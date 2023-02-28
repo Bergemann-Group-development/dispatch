@@ -17,11 +17,12 @@ MODULE ray_patch_mod
   USE bits_mod
   USE os_mod
   USE math_mod
+  USE handyfuncs_mod
   USE op_math_mod, only: searchsorted
   USE ray_mod, only: ray_type
   USE m3d_patch_mod, only: m3d_patch_t, vec, wmu, long_vec, long_wmu, detailed_prints, &
-  converged, print_send, atom_update_counter, hash_string, comoving_frame
-  USE mconst, only: cc
+  converged, print_send, atom_update_counter, comoving_frame
+  USE mconst, only: cc, over_4pi, PI
   implicit none
   private
 
@@ -32,7 +33,7 @@ MODULE ray_patch_mod
     real(8) :: vec(3), wmu
     integer :: fs, fe, i_out=0
     integer :: pre_pad_fs, pre_pad_fe
-    logical :: padded
+    logical :: padded, level_boundary=.false.
   contains
     procedure :: pre_init => ray_patch_pre_init
     procedure :: init => ray_patch_init
@@ -59,7 +60,7 @@ MODULE ray_patch_mod
   !-----------------------------------------------------------------------------
   integer, save:: verbose=0
   character(len=12), public, save :: formal_solver='linear'
-  real(4), public, save :: maxvel
+  real(4), public, save :: maxvel=0
 
 contains
 
@@ -90,14 +91,14 @@ SUBROUTINE ray_patch_pre_init (self)
   if (self%out_ray .and. self%i_mu /= 0) then
     self%i_out = self%i_mu - self%n_omega 
     self%vec = long_vec(:,self%i_out) 
-    self%wmu = long_wmu(self%i_out)
+    self%wmu = long_wmu(self%i_out) / (2.0*PI)
     self%dir = 1
   elseif(self%i_mu > 0) then
     self%vec = vec(:,self%i_mu)
-    self%wmu = wmu(self%i_mu)
+    self%wmu = wmu(self%i_mu) * over_4pi
     self%dir = merge(1, -1, vec(3,self%i_mu) > 0)
   elseif (self%i_mu == 0 .and. comoving_frame) then
-    self%wmu = math%pi4
+    self%wmu = 1
   endif
 
   call self%set_freq_indices()
@@ -131,7 +132,6 @@ SUBROUTINE ray_patch_init (self)
   endif
   
   call self%m3d_patch_t%init()
-  call self%init_bdries()
 
   if (self%save_output) then
     if (self%padded) then
@@ -190,17 +190,19 @@ SUBROUTINE comp_vproj (self, vproj)
     li = self%patch%li
     ui = self%patch%ui
 
+    call self%check_access(self%patch)
+
     d  => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),self%patch%idx%d, self%it,1)
     px => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),self%patch%idx%px,self%it,1)
     py => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),self%patch%idx%py,self%it,1)
     pz => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),self%patch%idx%pz,self%it,1)
 
-    !if (self%out_ray) then
-    !  vproj = (-self%vec(1)*px - self%vec(2)*py + self%vec(3)*pz) * scaling%u / (d*cc)
-    !else
+    if (self%out_ray) then
+      vproj = (-self%vec(1)*px - self%vec(2)*py + self%vec(3)*pz) * scaling%u / (d*cc)
+    else
       vproj = (self%vec(1)*px + self%vec(2)*py + self%vec(3)*pz) * scaling%u / (d*cc)
       !vproj = 0
-    !endif
+    endif
   endif
 END SUBROUTINE comp_vproj
 
@@ -326,18 +328,20 @@ SUBROUTINE init_bdries (self)
   class(ray_patch_t):: self
   !-----------------------------------------------------------------------------
   call trace%begin ('ray_patch_t%init_bdries')
-  if (.not. associated (self%boundaries)) then
-    allocate (self%boundaries)
-  endif
-  if (self%patch%boundaries%is_set(bits%zu) .and. self%dir <= 0) then
-    call self%boundaries%set(bits%zu)
+  call self%m3d_patch_t%init_bdries()
+  if (self%dir == 0) then
     call self%set(bits%no_download)
+  elseif (self%dir > 0) then
+    call self%boundaries%clear(bits%zu)
+    if (self%boundaries%is_set(bits%zl)) then
+      call self%set(bits%no_download)
+    endif
+  elseif (self%dir < 0) then
+    call self%boundaries%clear(bits%zl)
+    if (self%boundaries%is_set(bits%zu)) then
+      call self%set(bits%no_download)
+    endif
   endif
-  if (self%patch%boundaries%is_set(bits%zl) .and. self%dir >= 0) then
-    call self%boundaries%set(bits%zl)
-    call self%set(bits%no_download)
-  endif
-  call self%boundaries%pre_init (self)
   call trace%end()
 END SUBROUTINE init_bdries
 
@@ -357,6 +361,7 @@ SUBROUTINE ray_nbor_relations(self, another, needed, needs_me, download)
       if (self%kind==another%kind) then
         if (self%is_upstream(another)) then
           needs_me = .false.
+          self%level_boundary = another%level /= self%level
         elseif (another%is_upstream(self)) then
           needed = .false.
           download = .false.
@@ -482,7 +487,7 @@ SUBROUTINE pack (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('ray_patch_t%ray_pack', itimer=itimer)
   if ((self%verbose > 2 .or. self%print_update_info) .and. print_send) then
-    write(stdout, '(I6, A32, I3, A6, I6)') self%id, 'packing message on rank', & 
+    write(stdout, '(I6, A32, I3, A6, I10)') self%id, 'packing message on rank', & 
                                       mpi%rank, 'tag=', self%mesg%tag
   endif
   !-----------------------------------------------------------------------------
@@ -548,7 +553,7 @@ SUBROUTINE unpack (self, buffer)
   call trace%begin ('ray_patch_t%ray_unpack', itimer=itimer)
   call self%set (bits%busy)
   if ((self%verbose > 2 .or. self%print_update_info) .and. print_send) then
-    write(stdout, '(I6, A32, I3, A6, I6)') self%id, 'unpacking message on rank', & 
+    write(stdout, '(I6, A32, I3, A6, I10)') self%id, 'unpacking message on rank', & 
                                       mpi%rank, 'tag=', self%mesg%tag
   end if
   self%unpack_time = wallclock()

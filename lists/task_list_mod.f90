@@ -343,16 +343,17 @@ SUBROUTINE init_queue (self)
         !$omp end parallel
       end do
     else
-      do level=shared%levelmin,shared%levelmax
-        link => self%first(level)%pointer
+      link => self%head
+      !do level=shared%levelmin,shared%levelmax
+      !  link => self%first(level)%pointer
         do while (associated(link))
-          if (link%task%level /= level) then
-            exit
-          end if
+          !if (link%task%level /= level) then
+          !  exit
+          !end if
           call self%check_ready (link)
           link => link%next
         end do
-      end do
+      !end do
     end if
   !-----------------------------------------------------------------------------
   ! Optionally, find only the 1st task, and let check_nbors find the rest

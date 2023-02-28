@@ -392,6 +392,7 @@ SUBROUTINE add (self, mesg)
   self%tail => mesg                             ! tail points to it
   !$omp atomic
   self%n = self%n + 1                           ! increment counter
+#ifdef MPI
   if (mesg%tag == MPI_ANY_TAG) then
     !$omp atomic
     self%na = self%na + 1
@@ -401,6 +402,7 @@ SUBROUTINE add (self, mesg)
       'mesg_t%add: na=', self%na
     end if
   end if
+#endif
   call                                                   self%lock%unset ('add')
   call trace%end ()
 END SUBROUTINE add

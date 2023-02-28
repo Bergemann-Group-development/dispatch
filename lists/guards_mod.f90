@@ -283,14 +283,10 @@ SUBROUTINE same (self, tgt, src, all_tgt, all_src, only, nbstep)
   !-----------------------------------------------------------------------------
   ! Time interpolate in the target region
   !-----------------------------------------------------------------------------
-  if (tgt%nt==1 .and. src%nt==1) then
-    call interp%no_t   (tgt, src, ls, us, src%mem, tgt%mem, lt, ut, only=only)
-  else
-    m = shape(tgt%mem)
-    mem => tgt%mem(:,:,:,:,tgt%it,1)
-    call interp%in_t   (tgt, src, ls, us, src%mem, mem, lt, ut, only=only, &
-                          extrap=tgt%allow_extrapolate, nbstep=nbstep)
-  endif
+  m = shape(tgt%mem)
+  mem => tgt%mem(:,:,:,:,tgt%it,1)
+  call interp%in_t   (tgt, src, ls, us, src%mem, mem, lt, ut, only=only, &
+                        extrap=tgt%allow_extrapolate, nbstep=nbstep)
   if (associated(tgt%filled)) &
     tgt%filled (lt(1):ut(1),lt(2):ut(2),lt(3):ut(3)) = 10*src%level
   !.............................................................................
@@ -390,7 +386,7 @@ SUBROUTINE differ (self, tgt, src, all_tgt, all_src, only, nbstep)
   integer                              :: i, m(5), unit, sid, tid
   integer, save                        :: itimer=0
   !-----------------------------------------------------------------------------
-  ! Use all source cells if the all_src is present, or the rarget (child) is
+  ! Use all source cells if the all_src is present, or the target (child) is
   ! taking the first step.
   !-----------------------------------------------------------------------------
   call trace%begin ('guards_t%differ', itimer=itimer)

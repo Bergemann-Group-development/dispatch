@@ -21,11 +21,13 @@ MODULE atom_line_patch_mod
     !USE units_mod
     !USE scratch_mod
     USE mconst
+    USE handyfuncs_mod
     USE atom_mod, only: atom_type
     USE trans_mod, only: line_type
-    USE m3d_patch_mod, only: m3d_patch_t, maxiter, hash_string, comoving_frame
+    USE m3d_patch_mod, only: m3d_patch_t, maxiter, comoving_frame
     USE ray_patch_mod, only: ray_patch_t
-    USE op_math_mod, only: get_interval
+    USE op_math_mod, only: searchsorted
+    USE m3d_debug_mod
     implicit none
   
     !-----------------------------------------------------------------------------
@@ -33,15 +35,15 @@ MODULE atom_line_patch_mod
     type, public, extends(ray_patch_t) :: atom_line_t
       class(atom_type), pointer :: atom
       type(line_type), dimension(:), contiguous, pointer :: line
-      real(4), dimension(:,:,:), contiguous, pointer :: doppler_factor
       integer, dimension(:), contiguous, pointer :: idx_map
       integer :: nline, ired, iblue
     contains
       procedure :: pre_init => atom_line_pre_init
       procedure :: init => atom_line_init
       procedure :: update => atom_line_update
-      procedure :: deallocate_mem => atom_line_deallocate_mem
-      procedure :: nbor_relations => atom_line_nbor_relations
+      procedure :: allocate_mem
+      procedure :: deallocate_mem
+      procedure :: nbor_relations
       procedure :: create_line_indices
       procedure :: create_line_frequencies
       procedure :: interpolate_lines
@@ -100,7 +102,6 @@ MODULE atom_line_patch_mod
       line%phi => self%mem(:,:,:,fs:fe,1,1)
       fs = fe + 1
     end do
-    self%print_update_info = self%check_in_bounds()
   END SUBROUTINE atom_line_init
 
   !===============================================================================
@@ -117,6 +118,7 @@ MODULE atom_line_patch_mod
     nline = 0
     do i=1, self%atom%nline
       line => self%atom%line(i)
+      if (.not. line%active) cycle
       call line%check_range(self%fs, self%fe, fs, fe, skip)
       if (skip) cycle
       nline = nline + 1 
@@ -128,10 +130,10 @@ MODULE atom_line_patch_mod
     self%nline = nline
     allocate(self%line(self%nline))
     call os%mem_register(storage_size(self%line), self%nline, label='atom%line')
+
     do i=1, self%atom%nline
       idx = self%idx_map(i)
       if (idx==0) cycle
-
       self%line(idx) = self%atom%line(i)
     end do
   END SUBROUTINE create_line_indices
@@ -142,7 +144,7 @@ MODULE atom_line_patch_mod
     class(line_type), pointer :: line
     integer :: i, f, fs, fe
     real(8) :: nus, nue, pre_pad_nus, pre_pad_nue
-    real(8), allocatable :: nu(:)
+    real(8), dimension(:), allocatable :: nu, wq
     !---------------------------------------------------------------------------
     nus = self%sp%nu(self%fs)
     nue = self%sp%nu(self%fe)
@@ -160,25 +162,29 @@ MODULE atom_line_patch_mod
         if (allocated(line%q))  deallocate(line%q)
         line%nnu = line%nq ! reset number of frequencies to input
         call line%freql(self%atom%qnorm, symmetric=.true.)
-        call get_interval(line%nu, nus, nue, fs, fe, limit=.true.)
+        fs = max(searchsorted(line%nu, nus, outbounds_ok=.true.), 1)
+        fe = min(searchsorted(line%nu, nue, outbounds_ok=.true.)+1, line%nnu)
 
         line%nnu = fe-fs+1
-        ! this is needed for computing wphi
-        call get_interval(line%nu, pre_pad_nus, pre_pad_nue, line%fs, line%fe, limit=.true.)
 
-        line%fs = line%fs - fs + 1
-        line%fe = line%fe - fs + 1
-        
         allocate(nu(line%nnu))
+        allocate(wq(line%nnu))
         nu = line%nu(fs:fe)
+        wq = line%wq(fs:fe)
         deallocate(line%nu)
+        deallocate(line%wq)
         allocate(line%nu(line%nnu))
+        allocate(line%wq(line%nnu))
+        allocate(line%q (line%nnu))
         line%nu = nu
+        line%wq = wq
+        line%q  = line%nu/line%nu0 - 1
         deallocate(nu)
+        deallocate(wq)
 
-        line%nq = line%nnu
-        allocate(line%q(line%nq))
-        line%q = line%nu/line%nu0 - 1
+        ! this is needed for computing wphi
+        line%fs = max(searchsorted(line%nu, pre_pad_nus, outbounds_ok=.true.), 1)
+        line%fe = min(searchsorted(line%nu, pre_pad_nue, outbounds_ok=.true.), line%nnu)
       endif
     end do
   END SUBROUTINE create_line_frequencies
@@ -187,16 +193,17 @@ MODULE atom_line_patch_mod
   SUBROUTINE atom_line_update (self)
     class(atom_line_t) :: self
     class(line_type), pointer :: line
-    real(4), dimension(:,:,:), pointer, contiguous :: tothi, ne, temp, adamp, doppler_factor
-    real(4), dimension(:,:,:), pointer, contiguous :: inv_df, ni, nj, unsold_temp, stark_pe, vproj
+    real(4), dimension(:,:,:), pointer, contiguous :: tothi, ne, temp, adamp
+    real(4), dimension(:,:,:), pointer, contiguous :: vproj, doppler_factor
+    real(4), dimension(:,:,:), pointer, contiguous :: inv_df, ni, nj, unsold_temp, stark_pe
     real(4), dimension(:,:,:,:), pointer, contiguous :: phi
     real(4), dimension(:,:,:,:), pointer :: nh
-    real(8), dimension(:), allocatable :: wnu
-    integer :: i, f, p(3)
+    integer :: i, f, p(3), fs, fe
     integer, save:: itimer=0
     !-----------------------------------------------------------------------------
     if (self%is_finished()) return
     call trace%begin('atom_line_t%atom_line_update', itimer=itimer)
+    p = self%pcheck
 
     call self%check_access(self%m3d_parent%m3d_parent)
     ne   => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_ne,            self%it,1)
@@ -228,17 +235,27 @@ MODULE atom_line_patch_mod
       
       call line%profile(line%q, vproj, inv_df, adamp, line%phi)
 
-      if (.not. self%out_ray) then
+      if (self%print_update_info) then
+        if (i==self%linecheck) then
+          memcheck(2) = adamp(p(1),p(2),p(3))
+          memcheck(3) = vproj(p(1),p(2),p(3))
+        endif
+      endif
+
+      if (.not. self%out_ray .and. self%iter==0) then
         call os%allocate(line%wphi, self%n, zero=.true., label=trim(self%kind)//'%wphi')
-        call self%sp%set_weights(wnu, line%q(line%fs:line%fe), line%fs, line%fe)
         do f=line%fs, line%fe
-          line%wphi = line%wphi + line%phi(:,:,:,f) * wnu(f)
+          line%wphi = line%wphi + line%phi(:,:,:,f) * line%wq(f)
         end do
-        deallocate(wnu)
+        if (self%print_update_info) then
+          if (i==self%linecheck) then
+            memcheck(4) = line%wphi(p(1),p(2),p(3))
+          endif
+        endif
       endif
 
       do f=1,line%nnu
-        line%phi(:,:,:,f) = line%phi(:,:,:,f) * over_4pi * (line%q(f) + 1)
+        line%phi(:,:,:,f) = line%phi(:,:,:,f) * (line%q(f) + 1) * over_4pi
       end do
     enddo
 
@@ -246,13 +263,15 @@ MODULE atom_line_patch_mod
     call os%deallocate(adamp)
     call os%deallocate(unsold_temp)
     call os%deallocate(stark_pe)
-    call os%deallocate(vproj)
     call os%deallocate(inv_df)
+    call os%deallocate(vproj)
 
-    if (.not. self%out_ray) then
+    if (.not. self%out_ray .and. self%iter==0) then
       call self%integrate_wphi()
     endif
+
     call self%post_update()
+
     call trace%end(itimer)
   END SUBROUTINE atom_line_update
 
@@ -298,10 +317,6 @@ MODULE atom_line_patch_mod
     call os%allocate(chi_fac, self%n)
     call os%allocate(eta_fac, self%n)
 
-    !if (.not. associated(self%mem)) then
-    !  print *, 'mem not allocated. Something is wrong!'
-    !endif
-
     do i=1, self%nline
       line => self%line(i)
       call line%check_range(fcs,fce,fs,fe,skip)
@@ -312,15 +327,6 @@ MODULE atom_line_patch_mod
       phi => scratch_phi(:,:,:,1:nnu)
   
       call line%interpolate_phi(nu, phi)
-
-      !if (self%fcheck >= fs .and. self%fcheck <= fe) then
-      !  f = self%fcheck-fs+1
-      !  ff = self%fcheck-self%fs+1
-      !  p = self%pcheck
-      !  print '(8(ES15.7))', chi(p(1),p(2),p(3),ff) + phi(p(1),p(2),p(3),f) * line%chi_fac(p(1),p(2),p(3)), &
-      !    phi(p(1),p(2),p(3),f) * line%chi_fac(p(1),p(2),p(3)), phi(p(1),p(2),p(3),f), &
-      !    self%atom%n(p(1),p(2),p(3),line%i), self%atom%n(p(1),p(2),p(3),line%j)
-      !endif
 
       if (LTE) then
         ni => self%atom%nstar(:,:,:,line%i)
@@ -352,7 +358,7 @@ MODULE atom_line_patch_mod
   END SUBROUTINE interpolate_lines
 
   !===============================================================================
-  SUBROUTINE atom_line_nbor_relations(self, another, needed, needs_me, download)
+  SUBROUTINE nbor_relations(self, another, needed, needs_me, download)
     class(atom_line_t) :: self
     class(task_t), pointer :: another        ! another task in the list
     logical :: needed, needs_me, download    ! Is the other task: needed, 
@@ -365,6 +371,8 @@ MODULE atom_line_patch_mod
 
     if (needed .or. needs_me) then
       select type(another)
+      class is (atom_line_t)
+        ! do nothing
       class is (m3d_patch_t)
         if (another%id == self%m3d_parent%id) then
           needs_me = .false.
@@ -380,20 +388,38 @@ MODULE atom_line_patch_mod
       end select
     endif
     call trace%end()
-  END SUBROUTINE atom_line_nbor_relations
+  END SUBROUTINE nbor_relations
 
   !===============================================================================
-  SUBROUTINE atom_line_deallocate_mem(self, deallocator, print)
+  SUBROUTINE allocate_mem(self, allocator, m_in)
+    class(atom_line_t) :: self
+    class(m3d_patch_t), intent(in), target :: allocator
+    class(line_type), pointer :: line
+    integer, intent(in), optional :: m_in(6)
+    integer :: i, fs, fe
+    ! ----------------------------------------------------------------------------
+    call self%m3d_patch_t%allocate_mem(allocator, m_in)
+    fs = 1
+    do i=1, self%nline
+      line => self%line(i)
+      fe = fs + line%nq - 1
+      line%phi => self%mem(:,:,:,fs:fe,1,1)
+      fs = fe + 1
+    end do
+  END SUBROUTINE allocate_mem
+
+  !===============================================================================
+  SUBROUTINE deallocate_mem(self, deallocator, print)
     class(atom_line_t) :: self
     class(m3d_patch_t), intent(in), target :: deallocator
     logical, optional :: print
     ! ----------------------------------------------------------------------------
+    call self%m3d_patch_t%deallocate_mem(deallocator, print)
     if (self%is_finished() .and. self%is_clear(bits%busy)) then
-      call self%m3d_patch_t%deallocate_mem(deallocator, print)
       if (associated(self%line)) deallocate(self%line)
       if (associated(self%idx_map)) call os%deallocate(self%idx_map)
     endif    
-  END SUBROUTINE atom_line_deallocate_mem
+  END SUBROUTINE deallocate_mem
 
   !===============================================================================
   SUBROUTINE print_post_update_info (self)
@@ -407,7 +433,12 @@ MODULE atom_line_patch_mod
     nu => self%sp%nu(self%fcheck:self%fcheck)
     call os%allocate(phi, [self%n, 1])
     call self%line(i)%interpolate_phi(nu, phi)
-    call self%print_to_stdout(arr=phi(p(1),p(2),p(3),:))
+    memcheck(1) = phi(p(1),p(2),p(3),1)
+    if (self%out_ray) then
+      call self%print_to_stdout(arr=memcheck(1:3))
+    else
+      call self%print_to_stdout(arr=memcheck(1:4))
+    endif
     call os%deallocate(phi)
   END SUBROUTINE print_post_update_info
   
@@ -446,7 +477,10 @@ MODULE atom_line_patch_mod
     integer :: i, key(4)
     !-----------------------------------------------------------------------------
     call trace%begin('atom_line_t%init_nbors_hash', itimer=itimer)
+    self%interest%l = self%authority%l - self%ds
+    self%interest%u = self%authority%u + self%ds
     call self%m3d_patch_t%init_nbors_hash(nbors)
+    call self%ray_patch_t%init_nbors_hash(nbors)
 
     key(1:3) = self%key(1:3)
     key(4) = hash_string('net_opac')

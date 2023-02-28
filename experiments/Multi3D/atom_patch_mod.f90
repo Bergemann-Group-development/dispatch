@@ -20,10 +20,11 @@ MODULE atom_patch_mod
     USE bits_mod
     !USE units_mod
     !USE scratch_mod
+    USE handyfuncs_mod
     USE atom_cont_patch_mod, only: atom_cont_patch_t
     USE angle_rad_patch_mod, only: rad_patch_t
     USE atom_rate_patch_mod, only: atom_rate_t
-    USE atom_mod, only: atom_type, atomic_spectrum_type
+    USE atom_mod, only: atom_type, atomic_spectrum_type, use_classic_col, kramer_bf
     USE trans_mod, only: line_type
     USE mconst, only: CC
     USE ion_mod, only: ion_type, particle_type
@@ -32,10 +33,11 @@ MODULE atom_patch_mod
     USE bbtrans_mod, only: bbtrans_type
     USE composition_mod, only: composition_type
     USE m3d_patch_mod, only: m3d_patch_t, maxiter, check_NaN, recl, cswitch, &
-    global_maxerr, convlim, atom_update_counter, hash_string, comoving_frame, global_pos
+    global_maxerr, convlim, atom_update_counter, comoving_frame, global_pos
     USE bftrans_mod, only: bftrans_type
     USE atom_line_patch_mod, only:atom_line_t, second_sp
     USE net_opac_patch_mod, only:net_opac_t
+    USE m3d_debug_mod
     implicit none
   
     !-----------------------------------------------------------------------------
@@ -68,6 +70,7 @@ MODULE atom_patch_mod
     integer, save :: epos(3), elvl
     logical, save :: level_partf=.true.
     logical, save :: exclude_from_line_list=.true.
+    character(len=128), save :: precomputed_depart=''
 
     !-----------------------------------------------------------------------------
   
@@ -158,7 +161,8 @@ MODULE atom_patch_mod
     logical, save :: exclude_trace_cont=.true., use_atom_abnd=.true.
     integer, save, allocatable :: in_lines(:)
     namelist /atom_params/ atom_file, qnorm, convlim, exclude_trace_cont, level_partf, &
-    use_atom_abnd, logf_cut, red_cut, blue_cut, n_in_lines, abundance, exclude_from_line_list
+    use_atom_abnd, logf_cut, red_cut, blue_cut, n_in_lines, abundance, &
+    exclude_from_line_list, precomputed_depart, use_classic_col, kramer_bf
     namelist /line_mask/ in_lines
     !-----------------------------------------------------------------------------
     call trace%begin('atom_patch_t%pre_init_atom', itimer=itimer)
@@ -281,7 +285,23 @@ MODULE atom_patch_mod
       call self%save_abundance_to_file()
     endif
     if (level_partf) nullify(element)
-    call atom%compute_lte_populations(temp, ne, real(self%composition%dxi), element, molec)
+
+    if (precomputed_depart /= '') then
+      call self%load_mem(precomputed_depart, self%out_mem, self%kind)
+      do i=1, atom%nlevel
+        atom%n(:,:,:,i) = atom%n(:,:,:,i) / atom%nstar(:,:,:,i) 
+      end do
+      call atom%compute_lte_populations(temp, ne, real(self%composition%dxi), element, molec)
+      do i=1, atom%nlevel
+        atom%n(:,:,:,i) = atom%n(:,:,:,i) * atom%nstar(:,:,:,i) 
+      end do
+    else
+      call atom%compute_lte_populations(temp, ne, real(self%composition%dxi), element, molec)
+      do i=1, atom%nlevel
+        atom%n(:,:,:,i) = atom%nstar(:,:,:,i) 
+      end do
+    endif
+
     call atom%compute_cont_factors(temp, real(self%composition%dxi), ne)
     self%output_atom%n => atom%n
     self%output_atom%nstar => atom%nstar
@@ -317,7 +337,7 @@ MODULE atom_patch_mod
 
         ! Normalize wphi
         do i=1, self%atom%nline
-          self%atom%line(i)%wphi = math%pi4 / self%atom%line(i)%wphi
+          self%atom%line(i)%wphi = 1 / self%atom%line(i)%wphi
         end do
       endif
 
@@ -335,9 +355,6 @@ MODULE atom_patch_mod
       else
         self%update_skipped = .true.
       endif
-
-      call os%deallocate(self%atom%gamma_ij, label='atom%gamma_ij')
-      call os%deallocate(self%atom%gamma_ji, label='atom%gamma_ji')
     endif
     
     if (self%iter > 0) then
@@ -353,6 +370,11 @@ MODULE atom_patch_mod
   
     call self%post_update()
 
+    if (associated(self%atom%gamma_ij)) then
+      call os%deallocate(self%atom%gamma_ij, label='atom%gamma_ij')
+      call os%deallocate(self%atom%gamma_ji, label='atom%gamma_ji')
+    endif
+
     if (self%atom%stiff .and. .not. self%is_finished()) then
       call self%check_skip()
     endif
@@ -363,8 +385,7 @@ MODULE atom_patch_mod
   SUBROUTINE print_post_update_info (self)
     class(atom_patch_t):: self
     character(len=64) :: text
-    integer :: i, p(3), ipos
-    real(4), dimension(4) :: arr
+    integer :: i, l, p(3), ipos
     real(8) :: global
     !-----------------------------------------------------------------------------
     if (self%iter == 0) then
@@ -377,12 +398,22 @@ MODULE atom_patch_mod
       call self%print_to_stdout(text='update skipped')
     elseif (self%m3d_patch_t%check_in_bounds()) then
       i = self%lvlcheck
+      l = self%linecheck
       p = self%pcheck
-      arr(1) = self%lvlerr(i)
-      arr(2) = self%atom%n(p(1),p(2),p(3),i)
-      arr(3) = self%atom%totn(p(1),p(2),p(3))
-      arr(4) = 10.0**(self%atom%abnd-12.0)*self%composition%toth(p(1),p(2),p(3))
-      call self%print_to_stdout(arr=arr)
+      !arr(1) = self%lvlerr(i)
+      memcheck(1) = self%atom%n(p(1),p(2),p(3),i)
+      memcheck(2) = self%atom%totn(p(1),p(2),p(3))
+      if (associated(self%atom%gamma_ij) .and. l<=self%atom%nrad) then
+        memcheck(3) = self%atom%gamma_ij(p(1),p(2),p(3),l)
+        memcheck(4) = self%atom%gamma_ji(p(1),p(2),p(3),l)
+        if (l<=self%atom%nline) then
+          memcheck(5) = self%atom%line(l)%wphi(p(1),p(2),p(3))
+        endif
+      else
+        memcheck(3) = 10.0**(self%atom%abnd-12.0)
+        memcheck(4) = self%composition%toth(p(1),p(2),p(3))
+      endif
+      call self%print_to_stdout(arr=memcheck(1:5))
     else
       call self%print_to_stdout()
     endif
@@ -544,7 +575,7 @@ MODULE atom_patch_mod
     do i=1, size(self%composition%trans)
       trans => self%composition%trans(i)
       if (trans%level%g2 > 0) then
-        if (uppercase(trans%ion%id, 2) == uppercase(self%atom%id, 2)) then
+        if (uppercase(trans%ion%id, 2) == self%atom%id) then
           do kc=1, self%atom%ncont
             lower = self%atom%cont(kc)%i
 
@@ -611,7 +642,7 @@ MODULE atom_patch_mod
             line => self%atom%line(i)
             if (abs(line%nu0 / ll_line%nu0 -1) < 1e-6 &
                 .and. abs(line%Aji / ll_line%Aji - 1) < 1e-4) then
-              ll_line%active = .false.
+              call ll_line%deactivate()
               print '(A, F10.2)', 'excluding linelist line at ', CC / ll_line%nu0 *1e8
             endif
           end do
@@ -708,7 +739,7 @@ MODULE atom_patch_mod
     !-----------------------------------------------------------------------------
     if (self%ipos(3)==0) then
       open(newunit=lunit, file=trim(io%run_dir)//'abund.txt', form='FORMATTED', access='append')
-      write(lunit, '(A3, F8.4)') uppercase(self%atom%id, len(self%atom%id)), self%atom%abnd
+      write(lunit, '(A3, F8.4)') self%atom%id, self%atom%abnd
       close(lunit)
     endif
   END SUBROUTINE save_abundance_to_file

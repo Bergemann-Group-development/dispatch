@@ -10,6 +10,43 @@ import matplotlib.pyplot as plt
 import pickle
 from scipy.fft import fft, ifft
 
+class CoG_line(object):
+    def __init__(self, cog, kr):
+        self.cog = cog
+        self.kr = kr
+
+    def profile(self, abnd, dlam=None, vdop=None, vshift=None, **kwargs):
+        kr = self.kr
+        runs = self.cog.runs
+        line0 = runs[0].line[kr]
+
+        xx, mask = line0.get_xx(dlam)
+
+        yy = np.ones((len(runs), xx.size))
+        
+        for i, run in enumerate(runs):
+            line = run.line[kr]
+            yy[i], _ = run.get_yy(mask=mask, **kwargs)
+
+        func = PchipInterpolator(self.cog.abnds, yy, axis=0)
+        yy = func(abnd)
+
+        if vdop is not None or vshift is not None:
+            if dlam is not None:
+                ixx = xx + line0.lam0
+            else:
+                ixx = xx
+                
+            sxx, syy = convol(ixx, yy, vdop=vdop, vshift=vshift)
+            yy = np.interp(ixx, sxx, syy)
+
+        return xx, yy
+
+    def calc_weq(self, abnd, **kwargs):
+        xx, yy = self.profile(abnd, **kwargs)
+        weq = np.trapz(1 - yy, x=xx) * 1e3
+        return weq
+
 class CoG(object):
     """
     Read multiple m3dis runs of different abundance to create curve-of-growth class.
@@ -23,18 +60,18 @@ class CoG(object):
         self.runs = runs
         self.abnds = np.array([run.atom.abnd for run in runs])
         self.nruns = len(runs)
-        self.mus = np.unique(runs[0].vec[:,-1])
+        self.mus = np.unique(runs[0].vec[:,-1])[::-1]
         self.atom = runs[0].atom
+        self.line = [CoG_line(self, kr) for kr in range(self.atom.nline)]
         
         
-    def profile_func(self, kr, imu, xx=None, blend=None, renorm=False, zeta=False, custom=None, vdop=None):
+    def profile_func(self, kr, imu, xx=None, blend=None, custom=None, vdop=None):
         """
         Creates a function which takes abundance as an input func(abund).
         The function produces the line profile at the given abundance
         by interpolating the underlying abundance grid.
         Blends can be given either as basic_line objects
-        or tuple of xx and yy data. If zeta is True 1D runs are convolved
-        with a solar macroturbulence profile.
+        or tuple of xx and yy data.
         """
         if isinstance(kr, list):
             krs = kr.copy()
@@ -45,10 +82,16 @@ class CoG(object):
             for kr in krs:
                 line = run.line[kr]
                 line.prepare()
+                line.slc = slice(line.ib, line.ir)
         
         if xx is None:
             xxin = False
-            xx = np.concatenate([self.runs[0].line[kr].lam for kr in krs])
+            xx = []
+            for kr in krs:
+                line = self.runs[0].line[kr]
+                xx.append(self.runs[0].lam[line.slc])
+
+            xx = np.concatenate(xx)
             xx = np.sort(xx)
         else:
             xxin = True
@@ -56,22 +99,13 @@ class CoG(object):
         sum_yy = np.ones((self.nruns, xx.size))
             
         for i, kr in enumerate(krs):
-            lines = [run.line[kr] for run in self.runs]
-            lam = lines[0].lam
-            
-            if imu is not None:
-                yy = np.array([line.get_Imu(imu, norm=False)[0] for line in lines])
-            else:
-                yy = np.array([line.flux for line in lines])
-                
-            if renorm:
-                yy = interp1d(lam, yy, bounds_error=False, fill_value=1)(xx)
-                yy = yy / continuum(xx, yy)
-            else:
-                yy = yy / continuum(lam, yy)
-                yy = interp1d(lam, yy, bounds_error=False, fill_value=1)(xx)
-                
-            sum_yy += yy - 1
+            yy = []
+            for run in self.runs:
+                line = run.line[kr]
+                ie, cnt = run.get_yy(imu=imu, norm=True, mask=line.slc)
+                yy.append(ie)
+
+            sum_yy += np.array(yy) - 1
                 
         yy = sum_yy
             
@@ -90,12 +124,8 @@ class CoG(object):
                 else:
                     blend_yy = blend.flux
                     
-                if renorm:
-                    blend_yy = np.interp(xx, blend.lam, blend_yy)
-                    blend_yy = blend_yy / continuum(xx, blend_yy)
-                else:
-                    blend_yy = blend_yy / continuum(blend.lam, blend_yy)
-                    blend_yy = np.interp(xx, blend.lam, blend_yy)
+                blend_yy = blend_yy / continuum(blend.lam, blend_yy)
+                blend_yy = np.interp(xx, blend.lam, blend_yy)
                     
             yy = yy + blend_yy - 1
             
@@ -120,18 +150,17 @@ class CoG(object):
         return yy
         
         
-    def bestfit(self, kr, obs_xx, obs_yy, imu=None, dlam=None, bounds=None, blend=None):
+    def bestfit(self, kr, obs, imu=None, bounds=None, blend=None, **kwargs):
         """
         Concolves line profile with gaussian and applies doppler shift
         in order to make line of one angle fit observations.
-        """
-        if dlam is not None:
-            mask = np.abs(obs_xx - self.runs[0].line[kr].lam0) < dlam
-            obs_xx = obs_xx[mask]
-            obs_yy = obs_yy[mask]
+        """ 
+        oxx = obs[imu].lam.values
+        oyy = obs[imu].ie.values
+        err = obs[imu].err.values
             
-            
-        profile = self.profile_func(kr, imu, obs_xx, blend=blend)
+        #profile = self.profile_func(kr, imu, obs_xx, blend=blend)
+        lam, profile = self.profile_func(kr, imu, blend=blend, **kwargs)
         
         if bounds is None:
             bounds = ([self.abnds[0], -3, 0], [self.abnds[-1], 3, 8])
@@ -142,15 +171,14 @@ class CoG(object):
             yy = profile(abnd)
             sxx, syy = convol(xx, yy, vshift=vshift, vdop=vdop)
             yy = np.interp(xx, sxx, syy, left=1, right=1)
-            
+        
             return yy
         
-        pfit, _ = optimize.curve_fit(opt_func, obs_xx, obs_yy,
-                                         p0=[abnd0, 0, 1], bounds=bounds)
+        pfit, _ = optimize.curve_fit(opt_func, oxx, oyy, p0=[abnd0, 0, 1], bounds=bounds)
         
-        fitted = opt_func(obs_xx, *pfit)
+        fitted = opt_func(oxx, *pfit)
         
-        return obs_xx, fitted, pfit
+        return fitted, pfit
         
     
     def bestfit2(self, kr, obs, imus, bounds=None, p0=None, blend=None, **kwargs):

@@ -419,7 +419,9 @@ SUBROUTINE create_new (self, link)
   call patch%allocate_mesg ()
   task => patch
   task%mesg%tag = 0
+#ifdef MPI
   task%mesg%sender = MPI_ANY_SOURCE
+#endif
   call self%recv_list%add (task%mesg)
   call new_request (task%mesg, task)
   !.............................................................................

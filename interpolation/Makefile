@@ -14,4 +14,4 @@ remesh_mod.o:           io_mod.o trace_mod.o omp_timer_mod.o patch_mod.o
 guard_zones_mod.o:      io_mod.o trace_mod.o omp_timer_mod.o patch_mod.o omp_timer_mod.o
 prolong_mod.o:          io_mod.o trace_mod.o
 conserve_mod.o:         patch_mod.o shared_mod.o interp_mod.o
-interp_mod.o:           trace_mod.o io_mod.o patch_mod.o omp_lock_mod.o
+interp_mod.o:           trace_mod.o io_mod.o patch_mod.o omp_lock_mod.o vector_ops.o

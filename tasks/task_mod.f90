@@ -845,7 +845,8 @@ END SUBROUTINE timeslots2
 !> target%grace*self%dtime.
 !===============================================================================
 LOGICAL FUNCTION is_ahead_of (self, target)
-  class (task_t):: self, target
+  class (task_t):: self
+  class (task_t), pointer:: target
   !.............................................................................
   real:: grace
   real(8):: nbtime, nbdtime, tgtime

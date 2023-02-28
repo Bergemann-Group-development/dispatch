@@ -26,6 +26,7 @@ MODULE bbtrans_mod
     procedure :: prepare_VanderWaals
     procedure :: estimate_qmax
     procedure :: get_range
+    procedure :: deactivate
   end type
 
   integer, save :: count1, count2, count3, count4, count5, count6
@@ -40,10 +41,12 @@ contains
     real(4), dimension(:,:,:), intent(in) :: vproj, inv_df, adamp
     real(4), dimension(:,:,:,:), intent(inout) :: phi
     real(4), dimension(:,:,:), allocatable :: psi, damp
+    real(4) :: scalar
     integer :: f
     !----------------------------------------------------------------------------------
     allocate(psi, damp, mold=inv_df)
-    damp = adamp * inv_df * over_4pi / self%nu0
+    scalar = over_4pi / self%nu0
+    damp = adamp * inv_df * scalar
 
     !DIR$ FORCEINLINE
     do f=1, size(q)
@@ -64,7 +67,7 @@ contains
     real(4), dimension(:,:,:), allocatable :: eta_fac, chi_fac, norm, damp, psi, phi
     real(8), dimension(:), allocatable :: q
     real(4), dimension(:), allocatable :: fisqp
-    real(4) :: ex, ni, nj, upper_ev, qreal
+    real(4) :: ex, ni, nj, upper_ev, qreal, scalar
     integer :: i,j,k,f, m(4)
     integer, save :: itimer=0, itimer1=0, itimer2=0
     !----------------------------------------------------------------------------------
@@ -75,7 +78,8 @@ contains
     m = shape(eta)
 
     q = nu / self%nu0 - 1
-    norm = inv_df / self%nu0 * over_4pi
+    scalar = over_4pi / self%nu0
+    norm = inv_df * scalar
     damp = adamp * norm
 
     upper_ev = self%lower_ev + H_E * self%nu0
@@ -469,7 +473,7 @@ contains
     integer :: i, j
     !----------------------------------------------------------------------------------
     j = nint(sqrt(self%upper_g / 2))
-    i = nint(sqrt(1 / (1./i**2 - self%nu0 * H_E / RYD)))
+    i = nint(sqrt(1 / (1./j**2 + self%nu0 * H_E / RYD)))
   
     call self%LinearStarkH(adamp,ne,i,j)
     call self%IonicH(adamp,temp,nh6,ne,i,j)
@@ -512,27 +516,26 @@ contains
   !------------------------------------------------------------------------------------
 
   !====================================================================================
-  PURE ELEMENTAL SUBROUTINE IonicH (self, gamma, temp, nh, ne, il, jl) 
+  PURE ELEMENTAL SUBROUTINE IonicH (self, gamma, temp, nh, ne, i, j) 
     class(bbtrans_type), intent(in)  :: self
     real(4),intent(in)         :: temp,nh,ne
     real(4),intent(inout)      :: gamma
-    integer, intent(in) :: il, jl
-    integer :: i,j,k
+    integer, intent(in) :: i, j
     real(8) :: fn,fn1,rd,rmax,rmin,dohm,gprot,xmr,xmp,xm,rratio,xn
     real(8) :: gion, lam0
     !----------------------------------------------------------------------------------
     lam0 = CC / self%nu0 * 1e8
 
     ! ionic broadening
-    if( (jl-il >= 1) .and. (jl-il <= 3) .and. (il >= 4) .and. (il <= 20) ) then
+    if( (j-i >= 1) .and. (j-i <= 3) .and. (i >= 4) .and. (i <= 20) ) then
 
-      fn1 = 2.25 * il**2 * ( 1.5 + 0.271*log(2.0/3.0*il)+  1.92/il**0.422 )
-      if(jl-il.eq.1) then
+      fn1 = 2.25 * i**2 * ( 1.5 + 0.271*log(2.0/3.0*i)+  1.92/i**0.422 )
+      if(j-i.eq.1) then
         fn=fn1
-      else if(jl-il.eq.2) then
-        fn=fn1*(9.1333/il+5.57333)
-      else if(jl-il.eq.3) then
-        fn=fn1*(38.6667/il+12.9667)
+      else if(j-i.eq.2) then
+        fn=fn1*(9.1333/i+5.57333)
+      else if(j-i.eq.3) then
+        fn=fn1*(38.6667/i+12.9667)
       endif
 
       ! xm is reduced mass of radiator and perturber
@@ -610,7 +613,7 @@ contains
         c1 = c1**0.4
         self%gw1 = gv * 8.411 * 1.283984e-12 * lower_ion**0.8 * c1
       else
-        self%active = .false.
+        call self%deactivate()
       endif
     endif
   END SUBROUTINE prepare_VanderWaals
@@ -657,4 +660,11 @@ contains
     endif
   END SUBROUTINE get_range
   !------------------------------------------------------------------------------------
+
+  !====================================================================================
+  PURE SUBROUTINE deactivate(self)
+    class(bbtrans_type), intent(inout) :: self
+    !----------------------------------------------------------------------------------
+    self%active = .false.
+  END SUBROUTINE deactivate
 END MODULE bbtrans_mod

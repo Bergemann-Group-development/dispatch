@@ -2,6 +2,7 @@ MODULE composition_mod
     USE trace_mod
     USE prec_mod
     USE op_math_mod
+    USE handyfuncs_mod
     USE element_mod
     USE ion_mod
     USE level_mod
@@ -55,7 +56,6 @@ MODULE composition_mod
 
     character(128), public, save :: exclude_elements=''
     real(8), public, save :: dlam=0.5
-    public :: count_words
 
 contains
 
@@ -965,13 +965,14 @@ contains
         self%rho  = rho
         self%EK_over_temp = EK / self%temp
         self%pe   = self%temp*BK*self%ne
-        self%toth = self%rho / self%grph
+        !self%toth = self%rho / self%grph
+        self%toth = self%rho / (self%xmy*1.008*uu)
         self%saha = 2 * op_saha_const * self%temp*sqrt(self%temp) / self%ne
         self%teta = temp_to_theta / self%temp
 
         self%dxi = 4.98e-4*self%teta*sqrt(self%pe)
         ! --- this only shows up in the Oslo legacy code ---!
-        self%dxi=min(self%dxi,0.747*0.5)
+        !self%dxi=min(self%dxi,0.747*0.5)
         ! --------------------------------------------------!
 
         self%fe = 0
@@ -1887,49 +1888,4 @@ contains
             n_skipped = n_skipped + 1
         end do
     END SUBROUTINE check_for_comment
-
-    !===============================================================================
-    FUNCTION trim_between_words(string) result(res)
-        character(len=*) :: string
-        character(len=len(string)) :: res
-        character :: char
-        integer :: i, j
-        !---------------------------------------------------------------------------
-        res = ''
-        char = ' '
-        j = 1
-        do i=1, len(string)
-            if (string(i:i) == ' ') then
-                if (char == ' ') then
-                    cycle
-                else
-                    res(j:j) = string(i:i)
-                    j = j + 1
-                endif
-            else
-                res(j:j) = string(i:i)
-                j = j + 1
-            endif
-            char = string(i:i)
-        end do
-    END FUNCTION
-
-    !===============================================================================
-    SUBROUTINE count_words (string, nwords)
-        character(len=*), intent(in) :: string
-        integer, intent(out) :: nwords
-        integer :: i, n
-        logical :: new_word=.true.
-        !-----------------------------------------------------------------------------
-        n = len(string)
-        nwords = 0
-        do i=1, n
-        if (string(i:i) == ' ') then
-            new_word = .true.
-        elseif(new_word) then
-            nwords = nwords + 1
-            new_word = .false.
-        endif
-        end do
-    END SUBROUTINE count_words
 END MODULE composition_mod

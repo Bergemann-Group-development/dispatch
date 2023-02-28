@@ -44,7 +44,7 @@ SUBROUTINE compute_ion_equilibrium(self, EK_over_temp, ne, saha, dxi)
     do j=self%nion-1, 1, -1
         partp = ions(j+1)%part
         ! --- this only shows up in the Oslo legacy code ---!
-        partp = max(1d-3, partp)
+        !partp = max(1d-3, partp)
         ! --------------------------------------------------!
         partition_ratio = ions(j)%part / partp
         ions(j)%saha = ions(j)%saha_eq(EK_over_temp, ne, saha, dxi, partition_ratio)

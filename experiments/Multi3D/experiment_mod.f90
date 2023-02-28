@@ -11,9 +11,12 @@ MODULE experiment_mod
   USE units_mod, only: cgs
   USE scaling_mod, only: scaling
   USE kinds_mod
-  USE m3d_patch_mod, only: hash_string
+  USE handyfuncs_mod
   USE m3d_halo_mod, only: m3d_halo_t
+  USE m3d_patch_mod, only: verbose
+  USE ray_patch_mod, only: maxvel
   USE composition_patch_mod, only: composition_patch_t
+  USE read_stagger_snapshot_mod
   USE shared_mod
   USE halo_mod
   USE list_mod
@@ -23,10 +26,13 @@ MODULE experiment_mod
   USE timer_mod
   USE os_mod
   USE mpi_mod
+  USE omp_mod
+  USE omp_timer_mod
   implicit none
   private
   type, public, extends(solver_t):: experiment_t
     class(composition_patch_t), pointer :: composition => null()
+    real(4), dimension(:,:,:,:,:,:), pointer :: authority_mem => null()
     integer :: iter=0, maxiter, zs, ze
     integer :: dims(3), nbox(3)
     character(len=2) :: v5
@@ -34,6 +40,7 @@ MODULE experiment_mod
     procedure:: pre_init
     procedure:: init
     procedure:: info
+    procedure:: patch_info
     procedure:: task_info
     procedure:: pre_update
     procedure:: update
@@ -58,29 +65,36 @@ SUBROUTINE pre_init (self)
   class(experiment_t), target :: self
   integer, save:: itimer=0
   real(8), save:: timestep=1.d0
-  integer :: md(3)
+  integer :: md(3), thread
   !-----------------------------------------------------------------------------
   call trace%begin('experiment_t%pre_init', itimer=itimer)
-  call self%append_to(self%task_list)
 
   self%nv = 6
   self%nt = 4 ! Download returns wrong stuff if nt <= 2
   self%nw = 1
 
-  self%n = self%nbox / self%dims
-  md = mod(self%nbox, self%dims)
-
-  self%zs = self%ipos(3) * self%n(3) + min(md(3), self%ipos(3))
-  if (self%ipos(3)+1 <= md(3)) then
-    self%n(3) = self%n(3) + 1
-  endif
-  self%ze = self%zs + self%n(3)
-
-  self%size = self%ds * self%n
   self%periodic = [.true., .true., .false.]
 
-  self%position = 0.5d0*self%size
-  self%position(3) = self%position(3) + self%zs*self%ds(3)
+  if (irregular) then
+    call get_stagger_subregion(self%ipos(3), self%n, self%ds, self%position, self%zs)
+    self%ds = self%ds / scaling%l
+    self%position = self%position / scaling%l
+    self%size = self%ds * self%n
+  else
+    self%n = self%nbox / self%dims
+    md = mod(self%nbox, self%dims)
+
+    self%zs = self%ipos(3) * self%n(3) + min(md(3), self%ipos(3))
+    if (self%ipos(3)+1 <= md(3)) then
+      self%n(3) = self%n(3) + 1
+    endif
+
+    self%size = self%ds * self%n
+    self%position = 0.5d0*self%size
+    self%position(3) = self%position(3) + self%zs*self%ds(3)
+  endif
+
+  self%ze = self%zs + self%n(3)
 
   !-----------------------------------------------------------------------------
   ! Preliminary region information, relative to the task position.
@@ -99,15 +113,17 @@ SUBROUTINE pre_init (self)
   self%time     = 0.0
   self%dtime    = timestep
   self%out_next = huge(1.0)
-  self%place    = -1
 
   !self%mhd = .false.
   !call self%solver_t%pre_init ()
   call self%idx%init (energy=5, mhd=.false.)
 
+  call self%append_to(self%task_list)
+
   allocate(self%composition)
   self%composition%patch => self
   self%composition%task_list => self%task_list
+  self%composition%zs = self%zs
   call self%composition%pre_init()
   call trace%end (itimer=itimer)
 END SUBROUTINE pre_init
@@ -117,21 +133,58 @@ END SUBROUTINE pre_init
 !===============================================================================
 SUBROUTINE init (self)
   class(experiment_t):: self
+  real(4), dimension(:,:,:,:), pointer, contiguous :: authority
+  real(4), dimension(:,:,:), pointer, contiguous :: d, px, py, pz, tt, pe, vel
+  real(8) :: sub(3), pos(3)
+  integer :: li(3), ui(3), thread
   integer, save:: itimer=0
   !----------------------------------------------------------------------------
   call trace%begin('experiment_t%init', itimer=itimer)
-  !select type (link => self%link)
-  !class is (m3d_halo_t)
-  !  call self%solver_t%init
-  !class default
-  !  call self%task_t%init
-  !end select
   call self%patch_t%init()
+
+  thread = mod(self%ipos(3),omp%nthreads)
+  self%place = thread2place(thread, omp%ncores, omp%nthreads)+100
+  !self%place    = -1
+
+  li = self%li
+  ui = self%ui
+
+  self%authority_mem => self%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),:,:,:)
+
+  if (irregular) then
+    sub = self%size * scaling%l
+    pos = self%position * scaling%l
+    authority => self%authority_mem(:,:,:,:,self%it,1)
+    d  => authority(:,:,:,self%idx%d)
+    px => authority(:,:,:,self%idx%px)
+    py => authority(:,:,:,self%idx%py)
+    pz => authority(:,:,:,self%idx%pz)
+    tt => authority(:,:,:,self%idx%e)
+    pe => authority(:,:,:,6)
+    call load_stagger_subregion(self%n, sub, pos, d, px, py, pz, tt, pe)
+
+    pe = pe * cgs%k_b * tt ! convert from electron density to electron pressure
+
+    pe = pe / scaling%p
+    d  = d  / scaling%d
+    px = px / (scaling%d * scaling%u)
+    py = py / (scaling%d * scaling%u)
+    pz = pz / (scaling%d * scaling%u)
+
+    call os%allocate(vel, self%n)
+    vel = sqrt(px**2 + py**2 + pz**2) / d
+    maxvel = max(maxvel, scaling%u / cgs%c * maxval(vel))
+    call os%deallocate(vel)
+
+    call os%allocate(self%filled, self%gn)
+    self%filled = -1
+  endif
+
   if (associated(self%boundaries)) then
     call self%init_bdries ()
   endif
   call data_io%init (self)
-  call self%init_level()
+  !call self%init_level()
   call trace%end (itimer=itimer)
 END SUBROUTINE init
 
@@ -154,6 +207,7 @@ SUBROUTINE pre_update (self)
   !----------------------------------------------------------------------------
   call self%task_t%pre_update()
   call self%set(bits%no_download)
+  write(io_unit%dispatcher, '(F17.8, I3, 1x, A3, 1x, A)') wallclock(), mpi%rank, 'PRE', self%patch_info()
 END SUBROUTINE pre_update
 
 !===============================================================================
@@ -183,6 +237,7 @@ SUBROUTINE post_update (self)
   if (self%iter == 0) then
     call self%finish()
   endif
+  write(io_unit%dispatcher, '(F17.8, I3, 1x, A3, 1x, A)') wallclock(), mpi%rank, 'END', self%patch_info()
   
   self%iter = self%iter + 1
 END SUBROUTINE post_update
@@ -196,6 +251,21 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   !-----------------------------------------------------------------------------
   !print *, 'Experiment update called for patch', self%id
 END SUBROUTINE info  
+
+!===============================================================================
+FUNCTION patch_info (self) result(text)
+  class(experiment_t) :: self
+  character(len=merge(48, 32, verbose>3)) :: text
+  integer :: i
+  !-----------------------------------------------------------------------------
+  i = omp%place
+  if (verbose > 3) then
+    write(text, '(I3, 1x, I3, 1x, F8.4, A12, I8, I4)') i, self%place, self%time, &
+                    trim(self%kind), self%id, self%ipos(3)+1
+  else
+    write(text, '(A12, I8, I4)')  trim(self%kind), self%id, self%ipos(3)+1
+  endif
+END FUNCTION patch_info
 
 !===============================================================================
 !> For diagnostic output of tasks and nbor lists to data/run/rank_RRRRR.log
@@ -226,7 +296,9 @@ END SUBROUTINE finish
 SUBROUTINE init_level (self)
   class(experiment_t):: self
   !-----------------------------------------------------------------------------
-  if (any(self%n > 1)) then
+  if (irregular) then
+    self%level = stagger_levels(self%ipos(3)+1)
+  elseif (any(self%n > 1)) then
     ! The level does not depend on the patch size in non-regular grids
     self%level = 1
   end if
@@ -234,7 +306,7 @@ END SUBROUTINE init_level
 
 !===============================================================================
 SUBROUTINE append_to(self, list)
-  class (experiment_t), target :: self
+  class(experiment_t), target :: self
   class(list_t),  pointer :: list
   class(m3d_halo_t),  pointer :: link
   !-----------------------------------------------------------------------------
@@ -242,6 +314,7 @@ SUBROUTINE append_to(self, list)
   call link%init()
   link%task => self
   self%link => link
+  call self%init_level()
   call link%append_to(list)
   self%key = self%hash_key()
   call list%hash_table%add (self%key, self%link)

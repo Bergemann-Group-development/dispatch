@@ -1,5 +1,6 @@
 MODULE ray_mod
   USE mconst
+  USE radau_mod
   implicit none
 
   ! *******************************************************************
@@ -230,19 +231,12 @@ SUBROUTINE set_lobatto_quadratures(ntheta, nphi, vec, wts)
   real(8), intent(out), dimension(:), allocatable :: wts
   real(8), intent(out), dimension(:,:), allocatable :: vec
   real(8), dimension(:), allocatable :: mu, wmu
-  real(8) :: pi2, pi05, xphi, theta
-  integer :: nrays, i, nt, np, nmuphi
+  integer :: nrays
   ! -------------------------------------------------------------------
-  pi05   = PI * 0.5d0
-  pi2    = PI * 2.0d0
-
   nrays  = ntheta + 1
-  nmuphi = ntheta*nphi + 1
 
   allocate(mu(nrays))
   allocate(wmu(nrays))
-  allocate(wts(nmuphi))
-  allocate(vec(3, nmuphi))
 
   ! setting indexes and hard-coded Lobatto coefficients
   select case (nrays)
@@ -280,28 +274,8 @@ SUBROUTINE set_lobatto_quadratures(ntheta, nphi, vec, wts)
 
   end select
 
-  wmu = wmu * mu * 2
-
-  ! storing first index of vec and wts
-  wts(1) = wmu(1)
-  vec(:,1) = [0.d0, 0.d0, mu(1)]
-  ! storing the rest of vec and wts indexes
-  do nt = 2, nrays
-     do np = 1, nphi
-        i = (nt-2) * nphi + np+1
-        
-        ! Computing cartesian geometries
-        xphi = pi2 / dble(nphi) * (np-1)
-        theta = acos(mu(nt))
-        vec(1,i) = sin(theta) * cos(xphi)
-        vec(2,i) = sin(theta) * sin(xphi)
-        vec(3,i) = mu(nt)
-        wts(i)   = wmu(nt) / dble(nphi)
-     end do
-  end do
-
-  ! Remove computational anomalies
-  where (abs(vec) < 1d-3) vec = 0d0
+  wmu = wmu * mu * 2 * PI
+  call nphi_copies(nphi, mu, wmu, vec, wts)
 END SUBROUTINE set_lobatto_quadratures
 
 !===============================================================================
@@ -311,21 +285,10 @@ SUBROUTINE set_custom_quadratures(mu, nphi, vec, wts)
   real(8), intent(out), dimension(:), allocatable :: wts
   real(8), intent(out), dimension(:,:), allocatable :: vec
   real(8), dimension(:), allocatable :: wmu, smus, swts, swts2
-  real(8) :: pi2, pi05, xphi, theta
-  integer :: ntheta, nrays, i, nt, np, nmuphi, n1
-  logical :: includes_mu1
+  integer :: nrays
   ! -------------------------------------------------------------------
   nrays = size(mu)
-  includes_mu1 = findloc(mu, 1.0, 1) > 0
-  if (includes_mu1) then
-    nmuphi = (nrays-1)*nphi + 1
-  else
-    nmuphi = nrays*nphi
-  endif
-
   allocate(wmu(nrays))
-  allocate(wts(nmuphi))
-  allocate(vec(3, nmuphi))
   allocate(smus(nrays+1))
   allocate(swts(nrays+1))
 
@@ -347,9 +310,86 @@ SUBROUTINE set_custom_quadratures(mu, nphi, vec, wts)
 
   wmu = swts(nrays+1:2:-1)
   mu = mu(nrays:1:-1)
-  wmu = wmu * 2*mu
-  
-  pi2 = PI * 2.0d0
+  wmu = wmu * mu * 2 * PI
+
+  call nphi_copies(nphi, mu, wmu, vec, wts)
+END SUBROUTINE set_custom_quadratures
+
+!===============================================================================
+SUBROUTINE set_radau_quadratures(quad_scheme, vec, wts, up_and_down)
+  character(len=*), intent(in) :: quad_scheme
+  real(8), intent(out), dimension(:), allocatable :: wts
+  real(8), intent(out), dimension(:,:), allocatable :: vec
+  real(4), dimension(:), allocatable :: wmu2, mu2
+  real(8), dimension(:), allocatable :: wmu, mu
+  real(8), dimension(:), allocatable :: wts2
+  real(8), dimension(:,:), allocatable :: vec2
+  integer :: nrays, ntheta, nphi
+  logical, optional :: up_and_down
+  logical :: mirror=.true.
+  ! -------------------------------------------------------------------
+  select case (quad_scheme)
+  case ('radau1')
+    ntheta = 1
+    nphi = 1
+  case ('radau2')
+    ntheta = 2
+    nphi = 4
+  case ('radau4')
+    ntheta = 3
+    nphi = 4
+  end select
+
+  allocate(mu(ntheta), wmu(ntheta))
+  allocate(mu2(ntheta), wmu2(ntheta))
+  call radau%init(ntheta, mu2, wmu2)
+  mu = mu2(ntheta:1:-1)
+  wmu = wmu2(ntheta:1:-1)
+  call nphi_copies(nphi, mu, wmu, vec2, wts2, zrot=PI/4)
+  nrays = size(wts2)
+
+  if (present(up_and_down)) then
+    mirror = up_and_down
+  endif
+
+  if (mirror) then
+    allocate(wts(2*nrays))
+    allocate(vec(3, 2*nrays))
+    wts(  1:nrays) = wts2
+    vec(:,1:nrays) = vec2
+    wts(  nrays+1:2*nrays) =  wts2
+    vec(:,nrays+1:2*nrays) = -vec2
+    wts = wts * 2*PI
+  else
+    allocate(wts(nrays))
+    allocate(vec(3, nrays))
+    wts = wts2
+    vec = vec2
+  endif
+END SUBROUTINE set_radau_quadratures
+
+!===============================================================================
+SUBROUTINE nphi_copies (nphi, mu, wmu, vec, wts, zrot)
+  integer, intent(in) :: nphi
+  real(8), intent(inout), dimension(:) :: mu, wmu
+  real(8), intent(out), dimension(:), allocatable :: wts
+  real(8), intent(out), dimension(:,:), allocatable :: vec
+  real(8), intent(in), optional :: zrot
+  real(8), parameter :: pi2=2.d0*PI
+  real(8) :: xphi, theta, xoff
+  integer :: nrays, ntheta, i, nt, np, nmuphi, n1
+  logical :: includes_mu1
+  ! -------------------------------------------------------------------
+  nrays = size(mu)
+  includes_mu1 = findloc(mu, 1.0, 1) > 0
+  if (includes_mu1) then
+    nmuphi = (nrays-1)*nphi + 1
+  else
+    nmuphi = nrays*nphi
+  endif
+
+  allocate(wts(nmuphi))
+  allocate(vec(3, nmuphi))
 
   ! storing first index of vec and wts
   if (includes_mu1) then
@@ -359,6 +399,13 @@ SUBROUTINE set_custom_quadratures(mu, nphi, vec, wts)
   else
     n1 = 1
   endif
+
+  if (present(zrot)) then
+    xoff = zrot ! zrot assumed in radians
+  else
+    xoff = 0.d0
+  endif
+
   ! storing the rest of vec and wts indexes
   do nt = n1, nrays
      do np = 1, nphi
@@ -366,7 +413,7 @@ SUBROUTINE set_custom_quadratures(mu, nphi, vec, wts)
         if (includes_mu1) i = i+1
         
         ! Computing cartesian geometries
-        xphi = pi2 / dble(nphi) * (np-1)
+        xphi = pi2 / dble(nphi) * (np-1) + xoff
         theta = acos(mu(nt))
         vec(1,i) = sin(theta) * cos(xphi)
         vec(2,i) = sin(theta) * sin(xphi)
@@ -377,7 +424,7 @@ SUBROUTINE set_custom_quadratures(mu, nphi, vec, wts)
 
   ! Remove computational anomalies
   where (abs(vec) < 1d-3) vec = 0d0
-END SUBROUTINE set_custom_quadratures
+END SUBROUTINE nphi_copies
 
 !===============================================================================
 SUBROUTINE ray_init(ray, vec, wmu)

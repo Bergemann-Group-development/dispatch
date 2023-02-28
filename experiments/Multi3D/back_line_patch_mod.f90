@@ -21,7 +21,8 @@ MODULE back_line_patch_mod
     !USE units_mod
     !USE scratch_mod
     USE mconst
-    USE m3d_patch_mod, only: m3d_patch_t, hash_string
+    USE handyfuncs_mod
+    USE m3d_patch_mod, only: m3d_patch_t
     USE ray_patch_mod, only: ray_patch_t
     USE composition_mod, only: composition_type
     USE element_mod, only: element_type, isotope_type

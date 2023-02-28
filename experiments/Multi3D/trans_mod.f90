@@ -26,6 +26,7 @@ MODULE trans_mod
 
       integer :: ired  ! start index where line is active in overall frequency grid
       integer :: iblue ! end index where line is active in overall frequency grid
+      real(8) :: nu_min, nu_max
 
       real(8),dimension(:), allocatable :: nu  ! frequencies [Hz]
       real(8),dimension(:), allocatable :: wnu ! frequency quadrature weight [Hz]
@@ -60,7 +61,6 @@ MODULE trans_mod
     real(8) :: qmax ! width of profile in doppler units
     real(8) :: q0   ! switch from linear to logarithmic frequency grid spacing
     real(8) :: Grat ! ratio g(i)/g(j)
-    real(8) :: nu_min, nu_max
 
     ! Added to deal with multi component lines
     ! IO > 1 leads to the following being read from the atom file
@@ -85,7 +85,6 @@ MODULE trans_mod
     character(len=20) :: bf_type ! either 'detail' or 'hydrogenic'
 
     !real(8) :: nu0 ! ionization edge frequency
-    real(8) :: nu_max ! maximum frequency 
     real(8) :: alpha0 ! cross section at ionization threshold [cm^2]
     real(4),dimension(:),allocatable :: alpha ! cross sections [cm^2]    
     real(4), dimension(:,:,:), contiguous, pointer :: ni_over_nj_lte
@@ -105,7 +104,7 @@ contains
     real(4), dimension(:,:,:), intent(in) :: vproj, inv_df, adamp
     real(4), dimension(:,:,:,:), intent(inout) :: phi
     real(4), dimension(:,:,:), allocatable :: psi, damp, dphi, inv_df2
-    real(8) :: nu0, ga
+    real(8) :: nu0, ga, scalar
     real(8), dimension(:), allocatable :: q2
     integer :: f, i
     !----------------------------------------------------------------------------------
@@ -121,7 +120,8 @@ contains
         !q2 = (q + 1) * self%nu0 / nu0 - 1
         q2 = q + 1 - nu0/self%nu0
         ga = self%gaterm(i) - self%ga
-        damp = (adamp + ga) * inv_df * over_4pi / nu0
+        scalar = over_4pi / nu0
+        damp = (adamp + ga) * inv_df * scalar
         inv_df2 = self%wterm(i) * inv_df
 
         !DIR$ FORCEINLINE
@@ -234,6 +234,15 @@ contains
 
     do f=1, n(4)
       newq = nu(f)*norm - 1
+
+      if (abs(newq - self%q(1)) < 1e-6) then
+        phi(:,:,:,f) = self%phi(:,:,:,1)
+        cycle
+      elseif (abs(newq - self%q(self%nnu)) < 1e-6) then
+        phi(:,:,:,f) = self%phi(:,:,:,self%nnu)
+        cycle
+      endif
+
       i1 = searchsorted(self%q, newq)
 
       if (i1==-1) then
@@ -273,7 +282,7 @@ contains
       integer, intent(in) :: fs_in, fe_in
       integer, intent(out) :: fs_out, fe_out
       logical, intent(out) :: skip
-
+      !--------------------------------------------------------------------------------
       skip = .false.
 
       fs_out = max(self%ired,  fs_in)
@@ -288,7 +297,7 @@ contains
   !====================================================================================
   logical pure function overlaps(self, other)
       class(transition_type), intent(in) :: self, other
-
+      !--------------------------------------------------------------------------------
       overlaps = .false.
 
       if (self%ired > other%ired .and. self%ired < other%iblue) overlaps = .true.
@@ -337,8 +346,7 @@ contains
       real(8)  :: dq, x, x10, a, half, xmax, dx,qmax,q0, start
       integer :: nnu, j
       logical :: symmetric
-  
-  
+      !---------------------------------------------------------------------
       q0=self%q0
       qmax=self%qmax
       nnu=self%nnu
@@ -411,13 +419,13 @@ contains
       iblue = self%iblue
 
       ! equidistant grid in nu, between nu0 and numax 
-      self%nu(ired)  = self%nu0
+      self%nu(ired)  = self%nu_min
       self%nu(iblue) = self%nu_max
 
-      dnu = (self%nu_max-self%nu0) / (nnu-1)
+      dnu = (self%nu_max-self%nu_min) / (nnu-1)
 
       do j=ired,iblue
-          self%nu(j)    = self%nu0 + (j-ired) * dnu
+          self%nu(j)    = self%nu_min + (j-ired) * dnu
           !self%alpha(j) = self%alpha0 * ( self%nu(j) / self%nu0 )**(-3)
           ! for overflow reasons
           self%alpha(j) = ( self%nu(j) / self%nu0 )**(-3)

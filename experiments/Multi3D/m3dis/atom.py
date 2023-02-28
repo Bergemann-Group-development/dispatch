@@ -71,6 +71,7 @@ class atom_class(object):
                     key = self._read()[0]
 
         self.f.close()
+        self.title = 'A({}) = {:.2f}'.format(self.id, self.abnd)
                 
                 
     def partitionFunction(self, temp, ne):

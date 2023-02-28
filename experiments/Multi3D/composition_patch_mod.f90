@@ -4,8 +4,9 @@ MODULE composition_patch_mod
   USE mpi_mod
   USE omp_mod
   USE gpatch_mod
+  USE handyfuncs_mod
   USE element_mod, only: element_type
-  USE m3d_patch_mod,   only: m3d_patch_t, hash_string, comoving_frame, ilambd
+  USE m3d_patch_mod,   only: m3d_patch_t, comoving_frame, ilambd
   USE composition_mod, only: composition_type, dlam, exclude_elements
   USE back_cont_patch_mod,  only: back_cont_patch_t
   USE angle_rad_patch_mod,   only: rad_patch_t
@@ -55,7 +56,7 @@ SUBROUTINE composition_pre_init (self)
   class(out_rad_patch_t), pointer :: out_rad
   class(net_opac_t), pointer :: net_opac
   class(proj_patch_t), pointer :: proj
-  class(mean_rad_patch_t), pointer :: mean_rad
+  class(mean_rad_patch_t), pointer :: mean_rad => null()
   class(back_line_patch_t), pointer :: back_line
   class(atomic_spectrum_type), save, pointer :: output_sp
   integer :: iostat, i_out
@@ -122,6 +123,7 @@ SUBROUTINE composition_pre_init (self)
   allocate(atom_patch)
   atom_patch%composition => self%composition
   call atom_patch%pre_init_and_link(self, sp=output_sp)
+
   if (atom_patch%atom_allocated) then
     if (output_sp%nnu == 0) then
       output_sp => atom_patch%sp
@@ -133,13 +135,13 @@ SUBROUTINE composition_pre_init (self)
       call back_cont%composition%reassign_pointer()
       call back_cont%pre_init_and_link(self, i_mu=0, i_nu=n, sp=atom_patch%sp)
 
-      if (comoving_frame .or. ilambd > 0) then
+      !if (comoving_frame .or. ilambd > 0) then
         allocate(mean_rad)
         call mean_rad%pre_init_and_link(self, i_mu=0, i_nu=n, sp=atom_patch%sp)
         mean_rad%back_cont => back_cont
-      endif
+      !endif
 
-      if (ilambd > 0) back_cont%mean_rad => mean_rad
+      if (associated(mean_rad)) back_cont%mean_rad => mean_rad
 
       if (comoving_frame) then
         allocate(net_opac)
@@ -166,7 +168,7 @@ SUBROUTINE composition_pre_init (self)
       do m=1, self%n_omega
         allocate(rad)
         call rad%pre_init_and_link(self, i_mu=m, i_nu=n, sp=atom_patch%sp)
-        if (comoving_frame .or. ilambd > 0) rad%mean_rad => mean_rad
+        if (associated(mean_rad)) rad%mean_rad => mean_rad
       end do
     end do
   else
@@ -249,7 +251,7 @@ SUBROUTINE composition_update (self)
     call self%composition%load_state_variables(temp, ne, rho)
     call self%composition%get_nhyd(nh)
 
-    self%dtime = io%end_time - self%dtime
+    self%dtime = max(self%dtime, io%end_time - self%dtime)
   else
     self%dtime = self%patch%dtime
     !print *, self%m3d_patch_info()

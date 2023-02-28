@@ -3,6 +3,7 @@ from .trans import trans_class
 from .auxfuncs import vacuum2obs, continuum, freq_quad, convol
 import numpy as np
 import pandas as pd
+import dask.array as da
 import matplotlib.pyplot as plt
 import glob
 import f90nml
@@ -13,191 +14,13 @@ import os
 cc = 2.99792458e10 # Speed of light [cm/s]
 
 #=====================================================================
-def prepare(self, dmax=None):
-    #-----------------------------------------------------------------
-    self.lam0 = vacuum2obs(np.array(self.alamb))
-    self.lb = vacuum2obs(np.array(self.lam_blue))*(1-1e-7)
-    self.lr = vacuum2obs(np.array(self.lam_red ))*(1+1e-7)
-    self.i0 = np.searchsorted(self.run.lam, self.lam0)
-    
-    if dmax == None:
-        q = freq_quad(self.nq, self.qmax, self.q0)
-        lam = self.alamb / (q[:2]*self.run.qnorm/(CC*1e-5) + 1)
-        self.dmax = np.abs(lam[1] - lam[0])
-    else:
-        self.dmax = dmax
-    
-    if self.run.nml['spectrum_params']['daa'] == 0:
-        self.ib = self.i0 - np.argmax(self.run.dlam[self.i0::-1]>self.dmax) + 1
-        self.ir = self.i0 + np.argmax(self.run.dlam[self.i0:]>self.dmax) + 1
-        if self.ir == self.i0+1: self.ir = -1
-    else:
-        lb = self.run.nml['spectrum_params']['aa_blue']
-        lr = self.run.nml['spectrum_params']['aa_red']
-        if (self.lam0 < lr) and (self.lam0 > lb):
-            self.ib = 0
-            self.ir = self.run.lam.size
-            
-    self.lam = self.run.lam[self.ib:self.ir]
-    self.flux = self.run.flux[self.ib:self.ir]
-    self.flux_lte = self.run.flux_lte[self.ib:self.ir]
-    self.flux_cnt = self.run.flux_cnt[self.ib:self.ir]
-    self.ie = self.run.ie[:, self.ib:self.ir]
-    self.ie_lte = self.run.ie_lte[:, self.ib:self.ir]
-    self.cnt = self.run.cnt[:, self.ib:self.ir]
-        
-    self.prepared = True
-
-#=====================================================================
-def plot_trans(self, ang=None, imu=None, norm=True, dlam=None, \
-               dmax=None, vdop=None, vshift=None, renorm=False, \
-               show_LTE=True, **kwargs):
-    #-----------------------------------------------------------------
-    if not self.prepared:
-            self.prepare(dmax=dmax)
-    
-    if self.run.n_ang == 1: ang=0
-        
-    xx = self.lam
-    
-    if ang is not None:
-        yy = self.ie[ang]
-        cnt = self.cnt[ang]
-        if show_LTE: lte = self.ie_lte[ang]
-        ylabel = 'Intensity µ={:.2f}'.format(self.run.vec[ang,-1])
-        
-    elif imu is not None:
-        yy, cnt, mu = self.get_Imu(imu, norm=False)
-        if show_LTE:
-            lte, cnt, mu = self.get_Imu(imu, norm=False, LTE=True)
-
-        ylabel = 'Intensity µ={:.2f}'.format(mu)
-        
-    else:
-        yy = self.flux
-        cnt = self.flux_cnt
-        if show_LTE: lte = self.flux_lte
-        ylabel = 'Flux'
-    
-    
-    if norm and not renorm:
-        yy = yy / cnt
-        if show_LTE: lte = lte / cnt
-    elif renorm and not norm:
-        yy = yy / continuum(xx, yy)
-        if show_LTE: lte = lte / continuum(xx, lte)
-        
-    if vdop is not None or vshift is not None:
-        sxx, syy = convol(xx, yy, vdop=vdop, vshift=vshift)
-        yy = np.interp(xx, sxx, syy)
-        if show_LTE: 
-            sxx, syy = convol(xx, lte, vdop=vdop, vshift=vshift)
-            lte = np.interp(xx, sxx, syy)
-
-    if dlam==None:
-        plt.xlim(self.run.lam[self.ib], self.run.lam[self.ir-1])
-        plt.xlabel('Wavelength [Å]')
-    elif dlam==True:
-        xx = xx - self.lam0
-        plt.xlabel('$\Delta\lambda$ [Å]')
-    else:
-        xx = xx - self.lam0
-        plt.xlim(-dlam, dlam)
-        plt.xlabel('$\Delta\lambda$ [Å]')
-        
-        if norm and renorm:
-            mask = np.abs(xx) < dlam
-            xx = xx[mask]
-            yy = yy[mask]
-            yy = yy / continuum(xx, yy)
-            if show_LTE:
-                lte = lte[mask]
-                lte = lte / continuum(xx, lte)
-
-    plt.title('Line = {:.2f} [Å], A({}) = {:.2f}'.format(self.lam0, self.el.id, self.el.abnd), fontsize='medium')
-
-    plt.plot(xx, yy, label='NLTE', **kwargs)
-    
-    if show_LTE:
-        plt.plot(xx, lte, linestyle='--', label='LTE', zorder=-10, **kwargs)
-        plt.legend(frameon=False)
-
-    if norm or renorm:
-        plt.ylabel('Normalised ' + ylabel)
-    else:
-        plt.ylabel(ylabel)
-
-    plt.ticklabel_format(useOffset=False)
-
-#=====================================================================
-def get_Imu(self, imu=None, norm=True, LTE=False):
-    #-----------------------------------------------------------------
-    if not self.prepared: self.prepare()
-    
-    if imu is not None:
-        mus, idx = np.unique(1-self.run.vec[:,-1], return_inverse=True)
-        if LTE:
-            yy = np.mean(self.ie_lte[idx==imu,:], axis=0)
-        else:
-            yy = np.mean(self.ie[idx==imu,:], axis=0)
-        
-        cnt = np.mean(self.cnt[idx==imu,:], axis=0)
-        mu = 1-mus[imu]
-        
-    else:
-        if LTE:
-            yy = self.flux
-        else:
-            yy = self.flux_lte
-
-        cnt = self.flux_cnt
-        mu = None
-    
-    if norm:
-        yy = yy / cnt
-        
-    return yy, cnt, mu
-    
-#=====================================================================
-def calc_weq(self, ang=None):
-    #-----------------------------------------------------------------
-    if ang==None:
-        yy = self.flux
-    else:
-        yy = self.ie[ang]
-    
-    yy = yy / continuum(self.lam, yy)
-    weq = np.trapz(1 - yy, x=self.lam) * 1e3
-    
-    return weq
-
-#=====================================================================
-def calc_blueshift(self, imu=None):
-    #-----------------------------------------------------------------
-    nflux = self.get_Imu(imu=imu, norm=True)
-    
-    xx, indices = np.unique(self.lam.round(decimals=8), return_index=True)
-    yy = nflux[indices]
-    
-    ex = argrelextrema(yy, np.less_equal)[0]
-    iex = ex[np.argmin(np.abs(ex - self.i0 + self.ib))]
-    imin3 = iex + np.array([-1, 0, 1])
-    dep = 1 - yy[iex]
-    
-    p = np.polyfit(xx[imin3], yy[imin3], deg=2, rcond=1e-18)
-    xmin = np.roots(np.polyder(p))[0]
-    blue = (xmin / self.lam0 - 1) * cc * 1e-2
-    
-    return blue, dep
-
-
-#=====================================================================
 class read(object):
     #=================================================================
     def __init__(self, folder):
         #-------------------------------------------------------------
         folder = folder + os.sep
         sfolder = folder + 'save' + os.sep
+        self.sfolder = sfolder
         self.nml = f90nml.read(folder + 'params.nml')
         
         df = pd.read_csv(folder + 'abund.txt', header=None, sep='\s+', na_filter=False)
@@ -234,55 +57,58 @@ class read(object):
         self.dlam = np.diff(self.lam)
         
         print('Reading Intensities')
-        self.n_ang = len(glob.glob1(sfolder,"ray*_meta.txt"))
-        self.vec = np.zeros([self.n_ang, 3])
-        self.wts = np.zeros(self.n_ang)
+        file = folder + 'angle_quadrature.txt'
+        df = pd.read_csv(file, header=None, skiprows=1, sep='\s+', names=['ang', 'wmu', 'mux', 'muy', 'muz'])
+        self.vec = df.values[:,2:]
+        self.wts = df.values[:,1]
+        self.n_ang = self.wts.size
+        self.mus, self.imus = np.unique(1 - self.vec[:,-1], return_inverse=True)
+        self.mus = 1 - self.mus
+        self.nmu = self.mus.size
         
         self.i3 = [None]*self.n_ang
-        self.i3_lte = [None]*self.n_ang
         self.c3 = [None]*self.n_ang
-        self.ie = [None]*self.n_ang
-        self.ie_lte = [None]*self.n_ang
+        self.ie  = [None]*self.n_ang
         self.cnt = [None]*self.n_ang
-        
-        self.nmu = np.unique(self.vec[:,-1]).size
-        
+        self.i3_lte = [None]*self.n_ang
+        self.ie_lte = [None]*self.n_ang
+
+        out_rad = self.read_patch_save('out_rad', concat=False)
+        ie_dict = self.read_patch_save('ie',      concat=False)
+        ipos = list(out_rad.keys())[0][0]
+        nmu  = np.min([key[-1] for key in out_rad.keys()])
+
+        self.flux = np.zeros_like(self.lam)
+        self.flux_lte = np.zeros_like(self.lam)
+        self.flux_cnt = np.zeros_like(self.lam)
+
         for i in range(self.n_ang):
-            ray = 'ray{:03}'.format(i+1)
-            meta = open(sfolder + ray + '_meta.txt')
-            self.vec[i] = np.array(meta.readline().split()[1:], dtype=float)
-            self.wts[i] = float(meta.readline().split()[1])
-            info = meta.readline().split()
-            file = info[0]
-            prec = int(info[1])
-            dim  = np.array(info[2:], dtype=int)
-            
-            if prec == 32: dtype=np.float32
-            if prec == 64: dtype=np.float64
-            
-            self.i3[i] = np.memmap(sfolder + file, dtype=dtype).reshape(dim, order='F')[...,::-1,0]
-            self.i3_lte[i] = np.memmap(sfolder + file, dtype=dtype).reshape(dim, order='F')[...,::-1,1]
-            self.c3[i] = np.memmap(sfolder + file, dtype=dtype).reshape(dim, order='F')[...,::-1,2]
-            self.ie[i] = np.mean(self.i3[i], axis=(0,1))
-            self.cnt[i] = np.mean(self.c3[i], axis=(0,1))
-            self.ie_lte[i] = np.mean(self.i3_lte[i], axis=(0,1))
+            key = (ipos, 0, nmu+i)
+            mem = out_rad[key]
+            self.i3[i]     = mem[...,0,:,0]
+            self.i3_lte[i] = mem[...,0,:,1]
+            self.c3[i]     = mem[...,0,:,2]
+
+            mem = ie_dict[key]
+            self.ie[i]     = mem[0,0,0,:,0]
+            self.ie_lte[i] = mem[0,0,0,:,1]
+            self.cnt[i]    = mem[0,0,0,:,2]
+
+            self.flux     += self.wts[i] * self.ie[i]
+            self.flux_lte += self.wts[i] * self.ie_lte[i]
+            self.flux_cnt += self.wts[i] * self.cnt[i]
+        
+        #nwts = 1 / np.sum(self.wts)
+        #self.flux     *= nwts
+        #self.flux_cnt *= nwts
+        #self.flux_lte *= nwts
+        
+        dim = self.i3[0].shape
             
         if (np.product(dim[:2]) > 1):
             self.dim = '3D'
         else:
             self.dim = '1D'
-            
-        self.i3 = np.array(self.i3)
-        self.c3 = np.array(self.c3)
-        self.ie = np.array(self.ie)
-        self.cnt = np.array(self.cnt)
-        self.i3_lte = np.array(self.i3_lte)
-        self.ie_lte = np.array(self.ie_lte)
-        self.flux = np.sum(self.ie.T * self.wts, axis=-1) / np.sum(self.wts)
-        self.flux_lte = np.sum(self.ie_lte.T * self.wts, axis=-1) / np.sum(self.wts)
-        self.flux_cnt = np.sum(self.cnt.T * self.wts, axis=-1) / np.sum(self.wts)
-        self.flux_aa = self.flux*cc/(self.lam**2)*10
-        self.flux_aa_lte = self.flux_lte*cc/(self.lam**2)*10
             
         if hasattr(self, 'atom'):
             #print('Prepairing transitions')
@@ -290,35 +116,243 @@ class read(object):
                 line.run = self
                 line.prepared = False
             
-        mesh = open(folder + 'atmos_mesh.txt', 'r')
-        nx, ny, nz = [int(i) for i in mesh.readline().split()]
-        dx, dy, dz = [float(i) for i in mesh.readline().split()]
-        mesh.close()
-        
-        self.xx = np.linspace(0, (nx-1)*dx, nx)
-        self.yy = np.linspace(0, (ny-1)*dy, ny)
-        self.zz = np.linspace(0, (nz-1)*dz, nz)
-        
-        dat = FortranFile(folder + 'atmos_data.bin')
-        self.temp = dat.read_reals(np.float32).reshape((nx,ny,nz), order='F')
-        self.rho  = dat.read_reals(np.float32).reshape((nx,ny,nz), order='F')
-        self.px   = dat.read_reals(np.float32).reshape((nx,ny,nz), order='F')
-        self.py   = dat.read_reals(np.float32).reshape((nx,ny,nz), order='F')
-        self.pz   = dat.read_reals(np.float32).reshape((nx,ny,nz), order='F')
-        self.pe   = dat.read_reals(np.float32).reshape((nx,ny,nz), order='F')
-        self.tau  = dat.read_reals(np.float32).reshape((nx,ny,nz), order='F')
-        dat.close()
+        if os.path.isfile(folder + 'atmos_mesh.txt'):
+            mesh = open(folder + 'atmos_mesh.txt', 'r')
+            nx, ny, nz = [int(i) for i in mesh.readline().split()]
+            dx, dy, dz = [float(i) for i in mesh.readline().split()]
+            mesh.close()
+            
+            self.xx = np.linspace(0, (nx-1)*dx, nx)
+            self.yy = np.linspace(0, (ny-1)*dy, ny)
+            self.zz = np.linspace(0, (nz-1)*dz, nz)
+            
+            dat = FortranFile(folder + 'atmos_data.bin')
+            self.temp = dat.read_reals(np.float32).reshape((nx,ny,nz), order='F')
+            self.rho  = dat.read_reals(np.float32).reshape((nx,ny,nz), order='F')
+            self.px   = dat.read_reals(np.float32).reshape((nx,ny,nz), order='F')
+            self.py   = dat.read_reals(np.float32).reshape((nx,ny,nz), order='F')
+            self.pz   = dat.read_reals(np.float32).reshape((nx,ny,nz), order='F')
+            self.pe   = dat.read_reals(np.float32).reshape((nx,ny,nz), order='F')
+            self.tau  = dat.read_reals(np.float32).reshape((nx,ny,nz), order='F')
+            dat.close()
         
         maxiter = self.nml['m3d_params']['maxiter']
+        depart = self.nml['atom_params']['precomputed_depart'].strip()
         if (maxiter > 0):
             self.mode = 'NLTE'
-        else:
+        elif(depart==''):
             self.mode = 'LTE'
+        else:
+            self.mode = 'NLTE'
+
+
+    #=====================================================================
+    def set_xaxis(self, lam, dlam=None):
+        #-----------------------------------------------------------------
+        ib = None
+        ir = None
+
+        if dlam==None:
+            plt.xlabel('Wavelength [Å]')
+        else:
+            plt.xlabel('$\Delta\lambda$ [Å]')
+
+            if isinstance(dlam, tuple):
+                ib = np.searchsorted(lam, dlam[0])
+                ir = np.searchsorted(lam, dlam[1])
+                plt.xlim(dlam[0], dlam[1])
+
+            elif not isinstance(dlam, (bool)):
+                ib = np.searchsorted(lam, -dlam)
+                ir = np.searchsorted(lam,  dlam)
+                plt.xlim(-dlam, dlam)
+
+        mask = slice(ib, ir)
+        plt.ticklabel_format(useOffset=False)
+
+        return lam[mask], mask
+
+
+
+    #=====================================================================
+    def set_yaxis(self, ang, imu, norm, renorm=False):
+        #-----------------------------------------------------------------
+        if ang is not None:
+            ylabel = 'Intensity µ={:.2f}'.format(self.vec[ang,-1])
             
-              
-#=====================================================================
-trans_class.prepare = prepare
-trans_class.plot = plot_trans
-trans_class.get_Imu = get_Imu
-trans_class.calc_weq = calc_weq
-trans_class.calc_blueshift = calc_blueshift
+        elif imu is not None:
+            mus, idx = np.unique(1-self.vec[:,-1], return_inverse=True)
+            mu = 1-mus[imu]
+            ylabel = 'Intensity µ={:.2f}'.format(mu)
+            
+        else:
+            ylabel = 'Flux'
+
+        if norm or renorm:
+            plt.ylabel('Normalised ' + ylabel)
+        else:
+            plt.ylabel(ylabel)
+
+    #=====================================================================
+    def get_yy(self, ang=None, imu=None, norm=True, LTE=False, mask=slice(None, None)):
+        #-----------------------------------------------------------------
+        if ang is None and imu is None:
+            cnt = self.flux_cnt
+            if LTE:
+                yy = self.flux_lte
+            else:
+                yy = self.flux
+
+            cnt = cnt[mask]
+            yy  = yy[mask]
+
+        else:
+            cnt = self.cnt
+            if LTE:
+                yy = self.ie_lte
+            else:
+                yy = self.ie
+
+            if ang is not None:
+                cnt = cnt[ang][mask]
+                yy = yy[ang][mask]
+            
+            elif imu is not None:
+                cnt = [c[mask] for i, c in enumerate(cnt) if self.imus[i]==imu]
+                yy  = [y[mask] for i, y in enumerate(yy)  if self.imus[i]==imu]
+                cnt = np.mean(cnt, axis=0)
+                yy  = np.mean(yy,  axis=0)
+        
+        if norm:
+            yy = yy / cnt
+            
+        return yy, cnt
+
+
+    #=====================================================================
+    def plot_spectrum(self, ang=None, imu=None, norm=True, LTE=False,
+                      vdop=None, vshift=None, lam0=None, dlam=10, **kwargs):
+        #-----------------------------------------------------------------
+        if self.n_ang == 1: ang=0
+
+        xx = self.lam
+
+        if lam0 is not None:
+            xx = xx - lam0
+        else:
+            dlam = None
+
+        xx, mask = self.set_xaxis(xx, dlam)
+        yy, cnt = self.get_yy(ang, imu, norm, LTE, mask)
+        
+        if vdop is not None or vshift is not None:
+            if lam0 is not None:
+                oxx = xx + lam0
+            else:
+                oxx = xx
+                
+            sxx, syy = convol(oxx, yy, vdop=vdop, vshift=vshift)
+            yy = np.interp(oxx, sxx, syy)
+        
+        self.set_yaxis(ang, imu, norm)
+        return plt.plot(xx, yy, **kwargs)
+
+    #=====================================================================
+    def read_patch_save(self, kind, concat=True):
+        #-----------------------------------------------------------------
+        meta = open(self.sfolder + kind + '_meta.txt')
+
+        dct = {}
+        for line in meta:
+            if not line.strip().startswith('*'):
+                info = line.split()
+                file = info[0]
+                prec = int(info[1])
+                dims = [int(d) for d in info[2:]]
+
+                if prec == 32: dtype=np.float32
+                if prec == 64: dtype=np.float64
+
+                key = file.split('.')[0].split('_')[-1]
+                key = [int(k) for k in [key[0:3], key[3:6], key[6:9]]]
+
+                dct[tuple(key)] = np.memmap(self.sfolder + file, dtype=dtype).reshape(dims, order='F')
+
+        meta.close()
+
+        all_inu = np.unique([key[1] for key in dct.keys()])
+        f_indep = all_inu.sum() == 0
+        if kind in ['out_rad', 'ie']: f_indep = False
+
+        if concat:
+            return self.concat_patches(dct, kind, f_indep)
+
+        elif not f_indep:
+            for key, val in dct.items():
+                dct[key] = val[..., ::-1, :]
+            
+            return dct
+
+        else:
+            return dct
+
+    #=====================================================================
+    def concat_patches(self, dct, kind, f_indep):
+        #-----------------------------------------------------------------
+        all_iz  = np.unique([key[0] for key in dct.keys()])
+        all_inu = np.unique([key[1] for key in dct.keys()])
+        all_imu = np.unique([key[2] for key in dct.keys()])
+
+        n_nu = self.nml['m3d_params']['n_nu']
+
+        internal = {}
+        output = {}
+
+        for imu in all_imu:
+            merge_in = []
+            merge_out = []
+            for iz in all_iz:
+                if f_indep:
+                    key = (iz, all_inu[0], imu)
+                    if key in dct:
+                        merge_out.append(dct[key])
+
+                else:
+                    merge_nu = []
+                    for inu in range(1, n_nu+1):
+                        key = (iz, inu, imu)
+                        if key in dct:
+                            merge_nu.append(dct[key])
+
+                    if len(merge_nu) > 0:
+                        internal[(iz,imu)] = da.concatenate(merge_nu, axis=-2)
+                        merge_in.append(internal[(iz,imu)])
+                    
+                    merge_nu = []
+                    for inu in range(n_nu+1, 2*n_nu+1):
+                        key = (iz, inu, imu)
+                        if key in dct:
+                            merge_nu.append(dct[key])
+
+                    if len(merge_nu) > 0:
+                        output[(iz,imu)] = da.concatenate(merge_nu, axis=-2)
+                        merge_out.append(output[(iz,imu)])
+
+            if len(merge_in) > 0:
+                internal[(imu)] = da.concatenate(merge_in, axis=2)
+
+            if len(merge_out) > 0:
+                output[(imu)] = da.concatenate(merge_out, axis=2)
+
+        if f_indep:
+            return output
+
+        else:
+            for d in [internal, output]:
+                keys = [key for key in d.keys() if type(key) is tuple]
+                for key in keys: del d[key]
+
+                for key, val in d.items():
+                    d[key] = val[..., ::-1, :]
+
+            return internal, output

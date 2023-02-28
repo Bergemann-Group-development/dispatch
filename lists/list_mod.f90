@@ -3579,37 +3579,37 @@ SUBROUTINE info (self, label)
     call link%info
     link => link%next
   end do
-  write (stdlog,'(a,2x,2i3)') 'list_t%info first(level)%pointer:', &
-    shared%levelmin, shared%levelmax
-  n = 0
-  do level=shared%levelmin,shared%levelmax
-    link => self%first(level)%pointer
-    if (associated(link)) then
-      task => link%task
-      if (self%verbose > 0) &
-        write (stdlog,1) wallclock(), &
-          pad_trace(1:indent)//'list_t%info: level,task%id,task%level=', &
-          level, task%id, task%level
-        1 format(f12.6,a,i3,i7,":",i2.2)
-      n1 = 0
-      do while (link%task%level == level)
-        n1 = n1+1
-        link => link%next
-        if (.not.associated(link)) &
-          exit
-      end do
-      write (stdlog,*) 'level, n =', level, n1
-      n = n+n1
-    else
-      write (stdlog,1) wallclock(), &
-        pad_trace(1:indent)//'list_t%info: empty level=', level
-    end if
-  end do
-  if (n /= self%n) then
-    write (stderr,*) 'list_t%info: number of tasks in task list:', self%n
-    write (stderr,*) 'list_t%info: number of tasks in level lists:', n
-    call io%abort ('list_t%info: inconsistent task list level pointers')
-  end if
+  !write (stdlog,'(a,2x,2i3)') 'list_t%info first(level)%pointer:', &
+  !  shared%levelmin, shared%levelmax
+  !n = 0
+  !do level=shared%levelmin,shared%levelmax
+  !  link => self%first(level)%pointer
+  !  if (associated(link)) then
+  !    task => link%task
+  !    if (self%verbose > 0) &
+  !      write (stdlog,1) wallclock(), &
+  !        pad_trace(1:indent)//'list_t%info: level,task%id,task%level=', &
+  !        level, task%id, task%level
+  !      1 format(f12.6,a,i3,i7,":",i2.2)
+  !    n1 = 0
+  !    do while (link%task%level == level)
+  !      n1 = n1+1
+  !      link => link%next
+  !      if (.not.associated(link)) &
+  !        exit
+  !    end do
+  !    write (stdlog,*) 'level, n =', level, n1
+  !    n = n+n1
+  !  else
+  !    write (stdlog,1) wallclock(), &
+  !      pad_trace(1:indent)//'list_t%info: empty level=', level
+  !  end if
+  !end do
+  !if (n /= self%n) then
+  !  write (stderr,*) 'list_t%info: number of tasks in task list:', self%n
+  !  write (stderr,*) 'list_t%info: number of tasks in level lists:', n
+  !  call io%abort ('list_t%info: inconsistent task list level pointers')
+  !end if
   call trace%end(itimer)
 END SUBROUTINE info
 

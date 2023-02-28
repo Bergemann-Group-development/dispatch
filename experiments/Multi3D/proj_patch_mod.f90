@@ -9,7 +9,8 @@ MODULE proj_patch_mod
     USE trace_mod
     USE bits_mod
     USE os_mod
-    USE m3d_patch_mod, only:maxiter, m3d_patch_t, hash_string
+    USE handyfuncs_mod
+    USE m3d_patch_mod, only:maxiter, m3d_patch_t
     USE ray_patch_mod, only:ray_patch_t
     USE net_opac_patch_mod, only:net_opac_t
     USE op_math_mod, only:interp1d_linear

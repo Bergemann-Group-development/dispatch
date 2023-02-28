@@ -27,13 +27,14 @@ MODULE m3d_patch_mod
     USE math_mod
     USE bits_mod
     USE mconst
+    USE handyfuncs_mod
     USE prec_mod, only: inf4
     !USE units_mod
     !USE scratch_mod
-    USE m3d_halo_mod, only: m3d_halo_t, print_finished
+    USE m3d_halo_mod, only: m3d_halo_t, print_finished, print_download
     USE atom_mod, only: atomic_spectrum_type, lse_no_pivot
-    USE ray_mod, only: set_carlson_quadratures, set_lobatto_quadratures, set_custom_quadratures
-    USE composition_mod, only: count_words
+    USE ray_mod
+    USE m3d_debug_mod
     implicit none
     private
   
@@ -58,7 +59,7 @@ MODULE m3d_patch_mod
       integer :: fcheck, pcheck(3), linecheck, lvlcheck
       logical :: out_ray=.false., static_mem=.false.
       logical :: compressed=.false., save_output=.false.
-      logical :: print_update_info
+      logical :: print_update_info, checked_bounds=.false.
       integer :: i_nu=0, i_mu=0
       integer :: i_ne=1, i_rho=2, i_temp=3, i_nh1=4, i_nh6=9
       integer :: i_chi=1, i_eta=2, i_snu=2
@@ -77,6 +78,7 @@ MODULE m3d_patch_mod
       procedure :: set_nv_and_nw
       procedure :: set_initial_time
       procedure :: set_maxiter
+      procedure :: init_bdries
       procedure :: m3d_name
       procedure :: init_level
       procedure :: task_info
@@ -90,6 +92,7 @@ MODULE m3d_patch_mod
       procedure :: free_unused_memory
       procedure :: nbors_finished
       procedure :: skip_iterations
+      procedure :: claim_nbor_place
       procedure :: push_nbors_for_update
       procedure :: push
       procedure :: allocate_mem
@@ -108,24 +111,29 @@ MODULE m3d_patch_mod
       procedure :: hash_key
       procedure :: output
       procedure :: save
+      procedure :: load_mem
+      procedure :: set_place
     end type m3d_patch_t
   
     !-----------------------------------------------------------------------------
-    integer, save:: verbose=0
-    integer, public :: maxiter, ilambd
+    integer, save, public:: verbose=0
+    integer, public :: maxiter, ilambd, nz_total
     integer, public :: cswitch=1
     integer, public, save :: recl=0, save_id=-1
     real(8), public, save, dimension(:), allocatable:: wmu, long_wmu
     real(8), public, save, dimension(:,:), allocatable:: vec, long_vec
     real(8), public:: convlim=1d-3
     logical, public, save :: converged=.false.
-    logical, public, save :: check_NaN=.false., save_back_cont=.true.
+    logical, public, save :: check_NaN=.false., interp_log=.false.
+    logical, public, save :: save_back_cont=.true., save_atom_line=.true.
+    logical, public, save :: linear_long=.true.
     logical, public, save :: detailed_prints=.false., comoving_frame=.false.
     logical, public, save :: print_start=.false., print_push=.false., print_send=.false.
     character(len=128), save :: save_patch_kind=''
     character(len=64), public, save:: custom_mu
     real(8), parameter :: t_push=0.1d0
     real(4), public :: vel_max=0.0
+    real(4), public :: ray_offset(2)=[0.,0.]
     type(mpi_counter_t), public :: atom_update_counter, global_maxerr, global_pos
       
     public :: hash_string
@@ -140,15 +148,15 @@ MODULE m3d_patch_mod
     logical, save :: on=.true.
     integer :: iostat, m(6)
     character(len=256) :: command
-    integer, save :: fcheck=1, linecheck=3, pcheck(3)=[1,1,1], lvlcheck=1
-    integer, save :: n_nu=1, itimer=0, ntheta=3, nphi=4, total_n(3)
+    integer, save :: n_nu=1, itimer=0, ntheta=3, nphi=4
     character(len=32), save :: quad_scheme='set_a2'
     character(len=32), save :: long_scheme='lobatto'
     real(8), dimension(:), allocatable:: cust_mu
     namelist /m3d_params/ on, verbose, fcheck, linecheck, pcheck, quad_scheme, &
     long_scheme, n_nu, maxiter, ilambd, lvlcheck, comoving_frame, save_id, &
     ntheta, nphi, check_NaN, custom_mu, lse_no_pivot, save_patch_kind, cswitch, &
-    save_back_cont, detailed_prints, print_finished, print_start, print_push, print_send
+    save_back_cont, detailed_prints, print_finished, print_start, print_push, &
+    print_send, linear_long, interp_log, ray_offset, print_download, save_atom_line
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%pre_init', itimer=itimer)
     !-----------------------------------------------------------------------------
@@ -175,24 +183,32 @@ MODULE m3d_patch_mod
       !-------------------------------------------------------------------------
       ! Assign angles and integration weights
       !-------------------------------------------------------------------------
-      call set_carlson_quadratures (quad_scheme, vec, wmu, up_and_down=.true.)
+      select case (quad_scheme)
+      case ('disk_center', 'set_a2', 'set_a4', 'set_a6', 'set_a8', 'set_b4', 'set_b6', 'set_b8')
+        call set_carlson_quadratures (quad_scheme, vec, wmu, up_and_down=.true.)
+      case ('radau1', 'radau2', 'radau4')
+        call set_radau_quadratures (quad_scheme, vec, wmu, up_and_down=.true.)
+      case default
+        print *, 'Quadrature keyword "'// trim(quad_scheme) // '" not recognized for SC solver. Stopping...'
+        stop
+      end select
 
-      if (long_scheme == 'lobatto') then
+      select case (long_scheme)
+      case ('lobatto')
         call set_lobatto_quadratures (ntheta, nphi, long_vec, long_wmu)
-      elseif (long_scheme == 'custom') then
+      case ('disk_center', 'set_a2', 'set_a4', 'set_a6', 'set_a8', 'set_b4', 'set_b6', 'set_b8')
+        call set_carlson_quadratures (long_scheme, long_vec, long_wmu, up_and_down=.false.)
+      case ('radau1', 'radau2', 'radau4')
+        call set_radau_quadratures (long_scheme, long_vec, long_wmu, up_and_down=.false.)
+      case ('custom')
         call count_words(custom_mu, ntheta)
         allocate(cust_mu(ntheta))
         read(custom_mu, *) cust_mu 
         call set_custom_quadratures (cust_mu, nphi, long_vec, long_wmu)
-      else
-        call set_carlson_quadratures (long_scheme, long_vec, long_wmu, up_and_down=.false.)
-      endif
-
-      total_n = nint(self%patch%box / self%patch%ds)
-  
-      where (pcheck < 0)
-        pcheck = total_n + pcheck + 1
-      end where
+      case default
+        print *, 'Quadrature keyword "'// trim(long_scheme) // '" not recognized for LC solver. Stopping...'
+        stop
+      end select
     end if
   
     self%verbose = verbose
@@ -211,7 +227,7 @@ MODULE m3d_patch_mod
       allocate (self%lock)
       call self%lock%init('m3d')
     end if
-  
+
     self%id = 0 ! this is assigned later
     self%on = on
     self%in_task_list = .false.
@@ -233,27 +249,27 @@ MODULE m3d_patch_mod
     self%llc_nat    = self%patch%llc_nat
     self%status     = self%patch%status ! be aware that this copies all bits
     self%periodic   = self%patch%periodic
-    self%place      = self%patch%place
     self%mesh       => self%patch%mesh
     self%task_list  => self%patch%task_list
 
-    ! zs is actually one below the lower boundary
-    self%zs = nint((self%position(3) - 0.5d0*self%size(3)) / self%ds(3))
     self%ze = self%zs + self%n(3)
 
-    self%pcheck = pcheck
-    self%fcheck = fcheck
-    self%linecheck = linecheck
-    self%lvlcheck = lvlcheck
+    select case (self%kind)
+    case ('atom_patch', 'out_rad')
+      self%save_output = .true.
+    case default
+      self%save_output = string_in_text(save_patch_kind, self%kind)
+    end select
 
-    self%save_output = self%kind == 'atom_patch' .or. self%id == save_id &
-    .or. string_in_text(save_patch_kind, self%kind)
+    self%save_output = self%save_output .or. self%id == save_id
 
     ! ----------------------------------------------------------------------------
     ! Do not check density or validate with it. This is rather important to be set
     ! ----------------------------------------------------------------------------
     call self%set (bits%no_density)
     call self%set (bits%no_filled)
+    
+    call self%set_place(self, -2)
 
     call self%set_maxiter()
     call trace%end (itimer)
@@ -274,13 +290,12 @@ MODULE m3d_patch_mod
     self%interest%l  = self%authority%l - self%ng*self%size/self%n
     self%interest%u  = self%authority%u + self%ng*self%size/self%n
 
-    self%pcheck(3) = self%pcheck(3) - self%zs
-    self%pcheck = self%pcheck + self%ng
     self%gn = self%n + 2*self%ng
-    self%print_update_info = self%check_in_bounds()
     if (self%ng(3)==0) then
       call self%set(bits%no_download)
     endif
+
+    call self%init_bdries()
     call self%set_initial_time()
     call self%append_to_task_list()
     call trace%end(itimer)
@@ -297,6 +312,7 @@ MODULE m3d_patch_mod
     if (present(sp)) self%sp => sp
     self%patch => m3d_parent%patch
     self%m3d_parent => m3d_parent
+    self%zs = m3d_parent%zs
     call self%pre_init()
   END SUBROUTINE pre_init_and_link
 
@@ -324,23 +340,35 @@ MODULE m3d_patch_mod
     call self%patch_t%init()
     call data_io%init (self)
     self%status = status
-    call self%init_level()
+    !call self%init_level()
 
     self%mem = tiny(1.)
     ! ----------------------------------------------------------------------------
-    ! Set unsigned and pervolume. Opacity, source function,
-    ! intensity and populations are all positive definite
+    ! Set unsigned and pervolume.
     ! Although quantities are generally per volume, but density is not stored
     ! locally, thus this flag must not be set.
+    ! opacities can become negative in rare cases (masers and lasers)!
     ! ----------------------------------------------------------------------------
     self%pervolume = .false.
-    self%unsigned  = .true.
+    self%unsigned  = .false.
 
     li = self%li
     ui = self%ui
 
     self%authority_mem => self%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),:,:,:)
     if (self%save_output) self%out_mem => self%authority_mem(:,:,:,:,self%it,:)
+
+    self%pcheck = pcheck
+    self%fcheck = fcheck
+    self%linecheck = linecheck
+    self%lvlcheck = lvlcheck
+    
+    self%pcheck(3) = self%pcheck(3) - self%zs
+    self%pcheck = self%pcheck + self%ng
+
+    where (pcheck < 0)
+      self%pcheck = self%pcheck + nz_total + 1
+    endwhere
   
     self%initialized=.true.
     call trace%end(itimer)
@@ -350,6 +378,7 @@ MODULE m3d_patch_mod
   SUBROUTINE set_initial_time (self)
     class(m3d_patch_t) :: self
     real(8) :: tnu
+    integer :: thread
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%set_initial_time')
     !-----------------------------------------------------------------------------
@@ -363,32 +392,55 @@ MODULE m3d_patch_mod
     self%dtime    = self%patch%dtime
     self%dt       = self%patch%dtime
     self%out_next = self%patch%out_next
+    self%t_offset = 0.5d0
+
+    !if (self%i_mu == 0) then
+    !  thread = mod(self%ipos(3),omp%nthreads)
+    !  call self%set_place(self, thread2place(thread))
+    !endif
+
+
+    !select case (self%kind)
+    !case ('composition', 'atom_patch')
+    !thread = mod(self%ipos(3),omp%nthreads)
+    !call self%set_place(self, thread2place(thread, omp%ncores, omp%nthreads))
+    !end select
+
 
     select case (self%kind)
-    case ('composition')
-      self%t_offset = 0.1d0
-    case ('atom_patch')
-      self%t_offset = 0.2d0
-    case ('back_line')
-      self%t_offset = 0.3d0
+    case ('composition', 'atom_patch')
+      self%t_offset = 0.4d0
+    case ('back_cont')
+      !if (save_back_cont .and. .not. self%out_ray) then
+      !  self%t_offset = 0.4d0
+      !endif
     case ('out_rad')
       self%t_offset = 0.9d0
-    case default
-      self%t_offset = 0.5d0
-      if (.not. self%out_ray) then
-        tnu = t_push * (self%i_nu-1) / self%n_nu
-        self%t_offset = self%t_offset + tnu
-        if (self%kind == 'back_cont' .and. save_back_cont) then
-          self%t_offset = 0.3d0
-        endif
-      endif
+
+      !if (self%boundaries%is_set(bits%zl + bits%zu)) then
+      !  call self%set_place(self, self%place, push=.true.)
+      !endif
+      !if (self%ipos(3) < omp%nthreads) then
+      !  call self%set_place(self, self%place, push=.true.)
+      !endif
     end select
+    !case default
+    !  self%t_offset = 0.9d0
+    !  !if (.not. self%out_ray) then
+    !  !  tnu = t_push * (self%i_nu-1) / self%n_nu
+    !  !  self%t_offset = self%t_offset + tnu
+    !  !endif
+    !end select
+
+    if (self%i_nu > 0) then
+      tnu = self%i_nu
+      if (tnu > self%n_nu) tnu = tnu - self%n_nu
+      tnu = tnu / self%n_nu
+      self%t_offset = self%t_offset + 0.1*tnu
+    endif
 
     if (self%out_ray) then
       self%time = self%time + ilambd + maxiter
-      if (self%patch%boundaries%is_set(bits%zl)) then
-        self%time = self%time - t_push / 2
-      endif
     endif
 
     self%time = self%time + self%t_offset * self%dtime
@@ -421,10 +473,14 @@ MODULE m3d_patch_mod
     case ('composition')
       self%maxiter = 1
     case ('atom_line')
-      self%maxiter = min(0, self%m3d_parent%maxiter-1)
+      if (save_atom_line) then
+        self%maxiter = min(0, self%m3d_parent%maxiter-1)
+      else
+        self%maxiter = self%m3d_parent%maxiter - 1
+      endif
     case ('atom_patch')
       self%maxiter = maxiter
-    case ('line_opac', 'atom_cont')
+    case ('atom_cont')
       self%maxiter = self%m3d_parent%maxiter - 1
     case ('atom_rate')
       self%maxiter = self%m3d_parent%maxiter + ilambd - 1
@@ -438,10 +494,11 @@ MODULE m3d_patch_mod
         self%maxiter = ilambd + maxiter - 1
       endif
     case ('mean_rad')
-      self%maxiter = ilambd - 1
-      if (comoving_frame) then
-        self%maxiter = self%maxiter + maxiter
-      endif
+      !self%maxiter = ilambd - 1
+      !if (comoving_frame) then
+      !  self%maxiter = self%maxiter + maxiter
+      !endif
+      self%maxiter = ilambd + maxiter - 1
     case ('angle_rad', 'net_opac', 'proj_patch')
       self%maxiter = ilambd + maxiter - 1
     end select
@@ -449,6 +506,21 @@ MODULE m3d_patch_mod
     if (self%out_ray) self%maxiter = 0
     call trace%end()
   END SUBROUTINE set_maxiter
+  
+  !===============================================================================
+  !> Initialize boundary bits
+  !===============================================================================
+  SUBROUTINE init_bdries (self)
+    class(m3d_patch_t):: self
+    !-----------------------------------------------------------------------------
+    if (.not. associated (self%boundaries)) then
+      allocate (self%boundaries)
+      call self%boundaries%pre_init (self)
+    endif
+    if (maxiter==0) then
+      call self%boundaries%clear(bits%zu)
+    endif
+  END SUBROUTINE init_bdries
 
   !===============================================================================
   SUBROUTINE m3d_pre_update (self)
@@ -468,6 +540,16 @@ MODULE m3d_patch_mod
       endif
       if (.not. self%is_finished()) then
         call self%print_execution_history('PRE')
+      endif
+      !call self%push_nbors_for_update(post_update=.false.)
+      !if (self%i_mu > 0) then
+        call self%claim_nbor_place()
+      !endif
+    endif
+    if (self%verbose > 1) then
+      if (.not. self%checked_bounds) then
+        self%print_update_info = self%check_in_bounds()
+        self%checked_bounds = .true.
       endif
     endif
     call trace%end(itimer)
@@ -495,7 +577,10 @@ MODULE m3d_patch_mod
       call self%finish()
     endif
     call self%free_unused_memory()
-    call self%push_nbors_for_update()
+    !call self%push_nbors_for_update(post_update=.true.)
+    if (self%place>=100) then
+      self%place = self%place-100
+    endif
     call io%lock%unset
     if (check_NaN) then
       call self%check_mem_NaN()
@@ -534,6 +619,7 @@ MODULE m3d_patch_mod
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%finish')
     self%time = io%end_time
+    call self%set_place(self, -2)
     call self%set(bits%no_download)
     if (self%save_output) call self%save(self%out_mem, self%kind)
     call trace%end()
@@ -629,7 +715,7 @@ MODULE m3d_patch_mod
       call io%abort ('task_t another not associated')
     end if
 
-    needed=.true. ; needs_me=.true. ; download=.true.
+    needed=.true. ; needs_me=.true. ; download=any(self%ng>0)
 
     if (another%is_set (bits%frozen)) then
       needs_me = .false.
@@ -702,8 +788,9 @@ MODULE m3d_patch_mod
         call link%init()
         link%task => self
         self%link => link
-        !call link%append_to(self%task_list)
-        call self%task_list%append_link(self%link)
+        call self%init_level()
+        call link%append_to(self%task_list)
+        !call self%task_list%append_link(self%link)
         self%key = self%hash_key()
         call self%task_list%hash_table%add (self%key, self%link)
       endif
@@ -730,7 +817,8 @@ MODULE m3d_patch_mod
   SUBROUTINE init_level (self)
     class(m3d_patch_t):: self
     !-----------------------------------------------------------------------------
-    self%level = 1
+    self%level = self%patch%level
+    !self%level = 1
   END SUBROUTINE init_level
 
   !===============================================================================
@@ -744,40 +832,35 @@ MODULE m3d_patch_mod
   SUBROUTINE periodic_grid (self, only)
     class(m3d_patch_t):: self
     integer, optional:: only
-    integer :: iv, it, iw, i,j,k,t
+    integer :: iv, it, iw, i,j,k,t, ks, ke
     integer, save :: itimer=0
-    logical :: only_z
     !----------------------------------------------------------------------------
     if (.not. self%is_periodic()) return
     if (all(self%ng(:2) == 0) .or. .not. associated(self%mem)) return
     call trace%begin ('m3d_patch_t%periodic_grid', itimer=itimer)
-    call self%check_access(self)
-
-    only_z = present(only)
-    if (only_z) k = only
 
     if (.not. associated(self%periodic_idx)) then
       call self%init_periodic_idx()
     endif
 
+    if (present(only)) then
+      ks = only
+      ke = only
+    else
+      ks = 1
+      ke = self%gn(3)
+    endif
+
     do iw=1, self%nw
     do it=1, self%nt
     do iv=1, self%nv
-      if (only_z) then
-        do t=1, size(self%periodic_idx, 2)
-          i = self%periodic_idx(1,t)
-          j = self%periodic_idx(2,t)
-          self%mem(i,j,k,iv,it,iw) = self%mem(self%periodic_i(i),self%periodic_j(j),k,iv,it,iw)
-        end do
-      else
-        do k=1, self%gn(3)
-          do t=1, size(self%periodic_idx, 2)
-            i = self%periodic_idx(1,t)
-            j = self%periodic_idx(2,t)
-            self%mem(i,j,k,iv,it,iw) = self%mem(self%periodic_i(i),self%periodic_j(j),k,iv,it,iw)
-          end do
-        end do
-      endif
+    do k=ks, ke
+      do t=1, size(self%periodic_idx, 2)
+        i = self%periodic_idx(1,t)
+        j = self%periodic_idx(2,t)
+        self%mem(i,j,k,iv,it,iw) = self%mem(self%periodic_i(i),self%periodic_j(j),k,iv,it,iw)
+      end do
+    end do
     end do
     end do
     end do
@@ -841,49 +924,41 @@ MODULE m3d_patch_mod
   !> target%grace*self%dtime.
   !===============================================================================
   LOGICAL FUNCTION is_ahead_of (self, target)
-    class (m3d_patch_t):: self
-    class (task_t):: target
+    class (m3d_patch_t) :: self
+    class (task_t), pointer :: target
     !.............................................................................
     real:: grace
     real(8):: nbtime, nbdtime, tgtime
+    logical:: needed, needs_me, download
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%is_ahead_of')
     grace = self%grace + shared%extra_grace
-    if (omp_lock%tasks) then
-                                              call self%lock%set ('is_ahead_of')
-      !---------------------------------------------------------------------------
-      ! dt(self%dt) is always consistent with t(:), while dtime changes in
-      ! courant_condition(), before other attributes change in rotate()
-      !---------------------------------------------------------------------------
-      nbtime = self%time
-      tgtime = target%time
-      if (self%is_set(bits%frozen)) then
-        is_ahead_of = .true.
-      else
-        is_ahead_of = nbtime > tgtime
-      end if
-                                              call self%lock%unset ('is_ahead_of')
-    else
-      !$omp atomic read
-      nbtime = self%time
-      !$omp atomic read
-      nbdtime = self%dtime
-      !$omp atomic read
-      tgtime = target%time
-      ! -- if a task is frozen (in time) assume it is forever ahead of other tasks
-      if (self%is_set(bits%frozen)) then
-        is_ahead_of = .true.
-      ! -- a negative nbor time signals an invalid (e.g. initial RT) state
-    !  else if (nbtime < 0.0) then
-    !    is_ahead_of = .false.
-      ! -- do not use a grace interval for the first few steps
-      else if (self%istep < 3) then
-        is_ahead_of = nbtime > tgtime
-      ! -- use a grace interval that is fraction of the nbor time step
-      else
-        is_ahead_of = nbtime + nbdtime*grace > tgtime 
-      end if
+                                            call self%lock%set ('is_ahead_of')
+    !---------------------------------------------------------------------------
+    ! dt(self%dt) is always consistent with t(:), while dtime changes in
+    ! courant_condition(), before other attributes change in rotate()
+    !---------------------------------------------------------------------------
+    nbtime = self%time
+    tgtime = target%time
+    is_ahead_of = .false.
+    if (self%is_set(bits%frozen)) then
+      is_ahead_of = .true.
+    elseif (nbtime == tgtime) then
+      call self%nbor_relations(target, needed, needs_me, download)
+      if (needed == needs_me) then
+        select type(target)
+        class is (m3d_patch_t)
+          if (associated(target%m3d_parent)) then
+            is_ahead_of = .not. target%m3d_parent%id == self%id
+          else
+            is_ahead_of = .true.
+          endif
+        end select
+      endif
+    elseif (nbtime > tgtime) then
+      is_ahead_of = .true.
     end if
+                                            call self%lock%unset ('is_ahead_of')
     call trace%end()
   END FUNCTION is_ahead_of
 
@@ -976,6 +1051,7 @@ MODULE m3d_patch_mod
   SUBROUTINE check_mem (self)
     class(m3d_patch_t):: self
     integer :: orig_place
+    logical :: push
     !-----------------------------------------------------------------------------
     if (.not. associated(self%mem)) then
       if (.not. self%initialized) then
@@ -983,16 +1059,20 @@ MODULE m3d_patch_mod
           self%kind = trim(self%kind)//'V'
           self%static_mem = .true.
         endif
+        push = self%place >= 100
         orig_place = self%place
         call self%init()
-        if (orig_place == -1) self%place = -1
+        if (push) self%place = self%place + 100
+        !if (mod(orig_place,100) /= mod(self%place,100)) then
+        !  print *, self%m3d_patch_info2(), ' changed place from ', orig_place
+        !endif
+        !self%place = orig_place
       else
         call self%allocate_mem(self)
       endif
-      if (self%place /= omp%place .and. self%i_mu > 0) then
-        self%place = omp%place ! memory affinity
-      else
-      endif
+      !if (self%place /= omp%place .and. self%i_mu > 0) then
+      !  self%place = omp%place ! memory affinity
+      !endif
     endif
   END SUBROUTINE check_mem
 
@@ -1031,95 +1111,191 @@ MODULE m3d_patch_mod
   END SUBROUTINE check_mem_NaN
 
   !===============================================================================
-  SUBROUTINE push_nbors_for_update (self)
+  SUBROUTINE claim_nbor_place (self)
     class(m3d_patch_t) :: self
     class(nbor_t), pointer:: nbor, nbnbor
     class(task_t), pointer:: nbtask, nbnbtask
-    integer :: n_ready, n_needed, n_done
+    class(link_t), pointer:: nblink
+    integer :: thread, i, key(4)
     integer, save :: itimer=0
-    logical :: ok
     !-----------------------------------------------------------------------------
-    call trace%begin ('m3d_patch_t%push_nbors_for_update', itimer=itimer)
-    select case (self%kind)
-    case ('composition', 'atom_patch', 'atom_rate')
-      ok = .false.
-    case ('back_cont', 'atom_cont')
-      ok = self%out_ray
-    case default
-      ok = .true.
-    end select
-    if (ok) then
+    key = self%key
+    do i=-1, 1, 2
+      key(1) = self%key(1)+i
+      call self%task_list%hash_table%get (key, nblink)
+      if (associated(nblink)) then
+        nbtask => nblink%task
+        if (nbtask%time == self%time .and. nbtask%place < 0) then
+          call self%set_place(nbtask, -1)
+        endif
+      endif
+    end do
+
+    if (self%i_mu > 0) then
       nbor => self%link%nbor
       do while (associated (nbor))
         nbtask => nbor%task
-        n_needed = 0
-        n_ready = 0
-        n_done = 0
-        select type (nbtask)
-        class is (m3d_patch_t)
-        if (nbor%needs_me .and. nbtask%iter==self%iter .and. nbtask%t_push==0) then
+        if (nbor%needs_me .and. nbtask%time==self%time) then
+          if (all(self%key(1:3) == nbtask%key(1:3))) then
+            call self%set_place(nbtask, self%place, push=.true.)
+          endif
+        endif
+        nbor => nbor%next
+      end do
+    endif
+  END SUBROUTINE claim_nbor_place
+
+  !===============================================================================
+  SUBROUTINE set_place (self, other, place, push)
+    class(m3d_patch_t) :: self
+    class(task_t):: other
+    integer :: place
+    logical, optional :: push
+    !-----------------------------------------------------------------------------
+    if (present(push)) then
+      if (push .and. place < 100) then
+        other%place = place+100
+      else
+        other%place = place
+      endif
+    else
+      other%place = place
+    endif
+    if (self%id /= other%id .and. print_push) then
+      print '(A, A, A, A, I4, A, I4)', trim(self%m3d_patch_info2()), ' set place of ', &
+      trim(other%kind), ' ', other%id, ' to ', place
+    endif
+  END SUBROUTINE set_place
+
+  !===============================================================================
+  SUBROUTINE push_nbors_for_update (self, post_update)
+    class(m3d_patch_t) :: self
+    logical :: post_update
+    class(nbor_t), pointer:: nbor, nbnbor
+    class(task_t), pointer:: nbtask, nbnbtask
+    class(link_t), pointer:: pushed, tail, link
+    integer :: n_ready, n_needed, n_done
+    integer, save :: itimer=0
+    !-----------------------------------------------------------------------------
+    call trace%begin ('m3d_patch_t%push_nbors_for_update', itimer=itimer)
+    nbor => self%link%nbor
+    do while (associated (nbor))
+      nbtask => nbor%task
+      n_needed = 0
+      n_ready = 0
+      n_done = 0
+      select type (nbtask)
+      class is (m3d_patch_t)
+        if (nbor%needs_me .and. nbtask%iter==self%iter) then
+          nbnbor => nbtask%link%nbor
+          do while (associated(nbnbor))
+            if (nbnbor%needed) then
+              nbnbtask => nbnbor%task
+              n_needed = n_needed + 1
+              if (nbnbtask%id == self%id) then
+                if (post_update) then
+                  n_done = n_done + 1
+                else
+                  n_ready = n_ready + 1
+                endif
+              elseif (nbnbtask%time > nbtask%time) then
+                n_done = n_done + 1
+              elseif (nbnbtask%is_set(bits%ready)) then
+                n_ready = n_ready + 1
+              endif
+            endif
+            nbnbor => nbnbor%next
+          end do
+          if (n_done == n_needed) then
+            call self%push(nbtask, pushed, tail, post_update, requeue=.false.)
+          elseif ((n_done + n_ready) == n_needed) then
             nbnbor => nbtask%link%nbor
             do while (associated(nbnbor))
-              if (nbnbor%needed .and. .not. nbnbor%needs_me) then
+              if (nbnbor%needed) then
                 nbnbtask => nbnbor%task
-                n_needed = n_needed + 1
-                if (nbnbtask%id == self%id) then
-                  n_done = n_done + 1
-                elseif (nbnbtask%time > nbtask%time) then
-                  n_done = n_done + 1
-                elseif (nbnbtask%is_set(bits%ready)) then
-                  n_ready = n_ready + 1
+                if (nbnbtask%is_set(bits%ready) .and. nbnbtask%id /= self%id) then
+                  select type (nbnbtask)
+                  class is (m3d_patch_t)
+                    if (nbnbtask%iter == self%iter .and. nbnbtask%is_clear(bits%busy)) then
+                      call self%push(nbnbtask, pushed, tail, post_update, requeue=.true.)
+                    endif
+                  end select
                 endif
               endif
               nbnbor => nbnbor%next
             end do
-            if (n_done == n_needed) then
-              call self%push(nbtask)
-            elseif ((n_done + n_ready) == n_needed) then
-              nbnbor => nbtask%link%nbor
-              do while (associated(nbnbor))
-                if (nbnbor%needed) then
-                  nbnbtask => nbnbor%task
-                  if (nbnbtask%is_set(bits%ready) .and. nbnbtask%id /= self%id) then
-                    select type (nbnbtask)
-                    class is (m3d_patch_t)
-                      if (nbnbtask%iter == self%iter .and. nbnbtask%is_clear(bits%busy) .and. nbnbtask%t_push == 0) then
-                        call self%push(nbnbtask)
-                        call self%task_list%qlock%set ('remove')
-                        call self%task_list%remove_from_queue(nbnbor%link)
-                        call self%task_list%qlock%unset ('remove')
-                        call self%task_list%queue_by_time(nbnbor%link, nbnbtask%istep)
-                      endif
-                    end select
-                  endif
-                endif
-                nbnbor => nbnbor%next
-              end do
-            endif
-          end if
-        end select
-        nbor => nbor%next
+          endif
+        end if
+      end select
+      nbor => nbor%next
+    end do
+
+    if (associated(tail)) then
+      link => tail
+      do while (associated(link))
+        link => tail%prev
+        deallocate(tail)
       end do
     endif
 
-    if (self%t_push > 0) then
-      self%time = self%time + self%t_push
-      self%t_push = 0
+    if (post_update) then
+      if (self%t_push > 0) then
+        self%time = self%time + self%t_push
+        self%t_push = 0
+      endif
     endif
     call trace%end(itimer)
   END SUBROUTINE push_nbors_for_update
 
   !===============================================================================
-  SUBROUTINE push (self, other)
-    class(m3d_patch_t):: self, other
+  SUBROUTINE push (self, other, pushed, tail, post_update, requeue)
+    class(m3d_patch_t) :: self, other
+    class(link_t), pointer:: pushed, tail, link, prev
+    class(task_t), pointer:: task
+    logical, intent(in) :: requeue, post_update
+    real(8) :: t
     !-----------------------------------------------------------------------------
-    other%t_push = other%t_push + t_push
-    other%time = other%time - t_push
-    if (other%i_mu > 0) then
-      other%place = self%place
+    if (other%i_mu == self%i_mu) then
+      t = t_push
+    elseif (self%i_mu==0) then
+      t = t_push / 10
+    else
+      return
+    endif
+
+    link => pushed
+    do while (associated(link))
+      task => link%task
+      if (task%id == other%id) return
+      prev => link
+      link => link%next
+    end do
+    allocate(tail)
+    tail%task => other%link%task
+    tail%prev => link
+    if (associated(prev)) then
+      prev%next => tail
+    else
+      pushed => tail
+    endif
+
+    other%t_push = other%t_push + t
+    other%time = other%time - t
+    !if (other%i_mu > 0) then
+    !  other%place = self%place
+    !endif
+    if (requeue) then
+      call self%task_list%qlock%set ('remove')
+      call self%task_list%remove_from_queue(other%link)
+      call self%task_list%qlock%unset ('remove')
+      call self%task_list%queue_by_time(other%link, other%istep)
     endif
     if ((self%print_update_info .or. self%verbose > 2) .and. print_push) then
-      write(stdout, *) '  pushed', other%m3d_patch_info2()
+      if (post_update) then
+        write(stdout, *) '  post pushed', other%m3d_patch_info2()
+      else
+        write(stdout, *) '  pre pushed', other%m3d_patch_info2()
+      endif
     endif
   END SUBROUTINE push
   
@@ -1162,7 +1338,12 @@ MODULE m3d_patch_mod
     character(len=*), optional :: text
     !-----------------------------------------------------------------------------
     if (present(arr)) then
-      write(stdout,'(A, 6(ES15.7))') self%m3d_patch_info(), arr
+      call self%check_access(self)
+      if (size(arr)==0) then
+        write(stdout,'(A, A)') self%m3d_patch_info(), 'invalid index!'
+      else
+        write(stdout,'(A, 6(ES15.7))') self%m3d_patch_info(), arr
+      endif
     elseif (present(text)) then
       write(stdout,'(A, A, A)') self%m3d_patch_info(), ' ', trim(text)
     else
@@ -1207,21 +1388,6 @@ MODULE m3d_patch_mod
     key(3) = self%i_mu
     key(4) = hash_string(self%kind)
   END FUNCTION hash_key
-
-  !===============================================================================
-  FUNCTION hash_string(text) result(hashed) 
-    character(*), intent(in) :: text 
-    integer :: hashed ! 32-bit integers assumed 
-    integer, parameter :: magic_numb = Z'5D7A9F43'  ! hexadecimal
-    integer :: i, j 
-    !-----------------------------------------------------------------------------
-    hashed = 0
-    do i = 1, len_trim(text) 
-      j = mod(i-1, 4) * 8 
-      hashed = IEOR( hashed, ISHFT( ICHAR( text(i:i) ), j ) ) 
-    end do
-    hashed = abs( IEOR( hashed, magic_numb ) )
-  END FUNCTION hash_string 
 
   !===============================================================================
   !> Fast method to generate nbor lists in cases with very long task lists
@@ -1370,26 +1536,41 @@ MODULE m3d_patch_mod
   END SUBROUTINE save
 
   !===============================================================================
-  FUNCTION string_in_text (text, str) result(in_text)
-    character(len=*) :: str
-    character(len=*) :: text
-    character(len=128) :: dummy
-    integer :: i, j 
-    logical :: in_text
+  SUBROUTINE load_mem (self, folder, mem, label)
+    class(m3d_patch_t), intent(inout) :: self
+    character(len=128), intent(in) :: folder
+    character(len=*), intent(in) :: label
+    real(4), intent(inout), dimension(:,:,:,:,:) :: mem
+    character(len=128) :: filename, sfolder, metafile, file
+    integer :: lunit, file_size, mem_size, iostat, prec, m(5)
     ! ----------------------------------------------------------------------------
-    in_text = .false.
-    dummy = ''
-    j = 0
-    do i=1, len(text)
-      if (text(i:i) == ' ') then
-        if (dummy(1:j) == str) exit
-        j = 0
-      else
-        j = j + 1
-        dummy(j:j) = text(i:i)
-      endif
+    call self%check_access(self)
+    write(sfolder, '(A, A)') trim(folder), 'save/'
+    write(filename, '(A, A, 3(I3.3), A)') trim(label), '_', self%key(1:3), '.bin'
+    write(metafile, '(A, A, 3(I3.3), A)') trim(label), '_meta.txt'
+    call os%check_file(trim(sfolder)//filename)
+    call os%check_file(trim(sfolder)//metafile)
+    open(newunit=lunit, file=trim(sfolder)//metafile, form='formatted', iostat=iostat)
+    read(lunit,*) ! skip header
+    do while (iostat==0)
+      read(lunit, *, iostat=iostat) file, prec, m
+      if (file == filename) exit
     end do
-    if (dummy(1:j) == str) in_text = .true.
-  END FUNCTION
+    close(lunit)
+    if (iostat /= 0) then
+      print *, 'file not found in metafile! Stopping...'
+      stop
+    endif
+    if (any(m /= shape(mem))) then
+      write(stdout, *) 'Cannot load patch save ', trim(sfolder)//trim(filename), &
+      'Memory sizes do not match!'
+      print *, m
+      print *, shape(mem)
+      stop
+    endif
+    open(newunit=lunit, file=trim(sfolder)//filename, access='stream')
+    read(lunit) mem
+    close(lunit)
+  END SUBROUTINE load_mem
 
 END MODULE m3d_patch_mod

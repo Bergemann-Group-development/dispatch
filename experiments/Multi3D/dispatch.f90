@@ -51,7 +51,8 @@ PROGRAM dispatch
   call timer%print() 
   call mpi%barrier()
   write(*,'(a, I3, a, F7.2, a)') 'maximum memory on rank', mpi%rank, ' was', os%max_mem, 'Gb'
-  call os%print_tracked_mem()
+  write(*,'(a, I3, a, F7.2, a)') 'Multi3D terminated normally.'
+  !call os%print_tracked_mem()
   !write(*,'(a, I3, a, F7.2, a)') 'still allocated memory on rank', mpi%rank, ' is', os%gb, 'Gb'
   call setup%end                                ! End setup
 !===============================================================================

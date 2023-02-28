@@ -9,10 +9,10 @@ MODULE mean_rad_patch_mod
     USE trace_mod
     USE bits_mod
     USE os_mod
-    USE m3d_patch_mod, only:maxiter, m3d_patch_t, hash_string, comoving_frame, ilambd
+    USE handyfuncs_mod
+    USE m3d_patch_mod, only:maxiter, m3d_patch_t, comoving_frame, ilambd
     USE ray_patch_mod, only:ray_patch_t
     USE angle_rad_patch_mod, only:rad_patch_t
-    USE mconst, only:over_4pi
     implicit none
     private
   
@@ -115,8 +115,8 @@ MODULE mean_rad_patch_mod
         elseif (another%kind == 'net_opac') then
           needs_me = .false.
         elseif (another%kind == 'back_cont') then
-          if (.not. comoving_frame) needed = .false.
-          if (ilambd == 0) needs_me = .false.
+          !if (.not. comoving_frame) needed = .false.
+          !if (ilambd == 0) needs_me = .false.
         else
           needed = .false.; needs_me = .false.
         endif

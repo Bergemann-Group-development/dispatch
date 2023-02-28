@@ -9,9 +9,9 @@ MODULE out_rad_patch_mod
     USE trace_mod
     USE math_mod
     USE bits_mod
-    USE m3d_patch_mod, only: m3d_patch_t, hash_string
+    USE handyfuncs_mod
+    USE m3d_patch_mod, only: m3d_patch_t, long_vec, long_wmu
     USE ray_patch_mod, only: ray_patch_t
-    USE angle_rad_patch_mod, only: rad_patch_t
     USE mconst, only: cc
     USE os_mod
     USE omp_mod
@@ -19,13 +19,11 @@ MODULE out_rad_patch_mod
     implicit none
   
     type, public, extends(ray_patch_t) :: out_rad_patch_t
-      character(len=128) :: meta_file, ray_name
     contains
       procedure :: pre_init => out_rad_pre_init
       procedure :: update => out_rad_update
       procedure :: nbor_relations
-      procedure :: setup_metafile
-      procedure :: save_meta
+      procedure :: save_quadrature
       procedure :: print_post_update_info
       procedure :: init_nbors_hash
     end type out_rad_patch_t
@@ -46,7 +44,7 @@ MODULE out_rad_patch_mod
     self%n(3) = 1
     nw = 3
     call self%set_nv_and_nw (self%sp%nnu, nw)
-    call self%setup_metafile()
+    call self%save_quadrature()
     call self%post_pre_init()
     call trace%end(itimer)
   END SUBROUTINE out_rad_pre_init
@@ -78,12 +76,14 @@ MODULE out_rad_patch_mod
     real(8), allocatable :: lam(:)
     real(4), dimension(:,:,:), pointer :: Inu
     real(4), dimension(:,:,:,:), pointer :: mem
+    real(4), dimension(:,:,:,:,:), pointer, contiguous :: II
     integer :: lunit
     integer :: i, iw
+    real(4) :: norm
     !-----------------------------------------------------------------------------
     if (self%is_finished()) return
     call trace%begin('out_rad_patch_t%save_radiation_output')
-    write(stdout, '(A64)') 'Writing output for angle ' // self%ray_name
+    write(stdout, '(A, I3)') 'Writing output for angle ', self%i_out
   
     if (self%i_out == 1) then
       lam = 1d8 * dble(cc) / self%sp%nu
@@ -96,7 +96,7 @@ MODULE out_rad_patch_mod
     nbor => self%link%nbor
     do while (associated(nbor))
       select type(nb => nbor%task)
-      class is (rad_patch_t)
+      class is (ray_patch_t)
         call self%check_access(nb)
         do iw=1, self%nw
           Inu => self%mem(:,:,1, nb%fs:nb%fe, self%it, iw)
@@ -107,54 +107,47 @@ MODULE out_rad_patch_mod
       end select
       nbor => nbor%next
     end do
-  
-    mem => self%mem(:,:,1,:, self%it, :)
-    filename = trim(self%ray_name) // '_inu.bin'
-    call self%save_meta(filename, storage_size(mem), shape(mem))
-    filename = trim(io%run_dir) // 'save/' // trim(self%ray_name) // '_inu.bin'
-    open(newunit=lunit, file=filename, access='stream')
-    write(lunit) mem
-    close(lunit)
+
+    call os%allocate(II, [1,1,1,self%nv,self%nw])
+    norm = 1.0 / product(self%n(1:2))
+    II(1,1,1,:,:) = sum(sum(self%mem(:,:,1, :, self%it, :), 1),1) * norm
+    call self%save(II, 'ie')
+    call os%deallocate(II)
+
     call trace%end()
     call self%post_update()
   END SUBROUTINE out_rad_update
   
   !===============================================================================
-  SUBROUTINE setup_metafile(self)
+  SUBROUTINE save_quadrature(self)
     class(out_rad_patch_t),intent(inout):: self
-    integer :: meta_unit, iostat
+    integer :: meta_unit, iostat, i, nmu
+    character(len=128) :: meta_file
     ! ----------------------------------------------------------------------------
-    write(self%ray_name,'(A3, I3.3)') 'ray', self%i_out
-  
-    self%meta_file = trim(io%run_dir) // 'save/' // trim(self%ray_name) // '_meta.txt'
-    open(newunit=meta_unit, file=self%meta_file, form='formatted')
-  
-    write(meta_unit, '(A8, 1X, SP, 3(F12.8))') 'vec', self%vec
-    write(meta_unit, '(A8, 1X, SP, F12.8)') 'weight', self%wmu
-    close(meta_unit)
+    meta_file = trim(io%run_dir) // 'angle_quadrature.txt'
+    call io%lock%set('out_rad')
+    if (.not. os%exists(meta_file)) then
+      open(newunit=meta_unit, file=meta_file, form='formatted')
+      nmu = size(long_wmu)
+      write(meta_unit, '(A3, 4(A12))') '#', 'weight', 'mux', 'muy', 'muz'
+      do i=1, nmu
+        write(meta_unit, '(I3, F12.8, SP, 3(F12.8))') i, long_wmu(i), long_vec(:,i)
+      end do
+      close(meta_unit)
+    endif
+    call io%lock%unset('out_rad')
   END SUBROUTINE
-  
-  !===============================================================================
-  SUBROUTINE save_meta(self, filename, store, shpe)
-    class(out_rad_patch_t):: self
-    character(len=*), intent(in) :: filename
-    integer, intent(in) :: store
-    integer, dimension(:), intent(in) :: shpe
-    integer :: meta_unit
-    ! ----------------------------------------------------------------------------
-    open(newunit=meta_unit, file=self%meta_file, form='formatted', position='append')
-    write(meta_unit, '(A64, I4, 8(I10))') filename, store, shpe
-    close(meta_unit)
-  END SUBROUTINE save_meta
   
   !===============================================================================
   SUBROUTINE print_post_update_info (self)
     class(out_rad_patch_t) :: self
     character(48) :: text
     integer :: p(3), f
+    real(4) :: norm
     !-----------------------------------------------------------------------------
     f = self%fcheck
-    call self%print_to_stdout(arr=[sum(self%mem(:,:,1,f,1,1)) / product(self%n(1:2))])
+    norm = product(self%n(1:2))
+    call self%print_to_stdout(arr=[sum(self%mem(:,:,1,f,1,1)) / norm])
   END SUBROUTINE print_post_update_info
   
   !===============================================================================

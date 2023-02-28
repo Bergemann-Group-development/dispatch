@@ -64,6 +64,9 @@ MODULE halo_mod
   integer, save:: n_tot(4)=0
   real(8), save:: overlap_margin = 1d-10
   !$omp threadprivate (n_tot)
+
+  procedure(update), public, pointer :: halo_update => update
+
 CONTAINS
 
 !===============================================================================

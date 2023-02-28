@@ -21,11 +21,12 @@ MODULE angle_rad_patch_mod
   USE math_mod
   USE bits_mod
   USE units_mod, only: cgs
-  USE mconst, only: over_4pi
+  USE mconst, only: one_third, one_sixth
   !USE scratch_mod
-  USE m3d_patch_mod, only: m3d_patch_t, hash_string, comoving_frame, ilambd
+  USE handyfuncs_mod
+  USE m3d_patch_mod, only: m3d_patch_t, comoving_frame, ilambd
   USE ray_patch_mod, only: ray_patch_t, formal_solver
-  USE proj_patch_mod, only:interpolate_to_ray
+  USE proj_patch_mod, only: interpolate_to_ray
   USE os_mod
   USE omp_mod
   USE omp_lock_mod
@@ -52,11 +53,12 @@ MODULE angle_rad_patch_mod
     procedure :: long_char_update
     procedure :: short_ray_update
     procedure :: bndries
-    procedure :: interp_long
     procedure :: integrate_intensity
     !procedure :: interp_xy_up
     !procedure :: interp_xy_up_plane
     !procedure :: solve_long_plane
+    procedure :: linear_solver
+    procedure :: hermite_solver
     procedure :: remove_lower_layers_mem
     procedure :: deallocate_mem => rad_patch_deallocate_mem
     procedure :: allocate_mem => rad_patch_allocate_mem
@@ -68,7 +70,7 @@ MODULE angle_rad_patch_mod
   !-----------------------------------------------------------------------------
 
   real(4), save :: stiff_lim=1e-8
-  logical, public, save :: lock_Inu=.false.
+  logical, public, save :: lock_Inu=.false., hermite=.false.
 
 contains
   
@@ -78,7 +80,7 @@ SUBROUTINE radiation_pre_init (self)
   logical, save :: first_time=.true.
   integer :: iostat, nv, nw
   integer, save :: itimer=0
-  namelist /radiation_params/ stiff_lim, lock_Inu
+  namelist /radiation_params/ stiff_lim, lock_Inu, hermite
   ! ----------------------------------------------------------------------------
   call trace%begin('rad_patch_t%radiation_pre_init', itimer=itimer)
   self%kind = 'angle_rad'
@@ -195,9 +197,9 @@ SUBROUTINE radiation_update (self)
     call self%skip_iterations(self%stiff_count-1)
   endif
 
-  if (self%out_ray .and. self%patch%boundaries%is_set(bits%zu)) then
-    call self%remove_lower_layers_mem()
-  endif
+  !if (self%out_ray .and. self%patch%boundaries%is_set(bits%zu)) then
+  !  call self%remove_lower_layers_mem()
+  !endif
 END SUBROUTINE radiation_update
 
 !===============================================================================
@@ -297,11 +299,16 @@ SUBROUTINE short_ray_update (self)
           endif
 
           self%Inu(i,j,k,f) = self%Ieff(x,y,z,f) + Psi*ss
+          !self%Inu(i,j,k,f) = ss
+          !Psi = 1.0
+          !self%Ieff(x,y,z,f) = 0.
 
           if (comoving_frame) then
             self%Psi(x,y,z,f) = Psi
+            !Ieff is computed in mean_rad%update after Psi has been integrated
           else
             self%Psi(x,y,z,f) = Psi / xx
+            !Ieff is computed in full_preconditioning instead
             self%Ieff(x,y,z,f) = self%Ieff(x,y,z,f) + self%Psi(x,y,z,f) * eta_back(x,y,z,f)
           endif
         end do
@@ -323,42 +330,10 @@ END SUBROUTINE short_ray_update
 SUBROUTINE long_char_update (self)
   class(rad_patch_t), target :: self
   real(4), dimension(:,:,:), pointer, contiguous :: xx, ss
-  real(4), dimension(:,:), contiguous, pointer :: kernel
-  integer, dimension(:,:), contiguous, pointer :: ipart
-  real(4), dimension(2) :: delta, deltak, fpart
-  real(4) :: dsup, u0, Psi
-  real(8) :: ex, dt
-  integer :: f, i, j, k, iw, iiw
+  integer :: iw, iiw
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('rad_patch_t%long_char_update', itimer=itimer)
-  
-  call self%bndries() ! reinforce boundary condition
-
-  call os%allocate(kernel, [4,self%ui(3)])
-  call os%allocate(ipart, [2,self%ui(3)])
-  call os%allocate(xx, self%gn)
-  call os%allocate(ss, self%gn)
-
-  delta = self%vec(:2) / (self%vec(3) * self%ds(:2)) ! shift in units of grid cells
-  dsup = real(self%ray%dsup)
-
-  do k=1, self%ui(3)
-    !deltak = (self%box(3) - (k-1)*self%ds(3) - (self%position(3) - 0.5*self%size(3))) * delta
-    deltak = (self%box(3) - (k-1+self%zs)*self%ds(3)) * delta
-    ipart(:,k) = int(deltak) !integer part of shift
-    fpart = deltak - ipart(:,k) !fractional part
-    where (deltak < 0) 
-      fpart = 1.0 + fpart
-      ipart(:,k) = ipart(:,k) - 1.0
-    end where
-
-    ! bilinear interpolation to avoid overshooting
-    kernel(1,k) = (1.0-fpart(1))*(1.0-fpart(2))
-    kernel(2,k) =      fpart(1) *(1.0-fpart(2))
-    kernel(3,k) = (1.0-fpart(1))*     fpart(2) 
-    kernel(4,k) =      fpart(1) *     fpart(2)
-  end do
 
   do iw=1, self%opac%nw, 2
     self%chi => self%opac%mem(:,:,:,:, self%opac%it, iw)
@@ -366,50 +341,148 @@ SUBROUTINE long_char_update (self)
     iiw = (iw+1)/2
     self%Inu => self%mem(:,:,:,:, self%it, iiw)
 
-    do f=1, self%nv
-      ! ----------------------------------------------------------------------------
-      ! frequency vectorisation is slower, because k varies quicker in mem than f.
-      ! ----------------------------------------------------------------------------
-      do k=1, self%ui(3)
-        call self%interp_long(self%chi(:,:,k,f), xx(:,:,k), ipart(1,k), ipart(2,k), kernel(:,k))
-        call self%interp_long(self%Snu(:,:,k,f), ss(:,:,k), ipart(1,k), ipart(2,k), kernel(:,k))
-      end do
-
-      do k=1, self%n(3)
-      do j=1, self%n(2)
-      do i=1, self%n(1)
-        dt = 0.5 * dsup * ( xx(i,j,k) + xx(i,j,k+1) ) ! upwind optical pathlength
-        if (dt < 80) then
-          ex = exp(-dt) 
-        else
-          ex = 0
-        endif
-        ! Compute the U functions, use Taylor expansion for small dt
-        ! to avoid accuracy issues with 1-(number slightly smaller than one)
-        if ( dt > 1d-3 ) then
-          u0 = 1 - ex
-          Psi = 1 - u0 / dt
-        else
-          Psi = dt * (0.5 - 0.16666667*dt)
-          u0 = dt * (1 - Psi)
-        endif
-
-        ! intensity at center point
-        self%Inu(i,j,k+1,f) = self%Inu(i,j,k,f)*ex + (u0 - Psi)*ss(i,j,k) + Psi*ss(i,j,k+1)
-        !Psi = Psi / xx(i,j,k+1)
-      end do
-      end do
-      end do
-    end do ! f-loop
+    if (hermite) then
+      call self%hermite_solver(self%chi, self%Snu, self%Inu)
+    else
+      call self%linear_solver(self%chi, self%Snu, self%Inu)
+    endif
   end do
-
-  call os%deallocate(kernel)
-  call os%deallocate(ipart)
-  call os%deallocate(xx)
-  call os%deallocate(ss)
 
   call trace%end(itimer)
 END SUBROUTINE long_char_update
+
+!===============================================================================
+SUBROUTINE linear_solver(self, xx, ss, Inu)
+  class(rad_patch_t), intent(in) :: self
+  real(4), intent(in), dimension(:,:,:,:), pointer, contiguous :: xx, ss
+  real(4), intent(inout), dimension(:,:,:,:), pointer, contiguous :: Inu
+  real(4) :: dsup05, u0, Psi
+  real(8) :: ex, dt
+  integer :: i,j,k,f
+  !-----------------------------------------------------------------------------
+  dsup05 = 0.5*real(self%ray%dsup)
+
+  do f=1, self%nv
+    do k=1, self%n(3)
+    do j=1, self%n(2)
+    do i=1, self%n(1)
+      dt = dsup05 * ( xx(i,j,k,f) + xx(i,j,k+1,f) ) ! upwind optical pathlength
+      if (dt < 80) then
+        ex = exp(-dt) 
+      else
+        ex = 0
+      endif
+      ! Compute the U functions, use Taylor expansion for small dt
+      ! to avoid accuracy issues with 1-(number slightly smaller than one)
+      if ( dt > 1d-3 ) then
+        u0 = 1 - ex
+        Psi = 1 - u0 / dt
+      else
+        Psi = dt * (0.5 - 0.16666667*dt)
+        u0 = dt * (1 - Psi)
+      endif
+
+      ! intensity at center point
+      Inu(i,j,k+1,f) = Inu(i,j,k,f)*ex + (u0 - Psi)*ss(i,j,k,f) + Psi*ss(i,j,k+1,f)
+    end do
+    end do
+    end do
+  end do ! f-loop
+END SUBROUTINE linear_solver
+
+
+!===============================================================================
+SUBROUTINE hermite_solver(self, xx, ss, Inu)
+  class(rad_patch_t), intent(in) :: self
+  real(4), intent(in), dimension(:,:,:,:), pointer, contiguous :: xx, ss
+  real(4), intent(inout), dimension(:,:,:,:), pointer, contiguous :: Inu
+  real(4) :: dsup, u0, Psi, rdsup, dsup1, dsup2
+  real(4) :: p0, pup, pdn
+  real(4) :: alpha, beta, alphaprim, betaprim
+  real(8) :: ex, dt, dtdn, t1, t2, t3, dt2, dt3, a
+  integer :: i,j,k,f
+  !-----------------------------------------------------------------------------
+  dsup = real(self%ray%dsup)
+  rdsup = 1./ dsup
+  dsup1 = 0.5*dsup
+  dsup2 = 1./12.*dsup*dsup
+  do f=1, self%nv
+    do k=1, self%n(3)
+    do j=1, self%n(2)
+    do i=1, self%n(1)
+      pup = xx(i,j,k,f)
+      p0  = xx(i,j,k+1,f)
+
+      if (k < self%n(3)) then
+        pdn = xx(i,j,k+2,f)
+
+        ! one sided dchi/ds at upwind point
+        t1 = (p0 - pup) * rdsup
+        ! one sided dchi/ds at dnwind point
+        t3 = (pdn - p0) * rdsup
+        ! harmonic mean  dchi/ds at central point
+        t2 = t1*t3
+        if (t2 > 0) then
+          t2 = t2 / (0.5d0*(t1 + t3))
+        else
+          t2 = 0
+        endif
+
+        ! upwind optical pathlength
+        dt   = dsup1*(pup + p0) + dsup2*(t1-t2)
+        dtdn = dsup1*(pdn + p0) + dsup2*(t2-t3)
+      else
+        dt = dsup1*(pup + p0)
+      endif
+
+      if (dt > 0.05) then
+        ex=exp(-dt)
+        dt2 = dt*dt
+        dt3 = dt*dt2
+        ! compute interpolation params
+        alpha     =  ( 6.0*(dt-2.0)       + (-dt3+ 6.0*(dt+2.0))*ex  ) / dt3
+        beta      =  ( (dt3-6.0*(dt-2.0)) - 6.0*(dt+2.0)*ex          ) / dt3
+        alphaprim =  ( (2.0*dt-6.0)       + (dt2+4.0*dt+6.0)*ex      ) / dt2
+        betaprim  =  ( (-dt2+4.0*dt-6.0)  + (2.0*dt+6.0)*ex          ) / dt2
+      else
+        dt2 = 0.5*dt*dt
+        dt3 = one_third*dt*dt2
+        ex = 1. - dt + dt2 - dt3
+        alpha     =   0.8*dt3  - 0.7*dt2 + 0.5*dt
+        beta      =   0.2*dt3  - 0.3*dt2 + 0.5*dt
+        alphaprim = - 0.3*dt3  + one_sixth*dt2
+        betaprim  =   0.2*dt3  - one_sixth*dt2
+      endif
+
+      pup = ss(i,j,k,f)
+      p0  = ss(i,j,k+1,f)
+
+      if (k < self%n(3)) then
+        pdn = ss(i,j,k+2,f)
+
+        ! one sided dS/dt at upwind point
+        t1 = (p0 - pup) / dt
+        t3 = (pdn - p0) / dtdn
+        ! harmonic mean of dS/dt at central point
+        t2 = t1*t3
+        if (t2 > 0) then
+          a  = one_third * (1 + dtdn/dt)
+          t2 = t2 / ((1-a)*t1 + a*t3)
+        else
+          t2 = 0
+        endif
+      else
+        t1 = (p0 - pup) / dt
+        t2 = t1
+      endif
+
+      ! intensity at center point
+      Inu(i,j,k+1,f) = Inu(i,j,k,f)*ex + alpha*pup + beta*p0 + alphaprim*t1 + betaprim*t2
+    end do
+    end do
+    end do
+  end do ! f-loop
+END SUBROUTINE hermite_solver
 
 !===============================================================================
 SUBROUTINE integrate_intensity(self)
@@ -457,7 +530,7 @@ SUBROUTINE integrate_intensity(self)
     endif  
   endif
 
-  wmu = self%wmu * over_4pi
+  wmu = self%wmu
   Jnu => mean%mem(:,:,:,:,mean%it,1)
   Inu => self%authority_mem(:,:,:,:,self%it,1)
 
@@ -471,6 +544,7 @@ SUBROUTINE integrate_intensity(self)
     call interpolate_to_ray(vproj, nu_in, nu_out, self%Psi, mean%Psi, wmu)
     call interpolate_to_ray(vproj, nu_in, nu_out, self%Ieff, mean%Ieff, wmu)
     call os%deallocate(vproj)
+    !call self%compress_mem(self)
   else
     do f=1, self%nv
     do k=1, self%n(3)
@@ -487,30 +561,6 @@ SUBROUTINE integrate_intensity(self)
   call mean%mem_lock(1)%unset('integrate_intensity')
   call trace%end(itimer)
 END SUBROUTINE integrate_intensity
-
-!===============================================================================
-SUBROUTINE interp_long(self, Varin, Varup, up1, up2, kernel)
-  class(rad_patch_t), intent(in) :: self
-  integer :: x1,x2,y1,y2,i,j
-  integer, intent(in) :: up1, up2
-  real(4), dimension(:,:), intent(in), contiguous :: VarIn
-  real(4), dimension(:,:), intent(out), contiguous :: VarUp
-  real(4), dimension(:), intent(in), contiguous :: kernel
-  !-----------------------------------------------------------------------------
-  do j=1,self%n(2)
-    y1=modulo(j+up2-1,self%n(2))+1
-    y2=modulo(j+up2  ,self%n(2))+1
-
-    do i=1,self%n(1)
-      x1=modulo(i+up1-1,self%n(1))+1
-      x2=modulo(i+up1  ,self%n(1))+1
-
-      ! indices might cross periodic boundary, hence no array sum possible
-      VarUp(i,j) = kernel(1)*VarIn(x1,y1) + kernel(2)*Varin(x2,y1) &
-                 + kernel(3)*VarIn(x1,y2) + kernel(4)*Varin(x2,y2)
-    end do
-  end do
-END SUBROUTINE interp_long
 
 !===============================================================================
 SUBROUTINE finish (self)
@@ -586,26 +636,38 @@ END SUBROUTINE radiation_nbor_relations
 !===============================================================================
 SUBROUTINE bndries (self)
   class(rad_patch_t):: self
-  integer :: li, ui, f
+  integer :: lb, ub, f, iw, iiw, li(3), ui(3), o1(2), o2(2)
   !----------------------------------------------------------------------------
   call self%check_access(self%opac)
-  self%Inu => self%mem(:,:,:,:, self%it, self%i_inu)
-  self%chi => self%opac%mem(:,:,:,:, self%opac%it, self%opac%i_chi)
-  self%Snu => self%opac%mem(:,:,:,:, self%opac%it, self%opac%i_snu)
 
-  if (self%boundaries%is_set(bits%zu)) then
-    ui = ubound(self%mem,3)
-    do f=1, self%nv
-      self%Inu(:,:,ui,f) = 0
-    end do
+  if (self%out_ray) then
+    li = self%opac%li
+    ui = self%opac%ui
+  else
+    li = self%opac%mesh%lb
+    ui = self%opac%mesh%ub
   endif
 
-  if (self%boundaries%is_set(bits%zl)) then
-    li = lbound(self%mem,3)
-    do f=1, self%nv
-      self%Inu(:,:,li,f) = self%Snu(:,:,li,f)
-    end do
-  endif
+  do iw=1, self%opac%nw, 2
+    self%chi => self%opac%mem(:,:,:,:, self%opac%it, iw)
+    self%Snu => self%opac%mem(:,:,:,:, self%opac%it, iw+1)
+    iiw = (iw+1)/2
+    self%Inu => self%mem(:,:,:,:, self%it, iiw)
+
+    if (self%boundaries%is_set(bits%zu)) then
+      ub = ubound(self%mem,3)
+      do f=1, self%nv
+        self%Inu(:,:,ub,f) = 0
+      end do
+    endif
+
+    if (self%boundaries%is_set(bits%zl)) then
+      lb = lbound(self%mem,3)
+      do f=1, self%nv
+        self%Inu(:,:,lb,f) = self%Snu(li(1):ui(1),li(2):ui(2),lb,f)
+      end do
+    endif
+  end do
 END SUBROUTINE bndries
 
 !===============================================================================

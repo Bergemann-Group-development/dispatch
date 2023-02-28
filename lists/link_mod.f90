@@ -461,7 +461,7 @@ SUBROUTINE add_nbor_by_level (self, nbors, nbor, added)
     return
   end if
   !-----------------------------------------------------------------------------
-  ! Add it before the next higher levelm unless it is found before then
+  ! Add it before the next higher level unless it is found before then
   !-----------------------------------------------------------------------------
   nullify (prev)
   next => nbors
@@ -491,7 +491,7 @@ SUBROUTINE add_nbor_by_level (self, nbors, nbor, added)
   else
     nbors => nbor
   end if
-  nullify (nbor%next)
+  !nullify (nbor%next)
   if (present(added)) added = .true.
   self%task%n_nbors = self%task%n_nbors + 1
   !$omp atomic update

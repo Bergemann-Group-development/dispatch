@@ -9,7 +9,8 @@ MODULE back_cont_patch_mod
     USE trace_mod
     USE bits_mod
     USE os_mod
-    USE m3d_patch_mod, only: maxiter, m3d_patch_t, save_back_cont, hash_string, comoving_frame, ilambd
+    USE handyfuncs_mod
+    USE m3d_patch_mod, only: maxiter, m3d_patch_t, save_back_cont, comoving_frame, ilambd
     USE ray_patch_mod, only: ray_patch_t
     USE composition_mod, only: composition_type
     implicit none
@@ -90,11 +91,13 @@ MODULE back_cont_patch_mod
       call self%composition%scattering(nu, abslte, eta)
     endif
 
-    if (self%composition%ll_initialised .and. comoving_frame) then
-      call os%allocate(vproj, self%n)
-      call self%comp_vproj(vproj)
-      call self%composition%add_linelist_opacities(nu, eta, chi, vproj)
-      call os%deallocate(vproj)
+    if (.not. self%out_ray) then 
+      if (self%composition%ll_initialised .and. comoving_frame) then
+        call os%allocate(vproj, self%n)
+        call self%comp_vproj(vproj)
+        call self%composition%add_linelist_opacities(nu, eta, chi, vproj)
+        call os%deallocate(vproj)
+      endif
     endif
   
     if (.not. save_back_cont) then
@@ -128,8 +131,8 @@ MODULE back_cont_patch_mod
         elseif(another%kind=='angle_rad' .and. .not. self%out_ray) then
           needed = .false.
         elseif(another%kind=='mean_rad') then
-          if (.not. comoving_frame) needs_me = .false.
-          if (ilambd == 0) needed = .false.
+          !if (.not. comoving_frame) needs_me = .false.
+          !if (ilambd == 0) needed = .false.
         else
           needed = .false.; needs_me = .false.
         endif
@@ -159,10 +162,10 @@ MODULE back_cont_patch_mod
     mu_start = merge(self%n_omega+1, 1, self%out_ray)
     mu_stop  = merge(self%n_mu, self%n_omega, self%out_ray)
 
-    if (comoving_frame .or. ilambd > 0) then
+    !if (comoving_frame .or. ilambd > 0) then
       key(4) = hash_string('mean_rad')
       call self%check_nbor(key, nbors)
-    endif
+    !endif
   
     if (comoving_frame .and. .not. self%out_ray) then
       key(4) = hash_string('net_opac')

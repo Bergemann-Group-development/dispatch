@@ -166,7 +166,7 @@ SUBROUTINE update (self, task_list, test)
   class(task_list_t), pointer:: task_list
   logical:: test
   !.............................................................................
-  class(link_t), pointer:: link, prev
+  class(link_t), pointer:: link, prev, first
   class(task_t), pointer:: task, otask
   class(mesg_t), pointer:: mesg
   real(8):: now, start, time_incr
@@ -226,6 +226,7 @@ SUBROUTINE update (self, task_list, test)
     call trace%begin('dispatcher0_t%update(3)', itimer=itimer(i))
   end if
   nullify (prev)
+  nullify (first)
   if (associated(link) .and. .not.task_list%syncing) then
     if (verbose > 0) &
       write(io_unit%log,'(f12.6,2x,a,i6,i7,1p,e12.4)') wallclock(), &
@@ -237,22 +238,39 @@ SUBROUTINE update (self, task_list, test)
     if (omp_pick) then
       do while (associated(link))
         task => link%task
-        if (task%place==-1) exit
-        !-----------------------------------------------------------------------
-        ! Select a task with the same thread, or the same place
-        !-----------------------------------------------------------------------
-        if (pick_thread) then
-          if (omp%thread == task%thread) then
-            exit
-          end if
-        else
-          if (omp%place == task%place) then
-            exit
-          end if
-        end if
+        if (task%place == omp%place+100) then
+          exit
+        elseif (task%place == -1) then
+          first => prev
+        endif
         prev => link
         link => link%next_time
       end do
+      if (.not. associated(first)) then
+        nullify (prev)
+        link => task_list%queue
+        do while (associated(link))
+          task => link%task
+          !if (task%place==-1) exit
+          !-----------------------------------------------------------------------
+          ! Select a task with the same thread, or the same place
+          !-----------------------------------------------------------------------
+          if (pick_thread) then
+            if (omp%thread == task%thread) then
+              exit
+            end if
+          else
+            if (omp%place == task%place) then
+              exit
+            end if
+          end if
+          prev => link
+          link => link%next_time
+        end do
+      else
+        prev => first
+        link => first%next_time
+      endif
       !-------------------------------------------------------------------------
       ! If not found, fall back on first task in queue
       !-------------------------------------------------------------------------

@@ -684,7 +684,7 @@ END SUBROUTINE allocate_1d_d
 !===============================================================================
 SUBROUTINE allocate_2d_d (a, m, label, zero)
   real(8), pointer:: a(:,:)
-  integer:: m(:)
+  integer, intent(in) :: m(:)
   character(*), optional:: label
   logical, optional:: zero
   !-----------------------------------------------------------------------------

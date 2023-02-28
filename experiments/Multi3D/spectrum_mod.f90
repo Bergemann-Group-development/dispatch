@@ -15,7 +15,6 @@ MODULE spectrum_mod
         real(8),dimension(:),allocatable :: nu
     contains
       procedure :: init
-      procedure :: set_weights
     end type spectrum_type
     !---------------------------------------------------------------------
 
@@ -48,27 +47,6 @@ MODULE spectrum_mod
         self%nu(nnu-i) = CC / (aa_blue + i*daa) * 1e8
       end do
     END SUBROUTINE init
-
-    !===============================================================================
-    SUBROUTINE set_weights (self, weight, nu, start, end)
-      class(spectrum_type) :: self
-      real(8), dimension(:), allocatable :: weight
-      real(8), dimension(:), intent(in) :: nu
-      integer, intent(in) :: start, end
-      integer :: j, n
-      !-----------------------------------------------------------------------------
-      n = size(nu, 1)
-      if (allocated(weight)) deallocate(weight)
-      allocate( weight(start:end) )
-
-      weight(start) = 0.5 * ( nu(2) - nu(1) )
-
-      do  j=2,n-1
-          weight(start - 1 + j) = 0.5* ( nu(j+1) - nu(j-1) )
-      end do
-
-      weight(end) = 0.5 * ( nu(n) - nu(n-1) )
-    END SUBROUTINE set_weights
 
   END MODULE spectrum_mod
   !---------------------------------------------------------------------

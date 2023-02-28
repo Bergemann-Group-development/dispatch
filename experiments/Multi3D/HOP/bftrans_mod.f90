@@ -456,16 +456,14 @@ contains
 
   !===============================================================================
   SUBROUTINE add_absorption(self, abslte, lam, temp, EK_over_temp, teta, pe, rho, dxi, xfakh)
-      USE timer_mod
-      class(bftrans_type) :: self
+      class(bftrans_type), intent(in) :: self
       real(4), dimension(:,:,:,:), intent(inout) :: abslte
       real(dp), dimension(:,:,:), intent(in) :: temp, EK_over_temp, teta, pe, rho, dxi, xfakh
       real(dp), dimension(:), intent(in) :: lam
       real(dp), dimension(:,:,:), allocatable :: fakt
       real(dp) :: prev
-      integer :: i,j,k,nf
+      integer :: i,j,k,nf, m(2)
       !---------------------------------------------------------------------------
-
       nf = size(lam)
 
       if (associated(quad)) then

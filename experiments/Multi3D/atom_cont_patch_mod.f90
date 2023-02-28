@@ -9,8 +9,9 @@ MODULE atom_cont_patch_mod
     USE trace_mod
     USE bits_mod
     USE os_mod
+    USE handyfuncs_mod
     USE atom_mod, only: atom_type
-    USE m3d_patch_mod, only: m3d_patch_t, hash_string, comoving_frame
+    USE m3d_patch_mod, only: m3d_patch_t, comoving_frame
     USE ray_patch_mod, only: ray_patch_t
     implicit none
     private

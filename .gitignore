@@ -38,3 +38,4 @@ experiments/Multi3D/TABGEN
 experiments/Multi3D/data*
 *.ipynb
 *.lock
+*.eps
