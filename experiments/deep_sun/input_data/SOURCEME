@@ -1,2 +1,0 @@
-# Source this to create symbolic links to the files referred to in input.nml
-ln -sf ../../../data/stellar_atmospheres/mhd63.* .

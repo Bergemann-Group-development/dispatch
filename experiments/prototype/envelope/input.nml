@@ -1,9 +1,0 @@
-&envelope_params
- size=1.0
- n_patch=4,4,4
-/
-
-&io_params
- do_trace=f
- verbose=0
-/

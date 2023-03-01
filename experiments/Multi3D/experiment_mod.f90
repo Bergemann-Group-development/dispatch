@@ -54,6 +54,7 @@ MODULE experiment_mod
     procedure:: init_nbors_hash
     procedure:: check_nbor
     procedure:: nbor_relations
+    !procedure:: save_mesh
   end type
   
 CONTAINS
@@ -95,6 +96,8 @@ SUBROUTINE pre_init (self)
   endif
 
   self%ze = self%zs + self%n(3)
+
+  !call self%save_mesh()
 
   !-----------------------------------------------------------------------------
   ! Preliminary region information, relative to the task position.
@@ -424,5 +427,21 @@ SUBROUTINE check_nbor (self, key, nbors)
     end select
   end if
 END SUBROUTINE check_nbor
+
+!!===============================================================================
+!SUBROUTINE save_mesh(self)
+!  class(experiment_t), intent(inout):: self
+!  integer :: meta_unit, iostat, i, nmu
+!  character(len=128) :: meta_file
+!  ! ----------------------------------------------------------------------------
+!  meta_file = trim(io%run_dir) // 'atmos_mesh.txt'
+!  call io%lock%set('out_rad')
+!  open(newunit=meta_unit, file=meta_file, form='formatted', access='append')
+!  nmu = size(long_wmu)
+!  write(meta_unit, '(A5, 3(A4), 3(A12))') 'ipos', 'nx', 'ny', 'nz', 'dsx', 'dsy', 'dsz'
+!  write(meta_unit, '(I5, 3(I4), 3(F12.8))') self%ipos(3)+1, self%n, self%ds
+!  close(meta_unit)
+!  call io%lock%unset('out_rad')
+!END SUBROUTINE
 
 END MODULE

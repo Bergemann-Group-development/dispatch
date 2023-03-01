@@ -98,11 +98,6 @@ class read(object):
             self.flux_lte += self.wts[i] * self.ie_lte[i]
             self.flux_cnt += self.wts[i] * self.cnt[i]
         
-        #nwts = 1 / np.sum(self.wts)
-        #self.flux     *= nwts
-        #self.flux_cnt *= nwts
-        #self.flux_lte *= nwts
-        
         dim = self.i3[0].shape
             
         if (np.product(dim[:2]) > 1):
@@ -256,6 +251,35 @@ class read(object):
         
         self.set_yaxis(ang, imu, norm)
         return plt.plot(xx, yy, **kwargs)
+    
+
+    #=====================================================================
+    def plot_depart(self, ilvl, mean=True, show_splits=False):
+        atom_patch = self.read_patch_save('atom_patch', concat=False)
+        key = [1,0,0]
+        xx = []
+        yy = []
+        bot = 0
+        bots = []
+        while tuple(key) in atom_patch:
+            val = atom_patch[tuple(key)]
+            nx, ny, nz = val.shape[:3]
+            level = nx/5
+            xx = np.concatenate([xx, bot + np.arange(nz)/level])
+            bot = bot + nz/level
+            nlte = np.mean(val[:,:,:,ilvl,1], axis=(0,1))
+            lte  = np.mean(val[:,:,:,ilvl,0], axis=(0,1))
+            yy = np.concatenate([yy, nlte/lte])
+            key[0] = key[0] + 1
+            bots.append(bot)
+
+        xx = xx/xx[-1]
+        plt.plot(xx, yy)
+
+        if show_splits:
+            bots = np.array(bots) / xx[-1]
+            for bot in bots:
+                plt.axvline(bot, linewidth=0.2)
 
     #=====================================================================
     def read_patch_save(self, kind, concat=True):

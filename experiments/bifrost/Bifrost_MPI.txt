@@ -1,9 +1,0 @@
-BOUNDARIES/standard_boundaries.f90
-hyman_mpi.f90
-io.f90
-math_mpi.f90
-mhd_mpi.f90
-mpi.f90
-stagger_mesh_mpi.f90
-../dispatch2/solvers/bifrost/main.f90
-../dispatch2/solvers/bifrost/solver_mod.f90

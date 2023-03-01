@@ -1,7 +1,0 @@
-Bifrost/hyman_mpi.f90
-Bifrost/ideal_gas_mpi.f90
-Bifrost/io.f90
-Bifrost/math_mpi.f90
-Bifrost/mhd_mpi.f90
-Bifrost/mpi.f90
-Bifrost/stagger_mesh_mpi.f90
