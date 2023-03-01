@@ -446,6 +446,17 @@ SUBROUTINE read_multi_snapshot(self, atmos_file, ds, rho, temp, ne, px, py, pz)
   read(lunit, *) zi
   close(lunit)
 
+  ds(1) = xi(2) - xi(1)
+  ds(2) = yi(2) - yi(1)
+  ds(3) = zi(2) - zi(1)
+
+  if (abs(ds(3) / (zi(n(3)) - zi(n(3)-1)) - 1) > 1d-4) then
+    write(stdout,*) 'read_external_t%read_1d_snapshot: Warning: Non-equidistant atmosphere grid! Stopping!'
+    stop
+  endif
+
+  ds = abs(ds)
+
   call os%allocate(temp, n)
   call os%allocate(rho, n)
   call os%allocate(ne, n)
@@ -466,14 +477,6 @@ SUBROUTINE read_multi_snapshot(self, atmos_file, ds, rho, temp, ne, px, py, pz)
   px =   px * rho
   py =   py * rho
   pz = - pz * rho ! z-velocity is flipped in Multi format
-
-  ds(1) = xi(2) - xi(1)
-  ds(2) = yi(2) - yi(1)
-  ds(3) = zi(2) - zi(1)
-
-  if (abs(ds(3) / (zi(n(3)) - zi(n(3)-1)) - 1) > 1d-4) then
-    write(stdout,*) 'read_external_t%read_1d_snapshot: Warning: Non-equidistant atmosphere grid!'
-  endif
 END SUBROUTINE read_multi_snapshot
 
 !===============================================================================
