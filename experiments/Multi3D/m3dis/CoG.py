@@ -190,7 +190,7 @@ class CoG(object):
         chi_sq = np.zeros(imus.size)
         fitted = []
         
-        for imu in imus:
+        for i, imu in enumerate(imus):
             oxx = obs[imu].lam.values
             oyy = obs[imu].ie.values
             err = obs[imu].err.values
@@ -221,11 +221,11 @@ class CoG(object):
                 return yy
             
 #            (abnds[ang], vshifts[ang]), _ = optimize.curve_fit(opt_func, oxx, oyy, sigma=err/np.sqrt(oyy), p0=pnull, bounds=bounds)
-            (abnds[imu], vshifts[imu]), _ = optimize.curve_fit(opt_func, oxx, oyy, p0=pnull, bounds=bounds)
+            (abnds[i], vshifts[i]), _ = optimize.curve_fit(opt_func, oxx, oyy, p0=pnull, bounds=bounds)
         
-            fitted.append(opt_func(oxx, abnds[imu], vshifts[imu]))
+            fitted.append(opt_func(oxx, abnds[i], vshifts[i]))
             
-            chi_sq[imu] = np.sum(((oyy - fitted[imu]) / err)**2) / (fitted[imu].size - 1)
+            chi_sq[i] = np.sum(((oyy - fitted[i]) / err)**2) / (fitted[i].size - 1)
         
         return abnds, vshifts, fitted, chi_sq
     

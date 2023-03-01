@@ -228,6 +228,7 @@ contains
     real(4), dimension(:,:,:,:), intent(out) :: phi
     integer :: i,j,k,f, i1, i2, n(4)
     real(8) :: dx, dy, norm, newq
+    real(8), parameter :: tol=1e-10
     !----------------------------------------------------------------------------------
     n = shape(phi)
     norm = 1 / self%nu0
@@ -235,10 +236,10 @@ contains
     do f=1, n(4)
       newq = nu(f)*norm - 1
 
-      if (abs(newq - self%q(1)) < 1e-6) then
+      if (abs(newq - self%q(1)) < tol) then
         phi(:,:,:,f) = self%phi(:,:,:,1)
         cycle
-      elseif (abs(newq - self%q(self%nnu)) < 1e-6) then
+      elseif (abs(newq - self%q(self%nnu)) < tol) then
         phi(:,:,:,f) = self%phi(:,:,:,self%nnu)
         cycle
       endif
@@ -256,10 +257,10 @@ contains
         dx = dx / (self%q(i2)-self%q(i1))
       endif
 
-      if (dx < 1e-6) then
+      if (dx < tol) then
         phi(:,:,:,f) = self%phi(:,:,:,i1)
         cycle
-      elseif (dx > 1-1e-6) then
+      elseif (dx > 1 - tol) then
         phi(:,:,:,f) = self%phi(:,:,:,i2)
         cycle
       endif
