@@ -159,8 +159,24 @@ class trans_class(object):
         #-----------------------------------------------------------------
         if self.run.n_ang == 1: ang=0
 
+        xx, yy = self.crop(ang, imu, norm, dlam, vdop, vshift, renorm, LTE)
+
+        self.run.set_xaxis(xx, dlam)
+        self.run.set_yaxis(ang, imu, norm, renorm)
+
+        plot = plt.plot(xx, yy, **kwargs)
+
+        set_title(title, default=self.title+', '+self.el.title)
+        set_legend(**kwargs)
+
+        return plot
+    
+    #=====================================================================
+    def crop(self, ang=None, imu=None, norm=True, dlam=None, \
+                vdop=None, vshift=None, renorm=False, LTE=False):
+        #-----------------------------------------------------------------
         if not LTE and self.run.mode=='LTE':
-            print('Cannot plot NLTE line profile, because run was in LTE!')
+            print('Cannot get NLTE line profile, because run was in LTE!')
             LTE = True
 
         xx, mask = self.get_xx(dlam)
@@ -177,15 +193,7 @@ class trans_class(object):
                 
             sxx, syy = convol(ixx, yy, vdop=vdop, vshift=vshift)
             yy = np.interp(ixx, sxx, syy)
-
-        self.run.set_xaxis(xx, dlam)
-        self.run.set_yaxis(ang, imu, norm, renorm)
-
-        plot = plt.plot(xx, yy, **kwargs)
-
-        set_title(title, default=self.title+', '+self.el.title)
-        set_legend(**kwargs)
-
+        
         return xx, yy
 
     #=====================================================================

@@ -159,8 +159,8 @@ MODULE back_cont_patch_mod
     call self%m3d_patch_t%init_nbors_hash(nbors)
   
     key(1:3) = self%key(1:3)
-    mu_start = merge(self%n_omega+1, 1, self%out_ray)
-    mu_stop  = merge(self%n_mu, self%n_omega, self%out_ray)
+    mu_start = merge(-self%n_out, 1, self%out_ray)
+    mu_stop  = merge(-1, self%n_mu, self%out_ray)
 
     !if (comoving_frame .or. ilambd > 0) then
       key(4) = hash_string('mean_rad')

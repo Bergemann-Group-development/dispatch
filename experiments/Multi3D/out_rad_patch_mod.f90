@@ -165,10 +165,10 @@ MODULE out_rad_patch_mod
     call trace%begin('out_rad_patch_t%init_nbors_hash', itimer=itimer)
     key(1) = self%key(1)
     key(3) = self%key(3)
-    do i_nu=self%n_nu, 2*self%n_nu
-    key(2) = i_nu
-    key(4) = hash_string('angle_rad')
-    call self%check_nbor(key, nbors)
+    do i_nu=-self%n_nu, -1
+      key(2) = i_nu
+      key(4) = hash_string('angle_rad')
+      call self%check_nbor(key, nbors)
     end do
     call trace%end (itimer)
   END SUBROUTINE init_nbors_hash

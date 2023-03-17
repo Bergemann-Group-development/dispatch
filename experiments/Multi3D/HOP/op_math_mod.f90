@@ -359,6 +359,71 @@ contains
    !---------------------------------------------------------------------
 
    !===============================================================================
+   !  solves the equation  system  a*x=b.
+   !  when newmat=true, the system is rearranged into u*x=l*b, where u
+   !  is upper and l is lower triangular. these are then reused in later
+   !  calls with newmat=false and new right hand sides b. the solution
+   !  vector is returned in b. no pivoting, i.e. the matrix a is assumed
+   !  to have nonzero diagonal elements.
+   !
+   !  coded by: a. nordlund (feb-1979)
+   !
+   !  this is a modified version of eqsyst which tests for zero elements
+   !  below the diagonal and also stops at the last non-zero element above
+   !  the diagonal. considerable savings are obtained for loose matrices.
+   !
+   !  this is a column oriented version (m. carlsson jan-1986)
+   !  temporary scalars bl, all, alm and bk are used to show the compiler
+   !  that there is no vector dependency in the innermost do-loop
+   !===============================================================================
+   SUBROUTINE eqsyst(a,b,n)
+      integer :: n
+      real(8) :: a(n,n), b(n)
+      real(8) :: all, bl, alm, bk
+      integer :: lastn(n), l, k, m
+      !-----------------------------------------------------------------------------
+      ! find the last non-zero element in each column
+      do l=1,n
+         do k=n,l+1,-1
+            if(a(k,l)/=0.0) exit
+         end do
+         lastn(l)=k
+      end do
+
+      !   column loop: eliminate elements below the diagonal in column l.
+      do l=1,n-1
+         !  store -a(k,l)/a(l,l) in element a(k,l)
+         !  multiply right hand side with -a(k,l)/a(l,l)
+         all=a(l,l)
+         bl=b(l)
+         do k=l+1,lastn(l)
+            a(k,l)=-a(k,l)/all
+            b(k)=b(k)+a(k,l)*bl
+         end do
+         !  add fraction -a(k,l)/a(l,l) of row l to row k.
+         !  in each column go through all rows
+         do m=l+1,n
+            if(a(l,m)/=0.0) then
+               alm=a(l,m)
+               lastn(m)=max(lastn(l),lastn(m))
+               do k=l+1,lastn(l)
+                  a(k,m)=a(k,m)+a(k,l)*alm
+               end do
+            end if
+         end do
+      end do
+
+      ! backsubstitute
+      do k=n,1,-1
+         bk=b(k)
+         do l=k+1,n
+            bk=bk-a(k,l)*b(l)
+         end do
+         b(k)=bk/a(k,k)
+      end do
+   END SUBROUTINE eqsyst
+
+   !===============================================================================
    SUBROUTINE lineq_no_pivot (a, b, n)
       real(8):: a(n,n), b(n)
       integer :: i, j, k, n

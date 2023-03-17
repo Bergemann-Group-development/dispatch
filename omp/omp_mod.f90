@@ -16,6 +16,7 @@ MODULE omp_mod
     integer:: nplaces=0
     integer:: nsockets=1
     integer:: thread_task=0
+    integer:: stacksize=0
     logical:: trace=.false.
     logical:: master=.true.
     !real(8):: wait_time=0d0
@@ -24,10 +25,12 @@ MODULE omp_mod
     procedure:: info
     procedure, nopass:: mythread
     procedure, nopass:: numthreads => omp_numthreads
+    procedure, nopass:: get_stacksize
     procedure, nopass:: set_stacksize
     procedure, nopass:: delay
   end type
   public:: omp_numthreads
+  logical, save:: printed=.false.
   type(omp_t), public, save:: omp
   !$omp threadprivate (omp)
 CONTAINS
@@ -69,6 +72,7 @@ SUBROUTINE init (self)
   !$omp end parallel
   omp%nthreads = nthreads
   omp%nplaces = nplaces
+  omp%stacksize = get_stacksize(.true.)
 END SUBROUTINE init
 
 !===============================================================================
@@ -129,6 +133,39 @@ INTEGER FUNCTION omp_numthreads()
 END FUNCTION
 
 !===============================================================================
+FUNCTION get_stacksize(verbose) result(stacksize)
+#ifdef __INTEL_COMPILER
+#ifdef _OPENMP
+  USE omp_lib, only : kmp_set_stacksize_s, kmp_get_stacksize_s, kmp_size_t_kind
+  integer(kind=kmp_size_t_kind) :: stacksize
+#endif
+#endif
+  logical:: verbose
+  character(len=16):: envvar
+  logical:: kmp, omp
+  logical, save:: first_time=.true.
+  !-----------------------------------------------------------------------------
+#ifdef _OPENMP
+#ifdef __INTEL_COMPILER
+  call getenv ('KMP_STACKSIZE', envvar)
+  kmp = envvar /= ''
+  call getenv ('OMP_STACKSIZE', envvar)
+  omp = envvar /= ''
+  if (omp .and. .not. kmp .and. omp_get_thread_num()==0 .and. first_time) then
+    if (verbose .and. .not. printed) print '(/2x,a)', &
+      '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
+    print '(2x,a)', &
+      '! WARNING: Use KMP_STACKSIZE rather than OMP_STACKSIZE with Intel-MPI!   !'
+    print '(2x,a,/)', &
+      '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
+    printed = .true.
+  end if
+  stacksize = kmp_get_stacksize_s()
+#endif
+#endif
+END FUNCTION get_stacksize
+
+!===============================================================================
 !> Adjust OMP_STACKSIZE according to number of passive scalars, with baseline
 !> being 4M for MHD
 !===============================================================================
@@ -144,7 +181,7 @@ SUBROUTINE set_stacksize (nw, verbose)
   logical:: verbose
   character(len=16):: envvar
   logical:: kmp, omp
-  logical, save:: first_time=.true., printed=.false.
+  logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
   if (io_unit%do_validate) return
   recommended = 6*(4*nw)

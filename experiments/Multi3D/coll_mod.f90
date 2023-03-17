@@ -152,33 +152,6 @@ MODULE coll_mod
   
             !********************************************************************
 
-         case('SHULL82')
-            ! Coefficients for collisional ionization, radiative recombination, and dielectronic recombination
-            ! following
-            ! Shull & van Steenberg, Astrophysical Journal Supplement Series, vol. 48, Jan. 1982, p. 95-107
-            ! ''The ionization equilibrium of astrophysically abundant elements''
-  
-            !  the idea is to reduce dielectronic recombination rate
-            !  owing to collisional ionization of rydberg states
-            !  following summers 1974, appleton lab rept.
-            summrs=1.0d0
-            ! to remove density dependence in dielectronic rate comment out the next line
-            summrs=summers(id,ion,ul,nne)
-  
-            cdn = cgrid(3,i) * (tg/1.0d4)**(-cgrid(4,i)) &
-                 +  summrs * cgrid(5,i) /tg/stg * exp(-cgrid(7,i)/tg) * &  
-                 (1.d0 + cgrid(6,i) * (exp(- cgrid(8,i) /tg)))
-            cdn = cdn * nne
-  
-            cup = cgrid(1,i) * stg * exp(-cgrid(2,i)/tg) / (1.d0 + 0.1d0 * tg / cgrid(2,i)) 
-            cup = cup * nne
-  
-            !  3-body recombination (high density limit)
-            cdn = cdn + cup / nsr
-  
-  
-            !********************************************************************
-
          case('AR85-CDI')
   
             ! The AR85**** rates are based on 
@@ -213,21 +186,6 @@ MODULE coll_mod
   
             cup=cup*nne
             cdn=cup / nsr
-  
-  
-            !********************************************************************
-  
-         case('AR85-CEA')
-  
-            ! The AR85**** rates are based on 
-            ! Arnaud & Rothenflug
-            ! Astronomy and Astrophysics Supplement Series (ISSN 0365-0138), vol. 60, June 1985, p. 425-457
-            ! "An updated evaluation of recombination and ionization rates"          
-  
-            ! AR85-CEA is collision auto-ionization
-  
-            call ar85cea(id, ion, tg,ll,ul,ct)  
-            cup = cgrid(1,i) * ct * nne
   
             !********************************************************************
   
@@ -311,19 +269,6 @@ MODULE coll_mod
             cup = qb * actelc * nne * cgrid(1,i)
             cdn = cup/nsr
   
-            !********************************************************************
-  
-         case('BADNELL')
-            ! fits to dielectronic recombination from Badnell and co-workers.
-            ! see for example Altun et al., 2006, A&A, 44 7, 1165
-            cdn=0.0d0
-            do j=1,coll(i)%nc
-               cdn=cdn + cgrid(j+coll(i)%nc,i) * exp(-cgrid(j,i)/tg)
-            end do
-  
-            summrs=sumscl*summers(id,ion,ul,nne) + (1.0d0-sumscl)
-            cdn = cdn * nne * tg**(-1.5d0)* summrs
-  
          end select
   
          !********************************************************************
@@ -349,70 +294,6 @@ MODULE coll_mod
     end do
  
    end function is_valid_process
- 
-   !====================================================================================
-   pure function summers(id, ion, j,edens)
-      !*********************************************************************
-      !
-      !  DENSITY SENSITIVE DIELECTRONIC RECOMBINATION
-      !
-      !  the term adi may be multiplied by a density-sensitive factor
-      !  if needed- this is crucial for Li and B-like ions colliding with
-      !  impacting electrons.
-      !  This simple formulation was derived from a study of the dependence of
-      !  the dielectronic "bump" in the figures of Summers 1974 
-      !  (Appleton Laboratory internal memo), and fitting according to the
-      !  parameter Ne / z^7
-      !  This should be accurate to typically +/- 0.1 in log in regions
-      !  where it matters.  Worse case is e.g. C like Neon where it underestimates
-      !  density factor by maybe 0.25 in log.
-      !
-      !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-      !  June 24, 2006 changes begin P.G.Judge 
-      !  original (pre MAY 2006) code
-      !         !  define rho = nne/ z^7 where z is charge on recombining ion
-      !         rho=10.^(alog10(nne) - 7.* alog10(charge))
-      !         rho0=2.e3
-      !         if(isos eq 'LI' or isos eq 'NA' or isos eq 'K') then rho0 = 3.e1      
-      !         ne_factor = 1./(1. + rho/rho0)^0.14
-      !         print,'ne_factor',ne_factor
-      !
-      ! June 24, 2006, more accurate version. 
-      ! get the row and column of the recombined ion's isoelectronic 
-      ! sequence  in the periodic table
-      ! the following parameters mimic the tables 1-19 of
-      ! H. Summers' Appleton Lab Report 367, 1974
-      ! 
-      ! Mar  9 2012 jorritl: stolen from Phil Judge's DIPER IDL package
-      !
-      !*********************************************************************
-
-      real(8) :: summers  
-      character(len=*), intent(in) :: id
-      integer, intent(in), dimension(:) :: ion
-      integer, intent(in) :: j
-      real(8), intent(in) :: edens
-
-      real(8) :: z,rho0,rhoq,x,beta
-
-      real(8),parameter :: ex=exp(1.0d0)
-
-      integer :: anr,isoseq,row,col
-
-      summers=1.0d0
-      anr=atomic_number(id)   
-
-      z=real(ion(j)-1) ! charge of recombining ion
-      isoseq=anr-z+1 ! iso-electronic sequence of recombined ion
-      call rowcol(isoseq,row,col) ! row and column in periodic table
-      rhoq=edens/z**7
-      x=one_third*(0.5*z + (col-1))*row
-      beta= -0.2/log(x+ex)
-      rho0= 30.0+50.0*x
-      summers= (1.0d0 + rhoq/rho0)**beta
-
-      return
-   end function summers
 
    !*********************************************************************
 
@@ -499,26 +380,6 @@ MODULE coll_mod
       return
    end function ftwo
 
-
-   !*********************************************************************
-
-   pure integer function atomic_number(atomic_symbol)
-      USE mconst,only:element_name
-      implicit none
-      CHARACTER(len=*), intent(in) :: atomic_symbol
-      integer :: i
-
-      atomic_number=-1
-      do i=1,size(element_name)
-         if (uppercase(trim(atomic_symbol),2)==element_name(i)) then
-               atomic_number=i
-               return
-         end if
-      end do
-   end function atomic_number
-
-   !*********************************************************************
-
    PURE SUBROUTINE rowcol(an,row,col)
       !**********************************************************************
       !
@@ -549,127 +410,6 @@ MODULE coll_mod
       end  do
       col=an-istart(row)
    END SUBROUTINE rowcol
-
-   !**********************************************************************
-
-   SUBROUTINE ar85cea(id, ion, tg,ilo,ihi,cup)
-      !  new routine for computing collisional autoionization 
-      !  rates using formalism and formulae from arnaud and rothenflug 1985
-      ! 
-      !  ar85cea 94-02-22  new routine: (philip judge)
-      ! 
-      !          96-03-07  modifications: (philip judge)
-      !                    bug fixed: cup initialized to zero
-      !
-      character(len=*), intent(in) :: id
-      integer, dimension(:), intent(in) :: ion
-      integer,intent(in) :: ilo,ihi
-      real(8),intent(in) :: tg
-      real(8), intent(out) :: cup
-   
-      character(len=2) ::  isoseq_element, element
-   
-      integer :: z,atomic_charge
-      real(8) :: zz,bkt,a,b,zeff,iea,y,f1y
-   
-      bkt=tg*bk/ee
-   
-      !  initialize output to zero 
-      y=0.0
-      f1y=0.0
-      cup=0.0
-   
-      !  find element
-      element = id(1:2)
-      z=atomic_number(element)
-      zz=real(z)
-   
-      if (z<1 .or. z>92) then 
-         write(stdout, *) 'ar85-cea:  atomic number = ', z, ' for ', element
-         write(stdout, *) 'ar85-cea:  no autoionization included'
-         return
-      endif
-   
-      !  find iso-electronic sequence
-      atomic_charge=ion(ihi)-1
-      isoseq_element=lowercase(element_name(z-atomic_charge+1),2)
-   
-      select case(isoseq_element)
-      case('li') 
-         ! lithium sequence
-   
-         b=1.0 / (1.0 + 2.0d-4*zz**3)
-         zeff = zz-1.3 
-         iea=13.6*((zz-0.835)**2 - 0.25*(zz-1.62)**2)
-         y=iea/bkt
-         f1y=fone(y)
-         cup=1.60e-07*1.2*b/zeff**2/sqrt(bkt)*exp(-y)* &
-               (2.22*f1y+0.67*(1.-y*f1y)+0.49*y*f1y+1.2*y*(1.-y*f1y))
-   
-         ! special cases:
-         if(element == 'c ') cup = cup*0.6    ! C IV
-         if(element == 'n ') cup = cup*0.8 ! N V
-         if(element == 'o ') cup = cup*1.25   ! O VI
-   
-      case('na')
-         ! sodium sequence
-         if (z <= 16) then 
-            a=2.8e-17*(zz-11.)**(-0.7)
-            iea=26.*(zz-10.)
-            y=iea/bkt
-            f1y=fone(y)
-            cup= 6.69e+7 * a *iea/sqrt(bkt) * exp(-y)*(1. - y*f1y)
-         else if ( (z>=18) .and. (z<=28) ) then 
-            a=1.3e-14*(zz-10.)**(-3.73)
-            iea=11.*(zz-10.)*sqrt(zz-10.)
-            y=iea/bkt
-            f1y=fone(y)
-            cup= 6.69e+7 * a *iea/sqrt(bkt) * exp(-y)  &
-                  *(1. - 0.5*(y -y*y + y*y*y*f1y))
-         else 
-            return
-         endif
-   
-      case('mg','al','si','p ','s ')
-   
-         if (isoseq_element=='mg') iea=10.3*(zz-10.)**1.52
-         if (isoseq_element=='al') iea=18.0*(zz-11.)**1.33
-         if (isoseq_element=='si') iea=18.4*(zz-12.)**1.36
-         if (isoseq_element=='p ') iea=23.7*(zz-13.)**1.29
-         if (isoseq_element=='s ') iea=40.1*(zz-14.)**1.1
-         a=4.0e-13/zz**2/iea
-         y=iea/bkt
-         f1y=fone(y)
-         cup= 6.69e+7 * a *iea/sqrt(bkt) * exp(-y)   &
-               *(1. - 0.5*(y -y*y + y*y*y*f1y))
-      case default
-         ! do nothing
-      end select
-   
-      !  special cases
-   
-      if(element=='ca' .and. atomic_charge==0) then 
-         a = 9.8e-17
-         iea= 25.
-         b=1.12         
-         cup=6.69e+7*a *iea/sqrt(bkt) * exp(-y)*(1. + b*f1y) 
-      else if ( element=='ca' .and. atomic_charge==1 ) then 
-         a = 6.0e-17
-         iea= 25.
-         b=1.12         
-         cup=6.69e+7*a *iea/sqrt(bkt) * exp(-y)*(1. + b*f1y)
-      else if (element=='fe' .and. atomic_charge==3) then 
-         a = 1.8e-17
-         iea= 60.
-         b=1.0         
-         cup=6.69e+7*a *iea/sqrt(bkt) * exp(-y)*(1. + b*f1y)
-      else if ( element=='fe' .and. atomic_charge==4 ) then 
-         a = 5.0e-17
-         iea= 73.
-         b=1.0         
-         cup=6.69e+7*a *iea/sqrt(bkt) * exp(-y)*(1. + b*f1y)
-      endif
-   END SUBROUTINE ar85cea
 
    !*********************************************************************
 
@@ -781,7 +521,11 @@ MODULE coll_mod
       real(8), intent(in) :: nu, dev
       real(8) :: nl, hyd
       !---------------------------------------------------------------------
-      nl = sqrt(RydV/dev)
-      hyd = 2.815e29 * gaunt(nu,ceiling(nl)) / (nl**5 * nu**3)
+      if (dev > 0) then
+         nl = sqrt(RydV/dev)
+         hyd = 2.815e29 * gaunt(nu,ceiling(nl)) / (nl**5 * nu**3)
+      else
+         hyd = 0.
+      endif
    END FUNCTION Kramer
  END MODULE coll_mod

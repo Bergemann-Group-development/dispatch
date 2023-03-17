@@ -60,7 +60,6 @@ MODULE trans_mod
     real(8) :: f    ! oscillator strength
     real(8) :: qmax ! width of profile in doppler units
     real(8) :: q0   ! switch from linear to logarithmic frequency grid spacing
-    real(8) :: Grat ! ratio g(i)/g(j)
 
     ! Added to deal with multi component lines
     ! IO > 1 leads to the following being read from the atom file
@@ -75,6 +74,8 @@ MODULE trans_mod
 
   contains
       procedure :: profile => line_profile
+      procedure :: deactivate => bb_deactivate
+      procedure :: get_nu
       procedure :: freql
       procedure :: interpolate_phi
 
@@ -86,13 +87,13 @@ MODULE trans_mod
 
     !real(8) :: nu0 ! ionization edge frequency
     real(8) :: alpha0 ! cross section at ionization threshold [cm^2]
-    real(4),dimension(:),allocatable :: alpha ! cross sections [cm^2]    
+    real(4), dimension(:),allocatable :: alpha ! cross sections [cm^2]    
     real(4), dimension(:,:,:), contiguous, pointer :: ni_over_nj_lte
 
   contains
       procedure :: opacities => cont_opacities
+      procedure :: deactivate => bf_deactivate
       procedure :: rates => cont_rates
-      procedure :: freqc
   end type cont_type
 
 contains
@@ -308,7 +309,40 @@ contains
   !------------------------------------------------------------------------------------
 
   !====================================================================================
-  SUBROUTINE freql(self, qnorm, symmetric)
+  FUNCTION get_nu(self) result(nu)
+    class(line_type), intent(in)  :: self
+    real(8), dimension(:), allocatable :: nu, q
+    real(8) :: dq, a, qmax, q0
+    integer :: i, nnu
+    logical :: linear
+    !---------------------------------------------------------------------
+    q0   = self%q0
+    qmax = self%qmax
+    nnu  = self%nnu
+    linear = qmax.le.q0
+
+    if(.not. linear) then
+      a = 10.**(q0+.5)
+      qmax = log10(a*max(0.5,qmax-q0-0.5))
+      a = 1/a
+    endif
+
+    allocate(q(nnu))
+    dq = 2.*qmax / (nnu-1)
+    q = [(i*dq - qmax, i=1, nnu)]
+
+    if(.not. linear) then
+      q = q + a*(10.**q - 10.**(-q))
+    endif
+
+    ! convert to [Hz]
+    q = q * KM_TO_CM/cc
+    nu = self%nu0*(1.0 + q)
+    deallocate(q)
+  END FUNCTION
+
+  !====================================================================================
+  SUBROUTINE freql(self, symmetric)
       !***********************************************************************
   
       !  gives  frequency quadrature points and corresponding weights.
@@ -341,7 +375,6 @@ contains
       !***********************************************************************
   
       class(line_type), intent(inout)  :: self
-      real(8) :: qnorm
       real(8),dimension(:),allocatable :: q,wq
   
       real(8)  :: dq, x, x10, a, half, xmax, dx,qmax,q0, start
@@ -387,52 +420,36 @@ contains
             q(j)=x+(x10-1./x10)/a
         end do
       end if
-  
+
       ! convert to [Hz]
+      allocate(self%q(nnu))
       allocate(self%nu(nnu))
-      self%nu = self%nu0*(1.0+q*qnorm*KM_TO_CM/cc)
+      self%q = q*KM_TO_CM/cc
+      self%nu = self%nu0*(1.0 + self%q)
       self%nu_min = self%nu(1)
       self%nu_max = self%nu(nnu)
   END SUBROUTINE freql
   !------------------------------------------------------------------------------------
 
   !====================================================================================
-  SUBROUTINE freqc(self)
-      !---------------------------------------------------------------------   
-      !
-      !  gives quadrature points and weights for continua
-      !  the points are equidistant in frequency, the weights are
-      !  trapezoidal
-      !  calculates crossections from nn**-3 dependence if not given
-      !  explicitly
-      !
-      !  nnu      total number of quadrature points    
-      !  nu     quadrature points (Hz)                
-      !  wnu      quadrature weights                  
-      !
-      !---------------------------------------------------------------------
-      class(cont_type), intent(inout) :: self
-      integer :: j,nnu,ired,iblue
-      real(8) :: dnu
-      !---------------------------------------------------------------------
-      nnu   = self%nnu
-      ired  = self%ired
-      iblue = self%iblue
+  PURE SUBROUTINE bb_deactivate(self)
+    class(line_type), intent(inout) :: self
+    !----------------------------------------------------------------------------------
+    self%active = .false.
+    if (allocated(self%wnu)) deallocate(self%wnu)
+    if (allocated(self%nu)) deallocate(self%nu)
+    if (allocated(self%wq)) deallocate(self%wq)
+    if (allocated(self%q)) deallocate(self%q)
+  END SUBROUTINE bb_deactivate
 
-      ! equidistant grid in nu, between nu0 and numax 
-      self%nu(ired)  = self%nu_min
-      self%nu(iblue) = self%nu_max
-
-      dnu = (self%nu_max-self%nu_min) / (nnu-1)
-
-      do j=ired,iblue
-          self%nu(j)    = self%nu_min + (j-ired) * dnu
-          !self%alpha(j) = self%alpha0 * ( self%nu(j) / self%nu0 )**(-3)
-          ! for overflow reasons
-          self%alpha(j) = ( self%nu(j) / self%nu0 )**(-3)
-      end do
-  END SUBROUTINE freqc
-  !------------------------------------------------------------------------------------
+  !====================================================================================
+  PURE SUBROUTINE bf_deactivate(self)
+    class(cont_type), intent(inout) :: self
+    !----------------------------------------------------------------------------------
+    self%active = .false.
+    if (allocated(self%nu)) deallocate(self%nu)
+    if (allocated(self%alpha)) deallocate(self%alpha)
+  END SUBROUTINE bf_deactivate
 
   END MODULE trans_mod
 

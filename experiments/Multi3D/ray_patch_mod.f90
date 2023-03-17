@@ -67,7 +67,7 @@ contains
 !===============================================================================
 SUBROUTINE ray_patch_pre_init (self)
   class(ray_patch_t), target :: self
-  integer :: iostat
+  integer :: iostat, i_mu
   logical, save :: first_time=.true.
   integer, save :: itimer=0
   namelist /formal_solver_params/ formal_solver
@@ -87,17 +87,18 @@ SUBROUTINE ray_patch_pre_init (self)
   endif
 
   call self%m3d_patch_t%pre_init()
+
+  i_mu = abs(self%i_mu)
   
-  if (self%out_ray .and. self%i_mu /= 0) then
-    self%i_out = self%i_mu - self%n_omega 
-    self%vec = long_vec(:,self%i_out) 
-    self%wmu = long_wmu(self%i_out) / (2.0*PI)
+  if (self%out_ray .and. i_mu /= 0) then
+    self%vec = long_vec(:,i_mu) 
+    self%wmu = long_wmu(i_mu) / (2.0*PI)
     self%dir = 1
-  elseif(self%i_mu > 0) then
-    self%vec = vec(:,self%i_mu)
-    self%wmu = wmu(self%i_mu) * over_4pi
-    self%dir = merge(1, -1, vec(3,self%i_mu) > 0)
-  elseif (self%i_mu == 0 .and. comoving_frame) then
+  elseif(i_mu > 0) then
+    self%vec = vec(:,i_mu)
+    self%wmu = wmu(i_mu) * over_4pi
+    self%dir = merge(1, -1, self%vec(3) > 0)
+  elseif (i_mu == 0 .and. comoving_frame) then
     self%wmu = 1
   endif
 
@@ -148,7 +149,9 @@ END SUBROUTINE ray_patch_init
 SUBROUTINE set_freq_indices (self)
   class(ray_patch_t) :: self
   integer :: fs, fe, nv, md, i_nu
-  integer, save :: counter=0
+  integer, pointer :: counter
+  character(len=16) :: label
+  integer, save, target :: counter1=-999, counter2=-999
   !-----------------------------------------------------------------------------
   if (self%kind == 'out_rad') then
     self%fs = 1
@@ -157,10 +160,7 @@ SUBROUTINE set_freq_indices (self)
   endif
   nv = self%sp%nnu / self%n_nu
   md = mod(self%sp%nnu, self%n_nu)
-  i_nu = self%i_nu
-  if (i_nu > self%n_nu) then
-    i_nu = i_nu - self%n_nu
-  endif
+  i_nu = mod(abs(self%i_nu)-1, self%n_nu)+1
   fs = (i_nu-1) * nv + 1 + min(md, i_nu-1)
   if (i_nu <= md) then
     nv = nv + 1
@@ -170,10 +170,18 @@ SUBROUTINE set_freq_indices (self)
   self%fe = fe
   self%pre_pad_fs = fs
   self%pre_pad_fe = fe
-  if (i_nu > counter) then
-    if (counter == 0) write(stdout,'(I2, A18)') self%n_nu, 'frequency splits'
+
+  if (self%out_ray) then
+    counter => counter2
+    label = 'output'
+  else
+    counter => counter1
+    label = 'internal'
+  endif
+  if (self%i_nu > counter) then
+    if (counter == -999) write(stdout,'(I2, A10, A18)') self%n_nu, trim(label), 'frequency splits'
     write(stdout,'(I4, I10,A3,I8)') i_nu, fs, ' - ', fe
-    counter = i_nu
+    counter = self%i_nu
   endif
 END SUBROUTINE set_freq_indices
 

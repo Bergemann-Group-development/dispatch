@@ -379,6 +379,7 @@ SUBROUTINE init (self, name)
       print'(a,i4)', ' n_threads =', omp%nthreads
       print'(a,i4)', '  n_places =', omp%nplaces
       print'(a,i4)', '   n_ranks =', mpi%size
+      print'(a,i6,a2)', ' Stacksize =', int(omp%stacksize/1024.**2), 'MB'
     end if
     write(*,'(a,i2)') &
     ' This version was compiled with default real KIND =', kind(test)

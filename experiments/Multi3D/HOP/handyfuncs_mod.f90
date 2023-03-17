@@ -94,4 +94,62 @@ FUNCTION thread2place(thread, ncores, nthreads) result(place)
   place = nint(thread*ncores/real(nthreads))
 END FUNCTION thread2place
 
+!===============================================================================
+SUBROUTINE crop1d8(arr, i, o)
+  real(8), intent(inout), allocatable :: arr(:)
+  real(8), allocatable :: tmp(:)
+  integer, intent(in) :: i, o
+  integer :: n
+  ! ----------------------------------------------------------------------------
+  n = o-i+1
+  allocate(tmp(n))
+  tmp = arr(i:o)
+  deallocate(arr)
+  allocate(arr(n))
+  arr = tmp
+  deallocate(tmp)
+END SUBROUTINE crop1d8
+
+!====================================================================================
+pure function lowercase(string)
+  character(len=*),intent(in) :: string
+  character(len=len(string)) :: lowercase
+  character(len=26),parameter :: ucase='ABCDEFGHIJKLMNOPQRSTUVWXYZ' 
+  character(len=26),parameter :: lcase='abcdefghijklmnopqrstuvwxyz'
+  integer :: i,k
+  !---------------------------------------------------------------------------------
+  lowercase=' '
+  lowercase=string
+  do i=1, len(string)
+     k = index(ucase,string(i:i))
+     if (k > 0) then
+        lowercase(i:i)=lcase(k:k)
+     else
+        lowercase(i:i)=string(i:i)
+     end if
+  end do
+end function lowercase
+
+!====================================================================================
+pure function uppercase(string)
+  ! converts the first ss characters of string to uppercase and returns them as a new string.
+  implicit none
+  character(len=*),intent(in) :: string
+  character(len=len(string)) :: uppercase
+  character(len=26),parameter :: ucase='ABCDEFGHIJKLMNOPQRSTUVWXYZ' 
+  character(len=26),parameter :: lcase='abcdefghijklmnopqrstuvwxyz'
+  integer :: i,k
+  !---------------------------------------------------------------------------------
+  uppercase=' '
+  uppercase=string
+  do i=1, len(string)
+     k=index(lcase,string(i:i))
+     if (k > 0) then
+        uppercase(i:i)=ucase(k:k)
+     else
+        uppercase(i:i)=string(i:i)
+     end if
+  end do
+end function uppercase
+
 END MODULE handyfuncs_mod

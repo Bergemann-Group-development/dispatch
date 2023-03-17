@@ -14,7 +14,7 @@ MODULE atom_rate_patch_mod
     USE ray_patch_mod, only: ray_patch_t
     USE angle_rad_patch_mod, only: rad_patch_t
     USE trans_mod, only: transition_type
-    USE atom_mod, only: atom_type, unique_int
+    USE atom_mod, only: atom_type, atomic_spectrum_type, unique_int
     USE atom_line_patch_mod, only: atom_line_t
     USE mean_rad_patch_mod, only:mean_rad_patch_t
     USE mconst
@@ -25,7 +25,6 @@ MODULE atom_rate_patch_mod
     !-----------------------------------------------------------------------------
 
     type, public, extends(ray_patch_t) :: atom_rate_t
-      class(atom_type), pointer :: atom => null()
       class(rad_patch_t), pointer :: rad => null()
       class(atom_line_t), pointer :: lines => null()
       integer, dimension(:), pointer, contiguous :: idx_map, idx_remap
@@ -64,14 +63,14 @@ MODULE atom_rate_patch_mod
       call trans%check_range(self%fs,self%fe,fs,fe,skip)
       if (skip) cycle
       nrad = nrad+1
-      self%idx_map(i) = nrad
+      self%idx_map(trans%ntrans) = nrad
     end do
     do i=1, size(self%atom%cont)
       trans => self%atom%cont(i)
       call trans%check_range(self%fs,self%fe,fs,fe,skip)
       if (skip) cycle
       nrad = nrad+1
-      self%idx_map(i+self%atom%nline) = nrad
+      self%idx_map(trans%ntrans) = nrad
     end do
     call os%allocate(self%idx_remap, nrad, label='atom_rate:idx_remap')
     do i=1, self%atom%nrad
@@ -101,8 +100,9 @@ MODULE atom_rate_patch_mod
       self%static_mem = .false.
     endif
 
+    if (self%sp%maxal > 0) call self%check_access(self%lines)
+
     if (.not. self%static_mem) then
-      call self%check_access(self%lines)
       call self%full_preconditioning(gamma_ij, gamma_ji)
       self%update_skipped = .false.
     else
@@ -128,6 +128,7 @@ MODULE atom_rate_patch_mod
     class(atom_rate_t), target, intent(in) :: self
     real(4), dimension(:,:,:,:), intent(inout), contiguous :: gamma_ij, gamma_ji
     class(atom_type), pointer :: atom
+    class(atomic_spectrum_type), pointer :: sp
     real(4), dimension(:,:,:), pointer, contiguous :: temp
     real(4), dimension(:,:,:,:), pointer, contiguous :: Psi, Ieff
     real(4), dimension(:,:,:,:), pointer :: Inu
@@ -141,10 +142,11 @@ MODULE atom_rate_patch_mod
     real(4) :: chi, twohnu3_c2, alpha, hnu_inv, Bij, Bji, ufac, alpha2, dn, up
     integer :: i, j, k, kr, kr2, kc, kl, fs, fe, n_active, ff, f, p(3)
     integer :: x,y,z, nx, ny, nz, nupper, nlower, i2
-    logical :: cross_coupling
+    logical :: cross_coupling, skip_admin
     integer, save :: itimer1, itimer2, itimer3, itimer4, itimer5, itimer6
     !------------------------------------------------------------------------------------
     atom => self%atom
+    sp => self%sp
 
     if (self%print_update_info) then
       memcheck = 0
@@ -167,7 +169,8 @@ MODULE atom_rate_patch_mod
     ny = self%n(2)
     nz = self%n(3)
 
-    n_active = maxval(atom%sp%nac(fs:fe) + atom%sp%nal(fs:fe))
+    !n_active = maxval(sp%nac(fs:fe) + sp%nal(fs:fe))
+    n_active = sp%nmax
 
     allocate(wnu(n_active))
     allocate(lower(n_active), upper(n_active), trans(n_active), cross(n_active))
@@ -175,27 +178,8 @@ MODULE atom_rate_patch_mod
     allocate(Vij(nx,ny,nz,n_active))
     allocate(Vji(nx,ny,nz,n_active))
     
-    nlower = 0
-    nupper = 0
-    do ff=fs,fe
-      n_active = atom%sp%nac(ff) + atom%sp%nal(ff)
-      do kr=1, n_active
-        if (kr <= atom%sp%nac(ff)) then
-          kc = atom%sp%ac(kr,ff)
-          lower(kr) = atom%cont(kc)%i
-          upper(kr) = atom%cont(kc)%j
-        else
-          kl = atom%sp%al(kr - atom%sp%nac(ff),ff)
-          lower(kr) = atom%line(kl)%i
-          upper(kr) = atom%line(kl)%j
-        endif
-      end do
-      
-      call unique_int(lower(1:n_active), lower(1:n_active), i)
-      call unique_int(upper(1:n_active), upper(1:n_active), j)
-      if (i > nlower) nlower = i
-      if (j > nupper) nupper = j
-    end do
+    nlower = sp%nlower
+    nupper = sp%nupper
 
     allocate(phi, mold=Psi(:,:,:,1:1))
     allocate(blzfac, hk_over_temp, mold=temp)
@@ -208,53 +192,60 @@ MODULE atom_rate_patch_mod
     do ff=fs,fe
         !call trace%begin('administration', itimer=itimer1)
         f = ff - fs + 1
-        n_active = atom%sp%nac(ff) + atom%sp%nal(ff)
 
-        hnu_inv = 1 / (hh*atom%sp%nu(ff))
-        twohnu3_c2 = twoh_c2 * atom%sp%nu(ff)**3
-        
+        n_active = sp%nac(ff) + sp%nal(ff)
+        trans(1:sp%nac(ff)) = sp%ac(1:sp%nac(ff),ff)
+        trans(sp%nac(ff)+1:n_active) = sp%al(1:sp%nal(ff), ff)
+
         do kr=1, n_active
-          if (kr <= atom%sp%nac(ff)) then
-            kc = atom%sp%ac(kr,ff)
-            lower(kr) = atom%cont(kc)%i
-            upper(kr) = atom%cont(kc)%j
-            trans(kr) = self%idx_map(atom%cont(kc)%ntrans)
-            wnu  (kr) = atom%cont(kc)%wnu(ff) * hnu_inv ! wm needs to be multiplied later
+          k = trans(kr)
+          if (kr <= sp%nac(ff)) then
+            wnu(kr) = atom%cont(k)%wnu(ff)
           else
-            kl = atom%sp%al(kr - atom%sp%nac(ff),ff)
-            lower(kr) = atom%line(kl)%i
-            upper(kr) = atom%line(kl)%j
-            trans(kr) = self%idx_map(atom%line(kl)%ntrans)
-            wnu  (kr) = atom%line(kl)%wnu(ff) * hnu_inv ! wm needs to be multiplied later
+            wnu(kr) = atom%line(k)%wnu(ff)
           endif
         end do
 
-        cross(1:n_active) = .false.
-        cross_coupling = .false.
+        twohnu3_c2 = twoh_c2 * sp%nu(ff)**3
+        hnu_inv = 1 / (hh*sp%nu(ff))
+        wnu(1:n_active) = wnu(1:n_active) * hnu_inv ! wm needs to be multiplied later
 
-        do kr=1, n_active
-          do kr2=1, n_active
-            if (lower(kr) == upper(kr2)) then
-              cross_coupling = .true.
-              cross(kr) = .true.
+        skip_admin = .false.
+        if (ff > fs) then
+          if (all(sp%al(:,ff) == sp%al(:,ff-1))) then
+            if (all(sp%ac(:,ff) == sp%ac(:,ff-1))) then
+              skip_admin = .true.
+            endif
+          endif
+        endif
+
+        if (.not. skip_admin) then
+          do kr=1, n_active
+            k = trans(kr)
+            if (kr <= sp%nac(ff)) then
+              lower(kr) = atom%cont(k)%i
+              upper(kr) = atom%cont(k)%j
+            else
+              lower(kr) = atom%line(k)%i
+              upper(kr) = atom%line(k)%j
             endif
           end do
-        end do
 
-        call unique_int(lower(1:n_active), lower(1:n_active), nlower)
-        call unique_int(upper(1:n_active), upper(1:n_active), nupper)
+          cross(1:n_active) = .false.
+          cross_coupling = .false.
 
-        do kr=1, n_active
-        if (kr <= atom%sp%nac(ff)) then
-          kc = atom%sp%ac(kr,ff)
-          ii(kr) = findloc(lower(1:nlower), atom%cont(kc)%i, 1)
-          jj(kr) = findloc(upper(1:nupper), atom%cont(kc)%j, 1)
-        else
-          kl = atom%sp%al(kr - atom%sp%nac(ff),ff)
-          ii(kr) = findloc(lower(1:nlower), atom%line(kl)%i, 1)
-          jj(kr) = findloc(upper(1:nupper), atom%line(kl)%j, 1)
+          do kr=1, n_active
+            do kr2=1, n_active
+              if (lower(kr) == upper(kr2)) then
+                cross_coupling = .true.
+                cross(kr) = .true.
+              endif
+            end do
+          end do
+
+          call unique_int(lower(1:n_active), nlower, idx=ii)
+          call unique_int(upper(1:n_active), nupper, idx=jj)
         endif
-        end do
 
         !call trace%end(itimer1)
         !call trace%begin('nullify', itimer=itimer4)
@@ -268,8 +259,8 @@ MODULE atom_rate_patch_mod
           if (cross_coupling) SumChiDn(:,:,:,j) = 0
         end do
 
-        if (atom%sp%nac(ff) > 0) then
-          blzfac = exp(- hk_over_temp * real(atom%sp%nu(ff)))
+        if (sp%nac(ff) > 0) then
+          blzfac = exp(- hk_over_temp * real(sp%nu(ff)))
         endif
 
         !call trace%end(itimer4)
@@ -283,8 +274,8 @@ MODULE atom_rate_patch_mod
 
           ufac = twohnu3_c2 / wnu(kr)
 
-          if (kr <= atom%sp%nac(ff)) then
-            kc = atom%sp%ac(kr,ff)
+          if (kr <= sp%nac(ff)) then
+            kc = sp%ac(kr,ff)
             ! alpha0 is part of ni_over_nj_lte for overflow reasons
             alpha = atom%cont(kc)%alpha(ff) * wnu(kr)
             alpha2 = alpha * atom%cont(kc)%alpha0
@@ -302,9 +293,9 @@ MODULE atom_rate_patch_mod
             end do
             end do
           else
-            kl = atom%sp%al(kr - atom%sp%nac(ff),ff)
+            kl = sp%al(kr - sp%nac(ff),ff)
             kl = self%lines%idx_map(kl)
-            call self%lines%line(kl)%interpolate_phi(atom%sp%nu(ff:ff), phi)
+            call self%lines%line(kl)%interpolate_phi(sp%nu(ff:ff), phi)
             Bij = self%lines%line(kl)%Bij * wnu(kr)
             Bji = self%lines%line(kl)%Bji * wnu(kr)
             do z=1,nz
@@ -324,7 +315,7 @@ MODULE atom_rate_patch_mod
         end do
 
         !call trace%end(itimer2)
-        !call trace%begin('Ieff', itimer=itimer3)
+        !call trace%begin('Rij', itimer=itimer3)
 
         do j=1,nupper
           SumU(:,:,:,j) = SumU(:,:,:,j) * Psi(:,:,:,f)
@@ -339,6 +330,8 @@ MODULE atom_rate_patch_mod
           j = jj(kr)
           if (cross(kr)) i2 = findloc(upper(1:nupper), lower(i), 1)
           k = trans(kr)
+          if (kr <= sp%nac(ff)) k = k + atom%nline
+          k = self%idx_map(k)
 
           if (self%print_update_info) then
             if (f == self%fcheck) then
@@ -375,32 +368,30 @@ MODULE atom_rate_patch_mod
         endif
         !call trace%end(itimer3)
     end do
-
-    deallocate(Vij)
-    deallocate(Vji)
   END SUBROUTINE full_preconditioning
   !------------------------------------------------------------------------------------
 
   !===============================================================================
   SUBROUTINE integrate_rates (self, gamma_ij, gamma_ji)
     class(atom_rate_t) :: self
+    class(atom_type), pointer :: atom
     integer :: m(4), i, k
     real(4), dimension(:,:,:,:), pointer :: gamma_ij, gamma_ji
     real(4) :: wmu
     !-----------------------------------------------------------------------------
     call self%m3d_parent%mem_lock(1)%set('integrate_rates')
-    if (.not. associated(self%atom%gamma_ij)) then
-      m(1:3) = self%n
-      m(4) = self%atom%nrad
-      call os%allocate(self%atom%gamma_ij, m, zero=.true., label='atom%gamma_ij')
-      call os%allocate(self%atom%gamma_ji, m, zero=.true., label='atom%gamma_ji')
+    atom => self%m3d_parent%atom
+    if (.not. associated(atom%gamma_ij)) then
+      m = [self%n, atom%nrad]
+      call os%allocate(atom%gamma_ij, m, zero=.true., label='atom%gamma_ij')
+      call os%allocate(atom%gamma_ji, m, zero=.true., label='atom%gamma_ji')
       self%atom%stiff=.true.
     endif
     wmu = self%wmu / over_4pi
     do i=1, self%nv
       k = self%idx_remap(i)
-      self%atom%gamma_ij(:,:,:,k) = self%atom%gamma_ij(:,:,:,k) + wmu * gamma_ij(:,:,:,i)
-      self%atom%gamma_ji(:,:,:,k) = self%atom%gamma_ji(:,:,:,k) + wmu * gamma_ji(:,:,:,i)
+      atom%gamma_ij(:,:,:,k) = atom%gamma_ij(:,:,:,k) + wmu * gamma_ij(:,:,:,i)
+      atom%gamma_ji(:,:,:,k) = atom%gamma_ji(:,:,:,k) + wmu * gamma_ji(:,:,:,i)
     end do
     if (.not. self%static_mem) then
       self%atom%stiff=.false.
@@ -428,7 +419,7 @@ MODULE atom_rate_patch_mod
           needed = .false.; needs_me = .false.
         endif
       class is (atom_line_t)
-        if (self%i_mu > 0 .or. comoving_frame) then
+        if (self%i_mu /= 0 .or. comoving_frame) then
           needs_me=.false.
           self%lines => another
         else
@@ -489,7 +480,7 @@ MODULE atom_rate_patch_mod
     key(4) = hash_string('atom_line')
     call self%check_nbor(key, nbors)
   
-    if (comoving_frame) then
+    if (self%i_mu == 0) then
       key(4) = hash_string('mean_rad')
     else
       key(4) = hash_string('angle_rad')

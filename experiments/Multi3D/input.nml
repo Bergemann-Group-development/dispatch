@@ -8,9 +8,9 @@
 !&stagger_params     stagger_file='/shared-storage/bergemann-data/Stagger_remo/t5777g44m00/v05/t5777g44m0005' snap=20 dims=30,30,230 /
 &atom_params        atom_file='./input_multi3d/atoms/atom.ba06' convlim=1d-2
                     exclude_trace_cont=F exclude_from_line_list=T use_atom_abnd=T/
-&m3d_params         verbose=2 fcheck=1 pcheck=1,1,1 linecheck=4 lvlcheck=4 check_NaN=F
-                    n_nu=1 maxiter=0 save_back_cont=T
-                    quad_scheme='set_a2' long_scheme='lobatto'/
+&m3d_params         verbose=5 fcheck=1 pcheck=1,1,1 linecheck=4 lvlcheck=4 check_NaN=F
+                    n_nu=1 maxiter=1 save_back_cont=T decouple_continuum=T
+                    quad_scheme='disk_center' long_scheme='disk_center'/
 !&linelist_params    linelist_file='./input_multi3d/nlte_ges_linelist_jmg17feb2022_I_II.txt'
 !                    dlam=0.5 exclude_elements='V CN Cr Si Fe' /
 !&spectrum_params    daa=0.01 aa_blue=4840 aa_red=4880 /

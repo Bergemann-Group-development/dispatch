@@ -41,49 +41,4 @@ contains
        endif
     end do
   END SUBROUTINE NextEntry
-
-  !====================================================================================
-  pure function lowercase(string,ss)
-    character(len=*),intent(in) :: string
-    integer,intent(in) :: ss
-
-    integer :: i,k
-    character(len=ss) ::lowercase
-    character(len=26),parameter :: ucase='ABCDEFGHIJKLMNOPQRSTUVWXYZ' 
-    character(len=26),parameter :: lcase='abcdefghijklmnopqrstuvwxyz'
-    !---------------------------------------------------------------------------------
-    lowercase(:)=' '
-    lowercase(1:ss)=string(1:ss)
-    do i=1,ss
-       k=index(ucase,string(i:i))
-       if (k > 0) then
-          lowercase(i:i)=lcase(k:k)
-       else
-          lowercase(i:i)=string(i:i)
-       end if
-    end do
-  end function lowercase
-  
-  !====================================================================================
-  pure function uppercase(string,ss)
-    ! converts the first ss characters of string to uppercase and returns them as a new string.
-    implicit none
-    character(len=*),intent(in) :: string
-    integer,intent(in) :: ss
-    character(len=ss) :: uppercase
-    integer :: i,k
-    character(len=26),parameter :: ucase='ABCDEFGHIJKLMNOPQRSTUVWXYZ' 
-    character(len=26),parameter :: lcase='abcdefghijklmnopqrstuvwxyz'
-    !---------------------------------------------------------------------------------
-    uppercase(:)=' '
-    uppercase(1:ss)=string(1:ss)
-    do i=1,ss
-       k=index(lcase,string(i:i))
-       if (k > 0) then
-          uppercase(i:i)=ucase(k:k)
-       else
-          uppercase(i:i)=string(i:i)
-       end if
-    end do
-  end function uppercase
 END MODULE m3io_mod

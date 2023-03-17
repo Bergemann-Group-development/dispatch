@@ -1462,7 +1462,7 @@ contains
         logical :: first_print=.true.
         !---------------------------------------------------------------------------
         call trace%begin ('composition_type%init')
-        idx = findloc(self%molecules%id, uppercase(id, len(id)), 1)
+        idx = findloc(self%molecules%id, uppercase(id), 1)
         if (idx == 0) then
             molecule => null()
             if (first_print) then
@@ -1484,7 +1484,7 @@ contains
         logical :: first_print=.true.
         !---------------------------------------------------------------------------
         call trace%begin ('composition_type%init')
-        idx = findloc(self%elements%id, uppercase(id, len(id)), 1)
+        idx = findloc(self%elements%id, uppercase(id), 1)
 
         if (idx == 0) then
             element => null()
@@ -1514,7 +1514,7 @@ contains
         trim_id = trim(eid)//' '//trim(iid)
         call self%element_by_id(eid, element)
         if (associated(element)) then
-            idx = findloc(element%ions%id, uppercase(trim_id, len(trim_id)), 1)
+            idx = findloc(element%ions%id, uppercase(trim_id), 1)
             if (lbound(element%ions,1) /= 1) then
                 idx = idx + lbound(element%ions,1) - 1
             endif
@@ -1578,28 +1578,6 @@ contains
             bnu=c1*exp(-x)
         endif
     end FUNCTION planck
-
-    !================================================================================
-    pure FUNCTION uppercase(string,ss)
-        ! converts the first ss characters of string to uppercase and returns them as a new string.
-        character(len=*),intent(in) :: string
-        integer,intent(in) :: ss
-        character(len=ss) :: uppercase
-        integer :: i,k
-        character(len=26),parameter :: ucase='ABCDEFGHIJKLMNOPQRSTUVWXYZ' 
-        character(len=26),parameter :: lcase='abcdefghijklmnopqrstuvwxyz'
-        !---------------------------------------------------------------------------
-        uppercase(:)=' '
-        uppercase(1:ss)=string(1:ss)
-        do i=1,ss
-            k=index(lcase,string(i:i))
-            if (k > 0) then
-                uppercase(i:i)=ucase(k:k)
-            else
-                uppercase(i:i)=string(i:i)
-            end if
-        end do
-    end FUNCTION uppercase
 
     !=========================================================================
     SUBROUTINE compute_grams_per_hydrogen(self, suma, xmy, grph)

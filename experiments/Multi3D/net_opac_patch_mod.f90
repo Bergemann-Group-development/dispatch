@@ -358,8 +358,8 @@ MODULE net_opac_patch_mod
     key(4) = hash_string('atom_line')
     call self%check_nbor(key, nbors)
 
-    mu_start = merge(self%n_omega+1, 1, self%out_ray)
-    mu_stop  = merge(self%n_mu, self%n_omega, self%out_ray)
+    mu_start = merge(-self%n_out, 1, self%out_ray)
+    mu_stop  = merge(-1, self%n_mu, self%out_ray)
 
     !if (self%out_ray) then
       key(4) = hash_string('back_line')

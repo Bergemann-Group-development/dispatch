@@ -858,7 +858,7 @@ SUBROUTINE init (self)
     !print *, 'patch_mod', gn, self%mv, self%nt, self%nw, self%kind, associated(self%mem)
     call os%allocate(self%mem, [gn, self%mv, self%nt, self%nw], label=trim(self%kind)//'%mem')
     call os%allocate(self%u_phase, gn, zero=.true., label='u_phase')
-    call omp%set_stacksize (product(shape(self%mem)), io%master)
+    !call omp%set_stacksize (product(shape(self%mem)), io%master)
     !---------------------------------------------------------------------------
     ! The unsigned and pervolume flags may also be modified by the solver. They
     ! are allocated here, but need to be reallocated by solvers modifying nv.

@@ -63,14 +63,5 @@ MODULE mconst
   real(8), parameter :: RydV = 13.605d0     ! Rydberg constant [eV]
   real(8), parameter :: Rydk = 13.605d0*e_k ! Rydberg constant [K]
 
-  ! the elements
-  integer, parameter :: n_elements=28
-  character(len=2),dimension(n_elements),parameter :: &
-       element_name=(/ &
-       'H ','HE','LI','BE','B ','C ','N ','O ','F ','NE', &
-       'NA','MG','AL','SI','P ','S ','CL','AR','K ','CA', &
-       'SC','TI','V ','CR','MN','FE','CO','NI' /)
-  
-
 END MODULE mconst
 

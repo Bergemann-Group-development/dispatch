@@ -6,7 +6,7 @@ MODULE composition_patch_mod
   USE gpatch_mod
   USE handyfuncs_mod
   USE element_mod, only: element_type
-  USE m3d_patch_mod,   only: m3d_patch_t, comoving_frame, ilambd
+  USE m3d_patch_mod,   only: m3d_patch_t, comoving_frame, ilambd, decouple_continuum
   USE composition_mod, only: composition_type, dlam, exclude_elements
   USE back_cont_patch_mod,  only: back_cont_patch_t
   USE angle_rad_patch_mod,   only: rad_patch_t
@@ -36,10 +36,10 @@ MODULE composition_patch_mod
   contains
     procedure :: pre_init => composition_pre_init
     procedure :: update => composition_update
+    procedure :: create_sub_patches
     procedure :: print_post_update_info
     procedure :: save_abundances_to_file
     procedure :: nbor_relations => composition_patch_nbor_relations
-    procedure :: init_nbors_hash
   end type
   
   real(8), public :: FeH=0
@@ -51,24 +51,16 @@ SUBROUTINE composition_pre_init (self)
   class(composition_patch_t), target:: self
   type(composition_type), save :: composition
   class(atom_patch_t), pointer :: atom_patch
-  class(back_cont_patch_t), pointer :: back_cont
-  class(rad_patch_t), pointer :: rad
-  class(out_rad_patch_t), pointer :: out_rad
-  class(net_opac_t), pointer :: net_opac
-  class(proj_patch_t), pointer :: proj
-  class(mean_rad_patch_t), pointer :: mean_rad => null()
-  class(back_line_patch_t), pointer :: back_line
   class(atomic_spectrum_type), save, pointer :: output_sp
-  integer :: iostat, i_out
+  integer :: iostat, n_nu, n_mu
   integer, save:: itimer=0, itimer2=0
-  integer, save :: n_nu=1, verbose=0
+  integer, save :: verbose=0
   character(len=128), save :: absdat_file='./input_multi3d/absdat'
   character(len=128), save :: abund_file='./input_multi3d/abund'
   character(len=128), save :: isotope_file=''!'./input_multi3d/isotopes_abund.txt'
   character(len=128), save :: molec_file='./input_multi3d/molec_data.txt'
   character(len=128), save :: absmet_file=''
   character(len=128), save :: linelist_file=''
-  integer :: i, dir, p, m, n, m2, n2
   logical, save :: first_time=.true., absmet_big_end=.false.
   namelist /composition_params/ verbose, absdat_file, abund_file, absmet_file, &
   absmet_big_end, isotope_file, molec_file
@@ -122,55 +114,21 @@ SUBROUTINE composition_pre_init (self)
 
   allocate(atom_patch)
   atom_patch%composition => self%composition
-  call atom_patch%pre_init_and_link(self, sp=output_sp)
+  call atom_patch%pre_init_atom()
+  call atom_patch%pre_init_spectrum(output_sp)
+  call atom_patch%pre_init_and_link(self)
+
+  n_nu = self%n_nu
+  n_mu = self%n_mu
 
   if (atom_patch%atom_allocated) then
-    if (output_sp%nnu == 0) then
-      output_sp => atom_patch%sp
+    if (output_sp%nnu == 0) output_sp => atom_patch%sp
+    if (decouple_continuum) then
+      call self%create_sub_patches([1, n_nu],      [0, n_mu], self%composition, atom_patch%bb_sp)
+      call self%create_sub_patches([1, n_nu]+n_nu, [0, n_mu], self%composition, atom_patch%bf_sp)
+    else
+      call self%create_sub_patches([1, n_nu], [0, n_mu], self%composition, atom_patch%sp)
     endif
-
-    do n=1, self%n_nu
-      allocate(back_cont)
-      back_cont%composition => self%composition
-      call back_cont%composition%reassign_pointer()
-      call back_cont%pre_init_and_link(self, i_mu=0, i_nu=n, sp=atom_patch%sp)
-
-      !if (comoving_frame .or. ilambd > 0) then
-        allocate(mean_rad)
-        call mean_rad%pre_init_and_link(self, i_mu=0, i_nu=n, sp=atom_patch%sp)
-        mean_rad%back_cont => back_cont
-      !endif
-
-      if (associated(mean_rad)) back_cont%mean_rad => mean_rad
-
-      if (comoving_frame) then
-        allocate(net_opac)
-        call net_opac%pre_init_and_link(self, i_mu=0, i_nu=n, sp=atom_patch%sp)
-        mean_rad%opac => net_opac
-
-        do m=1, self%n_omega
-          allocate(proj)
-          call proj%pre_init_and_link(self, i_mu=m, i_nu=n, sp=atom_patch%sp)
-        end do
-      else
-        do m=1, self%n_omega
-          if (self%composition%ll_initialised) then
-            allocate(back_line)
-            back_line%composition => self%composition
-            call back_line%pre_init_and_link(self, i_mu=m, i_nu=n, sp=atom_patch%sp)
-          endif
-
-          allocate(net_opac)
-          call net_opac%pre_init_and_link(self, i_mu=m, i_nu=n, sp=atom_patch%sp)
-        end do
-      endif
-
-      do m=1, self%n_omega
-        allocate(rad)
-        call rad%pre_init_and_link(self, i_mu=m, i_nu=n, sp=atom_patch%sp)
-        if (associated(mean_rad)) rad%mean_rad => mean_rad
-      end do
-    end do
   else
     deallocate(atom_patch)
     if (output_sp%nnu == 0) then
@@ -178,44 +136,83 @@ SUBROUTINE composition_pre_init (self)
     endif
   endif
 
-  do n=1, self%n_nu
-    n2 = n+self%n_nu
-    do m=0, self%n_out
-      m2 = m+self%n_omega
-      if (m==0) then
-        allocate(back_cont)
-        back_cont%composition => self%composition
-        call back_cont%composition%reassign_pointer()
-        call back_cont%pre_init_and_link(self, i_mu=0, i_nu=n2, sp=output_sp)
-
-      else
-        if (self%composition%ll_initialised) then
-          allocate(back_line)
-          back_line%composition => self%composition
-          call back_line%pre_init_and_link(self, i_mu=m2, i_nu=n2, sp=output_sp)
-        endif
-
-        allocate(net_opac)
-        call net_opac%pre_init_and_link(self, i_mu=m2, i_nu=n2, sp=output_sp)
-
-        allocate(rad)
-        call rad%pre_init_and_link(self, i_mu=m2, i_nu=n2, sp=output_sp)
-      endif
-    end do
-  end do
-
-  do m=1, self%n_out
-    m2 = m+self%n_omega
-    if (self%patch%boundaries%is_set(bits%zu)) then
-      allocate(out_rad)
-      call out_rad%pre_init_and_link(self, i_mu=m2, sp=output_sp)
-    endif
-  end do
+  call self%create_sub_patches([-n_nu, 0], [-self%n_out, 0], self%composition, output_sp)
   
   call self%save_abundances_to_file()
   call self%post_pre_init()
   call trace%end(itimer)
 END SUBROUTINE composition_pre_init
+
+!===============================================================================
+SUBROUTINE create_sub_patches (self, nu, mu, composition, sp)
+  class(composition_patch_t) :: self
+  integer, intent(in) :: nu(2), mu(2)
+  class(composition_type), intent(in), target :: composition
+  class(atomic_spectrum_type), intent(in), pointer :: sp
+  class(back_cont_patch_t), pointer :: cont
+  class(back_line_patch_t), pointer :: line
+  class(out_rad_patch_t), pointer :: out
+  class(net_opac_t), pointer :: net
+  class(proj_patch_t), pointer :: proj
+  class(rad_patch_t), pointer :: rad
+  class(mean_rad_patch_t), pointer :: mean
+  integer :: n, m
+  logical :: cf, new_cont, new_line, new_rad, new_out, new_net, new_proj, new_mean
+  !-----------------------------------------------------------------------------
+  do n=nu(1), nu(2)
+    cf = comoving_frame .and. n>0
+    nullify(mean)
+  do m=mu(1), mu(2)
+    new_mean = n>0  .and. m==0
+    new_cont = n/=0 .and. m==0
+    new_line = n/=0 .and. (m<0 .or. merge(m==0, m/=0, cf)) .and. composition%ll_initialised
+    new_net  = n/=0 .and. (m<0 .or. merge(m==0, m/=0, cf))
+    new_proj = n/=0 .and. cf
+    new_rad  = n/=0 .and. m/=0
+    new_out  = n==0 .and. m<0 .and. self%patch%boundaries%is_set(bits%zu)
+
+    if (new_mean) then
+      allocate(mean)
+      call mean%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp)
+    endif
+    if (new_cont) then
+      allocate(cont)
+      cont%composition => composition
+      if (associated(mean)) then
+        cont%mean_rad => mean
+        mean%back_cont => cont
+      endif
+      call cont%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp)
+    endif
+    if (new_line) then
+      allocate(line)
+      line%composition => composition
+      call line%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp)
+    endif
+    if (new_net) then
+      allocate(net)
+      call net%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp)
+    endif
+    if (new_proj) then
+      allocate(proj)
+      call proj%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp)
+    endif
+    if (new_proj) then
+      allocate(proj)
+      call proj%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp)
+    endif
+    if (new_rad) then
+      allocate(rad)
+      if (associated(mean)) rad%mean_rad => mean
+      call rad%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp)
+    endif
+    if (new_out) then
+      allocate(out)
+      call out%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp)
+    endif
+  end do
+end do
+END SUBROUTINE create_sub_patches
 
 !===============================================================================
 SUBROUTINE composition_update (self)
@@ -313,50 +310,5 @@ SUBROUTINE composition_patch_nbor_relations(self, another, needed, needs_me, dow
   endif
   call trace%end()
 END SUBROUTINE composition_patch_nbor_relations
-
-!===============================================================================
-!> Fast method to generate nbor lists in cases with very long task lists
-!===============================================================================
-SUBROUTINE init_nbors_hash (self, nbors)
-  class(composition_patch_t):: self
-  class(nbor_t), pointer:: nbors
-  !.............................................................................
-  class(task_t), pointer:: task
-  class(nbor_t), pointer:: nbor
-  integer, save:: itimer=0
-  integer :: i, i_nu, i_mu, key(4)
-  !-----------------------------------------------------------------------------
-  call trace%begin('composition_patch_t%init_nbors_hash', itimer=itimer)
-  call self%m3d_patch_t%init_nbors_hash(nbors)
-
-  key(1:3) = self%key(1:3)
-  key(4) = hash_string('atom_patch')
-  call self%check_nbor(key, nbors)
-
-  do i_nu=1, 2*self%n_nu
-    key(2) = i_nu
-    key(4) = hash_string('back_cont')
-    call self%check_nbor(key, nbors)
-  end do
-
-  do i_nu=1, self%n_nu
-    key(2) = i_nu
-    do i_mu=1, self%n_mu
-      key(3) = i_mu
-      key(4) = hash_string('back_line')
-      call self%check_nbor(key, nbors)
-    end do
-  end do
-
-  do i_nu=self%n_nu+1, 2*self%n_nu
-    key(2) = i_nu
-    do i_mu=1, self%n_out
-      key(3) = i_mu+self%n_omega
-      key(4) = hash_string('back_line')
-      call self%check_nbor(key, nbors)
-    end do
-  end do
-  call trace%end (itimer)
-END SUBROUTINE init_nbors_hash
 
 END MODULE composition_patch_mod

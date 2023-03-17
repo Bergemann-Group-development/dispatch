@@ -32,11 +32,16 @@ MODULE m3d_patch_mod
     !USE units_mod
     !USE scratch_mod
     USE m3d_halo_mod, only: m3d_halo_t, print_finished, print_download
-    USE atom_mod, only: atomic_spectrum_type, lse_no_pivot
+    USE atom_mod, only: atom_type, atomic_spectrum_type, lse_no_pivot, lse_solver
     USE ray_mod
     USE m3d_debug_mod
     implicit none
     private
+
+    type, public :: key_link_t
+      integer :: key(4)
+      class(key_link_t), pointer :: next=>null()
+    end type key_link_t
   
     !-----------------------------------------------------------------------------
   
@@ -44,14 +49,16 @@ MODULE m3d_patch_mod
       class(gpatch_t),      pointer :: patch => null()         ! pointer to mhd patch
       class(m3d_patch_t),   pointer :: m3d_parent => null()    ! pointer to parent patch
       class(atomic_spectrum_type), pointer :: sp => null()
-      class(m3d_patch_t),   pointer :: last_allocator, last_deallocator
-      logical                  :: on=.false.       ! allows local turn-off
-      logical                  :: in_task_list = .false.
-      logical                  :: initialized  = .false.
+      class(atom_type), pointer :: atom => null()
+      class(key_link_t), pointer :: key_list => null()
+      class(m3d_patch_t), pointer :: last_allocator, last_deallocator
       real(4), dimension(:,:,:,:,:,:), pointer :: authority_mem => null()
       real(4), dimension(:,:,:,:,:), pointer :: out_mem => null() 
       integer, dimension(:,:), pointer :: periodic_idx
       integer, dimension(:), pointer :: periodic_i, periodic_j
+      logical :: on=.false.       ! allows local turn-off
+      logical :: in_task_list = .false.
+      logical :: initialized  = .false.
       real(8) :: t_offset=0, t_push=0
       real(8) :: allocation_time, deallocation_time
       integer :: iter=0, maxiter, master_maxiter, dir=0
@@ -75,6 +82,7 @@ MODULE m3d_patch_mod
       procedure :: is_finished
       procedure :: nbor_relations => m3d_nbor_relations
       procedure :: pre_init_and_link
+      procedure :: add_to_key_list
       procedure :: set_nv_and_nw
       procedure :: set_initial_time
       procedure :: set_maxiter
@@ -109,7 +117,6 @@ MODULE m3d_patch_mod
       procedure :: init_nbors_hash
       procedure :: check_nbor
       procedure :: hash_key
-      procedure :: output
       procedure :: save
       procedure :: load_mem
       procedure :: set_place
@@ -119,14 +126,14 @@ MODULE m3d_patch_mod
     integer, save, public:: verbose=0
     integer, public :: maxiter, ilambd, nz_total
     integer, public :: cswitch=1
-    integer, public, save :: recl=0, save_id=-1
+    integer, public, save :: save_id=-1
     real(8), public, save, dimension(:), allocatable:: wmu, long_wmu
     real(8), public, save, dimension(:,:), allocatable:: vec, long_vec
     real(8), public:: convlim=1d-3
     logical, public, save :: converged=.false.
     logical, public, save :: check_NaN=.false., interp_log=.false.
     logical, public, save :: save_back_cont=.true., save_atom_line=.true.
-    logical, public, save :: linear_long=.true.
+    logical, public, save :: linear_long=.true., decouple_continuum=.false.
     logical, public, save :: detailed_prints=.false., comoving_frame=.false.
     logical, public, save :: print_start=.false., print_push=.false., print_send=.false.
     character(len=128), save :: save_patch_kind=''
@@ -156,7 +163,8 @@ MODULE m3d_patch_mod
     long_scheme, n_nu, maxiter, ilambd, lvlcheck, comoving_frame, save_id, &
     ntheta, nphi, check_NaN, custom_mu, lse_no_pivot, save_patch_kind, cswitch, &
     save_back_cont, detailed_prints, print_finished, print_start, print_push, &
-    print_send, linear_long, interp_log, ray_offset, print_download, save_atom_line
+    print_send, linear_long, interp_log, ray_offset, print_download, save_atom_line, &
+    lse_solver, decouple_continuum
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%pre_init', itimer=itimer)
     !-----------------------------------------------------------------------------
@@ -213,11 +221,10 @@ MODULE m3d_patch_mod
   
     self%verbose = verbose
 
-    self%n_omega = size(vec, 2)
+    self%n_mu = size(vec, 2)
     self%n_out = size(long_vec, 2)
-    self%n_mu = self%n_omega + self%n_out
     self%n_nu = n_nu
-    self%out_ray = self%i_nu > self%n_nu .or. self%i_mu > self%n_omega
+    self%out_ray = self%i_nu < 0 .or. self%i_mu < 0
   
     if (self%pre_initialized) print *, 'pre_init issued somewhere'
     call io%lock%unset ('m3d_patch_t%pre_init')
@@ -314,6 +321,7 @@ MODULE m3d_patch_mod
     self%m3d_parent => m3d_parent
     self%zs = m3d_parent%zs
     call self%pre_init()
+    call m3d_parent%add_to_key_list(self)
   END SUBROUTINE pre_init_and_link
 
   !===============================================================================
@@ -424,17 +432,9 @@ MODULE m3d_patch_mod
       !  call self%set_place(self, self%place, push=.true.)
       !endif
     end select
-    !case default
-    !  self%t_offset = 0.9d0
-    !  !if (.not. self%out_ray) then
-    !  !  tnu = t_push * (self%i_nu-1) / self%n_nu
-    !  !  self%t_offset = self%t_offset + tnu
-    !  !endif
-    !end select
 
-    if (self%i_nu > 0) then
-      tnu = self%i_nu
-      if (tnu > self%n_nu) tnu = tnu - self%n_nu
+    if (self%i_nu /= 0) then
+      tnu = mod(abs(self%i_nu)-1, self%n_nu)+1
       tnu = tnu / self%n_nu
       self%t_offset = self%t_offset + 0.1*tnu
     endif
@@ -542,7 +542,7 @@ MODULE m3d_patch_mod
         call self%print_execution_history('PRE')
       endif
       !call self%push_nbors_for_update(post_update=.false.)
-      !if (self%i_mu > 0) then
+      !if (self%i_mu /= 0) then
         call self%claim_nbor_place()
       !endif
     endif
@@ -750,13 +750,13 @@ MODULE m3d_patch_mod
           if (another%patch%id /= self%patch%id) then
             needed=.false. ; needs_me=.false.
           else
-            if(self%i_mu > 0 .and. another%i_mu > 0) then
+            if(self%i_mu /= 0 .and. another%i_mu /= 0) then
               if (another%i_mu /= self%i_mu) then
                 needed=.false. ; needs_me=.false. ; download=.false.
               endif
             endif
 
-            if(self%i_nu > 0 .and. another%i_nu > 0) then
+            if(self%i_nu /= 0 .and. another%i_nu /= 0) then
               if (another%i_nu /= self%i_nu) then
                 needed=.false. ; needs_me=.false. ; download=.false.
               endif
@@ -973,13 +973,13 @@ MODULE m3d_patch_mod
     !-----------------------------------------------------------------------------
     select type (task)
     class is (m3d_patch_t)
-      if (self%i_mu > 0 .and. task%i_mu > 0) then
+      if (self%i_mu /= 0 .and. task%i_mu /= 0) then
         if (self%i_mu /= task%i_mu) then
           d = huge(1.0)
           return
         endif
       endif
-      if (self%i_nu > 0 .and. task%i_nu > 0) then
+      if (self%i_nu /= 0 .and. task%i_nu /= 0) then
         if (self%i_nu /= task%i_nu) then
           d = huge(1.0)
           return
@@ -1131,7 +1131,7 @@ MODULE m3d_patch_mod
       endif
     end do
 
-    if (self%i_mu > 0) then
+    if (self%i_mu /= 0) then
       nbor => self%link%nbor
       do while (associated (nbor))
         nbtask => nbor%task
@@ -1281,7 +1281,7 @@ MODULE m3d_patch_mod
 
     other%t_push = other%t_push + t
     other%time = other%time - t
-    !if (other%i_mu > 0) then
+    !if (other%i_mu /= 0) then
     !  other%place = self%place
     !endif
     if (requeue) then
@@ -1398,6 +1398,7 @@ MODULE m3d_patch_mod
     !.............................................................................
     class(task_t), pointer:: task
     class(nbor_t), pointer:: nbor
+    class(key_link_t), pointer :: klink
     integer, save:: itimer=0
     integer :: i, i_nu, key(4)
     !-----------------------------------------------------------------------------
@@ -1410,6 +1411,12 @@ MODULE m3d_patch_mod
       key(4) = hash_string(self%m3d_parent%kind)
       call self%check_nbor(key, nbors)
     endif
+
+    klink => self%key_list
+    do while (associated(klink))
+      call self%check_nbor(klink%key, nbors)
+      klink => klink%next
+    end do
   END SUBROUTINE init_nbors_hash
 
   !===============================================================================
@@ -1434,78 +1441,6 @@ MODULE m3d_patch_mod
   END SUBROUTINE check_nbor
 
   !===============================================================================
-  SUBROUTINE output (self)
-    class(m3d_patch_t):: self
-    integer:: snap, rec, unit, id, level, ipos(3), n(3), m(5), nv, nw, rank
-    integer:: i_nu, i_mu
-    real(8), dimension(3) :: ds, position, size, box
-    character(len=128) filename, knd
-    class(snapshot_t), pointer:: snapshot
-    namelist /m3d_out_nml/ snap, box, ds
-    namelist /patch_nml/ id, position, size, level, rank, ipos, i_nu, i_mu, knd, &
-    n, nv, nw, m
-    !-----------------------------------------------------------------------------
-    call io%lock%set ('m3d_patch_t%output')
-    snap = self%iout
-    snapshot => snapshots%get (snap)
-    !-----------------------------------------------------------------------------
-    ! Open a direct access file if not already open
-    !-----------------------------------------------------------------------------
-    if (snapshot%data_unit == 0) then
-      snapshot%record = 0
-      write (filename,'(a,i5.5,"/snapshot_",i5.5,".dat")') &
-        trim(io%run_dir), snap, mpi%rank
-      open (newunit=snapshot%data_unit, file=trim(filename), form='unformatted', &
-          recl=recl,  access='direct', status='unknown')
-    end if
-    unit = snapshot%data_unit
-    snapshot%record = snapshot%record + 1
-    self%record = snapshot%record
-    !-----------------------------------------------------------------------------
-    ! Write out
-    !-----------------------------------------------------------------------------
-    write (unit, rec=snapshot%record) self%authority_mem
-    flush (unit)
-    !-----------------------------------------------------------------------
-    ! Output namelist file with metadata
-    !-----------------------------------------------------------------------
-    unit = snapshot%meta_unit
-    if (unit == 0) then
-      box = self%box
-      ds  = self%ds
-      write(filename,'(a,i5.5,"/snapshot.nml")') trim(io%outputname), snap
-      open (io_unit%nml1, file=trim(filename), form='formatted', &
-            delim='apostrophe', status='unknown')
-      write (io_unit%nml1, m3d_out_nml)
-      close (io_unit%nml1)
-      !-------------------------------------------------------------------------
-      ! Open a new "data/run/rank_rrrrr_patches.nml"
-      !-------------------------------------------------------------------------
-      write (filename,'(a,i5.5,"/rank_",i5.5,"_patches.nml")') &
-        trim(io%outputname), snap, mpi%rank
-      open (newunit=unit, file=trim(filename), form='formatted', &
-            delim='apostrophe', status='unknown')
-      snapshot%meta_unit = unit
-    endif
-    id       = self%id
-    position = self%position
-    size     = self%size
-    level    = self%level
-    rank     = self%rank 
-    ipos     = self%ipos 
-    i_nu     = self%i_nu
-    i_mu     = self%i_mu
-    knd      = self%kind 
-    n        = self%n    
-    nv       = self%nv   
-    nw       = self%nw   
-    m        = [n, nv, nw]
-    write (unit, patch_nml)
-    flush (unit)
-    call io%lock%unset ('m3d_patch_t%output')
-  END SUBROUTINE output
-
-  !===============================================================================
   SUBROUTINE save (self, mem, label)
     class(m3d_patch_t):: self
     real(4), dimension(:,:,:,:,:) :: mem 
@@ -1516,7 +1451,7 @@ MODULE m3d_patch_mod
     ! ----------------------------------------------------------------------------
     call self%check_access(self)
     write(folder, '(A, A)') trim(io%run_dir), 'save/'
-    write(filename, '(A, A, 3(I3.3), A)') trim(label), '_', self%key(1:3), '.bin'
+    write(filename, '(A, A, 3(I3.3), A)') trim(label), '_', abs(self%key(1:3)), '.bin'
     meta_file = trim(label) // '_meta.txt'
     call io%lock%set('save')
     if (os%exists(trim(folder)//meta_file)) then
@@ -1572,5 +1507,25 @@ MODULE m3d_patch_mod
     read(lunit) mem
     close(lunit)
   END SUBROUTINE load_mem
+
+  !===============================================================================
+  SUBROUTINE add_to_key_list (self, other)
+    class(m3d_patch_t), intent(inout) :: self, other
+    class(key_link_t), pointer :: next, link, prev
+    ! ----------------------------------------------------------------------------
+    nullify(prev)
+    next => self%key_list
+    do while(associated(next))
+      prev => next
+      next => next%next
+    end do
+    allocate(link)
+    link%key = other%key
+    if (associated(prev)) then
+      prev%next => link
+    else
+      self%key_list => link
+    endif
+  END SUBROUTINE add_to_key_list
 
 END MODULE m3d_patch_mod

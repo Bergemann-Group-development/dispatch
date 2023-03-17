@@ -22,7 +22,7 @@ MODULE atom_line_patch_mod
     !USE scratch_mod
     USE mconst
     USE handyfuncs_mod
-    USE atom_mod, only: atom_type
+    USE atom_mod, only: atom_type, set_weights
     USE trans_mod, only: line_type
     USE m3d_patch_mod, only: m3d_patch_t, maxiter, comoving_frame
     USE ray_patch_mod, only: ray_patch_t
@@ -33,7 +33,6 @@ MODULE atom_line_patch_mod
     !-----------------------------------------------------------------------------
   
     type, public, extends(ray_patch_t) :: atom_line_t
-      class(atom_type), pointer :: atom
       type(line_type), dimension(:), contiguous, pointer :: line
       integer, dimension(:), contiguous, pointer :: idx_map
       integer :: nline, ired, iblue
@@ -156,31 +155,24 @@ MODULE atom_line_patch_mod
       line => self%line(i)
       if (second_sp .and. self%out_ray) then
         line%nq = line%nnu
-        !call line%freql(self%atom%qnorm, symmetric=.true.)
       else
         if (allocated(line%nu)) deallocate(line%nu)
         if (allocated(line%q))  deallocate(line%q)
+
         line%nnu = line%nq ! reset number of frequencies to input
-        call line%freql(self%atom%qnorm, symmetric=.true.)
+        allocate(line%nu(line%nnu))
+        allocate(line%q (line%nnu))
+        line%nu = line%get_nu()
+        line%q  = line%nu / line%nu0 - 1
+        call set_weights(line%wq, line%q, 1, line%nnu)
+
         fs = max(searchsorted(line%nu, nus, outbounds_ok=.true.), 1)
         fe = min(searchsorted(line%nu, nue, outbounds_ok=.true.)+1, line%nnu)
 
-        line%nnu = fe-fs+1
-
-        allocate(nu(line%nnu))
-        allocate(wq(line%nnu))
-        nu = line%nu(fs:fe)
-        wq = line%wq(fs:fe)
-        deallocate(line%nu)
-        deallocate(line%wq)
-        allocate(line%nu(line%nnu))
-        allocate(line%wq(line%nnu))
-        allocate(line%q (line%nnu))
-        line%nu = nu
-        line%wq = wq
-        line%q  = line%nu/line%nu0 - 1
-        deallocate(nu)
-        deallocate(wq)
+        call crop1d8(line%nu, fs, fe)
+        call crop1d8(line%q , fs, fe)
+        call crop1d8(line%wq, fs, fe)
+        line%nnu = size(line%nu)
 
         ! this is needed for computing wphi
         line%fs = max(searchsorted(line%nu, pre_pad_nus, outbounds_ok=.true.), 1)

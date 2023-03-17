@@ -18,9 +18,8 @@ MODULE atom_cont_patch_mod
   
     !-----------------------------------------------------------------------------
     type, public, extends(ray_patch_t) :: atom_cont_patch_t
-    class(atom_type), pointer :: atom => null()
     contains
-      procedure :: pre_init => opacity_pre_init
+      procedure :: pre_init => atom_cont_pre_init
       procedure :: update => atom_cont_update
       procedure :: nbor_relations
       procedure :: atom_cont_update
@@ -30,7 +29,7 @@ MODULE atom_cont_patch_mod
   contains
   
   !===============================================================================
-  SUBROUTINE opacity_pre_init (self)
+  SUBROUTINE atom_cont_pre_init (self)
     class(atom_cont_patch_t), target:: self
     integer :: nw, fs, fe
     integer, save :: itimer=0
@@ -55,7 +54,7 @@ MODULE atom_cont_patch_mod
     call self%set_nv_and_nw (self%fe-self%fs+1, 2)
     call self%post_pre_init()
     call trace%end(itimer)
-  END SUBROUTINE opacity_pre_init
+  END SUBROUTINE atom_cont_pre_init
   
   !===============================================================================
   SUBROUTINE atom_cont_update (self)
@@ -127,8 +126,8 @@ MODULE atom_cont_patch_mod
       mu_start = 0
       mu_stop  = 0
     else
-      mu_start = merge(self%n_omega+1, 1, self%out_ray)
-      mu_stop  = merge(self%n_mu, self%n_omega, self%out_ray)
+      mu_start = merge(-self%n_out, 1, self%out_ray)
+      mu_stop  = merge(-1, self%n_mu, self%out_ray)
     endif
   
     key(1:2) = self%key(1:2)

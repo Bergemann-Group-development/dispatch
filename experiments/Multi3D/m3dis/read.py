@@ -129,6 +129,8 @@ class read(object):
             self.pz   = dat.read_reals(np.float32).reshape((nx,ny,nz), order='F')
             self.pe   = dat.read_reals(np.float32).reshape((nx,ny,nz), order='F')
             self.tau  = dat.read_reals(np.float32).reshape((nx,ny,nz), order='F')
+            self.chi  = dat.read_reals(np.float32).reshape((nx,ny,nz), order='F')
+            self.eta  = dat.read_reals(np.float32).reshape((nx,ny,nz), order='F')
             dat.close()
         
         maxiter = self.nml['m3d_params']['maxiter']
