@@ -75,6 +75,7 @@ MODULE mean_rad_patch_mod
     if (self%is_finished()) return
     call trace%begin('mean_rad_patch_t%update', itimer=itimer)
     if (comoving_frame) then
+      call self%check_access(self%opac)
       Jnu => self%mem(:,:,:,:,self%it,1)
 
       do f=1, self%nv

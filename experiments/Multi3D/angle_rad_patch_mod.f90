@@ -24,7 +24,7 @@ MODULE angle_rad_patch_mod
   USE mconst, only: one_third, one_sixth
   !USE scratch_mod
   USE handyfuncs_mod
-  USE m3d_patch_mod, only: m3d_patch_t, comoving_frame, ilambd
+  USE m3d_patch_mod, only: m3d_patch_t, comoving_frame, ilambd, decouple_continuum
   USE ray_patch_mod, only: ray_patch_t, formal_solver
   USE proj_patch_mod, only: interpolate_to_ray
   USE os_mod
@@ -166,7 +166,7 @@ SUBROUTINE radiation_update (self)
     else
       call self%short_ray_update()
     endif
-    if (comoving_frame .or. self%iter < ilambd) then
+    if (comoving_frame .or. self%iter < ilambd .or. decouple_continuum) then
       call self%integrate_intensity()
     endif
   endif

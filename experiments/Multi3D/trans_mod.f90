@@ -24,8 +24,8 @@ MODULE trans_mod
 
       real(8) :: upper_ev
 
-      integer :: ired  ! start index where line is active in overall frequency grid
-      integer :: iblue ! end index where line is active in overall frequency grid
+      integer :: ired  = 0 ! start index where line is active in overall frequency grid
+      integer :: iblue = 0 ! end index where line is active in overall frequency grid
       real(8) :: nu_min, nu_max
 
       real(8),dimension(:), allocatable :: nu  ! frequencies [Hz]
@@ -52,7 +52,7 @@ MODULE trans_mod
     real(8),dimension(:),allocatable :: wq  ! frequency quadrature weight [Doppler units]
 
     real(4),dimension(:,:,:,:), pointer :: phi ! actual line profile data
-    real(4),dimension(:,:,:), pointer, contiguous :: wphi ! normalization such that
+    real(4),dimension(:,:,:), pointer, contiguous :: wphi=>null() ! normalization such that
     ! \Sigma_mu=1^{nrays} \Sigma_nu=1^{nnu} phi(nu,v(mu)) = 1
     ! in case of strong velocities this does not automatically follow from
     ! the independent normalization of the angle and frequency quadrature
@@ -88,7 +88,7 @@ MODULE trans_mod
     !real(8) :: nu0 ! ionization edge frequency
     real(8) :: alpha0 ! cross section at ionization threshold [cm^2]
     real(4), dimension(:),allocatable :: alpha ! cross sections [cm^2]    
-    real(4), dimension(:,:,:), contiguous, pointer :: ni_over_nj_lte
+    !real(4), dimension(:,:,:), contiguous, pointer :: ni_over_nj_lte
 
   contains
       procedure :: opacities => cont_opacities
@@ -139,9 +139,10 @@ contains
   !------------------------------------------------------------------------------------
 
   !====================================================================================
-  PURE SUBROUTINE cont_opacities(self, alpha, n, nstar, eta, chi)
+  PURE SUBROUTINE cont_opacities(self, alpha, ni_over_nj_lte, n, nstar, eta, chi)
     class(cont_type), intent(in) :: self
     real(4), dimension(:), intent(in) :: alpha
+    real(4), dimension(:,:,:), intent(in) :: ni_over_nj_lte
     real(4), dimension(:,:,:,:), intent(in) :: n, nstar
     real(4), dimension(:,:,:,:), intent(inout) :: eta, chi
     real(4), dimension(:,:,:), allocatable :: fakt
@@ -152,11 +153,11 @@ contains
     ny = size(n, 2)
     nz = size(n, 3)
     nf = size(eta,4)
-
+  
     allocate(fakt(nx,ny,nz))
     !fakt = nstar(:,:,:,self%i) / nstar(:,:,:,self%j) * n(:,:,:,self%j)
-    fakt = self%ni_over_nj_lte * n(:,:,:,self%j)
-
+    fakt = ni_over_nj_lte * n(:,:,:,self%j)
+  
     !$omp simd
     do f=1, nf
       alpha2 = alpha(f) * self%alpha0

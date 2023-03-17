@@ -90,7 +90,9 @@ SUBROUTINE ray_patch_pre_init (self)
 
   i_mu = abs(self%i_mu)
   
-  if (self%out_ray .and. i_mu /= 0) then
+  if (self%i_mu == 0) then
+    self%wmu = 1
+  elseif (self%out_ray) then
     self%vec = long_vec(:,i_mu) 
     self%wmu = long_wmu(i_mu) / (2.0*PI)
     self%dir = 1
@@ -98,8 +100,6 @@ SUBROUTINE ray_patch_pre_init (self)
     self%vec = vec(:,i_mu)
     self%wmu = wmu(i_mu) * over_4pi
     self%dir = merge(1, -1, self%vec(3) > 0)
-  elseif (i_mu == 0 .and. comoving_frame) then
-    self%wmu = 1
   endif
 
   call self%set_freq_indices()

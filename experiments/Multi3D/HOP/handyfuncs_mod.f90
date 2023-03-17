@@ -152,4 +152,16 @@ pure function uppercase(string)
   end do
 end function uppercase
 
+!====================================================================================
+pure function option(bool) result(out)
+  logical, intent(in), optional :: bool
+  logical :: out
+  !---------------------------------------------------------------------------------
+  if (present(bool)) then
+    out = bool
+  else
+    out = .false.
+  endif
+end function option
+
 END MODULE handyfuncs_mod

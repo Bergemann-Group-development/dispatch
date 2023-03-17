@@ -55,8 +55,8 @@ MODULE back_cont_patch_mod
   !===============================================================================
   SUBROUTINE back_cont_update (self)
     class(back_cont_patch_t) :: self
-    real(4), dimension(:,:,:,:), pointer :: chi, eta
-    real(8), dimension(:), pointer :: nu
+    real(4), dimension(:,:,:,:), pointer, contiguous :: chi, eta
+    real(8), dimension(:), pointer, contiguous :: nu
     real(4), dimension(:,:,:,:), pointer, contiguous :: Jold, abslte, sumsca
     real(4), dimension(:,:,:), pointer, contiguous :: vproj
     character(len=64) :: text
@@ -65,8 +65,8 @@ MODULE back_cont_patch_mod
     !-----------------------------------------------------------------------------
     if (self%is_finished()) return
     call trace%begin('back_cont_patch_t%update', itimer=itimer)
-    chi => self%authority_mem(:,:,:,:, self%it, self%i_chi)
-    eta => self%authority_mem(:,:,:,:, self%it, self%i_eta)
+    chi => self%mem(:,:,:,:, self%it, self%i_chi)
+    eta => self%mem(:,:,:,:, self%it, self%i_eta)
     nu  => self%sp%nu(self%fs:self%fe)
     eta = 0
   

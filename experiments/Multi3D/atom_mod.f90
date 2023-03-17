@@ -36,6 +36,18 @@ MODULE atom_mod
       !logical,dimension(:),allocatable :: hasPRDline
     end type atomic_spectrum_type
     !---------------------------------------------------------------------
+
+    type :: loca_data_t
+      ! rather constant doppler width factor, i.e. dnud = line(i)%nu0 * doppler_factor [Hz]
+      real(4), dimension(:,:,:), pointer, contiguous :: doppler_factor => null()
+      ! LTE, NLTE and total population of active atom
+      real(4), dimension(:,:,:,:), pointer, contiguous :: nstar => null()
+      real(4), dimension(:,:,:,:), pointer, contiguous :: n     => null()
+      real(8), dimension(:,:,:,:), pointer, contiguous :: gamma_ij => null()
+      real(8), dimension(:,:,:,:), pointer, contiguous :: gamma_ji => null()
+      real(4), dimension(:,:,:,:), pointer, contiguous :: ni_over_nj_lte => null()
+      real(4), dimension(:,:,:), pointer, contiguous :: totn => null() 
+    end type loca_data_t
   
     type, public :: atom_type
       integer :: nrad   ! total number of radiative transitions
@@ -58,20 +70,21 @@ MODULE atom_mod
       real(8), dimension(:), allocatable :: ev ! energy of level above ground state [eV]
       real(8), dimension(:), allocatable :: g ! multiplicity of level
 
-      type(line_type), dimension(:), allocatable :: line
-      type(cont_type), dimension(:), allocatable :: cont
+      type(line_type), dimension(:), pointer, contiguous :: line
+      type(cont_type), dimension(:), pointer, contiguous :: cont
       type(coll_type), dimension(:), pointer, contiguous :: coll
       type(atomic_spectrum_type), pointer :: sp
+      type(loca_data_t), pointer :: data
 
-      ! rather constant doppler width factor, i.e. dnud = line(i)%nu0 * doppler_factor [Hz]
-      real(4), dimension(:,:,:), pointer, contiguous :: doppler_factor => null()
-
-      ! LTE, NLTE and total population of active atom
-      real(4), dimension(:,:,:,:), pointer, contiguous :: nstar => null()
-      real(4), dimension(:,:,:,:), pointer, contiguous :: n     => null()
-      real(8), dimension(:,:,:,:), pointer, contiguous :: gamma_ij => null()
-      real(8), dimension(:,:,:,:), pointer, contiguous :: gamma_ji => null()
-      real(4), dimension(:,:,:), pointer, contiguous :: totn => null()
+      !! rather constant doppler width factor, i.e. dnud = line(i)%nu0 * doppler_factor [Hz]
+      !real(4), dimension(:,:,:), pointer, contiguous :: doppler_factor => null()
+      !
+      !! LTE, NLTE and total population of active atom
+      !real(4), dimension(:,:,:,:), pointer, contiguous :: nstar => null()
+      !real(4), dimension(:,:,:,:), pointer, contiguous :: n     => null()
+      !real(8), dimension(:,:,:,:), pointer, contiguous :: gamma_ij => null()
+      !real(8), dimension(:,:,:,:), pointer, contiguous :: gamma_ji => null()
+      !real(4), dimension(:,:,:), pointer, contiguous :: totn => null()
       real(8), dimension(:,:), pointer, contiguous :: tgrid, cgrid, dcdt
       real(4), dimension(:), pointer, contiguous :: cdata
       logical, dimension(:), pointer, contiguous :: ecol, hcol
@@ -101,7 +114,6 @@ MODULE atom_mod
       procedure :: prepare_Drawin
       procedure :: classic_col
       procedure :: copy_to
-      procedure :: link_to
     end type atom_type
 
     logical, public :: use_classic_col = .False.
@@ -162,7 +174,8 @@ MODULE atom_mod
       ffs = fs-fs_patch+1
       ffe = fe-fs_patch+1
 
-      call cnt%opacities(cnt%alpha(fs:fe), self%n, self%nstar, eta(:,:,:,ffs:ffe), chi(:,:,:,ffs:ffe))
+      call cnt%opacities(cnt%alpha(fs:fe), self%data%ni_over_nj_lte(:,:,:,i), &
+      self%data%n, self%data%nstar, eta(:,:,:,ffs:ffe), chi(:,:,:,ffs:ffe))
 
       !if (self%fcheck >= fs .and. self%fcheck <= fe) then
       !   p(:) = self%pcheck
@@ -351,6 +364,8 @@ MODULE atom_mod
     real(4), dimension(:,:,:), intent(in) :: temp, ne
     real(4), dimension(:,:,:) :: dxi
     real(4), dimension(:,:,:), allocatable :: partition, saha
+    real(4), dimension(:,:,:), pointer, contiguous :: totn
+    real(4), dimension(:,:,:,:), pointer, contiguous :: n, nstar
     integer :: nx, ny, nz
     logical :: zero_pop
     !---------------------------------------------------------------------------------
@@ -360,26 +375,30 @@ MODULE atom_mod
     
     allocate(partition, mold=temp)
     allocate(saha, mold=temp)
-    if (.not. associated(self%nstar)) allocate(self%nstar(nx, ny, nz, self%nlevel))
-    if (.not. associated(self%n    )) allocate(self%n    (nx, ny, nz, self%nlevel))
+    if (.not. associated(self%data%nstar)) allocate(self%data%nstar(nx, ny, nz, self%nlevel))
+    if (.not. associated(self%data%n    )) allocate(self%data%n    (nx, ny, nz, self%nlevel))
+
+    totn  => self%data%totn
+    nstar => self%data%nstar
+    n => self%data%n
 
     !dxi = 4.98e-4*5040./temp*sqrt(ne*bk*temp)
 
     if (associated(element)) then
-      partition = self%totn
+      partition = totn
       saha = 0.0
       do i=1, self%nlevel
         j = self%ion(i)
         ion => element%ions(j)
-        self%nstar(:,:,:,i) = self%lte_pop(i, temp, dxi, saha, partition)
-        self%nstar(:,:,:,i) = self%nstar(:,:,:,i) * ion%anjon * ion%part
+        nstar(:,:,:,i) = self%lte_pop(i, temp, dxi, saha, partition)
+        nstar(:,:,:,i) = nstar(:,:,:,i) * ion%anjon * ion%part
       end do
     else
       !saha = temp*sqrt(temp) / (saha_const*ne)
       saha = 1.5*log(temp) - log(saha_const*ne) ! actually log(saha)
 
       if (associated(mol)) then
-        partition = self%totn / mol%irwin_partf(dble(temp))
+        partition = totn / mol%irwin_partf(dble(temp))
       else
         !select case (self%id(1:len_trim(self%id)))
         !case ('ch','co','cn')
@@ -389,22 +408,22 @@ MODULE atom_mod
         !   stop
         !case default
         !   molec=.false.
-            partition = self%partition_function(temp, dxi, saha, self%totn)
+            partition = self%partition_function(temp, dxi, saha, totn)
         !end select
       endif
 
       do i=1, self%nlevel
-        where(self%totn == 0)
-          self%nstar(:,:,:,i) = 0
+        where(totn == 0)
+          nstar(:,:,:,i) = 0
         elsewhere
-          self%nstar(:,:,:,i) = self%lte_pop(i, temp, dxi, saha, partition)
+          nstar(:,:,:,i) = self%lte_pop(i, temp, dxi, saha, partition)
         endwhere
 
         zero_pop = .false.
         do x=1, nx
         do y=1, ny
         do z=1, nz
-          if (self%nstar(x,y,z,i) <= tiny(0.0) .and. .not. self%totn(x,y,z)==0) then
+          if (nstar(x,y,z,i) <= tiny(0.0) .and. .not. totn(x,y,z)==0) then
             zero_pop = .true.
           endif
         end do
@@ -418,7 +437,7 @@ MODULE atom_mod
 
       ! scale total abundances if treated model is a molecule
       !if(molec) then
-      !   self%totn = partition * self%nstar(:,:,:,1)
+      !   totn = partition * nstar(:,:,:,1)
       !endif
     endif
   END SUBROUTINE compute_lte_populations
@@ -494,14 +513,15 @@ MODULE atom_mod
     class(atom_type), target, intent(inout) :: self
     real(4), dimension(:,:,:) :: temp, dxi, ne
     real(4) :: dev, tns, test, saha, lalpha
-    integer :: i, j, k, kr, n(3), x, y, z, ii, jj
+    integer :: i, j, k, kr, n(4), x, y, z, ii, jj
     class(cont_type), pointer :: cont
     !---------------------------------------------------------------------------------
-    n = shape(self%totn)
+    n = [shape(temp), self%ncont]
+    call os%allocate(self%data%ni_over_nj_lte, n, label='data%ni_over_nj_lte')
+
     do kr=1,self%ncont
       cont => self%cont(kr)
       if (.not. cont%active) cycle
-      call os%allocate(cont%ni_over_nj_lte, n, label='cont%ni_over_nj_lte')
       i = cont%i
       j = cont%j
       ii = 0.5*(self%ion(i)*(self%ion(i)-1))
@@ -514,7 +534,7 @@ MODULE atom_mod
         dev = self%ev(i) - self%ev(j) - dxi(x,y,z)*(ii - jj)
         tns = log(self%g(i)/self%g(j)) - e_k/temp(x,y,z)*dev
         tns = tns + (self%ion(i) - self%ion(j))*saha
-        cont%ni_over_nj_lte(x,y,z) = exp(tns + lalpha)
+        self%data%ni_over_nj_lte(x,y,z,kr) = exp(tns + lalpha)
         !cont%ni_over_nj_lte(x,y,z) = self%nstar(x,y,z,i) / self%nstar(x,y,z,j)
       end do
       end do
@@ -709,8 +729,6 @@ MODULE atom_mod
         endif
       end do
 
-      lin%ired = 1
-      lin%iblue = lin%nnu
       lin%ntrans = i
 
       call lin%prepare_Stark(gq)
@@ -854,8 +872,6 @@ MODULE atom_mod
         endif
       endif
 
-      cnt%ired = 1
-      cnt%iblue = cnt%nnu
       tri = (cnt%j-1)*(cnt%j-2)/2 + cnt%i
       self%cdata(tri) = cnt%alpha0
 
@@ -1161,7 +1177,7 @@ MODULE atom_mod
   SUBROUTINE create_spectrum (self, sp, bb, bf)
     class(atom_type), target :: self
     class(spectrum_type), intent(out) :: sp
-    logical, intent(in) :: bb, bf
+    logical, intent(in), optional :: bb, bf
     type(line_type), pointer :: lin
     type(cont_type), pointer :: cnt
     integer :: i,nnu,js,je
@@ -1171,13 +1187,13 @@ MODULE atom_mod
     call trace%begin('atom_type%create_spectrum', itimer=itimer)
     ! compute total number of frequencies
     nnu = 0
-    if (bb) nnu = nnu + sum(self%line%nnu, self%line%active)
-    if (bf) nnu = nnu + sum(self%cont%nnu, self%cont%active)
+    if (option(bb)) nnu = nnu + sum(self%line%nnu, self%line%active)
+    if (option(bf)) nnu = nnu + sum(self%cont%nnu, self%cont%active)
 
     ! save all frequencies
     allocate(nu(nnu))
     je=0
-    if (bb) then
+    if (option(bb)) then
       do i=1,self%nline
         lin => self%line(i)
         if (.not. lin%active) cycle
@@ -1186,7 +1202,7 @@ MODULE atom_mod
         nu(js:je)=lin%get_nu()
       end do
     endif
-    if (bf) then
+    if (option(bf)) then
       do i=1,self%ncont
         cnt => self%cont(i)
         if (.not. cnt%active) cycle
@@ -1213,7 +1229,7 @@ MODULE atom_mod
   SUBROUTINE set_active_transitions (self, sp, bb, bf)
     class(atom_type), target :: self
     class(atomic_spectrum_type), intent(inout) :: sp
-    logical, intent(in) :: bb, bf
+    logical, intent(in), optional :: bb, bf
     type(line_type), pointer :: lin
     type(cont_type), pointer :: cnt
     real(8), dimension(:), allocatable :: dalpha_dnu,alpha_fromfile,nu_fromfile, alpha
@@ -1226,7 +1242,7 @@ MODULE atom_mod
     call os%allocate(sp%nac, sp%nnu, zero=.true.)
     call os%allocate(sp%nal, sp%nnu, zero=.true.)
 
-    if (bf) then
+    if (option(bf)) then
       do i=1,self%ncont
         cnt => self%cont(i)
         if (.not. cnt%active) cycle
@@ -1242,7 +1258,7 @@ MODULE atom_mod
       end do
     endif
 
-    if (bb) then
+    if (option(bb)) then
       do i=1,self%nline
         lin => self%line(i)
         if (.not. lin%active) cycle
@@ -1263,7 +1279,7 @@ MODULE atom_mod
     sp%nac = 0
     sp%nal = 0
 
-    if (bf) then    
+    if (option(bf)) then    
       do i=1,self%ncont
         cnt => self%cont(i)
         if (.not. cnt%active) cycle
@@ -1315,7 +1331,7 @@ MODULE atom_mod
       end do
     endif
 
-    if (bb) then
+    if (option(bb)) then
       do i=1,self%nline
         lin => self%line(i)
         if (.not. lin%active) cycle
@@ -1353,6 +1369,7 @@ MODULE atom_mod
     call self%get_active_nlevels(sp)
 
     write(*,'(a,I0,a)') 'sp_from_atom: frequency grid has ', sp%nnu, ' points.'
+    write(*,'(a,I0,a)') 'sp_from_atom: ', sum(sp%nac+sp%nal), ' active transition-frequency points'
     call trace%end(itimer)
   END SUBROUTINE set_active_transitions
 
@@ -1450,50 +1467,26 @@ MODULE atom_mod
   END SUBROUTINE unique_int
 
   !===============================================================================
-  SUBROUTINE copy_to (self, other)
+  SUBROUTINE copy_to (self, other, unlink_bb, unlink_bf)
     class(atom_type) :: self
     type(atom_type) :: other
-    real(8), dimension(:,:), pointer :: tgrid, cgrid, dcdt
-    type(coll_type), dimension(:), pointer :: col
+    logical, intent(in), optional :: unlink_bb, unlink_bf
     !-----------------------------------------------------------------------------
-    tgrid => self%tgrid
-    cgrid => self%cgrid
-    dcdt  => self%dcdt
-    col   => self%coll
-    nullify(self%tgrid)
-    nullify(self%cgrid)
-    nullify(self%dcdt)
-    nullify(self%coll)
-
     ! deep copy
     other = self
 
-    self%tgrid => tgrid
-    self%cgrid => cgrid
-    self%dcdt  => dcdt 
-    self%coll  => col
-    other%tgrid => tgrid
-    other%cgrid => cgrid
-    other%dcdt  => dcdt 
-    other%coll  => col
-    
-    call os%mem_register(storage_size(self%line), self%nline, label='atom%line')
-    call os%mem_register(storage_size(self%cont), self%ncont, label='atom%cont')
+    ! make copies of transitions
+    if (option(unlink_bb)) then
+      allocate(other%line, mold=self%line)
+      call os%mem_register(storage_size(self%line), self%nline, label='atom%line')
+      other%line  = self%line
+    endif
+    if (option(unlink_bf)) then
+      allocate(other%cont, mold=self%cont)
+      call os%mem_register(storage_size(self%cont), self%ncont, label='atom%cont')
+      other%cont  = self%cont
+    endif
   END SUBROUTINE
-
-  !===============================================================================
-  SUBROUTINE link_to (self, other)
-    class(atom_type) :: self, other
-    integer :: i
-    !-----------------------------------------------------------------------------
-    self%n     => other%n
-    self%nstar => other%nstar
-    self%totn  => other%totn
-    self%doppler_factor => other%doppler_factor
-    do i=1, self%ncont
-      self%cont(i)%ni_over_nj_lte => other%cont(i)%ni_over_nj_lte
-    enddo
-  END SUBROUTINE link_to
 
   !===============================================================================
   SUBROUTINE set_weights (weight, nu, start, end)

@@ -57,21 +57,30 @@ MODULE atom_rate_patch_mod
     call self%ray_patch_t%pre_init()
 
     call os%allocate(self%idx_map, self%atom%nrad, zero=.true., label='atom_rate:idx_map')
+
     nrad = 0
-    do i=1, size(self%atom%line)
-      trans => self%atom%line(i)
-      call trans%check_range(self%fs,self%fe,fs,fe,skip)
-      if (skip) cycle
-      nrad = nrad+1
-      self%idx_map(trans%ntrans) = nrad
-    end do
-    do i=1, size(self%atom%cont)
-      trans => self%atom%cont(i)
-      call trans%check_range(self%fs,self%fe,fs,fe,skip)
-      if (skip) cycle
-      nrad = nrad+1
-      self%idx_map(trans%ntrans) = nrad
-    end do
+    if (self%sp%maxal > 0) then
+      do i=1, size(self%atom%line)
+        trans => self%atom%line(i)
+        if (.not. trans%active) cycle
+        call trans%check_range(self%fs,self%fe,fs,fe,skip)
+        if (skip) cycle
+        nrad = nrad+1
+        self%idx_map(trans%ntrans) = nrad
+      end do
+    endif
+
+    if (self%sp%maxac > 0) then
+      do i=1, size(self%atom%cont)
+        trans => self%atom%cont(i)
+        if (.not. trans%active) cycle
+        call trans%check_range(self%fs,self%fe,fs,fe,skip)
+        if (skip) cycle
+        nrad = nrad+1
+        self%idx_map(trans%ntrans) = nrad
+      end do
+    endif
+
     call os%allocate(self%idx_remap, nrad, label='atom_rate:idx_remap')
     do i=1, self%atom%nrad
       k = self%idx_map(i)
@@ -93,14 +102,17 @@ MODULE atom_rate_patch_mod
     if (self%is_finished()) return
     call trace%begin('atom_rate_t%atom_rate_update', itimer=itimer)
 
+    call self%check_access(self%rad)
+    if (self%sp%maxal > 0) then
+      call self%check_access(self%lines)
+    endif
+
     gamma_ij => self%mem(:,:,:,:, self%it, self%i_Gij)
     gamma_ji => self%mem(:,:,:,:, self%it, self%i_Gji)
 
     if (.not. self%rad%stiff) then
       self%static_mem = .false.
     endif
-
-    if (self%sp%maxal > 0) call self%check_access(self%lines)
 
     if (.not. self%static_mem) then
       call self%full_preconditioning(gamma_ij, gamma_ji)
@@ -269,8 +281,8 @@ MODULE atom_rate_patch_mod
         do kr=1, n_active
           i = ii(kr)
           j = jj(kr)
-          ni => atom%n(:,:,:,lower(i))
-          nj => atom%n(:,:,:,upper(j))
+          ni => atom%data%n(:,:,:,lower(i))
+          nj => atom%data%n(:,:,:,upper(j))
 
           ufac = twohnu3_c2 / wnu(kr)
 
@@ -283,7 +295,7 @@ MODULE atom_rate_patch_mod
             do y=1,ny
             do x=1,nx
               vij(x,y,z,kr) = alpha2
-              vji(x,y,z,kr) = alpha * atom%cont(kc)%ni_over_nj_lte(x,y,z) * blzfac(x,y,z)
+              vji(x,y,z,kr) = alpha * atom%data%ni_over_nj_lte(x,y,z,kc) * blzfac(x,y,z)
               chi = vij(x,y,z,kr) * ni(x,y,z) - vji(x,y,z,kr) * nj(x,y,z)
 
               SumU(x,y,z,j) = SumU(x,y,z,j) + vji(x,y,z,kr) * ufac
@@ -380,18 +392,18 @@ MODULE atom_rate_patch_mod
     real(4) :: wmu
     !-----------------------------------------------------------------------------
     call self%m3d_parent%mem_lock(1)%set('integrate_rates')
-    atom => self%m3d_parent%atom
-    if (.not. associated(atom%gamma_ij)) then
+    atom => self%atom
+    if (.not. associated(atom%data%gamma_ij)) then
       m = [self%n, atom%nrad]
-      call os%allocate(atom%gamma_ij, m, zero=.true., label='atom%gamma_ij')
-      call os%allocate(atom%gamma_ji, m, zero=.true., label='atom%gamma_ji')
+      call os%allocate(atom%data%gamma_ij, m, zero=.true., label='atom%gamma_ij')
+      call os%allocate(atom%data%gamma_ji, m, zero=.true., label='atom%gamma_ji')
       self%atom%stiff=.true.
     endif
     wmu = self%wmu / over_4pi
     do i=1, self%nv
       k = self%idx_remap(i)
-      atom%gamma_ij(:,:,:,k) = atom%gamma_ij(:,:,:,k) + wmu * gamma_ij(:,:,:,i)
-      atom%gamma_ji(:,:,:,k) = atom%gamma_ji(:,:,:,k) + wmu * gamma_ji(:,:,:,i)
+      atom%data%gamma_ij(:,:,:,k) = atom%data%gamma_ij(:,:,:,k) + wmu * gamma_ij(:,:,:,i)
+      atom%data%gamma_ji(:,:,:,k) = atom%data%gamma_ji(:,:,:,k) + wmu * gamma_ji(:,:,:,i)
     end do
     if (.not. self%static_mem) then
       self%atom%stiff=.false.
@@ -446,6 +458,8 @@ MODULE atom_rate_patch_mod
       call self%print_to_stdout(text='update skipped')
     elseif (any(memcheck > 0)) then
       call self%print_to_stdout(arr=memcheck(1:2))
+    else
+      call self%print_to_stdout()
     endif
   END SUBROUTINE print_post_update_info
   

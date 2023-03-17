@@ -70,7 +70,7 @@ MODULE back_line_patch_mod
   SUBROUTINE back_line_patch_update (self)
     class(back_line_patch_t) :: self
     real(4), dimension(:,:,:), pointer, contiguous :: vproj
-    real(4), dimension(:,:,:,:), pointer :: eta, chi
+    real(4), dimension(:,:,:,:), pointer, contiguous :: eta, chi
     real(8), dimension(:), pointer, contiguous :: nu
     integer, save:: itimer=0, itimer2=0
     !-----------------------------------------------------------------------------

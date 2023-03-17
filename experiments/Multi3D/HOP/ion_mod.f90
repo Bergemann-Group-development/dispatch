@@ -9,7 +9,7 @@ MODULE ion_mod
         integer :: nx, ny, nz, nline=0
         character(len=6) :: id
         logical :: allocated=.false.
-        class(bbtrans_type), dimension(:), allocatable :: line
+        type(bbtrans_type), dimension(:), allocatable :: line
         real(dp), allocatable, dimension(:) :: irwin
         logical :: in_linelist
     contains

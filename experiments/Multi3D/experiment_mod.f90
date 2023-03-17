@@ -280,7 +280,7 @@ SUBROUTINE task_info (self, unit)
   !-----------------------------------------------------------------------------
   unit_L = shared%option (unit, io_unit%mpi)
   write(unit_L,'(1x,a,2x,a10,i6,4i4,7x,2l1,2x,3f9.3)') &
-    'experiment_t%task_info: kind, id, rank, level, mu, nu, BV, pos', &
+    'experiment_t%task_info: kind, id, rank, level, nu, mu, BV, pos', &
     self%kind, self%id, self%rank, self%level, 0, 0, &
     self%is_set(bits%boundary), self%is_set(bits%virtual), self%position
 END SUBROUTINE task_info

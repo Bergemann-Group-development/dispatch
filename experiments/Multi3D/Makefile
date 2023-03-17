@@ -1,8 +1,8 @@
 # Option groups
-OPTS = full_debug
+#OPTS = full_debug
 #OPTS = vscode
 #OPTS = debug
-#OPTS =
+OPTS =
 #OPTS = hoppe
 #OPTS = optimized
 
@@ -11,6 +11,11 @@ EXEC            = dispatch.x
 TOP             = ../..
 
 # Default methods
+ifndef mpiifort
+  MPI=
+endif
+
+COMPILER        = ifort
 SOLVER          = ramses/hlld_eos
 RT_SOLVER       = short_characteristics
 #EOS             = microphysics/eos/itable
@@ -48,7 +53,7 @@ guards_mod.o                : math_mod.o
 coll_var.o                  : coll_mod.o
 coll_mod.o                  : mmath.o 
 trans_mod.o                 : bbtrans_mod.o coll_mod.o
-atom_mod.o                  : m3io_mod.o trans_mod.o coll_mod.o op_math_mod.o spectrum_mod.o element_mod.o molecule_mod.o
+atom_mod.o                  : m3io_mod.o trans_mod.o coll_mod.o op_math_mod.o spectrum_mod.o element_mod.o molecule_mod.o handyfuncs_mod.o
 spectrum_mod.o              : io_mod.o timer_mod.o trace_mod.o mconst.o
 m3d_halo_mod.o              : halo_mod.o guards_mod.o gpatch_mod.o
 m3d_patch_mod.o             : gpatch_mod.o atom_mod.o ray_mod.o m3d_halo_mod.o handyfuncs_mod.o m3d_debug_mod.o

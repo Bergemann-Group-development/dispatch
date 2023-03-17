@@ -808,8 +808,8 @@ MODULE m3d_patch_mod
     !-----------------------------------------------------------------------------
     unit_L = shared%option (unit, io_unit%mpi)
     write(unit_L,'(1x,a,2x,a10,i6,4i4,7x,2l1,2x,3f9.3)') &
-      'm3d_patch_t%task_info: kind, id, rank, level, mu, nu, BV, pos', &
-      self%kind, self%id, self%rank, self%level, self%i_mu, self%i_nu, &
+      'm3d_patch_t%task_info: kind, id, rank, level, nu, mu, BV, pos', &
+      self%kind, self%id, self%rank, self%level, self%i_nu, self%i_mu, &
       self%is_set(bits%boundary), self%is_set(bits%virtual), self%position
   END SUBROUTINE task_info
   

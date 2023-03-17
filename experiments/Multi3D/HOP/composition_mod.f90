@@ -542,11 +542,11 @@ contains
                 allocate(lines(nline))
                 lines = p%line
                 deallocate(p%line)
-                allocate(p%line(p%nline+nline))
-                p%line(1:p%nline) = lines
-                deallocate(lines)
                 prev = p%nline
                 p%nline = p%nline + nline
+                allocate(p%line(p%nline))
+                p%line(1:prev) = lines
+                deallocate(lines)
             endif
 
             do i=1, nline

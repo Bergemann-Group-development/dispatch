@@ -201,7 +201,7 @@ MODULE atom_line_patch_mod
     ne   => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_ne,            self%it,1)
     temp => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_temp,          self%it,1)
     nh   => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_nh1:self%i_nh6,self%it,1)
-    doppler_factor => self%atom%doppler_factor
+    doppler_factor => self%atom%data%doppler_factor
 
     call os%allocate(tothi,       self%n)
     call os%allocate(adamp,       self%n)
@@ -321,11 +321,11 @@ MODULE atom_line_patch_mod
       call line%interpolate_phi(nu, phi)
 
       if (LTE) then
-        ni => self%atom%nstar(:,:,:,line%i)
-        nj => self%atom%nstar(:,:,:,line%j)
+        ni => self%atom%data%nstar(:,:,:,line%i)
+        nj => self%atom%data%nstar(:,:,:,line%j)
       else
-        ni => self%atom%n(:,:,:,line%i)
-        nj => self%atom%n(:,:,:,line%j)
+        ni => self%atom%data%n(:,:,:,line%i)
+        nj => self%atom%data%n(:,:,:,line%j)
       endif
 
       eta_fac = line%Aji * nj
