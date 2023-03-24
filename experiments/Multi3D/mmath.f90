@@ -29,7 +29,9 @@ MODULE mmath
   end interface har_mean_deriv
 
   interface hermite_interpolation
-     module procedure hermite_interpolation_single, hermite_interpolation_1d
+     module procedure hermite_interpolation_single, &
+                      hermite_interpolation_1d, &
+                      hermite_interpolation_1d4
   end interface hermite_interpolation
 
   interface ei1
@@ -595,6 +597,43 @@ contains
     end do
 
   END SUBROUTINE hermite_interpolation_1d
+
+  ! *******************************************************************
+
+  PURE SUBROUTINE hermite_interpolation_1d4(yy,xx,x,y,dydx)
+    implicit none
+
+    real(kind=8), dimension(:), intent(in)  :: x,y,dydx
+    real(8), dimension(:),intent(in) :: xx
+    real(4), dimension(:),intent(out):: yy
+    integer :: n,i,k
+    real(8) :: q,q2,q3,dx,p
+
+    n=size(x)
+
+    do k=1,size(xx)
+
+       if (xx(k)<=x(1)) then
+          yy(k) = y(1)
+       else if (xx(k)>=x(n)) then
+          yy(k) = y(n)
+       else
+
+          call hunt(n, x, xx(k), i)
+
+          dx = x(i+1)-x(i)
+          q = (xx(k)-x(i)) / dx
+          q2=q**2
+          q3=q2*q
+          p = 3.0d0*q2 - 2.0d0*q3
+
+          yy(k) = (1.0d0-p)*y(i) + p*y(i+1) + dx * ((q3-2.0d0*q2 +q)*dydx(i) + (q3-q2)*dydx(i+1))    
+
+       end if
+
+    end do
+
+  END SUBROUTINE hermite_interpolation_1d4
 
   ! ***********************************************************************
 

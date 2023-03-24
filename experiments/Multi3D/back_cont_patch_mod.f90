@@ -59,6 +59,7 @@ MODULE back_cont_patch_mod
     real(8), dimension(:), pointer, contiguous :: nu
     real(4), dimension(:,:,:,:), pointer, contiguous :: Jold, abslte, sumsca
     real(4), dimension(:,:,:), pointer, contiguous :: vproj
+    integer, dimension(:), pointer :: isort
     character(len=64) :: text
     integer, save:: itimer=0
     integer :: m(6)
@@ -67,7 +68,7 @@ MODULE back_cont_patch_mod
     call trace%begin('back_cont_patch_t%update', itimer=itimer)
     chi => self%mem(:,:,:,:, self%it, self%i_chi)
     eta => self%mem(:,:,:,:, self%it, self%i_eta)
-    nu  => self%sp%nu(self%fs:self%fe)
+    nu => self%sp%nu(self%fs:self%fe)
     eta = 0
   
     if (save_back_cont) then
@@ -80,7 +81,8 @@ MODULE back_cont_patch_mod
     endif
   
     if (self%iter == 0 .or. .not. save_back_cont) then
-      call self%composition%absorption(nu, chi, abslte, sumsca, include_absmet=self%out_ray==.false.)
+      call self%composition%absorption(nu, chi, abslte, sumsca, &
+      include_absmet=.not.self%out_ray, sorted=self%sp%sorted)
     endif
     
     if (.not. self%out_ray .and. ilambd > 0 .and. self%iter > 0) then

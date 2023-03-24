@@ -6,6 +6,7 @@ MODULE bftrans_mod
   USE element_mod
   USE molecule_mod
   USE os_mod
+  USE handyfuncs_mod
   implicit none
   private
   
@@ -34,6 +35,7 @@ MODULE bftrans_mod
       procedure :: add_absorption
       procedure :: set_xweight
       procedure :: load_lam_interp_weights
+      procedure :: load_unsorted_lam_interp_weights
       procedure :: interp_temp_quadratic
       procedure :: interp_temp_linear
   end type
@@ -49,7 +51,7 @@ MODULE bftrans_mod
 contains
 
   !===============================================================================
-  SUBROUTINE load_lam_interp_weights(self,lam)
+  SUBROUTINE load_lam_interp_weights(self, lam)
     class(bftrans_type) :: self
     real(dp), dimension(:), intent(in) :: lam
     integer :: nf, f
@@ -104,28 +106,71 @@ contains
     quad(f) = quadratic
 
     do i=1, nf+nx ! i is not actually needed
-        if (j >= nx) then
-            iw(f) = nx
+      if (j >= nx) then
+          iw(f) = nx
 
-        elseif (self%lam(j+1) < lam(f)) then
-            j = j+1
-            quadratic = self%check_lam_quadratic(j)
-            cycle
+      elseif (self%lam(j+1) < lam(f)) then
+          j = j+1
+          quadratic = self%check_lam_quadratic(j)
+          cycle
 
-        elseif (self%lam(j) < lam(f)) then
-            iw(f) = j
+      elseif (self%lam(j) < lam(f)) then
+          iw(f) = j
 
-        else
-            iw(f) = 1
-        endif
+      else
+          iw(f) = 1
+      endif
 
-        call self%set_xweight(lam, f)
+      call self%set_xweight(lam, f)
 
-        if (f == fe) exit
-        f = f+di
-        quad(f) = quadratic
+      if (f == fe) exit
+      f = f+di
+      quad(f) = quadratic
     end do
   END SUBROUTINE
+
+    !===============================================================================
+  SUBROUTINE load_unsorted_lam_interp_weights(self, lam)
+    class(bftrans_type) :: self
+    real(dp), dimension(:), intent(in) :: lam
+    real(dp) :: minl, maxl
+    integer :: nf, f
+    integer :: nx, j, i
+    logical :: quadratic
+    !---------------------------------------------------------------------------
+    active = .true.
+
+    nx = size(self%lam)
+    nf = size(lam)
+
+    minl = minval(lam, 1)
+    maxl = maxval(lam, 1)
+
+    if (.not. self%minex .and. self%minl > maxl) then
+      active = .false.
+      return
+    endif
+
+    if (.not. self%maxex .and. self%maxl < minl) then
+      active = .false.
+      return
+    endif
+
+    fs = nf
+    fe = 1
+    di = 1
+    iw(:) = 0
+
+    do i=1, nf
+      if (.not. self%maxex .and. lam(i) > self%maxl) cycle
+      if (.not. self%minex .and. lam(i) < self%minl) cycle
+      fs = min(i, fs)
+      fe = max(i, fe)
+      iw(i) = searchsorted(self%lam, lam(i), outbounds_ok=.true.)
+      quad(i) = self%check_lam_quadratic(iw(i))
+      call self%set_xweight(lam, i)
+    end do
+  END SUBROUTINE load_unsorted_lam_interp_weights
 
   !===============================================================================
   SUBROUTINE set_xweight(self, lam, f)
@@ -256,6 +301,7 @@ contains
 
           do f=fs,fe,di
               i = iw(f)
+              if (i==0) cycle
               if (quad(f)) then
                   where (in_bounds)
                       ab = yyt(:,:,:,i)   * lagrange(1,f) + &
@@ -286,6 +332,7 @@ contains
 
           do f=fs,fe,di
               i = iw(f)
+              if (i==0) cycle
               if (quad(f)) then
                   ab1 = sum(yy(i:i+2) * lagrange(1:3,f))
               else
@@ -347,11 +394,14 @@ contains
       quadratic = .false.
 
       if (self%kvadl) then
-          if (self%nnu - iw > 1) then
-              if (.not. self%ldisk(iw)) then
-                  quadratic = .true.
-              endif
+        if (self%nnu - iw > 1) then
+          if (iw < 0) then
+            quadratic = .false.
           endif
+          if (.not. self%ldisk(iw)) then
+            quadratic = .true.
+          endif
+        endif
       endif
   end FUNCTION check_lam_quadratic
 
@@ -455,12 +505,13 @@ contains
   END SUBROUTINE absorption_factor
 
   !===============================================================================
-  SUBROUTINE add_absorption(self, abslte, lam, temp, EK_over_temp, teta, pe, rho, dxi, xfakh)
+  SUBROUTINE add_absorption(self, abslte, lam, temp, EK_over_temp, teta, pe, rho, dxi, xfakh, sorted)
       class(bftrans_type), intent(in) :: self
       real(4), dimension(:,:,:,:), intent(inout) :: abslte
       real(dp), dimension(:,:,:), intent(in) :: temp, EK_over_temp, teta, pe, rho, dxi, xfakh
       real(dp), dimension(:), intent(in) :: lam
       real(dp), dimension(:,:,:), allocatable :: fakt
+      logical, optional :: sorted
       real(dp) :: prev
       integer :: i,j,k,nf, m(2)
       !---------------------------------------------------------------------------
@@ -479,7 +530,11 @@ contains
       call os%allocate(pvt_xkap, shape(self%xkap))
       allocate(fakt, mold=temp)
 
-      call self%load_lam_interp_weights(lam)
+      if (option(sorted, .true.)) then
+        call self%load_lam_interp_weights(lam)
+      else
+        call self%load_unsorted_lam_interp_weights(lam)
+      endif
 
       if (active) then
           !prev = abslte(pp(1), pp(2), pp(3), pp(4))

@@ -40,16 +40,16 @@ MODULE m3d_patch_mod
 
     type, public :: key_link_t
       integer :: key(4)
-      class(key_link_t), pointer :: next=>null()
+      class(key_link_t), pointer :: next => null()
     end type key_link_t
   
     !-----------------------------------------------------------------------------
   
     type, public, extends(gpatch_t) :: m3d_patch_t
-      class(gpatch_t),      pointer :: patch => null()         ! pointer to mhd patch
-      class(m3d_patch_t),   pointer :: m3d_parent => null()    ! pointer to parent patch
+      class(gpatch_t),    pointer :: patch => null()         ! pointer to mhd patch
+      class(m3d_patch_t), pointer :: m3d_parent => null()    ! pointer to parent patch
       class(atomic_spectrum_type), pointer :: sp => null()
-      class(atom_type), pointer :: atom => null()
+      type(atom_type), pointer :: atom => null()
       class(key_link_t), pointer :: key_list => null()
       class(m3d_patch_t), pointer :: last_allocator, last_deallocator
       real(4), dimension(:,:,:,:,:,:), pointer :: authority_mem => null()
@@ -309,14 +309,16 @@ MODULE m3d_patch_mod
   END SUBROUTINE m3d_post_pre_init
 
   !===============================================================================
-  recursive SUBROUTINE pre_init_and_link (self, m3d_parent, i_mu, i_nu, sp)
+  recursive SUBROUTINE pre_init_and_link (self, m3d_parent, i_mu, i_nu, sp, atom)
     class(m3d_patch_t), target :: self, m3d_parent
     class(atomic_spectrum_type), pointer, optional :: sp
+    class(atom_type), target, optional :: atom
     integer, optional :: i_mu, i_nu
     !-----------------------------------------------------------------------------
     if (present(i_mu)) self%i_mu = i_mu
     if (present(i_nu)) self%i_nu = i_nu
     if (present(sp)) self%sp => sp
+    if (present(atom)) self%atom => atom
     self%patch => m3d_parent%patch
     self%m3d_parent => m3d_parent
     self%zs = m3d_parent%zs

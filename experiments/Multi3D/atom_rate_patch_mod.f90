@@ -212,9 +212,9 @@ MODULE atom_rate_patch_mod
         do kr=1, n_active
           k = trans(kr)
           if (kr <= sp%nac(ff)) then
-            wnu(kr) = atom%cont(k)%wnu(ff)
+            wnu(kr) = atom%cont(k)%wnu(ff-atom%cont(k)%ired+1)
           else
-            wnu(kr) = atom%line(k)%wnu(ff)
+            wnu(kr) = atom%line(k)%wnu(ff-atom%line(k)%ired+1)
           endif
         end do
 
@@ -289,7 +289,7 @@ MODULE atom_rate_patch_mod
           if (kr <= sp%nac(ff)) then
             kc = sp%ac(kr,ff)
             ! alpha0 is part of ni_over_nj_lte for overflow reasons
-            alpha = atom%cont(kc)%alpha(ff) * wnu(kr)
+            alpha = atom%cont(kc)%alpha(ff-atom%cont(kc)%ired+1) * wnu(kr)
             alpha2 = alpha * atom%cont(kc)%alpha0
             do z=1,nz
             do y=1,ny

@@ -32,6 +32,7 @@ MODULE composition_patch_mod
   !-----------------------------------------------------------------------------
   type, public, extends(m3d_patch_t) :: composition_patch_t
     class(gpatch_t), pointer :: mhd ! pointer to MHD patch
+    class(atom_patch_t), pointer :: atom_patch
     type(composition_type) :: composition
   contains
     procedure :: pre_init => composition_pre_init
@@ -103,6 +104,7 @@ SUBROUTINE composition_pre_init (self)
     
     allocate(output_sp)
     call output_sp%init()
+    output_sp%name = 'output'
   endif
 
   ! copy composition with all the information from the abund
@@ -122,6 +124,7 @@ SUBROUTINE composition_pre_init (self)
   n_mu = self%n_mu
 
   if (atom_patch%atom_allocated) then
+    self%atom_patch => atom_patch
     if (output_sp%nnu == 0) output_sp => atom_patch%sp
     if (decouple_continuum) then
       call self%create_sub_patches([1, n_nu],      [0, n_mu], self%composition, atom_patch%bb_sp)
@@ -192,10 +195,9 @@ SUBROUTINE create_sub_patches (self, nu, mu, composition, sp)
     if (new_net) then
       allocate(net)
       call net%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp)
-    endif
-    if (new_proj) then
-      allocate(proj)
-      call proj%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp)
+      if (associated(self%atom_patch)) then
+        call self%atom_patch%add_to_key_list(net)
+      endif
     endif
     if (new_proj) then
       allocate(proj)

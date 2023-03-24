@@ -83,9 +83,9 @@ MODULE out_rad_patch_mod
     !-----------------------------------------------------------------------------
     if (self%is_finished()) return
     call trace%begin('out_rad_patch_t%save_radiation_output')
-    write(stdout, '(A, I3)') 'Writing output for angle ', self%i_out
+    write(stdout, '(A, I3)') 'Writing output for angle ', abs(self%i_mu)
   
-    if (self%i_out == 1) then
+    if (self%i_mu == -1) then
       lam = 1d8 * dble(cc) / self%sp%nu
       filename = trim(io%run_dir) // 'save/' // 'lam.bin'
       open(newunit=lunit, file=filename, access='stream')

@@ -27,7 +27,7 @@ MODULE atom_mod
     !-------------------------------------------------------------------------------
     type, public, extends(spectrum_type) :: atomic_spectrum_type
       ! maximum number of active lines or continua at any given frequency
-      integer :: maxal, maxac, nmax, nlower, nupper
+      integer :: maxal=0, maxac=0, nmax=0, nlower, nupper
       ! which continua (ac) and lines (al) are active at each frequency
       integer, dimension(:,:), contiguous, pointer :: ac,al
       ! how many continua (nac) and lines (nal) are active at each frequency
@@ -37,7 +37,7 @@ MODULE atom_mod
     end type atomic_spectrum_type
     !---------------------------------------------------------------------
 
-    type :: loca_data_t
+    type, public :: local_data_t
       ! rather constant doppler width factor, i.e. dnud = line(i)%nu0 * doppler_factor [Hz]
       real(4), dimension(:,:,:), pointer, contiguous :: doppler_factor => null()
       ! LTE, NLTE and total population of active atom
@@ -46,8 +46,9 @@ MODULE atom_mod
       real(8), dimension(:,:,:,:), pointer, contiguous :: gamma_ij => null()
       real(8), dimension(:,:,:,:), pointer, contiguous :: gamma_ji => null()
       real(4), dimension(:,:,:,:), pointer, contiguous :: ni_over_nj_lte => null()
-      real(4), dimension(:,:,:), pointer, contiguous :: totn => null() 
-    end type loca_data_t
+      real(4), dimension(:,:,:,:), pointer, contiguous :: wphi => null()
+      real(4), dimension(:,:,:),   pointer, contiguous :: totn => null() 
+    end type local_data_t
   
     type, public :: atom_type
       integer :: nrad   ! total number of radiative transitions
@@ -57,8 +58,9 @@ MODULE atom_mod
       integer :: nlevel ! number of levels
       integer :: nprd=0 ! number of PRD transitions
       
-      character(len=3) :: id    ! atom id string 
-      character(len=20) :: crout ! which collisional SUBROUTINE to use 
+      character(len=128) :: name
+      character(len=3)   :: id    ! atom id string 
+      character(len=20)  :: crout ! which collisional SUBROUTINE to use 
   
       character(len=20), dimension(:), allocatable :: label ! level label
   
@@ -74,7 +76,7 @@ MODULE atom_mod
       type(cont_type), dimension(:), pointer, contiguous :: cont
       type(coll_type), dimension(:), pointer, contiguous :: coll
       type(atomic_spectrum_type), pointer :: sp
-      type(loca_data_t), pointer :: data
+      type(local_data_t), pointer :: data
 
       !! rather constant doppler width factor, i.e. dnud = line(i)%nu0 * doppler_factor [Hz]
       !real(4), dimension(:,:,:), pointer, contiguous :: doppler_factor => null()
@@ -114,6 +116,7 @@ MODULE atom_mod
       procedure :: prepare_Drawin
       procedure :: classic_col
       procedure :: copy_to
+      procedure :: link_transitions
     end type atom_type
 
     logical, public :: use_classic_col = .False.
@@ -173,6 +176,8 @@ MODULE atom_mod
   
       ffs = fs-fs_patch+1
       ffe = fe-fs_patch+1
+      fs = fs-cnt%ired+1
+      fe = fe-cnt%ired+1
 
       call cnt%opacities(cnt%alpha(fs:fe), self%data%ni_over_nj_lte(:,:,:,i), &
       self%data%n, self%data%nstar, eta(:,:,:,ffs:ffe), chi(:,:,:,ffs:ffe))
@@ -385,13 +390,21 @@ MODULE atom_mod
     !dxi = 4.98e-4*5040./temp*sqrt(ne*bk*temp)
 
     if (associated(element)) then
+      print *, 'LTE populations based on UOP'
+      if (.not. allocated(element%ions)) then
+        print *, 'ion lost?'
+      endif
       partition = totn
       saha = 0.0
       do i=1, self%nlevel
         j = self%ion(i)
-        ion => element%ions(j)
-        nstar(:,:,:,i) = self%lte_pop(i, temp, dxi, saha, partition)
-        nstar(:,:,:,i) = nstar(:,:,:,i) * ion%anjon * ion%part
+        if (j <= ubound(element%ions,1)) then
+          ion => element%ions(j)
+          nstar(:,:,:,i) = self%lte_pop(i, temp, dxi, saha, partition)
+          nstar(:,:,:,i) = nstar(:,:,:,i) * ion%anjon * ion%part
+        else
+          print *, 'ion stage larger than max ion stage from UOP!'
+        endif
       end do
     else
       !saha = temp*sqrt(temp) / (saha_const*ne)
@@ -588,7 +601,7 @@ MODULE atom_mod
     call self%prepare_Drawin()
 
     call nextentry(latom)
-    read(latom,*) self%nlevel,self%nline,self%ncont,self%nrfix
+    read(latom,*) self%nlevel, self%nline, self%ncont, self%nrfix
 
     allocate(  self%ev    ( self%nlevel) ) ; self%ev = 0.0d0
     allocate(  self%g     ( self%nlevel) ) ; self%g = 0
@@ -696,11 +709,12 @@ MODULE atom_mod
       lin%lambda0 = hc_e / ( lin%upper_ev - lin%lower_ev ) ! [cm]
       lin%nu0 = cc / lin%lambda0    ! [Hz]
 
-      allocate(lin%nu(lin%nnu))
-      lin%nu = lin%get_nu()
-      lin%nu_min = lin%nu(1)
-      lin%nu_max = lin%nu(lin%nnu)
-      deallocate(lin%nu)
+      call os%allocate(lin%nu_input, lin%nnu, 'line%nu_input')
+      call os%allocate(lin%wq, lin%nnu, 'line%wq')
+      lin%nu_input = lin%get_nu()
+      lin%nu_min = lin%nu_input(1)
+      lin%nu_max = lin%nu_input(lin%nnu)
+      call set_weights(lin%wq, lin%nu_input / lin%nu0 - 1)
 
       gij = self%g(lin%i) / self%g(lin%j)
       lin%Aji = f_to_Aji * lin%f * gij / lin%lambda0**2 * hh
@@ -809,16 +823,16 @@ MODULE atom_mod
         ! cross sections given in detail
         cnt%bf_type='detail'
 
-        allocate( cnt%nu(cnt%nnu))
-        allocate( cnt%alpha(cnt%nnu))
+        call os%allocate(cnt%nu_input, cnt%nnu, 'cont%nu_input')
+        call os%allocate(cnt%alpha_input, cnt%nnu, 'cont%alpha_input')
 
         do j=1,cnt%nnu
           call nextentry(latom) 
-          read(latom,*)  cnt%nu(j), cnt%alpha(j)
+          read(latom,*)  cnt%nu_input(j), cnt%alpha_input(j)
         end do
         
         do j=2,cnt%nnu
-          if ( cnt%nu(j) > cnt%nu(j-1) ) then
+          if ( cnt%nu_input(j) > cnt%nu_input(j-1) ) then
             write(stdout,*) 'read_atom: continuum transition nr', i, &
                           ' wavelengths not decreasing'
             abort = .true.
@@ -826,7 +840,7 @@ MODULE atom_mod
         end do
 
         ! and convert to frequency [Hz]
-        cnt%nu = cc / ( cnt%nu * AA_TO_CM )
+        cnt%nu_input = cc / ( cnt%nu_input * AA_TO_CM )
       else
         ! hydrogenic transitions
         cnt%bf_type='hydrogenic'
@@ -846,11 +860,11 @@ MODULE atom_mod
       cnt%nu0 = ( cnt%upper_ev - cnt%lower_ev ) / h_e ! [Hz]
 
       if (cnt%bf_type == 'hydrogenic') then
-        allocate( cnt%nu(cnt%nnu)    )
-        allocate( cnt%alpha(cnt%nnu) )
+        call os%allocate(cnt%nu_input, cnt%nnu, 'cont%nu_input')
+        call os%allocate(cnt%alpha_input, cnt%nnu, 'cont%alpha_input')
         dnu = (cnt%nu_max - cnt%nu0) / (cnt%nnu-1)
-        cnt%nu = [(cnt%nu0 + i*dnu, i=0, cnt%nnu-1)]
-        cnt%alpha = (cnt%nu / cnt%nu0)**-3 * cnt%alpha0
+        cnt%nu_input = [(cnt%nu0 + i*dnu, i=0, cnt%nnu-1)]
+        cnt%alpha_input = (cnt%nu_input / cnt%nu0)**-3 * cnt%alpha0
 
       elseif (cnt%bf_type == 'Kramer') then
         if (kramer_bf) then
@@ -858,13 +872,13 @@ MODULE atom_mod
           thresh_aa = min(thresh_aa, red_thresh_aa)
           nnu = ceiling((thresh_aa - blue_thresh_aa) / cont_step_aa) + 1
           cnt%nnu = nnu
-          allocate(cnt%nu(nnu))
-          allocate(cnt%alpha(nnu))
-          cnt%nu(nnu:2:-1) = (/ (blue_thresh_aa + j*cont_step_aa, j=0, nnu-2) /)
-          cnt%nu(1) = thresh_aa
-          cnt%nu = cc / ( cnt%nu * AA_TO_CM )
-          cnt%alpha = Kramer(cnt%nu, self%ev(cnt%j) - self%ev(cnt%i))
-          cnt%alpha0 = cnt%alpha(1)
+          call os%allocate(cnt%nu_input, cnt%nnu, 'cont%nu_input')
+          call os%allocate(cnt%alpha_input, cnt%nnu, 'cont%alpha_input')
+          cnt%nu_input(nnu:2:-1) = (/ (blue_thresh_aa + j*cont_step_aa, j=0, nnu-2) /)
+          cnt%nu_input(1) = thresh_aa
+          cnt%nu_input = cc / ( cnt%nu_input * AA_TO_CM )
+          cnt%alpha_input = Kramer(cnt%nu_input, self%ev(cnt%j) - self%ev(cnt%i))
+          cnt%alpha0 = cnt%alpha_input(1)
           j = j+1
         else
           call cnt%deactivate()
@@ -875,10 +889,11 @@ MODULE atom_mod
       tri = (cnt%j-1)*(cnt%j-2)/2 + cnt%i
       self%cdata(tri) = cnt%alpha0
 
-      cnt%nu_min = cnt%nu(1)
-      cnt%nu_max = cnt%nu(cnt%nnu)
+      cnt%nu_min = cnt%nu_input(1)
+      cnt%nu_max = cnt%nu_input(cnt%nnu)
+
       ! for overflow reasons
-      cnt%alpha = cnt%alpha / cnt%alpha0
+      cnt%alpha_input = cnt%alpha_input / cnt%alpha0
     end do
 
     if (j>0) then
@@ -1174,14 +1189,14 @@ MODULE atom_mod
   !===============================================================================
   ! initialises the spectrum structure
   !===============================================================================
-  SUBROUTINE create_spectrum (self, sp, bb, bf)
+  SUBROUTINE create_spectrum (self, sp, bb, bf, sort)
     class(atom_type), target :: self
-    class(spectrum_type), intent(out) :: sp
-    logical, intent(in), optional :: bb, bf
+    class(spectrum_type) :: sp
+    logical, intent(in), optional :: bb, bf, sort
     type(line_type), pointer :: lin
     type(cont_type), pointer :: cnt
     integer :: i,nnu,js,je
-    real(8),dimension(:),allocatable :: nu
+    real(8), dimension(:), allocatable :: nu
     integer, save:: itimer=0
     !-----------------------------------------------------------------------------
     call trace%begin('atom_type%create_spectrum', itimer=itimer)
@@ -1192,6 +1207,7 @@ MODULE atom_mod
 
     ! save all frequencies
     allocate(nu(nnu))
+
     je=0
     if (option(bb)) then
       do i=1,self%nline
@@ -1199,7 +1215,9 @@ MODULE atom_mod
         if (.not. lin%active) cycle
         js=je+1
         je=js+lin%nnu-1
-        nu(js:je)=lin%get_nu()
+        nu(js:je)=lin%nu_input
+        lin%ired = js
+        lin%iblue = je
       end do
     endif
     if (option(bf)) then
@@ -1208,27 +1226,33 @@ MODULE atom_mod
         if (.not. cnt%active) cycle
         js=je+1
         je=js+cnt%nnu-1
-        nu(js:je)=cnt%nu
+        nu(js:je)=cnt%nu_input
+        cnt%ired = js
+        cnt%iblue = je
       end do
     endif
 
     ! sort frequencies into ascending order 
-    call refsor(nu)
+    if (option(sort, .true.)) then
+      sp%sorted = .true.
+      call refsor(nu)
 
-    ! discard duplicates, nnu contains number of unique elements on exit
-    call unista(nu,nnu)
+      ! discard duplicates, nnu contains number of unique elements on exit
+      call unista(nu,nnu)
+    endif
 
     ! now set overall frequency grid
     sp%nnu=nnu
     allocate(sp%nu(nnu)) 
     sp%nu=nu(1:nnu)
+
     call trace%end(itimer)
   END SUBROUTINE create_spectrum
 
   !===============================================================================
   SUBROUTINE set_active_transitions (self, sp, bb, bf)
     class(atom_type), target :: self
-    class(atomic_spectrum_type), intent(inout) :: sp
+    class(atomic_spectrum_type), target :: sp
     logical, intent(in), optional :: bb, bf
     type(line_type), pointer :: lin
     type(cont_type), pointer :: cnt
@@ -1243,11 +1267,11 @@ MODULE atom_mod
     call os%allocate(sp%nal, sp%nnu, zero=.true.)
 
     if (option(bf)) then
-      do i=1,self%ncont
+      do i=1, size(self%cont)
         cnt => self%cont(i)
         if (.not. cnt%active) cycle
         ! find minimum and maximum index of this continuum in the sp%nu grid
-        call get_interval(sp%nu, cnt%nu_min, cnt%nu_max, ired, iblue, limit=.false.)
+        call sp%get_interval(cnt, ired, iblue)
         if (iblue == 0 .or. ired == sp%nnu) then
           call cnt%deactivate()
         else
@@ -1259,11 +1283,11 @@ MODULE atom_mod
     endif
 
     if (option(bb)) then
-      do i=1,self%nline
+      do i=1, size(self%line)
         lin => self%line(i)
         if (.not. lin%active) cycle
-        ! find minimum and maximum index of this line in the sp%nu grid
-        call get_interval(sp%nu, lin%nu_min, lin%nu_max, ired, iblue, limit=.false.)
+        ! find minimum and maximum index of this continuum in the sp%nu grid
+        call sp%get_interval(lin, ired, iblue)
         if (iblue == 0 .or. ired == sp%nnu) then
           call lin%deactivate()
         else
@@ -1274,18 +1298,21 @@ MODULE atom_mod
       end do
     endif
 
-    call os%allocate(sp%ac, [maxval(sp%nac,1), sp%nnu], zero=.true., label='sp%ac')
-    call os%allocate(sp%al, [maxval(sp%nal,1), sp%nnu], zero=.true., label='sp%al')
+    sp%maxac = maxval(sp%nac)
+    sp%maxal = maxval(sp%nal)
+    sp%nmax  = maxval(sp%nac+sp%nal)
+
+    call os%allocate(sp%ac, [sp%maxac, sp%nnu], zero=.true., label='sp%ac')
+    call os%allocate(sp%al, [sp%maxal, sp%nnu], zero=.true., label='sp%al')
     sp%nac = 0
     sp%nal = 0
 
     if (option(bf)) then    
-      do i=1,self%ncont
+      do i=1, size(self%cont)
         cnt => self%cont(i)
         if (.not. cnt%active) cycle
         ! find minimum and maximum index of this continuum in the sp%nu grid
-        call get_interval(sp%nu, cnt%nu_min, cnt%nu_max, ired, iblue, limit=.false.)
-
+        call sp%get_interval(cnt, ired, iblue)
         ! total number of frequencies where this continuum is active
         nnu=iblue-ired+1
         cnt%nnu = nnu
@@ -1299,20 +1326,9 @@ MODULE atom_mod
           sp%ac( sp%nac(j), j ) = i ! the index of this active continuum
         end do
 
-        if (cnt%bf_type=='detail') then
-          allocate(nu_fromfile, alpha_fromfile, dalpha_dnu, mold=cnt%nu)
-          nu_fromfile = cnt%nu
-          alpha_fromfile = cnt%alpha
-          ! interpolate from given values
-          call hermite_derivative(dalpha_dnu, nu_fromfile, alpha_fromfile)
-        endif
-
-        ! set new frequency grid     
-        deallocate(cnt%nu)
-        deallocate(cnt%alpha)
-        allocate(cnt%nu(ired:iblue))
-        allocate(cnt%alpha(ired:iblue))
-        cnt%nu = sp%nu(ired:iblue)
+        ! set new frequency grid
+        call os%allocate(cnt%alpha, cnt%nnu)
+        cnt%nu => sp%nu(ired:iblue)
         
         ! recompute the bf cross sections
         select case(cnt%bf_type)
@@ -1321,25 +1337,23 @@ MODULE atom_mod
           cnt%alpha = (cnt%nu / cnt%nu0 )**-3
         case('detail')
           ! fill new cross sections 
-          allocate(alpha(cnt%nnu))
-          call hermite_interpolation(alpha, cnt%nu, nu_fromfile, alpha_fromfile, dalpha_dnu)
-          cnt%alpha = real(alpha)
-          deallocate(alpha, nu_fromfile, alpha_fromfile, dalpha_dnu)
+          call cnt%hermite_interp(cnt%alpha, cnt%nu)
         end select
 
-        call set_weights(cnt%wnu, cnt%nu, ired, iblue)
+        call os%allocate(cnt%wnu, cnt%nnu, 'cont%wnu')
+        call set_weights(cnt%wnu, cnt%nu)
       end do
     endif
 
     if (option(bb)) then
-      do i=1,self%nline
+      do i=1, size(self%line)
         lin => self%line(i)
         if (.not. lin%active) cycle
-        ! find minimum and maximum index of this line in the sp%nu grid
-        call get_interval(sp%nu, lin%nu_min, lin%nu_max, ired, iblue, limit=.false.)
-
+        ! find minimum and maximum index of this continuum in the sp%nu grid
+        call sp%get_interval(lin, ired, iblue)
         ! total number of frequencies where this line is active
         nnu=iblue-ired+1
+        lin%nnu = nnu
         ! min and max frequency where this line is active
         lin%ired  = ired
         lin%iblue = iblue
@@ -1350,21 +1364,15 @@ MODULE atom_mod
           sp%al( sp%nal(j), j ) = i
         end do
 
-        ! set new frequency grid for the line      
-        lin%nnu   = nnu
-        allocate(lin%nu(nnu))
-        allocate(lin%q(nnu))
-        lin%nu = sp%nu(ired:iblue) ! [Hz]
-        lin%q  = lin%nu/lin%nu0 - 1.0d0
+        lin%nu => sp%nu(ired:iblue)
+        call os%allocate(lin%q, lin%nnu)
+        lin%q = lin%nu/lin%nu0 - 1.0d0
 
         ! fill frequency integration weights for the line
-        call set_weights(lin%wnu, lin%nu, ired, iblue)
+        call os%allocate(lin%wnu, lin%nnu, 'line%wnu')
+        call set_weights(lin%wnu, lin%nu)
       end do
     endif
-
-    sp%maxac = maxval(sp%nac)
-    sp%maxal = maxval(sp%nal)
-    sp%nmax  = maxval(sp%nac+sp%nal)
 
     call self%get_active_nlevels(sp)
 
@@ -1467,48 +1475,53 @@ MODULE atom_mod
   END SUBROUTINE unique_int
 
   !===============================================================================
-  SUBROUTINE copy_to (self, other, unlink_bb, unlink_bf)
+  SUBROUTINE copy_to (self, other)
     class(atom_type) :: self
     type(atom_type) :: other
-    logical, intent(in), optional :: unlink_bb, unlink_bf
     !-----------------------------------------------------------------------------
     ! deep copy
     other = self
 
-    ! make copies of transitions
-    if (option(unlink_bb)) then
-      allocate(other%line, mold=self%line)
-      call os%mem_register(storage_size(self%line), self%nline, label='atom%line')
-      other%line  = self%line
-    endif
-    if (option(unlink_bf)) then
-      allocate(other%cont, mold=self%cont)
-      call os%mem_register(storage_size(self%cont), self%ncont, label='atom%cont')
-      other%cont  = self%cont
-    endif
+    allocate(other%line, mold=self%line)
+    call os%mem_register(storage_size(self%line), self%nline, label='atom%line')
+    other%line = self%line
+    
+    allocate(other%cont, mold=self%cont)
+    call os%mem_register(storage_size(self%cont), self%ncont, label='atom%cont')
+    other%cont = self%cont
   END SUBROUTINE
 
   !===============================================================================
-  SUBROUTINE set_weights (weight, nu, start, end)
-    real(8), dimension(:), allocatable :: weight
+  SUBROUTINE link_transitions (self, cont, line)
+    class(atom_type) :: self
+    type(cont_type), dimension(:), pointer, contiguous :: cont
+    type(line_type), dimension(:), pointer, contiguous :: line
+    !-----------------------------------------------------------------------------
+    self%cont => cont
+    self%line => line
+    !self%ncont = size(cont)
+    !self%nline = size(line)
+    !self%nrad  = self%ncont + self%nline
+  END SUBROUTINE
+
+  !===============================================================================
+  SUBROUTINE set_weights (weight, nu)
+    real(8), dimension(:), intent(out) :: weight
     real(8), dimension(:), intent(in) :: nu
-    integer, intent(in) :: start, end
     integer :: j, n
     !-----------------------------------------------------------------------------
     n = size(nu, 1)
     if (n==1) then
       print *, 'weight for single frequency wanted!'
+    elseif (size(weight) /= n) then
+      stop 'weight and nu do not have the same number of elements!'
     endif
-    if (allocated(weight)) deallocate(weight)
-    allocate( weight(start:end) )
 
-    weight(start) = 0.5 * ( nu(2) - nu(1) )
-
-    do  j=2,n-1
-        weight(start - 1 + j) = 0.5* ( nu(j+1) - nu(j-1) )
+    weight(1) = 0.5 * ( nu(2) - nu(1) )
+    do j=2,n-1
+        weight(j) = 0.5* ( nu(j+1) - nu(j-1) )
     end do
-
-    weight(end) = 0.5 * ( nu(n) - nu(n-1) )
+    weight(n) = 0.5 * ( nu(n) - nu(n-1) )
   END SUBROUTINE set_weights
 
 END MODULE atom_mod

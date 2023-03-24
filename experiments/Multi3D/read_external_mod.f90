@@ -808,7 +808,7 @@ SUBROUTINE save_atmos (self, patch)
 
   composition => patch%composition%composition
   call composition%load_state_variables(self%temp, self%ne, self%rho*real(scaling%d))
-  call composition%absorption(nu, chi, abslte, sumsca)
+  call composition%absorption(nu, chi, abslte, sumsca, sorted=.true.)
   call composition%scattering(nu, abslte, eta)
   call compute_tau_scale(chi(:,:,n:1:-1,1), dz, tau(:,:,n:1:-1))
 

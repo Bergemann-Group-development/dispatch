@@ -1081,7 +1081,7 @@ contains
     END SUBROUTINE compute_p6
 
     !===============================================================================
-    SUBROUTINE absorption(self, nu, chi, abslte, sumsca, include_absmet, absmet_big_end)
+    SUBROUTINE absorption(self, nu, chi, abslte, sumsca, include_absmet, absmet_big_end, sorted)
         !use phys_mod, only:planck
         class(composition_type), target :: self
         class(bftrans_type), pointer :: trans
@@ -1089,7 +1089,7 @@ contains
         real(4), dimension(:,:,:,:), intent(inout) :: chi, abslte, sumsca
         real(dp), dimension(:,:,:), allocatable :: stim
         real(dp), dimension(:), allocatable :: lam
-        logical, optional :: include_absmet, absmet_big_end
+        logical, optional :: include_absmet, absmet_big_end, sorted
         real(dp) :: xray2, epsln
         real(4) :: linop
         integer :: i, j, k, f, nf
@@ -1106,7 +1106,7 @@ contains
             select case (trim(trans%key))
             case ('H BF', 'H FF')
                 call trans%add_absorption(abslte, lam, self%temp, self%EK_over_temp, self%teta, &
-                                          self%pe, self%ro, self%dxi, self%xfakh)
+                                          self%pe, self%ro, self%dxi, self%xfakh, sorted)
             end select
         end do
 
@@ -1128,7 +1128,7 @@ contains
                 ! H- FF still to be added after multiplication of stim
             case default
                 call trans%add_absorption(abslte, lam, self%temp, self%EK_over_temp, self%teta, &
-                                          self%pe, self%ro, self%dxi, self%xfakh)
+                                          self%pe, self%ro, self%dxi, self%xfakh, sorted)
             end select
         end do
 
@@ -1148,7 +1148,7 @@ contains
         ! H- FF absorption is added without stim factor
         call self%trans_by_id('H- FF', trans)
         call trans%add_absorption(abslte, lam, self%temp, self%EK_over_temp, self%teta, &
-                                  self%pe, self%ro, self%dxi, self%xfakh)
+                                  self%pe, self%ro, self%dxi, self%xfakh, sorted)
 
         sumsca = 0
         call self%electron_scattering(sumsca)
@@ -1203,6 +1203,9 @@ contains
         real(4), dimension(:,:,:) :: totn
         !---------------------------------------------------------------------------
         call trace%begin ('composition_type%get_totn')
+        element => null()
+        molec   => null()
+
         call self%element_by_id(id, element)
 
         if (associated(element)) then
@@ -1486,8 +1489,8 @@ contains
         call trace%begin ('composition_type%init')
         idx = findloc(self%elements%id, uppercase(id), 1)
 
+        element => null()
         if (idx == 0) then
-            element => null()
             if (first_print) then
                 first_print = .false.
                 print *, 'Opacity package: element with id = ' // id // ' was not found.'

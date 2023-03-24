@@ -36,6 +36,9 @@ MODULE atom_cont_patch_mod
     ! ----------------------------------------------------------------------------
     call trace%begin('atom_cont_patch_t%opacity_pre_init', itimer=itimer)
     self%kind = 'atom_cont'
+    if (.not. associated(self%atom%cont)) then
+      return
+    endif
     call self%ray_patch_t%pre_init()
   
     self%ng = 0

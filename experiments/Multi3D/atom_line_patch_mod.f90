@@ -85,12 +85,7 @@ MODULE atom_line_patch_mod
     call self%create_line_indices()
     call self%create_line_frequencies()
 
-    nv = 0
-    do i=1, self%nline
-      line => self%line(i)
-      nv = nv + line%nq
-    end do
-
+    nv = sum(self%line%nq)
     call self%set_nv_and_nw(nv, 1)
     call self%m3d_patch_t%init()
 
@@ -156,23 +151,14 @@ MODULE atom_line_patch_mod
       if (second_sp .and. self%out_ray) then
         line%nq = line%nnu
       else
-        if (allocated(line%nu)) deallocate(line%nu)
-        if (allocated(line%q))  deallocate(line%q)
+        fs = max(searchsorted(line%nu_input, nus, outbounds_ok=.true.), 1)
+        fe = min(searchsorted(line%nu_input, nue, outbounds_ok=.true.)+1, size(line%nu_input))
+        line%nu => line%nu_input(fs:fe)
+        line%wq => line%wq(fs:fe)
+        line%nnu = fe-fs+1
 
-        line%nnu = line%nq ! reset number of frequencies to input
-        allocate(line%nu(line%nnu))
-        allocate(line%q (line%nnu))
-        line%nu = line%get_nu()
-        line%q  = line%nu / line%nu0 - 1
-        call set_weights(line%wq, line%q, 1, line%nnu)
-
-        fs = max(searchsorted(line%nu, nus, outbounds_ok=.true.), 1)
-        fe = min(searchsorted(line%nu, nue, outbounds_ok=.true.)+1, line%nnu)
-
-        call crop1d8(line%nu, fs, fe)
-        call crop1d8(line%q , fs, fe)
-        call crop1d8(line%wq, fs, fe)
-        line%nnu = size(line%nu)
+        call os%allocate(line%q , line%nnu, 'line%q')
+        line%q = line%nu / line%nu0 - 1
 
         ! this is needed for computing wphi
         line%fs = max(searchsorted(line%nu, pre_pad_nus, outbounds_ok=.true.), 1)
@@ -271,16 +257,19 @@ MODULE atom_line_patch_mod
   SUBROUTINE integrate_wphi (self)
     class(atom_line_t) :: self
     class(line_type), pointer :: line
+    class(atom_type), pointer :: atom
+    real(4), dimension(:,:,:), pointer, contiguous :: wphi
     integer :: i, k
     !-----------------------------------------------------------------------------
     call self%m3d_parent%mem_lock(1)%set('integrate_wphi')
+    atom => self%atom
+    if (.not. associated(atom%data%wphi)) then
+      call os%allocate(atom%data%wphi, [self%n, atom%nline], zero=.true., label=trim(self%m3d_parent%kind)//'%wphi')
+    endif
     do i=1, self%nline
       k = self%line(i)%ntrans
-      line => self%atom%line(k)
-      if (.not. associated(line%wphi)) then
-        call os%allocate(line%wphi, self%n, zero=.true., label=trim(self%m3d_parent%kind)//'%wphi')
-      endif
-      line%wphi = line%wphi + self%wmu * self%line(i)%wphi
+      wphi => atom%data%wphi(:,:,:,k)
+      wphi = wphi + self%wmu * self%line(i)%wphi
       call os%deallocate(self%line(i)%wphi, label=trim(self%kind)//'%wphi')
     end do
     call self%m3d_parent%mem_lock(1)%unset('integrate_wphi')

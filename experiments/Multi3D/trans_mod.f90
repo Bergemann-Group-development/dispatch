@@ -3,6 +3,7 @@ MODULE trans_mod
   USE mconst
   USE bbtrans_mod
   USE op_math_mod, only: searchsorted
+  USE mmath, only: hermite_interpolation, hermite_derivative
   ! *******************************************************************
   !
   !     Contains variables connected to the atom(s) 
@@ -28,9 +29,11 @@ MODULE trans_mod
       integer :: iblue = 0 ! end index where line is active in overall frequency grid
       real(8) :: nu_min, nu_max
 
-      real(8),dimension(:), allocatable :: nu  ! frequencies [Hz]
-      real(8),dimension(:), allocatable :: wnu ! frequency quadrature weight [Hz]
+      real(8), dimension(:), pointer, contiguous :: nu => null()  ! frequencies [Hz]
+      real(8), dimension(:), pointer, contiguous :: nu_input => null()
+      real(8), dimension(:), pointer, contiguous :: wnu => null() ! frequency quadrature weight [Hz]
 
+      integer, dimension(:), pointer, contiguous :: if => null()
       !real(8),dimension(:,:,:),  allocatable :: rij,rji
       !real(8),dimension(:,:,:),  allocatable :: qrad ! heating rate
       !real(8),dimension(:,:,:),  allocatable :: gamma_ij,gamma_ji
@@ -46,13 +49,13 @@ MODULE trans_mod
                                       ! for now only 'voigt' or
                                       ! 'hlinop' for hydrogen
 
-    real(8)  :: lambda0       ! line center vacuum wavelength [cm]
-    logical  :: hydrogen
-    real(8),dimension(:),allocatable :: q ! frequencies [Doppler units]
-    real(8),dimension(:),allocatable :: wq  ! frequency quadrature weight [Doppler units]
+    real(8) :: lambda0       ! line center vacuum wavelength [cm]
+    logical :: hydrogen
+    real(8),dimension(:), pointer, contiguous :: q => null() ! frequencies [Doppler units]
+    real(8),dimension(:), pointer, contiguous :: wq => null()  ! frequency quadrature weight [Doppler units]
 
-    real(4),dimension(:,:,:,:), pointer :: phi ! actual line profile data
-    real(4),dimension(:,:,:), pointer, contiguous :: wphi=>null() ! normalization such that
+    real(4),dimension(:,:,:,:), pointer :: phi => null() ! actual line profile data
+    real(4),dimension(:,:,:), pointer, contiguous :: wphi => null() ! normalization such that
     ! \Sigma_mu=1^{nrays} \Sigma_nu=1^{nnu} phi(nu,v(mu)) = 1
     ! in case of strong velocities this does not automatically follow from
     ! the independent normalization of the angle and frequency quadrature
@@ -86,14 +89,16 @@ MODULE trans_mod
     character(len=20) :: bf_type ! either 'detail' or 'hydrogenic'
 
     !real(8) :: nu0 ! ionization edge frequency
-    real(8) :: alpha0 ! cross section at ionization threshold [cm^2]
-    real(4), dimension(:),allocatable :: alpha ! cross sections [cm^2]    
+    real(4) :: alpha0 ! cross section at ionization threshold [cm^2]
+    real(4), dimension(:), pointer, contiguous :: alpha => null() ! cross sections [cm^2]    
+    real(8), dimension(:), pointer, contiguous :: alpha_input => null()
     !real(4), dimension(:,:,:), contiguous, pointer :: ni_over_nj_lte
 
   contains
       procedure :: opacities => cont_opacities
       procedure :: deactivate => bf_deactivate
       procedure :: rates => cont_rates
+      procedure :: hermite_interp
   end type cont_type
 
 contains
@@ -172,6 +177,19 @@ contains
     end do
   END SUBROUTINE cont_opacities
   !------------------------------------------------------------------------------------
+
+  !====================================================================================
+  PURE SUBROUTINE hermite_interp(self, alpha, nu)
+    class(cont_type), intent(in) :: self
+    real(8), intent(in), dimension(:) :: nu
+    real(4), intent(inout), dimension(:) :: alpha
+    real(8), allocatable, dimension(:) :: dalpha_dnu
+    !----------------------------------------------------------------------------------
+    allocate(dalpha_dnu, mold=self%nu_input)
+    call hermite_derivative(dalpha_dnu, self%nu_input, self%alpha_input)
+    call hermite_interpolation(alpha, nu, self%nu_input, self%alpha_input, dalpha_dnu)
+    deallocate(dalpha_dnu)
+  END SUBROUTINE hermite_interp
 
 !  !====================================================================================
 !  subroutine line_opacities(self, nu, hnu_4pi, n, vel_dop, doppler_factor, &
@@ -437,10 +455,6 @@ contains
     class(line_type), intent(inout) :: self
     !----------------------------------------------------------------------------------
     self%active = .false.
-    if (allocated(self%wnu)) deallocate(self%wnu)
-    if (allocated(self%nu)) deallocate(self%nu)
-    if (allocated(self%wq)) deallocate(self%wq)
-    if (allocated(self%q)) deallocate(self%q)
   END SUBROUTINE bb_deactivate
 
   !====================================================================================
@@ -448,8 +462,6 @@ contains
     class(cont_type), intent(inout) :: self
     !----------------------------------------------------------------------------------
     self%active = .false.
-    if (allocated(self%nu)) deallocate(self%nu)
-    if (allocated(self%alpha)) deallocate(self%alpha)
   END SUBROUTINE bf_deactivate
 
   END MODULE trans_mod

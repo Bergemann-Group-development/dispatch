@@ -31,7 +31,7 @@ MODULE ray_patch_mod
   type, public, extends(m3d_patch_t) :: ray_patch_t
     type(ray_type) :: ray
     real(8) :: vec(3), wmu
-    integer :: fs, fe, i_out=0
+    integer :: fs, fe
     integer :: pre_pad_fs, pre_pad_fe
     logical :: padded, level_boundary=.false.
   contains

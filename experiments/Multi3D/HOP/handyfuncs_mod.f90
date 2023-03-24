@@ -111,7 +111,7 @@ SUBROUTINE crop1d8(arr, i, o)
 END SUBROUTINE crop1d8
 
 !====================================================================================
-pure function lowercase(string)
+PURE FUNCTION lowercase(string)
   character(len=*),intent(in) :: string
   character(len=len(string)) :: lowercase
   character(len=26),parameter :: ucase='ABCDEFGHIJKLMNOPQRSTUVWXYZ' 
@@ -128,10 +128,10 @@ pure function lowercase(string)
         lowercase(i:i)=string(i:i)
      end if
   end do
-end function lowercase
+END FUNCTION lowercase
 
 !====================================================================================
-pure function uppercase(string)
+PURE FUNCTION uppercase(string)
   ! converts the first ss characters of string to uppercase and returns them as a new string.
   implicit none
   character(len=*),intent(in) :: string
@@ -150,18 +150,52 @@ pure function uppercase(string)
         uppercase(i:i)=string(i:i)
      end if
   end do
-end function uppercase
+END FUNCTION uppercase
 
 !====================================================================================
-pure function option(bool) result(out)
-  logical, intent(in), optional :: bool
+pure function option(bool, default) result(out)
+  logical, intent(in), optional :: bool, default
   logical :: out
   !---------------------------------------------------------------------------------
   if (present(bool)) then
     out = bool
   else
-    out = .false.
+    if (present(default)) then
+      out = default
+    else
+      out = .false.
+    endif
   endif
 end function option
+
+!====================================================================================
+SUBROUTINE sort_array(array, indices)
+  real(8), intent(inout) :: array(:)
+  integer, intent(out) :: indices(size(array))
+  real(8) :: tmp
+  integer :: i, j, min_idx, idx
+  !---------------------------------------------------------------------------------
+  ! initialize indices to the identity permutation
+  indices = [(i, i=1, size(array))]
+
+  ! selection sort algorithm
+  do i = 1, size(array)-1
+    min_idx = i
+    do j = i+1, size(array)
+      if (array(j) < array(min_idx)) then
+        min_idx = j
+      end if
+    end do
+    if (min_idx /= i) then
+      ! swap elements in array and indices
+      tmp = array(i)
+      array(i) = array(min_idx)
+      array(min_idx) = tmp
+      idx = indices(i)
+      indices(i) = indices(min_idx)
+      indices(min_idx) = idx
+    end if
+  end do
+END SUBROUTINE sort_array
 
 END MODULE handyfuncs_mod

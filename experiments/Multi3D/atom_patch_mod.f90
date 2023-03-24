@@ -25,8 +25,8 @@ MODULE atom_patch_mod
     USE angle_rad_patch_mod, only: rad_patch_t
     USE atom_rate_patch_mod, only: atom_rate_t
     USE atom_mod, only: atom_type, atomic_spectrum_type, use_classic_col, kramer_bf, debye_shield, &
-                        red_cut, blue_cut, logf_cut
-    USE trans_mod, only: line_type
+                        red_cut, blue_cut, logf_cut, local_data_t
+    USE trans_mod, only: line_type, cont_type
     USE mconst, only: CC
     USE ion_mod, only: ion_type, particle_type
     USE element_mod, only: element_type
@@ -129,24 +129,21 @@ MODULE atom_patch_mod
         cf = comoving_frame .and. n>0
         dc = decouple_continuum .and. n>self%n_nu
       do m=mu(1), mu(2)
-        new_cont = m==0
+        new_cont = merge(n<0, .true., dc) .and. m==0
         new_line = m<0 .or. merge(m==0, m/=0, cf)
         new_rate = merge(m==0, m>0, cf) .or. (m==0 .and. dc)
 
         if (new_cont) then
           allocate(cont)
-          cont%atom => atom
-          call cont%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp)
+          call cont%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp, atom=atom)
         endif
         if (new_line) then
           allocate(line)
-          line%atom => atom
-          call line%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp)
+          call line%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp, atom=atom)
         endif
         if (new_rate) then
           allocate(rate)
-          rate%atom => atom
-          call rate%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp)
+          call rate%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp, atom=atom)
         endif
       end do
     end do
@@ -156,6 +153,8 @@ MODULE atom_patch_mod
   SUBROUTINE pre_init_atom (self)
     class(atom_patch_t) :: self
     type(atom_type), save, target :: atom, output_atom
+    type(line_type), save, dimension(:), pointer, contiguous :: dc_line, out_line
+    type(cont_type), save, dimension(:), pointer, contiguous :: dc_cont, out_cont
     character(len=128), save :: atom_file=''
     real(8), save :: qnorm=10.0, abundance=-99.9
     integer, save :: itimer=0, n_in_lines=0
@@ -199,9 +198,22 @@ MODULE atom_patch_mod
 
       write (*,*) ' - Reading atom'
       call atom%read(atom_file, qnorm, in_lines=in_lines, read_coll=.true.)
+      atom%name = 'input'
 
       call os%copy_file(trim(atom_file), trim(io%run_dir)//'atom.txt')
       if (abundance > -99) atom%abnd = abundance
+
+      if (decouple_continuum) then
+        allocate(dc_line(atom%nline))
+        allocate(dc_cont(atom%ncont))
+        dc_line = atom%line
+        dc_cont = atom%cont
+      endif
+
+      allocate(out_line(atom%nline))
+      allocate(out_cont(atom%ncont))
+      out_line = atom%line
+      out_cont = atom%cont
     endif
 
     if (atom_file == '') then
@@ -210,7 +222,8 @@ MODULE atom_patch_mod
     endif
 
     allocate(self%atom)
-    call atom%copy_to(self%atom, unlink_bb=.true., unlink_bf=.true.)
+    self%atom = atom
+    self%atom%name = 'main'
 
     ! this pointer will be referenced by other atoms with same local data
     allocate(self%atom%data)
@@ -226,11 +239,17 @@ MODULE atom_patch_mod
     call self%exclude_double_lines()
 
     if (decouple_continuum) then
-      call self%atom%copy_to(self%bb_atom, unlink_bf=.true.)
-      call self%atom%copy_to(self%bf_atom, unlink_bb=.true.)
+      self%bb_atom = self%atom
+      self%bf_atom = self%atom
+      call self%bb_atom%link_transitions(null(), dc_line)
+      call self%bf_atom%link_transitions(dc_cont, null())
+      self%bb_atom%name = 'bound-bound'
+      self%bf_atom%name = 'bound-free'
     endif
 
-    call self%atom%copy_to(self%output_atom, unlink_bb=.true., unlink_bf=.true.)
+    self%output_atom = self%atom
+    call self%output_atom%link_transitions(out_cont, out_line)
+    self%output_atom%name = 'output'
 
     self%atom_allocated = .true.
     call trace%end(itimer)
@@ -250,13 +269,16 @@ MODULE atom_patch_mod
       first_time = .false.
 
       if (decouple_continuum) then
-        call self%bf_atom%create_spectrum(bf_sp, bf=.true.)
+        bf_sp%name = 'bound-free'
+        call self%bf_atom%create_spectrum(bf_sp, bf=.true., sort=.false.)
         call self%bf_atom%set_active_transitions(bf_sp, bf=.true.)
 
+        bb_sp%name = 'bound-bound'
         call self%bb_atom%create_spectrum(bb_sp, bb=.true.)
-        call self%bb_atom%set_active_transitions(bb_sp, bb=.true., bf=.true.)
+        call self%bb_atom%set_active_transitions(bb_sp, bb=.true.)
 
       else
+        sp%name = 'all'
         call self%atom%create_spectrum(sp, bb=.true., bf=.true.)
         call self%atom%set_active_transitions(sp, bb=.true., bf=.true.)
       endif
@@ -265,6 +287,7 @@ MODULE atom_patch_mod
       if (external_sp) then
         call self%output_atom%set_active_transitions(output_sp, bb=.true., bf=.true.) 
       else
+        output_sp%name = 'output based on atom'
         call self%output_atom%create_spectrum(output_sp, bb=.true.)
         call self%output_atom%set_active_transitions(output_sp, bb=.true., bf=.true.) 
       endif
@@ -307,16 +330,21 @@ MODULE atom_patch_mod
     temp => self%m3d_parent%mem(:,:,:,self%i_temp,          self%it,1)
     nh   => self%m3d_parent%mem(:,:,:,self%i_nh1:self%i_nh6,self%it,1)
 
-    nstar => self%mem(:,:,:,:,self%it,1)
-    n     => self%mem(:,:,:,:,self%it,2)
+    atom%data%nstar => self%mem(:,:,:,:,self%it,1)
+    atom%data%n     => self%mem(:,:,:,:,self%it,2)
+    n     => atom%data%n    
+    nstar => atom%data%nstar
 
     call os%allocate(atom%data%totn, self%n, label='totn')
     totn => atom%data%totn
 
     call os%allocate(atom%data%doppler_factor, self%n, label='doppler_factor')
     df => atom%data%doppler_factor
-
     df = atom%compute_doppler_factor(temp)
+
+    element => null()
+    molec   => null()
+
     call self%composition%get_totn(atom%id, atom%abnd, totn, element, molec)
     if (.not. associated(element) .and. .not.associated(molec)) then
       call self%save_abundance_to_file()
@@ -349,8 +377,6 @@ MODULE atom_patch_mod
     call atom%compute_cont_factors(temp, dxi, ne)
     call os%deallocate(dxi)
 
-    atom%data%n => n
-    atom%data%nstar => nstar
     call trace%end(itimer)
   END SUBROUTINE init_atom_data
 
@@ -361,6 +387,7 @@ MODULE atom_patch_mod
     class(task_t), pointer:: nbtask
     class(line_type), pointer :: line
     real(8), dimension(:,:,:,:), pointer, contiguous :: gamma_ij, gamma_ji
+    real(4), dimension(:,:,:,:), pointer, contiguous :: wphi
     integer :: i
     integer, save:: itimer=0, count=0
     real(8) :: global
@@ -371,22 +398,23 @@ MODULE atom_patch_mod
     if (self%iter == 0) then
       call self%init_atom_data()
     else
+      wphi => self%atom%data%wphi
+      gamma_ij => self%atom%data%gamma_ij
+      gamma_ji => self%atom%data%gamma_ji
+
       if (self%iter == 1) then
         self%dtime = self%dt_fixed
 
         ! Normalize wphi
         do i=1, self%atom%nline
-          self%atom%line(i)%wphi = 1 / self%atom%line(i)%wphi
+          wphi(:,:,:,i) = 1 / wphi(:,:,:,i)
         end do
       endif
 
       if (.not. self%atom%stiff) then
-        gamma_ij => self%atom%data%gamma_ij
-        gamma_ji => self%atom%data%gamma_ji
-
         do i=1, self%atom%nline
-          gamma_ij(:,:,:,i) = gamma_ij(:,:,:,i) * self%atom%line(i)%wphi
-          gamma_ji(:,:,:,i) = gamma_ji(:,:,:,i) * self%atom%line(i)%wphi
+          gamma_ij(:,:,:,i) = gamma_ij(:,:,:,i) * wphi(:,:,:,i)
+          gamma_ji(:,:,:,i) = gamma_ji(:,:,:,i) * wphi(:,:,:,i)
         end do
 
         call self%update_populations(gamma_ij, gamma_ji)
@@ -423,6 +451,7 @@ MODULE atom_patch_mod
   !===============================================================================
   SUBROUTINE print_post_update_info (self)
     class(atom_patch_t):: self
+    class(local_data_t), pointer :: adata
     character(len=64) :: text
     integer :: i, l, p(3), ipos
     real(8) :: global
@@ -439,14 +468,15 @@ MODULE atom_patch_mod
       i = self%lvlcheck
       l = self%linecheck
       p = self%pcheck
+      adata => self%atom%data
       !arr(1) = self%lvlerr(i)
-      memcheck(1) = self%atom%data%n(p(1),p(2),p(3),i)
-      memcheck(2) = self%atom%data%totn(p(1),p(2),p(3))
-      if (associated(self%atom%data%gamma_ij) .and. l<=self%atom%nrad) then
-        memcheck(3) = self%atom%data%gamma_ij(p(1),p(2),p(3),l)
-        memcheck(4) = self%atom%data%gamma_ji(p(1),p(2),p(3),l)
+      memcheck(1) = adata%n(p(1),p(2),p(3),i)
+      memcheck(2) = adata%totn(p(1),p(2),p(3))
+      if (associated(adata%gamma_ij) .and. l<=self%atom%nrad) then
+        memcheck(3) = adata%gamma_ij(p(1),p(2),p(3),l)
+        memcheck(4) = adata%gamma_ji(p(1),p(2),p(3),l)
         if (l<=self%atom%nline) then
-          memcheck(5) = self%atom%line(l)%wphi(p(1),p(2),p(3))
+          memcheck(5) = adata%wphi(p(1),p(2),p(3),l)
         endif
       else
         memcheck(3) = 10.0**(self%atom%abnd-12.0)
