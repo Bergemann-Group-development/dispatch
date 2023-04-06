@@ -14,11 +14,12 @@ MODULE spectrum_mod
         integer :: nnu=0
         ! frequency [Hz]
         real(8), dimension(:), allocatable :: nu
-        logical :: sorted=.false.
+        logical :: sorted=.false., saved=.false.
         character(len=32) :: name=''
     contains
       procedure :: init
       procedure :: get_interval
+      procedure :: save
     end type spectrum_type
     !---------------------------------------------------------------------
 
@@ -50,6 +51,7 @@ MODULE spectrum_mod
       do i=0,nnu-1
         self%nu(nnu-i) = CC / (aa_blue + i*daa) * 1e8
       end do
+      self%sorted=.true.
     END SUBROUTINE init
 
     !===============================================================================
@@ -65,6 +67,21 @@ MODULE spectrum_mod
         iblue = trans%iblue
       endif
     END SUBROUTINE get_interval
+
+    !===============================================================================
+    SUBROUTINE save (self, label)
+      class(spectrum_type), intent(in):: self
+      character(len=*), intent(in) :: label
+      character(len=128) :: filename
+      integer :: lunit
+      !-----------------------------------------------------------------------------
+      if (.not. self%saved) then
+        filename = trim(io%run_dir) // 'save/' // trim(label) // '_lam.bin'
+        open(newunit=lunit, file=filename, access='stream')
+        write(lunit) 1d8 * dble(cc) / self%nu
+        close(lunit)
+      endif
+    END SUBROUTINE save
 
   END MODULE spectrum_mod
   !---------------------------------------------------------------------

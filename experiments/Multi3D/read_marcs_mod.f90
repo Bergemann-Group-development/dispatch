@@ -3,6 +3,7 @@ MODULE read_marcs_mod
   USE prec_mod, only: dp
   USE os_mod
   USE op_math_mod, only: interp1d
+  USE mconst
   implicit none
 
 contains
@@ -17,7 +18,7 @@ contains
     real(dp) :: xx, yy, zz, palfa, pny, py, pbeta, abund(92)
     real(dp) :: lgTauR, lgTau5, pg, prad, pturb, xkapr, emu, vconv, fconv, rhox
     real(dp), dimension(:), allocatable :: depth, in_temp, in_pe, in_depth, in_rho
-    character(72) :: fileID
+    character(72) :: fileID, command
     !-----------------------------------------------------------------------------
     call os%check_file(file)
     open(newunit=lunit, file=file)
@@ -71,5 +72,13 @@ contains
     temp(1,1,:) = interp1d(in_depth, in_temp, depth, order=1, sorted=.true.)
     rho (1,1,:) = interp1d(in_depth, in_rho , depth, order=1, sorted=.true.)
     pe  (1,1,:) = interp1d(in_depth, in_pe  , depth, order=1, sorted=.true.)
+
+    write(command,*) 'rm ', trim(io%run_dir), 'atmos.marcs'
+    call execute_command_line (command, exitstat=iostat)
+    open(newunit=lunit, file=trim(io%run_dir) // 'atmos.marcs')
+    do k=1, newn
+      write(lunit, '(E14.6, F8.1, E14.6, F8.1, F8.1)') -depth(k)*1e-5, temp(1,1,k), pe(1,1,k)/(BK*temp(1,1,k)), 0., 0.
+    end do
+    close(lunit)
   END SUBROUTINE read_marcs
 END MODULE read_marcs_mod

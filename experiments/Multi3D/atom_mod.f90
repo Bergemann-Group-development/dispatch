@@ -110,6 +110,7 @@ MODULE atom_mod
       procedure :: compute_cont_factors
       procedure :: solve_stat_equilibrium
       procedure :: create_spectrum
+      procedure :: set_ired_iblue
       procedure :: set_active_transitions
       procedure :: get_active_nlevels
       procedure :: read
@@ -119,7 +120,7 @@ MODULE atom_mod
       procedure :: link_transitions
     end type atom_type
 
-    logical, public :: use_classic_col = .False.
+    logical, public :: use_classic_col = .False., m1d_legacy_mode=.False.
     logical, public :: lse_no_pivot = .True., kramer_bf=.False., debye_shield=.True.
     real(8), public :: red_thresh_aa  = 20000
     real(8), public :: blue_thresh_aa = 500
@@ -129,6 +130,7 @@ MODULE atom_mod
     real(8), parameter :: ame=5.485799e-4, amh=1.0
     real(8), parameter :: mu_e=ame/(ame+amh)
     character(len=32), public :: lse_solver='lineq_no_pivot'
+    integer, public :: nq_fac=1
 
     public :: unique_int, set_weights
   
@@ -647,6 +649,8 @@ MODULE atom_mod
       lin%q0   = lin%q0   * qnorm
       lin%qmax = lin%qmax * qnorm
 
+      if (nq_fac /= 0) lin%nnu=nq_fac*lin%nnu
+
       tri = (lin%j-1)*(lin%j-2)/2 + lin%i
       self%cdata(tri) = lin%f
 
@@ -709,6 +713,11 @@ MODULE atom_mod
       lin%lambda0 = hc_e / ( lin%upper_ev - lin%lower_ev ) ! [cm]
       lin%nu0 = cc / lin%lambda0    ! [Hz]
 
+      ! make sure we always have an odd number of frequency points for a line
+      if (mod(lin%nnu,2) == 0) lin%nnu=lin%nnu+1
+      !allocate( lin%nu(lin%nnu) )
+      lin%nq = lin%nnu
+
       call os%allocate(lin%nu_input, lin%nnu, 'line%nu_input')
       call os%allocate(lin%wq, lin%nnu, 'line%wq')
       lin%nu_input = lin%get_nu()
@@ -729,11 +738,6 @@ MODULE atom_mod
           cycle
         endif
       endif
-
-      ! make sure we always have an odd number of frequency points for a line
-      if (mod(lin%nnu,2) == 0) lin%nnu=lin%nnu+1
-      !allocate( lin%nu(lin%nnu) )
-      lin%nq = lin%nnu
       
       ! find continuum level
       do ic=lin%j+1, self%nlevel
@@ -1250,22 +1254,16 @@ MODULE atom_mod
   END SUBROUTINE create_spectrum
 
   !===============================================================================
-  SUBROUTINE set_active_transitions (self, sp, bb, bf)
+  SUBROUTINE set_ired_iblue (self, sp, bb, bf, set_active)
     class(atom_type), target :: self
     class(atomic_spectrum_type), target :: sp
-    logical, intent(in), optional :: bb, bf
+    logical, intent(in), optional :: bb, bf, set_active
     type(line_type), pointer :: lin
     type(cont_type), pointer :: cnt
-    real(8), dimension(:), allocatable :: dalpha_dnu,alpha_fromfile,nu_fromfile, alpha
     integer :: i, j, nnu, ired, iblue
     integer, save:: itimer=0
     !-----------------------------------------------------------------------------
-    call trace%begin('atom_type%set_active_transitions', itimer=itimer)
-    
-    ! allocate list of active continua and lines
-    call os%allocate(sp%nac, sp%nnu, zero=.true.)
-    call os%allocate(sp%nal, sp%nnu, zero=.true.)
-
+    call trace%begin('atom_type%set_ired_iblue', itimer=itimer)
     if (option(bf)) then
       do i=1, size(self%cont)
         cnt => self%cont(i)
@@ -1276,8 +1274,29 @@ MODULE atom_mod
           call cnt%deactivate()
         else
           if (iblue==ired) print *, 'WARNING, single frequency for cont', i
-          ! add to number of active continua
-          sp%nac(ired:iblue) = sp%nac(ired:iblue) + 1 ! number of active continua at frequency index j
+          ! total number of frequencies where this continuum is active
+          nnu=iblue-ired+1
+          cnt%nnu = nnu
+          ! min and max frequency where this continuum is active
+          cnt%ired  = ired
+          cnt%iblue = iblue
+
+          ! set new frequency grid
+          call os%allocate(cnt%alpha, cnt%nnu)
+          cnt%nu => sp%nu(ired:iblue)
+          
+          ! recompute the bf cross sections
+          select case(cnt%bf_type)
+          case('hydrogenic', 'Kramer')
+            ! use nu**-3 dependency
+            cnt%alpha = (cnt%nu / cnt%nu0 )**-3
+          case('detail')
+            ! fill new cross sections 
+            call cnt%hermite_interp(cnt%alpha, cnt%nu)
+          end select
+
+          call os%allocate(cnt%wnu, cnt%nnu, 'cont%wnu')
+          call set_weights(cnt%wnu, cnt%nu)
         endif
       end do
     endif
@@ -1292,9 +1311,59 @@ MODULE atom_mod
           call lin%deactivate()
         else
           if (iblue==ired) print *, 'WARNING, single frequency for line', i
-          ! add to number of active lines
-          sp%nal(ired:iblue) = sp%nal(ired:iblue) + 1
+          ! total number of frequencies where this line is active
+          nnu=iblue-ired+1
+          lin%nnu = nnu
+          ! min and max frequency where this line is active
+          lin%ired  = ired
+          lin%iblue = iblue
+
+          lin%nu => sp%nu(ired:iblue)
+          call os%allocate(lin%q, lin%nnu)
+          lin%q = lin%nu/lin%nu0 - 1.0d0
+
+          ! fill frequency integration weights for the line
+          call os%allocate(lin%wnu, lin%nnu, 'line%wnu')
+          call set_weights(lin%wnu, lin%nu)
         endif
+      end do
+    endif
+
+    if (option(set_active, .false.)) then
+      call self%set_active_transitions(sp, bb, bf)
+    endif
+    call trace%end(itimer)
+  END SUBROUTINE set_ired_iblue
+
+  !===============================================================================
+  SUBROUTINE set_active_transitions (self, sp, bb, bf)
+    class(atom_type), target :: self
+    class(atomic_spectrum_type), target :: sp
+    logical, intent(in), optional :: bb, bf
+    type(line_type), pointer :: lin
+    type(cont_type), pointer :: cnt
+    integer :: i, j, nnu, ired, iblue
+    integer, save:: itimer=0
+    !-----------------------------------------------------------------------------
+    call trace%begin('atom_type%set_active_transitions', itimer=itimer)
+    
+    ! allocate list of active continua and lines
+    call os%allocate(sp%nac, sp%nnu, zero=.true.)
+    call os%allocate(sp%nal, sp%nnu, zero=.true.)
+
+    if (option(bf)) then
+      do i=1, size(self%cont)
+        cnt => self%cont(i)
+        if (.not. cnt%active) cycle
+        sp%nac(cnt%ired:cnt%iblue) = sp%nac(cnt%ired:cnt%iblue) + 1 ! number of active continua at frequency index j
+      end do
+    endif
+
+    if (option(bb)) then
+      do i=1, size(self%line)
+        lin => self%line(i)
+        if (.not. lin%active) cycle
+        sp%nal(lin%ired:lin%iblue) = sp%nal(lin%ired:lin%iblue) + 1
       end do
     endif
 
@@ -1311,37 +1380,11 @@ MODULE atom_mod
       do i=1, size(self%cont)
         cnt => self%cont(i)
         if (.not. cnt%active) cycle
-        ! find minimum and maximum index of this continuum in the sp%nu grid
-        call sp%get_interval(cnt, ired, iblue)
-        ! total number of frequencies where this continuum is active
-        nnu=iblue-ired+1
-        cnt%nnu = nnu
-        ! min and max frequency where this continuum is active
-        cnt%ired  = ired
-        cnt%iblue = iblue
-    
         ! add to number of active continua
-        do j=ired,iblue
+        do j=cnt%ired,cnt%iblue
           sp%nac(j) = sp%nac(j) + 1 ! number of active continua at frequency index j
           sp%ac( sp%nac(j), j ) = i ! the index of this active continuum
         end do
-
-        ! set new frequency grid
-        call os%allocate(cnt%alpha, cnt%nnu)
-        cnt%nu => sp%nu(ired:iblue)
-        
-        ! recompute the bf cross sections
-        select case(cnt%bf_type)
-        case('hydrogenic', 'Kramer')
-          ! use nu**-3 dependency
-          cnt%alpha = (cnt%nu / cnt%nu0 )**-3
-        case('detail')
-          ! fill new cross sections 
-          call cnt%hermite_interp(cnt%alpha, cnt%nu)
-        end select
-
-        call os%allocate(cnt%wnu, cnt%nnu, 'cont%wnu')
-        call set_weights(cnt%wnu, cnt%nu)
       end do
     endif
 
@@ -1351,26 +1394,11 @@ MODULE atom_mod
         if (.not. lin%active) cycle
         ! find minimum and maximum index of this continuum in the sp%nu grid
         call sp%get_interval(lin, ired, iblue)
-        ! total number of frequencies where this line is active
-        nnu=iblue-ired+1
-        lin%nnu = nnu
-        ! min and max frequency where this line is active
-        lin%ired  = ired
-        lin%iblue = iblue
-      
         ! add to number of active lines
-        do j=ired,iblue
+        do j=lin%ired,lin%iblue
           sp%nal(j) = sp%nal(j) + 1
           sp%al( sp%nal(j), j ) = i
         end do
-
-        lin%nu => sp%nu(ired:iblue)
-        call os%allocate(lin%q, lin%nnu)
-        lin%q = lin%nu/lin%nu0 - 1.0d0
-
-        ! fill frequency integration weights for the line
-        call os%allocate(lin%wnu, lin%nnu, 'line%wnu')
-        call set_weights(lin%wnu, lin%nu)
       end do
     endif
 

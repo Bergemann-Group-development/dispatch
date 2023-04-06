@@ -100,20 +100,10 @@ SUBROUTINE radiation_pre_init (self)
   call self%ray%init(self%vec, self%wmu)
   call self%ray%set_stencil(self%ds * scaling%l)
 
-  if (self%out_ray) then
-    nw = 3
-    self%ng = [0,0,1]
-  else
-    nw = 1
-    if (self%ray%long) then
-      self%ng = [3,3,1]
-    else
-      self%ng = [2,2,1]
-    endif
-  endif
-
+  nw = merge(3, 1, self%out_ray)
   nv = self%fe-self%fs+1
   call self%set_nv_and_nw (nv, nw)
+  call self%set_guard_zones()
   call self%post_pre_init()
   call trace%end(itimer)
 END SUBROUTINE radiation_pre_init
@@ -163,6 +153,8 @@ SUBROUTINE radiation_update (self)
       print *, 'long ray detected! Stopping...'
       stop
       !call self%long_ray_update()
+    elseif (self%one_dimensional) then
+      call self%long_char_update()
     else
       call self%short_ray_update()
     endif
@@ -308,7 +300,6 @@ SUBROUTINE short_ray_update (self)
             !Ieff is computed in mean_rad%update after Psi has been integrated
           else
             self%Psi(x,y,z,f) = Psi / xx
-            !Ieff is computed in full_preconditioning instead
             self%Ieff(x,y,z,f) = self%Ieff(x,y,z,f) + self%Psi(x,y,z,f) * eta_back(x,y,z,f)
           endif
         end do
@@ -329,7 +320,7 @@ END SUBROUTINE short_ray_update
 !===============================================================================
 SUBROUTINE long_char_update (self)
   class(rad_patch_t), target :: self
-  real(4), dimension(:,:,:), pointer, contiguous :: xx, ss
+  real(4), dimension(:,:,:,:), pointer, contiguous :: eta_back
   integer :: iw, iiw
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -340,33 +331,44 @@ SUBROUTINE long_char_update (self)
     self%Snu => self%opac%mem(:,:,:,:, self%opac%it, iw+1)
     iiw = (iw+1)/2
     self%Inu => self%mem(:,:,:,:, self%it, iiw)
-
-    if (hermite) then
-      call self%hermite_solver(self%chi, self%Snu, self%Inu)
-    else
-      call self%linear_solver(self%chi, self%Snu, self%Inu)
+    if (.not. self%out_ray) then
+      eta_back => self%back_cont%mem(:,:,:,:, self%back_cont%it, self%back_cont%i_eta)
     endif
+
+    !if (hermite) then
+    !  call self%hermite_solver(self%chi, self%Snu, self%Inu)
+    !else
+    call self%linear_solver(self%chi, self%Snu, self%Inu, self%Psi, self%Ieff, eta_back)
+    !endif
   end do
 
   call trace%end(itimer)
 END SUBROUTINE long_char_update
 
 !===============================================================================
-SUBROUTINE linear_solver(self, xx, ss, Inu)
+SUBROUTINE linear_solver(self, xx, ss, Inu, Psi, Ieff, eta_back)
   class(rad_patch_t), intent(in) :: self
-  real(4), intent(in), dimension(:,:,:,:), pointer, contiguous :: xx, ss
-  real(4), intent(inout), dimension(:,:,:,:), pointer, contiguous :: Inu
-  real(4) :: dsup05, u0, Psi
+  real(4), intent(in), dimension(:,:,:,:), contiguous :: xx, ss
+  real(4), intent(inout), dimension(:,:,:,:), contiguous :: Inu
+  real(4), intent(inout), dimension(:,:,:,:), contiguous, optional :: Psi, Ieff, eta_back
+  real(4) :: dsup05, u0, Psi0
   real(8) :: ex, dt
-  integer :: i,j,k,f
+  integer :: i,j,k,f, k1, k2, kup, z
+  logical :: save_Psi
   !-----------------------------------------------------------------------------
   dsup05 = 0.5*real(self%ray%dsup)
+  save_Psi = .not. self%out_ray .and. present(Psi) .and. present(Ieff) .and. present(eta_back)
+
+  k1 = merge(self%li(3), self%ui(3), self%dir > 0)
+  k2 = merge(self%li(3), self%ui(3), self%dir < 0)
 
   do f=1, self%nv
-    do k=1, self%n(3)
+    do k=k1, k2, self%dir
+      kup = k - self%dir
+      z = k - self%ng(3)
     do j=1, self%n(2)
     do i=1, self%n(1)
-      dt = dsup05 * ( xx(i,j,k,f) + xx(i,j,k+1,f) ) ! upwind optical pathlength
+      dt = dsup05 * ( xx(i,j,kup,f) + xx(i,j,k,f) ) ! upwind optical pathlength
       if (dt < 80) then
         ex = exp(-dt) 
       else
@@ -376,14 +378,26 @@ SUBROUTINE linear_solver(self, xx, ss, Inu)
       ! to avoid accuracy issues with 1-(number slightly smaller than one)
       if ( dt > 1d-3 ) then
         u0 = 1 - ex
-        Psi = 1 - u0 / dt
+        Psi0 = 1 - u0 / dt
       else
-        Psi = dt * (0.5 - 0.16666667*dt)
-        u0 = dt * (1 - Psi)
+        Psi0 = dt * (0.5 - 0.16666667*dt)
+        u0 = dt * (1 - Psi0)
       endif
 
-      ! intensity at center point
-      Inu(i,j,k+1,f) = Inu(i,j,k,f)*ex + (u0 - Psi)*ss(i,j,k,f) + Psi*ss(i,j,k+1,f)
+      if (save_Psi) then
+        Ieff(i,j,z,f) = Inu(i,j,kup,f)*ex + (u0 - Psi0)*ss(i,j,kup,f)
+        Inu (i,j,k,f) = Ieff(i,j,z,f) + Psi0*ss(i,j,k,f)
+        if (comoving_frame) then
+          Psi (i,j,z,f) = Psi0
+          !Ieff is computed in mean_rad%update after Psi has been integrated
+        else
+          Psi (i,j,z,f) = Psi0 / xx(i,j,k,f)
+          Ieff(i,j,z,f) = Ieff(i,j,z,f) + Psi (i,j,z,f) * eta_back(i,j,z,f)
+        endif
+      else
+        ! intensity at center point
+        Inu(i,j,k,f) = Inu(i,j,kup,f)*ex + (u0 - Psi0)*ss(i,j,kup,f) + Psi0*ss(i,j,k,f)
+      endif
     end do
     end do
     end do

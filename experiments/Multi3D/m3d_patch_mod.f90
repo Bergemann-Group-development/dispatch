@@ -32,7 +32,7 @@ MODULE m3d_patch_mod
     !USE units_mod
     !USE scratch_mod
     USE m3d_halo_mod, only: m3d_halo_t, print_finished, print_download
-    USE atom_mod, only: atom_type, atomic_spectrum_type, lse_no_pivot, lse_solver
+    USE atom_mod, only: atom_type, atomic_spectrum_type, lse_no_pivot, lse_solver, m1d_legacy_mode, nq_fac
     USE ray_mod
     USE m3d_debug_mod
     implicit none
@@ -64,7 +64,7 @@ MODULE m3d_patch_mod
       integer :: iter=0, maxiter, master_maxiter, dir=0
       integer :: n_mu, n_nu, n_omega, n_out, zs, ze
       integer :: fcheck, pcheck(3), linecheck, lvlcheck
-      logical :: out_ray=.false., static_mem=.false.
+      logical :: out_ray=.false., static_mem=.false., one_dimensional=.false.
       logical :: compressed=.false., save_output=.false.
       logical :: print_update_info, checked_bounds=.false.
       integer :: i_nu=0, i_mu=0
@@ -135,6 +135,8 @@ MODULE m3d_patch_mod
     logical, public, save :: save_back_cont=.true., save_atom_line=.true.
     logical, public, save :: linear_long=.true., decouple_continuum=.false.
     logical, public, save :: detailed_prints=.false., comoving_frame=.false.
+    logical, public, save :: use_density=.true.
+    logical, public, save :: overlapping_bb=.true., overlapping_bf=.true.
     logical, public, save :: print_start=.false., print_push=.false., print_send=.false.
     character(len=128), save :: save_patch_kind=''
     character(len=64), public, save:: custom_mu
@@ -164,7 +166,7 @@ MODULE m3d_patch_mod
     ntheta, nphi, check_NaN, custom_mu, lse_no_pivot, save_patch_kind, cswitch, &
     save_back_cont, detailed_prints, print_finished, print_start, print_push, &
     print_send, linear_long, interp_log, ray_offset, print_download, save_atom_line, &
-    lse_solver, decouple_continuum
+    lse_solver, decouple_continuum, m1d_legacy_mode
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%pre_init', itimer=itimer)
     !-----------------------------------------------------------------------------
@@ -217,6 +219,14 @@ MODULE m3d_patch_mod
         print *, 'Quadrature keyword "'// trim(long_scheme) // '" not recognized for LC solver. Stopping...'
         stop
       end select
+
+      if (m1d_legacy_mode) then
+        decouple_continuum = .true.
+        overlapping_bb = .false.
+        overlapping_bf = .false.
+        use_density = .false.
+        nq_fac = 2
+      endif
     end if
   
     self%verbose = verbose
@@ -269,6 +279,7 @@ MODULE m3d_patch_mod
     end select
 
     self%save_output = self%save_output .or. self%id == save_id
+    self%one_dimensional = all(self%n(1:2) == 1)
 
     ! ----------------------------------------------------------------------------
     ! Do not check density or validate with it. This is rather important to be set
@@ -1453,7 +1464,11 @@ MODULE m3d_patch_mod
     ! ----------------------------------------------------------------------------
     call self%check_access(self)
     write(folder, '(A, A)') trim(io%run_dir), 'save/'
-    write(filename, '(A, A, 3(I3.3), A)') trim(label), '_', abs(self%key(1:3)), '.bin'
+    if (self%out_ray) then
+      write(filename, '(A, A, 3(I3.3), A)') trim(label), '_out_', abs(self%key(1:3)), '.bin'
+    else
+      write(filename, '(A, A, 3(I3.3), A)') trim(label), '_', abs(self%key(1:3)), '.bin'
+    endif
     meta_file = trim(label) // '_meta.txt'
     call io%lock%set('save')
     if (os%exists(trim(folder)//meta_file)) then

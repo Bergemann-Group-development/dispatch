@@ -52,7 +52,7 @@ MODULE atom_line_patch_mod
       procedure :: init_nbors_hash
     end type atom_line_t
 
-    logical, public, save :: second_sp=.false.
+    logical, public, save :: external_sp=.false.
 
     !-----------------------------------------------------------------------------
   
@@ -140,19 +140,27 @@ MODULE atom_line_patch_mod
     real(8) :: nus, nue, pre_pad_nus, pre_pad_nue
     real(8), dimension(:), allocatable :: nu, wq
     !---------------------------------------------------------------------------
-    nus = self%sp%nu(self%fs)
-    nue = self%sp%nu(self%fe)
-
-    pre_pad_nus = self%sp%nu(self%pre_pad_fs)
-    pre_pad_nue = self%sp%nu(self%pre_pad_fe)
+    if (self%sp%sorted) then
+      nus = self%sp%nu(self%fs)
+      nue = self%sp%nu(self%fe)
+      pre_pad_nus = self%sp%nu(self%pre_pad_fs)
+      pre_pad_nue = self%sp%nu(self%pre_pad_fe)
+    endif
 
     do i=1, self%nline
       line => self%line(i)
-      if (second_sp .and. self%out_ray) then
+      if (external_sp .and. self%out_ray) then
         line%nq = line%nnu
       else
+        if (.not. self%sp%sorted) then
+          nus = merge(self%sp%nu(self%fs), line%nu_input(1), self%fs>line%ired)
+          nue = merge(self%sp%nu(self%fe), line%nu_input(line%nq), self%fe<line%iblue)
+          pre_pad_nus = nus
+          pre_pad_nue = nue
+        endif
         fs = max(searchsorted(line%nu_input, nus, outbounds_ok=.true.), 1)
         fe = min(searchsorted(line%nu_input, nue, outbounds_ok=.true.)+1, size(line%nu_input))
+
         line%nu => line%nu_input(fs:fe)
         line%wq => line%wq(fs:fe)
         line%nnu = fe-fs+1
@@ -286,7 +294,9 @@ MODULE atom_line_patch_mod
     real(4), dimension(:,:,:,:), contiguous, pointer :: scratch_phi, phi
     integer :: i, fcs, fce, fs, fe, f, newq, ff, i1, i2, m(4), nnu, p(3), x,y,z
     logical :: skip
+    integer, save :: itimer=0
     !---------------------------------------------------------------------------
+    call trace%begin('atom_line_t%interpolate_lines', itimer=itimer)
     fcs = max(self%ired,  self%fs)
     fce = min(self%iblue, self%fe)
 
@@ -336,6 +346,7 @@ MODULE atom_line_patch_mod
     call os%deallocate(scratch_phi, label='scratch_phi')
     call os%deallocate(chi_fac)
     call os%deallocate(eta_fac)
+    call trace%end(itimer)
   END SUBROUTINE interpolate_lines
 
   !===============================================================================

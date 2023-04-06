@@ -451,10 +451,10 @@ contains
   END SUBROUTINE trans_boltzmann_weight
 
   !===============================================================================
-  SUBROUTINE absorption_factor(self, EK_over_temp, teta, pe, rho, dxi, xfakh, fakt)
+  SUBROUTINE absorption_factor(self, EK_over_temp, teta, pe, rho, dxi, fakt)
       class(bftrans_type), intent(in) :: self
       class(particle_type), pointer :: ion
-      real(dp), dimension(:,:,:), intent(in) :: EK_over_temp, teta, pe, rho, dxi, xfakh
+      real(dp), dimension(:,:,:), intent(in) :: EK_over_temp, teta, pe, rho, dxi
       real(dp), dimension(:,:,:), intent(out) :: fakt
       real(dp), dimension(:,:,:), allocatable :: h1
       integer, dimension(:,:,:), allocatable :: nniv
@@ -486,7 +486,7 @@ contains
               end where
 
           case('H FF')
-              !fakt = 2.0898E-26 / 2 * ion%part * xfakh * exp(-31.30364*teta + 2.3026*dxi*teta) / (31.30364*teta)
+              !fakt = 2.0898E-26 / 2 * ion%part * ion%rho_per_h * exp(-31.30364*teta + 2.3026*dxi*teta) / (31.30364*teta)
               fakt = self%level%boltzmann(EK_over_temp, dxi, natural_log=.true.)
               fakt = 2.0898E-26 / (2*RYD*EK_over_temp) * fakt * ion%part * ion%rho_per_h
 
@@ -505,10 +505,10 @@ contains
   END SUBROUTINE absorption_factor
 
   !===============================================================================
-  SUBROUTINE add_absorption(self, abslte, lam, temp, EK_over_temp, teta, pe, rho, dxi, xfakh, sorted)
+  SUBROUTINE add_absorption(self, abslte, lam, temp, EK_over_temp, teta, pe, rho, dxi, sorted)
       class(bftrans_type), intent(in) :: self
       real(4), dimension(:,:,:,:), intent(inout) :: abslte
-      real(dp), dimension(:,:,:), intent(in) :: temp, EK_over_temp, teta, pe, rho, dxi, xfakh
+      real(dp), dimension(:,:,:), intent(in) :: temp, EK_over_temp, teta, pe, rho, dxi
       real(dp), dimension(:), intent(in) :: lam
       real(dp), dimension(:,:,:), allocatable :: fakt
       logical, optional :: sorted
@@ -538,7 +538,7 @@ contains
 
       if (active) then
           !prev = abslte(pp(1), pp(2), pp(3), pp(4))
-          call self%absorption_factor(EK_over_temp, teta, pe, rho, dxi, xfakh, fakt)
+          call self%absorption_factor(EK_over_temp, teta, pe, rho, dxi, fakt)
           call self%interp_xkap(abslte, temp, teta, fakt)
           !print '(A14, A, 8(ES14.6))', self%label, self%ion%id, fakt(pp(1),pp(2),pp(3)), abslte(pp(1),pp(2),pp(3),pp(4)) - prev, abslte(pp(1),pp(2),pp(3),pp(4))
       endif

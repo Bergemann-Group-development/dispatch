@@ -85,14 +85,6 @@ MODULE out_rad_patch_mod
     call trace%begin('out_rad_patch_t%save_radiation_output')
     write(stdout, '(A, I3)') 'Writing output for angle ', abs(self%i_mu)
   
-    if (self%i_mu == -1) then
-      lam = 1d8 * dble(cc) / self%sp%nu
-      filename = trim(io%run_dir) // 'save/' // 'lam.bin'
-      open(newunit=lunit, file=filename, access='stream')
-      write(lunit) lam
-      close(lunit)
-    endif
-  
     nbor => self%link%nbor
     do while (associated(nbor))
       select type(nb => nbor%task)

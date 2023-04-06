@@ -77,7 +77,6 @@ MODULE trans_mod
 
   contains
       procedure :: profile => line_profile
-      procedure :: deactivate => bb_deactivate
       procedure :: get_nu
       procedure :: freql
       procedure :: interpolate_phi
@@ -96,7 +95,6 @@ MODULE trans_mod
 
   contains
       procedure :: opacities => cont_opacities
-      procedure :: deactivate => bf_deactivate
       procedure :: rates => cont_rates
       procedure :: hermite_interp
   end type cont_type
@@ -449,20 +447,6 @@ contains
       self%nu_max = self%nu(nnu)
   END SUBROUTINE freql
   !------------------------------------------------------------------------------------
-
-  !====================================================================================
-  PURE SUBROUTINE bb_deactivate(self)
-    class(line_type), intent(inout) :: self
-    !----------------------------------------------------------------------------------
-    self%active = .false.
-  END SUBROUTINE bb_deactivate
-
-  !====================================================================================
-  PURE SUBROUTINE bf_deactivate(self)
-    class(cont_type), intent(inout) :: self
-    !----------------------------------------------------------------------------------
-    self%active = .false.
-  END SUBROUTINE bf_deactivate
 
   END MODULE trans_mod
 

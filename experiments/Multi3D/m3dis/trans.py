@@ -153,8 +153,8 @@ class trans_class(object):
         self.prepared = True
 
     #=====================================================================
-    def plot(self, ang=None, imu=None, norm=True, dlam=None, \
-                vdop=None, vshift=None, renorm=False, \
+    def plot(self, ang=None, imu=None, norm=True, dlam=None,
+                vdop=None, vshift=None, renorm=False,
                 LTE=False, title=None, **kwargs):
         #-----------------------------------------------------------------
         if self.run.n_ang == 1: ang=0

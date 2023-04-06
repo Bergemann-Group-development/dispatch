@@ -44,6 +44,7 @@ MODULE ray_patch_mod
     procedure :: set_freq_indices
     procedure :: is_upstream => ray_is_upstream
     procedure :: comp_vproj
+    procedure :: set_guard_zones
     procedure :: ff_index
     procedure :: compress_mem
     procedure :: decompress_mem
@@ -158,6 +159,9 @@ SUBROUTINE set_freq_indices (self)
     self%fe = self%sp%nnu
     return
   endif
+  if (.not. associated(self%sp)) then
+    print *, ''
+  endif
   nv = self%sp%nnu / self%n_nu
   md = mod(self%sp%nnu, self%n_nu)
   i_nu = mod(abs(self%i_nu)-1, self%n_nu)+1
@@ -231,6 +235,21 @@ SUBROUTINE frequency_padding (self)
   nv = self%fe-self%fs+1
   call self%set_nv_and_nw (nv,self%nw)
 END SUBROUTINE frequency_padding
+
+!===============================================================================
+SUBROUTINE set_guard_zones (self)
+  class(ray_patch_t) :: self
+  !-----------------------------------------------------------------------------
+  if (self%out_ray) then
+    self%ng = [0,0,1]
+  elseif (self%one_dimensional) then
+    self%ng = [0,0,1]
+  elseif (self%ray%long) then
+    self%ng = [3,3,1]
+  else
+    self%ng = [2,2,1]
+  endif
+END SUBROUTINE set_guard_zones
 
 !===============================================================================
 SUBROUTINE ray_patch_finish (self)

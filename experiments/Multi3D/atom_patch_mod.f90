@@ -25,7 +25,7 @@ MODULE atom_patch_mod
     USE angle_rad_patch_mod, only: rad_patch_t
     USE atom_rate_patch_mod, only: atom_rate_t
     USE atom_mod, only: atom_type, atomic_spectrum_type, use_classic_col, kramer_bf, debye_shield, &
-                        red_cut, blue_cut, logf_cut, local_data_t
+                        red_cut, blue_cut, logf_cut, local_data_t, m1d_legacy_mode, nq_fac
     USE trans_mod, only: line_type, cont_type
     USE mconst, only: CC
     USE ion_mod, only: ion_type, particle_type
@@ -34,9 +34,10 @@ MODULE atom_patch_mod
     USE bbtrans_mod, only: bbtrans_type
     USE composition_mod, only: composition_type
     USE m3d_patch_mod, only: m3d_patch_t, maxiter, check_NaN, cswitch, key_link_t, &
-    global_maxerr, convlim, atom_update_counter, comoving_frame, global_pos, decouple_continuum
+    global_maxerr, convlim, atom_update_counter, comoving_frame, global_pos, &
+    decouple_continuum, overlapping_bb, overlapping_bf
     USE bftrans_mod, only: bftrans_type
-    USE atom_line_patch_mod, only:atom_line_t, second_sp
+    USE atom_line_patch_mod, only:atom_line_t, external_sp
     USE net_opac_patch_mod, only:net_opac_t
     USE m3d_debug_mod
     implicit none
@@ -125,13 +126,15 @@ MODULE atom_patch_mod
     integer :: n, m
     logical :: cf, dc, new_cont, new_line, new_rate
     !-----------------------------------------------------------------------------
+    if (.not. associated(sp)) return
+    if (sp%nnu == 0) return
     do n=nu(1), nu(2)
         cf = comoving_frame .and. n>0
-        dc = decouple_continuum .and. n>self%n_nu
+        dc = decouple_continuum
       do m=mu(1), mu(2)
-        new_cont = merge(n<0, .true., dc) .and. m==0
+        new_cont = m==0 .and. merge(n>self%n_nu, .true., dc)
         new_line = m<0 .or. merge(m==0, m/=0, cf)
-        new_rate = merge(m==0, m>0, cf) .or. (m==0 .and. dc)
+        new_rate = merge(m==0, m>0, cf) .or. (dc .and. m==0 .and. n>self%n_nu)
 
         if (new_cont) then
           allocate(cont)
@@ -163,7 +166,8 @@ MODULE atom_patch_mod
     integer :: iostat
     namelist /atom_params/ atom_file, qnorm, convlim, exclude_trace_cont, level_partf, &
     use_atom_abnd, logf_cut, red_cut, blue_cut, n_in_lines, abundance, debye_shield, &
-    exclude_from_line_list, precomputed_depart, use_classic_col, kramer_bf
+    exclude_from_line_list, precomputed_depart, use_classic_col, kramer_bf, overlapping_bf, &
+    overlapping_bb, nq_fac
     namelist /line_mask/ in_lines
     !-----------------------------------------------------------------------------
     call trace%begin('atom_patch_t%pre_init_atom', itimer=itimer)
@@ -262,7 +266,6 @@ MODULE atom_patch_mod
     type(atomic_spectrum_type), save, target :: sp, bb_sp, bf_sp
     logical, save :: first_time=.true.
     integer, save :: itimer=0
-    logical :: external_sp
     !-----------------------------------------------------------------------------
     call trace%begin('atom_patch_t%pre_init_spectrum', itimer=itimer)
     if (first_time) then
@@ -270,27 +273,31 @@ MODULE atom_patch_mod
 
       if (decouple_continuum) then
         bf_sp%name = 'bound-free'
-        call self%bf_atom%create_spectrum(bf_sp, bf=.true., sort=.false.)
-        call self%bf_atom%set_active_transitions(bf_sp, bf=.true.)
+        call self%bf_atom%create_spectrum(bf_sp, bf=.true., sort=overlapping_bf)
+        call self%bf_atom%set_ired_iblue(bf_sp, bf=.true., set_active=.true.)
+        call bf_sp%save('bf')
 
         bb_sp%name = 'bound-bound'
-        call self%bb_atom%create_spectrum(bb_sp, bb=.true.)
-        call self%bb_atom%set_active_transitions(bb_sp, bb=.true.)
+        call self%bb_atom%create_spectrum(bb_sp, bb=.true., sort=overlapping_bb)
+        call self%bb_atom%set_ired_iblue(bb_sp, bb=.true., set_active=.true.)
+        call bb_sp%save('bb')
 
       else
         sp%name = 'all'
         call self%atom%create_spectrum(sp, bb=.true., bf=.true.)
-        call self%atom%set_active_transitions(sp, bb=.true., bf=.true.)
+        call self%atom%set_ired_iblue(sp, bb=.true., bf=.true., set_active=.true.)
+        call sp%save('all')
       endif
 
       external_sp = output_sp%nnu > 0 
       if (external_sp) then
-        call self%output_atom%set_active_transitions(output_sp, bb=.true., bf=.true.) 
+        call self%output_atom%set_ired_iblue(output_sp, bb=.true., bf=.true.) 
       else
         output_sp%name = 'output based on atom'
         call self%output_atom%create_spectrum(output_sp, bb=.true.)
-        call self%output_atom%set_active_transitions(output_sp, bb=.true., bf=.true.) 
+        call self%output_atom%set_ired_iblue(output_sp, bb=.true., bf=.true.) 
       endif
+      call output_sp%save('out')
     endif
 
     self%output_sp => output_sp
@@ -361,7 +368,9 @@ MODULE atom_patch_mod
     if (precomputed_depart /= '') then
       call self%load_mem(precomputed_depart, self%out_mem, self%kind)
       do i=1, atom%nlevel
-        n(:,:,:,i) = n(:,:,:,i) / nstar(:,:,:,i) 
+        where (totn > 0)
+          n(:,:,:,i) = n(:,:,:,i) / nstar(:,:,:,i)
+        end where
       end do
       call atom%compute_lte_populations(temp, ne, dxi, element, molec)
       do i=1, atom%nlevel

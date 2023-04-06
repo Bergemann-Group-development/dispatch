@@ -8,7 +8,8 @@ import matplotlib.pyplot as plt
 import glob
 import f90nml
 from scipy.signal import argrelextrema
-from scipy.io import FortranFile 
+from scipy.io import FortranFile
+from matplotlib.collections import LineCollection
 import os
 
 cc = 2.99792458e10 # Speed of light [cm/s]
@@ -52,9 +53,16 @@ class read(object):
             self.line = lines
         
         print('Reading wavelengths')
-        self.lam = np.fromfile(sfolder + 'lam.bin', dtype=np.float64)
+        self.lam = np.fromfile(sfolder + 'out_lam.bin', dtype=np.float64)
         self.lam = vacuum2obs(self.lam[::-1])
         self.dlam = np.diff(self.lam)
+
+        if os.path.isfile(sfolder + 'bb_lam.bin'):
+            self.bb_lam = vacuum2obs(np.fromfile(sfolder + 'bb_lam.bin', dtype=np.float64))[::-1]
+        if os.path.isfile(sfolder + 'bf_lam.bin'):
+            self.bf_lam = vacuum2obs(np.fromfile(sfolder + 'bf_lam.bin', dtype=np.float64))[::-1]
+        if os.path.isfile(sfolder + 'all_lam.bin'):
+            self.all_lam = vacuum2obs(np.fromfile(sfolder + 'all_lam.bin', dtype=np.float64))[::-1]
         
         print('Reading Intensities')
         file = folder + 'angle_quadrature.txt'
@@ -76,14 +84,14 @@ class read(object):
         out_rad = self.read_patch_save('out_rad', concat=False)
         ie_dict = self.read_patch_save('ie',      concat=False)
         ipos = list(out_rad.keys())[0][0]
-        nmu  = np.min([key[-1] for key in out_rad.keys()])
+        nmu  = np.min([key[2] for key in out_rad.keys()])
 
         self.flux = np.zeros_like(self.lam)
         self.flux_lte = np.zeros_like(self.lam)
         self.flux_cnt = np.zeros_like(self.lam)
 
         for i in range(self.n_ang):
-            key = (ipos, 0, nmu+i)
+            key = list(out_rad.keys())[i]
             mem = out_rad[key]
             self.i3[i]     = mem[...,0,:,0]
             self.i3_lte[i] = mem[...,0,:,1]
@@ -146,23 +154,21 @@ class read(object):
     #=====================================================================
     def set_xaxis(self, lam, dlam=None):
         #-----------------------------------------------------------------
-        ib = None
-        ir = None
-
-        if dlam==None:
-            plt.xlabel('Wavelength [Å]')
-        else:
-            plt.xlabel('$\Delta\lambda$ [Å]')
-
+        if dlam is not None:
             if isinstance(dlam, tuple):
-                ib = np.searchsorted(lam, dlam[0])
-                ir = np.searchsorted(lam, dlam[1])
-                plt.xlim(dlam[0], dlam[1])
+                dl = dlam[:]
 
             elif not isinstance(dlam, (bool)):
-                ib = np.searchsorted(lam, -dlam)
-                ir = np.searchsorted(lam,  dlam)
-                plt.xlim(-dlam, dlam)
+                dl = (-dlam, dlam)
+
+            ib = np.searchsorted(lam, dl[0])
+            ir = np.searchsorted(lam, dl[1])
+            plt.xlim(*dl)
+            plt.xlabel('$\Delta\lambda$ [Å]')
+        else:
+            ib = None
+            ir = None
+            plt.xlabel('Wavelength [Å]')
 
         mask = slice(ib, ir)
         plt.ticklabel_format(useOffset=False)
@@ -228,7 +234,8 @@ class read(object):
 
     #=====================================================================
     def plot_spectrum(self, ang=None, imu=None, norm=True, LTE=False,
-                      vdop=None, vshift=None, lam0=None, dlam=10, **kwargs):
+                      vdop=None, vshift=None, lam0=None, dlam=10, 
+                      show_lines=False, **kwargs):
         #-----------------------------------------------------------------
         if self.n_ang == 1: ang=0
 
@@ -238,25 +245,63 @@ class read(object):
             xx = xx - lam0
         else:
             dlam = None
+            lam0 = 0
 
         xx, mask = self.set_xaxis(xx, dlam)
         yy, cnt = self.get_yy(ang, imu, norm, LTE, mask)
-        
+        xx = xx + lam0
+
         if vdop is not None or vshift is not None:
-            if lam0 is not None:
-                oxx = xx + lam0
-            else:
-                oxx = xx
-                
-            sxx, syy = convol(oxx, yy, vdop=vdop, vshift=vshift)
-            yy = np.interp(oxx, sxx, syy)
+            sxx, syy = convol(xx, yy, vdop=vdop, vshift=vshift)
+            yy = np.interp(xx, sxx, syy)
         
         self.set_yaxis(ang, imu, norm)
+        
+        xmin, xmax, ymin, ymax = plt.axis()
+        plt.xlim(xmin+lam0, xmax+lam0)
+        plt.xlabel('Wavelength [Å]')
+
+        if show_lines:
+            self.plot_line_labels()
+
         return plt.plot(xx, yy, **kwargs)
     
+    #=====================================================================
+    def plot_line_labels(self, nbins=4):
+        xmin, xmax, ymin, ymax = plt.axis()
+        x = np.array([line.lam0 for line in self.line])
+        mask = np.where((x > xmin) * (x < xmax))[0]
+        mask = mask[np.argsort(x[mask])[::-1]]
+        x = x[mask]
+        n = x.size
+
+        edges = np.linspace(xmin, xmax, nbins+1)
+        bins = np.zeros_like(edges, dtype=int)
+        ibin = np.digitize(x, edges)
+        occu = np.zeros_like(x)
+
+        for i, idx in enumerate(ibin):
+            bins[idx] += 1
+            occu[i] = bins[idx]
+
+        occu = 1 + occu*(ymax-ymin)/20
+
+        segs = np.zeros((n, 2, 2))
+        segs[:, 0, 1] = 1.0
+        segs[:, 1, 1] = occu
+        segs[:, :, 0] = x[:, None]
+
+        line_segments = LineCollection(segs, color='lightgrey')
+        plt.gca().add_collection(line_segments)
+
+        for i, idx in enumerate(mask):
+            line = self.line[idx]
+            plt.text(x=line.lam0, y=occu[i], s=idx, rotation=45, color='grey', fontsize=8)
+
+        plt.ylim(ymin, occu.max() + (ymax-ymin)/5)
 
     #=====================================================================
-    def plot_depart(self, ilvl, mean=True, show_splits=False):
+    def get_depart(self, ilvl, mean=True, xxin=None):
         atom_patch = self.read_patch_save('atom_patch', concat=False)
         key = [1,0,0]
         xx = []
@@ -276,12 +321,25 @@ class read(object):
             bots.append(bot)
 
         xx = xx/xx[-1]
-        plt.plot(xx, yy)
+
+        if xxin is not None:
+            xx = xxin
+
+        return xx, yy, bots
+
+
+    #=====================================================================
+    def plot_depart(self, ilvl, mean=True, show_splits=False, xxin=None, **kwargs):
+        xx, yy, bots = self.get_depart(ilvl, mean=mean, xxin=xxin)
+
+        plt.plot(xx, yy, **kwargs)
 
         if show_splits:
             bots = np.array(bots) / xx[-1]
             for bot in bots:
                 plt.axvline(bot, linewidth=0.2)
+
+        return xx, yy
 
     #=====================================================================
     def read_patch_save(self, kind, concat=True):
@@ -289,6 +347,7 @@ class read(object):
         meta = open(self.sfolder + kind + '_meta.txt')
 
         dct = {}
+        dct_out = {}
         for line in meta:
             if not line.strip().startswith('*'):
                 info = line.split()
@@ -301,6 +360,8 @@ class read(object):
 
                 key = file.split('.')[0].split('_')[-1]
                 key = [int(k) for k in [key[0:3], key[3:6], key[6:9]]]
+
+                if '_out' in file: key = key + ['out']
 
                 dct[tuple(key)] = np.memmap(self.sfolder + file, dtype=dtype).reshape(dims, order='F')
 

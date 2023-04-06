@@ -35,7 +35,7 @@ MODULE dispatcher0_mod
     procedure:: update
     procedure:: no_queue
   end type
-  real(8):: stall_start=0d0, max_stalled=600d0, retry_stalled=30d0
+  real(8):: stall_start=0d0, max_stalled=1e8, retry_stalled=1e8
   real:: delay_ms=0.05
   integer, save:: mpi_only_master=5
   integer, save:: verbose=0

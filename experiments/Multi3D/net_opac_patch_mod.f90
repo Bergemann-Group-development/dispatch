@@ -72,19 +72,7 @@ MODULE net_opac_patch_mod
     if (comoving_frame .and. .not. self%out_ray) then
       self%ng = 0
     else
-      if (self%out_ray) then
-        !if (linear_long) then
-          self%ng = [0,0,1]
-        !else
-        !  self%ng = [2,2,1]
-        !endif
-      else
-        if (self%ray%long) then
-          self%ng = [3,3,1]
-        else
-          self%ng = [2,2,1]
-        endif
-      endif
+      call self%set_guard_zones()
     endif
     call self%post_pre_init()
     call trace%end(itimer)

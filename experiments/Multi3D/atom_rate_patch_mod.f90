@@ -367,17 +367,17 @@ MODULE atom_rate_patch_mod
           end do
           end do
           end do
-        end do
-
-        if (self%print_update_info) then
-          if (f == self%fcheck) then
-            if (k==self%linecheck) then
-              p = self%pcheck
-              memcheck(1) = gamma_ij(p(1),p(2),p(3),self%linecheck) - memcheck(1)
-              memcheck(2) = gamma_ji(p(1),p(2),p(3),self%linecheck) - memcheck(2)
+          if (self%print_update_info) then
+            if (f == self%fcheck) then
+              if (k==self%linecheck) then
+                p = self%pcheck
+                memcheck(1) = gamma_ij(p(1),p(2),p(3),self%linecheck) - memcheck(1)
+                memcheck(2) = gamma_ji(p(1),p(2),p(3),self%linecheck) - memcheck(2)
+              endif
             endif
           endif
-        endif
+        end do
+
         !call trace%end(itimer3)
     end do
   END SUBROUTINE full_preconditioning

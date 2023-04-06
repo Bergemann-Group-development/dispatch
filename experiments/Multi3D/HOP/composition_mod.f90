@@ -25,7 +25,7 @@ MODULE composition_mod
         type(osmet_type) :: osmet
         real(dp), dimension(:,:,:), allocatable :: temp, ne, rho
         real(dp), dimension(:,:,:), allocatable :: EK_over_temp, pe, dxi, fe, toth, saha
-        real(dp), dimension(:,:,:), allocatable :: teta, eh, pg, E, xfakh, ro, p6
+        real(dp), dimension(:,:,:), allocatable :: teta, eh, pg, E, ro, p6
     contains
         procedure :: init => injon
         procedure :: init_molecules
@@ -925,7 +925,7 @@ contains
     END SUBROUTINE init_molecules
 
     !===============================================================================
-    SUBROUTINE load_state_variables(self, temp, ne, rho)
+    SUBROUTINE load_state_variables(self, temp, ne, rho, use_rho)
         class(composition_type), target :: self
         class(element_type), pointer :: element
         class(molec_type), pointer :: molecule
@@ -933,7 +933,9 @@ contains
         class(element_type), pointer :: H
         class(ion_type), pointer :: Hm, HI
         real(4), dimension(:,:,:), intent(in) :: temp, ne, rho
-        real(dp), dimension(:,:,:), allocatable :: xnen, ejon, xnecno, nh0, xerg, ehm
+        logical, intent(in), optional :: use_rho
+        real(dp), dimension(:,:,:), allocatable :: xnen, ejon, xnecno, xerg, ehm, toth
+        real(dp) :: uop_grph
         integer :: i,j, nx, ny, nz, lunit
         !---------------------------------------------------------------------------
         call trace%begin ('composition_type%load_state_variables')
@@ -949,24 +951,21 @@ contains
 
         if (self%loaded) then
             deallocate(self%temp)
-            deallocate(self%xfakh, self%ne,   self%rho,  self%pe, self%pg)
+            deallocate(self%ne,   self%rho,  self%pe, self%pg)
             deallocate(self%toth,  self%saha, self%teta, self%dxi, self%eh)
             deallocate(self%EK_over_temp, self%ro, self%p6, self%fe)
         endif
         
         allocate(self%temp(nx,ny,nz))
-        allocate(self%xfakh, self%ne,   self%rho,  self%pe, self%pg, mold=self%temp)
+        allocate(self%ne,   self%rho,  self%pe, self%pg, mold=self%temp)
         allocate(self%toth,  self%saha, self%teta, self%dxi, self%eh, mold=self%temp)
         allocate(self%EK_over_temp, self%ro, self%p6, self%fe, mold=self%temp)
-        allocate(xnen, xnecno, ejon, nh0, xerg, ehm, mold=self%temp)
+        allocate(xnen, xnecno, ejon, xerg, ehm, toth, mold=self%temp)
 
         self%temp = temp
         self%ne   = ne
-        self%rho  = rho
         self%EK_over_temp = EK / self%temp
         self%pe   = self%temp*BK*self%ne
-        !self%toth = self%rho / self%grph
-        self%toth = self%rho / (self%xmy*1.008*uu)
         self%saha = 2 * op_saha_const * self%temp*sqrt(self%temp) / self%ne
         self%teta = temp_to_theta / self%temp
 
@@ -1043,21 +1042,24 @@ contains
             end do
         end do
 
-        nh0 = HI%f * self%ne / self%fe * (BK/uop_BK)
+        uop_grph = self%grph*(1.008*uu/XMH)
+        
+        ! total hydrogen number density, computed from scratch
+        toth = self%ne / self%fe * (BK/uop_BK)
+        ! mass density computed from scratch
+        self%ro = toth * uop_grph
+
+        if (option(use_rho, .true.)) then
+            ! if rho is given, we compute toth from rho
+            self%rho  = rho
+            self%toth = rho / self%grph
+        else
+            ! if rho is not given, we use the quantities computed by UOP
+            self%rho  = self%ro
+            self%toth = toth
+        endif
 
         Hm%rho_per_h = HI%rho_per_h / Hm%saha
-
-        where (temp < self%tmolim)
-            ! keep this around for consistency with legacy code, its just a bunch of wrong constants.
-            !self%xfakh = self%ne*(BK/uop_BK) * HI%f / (self%fe * self%rho) * (1.008*UU / XMH)
-            self%xfakh = nh0 / self%rho * (1.008*UU / XMH)
-        elsewhere
-            self%xfakh = HI%rho_per_h
-        end where
-
-        ! legacy rho, should probably be replaced by actual rho
-        self%ro = self%ne / self%fe * (BK/uop_BK) * self%grph
-
         self%E = 1.5*self%pg/self%ro + (ejon - self%eh)*EE/self%grph
 
         call self%compute_p6(self%p6)
@@ -1091,7 +1093,6 @@ contains
         real(dp), dimension(:), allocatable :: lam
         logical, optional :: include_absmet, absmet_big_end, sorted
         real(dp) :: xray2, epsln
-        real(4) :: linop
         integer :: i, j, k, f, nf
         !---------------------------------------------------------------------------
         call trace%begin ('composition_type%absorption')
@@ -1106,7 +1107,7 @@ contains
             select case (trim(trans%key))
             case ('H BF', 'H FF')
                 call trans%add_absorption(abslte, lam, self%temp, self%EK_over_temp, self%teta, &
-                                          self%pe, self%ro, self%dxi, self%xfakh, sorted)
+                                          self%pe, self%ro, self%dxi, sorted)
             end select
         end do
 
@@ -1128,7 +1129,7 @@ contains
                 ! H- FF still to be added after multiplication of stim
             case default
                 call trans%add_absorption(abslte, lam, self%temp, self%EK_over_temp, self%teta, &
-                                          self%pe, self%ro, self%dxi, self%xfakh, sorted)
+                                          self%pe, self%ro, self%dxi, sorted)
             end select
         end do
 
@@ -1148,7 +1149,7 @@ contains
         ! H- FF absorption is added without stim factor
         call self%trans_by_id('H- FF', trans)
         call trans%add_absorption(abslte, lam, self%temp, self%EK_over_temp, self%teta, &
-                                  self%pe, self%ro, self%dxi, self%xfakh, sorted)
+                                  self%pe, self%ro, self%dxi, sorted)
 
         sumsca = 0
         call self%electron_scattering(sumsca)

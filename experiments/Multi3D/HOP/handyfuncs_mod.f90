@@ -1,4 +1,5 @@
 MODULE handyfuncs_mod
+  USE op_math_mod
   implicit none
   
 contains
@@ -197,5 +198,21 @@ SUBROUTINE sort_array(array, indices)
     end if
   end do
 END SUBROUTINE sort_array
+
+!====================================================================================
+SUBROUTINE refine_array(array, n, fac)
+  real(8), intent(inout), dimension(:), pointer, contiguous :: array
+  integer, intent(inout) :: n
+  integer, intent(in) :: fac
+  real(8), dimension(:), pointer, contiguous :: tmp
+  integer :: i, nnew
+  !---------------------------------------------------------------------------------
+  nnew = (n-1)*fac + 1
+  allocate(tmp(nnew))
+  tmp = interp1d([(dble(i), i=0, n-1)], array, [(dble(i)/fac, i=0, (n-1)*fac)], order=1, sorted=.true.)
+  deallocate(array)
+  array => tmp
+  n = nnew
+END SUBROUTINE refine_array
 
 END MODULE handyfuncs_mod

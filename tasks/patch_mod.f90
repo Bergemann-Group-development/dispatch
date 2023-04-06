@@ -771,8 +771,9 @@ SUBROUTINE init (self)
   character(len=120) :: id = &
     '$Id$'
   logical, save:: first_time=.true.
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('patch_t%init')
+  call trace%begin ('patch_t%init', itimer=itimer)
   call io_unit%print_id (id)
   call self%task_t%init
   !-----------------------------------------------------------------------------
@@ -910,7 +911,7 @@ SUBROUTINE init (self)
   call self%init_outside ()
   call io%lock%unset ('patch_t%init')
   !-----------------------------------------------------------------------------
-  call trace%end()
+  call trace%end(itimer)
 END SUBROUTINE init
 
 !===============================================================================

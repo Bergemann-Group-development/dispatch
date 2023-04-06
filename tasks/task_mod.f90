@@ -290,8 +290,9 @@ END SUBROUTINE pre_init
 SUBROUTINE init (self)
   class (task_t):: self
   integer:: id, id_master, id_tmp
+  integer, save :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('task_t%init')
+  call trace%begin ('task_t%init', itimer=itimer)
   call init_params (self)
   if (self%id == 0) then
     call init_unique (self)
@@ -343,7 +344,7 @@ SUBROUTINE init (self)
   self%place = omp%place                          ! memory affinity
   self%key = self%hash_key ()                     ! cache the hash key
   call self%log ('init', 3)
-  call trace%end ()
+  call trace%end (itimer)
 END SUBROUTINE init
 
 !===============================================================================

@@ -42,16 +42,7 @@ MODULE proj_patch_mod
     self%kind = 'proj_patch'
     call self%ray_patch_t%pre_init()
     call self%set_nv_and_nw (self%fe-self%fs+1, 2)
-
-    if (self%out_ray) then
-      self%ng = [0,0,1]
-    else
-      if (self%ray%long) then
-        self%ng = [3,3,1]
-      else
-        self%ng = [2,2,1]
-      endif
-    endif
+    call self%set_guard_zones()
     call self%post_pre_init()
     call trace%end(itimer)
   END SUBROUTINE pre_init

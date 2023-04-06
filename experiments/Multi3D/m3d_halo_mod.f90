@@ -468,7 +468,7 @@ CONTAINS
       task => self%task
       select type (task)
       class is (gpatch_t)
-        if (task%verbose > 4) then
+        if (task%verbose>1) then
           write(stdout,*) task%id, ' has finished!', task%task_list%nfinished, '/', task%task_list%na, timer%done
         endif
       end select

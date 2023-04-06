@@ -211,15 +211,16 @@ SUBROUTINE init (self)
   real(kind=KindScalarVar), pointer :: d(:,:,:)
   character(len=129):: id= &
   '$Id$'
+  integer, save :: itimer=0
   !-----------------------------------------------------------------------------
   if (self%is_set(bits%frozen)) &
     return
-  call trace%begin ('gpatch_t%init')
+  call trace%begin ('gpatch_t%init', itimer=itimer)
   call io_unit%print_id (id)
   call self%patch_t%init
   call self%init_bdries ()
   call data_io%init (self)
-  call trace%end()
+  call trace%end(itimer)
 END SUBROUTINE init
 
 !===============================================================================

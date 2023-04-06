@@ -21,6 +21,7 @@ MODULE back_cont_patch_mod
     integer :: i_abs=3, i_sca=4
     class(composition_type), pointer :: composition
     class(m3d_patch_t), pointer :: mean_rad => null()
+    logical :: include_absmet=.false.
     contains
       procedure :: pre_init => back_cont_pre_init
       procedure :: update => back_cont_update
@@ -44,6 +45,7 @@ MODULE back_cont_patch_mod
     call self%ray_patch_t%pre_init()
 
     self%static_mem = save_back_cont
+    self%include_absmet = .not. self%out_ray .and. self%i_nu > self%n_nu
   
     self%ng = 0
     nw = merge(4, 2, save_back_cont)
@@ -82,7 +84,7 @@ MODULE back_cont_patch_mod
   
     if (self%iter == 0 .or. .not. save_back_cont) then
       call self%composition%absorption(nu, chi, abslte, sumsca, &
-      include_absmet=.not.self%out_ray, sorted=self%sp%sorted)
+      include_absmet=self%include_absmet, sorted=self%sp%sorted)
     endif
     
     if (.not. self%out_ray .and. ilambd > 0 .and. self%iter > 0) then

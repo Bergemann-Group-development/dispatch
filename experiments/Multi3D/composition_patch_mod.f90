@@ -6,7 +6,8 @@ MODULE composition_patch_mod
   USE gpatch_mod
   USE handyfuncs_mod
   USE element_mod, only: element_type
-  USE m3d_patch_mod,   only: m3d_patch_t, comoving_frame, ilambd, decouple_continuum
+  USE m3d_patch_mod,   only: m3d_patch_t, comoving_frame, ilambd, decouple_continuum, &
+  use_density, overlapping_bb, overlapping_bf
   USE composition_mod, only: composition_type, dlam, exclude_elements
   USE back_cont_patch_mod,  only: back_cont_patch_t
   USE angle_rad_patch_mod,   only: rad_patch_t
@@ -62,7 +63,7 @@ SUBROUTINE composition_pre_init (self)
   character(len=128), save :: molec_file='./input_multi3d/molec_data.txt'
   character(len=128), save :: absmet_file=''
   character(len=128), save :: linelist_file=''
-  logical, save :: first_time=.true., absmet_big_end=.false.
+  logical, save :: first_time=.true., absmet_big_end=.false., external_sp
   namelist /composition_params/ verbose, absdat_file, abund_file, absmet_file, &
   absmet_big_end, isotope_file, molec_file
   namelist /linelist_params/ dlam, exclude_elements, linelist_file
@@ -105,6 +106,7 @@ SUBROUTINE composition_pre_init (self)
     allocate(output_sp)
     call output_sp%init()
     output_sp%name = 'output'
+    external_sp = output_sp%nnu > 0
   endif
 
   ! copy composition with all the information from the abund
@@ -125,7 +127,6 @@ SUBROUTINE composition_pre_init (self)
 
   if (atom_patch%atom_allocated) then
     self%atom_patch => atom_patch
-    if (output_sp%nnu == 0) output_sp => atom_patch%sp
     if (decouple_continuum) then
       call self%create_sub_patches([1, n_nu],      [0, n_mu], self%composition, atom_patch%bb_sp)
       call self%create_sub_patches([1, n_nu]+n_nu, [0, n_mu], self%composition, atom_patch%bf_sp)
@@ -134,7 +135,7 @@ SUBROUTINE composition_pre_init (self)
     endif
   else
     deallocate(atom_patch)
-    if (output_sp%nnu == 0) then
+    if (external_sp) then
       stop 'No atom nor output spectrum specified! Stopping...'
     endif
   endif
@@ -162,6 +163,8 @@ SUBROUTINE create_sub_patches (self, nu, mu, composition, sp)
   integer :: n, m
   logical :: cf, new_cont, new_line, new_rad, new_out, new_net, new_proj, new_mean
   !-----------------------------------------------------------------------------
+  if (.not. associated(sp)) return
+  if (sp%nnu == 0) return
   do n=nu(1), nu(2)
     cf = comoving_frame .and. n>0
     nullify(mean)
@@ -170,7 +173,7 @@ SUBROUTINE create_sub_patches (self, nu, mu, composition, sp)
     new_cont = n/=0 .and. m==0
     new_line = n/=0 .and. (m<0 .or. merge(m==0, m/=0, cf)) .and. composition%ll_initialised
     new_net  = n/=0 .and. (m<0 .or. merge(m==0, m/=0, cf))
-    new_proj = n/=0 .and. cf
+    new_proj = m/=0 .and. cf
     new_rad  = n/=0 .and. m/=0
     new_out  = n==0 .and. m<0 .and. self%patch%boundaries%is_set(bits%zu)
 
@@ -197,6 +200,9 @@ SUBROUTINE create_sub_patches (self, nu, mu, composition, sp)
       call net%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp)
       if (associated(self%atom_patch)) then
         call self%atom_patch%add_to_key_list(net)
+      endif
+      if (associated(mean)) then
+        mean%opac => net
       endif
     endif
     if (new_proj) then
@@ -247,7 +253,7 @@ SUBROUTINE composition_update (self)
   
     ! loading temp, ne and rho in to composition objekt
     ! ion and molecule equilibrium are solved immediately
-    call self%composition%load_state_variables(temp, ne, rho)
+    call self%composition%load_state_variables(temp, ne, rho, use_rho=use_density)
     call self%composition%get_nhyd(nh)
 
     self%dtime = max(self%dtime, io%end_time - self%dtime)
