@@ -51,10 +51,10 @@ SUBROUTINE compute_ion_equilibrium(self, EK_over_temp, ne, saha, dxi)
         fil = 1 + fil * ions(j)%saha
     end do
 
-    ions(1)%anjon = 1 / fil
+    ions(1)%f = self%abund / fil
 
     do j=2, self%nion
-        ions(j)%anjon = ions(j-1)%anjon * ions(j-1)%saha
+        ions(j)%f = ions(j-1)%f * ions(j-1)%saha
     end do
 END SUBROUTINE compute_ion_equilibrium
 
@@ -64,18 +64,18 @@ SUBROUTINE print_info(self, lunit, p)
     integer, intent(in) :: lunit, p(:)
     type(ion_type), pointer :: ion
     character(32) :: info
-    character(32) :: anjon_string
+    character(32) :: f_string
     character(48) :: saha_string
     character(64) :: part_string
     integer :: j
     !---------------------------------------------------------------------------
     write(info,'(A4, e12.4)') self%id, self%abund
-    anjon_string=''
+    f_string=''
     part_string=''
     saha_string=''
     do j=1, self%nion
         ion => self%ions(j)
-        write(anjon_string, '(A, f8.4)') trim(anjon_string), ion%anjon(p(1),p(2),p(3))
+        write(f_string, '(A, f8.4)') trim(f_string), ion%f(p(1),p(2),p(3))
     end do
 
     do j=1, self%nion
@@ -87,7 +87,7 @@ SUBROUTINE print_info(self, lunit, p)
         ion => self%ions(j)
         write(part_string, '(A, es10.2)') trim(part_string), 1/ion%part(p(1),p(2),p(3))
     end do
-    write(lunit, '(A,A,A,A)'), trim(info), anjon_string, saha_string, part_string
+    write(lunit, '(A,A,A,A)'), trim(info), f_string, saha_string, part_string
 END SUBROUTINE print_info
 
 END MODULE element_mod

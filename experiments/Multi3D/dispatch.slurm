@@ -7,7 +7,7 @@
 #SBATCH --partition=interactive
 #SBATCH --nodes=1                  # Number of MPI tasks (i.e. processes)
 #SBATCH --ntasks-per-node=1        # Maximum number of tasks on each node
-#SBATCH --cpus-per-task=30         # Number of cores per MPI task 
+#SBATCH --cpus-per-task=64         # Number of cores per MPI task 
 #SBATCH --ntasks-per-core=1
 #SBATCH --exclusive
 # --- User notifications ---

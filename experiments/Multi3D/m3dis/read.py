@@ -314,9 +314,18 @@ class read(object):
             level = nx/5
             xx = np.concatenate([xx, bot + np.arange(nz)/level])
             bot = bot + nz/level
-            nlte = np.mean(val[:,:,:,ilvl,1], axis=(0,1))
-            lte  = np.mean(val[:,:,:,ilvl,0], axis=(0,1))
-            yy = np.concatenate([yy, nlte/lte])
+            nlte = val[:,:,:,ilvl,1]
+            lte  = val[:,:,:,ilvl,0]
+
+            if mean:
+                nlte = np.mean(nlte, axis=(0,1))
+                lte  = np.mean(lte,  axis=(0,1))
+
+            if yy == []:
+                yy = nlte/lte
+            else:
+                yy = np.concatenate([yy, nlte/lte], axis=-1)
+
             key[0] = key[0] + 1
             bots.append(bot)
 
@@ -327,10 +336,9 @@ class read(object):
 
         return xx, yy, bots
 
-
     #=====================================================================
-    def plot_depart(self, ilvl, mean=True, show_splits=False, xxin=None, **kwargs):
-        xx, yy, bots = self.get_depart(ilvl, mean=mean, xxin=xxin)
+    def plot_depart(self, ilvl, show_splits=False, xxin=None, **kwargs):
+        xx, yy, bots = self.get_depart(ilvl, mean=True, xxin=xxin)
 
         plt.plot(xx, yy, **kwargs)
 

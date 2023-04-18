@@ -4,7 +4,8 @@ MODULE spectrum_mod
     USE timer_mod
     USE trace_mod
     USE mconst
-    USE op_math_mod, only: air2vac, get_ivl=>get_interval
+    USE handyfuncs_mod, only:air2vac
+    USE op_math_mod, only: get_ivl=>get_interval
     USE trans_mod, only: transition_type
     implicit none
 

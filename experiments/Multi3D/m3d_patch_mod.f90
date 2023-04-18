@@ -1494,7 +1494,7 @@ MODULE m3d_patch_mod
     character(len=*), intent(in) :: label
     real(4), intent(inout), dimension(:,:,:,:,:) :: mem
     character(len=128) :: filename, sfolder, metafile, file
-    integer :: lunit, file_size, mem_size, iostat, prec, m(5)
+    integer :: lunit, file_size, mem_size, iostat, prec, oldm(5), newm(5)
     ! ----------------------------------------------------------------------------
     call self%check_access(self)
     write(sfolder, '(A, A)') trim(folder), 'save/'
@@ -1505,7 +1505,7 @@ MODULE m3d_patch_mod
     open(newunit=lunit, file=trim(sfolder)//metafile, form='formatted', iostat=iostat)
     read(lunit,*) ! skip header
     do while (iostat==0)
-      read(lunit, *, iostat=iostat) file, prec, m
+      read(lunit, *, iostat=iostat) file, prec, oldm
       if (file == filename) exit
     end do
     close(lunit)
@@ -1513,15 +1513,17 @@ MODULE m3d_patch_mod
       print *, 'file not found in metafile! Stopping...'
       stop
     endif
-    if (any(m /= shape(mem))) then
+    newm = shape(mem)
+    open(newunit=lunit, file=trim(sfolder)//filename, access='stream')
+    if (all(oldm == newm)) then
+      read(lunit) mem
+    else
       write(stdout, *) 'Cannot load patch save ', trim(sfolder)//trim(filename), &
       'Memory sizes do not match!'
-      print *, m
-      print *, shape(mem)
+      print *, oldm
+      print *, newm
       stop
     endif
-    open(newunit=lunit, file=trim(sfolder)//filename, access='stream')
-    read(lunit) mem
     close(lunit)
   END SUBROUTINE load_mem
 

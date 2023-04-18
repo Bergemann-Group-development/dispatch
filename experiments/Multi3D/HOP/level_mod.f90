@@ -46,7 +46,7 @@ contains
 
         bk_err = BK / uop_BK ! keep around for consistency
 
-        a = 31.321*ion**2 * log10(exp(1.d0)) * EK_over_temp * prec_err
+        a = 31.321*ion**2 * log10e * EK_over_temp * prec_err
         p = ion * 4.2E3 / (ne*bk_err)**0.166666667
     
         if (p <= self%xl) then

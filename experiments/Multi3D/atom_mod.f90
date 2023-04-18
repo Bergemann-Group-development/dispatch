@@ -362,69 +362,41 @@ MODULE atom_mod
   !------------------------------------------------------------------------------------
   
   !====================================================================================
-  SUBROUTINE compute_lte_populations(self, temp, ne, dxi, element, mol)
+  SUBROUTINE compute_lte_populations(self, nstar, totn, temp, saha, dxi, element, mol)
     class(atom_type), intent(inout) :: self
     class(element_type), pointer :: element
     class(ion_type), pointer :: ion
     class(molec_type), pointer :: mol
     integer :: i, j, x,y,z
-    real(4), dimension(:,:,:), intent(in) :: temp, ne
-    real(4), dimension(:,:,:) :: dxi
-    real(4), dimension(:,:,:), allocatable :: partition, saha
-    real(4), dimension(:,:,:), pointer, contiguous :: totn
-    real(4), dimension(:,:,:,:), pointer, contiguous :: n, nstar
-    integer :: nx, ny, nz
+    real(4), intent(inout), dimension(:,:,:,:), pointer, contiguous :: nstar
+    real(4), intent(inout), dimension(:,:,:) :: totn
+    real(4), intent(in), dimension(:,:,:) :: temp, saha, dxi
+    real(4), dimension(:,:,:), allocatable :: partition, f
+    real(4), dimension(:,:,:), pointer :: ndis
+    integer :: ijk(3)
     logical :: zero_pop
+    integer, save :: itimer=0
     !---------------------------------------------------------------------------------
-    nx = size(temp, 1)
-    ny = size(temp, 2)
-    nz = size(temp, 3)
-    
-    allocate(partition, mold=temp)
-    allocate(saha, mold=temp)
-    if (.not. associated(self%data%nstar)) allocate(self%data%nstar(nx, ny, nz, self%nlevel))
-    if (.not. associated(self%data%n    )) allocate(self%data%n    (nx, ny, nz, self%nlevel))
-
-    totn  => self%data%totn
-    nstar => self%data%nstar
-    n => self%data%n
-
-    !dxi = 4.98e-4*5040./temp*sqrt(ne*bk*temp)
-
+    call trace%begin('atom_mod%compute_lte_populations', itimer=itimer)
+    allocate(partition, f, mold=temp)
     if (associated(element)) then
-      print *, 'LTE populations based on UOP'
-      if (.not. allocated(element%ions)) then
-        print *, 'ion lost?'
-      endif
-      partition = totn
-      saha = 0.0
       do i=1, self%nlevel
         j = self%ion(i)
         if (j <= ubound(element%ions,1)) then
           ion => element%ions(j)
-          nstar(:,:,:,i) = self%lte_pop(i, temp, dxi, saha, partition)
-          nstar(:,:,:,i) = nstar(:,:,:,i) * ion%anjon * ion%part
+          ! ion%anjon already takes saha factor into account
+          ! it also takes into account reductions in abundances due to molecules
+          partition = ion%n * ion%part
+          nstar(:,:,:,i) = self%lte_pop(i, temp, dxi, 1.0, partition)
         else
           print *, 'ion stage larger than max ion stage from UOP!'
         endif
       end do
     else
-      !saha = temp*sqrt(temp) / (saha_const*ne)
-      saha = 1.5*log(temp) - log(saha_const*ne) ! actually log(saha)
-
       if (associated(mol)) then
         partition = totn / mol%irwin_partf(dble(temp))
       else
-        !select case (self%id(1:len_trim(self%id)))
-        !case ('ch','co','cn')
-        !   molec=.true.
-        !   !partition = totn * self%g(1) * exp(-e_k/temp*self%ev(1)) / qcalc(elemid, temp)
-        !   print *, 'molecule partition functions need to be updated. Stopping...'
-        !   stop
-        !case default
-        !   molec=.false.
-            partition = self%partition_function(temp, dxi, saha, totn)
-        !end select
+        partition = self%partition_function(temp, dxi, saha, totn)
       endif
 
       do i=1, self%nlevel
@@ -434,27 +406,25 @@ MODULE atom_mod
           nstar(:,:,:,i) = self%lte_pop(i, temp, dxi, saha, partition)
         endwhere
 
-        zero_pop = .false.
-        do x=1, nx
-        do y=1, ny
-        do z=1, nz
-          if (nstar(x,y,z,i) <= tiny(0.0) .and. .not. totn(x,y,z)==0) then
-            zero_pop = .true.
-          endif
-        end do
-        end do
-        end do
-        if(zero_pop) then
-          print *, ' WARNING: ltepop: level ',i,' has zero lte population.'
+        ijk = findloc(nstar(:,:,:,i), 0., mask=totn>0)
+        if (any(ijk > 0)) then
+          print *, ' WARNING: ltepop: level ',i,' has zero lte population at', ijk
           !stop
         end if
       end do
 
-      ! scale total abundances if treated model is a molecule
-      !if(molec) then
-      !   totn = partition * nstar(:,:,:,1)
-      !endif
+      if (associated(mol)) then
+        ndis => nstar(:,:,:,self%nlevel)
+        totn = totn - ndis
+        ndis = huge(1.d0)
+        do j=1, mol%nions
+          ion => mol%ions(j)%p
+          ndis = min(ndis, ion%n)
+        end do
+        totn = totn + ndis
+      endif
     endif
+    call trace%end(itimer)
   END SUBROUTINE compute_lte_populations
   !------------------------------------------------------------------------------------
 
@@ -469,19 +439,20 @@ MODULE atom_mod
     integer :: i, j, l
     !---------------------------------------------------------------------------------
     j = self%ion(i_lvl)
-    evi  = (self%ev(i_lvl) - self%ev(1)) - dxi * 0.5*(j-1)*j
+    evi = self%ev(i_lvl) - self%ev(1) - dxi * 0.5*(j-1)*j
     tns = log(self%g(i_lvl)) - e_k/temp*evi
 
     if(j > self%ion(1)) then
       l = j - self%ion(1)
-      tns = tns + float(l)*saha
+      tns = tns + float(l)*log(saha)
     endif
 
-    if (tns+log(partition) < -75) then
-      !nstar = 0d0
-      nstar = tiny(1.0)
+    tns = tns + log(partition)
+
+    if (tns < -75) then
+      nstar = 0d0
     else
-      nstar = exp(tns) * partition
+      nstar = exp(tns)
     endif
   end function lte_pop
   !------------------------------------------------------------------------------------
@@ -497,13 +468,13 @@ MODULE atom_mod
     sumn = 0.
     do i=1, self%nlevel
       j = self%ion(i)
-      evi  = (self%ev(i) - self%ev(1)) - dxi * 0.5*(j-1)*j
+      evi = self%ev(i) - self%ev(1) - dxi * 0.5*(j-1)*j
 
       tns = log(self%g(i)) - e_k/temp*evi
 
       if(j > self%ion(1)) then
         l = j - self%ion(1)
-        tns = tns + float(l)*saha
+        tns = tns + float(l)*log(saha)
       endif
 
       sumn = sumn + exp(tns)
@@ -524,10 +495,10 @@ MODULE atom_mod
   !------------------------------------------------------------------------------------
    
   !====================================================================================
-  SUBROUTINE compute_cont_factors(self, temp, dxi, ne)
+  SUBROUTINE compute_cont_factors(self, temp, dxi, saha)
     class(atom_type), target, intent(inout) :: self
-    real(4), dimension(:,:,:) :: temp, dxi, ne
-    real(4) :: dev, tns, test, saha, lalpha
+    real(4), dimension(:,:,:) :: temp, dxi, saha
+    real(4) :: dev, tns, test, lalpha
     integer :: i, j, k, kr, n(4), x, y, z, ii, jj
     class(cont_type), pointer :: cont
     !---------------------------------------------------------------------------------
@@ -545,10 +516,9 @@ MODULE atom_mod
       do z=1, n(3)
       do y=1, n(2)
       do x=1, n(1)
-        saha = 1.5*log(temp(x,y,z)) - log(saha_const*ne(x,y,z)) ! actually log(saha)
         dev = self%ev(i) - self%ev(j) - dxi(x,y,z)*(ii - jj)
         tns = log(self%g(i)/self%g(j)) - e_k/temp(x,y,z)*dev
-        tns = tns + (self%ion(i) - self%ion(j))*saha
+        tns = tns + (self%ion(i) - self%ion(j))*log(saha(x,y,z))
         self%data%ni_over_nj_lte(x,y,z,kr) = exp(tns + lalpha)
         !cont%ni_over_nj_lte(x,y,z) = self%nstar(x,y,z,i) / self%nstar(x,y,z,j)
       end do

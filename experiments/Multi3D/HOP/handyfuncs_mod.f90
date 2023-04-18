@@ -215,4 +215,16 @@ SUBROUTINE refine_array(array, n, fac)
   n = nnew
 END SUBROUTINE refine_array
 
+!===============================================================================
+elemental FUNCTION air2vac (air) result(vac)
+  real(8), intent(in) :: air
+  real(8) :: vac, n, s, s2
+  !-----------------------------------------------------------------------------
+  s = 1d4 / air
+  s2 = s*s
+  n = 1d0 + 0.00008336624212083d0 + 0.02408926869968d0 / (130.1065924522d0 - s2) &
+        + 0.0001599740894897d0 / (38.92568793293d0 - s2)
+  vac = air*n
+END FUNCTION air2vac
+
 END MODULE handyfuncs_mod

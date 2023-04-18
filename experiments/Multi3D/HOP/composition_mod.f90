@@ -935,7 +935,6 @@ contains
         real(4), dimension(:,:,:), intent(in) :: temp, ne, rho
         logical, intent(in), optional :: use_rho
         real(dp), dimension(:,:,:), allocatable :: xnen, ejon, xnecno, xerg, ehm, toth
-        real(dp) :: uop_grph
         integer :: i,j, nx, ny, nz, lunit
         !---------------------------------------------------------------------------
         call trace%begin ('composition_type%load_state_variables')
@@ -988,7 +987,6 @@ contains
             
             do j=1, element%nion
                 ion => element%ions(j)
-                ion%f = ion%anjon * element%abund
 
                 ! number of electrons from ion
                 xnen = ion%f * (j-1)
@@ -1031,23 +1029,11 @@ contains
         end do
 
         call self%molecular_equilibrium(self%temp, self%teta, self%pe, self%dxi, xnecno, self%eh, self%pg, self%fe)
-
-        do i=1, self%nel
-            element => self%elements(i)
-            element%ions(1)%rho_per_h = element%ions(1)%f / self%grph
-
-            do j=2, element%nion
-                ion => element%ions(j)
-                ion%rho_per_h = ion%below%rho_per_h * ion%below%saha
-            end do
-        end do
-
-        uop_grph = self%grph*(1.008*uu/XMH)
         
         ! total hydrogen number density, computed from scratch
         toth = self%ne / self%fe * (BK/uop_BK)
         ! mass density computed from scratch
-        self%ro = toth * uop_grph
+        self%ro = toth * self%grph
 
         if (option(use_rho, .true.)) then
             ! if rho is given, we compute toth from rho
@@ -1059,7 +1045,20 @@ contains
             self%toth = toth
         endif
 
-        Hm%rho_per_h = HI%rho_per_h / Hm%saha
+        do i=1, self%nel
+            element => self%elements(i)
+            do j=1, element%nion
+                ion => element%ions(j)
+                ion%n = ion%f * self%toth
+                ion%n_over_rho = ion%f / self%grph
+            end do
+        end do
+
+        do i=1, self%nmolec
+            self%molecules(i)%n_over_rho = self%molecules(i)%f / self%grph
+        end do
+
+        Hm%n_over_rho = HI%n_over_rho / Hm%saha
         self%E = 1.5*self%pg/self%ro + (ejon - self%eh)*EE/self%grph
 
         call self%compute_p6(self%p6)
@@ -1202,6 +1201,7 @@ contains
         character(len=*), intent(in) :: id
         real(dp), intent(in) :: abund
         real(4), dimension(:,:,:) :: totn
+        integer :: j
         !---------------------------------------------------------------------------
         call trace%begin ('composition_type%get_totn')
         element => null()
@@ -1210,13 +1210,18 @@ contains
         call self%element_by_id(id, element)
 
         if (associated(element)) then
-            totn = element%ions(1)%f * (1 + element%ions(1)%saha) * self%toth
+            !totn = element%ions(1)%f * (1 + element%ions(1)%saha) * self%toth
+            totn = 0
+            do j=1, element%nion
+                totn = totn + element%ions(j)%n
+            end do
         else
             call self%molecule_by_id(id, molec)
             if (associated(molec)) then
                 totn = molec%f * self%toth
             else
-                totn = 10.0**(abund-12.0) * self%rho / (self%xmy*1.008*uu)
+                !totn = 10.0**(abund-12.0) * self%rho / (self%xmy*1.008*uu)
+                totn = 10.0**(abund-12.0) * self%toth
             endif
         endif
         call trace%end ()
@@ -1448,11 +1453,6 @@ contains
         end do
 
         where (tmolim) pg = pg * pefe
-
-        do i=1, self%nmolec
-            !self%molecules(i)%n = self%molecules(i)%f * self%ne / self%fe
-            self%molecules(i)%rho_per_h = self%molecules(i)%f / self%grph
-        end do
 
         call trace%end ()
     END SUBROUTINE molecular_equilibrium
@@ -1731,7 +1731,7 @@ contains
         call self%ion_by_id('H I', HI)
 
         fakt = HI%levels(1)%boltzmann(self%EK_over_temp, self%dxi, natural_log=.true.)
-        fakt = 2.0898E-26 / (2*RYD*self%EK_over_temp) * fakt * HI%part * HI%rho_per_h
+        fakt = 2.0898E-26 / (2*RYD*self%EK_over_temp) * fakt * HI%part * HI%n_over_rho
         h1 = sqrt(RYD/self%dxi)
         nniv = (min(int(h1), 15) + 0.5)**2
         
@@ -1789,14 +1789,14 @@ contains
                 ll = max(1026., lam(f))
                 xray2 = 1 / ll**2
 
-                rayh  = (5.799e-13 + xray2*(1.422e-6 + xray2*2.784)) * HI%rho_per_h
-                rayh2 = ( 8.14e-13 + xray2*( 1.28e-6 + xray2*1.61 )) * H2%rho_per_h
+                rayh  = (5.799e-13 + xray2*(1.422e-6 + xray2*2.784)) * HI%n_over_rho
+                rayh2 = ( 8.14e-13 + xray2*( 1.28e-6 + xray2*1.61 )) * H2%n_over_rho
     
                 ! add sumsca to sumsca from lines
                 sumsca(:,:,:,f) = sumsca(:,:,:,f) + (rayh + rayh2)*xray2*xray2
 
                 !if (f==pp(4)) then
-                !    print *, 'rayh', rayh(pp(1),pp(2),pp(3))*xray2**2, HI%rho_per_h(pp(1),pp(2),pp(3)), xray2
+                !    print *, 'rayh', rayh(pp(1),pp(2),pp(3))*xray2**2, HI%n_over_rho(pp(1),pp(2),pp(3)), xray2
                 !    print *, 'rayh2', rayh2(pp(1),pp(2),pp(3))*xray2**2
                 !endif
             endif

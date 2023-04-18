@@ -25,7 +25,7 @@ def read_collisions(atom):
         
         while key != 'END':
             if key == 'TEMP':
-                coltemp = np.array(atom._read(np.float)[1:])
+                coltemp = np.array(atom._read(float)[1:])
             else:
                 collision_class(atom, key, coltemp)
             
@@ -35,7 +35,7 @@ def read_collisions(atom):
 class collision_class():
     def __init__(self, atom, key, coltemp):
         data = np.array(atom._read())
-        i, j = data[:2].astype(np.int)-1
+        i, j = data[:2].astype(int)-1
         
         ihi = np.max([i, j])
         ilo = np.min([i, j])
@@ -44,7 +44,7 @@ class collision_class():
         self.lower = atom.level[ilo]
         
         self.coltemp = coltemp
-        self.colrate = data[2:].astype(np.float)
+        self.colrate = data[2:].astype(float)
         self.key = key
         
         #if key in ['CH+', 'CH0', 'OHM', 'CE', 'CI']:

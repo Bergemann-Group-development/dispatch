@@ -33,11 +33,11 @@ class atom_class(object):
         self.f = open(atom_file)
         
         self.id = self._read()[0]
-        self.abnd, self.ai = self._read(np.float)
+        self.abnd, self.ai = self._read(float)
         
         self.awgt = self.ai * UU
         
-        self.nk, self.nline, self.ncont, self.nrfix = self._read(np.int)
+        self.nk, self.nline, self.ncont, self.nrfix = self._read(int)
         self.nrad = self.nline + self.ncont
         
         self.level = [None]*self.nk
@@ -64,7 +64,7 @@ class atom_class(object):
                 
                 while key != 'END':
                     if key == 'TEMP':
-                        coltemp = np.array(self._read(np.float)[1:])
+                        coltemp = np.array(self._read(float)[1:])
                     else:
                         self.colls.append(collision_class(self, key, coltemp))
                     

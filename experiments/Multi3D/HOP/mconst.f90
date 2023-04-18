@@ -36,6 +36,7 @@ MODULE mconst
   real(8), parameter :: Rbohr= 5.29177349d-9 ! Bohr radius [cm]
   real(8), parameter :: sigma_th= 8.0d0/3.0d0*pi/em**2*(ec/cc)**4 ! Thomson cross-section
   real(8), parameter :: saha_const=0.5*(hh/sqrt(2.*pi*em)/sqrt(bk))**3 ! constants in saha equation
+  real(8), parameter :: XMH = 1.67339d-24 ! uu*1.008
 
   ! unit conversions
   real(8), parameter :: KM_TO_CM =1d5

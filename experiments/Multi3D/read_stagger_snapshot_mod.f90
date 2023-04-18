@@ -4,6 +4,7 @@ MODULE read_stagger_snapshot_mod
   USE trace_mod
   USE eos_mod
   USE handyfuncs_mod
+  USE op_math_mod, only: linspace, linterpolate_3d
   implicit none
   private
 
@@ -507,88 +508,5 @@ PURE SUBROUTINE transpose_stagger(f)
     f(i, :, :) = transpose(f(i, :, :))
   end do
 END SUBROUTINE transpose_stagger
-
-!===============================================================================
-FUNCTION interp1d_sorted (xx, yy, newx) result(newy)
-  real(4), dimension(:), intent(in) :: xx, yy, newx
-  real(4), dimension(:), allocatable :: newy
-  real(4) :: m
-  integer :: ii, i, nnew, nold
-  !-----------------------------------------------------------------------------
-  nnew = size(newx, 1)
-  nold = size(xx, 1)
-  allocate(newy(nnew))
-
-  i = 1
-  do ii=1, nnew
-    do while (xx(i+1) < newx(ii)) 
-        i = i + 1
-        if (i >= nold) then
-          i = nold
-          exit
-        endif
-    end do
-
-    if (i == nold) then
-        newy(ii) = yy(i)
-    elseif (xx(1) > newx(ii)) then
-        newy(ii) = yy(1)
-    else
-1        m = (yy(i+1) - yy(i)) /  (xx(i+1) - xx(i))
-        newy(ii) = m * (newx(ii) - xx(i)) + yy(i)
-    endif
-  end do
-END FUNCTION interp1d_sorted
-
-!===============================================================================
-PURE FUNCTION linspace (x1, x2, n) result(xx)
-  real(4), intent(in) :: x1, x2
-  integer, intent(in) :: n
-  real(4), dimension(n) :: xx
-  real(4) :: dx
-  integer :: i
-  !-----------------------------------------------------------------------------
-  dx = (x2 - x1) / real(n-1)
-  xx = (/ (x1 + i*dx, i=0, n-1) /)
-END FUNCTION linspace
-
-!===============================================================================
-SUBROUTINE linterpolate_3d(f, fout, oldx, oldy, oldz, newx, newy, newz)
-  real(4), intent(in),  dimension(:,:,:) :: f
-  real(4), intent(out), dimension(:,:,:) :: fout
-  real(4), dimension(:), intent(in) :: oldx, oldy, oldz, newx, newy, newz
-  real(4), dimension(:,:,:), allocatable :: fz, fy
-  integer :: i,j,k, nx, ny, nz, ox,oy,oz
-  !-----------------------------------------------------------------------------
-  ox = size(oldx,1); nx = size(newx,1)
-  oy = size(oldy,1); ny = size(newy,1)
-  oz = size(oldz,1); nz = size(newz,1)
-  
-  allocate(fz(ox,oy,nz))
-  allocate(fy(ox,ny,nz))
-
-  ! z-dimension linear interpolation
-  do j = 1, oy
-    do i = 1, ox
-       fz(i,j,:) = interp1d_sorted(oldz, f(i,j,:), newz)
-    end do
-  end do
-
-  ! y-dimension linear interpolation
-  do k = 1, nz
-    do i = 1, ox
-       fy(i,:,k) = interp1d_sorted(oldy, fz(i,:,k), newy)
-    end do
-  end do
-
-  ! x-dimension linear interpolation
-  do k = 1, nz
-    do j = 1, ny
-       fout(:,j,k) = interp1d_sorted(oldx, fy(:,j,k), newx)
-    end do
-  end do
-
-  !call os%deallocate(f)
-END SUBROUTINE linterpolate_3d
 
 END MODULE read_stagger_snapshot_mod

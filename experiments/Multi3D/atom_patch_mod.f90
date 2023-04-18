@@ -67,6 +67,7 @@ MODULE atom_patch_mod
       procedure :: print_post_update_info
       procedure :: check_in_bounds
       procedure :: save_abundance_to_file
+      procedure :: load_mem
     end type atom_patch_t
 
     integer, save :: epos(3), elvl
@@ -318,7 +319,7 @@ MODULE atom_patch_mod
     class(atom_type), pointer :: atom
     class(element_type), pointer :: element
     class(molec_type), pointer :: molec
-    real(4), dimension(:,:,:), pointer, contiguous :: dxi, totn, df
+    real(4), dimension(:,:,:), pointer, contiguous :: dxi, totn, df, saha
     real(4), dimension(:,:,:), pointer :: temp, ne
     real(4), dimension(:,:,:,:), pointer, contiguous :: n, nstar
     real(4), dimension(:,:,:,:), pointer :: nh
@@ -353,12 +354,15 @@ MODULE atom_patch_mod
     molec   => null()
 
     call self%composition%get_totn(atom%id, atom%abnd, totn, element, molec)
-    if (.not. associated(element) .and. .not.associated(molec)) then
+    if (.not. (associated(element) .or. associated(molec))) then
       call self%save_abundance_to_file()
     endif
+
     if (level_partf) nullify(element)
 
+    call os%allocate(saha, self%n)
     call os%allocate(dxi, self%n)
+    saha = real(self%composition%saha)
     if (debye_shield) then
       dxi = real(self%composition%dxi)
     else
@@ -372,18 +376,18 @@ MODULE atom_patch_mod
           n(:,:,:,i) = n(:,:,:,i) / nstar(:,:,:,i)
         end where
       end do
-      call atom%compute_lte_populations(temp, ne, dxi, element, molec)
+      call atom%compute_lte_populations(nstar, totn, temp, saha, dxi, element, molec)
       do i=1, atom%nlevel
         n(:,:,:,i) = n(:,:,:,i) * nstar(:,:,:,i) 
       end do
     else
-      call atom%compute_lte_populations(temp, ne, dxi, element, molec)
+      call atom%compute_lte_populations(nstar, totn, temp, saha, dxi, element, molec)
       do i=1, atom%nlevel
         n(:,:,:,i) = nstar(:,:,:,i) 
       end do
     endif
 
-    call atom%compute_cont_factors(temp, dxi, ne)
+    call atom%compute_cont_factors(temp, dxi, saha)
     call os%deallocate(dxi)
 
     call trace%end(itimer)
@@ -797,5 +801,68 @@ MODULE atom_patch_mod
       close(lunit)
     endif
   END SUBROUTINE save_abundance_to_file
+
+  !===============================================================================
+  SUBROUTINE load_mem (self, folder, mem, label)
+    class(atom_patch_t), intent(inout) :: self
+    character(len=128), intent(in) :: folder
+    character(len=*), intent(in) :: label
+    real(4), intent(inout), dimension(:,:,:,:,:) :: mem
+    real(4), dimension(:,:,:,:,:), pointer, contiguous :: mem2
+    character(len=128) :: filename, sfolder, metafile, file
+    integer :: lunit, file_size, mem_size, iostat, prec, oldm(5), newm(5), iv, iw, k
+    logical, save :: first_time=.true.
+    ! ----------------------------------------------------------------------------
+    call self%check_access(self)
+    write(sfolder, '(A, A)') trim(folder), 'save/'
+    write(filename, '(A, A, 3(I3.3), A)') trim(label), '_', self%key(1:3), '.bin'
+    write(metafile, '(A, A, 3(I3.3), A)') trim(label), '_meta.txt'
+    call os%check_file(trim(sfolder)//filename)
+    call os%check_file(trim(sfolder)//metafile)
+    open(newunit=lunit, file=trim(sfolder)//metafile, form='formatted', iostat=iostat)
+    read(lunit,*) ! skip header
+    do while (iostat==0)
+      read(lunit, *, iostat=iostat) file, prec, oldm
+      if (file == filename) exit
+    end do
+    close(lunit)
+    if (iostat /= 0) then
+      print *, 'file not found in metafile! Stopping...'
+      stop
+    endif
+    newm = shape(mem)
+    open(newunit=lunit, file=trim(sfolder)//filename, access='stream')
+    if (all(oldm == newm)) then
+      read(lunit) mem
+    elseif (all(oldm(3:5) == newm(3:5))) then
+      if (first_time) then
+        first_time = .false.
+        write(stdout, '(A, 2(I6,"x",I4))') 'Interpolating patch memory when loading', oldm(1:2), newm(1:2)
+      endif
+      call os%allocate(mem2, oldm)
+      read(lunit) mem2
+
+      mem2(:,:,:,:,2) = mem2(:,:,:,:,2) / mem2(:,:,:,:,1)
+
+      do iw=1, newm(5)
+      do iv=1, newm(4)
+      do  k=1, newm(3)
+        call interp2d_periodic(mem2(:,:,k,iv,iw), mem(:,:,k,iv,iw))
+      end do
+      end do
+      end do
+
+      mem(:,:,:,:,2) = mem(:,:,:,:,2) * mem(:,:,:,:,1)
+
+      call os%deallocate(mem2)
+    else
+      write(stdout, *) 'Cannot load patch save ', trim(sfolder)//trim(filename), &
+      'Memory sizes do not match!'
+      print *, oldm
+      print *, newm
+      stop
+    endif
+    close(lunit)
+  END SUBROUTINE load_mem
 
   END MODULE

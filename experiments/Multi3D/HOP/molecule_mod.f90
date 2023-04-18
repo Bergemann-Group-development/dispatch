@@ -20,15 +20,15 @@ MODULE molecule_mod
     
 contains
 
-! ----------------------------------------------------------------------------
+!===============================================================================
 ! Computes dissociation constants N(AB) / (N(A)*N(B)) for molecules
-! ----------------------------------------------------------------------------
+!===============================================================================
 elemental real(dp) FUNCTION pk(self, teta)
     class(molec_type), intent(in) :: self
     real(dp), intent(in) :: teta
-
+    !---------------------------------------------------------------------------
     pk = 10**(-poly1d(teta, self%dc(1), self%dc(2), self%dc(3), self%dc(4), self%dc(5)))
-end FUNCTION
+END FUNCTION
 
 !===============================================================================
 FUNCTION calc_f(self, pe_over_fe) result(f)
@@ -45,7 +45,7 @@ FUNCTION calc_f(self, pe_over_fe) result(f)
         f = f * ion%f
         if (j > 1) f = f * pe_over_fe
     end do
-end FUNCTION calc_f
+END FUNCTION calc_f
 
 !===============================================================================
 FUNCTION calc_e(self, teta, temp, dxi) result(e)
@@ -74,7 +74,7 @@ FUNCTION calc_e(self, teta, temp, dxi) result(e)
     end do
 
     e = -dis * self%f
-end FUNCTION
+END FUNCTION calc_e
 
 !===============================================================================
 SUBROUTINE allocate_molec (self, nx, ny, nz)
@@ -82,7 +82,7 @@ SUBROUTINE allocate_molec (self, nx, ny, nz)
     integer :: nx, ny, nz
     !---------------------------------------------------------------------------
     if (self%allocated) then
-        deallocate(self%f, self%e, self%dis, self%rho_per_h)
+        deallocate(self%f, self%e, self%dis, self%n_over_rho)
     endif
 
     self%nx = nx
@@ -91,11 +91,11 @@ SUBROUTINE allocate_molec (self, nx, ny, nz)
     allocate(self%f(nx,ny,nz))
     allocate(self%e(nx,ny,nz))
     allocate(self%dis(nx,ny,nz))
-    allocate(self%rho_per_h(nx,ny,nz))
+    allocate(self%n_over_rho(nx,ny,nz))
     self%f = 0
     self%e = 0
     self%dis = 0
-    self%rho_per_h = 0
+    self%n_over_rho = 0
     self%allocated = .true.
 END SUBROUTINE allocate_molec
 
