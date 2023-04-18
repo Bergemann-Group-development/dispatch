@@ -1050,15 +1050,17 @@ contains
             do j=1, element%nion
                 ion => element%ions(j)
                 ion%n = ion%f * self%toth
-                ion%n_over_rho = ion%f / self%grph
+                !ion%n_over_rho = ion%f / self%grph
             end do
         end do
 
         do i=1, self%nmolec
-            self%molecules(i)%n_over_rho = self%molecules(i)%f / self%grph
+            self%molecules(i)%n = self%molecules(i)%f * self%toth
+            !self%molecules(i)%n_over_rho = self%molecules(i)%f / self%grph
         end do
 
-        Hm%n_over_rho = HI%n_over_rho / Hm%saha
+        Hm%n = HI%n / Hm%saha
+        !Hm%n_over_rho = HI%n_over_rho / Hm%saha
         self%E = 1.5*self%pg/self%ro + (ejon - self%eh)*EE/self%grph
 
         call self%compute_p6(self%p6)
@@ -1156,13 +1158,13 @@ contains
 
         if (present(include_absmet)) then
             if (self%osmet%initialised .and. include_absmet) then
-                call self%osmet%add_line_opacities(nu, self%p6, self%temp, self%ne, abslte, sumsca)
+                call self%osmet%add_line_opacities(nu, self%p6, self%temp, self%ne, self%rho, abslte, sumsca)
             endif
         endif
 
         do f=1, nf
             ! BACKGROUND OPACITY
-            chi(:,:,:,f) = real((abslte(:,:,:,f) + sumsca(:,:,:,f)) * self%rho)
+            chi(:,:,:,f) = real((abslte(:,:,:,f) + sumsca(:,:,:,f)))
         end do
 
         !print *, 'chi/rho', abslte(pp(1),pp(2),pp(3),pp(4)) + sumsca(pp(1),pp(2),pp(3),pp(4))
@@ -1184,11 +1186,11 @@ contains
         nf = size(nu, 1)
         if (present(Jnu) .and. present(sumsca)) then
           do f=1, nf
-            eta(:,:,:,f) = real((abslte(:,:,:,f)*planck(nu(f), self%temp) + sumsca(:,:,:,f)*Jnu(:,:,:,f)) * self%rho)
+            eta(:,:,:,f) = real((abslte(:,:,:,f)*planck(nu(f), self%temp) + sumsca(:,:,:,f)*Jnu(:,:,:,f)))
           end do
         else
           do f=1, nf
-            eta(:,:,:,f) = real((abslte(:,:,:,f)*planck(nu(f), self%temp)) * self%rho)
+            eta(:,:,:,f) = real((abslte(:,:,:,f)*planck(nu(f), self%temp)))
           end do
         endif
     END SUBROUTINE scattering
@@ -1210,7 +1212,6 @@ contains
         call self%element_by_id(id, element)
 
         if (associated(element)) then
-            !totn = element%ions(1)%f * (1 + element%ions(1)%saha) * self%toth
             totn = 0
             do j=1, element%nion
                 totn = totn + element%ions(j)%n
@@ -1220,7 +1221,6 @@ contains
             if (associated(molec)) then
                 totn = molec%f * self%toth
             else
-                !totn = 10.0**(abund-12.0) * self%rho / (self%xmy*1.008*uu)
                 totn = 10.0**(abund-12.0) * self%toth
             endif
         endif
@@ -1731,7 +1731,7 @@ contains
         call self%ion_by_id('H I', HI)
 
         fakt = HI%levels(1)%boltzmann(self%EK_over_temp, self%dxi, natural_log=.true.)
-        fakt = 2.0898E-26 / (2*RYD*self%EK_over_temp) * fakt * HI%part * HI%n_over_rho
+        fakt = 2.0898E-26 / (2*RYD*self%EK_over_temp) * fakt * HI%part * HI%n
         h1 = sqrt(RYD/self%dxi)
         nniv = (min(int(h1), 15) + 0.5)**2
         
@@ -1758,7 +1758,7 @@ contains
         integer :: f
         !---------------------------------------------------------------------
         allocate(els, mold=self%temp)
-        els = 4.8206e-9 * self%pe / (self%temp * self%ro)
+        els = 4.8206e-9 * self%pe / self%temp * self%rho/self%ro
 
         do f=1, size(sumsca, 4)
             sumsca(:,:,:,f) = sumsca(:,:,:,f) + els
@@ -1789,8 +1789,8 @@ contains
                 ll = max(1026., lam(f))
                 xray2 = 1 / ll**2
 
-                rayh  = (5.799e-13 + xray2*(1.422e-6 + xray2*2.784)) * HI%n_over_rho
-                rayh2 = ( 8.14e-13 + xray2*( 1.28e-6 + xray2*1.61 )) * H2%n_over_rho
+                rayh  = (5.799e-13 + xray2*(1.422e-6 + xray2*2.784)) * HI%n
+                rayh2 = ( 8.14e-13 + xray2*( 1.28e-6 + xray2*1.61 )) * H2%n
     
                 ! add sumsca to sumsca from lines
                 sumsca(:,:,:,f) = sumsca(:,:,:,f) + (rayh + rayh2)*xray2*xray2

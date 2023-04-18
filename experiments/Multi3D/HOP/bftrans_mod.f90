@@ -463,17 +463,17 @@ contains
 
       if (self%regular) then
           call self%boltzmann_weight(EK_over_temp, fakt)
-          fakt = fakt * ion%part * ion%n_over_rho
+          fakt = fakt * ion%part * ion%n
       else
           select case(trim(self%key))
           case('H- BF')
-              fakt = 1.e-17 * ion%n_over_rho
+              fakt = 1.e-17 * ion%n
           case('H- FF')
-              fakt = 2.E-26 * pe * ion%part * ion%n_over_rho
+              fakt = 2.E-26 * pe * ion%part * ion%n
           case('H BF')
               !call self%boltzmann_weight(EK_over_temp, fakt) 
               fakt = 2 * self%k**2 * exp(-31.30364*teta*(1. - 1./self%k**2))
-              fakt = 2.0898E-26 / (2*self%k**5) * fakt * ion%part * ion%n_over_rho
+              fakt = 2.0898E-26 / (2*self%k**5) * fakt * ion%part * ion%n
 
               allocate(nniv(size(pe,1), size(pe,2), size(pe,3)))
               allocate(h1, mold=dxi)
@@ -486,19 +486,19 @@ contains
               end where
 
           case('H FF')
-              !fakt = 2.0898E-26 / 2 * ion%part * ion%n_over_rho * exp(-31.30364*teta + 2.3026*dxi*teta) / (31.30364*teta)
+              !fakt = 2.0898E-26 / 2 * ion%part * ion%n * exp(-31.30364*teta + 2.3026*dxi*teta) / (31.30364*teta)
               fakt = self%level%boltzmann(EK_over_temp, dxi, natural_log=.true.)
-              fakt = 2.0898E-26 / (2*RYD*EK_over_temp) * fakt * ion%part * ion%n_over_rho
+              fakt = 2.0898E-26 / (2*RYD*EK_over_temp) * fakt * ion%part * ion%n
 
           case('(H+H)')
-              fakt = (1e-25 * ion%n_over_rho)**2 * rho
+              fakt = (1e-25 * ion%n)**2
           case('H2+')
               select type(ion)
               class is (ion_type)
-                  fakt = (1e-20 * ion%n_over_rho)**2 * rho * ion%saha
+                  fakt = (1e-20 * ion%n)**2 * ion%saha
               end select
           case('H2-', 'HE-')
-              fakt = pe * ion%n_over_rho
+              fakt = pe * ion%n
           end select
       endif
       !print *, self%key, fakt

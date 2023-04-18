@@ -101,7 +101,6 @@ MODULE atom_mod
       real(8) :: drawin, mu_e
         
     contains
-      !procedure :: add_line_opacities
       procedure :: add_continuum_opacities
       procedure :: compute_doppler_factor
       procedure :: partition_function

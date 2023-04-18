@@ -81,10 +81,10 @@ contains
     END SUBROUTINE init_osmet
 
     !===============================================================================
-    SUBROUTINE add_line_opacities(self, nu, p6, temp, ne, abslte, sumsca)
+    SUBROUTINE add_line_opacities(self, nu, p6, temp, ne, rho, abslte, sumsca)
         class(osmet_type), intent(inout) :: self
         real(8), dimension(:), intent(in) :: nu
-        real(8), dimension(:,:,:), intent(in) :: p6, temp, ne
+        real(8), dimension(:,:,:), intent(in) :: p6, temp, ne, rho
         real(4), dimension(:,:,:,:), intent(inout) :: abslte, sumsca
         real(4), dimension(:,:,:), allocatable :: Tinv, sqrtT
         real(4) :: a1, b1, c1, d1, a2, b2, c2, d2
@@ -143,6 +143,7 @@ contains
         
                 ! last interpolation along frequencies is done on linear opacities
                 os = (abcd2 - abcd1) * dz + abcd1
+                os = os * rho(i,j,k)
 
                 ecnst1 = sqrtT(i,j,k) * nu3
                 beta = Tinv(i,j,k) * nu(f)

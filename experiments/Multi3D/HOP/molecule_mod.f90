@@ -82,7 +82,7 @@ SUBROUTINE allocate_molec (self, nx, ny, nz)
     integer :: nx, ny, nz
     !---------------------------------------------------------------------------
     if (self%allocated) then
-        deallocate(self%f, self%e, self%dis, self%n_over_rho)
+        deallocate(self%f, self%e, self%dis, self%n)
     endif
 
     self%nx = nx
@@ -90,12 +90,12 @@ SUBROUTINE allocate_molec (self, nx, ny, nz)
     self%nz = nz
     allocate(self%f(nx,ny,nz))
     allocate(self%e(nx,ny,nz))
+    allocate(self%n(nx,ny,nz))
     allocate(self%dis(nx,ny,nz))
-    allocate(self%n_over_rho(nx,ny,nz))
     self%f = 0
     self%e = 0
     self%dis = 0
-    self%n_over_rho = 0
+    self%n = 0
     self%allocated = .true.
 END SUBROUTINE allocate_molec
 

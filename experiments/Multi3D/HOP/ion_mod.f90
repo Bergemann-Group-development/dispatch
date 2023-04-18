@@ -5,7 +5,7 @@ MODULE ion_mod
     implicit none
 
     type particle_type
-        real(dp), dimension(:,:,:), allocatable :: f, n_over_rho, e, part
+        real(dp), dimension(:,:,:), allocatable :: f, n, e, part
         integer :: nx, ny, nz, nline=0
         character(len=6) :: id
         logical :: allocated=.false.
@@ -35,7 +35,7 @@ MODULE ion_mod
         real(dp) :: parco, awgt
         real(dp), pointer :: abund
         real(dp) :: acolc, tcolc, aradc, xradc, adic, bdic, t0c, t1c
-        real(dp), dimension(:,:,:), allocatable :: n, saha
+        real(dp), dimension(:,:,:), allocatable :: saha
         real(dp), dimension(:,:,:), allocatable :: pk, fil
     contains
         procedure :: partition
@@ -194,7 +194,7 @@ SUBROUTINE allocate_ion (self, nx, ny, nz)
     integer :: nx, ny, nz
     !---------------------------------------------------------------------------
     if (self%allocated) then
-        deallocate(self%f, self%saha, self%part, self%n, self%n_over_rho)
+        deallocate(self%f, self%saha, self%part, self%n)
     endif
     
     self%nx = nx
@@ -204,7 +204,6 @@ SUBROUTINE allocate_ion (self, nx, ny, nz)
     allocate(self%saha(nx,ny,nz))
     allocate(self%part(nx,ny,nz))
     allocate(self%n(nx,ny,nz))
-    allocate(self%n_over_rho(nx,ny,nz))
     self%allocated = .true.
 END SUBROUTINE allocate_ion
 
