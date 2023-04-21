@@ -50,7 +50,7 @@ MODULE atom_patch_mod
       class(atomic_spectrum_type), pointer :: output_sp, bf_sp, bb_sp
       real(8) :: maxerr=huge(1.0)
       real(8), dimension(:), allocatable :: lvlerr
-      logical :: update_skipped=.false., atom_allocated=.false.
+      logical :: update_skipped=.false., atom_allocated=.false., molec
     contains
       procedure :: pre_init => atom_patch_pre_init
       procedure :: update => atom_patch_update
@@ -332,6 +332,7 @@ MODULE atom_patch_mod
     allocate(atom%C(atom%nlevel, atom%nlevel))
     allocate(atom%W(atom%nlevel, atom%nlevel))
     allocate(atom%e(atom%nlevel))
+    allocate(atom%oldn(atom%nlevel))
     allocate(self%lvlerr(atom%nlevel))
 
     ne   => self%m3d_parent%mem(:,:,:,self%i_ne,            self%it,1)
@@ -357,6 +358,8 @@ MODULE atom_patch_mod
     if (.not. (associated(element) .or. associated(molec))) then
       call self%save_abundance_to_file()
     endif
+
+    if (associated(molec)) atom%tmax_update = self%composition%tmolim
 
     if (level_partf) nullify(element)
 

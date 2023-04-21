@@ -348,7 +348,7 @@ contains
                     trans%ion => Hm
                 case('H BF')
                     trans%bound_free = .true.
-                    trans%ion => elements(1)%ions(1)
+                    trans%ion => HI
                     ! hydrogen energy level
                     read (text(8:10),*) trans%k
                     trans%level%xion = RYD * (1. - 1./trans%k**2)
@@ -688,7 +688,7 @@ contains
                 if (ion%nline == 0) cycle
     
                 ! ion%part is actually the inverse partition
-                inv_part = ion%f * self%toth * ion%part
+                inv_part = ion%n * ion%part
     
                 do l=1, ion%nline
                     line => ion%line(l)
@@ -1242,7 +1242,7 @@ contains
 
         allocate(nh, blzfac, mold=self%temp)
         !nh = HI%f * self%ne / self%fe * (BK/uop_BK)
-        nh = 2*HI%part * HI%f * self%toth
+        nh = 2*HI%part * HI%n
 
         do k=1, nk
             level%xion = RYD * (1. - 1./k**2)
@@ -1755,10 +1755,12 @@ contains
         class(composition_type), target :: self
         real(4), dimension(:,:,:,:), intent(inout) :: sumsca
         real(dp), dimension(:,:,:), allocatable :: els
+        real(dp), parameter :: thomson = 8./3.*PI*(EC**2/(EM*CC**2))**2
         integer :: f
         !---------------------------------------------------------------------
         allocate(els, mold=self%temp)
-        els = 4.8206e-9 * self%pe / self%temp * self%rho/self%ro
+        !els = 4.8206e-9 * self%pe / self%temp
+        els = thomson * self%ne
 
         do f=1, size(sumsca, 4)
             sumsca(:,:,:,f) = sumsca(:,:,:,f) + els
@@ -1796,7 +1798,7 @@ contains
                 sumsca(:,:,:,f) = sumsca(:,:,:,f) + (rayh + rayh2)*xray2*xray2
 
                 !if (f==pp(4)) then
-                !    print *, 'rayh', rayh(pp(1),pp(2),pp(3))*xray2**2, HI%n_over_rho(pp(1),pp(2),pp(3)), xray2
+                !    print *, 'rayh', rayh(pp(1),pp(2),pp(3))*xray2**2, HI%n(pp(1),pp(2),pp(3)), xray2
                 !    print *, 'rayh2', rayh2(pp(1),pp(2),pp(3))*xray2**2
                 !endif
             endif

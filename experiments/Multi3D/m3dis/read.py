@@ -166,8 +166,10 @@ class read(object):
             plt.xlim(*dl)
             plt.xlabel('$\Delta\lambda$ [Å]')
         else:
-            ib = None
-            ir = None
+            ib = 0
+            ir = -1
+            diff = 0.05*(lam[ir] - lam[ib])
+            plt.xlim(lam[ib]-diff, lam[ir]+diff)
             plt.xlabel('Wavelength [Å]')
 
         mask = slice(ib, ir)
@@ -264,7 +266,9 @@ class read(object):
         if show_lines:
             self.plot_line_labels()
 
-        return plt.plot(xx, yy, **kwargs)
+        plt.plot(xx, yy, **kwargs)
+
+        return xx, yy
     
     #=====================================================================
     def plot_line_labels(self, nbins=4):

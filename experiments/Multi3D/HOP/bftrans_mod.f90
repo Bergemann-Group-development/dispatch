@@ -471,8 +471,8 @@ contains
           case('H- FF')
               fakt = 2.E-26 * pe * ion%part * ion%n
           case('H BF')
-              !call self%boltzmann_weight(EK_over_temp, fakt) 
-              fakt = 2 * self%k**2 * exp(-31.30364*teta*(1. - 1./self%k**2))
+              !fakt = 2 * self%k**2 * exp(-31.30364*teta*(1. - 1./self%k**2))
+              call self%boltzmann_weight(EK_over_temp, fakt) 
               fakt = 2.0898E-26 / (2*self%k**5) * fakt * ion%part * ion%n
 
               allocate(nniv(size(pe,1), size(pe,2), size(pe,3)))

@@ -33,6 +33,7 @@ MODULE atom_line_patch_mod
     !-----------------------------------------------------------------------------
   
     type, public, extends(ray_patch_t) :: atom_line_t
+      type(ray_patch_t), pointer :: net_opac
       type(line_type), dimension(:), contiguous, pointer :: line
       integer, dimension(:), contiguous, pointer :: idx_map
       integer :: nline, ired, iblue
@@ -50,6 +51,7 @@ MODULE atom_line_patch_mod
       procedure :: check_in_bounds
       procedure :: integrate_wphi
       procedure :: init_nbors_hash
+      procedure :: add_to_net_opac
     end type atom_line_t
 
     logical, public, save :: external_sp=.false.
@@ -183,8 +185,8 @@ MODULE atom_line_patch_mod
     real(4), dimension(:,:,:), pointer, contiguous :: vproj, doppler_factor
     real(4), dimension(:,:,:), pointer, contiguous :: inv_df, ni, nj, unsold_temp, stark_pe
     real(4), dimension(:,:,:,:), pointer, contiguous :: phi
-    real(4), dimension(:,:,:,:), pointer :: nh
-    integer :: i, f, p(3), fs, fe
+    real(4), dimension(:,:,:,:), pointer :: nh, chi, eta
+    integer :: i, f, p(3), fs, fe, iw, it
     integer, save:: itimer=0
     !-----------------------------------------------------------------------------
     if (self%is_finished()) return
@@ -252,6 +254,8 @@ MODULE atom_line_patch_mod
     call os%deallocate(inv_df)
     call os%deallocate(vproj)
 
+    call self%add_to_net_opac()
+
     if (.not. self%out_ray .and. self%iter==0) then
       call self%integrate_wphi()
     endif
@@ -260,6 +264,33 @@ MODULE atom_line_patch_mod
 
     call trace%end(itimer)
   END SUBROUTINE atom_line_update
+
+  !===============================================================================
+  SUBROUTINE add_to_net_opac (self)
+    class(atom_line_t) :: self
+    real(4), dimension(:,:,:,:), pointer :: nh, chi, eta
+    integer :: i, f, p(3), fs, fe, iw, it
+    !-----------------------------------------------------------------------------
+    call self%net_opac%check_mem()
+    do iw=1, self%net_opac%nw
+      do it=1, self%net_opac%nt
+        do f=1, self%net_opac%nv
+          self%net_opac%mem(:,:,:,f,it,iw) = 0
+        end do
+      end do
+    end do
+    self%net_opac%nullified = .true.
+
+    it = self%net_opac%it
+    chi => self%net_opac%authority_mem(:,:,:,:,it,1)
+    eta => self%net_opac%authority_mem(:,:,:,:,it,2)
+    call self%interpolate_lines(chi, eta, LTE=.false.)
+    if (self%out_ray) then
+      chi => self%net_opac%authority_mem(:,:,:,:,it,3)
+      eta => self%net_opac%authority_mem(:,:,:,:,it,4)
+      call self%interpolate_lines(chi, eta, LTE=.true.)
+    endif
+  END SUBROUTINE add_to_net_opac
 
   !===============================================================================
   SUBROUTINE integrate_wphi (self)
@@ -369,6 +400,10 @@ MODULE atom_line_patch_mod
         if (another%id == self%m3d_parent%id) then
           needs_me = .false.
         elseif (another%kind == 'net_opac') then
+          select type (another)
+          class is (ray_patch_t)
+            self%net_opac => another
+          end select
           needed = .false.
         elseif(another%kind == 'atom_rate') then
           needed = .false.

@@ -96,13 +96,15 @@ MODULE net_opac_patch_mod
     p = self%pcheck
     memcheck = 0
 
-    do iw=1, self%nw
-      do it=1, self%nt
-        do f=1, self%nv
-          mem(:,:,:,f,it,iw) = 0
+    if (.not. self%nullified) then
+      do iw=1, self%nw
+        do it=1, self%nt
+          do f=1, self%nv
+            mem(:,:,:,f,it,iw) = 0
+          end do
         end do
       end do
-    end do
+    endif
 
     nbor => self%link%nbor
     do while (associated(nbor))
@@ -111,15 +113,15 @@ MODULE net_opac_patch_mod
         call self%check_access(nbtask)
         select type (nbtask)
         class is (atom_line_t)
-          it = self%it
-          chi => self%authority_mem(:,:,:,:,it,1)
-          eta => self%authority_mem(:,:,:,:,it,2)
-          call nbtask%interpolate_lines(chi, eta, LTE=.false.)
-          if (self%out_ray) then
-            chi => self%authority_mem(:,:,:,:,it,3)
-            eta => self%authority_mem(:,:,:,:,it,4)
-            call nbtask%interpolate_lines(chi, eta, LTE=.true.)
-          endif
+          !it = self%it
+          !chi => self%authority_mem(:,:,:,:,it,1)
+          !eta => self%authority_mem(:,:,:,:,it,2)
+          !call nbtask%interpolate_lines(chi, eta, LTE=.false.)
+          !if (self%out_ray) then
+          !  chi => self%authority_mem(:,:,:,:,it,3)
+          !  eta => self%authority_mem(:,:,:,:,it,4)
+          !  call nbtask%interpolate_lines(chi, eta, LTE=.true.)
+          !endif
         class is (ray_patch_t)
           fs = nbtask%fs - self%fs + 1
           fe = fs + nbtask%nv - 1

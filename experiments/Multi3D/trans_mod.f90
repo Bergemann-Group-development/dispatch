@@ -247,7 +247,9 @@ contains
     integer :: i,j,k,f, i1, i2, n(4)
     real(8) :: dx, dy, norm, newq
     real(8), parameter :: tol=1e-10
+    integer, save :: itimer=0
     !----------------------------------------------------------------------------------
+    !call trace%begin('line_type%interpolate_phi', itimer=itimer)
     n = shape(phi)
     norm = 1 / self%nu0
 
@@ -292,6 +294,7 @@ contains
       end do
       end do
     end do
+    !call trace%end(itimer)
   END SUBROUTINE interpolate_phi
   !------------------------------------------------------------------------------------
 
@@ -326,9 +329,10 @@ contains
   !------------------------------------------------------------------------------------
 
   !====================================================================================
-  FUNCTION get_nu(self) result(nu)
+  SUBROUTINE get_nu(self, nu)
     class(line_type), intent(in)  :: self
-    real(8), dimension(:), allocatable :: nu, q
+    real(8), intent(out), dimension(:) :: nu
+    real(8), dimension(:), allocatable :: q
     real(8) :: dq, a, qmax, q0
     integer :: i, nnu
     logical :: linear
@@ -356,7 +360,7 @@ contains
     q = q * KM_TO_CM/cc
     nu = self%nu0*(1.0 + q)
     deallocate(q)
-  END FUNCTION
+  END SUBROUTINE
 
   !====================================================================================
   SUBROUTINE freql(self, symmetric)

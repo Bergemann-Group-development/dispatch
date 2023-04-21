@@ -216,6 +216,30 @@ SUBROUTINE refine_array(array, n, fac)
 END SUBROUTINE refine_array
 
 !===============================================================================
+SUBROUTINE remove_close_entries(array, threshold)
+  real(8), intent(inout), allocatable :: array(:)
+  real(8), intent(in) :: threshold
+  real(8), allocatable :: scratch(:)
+  integer :: i, new_size
+  !-----------------------------------------------------------------------------
+  new_size = size(array)
+  i = 1
+  do while (i < new_size)
+    if (abs(array(i+1) - array(i)) < threshold) then
+      array(i+1:new_size-1) = array(i+2:new_size)
+      new_size = new_size - 1
+    else
+      i = i + 1
+    end if
+  end do
+  
+  allocate(scratch, source=array(1:new_size))
+  deallocate(array)
+  allocate(array, source=scratch)
+  deallocate(scratch)
+END SUBROUTINE remove_close_entries
+
+!===============================================================================
 elemental FUNCTION air2vac (air) result(vac)
   real(8), intent(in) :: air
   real(8) :: vac, n, s, s2

@@ -50,16 +50,14 @@ MODULE coll_mod
       class(coll_type), dimension(:) :: coll
       character(len=*), intent(in) :: id
       integer, intent(in) :: nlevel
-      real(8), intent(in), dimension(:) :: g, ev
+      real(8), intent(in), dimension(:) :: g, ev, nh
       integer, intent(in), dimension(:) :: ion
-      real(8), dimension(nlevel,nlevel),intent(out) :: cij
-      real(8),intent(in) :: temp, ne
-      real(8),dimension(:), intent(in) :: nh
-      real(4),dimension(:), intent(in) :: nstar
+      real(4), intent(in), dimension(:) :: nstar
+      real(8), intent(out), dimension(nlevel,nlevel) :: cij
+      real(8), intent(in) :: temp, ne
   
       real(8) :: ct,cup,cdn,dekt,de_k,de
-      real(8) :: nne,tg,stg,nsr
-      real(8), dimension(:), allocatable :: nnh
+      real(8) :: stg,nsr
       real(8), dimension(:,:) :: tgrid, cgrid, dcdt
   
       real(8) :: t4,summrs
@@ -69,10 +67,7 @@ MODULE coll_mod
       integer :: ul,ll,i,j,k,z, nhlevels, ii, jj, nc, itemp
       !---------------------------------------------------------------------
       ! get local copies for ease of notation
-      tg=temp
-      stg=sqrt(tg)
-      nne=ne
-      nnh=nh(:)
+      stg=sqrt(temp)
       nhlevels = size(nh, 1)
       saha = 1.5*log(temp) - log(saha_const*ne)
       dxi = 4.98e-4*5040./temp*sqrt(ne*bk*temp)
@@ -104,7 +99,7 @@ MODULE coll_mod
          case ('OHMEGA','CE','CH','CI','FIXRAT','CH0','CHI')
             nc = coll(i)%nc
             itemp = coll(i)%itemp
-            call hermite_interpolation(ct,tg,tgrid(1:nc,itemp),cgrid(1:nc,i),dcdt(1:nc,i))
+            call hermite_interpolation(ct,temp,tgrid(1:nc,itemp),cgrid(1:nc,i),dcdt(1:nc,i))
          end select
   
          !********************************************************************
@@ -112,29 +107,29 @@ MODULE coll_mod
          select case (trim(coll(i)%key))
          case('OHMEGA')
             !  excitation of  electron collisons with positive ions
-            cdn = c0 / g(ul) * ct * nne / stg
+            cdn = c0 / g(ul) * ct * ne / stg
             cup = cdn * nsr
 
          case('CE')
             ! excitation of neutrals by electron collisions 
-            cdn = g(ll)/g(ul) * ct * nne * stg
+            cdn = g(ll)/g(ul) * ct * ne * stg
             cup = cdn * nsr
 
          case('CH')
             ! collisions with neutral hydrogen)
             ! these are downward rates (cdn); cup are upward rates
-            cdn = ct * nnh(1)
+            cdn = ct * nh(1)
             cup = cdn * nsr
 
          case('CHI')
             ! b-f collisions with neutral hydrogen
             ! these are downward rates (cdn); cup are upward rates
-            cup = ct * nnh(1)
+            cup = ct * nh(1)
             cdn = cup / nsr
 
          case('CI')
             ! ionization by electron collisions
-            cup = ct * nne * stg * exp(-dev*ek_over_temp) 
+            cup = ct * ne * stg * exp(-dev*ek_over_temp) 
             cdn = cup / nsr
 
          case('CH0')
@@ -147,7 +142,7 @@ MODULE coll_mod
             ! in the QM papers, the inverse exothermic rates (neutralisation) 
             ! are derived from the detailed balance
             ! N_kj(T,E_k) = N_jk(t,E_k) * exp(-E_jk/ (k_B * T))
-            cup = ct * nnh(1)
+            cup = ct * nh(1)
             cdn = cup / nsr
   
             !********************************************************************
@@ -167,7 +162,7 @@ MODULE coll_mod
   
                k = (j-1) * ncdi
   
-               xj=cgrid(k+1,i) * ee / bk / tg
+               xj=cgrid(k+1,i) * ee / bk / temp
   
                fac=exp(-xj)*sqrt(xj)
   
@@ -184,7 +179,7 @@ MODULE coll_mod
   
             if (cup<0) cup=0
   
-            cup=cup*nne
+            cup=cup*ne
             cdn=cup / nsr
   
             !********************************************************************
@@ -197,9 +192,9 @@ MODULE coll_mod
             ! "An updated evaluation of recombination and ionization rates"
   
             !AR85-CH is charge transfer with neutral hydrogen atom^+ + H -> atom + H^+
-            if ( tg>=cgrid(1,i) .and. tg<=cgrid(2,i) )  then
-               t4=tg/1.0d4
-               cdn = cgrid(3,i) * 1d-9 * t4**cgrid(4,i) * (1.0d0+cgrid(5,i)*exp(cgrid(6,i)*t4)) * nnh(1)
+            if ( temp>=cgrid(1,i) .and. temp<=cgrid(2,i) )  then
+               t4=temp/1.0d4
+               cdn = cgrid(3,i) * 1d-9 * t4**cgrid(4,i) * (1.0d0+cgrid(5,i)*exp(cgrid(6,i)*t4)) * nh(1)
             endif
   
             !********************************************************************  
@@ -212,9 +207,9 @@ MODULE coll_mod
             ! "An updated evaluation of recombination and ionization rates"
   
             ! ar85-ch+ is  charge transfer with ionized hydrogen atom + H^+ -> atom^+ + H
-            if ( tg>=cgrid(1,i) .and. tg<=cgrid(2,i) )  then
-               t4=tg/1.0d4
-               cdn = cgrid(3,i) * 1d-9 * t4**cgrid(4,i) * (1.0d0+cgrid(5,i)*exp(cgrid(6,i)*t4)) * nnh(nhlevels)
+            if ( temp>=cgrid(1,i) .and. temp<=cgrid(2,i) )  then
+               t4=temp/1.0d4
+               cdn = cgrid(3,i) * 1d-9 * t4**cgrid(4,i) * (1.0d0+cgrid(5,i)*exp(cgrid(6,i)*t4)) * nh(nhlevels)
             endif
   
             !********************************************************************
@@ -227,9 +222,9 @@ MODULE coll_mod
             ! "An updated evaluation of recombination and ionization rates"
   
             !AR85-CHE is charge transfer with neutral helium atom^+ + He -> atom + He^+
-            if ( tg>=cgrid(1,i) .and. tg<=cgrid(2,i) ) then
-               t4=tg/1.0d4
-               call hepop(tg,sum(nnh),he1,he2)
+            if ( temp>=cgrid(1,i) .and. temp<=cgrid(2,i) ) then
+               t4=temp/1.0d4
+               call hepop(temp,sum(nh),he1,he2)
                cdn = cgrid(3,i) * 1d-9 * t4**cgrid(4,i) * (1.0d0+cgrid(5,i)*exp(cgrid(6,i)*t4)) * he1 
             endif
   
@@ -243,9 +238,9 @@ MODULE coll_mod
             ! "An updated evaluation of recombination and ionization rates"
   
             ! ar85-chp or ar85-che+ is  charge transfer with ionized helium atom^+ + He^+ -> atom + He^2+
-            if ( tg>=cgrid(1,i) .and. tg<=cgrid(2,i) ) then
-               t4=tg/1.0d4
-               call hepop(tg,sum(nnh),he1,he2)
+            if ( temp>=cgrid(1,i) .and. temp<=cgrid(2,i) ) then
+               t4=temp/1.0d4
+               call hepop(temp,sum(nh),he1,he2)
                cdn = cgrid(3,i) * 1d-9 * t4**cgrid(4,i) * (1.0d0+cgrid(5,i)*exp(cgrid(6,i)*t4)) * he2 
             endif
   
@@ -257,8 +252,8 @@ MODULE coll_mod
             de=ev(ul)-ev(ll)
             z=ion(ll)-1
             betab = 0.25d0*(sqrt((1.d2*z +91.d0)/(4.d0*z+3.d0))-5.d0)
-            dekt  = de*ee/bk/tg
-            ddekt = -dekt/tg
+            dekt  = de*ee/bk/temp
+            ddekt = -dekt/temp
             dekt  = min(x100,dekt)
             dekti = 1.d0/dekt
             wlog = log(1.d0 + dekti)
@@ -266,7 +261,7 @@ MODULE coll_mod
             dexin1 = -exp(-dekt)/dekt*ddekt
             qb = 2.1715d-08 * cbar * (13.6d0/de)**1.5d0 * sqrt(dekt) * ei1(dekt) * wb
   
-            cup = qb * actelc * nne * cgrid(1,i)
+            cup = qb * actelc * ne * cgrid(1,i)
             cdn = cup/nsr
   
          end select

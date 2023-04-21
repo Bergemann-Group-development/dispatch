@@ -276,6 +276,34 @@ class trans_class(object):
         
         return blue, dep
 
+    #=====================================================================
+    def plot_resolved(self, ang=0, norm=True, dlam=None,
+                vdop=None, vshift=None, LTE=False, title=None,
+                color='k', linewidth=1, alpha=0.2, **kwargs):
+        #-----------------------------------------------------------------
+        xx, mask = self.get_xx(dlam)
+        cnt = self.run.c3[ang]
+
+        if LTE:
+            yy = self.run.i3_lte[ang]
+        else:
+            yy = self.run.i3[ang]
+
+        nnu = xx.size
+        yy  = yy [:,:,mask].reshape((-1, nnu))
+        cnt = cnt[:,:,mask].reshape((-1, nnu))
+
+        if norm:
+            yy = yy / np.mean(cnt, axis=0)
+        
+        plt.plot(xx, yy.T, color=color, linewidth=linewidth,
+                 alpha=alpha, **kwargs)
+        
+        set_title(title, default=self.title+', '+self.el.title)
+        set_legend(**kwargs)
+        
+        return xx, yy
+
 
 def set_title(title, default=None):
     if title is None:
@@ -286,4 +314,12 @@ def set_title(title, default=None):
 
 def set_legend(**kwargs):
     if 'label' in kwargs:
-        plt.legend(frameon=False)
+        #remove duplicates
+        handles, labels = plt.gca().get_legend_handles_labels()
+        newLabels, newHandles = [], []
+        for handle, label in zip(handles, labels):
+            if label not in newLabels:
+                newLabels.append(label)
+                newHandles.append(handle)
+
+        plt.legend(newHandles, newLabels, frameon=False)

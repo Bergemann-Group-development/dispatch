@@ -32,7 +32,8 @@ MODULE m3d_patch_mod
     !USE units_mod
     !USE scratch_mod
     USE m3d_halo_mod, only: m3d_halo_t, print_finished, print_download
-    USE atom_mod, only: atom_type, atomic_spectrum_type, lse_no_pivot, lse_solver, m1d_legacy_mode, nq_fac
+    USE atom_mod, only: atom_type, atomic_spectrum_type, lse_no_pivot, lse_solver, &
+    nu_tolerance, m1d_legacy_mode, nq_fac
     USE ray_mod
     USE m3d_debug_mod
     implicit none
@@ -58,7 +59,7 @@ MODULE m3d_patch_mod
       integer, dimension(:), pointer :: periodic_i, periodic_j
       logical :: on=.false.       ! allows local turn-off
       logical :: in_task_list = .false.
-      logical :: initialized  = .false.
+      logical :: initialized  = .false., nullified = .false.
       real(8) :: t_offset=0, t_push=0
       real(8) :: allocation_time, deallocation_time
       integer :: iter=0, maxiter, master_maxiter, dir=0
@@ -132,14 +133,14 @@ MODULE m3d_patch_mod
     real(8), public:: convlim=1d-3
     logical, public, save :: converged=.false.
     logical, public, save :: check_NaN=.false., interp_log=.false.
-    logical, public, save :: save_back_cont=.true., save_atom_line=.true.
+    logical, public, save :: save_back_cont=.false., save_atom_line=.false.
     logical, public, save :: linear_long=.true., decouple_continuum=.false.
     logical, public, save :: detailed_prints=.false., comoving_frame=.false.
     logical, public, save :: use_density=.true.
     logical, public, save :: overlapping_bb=.true., overlapping_bf=.true.
     logical, public, save :: print_start=.false., print_push=.false., print_send=.false.
     character(len=128), save :: save_patch_kind=''
-    character(len=64), public, save:: custom_mu
+    character(len=64), public, save:: custom_mu=''
     real(8), parameter :: t_push=0.1d0
     real(4), public :: vel_max=0.0
     real(4), public :: ray_offset(2)=[0.,0.]
@@ -166,7 +167,7 @@ MODULE m3d_patch_mod
     ntheta, nphi, check_NaN, custom_mu, lse_no_pivot, save_patch_kind, cswitch, &
     save_back_cont, detailed_prints, print_finished, print_start, print_push, &
     print_send, linear_long, interp_log, ray_offset, print_download, save_atom_line, &
-    lse_solver, decouple_continuum, m1d_legacy_mode
+    lse_solver, decouple_continuum, m1d_legacy_mode, nu_tolerance
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%pre_init', itimer=itimer)
     !-----------------------------------------------------------------------------
@@ -798,12 +799,13 @@ MODULE m3d_patch_mod
     if (associated(self%task_list)) then
       if (self%maxiter >= 0) then
         allocate (link)
+        call os%mem_register(storage_size(link), 1, label='link')
         call link%init()
         link%task => self
         self%link => link
         call self%init_level()
-        call link%append_to(self%task_list)
-        !call self%task_list%append_link(self%link)
+        !call link%append_to(self%task_list)
+        call self%task_list%append_link(self%link)
         self%key = self%hash_key()
         call self%task_list%hash_table%add (self%key, self%link)
       endif
@@ -1024,6 +1026,7 @@ MODULE m3d_patch_mod
       if (check_NaN) then
         self%mem = tiny(1.0)
       endif
+      self%nullified = .false.
       if (.not. self%compressed) then
         li = self%li
         ui = self%ui

@@ -8,7 +8,7 @@ MODULE atom_mod
     USE coll_mod
     USE trans_mod
     USE mmath, only: refsor, unista
-    USE op_math_mod, only: lineq, lineq_no_pivot, get_interval, eqsyst
+    USE op_math_mod, only: lineq, get_interval, eqsyst, lineq_no_pivot
     USE ion_mod, only: ion_type
     USE element_mod, only: element_type
     USE molecule_mod, only: molec_type
@@ -68,6 +68,7 @@ MODULE atom_mod
   
       real(8) :: abnd ! abundance ( in the [hydrogen]=12 scale)
       real(8) :: awgt ! atomic weight [g]
+      real(8) :: tmax_update=1.0d7
   
       real(8), dimension(:), allocatable :: ev ! energy of level above ground state [eV]
       real(8), dimension(:), allocatable :: g ! multiplicity of level
@@ -91,6 +92,7 @@ MODULE atom_mod
       real(4), dimension(:), pointer, contiguous :: cdata
       logical, dimension(:), pointer, contiguous :: ecol, hcol
 
+      real(4), dimension(:),   allocatable  :: oldn
       real(8), dimension(:),   allocatable  :: e
       real(8), dimension(:,:), allocatable  :: C, W
       
@@ -123,7 +125,8 @@ MODULE atom_mod
     logical, public :: lse_no_pivot = .True., kramer_bf=.False., debye_shield=.True.
     real(8), public :: red_thresh_aa  = 20000
     real(8), public :: blue_thresh_aa = 500
-    real(8), public :: cont_step_aa   = 50
+    real(8), public :: cont_step_aa = 50
+    real(8), public :: nu_tolerance = 1d6
     real(8), public :: logf_cut = -99.9, red_cut=huge(1.0), blue_cut=tiny(1.0)
     real(4), public :: vmic = 0
     real(8), parameter :: ame=5.485799e-4, amh=1.0
@@ -232,11 +235,12 @@ MODULE atom_mod
     integer, intent(in) :: cswitch
     logical, intent(in) :: check_NaN
     integer :: kr, pos, i, j
-    real(8) :: tmax_update =1.0d7
     integer, save :: itimer=0, itimer2=0
+    logical :: zero_pop, abort
     !------------------------------------------------------------------------------------
-    if (temp > tmax_update) then
-        return !self%e = 1.0d0
+    if (temp > self%tmax_update) then
+        self%e = 1.0d0
+        return
     endif
 
     self%w=0.0d0
@@ -284,39 +288,48 @@ MODULE atom_mod
 
     ! fill diagonal elements of rate coefficient matrix
     do i=1, self%nlevel
-      self%w(i,i) = -1.d0*sum(self%w(:,i))
+      self%w(i,i) = -sum(self%w(:,i))
     end do
-
-    ! go from rate coefficients to actual rates   
-    do i=1,self%nlevel
-      self%w(i,:) = self%w(i,:) * n 
-    enddo
 
     ! replace row with largest population with particle conservation
     ! equation.
     pos = maxloc(n,1)
-    self%w(pos,:) = n
-    self%e(pos)   = totn
+    self%e(pos) = totn
+    zero_pop = any(nstar==0)
+
+    if (zero_pop) then
+      self%oldn = n
+      self%w(pos,:) = 1
+    else
+      ! go from rate coefficients to actual rates   
+      do i=1,self%nlevel
+        self%w(i,:) = self%w(i,:) * n 
+      enddo
+      self%w(pos,:) = n
+    endif
 
     if (check_NaN) then
+      abort = .false.
       do i=1,self%nlevel
         if (self%w(i,i) == 0.d0) then
           print *, 'zero in rate diagonal at i = ', i
-          print *, 'Temp = ', temp
-          stop
+          abort = .true.
         endif
         do j=1,self%nlevel
           if (self%w(i,j) /= self%w(i,j)) then
             print *, 'NaN in rate Matrix at i,j = ', i, j
-            print *, 'Temp = ', temp
-            stop
+            abort = .true.
           elseif (self%w(i,j) > inf8) then
             print *, 'Infinity in rate Matrix at i,j = ', i, j
-            print *, 'Temp = ', temp
-            stop
+            abort = .true.
           endif
         end do
       end do
+      if (abort) then
+        print *, 'Temp = ', temp
+        print *, 'Totn  = ', totn
+        stop
+      endif
     endif
 
     call trace%begin('lse_solver', itimer=itimer2)
@@ -327,7 +340,7 @@ MODULE atom_mod
     case('eqsyst')
       call eqsyst(self%w, self%e, self%nlevel)
     case('lineq_no_pivot')
-      call lineq_no_pivot(self%w, self%e, self%nlevel)
+      call lineq_no_pivot2(self%w, self%e, self%nlevel)
     case('lineq')
       call lineq(self%w, self%e, self%nlevel)
     end select
@@ -338,17 +351,30 @@ MODULE atom_mod
       do i=1,self%nlevel
         if (self%e(i) /= self%e(i)) then
           print *, 'NaN in error vector at i = ', i
-          print *, 'Temp = ', temp
+          print *, 'Temp  = ', temp
           stop
         endif
       end do
     endif
 
-    ! set limits on corrections
-    where(self%e < 0.001d0) self%e = 0.001d0
-
-    ! update the populations
-    n = n * self%e
+    if (zero_pop) then
+      self%oldn = n
+      n = self%e
+      do i=1,self%nlevel
+        if (self%oldn(i) > 0) then
+          self%e(i) = n(i) / self%oldn(i)
+        elseif (n(i) == 0) then
+          self%e(i) = 1
+        else
+          self%e(i) = huge(1.0)
+        endif
+      end do
+    else
+      ! set limits on corrections
+      self%e = max(self%e, 0.001d0)
+      ! update the populations
+      n = n * self%e
+    endif
 
     !write(kr) self%e
     !write(kr) n
@@ -415,7 +441,7 @@ MODULE atom_mod
       if (associated(mol)) then
         ndis => nstar(:,:,:,self%nlevel)
         totn = totn - ndis
-        ndis = huge(1.d0)
+        ndis = huge(1.e0)
         do j=1, mol%nions
           ion => mol%ions(j)%p
           ndis = min(ndis, ion%n)
@@ -689,7 +715,7 @@ MODULE atom_mod
 
       call os%allocate(lin%nu_input, lin%nnu, 'line%nu_input')
       call os%allocate(lin%wq, lin%nnu, 'line%wq')
-      lin%nu_input = lin%get_nu()
+      call lin%get_nu(lin%nu_input)
       lin%nu_min = lin%nu_input(1)
       lin%nu_max = lin%nu_input(lin%nnu)
       call set_weights(lin%wq, lin%nu_input / lin%nu0 - 1)
@@ -1064,7 +1090,7 @@ MODULE atom_mod
     real(4), intent(in) :: temp, ne
     real(4), dimension(:), intent(in) :: nh
     real(4), dimension(:), intent(in) :: nstar
-    real(8) :: nij, cup, cdn, EK_over_temp, divu
+    real(8) :: ni, nj, nij, cup, cdn, EK_over_temp, divu
     real(8) :: dxi, dev, ex, u0, f, tmp, sqt, fac, nu0
     real(8) :: seaton, allen, regemorter
     integer :: i,j, ii, jj, tri, n
@@ -1084,13 +1110,16 @@ MODULE atom_mod
 
     n = 0
     do i=1, self%nlevel
-      if (nstar(i) == 0) cycle
+      ni = max(nstar(i), tiny(1.0))
       do j=i+1, self%nlevel
         tri = (j-1)*(j-2)/2 + i
-        fac = self%cdata(tri)
-        cont = self%ion(j) > self%ion(i)
 
         if (.not. self%ecol(tri) .or. .not. self%hcol(tri)) then
+          fac = self%cdata(tri)
+          cont = self%ion(j) > self%ion(i)
+          nj = max(nstar(j), tiny(1.0))
+          nij = ni / nj
+
           dev = self%ev(j) - self%ev(i)
           dev = max(dev, 1d-8) ! to avoid division by zero
 
@@ -1102,7 +1131,6 @@ MODULE atom_mod
 
           u0 = dev * EK_over_temp
           ex = exp(-u0)
-          nij = nstar(i) / nstar(j)
 
           ! collisions with electrons
           if (.not. self%ecol(tri)) then
@@ -1153,7 +1181,7 @@ MODULE atom_mod
         if (cont) exit
       end do
     end do
-    if (first_time) then
+    if (first_time .and. n>0) then
       first_time = .false.
       write(stdout, *) n, ' collisional transitions filled with classical recipes.'
     endif
@@ -1211,13 +1239,13 @@ MODULE atom_mod
       call refsor(nu)
 
       ! discard duplicates, nnu contains number of unique elements on exit
-      call unista(nu,nnu)
+      !call unista(nu,nnu)
+      call remove_close_entries(nu, nu_tolerance)
     endif
 
     ! now set overall frequency grid
-    sp%nnu=nnu
-    allocate(sp%nu(nnu)) 
-    sp%nu=nu(1:nnu)
+    allocate(sp%nu, source=nu)
+    sp%nnu = size(nu)
 
     call trace%end(itimer)
   END SUBROUTINE create_spectrum
@@ -1520,6 +1548,42 @@ MODULE atom_mod
     end do
     weight(n) = 0.5 * ( nu(n) - nu(n-1) )
   END SUBROUTINE set_weights
+
+
+  !===============================================================================
+  SUBROUTINE lineq_no_pivot2 (a, b, n)
+    real(8):: a(n,n), b(n), akk, akj, bi
+    integer :: i, j, k, n
+    !-----------------------------------------------------------------------------
+    do k=1,n-1
+      akk = 1/a(k,k)
+      do i=k+1,n
+        a(i,k) = a(i,k)*akk
+      end do
+      do j=k+1,n
+        akj = a(k,j)
+        if (akj /= 0) then
+          do i=k+1,n
+            a(i,j) = a(i,j) - a(i,k)*akj
+          end do
+        endif
+      end do
+    end do
+    do i=1,n
+      bi = b(i)
+      do j=1,i-1
+        bi = bi - a(i,j)*b(j)
+      end do
+      b(i) = bi
+    end do
+    do i=n,1,-1
+      bi = b(i)
+      do j=i+1,n
+        bi = bi - a(i,j)*b(j)
+      end do
+      b(i) = bi/a(i,i)
+    end do
+  END SUBROUTINE lineq_no_pivot2
 
 END MODULE atom_mod
   

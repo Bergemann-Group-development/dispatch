@@ -1,15 +1,15 @@
 ! -- Parameters defining the run -----------------------------------------------
-&io_params          datadir='data' gb_step=1.0 do_trace=F/
+&io_params          datadir='data' gb_step=10.0 do_trace=F/
 &timer_params       sec_per_report = 1e8 /
 !&atmos_params       atmos_format='Text' atmos_file='./input_multi3d/atmos/atmos.hd140283_MARCS' dims=3 FeH=-2.4 /
-&atmos_params       atmos_format='Multi' atmos_file='./input_multi3d/atmos/t5777g44m0005_20.5x5x230' dims=1/
+&atmos_params       dims=1 atmos_format='Multi' atmos_file='./input_multi3d/atmos/t5777g44m0005_20.5x5x230'/
 !&atmos_params       atmos_format='Marcs' atmos_file='input_multi3d/atmos/p5750_g+4.5_m0.0_t01_st_z+0.00_a+0.00_c+0.00_n+0.00_o+0.00_r+0.00_s+0.00.mod' dims=1/
 !&atmos_params       verbose=0 atmos_format='Stagger' dims=23 FeH=-0.0/
 !&stagger_params     stagger_file='/shared-storage/bergemann-data/Stagger_remo/t5777g44m00/v05/t5777g44m0005' snap=20 dims=30,30,230 /
 &atom_params        atom_file='./input_multi3d/atoms/atom.ba06' convlim=1d-2
                     exclude_trace_cont=F exclude_from_line_list=T use_atom_abnd=T/
-&m3d_params         verbose=5 fcheck=1 pcheck=1,1,1 linecheck=5 lvlcheck=2 check_NaN=F
-                    n_nu=1 maxiter=1 save_back_cont=T decouple_continuum=T
+&m3d_params         verbose=5 fcheck=1 pcheck=1,1,1 linecheck=5 lvlcheck=2
+                    n_nu=1 maxiter=99
                     quad_scheme='set_a2' long_scheme='disk_center'/
 !&linelist_params    linelist_file='./input_multi3d/nlte_ges_linelist_jmg17feb2022_I_II.txt'
 !                    dlam=0.5 exclude_elements='V CN Cr Si Fe' /

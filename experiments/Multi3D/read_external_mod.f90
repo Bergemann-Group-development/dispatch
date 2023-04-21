@@ -147,6 +147,10 @@ SUBROUTINE init(self, task_list, name)
                                     self%ne, self%px, self%py, self%pz)
     case ('Text')
       call self%read_1d_snapshot(atmos_file, self%ds, self%rho, self%temp, self%pe)
+    case ('MUST')
+      call self%read_multi_snapshot(atmos_file, self%ds, self%rho, self%temp, &
+                                    self%ne, self%px, self%py, self%pz)
+      self%pz = - self%pz
     case default
       write(stdout, *) 'unknown atmos_format ', atmos_format, &
       '. Options are: "Stagger", "Multi", "Marcs" and "Text".'

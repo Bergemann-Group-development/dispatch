@@ -318,7 +318,8 @@ SUBROUTINE append_to(self, list)
   link%task => self
   self%link => link
   call self%init_level()
-  call link%append_to(list)
+  !call link%append_to(list)
+  call list%append_link(self%link)
   self%key = self%hash_key()
   call list%hash_table%add (self%key, self%link)
 END SUBROUTINE append_to
