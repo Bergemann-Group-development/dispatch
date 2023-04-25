@@ -239,7 +239,7 @@ MODULE atom_mod
     logical :: zero_pop, abort
     !------------------------------------------------------------------------------------
     if (temp > self%tmax_update) then
-        self%e = 1.0d0
+        self%e = 0.0d0
         return
     endif
 
@@ -1115,12 +1115,13 @@ MODULE atom_mod
         tri = (j-1)*(j-2)/2 + i
 
         if (.not. self%ecol(tri) .or. .not. self%hcol(tri)) then
-          fac = self%cdata(tri)
+          fac = self%cdata(tri) ! / self%g(j)
           cont = self%ion(j) > self%ion(i)
           nj = max(nstar(j), tiny(1.0))
           nij = ni / nj
 
           dev = self%ev(j) - self%ev(i)
+          !if (dev == 0) cycle
           dev = max(dev, 1d-8) ! to avoid division by zero
 
           if (cont) then
@@ -1151,9 +1152,10 @@ MODULE atom_mod
                 cup = regemorter * f * tmp / dev
               else
                 ! Allen
-                cup = allen / self%g(i) * ex
+                cup = allen * ex / self%g(i)
               endif
             endif
+            !cup = cup * self%g(j)
             cdn = cup * nij
             self%c(j,i) = self%c(j,i) + cup ! upward rate
             self%c(i,j) = self%c(i,j) + cdn ! downward rate
@@ -1168,10 +1170,10 @@ MODULE atom_mod
             cup = nh(1) * self%drawin * divu * tmp * ex * sqt
             
             if (.not. cont) then
-              f = max(fac, 1.0e-5)
+              f = max(fac, 1e-5)
               cup = cup * f
             endif
-          
+            !cup = cup * self%g(j)
             cdn = cup * nij
             self%c(j,i) = self%c(j,i) + cup ! upward rate
             self%c(i,j) = self%c(i,j) + cdn ! downward rate

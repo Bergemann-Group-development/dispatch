@@ -302,6 +302,17 @@ class trans_class(object):
         set_title(title, default=self.title+', '+self.el.title)
         set_legend(**kwargs)
         
+        if 'label' in kwargs:
+            #remove duplicates
+            handles, labels = plt.gca().get_legend_handles_labels()
+            newLabels, newHandles = [], []
+            for handle, label in zip(handles, labels):
+                if label not in newLabels:
+                    newLabels.append(label)
+                    newHandles.append(handle)
+            
+            plt.legend(newHandles, newLabels, frameon=False)
+        
         return xx, yy
 
 
@@ -314,12 +325,4 @@ def set_title(title, default=None):
 
 def set_legend(**kwargs):
     if 'label' in kwargs:
-        #remove duplicates
-        handles, labels = plt.gca().get_legend_handles_labels()
-        newLabels, newHandles = [], []
-        for handle, label in zip(handles, labels):
-            if label not in newLabels:
-                newLabels.append(label)
-                newHandles.append(handle)
-
-        plt.legend(newHandles, newLabels, frameon=False)
+        plt.legend(frameon=False)
