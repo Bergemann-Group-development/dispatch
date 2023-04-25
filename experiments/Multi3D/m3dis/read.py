@@ -92,19 +92,21 @@ class read(object):
 
         for i in range(self.n_ang):
             key = list(out_rad.keys())[i]
+            ipos, inu, ang, kind = key
             mem = out_rad[key]
-            self.i3[i]     = mem[...,0,:,0]
-            self.i3_lte[i] = mem[...,0,:,1]
-            self.c3[i]     = mem[...,0,:,2]
+            ang = ang - 1
+            self.i3[ang]     = mem[...,0,:,0]
+            self.i3_lte[ang] = mem[...,0,:,1]
+            self.c3[ang]     = mem[...,0,:,2]
 
             mem = ie_dict[key]
-            self.ie[i]     = mem[0,0,0,:,0]
-            self.ie_lte[i] = mem[0,0,0,:,1]
-            self.cnt[i]    = mem[0,0,0,:,2]
+            self.ie[ang]     = mem[0,0,0,:,0]
+            self.ie_lte[ang] = mem[0,0,0,:,1]
+            self.cnt[ang]    = mem[0,0,0,:,2]
 
-            self.flux     += self.wts[i] * self.ie[i]
-            self.flux_lte += self.wts[i] * self.ie_lte[i]
-            self.flux_cnt += self.wts[i] * self.cnt[i]
+            self.flux     += self.wts[ang] * self.ie[ang]
+            self.flux_lte += self.wts[ang] * self.ie_lte[ang]
+            self.flux_cnt += self.wts[ang] * self.cnt[ang]
         
         dim = self.i3[0].shape
             
