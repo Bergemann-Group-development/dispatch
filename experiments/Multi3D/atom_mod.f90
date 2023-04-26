@@ -295,7 +295,7 @@ MODULE atom_mod
     ! equation.
     pos = maxloc(n,1)
     self%e(pos) = totn
-    zero_pop = any(nstar==0)
+    zero_pop = any(n==0)
 
     if (zero_pop) then
       self%oldn = n
@@ -340,7 +340,7 @@ MODULE atom_mod
     case('eqsyst')
       call eqsyst(self%w, self%e, self%nlevel)
     case('lineq_no_pivot')
-      call lineq_no_pivot2(self%w, self%e, self%nlevel)
+      call lineq_no_pivot(self%w, self%e, self%nlevel)
     case('lineq')
       call lineq(self%w, self%e, self%nlevel)
     end select
@@ -364,7 +364,7 @@ MODULE atom_mod
         if (self%oldn(i) > 0) then
           self%e(i) = n(i) / self%oldn(i)
         elseif (n(i) == 0) then
-          self%e(i) = 1
+          self%e(i) = 1.d0
         else
           self%e(i) = huge(1.0)
         endif
@@ -1550,42 +1550,6 @@ MODULE atom_mod
     end do
     weight(n) = 0.5 * ( nu(n) - nu(n-1) )
   END SUBROUTINE set_weights
-
-
-  !===============================================================================
-  SUBROUTINE lineq_no_pivot2 (a, b, n)
-    real(8):: a(n,n), b(n), akk, akj, bi
-    integer :: i, j, k, n
-    !-----------------------------------------------------------------------------
-    do k=1,n-1
-      akk = 1/a(k,k)
-      do i=k+1,n
-        a(i,k) = a(i,k)*akk
-      end do
-      do j=k+1,n
-        akj = a(k,j)
-        if (akj /= 0) then
-          do i=k+1,n
-            a(i,j) = a(i,j) - a(i,k)*akj
-          end do
-        endif
-      end do
-    end do
-    do i=1,n
-      bi = b(i)
-      do j=1,i-1
-        bi = bi - a(i,j)*b(j)
-      end do
-      b(i) = bi
-    end do
-    do i=n,1,-1
-      bi = b(i)
-      do j=i+1,n
-        bi = bi - a(i,j)*b(j)
-      end do
-      b(i) = bi/a(i,i)
-    end do
-  END SUBROUTINE lineq_no_pivot2
 
 END MODULE atom_mod
   

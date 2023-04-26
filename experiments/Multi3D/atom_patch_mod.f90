@@ -657,28 +657,34 @@ MODULE atom_patch_mod
     !-----------------------------------------------------------------------------
     do i=1, size(self%composition%trans)
       trans => self%composition%trans(i)
-      if (trans%level%g2 > 0) then
-        if (uppercase(trans%ion%id(1:2)) == self%atom%id) then
-          do kc=1, self%atom%ncont
-            lower = self%atom%cont(kc)%i
+      select case(trans%label)
+      case ('(H+H)', 'H2+', 'H- FF', 'H FF G')
+        ! do not exclude
+      case default
+        if (trans%level%g2 > 0) then
+          if (uppercase(trans%ion%id(1:2)) == self%atom%id) then
+            do kc=1, self%atom%ncont
+              lower = self%atom%cont(kc)%i
 
-            if (self%atom%ev(lower)==0) then
-              same = trans%level%xion == self%atom%ev(lower)
-            else
-              same = abs(trans%level%xion / self%atom%ev(lower) - 1) < 1d-2
-            endif
-
-            if (same) then
-              trans%exclude = .true.
-              if (first_time) then
-                print *, 'excluding transition ', trans%label
-                first_time = .false.
+              if (self%atom%ev(lower)==0) then
+                same = trans%level%xion == self%atom%ev(lower)
+              else
+                same = abs(trans%level%xion / self%atom%ev(lower) - 1) < 1d-2
               endif
-            endif
-          end do
+
+              if (same) then
+                trans%exclude = .true.
+                if (first_time) then
+                  print *, 'excluding transition ', trans%label
+                endif
+                exit
+              endif
+            end do
+          endif
         endif
-      endif
+      end select
     end do
+    if (first_time) first_time=.false.
   END SUBROUTINE exclude_double_continua
 
   !===============================================================================

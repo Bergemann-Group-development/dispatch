@@ -442,12 +442,13 @@ contains
   END SUBROUTINE get_temp_index
 
   !===============================================================================
-  PURE SUBROUTINE trans_boltzmann_weight(self, EK_over_temp, frac)
+  PURE SUBROUTINE trans_boltzmann_weight(self, EK_over_temp, frac, dxi)
       class(bftrans_type), intent(in) :: self
       real(dp), dimension(:,:,:), intent(in) :: EK_over_temp
+      real(dp), dimension(:,:,:), intent(in), optional :: dxi
       real(dp), dimension(:,:,:), intent(out) :: frac
       !---------------------------------------------------------------------------
-      frac = self%level%g2 * self%level%boltzmann(EK_over_temp, natural_log=.true.)
+      frac = self%level%g2 * self%level%boltzmann(EK_over_temp, dxi=dxi, natural_log=.true.)
   END SUBROUTINE trans_boltzmann_weight
 
   !===============================================================================
@@ -471,9 +472,8 @@ contains
           case('H- FF')
               fakt = 2.E-26 * pe * ion%part * ion%n
           case('H BF')
-              !fakt = 2 * self%k**2 * exp(-31.30364*teta*(1. - 1./self%k**2))
-              call self%boltzmann_weight(EK_over_temp, fakt) 
-              fakt = 2.0898E-26 / (2*self%k**5) * fakt * ion%part * ion%n
+              !call self%boltzmann_weight(EK_over_temp, fakt, dxi) 
+              !fakt = 2.0898E-26 / (2*self%k**5) * fakt * ion%part * ion%n
 
               allocate(nniv(size(pe,1), size(pe,2), size(pe,3)))
               allocate(h1, mold=dxi)
@@ -481,8 +481,10 @@ contains
               nniv = int(h1)
               where (nniv < self%k)
                   fakt = 0
-              elsewhere (nniv == self%k)
-                  fakt = fakt * min(h1 - float(nniv), 1.0d0)
+              elsewhere (nniv >= self%k)
+                  fakt = 2 * self%k**2 * exp(-31.30364*teta*(1. - 1./self%k**2))
+                  fakt = 2.0898E-26 / (2*self%k**5) * fakt * ion%part * ion%n
+                  fakt = fakt * (h1 - float(nniv))
               end where
 
           case('H FF')

@@ -1619,9 +1619,6 @@ contains
                 element%awgt  =  awgt / uu
                 call self%compute_grams_per_hydrogen(self%suma, self%xmy, self%grph)
             endif
-        elseif (first_time) then
-            first_time = .false.
-            print *, 'overwrite_abundance: Element of id= ', id, ' is not part of the opacity package.'
         endif
     END SUBROUTINE overwrite_abundance
 
@@ -1739,7 +1736,7 @@ contains
         where (h1 > 15.5)
             !umc = 2.3026 * self%dxi * self%teta
             !hrest = fakt * (exp(31.30364*self%teta/nniv-umc)-1.)
-            hrest = exp(self%EK_over_temp*(HI%levels(1)%xion/nniv - self%dxi))
+            hrest = exp(self%EK_over_temp*(RYD/nniv - self%dxi))
             hrest = fakt * (hrest - 1)
         end where
 
