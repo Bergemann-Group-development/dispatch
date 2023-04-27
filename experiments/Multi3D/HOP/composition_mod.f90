@@ -801,7 +801,8 @@ contains
 
                 if (j > lbound(element%ions,1)) then
                     ion%below => element%ions(j-1)
-                elseif(j < ubound(element%ions,1)) then
+                endif
+                if(j < ubound(element%ions,1)) then
                     ion%above => element%ions(j+1)
                 endif
 
@@ -1108,7 +1109,7 @@ contains
             select case (trim(trans%key))
             case ('H BF', 'H FF')
                 call trans%add_absorption(abslte, lam, self%temp, self%EK_over_temp, self%teta, &
-                                          self%pe, self%ro, self%dxi, sorted)
+                                          self%pe, self%toth, self%dxi, sorted)
             end select
         end do
 
@@ -1130,7 +1131,7 @@ contains
                 ! H- FF still to be added after multiplication of stim
             case default
                 call trans%add_absorption(abslte, lam, self%temp, self%EK_over_temp, self%teta, &
-                                          self%pe, self%ro, self%dxi, sorted)
+                                          self%pe, self%toth, self%dxi, sorted)
             end select
         end do
 
@@ -1150,7 +1151,7 @@ contains
         ! H- FF absorption is added without stim factor
         call self%trans_by_id('H- FF', trans)
         call trans%add_absorption(abslte, lam, self%temp, self%EK_over_temp, self%teta, &
-                                  self%pe, self%ro, self%dxi, sorted)
+                                  self%pe, self%toth, self%dxi, sorted)
 
         sumsca = 0
         call self%electron_scattering(sumsca)

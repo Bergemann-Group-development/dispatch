@@ -13,3 +13,4 @@ op_math_mod.o		    : prec_mod.o
 osmet_mod.o         : prec_mod.o op_math_mod.o
 prec_mod.o          : mconst.o trace_mod.o
 handyfuncs_mod.o    : op_math_mod.o
+hprofl_mod.o        : mconst.o bbtrans_mod.o

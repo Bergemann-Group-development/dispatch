@@ -329,8 +329,9 @@ contains
   !------------------------------------------------------------------------------------
 
   !====================================================================================
-  SUBROUTINE get_nu(self, nu)
+  SUBROUTINE get_nu(self, qnorm, nu)
     class(line_type), intent(in)  :: self
+    real(8), intent(in) :: qnorm
     real(8), intent(out), dimension(:) :: nu
     real(8), dimension(:), allocatable :: q
     real(8) :: dq, a, qmax, q0
@@ -350,14 +351,14 @@ contains
 
     allocate(q(nnu))
     dq = 2.*qmax / (nnu-1)
-    q = [(i*dq - qmax, i=1, nnu)]
+    q = [(i*dq - qmax, i=0, nnu-1)]
 
     if(.not. linear) then
       q = q + a*(10.**q - 10.**(-q))
     endif
 
     ! convert to [Hz]
-    q = q * KM_TO_CM/cc
+    q = q * qnorm * KM_TO_CM/cc
     nu = self%nu0*(1.0 + q)
     deallocate(q)
   END SUBROUTINE

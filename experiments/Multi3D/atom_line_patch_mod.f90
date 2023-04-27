@@ -27,6 +27,7 @@ MODULE atom_line_patch_mod
     USE m3d_patch_mod, only: m3d_patch_t, maxiter, comoving_frame
     USE ray_patch_mod, only: ray_patch_t
     USE op_math_mod, only: searchsorted
+    USE hprofl_mod, only: hydrogen_profile
     USE m3d_debug_mod
     implicit none
   
@@ -215,13 +216,18 @@ MODULE atom_line_patch_mod
 
     do i=1, self%nline
       line => self%line(i)
-      adamp = 0
-      call line%damping(adamp, temp, ne, tothi, unsold_temp, stark_pe)
-      if (self%atom%id == 'H') then
-        call line%dampingH(adamp, temp, ne, nh(:,:,:,6))
-      endif
-      
-      call line%profile(line%q, vproj, inv_df, adamp, line%phi)
+      select case (line%profile_type)
+      case ('voigt')
+        adamp = 0
+        call line%damping(adamp, temp, ne, tothi, unsold_temp, stark_pe)
+        if (self%atom%id == 'H') then
+          call line%dampingH(adamp, temp, ne, nh(:,:,:,6))
+        endif
+        
+        call line%profile(line%q, vproj, inv_df, adamp, line%phi)
+      case ('hlinop')
+        call hydrogen_profile(line%nu, line%nu0, line%i, line%j, temp, ne, nh(:,:,:,1), inv_df, line%phi)
+      end select
 
       if (self%print_update_info) then
         if (i==self%linecheck) then

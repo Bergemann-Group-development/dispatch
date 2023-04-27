@@ -452,10 +452,10 @@ contains
   END SUBROUTINE trans_boltzmann_weight
 
   !===============================================================================
-  SUBROUTINE absorption_factor(self, EK_over_temp, teta, pe, rho, dxi, fakt)
+  SUBROUTINE absorption_factor(self, EK_over_temp, teta, pe, toth, dxi, fakt)
       class(bftrans_type), intent(in) :: self
       class(particle_type), pointer :: ion
-      real(dp), dimension(:,:,:), intent(in) :: EK_over_temp, teta, pe, rho, dxi
+      real(dp), dimension(:,:,:), intent(in) :: EK_over_temp, teta, pe, toth, dxi
       real(dp), dimension(:,:,:), intent(out) :: fakt
       real(dp), dimension(:,:,:), allocatable :: h1
       integer, dimension(:,:,:), allocatable :: nniv
@@ -468,9 +468,13 @@ contains
       else
           select case(trim(self%key))
           case('H- BF')
+              ! factor 1e-17 comes from table 1 in Daugthy 1966 
               fakt = 1.e-17 * ion%n
           case('H- FF')
-              fakt = 2.E-26 * pe * ion%part * ion%n
+              ! factor 1e-26 comes from table 1 in Stilley & Callaway 1970
+              ! values are tabulated per unit electron pressure per hydrogen atom
+              !fakt = 2.E-26 * ion%n * pe * ion%part
+              fakt = 1.E-26 * toth * pe
           case('H BF')
               !call self%boltzmann_weight(EK_over_temp, fakt, dxi) 
               !fakt = 2.0898E-26 / (2*self%k**5) * fakt * ion%part * ion%n
@@ -493,11 +497,13 @@ contains
               fakt = 2.0898E-26 / (2*RYD*EK_over_temp) * fakt * ion%part * ion%n
 
           case('(H+H)')
-              fakt = (1e-25 * ion%n)**2
+              ! see Doyle 1968 "The astrophysical significance of the continuous spectrum of the hydrogen quasi-molecule"
+              fakt = (1d-25 * ion%n)**2
           case('H2+')
               select type(ion)
               class is (ion_type)
-                  fakt = (1e-20 * ion%n)**2 * ion%saha
+                  !fakt = (1d-20 * ion%n)**2 * ion%saha
+                  fakt = 1d-40 * ion%n * ion%above%n
               end select
           case('H2-', 'HE-')
               fakt = pe * ion%n
@@ -507,10 +513,10 @@ contains
   END SUBROUTINE absorption_factor
 
   !===============================================================================
-  SUBROUTINE add_absorption(self, abslte, lam, temp, EK_over_temp, teta, pe, rho, dxi, sorted)
+  SUBROUTINE add_absorption(self, abslte, lam, temp, EK_over_temp, teta, pe, toth, dxi, sorted)
       class(bftrans_type), intent(in) :: self
       real(4), dimension(:,:,:,:), intent(inout) :: abslte
-      real(dp), dimension(:,:,:), intent(in) :: temp, EK_over_temp, teta, pe, rho, dxi
+      real(dp), dimension(:,:,:), intent(in) :: temp, EK_over_temp, teta, pe, toth, dxi
       real(dp), dimension(:), intent(in) :: lam
       real(dp), dimension(:,:,:), allocatable :: fakt
       logical, optional :: sorted
@@ -540,7 +546,7 @@ contains
 
       if (active) then
           !prev = abslte(pp(1), pp(2), pp(3), pp(4))
-          call self%absorption_factor(EK_over_temp, teta, pe, rho, dxi, fakt)
+          call self%absorption_factor(EK_over_temp, teta, pe, toth, dxi, fakt)
           call self%interp_xkap(abslte, temp, teta, fakt)
           !print '(A14, A, 8(ES14.6))', self%label, self%ion%id, fakt(pp(1),pp(2),pp(3)), abslte(pp(1),pp(2),pp(3),pp(4)) - prev, abslte(pp(1),pp(2),pp(3),pp(4))
       endif

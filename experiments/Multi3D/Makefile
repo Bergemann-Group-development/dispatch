@@ -6,8 +6,6 @@ OPTS =
 #OPTS = hoppe
 #OPTS = optimized
 
-# RICHARD SAYS HI!
-
 # Default target and paths
 EXEC            = dispatch.x
 TOP             = ../..

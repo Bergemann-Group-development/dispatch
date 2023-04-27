@@ -369,11 +369,26 @@ MODULE atom_mod
           self%e(i) = huge(1.0)
         endif
       end do
+      n = max(n, 0.)
     else
       ! set limits on corrections
-      self%e = max(self%e, 0.001d0)
+      !self%e = max(self%e, 0.001d0)
+      self%e = max(self%e, tiny(1.0))
       ! update the populations
       n = n * self%e
+    endif
+
+    if (check_NaN) then
+      do i=1,self%nlevel
+        if (n(i) < 0) then
+          print *, 'Below zero in populations at i = ', i
+          print *, 'Temp  = ', temp
+          print *, n(i)
+          print *, self%e(i)
+          print *, zero_pop, self%oldn(i)
+          stop
+        endif
+      end do
     endif
 
     !write(kr) self%e
@@ -514,8 +529,7 @@ MODULE atom_mod
     real(4),  intent(in)  :: temp
     real(4) :: doppler_factor
     !---------------------------------------------------------------------------------
-    doppler_factor = sqrt( 2.0d0*bk / self%awgt * temp )
-    doppler_factor = sqrt( doppler_factor**2 + (vmic*1e5)**2 ) / cc
+    doppler_factor = sqrt(  2.0d0*bk*temp/self%awgt + (vmic*1e5)**2 ) / cc
   end function compute_doppler_factor
   !------------------------------------------------------------------------------------
    
@@ -641,8 +655,8 @@ MODULE atom_mod
 
       lin%i = min(ii, jj)
       lin%j = max(ii, jj)
-      lin%q0   = lin%q0   * qnorm
-      lin%qmax = lin%qmax * qnorm
+      lin%q0   = lin%q0  
+      lin%qmax = lin%qmax
 
       if (nq_fac /= 0) lin%nnu=nq_fac*lin%nnu
 
@@ -715,7 +729,7 @@ MODULE atom_mod
 
       call os%allocate(lin%nu_input, lin%nnu, 'line%nu_input')
       call os%allocate(lin%wq, lin%nnu, 'line%wq')
-      call lin%get_nu(lin%nu_input)
+      call lin%get_nu(qnorm, lin%nu_input)
       lin%nu_min = lin%nu_input(1)
       lin%nu_max = lin%nu_input(lin%nnu)
       call set_weights(lin%wq, lin%nu_input / lin%nu0 - 1)
