@@ -226,7 +226,7 @@ MODULE atom_line_patch_mod
         
         call line%profile(line%q, vproj, inv_df, adamp, line%phi)
       case ('hlinop')
-        call hydrogen_profile(line%nu, line%nu0, line%i, line%j, temp, ne, nh(:,:,:,1), inv_df, line%phi)
+        call hydrogen_profile(line%q, line%nu0, line%i, line%j, temp, ne, nh(:,:,:,1), inv_df, line%phi)
       end select
 
       if (self%print_update_info) then

@@ -11,23 +11,22 @@ MODULE hprofl_mod
 contains
 
   !====================================================================================
-  SUBROUTINE hydrogen_profile(nu, nu0, n, m, temp, ne, nh1, inv_df, phi)
-    real(8), dimension(:), intent(in) :: nu
+  SUBROUTINE hydrogen_profile(q, nu0, n, m, temp, ne, nh1, inv_df, phi)
+    real(8), dimension(:), intent(in) :: q
     real(8), intent(in) :: nu0
     integer, intent(in) :: n, m
     real(4), dimension(:,:,:), intent(in) :: temp, ne, nh1, inv_df
     real(4), dimension(:,:,:,:), intent(inout) :: phi
-    real(4) :: dopph
+    real(4) :: dop
     integer :: i,j,k,f
     !----------------------------------------------------------------------------------
     !DIR$ FORCEINLINE
-    do f=1, size(nu)
+    do f=1, size(q)
       do k=1, size(temp, 3)
       do j=1, size(temp, 2)
       do i=1, size(temp, 1)
-        dopph = 1 / inv_df(i,j,k)
-        phi(i,j,k,f) = hprofl(n,m,nu(f), nu0, temp(i,j,k), ne(i,j,k), nh1(i,j,k), 0.0, dopph)
-        phi(i,j,k,f) = phi(i,j,k,f) * nu0
+        dop = 1 / inv_df(i,j,k)
+        phi(i,j,k,f) = hprofl(n,m,q(f), nu0, temp(i,j,k), ne(i,j,k), nh1(i,j,k), 0.0, dop)
       end do
       end do
       end do
@@ -46,37 +45,38 @@ contains
   ! ne    = electron number density in cm-3
   ! h1frc  = number density of H I in cm-3
   ! he1frc = number density of He I in cm-3
-  ! dopph  = reduced Doppler width delta_lambda / lambda_0
+  ! dop  = reduced Doppler width delta_lambda / lambda_0
   !        = reduced Doppler width delta_nu / nu_0
   !  Based on code by Deane Peterson and Bob Kurucz
   !===============================================================================
-  FUNCTION hprofl(n,m,nu,nu0,temp,ne,h1frc,he1frc,dopph)
+  FUNCTION hprofl(n,m,q,nu0,temp,ne,h1frc,he1frc,dop)
     integer, intent(in) :: n
     integer, intent(in) :: m
-    real(8), intent(in) :: nu
+    real(8), intent(in) :: q
     real(8), intent(in) :: nu0
     real(4), intent(in) :: temp
     real(4), intent(in) :: ne
     real(4), intent(in) :: h1frc
     real(4), intent(in) :: he1frc
-    real(4), intent(in) :: dopph
+    real(4), intent(in) :: dop
     real(8) :: hprofl
-    integer :: i, mmn, ipos, k, nwid, icut
+    integer :: i, mmn, ipos, k, icut
     real(8), save, dimension(14) :: finest, finswt
     integer, save :: n1=0, m1=0, ifins
     logical, save :: lymanalf
-    real(4), save :: vdw, resont, radamp, stark
-    real(4) :: del, xn, xm, xm2, xmn2, gnm, xknm, &
+    real(4), save :: vdw, resont, radamp, stark, xknm
+    real(4) :: del, xn, xm, xm2, xmn2, gnm, &
                hwstk, vbarh, hwlor, t3nhe, hfwid, hhw, xself, xfac, spacing,  &
                freq22000, xlymanh2, va, d
-    real(8) :: delw, dop, lam, lam0, wave4000, xn2, fo, htotal, freqsq, &
+    real(8) :: nu,delw, lam, lam0, q4000, xn2, fo, htotal, freqsq, gam, &
                xv,gridfreq,xstark,xholt4000,sat4000,freq15000,xlymanh2plus
 
 
     !  Most model atmosphere codes include Rayleigh scattering by H atoms
     !  elsewhere, eg. quantum mechanical calculations. This parameter cuts
     !  the Lyman alpha natural absorption at this chosen point.
-    real(8), parameter :: raylcut = 1240.d0
+    real(8), parameter :: rayfcut = cc*1e8/1240.d0
+    real(8), parameter :: LyA0 = 82259.105 ! wavenumber
     !      PARAMETER (RAYLCUT = 3000.D0) ! in Angstroms
 
     integer, dimension(4), parameter :: istal  = [1, 3, 10, 21]
@@ -174,7 +174,7 @@ contains
         -11.37, -11.36, -11.35, -11.34, -11.33, -11.32, -11.30, -11.29,  &
         -11.28, -11.27, -11.27, -11.27, -11.26, -11.25, -11.24, -11.23,  &
         -11.22, -11.21, -11.20, -11.19, -11.18, -11.17, -11.15, -11.14,  &
-        -11.13, -11.12, -11.11, -11.10, -11.09, -11.08, -11.07]
+        -11.13, -11.12, -11.11, -11.10, -11.09, -11.08, -11.07] - 14.
 
     !     LYMAN ALPHA QUASI H2 PROFILE
     !     DELTA WAVENO = -22000+200*(N-1)  N=1,91  -4000
@@ -190,22 +190,24 @@ contains
         -12.90, -12.90, -12.90, -12.90, -12.90, -12.90, -12.89, -12.88,  &
         -12.87, -12.86, -12.85, -12.84, -12.83, -12.81, -12.80, -12.79,  &
         -12.78, -12.76, -12.74, -12.72, -12.70, -12.68, -12.65, -12.62,  &
-        -12.59, -12.56, -12.53]
+        -12.59, -12.56, -12.53] - 14.
 
     !  Data for self-broadening from calculations of Barklem, Piskunov and
     !  O'Mara (2000, A&A 363, 1091).
-    !  SIGMA is in m^2.
+    !  SIGMA is in m^2. 1E6 factor is due to SI -> CGS.
     !  BALFAC = (4/Pi)**(alf/2) Gamma(2-2/alf) the leading factor for
     !  computing the width.
-    real(4), dimension(3), parameter :: sigma  = [3.304E-18, 6.497E-18, 1.178E-17]
+    real(4), dimension(3), parameter :: sigma  = [3.304E-18, 6.497E-18, 1.178E-17]*1.e4
     real(4), dimension(3), parameter :: alf    = [    0.677,     0.455,     0.380]
-    real(4), dimension(3), parameter :: balfac = [  0.97875,   0.97659,   0.97794]
+    real(4), dimension(3), parameter :: balfac = [  0.97875,   0.97659,   0.97794]*1.e6
     !---------------------------------------------------------------------------
     !  Convert wavelengths to frequencies and compute detunings
+    nu = nu0*(q+1.d0)
     lam = cc/nu*1e8
     lam0 = cc/nu0*1e8
     delw = lam-lam0
     del = nu-nu0
+    !q = del / nu0
 
     !  Variables dependent on line - compute first time only
     if((n /= n1).or.(m /= m1)) then
@@ -250,7 +252,7 @@ contains
 
       resont = resont * 2.07E-24*gnm
       vdw = 4.45E-26*gnm*(xm2*(7.*xm2+5.))**0.4
-      stark = 1.6678E-18*nu0*xknm
+      stark = xknm/lam0
 
       !  Approximately include fine structure.  Exact pattern for alpha lines,
       !  M infinite pattern used for others.
@@ -274,23 +276,22 @@ contains
           finswt(i) = stwtal(k)/(3*xn2)
         end do
       end if
+      finest = finest / nu0
     end if
 
     !  Now compute the profile for the given physical conditions.
 
-    !  Firstly half-widths: DOPPH, HWSTK, HWLOR, are dnu/nu. DOP is the
-    !  doppler width dnu.
-    fo = 1.25E-9*ne**0.66667 ! Holtsmark normal field strength
+    !  Firstly half-widths: DOP, HWSTK, HWLOR, are dnu/nu.
+    fo = 2.6031*ec*ne**two_third ! Holtsmark normal field strength
     hwstk = stark*fo
-    dop = dopph*nu0
 
     !  For low Balmer lines use Barklem, Piskunov & O'Mara (2000, A&A 363,
-    !  1091) instead of Ali & Griem for self-broadening. 1E6 factor is due
-    !  to SI -> CGS.
+    !  1091) instead of Ali & Griem for self-broadening. 
     if ((n == 2) .and. (m <= 5)) then
       vbarh = sqrt(42008.e-8*temp)
-      resont = balfac(m-n) * 1.e4*sigma(m-n) * vbarh**(1.-alf(m-n))
-      resont = resont/nu0*1.e6/(2*pi)
+      i = m-n
+      resont = balfac(i)*sigma(i) * vbarh**(1. - alf(i))
+      resont = resont/nu0/(2*pi)
     end if
 
     t3nhe = (temp/10000.)**0.3 * he1frc
@@ -305,78 +306,21 @@ contains
     !   (2) (Lorentz) damping parts - self, natural and helium.
     !   (3) Stark broadening.
 
-    !  Determine the largest half-width
-    !    NWID=1, Doppler
-    !        =2, Lorentz
-    !        =3, Stark
-
-    !if (dopph >= hwlor .and. dopph >= hwstk) then
-    !  nwid = 1
-    !  hfwid = dopph*nu0
-    !else if (hwlor >= dopph .and. hwlor >= hwstk) then
-    !  nwid = 2
-    !  hfwid = hwlor*nu0
-    !else
-    !  nwid = 3
-    !  hfwid = hwstk*nu0
-    !end if
-
-    !  ATTEMPT TO do THIS BETTER - ASSUME FOR CORE STARK IS APPROX LORENTZIAN
+    !  ASSUME FOR CORE STARK IS APPROX LORENTZIAN
     !  AND USE VOIGT FUNCTION
-    nwid = 1
-    hfwid = (dopph + hwlor + hwstk/5.) * nu0 ! defines where we switch from Voigt TO adding
-  ! if (dopph==0) write(*,*) dopph, (hwlor + hwstk/5.),hwlor,hwstk/5.
-    va = (hwlor + hwstk/5.) / dopph                ! VOIGT "a"
+    hfwid = (dop + hwlor + hwstk) * nu0 ! defines where we switch from Voigt TO adding
 
-    !  HTOTAL is the profile.
-    htotal=0.d0
-
-    !  Case 1: Doppler core including fine structure
-    if ((abs(del) > hfwid) .or. (nwid == 1)) then
-      do i=1, ifins
-        d = abs(del-finest(i)) / dop
-        !          if(D.LE.7.) HTOTAL = HTOTAL + EXP(-D*D)*FINSWT(I)/(SQRTPI*DOP)
-
-        !  if INSIDE HFWID WE USE VOIGT FUNCTION WITH DOP, STARK AND LOR
-        !  if OUTSIDE JUST ADD THE DOPPLER PART - REST IS ADDED LATER IN DETAIL
-
-        if (abs(del) > hfwid) then
-          if (d <= 7.) htotal = htotal + exp(-d*d)*finswt(i)/(sqrtpi*dop)
-        else
-          xv = voigt_function2(va,d)
-          htotal = htotal + xv*finswt(i)/dop !/sqrtpi
-        end if
-      end do
-    end if
-
-    !  Case 2: Self-broadening section - includes natural and vdW due to
-    !  helium for convenience.
-    if ((abs(del) > hfwid).or.(nwid == 2)) then
-      if (.not. lymanalf) then
-        !  All lines except Lyman alpha:
-        !  The full classical expression for the line shape is used (eqn 4-73 in
-        !  Aller). This extends the profile to large detuning, but note the
-        !  impact approximation is not valid.
-        !  The classical damping constant is frequency dependent. Assume similar
-        !  dependence of quantum mechanical damping (cf. eqn 4-116 Aller).
-
-          hhw = hwlor*nu0
-          hhw = hhw * nu*nu/(nu0*nu0)
-          freqsq = 4.*nu*nu
-          xself = freqsq*hhw / (pi*((del*(nu0+nu))**2. + freqsq*hhw**2.))
-
-      else
-          !  Lyman alpha:
+    if (abs(del) > hfwid) then
+      if (lymanalf) then
+        !  Lyman alpha:
+        if (nu > rayfcut) then
           !  Natural broadening
           !  This is cut at some specified detuning in the red.
-
-          if (lam < raylcut) then
-            hhw = radamp*nu0
-            hhw = hhw * nu*nu/(nu0*nu0)
-            freqsq = 4.*nu*nu
-            htotal = htotal + freqsq*hhw / (pi*((del*(nu0+nu))**2. + freqsq*hhw**2.))
-          end if
-
+          va = radamp*(nu/nu0)**2 / dop
+        else
+          va = 0.0
+        endif
+        if (nu > (LyA0 - 4000.)*cc) then
           !  Self broadening of Lyman alpha:
           !  Red wing of Lyman Alpha before the satellite region and blue wing
           !  (ie. redward of ~1190 A).
@@ -385,116 +329,111 @@ contains
           !  anyway (~ Barklem et al for 2p).
           !  A factor 1.13 is needed to match this region to the far red wing
           !  (below) at -4000 cm^-1 (62 A) detuning. A linear transition is used.
+          xfac = 1.0
+          if (nu <= nu0) xfac = xfac + 0.13/62.*abs(delw)
+          va = va + (xfac*resont*h1frc + vdw*t3nhe) / dop
+        endif
+      else
+        !  Self-broadening section - includes natural and vdW due to
+        !  helium for convenience.
+        !  All lines except Lyman alpha:
+        !  The full classical expression for the line shape is used (eqn 4-73 in
+        !  Aller). This extends the profile to large detuning, but note the
+        !  impact approximation is not valid.
+        !  The classical damping constant is frequency dependent. Assume similar
+        !  dependence of quantum mechanical damping (cf. eqn 4-116 Aller).
+        va = hwlor*(nu/nu0)**2 / dop
+      endif
+    else
+      va = (hwlor + hwstk) / dop                ! VOIGT "a"
+    endif
 
-          if (nu > (82259.105 - 4000.)*cc) then
-            xfac = 1. + 0.13*(abs(delw)/62.)
-            if (nu > nu0) xfac = 1.0
-            hhw = (xfac*resont*h1frc + vdw*t3nhe) * nu0
-            xself = hhw/(pi*(del*del+hhw*hhw))
+    !  HTOTAL is the profile.
+    htotal=0.d0
 
-            !  Far red wing of Lyman Alpha in satellite region:
-            !  Self-broadening following Kurucz's implementation of Allard et al
-            !  (A&A 335, 1124, 1998), see Castelli & Kurucz (A&A 372, 260 2001) for
-            !  more details.
-            !  Tables LYMANH2() are on a delta wavenumber grid spacing of 200
-            !  waves/cm -22000, -21800, ...., -4000 waves/cm (91 points). The
-            !  profiles store log10(I(d omega)) for N(H) = 1e14 cm^-3. Assumed
-            !  insensitive to temp, and linear scaling with N(H).  Note I(d nu) =
-            !  I(d omega)/c
+    !  Doppler core including fine structure
+    do i=1, ifins
+      d = (q - finest(i)) / dop
 
-          else if (nu > 20000.*cc) then
-            spacing = 200.*cc
-            freq22000 = (82259.105 - 22000.)*cc
+      !  if INSIDE HFWID WE USE VOIGT FUNCTION WITH DOP, STARK AND LOR
+      !  if OUTSIDE JUST ADD THE DOPPLER PART - REST IS ADDED LATER IN DETAIL
+      xv = voigt_function2(va,d) / dop
+      htotal = htotal + finswt(i)*xv
+    end do
 
-            !  If redward of last point (1660 -> 5000 Angstrom) extrapolate,
-            !  otherwise (1278 -> 1660 Angstrom) linear (in log10 profiles)
-            !  interpolation
+    if (abs(del) > hfwid) then
+      if (lymanalf) then
+        !  Far red wing of Lyman Alpha in satellite region:
+        !  Self-broadening following Kurucz's implementation of Allard et al
+        !  (A&A 335, 1124, 1998), see Castelli & Kurucz (A&A 372, 260 2001) for
+        !  more details.
+        !  Tables LYMANH2() are on a delta wavenumber grid spacing of 200
+        !  waves/cm -22000, -21800, ...., -4000 waves/cm (91 points). The
+        !  profiles store log10(I(d omega)) for N(H) = 1e14 cm^-3. Assumed
+        !  insensitive to temp, and linear scaling with N(H).  Note I(d nu) =
+        !  I(d omega)/c
+        if (nu > 20000.*cc .and. nu <= (LyA0 - 4000.)*cc) then
+          spacing = 200.*cc
+          freq22000 = (LyA0 - 22000.)*cc
 
-            if (nu < freq22000) then
-                xlymanh2 = (lymanh2(2)-lymanh2(1))/spacing*(nu-freq22000) + lymanh2(1)
-            else
-                icut = (nu-freq22000)/spacing
-                gridfreq = icut*spacing+freq22000
-                xlymanh2 = (lymanh2(icut+2)-lymanh2(icut+1))/spacing*(nu-gridfreq) + lymanh2(icut+1)
-            end if
-            xself = (10.**(xlymanh2-14.))*h1frc/cc
-          else
-            xself = 0.
-          end if
+          !  If redward of last point (1660 -> 5000 Angstrom) extrapolate,
+          !  otherwise (1278 -> 1660 Angstrom) linear (in log10 profiles)
+          !  interpolation
 
-          !  End Lyman alpha section
+          icut = max(0.0, nu - freq22000)/spacing
+          gridfreq = icut*spacing + freq22000
+          xlymanh2 = (lymanh2(icut+2)-lymanh2(icut+1))/spacing*(nu-gridfreq) + lymanh2(icut+1)
+          htotal = htotal + LyA0 * h1frc * 10.**xlymanh2
+        end if !  End Lyman alpha section
 
-      end if
 
-      htotal = htotal + xself
-
-      !  End self-broadening section
-
-    end if
-
-    !  Case 3: Stark section
-
-    if ((abs(del) > hfwid) .or. (nwid == 3)) then
-
-      !  Stark wings due to ions and electrons.  If Lyman alpha this is for
-      !  before (blueward of) the satellite region.
-
-      if ((.not. lymanalf) .or. (nu > (82259.105 - 4000.)*cc)) then
-          xstark = stark1(n,m,lam,lam0,temp,ne)
+        !  Stark section
+        !  Stark wings due to ions and electrons.  If Lyman alpha this is for
+        !  before (blueward of) the satellite region.
+        if (nu > (LyA0 - 4000.)*cc) then
+          xstark = stark1(n,m,q,nu0,temp,ne,hwstk)
 
           !  If Lyman alpha we match the static ion part to the Allard et al
           !  value at -4000 cm^-1 detuning on red wing.
-
-          if ((lymanalf).and.(nu < 82259.105*cc)) then
-            wave4000 = 1.d8/(82259.105 - 4000.)
-            xholt4000 = 0.5 * stark1(n,m,wave4000,lam0,temp,ne)
-            sat4000 = (10.**(-11.07 - 14.))/cc*ne
-            xfac = 1.+(sat4000/xholt4000-1.)*abs(delw)/62.
-            xstark = xstark * 0.5 * (1. + xfac)
+          if (nu < nu0) then
+            q4000 = -4000./LyA0
+            xholt4000 = 0.5*stark1(n,m,q4000,nu0,temp,ne,hwstk)
+            sat4000 = LyA0 * ne * 10.**lymanh2plus(111)
+            xfac = 1. + (sat4000/xholt4000 - 1.)*abs(delw)/62.
+            xstark = 0.5*xstark * (1. + xfac)
           end if
 
-          !  Stark wings due to protons in the satellite region:
+          htotal = htotal + xstark
 
-          !  Following Kurucz's implementation of Allard et al (A&A 335, 1124,
-          !  1998), see Castelli & Kurucz (A&A 372, 260 2001) for more details.
-
-          !  Tables LYMANH2PLUS() are on a delta wavenumber grid spacing of 100
-          !  waves/cm -15000, -14900, ...., -4000 waves/cm (111 points).
-
-          !  The profiles store log10(I(d omega)) for N(H+) = 1e14 cm^-3. Assumed
-          !  insensitive to temp, and linear scaling with N(H+). Note I(d nu) =
-          !  I(d omega)/c and we assume N(H+) = N(e-).
-
-      else if (nu > 20000.*cc) then
-          spacing=100.*cc
-          freq15000=(82259.105-15000.)*cc
-
-          !  If redward of last point (1487 -> 5000 Angstroem) extrapolate,
-          !  otherwise (1278 -> 1487 Angstroem) interpolation.
-
-          if (nu < freq15000) then
-            xlymanh2plus = (lymanh2plus(2)-lymanh2plus(1))/spacing*  &
-                  (nu-freq15000)+lymanh2plus(1)
-          else
-            icut = (nu-freq15000)/spacing
-            gridfreq = icut*spacing+freq15000
-            xlymanh2plus = (lymanh2plus(icut+2)-lymanh2plus(icut+1))  &
-                  /spacing*(nu-gridfreq)+lymanh2plus(icut+1)
-          end if
-          xlymanh2plus = (10.**(xlymanh2plus-14.))*ne/cc
-
-
+        else if (nu > 20000.*cc) then
           !  There may be a contribution due to electrons also at long range.
           !  The static Holtsmark profile (1/2 the total STARK1) is used noting
           !  that the correction for quantum effects suggested by Stehle (1994,
           !  A&AS 104, 509 eqn 7) has been applied already.
+          htotal = htotal + 0.5*stark1(n,m,q,nu0,temp,ne,hwstk)
 
-          xstark = xlymanh2plus + 0.5 * stark1(n,m,lam,lam0,temp,ne)
-      else
-          xstark = 0.
-      end if
-      htotal = htotal + xstark
+          !  Stark wings due to protons in the satellite region:
+          !  Following Kurucz's implementation of Allard et al (A&A 335, 1124,
+          !  1998), see Castelli & Kurucz (A&A 372, 260 2001) for more details.
+          !  Tables LYMANH2PLUS() are on a delta wavenumber grid spacing of 100
+          !  waves/cm -15000, -14900, ...., -4000 waves/cm (111 points).
+          !  The profiles store log10(I(d omega)) for N(H+) = 1e14 cm^-3. Assumed
+          !  insensitive to temp, and linear scaling with N(H+). Note I(d nu) =
+          !  I(d omega)/c and we assume N(H+) = N(e-).
 
+          spacing=100.*cc
+          freq15000=(LyA0 - 15000.)*cc
+
+          !  If redward of last point (1487 -> 5000 Angstroem) extrapolate,
+          !  otherwise (1278 -> 1487 Angstroem) interpolation.
+          icut = max(0.0, nu - freq15000)/spacing
+          gridfreq = icut*spacing + freq15000
+          xlymanh2 = (lymanh2plus(icut+2)-lymanh2plus(icut+1))/spacing*(nu-gridfreq) + lymanh2plus(icut+1)
+          htotal = htotal + LyA0 * ne * 10.**xlymanh2
+        end if
+      else ! not lymanalf
+        htotal = htotal + stark1(n,m,q,nu0,temp,ne,hwstk)
+      endif
       !  End Stark section
     end if
 
@@ -548,109 +487,80 @@ contains
   !  by Deane Peterson & Bob Kurucz.
   !  (adapted, corrected and comments added by PB)
   !===============================================================================
-  FUNCTION stark1(n,m,lam,lam0,temp,ne)
+  FUNCTION stark1(n,m,q,nu0,temp,ne,hwstk)
     integer, intent(in) :: n
     integer, intent(in) :: m
-    real(8), intent(in) :: lam
-    real(8), intent(in) :: lam0
+    real(8), intent(in) :: q
+    real(8), intent(in) :: nu0
     real(4), intent(in) :: temp
     real(4), intent(in) :: ne
+    real(4), intent(in) :: hwstk
     real(8)             :: stark1
-    real(8) :: delw,del,f,fo,nu,nu0,y1num,y1wht,c1con,c2con,xknm,p1
-    real(8) :: t4,he1frc,xne16,pp,y1b,y1s,c1d,c2d,gcon1,gcon2,xn,xn2,xm,xm2,xmn2
-    real(8) :: xm2mn2,gnm,wty1,y1scal,c1,c2,g1,beta,y2,gam,prqs,dbeta,fns,y1
-    integer, save :: n1=0, m1=0, mmn
-    save
+    real(8) :: f,p1,t4,he1frc,xne16,pp,y1b,y1s,gcon1,gcon2,xn2,xm2,xmn2,q1
+    real(8) :: xm2mn2,wty1,y1scal,c1,c2,c21,g1,beta,y2,gam,prqs,dbeta,fns,y1
+    real(8), save :: gnm, y1num, y1wht
+    integer, save :: xn=0, xm=0, mmn
 
     real(4), dimension(2,2), parameter :: y1wtm = [1.e18, 1.e17, 1.e16, 1.e14]
-
     real(8), parameter :: clight = 2.9979258e18
     !---------------------------------------------------------------------------
     !  Variables depending on conditions
     t4 = temp/10000.
     xne16 = ne**0.1666667
     pp = xne16*0.08989/sqrt(temp) ! the shielding parameter
-    fo = 1.25E-9*ne**0.66667      ! Holtsmark normal field strength
     y1b = 2. / (1. + 0.012/temp*sqrt(ne/temp))
     y1s = t4**0.3/xne16
-    c1d = fo*78940. / temp
-    c2d = fo**2 / (5.96E-23*ne)
-    gcon1 = 0.2 + 0.09*sqrt(t4)/(1.+ne/1.e13)
+    gcon1 = 0.2 + 0.09*sqrt(t4) / (1. + ne/1.e13)
     gcon2 = 0.2 / (1. + ne/1.e15)
 
-    delw = lam-lam0
-    nu0 = clight/lam0
-    nu = clight/lam
-    del = nu-nu0
-
     !  Variables dependent on line - compute first time only
+    if((n /= xn).or.(m /= xm)) then
+      mmn = m-n
+      xn = n
+      xm = m
+      xn2 = xn*xn
+      xm2 = xm*xm
+      xm2mn2 = xm2-xn2
+      gnm = xm2mn2*xm2mn2/(xm2*xn2)
 
-    if((n /= n1).or.(m /= m1)) then
-       n1 = n
-       m1 = m
-       mmn = m-n
-       xn = n
-       xn2 = xn*xn
-       xm = m
-       xm2 = xm*xm
-       xmn2 = xm2*xn2
-       xm2mn2 = xm2-xn2
-       gnm = xm2mn2/xmn2
+      !  Some weighting factors which relate to y1, which is the velocity at
+      !  which the minimum impact parameter (where second order perturbation
+      !  theory breaks down) and the Lewis cutoff (the limit of validity of
+      !  the impact approximation) are the same.
 
-       !  Knm constants not tabulated from approximate asymptotic expression
-       !  (Griem 1960 eqn 33) where 1./(1.+.13/FLOAT(MMN)) appears to be a
-       !  correction factor to match to the tables.
-
-       if ((mmn <= 3).and.(n <= 4)) then
-          xknm = xknmtb(n,mmn)
-       else
-          xknm = 5.5e-5/gnm*xmn2/(1.+.13/real(mmn))
-       end if
-
-       !  Some weighting factors which relate to y1, which is the velocity at
-       !  which the minimum impact parameter (where second order perturbation
-       !  theory breaks down) and the Lewis cutoff (the limit of validity of
-       !  the impact approximation) are the same.
-
-       if(m == 2) then
-          y1num = 550.
-       else if (m == 3) then
-          y1num = 380.
-       else
-          y1num = 320.
-       end if
-       if (mmn <= 2 .and. n <= 2) then
-          y1wht = y1wtm(n,mmn)
-       else if (mmn <= 3) then
-          y1wht = 1.e14
-       else
-          y1wht = 1.e13
-       end if
-
-       c1con = xknm/lam0*gnm*xm2mn2
-       c2con = (xknm/lam0)**2
-
+      if(m == 2) then
+        y1num = 550.
+      else if (m == 3) then
+        y1num = 380.
+      else
+        y1num = 320.
+      end if
+      if (mmn <= 2 .and. n <= 2) then
+        y1wht = y1wtm(n,mmn)
+      else if (mmn <= 3) then
+        y1wht = 1.e14
+      else
+        y1wht = 1.e13
+      end if
     end if
 
     !  Compute line profile
 
-    !  PRQS is the quasistatic ion contribution
-    !  FNS  is the quasistatic electron contribution rel to PRQS
-    !  F    is the impact electron contribution
-
     !  First compute the width of the impact electron profile roughly Griem
     !  (1967, ApJ 147, 1092) eqn for w.
 
-    wty1 = 1./(1.+ne/y1wht)
-    y1scal = y1num*y1s*wty1+y1b*(1.-wty1)
-    c1 = c1d*c1con*y1scal
-    c2 = c2d*c2con
-    g1 = 6.77*sqrt(c1)
-    beta = dabs(delw)/fo/xknm
-    y1 = c1*beta
-    y2 = c2*beta**2
+    wty1 = 1./(1. + ne/y1wht)
+    y1scal = y1num*y1s*wty1 + y1b*(1. - wty1)
+    c1 = 78940./temp*y1scal*gnm
+    g1 = 6.77*sqrt(hwstk*c1)
+    q1 = abs(1/(q+1.d0) - 1)
+    beta = q1 / hwstk
+    y1 = q1*c1 
+    y2 = q1**2  / (5.96E-23*ne)
+    c21 = 1 / (c1*sqrt(5.96E-23*ne))
+
     if ((y2 <= 1.e-4).and.(y1 <= 1.e-5)) then
-       gam = g1*max( 0. , 0.2114+log(sqrt(c2)/c1))*(1.-gcon1-gcon2 )
+       gam = g1 * max(0., 0.2114 + log(c21)) * (1. - gcon1 - gcon2)
     else
        gam = g1*(0.5*exp(-min(80.,y1))+vcse1f(y1)-0.5*vcse1f(y2))*  &
             (1.-gcon1/(1.+(90.*y1)**3)-gcon2/(1.+2000.*y1))
@@ -658,7 +568,6 @@ contains
     end if
 
     !  Compute individual quasistatic and impact profiles.
-    prqs = sofbet(beta,pp,n,m)
     if (gam > 0.) then
        f = gam/pi/(gam*gam+beta*beta)
     else
@@ -668,18 +577,23 @@ contains
     !  Fraction of electrons which count as quasistatic. A fit to eqn 8
     !  (2nd term) of Griem (1967, ApJ 147, 1092).
     p1 = (0.9*y1)**2
-    fns = (p1+0.03*sqrt(y1))/(p1+1.)
+    fns = (p1 + 0.03*sqrt(y1)) / (p1 + 1.)
 
+    prqs = holtsmark(beta,pp,n,m)
     !  DBETA (=dBeta/dfreq) changes the area normalisation.
     !  DSQRT(WAVE/WAVEH) corrects the long range part to dfreq**-5/2
     !  asymptote, (see Stehle and Hutcheon 1999, A&AS 140, 93).
-    dbeta = clight/nu/nu/xknm/fo
-    stark1 = (prqs*(1.+fns)+f)*dbeta * sqrt(lam/lam0)
+    dbeta = (q+1.d0)**(-2.5d0) / hwstk
+    stark1 = (prqs*(1.+fns) + f) * dbeta
+    
+    !  PRQS is the quasistatic ion contribution
+    !  FNS  is the quasistatic electron contribution rel to PRQS
+    !  F    is the impact electron contribution
 
     !  The red wing is multiplied by the Boltzmann factor to roughly account
     !  for quantum effects (Stehle 1994, A&AS 104, 509 eqn 7). Assume
     !  absorption case.  If emission do for DEL.GT.0.
-    if (del < 0.d0) stark1 = stark1 * exp(-abs(hh*del)/(bk*temp))
+    if (q < 0) stark1 = stark1 * exp(h_k*q*nu0/temp)
   END FUNCTION stark1
 
 
@@ -694,12 +608,12 @@ contains
 
   !  STORAGE FOR CORRECTIONS (P,BETA,IND),(P,IND),(P,IND)
   !===============================================================================
-  FUNCTION sofbet(b,p,n,m)
+  FUNCTION holtsmark(b,p,n,m)
     real(8), intent(in) :: b
     real(8), intent(in) :: p
     integer, intent(in) :: n
     integer, intent(in) :: m
-    real                :: sofbet
+    real                :: holtsmark
     real :: propbm(5,15,7),c(5,7),d(5,7), pp(5),beta(15)
 
     real(8) :: wtbm,wtbp,wtpp,sb,dd,cc,wt,pr2,cbm,cbp,wtpm,corr,&
@@ -817,7 +731,7 @@ contains
     if(b > 500.) then
       !  Very large B
       b2=b*b
-      sofbet=(1.5/sqrt(b)+27./b2)/b2
+      holtsmark=(1.5/sqrt(b)+27./b2)/b2
       return
     end if
 
@@ -853,16 +767,16 @@ contains
       wt=max(min(0.5*(10.-b),1.),0.)
       if(b <= 10.) pr1=8./(83.+(2.+0.95*b2)*b)
       if(b >= 8.)  pr2=(1.5/sb+27./b2)/b2
-      sofbet=(pr1*wt+pr2*(1.-wt))*corr
+      holtsmark=(pr1*wt+pr2*(1.-wt))*corr
 
     else
       !  Asymptotic part for medium B's
       cc=c(ip,indx)*wtpp+c(im,indx)*wtpm
       dd=d(ip,indx)*wtpp+d(im,indx)*wtpm
       corr=1.+dd/(cc+b*sb)
-      sofbet=(1.5/sb+27./b2)/b2*corr
+      holtsmark=(1.5/sb+27./b2)/b2*corr
     end if
-  END FUNCTION sofbet
+  END FUNCTION holtsmark
 
   !===============================================================================
   !  E1 function calculator for VCS approximation. It's rough, but
@@ -876,12 +790,12 @@ contains
     vcse1f = 0.0
     if(x <= 0.0) return
     if(x <= 0.01) then
-       vcse1f=-log(x)-0.577215+x
-    else if(x <= 1.0) then
-       vcse1f=-log(x)-0.57721566+x*(0.99999193+x*(-0.24991055+  &
+       vcse1f = -log(x) - euler_const + x
+    elseif (x <= 1.0) then
+       vcse1f = -log(x) - euler_const + x*(0.99999193+x*(-0.24991055+  &
             x*(0.05519968+x*(-0.00976004+ x*0.00107857))))
-    else if(x <= 30.) then
-       vcse1f=(x*(x+2.334733)+0.25062)/(x*(x+3.330657)+ 1.681534)/x*exp(-x)
+    elseif (x <= 30.) then
+       vcse1f = (x*(x+2.334733)+0.25062)/(x*(x+3.330657)+ 1.681534)/x*exp(-x)
     end if
   END FUNCTION vcse1f
 
