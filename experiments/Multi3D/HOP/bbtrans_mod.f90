@@ -7,7 +7,7 @@ MODULE bbtrans_mod
   type :: bbtrans_type
     real(dp) :: nu0
     integer :: nnu ! number of frequencies in the line
-    real(dp) :: ga=0, gw1=0, gw2=0, gq=0 ! line broadening (damping) constants
+    real(dp) :: ga=0, gw1=0, gw2=0, gw3=0, gq=0 ! line broadening (damping) constants
     real(dp) :: lower_ev, upper_g
     !real(dp) :: gf
     real(dp) :: Aji, Bji, Bij ! Einstein coefficients, Bij is the
@@ -580,20 +580,20 @@ contains
     class(bbtrans_type), intent(inout)  :: self
     integer, intent(in) :: lower_ion
     real(dp), intent(in) :: gv, cnt_ev
-    real(dp) :: upper_ev, sigma, alpha, gx, gammaf, c1
+    real(dp) :: upper_ev, sigma, alpha, gx, gammaf, balfac, c1
     !----------------------------------------------------------------------------------
     ! compute van der waals broadening due to hydrogen
     ! following Barklem
     self%unsold = .false.
-    if(gv.ge.20.0) then
-      sigma=int(gv)*2.80028e-21
-      alpha=gv-int(gv)
-      gx=2.0-alpha*0.5
-      gx=gx-1.0
-      gammaf=1+(-.5748646+(.9512363+(-.6998588+(.4245549-.1010678*gx)*gx)*gx)*gx)*gx
+    if(gv >= 20.0) then
+      sigma = 2.80028e-21*int(gv)
+      alpha = gv - int(gv)
+      gx = 1.0 - 0.5*alpha
+      gammaf = 1+(-.5748646+(.9512363+(-.6998588+(.4245549-.1010678*gx)*gx)*gx)*gx)*gx
+      balfac = (4.0/pi)**(0.5*alpha) * gammaf * 2.e10
 
       self%gw2 = 0.5*(1 - alpha)
-      self%gw1 = (4.0/pi)**(alpha*0.5) * gammaf * 2.e10 * sigma * 10**(-12*self%gw2)
+      self%gw1 = balfac * sigma * 10**(-12*self%gw2)
     
     elseif (gv < 0.0) then
       ! recipe 'W' Turbospectrum

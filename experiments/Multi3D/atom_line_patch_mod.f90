@@ -22,12 +22,13 @@ MODULE atom_line_patch_mod
     !USE scratch_mod
     USE mconst
     USE handyfuncs_mod
+    USE ion_mod, only: ion_type
     USE atom_mod, only: atom_type, set_weights
     USE trans_mod, only: line_type
     USE m3d_patch_mod, only: m3d_patch_t, maxiter, comoving_frame
     USE ray_patch_mod, only: ray_patch_t
     USE op_math_mod, only: searchsorted
-    USE hprofl_mod, only: hydrogen_profile
+    USE hprofl_mod, only: hydrogen_profile, prepare_hydrogen_damping
     USE m3d_debug_mod
     implicit none
   
@@ -182,6 +183,7 @@ MODULE atom_line_patch_mod
   SUBROUTINE atom_line_update (self)
     class(atom_line_t) :: self
     class(line_type), pointer :: line
+    class(ion_type), pointer :: He1
     real(4), dimension(:,:,:), pointer, contiguous :: tothi, ne, temp, adamp
     real(4), dimension(:,:,:), pointer, contiguous :: vproj, doppler_factor
     real(4), dimension(:,:,:), pointer, contiguous :: inv_df, ni, nj, unsold_temp, stark_pe
@@ -199,6 +201,7 @@ MODULE atom_line_patch_mod
     temp => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_temp,          self%it,1)
     nh   => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_nh1:self%i_nh6,self%it,1)
     doppler_factor => self%atom%data%doppler_factor
+    call self%composition%ion_by_id('He I', He1)
 
     call os%allocate(tothi,       self%n)
     call os%allocate(adamp,       self%n)
@@ -211,7 +214,7 @@ MODULE atom_line_patch_mod
     inv_df = 1 / doppler_factor
 
     tothi = sum(nh(:,:,:,1:5), 4) ! total neutral hydrogen density
-    unsold_temp =  8.0*BK / PI * (1.0/MH + 1.0/self%atom%awgt) * temp
+    unsold_temp =  8.0*BK*temp / PI * (1.0/MH + 1.0/self%atom%awgt)
     stark_pe = ne * bk * temp**one_sixth
 
     do i=1, self%nline
@@ -223,10 +226,10 @@ MODULE atom_line_patch_mod
         if (self%atom%id == 'H') then
           call line%dampingH(adamp, temp, ne, nh(:,:,:,6))
         endif
-        
         call line%profile(line%q, vproj, inv_df, adamp, line%phi)
+
       case ('hlinop')
-        call hydrogen_profile(line%q, line%nu0, line%i, line%j, temp, ne, nh(:,:,:,1), inv_df, line%phi)
+        call hydrogen_profile(line, line%q, temp, ne, nh(:,:,:,1), vproj, inv_df, real(He1%n), line%phi)
       end select
 
       if (self%print_update_info) then

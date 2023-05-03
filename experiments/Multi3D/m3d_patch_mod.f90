@@ -34,6 +34,7 @@ MODULE m3d_patch_mod
     USE m3d_halo_mod, only: m3d_halo_t, print_finished, print_download
     USE atom_mod, only: atom_type, atomic_spectrum_type, lse_no_pivot, lse_solver, &
     nu_tolerance, m1d_legacy_mode, nq_fac
+    USE composition_mod, only: composition_type
     USE ray_mod
     USE m3d_debug_mod
     implicit none
@@ -49,6 +50,7 @@ MODULE m3d_patch_mod
     type, public, extends(gpatch_t) :: m3d_patch_t
       class(gpatch_t),    pointer :: patch => null()         ! pointer to mhd patch
       class(m3d_patch_t), pointer :: m3d_parent => null()    ! pointer to parent patch
+      type(composition_type), pointer :: composition
       class(atomic_spectrum_type), pointer :: sp => null()
       type(atom_type), pointer :: atom => null()
       class(key_link_t), pointer :: key_list => null()
@@ -331,6 +333,7 @@ MODULE m3d_patch_mod
     if (present(i_nu)) self%i_nu = i_nu
     if (present(sp)) self%sp => sp
     if (present(atom)) self%atom => atom
+    self%composition => m3d_parent%composition
     self%patch => m3d_parent%patch
     self%m3d_parent => m3d_parent
     self%zs = m3d_parent%zs

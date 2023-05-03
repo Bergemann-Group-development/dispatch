@@ -15,6 +15,7 @@ MODULE atom_mod
     USE os_mod
     USE trace_mod
     USE spectrum_mod, only: spectrum_type
+    USE hprofl_mod, only:prepare_hydrogen_damping
     ! *******************************************************************
     !
     !     Contains variables connected to the atom(s) 
@@ -712,6 +713,8 @@ MODULE atom_mod
           read(latom,*) lin%determ(iterm), lin%wterm(iterm),  lin%fterm(iterm), &
                         lin%gaterm(iterm), lin%gwterm(iterm), lin%gqterm(iterm)
         end do
+
+        lin%determ = cc*lin%determ
       end if
 
       lin%upper_g  = self%g(lin%j)
@@ -757,31 +760,24 @@ MODULE atom_mod
       end do
 
       lin%ntrans = i
+      lin%profile_type = trim(lowercase(lin%profile_type))
 
-      call lin%prepare_Stark(gq)
-      call lin%prepare_VanderWaals(gv, self%ion(lin%i), cnt_ev)
+      select case (lin%profile_type)
+      case ('voigt', 'hlinop')
+        continue
+      case default
+        write (*, fmt = '(a,1x,a,a)') 'Profile not recognised:', &
+                lin%profile_type, ' Setting it to VOIGT'
+        lin%profile_type = 'voigt'
+      end select
 
-      lin%profile_type = adjustl(lowercase(lin%profile_type))
-
-      if((trim(lin%profile_type) .ne. 'voigt'  ) .and. &
-        (trim(lin%profile_type) .ne. 'prd'    ) .and. &
-        (trim(lin%profile_type) .ne. 'doppler') .and. &
-        (trim(lin%profile_type) .ne. 'hlinop' )         ) then 
-
-        if ( self%id .eq. 'h' ) then
-          write (*,fmt = '(a,1x,a,a)') 'Profile not recognised:', &
-                  lin%profile_type, ' Setting it to HLINOP'
-
-          lin%profile_type = 'hlinop'
-      
-        else
-          write (*, fmt = '(a,1x,a,a)') 'Profile not recognised:', &
-                  lin%profile_type, ' Setting it to VOIGT'
-
-          lin%profile_type = 'voigt'
-      
-        end if
-      end if
+      select case (lin%profile_type)
+      case ('hlinop')
+        call prepare_hydrogen_damping(lin)
+      case ('voigt')
+        call lin%prepare_Stark(gq)
+        call lin%prepare_VanderWaals(gv, self%ion(lin%i), cnt_ev)
+      end select
     end do
 
     ncont = count(self%ion < maxval(self%ion))
@@ -928,11 +924,17 @@ MODULE atom_mod
     !self%crout = adjustl(self%crout)
     !strl=len_trim(self%crout)
     self%crout = lowercase(adjustl(self%crout))
-    if (self%crout /= 'gencol') then
-      write(stdout, *) 'Collision routine ', trim(self%crout), ' not supported. Stopping...'
-      abort=.true.
-    endif
 
+    select case (self%crout)
+    case ('end')
+      close(latom)
+      return
+    case ('gencol')
+      ! continue
+    case default
+      write(stdout, *) 'Collision routine ', trim(self%crout), ' not supported. Stopping...'
+      stop
+    end select
 
     write(stdout, *) ' - Reading collision data'
     ncoll = 0

@@ -108,7 +108,7 @@ contains
     real(4), dimension(:,:,:), intent(in) :: vproj, inv_df, adamp
     real(4), dimension(:,:,:,:), intent(inout) :: phi
     real(4), dimension(:,:,:), allocatable :: psi, damp, dphi, inv_df2
-    real(8) :: nu0, ga, scalar
+    real(8) :: ga, scalar
     real(8), dimension(:), allocatable :: q2
     integer :: f, i
     !----------------------------------------------------------------------------------
@@ -119,12 +119,11 @@ contains
         phi(:,:,:,f) = 0
       end do
       
+      scalar = over_4pi / self%nu0
+      
       do i=1, self%io
-        nu0 = self%nu0 + cc * self%determ(i)
-        !q2 = (q + 1) * self%nu0 / nu0 - 1
-        q2 = q + 1 - nu0/self%nu0
+        q2 = q - self%determ(i)
         ga = self%gaterm(i) - self%ga
-        scalar = over_4pi / nu0
         damp = (adamp + ga) * inv_df * scalar
         inv_df2 = self%wterm(i) * inv_df
 

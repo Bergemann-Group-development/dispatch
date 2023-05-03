@@ -37,6 +37,7 @@ MODULE atom_patch_mod
     global_maxerr, convlim, atom_update_counter, comoving_frame, global_pos, &
     decouple_continuum, overlapping_bb, overlapping_bf
     USE bftrans_mod, only: bftrans_type
+    USE hprofl_mod, only: hydrogen_BPO
     USE atom_line_patch_mod, only:atom_line_t, external_sp
     USE net_opac_patch_mod, only:net_opac_t
     USE m3d_debug_mod
@@ -46,7 +47,7 @@ MODULE atom_patch_mod
   
     type, public, extends(m3d_patch_t) :: atom_patch_t
       type(atom_type) :: output_atom, bb_atom, bf_atom
-      class(composition_type), pointer :: composition
+      !class(composition_type), pointer :: composition
       class(atomic_spectrum_type), pointer :: output_sp, bf_sp, bb_sp
       real(8) :: maxerr=huge(1.0)
       real(8), dimension(:), allocatable :: lvlerr
@@ -168,7 +169,7 @@ MODULE atom_patch_mod
     namelist /atom_params/ atom_file, qnorm, convlim, exclude_trace_cont, level_partf, &
     use_atom_abnd, logf_cut, red_cut, blue_cut, n_in_lines, abundance, debye_shield, &
     exclude_from_line_list, precomputed_depart, use_classic_col, kramer_bf, overlapping_bf, &
-    overlapping_bb, nq_fac
+    overlapping_bb, nq_fac, hydrogen_BPO
     namelist /line_mask/ in_lines
     !-----------------------------------------------------------------------------
     call trace%begin('atom_patch_t%pre_init_atom', itimer=itimer)

@@ -19,7 +19,7 @@ MODULE back_cont_patch_mod
     !-----------------------------------------------------------------------------
     type, public, extends(ray_patch_t) :: back_cont_patch_t
     integer :: i_abs=3, i_sca=4
-    class(composition_type), pointer :: composition
+    !class(composition_type), pointer :: composition
     class(m3d_patch_t), pointer :: mean_rad => null()
     logical :: include_absmet=.false.
     contains

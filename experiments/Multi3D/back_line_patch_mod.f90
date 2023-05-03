@@ -34,7 +34,7 @@ MODULE back_line_patch_mod
     !-----------------------------------------------------------------------------
   
     type, public, extends(ray_patch_t) :: back_line_patch_t
-      class(composition_type), pointer :: composition
+      !class(composition_type), pointer :: composition
       integer :: nline, ired, iblue
     contains
       procedure :: pre_init => back_line_patch_pre_init

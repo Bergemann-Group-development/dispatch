@@ -52,7 +52,6 @@ boundaries_mod.o            : standard_boundaries_mod.o io_mod.o trace_mod.o \
 guards_mod.o                : math_mod.o
 coll_var.o                  : coll_mod.o
 coll_mod.o                  : mmath.o 
-trans_mod.o                 : bbtrans_mod.o coll_mod.o mmath.o
 atom_mod.o                  : m3io_mod.o trans_mod.o coll_mod.o op_math_mod.o spectrum_mod.o element_mod.o molecule_mod.o handyfuncs_mod.o
 spectrum_mod.o              : io_mod.o timer_mod.o trace_mod.o mconst.o trans_mod.o
 m3d_halo_mod.o              : halo_mod.o guards_mod.o gpatch_mod.o
@@ -70,7 +69,7 @@ ray_mod.o                   : mmath.o radau_mod.o
 prec_mod.o                  : mconst.o os_mod.o
 patch_mod.o                 : os_mod.o
 mpi_debug_mod.o             : mpi_mod.o io_mod.o
-atom_line_patch_mod.o       : ray_patch_mod.o
+atom_line_patch_mod.o       : ray_patch_mod.o hprofl_mod.o
 back_line_patch_mod.o       : ray_patch_mod.o composition_mod.o
 back_cont_patch_mod.o       : ray_patch_mod.o composition_mod.o
 atom_cont_patch_mod.o       : ray_patch_mod.o atom_mod.o

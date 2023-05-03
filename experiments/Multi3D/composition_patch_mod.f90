@@ -34,7 +34,6 @@ MODULE composition_patch_mod
   type, public, extends(m3d_patch_t) :: composition_patch_t
     class(gpatch_t), pointer :: mhd ! pointer to MHD patch
     class(atom_patch_t), pointer :: atom_patch
-    type(composition_type) :: composition
   contains
     procedure :: pre_init => composition_pre_init
     procedure :: update => composition_update
@@ -111,6 +110,7 @@ SUBROUTINE composition_pre_init (self)
 
   ! copy composition with all the information from the abund
   ! and absdat file into dispackage to make it threadprivate
+  allocate(self%composition)
   self%composition = composition
   ! this is needed, otherwise all pointers will still point
   ! to ions and molecules in multi3d%composition
