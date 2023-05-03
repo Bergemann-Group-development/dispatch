@@ -282,7 +282,7 @@ contains
     if (self%gw2 == 0) then
       resont = self%gw1 * h1frc
     else
-      vbarh = sqrt(42008.e-8*temp)
+      vbarh = 42008.e-8*temp
       resont = self%gw1 * vbarh**self%gw2 * h1frc
     endif
 
@@ -353,7 +353,7 @@ contains
     if (self%gw2 == 0) then
       resont = self%gw1 * h1frc
     else
-      vbarh = sqrt(42008.e-8*temp)
+      vbarh = 42008.e-8*temp
       resont = self%gw1 * vbarh**self%gw2 * h1frc
     endif
 
