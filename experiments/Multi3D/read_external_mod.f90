@@ -56,6 +56,7 @@ MODULE read_external_mod
 
   type(read_external_t), public:: read_external
   type(rank_t) :: rank
+  character(len=126), public :: atmos_file='./input_multi3d/atmos/atmos.sun_MARCS_50'
 
 contains
 
@@ -73,7 +74,6 @@ SUBROUTINE init(self, task_list, name)
   integer :: patches_per_mpi=1
   integer :: dims=1
   integer :: verbose=1
-  character(len=126) :: atmos_file='./input_multi3d/atmos/atmos.sun_MARCS_50'
   character(len=126) :: atmos_format='Multi'
   real(4), dimension(:,:,:), pointer, contiguous :: vel
   namelist /atmos_params/ atmos_file, dims, verbose, patches_per_mpi, FeH, &

@@ -75,6 +75,7 @@ MODULE atom_patch_mod
     logical, save :: level_partf=.true.
     logical, save :: exclude_from_line_list=.true.
     character(len=128), save :: precomputed_depart=''
+    character(len=128), public :: atom_file=''
 
     !-----------------------------------------------------------------------------
   
@@ -160,7 +161,6 @@ MODULE atom_patch_mod
     type(atom_type), save, target :: atom, output_atom
     type(line_type), save, dimension(:), pointer, contiguous :: dc_line, out_line
     type(cont_type), save, dimension(:), pointer, contiguous :: dc_cont, out_cont
-    character(len=128), save :: atom_file=''
     real(8), save :: qnorm=10.0, abundance=-99.9
     integer, save :: itimer=0, n_in_lines=0
     integer, save, allocatable :: in_lines(:)
