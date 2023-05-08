@@ -369,7 +369,7 @@ contains
       x = - 2.d0*q / (p + root)
     else
       cam = - 0.5d0*p
-      root = sqrt(abs(0.25d0*p*p - q))
+      root = sqrt(abs(cam*cam - q))
       x = cam + root
     endif
     if (x < 0) then

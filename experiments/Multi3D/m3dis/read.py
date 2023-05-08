@@ -273,9 +273,10 @@ class read(object):
         return xx, yy
     
     #=====================================================================
-    def plot_line_labels(self, nbins=4):
+    def plot_line_labels(self, lam0=None, nbins=4):
         xmin, xmax, ymin, ymax = plt.axis()
         x = np.array([line.lam0 for line in self.line])
+        if lam0 is not None: x = x - lam0
         mask = np.where((x > xmin) * (x < xmax))[0]
         mask = mask[np.argsort(x[mask])[::-1]]
         x = x[mask]
@@ -302,7 +303,9 @@ class read(object):
 
         for i, idx in enumerate(mask):
             line = self.line[idx]
-            plt.text(x=line.lam0, y=occu[i], s=idx, rotation=45, color='grey', fontsize=8)
+            x = line.lam0
+            if lam0 is not None: x = x - lam0
+            plt.text(x=x, y=occu[i], s=idx, rotation=45, color='grey', fontsize=8)
 
         plt.ylim(ymin, occu.max() + (ymax-ymin)/5)
 

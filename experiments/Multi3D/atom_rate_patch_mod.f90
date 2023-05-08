@@ -288,13 +288,11 @@ MODULE atom_rate_patch_mod
 
           if (kr <= sp%nac(ff)) then
             kc = sp%ac(kr,ff)
-            ! alpha0 is part of ni_over_nj_lte for overflow reasons
             alpha = atom%cont(kc)%alpha(ff-atom%cont(kc)%ired+1) * wnu(kr)
-            alpha2 = alpha * atom%cont(kc)%alpha0
             do z=1,nz
             do y=1,ny
             do x=1,nx
-              vij(x,y,z,kr) = alpha2
+              vij(x,y,z,kr) = alpha
               vji(x,y,z,kr) = alpha * atom%data%ni_over_nj_lte(x,y,z,kc) * blzfac(x,y,z)
               chi = vij(x,y,z,kr) * ni(x,y,z) - vji(x,y,z,kr) * nj(x,y,z)
 

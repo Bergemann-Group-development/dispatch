@@ -140,6 +140,7 @@ SUBROUTINE init(self, task_list, name)
     case ('Stagger')
       call read_stagger_snapshot(self%ds, self%rho, self%px, self%py, &
       self%pz, self%ee, self%temp, self%ne)
+      atmos_file = stagger_file
     case ('Marcs')
       call read_marcs(atmos_file, self%ds, self%rho, self%temp, self%pe, FeH)
     case ('Multi')

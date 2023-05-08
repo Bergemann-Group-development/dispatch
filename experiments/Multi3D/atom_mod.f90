@@ -296,18 +296,18 @@ MODULE atom_mod
     ! equation.
     pos = maxloc(n,1)
     self%e(pos) = totn
-    zero_pop = any(n==0)
+    !zero_pop = any(n==0)
 
-    if (zero_pop) then
-      self%oldn = n
-      self%w(pos,:) = 1
-    else
+    !if (zero_pop) then
+    !  self%oldn = n
+    !  self%w(pos,:) = 1
+    !else
       ! go from rate coefficients to actual rates   
       do i=1,self%nlevel
         self%w(i,:) = self%w(i,:) * n 
       enddo
       self%w(pos,:) = n
-    endif
+    !endif
 
     if (check_NaN) then
       abort = .false.
@@ -358,26 +358,26 @@ MODULE atom_mod
       end do
     endif
 
-    if (zero_pop) then
-      self%oldn = n
-      n = self%e
-      do i=1,self%nlevel
-        if (self%oldn(i) > 0) then
-          self%e(i) = n(i) / self%oldn(i)
-        elseif (n(i) == 0) then
-          self%e(i) = 1.d0
-        else
-          self%e(i) = huge(1.0)
-        endif
-      end do
-      n = max(n, 0.)
-    else
+    !if (zero_pop) then
+    !  self%oldn = n
+    !  n = self%e
+    !  do i=1,self%nlevel
+    !    if (self%oldn(i) > 0) then
+    !      self%e(i) = n(i) / self%oldn(i)
+    !    elseif (n(i) == 0) then
+    !      self%e(i) = 1.d0
+    !    else
+    !      self%e(i) = huge(1.0)
+    !    endif
+    !  end do
+    !  n = max(n, 0.)
+    !else
       ! set limits on corrections
-      !self%e = max(self%e, 0.001d0)
-      self%e = max(self%e, tiny(1.0))
+      self%e = max(self%e, 0.001d0)
+      !self%e = max(self%e, tiny(1.0))
       ! update the populations
       n = n * self%e
-    endif
+    !endif
 
     if (check_NaN) then
       do i=1,self%nlevel
@@ -386,7 +386,7 @@ MODULE atom_mod
           print *, 'Temp  = ', temp
           print *, n(i)
           print *, self%e(i)
-          print *, zero_pop, self%oldn(i)
+          !print *, zero_pop, self%oldn(i)
           stop
         endif
       end do
@@ -409,11 +409,10 @@ MODULE atom_mod
     class(ion_type), pointer :: ion
     class(molec_type), pointer :: mol
     integer :: i, j, x,y,z
-    real(4), intent(inout), dimension(:,:,:,:), pointer, contiguous :: nstar
+    real(4), intent(inout), dimension(:,:,:,:) :: nstar
     real(4), intent(inout), dimension(:,:,:) :: totn
     real(4), intent(in), dimension(:,:,:) :: temp, saha, dxi
     real(4), dimension(:,:,:), allocatable :: partition, f
-    real(4), dimension(:,:,:), pointer :: ndis
     integer :: ijk(3)
     logical :: zero_pop
     integer, save :: itimer=0
@@ -434,35 +433,38 @@ MODULE atom_mod
         endif
       end do
     else
+      partition = self%partition_function(temp, dxi, saha, totn)
       if (associated(mol)) then
-        partition = totn / mol%irwin_partf(dble(temp))
-      else
-        partition = self%partition_function(temp, dxi, saha, totn)
+        nstar(:,:,:,1) = partition ! store partition function from levels
+        partition = totn / qjorg(temp)
+        !partition = totn / mol%irwin_partf(dble(temp))
+        partition = partition * self%g(1)*exp(-self%ev(1)*e_k/temp)
+         ! correct for the use of a different partition function
+        totn = partition / nstar(:,:,:,1) * totn
       endif
 
       do i=1, self%nlevel
-        where(totn == 0)
-          nstar(:,:,:,i) = 0
-        elsewhere
-          nstar(:,:,:,i) = self%lte_pop(i, temp, dxi, saha, partition)
-        endwhere
+        nstar(:,:,:,i) = self%lte_pop(i, temp, dxi, saha, partition)
+      end do
 
+      do i=1, self%nlevel
+        where(totn == 0) nstar(:,:,:,i) = 0
         ijk = findloc(nstar(:,:,:,i), 0., mask=totn>0)
         if (any(ijk > 0)) then
           print *, ' WARNING: ltepop: level ',i,' has zero lte population at', ijk
           !stop
         end if
       end do
-
       if (associated(mol)) then
-        ndis => nstar(:,:,:,self%nlevel)
-        totn = totn - ndis
-        ndis = huge(1.e0)
-        do j=1, mol%nions
-          ion => mol%ions(j)%p
-          ndis = min(ndis, ion%n)
-        end do
-        totn = totn + ndis
+        associate(ndis => nstar(:,:,:,self%nlevel))
+          totn = totn - ndis
+          ndis = huge(1.e0)
+          do j=1, mol%nions
+            ion => mol%ions(j)%p
+            ndis = min(ndis, ion%n*ion%part)
+          end do
+          totn = totn + ndis
+        end associate
       endif
     endif
     call trace%end(itimer)
@@ -481,7 +483,7 @@ MODULE atom_mod
     !---------------------------------------------------------------------------------
     j = self%ion(i_lvl)
     evi = self%ev(i_lvl) - self%ev(1) - dxi * 0.5*(j-1)*j
-    tns = log(self%g(i_lvl)) - e_k/temp*evi
+    tns = log(self%g(i_lvl)/self%g(1)) - e_k/temp*evi
 
     if(j > self%ion(1)) then
       l = j - self%ion(1)
@@ -490,8 +492,8 @@ MODULE atom_mod
 
     tns = tns + log(partition)
 
-    if (tns < -75) then
-      nstar = 0d0
+    if (tns < -85) then
+      nstar = tiny(1.0)
     else
       nstar = exp(tns)
     endif
@@ -511,7 +513,7 @@ MODULE atom_mod
       j = self%ion(i)
       evi = self%ev(i) - self%ev(1) - dxi * 0.5*(j-1)*j
 
-      tns = log(self%g(i)) - e_k/temp*evi
+      tns = log(self%g(i)/self%g(1)) - e_k/temp*evi
 
       if(j > self%ion(1)) then
         l = j - self%ion(1)
@@ -550,17 +552,16 @@ MODULE atom_mod
       if (.not. cont%active) cycle
       i = cont%i
       j = cont%j
-      ii = 0.5*(self%ion(i)*(self%ion(i)-1))
-      jj = 0.5*(self%ion(j)*(self%ion(j)-1))
-      lalpha = log(cont%alpha0)
+      !ii = 0.5*(self%ion(i)*(self%ion(i)-1))
+      !jj = 0.5*(self%ion(j)*(self%ion(j)-1))
       do z=1, n(3)
       do y=1, n(2)
       do x=1, n(1)
-        dev = self%ev(i) - self%ev(j) - dxi(x,y,z)*(ii - jj)
-        tns = log(self%g(i)/self%g(j)) - e_k/temp(x,y,z)*dev
-        tns = tns + (self%ion(i) - self%ion(j))*log(saha(x,y,z))
-        self%data%ni_over_nj_lte(x,y,z,kr) = exp(tns + lalpha)
-        !cont%ni_over_nj_lte(x,y,z) = self%nstar(x,y,z,i) / self%nstar(x,y,z,j)
+        !dev = self%ev(i) - self%ev(j) - dxi(x,y,z)*(ii - jj)
+        !tns = log(self%g(i)/self%g(j)) - e_k/temp(x,y,z)*dev
+        !tns = tns + (self%ion(i) - self%ion(j))*log(saha(x,y,z))
+        !self%data%ni_over_nj_lte(x,y,z,kr) = exp(tns)
+        self%data%ni_over_nj_lte(x,y,z,kr) = self%data%nstar(x,y,z,i) / self%data%nstar(x,y,z,j)
       end do
       end do
       end do
@@ -900,9 +901,6 @@ MODULE atom_mod
 
       cnt%nu_min = cnt%nu_input(1)
       cnt%nu_max = cnt%nu_input(cnt%nnu)
-
-      ! for overflow reasons
-      cnt%alpha_input = cnt%alpha_input / cnt%alpha0
     end do
 
     if (j>0) then
@@ -1304,7 +1302,7 @@ MODULE atom_mod
           select case(cnt%bf_type)
           case('hydrogenic', 'Kramer')
             ! use nu**-3 dependency
-            cnt%alpha = (cnt%nu / cnt%nu0 )**-3
+            cnt%alpha = (cnt%nu / cnt%nu0 )**-3 * cnt%alpha0
           case('detail')
             ! fill new cross sections 
             call cnt%hermite_interp(cnt%alpha, cnt%nu)
@@ -1566,6 +1564,56 @@ MODULE atom_mod
     end do
     weight(n) = 0.5 * ( nu(n) - nu(n-1) )
   END SUBROUTINE set_weights
+
+  !===============================================================================
+  !     calculates partition function for ch
+  !     data from u.g. jorgensen et al. a&a 1996, 315, 204
+  !
+  !: qjorg  98-08-13  new routine: (rouppe van der voort)
+  !:        calculates partition functions for ch
+  !:
+  !:        00-10-25  modifications: (martin asplund)
+  !:        constant extrapolation for t<1000 and t>8000
+  !:        avoided exceeding array limits for t>8000
+  !===============================================================================
+  PURE ELEMENTAL FUNCTION qjorg(temp)  
+    !     data from jorgensen, table 1.
+    !     temperature range t={1000, 8000}
+    !     note that function extapolates for temp>8000 and temp<1000
+    !     for extrapolation for temp>8500 or temp<1000 the results
+    !     differ significant from a polynomial extrapolation (polint)
+    real(4), intent(in) :: temp
+    real(4), parameter :: pfdata(15) = &
+                [203.5,  324.7,  471.2,  646.2,  850.8, 1085.1, 1348.1, &
+                1638.7, 1955.3, 2296.1, 2659.3, 3043.2, 3446.2, 3866.8, 4303.7]
+    real(4), parameter :: tdata(15) = &
+                [1000., 1500., 2000., 2500., 3000., 3500., 4000., &
+                 4500., 5000., 5500., 6000., 6500., 7000., 7500., 8000.]
+    real(4) :: qjorg, x0, x1, y0, y1, b, a
+    integer :: i
+    !-----------------------------------------------------------------------------
+    !     simple linear interpolation between two nearest points
+    do i=1, 14
+      if (temp .eq. tdata(i)) then
+        qjorg = pfdata(i)
+        return
+      elseif (temp .gt. tdata(i) .and. temp .lt. tdata(i+1)) then 
+        x0 = tdata(i)
+        x1 = tdata(i+1)
+        y0 = pfdata(i)
+        y1 = pfdata(i+1)
+      elseif (temp .le. tdata(1)) then
+        qjorg = pfdata(1)
+        return
+      elseif (temp .ge. tdata(15)) then
+        qjorg = pfdata(15)
+        return
+      endif
+    end do
+    b = y0
+    a = (y1 - y0)/(x1 - x0)
+    qjorg = a*(temp - x0) + b
+  END FUNCTION qjorg
 
 END MODULE atom_mod
   

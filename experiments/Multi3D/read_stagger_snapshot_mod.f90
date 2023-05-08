@@ -20,7 +20,7 @@ MODULE read_stagger_snapshot_mod
   real(4), parameter :: uue = uuv**2      ! internal energy per unit mass
   real(4), parameter :: uup = uur * uue   ! pressure
   real(4), parameter :: uua = 1./uul      ! extinction coefficient (alpha)
-  character(len=128), save :: stagger_file='/lustre/astro/rhoppe/multi-3d/input/atmos/t5777g44m00/t5777g44m0005'
+  character(len=128), public :: stagger_file='/lustre/astro/rhoppe/multi-3d/input/atmos/t5777g44m00/t5777g44m0005'
   character(len=128), save :: mesh_file, snap_file, data_file, aux_file
   integer, save :: snap=20, dims(3)=[5,5,230]
   real(4), save :: zcut=-99! in Mm below the surface

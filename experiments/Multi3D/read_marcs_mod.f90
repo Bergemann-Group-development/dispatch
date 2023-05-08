@@ -67,7 +67,7 @@ contains
 
     ds(1:2) = 1d10
     ds(3) = (in_depth(ndepth) - in_depth(1)) / (newn - 1)
-    depth = (/ ( k*ds(3) + in_depth(1), k=0, newn-1 ) /)
+    depth = [( k*ds(3) + in_depth(1), k=0, newn-1 )]
 
     temp(1,1,:) = interp1d(in_depth, in_temp, depth, order=1, sorted=.true.)
     rho (1,1,:) = interp1d(in_depth, in_rho , depth, order=1, sorted=.true.)

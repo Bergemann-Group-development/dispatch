@@ -186,7 +186,7 @@ MODULE atom_line_patch_mod
     class(ion_type), pointer :: He1
     real(4), dimension(:,:,:), pointer, contiguous :: tothi, ne, temp, adamp
     real(4), dimension(:,:,:), pointer, contiguous :: vproj, doppler_factor
-    real(4), dimension(:,:,:), pointer, contiguous :: inv_df, ni, nj, unsold_temp, stark_pe
+    real(4), dimension(:,:,:), pointer, contiguous :: inv_df, ni, nj, vbar2, stark_pe
     real(4), dimension(:,:,:,:), pointer, contiguous :: phi
     real(4), dimension(:,:,:,:), pointer :: nh, chi, eta
     integer :: i, f, p(3), fs, fe, iw, it
@@ -205,7 +205,7 @@ MODULE atom_line_patch_mod
 
     call os%allocate(tothi,       self%n)
     call os%allocate(adamp,       self%n)
-    call os%allocate(unsold_temp, self%n)
+    call os%allocate(vbar2, self%n)
     call os%allocate(stark_pe,    self%n)
     call os%allocate(vproj,       self%n)
     call os%allocate(inv_df,      self%n)
@@ -214,7 +214,7 @@ MODULE atom_line_patch_mod
     inv_df = 1 / doppler_factor
 
     tothi = sum(nh(:,:,:,1:5), 4) ! total neutral hydrogen density
-    unsold_temp =  8.0*BK*temp / PI * (1.0/MH + 1.0/self%atom%awgt)
+    vbar2 =  8.0*BK*temp / PI * (1.0/MH + 1.0/self%atom%awgt)
     stark_pe = ne * bk * temp**one_sixth
 
     do i=1, self%nline
@@ -222,7 +222,7 @@ MODULE atom_line_patch_mod
       select case (line%profile_type)
       case ('voigt')
         adamp = 0
-        call line%damping(adamp, temp, ne, tothi, unsold_temp, stark_pe)
+        call line%damping(adamp, temp, ne, tothi, vbar2, stark_pe)
         if (self%atom%id == 'H') then
           call line%dampingH(adamp, temp, ne, nh(:,:,:,6))
         endif
@@ -258,7 +258,7 @@ MODULE atom_line_patch_mod
 
     call os%deallocate(tothi)
     call os%deallocate(adamp)
-    call os%deallocate(unsold_temp)
+    call os%deallocate(vbar2)
     call os%deallocate(stark_pe)
     call os%deallocate(inv_df)
     call os%deallocate(vproj)

@@ -639,8 +639,8 @@ contains
         real(4), intent(in), dimension(:,:,:,:), pointer, contiguous :: all_eta, all_chi
         real(4), intent(in), dimension(:,:,:), pointer, contiguous :: vproj
         real(4), dimension(:,:,:), allocatable :: tothi, adamp, stark_pe
-        real(4), dimension(:,:,:), pointer, contiguous :: inv_part, unsold_temp, inv_df
-        real(4), dimension(:,:,:), pointer, contiguous :: iso_unsold_temp, iso_inv_df, iso_inv_part
+        real(4), dimension(:,:,:), pointer, contiguous :: inv_part, vbar2, inv_df
+        real(4), dimension(:,:,:), pointer, contiguous :: iso_vbar2, iso_inv_df, iso_inv_part
         real(4), dimension(:,:,:), pointer, contiguous :: ne, temp, EK_over_temp
         real(4), dimension(:,:,:), pointer, contiguous :: unsoldT, idopf, ipart
         real(4), dimension(:,:,:,:), pointer, contiguous :: eta, chi, nh
@@ -658,8 +658,8 @@ contains
         allocate(adamp,           mold=vproj)
         allocate(inv_part,        mold=vproj)
         allocate(iso_inv_part,    mold=vproj)
-        allocate(unsold_temp,     mold=vproj)
-        allocate(iso_unsold_temp, mold=vproj)
+        allocate(vbar2,     mold=vproj)
+        allocate(iso_vbar2, mold=vproj)
         allocate(stark_pe,        mold=vproj)
         m = shape(vproj)
         allocate(nh(m(1), m(2), m(3), 6))
@@ -680,7 +680,7 @@ contains
             inv_df = scalar / sqrt(temp)
     
             scalar = 8.0*BK / PI * (1.0/MH + 1.0/awgt)
-            unsold_temp =  scalar * temp
+            vbar2 =  scalar * temp
             prev_iso = 0
     
             do j=lbound(element%ions,1), ubound(element%ions,1)
@@ -706,13 +706,13 @@ contains
                       scalar = CC / sqrt(2*BK / iso_awgt)
                       iso_inv_df = scalar / sqrt(temp)
                       scalar = 8.0*BK / PI * (1.0/MH + 1.0/iso_awgt)
-                      iso_unsold_temp =  scalar * temp
+                      iso_vbar2 =  scalar * temp
                       iso_inv_part = inv_part * iso%f
-                      unsoldT => iso_unsold_temp
+                      unsoldT => iso_vbar2
                       idopf   => iso_inv_df
                       ipart   => iso_inv_part
                     elseif (line%iso_idx == 0) then
-                      unsoldT => unsold_temp
+                      unsoldT => vbar2
                       idopf   => inv_df
                       ipart   => inv_part
                     endif
@@ -744,7 +744,7 @@ contains
             inv_df = scalar / sqrt(temp)
       
             scalar = 8.0*BK / PI * (1.0/MH + 1.0/awgt)
-            unsold_temp =  scalar * temp
+            vbar2 =  scalar * temp
             inv_part = mol%f * self%toth / mol%irwin_partf(dble(temp))
       
             do l=1, mol%nline
@@ -758,7 +758,7 @@ contains
       
                 call trace%begin('bbtrans_type%damping', itimer=itimer2)
                 adamp = 0
-                call line%damping(adamp, temp, ne, tothi, unsold_temp, stark_pe)
+                call line%damping(adamp, temp, ne, tothi, vbar2, stark_pe)
                 call trace%end(itimer2)
                 call line%add_lte_opacities(nu(ired:iblue), &
                       vproj, inv_df, EK_over_temp, inv_part, adamp, eta, chi)
@@ -774,8 +774,8 @@ contains
         deallocate(adamp)
         deallocate(inv_part)
         deallocate(iso_inv_part)
-        deallocate(unsold_temp)
-        deallocate(iso_unsold_temp)
+        deallocate(vbar2)
+        deallocate(iso_vbar2)
         deallocate(stark_pe)
         deallocate(nh)
     END SUBROUTINE add_linelist_opacities
@@ -992,11 +992,11 @@ contains
                 ! number of electrons from ion
                 xnen = ion%f * (j-1)
                 
-                ! number of electrons from elements other than HI
-                if (ion%id /= 'H I') self%fe = self%fe + xnen
+                ! number of electrons from elements other than H
+                if (trim(element%id) /= 'H') self%fe = self%fe + xnen
                 
                 ! number of electrons from elements other than H, C, N, O
-                if (all(trim(element%id) /= ['H', 'C', 'N', 'O'])) then
+                if (findloc(['H', 'C', 'N', 'O'], trim(element%id), 1) == 0) then
                     xnecno = xnecno + xnen
                 endif
 
@@ -1263,7 +1263,7 @@ contains
         real(dp), dimension(:,:,:), allocatable, intent(inout) :: eh, pg, fe
         real(dp), dimension(:,:,:), allocatable :: r, s, b, pefe, p, q
         class(molec_type), pointer :: molecules(:)
-        class(molec_type), pointer :: H2, CN, H2p
+        class(molec_type), pointer :: H2, CN, H2p, CO, N2
         type(ion_pointer_t) :: ions(4)
         class(ion_type), pointer :: H, C, N, O, ion, ioni, ionj
         class(ion_type), pointer :: Hm
@@ -1291,7 +1291,9 @@ contains
         molecules => self%molecules
 
         call self%molecule_by_id('H2' , H2)
+        call self%molecule_by_id('N2' , N2)
         call self%molecule_by_id('CN' , CN)
+        call self%molecule_by_id('CO' , CO)
         call self%molecule_by_id('H2+', H2p)
         
         ions(1)%p => H
@@ -1319,16 +1321,17 @@ contains
             Hm%pk = 1/Hm%saha
             H%fil = 1 + H%saha + Hm%pk
             fe = xnecno
-            q = - fe/pe / H2%dis
-            p = - H%fil * q
+            b = H2%dis * pe/fe
+            q = - H%abund/b
+            p = H%fil/b
             H%f = solve_quadratic(p, q)
 
             fe = H%f * (H%saha - Hm%pk) + xnecno
 
             where (fe <= 0)
-                r = H2%dis * Hm%saha * Hm%saha
-                s = r - H%fil*Hm%saha
-                p = (H%fil*Hm%saha * xnecno - 1 - 2*xnecno*r) / s
+                r = H2%dis * Hm%saha
+                s = r - H%fil
+                p = (H%fil*xnecno - Hm%pk - 2*xnecno*r) / s
                 q = r*xnecno*xnecno/s
                 fe = solve_quadratic(p, q, avoid_negative=.true.)
                 H%f = (xnecno - fe)*Hm%saha
@@ -1343,7 +1346,7 @@ contains
         end do
 
         where (tmolim)
-            b = C%f_of_molecules_with(O)
+            b = CO%dis * pefe
             O%fil = 1 + O%saha + O%f_of_molecules_with(H)
             C%fil = 1 + C%saha + C%f_of_molecules_with(H)
 
@@ -1355,9 +1358,9 @@ contains
             CN%f = CN%calc_f(pefe) ! has to be recalculated since C%f changed
             
             N%fil = 1 + N%saha + N%f_of_molecules_with(H) + N%f_of_molecules_with(C)
-            b = 1 / N%f_of_molecules_with(N, count_double=.true.) 
-            p = 2*N%fil*b
-            q = - 2*N%abund*b
+            b = 2*N2%dis * pefe
+            q = -N%abund/b
+            p = N%fil/b
             N%f = solve_quadratic(p, q)
             where (N%f < 0) N%f = 0
         end where

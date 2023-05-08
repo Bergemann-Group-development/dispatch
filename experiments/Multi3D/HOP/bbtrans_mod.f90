@@ -439,19 +439,19 @@ contains
   !------------------------------------------------------------------------------------
 
   !====================================================================================
-  PURE ELEMENTAL SUBROUTINE line_damping (self, adamp, temp, ne, tothi, unsold_temp, stark_pe)
+  PURE ELEMENTAL SUBROUTINE line_damping (self, adamp, temp, ne, tothi, vbar2, stark_pe)
     class(bbtrans_type), intent(in)  :: self
-    real(4), intent(in)  :: temp, ne, tothi, unsold_temp, stark_pe
+    real(4), intent(in)  :: temp, ne, tothi, vbar2, stark_pe
     real(4), intent(inout) :: adamp
     !----------------------------------------------------------------------------------
     ! Van der Waals Broadening
     if(self%unsold) then
-      adamp = adamp + self%gw1 * unsold_temp**0.3 * tothi
+      adamp = adamp + self%gw1 * vbar2**0.3 * tothi
     elseif (self%gw2 == 0) then
       ! recipe 'W' Turbospectrum
       adamp = adamp + self%gw1 * temp**0.3 * tothi
     else
-      adamp = adamp + self%gw1 * unsold_temp**self%gw2 * tothi
+      adamp = adamp + self%gw1 * vbar2**self%gw2 * tothi
     endif
 
     ! Stark Broadening
@@ -580,7 +580,7 @@ contains
     class(bbtrans_type), intent(inout)  :: self
     integer, intent(in) :: lower_ion
     real(dp), intent(in) :: gv, cnt_ev
-    real(dp) :: upper_ev, sigma, alpha, gx, gammaf, balfac, c1
+    real(dp) :: upper_ev, sigma, alpha, gx, gammaf, balfac, c1, c625
     !----------------------------------------------------------------------------------
     ! compute van der waals broadening due to hydrogen
     ! following Barklem
@@ -609,9 +609,9 @@ contains
       ! 0.3d-30^0.4 = 6.1780059e-13 and  8.411 should be 17
       ! I haven't found the original reference to Unsold 1955 yet...
       c1 = 1./(cnt_ev - upper_ev)**2 - 1./(cnt_ev - self%lower_ev)**2
+      c625 = (lower_ion**2 * c1)**0.4 ! c6^(2/5) impact approximation
       if (c1 > 0) then
-        c1 = c1**0.4
-        self%gw1 = gv * 8.411 * 1.283984e-12 * lower_ion**0.8 * c1
+        self%gw1 = gv * 8.411 * 1.283984e-12 * c625
       else
         call self%deactivate()
       endif
