@@ -52,10 +52,10 @@ boundaries_mod.o            : standard_boundaries_mod.o io_mod.o trace_mod.o \
 guards_mod.o                : math_mod.o
 coll_var.o                  : coll_mod.o
 coll_mod.o                  : mmath.o 
-atom_mod.o                  : m3io_mod.o trans_mod.o coll_mod.o op_math_mod.o spectrum_mod.o element_mod.o molecule_mod.o handyfuncs_mod.o
-spectrum_mod.o              : io_mod.o timer_mod.o trace_mod.o mconst.o trans_mod.o
+atom_mod.o                  : m3io_mod.o trans_mod.o coll_mod.o op_math_mod.o spectrum_mod.o element_mod.o molecule_mod.o handyfuncs_mod.o hprofl_mod.o
+spectrum_mod.o              : io_mod.o timer_mod.o trace_mod.o mconst.o trans_mod.o handyfuncs_mod.o
 m3d_halo_mod.o              : halo_mod.o guards_mod.o gpatch_mod.o
-m3d_patch_mod.o             : gpatch_mod.o atom_mod.o ray_mod.o m3d_halo_mod.o handyfuncs_mod.o m3d_debug_mod.o
+m3d_patch_mod.o             : gpatch_mod.o atom_mod.o ray_mod.o m3d_halo_mod.o handyfuncs_mod.o m3d_debug_mod.o composition_mod.o
 ray_patch_mod.o             : m3d_patch_mod.o
 angle_rad_patch_mod.o       : ray_patch_mod.o back_cont_patch_mod.o proj_patch_mod.o
 atom_rate_patch_mod.o       : ray_patch_mod.o angle_rad_patch_mod.o atom_line_patch_mod.o mean_rad_patch_mod.o
