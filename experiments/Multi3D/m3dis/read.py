@@ -152,10 +152,11 @@ class read(object):
         else:
             self.mode = 'NLTE'
 
-
     #=====================================================================
-    def set_xaxis(self, lam, dlam=None):
+    def get_xx(self, lam, dlam=None, xmin=None, xmax=None):
         #-----------------------------------------------------------------
+        ib = None
+        ir = None
         if dlam is not None:
             if isinstance(dlam, tuple):
                 dl = dlam[:]
@@ -165,21 +166,25 @@ class read(object):
 
             ib = np.searchsorted(lam, dl[0])
             ir = np.searchsorted(lam, dl[1])
-            plt.xlim(*dl)
-            plt.xlabel('$\Delta\lambda$ [Å]')
-        else:
-            ib = 0
-            ir = -1
-            diff = 0.05*(lam[ir] - lam[ib])
-            plt.xlim(lam[ib]-diff, lam[ir]+diff)
-            plt.xlabel('Wavelength [Å]')
+
+        if xmin is not None: ib = np.searchsorted(lam, xmin)
+        if xmax is not None: ir = np.searchsorted(lam, xmax)
 
         mask = slice(ib, ir)
-        plt.ticklabel_format(useOffset=False)
-
         return lam[mask], mask
 
+    #=====================================================================
+    def set_xaxis(self, xx, dlam=None):
+        #-----------------------------------------------------------------
+        if dlam is not None:
+            plt.xlim(min(xx), max(xx))
+            plt.xlabel('$\Delta\lambda$ [Å]')
+        else:
+            diff = 0.05*(xx[0] - xx[-1])
+            plt.xlim(xx[0]-diff, xx[-1]+diff)
+            plt.xlabel('Wavelength [Å]')
 
+        plt.ticklabel_format(useOffset=False)
 
     #=====================================================================
     def set_yaxis(self, ang, imu, norm, renorm=False):
@@ -203,6 +208,8 @@ class read(object):
     #=====================================================================
     def get_yy(self, ang=None, imu=None, norm=True, LTE=False, mask=slice(None, None)):
         #-----------------------------------------------------------------
+        if self.n_ang == 1: ang=0
+
         if ang is None and imu is None:
             cnt = self.flux_cnt
             if LTE:
@@ -234,15 +241,11 @@ class read(object):
             yy = yy / cnt
             
         return yy, cnt
-
-
+    
     #=====================================================================
-    def plot_spectrum(self, ang=None, imu=None, norm=True, LTE=False,
-                      vdop=None, vshift=None, lam0=None, dlam=10, 
-                      show_lines=False, **kwargs):
+    def crop(self, lam0=None, dlam=None, xmin=None, xmax=None, vdop=None, 
+             vshift=None, **kwargs):
         #-----------------------------------------------------------------
-        if self.n_ang == 1: ang=0
-
         xx = self.lam
 
         if lam0 is not None:
@@ -251,26 +254,33 @@ class read(object):
             dlam = None
             lam0 = 0
 
-        xx, mask = self.set_xaxis(xx, dlam)
-        yy, cnt = self.get_yy(ang, imu, norm, LTE, mask)
+        xx, mask = self.get_xx(xx, dlam, xmin, xmax)
+        yy, cnt = self.get_yy(mask=mask, **kwargs)
         xx = xx + lam0
 
         if vdop is not None or vshift is not None:
             sxx, syy = convol(xx, yy, vdop=vdop, vshift=vshift)
             yy = np.interp(xx, sxx, syy)
+
+        return xx, yy
+
+    #=====================================================================
+    def plot_spectrum(self, ang=None, imu=None, norm=True, LTE=False,
+                      vdop=None, vshift=None, lam0=None, dlam=10, 
+                      show_lines=False, xmin=None, xmax=None,  **kwargs):
+        #-----------------------------------------------------------------
+        xx, yy = self.crop(lam0=lam0, dlam=dlam, ang=ang, imu=imu, norm=norm,
+                           xmin=xmin, xmax=xmax, LTE=LTE, vdop=vdop, vshift=vshift)
         
+        self.set_xaxis(xx, dlam)
         self.set_yaxis(ang, imu, norm)
-        
-        xmin, xmax, ymin, ymax = plt.axis()
-        plt.xlim(xmin+lam0, xmax+lam0)
+
         plt.xlabel('Wavelength [Å]')
 
         if show_lines:
             self.plot_line_labels()
 
-        plt.plot(xx, yy, **kwargs)
-
-        return xx, yy
+        return plt.plot(xx, yy, **kwargs)
     
     #=====================================================================
     def plot_line_labels(self, lam0=None, nbins=4):
@@ -308,6 +318,13 @@ class read(object):
             plt.text(x=x, y=occu[i], s=idx, rotation=45, color='grey', fontsize=8)
 
         plt.ylim(ymin, occu.max() + (ymax-ymin)/5)
+
+    #=====================================================================
+    def get_populations(self):
+        mem = self.read_patch_save('atom_patch')[0]
+        lte  = mem[...,0]
+        nlte = mem[...,1]
+        return lte, nlte
 
     #=====================================================================
     def get_depart(self, ilvl, mean=True, xxin=None):
@@ -357,6 +374,46 @@ class read(object):
                 plt.axvline(bot, linewidth=0.2)
 
         return xx, yy
+    
+    #=====================================================================
+    def get_cog_corr(self, element, LTE_runs, **kwargs):
+        #-----------------------------------------------------------------
+        xx, yy = self.crop(norm=True, **kwargs)
+        weq = np.trapz(1-yy, x=xx)*1e3
+        abnd = self.abundances[element]
+
+        lte_abnd = np.zeros(len(LTE_runs))
+        lte_weqs = np.zeros(len(LTE_runs))
+        for i, run in enumerate(LTE_runs):
+            lte_abnd[i] = run.abundances[element]
+            xx, yy = run.crop(norm=True, LTE=True, **kwargs)
+            lte_weqs [i] = np.trapz(1-yy, x=xx)*1e3
+
+        order = np.argsort(lte_weqs)
+        lte_weqs = lte_weqs[order]
+        lte_abnd = lte_abnd[order]
+
+        a0 = np.interp(weq, lte_weqs, lte_abnd)
+        corr = abnd - a0
+
+        return corr, lte_weqs, lte_abnd, weq, abnd
+
+    #=====================================================================
+    def plot_cog_corr(self, element, **kwargs):
+        #-----------------------------------------------------------------
+        corr, lte_weqs, lte_abnd, weq, abnd = self.get_cog_corr(element=element,**kwargs)
+        plt.scatter(lte_weqs, lte_abnd, label='LTE', color='cornflowerblue')
+        label = 'NLTE\n∆A={:.2f}'.format(corr)
+        plt.scatter(weq, abnd, label=label, color='k')
+        plt.xlabel(r'W$_{eq}$')
+        plt.ylabel('A({})'.format(element))
+
+        a0 = abnd - corr
+        plt.scatter(weq, a0, facecolor='none', color='k')
+        plt.annotate('', xy=(weq, a0), xytext=(weq, abnd),
+                    arrowprops=dict(arrowstyle='<-', color='k'))
+        plt.legend(loc='lower right')
+
 
     #=====================================================================
     def read_patch_save(self, kind, concat=True):
@@ -387,6 +444,7 @@ class read(object):
         all_inu = np.unique([key[1] for key in dct.keys()])
         f_indep = all_inu.sum() == 0
         if kind in ['out_rad', 'ie']: f_indep = False
+        if kind in ['atom_rate']: f_indep = True
 
         if concat:
             return self.concat_patches(dct, kind, f_indep)
