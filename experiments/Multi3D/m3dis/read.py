@@ -17,7 +17,7 @@ cc = 2.99792458e10 # Speed of light [cm/s]
 #=====================================================================
 class read(object):
     #=================================================================
-    def __init__(self, folder):
+    def __init__(self, folder, verbose=0):
         #-------------------------------------------------------------
         folder = folder + os.sep
         sfolder = folder + 'save' + os.sep
@@ -29,7 +29,7 @@ class read(object):
         
         if os.path.isfile(folder + 'atom.txt'):
             self.qnorm = self.nml['atom_params']['qnorm']
-            self.atom = atom_class(folder + 'atom.txt', qnorm=self.qnorm)
+            self.atom = atom_class(folder + 'atom.txt', qnorm=self.qnorm, verbose=verbose)
             loggf_cut = self.nml['atom_params']['logf_cut']
             red_cut   = self.nml['atom_params']['red_cut']
             blue_cut  = self.nml['atom_params']['blue_cut']
@@ -39,6 +39,8 @@ class read(object):
                 self.atom.abnd = self.abundances[self.atom.id]
             elif in_abnd > -99:
                 self.atom.abnd = in_abnd
+
+            self.atom.title = 'A({}) = {:.2f}'.format(self.atom.id, self.atom.abnd)
         
             if 'line_mask' in self.nml.keys():
                 in_lines = self.nml['line_mask']['in_lines']
@@ -52,7 +54,7 @@ class read(object):
             self.nline = len(lines)
             self.line = lines
         
-        print('Reading wavelengths')
+        if (verbose > 0): print('Reading wavelengths')
         self.lam = np.fromfile(sfolder + 'out_lam.bin', dtype=np.float64)
         self.lam = vacuum2obs(self.lam[::-1])
         self.dlam = np.diff(self.lam)
@@ -64,7 +66,7 @@ class read(object):
         if os.path.isfile(sfolder + 'all_lam.bin'):
             self.all_lam = vacuum2obs(np.fromfile(sfolder + 'all_lam.bin', dtype=np.float64))[::-1]
         
-        print('Reading Intensities')
+        if (verbose > 0): print('Reading Intensities')
         file = folder + 'angle_quadrature.txt'
         df = pd.read_csv(file, header=None, skiprows=1, sep='\s+', names=['ang', 'wmu', 'mux', 'muy', 'muz'])
         self.vec = df.values[:,2:]
@@ -208,6 +210,7 @@ class read(object):
     #=====================================================================
     def get_yy(self, ang=None, imu=None, norm=True, LTE=False, mask=slice(None, None)):
         #-----------------------------------------------------------------
+        if imu >= self.nmu: raise ValueError('imu is out of range. Nmu = {:}'.format(self.nmu))
         if self.n_ang == 1: ang=0
 
         if ang is None and imu is None:
@@ -263,6 +266,22 @@ class read(object):
             yy = np.interp(xx, sxx, syy)
 
         return xx, yy
+    
+    #=====================================================================
+    def interp(self, newx, vdop=None, vshift=None, **kwargs):
+        #-----------------------------------------------------------------
+        ib = np.searchsorted(self.lam, newx[0])
+        ir = np.searchsorted(self.lam, newx[-1])
+        mask = slice(ib, ir)
+
+        xx = self.lam[mask]
+        yy, cnt = self.get_yy(mask=mask, **kwargs)
+
+        if vdop is not None or vshift is not None:
+            xx, yy = convol(xx, yy, vdop=vdop, vshift=vshift)
+
+        yy = np.interp(newx, xx, yy)
+        return yy
 
     #=====================================================================
     def plot_spectrum(self, ang=None, imu=None, norm=True, LTE=False,

@@ -25,8 +25,8 @@ class atom_class(object):
     def _read(self, dtype=None):
         return _read(self.f, dtype)
     
-    def __init__(self, atom_file, atmos=None, qnorm=10, read_coll=False):
-        print('Reading atom')
+    def __init__(self, atom_file, atmos=None, qnorm=10, read_coll=False, verbose=0):
+        if (verbose > 0): print('Reading atom')
         
         self.file = atom_file
         
@@ -47,12 +47,12 @@ class atom_class(object):
         self.qnorm = qnorm
         
         # Reading energy levels
-        print('Reading energy levels')
+        if (verbose > 0): print('Reading energy levels')
         for i in range(self.nk):
             self.level[i] = level_class(self, i)
         
         # Reading transitions
-        print('Reading transitions')
+        if (verbose > 0): print('Reading transitions')
         for kr in range(self.nrad):
             self.trans[kr] = trans_class(self, kr)
             
@@ -71,7 +71,6 @@ class atom_class(object):
                     key = self._read()[0]
 
         self.f.close()
-        self.title = 'A({}) = {:.2f}'.format(self.id, self.abnd)
                 
                 
     def partitionFunction(self, temp, ne):
