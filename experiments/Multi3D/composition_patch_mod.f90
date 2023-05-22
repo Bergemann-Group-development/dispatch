@@ -53,7 +53,7 @@ SUBROUTINE composition_pre_init (self)
   type(composition_type), save :: composition
   class(atom_patch_t), pointer :: atom_patch
   class(atomic_spectrum_type), save, pointer :: output_sp
-  integer :: iostat, n_nu, n_mu
+  integer :: i, iostat, n_nu, n_mu, nlists
   integer, save:: itimer=0, itimer2=0
   integer, save :: verbose=0
   character(len=128), save :: absdat_file='./input_multi3d/absdat'
@@ -61,11 +61,12 @@ SUBROUTINE composition_pre_init (self)
   character(len=128), save :: isotope_file=''!'./input_multi3d/isotopes_abund.txt'
   character(len=128), save :: molec_file='./input_multi3d/molec_data.txt'
   character(len=128), save :: absmet_file=''
-  character(len=128), save :: linelist_file=''
+  character(len=512), save :: linelist_file=''
+  character(len=128), save :: line_lists(10)=''
   logical, save :: first_time=.true., absmet_big_end=.false., external_sp
   namelist /composition_params/ verbose, absdat_file, abund_file, absmet_file, &
   absmet_big_end, isotope_file, molec_file
-  namelist /linelist_params/ dlam, exclude_elements, linelist_file
+  namelist /linelist_params/ dlam, exclude_elements, linelist_file, line_lists
   ! ----------------------------------------------------------------------------
   call trace%begin('composition_patch_t%composition_pre_init', itimer=itimer)
   self%kind = 'composition'
@@ -99,7 +100,17 @@ SUBROUTINE composition_pre_init (self)
     call trace%begin('compositiont%init', itimer=itimer2)
     call composition%init(absdat_file, abund_file, absmet_file, FeH, &
     isotope_file=isotope_file, molec_file=molec_file, absmet_big_end=absmet_big_end)
-    call composition%init_linelist(linelist_file)
+
+    if (linelist_file /= '') then
+      call composition%init_linelist(linelist_file)
+    else
+      i = 1
+      do while (line_lists(i) /= '' .and. i <= size(line_lists))
+        call composition%init_linelist(line_lists(i))
+        i = i + 1
+      end do
+    endif
+
     call trace%end(itimer2)
     
     allocate(output_sp)
@@ -135,7 +146,7 @@ SUBROUTINE composition_pre_init (self)
     endif
   else
     deallocate(atom_patch)
-    if (external_sp) then
+    if (.not. external_sp) then
       stop 'No atom nor output spectrum specified! Stopping...'
     endif
   endif

@@ -76,6 +76,7 @@ MODULE atom_patch_mod
     logical, save :: exclude_from_line_list=.true.
     character(len=128), save :: precomputed_depart=''
     character(len=128), public :: atom_file=''
+    real(4), public :: vmic = 0
 
     !-----------------------------------------------------------------------------
   
@@ -272,32 +273,33 @@ MODULE atom_patch_mod
     call trace%begin('atom_patch_t%pre_init_spectrum', itimer=itimer)
     if (first_time) then
       first_time = .false.
-
-      if (decouple_continuum) then
-        bf_sp%name = 'bound-free'
-        call self%bf_atom%create_spectrum(bf_sp, bf=.true., sort=overlapping_bf)
-        call self%bf_atom%set_ired_iblue(bf_sp, bf=.true., set_active=.true.)
-        call bf_sp%save('bf')
-
-        bb_sp%name = 'bound-bound'
-        call self%bb_atom%create_spectrum(bb_sp, bb=.true., sort=overlapping_bb)
-        call self%bb_atom%set_ired_iblue(bb_sp, bb=.true., set_active=.true.)
-        call bb_sp%save('bb')
-
-      else
-        sp%name = 'all'
-        call self%atom%create_spectrum(sp, bb=.true., bf=.true.)
-        call self%atom%set_ired_iblue(sp, bb=.true., bf=.true., set_active=.true.)
-        call sp%save('all')
-      endif
-
       external_sp = output_sp%nnu > 0 
-      if (external_sp) then
-        call self%output_atom%set_ired_iblue(output_sp, bb=.true., bf=.true.) 
-      else
-        output_sp%name = 'output based on atom'
-        call self%output_atom%create_spectrum(output_sp, bb=.true.)
-        call self%output_atom%set_ired_iblue(output_sp, bb=.true., bf=.true.) 
+      if (associated(self%atom)) then
+        if (decouple_continuum) then
+          bf_sp%name = 'bound-free'
+          call self%bf_atom%create_spectrum(bf_sp, bf=.true., sort=overlapping_bf)
+          call self%bf_atom%set_ired_iblue(bf_sp, bf=.true., set_active=.true.)
+          call bf_sp%save('bf')
+
+          bb_sp%name = 'bound-bound'
+          call self%bb_atom%create_spectrum(bb_sp, bb=.true., sort=overlapping_bb)
+          call self%bb_atom%set_ired_iblue(bb_sp, bb=.true., set_active=.true.)
+          call bb_sp%save('bb')
+
+        else
+          sp%name = 'all'
+          call self%atom%create_spectrum(sp, bb=.true., bf=.true.)
+          call self%atom%set_ired_iblue(sp, bb=.true., bf=.true., set_active=.true.)
+          call sp%save('all')
+        endif
+
+        if (external_sp) then
+          call self%output_atom%set_ired_iblue(output_sp, bb=.true., bf=.true.) 
+        else
+          output_sp%name = 'output based on atom'
+          call self%output_atom%create_spectrum(output_sp, bb=.true.)
+          call self%output_atom%set_ired_iblue(output_sp, bb=.true., bf=.true.) 
+        endif
       endif
       call output_sp%save('out')
     endif
@@ -350,7 +352,7 @@ MODULE atom_patch_mod
 
     call os%allocate(atom%data%doppler_factor, self%n, label='doppler_factor')
     df => atom%data%doppler_factor
-    df = atom%compute_doppler_factor(temp)
+    df = atom%compute_doppler_factor(temp, vmic)
 
     element => null()
     molec   => null()

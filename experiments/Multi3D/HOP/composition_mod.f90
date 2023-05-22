@@ -455,7 +455,7 @@ contains
                     allocate(element%isotope(n_iso))
                     do i=1, n_iso
                         iso => element%isotope(i)
-                        read(lunit, *) iso%iso, iso%mass, iso%f
+                        read(lunit, *) iso%iso, iso%awgt, iso%f
                     end do
                 endif
                 read(lunit, *, iostat=iostat) text
@@ -480,15 +480,18 @@ contains
         character(len=*) :: linelist_file
         character(20) :: mass_id
         character(20) :: ion_id
-        real(dp) :: lam0, gv, gq, loggf, ent8, ent9, mass, cnt_ev, lam_vac
+        real(dp) :: lam0, gv, gq, loggf, ent8, ent9, mass, cnt_ev, lam_vac, vbar2e4
         character :: lower_orb, upper_orb
         character(len=150) :: label
         character :: char
-        integer :: lunit, iostat, j, nline, i, prev, iso_id, ntotal=0, iso_idx, nactive=0
+        integer :: lunit, iostat, j, nline, i, prev, iso_id, iso_idx
+        integer, save :: ntotal, nactive
         logical :: isotope, ok
         !-----------------------------------------------------------------------------
         if (linelist_file == '' .and. .not. self%ll_initialised) return
         self%ll_initialised = .true.
+        ntotal = 0
+        nactive = 0
 
         call os%check_file(linelist_file)
         open(newunit=lunit, file=linelist_file, iostat=iostat)
@@ -510,9 +513,13 @@ contains
             endif
             
             if (associated(ion) .and. isotope) then
-                iso_id = nint((mass - int(mass))*1000)
-                iso_idx = findloc(element%isotope%iso, iso_id, 1)
-                ok = iso_idx > 0
+                if (allocated(element%isotope)) then
+                    iso_id = nint((mass - int(mass))*1000)
+                    iso_idx = findloc(element%isotope%iso, iso_id, 1)
+                    ok = iso_idx > 0
+                else
+                    ok = .false.
+                endif
             endif
 
             if (.not. ok) then
@@ -579,8 +586,13 @@ contains
 
                 if (associated(ion)) then
                     cnt_ev = ion%levels(1)%xion
-                    call line%prepare_VanderWaals(gv, j, cnt_ev)
-                    if (isotope) line%iso_idx = iso_idx
+                    if (isotope) then
+                        line%iso_idx = iso_idx
+                        vbar2e4 = element%isotope(iso_idx)%compute_vbar2(10000.)
+                    else
+                        vbar2e4 = element%compute_vbar2(10000.)
+                    endif
+                    call line%prepare_VanderWaals(gv, j, cnt_ev, vbar2e4)
                 endif
 
                 if (line%active) nactive = nactive + 1
@@ -588,13 +600,13 @@ contains
             end do
         end do
         close(lunit)
-        print *, nactive, ' of ', ntotal, ' lines read from linelist ', linelist_file
+        print '(I12, a, I12, a, a)', nactive, ' of ', ntotal, ' lines read from linelist ', trim(linelist_file)
         call self%mask_linelist()
     END SUBROUTINE init_linelist
 
     !===============================================================================
     SUBROUTINE mask_linelist (self)
-        class(composition_type), target :: self
+      class(composition_type), target :: self
       class(element_type), pointer :: element
       class(molec_type), pointer :: mol
       integer :: n_excluded, i, ii, p
@@ -618,10 +630,12 @@ contains
         call self%element_by_id(id, element)
         if (associated(element)) then
           element%ions%in_linelist = .false.
+          print *, 'removing ', trim(element%id), ' from linelist'
         else
           call self%molecule_by_id(id, mol)
           if (associated(mol)) then
             mol%in_linelist = .false.
+            print *, 'removing ', trim(mol%id), ' from linelist'
           endif
         endif
       end do
@@ -641,10 +655,10 @@ contains
         real(4), dimension(:,:,:), allocatable :: tothi, adamp, stark_pe
         real(4), dimension(:,:,:), pointer, contiguous :: inv_part, vbar2, inv_df
         real(4), dimension(:,:,:), pointer, contiguous :: iso_vbar2, iso_inv_df, iso_inv_part
-        real(4), dimension(:,:,:), pointer, contiguous :: ne, temp, EK_over_temp
-        real(4), dimension(:,:,:), pointer, contiguous :: unsoldT, idopf, ipart
+        real(4), dimension(:,:,:), pointer, contiguous :: ne, temp, EK_over_temp, dxij
+        real(4), dimension(:,:,:), pointer, contiguous :: vb2, idopf, ipart, eta_fac, chi_fac
         real(4), dimension(:,:,:,:), pointer, contiguous :: eta, chi, nh
-        integer :: i, j, l, f, ired, iblue, nactive, prev_iso, m(3)
+        integer :: i, j, k, l, f, ired, iblue, nactive, prev_iso, m(3)
         real(8) :: cnt_ev, gf, awgt, iso_awgt
         real(4) :: scalar
         integer, save:: itimer=0, itimer2=0
@@ -658,9 +672,13 @@ contains
         allocate(adamp,           mold=vproj)
         allocate(inv_part,        mold=vproj)
         allocate(iso_inv_part,    mold=vproj)
-        allocate(vbar2,     mold=vproj)
-        allocate(iso_vbar2, mold=vproj)
+        allocate(vbar2,           mold=vproj)
+        allocate(iso_vbar2,       mold=vproj)
         allocate(stark_pe,        mold=vproj)
+        allocate(dxij,            mold=vproj)
+        allocate(eta_fac,         mold=vproj)
+        allocate(chi_fac,         mold=vproj)
+        allocate(dxij,            mold=vproj)
         m = shape(vproj)
         allocate(nh(m(1), m(2), m(3), 6))
         call self%get_nhyd(nh)
@@ -669,18 +687,14 @@ contains
         temp = real(self%temp)
         EK_over_temp = real(self%EK_over_temp)
         tothi = sum(nh(:,:,:,1:5), 4) ! total neutral hydrogen density
-        stark_pe = ne * BK * temp**one_sixth
+        stark_pe = ne * temp**one_sixth
 
         do i=1, self%nel
             element => self%elements(i)
             if (.not. any(element%ions%in_linelist)) cycle
     
-            awgt = element%awgt * UU
-            scalar = CC / sqrt(2*BK / awgt)
-            inv_df = scalar / sqrt(temp)
-    
-            scalar = 8.0*BK / PI * (1.0/MH + 1.0/awgt)
-            vbar2 =  scalar * temp
+            inv_df = 1 / element%compute_doppler_factor(temp, 0.0)
+            vbar2 = element%compute_vbar2(temp)
             prev_iso = 0
     
             do j=lbound(element%ions,1), ubound(element%ions,1)
@@ -689,6 +703,7 @@ contains
     
                 ! ion%part is actually the inverse partition
                 inv_part = ion%n * ion%part
+                dxij = real(self%dxi) * (ion%j-1)
     
                 do l=1, ion%nline
                     line => ion%line(l)
@@ -702,30 +717,27 @@ contains
                     if (line%iso_idx /= prev_iso) then
                       prev_iso = line%iso_idx
                       iso => element%isotope(line%iso_idx)
-                      iso_awgt = iso%mass * UU
-                      scalar = CC / sqrt(2*BK / iso_awgt)
-                      iso_inv_df = scalar / sqrt(temp)
-                      scalar = 8.0*BK / PI * (1.0/MH + 1.0/iso_awgt)
-                      iso_vbar2 =  scalar * temp
+                      iso_inv_df = 1 / iso%compute_doppler_factor(temp, 0.0)
+                      iso_vbar2 = iso%compute_vbar2(temp)
                       iso_inv_part = inv_part * iso%f
-                      unsoldT => iso_vbar2
+                      vb2 => iso_vbar2
                       idopf   => iso_inv_df
                       ipart   => iso_inv_part
                     elseif (line%iso_idx == 0) then
-                      unsoldT => vbar2
+                      vb2 => vbar2
                       idopf   => inv_df
                       ipart   => inv_part
                     endif
     
                     call trace%begin('bbtrans_type%damping', itimer=itimer2)
                     adamp = 0
-                    call line%damping(adamp, temp, ne, tothi, unsoldT, stark_pe)
+                    call line%damping(adamp, ne, tothi, vb2, stark_pe)
                     if (element%id == 'H') then
                       call line%dampingH(adamp, temp, ne, nh(:,:,:,6))
                     endif
                     call trace%end(itimer2)
                     call line%add_lte_opacities(nu(ired:iblue), &
-                          vproj, idopf, EK_over_temp, ipart, adamp, eta, chi)
+                          vproj, idopf, EK_over_temp, dxij, ipart, adamp, eta_fac, chi_fac, eta, chi)
                 end do
             end do
         end do
@@ -746,6 +758,7 @@ contains
             scalar = 8.0*BK / PI * (1.0/MH + 1.0/awgt)
             vbar2 =  scalar * temp
             inv_part = mol%f * self%toth / mol%irwin_partf(dble(temp))
+            dxij = 0.0
       
             do l=1, mol%nline
                 line => mol%line(l)
@@ -758,10 +771,10 @@ contains
       
                 call trace%begin('bbtrans_type%damping', itimer=itimer2)
                 adamp = 0
-                call line%damping(adamp, temp, ne, tothi, vbar2, stark_pe)
+                call line%damping(adamp, ne, tothi, vbar2, stark_pe)
                 call trace%end(itimer2)
                 call line%add_lte_opacities(nu(ired:iblue), &
-                      vproj, inv_df, EK_over_temp, inv_part, adamp, eta, chi)
+                      vproj, inv_df, EK_over_temp, dxij, inv_part, adamp, eta_fac, chi_fac, eta, chi)
             end do
         end do
 
@@ -1081,7 +1094,7 @@ contains
         call self%ion_by_id('H I', HI)
         call self%ion_by_id('HE I', HeI)
         
-        p6 = LOG10((HI%f + 0.42*HeI%f + 0.85*(H2%f + H2p%f)) * self%toth * BK * self%temp)
+        p6 = LOG10((HI%f + 0.41336*HeI%f + 0.85*(H2%f + H2p%f)) * self%toth * BK * self%temp)
     END SUBROUTINE compute_p6
 
     !===============================================================================
@@ -1561,32 +1574,6 @@ contains
         stop
     END SUBROUTINE trans_by_id
 
-    !===============================================================================
-    ! PE: 22-09-21: Convert to elemental FUNCTION
-    real(8) elemental FUNCTION planck(nu,t) result(bnu)
-        !---------------------------------------------------------------------
-        !
-        !  calculates planck FUNCTION bnu at frequency nu, temp t
-        !
-        !---------------------------------------------------------------------
-        USE mconst
-        implicit none
-        real(8), intent(in)  :: nu
-        real(8), intent(in)  :: t
-        real(8) :: x, c1,c2
-
-        c1=2.0*hh*nu**3/cc**2
-        c2=hh*nu/bk
-
-        x=c2/t
-
-        if(x.lt.80.) then
-            bnu=c1/(exp(x)-1.0)
-        else
-            bnu=c1*exp(-x)
-        endif
-    end FUNCTION planck
-
     !=========================================================================
     SUBROUTINE compute_grams_per_hydrogen(self, suma, xmy, grph)
         class(composition_type), target :: self
@@ -1620,7 +1607,7 @@ contains
                 endif
 
                 element%abund =  10**(abnd - 12.0)
-                element%awgt  =  awgt / uu
+                element%awgt  =  awgt
                 call self%compute_grams_per_hydrogen(self%suma, self%xmy, self%grph)
             endif
         endif

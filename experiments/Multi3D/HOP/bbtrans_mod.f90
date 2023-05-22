@@ -31,6 +31,7 @@ MODULE bbtrans_mod
 
   integer, save :: count1, count2, count3, count4, count5, count6
   real(4), save :: max_a=0, max_v=0
+  logical, public :: disable_stark=.false., disable_vdw=.false., disable_ga=.false.
     
 contains
 
@@ -58,71 +59,65 @@ contains
   !------------------------------------------------------------------------------------
 
   !====================================================================================
-  SUBROUTINE add_lte_opacities(self, nu, vproj, inv_df, EK_over_temp, inv_part, adamp, eta, chi)
+  SUBROUTINE add_lte_opacities(self, nu, vproj, inv_df, EK_over_temp, dxij, inv_part, adamp, eta_fac, chi_fac, eta, chi)
     class(bbtrans_type), intent(in) :: self
     real(8), dimension(:), intent(in), contiguous :: nu
-    real(4), dimension(:,:,:), intent(in), contiguous :: vproj, inv_df, inv_part, adamp
-    real(4), dimension(:,:,:), intent(in), contiguous :: EK_over_temp
+    real(4), dimension(:,:,:), intent(in), contiguous :: vproj, inv_df, inv_part
+    real(4), dimension(:,:,:), intent(in), contiguous :: EK_over_temp, dxij
+    real(4), dimension(:,:,:), contiguous :: adamp, eta_fac, chi_fac
     real(4), dimension(:,:,:,:), intent(inout) :: eta, chi
-    real(4), dimension(:,:,:), allocatable :: eta_fac, chi_fac, norm, damp, psi, phi
-    real(8), dimension(:), allocatable :: q
-    real(4), dimension(:), allocatable :: fisqp
-    real(4) :: ex, ni, nj, upper_ev, qreal, scalar
+    real(8) :: q
+    real(4) :: ex, ni, nj, nij, upper_ev, nu0_ev, scalar, phi
     integer :: i,j,k,f, m(4)
     integer, save :: itimer=0, itimer1=0, itimer2=0
     !----------------------------------------------------------------------------------
     call trace%begin('bbtrans_type%add_lte_opacities', itimer=itimer)
-    allocate(eta_fac, chi_fac, norm, psi, damp, phi, mold=vproj)
-    allocate(q, mold=nu)
-    allocate(fisqp(size(nu)))
     m = shape(eta)
 
-    q = nu / self%nu0 - 1
     scalar = over_4pi / self%nu0
-    norm = inv_df * scalar
-    damp = adamp * norm
-
-    upper_ev = self%lower_ev + H_E * self%nu0
+    nu0_ev = H_E * self%nu0
+    upper_ev = self%lower_ev + nu0_ev
 
     do k=1, m(3)
     do j=1, m(2)
     do i=1, m(1)
-      ex = self%lower_ev * EK_over_temp(i,j,k)
-      ni = inv_part(i,j,k)
-      if (ex < 80.) ni = ni * exp(-ex)
-      ex = upper_ev * EK_over_temp(i,j,k)
-      nj = self%upper_g * inv_part(i,j,k)
-      if (ex < 80.) nj = nj * exp(-ex)
+      ex = (upper_ev - dxij(i,j,k)) * EK_over_temp(i,j,k)
+      if (ex < 85.) then
+        adamp(i,j,k) = adamp(i,j,k) * inv_df(i,j,k) * scalar
 
-      eta_fac(i,j,k) = norm(i,j,k) *  self%Aji * nj
-      chi_fac(i,j,k) = norm(i,j,k) * (self%Bij * ni - self%Bji * nj)
+        nj = self%upper_g * inv_part(i,j,k) * exp(-ex)
+        nij = exp(nu0_ev * EK_over_temp(i,j,k))
+
+        nj = inv_df(i,j,k) * over_4pi * nj
+        eta_fac(i,j,k) = nj * self%Aji
+        chi_fac(i,j,k) = nj * (nij - 1) * self%Bji
+      else
+        adamp(i,j,k) = 0.0
+      endif
     end do
     end do
     end do
 
-    fisqp = nu * 0.5641895835
-    call trace%end(itimer)
-    call trace%begin('bbtrans_type%add_lte_opacities2', itimer=itimer1)
+    !call trace%begin('bbtrans_type%add_lte_opacities2', itimer=itimer1)
     
     !DIR$ FORCEINLINE
     do f=1, m(4)
-      phi = (q(f) - vproj) * inv_df
-      call trace%begin('bbtrans_type%voigt_function', itimer=itimer2)
-      phi = voigt_function2(damp, phi)
-      phi = phi * nu(f)
-      !phi = new_voigt(damp, phi, fisqp(f))
-      call trace%end(itimer2)
-
+      q = nu(f) / self%nu0 - 1
       do k=1, m(3)
       do j=1, m(2)
       do i=1, m(1)
-        eta(i,j,k,f) = eta(i,j,k,f) + phi(i,j,k) * eta_fac(i,j,k)
-        chi(i,j,k,f) = chi(i,j,k,f) + phi(i,j,k) * chi_fac(i,j,k)
+        if (adamp(i,j,k) > 0.0) then
+          phi = (q - vproj(i,j,k)) * inv_df(i,j,k)
+          phi = voigt_function2(adamp(i,j,k), phi)
+          eta(i,j,k,f) = eta(i,j,k,f) + phi * eta_fac(i,j,k)
+          chi(i,j,k,f) = chi(i,j,k,f) + phi * chi_fac(i,j,k)
+        endif
       end do
       end do
       end do
     end do
-    call trace%end(itimer1)
+    !call trace%end(itimer1)
+    call trace%end(itimer)
   END SUBROUTINE add_lte_opacities
   !------------------------------------------------------------------------------------
 
@@ -137,6 +132,7 @@ contains
   !------------------------------------------------------------------------------------
 
   !====================================================================================
+  !DIR$ ATTRIBUTES FORCEINLINE :: voigt_function2
   ELEMENTAL FUNCTION voigt_function2(a,vs) result(h)
     !---------------------------------------------------------------------
     !  computes a voigt function  h = h(a,v)
@@ -439,29 +435,32 @@ contains
   !------------------------------------------------------------------------------------
 
   !====================================================================================
-  PURE ELEMENTAL SUBROUTINE line_damping (self, adamp, temp, ne, tothi, vbar2, stark_pe)
+  PURE ELEMENTAL SUBROUTINE line_damping (self, adamp, ne, tothi, vbar2, stark_pe)
     class(bbtrans_type), intent(in)  :: self
-    real(4), intent(in)  :: temp, ne, tothi, vbar2, stark_pe
+    real(4), intent(in)  :: ne, tothi, vbar2, stark_pe
     real(4), intent(inout) :: adamp
     !----------------------------------------------------------------------------------
     ! Van der Waals Broadening
-    if(self%unsold) then
-      adamp = adamp + self%gw1 * vbar2**0.3 * tothi
-    elseif (self%gw2 == 0) then
-      ! recipe 'W' Turbospectrum
-      adamp = adamp + self%gw1 * temp**0.3 * tothi
-    else
-      adamp = adamp + self%gw1 * vbar2**self%gw2 * tothi
+    if (.not. disable_vdw) then
+      if(self%unsold) then
+        adamp = adamp + self%gw1 * vbar2**0.3 * tothi
+      else
+        adamp = adamp + self%gw1 * vbar2**self%gw2 * tothi
+      endif
     endif
 
-    ! Stark Broadening
-    if (self%gq >= 0.0) then
-      adamp = adamp + self%gq * ne
-    else! if line%gq < 0
-      adamp = adamp - self%gq * stark_pe
-    end if
+    if (.not. disable_stark) then
+      ! Stark Broadening
+      if (self%gq >= 0.0) then
+        adamp = adamp + self%gq * ne
+      else! if line%gq < 0
+        adamp = adamp - self%gq * stark_pe
+      end if
+    endif
     
-    adamp = adamp + self%ga
+    if (.not. disable_ga) then
+      adamp = adamp + self%ga
+    endif
   END SUBROUTINE line_damping
   !------------------------------------------------------------------------------------ 
   
@@ -475,8 +474,8 @@ contains
     j = nint(sqrt(self%upper_g / 2))
     i = nint(sqrt(1 / (1./j**2 + self%nu0 * H_E / RYD)))
   
-    call self%LinearStarkH(adamp,ne,i,j)
-    call self%IonicH(adamp,temp,nh6,ne,i,j)
+    if (.not. disable_stark) call self%LinearStarkH(adamp,ne,i,j)
+    if (.not. disable_vdw) call self%IonicH(adamp,temp,nh6,ne,i,j)
   END SUBROUTINE line_dampingH
   !------------------------------------------------------------------------------------
 
@@ -508,7 +507,9 @@ contains
     !----------------------------------------------------------------------------------
     if (gq < 0) then
       ! make negative to mark this recipe
-      self%gq = - 10**(19.4 + 2./3.*self%gq)
+      ! formula from Gray
+      !self%gq = - BK * 10**(19.4 + 2./3.*gq)
+      self%gq = - 10**gq * 1e-4**one_sixth
     else
       self%gq = gq
     endif
@@ -576,11 +577,11 @@ contains
   !------------------------------------------------------------------------------------
 
   !====================================================================================
-  PURE SUBROUTINE prepare_VanderWaals(self, gv, lower_ion, cnt_ev)
+  PURE SUBROUTINE prepare_VanderWaals(self, gv, lower_ion, cnt_ev, vbar2e4)
     class(bbtrans_type), intent(inout)  :: self
     integer, intent(in) :: lower_ion
-    real(dp), intent(in) :: gv, cnt_ev
-    real(dp) :: upper_ev, sigma, alpha, gx, gammaf, balfac, c1, c625
+    real(dp), intent(in) :: gv, cnt_ev, vbar2e4
+    real(dp) :: upper_ev, sigma, alpha, gx, gammaf, balfac, c1, c625, vbar2
     !----------------------------------------------------------------------------------
     ! compute van der waals broadening due to hydrogen
     ! following Barklem
@@ -597,7 +598,8 @@ contains
     
     elseif (gv < 0.0) then
       ! recipe 'W' Turbospectrum
-      self%gw1 = 10**gv / 10000.**0.3
+      self%unsold = .true.
+      self%gw1 = 10**gv / (vbar2e4)**0.3
       self%gw2 = 0.0
 
     elseif(gv.ne.0.0) then

@@ -3,21 +3,25 @@ MODULE element_mod
     USE op_math_mod
     USE ion_mod
     implicit none
+
     type isotope_type
         integer  :: iso
-        real(dp) :: mass, f
+        real(dp) :: awgt, f
+    contains
+        procedure :: compute_doppler_factor
+        procedure :: compute_vbar2
     end type isotope_type
 
-    type :: element_type
+    type, extends(isotope_type) :: element_type
         integer :: np, nion, nmolec, mcount, nx, ny, nz
-        real(dp) :: awgt, abund
+        real(dp) :: abund
         type(ion_type), allocatable :: ions(:)
         class(isotope_type), allocatable :: isotope(:)
         !type(mol_pointer_t), allocatable :: molecules(:)
         integer :: active
         real(dp), dimension(:,:,:), allocatable :: fil, n
         character(len=3) :: id
-        contains
+    contains
         procedure :: compute_ion_equilibrium
         procedure :: print_info
     end type element_type
@@ -89,5 +93,23 @@ SUBROUTINE print_info(self, lunit, p)
     end do
     write(lunit, '(A,A,A,A)'), trim(info), f_string, saha_string, part_string
 END SUBROUTINE print_info
+
+!====================================================================================
+pure elemental function compute_doppler_factor(self, temp, vmic) result(doppler_factor)
+  class(isotope_type), intent(in) :: self
+  real(4),  intent(in)  :: temp, vmic
+  real(4) :: doppler_factor
+  !---------------------------------------------------------------------------------
+  doppler_factor = sqrt(  2.0d0*bk*temp/(self%awgt*UU) + (vmic*1e5)**2 ) / cc
+end function compute_doppler_factor
+
+!====================================================================================
+pure elemental function compute_vbar2(self, temp) result(vbar2)
+  class(isotope_type), intent(in) :: self
+  real(4),  intent(in)  :: temp
+  real(4) :: vbar2
+  !---------------------------------------------------------------------------------
+  vbar2 = 8.0*BK*temp/PI * (1.0/MH + 1.0/(self%awgt*UU))
+end function compute_vbar2
 
 END MODULE element_mod

@@ -10,7 +10,7 @@ MODULE atom_mod
     USE mmath, only: refsor, unista
     USE op_math_mod, only: lineq, get_interval, eqsyst, lineq_no_pivot
     USE ion_mod, only: ion_type
-    USE element_mod, only: element_type
+    USE element_mod, only: element_type, isotope_type
     USE molecule_mod, only: molec_type
     USE os_mod
     USE trace_mod
@@ -51,7 +51,7 @@ MODULE atom_mod
       real(4), dimension(:,:,:),   pointer, contiguous :: totn => null() 
     end type local_data_t
   
-    type, public :: atom_type
+    type, public, extends(isotope_type) :: atom_type
       integer :: nrad   ! total number of radiative transitions
       integer :: nrfix  ! number of fixed transitions
       integer :: ncont  ! number of bound-free transitions
@@ -68,7 +68,7 @@ MODULE atom_mod
       integer, dimension(:), allocatable :: ion ! ionization stage of each level
   
       real(8) :: abnd ! abundance ( in the [hydrogen]=12 scale)
-      real(8) :: awgt ! atomic weight [g]
+      !real(8) :: awgt ! atomic weight [g]
       real(8) :: tmax_update=1.0d7
   
       real(8), dimension(:), allocatable :: ev ! energy of level above ground state [eV]
@@ -105,7 +105,7 @@ MODULE atom_mod
         
     contains
       procedure :: add_continuum_opacities
-      procedure :: compute_doppler_factor
+      !procedure :: compute_doppler_factor
       procedure :: partition_function
       procedure :: lte_pop
       procedure :: compute_lte_populations
@@ -129,7 +129,6 @@ MODULE atom_mod
     real(8), public :: cont_step_aa = 50
     real(8), public :: nu_tolerance = 1d6
     real(8), public :: logf_cut = -99.9, red_cut=huge(1.0), blue_cut=tiny(1.0)
-    real(4), public :: vmic = 0
     real(8), parameter :: ame=5.485799e-4, amh=1.0
     real(8), parameter :: mu_e=ame/(ame+amh)
     character(len=32), public :: lse_solver='lineq_no_pivot'
@@ -238,6 +237,7 @@ MODULE atom_mod
     integer :: kr, pos, i, j
     integer, save :: itimer=0, itimer2=0
     logical :: zero_pop, abort
+    logical, save :: first_time=.true.
     !------------------------------------------------------------------------------------
     if (temp > self%tmax_update) then
         self%e = 0.0d0
@@ -309,7 +309,8 @@ MODULE atom_mod
       self%w(pos,:) = n
     !endif
 
-    if (check_NaN) then
+    if (check_NaN .or. first_time) then
+      first_time = .false.
       abort = .false.
       do i=1,self%nlevel
         if (self%w(i,i) == 0.d0) then
@@ -526,15 +527,23 @@ MODULE atom_mod
   end function
   !------------------------------------------------------------------------------------
 
-  !====================================================================================
-  pure elemental function compute_doppler_factor(self, temp) result(doppler_factor)
-    class(atom_type), intent(in) :: self
-    real(4),  intent(in)  :: temp
-    real(4) :: doppler_factor
-    !---------------------------------------------------------------------------------
-    doppler_factor = sqrt(  2.0d0*bk*temp/self%awgt + (vmic*1e5)**2 ) / cc
-  end function compute_doppler_factor
-  !------------------------------------------------------------------------------------
+  !!====================================================================================
+  !pure elemental function compute_doppler_factor(self, temp) result(doppler_factor)
+  !  class(atom_type), intent(in) :: self
+  !  real(4),  intent(in)  :: temp
+  !  real(4) :: doppler_factor
+  !  !---------------------------------------------------------------------------------
+  !  doppler_factor = sqrt(  2.0d0*bk*temp/self%awgt + (vmic*1e5)**2 ) / cc
+  !end function compute_doppler_factor
+  !
+  !!====================================================================================
+  !pure elemental function compute_vbar2(self, temp) result(vbar2)
+  !  class(atom_type), intent(in) :: self
+  !  real(4),  intent(in)  :: temp
+  !  real(4) :: vbar2
+  !  !---------------------------------------------------------------------------------
+  !  vbar2 = 8.0*BK*temp/PI * (1.0/MH + 1.0/self%awgt)
+  !end function compute_doppler_factor
    
   !====================================================================================
   SUBROUTINE compute_cont_factors(self, temp, dxi, saha)
@@ -594,7 +603,7 @@ MODULE atom_mod
     type(coll_type), pointer :: col => null()
     real(8), allocatable, dimension(:) :: nu, alpha, tgrid
     real(8) :: scr, gv, gq, cnt_ev, nu_max, alpha0, thresh_aa, dnu
-    real(8) :: gij, red_fcut, blu_fcut
+    real(8) :: gij, red_fcut, blu_fcut, vbar2e4
     integer :: ncont, nnu
     character(len=20) :: txt
     character(len=26),parameter :: upcase_alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -610,7 +619,6 @@ MODULE atom_mod
 
     call nextentry(latom)
     read(latom,*) self%abnd, self%awgt
-    self%awgt=self%awgt*uu ! atomic weight [g]
     call self%prepare_Drawin()
 
     call nextentry(latom)
@@ -777,7 +785,8 @@ MODULE atom_mod
         call prepare_hydrogen_damping(lin)
       case ('voigt')
         call lin%prepare_Stark(gq)
-        call lin%prepare_VanderWaals(gv, self%ion(lin%i), cnt_ev)
+        vbar2e4 = self%compute_vbar2(10000.)
+        call lin%prepare_VanderWaals(gv, self%ion(lin%i), cnt_ev, vbar2e4)
       end select
     end do
 
@@ -1092,7 +1101,7 @@ MODULE atom_mod
     class(atom_type), intent(inout) :: self
     real(8) :: drmu, mu_h, ama
     !---------------------------------------------------------------------
-    ama = self%awgt/UU
+    ama = self%awgt
     mu_h = amh/(ama+amh)
     drmu = PI*MH*ama*mu_h
     self%drawin = 1.40758E-15 * sqrt(2.0*BK/drmu) * mu_e/mu_h
@@ -1117,9 +1126,9 @@ MODULE atom_mod
       dxi = 0
     endif
     sqt = sqrt(temp)
-    allen = 5.465e-11 * Rydk / sqt * ne
+    allen = 5.465e-11 * Rydk * ne / sqt
     regemorter = 14.5 * allen * Rydk / e_k
-    seaton = 1.55e13 * ne
+    seaton = 1.55e13 * ne / sqt
     EK_over_temp = e_k / temp
 
     n = 0
@@ -1129,7 +1138,7 @@ MODULE atom_mod
         tri = (j-1)*(j-2)/2 + i
 
         if (.not. self%ecol(tri) .or. .not. self%hcol(tri)) then
-          fac = self%cdata(tri) ! / self%g(j)
+          fac = self%cdata(tri)! / self%g(j)
           cont = self%ion(j) > self%ion(i)
           nj = max(nstar(j), tiny(1.0))
           nij = ni / nj
@@ -1153,10 +1162,10 @@ MODULE atom_mod
               ! ionization by electron collisions
               if (fac == 0) then
                 nu0 = dev * EE/HH
-                fac = Kramer(nu0, dev)
+                fac = Kramer(nu0, dev)! / self%g(j)
               endif
               tmp = min(0.1*self%ion(i), 0.3)
-              cup = seaton * fac * tmp / (u0*sqt) * ex
+              cup = seaton * fac * tmp / u0 * ex
             else
               ! excitation of neutrals by electron collisions 
               if (fac > 0) then

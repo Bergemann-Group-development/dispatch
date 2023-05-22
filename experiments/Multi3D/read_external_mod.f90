@@ -26,10 +26,11 @@ MODULE read_external_mod
   USE composition_patch_mod, only: FeH
   USE patch_mod
   USE mconst, only:cc
-  USE atom_mod, only: vmic, m1d_legacy_mode
+  USE atom_mod, only: m1d_legacy_mode
   USE ray_patch_mod, only: maxvel
   USE m3d_patch_mod, only: maxiter, ilambd, m3d_patch_t, atom_update_counter, &
   global_maxerr, global_pos, nz_total, use_density
+  USE atom_patch_mod, only: vmic
   USE m3d_halo_mod, only: m3d_halo_t
   USE read_stagger_snapshot_mod
   USE read_marcs_mod, only: read_marcs

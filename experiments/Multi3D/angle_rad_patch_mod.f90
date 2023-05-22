@@ -351,7 +351,7 @@ SUBROUTINE linear_solver(self, xx, ss, Inu, Psi, Ieff, eta_back)
   real(4), intent(in), dimension(:,:,:,:), contiguous :: xx, ss
   real(4), intent(inout), dimension(:,:,:,:), contiguous :: Inu
   real(4), intent(inout), dimension(:,:,:,:), contiguous, optional :: Psi, Ieff, eta_back
-  real(4) :: dsup05, u0, Psi0
+  real(4) :: dsup05, u0, Psi0, ss1, ss2, xx1, xx2
   real(8) :: ex, dt
   integer :: i,j,k,f, k1, k2, kup, z
   logical :: save_Psi
@@ -368,7 +368,12 @@ SUBROUTINE linear_solver(self, xx, ss, Inu, Psi, Ieff, eta_back)
       z = k - self%ng(3)
     do j=1, self%n(2)
     do i=1, self%n(1)
-      dt = dsup05 * ( xx(i,j,kup,f) + xx(i,j,k,f) ) ! upwind optical pathlength
+      ss1 = ss(i,j,kup,f)
+      ss2 = ss(i,j,k,f)
+      xx1 = xx(i,j,kup,f)
+      xx2 = xx(i,j,k,f)
+
+      dt = dsup05 * ( xx1 + xx2 ) ! upwind optical pathlength
       if (dt < 80) then
         ex = exp(-dt) 
       else
@@ -385,13 +390,13 @@ SUBROUTINE linear_solver(self, xx, ss, Inu, Psi, Ieff, eta_back)
       endif
 
       if (save_Psi) then
-        Ieff(i,j,z,f) = Inu(i,j,kup,f)*ex + (u0 - Psi0)*ss(i,j,kup,f)
-        Inu (i,j,k,f) = Ieff(i,j,z,f) + Psi0*ss(i,j,k,f)
+        Ieff(i,j,z,f) = Inu(i,j,kup,f)*ex + (u0 - Psi0)*ss1
+        Inu (i,j,k,f) = Ieff(i,j,z,f) + Psi0*ss2
         if (comoving_frame) then
           Psi (i,j,z,f) = Psi0
           !Ieff is computed in mean_rad%update after Psi has been integrated
         else
-          Psi (i,j,z,f) = Psi0 / xx(i,j,k,f)
+          Psi (i,j,z,f) = Psi0 / xx2
           Ieff(i,j,z,f) = Ieff(i,j,z,f) + Psi (i,j,z,f) * eta_back(i,j,z,f)
         endif
       else

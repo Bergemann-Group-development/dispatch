@@ -4,7 +4,6 @@ MODULE mconst
   ! physical and mathematical constants
   !
   ! *******************************************************************
-
   implicit none
 
   ! math
@@ -64,5 +63,25 @@ MODULE mconst
   real(8), parameter :: RydV = 13.605d0     ! Rydberg constant [eV]
   real(8), parameter :: Rydk = 13.605d0*e_k ! Rydberg constant [K]
 
+contains
+
+  !===============================================================================
+  ! PE: 22-09-21: Convert to elemental FUNCTION
+  !  calculates planck FUNCTION bnu at frequency nu, temp t
+  !===============================================================================
+  real(8) elemental FUNCTION planck(nu,t) result(bnu)
+      real(8), intent(in)  :: nu
+      real(8), intent(in)  :: t
+      real(8) :: x, c1
+      !---------------------------------------------------------------------
+      c1 = twoh_c2 * nu**3
+      x = h_k*nu/t
+
+      if(x.lt.80.) then
+          bnu = c1 / (exp(x) - 1.d0)
+      else
+          bnu = c1 * exp(-x)
+      endif
+  end FUNCTION planck
 END MODULE mconst
 

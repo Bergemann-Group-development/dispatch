@@ -214,15 +214,15 @@ MODULE atom_line_patch_mod
     inv_df = 1 / doppler_factor
 
     tothi = sum(nh(:,:,:,1:5), 4) ! total neutral hydrogen density
-    vbar2 =  8.0*BK*temp / PI * (1.0/MH + 1.0/self%atom%awgt)
-    stark_pe = ne * bk * temp**one_sixth
+    vbar2 =  self%atom%compute_vbar2(temp)
+    stark_pe = ne * temp**one_sixth
 
     do i=1, self%nline
       line => self%line(i)
       select case (line%profile_type)
       case ('voigt')
         adamp = 0
-        call line%damping(adamp, temp, ne, tothi, vbar2, stark_pe)
+        call line%damping(adamp, ne, tothi, vbar2, stark_pe)
         if (self%atom%id == 'H') then
           call line%dampingH(adamp, temp, ne, nh(:,:,:,6))
         endif

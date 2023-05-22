@@ -37,6 +37,7 @@ MODULE m3d_patch_mod
     USE composition_mod, only: composition_type
     USE ray_mod
     USE m3d_debug_mod
+    USE bbtrans_mod, only: disable_stark, disable_vdw, disable_ga
     implicit none
     private
 
@@ -169,7 +170,8 @@ MODULE m3d_patch_mod
     ntheta, nphi, check_NaN, custom_mu, lse_no_pivot, save_patch_kind, cswitch, &
     save_back_cont, detailed_prints, print_finished, print_start, print_push, &
     print_send, linear_long, interp_log, ray_offset, print_download, save_atom_line, &
-    lse_solver, decouple_continuum, m1d_legacy_mode, nu_tolerance
+    lse_solver, decouple_continuum, m1d_legacy_mode, nu_tolerance, disable_stark, &
+    disable_vdw, disable_ga
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%pre_init', itimer=itimer)
     !-----------------------------------------------------------------------------

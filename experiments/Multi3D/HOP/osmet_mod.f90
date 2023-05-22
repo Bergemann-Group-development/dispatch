@@ -90,7 +90,7 @@ contains
         real(4) :: a1, b1, c1, d1, a2, b2, c2, d2
         real(4) :: ab1, cd1, ab2, cd2, abcd1, abcd2
         real(4) :: dx, dy, dz, ecnst, os
-        real(dp) :: ecnst1, nu3, beta, epsln
+        real(dp) :: ecnst1, nu3, beta, epsln, psem1, psem2
         integer :: ix, iy, iz, i, j, k, f, nx, ny, nz, nf
         !---------------------------------------------------------------------------
         nx = size(abslte,1)
@@ -147,7 +147,9 @@ contains
 
                 ecnst1 = sqrtT(i,j,k) * nu3
                 beta = Tinv(i,j,k) * nu(f)
-                ecnst = ecnst1*( self%eosmet / psemi(2,beta) + (1-self%eosmet) / psemi(1,beta) )
+                psem1 = psemi(1,beta)
+                psem2 = psemi(2,beta)
+                ecnst = ecnst1*( self%eosmet / psem2 + (1-self%eosmet) / psem1 )
                 epsln = ne(i,j,k) / (ecnst + ne(i,j,k))
 
                 abslte(i,j,k,f) = abslte(i,j,k,f) + os*epsln
@@ -181,8 +183,8 @@ contains
             !if (z .eq. 1) psemi = splin(bb,betref,pnref,10,10)
             !if (z .gt. 1) psemi = splin(bb,betref,pcref,10,10)
             i = searchsorted(betref, bb)
-            if (z .eq. 1) psemi = interp1d_linear(i,betref,pnref,bb)
-            if (z .gt. 1) psemi = interp1d_linear(i,betref,pcref,bb)
+            if (z .eq. 1) psemi = interp1d_quadratic(i,betref,pnref,bb)
+            if (z .gt. 1) psemi = interp1d_quadratic(i,betref,pcref,bb)
         elseif(b .gt. 10.0)then
             !  limit of low temperature: kt << e
             if(z .eq. 1) psemi = 0.066 / sqrt(b)
