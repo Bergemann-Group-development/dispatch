@@ -92,11 +92,14 @@ class read(object):
         self.flux_lte = np.zeros_like(self.lam)
         self.flux_cnt = np.zeros_like(self.lam)
 
+        out_rad_keys = list(out_rad.keys())
+        min_ang = min([key[-1] for key in out_rad_keys])
+
         for i in range(self.n_ang):
-            key = list(out_rad.keys())[i]
-            ipos, inu, ang, kind = key
+            key = out_rad_keys[i]
+            ipos, inu, ang = key
             mem = out_rad[key]
-            ang = ang - 1
+            ang = ang - min_ang
             self.i3[ang]     = mem[...,0,:,0]
             self.i3_lte[ang] = mem[...,0,:,1]
             self.c3[ang]     = mem[...,0,:,2]
@@ -210,7 +213,8 @@ class read(object):
     #=====================================================================
     def get_yy(self, ang=None, imu=None, norm=True, LTE=False, mask=slice(None, None)):
         #-----------------------------------------------------------------
-        if imu >= self.nmu: raise ValueError('imu is out of range. Nmu = {:}'.format(self.nmu))
+        if imu is not None:
+            if imu >= self.nmu: raise ValueError('imu is out of range. Nmu = {:}'.format(self.nmu))
         if self.n_ang == 1: ang=0
 
         if ang is None and imu is None:
@@ -268,7 +272,7 @@ class read(object):
         return xx, yy
     
     #=====================================================================
-    def interp(self, newx, vdop=None, vshift=None, **kwargs):
+    def interp(self, newx, vdop=None, vshift=None, convolve=None, **kwargs):
         #-----------------------------------------------------------------
         ib = np.searchsorted(self.lam, newx[0])
         ir = np.searchsorted(self.lam, newx[-1])
@@ -277,8 +281,10 @@ class read(object):
         xx = self.lam[mask]
         yy, cnt = self.get_yy(mask=mask, **kwargs)
 
-        if vdop is not None or vshift is not None:
+        if vdop is not None or vshift is not None or convolve is not None:
             xx, yy = convol(xx, yy, vdop=vdop, vshift=vshift)
+        if custom is not None or vdop is not None:
+            yy = [interp1d(*convol(xx, y, custom=custom, vdop=vdop), bounds_error=False, fill_value=1)(xx) for y in yy]
 
         yy = np.interp(newx, xx, yy)
         return yy
@@ -454,7 +460,7 @@ class read(object):
                 key = file.split('.')[0].split('_')[-1]
                 key = [int(k) for k in [key[0:3], key[3:6], key[6:9]]]
 
-                if '_out' in file: key = key + ['out']
+                #if '_out' in file: key = key + ['out']
 
                 dct[tuple(key)] = np.memmap(self.sfolder + file, dtype=dtype).reshape(dims, order='F')
 
