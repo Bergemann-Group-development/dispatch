@@ -251,7 +251,7 @@ class read(object):
     
     #=====================================================================
     def crop(self, lam0=None, dlam=None, xmin=None, xmax=None, vdop=None, 
-             vshift=None, **kwargs):
+             vshift=None, convolve=None, **kwargs):
         #-----------------------------------------------------------------
         xx = self.lam
 
@@ -265,8 +265,8 @@ class read(object):
         yy, cnt = self.get_yy(mask=mask, **kwargs)
         xx = xx + lam0
 
-        if vdop is not None or vshift is not None:
-            sxx, syy = convol(xx, yy, vdop=vdop, vshift=vshift)
+        if vdop is not None or vshift is not None or convolve is not None:
+            sxx, syy = convol(xx, yy, vdop=vdop, vshift=vshift, custom=convolve)
             yy = np.interp(xx, sxx, syy)
 
         return xx, yy
@@ -282,9 +282,7 @@ class read(object):
         yy, cnt = self.get_yy(mask=mask, **kwargs)
 
         if vdop is not None or vshift is not None or convolve is not None:
-            xx, yy = convol(xx, yy, vdop=vdop, vshift=vshift)
-        if custom is not None or vdop is not None:
-            yy = [interp1d(*convol(xx, y, custom=custom, vdop=vdop), bounds_error=False, fill_value=1)(xx) for y in yy]
+            xx, yy = convol(xx, yy, vdop=vdop, vshift=vshift, custom=convolve)
 
         yy = np.interp(newx, xx, yy)
         return yy

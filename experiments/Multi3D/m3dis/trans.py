@@ -173,7 +173,7 @@ class trans_class(object):
     
     #=====================================================================
     def crop(self, ang=None, imu=None, norm=True, dlam=None, \
-                vdop=None, vshift=None, renorm=False, LTE=False):
+                vdop=None, vshift=None, convolve=None, renorm=False, LTE=False):
         #-----------------------------------------------------------------
         if not LTE and self.run.mode=='LTE':
             print('Cannot get NLTE line profile, because run was in LTE!')
@@ -185,13 +185,13 @@ class trans_class(object):
         if renorm:
             yy = yy / continuum(xx, yy)
             
-        if vdop is not None or vshift is not None:
+        if vdop is not None or vshift is not None or convolve is not None:
             if dlam is not None:
                 ixx = xx + self.lam0
             else:
                 ixx = xx
                 
-            sxx, syy = convol(ixx, yy, vdop=vdop, vshift=vshift)
+            sxx, syy = convol(ixx, yy, vdop=vdop, vshift=vshift, custom=convolve)
             yy = np.interp(ixx, sxx, syy)
         
         return xx, yy

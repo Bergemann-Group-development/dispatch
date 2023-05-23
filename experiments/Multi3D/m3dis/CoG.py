@@ -73,15 +73,15 @@ class CoG(object):
         
     
     #=================================================================
-    def interp(self, newx, abnd, vdop=None, vshift=None, **kwargs):
+    def interp(self, newx, abnd, vdop=None, vshift=None, convolve=None, **kwargs):
         runs = self.runs
         yy = np.array([run.interp(newx, **kwargs) for run in runs])
 
         func = PchipInterpolator(self.abnds, yy, axis=0)
         yy = func(abnd)
 
-        if vdop is not None or vshift is not None:
-            sxx, syy = convol(newx, yy, vdop=vdop, vshift=vshift)
+        if vdop is not None or vshift is not None or convolve is not None:
+            sxx, syy = convol(newx, yy, vdop=vdop, vshift=vshift, custom=convolve)
             yy = np.interp(newx, sxx, syy)
 
         return yy
