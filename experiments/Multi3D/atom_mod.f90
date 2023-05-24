@@ -690,6 +690,14 @@ MODULE atom_mod
         endif
       endif
 
+      lin%upper_g  = self%g(lin%j)
+      lin%lower_ev = self%ev(lin%i)
+      lin%upper_ev = self%ev(lin%j)
+      lin%hydrogen = trim(self%id) == 'h'
+
+      lin%lambda0 = hc_e / ( lin%upper_ev - lin%lower_ev ) ! [cm]
+      lin%nu0 = cc / lin%lambda0    ! [Hz]
+
       ! io is now modified so that multicomponent lines can be read
       ! io = 0: Normal line
       ! io = 1: For now is the same as io = 0
@@ -723,16 +731,8 @@ MODULE atom_mod
                         lin%gaterm(iterm), lin%gwterm(iterm), lin%gqterm(iterm)
         end do
 
-        lin%determ = cc*lin%determ
+        lin%determ = cc/lin%nu0 * lin%determ
       end if
-
-      lin%upper_g  = self%g(lin%j)
-      lin%lower_ev = self%ev(lin%i)
-      lin%upper_ev = self%ev(lin%j)
-      lin%hydrogen = trim(self%id) == 'h'
-
-      lin%lambda0 = hc_e / ( lin%upper_ev - lin%lower_ev ) ! [cm]
-      lin%nu0 = cc / lin%lambda0    ! [Hz]
 
       ! make sure we always have an odd number of frequency points for a line
       if (mod(lin%nnu,2) == 0) lin%nnu=lin%nnu+1

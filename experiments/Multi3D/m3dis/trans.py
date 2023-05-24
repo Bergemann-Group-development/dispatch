@@ -154,12 +154,14 @@ class trans_class(object):
 
     #=====================================================================
     def plot(self, ang=None, imu=None, norm=True, dlam=None,
-                vdop=None, vshift=None, renorm=False,
+                vdop=None, vshift=None, convolve=None, renorm=False,
                 LTE=False, title=None, **kwargs):
         #-----------------------------------------------------------------
         if self.run.n_ang == 1: ang=0
 
-        xx, yy = self.crop(ang, imu, norm, dlam, vdop, vshift, renorm, LTE)
+        xx, yy = self.crop(ang=ang, imu=imu, norm=norm, dlam=dlam,
+                            vdop=vdop, vshift=vshift, convolve=convolve,
+                            renorm=renorm, LTE=LTE)
 
         self.run.set_xaxis(xx, dlam)
         self.run.set_yaxis(ang, imu, norm, renorm)
