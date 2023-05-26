@@ -136,7 +136,7 @@ MODULE atom_patch_mod
         cf = comoving_frame .and. n>0
         dc = decouple_continuum
       do m=mu(1), mu(2)
-        new_cont = m==0 .and. merge(n>self%n_nu, .true., dc)
+        new_cont = m==0 .and. (merge(n>self%n_nu, .true., dc) .or. n<0)
         new_line = m<0 .or. merge(m==0, m/=0, cf)
         new_rate = merge(m==0, m>0, cf) .or. (dc .and. m==0 .and. n>self%n_nu)
 

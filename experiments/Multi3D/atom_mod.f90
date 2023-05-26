@@ -883,7 +883,7 @@ MODULE atom_mod
         call os%allocate(cnt%alpha_input, cnt%nnu, 'cont%alpha_input')
         dnu = (cnt%nu_max - cnt%nu0) / (cnt%nnu-1)
         cnt%nu_input = [(cnt%nu0 + i*dnu, i=0, cnt%nnu-1)]
-        cnt%alpha_input = (cnt%nu_input / cnt%nu0)**-3 * cnt%alpha0
+        cnt%alpha_input = (cnt%nu0 / cnt%nu_input)**3.d0 * cnt%alpha0
 
       elseif (cnt%bf_type == 'Kramer') then
         if (kramer_bf) then
@@ -1311,7 +1311,7 @@ MODULE atom_mod
           select case(cnt%bf_type)
           case('hydrogenic', 'Kramer')
             ! use nu**-3 dependency
-            cnt%alpha = (cnt%nu / cnt%nu0 )**-3 * cnt%alpha0
+            cnt%alpha = (cnt%nu0 / cnt%nu)**3.d0 * cnt%alpha0
           case('detail')
             ! fill new cross sections 
             call cnt%hermite_interp(cnt%alpha, cnt%nu)

@@ -147,6 +147,7 @@ MODULE m3d_patch_mod
     real(8), parameter :: t_push=0.1d0
     real(4), public :: vel_max=0.0
     real(4), public :: ray_offset(2)=[0.,0.]
+    integer, public :: pivot_z=0
     type(mpi_counter_t), public :: atom_update_counter, global_maxerr, global_pos
       
     public :: hash_string
@@ -171,7 +172,7 @@ MODULE m3d_patch_mod
     save_back_cont, detailed_prints, print_finished, print_start, print_push, &
     print_send, linear_long, interp_log, ray_offset, print_download, save_atom_line, &
     lse_solver, decouple_continuum, m1d_legacy_mode, nu_tolerance, disable_stark, &
-    disable_vdw, disable_ga
+    disable_vdw, disable_ga, pivot_z
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%pre_init', itimer=itimer)
     !-----------------------------------------------------------------------------
@@ -232,6 +233,8 @@ MODULE m3d_patch_mod
         use_density = .false.
         nq_fac = 2
       endif
+
+      if (pivot_z == 0) pivot_z = nint(self%patch%box(3) / self%patch%ds(3))
     end if
   
     self%verbose = verbose

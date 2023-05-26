@@ -65,7 +65,7 @@ contains
     real(4), dimension(:,:,:), intent(in), contiguous :: vproj, inv_df, inv_part
     real(4), dimension(:,:,:), intent(in), contiguous :: EK_over_temp, dxij
     real(4), dimension(:,:,:), contiguous :: adamp, eta_fac, chi_fac
-    real(4), dimension(:,:,:,:), intent(inout) :: eta, chi
+    real(4), dimension(:,:,:,:), intent(inout), contiguous :: eta, chi
     real(8) :: q
     real(4) :: ex, ni, nj, nij, upper_ev, nu0_ev, scalar, phi
     integer :: i,j,k,f, m(4)

@@ -32,7 +32,7 @@ MODULE net_opac_patch_mod
     USE atom_line_patch_mod, only:atom_line_t
     USE back_line_patch_mod, only:back_line_patch_t
     USE m3d_patch_mod, only:maxiter, m3d_patch_t, comoving_frame, linear_long, &
-                            interp_log, ray_offset
+                            interp_log, ray_offset, pivot_z
     USE m3d_debug_mod
     implicit none
     private
@@ -113,15 +113,7 @@ MODULE net_opac_patch_mod
         call self%check_access(nbtask)
         select type (nbtask)
         class is (atom_line_t)
-          !it = self%it
-          !chi => self%authority_mem(:,:,:,:,it,1)
-          !eta => self%authority_mem(:,:,:,:,it,2)
-          !call nbtask%interpolate_lines(chi, eta, LTE=.false.)
-          !if (self%out_ray) then
-          !  chi => self%authority_mem(:,:,:,:,it,3)
-          !  eta => self%authority_mem(:,:,:,:,it,4)
-          !  call nbtask%interpolate_lines(chi, eta, LTE=.true.)
-          !endif
+          ! chi and eta have already been added
         class is (ray_patch_t)
           fs = nbtask%fs - self%fs + 1
           fe = fs + nbtask%nv - 1
@@ -179,7 +171,7 @@ MODULE net_opac_patch_mod
     integer, dimension(:,:), contiguous, pointer :: ipart
     real(4), dimension(2) :: delta, deltak, fpart
     integer, dimension(:,:,:), contiguous, pointer :: ix, iy
-    real(4) :: distance2top, pmin, pmax, pup, p
+    real(4) :: distance2pivot, pmin, pmax, pup, p
     integer :: i, j, k, f, it, iw, up1, up2, nx, ny
     integer :: li, ui, ii, jj, x1, x2, y1, y2, kn
     integer, save :: itimer=0
@@ -189,7 +181,7 @@ MODULE net_opac_patch_mod
     call os%allocate(plane, self%gn(1:2))
 
     delta = self%vec(:2) / (self%vec(3) * self%ds(:2)) ! shift in units of grid cells
-    distance2top = self%box(3) - (self%position(3) - 0.5*self%size(3))
+    distance2pivot = self%ds(3)*pivot_z - (self%position(3) - 0.5*self%size(3))
 
     nx = self%n(1)
     ny = self%n(2)
@@ -207,7 +199,7 @@ MODULE net_opac_patch_mod
     call os%allocate(kern,[kn, kn, ui])
 
     do k=li, ui
-      deltak = (distance2top - (k-1)*self%ds(3)) * delta + ray_offset
+      deltak = (distance2pivot - (k-1)*self%ds(3)) * delta + ray_offset
       up1 = floor(deltak(1)) !integer part of shift
       up2 = floor(deltak(2)) !integer part of shift
       fpart = deltak - [up1, up2] !fractional part
