@@ -85,8 +85,6 @@ MODULE back_line_patch_mod
     call self%comp_vproj(vproj)
     call self%composition%add_linelist_opacities(nu, eta, chi, vproj)
     call os%deallocate(vproj)
-
-    call self%post_update()
     call trace%end(itimer)
   END SUBROUTINE back_line_patch_update
 

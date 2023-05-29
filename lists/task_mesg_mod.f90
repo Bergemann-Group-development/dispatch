@@ -850,6 +850,7 @@ SUBROUTINE post_update (self, link)
   ! Set the rank, by whatever (possibly overloaded) rule
   !-----------------------------------------------------------------------------
   call link%task%set_rank ()
+  call link%task%post_update ()
   !-----------------------------------------------------------------------------
   ! If the init_nbors bit is set, make a new nbor list, which also resets the
   ! status (IBVE) of the link task

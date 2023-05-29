@@ -274,8 +274,6 @@ SUBROUTINE composition_update (self)
     !print *, 'updating composition more than once is not implemented yet. Stopping...'
     !stop
   endif
-
-  call self%post_update()
   call trace%end(itimer)
 END SUBROUTINE composition_update
 

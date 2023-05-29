@@ -45,6 +45,7 @@ MODULE experiment_mod
     procedure:: pre_update
     procedure:: update
     procedure:: post_update
+    procedure:: rotate
     procedure:: finish
     procedure:: init_level
     procedure:: bndries
@@ -221,9 +222,20 @@ SUBROUTINE update (self)
   integer, save:: itimer=0
   !----------------------------------------------------------------------------
   call trace%begin('experiment_t%update', itimer=itimer)
-  call self%post_update()
+  !call self%post_update()
   call trace%end (itimer)
 END SUBROUTINE update
+
+!===============================================================================
+SUBROUTINE rotate (self)
+  class(experiment_t):: self
+  integer, save:: itimer=0
+  !----------------------------------------------------------------------------
+  call self%task_t%rotate
+  if (self%iter == 0) then
+    call self%finish()
+  endif
+END SUBROUTINE rotate
 
 !===============================================================================
 SUBROUTINE post_update (self)
@@ -237,9 +249,6 @@ SUBROUTINE post_update (self)
   !    self%mem(p(1),p(2),p(3),:,1,1)
   !endif
 
-  if (self%iter == 0) then
-    call self%finish()
-  endif
   write(io_unit%dispatcher, '(F17.8, I3, 1x, A3, 1x, A)') wallclock(), mpi%rank, 'END', self%patch_info()
   
   self%iter = self%iter + 1

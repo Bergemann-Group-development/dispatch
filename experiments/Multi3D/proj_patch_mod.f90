@@ -76,7 +76,6 @@ MODULE proj_patch_mod
 
     call self%boundaries%mirror()
     call self%periodic_grid()
-    call self%post_update()
     call trace%end(itimer)
   END SUBROUTINE update
   

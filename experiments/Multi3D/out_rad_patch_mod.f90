@@ -107,7 +107,6 @@ MODULE out_rad_patch_mod
     call os%deallocate(II)
 
     call trace%end()
-    call self%post_update()
   END SUBROUTINE out_rad_update
   
   !===============================================================================

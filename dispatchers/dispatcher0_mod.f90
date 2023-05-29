@@ -220,6 +220,12 @@ SUBROUTINE update (self, task_list, test)
   !-----------------------------------------------------------------------------
   call                              task_list%qlock%set ('dispatch0_t%update 1')
   link => task_list%queue                                    ! queue start
+  !print *, 'ready_list'
+  !do while (associated(link))
+  !  print '(i3, 1x, a)', link%task%id, trim(link%task%kind)
+  !  link => link%next_time
+  !end do
+  !link => task_list%queue                                    ! queue start
   if (detailed_timer) then
     call trace%end (itimer(i))
     i = i+1
@@ -238,39 +244,12 @@ SUBROUTINE update (self, task_list, test)
     if (omp_pick) then
       do while (associated(link))
         task => link%task
-        if (task%place == omp%place+100) then
+        if (task%place == -1) then
           exit
-        elseif (task%place == -1) then
-          first => prev
         endif
         prev => link
         link => link%next_time
       end do
-      if (.not. associated(first)) then
-        nullify (prev)
-        link => task_list%queue
-        do while (associated(link))
-          task => link%task
-          !if (task%place==-1) exit
-          !-----------------------------------------------------------------------
-          ! Select a task with the same thread, or the same place
-          !-----------------------------------------------------------------------
-          if (pick_thread) then
-            if (omp%thread == task%thread) then
-              exit
-            end if
-          else
-            if (omp%place == task%place) then
-              exit
-            end if
-          end if
-          prev => link
-          link => link%next_time
-        end do
-      else
-        prev => first
-        link => first%next_time
-      endif
       !-------------------------------------------------------------------------
       ! If not found, fall back on first task in queue
       !-------------------------------------------------------------------------

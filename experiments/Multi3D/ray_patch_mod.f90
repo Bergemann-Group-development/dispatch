@@ -690,6 +690,7 @@ SUBROUTINE print_post_update_info (self)
   !-----------------------------------------------------------------------------
   f = self%fcheck
   p = self%pcheck
+  call self%check_access(self)
   call self%print_to_stdout(arr=self%mem(p(1),p(2),p(3),f,1,:))
 END SUBROUTINE print_post_update_info
 

@@ -119,12 +119,12 @@ SUBROUTINE radiation_init (self)
   if (.not. self%out_ray) then
     m = shape(self%authority_mem)
     call self%allocate_mem(self)
-    if (lock_Inu) then
-      m = shape(self%authority_mem)
-      m(3) = 2
-      call os%allocate(self%Inu_old, m(1:4), label=trim(self%kind)//'%Inu_old')
-      self%Inu_old = tiny(1.0)
-    endif
+    !if (lock_Inu) then
+    !  m = shape(self%authority_mem)
+    !  m(3) = 2
+    !  call os%allocate(self%Inu_old, m(1:4), label=trim(self%kind)//'%Inu_old')
+    !  self%Inu_old = tiny(1.0)
+    !endif
   endif
 
   call trace%end()
@@ -163,31 +163,29 @@ SUBROUTINE radiation_update (self)
     endif
   endif
 
-  if (lock_Inu .and. .not. self%out_ray) then
-    k = self%n(3)
-    Inu_new => self%authority_mem(:,:,1:k:k-1,:,self%it,self%i_Inu)
-    if (all(abs(1 - self%Inu_old/Inu_new) < stiff_lim)) then
-      self%stiff_count = self%stiff_count*2
-      self%stiff = .true.
-      if (.not. self%opac%finished) then
-        call self%opac%compress_mem(self)
-        call self%opac%skip_iterations(self%stiff_count-1)
-      endif
+  !if (lock_Inu .and. .not. self%out_ray) then
+  !  k = self%n(3)
+  !  Inu_new => self%authority_mem(:,:,1:k:k-1,:,self%it,self%i_Inu)
+  !  if (all(abs(1 - self%Inu_old/Inu_new) < stiff_lim)) then
+  !    self%stiff_count = self%stiff_count*2
+  !    self%stiff = .true.
+  !    if (.not. self%opac%finished) then
+  !      call self%opac%compress_mem(self)
+  !      call self%opac%skip_iterations(self%stiff_count-1)
+  !    endif
+  !
+  !  elseif(self%stiff) then
+  !    !print *, self%m3d_patch_info(), 'Inu has changed, but used to be stiff'
+  !    self%stiff_count = 1
+  !    self%stiff = .false.
+  !  endif
+  !
+  !  self%Inu_old = Inu_new
+  !endif
 
-    elseif(self%stiff) then
-      !print *, self%m3d_patch_info(), 'Inu has changed, but used to be stiff'
-      self%stiff_count = 1
-      self%stiff = .false.
-    endif
-
-    self%Inu_old = Inu_new
-  endif
-
-  call self%post_update()
-
-  if (self%stiff .and. .not. self%is_finished()) then
-    call self%skip_iterations(self%stiff_count-1)
-  endif
+  !if (self%stiff .and. .not. self%is_finished()) then
+  !  call self%skip_iterations(self%stiff_count-1)
+  !endif
 
   !if (self%out_ray .and. self%patch%boundaries%is_set(bits%zu)) then
   !  call self%remove_lower_layers_mem()
@@ -751,10 +749,10 @@ SUBROUTINE print_post_update_info (self)
   !-----------------------------------------------------------------------------
   f = self%fcheck
   p = self%pcheck
-  if (self%stiff) then
-    write(text, '(A,I4)') 'intensity has not changed, skipping', self%stiff_count-1
-    call self%print_to_stdout(text=text)
-  else
+  !if (self%stiff) then
+  !  write(text, '(A,I4)') 'intensity has not changed, skipping', self%stiff_count-1
+  !  call self%print_to_stdout(text=text)
+  !else
     w = 1
     arr = 0
     arr(1) = self%mem(p(1),p(2),p(3),f,1,1)
@@ -770,7 +768,7 @@ SUBROUTINE print_post_update_info (self)
       endif
     endif
     call self%print_to_stdout(arr=arr(1:w))
-  endif
+  !endif
 END SUBROUTINE print_post_update_info
 
 !===============================================================================

@@ -102,11 +102,13 @@ MODULE atom_patch_mod
     n_nu = self%n_nu
     n_mu = self%n_mu
 
-    if (decouple_continuum) then
-      call self%create_sub_patches([1, n_nu],   [0, n_mu], self%bb_atom, self%bb_sp)
-      call self%create_sub_patches([1, n_nu]+n_nu, [0, 0], self%bf_atom, self%bf_sp)
-    else
-      call self%create_sub_patches([1, n_nu], [0, n_mu], self%atom, self%sp)
+    if (self%maxiter > 0) then
+      if (decouple_continuum) then
+        call self%create_sub_patches([1, n_nu],   [0, n_mu], self%bb_atom, self%bb_sp)
+        call self%create_sub_patches([1, n_nu]+n_nu, [0, 0], self%bf_atom, self%bf_sp)
+      else
+        call self%create_sub_patches([1, n_nu], [0, n_mu], self%atom, self%sp)
+      endif
     endif
 
     call self%create_sub_patches([-n_nu, -1], [-self%n_out, 0], self%output_atom, self%output_sp)
@@ -430,7 +432,7 @@ MODULE atom_patch_mod
         end do
       endif
 
-      if (.not. self%atom%stiff) then
+      !if (.not. self%atom%stiff) then
         do i=1, self%atom%nline
           gamma_ij(:,:,:,i) = gamma_ij(:,:,:,i) * wphi(:,:,:,i)
           gamma_ji(:,:,:,i) = gamma_ji(:,:,:,i) * wphi(:,:,:,i)
@@ -438,9 +440,9 @@ MODULE atom_patch_mod
 
         call self%update_populations(gamma_ij, gamma_ji)
         self%update_skipped = .false.
-      else
-        self%update_skipped = .true.
-      endif
+      !else
+      !  self%update_skipped = .true.
+      !endif
     endif
     
     if (self%iter > 0) then
@@ -453,17 +455,15 @@ MODULE atom_patch_mod
         call self%finish()
       endif
     endif
-  
-    call self%post_update()
 
     if (associated(self%atom%data%gamma_ij)) then
       call os%deallocate(self%atom%data%gamma_ij, label='atom%gamma_ij')
       call os%deallocate(self%atom%data%gamma_ji, label='atom%gamma_ji')
     endif
 
-    if (self%atom%stiff .and. .not. self%is_finished()) then
-      call self%check_skip()
-    endif
+    !if (self%atom%stiff .and. .not. self%is_finished()) then
+    !  call self%check_skip()
+    !endif
     call trace%end(itimer)
   END SUBROUTINE atom_patch_update
 

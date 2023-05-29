@@ -1204,8 +1204,8 @@ SUBROUTINE check_ready (self, link, lock)
       call task%log ('ready', 4)
       !.........................................................................
       if (self%verbose > 0 .or. task%id == io%id_debug) &
-        write (stdlog,'(f12.6,1x,a,i6,f12.6)') wallclock(), &
-        'list_t%check_ready: queue_by_time', task%id, task%time
+        write (stdlog,'(f12.6,1x,a,i6,f12.6,1x,a)') wallclock(), &
+        'list_t%check_ready: queue_by_time', task%id, task%time, trim(task%kind)
       !.........................................................................
       call self%queue_by_time (link, istep)
     else
@@ -2540,7 +2540,7 @@ SUBROUTINE real_queue_by_time (self, this, istep, error)
         !.......................................................................
         call task%log ('reject4', 4)
         go to 9
-      else if (next%task%time > task%time) then
+      else if (next%task%time >= task%time) then
         !-----------------------------------------------------------------------¨
         ! Check one more time if the task busy bit has been set in the meantime
         !-----------------------------------------------------------------------
@@ -2626,16 +2626,16 @@ SUBROUTINE real_queue_by_time (self, this, istep, error)
     if (associated(prev)) then
       call task%log ('set ready(t)', 3)
       if (self%verbose > 0) then
-        1 format(1x,a,3(a,i6,5x))
+        1 format(1x,a,3(a,i6,1x,a,5x))
         write (io_unit%log,1) 'list_t%queue_by_time: ', &
-        'task',task%id, 'in queue after', prev%task%id, 'nq:', nq
+        'task',task%id, trim(task%kind), 'in queue after', prev%task%id, trim(prev%task%kind), 'nq:', nq
       end if
       prev%next_time => this
     else
       call task%log ('set ready(h)', 3)
       if (self%verbose > 0) then
         write (io_unit%log,1) 'list_t%queue_by_time: ', &
-        'task', task%id, 'at queue head    nq:', nq
+        'task', task%id, trim(task%kind), 'at queue head    nq:', nq
       end if
       self%queue => this
     end if

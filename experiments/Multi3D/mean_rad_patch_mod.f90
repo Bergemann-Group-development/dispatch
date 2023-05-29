@@ -89,7 +89,6 @@ MODULE mean_rad_patch_mod
         self%Ieff(:,:,:,f) = self%Ieff(:,:,:,f) + self%Psi(:,:,:,f) * eta_back
       end do
     endif
-    call self%post_update()
     call trace%end(itimer)
   END SUBROUTINE update
   

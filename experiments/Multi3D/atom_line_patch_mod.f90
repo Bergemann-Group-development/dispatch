@@ -268,9 +268,6 @@ MODULE atom_line_patch_mod
     if (.not. self%out_ray .and. self%iter==0) then
       call self%integrate_wphi()
     endif
-
-    call self%post_update()
-
     call trace%end(itimer)
   END SUBROUTINE atom_line_update
 

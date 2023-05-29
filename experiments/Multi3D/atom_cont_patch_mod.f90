@@ -75,7 +75,6 @@ MODULE atom_cont_patch_mod
     if (self%iter == 1) then
       self%dtime = self%dt_fixed
     endif
-    call self%post_update()
   END SUBROUTINE atom_cont_update
   
   !===============================================================================

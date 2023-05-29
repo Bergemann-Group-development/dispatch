@@ -71,6 +71,7 @@ MODULE m3d_patch_mod
       logical :: out_ray=.false., static_mem=.false., one_dimensional=.false.
       logical :: compressed=.false., save_output=.false.
       logical :: print_update_info, checked_bounds=.false.
+      logical :: second_choice=.false.
       integer :: i_nu=0, i_mu=0
       integer :: i_ne=1, i_rho=2, i_temp=3, i_nh1=4, i_nh6=9
       integer :: i_chi=1, i_eta=2, i_snu=2
@@ -221,6 +222,8 @@ MODULE m3d_patch_mod
         allocate(cust_mu(ntheta))
         read(custom_mu, *) cust_mu 
         call set_custom_quadratures (cust_mu, nphi, long_vec, long_wmu)
+      case ('grid+', 'gridx', 'grid*')
+        call set_grid_quadratures(long_scheme, self%patch%ds, long_vec, long_wmu, up_and_down=.false.)
       case default
         print *, 'Quadrature keyword "'// trim(long_scheme) // '" not recognized for LC solver. Stopping...'
         stop
@@ -296,6 +299,8 @@ MODULE m3d_patch_mod
     call self%set (bits%no_filled)
     
     call self%set_place(self, -2)
+    call self%init_level()
+    self%key = self%hash_key()
 
     call self%set_maxiter()
     call trace%end (itimer)
@@ -370,7 +375,6 @@ MODULE m3d_patch_mod
     call self%patch_t%init()
     call data_io%init (self)
     self%status = status
-    !call self%init_level()
 
     self%mem = tiny(1.)
     ! ----------------------------------------------------------------------------
@@ -438,9 +442,9 @@ MODULE m3d_patch_mod
 
 
     select case (self%kind)
-    case ('composition', 'atom_patch')
-      self%t_offset = 0.4d0
-    case ('back_cont')
+    !case ('composition', 'atom_patch')
+    !  self%t_offset = 0.4d0
+    !case ('back_cont')
       !if (save_back_cont .and. .not. self%out_ray) then
       !  self%t_offset = 0.4d0
       !endif
@@ -455,11 +459,11 @@ MODULE m3d_patch_mod
       !endif
     end select
 
-    if (self%i_nu /= 0) then
-      tnu = mod(abs(self%i_nu)-1, self%n_nu)+1
-      tnu = tnu / self%n_nu
-      self%t_offset = self%t_offset + 0.1*tnu
-    endif
+    !if (self%i_nu /= 0) then
+    !  tnu = mod(abs(self%i_nu)-1, self%n_nu)+1
+    !  tnu = tnu / self%n_nu
+    !  self%t_offset = self%t_offset + 0.1*tnu
+    !endif
 
     if (self%out_ray) then
       self%time = self%time + ilambd + maxiter
@@ -467,7 +471,7 @@ MODULE m3d_patch_mod
 
     self%time = self%time + self%t_offset * self%dtime
 
-    self%t  = self%time            ! in case already set
+    self%t = self%time            ! in case already set
     self%iit = 1                   ! initial slots
     self%it = 1                    ! slot for current values
     self%new = 1                   ! slot for new values
@@ -496,14 +500,14 @@ MODULE m3d_patch_mod
       self%maxiter = 1
     case ('atom_line')
       if (save_atom_line) then
-        self%maxiter = min(0, self%m3d_parent%maxiter-1)
+        self%maxiter = 0
       else
         self%maxiter = self%m3d_parent%maxiter - 1
       endif
     case ('atom_patch')
       self%maxiter = maxiter
     case ('atom_cont')
-      self%maxiter = self%m3d_parent%maxiter - 1
+      self%maxiter = self%m3d_parent%maxiter-1
     case ('atom_rate')
       self%maxiter = self%m3d_parent%maxiter + ilambd - 1
       self%iter = ilambd
@@ -563,10 +567,6 @@ MODULE m3d_patch_mod
       if (.not. self%is_finished()) then
         call self%print_execution_history('PRE')
       endif
-      !call self%push_nbors_for_update(post_update=.false.)
-      !if (self%i_mu /= 0) then
-        call self%claim_nbor_place()
-      !endif
     endif
     if (self%verbose > 1) then
       if (.not. self%checked_bounds) then
@@ -595,10 +595,10 @@ MODULE m3d_patch_mod
         call self%print_to_stdout()
       endif
     endif
-    if (self%iter == self%maxiter .or. self%nbors_finished()) then
-      call self%finish()
-    endif
     call self%free_unused_memory()
+    !if (self%i_mu /= 0) then
+      call self%claim_nbor_place()
+    !endif
     !call self%push_nbors_for_update(post_update=.true.)
     if (self%place>=100) then
       self%place = self%place-100
@@ -811,10 +811,8 @@ MODULE m3d_patch_mod
         call link%init()
         link%task => self
         self%link => link
-        call self%init_level()
         !call link%append_to(self%task_list)
         call self%task_list%append_link(self%link)
-        self%key = self%hash_key()
         call self%task_list%hash_table%add (self%key, self%link)
       endif
     endif
@@ -848,6 +846,9 @@ MODULE m3d_patch_mod
   SUBROUTINE rotate (self)
     class(m3d_patch_t):: self
     !-----------------------------------------------------------------------------
+    if (self%iter == self%maxiter .or. self%nbors_finished()) then
+      call self%finish()
+    endif
     call self%task_t%rotate
   END SUBROUTINE rotate
   
@@ -1073,7 +1074,7 @@ MODULE m3d_patch_mod
 
   !===============================================================================
   SUBROUTINE check_mem (self)
-    class(m3d_patch_t):: self
+    class(m3d_patch_t) :: self
     integer :: orig_place
     logical :: push
     !-----------------------------------------------------------------------------
@@ -1083,14 +1084,14 @@ MODULE m3d_patch_mod
           self%kind = trim(self%kind)//'V'
           self%static_mem = .true.
         endif
-        push = self%place >= 100
+        !push = self%place >= 100
         orig_place = self%place
         call self%init()
-        if (push) self%place = self%place + 100
+        self%place = orig_place
+        !if (push) self%place = self%place + 100
         !if (mod(orig_place,100) /= mod(self%place,100)) then
         !  print *, self%m3d_patch_info2(), ' changed place from ', orig_place
         !endif
-        !self%place = orig_place
       else
         call self%allocate_mem(self)
       endif
@@ -1140,33 +1141,44 @@ MODULE m3d_patch_mod
     class(nbor_t), pointer:: nbor, nbnbor
     class(task_t), pointer:: nbtask, nbnbtask
     class(link_t), pointer:: nblink
-    integer :: thread, i, key(4)
     integer, save :: itimer=0
+    logical :: pushed
     !-----------------------------------------------------------------------------
-    key = self%key
-    do i=-1, 1, 2
-      key(1) = self%key(1)+i
-      call self%task_list%hash_table%get (key, nblink)
-      if (associated(nblink)) then
-        nbtask => nblink%task
-        if (nbtask%time == self%time .and. nbtask%place < 0) then
+    call trace%begin ('m3d_patch_t%claim_nbor_place', itimer=itimer)
+    pushed = .false.
+    nbor => self%link%nbor
+    do while (associated (nbor))
+      nbtask => nbor%task
+      if (nbor%needs_me .and. nbtask%is_set(bits%ready)) then
+        if (all(self%key(1:2) == nbtask%key(1:2))) then
           call self%set_place(nbtask, -1)
+          pushed = .true.
         endif
       endif
+      nbor => nbor%next
     end do
 
-    if (self%i_mu /= 0) then
+    if (.not. pushed .and. self%i_mu /= 0) then
       nbor => self%link%nbor
       do while (associated (nbor))
         nbtask => nbor%task
-        if (nbor%needs_me .and. nbtask%time==self%time) then
-          if (all(self%key(1:3) == nbtask%key(1:3))) then
-            call self%set_place(nbtask, self%place, push=.true.)
-          endif
+        if (nbor%needs_me) then
+          select type (nbtask)
+          class is (gpatch_t)
+            nbnbor => nbtask%link%nbor
+            do while (associated(nbnbor))
+              nbnbtask => nbnbor%task
+              if (nbnbor%needed .and. nbnbtask%is_set(bits%ready)) then
+                call self%set_place(nbnbtask, -1)
+              endif
+              nbnbor => nbnbor%next
+            end do
+          end select
         endif
         nbor => nbor%next
       end do
     endif
+    call trace%end(itimer)
   END SUBROUTINE claim_nbor_place
 
   !===============================================================================
@@ -1176,18 +1188,14 @@ MODULE m3d_patch_mod
     integer :: place
     logical, optional :: push
     !-----------------------------------------------------------------------------
-    if (present(push)) then
-      if (push .and. place < 100) then
-        other%place = place+100
-      else
-        other%place = place
-      endif
+    if (option(push) .and. place < 100) then
+      other%place = place+100
     else
       other%place = place
     endif
     if (self%id /= other%id .and. print_push) then
       print '(A, A, A, A, I4, A, I4)', trim(self%m3d_patch_info2()), ' set place of ', &
-      trim(other%kind), ' ', other%id, ' to ', place
+      trim(other%kind), ' ', other%id, ' to ', other%place
     endif
   END SUBROUTINE set_place
 
@@ -1362,7 +1370,6 @@ MODULE m3d_patch_mod
     character(len=*), optional :: text
     !-----------------------------------------------------------------------------
     if (present(arr)) then
-      call self%check_access(self)
       if (size(arr)==0) then
         write(stdout,'(A, A)') self%m3d_patch_info(), 'invalid index!'
       else

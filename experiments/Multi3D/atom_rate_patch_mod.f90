@@ -110,9 +110,9 @@ MODULE atom_rate_patch_mod
     gamma_ij => self%mem(:,:,:,:, self%it, self%i_Gij)
     gamma_ji => self%mem(:,:,:,:, self%it, self%i_Gji)
 
-    if (.not. self%rad%stiff) then
-      self%static_mem = .false.
-    endif
+    !if (.not. self%rad%stiff) then
+    !  self%static_mem = .false.
+    !endif
 
     if (.not. self%static_mem) then
       call self%full_preconditioning(gamma_ij, gamma_ji)
@@ -123,16 +123,15 @@ MODULE atom_rate_patch_mod
 
     call self%integrate_rates(gamma_ij, gamma_ji)
 
-    if (self%rad%stiff) then
-      self%static_mem = .true.
-      call self%rad%compress_mem(self)
-    endif
+    !if (self%rad%stiff) then
+    !  self%static_mem = .true.
+    !  call self%rad%compress_mem(self)
+    !endif
 
-    call trace%end(itimer)
-    call self%post_update()
     if (.not. self%static_mem) then
       call self%deallocate_mem(self, print=.true.)
     endif
+    call trace%end(itimer)
   END SUBROUTINE atom_rate_update
   
   !====================================================================================
@@ -395,7 +394,7 @@ MODULE atom_rate_patch_mod
       m = [self%n, atom%nrad]
       call os%allocate(atom%data%gamma_ij, m, zero=.true., label='atom%gamma_ij')
       call os%allocate(atom%data%gamma_ji, m, zero=.true., label='atom%gamma_ji')
-      self%atom%stiff=.true.
+      !self%atom%stiff=.true.
     endif
     wmu = self%wmu / over_4pi
     do i=1, self%nv
@@ -403,9 +402,9 @@ MODULE atom_rate_patch_mod
       atom%data%gamma_ij(:,:,:,k) = atom%data%gamma_ij(:,:,:,k) + wmu * gamma_ij(:,:,:,i)
       atom%data%gamma_ji(:,:,:,k) = atom%data%gamma_ji(:,:,:,k) + wmu * gamma_ji(:,:,:,i)
     end do
-    if (.not. self%static_mem) then
-      self%atom%stiff=.false.
-    endif
+    !if (.not. self%static_mem) then
+    !  self%atom%stiff=.false.
+    !endif
     call self%m3d_parent%mem_lock(1)%unset('integrate_rates')
   END SUBROUTINE integrate_rates
   

@@ -108,9 +108,7 @@ MODULE back_cont_patch_mod
       call os%deallocate(abslte, label='abslte')
       call os%deallocate(sumsca, label='sumsca')
     endif
-  
     call trace%end(itimer)
-    call self%post_update()
   END SUBROUTINE back_cont_update
   
   !===============================================================================

@@ -159,7 +159,6 @@ MODULE net_opac_patch_mod
       call self%rotate_cube()
     endif
 
-    call self%post_update()
     call trace%end(itimer)
   END SUBROUTINE net_opac_update
 
