@@ -643,6 +643,7 @@ MODULE m3d_patch_mod
     self%time = io%end_time
     call self%set_place(self, -2)
     call self%set(bits%no_download)
+    call self%set(bits%ignore)
     if (self%save_output) call self%save(self%out_mem, self%kind)
     call trace%end()
   END SUBROUTINE finish
@@ -1036,14 +1037,14 @@ MODULE m3d_patch_mod
         self%mem = tiny(1.0)
       endif
       self%nullified = .false.
-      if (.not. self%compressed) then
+      !if (.not. self%compressed) then
         li = self%li
         ui = self%ui
         self%authority_mem => self%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),:,:,:)
         if (self%save_output) then
           self%out_mem => self%authority_mem(:,:,:,:,self%it,:)
         endif
-      endif
+      !endif
       self%last_allocator => allocator
       self%allocation_time = allocator%time
       call trace%end (itimer)

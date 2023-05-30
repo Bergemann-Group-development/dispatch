@@ -235,7 +235,7 @@ CONTAINS
     call io%assert (all(ls >= sm%lb), 'guards_t%same: ls breach')
     call io%assert (all(us <= sm%ub), 'guards_t%same: us breach')
 
-    if (src%n(3)==1) then
+    if (size(src%mem,3)==1) then
       ls(3) = 1
       us(3) = 1
     endif

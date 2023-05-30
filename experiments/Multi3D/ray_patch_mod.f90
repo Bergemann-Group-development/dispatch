@@ -432,9 +432,10 @@ SUBROUTINE allocate_mem (self, allocator, m_in)
 END SUBROUTINE allocate_mem
 
 !===============================================================================
-SUBROUTINE compress_mem (self, compressor)
+SUBROUTINE compress_mem (self, compressor, static)
   class(ray_patch_t):: self
   class(m3d_patch_t), intent(in), target :: compressor
+  logical, intent(in) :: static
   integer :: i, k, m(6)
   real(4), dimension(:,:,:,:,:,:), pointer, contiguous :: dn
   integer, save:: itimer=0
@@ -442,7 +443,7 @@ SUBROUTINE compress_mem (self, compressor)
   if (.not. self%compressed) then
     call trace%begin ('ray_patch_t%compress_mem', itimer=itimer)
     call self%mem_lock(1)%set ('compress_mem')
-    self%static_mem = .true.
+    self%static_mem = static
     self%compressed = .true.
     m = shape(self%mem)
     m(3) = 1

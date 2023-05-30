@@ -30,6 +30,7 @@ MODULE angle_rad_patch_mod
   USE os_mod
   USE omp_mod
   USE omp_lock_mod
+  USE m3d_debug_mod
   implicit none
 
   !-----------------------------------------------------------------------------
@@ -162,6 +163,15 @@ SUBROUTINE radiation_update (self)
       call self%integrate_intensity()
     endif
   endif
+
+  if (self%print_update_info) then
+    f = self%fcheck
+    p = self%pcheck
+    memcheck(1) = self%mem(p(1),p(2),p(3),f,1,1)
+  endif
+  
+  call self%opac%compress_mem(self, static=.false.)
+  call self%compress_mem(self, static=.false.)
 
   !if (lock_Inu .and. .not. self%out_ray) then
   !  k = self%n(3)
@@ -561,7 +571,6 @@ SUBROUTINE integrate_intensity(self)
     call interpolate_to_ray(vproj, nu_in, nu_out, self%Psi, mean%Psi, wmu)
     call interpolate_to_ray(vproj, nu_in, nu_out, self%Ieff, mean%Ieff, wmu)
     call os%deallocate(vproj)
-    !call self%compress_mem(self)
   else
     do f=1, self%nv
     do k=1, self%n(3)
@@ -755,7 +764,7 @@ SUBROUTINE print_post_update_info (self)
   !else
     w = 1
     arr = 0
-    arr(1) = self%mem(p(1),p(2),p(3),f,1,1)
+    arr(1) = memcheck(1)
     p2 = p - self%ng
     if (all(p2>0) .and. all(p2<=self%n)) then
       if (associated(self%Psi)) then

@@ -78,7 +78,7 @@ MODULE out_rad_patch_mod
     real(4), dimension(:,:,:,:), pointer :: mem
     real(4), dimension(:,:,:,:,:), pointer, contiguous :: II
     integer :: lunit
-    integer :: i, iw
+    integer :: i, iw, top
     real(4) :: norm
     !-----------------------------------------------------------------------------
     if (self%is_finished()) return
@@ -92,8 +92,9 @@ MODULE out_rad_patch_mod
         call self%check_access(nb)
         do iw=1, self%nw
           Inu => self%mem(:,:,1, nb%fs:nb%fe, self%it, iw)
+          top = size(nb%authority_mem, 3)
           do i=1, nb%nv
-            Inu(:,:,i) = nb%authority_mem(:,:,nb%n(3), i, nb%it, iw)
+            Inu(:,:,i) = nb%authority_mem(:,:,top, i, nb%it, iw)
           end do
         end do
       end select
