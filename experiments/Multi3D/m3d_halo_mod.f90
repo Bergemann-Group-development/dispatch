@@ -187,9 +187,9 @@ CONTAINS
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_halo_t%same', itimer=itimer)
 
-    if (print_download) then
-      write(stdout, '(I4, A, I4)') tgt%id, ' downloading from ', src%id
-    endif
+    !if (print_download) then
+    !  write(stdout, '(I8, A, I8)') tgt%id, ' downloading from ', src%id
+    !endif
 
     tm => tgt%mesh                             ! tgt mesh
     sm => src%mesh                             ! src mesh
@@ -238,6 +238,11 @@ CONTAINS
     if (size(src%mem,3)==1) then
       ls(3) = 1
       us(3) = 1
+    endif
+
+    if (print_download) then
+      write(stdout, '(I8, A, I8)') tgt%id, ' downloading from ', src%id
+      write(stdout, *) ls, us, lt-ls
     endif
 
     if (src%level == tgt%level) then

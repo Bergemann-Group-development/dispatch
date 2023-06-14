@@ -45,7 +45,7 @@ MODULE dispatcher0_mod
   logical, save:: debug=.false.
   logical, save:: do_delay=.true.
   logical, save:: track_active=.false.
-  logical, save:: omp_pick=.false.
+  logical, save:: omp_pick=.true.
   logical, save:: pick_thread=.false.
   logical, save:: detailed_timer=.false.
   type(dispatcher0_t), public:: dispatcher0
