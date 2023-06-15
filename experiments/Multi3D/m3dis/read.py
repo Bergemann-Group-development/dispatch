@@ -460,7 +460,7 @@ class read(object):
 
                 #if '_out' in file: key = key + ['out']
 
-                dct[tuple(key)] = np.memmap(self.sfolder + file, dtype=dtype).reshape(dims, order='F')
+                dct[tuple(key)] = np.memmap(self.sfolder + file, dtype=dtype, mode='r').reshape(dims, order='F')
 
         meta.close()
 

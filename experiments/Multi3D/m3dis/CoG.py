@@ -97,8 +97,7 @@ class CoG(object):
             p0 = [abnd0, 0]
         
         def opt_func(newx, abnd, vshift):
-            kwargs['vshift'] = vshift
-            yy = self.interp(newx, abnd, **kwargs)
+            yy = self.interp(newx, abnd, vshift=vshift, **kwargs)
             return yy
         
         (abnd, vshift), _ = optimize.curve_fit(opt_func, oxx, oyy, p0=p0, bounds=bounds)
@@ -106,6 +105,24 @@ class CoG(object):
 
         return abnd, vshift, fitted
     
+    #=================================================================
+    def fit_abnd_and_vshift_and_vdop(self, oxx, oyy, bounds=None, p0=None, blend=None, **kwargs):
+        abnds = self.abnds
+        if bounds is None:
+            bounds = ([abnds[0], -3, 1e-4], [abnds[-1], 3, 1e1])
+            
+        if p0 is None:
+            abnd0 = np.mean(abnds)
+            p0 = [abnd0, 0, 1.0]
+        
+        def opt_func(newx, abnd, vshift, vdop):
+            yy = self.interp(newx, abnd, vshift=vshift, vdop=vdop, **kwargs)
+            return yy
+        
+        (abnd, vshift, vdop), _ = optimize.curve_fit(opt_func, oxx, oyy, p0=p0, bounds=bounds)
+        fitted = opt_func(oxx, abnd, vshift, vdop)
+
+        return abnd, vshift, vdop, fitted
 
     #=================================================================
     def save(self, file, protocol=4):

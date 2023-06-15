@@ -90,9 +90,9 @@ MODULE back_cont_patch_mod
     if (.not. self%out_ray .and. ilambd > 0 .and. self%iter > 0) then
       call self%check_access(self%mean_rad)
       Jold => self%mean_rad%authority_mem(:,:,:,:,self%mean_rad%it,1)
-      call self%composition%scattering(nu, abslte, eta, Jold, sumsca)
+      call self%composition%scattering(nu, abslte, eta, sumsca, Jold)
     else
-      call self%composition%scattering(nu, abslte, eta)
+      call self%composition%scattering(nu, abslte, eta, sumsca)
     endif
 
     if (.not. self%out_ray) then 
