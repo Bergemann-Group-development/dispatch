@@ -442,14 +442,14 @@ contains
   END SUBROUTINE get_temp_index
 
   !===============================================================================
-  PURE SUBROUTINE trans_boltzmann_weight(self, EK_over_temp, frac, dxi)
+  PURE ELEMENTAL FUNCTION trans_boltzmann_weight(self, EK_over_temp, dxi) result(frac)
       class(bftrans_type), intent(in) :: self
-      real(dp), dimension(:,:,:), intent(in) :: EK_over_temp
-      real(dp), dimension(:,:,:), intent(in), optional :: dxi
-      real(dp), dimension(:,:,:), intent(out) :: frac
+      real(dp), intent(in) :: EK_over_temp
+      real(dp), intent(in), optional :: dxi
+      real(dp) :: frac
       !---------------------------------------------------------------------------
       frac = self%level%g2 * self%level%boltzmann(EK_over_temp, dxi=dxi, natural_log=.true.)
-  END SUBROUTINE trans_boltzmann_weight
+  END FUNCTION trans_boltzmann_weight
 
   !===============================================================================
   SUBROUTINE absorption_factor(self, EK_over_temp, teta, pe, toth, dxi, fakt)
@@ -458,12 +458,12 @@ contains
       real(dp), dimension(:,:,:), intent(in) :: EK_over_temp, teta, pe, toth, dxi
       real(dp), dimension(:,:,:), intent(out) :: fakt
       real(dp), dimension(:,:,:), allocatable :: h1
-      integer, dimension(:,:,:), allocatable :: nniv
+      real(dp) :: thresh
       !---------------------------------------------------------------------------
       ion => self%ion
 
       if (self%regular) then
-          call self%boltzmann_weight(EK_over_temp, fakt)
+          fakt = self%boltzmann_weight(EK_over_temp)
           fakt = fakt * ion%part * ion%n
       else
           select case(trim(self%key))
@@ -473,22 +473,23 @@ contains
           case('H- FF')
               ! factor 1e-26 comes from table 1 in Stilley & Callaway 1970
               ! values are tabulated per unit electron pressure per hydrogen atom
-              !fakt = 2.E-26 * ion%n * pe * ion%part
-              fakt = 1.E-26 * toth * pe
+              fakt = 2.E-26 * ion%n * pe * ion%part
+              !fakt = 1.E-26 * toth * pe
           case('H BF')
               !call self%boltzmann_weight(EK_over_temp, fakt, dxi) 
               !fakt = 2.0898E-26 / (2*self%k**5) * fakt * ion%part * ion%n
 
-              allocate(nniv(size(pe,1), size(pe,2), size(pe,3)))
-              allocate(h1, mold=dxi)
-              h1 = sqrt(RYD/dxi)
-              nniv = int(h1)
-              where (nniv < self%k)
+              thresh = RYD - self%level%xion ! ionisation threshold
+              allocate(h1, source=sqrt(RYD/dxi))
+
+              where (dxi > thresh)
                   fakt = 0
-              elsewhere (nniv >= self%k)
-                  fakt = 2 * self%k**2 * exp(-31.30364*teta*(1. - 1./self%k**2))
+              elsewhere
+                  fakt = self%boltzmann_weight(EK_over_temp)
                   fakt = 2.0898E-26 / (2*self%k**5) * fakt * ion%part * ion%n
-                  fakt = fakt * (h1 - float(nniv))
+                  where (floor(h1) == self%k)
+                    fakt = fakt * (h1 - floor(h1))
+                  end where
               end where
 
           case('H FF')
@@ -521,12 +522,12 @@ contains
       real(dp), dimension(:,:,:), allocatable :: fakt
       logical, optional :: sorted
       real(dp) :: prev
-      integer :: i,j,k,nf, m(2)
+      integer :: i,j,k,nf, m(2), p(4)=[1,1,1,1]
       !---------------------------------------------------------------------------
       nf = size(lam)
 
       if (associated(quad)) then
-          print *, 'stopping...'
+          print *, 'stoping...'
           stop
       endif
 
@@ -545,10 +546,10 @@ contains
       endif
 
       if (active) then
-          !prev = abslte(pp(1), pp(2), pp(3), pp(4))
+          !prev = abslte(p(1), p(2), p(3), p(4))
           call self%absorption_factor(EK_over_temp, teta, pe, toth, dxi, fakt)
           call self%interp_xkap(abslte, temp, teta, fakt)
-          !print '(A14, A, 8(ES14.6))', self%label, self%ion%id, fakt(pp(1),pp(2),pp(3)), abslte(pp(1),pp(2),pp(3),pp(4)) - prev, abslte(pp(1),pp(2),pp(3),pp(4))
+          !print '(A14, A, 8(ES14.6))', self%label, self%ion%id, fakt(p(1),p(2),p(3))!, abslte(p(1),p(2),p(3),p(4)) - prev, abslte(p(1),p(2),p(3),p(4))
       endif
 
 
