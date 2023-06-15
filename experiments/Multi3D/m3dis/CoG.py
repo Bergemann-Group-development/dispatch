@@ -22,6 +22,16 @@ class CoG_line(object):
         xx, yy = self.crop(abnd, **kwargs)
         weq = np.trapz(1 - yy, x=xx) * 1e3
         return weq
+    
+    #=================================================================
+    def get_cog(self, **kwargs):
+        weqs = np.zeros(self.cog.nruns)
+
+        for i, run in enumerate(self.cog.runs):
+            line = run.line[self.kr]
+            weqs[i] = line.calc_weq(**kwargs)
+
+        return self.cog.abnds, weqs    
 
     #=================================================================
     def crop(self, abnd, dlam=None, vdop=None, vshift=None, **kwargs):
