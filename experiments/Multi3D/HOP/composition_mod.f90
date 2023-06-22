@@ -1189,7 +1189,7 @@ contains
     END SUBROUTINE absorption
 
     !===============================================================================
-    SUBROUTINE scattering (self, nu, abslte, eta, Jnu, sumsca)
+    SUBROUTINE scattering (self, nu, abslte, eta, sumsca, Jnu)
         class(composition_type), target :: self
         real(dp), dimension(:),     intent(in) :: nu
         real(4), dimension(:,:,:,:), intent(in) :: abslte
@@ -1198,14 +1198,18 @@ contains
         integer :: f, nf
         !---------------------------------------------------------------------------
         nf = size(nu, 1)
-        if (present(Jnu) .and. present(sumsca)) then
-          do f=1, nf
-            eta(:,:,:,f) = real((abslte(:,:,:,f)*planck(nu(f), self%temp) + sumsca(:,:,:,f)*Jnu(:,:,:,f)))
-          end do
+        if (present(Jnu)) then
+            do f=1, nf
+                eta(:,:,:,f) = real((abslte(:,:,:,f)*planck(nu(f), self%temp) + sumsca(:,:,:,f)*Jnu(:,:,:,f)))
+            end do
+        elseif (present(sumsca)) then
+            do f=1, nf
+                eta(:,:,:,f) = real((abslte(:,:,:,f) + sumsca(:,:,:,f)) * planck(nu(f), self%temp))
+            end do
         else
-          do f=1, nf
-            eta(:,:,:,f) = real((abslte(:,:,:,f)*planck(nu(f), self%temp)))
-          end do
+            do f=1, nf
+                eta(:,:,:,f) = real(abslte(:,:,:,f) * planck(nu(f), self%temp))
+            end do
         endif
     END SUBROUTINE scattering
 

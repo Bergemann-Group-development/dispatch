@@ -146,8 +146,8 @@ MODULE net_opac_patch_mod
     do iw=1, self%nw, 2
       do it=1, self%nt
         do f=1, self%nv
-            !Snu(:,:,:,f) = eta(:,:,:,f) / chi(:,:,:,f)
-            mem(:,:,:,f,it,iw+1) = mem(:,:,:,f,it,iw+1) / mem(:,:,:,f,it,iw)
+          !Snu = eta / chi
+          mem(:,:,:,f,it,iw+1) = mem(:,:,:,f,it,iw+1) / mem(:,:,:,f,it,iw)
         end do
       end do
     end do

@@ -450,17 +450,16 @@ class read(object):
                 info = line.split()
                 file = info[0]
                 prec = int(info[1])
-                dims = [int(d) for d in info[2:]]
-
-                if prec == 32: dtype=np.float32
-                if prec == 64: dtype=np.float64
+                dtype = '<f{:d}'.format(prec//8)
+                dims = tuple([int(d) for d in info[2:]])
 
                 key = file.split('.')[0].split('_')[-1]
-                key = [int(k) for k in [key[0:3], key[3:6], key[6:9]]]
+                key = np.array([int(k) for k in [key[0:3], key[3:6], key[6:9]]])
 
-                #if '_out' in file: key = key + ['out']
+                if '_out' in file:
+                    key[1:] = key[1:]*-1
 
-                dct[tuple(key)] = np.memmap(self.sfolder + file, dtype=dtype).reshape(dims, order='F')
+                dct[tuple(key)] = np.memmap(self.sfolder + file, dtype=dtype, mode='r', shape=dims, order='F')
 
         meta.close()
 

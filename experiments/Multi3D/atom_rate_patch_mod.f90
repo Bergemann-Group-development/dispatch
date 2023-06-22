@@ -10,7 +10,7 @@ MODULE atom_rate_patch_mod
     USE os_mod
     USE bits_mod
     USE handyfuncs_mod
-    USE m3d_patch_mod, only: comoving_frame
+    USE m3d_patch_mod, only: comoving_frame, preconditioning
     USE ray_patch_mod, only: ray_patch_t
     USE angle_rad_patch_mod, only: rad_patch_t
     USE trans_mod, only: transition_type
@@ -150,7 +150,7 @@ MODULE atom_rate_patch_mod
     real(4), dimension(:), allocatable :: wnu
     integer, dimension(:), allocatable :: lower, upper, trans, ii, jj
     logical, dimension(:), allocatable :: cross
-    real(4) :: chi, twohnu3_c2, alpha, hnu_inv, Bij, Bji, ufac, alpha2, dn, up
+    real(4) :: chi, twohnu3_c2, alpha, Bij, Bji, ufac, alpha2, dn, up, h4pi
     integer :: i, j, k, kr, kr2, kc, kl, fs, fe, n_active, ff, f, p(3)
     integer :: x,y,z, nx, ny, nz, nupper, nlower, i2
     logical :: cross_coupling, skip_admin
@@ -194,11 +194,15 @@ MODULE atom_rate_patch_mod
 
     allocate(phi, mold=Psi(:,:,:,1:1))
     allocate(blzfac, hk_over_temp, mold=temp)
-    allocate(SumChiUp(nx,ny,nz,nlower))
-    allocate(SumChiDn(nx,ny,nz,nupper))
-    allocate(SumU    (nx,ny,nz,nupper))
+
+    if (preconditioning) then
+      allocate(SumChiUp(nx,ny,nz,nlower))
+      allocate(SumChiDn(nx,ny,nz,nupper))
+      allocate(SumU    (nx,ny,nz,nupper))
+    endif
 
     hk_over_temp = h_k / temp
+    h4pi = self%wmu*4*PI / hh
 
     do ff=fs,fe
         !call trace%begin('administration', itimer=itimer1)
@@ -218,8 +222,7 @@ MODULE atom_rate_patch_mod
         end do
 
         twohnu3_c2 = twoh_c2 * sp%nu(ff)**3
-        hnu_inv = 1 / (hh*sp%nu(ff))
-        wnu(1:n_active) = wnu(1:n_active) * hnu_inv ! wm needs to be multiplied later
+        wnu(1:n_active) = wnu(1:n_active) * h4pi / sp%nu(ff)
 
         skip_admin = .false.
         if (ff > fs) then
@@ -242,17 +245,19 @@ MODULE atom_rate_patch_mod
             endif
           end do
 
-          cross(1:n_active) = .false.
-          cross_coupling = .false.
+          if (preconditioning) then 
+            cross(1:n_active) = .false.
+            cross_coupling = .false.
 
-          do kr=1, n_active
-            do kr2=1, n_active
-              if (lower(kr) == upper(kr2)) then
-                cross_coupling = .true.
-                cross(kr) = .true.
-              endif
+            do kr=1, n_active
+              do kr2=1, n_active
+                if (lower(kr) == upper(kr2)) then
+                  cross_coupling = .true.
+                  cross(kr) = .true.
+                endif
+              end do
             end do
-          end do
+          endif
 
           call unique_int(lower(1:n_active), nlower, idx=ii)
           call unique_int(upper(1:n_active), nupper, idx=jj)
@@ -261,14 +266,16 @@ MODULE atom_rate_patch_mod
         !call trace%end(itimer1)
         !call trace%begin('nullify', itimer=itimer4)
 
-        do i=1,nlower
-          SumChiUp(:,:,:,i) = 0
-        end do
+        if (preconditioning) then
+          do i=1,nlower
+            SumChiUp(:,:,:,i) = 0
+          end do
 
-        do j=1,nupper
-          SumU(:,:,:,j) = 0
-          if (cross_coupling) SumChiDn(:,:,:,j) = 0
-        end do
+          do j=1,nupper
+            SumU(:,:,:,j) = 0
+            if (cross_coupling) SumChiDn(:,:,:,j) = 0
+          end do
+        endif
 
         if (sp%nac(ff) > 0) then
           blzfac = exp(- hk_over_temp * real(sp%nu(ff)))
@@ -293,11 +300,12 @@ MODULE atom_rate_patch_mod
             do x=1,nx
               vij(x,y,z,kr) = alpha
               vji(x,y,z,kr) = alpha * atom%data%ni_over_nj_lte(x,y,z,kc) * blzfac(x,y,z)
-              chi = vij(x,y,z,kr) * ni(x,y,z) - vji(x,y,z,kr) * nj(x,y,z)
-
-              SumU(x,y,z,j) = SumU(x,y,z,j) + vji(x,y,z,kr) * ufac
-              SumChiUp(x,y,z,i) = SumChiUp(x,y,z,i) + chi
-              if (cross(kr)) SumChiDn(x,y,z,j) = SumChiDn(x,y,z,j) + chi
+              if (preconditioning) then
+                chi = vij(x,y,z,kr) * ni(x,y,z) - vji(x,y,z,kr) * nj(x,y,z)
+                SumU(x,y,z,j) = SumU(x,y,z,j) + vji(x,y,z,kr) * ufac
+                SumChiUp(x,y,z,i) = SumChiUp(x,y,z,i) + chi
+                if (cross(kr)) SumChiDn(x,y,z,j) = SumChiDn(x,y,z,j) + chi
+              endif
             end do
             end do
             end do
@@ -312,11 +320,12 @@ MODULE atom_rate_patch_mod
             do x=1,nx
               vij(x,y,z,kr) = phi(x,y,z,1) * Bij
               vji(x,y,z,kr) = phi(x,y,z,1) * Bji
-              chi = vij(x,y,z,kr) * ni(x,y,z) - vji(x,y,z,kr) * nj(x,y,z)
-
-              SumU(x,y,z,j) = SumU(x,y,z,j) + vji(x,y,z,kr) * ufac
-              SumChiUp(x,y,z,i) = SumChiUp(x,y,z,i) + chi
-              if (cross(kr)) SumChiDn(x,y,z,j) = SumChiDn(x,y,z,j) + chi
+              if (preconditioning) then
+                chi = vij(x,y,z,kr) * ni(x,y,z) - vji(x,y,z,kr) * nj(x,y,z)
+                SumU(x,y,z,j) = SumU(x,y,z,j) + vji(x,y,z,kr) * ufac
+                SumChiUp(x,y,z,i) = SumChiUp(x,y,z,i) + chi
+                if (cross(kr)) SumChiDn(x,y,z,j) = SumChiDn(x,y,z,j) + chi
+              endif
             end do
             end do
             end do
@@ -326,9 +335,11 @@ MODULE atom_rate_patch_mod
         !call trace%end(itimer2)
         !call trace%begin('Rij', itimer=itimer3)
 
-        do j=1,nupper
-          SumU(:,:,:,j) = SumU(:,:,:,j) * Psi(:,:,:,f)
-        end do
+        if (preconditioning) then
+          do j=1,nupper
+            SumU(:,:,:,j) = SumU(:,:,:,j) * Psi(:,:,:,f)
+          end do
+        endif
 
         !if (.not. comoving_frame) then
         !  Ieff(:,:,:,f) = Inu(:,:,:,f) - sum(SumU(:,:,:,1:nupper), 4)
@@ -352,24 +363,36 @@ MODULE atom_rate_patch_mod
             endif
           endif
 
-          do z=1,nz
-          do y=1,ny
-          do x=1,nx
-            gamma_ji(x,y,z,k) = gamma_ji(x,y,z,k) + vji(x,y,z,kr)*(twohnu3_c2 + Ieff(x,y,z,f)) - SumChiUp(x,y,z,i)*SumU(x,y,z,j)
-            if (cross(kr)) then
-              gamma_ij(x,y,z,k) = gamma_ij(x,y,z,k) + vij(x,y,z,kr)*Ieff(x,y,z,f) + SumChiDn(x,y,z,j)*SumU(x,y,z,i2)
-            else
+          if (preconditioning) then
+            do z=1,nz
+            do y=1,ny
+            do x=1,nx
+              gamma_ji(x,y,z,k) = gamma_ji(x,y,z,k) + vji(x,y,z,kr)*(twohnu3_c2 + Ieff(x,y,z,f)) - SumChiUp(x,y,z,i)*SumU(x,y,z,j)
+              if (cross(kr)) then
+                gamma_ij(x,y,z,k) = gamma_ij(x,y,z,k) + vij(x,y,z,kr)*Ieff(x,y,z,f) + SumChiDn(x,y,z,j)*SumU(x,y,z,i2)
+              else
+                gamma_ij(x,y,z,k) = gamma_ij(x,y,z,k) + vij(x,y,z,kr)*Ieff(x,y,z,f)
+              endif
+            end do
+            end do
+            end do
+          else
+            do z=1,nz
+            do y=1,ny
+            do x=1,nx
+              gamma_ji(x,y,z,k) = gamma_ji(x,y,z,k) + vji(x,y,z,kr)*(twohnu3_c2 + Ieff(x,y,z,f))
               gamma_ij(x,y,z,k) = gamma_ij(x,y,z,k) + vij(x,y,z,kr)*Ieff(x,y,z,f)
-            endif
-          end do
-          end do
-          end do
+            end do
+            end do
+            end do
+          endif
+
           if (self%print_update_info) then
             if (f == self%fcheck) then
               if (k==self%linecheck) then
                 p = self%pcheck
-                memcheck(1) = gamma_ij(p(1),p(2),p(3),self%linecheck) - memcheck(1)
-                memcheck(2) = gamma_ji(p(1),p(2),p(3),self%linecheck) - memcheck(2)
+                memcheck(1) = gamma_ij(p(1),p(2),p(3),k) - memcheck(1)
+                memcheck(2) = gamma_ji(p(1),p(2),p(3),k) - memcheck(2)
               endif
             endif
           endif
@@ -396,11 +419,10 @@ MODULE atom_rate_patch_mod
       call os%allocate(atom%data%gamma_ji, m, zero=.true., label='atom%gamma_ji')
       !self%atom%stiff=.true.
     endif
-    wmu = self%wmu / over_4pi
     do i=1, self%nv
       k = self%idx_remap(i)
-      atom%data%gamma_ij(:,:,:,k) = atom%data%gamma_ij(:,:,:,k) + wmu * gamma_ij(:,:,:,i)
-      atom%data%gamma_ji(:,:,:,k) = atom%data%gamma_ji(:,:,:,k) + wmu * gamma_ji(:,:,:,i)
+      atom%data%gamma_ij(:,:,:,k) = atom%data%gamma_ij(:,:,:,k) + gamma_ij(:,:,:,i)
+      atom%data%gamma_ji(:,:,:,k) = atom%data%gamma_ji(:,:,:,k) + gamma_ji(:,:,:,i)
     end do
     !if (.not. self%static_mem) then
     !  self%atom%stiff=.false.

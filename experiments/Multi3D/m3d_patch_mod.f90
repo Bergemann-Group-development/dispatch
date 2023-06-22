@@ -69,7 +69,7 @@ MODULE m3d_patch_mod
       integer :: n_mu, n_nu, n_omega, n_out, zs, ze
       integer :: fcheck, pcheck(3), linecheck, lvlcheck
       logical :: out_ray=.false., static_mem=.false., one_dimensional=.false.
-      logical :: compressed=.false., save_output=.false.
+      logical :: compressed=.false., save_output=.false., saved=.false.
       logical :: print_update_info, checked_bounds=.false.
       logical :: second_choice=.false.
       integer :: i_nu=0, i_mu=0
@@ -135,12 +135,13 @@ MODULE m3d_patch_mod
     real(8), public, save, dimension(:), allocatable:: wmu, long_wmu
     real(8), public, save, dimension(:,:), allocatable:: vec, long_vec
     real(8), public:: convlim=1d-3
-    logical, public, save :: converged=.false.
+    logical, public, save :: converged=.false., use_vel=.true.
+    logical, public, save :: preconditioning=.true.
     logical, public, save :: check_NaN=.false., interp_log=.false.
     logical, public, save :: save_back_cont=.false., save_atom_line=.false.
     logical, public, save :: linear_long=.true., decouple_continuum=.false.
     logical, public, save :: detailed_prints=.false., comoving_frame=.false.
-    logical, public, save :: use_density=.true.
+    logical, public, save :: use_density=.true., line_blanketing=.false.
     logical, public, save :: overlapping_bb=.true., overlapping_bf=.true.
     logical, public, save :: print_start=.false., print_push=.false., print_send=.false.
     character(len=128), save :: save_patch_kind=''
@@ -173,7 +174,7 @@ MODULE m3d_patch_mod
     save_back_cont, detailed_prints, print_finished, print_start, print_push, &
     print_send, linear_long, interp_log, ray_offset, print_download, save_atom_line, &
     lse_solver, decouple_continuum, m1d_legacy_mode, nu_tolerance, disable_stark, &
-    disable_vdw, disable_ga, pivot_z
+    disable_vdw, disable_ga, pivot_z, use_vel, preconditioning
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%pre_init', itimer=itimer)
     !-----------------------------------------------------------------------------
@@ -234,6 +235,9 @@ MODULE m3d_patch_mod
         overlapping_bb = .false.
         overlapping_bf = .false.
         use_density = .false.
+        use_vel = .false.
+        comoving_frame = .true.
+        preconditioning = .false.
         nq_fac = 2
       endif
 
@@ -514,7 +518,7 @@ MODULE m3d_patch_mod
     case ('back_line')
       self%maxiter = min(0, maxiter - 1)
     case ('back_cont')
-      if (save_back_cont) then
+      if (save_back_cont .and. .not. line_blanketing) then
         self%maxiter = min(ilambd, maxiter - 1)
       else
         self%maxiter = ilambd + maxiter - 1
@@ -599,6 +603,7 @@ MODULE m3d_patch_mod
     !if (self%i_mu /= 0) then
       call self%claim_nbor_place()
     !endif
+    if (self%save_output) call self%save(self%out_mem, self%kind)
     !call self%push_nbors_for_update(post_update=.true.)
     if (self%place>=100) then
       self%place = self%place-100
@@ -681,7 +686,7 @@ MODULE m3d_patch_mod
                     endif
                   endif
                 elseif (nbnbor%needs_me) then
-                  if (nbnbtask%time < nbtask%time) then
+                  if (nbnbtask%time <= nbtask%time) then
                     mem_not_needed=.false.
                   endif
                 endif
@@ -1483,13 +1488,15 @@ MODULE m3d_patch_mod
     character(len=32) :: filename
     integer :: lunit, iw, iv
     ! ----------------------------------------------------------------------------
-    call self%check_access(self)
     write(folder, '(A, A)') trim(io%run_dir), 'save/'
     if (self%out_ray) then
       write(filename, '(A, A, 3(I3.3), A)') trim(label), '_out_', abs(self%key(1:3)), '.bin'
-    else
+    elseif (.not. converged) then
       write(filename, '(A, A, 3(I3.3), A)') trim(label), '_', abs(self%key(1:3)), '.bin'
+    else
+      return
     endif
+    call self%check_access(self)
     meta_file = trim(label) // '_meta.txt'
     call io%lock%set('save')
     if (os%exists(trim(folder)//meta_file)) then
@@ -1500,12 +1507,13 @@ MODULE m3d_patch_mod
       write(lunit, '(A, A8, A22, A5, 8(A10))') '*', ' filename', '', 'bytes', &
       'nx', 'ny', 'nz', 'nv', 'nw'
     endif
-    write(lunit, '(A32, I4, 8(I10))') filename, storage_size(mem), shape(mem)
+    if (.not. self%saved) write(lunit, '(A32, I4, 8(I10))') filename, storage_size(mem), shape(mem)
     close(lunit)
     call io%lock%unset()
-    open(newunit=lunit, file=trim(folder)//filename, access='stream')
+    open(newunit=lunit, file=trim(folder)//filename, access='stream', status='replace')
     write(lunit) mem
     close(lunit)
+    self%saved = .true.
   END SUBROUTINE save
 
   !===============================================================================

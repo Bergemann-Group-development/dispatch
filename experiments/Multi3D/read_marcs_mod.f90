@@ -77,7 +77,7 @@ contains
     call execute_command_line (command, exitstat=iostat)
     open(newunit=lunit, file=trim(io%run_dir) // 'atmos.marcs')
     do k=1, newn
-      write(lunit, '(E14.6, F8.1, E14.6, F8.1, F8.1)') -depth(k)*1e-5, temp(1,1,k), pe(1,1,k)/(BK*temp(1,1,k)), 0., 0.
+      write(lunit, '(E17.8, E17.8, E17.8, F8.1, F8.1)') -depth(k)*1e-5, temp(1,1,k), pe(1,1,k)/(BK*temp(1,1,k)), 0., 0.
     end do
     close(lunit)
   END SUBROUTINE read_marcs

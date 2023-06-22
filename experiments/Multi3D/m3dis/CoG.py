@@ -22,6 +22,16 @@ class CoG_line(object):
         xx, yy = self.crop(abnd, **kwargs)
         weq = np.trapz(1 - yy, x=xx) * 1e3
         return weq
+    
+    #=================================================================
+    def get_cog(self, **kwargs):
+        weqs = np.zeros(self.cog.nruns)
+
+        for i, run in enumerate(self.cog.runs):
+            line = run.line[self.kr]
+            weqs[i] = line.calc_weq(**kwargs)
+
+        return self.cog.abnds, weqs    
 
     #=================================================================
     def crop(self, abnd, dlam=None, vdop=None, vshift=None, **kwargs):
@@ -97,8 +107,7 @@ class CoG(object):
             p0 = [abnd0, 0]
         
         def opt_func(newx, abnd, vshift):
-            kwargs['vshift'] = vshift
-            yy = self.interp(newx, abnd, **kwargs)
+            yy = self.interp(newx, abnd, vshift=vshift, **kwargs)
             return yy
         
         (abnd, vshift), _ = optimize.curve_fit(opt_func, oxx, oyy, p0=p0, bounds=bounds)
@@ -106,6 +115,24 @@ class CoG(object):
 
         return abnd, vshift, fitted
     
+    #=================================================================
+    def fit_abnd_and_vshift_and_vdop(self, oxx, oyy, bounds=None, p0=None, blend=None, **kwargs):
+        abnds = self.abnds
+        if bounds is None:
+            bounds = ([abnds[0], -3, 1e-4], [abnds[-1], 3, 1e1])
+            
+        if p0 is None:
+            abnd0 = np.mean(abnds)
+            p0 = [abnd0, 0, 1.0]
+        
+        def opt_func(newx, abnd, vshift, vdop):
+            yy = self.interp(newx, abnd, vshift=vshift, vdop=vdop, **kwargs)
+            return yy
+        
+        (abnd, vshift, vdop), _ = optimize.curve_fit(opt_func, oxx, oyy, p0=p0, bounds=bounds)
+        fitted = opt_func(oxx, abnd, vshift, vdop)
+
+        return abnd, vshift, vdop, fitted
 
     #=================================================================
     def save(self, file, protocol=4):

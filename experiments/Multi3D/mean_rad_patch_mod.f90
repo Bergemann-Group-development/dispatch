@@ -10,7 +10,7 @@ MODULE mean_rad_patch_mod
     USE bits_mod
     USE os_mod
     USE handyfuncs_mod
-    USE m3d_patch_mod, only:maxiter, m3d_patch_t, comoving_frame, ilambd
+    USE m3d_patch_mod, only:maxiter, m3d_patch_t, comoving_frame, ilambd, preconditioning
     USE ray_patch_mod, only:ray_patch_t
     USE angle_rad_patch_mod, only:rad_patch_t
     implicit none
@@ -64,7 +64,7 @@ MODULE mean_rad_patch_mod
     class(mean_rad_patch_t) :: self
     class(nbor_t), pointer:: nbor
     class(task_t), pointer:: nbtask
-    real(4), dimension(:,:,:,:), pointer :: Inu, Jnu
+    real(4), dimension(:,:,:,:), pointer :: Inu
     real(4), dimension(:,:,:), pointer :: ss, eta_back, xx
     real(8) :: dt, ex
     real(4) :: Psi, xx0, xxup
@@ -76,17 +76,19 @@ MODULE mean_rad_patch_mod
     call trace%begin('mean_rad_patch_t%update', itimer=itimer)
     if (comoving_frame) then
       call self%check_access(self%opac)
-      Jnu => self%mem(:,:,:,:,self%it,1)
 
       do f=1, self%nv
-        xx => self%opac%mem(:,:,:,f,self%opac%it,self%opac%i_chi)
+        xx => self%opac%mem(:,:,:,f,self%it,self%i_chi)
         self%Psi(:,:,:,f) = self%Psi(:,:,:,f) / xx
       end do
 
       do f=1, self%nv
-        xx => self%opac%mem(:,:,:,f,self%opac%it,self%opac%i_chi)
-        eta_back => self%back_cont%mem(:,:,:,f,self%back_cont%it,self%back_cont%i_eta)
-        self%Ieff(:,:,:,f) = self%Ieff(:,:,:,f) + self%Psi(:,:,:,f) * eta_back
+        if (preconditioning) then
+          eta_back => self%back_cont%mem(:,:,:,f,self%it,self%i_eta)
+          self%Ieff(:,:,:,f) = self%Ieff(:,:,:,f) + self%Psi(:,:,:,f) * eta_back
+        else
+          self%Ieff(:,:,:,f) = self%authority_mem(:,:,:,f,self%it,1)
+        endif
       end do
     endif
     call trace%end(itimer)

@@ -35,9 +35,10 @@ MODULE atom_patch_mod
     USE composition_mod, only: composition_type
     USE m3d_patch_mod, only: m3d_patch_t, maxiter, check_NaN, cswitch, key_link_t, &
     global_maxerr, convlim, atom_update_counter, comoving_frame, global_pos, &
-    decouple_continuum, overlapping_bb, overlapping_bf
+    decouple_continuum, overlapping_bb, overlapping_bf, line_blanketing
     USE bftrans_mod, only: bftrans_type
     USE hprofl_mod, only: hydrogen_BPO
+    USE osmet_mod, only:osmet_type
     USE atom_line_patch_mod, only:atom_line_t, external_sp
     USE net_opac_patch_mod, only:net_opac_t
     USE m3d_debug_mod
@@ -47,7 +48,6 @@ MODULE atom_patch_mod
   
     type, public, extends(m3d_patch_t) :: atom_patch_t
       type(atom_type) :: output_atom, bb_atom, bf_atom
-      !class(composition_type), pointer :: composition
       class(atomic_spectrum_type), pointer :: output_sp, bf_sp, bb_sp
       real(8) :: maxerr=huge(1.0)
       real(8), dimension(:), allocatable :: lvlerr
@@ -63,6 +63,7 @@ MODULE atom_patch_mod
       procedure :: init_atom_data
       procedure :: update_populations
       procedure :: check_skip
+      procedure :: get_osmet_nu
       procedure :: exclude_double_continua
       procedure :: exclude_double_lines
       procedure :: print_post_update_info
@@ -74,6 +75,7 @@ MODULE atom_patch_mod
     integer, save :: epos(3), elvl
     logical, save :: level_partf=.true.
     logical, save :: exclude_from_line_list=.true.
+    logical, save :: detailed_absmet=.false.
     character(len=128), save :: precomputed_depart=''
     character(len=128), public :: atom_file=''
     real(4), public :: vmic = 0
@@ -138,8 +140,8 @@ MODULE atom_patch_mod
         cf = comoving_frame .and. n>0
         dc = decouple_continuum
       do m=mu(1), mu(2)
-        new_cont = m==0 .and. (merge(n>self%n_nu, .true., dc) .or. n<0)
-        new_line = m<0 .or. merge(m==0, m/=0, cf)
+        new_cont = m==0 .and. (merge(n>self%n_nu, .true., dc) .or. n<0) .and. associated(atom%cont)
+        new_line = (m<0 .or. merge(m==0, m/=0, cf)) .and. associated(atom%line)
         new_rate = merge(m==0, m>0, cf) .or. (dc .and. m==0 .and. n>self%n_nu)
 
         if (new_cont) then
@@ -172,7 +174,7 @@ MODULE atom_patch_mod
     namelist /atom_params/ atom_file, qnorm, convlim, exclude_trace_cont, level_partf, &
     use_atom_abnd, logf_cut, red_cut, blue_cut, n_in_lines, abundance, debye_shield, &
     exclude_from_line_list, precomputed_depart, use_classic_col, kramer_bf, overlapping_bf, &
-    overlapping_bb, nq_fac, hydrogen_BPO
+    overlapping_bb, nq_fac, hydrogen_BPO, detailed_absmet
     namelist /line_mask/ in_lines
     !-----------------------------------------------------------------------------
     call trace%begin('atom_patch_t%pre_init_atom', itimer=itimer)
@@ -290,6 +292,7 @@ MODULE atom_patch_mod
 
         else
           sp%name = 'all'
+          if (detailed_absmet) call self%get_osmet_nu(sp, self%composition%osmet)
           call self%atom%create_spectrum(sp, bb=.true., bf=.true.)
           call self%atom%set_ired_iblue(sp, bb=.true., bf=.true., set_active=.true.)
           call sp%save('all')
@@ -649,6 +652,26 @@ MODULE atom_patch_mod
     endif
     call trace%end(itimer)
   END SUBROUTINE update_populations
+
+  !===============================================================================
+  SUBROUTINE get_osmet_nu (self, sp, osmet)
+    class(atom_patch_t), target :: self
+    class(atomic_spectrum_type) :: sp
+    class(osmet_type) :: osmet
+    integer :: i, fs, fe
+    !-----------------------------------------------------------------------------
+    if (.not. osmet%initialised) return
+    do i=1, self%atom%ncont
+      associate(cont => self%atom%cont(i))
+        fs = searchsorted(osmet%nu, cont%nu_min, outbounds_ok=.true.)+1
+        fe = searchsorted(osmet%nu, cont%nu_max, outbounds_ok=.true.)
+        osmet%active(fs:fe) = .true.
+      end associate
+    end do
+    sp%nnu = count(osmet%active)
+    allocate(sp%nu(sp%nnu))
+    sp%nu = pack(osmet%nu, osmet%active)
+  END SUBROUTINE get_osmet_nu
 
   !===============================================================================
   SUBROUTINE exclude_double_continua (self)

@@ -21,7 +21,7 @@ MODULE ray_patch_mod
   USE op_math_mod, only: searchsorted
   USE ray_mod, only: ray_type
   USE m3d_patch_mod, only: m3d_patch_t, vec, wmu, long_vec, long_wmu, detailed_prints, &
-  converged, print_send, atom_update_counter, comoving_frame
+  converged, print_send, atom_update_counter, comoving_frame, use_vel
   USE mconst, only: cc, over_4pi, PI
   implicit none
   private
@@ -122,7 +122,6 @@ SUBROUTINE ray_patch_init (self)
     !case ('back_cont', 'back_line', 'atom_cont', 'net_opac', 'mean_rad')
     case default
       call self%frequency_padding()
-      self%padded = .true.
     end select
   endif
   if (self%is_set(bits%virtual)) then
@@ -196,7 +195,7 @@ SUBROUTINE comp_vproj (self, vproj)
   real(4), dimension(:,:,:), pointer :: d, px, py, pz
   integer :: li(3), ui(3)
   !-----------------------------------------------------------------------------
-  if (self%i_mu == 0) then
+  if (self%i_mu == 0 .or. .not. use_vel) then
     vproj = 0
   else
     li = self%patch%li
@@ -213,7 +212,6 @@ SUBROUTINE comp_vproj (self, vproj)
       vproj = (-self%vec(1)*px - self%vec(2)*py + self%vec(3)*pz) * scaling%u / (d*cc)
     else
       vproj = (self%vec(1)*px + self%vec(2)*py + self%vec(3)*pz) * scaling%u / (d*cc)
-      !vproj = 0
     endif
   endif
 END SUBROUTINE comp_vproj
@@ -224,13 +222,16 @@ SUBROUTINE frequency_padding (self)
   real(8) :: max_nu, min_nu, dnu
   integer :: li(3), ui(3), fs, fe, nv
   !-----------------------------------------------------------------------------
-  dnu = maxval(self%sp%nu) * maxvel
-  min_nu = self%sp%nu(self%fs) - dnu
-  max_nu = self%sp%nu(self%fe) + dnu
-  fs = searchsorted(self%sp%nu, min_nu, outbounds_ok=.true.)
-  fe = searchsorted(self%sp%nu, max_nu, outbounds_ok=.true.)
-  self%fs = max(1, fs)
-  self%fe = min(self%sp%nnu, fe)
+  if (use_vel) then
+    dnu = maxval(self%sp%nu) * maxvel
+    min_nu = self%sp%nu(self%fs) - dnu
+    max_nu = self%sp%nu(self%fe) + dnu
+    fs = searchsorted(self%sp%nu, min_nu, outbounds_ok=.true.)
+    fe = searchsorted(self%sp%nu, max_nu, outbounds_ok=.true.)
+    self%fs = max(1, fs)
+    self%fe = min(self%sp%nnu, fe)
+    self%padded = .true.
+  endif
   
   nv = self%fe-self%fs+1
   call self%set_nv_and_nw (nv,self%nw)

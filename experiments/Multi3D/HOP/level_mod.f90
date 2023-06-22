@@ -24,7 +24,7 @@ contains
             dum = -EK_over_temp*self%xion
         endif 
 
-        if (dum < -80.d0) then
+        if (dum < -100.d0) then
             boltzmann = 0
         else
             if (.not. present(natural_log)) then

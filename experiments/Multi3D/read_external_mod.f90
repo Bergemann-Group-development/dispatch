@@ -820,7 +820,7 @@ SUBROUTINE save_atmos (self, patch)
   call composition%load_state_variables(self%temp, self%ne, &
        self%rho*real(scaling%d), use_rho=use_density)
   call composition%absorption(nu, chi, abslte, sumsca, sorted=.true.)
-  call composition%scattering(nu, abslte, eta)
+  call composition%scattering(nu, abslte, eta, sumsca)
   call compute_tau_scale(chi(:,:,n:1:-1,1), dz, tau(:,:,n:1:-1))
 
   open(file=trim(io%run_dir)//out_atmos_file, newunit=lunit, form='UNFORMATTED')

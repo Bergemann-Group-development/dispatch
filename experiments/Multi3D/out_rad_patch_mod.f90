@@ -105,6 +105,7 @@ MODULE out_rad_patch_mod
     norm = 1.0 / product(self%n(1:2))
     II(1,1,1,:,:) = sum(sum(self%mem(:,:,1, :, self%it, :), 1),1) * norm
     call self%save(II, 'ie')
+    self%saved = .false.
     call os%deallocate(II)
 
     call trace%end()
