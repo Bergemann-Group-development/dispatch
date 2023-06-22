@@ -223,7 +223,7 @@ MODULE atom_rate_patch_mod
         end do
 
         twohnu3_c2 = twoh_c2 * sp%nu(ff)**3
-        wnu(1:n_active) = wnu(1:n_active) * h4pi / sp%nu(ff)
+        wnu(1:n_active) = h4pi / sp%nu(ff) * wnu(1:n_active)
 
         skip_admin = .false.
         if (ff > fs) then
