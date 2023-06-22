@@ -10,7 +10,7 @@ MODULE proj_patch_mod
     USE bits_mod
     USE os_mod
     USE handyfuncs_mod
-    USE m3d_patch_mod, only:maxiter, m3d_patch_t
+    USE m3d_patch_mod, only:maxiter, m3d_patch_t, use_vel
     USE ray_patch_mod, only:ray_patch_t
     USE net_opac_patch_mod, only:net_opac_t
     USE op_math_mod, only:interp1d_linear
@@ -54,25 +54,37 @@ MODULE proj_patch_mod
     real(4), dimension(:,:,:), pointer, contiguous :: vproj
     real(8), dimension(:), pointer, contiguous :: nu_in, nu_out
     integer, save:: itimer=0
-    integer :: iw,it
+    integer :: iw, it, f
     !-----------------------------------------------------------------------------
     if (self%is_finished()) return
     call trace%begin('proj_patch_t%update', itimer=itimer)
     call self%check_access(self%net_opac)
-    call os%allocate(vproj, self%n)
-    call self%comp_vproj(vproj)
-    vproj = 1 / (1.0 + vproj)
-    nu_in => self%sp%nu(self%net_opac%fs:self%net_opac%fe)
-    nu_out => self%sp%nu(self%fs:self%fe)
+    
+    if (use_vel) then
+      if (.not. self%sp%sorted) call io%abort('Comoving frame for unsorted spectrum!')
+      call os%allocate(vproj, self%n)
+      call self%comp_vproj(vproj)
+      vproj = 1 / (1.0 + vproj)
+      nu_in => self%sp%nu(self%net_opac%fs:self%net_opac%fe)
+      nu_out => self%sp%nu(self%fs:self%fe)
 
-    do iw=1, self%nw
-    do it=1, self%nt
-      yy => self%net_opac%authority_mem(:,:,:,:,it,iw)
-      new_yy => self%authority_mem(:,:,:,:,it,iw)
-      call interpolate_to_ray(vproj, nu_in, nu_out, yy, new_yy)
-    end do
-    end do
-    call os%deallocate(vproj)
+      do iw=1, self%nw
+      do it=1, self%nt
+        yy => self%net_opac%authority_mem(:,:,:,:,it,iw)
+        new_yy => self%authority_mem(:,:,:,:,it,iw)
+        call interpolate_to_ray(vproj, nu_in, nu_out, yy, new_yy)
+      end do
+      end do
+      call os%deallocate(vproj)
+    else
+      do iw=1, self%nw
+      do it=1, self%nt
+      do f=1,  self%nv
+        self%authority_mem(:,:,:,f,it,iw) = self%net_opac%authority_mem(:,:,:,f,it,iw)
+      end do
+      end do
+      end do
+    endif
 
     call self%boundaries%mirror()
     call self%periodic_grid()

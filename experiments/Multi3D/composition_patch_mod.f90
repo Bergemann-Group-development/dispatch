@@ -7,7 +7,7 @@ MODULE composition_patch_mod
   USE handyfuncs_mod
   USE element_mod, only: element_type
   USE m3d_patch_mod,   only: m3d_patch_t, comoving_frame, ilambd, decouple_continuum, &
-  use_density, overlapping_bb, overlapping_bf
+  use_density, overlapping_bb, overlapping_bf, line_blanketing
   USE composition_mod, only: composition_type, dlam, exclude_elements
   USE back_cont_patch_mod,  only: back_cont_patch_t
   USE angle_rad_patch_mod,   only: rad_patch_t
@@ -97,6 +97,7 @@ SUBROUTINE composition_pre_init (self)
     if (verbose) write (*,*) ' - Initializing the NEW opacity package'
     composition%verbose = verbose
 
+    line_blanketing = absmet_file /= ''
     call trace%begin('compositiont%init', itimer=itimer2)
     call composition%init(absdat_file, abund_file, absmet_file, FeH, &
     isotope_file=isotope_file, molec_file=molec_file, absmet_big_end=absmet_big_end)

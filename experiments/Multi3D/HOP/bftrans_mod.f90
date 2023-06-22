@@ -458,6 +458,7 @@ contains
       real(dp), dimension(:,:,:), intent(in) :: EK_over_temp, teta, pe, toth, dxi
       real(dp), dimension(:,:,:), intent(out) :: fakt
       real(dp), dimension(:,:,:), allocatable :: h1
+      integer, dimension(:,:,:), allocatable :: nniv
       real(dp) :: thresh
       !---------------------------------------------------------------------------
       ion => self%ion
@@ -481,14 +482,15 @@ contains
 
               thresh = RYD - self%level%xion ! ionisation threshold
               allocate(h1, source=sqrt(RYD/dxi))
+              allocate(nniv, source=int(h1))
 
-              where (dxi > thresh)
+              where (nniv < self%k)
                   fakt = 0
               elsewhere
                   fakt = self%boltzmann_weight(EK_over_temp)
                   fakt = 2.0898E-26 / (2*self%k**5) * fakt * ion%part * ion%n
-                  where (floor(h1) == self%k)
-                    fakt = fakt * (h1 - floor(h1))
+                  where (nniv == self%k)
+                    fakt = fakt * (h1 - nniv)
                   end where
               end where
 

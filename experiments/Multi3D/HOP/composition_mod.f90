@@ -1202,10 +1202,10 @@ contains
             do f=1, nf
                 eta(:,:,:,f) = real((abslte(:,:,:,f)*planck(nu(f), self%temp) + sumsca(:,:,:,f)*Jnu(:,:,:,f)))
             end do
-        !elseif (present(sumsca)) then
-        !    do f=1, nf
-        !        eta(:,:,:,f) = real((abslte(:,:,:,f) + sumsca(:,:,:,f)) * planck(nu(f), self%temp))
-        !    end do
+        elseif (present(sumsca)) then
+            do f=1, nf
+                eta(:,:,:,f) = real((abslte(:,:,:,f) + sumsca(:,:,:,f)) * planck(nu(f), self%temp))
+            end do
         else
             do f=1, nf
                 eta(:,:,:,f) = real(abslte(:,:,:,f) * planck(nu(f), self%temp))

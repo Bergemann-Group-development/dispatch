@@ -668,7 +668,12 @@ MODULE atom_mod
       lin%q0   = lin%q0  
       lin%qmax = lin%qmax
 
-      if (nq_fac /= 0) lin%nnu=nq_fac*lin%nnu
+      ! make sure we always have an odd number of frequency points for a line
+      if (mod(lin%nnu,2) == 0) lin%nnu=lin%nnu+1
+
+      if (nq_fac /= 0) then
+        lin%nnu = nq_fac * (lin%nnu-1) + 1
+      endif
 
       tri = (lin%j-1)*(lin%j-2)/2 + lin%i
       self%cdata(tri) = lin%f
@@ -734,8 +739,6 @@ MODULE atom_mod
         lin%determ = cc/lin%nu0 * lin%determ
       end if
 
-      ! make sure we always have an odd number of frequency points for a line
-      if (mod(lin%nnu,2) == 0) lin%nnu=lin%nnu+1
       !allocate( lin%nu(lin%nnu) )
       lin%nq = lin%nnu
 
@@ -1227,14 +1230,15 @@ MODULE atom_mod
     !-----------------------------------------------------------------------------
     call trace%begin('atom_type%create_spectrum', itimer=itimer)
     ! compute total number of frequencies
-    nnu = 0
+    nnu = sp%nnu
     if (option(bb)) nnu = nnu + sum(self%line%nnu, self%line%active)
     if (option(bf)) nnu = nnu + sum(self%cont%nnu, self%cont%active)
 
     ! save all frequencies
     allocate(nu(nnu))
+    if (allocated(sp%nu)) nu(1:sp%nnu) = sp%nu
 
-    je=0
+    je=sp%nnu
     if (option(bb)) then
       do i=1,self%nline
         lin => self%line(i)
@@ -1269,6 +1273,7 @@ MODULE atom_mod
     endif
 
     ! now set overall frequency grid
+    if (allocated(sp%nu)) deallocate(sp%nu)
     allocate(sp%nu, source=nu)
     sp%nnu = size(nu)
 

@@ -10,7 +10,7 @@ MODULE back_cont_patch_mod
     USE bits_mod
     USE os_mod
     USE handyfuncs_mod
-    USE m3d_patch_mod, only: maxiter, m3d_patch_t, save_back_cont, comoving_frame, ilambd
+    USE m3d_patch_mod, only: maxiter, m3d_patch_t, save_back_cont, comoving_frame, ilambd, line_blanketing
     USE ray_patch_mod, only: ray_patch_t
     USE composition_mod, only: composition_type
     implicit none
@@ -45,7 +45,7 @@ MODULE back_cont_patch_mod
     call self%ray_patch_t%pre_init()
 
     self%static_mem = save_back_cont
-    self%include_absmet = .not. self%out_ray .and. self%i_nu > self%n_nu
+    self%include_absmet = .not. self%out_ray
   
     self%ng = 0
     nw = merge(4, 2, save_back_cont)
@@ -87,10 +87,11 @@ MODULE back_cont_patch_mod
       include_absmet=self%include_absmet, sorted=self%sp%sorted)
     endif
     
-    if (.not. self%out_ray .and. ilambd > 0 .and. self%iter > 0) then
+    if (.not. self%out_ray .and. self%iter > 0 .and. (ilambd > 0 .or. line_blanketing)) then
       call self%check_access(self%mean_rad)
       Jold => self%mean_rad%authority_mem(:,:,:,:,self%mean_rad%it,1)
       call self%composition%scattering(nu, abslte, eta, sumsca, Jold)
+      call self%mean_rad%deallocate_mem(self, print=.true.)
     else
       call self%composition%scattering(nu, abslte, eta, sumsca)
     endif
@@ -166,10 +167,8 @@ MODULE back_cont_patch_mod
     mu_start = merge(-self%n_out, 1, self%out_ray)
     mu_stop  = merge(-1, self%n_mu, self%out_ray)
 
-    !if (comoving_frame .or. ilambd > 0) then
-      key(4) = hash_string('mean_rad')
-      call self%check_nbor(key, nbors)
-    !endif
+    key(4) = hash_string('mean_rad')
+    call self%check_nbor(key, nbors)
   
     if (comoving_frame .and. .not. self%out_ray) then
       key(4) = hash_string('net_opac')

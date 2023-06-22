@@ -24,7 +24,8 @@ MODULE angle_rad_patch_mod
   USE mconst, only: one_third, one_sixth
   !USE scratch_mod
   USE handyfuncs_mod
-  USE m3d_patch_mod, only: m3d_patch_t, comoving_frame, ilambd, decouple_continuum
+  USE m3d_patch_mod, only: m3d_patch_t, comoving_frame, ilambd, decouple_continuum, &
+  line_blanketing, use_vel, preconditioning
   USE ray_patch_mod, only: ray_patch_t, formal_solver
   USE proj_patch_mod, only: interpolate_to_ray
   USE os_mod
@@ -158,7 +159,7 @@ SUBROUTINE radiation_update (self)
     else
       call self%short_ray_update()
     endif
-    if (comoving_frame .or. self%iter < ilambd .or. decouple_continuum) then
+    if (comoving_frame .or. self%iter < ilambd .or. decouple_continuum .or. line_blanketing) then
       call self%integrate_intensity()
     endif
   endif
@@ -199,7 +200,7 @@ SUBROUTINE short_ray_update (self)
   class(rad_patch_t), target :: self
   real(4), dimension(:,:), pointer, contiguous :: kernel
   real(4), dimension(:,:,:,:), pointer, contiguous :: eta_back
-  real(4) :: Inuup, xxup, ssup, xxmin, ssmin, Inumin, dsup05, xx, ss, Inu, u0, Psi
+  real(4) :: Inuup, xxup, ssup, xxmin, ssmin, Inumin, dsup05, xx, ss, Inu, u0, Psi, Ieff
   real(8) :: dt, ex ! important
   integer :: f, k, i, j, dx,dy,i1,j1,x1,x2,y1,y2, kup, k1, k2, dir, x, y, z, ii, jj, t, li(3)
   integer, save:: itimer=0
@@ -282,15 +283,15 @@ SUBROUTINE short_ray_update (self)
               end do
             end do
             Inuup = max(Inuup, Inumin)
-            self%Ieff(x,y,z,f) = Inuup*ex + (u0 - Psi)*ssup
+            Ieff = Inuup*ex + (u0 - Psi)*ssup
           else
             !ex = 0
             u0 = 1 / dt
             Psi = 1 - u0
-            self%Ieff(x,y,z,f) = u0*ssup
+            Ieff = u0*ssup
           endif
 
-          self%Inu(i,j,k,f) = self%Ieff(x,y,z,f) + Psi*ss
+          self%Inu(i,j,k,f) = Ieff + Psi*ss
           !self%Inu(i,j,k,f) = ss
           !Psi = 1.0
           !self%Ieff(x,y,z,f) = 0.
@@ -300,7 +301,11 @@ SUBROUTINE short_ray_update (self)
             !Ieff is computed in mean_rad%update after Psi has been integrated
           else
             self%Psi(x,y,z,f) = Psi / xx
-            self%Ieff(x,y,z,f) = self%Ieff(x,y,z,f) + self%Psi(x,y,z,f) * eta_back(x,y,z,f)
+            if (preconditioning) then
+              self%Ieff(x,y,z,f) = Ieff + self%Psi(x,y,z,f) * eta_back(x,y,z,f)
+            else
+              self%Ieff(x,y,z,f) = self%Inu(i,j,k,f)
+            endif
           endif
         end do
       end do
@@ -532,6 +537,7 @@ SUBROUTINE integrate_intensity(self)
       nbor => nbor%next
     end do
   endif
+  
   mean => self%mean_rad
   call mean%mem_lock(1)%set('integrate_intensity')
   if (.not. associated(mean%mem)) then
@@ -553,7 +559,8 @@ SUBROUTINE integrate_intensity(self)
   Jnu => mean%mem(:,:,:,:,mean%it,1)
   Inu => self%authority_mem(:,:,:,:,self%it,1)
 
-  if (comoving_frame) then
+  if (comoving_frame .and. use_vel) then
+    if (.not. mean%sp%sorted) call io%abort('Comoving frame for unsorted spectrum!')
     call os%allocate(vproj, self%n)
     call self%comp_vproj(vproj)
     vproj = 1.0 + vproj
@@ -600,11 +607,13 @@ SUBROUTINE finish (self)
     if (associated(self%Ieff)) then
       m = shape(self%Ieff)
       mem(1:m(1),1:m(2),1:m(3),fs:fe,1:1) => self%Ieff(:,:,:,fs:fe)
+      self%saved = .false.
       call self%save(mem, label='Ieff')
     endif
     if (associated(self%Psi)) then
       m = shape(self%Psi)
       mem(1:m(1),1:m(2),1:m(3),fs:fe,1:1) => self%Psi(:,:,:,fs:fe)
+      self%saved = .false.
       call self%save(mem, label='Psi')
     endif
   endif

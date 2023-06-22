@@ -5,18 +5,19 @@ MODULE osmet_mod
     implicit none
 
     real(dp), parameter :: ln10 = log(10.0)
-    integer, parameter :: mnu=154000, mtem=17, mp6=18
+    integer :: mnu=154000, mtem=17, mp6=18
 
     type :: osmet_type
-        real(dp) :: nu(mnu)
+        real(dp), dimension(:), pointer, contiguous :: nu
         real(dp), dimension(:), allocatable :: p6, temp
         real(4), dimension(:,:,:), pointer, contiguous :: ostabl
+        logical, dimension(:), pointer, contiguous :: active
         integer :: lunit, np6, ntemp, nnu, maxrec
         logical :: initialised=.false.
         real(dp) :: eosmet
 
     contains
-        procedure :: init => init_osmet
+        procedure :: init
         procedure :: add_line_opacities
 
     end type
@@ -26,7 +27,7 @@ contains
     !===============================================================================
     ! initialises osmet type.
     !===============================================================================
-    SUBROUTINE init_osmet (self, absmet_file, absmet_big_end)
+    SUBROUTINE init (self, absmet_file, absmet_big_end)
         class(osmet_type) :: self
         character(len=80), intent(in) :: absmet_file
         logical, intent(in), optional :: absmet_big_end
@@ -65,20 +66,29 @@ contains
         read(lunit)
         read(lunit)
 
-        allocate(self%ostabl(maxp6, maxtem, mnu))
-        self%ostabl = 0
-
+        ! count number of frequencies first
         do nnu=1, mnu
             read(lunit, iostat=iostat) wnum, orig_ostabl
-            if (iostat < 0) exit
-            
-            self%ostabl(:, :, mnu - nnu + 1) = orig_ostabl(:maxp6, :maxtem)
-            self%nu(mnu - nnu + 1) = CC * dble(wnum)
+            if (iostat < 0 .or. wnum == 0.) exit
+        end do
+        mnu = nnu-1
+        do nnu=1, mnu+1
+            backspace(lunit)
+        end do
+        
+        allocate(self%nu(mnu))
+        allocate(self%active(mnu), source=.false.)
+        allocate(self%ostabl(maxp6, maxtem, mnu))
+
+        do nnu=mnu, 1, -1
+            read(lunit, iostat=iostat) wnum, orig_ostabl
+            self%ostabl(:, :, nnu) = orig_ostabl(:maxp6, :maxtem)
+            self%nu(nnu) = CC * dble(wnum)
         end do
 
         close(lunit)
         self%initialised = .true.
-    END SUBROUTINE init_osmet
+    END SUBROUTINE init
 
     !===============================================================================
     SUBROUTINE add_line_opacities(self, nu, p6, temp, ne, rho, abslte, sumsca)
