@@ -151,7 +151,7 @@ MODULE atom_rate_patch_mod
     real(4), dimension(:), allocatable :: wnu
     integer, dimension(:), allocatable :: lower, upper, trans, ii, jj
     logical, dimension(:), allocatable :: cross
-    real(4) :: chi, twohnu3_c2, alpha, Bij, Bji, ufac, alpha2, dn, up h4pi
+    real(4) :: chi, twohnu3_c2, alpha, Bij, Bji, ufac, alpha2, dn, up, h4pi
     integer :: i, j, k, kr, kr2, kc, kl, fs, fe, n_active, ff, f, p(3)
     integer :: x,y,z, nx, ny, nz, nupper, nlower, i2
     logical :: cross_coupling, skip_admin
