@@ -122,15 +122,12 @@ MODULE atom_rate_patch_mod
     endif
 
     call self%integrate_rates(gamma_ij, gamma_ji)
+    self%free_self = .not. self%static_mem
 
     !if (self%rad%stiff) then
     !  self%static_mem = .true.
     !  call self%rad%compress_mem(self)
     !endif
-
-    if (.not. self%static_mem) then
-      call self%deallocate_mem(self, print=.true.)
-    endif
     call trace%end(itimer)
   END SUBROUTINE atom_rate_update
   

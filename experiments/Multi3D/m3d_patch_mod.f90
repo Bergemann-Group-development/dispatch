@@ -71,7 +71,7 @@ MODULE m3d_patch_mod
       logical :: out_ray=.false., static_mem=.false., one_dimensional=.false.
       logical :: compressed=.false., save_output=.false., saved=.false.
       logical :: print_update_info, checked_bounds=.false.
-      logical :: second_choice=.false.
+      logical :: free_self=.false.
       integer :: i_nu=0, i_mu=0
       integer :: i_ne=1, i_rho=2, i_temp=3, i_nh1=4, i_nh6=9
       integer :: i_chi=1, i_eta=2, i_snu=2
@@ -599,11 +599,13 @@ MODULE m3d_patch_mod
         call self%print_to_stdout()
       endif
     endif
+    if (self%save_output) then
+      call self%save(self%out_mem, self%kind)
+    endif
     call self%free_unused_memory()
     !if (self%i_mu /= 0) then
       call self%claim_nbor_place()
     !endif
-    if (self%save_output) call self%save(self%out_mem, self%kind)
     !call self%push_nbors_for_update(post_update=.true.)
     if (self%place>=100) then
       self%place = self%place-100
@@ -667,6 +669,9 @@ MODULE m3d_patch_mod
     class(task_t), pointer:: nbtask, nbnbtask
     logical :: mem_not_needed
     !-----------------------------------------------------------------------------
+    if (self%free_self) then
+      call self%deallocate_mem(self, print=.true.)
+    endif
     nbor => self%link%nbor
     do while (associated(nbor))
       if (nbor%needed .and. nbor%task%is_clear(bits%external)) then
@@ -1032,10 +1037,8 @@ MODULE m3d_patch_mod
       if (present(m_in)) then
         m = m_in
       else
-        m(:3) = self%gn
-        m( 4) = self%nv
-        m( 5) = self%nt
-        m( 6) = self%nw
+        m = [self%gn, self%nv, self%nt, self%nw]
+        self%compressed = .false.
       endif
       call os%allocate(self%mem, m, label=trim(self%kind)//'%mem')
       if (check_NaN) then
