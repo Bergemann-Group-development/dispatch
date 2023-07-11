@@ -72,7 +72,7 @@ SUBROUTINE init (self)
   !$omp end parallel
   omp%nthreads = nthreads
   omp%nplaces = nplaces
-  omp%stacksize = get_stacksize(.true.)
+  omp%stacksize = get_stacksize()
 END SUBROUTINE init
 
 !===============================================================================
@@ -133,34 +133,19 @@ INTEGER FUNCTION omp_numthreads()
 END FUNCTION
 
 !===============================================================================
-FUNCTION get_stacksize(verbose) result(stacksize)
+FUNCTION get_stacksize() result(stacksize)
 #ifdef __INTEL_COMPILER
 #ifdef _OPENMP
   USE omp_lib, only : kmp_set_stacksize_s, kmp_get_stacksize_s, kmp_size_t_kind
-  integer(kind=kmp_size_t_kind) :: stacksize
 #endif
 #endif
-  logical:: verbose
-  character(len=16):: envvar
-  logical:: kmp, omp
-  logical, save:: first_time=.true.
+  integer :: stacksize
   !-----------------------------------------------------------------------------
 #ifdef _OPENMP
 #ifdef __INTEL_COMPILER
-  call getenv ('KMP_STACKSIZE', envvar)
-  kmp = envvar /= ''
-  call getenv ('OMP_STACKSIZE', envvar)
-  omp = envvar /= ''
-  if (omp .and. .not. kmp .and. omp_get_thread_num()==0 .and. first_time) then
-    if (verbose .and. .not. printed) print '(/2x,a)', &
-      '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
-    print '(2x,a)', &
-      '! WARNING: Use KMP_STACKSIZE rather than OMP_STACKSIZE with Intel-MPI!   !'
-    print '(2x,a,/)', &
-      '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
-    printed = .true.
-  end if
   stacksize = kmp_get_stacksize_s()
+#else
+  stacksize = -1
 #endif
 #endif
 END FUNCTION get_stacksize

@@ -21,7 +21,7 @@ MODULE mean_rad_patch_mod
     contains
       procedure :: pre_init
       procedure :: init
-      procedure :: update
+      procedure :: execute
       procedure :: nbor_relations
       procedure :: init_nbors_hash
     end type mean_rad_patch_t
@@ -39,13 +39,6 @@ MODULE mean_rad_patch_mod
     call self%ray_patch_t%pre_init()
     call self%set_nv_and_nw (self%fe-self%fs+1, 1)
 
-    if (.not. associated(self%mem_lock)) then
-      allocate (self%mem_lock(self%nt))
-      do i=1,self%nt
-        call self%mem_lock(i)%init ('meml')
-      end do
-    endif
-
     self%ng = 0
     call self%post_pre_init()
     call trace%end(itimer)
@@ -60,7 +53,7 @@ MODULE mean_rad_patch_mod
   END SUBROUTINE init
   
   !===============================================================================
-  SUBROUTINE update (self)
+  SUBROUTINE execute (self)
     class(mean_rad_patch_t) :: self
     class(nbor_t), pointer:: nbor
     class(task_t), pointer:: nbtask
@@ -68,19 +61,25 @@ MODULE mean_rad_patch_mod
     real(4), dimension(:,:,:), pointer :: ss, eta_back, xx
     real(8) :: dt, ex
     real(4) :: Psi, xx0, xxup
-    integer, save:: itimer=0
     integer :: i,j,k,iw, it, f
     real(4) :: wmu
+    integer, save :: itimer=0
     !-----------------------------------------------------------------------------
-    if (self%is_finished()) return
-    call trace%begin('mean_rad_patch_t%update', itimer=itimer)
+    call trace%begin (trim(self%kind)//'%update', itimer=itimer)
     if (comoving_frame) then
+      call self%opac%mem_lock(1)%set_read('mean_rad_update')
       call self%check_access(self%opac)
 
       do f=1, self%nv
         xx => self%opac%mem(:,:,:,f,self%it,self%i_chi)
         self%Psi(:,:,:,f) = self%Psi(:,:,:,f) / xx
       end do
+      call self%opac%mem_lock(1)%unset_read('mean_rad_update')
+
+      if (preconditioning) then
+        call self%back_cont%mem_lock(1)%set_read('mean_rad_update')
+        call self%check_access(self%back_cont)
+      endif
 
       do f=1, self%nv
         if (preconditioning) then
@@ -90,9 +89,11 @@ MODULE mean_rad_patch_mod
           self%Ieff(:,:,:,f) = self%authority_mem(:,:,:,f,self%it,1)
         endif
       end do
+
+      if (preconditioning) call self%back_cont%mem_lock(1)%unset_read('mean_rad_update')
     endif
     call trace%end(itimer)
-  END SUBROUTINE update
+  END SUBROUTINE execute
   
   !===============================================================================
   SUBROUTINE nbor_relations(self, another, needed, needs_me, download)

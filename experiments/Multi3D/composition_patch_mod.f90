@@ -18,6 +18,7 @@ MODULE composition_patch_mod
   USE out_rad_patch_mod, only:out_rad_patch_t
   USE proj_patch_mod, only:proj_patch_t
   USE mean_rad_patch_mod, only:mean_rad_patch_t
+  USE bftrans_mod, only: H_occupation_probability
   USE task_mod
   USE trace_mod
   USE scaling_mod
@@ -36,7 +37,7 @@ MODULE composition_patch_mod
     class(atom_patch_t), pointer :: atom_patch
   contains
     procedure :: pre_init => composition_pre_init
-    procedure :: update => composition_update
+    procedure :: execute
     procedure :: create_sub_patches
     procedure :: print_post_update_info
     procedure :: save_abundances_to_file
@@ -65,7 +66,7 @@ SUBROUTINE composition_pre_init (self)
   character(len=128), save :: line_lists(10)=''
   logical, save :: first_time=.true., absmet_big_end=.false., external_sp
   namelist /composition_params/ verbose, absdat_file, abund_file, absmet_file, &
-  absmet_big_end, isotope_file, molec_file
+  absmet_big_end, isotope_file, molec_file, H_occupation_probability
   namelist /linelist_params/ dlam, exclude_elements, linelist_file, line_lists
   ! ----------------------------------------------------------------------------
   call trace%begin('composition_patch_t%composition_pre_init', itimer=itimer)
@@ -94,7 +95,7 @@ SUBROUTINE composition_pre_init (self)
     call io%namelist_warning ('linelist_params', iostat)
     write (io%namelist, linelist_params)
 
-    if (verbose) write (*,*) ' - Initializing the NEW opacity package'
+    if (verbose > 0) write (*,*) ' - Initializing the NEW opacity package'
     composition%verbose = verbose
 
     line_blanketing = absmet_file /= ''
@@ -235,16 +236,15 @@ end do
 END SUBROUTINE create_sub_patches
 
 !===============================================================================
-SUBROUTINE composition_update (self)
+SUBROUTINE execute (self)
   class(composition_patch_t) :: self
   real(4), dimension(:,:,:), pointer :: d, e, pe
   real(4), dimension(:,:,:), pointer, contiguous :: ne, rho, temp
   real(4), dimension(:,:,:,:), pointer :: nh
-  integer, save:: itimer=0
   integer :: li(3), ui(3)
+  integer, save:: itimer=0
   ! ----------------------------------------------------------------------------
-  if (self%is_finished()) return
-  call trace%begin('composition_patch_t%composition_update', itimer=itimer)
+  call trace%begin('composition_patch_t%execute', itimer=itimer)
 
   if (self%iter == 0) then
     li = self%patch%li
@@ -269,6 +269,7 @@ SUBROUTINE composition_update (self)
     call self%composition%get_nhyd(nh)
 
     self%dtime = max(self%dtime, io%end_time - self%dtime)
+    self%out_ray = .true. ! so that it is still executed after convergence
   else
     self%dtime = self%patch%dtime
     !print *, self%m3d_patch_info()
@@ -276,7 +277,7 @@ SUBROUTINE composition_update (self)
     !stop
   endif
   call trace%end(itimer)
-END SUBROUTINE composition_update
+END SUBROUTINE execute
 
 !===============================================================================
 SUBROUTINE print_post_update_info (self)

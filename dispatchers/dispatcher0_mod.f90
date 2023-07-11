@@ -220,12 +220,6 @@ SUBROUTINE update (self, task_list, test)
   !-----------------------------------------------------------------------------
   call                              task_list%qlock%set ('dispatch0_t%update 1')
   link => task_list%queue                                    ! queue start
-  !print *, 'ready_list'
-  !do while (associated(link))
-  !  print '(i3, 1x, a)', link%task%id, trim(link%task%kind)
-  !  link => link%next_time
-  !end do
-  !link => task_list%queue                                    ! queue start
   if (detailed_timer) then
     call trace%end (itimer(i))
     i = i+1
@@ -238,6 +232,18 @@ SUBROUTINE update (self, task_list, test)
       write(io_unit%log,'(f12.6,2x,a,i6,i7,1p,e12.4)') wallclock(), &
         'dispather0_t%update: na, id, time =', &
         task_list%na, link%task%id, link%task%time
+    !print *, 'ready_list', omp%thread, wallclock()
+    !do while (associated(link))
+    !  print '(i3, 1x, a)', link%task%id, trim(link%task%kind)
+    !  link => link%next_time
+    !end do
+    !link => task_list%active                                    ! queue start
+    !print *, 'active_list', omp%thread, wallclock()
+    !do while (associated(link))
+    !  print '(i3, 1x, a)', link%task%id, trim(link%task%kind)
+    !  link => link%next_active
+    !end do
+    !link => task_list%queue                                    ! queue start
     !---------------------------------------------------------------------------
     ! If the patch mem was OMP placed, search ready queue for matching thread
     !---------------------------------------------------------------------------
@@ -260,6 +266,17 @@ SUBROUTINE update (self, task_list, test)
     end if
     task => link%task
     task%atime = task%time
+    already_busy = task%is_set (bits%busy)
+    id = task%id
+    !---------------------------------------------------------------------------
+    ! Change the task stat from ready to busy.  The task is owned by the
+    ! current thread as long as it is under update or post-update, so there
+    ! should be no ambiguity possible about the bit status
+    !---------------------------------------------------------------------------
+    call task%log ('set busy', 3)
+    call task%set (bits%busy)                              ! mark task busy
+    call task%log ('clear ready', 3)
+    call task%clear (bits%ready)                           ! clear ready state
     !...........................................................................
     write (label,'(a,i6,l2)') &
       trim(task%kind), task_list%nq, associated(task_list%queue)
@@ -286,17 +303,6 @@ SUBROUTINE update (self, task_list, test)
         'time', task%time, 'nq', task%nq
       flush (io_unit%log)
     end if
-    already_busy = task%is_set (bits%busy)
-    id = task%id
-    !---------------------------------------------------------------------------
-    ! Change the task stat from ready to busy.  The task is owned by the
-    ! current thread as long as it is under update or post-update, so there
-    ! should be no ambiguity possible about the bit status
-    !---------------------------------------------------------------------------
-    call task%log ('set busy', 3)
-    call task%set (bits%busy)                              ! mark task busy
-    call task%log ('clear ready', 3)
-    call task%clear (bits%ready)                           ! clear ready state
     !---------------------------------------------------------------------------
     ! Remove the accepted task link from the queue
     !---------------------------------------------------------------------------
@@ -305,6 +311,8 @@ SUBROUTINE update (self, task_list, test)
     else
       task_list%queue => link%next_time                    ! chop head off
     end if
+    !print *, 'removed link', omp%thread, wallclock()
+    track_active = .true.
     if (track_active) &
       call task_list%queue_active (link)
     !$omp atomic capture
@@ -375,10 +383,12 @@ SUBROUTINE update (self, task_list, test)
       write (stderr,'(i6,a,i4,a,i6)') &
         mpi%rank,' WARNING: thread', omp%thread, &
         ' found task with busy-bit set:', task%id
-      call io%warning ('already busy')
+      !call io%warning ('already busy')
     else
       call task_list%update (link, test)
     end if
+    if (track_active) &
+      call task_list%remove_active (link)
     !---------------------------------------------------------------------------
     ! Force outstanding I/O tasks to complete (taskyield is not enough)
     !---------------------------------------------------------------------------

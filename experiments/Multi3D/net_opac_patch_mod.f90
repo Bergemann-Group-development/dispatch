@@ -41,7 +41,7 @@ MODULE net_opac_patch_mod
     type, public, extends(ray_patch_t) :: net_opac_t
     contains
       procedure :: pre_init => net_opac_pre_init
-      procedure :: update => net_opac_update
+      procedure :: execute
       procedure :: rotate_cube
       procedure :: nbor_relations => net_opac_nbor_relations
       procedure :: init_nbors_hash
@@ -79,19 +79,16 @@ MODULE net_opac_patch_mod
   END SUBROUTINE net_opac_pre_init
   
   !===============================================================================
-  SUBROUTINE net_opac_update (self)
+  SUBROUTINE execute (self)
     class(net_opac_t) :: self
     class(nbor_t), pointer:: nbor
     class(task_t), pointer:: nbtask
     real(4), dimension(:,:,:,:,:,:), pointer :: mem
     real(4), dimension(:,:,:,:), pointer :: chi, eta, Snu
-    integer, save:: itimer=0
     integer :: iw,it, f, fs, fe, fn, x, y, z, iiw, nw, p(3)
+    integer, save :: itimer=0
     !-----------------------------------------------------------------------------
-    if (self%is_finished()) return
-    call self%decompress_mem(self)
-
-    call trace%begin('net_opac_t%net_opac_update', itimer=itimer)
+    call trace%begin (trim(self%kind)//'%update', itimer=itimer)
     mem => self%authority_mem
     p = self%pcheck
     memcheck = 0
@@ -110,11 +107,12 @@ MODULE net_opac_patch_mod
     do while (associated(nbor))
       if (nbor%needed .and. .not. nbor%download) then
         nbtask => nbor%task
-        call self%check_access(nbtask)
         select type (nbtask)
         class is (atom_line_t)
           ! chi and eta have already been added
         class is (ray_patch_t)
+          call nbtask%mem_lock(1)%set_read('net_opac_update')
+          call self%check_access(nbtask)
           fs = nbtask%fs - self%fs + 1
           fe = fs + nbtask%nv - 1
           if (self%out_ray) then
@@ -137,6 +135,7 @@ MODULE net_opac_patch_mod
           end do
           end do
           end do
+          call nbtask%mem_lock(1)%unset_read('net_opac_update')
         end select
       endif
       nbor => nbor%next
@@ -158,9 +157,8 @@ MODULE net_opac_patch_mod
     if (self%out_ray) then
       call self%rotate_cube()
     endif
-
     call trace%end(itimer)
-  END SUBROUTINE net_opac_update
+  END SUBROUTINE execute
 
   !===============================================================================
   SUBROUTINE rotate_cube (self)

@@ -137,16 +137,29 @@ class read(object):
             self.zz = np.linspace(0, (nz-1)*dz, nz)
             
             dat = FortranFile(folder + 'atmos_data.bin')
-            self.temp = dat.read_reals(np.float32).reshape((nx,ny,nz), order='F')
-            self.rho  = dat.read_reals(np.float32).reshape((nx,ny,nz), order='F')
-            self.px   = dat.read_reals(np.float32).reshape((nx,ny,nz), order='F')
-            self.py   = dat.read_reals(np.float32).reshape((nx,ny,nz), order='F')
-            self.pz   = dat.read_reals(np.float32).reshape((nx,ny,nz), order='F')
-            self.pe   = dat.read_reals(np.float32).reshape((nx,ny,nz), order='F')
-            self.tau  = dat.read_reals(np.float32).reshape((nx,ny,nz), order='F')
-            self.chi  = dat.read_reals(np.float32).reshape((nx,ny,nz), order='F')
-            self.eta  = dat.read_reals(np.float32).reshape((nx,ny,nz), order='F')
+            self.temp = dat.read_reals(np.float32)
+            self.rho  = dat.read_reals(np.float32)
+            self.px   = dat.read_reals(np.float32)
+            self.py   = dat.read_reals(np.float32)
+            self.pz   = dat.read_reals(np.float32)
+            self.pe   = dat.read_reals(np.float32)
+            self.tau  = dat.read_reals(np.float32)
+            self.chi  = dat.read_reals(np.float32)
+            self.eta  = dat.read_reals(np.float32)
             dat.close()
+
+            if nx*ny > 1:
+                self.temp = self.temp.reshape((nx,ny,nz), order='F')
+                self.rho  = self.rho .reshape((nx,ny,nz), order='F')
+                self.px   = self.px  .reshape((nx,ny,nz), order='F')
+                self.py   = self.py  .reshape((nx,ny,nz), order='F')
+                self.pz   = self.pz  .reshape((nx,ny,nz), order='F')
+                self.pe   = self.pe  .reshape((nx,ny,nz), order='F')
+                self.tau  = self.tau .reshape((nx,ny,nz), order='F')
+                self.chi  = self.chi .reshape((nx,ny,nz), order='F')
+                self.eta  = self.eta .reshape((nx,ny,nz), order='F')
+
+            self.ltau = np.log10(self.tau)
         
         maxiter = self.nml['m3d_params']['maxiter']
         depart = self.nml['atom_params']['precomputed_depart'].strip()

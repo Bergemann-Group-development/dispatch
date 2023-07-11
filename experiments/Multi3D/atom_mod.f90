@@ -1297,7 +1297,7 @@ MODULE atom_mod
         if (.not. cnt%active) cycle
         ! find minimum and maximum index of this continuum in the sp%nu grid
         call sp%get_interval(cnt, ired, iblue)
-        if (iblue == 0 .or. ired == sp%nnu) then
+        if (iblue == 0 .or. ired >= sp%nnu) then
           call cnt%deactivate()
         else
           if (iblue==ired) print *, 'WARNING, single frequency for cont', i
@@ -1537,20 +1537,18 @@ MODULE atom_mod
     ! deep copy
     other = self
 
-    allocate(other%line, mold=self%line)
+    allocate(other%line, source=self%line)
     call os%mem_register(storage_size(self%line), self%nline, label='atom%line')
-    other%line = self%line
     
-    allocate(other%cont, mold=self%cont)
+    allocate(other%cont, source=self%cont)
     call os%mem_register(storage_size(self%cont), self%ncont, label='atom%cont')
-    other%cont = self%cont
   END SUBROUTINE
 
   !===============================================================================
   SUBROUTINE link_transitions (self, cont, line)
     class(atom_type) :: self
-    type(cont_type), dimension(:), pointer, contiguous :: cont
-    type(line_type), dimension(:), pointer, contiguous :: line
+    type(cont_type), dimension(:), pointer :: cont
+    type(line_type), dimension(:), pointer :: line
     !-----------------------------------------------------------------------------
     self%cont => cont
     self%line => line

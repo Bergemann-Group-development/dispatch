@@ -24,7 +24,7 @@ MODULE back_cont_patch_mod
     logical :: include_absmet=.false.
     contains
       procedure :: pre_init => back_cont_pre_init
-      procedure :: update => back_cont_update
+      procedure :: execute
       procedure :: nbor_relations
       procedure :: init_nbors_hash
     end type back_cont_patch_t
@@ -55,7 +55,7 @@ MODULE back_cont_patch_mod
   END SUBROUTINE back_cont_pre_init
 
   !===============================================================================
-  SUBROUTINE back_cont_update (self)
+  SUBROUTINE execute (self)
     class(back_cont_patch_t) :: self
     real(4), dimension(:,:,:,:), pointer, contiguous :: chi, eta
     real(8), dimension(:), pointer, contiguous :: nu
@@ -63,11 +63,11 @@ MODULE back_cont_patch_mod
     real(4), dimension(:,:,:), pointer, contiguous :: vproj
     integer, dimension(:), pointer :: isort
     character(len=64) :: text
-    integer, save:: itimer=0
     integer :: m(6)
+    logical :: scattering_from_Jnu
+    integer, save :: itimer=0
     !-----------------------------------------------------------------------------
-    if (self%is_finished()) return
-    call trace%begin('back_cont_patch_t%update', itimer=itimer)
+    call trace%begin (trim(self%kind)//'%update', itimer=itimer)
     chi => self%mem(:,:,:,:, self%it, self%i_chi)
     eta => self%mem(:,:,:,:, self%it, self%i_eta)
     nu => self%sp%nu(self%fs:self%fe)
@@ -87,14 +87,24 @@ MODULE back_cont_patch_mod
       include_absmet=self%include_absmet, sorted=self%sp%sorted)
     endif
     
-    if (.not. self%out_ray .and. self%iter > 0 .and. (ilambd > 0 .or. line_blanketing)) then
+    if ((ilambd > 0 .or. line_blanketing) .and. .not. self%out_ray) then
+      self%mean_rad%static_mem = .true.
+      scattering_from_Jnu = .true.
+    else
+      scattering_from_Jnu = .false.
+    endif
+
+    if (scattering_from_Jnu .and. self%iter > 0) then
+      call self%mean_rad%mem_lock(1)%set ('back_cont_update')
       call self%check_access(self%mean_rad)
       Jold => self%mean_rad%authority_mem(:,:,:,:,self%mean_rad%it,1)
       call self%composition%scattering(nu, abslte, eta, sumsca, Jold)
       call self%mean_rad%deallocate_mem(self, print=.true.)
+      call self%mean_rad%mem_lock(1)%unset ('back_cont_update')
     else
       call self%composition%scattering(nu, abslte, eta, sumsca)
     endif
+    
 
     if (.not. self%out_ray) then 
       if (self%composition%ll_initialised .and. comoving_frame) then
@@ -110,7 +120,7 @@ MODULE back_cont_patch_mod
       call os%deallocate(sumsca, label='sumsca')
     endif
     call trace%end(itimer)
-  END SUBROUTINE back_cont_update
+  END SUBROUTINE execute
   
   !===============================================================================
   SUBROUTINE nbor_relations(self, another, needed, needs_me, download)

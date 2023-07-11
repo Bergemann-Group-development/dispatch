@@ -35,7 +35,7 @@ MODULE atom_patch_mod
     USE composition_mod, only: composition_type
     USE m3d_patch_mod, only: m3d_patch_t, maxiter, check_NaN, cswitch, key_link_t, &
     global_maxerr, convlim, atom_update_counter, comoving_frame, global_pos, &
-    decouple_continuum, overlapping_bb, overlapping_bf, line_blanketing
+    decouple_continuum, overlapping_bb, overlapping_bf, line_blanketing, converged
     USE bftrans_mod, only: bftrans_type
     USE hprofl_mod, only: hydrogen_BPO
     USE osmet_mod, only:osmet_type
@@ -54,8 +54,7 @@ MODULE atom_patch_mod
       logical :: update_skipped=.false., atom_allocated=.false., molec
     contains
       procedure :: pre_init => atom_patch_pre_init
-      procedure :: update => atom_patch_update
-      procedure :: finish => atom_patch_finish
+      procedure :: execute
       procedure :: nbor_relations => atom_patch_nbor_relations
       procedure :: create_sub_patches
       procedure :: pre_init_atom
@@ -405,7 +404,7 @@ MODULE atom_patch_mod
   END SUBROUTINE init_atom_data
 
   !===============================================================================
-  SUBROUTINE atom_patch_update (self)
+  SUBROUTINE execute (self)
     class(atom_patch_t) :: self
     class(nbor_t), pointer:: nbor
     class(task_t), pointer:: nbtask
@@ -413,12 +412,11 @@ MODULE atom_patch_mod
     real(8), dimension(:,:,:,:), pointer, contiguous :: gamma_ij, gamma_ji
     real(4), dimension(:,:,:,:), pointer, contiguous :: wphi
     integer :: i
-    integer, save:: itimer=0, count=0
+    integer, save:: count=0
     real(8) :: global
+    integer, save :: itimer=0
     !-----------------------------------------------------------------------------
-    if (self%is_finished()) return
-    call trace%begin('atom_patch_t%atom_patch_update', itimer=itimer)
-
+    call trace%begin (trim(self%kind)//'%update', itimer=itimer)
     if (self%iter == 0) then
       call self%init_atom_data()
     else
@@ -455,6 +453,7 @@ MODULE atom_patch_mod
       global = global_maxerr%update(0.d0)
       if ((global > 0) .and. global < convlim .and. self%maxerr < convlim) then
         write(stdout, *) self%ipos(3)+1, 'Converged!', count
+        if (self%iter < self%maxiter) converged = .true.
         call self%finish()
       endif
     endif
@@ -463,12 +462,8 @@ MODULE atom_patch_mod
       call os%deallocate(self%atom%data%gamma_ij, label='atom%gamma_ij')
       call os%deallocate(self%atom%data%gamma_ji, label='atom%gamma_ji')
     endif
-
-    !if (self%atom%stiff .and. .not. self%is_finished()) then
-    !  call self%check_skip()
-    !endif
     call trace%end(itimer)
-  END SUBROUTINE atom_patch_update
+  END SUBROUTINE execute
 
   !===============================================================================
   SUBROUTINE print_post_update_info (self)
@@ -553,44 +548,6 @@ MODULE atom_patch_mod
       nbor => nbor%next
     end do
   END SUBROUTINE check_skip
-
-  !===============================================================================
-  SUBROUTINE atom_patch_finish (self)
-    USE m3d_patch_mod, only: converged
-    class(atom_patch_t) :: self
-    class(nbor_t), pointer:: nbor
-    class(task_t), pointer:: nbtask
-    integer :: i, j
-    ! ----------------------------------------------------------------------------
-    call trace%begin('atom_patch_t%atom_patch_finish')
-    call self%m3d_patch_t%finish()
-    if (self%iter < self%maxiter) converged = .true.
-
-    nbor => self%link%nbor
-    do while (associated(nbor))
-      if (nbor%needs_me) then
-        nbtask => nbor%task
-        select type(nbtask)
-        class is (m3d_patch_t)
-          if (.not. nbtask%out_ray .and. associated(nbtask%m3d_parent)) then
-            if (nbtask%m3d_parent%id == self%id) then
-              if (.not. nbtask%finished) then
-                call nbtask%finish()
-                call nbtask%free_unused_memory()
-              elseif (.not. nbtask%static_mem) then
-                call nbtask%mem_lock(1)%set ('atom_patch_finish')
-                call nbtask%deallocate_mem(self, print=.true.)
-                call nbtask%mem_lock(1)%unset ('atom_patch_finish')
-              endif
-            endif
-          endif
-        end select
-      endif
-      nbor => nbor%next
-    end do
-    
-    call trace%end()
-  END SUBROUTINE atom_patch_finish
 
   !===============================================================================
   SUBROUTINE update_populations (self, gamma_ij, gamma_ji)
@@ -687,9 +644,10 @@ MODULE atom_patch_mod
       case ('(H+H)', 'H2+', 'H- FF', 'H FF G')
         ! do not exclude
       case default
-        if (trans%level%g2 > 0) then
+        if (trans%level%g > 0) then
           if (uppercase(trans%ion%id(1:2)) == self%atom%id) then
             do kc=1, self%atom%ncont
+              if (.not. self%atom%cont(kc)%active) cycle
               lower = self%atom%cont(kc)%i
 
               if (self%atom%ev(lower)==0) then
@@ -699,7 +657,7 @@ MODULE atom_patch_mod
               endif
 
               if (same) then
-                trans%exclude = .true.
+                trans%active = .false.
                 if (first_time) then
                   print *, 'excluding transition ', trans%label
                 endif

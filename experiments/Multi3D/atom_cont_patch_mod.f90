@@ -20,9 +20,8 @@ MODULE atom_cont_patch_mod
     type, public, extends(ray_patch_t) :: atom_cont_patch_t
     contains
       procedure :: pre_init => atom_cont_pre_init
-      procedure :: update => atom_cont_update
+      procedure :: execute
       procedure :: nbor_relations
-      procedure :: atom_cont_update
       procedure :: init_nbors_hash
     end type atom_cont_patch_t
       
@@ -57,25 +56,24 @@ MODULE atom_cont_patch_mod
   END SUBROUTINE atom_cont_pre_init
   
   !===============================================================================
-  SUBROUTINE atom_cont_update (self)
+  SUBROUTINE execute (self)
     class(atom_cont_patch_t) :: self
     real(4), dimension(:,:,:,:), pointer, contiguous :: chi, eta
     real(4), dimension(:,:,:), pointer, contiguous :: temp
-    integer, save:: itimer=0
+    integer, save :: itimer=0
     !-----------------------------------------------------------------------------
-    if (self%is_finished()) return
-    call trace%begin('atom_cont_patch_t%atom_cont_update', itimer=itimer)
+    call trace%begin (trim(self%kind)//'%update', itimer=itimer)
     chi => self%authority_mem(:,:,:,:, self%it, self%i_chi)
     eta => self%authority_mem(:,:,:,:, self%it, self%i_eta)
     temp => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_temp, self%it,1)
     chi = 0
     eta = 0
     call self%atom%add_continuum_opacities(self%fs, self%fe, self%sp%nu, temp, chi, eta)
-    call trace%end(itimer)
     if (self%iter == 1) then
       self%dtime = self%dt_fixed
     endif
-  END SUBROUTINE atom_cont_update
+    call trace%end(itimer)
+  END SUBROUTINE execute
   
   !===============================================================================
   SUBROUTINE nbor_relations(self, another, needed, needs_me, download)

@@ -69,10 +69,9 @@ def convol(sx, sy, vrot=None, zeta_rt=None, vshift=None, vdop=None, custom=None)
     Give vshift in km/s for blue/red - dopplershift.
     Give vdop in km/s for gaussian doppler broadening.
     """
-    beta = 1.5
-    cc   = 299792.458 # VELOCITY OF LIGHT (KM/S)
-    sxx  = np.log(sx.astype(np.float64)) # original xscale in
-    syy  =        sy.astype(np.float64)
+    cc  = 299792.458 # VELOCITY OF LIGHT (KM/S)
+    sxx = np.log(sx.astype(np.float64)) # original xscale in
+    syy =        sy.astype(np.float64)
     
     min_rd = 0.1 / cc    # RESAMPLING-DISTANCE
     
@@ -92,6 +91,7 @@ def convol(sx, sy, vrot=None, zeta_rt=None, vshift=None, vdop=None, custom=None)
     
     if vrot is not None:
         normf = cc/vrot
+        beta = 1.5
         xi = normf*px
         
         xi[abs(xi) > 1] = 1

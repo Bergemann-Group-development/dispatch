@@ -21,7 +21,7 @@ MODULE out_rad_patch_mod
     type, public, extends(ray_patch_t) :: out_rad_patch_t
     contains
       procedure :: pre_init => out_rad_pre_init
-      procedure :: update => out_rad_update
+      procedure :: execute
       procedure :: nbor_relations
       procedure :: save_quadrature
       procedure :: print_post_update_info
@@ -69,7 +69,7 @@ MODULE out_rad_patch_mod
   END SUBROUTINE nbor_relations
   
   !===============================================================================
-  SUBROUTINE out_rad_update(self)
+  SUBROUTINE execute(self)
     class(out_rad_patch_t) :: self
     class(nbor_t), pointer:: nbor
     character(len=128) :: filename
@@ -80,15 +80,16 @@ MODULE out_rad_patch_mod
     integer :: lunit
     integer :: i, iw, top
     real(4) :: norm
+    integer, save :: itimer=0
     !-----------------------------------------------------------------------------
-    if (self%is_finished()) return
-    call trace%begin('out_rad_patch_t%save_radiation_output')
+    call trace%begin (trim(self%kind)//'%update', itimer=itimer)
     write(stdout, '(A, I3)') 'Writing output for angle ', abs(self%i_mu)
   
     nbor => self%link%nbor
     do while (associated(nbor))
       select type(nb => nbor%task)
       class is (ray_patch_t)
+        call nb%mem_lock(1)%set_read('out_rad_update')
         call self%check_access(nb)
         do iw=1, self%nw
           Inu => self%mem(:,:,1, nb%fs:nb%fe, self%it, iw)
@@ -97,6 +98,7 @@ MODULE out_rad_patch_mod
             Inu(:,:,i) = nb%authority_mem(:,:,top, i, nb%it, iw)
           end do
         end do
+        call nb%mem_lock(1)%unset_read('out_rad_update')
       end select
       nbor => nbor%next
     end do
@@ -107,9 +109,8 @@ MODULE out_rad_patch_mod
     call self%save(II, 'ie')
     self%saved = .false.
     call os%deallocate(II)
-
-    call trace%end()
-  END SUBROUTINE out_rad_update
+    call trace%end(itimer)
+  END SUBROUTINE execute
   
   !===============================================================================
   SUBROUTINE save_quadrature(self)

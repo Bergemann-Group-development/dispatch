@@ -5,10 +5,10 @@ MODULE hprofl_mod
   USE mconst
   implicit none
 
-  real(4), dimension(4,3), parameter ::  xknmtb = [&
+  real(4), dimension(4,3), parameter ::  xknmtb = reshape([&
       0.0001716, 0.0090190, 0.1001000, 0.5820000,  &
       0.0005235, 0.0177200, 0.1710000, 0.8660000,  &
-      0.0008912, 0.0250700, 0.2230000, 1.0200000]
+      0.0008912, 0.0250700, 0.2230000, 1.0200000], [4,3])
 
 
   !  Einstein A-value sums for H lines
@@ -65,18 +65,18 @@ MODULE hprofl_mod
     2.,3.,4.,1.,2.,1.,2.,1.,4.,6.,1.,7.,6.,4.,4.,4.,5.]
 
   !  Fine structure for M.EQ.INFINITY IN nu*10**-7
-  real(4), dimension(5,4), parameter :: stcomp = [&
+  real(4), dimension(5,4), parameter :: stcomp = reshape([&
       0.,    0.,    0.,    0.,    0.,  &
     468.,  576., -522.,    0.,    0.,  &
     260.,  290.,  -33., -140.,    0.,  &
-    140.,  150.,   18.,  -27.,  -51.]*1e7
+    140.,  150.,   18.,  -27.,  -51.], [5,4])*1e7
 
   !  Weights for fine structure components
-  real(4), dimension(5,4), parameter :: stcpwt = [&
+  real(4), dimension(5,4), parameter :: stcpwt = reshape([&
     1., 0., 0., 0., 0., &
     1., 1., 2., 0., 0., &
     1., 1., 4., 3., 0., &
-    1., 1., 4., 6., 4.]
+    1., 1., 4., 6., 4.], [5,4])
 
 
 
@@ -214,8 +214,8 @@ contains
     self%gw3 = 4.45E-26*gnm*(m2*(7.*m2+5.))**0.4
 
     if (hydrogen_BPO) then
-      !  For low Balmer lines use Barklem, Piskunov & O'Mara (2000, A&A 363,
-      !  1091) instead of Ali & Griem for self-broadening. 
+      !  For low Balmer lines use Barklem, Piskunov & O'Mara (2000, A&A 363, 1091)
+      !  instead of Ali & Griem for self-broadening. 
       if ((n == 2) .and. (m <= 5)) then
         resont = balfac(mmn)*sigma(mmn)
         self%gw1 = resont/self%nu0/(2*pi)
@@ -546,7 +546,7 @@ contains
     real(8), save :: gnm, y1num, y1wht
     integer, save :: xn=0, xm=0, mmn
 
-    real(4), dimension(2,2), parameter :: y1wtm = [1.e18, 1.e17, 1.e16, 1.e14]
+    real(4), dimension(2,2), parameter :: y1wtm = reshape([1.e18, 1.e17, 1.e16, 1.e14], [2,2])
     !---------------------------------------------------------------------------
     !  Variables depending on conditions
     t4 = temp/10000.

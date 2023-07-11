@@ -4,14 +4,16 @@ MODULE ion_mod
     USE bbtrans_mod, only: bbtrans_type
     implicit none
 
-    type particle_type
-        real(dp), dimension(:,:,:), allocatable :: f, n, e, part
-        integer :: nx, ny, nz, nline=0
+    type, extends(state_type) :: particle_type
+        real(dp), dimension(:,:,:), allocatable :: f, e, part
+        integer :: nx, ny, nz, nk, nline=0
         character(len=6) :: id
-        logical :: allocated=.false.
+        type(level_type), allocatable :: levels(:)
         type(bbtrans_type), dimension(:), allocatable :: line
         real(dp), allocatable, dimension(:) :: irwin
+        real(dp) :: awgt
         logical :: in_linelist
+        logical :: allocated=.false.
     contains
         procedure :: irwin_partf
         procedure :: irwin_poly
@@ -26,13 +28,12 @@ MODULE ion_mod
     end type ion_pointer_t
     
     type, extends(particle_type) :: ion_type
-        integer :: g0, nk, j, iqfix, nmolec=0, mcount, n_iso=0
-        type(level_type), allocatable :: levels(:)
+        integer :: g0, j, iqfix, nmolec=0, mcount, n_iso=0
         type(ion_type), pointer :: above
         type(ion_type), pointer :: below
         class(particle_pointer_t), allocatable :: molecules(:)
         integer :: active
-        real(dp) :: parco, awgt
+        real(dp) :: parco
         real(dp), pointer :: abund
         real(dp) :: acolc, tcolc, aradc, xradc, adic, bdic, t0c, t1c
         real(dp), dimension(:,:,:), allocatable :: saha
@@ -63,7 +64,7 @@ elemental real(dp) FUNCTION partition(self, EK_over_temp, ne)
     elseif (allocated(self%irwin)) then ! IRWIN FORMAT
         partition = self%irwin_partf(EK / EK_over_temp)
     else
-        g   = self%levels%g2
+        g   = self%levels%g
         blz = self%levels%boltzmann(EK_over_temp)
         where(self%levels%xl > 0) fis = self%levels%fischel_sparks(self%j, EK_over_temp, ne)
         partition = self%g0 + sum(g*fis*blz)
@@ -83,7 +84,7 @@ elemental real(dp) FUNCTION saha_eq(self, EK_over_temp, ne, saha, dxi, partition
         dxi_j = dxi*self%j
     endif
 
-    saha_eq = saha * self%levels(1)%boltzmann(EK_over_temp, dxi=dxi_j) * partition_ratio
+    saha_eq = saha * self%boltzmann(EK_over_temp, dxi=dxi_j) * partition_ratio
 END FUNCTION saha_eq
 
 !===============================================================================

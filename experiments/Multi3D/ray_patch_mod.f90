@@ -433,17 +433,17 @@ SUBROUTINE allocate_mem (self, allocator, m_in)
 END SUBROUTINE allocate_mem
 
 !===============================================================================
-SUBROUTINE compress_mem (self, compressor, static)
+SUBROUTINE compress_mem (self, compressor, static, locked)
   class(ray_patch_t):: self
   class(m3d_patch_t), intent(in), target :: compressor
-  logical, intent(in) :: static
+  logical, intent(in) :: static, locked
   integer :: i, k, m(6)
   real(4), dimension(:,:,:,:,:,:), pointer, contiguous :: dn
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not. self%compressed) then
     call trace%begin ('ray_patch_t%compress_mem', itimer=itimer)
-    call self%mem_lock(1)%set ('compress_mem')
+    if (.not. locked) call self%mem_lock(1)%set ('compress_mem')
     self%static_mem = static
     self%compressed = .true.
     m = shape(self%mem)
@@ -453,14 +453,14 @@ SUBROUTINE compress_mem (self, compressor, static)
     do i=1, self%nv
       dn(:,:,1:1,i,:,:) = self%mem(:,:,k:k,i,:,:)
     end do
-    call self%deallocate_mem(compressor)
+    call self%m3d_patch_t%deallocate_mem(compressor)
     call self%m3d_patch_t%allocate_mem(compressor, m)
     self%allocation_time = self%time
     do i=1, self%nv
       self%mem(:,:,1:1,i,:,:) = dn(:,:,1:1,i,:,:)
     end do
     call os%deallocate(dn)
-    call self%mem_lock(1)%unset ('compress_mem')
+    if (.not. locked) call self%mem_lock(1)%unset ('compress_mem')
     if (self%print_update_info .and. detailed_prints) then
       write(stdout,*) self%m3d_patch_info2(), ' has been compressed'
     endif
@@ -500,7 +500,7 @@ SUBROUTINE decompress_mem (self, decompressor)
     call trace%end(itimer)
   endif
 END SUBROUTINE decompress_mem
-  
+
 !===============================================================================
 !> Pack patch info into a buffer, for MPI communication
 !> FIXME: Consider replacing with mpi_buffer() calls

@@ -85,6 +85,7 @@ CONTAINS
     logical, optional       :: all_tgt, all_src
     integer, optional       :: only
     !-----------------------------------------------------------------------------
+    call self%task%clear(bits%ignore)
     call self%task%pre_update()
     !call self%halo_t%update(all_tgt, all_src, only)
     call halo_update(self, all_tgt, all_src, only)
@@ -167,7 +168,11 @@ CONTAINS
     class is (patch_t)
       select type (source)
       class is (patch_t)
+        call source%mem_lock(1)%set_read('source_to_target')
+        call target%mem_lock(1)%set('source_to_target')
         call self%same(target, source, only=only)
+        call target%mem_lock(1)%unset('source_to_target')
+        call source%mem_lock(1)%unset_read('source_to_target')
       end select
     end select
     call trace%end (itimer=itimer)
@@ -230,19 +235,27 @@ CONTAINS
       call tgt%stats ('guards_t%same tgt')
       call src%stats ('guards_t%same src')
     end if
-    call io%assert (all(lt >= tm%lb), 'guards_t%same: lt breach')
-    call io%assert (all(ut <= tm%ub), 'guards_t%same: ut breach')
-    call io%assert (all(ls >= sm%lb), 'guards_t%same: ls breach')
-    call io%assert (all(us <= sm%ub), 'guards_t%same: us breach')
 
     if (size(src%mem,3)==1) then
       ls(3) = 1
       us(3) = 1
     endif
 
+    call io%assert (all(lt <= tm%ub), 'guards_t%same: lt breach')
+    call io%assert (all(ut >= tm%lb), 'guards_t%same: ut breach')
+    call io%assert (all(ls <= sm%ub), 'guards_t%same: ls breach')
+    call io%assert (all(us >= sm%lb), 'guards_t%same: us breach')
+
     if (print_download) then
       write(stdout, '(I8, A, I8)') tgt%id, ' downloading from ', src%id
-      write(stdout, *) ls, us, lt-ls
+      write(stdout, '(4(3(I4), 1x))') ls, us, lt, ut
+    endif
+
+    if (.not. associated(src%mem)) then
+      print *, 'source not allocated', src%id, tgt%id
+    endif
+    if (.not. associated(tgt%mem)) then
+      print *, 'target not allocated', src%id, tgt%id
     endif
 
     if (src%level == tgt%level) then

@@ -826,8 +826,9 @@ SUBROUTINE post_update (self, link)
   class(task_mesg_t):: self
   class(link_t), pointer:: link
   class(task_t), pointer:: task
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('task_mesg_t%post_update')
+  call trace%begin ('task_mesg_t%post_update', itimer=itimer)
   task => link%task
   !.............................................................................
   if (verbose > 1) &
@@ -850,7 +851,6 @@ SUBROUTINE post_update (self, link)
   ! Set the rank, by whatever (possibly overloaded) rule
   !-----------------------------------------------------------------------------
   call link%task%set_rank ()
-  call link%task%post_update ()
   !-----------------------------------------------------------------------------
   ! If the init_nbors bit is set, make a new nbor list, which also resets the
   ! status (IBVE) of the link task
@@ -909,7 +909,7 @@ SUBROUTINE post_update (self, link)
   ! Mark thread no longer on this task
   !-----------------------------------------------------------------------------
   omp%thread_task = -1
-  call trace%end ()
+  call trace%end (itimer)
 END SUBROUTINE post_update
 
 !===============================================================================

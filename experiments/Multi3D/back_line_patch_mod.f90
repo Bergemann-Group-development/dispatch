@@ -38,7 +38,7 @@ MODULE back_line_patch_mod
       integer :: nline, ired, iblue
     contains
       procedure :: pre_init => back_line_patch_pre_init
-      procedure :: update => back_line_patch_update
+      procedure :: execute
       procedure :: nbor_relations => back_line_patch_nbor_relations
       procedure :: init_nbors_hash
     end type back_line_patch_t
@@ -67,16 +67,14 @@ MODULE back_line_patch_mod
   END SUBROUTINE back_line_patch_pre_init
 
   !===============================================================================
-  SUBROUTINE back_line_patch_update (self)
+  SUBROUTINE execute (self)
     class(back_line_patch_t) :: self
     real(4), dimension(:,:,:), pointer, contiguous :: vproj
     real(4), dimension(:,:,:,:), pointer, contiguous :: eta, chi
     real(8), dimension(:), pointer, contiguous :: nu
-    integer, save:: itimer=0, itimer2=0
+    integer, save :: itimer=0
     !-----------------------------------------------------------------------------
-    if (self%is_finished()) return
-    call trace%begin('back_line_patch_t%back_line_patch_update', itimer=itimer)
-
+    call trace%begin (trim(self%kind)//'%update', itimer=itimer)
     eta => self%mem(:,:,:,:,1,self%i_eta)
     chi => self%mem(:,:,:,:,1,self%i_chi)
     nu  => self%sp%nu(self%fs:self%fe)
@@ -86,7 +84,7 @@ MODULE back_line_patch_mod
     call self%composition%add_linelist_opacities(nu, eta, chi, vproj)
     call os%deallocate(vproj)
     call trace%end(itimer)
-  END SUBROUTINE back_line_patch_update
+  END SUBROUTINE execute
 
   !===============================================================================
   SUBROUTINE back_line_patch_nbor_relations(self, another, needed, needs_me, download)

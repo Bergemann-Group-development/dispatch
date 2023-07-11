@@ -42,7 +42,7 @@ MODULE atom_line_patch_mod
     contains
       procedure :: pre_init => atom_line_pre_init
       procedure :: init => atom_line_init
-      procedure :: update => atom_line_update
+      procedure :: execute
       procedure :: allocate_mem
       procedure :: deallocate_mem
       procedure :: nbor_relations
@@ -180,7 +180,7 @@ MODULE atom_line_patch_mod
   END SUBROUTINE create_line_frequencies
 
   !===============================================================================
-  SUBROUTINE atom_line_update (self)
+  SUBROUTINE execute (self)
     class(atom_line_t) :: self
     class(line_type), pointer :: line
     class(ion_type), pointer :: He1
@@ -190,12 +190,10 @@ MODULE atom_line_patch_mod
     real(4), dimension(:,:,:,:), pointer, contiguous :: phi
     real(4), dimension(:,:,:,:), pointer :: nh, chi, eta
     integer :: i, f, p(3), fs, fe, iw, it
-    integer, save:: itimer=0
+    integer, save :: itimer=0
     !-----------------------------------------------------------------------------
-    if (self%is_finished()) return
-    call trace%begin('atom_line_t%atom_line_update', itimer=itimer)
+    call trace%begin (trim(self%kind)//'%update', itimer=itimer)
     p = self%pcheck
-
     call self%check_access(self%m3d_parent%m3d_parent)
     ne   => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_ne,            self%it,1)
     temp => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_temp,          self%it,1)
@@ -269,7 +267,7 @@ MODULE atom_line_patch_mod
       call self%integrate_wphi()
     endif
     call trace%end(itimer)
-  END SUBROUTINE atom_line_update
+  END SUBROUTINE execute
 
   !===============================================================================
   SUBROUTINE add_to_net_opac (self)
@@ -277,6 +275,7 @@ MODULE atom_line_patch_mod
     real(4), dimension(:,:,:,:), pointer :: nh, chi, eta
     integer :: i, f, p(3), fs, fe, iw, it
     !-----------------------------------------------------------------------------
+    call self%net_opac%mem_lock(1)%set('add_to_net_opac')
     call self%net_opac%check_mem()
     do iw=1, self%net_opac%nw
       do it=1, self%net_opac%nt
@@ -296,6 +295,7 @@ MODULE atom_line_patch_mod
       eta => self%net_opac%authority_mem(:,:,:,:,it,4)
       call self%interpolate_lines(chi, eta, LTE=.true.)
     endif
+    call self%net_opac%mem_lock(1)%unset('add_to_net_opac')
   END SUBROUTINE add_to_net_opac
 
   !===============================================================================
