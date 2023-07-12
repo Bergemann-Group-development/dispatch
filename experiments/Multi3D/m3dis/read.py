@@ -259,12 +259,13 @@ class read(object):
         
         if norm:
             yy = yy / cnt
+
             
         return yy, cnt
     
     #=====================================================================
     def crop(self, lam0=None, dlam=None, xmin=None, xmax=None, vdop=None, 
-             vshift=None, convolve=None, **kwargs):
+             vshift=None, convolve=None, per_aa=False, **kwargs):
         #-----------------------------------------------------------------
         xx = self.lam
 
@@ -274,6 +275,9 @@ class read(object):
             dlam = None
             lam0 = 0
 
+        if per_aa:
+            kwargs['norm'] = False
+
         xx, mask = self.get_xx(xx, dlam, xmin, xmax)
         yy, cnt = self.get_yy(mask=mask, **kwargs)
         xx = xx + lam0
@@ -281,6 +285,9 @@ class read(object):
         if vdop is not None or vshift is not None or convolve is not None:
             sxx, syy = convol(xx, yy, vdop=vdop, vshift=vshift, custom=convolve)
             yy = np.interp(xx, sxx, syy)
+
+        if per_aa:
+            yy = yy * cc / (xx**2) * 1e8
 
         return xx, yy
     
@@ -303,10 +310,11 @@ class read(object):
     #=====================================================================
     def plot_spectrum(self, ang=None, imu=None, norm=True, LTE=False,
                       vdop=None, vshift=None, lam0=None, dlam=10, 
-                      show_lines=False, xmin=None, xmax=None,  **kwargs):
+                      show_lines=False, xmin=None, xmax=None,  per_aa=False, **kwargs):
         #-----------------------------------------------------------------
         xx, yy = self.crop(lam0=lam0, dlam=dlam, ang=ang, imu=imu, norm=norm,
-                           xmin=xmin, xmax=xmax, LTE=LTE, vdop=vdop, vshift=vshift)
+                           xmin=xmin, xmax=xmax, LTE=LTE, vdop=vdop, vshift=vshift,
+                           per_aa=per_aa)
         
         self.set_xaxis(xx, dlam)
         self.set_yaxis(ang, imu, norm)
