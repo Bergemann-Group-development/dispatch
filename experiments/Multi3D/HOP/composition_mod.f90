@@ -1113,6 +1113,10 @@ contains
                 
                 ! number of electrons from elements other than H
                 if (trim(element%id) /= 'H') self%fe = self%fe + xnen
+
+                if (.not. self%loaded) then
+                    print '(A6, 2(2x, E14.6))', ion%id, ion%f(1,1,224), self%fe(1,1,224)
+                endif
                 
                 ! number of electrons from elements other than H, C, N, O
                 if (findloc(['H', 'C', 'N', 'O'], trim(element%id), 1) == 0) then
@@ -1146,7 +1150,7 @@ contains
         end do
 
         call self%molecular_equilibrium(self%temp, self%teta, self%pe, self%dxi, xnecno, self%eh, self%pg, self%fe)
-        
+
         ! total hydrogen number density, computed from scratch
         toth = self%ne / self%fe * (BK/uop_BK)
         ! mass density computed from scratch
@@ -1167,17 +1171,14 @@ contains
             do j=1, element%nion
                 ion => element%ions(j)
                 ion%n = ion%f * self%toth
-                !ion%n_over_rho = ion%f / self%grph
             end do
         end do
 
         do i=1, self%nmolec
             self%molecules(i)%n = self%molecules(i)%f * self%toth
-            !self%molecules(i)%n_over_rho = self%molecules(i)%f / self%grph
         end do
 
         Hm%n = HI%n / Hm%saha
-        !Hm%n_over_rho = HI%n_over_rho / Hm%saha
         self%E = 1.5*self%pg/self%ro + (ejon - self%eh)*EE/self%grph
 
         call self%compute_p6(self%p6)
@@ -1305,7 +1306,7 @@ contains
             abslte(:,:,:,f) = abslte(:,:,:,f) * lam(f)**3
         end do
 
-        if (nf > 1) print '(A22, 3(E14.6))', 'after lam3', abslte(p(1),p(2),p(3),p(4)), lam(p(4))**3
+        !if (nf > 1) print '(A22, 3(E14.6))', 'after lam3', abslte(p(1),p(2),p(3),p(4)), lam(p(4))**3
 
         ! add absorption from all tables, which do not include stimulated emission or lam^3 factor
         do i=1, size(self%trans)
@@ -1351,7 +1352,7 @@ contains
         call self%electron_scattering(sumsca)
         call self%rayleigh_scattering(lam, sumsca)
 
-        if (nf > 1) print '(A22, 3(E14.6))', 'after scattering', abslte(p(1),p(2),p(3),p(4))
+        !if (nf > 1) print '(A22, 3(E14.6))', 'after scattering', abslte(p(1),p(2),p(3),p(4))
 
         if (present(include_absmet)) then
             if (self%osmet%initialised .and. include_absmet) then
@@ -1815,7 +1816,7 @@ contains
         real(4), intent(in) :: tol ! stop cryterium
         logical, dimension(:,:,:), allocatable :: ne_converged
         real(4), dimension(:,:,:), allocatable :: ne, a, b, x, xold, fx, fa, fb 
-        integer :: i, nconverded, arr_size, arr_shape(3)
+        integer :: i, nconverged, arr_size, arr_shape(3)
         integer, parameter :: nmax = 20 ! max number of iteration
 
         !self%temp = temp 
@@ -1857,12 +1858,12 @@ contains
             ne_converged = .true.
         endwhere
 
-        nconverded = count(ne_converged)
+        nconverged = count(ne_converged)
         i = 0
         write(*,*)
-        write(*,fmt="(5x,'it [',I2.2,']',1x,'n-converded:',1x,I3,1X,'/ total size: ',I3)") i, nconverded, arr_size
+        write(*,fmt="(5x,'it [',I2.2,']',1x,'n-converged:',1x,I3,1X,'/ total size: ',I3)") i, nconverged, arr_size
 
-        if (nconverded < arr_size) then
+        if (nconverged < arr_size) then
             x=b
             do i=1,nmax
                 xold = x
@@ -1873,7 +1874,7 @@ contains
                 where (abs(x-xold) < tol)
                     ne_converged = .true.
                 end where
-                nconverded = count(ne_converged)
+                nconverged = count(ne_converged)
                 if (size(ne_converged) == count(ne_converged)) exit ! all good !
 
                 where (.not.ne_converged)
@@ -1892,7 +1893,7 @@ contains
             enddo
         endif
 
-        write(*,fmt="(5x,'it [',I2.2,']',1x,'n-converded:',1x,I3,1X,'/ total size: ',I3)") i, nconverded, arr_size
+        write(*,fmt="(5x,'it [',I2.2,']',1x,'n-converged:',1x,I3,1X,'/ total size: ',I3)") i, nconverged, arr_size
         write(*,*)
 
         deallocate(ne)
@@ -1931,7 +1932,7 @@ contains
             abslte(:,:,:,f) = abslte(:,:,:,f) + hrest
         end do
 
-        if (nf > 1) print '(A22, 3(E14.6))', 'hrest', hrest(p(1),p(2),p(3)), hrest(p(1),p(2),p(3)), abslte(p(1),p(2),p(3),p(4))
+        !if (nf > 1) print '(A22, 3(E14.6))', 'hrest', hrest(p(1),p(2),p(3)), hrest(p(1),p(2),p(3)), abslte(p(1),p(2),p(3),p(4))
     END SUBROUTINE add_hrest
 
     !=========================================================================

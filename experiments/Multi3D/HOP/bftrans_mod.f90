@@ -517,7 +517,6 @@ contains
       select case(trim(self%key))
       case('H- BF')
           fakt = ion%n
-          print *, log10(ion%n(1,1,:)/EK_over_temp(1,1,:) * 1.602189d-12)
       case('H- FF')
           fakt = ion%n * pe
       case('H BF')
