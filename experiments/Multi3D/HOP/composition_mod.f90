@@ -1113,10 +1113,6 @@ contains
                 
                 ! number of electrons from elements other than H
                 if (trim(element%id) /= 'H') self%fe = self%fe + xnen
-
-                if (.not. self%loaded) then
-                    print '(A6, 2(2x, E14.6))', ion%id, ion%f(1,1,224), self%fe(1,1,224)
-                endif
                 
                 ! number of electrons from elements other than H, C, N, O
                 if (findloc(['H', 'C', 'N', 'O'], trim(element%id), 1) == 0) then
