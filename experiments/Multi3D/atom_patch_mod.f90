@@ -640,8 +640,9 @@ MODULE atom_patch_mod
     !-----------------------------------------------------------------------------
     do i=1, size(self%composition%trans)
       trans => self%composition%trans(i)
+      if (.not. trans%active) cycle
       select case(trans%label)
-      case ('(H+H)', 'H2+', 'H- FF', 'H FF G')
+      case ('(H+H)', 'H2+', 'H- FF', 'H FF', 'H2-', 'H- BF')
         ! do not exclude
       case default
         if (trans%level%g > 0) then
