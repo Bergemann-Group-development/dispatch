@@ -154,7 +154,7 @@ MODULE net_opac_patch_mod
     call self%boundaries%mirror()
     call self%periodic_grid()
 
-    if (self%out_ray) then
+    if (self%out_ray .and. .not. self%one_dimensional) then
       call self%rotate_cube()
     endif
     call trace%end(itimer)

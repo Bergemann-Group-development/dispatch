@@ -5,9 +5,10 @@ MODULE composition_patch_mod
   USE omp_mod
   USE gpatch_mod
   USE handyfuncs_mod
+  USE optab_mod, only: optab
   USE element_mod, only: element_type
   USE m3d_patch_mod,   only: m3d_patch_t, comoving_frame, ilambd, decouple_continuum, &
-  use_density, overlapping_bb, overlapping_bf, line_blanketing
+  use_density, use_ne, overlapping_bb, overlapping_bf, line_blanketing, binned_opac, save_Qrad, maxiter
   USE composition_mod, only: composition_type, dlam, exclude_elements
   USE back_cont_patch_mod,  only: back_cont_patch_t
   USE angle_rad_patch_mod,   only: rad_patch_t
@@ -61,12 +62,13 @@ SUBROUTINE composition_pre_init (self)
   character(len=128), save :: abund_file='./input_multi3d/abund'
   character(len=128), save :: isotope_file=''!'./input_multi3d/isotopes_abund.txt'
   character(len=128), save :: molec_file='./input_multi3d/molec_data.txt'
+  character(len=128), save :: opac_table=''
   character(len=128), save :: absmet_file=''
   character(len=512), save :: linelist_file=''
   character(len=128), save :: line_lists(10)=''
   logical, save :: first_time=.true., absmet_big_end=.false., external_sp
   namelist /composition_params/ verbose, absdat_file, abund_file, absmet_file, &
-  absmet_big_end, isotope_file, molec_file, H_occupation_probability
+  absmet_big_end, isotope_file, molec_file, H_occupation_probability, opac_table
   namelist /linelist_params/ dlam, exclude_elements, linelist_file, line_lists
   ! ----------------------------------------------------------------------------
   call trace%begin('composition_patch_t%composition_pre_init', itimer=itimer)
@@ -112,13 +114,19 @@ SUBROUTINE composition_pre_init (self)
         i = i + 1
       end do
     endif
-
-    call trace%end(itimer2)
     
     allocate(output_sp)
-    call output_sp%init()
-    output_sp%name = 'output'
+    binned_opac = opac_table /= ''
+      
+    if (binned_opac) then
+      call optab%init(opac_table, output_sp)
+    else
+      call output_sp%init()
+      output_sp%name = 'output'
+    endif
+
     external_sp = output_sp%nnu > 0
+    call trace%end(itimer2)
   endif
 
   ! copy composition with all the information from the abund
@@ -146,6 +154,8 @@ SUBROUTINE composition_pre_init (self)
     else
       call self%create_sub_patches([1, n_nu], [0, n_mu], self%composition, atom_patch%sp)
     endif
+  elseif (save_Qrad) then
+    call self%create_sub_patches([1, n_nu], [0, n_mu], self%composition, output_sp)
   else
     deallocate(atom_patch)
     if (.not. external_sp) then
@@ -265,7 +275,7 @@ SUBROUTINE execute (self)
   
     ! loading temp, ne and rho in to composition objekt
     ! ion and molecule equilibrium are solved immediately
-    call self%composition%load_state_variables(temp, ne, rho, use_rho=use_density)
+    call self%composition%load_state_variables(dble(temp), dble(ne), dble(rho), use_rho=use_density, use_ne=use_ne)
     call self%composition%get_nhyd(nh)
 
     self%dtime = max(self%dtime, io%end_time - self%dtime)

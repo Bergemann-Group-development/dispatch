@@ -175,22 +175,6 @@ PURE FUNCTION capitalize(string)
 END FUNCTION capitalize
 
 !====================================================================================
-pure function option(bool, default) result(out)
-  logical, intent(in), optional :: bool, default
-  logical :: out
-  !---------------------------------------------------------------------------------
-  if (present(bool)) then
-    out = bool
-  else
-    if (present(default)) then
-      out = default
-    else
-      out = .false.
-    endif
-  endif
-end function option
-
-!====================================================================================
 SUBROUTINE sort_array(array, indices)
   real(8), intent(inout) :: array(:)
   integer, intent(out) :: indices(size(array))

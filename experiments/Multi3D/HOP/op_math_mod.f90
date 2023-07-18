@@ -6,7 +6,34 @@ MODULE op_math_mod
     module procedure poly3, poly4, poly5, poly6
   end interface poly1d
     
+  interface searchsorted
+    module procedure searchsorted4, searchsorted8
+  end interface searchsorted
+
+  interface BinarySearch
+    module procedure BinarySearch4, BinarySearch8
+  end interface BinarySearch
+
+  interface pchip_mono
+    module procedure pchip_mono4, pchip_mono8
+  end interface pchip_mono
 contains
+
+  !====================================================================================
+  PURE FUNCTION option(bool, default) result(out)
+    logical, intent(in), optional :: bool, default
+    logical :: out
+    !---------------------------------------------------------------------------------
+    if (present(bool)) then
+      out = bool
+    else
+      if (present(default)) then
+        out = default
+      else
+        out = .false.
+      endif
+    endif
+  END FUNCTION option
 
   !====================================================================================
   FUNCTION interp1d(xx,yy,newx, order, sorted) result(newy)
@@ -113,7 +140,38 @@ contains
   !====================================================================================
   ! Finds index of element after which value should be inserted to maintain order.
   !====================================================================================
-  pure FUNCTION searchsorted(arr, val, outbounds_ok) result(i)
+  pure FUNCTION searchsorted4(arr, val, outbounds_ok) result(i)
+    real(4), intent(in) :: arr(:), val
+    logical, optional, intent(in) :: outbounds_ok
+    logical :: ob_ok, above, below
+    integer :: i, n
+    !----------------------------------------------------------------------------
+    if (present(outbounds_ok)) then
+      ob_ok = outbounds_ok
+    else
+      ob_ok = .false.
+    endif
+
+    n = size(arr)
+    below = val < arr(1)
+    above = val > arr(n)
+
+    if (below .or. above) then
+      if (ob_ok) then
+        if (below) i = 0
+        if (above) i = n
+      else
+        i = -1
+      endif
+    else
+      i = BinarySearch4(arr, 1, n, val)
+    endif
+  end FUNCTION searchsorted4
+
+  !====================================================================================
+  ! Finds index of element after which value should be inserted to maintain order.
+  !====================================================================================
+  pure FUNCTION searchsorted8(arr, val, outbounds_ok) result(i)
     real(8), intent(in) :: arr(:), val
     logical, optional, intent(in) :: outbounds_ok
     logical :: ob_ok, above, below
@@ -137,12 +195,34 @@ contains
         i = -1
       endif
     else
-      i = BinarySearch(arr, 1, n, val)
+      i = BinarySearch8(arr, 1, n, val)
     endif
-  end FUNCTION searchsorted
+  end FUNCTION searchsorted8
 
   !====================================================================================
-  pure recursive FUNCTION BinarySearch(arr, l, r, x) result(idx)
+  pure recursive FUNCTION BinarySearch4(arr, l, r, x) result(idx)
+    real(4), intent(in) :: arr(:)
+    real(4), intent(in) :: x
+    integer, intent(in) :: l, r
+    integer :: idx, mid
+    !----------------------------------------------------------------------------
+    if (r - l > 1) then
+      mid = l + (r - l) / 2
+
+      if(arr(mid) >= x) then
+        idx = BinarySearch4(arr, l, mid, x)
+
+      elseif(arr(mid) < x) then
+        idx = BinarySearch4(arr, mid, r, x)
+
+      endif
+    else
+        idx = l
+    endif
+  end FUNCTION BinarySearch4
+
+  !====================================================================================
+  pure recursive FUNCTION BinarySearch8(arr, l, r, x) result(idx)
     real(8), intent(in) :: arr(:)
     real(8), intent(in) :: x
     integer, intent(in) :: l, r
@@ -152,16 +232,16 @@ contains
       mid = l + (r - l) / 2
 
       if(arr(mid) >= x) then
-        idx = BinarySearch(arr, l, mid, x)
+        idx = BinarySearch8(arr, l, mid, x)
 
       elseif(arr(mid) < x) then
-        idx = BinarySearch(arr, mid, r, x)
+        idx = BinarySearch8(arr, mid, r, x)
 
       endif
     else
         idx = l
     endif
-  end FUNCTION BinarySearch
+  end FUNCTION BinarySearch8
 
   !===============================================================================
   PURE FUNCTION linspace (x1, x2, n) result(xx)
@@ -708,4 +788,158 @@ contains
       order(j+1) = i
     end do
   END SUBROUTINE argSort
+
+  !===============================================================================
+  ! Monotonic piecewise cubic hermite interpolation
+  ! Coded by Richard Hoppe, July 2023
+  !===============================================================================
+  SUBROUTINE pchip_mono4(xx, yy, newx, newy, sorted)
+    real(4), intent(in) :: xx(:)            ! X values of the data points
+    real(4), intent(in) :: yy(:)            ! Y values of the data points
+    real(4), intent(in) :: newx(:)          ! X values to interpolate at
+    real(4), intent(out) :: newy(:)         ! Interpolated Y values
+    real(4), allocatable :: dydx(:)         ! derivative
+    real(4), allocatable :: dx(:)
+    real(4), allocatable :: dy(:)
+    logical, optional :: sorted
+    logical :: is_sorted
+    integer :: n                 ! Number of data points
+    integer :: n_interp          ! Number of interpolation points
+    integer :: j                 ! Loop index for interpolation points
+    integer :: i                 ! Loop index for data points
+    real(4) :: d1, d2, d, alpha, t1, t2, t3, p, a
+    !-----------------------------------------------------------------------------
+    n = size(xx)
+    n_interp = size(newx)
+    is_sorted = option(sorted, .false.)
+    
+    allocate(dydx(n), source=0.)
+    allocate(dx(n-1))
+    allocate(dy(n-1))
+    
+    dx = xx(2:n) - xx(1:n-1)
+    dy = yy(2:n) - yy(1:n-1)
+    
+    do i=2, n-1
+      if (dy(i-1) == 0 .or. dy(i) == 0) cycle
+
+      d1 = dy(i-1)/dx(i-1)
+      d2 = dy(i)/dx(i)
+      
+      if (sign(1., d1) == sign(1., d2)) then
+          ! harmonic mean derivative
+          alpha = (1. + dx(i-1)/(dx(i) + dx(i-1))) / 3.0
+          dydx(i) = 1. / ((1. - alpha)/d2 + alpha/d1)
+      endif
+    end do
+    
+    ! boundary slopes from quadratic polynomial using 2 points and 1 dydx
+    a = (dy(1) - dx(1)*dydx(2)) / (xx(2)**2 - xx(1)**2 - 2.*xx(2)*dx(1))
+    dydx(1) = dydx(2) - 2.*a*dx(1)
+    
+    a = (dy(n-1) - dx(n-1)*dydx(n-1)) / (xx(n)**2 - xx(n-1)**2 - 2.*xx(n-1)*dx(n-1))
+    dydx(n) = dydx(n-1) + 2.*a*dx(n-1)
+    
+    i = 1
+    do j=1, n_interp
+      if (is_sorted) then
+        ! Find the interval containing newx(j)
+        do i=i, n - 1
+          if (newx(j) <= xx(i + 1)) then
+            exit ! Found the interval
+          end if
+        end do
+        i = min(i, n-1)
+      else
+        i = searchsorted(xx, newx(j), outbounds_ok=.true.)
+      endif
+      
+      ! Calculate the interpolation parameter
+      t1 = (newx(j) - xx(i)) / dx(i)
+
+      t2 = t1*t1
+      t3 = t2*t1
+      p = 3.0*t2 - 2.0*t3
+  
+      newy(j) = (1.0 - p)*yy(i) + p*yy(i+1) + dx(i)*((t3 - 2.0*t2 + t1)*dydx(i) + (t3-t2)*dydx(i+1)) 
+    end do
+    deallocate(dydx, dx, dy)
+  END SUBROUTINE pchip_mono4
+
+  !===============================================================================
+  ! Monotonic piecewise cubic hermite interpolation
+  ! Coded by Richard Hoppe, July 2023
+  !===============================================================================
+  SUBROUTINE pchip_mono8(xx, yy, newx, newy, sorted)
+    real(8), intent(in) :: xx(:)            ! X values of the data points
+    real(8), intent(in) :: yy(:)            ! Y values of the data points
+    real(8), intent(in) :: newx(:)          ! X values to interpolate at
+    real(8), intent(out) :: newy(:)         ! Interpolated Y values
+    real(8), allocatable :: dydx(:)         ! derivative
+    real(8), allocatable :: dx(:)
+    real(8), allocatable :: dy(:)
+    logical, optional :: sorted
+    logical :: is_sorted
+    integer :: n                 ! Number of data points
+    integer :: n_interp          ! Number of interpolation points
+    integer :: j                 ! Loop index for interpolation points
+    integer :: i                 ! Loop index for data points
+    real(8) :: d1, d2, d, alpha, t1, t2, t3, p, a
+    !-----------------------------------------------------------------------------
+    n = size(xx)
+    n_interp = size(newx)
+    is_sorted = option(sorted, .false.)
+    
+    allocate(dydx(n), source=0.d0)
+    allocate(dx(n-1))
+    allocate(dy(n-1))
+    
+    dx = xx(2:n) - xx(1:n-1)
+    dy = yy(2:n) - yy(1:n-1)
+    
+    do i=2, n-1
+      if (dy(i-1) == 0 .or. dy(i) == 0) cycle
+      
+      d1 = dy(i-1)/dx(i-1)
+      d2 = dy(i)/dx(i)
+      
+      if (sign(1.d0, d1) == sign(1.d0, d2)) then
+          ! harmonic mean derivative
+          alpha = (1. + dx(i-1)/(dx(i) + dx(i-1))) / 3.0
+          dydx(i) = 1. / ((1. - alpha)/d2 + alpha/d1)
+      endif
+    end do
+    
+    ! boundary slopes from quadratic polynomial using 2 points and 1 dydx
+    a = (dy(1) - dx(1)*dydx(2)) / (xx(2)**2 - xx(1)**2 - 2.*xx(2)*dx(1))
+    dydx(1) = dydx(2) - 2.*a*dx(1)
+    
+    a = (dy(n-1) - dx(n-1)*dydx(n-1)) / (xx(n)**2 - xx(n-1)**2 - 2.*xx(n-1)*dx(n-1))
+    dydx(n) = dydx(n-1) + 2.*a*dx(n-1)
+    
+    i = 1
+    do j=1, n_interp
+      if (sorted) then
+        ! Find the interval containing newx(j)
+        do i=i, n - 1
+          if (newx(j) <= xx(i + 1)) then
+            exit ! Found the interval
+          end if
+        end do
+        i = min(i, n-1)
+      else
+        i = searchsorted(xx, newx(j), outbounds_ok=.true.)
+      endif
+      
+      ! Calculate the interpolation parameter
+      t1 = (newx(j) - xx(i)) / dx(i)
+
+      t2 = t1*t1
+      t3 = t2*t1
+      p = 3.0*t2 - 2.0*t3
+  
+      newy(j) = (1.0 - p)*yy(i) + p*yy(i+1) + dx(i)*((t3 - 2.0*t2 + t1)*dydx(i) + (t3-t2)*dydx(i+1)) 
+    end do
+    deallocate(dydx, dx, dy)
+  END SUBROUTINE pchip_mono8
 END MODULE op_math_mod

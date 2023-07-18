@@ -13,7 +13,7 @@ MODULE element_mod
     end type isotope_type
 
     type, extends(isotope_type) :: element_type
-        integer :: np, nion, nmolec, mcount, nx, ny, nz
+        integer :: np, nion, nmolec, mcount
         real(dp) :: abund
         type(ion_type), allocatable :: ions(:)
         class(isotope_type), allocatable :: isotope(:)
@@ -33,19 +33,22 @@ SUBROUTINE compute_ion_equilibrium(self, EK_over_temp, ne, saha, dxi)
     class(element_type), target :: self
     type(ion_type), pointer :: ions(:), ion
     real(dp), dimension(:,:,:), intent(in) :: EK_over_temp, ne, dxi, saha
-    real(dp), dimension(self%nx, self%ny, self%nz) :: fil, partition_ratio, partp
-    integer :: j
+    real(dp), dimension(:,:,:), allocatable :: fil, partition_ratio, partp
+    integer :: j, l, u
     !---------------------------------------------------------------------------
+    allocate(fil, partition_ratio, partp, mold=ne)
     ions => self%ions
+    l = lbound(ions,1)
+    u = ubound(ions,1)
 
-    do j=1, self%nion
+    do j=l, u
         ion => self%ions(j)
-        call ion%allocate(self%nx, self%ny, self%nz)
+        call ion%allocate(shape(ne))
         ion%part = 1 / ion%partition(EK_over_temp, ne)
     end do
 
     fil = 1
-    do j=self%nion-1, 1, -1
+    do j=u-1, l, -1
         partp = ions(j+1)%part
         ! --- this only shows up in the Oslo legacy code ---!
         !partp = max(1d-3, partp)
@@ -55,9 +58,9 @@ SUBROUTINE compute_ion_equilibrium(self, EK_over_temp, ne, saha, dxi)
         fil = 1 + fil * ions(j)%saha
     end do
 
-    ions(1)%f = self%abund / fil
+    ions(l)%f = self%abund / fil
 
-    do j=2, self%nion
+    do j=l+1, u
         ions(j)%f = ions(j-1)%f * ions(j-1)%saha
     end do
 END SUBROUTINE compute_ion_equilibrium

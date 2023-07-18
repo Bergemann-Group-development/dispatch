@@ -138,12 +138,12 @@ MODULE m3d_patch_mod
     real(8), public, save, dimension(:,:), allocatable:: vec, long_vec
     real(8), public:: convlim=1d-3
     logical, public, save :: converged=.false., use_vel=.true.
-    logical, public, save :: preconditioning=.true.
+    logical, public, save :: preconditioning=.true., binned_opac=.false., save_Qrad=.false.
     logical, public, save :: check_NaN=.false., interp_log=.false.
     logical, public, save :: save_back_cont=.false., save_atom_line=.false.
     logical, public, save :: linear_long=.true., decouple_continuum=.false.
     logical, public, save :: detailed_prints=.false., comoving_frame=.false.
-    logical, public, save :: use_density=.true., line_blanketing=.false.
+    logical, public, save :: use_density=.true., use_ne=.true., line_blanketing=.false.
     logical, public, save :: overlapping_bb=.true., overlapping_bf=.true.
     logical, public, save :: print_start=.false., print_push=.false., print_send=.false.
     character(len=128), save :: save_patch_kind=''
@@ -176,7 +176,7 @@ MODULE m3d_patch_mod
     save_back_cont, detailed_prints, print_finished, print_start, print_push, &
     print_send, linear_long, interp_log, ray_offset, print_download, save_atom_line, &
     lse_solver, decouple_continuum, m1d_legacy_mode, nu_tolerance, disable_stark, &
-    disable_vdw, disable_ga, pivot_z, use_vel, preconditioning
+    disable_vdw, disable_ga, pivot_z, use_vel, preconditioning, save_Qrad
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%pre_init', itimer=itimer)
     self%type = trim(self%kind)
@@ -563,7 +563,7 @@ MODULE m3d_patch_mod
       allocate (self%boundaries)
       call self%boundaries%pre_init (self)
     endif
-    if (maxiter==0) then
+    if (self%out_ray .and. maxiter==0) then
       call self%boundaries%clear(bits%zu)
     endif
   END SUBROUTINE init_bdries
@@ -649,7 +649,7 @@ MODULE m3d_patch_mod
     class(m3d_patch_t):: self
     !-----------------------------------------------------------------------------
     self%iter = self%iter + 1
-    if (self%iter == self%maxiter .or. self%nbors_finished()) then
+    if (self%iter >= self%maxiter .or. self%nbors_finished()) then
       call self%finish()
     endif
     call self%task_t%rotate
@@ -1547,6 +1547,9 @@ MODULE m3d_patch_mod
     integer, save :: itimer=0
     ! ----------------------------------------------------------------------------
     call trace%begin('m3d_patch_t%save', itimer=itimer)
+    if (size(mem) == 0) then
+      call shared%abort('mem not associated in save')
+    endif
     write(folder, '(A, A)') trim(io%run_dir), 'save/'
     if (self%out_ray) then
       write(filename, '(A, A, 3(I3.3), A)') trim(label), '_out_', abs(self%key(1:3)), '.bin'
@@ -1556,7 +1559,6 @@ MODULE m3d_patch_mod
       call trace%end(itimer)
       return
     endif
-    call self%check_access(self)
     meta_file = trim(label) // '_meta.txt'
     call io%lock%set('save')
     if (os%exists(trim(folder)//meta_file)) then

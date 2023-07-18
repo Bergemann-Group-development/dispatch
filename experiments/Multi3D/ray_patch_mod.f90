@@ -39,7 +39,6 @@ MODULE ray_patch_mod
     procedure :: init => ray_patch_init
     procedure :: print_post_update_info
     procedure :: check_in_bounds
-    procedure :: finish => ray_patch_finish
     procedure :: nbor_relations => ray_nbor_relations
     procedure :: set_freq_indices
     procedure :: is_upstream => ray_is_upstream
@@ -251,14 +250,6 @@ SUBROUTINE set_guard_zones (self)
     self%ng = [2,2,1]
   endif
 END SUBROUTINE set_guard_zones
-
-!===============================================================================
-SUBROUTINE ray_patch_finish (self)
-  class(ray_patch_t) :: self
-  !-----------------------------------------------------------------------------
-  call self%m3d_patch_t%finish()
-  self%static_mem = .false.
-END SUBROUTINE ray_patch_finish
 
 !===============================================================================
 !> Determine if a task is upstream.  

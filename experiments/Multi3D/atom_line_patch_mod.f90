@@ -22,8 +22,9 @@ MODULE atom_line_patch_mod
     !USE scratch_mod
     USE mconst
     USE handyfuncs_mod
+    USE spectrum_mod, only: set_weights
     USE ion_mod, only: ion_type
-    USE atom_mod, only: atom_type, set_weights
+    USE atom_mod, only: atom_type
     USE trans_mod, only: line_type
     USE m3d_patch_mod, only: m3d_patch_t, maxiter, comoving_frame
     USE ray_patch_mod, only: ray_patch_t

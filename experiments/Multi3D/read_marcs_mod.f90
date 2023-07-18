@@ -2,22 +2,25 @@ MODULE read_marcs_mod
   USE io_mod
   USE prec_mod, only: dp
   USE os_mod
-  USE op_math_mod, only: interp1d
+  USE op_math_mod, only: interp1d, pchip_mono
   USE mconst
   implicit none
+
+  integer, public :: zfac=4
 
 contains
 
   !===============================================================================
-  SUBROUTINE read_marcs (file, ds, rho, temp, pe, FeH)
+  SUBROUTINE read_marcs (file, newn, ds, rho, temp, pe, FeH)
     character(len=*), intent(in) :: file
+    integer, intent(in) :: newn 
     real(8), intent(out) :: ds(3), FeH
     real(4), intent(out), dimension(:,:,:), pointer, contiguous :: rho, temp, pe
-    integer :: lunit, iostat, ndepth, kk, k, newn
-    real(dp) :: teff, flux, g, xite, rmass, rmetal, alpha, radius, rluminosity
-    real(dp) :: xx, yy, zz, palfa, pny, py, pbeta, abund(92)
-    real(dp) :: lgTauR, lgTau5, pg, prad, pturb, xkapr, emu, vconv, fconv, rhox
-    real(dp), dimension(:), allocatable :: depth, in_temp, in_pe, in_depth, in_rho
+    integer :: lunit, iostat, ndepth, kk, k
+    real(4) :: teff, flux, g, xite, rmass, rmetal, alpha, radius, rluminosity
+    real(4) :: xx, yy, zz, palfa, pny, py, pbeta, abund(92)
+    real(4) :: lgTauR, lgTau5, pg, prad, pturb, xkapr, emu, vconv, fconv, rhox
+    real(4), dimension(:), allocatable :: depth, in_temp, in_pe, in_depth, in_rho
     character(72) :: fileID, command
     !-----------------------------------------------------------------------------
     call os%check_file(file)
@@ -59,7 +62,6 @@ contains
     end do
     close(lunit)
 
-    newn = ndepth*4
     allocate(depth(newn))
     allocate(temp (1,1,newn))
     allocate(rho  (1,1,newn))
@@ -69,9 +71,13 @@ contains
     ds(3) = (in_depth(ndepth) - in_depth(1)) / (newn - 1)
     depth = [( k*ds(3) + in_depth(1), k=0, newn-1 )]
 
-    temp(1,1,:) = interp1d(in_depth, in_temp, depth, order=1, sorted=.true.)
-    rho (1,1,:) = interp1d(in_depth, in_rho , depth, order=1, sorted=.true.)
-    pe  (1,1,:) = interp1d(in_depth, in_pe  , depth, order=1, sorted=.true.)
+    !temp(1,1,:) = interp1d(in_depth, in_temp, depth, order=1, sorted=.true.)
+    !rho (1,1,:) = interp1d(in_depth, in_rho , depth, order=1, sorted=.true.)
+    !pe  (1,1,:) = interp1d(in_depth, in_pe  , depth, order=1, sorted=.true.)
+
+    call pchip_mono(in_depth, in_temp, depth, temp(1,1,:), sorted=.true.)
+    call pchip_mono(in_depth, in_rho , depth, rho (1,1,:), sorted=.true.)
+    call pchip_mono(in_depth, in_pe  , depth, pe  (1,1,:), sorted=.true.)
 
     write(command,*) 'rm ', trim(io%run_dir), 'atmos.marcs'
     call execute_command_line (command, exitstat=iostat)

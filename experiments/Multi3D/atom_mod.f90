@@ -14,7 +14,7 @@ MODULE atom_mod
     USE molecule_mod, only: molec_type
     USE os_mod
     USE trace_mod
-    USE spectrum_mod, only: spectrum_type
+    USE spectrum_mod, only: spectrum_type, set_weights
     USE hprofl_mod, only:prepare_hydrogen_damping
     ! *******************************************************************
     !
@@ -134,7 +134,7 @@ MODULE atom_mod
     character(len=32), public :: lse_solver='lineq_no_pivot'
     integer, public :: nq_fac=1
 
-    public :: unique_int, set_weights
+    public :: unique_int
   
   contains
   
@@ -1556,26 +1556,6 @@ MODULE atom_mod
     !self%nline = size(line)
     !self%nrad  = self%ncont + self%nline
   END SUBROUTINE
-
-  !===============================================================================
-  SUBROUTINE set_weights (weight, nu)
-    real(8), dimension(:), intent(out) :: weight
-    real(8), dimension(:), intent(in) :: nu
-    integer :: j, n
-    !-----------------------------------------------------------------------------
-    n = size(nu, 1)
-    if (n==1) then
-      print *, 'weight for single frequency wanted!'
-    elseif (size(weight) /= n) then
-      stop 'weight and nu do not have the same number of elements!'
-    endif
-
-    weight(1) = 0.5 * ( nu(2) - nu(1) )
-    do j=2,n-1
-        weight(j) = 0.5* ( nu(j+1) - nu(j-1) )
-    end do
-    weight(n) = 0.5 * ( nu(n) - nu(n-1) )
-  END SUBROUTINE set_weights
 
   !===============================================================================
   !     calculates partition function for ch

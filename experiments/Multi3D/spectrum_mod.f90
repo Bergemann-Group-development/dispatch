@@ -14,7 +14,7 @@ MODULE spectrum_mod
         ! total number of frequencies
         integer :: nnu=0
         ! frequency [Hz]
-        real(8), dimension(:), allocatable :: nu
+        real(8), dimension(:), allocatable :: nu, wnu
         logical :: sorted=.false., saved=.false.
         character(len=32) :: name=''
     contains
@@ -23,6 +23,8 @@ MODULE spectrum_mod
       procedure :: save
     end type spectrum_type
     !---------------------------------------------------------------------
+
+    public :: set_weights
 
   contains
     !===============================================================================
@@ -49,11 +51,33 @@ MODULE spectrum_mod
       nnu = ceiling((aa_red - aa_blue) / daa)
       self%nnu = nnu
       allocate(self%nu(nnu))
+      allocate(self%wnu(nnu))
       do i=0,nnu-1
         self%nu(nnu-i) = CC / (aa_blue + i*daa) * 1e8
       end do
+      call set_weights(self%wnu, self%nu)
       self%sorted=.true.
     END SUBROUTINE init
+
+    !===============================================================================
+    SUBROUTINE set_weights (weight, nu)
+      real(8), dimension(:), intent(out) :: weight
+      real(8), dimension(:), intent(in) :: nu
+      integer :: j, n
+      !-----------------------------------------------------------------------------
+      n = size(nu, 1)
+      if (n==1) then
+        print *, 'weight for single frequency wanted!'
+      elseif (size(weight) /= n) then
+        stop 'weight and nu do not have the same number of elements!'
+      endif
+  
+      weight(1) = 0.5 * ( nu(2) - nu(1) )
+      do j=2,n-1
+          weight(j) = 0.5* ( nu(j+1) - nu(j-1) )
+      end do
+      weight(n) = 0.5 * ( nu(n) - nu(n-1) )
+    END SUBROUTINE set_weights
 
     !===============================================================================
     SUBROUTINE get_interval (self, trans, ired, iblue)

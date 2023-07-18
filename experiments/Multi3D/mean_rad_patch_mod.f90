@@ -10,7 +10,7 @@ MODULE mean_rad_patch_mod
     USE bits_mod
     USE os_mod
     USE handyfuncs_mod
-    USE m3d_patch_mod, only:maxiter, m3d_patch_t, comoving_frame, ilambd, preconditioning
+    USE m3d_patch_mod, only:maxiter, m3d_patch_t, comoving_frame, ilambd, preconditioning, save_Qrad
     USE ray_patch_mod, only:ray_patch_t
     USE angle_rad_patch_mod, only:rad_patch_t
     implicit none
@@ -24,6 +24,8 @@ MODULE mean_rad_patch_mod
       procedure :: execute
       procedure :: nbor_relations
       procedure :: init_nbors_hash
+      procedure :: allocate_mem
+      procedure :: deallocate_mem
     end type mean_rad_patch_t
       
   contains
@@ -37,7 +39,9 @@ MODULE mean_rad_patch_mod
     call trace%begin('mean_rad_patch_t%pre_init', itimer=itimer)
     self%kind = 'mean_rad'
     call self%ray_patch_t%pre_init()
-    call self%set_nv_and_nw (self%fe-self%fs+1, 1)
+
+    nw = 3
+    call self%set_nv_and_nw (self%fe-self%fs+1, nw)
 
     self%ng = 0
     call self%post_pre_init()
@@ -49,8 +53,41 @@ MODULE mean_rad_patch_mod
     class(mean_rad_patch_t) :: self
     ! ----------------------------------------------------------------------------
     call self%ray_patch_t%init()
-    call self%allocate_mem(self)
+    call self%ray_patch_t%allocate_mem(self)
+    self%Psi  => self%mem(:,:,:,:,self%it,2)
+    self%Ieff => self%mem(:,:,:,:,self%it,3)
+    if (save_Qrad) then
+      call os%allocate(self%Qrad, self%n, label=trim(self%kind)//'%Qrad')
+      self%Qrad = 0.d0
+    endif
   END SUBROUTINE init
+
+  !===============================================================================
+  SUBROUTINE allocate_mem (self, allocator, m_in)
+    class(mean_rad_patch_t):: self
+    class(m3d_patch_t), intent(in), target :: allocator
+    integer, intent(in), optional :: m_in(6)
+    !-----------------------------------------------------------------------------
+    call self%ray_patch_t%allocate_mem(allocator, m_in)
+    self%Psi  => self%mem(:,:,:,:,self%it,2)
+    self%Ieff => self%mem(:,:,:,:,self%it,3)
+    if (save_Qrad) then
+      call os%allocate(self%Qrad, self%n, label=trim(self%kind)//'%Qrad')
+      self%Qrad = 0.d0
+    endif
+  END SUBROUTINE allocate_mem
+
+  !===============================================================================
+  SUBROUTINE deallocate_mem (self, deallocator, print)
+    class(mean_rad_patch_t):: self
+    class(m3d_patch_t), intent(in), target :: deallocator
+    logical, optional :: print
+    !-----------------------------------------------------------------------------
+    call self%ray_patch_t%deallocate_mem(self)
+    if (associated(self%Qrad)) then
+      call os%deallocate(self%Qrad, label=trim(self%kind)//'%Qrad')
+    endif
+  END SUBROUTINE deallocate_mem
   
   !===============================================================================
   SUBROUTINE execute (self)

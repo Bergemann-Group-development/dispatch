@@ -34,7 +34,7 @@ END FUNCTION
 FUNCTION calc_f(self, pe_over_fe) result(f)
     class(molec_type), intent(in) :: self
     real(dp), dimension(:,:,:) :: pe_over_fe
-    real(dp), dimension(self%nx,self%ny,self%nz) :: f
+    real(dp), dimension(self%m(1), self%m(2), self%m(3)) :: f
     type(ion_type), pointer :: ion
     integer :: j
     !---------------------------------------------------------------------------
@@ -52,7 +52,7 @@ FUNCTION calc_e(self, teta, temp, dxi) result(e)
     class(molec_type), intent(in) :: self
     class(ion_type), pointer :: ion
     real(dp), dimension(:,:,:) :: teta, temp, dxi
-    real(dp), dimension(self%nx,self%ny,self%nz) :: dis, e
+    real(dp), dimension(self%m(1), self%m(2), self%m(3)) :: dis, e
     integer :: i
     !---------------------------------------------------------------------------
     if (size(self%de) > 1) then
@@ -77,25 +77,15 @@ FUNCTION calc_e(self, teta, temp, dxi) result(e)
 END FUNCTION calc_e
 
 !===============================================================================
-SUBROUTINE allocate_molec (self, nx, ny, nz)
+SUBROUTINE allocate_molec (self, m)
     class(molec_type) :: self
-    integer :: nx, ny, nz
+    integer :: m(3)
     !---------------------------------------------------------------------------
-    if (self%allocated) then
-        deallocate(self%f, self%e, self%dis, self%n)
-    endif
-
-    self%nx = nx
-    self%ny = ny
-    self%nz = nz
-    allocate(self%f(nx,ny,nz))
-    allocate(self%e(nx,ny,nz))
-    allocate(self%n(nx,ny,nz))
-    allocate(self%dis(nx,ny,nz))
-    self%f = 0
-    self%e = 0
-    self%dis = 0
-    self%n = 0
+    if (all(m == self%m)) return
+    self%m = m
+    if (self%allocated) deallocate(self%f, self%e, self%dis, self%n)
+    allocate(self%f(m(1),m(2),m(3)), source=0.d0)
+    allocate(self%e, self%n, self%dis, source=self%f)
     self%allocated = .true.
 END SUBROUTINE allocate_molec
 

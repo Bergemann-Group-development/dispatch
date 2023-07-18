@@ -25,7 +25,7 @@ MODULE angle_rad_patch_mod
   !USE scratch_mod
   USE handyfuncs_mod
   USE m3d_patch_mod, only: m3d_patch_t, comoving_frame, ilambd, decouple_continuum, &
-  line_blanketing, use_vel, preconditioning
+  line_blanketing, use_vel, preconditioning, save_Qrad, binned_opac
   USE ray_patch_mod, only: ray_patch_t, formal_solver
   USE proj_patch_mod, only: interpolate_to_ray
   USE os_mod
@@ -42,7 +42,7 @@ MODULE angle_rad_patch_mod
     class(rad_patch_t), pointer :: mean_rad => null()
     real(4), dimension(:,:,:,:), contiguous, pointer :: Inu=>null(), chi=>null(), Snu=>null()
     real(4), dimension(:,:,:,:), contiguous, pointer :: Psi=>null(), Ieff=>null()
-    real(4), dimension(:,:,:,:), contiguous, pointer :: Inu_old
+    real(4), dimension(:,:,:), pointer, contiguous :: Qrad=>null()
     integer :: stiff_count=1
     logical :: stiff=.false.
     real(8) :: dsup=0
@@ -121,12 +121,6 @@ SUBROUTINE radiation_init (self)
   if (.not. self%out_ray) then
     m = shape(self%authority_mem)
     call self%allocate_mem(self)
-    !if (lock_Inu) then
-    !  m = shape(self%authority_mem)
-    !  m(3) = 2
-    !  call os%allocate(self%Inu_old, m(1:4), label=trim(self%kind)//'%Inu_old')
-    !  self%Inu_old = tiny(1.0)
-    !endif
   endif
 
   call trace%end()
@@ -502,10 +496,10 @@ SUBROUTINE integrate_intensity(self)
   class(task_t), pointer :: nbtask
   class(rad_patch_t), pointer :: mean
   real(4), dimension(:,:,:), pointer :: vproj
-  real(4), dimension(:,:,:,:), pointer :: Jnu, Inu
+  real(4), dimension(:,:,:,:), pointer :: Jnu, Inu, Snu, chi
   real(8), dimension(:), pointer, contiguous :: nu_in, nu_out
-  real(4) :: wmu
-  integer :: f, i, j, k
+  real(4) :: wmu, wmunu
+  integer :: f, i, j, k, w
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('rad_patch_t%integrate_intensity', itimer=itimer)
@@ -513,17 +507,11 @@ SUBROUTINE integrate_intensity(self)
   call mean%mem_lock(1)%set('integrate_intensity')
   if (.not. associated(mean%mem)) then
     call mean%check_mem()
-    do f=1, self%nv
-      mean%mem(:,:,:,f,mean%it,1) = 0
+    do w=1, mean%nw
+    do f=1, mean%nv
+      mean%mem(:,:,:,f,mean%it,w) = 0
     end do
-    do f=1, self%nv
-      mean%Psi(:,:,:,f) = 0
     end do
-    if (.not. comoving_frame) then
-      do f=1, self%nv
-        mean%Ieff(:,:,:,f) = 0
-      end do
-    endif  
   endif
 
   wmu = self%wmu
@@ -554,6 +542,27 @@ SUBROUTINE integrate_intensity(self)
     end do
     end do
   endif
+
+  if (save_Qrad) then
+    chi => self%opac%authority_mem(:,:,:,:,mean%it,self%i_chi)
+    Snu => self%opac%authority_mem(:,:,:,:,mean%it,self%i_Snu)
+    if (binned_opac) then
+      wmunu = wmu
+    endif
+    do f=1, self%nv
+      if (.not. binned_opac) then
+        wmunu = wmu * mean%sp%wnu(mean%fs-f+1)
+      endif
+      do k=1, self%n(3)
+      do j=1, self%n(2)
+      do i=1, self%n(1)
+        mean%Qrad(i,j,k) = mean%Qrad(i,j,k) + wmunu * chi(i,j,k,f) * (Inu(i,j,k,f) - Snu(i,j,k,f))
+      end do
+      end do
+      end do
+    end do
+  endif
+
   call mean%mem_lock(1)%unset('integrate_intensity')
   call trace%end(itimer)
 END SUBROUTINE integrate_intensity
@@ -586,6 +595,12 @@ SUBROUTINE save (self, mem, label)
     mem2(1:m(1),1:m(2),1:m(3),fs:fe,1:1) => self%Psi(:,:,:,fs:fe)
     self%saved = .false.
     call self%ray_patch_t%save(mem2, label='Psi')
+  endif
+  if (associated(self%Qrad)) then
+    m(1:3) = shape(self%Qrad)
+    mem2(1:m(1),1:m(2),1:m(3),1:1,1:1) => self%Qrad
+    self%saved = .false.
+    call self%ray_patch_t%save(mem2, label='Qrad')
   endif
 END SUBROUTINE save
 

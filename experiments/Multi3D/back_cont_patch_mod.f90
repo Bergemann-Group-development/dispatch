@@ -10,9 +10,11 @@ MODULE back_cont_patch_mod
     USE bits_mod
     USE os_mod
     USE handyfuncs_mod
-    USE m3d_patch_mod, only: maxiter, m3d_patch_t, save_back_cont, comoving_frame, ilambd, line_blanketing
+    USE m3d_patch_mod, only: maxiter, m3d_patch_t, save_back_cont, comoving_frame, &
+    ilambd, line_blanketing, binned_opac
     USE ray_patch_mod, only: ray_patch_t
     USE composition_mod, only: composition_type
+    USE optab_mod, only: optab
     implicit none
     private
   
@@ -60,7 +62,7 @@ MODULE back_cont_patch_mod
     real(4), dimension(:,:,:,:), pointer, contiguous :: chi, eta
     real(8), dimension(:), pointer, contiguous :: nu
     real(4), dimension(:,:,:,:), pointer, contiguous :: Jold, abslte, sumsca
-    real(4), dimension(:,:,:), pointer, contiguous :: vproj
+    real(4), dimension(:,:,:), pointer, contiguous :: vproj, temp, rho
     integer, dimension(:), pointer :: isort
     character(len=64) :: text
     integer :: m(6)
@@ -70,54 +72,61 @@ MODULE back_cont_patch_mod
     call trace%begin (trim(self%kind)//'%update', itimer=itimer)
     chi => self%mem(:,:,:,:, self%it, self%i_chi)
     eta => self%mem(:,:,:,:, self%it, self%i_eta)
-    nu => self%sp%nu(self%fs:self%fe)
-    eta = 0
-  
-    if (save_back_cont) then
-      abslte => self%mem(:,:,:,:,self%it,self%i_abs)
-      sumsca => self%mem(:,:,:,:,self%it,self%i_sca)
-    else
-      m = shape(self%mem)
-      call os%allocate(abslte, m(1:4), label='abslte')
-      call os%allocate(sumsca, m(1:4), label='sumsca')
-    endif
-  
-    if (self%iter == 0 .or. .not. save_back_cont) then
-      call self%composition%absorption(nu, chi, abslte, sumsca, &
-      include_absmet=self%include_absmet, sorted=self%sp%sorted)
-    endif
-    
-    if ((ilambd > 0 .or. line_blanketing) .and. .not. self%out_ray) then
-      self%mean_rad%static_mem = .true.
-      scattering_from_Jnu = .true.
-    else
-      scattering_from_Jnu = .false.
-    endif
 
-    if (scattering_from_Jnu .and. self%iter > 0) then
-      call self%mean_rad%mem_lock(1)%set ('back_cont_update')
-      call self%check_access(self%mean_rad)
-      Jold => self%mean_rad%authority_mem(:,:,:,:,self%mean_rad%it,1)
-      call self%composition%scattering(nu, abslte, eta, sumsca, Jold)
-      call self%mean_rad%deallocate_mem(self, print=.true.)
-      call self%mean_rad%mem_lock(1)%unset ('back_cont_update')
+    if (binned_opac) then
+      temp => self%m3d_parent%mem(:,:,:, self%i_temp, self%it, 1)
+      rho  => self%m3d_parent%mem(:,:,:, self%i_rho,  self%it, 1)
+      call optab%interpolate(chi, eta, temp, rho)
     else
-      call self%composition%scattering(nu, abslte, eta, sumsca)
-    endif
+      nu => self%sp%nu(self%fs:self%fe)
+      eta = 0
     
-
-    if (.not. self%out_ray) then 
-      if (self%composition%ll_initialised .and. comoving_frame) then
-        call os%allocate(vproj, self%n)
-        call self%comp_vproj(vproj)
-        call self%composition%add_linelist_opacities(nu, eta, chi, vproj)
-        call os%deallocate(vproj)
+      if (save_back_cont) then
+        abslte => self%mem(:,:,:,:,self%it,self%i_abs)
+        sumsca => self%mem(:,:,:,:,self%it,self%i_sca)
+      else
+        m = shape(self%mem)
+        call os%allocate(abslte, m(1:4), label='abslte')
+        call os%allocate(sumsca, m(1:4), label='sumsca')
       endif
-    endif
-  
-    if (.not. save_back_cont) then
-      call os%deallocate(abslte, label='abslte')
-      call os%deallocate(sumsca, label='sumsca')
+    
+      if (self%iter == 0 .or. .not. save_back_cont) then
+        call self%composition%absorption(nu, chi, abslte, sumsca, &
+        include_absmet=self%include_absmet, sorted=self%sp%sorted)
+      endif
+      
+      if ((ilambd > 0 .or. line_blanketing) .and. .not. self%out_ray) then
+        self%mean_rad%static_mem = .true.
+        scattering_from_Jnu = .true.
+      else
+        scattering_from_Jnu = .false.
+      endif
+
+      if (scattering_from_Jnu .and. self%iter > 0) then
+        call self%mean_rad%mem_lock(1)%set ('back_cont_update')
+        call self%check_access(self%mean_rad)
+        Jold => self%mean_rad%authority_mem(:,:,:,:,self%mean_rad%it,1)
+        call self%composition%scattering(nu, abslte, eta, sumsca, Jold)
+        call self%mean_rad%deallocate_mem(self, print=.true.)
+        call self%mean_rad%mem_lock(1)%unset ('back_cont_update')
+      else
+        call self%composition%scattering(nu, abslte, eta, sumsca)
+      endif
+      
+
+      if (.not. self%out_ray) then 
+        if (self%composition%ll_initialised .and. comoving_frame) then
+          call os%allocate(vproj, self%n)
+          call self%comp_vproj(vproj)
+          call self%composition%add_linelist_opacities(nu, eta, chi, vproj)
+          call os%deallocate(vproj)
+        endif
+      endif
+    
+      if (.not. save_back_cont) then
+        call os%deallocate(abslte, label='abslte')
+        call os%deallocate(sumsca, label='sumsca')
+      endif
     endif
     call trace%end(itimer)
   END SUBROUTINE execute

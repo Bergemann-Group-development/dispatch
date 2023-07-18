@@ -1,6 +1,6 @@
-from .atom import atom_class, CC
+from .atom import atom_class
 from .trans import trans_class
-from .auxfuncs import vacuum2obs, continuum, freq_quad, convol
+from .auxfuncs import vacuum2obs, continuum, freq_quad, convol, SBOL, CC
 import numpy as np
 import pandas as pd
 import dask.array as da
@@ -12,8 +12,6 @@ from scipy.io import FortranFile
 from matplotlib.collections import LineCollection
 import os
 
-cc = 2.99792458e10 # Speed of light [cm/s]
-
 #=====================================================================
 class read(object):
     #=================================================================
@@ -22,8 +20,7 @@ class read(object):
         folder = folder + os.sep
         sfolder = folder + 'save' + os.sep
         self.sfolder = sfolder
-        self.nml = f90nml.read(folder + 'params.nml')
-        
+        self.nml = f90nml.read(folder + 'params.nml')   
         df = pd.read_csv(folder + 'abund.txt', header=None, sep='\s+', na_filter=False)
         self.abundances = {k.lower().capitalize():v for k, v in df.values}
         
@@ -287,7 +284,7 @@ class read(object):
             yy = np.interp(xx, sxx, syy)
 
         if per_aa:
-            yy = yy * cc / (xx**2) * 1e8
+            yy = yy * CC / (xx**2) * 1e8
 
         return xx, yy
     
@@ -458,6 +455,16 @@ class read(object):
                     arrowprops=dict(arrowstyle='<-', color='k'))
         plt.legend(loc='lower right')
 
+    #=====================================================================
+    def calc_teff(self):
+        #-----------------------------------------------------------------
+        if self.n_ang == 1:
+            raise ValueError('n_ang = 1! Cannot return effective Temperature from disk center intensity only!')
+
+        xx, yy = self.crop(per_aa=True)
+        bol = np.trapz(yy , x=xx)
+        teff = (bol / SBOL)**0.25
+        return teff
 
     #=====================================================================
     def read_patch_save(self, kind, concat=True):
@@ -485,7 +492,7 @@ class read(object):
         meta.close()
 
         all_inu = np.unique([key[1] for key in dct.keys()])
-        f_indep = all_inu.sum() == 0
+        f_indep = all(all_inu == 0)
         if kind in ['out_rad', 'ie']: f_indep = False
         if kind in ['atom_rate']: f_indep = True
 

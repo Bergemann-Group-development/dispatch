@@ -44,10 +44,11 @@ MODULE read_stagger_snapshot_mod
 contains
 
 !===============================================================================
-SUBROUTINE read_stagger_params()
+SUBROUTINE read_stagger_params(nx, ny, nz)
+  integer, intent(in) :: nx, ny, nz
   integer :: iostat, nsub
   logical, save :: first_time=.true.
-  namelist /stagger_params/ stagger_file, snap, zcut, ee_offset, dims, maxTemp, &
+  namelist /stagger_params/ stagger_file, snap, zcut, ee_offset, maxTemp, &
   refinement
   !-----------------------------------------------------------------------------
   if (first_time) then
@@ -60,6 +61,9 @@ SUBROUTINE read_stagger_params()
     end if
     call io%namelist_warning ('stagger_params', iostat)
     write (io%namelist, stagger_params)
+
+    dims = [nx, ny, nz]
+
     mesh_file = trim(stagger_file) // '.msh'
     write(snap_file, '(A,A1,I5.5)') trim(stagger_file), '_', snap
     write(data_file, *) trim(snap_file), '.dat'
@@ -107,12 +111,7 @@ SUBROUTINE read_stagger_snapshot(ds, d, px, py, pz, ee, tt, ne)
 
   !newx = linspace(xx(1), xx(nx), dims(1))
   !newy = linspace(yy(1), yy(ny), dims(2))
-  !
-  !if (zcut > -99) then
-  !  newz = linspace(zcut, zz(nz), dims(3))
-  !else
-  !  newz = linspace(zz(1), zz(nz), dims(3))
-  !endif
+  !newz = linspace(zz(1), zz(nz), dims(3))
 
   !ds(1) = (newx(dims(1)) - newx(1)) / (dims(1) - 1)
   !ds(2) = (newy(dims(2)) - newy(1)) / (dims(2) - 1)
