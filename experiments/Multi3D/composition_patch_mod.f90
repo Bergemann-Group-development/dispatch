@@ -7,9 +7,9 @@ MODULE composition_patch_mod
   USE handyfuncs_mod
   USE optab_mod, only: optab
   USE element_mod, only: element_type
-  USE m3d_patch_mod,   only: m3d_patch_t, comoving_frame, ilambd, decouple_continuum, &
+  USE m3d_patch_mod,   only: m3d_patch_t, comoving_frame, ilambd, decouple_continuum, dlam, &
   use_density, use_ne, overlapping_bb, overlapping_bf, line_blanketing, binned_opac, save_Qrad, maxiter
-  USE composition_mod, only: composition_type, dlam, exclude_elements
+  USE composition_mod, only: composition_type, exclude_elements
   USE back_cont_patch_mod,  only: back_cont_patch_t
   USE angle_rad_patch_mod,   only: rad_patch_t
   USE atom_patch_mod,  only: atom_patch_t

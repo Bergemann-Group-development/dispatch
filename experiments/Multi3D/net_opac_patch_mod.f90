@@ -151,7 +151,7 @@ MODULE net_opac_patch_mod
       end do
     end do
     
-    call self%boundaries%mirror()
+    call self%boundaries%extrap()
     call self%periodic_grid()
 
     if (self%out_ray .and. .not. self%one_dimensional) then

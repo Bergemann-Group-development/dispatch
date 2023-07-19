@@ -11,7 +11,7 @@ MODULE back_cont_patch_mod
     USE os_mod
     USE handyfuncs_mod
     USE m3d_patch_mod, only: maxiter, m3d_patch_t, save_back_cont, comoving_frame, &
-    ilambd, line_blanketing, binned_opac
+    ilambd, line_blanketing, binned_opac, dlam
     USE ray_patch_mod, only: ray_patch_t
     USE composition_mod, only: composition_type
     USE optab_mod, only: optab
@@ -118,7 +118,7 @@ MODULE back_cont_patch_mod
         if (self%composition%ll_initialised .and. comoving_frame) then
           call os%allocate(vproj, self%n)
           call self%comp_vproj(vproj)
-          call self%composition%add_linelist_opacities(nu, eta, chi, vproj)
+          call self%composition%add_linelist_opacities(nu, eta, chi, vproj, dlam)
           call os%deallocate(vproj)
         endif
       endif

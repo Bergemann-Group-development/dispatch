@@ -793,7 +793,7 @@ contains
   ! Monotonic piecewise cubic hermite interpolation
   ! Coded by Richard Hoppe, July 2023
   !===============================================================================
-  SUBROUTINE pchip_mono4(xx, yy, newx, newy, sorted)
+  PURE SUBROUTINE pchip_mono4(xx, yy, newx, newy, sorted)
     real(4), intent(in) :: xx(:)            ! X values of the data points
     real(4), intent(in) :: yy(:)            ! Y values of the data points
     real(4), intent(in) :: newx(:)          ! X values to interpolate at
@@ -801,13 +801,13 @@ contains
     real(4), allocatable :: dydx(:)         ! derivative
     real(4), allocatable :: dx(:)
     real(4), allocatable :: dy(:)
-    logical, optional :: sorted
+    logical, intent(in), optional :: sorted
     logical :: is_sorted
     integer :: n                 ! Number of data points
     integer :: n_interp          ! Number of interpolation points
     integer :: j                 ! Loop index for interpolation points
     integer :: i                 ! Loop index for data points
-    real(4) :: d1, d2, d, alpha, t1, t2, t3, p, a
+    real(4) :: d1, d2, alpha, t1, t2, t3, p, a
     !-----------------------------------------------------------------------------
     n = size(xx)
     n_interp = size(newx)
@@ -870,7 +870,7 @@ contains
   ! Monotonic piecewise cubic hermite interpolation
   ! Coded by Richard Hoppe, July 2023
   !===============================================================================
-  SUBROUTINE pchip_mono8(xx, yy, newx, newy, sorted)
+  PURE SUBROUTINE pchip_mono8(xx, yy, newx, newy, sorted)
     real(8), intent(in) :: xx(:)            ! X values of the data points
     real(8), intent(in) :: yy(:)            ! Y values of the data points
     real(8), intent(in) :: newx(:)          ! X values to interpolate at
@@ -878,13 +878,13 @@ contains
     real(8), allocatable :: dydx(:)         ! derivative
     real(8), allocatable :: dx(:)
     real(8), allocatable :: dy(:)
-    logical, optional :: sorted
+    logical, intent(in), optional :: sorted
     logical :: is_sorted
     integer :: n                 ! Number of data points
     integer :: n_interp          ! Number of interpolation points
     integer :: j                 ! Loop index for interpolation points
     integer :: i                 ! Loop index for data points
-    real(8) :: d1, d2, d, alpha, t1, t2, t3, p, a
+    real(8) :: d1, d2, alpha, t1, t2, t3, p, a
     !-----------------------------------------------------------------------------
     n = size(xx)
     n_interp = size(newx)

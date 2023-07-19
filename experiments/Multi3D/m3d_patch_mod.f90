@@ -146,6 +146,7 @@ MODULE m3d_patch_mod
     logical, public, save :: use_density=.true., use_ne=.true., line_blanketing=.false.
     logical, public, save :: overlapping_bb=.true., overlapping_bf=.true.
     logical, public, save :: print_start=.false., print_push=.false., print_send=.false.
+    real(8), public, save :: dlam=0.5
     character(len=128), save :: save_patch_kind=''
     character(len=64), public, save:: custom_mu=''
     real(8), parameter :: t_push=0.1d0

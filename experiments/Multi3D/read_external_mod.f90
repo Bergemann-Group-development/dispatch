@@ -22,6 +22,7 @@ MODULE read_external_mod
   USE shared_mod
   USE task_list_mod
   USE experiment_mod
+  USE ion_mod, only: vmic
   USE composition_mod
   USE composition_patch_mod, only: FeH
   USE patch_mod
@@ -30,7 +31,6 @@ MODULE read_external_mod
   USE ray_patch_mod, only: maxvel
   USE m3d_patch_mod, only: maxiter, ilambd, m3d_patch_t, atom_update_counter, &
   global_maxerr, global_pos, nz_total, use_density, use_ne
-  USE atom_patch_mod, only: vmic
   USE m3d_halo_mod, only: m3d_halo_t
   USE read_stagger_snapshot_mod
   USE read_marcs_mod, only: read_marcs, zfac

@@ -77,7 +77,6 @@ MODULE atom_patch_mod
     logical, save :: detailed_absmet=.false.
     character(len=128), save :: precomputed_depart=''
     character(len=128), public :: atom_file=''
-    real(4), public :: vmic = 0
 
     !-----------------------------------------------------------------------------
   
@@ -353,10 +352,6 @@ MODULE atom_patch_mod
 
     call os%allocate(atom%data%totn, self%n, label='totn')
     totn => atom%data%totn
-
-    call os%allocate(atom%data%doppler_factor, self%n, label='doppler_factor')
-    df => atom%data%doppler_factor
-    df = atom%compute_doppler_factor(temp, vmic)
 
     element => null()
     molec   => null()

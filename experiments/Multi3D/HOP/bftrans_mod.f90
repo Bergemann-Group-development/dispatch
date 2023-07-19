@@ -188,6 +188,7 @@ contains
       ! if there are not enough points, step back
       k = merge(2, 1, quad(f))
       iw(f) = min(iw(f), self%nnu-k)
+      iw(f) = max(iw(f), 1)
       j = iw(f)
       k = k+1
 
@@ -453,10 +454,9 @@ contains
 
       if (self%kvadl) then
         if (self%nnu - iw > 1) then
-          if (iw < 0) then
+          if (iw <= 0) then
             quadratic = .false.
-          endif
-          if (.not. self%ldisk(iw)) then
+          elseif (.not. self%ldisk(iw)) then
             quadratic = .true.
           endif
         endif

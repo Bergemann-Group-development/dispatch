@@ -17,7 +17,7 @@ MODULE composition_mod
 
     type, public :: composition_type
         logical :: initialised, ll_initialised=.false., loaded=.false.
-        integer :: nel, nmolec, verbose
+        integer :: nel, nmolec, nline, verbose
         real(dp) :: xmy, suma, grph, tmolim, molh, FeH
         type(element_type), allocatable :: elements(:)
         type(molec_type),   allocatable :: molecules(:)
@@ -53,13 +53,13 @@ MODULE composition_mod
         procedure :: overwrite_abundance
         procedure :: init_linelist
         procedure :: mask_linelist
+        procedure :: precompute_line_extends
         procedure :: add_linelist_opacities
         procedure :: print_ion_table
         procedure :: read_molec_data
     end type
 
     character(128), public, save :: exclude_elements=''
-    real(8), public, save :: dlam=0.5
 
 contains
 
@@ -533,7 +533,7 @@ contains
                     allocate(element%isotope(n_iso))
                     do i=1, n_iso
                         iso => element%isotope(i)
-                        read(lunit, *) iso%iso, iso%awgt, iso%f
+                        read(lunit, *) iso%iso, iso%awgt, iso%frac
                     end do
                 endif
                 read(lunit, *, iostat=iostat) text
@@ -595,6 +595,7 @@ contains
             read(lunit,*,iostat=iostat) ion_id
             read(mass_id,*) mass
             isotope = mod(mass, 1.0) > 0
+            if (isotope) iso_id = nint((mass - int(mass))*1000)
             !ion_id = adjustl(trim(ion_id))
             ion_id = trim_between_words(ion_id)
             nullify(mol)
@@ -608,7 +609,6 @@ contains
             
             if (associated(ion) .and. isotope) then
                 if (allocated(element%isotope)) then
-                    iso_id = nint((mass - int(mass))*1000)
                     iso_idx = findloc(element%isotope%iso, iso_id, 1)
                     ok = iso_idx > 0
                 else
@@ -695,7 +695,9 @@ contains
         end do
         close(lunit)
         print '(I12, a, I12, a, a)', nactive, ' of ', ntotal, ' lines read from linelist ', trim(linelist_file)
+        self%nline = nactive
         call self%mask_linelist()
+        !call self%precompute_line_extends()
     END SUBROUTINE init_linelist
 
     !===============================================================================
@@ -736,7 +738,82 @@ contains
     END SUBROUTINE mask_linelist
 
     !===============================================================================
-    SUBROUTINE add_linelist_opacities(self, nu, all_eta, all_chi, vproj)
+    SUBROUTINE precompute_line_extends (self)
+        class(composition_type), target :: self
+        class(element_type), pointer :: element
+        class(particle_type), pointer :: ion
+        class(bbtrans_type), pointer :: line
+        type(composition_type) :: comp
+        real(dp), pointer, contiguous :: nu(:)
+        real(dp), dimension(1,1,10) :: temp, rho, zero
+        real(4), dimension(:,:,:,:), pointer, contiguous :: chi, scratch1, scratch2
+        integer :: i, j, l, n, n_deactivate
+        logical :: deactivate
+        ! ----------------------------------------------------------------------------
+        allocate(nu(self%nline))
+        allocate(chi(1,1,10,self%nline))
+        allocate(scratch1, scratch2, mold=chi)
+
+        n = 1
+        do i=1, self%nel
+            element => self%elements(i)
+            if (.not. any(element%ions%in_linelist)) cycle
+    
+            do j=lbound(element%ions,1), ubound(element%ions,1)
+                ion => element%ions(j)
+                if (ion%nline == 0) cycle
+
+                do l=1, ion%nline
+                    line => ion%line(l)
+                    if (.not. line%active) cycle
+
+                    nu(n) = line%nu0
+                    n = n+1
+                end do
+            end do
+        end do
+
+        temp(1,1,:) = linspace(3000., 12000., 10)
+        rho (1,1,:) = 10**linspace(-9., -6., 10)
+        zero = 0.d0
+
+        comp = self
+        call comp%reassign_pointer()
+        call comp%load_state_variables(temp, zero, rho, use_ne=.false.)
+        call comp%absorption(nu, chi, scratch1, scratch2, sorted=.false.)
+        scratch1 = 0.0
+        scratch2 = 0.0
+        call comp%add_linelist_opacities(nu, scratch1, scratch2, real(zero), 0.d0)
+
+        n = 1
+        n_deactivate = 0
+        do i=1, self%nel
+            element => self%elements(i)
+            if (.not. any(element%ions%in_linelist)) cycle
+    
+            do j=lbound(element%ions,1), ubound(element%ions,1)
+                ion => element%ions(j)
+                if (ion%nline == 0) cycle
+
+                do l=1, ion%nline
+                    line => ion%line(l)
+                    if (.not. line%active) cycle
+
+                    deactivate = all(scratch2(:,:,:,n) / chi(:,:,:,n) < 1e-4)
+                    if (deactivate) then
+                        line%active = .false.
+                        n_deactivate = n_deactivate + 1
+                    endif
+                    n = n+1
+                end do
+            end do
+        end do
+
+        deallocate(nu)
+      END SUBROUTINE precompute_line_extends
+
+    !===============================================================================
+    SUBROUTINE add_linelist_opacities(self, nu, all_eta, all_chi, vproj, dlam)
         class(composition_type), target :: self
         class(element_type), pointer :: element
         class(ion_type), pointer :: ion
@@ -745,7 +822,8 @@ contains
         class(bbtrans_type), pointer :: line
         real(8), intent(in), dimension(:), pointer, contiguous :: nu
         real(4), intent(in), dimension(:,:,:,:), pointer, contiguous :: all_eta, all_chi
-        real(4), intent(in), dimension(:,:,:), pointer, contiguous :: vproj
+        real(4), intent(in), dimension(:,:,:), contiguous :: vproj
+        real(8), intent(in) :: dlam
         real(4), dimension(:,:,:), allocatable :: tothi, adamp, stark_pe
         real(4), dimension(:,:,:), pointer, contiguous :: inv_part, vbar2, inv_df
         real(4), dimension(:,:,:), pointer, contiguous :: iso_vbar2, iso_inv_df, iso_inv_part
@@ -753,7 +831,7 @@ contains
         real(4), dimension(:,:,:), pointer, contiguous :: vb2, idopf, ipart, eta_fac, chi_fac
         real(4), dimension(:,:,:,:), pointer, contiguous :: eta, chi, nh
         integer :: i, j, k, l, f, ired, iblue, nactive, prev_iso, m(3)
-        real(8) :: cnt_ev, gf, awgt, iso_awgt
+        real(8) :: cnt_ev, gf, awgt, iso_awgt, dl
         real(4) :: scalar
         integer, save:: itimer=0, itimer2=0
         !---------------------------------------------------------------------------
@@ -787,7 +865,7 @@ contains
             element => self%elements(i)
             if (.not. any(element%ions%in_linelist)) cycle
     
-            inv_df = 1 / element%compute_doppler_factor(temp, 0.0)
+            inv_df = element%inverse_doppler_factor(temp)
             vbar2 = element%compute_vbar2(temp)
             prev_iso = 0
     
@@ -811,16 +889,16 @@ contains
                     if (line%iso_idx /= prev_iso) then
                       prev_iso = line%iso_idx
                       iso => element%isotope(line%iso_idx)
-                      iso_inv_df = 1 / iso%compute_doppler_factor(temp, 0.0)
+                      iso_inv_df = iso%inverse_doppler_factor(temp)
                       iso_vbar2 = iso%compute_vbar2(temp)
-                      iso_inv_part = inv_part * iso%f
+                      iso_inv_part = inv_part * iso%frac
                       vb2 => iso_vbar2
-                      idopf   => iso_inv_df
-                      ipart   => iso_inv_part
+                      idopf => iso_inv_df
+                      ipart => iso_inv_part
                     elseif (line%iso_idx == 0) then
                       vb2 => vbar2
-                      idopf   => inv_df
-                      ipart   => inv_part
+                      idopf => inv_df
+                      ipart => inv_part
                     endif
     
                     call trace%begin('bbtrans_type%damping', itimer=itimer2)
@@ -840,13 +918,10 @@ contains
             mol => self%molecules(i)
             if (.not. mol%in_linelist) cycle
 
-            awgt = mol%awgt * UU
-            scalar = CC / sqrt(2*BK / awgt)
-            inv_df = scalar / sqrt(temp)
-      
-            scalar = 8.0*BK / PI * (1.0/MH + 1.0/awgt)
-            vbar2 =  scalar * temp
-            inv_part = mol%f * self%toth / mol%irwin_partf(dble(temp))
+            inv_df = mol%inverse_doppler_factor(temp)
+            vbar2 = mol%compute_vbar2(temp)
+
+            inv_part = mol%n * mol%part
             dxij = 0.0
       
             do l=1, mol%nline
@@ -1036,6 +1111,7 @@ contains
         class(composition_type), target :: self
         class(element_type), pointer :: element
         class(ion_type), pointer :: ion
+        class(molec_type), pointer :: mol
         real(dp), dimension(:,:,:), intent(in) :: temp, ne, rho
         logical, intent(in), optional :: use_rho, use_ne
         real(dp), dimension(:,:,:), allocatable :: ro
@@ -1060,9 +1136,10 @@ contains
         allocate(self%EK_over_temp, self%p6, ro, mold=temp)
         
         if (option(use_ne, .true.)) then
+            self%ne = ne
             call self%thermal_equilibrium(temp, ne, self%rho, self%pg)
         else
-            call self%iterate_thermal_eq(temp, rho, tol=1d-6)
+            call self%iterate_thermal_eq(temp, rho, self%ne, tol=1d-6)
         endif
 
         if (option(use_rho, .true.)) then
@@ -1080,7 +1157,7 @@ contains
         !endif
 
         self%toth = self%rho / self%grph
-        call self%set_aux_data(temp, ne)
+        call self%set_aux_data(temp, self%ne)
 
         do i=1, self%nel
             element => self%elements(i)
@@ -1091,7 +1168,9 @@ contains
         end do
 
         do i=1, self%nmolec
-            self%molecules(i)%n = self%molecules(i)%f * self%toth
+            mol => self%molecules(i)
+            mol%n = mol%f * self%toth
+            mol%part = 1.0 / mol%irwin_partf(self%temp)
         end do
 
         call self%compute_p6(self%p6)
@@ -1188,12 +1267,13 @@ contains
     !=========================================================================
     ! find a state variables consistent with given temp & rho    
     !=========================================================================
-    SUBROUTINE iterate_thermal_eq(self, temp, rho, tol)
+    SUBROUTINE iterate_thermal_eq(self, temp, rho, ne, tol)
         class(composition_type), target :: self
         real(dp), dimension(:,:,:), intent(in) :: temp, rho
+        real(dp), dimension(:,:,:), intent(out) :: ne
         real(dp), intent(in) :: tol ! stop criterion
         logical, dimension(:,:,:), allocatable :: ne_converged
-        real(dp), dimension(:,:,:), allocatable :: ne, a, b, x, xold, fx, fa, fb, ro, pg
+        real(dp), dimension(:,:,:), allocatable :: a, b, x, xold, fx, fa, fb, ro, pg
         integer :: i, nconverged, arr_size, m(3)
         integer, parameter :: nmax = 20 ! max number of iteration
         !---------------------------------------------------------------------------
@@ -1201,7 +1281,7 @@ contains
         arr_size = size(temp)
 
         allocate(ne_converged(m(1),m(2),m(3)), source=.false.) ! cant use mold= on different kinds
-        allocate(ne, x, xold, a, b, fx, fa, fb, ro, pg, mold=temp)
+        allocate(x, xold, a, b, fx, fa, fb, ro, pg, mold=temp)
 
         ! set initial value for electron density
         where (temp > 1.0d4) ! fully ionized gas
@@ -1257,7 +1337,6 @@ contains
 
         write(*,fmt="(5x,'it [',I2.2,']',1x,'n-converged:',1x,I3,1X,'/ total size: ',I3)") i, nconverged, arr_size
 
-        deallocate(ne)
         deallocate(ne_converged)
         deallocate(x,xold,a,b,fx,fa,fb)
     END SUBROUTINE iterate_thermal_eq

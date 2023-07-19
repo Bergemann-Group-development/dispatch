@@ -4,14 +4,20 @@ MODULE ion_mod
     USE bbtrans_mod, only: bbtrans_type
     implicit none
 
-    type, extends(state_type) :: particle_type
+    type, extends(state_type) :: massive_type
+        real(dp) :: awgt
+    contains
+        procedure :: inverse_doppler_factor
+        procedure :: compute_vbar2
+    end type
+
+    type, extends(massive_type) :: particle_type
         real(dp), dimension(:,:,:), allocatable :: f, e, part
         integer :: m(3)=[0,0,0], nk, nline=0
         character(len=6) :: id
         type(level_type), allocatable :: levels(:)
         type(bbtrans_type), dimension(:), allocatable :: line
         real(dp), allocatable, dimension(:) :: irwin
-        real(dp) :: awgt
         logical :: in_linelist
         logical :: allocated=.false.
     contains
@@ -49,6 +55,8 @@ MODULE ion_mod
         procedure :: allocate => allocate_particle
         !procedure :: absorption_factor => ion_absorption_factor
     end type
+
+    real(dp), public :: vmic=0.d0
 
 contains
 
@@ -237,5 +245,27 @@ pure FUNCTION irwin_poly (self, temp) result(u)
         u=u*temp + self%irwin(i-1)
     end do
 END FUNCTION irwin_poly
+
+!====================================================================================
+pure elemental function inverse_doppler_factor(self, temp) result(inv_df)
+  class(massive_type), intent(in) :: self
+  real(4), intent(in)  :: temp
+  real(4) :: dop, inv_df
+  real(4), parameter :: const=2.0d0*BK/UU
+  !---------------------------------------------------------------------------------
+  dop = const*temp/self%awgt
+  if (vmic > 0) dop = dop + (vmic*1e5)**2
+  inv_df = CC / sqrt(dop)
+end function inverse_doppler_factor
+
+!====================================================================================
+pure elemental function compute_vbar2(self, temp) result(vbar2)
+  class(massive_type), intent(in) :: self
+  real(4),  intent(in)  :: temp
+  real(4) :: vbar2
+  real(4), parameter :: const=8.0d0*BK/(PI*UU), inv_MH=UU/MH
+  !---------------------------------------------------------------------------------
+  vbar2 = const*temp * (inv_MH + 1.0/self%awgt)
+end function compute_vbar2
 
 END MODULE ion_mod

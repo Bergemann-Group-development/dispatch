@@ -22,7 +22,7 @@ MODULE back_line_patch_mod
     !USE scratch_mod
     USE mconst
     USE handyfuncs_mod
-    USE m3d_patch_mod, only: m3d_patch_t
+    USE m3d_patch_mod, only: m3d_patch_t, dlam
     USE ray_patch_mod, only: ray_patch_t
     USE composition_mod, only: composition_type
     USE element_mod, only: element_type, isotope_type
@@ -81,7 +81,7 @@ MODULE back_line_patch_mod
     
     call os%allocate(vproj, self%n)
     call self%comp_vproj(vproj)
-    call self%composition%add_linelist_opacities(nu, eta, chi, vproj)
+    call self%composition%add_linelist_opacities(nu, eta, chi, vproj, dlam)
     call os%deallocate(vproj)
     call trace%end(itimer)
   END SUBROUTINE execute

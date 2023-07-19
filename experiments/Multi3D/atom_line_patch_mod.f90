@@ -186,7 +186,7 @@ MODULE atom_line_patch_mod
     class(line_type), pointer :: line
     class(ion_type), pointer :: He1
     real(4), dimension(:,:,:), pointer, contiguous :: tothi, ne, temp, adamp
-    real(4), dimension(:,:,:), pointer, contiguous :: vproj, doppler_factor
+    real(4), dimension(:,:,:), pointer, contiguous :: vproj
     real(4), dimension(:,:,:), pointer, contiguous :: inv_df, ni, nj, vbar2, stark_pe
     real(4), dimension(:,:,:,:), pointer, contiguous :: phi
     real(4), dimension(:,:,:,:), pointer :: nh, chi, eta
@@ -199,7 +199,6 @@ MODULE atom_line_patch_mod
     ne   => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_ne,            self%it,1)
     temp => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_temp,          self%it,1)
     nh   => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_nh1:self%i_nh6,self%it,1)
-    doppler_factor => self%atom%data%doppler_factor
     call self%composition%ion_by_id('He I', He1)
 
     call os%allocate(tothi,       self%n)
@@ -210,10 +209,10 @@ MODULE atom_line_patch_mod
     call os%allocate(inv_df,      self%n)
     
     call self%comp_vproj(vproj)
-    inv_df = 1 / doppler_factor
 
     tothi = sum(nh(:,:,:,1:5), 4) ! total neutral hydrogen density
-    vbar2 =  self%atom%compute_vbar2(temp)
+    vbar2 = self%atom%compute_vbar2(temp)
+    inv_df = self%atom%inverse_doppler_factor(temp)
     stark_pe = ne * temp**one_sixth
 
     do i=1, self%nline

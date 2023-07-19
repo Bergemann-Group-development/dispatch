@@ -83,9 +83,9 @@ SUBROUTINE allocate_molec (self, m)
     !---------------------------------------------------------------------------
     if (all(m == self%m)) return
     self%m = m
-    if (self%allocated) deallocate(self%f, self%e, self%dis, self%n)
+    if (self%allocated) deallocate(self%f, self%e, self%dis, self%part, self%n)
     allocate(self%f(m(1),m(2),m(3)), source=0.d0)
-    allocate(self%e, self%n, self%dis, source=self%f)
+    allocate(self%e, self%n, self%dis, self%part, source=self%f)
     self%allocated = .true.
 END SUBROUTINE allocate_molec
 

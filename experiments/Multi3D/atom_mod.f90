@@ -9,8 +9,8 @@ MODULE atom_mod
     USE trans_mod
     USE mmath, only: refsor, unista
     USE op_math_mod, only: lineq, get_interval, eqsyst, lineq_no_pivot
-    USE ion_mod, only: ion_type
-    USE element_mod, only: element_type, isotope_type
+    USE ion_mod, only: ion_type, massive_type
+    USE element_mod, only: element_type
     USE molecule_mod, only: molec_type
     USE os_mod
     USE trace_mod
@@ -39,8 +39,6 @@ MODULE atom_mod
     !---------------------------------------------------------------------
 
     type, public :: local_data_t
-      ! rather constant doppler width factor, i.e. dnud = line(i)%nu0 * doppler_factor [Hz]
-      real(4), dimension(:,:,:), pointer, contiguous :: doppler_factor => null()
       ! LTE, NLTE and total population of active atom
       real(4), dimension(:,:,:,:), pointer, contiguous :: nstar => null()
       real(4), dimension(:,:,:,:), pointer, contiguous :: n     => null()
@@ -51,7 +49,7 @@ MODULE atom_mod
       real(4), dimension(:,:,:),   pointer, contiguous :: totn => null() 
     end type local_data_t
   
-    type, public, extends(isotope_type) :: atom_type
+    type, public, extends(massive_type) :: atom_type
       integer :: nrad   ! total number of radiative transitions
       integer :: nrfix  ! number of fixed transitions
       integer :: ncont  ! number of bound-free transitions
@@ -80,15 +78,6 @@ MODULE atom_mod
       type(atomic_spectrum_type), pointer :: sp
       type(local_data_t), pointer :: data
 
-      !! rather constant doppler width factor, i.e. dnud = line(i)%nu0 * doppler_factor [Hz]
-      !real(4), dimension(:,:,:), pointer, contiguous :: doppler_factor => null()
-      !
-      !! LTE, NLTE and total population of active atom
-      !real(4), dimension(:,:,:,:), pointer, contiguous :: nstar => null()
-      !real(4), dimension(:,:,:,:), pointer, contiguous :: n     => null()
-      !real(8), dimension(:,:,:,:), pointer, contiguous :: gamma_ij => null()
-      !real(8), dimension(:,:,:,:), pointer, contiguous :: gamma_ji => null()
-      !real(4), dimension(:,:,:), pointer, contiguous :: totn => null()
       real(8), dimension(:,:), pointer, contiguous :: tgrid, cgrid, dcdt
       real(4), dimension(:), pointer, contiguous :: cdata
       logical, dimension(:), pointer, contiguous :: ecol, hcol
@@ -105,7 +94,6 @@ MODULE atom_mod
         
     contains
       procedure :: add_continuum_opacities
-      !procedure :: compute_doppler_factor
       procedure :: partition_function
       procedure :: lte_pop
       procedure :: compute_lte_populations
@@ -526,24 +514,6 @@ MODULE atom_mod
     sumn = totn / sumn
   end function
   !------------------------------------------------------------------------------------
-
-  !!====================================================================================
-  !pure elemental function compute_doppler_factor(self, temp) result(doppler_factor)
-  !  class(atom_type), intent(in) :: self
-  !  real(4),  intent(in)  :: temp
-  !  real(4) :: doppler_factor
-  !  !---------------------------------------------------------------------------------
-  !  doppler_factor = sqrt(  2.0d0*bk*temp/self%awgt + (vmic*1e5)**2 ) / cc
-  !end function compute_doppler_factor
-  !
-  !!====================================================================================
-  !pure elemental function compute_vbar2(self, temp) result(vbar2)
-  !  class(atom_type), intent(in) :: self
-  !  real(4),  intent(in)  :: temp
-  !  real(4) :: vbar2
-  !  !---------------------------------------------------------------------------------
-  !  vbar2 = 8.0*BK*temp/PI * (1.0/MH + 1.0/self%awgt)
-  !end function compute_doppler_factor
    
   !====================================================================================
   SUBROUTINE compute_cont_factors(self, temp, dxi, saha)

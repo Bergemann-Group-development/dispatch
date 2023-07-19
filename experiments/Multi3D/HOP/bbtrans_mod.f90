@@ -646,19 +646,24 @@ contains
     integer, intent(out) :: ired, iblue
     real(dp) :: lam0, lam_red, lam_blue, nu_red, nu_blue
     !----------------------------------------------------------------------------------
-    lam0 = CC / self%nu0 * 1e8
-    lam_red  = lam0 + dlam
-    lam_blue = lam0 - dlam
-    nu_red  = CC / lam_red  * 1e8
-    nu_blue = CC / lam_blue * 1e8
-
-    ired  = searchsorted(nu, nu_red,  outbounds_ok=.true.)
-    iblue = searchsorted(nu, nu_blue, outbounds_ok=.true.)
-    if (iblue==ired) then
-     ired  = 0
-     iblue = 0
-    elseif (ired == 0) then
-      ired = 1
+    if (dlam == 0) then
+      ired = findloc(nu, self%nu0, 1)
+      iblue = ired
+    else
+      lam0 = CC / self%nu0 * 1e8
+      lam_red  = lam0 + dlam
+      lam_blue = lam0 - dlam
+      nu_red  = CC / lam_red  * 1e8
+      nu_blue = CC / lam_blue * 1e8
+  
+      ired  = searchsorted(nu, nu_red,  outbounds_ok=.true.)
+      iblue = searchsorted(nu, nu_blue, outbounds_ok=.true.)
+      if (iblue==ired) then
+       ired  = 0
+       iblue = 0
+      elseif (ired == 0) then
+        ired = 1
+      endif
     endif
   END SUBROUTINE get_range
   !------------------------------------------------------------------------------------
