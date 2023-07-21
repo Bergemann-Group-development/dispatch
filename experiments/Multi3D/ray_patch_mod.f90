@@ -45,8 +45,6 @@ MODULE ray_patch_mod
     procedure :: comp_vproj
     procedure :: set_guard_zones
     procedure :: ff_index
-    procedure :: compress_mem
-    procedure :: decompress_mem
     procedure :: pack
     procedure :: unpack
     procedure :: allocate_mesg
@@ -407,10 +405,11 @@ SUBROUTINE ray_nbor_relations(self, another, needed, needs_me, download)
 END SUBROUTINE ray_nbor_relations
 
 !===============================================================================
-SUBROUTINE allocate_mem (self, allocator, m_in)
+SUBROUTINE allocate_mem (self, allocator, m_in, label)
   class(ray_patch_t):: self
   class(m3d_patch_t), intent(in), target :: allocator
   integer, intent(in), optional :: m_in(6)
+  character(len=*), optional :: label
   integer :: fs, fe
   !-----------------------------------------------------------------------------
   call self%m3d_patch_t%allocate_mem(allocator, m_in)
@@ -422,75 +421,6 @@ SUBROUTINE allocate_mem (self, allocator, m_in)
     endif
   endif
 END SUBROUTINE allocate_mem
-
-!===============================================================================
-SUBROUTINE compress_mem (self, compressor, static, locked)
-  class(ray_patch_t):: self
-  class(m3d_patch_t), intent(in), target :: compressor
-  logical, intent(in) :: static, locked
-  integer :: i, k, m(6)
-  real(4), dimension(:,:,:,:,:,:), pointer, contiguous :: dn
-  integer, save:: itimer=0
-  !-----------------------------------------------------------------------------
-  if (.not. self%compressed) then
-    call trace%begin ('ray_patch_t%compress_mem', itimer=itimer)
-    if (.not. locked) call self%mem_lock(1)%set ('compress_mem')
-    self%static_mem = static
-    self%compressed = .true.
-    m = shape(self%mem)
-    m(3) = 1
-    k = merge(self%ui(3), self%li(3),self%dir>0)
-    call os%allocate(dn, m)
-    do i=1, self%nv
-      dn(:,:,1:1,i,:,:) = self%mem(:,:,k:k,i,:,:)
-    end do
-    call self%m3d_patch_t%deallocate_mem(compressor)
-    call self%m3d_patch_t%allocate_mem(compressor, m)
-    self%allocation_time = self%time
-    do i=1, self%nv
-      self%mem(:,:,1:1,i,:,:) = dn(:,:,1:1,i,:,:)
-    end do
-    call os%deallocate(dn)
-    if (.not. locked) call self%mem_lock(1)%unset ('compress_mem')
-    if (self%print_update_info .and. detailed_prints) then
-      write(stdout,*) self%m3d_patch_info2(), ' has been compressed'
-    endif
-    call trace%end(itimer)
-  endif
-END SUBROUTINE compress_mem
-
-!===============================================================================
-SUBROUTINE decompress_mem (self, decompressor)
-  class(ray_patch_t) :: self
-  class(m3d_patch_t), intent(in), target :: decompressor
-  integer :: i, k, m(6)
-  real(4), dimension(:,:,:,:,:,:), pointer, contiguous :: up
-  integer, save:: itimer=0
-  !-----------------------------------------------------------------------------
-  if (self%compressed) then
-    call trace%begin ('ray_patch_t%decompress_mem', itimer=itimer)
-    call self%mem_lock(1)%set ('decompress_mem')
-    self%static_mem = .false.
-    self%compressed = .false.
-    m = shape(self%mem)
-    call os%allocate(up, m)
-    do i=1, self%nv
-      up(:,:,1:1,i,:,:) = self%mem(:,:,1:1,i,:,:)
-    end do
-    call self%m3d_patch_t%deallocate_mem(decompressor)
-    call self%allocate_mem(decompressor)
-    k = merge(1,self%gn(3),self%dir>0)
-    do i=1, self%nv
-      self%mem(:,:,k:k,i,:,:) = up(:,:,1:1,i,:,:)
-    end do
-    call os%deallocate(up)
-    call self%mem_lock(1)%unset ('decompress_mem')
-    if (self%print_update_info .and. detailed_prints) then
-      write(stdout,*) self%m3d_patch_info2(), ' has been decompressed'
-    endif
-    call trace%end(itimer)
-  endif
-END SUBROUTINE decompress_mem
 
 !===============================================================================
 !> Pack patch info into a buffer, for MPI communication

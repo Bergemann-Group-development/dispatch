@@ -73,12 +73,12 @@ SUBROUTINE init(self, task_list, name)
   real(4) :: origin(3)=[0.0,0.0,0.0]
   integer :: iostat, k, ip
   integer :: patches_per_mpi=1
-  integer :: dims=1, nx=5, ny=5, nz=256
+  integer :: dims=1, nx=5, ny=5, nz=256, snap=0
   integer :: verbose=1
   character(len=126) :: atmos_format='Multi'
   real(4), dimension(:,:,:), pointer, contiguous :: vel
   namelist /atmos_params/ atmos_file, dims, verbose, patches_per_mpi, FeH, &
-  atmos_format, vmic, use_density, use_ne, nx, ny, nz
+  atmos_format, vmic, use_density, use_ne, nx, ny, nz, snap
   !-----------------------------------------------------------------------------
   if (associated(task_list)) return
   call trace%begin('read_external_t%init')
@@ -99,7 +99,7 @@ SUBROUTINE init(self, task_list, name)
   write (io%namelist, atmos_params)
 
   if (atmos_format == 'Stagger') then
-    call read_stagger_params(nx, ny, nz)
+    call read_stagger_params(atmos_file, snap, nx, ny, nz)
     if (irregular) then
       dims = size(stagger_levels)
     endif
@@ -141,7 +141,6 @@ SUBROUTINE init(self, task_list, name)
     case ('Stagger')
       call read_stagger_snapshot(self%ds, self%rho, self%px, self%py, &
       self%pz, self%ee, self%temp, self%ne)
-      atmos_file = stagger_file
     case ('Marcs')
       call read_marcs(atmos_file, nz, self%ds, self%rho, self%temp, self%pe, FeH)
     case ('Multi')
@@ -331,7 +330,7 @@ SUBROUTINE init(self, task_list, name)
   write (stdlog,*) 'read_external_mod: ntask,nwrite=', io%ntask, io%nwrite
   if (verbose > 0) write(stdout,*) 'read_external_t%init: print tasks'
   call self%task_list%print_tasks
-  call self%task_list%check_hash_table
+  !call self%task_list%check_hash_table
   !call self%task_list%hash_table%stats
   if (verbose > 0) write(stdout,*) 'read_external_t%init: done'
   flush (stdout)

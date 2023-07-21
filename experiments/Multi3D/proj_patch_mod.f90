@@ -10,6 +10,7 @@ MODULE proj_patch_mod
     USE bits_mod
     USE os_mod
     USE handyfuncs_mod
+    USE m3d_halo_mod, only:lock_mem, unlock_mem
     USE m3d_patch_mod, only:maxiter, m3d_patch_t, use_vel
     USE ray_patch_mod, only:ray_patch_t
     USE net_opac_patch_mod, only:net_opac_t
@@ -57,7 +58,7 @@ MODULE proj_patch_mod
     integer, save :: itimer=0
     !-----------------------------------------------------------------------------
     call trace%begin (trim(self%kind)//'%update', itimer=itimer)
-    call self%net_opac%mem_lock(1)%set_read('proj_patch_update')
+    call lock_mem( self%net_opac, 'proj_patch_update', read=.true.)
     call self%check_access(self%net_opac)
     if (use_vel) then
       if (.not. self%sp%sorted) call io%abort('Comoving frame for unsorted spectrum!')
@@ -84,7 +85,7 @@ MODULE proj_patch_mod
       end do
       end do
     endif
-    call self%net_opac%mem_lock(1)%unset_read('proj_patch_update')
+    call unlock_mem( self%net_opac, 'proj_patch_update', read=.true.)
 
     call self%boundaries%extrap()
     call self%periodic_grid()

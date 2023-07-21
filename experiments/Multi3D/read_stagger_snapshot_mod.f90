@@ -20,10 +20,9 @@ MODULE read_stagger_snapshot_mod
   real(4), parameter :: uue = uuv**2      ! internal energy per unit mass
   real(4), parameter :: uup = uur * uue   ! pressure
   real(4), parameter :: uua = 1./uul      ! extinction coefficient (alpha)
-  character(len=128), public :: stagger_file='/lustre/astro/rhoppe/multi-3d/input/atmos/t5777g44m00/t5777g44m0005'
+  !character(len=128), public :: stagger_file='/lustre/astro/rhoppe/multi-3d/input/atmos/t5777g44m00/t5777g44m0005'
   character(len=128), save :: mesh_file, snap_file, data_file, aux_file
-  integer, save :: snap=20, dims(3)=[5,5,230]
-  real(4), save :: zcut=-99! in Mm below the surface
+  integer, save :: dims(3)!=[5,5,230], snap=0
   real(4), save :: maxTemp=huge(1.0)
   real(4), save :: ee_offset=3.2122
   character(len=128), save :: refinement=''
@@ -44,12 +43,12 @@ MODULE read_stagger_snapshot_mod
 contains
 
 !===============================================================================
-SUBROUTINE read_stagger_params(nx, ny, nz)
-  integer, intent(in) :: nx, ny, nz
+SUBROUTINE read_stagger_params(stagger_file, snap, nx, ny, nz)
+  character(len=*), intent(in) :: stagger_file
+  integer, intent(in) :: snap, nx, ny, nz
   integer :: iostat, nsub
   logical, save :: first_time=.true.
-  namelist /stagger_params/ stagger_file, snap, zcut, ee_offset, maxTemp, &
-  refinement
+  namelist /stagger_params/ refinement
   !-----------------------------------------------------------------------------
   if (first_time) then
     first_time = .false.

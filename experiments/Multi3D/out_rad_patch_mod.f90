@@ -10,6 +10,7 @@ MODULE out_rad_patch_mod
     USE math_mod
     USE bits_mod
     USE handyfuncs_mod
+    USE m3d_halo_mod, only: lock_mem, unlock_mem
     USE m3d_patch_mod, only: m3d_patch_t, long_vec, long_wmu
     USE ray_patch_mod, only: ray_patch_t
     USE mconst, only: cc
@@ -89,7 +90,7 @@ MODULE out_rad_patch_mod
     do while (associated(nbor))
       select type(nb => nbor%task)
       class is (ray_patch_t)
-        call nb%mem_lock(1)%set_read('out_rad_update')
+        call lock_mem( nb, 'out_rad_update', read=.true.)
         call self%check_access(nb)
         do iw=1, self%nw
           Inu => self%mem(:,:,1, nb%fs:nb%fe, self%it, iw)
@@ -98,7 +99,7 @@ MODULE out_rad_patch_mod
             Inu(:,:,i) = nb%authority_mem(:,:,top, i, nb%it, iw)
           end do
         end do
-        call nb%mem_lock(1)%unset_read('out_rad_update')
+        call unlock_mem( nb, 'out_rad_update', read=.true.)
       end select
       nbor => nbor%next
     end do

@@ -10,6 +10,7 @@ MODULE atom_rate_patch_mod
     USE os_mod
     USE bits_mod
     USE handyfuncs_mod
+    USE m3d_halo_mod, only:lock_mem, unlock_mem
     USE m3d_patch_mod, only: comoving_frame, preconditioning
     USE ray_patch_mod, only: ray_patch_t
     USE angle_rad_patch_mod, only: rad_patch_t
@@ -100,7 +101,7 @@ MODULE atom_rate_patch_mod
     integer, save :: itimer=0
     !-----------------------------------------------------------------------------
     call trace%begin (trim(self%kind)//'%update', itimer=itimer)
-    call self%rad%mem_lock(1)%set_read('atom_rate_update')
+    call lock_mem(self%rad, 'atom_rate_update', read=.true.)
     call self%check_access(self%rad)
     if (self%sp%maxal > 0) then
       call self%check_access(self%lines)
@@ -116,7 +117,7 @@ MODULE atom_rate_patch_mod
       self%update_skipped = .true.
     endif
     
-    call self%rad%mem_lock(1)%unset_read('atom_rate_update')
+    call unlock_mem(self%rad, 'atom_rate_update', read=.true.)
 
     call self%integrate_rates(gamma_ij, gamma_ji)
     self%free_self = .not. self%static_mem
@@ -400,7 +401,7 @@ MODULE atom_rate_patch_mod
     real(4), dimension(:,:,:,:), pointer :: gamma_ij, gamma_ji
     real(4) :: wmu
     !-----------------------------------------------------------------------------
-    call self%m3d_parent%mem_lock(1)%set('integrate_rates')
+    call lock_mem(self%m3d_parent, 'integrate_rates')
     atom => self%atom
     if (.not. associated(atom%data%gamma_ij)) then
       m = [self%n, atom%nrad]
@@ -412,7 +413,7 @@ MODULE atom_rate_patch_mod
       atom%data%gamma_ij(:,:,:,k) = atom%data%gamma_ij(:,:,:,k) + gamma_ij(:,:,:,i)
       atom%data%gamma_ji(:,:,:,k) = atom%data%gamma_ji(:,:,:,k) + gamma_ji(:,:,:,i)
     end do
-    call self%m3d_parent%mem_lock(1)%unset('integrate_rates')
+    call unlock_mem(self%m3d_parent, 'integrate_rates')
   END SUBROUTINE integrate_rates
   
   !===============================================================================

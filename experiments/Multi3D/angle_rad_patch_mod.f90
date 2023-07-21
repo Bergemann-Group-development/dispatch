@@ -24,6 +24,7 @@ MODULE angle_rad_patch_mod
   USE mconst, only: one_third, one_sixth
   !USE scratch_mod
   USE handyfuncs_mod
+  USE m3d_halo_mod, only:lock_mem, unlock_mem
   USE m3d_patch_mod, only: m3d_patch_t, comoving_frame, ilambd, decouple_continuum, &
   line_blanketing, use_vel, preconditioning, save_Qrad, binned_opac
   USE ray_patch_mod, only: ray_patch_t, formal_solver
@@ -62,8 +63,8 @@ MODULE angle_rad_patch_mod
     procedure :: linear_solver
     procedure :: hermite_solver
     procedure :: remove_lower_layers_mem
-    procedure :: deallocate_mem => rad_patch_deallocate_mem
-    procedure :: allocate_mem => rad_patch_allocate_mem
+    procedure :: deallocate_mem
+    procedure :: allocate_mem
     procedure :: print_post_update_info
     procedure :: init_nbors_hash
     procedure :: save
@@ -137,7 +138,7 @@ SUBROUTINE execute (self)
   !-----------------------------------------------------------------------------
   ! Boundary conditions
   !-----------------------------------------------------------------------------
-  call self%opac%mem_lock(1)%set_read ('angle_rad_update')
+  call lock_mem (self%opac, 'angle_rad_update', read=.true.)
   call self%check_access(self%opac)
 
   call self%bndries()
@@ -147,7 +148,7 @@ SUBROUTINE execute (self)
     call self%long_char_update()
   else
     call self%decompress_mem(self)
-    call self%back_cont%mem_lock(1)%set_read ('angle_rad_update')
+    call lock_mem (self%back_cont, 'angle_rad_update', read=.true.)
     call self%check_access(self%back_cont)
     if (self%ray%long) then
       print *, 'long ray detected! Stopping...'
@@ -158,13 +159,13 @@ SUBROUTINE execute (self)
     else
       call self%short_ray_update()
     endif
-    call self%back_cont%mem_lock(1)%unset_read ('angle_rad_update')
+    call unlock_mem (self%back_cont, 'angle_rad_update', read=.true.)
     if (comoving_frame .or. self%iter < ilambd .or. decouple_continuum .or. line_blanketing) then
       call self%integrate_intensity()
     endif
   endif
   call self%opac%compress_mem(self, static=.false., locked=.true.)
-  call self%opac%mem_lock(1)%unset_read ('angle_rad_update')
+  call unlock_mem (self%opac, 'angle_rad_update', read=.true.)
 
   if (self%print_update_info) then
     f = self%fcheck
@@ -504,9 +505,9 @@ SUBROUTINE integrate_intensity(self)
   !-----------------------------------------------------------------------------
   call trace%begin('rad_patch_t%integrate_intensity', itimer=itimer)
   mean => self%mean_rad
-  call mean%mem_lock(1)%set('integrate_intensity')
+  call lock_mem(mean, 'integrate_intensity')
   if (.not. associated(mean%mem)) then
-    call mean%check_mem()
+    call mean%check_mem(locked=.true.)
     do w=1, mean%nw
     do f=1, mean%nv
       mean%mem(:,:,:,f,mean%it,w) = 0
@@ -563,7 +564,7 @@ SUBROUTINE integrate_intensity(self)
     end do
   endif
 
-  call mean%mem_lock(1)%unset('integrate_intensity')
+  call unlock_mem(mean, 'integrate_intensity')
   call trace%end(itimer)
 END SUBROUTINE integrate_intensity
 
@@ -698,7 +699,7 @@ SUBROUTINE remove_lower_layers_mem (self)
 END SUBROUTINE remove_lower_layers_mem
 
 !===============================================================================
-SUBROUTINE rad_patch_deallocate_mem (self, deallocator, print)
+SUBROUTINE deallocate_mem (self, deallocator, print)
   class(rad_patch_t):: self
   class(m3d_patch_t), intent(in), target :: deallocator
   logical, optional :: print
@@ -711,17 +712,18 @@ SUBROUTINE rad_patch_deallocate_mem (self, deallocator, print)
       call os%deallocate(self%Ieff,label=trim(self%kind)//'%Ieff')
     endif
   endif
-END SUBROUTINE rad_patch_deallocate_mem
+END SUBROUTINE deallocate_mem
 
 !===============================================================================
-SUBROUTINE rad_patch_allocate_mem (self, allocator, m_in)
+SUBROUTINE allocate_mem (self, allocator, m_in, label)
   class(rad_patch_t):: self
   class(m3d_patch_t), intent(in), target :: allocator
   integer, intent(in), optional :: m_in(6)
+  character(len=*), optional :: label
   integer :: m(4)
   !-----------------------------------------------------------------------------
   call self%ray_patch_t%allocate_mem(allocator, m_in)
-  if (.not. self%out_ray) then
+  if (.not. self%out_ray .and. .not. self%compressed) then
     if (.not. (associated(self%Psi) .or. self%is_set(bits%virtual))) then
       m(1:3) = self%n
       m(4) = self%nv
@@ -732,7 +734,7 @@ SUBROUTINE rad_patch_allocate_mem (self, allocator, m_in)
         self%Ieff = tiny(1.0)
     endif
   endif
-END SUBROUTINE rad_patch_allocate_mem
+END SUBROUTINE allocate_mem
 
 !===============================================================================
 SUBROUTINE print_post_update_info (self)

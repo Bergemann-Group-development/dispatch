@@ -26,6 +26,7 @@ MODULE atom_line_patch_mod
     USE ion_mod, only: ion_type
     USE atom_mod, only: atom_type
     USE trans_mod, only: line_type
+    USE m3d_halo_mod, only:lock_mem, unlock_mem
     USE m3d_patch_mod, only: m3d_patch_t, maxiter, comoving_frame
     USE ray_patch_mod, only: ray_patch_t
     USE op_math_mod, only: searchsorted
@@ -261,7 +262,7 @@ MODULE atom_line_patch_mod
     call os%deallocate(inv_df)
     call os%deallocate(vproj)
 
-    call self%add_to_net_opac()
+    !call self%add_to_net_opac()
 
     if (.not. self%out_ray .and. self%iter==0) then
       call self%integrate_wphi()
@@ -274,9 +275,10 @@ MODULE atom_line_patch_mod
     class(atom_line_t) :: self
     real(4), dimension(:,:,:,:), pointer :: nh, chi, eta
     integer :: i, f, p(3), fs, fe, iw, it
+    logical :: compressed
     !-----------------------------------------------------------------------------
-    call self%net_opac%mem_lock(1)%set('add_to_net_opac')
-    call self%net_opac%check_mem()
+    call lock_mem(self%net_opac, 'add_to_net_opac')
+    call self%net_opac%check_mem(locked=.true.)
     do iw=1, self%net_opac%nw
       do it=1, self%net_opac%nt
         do f=1, self%net_opac%nv
@@ -295,7 +297,7 @@ MODULE atom_line_patch_mod
       eta => self%net_opac%authority_mem(:,:,:,:,it,4)
       call self%interpolate_lines(chi, eta, LTE=.true.)
     endif
-    call self%net_opac%mem_lock(1)%unset('add_to_net_opac')
+    ! do not unlock the task here. Net_opac is locked until its update
   END SUBROUTINE add_to_net_opac
 
   !===============================================================================
@@ -306,7 +308,7 @@ MODULE atom_line_patch_mod
     real(4), dimension(:,:,:), pointer, contiguous :: wphi
     integer :: i, k
     !-----------------------------------------------------------------------------
-    call self%m3d_parent%mem_lock(1)%set('integrate_wphi')
+    call lock_mem(self%m3d_parent, 'integrate_wphi')
     atom => self%atom
     if (.not. associated(atom%data%wphi)) then
       call os%allocate(atom%data%wphi, [self%n, atom%nline], zero=.true., label=trim(self%m3d_parent%kind)//'%wphi')
@@ -317,7 +319,7 @@ MODULE atom_line_patch_mod
       wphi = wphi + self%wmu * self%line(i)%wphi
       call os%deallocate(self%line(i)%wphi, label=trim(self%kind)//'%wphi')
     end do
-    call self%m3d_parent%mem_lock(1)%unset('integrate_wphi')
+    call unlock_mem(self%m3d_parent, 'integrate_wphi')
   END SUBROUTINE integrate_wphi
 
   !===============================================================================
@@ -424,11 +426,12 @@ MODULE atom_line_patch_mod
   END SUBROUTINE nbor_relations
 
   !===============================================================================
-  SUBROUTINE allocate_mem(self, allocator, m_in)
+  SUBROUTINE allocate_mem(self, allocator, m_in, label)
     class(atom_line_t) :: self
     class(m3d_patch_t), intent(in), target :: allocator
     class(line_type), pointer :: line
     integer, intent(in), optional :: m_in(6)
+    character(len=*), optional :: label
     integer :: i, fs, fe
     ! ----------------------------------------------------------------------------
     call self%m3d_patch_t%allocate_mem(allocator, m_in)

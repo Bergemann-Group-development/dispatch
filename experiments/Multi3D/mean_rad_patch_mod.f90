@@ -10,6 +10,7 @@ MODULE mean_rad_patch_mod
     USE bits_mod
     USE os_mod
     USE handyfuncs_mod
+    USE m3d_halo_mod, only:lock_mem, unlock_mem
     USE m3d_patch_mod, only:maxiter, m3d_patch_t, comoving_frame, ilambd, preconditioning, save_Qrad
     USE ray_patch_mod, only:ray_patch_t
     USE angle_rad_patch_mod, only:rad_patch_t
@@ -63,10 +64,11 @@ MODULE mean_rad_patch_mod
   END SUBROUTINE init
 
   !===============================================================================
-  SUBROUTINE allocate_mem (self, allocator, m_in)
+  SUBROUTINE allocate_mem (self, allocator, m_in, label)
     class(mean_rad_patch_t):: self
     class(m3d_patch_t), intent(in), target :: allocator
     integer, intent(in), optional :: m_in(6)
+    character(len=*), optional :: label
     !-----------------------------------------------------------------------------
     call self%ray_patch_t%allocate_mem(allocator, m_in)
     self%Psi  => self%mem(:,:,:,:,self%it,2)
@@ -104,17 +106,17 @@ MODULE mean_rad_patch_mod
     !-----------------------------------------------------------------------------
     call trace%begin (trim(self%kind)//'%update', itimer=itimer)
     if (comoving_frame) then
-      call self%opac%mem_lock(1)%set_read('mean_rad_update')
+      call lock_mem( self%opac, 'mean_rad_update')
       call self%check_access(self%opac)
 
       do f=1, self%nv
         xx => self%opac%mem(:,:,:,f,self%it,self%i_chi)
         self%Psi(:,:,:,f) = self%Psi(:,:,:,f) / xx
       end do
-      call self%opac%mem_lock(1)%unset_read('mean_rad_update')
+      call unlock_mem( self%opac, 'mean_rad_update', read=.true.)
 
       if (preconditioning) then
-        call self%back_cont%mem_lock(1)%set_read('mean_rad_update')
+        call lock_mem( self%back_cont, 'mean_rad_update', read=.true.)
         call self%check_access(self%back_cont)
       endif
 
@@ -127,7 +129,7 @@ MODULE mean_rad_patch_mod
         endif
       end do
 
-      if (preconditioning) call self%back_cont%mem_lock(1)%unset_read('mean_rad_update')
+      if (preconditioning) call unlock_mem( self%back_cont, 'mean_rad_update', read=.true.)
     endif
     call trace%end(itimer)
   END SUBROUTINE execute

@@ -100,6 +100,8 @@ MODULE back_line_patch_mod
 
     if (needed .or. needs_me) then
       select type(another)
+      class is (back_line_patch_t)
+        ! do nothing
       class is (m3d_patch_t)
         if (another%id == self%m3d_parent%id) then
           needs_me = .false.
@@ -128,7 +130,10 @@ MODULE back_line_patch_mod
     integer :: i, i_nu, i_mu, key(4)
     !-----------------------------------------------------------------------------
     call trace%begin('back_line_patch_t%init_nbors_hash', itimer=itimer)
+    self%interest%l = self%authority%l - self%ds
+    self%interest%u = self%authority%u + self%ds
     call self%m3d_patch_t%init_nbors_hash(nbors)
+    call self%ray_patch_t%init_nbors_hash(nbors)
   
     key(1:3) = self%key(1:3)
     key(4) = hash_string('net_opac')

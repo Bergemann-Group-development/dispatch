@@ -31,6 +31,7 @@ MODULE net_opac_patch_mod
     USE atom_cont_patch_mod, only:atom_cont_patch_t
     USE atom_line_patch_mod, only:atom_line_t
     USE back_line_patch_mod, only:back_line_patch_t
+    USE m3d_halo_mod, only: lock_mem, unlock_mem
     USE m3d_patch_mod, only:maxiter, m3d_patch_t, comoving_frame, linear_long, &
                             interp_log, ray_offset, pivot_z
     USE m3d_debug_mod
@@ -85,7 +86,7 @@ MODULE net_opac_patch_mod
     class(task_t), pointer:: nbtask
     real(4), dimension(:,:,:,:,:,:), pointer :: mem
     real(4), dimension(:,:,:,:), pointer :: chi, eta, Snu
-    integer :: iw,it, f, fs, fe, fn, x, y, z, iiw, nw, p(3)
+    integer :: iw, it, f, fs, fe, fn, x, y, z, iiw, nw, p(3)
     integer, save :: itimer=0
     !-----------------------------------------------------------------------------
     call trace%begin (trim(self%kind)//'%update', itimer=itimer)
@@ -109,9 +110,17 @@ MODULE net_opac_patch_mod
         nbtask => nbor%task
         select type (nbtask)
         class is (atom_line_t)
-          ! chi and eta have already been added
+          it = self%it
+          chi => self%authority_mem(:,:,:,:,it,1)
+          eta => self%authority_mem(:,:,:,:,it,2)
+          call nbtask%interpolate_lines(chi, eta, LTE=.false.)
+          if (self%out_ray) then
+            chi => self%authority_mem(:,:,:,:,it,3)
+            eta => self%authority_mem(:,:,:,:,it,4)
+            call nbtask%interpolate_lines(chi, eta, LTE=.true.)
+          endif
         class is (ray_patch_t)
-          call nbtask%mem_lock(1)%set_read('net_opac_update')
+          call lock_mem( nbtask, 'net_opac_update', read=.true.)
           call self%check_access(nbtask)
           fs = nbtask%fs - self%fs + 1
           fe = fs + nbtask%nv - 1
@@ -135,7 +144,7 @@ MODULE net_opac_patch_mod
           end do
           end do
           end do
-          call nbtask%mem_lock(1)%unset_read('net_opac_update')
+          call unlock_mem( nbtask, 'net_opac_update', read=.true.)
         end select
       endif
       nbor => nbor%next

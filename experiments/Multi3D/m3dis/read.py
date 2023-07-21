@@ -361,6 +361,18 @@ class read(object):
         plt.ylim(ymin, occu.max() + (ymax-ymin)/5)
 
     #=====================================================================
+    def plot_surface(self, i, cmap='hot', **kwargs):
+        i3 = self.i3[0]
+
+        if not 'extent' in kwargs.keys():
+            if self.xx.size > 1 and self.yy.size > 1:
+                extent = [0, self.xx[-1], 0, self.yy[-1]]
+                plt.xlabel('Mm')
+                plt.ylabel('Mm')
+
+        plt.imshow(i3[:,:,i], cmap=cmap, extent=extent, **kwargs)
+
+    #=====================================================================
     def get_populations(self):
         mem = self.read_patch_save('atom_patch')[0]
         lte  = mem[...,0]

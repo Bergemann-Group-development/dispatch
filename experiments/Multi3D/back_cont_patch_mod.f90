@@ -10,8 +10,9 @@ MODULE back_cont_patch_mod
     USE bits_mod
     USE os_mod
     USE handyfuncs_mod
+    USE m3d_halo_mod, only:lock_mem, unlock_mem
     USE m3d_patch_mod, only: maxiter, m3d_patch_t, save_back_cont, comoving_frame, &
-    ilambd, line_blanketing, binned_opac, dlam
+    ilambd, line_blanketing, binned_opac, dlam, absmet_in_output
     USE ray_patch_mod, only: ray_patch_t
     USE composition_mod, only: composition_type
     USE optab_mod, only: optab
@@ -47,7 +48,7 @@ MODULE back_cont_patch_mod
     call self%ray_patch_t%pre_init()
 
     self%static_mem = save_back_cont
-    self%include_absmet = .not. self%out_ray
+    self%include_absmet = (.not. self%out_ray) .or. (absmet_in_output)
   
     self%ng = 0
     nw = merge(4, 2, save_back_cont)
@@ -103,12 +104,12 @@ MODULE back_cont_patch_mod
       endif
 
       if (scattering_from_Jnu .and. self%iter > 0) then
-        call self%mean_rad%mem_lock(1)%set ('back_cont_update')
+        call lock_mem (self%mean_rad, 'back_cont_update')
         call self%check_access(self%mean_rad)
         Jold => self%mean_rad%authority_mem(:,:,:,:,self%mean_rad%it,1)
         call self%composition%scattering(nu, abslte, eta, sumsca, Jold)
         call self%mean_rad%deallocate_mem(self, print=.true.)
-        call self%mean_rad%mem_lock(1)%unset ('back_cont_update')
+        call unlock_mem (self%mean_rad, 'back_cont_update')
       else
         call self%composition%scattering(nu, abslte, eta, sumsca)
       endif

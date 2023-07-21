@@ -2475,7 +2475,7 @@ SUBROUTINE real_queue_by_time (self, this, istep, error)
   class(list_t):: self
   class(link_t), pointer:: this
   integer:: istep
-  logical:: error
+  logical:: error, ok
   class(link_t), pointer:: next, prev, link
   class(task_t), pointer:: task
   character(16):: label
@@ -2484,28 +2484,26 @@ SUBROUTINE real_queue_by_time (self, this, istep, error)
   ! Refuse to queue virtual tasks
   !-----------------------------------------------------------------------------
   error=.false.
+  ok = .true.
   task => this%task
   ignore = bits%virtual + bits%external + bits%frozen + bits%remove
   if (task%is_set (ignore) .or. task%rank /= mpi%rank) then
-    write(stderr,'(2i6,4x,a,2x,4l1)') task%rank, mpi%rank, omp%thread, &
+    write(stderr,'(3i6,4x,a,2x,4l1)') task%rank, mpi%rank, omp%thread, &
       'ERROR: tried to queue virtual, frozen or removed task, VFRE=', &
       task%is_set(bits%virtual), task%is_set(bits%frozen), &
       task%is_set(bits%remove), task%is_set(bits%external)
-    write(io_unit%log,'(2i6,4x,a,2x,4l1)') task%rank, mpi%rank, omp%thread, &
+    write(io_unit%log,'(3i6,4x,a,2x,4l1)') task%rank, mpi%rank, omp%thread, &
       'ERROR: tried to queue virtual, frozen or removed task, VFRE=', &
       task%is_set(bits%virtual), task%is_set(bits%frozen), &
       task%is_set(bits%remove), task%is_set(bits%external)
     return
   end if
   !-----------------------------------------------------------------------------
-  !$omp atomic
-  mpi_mesg%n_ready = mpi_mesg%n_ready+1
-  !-----------------------------------------------------------------------------
   ! Lock the queue while inserting the task, and mark the task as being in the
   ! ready queue (or executing -- the bit is cleared only after updating).
   ! Double check that no other thread has set the ready bit on this task.
   !-----------------------------------------------------------------------------
-  if (task%is_clear (bits%ready) .or. task%id == omp%thread_task) then
+  if (task%is_clear (bits%ready)) then
     if (self%verbose > 1 .and. task%id == omp%thread_task) then
       write (stdlog,'(a,i6,":",i2.2)') 'queue_by_time: self-schedule task', &
         task%id, task%level
@@ -2518,7 +2516,7 @@ SUBROUTINE real_queue_by_time (self, this, istep, error)
     ! and started running in the meantime.
     !---------------------------------------------------------------------------
     if (task%is_set (bits%ready+bits%busy)) then
-      call task%log ('reject2', 4)
+      call task%log ('reject1', 2)
       return
     end if
     !---------------------------------------------------------------------------
@@ -2538,54 +2536,11 @@ SUBROUTINE real_queue_by_time (self, this, istep, error)
           write (io_unit%log,*) omp%thread, ' WARNING: task', task%id, &
             ' is already in ready queue'
         !.......................................................................
-        call task%log ('reject4', 4)
-        go to 9
-      else if (next%task%time >= task%time) then
-        !-----------------------------------------------------------------------¨
-        ! Check one more time if the task busy bit has been set in the meantime
-        !-----------------------------------------------------------------------
-        if (task%is_set(bits%busy+bits%ready)) then
-          call task%log ('reject5', 2)
-          go to 9
-        end if
-        if (task%istep /= istep) then
-          call task%log ('reject6', 2)
-          go to 9
-        end if
-        !-----------------------------------------------------------------------
-        ! Set the ready bit, and actually queue the task.  The ready bit is to
-        ! be used only as advice that this task is either in the queue or else
-        ! is being updated, and that it should therefore not be tested or queued
-        !-----------------------------------------------------------------------
-        call task%log ('set ready', 3)
-        call this%task%set (bits%ready)
-        this%next_time => next
-        if (associated(prev)) then
-          !.....................................................................
-          if (self%verbose > 1) &
-            write (io_unit%log,'(i4,2x,a,i6,a,i6,i5,1p,3g16.6)') &
-              omp%thread, 'task',task%id,' in ready queue between', &
-              prev%task%id,next%task%id, prev%task%time, this%task%time, &
-              next%task%time
-          !.....................................................................
-          prev%next_time => this
-        else
-          self%queue => this
-          !.....................................................................
-          if (self%verbose > 1) &
-            write (io_unit%log,*) 'task',task%id,' at ready queue head',self%nq
-          !.....................................................................
-        end if
-        this%prev_time => prev
-        !$omp atomic capture
-        self%nq = self%nq+1
-        nq = self%nq
-        !$omp end atomic
-        if (io%task_logging > 3) then
-          write (label,'("queue1",i7)') nq
-          call this%task%log (label, 4)
-        end if
-        go to 9
+        call task%log ('reject2', 2)
+        ok = .false.
+        exit
+      else if (next%task%time > task%time) then
+        exit
       end if
       prev => next
       next => next%next_time
@@ -2595,7 +2550,7 @@ SUBROUTINE real_queue_by_time (self, this, istep, error)
       !$omp atomic read
       nq = self%nq
       if (n > nq) then
-        write (io_unit%log,*) 'WARNING:  queue_by_time, nq,n=', self%nq, n
+        write (stdlog,*) 'WARNING:  queue_by_time, nq,n=', self%nq, n
       end if
     end if
     !---------------------------------------------------------------------------
@@ -2604,59 +2559,89 @@ SUBROUTINE real_queue_by_time (self, this, istep, error)
     ! has been delayed or suspended)
     !---------------------------------------------------------------------------
     if (task%is_set(bits%busy+bits%ready)) then
-      call task%log ('reject7', 2)
-      go to 9
+      call task%log ('reject3', 2)
+      ok = .false.
     end if
     if (task%istep /= istep) then
-      call task%log ('reject8', 2)
-      go to 9
+      call task%log ('reject3', 2)
+      ok = .false.
     end if
     !---------------------------------------------------------------------------
-    ! No place found, so add after prev if exists, or else at head
+    ! If OK, add the task to the queue, AFTER setting the %ready bit
     !---------------------------------------------------------------------------
-    !$omp atomic capture
-    self%nq = self%nq+1
-    nq = self%nq
-    !$omp end atomic
-    call this%task%set (bits%ready)
-    if (io%task_logging > 3) then
-      write (label,'("queue2",i7)') nq
-      call task%log (label, 4)
-    end if
-    if (associated(prev)) then
-      call task%log ('set ready(t)', 3)
-      if (self%verbose > 0) then
-        1 format(1x,a,3(a,i6,1x,a,5x))
-        write (io_unit%log,1) 'list_t%queue_by_time: ', &
-        'task',task%id, trim(task%kind), 'in queue after', prev%task%id, trim(prev%task%kind), 'nq:', nq
+    if (ok) then
+      !-------------------------------------------------------------------------
+      ! Keep track of queue size
+      !-------------------------------------------------------------------------
+      !$omp atomic capture
+      self%nq = self%nq+1
+      nq = self%nq
+      !$omp end atomic
+      !-------------------------------------------------------------------------
+      ! Set the ready bit before actually queuing the task.  The ready bit is
+      ! used only as advice that this task is either in the queue or else
+      ! is being updated, and that it should therefore not be tested or queued
+      !-------------------------------------------------------------------------
+      call task%set (bits%ready)
+      call task%log ('set ready', 2)
+      if (associated(next)) then
+        this%next_time => next
+        this%prev_time => prev
+        if (associated(prev)) then
+          prev%next_time => this
+          call task%log ('queue1', 2)
+          !.....................................................................
+          if (self%verbose > 1) &
+            write (stdlog,1) 'queue_by_time: id=', task%id, 'nq=', nq, &
+            'between', prev%task%id, 'and', next%task%id
+          1 format(1x,4(a,i6,5x))
+        else
+          self%queue => this
+          call task%log ('queue2', 2)
+          !.....................................................................
+          if (self%verbose > 1) &
+            write (stdlog,1) 'queue_by_time: id=', task%id, 'nq=', nq, &
+            'at head'
+        end if
+      !-------------------------------------------------------------------------
+      ! No place found, so add after prev if exists, or else at head
+      !-------------------------------------------------------------------------
+      else
+        this%prev_time => prev
+        nullify (this%next_time)
+        if (associated(prev)) then
+          prev%next_time => this
+          call task%log ('queue3', 2)
+          !.....................................................................
+          if (self%verbose > 0) then
+            write (stdlog,1) 'queue_by_time: id=', task%id, 'nq=', nq, &
+            'after', prev%task%id
+          end if
+        else
+          self%queue => this
+          call task%log ('queue4', 2)
+          !.....................................................................
+          if (self%verbose > 0) then
+            write (stdlog,1) 'queue_by_time: id=', task%id, 'nq=', nq, &
+            'is queue'
+          end if
+        end if
       end if
-      prev%next_time => this
-    else
-      call task%log ('set ready(h)', 3)
-      if (self%verbose > 0) then
-        write (io_unit%log,1) 'list_t%queue_by_time: ', &
-        'task', task%id, trim(task%kind), 'at queue head    nq:', nq
-      end if
-      self%queue => this
+      !-------------------------------------------------------------------------
+      !task%ostep = task%istep
+      !$omp atomic
+      mpi_mesg%n_ready = mpi_mesg%n_ready+1
+      call self%remove_active (this)                 ! remove from active_queue
     end if
-    this%prev_time => prev
-    nullify (this%next_time)
-    !...........................................................................
-    if (self%verbose > 1) then
-      write (io_unit%queue,'(f12.6,i4,1x,a12,i7,":",i2.2,f12.6,i4,2i6)') &
-      wallclock(), omp%thread, 'queued', task%id, task%level, task%time, &
-      task%thread, task%istep, nq
-    end if
-  9 continue
     call                                      self%qlock%unset ('queue_by_time')
-    call self%remove_active (this)                    ! remove from active_queue
   !-----------------------------------------------------------------------------
   ! Since we clear the ready bit in task_list%update, outside of any critical
   ! region, it is perfectly normal that several threads compete about putting
   ! a given task onto the queue, so there is no reason to print a warning here
   !-----------------------------------------------------------------------------
   else
-    call task%log ('reject3', 4)
+    ok = .false.
+    call task%log ('reject5', 2)
   end if
 END SUBROUTINE real_queue_by_time
 

@@ -18,6 +18,7 @@ MODULE m3d_halo_mod
     USE omp_timer_mod
     USE bits_mod
     USE guards_mod
+    USE handyfuncs_mod, only:option
     implicit none
     private
   
@@ -37,6 +38,9 @@ MODULE m3d_halo_mod
     end type
 
     logical, public, save :: print_finished=.false., print_download=.false.
+    logical, public, save :: print_lock=.false.
+
+    public :: lock_mem, unlock_mem
 
 CONTAINS
 
@@ -85,11 +89,38 @@ CONTAINS
     logical, optional       :: all_tgt, all_src
     integer, optional       :: only
     !-----------------------------------------------------------------------------
-    call self%task%clear(bits%ignore)
     call self%task%pre_update()
     !call self%halo_t%update(all_tgt, all_src, only)
     call halo_update(self, all_tgt, all_src, only)
   END SUBROUTINE update
+
+  !===============================================================================
+  SUBROUTINE lock_mem (self, label, read)
+    class(patch_t) :: self
+    character(len=*) :: label
+    logical, optional :: read
+    !-----------------------------------------------------------------------------
+    if (option(read, .false.)) then
+      call self%mem_lock(1)%set_read (label)
+    else
+      call self%mem_lock(1)%set (label)
+    endif
+    if (print_lock) print '(A20, I6, A10)', trim(self%kind), self%id, 'locked'
+  END SUBROUTINE lock_mem
+
+  !===============================================================================
+  SUBROUTINE unlock_mem (self, label, read)
+    class(patch_t) :: self
+    character(len=*) :: label
+    logical, optional :: read
+    !-----------------------------------------------------------------------------
+    if (option(read, .false.)) then
+      call self%mem_lock(1)%unset_read (label)
+    else
+      call self%mem_lock(1)%unset (label)
+    endif
+    if (print_lock) print '(A20, I6, A10)', trim(self%kind), self%id, 'unlocked'
+  END SUBROUTINE unlock_mem
 
   !===============================================================================
   !> Comprehensive entry point
@@ -168,11 +199,11 @@ CONTAINS
     class is (patch_t)
       select type (source)
       class is (patch_t)
-        call source%mem_lock(1)%set_read('source_to_target')
-        call target%mem_lock(1)%set('source_to_target')
+        call lock_mem(source, 'source_to_target', read=.true.)
+        !call lock_mem(target, 'source_to_target')
         call self%same(target, source, only=only)
-        call target%mem_lock(1)%unset('source_to_target')
-        call source%mem_lock(1)%unset_read('source_to_target')
+        !call unlock_mem(target, 'source_to_target')
+        call unlock_mem(source, 'source_to_target', read=.true.)
       end select
     end select
     call trace%end (itimer=itimer)

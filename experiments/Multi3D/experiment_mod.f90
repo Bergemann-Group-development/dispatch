@@ -146,8 +146,8 @@ SUBROUTINE init (self)
   call trace%begin('experiment_t%init', itimer=itimer)
   call self%patch_t%init()
 
-  thread = mod(self%ipos(3),omp%nthreads)
-  self%place = thread2place(thread, omp%ncores, omp%nthreads)+100
+  !thread = mod(self%ipos(3),omp%nthreads)
+  !self%place = thread2place(thread, omp%ncores, omp%nthreads)+100
   !self%place    = -1
 
   li = self%li
@@ -208,10 +208,14 @@ END SUBROUTINE bndries
 SUBROUTINE pre_update (self)
   class(experiment_t), target:: self
   integer, save:: itimer=0
+  logical :: ready, busy
   !----------------------------------------------------------------------------
   call self%task_t%pre_update()
   call self%set(bits%no_download)
-  write(io_unit%dispatcher, '(F17.8, I3, 1x, A3, 1x, A)') wallclock(), mpi%rank, 'PRE', self%patch_info()
+  ready = self%is_set(bits%ready)
+  busy  = self%is_set(bits%busy)
+  write(io_unit%dispatcher, '(F17.8, I3, 1x, A3, 1x, 2(L1), 1x, A)') &
+  wallclock(), mpi%rank, 'PRE', ready, busy, self%patch_info()
 END SUBROUTINE pre_update
 
 !===============================================================================
