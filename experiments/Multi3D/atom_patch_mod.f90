@@ -21,7 +21,7 @@ MODULE atom_patch_mod
     !USE units_mod
     !USE scratch_mod
     USE handyfuncs_mod
-    USE atom_cont_patch_mod, only: atom_cont_patch_t
+    USE atom_cont_patch_mod, only: atom_cont_t
     USE angle_rad_patch_mod, only: rad_patch_t
     USE atom_rate_patch_mod, only: atom_rate_t
     USE atom_mod, only: atom_type, atomic_spectrum_type, use_classic_col, kramer_bf, debye_shield, &
@@ -127,7 +127,7 @@ MODULE atom_patch_mod
     class(atom_type), intent(in), target :: atom
     class(atomic_spectrum_type), intent(in), pointer :: sp
     class(atom_rate_t), pointer :: rate
-    class(atom_cont_patch_t), pointer :: cont
+    class(atom_cont_t), pointer :: cont
     class(atom_line_t), pointer :: line
     integer :: n, m
     logical :: cf, dc, new_cont, new_line, new_rate
@@ -741,7 +741,7 @@ MODULE atom_patch_mod
         else
           needs_me = .false.
         endif
-      class is (atom_cont_patch_t)
+      class is (atom_cont_t)
         needed = .false.
         if (another%atom%id /= self%atom%id) then
           needs_me = .false.

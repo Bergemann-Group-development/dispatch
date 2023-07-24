@@ -53,6 +53,7 @@ MODULE ray_patch_mod
     procedure :: init_nbors_hash
     procedure :: frequency_padding
     procedure :: init_bdries
+    procedure :: bndries
   end type ray_patch_t
 
   !-----------------------------------------------------------------------------
@@ -657,5 +658,40 @@ SUBROUTINE init_nbors_hash (self, nbors)
   call self%check_nbor(key, nbors)
   call trace%end (itimer)
 END SUBROUTINE init_nbors_hash
+
+  !===============================================================================
+  SUBROUTINE bndries (self)
+    class(ray_patch_t) :: self
+    integer :: i, j, k, iv, iw, b, it, ng
+    real(4) :: xxold(3), xxnew(self%ng(3))
+    real(4), dimension(:,:,:,:,:,:), pointer :: mem
+    ! ----------------------------------------------------------------------------
+    if (self%ng(3) == 0) return
+    it = self%it
+    ng = self%ng(3)
+    mem => self%mem
+
+    if (self%boundaries%is_set(bits%zu)) then
+        b = self%ui(3)
+        mem(:,:,b+1:b+ng,:,:,:) = 0.
+    endif
+
+    if (self%boundaries%is_set(bits%zl)) then
+        b = self%li(3)
+        xxold = [(i*self%ds(3), i=1, 3)]
+        xxnew = [(i*self%ds(3), i=1-ng, 0)]
+        do iw=1, self%nw
+        do iv=1, self%nv
+        do j=1,  self%gn(2)
+        do i=1,  self%gn(1)
+          call pchip_mono(xxold, mem(i,j,b:b+2,   iv,it,iw), &
+                          xxnew, mem(i,j,b-ng:b-1,iv,it,iw), sorted=.true.)
+          mem(i,j,b-ng:b-1,iv,it,iw) = max(mem(i,j,b-ng:b-1,iv,it,iw), 0.)
+        end do
+        end do
+        end do
+        end do
+    endif
+  END SUBROUTINE bndries
 
 END MODULE ray_patch_mod

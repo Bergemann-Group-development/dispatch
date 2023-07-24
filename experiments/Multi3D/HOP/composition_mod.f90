@@ -821,7 +821,7 @@ contains
         class(isotope_type), pointer :: iso
         class(bbtrans_type), pointer :: line
         real(8), intent(in), dimension(:), pointer, contiguous :: nu
-        real(4), intent(in), dimension(:,:,:,:), pointer, contiguous :: all_eta, all_chi
+        real(4), intent(in), dimension(:,:,:,:), pointer :: all_eta, all_chi
         real(4), intent(in), dimension(:,:,:), contiguous :: vproj
         real(8), intent(in) :: dlam
         real(4), dimension(:,:,:), allocatable :: tothi, adamp, stark_pe
@@ -829,10 +829,12 @@ contains
         real(4), dimension(:,:,:), pointer, contiguous :: iso_vbar2, iso_inv_df, iso_inv_part
         real(4), dimension(:,:,:), pointer, contiguous :: ne, temp, EK_over_temp, dxij
         real(4), dimension(:,:,:), pointer, contiguous :: vb2, idopf, ipart, eta_fac, chi_fac
-        real(4), dimension(:,:,:,:), pointer, contiguous :: eta, chi, nh
+        real(4), dimension(:,:,:,:), pointer :: eta, chi
+        real(4), dimension(:,:,:,:), pointer, contiguous :: nh
         integer :: i, j, k, l, f, ired, iblue, nactive, prev_iso, m(3)
         real(8) :: cnt_ev, gf, awgt, iso_awgt, dl
         real(4) :: scalar
+        logical, dimension(:), allocatable :: fmask
         integer, save:: itimer=0, itimer2=0
         !---------------------------------------------------------------------------
         allocate(ne,              mold=vproj)
@@ -851,6 +853,7 @@ contains
         allocate(eta_fac,         mold=vproj)
         allocate(chi_fac,         mold=vproj)
         allocate(dxij,            mold=vproj)
+        allocate(fmask(size(nu)), source=.false.)
         m = shape(vproj)
         allocate(nh(m(1), m(2), m(3), 6))
         call self%get_nhyd(nh)
@@ -883,8 +886,9 @@ contains
                     call line%get_range(nu, dlam, ired, iblue)
                     if (iblue == 0) cycle
     
-                    eta => all_eta(:,:,:,ired:iblue)
+                    !eta => all_eta(:,:,:,ired:iblue)
                     chi => all_chi(:,:,:,ired:iblue)
+                    fmask(ired:iblue) = .true.
     
                     if (line%iso_idx /= prev_iso) then
                       prev_iso = line%iso_idx
@@ -909,7 +913,7 @@ contains
                     endif
                     call trace%end(itimer2)
                     call line%add_lte_opacities(nu(ired:iblue), &
-                          vproj, idopf, EK_over_temp, dxij, ipart, adamp, eta_fac, chi_fac, eta, chi)
+                          vproj, idopf, EK_over_temp, dxij, ipart, adamp, chi_fac, chi)
                 end do
             end do
         end do
@@ -930,18 +934,26 @@ contains
                 call line%get_range(nu, dlam, ired, iblue)
                 if (iblue == 0) cycle
       
-                eta => all_eta(:,:,:,ired:iblue)
+                !eta => all_eta(:,:,:,ired:iblue)
                 chi => all_chi(:,:,:,ired:iblue)
+                fmask(ired:iblue) = .true.
       
                 call trace%begin('bbtrans_type%damping', itimer=itimer2)
                 adamp = 0
                 call line%damping(adamp, ne, tothi, vbar2, stark_pe)
                 call trace%end(itimer2)
                 call line%add_lte_opacities(nu(ired:iblue), &
-                      vproj, inv_df, EK_over_temp, dxij, inv_part, adamp, eta_fac, chi_fac, eta, chi)
+                      vproj, inv_df, EK_over_temp, dxij, inv_part, adamp, chi_fac, chi)
             end do
         end do
 
+        do f=1, size(nu)
+            if (fmask(f)) then
+                all_eta(:,:,:,f) = planck(nu(f), self%temp) * all_chi(:,:,:,f)
+            endif
+        end do
+
+        deallocate(fmask)
         deallocate(ne)
         deallocate(temp)
         deallocate(EK_over_temp)

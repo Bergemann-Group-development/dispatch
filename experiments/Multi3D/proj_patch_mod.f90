@@ -87,7 +87,7 @@ MODULE proj_patch_mod
     endif
     call unlock_mem( self%net_opac, 'proj_patch_update', read=.true.)
 
-    call self%boundaries%extrap()
+    call self%bndries()
     call self%periodic_grid()
     call trace%end(itimer)
   END SUBROUTINE execute

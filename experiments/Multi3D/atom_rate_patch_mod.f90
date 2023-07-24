@@ -116,6 +116,9 @@ MODULE atom_rate_patch_mod
     else
       self%update_skipped = .true.
     endif
+
+    call os%deallocate(self%rad%Psi,  trim(self%rad%kind)//'%Psi')
+    call os%deallocate(self%rad%Ieff, trim(self%rad%kind)//'%Ieff')
     
     call unlock_mem(self%rad, 'atom_rate_update', read=.true.)
 

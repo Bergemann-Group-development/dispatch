@@ -29,7 +29,6 @@ MODULE boundaries_mod
     ! Experiment - specific procedures
     ! --------------------------------------------------------------------------
     procedure:: mirror
-    procedure:: extrap
   end type
   integer, save:: verbose=1
 CONTAINS
@@ -52,52 +51,5 @@ SUBROUTINE mirror(self)
       self%patch%mem(:,:,b,:,it,:) = self%patch%mem(:,:,b+1,:,it,:)
   endif
 END SUBROUTINE mirror
-
-!===============================================================================
-SUBROUTINE extrap(self)
-  class(boundaries_t):: self
-  integer :: i, j, k, iv, iw, b, it, ng
-  real(4) :: xxold(3), xxnew(self%patch%ng(3))
-  real(4), dimension(:,:,:,:,:,:), pointer :: mem
-  ! ----------------------------------------------------------------------------
-  if (self%patch%ng(3) == 0) return
-  it = self%patch%it
-  ng = self%patch%ng(3)
-  mem => self%patch%mem
-
-  if (self%is_set(bits%zu)) then
-      b = self%patch%ui(3)
-      xxold = [(i*self%patch%ds(3), i=1, 3)]
-      xxnew = [(i*self%patch%ds(3), i=4, 3+ng)]
-      do iw=1, self%patch%nw
-      do iv=1, self%patch%nv
-      do j=1,  self%patch%gn(2)
-      do i=1,  self%patch%gn(1)
-        call pchip_mono(xxold, mem(i,j,b-2:b,   iv,it,iw), &
-                        xxnew, mem(i,j,b+1:b+ng,iv,it,iw), sorted=.true.)
-        mem(i,j,b+1:b+ng,iv,it,iw) = max(mem(i,j,b+1:b+ng,iv,it,iw), 0.)
-      end do
-      end do
-      end do
-      end do
-  endif
-
-  if (self%is_set(bits%zl)) then
-      b = self%patch%li(3)
-      xxold = [(i*self%patch%ds(3), i=1, 3)]
-      xxnew = [(i*self%patch%ds(3), i=1-ng, 0)]
-      do iw=1, self%patch%nw
-      do iv=1, self%patch%nv
-      do j=1,  self%patch%gn(2)
-      do i=1,  self%patch%gn(1)
-        call pchip_mono(xxold, mem(i,j,b:b+2,   iv,it,iw), &
-                        xxnew, mem(i,j,b-ng:b-1,iv,it,iw), sorted=.true.)
-        mem(i,j,b-ng:b-1,iv,it,iw) = max(mem(i,j,b-ng:b-1,iv,it,iw), 0.)
-      end do
-      end do
-      end do
-      end do
-  endif
-END SUBROUTINE extrap
 
 END MODULE boundaries_mod

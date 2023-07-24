@@ -17,23 +17,23 @@ MODULE atom_cont_patch_mod
     private
   
     !-----------------------------------------------------------------------------
-    type, public, extends(ray_patch_t) :: atom_cont_patch_t
+    type, public, extends(ray_patch_t) :: atom_cont_t
     contains
       procedure :: pre_init => atom_cont_pre_init
       procedure :: execute
       procedure :: nbor_relations
       procedure :: init_nbors_hash
-    end type atom_cont_patch_t
+    end type atom_cont_t
       
   contains
   
   !===============================================================================
   SUBROUTINE atom_cont_pre_init (self)
-    class(atom_cont_patch_t), target:: self
+    class(atom_cont_t), target:: self
     integer :: nw, fs, fe
     integer, save :: itimer=0
     ! ----------------------------------------------------------------------------
-    call trace%begin('atom_cont_patch_t%opacity_pre_init', itimer=itimer)
+    call trace%begin('atom_cont_t%opacity_pre_init', itimer=itimer)
     self%kind = 'atom_cont'
     call self%ray_patch_t%pre_init()
   
@@ -57,7 +57,7 @@ MODULE atom_cont_patch_mod
   
   !===============================================================================
   SUBROUTINE execute (self)
-    class(atom_cont_patch_t) :: self
+    class(atom_cont_t) :: self
     real(4), dimension(:,:,:,:), pointer, contiguous :: chi, eta
     real(4), dimension(:,:,:), pointer, contiguous :: temp
     integer, save :: itimer=0
@@ -77,14 +77,14 @@ MODULE atom_cont_patch_mod
   
   !===============================================================================
   SUBROUTINE nbor_relations(self, another, needed, needs_me, download)
-    class(atom_cont_patch_t) :: self
+    class(atom_cont_t) :: self
     class(task_t), pointer :: another        ! another task in the list
     logical :: needed, needs_me, download    ! Is the other task: needed, 
                                              ! does it need me, should I download?
     class(task_t), pointer :: other
     logical :: default
     ! ----------------------------------------------------------------------------
-    call trace%begin ('atom_cont_patch_t%nbor_relations')
+    call trace%begin ('atom_cont_t%nbor_relations')
     call self%ray_patch_t%nbor_relations(another, needed, needs_me, download)
   
     if (needed .or. needs_me) then
@@ -108,7 +108,7 @@ MODULE atom_cont_patch_mod
   !> Fast method to generate nbor lists in cases with very long task lists
   !===============================================================================
   SUBROUTINE init_nbors_hash (self, nbors)
-    class(atom_cont_patch_t):: self
+    class(atom_cont_t):: self
     class(nbor_t), pointer:: nbors
     !.............................................................................
     class(task_t), pointer:: task
@@ -116,7 +116,7 @@ MODULE atom_cont_patch_mod
     integer, save:: itimer=0
     integer :: key(4), i_mu, mu_start, mu_stop
     !-----------------------------------------------------------------------------
-    call trace%begin('atom_cont_patch_t%init_nbors_hash', itimer=itimer)
+    call trace%begin('atom_cont_t%init_nbors_hash', itimer=itimer)
     call self%m3d_patch_t%init_nbors_hash(nbors)
   
     if (comoving_frame .and. .not. self%out_ray) then

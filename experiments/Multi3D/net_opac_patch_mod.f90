@@ -27,13 +27,12 @@ MODULE net_opac_patch_mod
     USE mmath, only: cc_kernel
     USE handyfuncs_mod
     USE ray_patch_mod, only:ray_patch_t
-    USE back_cont_patch_mod, only:back_cont_patch_t
-    USE atom_cont_patch_mod, only:atom_cont_patch_t
+    USE back_cont_patch_mod, only:back_cont_t
+    USE atom_cont_patch_mod, only:atom_cont_t
     USE atom_line_patch_mod, only:atom_line_t
-    USE back_line_patch_mod, only:back_line_patch_t
     USE m3d_halo_mod, only: lock_mem, unlock_mem
     USE m3d_patch_mod, only:maxiter, m3d_patch_t, comoving_frame, linear_long, &
-                            interp_log, ray_offset, pivot_z
+                            interp_log, ray_offset, pivot_z, dlam
     USE m3d_debug_mod
     implicit none
     private
@@ -86,8 +85,10 @@ MODULE net_opac_patch_mod
     class(task_t), pointer:: nbtask
     real(4), dimension(:,:,:,:,:,:), pointer :: mem
     real(4), dimension(:,:,:,:), pointer :: chi, eta, Snu
+    real(4), dimension(:,:,:), pointer, contiguous :: vproj
+    real(8), dimension(:), pointer, contiguous :: nu
     integer :: iw, it, f, fs, fe, fn, x, y, z, iiw, nw, p(3)
-    integer, save :: itimer=0
+    integer, save :: itimer=0, itimer2=0
     !-----------------------------------------------------------------------------
     call trace%begin (trim(self%kind)//'%update', itimer=itimer)
     mem => self%authority_mem
@@ -104,6 +105,21 @@ MODULE net_opac_patch_mod
       end do
     endif
 
+    nu  => self%sp%nu(self%fs:self%fe)
+
+    if (self%out_ray .and. self%composition%ll_initialised) then
+      chi => self%authority_mem(:,:,:,:,1,1)
+      eta => self%authority_mem(:,:,:,:,1,2)
+      call os%allocate(vproj, self%n)
+      call self%comp_vproj(vproj)
+      call trace%begin ('add_linelist_opacities', itimer=itimer2)
+      call self%composition%add_linelist_opacities(nu, eta, chi, vproj, dlam)
+      call trace%end (itimer2)
+      call os%deallocate(vproj)
+      self%authority_mem(:,:,:,:,1,3) = chi
+      self%authority_mem(:,:,:,:,1,4) = eta
+    endif
+
     nbor => self%link%nbor
     do while (associated(nbor))
       if (nbor%needed .and. .not. nbor%download) then
@@ -111,13 +127,17 @@ MODULE net_opac_patch_mod
         select type (nbtask)
         class is (atom_line_t)
           it = self%it
-          chi => self%authority_mem(:,:,:,:,it,1)
-          eta => self%authority_mem(:,:,:,:,it,2)
-          call nbtask%interpolate_lines(chi, eta, LTE=.false.)
           if (self%out_ray) then
+            chi => self%authority_mem(:,:,:,:,it,1)
+            eta => self%authority_mem(:,:,:,:,it,2)
+            call nbtask%add_line_opacity(nu, chi, eta, LTE=.false.)
             chi => self%authority_mem(:,:,:,:,it,3)
             eta => self%authority_mem(:,:,:,:,it,4)
-            call nbtask%interpolate_lines(chi, eta, LTE=.true.)
+            call nbtask%add_line_opacity(nu, chi, eta, LTE=.true.)
+          else
+            chi => self%authority_mem(:,:,:,:,it,1)
+            eta => self%authority_mem(:,:,:,:,it,2)
+            call nbtask%interpolate_lines(chi, eta, LTE=.false.)
           endif
         class is (ray_patch_t)
           call lock_mem( nbtask, 'net_opac_update', read=.true.)
@@ -160,7 +180,7 @@ MODULE net_opac_patch_mod
       end do
     end do
     
-    call self%boundaries%extrap()
+    call self%bndries()
     call self%periodic_grid()
 
     if (self%out_ray .and. .not. self%one_dimensional) then

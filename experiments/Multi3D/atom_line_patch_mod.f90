@@ -27,7 +27,7 @@ MODULE atom_line_patch_mod
     USE atom_mod, only: atom_type
     USE trans_mod, only: line_type
     USE m3d_halo_mod, only:lock_mem, unlock_mem
-    USE m3d_patch_mod, only: m3d_patch_t, maxiter, comoving_frame
+    USE m3d_patch_mod, only: m3d_patch_t, maxiter, comoving_frame, pre_update, update
     USE ray_patch_mod, only: ray_patch_t
     USE op_math_mod, only: searchsorted
     USE hprofl_mod, only: hydrogen_profile, prepare_hydrogen_damping
@@ -44,6 +44,8 @@ MODULE atom_line_patch_mod
     contains
       procedure :: pre_init => atom_line_pre_init
       procedure :: init => atom_line_init
+      procedure :: pre_update => atom_line_pre_update
+      procedure :: update => atom_line_update
       procedure :: execute
       procedure :: allocate_mem
       procedure :: deallocate_mem
@@ -51,6 +53,7 @@ MODULE atom_line_patch_mod
       procedure :: create_line_indices
       procedure :: create_line_frequencies
       procedure :: interpolate_lines
+      procedure :: add_line_opacity
       procedure :: print_post_update_info
       procedure :: check_in_bounds
       procedure :: integrate_wphi
@@ -63,6 +66,26 @@ MODULE atom_line_patch_mod
     !-----------------------------------------------------------------------------
   
   contains
+
+  !===============================================================================
+  SUBROUTINE atom_line_pre_update (self)
+    class(atom_line_t), target :: self
+    !---------------------------------------------------------------------------
+    if (.not. self%out_ray) then
+      call pre_update(self)
+    else
+      call self%create_line_indices()
+    endif
+  END SUBROUTINE atom_line_pre_update
+
+  !===============================================================================
+  SUBROUTINE atom_line_update (self)
+    class(atom_line_t) :: self
+    !---------------------------------------------------------------------------
+    if (.not. self%out_ray) then
+      call update(self)
+    endif
+  END SUBROUTINE atom_line_update
 
   !===============================================================================
   SUBROUTINE atom_line_pre_init (self)
@@ -204,7 +227,7 @@ MODULE atom_line_patch_mod
 
     call os%allocate(tothi,       self%n)
     call os%allocate(adamp,       self%n)
-    call os%allocate(vbar2, self%n)
+    call os%allocate(vbar2,       self%n)
     call os%allocate(stark_pe,    self%n)
     call os%allocate(vproj,       self%n)
     call os%allocate(inv_df,      self%n)
@@ -387,6 +410,127 @@ MODULE atom_line_patch_mod
     call os%deallocate(eta_fac)
     call trace%end(itimer)
   END SUBROUTINE interpolate_lines
+
+  !===============================================================================
+  SUBROUTINE add_line_opacity (self, nu, chi, eta, LTE)
+    class(atom_line_t) :: self
+    class(line_type), pointer :: line
+    class(ion_type), pointer :: He1
+    real(8), intent(in), dimension(:) :: nu
+    real(4), intent(inout), dimension(:,:,:,:), pointer :: chi, eta
+    logical, intent(in) :: LTE
+    real(4), dimension(:,:,:), pointer, contiguous :: tothi, ne, temp, adamp
+    real(4), dimension(:,:,:), pointer, contiguous :: vproj, eta_fac, chi_fac
+    real(4), dimension(:,:,:), pointer, contiguous :: inv_df, ni, nj, vbar2, stark_pe
+    real(4), dimension(:,:,:,:), pointer, contiguous :: phi
+    real(4), dimension(:,:,:,:), pointer :: nh
+    real(8), dimension(:), allocatable :: wq, q
+    integer :: i, j, k, f, p(3), fs, fe, ff, iw, it, nmax, nq, x,y,z
+    logical :: skip
+    integer, save :: itimer=0
+    !-----------------------------------------------------------------------------
+    call trace%begin (trim(self%kind)//'%add_line_opacity', itimer=itimer)
+    call self%check_access(self%m3d_parent%m3d_parent)
+    ne   => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_ne,            self%it,1)
+    temp => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_temp,          self%it,1)
+    nh   => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_nh1:self%i_nh6,self%it,1)
+    call self%composition%ion_by_id('He I', He1)
+
+    call os%allocate(tothi,       self%n)
+    call os%allocate(adamp,       self%n)
+    call os%allocate(vbar2,       self%n)
+    call os%allocate(stark_pe,    self%n)
+    call os%allocate(vproj,       self%n)
+    call os%allocate(inv_df,      self%n)
+    call os%allocate(chi_fac,     self%n)
+    call os%allocate(eta_fac,     self%n)
+    
+    call self%comp_vproj(vproj)
+
+    tothi = sum(nh(:,:,:,1:5), 4) ! total neutral hydrogen density
+    vbar2 = self%atom%compute_vbar2(temp)
+    inv_df = self%atom%inverse_doppler_factor(temp)
+    stark_pe = ne * temp**one_sixth
+
+    nmax = 0
+    do i=1, self%nline
+      line => self%line(i)
+      call line%check_range(self%fs, self%fe, fs, fe, skip)
+      if (skip) cycle
+      nmax = max(fe-fs+1, nmax)
+    end do
+
+    call os%allocate(phi, [self%n, nmax])
+    allocate(q (nmax))
+    allocate(wq(nmax))
+
+    do i=1, self%nline
+      line => self%line(i)
+      call line%check_range(self%fs, self%fe, fs, fe, skip)
+      if (skip) then
+        cycle
+      endif
+
+      fs = fs - self%fs + 1
+      fe = fe - self%fs + 1
+
+      nq = fe - fs + 1
+      q(1:nq) = nu(fs:fe) / line%nu0 - 1.0
+
+      select case (line%profile_type)
+      case ('voigt')
+        adamp = 0
+        call line%damping(adamp, ne, tothi, vbar2, stark_pe)
+        if (self%atom%id == 'H') then
+          call line%dampingH(adamp, temp, ne, nh(:,:,:,6))
+        endif
+        call line%profile(q(1:nq), vproj, inv_df, adamp, phi(:,:,:,1:nq))
+
+      case ('hlinop')
+        call hydrogen_profile(line, q(1:nq), temp, ne, nh(:,:,:,1), vproj, inv_df, real(He1%n), phi(:,:,:,1:nq))
+      end select
+
+      do f=1,nq
+        phi(:,:,:,f) = phi(:,:,:,f) * (q(f) + 1.) * over_4pi
+      end do
+
+      if (LTE) then
+        ni => self%atom%data%nstar(:,:,:,line%i)
+        nj => self%atom%data%nstar(:,:,:,line%j)
+      else
+        ni => self%atom%data%n(:,:,:,line%i)
+        nj => self%atom%data%n(:,:,:,line%j)
+      endif
+
+      eta_fac = line%Aji * nj
+      chi_fac = line%Bij * ni - line%Bji * nj
+  
+      do f=1, nq
+        ff = fs + f - 1
+        do z=1,self%n(3)
+        do y=1,self%n(2)
+        do x=1,self%n(1)
+          eta(x,y,z,ff) = eta(x,y,z,ff) + phi(x,y,z,f) * eta_fac(x,y,z)
+          chi(x,y,z,ff) = chi(x,y,z,ff) + phi(x,y,z,f) * chi_fac(x,y,z)
+        end do
+        end do
+        end do
+      end do
+    enddo
+
+    deallocate(q)
+    deallocate(wq)
+    call os%deallocate(phi)
+    call os%deallocate(chi_fac)
+    call os%deallocate(eta_fac)
+    call os%deallocate(tothi)
+    call os%deallocate(adamp)
+    call os%deallocate(vbar2)
+    call os%deallocate(stark_pe)
+    call os%deallocate(inv_df)
+    call os%deallocate(vproj)
+    call trace%end(itimer)
+  END SUBROUTINE add_line_opacity
 
   !===============================================================================
   SUBROUTINE nbor_relations(self, another, needed, needs_me, download)

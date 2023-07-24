@@ -159,7 +159,7 @@ MODULE m3d_patch_mod
     integer, public :: pivot_z=0
     type(mpi_counter_t), public :: atom_update_counter, global_maxerr, global_pos
       
-    public :: hash_string
+    public :: hash_string, pre_update, update
 
   contains
   
@@ -1699,7 +1699,7 @@ MODULE m3d_patch_mod
     write(folder, '(A, A)') trim(io%run_dir), 'save/'
     if (self%out_ray) then
       write(filename, '(A, A, 3(I3.3), A)') trim(label), '_out_', abs(self%key(1:3)), '.bin'
-    elseif (.not. converged) then
+    elseif (.not. converged .or. self%kind=='atom_patch') then
       write(filename, '(A, A, 3(I3.3), A)') trim(label), '_', abs(self%key(1:3)), '.bin'
     else
       call trace%end(itimer)

@@ -706,8 +706,10 @@ SUBROUTINE deallocate_mem (self, deallocator, print)
   integer :: m(6), li(3), ui(3)
   !-----------------------------------------------------------------------------
   call self%ray_patch_t%deallocate_mem(deallocator, print)
-  if (associated(self%Psi) .and. self%is_clear(bits%busy)) then
-    call os%deallocate(self%Psi, label=trim(self%kind)//'%Psi')
+  if (self%is_clear(bits%busy)) then
+    if (associated(self%Psi)) then
+      call os%deallocate(self%Psi, label=trim(self%kind)//'%Psi')
+    endif
     if (associated(self%Ieff)) then
       call os%deallocate(self%Ieff,label=trim(self%kind)//'%Ieff')
     endif

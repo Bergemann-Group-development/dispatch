@@ -10,12 +10,11 @@ MODULE composition_patch_mod
   USE m3d_patch_mod,   only: m3d_patch_t, comoving_frame, ilambd, decouple_continuum, dlam, &
   use_density, use_ne, overlapping_bb, overlapping_bf, line_blanketing, binned_opac, save_Qrad, maxiter
   USE composition_mod, only: composition_type, exclude_elements
-  USE back_cont_patch_mod,  only: back_cont_patch_t
+  USE back_cont_patch_mod,  only: back_cont_t
   USE angle_rad_patch_mod,   only: rad_patch_t
   USE atom_patch_mod,  only: atom_patch_t
   USE atom_rate_patch_mod,  only: atom_rate_t
   USE net_opac_patch_mod,  only: net_opac_t
-  USE back_line_patch_mod, only:back_line_patch_t
   USE out_rad_patch_mod, only:out_rad_patch_t
   USE proj_patch_mod, only:proj_patch_t
   USE mean_rad_patch_mod, only:mean_rad_patch_t
@@ -176,15 +175,14 @@ SUBROUTINE create_sub_patches (self, nu, mu, composition, sp)
   integer, intent(in) :: nu(2), mu(2)
   class(composition_type), intent(in), target :: composition
   class(atomic_spectrum_type), intent(in), pointer :: sp
-  class(back_cont_patch_t), pointer :: cont
-  class(back_line_patch_t), pointer :: line
+  class(back_cont_t), pointer :: cont
   class(out_rad_patch_t), pointer :: out
   class(net_opac_t), pointer :: net
   class(proj_patch_t), pointer :: proj
   class(rad_patch_t), pointer :: rad
   class(mean_rad_patch_t), pointer :: mean
   integer :: n, m
-  logical :: cf, new_cont, new_line, new_rad, new_out, new_net, new_proj, new_mean
+  logical :: cf, new_cont, new_rad, new_out, new_net, new_proj, new_mean
   !-----------------------------------------------------------------------------
   if (.not. associated(sp)) return
   if (sp%nnu == 0) return
@@ -194,7 +192,6 @@ SUBROUTINE create_sub_patches (self, nu, mu, composition, sp)
   do m=mu(1), mu(2)
     new_mean = n>0  .and. m==0
     new_cont = n/=0 .and. m==0
-    new_line = n/=0 .and. (m<0 .or. merge(m==0, m/=0, cf)) .and. composition%ll_initialised
     new_net  = n/=0 .and. (m<0 .or. merge(m==0, m/=0, cf))
     new_proj = m/=0 .and. cf
     new_rad  = n/=0 .and. m/=0
@@ -212,11 +209,6 @@ SUBROUTINE create_sub_patches (self, nu, mu, composition, sp)
         mean%back_cont => cont
       endif
       call cont%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp)
-    endif
-    if (new_line) then
-      allocate(line)
-      line%composition => composition
-      call line%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp)
     endif
     if (new_net) then
       allocate(net)

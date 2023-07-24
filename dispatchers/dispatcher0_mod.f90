@@ -37,7 +37,7 @@ MODULE dispatcher0_mod
     procedure:: no_queue
   end type
   real(8):: stall_start=0d0, max_stalled=1e8, retry_stalled=1e8
-  real(8):: soft_mem_limit=256.
+  real(8):: soft_mem_limit=huge(1.d0)
   real:: delay_ms=0.05
   integer, save:: mpi_only_master=5
   integer, save:: verbose=0

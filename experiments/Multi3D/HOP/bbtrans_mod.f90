@@ -59,20 +59,18 @@ contains
   !------------------------------------------------------------------------------------
 
   !====================================================================================
-  SUBROUTINE add_lte_opacities(self, nu, vproj, inv_df, EK_over_temp, dxij, inv_part, adamp, eta_fac, chi_fac, eta, chi)
+  SUBROUTINE add_lte_opacities(self, nu, vproj, inv_df, EK_over_temp, dxij, inv_part, adamp, chi_fac, chi)
     class(bbtrans_type), intent(in) :: self
     real(8), dimension(:), intent(in), contiguous :: nu
     real(4), dimension(:,:,:), intent(in), contiguous :: vproj, inv_df, inv_part
     real(4), dimension(:,:,:), intent(in), contiguous :: EK_over_temp, dxij
-    real(4), dimension(:,:,:), contiguous :: adamp, eta_fac, chi_fac
-    real(4), dimension(:,:,:,:), intent(inout), contiguous :: eta, chi
+    real(4), dimension(:,:,:), contiguous :: adamp, chi_fac
+    real(4), dimension(:,:,:,:), intent(inout) :: chi
     real(8) :: q
     real(4) :: ex, ni, nj, nij, upper_ev, nu0_ev, scalar, phi
     integer :: i,j,k,f, m(4)
-    integer, save :: itimer=0, itimer1=0, itimer2=0
     !----------------------------------------------------------------------------------
-    call trace%begin('bbtrans_type%add_lte_opacities', itimer=itimer)
-    m = shape(eta)
+    m = shape(chi)
 
     scalar = over_4pi / self%nu0
     nu0_ev = H_E * self%nu0
@@ -88,17 +86,15 @@ contains
         nj = self%upper_g * inv_part(i,j,k) * exp(-ex)
         nij = exp(nu0_ev * EK_over_temp(i,j,k))
 
-        nj = inv_df(i,j,k) * over_4pi * nj
-        eta_fac(i,j,k) = nj * self%Aji
-        chi_fac(i,j,k) = nj * (nij - 1) * self%Bji
+        nj = inv_df(i,j,k) * nj * over_4pi
+        !eta_fac(i,j,k) = nj * self%Aji
+        chi_fac(i,j,k) = nj * (nij - 1.) * self%Bji
       else
         adamp(i,j,k) = 0.0
       endif
     end do
     end do
     end do
-
-    !call trace%begin('bbtrans_type%add_lte_opacities2', itimer=itimer1)
     
     !DIR$ FORCEINLINE
     do f=1, m(4)
@@ -109,15 +105,13 @@ contains
         if (adamp(i,j,k) > 0.0) then
           phi = (q - vproj(i,j,k)) * inv_df(i,j,k)
           phi = voigt_function2(adamp(i,j,k), phi)
-          eta(i,j,k,f) = eta(i,j,k,f) + phi * eta_fac(i,j,k)
+          !eta(i,j,k,f) = eta(i,j,k,f) + phi * eta_fac(i,j,k)
           chi(i,j,k,f) = chi(i,j,k,f) + phi * chi_fac(i,j,k)
         endif
       end do
       end do
       end do
     end do
-    !call trace%end(itimer1)
-    call trace%end(itimer)
   END SUBROUTINE add_lte_opacities
   !------------------------------------------------------------------------------------
 
@@ -195,12 +189,10 @@ contains
     else
       if (v >= 2.4) then
         h = 1./(v2 - 1.5) * (0.554153432 + v*(0.278711796 + v*(-0.188325687 + v*(0.042991293 + v*-0.003278278))))
+      elseif (v >= 1.3) then
+        h = -4.48480194 + v*(9.39456063 + v*(-6.61487486 + v*(1.98919585 + v*-0.22041650)))
       else
-        if (v >= 1.3) then
-          h = -4.48480194 + v*(9.39456063 + v*(-6.61487486 + v*(1.98919585 + v*-0.22041650)))
-        else
-          h = -1.12470432 + v*(-0.15516677 + v*(3.28867591 + v*(-2.34357915 + v*0.42139162)))
-        endif
+        h = -1.12470432 + v*(-0.15516677 + v*(3.28867591 + v*(-2.34357915 + v*0.42139162)))
       endif
 
       ! a le 0.2  and v lt 5.
