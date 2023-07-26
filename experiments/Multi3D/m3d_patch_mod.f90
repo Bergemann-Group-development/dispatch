@@ -78,6 +78,7 @@ MODULE m3d_patch_mod
       integer :: i_Gij=1, i_Gji=2
       integer :: i_Inu=1
       character(3) :: mem_label='mem'
+      logical :: prepend=.true.
     contains
       procedure :: pre_init
       procedure :: post_pre_init
@@ -109,7 +110,6 @@ MODULE m3d_patch_mod
       procedure :: nbors_finished
       procedure :: skip_iterations
       procedure :: claim_nbor_place
-      procedure :: push_nbors_for_update
       procedure :: push
       procedure :: allocate_mem
       procedure :: deallocate_mem
@@ -123,13 +123,14 @@ MODULE m3d_patch_mod
       procedure :: print_to_stdout
       procedure :: print_post_update_info
       procedure :: check_in_bounds
-      procedure :: print_execution_history
       procedure :: init_nbors_hash
       procedure :: check_nbor
       procedure :: hash_key
       procedure :: save
       procedure :: load_mem
       procedure :: set_place
+      procedure :: queue_before
+      procedure :: sort_nbors
     end type m3d_patch_t
   
     !-----------------------------------------------------------------------------
@@ -159,7 +160,7 @@ MODULE m3d_patch_mod
     integer, public :: pivot_z=0
     type(mpi_counter_t), public :: atom_update_counter, global_maxerr, global_pos
       
-    public :: hash_string, pre_update, update
+    public :: hash_string, pre_update, update, print_execution_history
 
   contains
   
@@ -485,11 +486,12 @@ MODULE m3d_patch_mod
       !endif
     end select
 
-    !if (self%i_nu /= 0) then
-    !  tnu = mod(abs(self%i_nu)-1, self%n_nu)+1
-    !  tnu = tnu / self%n_nu
-    !  self%t_offset = self%t_offset + 0.1*tnu
-    !endif
+    tnu = abs(self%i_nu) / real(self%n_nu)
+    self%t_offset = self%t_offset + 0.1*tnu
+
+    if (self%boundaries%is_clear(bits%zl + bits%zu)) then
+      self%t_offset = self%t_offset + 0.001
+    endif
 
     if (self%out_ray) then
       self%time = self%time + ilambd + maxiter
@@ -537,8 +539,6 @@ MODULE m3d_patch_mod
     case ('atom_rate')
       self%maxiter = self%m3d_parent%maxiter + ilambd - 1
       self%iter = ilambd
-    case ('back_line')
-      self%maxiter = min(0, maxiter - 1)
     case ('back_cont')
       if (save_back_cont .and. .not. line_blanketing) then
         self%maxiter = min(ilambd, maxiter - 1)
@@ -589,9 +589,9 @@ MODULE m3d_patch_mod
         call self%finish()
         call self%free_unused_memory()
         self%print_update_info = .false.
-        call self%print_execution_history('SKP')
+        call print_execution_history(self, 'SKP')
       else
-        call self%print_execution_history('PRE')
+        call print_execution_history(self, 'PRE')
         call self%check_mem(locked=.true.)
       endif
     endif
@@ -631,9 +631,9 @@ MODULE m3d_patch_mod
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%post_update', itimer=itimer)
     if (self%kind == 'atom_patch' .and. converged) then
-      call self%print_execution_history('CON')
+      call print_execution_history(self, 'CON')
     else
-      call self%print_execution_history('END')
+      call print_execution_history(self, 'END')
     endif
     if (self%verbose > 1) then
       if (self%print_update_info) then
@@ -648,7 +648,6 @@ MODULE m3d_patch_mod
     if (self%save_output .and. self%finished) then
       call self%save(self%out_mem, self%kind)
     endif
-    call self%free_unused_memory()
     call trace%end(itimer)
   END SUBROUTINE post_update
 
@@ -661,7 +660,8 @@ MODULE m3d_patch_mod
       call self%finish()
     endif
     call self%task_t%rotate
-    call self%claim_nbor_place()
+    call self%free_unused_memory()
+    !call self%claim_nbor_place()
   END SUBROUTINE rotate
 
   !===============================================================================
@@ -731,15 +731,11 @@ MODULE m3d_patch_mod
             do while (associated(nbnbor) .and. mem_not_needed)
               nbnbtask => nbnbor%task
               if (nbnbtask%is_clear(bits%virtual)) then
-                if (nbnbor%task%id == self%id) then
-                  if (.not. self%is_finished()) then
-                    if (self%time + self%t_push + self%dtime < nbtask%time) then
+                if (nbnbor%needs_me) then
+                  if (nbnbtask%key(1)==nbtask%key(1) .or. nbnbtask%is_clear(bits%no_download)) then
+                    if (nbnbtask%time < nbtask%time) then
                       mem_not_needed=.false.
                     endif
-                  endif
-                elseif (nbnbor%needs_me) then
-                  if (nbnbtask%time < nbtask%time) then
-                    mem_not_needed=.false.
                   endif
                 endif
               endif
@@ -1266,67 +1262,33 @@ MODULE m3d_patch_mod
   END SUBROUTINE check_mem_NaN
 
   !===============================================================================
-  RECURSIVE SUBROUTINE claim_nbor_place (self, key_in, first_in)
+  SUBROUTINE claim_nbor_place (self)
     class(m3d_patch_t) :: self
-    class(nbor_t), pointer:: nbor, nbnbor
-    class(task_t), pointer:: nbtask, nbnbtask
-    class(task_t), pointer:: pick, first
-    class(task_t), optional, pointer:: first_in
-    class(link_t), pointer:: nblink
-    integer, optional :: key_in(3)
+    class(nbor_t), pointer:: nbor
+    class(task_t), pointer:: nbtask
     integer, save :: itimer=0
-    integer :: key(3), topscore
-    logical :: pushed
+    integer :: key(4), topscore
+    logical :: pushed, need
     !-----------------------------------------------------------------------------
-    nullify(pick, first)
-    if (present(key_in)) then
-      key = key_in
-    else
-      key = self%key(1:3)
-    endif
-    if (present(first_in)) then
-      first => first_in
-    endif
-    topscore = 0
+    pushed = .false.
+    key = self%key
     nbor => self%link%nbor
     do while (associated (nbor))
       nbtask => nbor%task
-      if (nbor%needs_me) then
-        if(is_ready(self, nbor%link) .and. (.not. nbtask%finished)) then
-          if (.not. associated(first)) first => nbtask
-          call key_test(nbtask, pick, topscore, key)
+      if (nbor%needs_me .and. (.not. nbtask%finished)) then
+        if (count(key(1:3)==nbtask%key(1:3)) == 3) then
+          if(is_ready(self, nbor%link)) then
+            select type (nbtask)
+            class is (m3d_patch_t)
+              !nbtask%prepend = .true.
+              call self%push(nbtask)
+              pushed = .true.
+            end select
+          endif
         endif
       endif
       nbor => nbor%next
     end do
-    if (.not. associated(pick)) then
-      nbor => self%link%nbor
-      do while (associated (nbor))
-        nbtask => nbor%task
-        if (nbor%needs_me .and. .not. nbtask%finished) then
-          if (nbtask%is_clear(bits%ready)) then
-            nbnbor => nbor%link%nbor
-            do while (associated(nbnbor))
-              nbnbtask => nbnbor%task
-              if (nbnbor%needed) then
-                if (is_ready(self, nbnbor%link) .and. (.not. nbnbtask%finished)) then
-                  call key_test(nbnbtask, pick, topscore, key)
-                endif
-              endif
-              nbnbor => nbnbor%next
-            end do
-          endif
-        endif
-        nbor => nbor%next
-      end do
-    endif
-    if (associated(pick)) then
-      call self%set_place(pick, -1)
-    elseif (associated(self%m3d_parent)) then
-      call self%m3d_parent%claim_nbor_place(key, first)
-    elseif (associated(first)) then
-      call self%set_place(first, -1)
-    endif
 
   contains
     !-----------------------------------------------------------------------------
@@ -1401,134 +1363,15 @@ MODULE m3d_patch_mod
   END SUBROUTINE set_place
 
   !===============================================================================
-  SUBROUTINE push_nbors_for_update (self, post_update)
-    class(m3d_patch_t) :: self
-    logical :: post_update
-    class(nbor_t), pointer:: nbor, nbnbor
-    class(task_t), pointer:: nbtask, nbnbtask
-    class(link_t), pointer:: pushed, tail, link
-    integer :: n_ready, n_needed, n_done
-    integer, save :: itimer=0
-    !-----------------------------------------------------------------------------
-    call trace%begin ('m3d_patch_t%push_nbors_for_update', itimer=itimer)
-    nbor => self%link%nbor
-    do while (associated (nbor))
-      nbtask => nbor%task
-      n_needed = 0
-      n_ready = 0
-      n_done = 0
-      select type (nbtask)
-      class is (m3d_patch_t)
-        if (nbor%needs_me .and. nbtask%iter==self%iter) then
-          nbnbor => nbtask%link%nbor
-          do while (associated(nbnbor))
-            if (nbnbor%needed) then
-              nbnbtask => nbnbor%task
-              n_needed = n_needed + 1
-              if (nbnbtask%id == self%id) then
-                if (post_update) then
-                  n_done = n_done + 1
-                else
-                  n_ready = n_ready + 1
-                endif
-              elseif (nbnbtask%time > nbtask%time) then
-                n_done = n_done + 1
-              elseif (nbnbtask%is_set(bits%ready)) then
-                n_ready = n_ready + 1
-              endif
-            endif
-            nbnbor => nbnbor%next
-          end do
-          if (n_done == n_needed) then
-            call self%push(nbtask, pushed, tail, post_update, requeue=.false.)
-          elseif ((n_done + n_ready) == n_needed) then
-            nbnbor => nbtask%link%nbor
-            do while (associated(nbnbor))
-              if (nbnbor%needed) then
-                nbnbtask => nbnbor%task
-                if (nbnbtask%is_set(bits%ready) .and. nbnbtask%id /= self%id) then
-                  select type (nbnbtask)
-                  class is (m3d_patch_t)
-                    if (nbnbtask%iter == self%iter .and. nbnbtask%is_clear(bits%busy)) then
-                      call self%push(nbnbtask, pushed, tail, post_update, requeue=.true.)
-                    endif
-                  end select
-                endif
-              endif
-              nbnbor => nbnbor%next
-            end do
-          endif
-        end if
-      end select
-      nbor => nbor%next
-    end do
-
-    if (associated(tail)) then
-      link => tail
-      do while (associated(link))
-        link => tail%prev
-        deallocate(tail)
-      end do
-    endif
-
-    if (post_update) then
-      if (self%t_push > 0) then
-        self%time = self%time + self%t_push
-        self%t_push = 0
-      endif
-    endif
-    call trace%end(itimer)
-  END SUBROUTINE push_nbors_for_update
-
-  !===============================================================================
-  SUBROUTINE push (self, other, pushed, tail, post_update, requeue)
+  SUBROUTINE push (self, other)
     class(m3d_patch_t) :: self, other
-    class(link_t), pointer:: pushed, tail, link, prev
-    class(task_t), pointer:: task
-    logical, intent(in) :: requeue, post_update
-    real(8) :: t
     !-----------------------------------------------------------------------------
-    if (other%i_mu == self%i_mu) then
-      t = t_push
-    elseif (self%i_mu==0) then
-      t = t_push / 10
-    else
-      return
-    endif
-
-    link => pushed
-    do while (associated(link))
-      task => link%task
-      if (task%id == other%id) return
-      prev => link
-      link => link%next
-    end do
-    allocate(tail)
-    tail%task => other%link%task
-    tail%prev => link
-    if (associated(prev)) then
-      prev%next => tail
-    else
-      pushed => tail
-    endif
-
-    other%t_push = other%t_push + t
-    other%time = other%time - t
-    !if (other%i_mu /= 0) then
-    !  other%place = self%place
-    !endif
-    if (requeue) then
-      call self%task_list%qlock%set ('remove')
-      call self%task_list%remove_from_queue(other%link)
-      call self%task_list%qlock%unset ('remove')
-      call self%task_list%queue_by_time(other%link, other%istep)
-    endif
-    if ((self%print_update_info .or. self%verbose > 2) .and. print_push) then
-      if (post_update) then
-        write(stdout, *) '  post pushed', other%m3d_patch_info2()
-      else
-        write(stdout, *) '  pre pushed', other%m3d_patch_info2()
-      endif
+    if (other%is_set(bits%ready)) return
+    other%t_push = t_push
+    other%time = other%time - other%t_push
+    if (self%id /= other%id .and. print_push) then
+      print '(A, A, A, 1x, I6)', trim(self%m3d_patch_info2()), ' pushed ', &
+      trim(other%kind), other%id
     endif
   END SUBROUTINE push
   
@@ -1607,12 +1450,13 @@ MODULE m3d_patch_mod
 
   !===============================================================================
   SUBROUTINE print_execution_history (self, status)
-    class(m3d_patch_t) :: self
+    class(task_t) :: self
     character(len=3) :: status
     !-----------------------------------------------------------------------------
     !$omp critical (cr_print_execution_history)
-    write(io_unit%dispatcher, '(F17.8, 2(I3, 1x), 1x, A3, 1x, A, I8)') &
-    wallclock(), mpi%rank, omp%thread, status, self%m3d_patch_info(), self%nq
+    write(io_unit%dispatcher, &
+    '(F17.8, 2(I3, 1x), 1x, A3, 1x, A12, 1x, I8, 1x, 3(I3,1x), F17.8)') &
+    wallclock(), mpi%rank, omp%thread, status, trim(self%kind), self%id, self%key(1:3), self%time
     !$omp end critical (cr_print_execution_history)
   END SUBROUTINE print_execution_history
 
@@ -1784,5 +1628,49 @@ MODULE m3d_patch_mod
       self%key_list => link
     endif
   END SUBROUTINE add_to_key_list
+
+  !===============================================================================
+  FUNCTION queue_before (self, other) result(queue)
+    class(m3d_patch_t):: self
+    class(task_t):: other
+    logical :: queue
+    !-----------------------------------------------------------------------------
+    if (self%prepend) then
+      queue = other%time >= self%time
+      !self%prepend = .false.
+    else
+      queue = self%task_t%queue_before(other)
+    endif
+    if (self%t_push > 0.) then
+      self%time = self%time + self%t_push
+      self%t_push = 0.
+    endif
+  END FUNCTION queue_before
+
+  !===============================================================================
+  SUBROUTINE sort_nbors (self)
+    class(m3d_patch_t) :: self
+    class(nbor_t), pointer:: nbor
+    class(task_t), pointer:: nbtask
+    integer:: n_nbors
+    !-----------------------------------------------------------------------------
+    nbor => self%link%nbor
+    do while(associated(nbor))
+      nbtask => nbor%link%task
+      nbtask%istep = nbtask%level
+      nbtask%level = -count(nbtask%key == self%key)
+      nbor => nbor%next
+    end do  
+
+    nbor => self%link%nbor
+    call sort_nbors_by_level(self%link, nbor, nbor)
+
+    do while(associated(nbor))
+      nbtask => nbor%link%task
+      nbtask%level = nbtask%istep
+      nbtask%istep = 0
+      nbor => nbor%next
+    end do  
+  END SUBROUTINE sort_nbors
 
 END MODULE m3d_patch_mod

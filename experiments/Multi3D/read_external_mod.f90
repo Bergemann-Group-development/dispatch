@@ -599,6 +599,11 @@ SUBROUTINE init_all_nbors (self)
     link => link%next                                   ! continue list
   end do
   !$omp end parallel
+  link => self%head
+  do while (associated(link))
+    call link%task%sort_nbors()
+    link => link%next
+  end do
   if (self%verbose > 0) &
     call timer%toc ('time to initialize nbor lists', 1, time)
   call trace%end (itimer)

@@ -195,6 +195,8 @@ MODULE task_mod
     procedure:: to_generic => void
     procedure:: from_generic => void
     procedure:: init_bdries => void
+    procedure:: queue_before
+    procedure:: sort_nbors
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -1724,5 +1726,19 @@ SUBROUTINE set_rank (self)
   call trace%begin ('task_t%set_rank')
   call trace%end ()
 END SUBROUTINE set_rank
+
+!===============================================================================
+FUNCTION queue_before (self, other) result(queue)
+  class(task_t):: self, other
+  logical :: queue
+  !-----------------------------------------------------------------------------
+  queue = other%time > self%time
+END FUNCTION queue_before
+
+!===============================================================================
+SUBROUTINE sort_nbors (self)
+  class(task_t):: self
+  !-----------------------------------------------------------------------------
+END SUBROUTINE sort_nbors
 
 END MODULE task_mod

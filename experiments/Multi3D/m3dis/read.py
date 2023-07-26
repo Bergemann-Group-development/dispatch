@@ -89,14 +89,10 @@ class read(object):
         self.flux_lte = np.zeros_like(self.lam)
         self.flux_cnt = np.zeros_like(self.lam)
 
-        out_rad_keys = list(out_rad.keys())
-        min_ang = min([key[-1] for key in out_rad_keys])
-
-        for i in range(self.n_ang):
-            key = out_rad_keys[i]
+        for key in out_rad.keys():
             ipos, inu, ang = key
             mem = out_rad[key]
-            ang = ang - min_ang
+            ang = abs(ang)-1
             self.i3[ang]     = mem[...,0,:,0]
             self.i3_lte[ang] = mem[...,0,:,1]
             self.c3[ang]     = mem[...,0,:,2]

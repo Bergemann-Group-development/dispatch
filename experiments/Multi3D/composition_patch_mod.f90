@@ -141,24 +141,26 @@ SUBROUTINE composition_pre_init (self)
   call atom_patch%pre_init_atom()
   call atom_patch%pre_init_spectrum(output_sp)
   call atom_patch%pre_init_and_link(self)
+  self%atom_patch => atom_patch
 
   n_nu = self%n_nu
   n_mu = self%n_mu
 
-  if (atom_patch%atom_allocated) then
-    self%atom_patch => atom_patch
-    if (decouple_continuum) then
-      call self%create_sub_patches([1, n_nu],      [0, n_mu], self%composition, atom_patch%bb_sp)
-      call self%create_sub_patches([1, n_nu]+n_nu, [0, n_mu], self%composition, atom_patch%bf_sp)
+  if (ilambd + maxiter > 0) then
+    if (atom_patch%atom_allocated) then
+      if (decouple_continuum) then
+        call self%create_sub_patches([1, n_nu],      [0, n_mu], self%composition, atom_patch%bb_sp)
+        call self%create_sub_patches([1, n_nu]+n_nu, [0, n_mu], self%composition, atom_patch%bf_sp)
+      else
+        call self%create_sub_patches([1, n_nu], [0, n_mu], self%composition, atom_patch%sp)
+      endif
+    elseif (save_Qrad) then
+      call self%create_sub_patches([1, n_nu], [0, n_mu], self%composition, output_sp)
     else
-      call self%create_sub_patches([1, n_nu], [0, n_mu], self%composition, atom_patch%sp)
-    endif
-  elseif (save_Qrad) then
-    call self%create_sub_patches([1, n_nu], [0, n_mu], self%composition, output_sp)
-  else
-    deallocate(atom_patch)
-    if (.not. external_sp) then
-      stop 'No atom nor output spectrum specified! Stopping...'
+      deallocate(atom_patch)
+      if (.not. external_sp) then
+        stop 'No atom nor output spectrum specified! Stopping...'
+      endif
     endif
   endif
 
@@ -322,7 +324,7 @@ SUBROUTINE composition_patch_nbor_relations(self, another, needed, needs_me, dow
       select case (another%kind)
       case ('atom_patch')
         ! is needed after convergence and needs me
-      case ('back_cont', 'back_line')
+      case ('back_cont')
         needed = .false.
       case default
         needed = .false.; needs_me = .false.

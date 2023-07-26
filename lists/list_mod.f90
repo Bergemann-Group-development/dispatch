@@ -2539,7 +2539,8 @@ SUBROUTINE real_queue_by_time (self, this, istep, error)
         call task%log ('reject2', 2)
         ok = .false.
         exit
-      else if (next%task%time > task%time) then
+      !else if (next%task%time > task%time) then
+      else if (task%queue_before(next%task)) then
         exit
       end if
       prev => next

@@ -777,7 +777,6 @@ SUBROUTINE init_nbors_hash (self, nbors)
   integer :: i_mu, i_nu, key(4)
   !-----------------------------------------------------------------------------
   call trace%begin('rad_patch_t%init_nbors_hash', itimer=itimer)
-
   call self%ray_patch_t%init_nbors_hash(nbors)
   key(1:3) = self%key(1:3)
   if (comoving_frame .and. .not. self%out_ray) then

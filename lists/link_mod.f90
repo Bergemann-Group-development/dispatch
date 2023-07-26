@@ -98,6 +98,7 @@ MODULE link_mod
   type(link_t), target, public:: garbage
   integer:: garbage_n=0, verbose=0
   logical, save:: debug=.false.
+  public :: sort_nbors_by_level
 CONTAINS
 
 !===============================================================================

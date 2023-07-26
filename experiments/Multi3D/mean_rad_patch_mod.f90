@@ -184,7 +184,6 @@ MODULE mean_rad_patch_mod
     !-----------------------------------------------------------------------------
     call trace%begin('mean_rad_patch_t%init_nbors_hash', itimer=itimer)
     call self%ray_patch_t%init_nbors_hash(nbors)
-  
     key(1:3) = self%key(1:3)
     key(4) = hash_string('atom_rate')
     call self%check_nbor(key, nbors)

@@ -117,7 +117,7 @@ SUBROUTINE ray_patch_init (self)
     select case (self%kind)
     case ('atom_line', 'atom_rate')
       ! frequency padding for atom_lines is done in atom_line%init
-    !case ('back_cont', 'back_line', 'atom_cont', 'net_opac', 'mean_rad')
+    !case ('back_cont', 'atom_cont', 'net_opac', 'mean_rad')
     case default
       call self%frequency_padding()
     end select

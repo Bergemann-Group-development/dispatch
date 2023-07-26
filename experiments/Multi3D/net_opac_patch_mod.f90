@@ -144,11 +144,7 @@ MODULE net_opac_patch_mod
           call self%check_access(nbtask)
           fs = nbtask%fs - self%fs + 1
           fe = fs + nbtask%nv - 1
-          if (self%out_ray) then
-            nw = merge(4, self%nw, nbtask%kind=='back_line')
-          else
-            nw = self%nw
-          endif
+          nw = self%nw
           do iw=1, nw
             iiw = mod(iw-1,2)+1
           do it=1, self%nt
@@ -321,7 +317,7 @@ MODULE net_opac_patch_mod
           needs_me = .false.; needed = .false.
         else
           select case(another%kind)
-          case ('atom_line', 'back_cont', 'back_line', 'atom_cont', 'atom_patch')
+          case ('atom_line', 'back_cont', 'atom_cont', 'atom_patch')
             needs_me = .false.
           case ('angle_rad')
             if (self%out_ray .or. .not. comoving_frame) then
@@ -361,18 +357,13 @@ MODULE net_opac_patch_mod
     else
       call self%ray_patch_t%init_nbors_hash(nbors)
     endif
-  
+
     key(1:3) = self%key(1:3)
     key(4) = hash_string('atom_line')
     call self%check_nbor(key, nbors)
 
     mu_start = merge(-self%n_out, 1, self%out_ray)
     mu_stop  = merge(-1, self%n_mu, self%out_ray)
-
-    !if (self%out_ray) then
-      key(4) = hash_string('back_line')
-      call self%check_nbor(key, nbors)
-    !endif
 
     if (comoving_frame .and. .not. self%out_ray) then
       key(4) = hash_string('mean_rad')
@@ -395,7 +386,7 @@ MODULE net_opac_patch_mod
     key(4) = hash_string('atom_cont')
     call self%check_nbor(key, nbors)
 
-    ! because of atom_linees
+    ! because of atom_lines
     key(2) = 0
     key(4) = hash_string('atom_patch')
     call self%check_nbor(key, nbors)
