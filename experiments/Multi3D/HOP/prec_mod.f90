@@ -11,7 +11,7 @@ MODULE prec_mod
     ! physics
     real(dp), parameter :: EK  = EE/BK
     !real(dp), parameter :: op_saha_const = (2*PI*EM*BK/HH**2)**1.5
-    real(dp), parameter :: op_saha_const = 1.202e9/BK/5040**2.5/2
+    real(dp), parameter :: op_saha_const = 1.202e9/BK/2/5040**2.5
     !real(dp), parameter :: temp_to_theta = log10e*EK
     real(dp), parameter :: temp_to_theta = 5040
     real(dp), parameter :: prec_err = temp_to_theta / (log10e*EK)

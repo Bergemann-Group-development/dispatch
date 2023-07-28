@@ -217,7 +217,7 @@ class read(object):
             plt.ylabel(ylabel)
 
     #=====================================================================
-    def get_yy(self, ang=None, imu=None, norm=True, cont=True, LTE=False, mask=slice(None, None)):
+    def get_yy(self, ang=None, imu=None, norm=True, cont=False, LTE=False, mask=slice(None, None)):
         #-----------------------------------------------------------------
         if imu is not None:
             if imu >= self.nmu: raise ValueError('imu is out of range. Nmu = {:}'.format(self.nmu))
