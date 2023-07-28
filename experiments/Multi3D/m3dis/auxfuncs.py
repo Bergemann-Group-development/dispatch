@@ -371,6 +371,14 @@ def _read_fix(f, length, n, dtype=None):
     return out
 
 
+def is_number(s):
+    try:
+        float(s)
+        return True
+    except ValueError:
+        return False
+
+
 def voigt_num(a, v):
     AK = np.array([ -1.12470432, -0.15516677,  3.28867591, -2.34357915,
                      0.42139162, -4.48480194,  9.39456063, -6.61487486,  1.98919585,

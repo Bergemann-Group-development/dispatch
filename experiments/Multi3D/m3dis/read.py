@@ -217,7 +217,7 @@ class read(object):
             plt.ylabel(ylabel)
 
     #=====================================================================
-    def get_yy(self, ang=None, imu=None, norm=True, LTE=False, mask=slice(None, None)):
+    def get_yy(self, ang=None, imu=None, norm=True, cont=True, LTE=False, mask=slice(None, None)):
         #-----------------------------------------------------------------
         if imu is not None:
             if imu >= self.nmu: raise ValueError('imu is out of range. Nmu = {:}'.format(self.nmu))
@@ -225,9 +225,11 @@ class read(object):
 
         if ang is None and imu is None:
             cnt = self.flux_cnt
-            if LTE:
+            if cont:
+                yy = self.flux_cnt
+            elif LTE:
                 yy = self.flux_lte
-            else:
+            else:   
                 yy = self.flux
 
             cnt = cnt[mask]
@@ -235,7 +237,9 @@ class read(object):
 
         else:
             cnt = self.cnt
-            if LTE:
+            if cont:
+                yy = self.cnt
+            elif LTE:
                 yy = self.ie_lte
             else:
                 yy = self.ie
@@ -302,12 +306,12 @@ class read(object):
 
     #=====================================================================
     def plot_spectrum(self, ang=None, imu=None, norm=True, LTE=False,
-                      vdop=None, vshift=None, lam0=None, dlam=10, 
+                      vdop=None, vshift=None, lam0=None, dlam=10, cont=False,
                       show_lines=False, xmin=None, xmax=None,  per_aa=False, **kwargs):
         #-----------------------------------------------------------------
         xx, yy = self.crop(lam0=lam0, dlam=dlam, ang=ang, imu=imu, norm=norm,
                            xmin=xmin, xmax=xmax, LTE=LTE, vdop=vdop, vshift=vshift,
-                           per_aa=per_aa)
+                           per_aa=per_aa, cont=cont)
         
         self.set_xaxis(xx, dlam)
         self.set_yaxis(ang, imu, norm)

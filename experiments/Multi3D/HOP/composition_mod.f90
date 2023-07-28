@@ -6,7 +6,7 @@ MODULE composition_mod
     USE element_mod
     USE ion_mod
     USE level_mod, only: level_type, wcalc
-    USE bbtrans_mod, only:bbtrans_type
+    USE bbtrans_mod, only:bbtrans_type, voigt_function2, count1, count2
     USE bftrans_mod, only:bftrans_type, H_occupation_probability
     USE molecule_mod, only:molec_type
     USE osmet_mod
@@ -444,11 +444,20 @@ contains
             trans%minl = trans%lam(1)
             trans%maxl = trans%lam(nnu)
 
+
             do j=1, nnu-1
-                if (trans%lam(j+1) - trans%lam(j) < 2) then
+                if (trans%lam(j+1) - trans%lam(j) <= 10.) then
                     trans%ldisk(j) = .true.
                 endif
             end do
+
+            !if (count(trans%ldisk)>0) then
+            !    write(text, '(A,I0,A)') '(A10, ":[",', count(trans%ldisk), '(F14.1,","),F14.1,"],")'
+            !    print text, "'"//trim(trans%key)//"'", pack(trans%lam, trans%ldisk), trans%maxl
+            !else
+            !    write(text, '(A,I0,A)') '(A10, ":[",F14.1,"],")'
+            !    print text, "'"//trim(trans%key)//"'", trans%maxl
+            !endif
 
             !read(absdat,999) ilogt,kvadt,minet,maxet,ntt,iteta
             call read_fixed(absdat, '(A10)', ilogt)
@@ -809,6 +818,8 @@ contains
             end do
         end do
 
+        print *, n_deactivate, ' lines deactivated!'
+
         deallocate(nu)
       END SUBROUTINE precompute_line_extends
 
@@ -824,35 +835,32 @@ contains
         real(4), intent(in), dimension(:,:,:,:), pointer :: all_eta, all_chi
         real(4), intent(in), dimension(:,:,:), contiguous :: vproj
         real(8), intent(in) :: dlam
-        real(4), dimension(:,:,:), allocatable :: tothi, adamp, stark_pe
-        real(4), dimension(:,:,:), pointer, contiguous :: inv_part, vbar2, inv_df
-        real(4), dimension(:,:,:), pointer, contiguous :: iso_vbar2, iso_inv_df, iso_inv_part
-        real(4), dimension(:,:,:), pointer, contiguous :: ne, temp, EK_over_temp, dxij
-        real(4), dimension(:,:,:), pointer, contiguous :: vb2, idopf, ipart, eta_fac, chi_fac
+        real(4), dimension(:,:,:), allocatable :: tothi, adamp, stark_pe, ne, temp, EK_over_temp, dxij, eta_fac, chi_fac
+        real(4), dimension(:,:,:), allocatable, target :: inv_part, vbar2, inv_df, iso_vbar2, iso_inv_df, iso_inv_part
+        real(4), dimension(:,:,:), pointer, contiguous :: vb2, idopf, ipart
         real(4), dimension(:,:,:,:), pointer :: eta, chi
-        real(4), dimension(:,:,:,:), pointer, contiguous :: nh
+        real(4), dimension(:,:,:,:), allocatable :: nh
         integer :: i, j, k, l, f, ired, iblue, nactive, prev_iso, m(3)
         real(8) :: cnt_ev, gf, awgt, iso_awgt, dl
         real(4) :: scalar
         logical, dimension(:), allocatable :: fmask
         integer, save:: itimer=0, itimer2=0
         !---------------------------------------------------------------------------
+        allocate(tothi,           mold=vproj)
+        allocate(adamp,           mold=vproj)
+        allocate(stark_pe,        mold=vproj)
         allocate(ne,              mold=vproj)
         allocate(temp,            mold=vproj)
         allocate(EK_over_temp,    mold=vproj)
         allocate(inv_df,          mold=vproj)
         allocate(iso_inv_df,      mold=vproj)
-        allocate(tothi,           mold=vproj)
-        allocate(adamp,           mold=vproj)
         allocate(inv_part,        mold=vproj)
         allocate(iso_inv_part,    mold=vproj)
         allocate(vbar2,           mold=vproj)
         allocate(iso_vbar2,       mold=vproj)
-        allocate(stark_pe,        mold=vproj)
         allocate(dxij,            mold=vproj)
         allocate(eta_fac,         mold=vproj)
         allocate(chi_fac,         mold=vproj)
-        allocate(dxij,            mold=vproj)
         allocate(fmask(size(nu)), source=.false.)
         m = shape(vproj)
         allocate(nh(m(1), m(2), m(3), 6))
@@ -952,21 +960,6 @@ contains
                 all_eta(:,:,:,f) = planck(nu(f), self%temp) * all_chi(:,:,:,f)
             endif
         end do
-
-        deallocate(fmask)
-        deallocate(ne)
-        deallocate(temp)
-        deallocate(EK_over_temp)
-        deallocate(inv_df)
-        deallocate(iso_inv_df)
-        deallocate(tothi)
-        deallocate(adamp)
-        deallocate(inv_part)
-        deallocate(iso_inv_part)
-        deallocate(vbar2)
-        deallocate(iso_vbar2)
-        deallocate(stark_pe)
-        deallocate(nh)
     END SUBROUTINE add_linelist_opacities
 
     !===============================================================================
