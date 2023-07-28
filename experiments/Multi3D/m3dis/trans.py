@@ -28,15 +28,13 @@ class trans_class(object):
                 data = self._read()
                 j, i, fosc, nq, qmax, q0, iw, ga, gw, gq = data[:10]
                 if (len(data) > 10): self.profile = data[10]
+                self.j, self.i, self.nq, self.iw = map(int, [j, i, nq, iw])
+                self.fosc, self.qmax, self.q0, self.ga, self.gw, self.gq = map(float, [fosc, qmax, q0, ga, gw, gq])
             except:
                 self.atom.f.seek(pos)
                 data = self._read()
                 print(kr, data)
-                j, i, fosc, nq, qmax, q0, iw, ga, gw, gq = data[:10]
-                if (len(data) > 10): self.profile = data[10]
-            
-            self.j, self.i, self.nq, self.iw = map(int, [j, i, nq, iw])
-            self.fosc, self.qmax, self.q0, self.ga, self.gw, self.gq = map(float, [fosc, qmax, q0, ga, gw, gq])
+                print('Could not read line above!')
             
         else:
             j, i, fosc, nq, qmax = atom._read()[:5]
@@ -62,13 +60,13 @@ class trans_class(object):
         self.u = CC / self.alamb * 1e8
         self.lam0 = vacuum2obs(np.array(self.alamb))
 
-        if abs(self.lam0 / self.c_lam0 - 1) > 1e-3:
-            print('mismatch in central wavelength of line', kr)
-            print('Ritz lam0 = {:.2f}, Comment lam0 = {:.2f}'.format(self.lam0, self.c_lam0))
-
         if kr < atom.nline:
-            loggf = round(np.log10(self.fosc * self.lower.g), 3)
-            if abs(loggf / self.c_loggf - 1) > 1e-2:
+            if abs(self.lam0 / self.c_lam0 - 1) > 1e-3:
+                print('mismatch in central wavelength of line', kr)
+                print('Ritz lam0 = {:.2f}, Comment lam0 = {:.2f}'.format(self.lam0, self.c_lam0))
+
+            loggf = np.log10(self.fosc * self.lower.g)
+            if abs(round(loggf,3) / self.c_loggf - 1) > 1e-2:
                 print('mismatch in loggf of line', kr)
                 print('loggf = {:.4f}, Comment loggf = {:.4f}'.format(loggf, self.c_loggf))
 
