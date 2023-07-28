@@ -24,12 +24,16 @@ class trans_class(object):
         
         if kr < atom.nline:
             try:
+                pos = self.atom.f.tell()
                 data = self._read()
-                j, i, fosc, nq, qmax, q0, iw, ga, gw, gq, profile = data
+                j, i, fosc, nq, qmax, q0, iw, ga, gw, gq = data[:10]
+                if (len(data) > 10): self.profile = data[10]
             except:
+                self.atom.f.seek(pos)
                 data = self._read()
                 print(kr, data)
-                j, i, fosc, nq, qmax, q0, iw, ga, gw, gq, profile = data
+                j, i, fosc, nq, qmax, q0, iw, ga, gw, gq = data[:10]
+                if (len(data) > 10): self.profile = data[10]
             
             self.j, self.i, self.nq, self.iw = map(int, [j, i, nq, iw])
             self.fosc, self.qmax, self.q0, self.ga, self.gw, self.gq = map(float, [fosc, qmax, q0, ga, gw, gq])
@@ -58,12 +62,12 @@ class trans_class(object):
         self.u = CC / self.alamb * 1e8
         self.lam0 = vacuum2obs(np.array(self.alamb))
 
-        if abs(self.lam0 / self.c_lam0 - 1) > 1e-4:
+        if abs(self.lam0 / self.c_lam0 - 1) > 1e-3:
             print('mismatch in central wavelength of line', kr)
             print('Ritz lam0 = {:.2f}, Comment lam0 = {:.2f}'.format(self.lam0, self.c_lam0))
 
         if kr < atom.nline:
-            loggf = np.log10(self.fosc * self.lower.g)
+            loggf = round(np.log10(self.fosc * self.lower.g), 3)
             if abs(loggf / self.c_loggf - 1) > 1e-2:
                 print('mismatch in loggf of line', kr)
                 print('loggf = {:.4f}, Comment loggf = {:.4f}'.format(loggf, self.c_loggf))
@@ -131,13 +135,12 @@ class trans_class(object):
     def _read(self):
         f = self.atom.f
         line = f.readline()
-        while line.strip()=='' or line.startswith('*'): 
+        while line.strip()=='' or line.startswith('*'):
             if (line.startswith('* id')):
-                self.c_kr, self.c_lam0, self.c_loggf = [float(s) for s in line.split() if is_number(s)]
+                self.c_kr, self.c_lam0, self.c_loggf = [float(s) for s in line.split() if is_number(s)][:3]
                 break
 
             line = f.readline()
-
 
         line = f.readline()
         return line.split()
