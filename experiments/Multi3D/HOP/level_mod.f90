@@ -100,7 +100,7 @@ contains
         real(dp), intent(in) , dimension(:,:,:) :: nh, nhe, ne, shield
         real(dp), intent(in) :: ns
         real(dp), intent(out), dimension(:,:,:) :: w
-        real(dp) :: ns2, rih, x1, x2, neutr, k1, k2, a, over_ne, x, f, charg, res
+        real(dp) :: ns2, rih, x1, x2, neutr, k1, k2, x, f, charg, res
         real(dp), parameter :: a0=5.29177d-9
         real(dp), parameter :: pi43=4.18879d0  ! 4.18879 is 4*pi/3
         integer :: i,j,k, m(3)

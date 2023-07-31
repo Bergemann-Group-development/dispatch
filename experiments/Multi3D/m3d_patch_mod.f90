@@ -68,7 +68,7 @@ MODULE m3d_patch_mod
       integer :: iter=0, maxiter, master_maxiter, dir=0
       integer :: n_mu, n_nu, n_omega, n_out, zs, ze
       integer :: fcheck, pcheck(3), linecheck, lvlcheck
-      logical :: out_ray=.false., static_mem=.false., one_dimensional=.false.
+      logical :: out_ray=.false., static_mem=.false.
       logical :: compressed=.false., save_output=.false., saved=.false.
       logical :: print_update_info, checked_bounds=.false.
       logical :: free_self=.false.
@@ -151,7 +151,7 @@ MODULE m3d_patch_mod
     logical, public, save :: overlapping_bb=.true., overlapping_bf=.true.
     logical, public, save :: absmet_in_output=.false.
     logical, public, save :: print_start=.false., print_push=.false., print_send=.false.
-    real(8), public, save :: dlam=0.5
+    real(8), public, save :: dlam=100.
     character(len=128), save :: save_patch_kind=''
     character(len=64), public, save:: custom_mu=''
     real(8), parameter :: t_push=0.1d0
@@ -208,13 +208,14 @@ MODULE m3d_patch_mod
         write (command, *) 'rm ', trim(io%run_dir), 'save/*.txt ', trim(io%run_dir), 'save/*.bin'
         call execute_command_line (trim(command), exitstat=iostat)
       endif
+      one_dimensional = all(self%patch%n(1:2) == 1)
       !-------------------------------------------------------------------------
       ! Assign angles and integration weights
       !-------------------------------------------------------------------------
       select case (quad_scheme)
       case ('disk_center', 'set_a2', 'set_a4', 'set_a6', 'set_a8', 'set_b4', 'set_b6', 'set_b8')
         call set_carlson_quadratures (quad_scheme, vec, wmu, up_and_down=.true.)
-      case ('radau1', 'radau2', 'radau4')
+      case ('radau1', 'radau2', 'radau3', 'radau4', 'radau5')
         call set_radau_quadratures (quad_scheme, vec, wmu, up_and_down=.true.)
       case default
         print *, 'Quadrature keyword "'// trim(quad_scheme) // '" not recognized for SC solver. Stopping...'
@@ -226,7 +227,7 @@ MODULE m3d_patch_mod
         call set_lobatto_quadratures (ntheta, nphi, long_vec, long_wmu)
       case ('disk_center', 'set_a2', 'set_a4', 'set_a6', 'set_a8', 'set_b4', 'set_b6', 'set_b8')
         call set_carlson_quadratures (long_scheme, long_vec, long_wmu, up_and_down=.false.)
-      case ('radau1', 'radau2', 'radau4')
+      case ('radau1', 'radau2', 'radau3', 'radau4', 'radau5')
         call set_radau_quadratures (long_scheme, long_vec, long_wmu, up_and_down=.false.)
       case ('custom')
         call count_words(custom_mu, ntheta)
@@ -300,7 +301,6 @@ MODULE m3d_patch_mod
     end select
 
     self%save_output = self%save_output .or. self%id == save_id
-    self%one_dimensional = all(self%n(1:2) == 1)
 
     ! ----------------------------------------------------------------------------
     ! Do not check density or validate with it. This is rather important to be set

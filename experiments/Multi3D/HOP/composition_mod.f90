@@ -6,7 +6,7 @@ MODULE composition_mod
     USE element_mod
     USE ion_mod
     USE level_mod, only: level_type, wcalc
-    USE bbtrans_mod, only:bbtrans_type, voigt_function2, count1, count2
+    USE bbtrans_mod, only:bbtrans_type
     USE bftrans_mod, only:bftrans_type, H_occupation_probability
     USE molecule_mod, only:molec_type
     USE osmet_mod
@@ -53,7 +53,6 @@ MODULE composition_mod
         procedure :: overwrite_abundance
         procedure :: init_linelist
         procedure :: mask_linelist
-        procedure :: precompute_line_extends
         procedure :: add_linelist_opacities
         procedure :: print_ion_table
         procedure :: read_molec_data
@@ -706,7 +705,6 @@ contains
         print '(I12, a, I12, a, a)', nactive, ' of ', ntotal, ' lines read from linelist ', trim(linelist_file)
         self%nline = nactive
         call self%mask_linelist()
-        !call self%precompute_line_extends()
     END SUBROUTINE init_linelist
 
     !===============================================================================
@@ -747,83 +745,6 @@ contains
     END SUBROUTINE mask_linelist
 
     !===============================================================================
-    SUBROUTINE precompute_line_extends (self)
-        class(composition_type), target :: self
-        class(element_type), pointer :: element
-        class(particle_type), pointer :: ion
-        class(bbtrans_type), pointer :: line
-        type(composition_type) :: comp
-        real(dp), pointer, contiguous :: nu(:)
-        real(dp), dimension(1,1,10) :: temp, rho, zero
-        real(4), dimension(:,:,:,:), pointer, contiguous :: chi, scratch1, scratch2
-        integer :: i, j, l, n, n_deactivate
-        logical :: deactivate
-        ! ----------------------------------------------------------------------------
-        allocate(nu(self%nline))
-        allocate(chi(1,1,10,self%nline))
-        allocate(scratch1, scratch2, mold=chi)
-
-        n = 1
-        do i=1, self%nel
-            element => self%elements(i)
-            if (.not. any(element%ions%in_linelist)) cycle
-    
-            do j=lbound(element%ions,1), ubound(element%ions,1)
-                ion => element%ions(j)
-                if (ion%nline == 0) cycle
-
-                do l=1, ion%nline
-                    line => ion%line(l)
-                    if (.not. line%active) cycle
-
-                    nu(n) = line%nu0
-                    n = n+1
-                end do
-            end do
-        end do
-
-        temp(1,1,:) = linspace(3000., 12000., 10)
-        rho (1,1,:) = 10**linspace(-9., -6., 10)
-        zero = 0.d0
-
-        comp = self
-        call comp%reassign_pointer()
-        call comp%load_state_variables(temp, zero, rho, use_ne=.false.)
-        call comp%absorption(nu, chi, scratch1, scratch2, sorted=.false.)
-        scratch1 = 0.0
-        scratch2 = 0.0
-        call comp%add_linelist_opacities(nu, scratch1, scratch2, real(zero), 0.d0)
-
-        n = 1
-        n_deactivate = 0
-        do i=1, self%nel
-            element => self%elements(i)
-            if (.not. any(element%ions%in_linelist)) cycle
-    
-            do j=lbound(element%ions,1), ubound(element%ions,1)
-                ion => element%ions(j)
-                if (ion%nline == 0) cycle
-
-                do l=1, ion%nline
-                    line => ion%line(l)
-                    if (.not. line%active) cycle
-
-                    deactivate = all(scratch2(:,:,:,n) / chi(:,:,:,n) < 1e-4)
-                    if (deactivate) then
-                        line%active = .false.
-                        n_deactivate = n_deactivate + 1
-                    endif
-                    n = n+1
-                end do
-            end do
-        end do
-
-        print *, n_deactivate, ' lines deactivated!'
-
-        deallocate(nu)
-      END SUBROUTINE precompute_line_extends
-
-    !===============================================================================
     SUBROUTINE add_linelist_opacities(self, nu, all_eta, all_chi, vproj, dlam)
         class(composition_type), target :: self
         class(element_type), pointer :: element
@@ -835,10 +756,12 @@ contains
         real(4), intent(in), dimension(:,:,:,:), pointer :: all_eta, all_chi
         real(4), intent(in), dimension(:,:,:), contiguous :: vproj
         real(8), intent(in) :: dlam
-        real(4), dimension(:,:,:), allocatable :: tothi, adamp, stark_pe, ne, temp, EK_over_temp, dxij, eta_fac, chi_fac
+        real(4), dimension(:,:,:), allocatable :: tothi, adamp, stark_pe, ne, temp, EK_over_temp, dxij, chi_fac, unsold
         real(4), dimension(:,:,:), allocatable, target :: inv_part, vbar2, inv_df, iso_vbar2, iso_inv_df, iso_inv_part
         real(4), dimension(:,:,:), pointer, contiguous :: vb2, idopf, ipart
-        real(4), dimension(:,:,:,:), pointer :: eta, chi
+        real(4), dimension(:,:,:,:), pointer, contiguous :: eta, chi
+        real(4), dimension(:,:,:,:), pointer :: cont
+        real(4), dimension(:,:,:,:), allocatable, target :: chi_l
         real(4), dimension(:,:,:,:), allocatable :: nh
         integer :: i, j, k, l, f, ired, iblue, nactive, prev_iso, m(3)
         real(8) :: cnt_ev, gf, awgt, iso_awgt, dl
@@ -859,12 +782,15 @@ contains
         allocate(vbar2,           mold=vproj)
         allocate(iso_vbar2,       mold=vproj)
         allocate(dxij,            mold=vproj)
-        allocate(eta_fac,         mold=vproj)
         allocate(chi_fac,         mold=vproj)
+        allocate(unsold,          mold=vproj)
         allocate(fmask(size(nu)), source=.false.)
         m = shape(vproj)
         allocate(nh(m(1), m(2), m(3), 6))
         call self%get_nhyd(nh)
+
+        allocate(chi_l, mold=all_chi)
+        chi_l = 0.
 
         ne   = real(self%ne)
         temp = real(self%temp)
@@ -878,6 +804,7 @@ contains
     
             inv_df = element%inverse_doppler_factor(temp)
             vbar2 = element%compute_vbar2(temp)
+            unsold = vbar2**0.3 * tothi
             prev_iso = 0
     
             do j=lbound(element%ions,1), ubound(element%ions,1)
@@ -894,8 +821,8 @@ contains
                     call line%get_range(nu, dlam, ired, iblue)
                     if (iblue == 0) cycle
     
-                    !eta => all_eta(:,:,:,ired:iblue)
-                    chi => all_chi(:,:,:,ired:iblue)
+                    chi  => chi_l  (:,:,:,ired:iblue)
+                    cont => all_chi(:,:,:,ired:iblue)
                     fmask(ired:iblue) = .true.
     
                     if (line%iso_idx /= prev_iso) then
@@ -913,15 +840,10 @@ contains
                       ipart => inv_part
                     endif
     
-                    call trace%begin('bbtrans_type%damping', itimer=itimer2)
-                    adamp = 0
-                    call line%damping(adamp, ne, tothi, vb2, stark_pe)
-                    if (element%id == 'H') then
-                      call line%dampingH(adamp, temp, ne, nh(:,:,:,6))
-                    endif
+                    call trace%begin('bbtrans_type%add_lte_opacities', itimer=itimer2)
+                    call line%add_lte_opacities2(nu(ired:iblue), &
+                        vproj, idopf, EK_over_temp, dxij, ipart, ne, tothi, vb2, stark_pe, unsold, chi, cont)
                     call trace%end(itimer2)
-                    call line%add_lte_opacities(nu(ired:iblue), &
-                          vproj, idopf, EK_over_temp, dxij, ipart, adamp, chi_fac, chi)
                 end do
             end do
         end do
@@ -943,22 +865,29 @@ contains
                 if (iblue == 0) cycle
       
                 !eta => all_eta(:,:,:,ired:iblue)
-                chi => all_chi(:,:,:,ired:iblue)
+                !chi => all_chi(:,:,:,ired:iblue)
+                chi  => chi_l  (:,:,:,ired:iblue)
+                cont => all_chi(:,:,:,ired:iblue)
                 fmask(ired:iblue) = .true.
       
-                call trace%begin('bbtrans_type%damping', itimer=itimer2)
-                adamp = 0
-                call line%damping(adamp, ne, tothi, vbar2, stark_pe)
+                call trace%begin('bbtrans_type%add_lte_opacities', itimer=itimer2)
+                call line%add_lte_opacities2(nu(ired:iblue), &
+                    vproj, inv_df, EK_over_temp, dxij, inv_part, ne, tothi, vbar2, stark_pe, unsold, chi, cont)
                 call trace%end(itimer2)
-                call line%add_lte_opacities(nu(ired:iblue), &
-                      vproj, inv_df, EK_over_temp, dxij, inv_part, adamp, chi_fac, chi)
             end do
         end do
 
         do f=1, size(nu)
-            if (fmask(f)) then
-                all_eta(:,:,:,f) = planck(nu(f), self%temp) * all_chi(:,:,:,f)
-            endif
+          if (fmask(f)) then
+            do k=1, m(3)
+            do j=1, m(2)
+            do i=1, m(1)
+                all_chi(i,j,k,f) = all_chi(i,j,k,f) + chi_l(i,j,k,f)
+                all_eta(i,j,k,f) = all_eta(i,j,k,f) + planck(nu(f), self%temp(i,j,k)) * chi_l(i,j,k,f)
+            end do
+            end do
+            end do
+          endif
         end do
     END SUBROUTINE add_linelist_opacities
 
@@ -1354,7 +1283,7 @@ contains
         class(level_type), pointer :: lvl
         real(dp), dimension(:,:,:), allocatable :: h1, part
         integer, dimension(:,:,:), allocatable :: nniv
-        integer :: i, itimer=0
+        integer :: i, itimer=0, itimer2=0
         !---------------------------------------------------------------------------
         call trace%begin ('composition_type%init_H_levels', itimer=itimer)
         call self%ion_by_id('H I', HI)
@@ -1384,7 +1313,9 @@ contains
           do i=1, HI%nk
             lvl => HI%levels(i)
             allocate(lvl%w, mold=self%temp)
+            call trace%begin ('composition_type%init_H_levels%wcalc', itimer=itimer2)
             call wcalc(HI%n, HeI%n, self%ne, self%shield, dble(i), lvl%w)
+            call trace%end (itimer2)
             part = part + lvl%w * lvl%n
           end do
           part = 1.d0 / part

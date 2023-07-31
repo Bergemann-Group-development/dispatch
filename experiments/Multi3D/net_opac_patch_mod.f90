@@ -33,6 +33,7 @@ MODULE net_opac_patch_mod
     USE m3d_halo_mod, only: lock_mem, unlock_mem
     USE m3d_patch_mod, only:maxiter, m3d_patch_t, comoving_frame, linear_long, &
                             interp_log, ray_offset, pivot_z, dlam
+    USE ray_mod, only: one_dimensional
     USE m3d_debug_mod
     implicit none
     private
@@ -95,18 +96,39 @@ MODULE net_opac_patch_mod
     p = self%pcheck
     memcheck = 0
 
-    if (.not. self%nullified) then
-      do iw=1, self%nw
-        do it=1, self%nt
-          do f=1, self%nv
-            mem(:,:,:,f,it,iw) = 0
+    nbor => self%link%nbor
+    do while (associated(nbor))
+      if (nbor%needed .and. .not. nbor%download) then
+        nbtask => nbor%task
+        select type (nbtask)
+        class is (back_cont_t)
+          call lock_mem( nbtask, 'net_opac_update', read=.true.)
+          call self%check_access(nbtask)
+          fs = nbtask%fs - self%fs + 1
+          fe = fs + nbtask%nv - 1
+          nw = self%nw
+          do iw=1, nw
+            iiw = mod(iw-1,2)+1
+          do it=1, self%nt
+          do f=fs,fe
+            fn = f - fs + 1
+            do z=1, self%n(3)
+            do y=1, self%n(2)
+            do x=1, self%n(1)
+              mem(x,y,z,f,it,iw) = nbtask%mem(x,y,z,fn,it,iiw)
+            end do
+            end do
+            end do
           end do
-        end do
-      end do
-    endif
+          end do
+          end do
+          call unlock_mem( nbtask, 'net_opac_update', read=.true.)
+        end select
+      endif
+      nbor => nbor%next
+    end do
 
     nu  => self%sp%nu(self%fs:self%fe)
-
     if (self%out_ray .and. self%composition%ll_initialised) then
       chi => self%authority_mem(:,:,:,:,1,1)
       eta => self%authority_mem(:,:,:,:,1,2)
@@ -116,8 +138,10 @@ MODULE net_opac_patch_mod
       call self%composition%add_linelist_opacities(nu, eta, chi, vproj, dlam)
       call trace%end (itimer2)
       call os%deallocate(vproj)
-      self%authority_mem(:,:,:,:,1,3) = chi
-      self%authority_mem(:,:,:,:,1,4) = eta
+      do f=1, self%nv
+        self%authority_mem(:,:,:,f,1,3) = chi(:,:,:,f)
+        self%authority_mem(:,:,:,f,1,4) = eta(:,:,:,f)
+      end do
     endif
 
     nbor => self%link%nbor
@@ -125,6 +149,8 @@ MODULE net_opac_patch_mod
       if (nbor%needed .and. .not. nbor%download) then
         nbtask => nbor%task
         select type (nbtask)
+        class is (back_cont_t)
+          ! already added
         class is (atom_line_t)
           it = self%it
           if (self%out_ray) then
@@ -179,7 +205,7 @@ MODULE net_opac_patch_mod
     call self%bndries()
     call self%periodic_grid()
 
-    if (self%out_ray .and. .not. self%one_dimensional) then
+    if (self%out_ray .and. .not. one_dimensional) then
       call self%rotate_cube()
     endif
     call trace%end(itimer)

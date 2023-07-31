@@ -20,6 +20,7 @@ MODULE bbtrans_mod
     procedure :: damping => line_damping
     procedure :: dampingH => line_dampingH
     procedure :: add_lte_opacities
+    procedure :: add_lte_opacities2
     procedure :: LinearStarkH
     procedure :: IonicH
     procedure :: prepare_Stark
@@ -72,15 +73,15 @@ contains
     real(4), dimension(:,:,:), intent(in), contiguous :: vproj, inv_df, inv_part
     real(4), dimension(:,:,:), intent(in), contiguous :: EK_over_temp, dxij
     real(4), dimension(:,:,:), contiguous :: adamp, chi_fac
-    real(4), dimension(:,:,:,:), intent(inout) :: chi
+    real(4), dimension(:,:,:,:), intent(inout), contiguous :: chi
     real(8) :: q
     real(4) :: ex, ni, nj, nij, upper_ev, nu0_ev, scalar, phi
-    integer :: i,j,k,f, m(4)
+    integer :: i,j,k,f, m(4), itimer=0
     !real(4), dimension(na+1, nv+1) :: local_table
     !local_table = voigt_table !prefetch
     !----------------------------------------------------------------------------------
+    !call trace%begin('add_lte_opacities_1', itimer=itimer)
     m = shape(chi)
-
     scalar = over_4pi / self%nu0
     nu0_ev = H_E * self%nu0
     upper_ev = self%lower_ev + nu0_ev
@@ -90,7 +91,7 @@ contains
     do i=1, m(1)
       ex = (upper_ev - dxij(i,j,k)) * EK_over_temp(i,j,k)
       if (ex < 85.) then
-        adamp(i,j,k) = adamp(i,j,k) * inv_df(i,j,k) * scalar
+        adamp(i,j,k) = adamp(i,j,k) * scalar * inv_df(i,j,k)
 
         nj = self%upper_g * inv_part(i,j,k) * exp(-ex)
         nij = exp(nu0_ev * EK_over_temp(i,j,k))
@@ -122,7 +123,105 @@ contains
       end do
       end do
     end do
+    !call trace%end(itimer)
   END SUBROUTINE add_lte_opacities
+  !------------------------------------------------------------------------------------
+
+  !====================================================================================
+  SUBROUTINE add_lte_opacities2(self, nu, vproj, inv_df, EK_over_temp, dxij, inv_part, &
+    ne, tothi, vbar2, stark_pe, unsold, chi, cont)
+    class(bbtrans_type), intent(in) :: self
+    real(8), dimension(:), intent(in), contiguous :: nu
+    real(4), dimension(:,:,:), intent(in), contiguous :: vproj, inv_df, inv_part
+    real(4), dimension(:,:,:), intent(in), contiguous :: EK_over_temp, dxij, ne, tothi, vbar2, stark_pe, unsold
+    real(4), dimension(:,:,:,:), intent(inout), contiguous :: chi
+    real(4), dimension(:,:,:,:), intent(in) :: cont
+    real(8), allocatable :: qq(:)
+    real(4) :: ex, ni, nj, nij, upper_ev, nu0_ev, scalar, vs, lchi
+    real(4) :: phi, a, idf, cf, v, ref, ekt, gj_Bji_4pi
+    real(4), parameter :: tol=1e-7
+    integer :: i,j,k,f, f0, f1, m(4), hi, hj, itimer=0
+    !----------------------------------------------------------------------------------
+    !call trace%begin('add_lte_opacities_1', itimer=itimer)
+    m = shape(chi)
+    scalar = over_4pi / self%nu0
+    nu0_ev = H_E * self%nu0
+    upper_ev = self%lower_ev + nu0_ev
+    gj_Bji_4pi = self%upper_g * self%Bji * over_4pi
+
+    allocate(qq, source = nu / self%nu0 - 1)
+    f0 = minloc(qq,1)
+    
+    do k=1, m(3)
+    do j=1, m(2)
+    do i=1, m(1)
+      ! Fixed Broadening
+      if (.not. disable_ga) then
+        a = self%ga
+      else
+        a = 0
+      endif
+      ! Van der Waals Broadening
+      if (.not. disable_vdw) then
+        if (self%unsold) then
+          a = a + self%gw1 * unsold(i,j,k)
+        else
+          a = a + self%gw1 * vbar2(i,j,k)**self%gw2 * tothi(i,j,k)
+        endif
+      endif
+      ! Stark Broadening
+      if (.not. disable_stark) then
+        if (self%gq >= 0.0) then
+          a = a + self%gq * ne(i,j,k)
+        else! if line%gq < 0
+          a = a - self%gq * stark_pe(i,j,k)
+        end if
+      endif
+
+      ! fetch variables
+      idf = inv_df(i,j,k)
+      v   = vproj(i,j,k)
+      ekt = EK_over_temp(i,j,k)
+      ex  = (upper_ev - dxij(i,j,k)) * ekt
+
+      if (ex < 85.) then
+        ! compute level populations
+        a = a * scalar * idf
+        nij = exp(nu0_ev * ekt)
+        nj = inv_part(i,j,k) * exp(-ex)
+        cf = idf * nj * gj_Bji_4pi * (nij - 1.)
+        
+        ! check if line peak is larger than continuum tolerance
+        vs = (qq(f0) - v) * idf
+        lchi = voigt_function2(a, vs) * cf
+        ref = tol * cont(i,j,k,f0)
+        if (lchi > ref) then
+          ! if so, add and continue with blue wing
+          chi(i,j,k,f0) = chi(i,j,k,f0) + lchi
+          f1 = 1
+          do f=f0+1, m(4)
+            vs = (qq(f) - v) * idf
+            lchi = voigt_function2(a, vs) * cf
+            ! if line opacity below tolerance exit and save f
+            if (lchi < ref) then
+              f1 = f-f0
+              exit
+            endif
+            chi(i,j,k,f) = chi(i,j,k,f) + lchi
+          end do
+          ! no do red wing, starting where blue wing left off
+          do f=f1, f0-1
+            vs = (qq(f) - v) * idf
+            lchi = voigt_function2(a, vs) * cf
+            chi(i,j,k,f) = chi(i,j,k,f) + lchi
+          end do
+        endif
+      endif
+    end do
+    end do
+    end do
+    !call trace%end(itimer)
+  END SUBROUTINE add_lte_opacities2
   !------------------------------------------------------------------------------------
 
   !====================================================================================
@@ -391,15 +490,15 @@ contains
   !------------------------------------------------------------------------------------
 
   !====================================================================================
-  PURE ELEMENTAL SUBROUTINE line_damping (self, adamp, ne, tothi, vbar2, stark_pe)
+  PURE ELEMENTAL SUBROUTINE line_damping (self, adamp, ne, tothi, vbar2, stark_pe, unsold)
     class(bbtrans_type), intent(in)  :: self
-    real(4), intent(in)  :: ne, tothi, vbar2, stark_pe
+    real(4), intent(in)  :: ne, tothi, vbar2, stark_pe, unsold
     real(4), intent(inout) :: adamp
     !----------------------------------------------------------------------------------
     ! Van der Waals Broadening
     if (.not. disable_vdw) then
-      if(self%unsold) then
-        adamp = adamp + self%gw1 * vbar2**0.3 * tothi
+      if (self%unsold) then
+        adamp = adamp + self%gw1 * unsold
       else
         adamp = adamp + self%gw1 * vbar2**self%gw2 * tothi
       endif

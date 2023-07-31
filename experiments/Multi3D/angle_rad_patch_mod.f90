@@ -29,6 +29,7 @@ MODULE angle_rad_patch_mod
   line_blanketing, use_vel, preconditioning, save_Qrad, binned_opac
   USE ray_patch_mod, only: ray_patch_t, formal_solver
   USE proj_patch_mod, only: interpolate_to_ray
+  USE ray_mod, only: one_dimensional
   USE os_mod
   USE omp_mod
   USE omp_lock_mod
@@ -154,7 +155,7 @@ SUBROUTINE execute (self)
       print *, 'long ray detected! Stopping...'
       stop
       !call self%long_ray_update()
-    elseif (self%one_dimensional) then
+    elseif (one_dimensional) then
       call self%long_char_update()
     else
       call self%short_ray_update()

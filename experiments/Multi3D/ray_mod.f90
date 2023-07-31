@@ -73,6 +73,8 @@ MODULE ray_mod
 
   end type ray_type
   
+  logical, public :: one_dimensional=.false.
+  
 contains
 
 !===============================================================================
@@ -372,14 +374,16 @@ SUBROUTINE set_radau_quadratures(quad_scheme, vec, wts, up_and_down)
   select case (quad_scheme)
   case ('radau1')
     ntheta = 1
-    nphi = 1
   case ('radau2')
     ntheta = 2
-    nphi = 4
-  case ('radau4')
+  case ('radau3')
     ntheta = 3
-    nphi = 4
+  case ('radau4')
+    ntheta = 4
+  case ('radau5')
+    ntheta = 5
   end select
+  nphi = 4
 
   allocate(mu(ntheta), wmu(ntheta))
   allocate(mu2(ntheta), wmu2(ntheta))
@@ -412,18 +416,25 @@ SUBROUTINE set_radau_quadratures(quad_scheme, vec, wts, up_and_down)
 END SUBROUTINE set_radau_quadratures
 
 !===============================================================================
-SUBROUTINE nphi_copies (nphi, mu, wmu, vec, wts, zrot)
-  integer, intent(in) :: nphi
+SUBROUTINE nphi_copies (nphi_in, mu, wmu, vec, wts, zrot)
+  integer, intent(in) :: nphi_in
   real(8), intent(inout), dimension(:) :: mu, wmu
   real(8), intent(out), dimension(:), allocatable :: wts
   real(8), intent(out), dimension(:,:), allocatable :: vec
   real(8), intent(in), optional, dimension(:) :: zrot
   real(8) :: xphi, theta, xoff
-  integer :: nrays, ntheta, i, nt, np, nmuphi, n1
+  integer :: nrays, ntheta, i, nt, np, nmuphi, n1, nphi
   logical :: includes_mu1
   ! -------------------------------------------------------------------
   nrays = size(mu)
   includes_mu1 = findloc(mu, 1.0, 1) > 0
+
+  ! no need for nphi copies if atmosphere is plane parallel
+  nphi = merge(1, nphi_in, one_dimensional)
+  if (nphi /= nphi_in) then
+    print *, 'nphi has been set to 1 since atmosphere is 1D!'
+  endif
+
   if (includes_mu1) then
     nmuphi = (nrays-1)*nphi + 1
   else

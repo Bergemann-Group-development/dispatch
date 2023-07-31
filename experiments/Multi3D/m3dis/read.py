@@ -198,7 +198,7 @@ class read(object):
         plt.ticklabel_format(useOffset=False)
 
     #=====================================================================
-    def set_yaxis(self, ang, imu, norm, renorm=False):
+    def set_yaxis(self, ang, imu, norm, per_aa=False, renorm=False):
         #-----------------------------------------------------------------
         if ang is not None:
             ylabel = 'Intensity µ={:.2f}'.format(self.vec[ang,-1])
@@ -211,10 +211,14 @@ class read(object):
         else:
             ylabel = 'Flux'
 
+        if per_aa: norm=False
+
         if norm or renorm:
             plt.ylabel('Normalised ' + ylabel)
+        elif (per_aa):
+            plt.ylabel(ylabel + r' [erg/s/cm$^{2}$/Å]')
         else:
-            plt.ylabel(ylabel)
+            plt.ylabel(ylabel + r' [erg/s/cm$^{2}$/Hz]')
 
     #=====================================================================
     def get_yy(self, ang=None, imu=None, norm=True, cont=False, LTE=False, mask=slice(None, None)):
@@ -314,7 +318,7 @@ class read(object):
                            per_aa=per_aa, cont=cont)
         
         self.set_xaxis(xx, dlam)
-        self.set_yaxis(ang, imu, norm)
+        self.set_yaxis(ang, imu, norm, per_aa=per_aa)
 
         plt.xlabel('Wavelength [Å]')
 

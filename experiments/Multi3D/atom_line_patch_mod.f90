@@ -210,7 +210,7 @@ MODULE atom_line_patch_mod
     class(line_type), pointer :: line
     class(ion_type), pointer :: He1
     real(4), dimension(:,:,:), pointer, contiguous :: tothi, ne, temp, adamp
-    real(4), dimension(:,:,:), pointer, contiguous :: vproj
+    real(4), dimension(:,:,:), pointer, contiguous :: vproj, unsold
     real(4), dimension(:,:,:), pointer, contiguous :: inv_df, ni, nj, vbar2, stark_pe
     real(4), dimension(:,:,:,:), pointer, contiguous :: phi
     real(4), dimension(:,:,:,:), pointer :: nh, chi, eta
@@ -231,6 +231,7 @@ MODULE atom_line_patch_mod
     call os%allocate(stark_pe,    self%n)
     call os%allocate(vproj,       self%n)
     call os%allocate(inv_df,      self%n)
+    call os%allocate(unsold,      self%n)
     
     call self%comp_vproj(vproj)
 
@@ -244,7 +245,7 @@ MODULE atom_line_patch_mod
       select case (line%profile_type)
       case ('voigt')
         adamp = 0
-        call line%damping(adamp, ne, tothi, vbar2, stark_pe)
+        call line%damping(adamp, ne, tothi, vbar2, stark_pe, unsold)
         if (self%atom%id == 'H') then
           call line%dampingH(adamp, temp, ne, nh(:,:,:,6))
         endif
@@ -284,6 +285,7 @@ MODULE atom_line_patch_mod
     call os%deallocate(stark_pe)
     call os%deallocate(inv_df)
     call os%deallocate(vproj)
+    call os%deallocate(unsold)
 
     !call self%add_to_net_opac()
 
@@ -420,7 +422,7 @@ MODULE atom_line_patch_mod
     real(4), intent(inout), dimension(:,:,:,:), pointer :: chi, eta
     logical, intent(in) :: LTE
     real(4), dimension(:,:,:), pointer, contiguous :: tothi, ne, temp, adamp
-    real(4), dimension(:,:,:), pointer, contiguous :: vproj, eta_fac, chi_fac
+    real(4), dimension(:,:,:), pointer, contiguous :: vproj, eta_fac, chi_fac, unsold
     real(4), dimension(:,:,:), pointer, contiguous :: inv_df, ni, nj, vbar2, stark_pe
     real(4), dimension(:,:,:,:), pointer, contiguous :: phi
     real(4), dimension(:,:,:,:), pointer :: nh
@@ -444,11 +446,13 @@ MODULE atom_line_patch_mod
     call os%allocate(inv_df,      self%n)
     call os%allocate(chi_fac,     self%n)
     call os%allocate(eta_fac,     self%n)
+    call os%allocate(unsold,      self%n)
     
     call self%comp_vproj(vproj)
 
     tothi = sum(nh(:,:,:,1:5), 4) ! total neutral hydrogen density
     vbar2 = self%atom%compute_vbar2(temp)
+    unsold = vbar2**0.3 * tothi
     inv_df = self%atom%inverse_doppler_factor(temp)
     stark_pe = ne * temp**one_sixth
 
@@ -480,7 +484,7 @@ MODULE atom_line_patch_mod
       select case (line%profile_type)
       case ('voigt')
         adamp = 0
-        call line%damping(adamp, ne, tothi, vbar2, stark_pe)
+        call line%damping(adamp, ne, tothi, vbar2, stark_pe, unsold)
         if (self%atom%id == 'H') then
           call line%dampingH(adamp, temp, ne, nh(:,:,:,6))
         endif
@@ -529,6 +533,7 @@ MODULE atom_line_patch_mod
     call os%deallocate(stark_pe)
     call os%deallocate(inv_df)
     call os%deallocate(vproj)
+    call os%deallocate(unsold)
     call trace%end(itimer)
   END SUBROUTINE add_line_opacity
 

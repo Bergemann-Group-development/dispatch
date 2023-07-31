@@ -19,7 +19,7 @@ MODULE ray_patch_mod
   USE math_mod
   USE handyfuncs_mod
   USE op_math_mod, only: searchsorted
-  USE ray_mod, only: ray_type
+  USE ray_mod, only: ray_type, one_dimensional
   USE m3d_patch_mod, only: m3d_patch_t, vec, wmu, long_vec, long_wmu, detailed_prints, &
   converged, print_send, atom_update_counter, comoving_frame, use_vel
   USE mconst, only: cc, over_4pi, PI
@@ -241,7 +241,7 @@ SUBROUTINE set_guard_zones (self)
   !-----------------------------------------------------------------------------
   if (self%out_ray) then
     self%ng = [0,0,1]
-  elseif (self%one_dimensional) then
+  elseif (one_dimensional) then
     self%ng = [0,0,1]
   elseif (self%ray%long) then
     self%ng = [3,3,1]
