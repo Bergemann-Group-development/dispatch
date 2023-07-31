@@ -173,7 +173,7 @@ MODULE m3d_patch_mod
     integer :: iostat, m(6), i
     character(len=256) :: command
     integer, save :: n_nu=1, itimer=0, ntheta=3, nphi=4
-    character(len=32), save :: quad_scheme='set_a2'
+    character(len=32), save :: quad_scheme='radau2'
     character(len=32), save :: long_scheme='lobatto'
     real(8), dimension(:), allocatable:: cust_mu
     namelist /m3d_params/ on, verbose, fcheck, linecheck, pcheck, quad_scheme, &

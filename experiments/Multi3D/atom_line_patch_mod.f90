@@ -239,6 +239,7 @@ MODULE atom_line_patch_mod
     vbar2 = self%atom%compute_vbar2(temp)
     inv_df = self%atom%inverse_doppler_factor(temp)
     stark_pe = ne * temp**one_sixth
+    unsold = vbar2**0.3 * tothi
 
     do i=1, self%nline
       line => self%line(i)

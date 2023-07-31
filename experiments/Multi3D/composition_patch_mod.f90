@@ -57,8 +57,8 @@ SUBROUTINE composition_pre_init (self)
   integer :: i, iostat, n_nu, n_mu, nlists
   integer, save:: itimer=0, itimer2=0
   integer, save :: verbose=0
-  character(len=128), save :: absdat_file='./input_multi3d/absdat'
-  character(len=128), save :: abund_file='./input_multi3d/abund'
+  character(len=128), save :: absdat_file='./input_multi3d/TS_absdat.dat'
+  character(len=128), save :: abund_file='./input_multi3d/abund_magg'
   character(len=128), save :: isotope_file=''!'./input_multi3d/isotopes_abund.txt'
   character(len=128), save :: molec_file='./input_multi3d/molec_data.txt'
   character(len=128), save :: opac_table=''
