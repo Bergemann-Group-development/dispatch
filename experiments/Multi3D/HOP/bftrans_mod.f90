@@ -1,7 +1,7 @@
 MODULE bftrans_mod
   USE prec_mod
   USE op_math_mod
-  USE level_mod
+  USE level_mod, only: level_type, wcalc
   USE ion_mod
   USE element_mod
   USE molecule_mod
@@ -11,17 +11,18 @@ MODULE bftrans_mod
   private
   
   type, public :: bftrans_type
-      integer :: j, k, ntt, nnu, verbose
+      integer :: k, ntt, nnu, verbose
       type(level_type) :: level
       class(particle_type), pointer :: ion
       real(dp) :: mint, maxt, minl, maxl
-      logical :: ilogl, kvadl, minex, maxex
-      logical :: ilogt, kvadt, minet, maxet, iteta
+      logical :: ilogl, kvadl, minex, maxex, loglam
+      logical :: ilogt, kvadt, minet, maxet, iteta, pedep, istim
       real(dp), dimension(:), allocatable :: lam, temp, teta, tt
       real(dp), dimension(:,:), allocatable :: xkap
       real(dp), dimension(:,:), allocatable :: log_xkap
       logical, dimension(:), allocatable :: ldisk!, tdisk
-      logical :: bound_free, regular, exclude=.false.
+      logical :: free_free=.false., regular=.false., molecular=.false.
+      logical :: active=.true.
       character(len=5) :: key
       character(len=20) :: label
 
@@ -30,7 +31,6 @@ MODULE bftrans_mod
       procedure :: interp_xkap
       procedure :: check_temp_quadratic
       procedure :: check_lam_quadratic
-      procedure :: boltzmann_weight => trans_boltzmann_weight
       procedure :: absorption_factor
       procedure :: add_absorption
       procedure :: set_xweight
@@ -38,15 +38,17 @@ MODULE bftrans_mod
       procedure :: load_unsorted_lam_interp_weights
       procedure :: interp_temp_quadratic
       procedure :: interp_temp_linear
+      procedure :: H_occupation
   end type
 
   logical :: active
-  integer :: fs, fe, di
+  integer :: fs, fe
+  logical, public :: H_occupation_probability=.true.
   integer, dimension(:), pointer, contiguous :: iw => null()
   logical, dimension(:), pointer, contiguous :: quad => null()
   real(dp), dimension(:,:), pointer, contiguous :: lagrange => null()
   real(dp), dimension(:,:), pointer, contiguous :: pvt_xkap => null()
-  !$omp threadprivate(active, fs, fe, di, iw, quad, lagrange, pvt_xkap)
+  !$omp threadprivate(active, fs, fe, iw, quad, lagrange, pvt_xkap)
 
 contains
 
@@ -54,7 +56,7 @@ contains
   SUBROUTINE load_lam_interp_weights(self, lam)
     class(bftrans_type) :: self
     real(dp), dimension(:), intent(in) :: lam
-    integer :: nf, f
+    integer :: nf, f, di
     integer :: nx, j, i
     logical :: quadratic
     !---------------------------------------------------------------------------
@@ -127,6 +129,10 @@ contains
       f = f+di
       quad(f) = quadratic
     end do
+
+    i = fs
+    fs = min(fs, fe)
+    fe = max(fe, i)
   END SUBROUTINE
 
     !===============================================================================
@@ -158,7 +164,6 @@ contains
 
     fs = nf
     fe = 1
-    di = 1
     iw(:) = 0
 
     do i=1, nf
@@ -176,33 +181,44 @@ contains
   SUBROUTINE set_xweight(self, lam, f)
       class(bftrans_type) :: self
       real(dp), dimension(:), intent(in) :: lam
+      real(dp) :: xx(3), x
       integer, intent(in) :: f
-      integer :: j
+      integer :: j, k
       !---------------------------------------------------------------------------
+      ! if there are not enough points, step back
+      k = merge(2, 1, quad(f))
+      iw(f) = min(iw(f), self%nnu-k)
+      iw(f) = max(iw(f), 1)
       j = iw(f)
+      k = k+1
 
-      if (quad(f)) then
-          if (size(self%lam) - j < 2) then
-              ! if there are not enough points, step back one index
-              iw(f) = iw(f) - 1
-              j = iw(f)
-          endif
+      associate(xx => xx(1:k))
+        x = lam(f)
+        xx = self%lam(j:j+k-1)
 
-          lagrange(1:3,f) = quadratic_weight(self%lam(j:j+2), lam(f))
-      else
-          lagrange(1:2,f) = linear_weight(self%lam(j:j+1), lam(f))
-      endif
+        if (self%loglam) then
+          x = log(x)
+          xx = log(xx)
+        endif
+
+        if (quad(f)) then
+            lagrange(1:k,f) = quadratic_weight(xx, x)
+        else
+            lagrange(1:k,f) = linear_weight(xx, x)
+        endif
+      end associate
   END SUBROUTINE set_xweight
 
   !===============================================================================
   FUNCTION quadratic_weight(xxx,newx) result(w)
       real(dp), dimension(3), intent(in) :: xxx
       real(dp), intent(in) :: newx
-      real(dp) :: w(3)
+      real(dp) :: diff(3), w(3)
       !---------------------------------------------------------------------------
-      w(1) = (newx-xxx(2)) * (newx-xxx(3)) / ((xxx(1)-xxx(2)) * (xxx(1)-xxx(3)))
-      w(2) = (newx-xxx(1)) * (newx-xxx(3)) / ((xxx(2)-xxx(1)) * (xxx(2)-xxx(3)))
-      w(3) = (newx-xxx(1)) * (newx-xxx(2)) / ((xxx(3)-xxx(1)) * (xxx(3)-xxx(2)))
+      diff = newx-xxx
+      w(1) = diff(2) * diff(3) / ((xxx(1)-xxx(2)) * (xxx(1)-xxx(3)))
+      w(2) = diff(1) * diff(3) / ((xxx(2)-xxx(1)) * (xxx(2)-xxx(3)))
+      w(3) = diff(1) * diff(2) / ((xxx(3)-xxx(1)) * (xxx(3)-xxx(2)))
   end FUNCTION quadratic_weight
 
   !===============================================================================
@@ -216,11 +232,13 @@ contains
   end FUNCTION linear_weight
 
   !===============================================================================
-  SUBROUTINE interp_xkap(self, abslte, temp, teta, fakt)
+  SUBROUTINE interp_xkap(self, abslte, temp, teta, fakt, lam, ne, nhe, shield)
       class(bftrans_type) :: self
       real(4), dimension(:,:,:,:), intent(inout) :: abslte
       real(dp), intent(in), dimension(:,:,:), target :: temp, teta
-      real(dp), intent(in), dimension(:,:,:) :: fakt
+      real(dp), intent(inout), dimension(:,:,:) :: fakt
+      real(dp), intent(in), dimension(:) :: lam
+      real(dp), intent(in), dimension(:,:,:), optional :: ne, nhe, shield
       real(dp), dimension(:,:,:), pointer :: newt
       real(dp), dimension(:,:,:,:), allocatable :: yyt
       real(dp), dimension(:,:,:), allocatable :: ab, yt
@@ -230,6 +248,7 @@ contains
       integer :: i, f, nx, ny, nz
       integer, dimension(:,:,:), allocatable :: it
       logical, dimension(:,:,:), allocatable :: quadratic, in_bounds
+      logical :: skip
       !---------------------------------------------------------------------------
       nx = size(temp, 1)
       ny = size(temp, 2)
@@ -243,7 +262,6 @@ contains
           allocate(it(nx,ny,nz))
 
           ab = 0
-
           in_bounds = .true.
 
           if (.not. self%minet) then
@@ -299,19 +317,19 @@ contains
               yyt(:,:,:,f) = yt
           end do
 
-          do f=fs,fe,di
+          do f=fs,fe
               i = iw(f)
               if (i==0) cycle
               if (quad(f)) then
                   where (in_bounds)
                       ab = yyt(:,:,:,i)   * lagrange(1,f) + &
-                          yyt(:,:,:,i+1) * lagrange(2,f) + &
-                          yyt(:,:,:,i+2) * lagrange(3,f)
+                           yyt(:,:,:,i+1) * lagrange(2,f) + &
+                           yyt(:,:,:,i+2) * lagrange(3,f)
                   end where
               else
                   where (in_bounds)
                       ab = yyt(:,:,:,i)   * lagrange(1,f) + & 
-                          yyt(:,:,:,i+1) * lagrange(2,f)
+                           yyt(:,:,:,i+1) * lagrange(2,f)
                   end where
               endif
 
@@ -330,7 +348,7 @@ contains
               yy = self%xkap(:,1)
           endif
 
-          do f=fs,fe,di
+          do f=fs,fe
               i = iw(f)
               if (i==0) cycle
               if (quad(f)) then
@@ -340,6 +358,12 @@ contains
               endif
 
               if (self%ilogl) ab1 = exp(ab1)
+
+              if (H_occupation_probability .and. self%key == 'H BF') then
+                call self%H_occupation(lam(f), nhe, ne, shield, temp, fakt, skip)
+                if (skip) cycle
+              endif
+
               abslte(:,:,:,f) = abslte(:,:,:,f) + fakt*ab1
 
               !if (f == 1) then
@@ -348,6 +372,41 @@ contains
           end do
       endif
   END SUBROUTINE interp_xkap
+
+  !===============================================================================
+  PURE SUBROUTINE H_occupation(self, lam, nhe, ne, shield, temp, fakt, skip)
+      class(bftrans_type), intent(in) :: self
+      real(dp), intent(in) :: lam
+      real(dp), intent(in), dimension(:,:,:) :: nhe, ne, shield, temp
+      real(dp), intent(out), dimension(:,:,:) :: fakt
+      logical, intent(out) :: skip
+      real(dp) :: redcut, nu, x, scalar
+      !---------------------------------------------------------------------------
+      associate(lvl => self%ion%levels(self%k))
+        redcut = hc_e / ((self%k**(-2.d0) - (self%k+1)**(-2.d0))*RYD) * 1d8
+        if (lam > redcut) then
+          redcut = exp((redcut - lam)*1.d-2)
+        else
+          redcut = 1.0
+        endif
+        skip = redcut < 1d-1
+        if (.not. skip) then
+          nu = cc/lam*1e8
+          scalar = 2.0898E-26 / (2*self%k**5) * redcut
+
+          x = 1. - (lvl%xion + h_e*nu)/RYD
+          if(x > 0.d0) then
+            x = 1.d0/sqrt(x)
+            call wcalc(self%ion%n, nhe, ne, shield, x, fakt)
+            fakt = lvl%w - fakt
+          else
+            fakt = lvl%w
+          endif
+
+          fakt = fakt * scalar * lvl%n
+        endif
+      end associate
+  END SUBROUTINE H_occupation 
 
   !===============================================================================
   elemental FUNCTION interp_temp_quadratic(self, f, it, newt) result(newy)
@@ -395,10 +454,9 @@ contains
 
       if (self%kvadl) then
         if (self%nnu - iw > 1) then
-          if (iw < 0) then
+          if (iw <= 0) then
             quadratic = .false.
-          endif
-          if (.not. self%ldisk(iw)) then
+          elseif (.not. self%ldisk(iw)) then
             quadratic = .true.
           endif
         endif
@@ -442,99 +500,71 @@ contains
   END SUBROUTINE get_temp_index
 
   !===============================================================================
-  PURE ELEMENTAL FUNCTION trans_boltzmann_weight(self, EK_over_temp, dxi) result(frac)
-      class(bftrans_type), intent(in) :: self
-      real(dp), intent(in) :: EK_over_temp
-      real(dp), intent(in), optional :: dxi
-      real(dp) :: frac
-      !---------------------------------------------------------------------------
-      frac = self%level%g2 * self%level%boltzmann(EK_over_temp, dxi=dxi, natural_log=.true.)
-  END FUNCTION trans_boltzmann_weight
-
-  !===============================================================================
-  SUBROUTINE absorption_factor(self, EK_over_temp, teta, pe, toth, dxi, fakt)
+  SUBROUTINE absorption_factor(self, EK_over_temp, teta, pe, dxi, fakt)
       class(bftrans_type), intent(in) :: self
       class(particle_type), pointer :: ion
-      real(dp), dimension(:,:,:), intent(in) :: EK_over_temp, teta, pe, toth, dxi
+      real(dp), dimension(:,:,:), intent(in) :: EK_over_temp, teta, pe, dxi
       real(dp), dimension(:,:,:), intent(out) :: fakt
       real(dp), dimension(:,:,:), allocatable :: h1
       integer, dimension(:,:,:), allocatable :: nniv
-      real(dp) :: thresh
+      real(dp) :: scalar
       !---------------------------------------------------------------------------
       ion => self%ion
-
-      if (self%regular) then
-          fakt = self%boltzmann_weight(EK_over_temp)
-          fakt = fakt * ion%part * ion%n
-      else
-          select case(trim(self%key))
-          case('H- BF')
-              ! factor 1e-17 comes from table 1 in Daugthy 1966 
-              fakt = 1.e-17 * ion%n
-          case('H- FF')
-              ! factor 1e-26 comes from table 1 in Stilley & Callaway 1970
-              ! values are tabulated per unit electron pressure per hydrogen atom
-              fakt = 2.E-26 * ion%n * pe * ion%part
-              !fakt = 1.E-26 * toth * pe
-          case('H BF')
-              !call self%boltzmann_weight(EK_over_temp, fakt, dxi) 
-              !fakt = 2.0898E-26 / (2*self%k**5) * fakt * ion%part * ion%n
-
-              thresh = RYD - self%level%xion ! ionisation threshold
-              allocate(h1, source=sqrt(RYD/dxi))
-              allocate(nniv, source=int(h1))
-
-              where (nniv < self%k)
-                  fakt = 0
-              elsewhere
-                  fakt = self%boltzmann_weight(EK_over_temp)
-                  fakt = 2.0898E-26 / (2*self%k**5) * fakt * ion%part * ion%n
-                  where (nniv == self%k)
-                    fakt = fakt * (h1 - nniv)
-                  end where
-              end where
-
-          case('H FF')
-              !fakt = 2.0898E-26 / 2 * ion%part * ion%n * exp(-31.30364*teta + 2.3026*dxi*teta) / (31.30364*teta)
-              fakt = self%level%boltzmann(EK_over_temp, dxi, natural_log=.true.)
-              fakt = 2.0898E-26 / (2*RYD*EK_over_temp) * fakt * ion%part * ion%n
-
-          case('(H+H)')
-              ! see Doyle 1968 "The astrophysical significance of the continuous spectrum of the hydrogen quasi-molecule"
-              fakt = (1d-25 * ion%n)**2
-          case('H2+')
-              select type(ion)
-              class is (ion_type)
-                  !fakt = (1d-20 * ion%n)**2 * ion%saha
-                  fakt = 1d-40 * ion%n * ion%above%n
-              end select
-          case('H2-', 'HE-')
-              fakt = pe * ion%n
+      !if (self%key /= 'H- BF') then
+      !  fakt = 0
+      !  return
+      !endif
+      select case(trim(self%key))
+      case('H- BF')
+          fakt = ion%n
+      case('H- FF')
+          fakt = ion%n * pe
+      case('H BF')
+          if (.not. H_occupation_probability) then
+            scalar = 2.0898E-26 / (2*self%k**5)
+            fakt = scalar * ion%levels(self%k)%n
+          endif
+      case('H FF')
+          !fakt = 2.0898E-26 / 2 * ion%part * ion%n * exp(-31.30364*teta + 2.3026*dxi*teta) / (31.30364*teta)
+          fakt = ion%boltzmann(EK_over_temp, dxi, natural_log=.true.)
+          fakt = 2.0898E-26 / (2*RYD*EK_over_temp) * fakt * ion%part * ion%n
+      case('(H+H)')
+          ! see Doyle 1968 "The astrophysical significance of the continuous spectrum of the hydrogen quasi-molecule"
+          fakt = (1d-25 * ion%n)**2
+      case('H2+')
+          select type(ion)
+          class is (ion_type)
+              fakt = 1d-40 * ion%n * ion%above%n
           end select
-      endif
-      !print *, self%key, fakt
+      case default
+        if (self%pedep) then
+          fakt = pe * ion%n
+          if (self%free_free) then
+            fakt = (1d-40 / EE) * EK_over_temp * fakt
+          endif
+        elseif (self%molecular) then
+            fakt = ion%n * ion%awgt / 6.023d23
+        elseif (self%regular) then
+            fakt = self%level%g * self%level%boltzmann(EK_over_temp, natural_log=.true.)
+            fakt = fakt * ion%part * ion%n
+        endif
+      end select
   END SUBROUTINE absorption_factor
 
   !===============================================================================
-  SUBROUTINE add_absorption(self, abslte, lam, temp, EK_over_temp, teta, pe, toth, dxi, sorted)
+  SUBROUTINE add_absorption(self, abslte, lam, temp, EK_over_temp, teta, pe, dxi, ne, nhe, shield, sorted)
       class(bftrans_type), intent(in) :: self
       real(4), dimension(:,:,:,:), intent(inout) :: abslte
-      real(dp), dimension(:,:,:), intent(in) :: temp, EK_over_temp, teta, pe, toth, dxi
+      real(dp), dimension(:,:,:), intent(in) :: temp, EK_over_temp, teta, pe, dxi
+      real(dp), dimension(:,:,:), intent(in), optional :: ne, nhe, shield
       real(dp), dimension(:), intent(in) :: lam
       real(dp), dimension(:,:,:), allocatable :: fakt
       logical, optional :: sorted
       real(dp) :: prev
-      integer :: i,j,k,nf, m(2), p(4)=[1,1,1,1]
+      integer :: i,j,k,nf, m(2), p(4)=pp
       !---------------------------------------------------------------------------
+      if (.not. self%active) return
       nf = size(lam)
-
-      if (associated(quad)) then
-          print *, 'stoping...'
-          stop
-      endif
-
-      if (self%exclude) return
-
       call os%allocate(quad, nf)
       call os%allocate(iw, nf)
       call os%allocate(lagrange, [3,nf], zero=.true.)
@@ -548,12 +578,12 @@ contains
       endif
 
       if (active) then
-          !prev = abslte(p(1), p(2), p(3), p(4))
-          call self%absorption_factor(EK_over_temp, teta, pe, toth, dxi, fakt)
-          call self%interp_xkap(abslte, temp, teta, fakt)
-          !print '(A14, A, 8(ES14.6))', self%label, self%ion%id, fakt(p(1),p(2),p(3))!, abslte(p(1),p(2),p(3),p(4)) - prev, abslte(p(1),p(2),p(3),p(4))
+          !if (nf > 1) prev = abslte(p(1), p(2), p(3), p(4))
+          call self%absorption_factor(EK_over_temp, teta, pe, dxi, fakt)
+          call self%interp_xkap(abslte, temp, teta, fakt, lam, ne, nhe, shield)
+          !if (nf > 1) print '(A8, 2x, A12, 2x, A, 8(ES14.6))', self%key, self%label, self%ion%id, &
+          ! fakt(p(1),p(2),p(3)), abslte(p(1),p(2),p(3),p(4)) - prev, abslte(p(1),p(2),p(3),p(4))
       endif
-
 
       call os%deallocate(quad)
       call os%deallocate(iw)

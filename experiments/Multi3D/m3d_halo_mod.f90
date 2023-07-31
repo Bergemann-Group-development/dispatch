@@ -18,6 +18,7 @@ MODULE m3d_halo_mod
     USE omp_timer_mod
     USE bits_mod
     USE guards_mod
+    USE handyfuncs_mod, only:option
     implicit none
     private
   
@@ -37,6 +38,9 @@ MODULE m3d_halo_mod
     end type
 
     logical, public, save :: print_finished=.false., print_download=.false.
+    logical, public, save :: print_lock=.false.
+
+    public :: lock_mem, unlock_mem
 
 CONTAINS
 
@@ -89,6 +93,34 @@ CONTAINS
     !call self%halo_t%update(all_tgt, all_src, only)
     call halo_update(self, all_tgt, all_src, only)
   END SUBROUTINE update
+
+  !===============================================================================
+  SUBROUTINE lock_mem (self, label, read)
+    class(patch_t) :: self
+    character(len=*) :: label
+    logical, optional :: read
+    !-----------------------------------------------------------------------------
+    if (option(read, .false.)) then
+      call self%mem_lock(1)%set_read (label)
+    else
+      call self%mem_lock(1)%set (label)
+    endif
+    if (print_lock) print '(A20, I6, A10)', trim(self%kind), self%id, 'locked'
+  END SUBROUTINE lock_mem
+
+  !===============================================================================
+  SUBROUTINE unlock_mem (self, label, read)
+    class(patch_t) :: self
+    character(len=*) :: label
+    logical, optional :: read
+    !-----------------------------------------------------------------------------
+    if (option(read, .false.)) then
+      call self%mem_lock(1)%unset_read (label)
+    else
+      call self%mem_lock(1)%unset (label)
+    endif
+    if (print_lock) print '(A20, I6, A10)', trim(self%kind), self%id, 'unlocked'
+  END SUBROUTINE unlock_mem
 
   !===============================================================================
   !> Comprehensive entry point
@@ -167,7 +199,11 @@ CONTAINS
     class is (patch_t)
       select type (source)
       class is (patch_t)
+        call lock_mem(source, 'source_to_target', read=.true.)
+        !call lock_mem(target, 'source_to_target')
         call self%same(target, source, only=only)
+        !call unlock_mem(target, 'source_to_target')
+        call unlock_mem(source, 'source_to_target', read=.true.)
       end select
     end select
     call trace%end (itimer=itimer)
@@ -187,9 +223,9 @@ CONTAINS
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_halo_t%same', itimer=itimer)
 
-    if (print_download) then
-      write(stdout, '(I4, A, I4)') tgt%id, ' downloading from ', src%id
-    endif
+    !if (print_download) then
+    !  write(stdout, '(I8, A, I8)') tgt%id, ' downloading from ', src%id
+    !endif
 
     tm => tgt%mesh                             ! tgt mesh
     sm => src%mesh                             ! src mesh
@@ -230,14 +266,27 @@ CONTAINS
       call tgt%stats ('guards_t%same tgt')
       call src%stats ('guards_t%same src')
     end if
-    call io%assert (all(lt >= tm%lb), 'guards_t%same: lt breach')
-    call io%assert (all(ut <= tm%ub), 'guards_t%same: ut breach')
-    call io%assert (all(ls >= sm%lb), 'guards_t%same: ls breach')
-    call io%assert (all(us <= sm%ub), 'guards_t%same: us breach')
 
-    if (src%n(3)==1) then
+    if (size(src%mem,3)==1) then
       ls(3) = 1
       us(3) = 1
+    endif
+
+    call io%assert (all(lt <= tm%ub), 'guards_t%same: lt breach')
+    call io%assert (all(ut >= tm%lb), 'guards_t%same: ut breach')
+    call io%assert (all(ls <= sm%ub), 'guards_t%same: ls breach')
+    call io%assert (all(us >= sm%lb), 'guards_t%same: us breach')
+
+    if (print_download) then
+      write(stdout, '(I8, A, I8)') tgt%id, ' downloading from ', src%id
+      write(stdout, '(4(3(I4), 1x))') ls, us, lt, ut
+    endif
+
+    if (.not. associated(src%mem)) then
+      print *, 'source not allocated', src%id, tgt%id
+    endif
+    if (.not. associated(tgt%mem)) then
+      print *, 'target not allocated', src%id, tgt%id
     endif
 
     if (src%level == tgt%level) then

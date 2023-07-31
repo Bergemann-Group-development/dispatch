@@ -1,6 +1,6 @@
-from .atom import atom_class, CC
+from .atom import atom_class
 from .trans import trans_class
-from .auxfuncs import vacuum2obs, continuum, freq_quad, convol
+from .auxfuncs import vacuum2obs, continuum, freq_quad, convol, SBOL, CC
 import numpy as np
 import pandas as pd
 import dask.array as da
@@ -12,8 +12,6 @@ from scipy.io import FortranFile
 from matplotlib.collections import LineCollection
 import os
 
-cc = 2.99792458e10 # Speed of light [cm/s]
-
 #=====================================================================
 class read(object):
     #=================================================================
@@ -22,8 +20,7 @@ class read(object):
         folder = folder + os.sep
         sfolder = folder + 'save' + os.sep
         self.sfolder = sfolder
-        self.nml = f90nml.read(folder + 'params.nml')
-        
+        self.nml = f90nml.read(folder + 'params.nml')   
         df = pd.read_csv(folder + 'abund.txt', header=None, sep='\s+', na_filter=False)
         self.abundances = {k.lower().capitalize():v for k, v in df.values}
         
@@ -92,14 +89,10 @@ class read(object):
         self.flux_lte = np.zeros_like(self.lam)
         self.flux_cnt = np.zeros_like(self.lam)
 
-        out_rad_keys = list(out_rad.keys())
-        min_ang = min([key[-1] for key in out_rad_keys])
-
-        for i in range(self.n_ang):
-            key = out_rad_keys[i]
+        for key in out_rad.keys():
             ipos, inu, ang = key
             mem = out_rad[key]
-            ang = ang - min_ang
+            ang = abs(ang)-1
             self.i3[ang]     = mem[...,0,:,0]
             self.i3_lte[ang] = mem[...,0,:,1]
             self.c3[ang]     = mem[...,0,:,2]
@@ -137,16 +130,29 @@ class read(object):
             self.zz = np.linspace(0, (nz-1)*dz, nz)
             
             dat = FortranFile(folder + 'atmos_data.bin')
-            self.temp = dat.read_reals(np.float32).reshape((nx,ny,nz), order='F')
-            self.rho  = dat.read_reals(np.float32).reshape((nx,ny,nz), order='F')
-            self.px   = dat.read_reals(np.float32).reshape((nx,ny,nz), order='F')
-            self.py   = dat.read_reals(np.float32).reshape((nx,ny,nz), order='F')
-            self.pz   = dat.read_reals(np.float32).reshape((nx,ny,nz), order='F')
-            self.pe   = dat.read_reals(np.float32).reshape((nx,ny,nz), order='F')
-            self.tau  = dat.read_reals(np.float32).reshape((nx,ny,nz), order='F')
-            self.chi  = dat.read_reals(np.float32).reshape((nx,ny,nz), order='F')
-            self.eta  = dat.read_reals(np.float32).reshape((nx,ny,nz), order='F')
+            self.temp = dat.read_reals(np.float32)
+            self.rho  = dat.read_reals(np.float32)
+            self.px   = dat.read_reals(np.float32)
+            self.py   = dat.read_reals(np.float32)
+            self.pz   = dat.read_reals(np.float32)
+            self.pe   = dat.read_reals(np.float32)
+            self.tau  = dat.read_reals(np.float32)
+            self.chi  = dat.read_reals(np.float32)
+            self.eta  = dat.read_reals(np.float32)
             dat.close()
+
+            if nx*ny > 1:
+                self.temp = self.temp.reshape((nx,ny,nz), order='F')
+                self.rho  = self.rho .reshape((nx,ny,nz), order='F')
+                self.px   = self.px  .reshape((nx,ny,nz), order='F')
+                self.py   = self.py  .reshape((nx,ny,nz), order='F')
+                self.pz   = self.pz  .reshape((nx,ny,nz), order='F')
+                self.pe   = self.pe  .reshape((nx,ny,nz), order='F')
+                self.tau  = self.tau .reshape((nx,ny,nz), order='F')
+                self.chi  = self.chi .reshape((nx,ny,nz), order='F')
+                self.eta  = self.eta .reshape((nx,ny,nz), order='F')
+
+            self.ltau = np.log10(self.tau)
         
         maxiter = self.nml['m3d_params']['maxiter']
         depart = self.nml['atom_params']['precomputed_depart'].strip()
@@ -192,7 +198,7 @@ class read(object):
         plt.ticklabel_format(useOffset=False)
 
     #=====================================================================
-    def set_yaxis(self, ang, imu, norm, renorm=False):
+    def set_yaxis(self, ang, imu, norm, per_aa=False, renorm=False):
         #-----------------------------------------------------------------
         if ang is not None:
             ylabel = 'Intensity µ={:.2f}'.format(self.vec[ang,-1])
@@ -205,13 +211,17 @@ class read(object):
         else:
             ylabel = 'Flux'
 
+        if per_aa: norm=False
+
         if norm or renorm:
             plt.ylabel('Normalised ' + ylabel)
+        elif (per_aa):
+            plt.ylabel(ylabel + r' [erg/s/cm$^{2}$/Å]')
         else:
-            plt.ylabel(ylabel)
+            plt.ylabel(ylabel + r' [erg/s/cm$^{2}$/Hz]')
 
     #=====================================================================
-    def get_yy(self, ang=None, imu=None, norm=True, LTE=False, mask=slice(None, None)):
+    def get_yy(self, ang=None, imu=None, norm=True, cont=False, LTE=False, mask=slice(None, None)):
         #-----------------------------------------------------------------
         if imu is not None:
             if imu >= self.nmu: raise ValueError('imu is out of range. Nmu = {:}'.format(self.nmu))
@@ -219,9 +229,11 @@ class read(object):
 
         if ang is None and imu is None:
             cnt = self.flux_cnt
-            if LTE:
+            if cont:
+                yy = self.flux_cnt
+            elif LTE:
                 yy = self.flux_lte
-            else:
+            else:   
                 yy = self.flux
 
             cnt = cnt[mask]
@@ -229,7 +241,9 @@ class read(object):
 
         else:
             cnt = self.cnt
-            if LTE:
+            if cont:
+                yy = self.cnt
+            elif LTE:
                 yy = self.ie_lte
             else:
                 yy = self.ie
@@ -246,12 +260,13 @@ class read(object):
         
         if norm:
             yy = yy / cnt
+
             
         return yy, cnt
     
     #=====================================================================
     def crop(self, lam0=None, dlam=None, xmin=None, xmax=None, vdop=None, 
-             vshift=None, convolve=None, **kwargs):
+             vshift=None, convolve=None, per_aa=False, **kwargs):
         #-----------------------------------------------------------------
         xx = self.lam
 
@@ -261,6 +276,9 @@ class read(object):
             dlam = None
             lam0 = 0
 
+        if per_aa:
+            kwargs['norm'] = False
+
         xx, mask = self.get_xx(xx, dlam, xmin, xmax)
         yy, cnt = self.get_yy(mask=mask, **kwargs)
         xx = xx + lam0
@@ -268,6 +286,9 @@ class read(object):
         if vdop is not None or vshift is not None or convolve is not None:
             sxx, syy = convol(xx, yy, vdop=vdop, vshift=vshift, custom=convolve)
             yy = np.interp(xx, sxx, syy)
+
+        if per_aa:
+            yy = yy * CC / (xx**2) * 1e8
 
         return xx, yy
     
@@ -289,14 +310,15 @@ class read(object):
 
     #=====================================================================
     def plot_spectrum(self, ang=None, imu=None, norm=True, LTE=False,
-                      vdop=None, vshift=None, lam0=None, dlam=10, 
-                      show_lines=False, xmin=None, xmax=None,  **kwargs):
+                      vdop=None, vshift=None, lam0=None, dlam=10, cont=False,
+                      show_lines=False, xmin=None, xmax=None,  per_aa=False, **kwargs):
         #-----------------------------------------------------------------
         xx, yy = self.crop(lam0=lam0, dlam=dlam, ang=ang, imu=imu, norm=norm,
-                           xmin=xmin, xmax=xmax, LTE=LTE, vdop=vdop, vshift=vshift)
+                           xmin=xmin, xmax=xmax, LTE=LTE, vdop=vdop, vshift=vshift,
+                           per_aa=per_aa, cont=cont)
         
         self.set_xaxis(xx, dlam)
-        self.set_yaxis(ang, imu, norm)
+        self.set_yaxis(ang, imu, norm, per_aa=per_aa)
 
         plt.xlabel('Wavelength [Å]')
 
@@ -341,6 +363,18 @@ class read(object):
             plt.text(x=x, y=occu[i], s=idx, rotation=45, color='grey', fontsize=8)
 
         plt.ylim(ymin, occu.max() + (ymax-ymin)/5)
+
+    #=====================================================================
+    def plot_surface(self, i, cmap='hot', **kwargs):
+        i3 = self.i3[0]
+
+        if not 'extent' in kwargs.keys():
+            if self.xx.size > 1 and self.yy.size > 1:
+                extent = [0, self.xx[-1], 0, self.yy[-1]]
+                plt.xlabel('Mm')
+                plt.ylabel('Mm')
+
+        plt.imshow(i3[:,:,i], cmap=cmap, extent=extent, **kwargs)
 
     #=====================================================================
     def get_populations(self):
@@ -437,6 +471,16 @@ class read(object):
                     arrowprops=dict(arrowstyle='<-', color='k'))
         plt.legend(loc='lower right')
 
+    #=====================================================================
+    def calc_teff(self):
+        #-----------------------------------------------------------------
+        if self.n_ang == 1:
+            raise ValueError('n_ang = 1! Cannot return effective Temperature from disk center intensity only!')
+
+        xx, yy = self.crop(per_aa=True)
+        bol = np.trapz(yy , x=xx)
+        teff = (bol / SBOL)**0.25
+        return teff
 
     #=====================================================================
     def read_patch_save(self, kind, concat=True):
@@ -464,7 +508,7 @@ class read(object):
         meta.close()
 
         all_inu = np.unique([key[1] for key in dct.keys()])
-        f_indep = all_inu.sum() == 0
+        f_indep = all(all_inu == 0)
         if kind in ['out_rad', 'ie']: f_indep = False
         if kind in ['atom_rate']: f_indep = True
 

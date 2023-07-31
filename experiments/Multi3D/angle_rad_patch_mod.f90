@@ -24,13 +24,16 @@ MODULE angle_rad_patch_mod
   USE mconst, only: one_third, one_sixth
   !USE scratch_mod
   USE handyfuncs_mod
+  USE m3d_halo_mod, only:lock_mem, unlock_mem
   USE m3d_patch_mod, only: m3d_patch_t, comoving_frame, ilambd, decouple_continuum, &
-  line_blanketing, use_vel, preconditioning
+  line_blanketing, use_vel, preconditioning, save_Qrad, binned_opac
   USE ray_patch_mod, only: ray_patch_t, formal_solver
   USE proj_patch_mod, only: interpolate_to_ray
+  USE ray_mod, only: one_dimensional
   USE os_mod
   USE omp_mod
   USE omp_lock_mod
+  USE m3d_debug_mod
   implicit none
 
   !-----------------------------------------------------------------------------
@@ -39,18 +42,18 @@ MODULE angle_rad_patch_mod
     class(ray_patch_t), pointer :: opac => null()
     class(ray_patch_t), pointer :: back_cont => null()
     class(rad_patch_t), pointer :: mean_rad => null()
-    real(4), dimension(:,:,:,:), contiguous, pointer :: Inu, chi, Snu
-    real(4), dimension(:,:,:,:), contiguous, pointer :: Psi, Ieff
-    real(4), dimension(:,:,:,:), contiguous, pointer :: Inu_old
+    real(4), dimension(:,:,:,:), contiguous, pointer :: Inu=>null(), chi=>null(), Snu=>null()
+    real(4), dimension(:,:,:,:), contiguous, pointer :: Psi=>null(), Ieff=>null()
+    real(4), dimension(:,:,:), pointer, contiguous :: Qrad=>null()
     integer :: stiff_count=1
     logical :: stiff=.false.
     real(8) :: dsup=0
   contains
     procedure :: pre_init => radiation_pre_init
     procedure :: init => radiation_init
-    procedure :: update => radiation_update
     procedure :: nbor_relations => radiation_nbor_relations
     !procedure :: long_ray_update
+    procedure :: execute
     procedure :: long_char_update
     procedure :: short_ray_update
     procedure :: bndries
@@ -61,11 +64,11 @@ MODULE angle_rad_patch_mod
     procedure :: linear_solver
     procedure :: hermite_solver
     procedure :: remove_lower_layers_mem
-    procedure :: deallocate_mem => rad_patch_deallocate_mem
-    procedure :: allocate_mem => rad_patch_allocate_mem
+    procedure :: deallocate_mem
+    procedure :: allocate_mem
     procedure :: print_post_update_info
     procedure :: init_nbors_hash
-    procedure :: finish
+    procedure :: save
   end type rad_patch_t
 
   !-----------------------------------------------------------------------------
@@ -120,80 +123,60 @@ SUBROUTINE radiation_init (self)
   if (.not. self%out_ray) then
     m = shape(self%authority_mem)
     call self%allocate_mem(self)
-    if (lock_Inu) then
-      m = shape(self%authority_mem)
-      m(3) = 2
-      call os%allocate(self%Inu_old, m(1:4), label=trim(self%kind)//'%Inu_old')
-      self%Inu_old = tiny(1.0)
-    endif
   endif
 
   call trace%end()
 END SUBROUTINE radiation_init
 
 !===============================================================================
-SUBROUTINE radiation_update (self)
+SUBROUTINE execute (self)
   class(rad_patch_t) :: self
   real(4), dimension(:,:,:,:), pointer :: Inu_new
   integer :: k, f, p(3)
-  ! ----------------------------------------------------------------------------
-  if (self%is_finished()) return
+  integer, save :: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin (trim(self%kind)//'%update', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Boundary conditions
   !-----------------------------------------------------------------------------
+  call lock_mem (self%opac, 'angle_rad_update', read=.true.)
+  call self%check_access(self%opac)
+
   call self%bndries()
   call self%periodic_grid(only=merge(1, self%gn(3), self%dir>0))
 
-  call self%check_access(self%opac)
   if (self%out_ray) then
     call self%long_char_update()
   else
     call self%decompress_mem(self)
+    call lock_mem (self%back_cont, 'angle_rad_update', read=.true.)
     call self%check_access(self%back_cont)
     if (self%ray%long) then
       print *, 'long ray detected! Stopping...'
       stop
       !call self%long_ray_update()
-    elseif (self%one_dimensional) then
+    elseif (one_dimensional) then
       call self%long_char_update()
     else
       call self%short_ray_update()
     endif
+    call unlock_mem (self%back_cont, 'angle_rad_update', read=.true.)
     if (comoving_frame .or. self%iter < ilambd .or. decouple_continuum .or. line_blanketing) then
       call self%integrate_intensity()
     endif
   endif
+  call self%opac%compress_mem(self, static=.false., locked=.true.)
+  call unlock_mem (self%opac, 'angle_rad_update', read=.true.)
 
-  if (lock_Inu .and. .not. self%out_ray) then
-    k = self%n(3)
-    Inu_new => self%authority_mem(:,:,1:k:k-1,:,self%it,self%i_Inu)
-    if (all(abs(1 - self%Inu_old/Inu_new) < stiff_lim)) then
-      self%stiff_count = self%stiff_count*2
-      self%stiff = .true.
-      if (.not. self%opac%finished) then
-        call self%opac%compress_mem(self)
-        call self%opac%skip_iterations(self%stiff_count-1)
-      endif
-
-    elseif(self%stiff) then
-      !print *, self%m3d_patch_info(), 'Inu has changed, but used to be stiff'
-      self%stiff_count = 1
-      self%stiff = .false.
-    endif
-
-    self%Inu_old = Inu_new
+  if (self%print_update_info) then
+    f = self%fcheck
+    p = self%pcheck
+    memcheck(1) = self%mem(p(1),p(2),p(3),f,1,1)
   endif
-
-  call self%post_update()
-
-  if (self%stiff .and. .not. self%is_finished()) then
-    call self%skip_iterations(self%stiff_count-1)
-  endif
-
-  !if (self%out_ray .and. self%patch%boundaries%is_set(bits%zu)) then
-  !  call self%remove_lower_layers_mem()
-  !endif
-END SUBROUTINE radiation_update
+  
+  call self%compress_mem(self, static=.false., locked=.true.)
+  call trace%end(itimer)
+END SUBROUTINE execute
 
 !===============================================================================
 SUBROUTINE short_ray_update (self)
@@ -355,7 +338,7 @@ SUBROUTINE linear_solver(self, xx, ss, Inu, Psi, Ieff, eta_back)
   class(rad_patch_t), intent(in) :: self
   real(4), intent(in), dimension(:,:,:,:), contiguous :: xx, ss
   real(4), intent(inout), dimension(:,:,:,:), contiguous :: Inu
-  real(4), intent(inout), dimension(:,:,:,:), contiguous, optional :: Psi, Ieff, eta_back
+  real(4), intent(inout), dimension(:,:,:,:), pointer, contiguous, optional :: Psi, Ieff, eta_back
   real(4) :: dsup05, u0, Psi0, ss1, ss2, xx1, xx2
   real(8) :: ex, dt
   integer :: i,j,k,f, k1, k2, kup, z
@@ -380,7 +363,7 @@ SUBROUTINE linear_solver(self, xx, ss, Inu, Psi, Ieff, eta_back)
 
       dt = dsup05 * ( xx1 + xx2 ) ! upwind optical pathlength
       if (dt < 80) then
-        ex = exp(-dt) 
+        ex = exp(-dt)
       else
         ex = 0
       endif
@@ -515,44 +498,22 @@ SUBROUTINE integrate_intensity(self)
   class(task_t), pointer :: nbtask
   class(rad_patch_t), pointer :: mean
   real(4), dimension(:,:,:), pointer :: vproj
-  real(4), dimension(:,:,:,:), pointer :: Jnu, Inu
+  real(4), dimension(:,:,:,:), pointer :: Jnu, Inu, Snu, chi
   real(8), dimension(:), pointer, contiguous :: nu_in, nu_out
-  real(4) :: wmu
-  integer :: f, i, j, k
+  real(4) :: wmu, wmunu
+  integer :: f, i, j, k, w
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('rad_patch_t%integrate_intensity', itimer=itimer)
-  if (comoving_frame) then
-    nbor => self%link%nbor
-    do while (associated(nbor))
-      if (nbor%download) then
-        nbtask => nbor%task
-        select type (nbtask)
-        class is (rad_patch_t)
-          call nbtask%mem_lock(1)%set ('free_unused_memory')
-          call nbtask%deallocate_mem(self, print=.true.)
-          call nbtask%mem_lock(1)%unset ('free_unused_memory')
-        end select
-      endif
-      nbor => nbor%next
-    end do
-  endif
-  
   mean => self%mean_rad
-  call mean%mem_lock(1)%set('integrate_intensity')
+  call lock_mem(mean, 'integrate_intensity')
   if (.not. associated(mean%mem)) then
-    call mean%check_mem()
-    do f=1, self%nv
-      mean%mem(:,:,:,f,mean%it,1) = 0
+    call mean%check_mem(locked=.true.)
+    do w=1, mean%nw
+    do f=1, mean%nv
+      mean%mem(:,:,:,f,mean%it,w) = 0
     end do
-    do f=1, self%nv
-      mean%Psi(:,:,:,f) = 0
     end do
-    if (.not. comoving_frame) then
-      do f=1, self%nv
-        mean%Ieff(:,:,:,f) = 0
-      end do
-    endif  
   endif
 
   wmu = self%wmu
@@ -570,7 +531,6 @@ SUBROUTINE integrate_intensity(self)
     call interpolate_to_ray(vproj, nu_in, nu_out, self%Psi, mean%Psi, wmu)
     call interpolate_to_ray(vproj, nu_in, nu_out, self%Ieff, mean%Ieff, wmu)
     call os%deallocate(vproj)
-    !call self%compress_mem(self)
   else
     do f=1, self%nv
     do k=1, self%n(3)
@@ -584,40 +544,67 @@ SUBROUTINE integrate_intensity(self)
     end do
     end do
   endif
-  call mean%mem_lock(1)%unset('integrate_intensity')
+
+  if (save_Qrad) then
+    chi => self%opac%authority_mem(:,:,:,:,mean%it,self%i_chi)
+    Snu => self%opac%authority_mem(:,:,:,:,mean%it,self%i_Snu)
+    if (binned_opac) then
+      wmunu = wmu
+    endif
+    do f=1, self%nv
+      if (.not. binned_opac) then
+        wmunu = wmu * mean%sp%wnu(mean%fs-f+1)
+      endif
+      do k=1, self%n(3)
+      do j=1, self%n(2)
+      do i=1, self%n(1)
+        mean%Qrad(i,j,k) = mean%Qrad(i,j,k) + wmunu * chi(i,j,k,f) * (Inu(i,j,k,f) - Snu(i,j,k,f))
+      end do
+      end do
+      end do
+    end do
+  endif
+
+  call unlock_mem(mean, 'integrate_intensity')
   call trace%end(itimer)
 END SUBROUTINE integrate_intensity
 
 !===============================================================================
-SUBROUTINE finish (self)
+SUBROUTINE save (self, mem, label)
   class(rad_patch_t) :: self
-  real(4), dimension(:,:,:,:,:), pointer :: mem
+  real(4), dimension(:,:,:,:,:) :: mem
+  real(4), dimension(:,:,:,:,:), pointer :: mem2
+  character(len=*) :: label
   integer, dimension(4) :: m
   integer :: fs, fe
   !-----------------------------------------------------------------------------
-  call self%ray_patch_t%finish()
-  if (self%save_output .and. .not. self%out_ray) then
-    if (self%padded) then
-      fs = self%pre_pad_fs - self%fs + 1
-      fe = fs + self%pre_pad_fe - self%pre_pad_fs
-    else
-      fs = 1
-      fe = self%nv
-    endif
-    if (associated(self%Ieff)) then
-      m = shape(self%Ieff)
-      mem(1:m(1),1:m(2),1:m(3),fs:fe,1:1) => self%Ieff(:,:,:,fs:fe)
-      self%saved = .false.
-      call self%save(mem, label='Ieff')
-    endif
-    if (associated(self%Psi)) then
-      m = shape(self%Psi)
-      mem(1:m(1),1:m(2),1:m(3),fs:fe,1:1) => self%Psi(:,:,:,fs:fe)
-      self%saved = .false.
-      call self%save(mem, label='Psi')
-    endif
+  call self%ray_patch_t%save(mem, label)
+  if (self%padded) then
+    fs = self%pre_pad_fs - self%fs + 1
+    fe = fs + self%pre_pad_fe - self%pre_pad_fs
+  else
+    fs = 1
+    fe = self%nv
   endif
-END SUBROUTINE finish
+  if (associated(self%Ieff)) then
+    m = shape(self%Ieff)
+    mem2(1:m(1),1:m(2),1:m(3),fs:fe,1:1) => self%Ieff(:,:,:,fs:fe)
+    self%saved = .false.
+    call self%ray_patch_t%save(mem2, label='Ieff')
+  endif
+  if (associated(self%Psi)) then
+    m = shape(self%Psi)
+    mem2(1:m(1),1:m(2),1:m(3),fs:fe,1:1) => self%Psi(:,:,:,fs:fe)
+    self%saved = .false.
+    call self%ray_patch_t%save(mem2, label='Psi')
+  endif
+  if (associated(self%Qrad)) then
+    m(1:3) = shape(self%Qrad)
+    mem2(1:m(1),1:m(2),1:m(3),1:1,1:1) => self%Qrad
+    self%saved = .false.
+    call self%ray_patch_t%save(mem2, label='Qrad')
+  endif
+END SUBROUTINE save
 
 !===============================================================================
 SUBROUTINE radiation_nbor_relations(self, another, needed, needs_me, download)
@@ -666,8 +653,6 @@ SUBROUTINE bndries (self)
   class(rad_patch_t):: self
   integer :: lb, ub, f, iw, iiw, li(3), ui(3), o1(2), o2(2)
   !----------------------------------------------------------------------------
-  call self%check_access(self%opac)
-
   if (self%out_ray) then
     li = self%opac%li
     ui = self%opac%ui
@@ -715,30 +700,33 @@ SUBROUTINE remove_lower_layers_mem (self)
 END SUBROUTINE remove_lower_layers_mem
 
 !===============================================================================
-SUBROUTINE rad_patch_deallocate_mem (self, deallocator, print)
+SUBROUTINE deallocate_mem (self, deallocator, print)
   class(rad_patch_t):: self
   class(m3d_patch_t), intent(in), target :: deallocator
   logical, optional :: print
   integer :: m(6), li(3), ui(3)
   !-----------------------------------------------------------------------------
   call self%ray_patch_t%deallocate_mem(deallocator, print)
-  if (associated(self%Psi) .and. self%is_clear(bits%busy)) then
-    call os%deallocate(self%Psi, label=trim(self%kind)//'%Psi')
+  if (self%is_clear(bits%busy)) then
+    if (associated(self%Psi)) then
+      call os%deallocate(self%Psi, label=trim(self%kind)//'%Psi')
+    endif
     if (associated(self%Ieff)) then
       call os%deallocate(self%Ieff,label=trim(self%kind)//'%Ieff')
     endif
   endif
-END SUBROUTINE rad_patch_deallocate_mem
+END SUBROUTINE deallocate_mem
 
 !===============================================================================
-SUBROUTINE rad_patch_allocate_mem (self, allocator, m_in)
+SUBROUTINE allocate_mem (self, allocator, m_in, label)
   class(rad_patch_t):: self
   class(m3d_patch_t), intent(in), target :: allocator
   integer, intent(in), optional :: m_in(6)
+  character(len=*), optional :: label
   integer :: m(4)
   !-----------------------------------------------------------------------------
   call self%ray_patch_t%allocate_mem(allocator, m_in)
-  if (.not. self%out_ray) then
+  if (.not. self%out_ray .and. .not. self%compressed) then
     if (.not. (associated(self%Psi) .or. self%is_set(bits%virtual))) then
       m(1:3) = self%n
       m(4) = self%nv
@@ -749,7 +737,7 @@ SUBROUTINE rad_patch_allocate_mem (self, allocator, m_in)
         self%Ieff = tiny(1.0)
     endif
   endif
-END SUBROUTINE rad_patch_allocate_mem
+END SUBROUTINE allocate_mem
 
 !===============================================================================
 SUBROUTINE print_post_update_info (self)
@@ -760,26 +748,21 @@ SUBROUTINE print_post_update_info (self)
   !-----------------------------------------------------------------------------
   f = self%fcheck
   p = self%pcheck
-  if (self%stiff) then
-    write(text, '(A,I4)') 'intensity has not changed, skipping', self%stiff_count-1
-    call self%print_to_stdout(text=text)
-  else
-    w = 1
-    arr = 0
-    arr(1) = self%mem(p(1),p(2),p(3),f,1,1)
-    p2 = p - self%ng
-    if (all(p2>0) .and. all(p2<=self%n)) then
-      if (associated(self%Psi)) then
-        w = w + 1
-        arr(2) = self%Psi(p2(1),p2(2),p2(3),f)
-      endif
-      if (associated(self%Ieff)) then
-        w = w + 1
-        arr(3) = self%Ieff(p2(1),p2(2),p2(3),f)
-      endif
+  w = 1
+  arr = 0
+  arr(1) = memcheck(1)
+  p2 = p - self%ng
+  if (all(p2>0) .and. all(p2<=self%n)) then
+    if (associated(self%Psi)) then
+      w = w + 1
+      arr(2) = self%Psi(p2(1),p2(2),p2(3),f)
     endif
-    call self%print_to_stdout(arr=arr(1:w))
+    if (associated(self%Ieff)) then
+      w = w + 1
+      arr(3) = self%Ieff(p2(1),p2(2),p2(3),f)
+    endif
   endif
+  call self%print_to_stdout(arr=arr(1:w))
 END SUBROUTINE print_post_update_info
 
 !===============================================================================
@@ -795,7 +778,6 @@ SUBROUTINE init_nbors_hash (self, nbors)
   integer :: i_mu, i_nu, key(4)
   !-----------------------------------------------------------------------------
   call trace%begin('rad_patch_t%init_nbors_hash', itimer=itimer)
-
   call self%ray_patch_t%init_nbors_hash(nbors)
   key(1:3) = self%key(1:3)
   if (comoving_frame .and. .not. self%out_ray) then

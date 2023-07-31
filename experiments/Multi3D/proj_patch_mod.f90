@@ -10,6 +10,7 @@ MODULE proj_patch_mod
     USE bits_mod
     USE os_mod
     USE handyfuncs_mod
+    USE m3d_halo_mod, only:lock_mem, unlock_mem
     USE m3d_patch_mod, only:maxiter, m3d_patch_t, use_vel
     USE ray_patch_mod, only:ray_patch_t
     USE net_opac_patch_mod, only:net_opac_t
@@ -23,7 +24,7 @@ MODULE proj_patch_mod
       class(ray_patch_t), pointer :: net_opac
     contains
       procedure :: pre_init
-      procedure :: update
+      procedure :: execute
       procedure :: nbor_relations
       procedure :: init_nbors_hash
     end type proj_patch_t
@@ -48,18 +49,17 @@ MODULE proj_patch_mod
   END SUBROUTINE pre_init
   
   !===============================================================================
-  SUBROUTINE update (self)
+  SUBROUTINE execute (self)
     class(proj_patch_t) :: self
     real(4), dimension(:,:,:,:), pointer :: yy, new_yy
     real(4), dimension(:,:,:), pointer, contiguous :: vproj
     real(8), dimension(:), pointer, contiguous :: nu_in, nu_out
-    integer, save:: itimer=0
     integer :: iw, it, f
+    integer, save :: itimer=0
     !-----------------------------------------------------------------------------
-    if (self%is_finished()) return
-    call trace%begin('proj_patch_t%update', itimer=itimer)
+    call trace%begin (trim(self%kind)//'%update', itimer=itimer)
+    call lock_mem( self%net_opac, 'proj_patch_update', read=.true.)
     call self%check_access(self%net_opac)
-    
     if (use_vel) then
       if (.not. self%sp%sorted) call io%abort('Comoving frame for unsorted spectrum!')
       call os%allocate(vproj, self%n)
@@ -85,12 +85,12 @@ MODULE proj_patch_mod
       end do
       end do
     endif
+    call unlock_mem( self%net_opac, 'proj_patch_update', read=.true.)
 
-    call self%boundaries%mirror()
+    call self%bndries()
     call self%periodic_grid()
-    call self%post_update()
     call trace%end(itimer)
-  END SUBROUTINE update
+  END SUBROUTINE execute
   
   !===============================================================================
   SUBROUTINE interpolate_to_ray(proj, nu_in, nu_out, yy, new_yy, weight)

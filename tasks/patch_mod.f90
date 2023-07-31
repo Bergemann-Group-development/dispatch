@@ -692,8 +692,7 @@ SUBROUTINE mesh_init (self)
   ! assign non-zero values to this variable (if any).
   !-----------------------------------------------------------------------------
   do i=1,3
-    allocate(self%mesh(i)%h(self%nv))
-    self%mesh(i)%h = 0.0
+    allocate(self%mesh(i)%h(self%nv), source=0.d0)
     if (self%kind == 'zeus_mhd_patch' .and. &
         self%staggered .and. self%n(i) /= 1) self%mesh(i)%gn = self%mesh(i)%gn + 1
     if (self%kind == 'zeus_tw_mhd_patch' .and. &

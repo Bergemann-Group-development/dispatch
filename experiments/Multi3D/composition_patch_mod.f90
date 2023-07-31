@@ -5,19 +5,20 @@ MODULE composition_patch_mod
   USE omp_mod
   USE gpatch_mod
   USE handyfuncs_mod
+  USE optab_mod, only: optab
   USE element_mod, only: element_type
-  USE m3d_patch_mod,   only: m3d_patch_t, comoving_frame, ilambd, decouple_continuum, &
-  use_density, overlapping_bb, overlapping_bf, line_blanketing
-  USE composition_mod, only: composition_type, dlam, exclude_elements
-  USE back_cont_patch_mod,  only: back_cont_patch_t
+  USE m3d_patch_mod,   only: m3d_patch_t, comoving_frame, ilambd, decouple_continuum, dlam, &
+  use_density, use_ne, overlapping_bb, overlapping_bf, line_blanketing, binned_opac, save_Qrad, maxiter
+  USE composition_mod, only: composition_type, exclude_elements
+  USE back_cont_patch_mod,  only: back_cont_t
   USE angle_rad_patch_mod,   only: rad_patch_t
   USE atom_patch_mod,  only: atom_patch_t
   USE atom_rate_patch_mod,  only: atom_rate_t
   USE net_opac_patch_mod,  only: net_opac_t
-  USE back_line_patch_mod, only:back_line_patch_t
   USE out_rad_patch_mod, only:out_rad_patch_t
   USE proj_patch_mod, only:proj_patch_t
   USE mean_rad_patch_mod, only:mean_rad_patch_t
+  USE bftrans_mod, only: H_occupation_probability
   USE task_mod
   USE trace_mod
   USE scaling_mod
@@ -36,7 +37,7 @@ MODULE composition_patch_mod
     class(atom_patch_t), pointer :: atom_patch
   contains
     procedure :: pre_init => composition_pre_init
-    procedure :: update => composition_update
+    procedure :: execute
     procedure :: create_sub_patches
     procedure :: print_post_update_info
     procedure :: save_abundances_to_file
@@ -60,12 +61,13 @@ SUBROUTINE composition_pre_init (self)
   character(len=128), save :: abund_file='./input_multi3d/abund'
   character(len=128), save :: isotope_file=''!'./input_multi3d/isotopes_abund.txt'
   character(len=128), save :: molec_file='./input_multi3d/molec_data.txt'
+  character(len=128), save :: opac_table=''
   character(len=128), save :: absmet_file=''
   character(len=512), save :: linelist_file=''
   character(len=128), save :: line_lists(10)=''
   logical, save :: first_time=.true., absmet_big_end=.false., external_sp
   namelist /composition_params/ verbose, absdat_file, abund_file, absmet_file, &
-  absmet_big_end, isotope_file, molec_file
+  absmet_big_end, isotope_file, molec_file, H_occupation_probability, opac_table
   namelist /linelist_params/ dlam, exclude_elements, linelist_file, line_lists
   ! ----------------------------------------------------------------------------
   call trace%begin('composition_patch_t%composition_pre_init', itimer=itimer)
@@ -94,7 +96,7 @@ SUBROUTINE composition_pre_init (self)
     call io%namelist_warning ('linelist_params', iostat)
     write (io%namelist, linelist_params)
 
-    if (verbose) write (*,*) ' - Initializing the NEW opacity package'
+    if (verbose > 0) write (*,*) ' - Initializing the NEW opacity package'
     composition%verbose = verbose
 
     line_blanketing = absmet_file /= ''
@@ -111,13 +113,19 @@ SUBROUTINE composition_pre_init (self)
         i = i + 1
       end do
     endif
-
-    call trace%end(itimer2)
     
     allocate(output_sp)
-    call output_sp%init()
-    output_sp%name = 'output'
+    binned_opac = opac_table /= ''
+      
+    if (binned_opac) then
+      call optab%init(opac_table, output_sp)
+    else
+      call output_sp%init()
+      output_sp%name = 'output'
+    endif
+
     external_sp = output_sp%nnu > 0
+    call trace%end(itimer2)
   endif
 
   ! copy composition with all the information from the abund
@@ -133,22 +141,26 @@ SUBROUTINE composition_pre_init (self)
   call atom_patch%pre_init_atom()
   call atom_patch%pre_init_spectrum(output_sp)
   call atom_patch%pre_init_and_link(self)
+  self%atom_patch => atom_patch
 
   n_nu = self%n_nu
   n_mu = self%n_mu
 
-  if (atom_patch%atom_allocated) then
-    self%atom_patch => atom_patch
-    if (decouple_continuum) then
-      call self%create_sub_patches([1, n_nu],      [0, n_mu], self%composition, atom_patch%bb_sp)
-      call self%create_sub_patches([1, n_nu]+n_nu, [0, n_mu], self%composition, atom_patch%bf_sp)
+  if (ilambd + maxiter > 0) then
+    if (atom_patch%atom_allocated) then
+      if (decouple_continuum) then
+        call self%create_sub_patches([1, n_nu],      [0, n_mu], self%composition, atom_patch%bb_sp)
+        call self%create_sub_patches([1, n_nu]+n_nu, [0, n_mu], self%composition, atom_patch%bf_sp)
+      else
+        call self%create_sub_patches([1, n_nu], [0, n_mu], self%composition, atom_patch%sp)
+      endif
+    elseif (save_Qrad) then
+      call self%create_sub_patches([1, n_nu], [0, n_mu], self%composition, output_sp)
     else
-      call self%create_sub_patches([1, n_nu], [0, n_mu], self%composition, atom_patch%sp)
-    endif
-  else
-    deallocate(atom_patch)
-    if (.not. external_sp) then
-      stop 'No atom nor output spectrum specified! Stopping...'
+      deallocate(atom_patch)
+      if (.not. external_sp) then
+        stop 'No atom nor output spectrum specified! Stopping...'
+      endif
     endif
   endif
 
@@ -165,15 +177,14 @@ SUBROUTINE create_sub_patches (self, nu, mu, composition, sp)
   integer, intent(in) :: nu(2), mu(2)
   class(composition_type), intent(in), target :: composition
   class(atomic_spectrum_type), intent(in), pointer :: sp
-  class(back_cont_patch_t), pointer :: cont
-  class(back_line_patch_t), pointer :: line
+  class(back_cont_t), pointer :: cont
   class(out_rad_patch_t), pointer :: out
   class(net_opac_t), pointer :: net
   class(proj_patch_t), pointer :: proj
   class(rad_patch_t), pointer :: rad
   class(mean_rad_patch_t), pointer :: mean
   integer :: n, m
-  logical :: cf, new_cont, new_line, new_rad, new_out, new_net, new_proj, new_mean
+  logical :: cf, new_cont, new_rad, new_out, new_net, new_proj, new_mean
   !-----------------------------------------------------------------------------
   if (.not. associated(sp)) return
   if (sp%nnu == 0) return
@@ -183,7 +194,6 @@ SUBROUTINE create_sub_patches (self, nu, mu, composition, sp)
   do m=mu(1), mu(2)
     new_mean = n>0  .and. m==0
     new_cont = n/=0 .and. m==0
-    new_line = n/=0 .and. (m<0 .or. merge(m==0, m/=0, cf)) .and. composition%ll_initialised
     new_net  = n/=0 .and. (m<0 .or. merge(m==0, m/=0, cf))
     new_proj = m/=0 .and. cf
     new_rad  = n/=0 .and. m/=0
@@ -201,11 +211,6 @@ SUBROUTINE create_sub_patches (self, nu, mu, composition, sp)
         mean%back_cont => cont
       endif
       call cont%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp)
-    endif
-    if (new_line) then
-      allocate(line)
-      line%composition => composition
-      call line%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp)
     endif
     if (new_net) then
       allocate(net)
@@ -235,16 +240,15 @@ end do
 END SUBROUTINE create_sub_patches
 
 !===============================================================================
-SUBROUTINE composition_update (self)
+SUBROUTINE execute (self)
   class(composition_patch_t) :: self
   real(4), dimension(:,:,:), pointer :: d, e, pe
   real(4), dimension(:,:,:), pointer, contiguous :: ne, rho, temp
   real(4), dimension(:,:,:,:), pointer :: nh
-  integer, save:: itimer=0
   integer :: li(3), ui(3)
+  integer, save:: itimer=0
   ! ----------------------------------------------------------------------------
-  if (self%is_finished()) return
-  call trace%begin('composition_patch_t%composition_update', itimer=itimer)
+  call trace%begin('composition_patch_t%execute', itimer=itimer)
 
   if (self%iter == 0) then
     li = self%patch%li
@@ -265,20 +269,19 @@ SUBROUTINE composition_update (self)
   
     ! loading temp, ne and rho in to composition objekt
     ! ion and molecule equilibrium are solved immediately
-    call self%composition%load_state_variables(temp, ne, rho, use_rho=use_density)
+    call self%composition%load_state_variables(dble(temp), dble(ne), dble(rho), use_rho=use_density, use_ne=use_ne)
     call self%composition%get_nhyd(nh)
 
     self%dtime = max(self%dtime, io%end_time - self%dtime)
+    self%out_ray = .true. ! so that it is still executed after convergence
   else
     self%dtime = self%patch%dtime
     !print *, self%m3d_patch_info()
     !print *, 'updating composition more than once is not implemented yet. Stopping...'
     !stop
   endif
-
-  call self%post_update()
   call trace%end(itimer)
-END SUBROUTINE composition_update
+END SUBROUTINE execute
 
 !===============================================================================
 SUBROUTINE print_post_update_info (self)
@@ -321,7 +324,7 @@ SUBROUTINE composition_patch_nbor_relations(self, another, needed, needs_me, dow
       select case (another%kind)
       case ('atom_patch')
         ! is needed after convergence and needs me
-      case ('back_cont', 'back_line')
+      case ('back_cont')
         needed = .false.
       case default
         needed = .false.; needs_me = .false.

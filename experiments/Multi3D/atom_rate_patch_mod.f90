@@ -10,6 +10,7 @@ MODULE atom_rate_patch_mod
     USE os_mod
     USE bits_mod
     USE handyfuncs_mod
+    USE m3d_halo_mod, only:lock_mem, unlock_mem
     USE m3d_patch_mod, only: comoving_frame, preconditioning
     USE ray_patch_mod, only: ray_patch_t
     USE angle_rad_patch_mod, only: rad_patch_t
@@ -31,7 +32,7 @@ MODULE atom_rate_patch_mod
       logical :: update_skipped=.false.
       contains
         procedure :: pre_init => atom_rate_pre_init
-        procedure :: update => atom_rate_update
+        procedure :: execute
         procedure :: nbor_relations => atom_rate_nbor_relations
         procedure :: integrate_rates
         procedure :: print_post_update_info
@@ -94,14 +95,13 @@ MODULE atom_rate_patch_mod
   END SUBROUTINE atom_rate_pre_init
 
   !===============================================================================
-  SUBROUTINE atom_rate_update (self)
+  SUBROUTINE execute (self)
     class(atom_rate_t) :: self
     real(4), dimension(:,:,:,:), pointer :: gamma_ij, gamma_ji
-    integer, save:: itimer=0
+    integer, save :: itimer=0
     !-----------------------------------------------------------------------------
-    if (self%is_finished()) return
-    call trace%begin('atom_rate_t%atom_rate_update', itimer=itimer)
-
+    call trace%begin (trim(self%kind)//'%update', itimer=itimer)
+    call lock_mem(self%rad, 'atom_rate_update', read=.true.)
     call self%check_access(self%rad)
     if (self%sp%maxal > 0) then
       call self%check_access(self%lines)
@@ -110,10 +110,6 @@ MODULE atom_rate_patch_mod
     gamma_ij => self%mem(:,:,:,:, self%it, self%i_Gij)
     gamma_ji => self%mem(:,:,:,:, self%it, self%i_Gji)
 
-    if (.not. self%rad%stiff) then
-      self%static_mem = .false.
-    endif
-
     if (.not. self%static_mem) then
       call self%full_preconditioning(gamma_ij, gamma_ji)
       self%update_skipped = .false.
@@ -121,19 +117,15 @@ MODULE atom_rate_patch_mod
       self%update_skipped = .true.
     endif
 
+    call os%deallocate(self%rad%Psi,  trim(self%rad%kind)//'%Psi')
+    call os%deallocate(self%rad%Ieff, trim(self%rad%kind)//'%Ieff')
+    
+    call unlock_mem(self%rad, 'atom_rate_update', read=.true.)
+
     call self%integrate_rates(gamma_ij, gamma_ji)
-
-    if (self%rad%stiff) then
-      self%static_mem = .true.
-      call self%rad%compress_mem(self)
-    endif
-
+    self%free_self = .not. self%static_mem
     call trace%end(itimer)
-    call self%post_update()
-    if (.not. self%static_mem) then
-      call self%deallocate_mem(self, print=.true.)
-    endif
-  END SUBROUTINE atom_rate_update
+  END SUBROUTINE execute
   
   !====================================================================================
   SUBROUTINE full_preconditioning(self, gamma_ij, gamma_ji)
@@ -412,23 +404,19 @@ MODULE atom_rate_patch_mod
     real(4), dimension(:,:,:,:), pointer :: gamma_ij, gamma_ji
     real(4) :: wmu
     !-----------------------------------------------------------------------------
-    call self%m3d_parent%mem_lock(1)%set('integrate_rates')
+    call lock_mem(self%m3d_parent, 'integrate_rates')
     atom => self%atom
     if (.not. associated(atom%data%gamma_ij)) then
       m = [self%n, atom%nrad]
       call os%allocate(atom%data%gamma_ij, m, zero=.true., label='atom%gamma_ij')
       call os%allocate(atom%data%gamma_ji, m, zero=.true., label='atom%gamma_ji')
-      self%atom%stiff=.true.
     endif
     do i=1, self%nv
       k = self%idx_remap(i)
       atom%data%gamma_ij(:,:,:,k) = atom%data%gamma_ij(:,:,:,k) + gamma_ij(:,:,:,i)
       atom%data%gamma_ji(:,:,:,k) = atom%data%gamma_ji(:,:,:,k) + gamma_ji(:,:,:,i)
     end do
-    if (.not. self%static_mem) then
-      self%atom%stiff=.false.
-    endif
-    call self%m3d_parent%mem_lock(1)%unset('integrate_rates')
+    call unlock_mem(self%m3d_parent, 'integrate_rates')
   END SUBROUTINE integrate_rates
   
   !===============================================================================

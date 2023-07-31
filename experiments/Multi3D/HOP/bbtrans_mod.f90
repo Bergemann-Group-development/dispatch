@@ -20,6 +20,7 @@ MODULE bbtrans_mod
     procedure :: damping => line_damping
     procedure :: dampingH => line_dampingH
     procedure :: add_lte_opacities
+    procedure :: add_lte_opacities2
     procedure :: LinearStarkH
     procedure :: IonicH
     procedure :: prepare_Stark
@@ -32,6 +33,13 @@ MODULE bbtrans_mod
   integer, save :: count1, count2, count3, count4, count5, count6
   real(4), save :: max_a=0, max_v=0
   logical, public :: disable_stark=.false., disable_vdw=.false., disable_ga=.false.
+
+  integer, parameter :: na=20, nv=20
+  real(4), dimension(na+1,nv+1) :: voigt_table
+  real(4), parameter :: amax=1.4, vmax=5.0
+  real(4), parameter :: da=amax/real(na), dv=vmax/real(nv)
+  real(4), parameter :: dai=1./da, dvi=1./dv
+  !$omp threadprivate(voigt_table)
     
 contains
 
@@ -59,21 +67,21 @@ contains
   !------------------------------------------------------------------------------------
 
   !====================================================================================
-  SUBROUTINE add_lte_opacities(self, nu, vproj, inv_df, EK_over_temp, dxij, inv_part, adamp, eta_fac, chi_fac, eta, chi)
+  SUBROUTINE add_lte_opacities(self, nu, vproj, inv_df, EK_over_temp, dxij, inv_part, adamp, chi_fac, chi)
     class(bbtrans_type), intent(in) :: self
     real(8), dimension(:), intent(in), contiguous :: nu
     real(4), dimension(:,:,:), intent(in), contiguous :: vproj, inv_df, inv_part
     real(4), dimension(:,:,:), intent(in), contiguous :: EK_over_temp, dxij
-    real(4), dimension(:,:,:), contiguous :: adamp, eta_fac, chi_fac
-    real(4), dimension(:,:,:,:), intent(inout), contiguous :: eta, chi
+    real(4), dimension(:,:,:), contiguous :: adamp, chi_fac
+    real(4), dimension(:,:,:,:), intent(inout), contiguous :: chi
     real(8) :: q
     real(4) :: ex, ni, nj, nij, upper_ev, nu0_ev, scalar, phi
-    integer :: i,j,k,f, m(4)
-    integer, save :: itimer=0, itimer1=0, itimer2=0
+    integer :: i,j,k,f, m(4), itimer=0
+    !real(4), dimension(na+1, nv+1) :: local_table
+    !local_table = voigt_table !prefetch
     !----------------------------------------------------------------------------------
-    call trace%begin('bbtrans_type%add_lte_opacities', itimer=itimer)
-    m = shape(eta)
-
+    !call trace%begin('add_lte_opacities_1', itimer=itimer)
+    m = shape(chi)
     scalar = over_4pi / self%nu0
     nu0_ev = H_E * self%nu0
     upper_ev = self%lower_ev + nu0_ev
@@ -83,22 +91,20 @@ contains
     do i=1, m(1)
       ex = (upper_ev - dxij(i,j,k)) * EK_over_temp(i,j,k)
       if (ex < 85.) then
-        adamp(i,j,k) = adamp(i,j,k) * inv_df(i,j,k) * scalar
+        adamp(i,j,k) = adamp(i,j,k) * scalar * inv_df(i,j,k)
 
         nj = self%upper_g * inv_part(i,j,k) * exp(-ex)
         nij = exp(nu0_ev * EK_over_temp(i,j,k))
 
-        nj = inv_df(i,j,k) * over_4pi * nj
-        eta_fac(i,j,k) = nj * self%Aji
-        chi_fac(i,j,k) = nj * (nij - 1) * self%Bji
+        nj = inv_df(i,j,k) * nj * over_4pi
+        !eta_fac(i,j,k) = nj * self%Aji
+        chi_fac(i,j,k) = nj * (nij - 1.) * self%Bji
       else
         adamp(i,j,k) = 0.0
       endif
     end do
     end do
     end do
-
-    !call trace%begin('bbtrans_type%add_lte_opacities2', itimer=itimer1)
     
     !DIR$ FORCEINLINE
     do f=1, m(4)
@@ -109,16 +115,113 @@ contains
         if (adamp(i,j,k) > 0.0) then
           phi = (q - vproj(i,j,k)) * inv_df(i,j,k)
           phi = voigt_function2(adamp(i,j,k), phi)
-          eta(i,j,k,f) = eta(i,j,k,f) + phi * eta_fac(i,j,k)
+          !call voigt_sub(adamp(i,j,k), phi, local_table, phi)
+          !eta(i,j,k,f) = eta(i,j,k,f) + phi * eta_fac(i,j,k)
           chi(i,j,k,f) = chi(i,j,k,f) + phi * chi_fac(i,j,k)
         endif
       end do
       end do
       end do
     end do
-    !call trace%end(itimer1)
-    call trace%end(itimer)
+    !call trace%end(itimer)
   END SUBROUTINE add_lte_opacities
+  !------------------------------------------------------------------------------------
+
+  !====================================================================================
+  SUBROUTINE add_lte_opacities2(self, nu, vproj, inv_df, EK_over_temp, dxij, inv_part, &
+    ne, tothi, vbar2, stark_pe, unsold, chi, cont)
+    class(bbtrans_type), intent(in) :: self
+    real(8), dimension(:), intent(in), contiguous :: nu
+    real(4), dimension(:,:,:), intent(in), contiguous :: vproj, inv_df, inv_part
+    real(4), dimension(:,:,:), intent(in), contiguous :: EK_over_temp, dxij, ne, tothi, vbar2, stark_pe, unsold
+    real(4), dimension(:,:,:,:), intent(inout), contiguous :: chi
+    real(4), dimension(:,:,:,:), intent(in) :: cont
+    real(8), allocatable :: qq(:)
+    real(4) :: ex, ni, nj, nij, upper_ev, nu0_ev, scalar, vs, lchi
+    real(4) :: phi, a, idf, cf, v, ref, ekt, gj_Bji_4pi
+    real(4), parameter :: tol=1e-7
+    integer :: i,j,k,f, f0, f1, m(4), hi, hj, itimer=0
+    !----------------------------------------------------------------------------------
+    !call trace%begin('add_lte_opacities_1', itimer=itimer)
+    m = shape(chi)
+    scalar = over_4pi / self%nu0
+    nu0_ev = H_E * self%nu0
+    upper_ev = self%lower_ev + nu0_ev
+    gj_Bji_4pi = self%upper_g * self%Bji * over_4pi
+
+    allocate(qq, source = nu / self%nu0 - 1)
+    f0 = minloc(qq,1)
+    
+    do k=1, m(3)
+    do j=1, m(2)
+    do i=1, m(1)
+      ! Fixed Broadening
+      if (.not. disable_ga) then
+        a = self%ga
+      else
+        a = 0
+      endif
+      ! Van der Waals Broadening
+      if (.not. disable_vdw) then
+        if (self%unsold) then
+          a = a + self%gw1 * unsold(i,j,k)
+        else
+          a = a + self%gw1 * vbar2(i,j,k)**self%gw2 * tothi(i,j,k)
+        endif
+      endif
+      ! Stark Broadening
+      if (.not. disable_stark) then
+        if (self%gq >= 0.0) then
+          a = a + self%gq * ne(i,j,k)
+        else! if line%gq < 0
+          a = a - self%gq * stark_pe(i,j,k)
+        end if
+      endif
+
+      ! fetch variables
+      idf = inv_df(i,j,k)
+      v   = vproj(i,j,k)
+      ekt = EK_over_temp(i,j,k)
+      ex  = (upper_ev - dxij(i,j,k)) * ekt
+
+      if (ex < 85.) then
+        ! compute level populations
+        a = a * scalar * idf
+        nij = exp(nu0_ev * ekt)
+        nj = inv_part(i,j,k) * exp(-ex)
+        cf = idf * nj * gj_Bji_4pi * (nij - 1.)
+        
+        ! check if line peak is larger than continuum tolerance
+        vs = (qq(f0) - v) * idf
+        lchi = voigt_function2(a, vs) * cf
+        ref = tol * cont(i,j,k,f0)
+        if (lchi > ref) then
+          ! if so, add and continue with blue wing
+          chi(i,j,k,f0) = chi(i,j,k,f0) + lchi
+          f1 = 1
+          do f=f0+1, m(4)
+            vs = (qq(f) - v) * idf
+            lchi = voigt_function2(a, vs) * cf
+            ! if line opacity below tolerance exit and save f
+            if (lchi < ref) then
+              f1 = f-f0
+              exit
+            endif
+            chi(i,j,k,f) = chi(i,j,k,f) + lchi
+          end do
+          ! no do red wing, starting where blue wing left off
+          do f=f1, f0-1
+            vs = (qq(f) - v) * idf
+            lchi = voigt_function2(a, vs) * cf
+            chi(i,j,k,f) = chi(i,j,k,f) + lchi
+          end do
+        endif
+      endif
+    end do
+    end do
+    end do
+    !call trace%end(itimer)
+  END SUBROUTINE add_lte_opacities2
   !------------------------------------------------------------------------------------
 
   !====================================================================================
@@ -195,12 +298,10 @@ contains
     else
       if (v >= 2.4) then
         h = 1./(v2 - 1.5) * (0.554153432 + v*(0.278711796 + v*(-0.188325687 + v*(0.042991293 + v*-0.003278278))))
+      elseif (v >= 1.3) then
+        h = -4.48480194 + v*(9.39456063 + v*(-6.61487486 + v*(1.98919585 + v*-0.22041650)))
       else
-        if (v >= 1.3) then
-          h = -4.48480194 + v*(9.39456063 + v*(-6.61487486 + v*(1.98919585 + v*-0.22041650)))
-        else
-          h = -1.12470432 + v*(-0.15516677 + v*(3.28867591 + v*(-2.34357915 + v*0.42139162)))
-        endif
+        h = -1.12470432 + v*(-0.15516677 + v*(3.28867591 + v*(-2.34357915 + v*0.42139162)))
       endif
 
       ! a le 0.2  and v lt 5.
@@ -211,100 +312,54 @@ contains
 
 
   !====================================================================================
-  SUBROUTINE voigt_sub(aa,vs)
+  SUBROUTINE voigt_sub(as,vs,table,h)
     !---------------------------------------------------------------------
     !  computes a voigt function  h = h(a,v)
     !  a=gamma/(4*pi*dnud)   and  v=(nu-nu0)/dnud.  this  is  done after
     !  traving (landolt-b\rnstein, p. 449).
     !  coded by: kjell eriksson  (apr-1974). revised: (july-1975).
     !---------------------------------------------------------------------
-    real(4), intent(in), dimension(:,:,:) :: aa
-    real(4), intent(inout), dimension(:,:,:) :: vs
-    real(4) :: h, a
-    real(4) :: v,u,v2,v4,ex
-    real(4) :: a2,u2
-    complex(8) :: tav,uav,w4,u4 
-    real(4), parameter :: pqs  = 1.128379167  ! 2./pi**0.5
-    real(4), parameter :: isqp = 0.5641895835 ! 1/pi**0.5
-    real(4), parameter :: ipi  = 0.3183098862 ! 1/pi
-    integer :: i,j,k
+    real(4), intent(in) :: as, vs
+    real(4), intent(inout), dimension(:,:) :: table
+    real(4), intent(out) :: h
+    real(4) :: a, v, y1, y2, y3, y4, yy1, yy2, ddv, dda
+    logical, save :: first_time=.true.
+    integer :: i, j
+    !$omp threadprivate(first_time)
     !----------------------------------------------------------------------------------
-    do k=1, size(aa,3)
-    do j=1, size(aa,2)
-    do i=1, size(aa,1)
-      a = aa(i,j,k)
-      v = abs(vs(i,j,k))
-      max_a = max(a, max_a)
-      max_v = max(v, max_v)
-      u = a + v
-      v2 = v*v
-
-      if (a == 0.0) then
-        if (v2 < 100.) then
-          h = exp(-v2) * isqp
-          count1 = count1 + 1
-        else
-          h = 0.
-          count2 = count2 + 1
-        endif
-
-      elseif (a > 0.2) then
-        if (a > 1.4 .or. u > 3.2) then
-          a2 = a*a
-          u = 1 / (a2 + v2)
-          u2 = 0.5 * u*u
-          ! a gt 1.4  or  a + v gt 3.2
-          h = ipi*a*u * (1. + u2*((3.*v2 - a2) + u2*(15.*v2*v2 - 30.*v2*a2 + 3.*a2*a2)))
-          count3 = count3 + 1
-
-        else
-          tav = cmplx(a,-v)
-          if (a >= 0.195e0*v - 0.176e0) then
-            w4 = (16.4955e0 + tav*(20.20933e0 + tav*(11.96482e0      &
-              +  tav*(3.778987e0 + tav*0.5642236e0)))) / (16.4955e0  &
-              +  tav*(38.82363e0 + tav*(39.27121e0 + tav*(21.69274e0 &
-              +  tav*(6.699398e0 + tav)))))
-          else
-            uav = tav*tav 
-            w4 = tav*(36183.31e0 - uav*(3321.9905e0 - uav*(1540.787e0 &
-              - uav*(219.0313e0 - uav*( 35.76683e0 - uav*(1.320522e0 &
-              - uav*0.56419e0))))))
-            u4 = (32066.6e0 - uav*(24322.84e0 - uav*(9022.228e0       &
-              - uav*(2186.181e0 - uav*(364.2191e0                    &
-              - uav*(61.57037e0 - uav*(1.841439e0 - uav)))))))
-            w4 = exp(uav) - w4/u4
-          endif
-          h = real(w4) * isqp
-          count4 = count4 + 1
-        endif
-
-      elseif (v >= 5.0) then
-        v4 = 4*v2*v2
-        h = ipi * a*(15. + 6.*v2 + v4) / (v4*v2)
-        count5 = count5 + 1
-
-      else
-        if (v >= 2.4) then
-          h = 1./(v2 - 1.5) * (0.554153432 + v*(0.278711796 + v*(-0.188325687 + v*(0.042991293 + v*-0.003278278))))
-        else
-          if (v >= 1.3) then
-            h = -4.48480194 + v*(9.39456063 + v*(-6.61487486 + v*(1.98919585 + v*-0.22041650)))
-          else
-            h = -1.12470432 + v*(-0.15516677 + v*(3.28867591 + v*(-2.34357915 + v*0.42139162)))
-          endif
-        endif
-
-        ! a le 0.2  and v lt 5.
-        h = (h*a + exp(-v2)*(1. + a*a*(1. - 2.*v2))) * isqp
-        count6 = count6 + 1
-      endif
-      vs(i,j,k) = h
-    end do
-    end do
-    end do
+    if (first_time) then
+      first_time = .false.
+      do j=0, nv
+      do i=0, na
+        voigt_table(i+1,j+1) = voigt_function2(da*i, dv*j)
+      end do
+      end do
+      table = voigt_table
+    endif
+    v = abs(vs)
+    a = as
+    if (a > amax .or. v > vmax) then
+      h = voigt_function2(a, v)
+    else
+      a = a*dai
+      v = v*dvi
+      i = int(a)
+      j = int(v)
+    
+      y1 = table(i+1,j+1)
+      y2 = table(i+2,j+1)
+      y3 = table(i+1,j+2)
+      y4 = table(i+2,j+2)
+    
+      dda = a - i
+      yy1 = (y2 - y1) * dda + y1
+      yy2 = (y4 - y3) * dda + y3
+    
+      ddv = v - j
+      h = (yy2 - yy1) * ddv + yy1
+    endif
   END SUBROUTINE voigt_sub
   !------------------------------------------------------------------------------------
-
 
   !====================================================================================
   ELEMENTAL FUNCTION voigt_function(a,vs) result(h)
@@ -435,15 +490,15 @@ contains
   !------------------------------------------------------------------------------------
 
   !====================================================================================
-  PURE ELEMENTAL SUBROUTINE line_damping (self, adamp, ne, tothi, vbar2, stark_pe)
+  PURE ELEMENTAL SUBROUTINE line_damping (self, adamp, ne, tothi, vbar2, stark_pe, unsold)
     class(bbtrans_type), intent(in)  :: self
-    real(4), intent(in)  :: ne, tothi, vbar2, stark_pe
+    real(4), intent(in)  :: ne, tothi, vbar2, stark_pe, unsold
     real(4), intent(inout) :: adamp
     !----------------------------------------------------------------------------------
     ! Van der Waals Broadening
     if (.not. disable_vdw) then
-      if(self%unsold) then
-        adamp = adamp + self%gw1 * vbar2**0.3 * tothi
+      if (self%unsold) then
+        adamp = adamp + self%gw1 * unsold
       else
         adamp = adamp + self%gw1 * vbar2**self%gw2 * tothi
       endif
@@ -610,13 +665,16 @@ contains
       ! constant  1.283984e-12. According to Gray it should be 
       ! 0.3d-30^0.4 = 6.1780059e-13 and  8.411 should be 17
       ! I haven't found the original reference to Unsold 1955 yet...
-      c1 = 1./(cnt_ev - upper_ev)**2 - 1./(cnt_ev - self%lower_ev)**2
-      c625 = (lower_ion**2 * c1)**0.4 ! c6^(2/5) impact approximation
-      if (c1 > 0) then
-        self%gw1 = gv * 8.411 * 1.283984e-12 * c625
-      else
-        call self%deactivate()
+      if (self%lower_ev < cnt_ev) then
+        c1 = 1./(cnt_ev - upper_ev)**2 - 1./(cnt_ev - self%lower_ev)**2
+        if (c1 > 0) then
+          c625 = (lower_ion**2 * c1)**0.4 ! c6^(2/5) impact approximation
+          self%gw1 = gv * 8.411 * 1.283984e-12 * c625
+        endif
       endif
+    endif
+    if (self%gw1 == 0) then
+      call self%deactivate()
     endif
   END SUBROUTINE prepare_VanderWaals
   !------------------------------------------------------------------------------------
@@ -646,19 +704,24 @@ contains
     integer, intent(out) :: ired, iblue
     real(dp) :: lam0, lam_red, lam_blue, nu_red, nu_blue
     !----------------------------------------------------------------------------------
-    lam0 = CC / self%nu0 * 1e8
-    lam_red  = lam0 + dlam
-    lam_blue = lam0 - dlam
-    nu_red  = CC / lam_red  * 1e8
-    nu_blue = CC / lam_blue * 1e8
-
-    ired  = searchsorted(nu, nu_red,  outbounds_ok=.true.)
-    iblue = searchsorted(nu, nu_blue, outbounds_ok=.true.)
-    if (iblue==ired) then
-     ired  = 0
-     iblue = 0
-    elseif (ired == 0) then
-      ired = 1
+    if (dlam == 0) then
+      ired = findloc(nu, self%nu0, 1)
+      iblue = ired
+    else
+      lam0 = CC / self%nu0 * 1e8
+      lam_red  = lam0 + dlam
+      lam_blue = lam0 - dlam
+      nu_red  = CC / lam_red  * 1e8
+      nu_blue = CC / lam_blue * 1e8
+  
+      ired  = searchsorted(nu, nu_red,  outbounds_ok=.true.)
+      iblue = searchsorted(nu, nu_blue, outbounds_ok=.true.)
+      if (iblue==ired) then
+       ired  = 0
+       iblue = 0
+      elseif (ired == 0) then
+        ired = 1
+      endif
     endif
   END SUBROUTINE get_range
   !------------------------------------------------------------------------------------

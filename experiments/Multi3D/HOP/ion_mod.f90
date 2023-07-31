@@ -4,14 +4,22 @@ MODULE ion_mod
     USE bbtrans_mod, only: bbtrans_type
     implicit none
 
-    type particle_type
-        real(dp), dimension(:,:,:), allocatable :: f, n, e, part
-        integer :: nx, ny, nz, nline=0
+    type, extends(state_type) :: massive_type
+        real(dp) :: awgt
+    contains
+        procedure :: inverse_doppler_factor
+        procedure :: compute_vbar2
+    end type
+
+    type, extends(massive_type) :: particle_type
+        real(dp), dimension(:,:,:), allocatable :: f, e, part
+        integer :: m(3)=[0,0,0], nk, nline=0
         character(len=6) :: id
-        logical :: allocated=.false.
+        type(level_type), allocatable :: levels(:)
         type(bbtrans_type), dimension(:), allocatable :: line
         real(dp), allocatable, dimension(:) :: irwin
         logical :: in_linelist
+        logical :: allocated=.false.
     contains
         procedure :: irwin_partf
         procedure :: irwin_poly
@@ -26,17 +34,17 @@ MODULE ion_mod
     end type ion_pointer_t
     
     type, extends(particle_type) :: ion_type
-        integer :: g0, nk, j, iqfix, nmolec=0, mcount, n_iso=0
-        type(level_type), allocatable :: levels(:)
+        integer :: j, nmolec=0, mcount, n_iso=0
         type(ion_type), pointer :: above
         type(ion_type), pointer :: below
         class(particle_pointer_t), allocatable :: molecules(:)
         integer :: active
-        real(dp) :: parco, awgt
+        real(dp) :: parco
         real(dp), pointer :: abund
         real(dp) :: acolc, tcolc, aradc, xradc, adic, bdic, t0c, t1c
         real(dp), dimension(:,:,:), allocatable :: saha
         real(dp), dimension(:,:,:), allocatable :: pk, fil
+        logical :: fixed_part = .false.
     contains
         procedure :: partition
         procedure :: saha_eq
@@ -44,9 +52,11 @@ MODULE ion_mod
         procedure :: f_of_own_molecules
         procedure :: f_of_molecules_with
         procedure :: e_of_molecules_with
-        procedure :: allocate => allocate_ion
+        procedure :: allocate => allocate_particle
         !procedure :: absorption_factor => ion_absorption_factor
     end type
+
+    real(dp), public :: vmic=0.d0
 
 contains
 
@@ -56,17 +66,16 @@ elemental real(dp) FUNCTION partition(self, EK_over_temp, ne)
     real(dp), intent(in) :: EK_over_temp, ne
     real(dp), dimension(self%nk) :: blz, fis, g
     !---------------------------------------------------------------------------
-    fis = 1
-
-    if (self%iqfix == 0) then
+    if (self%fixed_part) then
         partition = self%parco
     elseif (allocated(self%irwin)) then ! IRWIN FORMAT
         partition = self%irwin_partf(EK / EK_over_temp)
     else
-        g   = self%levels%g2
+        fis = 1
+        g   = self%levels%g
         blz = self%levels%boltzmann(EK_over_temp)
         where(self%levels%xl > 0) fis = self%levels%fischel_sparks(self%j, EK_over_temp, ne)
-        partition = self%g0 + sum(g*fis*blz)
+        partition = sum(g*fis*blz)
     endif
 END FUNCTION partition
 
@@ -77,13 +86,13 @@ elemental real(dp) FUNCTION saha_eq(self, EK_over_temp, ne, saha, dxi, partition
     real(dp), intent(in), optional :: partition_ratio
     real(dp) :: dxi_j, partp
     !---------------------------------------------------------------------------
-    if (self%j == -2) then
+    if (self%id == 'H -') then
         dxi_j = 2*dxi
     else
         dxi_j = dxi*self%j
     endif
 
-    saha_eq = saha * self%levels(1)%boltzmann(EK_over_temp, dxi=dxi_j) * partition_ratio
+    saha_eq = saha * self%boltzmann(EK_over_temp, dxi=dxi_j) * partition_ratio
 END FUNCTION saha_eq
 
 !===============================================================================
@@ -91,7 +100,7 @@ FUNCTION f_of_own_molecules(self) result(fsum)
     class(ion_type) :: self
     type(particle_type), pointer :: molecule
     integer :: i
-    real(dp), dimension(self%nx, self%ny, self%nz) :: fsum
+    real(dp), dimension(self%m(1), self%m(2), self%m(3)) :: fsum
     !---------------------------------------------------------------------------
     fsum = 0
     do i=1, self%nmolec
@@ -107,7 +116,7 @@ FUNCTION f_of_molecules_with(self, other, count_double) result(fsum)
     type(particle_type), pointer :: molecule
     type(particle_pointer_t), allocatable :: mol_list(:)
     integer :: i
-    real(dp), dimension(self%nx, self%ny, self%nz) :: fsum
+    real(dp), dimension(self%m(1), self%m(2), self%m(3)) :: fsum
     logical, optional :: count_double
     !---------------------------------------------------------------------------
     call self%molecules_with(other, mol_list, count_double)
@@ -127,7 +136,7 @@ FUNCTION e_of_molecules_with(self, other, count_double) result(esum)
     class(particle_type), pointer :: molecule
     type(particle_pointer_t), allocatable :: mol_list(:)
     integer :: i
-    real(dp), dimension(self%nx, self%ny, self%nz) :: esum
+    real(dp), dimension(self%m(1), self%m(2), self%m(3)) :: esum
     logical, optional :: count_double
     !---------------------------------------------------------------------------
     call self%molecules_with(other, mol_list, count_double)
@@ -189,23 +198,17 @@ SUBROUTINE molecules_with (self, other, mol_list, count_double)
 END SUBROUTINE molecules_with
 
 !===============================================================================
-SUBROUTINE allocate_ion (self, nx, ny, nz)
+SUBROUTINE allocate_particle (self, m)
     class(ion_type) :: self
-    integer :: nx, ny, nz
+    integer :: m(3)
     !---------------------------------------------------------------------------
-    if (self%allocated) then
-        deallocate(self%f, self%saha, self%part, self%n)
-    endif
-    
-    self%nx = nx
-    self%ny = ny
-    self%nz = nz
-    allocate(self%f(nx,ny,nz))
-    allocate(self%saha(nx,ny,nz))
-    allocate(self%part(nx,ny,nz))
-    allocate(self%n(nx,ny,nz))
+    if (all(m == self%m)) return
+    self%m = m
+    if (self%allocated) deallocate(self%f, self%saha, self%part, self%n)
+    allocate(self%f(m(1),m(2),m(3)))
+    allocate(self%saha, self%part, self%n, mold=self%f)
     self%allocated = .true.
-END SUBROUTINE allocate_ion
+END SUBROUTINE allocate_particle
 
 !===============================================================================
 elemental FUNCTION irwin_partf (self, temp) result(u)
@@ -242,5 +245,27 @@ pure FUNCTION irwin_poly (self, temp) result(u)
         u=u*temp + self%irwin(i-1)
     end do
 END FUNCTION irwin_poly
+
+!====================================================================================
+pure elemental function inverse_doppler_factor(self, temp) result(inv_df)
+  class(massive_type), intent(in) :: self
+  real(4), intent(in)  :: temp
+  real(4) :: dop, inv_df
+  real(4), parameter :: const=2.0d0*BK/UU
+  !---------------------------------------------------------------------------------
+  dop = const*temp/self%awgt
+  if (vmic > 0) dop = dop + (vmic*1e5)**2
+  inv_df = CC / sqrt(dop)
+end function inverse_doppler_factor
+
+!====================================================================================
+pure elemental function compute_vbar2(self, temp) result(vbar2)
+  class(massive_type), intent(in) :: self
+  real(4),  intent(in)  :: temp
+  real(4) :: vbar2
+  real(4), parameter :: const=8.0d0*BK/(PI*UU), inv_MH=UU/MH
+  !---------------------------------------------------------------------------------
+  vbar2 = const*temp * (inv_MH + 1.0/self%awgt)
+end function compute_vbar2
 
 END MODULE ion_mod

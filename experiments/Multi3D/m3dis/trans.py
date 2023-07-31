@@ -19,18 +19,22 @@ EK  = EE/BK
 class trans_class(object):
     def __init__(self, atom, kr):
         self.kr = kr
+        self.el = atom
+        self.atom  = atom
         
         if kr < atom.nline:
             try:
-                data = atom._read()
-                j, i, fosc, nq, qmax, q0, iw, ga, gw, gq, profile = data
+                pos = self.atom.f.tell()
+                data = self._read()
+                j, i, fosc, nq, qmax, q0, iw, ga, gw, gq = data[:10]
+                if (len(data) > 10): self.profile = data[10]
+                self.j, self.i, self.nq, self.iw = map(int, [j, i, nq, iw])
+                self.fosc, self.qmax, self.q0, self.ga, self.gw, self.gq = map(float, [fosc, qmax, q0, ga, gw, gq])
             except:
+                self.atom.f.seek(pos)
+                data = self._read()
                 print(kr, data)
-                j, i, fosc, nq, qmax, q0, iw, ga, gw, gq, profile = data
-            
-            self.j, self.i, self.nq, self.iw = map(int, [j, i, nq, iw])
-            self.fosc, self.qmax, self.q0, self.ga, self.gw, self.gq = map(float, [fosc, qmax, q0, ga, gw, gq])
-            
+                print('Could not read line above!')
             
         else:
             j, i, fosc, nq, qmax = atom._read()[:5]
@@ -40,9 +44,12 @@ class trans_class(object):
 
         self.i = self.i-1
         self.j = self.j-1
+
+        if self.i >= atom.nk:
+            print('Lower level {:} of line {:} is beyond level bound of {}!'.format(self.i, kr, atom.nk))
+        if self.j >= atom.nk:
+            print('Upper level {:} of line {:} is beyond level bound of {}!'.format(self.j, kr, atom.nk))
         
-        self.el = atom
-        self.atom  = atom
         self.upper = atom.level[self.j]
         self.lower = atom.level[self.i]
         
@@ -52,9 +59,19 @@ class trans_class(object):
         self.alamb = 1 / (self.upper.ecm - self.lower.ecm) * 1e8
         self.u = CC / self.alamb * 1e8
         self.lam0 = vacuum2obs(np.array(self.alamb))
-        self.title = 'Line = {:.2f} [Å]'.format(self.lam0)
-        
+
         if kr < atom.nline:
+            if abs(self.lam0 / self.c_lam0 - 1) > 1e-3:
+                print('mismatch in central wavelength of line', kr)
+                print('Ritz lam0 = {:.2f}, Comment lam0 = {:.2f}'.format(self.lam0, self.c_lam0))
+
+            loggf = np.log10(self.fosc * self.lower.g)
+            if abs(round(loggf,3) / self.c_loggf - 1) > 1e-2:
+                print('mismatch in loggf of line', kr)
+                print('loggf = {:.4f}, Comment loggf = {:.4f}'.format(loggf, self.c_loggf))
+
+            self.title = 'Line = {:.2f} [Å]'.format(self.c_lam0)
+
             self.iwide = self.iw > 0
             
             self.a   = self.fosc * 6.671e15 * self.lower.g / self.upper.g / self.alamb**2
@@ -111,6 +128,20 @@ class trans_class(object):
                 cont = atom.level[cont[0]]
                 self.iee = cont.ev-self.lower.ev
                 self.jee = cont.ev-self.upper.ev
+
+
+    def _read(self):
+        f = self.atom.f
+        line = f.readline()
+        while line.strip()=='' or line.startswith('*'):
+            if (line.startswith('* id')):
+                self.c_kr, self.c_lam0, self.c_loggf = [float(s) for s in line.split() if is_number(s)][:3]
+                break
+
+            line = f.readline()
+
+        line = f.readline()
+        return line.split()
             
             
     def prepare_VanderWaals(self, gv):

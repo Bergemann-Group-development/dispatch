@@ -27,12 +27,13 @@ MODULE net_opac_patch_mod
     USE mmath, only: cc_kernel
     USE handyfuncs_mod
     USE ray_patch_mod, only:ray_patch_t
-    USE back_cont_patch_mod, only:back_cont_patch_t
-    USE atom_cont_patch_mod, only:atom_cont_patch_t
+    USE back_cont_patch_mod, only:back_cont_t
+    USE atom_cont_patch_mod, only:atom_cont_t
     USE atom_line_patch_mod, only:atom_line_t
-    USE back_line_patch_mod, only:back_line_patch_t
+    USE m3d_halo_mod, only: lock_mem, unlock_mem
     USE m3d_patch_mod, only:maxiter, m3d_patch_t, comoving_frame, linear_long, &
-                            interp_log, ray_offset, pivot_z
+                            interp_log, ray_offset, pivot_z, dlam
+    USE ray_mod, only: one_dimensional
     USE m3d_debug_mod
     implicit none
     private
@@ -41,7 +42,7 @@ MODULE net_opac_patch_mod
     type, public, extends(ray_patch_t) :: net_opac_t
     contains
       procedure :: pre_init => net_opac_pre_init
-      procedure :: update => net_opac_update
+      procedure :: execute
       procedure :: rotate_cube
       procedure :: nbor_relations => net_opac_nbor_relations
       procedure :: init_nbors_hash
@@ -79,30 +80,67 @@ MODULE net_opac_patch_mod
   END SUBROUTINE net_opac_pre_init
   
   !===============================================================================
-  SUBROUTINE net_opac_update (self)
+  SUBROUTINE execute (self)
     class(net_opac_t) :: self
     class(nbor_t), pointer:: nbor
     class(task_t), pointer:: nbtask
     real(4), dimension(:,:,:,:,:,:), pointer :: mem
     real(4), dimension(:,:,:,:), pointer :: chi, eta, Snu
-    integer, save:: itimer=0
-    integer :: iw,it, f, fs, fe, fn, x, y, z, iiw, nw, p(3)
+    real(4), dimension(:,:,:), pointer, contiguous :: vproj
+    real(8), dimension(:), pointer, contiguous :: nu
+    integer :: iw, it, f, fs, fe, fn, x, y, z, iiw, nw, p(3)
+    integer, save :: itimer=0, itimer2=0
     !-----------------------------------------------------------------------------
-    if (self%is_finished()) return
-    call self%decompress_mem(self)
-
-    call trace%begin('net_opac_t%net_opac_update', itimer=itimer)
+    call trace%begin (trim(self%kind)//'%update', itimer=itimer)
     mem => self%authority_mem
     p = self%pcheck
     memcheck = 0
 
-    if (.not. self%nullified) then
-      do iw=1, self%nw
-        do it=1, self%nt
-          do f=1, self%nv
-            mem(:,:,:,f,it,iw) = 0
+    nbor => self%link%nbor
+    do while (associated(nbor))
+      if (nbor%needed .and. .not. nbor%download) then
+        nbtask => nbor%task
+        select type (nbtask)
+        class is (back_cont_t)
+          call lock_mem( nbtask, 'net_opac_update', read=.true.)
+          call self%check_access(nbtask)
+          fs = nbtask%fs - self%fs + 1
+          fe = fs + nbtask%nv - 1
+          nw = self%nw
+          do iw=1, nw
+            iiw = mod(iw-1,2)+1
+          do it=1, self%nt
+          do f=fs,fe
+            fn = f - fs + 1
+            do z=1, self%n(3)
+            do y=1, self%n(2)
+            do x=1, self%n(1)
+              mem(x,y,z,f,it,iw) = nbtask%mem(x,y,z,fn,it,iiw)
+            end do
+            end do
+            end do
           end do
-        end do
+          end do
+          end do
+          call unlock_mem( nbtask, 'net_opac_update', read=.true.)
+        end select
+      endif
+      nbor => nbor%next
+    end do
+
+    nu  => self%sp%nu(self%fs:self%fe)
+    if (self%out_ray .and. self%composition%ll_initialised) then
+      chi => self%authority_mem(:,:,:,:,1,1)
+      eta => self%authority_mem(:,:,:,:,1,2)
+      call os%allocate(vproj, self%n)
+      call self%comp_vproj(vproj)
+      call trace%begin ('add_linelist_opacities', itimer=itimer2)
+      call self%composition%add_linelist_opacities(nu, eta, chi, vproj, dlam)
+      call trace%end (itimer2)
+      call os%deallocate(vproj)
+      do f=1, self%nv
+        self%authority_mem(:,:,:,f,1,3) = chi(:,:,:,f)
+        self%authority_mem(:,:,:,f,1,4) = eta(:,:,:,f)
       end do
     endif
 
@@ -110,18 +148,29 @@ MODULE net_opac_patch_mod
     do while (associated(nbor))
       if (nbor%needed .and. .not. nbor%download) then
         nbtask => nbor%task
-        call self%check_access(nbtask)
         select type (nbtask)
+        class is (back_cont_t)
+          ! already added
         class is (atom_line_t)
-          ! chi and eta have already been added
+          it = self%it
+          if (self%out_ray) then
+            chi => self%authority_mem(:,:,:,:,it,1)
+            eta => self%authority_mem(:,:,:,:,it,2)
+            call nbtask%add_line_opacity(nu, chi, eta, LTE=.false.)
+            chi => self%authority_mem(:,:,:,:,it,3)
+            eta => self%authority_mem(:,:,:,:,it,4)
+            call nbtask%add_line_opacity(nu, chi, eta, LTE=.true.)
+          else
+            chi => self%authority_mem(:,:,:,:,it,1)
+            eta => self%authority_mem(:,:,:,:,it,2)
+            call nbtask%interpolate_lines(chi, eta, LTE=.false.)
+          endif
         class is (ray_patch_t)
+          call lock_mem( nbtask, 'net_opac_update', read=.true.)
+          call self%check_access(nbtask)
           fs = nbtask%fs - self%fs + 1
           fe = fs + nbtask%nv - 1
-          if (self%out_ray) then
-            nw = merge(4, self%nw, nbtask%kind=='back_line')
-          else
-            nw = self%nw
-          endif
+          nw = self%nw
           do iw=1, nw
             iiw = mod(iw-1,2)+1
           do it=1, self%nt
@@ -137,6 +186,7 @@ MODULE net_opac_patch_mod
           end do
           end do
           end do
+          call unlock_mem( nbtask, 'net_opac_update', read=.true.)
         end select
       endif
       nbor => nbor%next
@@ -152,16 +202,14 @@ MODULE net_opac_patch_mod
       end do
     end do
     
-    call self%boundaries%mirror()
+    call self%bndries()
     call self%periodic_grid()
 
-    if (self%out_ray) then
+    if (self%out_ray .and. .not. one_dimensional) then
       call self%rotate_cube()
     endif
-
-    call self%post_update()
     call trace%end(itimer)
-  END SUBROUTINE net_opac_update
+  END SUBROUTINE execute
 
   !===============================================================================
   SUBROUTINE rotate_cube (self)
@@ -295,7 +343,7 @@ MODULE net_opac_patch_mod
           needs_me = .false.; needed = .false.
         else
           select case(another%kind)
-          case ('atom_line', 'back_cont', 'back_line', 'atom_cont', 'atom_patch')
+          case ('atom_line', 'back_cont', 'atom_cont', 'atom_patch')
             needs_me = .false.
           case ('angle_rad')
             if (self%out_ray .or. .not. comoving_frame) then
@@ -335,18 +383,13 @@ MODULE net_opac_patch_mod
     else
       call self%ray_patch_t%init_nbors_hash(nbors)
     endif
-  
+
     key(1:3) = self%key(1:3)
     key(4) = hash_string('atom_line')
     call self%check_nbor(key, nbors)
 
     mu_start = merge(-self%n_out, 1, self%out_ray)
     mu_stop  = merge(-1, self%n_mu, self%out_ray)
-
-    !if (self%out_ray) then
-      key(4) = hash_string('back_line')
-      call self%check_nbor(key, nbors)
-    !endif
 
     if (comoving_frame .and. .not. self%out_ray) then
       key(4) = hash_string('mean_rad')
@@ -369,7 +412,7 @@ MODULE net_opac_patch_mod
     key(4) = hash_string('atom_cont')
     call self%check_nbor(key, nbors)
 
-    ! because of atom_linees
+    ! because of atom_lines
     key(2) = 0
     key(4) = hash_string('atom_patch')
     call self%check_nbor(key, nbors)

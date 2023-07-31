@@ -70,10 +70,9 @@ prec_mod.o                  : mconst.o os_mod.o
 patch_mod.o                 : os_mod.o
 mpi_debug_mod.o             : mpi_mod.o io_mod.o
 atom_line_patch_mod.o       : ray_patch_mod.o hprofl_mod.o
-back_line_patch_mod.o       : ray_patch_mod.o composition_mod.o
 back_cont_patch_mod.o       : ray_patch_mod.o composition_mod.o
 atom_cont_patch_mod.o       : ray_patch_mod.o atom_mod.o
-net_opac_patch_mod.o        : ray_patch_mod.o atom_line_patch_mod.o back_line_patch_mod.o atom_cont_patch_mod.o
+net_opac_patch_mod.o        : ray_patch_mod.o atom_line_patch_mod.o atom_cont_patch_mod.o
 out_rad_patch_mod.o         : ray_patch_mod.o
 proj_patch_mod.o            : ray_patch_mod.o net_opac_patch_mod.o
 mean_rad_patch_mod.o        : ray_patch_mod.o angle_rad_patch_mod.o proj_patch_mod.o

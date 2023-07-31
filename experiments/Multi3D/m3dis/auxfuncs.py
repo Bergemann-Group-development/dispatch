@@ -15,6 +15,7 @@ EM = 9.109534E-28
 UU = 1.6605655E-24
 BK = 1.380662E-16
 PI = 3.14159265359
+SBOL = 5.6704e-5
 
 HCE = HH*CC/EE*1e8
 HC2 = 2.*HH*CC *1e24
@@ -69,10 +70,9 @@ def convol(sx, sy, vrot=None, zeta_rt=None, vshift=None, vdop=None, custom=None)
     Give vshift in km/s for blue/red - dopplershift.
     Give vdop in km/s for gaussian doppler broadening.
     """
-    beta = 1.5
-    cc   = 299792.458 # VELOCITY OF LIGHT (KM/S)
-    sxx  = np.log(sx.astype(np.float64)) # original xscale in
-    syy  =        sy.astype(np.float64)
+    cc  = 299792.458 # VELOCITY OF LIGHT (KM/S)
+    sxx = np.log(sx.astype(np.float64)) # original xscale in
+    syy =        sy.astype(np.float64)
     
     min_rd = 0.1 / cc    # RESAMPLING-DISTANCE
     
@@ -92,6 +92,7 @@ def convol(sx, sy, vrot=None, zeta_rt=None, vshift=None, vdop=None, custom=None)
     
     if vrot is not None:
         normf = cc/vrot
+        beta = 1.5
         xi = normf*px
         
         xi[abs(xi) > 1] = 1
@@ -368,6 +369,14 @@ def _read_fix(f, length, n, dtype=None):
         out = out.astype(dtype)
         
     return out
+
+
+def is_number(s):
+    try:
+        float(s)
+        return True
+    except ValueError:
+        return False
 
 
 def voigt_num(a, v):

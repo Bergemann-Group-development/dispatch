@@ -19,7 +19,7 @@ MODULE ray_patch_mod
   USE math_mod
   USE handyfuncs_mod
   USE op_math_mod, only: searchsorted
-  USE ray_mod, only: ray_type
+  USE ray_mod, only: ray_type, one_dimensional
   USE m3d_patch_mod, only: m3d_patch_t, vec, wmu, long_vec, long_wmu, detailed_prints, &
   converged, print_send, atom_update_counter, comoving_frame, use_vel
   USE mconst, only: cc, over_4pi, PI
@@ -39,15 +39,12 @@ MODULE ray_patch_mod
     procedure :: init => ray_patch_init
     procedure :: print_post_update_info
     procedure :: check_in_bounds
-    procedure :: finish => ray_patch_finish
     procedure :: nbor_relations => ray_nbor_relations
     procedure :: set_freq_indices
     procedure :: is_upstream => ray_is_upstream
     procedure :: comp_vproj
     procedure :: set_guard_zones
     procedure :: ff_index
-    procedure :: compress_mem
-    procedure :: decompress_mem
     procedure :: pack
     procedure :: unpack
     procedure :: allocate_mesg
@@ -56,6 +53,7 @@ MODULE ray_patch_mod
     procedure :: init_nbors_hash
     procedure :: frequency_padding
     procedure :: init_bdries
+    procedure :: bndries
   end type ray_patch_t
 
   !-----------------------------------------------------------------------------
@@ -119,7 +117,7 @@ SUBROUTINE ray_patch_init (self)
     select case (self%kind)
     case ('atom_line', 'atom_rate')
       ! frequency padding for atom_lines is done in atom_line%init
-    !case ('back_cont', 'back_line', 'atom_cont', 'net_opac', 'mean_rad')
+    !case ('back_cont', 'atom_cont', 'net_opac', 'mean_rad')
     case default
       call self%frequency_padding()
     end select
@@ -243,7 +241,7 @@ SUBROUTINE set_guard_zones (self)
   !-----------------------------------------------------------------------------
   if (self%out_ray) then
     self%ng = [0,0,1]
-  elseif (self%one_dimensional) then
+  elseif (one_dimensional) then
     self%ng = [0,0,1]
   elseif (self%ray%long) then
     self%ng = [3,3,1]
@@ -251,14 +249,6 @@ SUBROUTINE set_guard_zones (self)
     self%ng = [2,2,1]
   endif
 END SUBROUTINE set_guard_zones
-
-!===============================================================================
-SUBROUTINE ray_patch_finish (self)
-  class(ray_patch_t) :: self
-  !-----------------------------------------------------------------------------
-  call self%m3d_patch_t%finish()
-  self%static_mem = .false.
-END SUBROUTINE ray_patch_finish
 
 !===============================================================================
 !> Determine if a task is upstream.  
@@ -416,10 +406,11 @@ SUBROUTINE ray_nbor_relations(self, another, needed, needs_me, download)
 END SUBROUTINE ray_nbor_relations
 
 !===============================================================================
-SUBROUTINE allocate_mem (self, allocator, m_in)
+SUBROUTINE allocate_mem (self, allocator, m_in, label)
   class(ray_patch_t):: self
   class(m3d_patch_t), intent(in), target :: allocator
   integer, intent(in), optional :: m_in(6)
+  character(len=*), optional :: label
   integer :: fs, fe
   !-----------------------------------------------------------------------------
   call self%m3d_patch_t%allocate_mem(allocator, m_in)
@@ -432,74 +423,6 @@ SUBROUTINE allocate_mem (self, allocator, m_in)
   endif
 END SUBROUTINE allocate_mem
 
-!===============================================================================
-SUBROUTINE compress_mem (self, compressor)
-  class(ray_patch_t):: self
-  class(m3d_patch_t), intent(in), target :: compressor
-  integer :: i, k, m(6)
-  real(4), dimension(:,:,:,:,:,:), pointer, contiguous :: dn
-  integer, save:: itimer=0
-  !-----------------------------------------------------------------------------
-  if (.not. self%compressed) then
-    call trace%begin ('ray_patch_t%compress_mem', itimer=itimer)
-    call self%mem_lock(1)%set ('compress_mem')
-    self%static_mem = .true.
-    self%compressed = .true.
-    m = shape(self%mem)
-    m(3) = 1
-    k = merge(self%ui(3), self%li(3),self%dir>0)
-    call os%allocate(dn, m)
-    do i=1, self%nv
-      dn(:,:,1:1,i,:,:) = self%mem(:,:,k:k,i,:,:)
-    end do
-    call self%deallocate_mem(compressor)
-    call self%m3d_patch_t%allocate_mem(compressor, m)
-    self%allocation_time = self%time
-    do i=1, self%nv
-      self%mem(:,:,1:1,i,:,:) = dn(:,:,1:1,i,:,:)
-    end do
-    call os%deallocate(dn)
-    call self%mem_lock(1)%unset ('compress_mem')
-    if (self%print_update_info .and. detailed_prints) then
-      write(stdout,*) self%m3d_patch_info2(), ' has been compressed'
-    endif
-    call trace%end(itimer)
-  endif
-END SUBROUTINE compress_mem
-
-!===============================================================================
-SUBROUTINE decompress_mem (self, decompressor)
-  class(ray_patch_t) :: self
-  class(m3d_patch_t), intent(in), target :: decompressor
-  integer :: i, k, m(6)
-  real(4), dimension(:,:,:,:,:,:), pointer, contiguous :: up
-  integer, save:: itimer=0
-  !-----------------------------------------------------------------------------
-  if (self%compressed) then
-    call trace%begin ('ray_patch_t%decompress_mem', itimer=itimer)
-    call self%mem_lock(1)%set ('decompress_mem')
-    self%static_mem = .false.
-    self%compressed = .false.
-    m = shape(self%mem)
-    call os%allocate(up, m)
-    do i=1, self%nv
-      up(:,:,1:1,i,:,:) = self%mem(:,:,1:1,i,:,:)
-    end do
-    call self%m3d_patch_t%deallocate_mem(decompressor)
-    call self%allocate_mem(decompressor)
-    k = merge(1,self%gn(3),self%dir>0)
-    do i=1, self%nv
-      self%mem(:,:,k:k,i,:,:) = up(:,:,1:1,i,:,:)
-    end do
-    call os%deallocate(up)
-    call self%mem_lock(1)%unset ('decompress_mem')
-    if (self%print_update_info .and. detailed_prints) then
-      write(stdout,*) self%m3d_patch_info2(), ' has been decompressed'
-    endif
-    call trace%end(itimer)
-  endif
-END SUBROUTINE decompress_mem
-  
 !===============================================================================
 !> Pack patch info into a buffer, for MPI communication
 !> FIXME: Consider replacing with mpi_buffer() calls
@@ -691,6 +614,7 @@ SUBROUTINE print_post_update_info (self)
   !-----------------------------------------------------------------------------
   f = self%fcheck
   p = self%pcheck
+  call self%check_access(self)
   call self%print_to_stdout(arr=self%mem(p(1),p(2),p(3),f,1,:))
 END SUBROUTINE print_post_update_info
 
@@ -734,5 +658,40 @@ SUBROUTINE init_nbors_hash (self, nbors)
   call self%check_nbor(key, nbors)
   call trace%end (itimer)
 END SUBROUTINE init_nbors_hash
+
+  !===============================================================================
+  SUBROUTINE bndries (self)
+    class(ray_patch_t) :: self
+    integer :: i, j, k, iv, iw, b, it, ng
+    real(4) :: xxold(3), xxnew(self%ng(3))
+    real(4), dimension(:,:,:,:,:,:), pointer :: mem
+    ! ----------------------------------------------------------------------------
+    if (self%ng(3) == 0) return
+    it = self%it
+    ng = self%ng(3)
+    mem => self%mem
+
+    if (self%boundaries%is_set(bits%zu)) then
+        b = self%ui(3)
+        mem(:,:,b+1:b+ng,:,:,:) = 0.
+    endif
+
+    if (self%boundaries%is_set(bits%zl)) then
+        b = self%li(3)
+        xxold = [(i*self%ds(3), i=1, 3)]
+        xxnew = [(i*self%ds(3), i=1-ng, 0)]
+        do iw=1, self%nw
+        do iv=1, self%nv
+        do j=1,  self%gn(2)
+        do i=1,  self%gn(1)
+          call pchip_mono(xxold, mem(i,j,b:b+2,   iv,it,iw), &
+                          xxnew, mem(i,j,b-ng:b-1,iv,it,iw), sorted=.true.)
+          mem(i,j,b-ng:b-1,iv,it,iw) = max(mem(i,j,b-ng:b-1,iv,it,iw), 0.)
+        end do
+        end do
+        end do
+        end do
+    endif
+  END SUBROUTINE bndries
 
 END MODULE ray_patch_mod

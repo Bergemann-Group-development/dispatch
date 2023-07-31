@@ -5,6 +5,7 @@
 !===============================================================================
 MODULE dispatcher0_mod
   USE io_mod
+  USE os_mod
   USE trace_mod
   USE omp_mod
   USE timer_mod
@@ -36,6 +37,7 @@ MODULE dispatcher0_mod
     procedure:: no_queue
   end type
   real(8):: stall_start=0d0, max_stalled=1e8, retry_stalled=1e8
+  real(8):: soft_mem_limit=huge(1.d0)
   real:: delay_ms=0.05
   integer, save:: mpi_only_master=5
   integer, save:: verbose=0
@@ -65,7 +67,7 @@ SUBROUTINE init (self, name)
   ! An optional namelist can be used to turn debugging on
   !-----------------------------------------------------------------------------
   namelist /dispatcher0_params/ verbose, max_stalled, retry_stalled, do_delay, &
-    delay_ms, mpi_only_master, debug, detailed_timer, omp_pick, pick_thread
+    delay_ms, mpi_only_master, debug, detailed_timer, omp_pick, pick_thread, soft_mem_limit
   character(len=120):: ids = &
   '$Id$'
   !-----------------------------------------------------------------------------
@@ -227,64 +229,61 @@ SUBROUTINE update (self, task_list, test)
   end if
   nullify (prev)
   nullify (first)
+  !---------------------------------------------------------------------------
+  ! If the patch mem was OMP placed, search ready queue for matching thread
+  !---------------------------------------------------------------------------
+  if (omp_pick) then
+    do while (associated(link))
+      task => link%task
+      if (task%place == -1) then
+        exit
+      endif
+      prev => link
+      link => link%next_time
+    end do
+    !-------------------------------------------------------------------------
+    ! If not found, fall back on first task in queue
+    !-------------------------------------------------------------------------
+    if (.not. associated(link)) then
+      if (os%gb < soft_mem_limit .or. omp%thread == 0) then
+        nullify (prev)
+        link => task_list%queue
+      endif
+    end if
+  end if
   if (associated(link) .and. .not.task_list%syncing) then
     if (verbose > 0) &
       write(io_unit%log,'(f12.6,2x,a,i6,i7,1p,e12.4)') wallclock(), &
         'dispather0_t%update: na, id, time =', &
         task_list%na, link%task%id, link%task%time
-    !---------------------------------------------------------------------------
-    ! If the patch mem was OMP placed, search ready queue for matching thread
-    !---------------------------------------------------------------------------
-    if (omp_pick) then
-      do while (associated(link))
-        task => link%task
-        if (task%place == omp%place+100) then
-          exit
-        elseif (task%place == -1) then
-          first => prev
-        endif
-        prev => link
-        link => link%next_time
-      end do
-      if (.not. associated(first)) then
-        nullify (prev)
-        link => task_list%queue
-        do while (associated(link))
-          task => link%task
-          !if (task%place==-1) exit
-          !-----------------------------------------------------------------------
-          ! Select a task with the same thread, or the same place
-          !-----------------------------------------------------------------------
-          if (pick_thread) then
-            if (omp%thread == task%thread) then
-              exit
-            end if
-          else
-            if (omp%place == task%place) then
-              exit
-            end if
-          end if
-          prev => link
-          link => link%next_time
-        end do
-      else
-        prev => first
-        link => first%next_time
-      endif
-      !-------------------------------------------------------------------------
-      ! If not found, fall back on first task in queue
-      !-------------------------------------------------------------------------
-      if (.not. associated(link)) then
-        nullify (prev)
-        link => task_list%queue
-      end if
-    end if
     task => link%task
+    !---------------------------------------------------------------------------
+    ! Bail out if the busy bit is already set
+    !---------------------------------------------------------------------------
+    already_busy = task%is_set (bits%busy)
+    if (task%is_set(bits%busy)) then
+      call task%log ('already busy')
+      write (stdlog,'(a,i4,a,i9)') &
+        ' WARNING: thread', omp%thread, &
+        ' found task with busy-bit set:', task%id
+      call trace%end (itimer(i))
+      return
+    end if
+    !---------------------------------------------------------------------------
+    ! Change the task state from ready to busy.  The task is owned by the
+    ! current thread as long as it is under update or post-update, so there
+    ! should be no ambiguity possible about the bit status
+    !---------------------------------------------------------------------------
     task%atime = task%time
+    id = task%id
+    call task%set (bits%busy)                              ! mark task busy
+    call task%clear (bits%ready)                           ! clear ready state
+    call task%log ('set busy', 2)
     !...........................................................................
     write (label,'(a,i6,l2)') &
       trim(task%kind), task_list%nq, associated(task_list%queue)
-    call task%log (label, 1)
+    call task%log (trim(label), 1)
+    call task%log (trim(label), 4)
     !---------------------------------------------------------------------------
     ! Keep track of memory affinity
     !---------------------------------------------------------------------------
@@ -307,17 +306,6 @@ SUBROUTINE update (self, task_list, test)
         'time', task%time, 'nq', task%nq
       flush (io_unit%log)
     end if
-    already_busy = task%is_set (bits%busy)
-    id = task%id
-    !---------------------------------------------------------------------------
-    ! Change the task stat from ready to busy.  The task is owned by the
-    ! current thread as long as it is under update or post-update, so there
-    ! should be no ambiguity possible about the bit status
-    !---------------------------------------------------------------------------
-    call task%log ('set busy', 3)
-    call task%set (bits%busy)                              ! mark task busy
-    call task%log ('clear ready', 3)
-    call task%clear (bits%ready)                           ! clear ready state
     !---------------------------------------------------------------------------
     ! Remove the accepted task link from the queue
     !---------------------------------------------------------------------------
@@ -343,19 +331,6 @@ SUBROUTINE update (self, task_list, test)
         otime = time
         !$omp atomic write
         oid = otask%id
-        if (omp%master) then
-          write (io_unit%queue,'(f12.6,2i7,2f12.6,2i5)') &
-            wallclock(), task%id, task%istep, task%time, &
-            otask%atime, task_list%nq, task_list%nac
-          flush (io_unit%queue)
-        end if
-      else
-        if (omp%master .and. verbose > 1) then
-          write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,2i6)') &
-            wallclock(), omp%thread, 'take', task%id, task%time, &
-            task%istep, task_list%nq
-          flush (io_unit%queue)
-        end if
       end if
     end if
     !---------------------------------------------------------------------------
@@ -386,19 +361,34 @@ SUBROUTINE update (self, task_list, test)
   now = wallclock()
   if (associated(link)) then
     nullify (link%next_time)
-    if (detailed_timer) then
-      call trace%end (itimer(i))
-      i = i+1
-      call trace%begin('dispatcher0_t%update(4)', itimer=itimer(i))
-    end if
-    if (already_busy) then
-      call task%log ('already busy')
-      write (stderr,'(i6,a,i4,a,i6)') &
-        mpi%rank,' WARNING: thread', omp%thread, &
-        ' found task with busy-bit set:', task%id
-      call io%warning ('already busy')
-    else
-      call task_list%update (link, test)
+    call trace%end (itimer(i))
+    i = i+1
+    call trace%begin('dispatcher0_t%update(task)', itimer=itimer(i))
+    !-------------------------------------------------------------------------
+    ! Initially, the task%cost should be zero, so the first time the task
+    ! list cost remains zero, but the next time a task updates, the previous
+    ! cost of the task is subtracted and the new cost is added, which should
+    ! keep the task_list%cost always equal to the sum of all task costs.
+    !-------------------------------------------------------------------------
+    !associate (task_list_cost=>task_list%cost)
+    !!$omp atomic update
+    !task_list_cost = task_list_cost - task%cost
+    call task_list%update (link, test)
+    !-------------------------------------------------------------------------
+    ! The start time was set before the MPI and other service calls, to make
+    ! sure that their contribution too the task list cost is counted.
+    !-------------------------------------------------------------------------
+    !cost = (wallclock()-start)/max(task%dtime,tiny(1d0))
+    !task%cost = cost
+    !!$omp atomic
+    !task_list_cost = task_list_cost + task%cost
+    !call task%log ('cost', 4, task_list%nq, r1=cost, d1=task_list_cost)
+    !end associate
+    !...........................................................................
+    if (abs(io%task_logging) > 1) then
+      write (label,'(a,i6,l2)') &
+        'done', task_list%nq, associated(task_list%queue)
+      call task%log (trim(label), 2)
     end if
     !---------------------------------------------------------------------------
     ! Force outstanding I/O tasks to complete (taskyield is not enough)

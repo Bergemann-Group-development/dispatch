@@ -21,7 +21,7 @@ MODULE atom_patch_mod
     !USE units_mod
     !USE scratch_mod
     USE handyfuncs_mod
-    USE atom_cont_patch_mod, only: atom_cont_patch_t
+    USE atom_cont_patch_mod, only: atom_cont_t
     USE angle_rad_patch_mod, only: rad_patch_t
     USE atom_rate_patch_mod, only: atom_rate_t
     USE atom_mod, only: atom_type, atomic_spectrum_type, use_classic_col, kramer_bf, debye_shield, &
@@ -35,7 +35,7 @@ MODULE atom_patch_mod
     USE composition_mod, only: composition_type
     USE m3d_patch_mod, only: m3d_patch_t, maxiter, check_NaN, cswitch, key_link_t, &
     global_maxerr, convlim, atom_update_counter, comoving_frame, global_pos, &
-    decouple_continuum, overlapping_bb, overlapping_bf, line_blanketing
+    decouple_continuum, overlapping_bb, overlapping_bf, line_blanketing, converged
     USE bftrans_mod, only: bftrans_type
     USE hprofl_mod, only: hydrogen_BPO
     USE osmet_mod, only:osmet_type
@@ -54,8 +54,7 @@ MODULE atom_patch_mod
       logical :: update_skipped=.false., atom_allocated=.false., molec
     contains
       procedure :: pre_init => atom_patch_pre_init
-      procedure :: update => atom_patch_update
-      procedure :: finish => atom_patch_finish
+      procedure :: execute
       procedure :: nbor_relations => atom_patch_nbor_relations
       procedure :: create_sub_patches
       procedure :: pre_init_atom
@@ -78,7 +77,6 @@ MODULE atom_patch_mod
     logical, save :: detailed_absmet=.false.
     character(len=128), save :: precomputed_depart=''
     character(len=128), public :: atom_file=''
-    real(4), public :: vmic = 0
 
     !-----------------------------------------------------------------------------
   
@@ -104,11 +102,13 @@ MODULE atom_patch_mod
     n_nu = self%n_nu
     n_mu = self%n_mu
 
-    if (decouple_continuum) then
-      call self%create_sub_patches([1, n_nu],   [0, n_mu], self%bb_atom, self%bb_sp)
-      call self%create_sub_patches([1, n_nu]+n_nu, [0, 0], self%bf_atom, self%bf_sp)
-    else
-      call self%create_sub_patches([1, n_nu], [0, n_mu], self%atom, self%sp)
+    if (self%maxiter > 0) then
+      if (decouple_continuum) then
+        call self%create_sub_patches([1, n_nu],   [0, n_mu], self%bb_atom, self%bb_sp)
+        call self%create_sub_patches([1, n_nu]+n_nu, [0, 0], self%bf_atom, self%bf_sp)
+      else
+        call self%create_sub_patches([1, n_nu], [0, n_mu], self%atom, self%sp)
+      endif
     endif
 
     call self%create_sub_patches([-n_nu, -1], [-self%n_out, 0], self%output_atom, self%output_sp)
@@ -127,7 +127,7 @@ MODULE atom_patch_mod
     class(atom_type), intent(in), target :: atom
     class(atomic_spectrum_type), intent(in), pointer :: sp
     class(atom_rate_t), pointer :: rate
-    class(atom_cont_patch_t), pointer :: cont
+    class(atom_cont_t), pointer :: cont
     class(atom_line_t), pointer :: line
     integer :: n, m
     logical :: cf, dc, new_cont, new_line, new_rate
@@ -353,10 +353,6 @@ MODULE atom_patch_mod
     call os%allocate(atom%data%totn, self%n, label='totn')
     totn => atom%data%totn
 
-    call os%allocate(atom%data%doppler_factor, self%n, label='doppler_factor')
-    df => atom%data%doppler_factor
-    df = atom%compute_doppler_factor(temp, vmic)
-
     element => null()
     molec   => null()
 
@@ -403,7 +399,7 @@ MODULE atom_patch_mod
   END SUBROUTINE init_atom_data
 
   !===============================================================================
-  SUBROUTINE atom_patch_update (self)
+  SUBROUTINE execute (self)
     class(atom_patch_t) :: self
     class(nbor_t), pointer:: nbor
     class(task_t), pointer:: nbtask
@@ -411,12 +407,11 @@ MODULE atom_patch_mod
     real(8), dimension(:,:,:,:), pointer, contiguous :: gamma_ij, gamma_ji
     real(4), dimension(:,:,:,:), pointer, contiguous :: wphi
     integer :: i
-    integer, save:: itimer=0, count=0
+    integer, save:: count=0
     real(8) :: global
+    integer, save :: itimer=0
     !-----------------------------------------------------------------------------
-    if (self%is_finished()) return
-    call trace%begin('atom_patch_t%atom_patch_update', itimer=itimer)
-
+    call trace%begin (trim(self%kind)//'%update', itimer=itimer)
     if (self%iter == 0) then
       call self%init_atom_data()
     else
@@ -433,7 +428,7 @@ MODULE atom_patch_mod
         end do
       endif
 
-      if (.not. self%atom%stiff) then
+      !if (.not. self%atom%stiff) then
         do i=1, self%atom%nline
           gamma_ij(:,:,:,i) = gamma_ij(:,:,:,i) * wphi(:,:,:,i)
           gamma_ji(:,:,:,i) = gamma_ji(:,:,:,i) * wphi(:,:,:,i)
@@ -441,9 +436,9 @@ MODULE atom_patch_mod
 
         call self%update_populations(gamma_ij, gamma_ji)
         self%update_skipped = .false.
-      else
-        self%update_skipped = .true.
-      endif
+      !else
+      !  self%update_skipped = .true.
+      !endif
     endif
     
     if (self%iter > 0) then
@@ -453,22 +448,17 @@ MODULE atom_patch_mod
       global = global_maxerr%update(0.d0)
       if ((global > 0) .and. global < convlim .and. self%maxerr < convlim) then
         write(stdout, *) self%ipos(3)+1, 'Converged!', count
+        if (self%iter < self%maxiter) converged = .true.
         call self%finish()
       endif
     endif
-  
-    call self%post_update()
 
     if (associated(self%atom%data%gamma_ij)) then
       call os%deallocate(self%atom%data%gamma_ij, label='atom%gamma_ij')
       call os%deallocate(self%atom%data%gamma_ji, label='atom%gamma_ji')
     endif
-
-    if (self%atom%stiff .and. .not. self%is_finished()) then
-      call self%check_skip()
-    endif
     call trace%end(itimer)
-  END SUBROUTINE atom_patch_update
+  END SUBROUTINE execute
 
   !===============================================================================
   SUBROUTINE print_post_update_info (self)
@@ -553,44 +543,6 @@ MODULE atom_patch_mod
       nbor => nbor%next
     end do
   END SUBROUTINE check_skip
-
-  !===============================================================================
-  SUBROUTINE atom_patch_finish (self)
-    USE m3d_patch_mod, only: converged
-    class(atom_patch_t) :: self
-    class(nbor_t), pointer:: nbor
-    class(task_t), pointer:: nbtask
-    integer :: i, j
-    ! ----------------------------------------------------------------------------
-    call trace%begin('atom_patch_t%atom_patch_finish')
-    call self%m3d_patch_t%finish()
-    if (self%iter < self%maxiter) converged = .true.
-
-    nbor => self%link%nbor
-    do while (associated(nbor))
-      if (nbor%needs_me) then
-        nbtask => nbor%task
-        select type(nbtask)
-        class is (m3d_patch_t)
-          if (.not. nbtask%out_ray .and. associated(nbtask%m3d_parent)) then
-            if (nbtask%m3d_parent%id == self%id) then
-              if (.not. nbtask%finished) then
-                call nbtask%finish()
-                call nbtask%free_unused_memory()
-              elseif (.not. nbtask%static_mem) then
-                call nbtask%mem_lock(1)%set ('atom_patch_finish')
-                call nbtask%deallocate_mem(self, print=.true.)
-                call nbtask%mem_lock(1)%unset ('atom_patch_finish')
-              endif
-            endif
-          endif
-        end select
-      endif
-      nbor => nbor%next
-    end do
-    
-    call trace%end()
-  END SUBROUTINE atom_patch_finish
 
   !===============================================================================
   SUBROUTINE update_populations (self, gamma_ij, gamma_ji)
@@ -683,13 +635,15 @@ MODULE atom_patch_mod
     !-----------------------------------------------------------------------------
     do i=1, size(self%composition%trans)
       trans => self%composition%trans(i)
+      if (.not. trans%active) cycle
       select case(trans%label)
-      case ('(H+H)', 'H2+', 'H- FF', 'H FF G')
+      case ('(H+H)', 'H2+', 'H- FF', 'H FF', 'H2-', 'H- BF')
         ! do not exclude
       case default
-        if (trans%level%g2 > 0) then
+        if (trans%level%g > 0) then
           if (uppercase(trans%ion%id(1:2)) == self%atom%id) then
             do kc=1, self%atom%ncont
+              if (.not. self%atom%cont(kc)%active) cycle
               lower = self%atom%cont(kc)%i
 
               if (self%atom%ev(lower)==0) then
@@ -699,7 +653,7 @@ MODULE atom_patch_mod
               endif
 
               if (same) then
-                trans%exclude = .true.
+                trans%active = .false.
                 if (first_time) then
                   print *, 'excluding transition ', trans%label
                 endif
@@ -787,7 +741,7 @@ MODULE atom_patch_mod
         else
           needs_me = .false.
         endif
-      class is (atom_cont_patch_t)
+      class is (atom_cont_t)
         needed = .false.
         if (another%atom%id /= self%atom%id) then
           needs_me = .false.

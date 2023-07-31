@@ -22,6 +22,7 @@ MODULE read_external_mod
   USE shared_mod
   USE task_list_mod
   USE experiment_mod
+  USE ion_mod, only: vmic
   USE composition_mod
   USE composition_patch_mod, only: FeH
   USE patch_mod
@@ -29,11 +30,10 @@ MODULE read_external_mod
   USE atom_mod, only: m1d_legacy_mode
   USE ray_patch_mod, only: maxvel
   USE m3d_patch_mod, only: maxiter, ilambd, m3d_patch_t, atom_update_counter, &
-  global_maxerr, global_pos, nz_total, use_density
-  USE atom_patch_mod, only: vmic
+  global_maxerr, global_pos, nz_total, use_density, use_ne
   USE m3d_halo_mod, only: m3d_halo_t
   USE read_stagger_snapshot_mod
-  USE read_marcs_mod, only: read_marcs
+  USE read_marcs_mod, only: read_marcs, zfac
   implicit none
 
   type, public:: read_external_t
@@ -73,12 +73,12 @@ SUBROUTINE init(self, task_list, name)
   real(4) :: origin(3)=[0.0,0.0,0.0]
   integer :: iostat, k, ip
   integer :: patches_per_mpi=1
-  integer :: dims=1
+  integer :: dims=1, nx=5, ny=5, nz=256, snap=0
   integer :: verbose=1
   character(len=126) :: atmos_format='Multi'
   real(4), dimension(:,:,:), pointer, contiguous :: vel
   namelist /atmos_params/ atmos_file, dims, verbose, patches_per_mpi, FeH, &
-  atmos_format, vmic, use_density
+  atmos_format, vmic, use_density, use_ne, nx, ny, nz, snap
   !-----------------------------------------------------------------------------
   if (associated(task_list)) return
   call trace%begin('read_external_t%init')
@@ -99,7 +99,7 @@ SUBROUTINE init(self, task_list, name)
   write (io%namelist, atmos_params)
 
   if (atmos_format == 'Stagger') then
-    call read_stagger_params()
+    call read_stagger_params(atmos_file, snap, nx, ny, nz)
     if (irregular) then
       dims = size(stagger_levels)
     endif
@@ -141,9 +141,8 @@ SUBROUTINE init(self, task_list, name)
     case ('Stagger')
       call read_stagger_snapshot(self%ds, self%rho, self%px, self%py, &
       self%pz, self%ee, self%temp, self%ne)
-      atmos_file = stagger_file
     case ('Marcs')
-      call read_marcs(atmos_file, self%ds, self%rho, self%temp, self%pe, FeH)
+      call read_marcs(atmos_file, nz, self%ds, self%rho, self%temp, self%pe, FeH)
     case ('Multi')
       call self%read_multi_snapshot(atmos_file, self%ds, self%rho, self%temp, &
                                     self%ne, self%px, self%py, self%pz)
@@ -331,7 +330,7 @@ SUBROUTINE init(self, task_list, name)
   write (stdlog,*) 'read_external_mod: ntask,nwrite=', io%ntask, io%nwrite
   if (verbose > 0) write(stdout,*) 'read_external_t%init: print tasks'
   call self%task_list%print_tasks
-  call self%task_list%check_hash_table
+  !call self%task_list%check_hash_table
   !call self%task_list%hash_table%stats
   if (verbose > 0) write(stdout,*) 'read_external_t%init: done'
   flush (stdout)
@@ -600,6 +599,11 @@ SUBROUTINE init_all_nbors (self)
     link => link%next                                   ! continue list
   end do
   !$omp end parallel
+  link => self%head
+  do while (associated(link))
+    call link%task%sort_nbors()
+    link => link%next
+  end do
   if (self%verbose > 0) &
     call timer%toc ('time to initialize nbor lists', 1, time)
   call trace%end (itimer)
@@ -817,8 +821,8 @@ SUBROUTINE save_atmos (self, patch)
   dz = self%ds(3) * scaling%l
 
   composition => patch%composition%composition
-  call composition%load_state_variables(self%temp, self%ne, &
-       self%rho*real(scaling%d), use_rho=use_density)
+  call composition%load_state_variables(dble(self%temp), dble(self%ne), &
+      dble(self%rho)*scaling%d, use_rho=use_density, use_ne=use_ne)
   call composition%absorption(nu, chi, abslte, sumsca, sorted=.true.)
   call composition%scattering(nu, abslte, eta, sumsca)
   call compute_tau_scale(chi(:,:,n:1:-1,1), dz, tau(:,:,n:1:-1))
@@ -832,7 +836,7 @@ SUBROUTINE save_atmos (self, patch)
   write(lunit) self%pe  
   write(lunit) tau      
   write(lunit) chi      
-  write(lunit) eta      
+  write(lunit) eta   
   close(lunit)
 END SUBROUTINE save_atmos
 

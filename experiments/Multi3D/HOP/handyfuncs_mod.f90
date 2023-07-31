@@ -73,10 +73,21 @@ FUNCTION string_in_text (text, str) result(in_text)
 END FUNCTION
 
 !===============================================================================
+FUNCTION extract_int (str) result(val)
+  character(len=*) :: str
+  character(len=128) :: dummy
+  integer :: i, o, val
+  ! ----------------------------------------------------------------------------
+  i = scan(str, '0123456789')
+  o = scan(str, '0123456789', back=.true.)
+  read(str(i:o), *) val
+END FUNCTION
+
+!===============================================================================
 FUNCTION hash_string(text) result(hashed) 
   character(*), intent(in) :: text 
   integer :: hashed ! 32-bit integers assumed 
-  integer, parameter :: magic_numb = Z'5D7A9F43'  ! hexadecimal
+  integer, parameter :: magic_numb = int(Z'5D7A9F43', kind=kind(magic_numb))  ! hexadecimal
   integer :: i, j 
   !-----------------------------------------------------------------------------
   hashed = 0
@@ -154,20 +165,14 @@ PURE FUNCTION uppercase(string)
 END FUNCTION uppercase
 
 !====================================================================================
-pure function option(bool, default) result(out)
-  logical, intent(in), optional :: bool, default
-  logical :: out
+PURE FUNCTION capitalize(string)
+  character(len=*),intent(in) :: string
+  character(len=len(string)) :: capitalize
+  integer :: i,k
   !---------------------------------------------------------------------------------
-  if (present(bool)) then
-    out = bool
-  else
-    if (present(default)) then
-      out = default
-    else
-      out = .false.
-    endif
-  endif
-end function option
+  capitalize = lowercase(trim(string))
+  capitalize(1:1) = uppercase(capitalize(1:1))
+END FUNCTION capitalize
 
 !====================================================================================
 SUBROUTINE sort_array(array, indices)

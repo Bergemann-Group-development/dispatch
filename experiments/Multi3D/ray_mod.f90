@@ -73,6 +73,8 @@ MODULE ray_mod
 
   end type ray_type
   
+  logical, public :: one_dimensional=.false.
+  
 contains
 
 !===============================================================================
@@ -182,13 +184,13 @@ SUBROUTINE set_carlson_quadratures (quad_scheme, vec, wts, up_and_down)
     stop
   end select
 
+  ! Normalize, so that integration over 8 octants yields 4 pi
+  ! the above sets are normalized so that integration over one octant yields 1.
+  wmu = wmu * 0.5 * pi
+
   if (mirror) then
-    ! Normalize, so that integration over 8 octants yields 4 pi
-    ! the above sets are normalized so that integration over one octant yields 1.
-    wmu = wmu * 0.5 * pi
     nmu = 8*nro
   else
-    wmu = wmu * 0.5 * pi
     nmu = 4*nro
   endif
 
@@ -220,6 +222,43 @@ SUBROUTINE set_carlson_quadratures (quad_scheme, vec, wts, up_and_down)
   endif
 END SUBROUTINE set_carlson_quadratures
 !---------------------------------------------------------------------
+
+!===============================================================================
+SUBROUTINE set_grid_quadratures (quad_scheme, ds, vec, wts, up_and_down)
+  character(len=*), intent(in) :: quad_scheme
+  real(8), intent(in) :: ds(3)
+  integer :: m, i, nro, nmu
+  real(8), dimension(:), allocatable :: mu, zrot
+  real(8), dimension(:), allocatable, intent(out) :: wts
+  real(8), dimension(:,:), allocatable, intent(out) :: vec
+  real(8) :: plus, cross
+  logical, optional :: up_and_down
+  logical :: mirror=.true.
+  ! ----------------------------------------------------------------------------
+  if (present(up_and_down)) then
+    mirror = up_and_down
+  endif
+
+  plus = ds(1)/ds(3)
+  cross = sqrt(ds(1)**2 + ds(2)**2)/ds(3)
+
+  ! define the different angle sets
+  select case (trim(quad_scheme))
+  case('grid+')
+    allocate(mu, source=[0.d0, atan(plus)])
+    allocate(zrot, source=[0.d0, 0.d0])
+  case('gridx')
+    allocate(mu, source=[0.d0, atan(cross)])
+    allocate(zrot, source=[0.d0, PI/4.])
+  case('grid*')
+    allocate(mu, source=[0.d0, atan(plus), atan(cross)])
+    allocate(zrot, source=[0.d0, 0.d0, PI/4.])
+  end select
+
+  mu = cos(mu)
+
+  call set_custom_quadratures(mu, nphi=4, vec=vec, wts=wts, zrot=zrot)
+END SUBROUTINE set_grid_quadratures
 
 !===============================================================================
 SUBROUTINE set_lobatto_quadratures(ntheta, nphi, vec, wts)
@@ -279,20 +318,23 @@ SUBROUTINE set_lobatto_quadratures(ntheta, nphi, vec, wts)
 END SUBROUTINE set_lobatto_quadratures
 
 !===============================================================================
-SUBROUTINE set_custom_quadratures(mu, nphi, vec, wts)
+SUBROUTINE set_custom_quadratures(mu, nphi, vec, wts, zrot)
   real(8), intent(inout), dimension(:) :: mu
   integer, intent(in) :: nphi
   real(8), intent(out), dimension(:), allocatable :: wts
   real(8), intent(out), dimension(:,:), allocatable :: vec
   real(8), dimension(:), allocatable :: wmu, smus, swts, swts2
+  integer, dimension(:), allocatable :: order
+  real(8), dimension(:), optional :: zrot
   integer :: nrays
   ! -------------------------------------------------------------------
   nrays = size(mu)
   allocate(wmu(nrays))
+  allocate(order(nrays))
   allocate(smus(nrays+1))
   allocate(swts(nrays+1))
 
-  call dirty_sort(mu)
+  call sort_array(mu, mu, order)
   smus(1) = 0.d0
   smus(2:nrays+1) = mu
 
@@ -311,8 +353,9 @@ SUBROUTINE set_custom_quadratures(mu, nphi, vec, wts)
   wmu = swts(nrays+1:2:-1)
   mu = mu(nrays:1:-1)
   wmu = wmu * mu * 2 * PI
+  if (present(zrot)) zrot = zrot(order(nrays:1:-1))
 
-  call nphi_copies(nphi, mu, wmu, vec, wts)
+  call nphi_copies(nphi, mu, wmu, vec, wts, zrot)
 END SUBROUTINE set_custom_quadratures
 
 !===============================================================================
@@ -322,7 +365,7 @@ SUBROUTINE set_radau_quadratures(quad_scheme, vec, wts, up_and_down)
   real(8), intent(out), dimension(:,:), allocatable :: vec
   real(4), dimension(:), allocatable :: wmu2, mu2
   real(8), dimension(:), allocatable :: wmu, mu
-  real(8), dimension(:), allocatable :: wts2
+  real(8), dimension(:), allocatable :: wts2, zrot
   real(8), dimension(:,:), allocatable :: vec2
   integer :: nrays, ntheta, nphi
   logical, optional :: up_and_down
@@ -331,21 +374,25 @@ SUBROUTINE set_radau_quadratures(quad_scheme, vec, wts, up_and_down)
   select case (quad_scheme)
   case ('radau1')
     ntheta = 1
-    nphi = 1
   case ('radau2')
     ntheta = 2
-    nphi = 4
-  case ('radau4')
+  case ('radau3')
     ntheta = 3
-    nphi = 4
+  case ('radau4')
+    ntheta = 4
+  case ('radau5')
+    ntheta = 5
   end select
+  nphi = 4
 
   allocate(mu(ntheta), wmu(ntheta))
   allocate(mu2(ntheta), wmu2(ntheta))
+  allocate(zrot(ntheta))
   call radau%init(ntheta, mu2, wmu2)
   mu = mu2(ntheta:1:-1)
   wmu = wmu2(ntheta:1:-1)
-  call nphi_copies(nphi, mu, wmu, vec2, wts2, zrot=PI/4)
+  zrot = PI/4.
+  call nphi_copies(nphi, mu, wmu, vec2, wts2, zrot=zrot)
   nrays = size(wts2)
 
   if (present(up_and_down)) then
@@ -369,19 +416,25 @@ SUBROUTINE set_radau_quadratures(quad_scheme, vec, wts, up_and_down)
 END SUBROUTINE set_radau_quadratures
 
 !===============================================================================
-SUBROUTINE nphi_copies (nphi, mu, wmu, vec, wts, zrot)
-  integer, intent(in) :: nphi
+SUBROUTINE nphi_copies (nphi_in, mu, wmu, vec, wts, zrot)
+  integer, intent(in) :: nphi_in
   real(8), intent(inout), dimension(:) :: mu, wmu
   real(8), intent(out), dimension(:), allocatable :: wts
   real(8), intent(out), dimension(:,:), allocatable :: vec
-  real(8), intent(in), optional :: zrot
-  real(8), parameter :: pi2=2.d0*PI
+  real(8), intent(in), optional, dimension(:) :: zrot
   real(8) :: xphi, theta, xoff
-  integer :: nrays, ntheta, i, nt, np, nmuphi, n1
+  integer :: nrays, ntheta, i, nt, np, nmuphi, n1, nphi
   logical :: includes_mu1
   ! -------------------------------------------------------------------
   nrays = size(mu)
   includes_mu1 = findloc(mu, 1.0, 1) > 0
+
+  ! no need for nphi copies if atmosphere is plane parallel
+  nphi = merge(1, nphi_in, one_dimensional)
+  if (nphi /= nphi_in) then
+    print *, 'nphi has been set to 1 since atmosphere is 1D!'
+  endif
+
   if (includes_mu1) then
     nmuphi = (nrays-1)*nphi + 1
   else
@@ -400,20 +453,21 @@ SUBROUTINE nphi_copies (nphi, mu, wmu, vec, wts, zrot)
     n1 = 1
   endif
 
-  if (present(zrot)) then
-    xoff = zrot ! zrot assumed in radians
-  else
-    xoff = 0.d0
-  endif
 
   ! storing the rest of vec and wts indexes
   do nt = n1, nrays
      do np = 1, nphi
         i = (nt-n1) * nphi + np
         if (includes_mu1) i = i+1
+
+        if (present(zrot)) then
+          xoff = zrot(nt) ! zrot assumed in radians
+        else
+          xoff = 0.d0
+        endif
         
         ! Computing cartesian geometries
-        xphi = pi2 / dble(nphi) * (np-1) + xoff
+        xphi = 2.d0*PI / dble(nphi) * (np-1) + xoff
         theta = acos(mu(nt))
         vec(1,i) = sin(theta) * cos(xphi)
         vec(2,i) = sin(theta) * sin(xphi)
@@ -1118,8 +1172,8 @@ SUBROUTINE simps_weights(xx, wts)
   !-----------------------------------------------------------------------------
   n = size(xx)
 
-  if (n < 4) then
-    stop 'less than 4 weights in simps_weights'
+  if (n < 3) then
+    stop 'less than 3 weights in simps_weights'
   endif
 
   allocate(h(n-1))
@@ -1135,18 +1189,34 @@ SUBROUTINE simps_weights(xx, wts)
 END SUBROUTINE simps_weights
 
 !===============================================================================
-SUBROUTINE dirty_sort(arr)
-  real(8), intent(inout), dimension(:) :: arr
-  real(8) :: tmp
-  integer :: i, imin, n
+SUBROUTINE sort_array(array, sorted_array, permutation_order)
+  real(kind=8), intent(in) :: array(:)
+  real(kind=8), intent(out) :: sorted_array(:)
+  integer, intent(out) :: permutation_order(:)
+  real(kind=8), allocatable :: temp_array(:)
+  integer :: n, i, j
   !-----------------------------------------------------------------------------
-  n = size(arr)
-  do i=1, n-1
-    imin = i - 1 + minloc(arr(i:n), 1)
-    tmp = arr(i)
-    arr(i) = arr(imin)
-    arr(imin) = tmp
+  n = size(array)
+
+  ! Copy the original array to a temporary array
+  allocate(temp_array, source=array)
+
+  ! Initialize the permutation order
+  permutation_order = [(i, i = 1, n)]
+
+  ! Sort the temporary array and permutation order using bubble sort
+  do i = 1, n - 1
+    do j = 1, n - i
+      if (temp_array(j) > temp_array(j+1)) then
+        ! Swap elements in the temporary array and permutation order
+        temp_array(j:j+1) = [temp_array(j+1), temp_array(j)]
+        permutation_order(j:j+1) = [permutation_order(j+1), permutation_order(j)]
+      end if
+    end do
   end do
-END SUBROUTINE dirty_sort
+
+  ! Return the sorted array and permutation order
+  sorted_array = temp_array
+END SUBROUTINE sort_array
 
 END MODULE ray_mod

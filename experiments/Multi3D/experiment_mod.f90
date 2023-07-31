@@ -13,7 +13,7 @@ MODULE experiment_mod
   USE kinds_mod
   USE handyfuncs_mod
   USE m3d_halo_mod, only: m3d_halo_t
-  USE m3d_patch_mod, only: verbose
+  USE m3d_patch_mod, only: verbose, print_execution_history
   USE ray_patch_mod, only: maxvel
   USE composition_patch_mod, only: composition_patch_t
   USE read_stagger_snapshot_mod
@@ -40,11 +40,11 @@ MODULE experiment_mod
     procedure:: pre_init
     procedure:: init
     procedure:: info
-    procedure:: patch_info
     procedure:: task_info
     procedure:: pre_update
     procedure:: update
     procedure:: post_update
+    procedure:: rotate
     procedure:: finish
     procedure:: init_level
     procedure:: bndries
@@ -145,8 +145,8 @@ SUBROUTINE init (self)
   call trace%begin('experiment_t%init', itimer=itimer)
   call self%patch_t%init()
 
-  thread = mod(self%ipos(3),omp%nthreads)
-  self%place = thread2place(thread, omp%ncores, omp%nthreads)+100
+  !thread = mod(self%ipos(3),omp%nthreads)
+  !self%place = thread2place(thread, omp%ncores, omp%nthreads)+100
   !self%place    = -1
 
   li = self%li
@@ -207,10 +207,11 @@ END SUBROUTINE bndries
 SUBROUTINE pre_update (self)
   class(experiment_t), target:: self
   integer, save:: itimer=0
+  logical :: ready, busy
   !----------------------------------------------------------------------------
   call self%task_t%pre_update()
   call self%set(bits%no_download)
-  write(io_unit%dispatcher, '(F17.8, I3, 1x, A3, 1x, A)') wallclock(), mpi%rank, 'PRE', self%patch_info()
+  call print_execution_history(self, 'PRE')
 END SUBROUTINE pre_update
 
 !===============================================================================
@@ -226,6 +227,18 @@ SUBROUTINE update (self)
 END SUBROUTINE update
 
 !===============================================================================
+SUBROUTINE rotate (self)
+  class(experiment_t):: self
+  integer, save:: itimer=0
+  !----------------------------------------------------------------------------
+  call self%task_t%rotate
+  if (self%iter == 0) then
+    call self%finish()
+  endif
+  self%iter = self%iter + 1
+END SUBROUTINE rotate
+
+!===============================================================================
 SUBROUTINE post_update (self)
   class(experiment_t):: self
   integer :: p(3)
@@ -236,13 +249,7 @@ SUBROUTINE post_update (self)
   !    write(*,'(F5.1, A12, I4, 12(ES15.7))') self%time, trim(self%kind), self%id, &
   !    self%mem(p(1),p(2),p(3),:,1,1)
   !endif
-
-  if (self%iter == 0) then
-    call self%finish()
-  endif
-  write(io_unit%dispatcher, '(F17.8, I3, 1x, A3, 1x, A)') wallclock(), mpi%rank, 'END', self%patch_info()
-  
-  self%iter = self%iter + 1
+  call print_execution_history(self, 'END')
 END SUBROUTINE post_update
 
 !===============================================================================
@@ -253,22 +260,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   optional           :: nq, ntask, experiment_name
   !-----------------------------------------------------------------------------
   !print *, 'Experiment update called for patch', self%id
-END SUBROUTINE info  
-
-!===============================================================================
-FUNCTION patch_info (self) result(text)
-  class(experiment_t) :: self
-  character(len=merge(48, 32, verbose>3)) :: text
-  integer :: i
-  !-----------------------------------------------------------------------------
-  i = omp%place
-  if (verbose > 3) then
-    write(text, '(I3, 1x, I3, 1x, F8.4, A12, I8, I4)') i, self%place, self%time, &
-                    trim(self%kind), self%id, self%ipos(3)+1
-  else
-    write(text, '(A12, I8, I4)')  trim(self%kind), self%id, self%ipos(3)+1
-  endif
-END FUNCTION patch_info
+END SUBROUTINE info
 
 !===============================================================================
 !> For diagnostic output of tasks and nbor lists to data/run/rank_RRRRR.log

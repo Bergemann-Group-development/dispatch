@@ -10,7 +10,8 @@ MODULE mean_rad_patch_mod
     USE bits_mod
     USE os_mod
     USE handyfuncs_mod
-    USE m3d_patch_mod, only:maxiter, m3d_patch_t, comoving_frame, ilambd, preconditioning
+    USE m3d_halo_mod, only:lock_mem, unlock_mem
+    USE m3d_patch_mod, only:maxiter, m3d_patch_t, comoving_frame, ilambd, preconditioning, save_Qrad
     USE ray_patch_mod, only:ray_patch_t
     USE angle_rad_patch_mod, only:rad_patch_t
     implicit none
@@ -21,9 +22,11 @@ MODULE mean_rad_patch_mod
     contains
       procedure :: pre_init
       procedure :: init
-      procedure :: update
+      procedure :: execute
       procedure :: nbor_relations
       procedure :: init_nbors_hash
+      procedure :: allocate_mem
+      procedure :: deallocate_mem
     end type mean_rad_patch_t
       
   contains
@@ -37,14 +40,9 @@ MODULE mean_rad_patch_mod
     call trace%begin('mean_rad_patch_t%pre_init', itimer=itimer)
     self%kind = 'mean_rad'
     call self%ray_patch_t%pre_init()
-    call self%set_nv_and_nw (self%fe-self%fs+1, 1)
 
-    if (.not. associated(self%mem_lock)) then
-      allocate (self%mem_lock(self%nt))
-      do i=1,self%nt
-        call self%mem_lock(i)%init ('meml')
-      end do
-    endif
+    nw = 3
+    call self%set_nv_and_nw (self%fe-self%fs+1, nw)
 
     self%ng = 0
     call self%post_pre_init()
@@ -56,11 +54,45 @@ MODULE mean_rad_patch_mod
     class(mean_rad_patch_t) :: self
     ! ----------------------------------------------------------------------------
     call self%ray_patch_t%init()
-    call self%allocate_mem(self)
+    call self%ray_patch_t%allocate_mem(self)
+    self%Psi  => self%mem(:,:,:,:,self%it,2)
+    self%Ieff => self%mem(:,:,:,:,self%it,3)
+    if (save_Qrad) then
+      call os%allocate(self%Qrad, self%n, label=trim(self%kind)//'%Qrad')
+      self%Qrad = 0.d0
+    endif
   END SUBROUTINE init
+
+  !===============================================================================
+  SUBROUTINE allocate_mem (self, allocator, m_in, label)
+    class(mean_rad_patch_t):: self
+    class(m3d_patch_t), intent(in), target :: allocator
+    integer, intent(in), optional :: m_in(6)
+    character(len=*), optional :: label
+    !-----------------------------------------------------------------------------
+    call self%ray_patch_t%allocate_mem(allocator, m_in)
+    self%Psi  => self%mem(:,:,:,:,self%it,2)
+    self%Ieff => self%mem(:,:,:,:,self%it,3)
+    if (save_Qrad) then
+      call os%allocate(self%Qrad, self%n, label=trim(self%kind)//'%Qrad')
+      self%Qrad = 0.d0
+    endif
+  END SUBROUTINE allocate_mem
+
+  !===============================================================================
+  SUBROUTINE deallocate_mem (self, deallocator, print)
+    class(mean_rad_patch_t):: self
+    class(m3d_patch_t), intent(in), target :: deallocator
+    logical, optional :: print
+    !-----------------------------------------------------------------------------
+    call self%ray_patch_t%deallocate_mem(self)
+    if (associated(self%Qrad)) then
+      call os%deallocate(self%Qrad, label=trim(self%kind)//'%Qrad')
+    endif
+  END SUBROUTINE deallocate_mem
   
   !===============================================================================
-  SUBROUTINE update (self)
+  SUBROUTINE execute (self)
     class(mean_rad_patch_t) :: self
     class(nbor_t), pointer:: nbor
     class(task_t), pointer:: nbtask
@@ -68,19 +100,25 @@ MODULE mean_rad_patch_mod
     real(4), dimension(:,:,:), pointer :: ss, eta_back, xx
     real(8) :: dt, ex
     real(4) :: Psi, xx0, xxup
-    integer, save:: itimer=0
     integer :: i,j,k,iw, it, f
     real(4) :: wmu
+    integer, save :: itimer=0
     !-----------------------------------------------------------------------------
-    if (self%is_finished()) return
-    call trace%begin('mean_rad_patch_t%update', itimer=itimer)
+    call trace%begin (trim(self%kind)//'%update', itimer=itimer)
     if (comoving_frame) then
+      call lock_mem( self%opac, 'mean_rad_update')
       call self%check_access(self%opac)
 
       do f=1, self%nv
         xx => self%opac%mem(:,:,:,f,self%it,self%i_chi)
         self%Psi(:,:,:,f) = self%Psi(:,:,:,f) / xx
       end do
+      call unlock_mem( self%opac, 'mean_rad_update', read=.true.)
+
+      if (preconditioning) then
+        call lock_mem( self%back_cont, 'mean_rad_update', read=.true.)
+        call self%check_access(self%back_cont)
+      endif
 
       do f=1, self%nv
         if (preconditioning) then
@@ -90,10 +128,11 @@ MODULE mean_rad_patch_mod
           self%Ieff(:,:,:,f) = self%authority_mem(:,:,:,f,self%it,1)
         endif
       end do
+
+      if (preconditioning) call unlock_mem( self%back_cont, 'mean_rad_update', read=.true.)
     endif
-    call self%post_update()
     call trace%end(itimer)
-  END SUBROUTINE update
+  END SUBROUTINE execute
   
   !===============================================================================
   SUBROUTINE nbor_relations(self, another, needed, needs_me, download)
@@ -145,7 +184,6 @@ MODULE mean_rad_patch_mod
     !-----------------------------------------------------------------------------
     call trace%begin('mean_rad_patch_t%init_nbors_hash', itimer=itimer)
     call self%ray_patch_t%init_nbors_hash(nbors)
-  
     key(1:3) = self%key(1:3)
     key(4) = hash_string('atom_rate')
     call self%check_nbor(key, nbors)

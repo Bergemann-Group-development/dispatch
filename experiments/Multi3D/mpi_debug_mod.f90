@@ -1,7 +1,9 @@
 MODULE mpi_debug_mod
   USE io_mod
   USE mpi_mod
+#ifdef __INTEL_COMPILER
   USE IFPORT
+#endif
   implicit none
     
 contains

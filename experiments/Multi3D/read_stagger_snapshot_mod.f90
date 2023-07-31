@@ -20,10 +20,9 @@ MODULE read_stagger_snapshot_mod
   real(4), parameter :: uue = uuv**2      ! internal energy per unit mass
   real(4), parameter :: uup = uur * uue   ! pressure
   real(4), parameter :: uua = 1./uul      ! extinction coefficient (alpha)
-  character(len=128), public :: stagger_file='/lustre/astro/rhoppe/multi-3d/input/atmos/t5777g44m00/t5777g44m0005'
+  !character(len=128), public :: stagger_file='/lustre/astro/rhoppe/multi-3d/input/atmos/t5777g44m00/t5777g44m0005'
   character(len=128), save :: mesh_file, snap_file, data_file, aux_file
-  integer, save :: snap=20, dims(3)=[5,5,230]
-  real(4), save :: zcut=-99! in Mm below the surface
+  integer, save :: dims(3)!=[5,5,230], snap=0
   real(4), save :: maxTemp=huge(1.0)
   real(4), save :: ee_offset=3.2122
   character(len=128), save :: refinement=''
@@ -44,11 +43,12 @@ MODULE read_stagger_snapshot_mod
 contains
 
 !===============================================================================
-SUBROUTINE read_stagger_params()
+SUBROUTINE read_stagger_params(stagger_file, snap, nx, ny, nz)
+  character(len=*), intent(in) :: stagger_file
+  integer, intent(in) :: snap, nx, ny, nz
   integer :: iostat, nsub
   logical, save :: first_time=.true.
-  namelist /stagger_params/ stagger_file, snap, zcut, ee_offset, dims, maxTemp, &
-  refinement
+  namelist /stagger_params/ refinement
   !-----------------------------------------------------------------------------
   if (first_time) then
     first_time = .false.
@@ -60,6 +60,9 @@ SUBROUTINE read_stagger_params()
     end if
     call io%namelist_warning ('stagger_params', iostat)
     write (io%namelist, stagger_params)
+
+    dims = [nx, ny, nz]
+
     mesh_file = trim(stagger_file) // '.msh'
     write(snap_file, '(A,A1,I5.5)') trim(stagger_file), '_', snap
     write(data_file, *) trim(snap_file), '.dat'
@@ -107,12 +110,7 @@ SUBROUTINE read_stagger_snapshot(ds, d, px, py, pz, ee, tt, ne)
 
   !newx = linspace(xx(1), xx(nx), dims(1))
   !newy = linspace(yy(1), yy(ny), dims(2))
-  !
-  !if (zcut > -99) then
-  !  newz = linspace(zcut, zz(nz), dims(3))
-  !else
-  !  newz = linspace(zz(1), zz(nz), dims(3))
-  !endif
+  !newz = linspace(zz(1), zz(nz), dims(3))
 
   !ds(1) = (newx(dims(1)) - newx(1)) / (dims(1) - 1)
   !ds(2) = (newy(dims(2)) - newy(1)) / (dims(2) - 1)

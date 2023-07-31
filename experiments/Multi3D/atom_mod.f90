@@ -9,12 +9,12 @@ MODULE atom_mod
     USE trans_mod
     USE mmath, only: refsor, unista
     USE op_math_mod, only: lineq, get_interval, eqsyst, lineq_no_pivot
-    USE ion_mod, only: ion_type
-    USE element_mod, only: element_type, isotope_type
+    USE ion_mod, only: ion_type, massive_type
+    USE element_mod, only: element_type
     USE molecule_mod, only: molec_type
     USE os_mod
     USE trace_mod
-    USE spectrum_mod, only: spectrum_type
+    USE spectrum_mod, only: spectrum_type, set_weights
     USE hprofl_mod, only:prepare_hydrogen_damping
     ! *******************************************************************
     !
@@ -39,8 +39,6 @@ MODULE atom_mod
     !---------------------------------------------------------------------
 
     type, public :: local_data_t
-      ! rather constant doppler width factor, i.e. dnud = line(i)%nu0 * doppler_factor [Hz]
-      real(4), dimension(:,:,:), pointer, contiguous :: doppler_factor => null()
       ! LTE, NLTE and total population of active atom
       real(4), dimension(:,:,:,:), pointer, contiguous :: nstar => null()
       real(4), dimension(:,:,:,:), pointer, contiguous :: n     => null()
@@ -51,7 +49,7 @@ MODULE atom_mod
       real(4), dimension(:,:,:),   pointer, contiguous :: totn => null() 
     end type local_data_t
   
-    type, public, extends(isotope_type) :: atom_type
+    type, public, extends(massive_type) :: atom_type
       integer :: nrad   ! total number of radiative transitions
       integer :: nrfix  ! number of fixed transitions
       integer :: ncont  ! number of bound-free transitions
@@ -80,15 +78,6 @@ MODULE atom_mod
       type(atomic_spectrum_type), pointer :: sp
       type(local_data_t), pointer :: data
 
-      !! rather constant doppler width factor, i.e. dnud = line(i)%nu0 * doppler_factor [Hz]
-      !real(4), dimension(:,:,:), pointer, contiguous :: doppler_factor => null()
-      !
-      !! LTE, NLTE and total population of active atom
-      !real(4), dimension(:,:,:,:), pointer, contiguous :: nstar => null()
-      !real(4), dimension(:,:,:,:), pointer, contiguous :: n     => null()
-      !real(8), dimension(:,:,:,:), pointer, contiguous :: gamma_ij => null()
-      !real(8), dimension(:,:,:,:), pointer, contiguous :: gamma_ji => null()
-      !real(4), dimension(:,:,:), pointer, contiguous :: totn => null()
       real(8), dimension(:,:), pointer, contiguous :: tgrid, cgrid, dcdt
       real(4), dimension(:), pointer, contiguous :: cdata
       logical, dimension(:), pointer, contiguous :: ecol, hcol
@@ -105,7 +94,6 @@ MODULE atom_mod
         
     contains
       procedure :: add_continuum_opacities
-      !procedure :: compute_doppler_factor
       procedure :: partition_function
       procedure :: lte_pop
       procedure :: compute_lte_populations
@@ -134,7 +122,7 @@ MODULE atom_mod
     character(len=32), public :: lse_solver='lineq_no_pivot'
     integer, public :: nq_fac=1
 
-    public :: unique_int, set_weights
+    public :: unique_int
   
   contains
   
@@ -526,24 +514,6 @@ MODULE atom_mod
     sumn = totn / sumn
   end function
   !------------------------------------------------------------------------------------
-
-  !!====================================================================================
-  !pure elemental function compute_doppler_factor(self, temp) result(doppler_factor)
-  !  class(atom_type), intent(in) :: self
-  !  real(4),  intent(in)  :: temp
-  !  real(4) :: doppler_factor
-  !  !---------------------------------------------------------------------------------
-  !  doppler_factor = sqrt(  2.0d0*bk*temp/self%awgt + (vmic*1e5)**2 ) / cc
-  !end function compute_doppler_factor
-  !
-  !!====================================================================================
-  !pure elemental function compute_vbar2(self, temp) result(vbar2)
-  !  class(atom_type), intent(in) :: self
-  !  real(4),  intent(in)  :: temp
-  !  real(4) :: vbar2
-  !  !---------------------------------------------------------------------------------
-  !  vbar2 = 8.0*BK*temp/PI * (1.0/MH + 1.0/self%awgt)
-  !end function compute_doppler_factor
    
   !====================================================================================
   SUBROUTINE compute_cont_factors(self, temp, dxi, saha)
@@ -1297,7 +1267,7 @@ MODULE atom_mod
         if (.not. cnt%active) cycle
         ! find minimum and maximum index of this continuum in the sp%nu grid
         call sp%get_interval(cnt, ired, iblue)
-        if (iblue == 0 .or. ired == sp%nnu) then
+        if (iblue == 0 .or. ired >= sp%nnu) then
           call cnt%deactivate()
         else
           if (iblue==ired) print *, 'WARNING, single frequency for cont', i
@@ -1537,20 +1507,18 @@ MODULE atom_mod
     ! deep copy
     other = self
 
-    allocate(other%line, mold=self%line)
+    allocate(other%line, source=self%line)
     call os%mem_register(storage_size(self%line), self%nline, label='atom%line')
-    other%line = self%line
     
-    allocate(other%cont, mold=self%cont)
+    allocate(other%cont, source=self%cont)
     call os%mem_register(storage_size(self%cont), self%ncont, label='atom%cont')
-    other%cont = self%cont
   END SUBROUTINE
 
   !===============================================================================
   SUBROUTINE link_transitions (self, cont, line)
     class(atom_type) :: self
-    type(cont_type), dimension(:), pointer, contiguous :: cont
-    type(line_type), dimension(:), pointer, contiguous :: line
+    type(cont_type), dimension(:), pointer :: cont
+    type(line_type), dimension(:), pointer :: line
     !-----------------------------------------------------------------------------
     self%cont => cont
     self%line => line
@@ -1558,26 +1526,6 @@ MODULE atom_mod
     !self%nline = size(line)
     !self%nrad  = self%ncont + self%nline
   END SUBROUTINE
-
-  !===============================================================================
-  SUBROUTINE set_weights (weight, nu)
-    real(8), dimension(:), intent(out) :: weight
-    real(8), dimension(:), intent(in) :: nu
-    integer :: j, n
-    !-----------------------------------------------------------------------------
-    n = size(nu, 1)
-    if (n==1) then
-      print *, 'weight for single frequency wanted!'
-    elseif (size(weight) /= n) then
-      stop 'weight and nu do not have the same number of elements!'
-    endif
-
-    weight(1) = 0.5 * ( nu(2) - nu(1) )
-    do j=2,n-1
-        weight(j) = 0.5* ( nu(j+1) - nu(j-1) )
-    end do
-    weight(n) = 0.5 * ( nu(n) - nu(n-1) )
-  END SUBROUTINE set_weights
 
   !===============================================================================
   !     calculates partition function for ch

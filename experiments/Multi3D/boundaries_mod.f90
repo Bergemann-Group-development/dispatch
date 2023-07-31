@@ -16,6 +16,7 @@ MODULE boundaries_mod
   USE math_mod
   USE patch_mod
   USE units_mod
+  USE op_math_mod, only: pchip_mono
   ! ----------------------------------------------------------------------------
   ! Experiment - specific USE modules
   ! ----------------------------------------------------------------------------
@@ -49,6 +50,6 @@ SUBROUTINE mirror(self)
       b = lbound(self%patch%mem,3)
       self%patch%mem(:,:,b,:,it,:) = self%patch%mem(:,:,b+1,:,it,:)
   endif
-END SUBROUTINE
+END SUBROUTINE mirror
 
 END MODULE boundaries_mod
