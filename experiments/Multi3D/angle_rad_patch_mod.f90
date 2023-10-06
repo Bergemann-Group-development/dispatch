@@ -26,7 +26,7 @@ MODULE angle_rad_patch_mod
   USE handyfuncs_mod
   USE m3d_halo_mod, only:lock_mem, unlock_mem
   USE m3d_patch_mod, only: m3d_patch_t, comoving_frame, ilambd, decouple_continuum, &
-  line_blanketing, use_vel, preconditioning, save_Qrad, binned_opac
+  line_blanketing, use_vel, preconditioning, save_Qrad, binned_opac, make_opac_table
   USE ray_patch_mod, only: ray_patch_t, formal_solver
   USE proj_patch_mod, only: interpolate_to_ray
   USE ray_mod, only: one_dimensional
@@ -134,6 +134,7 @@ SUBROUTINE execute (self)
   real(4), dimension(:,:,:,:), pointer :: Inu_new
   integer :: k, f, p(3)
   integer, save :: itimer=0
+  if (make_opac_table) return
   !-----------------------------------------------------------------------------
   call trace%begin (trim(self%kind)//'%update', itimer=itimer)
   !-----------------------------------------------------------------------------

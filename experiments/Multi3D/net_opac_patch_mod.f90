@@ -32,7 +32,7 @@ MODULE net_opac_patch_mod
     USE atom_line_patch_mod, only:atom_line_t
     USE m3d_halo_mod, only: lock_mem, unlock_mem
     USE m3d_patch_mod, only:maxiter, m3d_patch_t, comoving_frame, linear_long, &
-                            interp_log, ray_offset, pivot_z, dlam
+                            interp_log, ray_offset, pivot_z, dlam, make_opac_table
     USE ray_mod, only: one_dimensional
     USE m3d_debug_mod
     implicit none
@@ -46,6 +46,8 @@ MODULE net_opac_patch_mod
       procedure :: rotate_cube
       procedure :: nbor_relations => net_opac_nbor_relations
       procedure :: init_nbors_hash
+      procedure :: save_opacity
+      procedure :: save_eos
     end type net_opac_t
   
     !-----------------------------------------------------------------------------
@@ -208,6 +210,12 @@ MODULE net_opac_patch_mod
     if (self%out_ray .and. .not. one_dimensional) then
       call self%rotate_cube()
     endif
+
+    if (make_opac_table) then
+      call self%save_opacity (self%authority_mem, 'opacity_table')
+      call self%save_eos (self%composition%E, self%composition%Ne, self%composition%Pg)
+    endif
+
     call trace%end(itimer)
   END SUBROUTINE execute
 
@@ -440,6 +448,63 @@ MODULE net_opac_patch_mod
       endforall
     endif
   END SUBROUTINE set_interpolation_kernel
+
+  !===============================================================================
+  SUBROUTINE save_opacity (self, mem, label)
+    class(net_opac_t) :: self
+    real(4), dimension(:,:,:,:,:,:) :: mem
+    real(4), dimension(:,:,:,:,:), pointer :: mem2
+    real(4), dimension(:,:,:,:), allocatable, target :: s
+    character(len=*) :: label
+    integer, dimension(6) :: m
+    integer :: fs, fe
+    !-----------------------------------------------------------------------------
+    write(stdout,"(A)") "Saving opacity table..."
+    
+    m = shape(mem)
+    fs = 1
+    fe = self%nv
+    allocate(s, source=mem(:,:,:,:,1,4))
+
+    s = mem(:,:,:,:,1,3)
+    mem2(1:m(1),1:m(2),1:m(3),fs:fe,1:1) => s
+    self%saved = .false.
+    call self%ray_patch_t%save(mem2, label='chi')
+
+    s = mem(:,:,:,:,1,4) / mem(:,:,:,:,1,3)
+    self%saved = .false.
+    call self%ray_patch_t%save(mem2, label='src')
+    
+    deallocate(s)
+  END SUBROUTINE save_opacity
+
+  SUBROUTINE save_eos (self, E, Ne, Pg)
+    class(net_opac_t) :: self
+    real(dp), dimension(:,:,:) :: E, Ne, Pg
+    real(4), dimension(:,:,:,:,:), pointer :: mem2
+    real(4), dimension(:,:,:), allocatable, target :: s
+    integer, dimension(3) :: m
+    integer :: fs, fe
+    !-----------------------------------------------------------------------------
+    m = shape(E)
+    allocate(s(m(1),m(2),m(3)))
+    mem2(1:m(1),1:m(2),1:m(3),1:1,1:1) => s
+
+    s = E
+    s = s + (13.595+5.0)/2.380491d-24*1.60218d-12
+    self%saved = .false.
+    call self%ray_patch_t%save(mem2, label="E")
+
+    s = Ne
+    self%saved = .false.
+    call self%ray_patch_t%save(mem2, label="Ne")
+
+    s = Pg
+    self%saved = .false.
+    call self%ray_patch_t%save(mem2, label="Pg")
+
+    deallocate(s)
+  END SUBROUTINE save_eos
   
   END MODULE net_opac_patch_mod
   
