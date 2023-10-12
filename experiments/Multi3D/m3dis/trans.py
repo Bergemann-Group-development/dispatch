@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 from .auxfuncs import *
 import matplotlib.pyplot as plt
 
@@ -61,14 +62,15 @@ class trans_class(object):
         self.lam0 = vacuum2obs(np.array(self.alamb))
 
         if kr < atom.nline:
-            if abs(self.lam0 / self.c_lam0 - 1) > 1e-3:
-                print('mismatch in central wavelength of line', kr)
-                print('Ritz lam0 = {:.2f}, Comment lam0 = {:.2f}'.format(self.lam0, self.c_lam0))
+            if atom.sanity_check:
+                if abs(self.lam0 / self.c_lam0 - 1) > 1e-3:
+                    print('mismatch in central wavelength of line', kr)
+                    print('Ritz lam0 = {:.2f}, Comment lam0 = {:.2f}'.format(self.lam0, self.c_lam0))
 
-            loggf = np.log10(self.fosc * self.lower.g)
-            if abs(round(loggf,3) / self.c_loggf - 1) > 1e-2:
-                print('mismatch in loggf of line', kr)
-                print('loggf = {:.4f}, Comment loggf = {:.4f}'.format(loggf, self.c_loggf))
+                loggf = np.log10(self.fosc * self.lower.g)
+                if abs(round(loggf,3) / self.c_loggf - 1) > 1e-2:
+                    print('mismatch in loggf of line', kr)
+                    print('loggf = {:.4f}, Comment loggf = {:.4f}'.format(loggf, self.c_loggf))
 
             self.title = 'Line = {:.2f} [Å]'.format(self.c_lam0)
 
@@ -86,18 +88,20 @@ class trans_class(object):
             #    self.q = freq_quad((2*self.nq-1), self.qmax, self.q0)[self.nq-1:]
             else:
                 q=freq_quad(self.nq, self.qmax, self.q0)
-                
-            self.hyperfine = []
             
-            if self.iw > 1:
-                for i in range(self.iw):
-                    self.hyperfine.append(atom._read())
+            if self.iw > 0:
+                pos = self.atom.f.tell()
+                self.hyperfine = pd.read_csv(self.atom.f, nrows=self.iw, sep='\s+',
+                                             names=['de', 'w', 'f', 'ga', 'gw', 'gq'])
+                self.atom.f.seek(pos)
+                for i in range(self.iw): self.atom.f.readline() # skip lines
             
             self.cont = False
             
             lam = self.alamb / (q*atom.qnorm/(CC*1e-5) + 1)
             
-            self.prepare_VanderWaals(self.gw)
+            if (atom.level[-1].ion > atom.level[0].ion):
+                self.prepare_VanderWaals(self.gw)
         
         else:
             if self.qmax < 0:
@@ -133,8 +137,8 @@ class trans_class(object):
     def _read(self):
         f = self.atom.f
         line = f.readline()
-        while line.strip()=='' or line.startswith('*'):
-            if (line.startswith('* id')):
+        while line.strip()=='' or line.strip().startswith('*'):
+            if (line.startswith('* i')):
                 self.c_kr, self.c_lam0, self.c_loggf = [float(s) for s in line.split() if is_number(s)][:3]
                 break
 

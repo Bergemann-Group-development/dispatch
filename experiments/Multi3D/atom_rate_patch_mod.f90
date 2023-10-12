@@ -11,10 +11,10 @@ MODULE atom_rate_patch_mod
     USE bits_mod
     USE handyfuncs_mod
     USE m3d_halo_mod, only:lock_mem, unlock_mem
-    USE m3d_patch_mod, only: comoving_frame, preconditioning
+    USE m3d_patch_mod, only: comoving_frame, preconditioning, auto_preconditioning
     USE ray_patch_mod, only: ray_patch_t
     USE angle_rad_patch_mod, only: rad_patch_t
-    USE trans_mod, only: transition_type
+    USE trans_mod, only: transition_type, line_type, cont_type
     USE atom_mod, only: atom_type, atomic_spectrum_type, unique_int
     USE atom_line_patch_mod, only: atom_line_t
     USE mean_rad_patch_mod, only:mean_rad_patch_t
@@ -38,6 +38,7 @@ MODULE atom_rate_patch_mod
         procedure :: print_post_update_info
         procedure :: check_in_bounds
         procedure :: init_nbors_hash
+        procedure :: auto_precon
         procedure :: full_preconditioning
     end type atom_rate_t
   
@@ -111,14 +112,21 @@ MODULE atom_rate_patch_mod
     gamma_ji => self%mem(:,:,:,:, self%it, self%i_Gji)
 
     if (.not. self%static_mem) then
-      call self%full_preconditioning(gamma_ij, gamma_ji)
+      if (.not. auto_preconditioning) then
+        call self%full_preconditioning(gamma_ij, gamma_ji)
+      else
+        call self%auto_precon(gamma_ij, gamma_ji)
+      endif
+
       self%update_skipped = .false.
     else
       self%update_skipped = .true.
     endif
 
-    call os%deallocate(self%rad%Psi,  trim(self%rad%kind)//'%Psi')
-    call os%deallocate(self%rad%Ieff, trim(self%rad%kind)//'%Ieff')
+    if (self%rad%i_mu /= 0) then
+      call os%deallocate(self%rad%Psi,  trim(self%rad%kind)//'%Psi')
+      call os%deallocate(self%rad%Ieff, trim(self%rad%kind)//'%Ieff')
+    endif
     
     call unlock_mem(self%rad, 'atom_rate_update', read=.true.)
 
@@ -208,9 +216,9 @@ MODULE atom_rate_patch_mod
         do kr=1, n_active
           k = trans(kr)
           if (kr <= sp%nac(ff)) then
-            wnu(kr) = atom%cont(k)%wnu(ff-atom%cont(k)%ired+1)
+            wnu(kr) = atom%cont(k)%wnu(ff)
           else
-            wnu(kr) = atom%line(k)%wnu(ff-atom%line(k)%ired+1)
+            wnu(kr) = atom%line(k)%wnu(ff)
           endif
         end do
 
@@ -287,7 +295,8 @@ MODULE atom_rate_patch_mod
 
           if (kr <= sp%nac(ff)) then
             kc = sp%ac(kr,ff)
-            alpha = atom%cont(kc)%alpha(ff-atom%cont(kc)%ired+1) * wnu(kr)
+            !alpha = atom%cont(kc)%alpha(ff-atom%cont(kc)%ired+1) * wnu(kr)
+            alpha = atom%cont(kc)%alpha(ff) * wnu(kr)
             do z=1,nz
             do y=1,ny
             do x=1,nx
@@ -395,6 +404,149 @@ MODULE atom_rate_patch_mod
     end do
   END SUBROUTINE full_preconditioning
   !------------------------------------------------------------------------------------
+
+  !====================================================================================
+  SUBROUTINE auto_precon(self, gamma_ij, gamma_ji)
+    class(atom_rate_t), target, intent(in) :: self
+    real(4), dimension(:,:,:,:), intent(inout), contiguous :: gamma_ij, gamma_ji
+    class(atom_type), pointer :: atom
+    class(atomic_spectrum_type), pointer :: sp
+    class(line_type), pointer :: line
+    class(cont_type), pointer :: cont
+    real(8), dimension(:), pointer, contiguous :: nu
+    real(4), dimension(:,:,:), pointer, contiguous :: temp, ni, nj
+    real(4), dimension(:,:,:,:), pointer, contiguous :: Psi, Ieff
+    real(4), dimension(:,:,:,:), pointer :: Inu
+    real(4), dimension(:,:,:,:), pointer, contiguous :: blzfac, phi, scratch
+    real(4), dimension(:,:,:), allocatable :: hk_over_temp
+    real(4), dimension(:), allocatable :: twohnu3_c2, h4pi_nu, w_nu, alpha_2hnu3_c2, w_alpha
+    real(4) :: vij, vji, alpha, Bij, Bji, h4pi, ufac, wnu, chi, g_ij, g_ji, nii, njj, blz, tmp, nij_lte
+    integer :: i, j, k, kl, kc, fs, fe, ff, f, fff, p(3)
+    integer :: x,y,z, nnu, nx, ny, nz, m(4), fcs, fce, frs
+    logical :: skip
+    !------------------------------------------------------------------------------------
+    atom => self%atom
+    sp => self%sp
+    nx = self%n(1)
+    ny = self%n(2)
+    nz = self%n(3)
+
+    if (self%print_update_info) then
+      memcheck = 0
+    endif
+
+    fs = self%fs
+    fe = self%fe
+    frs = self%rad%fs - 1
+    Psi (1:nx,1:ny,1:nz,fs:fe) => self%rad%Psi (:,:,:,fs-frs:fe-frs)
+    Ieff(1:nx,1:ny,1:nz,fs:fe) => self%rad%Ieff(:,:,:,fs-frs:fe-frs)
+    temp => self%m3d_parent%m3d_parent%mem(:,:,:,self%i_temp, self%it,1)
+
+    hk_over_temp = h_k / temp
+    h4pi = self%wmu*4*PI / hh
+
+    ! Zero the rates
+    gamma_ij = 0.0d0
+    gamma_ji = 0.0d0
+
+    m = [self%n, fe-fs+1]
+    call os%allocate(scratch, m, label='scratch')
+    allocate(h4pi_nu(fs:fe), source=h4pi / real(sp%nu(fs:fe)))
+    allocate(twohnu3_c2(fs:fe), w_nu(fs:fe), alpha_2hnu3_c2(fs:fe), w_alpha(fs:fe), mold=h4pi_nu)
+    twohnu3_c2 = twoh_c2 * sp%nu(fs:fe)**3
+    
+    i = 1
+    if (associated(atom%line)) then
+      do i=1, self%lines%nline
+        line => self%lines%line(i)
+        call line%check_range(self%fs,self%fe,fs,fe,skip)
+        !if (skip) print *, 'line not active. Something is wrong!'
+
+        nu => self%sp%nu(fs:fe)
+        nnu = size(nu)
+        phi(1:nx,1:ny,1:nz,fs:fe) => scratch(:,:,:,1:nnu)
+        call line%interpolate_phi(nu, phi)
+        w_nu(fs:fe) = h4pi_nu(fs:fe) * line%wnu(fs:fe)
+        
+        do z=1,nz
+        do y=1,ny
+        do x=1,nx
+          nii = atom%data%n(x,y,z,line%i)
+          njj = atom%data%n(x,y,z,line%j)
+          blz = line%Bij*nii - line%Bji*njj
+          g_ij = 0
+          g_ji = 0
+          do f=fs, fe
+            tmp = phi(x,y,z,f)
+            vij = tmp * line%Bij * w_nu(f)
+            vji = tmp * line%Bji * w_nu(f)
+            ufac = twohnu3_c2(f) * tmp * blz
+            g_ji = g_ji + vji*(twohnu3_c2(f) + Ieff(x,y,z,f) - ufac*Psi(x,y,z,f))
+            g_ij = g_ij + vij*Ieff(x,y,z,f)
+          end do
+          gamma_ji(x,y,z,i) = g_ji
+          gamma_ij(x,y,z,i) = g_ij
+        end do
+        end do
+        end do
+      end do
+    endif
+
+    if (associated(atom%cont)) then
+      blzfac(1:nx,1:ny,1:nz,self%fs:self%fe) => scratch
+      do f=self%fs, self%fe
+        blzfac(:,:,:,f) = exp(- hk_over_temp * real(sp%nu(f)))
+      end do
+
+      do i=i, size(gamma_ij, 4)
+        kc = self%idx_remap(i) - atom%nline
+        cont => atom%cont(kc)
+        call cont%check_range(self%fs,self%fe,fs,fe,skip)
+        !if (skip) print *, 'line not active. Something is wrong!'
+
+        w_nu(fs:fe) = h4pi_nu(fs:fe) * cont%wnu(fs:fe)
+        alpha_2hnu3_c2(fs:fe) = twohnu3_c2(fs:fe) * cont%alpha(fs:fe)
+        w_alpha(fs:fe) = cont%alpha(fs:fe) * w_nu(fs:fe)
+        
+        do z=1,nz
+        do y=1,ny
+        do x=1,nx
+          nij_lte = atom%data%ni_over_nj_lte(x,y,z,kc)
+          nii = atom%data%n(x,y,z,cont%i)
+          njj = atom%data%n(x,y,z,cont%j) * nij_lte
+          g_ij = 0
+          g_ji = 0
+          do f=fs, fe
+            blz = blzfac(x,y,z,f)
+            vij = w_alpha(f)
+            vji = vij * nij_lte * blz
+            ufac = alpha_2hnu3_c2(f) * (nii - blz * njj)
+            g_ji = g_ji + vji*(twohnu3_c2(f) + Ieff(x,y,z,f) - ufac*Psi(x,y,z,f))
+            g_ij = g_ij + vij*Ieff(x,y,z,f)
+          end do
+          gamma_ji(x,y,z,i) = g_ji
+          gamma_ij(x,y,z,i) = g_ij
+        end do
+        end do
+        end do
+      end do
+    endif
+    call os%deallocate(scratch, 'scratch')
+  contains
+    subroutine update_memcheck (new, old)
+      real(4) :: new(2), old(2)
+      !---------------------------------------------------------------------------
+      if (self%print_update_info) then
+        if (ff==self%fcheck) then
+          if (self%idx_remap(i)==self%linecheck) then
+            p = self%pcheck
+            new(1) = gamma_ij(p(1),p(2),p(3),i) - old(1)
+            new(2) = gamma_ji(p(1),p(2),p(3),i) - old(2)
+          endif
+        endif
+      endif
+    end subroutine update_memcheck
+  END SUBROUTINE auto_precon
 
   !===============================================================================
   SUBROUTINE integrate_rates (self, gamma_ij, gamma_ji)

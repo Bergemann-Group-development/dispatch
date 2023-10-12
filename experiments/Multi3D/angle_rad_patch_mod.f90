@@ -174,7 +174,10 @@ SUBROUTINE execute (self)
     memcheck(1) = self%mem(p(1),p(2),p(3),f,1,1)
   endif
   
-  call self%compress_mem(self, static=.false., locked=.true.)
+  if (.not. self%out_ray .or. .not. self%save_output) then
+    call self%compress_mem(self, static=.false., locked=.true.)
+  endif
+  
   call trace%end(itimer)
 END SUBROUTINE execute
 

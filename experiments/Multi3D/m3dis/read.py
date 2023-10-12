@@ -125,6 +125,9 @@ class read(object):
             dx, dy, dz = [float(i) for i in mesh.readline().split()]
             mesh.close()
             
+            self.dx = dx
+            self.dy = dy
+            self.dz = dz
             self.xx = np.linspace(0, (nx-1)*dx, nx)
             self.yy = np.linspace(0, (ny-1)*dy, ny)
             self.zz = np.linspace(0, (nz-1)*dz, nz)
@@ -485,7 +488,13 @@ class read(object):
     #=====================================================================
     def read_patch_save(self, kind, concat=True):
         #-----------------------------------------------------------------
-        meta = open(self.sfolder + kind + '_meta.txt')
+        try:
+            meta = open(self.sfolder + kind + '_meta.txt')
+        except FileNotFoundError:
+            print('{:} not found!'.format(self.sfolder + kind + '_meta.txt'))
+            if (not kind in self.nml['m3d_params']['save_patch_kind'].split()):
+                print('The patch was not saved. Check the save_patch_kind parameter in the m3d_params namelist.')
+            raise FileNotFoundError()
 
         dct = {}
         dct_out = {}
@@ -533,54 +542,100 @@ class read(object):
 
         n_nu = self.nml['m3d_params']['n_nu']
 
-        internal = {}
-        output = {}
-
-        for imu in all_imu:
-            merge_in = []
-            merge_out = []
-            for iz in all_iz:
-                if f_indep:
-                    key = (iz, all_inu[0], imu)
-                    if key in dct:
-                        merge_out.append(dct[key])
-
-                else:
+        def merge_set(inus):
+            d = {}
+            for imu in all_imu:
+                py_imu = abs(imu) - 1
+                merge = []
+                for iz in all_iz:
                     merge_nu = []
-                    for inu in range(1, n_nu+1):
+
+                    for inu in inus:
                         key = (iz, inu, imu)
                         if key in dct:
                             merge_nu.append(dct[key])
-
-                    if len(merge_nu) > 0:
-                        internal[(iz,imu)] = da.concatenate(merge_nu, axis=-2)
-                        merge_in.append(internal[(iz,imu)])
                     
-                    merge_nu = []
-                    for inu in range(n_nu+1, 2*n_nu+1):
-                        key = (iz, inu, imu)
-                        if key in dct:
-                            merge_nu.append(dct[key])
-
                     if len(merge_nu) > 0:
-                        output[(iz,imu)] = da.concatenate(merge_nu, axis=-2)
-                        merge_out.append(output[(iz,imu)])
+                        val = da.concatenate(merge_nu, axis=-2)
+                        if not f_indep: val = val[..., ::-1, :]
+                        d[(iz,py_imu)] = val
+                        merge.append(d[(iz,py_imu)])
+                
+                if len(merge) > 0:
+                    d[(py_imu)] = da.concatenate(merge, axis=2)
 
-            if len(merge_in) > 0:
-                internal[(imu)] = da.concatenate(merge_in, axis=2)
-
-            if len(merge_out) > 0:
-                output[(imu)] = da.concatenate(merge_out, axis=2)
+            return d
 
         if f_indep:
-            return output
-
+            sets = [[0]]
         else:
-            for d in [internal, output]:
-                keys = [key for key in d.keys() if type(key) is tuple]
-                for key in keys: del d[key]
+            set1 = [inu for inu in all_inu if inu > 0 and inu <= n_nu]
+            set2 = [inu for inu in all_inu if inu > 0 and inu > n_nu]
+            set3 = [inu for inu in all_inu if inu < 0][::-1]
+            sets = [s for s in [set1, set2, set3] if len(s)>0]
+        
+        return [merge_set(s) for s in sets]
 
-                for key, val in d.items():
-                    d[key] = val[..., ::-1, :]
+    #=====================================================================
+    def get_cntrbf(self, f, imu=0, LTE=False):
+        #-----------------------------------------------------------------
+        if self.dim == '3D':
+            raise ValueError('Contribution functions for 3D setups are not supported yet!')
 
-            return internal, output
+        net_opac  = self.read_patch_save('net_opac')[-1]
+        angle_rad = self.read_patch_save('angle_rad')[-1]
+
+        mu = self.mus[imu]
+        ds = self.dz / mu * 1e8
+
+        net_opac  = net_opac[imu].squeeze()
+        angle_rad = angle_rad[imu].squeeze()
+
+        net_opac  = np.array(net_opac [..., f, :])
+        angle_rad = np.array(angle_rad[..., f, :])
+
+        if LTE:
+            net_chi = net_opac[..., 2]
+            net_src = net_opac[..., 3]
+        else:
+            net_chi = net_opac[..., 0]
+            net_src = net_opac[..., 1]
+
+        cnt_chi = net_opac[..., 4]
+        cnt_src = net_opac[..., 5]
+
+        #nlte_inu = angle_rad[..., 0]
+        #lte_inu  = angle_rad[..., 1]
+        cnt_inu = angle_rad[..., 2]
+
+        net_eta = net_src * net_chi
+        cnt_eta = cnt_src * cnt_chi
+        lin_chi = net_chi - cnt_chi
+        lin_eta = net_eta - cnt_eta
+
+        chiR = lin_chi + cnt_eta/cnt_inu
+        tauR = compute_tau_scale(chiR[::-1], ds)[::-1]
+        cntrbf = np.log(10) * self.tau / self.chi * (lin_chi - lin_eta/cnt_inu) * np.exp(-tauR)
+
+        return cntrbf
+
+    #=====================================================================
+    def plot_cntrbf(self, f, imu=0, LTE=False, **kwargs):
+        #-----------------------------------------------------------------
+        cntrbf = self.get_cntrbf(f, imu=imu, LTE=LTE)
+        plot = plt.plot(self.ltau, cntrbf, **kwargs)
+        plt.ylabel('Angle-dependent Contribution Function', fontsize='medium')
+        plt.xlabel(r'log$\tau_{500}$')
+        return plot
+
+
+#=====================================================================
+def compute_tau_scale (chi, ds):
+    #-----------------------------------------------------------------
+    tau = np.array(np.zeros_like(chi))
+    tau[1] = 0.5*(chi[1] + chi[0]) * ds
+    tau[2] = 0.5*(chi[2] + chi[1]) * ds + tau[1]
+    tau[0] = np.exp( 2*np.log(tau[1]) - np.log(tau[2]) )
+    for i in range(1, tau.shape[0]):
+        tau[i] = tau[i-1] + 0.5*(chi[i] + chi[i-1]) * ds
+    return tau

@@ -14,7 +14,7 @@ MODULE atom_mod
     USE molecule_mod, only: molec_type
     USE os_mod
     USE trace_mod
-    USE spectrum_mod, only: spectrum_type, set_weights
+    USE spectrum_mod, only: spectrum_type, set_weights, nu_tolerance
     USE hprofl_mod, only:prepare_hydrogen_damping
     ! *******************************************************************
     !
@@ -115,7 +115,6 @@ MODULE atom_mod
     real(8), public :: red_thresh_aa  = 20000
     real(8), public :: blue_thresh_aa = 500
     real(8), public :: cont_step_aa = 50
-    real(8), public :: nu_tolerance = 1d6
     real(8), public :: logf_cut = -99.9, red_cut=huge(1.0), blue_cut=tiny(1.0)
     real(8), parameter :: ame=5.485799e-4, amh=1.0
     real(8), parameter :: mu_e=ame/(ame+amh)
@@ -168,8 +167,8 @@ MODULE atom_mod
   
       ffs = fs-fs_patch+1
       ffe = fe-fs_patch+1
-      fs = fs-cnt%ired+1
-      fe = fe-cnt%ired+1
+      fs = fs!-cnt%ired+1
+      fe = fe!-cnt%ired+1
 
       call cnt%opacities(cnt%alpha(fs:fe), self%data%ni_over_nj_lte(:,:,:,i), &
       self%data%n, self%data%nstar, eta(:,:,:,ffs:ffe), chi(:,:,:,ffs:ffe))
@@ -1279,7 +1278,8 @@ MODULE atom_mod
           cnt%iblue = iblue
 
           ! set new frequency grid
-          call os%allocate(cnt%alpha, cnt%nnu)
+          allocate(cnt%alpha(ired:iblue))
+          call os%mem_register(storage_size(cnt%alpha), cnt%nnu)
           cnt%nu => sp%nu(ired:iblue)
           
           ! recompute the bf cross sections
@@ -1292,7 +1292,8 @@ MODULE atom_mod
             call cnt%hermite_interp(cnt%alpha, cnt%nu)
           end select
 
-          call os%allocate(cnt%wnu, cnt%nnu, 'cont%wnu')
+          allocate(cnt%wnu(ired:iblue))
+          call os%mem_register(storage_size(cnt%wnu), cnt%nnu, 'cont%wnu')
           call set_weights(cnt%wnu, cnt%nu)
         endif
       end do
@@ -1320,7 +1321,8 @@ MODULE atom_mod
           lin%q = lin%nu/lin%nu0 - 1.0d0
 
           ! fill frequency integration weights for the line
-          call os%allocate(lin%wnu, lin%nnu, 'line%wnu')
+          allocate(lin%wnu(ired:iblue))
+          call os%mem_register(storage_size(lin%wnu), lin%nnu, 'line%wnu')
           call set_weights(lin%wnu, lin%nu)
         endif
       end do

@@ -19,6 +19,7 @@ MODULE mean_rad_patch_mod
   
     !-----------------------------------------------------------------------------
     type, public, extends(rad_patch_t) :: mean_rad_patch_t
+      real(4), dimension(:), contiguous, pointer :: old_Jnu => null()
     contains
       procedure :: pre_init
       procedure :: init
@@ -28,6 +29,8 @@ MODULE mean_rad_patch_mod
       procedure :: allocate_mem
       procedure :: deallocate_mem
     end type mean_rad_patch_t
+
+    real(4), parameter :: sp_convlim = 0
       
   contains
   
@@ -54,12 +57,12 @@ MODULE mean_rad_patch_mod
     class(mean_rad_patch_t) :: self
     ! ----------------------------------------------------------------------------
     call self%ray_patch_t%init()
-    call self%ray_patch_t%allocate_mem(self)
-    self%Psi  => self%mem(:,:,:,:,self%it,2)
-    self%Ieff => self%mem(:,:,:,:,self%it,3)
-    if (save_Qrad) then
-      call os%allocate(self%Qrad, self%n, label=trim(self%kind)//'%Qrad')
-      self%Qrad = 0.d0
+    if (self%patch%boundaries%is_set(bits%zu)) call self%boundaries%set(bits%zu)
+    if (self%patch%boundaries%is_set(bits%zl)) call self%boundaries%set(bits%zl)
+    call self%allocate_mem(self)
+    if (sp_convlim /= 0 .and. self%patch%boundaries%is_set(bits%zu)) then
+      call os%allocate(self%old_Jnu, self%nv, label=trim(self%kind)//'%old_Jnu')
+      self%old_Jnu = huge(1.0)
     endif
   END SUBROUTINE init
 
@@ -101,10 +104,12 @@ MODULE mean_rad_patch_mod
     real(8) :: dt, ex
     real(4) :: Psi, xx0, xxup
     integer :: i,j,k,iw, it, f
-    real(4) :: wmu
+    real(4) :: wmu, new_Jnu, sp_conv, max_conv
+    logical :: sp_converged
     integer, save :: itimer=0
     !-----------------------------------------------------------------------------
     call trace%begin (trim(self%kind)//'%update', itimer=itimer)
+    Inu => self%authority_mem(:,:,:,:,self%it,1)
     if (comoving_frame) then
       call lock_mem( self%opac, 'mean_rad_update')
       call self%check_access(self%opac)
@@ -125,11 +130,25 @@ MODULE mean_rad_patch_mod
           eta_back => self%back_cont%mem(:,:,:,f,self%it,self%i_eta)
           self%Ieff(:,:,:,f) = self%Ieff(:,:,:,f) + self%Psi(:,:,:,f) * eta_back
         else
-          self%Ieff(:,:,:,f) = self%authority_mem(:,:,:,f,self%it,1)
+          self%Ieff(:,:,:,f) = Inu(:,:,:,f)
         endif
       end do
 
       if (preconditioning) call unlock_mem( self%back_cont, 'mean_rad_update', read=.true.)
+    endif
+    if (associated(self%old_Jnu)) then
+      max_conv = 0.
+      do f=1, self%nv
+        new_Jnu = sum(Inu(:,:,self%n(3),f))
+        sp_conv = abs(new_Jnu / self%old_Jnu(f) - 1.)
+        max_conv = max(max_conv, sp_conv)
+        self%old_Jnu(f) = new_Jnu
+      end do
+      sp_converged = max_conv < sp_convlim
+      if (sp_converged) then
+        print *, 'Spectrum has converged, i_nu = ', self%i_nu
+      endif
+      print *, 'Spectrum max_conv, i_nu = ', max_conv, self%i_nu
     endif
     call trace%end(itimer)
   END SUBROUTINE execute

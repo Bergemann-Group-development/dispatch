@@ -279,6 +279,9 @@ MODULE atom_patch_mod
       if (associated(self%atom)) then
         if (decouple_continuum) then
           bf_sp%name = 'bound-free'
+          if (detailed_absmet .and. overlapping_bf) then
+             call self%get_osmet_nu(bf_sp, self%composition%osmet)
+          endif
           call self%bf_atom%create_spectrum(bf_sp, bf=.true., sort=overlapping_bf)
           call self%bf_atom%set_ired_iblue(bf_sp, bf=.true., set_active=.true.)
           call bf_sp%save('bf')

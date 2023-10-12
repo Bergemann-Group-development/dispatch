@@ -25,12 +25,13 @@ class atom_class(object):
     def _read(self, dtype=None):
         return _read(self.f, dtype)
     
-    def __init__(self, atom_file, atmos=None, qnorm=10, read_coll=False, verbose=0):
+    def __init__(self, atom_file, atmos=None, qnorm=10, read_coll=False, verbose=0, sanity_check=True):
         if (verbose > 0): print('Reading atom')
         
         self.file = atom_file
         
         self.f = open(atom_file)
+        self.sanity_check = sanity_check
         
         self.id = self._read()[0]
         self.abnd, self.ai = self._read(float)
@@ -50,6 +51,9 @@ class atom_class(object):
         if (verbose > 0): print('Reading energy levels')
         for i in range(self.nk):
             self.level[i] = level_class(self, i)
+
+        if self.level[0].ion == self.level[-1].ion and self.ncont > 0:
+            print('No ionised or dissociated stage in atom file, but continua are given!')
         
         # Reading transitions
         if (verbose > 0): print('Reading transitions')

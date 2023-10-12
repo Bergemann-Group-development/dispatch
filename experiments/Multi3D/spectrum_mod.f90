@@ -25,6 +25,7 @@ MODULE spectrum_mod
     !---------------------------------------------------------------------
 
     public :: set_weights
+    real(8), public :: nu_tolerance = 1d6
 
   contains
     !===============================================================================
@@ -114,6 +115,16 @@ MODULE spectrum_mod
       !-----------------------------------------------------------------------------
       if (self%sorted) then
         call get_ivl(self%nu, trans%nu_min, trans%nu_max, ired, iblue, limit=.false.)
+        if (ired > 1) then
+          if((trans%nu_min - self%nu(ired-1)) < nu_tolerance) then
+            ired = ired - 1
+          endif
+        endif
+        if (iblue < self%nnu) then
+          if((self%nu(iblue+1) - trans%nu_max) < nu_tolerance) then
+            iblue = iblue + 1
+          endif
+        endif
       else
         ired = trans%ired
         iblue = trans%iblue

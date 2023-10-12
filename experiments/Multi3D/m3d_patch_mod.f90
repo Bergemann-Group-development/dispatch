@@ -32,8 +32,8 @@ MODULE m3d_patch_mod
     !USE units_mod
     !USE scratch_mod
     USE m3d_halo_mod, only: m3d_halo_t, print_finished, print_download, lock_mem, unlock_mem, print_lock
-    USE atom_mod, only: atom_type, atomic_spectrum_type, lse_no_pivot, lse_solver, &
-    nu_tolerance, m1d_legacy_mode, nq_fac
+    USE spectrum_mod, only: nu_tolerance
+    USE atom_mod, only: atom_type, atomic_spectrum_type, lse_no_pivot, lse_solver, m1d_legacy_mode, nq_fac
     USE composition_mod, only: composition_type
     USE ray_mod
     USE m3d_debug_mod
@@ -141,7 +141,7 @@ MODULE m3d_patch_mod
     real(8), public, save, dimension(:), allocatable:: wmu, long_wmu
     real(8), public, save, dimension(:,:), allocatable:: vec, long_vec
     real(8), public:: convlim=1d-3
-    logical, public, save :: converged=.false., use_vel=.true.
+    logical, public, save :: converged=.false., use_vel=.true., auto_preconditioning=.false.
     logical, public, save :: preconditioning=.true., binned_opac=.false., save_Qrad=.false.
     logical, public, save :: check_NaN=.false., interp_log=.false.
     logical, public, save :: save_back_cont=.false., save_atom_line=.false.
@@ -183,7 +183,7 @@ MODULE m3d_patch_mod
     print_send, linear_long, interp_log, ray_offset, print_download, save_atom_line, &
     lse_solver, decouple_continuum, m1d_legacy_mode, nu_tolerance, disable_stark, &
     disable_vdw, disable_ga, pivot_z, use_vel, preconditioning, save_Qrad, &
-    absmet_in_output, print_lock
+    absmet_in_output, print_lock, auto_preconditioning
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%pre_init', itimer=itimer)
     self%type = trim(self%kind)
