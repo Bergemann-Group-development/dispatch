@@ -151,6 +151,7 @@ MODULE m3d_patch_mod
     logical, public, save :: overlapping_bb=.true., overlapping_bf=.true.
     logical, public, save :: absmet_in_output=.false.
     logical, public, save :: print_start=.false., print_push=.false., print_send=.false.
+    logical, public, save:: make_opac_table=.false.
     real(8), public, save :: dlam=100.
     character(len=128), save :: save_patch_kind=''
     character(len=64), public, save:: custom_mu=''
@@ -183,7 +184,7 @@ MODULE m3d_patch_mod
     print_send, linear_long, interp_log, ray_offset, print_download, save_atom_line, &
     lse_solver, decouple_continuum, m1d_legacy_mode, nu_tolerance, disable_stark, &
     disable_vdw, disable_ga, pivot_z, use_vel, preconditioning, save_Qrad, &
-    absmet_in_output, print_lock, auto_preconditioning
+    absmet_in_output, print_lock, auto_preconditioning, make_opac_table
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%pre_init', itimer=itimer)
     self%type = trim(self%kind)

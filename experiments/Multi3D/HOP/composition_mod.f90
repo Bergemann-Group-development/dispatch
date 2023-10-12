@@ -1060,20 +1060,21 @@ contains
 
         if (self%loaded) then
             deallocate(self%temp)
-            deallocate(self%ne, self%rho, self%pe, self%pg)
+            deallocate(self%ne, self%rho, self%pe, self%pg, self%E)
             deallocate(self%toth, self%saha, self%teta, self%dxi)
             deallocate(self%EK_over_temp, self%p6)
         endif
 
-        allocate(self%temp, self%ne, self%rho, self%pe, self%pg, mold=temp)
+        allocate(self%temp, self%ne, self%rho, self%pe, self%pg, self%E, mold=temp)
         allocate(self%toth, self%saha, self%teta, self%dxi, mold=temp)
         allocate(self%EK_over_temp, self%p6, ro, mold=temp)
         
         if (option(use_ne, .true.)) then
             self%ne = ne
-            call self%thermal_equilibrium(temp, ne, self%rho, self%pg)
+            call self%thermal_equilibrium(temp, ne, self%rho, self%pg, self%E)
         else
             call self%iterate_thermal_eq(temp, rho, self%ne, tol=1d-6)
+            call self%thermal_equilibrium(temp, self%ne, self%rho, self%pg, self%E)
         endif
 
         if (option(use_rho, .true.)) then
