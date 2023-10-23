@@ -127,7 +127,7 @@ MODULE patch_mod
     class(patch_t)       , pointer:: patch_ptr                  => null()
   contains
     procedure, nopass:: cast2patch
-    procedure:: init
+    procedure:: init=>patch_t_init
     procedure:: pre_init
     procedure:: setup
     procedure:: reset
@@ -235,6 +235,7 @@ MODULE patch_mod
     procedure:: check_gz_density
     procedure:: to_radial
     procedure:: to_cartesian
+    procedure:: allocate_mem
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -293,7 +294,7 @@ MODULE patch_mod
   logical, save:: zero_order_extrap=.true.          ! extrap to no-mans-land
   logical, save:: courant_ramp=.false.              ! ramp up Courant param
   logical, contiguous, pointer:: outside(:,:,:) => null()
-  public task2patch
+  public task2patch, patch_t_init
 CONTAINS
 
 !===============================================================================
@@ -762,7 +763,7 @@ END SUBROUTINE reset
 !> told the patch dimensions (which include the number of variable and the
 !> number of time slices), the patch position, and the patch size
 !===============================================================================
-SUBROUTINE init (self)
+SUBROUTINE patch_t_init (self)
   class(patch_t):: self
   !.............................................................................
   integer            :: i, gn(3)
@@ -856,7 +857,8 @@ SUBROUTINE init (self)
     self%mv = max (self%mv, self%nv)
     gn = self%mesh%gn
     !print *, 'patch_mod', gn, self%mv, self%nt, self%nw, self%kind, associated(self%mem)
-    call os%allocate(self%mem, [gn, self%mv, self%nt, self%nw], label=trim(self%kind)//'%mem')
+    !call os%allocate(self%mem, [gn, self%mv, self%nt, self%nw], label=trim(self%kind)//'%mem')
+    call self%allocate_mem(self)
     call os%allocate(self%u_phase, gn, zero=.true., label='u_phase')
     !call omp%set_stacksize (product(shape(self%mem)), io%master)
     !---------------------------------------------------------------------------
@@ -911,7 +913,7 @@ SUBROUTINE init (self)
   call io%lock%unset ('patch_t%init')
   !-----------------------------------------------------------------------------
   call trace%end(itimer)
-END SUBROUTINE init
+END SUBROUTINE patch_t_init
 
 !===============================================================================
 !> Deallocate a patch and its allocated parts
@@ -4093,5 +4095,15 @@ SUBROUTINE to_cartesian (self, lt, ut, v1, v2, v3)
   real, dimension(:,:,:):: v1, v2, v3
   !-----------------------------------------------------------------------------
 END SUBROUTINE to_cartesian
+
+!===============================================================================
+SUBROUTINE allocate_mem (self, allocator, m_in, label)
+  class(patch_t):: self
+  class(patch_t), intent(in), target :: allocator
+  integer, intent(in), optional :: m_in(6)
+  character(len=*), optional :: label
+  !-----------------------------------------------------------------------------
+  call os%allocate(self%mem, [self%gn, self%mv, self%nt, self%nw], label=trim(self%kind)//'%mem')
+END SUBROUTINE allocate_mem
 
 END MODULE patch_mod

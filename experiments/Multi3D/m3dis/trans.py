@@ -184,7 +184,7 @@ class trans_class(object):
         slc = slice(self.ib, self.ir)
         self.lam  = self.run.lam[slc]
         self.flux = self.run.flux[slc]
-        self.ie = [ie[slc] for ie in self.run.ie]
+        self.ie = self.run.ie[slc]
         self.prepared = True
 
     #=====================================================================
@@ -319,12 +319,12 @@ class trans_class(object):
                 color='k', linewidth=1, alpha=0.2, **kwargs):
         #-----------------------------------------------------------------
         xx, mask = self.get_xx(dlam)
-        cnt = self.run.c3[ang]
+        cnt = self.run.c3[...,ang]
 
         if LTE:
-            yy = self.run.i3_lte[ang]
+            yy = self.run.i3_lte[...,ang]
         else:
-            yy = self.run.i3[ang]
+            yy = self.run.i3[...,ang]
 
         nnu = xx.size
         yy  = yy [:,:,mask].reshape((-1, nnu))

@@ -1,12 +1,13 @@
 MODULE bftrans_mod
   USE prec_mod
   USE op_math_mod
-  USE level_mod, only: level_type, wcalc
+  USE level_mod, only: level_type, wcalc, wcalc2
   USE ion_mod
   USE element_mod
   USE molecule_mod
   USE os_mod
   USE handyfuncs_mod
+  USE trace_mod
   implicit none
   private
   
@@ -133,7 +134,7 @@ contains
     i = fs
     fs = min(fs, fe)
     fe = max(fe, i)
-  END SUBROUTINE
+  END SUBROUTINE load_lam_interp_weights
 
     !===============================================================================
   SUBROUTINE load_unsorted_lam_interp_weights(self, lam)
@@ -232,145 +233,181 @@ contains
   end FUNCTION linear_weight
 
   !===============================================================================
-  SUBROUTINE interp_xkap(self, abslte, temp, teta, fakt, lam, ne, nhe, shield)
-      class(bftrans_type) :: self
-      real(4), dimension(:,:,:,:), intent(inout) :: abslte
-      real(dp), intent(in), dimension(:,:,:), target :: temp, teta
-      real(dp), intent(inout), dimension(:,:,:) :: fakt
-      real(dp), intent(in), dimension(:) :: lam
-      real(dp), intent(in), dimension(:,:,:), optional :: ne, nhe, shield
-      real(dp), dimension(:,:,:), pointer :: newt
-      real(dp), dimension(:,:,:,:), allocatable :: yyt
-      real(dp), dimension(:,:,:), allocatable :: ab, yt
-      real(dp) :: ab1
-      real(dp), dimension(self%nnu) :: yy
-      real(dp), dimension(self%ntt) :: tt
-      integer :: i, f, nx, ny, nz
-      integer, dimension(:,:,:), allocatable :: it
-      logical, dimension(:,:,:), allocatable :: quadratic, in_bounds
-      logical :: skip
-      !---------------------------------------------------------------------------
-      nx = size(temp, 1)
-      ny = size(temp, 2)
-      nz = size(temp, 3)
-      
-      if (self%ntt > 1) then
-          allocate(yyt(nx,ny,nz,self%nnu))
-          allocate(ab, yt, mold=temp)
-          allocate(quadratic(nx,ny,nz))
-          allocate(in_bounds(nx,ny,nz))
-          allocate(it(nx,ny,nz))
-
-          ab = 0
-          in_bounds = .true.
-
-          if (.not. self%minet) then
-              where (temp < self%mint)
-                  in_bounds = .false.
-              end where
-          endif
-
-          if (.not. self%maxet) then
-              where (temp > self%maxt)
-                  in_bounds = .false.
-              end where
-          endif
-
-          if (.not. all(in_bounds) .and. self%verbose > 1) then
-              print *, 'temperature out of bounds in continuum ', self%key
-              print *, 'this could be a problem, please check'
-          endif
-
-          if (self%ilogt) then
-              pvt_xkap = self%log_xkap
-          else
-              pvt_xkap = self%xkap
-          endif
-
-          if (self%iteta) then
-              newt => teta
-          else
-              newt => temp
-          endif
-
-          call self%get_temp_index(newt, it, quadratic)
-
-          where (quadratic) 
-              quadratic = self%check_temp_quadratic(it)
-          end where
-
-          do f=1, self%nnu
-              where (quadratic .and. in_bounds)
-                  yt = self%interp_temp_quadratic(f, it, newt)
-              elsewhere (in_bounds)
-                  yt = self%interp_temp_linear(f, it, newt)
-              elsewhere
-                  yt = 0
-              end where
-
-              if (self%ilogt .and. .not. self%ilogl) then
-                  where (in_bounds) yt = exp(yt)
-              elseif(self%ilogl .and. .not. self%ilogt) then
-                  where (in_bounds) yt = log(yt)
-              endif
-
-              yyt(:,:,:,f) = yt
-          end do
-
-          do f=fs,fe
-              i = iw(f)
-              if (i==0) cycle
-              if (quad(f)) then
-                  where (in_bounds)
-                      ab = yyt(:,:,:,i)   * lagrange(1,f) + &
-                           yyt(:,:,:,i+1) * lagrange(2,f) + &
-                           yyt(:,:,:,i+2) * lagrange(3,f)
-                  end where
-              else
-                  where (in_bounds)
-                      ab = yyt(:,:,:,i)   * lagrange(1,f) + & 
-                           yyt(:,:,:,i+1) * lagrange(2,f)
-                  end where
-              endif
-
-              if (self%ilogl) where (in_bounds) ab = exp(ab)
-
-              where (in_bounds)
-                  abslte(:,:,:,f) = abslte(:,:,:,f) + fakt*ab
-              end where
-
-              !if (f == 1) print '(A20,4(E18.10))', self%label, fakt(1,1,230)*ab(1,1,230), fakt(1,1,230), ab(1,1,230), abslte(1,1,230,f)
-          end do
+  SUBROUTINE interp_xkap(self, chi, temp, teta, fakt, lam, ne, nhe, shield)
+    class(bftrans_type) :: self
+    class(level_type), pointer :: lvl
+    real(4), dimension(:,:,:,:), intent(inout) :: chi
+    real(dp), intent(in), dimension(:,:,:), target :: temp, teta
+    real(dp), intent(inout), dimension(:,:,:) :: fakt
+    real(dp), intent(in), dimension(:) :: lam
+    real(dp), intent(in), dimension(:,:,:), optional :: ne, nhe, shield
+    real(dp), dimension(:,:,:), pointer :: newt
+    real(dp), dimension(:), allocatable :: ab
+    real(dp), dimension(:,:), pointer :: xkap
+    real(dp), dimension(3,self%ntt-1) :: dtdt
+    real(dp) :: ab1, fakt1, t, diff(3), w(3), t3(3), dt, a, b, y1,y2,y3
+    real(dp), dimension(self%nnu) :: yy
+    real(dp), dimension(self%ntt) :: tt
+    integer :: i, f, nx, ny, nz, x, y, z, it, it2, j1, j2, j3
+    logical :: skip, do_log, do_exp, in_bounds, quadratic
+    integer, save :: itimer1=0, itimer2=0, itimer3=0, itimer4=0, itimer5=0
+    !---------------------------------------------------------------------------
+    nx = size(temp, 1)
+    ny = size(temp, 2)
+    nz = size(temp, 3)
+    allocate(ab(fs:fe), mold=lam(fs:fe))
+    
+    if (self%ntt > 1) then
+      call trace%begin('interp_xkap_1', itimer=itimer1)
+      if (self%ilogt) then
+          pvt_xkap = self%log_xkap
+          do_exp = .not. self%ilogl
       else
-          if(self%ilogl) then
-              yy = self%log_xkap(:,1)
+          pvt_xkap = self%xkap
+          do_log = self%ilogl
+      endif
+
+      if (self%iteta) then
+          newt => teta
+      else
+          newt => temp
+      endif
+
+      if (self%kvadt) then
+        do it=1, self%ntt-1
+          if (it+2 <= self%ntt) then
+            t3 = self%tt(it:it+2)
           else
-              yy = self%xkap(:,1)
+            t3 = self%tt(it-1:it+1)
+          endif
+          dtdt(1,it) = 1. / ((t3(1)-t3(2)) * (t3(1)-t3(3)))
+          dtdt(2,it) = 1. / ((t3(2)-t3(1)) * (t3(2)-t3(3)))
+          dtdt(3,it) = 1. / ((t3(3)-t3(1)) * (t3(3)-t3(2)))
+        end do
+      else
+        do it=1, self%ntt-1
+          dtdt(1,it) = 1. / (self%tt(it+1) - self%tt(it))
+        end do
+      endif
+
+      do z=1, nz
+      do y=1, ny
+      do x=1, nx
+        t = temp(x,y,z)
+        in_bounds = .true.
+        quadratic = .false.
+        if (.not. self%minet) in_bounds = t > self%mint
+        if (.not. self%maxet) in_bounds = t < self%maxt
+
+        if (in_bounds) then
+          t = newt(x,y,z)
+          if (t < self%tt(1)) then
+            it = 1
+          elseif (t > self%tt(self%ntt)) then
+            it = self%ntt - 1
+          else
+            do it=1, self%ntt-1
+              if (self%tt(it+1) > t) exit
+            end do
+            quadratic = self%kvadt
           endif
 
+          if (quadratic) then
+            ! quadratic interpolation
+            if (it+2 <= self%ntt) then
+              i = it
+              xkap => pvt_xkap(:,it:it+2)
+            else
+              i = it-1
+              xkap => pvt_xkap(:,it-1:it+1)
+            endif
+            diff = t - self%tt(i:i+2)
+            w(1) = diff(2) * diff(3) * dtdt(1,it)
+            w(2) = diff(1) * diff(3) * dtdt(2,it)
+            w(3) = diff(1) * diff(2) * dtdt(3,it)
+            yy(:) = 0
+            yy(:) = yy(:) + xkap(:,1) * w(1)
+            yy(:) = yy(:) + xkap(:,2) * w(2)
+            yy(:) = yy(:) + xkap(:,3) * w(3)
+          else
+            ! linear interpolation
+            dt = (t - self%tt(it)) * dtdt(1,it)
+            do f=1, self%nnu
+              a = pvt_xkap(f,it)
+              b = pvt_xkap(f,it+1)
+              yy(f) = (b - a)*dt + a
+            end do
+          endif
+
+          if (do_exp) then
+            yy = exp(yy)
+          elseif(do_log) then
+            yy = log(yy)
+          endif
+
+          fakt1 = fakt(x,y,z)
+          i = 0
           do f=fs,fe
+            if (i /= iw(f)) then
               i = iw(f)
-              if (i==0) cycle
+              y1 = yy(i)
+              y2 = yy(i+1)
+              if (quad(f)) y3 = yy(i+2)
+            endif
+            if (i /= 0) then
+              ab1 =       y1*lagrange(1,f)
+              ab1 = ab1 + y2*lagrange(2,f)
               if (quad(f)) then
-                  ab1 = sum(yy(i:i+2) * lagrange(1:3,f))
-              else
-                  ab1 = sum(yy(i:i+1) * lagrange(1:2,f))
+                ab1 = ab1 + y3*lagrange(3,f)
               endif
-
               if (self%ilogl) ab1 = exp(ab1)
-
-              if (H_occupation_probability .and. self%key == 'H BF') then
-                call self%H_occupation(lam(f), nhe, ne, shield, temp, fakt, skip)
-                if (skip) cycle
-              endif
-
-              abslte(:,:,:,f) = abslte(:,:,:,f) + fakt*ab1
-
-              !if (f == 1) then
-              !    print '(A20,4(E18.10))', self%label, fakt(1,1,230)*ab1, fakt(1,1,230), ab1, abslte(1,1,230,f)
-              !endif
+              chi(f,x,y,z) = chi(f,x,y,z) + fakt1*ab1
+            endif
           end do
+        endif
+      end do
+      end do
+      end do
+      call trace%end(itimer1)
+    else
+      call trace%begin('interp_xkap_2', itimer=itimer2)
+
+      if(self%ilogl) then
+        yy = self%log_xkap(:,1)
+      else
+        yy = self%xkap(:,1)
       endif
+
+      do f=fs,fe
+        i = iw(f)
+        if (i==0) cycle
+        if (quad(f)) then
+            ab(f) = sum(yy(i:i+2) * lagrange(1:3,f))
+        else
+            ab(f) = sum(yy(i:i+1) * lagrange(1:2,f))
+        endif
+      end do
+      if (self%ilogl) ab = exp(ab)
+
+      if (H_occupation_probability .and. self%key == 'H BF') then
+        lvl => self%ion%levels(self%k)
+        lvl%i = self%k
+        call trace%begin('wcalc2', itimer=itimer3)
+        call wcalc2(lvl, chi, lam, ab, fakt, self%ion%n, nhe, ne, shield)
+        call trace%end(itimer3)
+      else
+        do z=1, nz
+        do y=1, ny
+        do x=1, nx
+          do f=fs,fe
+            chi(f,x,y,z) = chi(f,x,y,z) + ab(f)*fakt(x,y,z)
+          end do
+        end do
+        end do
+        end do
+      endif
+      call trace%end(itimer2)
+    endif
   END SUBROUTINE interp_xkap
 
   !===============================================================================
@@ -406,14 +443,14 @@ contains
           fakt = fakt * scalar * lvl%n
         endif
       end associate
-  END SUBROUTINE H_occupation 
+  END SUBROUTINE H_occupation
 
   !===============================================================================
   elemental FUNCTION interp_temp_quadratic(self, f, it, newt) result(newy)
       class(bftrans_type), intent(in) :: self
       real(dp), intent(in) :: newt
       integer, intent(in) :: f, it
-      real(dp) :: newy, w(3)
+      real(dp) :: newy, w(3), diff(3)
       integer :: j1, j2, j3
       !---------------------------------------------------------------------------
       if (self%ntt - it > 1) then
@@ -426,9 +463,10 @@ contains
           j3 = it+1
       endif
 
-      w(1) = (newt-self%tt(j2)) * (newt-self%tt(j3)) / ((self%tt(j1)-self%tt(j2)) * (self%tt(j1)-self%tt(j3)))
-      w(2) = (newt-self%tt(j1)) * (newt-self%tt(j3)) / ((self%tt(j2)-self%tt(j1)) * (self%tt(j2)-self%tt(j3)))
-      w(3) = (newt-self%tt(j1)) * (newt-self%tt(j2)) / ((self%tt(j3)-self%tt(j1)) * (self%tt(j3)-self%tt(j2)))
+      diff = newt - self%tt(j1:j3)
+      w(1) = diff(2) * diff(3) / ((self%tt(j1)-self%tt(j2)) * (self%tt(j1)-self%tt(j3)))
+      w(2) = diff(1) * diff(3) / ((self%tt(j2)-self%tt(j1)) * (self%tt(j2)-self%tt(j3)))
+      w(3) = diff(1) * diff(2) / ((self%tt(j3)-self%tt(j1)) * (self%tt(j3)-self%tt(j2)))
 
       newy = sum(pvt_xkap(f,j1:j3) * w(1:3))
   end FUNCTION interp_temp_quadratic 
@@ -552,9 +590,9 @@ contains
   END SUBROUTINE absorption_factor
 
   !===============================================================================
-  SUBROUTINE add_absorption(self, abslte, lam, temp, EK_over_temp, teta, pe, dxi, ne, nhe, shield, sorted)
+  SUBROUTINE add_absorption(self, chi, lam, temp, EK_over_temp, teta, pe, dxi, ne, nhe, shield, sorted)
       class(bftrans_type), intent(in) :: self
-      real(4), dimension(:,:,:,:), intent(inout) :: abslte
+      real(4), dimension(:,:,:,:), intent(inout) :: chi
       real(dp), dimension(:,:,:), intent(in) :: temp, EK_over_temp, teta, pe, dxi
       real(dp), dimension(:,:,:), intent(in), optional :: ne, nhe, shield
       real(dp), dimension(:), intent(in) :: lam
@@ -578,11 +616,11 @@ contains
       endif
 
       if (active) then
-          !if (nf > 1) prev = abslte(p(1), p(2), p(3), p(4))
+          !if (nf > 1) prev = chi(p(1), p(2), p(3), p(4))
           call self%absorption_factor(EK_over_temp, teta, pe, dxi, fakt)
-          call self%interp_xkap(abslte, temp, teta, fakt, lam, ne, nhe, shield)
+          call self%interp_xkap(chi, temp, teta, fakt, lam, ne, nhe, shield)
           !if (nf > 1) print '(A8, 2x, A12, 2x, A, 8(ES14.6))', self%key, self%label, self%ion%id, &
-          ! fakt(p(1),p(2),p(3)), abslte(p(1),p(2),p(3),p(4)) - prev, abslte(p(1),p(2),p(3),p(4))
+          ! fakt(p(1),p(2),p(3)), chi(p(1),p(2),p(3),p(4)) - prev, chi(p(1),p(2),p(3),p(4))
       endif
 
       call os%deallocate(quad)
@@ -590,5 +628,6 @@ contains
       call os%deallocate(lagrange)
       call os%deallocate(pvt_xkap)
   END SUBROUTINE add_absorption
+
 
 END MODULE

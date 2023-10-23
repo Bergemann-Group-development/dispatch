@@ -712,11 +712,11 @@ MODULE atom_mod
       lin%nq = lin%nnu
 
       call os%allocate(lin%nu_input, lin%nnu, 'line%nu_input')
-      call os%allocate(lin%wq, lin%nnu, 'line%wq')
+      !call os%allocate(lin%wq, lin%nnu, 'line%wq')
       call lin%get_nu(qnorm, lin%nu_input)
       lin%nu_min = lin%nu_input(1)
       lin%nu_max = lin%nu_input(lin%nnu)
-      call set_weights(lin%wq, lin%nu_input / lin%nu0 - 1)
+      !call set_weights(lin%wq, lin%nu_input / lin%nu0 - 1)
 
       gij = self%g(lin%i) / self%g(lin%j)
       lin%Aji = f_to_Aji * lin%f * gij / lin%lambda0**2 * hh
@@ -1317,13 +1317,19 @@ MODULE atom_mod
           lin%iblue = iblue
 
           lin%nu => sp%nu(ired:iblue)
-          call os%allocate(lin%q, lin%nnu)
-          lin%q = lin%nu/lin%nu0 - 1.0d0
+          !call os%allocate(lin%q, lin%nnu)
+          allocate(lin%q(ired:iblue))
+          call os%mem_register(storage_size(lin%q), nnu)
+          lin%q(ired:iblue) = lin%nu/lin%nu0 - 1.0d0
 
           ! fill frequency integration weights for the line
           allocate(lin%wnu(ired:iblue))
           call os%mem_register(storage_size(lin%wnu), lin%nnu, 'line%wnu')
           call set_weights(lin%wnu, lin%nu)
+
+          allocate(lin%wq(ired:iblue))
+          call os%mem_register(storage_size(lin%wq), nnu)
+          call set_weights(lin%wq, lin%q)
         endif
       end do
     endif

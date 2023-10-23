@@ -221,12 +221,18 @@ CONTAINS
     real(8)                              :: off
     integer, save          :: itimer=0
     !-----------------------------------------------------------------------------
+    if (size(src%mem,3)==1 .and. size(tgt%mem,3)==1) then
+      tgt%mem = src%mem
+      return
+    endif
+    
     call trace%begin ('m3d_halo_t%same', itimer=itimer)
 
+  
     !if (print_download) then
     !  write(stdout, '(I8, A, I8)') tgt%id, ' downloading from ', src%id
     !endif
-
+  
     tm => tgt%mesh                             ! tgt mesh
     sm => src%mesh                             ! src mesh
     !off = merge(0.5, -0.5, src%level > tgt%level)
@@ -238,10 +244,10 @@ CONTAINS
     fl = max(tl,sl)                            ! overlap lower corner
     fu = min(tu,su)                            ! overlap upper corner
     call io%assert (all(fu > fl), 'guards_t%differ: corner reversal')
-
+  
     lt = ceiling((fl  )/tm%d + tm%o)      ! tgt lowwe index
     ut = floor  ((fu  )/tm%d + tm%o)      ! tgt upper index
-
+  
     if (tgt%level == src%level) then
       ls = ceiling((fl-d)/sm%d + sm%o)      ! src lower index
       us = floor  ((fu-d)/sm%d + sm%o)      ! src upper index
@@ -255,7 +261,7 @@ CONTAINS
       ls = floor  ((fl-d)/sm%d + sm%o)              ! src lower index
       us = ceiling((fu-d)/sm%d + sm%o)              ! src upper index
     endif
-
+  
     ls = max(ls,sm%li)                            ! bounds
     us = min(us,sm%ui)                            ! bounds
     lt = max(lt,tm%lb)                            ! bounds
@@ -266,29 +272,29 @@ CONTAINS
       call tgt%stats ('guards_t%same tgt')
       call src%stats ('guards_t%same src')
     end if
-
+  
     if (size(src%mem,3)==1) then
       ls(3) = 1
       us(3) = 1
     endif
-
+  
     call io%assert (all(lt <= tm%ub), 'guards_t%same: lt breach')
     call io%assert (all(ut >= tm%lb), 'guards_t%same: ut breach')
     call io%assert (all(ls <= sm%ub), 'guards_t%same: ls breach')
     call io%assert (all(us >= sm%lb), 'guards_t%same: us breach')
-
+  
     if (print_download) then
       write(stdout, '(I8, A, I8)') tgt%id, ' downloading from ', src%id
       write(stdout, '(4(3(I4), 1x))') ls, us, lt, ut
     endif
-
+  
     if (.not. associated(src%mem)) then
       print *, 'source not allocated', src%id, tgt%id
     endif
     if (.not. associated(tgt%mem)) then
       print *, 'target not allocated', src%id, tgt%id
     endif
-
+  
     if (src%level == tgt%level) then
       call self%no_t (tgt, src, ls, us, src%mem, tgt%mem, lt, ut, only=only)
     elseif (src%level == tgt%level-1) then
@@ -296,7 +302,7 @@ CONTAINS
     elseif (src%level == tgt%level+1) then
       call self%binning_to_lower_level (tgt, src, ls, us, src%mem, tgt%mem, lt, ut, only=only)
     endif
-
+  
     if (associated(tgt%filled)) &
     tgt%filled (lt(1):ut(1),lt(2):ut(2),lt(3):ut(3)) = 10*src%level
     call trace%end (itimer=itimer)

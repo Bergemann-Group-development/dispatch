@@ -17,7 +17,7 @@ MODULE timer_mod
   USE omp_lib
   implicit none
   private
-  integer, parameter:: maxproc=100, maxdepth=50
+  integer, parameter:: maxproc=1000, maxdepth=50
   integer, save:: ntimer=0
   type:: latency_t
     real:: max=0.0

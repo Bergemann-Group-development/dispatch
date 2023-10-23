@@ -19,6 +19,7 @@ MODULE osmet_mod
     contains
         procedure :: init
         procedure :: add_line_opacities
+        procedure :: add_line_opacities2
 
     end type
 
@@ -169,6 +170,71 @@ contains
             end do
         end do
     END SUBROUTINE add_line_opacities
+
+    !===============================================================================
+    SUBROUTINE add_line_opacities2(self, nu, p6, temp, rho, chi)
+      class(osmet_type), intent(inout) :: self
+      real(8), dimension(:), intent(in) :: nu
+      real(8), dimension(:,:,:), intent(in) :: p6, temp, rho
+      real(4), dimension(:,:,:,:), intent(inout) :: chi
+      real(8) :: p, t
+      real(4) :: a1, b1, c1, d1, a2, b2, c2, d2, r
+      real(4) :: ab1, cd1, ab2, cd2, abcd1, abcd2
+      real(4) :: dx, dy, dz, os
+      integer :: ix, iy, iz, i, j, k, f, nx, ny, nz, nf
+      !---------------------------------------------------------------------------
+      nf = size(chi,1)
+      nx = size(chi,2)
+      ny = size(chi,3)
+      nz = size(chi,4)
+
+      do k=1, nz
+      do j=1, ny
+      do i=1, nx
+        t = temp(i,j,k)
+        p = p6(i,j,k)
+        r = rho(i,j,k)
+        ix = searchsorted(self%p6, p)
+        iy = searchsorted(self%temp, t)
+
+        if (ix<0 .or. iy<0) then
+            cycle
+        endif
+  
+        dx = (p - self%p6  (ix)) / (self%p6  (ix+1) - self%p6  (ix))
+        dy = (t - self%temp(iy)) / (self%temp(iy+1) - self%temp(iy))
+
+        do f=1, nf
+          iz = searchsorted(self%nu, nu(f))
+          if (iz < 0) cycle
+          
+          dz = (nu(f) - self%nu(iz)) / (self%nu(iz+1) - self%nu(iz))
+
+          a1 = self%ostabl(ix,   iy,   iz)
+          b1 = self%ostabl(ix+1, iy,   iz)
+          c1 = self%ostabl(ix+1, iy+1, iz)
+          d1 = self%ostabl(ix,   iy+1, iz)
+          a2 = self%ostabl(ix,   iy,   iz+1)
+          b2 = self%ostabl(ix+1, iy,   iz+1)
+          c2 = self%ostabl(ix+1, iy+1, iz+1)
+          d2 = self%ostabl(ix,   iy+1, iz+1)
+  
+          ab1 = (b1 - a1) * dx + a1
+          cd1 = (c1 - d1) * dx + d1
+          ab2 = (b2 - a2) * dx + a2
+          cd2 = (c2 - d2) * dx + d2
+          
+          abcd1 = exp(ln10*((cd1 - ab1) * dy + ab1))
+          abcd2 = exp(ln10*((cd2 - ab2) * dy + ab2))
+  
+          ! last interpolation along frequencies is done on linear opacities
+          os = (abcd2 - abcd1) * dz + abcd1
+          chi(f,i,j,k) = chi(f,i,j,k) + os*r
+        end do
+        end do
+        end do
+      end do
+    END SUBROUTINE add_line_opacities2
 
     !===============================================================================
     !  thermal p-FUNCTION for semic empirical collision rates

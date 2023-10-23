@@ -814,7 +814,7 @@ SUBROUTINE save_atmos (self, patch)
   
   n = self%n(3)
   m = shape(self%temp)
-  allocate(chi(m(1), m(2), m(3),1))
+  allocate(chi(1,m(1), m(2), m(3)))
   allocate(abslte, sumsca, eta, mold=chi)
   allocate(tau, mold=self%temp)
   nu = 1e8 * cc / 5000.0
@@ -823,9 +823,8 @@ SUBROUTINE save_atmos (self, patch)
   composition => patch%composition%composition
   call composition%load_state_variables(dble(self%temp), dble(self%ne), &
       dble(self%rho)*scaling%d, use_rho=use_density, use_ne=use_ne)
-  call composition%absorption(nu, chi, abslte, sumsca, sorted=.true.)
-  call composition%scattering(nu, abslte, eta, sumsca)
-  call compute_tau_scale(chi(:,:,n:1:-1,1), dz, tau(:,:,n:1:-1))
+  call composition%absorption(nu, chi, sorted=.true.)
+  call compute_tau_scale(chi(1,:,:,n:1:-1), dz, tau(:,:,n:1:-1))
 
   open(file=trim(io%run_dir)//out_atmos_file, newunit=lunit, form='UNFORMATTED')
   write(lunit) self%temp

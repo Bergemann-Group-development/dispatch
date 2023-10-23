@@ -21,9 +21,6 @@ MODULE atom_patch_mod
     !USE units_mod
     !USE scratch_mod
     USE handyfuncs_mod
-    USE atom_cont_patch_mod, only: atom_cont_t
-    USE angle_rad_patch_mod, only: rad_patch_t
-    USE atom_rate_patch_mod, only: atom_rate_t
     USE atom_mod, only: atom_type, atomic_spectrum_type, use_classic_col, kramer_bf, debye_shield, &
                         red_cut, blue_cut, logf_cut, local_data_t, m1d_legacy_mode, nq_fac
     USE trans_mod, only: line_type, cont_type
@@ -39,8 +36,7 @@ MODULE atom_patch_mod
     USE bftrans_mod, only: bftrans_type
     USE hprofl_mod, only: hydrogen_BPO
     USE osmet_mod, only:osmet_type
-    USE atom_line_patch_mod, only:atom_line_t, external_sp
-    USE net_opac_patch_mod, only:net_opac_t
+    USE nlte_patch_mod, only:nlte_patch_t
     USE m3d_debug_mod
     implicit none
   
@@ -56,17 +52,16 @@ MODULE atom_patch_mod
       procedure :: pre_init => atom_patch_pre_init
       procedure :: execute
       procedure :: nbor_relations => atom_patch_nbor_relations
-      procedure :: create_sub_patches
       procedure :: pre_init_atom
       procedure :: pre_init_spectrum
       procedure :: init_atom_data
       procedure :: update_populations
-      procedure :: check_skip
       procedure :: get_osmet_nu
       procedure :: exclude_double_continua
       procedure :: exclude_double_lines
       procedure :: print_post_update_info
       procedure :: check_in_bounds
+      procedure :: init_nbors_hash
       procedure :: save_abundance_to_file
       procedure :: load_mem
     end type atom_patch_t
@@ -77,6 +72,7 @@ MODULE atom_patch_mod
     logical, save :: detailed_absmet=.false.
     character(len=128), save :: precomputed_depart=''
     character(len=128), public :: atom_file=''
+    logical, public, save :: external_sp=.false.
 
     !-----------------------------------------------------------------------------
   
@@ -99,64 +95,12 @@ MODULE atom_patch_mod
     call self%set_nv_and_nw(self%atom%nlevel, 2)
     self%static_mem=.true.
 
-    n_nu = self%n_nu
-    n_mu = self%n_mu
-
-    if (self%maxiter > 0) then
-      if (decouple_continuum) then
-        call self%create_sub_patches([1, n_nu],   [0, n_mu], self%bb_atom, self%bb_sp)
-        call self%create_sub_patches([1, n_nu]+n_nu, [0, 0], self%bf_atom, self%bf_sp)
-      else
-        call self%create_sub_patches([1, n_nu], [0, n_mu], self%atom, self%sp)
-      endif
-    endif
-
-    call self%create_sub_patches([-n_nu, -1], [-self%n_out, 0], self%output_atom, self%output_sp)
-
     call self%post_pre_init()
     self%atom%fcheck = self%fcheck
     self%atom%pcheck = self%pcheck
     self%atom%linecheck = self%linecheck
     call trace%end(itimer)
   END SUBROUTINE atom_patch_pre_init
-
-  !===============================================================================
-  SUBROUTINE create_sub_patches (self, nu, mu, atom, sp)
-    class(atom_patch_t) :: self
-    integer, intent(in) :: nu(2), mu(2)
-    class(atom_type), intent(in), target :: atom
-    class(atomic_spectrum_type), intent(in), pointer :: sp
-    class(atom_rate_t), pointer :: rate
-    class(atom_cont_t), pointer :: cont
-    class(atom_line_t), pointer :: line
-    integer :: n, m
-    logical :: cf, dc, new_cont, new_line, new_rate
-    !-----------------------------------------------------------------------------
-    if (.not. associated(sp)) return
-    if (sp%nnu == 0) return
-    do n=nu(1), nu(2)
-        cf = comoving_frame .and. n>0
-        dc = decouple_continuum
-      do m=mu(1), mu(2)
-        new_cont = m==0 .and. (merge(n>self%n_nu, .true., dc) .or. n<0) .and. associated(atom%cont)
-        new_line = (m<0 .or. merge(m==0, m/=0, cf)) .and. associated(atom%line)
-        new_rate = merge(m==0, m>0, cf) .or. (dc .and. m==0 .and. n>self%n_nu)
-
-        if (new_cont) then
-          allocate(cont)
-          call cont%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp, atom=atom)
-        endif
-        if (new_line) then
-          allocate(line)
-          call line%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp, atom=atom)
-        endif
-        if (new_rate) then
-          allocate(rate)
-          call rate%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp, atom=atom)
-        endif
-      end do
-    end do
-  END SUBROUTINE create_sub_patches
 
   !===============================================================================
   SUBROUTINE pre_init_atom (self)
@@ -353,6 +297,7 @@ MODULE atom_patch_mod
     n     => atom%data%n    
     nstar => atom%data%nstar
 
+    call os%allocate(atom%data%wphi, [self%n, atom%nline], label='wphi', zero=.true.)
     call os%allocate(atom%data%totn, self%n, label='totn')
     totn => atom%data%totn
 
@@ -409,7 +354,7 @@ MODULE atom_patch_mod
     class(line_type), pointer :: line
     real(8), dimension(:,:,:,:), pointer, contiguous :: gamma_ij, gamma_ji
     real(4), dimension(:,:,:,:), pointer, contiguous :: wphi
-    integer :: i
+    integer :: i, l, p(3)
     integer, save:: count=0
     real(8) :: global
     integer, save :: itimer=0
@@ -456,6 +401,25 @@ MODULE atom_patch_mod
       endif
     endif
 
+    if (self%print_update_info) then
+      p = self%pcheck
+      l = self%linecheck
+      memcheck(1) = self%atom%data%n(p(1),p(2),p(3),self%lvlcheck)
+      memcheck(2) = self%atom%data%totn(p(1),p(2),p(3))
+      if (associated(self%atom%data%gamma_ij)) then
+        if (self%linecheck<=self%atom%nrad) then
+          memcheck(3) = self%atom%data%gamma_ij(p(1),p(2),p(3),l)
+          memcheck(4) = self%atom%data%gamma_ji(p(1),p(2),p(3),l)
+          if (l<=self%atom%nline) then
+            memcheck(5) = self%atom%data%wphi(p(1),p(2),p(3),l)
+          endif
+        endif
+      else
+        memcheck(3) = 10.0**(self%atom%abnd-12.0)
+        memcheck(4) = self%composition%toth(p(1),p(2),p(3))
+      endif
+    endif
+
     if (associated(self%atom%data%gamma_ij)) then
       call os%deallocate(self%atom%data%gamma_ij, label='atom%gamma_ij')
       call os%deallocate(self%atom%data%gamma_ji, label='atom%gamma_ji')
@@ -480,23 +444,6 @@ MODULE atom_patch_mod
     if (self%update_skipped) then
       call self%print_to_stdout(text='update skipped')
     elseif (self%m3d_patch_t%check_in_bounds()) then
-      i = self%lvlcheck
-      l = self%linecheck
-      p = self%pcheck
-      adata => self%atom%data
-      !arr(1) = self%lvlerr(i)
-      memcheck(1) = adata%n(p(1),p(2),p(3),i)
-      memcheck(2) = adata%totn(p(1),p(2),p(3))
-      if (associated(adata%gamma_ij) .and. l<=self%atom%nrad) then
-        memcheck(3) = adata%gamma_ij(p(1),p(2),p(3),l)
-        memcheck(4) = adata%gamma_ji(p(1),p(2),p(3),l)
-        if (l<=self%atom%nline) then
-          memcheck(5) = adata%wphi(p(1),p(2),p(3),l)
-        endif
-      else
-        memcheck(3) = 10.0**(self%atom%abnd-12.0)
-        memcheck(4) = self%composition%toth(p(1),p(2),p(3))
-      endif
       call self%print_to_stdout(arr=memcheck(1:5))
     else
       call self%print_to_stdout()
@@ -508,44 +455,6 @@ MODULE atom_patch_mod
     write(stdout,'(1X, A80)') &
     '................................................................................'
   END SUBROUTINE print_post_update_info
-
-  !===============================================================================
-  SUBROUTINE check_skip (self)
-    class(atom_patch_t) :: self
-    class(nbor_t), pointer :: nbor
-    class(task_t), pointer :: nbtask
-    integer :: iter, atom_iter
-    real(8) :: time
-    ! ----------------------------------------------------------------------------
-    time=huge(1.d0)
-    nbor => self%link%nbor
-    do while (associated(nbor))
-      nbtask => nbor%task
-      select type(nbtask)
-      class is (atom_rate_t)
-        if (.not. nbtask%out_ray) then
-          time = min(time, nbtask%rad%time)
-        endif
-      end select
-      nbor => nbor%next
-    end do
-    iter = max(0, floor(time - self%time))
-    atom_iter = max(0, min(self%maxiter - self%iter - 1, iter))
-    call self%skip_iterations(atom_iter)
-    nbor => self%link%nbor
-    do while (associated(nbor))
-      if (nbor%needs_me) then
-        nbtask => nbor%task
-        select type(nbtask)
-        class is (m3d_patch_t)
-          if (.not. nbtask%out_ray .and. .not. nbtask%is_finished()) then
-            call nbtask%skip_iterations(iter)
-          endif
-        end select
-      endif
-      nbor => nbor%next
-    end do
-  END SUBROUTINE check_skip
 
   !===============================================================================
   SUBROUTINE update_populations (self, gamma_ij, gamma_ji)
@@ -735,26 +644,8 @@ MODULE atom_patch_mod
   
     if (needed .or. needs_me) then
       select type (another)
-      class is (atom_line_t)
-        needed = .false.
-        if (associated(another%atom)) then
-          if (another%atom%id /= self%atom%id) then
-            needs_me = .false.
-          endif
-        else
-          needs_me = .false.
-        endif
-      class is (atom_cont_t)
-        needed = .false.
-        if (another%atom%id /= self%atom%id) then
-          needs_me = .false.
-        endif
-      class is (atom_rate_t)
-        if (another%atom%id /= self%atom%id) then
-          needed = .false.; needs_me = .false.
-        endif
-      class is (net_opac_t)
-        needed = .false.
+      class is (nlte_patch_t)
+        ! is needed and needs_me
       class default
         if (another%id == self%m3d_parent%id) then
           ! the composition patch needs this to be able to
@@ -781,6 +672,25 @@ MODULE atom_patch_mod
       cib = .true.
     endif
   END FUNCTION check_in_bounds
+
+  !===============================================================================
+  SUBROUTINE init_nbors_hash (self, nbors)
+    class(atom_patch_t):: self
+    class(nbor_t), pointer:: nbors
+    integer, save:: itimer=0
+    integer :: key(4), i_nu, i_mu
+    !-----------------------------------------------------------------------------
+    call self%m3d_patch_t%init_nbors_hash(nbors)
+    key = self%key
+    key(4) = hash_string('nlte_patch')
+    do i_nu=-self%n_nu, self%n_nu
+      do i_mu=-1, 2
+        key(2) = i_nu
+        key(3) = i_mu
+        call self%check_nbor(key, nbors)
+      end do
+    end do
+  END SUBROUTINE init_nbors_hash
 
   !===============================================================================
   SUBROUTINE save_abundance_to_file (self)

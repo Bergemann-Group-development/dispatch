@@ -10,14 +10,8 @@ MODULE composition_patch_mod
   USE m3d_patch_mod,   only: m3d_patch_t, comoving_frame, ilambd, decouple_continuum, dlam, &
   use_density, use_ne, overlapping_bb, overlapping_bf, line_blanketing, binned_opac, save_Qrad, maxiter
   USE composition_mod, only: composition_type, exclude_elements
-  USE back_cont_patch_mod,  only: back_cont_t
-  USE angle_rad_patch_mod,   only: rad_patch_t
   USE atom_patch_mod,  only: atom_patch_t
-  USE atom_rate_patch_mod,  only: atom_rate_t
-  USE net_opac_patch_mod,  only: net_opac_t
-  USE out_rad_patch_mod, only:out_rad_patch_t
-  USE proj_patch_mod, only:proj_patch_t
-  USE mean_rad_patch_mod, only:mean_rad_patch_t
+  USE nlte_patch_mod, only:nlte_patch_t
   USE bftrans_mod, only: H_occupation_probability
   USE task_mod
   USE trace_mod
@@ -148,14 +142,9 @@ SUBROUTINE composition_pre_init (self)
 
   if (ilambd + maxiter > 0) then
     if (atom_patch%atom_allocated) then
-      if (decouple_continuum) then
-        call self%create_sub_patches([1, n_nu],      [0, n_mu], self%composition, atom_patch%bb_sp)
-        call self%create_sub_patches([1, n_nu]+n_nu, [0, n_mu], self%composition, atom_patch%bf_sp)
-      else
-        call self%create_sub_patches([1, n_nu], [0, n_mu], self%composition, atom_patch%sp)
-      endif
+      call self%create_sub_patches([1, n_nu], [0, 2], self%composition, atom_patch%sp)
     elseif (save_Qrad) then
-      call self%create_sub_patches([1, n_nu], [0, n_mu], self%composition, output_sp)
+      call self%create_sub_patches([1, n_nu], [0, 2], self%composition, output_sp)
     else
       deallocate(atom_patch)
       if (.not. external_sp) then
@@ -164,7 +153,7 @@ SUBROUTINE composition_pre_init (self)
     endif
   endif
 
-  call self%create_sub_patches([-n_nu, 0], [-self%n_out, 0], self%composition, output_sp)
+  call self%create_sub_patches([-n_nu, 0], [-1, 0], self%composition, output_sp)
   
   call self%save_abundances_to_file()
   call self%post_pre_init()
@@ -177,63 +166,24 @@ SUBROUTINE create_sub_patches (self, nu, mu, composition, sp)
   integer, intent(in) :: nu(2), mu(2)
   class(composition_type), intent(in), target :: composition
   class(atomic_spectrum_type), intent(in), pointer :: sp
-  class(back_cont_t), pointer :: cont
-  class(out_rad_patch_t), pointer :: out
-  class(net_opac_t), pointer :: net
-  class(proj_patch_t), pointer :: proj
-  class(rad_patch_t), pointer :: rad
-  class(mean_rad_patch_t), pointer :: mean
+  class(nlte_patch_t), pointer :: nlte
   integer :: n, m
-  logical :: cf, new_cont, new_rad, new_out, new_net, new_proj, new_mean
+  logical :: cf, new_cont, new_rad, new_out, new_net, new_proj, new_mean, new_nlte
   !-----------------------------------------------------------------------------
   if (.not. associated(sp)) return
   if (sp%nnu == 0) return
   do n=nu(1), nu(2)
     cf = comoving_frame .and. n>0
-    nullify(mean)
   do m=mu(1), mu(2)
-    new_mean = n>0  .and. m==0
-    new_cont = n/=0 .and. m==0
-    new_net  = n/=0 .and. (m<0 .or. merge(m==0, m/=0, cf))
-    new_proj = m/=0 .and. cf
-    new_rad  = n/=0 .and. m/=0
-    new_out  = n==0 .and. m<0 .and. self%patch%boundaries%is_set(bits%zu)
-
-    if (new_mean) then
-      allocate(mean)
-      call mean%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp)
-    endif
-    if (new_cont) then
-      allocate(cont)
-      cont%composition => composition
-      if (associated(mean)) then
-        cont%mean_rad => mean
-        mean%back_cont => cont
+    new_nlte = n/=0 .and. m/=0
+    if (new_nlte) then
+      allocate(nlte)
+      call nlte%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp)
+      if (nlte%out_ray) then
+        nlte%atom => self%atom_patch%output_atom
+      else
+        nlte%atom => self%atom_patch%atom
       endif
-      call cont%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp)
-    endif
-    if (new_net) then
-      allocate(net)
-      call net%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp)
-      if (associated(self%atom_patch)) then
-        call self%atom_patch%add_to_key_list(net)
-      endif
-      if (associated(mean)) then
-        mean%opac => net
-      endif
-    endif
-    if (new_proj) then
-      allocate(proj)
-      call proj%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp)
-    endif
-    if (new_rad) then
-      allocate(rad)
-      if (associated(mean)) rad%mean_rad => mean
-      call rad%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp)
-    endif
-    if (new_out) then
-      allocate(out)
-      call out%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp)
     endif
   end do
 end do
@@ -324,7 +274,7 @@ SUBROUTINE composition_patch_nbor_relations(self, another, needed, needs_me, dow
       select case (another%kind)
       case ('atom_patch')
         ! is needed after convergence and needs me
-      case ('back_cont')
+      case ('nlte_patch')
         needed = .false.
       case default
         needed = .false.; needs_me = .false.

@@ -482,14 +482,13 @@ SUBROUTINE nphi_copies (nphi_in, mu, wmu, vec, wts, zrot)
 END SUBROUTINE nphi_copies
 
 !===============================================================================
-SUBROUTINE ray_init(ray, vec, wmu)
+SUBROUTINE ray_init(ray, vec)
   class(ray_type), intent(inout) :: ray
-  real(8), intent(in) :: vec(3), wmu
+  real(8), intent(in) :: vec(3)
   ! ----------------------------------------------------------------------------
   ray%mux = vec(1)
   ray%muy = vec(2)
   ray%muz = vec(3)
-  ray%wmu = wmu
 
   if (ray%mux.gt.0) then
     ! x sweep in direction of increasing x index

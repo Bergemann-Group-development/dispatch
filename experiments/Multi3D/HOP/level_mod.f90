@@ -142,5 +142,93 @@ contains
         end do
         end do
     END SUBROUTINE wcalc
+
+    !===============================================================================
+    SUBROUTINE wcalc2(self, chi, lam, ab, fakt, nh, nhe, ne, shield)
+      class(level_type) :: self
+      real(4), intent(inout), dimension(:,:,:,:) :: chi
+      real(dp), intent(in), dimension(:) :: lam, ab
+      real(dp), intent(in) , dimension(:,:,:) :: fakt, nh, nhe, ne, shield
+      real(dp), dimension(:), allocatable :: x1, x2, kk, lfac, cutfac
+      real(dp) :: ns, ns2, rih, neutr, k1, k2, x, charg, res, nh43, nhe43
+      real(dp) :: redcut, nu, w, n, frac
+      real(dp), parameter :: a0=5.29177d-9
+      real(dp), parameter :: pi43=4.18879d0  ! 4.18879 is 4*pi/3
+      integer :: f,i,j,k, m(3), nf
+      !---------------------------------------------------------------------------
+      m = shape(fakt)
+      nf = size(lam)
+      allocate(x1, x2, kk, lfac, cutfac, mold=lam)
+      kk = 0.
+
+      redcut = hc_e / ((self%i**(-2.d0) - (self%i+1)**(-2.d0))*RYD) * 1d8
+
+      do f=1, nf
+        if (lam(f) > redcut) then
+          cutfac(f) = exp((redcut - lam(f))*1.d-2)
+        else
+          cutfac(f) = 1.0
+        endif
+        if (cutfac(f) > 1d-1) then
+          lfac(f) = 2.0898E-26 / (2*self%i**5) * cutfac(f)
+
+          nu = cc/lam(f)*1e8
+          ns = 1. - (self%xion + h_e*nu)/RYD
+          if(ns > 0) then
+            ns = 1.d0/sqrt(ns)
+            ns2 = ns*ns
+            rih = ns * sqrt(2.5*ns2 + 0.5)
+            x1(f) = (a0*(rih + 1.73))**3
+            x2(f) = (a0*(rih + 1.02))**3
+            k1 = 8.3e14 / (ns2*ns2)
+            if(ns > 3.) then
+              k1 = k1 * 5.33333333*ns / (ns + 1.d0)**2
+            endif
+            kk(f) = k1*sqrt(k1)
+          endif
+        endif
+      end do
+
+      do k=1, m(3)
+      do j=1, m(2)
+      do i=1, m(1)
+        w = self%w(i,j,k)
+        x = shield(i,j,k)
+        n = self%n(i,j,k)
+        nh43  = pi43 * nh(i,j,k)
+        nhe43 = pi43 * nhe(i,j,k)
+        do f=1, nf
+          if (cutfac(f) > 1d-1) then
+            if(kk(f) /= 0.d0) then
+              ! neutral perturbers
+              neutr = nh43*x1(f) + nhe43*x2(f)
+              if (neutr > 1e-5) then
+                res = exp(-neutr)
+              else
+                res = 1.0
+              endif
+              
+              ! charged perturbers
+              k1 = kk(f)
+              if (k1*x < 1e4) then
+                k2 = k1*k1
+                frac = 0.1402d0*x*k2 / (ne(i,j,k) * (1. + 0.1285*x*k1))
+                charg = frac / (1.d0 + frac)
+                res = res * charg
+              endif
+
+              res = w - res
+            else
+              res = w
+            endif
+    
+            res = res * lfac(f) * n
+            chi(f,i,j,k) = chi(f,i,j,k) + res*ab(f)
+          endif
+        end do
+      end do
+      end do
+      end do
+    END SUBROUTINE wcalc2
     
 END MODULE level_mod

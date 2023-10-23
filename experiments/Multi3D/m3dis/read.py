@@ -15,7 +15,7 @@ import os
 #=====================================================================
 class read(object):
     #=================================================================
-    def __init__(self, folder, verbose=0):
+    def __init__(self, folder, verbose=0, sanity_check=False):
         #-------------------------------------------------------------
         folder = folder + os.sep
         sfolder = folder + 'save' + os.sep
@@ -26,7 +26,7 @@ class read(object):
         
         if os.path.isfile(folder + 'atom.txt'):
             self.qnorm = self.nml['atom_params']['qnorm']
-            self.atom = atom_class(folder + 'atom.txt', qnorm=self.qnorm, verbose=verbose)
+            self.atom = atom_class(folder + 'atom.txt', qnorm=self.qnorm, verbose=verbose, sanity_check=sanity_check)
             loggf_cut = self.nml['atom_params']['logf_cut']
             red_cut   = self.nml['atom_params']['red_cut']
             blue_cut  = self.nml['atom_params']['blue_cut']
@@ -72,39 +72,25 @@ class read(object):
         self.mus, self.imus = np.unique(1 - self.vec[:,-1], return_inverse=True)
         self.mus = 1 - self.mus
         self.nmu = self.mus.size
-        
-        self.i3 = [None]*self.n_ang
-        self.c3 = [None]*self.n_ang
-        self.ie  = [None]*self.n_ang
-        self.cnt = [None]*self.n_ang
-        self.i3_lte = [None]*self.n_ang
-        self.ie_lte = [None]*self.n_ang
 
-        out_rad = self.read_patch_save('out_rad', concat=False)
-        ie_dict = self.read_patch_save('ie',      concat=False)
-        ipos = list(out_rad.keys())[0][0]
-        nmu  = np.min([key[2] for key in out_rad.keys()])
+        i3 = self.read_patch_save('i3', fdim=2)[0]
+        ie = self.read_patch_save('ie', fdim=2)[0]
 
         self.flux = np.zeros_like(self.lam)
         self.flux_lte = np.zeros_like(self.lam)
         self.flux_cnt = np.zeros_like(self.lam)
+        
+        self.i3     = i3[...,0]
+        self.i3_lte = i3[...,1]
+        self.c3     = i3[...,2]
 
-        for key in out_rad.keys():
-            ipos, inu, ang = key
-            mem = out_rad[key]
-            ang = abs(ang)-1
-            self.i3[ang]     = mem[...,0,:,0]
-            self.i3_lte[ang] = mem[...,0,:,1]
-            self.c3[ang]     = mem[...,0,:,2]
+        self.ie     = ie[0,0,:,:,0]
+        self.ie_lte = ie[0,0,:,:,1]
+        self.cnt    = ie[0,0,:,:,2]
 
-            mem = ie_dict[key]
-            self.ie[ang]     = mem[0,0,0,:,0]
-            self.ie_lte[ang] = mem[0,0,0,:,1]
-            self.cnt[ang]    = mem[0,0,0,:,2]
-
-            self.flux     += self.wts[ang] * self.ie[ang]
-            self.flux_lte += self.wts[ang] * self.ie_lte[ang]
-            self.flux_cnt += self.wts[ang] * self.cnt[ang]
+        self.flux     = np.sum(self.wts * self.ie    , axis=-1)
+        self.flux_lte = np.sum(self.wts * self.ie_lte, axis=-1)
+        self.flux_cnt = np.sum(self.wts * self.cnt   , axis=-1)
         
         dim = self.i3[0].shape
             
@@ -252,20 +238,19 @@ class read(object):
                 yy = self.ie
 
             if ang is not None:
-                cnt = cnt[ang][mask]
-                yy = yy[ang][mask]
+                cnt = cnt[...,ang][mask]
+                yy = yy[...,ang][mask]
             
             elif imu is not None:
-                cnt = [c[mask] for i, c in enumerate(cnt) if self.imus[i]==imu]
-                yy  = [y[mask] for i, y in enumerate(yy)  if self.imus[i]==imu]
-                cnt = np.mean(cnt, axis=0)
-                yy  = np.mean(yy,  axis=0)
+                mu_mask = self.imus==imu
+                cnt = np.mean(cnt[...,mu_mask], axis=-1)
+                yy  = np.mean(yy [...,mu_mask], axis=-1)
         
         if norm:
             yy = yy / cnt
 
             
-        return yy, cnt
+        return np.array(yy), np.array(cnt)
     
     #=====================================================================
     def crop(self, lam0=None, dlam=None, xmin=None, xmax=None, vdop=None, 
@@ -389,7 +374,7 @@ class read(object):
     #=====================================================================
     def get_depart(self, ilvl, mean=True, xxin=None):
         atom_patch = self.read_patch_save('atom_patch', concat=False)
-        key = [1,0,0]
+        key = [1,0]
         xx = []
         yy = []
         bot = 0
@@ -486,7 +471,7 @@ class read(object):
         return teff
 
     #=====================================================================
-    def read_patch_save(self, kind, concat=True):
+    def read_patch_save(self, kind, concat=True, fdim=3):
         #-----------------------------------------------------------------
         try:
             meta = open(self.sfolder + kind + '_meta.txt')
@@ -507,7 +492,7 @@ class read(object):
                 dims = tuple([int(d) for d in info[2:]])
 
                 key = file.split('.')[0].split('_')[-1]
-                key = np.array([int(k) for k in [key[0:3], key[3:6], key[6:9]]])
+                key = np.array([int(k) for k in [key[0:3], key[3:6]]])
 
                 if '_out' in file:
                     key[1:] = key[1:]*-1
@@ -516,65 +501,49 @@ class read(object):
 
         meta.close()
 
-        all_inu = np.unique([key[1] for key in dct.keys()])
-        f_indep = all(all_inu == 0)
-        if kind in ['out_rad', 'ie']: f_indep = False
-        if kind in ['atom_rate']: f_indep = True
-
         if concat:
-            return self.concat_patches(dct, kind, f_indep)
-
-        elif not f_indep:
-            for key, val in dct.items():
-                dct[key] = val[..., ::-1, :]
-            
-            return dct
-
+            return self.concat_patches(dct, kind, fdim=fdim)
         else:
             return dct
 
     #=====================================================================
-    def concat_patches(self, dct, kind, f_indep):
+    def concat_patches(self, dct, kind, fdim=3):
         #-----------------------------------------------------------------
         all_iz  = np.unique([key[0] for key in dct.keys()])
         all_inu = np.unique([key[1] for key in dct.keys()])
-        all_imu = np.unique([key[2] for key in dct.keys()])
+        f_indep = all(all_inu == 0)
 
         n_nu = self.nml['m3d_params']['n_nu']
 
         def merge_set(inus):
-            d = {}
-            for imu in all_imu:
-                py_imu = abs(imu) - 1
-                merge = []
-                for iz in all_iz:
-                    merge_nu = []
+            merge = []
+            for iz in all_iz:
+                merge_nu = []
 
-                    for inu in inus:
-                        key = (iz, inu, imu)
-                        if key in dct:
-                            merge_nu.append(dct[key])
-                    
-                    if len(merge_nu) > 0:
-                        val = da.concatenate(merge_nu, axis=-2)
-                        if not f_indep: val = val[..., ::-1, :]
-                        d[(iz,py_imu)] = val
-                        merge.append(d[(iz,py_imu)])
+                for inu in inus:
+                    key = (iz, inu)
+                    if key in dct:
+                        merge_nu.append(dct[key])
                 
-                if len(merge) > 0:
-                    d[(py_imu)] = da.concatenate(merge, axis=2)
+                if len(merge_nu) > 0:
+                    mem = da.concatenate(merge_nu, axis=fdim)
+                    mem = np.flip(mem, axis=fdim)
+                    merge.append(mem)
+            
+            if len(merge) > 1:
+                mem = da.concatenate(merge, axis=2)
 
-            return d
+            return mem
 
         if f_indep:
-            sets = [[0]]
+            return [merge_set(0)]
         else:
             set1 = [inu for inu in all_inu if inu > 0 and inu <= n_nu]
             set2 = [inu for inu in all_inu if inu > 0 and inu > n_nu]
             set3 = [inu for inu in all_inu if inu < 0][::-1]
             sets = [s for s in [set1, set2, set3] if len(s)>0]
         
-        return [merge_set(s) for s in sets]
+            return [merge_set(s) for s in sets]
 
     #=====================================================================
     def get_cntrbf(self, f, imu=0, LTE=False):

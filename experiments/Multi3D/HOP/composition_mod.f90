@@ -42,8 +42,11 @@ MODULE composition_mod
         procedure :: ion_by_id
         procedure :: absorption
         procedure :: add_hrest
+        procedure :: add_hrest2
         procedure :: electron_scattering
         procedure :: rayleigh_scattering
+        procedure :: electron_scattering2
+        procedure :: rayleigh_scattering2
         procedure :: scattering
         procedure :: reassign_pointer
         procedure :: get_totn
@@ -1356,18 +1359,18 @@ contains
     END SUBROUTINE compute_p6
 
     !===============================================================================
-    SUBROUTINE absorption(self, nu, chi, abslte, sumsca, include_absmet, absmet_big_end, sorted)
+    SUBROUTINE absorption(self, nu, chi, blz, include_absmet, absmet_big_end, sorted)
         !use phys_mod, only:planck
         class(composition_type), target :: self
         class(bftrans_type), pointer :: trans
         class(ion_type), pointer :: HeI
         real(dp), dimension(:), intent(in) :: nu
-        real(4), dimension(:,:,:,:), intent(inout) :: chi, abslte, sumsca
-        real(dp), dimension(:,:,:), allocatable :: stim
+        real(4), dimension(:,:,:,:), intent(inout) :: chi
+        real(4), dimension(:,:,:,:), intent(in), optional :: blz
         real(dp), dimension(:), allocatable :: lam
         logical, optional :: include_absmet, absmet_big_end, sorted
-        real(dp) :: xray2, epsln
-        integer :: i, j, k, f, nf
+        real(dp) :: xray2, epsln, stim
+        integer :: i, x, y, z, f, nf, nx, ny, nz
         integer :: p(4)=pp
         logical :: ok
         !---------------------------------------------------------------------------
@@ -1375,11 +1378,14 @@ contains
         allocate(lam, mold=nu)
         call self%ion_by_id('HE I', HeI)
 
+        nx = size(self%temp, 1)
+        ny = size(self%temp, 2)
+        nz = size(self%temp, 3)
         nf = size(nu, 1)
         lam = cc / nu * 1e8
-        abslte = 0
+        chi = 0
 
-        call self%add_hrest(abslte)
+        call self%add_hrest2(chi)
 
         ! add absorption from all tables, which do not include stimulated emission or lam^3 factor
         do i=1, size(self%trans)
@@ -1391,7 +1397,7 @@ contains
                 ok = trans%free_free .and. (.not. trans%istim)
             end select
             if (ok) then
-                call trans%add_absorption(abslte, lam, self%temp, self%EK_over_temp, self%teta, &
+                call trans%add_absorption(chi, lam, self%temp, self%EK_over_temp, self%teta, &
                                           self%pe, self%dxi, ne=self%ne, nhe=HeI%n, shield=self%shield, sorted=sorted)
             endif
         end do
@@ -1399,10 +1405,8 @@ contains
         do f=1, nf
             ! Hrest, H BF and H FF are multiplied by lam**3
             !------------------------------------------------------
-            abslte(:,:,:,f) = abslte(:,:,:,f) * lam(f)**3
+            chi(f,:,:,:) = chi(f,:,:,:) * lam(f)**3
         end do
-
-        !if (nf > 1) print '(A22, 3(E14.6))', 'after lam3', abslte(p(1),p(2),p(3),p(4)), lam(p(4))**3
 
         ! add absorption from all tables, which do not include stimulated emission or lam^3 factor
         do i=1, size(self%trans)
@@ -1414,19 +1418,37 @@ contains
                 ok = (.not. trans%free_free) .and. (.not. trans%istim)
             end select
             if (ok) then
-                call trans%add_absorption(abslte, lam, self%temp, self%EK_over_temp, self%teta, &
+                call trans%add_absorption(chi, lam, self%temp, self%EK_over_temp, self%teta, &
                 self%pe, self%dxi, sorted=sorted)
             endif
         end do
 
-        allocate(stim, mold=self%temp)
-        do f=1, nf
-            ! all continua above are multiplied by stim
-            !--------------------------------------------------------------------------------
-            !stim = 1. - exp(-28556.*self%teta/lam(f))
-            stim = 1. - exp(- h_e * nu(f) * self%EK_over_temp)
-            abslte(:,:,:, f) = abslte(:,:,:, f) * stim
-        end do
+        if (present(blz)) then
+            do z=1, nz
+            do y=1, ny
+            do x=1, nx
+            do f=1, nf
+                ! all continua above are multiplied by stim
+                !--------------------------------------------------------------------------------
+                !stim = 1. - exp(-28556.*self%teta/lam(f))
+                stim = 1. - blz(f,x,y,z)
+                chi(f,x,y,z) = chi(f,x,y,z) * stim
+            end do
+            end do
+            end do
+            end do
+        else
+            do z=1, nz
+            do y=1, ny
+            do x=1, nx
+            do f=1, nf
+                stim = 1. - exp(- h_e * nu(f) * self%EK_over_temp(x,y,z))
+                chi(f,x,y,z) = chi(f,x,y,z) * stim
+            end do
+            end do
+            end do
+            end do
+        endif
 
         do i=1, size(self%trans)
             trans => self%trans(i)
@@ -1439,31 +1461,19 @@ contains
                 ok = trans%istim
             end select
             if (ok) then
-                call trans%add_absorption(abslte, lam, self%temp, self%EK_over_temp, self%teta, &
+                call trans%add_absorption(chi, lam, self%temp, self%EK_over_temp, self%teta, &
                 self%pe, self%dxi, sorted=sorted)
             endif
         end do
 
-        sumsca = 0
-        call self%electron_scattering(sumsca)
-        call self%rayleigh_scattering(lam, sumsca)
-
-        !if (nf > 1) print '(A22, 3(E14.6))', 'after scattering', abslte(p(1),p(2),p(3),p(4))
+        call self%electron_scattering2(chi)
+        call self%rayleigh_scattering2(lam, chi)
 
         if (present(include_absmet)) then
             if (self%osmet%initialised .and. include_absmet) then
-                call self%osmet%add_line_opacities(nu, self%p6, self%temp, self%ne, self%rho, abslte, sumsca)
+                call self%osmet%add_line_opacities2(nu, self%p6, self%temp, self%rho, chi)
             endif
         endif
-
-        do f=1, nf
-            ! BACKGROUND OPACITY
-            chi(:,:,:,f) = real((abslte(:,:,:,f) + sumsca(:,:,:,f)))
-        end do
-
-        !print *, 'chi/rho', abslte(pp(1),pp(2),pp(3),pp(4)) + sumsca(pp(1),pp(2),pp(3),pp(4))
-        !print *, 'abslte', abslte(pp(1),pp(2),pp(3),pp(4))
-        !print *, 'sumsca', sumsca(pp(1),pp(2),pp(3),pp(4))
 
         call trace%end ()
     END SUBROUTINE absorption
@@ -1944,6 +1954,37 @@ contains
     END SUBROUTINE add_hrest
 
     !=========================================================================
+    SUBROUTINE add_hrest2(self, chi)
+        class(composition_type), target :: self
+        class(ion_type), pointer :: HI
+        real(4), dimension(:,:,:,:), intent(inout) :: chi
+        real(dp) :: hrest, umc, h1, nniv, fakt, EK_over_temp, dxi
+        integer :: f, x,y,z
+        integer :: p(4)=pp
+        !---------------------------------------------------------------------
+        call self%ion_by_id('H I', HI)
+        do z=1, size(self%temp,3)
+        do y=1, size(self%temp,2)
+        do x=1, size(self%temp,1)
+            EK_over_temp = self%EK_over_temp(x,y,z)
+            dxi = self%dxi(x,y,z)
+            fakt = HI%boltzmann(EK_over_temp, dxi, natural_log=.true.)
+            fakt = 2.0898E-26 / (2*RYD*EK_over_temp) * fakt * HI%part(x,y,z) * HI%n(x,y,z)
+            h1 = sqrt(RYD/dxi)
+            nniv = (min(int(h1), 15) + 0.5)**2
+            if (h1 > 15.5) then
+                !umc = 2.3026 * self%dxi * self%teta
+                !hrest = fakt * (exp(31.30364*self%teta/nniv-umc)-1.)
+                hrest = exp(EK_over_temp*(RYD/nniv - dxi))
+                hrest = fakt * (hrest - 1)
+                chi(:,x,y,z) = chi(:,x,y,z) + hrest
+            endif
+        end do
+        end do
+        end do
+    END SUBROUTINE add_hrest2
+
+    !=========================================================================
     SUBROUTINE electron_scattering(self, sumsca)
         class(composition_type), target :: self
         real(4), dimension(:,:,:,:), intent(inout) :: sumsca
@@ -1961,6 +2002,25 @@ contains
 
         !print *, 'els', els(pp(1),pp(2),pp(3))
     END SUBROUTINE electron_scattering
+
+    !=========================================================================
+    SUBROUTINE electron_scattering2(self, chi)
+        class(composition_type), target :: self
+        real(4), dimension(:,:,:,:), intent(inout) :: chi
+        real(dp), parameter :: thomson = 8./3.*PI*(EC**2/(EM*CC**2))**2
+        real(dp) :: els
+        integer :: f, x, y, z
+        !---------------------------------------------------------------------
+        do z=1, size(chi, 4)
+        do y=1, size(chi, 3)
+        do x=1, size(chi, 2)
+            !els = 4.8206e-9 * self%pe / self%temp
+            els = thomson * self%ne(x,y,z)
+            chi(:,x,y,z) = chi(:,x,y,z) + els
+        end do
+        end do
+        end do
+    END SUBROUTINE electron_scattering2
 
     !=========================================================================
     SUBROUTINE rayleigh_scattering(self, lam, sumsca)
@@ -2002,6 +2062,53 @@ contains
             sumsca(:,:,:,f) = sumsca(:,:,:,f) + scalar * HE%n
         end do
     END SUBROUTINE rayleigh_scattering
+
+    !=========================================================================
+    SUBROUTINE rayleigh_scattering2(self, lam, chi)
+        class(composition_type), target :: self
+        class(molec_type), pointer :: H2
+        class(ion_type), pointer :: HI, HE
+        real(dp), dimension(:), intent(in) :: lam
+        real(4), dimension(:,:,:,:), intent(inout) :: chi
+        real(dp), dimension(:), allocatable :: xray2, HeIscat
+        real(dp) :: xr, ll, scalar, h2ray, rayh, rayh2, nHI, nH2, nHE
+        integer :: f, x, y, z
+        !---------------------------------------------------------------------
+        allocate(xray2, HeIscat,  mold=lam)
+
+        ! rayleigh scattering
+        call self%ion_by_id('H I', HI)
+        call self%ion_by_id('HE I', HE)
+        call self%molecule_by_id('H2', H2)
+        
+        xray2 = 0.
+        where (lam > 911.27) xray2 = 1 / max(1026., lam)**2
+
+        ! Scattering by HeI in cm**2/atom, from Bues & Wehrse, 1976, A&A 51, 461
+        HeIscat = 0.66520e-24*4.*(500./lam)**4
+
+        do z=1, size(chi, 4)
+        do y=1, size(chi, 3)
+        do x=1, size(chi, 2)
+          nHI = HI%n(x,y,z)
+          nH2 = H2%n(x,y,z)
+          nHE = HE%n(x,y,z)
+          do f=1, size(lam)
+            xr = xray2(f)
+            if (xr > 0.) then
+              rayh  = (5.799e-13 + xr*(1.422e-6 + xr*2.784)) * nHI
+              rayh2 = ( 8.14e-13 + xr*( 1.28e-6 + xr*1.61 )) * nH2
+  
+              ! add sumsca to sumsca from lines
+              chi(f,x,y,z) = chi(f,x,y,z) + (rayh + rayh2)*xr*xr
+            endif
+
+            chi(f,x,y,z) = chi(f,x,y,z) + HeIscat(f) * nHE
+          end do
+        end do
+        end do
+        end do
+    END SUBROUTINE rayleigh_scattering2
 
     !=========================================================================
     SUBROUTINE print_ion_table(self)
