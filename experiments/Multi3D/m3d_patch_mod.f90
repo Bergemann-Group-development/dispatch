@@ -31,8 +31,8 @@ MODULE m3d_patch_mod
     USE prec_mod, only: inf4
     !USE units_mod
     !USE scratch_mod
-    USE patch_mod, only: patch_t
-    USE m3d_halo_mod, only: m3d_halo_t, print_finished, print_download, lock_mem, unlock_mem, print_lock
+    USE patch_mod, only: patch_t, patch_t_init
+    USE m3d_halo_mod, only: m3d_halo_t, print_finished, print_download, unlock_mem, print_lock
     USE spectrum_mod, only: nu_tolerance
     USE atom_mod, only: atom_type, atomic_spectrum_type, lse_no_pivot, lse_solver, m1d_legacy_mode, nq_fac
     USE composition_mod, only: composition_type
@@ -56,8 +56,6 @@ MODULE m3d_patch_mod
       class(atomic_spectrum_type), pointer :: sp => null()
       type(atom_type), pointer :: atom => null()
       class(key_link_t), pointer :: key_list => null()
-      class(patch_t), pointer :: last_allocator
-      class(m3d_patch_t), pointer :: last_deallocator
       real(4), dimension(:,:,:,:,:,:), pointer :: authority_mem => null()
       real(4), dimension(:,:,:,:,:), pointer :: out_mem => null() 
       integer, dimension(:,:), pointer :: periodic_idx
@@ -66,9 +64,8 @@ MODULE m3d_patch_mod
       logical :: in_task_list = .false.
       logical :: initialized  = .false., nullified = .false.
       real(8) :: t_offset=0, t_push=0
-      real(8) :: allocation_time, deallocation_time
       integer :: iter=0, maxiter, master_maxiter, dir=0
-      integer :: n_mu, n_nu, n_omega, n_out, zs, ze
+      integer :: n_nu, n_omega, n_out, zs, ze
       integer :: fcheck, pcheck(3), linecheck, lvlcheck
       logical :: out_ray=.false., static_mem=.false.
       logical :: compressed=.false., save_output=.false., saved=.false.
@@ -106,14 +103,11 @@ MODULE m3d_patch_mod
       procedure :: is_ahead_of
       procedure :: rotate
       procedure :: distance_to
-      procedure :: free_unused_memory
       procedure :: nbors_finished
       procedure :: skip_iterations
-      procedure :: claim_nbor_place
       procedure :: push
       procedure :: allocate_mem
       procedure :: deallocate_mem
-      procedure :: check_mem
       procedure :: check_mem_NaN
       procedure :: check_access
       procedure :: m3d_patch_info
@@ -253,15 +247,12 @@ MODULE m3d_patch_mod
 
       if (pivot_z == 0) then
         ! taking the top as the pivot plane
-        pivot_z = self%patch%box(3)
-      else
-        pivot_z = pivot_z * self%ds(3)
+        pivot_z = nint(self%patch%box(3) / self%patch%ds(3))
       endif
     end if
   
     self%verbose = verbose
 
-    self%n_mu = size(vec, 2)
     self%n_out = size(long_vec, 2)
     self%n_nu = n_nu
     self%out_ray = self%i_nu < 0 .or. self%i_mu < 0
@@ -402,28 +393,24 @@ MODULE m3d_patch_mod
     call trace%begin ('m3d_patch_t%init', itimer=itimer)
     ! internal is set in task%pre_init, which is called by patch%init
     status = self%status
-    call self%patch_t%init()
+    call patch_t_init(self) ! mem is allocated here
     call data_io%init (self)
     self%initialized=.true.
     self%status = status
 
-    if (check_NaN) then
-      self%mem = tiny(1.)
+    if (self%is_set(bits%no_download)) then
+      if (check_NaN) then
+        self%mem = tiny(1.)
+      endif
+      ! ----------------------------------------------------------------------------
+      ! Set unsigned and pervolume.
+      ! Although quantities are generally per volume, but density is not stored
+      ! locally, thus this flag must not be set.
+      ! opacities can become negative in rare cases (masers and lasers)!
+      ! ----------------------------------------------------------------------------
+      self%pervolume = .false.
+      self%unsigned  = .false.
     endif
-    ! ----------------------------------------------------------------------------
-    ! Set unsigned and pervolume.
-    ! Although quantities are generally per volume, but density is not stored
-    ! locally, thus this flag must not be set.
-    ! opacities can become negative in rare cases (masers and lasers)!
-    ! ----------------------------------------------------------------------------
-    self%pervolume = .false.
-    self%unsigned  = .false.
-
-    li = self%li
-    ui = self%ui
-
-    self%authority_mem => self%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),:,:,:)
-    if (self%save_output) self%out_mem => self%authority_mem(:,:,:,:,self%it,:)
 
     self%pcheck = pcheck
     self%fcheck = fcheck
@@ -446,16 +433,14 @@ MODULE m3d_patch_mod
     integer :: thread
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%set_initial_time')
-    self%t_offset = 0.5d0
-    tnu = abs(self%i_nu) / real(self%n_nu)
-    self%t_offset = self%t_offset + 0.1*tnu
-
-    if (self%boundaries%is_clear(bits%zl + bits%zu)) then
-      self%t_offset = self%t_offset + 0.001
-    endif
-
     if (self%out_ray) then
       self%time = self%time + ilambd + maxiter
+    endif
+
+    if (self%dir/=0) then
+      self%t_offset = 0.5d0
+    else
+      self%t_offset = 0.1d0
     endif
 
     self%time = self%time + self%t_offset * self%dtime
@@ -517,19 +502,19 @@ MODULE m3d_patch_mod
     integer, save :: itimer=0
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%pre_update', itimer=itimer)
-    call lock_mem (self, 'update')
     if (print_start) then
       write(stdout, *) 'Update on', self%id, 'has begun', self%finished, self%time
     endif
     if (.not. self%is_finished()) then
       if (converged .and. .not. self%out_ray) then
         call self%finish()
-        call self%free_unused_memory()
         self%print_update_info = .false.
         call print_execution_history(self, 'SKP')
       else
         call print_execution_history(self, 'PRE')
-        call self%check_mem(locked=.true.)
+        if (.not. self%initialized) then
+          call self%init()
+        endif
       endif
     endif
     if (self%verbose > 1) then
@@ -553,7 +538,6 @@ MODULE m3d_patch_mod
       call self%execute()
       call self%post_update()
     endif
-    call unlock_mem (self, 'update')
     call trace%end(itimer)
   END SUBROUTINE update
 
@@ -600,8 +584,6 @@ MODULE m3d_patch_mod
       call self%finish()
     endif
     call self%task_t%rotate
-    call self%free_unused_memory()
-    !call self%claim_nbor_place()
   END SUBROUTINE rotate
 
   !===============================================================================
@@ -648,50 +630,6 @@ MODULE m3d_patch_mod
     !-----------------------------------------------------------------------------
     is_finished = self%time >= io%end_time
   END FUNCTION is_finished
-  
-  !===============================================================================
-  SUBROUTINE free_unused_memory (self)
-    class(m3d_patch_t):: self
-    class(nbor_t), pointer:: nbor, nbnbor
-    class(task_t), pointer:: nbtask, nbnbtask
-    logical :: mem_not_needed
-    !-----------------------------------------------------------------------------
-    if (self%free_self) then
-      call self%deallocate_mem(self, print=.true.)
-    endif
-    nbor => self%link%nbor
-    do while (associated(nbor))
-      if (nbor%needed .and. nbor%task%is_clear(bits%external)) then
-        nbtask => nbor%task
-        select type (nbtask)
-        class is (m3d_patch_t)
-          if (.not. nbtask%static_mem) then
-            nbnbor => nbtask%link%nbor
-            mem_not_needed=.true.
-            do while (associated(nbnbor) .and. mem_not_needed)
-              nbnbtask => nbnbor%task
-              if (nbnbtask%is_clear(bits%virtual)) then
-                if (nbnbor%needs_me) then
-                  if (nbnbtask%key(1)==nbtask%key(1) .or. nbnbtask%is_clear(bits%no_download)) then
-                    if (nbnbtask%time < nbtask%time) then
-                      mem_not_needed=.false.
-                    endif
-                  endif
-                endif
-              endif
-              nbnbor => nbnbor%next
-            end do
-            if (mem_not_needed .and. nbtask%initialized) then
-              call lock_mem(nbtask, 'free_unused_memory')
-              call nbtask%deallocate_mem(self, print=.true.)
-              call unlock_mem(nbtask, 'free_unused_memory')
-            endif
-          endif
-        end select
-      endif
-      nbor => nbor%next
-    end do
-  END SUBROUTINE free_unused_memory
   
   !===============================================================================
   FUNCTION nbors_finished (self)
@@ -924,9 +862,8 @@ MODULE m3d_patch_mod
   END FUNCTION distance_to
 
   !===============================================================================
-  SUBROUTINE allocate_mem (self, allocator, m_in, label)
+  SUBROUTINE allocate_mem (self, m_in, label)
     class(m3d_patch_t):: self
-    class(patch_t), intent(in), target  :: allocator
     integer, intent(in), optional :: m_in(6)
     character(len=*), optional :: label
     integer :: m(6), li(3), ui(3)
@@ -960,26 +897,21 @@ MODULE m3d_patch_mod
       if (self%save_output) then
         self%out_mem => self%authority_mem(:,:,:,:,self%it,:)
       endif
-      self%last_allocator => allocator
-      self%allocation_time = wallclock()
       call trace%end (itimer)
     endif
   END SUBROUTINE allocate_mem
 
   !===============================================================================
-  SUBROUTINE deallocate_mem (self, deallocator, print)
+  SUBROUTINE deallocate_mem (self, print)
     class(m3d_patch_t):: self
-    class(m3d_patch_t), intent(in), target :: deallocator
     logical, optional :: print
     integer :: m(6), li(3), ui(3)
     logical :: free
     !-----------------------------------------------------------------------------
     if (associated(self%mem)) then
-      if (self%is_clear(bits%busy) .or. deallocator%id==self%id) then
+      if (self%is_clear(bits%busy)) then
         call os%deallocate(self%mem, label=trim(self%kind)//'%'//self%mem_label)
         self%nullified = .false.
-        self%last_deallocator => deallocator
-        self%deallocation_time = wallclock()
         if (present(print)) then
           if (print .and. (self%print_update_info .or. self%verbose > 2) .and. detailed_prints) then
             write(stdout, *) '  deallocated', self%m3d_patch_info2()
@@ -988,40 +920,6 @@ MODULE m3d_patch_mod
       endif
     endif
   END SUBROUTINE deallocate_mem
-
-  !===============================================================================
-  SUBROUTINE check_mem (self, locked)
-    class(m3d_patch_t), target :: self
-    logical, intent(in), optional :: locked
-    integer :: orig_place
-    logical :: push
-    !-----------------------------------------------------------------------------
-    if (.not. associated(self%mem)) then
-      if (.not. self%initialized) then
-        if (self%is_set(bits%virtual)) then
-          self%kind = trim(self%kind)//'V'
-          self%static_mem = .true.
-        endif
-        !push = self%place >= 100
-        orig_place = self%place
-        call self%init()
-        call self%deallocate_mem(self)
-        call self%allocate_mem(self)
-        self%place = orig_place
-        !if (push) self%place = self%place + 100
-        !if (mod(orig_place,100) /= mod(self%place,100)) then
-        !  print *, self%m3d_patch_info2(), ' changed place from ', orig_place
-        !endif
-        self%last_allocator => self
-        self%allocation_time = wallclock()
-      else
-        call self%allocate_mem(self)
-      endif
-      !if (self%place /= omp%place .and. self%i_mu > 0) then
-      !  self%place = omp%place ! memory affinity
-      !endif
-    endif
-  END SUBROUTINE check_mem
 
   !===============================================================================
   SUBROUTINE check_mem_NaN (self)
@@ -1057,89 +955,6 @@ MODULE m3d_patch_mod
     endif
     call trace%end(itimer)
   END SUBROUTINE check_mem_NaN
-
-  !===============================================================================
-  SUBROUTINE claim_nbor_place (self)
-    class(m3d_patch_t) :: self
-    class(nbor_t), pointer:: nbor
-    class(task_t), pointer:: nbtask
-    integer, save :: itimer=0
-    integer :: key(4), topscore
-    logical :: pushed, need
-    !-----------------------------------------------------------------------------
-    pushed = .false.
-    key = self%key
-    nbor => self%link%nbor
-    do while (associated (nbor))
-      nbtask => nbor%task
-      if (nbor%needs_me .and. (.not. nbtask%finished)) then
-        if (count(key(1:3)==nbtask%key(1:3)) == 3) then
-          if(is_ready(self, nbor%link)) then
-            select type (nbtask)
-            class is (m3d_patch_t)
-              !nbtask%prepend = .true.
-              call self%push(nbtask)
-              pushed = .true.
-            end select
-          endif
-        endif
-      endif
-      nbor => nbor%next
-    end do
-
-  contains
-    !-----------------------------------------------------------------------------
-    function is_ready(self, link) result(ok)
-      class(task_t) :: self
-      class(link_t) :: link
-      class(nbor_t), pointer :: nbor
-      class(task_t), pointer :: task, nbtask
-      logical :: ok
-      integer :: ignore
-      !-----------------------------------------------------------------------------
-      ok = .true.
-      ignore = bits%frozen + bits%remove + bits%external
-      task => link%task
-      nbor => link%nbor
-      do while (associated (nbor))                        ! keep going until end
-        nbtask => nbor%task
-        if (nbor%needed .and. nbtask%is_clear(ignore)) then
-          if (abs(task%level-nbtask%level) <= 1) then
-            if (.not. nbor%task%is_ahead_of (task)) then
-              ok = .false.
-            endif
-          endif
-        endif
-        nbor => nbor%next    
-      end do
-    end function is_ready
-
-    !-----------------------------------------------------------------------------
-    subroutine key_test (task, choice, topscore, key)
-      class(task_t), target :: task
-      class(task_t), pointer :: choice
-      integer :: key(:), topscore
-      integer :: i, score
-      !-----------------------------------------------------------------------------
-      score = 0
-      if(key(1) == task%key(1)) then
-        score = count(key == task%key(1:3))
-        if (score == 3) then
-          score = 10
-        elseif (key(2)==0) then
-          score = count(task%key(1:3) /= 0)
-        endif
-      elseif (any(key < 0)) then
-        score = count(key == task%key(1:3))
-        score = merge(score, 0, all(key(2:3) == task%key(2:3)))
-      endif
-      if (score > topscore) then
-        topscore = score
-        choice => task
-      endif
-      !print '(3x, I3, I5, 1x, A)', score, task%id, trim(task%kind)
-    end subroutine key_test
-  END SUBROUTINE claim_nbor_place
 
   !===============================================================================
   SUBROUTINE set_place (self, other, place, push)
@@ -1196,13 +1011,6 @@ MODULE m3d_patch_mod
         call io%lock%set('check_access')
         print *, 'memory of ', other%m3d_patch_info()
         print *, 'cannot be accessed from ', self%m3d_patch_info()
-        print *, 'static mem =', other%static_mem
-        if (associated(other%last_deallocator)) then
-          print '(a, a, F10.6)', 'it was last deallocated by', other%last_deallocator%m3d_patch_info2(), other%deallocation_time
-        endif
-        if (associated(other%last_allocator)) then
-          print '(a, a, F10.6)', 'it was last   allocated by', other%last_allocator%kind, other%allocation_time
-        endif
         call io%lock%unset('check_access')
         call shared%abort('memory array not accessible')
       endif

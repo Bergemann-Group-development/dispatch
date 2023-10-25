@@ -37,7 +37,6 @@ MODULE ray_patch_mod
     logical :: padded, level_boundary=.false.
   contains
     procedure :: pre_init => ray_patch_pre_init
-    procedure :: init => ray_patch_init
     procedure :: print_post_update_info
     procedure :: check_in_bounds
     procedure :: nbor_relations => ray_nbor_relations
@@ -49,7 +48,6 @@ MODULE ray_patch_mod
     procedure :: pack
     procedure :: unpack
     procedure :: allocate_mesg
-    procedure :: allocate_mem
     procedure :: total_mesg_buffer_size
     procedure :: init_nbors_hash
     procedure :: frequency_padding
@@ -105,44 +103,6 @@ SUBROUTINE ray_patch_pre_init (self)
   call self%set_freq_indices()
   call trace%end(itimer)
 END SUBROUTINE ray_patch_pre_init
-
-!===============================================================================
-SUBROUTINE ray_patch_init (self)
-  class(ray_patch_t) :: self
-  real(8) :: offset
-  real(4), dimension(:,:,:), pointer, contiguous :: vproj
-  integer :: tmp, fs, fe
-  ! ----------------------------------------------------------------------------
-  self%padded = .false.
-  if (comoving_frame .and. .not. self%out_ray) then
-    select case (self%kind)
-    case ('atom_line', 'atom_rate')
-      ! frequency padding for atom_lines is done in atom_line%init
-    !case ('back_cont', 'atom_cont', 'net_opac', 'mean_rad')
-    case default
-      call self%frequency_padding()
-    end select
-  endif
-  if (self%is_set(bits%virtual)) then
-    offset = self%dir * 0.5d0 * (self%size(3) - self%ds(3))
-    self%position(3) = self%position(3) + offset
-    self%size(3) = self%ds(3)
-    self%n(3) = 1
-    self%ng = 0
-  endif
-  
-  call self%m3d_patch_t%init()
-
-  if (self%save_output) then
-    if (self%padded) then
-      fs = self%pre_pad_fs - self%fs + 1
-      fe = fs + self%pre_pad_fe - self%pre_pad_fs
-      self%out_mem => self%authority_mem(:,:,:,fs:fe,self%it,:)
-    else
-      self%out_mem => self%authority_mem(:,:,:,:,self%it,:)
-    endif
-  endif
-END SUBROUTINE ray_patch_init
 
 !===============================================================================
 SUBROUTINE set_freq_indices (self)
@@ -418,24 +378,6 @@ SUBROUTINE ray_nbor_relations(self, another, needed, needs_me, download)
 END SUBROUTINE ray_nbor_relations
 
 !===============================================================================
-SUBROUTINE allocate_mem (self, allocator, m_in, label)
-  class(ray_patch_t):: self
-  class(patch_t), intent(in), target :: allocator
-  integer, intent(in), optional :: m_in(6)
-  character(len=*), optional :: label
-  integer :: fs, fe
-  !-----------------------------------------------------------------------------
-  call self%m3d_patch_t%allocate_mem(allocator, m_in)
-  if (self%save_output .and. .not. self%compressed) then
-    if (self%padded) then
-      fs = self%pre_pad_fs - self%fs + 1
-      fe = fs + self%pre_pad_fe - self%pre_pad_fs
-      self%out_mem => self%authority_mem(:,:,:,fs:fe,self%it,:)
-    endif
-  endif
-END SUBROUTINE allocate_mem
-
-!===============================================================================
 !> Pack patch info into a buffer, for MPI communication
 !> FIXME: Consider replacing with mpi_buffer() calls
 !===============================================================================
@@ -475,7 +417,7 @@ SUBROUTINE pack (self)
   call anonymous_copy (n_header, header, mesg%buffer(ibuf))
   ibuf = ibuf + n_header
   if (.not. converged .or. self%out_ray) then
-    call self%check_mem()
+    !call self%check_mem()
     !-----------------------------------------------------------------------------
     ! Copy the variables to the output buffer.
     !-----------------------------------------------------------------------------
@@ -538,7 +480,7 @@ SUBROUTINE unpack (self, buffer)
   endif
   ibuf = ibuf + n_header
   if (.not. converged .or. self%out_ray) then
-    call self%check_mem()
+    !call self%check_mem()
     !-----------------------------------------------------------------------------
     ! Copy array data from the buffer to the time slot, under time slot lock
     !-----------------------------------------------------------------------------

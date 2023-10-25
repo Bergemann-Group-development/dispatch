@@ -48,7 +48,7 @@ SUBROUTINE composition_pre_init (self)
   type(composition_type), save :: composition
   class(atom_patch_t), pointer :: atom_patch
   class(atomic_spectrum_type), save, pointer :: output_sp
-  integer :: i, iostat, n_nu, n_mu, nlists
+  integer :: i, iostat, n_nu, nlists
   integer, save:: itimer=0, itimer2=0
   integer, save :: verbose=0
   character(len=128), save :: absdat_file='./input_multi3d/TS_absdat.dat'
@@ -138,7 +138,6 @@ SUBROUTINE composition_pre_init (self)
   self%atom_patch => atom_patch
 
   n_nu = self%n_nu
-  n_mu = self%n_mu
 
   if (ilambd + maxiter > 0) then
     if (atom_patch%atom_allocated) then

@@ -82,7 +82,6 @@ MODULE atom_patch_mod
   SUBROUTINE atom_patch_pre_init (self)
     class(atom_patch_t), target:: self
     integer, save :: itimer=0
-    integer :: n_nu, n_mu
     ! ----------------------------------------------------------------------------
     call trace%begin('atom_patch_t%atom_patch_pre_init', itimer=itimer)
     self%kind = 'atom_patch'
@@ -664,13 +663,8 @@ MODULE atom_patch_mod
     class(atom_patch_t) :: self
     logical :: cib
     !-----------------------------------------------------------------------------
-    cib = .false.
-    
-    if (self%m3d_patch_t%check_in_bounds()) then
-      cib = self%lvlcheck > 0 .and. self%lvlcheck <= self%atom%nlevel
-    elseif (self%verbose > 2) then
-      cib = .true.
-    endif
+    cib = self%m3d_patch_t%check_in_bounds()
+    cib = cib .and. self%lvlcheck > 0 .and. self%lvlcheck <= self%atom%nlevel
   END FUNCTION check_in_bounds
 
   !===============================================================================

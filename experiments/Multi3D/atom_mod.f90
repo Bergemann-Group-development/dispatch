@@ -722,6 +722,7 @@ MODULE atom_mod
       lin%Aji = f_to_Aji * lin%f * gij / lin%lambda0**2 * hh
       lin%Bji = c2_2h / lin%nu0**3 * lin%Aji
       lin%Bij = lin%Bji / gij
+      lin%Aij = lin%Aji / gij
 
       if (red_cut < huge(1.0) .or. blue_cut > tiny(1.0)) then
         red_fcut = cc*1e8 / red_cut

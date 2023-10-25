@@ -858,7 +858,7 @@ SUBROUTINE patch_t_init (self)
     gn = self%mesh%gn
     !print *, 'patch_mod', gn, self%mv, self%nt, self%nw, self%kind, associated(self%mem)
     !call os%allocate(self%mem, [gn, self%mv, self%nt, self%nw], label=trim(self%kind)//'%mem')
-    call self%allocate_mem(self)
+    call self%allocate_mem()
     call os%allocate(self%u_phase, gn, zero=.true., label='u_phase')
     !call omp%set_stacksize (product(shape(self%mem)), io%master)
     !---------------------------------------------------------------------------
@@ -4097,13 +4097,16 @@ SUBROUTINE to_cartesian (self, lt, ut, v1, v2, v3)
 END SUBROUTINE to_cartesian
 
 !===============================================================================
-SUBROUTINE allocate_mem (self, allocator, m_in, label)
+SUBROUTINE allocate_mem (self, m_in, label)
   class(patch_t):: self
-  class(patch_t), intent(in), target :: allocator
   integer, intent(in), optional :: m_in(6)
   character(len=*), optional :: label
   !-----------------------------------------------------------------------------
-  call os%allocate(self%mem, [self%gn, self%mv, self%nt, self%nw], label=trim(self%kind)//'%mem')
+  if (present(m_in)) then
+    call os%allocate(self%mem, m_in, label=trim(self%kind)//'%mem')
+  else
+    call os%allocate(self%mem, [self%gn, self%mv, self%nt, self%nw], label=trim(self%kind)//'%mem')
+  endif
 END SUBROUTINE allocate_mem
 
 END MODULE patch_mod

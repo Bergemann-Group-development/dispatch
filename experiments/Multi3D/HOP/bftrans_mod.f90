@@ -16,7 +16,7 @@ MODULE bftrans_mod
       type(level_type) :: level
       class(particle_type), pointer :: ion
       real(dp) :: mint, maxt, minl, maxl
-      logical :: ilogl, kvadl, minex, maxex, loglam
+      logical :: ilogl, kvadl, minex, maxex, loglam=.false.
       logical :: ilogt, kvadt, minet, maxet, iteta, pedep, istim
       real(dp), dimension(:), allocatable :: lam, temp, teta, tt
       real(dp), dimension(:,:), allocatable :: xkap
@@ -245,6 +245,7 @@ contains
     real(dp), dimension(:), allocatable :: ab
     real(dp), dimension(:,:), pointer :: xkap
     real(dp), dimension(3,self%ntt-1) :: dtdt
+    real(dp), dimension(self%ntt-1) :: dtdt1
     real(dp) :: ab1, fakt1, t, diff(3), w(3), t3(3), dt, a, b, y1,y2,y3
     real(dp), dimension(self%nnu) :: yy
     real(dp), dimension(self%ntt) :: tt
@@ -259,6 +260,8 @@ contains
     
     if (self%ntt > 1) then
       call trace%begin('interp_xkap_1', itimer=itimer1)
+      do_exp = .false.
+      do_log = .false.
       if (self%ilogt) then
           pvt_xkap = self%log_xkap
           do_exp = .not. self%ilogl
@@ -284,11 +287,11 @@ contains
           dtdt(2,it) = 1. / ((t3(2)-t3(1)) * (t3(2)-t3(3)))
           dtdt(3,it) = 1. / ((t3(3)-t3(1)) * (t3(3)-t3(2)))
         end do
-      else
-        do it=1, self%ntt-1
-          dtdt(1,it) = 1. / (self%tt(it+1) - self%tt(it))
-        end do
       endif
+      
+      do it=1, self%ntt-1
+        dtdt1(it) = 1. / (self%tt(it+1) - self%tt(it))
+      end do
 
       do z=1, nz
       do y=1, ny
@@ -331,7 +334,7 @@ contains
             yy(:) = yy(:) + xkap(:,3) * w(3)
           else
             ! linear interpolation
-            dt = (t - self%tt(it)) * dtdt(1,it)
+            dt = (t - self%tt(it)) * dtdt1(it)
             do f=1, self%nnu
               a = pvt_xkap(f,it)
               b = pvt_xkap(f,it+1)

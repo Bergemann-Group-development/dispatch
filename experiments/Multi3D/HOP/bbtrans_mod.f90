@@ -10,7 +10,7 @@ MODULE bbtrans_mod
     real(dp) :: ga=0, gw1=0, gw2=0, gw3=0, gq=0 ! line broadening (damping) constants
     real(dp) :: lower_ev, upper_g
     !real(dp) :: gf
-    real(dp) :: Aji, Bji, Bij ! Einstein coefficients, Bij is the
+    real(dp) :: Aji, Aij, Bji, Bij ! Einstein coefficients, Bij is the
                               ! transition from the lower to the upper
                               ! level
     logical :: active=.true., unsold

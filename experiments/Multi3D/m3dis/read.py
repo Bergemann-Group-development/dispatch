@@ -73,8 +73,8 @@ class read(object):
         self.mus = 1 - self.mus
         self.nmu = self.mus.size
 
-        i3 = self.read_patch_save('i3', fdim=2)[0]
-        ie = self.read_patch_save('ie', fdim=2)[0]
+        i3 = self.read_patch_save('i3', fdim=0)[0]
+        ie = self.read_patch_save('ie', fdim=0)[0]
 
         self.flux = np.zeros_like(self.lam)
         self.flux_lte = np.zeros_like(self.lam)
@@ -84,9 +84,9 @@ class read(object):
         self.i3_lte = i3[...,1]
         self.c3     = i3[...,2]
 
-        self.ie     = ie[0,0,:,:,0]
-        self.ie_lte = ie[0,0,:,:,1]
-        self.cnt    = ie[0,0,:,:,2]
+        self.ie     = ie[:,0,0,:,0]
+        self.ie_lte = ie[:,0,0,:,1]
+        self.cnt    = ie[:,0,0,:,2]
 
         self.flux     = np.sum(self.wts * self.ie    , axis=-1)
         self.flux_lte = np.sum(self.wts * self.ie_lte, axis=-1)
