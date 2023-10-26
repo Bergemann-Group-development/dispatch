@@ -2,9 +2,9 @@
 #OPTS = full_debug
 #OPTS = vscode
 #OPTS = debug
-OPTS =
+#OPTS =
 #OPTS = hoppe
-#OPTS = optimized
+OPTS = optimized
 
 # Default target and paths
 EXEC            = dispatch.x

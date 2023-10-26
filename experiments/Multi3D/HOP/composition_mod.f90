@@ -748,15 +748,15 @@ contains
     END SUBROUTINE mask_linelist
 
     !===============================================================================
-    SUBROUTINE add_linelist_opacities(self, nu, all_eta, all_chi, vproj, dlam)
+    SUBROUTINE add_linelist_opacities(self, nu, all_chi, all_eta, blz, vproj, dlam)
         class(composition_type), target :: self
         class(element_type), pointer :: element
         class(ion_type), pointer :: ion
         class(molec_type), pointer :: mol
         class(isotope_type), pointer :: iso
         class(bbtrans_type), pointer :: line
-        real(8), intent(in), dimension(:), pointer, contiguous :: nu
-        real(4), intent(in), dimension(:,:,:,:), pointer :: all_eta, all_chi
+        real(8), intent(in), dimension(:), pointer :: nu
+        real(4), intent(inout), dimension(:,:,:,:) :: all_chi, all_eta, blz
         real(4), intent(in), dimension(:,:,:), contiguous :: vproj
         real(8), intent(in) :: dlam
         real(4), dimension(:,:,:), allocatable :: tothi, adamp, stark_pe, ne, temp, EK_over_temp, dxij, chi_fac, unsold
@@ -768,7 +768,7 @@ contains
         real(4), dimension(:,:,:,:), allocatable :: nh
         integer :: i, j, k, l, f, ired, iblue, nactive, prev_iso, m(3)
         real(8) :: cnt_ev, gf, awgt, iso_awgt, dl
-        real(4) :: scalar
+        real(4) :: scalar, bnu
         logical, dimension(:), allocatable :: fmask
         integer, save:: itimer=0, itimer2=0
         !---------------------------------------------------------------------------
@@ -824,8 +824,6 @@ contains
                     call line%get_range(nu, dlam, ired, iblue)
                     if (iblue == 0) cycle
     
-                    chi  => chi_l  (:,:,:,ired:iblue)
-                    cont => all_chi(:,:,:,ired:iblue)
                     fmask(ired:iblue) = .true.
     
                     if (line%iso_idx /= prev_iso) then
@@ -844,8 +842,8 @@ contains
                     endif
     
                     call trace%begin('bbtrans_type%add_lte_opacities', itimer=itimer2)
-                    call line%add_lte_opacities2(nu(ired:iblue), &
-                        vproj, idopf, EK_over_temp, dxij, ipart, ne, tothi, vb2, stark_pe, unsold, chi, cont)
+                    call line%add_lte_opacities2(ired, iblue, nu, &
+                        vproj, idopf, EK_over_temp, dxij, ipart, ne, tothi, vb2, stark_pe, unsold, chi_l, all_chi)
                     call trace%end(itimer2)
                 end do
             end do
@@ -866,31 +864,31 @@ contains
                 if (.not. line%active) cycle
                 call line%get_range(nu, dlam, ired, iblue)
                 if (iblue == 0) cycle
-      
-                !eta => all_eta(:,:,:,ired:iblue)
-                !chi => all_chi(:,:,:,ired:iblue)
-                chi  => chi_l  (:,:,:,ired:iblue)
-                cont => all_chi(:,:,:,ired:iblue)
+
                 fmask(ired:iblue) = .true.
       
                 call trace%begin('bbtrans_type%add_lte_opacities', itimer=itimer2)
-                call line%add_lte_opacities2(nu(ired:iblue), &
-                    vproj, inv_df, EK_over_temp, dxij, inv_part, ne, tothi, vbar2, stark_pe, unsold, chi, cont)
+                call line%add_lte_opacities2(ired, iblue, nu, &
+                    vproj, inv_df, EK_over_temp, dxij, inv_part, ne, tothi, vbar2, stark_pe, unsold, chi_l, all_chi)
                 call trace%end(itimer2)
             end do
         end do
 
-        do f=1, size(nu)
-          if (fmask(f)) then
-            do k=1, m(3)
-            do j=1, m(2)
-            do i=1, m(1)
-                all_chi(i,j,k,f) = all_chi(i,j,k,f) + chi_l(i,j,k,f)
-                all_eta(i,j,k,f) = all_eta(i,j,k,f) + planck(nu(f), self%temp(i,j,k)) * chi_l(i,j,k,f)
+        do k=1, m(3)
+        do j=1, m(2)
+        do i=1, m(1)
+            do f=1, size(nu)
+                if (fmask(f)) then
+                    bnu = blz(f,i,j,k)
+                    if (bnu > 1e-10) then
+                      bnu = bnu / (1.0 - bnu)
+                    endif
+                    all_chi(f,i,j,k) = all_chi(f,i,j,k) + chi_l(f,i,j,k)
+                    all_eta(f,i,j,k) = all_eta(f,i,j,k) + chi_l(f,i,j,k) * bnu
+                endif
             end do
-            end do
-            end do
-          endif
+        end do
+        end do
         end do
     END SUBROUTINE add_linelist_opacities
 

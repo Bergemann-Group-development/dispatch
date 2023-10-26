@@ -33,7 +33,7 @@ MODULE nlte_patch_mod
   USE ray_patch_mod, only:ray_patch_t
   USE m3d_halo_mod, only: lock_mem, unlock_mem
   USE m3d_patch_mod, only: all_vec=>vec, all_wmu=>wmu, use_vel, m3d_patch_t, &
-  absmet_in_output, pre_update, long_wmu, long_vec, ray_offset, pivot_z
+  absmet_in_output, pre_update, long_wmu, long_vec, ray_offset, pivot_z, dlam
   USE ray_mod, only: one_dimensional, ray_type
   USE trans_mod, only:line_type, cont_type
   USE bbtrans_mod, only:voigt_function2
@@ -114,7 +114,7 @@ SUBROUTINE execute (self)
   real(4), dimension(:,:,:), allocatable :: inv_df, vproj
   real(4) :: wmu
   real(8) :: vec(3)
-  logical :: get_rates
+  logical :: get_rates, use_linelist
   integer :: i_mu, i, zs, ze, p(3), ng, i_set, l
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
@@ -128,6 +128,7 @@ SUBROUTINE execute (self)
   zs = 1 - ng
   ze = nz + ng
   get_rates = .not. self%out_ray
+  use_linelist = self%out_ray .and. self%composition%ll_initialised
 
   self%mem_remap(1:3,fs:fe,1:nx,1:ny,self%mus:self%mue,1:self%n_set) => self%mem
   self%nu(fs:fe) => self%sp%nu(fs:fe)
@@ -160,6 +161,9 @@ SUBROUTINE execute (self)
 
       if (i_set < 3) then ! i_set==3 is the continuum only
         call self%add_bound_bound_opacities(wmu, inv_df, vproj, adamp, LTE=i_set==2)
+        if (use_linelist) then
+          call self%composition%add_linelist_opacities(self%nu, work(1,:,:,:,1:nz), work(2,:,:,:,1:nz), back(3,:,:,:,:), vproj, dlam)
+        endif
       endif
 
       call self%eta_to_Snu()
@@ -282,7 +286,7 @@ SUBROUTINE lte_bound_free_opacities (self, temp, include_absmet)
       ! The source function is the planck function in LTE, therefore eta=chi*Bnu
       associate(blz=>back(3,f,x,y,z), chi=>back(1,f,x,y,z), eta=>back(2,f,x,y,z))
         if (blz>1e-10) then
-          bnu = 1. / (1/blz - 1.d0)
+          bnu = blz / (1.0 - blz)
         else
           bnu = blz
         endif
