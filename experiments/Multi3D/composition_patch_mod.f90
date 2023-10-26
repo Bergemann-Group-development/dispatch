@@ -141,9 +141,12 @@ SUBROUTINE composition_pre_init (self)
 
   if (ilambd + maxiter > 0) then
     if (atom_patch%atom_allocated) then
-      call self%create_sub_patches([1, n_nu], [0, 2], self%composition, atom_patch%sp)
-    elseif (save_Qrad) then
-      call self%create_sub_patches([1, n_nu], [0, 2], self%composition, output_sp)
+      if (decouple_continuum) then
+        call self%create_sub_patches([1, n_nu],      [1, 2], atom_patch%bb_sp, atom_patch%bb_atom)
+        call self%create_sub_patches([1, n_nu]+n_nu, [1, 2], atom_patch%bf_sp, atom_patch%bf_atom)
+      else
+        call self%create_sub_patches([1, n_nu], [1, 2], atom_patch%sp, atom_patch%atom)
+      endif
     else
       deallocate(atom_patch)
       if (.not. external_sp) then
@@ -152,7 +155,11 @@ SUBROUTINE composition_pre_init (self)
     endif
   endif
 
-  call self%create_sub_patches([-n_nu, 0], [-1, 0], self%composition, output_sp)
+  if (associated(atom_patch)) then
+    call self%create_sub_patches([-n_nu, 0], [-1, 0], output_sp, atom_patch%output_atom)
+  else
+    call self%create_sub_patches([-n_nu, 0], [-1, 0], output_sp)
+  endif
   
   call self%save_abundances_to_file()
   call self%post_pre_init()
@@ -160,11 +167,11 @@ SUBROUTINE composition_pre_init (self)
 END SUBROUTINE composition_pre_init
 
 !===============================================================================
-SUBROUTINE create_sub_patches (self, nu, mu, composition, sp)
+SUBROUTINE create_sub_patches (self, nu, mu, sp, atom)
   class(composition_patch_t) :: self
   integer, intent(in) :: nu(2), mu(2)
-  class(composition_type), intent(in), target :: composition
   class(atomic_spectrum_type), intent(in), pointer :: sp
+  type(atom_type), intent(in), pointer, optional :: atom
   class(nlte_patch_t), pointer :: nlte
   integer :: n, m
   logical :: cf, new_cont, new_rad, new_out, new_net, new_proj, new_mean, new_nlte
@@ -178,11 +185,7 @@ SUBROUTINE create_sub_patches (self, nu, mu, composition, sp)
     if (new_nlte) then
       allocate(nlte)
       call nlte%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp)
-      if (nlte%out_ray) then
-        nlte%atom => self%atom_patch%output_atom
-      else
-        nlte%atom => self%atom_patch%atom
-      endif
+      if (present(atom)) nlte%atom => atom
     endif
   end do
 end do

@@ -418,7 +418,6 @@ MODULE m3d_patch_mod
     self%lvlcheck = lvlcheck
     
     self%pcheck(3) = self%pcheck(3) - self%zs
-    self%pcheck = self%pcheck + self%ng
 
     where (pcheck < 0)
       self%pcheck = self%pcheck + nz_total + 1

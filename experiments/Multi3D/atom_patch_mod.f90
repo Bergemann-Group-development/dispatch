@@ -95,9 +95,6 @@ MODULE atom_patch_mod
     self%static_mem=.true.
 
     call self%post_pre_init()
-    self%atom%fcheck = self%fcheck
-    self%atom%pcheck = self%pcheck
-    self%atom%linecheck = self%linecheck
     call trace%end(itimer)
   END SUBROUTINE atom_patch_pre_init
 
@@ -677,7 +674,7 @@ MODULE atom_patch_mod
     call self%m3d_patch_t%init_nbors_hash(nbors)
     key = self%key
     key(4) = hash_string('nlte_patch')
-    do i_nu=-self%n_nu, self%n_nu
+    do i_nu=-self%n_nu, 2*self%n_nu
       do i_mu=-1, 2
         key(2) = i_nu
         key(3) = i_mu

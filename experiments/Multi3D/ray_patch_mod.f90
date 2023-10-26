@@ -37,14 +37,12 @@ MODULE ray_patch_mod
     logical :: padded, level_boundary=.false.
   contains
     procedure :: pre_init => ray_patch_pre_init
-    procedure :: print_post_update_info
     procedure :: check_in_bounds
     procedure :: nbor_relations => ray_nbor_relations
     procedure :: set_freq_indices
     procedure :: is_upstream => ray_is_upstream
     procedure :: comp_vproj
     procedure :: set_guard_zones
-    procedure :: ff_index
     procedure :: pack
     procedure :: unpack
     procedure :: allocate_mesg
@@ -297,21 +295,6 @@ END FUNCTION ray_is_upstream
 !END FUNCTION ray_is_upstream
 
 !===============================================================================
-SUBROUTINE ff_index(self, ff, f)
-  class(ray_patch_t):: self
-  integer, intent(in)  :: ff
-  integer, intent(out) :: f
-  logical :: ff_in_range
-  !-----------------------------------------------------------------------------
-  ff_in_range = ff>=self%fs .and. ff<=self%fe
-  if (ff_in_range) then
-    f = ff - self%fs + 1
-  else
-    f = -1
-  endif
-END SUBROUTINE ff_index
-
-!===============================================================================
 !> Initialize boundary bits
 !===============================================================================
 SUBROUTINE init_bdries (self)
@@ -562,31 +545,12 @@ FUNCTION total_mesg_buffer_size(self) result(n_buf)
 END FUNCTION total_mesg_buffer_size
 
 !===============================================================================
-SUBROUTINE print_post_update_info (self)
-  class(ray_patch_t) :: self
-  integer :: f, p(3)
-  !-----------------------------------------------------------------------------
-  f = self%fcheck
-  p = self%pcheck
-  call self%check_access(self)
-  call self%print_to_stdout(arr=self%mem(p(1),p(2),p(3),f,1,:))
-END SUBROUTINE print_post_update_info
-
-!===============================================================================
 FUNCTION check_in_bounds (self) result (cib)
   class(ray_patch_t) :: self
   logical :: cib
-  integer :: f
   !-----------------------------------------------------------------------------
-  cib = .false.
-  call self%ff_index(self%fcheck, f)
-  if (f > 0) then
-    if (self%kind == 'out_rad') then
-      self%pcheck(3) = 1
-    endif
-    cib = self%m3d_patch_t%check_in_bounds()
-  endif
-  self%fcheck = f
+  cib = self%fcheck>=self%fs .and. self%fcheck<=self%fe
+  cib = cib .and. self%m3d_patch_t%check_in_bounds()
 END FUNCTION check_in_bounds
 
 !===============================================================================

@@ -51,8 +51,8 @@ MODULE nlte_patch_mod
   contains
     procedure :: pre_init => nlte_patch_pre_init
     procedure :: execute
-    procedure :: lte_bound_free_opacities
-    procedure :: sum_bound_free_opacities
+    procedure :: lte_background_opacities
+    procedure :: add_bound_free_opacities
     procedure :: bound_bound_damping
     procedure :: add_bound_bound_opacities
     procedure :: bound_bound_rates
@@ -114,7 +114,7 @@ SUBROUTINE execute (self)
   real(4), dimension(:,:,:), allocatable :: inv_df, vproj
   real(4) :: wmu
   real(8) :: vec(3)
-  logical :: get_rates, use_linelist
+  logical :: get_rates, use_linelist, use_atom, bound_bound, bound_free
   integer :: i_mu, i, zs, ze, p(3), ng, i_set, l
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
@@ -127,8 +127,19 @@ SUBROUTINE execute (self)
   nz = self%patch%n(3)
   zs = 1 - ng
   ze = nz + ng
+  p = self%pcheck
+
   get_rates = .not. self%out_ray
   use_linelist = self%out_ray .and. self%composition%ll_initialised
+
+  use_atom = associated(self%atom)
+  if (use_atom) then
+    bound_bound = associated(self%atom%line)
+    bound_free = associated(self%atom%cont)
+  else
+    bound_bound = .false.
+    bound_free = .false.
+  endif
 
   self%mem_remap(1:3,fs:fe,1:nx,1:ny,self%mus:self%mue,1:self%n_set) => self%mem
   self%nu(fs:fe) => self%sp%nu(fs:fe)
@@ -141,10 +152,13 @@ SUBROUTINE execute (self)
 
   inv_df = self%atom%inverse_doppler_factor(temp)
 
-  call self%lte_bound_free_opacities(temp, include_absmet=get_rates.or.absmet_in_output)
-  call self%sum_bound_free_opacities()
-  call self%bound_bound_damping(adamp, temp, inv_df)
-  
+  call self%lte_background_opacities(temp, include_absmet=get_rates.or.absmet_in_output)
+
+  if (use_atom) then
+    if (bound_free) call self%add_bound_free_opacities()
+    if (bound_bound) call self%bound_bound_damping(adamp, temp, inv_df)
+  endif
+
   do i_set=1, self%n_set
     ! Starting loop over angles
     do i_mu=self%mus, self%mue
@@ -160,7 +174,7 @@ SUBROUTINE execute (self)
       call self%back_to_work()
 
       if (i_set < 3) then ! i_set==3 is the continuum only
-        call self%add_bound_bound_opacities(wmu, inv_df, vproj, adamp, LTE=i_set==2)
+        if (bound_bound) call self%add_bound_bound_opacities(wmu, inv_df, vproj, adamp, LTE=i_set==2)
         if (use_linelist) then
           call self%composition%add_linelist_opacities(self%nu, work(1,:,:,:,1:nz), work(2,:,:,:,1:nz), back(3,:,:,:,:), vproj, dlam)
         endif
@@ -169,36 +183,30 @@ SUBROUTINE execute (self)
       call self%eta_to_Snu()
       call self%set_upstream_boundary(i_mu, i_set, ng)
 
-      if (self%print_update_info .and. i_mu==self%mus) then
-        p = self%pcheck - self%ng
-        i = self%fcheck + self%fs - 1
-        memcheck(1:2) = work(1:2, i, p(1), p(2), p(3))
-      endif
-
       if (one_dimensional .or. self%out_ray) then
         if (.not. one_dimensional) call self%rotate_cube(vec)
-        call self%long_char(vec)
+        call self%long_char(vec, get_rates)
       else
-        call self%short_char(vec)
+        call self%short_char(vec, get_rates)
       endif
 
       if (self%print_update_info .and. i_mu==self%mus) then
-        memcheck(3) = work(3, i, p(1), p(2), p(3))
-        memcheck(2:3) = memcheck(2:3) * self%twohnu3_c2(i)
+        memcheck(1:3) = work(:, self%fcheck, p(1), p(2), p(3))
+        memcheck(2:3) = memcheck(2:3) * self%twohnu3_c2(self%fcheck)
       endif
 
       call self%work_to_mem(i_mu, i_set)
       
       if (get_rates) then
-        call self%integrate_intensity(wmu)
-        call self%bound_bound_rates(wmu, inv_df, vproj, adamp, gamma_ij, gamma_ji)
+        if (bound_free) call self%integrate_intensity(wmu)
+        if (bound_bound) call self%bound_bound_rates(wmu, inv_df, vproj, adamp, gamma_ij, gamma_ji)
       endif
     end do
   end do
 
   if (get_rates) then
-    call self%bound_free_rates(gamma_ij, gamma_ji)
-    call self%integrate_rates(gamma_ij, gamma_ji)
+    if (bound_free) call self%bound_free_rates(gamma_ij, gamma_ji)
+    if (use_atom) call self%integrate_rates(gamma_ij, gamma_ji)
   elseif (self%patch%boundaries%is_set(bits%zu)) then
     call self%save_intensity()
   endif
@@ -211,27 +219,28 @@ contains
   subroutine allocate_arrays()
     allocate(back(3,fs:fe,nx,ny,nz), source=0.)
     allocate(work(3,fs:fe,nx,ny,zs:ze), source=0.)
-    allocate(self%Jnu(fs:fe,nx,ny,nz), source=0.)
-    allocate(self%Psi(fs:fe,nx,ny,nz), source=0.)
-    allocate(self%PsiJ(fs:fe,nx,ny,nz), source=0.)
     allocate(self%twohnu3_c2(fs:fe))
     allocate(self%h4pi_nu(fs:fe))
-  
-    allocate(adamp(nx,ny,nz,self%atom%nline), source=0.)
     allocate(inv_df, vproj, mold=temp)
-  
     call mem_register(back,      label='back')
     call mem_register(work,      label='work')
-    call mem_register(self%Jnu,  label='Jnu')
-    call mem_register(self%Psi,  label='Psi')
-    call mem_register(self%PsiJ, label='PsiJ')
-    call mem_register(adamp,     label='adamp')
-  
+    if (bound_bound) then
+      allocate(adamp(nx,ny,nz,self%atom%nline), source=0.)
+      call mem_register(adamp, label='adamp')
+    endif
     if (get_rates) then
+      allocate(self%Psi(fs:fe,nx,ny,nz), source=0.)
       allocate(gamma_ij(nx, ny, nz, self%atom%nrad), source=0.)
       allocate(gamma_ji(nx, ny, nz, self%atom%nrad), source=0.)
+      call mem_register(self%Psi, label='Psi')
       call mem_register(gamma_ij, label='gamma_ij')
       call mem_register(gamma_ji, label='gamma_ji')
+      if (bound_free) then
+        allocate(self%Jnu(fs:fe,nx,ny,nz), source=0.)
+        allocate(self%PsiJ(fs:fe,nx,ny,nz), source=0.)
+        call mem_register(self%Jnu,  label='Jnu')
+        call mem_register(self%PsiJ, label='PsiJ')
+      endif
     endif  
   end subroutine allocate_arrays
 
@@ -239,29 +248,35 @@ contains
   subroutine deallocate_arrays()
     call mem_unregister(work     , label='work')
     call mem_unregister(back     , label='back')
-    call mem_unregister(self%Jnu , label='Jnu')
-    call mem_unregister(self%Psi , label='Psi')
-    call mem_unregister(self%PsiJ, label='PsiJ')
-    call mem_unregister(adamp    , label='adamp')
-    deallocate(work, back, self%Jnu, self%Psi, self%PsiJ)
-    deallocate(self%twohnu3_c2, self%h4pi_nu, adamp)
+    deallocate(work, back)
+    deallocate(self%twohnu3_c2, self%h4pi_nu)
+    if (bound_bound) then
+      call mem_unregister(adamp, label='adamp')
+      deallocate(adamp)
+    endif
     if (get_rates) then
-      call mem_unregister(gamma_ij , label='gamma_ij')
-      call mem_unregister(gamma_ji , label='gamma_ji')
-      deallocate(gamma_ij, gamma_ji)
+      call mem_unregister(self%Psi, label='Psi')
+      call mem_unregister(gamma_ij, label='gamma_ij')
+      call mem_unregister(gamma_ji, label='gamma_ji')
+      deallocate(gamma_ij, gamma_ji, self%Psi)
+      if (bound_free) then
+        call mem_unregister(self%Jnu , label='Jnu')
+        call mem_unregister(self%PsiJ, label='PsiJ')
+        deallocate(self%Jnu, self%PsiJ)
+      endif
     endif
   end subroutine deallocate_arrays
 END SUBROUTINE execute
 
 !===============================================================================
-SUBROUTINE lte_bound_free_opacities (self, temp, include_absmet)
+SUBROUTINE lte_background_opacities (self, temp, include_absmet)
   class(nlte_patch_t) :: self
   real(4), contiguous, dimension(:,:,:) :: temp
   real(4) :: h_kT, hv_kT, bnu
   logical :: include_absmet
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin('nlte_patch%lte_bound_free_opacities', itimer=itimer)
+  call trace%begin('nlte_patch%lte_background_opacities', itimer=itimer)
   do z=1, nz
   do y=1, ny
   do x=1, nx
@@ -297,10 +312,10 @@ SUBROUTINE lte_bound_free_opacities (self, temp, include_absmet)
   end do
   end do
   call trace%end(itimer)
-END SUBROUTINE lte_bound_free_opacities
+END SUBROUTINE lte_background_opacities
 
 !===============================================================================
-SUBROUTINE sum_bound_free_opacities (self)
+SUBROUTINE add_bound_free_opacities (self)
   class(nlte_patch_t) :: self
   class(cont_type), pointer :: cont
   real(4), contiguous, dimension(:,:,:,:), pointer :: n
@@ -309,7 +324,7 @@ SUBROUTINE sum_bound_free_opacities (self)
   integer :: i, fsmin, femax
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin('nlte_patch%sum_bound_free_opacities', itimer=itimer)
+  call trace%begin('nlte_patch%add_bound_free_opacities', itimer=itimer)
   ! Summing contributions from all bound-free transitions
   n => self%atom%data%n
   fsmin = huge(1); femax = 0
@@ -357,7 +372,7 @@ SUBROUTINE sum_bound_free_opacities (self)
   end do
   end do
   call trace%end(itimer)
-END SUBROUTINE sum_bound_free_opacities
+END SUBROUTINE add_bound_free_opacities
 
 
 !===============================================================================
@@ -795,10 +810,11 @@ SUBROUTINE rotate_cube (self, vec)
 END SUBROUTINE rotate_cube
 
 !===============================================================================
-SUBROUTINE short_char (self, vec)
+SUBROUTINE short_char (self, vec, get_rates)
   class(nlte_patch_t) :: self
   type(ray_type) :: ray
   real(8) :: vec(3)
+  logical :: get_rates
   real(4) :: Inuup, xxup, ssup, xxmin, ssmin, Inumin, dsup05, xx, ss, Inu, u0, Psi
   real(8) :: dt, ex ! important
   real(4), dimension(:,:), allocatable :: kernel, work_up, work_min
@@ -873,7 +889,7 @@ SUBROUTINE short_char (self, vec)
           endif
 
           work(3,f,x,y,z) = Inu
-          self%Psi(f,x,y,z) = Psi / xx
+          if (get_rates) self%Psi(f,x,y,z) = Psi / xx
         end do ! f-loop
       end do
     end do
@@ -882,9 +898,10 @@ SUBROUTINE short_char (self, vec)
 END SUBROUTINE short_char
 
 !===============================================================================
-SUBROUTINE long_char (self, vec)
+SUBROUTINE long_char (self, vec, get_rates)
   class(nlte_patch_t) :: self
   real(8) :: vec(3)
+  logical :: get_rates
   real(4) :: ds, Inuup, xxup, ssup, dsup05, xx, ss, Inu, u0, Psi
   real(8) :: dt, ex ! important
   real(4), allocatable, dimension(:,:) :: kernel
@@ -932,7 +949,7 @@ SUBROUTINE long_char (self, vec)
         endif
 
         work(3,f,x,y,z) = Inu
-        self%Psi(f,x,y,z) = Psi / xx
+        if (get_rates) self%Psi(f,x,y,z) = Psi / xx
       end do ! f-loop
     end do
     end do

@@ -87,13 +87,11 @@ MODULE atom_mod
       real(8), dimension(:,:), allocatable  :: C, W
       
       real(8) :: qnorm
-      integer :: fcheck, pcheck(3), linecheck
       logical :: stiff 
 
       real(8) :: drawin, mu_e
         
     contains
-      procedure :: add_continuum_opacities
       procedure :: partition_function
       procedure :: lte_pop
       procedure :: compute_lte_populations
@@ -124,91 +122,6 @@ MODULE atom_mod
     public :: unique_int
   
   contains
-  
-  !====================================================================================
-  SUBROUTINE add_continuum_opacities(self, fs_patch, fe_patch, nu, temp, chi, eta)
-    class(atom_type), intent(in), target :: self
-    class(cont_type), pointer :: cnt
-    integer, intent(in) :: fs_patch, fe_patch
-    real(8), dimension(:), intent(in) :: nu
-    real(4), dimension(:,:,:), intent(in) :: temp
-    real(4), dimension(:,:,:,:), intent(inout) :: chi, eta
-    real(8), dimension(:), allocatable :: twohnu3_c2, hnu_k
-    real(4), dimension(:,:,:), allocatable :: t_inv
-    real(4) :: blz
-    integer :: i, j, k, f, fcs, fce, fs, fe, nx, ny, nz, ffs, ffe, ff, p(3)
-    logical :: skip
-    !------------------------------------------------------------------------------------
-    ! all_chi and all_eta only range from fs:fe
-    ! nu however contains all frequencies from atom
-
-    fcs = max(minval(self%cont%ired),  fs_patch)
-    fce = min(maxval(self%cont%iblue), fe_patch)
-
-    if (fcs >= fe_patch) return
-    if (fce <= fs_patch) return
-
-    nx = size(temp,1)
-    ny = size(temp,2)
-    nz = size(temp,3)
-
-    allocate(twohnu3_c2(fcs:fce), hnu_k(fcs:fce))
-    allocate(t_inv(nx,ny,nz))
-
-    twohnu3_c2 = twoh_c2 * nu(fcs:fce)**3
-    hnu_k = h_k * nu(fcs:fce)
-    t_inv = 1 / temp
-
-    do i=1, size(self%cont)
-      cnt => self%cont(i)
-      if (.not. cnt%active) cycle
-      call cnt%check_range(fcs,fce,fs,fe,skip)
-      if (skip) cycle
-  
-      ffs = fs-fs_patch+1
-      ffe = fe-fs_patch+1
-      fs = fs!-cnt%ired+1
-      fe = fe!-cnt%ired+1
-
-      call cnt%opacities(cnt%alpha(fs:fe), self%data%ni_over_nj_lte(:,:,:,i), &
-      self%data%n, self%data%nstar, eta(:,:,:,ffs:ffe), chi(:,:,:,ffs:ffe))
-
-      !if (self%fcheck >= fs .and. self%fcheck <= fe) then
-      !   p(:) = self%pcheck
-      !   f = self%fcheck
-      !   print *, i, cnt%i, cnt%j, 'chi cont'
-      !   print '(8(ES15.7))', chi(p(1),p(2),p(3),f-fs_patch+1) &
-      !         - eta(p(1),p(2),p(3),f-fs_patch+1) &
-      !         * exp(- hnu_k(f) * t_inv(p(1),p(2),p(3))), &
-      !            cnt%alpha(f) * self%n(p(1),p(2),p(3), cnt%i) &
-      !         * (1 - exp(- hnu_k(f) * t_inv(p(1),p(2),p(3)))), &
-      !         self%n(p(1),p(2),p(3),cnt%i), &
-      !         self%n(p(1),p(2),p(3),cnt%j)
-      !endif
-    end do
-
-    do f=fcs,fce
-      ff = f-fs_patch+1
-      do k=1,nz
-      do j=1,ny
-      !$omp simd
-      do i=1,nx
-        blz = - hnu_k(f) * t_inv(i,j,k)
-        if (blz < -80) then
-          eta(i,j,k,ff) = 0
-        else
-          if (blz < -1e-8) then
-            eta(i,j,k,ff) = eta(i,j,k,ff) * exp(blz)
-          endif
-          chi(i,j,k,ff) = chi(i,j,k,ff) - eta(i,j,k,ff)
-          eta(i,j,k,ff) = eta(i,j,k,ff) * twohnu3_c2(f)
-        endif
-      end do
-      end do
-      end do
-    end do
-  END SUBROUTINE add_continuum_opacities
-  !------------------------------------------------------------------------------------
   
   !====================================================================================
   SUBROUTINE solve_stat_equilibrium (self, temp, ne, totn, n, nstar, nh, gamma_ij, gamma_ji, cswitch, check_NaN)
