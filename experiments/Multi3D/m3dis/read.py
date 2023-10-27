@@ -39,11 +39,11 @@ class read(object):
 
             self.atom.title = 'A({}) = {:.2f}'.format(self.atom.id, self.atom.abnd)
         
+            lines = self.atom.trans[:self.atom.nline]
             if 'line_mask' in self.nml.keys():
-                in_lines = self.nml['line_mask']['in_lines']
-                lines = [self.atom.trans[i-1] for i in in_lines]
-            else:
-                lines = self.atom.trans[:self.atom.nline]
+                if 'in_lines' in self.nml['line_mask'].keys():
+                    in_lines = self.nml['line_mask']['in_lines']
+                    lines = [self.atom.trans[i-1] for i in in_lines]
                 
             lines = [line for line in lines if np.log10(line.fosc*line.lower.g) > loggf_cut]
             lines = [line for line in lines if line.lam_red > blue_cut and line.lam_blue < red_cut]
@@ -493,10 +493,6 @@ class read(object):
 
                 key = file.split('.')[0].split('_')[-1]
                 key = np.array([int(k) for k in [key[0:3], key[3:6]]])
-
-                if '_out' in file:
-                    key[1:] = key[1:]*-1
-
                 dct[tuple(key)] = np.memmap(self.sfolder + file, dtype=dtype, mode='r', shape=dims, order='F')
 
         meta.close()
@@ -546,49 +542,6 @@ class read(object):
             return [merge_set(s) for s in sets]
 
     #=====================================================================
-    def get_cntrbf(self, f, imu=0, LTE=False):
-        #-----------------------------------------------------------------
-        if self.dim == '3D':
-            raise ValueError('Contribution functions for 3D setups are not supported yet!')
-
-        net_opac  = self.read_patch_save('net_opac')[-1]
-        angle_rad = self.read_patch_save('angle_rad')[-1]
-
-        mu = self.mus[imu]
-        ds = self.dz / mu * 1e8
-
-        net_opac  = net_opac[imu].squeeze()
-        angle_rad = angle_rad[imu].squeeze()
-
-        net_opac  = np.array(net_opac [..., f, :])
-        angle_rad = np.array(angle_rad[..., f, :])
-
-        if LTE:
-            net_chi = net_opac[..., 2]
-            net_src = net_opac[..., 3]
-        else:
-            net_chi = net_opac[..., 0]
-            net_src = net_opac[..., 1]
-
-        cnt_chi = net_opac[..., 4]
-        cnt_src = net_opac[..., 5]
-
-        #nlte_inu = angle_rad[..., 0]
-        #lte_inu  = angle_rad[..., 1]
-        cnt_inu = angle_rad[..., 2]
-
-        net_eta = net_src * net_chi
-        cnt_eta = cnt_src * cnt_chi
-        lin_chi = net_chi - cnt_chi
-        lin_eta = net_eta - cnt_eta
-
-        chiR = lin_chi + cnt_eta/cnt_inu
-        tauR = compute_tau_scale(chiR[::-1], ds)[::-1]
-        cntrbf = np.log(10) * self.tau / self.chi * (lin_chi - lin_eta/cnt_inu) * np.exp(-tauR)
-
-        return cntrbf
-
-    #=====================================================================
     def plot_cntrbf(self, f, imu=0, LTE=False, **kwargs):
         #-----------------------------------------------------------------
         cntrbf = self.get_cntrbf(f, imu=imu, LTE=LTE)
@@ -596,15 +549,3 @@ class read(object):
         plt.ylabel('Angle-dependent Contribution Function', fontsize='medium')
         plt.xlabel(r'log$\tau_{500}$')
         return plot
-
-
-#=====================================================================
-def compute_tau_scale (chi, ds):
-    #-----------------------------------------------------------------
-    tau = np.array(np.zeros_like(chi))
-    tau[1] = 0.5*(chi[1] + chi[0]) * ds
-    tau[2] = 0.5*(chi[2] + chi[1]) * ds + tau[1]
-    tau[0] = np.exp( 2*np.log(tau[1]) - np.log(tau[2]) )
-    for i in range(1, tau.shape[0]):
-        tau[i] = tau[i-1] + 0.5*(chi[i] + chi[i-1]) * ds
-    return tau

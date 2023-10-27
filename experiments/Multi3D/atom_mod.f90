@@ -562,9 +562,11 @@ MODULE atom_mod
 
       if (present(in_lines)) then
         if (allocated(in_lines)) then
-          if (findloc(in_lines, i, 1) <= 0) then
-            call lin%deactivate()
-            cycle
+          if (size(in_lines) > 0) then
+            if (findloc(in_lines, i, 1) <= 0) then
+              call lin%deactivate()
+              cycle
+            endif
           endif
         endif
       endif

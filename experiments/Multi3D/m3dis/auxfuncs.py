@@ -205,8 +205,8 @@ def idl_tabulate(x, f, p=5):
     return ret
 
 def continuum(xx, yy, axis=-1):
-    yspace = yy.take([0, -1],axis)
-    xspace = xx.take([0, -1],axis)
+    yspace = yy.take([0, -1], axis)
+    xspace = xx.take([0, -1], axis)
 
     yspace = np.moveaxis(yspace, axis, -1)
     
@@ -427,3 +427,41 @@ def voigt_num(a, v):
     h[mask4] = (SQ2/SQP*a/u*(1. + u2*(3.*v2 - a2) + u2*u2*(15.*v2*v2 - 30.*v2*a2 + 3.*a2*a2)))[mask4]
     
     return h
+
+#=====================================================================
+def compute_tau_scale (chi, ds):
+    #-----------------------------------------------------------------
+    tau  = np.array(np.zeros_like(chi))
+    dchi = np.array(np.zeros_like(chi))
+    tau1 = 0.5*(chi[1] + chi[0]) * ds
+    tau2 = 0.5*(chi[2] + chi[1]) * ds + tau1
+    dchi[0] = tau1*tau1/tau2
+    dchi[1:] = 0.5*(chi[1:] + chi[:-1]) * ds
+    tau = np.cumsum(dchi, axis=0)
+    return tau
+
+#=====================================================================
+def shift_interp(signal1, signal2, dx):
+    #-----------------------------------------------------------------
+    conv = np.convolve(signal1, signal2[::-1], mode='same')
+    max_index = np.argmax(conv)
+    shift = len(signal1) // 2 - max_index
+    fi = (1-dx)*np.roll(signal1, shift) + dx*signal2
+    fi = np.roll(fi, int((dx-1)*shift))
+    return fi
+
+#=====================================================================
+def shift_interp2(xx, yy, newx):
+    #-----------------------------------------------------------------
+    ii2 = np.searchsorted(xx, newx)
+    ii1 = ii2-1
+    ii1 = np.maximum(0, ii1)
+    ii2 = np.maximum(0, ii2)
+    ii1 = np.minimum(xx.size-1, ii1)
+    ii2 = np.minimum(xx.size-1, ii2)
+    dx = np.zeros_like(newx)
+    mask = ii1!=ii2
+    dx[mask] = (newx[mask] - xx[ii1[mask]]) / (xx[ii2[mask]] - xx[ii1[mask]])
+    dx[ii1==ii2] = 0
+    out = [shift_interp(yy[i1], yy[i2], d) for d, i1, i2 in zip(dx, ii1, ii2)]
+    return np.array(out)

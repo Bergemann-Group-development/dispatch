@@ -143,12 +143,13 @@ MODULE spectrum_mod
 
     !===============================================================================
     SUBROUTINE save (self, label)
-      class(spectrum_type), intent(in):: self
+      class(spectrum_type), intent(inout):: self
       character(len=*), intent(in) :: label
       character(len=128) :: filename
       integer :: lunit
       !-----------------------------------------------------------------------------
       if (.not. self%saved) then
+        self%saved = .true.
         filename = trim(io%run_dir) // 'save/' // trim(label) // '_lam.bin'
         open(newunit=lunit, file=filename, access='stream')
         write(lunit) 1d8 * dble(cc) / self%nu

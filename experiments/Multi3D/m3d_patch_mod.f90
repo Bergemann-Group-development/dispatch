@@ -568,9 +568,6 @@ MODULE m3d_patch_mod
     if (check_NaN) then
       call self%check_mem_NaN()
     endif
-    if (self%save_output .and. self%finished) then
-      call self%save(self%out_mem, self%kind)
-    endif
     call trace%end(itimer)
   END SUBROUTINE post_update
 
@@ -619,7 +616,9 @@ MODULE m3d_patch_mod
     call self%set_place(self, -2)
     call self%set(bits%no_download)
     call self%set(bits%ignore)
-    if (self%save_output) call self%save(self%out_mem, self%kind)
+    if (self%save_output) then
+      call self%save(self%out_mem, pack(self%out_mem, .true.), self%kind)
+    endif
     call trace%end()
   END SUBROUTINE finish
 
@@ -1131,13 +1130,14 @@ MODULE m3d_patch_mod
   END SUBROUTINE check_nbor
 
   !===============================================================================
-  SUBROUTINE save (self, mem, label)
+  SUBROUTINE save (self, mem, mem_packed, label)
     class(m3d_patch_t):: self
-    real(4), dimension(:,:,:,:,:) :: mem 
+    real(4), dimension(..) :: mem
+    real(4), dimension(:) :: mem_packed
     character(len=*) :: label
     character(len=128) :: meta_file, folder
-    character(len=32) :: filename
-    integer :: lunit, iw, iv
+    character(len=32) :: filename, fmt
+    integer :: i, lunit, ndim
     integer, save :: itimer=0
     ! ----------------------------------------------------------------------------
     call trace%begin('m3d_patch_t%save', itimer=itimer)
@@ -1145,14 +1145,7 @@ MODULE m3d_patch_mod
       call shared%abort('mem not associated in save')
     endif
     write(folder, '(A, A)') trim(io%run_dir), 'save/'
-    if (self%out_ray) then
-      write(filename, '(A, A, 2(I3.3), A)') trim(label), '_out_', abs(self%key(1:2)), '.bin'
-    elseif (.not. converged .or. self%kind=='atom_patch') then
-      write(filename, '(A, A, 2(I3.3), A)') trim(label), '_', abs(self%key(1:2)), '.bin'
-    else
-      call trace%end(itimer)
-      return
-    endif
+    write(filename, '(A, A, 2(I3.3), A)') trim(label), '_', abs(self%key(1:2)), '.bin'
     meta_file = trim(label) // '_meta.txt'
     call io%lock%set('save')
     if (os%exists(trim(folder)//meta_file)) then
@@ -1160,16 +1153,16 @@ MODULE m3d_patch_mod
     else
       call os%mkdir(folder)
       open(newunit=lunit, file=trim(folder)//meta_file, form='formatted')
-      write(lunit, '(A, A9, A21, A5, 8(A10))') '*', ' filename', '', 'bytes', &
-      'n1', 'n2', 'n3', 'n4', 'n5'
+      write(lunit, '(A, A9, A21, A5)') '*', ' filename', '', 'bytes'
     endif
-    if (.not. self%saved) write(lunit, '(A32, I4, 8(I10))') filename, storage_size(mem), shape(mem)
+    ndim = size(shape(mem))
+    write(fmt, '(I3,A)') ndim, '(I10))'
+    write(lunit, '(A32, I4, '//fmt) filename, storage_size(mem), shape(mem)
     close(lunit)
     open(newunit=lunit, file=trim(folder)//filename, access='stream', status='replace')
-    write(lunit) mem
+    write(lunit) mem_packed
     close(lunit)
     call io%lock%unset('save')
-    self%saved = .true.
     call trace%end(itimer)
   END SUBROUTINE save
 

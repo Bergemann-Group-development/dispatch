@@ -36,7 +36,7 @@ MODULE atom_patch_mod
     USE bftrans_mod, only: bftrans_type
     USE hprofl_mod, only: hydrogen_BPO
     USE osmet_mod, only:osmet_type
-    USE nlte_patch_mod, only:nlte_patch_t
+    USE nlte_patch_mod, only:nlte_patch_t, n_cntrbf, cntrbf_lines
     USE m3d_debug_mod
     implicit none
   
@@ -108,12 +108,12 @@ MODULE atom_patch_mod
     integer, save :: itimer=0, n_in_lines=0
     integer, save, allocatable :: in_lines(:)
     logical, save :: first_time=.true., exclude_trace_cont=.true., use_atom_abnd=.true.
-    integer :: iostat
+    integer :: i, iostat
     namelist /atom_params/ atom_file, qnorm, convlim, exclude_trace_cont, level_partf, &
     use_atom_abnd, logf_cut, red_cut, blue_cut, n_in_lines, abundance, debye_shield, &
     exclude_from_line_list, precomputed_depart, use_classic_col, kramer_bf, overlapping_bf, &
-    overlapping_bb, nq_fac, hydrogen_BPO, detailed_absmet
-    namelist /line_mask/ in_lines
+    overlapping_bb, nq_fac, hydrogen_BPO, detailed_absmet, n_cntrbf
+    namelist /line_mask/ in_lines, cntrbf_lines
     !-----------------------------------------------------------------------------
     call trace%begin('atom_patch_t%pre_init_atom', itimer=itimer)
     if (first_time) then
@@ -134,8 +134,8 @@ MODULE atom_patch_mod
         return
       endif
 
-      if (n_in_lines > 0) then
-        allocate(in_lines(n_in_lines))
+      if (n_in_lines+n_cntrbf > 0) then
+        allocate(in_lines(n_in_lines), cntrbf_lines(n_cntrbf))
         rewind (io%input)
         read (io%input, line_mask, iostat=iostat)
         if (iostat > 0) then

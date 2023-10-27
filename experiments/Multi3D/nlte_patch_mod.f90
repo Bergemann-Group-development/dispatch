@@ -63,7 +63,8 @@ MODULE nlte_patch_mod
     procedure :: integrate_intensity
     procedure :: integrate_rates
     procedure :: work_to_mem
-    procedure :: save_intensity
+    procedure :: save_intensity 
+    procedure :: save_contribution_function 
     procedure :: rotate_cube
     procedure :: short_char
     procedure :: long_char
@@ -74,11 +75,19 @@ MODULE nlte_patch_mod
     procedure :: allocate_mem
   end type nlte_patch_t
 
+  type :: line_cntrbf
+    real(4), dimension(:,:,:,:,:,:), allocatable :: data
+  end type
+
   !-----------------------------------------------------------------------------
   integer, save:: verbose=0                           ! verbosity
+  integer, public :: n_cntrbf=0
+  integer, public, dimension(:), allocatable :: cntrbf_lines
   integer :: f, x, y, z, nx, ny, nz, fs, fe, nf
-  real(4), dimension(:,:,:,:,:), allocatable :: work, back
+  real(4), dimension(:,:,:,:,:), allocatable, target :: work, back
+  type(line_cntrbf), dimension(:), allocatable :: cntrbf
   !$omp threadprivate(work, back, x, y, z, nx, ny, nz, f, fs, fe, nf)
+  !$omp threadprivate(cntrbf)
     
 contains
 
@@ -114,8 +123,8 @@ SUBROUTINE execute (self)
   real(4), dimension(:,:,:), allocatable :: inv_df, vproj
   real(4) :: wmu
   real(8) :: vec(3)
-  logical :: get_rates, use_linelist, use_atom, bound_bound, bound_free
-  integer :: i_mu, i, zs, ze, p(3), ng, i_set, l
+  logical :: skip, get_rates, use_linelist, use_atom, bound_bound, bound_free, get_cntrbf
+  integer :: i, j, i_mu, zs, ze, p(3), ng, i_set, l, nnu_cntrbf
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('nlte_patch%execute', itimer=itimer)
@@ -145,6 +154,8 @@ SUBROUTINE execute (self)
   self%nu(fs:fe) => self%sp%nu(fs:fe)
   temp => self%m3d_parent%mem(:,:,:,self%i_temp,self%it,1)
 
+  get_cntrbf = self%out_ray .and. n_cntrbf>0
+
   call allocate_arrays()
 
   self%twohnu3_c2 = twoh_c2 * self%nu**3
@@ -159,18 +170,19 @@ SUBROUTINE execute (self)
     if (bound_bound) call self%bound_bound_damping(adamp, temp, inv_df)
   endif
 
-  do i_set=1, self%n_set
-    ! Starting loop over angles
-    do i_mu=self%mus, self%mue
-      if (get_rates) then
-        wmu = all_wmu(i_mu)
-        vec = all_vec(:,i_mu)
-      else
-        wmu = long_wmu(i_mu)
-        vec = long_vec(:,i_mu)
-      endif
-      wmu = wmu * over_4pi
-      call self%get_vproj(vproj, vec)
+  ! Starting loop over angles
+  do i_mu=self%mus, self%mue
+    if (get_rates) then
+      wmu = all_wmu(i_mu)
+      vec = all_vec(:,i_mu)
+    else
+      wmu = long_wmu(i_mu)
+      vec = long_vec(:,i_mu)
+    endif
+    wmu = wmu * over_4pi
+    call self%get_vproj(vproj, vec)
+
+    do i_set=1, self%n_set
       call self%back_to_work()
 
       if (i_set < 3) then ! i_set==3 is the continuum only
@@ -183,11 +195,18 @@ SUBROUTINE execute (self)
       call self%eta_to_Snu()
       call self%set_upstream_boundary(i_mu, i_set, ng)
 
+      if (self%out_ray .and. .not. one_dimensional) then
+        call self%rotate_cube(vec)
+      endif
+
       if (one_dimensional .or. self%out_ray) then
-        if (.not. one_dimensional) call self%rotate_cube(vec)
         call self%long_char(vec, get_rates)
       else
         call self%short_char(vec, get_rates)
+      endif
+
+      if (get_cntrbf) then
+        call self%save_contribution_function(i_set, i_mu)
       endif
 
       if (self%print_update_info .and. i_mu==self%mus) then
@@ -210,6 +229,11 @@ SUBROUTINE execute (self)
   elseif (self%patch%boundaries%is_set(bits%zu)) then
     call self%save_intensity()
   endif
+
+  !if (get_cntrbf) then
+  !  call self%save
+  !endif
+
   call deallocate_arrays
   call trace%end(itimer)
 
@@ -217,6 +241,8 @@ contains
 
   !-----------------------------------------------------------------------------
   subroutine allocate_arrays()
+    fs = self%fs
+    fe = self%fe
     allocate(back(3,fs:fe,nx,ny,nz), source=0.)
     allocate(work(3,fs:fe,nx,ny,zs:ze), source=0.)
     allocate(self%twohnu3_c2(fs:fe))
@@ -241,7 +267,21 @@ contains
         call mem_register(self%Jnu,  label='Jnu')
         call mem_register(self%PsiJ, label='PsiJ')
       endif
-    endif  
+    endif
+    if (get_cntrbf) then
+      allocate(cntrbf(n_cntrbf))
+      do i=1, n_cntrbf
+        j = cntrbf_lines(i)
+        associate(line=>self%atom%line(j))
+          if (.not. line%active) cycle
+          call line%check_range(self%fs, self%fe, fs, fe, skip)
+          if (.not. skip) then
+            allocate(cntrbf(i)%data(nx,ny,nz,fs:fe,4,self%mus:self%mue))
+            call mem_register(cntrbf(i)%data, 'cntrbf')
+          endif
+        end associate
+      end do
+    endif
   end subroutine allocate_arrays
 
   !-----------------------------------------------------------------------------
@@ -264,6 +304,15 @@ contains
         call mem_unregister(self%PsiJ, label='PsiJ')
         deallocate(self%Jnu, self%PsiJ)
       endif
+    endif
+    if (get_cntrbf) then
+      do i=1, n_cntrbf
+        if (allocated(cntrbf(i)%data)) then
+          call mem_unregister(cntrbf(i)%data, label='cntrbf')
+          deallocate(cntrbf(i)%data)
+        endif
+      end do
+      deallocate(cntrbf)
     endif
   end subroutine deallocate_arrays
 END SUBROUTINE execute
@@ -985,6 +1034,60 @@ SUBROUTINE get_vproj (self, vproj, vec)
   endif
 END SUBROUTINE get_vproj
 
+!===============================================================================
+SUBROUTINE save_contribution_function (self, i_set, i_mu)
+  class(nlte_patch_t) :: self
+  integer :: i, j, i_set, i_mu
+  real(4) :: net_chi, net_src, lin_chi, lin_eta
+  real(4) :: cnt_inu, cnt_chi, cnt_eta
+  character(32) :: name
+  logical :: skip
+  !-----------------------------------------------------------------------------
+  do i=1, n_cntrbf
+    j = cntrbf_lines(i)
+    associate(line=>self%atom%line(j))
+      if (.not. line%active) cycle
+      call line%check_range(self%fs, self%fe, fs, fe, skip)
+      if (skip) cycle
+      do z=1,nz
+      do y=1,ny
+      do x=1,nx
+        do f=fs,fe
+          cnt_chi = back(1,f,x,y,z)
+          cnt_eta = back(2,f,x,y,z)
+          associate(cf => cntrbf(i)%data(x,y,z,f,:,i_mu))
+            if (i_set < 3) then
+              net_chi = work(1,f,x,y,z)
+              net_src = work(2,f,x,y,z)
+              lin_chi = net_chi - cnt_chi
+              lin_eta = net_src*net_chi - cnt_eta
+              if (i_set == 1) then
+                cf(1) = lin_chi
+                cf(2) = lin_eta
+              elseif (i_set == 2) then
+                cf(3) = lin_chi
+                cf(4) = lin_eta
+              endif
+            else
+              cnt_inu = work(3,f,x,y,z)
+              cf(2) = cf(1) - cf(2)   / cnt_inu ! lin_chi - lin_eta/cnt_inu
+              cf(1) = cf(1) + cnt_eta / cnt_inu ! lin_chi + cnt_eta/cnt_inu
+              cf(4) = cf(3) - cf(4)   / cnt_inu ! lin_chi - lin_eta/cnt_inu (LTE)
+              cf(3) = cf(3) + cnt_eta / cnt_inu ! lin_chi + cnt_eta/cnt_inu (LTE)
+            endif
+          end associate
+        end do
+      end do
+      end do
+      end do
+    end associate
+    if (i_set==3 .and. i_mu==self%mue) then
+      write(name, '(A,I6.6)') 'cntrbf_', j
+      call self%save(cntrbf(i)%data, pack(cntrbf(i)%data, .true.), name)
+    endif
+  end do
+END SUBROUTINE save_contribution_function
+
   !===============================================================================
 SUBROUTINE print_post_update_info (self)
   class(nlte_patch_t) :: self
@@ -1088,9 +1191,8 @@ SUBROUTINE save_intensity (self)
   end do
   ie = ie / real(nx*ny)
 
-  call self%save(ie, 'ie')
-  self%saved = .false.
-  call self%save(i3, 'i3')
+  call self%save(ie, pack(ie, .true.), 'ie')
+  call self%save(i3, pack(i3, .true.), 'i3')
 
   meta_file = trim(io%run_dir) // 'angle_quadrature.txt'
   call io%lock%set('save_quadrature')

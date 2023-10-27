@@ -74,6 +74,7 @@ MODULE trans_mod
     real(8), dimension(:), allocatable :: gwterm
     real(8), dimension(:), allocatable :: gqterm
     integer :: fs, fe
+    logical :: get_cntrbf=.false.
 
   contains
       procedure :: profile => line_profile
