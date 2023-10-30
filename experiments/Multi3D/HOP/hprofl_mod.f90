@@ -247,13 +247,13 @@ contains
     end if
 
     self%io = ifins
-    allocate(self%determ(ifins))
-    allocate(self%gaterm(ifins))
-    allocate(self%wterm(ifins))
+    allocate(self%dq(ifins))
+    allocate(self%da(ifins))
+    allocate(self%wt(ifins))
 
-    self%determ = finest(1:ifins) / self%nu0
-    self%wterm  = finswt(1:ifins)
-    self%gaterm = self%ga
+    self%dq = finest(1:ifins) / self%nu0
+    self%wt  = finswt(1:ifins)
+    self%da = 0
   END SUBROUTINE prepare_hydrogen_damping
 
   !===============================================================================
@@ -308,9 +308,9 @@ contains
 
     !  Including fine structure
     do i=1, self%io
-      d = (q - self%determ(i)) * inv_df
+      d = (q - self%dq(i)) * inv_df
       xv = voigt_function2(adamp,d) * inv_df
-      hprofl = hprofl + self%wterm(i)*xv
+      hprofl = hprofl + self%wt(i)*xv
     end do
   END FUNCTION hprofl
   
@@ -400,11 +400,11 @@ contains
 
     !  Doppler core including fine structure
     do i=1, self%io
-      d = (q - self%determ(i)) * inv_df
+      d = (q - self%dq(i)) * inv_df
       !  if INSIDE HFWID WE USE VOIGT FUNCTION WITH DOP, STARK AND LOR
       !  if OUTSIDE JUST ADD THE DOPPLER PART - REST IS ADDED LATER IN DETAIL
       xv = voigt_function2(adamp,d) * inv_df
-      htotal = htotal + self%wterm(i)*xv
+      htotal = htotal + self%wt(i)*xv
     end do
 
     if (abs(q) > hfwid) then

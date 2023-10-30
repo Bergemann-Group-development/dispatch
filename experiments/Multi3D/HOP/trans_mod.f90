@@ -67,10 +67,10 @@ MODULE trans_mod
     ! Added to deal with multi component lines
     ! IO > 1 leads to the following being read from the atom file
     integer :: io ! number of components in term (lifted from Multi 2.3)
-    real(8), dimension(:), allocatable :: determ
-    real(8), dimension(:), allocatable :: wterm 
+    real(8), dimension(:), allocatable :: dq
+    real(8), dimension(:), allocatable :: wt 
     real(8), dimension(:), allocatable :: fterm 
-    real(8), dimension(:), allocatable :: gaterm
+    real(8), dimension(:), allocatable :: da
     real(8), dimension(:), allocatable :: gwterm
     real(8), dimension(:), allocatable :: gqterm
     integer :: fs, fe
@@ -123,10 +123,10 @@ contains
       scalar = over_4pi / self%nu0
       
       do i=1, self%io
-        q2 = q - self%determ(i)
-        ga = self%gaterm(i) - self%ga
+        q2 = q - self%dq(i)
+        ga = self%da(i)
         damp = (adamp + ga) * inv_df * scalar
-        inv_df2 = self%wterm(i) * inv_df
+        inv_df2 = self%wt(i) * inv_df
 
         !DIR$ FORCEINLINE
         do f=1, size(q)

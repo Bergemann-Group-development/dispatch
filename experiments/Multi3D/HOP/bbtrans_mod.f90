@@ -115,7 +115,6 @@ contains
         if (adamp(i,j,k) > 0.0) then
           phi = (q - vproj(i,j,k)) * inv_df(i,j,k)
           phi = voigt_function2(adamp(i,j,k), phi)
-          !call voigt_sub(adamp(i,j,k), phi, local_table, phi)
           !eta(i,j,k,f) = eta(i,j,k,f) + phi * eta_fac(i,j,k)
           chi(i,j,k,f) = chi(i,j,k,f) + phi * chi_fac(i,j,k)
         endif
@@ -227,16 +226,6 @@ contains
   !------------------------------------------------------------------------------------
 
   !====================================================================================
-  ELEMENTAL FUNCTION psi_func(a) result(psi)
-    real(4), intent(in) :: a
-    real(4) :: psi
-    real(4), parameter :: isqp = 0.5641895835 ! 1/pi**0.5
-    !----------------------------------------------------------------------------------
-    psi = (0.979895023 + a*(-0.962846325 + a*(0.532770573 + a*-0.122727278))) * isqp
-  END FUNCTION psi_func
-  !------------------------------------------------------------------------------------
-
-  !====================================================================================
   !DIR$ ATTRIBUTES FORCEINLINE :: voigt_function2
   ELEMENTAL FUNCTION voigt_function2(a,vs) result(h)
     !---------------------------------------------------------------------
@@ -310,57 +299,6 @@ contains
       h = (h*a + exp(-v2)*(1. + a*a*(1. - 2.*v2))) * isqp
     endif
   END FUNCTION voigt_function2
-  !------------------------------------------------------------------------------------
-
-
-  !====================================================================================
-  SUBROUTINE voigt_sub(as,vs,table,h)
-    !---------------------------------------------------------------------
-    !  computes a voigt function  h = h(a,v)
-    !  a=gamma/(4*pi*dnud)   and  v=(nu-nu0)/dnud.  this  is  done after
-    !  traving (landolt-b\rnstein, p. 449).
-    !  coded by: kjell eriksson  (apr-1974). revised: (july-1975).
-    !---------------------------------------------------------------------
-    real(4), intent(in) :: as, vs
-    real(4), intent(inout), dimension(:,:) :: table
-    real(4), intent(out) :: h
-    real(4) :: a, v, y1, y2, y3, y4, yy1, yy2, ddv, dda
-    logical, save :: first_time=.true.
-    integer :: i, j
-    !$omp threadprivate(first_time)
-    !----------------------------------------------------------------------------------
-    if (first_time) then
-      first_time = .false.
-      do j=0, nv
-      do i=0, na
-        voigt_table(i+1,j+1) = voigt_function2(da*i, dv*j)
-      end do
-      end do
-      table = voigt_table
-    endif
-    v = abs(vs)
-    a = as
-    if (a > amax .or. v > vmax) then
-      h = voigt_function2(a, v)
-    else
-      a = a*dai
-      v = v*dvi
-      i = int(a)
-      j = int(v)
-    
-      y1 = table(i+1,j+1)
-      y2 = table(i+2,j+1)
-      y3 = table(i+1,j+2)
-      y4 = table(i+2,j+2)
-    
-      dda = a - i
-      yy1 = (y2 - y1) * dda + y1
-      yy2 = (y4 - y3) * dda + y3
-    
-      ddv = v - j
-      h = (yy2 - yy1) * ddv + yy1
-    endif
-  END SUBROUTINE voigt_sub
   !------------------------------------------------------------------------------------
 
   !====================================================================================

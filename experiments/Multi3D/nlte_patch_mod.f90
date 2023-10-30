@@ -527,8 +527,8 @@ SUBROUTINE add_bound_bound_opacities (self, wmu, inv_df, vproj, adamp, LTE)
   real(4), contiguous, dimension(:,:,:,:) :: adamp
   real(4), contiguous, dimension(:,:,:,:), pointer :: n
   real(4), contiguous, dimension(:,:,:), pointer :: wphi
-  real(4) :: wmu, idf, vpr, a, idf_4pi, ni, nj, Bji_nj, Bij_ni, q, phi, widf, chi_fac
-  integer :: i
+  real(4) :: wmu, idf, vpr, a, idf_4pi, ni, nj, Bji_nj, Bij_ni, widf, chi_fac, wp
+  integer :: i, ih
   logical :: LTE
   integer, save :: itimer=0, itimer1=0
   !-----------------------------------------------------------------------------
@@ -554,16 +554,19 @@ SUBROUTINE add_bound_bound_opacities (self, wmu, inv_df, vproj, adamp, LTE)
       do y=1, ny
       do x=1, nx
         idf = inv_df(x,y,z)
-        vpr = vproj(x,y,z)
-        a = adamp(x,y,z,i)
-        widf = wmu * idf
-  
-        do f=fs, fe
-          q = line%q(f)
-          phi = (q - vpr) * idf
-          phi = voigt_function2(a, phi) * widf
-          wphi(x,y,z) = wphi(x,y,z) + phi * line%wq(f)
-        end do 
+        if (line%io > 1) then
+          do ih=1, line%io
+            a = adamp(x,y,z,i) + idf*line%da(ih)
+            vpr = vproj(x,y,z) + line%dq(ih)
+            widf = wmu * idf * line%wt(ih)
+            call voigt_wphi()
+          end do
+        else
+          vpr = vproj(x,y,z)
+          a = adamp(x,y,z,i)
+          widf = wmu * idf
+          call voigt_wphi()
+        endif
       end do
       end do
       end do
@@ -579,30 +582,60 @@ SUBROUTINE add_bound_bound_opacities (self, wmu, inv_df, vproj, adamp, LTE)
       ni = n(x,y,z,line%i)
       nj = n(x,y,z,line%j)
       idf = inv_df(x,y,z)
-      vpr = vproj(x,y,z)
-      a = adamp(x,y,z,i)
-      idf_4pi = idf * over_4pi
 
       Bji_nj = line%Bji * nj
       Bij_ni = line%Bij * ni
       chi_fac = Bij_ni - Bji_nj
 
-      do f=fs, fe
-        associate(chi=>work(1,f,x,y,z), eta=>work(2,f,x,y,z))
-          q = line%q(f)
-          phi = (q - vpr) * idf
-          phi = voigt_function2(a, phi)
-          phi = phi * idf_4pi * (q + 1)
-          chi = chi + phi * chi_fac
-          eta = eta + phi * Bji_nj
-        end associate
-      end do 
+      if (line%io > 1) then
+        do ih=1, line%io
+          a = adamp(x,y,z,i) + idf*line%da(ih)
+          vpr = vproj(x,y,z) + line%dq(ih)
+          idf_4pi = idf * over_4pi * line%wt(ih)
+          call voigt_opacity
+        end do
+      else
+        vpr = vproj(x,y,z)
+        a = adamp(x,y,z,i)
+        idf_4pi = idf * over_4pi
+        call voigt_opacity
+      endif
     end do
     end do
     end do
   end do
-
   call trace%end(itimer)
+
+contains
+  !-----------------------------------------------------------------------------
+  subroutine voigt_wphi()
+    real(4) :: q, vel, vgt, phi
+    !-----------------------------------------------------------------------------
+    wp = 0
+    do f=fs, fe
+      q = line%q(f)
+      vel = (q - vpr) * idf
+      vgt = voigt_function2(a, vel)
+      wp = wp + vgt * line%wq(f)
+    end do 
+    wphi(x,y,z) = wphi(x,y,z) + wp * widf
+  end subroutine
+
+  !-----------------------------------------------------------------------------
+  subroutine voigt_opacity()
+    real(4) :: q, vel, vgt, phi
+    !-----------------------------------------------------------------------------
+    do f=fs, fe
+      associate(chi=>work(1,f,x,y,z), eta=>work(2,f,x,y,z))
+        q = line%q(f)
+        vel = (q - vpr) * idf
+        vgt = voigt_function2(a, vel)
+        phi = vgt * idf_4pi * (q + 1)
+        chi = chi + phi * chi_fac
+        eta = eta + phi * Bji_nj
+      end associate
+    end do 
+  end subroutine voigt_opacity
 END SUBROUTINE add_bound_bound_opacities
 
 !===============================================================================
@@ -613,9 +646,9 @@ SUBROUTINE bound_bound_rates (self, wmu, inv_df, vproj, adamp, gamma_ij, gamma_j
   real(4), contiguous, dimension(:,:,:,:) :: adamp, gamma_ij, gamma_ji
   real(4), contiguous, dimension(:,:,:,:), pointer :: n
   real(4), dimension(:), allocatable :: w_nu
-  real(4) :: wmu, idf, vpr, a, idf_4pi, ni, nj, chi_fac, Bji_nj, q, phi
-  real(4) :: Bij_ni, g_ij, g_ji, vvv, ufac
-  integer :: i, zup, l
+  real(4) :: wmu, idf, vpr, a, idf_4pi, ni, nj, chi_fac, Bji_nj, q, phi, vel, vgt
+  real(4) :: Bij_ni, g_ij, g_ji, vvv, ufac, a2
+  integer :: i, l, ih
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin (trim(self%kind)//'%bound_bound_rates', itimer=itimer)
@@ -628,8 +661,7 @@ SUBROUTINE bound_bound_rates (self, wmu, inv_df, vproj, adamp, gamma_ij, gamma_j
     fe = line%iblue
     w_nu(fs:fe) = wmu * self%h4pi_nu(fs:fe) * line%wnu(fs:fe)
 
-    do z=1, nz
-      zup = z - self%dir
+    do z=1,nz
     do y=1,ny
     do x=1,nx
       ni = n(x,y,z,line%i)
@@ -644,18 +676,39 @@ SUBROUTINE bound_bound_rates (self, wmu, inv_df, vproj, adamp, gamma_ij, gamma_j
 
       g_ij = 0
       g_ji = 0
-      do f=fs, fe
-        associate(Inu=>work(3,f,x,y,z), Psi=>self%Psi(f,x,y,z))
-          q = line%q(f)
-          phi = (q - vpr) * idf
-          phi = voigt_function2(a, phi)
-          phi = phi * idf_4pi * (q + 1)
-          vvv = phi * w_nu(f)
-          phi = phi * Psi
-          g_ji = g_ji + vvv*(1. + Inu - phi*Bij_ni)
-          g_ij = g_ij + vvv*(Inu - phi*Bji_nj)
-        end associate
-      end do 
+      if (line%io > 1) then
+        do f=fs, fe
+          associate(Inu=>work(3,f,x,y,z), Psi=>self%Psi(f,x,y,z))
+            phi = 0
+            do ih=1, line%io
+              q = line%q(f) - line%dq(ih)
+              a2 = a + idf*line%da(ih)
+              vel = (q - vpr) * idf
+              vgt = voigt_function2(a2, vel)
+              phi = vgt * (q + 1)
+              phi = phi + phi * line%wt(ih)
+            end do
+            phi = phi * idf_4pi
+            vvv = phi * w_nu(f)
+            phi = phi * Psi
+            g_ji = g_ji + vvv*(1. + Inu - phi*Bij_ni)
+            g_ij = g_ij + vvv*(Inu - phi*Bji_nj)
+          end associate
+        end do
+      else
+        do f=fs, fe
+          associate(Inu=>work(3,f,x,y,z), Psi=>self%Psi(f,x,y,z))
+            q = line%q(f)
+            vel = (q - vpr) * idf
+            vgt = voigt_function2(a, vel)
+            phi = vgt * idf_4pi * (q + 1)
+            vvv = phi * w_nu(f)
+            phi = phi * Psi
+            g_ji = g_ji + vvv*(1. + Inu - phi*Bij_ni)
+            g_ij = g_ij + vvv*(Inu - phi*Bji_nj)
+          end associate
+        end do
+      endif
       gamma_ji(x,y,z,i) = gamma_ji(x,y,z,i) + g_ji * line%Aji
       gamma_ij(x,y,z,i) = gamma_ij(x,y,z,i) + g_ij * line%Aij
     end do

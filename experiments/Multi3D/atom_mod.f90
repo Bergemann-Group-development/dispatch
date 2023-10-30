@@ -593,11 +593,11 @@ MODULE atom_mod
       ! io > 1: Number of components in term
       ! Like in Multi, thereafter follows one extra input line per component:
 
-      !   determ  wterm  fterm  gaterm  gwterm  gqterm
-      ! determ    energy difference for component i of transition kr. unit cm-1.
-      ! wterm     weight of component kterm in weighted average
+      !   dq  wt  fterm  da  gwterm  gqterm
+      ! dq    energy difference for component i of transition kr. unit cm-1.
+      ! wt     weight of component kterm in weighted average
       ! fterm     oscillator strength
-      ! gaterm    damping constants
+      ! da    damping constants
       ! gwterm
       ! gqterm
       ! adterm    adamp for component, calculated in damp
@@ -607,20 +607,21 @@ MODULE atom_mod
         write(stdout, *) uppercase(rname), &
         ' found ' ,nterm, 'components in transition KR = ',i
 
-        allocate(lin%determ (nterm) )
-        allocate(lin%wterm  (nterm) )
+        allocate(lin%dq (nterm) )
+        allocate(lin%wt  (nterm) )
         allocate(lin%fterm  (nterm) )
-        allocate(lin%gaterm (nterm) )
+        allocate(lin%da (nterm) )
         allocate(lin%gwterm (nterm) )
         allocate(lin%gqterm (nterm) )
         !allocate(lin%adterm, xs, xe, ys, ye, zs1, ze1, 1, nterm, rname)
 
         do iterm = 1, nterm
-          read(latom,*) lin%determ(iterm), lin%wterm(iterm),  lin%fterm(iterm), &
-                        lin%gaterm(iterm), lin%gwterm(iterm), lin%gqterm(iterm)
+          read(latom,*) lin%dq(iterm), lin%wt(iterm),  lin%fterm(iterm), &
+                        lin%da(iterm), lin%gwterm(iterm), lin%gqterm(iterm)
         end do
 
-        lin%determ = cc/lin%nu0 * lin%determ
+        lin%dq = cc/lin%nu0 * lin%dq
+        lin%da = (lin%da - lin%ga) * over_4pi / lin%nu0
       end if
 
       !allocate( lin%nu(lin%nnu) )
