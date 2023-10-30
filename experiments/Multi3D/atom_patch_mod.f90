@@ -293,7 +293,10 @@ MODULE atom_patch_mod
     n     => atom%data%n    
     nstar => atom%data%nstar
 
-    call os%allocate(atom%data%wphi, [self%n, atom%nline], label='wphi', zero=.true.)
+    if (self%maxiter > 0) then
+      call os%allocate(atom%data%wphi, [self%n, atom%nline], label='wphi', zero=.true.)
+    endif
+
     call os%allocate(atom%data%totn, self%n, label='totn')
     totn => atom%data%totn
 
@@ -674,8 +677,8 @@ MODULE atom_patch_mod
     call self%m3d_patch_t%init_nbors_hash(nbors)
     key = self%key
     key(4) = hash_string('nlte_patch')
-    do i_nu=-self%n_nu, 2*self%n_nu
-      do i_mu=-1, 2
+    do i_mu=-1, 2
+      do i_nu=-self%n_nu, 2*self%n_nu
         key(2) = i_nu
         key(3) = i_mu
         call self%check_nbor(key, nbors)
@@ -708,8 +711,8 @@ MODULE atom_patch_mod
     ! ----------------------------------------------------------------------------
     call self%check_access(self)
     write(sfolder, '(A, A)') trim(folder), 'save/'
-    write(filename, '(A, A, 3(I3.3), A)') trim(label), '_', self%key(1:3), '.bin'
-    write(metafile, '(A, A, 3(I3.3), A)') trim(label), '_meta.txt'
+    write(filename, '(A, A, 2(I3.3), A)') trim(label), '_', self%key(1:2), '.bin'
+    write(metafile, '(A, A)') trim(label), '_meta.txt'
     call os%check_file(trim(sfolder)//filename)
     call os%check_file(trim(sfolder)//metafile)
     open(newunit=lunit, file=trim(sfolder)//metafile, form='formatted', iostat=iostat)

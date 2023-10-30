@@ -4101,12 +4101,22 @@ SUBROUTINE allocate_mem (self, m_in, label)
   class(patch_t):: self
   integer, intent(in), optional :: m_in(6)
   character(len=*), optional :: label
+  integer :: m(6)
   !-----------------------------------------------------------------------------
   if (present(m_in)) then
-    call os%allocate(self%mem, m_in, label=trim(self%kind)//'%mem')
+    m = m_in
   else
-    call os%allocate(self%mem, [self%gn, self%mv, self%nt, self%nw], label=trim(self%kind)//'%mem')
+    m = [self%gn, self%mv, self%nt, self%nw]
   endif
+  if (product(m) < 0) then
+    print *, ' m = ', m
+    if (all(m > 0)) then
+      call shared%abort('patch_t%allocate_mem: Negative allocation size! Array possibly too large')
+    else
+      call shared%abort('patch_t%allocate_mem: Negative allocation size! Some dimension is negative!')
+    endif
+  endif
+  call os%allocate(self%mem, m, label=trim(self%kind)//'%mem')
 END SUBROUTINE allocate_mem
 
 END MODULE patch_mod

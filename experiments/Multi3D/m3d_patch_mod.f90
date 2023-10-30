@@ -63,7 +63,7 @@ MODULE m3d_patch_mod
       logical :: on=.false.       ! allows local turn-off
       logical :: in_task_list = .false.
       logical :: initialized  = .false., nullified = .false.
-      real(8) :: t_offset=0, t_push=0
+      real(8) :: t_offset=0
       integer :: iter=0, maxiter, master_maxiter, dir=0
       integer :: n_nu, n_omega, n_out, zs, ze
       integer :: fcheck, pcheck(3), linecheck, lvlcheck
@@ -77,7 +77,7 @@ MODULE m3d_patch_mod
       integer :: i_Gij=1, i_Gji=2
       integer :: i_Inu=1
       character(3) :: mem_label='mem'
-      logical :: prepend=.true.
+      logical :: prepend=.false.
     contains
       procedure :: pre_init
       procedure :: post_pre_init
@@ -105,7 +105,6 @@ MODULE m3d_patch_mod
       procedure :: distance_to
       procedure :: nbors_finished
       procedure :: skip_iterations
-      procedure :: push
       procedure :: allocate_mem
       procedure :: deallocate_mem
       procedure :: check_mem_NaN
@@ -142,12 +141,11 @@ MODULE m3d_patch_mod
     logical, public, save :: use_density=.true., use_ne=.true., line_blanketing=.false.
     logical, public, save :: overlapping_bb=.true., overlapping_bf=.true.
     logical, public, save :: absmet_in_output=.false.
-    logical, public, save :: print_start=.false., print_push=.false., print_send=.false.
+    logical, public, save :: print_start=.false., print_send=.false.
     logical, public, save:: make_opac_table=.false.
     real(8), public, save :: dlam=100.
     character(len=128), save :: save_patch_kind=''
     character(len=64), public, save:: custom_mu=''
-    real(8), parameter :: t_push=0.1d0
     real(4), public :: vel_max=0.0
     real(4), public :: ray_offset(2)=[0.,0.]
     integer, public :: pivot_z=0
@@ -172,7 +170,7 @@ MODULE m3d_patch_mod
     namelist /m3d_params/ on, verbose, fcheck, linecheck, pcheck, quad_scheme, &
     long_scheme, n_nu, maxiter, ilambd, lvlcheck, comoving_frame, save_id, &
     ntheta, nphi, check_NaN, custom_mu, lse_no_pivot, save_patch_kind, cswitch, &
-    save_back_cont, detailed_prints, print_finished, print_start, print_push, &
+    save_back_cont, detailed_prints, print_finished, print_start, &
     print_send, linear_long, interp_log, ray_offset, print_download, save_atom_line, &
     lse_solver, decouple_continuum, m1d_legacy_mode, nu_tolerance, disable_stark, &
     disable_vdw, disable_ga, pivot_z, use_vel, preconditioning, save_Qrad, &
@@ -955,35 +953,17 @@ MODULE m3d_patch_mod
   END SUBROUTINE check_mem_NaN
 
   !===============================================================================
-  SUBROUTINE set_place (self, other, place, push)
+  SUBROUTINE set_place (self, other, place)
     class(m3d_patch_t) :: self
     class(task_t):: other
     integer :: place
-    logical, optional :: push
     !-----------------------------------------------------------------------------
-    !if (option(push) .and. place < 100) then
-    !  other%place = place+100
-    !else
-      other%place = place
-    !endif
-    if (self%id /= other%id .and. print_push) then
+    other%place = place
+    if (self%id /= other%id) then
       print '(A, A, A, A, I4, A, I4)', trim(self%m3d_patch_info2()), ' set place of ', &
       trim(other%kind), ' ', other%id, ' to ', other%place
     endif
   END SUBROUTINE set_place
-
-  !===============================================================================
-  SUBROUTINE push (self, other)
-    class(m3d_patch_t) :: self, other
-    !-----------------------------------------------------------------------------
-    if (other%is_set(bits%ready)) return
-    other%t_push = t_push
-    other%time = other%time - other%t_push
-    if (self%id /= other%id .and. print_push) then
-      print '(A, A, A, 1x, I6)', trim(self%m3d_patch_info2()), ' pushed ', &
-      trim(other%kind), other%id
-    endif
-  END SUBROUTINE push
   
   !===============================================================================
   SUBROUTINE skip_iterations (self, n)
@@ -1177,8 +1157,8 @@ MODULE m3d_patch_mod
     ! ----------------------------------------------------------------------------
     call self%check_access(self)
     write(sfolder, '(A, A)') trim(folder), 'save/'
-    write(filename, '(A, A, 3(I3.3), A)') trim(label), '_', self%key(1:3), '.bin'
-    write(metafile, '(A, A, 3(I3.3), A)') trim(label), '_meta.txt'
+    write(filename, '(A, A, 2(I3.3), A)') trim(label), '_', self%key(1:2), '.bin'
+    write(metafile, '(A, A)') trim(label), '_meta.txt'
     call os%check_file(trim(sfolder)//filename)
     call os%check_file(trim(sfolder)//metafile)
     open(newunit=lunit, file=trim(sfolder)//metafile, form='formatted', iostat=iostat)
@@ -1237,10 +1217,6 @@ MODULE m3d_patch_mod
       !self%prepend = .false.
     else
       queue = self%task_t%queue_before(other)
-    endif
-    if (self%t_push > 0.) then
-      self%time = self%time + self%t_push
-      self%t_push = 0.
     endif
   END FUNCTION queue_before
 

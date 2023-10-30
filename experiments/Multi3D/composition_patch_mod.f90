@@ -174,18 +174,17 @@ SUBROUTINE create_sub_patches (self, nu, mu, sp, atom)
   type(atom_type), intent(in), pointer, optional :: atom
   class(nlte_patch_t), pointer :: nlte
   integer :: n, m
-  logical :: cf, new_cont, new_rad, new_out, new_net, new_proj, new_mean, new_nlte
+  logical :: new_nlte
   !-----------------------------------------------------------------------------
   if (.not. associated(sp)) return
   if (sp%nnu == 0) return
-  do n=nu(1), nu(2)
-    cf = comoving_frame .and. n>0
   do m=mu(1), mu(2)
+  do n=nu(1), nu(2)
     new_nlte = n/=0 .and. m/=0
     if (new_nlte) then
       allocate(nlte)
-      call nlte%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp)
       if (present(atom)) nlte%atom => atom
+      call nlte%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp)
     endif
   end do
 end do
