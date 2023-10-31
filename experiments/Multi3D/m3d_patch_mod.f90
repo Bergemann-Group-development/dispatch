@@ -907,13 +907,11 @@ MODULE m3d_patch_mod
     logical :: free
     !-----------------------------------------------------------------------------
     if (associated(self%mem)) then
-      if (self%is_clear(bits%busy)) then
-        call os%deallocate(self%mem, label=trim(self%kind)//'%'//self%mem_label)
-        self%nullified = .false.
-        if (present(print)) then
-          if (print .and. (self%print_update_info .or. self%verbose > 2) .and. detailed_prints) then
-            write(stdout, *) '  deallocated', self%m3d_patch_info2()
-          endif
+      call os%deallocate(self%mem, label=trim(self%kind)//'%'//self%mem_label)
+      self%nullified = .false.
+      if (present(print)) then
+        if (print .and. (self%print_update_info .or. self%verbose > 2) .and. detailed_prints) then
+          write(stdout, *) '  deallocated', self%m3d_patch_info2()
         endif
       endif
     endif

@@ -882,7 +882,9 @@ SUBROUTINE work_to_mem (self, i_mu, i_set)
   lower_end = self%patch%boundaries%is_set(bits%zl) .and. self%dir < 0
 
   if (upper_end .or. lower_end) then
-    call self%deallocate_mem()
+    if (i_mu == self%mue .and. i_set == self%n_set) then
+      call self%deallocate_mem()
+    endif
   else
     z = merge(self%patch%n(3), 1, self%dir > 0)
     do f=self%fs, self%fe
