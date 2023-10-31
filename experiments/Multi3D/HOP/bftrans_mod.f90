@@ -236,7 +236,7 @@ contains
   SUBROUTINE interp_xkap(self, chi, temp, teta, fakt, lam, ne, nhe, shield)
     class(bftrans_type) :: self
     class(level_type), pointer :: lvl
-    real(4), dimension(:,:,:,:), intent(inout) :: chi
+    real(4), dimension(:,:,:,:), contiguous, intent(inout) :: chi
     real(dp), intent(in), dimension(:,:,:), target :: temp, teta
     real(dp), intent(inout), dimension(:,:,:) :: fakt
     real(dp), intent(in), dimension(:) :: lam
@@ -595,7 +595,7 @@ contains
   !===============================================================================
   SUBROUTINE add_absorption(self, chi, lam, temp, EK_over_temp, teta, pe, dxi, ne, nhe, shield, sorted)
       class(bftrans_type), intent(in) :: self
-      real(4), dimension(:,:,:,:), intent(inout) :: chi
+      real(4), dimension(:,:,:,:), contiguous, intent(inout) :: chi
       real(dp), dimension(:,:,:), intent(in) :: temp, EK_over_temp, teta, pe, dxi
       real(dp), dimension(:,:,:), intent(in), optional :: ne, nhe, shield
       real(dp), dimension(:), intent(in) :: lam

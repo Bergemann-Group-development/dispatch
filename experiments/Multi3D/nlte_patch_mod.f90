@@ -248,7 +248,7 @@ SUBROUTINE execute (self)
       if (i_set < 3) then ! i_set==3 is the continuum only
         if (self%bound_bound) call self%add_bound_bound_opacities(wmu, inv_df, vproj, adamp, LTE=i_set==2)
         if (use_linelist) then
-          call self%composition%add_linelist_opacities(self%nu, work(1,:,:,:,1:nz), work(2,:,:,:,1:nz), back(3,:,:,:,:), vproj, dlam)
+          call self%composition%add_linelist_opacities(self%nu, work(1,:,:,:,1:nz), work(2,:,:,:,1:nz), back(:,:,:,:,3), vproj, dlam)
         endif
       endif
 
@@ -303,7 +303,7 @@ contains
   subroutine allocate_arrays()
     fs = self%fs
     fe = self%fe
-    allocate(back(3,fs:fe,nx,ny,nz), source=0.)
+    allocate(back(fs:fe,nx,ny,nz,3), source=0.)
     allocate(work(3,fs:fe,nx,ny,zs:ze), source=0.)
     allocate(self%twohnu3_c2(fs:fe))
     allocate(self%h4pi_nu(fs:fe))
@@ -393,14 +393,14 @@ SUBROUTINE lte_background_opacities (self, temp, include_absmet)
     h_kT = h_k / temp(x,y,z)
     do f=self%fs, self%fe
       hv_kT = self%nu(f) * h_kT
-      back(3,f,x,y,z) = exp(-hv_kT)
+      back(f,x,y,z,3) = exp(-hv_kT)
     end do
   end do
   end do
   end do
 
   ! getting background LTE absorption
-  call self%composition%absorption(self%nu, back(1,:,:,:,:), blz=back(3,:,:,:,:), &
+  call self%composition%absorption(self%nu, back(:,:,:,:,1), blz=back(:,:,:,:,3), &
   include_absmet=include_absmet, sorted=self%sp%sorted)
 
   do z=1, nz
@@ -408,7 +408,7 @@ SUBROUTINE lte_background_opacities (self, temp, include_absmet)
   do x=1, nx
     do f=self%fs, self%fe
       ! The source function is the planck function in LTE, therefore eta=chi*Bnu
-      associate(blz=>back(3,f,x,y,z), chi=>back(1,f,x,y,z), eta=>back(2,f,x,y,z))
+      associate(blz=>back(f,x,y,z,3), chi=>back(f,x,y,z,1), eta=>back(f,x,y,z,2))
         if (blz>1e-10) then
           bnu = blz / (1.0 - blz)
         else
@@ -467,7 +467,7 @@ SUBROUTINE add_bound_free_opacities (self)
   do y=1, ny
   do x=1, nx
     do f=fsmin, femax
-      associate(chi=>work(1,f,x,y,z), eta=>work(2,f,x,y,z), blz=>back(3,f,x,y,z))
+      associate(chi=>work(1,f,x,y,z), eta=>work(2,f,x,y,z), blz=>back(f,x,y,z,3))
         eta = eta * blz
         chi = chi - eta
       end associate
@@ -475,8 +475,8 @@ SUBROUTINE add_bound_free_opacities (self)
 
     do f=self%fs, self%fe
       ! adding background (LTE) and bound-free to give continuum opacities
-      back(1,f,x,y,z) = back(1,f,x,y,z) + work(1,f,x,y,z)
-      back(2,f,x,y,z) = back(2,f,x,y,z) + work(2,f,x,y,z)
+      back(f,x,y,z,1) = back(f,x,y,z,1) + work(1,f,x,y,z)
+      back(f,x,y,z,2) = back(f,x,y,z,2) + work(2,f,x,y,z)
     end do
   end do
   end do
@@ -755,7 +755,7 @@ SUBROUTINE bound_free_rates (self, gamma_ij, gamma_ji)
       g_ij = 0
       g_ji = 0
       do f=fs, fe
-        associate(Jnu=>self%Jnu(f,x,y,z), blz=>back(3,f,x,y,z), Psi=>self%PsiJ(f,x,y,z))
+        associate(Jnu=>self%Jnu(f,x,y,z), blz=>back(f,x,y,z,3), Psi=>self%PsiJ(f,x,y,z))
           vij = w_alpha(f)
           vji = vij * blz
           phi = Psi * cont%alpha(f)
@@ -909,8 +909,8 @@ SUBROUTINE back_to_work (self)
   do x=1, nx
   do f=self%fs, self%fe
     associate(chi=>work(1,f,x,y,z), eta=>work(2,f,x,y,z))
-      chi = back(1,f,x,y,z)
-      eta = back(2,f,x,y,z)
+      chi = back(f,x,y,z,1)
+      eta = back(f,x,y,z,2)
     end associate
   end do
   end do
@@ -1182,8 +1182,8 @@ SUBROUTINE save_contribution_function (self, i_set, i_mu)
       do y=1,ny
       do x=1,nx
         do f=fs,fe
-          cnt_chi = back(1,f,x,y,z)
-          cnt_eta = back(2,f,x,y,z)
+          cnt_chi = back(f,x,y,z,1)
+          cnt_eta = back(f,x,y,z,2)
           associate(cf => cntrbf(i)%data(x,y,z,f,:,i_mu))
             if (i_set < 3) then
               net_chi = work(1,f,x,y,z)

@@ -1363,8 +1363,8 @@ contains
         class(bftrans_type), pointer :: trans
         class(ion_type), pointer :: HeI
         real(dp), dimension(:), intent(in) :: nu
-        real(4), dimension(:,:,:,:), intent(inout) :: chi
-        real(4), dimension(:,:,:,:), intent(in), optional :: blz
+        real(4), dimension(:,:,:,:), contiguous, intent(inout) :: chi
+        real(4), dimension(:,:,:,:), contiguous, intent(in), optional :: blz
         real(dp), dimension(:), allocatable :: lam
         logical, optional :: include_absmet, absmet_big_end, sorted
         real(dp) :: xray2, epsln, stim
