@@ -842,7 +842,7 @@ contains
                     endif
     
                     call trace%begin('bbtrans_type%add_lte_opacities', itimer=itimer2)
-                    call line%add_lte_opacities2(ired, iblue, nu, &
+                    call line%add_lte_opacities(ired, iblue, nu, &
                         vproj, idopf, EK_over_temp, dxij, ipart, ne, tothi, vb2, stark_pe, unsold, chi_l, all_chi)
                     call trace%end(itimer2)
                 end do
@@ -868,7 +868,7 @@ contains
                 fmask(ired:iblue) = .true.
       
                 call trace%begin('bbtrans_type%add_lte_opacities', itimer=itimer2)
-                call line%add_lte_opacities2(ired, iblue, nu, &
+                call line%add_lte_opacities(ired, iblue, nu, &
                     vproj, inv_df, EK_over_temp, dxij, inv_part, ne, tothi, vbar2, stark_pe, unsold, chi_l, all_chi)
                 call trace%end(itimer2)
             end do

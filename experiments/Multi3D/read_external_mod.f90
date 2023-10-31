@@ -4,7 +4,6 @@
 MODULE read_external_mod
   USE io_mod
   USE os_mod
-  USE m3io_mod, only: NextEntry
   USE mpi_coords_mod
   USE mpi_mod
   USE omp_mod
@@ -27,7 +26,7 @@ MODULE read_external_mod
   USE composition_patch_mod, only: FeH
   USE patch_mod
   USE mconst, only:cc
-  USE atom_mod, only: m1d_legacy_mode
+  USE atom_mod, only: m1d_legacy_mode, NextEntry
   USE ray_patch_mod, only: maxvel
   USE m3d_patch_mod, only: maxiter, ilambd, m3d_patch_t, atom_update_counter, &
   global_maxerr, global_pos, nz_total, use_density, use_ne

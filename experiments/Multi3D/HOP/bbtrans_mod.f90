@@ -20,7 +20,6 @@ MODULE bbtrans_mod
     procedure :: damping => line_damping
     procedure :: dampingH => line_dampingH
     procedure :: add_lte_opacities
-    procedure :: add_lte_opacities2
     procedure :: LinearStarkH
     procedure :: IonicH
     procedure :: prepare_Stark
@@ -67,67 +66,7 @@ contains
   !------------------------------------------------------------------------------------
 
   !====================================================================================
-  SUBROUTINE add_lte_opacities(self, nu, vproj, inv_df, EK_over_temp, dxij, inv_part, adamp, chi_fac, chi)
-    class(bbtrans_type), intent(in) :: self
-    real(8), dimension(:), intent(in), contiguous :: nu
-    real(4), dimension(:,:,:), intent(in), contiguous :: vproj, inv_df, inv_part
-    real(4), dimension(:,:,:), intent(in), contiguous :: EK_over_temp, dxij
-    real(4), dimension(:,:,:), contiguous :: adamp, chi_fac
-    real(4), dimension(:,:,:,:), intent(inout), contiguous :: chi
-    real(8) :: q
-    real(4) :: ex, ni, nj, nij, upper_ev, nu0_ev, scalar, phi
-    integer :: i,j,k,f, m(4), itimer=0
-    !real(4), dimension(na+1, nv+1) :: local_table
-    !local_table = voigt_table !prefetch
-    !----------------------------------------------------------------------------------
-    !call trace%begin('add_lte_opacities_1', itimer=itimer)
-    m = shape(chi)
-    scalar = over_4pi / self%nu0
-    nu0_ev = H_E * self%nu0
-    upper_ev = self%lower_ev + nu0_ev
-
-    do k=1, m(3)
-    do j=1, m(2)
-    do i=1, m(1)
-      ex = (upper_ev - dxij(i,j,k)) * EK_over_temp(i,j,k)
-      if (ex < 85.) then
-        adamp(i,j,k) = adamp(i,j,k) * scalar * inv_df(i,j,k)
-
-        nj = self%upper_g * inv_part(i,j,k) * exp(-ex)
-        nij = exp(nu0_ev * EK_over_temp(i,j,k))
-
-        nj = inv_df(i,j,k) * nj * over_4pi
-        !eta_fac(i,j,k) = nj * self%Aji
-        chi_fac(i,j,k) = nj * (nij - 1.) * self%Bji
-      else
-        adamp(i,j,k) = 0.0
-      endif
-    end do
-    end do
-    end do
-    
-    !DIR$ FORCEINLINE
-    do f=1, m(4)
-      q = nu(f) / self%nu0 - 1
-      do k=1, m(3)
-      do j=1, m(2)
-      do i=1, m(1)
-        if (adamp(i,j,k) > 0.0) then
-          phi = (q - vproj(i,j,k)) * inv_df(i,j,k)
-          phi = voigt_function2(adamp(i,j,k), phi)
-          !eta(i,j,k,f) = eta(i,j,k,f) + phi * eta_fac(i,j,k)
-          chi(i,j,k,f) = chi(i,j,k,f) + phi * chi_fac(i,j,k)
-        endif
-      end do
-      end do
-      end do
-    end do
-    !call trace%end(itimer)
-  END SUBROUTINE add_lte_opacities
-  !------------------------------------------------------------------------------------
-
-  !====================================================================================
-  SUBROUTINE add_lte_opacities2(self, ired, iblue, nu, vproj, inv_df, EK_over_temp, dxij, inv_part, &
+  SUBROUTINE add_lte_opacities(self, ired, iblue, nu, vproj, inv_df, EK_over_temp, dxij, inv_part, &
     ne, tothi, vbar2, stark_pe, unsold, chi, cont)
     class(bbtrans_type), intent(in) :: self
     integer, intent(in) :: ired, iblue
@@ -222,7 +161,7 @@ contains
     end do
     end do
     !call trace%end(itimer)
-  END SUBROUTINE add_lte_opacities2
+  END SUBROUTINE add_lte_opacities
   !------------------------------------------------------------------------------------
 
   !====================================================================================

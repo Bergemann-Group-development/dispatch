@@ -29,7 +29,6 @@ MODULE nlte_patch_mod
   USE op_math_mod, only: pchip_mono
   USE handyfuncs_mod
   USE atom_mod, only:atom_type
-  USE spectrum_mod, only:set_weights
   USE ray_patch_mod, only:ray_patch_t
   USE m3d_halo_mod, only: lock_mem, unlock_mem
   USE m3d_patch_mod, only: all_vec=>vec, all_wmu=>wmu, use_vel, m3d_patch_t, &
@@ -46,7 +45,7 @@ MODULE nlte_patch_mod
     type(line_type), dimension(:), allocatable :: line
     type(cont_type), dimension(:), allocatable :: cont
     real(4), dimension(:,:,:,:), allocatable :: Jnu, Psi, PsiJ
-    real(4), dimension(:), allocatable :: twohnu3_c2, h4pi_nu
+    real(4), dimension(:), allocatable :: twohnu3_c2
     real(8), dimension(:), pointer :: nu
     integer :: nline=0, ncont=0, mus, mue, n_set, nf, n_mu
     logical :: use_atom, bound_bound, bound_free
@@ -219,7 +218,6 @@ SUBROUTINE execute (self)
   call allocate_arrays()
 
   self%twohnu3_c2 = twoh_c2 * self%nu**3
-  self%h4pi_nu = 4*PI / (hh*self%nu)
 
   inv_df = self%atom%inverse_doppler_factor(temp)
 
@@ -248,7 +246,7 @@ SUBROUTINE execute (self)
       if (i_set < 3) then ! i_set==3 is the continuum only
         if (self%bound_bound) call self%add_bound_bound_opacities(wmu, inv_df, vproj, adamp, LTE=i_set==2)
         if (use_linelist) then
-          call self%composition%add_linelist_opacities(self%nu, work(1,:,:,:,1:nz), work(2,:,:,:,1:nz), back(:,:,:,:,3), vproj, dlam)
+          call self%composition%add_linelist_opacities(self%nu, work(:,:,:,1:nz,1), work(:,:,:,1:nz,2), back(:,:,:,:,3), vproj, dlam)
         endif
       endif
 
@@ -270,7 +268,7 @@ SUBROUTINE execute (self)
       endif
 
       if (self%print_update_info .and. i_mu==self%mus) then
-        memcheck(1:3) = work(:, self%fcheck, p(1), p(2), p(3))
+        memcheck(1:3) = work(self%fcheck, p(1), p(2), p(3),:)
         memcheck(2:3) = memcheck(2:3) * self%twohnu3_c2(self%fcheck)
       endif
 
@@ -304,9 +302,8 @@ contains
     fs = self%fs
     fe = self%fe
     allocate(back(fs:fe,nx,ny,nz,3), source=0.)
-    allocate(work(3,fs:fe,nx,ny,zs:ze), source=0.)
+    allocate(work(fs:fe,nx,ny,zs:ze,3), source=0.)
     allocate(self%twohnu3_c2(fs:fe))
-    allocate(self%h4pi_nu(fs:fe))
     allocate(inv_df, vproj, mold=temp)
     call mem_register(back,      label='back')
     call mem_register(work,      label='work')
@@ -349,7 +346,7 @@ contains
     call mem_unregister(work     , label='work')
     call mem_unregister(back     , label='back')
     deallocate(work, back)
-    deallocate(self%twohnu3_c2, self%h4pi_nu)
+    deallocate(self%twohnu3_c2)
     if (self%bound_bound) then
       call mem_unregister(adamp, label='adamp')
       deallocate(adamp)
@@ -454,8 +451,8 @@ SUBROUTINE add_bound_free_opacities (self)
       tmp = ni_over_nj_lte(x,y,z) * nj
       do f=fs, fe
         alpha = cont%alpha(f)
-        work(1,f,x,y,z) = work(1,f,x,y,z) + alpha * ni   ! chi
-        work(2,f,x,y,z) = work(2,f,x,y,z) + alpha * tmp  ! eta
+        work(f,x,y,z,1) = work(f,x,y,z,1) + alpha * ni   ! chi
+        work(f,x,y,z,2) = work(f,x,y,z,2) + alpha * tmp  ! eta
       end do
     end do
     end do
@@ -467,7 +464,7 @@ SUBROUTINE add_bound_free_opacities (self)
   do y=1, ny
   do x=1, nx
     do f=fsmin, femax
-      associate(chi=>work(1,f,x,y,z), eta=>work(2,f,x,y,z), blz=>back(f,x,y,z,3))
+      associate(chi=>work(f,x,y,z,1), eta=>work(f,x,y,z,2), blz=>back(f,x,y,z,3))
         eta = eta * blz
         chi = chi - eta
       end associate
@@ -475,8 +472,8 @@ SUBROUTINE add_bound_free_opacities (self)
 
     do f=self%fs, self%fe
       ! adding background (LTE) and bound-free to give continuum opacities
-      back(f,x,y,z,1) = back(f,x,y,z,1) + work(1,f,x,y,z)
-      back(f,x,y,z,2) = back(f,x,y,z,2) + work(2,f,x,y,z)
+      back(f,x,y,z,1) = back(f,x,y,z,1) + work(f,x,y,z,1)
+      back(f,x,y,z,2) = back(f,x,y,z,2) + work(f,x,y,z,2)
     end do
   end do
   end do
@@ -624,7 +621,7 @@ contains
     real(4) :: q, vel, vgt, phi
     !-----------------------------------------------------------------------------
     do f=fs, fe
-      associate(chi=>work(1,f,x,y,z), eta=>work(2,f,x,y,z))
+      associate(chi=>work(f,x,y,z,1), eta=>work(f,x,y,z,2))
         q = line%q(f)
         vel = (q - vpr) * idf
         vgt = voigt_function2(a, vel)
@@ -643,21 +640,21 @@ SUBROUTINE bound_bound_rates (self, wmu, inv_df, vproj, adamp, gamma_ij, gamma_j
   real(4), contiguous, dimension(:,:,:) :: inv_df, vproj
   real(4), contiguous, dimension(:,:,:,:) :: adamp, gamma_ij, gamma_ji
   real(4), contiguous, dimension(:,:,:,:), pointer :: n
-  real(4), dimension(:), allocatable :: w_nu
+  real(4), dimension(:), allocatable :: wmunu
   real(4) :: wmu, idf, vpr, a, idf_4pi, ni, nj, chi_fac, Bji_nj, q, phi, vel, vgt
   real(4) :: Bij_ni, g_ij, g_ji, vvv, ufac, a2
   integer :: i, l, ih
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin (trim(self%kind)//'%bound_bound_rates', itimer=itimer)
-  allocate(w_nu(self%fs:self%fe))
+  allocate(wmunu(self%fs:self%fe))
   ! Computing bound-bound radiative rates
   n => self%atom%data%n
   do i=1, self%nline
     line => self%line(i)
     fs = line%ired
     fe = line%iblue
-    w_nu(fs:fe) = wmu * self%h4pi_nu(fs:fe) * line%wnu(fs:fe)
+    wmunu(fs:fe) = wmu * line%wnu(fs:fe)
 
     do z=1,nz
     do y=1,ny
@@ -676,7 +673,7 @@ SUBROUTINE bound_bound_rates (self, wmu, inv_df, vproj, adamp, gamma_ij, gamma_j
       g_ji = 0
       if (line%io > 1) then
         do f=fs, fe
-          associate(Inu=>work(3,f,x,y,z), Psi=>self%Psi(f,x,y,z))
+          associate(Inu=>work(f,x,y,z,3), Psi=>self%Psi(f,x,y,z))
             phi = 0
             do ih=1, line%io
               q = line%q(f) - line%dq(ih)
@@ -687,7 +684,7 @@ SUBROUTINE bound_bound_rates (self, wmu, inv_df, vproj, adamp, gamma_ij, gamma_j
               phi = phi + vgt * line%wt(ih)
             end do
             phi = phi * idf_4pi
-            vvv = phi * w_nu(f)
+            vvv = phi * wmunu(f)
             phi = phi * Psi
             g_ji = g_ji + vvv*(1. + Inu - phi*Bij_ni)
             g_ij = g_ij + vvv*(Inu - phi*Bji_nj)
@@ -695,12 +692,12 @@ SUBROUTINE bound_bound_rates (self, wmu, inv_df, vproj, adamp, gamma_ij, gamma_j
         end do
       else
         do f=fs, fe
-          associate(Inu=>work(3,f,x,y,z), Psi=>self%Psi(f,x,y,z))
+          associate(Inu=>work(f,x,y,z,3), Psi=>self%Psi(f,x,y,z))
             q = line%q(f)
             vel = (q - vpr) * idf
             vgt = voigt_function2(a, vel)
             phi = vgt * idf_4pi * (q + 1)
-            vvv = phi * w_nu(f)
+            vvv = phi * wmunu(f)
             phi = phi * Psi
             g_ji = g_ji + vvv*(1. + Inu - phi*Bij_ni)
             g_ij = g_ij + vvv*(Inu - phi*Bji_nj)
@@ -723,16 +720,15 @@ SUBROUTINE bound_free_rates (self, gamma_ij, gamma_ji)
   real(4), contiguous, dimension(:,:,:,:) :: gamma_ij, gamma_ji
   real(4), contiguous, dimension(:,:,:,:), pointer :: n
   real(4), contiguous, dimension(:,:,:), pointer :: ni_over_nj_lte
-  real(4), dimension(:), allocatable :: alpha_2hnu3_c2, w_alpha, w_nu
+  real(4), dimension(:), allocatable :: w_alpha, wmunu
   real(4) :: ni, nj, tmp, eta_fac, q, phi
   real(4) :: g_ij, g_ji, vij, vji, ufac
   integer :: i, j, icont
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin (trim(self%kind)//'%bound_free_rates', itimer=itimer)
-  allocate(alpha_2hnu3_c2(self%fs:self%fe))
+  allocate(wmunu(self%fs:self%fe))
   allocate(w_alpha(self%fs:self%fe))
-  allocate(w_nu(self%fs:self%fe))
   ! Computing bound-free radiative rates based on half integrated mean intensity
   n => self%atom%data%n
   do j=1, self%ncont
@@ -742,9 +738,8 @@ SUBROUTINE bound_free_rates (self, gamma_ij, gamma_ji)
     fe = cont%iblue
     icont = cont%ntrans-self%atom%nline
     ni_over_nj_lte => self%atom%data%ni_over_nj_lte(:,:,:,icont)
-    w_nu(fs:fe) = 0.5 * self%h4pi_nu(fs:fe) * cont%wnu(fs:fe)
-    alpha_2hnu3_c2(fs:fe) = self%twohnu3_c2(fs:fe) * cont%alpha(fs:fe)
-    w_alpha(fs:fe) = alpha_2hnu3_c2(fs:fe) * w_nu(fs:fe)
+    wmunu(fs:fe) = 0.5 * cont%wnu(fs:fe)
+    w_alpha(fs:fe) = self%twohnu3_c2(fs:fe) * cont%alpha(fs:fe) * wmunu(fs:fe)
     
     do z=1,nz
     do y=1,ny
@@ -780,33 +775,33 @@ SUBROUTINE set_upstream_boundary (self, i_mu, i_set, ng)
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('nlte_patch%set_upstream_boundary', itimer=itimer)
-  z = merge(lbound(work,5), ubound(work,5), self%dir > 0)
+  z = merge(lbound(work,4), ubound(work,4), self%dir > 0)
   nx = self%patch%n(1)
   ny = self%patch%n(2)
   nz = self%patch%n(3)
 
   if (self%boundaries%is_set(bits%zu) .and. self%dir < 0) then
-    work(:,:,:,:,z) = 0.
+    work(:,:,:,z,:) = 0.
   elseif (self%boundaries%is_set(bits%zl) .and. self%dir > 0) then
     xxold = [(i*self%ds(3), i=1, 3)]
     xxnew = [(i*self%ds(3), i=1-ng, 0)]
+    do i=1, 2
     do y=1,  ny
     do x=1,  nx
     do f=self%fs, self%fe
-      do i=1, 2
-        call pchip_mono(xxold, work(i,f,x,y,z+1:z+3), &
-                        xxnew, work(i,f,x,y,z:z), sorted=.true.)
-        work(i,f,x,y,z) = max(work(i,f,x,y,z), 0.)
+        call pchip_mono(xxold, work(f,x,y,z+1:z+3,i), &
+                        xxnew, work(f,x,y,z:z,i), sorted=.true.)
+        work(f,x,y,z,i) = max(work(f,x,y,z,i), 0.)
       end do
-      work(3,f,x,y,z) = work(2,f,x,y,z)
     end do
     end do
     end do
+    work(:,:,:,:,3) = work(:,:,:,:,2)
   else
     do f=self%fs, self%fe
-      work(1,f,:,:,z) = self%mem(1,f,:,:,i_mu,i_set)
-      work(2,f,:,:,z) = self%mem(2,f,:,:,i_mu,i_set)
-      work(3,f,:,:,z) = self%mem(3,f,:,:,i_mu,i_set)
+      work(f,:,:,z,1) = self%mem(f,:,:,i_mu,i_set,1)
+      work(f,:,:,z,2) = self%mem(f,:,:,i_mu,i_set,2)
+      work(f,:,:,z,3) = self%mem(f,:,:,i_mu,i_set,3)
     end do
   endif
   call trace%end(itimer)
@@ -825,7 +820,7 @@ SUBROUTINE integrate_intensity (self, wmu)
   do y=1, self%patch%n(2)
   do x=1, self%patch%n(1)
   do f=self%fs, self%fe
-    self%Jnu(f,x,y,z) = self%Jnu(f,x,y,z) + wmu2 * work(3,f,x,y,z)
+    self%Jnu(f,x,y,z) = self%Jnu(f,x,y,z) + wmu2 * work(f,x,y,z,3)
   end do
   end do
   end do
@@ -891,9 +886,9 @@ SUBROUTINE work_to_mem (self, i_mu, i_set)
   else
     z = merge(self%patch%n(3), 1, self%dir > 0)
     do f=self%fs, self%fe
-      self%mem(1,f,:,:,i_mu,i_set) = work(1,f,:,:,z)
-      self%mem(2,f,:,:,i_mu,i_set) = work(2,f,:,:,z)
-      self%mem(3,f,:,:,i_mu,i_set) = work(3,f,:,:,z)
+      self%mem(f,:,:,i_mu,i_set,1) = work(f,:,:,z,1)
+      self%mem(f,:,:,i_mu,i_set,2) = work(f,:,:,z,2)
+      self%mem(f,:,:,i_mu,i_set,3) = work(f,:,:,z,3)
     end do
   endif
   call trace%end(itimer)
@@ -908,7 +903,7 @@ SUBROUTINE back_to_work (self)
   do y=1, ny
   do x=1, nx
   do f=self%fs, self%fe
-    associate(chi=>work(1,f,x,y,z), eta=>work(2,f,x,y,z))
+    associate(chi=>work(f,x,y,z,1), eta=>work(f,x,y,z,2))
       chi = back(f,x,y,z,1)
       eta = back(f,x,y,z,2)
     end associate
@@ -927,7 +922,7 @@ SUBROUTINE eta_to_Snu (self)
   do y=1, ny
   do x=1, nx
     do f=self%fs, self%fe
-      work(2,f,x,y,z) = work(2,f,x,y,z) / work(1,f,x,y,z)
+      work(f,x,y,z,2) = work(f,x,y,z,2) / work(f,x,y,z,1)
     end do
   end do
   end do
@@ -973,7 +968,7 @@ SUBROUTINE rotate_cube (self, vec)
           x1 = modulo(x+up1-1, nx)+1
           x2 = modulo(x+up1,   nx)+1
 
-          associate(plane=>work(i,:,:,:,z), shifted=>work(3,:,:,:,z))
+          associate(plane=>work(:,:,:,z,i), shifted=>work(:,:,:,z,3))
             shifted(:,x,y) = a*plane(:,x1,y1)
             shifted(:,x,y) = b*plane(:,x2,y1) + shifted(:,x,y)
             shifted(:,x,y) = c*plane(:,x1,y2) + shifted(:,x,y)
@@ -981,7 +976,7 @@ SUBROUTINE rotate_cube (self, vec)
           end associate
         end do
       end do
-      work(i,:,:,:,z) = work(3,:,:,:,z)
+      work(:,:,:,z,i) = work(:,:,:,z,3)
     end do
   end do
   call trace%end(itimer)
@@ -1004,8 +999,8 @@ SUBROUTINE short_char (self, vec, get_rates)
   call ray%set_stencil(self%ds * scaling%l)
 
   allocate(kernel, source=real(ray%upkern))
-  allocate(work_up(3,self%fs:self%fe))
-  allocate(work_min(3,self%fs:self%fe))
+  allocate(work_up(self%fs:self%fe,3))
+  allocate(work_min(self%fs:self%fe,3))
 
   dsup05 = 0.5*real(ray%dsup)
 
@@ -1030,7 +1025,7 @@ SUBROUTINE short_char (self, vec, get_rates)
           do ii=1,dx
             xup = modulo(ii+x1-1, nx) + 1
             yup = modulo(jj+y1-1, ny) + 1
-            associate(wup => work(:, :, xup, yup, zup))
+            associate(wup => work(:, xup, yup, zup,:))
               work_up = work_up + kernel(ii,jj)*wup
               if (ii>1 .and. ii<dx .and. jj>1 .and. jj<dy) then
                 work_min = min(work_min, wup)
@@ -1041,11 +1036,11 @@ SUBROUTINE short_char (self, vec, get_rates)
         work_up = max(work_up, work_min)
 
         do f=self%fs, self%fe
-          xx = work(1,f,x,y,z)
-          ss = work(2,f,x,y,z)
-          xxup = work_up(1,f)
-          ssup = work_up(2,f)
-          Inuup = work_up(3,f)
+          xx = work(f,x,y,z,1)
+          ss = work(f,x,y,z,2)
+          xxup  = work_up(f,1)
+          ssup  = work_up(f,2)
+          Inuup = work_up(f,3)
 
           dt = dsup05 * ( xxup + xx ) ! upwind optical pathlength
           if (dt < 80) then
@@ -1066,7 +1061,7 @@ SUBROUTINE short_char (self, vec, get_rates)
             Inu = u0*ssup + Psi*ss
           endif
 
-          work(3,f,x,y,z) = Inu
+          work(f,x,y,z,3) = Inu
           if (get_rates) self%Psi(f,x,y,z) = Psi / xx
         end do ! f-loop
       end do
@@ -1102,13 +1097,13 @@ SUBROUTINE long_char (self, vec, get_rates)
     do y=1, ny
     do x=1, nx
       do f=self%fs, self%fe
-        xxup = work(1,f,x,y,zup)
-        ssup = work(2,f,x,y,zup)
-        xx = work(1,f,x,y,z)
-        ss = work(2,f,x,y,z)
+        xxup = work(f,x,y,zup,1)
+        ssup = work(f,x,y,zup,2)
+        xx = work(f,x,y,z,1)
+        ss = work(f,x,y,z,2)
         dt = dsup05 * ( xxup + xx ) ! upwind optical pathlength
         if (dt < 80) then
-          Inuup = work(3,f,x,y,zup)
+          Inuup = work(f,x,y,zup,3)
           ex = exp(-dt)
           if ( dt > 1d-3 ) then
             u0 = 1 - ex
@@ -1126,7 +1121,7 @@ SUBROUTINE long_char (self, vec, get_rates)
           Inu = u0*ssup + Psi*ss
         endif
 
-        work(3,f,x,y,z) = Inu
+        work(f,x,y,z,3) = Inu
         if (get_rates) self%Psi(f,x,y,z) = Psi / xx
       end do ! f-loop
     end do
@@ -1186,8 +1181,8 @@ SUBROUTINE save_contribution_function (self, i_set, i_mu)
           cnt_eta = back(f,x,y,z,2)
           associate(cf => cntrbf(i)%data(x,y,z,f,:,i_mu))
             if (i_set < 3) then
-              net_chi = work(1,f,x,y,z)
-              net_src = work(2,f,x,y,z)
+              net_chi = work(f,x,y,z,1)
+              net_src = work(f,x,y,z,2)
               lin_chi = net_chi - cnt_chi
               lin_eta = net_src*net_chi - cnt_eta
               if (i_set == 1) then
@@ -1198,7 +1193,7 @@ SUBROUTINE save_contribution_function (self, i_set, i_mu)
                 cf(4) = lin_eta
               endif
             else
-              cnt_inu = work(3,f,x,y,z)
+              cnt_inu = work(f,x,y,z,3)
               cf(2) = cf(1) - cf(2)   / cnt_inu ! lin_chi - lin_eta/cnt_inu
               cf(1) = cf(1) + cnt_eta / cnt_inu ! lin_chi + cnt_eta/cnt_inu
               cf(4) = cf(3) - cf(4)   / cnt_inu ! lin_chi - lin_eta/cnt_inu (LTE)
@@ -1293,14 +1288,14 @@ SUBROUTINE allocate_mem(self, m_in, label)
   integer :: i, m(6)
   ! ----------------------------------------------------------------------------
   if (self%is_set(bits%no_download)) then
-    m = [3, self%nf, self%n(1), self%n(2), self%n_mu, self%n_set]
+    m = [self%nf, self%n(1), self%n(2), self%n_set, self%n_mu, 3]
     call self%patch_t%allocate_mem(m)
     fs = self%fs
     fe = self%fe
     nx = self%n(1)
     ny = self%n(2)
     tmp => self%mem
-    self%mem(1:3,fs:fe,1:nx,1:ny,self%mus:self%mue,1:self%n_set) => tmp
+    self%mem(fs:fe,1:nx,1:ny,self%mus:self%mue,1:self%n_set,1:3) => tmp
   endif
 END SUBROUTINE allocate_mem
 
@@ -1317,7 +1312,7 @@ SUBROUTINE save_intensity (self)
   allocate(ie(fs:fe, 1, 1, self%mus:self%mue, self%n_set), source=0.)
 
   do f=fs, fe
-    i3(f,:,:,:,:) = self%twohnu3_c2(f) * self%mem(3,f,:,:,:,:)
+    i3(f,:,:,:,:) = self%twohnu3_c2(f) * self%mem(f,:,:,:,:,3)
   end do
 
   do y=1, ny

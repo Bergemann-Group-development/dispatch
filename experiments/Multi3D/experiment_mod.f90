@@ -199,7 +199,6 @@ SUBROUTINE bndries (self)
   integer, save:: itimer=0
   !----------------------------------------------------------------------------
   call trace%begin('experiment_t%bndries', itimer=itimer)
-  call self%boundaries%mirror()
   call trace%end (itimer)
 END SUBROUTINE bndries
 

@@ -532,7 +532,7 @@ MODULE m3d_patch_mod
     call trace%begin('m3d_patch_t%update', itimer=itimer)
     call lock_mem(self, 'update')
     if (.not. self%is_finished()) then
-      call self%check_access(self)
+      !call self%check_access(self)
       call self%execute()
       call self%post_update()
     endif

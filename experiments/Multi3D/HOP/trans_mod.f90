@@ -77,10 +77,8 @@ MODULE trans_mod
     logical :: get_cntrbf=.false.
 
   contains
-      procedure :: profile => line_profile
       procedure :: get_nu
       procedure :: freql
-      procedure :: interpolate_phi
 
   end type line_type
 
@@ -95,84 +93,10 @@ MODULE trans_mod
     !real(4), dimension(:,:,:), contiguous, pointer :: ni_over_nj_lte
 
   contains
-      procedure :: opacities => cont_opacities
-      procedure :: rates => cont_rates
       procedure :: hermite_interp
   end type cont_type
 
 contains
-
-  !====================================================================================
-  SUBROUTINE line_profile(self, q, vproj, inv_df, adamp, phi)
-    class(line_type), intent(in) :: self
-    real(8), dimension(:), intent(in) :: q
-    real(4), dimension(:,:,:), intent(in) :: vproj, inv_df, adamp
-    real(4), dimension(:,:,:,:), intent(inout) :: phi
-    real(4), dimension(:,:,:), allocatable :: psi, damp, dphi, inv_df2
-    real(8) :: ga, scalar
-    real(8), dimension(:), allocatable :: q2
-    integer :: f, i
-    !----------------------------------------------------------------------------------
-    if (self%io > 1) then
-      allocate(q2, mold=q)
-      allocate(psi, damp, dphi, inv_df2, mold=vproj)
-      do f=1, size(q)
-        phi(:,:,:,f) = 0
-      end do
-      
-      scalar = over_4pi / self%nu0
-      
-      do i=1, self%io
-        q2 = q - self%dq(i)
-        ga = self%da(i)
-        damp = (adamp + ga) * inv_df * scalar
-        inv_df2 = self%wt(i) * inv_df
-
-        !DIR$ FORCEINLINE
-        do f=1, size(q)
-            dphi = (q2(f) - vproj) * inv_df
-            dphi = voigt_function2(damp, dphi)
-            phi(:,:,:,f) = phi(:,:,:,f) + dphi * inv_df2
-        end do 
-        end do
-    else
-      call self%bbtrans_type%profile(q, vproj, inv_df, adamp, phi)  
-    endif
-  END SUBROUTINE line_profile
-  !------------------------------------------------------------------------------------
-
-  !====================================================================================
-  PURE SUBROUTINE cont_opacities(self, alpha, ni_over_nj_lte, n, nstar, eta, chi)
-    class(cont_type), intent(in) :: self
-    real(4), dimension(:), intent(in) :: alpha
-    real(4), dimension(:,:,:), intent(in) :: ni_over_nj_lte
-    real(4), dimension(:,:,:,:), intent(in) :: n, nstar
-    real(4), dimension(:,:,:,:), intent(inout) :: eta, chi
-    real(4), dimension(:,:,:), allocatable :: fakt
-    integer :: i,j,k,f, nf, nx, ny, nz
-    !----------------------------------------------------------------------------------
-    nx = size(n, 1)
-    ny = size(n, 2)
-    nz = size(n, 3)
-    nf = size(eta,4)
-  
-    allocate(fakt(nx,ny,nz))
-    !fakt = nstar(:,:,:,self%i) / nstar(:,:,:,self%j) * n(:,:,:,self%j)
-    fakt = ni_over_nj_lte * n(:,:,:,self%j)
-  
-    !$omp simd
-    do f=1, nf
-    do k=1, nz
-    do j=1, ny
-    do i=1, nx
-      eta(i,j,k,f) = eta(i,j,k,f) + alpha(f) * fakt(i,j,k)
-      chi(i,j,k,f) = chi(i,j,k,f) + alpha(f) * n(i,j,k,self%i)
-    end do
-    end do
-    end do
-    end do
-  END SUBROUTINE cont_opacities
-  !------------------------------------------------------------------------------------
 
   !====================================================================================
   PURE SUBROUTINE hermite_interp(self, alpha, nu)
@@ -186,88 +110,6 @@ contains
     call hermite_interpolation(alpha, nu, self%nu_input, self%alpha_input, dalpha_dnu)
     deallocate(dalpha_dnu)
   END SUBROUTINE hermite_interp
-
-  !====================================================================================
-  PURE SUBROUTINE cont_rates(self, walpha, fconst, nstar, blzfac, Inu, Rij, Rji)
-      class(cont_type), intent(in) :: self
-      real(8), dimension(:), intent(in) :: walpha, fconst
-      real(4), dimension(:,:,:,:), intent(in) :: nstar
-      real(8), dimension(:,:,:,:), intent(in) :: blzfac, Inu
-      real(8), dimension(:,:,:), intent(out) :: Rij, Rji
-      real(8), dimension(:,:,:), allocatable :: Rijf
-      integer :: f
-      !----------------------------------------------------------------------------------
-      Rij = 0
-      Rji = 0
-
-      do f=1, size(walpha)
-        Rijf = walpha(f) * Inu(:,:,:,f)
-        Rij = Rij + Rijf
-        Rji = Rji + (fconst(f) + Rijf) * blzfac(:,:,:,f)
-      end do
-
-      Rji = Rji * nstar(:,:,:,self%i) / nstar(:,:,:,self%j)
-  END SUBROUTINE cont_rates
-  !------------------------------------------------------------------------------------
-
-  !====================================================================================
-  SUBROUTINE interpolate_phi(self, nu, phi)
-    class(line_type), intent(in) :: self
-    real(8), dimension(:), intent(in) :: nu
-    real(4), dimension(:,:,:,:), intent(out) :: phi
-    integer :: i,j,k,f, i1, i2, n(4)
-    real(8) :: dx, dy, norm, newq
-    real(8), parameter :: tol=1e-10
-    integer, save :: itimer=0
-    !----------------------------------------------------------------------------------
-    !call trace%begin('line_type%interpolate_phi', itimer=itimer)
-    n = shape(phi)
-    norm = 1 / self%nu0
-
-    do f=1, n(4)
-      newq = nu(f)*norm - 1
-
-      if (abs(newq - self%q(1)) < tol) then
-        phi(:,:,:,f) = self%phi(:,:,:,1)
-        cycle
-      elseif (abs(newq - self%q(self%nnu)) < tol) then
-        phi(:,:,:,f) = self%phi(:,:,:,self%nnu)
-        cycle
-      endif
-
-      i1 = searchsorted(self%q, newq)
-
-      if (i1==-1) then
-        phi(:,:,:,f) = 0
-        cycle
-      endif
-
-      dx = (newq - self%q(i1))
-      if (dx > 0) then
-        i2 = i1+1
-        dx = dx / (self%q(i2)-self%q(i1))
-      endif
-
-      if (dx < tol) then
-        phi(:,:,:,f) = self%phi(:,:,:,i1)
-        cycle
-      elseif (dx > 1 - tol) then
-        phi(:,:,:,f) = self%phi(:,:,:,i2)
-        cycle
-      endif
-
-      do k=1,n(3)
-      do j=1,n(2)
-      do i=1,n(1)
-        dy = self%phi(i,j,k,i2) - self%phi(i,j,k,i1)
-        phi(i,j,k,f) = dy*dx + self%phi(i,j,k,i1)
-      end do
-      end do
-      end do
-    end do
-    !call trace%end(itimer)
-  END SUBROUTINE interpolate_phi
-  !------------------------------------------------------------------------------------
 
   !====================================================================================
   PURE SUBROUTINE check_range(self, fs_in, fe_in, fs_out, fe_out, skip)

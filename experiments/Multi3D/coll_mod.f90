@@ -1,7 +1,6 @@
 MODULE coll_mod
     USE io_mod
     USE os_mod
-    USE m3io_mod
     USE mmath,only:ei1,hermite_interpolation,hermite_derivative
     USE mconst
     USE prec_mod

@@ -41,7 +41,6 @@ MODULE ray_patch_mod
     procedure :: nbor_relations => ray_nbor_relations
     procedure :: set_freq_indices
     procedure :: is_upstream => ray_is_upstream
-    procedure :: comp_vproj
     procedure :: set_guard_zones
     procedure :: pack
     procedure :: unpack
@@ -144,34 +143,6 @@ SUBROUTINE set_freq_indices (self)
     counter = self%i_nu
   endif
 END SUBROUTINE set_freq_indices
-
-!===============================================================================
-SUBROUTINE comp_vproj (self, vproj)
-  class(ray_patch_t) :: self
-  real(4), dimension(:,:,:) :: vproj
-  real(4), dimension(:,:,:), pointer :: d, px, py, pz
-  integer :: li(3), ui(3)
-  !-----------------------------------------------------------------------------
-  if (self%i_mu == 0 .or. .not. use_vel) then
-    vproj = 0
-  else
-    li = self%patch%li
-    ui = self%patch%ui
-
-    call self%check_access(self%patch)
-
-    d  => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),self%patch%idx%d, self%it,1)
-    px => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),self%patch%idx%px,self%it,1)
-    py => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),self%patch%idx%py,self%it,1)
-    pz => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),self%patch%idx%pz,self%it,1)
-
-    if (self%out_ray) then
-      vproj = (-self%vec(1)*px - self%vec(2)*py + self%vec(3)*pz) * scaling%u / (d*cc)
-    else
-      vproj = (self%vec(1)*px + self%vec(2)*py + self%vec(3)*pz) * scaling%u / (d*cc)
-    endif
-  endif
-END SUBROUTINE comp_vproj
 
 !===============================================================================
 SUBROUTINE frequency_padding (self)

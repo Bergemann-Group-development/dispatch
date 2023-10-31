@@ -1,7 +1,6 @@
 ! *******************************************************************
 MODULE atom_mod
     USE io_mod
-    USE m3io_mod
     USE handyfuncs_mod
     USE prec_mod, only: inf8
     USE mconst
@@ -119,7 +118,7 @@ MODULE atom_mod
     character(len=32), public :: lse_solver='lineq_no_pivot'
     integer, public :: nq_fac=1
 
-    public :: unique_int
+    public :: unique_int, NextEntry
   
   contains
   
@@ -1212,6 +1211,7 @@ MODULE atom_mod
           allocate(cnt%wnu(ired:iblue))
           call os%mem_register(storage_size(cnt%wnu), cnt%nnu, 'cont%wnu')
           call set_weights(cnt%wnu, cnt%nu)
+          cnt%wnu = cnt%wnu / (h_4pi*cnt%nu)
         endif
       end do
     endif
@@ -1243,6 +1243,7 @@ MODULE atom_mod
           allocate(lin%wnu(ired:iblue))
           call os%mem_register(storage_size(lin%wnu), lin%nnu, 'line%wnu')
           call set_weights(lin%wnu, lin%nu)
+          lin%wnu = lin%wnu / (h_4pi*lin%nu)
 
           allocate(lin%wq(ired:iblue))
           call os%mem_register(storage_size(lin%wq), nnu)
@@ -1501,6 +1502,41 @@ MODULE atom_mod
     a = (y1 - y0)/(x1 - x0)
     qjorg = a*(temp - x0) + b
   END FUNCTION qjorg
+
+  !====================================================================================
+  SUBROUTINE NextEntry(fileunit, comment)
+    ! ***********************************************************************
+    ! --- Reads an input line, returns when it is not a 
+    ! --- comment or an empty line.
+    ! --- Feb 21 2005: 
+    ! ---   Created by Jorrit Leenaarts (j.leenaarts@astro.uu.nl)
+    ! --- May 28 2008 :
+    !       jorritl: updated, will now also check for empty lines,
+    !       and allow data in the first column of the file.
+    ! ***********************************************************************
+    integer,intent(in) :: fileunit
+    character(len=132) :: instring
+    character(len=1)   :: token1, cmt
+    character(len=*),intent(in), optional :: comment
+    !---------------------------------------------------------------------------------
+    if (present(comment)) then
+      cmt = comment
+    else
+      cmt = '*'
+    endif
+    do 
+       ! read the line
+       read(unit=fileunit,fmt='(A72)') instring
+       instring=adjustl(instring)
+       token1=instring(1:1)
+
+       ! exit if line is not a comment and not empty
+       if (token1 .ne. cmt .and. token1 .ne. ' ') then
+          backspace(fileunit)
+          exit
+       endif
+    end do
+  END SUBROUTINE NextEntry
 
 END MODULE atom_mod
   
