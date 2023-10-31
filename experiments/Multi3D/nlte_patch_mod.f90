@@ -47,7 +47,6 @@ MODULE nlte_patch_mod
     type(cont_type), dimension(:), allocatable :: cont
     real(4), dimension(:,:,:,:), allocatable :: Jnu, Psi, PsiJ
     real(4), dimension(:), allocatable :: twohnu3_c2, h4pi_nu
-    real(4), dimension(:,:,:,:,:,:), pointer :: mem_remap
     real(8), dimension(:), pointer :: nu
     integer :: nline=0, ncont=0, mus, mue, n_set, nf, n_mu
     logical :: use_atom, bound_bound, bound_free
@@ -212,7 +211,6 @@ SUBROUTINE execute (self)
   get_rates = .not. self%out_ray
   use_linelist = self%out_ray .and. self%composition%ll_initialised
 
-  self%mem_remap(1:3,fs:fe,1:nx,1:ny,self%mus:self%mue,1:self%n_set) => self%mem
   self%nu(fs:fe) => self%sp%nu(fs:fe)
   temp => self%m3d_parent%mem(:,:,:,self%i_temp,self%it,1)
 
@@ -685,8 +683,8 @@ SUBROUTINE bound_bound_rates (self, wmu, inv_df, vproj, adamp, gamma_ij, gamma_j
               a2 = a + idf*line%da(ih)
               vel = (q - vpr) * idf
               vgt = voigt_function2(a2, vel)
-              phi = vgt * (q + 1)
-              phi = phi + phi * line%wt(ih)
+              vgt = vgt * (q + 1)
+              phi = phi + vgt * line%wt(ih)
             end do
             phi = phi * idf_4pi
             vvv = phi * w_nu(f)
@@ -806,9 +804,9 @@ SUBROUTINE set_upstream_boundary (self, i_mu, i_set, ng)
     end do
   else
     do f=self%fs, self%fe
-      work(1,f,:,:,z) = self%mem_remap(1,f,:,:,i_mu,i_set)
-      work(2,f,:,:,z) = self%mem_remap(2,f,:,:,i_mu,i_set)
-      work(3,f,:,:,z) = self%mem_remap(3,f,:,:,i_mu,i_set)
+      work(1,f,:,:,z) = self%mem(1,f,:,:,i_mu,i_set)
+      work(2,f,:,:,z) = self%mem(2,f,:,:,i_mu,i_set)
+      work(3,f,:,:,z) = self%mem(3,f,:,:,i_mu,i_set)
     end do
   endif
   call trace%end(itimer)
@@ -877,14 +875,27 @@ SUBROUTINE work_to_mem (self, i_mu, i_set)
   class(nlte_patch_t) :: self
   integer :: f, i_mu, i_set, z
   integer, save :: itimer=0
+  logical :: upper_end, lower_end
   !-----------------------------------------------------------------------------
   call trace%begin('nlte_patch%work_to_mem', itimer=itimer)
-  z = merge(self%patch%n(3), 1, self%dir > 0)
-  do f=self%fs, self%fe
-    self%mem_remap(1,f,:,:,i_mu,i_set) = work(1,f,:,:,z)
-    self%mem_remap(2,f,:,:,i_mu,i_set) = work(2,f,:,:,z)
-    self%mem_remap(3,f,:,:,i_mu,i_set) = work(3,f,:,:,z)
-  end do
+
+  if (self%is_set(bits%no_download) .and. .not. associated(self%mem)) then
+    call self%allocate_mem()
+  endif
+
+  upper_end = self%patch%boundaries%is_set(bits%zu) .and. self%dir > 0 .and. .not. self%out_ray
+  lower_end = self%patch%boundaries%is_set(bits%zl) .and. self%dir < 0
+
+  if (upper_end .or. lower_end) then
+    call self%deallocate_mem()
+  else
+    z = merge(self%patch%n(3), 1, self%dir > 0)
+    do f=self%fs, self%fe
+      self%mem(1,f,:,:,i_mu,i_set) = work(1,f,:,:,z)
+      self%mem(2,f,:,:,i_mu,i_set) = work(2,f,:,:,z)
+      self%mem(3,f,:,:,i_mu,i_set) = work(3,f,:,:,z)
+    end do
+  endif
   call trace%end(itimer)
 END SUBROUTINE work_to_mem
 
@@ -1276,6 +1287,7 @@ END SUBROUTINE init_nbors_hash
 SUBROUTINE allocate_mem(self, m_in, label)
   class(nlte_patch_t) :: self
   class(line_type), pointer :: line
+  real(4), dimension(:,:,:,:,:,:), pointer, contiguous :: tmp
   integer, intent(in), optional :: m_in(6)
   character(len=*), optional :: label
   integer :: i, m(6)
@@ -1283,6 +1295,12 @@ SUBROUTINE allocate_mem(self, m_in, label)
   if (self%is_set(bits%no_download)) then
     m = [3, self%nf, self%n(1), self%n(2), self%n_mu, self%n_set]
     call self%patch_t%allocate_mem(m)
+    fs = self%fs
+    fe = self%fe
+    nx = self%n(1)
+    ny = self%n(2)
+    tmp => self%mem
+    self%mem(1:3,fs:fe,1:nx,1:ny,self%mus:self%mue,1:self%n_set) => tmp
   endif
 END SUBROUTINE allocate_mem
 
@@ -1299,7 +1317,7 @@ SUBROUTINE save_intensity (self)
   allocate(ie(fs:fe, 1, 1, self%mus:self%mue, self%n_set), source=0.)
 
   do f=fs, fe
-    i3(f,:,:,:,:) = self%twohnu3_c2(f) * self%mem_remap(3,f,:,:,:,:)
+    i3(f,:,:,:,:) = self%twohnu3_c2(f) * self%mem(3,f,:,:,:,:)
   end do
 
   do y=1, ny

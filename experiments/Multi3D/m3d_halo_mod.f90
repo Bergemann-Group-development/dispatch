@@ -172,6 +172,10 @@ CONTAINS
               call lock_mem(source, 'download', read=.true.)
               !call lock_mem(target, 'download')
               target%mem => source%mem
+              nullify(source%mem)
+              if (source%time - target%time > 1. .and. .not. source%finished) then
+                print '(A, 2(I5, F8.1))', 'Gauss-Seidel occured!', source%id, source%time, target%id, target%time
+              endif
               !call unlock_mem(target, 'download')
               call unlock_mem(source, 'download', read=.true.)
             end select

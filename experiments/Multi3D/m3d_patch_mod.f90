@@ -32,7 +32,7 @@ MODULE m3d_patch_mod
     !USE units_mod
     !USE scratch_mod
     USE patch_mod, only: patch_t, patch_t_init
-    USE m3d_halo_mod, only: m3d_halo_t, print_finished, print_download, unlock_mem, print_lock
+    USE m3d_halo_mod, only: m3d_halo_t, print_finished, print_download, lock_mem, unlock_mem, print_lock
     USE spectrum_mod, only: nu_tolerance
     USE atom_mod, only: atom_type, atomic_spectrum_type, lse_no_pivot, lse_solver, m1d_legacy_mode, nq_fac
     USE composition_mod, only: composition_type
@@ -530,11 +530,13 @@ MODULE m3d_patch_mod
     integer, save :: itimer=0
     !-----------------------------------------------------------------------------
     call trace%begin('m3d_patch_t%update', itimer=itimer)
+    call lock_mem(self, 'update')
     if (.not. self%is_finished()) then
       call self%check_access(self)
       call self%execute()
       call self%post_update()
     endif
+    call unlock_mem(self, 'update')
     call trace%end(itimer)
   END SUBROUTINE update
 
