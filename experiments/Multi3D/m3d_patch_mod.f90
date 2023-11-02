@@ -117,7 +117,10 @@ MODULE m3d_patch_mod
       procedure :: init_nbors_hash
       procedure :: check_nbor
       procedure :: hash_key
-      procedure :: save
+      procedure :: save4
+      procedure :: save5
+      procedure :: save6
+      procedure :: save_meta
       procedure :: load_mem
       procedure :: set_place
       procedure :: queue_before
@@ -617,7 +620,7 @@ MODULE m3d_patch_mod
     call self%set(bits%no_download)
     call self%set(bits%ignore)
     if (self%save_output) then
-      call self%save(self%out_mem, pack(self%out_mem, .true.), self%kind)
+      call self%save5(self%out_mem, self%kind)
     endif
     call trace%end()
   END SUBROUTINE finish
@@ -1110,24 +1113,69 @@ MODULE m3d_patch_mod
   END SUBROUTINE check_nbor
 
   !===============================================================================
-  SUBROUTINE save (self, mem, mem_packed, label)
+  SUBROUTINE save4 (self, mem, label)
+    class(m3d_patch_t):: self
+    real(4), dimension(:,:,:,:) :: mem
+    character(len=*) :: label
+    character(len=32) :: filename
+    integer :: lunit
+    integer, save :: itimer=0
+    ! ----------------------------------------------------------------------------
+    call trace%begin('m3d_patch_t%save', itimer=itimer)
+    call self%save_meta(mem, label, filename, lunit)
+    write(lunit) mem
+    close(lunit)
+    call trace%end(itimer)
+  END SUBROUTINE save4
+
+  !===============================================================================
+  SUBROUTINE save5 (self, mem, label)
+    class(m3d_patch_t):: self
+    real(4), dimension(:,:,:,:,:) :: mem
+    character(len=*) :: label
+    character(len=32) :: filename
+    integer :: lunit
+    integer, save :: itimer=0
+    ! ----------------------------------------------------------------------------
+    call trace%begin('m3d_patch_t%save', itimer=itimer)
+    call self%save_meta(mem, label, filename, lunit)
+    write(lunit) mem
+    close(lunit)
+    call trace%end(itimer)
+  END SUBROUTINE save5
+
+  !===============================================================================
+  SUBROUTINE save6 (self, mem, label)
+    class(m3d_patch_t):: self
+    real(4), dimension(:,:,:,:,:,:) :: mem
+    character(len=*) :: label
+    character(len=32) :: filename
+    integer :: lunit
+    integer, save :: itimer=0
+    ! ----------------------------------------------------------------------------
+    call trace%begin('m3d_patch_t%save', itimer=itimer)
+    call self%save_meta(mem, label, filename, lunit)
+    write(lunit) mem
+    close(lunit)
+    call trace%end(itimer)
+  END SUBROUTINE save6
+
+  !===============================================================================
+  SUBROUTINE save_meta(self, mem, label, filename, lunit)
     class(m3d_patch_t):: self
     real(4), dimension(..) :: mem
-    real(4), dimension(:) :: mem_packed
     character(len=*) :: label
     character(len=128) :: meta_file, folder
     character(len=32) :: filename, fmt
     integer :: i, lunit, ndim
-    integer, save :: itimer=0
     ! ----------------------------------------------------------------------------
-    call trace%begin('m3d_patch_t%save', itimer=itimer)
+    call io%lock%set('save_meta')
     if (size(mem) == 0) then
       call shared%abort('mem not associated in save')
     endif
     write(folder, '(A, A)') trim(io%run_dir), 'save/'
     write(filename, '(A, A, 2(I3.3), A)') trim(label), '_', abs(self%key(1:2)), '.bin'
     meta_file = trim(label) // '_meta.txt'
-    call io%lock%set('save')
     if (os%exists(trim(folder)//meta_file)) then
       open(newunit=lunit, file=trim(folder)//meta_file, form='formatted', position='append')
     else
@@ -1139,12 +1187,9 @@ MODULE m3d_patch_mod
     write(fmt, '(I3,A)') ndim, '(I10))'
     write(lunit, '(A32, I4, '//fmt) filename, storage_size(mem), shape(mem)
     close(lunit)
+    call io%lock%unset('save_meta')
     open(newunit=lunit, file=trim(folder)//filename, access='stream', status='replace')
-    write(lunit) mem_packed
-    close(lunit)
-    call io%lock%unset('save')
-    call trace%end(itimer)
-  END SUBROUTINE save
+  END SUBROUTINE save_meta
 
   !===============================================================================
   SUBROUTINE load_mem (self, folder, mem, label)

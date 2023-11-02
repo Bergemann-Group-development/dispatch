@@ -1209,7 +1209,7 @@ SUBROUTINE save_contribution_function (self, i_set, i_mu)
     end associate
     if (i_set==3 .and. i_mu==self%mue) then
       write(name, '(A,I6.6)') 'cntrbf_', j
-      call self%save(cntrbf(i)%data, pack(cntrbf(i)%data, .true.), name)
+      call self%save6(cntrbf(i)%data, name)
     endif
   end do
 END SUBROUTINE save_contribution_function
@@ -1324,8 +1324,8 @@ SUBROUTINE save_intensity (self)
   end do
   ie = ie / real(nx*ny)
 
-  call self%save(ie, pack(ie, .true.), 'ie')
-  call self%save(i3, pack(i3, .true.), 'i3')
+  call self%save5(ie, 'ie')
+  call self%save5(i3, 'i3')
 
   meta_file = trim(io%run_dir) // 'angle_quadrature.txt'
   call io%lock%set('save_quadrature')
