@@ -231,6 +231,12 @@ SUBROUTINE execute (self)
 
   get_cntrbf = self%out_ray .and. n_cntrbf>0
 
+  if (self%use_atom) then
+    if (self%atom%data%converged) then
+      self%get_rates = .false.
+    endif
+  endif
+
   call allocate_arrays()
 
   self%twohnu3_c2 = twoh_c2 * self%nu**3
@@ -307,11 +313,8 @@ SUBROUTINE execute (self)
   call deallocate_arrays()
 
   if (self%use_atom) then
-    if (self%atom%data%converged) then
-      self%get_rates = .false.
-      if (premature_finish) then
-        call self%finish()
-      endif
+    if (self%atom%data%converged .and. premature_finish) then
+      call self%finish()
     endif
   endif
 
@@ -1365,6 +1368,7 @@ END SUBROUTINE save_intensity
 SUBROUTINE copy_to (self, tgt)
   class(nlte_patch_t):: self
   class(patch_t):: tgt
+  integer :: i, i_set, i_mu
   !-----------------------------------------------------------------------------
   if (.not. associated(tgt%mem)) then
     call tgt%allocate_mem()
@@ -1372,7 +1376,17 @@ SUBROUTINE copy_to (self, tgt)
   if (.not. all(shape(tgt%mem) == shape(self%mem))) then
     call shared%abort('nlte_patch_t%copy_to: mem of differing shape!')
   endif
-  tgt%mem = self%mem
+  do i=1, 3
+  do i_set=1, self%n_set
+  do i_mu=self%mus, self%mue
+  do y=1, self%n(2)
+  do x=1, self%n(1)
+    tgt%mem(:,x,y,i_mu,i_set,i) = self%mem(:,x,y,i_mu,i_set,i)
+  end do
+  end do
+  end do
+  end do
+  end do
   if ((.not. self%static_mem) .or. tgt%static_mem) then
     call self%deallocate_mem()
   endif

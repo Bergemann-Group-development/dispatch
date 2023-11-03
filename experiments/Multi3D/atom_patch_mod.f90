@@ -423,6 +423,10 @@ MODULE atom_patch_mod
       endif
     endif
 
+    if ((self%is_finished() .or. self%iter==self%maxiter) .and. associated(self%atom%data%wphi)) then
+      call os%deallocate(self%atom%data%wphi, 'wphi')
+    endif
+
     if (associated(self%atom%data%gamma_ij)) then
       call os%deallocate(self%atom%data%gamma_ij, label='atom%gamma_ij')
       call os%deallocate(self%atom%data%gamma_ji, label='atom%gamma_ji')
