@@ -1,6 +1,6 @@
 from .atom import atom_class
 from .trans import trans_class
-from .auxfuncs import vacuum2obs, continuum, freq_quad, convol, SBOL, CC
+from .auxfuncs import vacuum2obs, continuum, freq_quad, convol, SBOL, CC, interp_tau
 import numpy as np
 import pandas as pd
 import dask.array as da
@@ -84,9 +84,9 @@ class read(object):
         self.i3_lte = i3[...,1]
         self.c3     = i3[...,2]
 
-        self.ie     = ie[:,0,0,:,0]
-        self.ie_lte = ie[:,0,0,:,1]
-        self.cnt    = ie[:,0,0,:,2]
+        self.ie     = np.array(ie[:,0,0,:,0])
+        self.ie_lte = np.array(ie[:,0,0,:,1])
+        self.cnt    = np.array(ie[:,0,0,:,2])
 
         self.flux     = np.sum(self.wts * self.ie    , axis=-1)
         self.flux_lte = np.sum(self.wts * self.ie_lte, axis=-1)
@@ -365,60 +365,54 @@ class read(object):
         plt.imshow(i3[:,:,i], cmap=cmap, extent=extent, **kwargs)
 
     #=====================================================================
-    def get_populations(self):
+    def get_populations(self, ilvl=None):
+        #-----------------------------------------------------------------
         mem = self.read_patch_save('atom_patch')[0]
         lte  = mem[...,0]
         nlte = mem[...,1]
+        if ilvl is not None:
+            lte  = lte [...,ilvl]
+            nlte = nlte[...,ilvl]
+
         return lte, nlte
 
     #=====================================================================
-    def get_depart(self, ilvl, mean=True, xxin=None):
-        atom_patch = self.read_patch_save('atom_patch', concat=False)
-        key = [1,0]
-        xx = []
-        yy = []
-        bot = 0
-        bots = []
-        while tuple(key) in atom_patch:
-            val = atom_patch[tuple(key)]
-            nx, ny, nz = val.shape[:3]
-            level = nx/5
-            xx = np.concatenate([xx, bot + np.arange(nz)/level])
-            bot = bot + nz/level
-            nlte = val[:,:,:,ilvl,1]
-            lte  = val[:,:,:,ilvl,0]
-
-            if mean:
-                nlte = np.mean(nlte, axis=(0,1))
-                lte  = np.mean(lte,  axis=(0,1))
-
-            if yy == []:
-                yy = nlte/lte
-            else:
-                yy = np.concatenate([yy, nlte/lte], axis=-1)
-
-            key[0] = key[0] + 1
-            bots.append(bot)
-
-        xx = xx/xx[-1]
-
-        if xxin is not None:
-            xx = xxin
-
-        return xx, yy, bots
-
+    def get_depart(self, ilvl=None):
+        #-----------------------------------------------------------------
+        lte, nlte = self.get_populations(ilvl=ilvl)
+        dep = np.array(nlte/lte)
+        if self.dim=='1D': dep = dep.flatten()
+        return dep
+    
     #=====================================================================
-    def plot_depart(self, ilvl, show_splits=False, xxin=None, **kwargs):
-        xx, yy, bots = self.get_depart(ilvl, mean=True, xxin=xxin)
+    def plot_depart(self, ilvl, mean='optical', tau_in=None, **kwargs):
+        #-----------------------------------------------------------------
+        dep = self.get_depart(ilvl)
+        plt.title('Departure coefficient of level {:.2f}[eV]'.format(self.atom.level[ilvl].ev), fontsize='medium')
+        plt.ylabel(r'$\rm n\,/\,n_{\rm LTE}$')
+        if mean=='optical':
+            if self.dim=='3D':
+                if tau_in is None:
+                    ltau = np.mean(self.ltau, axis=(0, 1))[::-1]
+                else:
+                    ltau = tau_in
 
-        plt.plot(xx, yy, **kwargs)
+                dep = interp_tau(ltau, self.ltau[:,:,::-1], dep[:,:,::-1])
+                dep = np.mean(dep, axis=(0,1))
+            else:
+                ltau = self.ltau
+                dep = self.get_depart(ilvl)
 
-        if show_splits:
-            bots = np.array(bots) / xx[-1]
-            for bot in bots:
-                plt.axvline(bot, linewidth=0.2)
+            plt.xlabel(r'log$\tau_{500}$')
+            return plt.plot(ltau, dep, **kwargs)
+        
+        elif mean=='geometrical':
+            if self.dim=='3D':
+                dep = np.mean(dep, axis=(0,1))
 
-        return xx, yy
+            plt.xlabel('Height [Mm]')
+            return plt.plot(self.zz, dep, **kwargs)
+    
     
     #=====================================================================
     def get_cog_corr(self, element, LTE_runs, **kwargs):
@@ -532,7 +526,7 @@ class read(object):
             return mem
 
         if f_indep:
-            return [merge_set(0)]
+            return [merge_set([0])]
         else:
             set1 = [inu for inu in all_inu if inu > 0 and inu <= n_nu]
             set2 = [inu for inu in all_inu if inu > 0 and inu > n_nu]

@@ -32,11 +32,13 @@ MODULE nlte_patch_mod
   USE ray_patch_mod, only:ray_patch_t
   USE m3d_halo_mod, only: lock_mem, unlock_mem
   USE m3d_patch_mod, only: all_vec=>vec, all_wmu=>wmu, use_vel, m3d_patch_t, &
-  absmet_in_output, pre_update, long_wmu, long_vec, ray_offset, pivot_z, dlam
+  absmet_in_output, long_wmu, long_vec, ray_offset, pivot_z, dlam, &
+  premature_finish, m3d_patch_pre_update=>pre_update
   USE ray_mod, only: one_dimensional, ray_type
   USE trans_mod, only:line_type, cont_type
   USE bbtrans_mod, only:voigt_function2
   USE m3d_debug_mod
+  USE shared_mod
   implicit none
   private
 
@@ -48,10 +50,11 @@ MODULE nlte_patch_mod
     real(4), dimension(:), allocatable :: twohnu3_c2
     real(8), dimension(:), pointer :: nu
     integer :: nline=0, ncont=0, mus, mue, n_set, nf, n_mu
-    logical :: use_atom, bound_bound, bound_free
+    logical :: use_atom, bound_bound, bound_free, get_rates
   contains
     procedure :: pre_init => nlte_patch_pre_init
     procedure :: init_patch_trans
+    procedure :: pre_update => nlte_patch_pre_update
     procedure :: execute
     procedure :: lte_background_opacities
     procedure :: add_bound_free_opacities
@@ -75,6 +78,7 @@ MODULE nlte_patch_mod
     procedure :: nbor_relations => nlte_patch_nbor_relations
     procedure :: init_nbors_hash
     procedure :: allocate_mem
+    procedure :: copy_to
   end type nlte_patch_t
 
   type :: line_cntrbf
@@ -118,6 +122,7 @@ SUBROUTINE nlte_patch_pre_init (self)
     self%bound_bound = .false.
     self%bound_free = .false.
   endif
+  self%get_rates = .not. self%out_ray
 
   self%ng(3) = 1
   call self%post_pre_init()
@@ -185,6 +190,18 @@ SUBROUTINE init_patch_trans (self)
 END SUBROUTINE init_patch_trans
 
 !===============================================================================
+SUBROUTINE nlte_patch_pre_update (self)
+  class(nlte_patch_t), target :: self
+  !-----------------------------------------------------------------------------
+  call m3d_patch_pre_update(self)
+  if (self%use_atom) then
+    if (premature_finish .and. self%atom%data%converged) then
+      self%static_mem = .true.
+    endif
+  endif
+END SUBROUTINE nlte_patch_pre_update
+
+!===============================================================================
 SUBROUTINE execute (self)
   class(nlte_patch_t) :: self
   real(4), dimension(:,:,:,:), allocatable :: gamma_ij, gamma_ji, adamp
@@ -192,7 +209,7 @@ SUBROUTINE execute (self)
   real(4), dimension(:,:,:), allocatable :: inv_df, vproj
   real(4) :: wmu
   real(8) :: vec(3)
-  logical :: skip, get_rates, use_linelist, get_cntrbf
+  logical :: skip, use_linelist, get_cntrbf
   integer :: i, j, i_mu, zs, ze, p(3), ng, i_set, l, nnu_cntrbf
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
@@ -207,7 +224,6 @@ SUBROUTINE execute (self)
   ze = nz + ng
   p = self%pcheck
 
-  get_rates = .not. self%out_ray
   use_linelist = self%out_ray .and. self%composition%ll_initialised
 
   self%nu(fs:fe) => self%sp%nu(fs:fe)
@@ -221,7 +237,7 @@ SUBROUTINE execute (self)
 
   inv_df = self%atom%inverse_doppler_factor(temp)
 
-  call self%lte_background_opacities(temp, include_absmet=get_rates.or.absmet_in_output)
+  call self%lte_background_opacities(temp, include_absmet=(.not.self%out_ray).or.absmet_in_output)
 
   if (self%use_atom) then
     if (self%bound_free) call self%add_bound_free_opacities()
@@ -230,12 +246,12 @@ SUBROUTINE execute (self)
 
   ! Starting loop over angles
   do i_mu=self%mus, self%mue
-    if (get_rates) then
-      wmu = all_wmu(i_mu)
-      vec = all_vec(:,i_mu)
-    else
+    if (self%out_ray) then
       wmu = long_wmu(i_mu)
       vec = long_vec(:,i_mu)
+    else
+      wmu = all_wmu(i_mu)
+      vec = all_vec(:,i_mu)
     endif
     wmu = wmu * over_4pi
     call self%get_vproj(vproj, vec)
@@ -258,9 +274,9 @@ SUBROUTINE execute (self)
       endif
 
       if (one_dimensional .or. self%out_ray) then
-        call self%long_char(vec, get_rates)
+        call self%long_char(vec)
       else
-        call self%short_char(vec, get_rates)
+        call self%short_char(vec)
       endif
 
       if (get_cntrbf) then
@@ -274,25 +290,31 @@ SUBROUTINE execute (self)
 
       call self%work_to_mem(i_mu, i_set)
       
-      if (get_rates) then
+      if (self%get_rates) then
         if (self%bound_free) call self%integrate_intensity(wmu)
         if (self%bound_bound) call self%bound_bound_rates(wmu, inv_df, vproj, adamp, gamma_ij, gamma_ji)
       endif
     end do
   end do
 
-  if (get_rates) then
+  if (self%get_rates) then
     if (self%bound_free) call self%bound_free_rates(gamma_ij, gamma_ji)
     if (self%use_atom) call self%integrate_rates(gamma_ij, gamma_ji)
   elseif (self%patch%boundaries%is_set(bits%zu)) then
     call self%save_intensity()
   endif
 
-  !if (get_cntrbf) then
-  !  call self%save
-  !endif
+  call deallocate_arrays()
 
-  call deallocate_arrays
+  if (self%use_atom) then
+    if (self%atom%data%converged) then
+      self%get_rates = .false.
+      if (premature_finish) then
+        call self%finish()
+      endif
+    endif
+  endif
+
   call trace%end(itimer)
 
 contains
@@ -311,7 +333,7 @@ contains
       allocate(adamp(nx,ny,nz,self%nline), source=0.)
       call mem_register(adamp, label='adamp')
     endif
-    if (get_rates) then
+    if (self%get_rates) then
       allocate(self%Psi(fs:fe,nx,ny,nz), source=0.)
       allocate(gamma_ij(nx, ny, nz, self%nline+self%ncont), source=0.)
       allocate(gamma_ji(nx, ny, nz, self%nline+self%ncont), source=0.)
@@ -351,7 +373,7 @@ contains
       call mem_unregister(adamp, label='adamp')
       deallocate(adamp)
     endif
-    if (get_rates) then
+    if (self%get_rates) then
       call mem_unregister(self%Psi, label='Psi')
       call mem_unregister(gamma_ij, label='gamma_ij')
       call mem_unregister(gamma_ji, label='gamma_ji')
@@ -874,7 +896,7 @@ SUBROUTINE work_to_mem (self, i_mu, i_set)
   !-----------------------------------------------------------------------------
   call trace%begin('nlte_patch%work_to_mem', itimer=itimer)
 
-  if (self%is_set(bits%no_download) .and. .not. associated(self%mem)) then
+  if (.not. associated(self%mem)) then
     call self%allocate_mem()
   endif
 
@@ -985,11 +1007,10 @@ SUBROUTINE rotate_cube (self, vec)
 END SUBROUTINE rotate_cube
 
 !===============================================================================
-SUBROUTINE short_char (self, vec, get_rates)
+SUBROUTINE short_char (self, vec)
   class(nlte_patch_t) :: self
   type(ray_type) :: ray
   real(8) :: vec(3)
-  logical :: get_rates
   real(4) :: Inuup, xxup, ssup, xxmin, ssmin, Inumin, dsup05, xx, ss, Inu, u0, Psi
   real(8) :: dt, ex ! important
   real(4), dimension(:,:), allocatable :: kernel, work_up, work_min
@@ -1064,7 +1085,7 @@ SUBROUTINE short_char (self, vec, get_rates)
           endif
 
           work(f,x,y,z,3) = Inu
-          if (get_rates) self%Psi(f,x,y,z) = Psi / xx
+          if (self%get_rates) self%Psi(f,x,y,z) = Psi / xx
         end do ! f-loop
       end do
     end do
@@ -1073,10 +1094,9 @@ SUBROUTINE short_char (self, vec, get_rates)
 END SUBROUTINE short_char
 
 !===============================================================================
-SUBROUTINE long_char (self, vec, get_rates)
+SUBROUTINE long_char (self, vec)
   class(nlte_patch_t) :: self
   real(8) :: vec(3)
-  logical :: get_rates
   real(4) :: ds, Inuup, xxup, ssup, dsup05, xx, ss, Inu, u0, Psi
   real(8) :: dt, ex ! important
   real(4), allocatable, dimension(:,:) :: kernel
@@ -1124,7 +1144,7 @@ SUBROUTINE long_char (self, vec, get_rates)
         endif
 
         work(f,x,y,z,3) = Inu
-        if (get_rates) self%Psi(f,x,y,z) = Psi / xx
+        if (self%get_rates) self%Psi(f,x,y,z) = Psi / xx
       end do ! f-loop
     end do
     end do
@@ -1289,7 +1309,7 @@ SUBROUTINE allocate_mem(self, m_in, label)
   character(len=*), optional :: label
   integer :: i, m(6)
   ! ----------------------------------------------------------------------------
-  if (self%is_set(bits%no_download)) then
+  !if (self%is_set(bits%no_download)) then
     m = [self%nf, self%n(1), self%n(2), self%n_set, self%n_mu, 3]
     call self%patch_t%allocate_mem(m)
     fs = self%fs
@@ -1298,7 +1318,7 @@ SUBROUTINE allocate_mem(self, m_in, label)
     ny = self%n(2)
     tmp => self%mem
     self%mem(fs:fe,1:nx,1:ny,self%mus:self%mue,1:self%n_set,1:3) => tmp
-  endif
+  !endif
 END SUBROUTINE allocate_mem
 
 !===============================================================================
@@ -1340,6 +1360,23 @@ SUBROUTINE save_intensity (self)
   endif
   call io%lock%unset('save_quadrature')
 END SUBROUTINE save_intensity
+
+!===============================================================================
+SUBROUTINE copy_to (self, tgt)
+  class(nlte_patch_t):: self
+  class(patch_t):: tgt
+  !-----------------------------------------------------------------------------
+  if (.not. associated(tgt%mem)) then
+    call tgt%allocate_mem()
+  endif
+  if (.not. all(shape(tgt%mem) == shape(self%mem))) then
+    call shared%abort('nlte_patch_t%copy_to: mem of differing shape!')
+  endif
+  tgt%mem = self%mem
+  if ((.not. self%static_mem) .or. tgt%static_mem) then
+    call self%deallocate_mem()
+  endif
+END SUBROUTINE copy_to
 
 !===============================================================================
 SUBROUTINE mem_register(arr, label)

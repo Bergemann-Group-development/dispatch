@@ -5,6 +5,7 @@ from scipy.signal import argrelextrema
 from scipy.special import voigt_profile
 from scipy import integrate, stats, optimize
 from scipy.interpolate import interp1d
+from numba import njit, jit
 import shlex
 import re
 
@@ -465,3 +466,18 @@ def shift_interp2(xx, yy, newx):
     dx[ii1==ii2] = 0
     out = [shift_interp(yy[i1], yy[i2], d) for d, i1, i2 in zip(dx, ii1, ii2)]
     return np.array(out)
+
+
+@njit
+#=====================================================================
+def interp_tau(newx, xx, yy):
+    #-----------------------------------------------------------------
+  shape = np.shape(yy)
+  nx = np.shape(newx)
+  newy = np.empty((shape[:2] + nx))
+
+  for i in range(shape[0]):
+    for j in range(shape[1]):
+      newy[i,j] = np.interp(newx, xx[i,j], yy[i,j])
+
+  return newy

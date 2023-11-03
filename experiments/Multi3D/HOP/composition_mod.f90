@@ -1469,7 +1469,7 @@ contains
 
         if (present(include_absmet)) then
             if (self%osmet%initialised .and. include_absmet) then
-                call self%osmet%add_line_opacities2(nu, self%p6, self%temp, self%rho, chi)
+                call self%osmet%add_line_opacities(nu, self%p6, self%temp, self%rho, chi)
             endif
         endif
 

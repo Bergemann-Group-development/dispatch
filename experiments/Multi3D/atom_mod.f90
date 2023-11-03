@@ -46,6 +46,7 @@ MODULE atom_mod
       real(4), dimension(:,:,:,:), pointer, contiguous :: ni_over_nj_lte => null()
       real(4), dimension(:,:,:,:), pointer, contiguous :: wphi => null()
       real(4), dimension(:,:,:),   pointer, contiguous :: totn => null() 
+      logical :: converged=.false.
     end type local_data_t
   
     type, public, extends(massive_type) :: atom_type

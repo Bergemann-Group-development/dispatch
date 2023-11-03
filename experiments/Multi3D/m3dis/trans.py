@@ -383,8 +383,8 @@ class trans_class(object):
         if self.run.dim=='1D':
             return self.run.ltau, cf[0,0]
         else:
-            ltau = np.linspace(np.min(self.run.ltau), 2, 1000)
-            cf = LinArrayInterp(self.run.ltau[...,::-1], cf[...,::-1], ltau)
+            ltau = np.linspace(np.min(self.run.ltau), np.max(self.run.ltau), 1000)
+            cf = interp_tau(ltau, self.run.ltau[...,::-1], cf[...,::-1])
             ltau = ltau[::-1]
             cf = cf[..., ::-1]
             return ltau, cf

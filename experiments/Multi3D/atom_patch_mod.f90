@@ -31,8 +31,8 @@ MODULE atom_patch_mod
     USE bbtrans_mod, only: bbtrans_type
     USE composition_mod, only: composition_type
     USE m3d_patch_mod, only: m3d_patch_t, maxiter, check_NaN, cswitch, key_link_t, &
-    global_maxerr, convlim, atom_update_counter, comoving_frame, global_pos, &
-    decouple_continuum, overlapping_bb, overlapping_bf, line_blanketing, converged
+    global_maxerr, convlim, convmin, atom_update_counter, comoving_frame, global_pos, &
+    decouple_continuum, overlapping_bb, overlapping_bf, line_blanketing, converged, premature_finish
     USE bftrans_mod, only: bftrans_type
     USE hprofl_mod, only: hydrogen_BPO
     USE osmet_mod, only:osmet_type
@@ -112,7 +112,7 @@ MODULE atom_patch_mod
     namelist /atom_params/ atom_file, qnorm, convlim, exclude_trace_cont, level_partf, &
     use_atom_abnd, logf_cut, red_cut, blue_cut, n_in_lines, abundance, debye_shield, &
     exclude_from_line_list, precomputed_depart, use_classic_col, kramer_bf, overlapping_bf, &
-    overlapping_bb, nq_fac, hydrogen_BPO, detailed_absmet, n_cntrbf
+    overlapping_bb, nq_fac, hydrogen_BPO, detailed_absmet, n_cntrbf, convmin, premature_finish
     namelist /line_mask/ in_lines, cntrbf_lines
     !-----------------------------------------------------------------------------
     call trace%begin('atom_patch_t%pre_init_atom', itimer=itimer)
@@ -375,17 +375,21 @@ MODULE atom_patch_mod
         end do
       endif
 
-      !if (.not. self%atom%stiff) then
+      if (self%atom%data%converged) then
+        self%update_skipped = .true.
+      else
         do i=1, self%atom%nline
           gamma_ij(:,:,:,i) = gamma_ij(:,:,:,i) * wphi(:,:,:,i)
           gamma_ji(:,:,:,i) = gamma_ji(:,:,:,i) * wphi(:,:,:,i)
         end do
 
         call self%update_populations(gamma_ij, gamma_ji)
+        self%atom%data%converged = self%maxerr < convmin
         self%update_skipped = .false.
-      !else
-      !  self%update_skipped = .true.
-      !endif
+        if (self%atom%data%converged .and. premature_finish) then
+          call self%finish()
+        endif
+      endif
     endif
     
     if (self%iter > 0) then

@@ -67,7 +67,7 @@ MODULE m3d_patch_mod
       integer :: iter=0, maxiter, master_maxiter, dir=0
       integer :: n_nu, n_omega, n_out, zs, ze
       integer :: fcheck, pcheck(3), linecheck, lvlcheck
-      logical :: out_ray=.false., static_mem=.false.
+      logical :: out_ray=.false.
       logical :: compressed=.false., save_output=.false., saved=.false.
       logical :: print_update_info, checked_bounds=.false.
       logical :: free_self=.false.
@@ -134,8 +134,8 @@ MODULE m3d_patch_mod
     integer, public, save :: save_id=-1
     real(8), public, save, dimension(:), allocatable:: wmu, long_wmu
     real(8), public, save, dimension(:,:), allocatable:: vec, long_vec
-    real(8), public:: convlim=1d-3
-    logical, public, save :: converged=.false., use_vel=.true., auto_preconditioning=.false.
+    real(8), public:: convlim=1d-3, convmin=tiny(1.0)
+    logical, public, save :: converged=.false., use_vel=.true., premature_finish=.false.
     logical, public, save :: preconditioning=.true., binned_opac=.false., save_Qrad=.false.
     logical, public, save :: check_NaN=.false., interp_log=.false.
     logical, public, save :: save_back_cont=.false., save_atom_line=.false.
@@ -176,8 +176,8 @@ MODULE m3d_patch_mod
     save_back_cont, detailed_prints, print_finished, print_start, &
     print_send, linear_long, interp_log, ray_offset, print_download, save_atom_line, &
     lse_solver, decouple_continuum, m1d_legacy_mode, nu_tolerance, disable_stark, &
-    disable_vdw, disable_ga, pivot_z, use_vel, preconditioning, save_Qrad, &
-    absmet_in_output, print_lock, auto_preconditioning, make_opac_table
+    disable_vdw, disable_ga, pivot_z, use_vel, save_Qrad, &
+    absmet_in_output, print_lock, make_opac_table
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%pre_init', itimer=itimer)
     self%type = trim(self%kind)

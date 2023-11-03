@@ -19,7 +19,6 @@ MODULE osmet_mod
     contains
         procedure :: init
         procedure :: add_line_opacities
-        procedure :: add_line_opacities2
 
     end type
 
@@ -92,87 +91,7 @@ contains
     END SUBROUTINE init
 
     !===============================================================================
-    SUBROUTINE add_line_opacities(self, nu, p6, temp, ne, rho, abslte, sumsca)
-        class(osmet_type), intent(inout) :: self
-        real(8), dimension(:), intent(in) :: nu
-        real(8), dimension(:,:,:), intent(in) :: p6, temp, ne, rho
-        real(4), dimension(:,:,:,:), intent(inout) :: abslte, sumsca
-        real(4), dimension(:,:,:), allocatable :: Tinv, sqrtT
-        real(4) :: a1, b1, c1, d1, a2, b2, c2, d2
-        real(4) :: ab1, cd1, ab2, cd2, abcd1, abcd2
-        real(4) :: dx, dy, dz, ecnst, os
-        real(dp) :: ecnst1, nu3, beta, epsln, psem1, psem2
-        integer :: ix, iy, iz, i, j, k, f, nx, ny, nz, nf
-        !---------------------------------------------------------------------------
-        nx = size(abslte,1)
-        ny = size(abslte,2)
-        nz = size(abslte,3)
-        nf = size(abslte,4)
-
-        allocate(Tinv(nx,ny,nz))
-        allocate(sqrtT(nx,ny,nz))
-        Tinv = HH / (BK*temp)
-        sqrtT = SQRT(temp)
-
-        do f=1, nf
-            iz = searchsorted(self%nu, nu(f))
-
-            if (iz < 0) cycle
-            
-            dz = (nu(f) - self%nu(iz)) / (self%nu(iz+1) - self%nu(iz))
-            nu3 = 1 / ( 20.6D0*(CC/nu(f))**3 )
-
-            do k=1, nz
-            do j=1, ny
-            do i=1, nx
-                ix = searchsorted(self%p6, p6(i,j,k))
-                iy = searchsorted(self%temp, temp(i,j,k))
-
-                if (ix<0 .or. iy<0) then
-                    cycle
-                endif
-
-                a1 = self%ostabl(ix,   iy,   iz)
-                b1 = self%ostabl(ix+1, iy,   iz)
-                c1 = self%ostabl(ix+1, iy+1, iz)
-                d1 = self%ostabl(ix,   iy+1, iz)
-                a2 = self%ostabl(ix,   iy,   iz+1)
-                b2 = self%ostabl(ix+1, iy,   iz+1)
-                c2 = self%ostabl(ix+1, iy+1, iz+1)
-                d2 = self%ostabl(ix,   iy+1, iz+1)
-        
-                dx = (p6  (i,j,k) - self%p6  (ix)) / (self%p6  (ix+1) - self%p6  (ix))
-                dy = (temp(i,j,k) - self%temp(iy)) / (self%temp(iy+1) - self%temp(iy))
-        
-                ab1 = (b1 - a1) * dx + a1
-                cd1 = (c1 - d1) * dx + d1
-                ab2 = (b2 - a2) * dx + a2
-                cd2 = (c2 - d2) * dx + d2
-                
-                abcd1 = exp(ln10*((cd1 - ab1) * dy + ab1))
-                abcd2 = exp(ln10*((cd2 - ab2) * dy + ab2))
-        
-                ! last interpolation along frequencies is done on linear opacities
-                os = (abcd2 - abcd1) * dz + abcd1
-                os = os * rho(i,j,k)
-
-                ecnst1 = sqrtT(i,j,k) * nu3
-                beta = Tinv(i,j,k) * nu(f)
-                psem1 = psemi(1,beta)
-                psem2 = psemi(2,beta)
-                ecnst = ecnst1*( self%eosmet / psem2 + (1-self%eosmet) / psem1 )
-                epsln = ne(i,j,k) / (ecnst + ne(i,j,k))
-
-                abslte(i,j,k,f) = abslte(i,j,k,f) + os*epsln
-                sumsca(i,j,k,f) = sumsca(i,j,k,f) + os*(1 - epsln)
-            end do
-            end do
-            end do
-        end do
-    END SUBROUTINE add_line_opacities
-
-    !===============================================================================
-    SUBROUTINE add_line_opacities2(self, nu, p6, temp, rho, chi)
+    SUBROUTINE add_line_opacities(self, nu, p6, temp, rho, chi)
       class(osmet_type), intent(inout) :: self
       real(8), dimension(:), intent(in) :: nu
       real(8), dimension(:,:,:), intent(in) :: p6, temp, rho
@@ -234,7 +153,7 @@ contains
         end do
         end do
       end do
-    END SUBROUTINE add_line_opacities2
+    END SUBROUTINE add_line_opacities
 
     !===============================================================================
     !  thermal p-FUNCTION for semic empirical collision rates

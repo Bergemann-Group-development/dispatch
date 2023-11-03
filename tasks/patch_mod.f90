@@ -125,6 +125,7 @@ MODULE patch_mod
     type(lock_t)         , pointer:: mem_lock(:)                => null()
     real(var_k), pointer, contiguous:: generic(:,:,:,:)         => null()
     class(patch_t)       , pointer:: patch_ptr                  => null()
+    logical :: static_mem=.false.
   contains
     procedure, nopass:: cast2patch
     procedure:: init=>patch_t_init
@@ -236,6 +237,7 @@ MODULE patch_mod
     procedure:: to_radial
     procedure:: to_cartesian
     procedure:: allocate_mem
+    procedure:: copy_to
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -4118,5 +4120,13 @@ SUBROUTINE allocate_mem (self, m_in, label)
   endif
   call os%allocate(self%mem, m, label=trim(self%kind)//'%mem')
 END SUBROUTINE allocate_mem
+
+!===============================================================================
+SUBROUTINE copy_to (self, tgt)
+  class(patch_t):: self
+  class(patch_t):: tgt
+  !-----------------------------------------------------------------------------
+  ! fallback
+END SUBROUTINE copy_to
 
 END MODULE patch_mod
