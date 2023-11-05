@@ -194,7 +194,7 @@ SUBROUTINE nlte_patch_pre_update (self)
   class(nlte_patch_t), target :: self
   !-----------------------------------------------------------------------------
   call m3d_patch_pre_update(self)
-  if (self%use_atom) then
+  if (self%use_atom .and. .not. self%out_ray) then
     if (premature_finish .and. self%atom%data%converged) then
       self%static_mem = .true.
     endif

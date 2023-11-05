@@ -48,7 +48,7 @@ SUBROUTINE composition_pre_init (self)
   type(composition_type), save :: composition
   class(atom_patch_t), pointer :: atom_patch
   class(atomic_spectrum_type), save, pointer :: output_sp
-  integer :: i, iostat, n_nu, nlists
+  integer :: i, iostat, n_nu, nlists, mu
   integer, save:: itimer=0, itimer2=0
   integer, save :: verbose=0
   character(len=128), save :: absdat_file='./input_multi3d/TS_absdat.dat'
@@ -139,14 +139,22 @@ SUBROUTINE composition_pre_init (self)
 
   n_nu = self%n_nu
 
+  if (associated(atom_patch)) then
+    call self%create_sub_patches([-n_nu, -1], -1, output_sp, atom_patch%output_atom)
+  else
+    call self%create_sub_patches([-n_nu, -1], -1, output_sp)
+  endif
+
   if (ilambd + maxiter > 0) then
     if (atom_patch%atom_allocated) then
-      if (decouple_continuum) then
-        call self%create_sub_patches([1, n_nu],      [1, 2], atom_patch%bb_sp, atom_patch%bb_atom)
-        call self%create_sub_patches([1, n_nu]+n_nu, [1, 2], atom_patch%bf_sp, atom_patch%bf_atom)
-      else
-        call self%create_sub_patches([1, n_nu], [1, 2], atom_patch%sp, atom_patch%atom)
-      endif
+      do mu=1,2
+        if (decouple_continuum) then
+          call self%create_sub_patches([1, n_nu],      mu, atom_patch%bb_sp, atom_patch%bb_atom)
+          call self%create_sub_patches([1, n_nu]+n_nu, mu, atom_patch%bf_sp, atom_patch%bf_atom)
+        else
+          call self%create_sub_patches([1, n_nu], mu, atom_patch%sp, atom_patch%atom)
+        endif
+      end do
     else
       deallocate(atom_patch)
       if (.not. external_sp) then
@@ -155,11 +163,6 @@ SUBROUTINE composition_pre_init (self)
     endif
   endif
 
-  if (associated(atom_patch)) then
-    call self%create_sub_patches([-n_nu, 0], [-1, 0], output_sp, atom_patch%output_atom)
-  else
-    call self%create_sub_patches([-n_nu, 0], [-1, 0], output_sp)
-  endif
   
   call self%save_abundances_to_file()
   call self%post_pre_init()
@@ -169,25 +172,20 @@ END SUBROUTINE composition_pre_init
 !===============================================================================
 SUBROUTINE create_sub_patches (self, nu, mu, sp, atom)
   class(composition_patch_t) :: self
-  integer, intent(in) :: nu(2), mu(2)
+  integer, intent(in) :: nu(2), mu
   class(atomic_spectrum_type), intent(in), pointer :: sp
   type(atom_type), intent(in), pointer, optional :: atom
   class(nlte_patch_t), pointer :: nlte
-  integer :: n, m
+  integer :: n
   logical :: new_nlte
   !-----------------------------------------------------------------------------
   if (.not. associated(sp)) return
   if (sp%nnu == 0) return
-  do m=mu(1), mu(2)
   do n=nu(1), nu(2)
-    new_nlte = n/=0 .and. m/=0
-    if (new_nlte) then
-      allocate(nlte)
-      if (present(atom)) nlte%atom => atom
-      call nlte%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp)
-    endif
+    allocate(nlte)
+    if (present(atom)) nlte%atom => atom
+    call nlte%pre_init_and_link(self, i_mu=mu, i_nu=n, sp=sp)
   end do
-end do
 END SUBROUTINE create_sub_patches
 
 !===============================================================================

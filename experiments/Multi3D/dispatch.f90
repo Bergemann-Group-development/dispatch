@@ -54,7 +54,7 @@ PROGRAM dispatch
   write(*,'(a, I3, a, F7.2, a)') 'maximum memory on rank', mpi%rank, ' was', os%max_mem, 'Gb'
   write(*,'(a, I3, a, F7.2, a)') 'Multi3D terminated normally.'
   write(*, '(a,3x,a)') trim(atmos_file), trim(atom_file)
-  !call os%print_tracked_mem()
+  call os%print_tracked_mem()
   !write(*,'(a, I3, a, F7.2, a)') 'still allocated memory on rank', mpi%rank, ' is', os%gb, 'Gb'
   call setup%end                                ! End setup
 !===============================================================================
