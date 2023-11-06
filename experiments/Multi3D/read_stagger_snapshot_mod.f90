@@ -2,7 +2,6 @@ MODULE read_stagger_snapshot_mod
   USE io_mod
   USE os_mod
   USE trace_mod
-  USE eos_mod
   USE handyfuncs_mod
   USE op_math_mod, only: linspace, linterpolate_3d
   implicit none

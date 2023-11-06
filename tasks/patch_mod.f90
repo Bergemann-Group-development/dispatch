@@ -237,6 +237,7 @@ MODULE patch_mod
     procedure:: to_radial
     procedure:: to_cartesian
     procedure:: allocate_mem
+    procedure:: deallocate_mem
     procedure:: copy_to
   end type
   !-----------------------------------------------------------------------------
@@ -4099,10 +4100,9 @@ SUBROUTINE to_cartesian (self, lt, ut, v1, v2, v3)
 END SUBROUTINE to_cartesian
 
 !===============================================================================
-SUBROUTINE allocate_mem (self, m_in, label)
+SUBROUTINE allocate_mem (self, m_in)
   class(patch_t):: self
   integer, intent(in), optional :: m_in(6)
-  character(len=*), optional :: label
   integer :: m(6)
   !-----------------------------------------------------------------------------
   if (present(m_in)) then
@@ -4118,8 +4118,17 @@ SUBROUTINE allocate_mem (self, m_in, label)
       call shared%abort('patch_t%allocate_mem: Negative allocation size! Some dimension is negative!')
     endif
   endif
+  !print *, self%key, 'allocated'
   call os%allocate(self%mem, m, label=trim(self%kind)//'%mem')
 END SUBROUTINE allocate_mem
+
+!===============================================================================
+SUBROUTINE deallocate_mem (self)
+  class(patch_t):: self
+  !-----------------------------------------------------------------------------
+  !print *, self%key, 'deallocated'
+  call os%deallocate(self%mem, label=trim(self%kind)//'%mem')
+END SUBROUTINE deallocate_mem
 
 !===============================================================================
 SUBROUTINE copy_to (self, tgt)

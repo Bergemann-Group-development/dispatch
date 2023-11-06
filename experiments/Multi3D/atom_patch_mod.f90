@@ -1,25 +1,12 @@
 MODULE atom_patch_mod
     USE os_mod
-    USE list_mod
-    USE halo_mod
     USE gpatch_mod
-    USE link_mod
-    USE task_mod
-    USE omp_timer_mod
-    !USE index_mod
-    !USE mesh_mod
     USE io_mod
-    !USE aux_mod
-    USE timer_mod
     USE scaling_mod
     USE trace_mod
-    USE mpi_mod
-    !USE omp_mod
-    !USE omp_timer_mod
-    USE math_mod
     USE bits_mod
-    !USE units_mod
-    !USE scratch_mod
+    USE task_mod, only: task_t
+    USE link_mod, only: nbor_t
     USE handyfuncs_mod
     USE atom_mod, only: atom_type, atomic_spectrum_type, use_classic_col, kramer_bf, debye_shield, &
                         red_cut, blue_cut, logf_cut, local_data_t, m1d_legacy_mode, nq_fac
@@ -348,8 +335,6 @@ MODULE atom_patch_mod
   !===============================================================================
   SUBROUTINE execute (self)
     class(atom_patch_t) :: self
-    class(nbor_t), pointer:: nbor
-    class(task_t), pointer:: nbtask
     class(line_type), pointer :: line
     real(8), dimension(:,:,:,:), pointer, contiguous :: gamma_ij, gamma_ji
     real(4), dimension(:,:,:,:), pointer, contiguous :: wphi

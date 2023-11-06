@@ -1,29 +1,15 @@
 MODULE nlte_patch_mod
-  !USE rt_integral_mod
-  !USE radau_mod
-  !USE boundaries_mod
-  !USE eos_mod
-  !USE list_mod
   USE os_mod
   USE halo_mod
   USE gpatch_mod
   USE link_mod
   USE task_mod
-  !USE index_mod
-  !USE mesh_mod
   USE io_mod
-  !USE aux_mod
   USE timer_mod
   USE scaling_mod
   USE trace_mod
-  !USE mpi_mod
-  !USE omp_mod
-  !USE omp_timer_mod
-  !USE math_mod
   USE bits_mod
   USE os_mod
-  !USE units_mod
-  !USE scratch_mod
   USE patch_mod, only: patch_t
   USE mmath, only: cc_kernel
   USE op_math_mod, only: pchip_mono
@@ -44,6 +30,7 @@ MODULE nlte_patch_mod
 
   !-----------------------------------------------------------------------------
   type, public, extends(ray_patch_t) :: nlte_patch_t
+    class(nlte_patch_t), pointer :: upstream
     type(line_type), dimension(:), allocatable :: line
     type(cont_type), dimension(:), allocatable :: cont
     real(4), dimension(:,:,:,:), allocatable :: Jnu, Psi, PsiJ
@@ -77,6 +64,7 @@ MODULE nlte_patch_mod
     procedure :: print_post_update_info
     procedure :: nbor_relations => nlte_patch_nbor_relations
     procedure :: init_nbors_hash
+    procedure :: finish
     procedure :: allocate_mem
     procedure :: copy_to
   end type nlte_patch_t
@@ -122,7 +110,7 @@ SUBROUTINE nlte_patch_pre_init (self)
     self%bound_bound = .false.
     self%bound_free = .false.
   endif
-  self%get_rates = .not. self%out_ray
+  self%get_rates = self%in_ray
 
   self%ng(3) = 1
   call self%post_pre_init()
@@ -194,7 +182,7 @@ SUBROUTINE nlte_patch_pre_update (self)
   class(nlte_patch_t), target :: self
   !-----------------------------------------------------------------------------
   call m3d_patch_pre_update(self)
-  if (self%use_atom .and. .not. self%out_ray) then
+  if (self%use_atom .and. self%in_ray) then
     if (premature_finish .and. self%atom%data%converged) then
       self%static_mem = .true.
     endif
@@ -243,7 +231,7 @@ SUBROUTINE execute (self)
 
   inv_df = self%atom%inverse_doppler_factor(temp)
 
-  call self%lte_background_opacities(temp, include_absmet=(.not.self%out_ray).or.absmet_in_output)
+  call self%lte_background_opacities(temp, include_absmet=self%in_ray.or.absmet_in_output)
 
   if (self%use_atom) then
     if (self%bound_free) call self%add_bound_free_opacities()
@@ -308,6 +296,7 @@ SUBROUTINE execute (self)
     if (self%use_atom) call self%integrate_rates(gamma_ij, gamma_ji)
   elseif (self%patch%boundaries%is_set(bits%zu)) then
     call self%save_intensity()
+    call self%deallocate_mem()
   endif
 
   call deallocate_arrays()
@@ -567,7 +556,7 @@ SUBROUTINE add_bound_bound_opacities (self, wmu, inv_df, vproj, adamp, LTE)
     call trace%begin (trim(self%kind)//'%wphi', itimer=itimer1)
     
     ! Saving integrated line profiles wphi for profile normalisation
-    if (self%iter == 0 .and. .not. self%out_ray) then
+    if (self%iter == 0 .and. self%in_ray) then
       call lock_mem(self%m3d_parent, 'wphi')
       wphi => self%atom%data%wphi(:,:,:,line%ntrans)
       do z=1, nz
@@ -1260,6 +1249,9 @@ SUBROUTINE nlte_patch_nbor_relations(self, another, needed, needs_me, download)
     select type(another)
     class is (nlte_patch_t)
       ! do nothing
+      if (needed) then
+        self%upstream => another
+      endif
     class is (m3d_patch_t)
       if (another%id == self%m3d_parent%id) then
         needs_me = .false.
@@ -1304,15 +1296,28 @@ SUBROUTINE init_nbors_hash (self, nbors)
 END SUBROUTINE init_nbors_hash
 
 !===============================================================================
-SUBROUTINE allocate_mem(self, m_in, label)
+SUBROUTINE finish(self)
+  class(nlte_patch_t) :: self
+  ! ----------------------------------------------------------------------------
+  call self%m3d_patch_t%finish()
+  if (associated(self%upstream)) then
+    if (associated(self%upstream%mem)) then
+      call self%upstream%deallocate_mem()
+    endif
+  endif
+END SUBROUTINE finish
+
+!===============================================================================
+SUBROUTINE allocate_mem(self, m_in)
   class(nlte_patch_t) :: self
   class(line_type), pointer :: line
   real(4), dimension(:,:,:,:,:,:), pointer, contiguous :: tmp
   integer, intent(in), optional :: m_in(6)
-  character(len=*), optional :: label
   integer :: i, m(6)
+  logical :: ok
   ! ----------------------------------------------------------------------------
-  !if (self%is_set(bits%no_download)) then
+  ok = self%is_set(bits%no_download) .or. self%iter > 0
+  if (ok) then
     m = [self%nf, self%n(1), self%n(2), self%n_set, self%n_mu, 3]
     call self%patch_t%allocate_mem(m)
     fs = self%fs
@@ -1321,7 +1326,7 @@ SUBROUTINE allocate_mem(self, m_in, label)
     ny = self%n(2)
     tmp => self%mem
     self%mem(fs:fe,1:nx,1:ny,self%mus:self%mue,1:self%n_set,1:3) => tmp
-  !endif
+  endif
 END SUBROUTINE allocate_mem
 
 !===============================================================================
@@ -1370,25 +1375,27 @@ SUBROUTINE copy_to (self, tgt)
   class(patch_t):: tgt
   integer :: i, i_set, i_mu
   !-----------------------------------------------------------------------------
-  if (.not. associated(tgt%mem)) then
-    call tgt%allocate_mem()
-  endif
-  if (.not. all(shape(tgt%mem) == shape(self%mem))) then
-    call shared%abort('nlte_patch_t%copy_to: mem of differing shape!')
-  endif
-  do i=1, 3
-  do i_set=1, self%n_set
-  do i_mu=self%mus, self%mue
-  do y=1, self%n(2)
-  do x=1, self%n(1)
-    tgt%mem(:,x,y,i_mu,i_set,i) = self%mem(:,x,y,i_mu,i_set,i)
-  end do
-  end do
-  end do
-  end do
-  end do
-  if ((.not. self%static_mem) .or. tgt%static_mem) then
-    call self%deallocate_mem()
+  if (.not. self%static_mem) then
+    tgt%mem => self%mem
+    nullify(self%mem)
+  else
+    if (.not. associated(tgt%mem)) then
+      call tgt%allocate_mem()
+    endif
+    do i=1, 3
+    do i_set=1, self%n_set
+    do i_mu=self%mus, self%mue
+    do y=1, self%n(2)
+    do x=1, self%n(1)
+      tgt%mem(:,x,y,i_mu,i_set,i) = self%mem(:,x,y,i_mu,i_set,i)
+    end do
+    end do
+    end do
+    end do
+    end do
+    if (tgt%static_mem) then
+      call self%deallocate_mem()
+    endif
   endif
 END SUBROUTINE copy_to
 

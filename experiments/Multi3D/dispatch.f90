@@ -28,7 +28,7 @@ PROGRAM dispatch
   USE mpi_mod
   USE os_mod
   USE setup_mod
-  USE restart_mod
+  !USE restart_mod
   USE dispatcher_mod
   !USE cartesian_mod
   USE task_list_mod

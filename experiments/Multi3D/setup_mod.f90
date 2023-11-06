@@ -12,13 +12,9 @@
 MODULE setup_mod
   USE io_mod
   USE mpi_mod
-  USE omp_lock_mod
-  USE timer_mod
-  USE trace_mod
   USE mpi_mesg_mod
   USE scaling_mod
-  USE eos_mod
-  USE opacity_mod
+  USE trace_mod
   implicit none
   private
   type, public:: setup_t

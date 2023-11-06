@@ -1,8 +1,8 @@
 MODULE composition_patch_mod
   USE io_mod
   USE os_mod
-  USE mpi_mod
-  USE omp_mod
+  USE task_mod, only: task_t
+  USE link_mod, only: nbor_t
   USE gpatch_mod
   USE handyfuncs_mod
   USE optab_mod, only: optab
@@ -13,7 +13,6 @@ MODULE composition_patch_mod
   USE atom_patch_mod,  only: atom_patch_t
   USE nlte_patch_mod, only:nlte_patch_t
   USE bftrans_mod, only: H_occupation_probability
-  USE task_mod
   USE trace_mod
   USE scaling_mod
   USE units_mod

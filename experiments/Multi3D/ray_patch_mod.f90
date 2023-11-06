@@ -41,7 +41,6 @@ MODULE ray_patch_mod
     procedure :: nbor_relations => ray_nbor_relations
     procedure :: set_freq_indices
     procedure :: is_upstream => ray_is_upstream
-    procedure :: set_guard_zones
     procedure :: pack
     procedure :: unpack
     procedure :: allocate_mesg
@@ -165,21 +164,6 @@ SUBROUTINE frequency_padding (self)
   call self%set_nv_and_nw (nv,self%nw)
 END SUBROUTINE frequency_padding
 
-!===============================================================================
-SUBROUTINE set_guard_zones (self)
-  class(ray_patch_t) :: self
-  !-----------------------------------------------------------------------------
-  if (self%out_ray) then
-    self%ng = [0,0,1]
-  elseif (one_dimensional) then
-    self%ng = [0,0,1]
-  elseif (self%ray%long) then
-    self%ng = [3,3,1]
-  else
-    self%ng = [2,2,1]
-  endif
-END SUBROUTINE set_guard_zones
-
 
 !===============================================================================
 !> Determine if a task is upstream.  
@@ -190,80 +174,6 @@ logical FUNCTION ray_is_upstream (self, other) result(is_upstream)
   is_upstream = self%i_mu == other%i_mu
   is_upstream = is_upstream .and. self%key(1)-self%dir == other%key(1)
 END FUNCTION ray_is_upstream
-
-!===============================================================================
-!> Determine if a task is upstream.  
-!===============================================================================
-!logical FUNCTION ray_is_upstream (self, other) result(is_upstream)
-!  class(ray_patch_t):: self, other
-!  real(8):: ds1(3), ds2(3)
-!  real:: sinth
-!  real, parameter:: eps=1e-4
-!  integer:: is1(3), is2(3), is3(3), is4(3), i, lbit(3), ubit(3)
-!  logical:: lower, upper, upstream
-!  !-----------------------------------------------------------------------------
-!  ! If self is at a boundary and other points inward, or the task has no RT,
-!  ! then the task is outside and is not needed
-!  !-----------------------------------------------------------------------------
-!  if (.not.self%on) then
-!    is_upstream=.false.
-!    return
-!  end if
-!  !
-!  if (self%i_mu /= other%i_mu) then
-!    is_upstream=.false.
-!    return
-!  end if
-!  !
-!  call trace%begin ('ray_patch_t%ray_is_upstream')
-!  !-----------------------------------------------------------------------------
-!  ! If the task does not have RT it is not needed
-!  !-----------------------------------------------------------------------------
-!  if (.not.other%on) then
-!    is_upstream = .false.
-!    call trace%end ()
-!    return
-!  end if
-!  !
-!  is_upstream=.true.
-!  ds1 = self%position-other%position
-!  where (self%periodic)
-!    ds1 = modulo(ds1 + 0.5_8*self%box, self%box) - 0.5_8*self%box
-!  end where
-!  ds1 = ds1/self%box                                                            ! relative task offsets
-!  is1 = 0; is2=0
-!  do i=1,3
-!    if (ds1(i)      > +eps) is1(i)=1
-!    if (self%vec(i) > +eps) is2(i)=1
-!    if (ds1(i)      < -eps) is1(i)=-1
-!    if (self%vec(i) < -eps) is2(i)=-1
-!  end do
-!  if (all(is1*is2 <= 0)) is_upstream = .false.
-!  ! ----------------------------------------------------------------------------
-!  ! If the nbor lies outside the boundaries it is not needed
-!  ! ----------------------------------------------------------------------------
-!  lbit = [bits%xl, bits%yl, bits%zl]
-!  ubit = [bits%xu, bits%yu, bits%zu]
-!  do i=1,3
-!    lower = self%patch%boundaries%is_set(lbit(i))
-!    upper = self%patch%boundaries%is_set(ubit(i))
-!    if (upper .and. ds1(i)==1) then
-!      is_upstream = .false.
-!    end if
-!    if (lower .and. ds1(i)==-1) then
-!      is_upstream = .false.
-!    end if
-!  end do
-!  !-----------------------------------------------------------------------------
-!  ! If the task does not have RT it is not needed
-!  !-----------------------------------------------------------------------------
-!  if (.not.other%on) then
-!    is_upstream = .false.
-!    call trace%end ()
-!    return
-!  end if
-!  call trace%end ()
-!END FUNCTION ray_is_upstream
 
 !===============================================================================
 !> Initialize boundary bits
@@ -364,7 +274,7 @@ SUBROUTINE pack (self)
   ! Packing meta-data is a task-owner read operation, and does not need locking
   !-----------------------------------------------------------------------------
   call self%patch_to_header (header)
-  if (converged .and. .not. self%out_ray) then
+  if (converged .and. self%in_ray) then
     header%level = 0
   endif
   ibuf = 1

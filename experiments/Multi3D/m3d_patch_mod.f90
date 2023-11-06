@@ -1,8 +1,4 @@
 MODULE m3d_patch_mod
-    !USE rt_integral_mod
-    !USE radau_mod
-    !USE boundaries_mod
-    !USE eos_mod
     USE os_mod
     USE list_mod
     USE halo_mod
@@ -11,13 +7,10 @@ MODULE m3d_patch_mod
     USE task_mod
     USE guards_mod
     USE snapshots_mod
-    !USE index_mod
     USE mesh_mod
     USE io_mod
     USE data_io_mod
-    !USE aux_mod
     USE timer_mod
-    !USE scaling_mod
     USE trace_mod
     USE mpi_mod
     USE omp_mod
@@ -29,8 +22,6 @@ MODULE m3d_patch_mod
     USE mconst
     USE handyfuncs_mod
     USE prec_mod, only: inf4
-    !USE units_mod
-    !USE scratch_mod
     USE patch_mod, only: patch_t, patch_t_init
     USE m3d_halo_mod, only: m3d_halo_t, print_finished, print_download, lock_mem, unlock_mem, print_lock
     USE spectrum_mod, only: nu_tolerance
@@ -62,12 +53,12 @@ MODULE m3d_patch_mod
       integer, dimension(:), pointer :: periodic_i, periodic_j
       logical :: on=.false.       ! allows local turn-off
       logical :: in_task_list = .false.
-      logical :: initialized  = .false., nullified = .false.
+      logical :: initialized  = .false.
       real(8) :: t_offset=0
       integer :: iter=0, maxiter, master_maxiter, dir=0
       integer :: n_nu, n_omega, n_out, zs, ze
       integer :: fcheck, pcheck(3), linecheck, lvlcheck
-      logical :: out_ray=.false.
+      logical :: out_ray=.false., in_ray=.false.
       logical :: compressed=.false., save_output=.false., saved=.false.
       logical :: print_update_info, checked_bounds=.false.
       logical :: free_self=.false.
@@ -76,7 +67,6 @@ MODULE m3d_patch_mod
       integer :: i_chi=1, i_eta=2, i_snu=2
       integer :: i_Gij=1, i_Gji=2
       integer :: i_Inu=1
-      character(3) :: mem_label='mem'
       logical :: prepend=.false.
     contains
       procedure :: pre_init
@@ -106,7 +96,6 @@ MODULE m3d_patch_mod
       procedure :: nbors_finished
       procedure :: skip_iterations
       procedure :: allocate_mem
-      procedure :: deallocate_mem
       procedure :: check_mem_NaN
       procedure :: check_access
       procedure :: m3d_patch_info
@@ -257,6 +246,7 @@ MODULE m3d_patch_mod
     self%n_out = size(long_vec, 2)
     self%n_nu = n_nu
     self%out_ray = self%i_nu < 0 .or. self%i_mu < 0
+    self%in_ray = .not. self%out_ray
   
     if (self%pre_initialized) print *, 'pre_init issued somewhere'
     call io%lock%unset ('m3d_patch_t%pre_init')
@@ -506,7 +496,7 @@ MODULE m3d_patch_mod
       write(stdout, *) 'Update on', self%id, 'has begun', self%finished, self%time
     endif
     if (.not. self%is_finished()) then
-      if (converged .and. .not. self%out_ray) then
+      if (converged .and. self%in_ray) then
         call self%finish()
         self%print_update_info = .false.
         call print_execution_history(self, 'SKP')
@@ -863,10 +853,9 @@ MODULE m3d_patch_mod
   END FUNCTION distance_to
 
   !===============================================================================
-  SUBROUTINE allocate_mem (self, m_in, label)
+  SUBROUTINE allocate_mem (self, m_in)
     class(m3d_patch_t):: self
     integer, intent(in), optional :: m_in(6)
-    character(len=*), optional :: label
     integer :: m(6), li(3), ui(3)
     integer, save :: itimer=0
     !-----------------------------------------------------------------------------
@@ -878,16 +867,10 @@ MODULE m3d_patch_mod
         m = [self%gn, self%nv, self%nt, self%nw]
         self%compressed = .false.
       endif
-      if (present(label)) then
-        self%mem_label = label
-      else
-        self%mem_label = 'mem'
-      endif
-      call os%allocate(self%mem, m, label=trim(self%kind)//'%'//self%mem_label)
+      call self%patch_t%allocate_mem(m)
       if (check_NaN) then
         self%mem = tiny(1.0)
       endif
-      self%nullified = .false.
       li = self%li
       ui = self%ui
       if (self%compressed) then
@@ -901,24 +884,6 @@ MODULE m3d_patch_mod
       call trace%end (itimer)
     endif
   END SUBROUTINE allocate_mem
-
-  !===============================================================================
-  SUBROUTINE deallocate_mem (self, print)
-    class(m3d_patch_t):: self
-    logical, optional :: print
-    integer :: m(6), li(3), ui(3)
-    logical :: free
-    !-----------------------------------------------------------------------------
-    if (associated(self%mem)) then
-      call os%deallocate(self%mem, label=trim(self%kind)//'%'//self%mem_label)
-      self%nullified = .false.
-      if (present(print)) then
-        if (print .and. (self%print_update_info .or. self%verbose > 2) .and. detailed_prints) then
-          write(stdout, *) '  deallocated', self%m3d_patch_info2()
-        endif
-      endif
-    endif
-  END SUBROUTINE deallocate_mem
 
   !===============================================================================
   SUBROUTINE check_mem_NaN (self)

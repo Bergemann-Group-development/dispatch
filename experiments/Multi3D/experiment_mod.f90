@@ -4,30 +4,24 @@
 !===============================================================================
 MODULE experiment_mod
   USE io_mod
+  USE os_mod
   USE data_io_mod
   USE bits_mod
   USE trace_mod
-  USE solver_mod
+  USE shared_mod
+  USE task_mod, only: task_t
+  USE link_mod, only: nbor_t, link_t
+  USE list_mod, only: list_t
+  USE halo_mod, only: halo_t
+  USE solver_mod, only: solver_t
   USE units_mod, only: cgs
   USE scaling_mod, only: scaling
-  USE kinds_mod
   USE handyfuncs_mod
   USE m3d_halo_mod, only: m3d_halo_t
   USE m3d_patch_mod, only: verbose, print_execution_history
   USE ray_patch_mod, only: maxvel
   USE composition_patch_mod, only: composition_patch_t
   USE read_stagger_snapshot_mod
-  USE shared_mod
-  USE halo_mod
-  USE list_mod
-  USE link_mod
-  USE task_mod
-  USE math_mod
-  USE timer_mod
-  USE os_mod
-  USE mpi_mod
-  USE omp_mod
-  USE omp_timer_mod
   implicit none
   private
   type, public, extends(solver_t):: experiment_t
