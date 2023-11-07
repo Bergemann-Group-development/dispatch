@@ -286,7 +286,7 @@ SUBROUTINE execute (self)
         memcheck(2:3) = memcheck(2:3) * self%twohnu3_c2(self%fcheck)
       endif
 
-      call self%work_to_mem(i_mu, i_set, end_boundary)
+      call self%work_to_mem(i_mu, i_set)
       
       if (self%get_rates) then
         if (self%bound_free) call self%integrate_intensity(wmu)
@@ -898,10 +898,9 @@ SUBROUTINE integrate_rates (self, gamma_ij, gamma_ji)
 END SUBROUTINE integrate_rates
 
 !===============================================================================
-SUBROUTINE work_to_mem (self, i_mu, i_set, end_boundary)
+SUBROUTINE work_to_mem (self, i_mu, i_set)
   class(nlte_patch_t) :: self
   integer :: f, i_mu, i_set, z
-  logical :: end_boundary
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('nlte_patch%work_to_mem', itimer=itimer)
@@ -910,14 +909,12 @@ SUBROUTINE work_to_mem (self, i_mu, i_set, end_boundary)
     call self%allocate_mem()
   endif
 
-  if (.not. end_boundary) then
-    z = merge(self%patch%n(3), 1, self%dir > 0)
-    do f=self%fs, self%fe
-      self%mem(f,:,:,i_mu,i_set,1) = work(f,:,:,z,1)
-      self%mem(f,:,:,i_mu,i_set,2) = work(f,:,:,z,2)
-      self%mem(f,:,:,i_mu,i_set,3) = work(f,:,:,z,3)
-    end do
-  endif
+  z = merge(self%patch%n(3), 1, self%dir > 0)
+  do f=self%fs, self%fe
+    self%mem(f,:,:,i_mu,i_set,1) = work(f,:,:,z,1)
+    self%mem(f,:,:,i_mu,i_set,2) = work(f,:,:,z,2)
+    self%mem(f,:,:,i_mu,i_set,3) = work(f,:,:,z,3)
+  end do
   call trace%end(itimer)
 END SUBROUTINE work_to_mem
 
