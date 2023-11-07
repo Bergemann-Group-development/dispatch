@@ -39,6 +39,7 @@ PROGRAM dispatch
   USE atom_patch_mod, only: atom_file
   !type(cartesian_t):: cartesian                 ! Use Cartesian patch arrangement
   class(task_list_t), pointer:: task_list => null()
+  !integer :: i
   !.............................................................................
   call setup%init                               ! Generic setup (MPI, I/O, ...)
   call dispatcher%init                          ! Initialize the dispatcher
@@ -54,7 +55,9 @@ PROGRAM dispatch
   write(*,'(a, I3, a, F7.2, a)') 'maximum memory on rank', mpi%rank, ' was', os%max_mem, 'Gb'
   write(*,'(a, I3, a, F7.2, a)') 'Multi3D terminated normally.'
   write(*, '(a,3x,a)') trim(atmos_file), trim(atom_file)
-  call os%print_tracked_mem()
+  !call os%print_tracked_mem()
+  !i = findloc(os%labels(1:os%nlabels), 'nlte_patch%mem', 1)
+  !print *, os%n_allocated(i), os%labelled_mem(i)
   !write(*,'(a, I3, a, F7.2, a)') 'still allocated memory on rank', mpi%rank, ' is', os%gb, 'Gb'
   call setup%end                                ! End setup
 !===============================================================================

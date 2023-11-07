@@ -30,7 +30,7 @@ MODULE nlte_patch_mod
 
   !-----------------------------------------------------------------------------
   type, public, extends(ray_patch_t) :: nlte_patch_t
-    class(nlte_patch_t), pointer :: upstream
+    class(nlte_patch_t), pointer :: upstream, dnstream
     type(line_type), dimension(:), allocatable :: line
     type(cont_type), dimension(:), allocatable :: cont
     real(4), dimension(:,:,:,:), allocatable :: Jnu, Psi, PsiJ
@@ -197,7 +197,7 @@ SUBROUTINE execute (self)
   real(4), dimension(:,:,:), allocatable :: inv_df, vproj
   real(4) :: wmu
   real(8) :: vec(3)
-  logical :: skip, use_linelist, get_cntrbf
+  logical :: skip, use_linelist, get_cntrbf, end_boundary
   integer :: i, j, i_mu, zs, ze, p(3), ng, i_set, l, nnu_cntrbf
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
@@ -212,12 +212,16 @@ SUBROUTINE execute (self)
   ze = nz + ng
   p = self%pcheck
 
-  use_linelist = self%out_ray .and. self%composition%ll_initialised
-
   self%nu(fs:fe) => self%sp%nu(fs:fe)
   temp => self%m3d_parent%mem(:,:,:,self%i_temp,self%it,1)
 
+  use_linelist = self%out_ray .and. self%composition%ll_initialised
   get_cntrbf = self%out_ray .and. n_cntrbf>0
+  end_boundary = self%patch%boundaries%is_set(bits%zl) .and. self%dir<0
+  end_boundary = self%patch%boundaries%is_set(bits%zu) .and. self%dir>0 .or. end_boundary
+  if (.not. end_boundary) then
+    end_boundary = self%dnstream%is_finished()
+  endif
 
   if (self%use_atom) then
     if (self%atom%data%converged) then
@@ -282,7 +286,7 @@ SUBROUTINE execute (self)
         memcheck(2:3) = memcheck(2:3) * self%twohnu3_c2(self%fcheck)
       endif
 
-      call self%work_to_mem(i_mu, i_set)
+      call self%work_to_mem(i_mu, i_set, end_boundary)
       
       if (self%get_rates) then
         if (self%bound_free) call self%integrate_intensity(wmu)
@@ -294,8 +298,12 @@ SUBROUTINE execute (self)
   if (self%get_rates) then
     if (self%bound_free) call self%bound_free_rates(gamma_ij, gamma_ji)
     if (self%use_atom) call self%integrate_rates(gamma_ij, gamma_ji)
-  elseif (self%patch%boundaries%is_set(bits%zu)) then
-    call self%save_intensity()
+  endif
+
+  if (end_boundary) then
+    if (self%out_ray) then
+      call self%save_intensity()
+    endif
     call self%deallocate_mem()
   endif
 
@@ -794,9 +802,9 @@ SUBROUTINE set_upstream_boundary (self, i_mu, i_set, ng)
   ny = self%patch%n(2)
   nz = self%patch%n(3)
 
-  if (self%boundaries%is_set(bits%zu) .and. self%dir < 0) then
+  if (self%boundaries%is_set(bits%zu)) then
     work(:,:,:,z,:) = 0.
-  elseif (self%boundaries%is_set(bits%zl) .and. self%dir > 0) then
+  elseif (self%boundaries%is_set(bits%zl)) then
     xxold = [(i*self%ds(3), i=1, 3)]
     xxnew = [(i*self%ds(3), i=1-ng, 0)]
     do i=1, 2
@@ -810,12 +818,22 @@ SUBROUTINE set_upstream_boundary (self, i_mu, i_set, ng)
     end do
     end do
     end do
-    work(:,:,:,:,3) = work(:,:,:,:,2)
-  else
+    do y=1,  ny
+    do x=1,  nx
     do f=self%fs, self%fe
-      work(f,:,:,z,1) = self%mem(f,:,:,i_mu,i_set,1)
-      work(f,:,:,z,2) = self%mem(f,:,:,i_mu,i_set,2)
-      work(f,:,:,z,3) = self%mem(f,:,:,i_mu,i_set,3)
+      work(f,x,y,z,3) = work(f,x,y,z,2)
+    end do
+    end do
+    end do
+  else
+    do y=1,  ny
+    do x=1,  nx
+    do f=self%fs, self%fe
+        work(f,x,y,z,1) = self%mem(f,x,y,i_mu,i_set,1)
+        work(f,x,y,z,2) = self%mem(f,x,y,i_mu,i_set,2)
+        work(f,x,y,z,3) = self%mem(f,x,y,i_mu,i_set,3)
+    end do
+    end do
     end do
   endif
   call trace%end(itimer)
@@ -880,11 +898,11 @@ SUBROUTINE integrate_rates (self, gamma_ij, gamma_ji)
 END SUBROUTINE integrate_rates
 
 !===============================================================================
-SUBROUTINE work_to_mem (self, i_mu, i_set)
+SUBROUTINE work_to_mem (self, i_mu, i_set, end_boundary)
   class(nlte_patch_t) :: self
   integer :: f, i_mu, i_set, z
+  logical :: end_boundary
   integer, save :: itimer=0
-  logical :: upper_end, lower_end
   !-----------------------------------------------------------------------------
   call trace%begin('nlte_patch%work_to_mem', itimer=itimer)
 
@@ -892,14 +910,7 @@ SUBROUTINE work_to_mem (self, i_mu, i_set)
     call self%allocate_mem()
   endif
 
-  upper_end = self%patch%boundaries%is_set(bits%zu) .and. self%dir > 0 .and. .not. self%out_ray
-  lower_end = self%patch%boundaries%is_set(bits%zl) .and. self%dir < 0
-
-  if (upper_end .or. lower_end) then
-    if (i_mu == self%mue .and. i_set == self%n_set) then
-      call self%deallocate_mem()
-    endif
-  else
+  if (.not. end_boundary) then
     z = merge(self%patch%n(3), 1, self%dir > 0)
     do f=self%fs, self%fe
       self%mem(f,:,:,i_mu,i_set,1) = work(f,:,:,z,1)
@@ -1251,6 +1262,9 @@ SUBROUTINE nlte_patch_nbor_relations(self, another, needed, needs_me, download)
       ! do nothing
       if (needed) then
         self%upstream => another
+      endif
+      if (needs_me) then
+        self%dnstream => another
       endif
     class is (m3d_patch_t)
       if (another%id == self%m3d_parent%id) then
