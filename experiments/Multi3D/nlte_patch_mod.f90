@@ -1014,7 +1014,8 @@ SUBROUTINE short_char (self, vec)
   real(4) :: Inuup, xxup, ssup, xxmin, ssmin, Inumin, dsup05, xx, ss, Inu, u0, Psi
   real(8) :: dt, ex ! important
   real(4), dimension(:,:), allocatable :: kernel, work_up, work_min
-  integer :: dx, dy, zs, ze, xup, yup, zup, x1, y1, ii, jj
+  integer :: dx, dy, zs, ze, xup, yup, zup, x1, y1, i, ii, jj
+  logical :: inner
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('nlte_patch%short_char', itimer=itimer)
@@ -1046,14 +1047,17 @@ SUBROUTINE short_char (self, vec)
         work_min = huge(1.0)
         do jj=1,dy
           do ii=1,dx
+            inner = ii>1 .and. ii<dx .and. jj>1 .and. jj<dy
             xup = modulo(ii+x1-1, nx) + 1
             yup = modulo(jj+y1-1, ny) + 1
-            associate(wup => work(:, xup, yup, zup,:))
-              work_up = work_up + kernel(ii,jj)*wup
-              if (ii>1 .and. ii<dx .and. jj>1 .and. jj<dy) then
-                work_min = min(work_min, wup)
-              endif
-            end associate
+            work_up(:,1) = work_up(:,1) + kernel(ii,jj)*work(:, xup, yup, zup,1)
+            work_up(:,2) = work_up(:,2) + kernel(ii,jj)*work(:, xup, yup, zup,2)
+            work_up(:,3) = work_up(:,3) + kernel(ii,jj)*work(:, xup, yup, zup,3)
+            if (inner) then
+              work_min(:,1) = min(work_min(:,1), work(:, xup, yup, zup,1))
+              work_min(:,2) = min(work_min(:,2), work(:, xup, yup, zup,2))
+              work_min(:,3) = min(work_min(:,3), work(:, xup, yup, zup,3))
+            endif
           end do
         end do
         work_up = max(work_up, work_min)
