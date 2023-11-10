@@ -34,8 +34,10 @@ class atom_class(object):
         self.sanity_check = sanity_check
         
         self.id = self._read()[0]
+        self.molec = self.id in ['H2', 'C2', 'N2', 'O2', 'CH', 'OH', 'NH', 'CN', 'CO', 'NO', 'H2O']
+        if not self.molec: self.id = self.id.capitalize()
+
         self.abnd, self.ai = self._read(float)
-        
         self.awgt = self.ai * UU
         
         self.nk, self.nline, self.ncont, self.nrfix = self._read(int)

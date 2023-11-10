@@ -33,7 +33,7 @@ class read(object):
             in_abnd   = self.nml['atom_params']['abundance']
             
             if self.atom.id in self.abundances:
-                self.atom.abnd = self.abundances[self.atom.id]
+                self.atom.abnd = float(self.abundances[self.atom.id])
             elif in_abnd > -99:
                 self.atom.abnd = in_abnd
 
@@ -543,3 +543,40 @@ class read(object):
         plt.ylabel('Angle-dependent Contribution Function', fontsize='medium')
         plt.xlabel(r'log$\tau_{500}$')
         return plot
+
+#=====================================================================
+def weq_diff(run1, run2, marker='.', linestyle='none', **kwargs):
+    #-----------------------------------------------------------------
+    weq1 = [line.calc_weq() / line.calc_weq(LTE=True) for line in run1.line]
+    weq2 = [line.calc_weq() / line.calc_weq(LTE=True) for line in run2.line]
+    maxw = np.max([weq1, weq2])
+    minw = np.min([weq1, weq2])
+    plt.plot([minw, maxw], [minw, maxw], zorder=-10, color='lightgrey', linestyle='--')
+    plt.plot(weq1, weq2, marker='.', linestyle='none', **kwargs)
+
+    def compare_dict(x, y):
+        diff_x = {k: x[k] for k in x if k in y and x[k] != y[k]}
+        diff_y = {k: y[k] for k in y if k in y and x[k] != y[k]}
+        return diff_x, diff_y
+
+    def cstrip(val):
+        if type(val)==str:
+            val = val.strip()
+        return val
+
+    x = run1.nml
+    y = run2.nml
+
+    diff_dict_x = {}
+    diff_dict_y = {}
+
+    for key, val in x.items():
+        diff_x, diff_y = compare_dict(x[key], y[key])
+        if len(diff_x) > 0:
+            diff_dict_x = dict(diff_dict_x, **diff_x)
+            diff_dict_y = dict(diff_dict_y, **diff_y)
+
+    xlabel = '\n'.join(['{:}={:}'.format(key, cstrip(val)) for key, val in diff_dict_x.items()])
+    ylabel = '\n'.join(['{:}={:}'.format(key, cstrip(val)) for key, val in diff_dict_y.items()])
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)

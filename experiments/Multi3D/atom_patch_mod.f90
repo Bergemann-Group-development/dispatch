@@ -265,10 +265,10 @@ MODULE atom_patch_mod
     call trace%begin('atom_patch_t%init_atom_data', itimer=itimer)
     atom => self%atom
 
-    allocate(atom%C(atom%nlevel, atom%nlevel))
-    allocate(atom%W(atom%nlevel, atom%nlevel))
-    allocate(atom%e(atom%nlevel))
-    allocate(atom%oldn(atom%nlevel))
+    allocate(atom%data%C(atom%nlevel, atom%nlevel))
+    allocate(atom%data%W(atom%nlevel, atom%nlevel))
+    allocate(atom%data%e(atom%nlevel))
+    allocate(atom%data%oldn(atom%nlevel))
     allocate(self%lvlerr(atom%nlevel))
 
     ne   => self%m3d_parent%mem(:,:,:,self%i_ne,            self%it,1)
@@ -484,8 +484,8 @@ MODULE atom_patch_mod
 
             ! keep track of maximum population change
             do ii=1,atom%nlevel
-              if (abs(atom%e(ii)) > self%lvlerr(ii)) then
-                  self%lvlerr(ii) = abs(atom%e(ii))
+              if (abs(atom%data%e(ii)) > self%lvlerr(ii)) then
+                  self%lvlerr(ii) = abs(atom%data%e(ii))
                   if (self%lvlerr(ii) > self%maxerr) then
                     self%maxerr = self%lvlerr(ii)
                     ep = [i, j, k + self%zs]

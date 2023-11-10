@@ -46,6 +46,9 @@ MODULE atom_mod
       real(4), dimension(:,:,:,:), pointer, contiguous :: ni_over_nj_lte => null()
       real(4), dimension(:,:,:,:), pointer, contiguous :: wphi => null()
       real(4), dimension(:,:,:),   pointer, contiguous :: totn => null() 
+      real(4), dimension(:),   allocatable  :: oldn
+      real(8), dimension(:),   allocatable  :: e
+      real(8), dimension(:,:), allocatable  :: C, W
       logical :: converged=.false.
     end type local_data_t
   
@@ -81,14 +84,8 @@ MODULE atom_mod
       real(8), dimension(:,:), pointer, contiguous :: tgrid, cgrid, dcdt
       real(4), dimension(:), pointer, contiguous :: cdata
       logical, dimension(:), pointer, contiguous :: ecol, hcol
-
-      real(4), dimension(:),   allocatable  :: oldn
-      real(8), dimension(:),   allocatable  :: e
-      real(8), dimension(:,:), allocatable  :: C, W
       
       real(8) :: qnorm
-      logical :: stiff 
-
       real(8) :: drawin, mu_e
         
     contains
@@ -140,12 +137,12 @@ MODULE atom_mod
     logical, save :: first_time=.true.
     !------------------------------------------------------------------------------------
     if (temp > self%tmax_update) then
-        self%e = 0.0d0
+        self%data%e = 0.0d0
         return
     endif
 
-    self%w=0.0d0
-    self%e=0.0d0
+    self%data%w=0.0d0
+    self%data%e=0.0d0
     
     ! Add radiative rates to W
     do kr=1, self%nrad
@@ -156,20 +153,20 @@ MODULE atom_mod
         i = self%cont(kr-self%nline)%i
         j = self%cont(kr-self%nline)%j
       endif
-      self%w(j,i) = gamma_ij(kr)
-      self%w(i,j) = gamma_ji(kr)
+      self%data%w(j,i) = gamma_ij(kr)
+      self%data%w(i,j) = gamma_ji(kr)
     enddo
 
     if (cswitch > 0) then
       call trace%begin('gencol', itimer=itimer)
-      self%c = 0.d0
+      self%data%c = 0.d0
 
       if (use_classic_col) then
         call self%classic_col(temp,ne,nh,nstar)
       endif
 
       call gencol(self%coll,self%id,self%nlevel,self%g,self%ev,self%ion,&
-                  self%c,dble(temp),dble(ne),nstar,dble(nh),self%tgrid,self%cgrid,self%dcdt)
+                  self%data%c,dble(temp),dble(ne),nstar,dble(nh),self%tgrid,self%cgrid,self%dcdt)
 
       call trace%end(itimer=itimer)
 
@@ -177,51 +174,51 @@ MODULE atom_mod
       !write(kr) nstar
       !write(kr) n
       !write(kr) totn
-      !write(kr) self%w
-      !write(kr) self%c
+      !write(kr) self%data%w
+      !write(kr) self%data%c
 
       do j=1, self%nlevel
       do i=1, self%nlevel
-        self%w(i,j) = self%w(i,j) + self%c(i,j) * cswitch
+        self%data%w(i,j) = self%data%w(i,j) + self%data%c(i,j) * cswitch
       end do
       end do
     endif
 
     ! fill diagonal elements of rate coefficient matrix
     do i=1, self%nlevel
-      self%w(i,i) = -sum(self%w(:,i))
+      self%data%w(i,i) = -sum(self%data%w(:,i))
     end do
 
     ! replace row with largest population with particle conservation
     ! equation.
     pos = maxloc(n,1)
-    self%e(pos) = totn
+    self%data%e(pos) = totn
     !zero_pop = any(n==0)
 
     !if (zero_pop) then
-    !  self%oldn = n
-    !  self%w(pos,:) = 1
+    !  self%data%oldn = n
+    !  self%data%w(pos,:) = 1
     !else
       ! go from rate coefficients to actual rates   
       do i=1,self%nlevel
-        self%w(i,:) = self%w(i,:) * n 
+        self%data%w(i,:) = self%data%w(i,:) * n 
       enddo
-      self%w(pos,:) = n
+      self%data%w(pos,:) = n
     !endif
 
     if (check_NaN .or. first_time) then
       first_time = .false.
       abort = .false.
       do i=1,self%nlevel
-        if (self%w(i,i) == 0.d0) then
+        if (self%data%w(i,i) == 0.d0) then
           print *, 'zero in rate diagonal at i = ', i
           abort = .true.
         endif
         do j=1,self%nlevel
-          if (self%w(i,j) /= self%w(i,j)) then
+          if (self%data%w(i,j) /= self%data%w(i,j)) then
             print *, 'NaN in rate Matrix at i,j = ', i, j
             abort = .true.
-          elseif (self%w(i,j) > inf8) then
+          elseif (self%data%w(i,j) > inf8) then
             print *, 'Infinity in rate Matrix at i,j = ', i, j
             abort = .true.
           endif
@@ -240,18 +237,18 @@ MODULE atom_mod
     ! e contains the solution vector x on exit
     select case (lse_solver)
     case('eqsyst')
-      call eqsyst(self%w, self%e, self%nlevel)
+      call eqsyst(self%data%w, self%data%e, self%nlevel)
     case('lineq_no_pivot')
-      call lineq_no_pivot(self%w, self%e, self%nlevel)
+      call lineq_no_pivot(self%data%w, self%data%e, self%nlevel)
     case('lineq')
-      call lineq(self%w, self%e, self%nlevel)
+      call lineq(self%data%w, self%data%e, self%nlevel)
     end select
 
     call trace%end(itimer2)
 
     if (check_NaN) then
       do i=1,self%nlevel
-        if (self%e(i) /= self%e(i)) then
+        if (self%data%e(i) /= self%data%e(i)) then
           print *, 'NaN in error vector at i = ', i
           print *, 'Temp  = ', temp
           stop
@@ -260,24 +257,24 @@ MODULE atom_mod
     endif
 
     !if (zero_pop) then
-    !  self%oldn = n
-    !  n = self%e
+    !  self%data%oldn = n
+    !  n = self%data%e
     !  do i=1,self%nlevel
-    !    if (self%oldn(i) > 0) then
-    !      self%e(i) = n(i) / self%oldn(i)
+    !    if (self%data%oldn(i) > 0) then
+    !      self%data%e(i) = n(i) / self%data%oldn(i)
     !    elseif (n(i) == 0) then
-    !      self%e(i) = 1.d0
+    !      self%data%e(i) = 1.d0
     !    else
-    !      self%e(i) = huge(1.0)
+    !      self%data%e(i) = huge(1.0)
     !    endif
     !  end do
     !  n = max(n, 0.)
     !else
       ! set limits on corrections
-      self%e = max(self%e, 0.001d0)
-      !self%e = max(self%e, tiny(1.0))
+      self%data%e = max(self%data%e, 0.001d0)
+      !self%data%e = max(self%data%e, tiny(1.0))
       ! update the populations
-      n = n * self%e
+      n = n * self%data%e
     !endif
 
     if (check_NaN) then
@@ -286,20 +283,20 @@ MODULE atom_mod
           print *, 'Below zero in populations at i = ', i
           print *, 'Temp  = ', temp
           print *, n(i)
-          print *, self%e(i)
-          !print *, zero_pop, self%oldn(i)
+          print *, self%data%e(i)
+          !print *, zero_pop, self%data%oldn(i)
           stop
         endif
       end do
     endif
 
-    !write(kr) self%e
+    !write(kr) self%data%e
     !write(kr) n
     !close(kr)
     !stop
 
     ! set e to the relative change in the populations 
-    self%e = self%e - 1.0d0
+    self%data%e = self%data%e - 1.0d0
   END SUBROUTINE solve_stat_equilibrium
   !------------------------------------------------------------------------------------
   
@@ -1069,8 +1066,8 @@ MODULE atom_mod
             endif
             !cup = cup * self%g(j)
             cdn = cup * nij
-            self%c(j,i) = self%c(j,i) + cup ! upward rate
-            self%c(i,j) = self%c(i,j) + cdn ! downward rate
+            self%data%c(j,i) = self%data%c(j,i) + cup ! upward rate
+            self%data%c(i,j) = self%data%c(i,j) + cdn ! downward rate
             n = n + 1
           endif
 
@@ -1087,8 +1084,8 @@ MODULE atom_mod
             endif
             !cup = cup * self%g(j)
             cdn = cup * nij
-            self%c(j,i) = self%c(j,i) + cup ! upward rate
-            self%c(i,j) = self%c(i,j) + cdn ! downward rate
+            self%data%c(j,i) = self%data%c(j,i) + cup ! upward rate
+            self%data%c(i,j) = self%data%c(i,j) + cdn ! downward rate
             n = n + 1
           endif
         endif

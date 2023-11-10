@@ -140,6 +140,7 @@ class trans_class(object):
         line = f.readline()
         while line.strip()=='' or line.strip().startswith('*'):
             if (line.startswith('* i')):
+                line = line.replace('=', ' ')
                 self.c_kr, self.c_lam0, self.c_loggf = [float(s) for s in line.split() if is_number(s)][:3]
                 break
 
