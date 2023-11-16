@@ -110,7 +110,6 @@ MODULE m3d_patch_mod
       procedure :: save5
       procedure :: save6
       procedure :: save_meta
-      procedure :: load_mem
       procedure :: set_place
       procedure :: queue_before
       procedure :: sort_nbors
@@ -123,12 +122,12 @@ MODULE m3d_patch_mod
     integer, public, save :: save_id=-1
     real(8), public, save, dimension(:), allocatable:: wmu, long_wmu
     real(8), public, save, dimension(:,:), allocatable:: vec, long_vec
-    real(8), public:: convlim=1d-3, convmin=tiny(1.0)
-    logical, public, save :: converged=.false., use_vel=.true., premature_finish=.false.
+    real(8), public:: convlim=1d-3, convmax=tiny(1.0)
+    logical, public, save :: converged=.false., use_vel=.true., premature_finish=.true.
     logical, public, save :: preconditioning=.true., binned_opac=.false., save_Qrad=.false.
     logical, public, save :: check_NaN=.false., interp_log=.false.
     logical, public, save :: save_back_cont=.false., save_atom_line=.false.
-    logical, public, save :: linear_long=.true., decouple_continuum=.false.
+    logical, public, save :: linear_long=.true., decouple_continuum=.true.
     logical, public, save :: detailed_prints=.false., comoving_frame=.false.
     logical, public, save :: use_density=.true., use_ne=.true., line_blanketing=.false.
     logical, public, save :: overlapping_bb=.true., overlapping_bf=.true.
@@ -155,7 +154,7 @@ MODULE m3d_patch_mod
     logical, save :: on=.true.
     integer :: iostat, m(6), i
     character(len=256) :: command
-    integer, save :: n_nu=1, itimer=0, ntheta=3, nphi=4
+    integer, save :: n_nu=0, itimer=0, ntheta=3, nphi=4
     character(len=32), save :: quad_scheme='radau2'
     character(len=32), save :: long_scheme='lobatto'
     real(8), dimension(:), allocatable:: cust_mu
@@ -244,7 +243,11 @@ MODULE m3d_patch_mod
     self%verbose = verbose
 
     self%n_out = size(long_vec, 2)
-    self%n_nu = n_nu
+    if (n_nu > 0) then
+      self%n_nu = n_nu
+    else
+      self%n_nu = omp%nthreads
+    endif
     self%out_ray = self%i_nu < 0 .or. self%i_mu < 0
     self%in_ray = .not. self%out_ray
   
@@ -390,9 +393,6 @@ MODULE m3d_patch_mod
     self%status = status
 
     if (self%is_set(bits%no_download)) then
-      if (check_NaN) then
-        self%mem = tiny(1.)
-      endif
       ! ----------------------------------------------------------------------------
       ! Set unsigned and pervolume.
       ! Although quantities are generally per volume, but density is not stored
@@ -888,18 +888,17 @@ MODULE m3d_patch_mod
   !===============================================================================
   SUBROUTINE check_mem_NaN (self)
     class(m3d_patch_t):: self
-    integer :: i,j,k,v,t,w,m(6)
+    integer :: i,j,k,v,t,w
     integer, save :: itimer
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%check_mem_NaN', itimer=itimer)
-    m = shape(self%mem)
     if (associated(self%mem)) then
-      do w=1, m(6)
-      do t=1, m(5)
-      do v=1, m(4)
-      do k=1, m(3)
-      do j=1, m(2)
-      do i=1, m(1)
+      do w=lbound(self%mem, 6), ubound(self%mem, 6)
+      do t=lbound(self%mem, 5), ubound(self%mem, 5)
+      do v=lbound(self%mem, 4), ubound(self%mem, 4)
+      do k=lbound(self%mem, 3), ubound(self%mem, 3)
+      do j=lbound(self%mem, 2), ubound(self%mem, 2)
+      do i=lbound(self%mem, 1), ubound(self%mem, 1)
         if (self%mem(i,j,k,v,t,w) /= self%mem(i,j,k,v,t,w)) then
           write(stdout, '(A,A,3(I4),I5,I3,I3)') self%m3d_patch_info(), '  NaN', i,j,k,v,t,w
           stop
@@ -966,7 +965,7 @@ MODULE m3d_patch_mod
   !===============================================================================
   SUBROUTINE print_to_stdout (self, arr, text)
     class(m3d_patch_t) :: self
-    real(4), dimension(:), optional :: arr
+    real(8), dimension(:), optional :: arr
     character(len=*), optional :: text
     !-----------------------------------------------------------------------------
     !$omp critical (cr_print_to_stdout)
@@ -996,7 +995,7 @@ MODULE m3d_patch_mod
     class(m3d_patch_t) :: self
     logical :: cib
     !-----------------------------------------------------------------------------
-    cib = all(self%pcheck > 0) .and. all(self%pcheck <= self%gn)
+    cib = all(self%pcheck > 0) .and. all(self%pcheck <= self%n)
   END FUNCTION check_in_bounds
 
   !===============================================================================
@@ -1156,45 +1155,6 @@ MODULE m3d_patch_mod
     open(newunit=lunit, file=trim(folder)//filename, access='stream', status='replace')
   END SUBROUTINE save_meta
 
-  !===============================================================================
-  SUBROUTINE load_mem (self, folder, mem, label)
-    class(m3d_patch_t), intent(inout) :: self
-    character(len=128), intent(in) :: folder
-    character(len=*), intent(in) :: label
-    real(4), intent(inout), dimension(:,:,:,:,:) :: mem
-    character(len=128) :: filename, sfolder, metafile, file
-    integer :: lunit, file_size, mem_size, iostat, prec, oldm(5), newm(5)
-    ! ----------------------------------------------------------------------------
-    call self%check_access(self)
-    write(sfolder, '(A, A)') trim(folder), 'save/'
-    write(filename, '(A, A, 2(I3.3), A)') trim(label), '_', self%key(1:2), '.bin'
-    write(metafile, '(A, A)') trim(label), '_meta.txt'
-    call os%check_file(trim(sfolder)//filename)
-    call os%check_file(trim(sfolder)//metafile)
-    open(newunit=lunit, file=trim(sfolder)//metafile, form='formatted', iostat=iostat)
-    read(lunit,*) ! skip header
-    do while (iostat==0)
-      read(lunit, *, iostat=iostat) file, prec, oldm
-      if (file == filename) exit
-    end do
-    close(lunit)
-    if (iostat /= 0) then
-      print *, 'file not found in metafile! Stopping...'
-      stop
-    endif
-    newm = shape(mem)
-    open(newunit=lunit, file=trim(sfolder)//filename, access='stream')
-    if (all(oldm == newm)) then
-      read(lunit) mem
-    else
-      write(stdout, *) 'Cannot load patch save ', trim(sfolder)//trim(filename), &
-      'Memory sizes do not match!'
-      print *, oldm
-      print *, newm
-      stop
-    endif
-    close(lunit)
-  END SUBROUTINE load_mem
 
   !===============================================================================
   SUBROUTINE add_to_key_list (self, other)

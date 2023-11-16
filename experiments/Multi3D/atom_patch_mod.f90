@@ -18,7 +18,7 @@ MODULE atom_patch_mod
     USE bbtrans_mod, only: bbtrans_type
     USE composition_mod, only: composition_type
     USE m3d_patch_mod, only: m3d_patch_t, maxiter, check_NaN, cswitch, key_link_t, &
-    global_maxerr, convlim, convmin, atom_update_counter, comoving_frame, global_pos, &
+    global_maxerr, convlim, convmax, atom_update_counter, comoving_frame, global_pos, &
     decouple_continuum, overlapping_bb, overlapping_bf, line_blanketing, converged, premature_finish
     USE bftrans_mod, only: bftrans_type
     USE hprofl_mod, only: hydrogen_BPO
@@ -38,6 +38,7 @@ MODULE atom_patch_mod
     contains
       procedure :: pre_init => atom_patch_pre_init
       procedure :: execute
+      procedure :: finish
       procedure :: nbor_relations => atom_patch_nbor_relations
       procedure :: pre_init_atom
       procedure :: pre_init_spectrum
@@ -51,6 +52,9 @@ MODULE atom_patch_mod
       procedure :: init_nbors_hash
       procedure :: save_abundance_to_file
       procedure :: load_mem
+      procedure :: allocate_mem
+      procedure :: deallocate_mem
+      procedure :: check_mem_NaN
     end type atom_patch_t
 
     integer, save :: epos(3), elvl
@@ -99,7 +103,7 @@ MODULE atom_patch_mod
     namelist /atom_params/ atom_file, qnorm, convlim, exclude_trace_cont, level_partf, &
     use_atom_abnd, logf_cut, red_cut, blue_cut, n_in_lines, abundance, debye_shield, &
     exclude_from_line_list, precomputed_depart, use_classic_col, kramer_bf, overlapping_bf, &
-    overlapping_bb, nq_fac, hydrogen_BPO, detailed_absmet, n_cntrbf, convmin, premature_finish
+    overlapping_bb, nq_fac, hydrogen_BPO, detailed_absmet, n_cntrbf, convmax, premature_finish
     namelist /line_mask/ in_lines, cntrbf_lines
     !-----------------------------------------------------------------------------
     call trace%begin('atom_patch_t%pre_init_atom', itimer=itimer)
@@ -255,37 +259,24 @@ MODULE atom_patch_mod
     class(atom_type), pointer :: atom
     class(element_type), pointer :: element
     class(molec_type), pointer :: molec
-    real(4), dimension(:,:,:), pointer, contiguous :: dxi, totn, df, saha
+    real(4), dimension(:,:,:), pointer, contiguous :: dxi, df, saha
+    real(8), dimension(:,:,:), pointer, contiguous :: totn
     real(4), dimension(:,:,:), pointer :: temp, ne
-    real(4), dimension(:,:,:,:), pointer, contiguous :: n, nstar
+    real(8), dimension(:,:,:,:), pointer, contiguous :: n, nstar
     real(4), dimension(:,:,:,:), pointer :: nh
+    real(4) :: nmax, nlim
     integer, save:: itimer=0
     integer :: i
     !-----------------------------------------------------------------------------
     call trace%begin('atom_patch_t%init_atom_data', itimer=itimer)
     atom => self%atom
-
-    allocate(atom%data%C(atom%nlevel, atom%nlevel))
-    allocate(atom%data%W(atom%nlevel, atom%nlevel))
-    allocate(atom%data%e(atom%nlevel))
-    allocate(atom%data%oldn(atom%nlevel))
-    allocate(self%lvlerr(atom%nlevel))
-
     ne   => self%m3d_parent%mem(:,:,:,self%i_ne,            self%it,1)
     temp => self%m3d_parent%mem(:,:,:,self%i_temp,          self%it,1)
     nh   => self%m3d_parent%mem(:,:,:,self%i_nh1:self%i_nh6,self%it,1)
 
-    atom%data%nstar => self%mem(:,:,:,:,self%it,1)
-    atom%data%n     => self%mem(:,:,:,:,self%it,2)
     n     => atom%data%n    
     nstar => atom%data%nstar
-
-    if (self%maxiter > 0) then
-      call os%allocate(atom%data%wphi, [self%n, atom%nline], label='wphi', zero=.true.)
-    endif
-
-    call os%allocate(atom%data%totn, self%n, label='totn')
-    totn => atom%data%totn
+    totn  => atom%data%totn
 
     element => null()
     molec   => null()
@@ -308,27 +299,21 @@ MODULE atom_patch_mod
       dxi = 0
     endif
 
+    call atom%compute_lte_populations(nstar, totn, temp, saha, dxi, element, molec)
+
     if (precomputed_depart /= '') then
-      call self%load_mem(precomputed_depart, self%out_mem, self%kind)
-      do i=1, atom%nlevel
-        where (totn > 0)
-          n(:,:,:,i) = n(:,:,:,i) / nstar(:,:,:,i)
-        end where
-      end do
-      call atom%compute_lte_populations(nstar, totn, temp, saha, dxi, element, molec)
+      call self%load_mem(precomputed_depart, self%kind)
       do i=1, atom%nlevel
         n(:,:,:,i) = n(:,:,:,i) * nstar(:,:,:,i) 
       end do
     else
-      call atom%compute_lte_populations(nstar, totn, temp, saha, dxi, element, molec)
       do i=1, atom%nlevel
         n(:,:,:,i) = nstar(:,:,:,i) 
       end do
     endif
 
-    call atom%compute_cont_factors(temp, dxi, saha)
     call os%deallocate(dxi)
-
+    call os%deallocate(saha)
     call trace%end(itimer)
   END SUBROUTINE init_atom_data
 
@@ -336,11 +321,12 @@ MODULE atom_patch_mod
   SUBROUTINE execute (self)
     class(atom_patch_t) :: self
     class(line_type), pointer :: line
-    real(8), dimension(:,:,:,:), pointer, contiguous :: gamma_ij, gamma_ji
+    class(cont_type), pointer :: cont
+    real(8), dimension(:,:,:,:), pointer, contiguous :: gamma_ij, gamma_ji, nstar
     real(4), dimension(:,:,:,:), pointer, contiguous :: wphi
-    integer :: i, l, p(3)
+    integer :: i, l, p(3), ii, jj
     integer, save:: count=0
-    real(8) :: global
+    real(8) :: global, gij
     integer, save :: itimer=0
     !-----------------------------------------------------------------------------
     call trace%begin (trim(self%kind)//'%update', itimer=itimer)
@@ -348,6 +334,7 @@ MODULE atom_patch_mod
       call self%init_atom_data()
     else
       wphi => self%atom%data%wphi
+      nstar => self%atom%data%nstar
       gamma_ij => self%atom%data%gamma_ij
       gamma_ji => self%atom%data%gamma_ji
 
@@ -364,17 +351,28 @@ MODULE atom_patch_mod
         self%update_skipped = .true.
       else
         do i=1, self%atom%nline
+          line => self%atom%line(i)
+          gij = self%atom%g(line%i) / self%atom%g(line%j)
           gamma_ij(:,:,:,i) = gamma_ij(:,:,:,i) * wphi(:,:,:,i)
           gamma_ji(:,:,:,i) = gamma_ji(:,:,:,i) * wphi(:,:,:,i)
+          gamma_ji(:,:,:,i) = gamma_ji(:,:,:,i) * gij
+        end do
+        do i=i, self%atom%nrad
+          cont => self%atom%cont(i-self%atom%nline)
+          gamma_ji(:,:,:,i) = gamma_ji(:,:,:,i) * nstar(:,:,:,cont%i) / nstar(:,:,:,cont%j)
         end do
 
         call self%update_populations(gamma_ij, gamma_ji)
-        self%atom%data%converged = self%maxerr < convmin
+        self%atom%data%converged = self%maxerr < convmax
         self%update_skipped = .false.
         if (self%atom%data%converged .and. premature_finish) then
           call self%finish()
         endif
       endif
+    endif
+
+    if (.not. self%update_skipped) then
+      call self%atom%compute_cont_factors()
     endif
     
     if (self%iter > 0) then
@@ -383,7 +381,7 @@ MODULE atom_patch_mod
     if (count >= self%task_list%dims(3)) then
       global = global_maxerr%update(0.d0)
       if ((global > 0) .and. global < convlim .and. self%maxerr < convlim) then
-        write(stdout, *) self%ipos(3)+1, 'Converged!', count
+        write(stdout, *) self%ipos(3)+1, 'Converged!', global
         if (self%iter < self%maxiter) converged = .true.
         call self%finish()
       endif
@@ -420,6 +418,26 @@ MODULE atom_patch_mod
   END SUBROUTINE execute
 
   !===============================================================================
+  SUBROUTINE finish (self)
+    class(atom_patch_t):: self
+    integer :: i, j, k, l
+    !-----------------------------------------------------------------------------
+    call os%allocate(self%out_mem, [self%n, self%atom%nlevel, 2])
+    do l=1, self%atom%nlevel
+    do k=1, self%n(3)
+    do j=1, self%n(2)
+    do i=1, self%n(1)
+      self%out_mem(i,j,k,l,1) = real(self%atom%data%nstar(i,j,k,l))
+      self%out_mem(i,j,k,l,2) = real(self%atom%data%n(i,j,k,l) / self%atom%data%nstar(i,j,k,l))
+    end do
+    end do
+    end do
+    end do
+    call self%m3d_patch_t%finish()
+    call os%deallocate(self%out_mem)
+  END SUBROUTINE finish
+
+  !===============================================================================
   SUBROUTINE print_post_update_info (self)
     class(atom_patch_t):: self
     class(local_data_t), pointer :: adata
@@ -453,14 +471,14 @@ MODULE atom_patch_mod
     class(atom_patch_t), target :: self
     class(atom_type), pointer :: atom
     integer, dimension(3) :: ep
-    real(4), pointer :: temp, ne, totn
     real(4), dimension(:), pointer :: nh
     real(8), dimension(:), pointer :: Gij, Gji
-    real(4), dimension(:), pointer :: n, nstar
+    real(8), dimension(:), pointer :: n, nstar
     real(8), dimension(:,:,:,:), target :: gamma_ij, gamma_ji
     integer :: i, j, k, ii, ipos, il
+    real(4) :: temp, ne
+    real(8) :: global, totn
     integer, save :: itimer=0
-    real(8) :: global
     ! ----------------------------------------------------------------------------
     call trace%begin('atom_patch_t%update_populations', itimer=itimer)
     atom => self%atom
@@ -470,10 +488,10 @@ MODULE atom_patch_mod
     do k=1, self%n(3)
       do j=1, self%n(2)
         do i=1, self%n(1)
-          ne    => self%m3d_parent%mem(i,j,k,self%i_ne,            self%it,1)
-          temp  => self%m3d_parent%mem(i,j,k,self%i_temp,          self%it,1)
+          ne    = self%m3d_parent%mem(i,j,k,self%i_ne,            self%it,1)
+          temp  = self%m3d_parent%mem(i,j,k,self%i_temp,          self%it,1)
           nh    => self%m3d_parent%mem(i,j,k,self%i_nh1:self%i_nh6,self%it,1)
-          totn  => atom%data%totn  (i,j,k)
+          totn  =  atom%data%totn  (i,j,k)
           n     => atom%data%n     (i,j,k,:)
           nstar => atom%data%nstar (i,j,k,:)
           Gij   => gamma_ij   (i,j,k,:)
@@ -692,14 +710,53 @@ MODULE atom_patch_mod
   END SUBROUTINE save_abundance_to_file
 
   !===============================================================================
-  SUBROUTINE load_mem (self, folder, mem, label)
+  SUBROUTINE allocate_mem(self, m_in)
+    class(atom_patch_t) :: self
+    integer, intent(in), optional :: m_in(6)
+    integer :: m(4)
+    ! ----------------------------------------------------------------------------
+    associate(atom=>self%atom)
+      allocate(atom%data%C(atom%nlevel, atom%nlevel))
+      allocate(atom%data%W(atom%nlevel, atom%nlevel))
+      allocate(atom%data%e(atom%nlevel))
+      allocate(atom%data%oldn(atom%nlevel))
+      allocate(self%lvlerr(atom%nlevel))
+      call os%allocate(atom%data%nstar, [self%n, atom%nlevel], label='nstar')
+      call os%allocate(atom%data%n,     [self%n, atom%nlevel], label='n')
+      call os%allocate(atom%data%totn, self%n, label='totn')
+      if (self%maxiter > 0) then
+        call os%allocate(atom%data%wphi,  [self%n, atom%nline],  label='wphi', zero=.true.)
+      endif
+    end associate
+  END SUBROUTINE allocate_mem
+
+  !===============================================================================
+  SUBROUTINE deallocate_mem(self)
+    class(atom_patch_t) :: self
+    ! ----------------------------------------------------------------------------
+    associate(atom=>self%atom)
+      deallocate(atom%data%C)
+      deallocate(atom%data%W)
+      deallocate(atom%data%e)
+      deallocate(atom%data%oldn)
+      deallocate(self%lvlerr)
+      call os%deallocate(self%atom%data%nstar, label='nstar')
+      call os%deallocate(self%atom%data%n,     label='n')
+      call os%deallocate(atom%data%totn,       label='totn')
+      if (self%maxiter > 0) then
+        call os%deallocate(atom%data%wphi, label='wphi')
+      endif
+    end associate
+  END SUBROUTINE deallocate_mem
+
+  !===============================================================================
+  SUBROUTINE load_mem (self, folder, label)
     class(atom_patch_t), intent(inout) :: self
     character(len=128), intent(in) :: folder
     character(len=*), intent(in) :: label
-    real(4), intent(inout), dimension(:,:,:,:,:) :: mem
-    real(4), dimension(:,:,:,:,:), pointer, contiguous :: mem2
     character(len=128) :: filename, sfolder, metafile, file
-    integer :: lunit, file_size, mem_size, iostat, prec, oldm(5), newm(5), iv, iw, k
+    real(4), dimension(:,:,:,:,:), pointer, contiguous :: mem
+    integer :: lunit, file_size, mem_size, iostat, prec, oldm(5), newm(5), iv, iw, k, i
     logical, save :: first_time=.true.
     ! ----------------------------------------------------------------------------
     call self%check_access(self)
@@ -719,31 +776,36 @@ MODULE atom_patch_mod
       print *, 'file not found in metafile! Stopping...'
       stop
     endif
-    newm = shape(mem)
+    newm = [self%n, self%atom%nlevel, 2]
     open(newunit=lunit, file=trim(sfolder)//filename, access='stream')
     if (all(oldm == newm)) then
+      call os%allocate(mem, newm)
       read(lunit) mem
-    elseif (all(oldm(3:5) == newm(3:5))) then
-      if (first_time) then
-        first_time = .false.
-        write(stdout, '(A, 2(I6,"x",I4))') 'Interpolating patch memory when loading', oldm(1:2), newm(1:2)
-      endif
-      call os%allocate(mem2, oldm)
-      read(lunit) mem2
-
-      mem2(:,:,:,:,2) = mem2(:,:,:,:,2) / mem2(:,:,:,:,1)
-
-      do iw=1, newm(5)
-      do iv=1, newm(4)
-      do  k=1, newm(3)
-        call interp2d_periodic(mem2(:,:,k,iv,iw), mem(:,:,k,iv,iw))
+      do i=1, self%atom%nlevel
+        self%atom%data%n(:,:,:,i) = dble(mem(:,:,:,i,2)) * self%atom%data%nstar(:,:,:,i)
       end do
-      end do
-      end do
-
-      mem(:,:,:,:,2) = mem(:,:,:,:,2) * mem(:,:,:,:,1)
-
-      call os%deallocate(mem2)
+      call os%deallocate(mem)
+    !elseif (all(oldm(3:5) == newm(3:5))) then
+    !  if (first_time) then
+    !    first_time = .false.
+    !    write(stdout, '(A, 2(I6,"x",I4))') 'Interpolating patch memory when loading', oldm(1:2), newm(1:2)
+    !  endif
+    !  call os%allocate(mem2, oldm)
+    !  read(lunit) mem2
+    !
+    !  !mem2(:,:,:,:,2) = mem2(:,:,:,:,2) / mem2(:,:,:,:,1)
+    !
+    !  do iw=1, newm(5)
+    !  do iv=1, newm(4)
+    !  do  k=1, newm(3)
+    !    call interp2d_periodic(mem2(:,:,k,iv,iw), mem(:,:,k,iv,iw))
+    !  end do
+    !  end do
+    !  end do
+    !
+    !  mem(:,:,:,:,2) = mem(:,:,:,:,2) * mem(:,:,:,:,1)
+    !
+    !  call os%deallocate(mem2)
     else
       write(stdout, *) 'Cannot load patch save ', trim(sfolder)//trim(filename), &
       'Memory sizes do not match!'
@@ -753,5 +815,34 @@ MODULE atom_patch_mod
     endif
     close(lunit)
   END SUBROUTINE load_mem
+
+  !===============================================================================
+  SUBROUTINE check_mem_NaN (self)
+    class(atom_patch_t):: self
+    integer :: i,j,k,v,t,w
+    integer, save :: itimer
+    !-----------------------------------------------------------------------------
+    call trace%begin ('atom_patch_t%check_mem_NaN', itimer=itimer)
+    associate(n=>self%atom%data%n)
+      if (associated(self%atom%data%n)) then
+        do v=lbound(n, 4), ubound(n, 4)
+        do k=lbound(n, 3), ubound(n, 3)
+        do j=lbound(n, 2), ubound(n, 2)
+        do i=lbound(n, 1), ubound(n, 1)
+          if (n(i,j,k,v) /= n(i,j,k,v)) then
+            write(stdout, '(A,A,3(I4),I5,I3,I3)') self%m3d_patch_info(), '  NaN', i,j,k,v
+            stop
+          elseif (n(i,j,k,v) > inf4) then
+            write(stdout, '(A,A,3(I4),I5,I3,I3)') self%m3d_patch_info(), '  Infinity', i,j,k,v
+            stop
+          endif
+        end do
+        end do
+        end do
+        end do
+      endif
+    end associate
+    call trace%end(itimer)
+  END SUBROUTINE check_mem_NaN
 
   END MODULE

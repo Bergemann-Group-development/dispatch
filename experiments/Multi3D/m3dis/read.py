@@ -365,22 +365,15 @@ class read(object):
         plt.imshow(i3[:,:,i], cmap=cmap, extent=extent, **kwargs)
 
     #=====================================================================
-    def get_populations(self, ilvl=None):
-        #-----------------------------------------------------------------
-        mem = self.read_patch_save('atom_patch')[0]
-        lte  = mem[...,0]
-        nlte = mem[...,1]
-        if ilvl is not None:
-            lte  = lte [...,ilvl]
-            nlte = nlte[...,ilvl]
-
-        return lte, nlte
-
-    #=====================================================================
     def get_depart(self, ilvl=None):
         #-----------------------------------------------------------------
-        lte, nlte = self.get_populations(ilvl=ilvl)
-        dep = np.array(nlte/lte)
+        mem = self.read_patch_save('atom_patch')[0]
+        dep = mem[...,1]
+
+        if ilvl is not None:
+            dep = dep[...,ilvl]
+
+        dep = np.array(dep)
         if self.dim=='1D': dep = dep.flatten()
         return dep
     

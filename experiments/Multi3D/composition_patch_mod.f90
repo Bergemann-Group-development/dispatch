@@ -237,7 +237,7 @@ SUBROUTINE print_post_update_info (self)
   integer :: p(3)
   !-----------------------------------------------------------------------------
   p = self%pcheck
-  call self%print_to_stdout(arr=self%mem(p(1),p(2),p(3),:self%i_temp,1,1))
+  call self%print_to_stdout(arr=dble(self%mem(p(1),p(2),p(3),:self%i_temp,1,1)))
 END SUBROUTINE print_post_update_info
 
 !===============================================================================

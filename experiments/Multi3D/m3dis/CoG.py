@@ -31,7 +31,14 @@ class CoG_line(object):
             line = run.line[self.kr]
             weqs[i] = line.calc_weq(**kwargs)
 
-        return self.cog.abnds, weqs    
+        return self.cog.abnds, weqs
+    
+    def get_weq_corr(self, nlte_run, **kwargs):
+        abnds, weqs = self.get_cog(**kwargs)
+        nlte_weq = nlte_run.line[self.kr].calc_weq(**kwargs)
+        func = PchipInterpolator(weqs,abnds)
+        corr = nlte_run.atom.abnd - func(nlte_weq)
+        return corr
 
     #=================================================================
     def crop(self, abnd, dlam=None, vdop=None, vshift=None, **kwargs):

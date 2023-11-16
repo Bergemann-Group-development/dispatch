@@ -51,7 +51,7 @@ MODULE trans_mod
 
     real(8) :: lambda0       ! line center vacuum wavelength [cm]
     logical :: hydrogen
-    real(8),dimension(:), pointer, contiguous :: q => null() ! frequencies [Doppler units]
+    real(4),dimension(:), pointer, contiguous :: q => null() ! frequencies [Doppler units]
     real(8),dimension(:), pointer, contiguous :: wq => null()  ! frequency quadrature weight [Doppler units]
 
     real(4),dimension(:,:,:,:), pointer :: phi => null() ! actual line profile data
@@ -90,7 +90,6 @@ MODULE trans_mod
     real(4) :: alpha0 ! cross section at ionization threshold [cm^2]
     real(4), dimension(:), pointer, contiguous :: alpha => null() ! cross sections [cm^2]    
     real(8), dimension(:), pointer, contiguous :: alpha_input => null()
-    !real(4), dimension(:,:,:), contiguous, pointer :: ni_over_nj_lte
 
   contains
       procedure :: hermite_interp

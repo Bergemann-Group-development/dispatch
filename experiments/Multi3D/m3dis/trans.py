@@ -63,6 +63,10 @@ class trans_class(object):
         self.lam0 = vacuum2obs(np.array(self.alamb))
 
         if kr < atom.nline:
+            if not hasattr(atom, 'c_lam0'):
+                self.c_lam0 = self.lam0
+                self.c_loggf = np.log10(self.fosc * self.lower.g)
+
             if atom.sanity_check:
                 if abs(self.lam0 / self.c_lam0 - 1) > 1e-3:
                     print('mismatch in central wavelength of line', kr)
@@ -142,11 +146,9 @@ class trans_class(object):
             if (line.startswith('* i')):
                 line = line.replace('=', ' ')
                 self.c_kr, self.c_lam0, self.c_loggf = [float(s) for s in line.split() if is_number(s)][:3]
-                break
 
             line = f.readline()
 
-        line = f.readline()
         return line.split()
             
             

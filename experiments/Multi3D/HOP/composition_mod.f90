@@ -1508,7 +1508,7 @@ contains
         class(molec_type), intent(out), pointer :: molec
         character(len=*), intent(in) :: id
         real(dp), intent(in) :: abund
-        real(4), dimension(:,:,:) :: totn
+        real(dp), dimension(:,:,:) :: totn
         integer :: j
         !---------------------------------------------------------------------------
         call trace%begin ('composition_type%get_totn')

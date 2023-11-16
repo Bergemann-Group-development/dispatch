@@ -36,7 +36,6 @@ MODULE bftrans_mod
       procedure :: add_absorption
       procedure :: set_xweight
       procedure :: load_lam_interp_weights
-      procedure :: load_unsorted_lam_interp_weights
       procedure :: interp_temp_quadratic
       procedure :: interp_temp_linear
       procedure :: H_occupation
@@ -45,105 +44,23 @@ MODULE bftrans_mod
   logical :: active
   integer :: fs, fe
   logical, public :: H_occupation_probability=.true.
-  integer, dimension(:), pointer, contiguous :: iw => null()
-  logical, dimension(:), pointer, contiguous :: quad => null()
-  real(dp), dimension(:,:), pointer, contiguous :: lagrange => null()
+  integer, dimension(:), allocatable :: iw
+  logical, dimension(:), allocatable :: quad
+  real(dp), dimension(:,:), allocatable :: lagrange
   real(dp), dimension(:,:), pointer, contiguous :: pvt_xkap => null()
   !$omp threadprivate(active, fs, fe, iw, quad, lagrange, pvt_xkap)
 
 contains
 
-  !===============================================================================
-  SUBROUTINE load_lam_interp_weights(self, lam)
-    class(bftrans_type) :: self
-    real(dp), dimension(:), intent(in) :: lam
-    integer :: nf, f, di
-    integer :: nx, j, i
-    logical :: quadratic
-    !---------------------------------------------------------------------------
-    active = .true.
-
-    nx = size(self%lam)
-    nf = size(lam)
-
-    if (lam(1) > lam(nf)) then
-      di = -1
-      fs = nf
-      fe = 1
-    else
-      di = 1
-      fs = 1
-      fe = nf
-    endif
-
-    if (.not. self%minex .and. self%minl > lam(fs)) then
-      if (lam(fe) < self%minl) then
-        active = .false.
-        return
-      endif
-      do f=fs,fe,di
-        if (lam(f) > self%minl) then
-          fs = f
-          exit
-        endif
-      end do
-    endif
-
-    if (.not. self%maxex .and. self%maxl < lam(fe)) then
-      if (lam(fs) > self%maxl) then
-        active = .false.
-        return
-      endif
-      do f=fe,fs,-di
-        if (lam(f) < self%maxl) then
-          fe = f
-          exit
-        endif
-      end do
-    endif
-
-    j = 1
-    f = fs
-
-    quadratic = self%check_lam_quadratic(j)
-    quad(f) = quadratic
-
-    do i=1, nf+nx ! i is not actually needed
-      if (j >= nx) then
-          iw(f) = nx
-
-      elseif (self%lam(j+1) < lam(f)) then
-          j = j+1
-          quadratic = self%check_lam_quadratic(j)
-          cycle
-
-      elseif (self%lam(j) < lam(f)) then
-          iw(f) = j
-
-      else
-          iw(f) = 1
-      endif
-
-      call self%set_xweight(lam, f)
-
-      if (f == fe) exit
-      f = f+di
-      quad(f) = quadratic
-    end do
-
-    i = fs
-    fs = min(fs, fe)
-    fe = max(fe, i)
-  END SUBROUTINE load_lam_interp_weights
-
     !===============================================================================
-  SUBROUTINE load_unsorted_lam_interp_weights(self, lam)
+  SUBROUTINE load_lam_interp_weights(self, lam)
     class(bftrans_type) :: self
     real(dp), dimension(:), intent(in) :: lam
     real(dp) :: minl, maxl
     integer :: nf, f
     integer :: nx, j, i
     logical :: quadratic
+    integer, save :: itimer=0
     !---------------------------------------------------------------------------
     active = .true.
 
@@ -162,6 +79,7 @@ contains
       active = .false.
       return
     endif
+    call trace%begin('load_lam_interp_weights', itimer=itimer)
 
     fs = nf
     fe = 1
@@ -176,7 +94,8 @@ contains
       quad(i) = self%check_lam_quadratic(iw(i))
       call self%set_xweight(lam, i)
     end do
-  END SUBROUTINE load_unsorted_lam_interp_weights
+    call trace%end(itimer)
+  END SUBROUTINE load_lam_interp_weights
 
   !===============================================================================
   SUBROUTINE set_xweight(self, lam, f)
@@ -348,25 +267,26 @@ contains
             yy = log(yy)
           endif
 
-          fakt1 = fakt(x,y,z)
           i = 0
+          ab = 0
           do f=fs,fe
             if (i /= iw(f)) then
               i = iw(f)
               y1 = yy(i)
               y2 = yy(i+1)
-              if (quad(f)) y3 = yy(i+2)
+              if (quad(f)) then
+                y3 = yy(i+2)
+              else
+                y3 = 0
+              endif
             endif
             if (i /= 0) then
-              ab1 =       y1*lagrange(1,f)
-              ab1 = ab1 + y2*lagrange(2,f)
-              if (quad(f)) then
-                ab1 = ab1 + y3*lagrange(3,f)
-              endif
-              if (self%ilogl) ab1 = exp(ab1)
-              chi(f,x,y,z) = chi(f,x,y,z) + fakt1*ab1
+              ab(f) = sum([y1, y2, y3]*lagrange(:,f))
             endif
           end do
+          fakt1 = fakt(x,y,z)
+          if (self%ilogl) ab = exp(ab)
+          chi(fs:fe,x,y,z) = chi(fs:fe,x,y,z) + fakt1*ab(fs:fe)
         endif
       end do
       end do
@@ -396,7 +316,7 @@ contains
         lvl => self%ion%levels(self%k)
         lvl%i = self%k
         call trace%begin('wcalc2', itimer=itimer3)
-        call wcalc2(lvl, chi, lam, ab, fakt, self%ion%n, nhe, ne, shield)
+        call wcalc2(lvl, chi, lam(fs:fe), ab, fakt, self%ion%n, nhe, ne, shield)
         call trace%end(itimer3)
       else
         do z=1, nz
@@ -606,17 +526,13 @@ contains
       !---------------------------------------------------------------------------
       if (.not. self%active) return
       nf = size(lam)
-      call os%allocate(quad, nf)
-      call os%allocate(iw, nf)
-      call os%allocate(lagrange, [3,nf], zero=.true.)
+      allocate(quad(nf))
+      allocate(iw(nf))
+      allocate(lagrange(3,nf), source=0.d0)
       call os%allocate(pvt_xkap, shape(self%xkap))
       allocate(fakt, mold=temp)
 
-      if (option(sorted, .true.)) then
-        call self%load_lam_interp_weights(lam)
-      else
-        call self%load_unsorted_lam_interp_weights(lam)
-      endif
+      call self%load_lam_interp_weights(lam)
 
       if (active) then
           !if (nf > 1) prev = chi(p(1), p(2), p(3), p(4))
@@ -626,9 +542,9 @@ contains
           ! fakt(p(1),p(2),p(3)), chi(p(1),p(2),p(3),p(4)) - prev, chi(p(1),p(2),p(3),p(4))
       endif
 
-      call os%deallocate(quad)
-      call os%deallocate(iw)
-      call os%deallocate(lagrange)
+      deallocate(quad)
+      deallocate(iw)
+      deallocate(lagrange)
       call os%deallocate(pvt_xkap)
   END SUBROUTINE add_absorption
 

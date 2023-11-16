@@ -10,6 +10,7 @@ MODULE nlte_patch_mod
   USE trace_mod
   USE bits_mod
   USE os_mod
+  USE mconst
   USE patch_mod, only: patch_t
   USE mmath, only: cc_kernel
   USE op_math_mod, only: pchip_mono
@@ -22,7 +23,7 @@ MODULE nlte_patch_mod
   premature_finish, m3d_patch_pre_update=>pre_update
   USE ray_mod, only: one_dimensional, ray_type
   USE trans_mod, only:line_type, cont_type
-  USE bbtrans_mod, only:voigt_function2
+  USE bbtrans_mod, only:voigt_function2, voigt_profile
   USE m3d_debug_mod
   USE shared_mod
   implicit none
@@ -446,8 +447,8 @@ END SUBROUTINE lte_background_opacities
 SUBROUTINE add_bound_free_opacities (self)
   class(nlte_patch_t), target :: self
   class(cont_type), pointer :: cont
-  real(4), contiguous, dimension(:,:,:,:), pointer :: n
-  real(4), contiguous, dimension(:,:,:), pointer :: ni_over_nj_lte
+  real(8), contiguous, dimension(:,:,:,:), pointer :: n
+  real(4), contiguous, dimension(:,:,:), pointer :: nibj
   real(4) :: ni, nj, tmp, alpha
   integer :: i, icont, fsmin, femax
   integer, save :: itimer=0
@@ -463,14 +464,13 @@ SUBROUTINE add_bound_free_opacities (self)
     fsmin = min(fsmin, fs)
     femax = max(femax, fe)
     icont = cont%ntrans-self%atom%nline
-    ni_over_nj_lte => self%atom%data%ni_over_nj_lte(:,:,:,icont)
+    nibj => self%atom%data%nibj(:,:,:,icont)
 
     do z=1, nz
     do y=1, ny
     do x=1, nx
-      ni = n(x,y,z,cont%i)
-      nj = n(x,y,z,cont%j)
-      tmp = ni_over_nj_lte(x,y,z) * nj
+      ni  = n(x,y,z,cont%i)
+      tmp = nibj(x,y,z)
       do f=fs, fe
         alpha = cont%alpha(f)
         work(f,x,y,z,1) = work(f,x,y,z,1) + alpha * ni   ! chi
@@ -542,9 +542,10 @@ SUBROUTINE add_bound_bound_opacities (self, wmu, inv_df, vproj, adamp, LTE)
   class(line_type), pointer :: line
   real(4), contiguous, dimension(:,:,:) :: inv_df, vproj
   real(4), contiguous, dimension(:,:,:,:) :: adamp
-  real(4), contiguous, dimension(:,:,:,:), pointer :: n
+  real(8), contiguous, dimension(:,:,:,:), pointer :: n
   real(4), contiguous, dimension(:,:,:), pointer :: wphi
-  real(4) :: wmu, idf, vpr, a, idf_4pi, ni, nj, Bji_nj, Bij_ni, widf, chi_fac, wp
+  real(4), dimension(:), allocatable :: vphi
+  real(4) :: wmu, idf, vpr, a, idf_4pi, ni, nj, Bji_nj, Bij_ni, widf, chi_fac, wp, amin, amax
   integer :: i, ih
   logical :: LTE
   integer, save :: itimer=0, itimer1=0
@@ -556,6 +557,8 @@ SUBROUTINE add_bound_bound_opacities (self, wmu, inv_df, vproj, adamp, LTE)
   else
     n => self%atom%data%n
   endif
+
+  allocate(vphi(self%fs:self%fe))
 
   do i=1, self%nline
     line => self%line(i)
@@ -600,23 +603,28 @@ SUBROUTINE add_bound_bound_opacities (self, wmu, inv_df, vproj, adamp, LTE)
       nj = n(x,y,z,line%j)
       idf = inv_df(x,y,z)
 
-      Bji_nj = line%Bji * nj
-      Bij_ni = line%Bij * ni
-      chi_fac = Bij_ni - Bji_nj
+      associate(phi => vphi(fs:fe))
+        if (line%io > 1) then
+          phi = 0
+          do ih=1, line%io
+            a = adamp(x,y,z,i) + idf*line%da(ih)
+            vpr = vproj(x,y,z) + line%dq(ih)
+            phi = phi + voigt_profile(a, line%q(fs:fe), vpr, idf) * line%wt(ih)
+          end do
+        else
+          vpr = vproj(x,y,z)
+          a = adamp(x,y,z,i)
+          phi = voigt_profile(a, line%q(fs:fe), vpr, idf)
+        endif
 
-      if (line%io > 1) then
-        do ih=1, line%io
-          a = adamp(x,y,z,i) + idf*line%da(ih)
-          vpr = vproj(x,y,z) + line%dq(ih)
-          idf_4pi = idf * over_4pi * line%wt(ih)
-          call voigt_opacity
-        end do
-      else
-        vpr = vproj(x,y,z)
-        a = adamp(x,y,z,i)
-        idf_4pi = idf * over_4pi
-        call voigt_opacity
-      endif
+        Bji_nj = line%Bji * nj
+        Bij_ni = line%Bij * ni
+        chi_fac = Bij_ni - Bji_nj
+        associate(chi=>work(fs:fe,x,y,z,1), eta=>work(fs:fe,x,y,z,2))
+          chi = chi + phi * chi_fac
+          eta = eta + phi * Bji_nj
+        end associate
+      end associate
     end do
     end do
     end do
@@ -661,7 +669,7 @@ SUBROUTINE bound_bound_rates (self, wmu, inv_df, vproj, adamp, gamma_ij, gamma_j
   class(line_type), pointer :: line
   real(4), contiguous, dimension(:,:,:) :: inv_df, vproj
   real(4), contiguous, dimension(:,:,:,:) :: adamp, gamma_ij, gamma_ji
-  real(4), contiguous, dimension(:,:,:,:), pointer :: n
+  real(8), contiguous, dimension(:,:,:,:), pointer :: n
   real(4), dimension(:), allocatable :: wmunu
   real(4) :: wmu, idf, vpr, a, idf_4pi, ni, nj, chi_fac, Bji_nj, q, phi, vel, vgt
   real(4) :: Bij_ni, g_ij, g_ji, vvv, ufac, a2
@@ -676,7 +684,7 @@ SUBROUTINE bound_bound_rates (self, wmu, inv_df, vproj, adamp, gamma_ij, gamma_j
     line => self%line(i)
     fs = line%ired
     fe = line%iblue
-    wmunu(fs:fe) = wmu * line%wnu(fs:fe)
+    wmunu(fs:fe) = wmu * line%wnu(fs:fe) * line%Aij
 
     do z=1,nz
     do y=1,ny
@@ -700,12 +708,9 @@ SUBROUTINE bound_bound_rates (self, wmu, inv_df, vproj, adamp, gamma_ij, gamma_j
             do ih=1, line%io
               q = line%q(f) - line%dq(ih)
               a2 = a + idf*line%da(ih)
-              vel = (q - vpr) * idf
-              vgt = voigt_function2(a2, vel)
-              vgt = vgt * (q + 1)
+              vgt = voigt_profile(a2, q, vpr, idf)
               phi = phi + vgt * line%wt(ih)
             end do
-            phi = phi * idf_4pi
             vvv = phi * wmunu(f)
             phi = phi * Psi
             g_ji = g_ji + vvv*(1. + Inu - phi*Bij_ni)
@@ -715,10 +720,7 @@ SUBROUTINE bound_bound_rates (self, wmu, inv_df, vproj, adamp, gamma_ij, gamma_j
       else
         do f=fs, fe
           associate(Inu=>work(f,x,y,z,3), Psi=>self%Psi(f,x,y,z))
-            q = line%q(f)
-            vel = (q - vpr) * idf
-            vgt = voigt_function2(a, vel)
-            phi = vgt * idf_4pi * (q + 1)
+            phi = voigt_profile(a, line%q(f), vpr, idf)
             vvv = phi * wmunu(f)
             phi = phi * Psi
             g_ji = g_ji + vvv*(1. + Inu - phi*Bij_ni)
@@ -726,8 +728,8 @@ SUBROUTINE bound_bound_rates (self, wmu, inv_df, vproj, adamp, gamma_ij, gamma_j
           end associate
         end do
       endif
-      gamma_ji(x,y,z,i) = gamma_ji(x,y,z,i) + g_ji * line%Aji
-      gamma_ij(x,y,z,i) = gamma_ij(x,y,z,i) + g_ij * line%Aij
+      gamma_ji(x,y,z,i) = gamma_ji(x,y,z,i) + g_ji
+      gamma_ij(x,y,z,i) = gamma_ij(x,y,z,i) + g_ij
     end do
     end do
     end do
@@ -740,8 +742,8 @@ SUBROUTINE bound_free_rates (self, gamma_ij, gamma_ji)
   class(nlte_patch_t), target :: self
   class(cont_type), pointer :: cont
   real(4), contiguous, dimension(:,:,:,:) :: gamma_ij, gamma_ji
-  real(4), contiguous, dimension(:,:,:,:), pointer :: n
-  real(4), contiguous, dimension(:,:,:), pointer :: ni_over_nj_lte
+  real(8), contiguous, dimension(:,:,:,:), pointer :: n
+  real(4), contiguous, dimension(:,:,:), pointer :: nibj
   real(4), dimension(:), allocatable :: w_alpha, wmunu
   real(4) :: ni, nj, tmp, eta_fac, q, phi
   real(4) :: g_ij, g_ji, vij, vji, ufac
@@ -759,16 +761,16 @@ SUBROUTINE bound_free_rates (self, gamma_ij, gamma_ji)
     fs = cont%ired
     fe = cont%iblue
     icont = cont%ntrans-self%atom%nline
-    ni_over_nj_lte => self%atom%data%ni_over_nj_lte(:,:,:,icont)
+    nibj => self%atom%data%nibj(:,:,:,icont)
     wmunu(fs:fe) = 0.5 * cont%wnu(fs:fe)
     w_alpha(fs:fe) = self%twohnu3_c2(fs:fe) * cont%alpha(fs:fe) * wmunu(fs:fe)
     
     do z=1,nz
     do y=1,ny
     do x=1,nx
-      tmp = ni_over_nj_lte(x,y,z)
+      tmp = nibj(x,y,z)   
       ni = n(x,y,z,cont%i)
-      nj = n(x,y,z,cont%j) * tmp
+      nj = n(x,y,z,cont%j)
       g_ij = 0
       g_ji = 0
       do f=fs, fe
@@ -777,10 +779,10 @@ SUBROUTINE bound_free_rates (self, gamma_ij, gamma_ji)
           vji = vij * blz
           phi = Psi * cont%alpha(f)
           g_ji = g_ji + vji*(1. + Jnu - phi*ni)
-          g_ij = g_ij + vij*(Jnu - phi*blz*nj)
+          g_ij = g_ij + vij*(Jnu - phi*blz*tmp)
         end associate
       end do
-      gamma_ji(x,y,z,i) = gamma_ji(x,y,z,i) + g_ji * tmp
+      gamma_ji(x,y,z,i) = gamma_ji(x,y,z,i) + g_ji
       gamma_ij(x,y,z,i) = gamma_ij(x,y,z,i) + g_ij
     end do
     end do
@@ -1014,6 +1016,7 @@ SUBROUTINE short_char (self, vec)
   real(4) :: Inuup, xxup, ssup, xxmin, ssmin, Inumin, dsup05, xx, ss, Inu, u0, Psi
   real(8) :: dt, ex ! important
   real(4), dimension(:,:), allocatable :: kernel, work_up, work_min
+  real(4), dimension(:), allocatable :: dtau
   integer :: dx, dy, zs, ze, xup, yup, zup, x1, y1, i, ii, jj
   logical :: inner
   integer, save :: itimer=0
@@ -1025,6 +1028,7 @@ SUBROUTINE short_char (self, vec)
   allocate(kernel, source=real(ray%upkern))
   allocate(work_up(self%fs:self%fe,3))
   allocate(work_min(self%fs:self%fe,3))
+  allocate(dtau(self%fs:self%fe))
 
   dsup05 = 0.5*real(ray%dsup)
 
@@ -1089,7 +1093,7 @@ SUBROUTINE short_char (self, vec)
           endif
 
           work(f,x,y,z,3) = Inu
-          if (self%get_rates) self%Psi(f,x,y,z) = Psi / xx
+          if (self%get_rates) self%Psi(f,x,y,z) = Psi / work(f,x,y,z,1)
         end do ! f-loop
       end do
     end do

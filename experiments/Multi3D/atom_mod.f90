@@ -39,13 +39,13 @@ MODULE atom_mod
 
     type, public :: local_data_t
       ! LTE, NLTE and total population of active atom
-      real(4), dimension(:,:,:,:), pointer, contiguous :: nstar => null()
-      real(4), dimension(:,:,:,:), pointer, contiguous :: n     => null()
+      real(8), dimension(:,:,:,:), pointer, contiguous :: nstar => null()
+      real(8), dimension(:,:,:,:), pointer, contiguous :: n     => null()
       real(8), dimension(:,:,:,:), pointer, contiguous :: gamma_ij => null()
       real(8), dimension(:,:,:,:), pointer, contiguous :: gamma_ji => null()
-      real(4), dimension(:,:,:,:), pointer, contiguous :: ni_over_nj_lte => null()
+      real(4), dimension(:,:,:,:), pointer, contiguous :: nibj => null()
       real(4), dimension(:,:,:,:), pointer, contiguous :: wphi => null()
-      real(4), dimension(:,:,:),   pointer, contiguous :: totn => null() 
+      real(8), dimension(:,:,:),   pointer, contiguous :: totn => null() 
       real(4), dimension(:),   allocatable  :: oldn
       real(8), dimension(:),   allocatable  :: e
       real(8), dimension(:,:), allocatable  :: C, W
@@ -105,7 +105,7 @@ MODULE atom_mod
       procedure :: link_transitions
     end type atom_type
 
-    logical, public :: use_classic_col = .False., m1d_legacy_mode=.False.
+    logical, public :: use_classic_col = .True., m1d_legacy_mode=.False.
     logical, public :: lse_no_pivot = .True., kramer_bf=.False., debye_shield=.True.
     real(8), public :: red_thresh_aa  = 20000
     real(8), public :: blue_thresh_aa = 500
@@ -124,11 +124,12 @@ MODULE atom_mod
   SUBROUTINE solve_stat_equilibrium (self, temp, ne, totn, n, nstar, nh, gamma_ij, gamma_ji, cswitch, check_NaN)
     class(atom_type), target :: self
     class(transition_type), pointer :: trans
-    real(4), intent(in) :: temp, ne, totn
+    real(4), intent(in) :: temp, ne
+    real(8), intent(in) :: totn
     real(4), dimension(:), intent(in) :: nh
     real(8), dimension(:), intent(in) :: gamma_ij, gamma_ji
-    real(4), dimension(:), intent(in) :: nstar
-    real(4), dimension(:), intent(inout) :: n
+    real(8), dimension(:), intent(in) :: nstar
+    real(8), dimension(:), intent(inout) :: n
     integer, intent(in) :: cswitch
     logical, intent(in) :: check_NaN
     integer :: kr, pos, i, j
@@ -201,7 +202,7 @@ MODULE atom_mod
     !else
       ! go from rate coefficients to actual rates   
       do i=1,self%nlevel
-        self%data%w(i,:) = self%data%w(i,:) * n 
+        self%data%w(i,:) = self%data%w(i,:) * n
       enddo
       self%data%w(pos,:) = n
     !endif
@@ -307,8 +308,8 @@ MODULE atom_mod
     class(ion_type), pointer :: ion
     class(molec_type), pointer :: mol
     integer :: i, j, x,y,z
-    real(4), intent(inout), dimension(:,:,:,:) :: nstar
-    real(4), intent(inout), dimension(:,:,:) :: totn
+    real(8), intent(inout), dimension(:,:,:,:) :: nstar
+    real(8), intent(inout), dimension(:,:,:) :: totn
     real(4), intent(in), dimension(:,:,:) :: temp, saha, dxi
     real(4), dimension(:,:,:), allocatable :: partition, f
     integer :: ijk(3)
@@ -347,9 +348,9 @@ MODULE atom_mod
 
       do i=1, self%nlevel
         where(totn == 0) nstar(:,:,:,i) = 0
-        ijk = findloc(nstar(:,:,:,i), 0., mask=totn>0)
+        ijk = findloc(nstar(:,:,:,i), tiny(1.d0), mask=totn>0)
         if (any(ijk > 0)) then
-          print *, ' WARNING: ltepop: level ',i,' has zero lte population at', ijk
+          print '(A, I5, A, 3(I4))', ' WARNING: ltepop: level ',i,' has zero lte population at', ijk
           !stop
         end if
       end do
@@ -375,7 +376,7 @@ MODULE atom_mod
     real(4), intent(in) :: temp, dxi, saha, partition
     integer, intent(in) :: i_lvl
     real(8) :: evi, tns
-    real(4) :: nstar
+    real(8) :: nstar
     logical :: molec
     integer :: i, j, l
     !---------------------------------------------------------------------------------
@@ -388,20 +389,15 @@ MODULE atom_mod
       tns = tns + float(l)*log(saha)
     endif
 
-    tns = tns + log(partition)
-
-    if (tns < -85) then
-      nstar = tiny(1.0)
-    else
-      nstar = exp(tns)
-    endif
+    nstar = exp(tns) * partition
   end function lte_pop
   !------------------------------------------------------------------------------------
   
   !====================================================================================
   elemental function partition_function(self, temp, dxi, saha, totn) result(sumn)
     class(atom_type), intent(in) :: self
-    real(4), intent(in) :: temp, dxi, totn, saha
+    real(4), intent(in) :: temp, dxi, saha
+    real(8), intent(in) :: totn
     real(8) :: evi, tns
     real(4) :: sumn
     integer :: i, j, l
@@ -425,31 +421,25 @@ MODULE atom_mod
   !------------------------------------------------------------------------------------
    
   !====================================================================================
-  SUBROUTINE compute_cont_factors(self, temp, dxi, saha)
+  SUBROUTINE compute_cont_factors(self)
     class(atom_type), target, intent(inout) :: self
-    real(4), dimension(:,:,:) :: temp, dxi, saha
-    real(4) :: dev, tns, test, lalpha
-    integer :: i, j, k, kr, n(4), x, y, z, ii, jj
+    real(4) :: bj
+    integer :: i, j, k, kr, n(4), x, y, z
     class(cont_type), pointer :: cont
     !---------------------------------------------------------------------------------
-    n = [shape(temp), self%ncont]
-    call os%allocate(self%data%ni_over_nj_lte, n, label='data%ni_over_nj_lte')
+    n = [shape(self%data%totn), self%ncont]
+    call os%allocate(self%data%nibj, n, label='data%nibj')
 
     do kr=1,self%ncont
       cont => self%cont(kr)
       if (.not. cont%active) cycle
       i = cont%i
       j = cont%j
-      !ii = 0.5*(self%ion(i)*(self%ion(i)-1))
-      !jj = 0.5*(self%ion(j)*(self%ion(j)-1))
       do z=1, n(3)
       do y=1, n(2)
       do x=1, n(1)
-        !dev = self%ev(i) - self%ev(j) - dxi(x,y,z)*(ii - jj)
-        !tns = log(self%g(i)/self%g(j)) - e_k/temp(x,y,z)*dev
-        !tns = tns + (self%ion(i) - self%ion(j))*log(saha(x,y,z))
-        !self%data%ni_over_nj_lte(x,y,z,kr) = exp(tns)
-        self%data%ni_over_nj_lte(x,y,z,kr) = self%data%nstar(x,y,z,i) / self%data%nstar(x,y,z,j)
+        bj = self%data%n(x,y,z,j) / self%data%nstar(x,y,z,j)
+        self%data%nibj(x,y,z,kr) = bj * self%data%nstar(x,y,z,i)
       end do
       end do
       end do
@@ -998,7 +988,7 @@ MODULE atom_mod
     class(atom_type), intent(inout) :: self
     real(4), intent(in) :: temp, ne
     real(4), dimension(:), intent(in) :: nh
-    real(4), dimension(:), intent(in) :: nstar
+    real(8), dimension(:), intent(in) :: nstar
     real(8) :: ni, nj, nij, cup, cdn, EK_over_temp, divu
     real(8) :: dxi, dev, ex, u0, f, tmp, sqt, fac, nu0
     real(8) :: seaton, allen, regemorter
@@ -1019,14 +1009,14 @@ MODULE atom_mod
 
     n = 0
     do i=1, self%nlevel
-      ni = max(nstar(i), tiny(1.0))
+      ni = nstar(i)
       do j=i+1, self%nlevel
         tri = (j-1)*(j-2)/2 + i
 
         if (.not. self%ecol(tri) .or. .not. self%hcol(tri)) then
           fac = self%cdata(tri)! / self%g(j)
           cont = self%ion(j) > self%ion(i)
-          nj = max(nstar(j), tiny(1.0))
+          nj = nstar(j)
           nij = ni / nj
 
           dev = self%ev(j) - self%ev(i)
@@ -1245,7 +1235,7 @@ MODULE atom_mod
 
           allocate(lin%wq(ired:iblue))
           call os%mem_register(storage_size(lin%wq), nnu)
-          call set_weights(lin%wq, lin%q)
+          call set_weights(lin%wq, dble(lin%q))
         endif
       end do
     endif

@@ -51,7 +51,7 @@ MODULE coll_mod
       integer, intent(in) :: nlevel
       real(8), intent(in), dimension(:) :: g, ev, nh
       integer, intent(in), dimension(:) :: ion
-      real(4), intent(in), dimension(:) :: nstar
+      real(8), intent(in), dimension(:) :: nstar
       real(8), intent(out), dimension(nlevel,nlevel) :: cij
       real(8), intent(in) :: temp, ne
   
