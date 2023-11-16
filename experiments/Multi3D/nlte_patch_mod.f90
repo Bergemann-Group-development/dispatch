@@ -50,6 +50,7 @@ MODULE nlte_patch_mod
     procedure :: add_bound_bound_opacities
     procedure :: bound_bound_rates
     procedure :: bound_free_rates
+    procedure :: subtract_stimulated_emission
     procedure :: back_to_work
     procedure :: eta_to_Snu
     procedure :: set_upstream_boundary
@@ -243,6 +244,8 @@ SUBROUTINE execute (self)
     if (self%bound_bound) call self%bound_bound_damping(adamp, temp, inv_df)
   endif
 
+  call self%subtract_stimulated_emission()
+
   ! Starting loop over angles
   do i_mu=self%mus, self%mue
     if (self%out_ray) then
@@ -430,11 +433,8 @@ SUBROUTINE lte_background_opacities (self, temp, include_absmet)
       ! The source function is the planck function in LTE, therefore eta=chi*Bnu
       associate(blz=>back(f,x,y,z,3), chi=>back(f,x,y,z,1), eta=>back(f,x,y,z,2))
         if (blz>1e-10) then
-          bnu = blz / (1.0 - blz)
-        else
-          bnu = blz
+          eta = chi / (1.0 - blz)
         endif
-        eta = chi * bnu
       end associate
     end do
   end do
@@ -450,19 +450,16 @@ SUBROUTINE add_bound_free_opacities (self)
   real(8), contiguous, dimension(:,:,:,:), pointer :: n
   real(4), contiguous, dimension(:,:,:), pointer :: nibj
   real(4) :: ni, nj, tmp, alpha
-  integer :: i, icont, fsmin, femax
+  integer :: i, icont
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('nlte_patch%add_bound_free_opacities', itimer=itimer)
   ! Summing contributions from all bound-free transitions
   n => self%atom%data%n
-  fsmin = huge(1); femax = 0
   do i=1, self%ncont
     cont => self%cont(i)
     fs = cont%ired
     fe = cont%iblue
-    fsmin = min(fsmin, fs)
-    femax = max(femax, fe)
     icont = cont%ntrans-self%atom%nline
     nibj => self%atom%data%nibj(:,:,:,icont)
 
@@ -485,13 +482,6 @@ SUBROUTINE add_bound_free_opacities (self)
   do z=1, nz
   do y=1, ny
   do x=1, nx
-    do f=fsmin, femax
-      associate(chi=>work(f,x,y,z,1), eta=>work(f,x,y,z,2), blz=>back(f,x,y,z,3))
-        eta = eta * blz
-        chi = chi - eta
-      end associate
-    end do
-
     do f=self%fs, self%fe
       ! adding background (LTE) and bound-free to give continuum opacities
       back(f,x,y,z,1) = back(f,x,y,z,1) + work(f,x,y,z,1)
@@ -502,7 +492,6 @@ SUBROUTINE add_bound_free_opacities (self)
   end do
   call trace%end(itimer)
 END SUBROUTINE add_bound_free_opacities
-
 
 !===============================================================================
 SUBROUTINE bound_bound_damping (self, adamp, temp, inv_df)
@@ -543,11 +532,11 @@ SUBROUTINE add_bound_bound_opacities (self, wmu, inv_df, vproj, adamp, LTE)
   real(4), contiguous, dimension(:,:,:) :: inv_df, vproj
   real(4), contiguous, dimension(:,:,:,:) :: adamp
   real(8), contiguous, dimension(:,:,:,:), pointer :: n
-  real(4), contiguous, dimension(:,:,:), pointer :: wphi
+  real(4), dimension(:,:,:), allocatable :: wphi
   real(4), dimension(:), allocatable :: vphi
   real(4) :: wmu, idf, vpr, a, idf_4pi, ni, nj, Bji_nj, Bij_ni, widf, chi_fac, wp, amin, amax
   integer :: i, ih
-  logical :: LTE
+  logical :: LTE, get_wphi
   integer, save :: itimer=0, itimer1=0
   !-----------------------------------------------------------------------------
   call trace%begin (trim(self%kind)//'%add_bound_bound_opacities', itimer=itimer)
@@ -559,41 +548,13 @@ SUBROUTINE add_bound_bound_opacities (self, wmu, inv_df, vproj, adamp, LTE)
   endif
 
   allocate(vphi(self%fs:self%fe))
+  allocate(wphi, mold=vproj)
+  get_wphi = self%iter == 0 .and. self%in_ray
 
   do i=1, self%nline
     line => self%line(i)
     fs = line%ired
     fe = line%iblue
-    call trace%begin (trim(self%kind)//'%wphi', itimer=itimer1)
-    
-    ! Saving integrated line profiles wphi for profile normalisation
-    if (self%iter == 0 .and. self%in_ray) then
-      call lock_mem(self%m3d_parent, 'wphi')
-      wphi => self%atom%data%wphi(:,:,:,line%ntrans)
-      do z=1, nz
-      do y=1, ny
-      do x=1, nx
-        idf = inv_df(x,y,z)
-        if (line%io > 1) then
-          do ih=1, line%io
-            a = adamp(x,y,z,i) + idf*line%da(ih)
-            vpr = vproj(x,y,z) + line%dq(ih)
-            widf = wmu * idf * line%wt(ih)
-            call voigt_wphi()
-          end do
-        else
-          vpr = vproj(x,y,z)
-          a = adamp(x,y,z,i)
-          widf = wmu * idf
-          call voigt_wphi()
-        endif
-      end do
-      end do
-      end do
-      call unlock_mem(self%m3d_parent, 'wphi')
-    endif
-
-    call trace%end(itimer1)
 
     ! Adding bound-bound opacities
     do z=1, nz
@@ -624,43 +585,24 @@ SUBROUTINE add_bound_bound_opacities (self, wmu, inv_df, vproj, adamp, LTE)
           chi = chi + phi * chi_fac
           eta = eta + phi * Bji_nj
         end associate
+
+        if (get_wphi) then
+          wphi(x,y,z) = sum(phi * line%wq(fs:fe))
+        endif
       end associate
     end do
     end do
     end do
+
+    if (get_wphi) then
+      call lock_mem(self%m3d_parent, 'wphi')
+      associate(sum_wphi => self%atom%data%wphi(:,:,:,line%ntrans))
+        sum_wphi = sum_wphi + wmu * wphi
+      end associate
+      call unlock_mem(self%m3d_parent, 'wphi')
+    endif
   end do
   call trace%end(itimer)
-
-contains
-  !-----------------------------------------------------------------------------
-  subroutine voigt_wphi()
-    real(4) :: q, vel, vgt, phi
-    !-----------------------------------------------------------------------------
-    wp = 0
-    do f=fs, fe
-      q = line%q(f)
-      vel = (q - vpr) * idf
-      vgt = voigt_function2(a, vel)
-      wp = wp + vgt * line%wq(f)
-    end do 
-    wphi(x,y,z) = wphi(x,y,z) + wp * widf
-  end subroutine
-
-  !-----------------------------------------------------------------------------
-  subroutine voigt_opacity()
-    real(4) :: q, vel, vgt, phi
-    !-----------------------------------------------------------------------------
-    do f=fs, fe
-      associate(chi=>work(f,x,y,z,1), eta=>work(f,x,y,z,2))
-        q = line%q(f)
-        vel = (q - vpr) * idf
-        vgt = voigt_function2(a, vel)
-        phi = vgt * idf_4pi * (q + 1)
-        chi = chi + phi * chi_fac
-        eta = eta + phi * Bji_nj
-      end associate
-    end do 
-  end subroutine voigt_opacity
 END SUBROUTINE add_bound_bound_opacities
 
 !===============================================================================
@@ -694,7 +636,6 @@ SUBROUTINE bound_bound_rates (self, wmu, inv_df, vproj, adamp, gamma_ij, gamma_j
       idf = inv_df(x,y,z)
       vpr = vproj(x,y,z)
       a = adamp(x,y,z,i)
-      idf_4pi = idf * over_4pi
 
       Bji_nj = line%Bji * nj
       Bij_ni = line%Bij * ni
@@ -921,9 +862,32 @@ SUBROUTINE work_to_mem (self, i_mu, i_set)
 END SUBROUTINE work_to_mem
 
 !===============================================================================
+SUBROUTINE subtract_stimulated_emission (self)
+  class(nlte_patch_t) :: self
+  integer, save :: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin('nlte_patch%subtract_stimulated_emission', itimer=itimer)
+  do z=1, nz
+  do y=1, ny
+  do x=1, nx
+  do f=self%fs, self%fe
+    associate(chi=>back(f,x,y,z,1), eta=>back(f,x,y,z,2), blz=>back(f,x,y,z,3))
+      eta = eta * blz
+      chi = chi - eta
+    end associate
+  end do
+  end do
+  end do
+  end do
+  call trace%end(itimer)
+END SUBROUTINE subtract_stimulated_emission
+
+!===============================================================================
 SUBROUTINE back_to_work (self)
   class(nlte_patch_t) :: self
+  integer, save :: itimer=0
   !-----------------------------------------------------------------------------
+  call trace%begin('nlte_patch%back_to_work', itimer=itimer)
   ! copy back opacities into angle dependent opacities
   do z=1, nz
   do y=1, ny
@@ -937,12 +901,15 @@ SUBROUTINE back_to_work (self)
   end do
   end do
   end do
+  call trace%end(itimer)
 END SUBROUTINE back_to_work
 
 !===============================================================================
 SUBROUTINE eta_to_Snu (self)
   class(nlte_patch_t) :: self
+  integer, save :: itimer=0
   !-----------------------------------------------------------------------------
+  call trace%begin('nlte_patch%eta_to_Snu', itimer=itimer)
   ! Converting eta into source function Snu=eta/chi
   do z=1, nz
   do y=1, ny
@@ -953,6 +920,7 @@ SUBROUTINE eta_to_Snu (self)
   end do
   end do
   end do
+  call trace%end(itimer)
 END SUBROUTINE eta_to_Snu
 
 !===============================================================================
@@ -1016,7 +984,6 @@ SUBROUTINE short_char (self, vec)
   real(4) :: Inuup, xxup, ssup, xxmin, ssmin, Inumin, dsup05, xx, ss, Inu, u0, Psi
   real(8) :: dt, ex ! important
   real(4), dimension(:,:), allocatable :: kernel, work_up, work_min
-  real(4), dimension(:), allocatable :: dtau
   integer :: dx, dy, zs, ze, xup, yup, zup, x1, y1, i, ii, jj
   logical :: inner
   integer, save :: itimer=0
@@ -1028,7 +995,6 @@ SUBROUTINE short_char (self, vec)
   allocate(kernel, source=real(ray%upkern))
   allocate(work_up(self%fs:self%fe,3))
   allocate(work_min(self%fs:self%fe,3))
-  allocate(dtau(self%fs:self%fe))
 
   dsup05 = 0.5*real(ray%dsup)
 

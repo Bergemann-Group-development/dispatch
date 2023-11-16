@@ -10,6 +10,7 @@ MODULE mconst
   real(8), parameter :: pi = 3.14159265359d0 ! Pi
   real(8), parameter :: euler_const=0.5772156649d0 ! Euler's constant
   real(8), parameter :: sqrtpi   =1.772453850906d0
+  real(8), parameter :: pi4 = 4.d0*pi
   complex(8), parameter :: ci = (0,1)
 
   ! numbers
@@ -56,7 +57,7 @@ MODULE mconst
   real(8), parameter :: hc_k    = hh * cc / bk 
   real(8), parameter :: e_k     = ee/bk
   real(8), parameter :: h_k     = hh / bk
-  real(8), parameter :: over_4pi= 1.0 / (4.0d0*pi)
+  real(8), parameter :: over_4pi= 1.0 / pi4
   real(8), parameter :: h_4pi   = hh * over_4pi
   ! 24.09.21 PE: Include parameter for line opacity
   real(8), parameter :: pie2_mc = pi * ec**2 / em / cc

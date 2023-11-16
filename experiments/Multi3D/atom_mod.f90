@@ -1236,6 +1236,7 @@ MODULE atom_mod
           allocate(lin%wq(ired:iblue))
           call os%mem_register(storage_size(lin%wq), nnu)
           call set_weights(lin%wq, dble(lin%q))
+          lin%wq = lin%wq * pi4
         endif
       end do
     endif
