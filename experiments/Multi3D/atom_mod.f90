@@ -1013,9 +1013,9 @@ MODULE atom_mod
       do j=i+1, self%nlevel
         tri = (j-1)*(j-2)/2 + i
 
+        cont = self%ion(j) > self%ion(i)
         if (.not. self%ecol(tri) .or. .not. self%hcol(tri)) then
           fac = self%cdata(tri)! / self%g(j)
-          cont = self%ion(j) > self%ion(i)
           nj = nstar(j)
           nij = ni / nj
 

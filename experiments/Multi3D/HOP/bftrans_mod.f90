@@ -18,7 +18,7 @@ MODULE bftrans_mod
       real(dp) :: mint, maxt, minl, maxl
       logical :: ilogl, kvadl, minex, maxex, loglam=.false.
       logical :: ilogt, kvadt, minet, maxet, iteta, pedep, istim
-      real(dp), dimension(:), allocatable :: lam, temp, teta, tt
+      real(dp), dimension(:), allocatable :: lam, temp, teta, tt, lnlam
       real(dp), dimension(:,:), allocatable :: xkap
       real(dp), dimension(:,:), allocatable :: log_xkap
       logical, dimension(:), allocatable :: ldisk!, tdisk
@@ -29,10 +29,8 @@ MODULE bftrans_mod
 
   contains
       procedure :: interp_xkap
-      procedure :: check_lam_quadratic
       procedure :: absorption_factor
       procedure :: add_absorption
-      procedure :: set_xweight
       procedure :: load_lam_interp_weights
   end type
 
@@ -49,40 +47,36 @@ contains
 
     !===============================================================================
   SUBROUTINE load_lam_interp_weights(self, lam)
-    class(bftrans_type) :: self
+    class(bftrans_type), target :: self
     real(dp), dimension(:), intent(in) :: lam
-    real(dp) :: minl, maxl
+    real(dp), dimension(:), pointer, contiguous :: xx
+    real(dp) :: x
     integer :: nf, f
-    integer :: nx, j, i
+    integer :: i,j,k
     logical :: quadratic, above, below, skip
     integer, save :: itimer=0
     !---------------------------------------------------------------------------
     active = .true.
-
-    nx = size(self%lam)
     nf = size(lam)
 
-    minl = minval(lam, 1)
-    maxl = maxval(lam, 1)
+    above = minval(lam, 1) > self%maxl
+    below = maxval(lam, 1) < self%minl
 
-    if (.not. self%minex .and. self%minl > maxl) then
+    skip = (.not. self%maxex .and. above) .or. (.not. self%minex .and. below)
+    if (skip) then
       active = .false.
       return
     endif
 
-    if (.not. self%maxex .and. self%maxl < minl) then
-      active = .false.
-      return
-    endif
     call trace%begin('load_lam_interp_weights', itimer=itimer)
 
     fs = nf
     fe = 1
-    iw(:) = 0
 
     do i=1, nf
-      above = lam(i) > self%maxl
-      below = lam(i) < self%minl
+      x = lam(i)
+      above = x > self%maxl
+      below = x < self%minl
       skip = (.not. self%maxex .and. above) .or. (.not. self%minex .and. below)
       if (.not. skip) then
         fs = min(i, fs)
@@ -104,9 +98,34 @@ contains
             if (fits_in(j)) exit
           end do
         endif
+
+        quadratic = self%kvadl .and. .not. (j<1 .or. j >= (self%nnu - 1))
+        if (quadratic) quadratic = .not. self%ldisk(j)
+
+        if (quadratic) then
+          k = 2
+        else
+          k = 1
+        endif
+
+        ! if there are not enough points, step back
+        j = min(j, self%nnu-k)
+        j = max(j, 1)
+        if (self%loglam) then
+          x = log(x)
+          xx => self%lnlam(j:j+k)
+        else
+          xx => self%lam(j:j+k)
+        endif
+
+        if (quadratic) then
+          lagrange(1:1+k,i) = quadratic_weight(xx, x)
+        else
+          lagrange(1:1+k,i) = linear_weight(xx, x)
+        endif
+
         iw(i) = j
-        quad(i) = self%check_lam_quadratic(j)
-        call self%set_xweight(lam, i)
+        quad(i) = quadratic
       endif
     end do
     call trace%end(itimer)
@@ -115,45 +134,13 @@ contains
       integer, intent(in) :: idx
       fits_in = idx > 0 .and. idx < self%nnu
       if (fits_in) then
-        fits_in = lam(i) > self%lam(idx) .and. lam(i) < self%lam(idx+1)
+        fits_in = x > self%lam(idx) .and. x < self%lam(idx+1)
       endif
     end function fits_in
   END SUBROUTINE load_lam_interp_weights
 
   !===============================================================================
-  SUBROUTINE set_xweight(self, lam, f)
-      class(bftrans_type) :: self
-      real(dp), dimension(:), intent(in) :: lam
-      real(dp) :: xx(3), x
-      integer, intent(in) :: f
-      integer :: j, k
-      !---------------------------------------------------------------------------
-      ! if there are not enough points, step back
-      k = merge(2, 1, quad(f))
-      iw(f) = min(iw(f), self%nnu-k)
-      iw(f) = max(iw(f), 1)
-      j = iw(f)
-      k = k+1
-
-      associate(xx => xx(1:k))
-        x = lam(f)
-        xx = self%lam(j:j+k-1)
-
-        if (self%loglam) then
-          x = log(x)
-          xx = log(xx)
-        endif
-
-        if (quad(f)) then
-            lagrange(1:k,f) = quadratic_weight(xx, x)
-        else
-            lagrange(1:k,f) = linear_weight(xx, x)
-        endif
-      end associate
-  END SUBROUTINE set_xweight
-
-  !===============================================================================
-  FUNCTION quadratic_weight(xxx,newx) result(w)
+  PURE FUNCTION quadratic_weight(xxx,newx) result(w)
       real(dp), dimension(3), intent(in) :: xxx
       real(dp), intent(in) :: newx
       real(dp) :: diff(3), w(3)
@@ -165,13 +152,14 @@ contains
   end FUNCTION quadratic_weight
 
   !===============================================================================
-  FUNCTION linear_weight(xx,newx) result(w)
+  PURE FUNCTION linear_weight(xx,newx) result(w)
       real(dp), dimension(2), intent(in) :: xx
       real(dp), intent(in) :: newx
-      real(dp) :: w(2)
+      real(dp) :: w(2), dx
       !---------------------------------------------------------------------------
-      w(1) = (xx(2) - newx) / (xx(2) - xx(1))
-      w(2) = (newx - xx(1)) / (xx(2) - xx(1))
+      dx = 1 / (xx(2) - xx(1))
+      w(1) = (xx(2) - newx) * dx
+      w(2) = (newx - xx(1)) * dx
   end FUNCTION linear_weight
 
   !===============================================================================
@@ -355,25 +343,6 @@ contains
       call trace%end(itimer2)
     endif
   END SUBROUTINE interp_xkap
-
-  !===============================================================================
-  elemental FUNCTION check_lam_quadratic(self, iw) result(quadratic)
-      class(bftrans_type), intent(in) :: self
-      integer, intent(in) :: iw
-      logical :: quadratic
-      !---------------------------------------------------------------------------
-      quadratic = .false.
-
-      if (self%kvadl) then
-        if (self%nnu - iw > 1) then
-          if (iw <= 0) then
-            quadratic = .false.
-          elseif (.not. self%ldisk(iw)) then
-            quadratic = .true.
-          endif
-        endif
-      endif
-  end FUNCTION check_lam_quadratic
 
   !===============================================================================
   SUBROUTINE absorption_factor(self, EK_over_temp, teta, pe, dxi, fakt)

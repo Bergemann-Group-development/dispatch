@@ -443,6 +443,10 @@ contains
 
             read(absdat, *) trans%lam
 
+            if (trans%loglam) then
+                allocate(trans%lnlam, source=log(trans%lam))
+            endif
+
             trans%minl = trans%lam(1)
             trans%maxl = trans%lam(nnu)
 
