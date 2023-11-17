@@ -200,7 +200,7 @@ SUBROUTINE execute (self)
   real(4), dimension(:,:,:), allocatable :: inv_df, vproj
   real(4) :: wmu
   real(8) :: vec(3)
-  logical :: skip, use_linelist, get_cntrbf, end_boundary
+  logical :: skip, use_linelist, get_cntrbf, end_boundary, include_absmet
   integer :: i, j, i_mu, zs, ze, p(3), ng, i_set, l, nnu_cntrbf
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
@@ -238,7 +238,9 @@ SUBROUTINE execute (self)
 
   inv_df = self%atom%inverse_doppler_factor(temp)
 
-  call self%lte_background_opacities(temp, include_absmet=self%in_ray.or.absmet_in_output)
+  !include_absmet = self%in_ray .or. absmet_in_output
+  include_absmet = self%in_ray .and. self%i_nu > self%n_nu
+  call self%lte_background_opacities(temp, include_absmet=include_absmet)
 
   if (self%use_atom) then
     if (self%bound_free) call self%add_bound_free_opacities()
@@ -431,12 +433,9 @@ SUBROUTINE lte_background_opacities (self, temp, include_absmet)
   do y=1, ny
   do x=1, nx
     do f=self%fs, self%fe
-      ! The source function is the planck function in LTE, therefore eta=chi*Bnu
-      associate(blz=>back(f,x,y,z,3), chi=>back(f,x,y,z,1), eta=>back(f,x,y,z,2))
-        if (blz>1e-10) then
-          eta = chi / (1.0 - blz)
-        endif
-      end associate
+      ! This yields the planck function for S=eta/chi after subtract_stimulated_emission
+      ! chi*blz / (chi - chi*blz) = blz / (1 - blz)
+      back(f,x,y,z,2) = back(f,x,y,z,1)
     end do
   end do
   end do

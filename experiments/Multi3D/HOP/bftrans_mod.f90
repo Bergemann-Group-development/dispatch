@@ -28,17 +28,12 @@ MODULE bftrans_mod
       character(len=20) :: label
 
   contains
-      procedure :: get_temp_index
       procedure :: interp_xkap
-      procedure :: check_temp_quadratic
       procedure :: check_lam_quadratic
       procedure :: absorption_factor
       procedure :: add_absorption
       procedure :: set_xweight
       procedure :: load_lam_interp_weights
-      procedure :: interp_temp_quadratic
-      procedure :: interp_temp_linear
-      procedure :: H_occupation
   end type
 
   logical :: active
@@ -59,7 +54,7 @@ contains
     real(dp) :: minl, maxl
     integer :: nf, f
     integer :: nx, j, i
-    logical :: quadratic
+    logical :: quadratic, above, below, skip
     integer, save :: itimer=0
     !---------------------------------------------------------------------------
     active = .true.
@@ -86,15 +81,43 @@ contains
     iw(:) = 0
 
     do i=1, nf
-      if (.not. self%maxex .and. lam(i) > self%maxl) cycle
-      if (.not. self%minex .and. lam(i) < self%minl) cycle
-      fs = min(i, fs)
-      fe = max(i, fe)
-      iw(i) = searchsorted(self%lam, lam(i), outbounds_ok=.true.)
-      quad(i) = self%check_lam_quadratic(iw(i))
-      call self%set_xweight(lam, i)
+      above = lam(i) > self%maxl
+      below = lam(i) < self%minl
+      skip = (.not. self%maxex .and. above) .or. (.not. self%minex .and. below)
+      if (.not. skip) then
+        fs = min(i, fs)
+        fe = max(i, fe)
+        j = -1
+        if (below) then
+          j = 0
+        elseif (above) then
+          j = self%nnu
+        elseif (i > 1) then
+          if (fits_in(iw(i-1))) then
+            j = iw(i-1)
+          elseif (fits_in(iw(i-1)-1)) then
+            j = iw(i-1)-1
+          endif
+        endif
+        if (j<0) then
+          do j=1, self%nnu-1
+            if (fits_in(j)) exit
+          end do
+        endif
+        iw(i) = j
+        quad(i) = self%check_lam_quadratic(j)
+        call self%set_xweight(lam, i)
+      endif
     end do
     call trace%end(itimer)
+  contains
+    pure logical function fits_in(idx)
+      integer, intent(in) :: idx
+      fits_in = idx > 0 .and. idx < self%nnu
+      if (fits_in) then
+        fits_in = lam(i) > self%lam(idx) .and. lam(i) < self%lam(idx+1)
+      endif
+    end function fits_in
   END SUBROUTINE load_lam_interp_weights
 
   !===============================================================================
@@ -334,78 +357,6 @@ contains
   END SUBROUTINE interp_xkap
 
   !===============================================================================
-  PURE SUBROUTINE H_occupation(self, lam, nhe, ne, shield, temp, fakt, skip)
-      class(bftrans_type), intent(in) :: self
-      real(dp), intent(in) :: lam
-      real(dp), intent(in), dimension(:,:,:) :: nhe, ne, shield, temp
-      real(dp), intent(out), dimension(:,:,:) :: fakt
-      logical, intent(out) :: skip
-      real(dp) :: redcut, nu, x, scalar
-      !---------------------------------------------------------------------------
-      associate(lvl => self%ion%levels(self%k))
-        redcut = hc_e / ((self%k**(-2.d0) - (self%k+1)**(-2.d0))*RYD) * 1d8
-        if (lam > redcut) then
-          redcut = exp((redcut - lam)*1.d-2)
-        else
-          redcut = 1.0
-        endif
-        skip = redcut < 1d-1
-        if (.not. skip) then
-          nu = cc/lam*1e8
-          scalar = 2.0898E-26 / (2*self%k**5) * redcut
-
-          x = 1. - (lvl%xion + h_e*nu)/RYD
-          if(x > 0.d0) then
-            x = 1.d0/sqrt(x)
-            call wcalc(self%ion%n, nhe, ne, shield, x, fakt)
-            fakt = lvl%w - fakt
-          else
-            fakt = lvl%w
-          endif
-
-          fakt = fakt * scalar * lvl%n
-        endif
-      end associate
-  END SUBROUTINE H_occupation
-
-  !===============================================================================
-  elemental FUNCTION interp_temp_quadratic(self, f, it, newt) result(newy)
-      class(bftrans_type), intent(in) :: self
-      real(dp), intent(in) :: newt
-      integer, intent(in) :: f, it
-      real(dp) :: newy, w(3), diff(3)
-      integer :: j1, j2, j3
-      !---------------------------------------------------------------------------
-      if (self%ntt - it > 1) then
-          j1 = it
-          j2 = it+1
-          j3 = it+2
-      else
-          j1 = it-1
-          j2 = it
-          j3 = it+1
-      endif
-
-      diff = newt - self%tt(j1:j3)
-      w(1) = diff(2) * diff(3) / ((self%tt(j1)-self%tt(j2)) * (self%tt(j1)-self%tt(j3)))
-      w(2) = diff(1) * diff(3) / ((self%tt(j2)-self%tt(j1)) * (self%tt(j2)-self%tt(j3)))
-      w(3) = diff(1) * diff(2) / ((self%tt(j3)-self%tt(j1)) * (self%tt(j3)-self%tt(j2)))
-
-      newy = sum(pvt_xkap(f,j1:j3) * w(1:3))
-  end FUNCTION interp_temp_quadratic 
-
-  !===============================================================================
-  elemental FUNCTION interp_temp_linear(self, f, it, newt) result(newy)
-      class(bftrans_type), intent(in) :: self
-      real(dp), intent(in) :: newt
-      integer, intent(in) :: f, it
-      real(dp) :: m, newy
-      !---------------------------------------------------------------------------
-      m = (pvt_xkap(f,it+1) - pvt_xkap(f,it)) / (self%tt(it+1) - self%tt(it))
-      newy = m * (newt - self%tt(it)) + pvt_xkap(f,it)
-  end FUNCTION interp_temp_linear
-
-  !===============================================================================
   elemental FUNCTION check_lam_quadratic(self, iw) result(quadratic)
       class(bftrans_type), intent(in) :: self
       integer, intent(in) :: iw
@@ -423,42 +374,6 @@ contains
         endif
       endif
   end FUNCTION check_lam_quadratic
-
-  !===============================================================================
-  elemental FUNCTION check_temp_quadratic(self, it) result(quadratic)
-      class(bftrans_type), intent(in) :: self
-      integer, intent(in) :: it
-      logical :: quadratic
-      !---------------------------------------------------------------------------
-      quadratic = .false.
-
-      if (self%kvadt) then
-          if (self%ntt - it > 1) then
-              !if (.not. self%tdisk(it)) then
-              quadratic = .true.
-              !endif
-          endif
-      endif
-  end FUNCTION check_temp_quadratic
-
-  !===============================================================================
-  elemental SUBROUTINE get_temp_index(self, newt, idx, no_extrap)
-      class(bftrans_type), intent(in) :: self
-      real(dp), intent(in) :: newt
-      integer,  intent(out) :: idx
-      logical,  intent(out) :: no_extrap
-      !---------------------------------------------------------------------------
-      no_extrap = .false.
-
-      if (newt < self%tt(1)) then
-          idx = 1
-      elseif (newt > self%tt(self%ntt)) then
-          idx = self%ntt - 1
-      else
-          idx = BinarySearch(self%tt, 1, self%ntt, newt)
-          no_extrap = .true.
-      endif
-  END SUBROUTINE get_temp_index
 
   !===============================================================================
   SUBROUTINE absorption_factor(self, EK_over_temp, teta, pe, dxi, fakt)
