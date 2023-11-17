@@ -31,7 +31,8 @@ MODULE nlte_patch_mod
 
   !-----------------------------------------------------------------------------
   type, public, extends(ray_patch_t) :: nlte_patch_t
-    class(nlte_patch_t), pointer :: upstream, dnstream
+    class(nlte_patch_t), pointer :: upstream=>null()
+    class(nlte_patch_t), pointer :: dnstream=>null()
     type(line_type), dimension(:), allocatable :: line
     type(cont_type), dimension(:), allocatable :: cont
     real(4), dimension(:,:,:,:), allocatable :: Jnu, Psi, PsiJ

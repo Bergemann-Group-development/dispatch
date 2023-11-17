@@ -369,13 +369,14 @@ SUBROUTINE init_exp (self)
   type(link_t), pointer:: link
   class(task_t), pointer:: task
   logical:: periodic(3)
-  integer:: id
+  integer:: id, thread
   !-----------------------------------------------------------------------------
   id = 0
   link => self%task_list%head
   do while (associated(link))
     id = id+1
-    if (mod(id,omp%nthreads)==omp%thread) then
+    thread = mod(id,omp%nthreads)
+    if (thread==omp%thread) then
       task => link%task
       select type (task)
       class is (experiment_t)
@@ -574,16 +575,14 @@ SUBROUTINE init_all_nbors (self)
   integer:: i, i0, i1, i2, m, n=0, nv=0, nb=0
   real(8):: time
   integer, save:: itimer=0
-  integer :: fixed_threads
   !.............................................................................
   if (self%hands_off_nbor_lists) return
   call trace%begin('read_external_mod%init_all_nbors', itimer=itimer)
   if (self%verbose > 0) &
     call timer%tic (time)
-  fixed_threads = min(omp%nthreads, 4)
-  i2 = self%n/fixed_threads + 1                         ! tasks per thread
+  i2 = self%n/omp%nthreads + 1                         ! tasks per thread
   n = 0
-  !$omp parallel private(i,m,i0,i1,link) shared(self,i2,n,stdout) default(none) num_threads(fixed_threads)
+  !$omp parallel private(i,m,i0,i1,link) shared(self,i2,n,stdout) default(none) num_threads(omp%nthreads)
   i0 = omp%thread*i2
   i1 = i0 + i2
   if (omp%master) &

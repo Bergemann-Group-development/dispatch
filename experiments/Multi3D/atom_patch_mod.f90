@@ -516,6 +516,7 @@ MODULE atom_patch_mod
       end do
     end do
 
+    !$omp critical (maxerr_reset)
     global = global_maxerr%update(0.d0)
     ipos = global_pos%update(+0)
     if (ipos == self%ipos(3) .or. self%maxerr > global) then
@@ -524,6 +525,7 @@ MODULE atom_patch_mod
       epos = ep
       elvl = il
     endif
+    !$omp end critical (maxerr_reset)
     call trace%end(itimer)
   END SUBROUTINE update_populations
 

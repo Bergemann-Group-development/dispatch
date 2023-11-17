@@ -51,7 +51,7 @@ coll_var.o                  : coll_mod.o
 coll_mod.o                  : mmath.o 
 atom_mod.o                  : trans_mod.o coll_mod.o op_math_mod.o spectrum_mod.o element_mod.o molecule_mod.o handyfuncs_mod.o hprofl_mod.o
 spectrum_mod.o              : io_mod.o timer_mod.o trace_mod.o mconst.o trans_mod.o handyfuncs_mod.o
-m3d_halo_mod.o              : halo_mod.o guards_mod.o gpatch_mod.o
+m3d_halo_mod.o              : halo_mod.o guards_mod.o gpatch_mod.o handyfuncs_mod.o
 m3d_patch_mod.o             : gpatch_mod.o atom_mod.o ray_mod.o m3d_halo_mod.o handyfuncs_mod.o m3d_debug_mod.o composition_mod.o
 ray_patch_mod.o             : m3d_patch_mod.o
 nlte_patch_mod.o            : ray_patch_mod.o

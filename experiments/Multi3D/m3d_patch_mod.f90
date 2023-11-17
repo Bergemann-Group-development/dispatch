@@ -43,14 +43,12 @@ MODULE m3d_patch_mod
     type, public, extends(gpatch_t) :: m3d_patch_t
       class(gpatch_t),    pointer :: patch => null()         ! pointer to mhd patch
       class(m3d_patch_t), pointer :: m3d_parent => null()    ! pointer to parent patch
-      type(composition_type), pointer :: composition
+      type(composition_type), pointer :: composition => null()
       class(atomic_spectrum_type), pointer :: sp => null()
       type(atom_type), pointer :: atom => null()
       class(key_link_t), pointer :: key_list => null()
       real(4), dimension(:,:,:,:,:,:), pointer :: authority_mem => null()
-      real(4), dimension(:,:,:,:,:), pointer :: out_mem => null() 
-      integer, dimension(:,:), pointer :: periodic_idx
-      integer, dimension(:), pointer :: periodic_i, periodic_j
+      real(4), dimension(:,:,:,:,:), pointer :: out_mem => null()
       logical :: on=.false.       ! allows local turn-off
       logical :: in_task_list = .false.
       logical :: initialized  = .false.
