@@ -21,7 +21,7 @@ MODULE ray_patch_mod
   USE patch_mod, only: patch_t
   USE op_math_mod, only: searchsorted
   USE ray_mod, only: ray_type, one_dimensional
-  USE m3d_patch_mod, only: m3d_patch_t, vec, wmu, long_vec, long_wmu, detailed_prints, &
+  USE m3d_patch_mod, only: m3d_patch_t, vec, wmu, long_vec, long_wmu, &
   converged, print_send, atom_update_counter, comoving_frame, use_vel
   USE mconst, only: cc, over_4pi, PI
   implicit none

@@ -73,16 +73,7 @@ class read(object):
         self.mus = 1 - self.mus
         self.nmu = self.mus.size
 
-        i3 = self.read_patch_save('i3', fdim=0)[0]
         ie = self.read_patch_save('ie', fdim=0)[0]
-
-        self.flux = np.zeros_like(self.lam)
-        self.flux_lte = np.zeros_like(self.lam)
-        self.flux_cnt = np.zeros_like(self.lam)
-        
-        self.i3     = i3[...,0]
-        self.i3_lte = i3[...,1]
-        self.c3     = i3[...,2]
 
         self.ie     = np.array(ie[:,0,0,:,0])
         self.ie_lte = np.array(ie[:,0,0,:,1])
@@ -91,13 +82,12 @@ class read(object):
         self.flux     = np.sum(self.wts * self.ie    , axis=-1)
         self.flux_lte = np.sum(self.wts * self.ie_lte, axis=-1)
         self.flux_cnt = np.sum(self.wts * self.cnt   , axis=-1)
-        
-        dim = self.i3[0].shape
-            
-        if (np.product(dim[:2]) > 1):
-            self.dim = '3D'
-        else:
-            self.dim = '1D'
+
+        if self.nml['m3d_params']['save_resolved']:
+            i3 = self.read_patch_save('i3', fdim=0)[0]
+            self.i3     = i3[...,0]
+            self.i3_lte = i3[...,1]
+            self.c3     = i3[...,2]
             
         if hasattr(self, 'atom'):
             #print('Prepairing transitions')
@@ -140,6 +130,9 @@ class read(object):
                 self.tau  = self.tau .reshape((nx,ny,nz), order='F')
                 self.chi  = self.chi .reshape((nx,ny,nz), order='F')
                 self.eta  = self.eta .reshape((nx,ny,nz), order='F')
+                self.dim = '3D'
+            else:
+                self.dim = '1D'
 
             self.ltau = np.log10(self.tau)
         

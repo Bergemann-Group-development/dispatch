@@ -42,11 +42,8 @@ MODULE composition_mod
         procedure :: ion_by_id
         procedure :: absorption
         procedure :: add_hrest
-        procedure :: add_hrest2
         procedure :: electron_scattering
         procedure :: rayleigh_scattering
-        procedure :: electron_scattering2
-        procedure :: rayleigh_scattering2
         procedure :: scattering
         procedure :: reassign_pointer
         procedure :: get_totn
@@ -1387,7 +1384,7 @@ contains
         lam = cc / nu * 1e8
         chi = 0
 
-        call self%add_hrest2(chi)
+        call self%add_hrest(chi)
 
         ! add absorption from all tables, which do not include stimulated emission or lam^3 factor
         do i=1, size(self%trans)
@@ -1468,8 +1465,8 @@ contains
             endif
         end do
 
-        call self%electron_scattering2(chi)
-        call self%rayleigh_scattering2(lam, chi)
+        call self%electron_scattering(chi)
+        call self%rayleigh_scattering(lam, chi)
 
         if (present(include_absmet)) then
             if (self%osmet%initialised .and. include_absmet) then
@@ -1923,40 +1920,7 @@ contains
     END SUBROUTINE overwrite_abundance
 
     !=========================================================================
-    SUBROUTINE add_hrest(self, abslte)
-        class(composition_type), target :: self
-        class(ion_type), pointer :: HI
-        real(4), dimension(:,:,:,:), intent(inout) :: abslte
-        real(dp), dimension(:,:,:), allocatable :: hrest, umc, h1, nniv, fakt
-        integer :: f, nf
-        integer :: p(4)=pp
-        !---------------------------------------------------------------------
-        allocate(hrest, fakt, umc, h1, nniv, mold=self%temp)
-        call self%ion_by_id('H I', HI)
-        nf = size(abslte, 4)
-
-        fakt = HI%boltzmann(self%EK_over_temp, self%dxi, natural_log=.true.)
-        fakt = 2.0898E-26 / (2*RYD*self%EK_over_temp) * fakt * HI%part * HI%n
-        h1 = sqrt(RYD/self%dxi)
-        nniv = (min(int(h1), 15) + 0.5)**2
-        
-        hrest = 0
-        where (h1 > 15.5)
-            !umc = 2.3026 * self%dxi * self%teta
-            !hrest = fakt * (exp(31.30364*self%teta/nniv-umc)-1.)
-            hrest = exp(self%EK_over_temp*(RYD/nniv - self%dxi))
-            hrest = fakt * (hrest - 1)
-        end where
-
-        do f=1, nf
-            abslte(:,:,:,f) = abslte(:,:,:,f) + hrest
-        end do
-
-        !if (nf > 1) print '(A22, 3(E14.6))', 'hrest', hrest(p(1),p(2),p(3)), hrest(p(1),p(2),p(3)), abslte(p(1),p(2),p(3),p(4))
-    END SUBROUTINE add_hrest
-
-    !=========================================================================
-    SUBROUTINE add_hrest2(self, chi)
+    SUBROUTINE add_hrest(self, chi)
         class(composition_type), target :: self
         class(ion_type), pointer :: HI
         real(4), dimension(:,:,:,:), intent(inout) :: chi
@@ -1984,29 +1948,10 @@ contains
         end do
         end do
         end do
-    END SUBROUTINE add_hrest2
+    END SUBROUTINE add_hrest
 
     !=========================================================================
-    SUBROUTINE electron_scattering(self, sumsca)
-        class(composition_type), target :: self
-        real(4), dimension(:,:,:,:), intent(inout) :: sumsca
-        real(dp), dimension(:,:,:), allocatable :: els
-        real(dp), parameter :: thomson = 8./3.*PI*(EC**2/(EM*CC**2))**2
-        integer :: f
-        !---------------------------------------------------------------------
-        allocate(els, mold=self%temp)
-        !els = 4.8206e-9 * self%pe / self%temp
-        els = thomson * self%ne
-
-        do f=1, size(sumsca, 4)
-            sumsca(:,:,:,f) = sumsca(:,:,:,f) + els
-        end do
-
-        !print *, 'els', els(pp(1),pp(2),pp(3))
-    END SUBROUTINE electron_scattering
-
-    !=========================================================================
-    SUBROUTINE electron_scattering2(self, chi)
+    SUBROUTINE electron_scattering(self, chi)
         class(composition_type), target :: self
         real(4), dimension(:,:,:,:), intent(inout) :: chi
         real(dp), parameter :: thomson = 8./3.*PI*(EC**2/(EM*CC**2))**2
@@ -2022,51 +1967,10 @@ contains
         end do
         end do
         end do
-    END SUBROUTINE electron_scattering2
+    END SUBROUTINE electron_scattering
 
     !=========================================================================
-    SUBROUTINE rayleigh_scattering(self, lam, sumsca)
-        class(composition_type), target :: self
-        class(molec_type), pointer :: H2
-        class(ion_type), pointer :: HI, HE
-        real(dp), dimension(:), intent(in) :: lam
-        real(4), dimension(:,:,:,:), intent(inout) :: sumsca
-        real(dp), dimension(:,:,:), allocatable :: h2ray, rayh, rayh2
-        real(dp) :: xray2, ll, scalar
-        integer :: f
-        !---------------------------------------------------------------------
-        allocate(h2ray, rayh, rayh2, mold=self%temp)
-
-        ! rayleigh scattering
-        call self%ion_by_id('H I', HI)
-        call self%ion_by_id('HE I', HE)
-        call self%molecule_by_id('H2', H2)
-
-        do f=1, size(lam)
-            if (lam(f) > 911.27) then
-                ll = max(1026., lam(f))
-                xray2 = 1 / ll**2
-
-                rayh  = (5.799e-13 + xray2*(1.422e-6 + xray2*2.784)) * HI%n
-                rayh2 = ( 8.14e-13 + xray2*( 1.28e-6 + xray2*1.61 )) * H2%n
-    
-                ! add sumsca to sumsca from lines
-                sumsca(:,:,:,f) = sumsca(:,:,:,f) + (rayh + rayh2)*xray2*xray2
-
-                !if (f==pp(4)) then
-                !    print *, 'rayh', rayh(pp(1),pp(2),pp(3))*xray2**2, HI%n(pp(1),pp(2),pp(3)), xray2
-                !    print *, 'rayh2', rayh2(pp(1),pp(2),pp(3))*xray2**2
-                !endif
-            endif
-
-            ! Scattering by HeI in cm**2/atom, from Bues & Wehrse, 1976, A&A 51, 461
-            scalar = 0.66520e-24*4.*(500./lam(f))**4
-            sumsca(:,:,:,f) = sumsca(:,:,:,f) + scalar * HE%n
-        end do
-    END SUBROUTINE rayleigh_scattering
-
-    !=========================================================================
-    SUBROUTINE rayleigh_scattering2(self, lam, chi)
+    SUBROUTINE rayleigh_scattering(self, lam, chi)
         class(composition_type), target :: self
         class(molec_type), pointer :: H2
         class(ion_type), pointer :: HI, HE
@@ -2110,7 +2014,7 @@ contains
         end do
         end do
         end do
-    END SUBROUTINE rayleigh_scattering2
+    END SUBROUTINE rayleigh_scattering
 
     !=========================================================================
     SUBROUTINE print_ion_table(self)

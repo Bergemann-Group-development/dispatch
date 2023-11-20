@@ -20,7 +20,7 @@ MODULE nlte_patch_mod
   USE m3d_halo_mod, only: lock_mem, unlock_mem
   USE m3d_patch_mod, only: all_vec=>vec, all_wmu=>wmu, use_vel, m3d_patch_t, &
   absmet_in_output, long_wmu, long_vec, ray_offset, pivot_z, dlam, &
-  premature_finish, m3d_patch_pre_update=>pre_update
+  premature_finish, m3d_patch_pre_update=>pre_update, save_resolved
   USE ray_mod, only: one_dimensional, ray_type
   USE trans_mod, only:line_type, cont_type
   USE bbtrans_mod, only:voigt_function2, voigt_profile
@@ -51,7 +51,6 @@ MODULE nlte_patch_mod
     procedure :: add_bound_bound_opacities
     procedure :: bound_bound_rates
     procedure :: bound_free_rates
-    procedure :: subtract_stimulated_emission
     procedure :: back_to_work
     procedure :: eta_to_Snu
     procedure :: set_upstream_boundary
@@ -247,8 +246,6 @@ SUBROUTINE execute (self)
     if (self%bound_bound) call self%bound_bound_damping(adamp, temp, inv_df)
   endif
 
-  call self%subtract_stimulated_emission()
-
   ! Starting loop over angles
   do i_mu=self%mus, self%mue
     if (self%out_ray) then
@@ -433,9 +430,10 @@ SUBROUTINE lte_background_opacities (self, temp, include_absmet)
   do y=1, ny
   do x=1, nx
     do f=self%fs, self%fe
-      ! This yields the planck function for S=eta/chi after subtract_stimulated_emission
-      ! chi*blz / (chi - chi*blz) = blz / (1 - blz)
-      back(f,x,y,z,2) = back(f,x,y,z,1)
+      associate(chi=>back(f,x,y,z,1), eta=>back(f,x,y,z,1), blz=>back(f,x,y,z,3))
+        bnu = blz / (1 - blz)
+        back(f,x,y,z,2) = back(f,x,y,z,1) * bnu
+      end associate
     end do
   end do
   end do
@@ -450,16 +448,20 @@ SUBROUTINE add_bound_free_opacities (self)
   real(8), contiguous, dimension(:,:,:,:), pointer :: n
   real(4), contiguous, dimension(:,:,:), pointer :: nibj
   real(4) :: ni, nj, tmp, alpha
-  integer :: i, icont
+  integer :: i, icont, fsmin, femax
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('nlte_patch%add_bound_free_opacities', itimer=itimer)
   ! Summing contributions from all bound-free transitions
   n => self%atom%data%n
+  fsmin = huge(1)
+  femax = 1
   do i=1, self%ncont
     cont => self%cont(i)
     fs = cont%ired
     fe = cont%iblue
+    fsmin = min(fsmin, fs)
+    femax = max(femax, fe)
     icont = cont%ntrans-self%atom%nline
     nibj => self%atom%data%nibj(:,:,:,icont)
 
@@ -482,6 +484,12 @@ SUBROUTINE add_bound_free_opacities (self)
   do z=1, nz
   do y=1, ny
   do x=1, nx
+    do f=fsmin, femax
+      associate(chi=>work(f,x,y,z,1), eta=>work(f,x,y,z,2), blz=>back(f,x,y,z,3))
+        eta = eta * blz
+        chi = chi - eta
+      end associate
+    end do
     do f=self%fs, self%fe
       ! adding background (LTE) and bound-free to give continuum opacities
       back(f,x,y,z,1) = back(f,x,y,z,1) + work(f,x,y,z,1)
@@ -860,27 +868,6 @@ SUBROUTINE work_to_mem (self, i_mu, i_set)
   end do
   call trace%end(itimer)
 END SUBROUTINE work_to_mem
-
-!===============================================================================
-SUBROUTINE subtract_stimulated_emission (self)
-  class(nlte_patch_t) :: self
-  integer, save :: itimer=0
-  !-----------------------------------------------------------------------------
-  call trace%begin('nlte_patch%subtract_stimulated_emission', itimer=itimer)
-  do z=1, nz
-  do y=1, ny
-  do x=1, nx
-  do f=self%fs, self%fe
-    associate(chi=>back(f,x,y,z,1), eta=>back(f,x,y,z,2), blz=>back(f,x,y,z,3))
-      eta = eta * blz
-      chi = chi - eta
-    end associate
-  end do
-  end do
-  end do
-  end do
-  call trace%end(itimer)
-END SUBROUTINE subtract_stimulated_emission
 
 !===============================================================================
 SUBROUTINE back_to_work (self)
@@ -1338,7 +1325,10 @@ SUBROUTINE save_intensity (self)
   ie = ie / real(nx*ny)
 
   call self%save5(ie, 'ie')
-  call self%save5(i3, 'i3')
+
+  if (save_resolved) then
+    call self%save5(i3, 'i3')
+  endif
 
   meta_file = trim(io%run_dir) // 'angle_quadrature.txt'
   call io%lock%set('save_quadrature')

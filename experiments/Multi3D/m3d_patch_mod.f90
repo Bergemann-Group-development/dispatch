@@ -123,10 +123,9 @@ MODULE m3d_patch_mod
     real(8), public:: convlim=1d-3, convmax=tiny(1.0)
     logical, public, save :: converged=.false., use_vel=.true., premature_finish=.true.
     logical, public, save :: preconditioning=.true., binned_opac=.false., save_Qrad=.false.
-    logical, public, save :: check_NaN=.false., interp_log=.false.
-    logical, public, save :: save_back_cont=.false., save_atom_line=.false.
-    logical, public, save :: linear_long=.true., decouple_continuum=.true.
-    logical, public, save :: detailed_prints=.false., comoving_frame=.false.
+    logical, public, save :: check_NaN=.false., save_resolved=.false.
+    logical, public, save :: decouple_continuum=.true.
+    logical, public, save :: comoving_frame=.false.
     logical, public, save :: use_density=.true., use_ne=.true., line_blanketing=.false.
     logical, public, save :: overlapping_bb=.true., overlapping_bf=.true.
     logical, public, save :: absmet_in_output=.false.
@@ -159,10 +158,9 @@ MODULE m3d_patch_mod
     namelist /m3d_params/ on, verbose, fcheck, linecheck, pcheck, quad_scheme, &
     long_scheme, n_nu, maxiter, ilambd, lvlcheck, comoving_frame, save_id, &
     ntheta, nphi, check_NaN, custom_mu, lse_no_pivot, save_patch_kind, cswitch, &
-    save_back_cont, detailed_prints, print_finished, print_start, &
-    print_send, linear_long, interp_log, ray_offset, print_download, save_atom_line, &
+    print_finished, print_start, print_send, ray_offset, print_download, &
     lse_solver, decouple_continuum, m1d_legacy_mode, nu_tolerance, disable_stark, &
-    disable_vdw, disable_ga, pivot_z, use_vel, save_Qrad, &
+    disable_vdw, disable_ga, pivot_z, use_vel, save_Qrad, save_resolved, &
     absmet_in_output, print_lock, make_opac_table
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%pre_init', itimer=itimer)
