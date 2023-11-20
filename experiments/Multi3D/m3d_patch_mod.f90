@@ -124,7 +124,7 @@ MODULE m3d_patch_mod
     logical, public, save :: converged=.false., use_vel=.true., premature_finish=.true.
     logical, public, save :: preconditioning=.true., binned_opac=.false., save_Qrad=.false.
     logical, public, save :: check_NaN=.false., save_resolved=.false.
-    logical, public, save :: decouple_continuum=.true.
+    logical, public, save :: decouple_continuum=.false.
     logical, public, save :: comoving_frame=.false.
     logical, public, save :: use_density=.true., use_ne=.true., line_blanketing=.false.
     logical, public, save :: overlapping_bb=.true., overlapping_bf=.true.
