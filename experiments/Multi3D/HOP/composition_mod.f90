@@ -146,7 +146,7 @@ contains
 
         do i=1, self%nel
             element => elements(i)
-            if (element%id /= 'H' .and. element%id /= 'HE') then
+            if (element%id /= 'H' .and. element%id /= 'He') then
                 element%abund = element%abund + FeH
             endif
         end do

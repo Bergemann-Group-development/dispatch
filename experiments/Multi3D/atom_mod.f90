@@ -46,7 +46,7 @@ MODULE atom_mod
       real(4), dimension(:,:,:,:), pointer, contiguous :: nibj => null()
       real(4), dimension(:,:,:,:), pointer, contiguous :: wphi => null()
       real(8), dimension(:,:,:),   pointer, contiguous :: totn => null() 
-      real(4), dimension(:),   allocatable  :: oldn
+      real(8), dimension(:,:,:,:,:), pointer, contiguous :: oldn => null()
       real(8), dimension(:),   allocatable  :: e
       real(8), dimension(:,:), allocatable  :: C, W
       logical :: converged=.false.

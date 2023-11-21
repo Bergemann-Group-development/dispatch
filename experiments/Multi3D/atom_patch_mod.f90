@@ -18,7 +18,7 @@ MODULE atom_patch_mod
     USE bbtrans_mod, only: bbtrans_type
     USE composition_mod, only: composition_type
     USE m3d_patch_mod, only: m3d_patch_t, maxiter, check_NaN, cswitch, key_link_t, &
-    global_maxerr, convlim, convmax, atom_update_counter, comoving_frame, global_pos, &
+    global_maxerr, convlim, convmax, atom_update_counter, comoving_frame, global_pos, ng_step, &
     decouple_continuum, overlapping_bb, overlapping_bf, line_blanketing, converged, premature_finish
     USE bftrans_mod, only: bftrans_type
     USE hprofl_mod, only: hydrogen_BPO
@@ -55,6 +55,7 @@ MODULE atom_patch_mod
       procedure :: allocate_mem
       procedure :: deallocate_mem
       procedure :: check_mem_NaN
+      procedure :: ng_acceleration
     end type atom_patch_t
 
     integer, save :: epos(3), elvl
@@ -362,11 +363,21 @@ MODULE atom_patch_mod
           gamma_ji(:,:,:,i) = gamma_ji(:,:,:,i) * nstar(:,:,:,cont%i) / nstar(:,:,:,cont%j)
         end do
 
+        if (ng_step > 0) then
+          do i=1, self%atom%nlevel
+            self%atom%data%oldn(:,:,:,i,1) = self%atom%data%oldn(:,:,:,i,2)
+            self%atom%data%oldn(:,:,:,i,2) = self%atom%data%oldn(:,:,:,i,3)
+            self%atom%data%oldn(:,:,:,i,3) = self%atom%data%n(:,:,:,i)
+          end do
+        endif
+
         call self%update_populations(gamma_ij, gamma_ji)
         self%atom%data%converged = self%maxerr < convmax
         self%update_skipped = .false.
         if (self%atom%data%converged .and. premature_finish) then
           call self%finish()
+        elseif (ng_step > 0 .and. mod(self%iter, ng_step) == 0) then
+          call self%ng_acceleration()
         endif
       endif
     endif
@@ -416,6 +427,68 @@ MODULE atom_patch_mod
     endif
     call trace%end(itimer)
   END SUBROUTINE execute
+
+  !===============================================================================
+  SUBROUTINE ng_acceleration (self)
+    class(atom_patch_t):: self
+    integer :: x, y, z, k, epos(4)
+    real(8), dimension(self%atom%nlevel) :: n1, n2, n3, n4, n5, d0, d1, d2, e
+    real(8) :: d01, d02, d11, d12, d21, d22, a, b, den, emax, enew
+    integer, save :: itimer=0
+    ! ----------------------------------------------------------------------------
+    call trace%begin ('atom_patch_t%ng_acceleration', itimer=itimer)
+    emax = 1e-3
+    do z=1, self%n(3)
+    do y=1, self%n(2)
+    do x=1, self%n(1)
+      n4 = self%atom%data%n(x,y,z,:)
+      n1 = self%atom%data%oldn(x,y,z,:,1) / n4
+      n2 = self%atom%data%oldn(x,y,z,:,2) / n4
+      n3 = self%atom%data%oldn(x,y,z,:,3) / n4
+
+      d0 = 1. - n3
+      d1 = n3 - n2
+      d2 = n2 - n1
+
+      d1 = d0 - d1
+      d2 = d0 - d2
+
+      d01 = dot_product(d0, d1)
+      d02 = dot_product(d0, d2)
+      d11 = dot_product(d1, d1)
+      d22 = dot_product(d2, d2)
+      d12 = dot_product(d1, d2)
+      d21 = d12
+
+      den = d11*d22 - d12*d21
+
+      if (abs(den) > 0) then
+        a = (d01*d22 - d02*d21) / den
+        b = (d02*d11 - d01*d21) / den
+
+        e = 1.d0 - a - b + a*n3 + b*n2
+      else
+        e = 1.d0
+      endif
+
+      e = max(e, 0.001d0)
+
+      self%atom%data%n(x,y,z,:) = e*n4
+
+      do k=1,self%atom%nlevel
+        enew = e(k) - 1.d0
+
+        if (abs(enew) > emax) then
+          emax = enew
+          epos = [k, x, y, z]
+        endif
+      end do
+    end do
+    end do
+    end do
+    print '(A, ES14.7, 4(I4))', 'NG acceleration ', emax, epos
+    call trace%end(itimer)
+  END SUBROUTINE ng_acceleration
 
   !===============================================================================
   SUBROUTINE finish (self)
@@ -721,13 +794,15 @@ MODULE atom_patch_mod
       allocate(atom%data%C(atom%nlevel, atom%nlevel))
       allocate(atom%data%W(atom%nlevel, atom%nlevel))
       allocate(atom%data%e(atom%nlevel))
-      allocate(atom%data%oldn(atom%nlevel))
       allocate(self%lvlerr(atom%nlevel))
       call os%allocate(atom%data%nstar, [self%n, atom%nlevel], label='nstar')
       call os%allocate(atom%data%n,     [self%n, atom%nlevel], label='n')
       call os%allocate(atom%data%totn, self%n, label='totn')
       if (self%maxiter > 0) then
         call os%allocate(atom%data%wphi,  [self%n, atom%nline],  label='wphi', zero=.true.)
+        if (ng_step > 0) then
+          call os%allocate(atom%data%oldn,  [self%n, atom%nlevel, 3],  label='oldn')
+        endif
       endif
     end associate
   END SUBROUTINE allocate_mem
@@ -747,6 +822,9 @@ MODULE atom_patch_mod
       call os%deallocate(atom%data%totn,       label='totn')
       if (self%maxiter > 0) then
         call os%deallocate(atom%data%wphi, label='wphi')
+        if (ng_step > 0) then
+          call os%deallocate(atom%data%oldn, label='oldn')
+        endif
       endif
     end associate
   END SUBROUTINE deallocate_mem
