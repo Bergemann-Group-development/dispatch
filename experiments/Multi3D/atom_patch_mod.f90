@@ -18,7 +18,7 @@ MODULE atom_patch_mod
     USE bbtrans_mod, only: bbtrans_type
     USE composition_mod, only: composition_type
     USE m3d_patch_mod, only: m3d_patch_t, maxiter, check_NaN, cswitch, key_link_t, &
-    global_maxerr, convlim, convmax, atom_update_counter, comoving_frame, global_pos, ng_step, &
+    global_maxerr, convlim, convmax, atom_update_counter, comoving_frame, global_pos, ng_step, ng_start, &
     decouple_continuum, overlapping_bb, overlapping_bf, line_blanketing, converged, premature_finish
     USE bftrans_mod, only: bftrans_type
     USE hprofl_mod, only: hydrogen_BPO
@@ -58,7 +58,7 @@ MODULE atom_patch_mod
       procedure :: ng_acceleration
     end type atom_patch_t
 
-    integer, save :: epos(3), elvl
+    integer, save :: epos(3), elvl, ng_type=1
     logical, save :: level_partf=.true.
     logical, save :: exclude_from_line_list=.true.
     logical, save :: detailed_absmet=.false.
@@ -104,7 +104,7 @@ MODULE atom_patch_mod
     namelist /atom_params/ atom_file, qnorm, convlim, exclude_trace_cont, level_partf, &
     use_atom_abnd, logf_cut, red_cut, blue_cut, n_in_lines, abundance, debye_shield, &
     exclude_from_line_list, precomputed_depart, use_classic_col, kramer_bf, overlapping_bf, &
-    overlapping_bb, nq_fac, hydrogen_BPO, detailed_absmet, n_cntrbf, convmax, premature_finish
+    overlapping_bb, nq_fac, hydrogen_BPO, detailed_absmet, n_cntrbf, convmax, premature_finish, ng_type
     namelist /line_mask/ in_lines, cntrbf_lines
     !-----------------------------------------------------------------------------
     call trace%begin('atom_patch_t%pre_init_atom', itimer=itimer)
@@ -329,6 +329,7 @@ MODULE atom_patch_mod
     integer :: i, l, p(3), ii, jj
     integer, save:: count=0
     real(8) :: global, gij
+    logical :: do_ng
     integer, save :: itimer=0
     !-----------------------------------------------------------------------------
     call trace%begin (trim(self%kind)//'%update', itimer=itimer)
@@ -375,9 +376,10 @@ MODULE atom_patch_mod
         call self%update_populations(gamma_ij, gamma_ji)
         self%atom%data%converged = self%maxerr < convmax
         self%update_skipped = .false.
+        do_ng = ng_step > 0 .and. mod(self%iter-ng_start, ng_step) == 0 .and. self%iter >= ng_start
         if (self%atom%data%converged .and. premature_finish) then
           call self%finish()
-        elseif (ng_step > 0 .and. mod(self%iter, ng_step) == 0) then
+        elseif (do_ng) then
           call self%ng_acceleration()
         endif
       endif
@@ -431,20 +433,29 @@ MODULE atom_patch_mod
   !===============================================================================
   SUBROUTINE ng_acceleration (self)
     class(atom_patch_t):: self
-    integer :: x, y, z, k, epos(4)
-    real(8), dimension(self%atom%nlevel) :: n1, n2, n3, n4, n5, d0, d1, d2, e
+    integer :: i, x, y, z, k, epos(4), nvec
+    real(8), dimension(:), allocatable :: n1, n2, n3, n4, n5, d0, d1, d2, e
     real(8) :: d01, d02, d11, d12, d21, d22, a, b, den, emax, enew
     integer, save :: itimer=0
     ! ----------------------------------------------------------------------------
     call trace%begin ('atom_patch_t%ng_acceleration', itimer=itimer)
+    nvec = self%atom%nlevel * product(self%n(1:2))
+    allocate(e(nvec))
+    allocate(n1, n2, n3, n4, n5, d0, d1, d2, mold=e)
     emax = 1e-3
     do z=1, self%n(3)
-    do y=1, self%n(2)
-    do x=1, self%n(1)
-      n4 = self%atom%data%n(x,y,z,:)
-      n1 = self%atom%data%oldn(x,y,z,:,1) / n4
-      n2 = self%atom%data%oldn(x,y,z,:,2) / n4
-      n3 = self%atom%data%oldn(x,y,z,:,3) / n4
+      i = 0
+      do y=1, self%n(2)
+      do x=1, self%n(1)
+      do k=1, self%atom%nlevel
+        i = i+1
+        n4(i) = self%atom%data%n(x,y,z,k)
+        n1(i) = self%atom%data%oldn(x,y,z,k,1) / n4(i)
+        n2(i) = self%atom%data%oldn(x,y,z,k,2) / n4(i)
+        n3(i) = self%atom%data%oldn(x,y,z,k,3) / n4(i)
+      end do
+      end do
+      end do
 
       d0 = 1. - n3
       d1 = n3 - n2
@@ -473,18 +484,21 @@ MODULE atom_patch_mod
 
       e = max(e, 0.001d0)
 
-      self%atom%data%n(x,y,z,:) = e*n4
-
+      i = 0
+      do y=1, self%n(2)
+      do x=1, self%n(1)
       do k=1,self%atom%nlevel
-        enew = e(k) - 1.d0
+        i = i+1
+        self%atom%data%n(x,y,z,k) = e(i)*n4(i)
+        enew = e(i) - 1.d0
 
         if (abs(enew) > emax) then
           emax = enew
           epos = [k, x, y, z]
         endif
       end do
-    end do
-    end do
+      end do
+      end do
     end do
     print '(A, ES14.7, 4(I4))', 'NG acceleration ', emax, epos
     call trace%end(itimer)

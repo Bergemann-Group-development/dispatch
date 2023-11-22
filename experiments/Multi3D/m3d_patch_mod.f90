@@ -136,7 +136,7 @@ MODULE m3d_patch_mod
     character(len=64), public, save:: custom_mu=''
     real(4), public :: vel_max=0.0
     real(4), public :: ray_offset(2)=[0.,0.]
-    integer, public :: pivot_z=0, ng_step=-1
+    integer, public :: pivot_z=0, ng_step=-1, ng_start=8
     type(mpi_counter_t), public :: atom_update_counter, global_maxerr, global_pos
       
     public :: hash_string, pre_update, update, print_execution_history
@@ -161,7 +161,7 @@ MODULE m3d_patch_mod
     print_finished, print_start, print_send, ray_offset, print_download, &
     lse_solver, decouple_continuum, m1d_legacy_mode, nu_tolerance, disable_stark, &
     disable_vdw, disable_ga, pivot_z, use_vel, save_Qrad, save_resolved, &
-    absmet_in_output, print_lock, make_opac_table, ng_step
+    absmet_in_output, print_lock, make_opac_table, ng_step, ng_start
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%pre_init', itimer=itimer)
     self%type = trim(self%kind)
