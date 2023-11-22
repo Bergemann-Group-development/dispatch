@@ -167,20 +167,20 @@ class read(object):
         return lam[mask], mask
 
     #=====================================================================
-    def set_xaxis(self, xx, dlam=None):
+    def set_xaxis(self, xx, dlam=None, set_labels=True):
         #-----------------------------------------------------------------
         if dlam is not None:
             plt.xlim(min(xx), max(xx))
-            plt.xlabel('$\Delta\lambda$ [Å]')
+            if set_labels: plt.xlabel('$\Delta\lambda$ [Å]')
         else:
             diff = 0.05*(xx[0] - xx[-1])
             plt.xlim(xx[0]-diff, xx[-1]+diff)
-            plt.xlabel('Wavelength [Å]')
+            if set_labels: plt.xlabel('Wavelength [Å]')
 
         plt.ticklabel_format(useOffset=False)
 
     #=====================================================================
-    def set_yaxis(self, ang, imu, norm, per_aa=False, renorm=False):
+    def set_yaxis(self, ang, imu, norm, per_aa=False, renorm=False, set_labels=True):
         #-----------------------------------------------------------------
         if ang is not None:
             ylabel = 'Intensity µ={:.2f}'.format(self.vec[ang,-1])
@@ -195,12 +195,13 @@ class read(object):
 
         if per_aa: norm=False
 
-        if norm or renorm:
-            plt.ylabel('Normalised ' + ylabel)
-        elif (per_aa):
-            plt.ylabel(ylabel + r' [erg/s/cm$^{2}$/Å]')
-        else:
-            plt.ylabel(ylabel + r' [erg/s/cm$^{2}$/Hz]')
+        if set_labels:
+            if norm or renorm:
+                plt.ylabel('Normalised ' + ylabel)
+            elif (per_aa):
+                plt.ylabel(ylabel + r' [erg/s/cm$^{2}$/Å]')
+            else:
+                plt.ylabel(ylabel + r' [erg/s/cm$^{2}$/Hz]')
 
     #=====================================================================
     def get_yy(self, ang=None, imu=None, norm=True, cont=False, LTE=False, mask=slice(None, None)):

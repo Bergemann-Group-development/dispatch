@@ -511,11 +511,9 @@ MODULE m3d_patch_mod
         endif
       endif
     endif
-    if (self%verbose > 1) then
-      if (.not. self%checked_bounds) then
-        self%print_update_info = self%check_in_bounds()
-        self%checked_bounds = .true.
-      endif
+    if (.not. self%checked_bounds) then
+      self%print_update_info = self%check_in_bounds()
+      self%checked_bounds = .true.
     endif
     self%place = 0
     call trace%end(itimer)
@@ -555,7 +553,7 @@ MODULE m3d_patch_mod
     else
       call print_execution_history(self, 'END')
     endif
-    if (self%verbose > 1) then
+    if (self%verbose > 0) then
       if (self%print_update_info) then
         call self%print_post_update_info()
       elseif (self%verbose > 2) then
@@ -975,23 +973,33 @@ MODULE m3d_patch_mod
     !$omp critical (cr_print_to_stdout)
     if (present(arr)) then
       if (size(arr)==0) then
-        write(stdout,'(A, A)') self%m3d_patch_info(), 'invalid index!'
+        write(stdout,'(A, A)') trim(patch_info()), 'invalid index!'
       else
-        write(stdout,'(A, 6(ES15.7))') self%m3d_patch_info(), arr
+        write(stdout,'(A, 6(ES15.7))') trim(patch_info()), arr
       endif
     elseif (present(text)) then
-      write(stdout,'(A, A, A)') self%m3d_patch_info(), ' ', trim(text)
+      write(stdout,'(A, A, A)') trim(patch_info()), ' ', trim(text)
     else
-      write(stdout,'(A)') self%m3d_patch_info()
+      write(stdout,'(A)') trim(patch_info())
     endif
     !$omp end critical (cr_print_to_stdout)
+  contains
+    function patch_info() result(text)
+      character(len=32) :: text
+      !-----------------------------------------------------------------------------
+      write(text, '(A12, I4)')  trim(self%kind), self%key(1)
+      if (self%i_nu /= 0) write(text, '(A, I4)') trim(text), self%i_nu
+      if (self%i_mu /= 0) write(text, '(A, I4)') trim(text), self%i_mu
+    end function
   END SUBROUTINE print_to_stdout
 
   !===============================================================================
   SUBROUTINE print_post_update_info (self)
     class(m3d_patch_t) :: self
     !-----------------------------------------------------------------------------
-    call self%print_to_stdout()
+    if (self%verbose > 1) then
+      call self%print_to_stdout()
+    endif
   END SUBROUTINE print_post_update_info
 
   !===============================================================================

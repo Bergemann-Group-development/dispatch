@@ -236,8 +236,10 @@ SUBROUTINE print_post_update_info (self)
   class(composition_patch_t):: self
   integer :: p(3)
   !-----------------------------------------------------------------------------
-  p = self%pcheck
-  call self%print_to_stdout(arr=dble(self%mem(p(1),p(2),p(3),:self%i_temp,1,1)))
+  if (self%verbose > 1) then
+    p = self%pcheck
+    call self%print_to_stdout(arr=dble(self%mem(p(1),p(2),p(3),:self%i_temp,1,1)))
+  endif
 END SUBROUTINE print_post_update_info
 
 !===============================================================================

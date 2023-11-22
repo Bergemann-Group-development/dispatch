@@ -6,6 +6,6 @@
 !&atmos_params       dims=32 atmos_format='Marcs' atmos_file='input_multi3d/atmos/p5777_g+4.4_m0.0_t01_st_z+0.00_a+0.00_c+0.00_n+0.00_o+0.00_r+0.00_s+0.00.mod '/
 &atmos_params       dims=32 atmos_format='Stagger' FeH=-0.0 nx=10 ny=10 nz=256 atmos_file='/shared-storage/bergemann-data/Stagger_remo/t5777g44m00/v05/t5777g44m0005' snap=20 /
 &atom_params        atom_file='./input_multi3d/atoms/atom.ba06' use_atom_abnd=T convlim=1d-2 convmax=1d-3/
-&m3d_params         verbose=2 maxiter=99 pcheck=1,1,-1 /
+&m3d_params         verbose=2 maxiter=99 /
 !&linelist_params    linelist_file='./input_multi3d/nlte_ges_linelist_jmg17feb2022_I_II.txt' /
 !&spectrum_params    daa=0.01 aa_blue=4840 aa_red=4880 /

@@ -424,17 +424,13 @@ SUBROUTINE nphi_copies (nphi_in, mu, wmu, vec, wts, zrot)
   real(8), intent(in), optional, dimension(:) :: zrot
   real(8) :: xphi, theta, xoff
   integer :: nrays, ntheta, i, nt, np, nmuphi, n1, nphi
-  logical :: includes_mu1, first_time=.true.
+  logical :: includes_mu1
   ! -------------------------------------------------------------------
   nrays = size(mu)
   includes_mu1 = findloc(mu, 1.0, 1) > 0
 
   ! no need for nphi copies if atmosphere is plane parallel
   nphi = merge(1, nphi_in, one_dimensional)
-  if (nphi /= nphi_in .and. first_time) then
-    first_time = .false.
-    print *, 'nphi has been set to 1 since atmosphere is 1D!'
-  endif
 
   if (includes_mu1) then
     nmuphi = (nrays-1)*nphi + 1

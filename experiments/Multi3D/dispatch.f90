@@ -45,16 +45,16 @@ PROGRAM dispatch
   call dispatcher%init                          ! Initialize the dispatcher
   call check_mpi_debug()
   call read_external%init (task_list)           ! Possibly initialize task_list
-  call timer%print() 
+  !call timer%print() 
   !call restart%init (task_list)                 ! Possibly initialize task_list
   !call cartesian%init (task_list)               ! .. or else here ...
   !call read_snapshot%init (task_list)           ! Construct ICs
   call dispatcher%execute (task_list)           ! Run dispatcher on the task_list
-  call timer%print() 
+  if (timer%verbose > 0) call timer%print() 
   call mpi%barrier()
   write(*,'(a, I3, a, F7.2, a)') 'maximum memory on rank', mpi%rank, ' was', os%max_mem, 'Gb'
-  write(*,'(a, I3, a, F7.2, a)') 'Multi3D terminated normally.'
   write(*, '(a,3x,a)') trim(atmos_file), trim(atom_file)
+  write(*,'(a, I3, a, F7.2, a)') 'Multi3D terminated normally.'
   !call os%print_tracked_mem()
   !i = findloc(os%labels(1:os%nlabels), 'nlte_patch%mem', 1)
   !print *, os%n_allocated(i), os%labelled_mem(i)

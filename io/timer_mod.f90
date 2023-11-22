@@ -46,6 +46,7 @@ MODULE timer_mod
     integer:: n_lines=0
     integer:: n_mhd=0, n_solve=0
     integer:: time_level=0
+    integer:: verbose
     type(latency_t):: latency
     real(8), pointer:: levelcost(:) => null()
     integer(8), pointer:: levelpop(:) => null()
@@ -127,6 +128,7 @@ SUBROUTINE init_parallel (self)
   end if
   write (io_unit%nml, timer_params)
   self%sec_per_report = sec_per_report
+  self%verbose = verbose
   toc_verbose = toc
   !$omp atomic write
   timer%next_report_sec = wallclock() + sec_per_report

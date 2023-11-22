@@ -56,7 +56,7 @@ MODULE read_external_mod
 
   type(read_external_t), public:: read_external
   type(rank_t) :: rank
-  character(len=126), public :: atmos_file='./input_multi3d/atmos/atmos.sun_MARCS_50'
+  character(len=256), public :: atmos_file='./input_multi3d/atmos/atmos.sun_MARCS_50'
 
 contains
 
@@ -73,7 +73,7 @@ SUBROUTINE init(self, task_list, name)
   integer :: iostat, k, ip
   integer :: patches_per_mpi=1
   integer :: dims=1, nx=5, ny=5, nz=256, snap=0
-  integer :: verbose=1
+  integer :: verbose=0
   character(len=126) :: atmos_format='Multi'
   real(4), dimension(:,:,:), pointer, contiguous :: vel
   namelist /atmos_params/ atmos_file, dims, verbose, patches_per_mpi, FeH, &
@@ -251,15 +251,19 @@ SUBROUTINE init(self, task_list, name)
     if (all(self%dims==1)) call patch%task_t%set(bits%root_grid)
     call self%setup_patch(patch)
 
-    if (k==0) write(stdout,'(I2, A28)') self%dims(3), ' subdomains in z-direction:'
-    write(stdout,'(I4, I6,A3,I4,4X,3I4, 2X, F7.4, E14.4)') k+1, patch%zs+1, ' - ', patch%ze, &
-    patch%n, (patch%position(3)-patch%origin(3))/patch%box(3), patch%ds(3)
+    if (verbose > 0) then
+      if (k==0) write(stdout,'(I2, A28)') self%dims(3), ' subdomains in z-direction:'
+      write(stdout,'(I4, I6,A3,I4,4X,3I4, 2X, F7.4, E14.4)') k+1, patch%zs+1, ' - ', patch%ze, &
+      patch%n, (patch%position(3)-patch%origin(3))/patch%box(3), patch%ds(3)
+    endif
   end do
   
   nz_total = patch%ze
   
-  write (stdout, '(A, 3(F10.4))') 'box = ', patch%box
-  write (stdout,*) ip, 'tasks generated'
+  if (verbose > 0) then
+    write (stdout, '(A, 3(F10.4))') 'box = ', patch%box
+    write (stdout,*) ip, 'tasks generated'
+  endif
 
   if (.not. irregular) then
     call self%save_atmos(patch)
@@ -295,7 +299,7 @@ SUBROUTINE init(self, task_list, name)
   ! The I/O conunters must be set before initializing patches
   !-----------------------------------------------------------------------------
   call self%task_list%set_io_counts
-  write (stdout,'(a,i8)') ' number of tasks in task list:', self%task_list%n
+  if (verbose > 0) write (stdout,'(a,i8)') ' number of tasks in task list:', self%task_list%n
   io%nwrite = product(self%dims)
   write (stdlog,*) 'read_external_mod: ntask,nwrite=', io%ntask, io%nwrite
 
@@ -398,7 +402,7 @@ SUBROUTINE read_1d_snapshot(self, atmos_file, ds, rho, temp, pe)
   real(4), intent(out), dimension(:,:,:), pointer, contiguous :: rho, temp, pe
   real(8), intent(out), dimension(:) :: ds
   integer :: nz, lunit, i, iostat
-  character(len=126) :: atmos_file
+  character(len=*) :: atmos_file
   real(4), dimension(:), allocatable :: zi
   real(4) :: vturb
   !-----------------------------------------------------------------------------
@@ -438,7 +442,7 @@ SUBROUTINE read_multi_snapshot(self, atmos_file, ds, rho, temp, ne, px, py, pz)
   real(4), intent(out), dimension(:,:,:), pointer, contiguous :: rho, temp, ne, px, py, pz
   real(8), intent(out), dimension(:) :: ds
   integer :: lunit, n(3)
-  character(len=126) :: atmos_file
+  character(len=*) :: atmos_file
   real(4) :: test
   real(4), dimension(:), allocatable :: xi, yi, zi
   !-----------------------------------------------------------------------------
@@ -585,7 +589,7 @@ SUBROUTINE init_all_nbors (self)
   !$omp parallel private(i,m,i0,i1,link) shared(self,i2,n,stdout) default(none) num_threads(omp%nthreads)
   i0 = omp%thread*i2
   i1 = i0 + i2
-  if (omp%master) &
+  if (omp%master .and. self%verbose > 0) &
     write (stdout,*) self%n, 'task to generate nbor lists for'
   link => self%head                                     ! start checking links
   i = 0                                                 ! task counter

@@ -136,7 +136,7 @@ SUBROUTINE set_freq_indices (self)
     counter => counter1
     label = 'internal'
   endif
-  if (self%i_nu > counter) then
+  if (self%i_nu > counter .and. self%verbose > 2) then
     if (counter == -999) write(stdout,'(I2, A10, A18)') self%n_nu, trim(label), 'frequency splits'
     write(stdout,'(I4, I10,A3,I8)') i_nu, fs, ' - ', fe
     counter = self%i_nu

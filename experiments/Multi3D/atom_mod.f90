@@ -59,6 +59,7 @@ MODULE atom_mod
       integer :: nline  ! number of bound-bound transitions
       integer :: nlevel ! number of levels
       integer :: nprd=0 ! number of PRD transitions
+      integer :: verbose=0
       
       character(len=128) :: name
       character(len=3)   :: id    ! atom id string 
@@ -889,7 +890,7 @@ MODULE atom_mod
       key = uppercase(adjustl(key))
 
       if (trim(key) == 'END') then
-        write(*,*) "read_collisions: read all collisions."
+        !write(*,*) "read_collisions: read all collisions."
         exit
       else
         call nextentry(latom)
@@ -1317,7 +1318,9 @@ MODULE atom_mod
     call self%get_active_nlevels(sp)
 
     write(*,'(a,I0,a)') 'sp_from_atom: frequency grid has ', sp%nnu, ' points.'
-    write(*,'(a,I0,a)') 'sp_from_atom: ', sum(sp%nac+sp%nal), ' active transition-frequency points'
+    if (self%verbose > 2) then
+      write(*,'(a,I0,a)') 'sp_from_atom: ', sum(sp%nac+sp%nal), ' active transition-frequency points'
+    endif
     call trace%end(itimer)
   END SUBROUTINE set_active_transitions
 

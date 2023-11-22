@@ -562,8 +562,10 @@ SUBROUTINE pre_init (self)
     !...........................................................................
     if (mpi%rank > 0) &
       self%track = .true.
-    write (stdout,*) 'patch_t%pre_init: etype='//trim(self%etype)// &
-                                      ', kind='//trim(self%kind)
+    if (verbose > 0) then
+      write (stdout,*) 'patch_t%pre_init: etype='//trim(self%etype)// &
+                                        ', kind='//trim(self%kind)
+    endif
     first_time = .false.
   end if
   !-----------------------------------------------------------------------------

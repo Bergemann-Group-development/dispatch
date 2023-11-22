@@ -181,7 +181,6 @@ class trans_class(object):
         self.i0 = np.searchsorted(self.run.lam, self.lam0)
         self.ib = np.searchsorted(self.run.lam, self.lb)
         self.ir = np.searchsorted(self.run.lam, self.lr, side='right')
-        self.dlam = self.lam0 - self.run.lam[self.ib]
         slc = slice(self.ib, self.ir)
         self.lam  = self.run.lam[slc]
         self.flux = self.run.flux[slc]
@@ -191,7 +190,7 @@ class trans_class(object):
     #=====================================================================
     def plot(self, ang=None, imu=None, norm=True, dlam=None,
                 vdop=None, vshift=None, convolve=None, renorm=False,
-                LTE=False, title=None, **kwargs):
+                LTE=False, title=None, set_labels=True, **kwargs):
         #-----------------------------------------------------------------
         if self.run.n_ang == 1: ang=0
 
@@ -199,13 +198,14 @@ class trans_class(object):
                             vdop=vdop, vshift=vshift, convolve=convolve,
                             renorm=renorm, LTE=LTE)
 
-        self.run.set_xaxis(xx, dlam)
-        self.run.set_yaxis(ang, imu, norm, renorm)
+        self.run.set_xaxis(xx, dlam, set_labels=set_labels)
+        self.run.set_yaxis(ang, imu, norm, renorm, set_labels=set_labels)
 
         plot = plt.plot(xx, yy, **kwargs)
 
-        set_title(title, default=self.title+', '+self.el.title)
-        set_legend(**kwargs)
+        if set_labels:
+            set_title(title, default=self.title+', '+self.el.title)
+            set_legend(**kwargs)
 
         return plot
     
@@ -265,19 +265,16 @@ class trans_class(object):
         if not self.prepared: self.prepare()
         xx = self.run.lam
 
-        if dlam is None:
-            dl = self.dlam
-        elif isinstance(dlam, (bool)):
-            dl = self.dlam
+        if dlam is None or isinstance(dlam, (bool)):
+            ib = self.ib
+            ir = self.ir
         else:
-            dl = dlam
-            
-        if isinstance(dlam, tuple):
-            ib = np.searchsorted(xx - self.lam0, dlam[0])
-            ir = np.searchsorted(xx - self.lam0, dlam[1])
-        else:
-            ib = np.searchsorted(xx - self.lam0, -dl)
-            ir = np.searchsorted(xx - self.lam0,  dl)
+            if isinstance(dlam, tuple):
+                ib = np.searchsorted(xx - self.lam0, dlam[0])
+                ir = np.searchsorted(xx - self.lam0, dlam[1])
+            else:
+                ib = np.searchsorted(xx - self.lam0, -dlam)
+                ir = np.searchsorted(xx - self.lam0,  dlam)
 
         mask = slice(ib, ir)
         xx = xx[mask]

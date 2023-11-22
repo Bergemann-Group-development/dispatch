@@ -140,6 +140,7 @@ MODULE atom_patch_mod
       write (*,*) ' - Reading atom'
       call atom%read(atom_file, qnorm, in_lines=in_lines, read_coll=.true.)
       atom%name = 'input'
+      atom%verbose = self%verbose
 
       call os%copy_file(trim(atom_file), trim(io%run_dir)//'atom.txt')
       if (abundance > -99) atom%abnd = abundance
@@ -392,7 +393,7 @@ MODULE atom_patch_mod
     if (count >= self%task_list%dims(3)) then
       global = global_maxerr%update(0.d0)
       if ((global > 0) .and. global < convlim .and. self%maxerr < convlim) then
-        write(stdout, *) self%ipos(3)+1, 'Converged!', global
+        !write(stdout, *) self%ipos(3)+1, 'Converged!', global
         if (self%iter < self%maxiter) converged = .true.
         call self%finish()
       endif
@@ -402,18 +403,17 @@ MODULE atom_patch_mod
       p = self%pcheck
       l = self%linecheck
       memcheck(1) = self%atom%data%n(p(1),p(2),p(3),self%lvlcheck)
-      memcheck(2) = self%atom%data%totn(p(1),p(2),p(3))
       if (associated(self%atom%data%gamma_ij)) then
         if (self%linecheck<=self%atom%nrad) then
-          memcheck(3) = self%atom%data%gamma_ij(p(1),p(2),p(3),l)
-          memcheck(4) = self%atom%data%gamma_ji(p(1),p(2),p(3),l)
+          memcheck(2) = self%atom%data%gamma_ij(p(1),p(2),p(3),l)
+          memcheck(3) = self%atom%data%gamma_ji(p(1),p(2),p(3),l)
           if (l<=self%atom%nline) then
-            memcheck(5) = self%atom%data%wphi(p(1),p(2),p(3),l)
+            memcheck(4) = self%atom%data%wphi(p(1),p(2),p(3),l)
           endif
         endif
       else
-        memcheck(3) = 10.0**(self%atom%abnd-12.0)
-        memcheck(4) = self%composition%toth(p(1),p(2),p(3))
+        memcheck(2) = 10.0**(self%atom%abnd-12.0)
+        memcheck(3) = self%composition%toth(p(1),p(2),p(3))
       endif
     endif
 
@@ -520,6 +520,8 @@ MODULE atom_patch_mod
     !-----------------------------------------------------------------------------
     if (self%iter == 0) then
       write(text,'(A,I2,A,I2,A)') 'LTE Iteration .'
+    elseif (converged) then
+      write(text,'(A)') 'Converged!'
     else
       write(text,'(A,I2,A,I2,A)') 'Iteration ', self%iter, '/', self%maxiter, '.'
     endif
@@ -527,14 +529,15 @@ MODULE atom_patch_mod
     if (self%update_skipped) then
       call self%print_to_stdout(text='update skipped')
     elseif (self%m3d_patch_t%check_in_bounds()) then
-      call self%print_to_stdout(arr=memcheck(1:5))
+      call self%print_to_stdout(arr=memcheck(1:4))
     else
       call self%print_to_stdout()
     endif
     global = global_maxerr%update(0.d0)
     ipos = global_pos%update(+0)
-    write(stdout,'(A19, ES19.7, A10, ES15.7, A9, I2, 2X, 4I4)') 'local err =', self%maxerr, &
-      ', global =', global, ', ipos = ', ipos+1, elvl, epos
+    write(stdout,'(A, ES12.4, A10, ES12.4, A, I4, A, "[", 3I4, "]")') &
+      '  local =', self%maxerr,  ', global =', global, &
+      ', lvl =',elvl, ', pos=', epos
     write(stdout,'(1X, A80)') &
     '................................................................................'
   END SUBROUTINE print_post_update_info

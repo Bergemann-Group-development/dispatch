@@ -17,6 +17,7 @@ contains
     real(8), intent(out) :: ds(3), FeH
     real(4), intent(out), dimension(:,:,:), pointer, contiguous :: rho, temp, pe
     integer :: lunit, iostat, ndepth, kk, k
+    real(8) :: FeH_marcs
     real(4) :: teff, flux, g, xite, rmass, rmetal, alpha, radius, rluminosity
     real(4) :: xx, yy, zz, palfa, pny, py, pbeta, abund(92)
     real(4) :: lgTauR, lgTau5, pg, prad, pturb, xkapr, emu, vconv, fconv, rhox
@@ -31,7 +32,7 @@ contains
     read(lunit,*) g                     ! Surface gravity [cm/s2]
     read(lunit,*) xite                  ! Microturbulence parameter [km/s]
     read(lunit,*) rmass                 ! No mass for plane-parallel models
-    read(lunit,*) FeH, alpha            ! Metallicity [Fe/H] and [alpha/Fe]
+    read(lunit,*) FeH_marcs, alpha      ! Metallicity [Fe/H] and [alpha/Fe]
     read(lunit,*) radius                ! 1 cm radius for plane-parallel models
     read(lunit,*) rluminosity           ! Luminosity [Lsun] FOR A RADIUS OF 1 cm!
     read(lunit,*) palfa, pny, py, pbeta ! Convection parameters: alpha, nu, y and beta
@@ -42,7 +43,10 @@ contains
     read(lunit,*) ! skip comment
     read(lunit,*) ! skip comment
 
-    write(stdout, '(A, F6.2)') 'FeH was overwritten by Marcs model: [Fe/H] =', FeH
+    if (FeH /= FeH_marcs) then
+      FeH = FeH_marcs
+      write(stdout, '(A, F6.2)') 'FeH was overwritten by Marcs model: [Fe/H] =', FeH
+    endif
     
     allocate(in_depth(ndepth))
     allocate(in_temp (ndepth))

@@ -1199,7 +1199,9 @@ END SUBROUTINE save_contribution_function
 SUBROUTINE print_post_update_info (self)
   class(nlte_patch_t) :: self
   !-----------------------------------------------------------------------------
-  call self%print_to_stdout(arr=memcheck(1:3))
+  if (self%verbose > 1) then
+    call self%print_to_stdout(arr=memcheck(1:3))
+  endif
 END SUBROUTINE print_post_update_info
 
 !===============================================================================

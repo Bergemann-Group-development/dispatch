@@ -229,8 +229,10 @@ SUBROUTINE init_levels (self)
   shared%levelmin = refine%levelmin
   shared%levelmax = refine%levelmax
   !.............................................................................
-  write (io%output,'(1x,a,2i4)') &
-    'AMR levels:  min, max = ', refine%levelmin, refine%levelmax
+  if (self%verbose > 0) then
+    write (io%output,'(1x,a,2i4)') &
+      'AMR levels:  min, max = ', refine%levelmin, refine%levelmax
+  endif
   call self%init_levelstats
   call trace%end()
 END SUBROUTINE init_levels
@@ -304,7 +306,7 @@ SUBROUTINE startup (self)
   !-----------------------------------------------------------------------------
   ! Initialize the data I/O, and start timer
   !-----------------------------------------------------------------------------
-  call os%gb_print (os%gb)
+  !call os%gb_print (os%gb)
   call mpi%barrier ('self%execute')
   call timer%tic (time=sec)
 !  call timer%print()
@@ -764,8 +766,10 @@ SUBROUTINE end_game (self, task)
       self%first_finished = wallclock()             ! cf. dispatcher
       call load_balance%set (active=.false.)        ! turn off load balancing
       refine%on = .false.                           ! turn off refinement
-      write (stdout,'(a,1p,g12.4)') &
-        ' first finish at run time =', self%first_finished
+      if (self%verbose > 0) then
+        write (stdout,'(a,1p,g12.4)') &
+          ' first finish at run time =', self%first_finished
+      endif
       write (stdlog,'(a,1p,g12.4)') &
         ' first finish at run time =', self%first_finished
     end if
