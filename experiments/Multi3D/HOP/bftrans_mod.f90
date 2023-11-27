@@ -415,6 +415,7 @@ contains
       allocate(lagrange(3,nf), source=0.d0)
       call os%allocate(pvt_xkap, shape(self%xkap))
       allocate(fakt, mold=temp)
+      fakt = huge(1d0)
 
       call self%load_lam_interp_weights(lam)
 
