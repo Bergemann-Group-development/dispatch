@@ -145,7 +145,7 @@ MODULE spectrum_mod
     SUBROUTINE save (self, label)
       class(spectrum_type), intent(inout):: self
       character(len=*), intent(in) :: label
-      character(len=128) :: filename
+      character(len=256) :: filename
       integer :: lunit
       !-----------------------------------------------------------------------------
       if (.not. self%saved) then

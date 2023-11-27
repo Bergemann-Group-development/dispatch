@@ -38,13 +38,13 @@ MODULE io_mod
     !integer:: dims(3)=0         ! FIXME
     integer:: mpi_dims(3)=1     ! FIXME
     integer:: print_every=0, iprint=0       ! print cadence
-    character(len=120):: inputname          ! input namelist file (e.g. run.nml)
-    character(len=120):: inputdir='data/'   ! input directory (restart_mod)
-    character(len=120):: run_name=''        ! run part of input file
-    character(len=120):: data_dir='data/'   ! data
-    character(len=120):: run_dir='data/'    ! data/run
-    character(len=120):: outputname         ! same as run_dir, for compatibily
-    character(len=120):: top                ! base name
+    character(len=256):: inputname          ! input namelist file (e.g. run.nml)
+    character(len=256):: inputdir='data/'   ! input directory (restart_mod)
+    character(len=256):: run_name=''        ! run part of input file
+    character(len=256):: data_dir='data/'   ! data
+    character(len=256):: run_dir='data/'    ! data/run
+    character(len=256):: outputname         ! same as run_dir, for compatibily
+    character(len=256):: top                ! base name
     character(len=1):: sep = '/'
     character(len=72):: &
     hl='-------------------------------------------------------------------------'
@@ -130,8 +130,8 @@ SUBROUTINE init (self, name)
   class(io_t):: self
   integer, save:: verbose=0, levelmax=10
   character(len=*), optional:: name
-  character(len=120):: filename, datadir='data'
-  character(len=120), save:: top='../../'
+  character(len=256):: filename, datadir='data'
+  character(len=256), save:: top='../../'
   character(len=16), save:: method='background'
   integer, save:: id_debug=-1, restart=-9, format=0, time_derivs=0
   integer, save:: log_sent=0, task_logging=0, nml_version=4
@@ -437,7 +437,7 @@ SUBROUTINE open_rank_file (unit, ext, form, thread)
   integer:: unit
   integer, optional:: thread
   character(len=*):: ext, form
-  character(len=120):: filename
+  character(len=256):: filename
   !-----------------------------------------------------------------------------
   if (present(thread)) then
     write (io_unit%threadbase,'(a,"thread_",i5.5,"_",i3.3)') &

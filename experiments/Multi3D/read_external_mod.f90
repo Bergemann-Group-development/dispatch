@@ -77,7 +77,7 @@ SUBROUTINE init(self, task_list, name)
   character(len=126) :: atmos_format='Multi'
   real(4), dimension(:,:,:), pointer, contiguous :: vel
   namelist /atmos_params/ atmos_file, dims, verbose, patches_per_mpi, FeH, &
-  atmos_format, vmic, use_density, use_ne, nx, ny, nz, snap
+  atmos_format, vmic, use_density, use_ne, nx, ny, nz, snap, legacy_stagger_interp
   !-----------------------------------------------------------------------------
   if (associated(task_list)) return
   call trace%begin('read_external_t%init')
@@ -141,7 +141,7 @@ SUBROUTINE init(self, task_list, name)
       call read_stagger_snapshot(self%ds, self%rho, self%px, self%py, &
       self%pz, self%ee, self%temp, self%ne)
     case ('Marcs')
-      call read_marcs(atmos_file, nz, self%ds, self%rho, self%temp, self%pe, FeH)
+      call read_marcs(atmos_file, nz, self%ds, self%rho, self%temp, self%pe, FeH, vmic)
     case ('Multi')
       call self%read_multi_snapshot(atmos_file, self%ds, self%rho, self%temp, &
                                     self%ne, self%px, self%py, self%pz)

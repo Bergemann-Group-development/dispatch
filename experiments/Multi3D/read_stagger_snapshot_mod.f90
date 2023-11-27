@@ -20,12 +20,12 @@ MODULE read_stagger_snapshot_mod
   real(4), parameter :: uup = uur * uue   ! pressure
   real(4), parameter :: uua = 1./uul      ! extinction coefficient (alpha)
   !character(len=128), public :: stagger_file='/lustre/astro/rhoppe/multi-3d/input/atmos/t5777g44m00/t5777g44m0005'
-  character(len=128), save :: mesh_file, snap_file, data_file, aux_file
+  character(len=256), save :: mesh_file, snap_file, data_file, aux_file
   integer, save :: dims(3)!=[5,5,230], snap=0
   real(4), save :: maxTemp=huge(1.0)
   real(4), save :: ee_offset=3.2122
   character(len=128), save :: refinement=''
-  logical, public, save :: irregular=.false.
+  logical, public, save :: irregular=.false., legacy_stagger_interp=.false.
   integer, dimension(:), allocatable, save, public  :: stagger_levels
   real(8), dimension(:), allocatable, save:: level_ratio
   integer, save :: maxlvl, minlvl
@@ -103,17 +103,20 @@ SUBROUTINE read_stagger_snapshot(ds, d, px, py, pz, ee, tt, ne)
   call os%allocate(newy, dims(2))
   call os%allocate(newz, dims(3))
 
-  newx = [ (ds(1)*i, i=0, dims(1)-1) ]
-  newy = [ (ds(2)*i, i=0, dims(2)-1) ]
-  newz = [ (ds(3)*i, i=0, dims(3)-1) ]
+  if (legacy_stagger_interp) then
+    newx = linspace(xx(1), xx(nx), dims(1))
+    newy = linspace(yy(1), yy(ny), dims(2))
+    newz = linspace(zz(1), zz(nz), dims(3))
 
-  !newx = linspace(xx(1), xx(nx), dims(1))
-  !newy = linspace(yy(1), yy(ny), dims(2))
-  !newz = linspace(zz(1), zz(nz), dims(3))
+    ds(1) = (newx(dims(1)) - newx(1)) / (dims(1) - 1)
+    ds(2) = (newy(dims(2)) - newy(1)) / (dims(2) - 1)
+    ds(3) = (newz(dims(3)) - newz(1)) / (dims(3) - 1)
+  else
+    newx = [ (ds(1)*i, i=0, dims(1)-1) ]
+    newy = [ (ds(2)*i, i=0, dims(2)-1) ]
+    newz = [ (ds(3)*i, i=0, dims(3)-1) ]
+  endif
 
-  !ds(1) = (newx(dims(1)) - newx(1)) / (dims(1) - 1)
-  !ds(2) = (newy(dims(2)) - newy(1)) / (dims(2) - 1)
-  !ds(3) = (newz(dims(3)) - newz(1)) / (dims(3) - 1)
   ds = ds * uul
 
   call os%allocate(d,  dims)

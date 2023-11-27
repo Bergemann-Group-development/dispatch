@@ -23,6 +23,7 @@ class trans_class(object):
         self.kr = kr
         self.el = atom
         self.atom  = atom
+        self.prepared = False
         
         if kr < atom.nline:
             try:

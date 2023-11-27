@@ -180,9 +180,9 @@ MODULE m3d_patch_mod
       call io%namelist_warning ('m3d_params', iostat)
       if (mpi%master) then
         call os%mkdir(trim(io%run_dir)//'save')
-        write (command, *) 'rm ', trim(io%run_dir), '*.txt ', trim(io%run_dir), '*.bin'
+        write (command, *) 'rm -f ', trim(io%run_dir), '*.txt ', trim(io%run_dir), '*.bin'
         call execute_command_line (trim(command), exitstat=iostat)
-        write (command, *) 'rm ', trim(io%run_dir), 'save/*.txt ', trim(io%run_dir), 'save/*.bin'
+        write (command, *) 'rm -f ', trim(io%run_dir), 'save/*.txt ', trim(io%run_dir), 'save/*.bin'
         call execute_command_line (trim(command), exitstat=iostat)
       endif
       one_dimensional = all(self%patch%n(1:2) == 1)
@@ -1141,7 +1141,7 @@ MODULE m3d_patch_mod
     class(m3d_patch_t):: self
     real(4), dimension(..) :: mem
     character(len=*) :: label
-    character(len=128) :: meta_file, folder
+    character(len=256) :: meta_file, folder
     character(len=32) :: filename, fmt
     integer :: i, lunit, ndim
     ! ----------------------------------------------------------------------------

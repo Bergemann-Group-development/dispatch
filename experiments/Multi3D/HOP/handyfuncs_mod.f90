@@ -53,7 +53,7 @@ END FUNCTION
 FUNCTION string_in_text (text, str) result(in_text)
   character(len=*) :: str
   character(len=*) :: text
-  character(len=128) :: dummy
+  character(len=256) :: dummy
   integer :: i, j 
   logical :: in_text
   ! ----------------------------------------------------------------------------
@@ -75,7 +75,7 @@ END FUNCTION
 !===============================================================================
 FUNCTION extract_int (str) result(val)
   character(len=*) :: str
-  character(len=128) :: dummy
+  character(len=256) :: dummy
   integer :: i, o, val
   ! ----------------------------------------------------------------------------
   i = scan(str, '0123456789')

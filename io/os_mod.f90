@@ -317,7 +317,7 @@ SUBROUTINE copy_file (file1, file2)
   !.............................................................................
   logical:: exists
   integer:: u1, u2, n, iostat
-  character(len=120):: line
+  character(len=512):: line
   !-----------------------------------------------------------------------------
   call mpi%barrier ('copy_file')
   if (mpi%master .and. omp%master) then

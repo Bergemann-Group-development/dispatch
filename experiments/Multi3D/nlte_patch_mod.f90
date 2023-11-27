@@ -1308,7 +1308,7 @@ SUBROUTINE save_intensity (self)
   class(nlte_patch_t) :: self
   real(4), dimension(:,:,:,:,:), allocatable :: ie, i3
   integer :: meta_unit, iostat, i, nmu
-  character(len=128) :: meta_file
+  character(len=256) :: meta_file
   !-----------------------------------------------------------------------------
   fs = self%fs
   fe = self%fe

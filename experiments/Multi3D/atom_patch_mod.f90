@@ -62,8 +62,8 @@ MODULE atom_patch_mod
     logical, save :: level_partf=.true.
     logical, save :: exclude_from_line_list=.true.
     logical, save :: detailed_absmet=.false.
-    character(len=128), save :: precomputed_depart=''
-    character(len=128), public :: atom_file=''
+    character(len=256), save :: precomputed_depart=''
+    character(len=256), public :: atom_file=''
     logical, public, save :: external_sp=.false.
 
     !-----------------------------------------------------------------------------
@@ -849,9 +849,9 @@ MODULE atom_patch_mod
   !===============================================================================
   SUBROUTINE load_mem (self, folder, label)
     class(atom_patch_t), intent(inout) :: self
-    character(len=128), intent(in) :: folder
+    character(len=256), intent(in) :: folder
     character(len=*), intent(in) :: label
-    character(len=128) :: filename, sfolder, metafile, file
+    character(len=256) :: filename, sfolder, metafile, file
     real(4), dimension(:,:,:,:,:), pointer, contiguous :: mem
     integer :: lunit, file_size, mem_size, iostat, prec, oldm(5), newm(5), iv, iw, k, i
     logical, save :: first_time=.true.

@@ -50,14 +50,14 @@ SUBROUTINE composition_pre_init (self)
   integer :: i, iostat, n_nu, nlists, mu
   integer, save:: itimer=0, itimer2=0
   integer, save :: verbose=0
-  character(len=128), save :: absdat_file='./input_multi3d/TS_absdat.dat'
-  character(len=128), save :: abund_file='./input_multi3d/abund_magg'
-  character(len=128), save :: isotope_file=''!'./input_multi3d/isotopes_abund.txt'
-  character(len=128), save :: molec_file='./input_multi3d/molec_data.txt'
-  character(len=128), save :: opac_table=''
-  character(len=128), save :: absmet_file=''
+  character(len=256), save :: absdat_file='./input_multi3d/TS_absdat.dat'
+  character(len=256), save :: abund_file='./input_multi3d/abund_magg'
+  character(len=256), save :: isotope_file=''!'./input_multi3d/isotopes_abund.txt'
+  character(len=256), save :: molec_file='./input_multi3d/molec_data.txt'
+  character(len=256), save :: opac_table=''
+  character(len=256), save :: absmet_file=''
   character(len=512), save :: linelist_file=''
-  character(len=128), save :: line_lists(10)=''
+  character(len=256), save :: line_lists(10)=''
   logical, save :: first_time=.true., absmet_big_end=.false., external_sp
   namelist /composition_params/ verbose, absdat_file, abund_file, absmet_file, &
   absmet_big_end, isotope_file, molec_file, H_occupation_probability, opac_table

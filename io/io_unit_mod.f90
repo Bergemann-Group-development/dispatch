@@ -15,9 +15,9 @@ MODULE io_unit_mod
       aux=30, particle_d=31, particle_i=32, tmp=50, sent=150, &
       mesa=200 ! Mesa has reserved numbers >= 200
     integer:: iodir = -1
-    character(len=64):: inputname='input.nml', data_dir='data/', top='../../'
-    character(len=64):: run_dir='data/', inputdir='data/'
-    character(len=64):: rankbase='rank', threadbase='thread'
+    character(len=256):: inputname='input.nml', data_dir='data/', top='../../'
+    character(len=256):: run_dir='data/', inputdir='data/'
+    character(len=256):: rankbase='rank', threadbase='thread'
   contains
     procedure, nopass:: print_id
   end type

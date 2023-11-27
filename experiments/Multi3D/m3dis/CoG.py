@@ -28,14 +28,14 @@ class CoG_line(object):
         weqs = np.zeros(self.cog.nruns)
 
         for i, run in enumerate(self.cog.runs):
-            line = run.line[self.kr]
+            line = run.atom.trans[self.kr]
             weqs[i] = line.calc_weq(**kwargs)
 
         return self.cog.abnds, weqs
     
     def get_weq_corr(self, nlte_run, **kwargs):
         abnds, weqs = self.get_cog(**kwargs)
-        nlte_weq = nlte_run.line[self.kr].calc_weq(**kwargs)
+        nlte_weq = nlte_run.atom.trans[self.kr].calc_weq(**kwargs)
         func = PchipInterpolator(weqs,abnds)
         corr = nlte_run.atom.abnd - func(nlte_weq)
         return corr
@@ -86,7 +86,7 @@ class CoG(object):
         self.abnds = self.abnds[order]
         self.mus = np.unique(runs[0].vec[:,-1])[::-1]
         self.atom = runs[0].atom
-        self.line = [CoG_line(self, kr) for kr in range(self.atom.nline)]
+        self.line = [CoG_line(self, line.kr) for line in self.runs[0].line]
         
     
     #=================================================================

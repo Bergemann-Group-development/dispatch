@@ -471,6 +471,7 @@ MODULE atom_mod
     type(line_type), pointer :: lin => null()
     type(cont_type), pointer :: cnt => null()
     type(coll_type), pointer :: col => null()
+    logical, dimension(:,:), allocatable :: ij_check
     real(8), allocatable, dimension(:) :: nu, alpha, tgrid
     real(8) :: scr, gv, gq, cnt_ev, nu_max, alpha0, thresh_aa, dnu
     real(8) :: gij, red_fcut, blu_fcut, vbar2e4
@@ -520,6 +521,7 @@ MODULE atom_mod
       endif
     end do
 
+    allocate(ij_check(self%nlevel, self%nlevel), source=.false.)
     allocate(self%line(self%nline)) 
     call os%mem_register(storage_size(self%line), self%nline, label='atom%line')
 
@@ -537,6 +539,12 @@ MODULE atom_mod
       lin%j = max(ii, jj)
       lin%q0   = lin%q0  
       lin%qmax = lin%qmax
+
+      if (ij_check(lin%i, lin%j)) then
+        print *, 'Transition assigned twice!', lin%i, lin%j
+      else
+        ij_check(lin%i, lin%j) = .true.
+      endif
 
       ! make sure we always have an odd number of frequency points for a line
       if (mod(lin%nnu,2) == 0) lin%nnu=lin%nnu+1

@@ -56,7 +56,7 @@ MODULE ion_mod
         !procedure :: absorption_factor => ion_absorption_factor
     end type
 
-    real(dp), public :: vmic=0.d0
+    real(dp), public :: vmic=-1.
 
 contains
 

@@ -43,6 +43,7 @@ class read(object):
             if 'line_mask' in self.nml.keys():
                 if 'in_lines' in self.nml['line_mask'].keys():
                     in_lines = self.nml['line_mask']['in_lines']
+                    if type(in_lines)==int: in_lines=[in_lines]
                     lines = [self.atom.trans[i-1] for i in in_lines]
                 
             lines = [line for line in lines if np.log10(line.fosc*line.lower.g) > loggf_cut]
@@ -91,9 +92,8 @@ class read(object):
             
         if hasattr(self, 'atom'):
             #print('Prepairing transitions')
-            for line in self.line:
-                line.run = self
-                line.prepared = False
+            for trans in self.atom.trans:
+                trans.run = self
             
         if os.path.isfile(folder + 'atmos_mesh.txt'):
             mesh = open(folder + 'atmos_mesh.txt', 'r')
