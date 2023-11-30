@@ -499,7 +499,7 @@ SUBROUTINE save_multi_atmos (self)
   real(8) :: ds(3)
   integer :: lunit, i, j, recl
   !-----------------------------------------------------------------------------
-  open(file=trim(io%run_dir)//'mesh.multi', newunit=lunit, form='FORMATTED')
+  open(file=trim(io%run_dir)//'multi.mesh', newunit=lunit, form='FORMATTED')
   ds = self%ds * scaling%l
   do i=1, 3
     write(lunit, *) self%n(i)
@@ -522,7 +522,7 @@ SUBROUTINE save_multi_atmos (self)
 
   recl = kind(1.0)*product(self%n)
 
-  open(file=trim(io%run_dir)//'atm3d.multi', newunit=lunit, form='UNFORMATTED', access='direct', recl=recl)
+  open(file=trim(io%run_dir)//'multi.atmos', newunit=lunit, form='UNFORMATTED', access='direct', recl=recl)
   write(lunit, rec=1) ne  
   write(lunit, rec=2) temp
   write(lunit, rec=3) vx  

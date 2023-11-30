@@ -305,9 +305,6 @@ MODULE atom_patch_mod
 
     if (precomputed_depart /= '') then
       call self%load_mem(precomputed_depart, self%kind)
-      do i=1, atom%nlevel
-        n(:,:,:,i) = n(:,:,:,i) * nstar(:,:,:,i) 
-      end do
     else
       do i=1, atom%nlevel
         n(:,:,:,i) = nstar(:,:,:,i) 
@@ -856,7 +853,6 @@ MODULE atom_patch_mod
     integer :: lunit, file_size, mem_size, iostat, prec, oldm(5), newm(5), iv, iw, k, i
     logical, save :: first_time=.true.
     ! ----------------------------------------------------------------------------
-    call self%check_access(self)
     write(sfolder, '(A, A)') trim(folder), 'save/'
     write(filename, '(A, A, 2(I3.3), A)') trim(label), '_', self%key(1:2), '.bin'
     write(metafile, '(A, A)') trim(label), '_meta.txt'
