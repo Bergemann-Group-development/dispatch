@@ -22,10 +22,10 @@ EK  = EE/BK
 saha_const=0.5*(HH/np.sqrt(2.*PI*EM)/np.sqrt(BK))**3
         
 class atom_class(object):
-    def _read(self, dtype=None):
-        return _read(self.f, dtype)
+    def _read(self, **kwargs):
+        return _read(self.f, **kwargs)
     
-    def __init__(self, atom_file, atmos=None, qnorm=10, read_coll=False, verbose=0, sanity_check=True):
+    def __init__(self, atom_file, atmos=None, qnorm=10, read_coll=False, read_bf=False, verbose=0, sanity_check=False):
         if (verbose > 0): print('Reading atom')
         
         self.file = atom_file
@@ -37,10 +37,10 @@ class atom_class(object):
         self.molec = self.id in ['H2', 'C2', 'N2', 'O2', 'CH', 'OH', 'NH', 'CN', 'CO', 'NO', 'H2O']
         if not self.molec: self.id = self.id.capitalize()
 
-        self.abnd, self.ai = self._read(float)
+        self.abnd, self.ai = self._read(dtype=float)
         self.awgt = self.ai * UU
         
-        self.nk, self.nline, self.ncont, self.nrfix = self._read(int)
+        self.nk, self.nline, self.ncont, self.nrfix = self._read(dtype=int)
         self.nrad = self.nline + self.ncont
         
         self.level = [None]*self.nk
@@ -54,13 +54,15 @@ class atom_class(object):
         for i in range(self.nk):
             self.level[i] = level_class(self, i)
 
+        self.ground_states = np.where(np.diff([level.ion for level in self.level], prepend=0) > 0)[0]
+
         if self.level[0].ion == self.level[-1].ion and self.ncont > 0:
             print('No ionised or dissociated stage in atom file, but continua are given!')
         
         # Reading transitions
         if (verbose > 0): print('Reading transitions')
         for kr in range(self.nrad):
-            self.trans[kr] = trans_class(self, kr)
+            self.trans[kr] = trans_class(self, kr, read_bf=read_bf)
             
             
         if read_coll:
@@ -70,7 +72,7 @@ class atom_class(object):
                 
                 while key != 'END':
                     if key == 'TEMP':
-                        coltemp = np.array(self._read(float)[1:])
+                        coltemp = np.array(self._read(dtype=float)[1:])
                     else:
                         self.colls.append(collision_class(self, key, coltemp))
                     

@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from .auxfuncs import *
+from .auxfuncs import vacuum2obs, _vacuum2obs, is_number, freq_quad
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 
@@ -19,7 +19,7 @@ EK  = EE/BK
 
 
 class trans_class(object):
-    def __init__(self, atom, kr):
+    def __init__(self, atom, kr, read_bf=True):
         self.kr = kr
         self.el = atom
         self.atom  = atom
@@ -61,7 +61,7 @@ class trans_class(object):
         
         self.alamb = 1 / (self.upper.ecm - self.lower.ecm) * 1e8
         self.u = CC / self.alamb * 1e8
-        self.lam0 = vacuum2obs(np.array(self.alamb))
+        self.lam0 = _vacuum2obs(self.alamb)
 
         if kr < atom.nline:
             if not hasattr(atom, 'c_lam0'):
@@ -105,39 +105,33 @@ class trans_class(object):
             self.cont = False
             
             lam = self.alamb / (q*atom.qnorm/(CC*1e-5) + 1)
+            self.lam_red  = lam[ 0]
+            self.lam_blue = lam[-1]
             
-            if (atom.level[-1].ion > atom.level[0].ion):
-                self.prepare_VanderWaals(self.gw)
+            #if (atom.level[-1].ion > atom.level[0].ion):
+            #    self.prepare_VanderWaals(self.gw)
+            #cont = np.searchsorted(atom.ground_states, self.upper.i)
+            #if len(atom.ground_states)>1:
+            #    cont = atom.level[cont]
+            #    self.iee = cont.ev-self.lower.ev
+            #    self.jee = cont.ev-self.upper.ev
         
-        else:
+        elif read_bf:
             if self.qmax < 0:
-                self.lam=np.zeros(self.nq)
-                self.alfac=np.zeros(self.nq)
-                
-                for i in range(self.nq):
-                    self.lam[i], self.alfac[i] = map(float, atom._read())
-                    
+                self.lam, self.alfac = np.loadtxt(atom.f, dtype=float, max_rows=self.nq).T
                 lam = self.lam
                     
             else:
                 frq = np.linspace(self.u, CC / self.qmax * 1e8, self.nq)
                 lam = CC / frq * 1e8
+            
+            self.lam_red  = lam[ 0]
+            self.lam_blue = lam[-1]
         
             self.iwide = True
             self.cont = True
-            
-        self.lam_red  = lam[ 0]
-        self.lam_blue = lam[-1]
-        
-        if not self.cont:
-            ions = np.array([lvl.ion for lvl in atom.level])
-            self.zz = self.lower.ion
-            cont = np.where(ions > self.upper.ion)[0]
-
-            if len(cont)>0:
-                cont = atom.level[cont[0]]
-                self.iee = cont.ev-self.lower.ev
-                self.jee = cont.ev-self.upper.ev
+        else:
+            if self.qmax < 0: [atom.f.readline() for i in range(self.nq)] # skipping bf-data
 
 
     def _read(self):
@@ -177,8 +171,8 @@ class trans_class(object):
     #=====================================================================
     def prepare(self):
         #-----------------------------------------------------------------
-        self.lb = vacuum2obs(np.array(self.lam_blue))*(1-1e-7)
-        self.lr = vacuum2obs(np.array(self.lam_red ))*(1+1e-7)
+        self.lb = vacuum2obs(self.lam_blue)*(1-1e-7)
+        self.lr = vacuum2obs(self.lam_red )*(1+1e-7)
         self.i0 = np.searchsorted(self.run.lam, self.lam0)
         self.ib = np.searchsorted(self.run.lam, self.lb)
         self.ir = np.searchsorted(self.run.lam, self.lr, side='right')

@@ -114,8 +114,8 @@ MODULE m3d_patch_mod
     end type m3d_patch_t
   
     !-----------------------------------------------------------------------------
-    integer, save, public:: verbose=0
-    integer, public :: maxiter, ilambd, nz_total
+    integer, save, public:: verbose=2
+    integer, public :: maxiter=0, ilambd, nz_total
     integer, public :: cswitch=1
     integer, public, save :: save_id=-1
     real(8), public, save, dimension(:), allocatable:: wmu, long_wmu
@@ -150,7 +150,7 @@ MODULE m3d_patch_mod
     logical, save :: first_time=.true.
     logical, save :: on=.true.
     integer :: iostat, m(6), i
-    character(len=256) :: command
+    character(len=512) :: command
     integer, save :: n_nu=0, itimer=0, ntheta=3, nphi=4
     character(len=32), save :: quad_scheme='radau2'
     character(len=32), save :: long_scheme='lobatto'

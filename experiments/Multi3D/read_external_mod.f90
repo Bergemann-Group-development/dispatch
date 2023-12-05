@@ -74,7 +74,7 @@ SUBROUTINE init(self, task_list, name)
   integer :: patches_per_mpi=1
   integer :: dims=1, nx=5, ny=5, nz=256, snap=0
   integer :: verbose=0
-  character(len=126) :: atmos_format='Multi'
+  character(len=126) :: atmos_format='Text'
   real(4), dimension(:,:,:), pointer, contiguous :: vel
   namelist /atmos_params/ atmos_file, dims, verbose, patches_per_mpi, FeH, &
   atmos_format, vmic, use_density, use_ne, nx, ny, nz, snap, legacy_stagger_interp

@@ -8,6 +8,8 @@ from scipy.interpolate import interp1d
 from numba import njit, jit
 import shlex
 import re
+import os
+import errno
 
 EE = 1.602189E-12
 HH = 6.626176E-27
@@ -24,6 +26,11 @@ HCK = HH*CC/BK*1e8
 EK  = EE/BK
 #HNY4P = HH*CC/QNORM/4./PI*1e-5
 
+def check_file(file):
+    if file is not '':
+        if not os.path.exists(file):
+            raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), file)
+
 def planck(lam, temp):
     return HC2/lam**3/(np.exp(HCK/np.outer(temp, lam)) - 1)
 
@@ -33,12 +40,14 @@ def vacuum2obs(vac):
     """
     if type(vac) != np.ndarray:
         vac = np.array(vac)
-        
     vac = vac.astype(np.float64)
-        
-    convf = 1 + 2.735182e-4 + 131.4182 / vac**2 + 2.76249e8 / vac**4
+    return _vacuum2obs(vac)
+
+@njit
+def _vacuum2obs(vac):
+    ivac2 = 1/vac**2
+    convf = 1 + 2.735182e-4 + 131.4182 * ivac2 + 2.76249e8 * ivac2*ivac2
     obs = vac / convf
-    
     return obs
 
 def air2vac(air):
@@ -141,6 +150,7 @@ def convol(sx, sy, vrot=None, zeta_rt=None, vshift=None, vdop=None, custom=None)
         
     return xx, yy
 
+@njit
 def freq_quad(nnu, qmax, q0):
     if qmax <= q0:
         dq = 2 * qmax / (nnu - 1)
@@ -149,7 +159,7 @@ def freq_quad(nnu, qmax, q0):
     elif qmax >= 0 and q0 >= 0:
         a = 10**(q0+0.5)
         
-        xmax = np.log10(a * np.max([0.5, qmax-q0-0.5]))
+        xmax = np.log10(a * max([0.5, qmax-q0-0.5]))
         
         dx = 2 *  xmax / (nnu-1)
         
@@ -318,18 +328,22 @@ def synth_blends(obs_xx, obs_yy, order=20, blank_lam=None):
     return yy
 
 
-def _read(f, dtype=None):
+def _read(f, dtype=None, quotes=None):
     line = f.readline()
     line = line.replace(',','')
     while line.startswith('*') or line.strip()=='': 
         line = f.readline()
+
+    line.strip()
         
-    lex = shlex.shlex(line.strip())
-    lex.commenters='*'
-    lex.quotes = "'"
-    lex.whitespace_split = True
-    
-    out = list(lex)
+    if quotes is not None:
+        lex = shlex.shlex(line.strip())
+        lex.commenters='*'
+        lex.quotes = quotes
+        lex.whitespace_split = True
+        out = list(lex)
+    else:
+        out = line.split()
     
     if dtype is not None:
         if isinstance(dtype, list):

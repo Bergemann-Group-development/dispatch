@@ -25,7 +25,7 @@ def read_collisions(atom):
         
         while key != 'END':
             if key == 'TEMP':
-                coltemp = np.array(atom._read(float)[1:])
+                coltemp = np.array(atom._read(dtype=float)[1:])
             else:
                 collision_class(atom, key, coltemp)
             

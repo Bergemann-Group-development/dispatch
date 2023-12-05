@@ -203,7 +203,8 @@ SUBROUTINE check_file (self, name)
   !-----------------------------------------------------------------------------
   inquire (file=name, exist=exists)
   if (.not. exists) then
-    call shared%abort('file ' // trim(name) // ' was not found!')
+    write(*,*) 'Error: File not found - ', trim(name)
+    error stop 'File not found'
   endif
 END SUBROUTINE check_file
 

@@ -23,7 +23,7 @@ contains
     real(4) :: xx, yy, zz, palfa, pny, py, pbeta, abund(92)
     real(4) :: lgTauR, lgTau5, pg, prad, pturb, xkapr, emu, vconv, fconv, rhox
     real(4), dimension(:), allocatable :: depth, in_temp, in_pe, in_depth, in_rho
-    character(256) :: fileID, command
+    character(512) :: fileID, command
     !-----------------------------------------------------------------------------
     call os%check_file(file)
     open(newunit=lunit, file=file)

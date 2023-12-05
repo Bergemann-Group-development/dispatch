@@ -18,7 +18,7 @@ EK  = EE/BK
 class level_class(object):
     def __init__(self, atom, i):
         self.i = i
-        ecm, g, label, ion = atom._read()[:4]
+        ecm, g, label, ion = atom._read(quotes="'")[:4]
         self.ecm   = float(ecm)
         self.g     = float(g)
         self.label = label

@@ -239,6 +239,10 @@ MODULE atom_patch_mod
           call self%output_atom%create_spectrum(output_sp, bb=.true.)
           call self%output_atom%set_ired_iblue(output_sp, bb=.true., bf=.true.) 
         endif
+      elseif (external_sp) then
+        call self%output_atom%set_ired_iblue(output_sp, bb=.true., bf=.true.) 
+      else
+        stop 'Neither atom nor spectral range specified!'
       endif
       call output_sp%save('out')
     endif
@@ -853,7 +857,7 @@ MODULE atom_patch_mod
     integer :: lunit, file_size, mem_size, iostat, prec, oldm(5), newm(5), iv, iw, k, i
     logical, save :: first_time=.true.
     ! ----------------------------------------------------------------------------
-    write(sfolder, '(A, A)') trim(folder), 'save/'
+    write(sfolder, '(A, A)') trim(folder), '/save/'
     write(filename, '(A, A, 2(I3.3), A)') trim(label), '_', self%key(1:2), '.bin'
     write(metafile, '(A, A)') trim(label), '_meta.txt'
     call os%check_file(trim(sfolder)//filename)

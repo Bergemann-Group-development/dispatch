@@ -1,6 +1,6 @@
 from .atom import atom_class
 from .trans import trans_class
-from .auxfuncs import vacuum2obs, continuum, freq_quad, convol, SBOL, CC, interp_tau
+from .auxfuncs import vacuum2obs, continuum, freq_quad, convol, SBOL, CC, interp_tau, check_file
 import numpy as np
 import pandas as pd
 import dask.array as da
@@ -12,10 +12,50 @@ from scipy.io import FortranFile
 from matplotlib.collections import LineCollection
 import os
 
+def launch(input_name, nml_settings=None, default=None, overwrite=False, threads=32, log_file=None):
+    cwd = os.getcwd()
+    check_file(cwd + '/dispatch.x')
+    if default is not None:
+        input = f90nml.read(default + '/params.nml')
+    else:
+        input = f90nml.Namelist()
+
+    input_file = input_name + '.nml'
+    if not os.path.isfile(input_file) or overwrite:
+        if nml_settings is not None:
+            input.patch(nml_settings)
+
+        input.write(input_file, force=True)
+
+        if log_file is None:
+            command = './dispatch.x {:}'.format(input_file)
+        else:
+            command = './dispatch.x {:} > {:}'.format(input_file, log_file)
+
+        print(input_file, ' launched')
+        os.environ['OMP_NUM_THREADS'] = str(threads)
+        iostat = os.system(command)
+        if iostat!=0 and log_file is not None: 
+            with open('{:}.log'.format(input_name)) as f:
+                for line in f:
+                    pass
+                last_line = line
+                print(last_line)
+    else:
+        print(input_file, ' already exists')
+        input = f90nml.read(input_file)
+
+    datadir = 'data/'
+    if 'io_params' in input:
+        if 'datadir' in input['io_params']:
+            datadir = input['io_params']['datadir']
+
+    return os.path.join(datadir, input_name)
+
 #=====================================================================
 class read(object):
     #=================================================================
-    def __init__(self, folder, verbose=0, sanity_check=False):
+    def __init__(self, folder, verbose=0, **kwargs):
         #-------------------------------------------------------------
         folder = folder + os.sep
         sfolder = folder + 'save' + os.sep
@@ -26,7 +66,7 @@ class read(object):
         
         if os.path.isfile(folder + 'atom.txt'):
             self.qnorm = self.nml['atom_params']['qnorm']
-            self.atom = atom_class(folder + 'atom.txt', qnorm=self.qnorm, verbose=verbose, sanity_check=sanity_check)
+            self.atom = atom_class(folder + 'atom.txt', qnorm=self.qnorm, verbose=verbose, **kwargs)
             loggf_cut = self.nml['atom_params']['logf_cut']
             red_cut   = self.nml['atom_params']['red_cut']
             blue_cut  = self.nml['atom_params']['blue_cut']
