@@ -277,8 +277,9 @@ class read(object):
             
             elif imu is not None:
                 mu_mask = self.imus==imu
-                cnt = np.mean(cnt[...,mu_mask], axis=-1)
-                yy  = np.mean(yy [...,mu_mask], axis=-1)
+                cnt = np.mean(cnt[mask, mu_mask], axis=-1)
+                yy  = np.mean(yy [mask, mu_mask], axis=-1)
+                
         
         if norm:
             yy = yy / cnt
