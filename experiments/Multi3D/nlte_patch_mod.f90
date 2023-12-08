@@ -235,7 +235,6 @@ SUBROUTINE execute (self)
 
   self%twohnu3_c2 = twoh_c2 * self%nu**3
 
-  inv_df = self%atom%inverse_doppler_factor(temp)
 
   !include_absmet = self%in_ray .or. absmet_in_output
   include_absmet = self%in_ray .and. self%i_nu > self%n_nu
@@ -243,7 +242,10 @@ SUBROUTINE execute (self)
 
   if (self%use_atom) then
     if (self%bound_free) call self%add_bound_free_opacities()
-    if (self%bound_bound) call self%bound_bound_damping(adamp, temp, inv_df)
+    if (self%bound_bound) then
+      inv_df = self%atom%inverse_doppler_factor(temp)
+      call self%bound_bound_damping(adamp, temp, inv_df)
+    endif
   endif
 
   ! Starting loop over angles

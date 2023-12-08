@@ -272,8 +272,8 @@ class read(object):
                 yy = self.ie
 
             if ang is not None:
-                cnt = cnt[...,ang][mask]
-                yy = yy[...,ang][mask]
+                cnt = cnt[mask,ang]
+                yy = yy[mask,ang]
             
             elif imu is not None:
                 mu_mask = self.imus==imu
