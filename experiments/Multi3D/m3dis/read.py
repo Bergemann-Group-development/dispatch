@@ -563,15 +563,6 @@ class read(object):
         
             return [merge_set(s) for s in sets]
 
-    #=====================================================================
-    def plot_cntrbf(self, f, imu=0, LTE=False, **kwargs):
-        #-----------------------------------------------------------------
-        cntrbf = self.get_cntrbf(f, imu=imu, LTE=LTE)
-        plot = plt.plot(self.ltau, cntrbf, **kwargs)
-        plt.ylabel('Angle-dependent Contribution Function', fontsize='medium')
-        plt.xlabel(r'log$\tau_{500}$')
-        return plot
-
 #=====================================================================
 def weq_diff(run1, run2, marker='.', linestyle='none', **kwargs):
     #-----------------------------------------------------------------

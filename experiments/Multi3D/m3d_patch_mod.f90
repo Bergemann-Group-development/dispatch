@@ -1097,7 +1097,7 @@ MODULE m3d_patch_mod
     integer :: lunit
     integer, save :: itimer=0
     ! ----------------------------------------------------------------------------
-    call trace%begin('m3d_patch_t%save', itimer=itimer)
+    call trace%begin('m3d_patch_t%save4', itimer=itimer)
     call self%save_meta(mem, label, filename, lunit)
     write(lunit) mem
     close(lunit)
@@ -1113,7 +1113,7 @@ MODULE m3d_patch_mod
     integer :: lunit
     integer, save :: itimer=0
     ! ----------------------------------------------------------------------------
-    call trace%begin('m3d_patch_t%save', itimer=itimer)
+    call trace%begin('m3d_patch_t%save5', itimer=itimer)
     call self%save_meta(mem, label, filename, lunit)
     write(lunit) mem
     close(lunit)
@@ -1129,7 +1129,7 @@ MODULE m3d_patch_mod
     integer :: lunit
     integer, save :: itimer=0
     ! ----------------------------------------------------------------------------
-    call trace%begin('m3d_patch_t%save', itimer=itimer)
+    call trace%begin('m3d_patch_t%save6', itimer=itimer)
     call self%save_meta(mem, label, filename, lunit)
     write(lunit) mem
     close(lunit)

@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from .auxfuncs import vacuum2obs, _vacuum2obs, is_number, freq_quad
+from .auxfuncs import vacuum2obs, _vacuum2obs, is_number, freq_quad, compute_tau_scale
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 
@@ -346,75 +346,58 @@ class trans_class(object):
         return xx, yy
 
     #=====================================================================
-    def get_cntrbf(self, df=None, ang=0, LTE=False):
+    def get_cntrbf(self, ang=0, LTE=False):
         #-----------------------------------------------------------------
         if not self.prepared: self.prepare()
         
         name = 'cntrbf_{:06}'.format(self.kr+1)
         cntrbf  = self.run.read_patch_save(name, fdim=3)[-1]
-
-        if df is None:
-            cntrbf = cntrbf[...,ang].T
-            cntrbf = np.moveaxis(cntrbf, 1, -1)
-        else:
-            f0 = (self.ir - self.ib) // 2
-            f = f0 + df
-            cntrbf = cntrbf[...,f,:,ang].T
-
-        cntrbf = np.array(cntrbf)
+        cntrbf = cntrbf[..., ang].squeeze()
+        cntrbf = np.moveaxis(cntrbf, -2, 0)
 
         if LTE:
-            chiR = cntrbf[2]
-            chiD = cntrbf[3]
+            chiR = cntrbf[..., 2]
+            chiD = cntrbf[..., 3]
         else:
-            chiR = cntrbf[0]
-            chiD = cntrbf[1]
+            chiR = cntrbf[..., 0]
+            chiD = cntrbf[..., 1]
 
         mu = self.run.vec[ang, -1]
         ds = self.run.dz / mu * 1e8
-        tauR = compute_tau_scale(chiR[::-1], ds)[::-1].T
-        cf = np.log(10) * self.run.tau / self.run.chi * chiD.T * np.exp(-tauR)
+        tauR = compute_tau_scale(chiR, ds, axis=-1)
+        cf = np.log(10) * self.run.tau / self.run.chi * chiD * np.exp(-tauR)
 
-        if self.run.dim=='1D':
-            return self.run.ltau, cf[0,0]
-        else:
-            ltau = np.linspace(np.min(self.run.ltau), np.max(self.run.ltau), 1000)
-            cf = interp_tau(ltau, self.run.ltau[...,::-1], cf[...,::-1])
-            ltau = ltau[::-1]
-            cf = cf[..., ::-1]
-            return ltau, cf
+        return cf
+
     
     #=====================================================================
-    def plot_cntrbf(self, df=None, ang=0, LTE=False, dlam=None, title=None, cmap='binary', interpolation='none', **kwargs):
+    def plot_cntrbf(self, ang=0, LTE=False, dlam=None, title=None, cmap='binary', interpolation='none', **kwargs):
         #-----------------------------------------------------------------
-        ltau, cf = self.get_cntrbf(df=df, ang=0, LTE=LTE)
+        cf = self.get_cntrbf(ang=ang, LTE=LTE)
         set_title(title, default='Contribution function of ' + self.title)
 
+        ltau = self.run.ltau
+
         if self.run.dim == '3D':
-            cf = np.mean(cf, axis=(-2, -3))
+            cf = np.mean(cf, axis=(1,2))
+            ltau = np.mean(ltau, axis=(0,1))
 
-        if df is None:
-            xx, _ = self.get_xx(dlam=dlam)
-            ix = self.i0-self.ib - xx.size//2
-            slc = slice(ix, ix+xx.size)
-            cf = cf[slc]
-            tau_max = ltau[0]
-            tau_min = ltau[-1]
-            reg_ltau = np.linspace(tau_max, tau_min, 1000)
-            cf = interp1d(ltau, cf, axis=-1)(reg_ltau)
+        xx, _ = self.get_xx(dlam=dlam)
+        ix = self.i0 - self.ib - xx.size//2
+        slc = slice(ix, ix+xx.size)
+        cf = cf[slc]
+        tau_max = ltau[0]
+        tau_min = ltau[-1]
+        reg_ltau = np.linspace(tau_max, tau_min, 1000)
+        cf = interp1d(ltau, cf, axis=-1)(reg_ltau)
 
-            if self.run.dim == '1D':
-                newx = np.linspace(xx[0], xx[-1], 1000)
-                cf = shift_interp2(xx, cf, newx)
-                
-            self.run.set_xaxis(xx, dlam=dlam)
-            plt.ylabel(r'log$\tau_{500}$')
-            return plt.imshow(cf.T, extent=(xx[0], xx[-1], tau_min, tau_max), aspect='auto', cmap=cmap, interpolation=interpolation, **kwargs)
-        else:
-
-            plt.ylabel(r'$\mathscr{C}_R$ (Magain 1986)')
-            plt.xlabel(r'log$\tau_{500}$')
-            return plt.plot(ltau, cf, **kwargs)
+        #if self.run.dim == '1D':
+        #    newx = np.linspace(xx[0], xx[-1], 1000)
+        #    cf = shift_interp2(xx, cf, newx)
+            
+        self.run.set_xaxis(xx, dlam=dlam)
+        plt.ylabel(r'log$\tau_{500}$')
+        return plt.imshow(cf.T, extent=(xx[0], xx[-1], tau_min, tau_max), aspect='auto', cmap=cmap, interpolation=interpolation, **kwargs)
 
 
 def set_title(title, default=None):

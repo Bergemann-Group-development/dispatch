@@ -444,8 +444,10 @@ def voigt_num(a, v):
     return h
 
 #=====================================================================
-def compute_tau_scale (chi, ds):
+def compute_tau_scale (chi, ds, axis=-1):
     #-----------------------------------------------------------------
+    chi = np.moveaxis(chi, axis, 0)
+    chi = chi[::-1]
     tau  = np.array(np.zeros_like(chi))
     dchi = np.array(np.zeros_like(chi))
     tau1 = 0.5*(chi[1] + chi[0]) * ds
@@ -453,6 +455,8 @@ def compute_tau_scale (chi, ds):
     dchi[0] = tau1*tau1/tau2
     dchi[1:] = 0.5*(chi[1:] + chi[:-1]) * ds
     tau = np.cumsum(dchi, axis=0)
+    tau = tau[::-1]
+    tau = np.moveaxis(tau, 0, axis)
     return tau
 
 #=====================================================================
