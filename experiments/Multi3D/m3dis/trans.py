@@ -346,14 +346,19 @@ class trans_class(object):
         return xx, yy
 
     #=====================================================================
-    def get_cntrbf(self, ang=0, LTE=False):
+    def get_cntrbf(self, ang=0, LTE=False, mean=False, fslice=None, ntau=100):
         #-----------------------------------------------------------------
         if not self.prepared: self.prepare()
         
         name = 'cntrbf_{:06}'.format(self.kr+1)
         cntrbf  = self.run.read_patch_save(name, fdim=3)[-1]
-        cntrbf = cntrbf[..., ang].squeeze()
-        cntrbf = np.moveaxis(cntrbf, -2, 0)
+
+        if fslice is None:
+            cntrbf = cntrbf[..., ang]
+        else:
+            cntrbf = cntrbf[..., fslice, :, ang]
+
+        cntrbf = np.moveaxis(cntrbf, -2, 0).squeeze()
 
         if LTE:
             chiR = cntrbf[..., 2]
@@ -367,37 +372,32 @@ class trans_class(object):
         tauR = compute_tau_scale(chiR, ds, axis=-1)
         cf = np.log(10) * self.run.tau / self.run.chi * chiD * np.exp(-tauR)
 
-        return cf
+        if mean and self.run.dim == '3D':
+            ltau = np.mean(self.run.ltau, axis=(0,1))
+            reg_ltau = np.linspace(ltau[0], ltau[-1], ntau)
+            cf = interp1d(ltau, cf, axis=-1)(reg_ltau)
+            cf = np.mean(cf, axis=(1,2))
+            return reg_ltau, cf
+        
+        else:
+            return ltau, cf
 
     
     #=====================================================================
-    def plot_cntrbf(self, ang=0, LTE=False, dlam=None, title=None, cmap='binary', interpolation='none', **kwargs):
+    def plot_cntrbf(self, ang=0, LTE=False, dlam=None, title=None, ntau=100, cmap='binary', **kwargs):
         #-----------------------------------------------------------------
-        cf = self.get_cntrbf(ang=ang, LTE=LTE)
-        set_title(title, default='Contribution function of ' + self.title)
-
-        ltau = self.run.ltau
-
-        if self.run.dim == '3D':
-            cf = np.mean(cf, axis=(1,2))
-            ltau = np.mean(ltau, axis=(0,1))
-
         xx, _ = self.get_xx(dlam=dlam)
         ix = self.i0 - self.ib - xx.size//2
         slc = slice(ix, ix+xx.size)
-        cf = cf[slc]
-        tau_max = ltau[0]
-        tau_min = ltau[-1]
-        reg_ltau = np.linspace(tau_max, tau_min, 1000)
-        cf = interp1d(ltau, cf, axis=-1)(reg_ltau)
 
-        #if self.run.dim == '1D':
-        #    newx = np.linspace(xx[0], xx[-1], 1000)
-        #    cf = shift_interp2(xx, cf, newx)
+        ltau, cf = self.get_cntrbf(ang=ang, LTE=LTE, mean=True, fslice=slc, ntau=ntau)
             
         self.run.set_xaxis(xx, dlam=dlam)
         plt.ylabel(r'log$\tau_{500}$')
-        return plt.imshow(cf.T, extent=(xx[0], xx[-1], tau_min, tau_max), aspect='auto', cmap=cmap, interpolation=interpolation, **kwargs)
+        set_title(title, default='Contribution function of ' + self.title)
+
+        X, Y, Z = *np.meshgrid(xx, ltau), cf.T
+        return plt.pcolormesh(X, Y, Z, cmap=cmap, edgecolors='face', **kwargs)
 
 
 def set_title(title, default=None):
