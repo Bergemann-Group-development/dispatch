@@ -48,6 +48,7 @@ FUNCTION get (self, rank) RESULT (value)
   integer:: err
   !-----------------------------------------------------------------------------
   call trace%begin ('mpi_window_t%get')
+  value = 0
 #ifdef MPI
   !$omp critical (mpi_get_cr)
   call MPI_Win_lock (MPI_LOCK_SHARED, rank, 0, self%window, err)

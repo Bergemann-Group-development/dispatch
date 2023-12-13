@@ -401,6 +401,7 @@ SUBROUTINE detect_cores
   !.............................................................................
   nullify(head)
   n_socket = 0
+  n_core = 0
   oid = -1
   inquire (file=file, exist=exist)
   if (exist) then
