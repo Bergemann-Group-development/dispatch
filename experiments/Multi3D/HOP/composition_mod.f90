@@ -586,6 +586,7 @@ contains
         character(len=*) :: linelist_file
         character(20) :: mass_id
         character(20) :: ion_id
+        character(len=512) :: line_text
         real(dp) :: lam0, gv, gq, loggf, ent8, ent9, mass, cnt_ev, lam_vac, vbar2e4
         character :: lower_orb, upper_orb
         character(len=150) :: label
@@ -603,8 +604,10 @@ contains
         open(newunit=lunit, file=linelist_file, iostat=iostat)
         do while (iostat==0)
             read(lunit,*,iostat=iostat) mass_id, j, nline
-            if (iostat/=0) exit
+            if (iostat < 0) exit ! End-of-File
+            call print_failed_line(lunit, iostat)
             read(lunit,*,iostat=iostat) ion_id
+            call print_failed_line(lunit, iostat)
             read(mass_id,*) mass
             isotope = mod(mass, 1.0) > 0
             if (isotope) iso_id = nint((mass - int(mass))*1000)
@@ -634,7 +637,7 @@ contains
                 endif
                 do i=1, nline
                     read(lunit, *, iostat=iostat) ! skipping this ion
-                    if (iostat.ne.0) exit
+                    call print_failed_line(lunit, iostat)
                 end do
                 cycle
             endif
@@ -664,23 +667,19 @@ contains
 
             do i=1, nline
                 line => p%line(prev+i)
+                read(lunit,'(A)', iostat=iostat) line_text
                 ! Try to read with stark broadening parameter
-                read(lunit,*,iostat=iostat) lam0, line%lower_ev, loggf, gv, line%upper_g, &
+                read(line_text,*,iostat=iostat) lam0, line%lower_ev, loggf, gv, line%upper_g, &
                     line%ga, gq, lower_orb, upper_orb, ent8, ent9, label
 
-                if (iostat.ne.0) then
-                    ! Try to read without stark broadening parameter
-                    backspace lunit
-                    read(lunit,*,iostat=iostat) lam0, line%lower_ev, loggf, gv, line%upper_g, &
-                        line%ga, lower_orb, upper_orb, ent8, ent9, label
-
-                    ! Stop if nothing has worked
-                    if (iostat.ne.0) then
-                        print *, "Failed to read a line in the linelist", lam0
-                        stop
-                    endif
+                if (iostat > 0) then
                     gq = 0.0
+                    ! Try to read without stark broadening parameter
+                    read(line_text, *, iostat=iostat) lam0, line%lower_ev, loggf, gv, line%upper_g, &
+                    line%ga, lower_orb, upper_orb, ent8, ent9, label
                 endif
+                ! Stop if nothing has worked
+                call print_failed_line(lunit, iostat)
 
                 lam_vac = air2vac(lam0) * 1e-8
                 line%nu0 = CC / lam_vac
@@ -709,6 +708,21 @@ contains
         print '(I12, a, I12, a, a)', nactive, ' of ', ntotal, ' lines read from linelist ', trim(linelist_file)
         self%nline = nactive
         call self%mask_linelist()
+
+    contains
+        ! --------------------------------------------------------------------------
+        subroutine print_failed_line(lunit, iostat)
+            integer, intent(in) :: lunit, iostat
+            character(len=512) :: line_text
+            ! ----------------------------------------------------------------------
+            if (iostat > 0) then
+                backspace lunit
+                read(lunit,'(A)') line_text
+                print '(I4, 1x, A)', iostat, "Failed to read a line in the linelist:"
+                print '(A)', line_text
+                stop
+            endif
+        end subroutine print_failed_line
     END SUBROUTINE init_linelist
 
     !===============================================================================
