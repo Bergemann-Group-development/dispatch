@@ -226,9 +226,8 @@ class read(object):
             ylabel = 'Intensity µ={:.2f}'.format(self.vec[ang,-1])
             
         elif imu is not None:
-            mus, idx = np.unique(1-self.vec[:,-1], return_inverse=True)
-            mu = 1-mus[imu]
-            ylabel = 'Intensity µ={:.2f}'.format(mu)
+            if imu < 0: imu = self.imus.max() + imu + 1
+            ylabel = 'Intensity µ={:.2f}'.format(self.mus[imu])
             
         else:
             ylabel = 'Flux'
@@ -247,7 +246,11 @@ class read(object):
     def get_yy(self, ang=None, imu=None, norm=True, cont=False, LTE=False, mask=slice(None, None)):
         #-----------------------------------------------------------------
         if imu is not None:
-            if imu >= self.nmu: raise ValueError('imu is out of range. Nmu = {:}'.format(self.nmu))
+            if imu >= self.nmu:
+                raise ValueError('imu is out of range. Nmu = {:}'.format(self.nmu))
+            elif imu < 0:
+                imu = self.imus.max() + imu + 1
+
         if self.n_ang == 1: ang=0
 
         if ang is None and imu is None:

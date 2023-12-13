@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from .auxfuncs import vacuum2obs, _vacuum2obs, is_number, freq_quad, compute_tau_scale
+from .auxfuncs import vacuum2obs, _vacuum2obs, is_number, freq_quad, compute_tau_scale, find_close, interp_tau
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 
@@ -171,11 +171,13 @@ class trans_class(object):
     #=====================================================================
     def prepare(self):
         #-----------------------------------------------------------------
-        self.lb = vacuum2obs(self.lam_blue)*(1-1e-7)
-        self.lr = vacuum2obs(self.lam_red )*(1+1e-7)
-        self.i0 = np.searchsorted(self.run.lam, self.lam0)
-        self.ib = np.searchsorted(self.run.lam, self.lb)
-        self.ir = np.searchsorted(self.run.lam, self.lr, side='right')
+        self.lb = vacuum2obs(self.lam_blue)
+        self.lr = vacuum2obs(self.lam_red)
+
+        self.i0 = find_close(self.run.lam, self.lam0)
+        self.ib = find_close(self.run.lam, self.lb)
+        self.ir = find_close(self.run.lam, self.lr)
+
         slc = slice(self.ib, self.ir)
         self.lam  = self.run.lam[slc]
         self.flux = self.run.flux[slc]
@@ -346,51 +348,102 @@ class trans_class(object):
         return xx, yy
 
     #=====================================================================
-    def get_cntrbf(self, ang=0, LTE=False, mean=False, fslice=None, ntau=100):
+    def get_cntrbf(self, df=None, ang=None, imu=None, LTE=False, mean=False, fslice=None):
         #-----------------------------------------------------------------
         if not self.prepared: self.prepare()
         
         name = 'cntrbf_{:06}'.format(self.kr+1)
-        cntrbf  = self.run.read_patch_save(name, fdim=3)[-1]
+        mem  = self.run.read_patch_save(name, fdim=3)[-1]
 
-        if fslice is None:
-            cntrbf = cntrbf[..., ang]
-        else:
-            cntrbf = cntrbf[..., fslice, :, ang]
+        # dims are [nx, ny, nz, nf, set, ang]
+        mem = np.moveaxis(mem, [4, 5, 3], [0,1,2])
+        # dims are [set, ang, nf, nx, ny, nz]
 
-        cntrbf = np.moveaxis(cntrbf, -2, 0).squeeze()
+        if df is not None:
+            f = self.i0 - self.ib + df
+            mem = mem[:,:,f:f+1]
+        elif fslice is not None:
+            mem = mem[:,:,fslice]
 
         if LTE:
-            chiR = cntrbf[..., 2]
-            chiD = cntrbf[..., 3]
+            cntrbf = mem[3:6]
         else:
-            chiR = cntrbf[..., 0]
-            chiD = cntrbf[..., 1]
+            cntrbf = mem[0:3]
 
-        mu = self.run.vec[ang, -1]
-        ds = self.run.dz / mu * 1e8
-        tauR = compute_tau_scale(chiR, ds, axis=-1)
-        cf = np.log(10) * self.run.tau / self.run.chi * chiD * np.exp(-tauR)
-
-        if mean and self.run.dim == '3D':
-            ltau = np.mean(self.run.ltau, axis=(0,1))
-            reg_ltau = np.linspace(ltau[0], ltau[-1], ntau)
-            cf = interp1d(ltau, cf, axis=-1)(reg_ltau)
-            cf = np.mean(cf, axis=(1,2))
-            return reg_ltau, cf
+        cnt_inus = mem[6]
         
+        nset, nang, nf, nx, ny, nz = cntrbf.shape
+        ltau = self.run.ltau
+        get_mean = mean and self.run.dim == '3D'
+
+        if get_mean:
+            new_ltau = np.mean(ltau, axis=(0,1))[::-1]
+            cfunc = np.zeros((nf, nz))
         else:
-            return ltau, cf
+            cnt_inus = cnt_inus.squeeze()
+            cntrbf = cntrbf.squeeze()
+            cfunc = np.zeros_like(cnt_inus[0])
 
-    
+        all_angs = np.array(range(self.run.n_ang))
+        if ang is None and imu is None:
+            angs = all_angs
+        elif imu is not None:
+            if imu < 0: imu = self.run.imus.max()+imu+1
+            angs = all_angs[self.run.imus==imu]
+        elif ang is not None:
+            angs = np.array([ang])
+
+        wts = np.ones(angs.size) / angs.size
+            
+        conversion = np.log(10) * self.run.tau / self.run.chi
+        for ang, w in zip(angs, wts):
+            lin_chi, lin_eta, net_chi = cntrbf[:, ang]
+            cnt_inu = cnt_inus[ang]
+            mu = self.run.vec[ang, -1]
+            ds = self.run.dz / mu * 1e8
+            tau = compute_tau_scale(net_chi, ds, axis=-1)
+            cf = conversion * (lin_chi*cnt_inu - lin_eta) * np.exp(-tau)
+
+            if get_mean:
+                yy = np.array(cf[...,::-1])
+                xx = ltau[...,::-1].copy()
+                newcf = interp_tau(new_ltau, xx, yy)
+                cfunc = cfunc + w*np.mean(newcf, axis=(1,2))
+            else:
+                cfunc = cfunc + w*cf
+
+        if get_mean: ltau = new_ltau
+        return ltau, cfunc.squeeze()
+
     #=====================================================================
-    def plot_cntrbf(self, ang=0, LTE=False, dlam=None, title=None, ntau=100, cmap='binary', **kwargs):
+    def plot_cntrbf(self, df=0, imu=None, ang=None, LTE=False, title=None, **kwargs):
         #-----------------------------------------------------------------
-        xx, _ = self.get_xx(dlam=dlam)
-        ix = self.i0 - self.ib - xx.size//2
-        slc = slice(ix, ix+xx.size)
+        ltau, cf = self.get_cntrbf(df=df, imu=imu, ang=ang, LTE=LTE, mean=True)
+            
+        f = self.i0 - self.ib + df
+        plt.xlabel(r'log$\tau_{500}$')
+        plt.ylabel('Contribution function')
 
-        ltau, cf = self.get_cntrbf(ang=ang, LTE=LTE, mean=True, fslice=slc, ntau=ntau)
+        wave = '$\lambda=${:.3f}[Å]'.format(self.lam[f])
+        if ang is None and imu is None:
+            angle = 'flux'
+        else:
+            if ang is not None:
+                imu = self.run.imus[ang]
+
+            angle = '$\mu=${:.2f}'.format(self.run.mus[imu])
+
+        set_title(title, default=wave + ', ' + angle)
+        return plt.plot(ltau, cf, **kwargs)
+    
+
+    #=====================================================================
+    def hist_cntrbf(self, imu=None, ang=None, LTE=False, dlam=0.5, title=None, cmap='binary', **kwargs):
+        #-----------------------------------------------------------------
+        xx, slc = self.get_xx(dlam=dlam)
+        slc = slice(slc.start-self.ib, slc.stop-self.ib)
+
+        ltau, cf = self.get_cntrbf(imu=imu, ang=ang, LTE=LTE, mean=True, fslice=slc)
             
         self.run.set_xaxis(xx, dlam=dlam)
         plt.ylabel(r'log$\tau_{500}$')

@@ -620,7 +620,9 @@ SUBROUTINE init (self)
   write (io%namelist, mpi_mesg_params)
   self%debug = debug
   self%tag_wrap = tag_wrap
-  call self%test ()
+  if (mpi%size > 1) then
+    call self%test ()
+  endif
   call trace%end()
 END SUBROUTINE init
 

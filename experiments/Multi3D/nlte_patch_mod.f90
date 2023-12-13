@@ -20,7 +20,8 @@ MODULE nlte_patch_mod
   USE m3d_halo_mod, only: lock_mem, unlock_mem
   USE m3d_patch_mod, only: all_vec=>vec, all_wmu=>wmu, use_vel, m3d_patch_t, &
   absmet_in_output, long_wmu, long_vec, ray_offset, pivot_z, dlam, &
-  premature_finish, m3d_patch_pre_update=>pre_update, save_resolved
+  premature_finish, m3d_patch_pre_update=>pre_update, save_resolved, &
+  column_by_column
   USE ray_mod, only: one_dimensional, ray_type
   USE trans_mod, only:line_type, cont_type
   USE bbtrans_mod, only:voigt_function2, voigt_profile
@@ -273,7 +274,7 @@ SUBROUTINE execute (self)
       call self%eta_to_Snu()
       call self%set_upstream_boundary(i_mu, i_set, ng)
 
-      if (self%out_ray .and. .not. one_dimensional) then
+      if (self%out_ray .and. .not. (one_dimensional .or. column_by_column)) then
         call self%rotate_cube(vec)
       endif
 
@@ -361,7 +362,7 @@ contains
           if (.not. line%active) cycle
           call line%check_range(self%fs, self%fe, fs, fe, skip)
           if (.not. skip) then
-            allocate(cntrbf(i)%data(nx,ny,nz,fs:fe,4,self%mus:self%mue))
+            allocate(cntrbf(i)%data(nx,ny,nz,fs:fe,7,self%mus:self%mue))
             call mem_register(cntrbf(i)%data, 'cntrbf')
           endif
         end associate
@@ -1173,16 +1174,14 @@ SUBROUTINE save_contribution_function (self, i_set, i_mu)
               if (i_set == 1) then
                 cf(1) = lin_chi
                 cf(2) = lin_eta
+                cf(3) = net_chi
               elseif (i_set == 2) then
-                cf(3) = lin_chi
-                cf(4) = lin_eta
+                cf(4) = lin_chi
+                cf(5) = lin_eta
+                cf(6) = net_chi
               endif
             else
-              cnt_inu = work(f,x,y,z,3)
-              cf(2) = cf(1) - cf(2)   / cnt_inu ! lin_chi - lin_eta/cnt_inu
-              cf(1) = cf(1) + cnt_eta / cnt_inu ! lin_chi + cnt_eta/cnt_inu
-              cf(4) = cf(3) - cf(4)   / cnt_inu ! lin_chi - lin_eta/cnt_inu (LTE)
-              cf(3) = cf(3) + cnt_eta / cnt_inu ! lin_chi + cnt_eta/cnt_inu (LTE)
+              cf(7) = work(f,x,y,z,3) !cnt_inu
             endif
           end associate
         end do

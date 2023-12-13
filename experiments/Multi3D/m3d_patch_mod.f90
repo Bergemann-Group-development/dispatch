@@ -128,7 +128,7 @@ MODULE m3d_patch_mod
     logical, public, save :: comoving_frame=.false.
     logical, public, save :: use_density=.true., use_ne=.true., line_blanketing=.false.
     logical, public, save :: overlapping_bb=.true., overlapping_bf=.true.
-    logical, public, save :: absmet_in_output=.false.
+    logical, public, save :: absmet_in_output=.false., column_by_column=.false.
     logical, public, save :: print_start=.false., print_send=.false.
     logical, public, save:: make_opac_table=.false.
     real(8), public, save :: dlam=100.
@@ -161,7 +161,7 @@ MODULE m3d_patch_mod
     print_finished, print_start, print_send, ray_offset, print_download, &
     lse_solver, decouple_continuum, m1d_legacy_mode, nu_tolerance, disable_stark, &
     disable_vdw, disable_ga, pivot_z, use_vel, save_Qrad, save_resolved, &
-    absmet_in_output, print_lock, make_opac_table, ng_step, ng_start
+    absmet_in_output, print_lock, make_opac_table, ng_step, ng_start, column_by_column
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%pre_init', itimer=itimer)
     self%type = trim(self%kind)

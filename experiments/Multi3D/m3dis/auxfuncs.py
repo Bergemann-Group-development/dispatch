@@ -490,12 +490,29 @@ def shift_interp2(xx, yy, newx):
 #=====================================================================
 def interp_tau(newx, xx, yy):
     #-----------------------------------------------------------------
-  shape = np.shape(yy)
-  nx = np.shape(newx)
-  newy = np.empty((shape[:2] + nx))
+    xshape = np.shape(xx)
+    yshape = np.shape(yy)
+    nnew = len(newx)
+    nold = xshape[-1]
+    dimdiff = len(yshape) - len(xshape)
+    extra = list(yshape)[:dimdiff]
+    xx = xx.reshape((-1, nold))
+    n = np.shape(xx)[0]
+    nextra = np.prod(np.array(extra))
+    yy = yy.reshape((nextra, n, nold))
+    newy = np.empty((nextra, n, nnew))
 
-  for i in range(shape[0]):
-    for j in range(shape[1]):
-      newy[i,j] = np.interp(newx, xx[i,j], yy[i,j])
+    for i in range(nextra):
+        for j in range(n):
+            newy[i,j] = np.interp(newx, xx[j], yy[i,j])
+    
+    newy = newy.reshape(yshape[:-1] + (nnew,))
+    return newy
 
-  return newy
+#=====================================================================
+def find_close(arr, val):
+    #-----------------------------------------------------------------
+    i = np.searchsorted(arr, val)
+    if np.isclose(arr[i-1], val, rtol=1e-10): i = i-1
+    if np.isclose(arr[i+1], val, rtol=1e-10): i = i+1
+    return i
