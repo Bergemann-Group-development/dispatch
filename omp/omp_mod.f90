@@ -139,13 +139,27 @@ FUNCTION get_stacksize() result(stacksize)
   USE omp_lib, only : kmp_set_stacksize_s, kmp_get_stacksize_s, kmp_size_t_kind
 #endif
 #endif
-  integer :: stacksize
+  integer :: stacksize, factor, n
+  character(len=16):: envvar
   !-----------------------------------------------------------------------------
 #ifdef _OPENMP
 #ifdef __INTEL_COMPILER
   stacksize = kmp_get_stacksize_s()
 #else
-  stacksize = -1
+  call getenv ('OMP_STACKSIZE', envvar)
+  n = len_trim(envvar)
+  select case(envvar(n:n))
+  case('0','1','2','3','4','5','6','7','8','9')
+    factor = 1
+  case('K')
+    factor = 1024
+  case('M')
+    factor = 1024**2
+  case('G')
+    factor = 1024**3
+  end select
+  read(envvar(1:n-1), *) stacksize
+  stacksize = stacksize * factor
 #endif
 #endif
 END FUNCTION get_stacksize
