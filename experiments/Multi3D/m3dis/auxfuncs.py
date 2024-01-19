@@ -136,6 +136,9 @@ def convol(sx, sy, vrot=None, zeta_rt=None, vshift=None, vdop=None, custom=None)
     yy = syn
     
     if custom is not None:
+        if not hasattr(custom, '__iter__'):
+            print('Custom convolution profile must be an array!')
+
         py = interp1d(*custom, bounds_error=False, fill_value=0)(xx - np.mean(xx))
         xx, yy = conv_profile(xx, yy, xx, py)
         #py = py / np.trapz(py, x=xx)

@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from .auxfuncs import vacuum2obs, _vacuum2obs, is_number, freq_quad, compute_tau_scale, find_close, interp_tau
+from .auxfuncs import convol, vacuum2obs, _vacuum2obs, is_number, freq_quad, compute_tau_scale, find_close, interp_tau
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 
