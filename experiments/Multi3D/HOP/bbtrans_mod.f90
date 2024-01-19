@@ -90,7 +90,7 @@ contains
 
     allocate(qq(ired:iblue))
     qq(ired:iblue) = nu(ired:iblue) / self%nu0 - 1
-    f0 = minloc(qq,1) + ired - 1
+    f0 = minloc(abs(qq),1) + ired - 1
     
     do k=1, m(3)
     do j=1, m(2)
@@ -144,7 +144,7 @@ contains
             lchi = voigt_function2(a, vs) * cf
             ! if line opacity below tolerance exit and save f
             if (lchi < ref) then
-              f1 = f-f0
+              f1 = max(ired, f0-f)
               exit
             endif
             chi(f,i,j,k) = chi(f,i,j,k) + lchi
