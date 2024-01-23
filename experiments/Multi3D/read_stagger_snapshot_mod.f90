@@ -68,16 +68,16 @@ SUBROUTINE read_stagger_params(stagger_file, snap, nx, ny, nz)
 
     mesh_file = trim(stagger_file) // '.msh'
     write(snap_file, '(A,A1,I5.5)') trim(stagger_file), '_', snap
-    write(data_file, *) trim(snap_file), '.dat'
-    write(aux_file,  *) trim(snap_file), '.aux'
-    !irregular = refinement /= ''
-    !
-    !call count_words(refinement, nsub)
-    !allocate(stagger_levels(nsub))
-    !allocate(level_ratio(nsub))
-    !read(refinement, *) stagger_levels
-    !maxlvl = maxval(stagger_levels)
-    !minlvl = minval(stagger_levels)
+    write(data_file, '(A,A)') trim(snap_file), '.dat'
+    write(aux_file,  '(A,A)') trim(snap_file), '.aux'
+    irregular = refinement /= ''
+
+    call count_words(refinement, nsub)
+    allocate(stagger_levels(nsub))
+    allocate(level_ratio(nsub))
+    read(refinement, *) stagger_levels
+    maxlvl = maxval(stagger_levels)
+    minlvl = minval(stagger_levels)
 
     !level_ratio = 2**(maxlvl-stagger_levels)
     !norm = sum(level_ratio)

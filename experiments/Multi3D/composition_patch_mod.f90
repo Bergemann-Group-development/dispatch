@@ -287,13 +287,16 @@ END SUBROUTINE print_post_update_info
 SUBROUTINE save_abundances_to_file (self)
   class(composition_patch_t), target :: self
   class(element_type), pointer :: element
+  real(8) :: abnd
   integer :: lunit, i
   !-----------------------------------------------------------------------------
   if (self%ipos(3)==0) then
     open(newunit=lunit, file=trim(io%run_dir)//'abund.txt', form='FORMATTED')
     do i=1, self%composition%nel
       element => self%composition%elements(i)
-      write(lunit, '(A3, F8.4)') element%id, log10(element%abund) + 12.0
+      abnd = log10(element%abund) + 12.0
+      abnd = max(abnd, -99.9)
+      write(lunit, '(A3, F8.4)') element%id, abnd
     end do
     close(lunit)
   endif
