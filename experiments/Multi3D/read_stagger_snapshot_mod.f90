@@ -4,6 +4,7 @@ MODULE read_stagger_snapshot_mod
   USE trace_mod
   USE handyfuncs_mod
   USE op_math_mod, only: linspace, linterpolate_3d
+  USE m3d_patch_mod, only: pivot_z, ray_offset
   implicit none
   private
 
@@ -13,6 +14,8 @@ MODULE read_stagger_snapshot_mod
   ! stagger coefficients
   real(4), parameter :: uul = 1.0e+8      ! length
   real(4), parameter :: uur = 1.0e-7      ! density
+  real(4), parameter :: luul = log(uul)
+  real(4), parameter :: luur = log(uur)
   real(4), parameter :: uut = 1.0e2       ! time
   real(4), parameter :: uuv = uul / uut   ! velocity
   real(4), parameter :: uum = uuv * uur   ! momentum
@@ -25,12 +28,12 @@ MODULE read_stagger_snapshot_mod
   real(4), save :: maxTemp=huge(1.0)
   real(4), save :: ee_offset=3.2122
   character(len=128), save :: refinement=''
-  logical, public, save :: irregular=.false., legacy_stagger_interp=.false.
-  integer, dimension(:), allocatable, save, public  :: stagger_levels
+  logical, public, save :: legacy_stagger_interp=.false.!, irregular=.false.
+  !integer, dimension(:), allocatable, save, public  :: stagger_levels
   real(8), dimension(:), allocatable, save:: level_ratio
   integer, save :: maxlvl, minlvl
   real(8), save :: norm, mindz
-  real(4), dimension(:,:,:), allocatable, save :: iie, itemp, ilne, irho
+  real(4), dimension(:,:,:), allocatable, save :: iie, iltemp, ilne, ilrho
   real(4), dimension(:,:,:), allocatable, save :: ipx, ipy, ipz
 
   public :: read_stagger_params
@@ -38,6 +41,7 @@ MODULE read_stagger_snapshot_mod
   public :: read_stagger_snapshot
   public :: load_stagger_subregion
   public :: get_stagger_subregion
+  public :: deallocate_stagger
     
 contains
 
@@ -66,19 +70,19 @@ SUBROUTINE read_stagger_params(stagger_file, snap, nx, ny, nz)
     write(snap_file, '(A,A1,I5.5)') trim(stagger_file), '_', snap
     write(data_file, *) trim(snap_file), '.dat'
     write(aux_file,  *) trim(snap_file), '.aux'
-    irregular = refinement /= ''
+    !irregular = refinement /= ''
+    !
+    !call count_words(refinement, nsub)
+    !allocate(stagger_levels(nsub))
+    !allocate(level_ratio(nsub))
+    !read(refinement, *) stagger_levels
+    !maxlvl = maxval(stagger_levels)
+    !minlvl = minval(stagger_levels)
 
-    call count_words(refinement, nsub)
-    allocate(stagger_levels(nsub))
-    allocate(level_ratio(nsub))
-    read(refinement, *) stagger_levels
-    maxlvl = maxval(stagger_levels)
-    minlvl = minval(stagger_levels)
-
-    level_ratio = 2**(maxlvl-stagger_levels)
-    norm = sum(level_ratio)
-    level_ratio = level_ratio / norm
-    call read_stagger_data(irho, ipx, ipy, ipz, iie, itemp, ilne)
+    !level_ratio = 2**(maxlvl-stagger_levels)
+    !norm = sum(level_ratio)
+    !level_ratio = level_ratio / norm
+    call read_stagger_data(ilrho, ipx, ipy, ipz, iie, iltemp, ilne)
   end if
 END SUBROUTINE read_stagger_params
 
@@ -95,7 +99,7 @@ SUBROUTINE read_stagger_snapshot(ds, d, px, py, pz, ee, tt, ne)
   !-----------------------------------------------------------------------------
   call trace%begin('read_stagger_snapshot_mod%read_stagger', itimer=itimer)
   call read_stagger_mesh(nx, ny, nz, xx, yy, zz)
-  call read_stagger_size(m, box)
+  call read_stagger_size(box)
 
   ds = box / (uul*dims)
 
@@ -133,35 +137,34 @@ SUBROUTINE read_stagger_snapshot(ds, d, px, py, pz, ee, tt, ne)
   call os%deallocate(newy)
   call os%deallocate(newz)
 
-  deallocate(irho)
-  deallocate(itemp)
-  deallocate(ilne)
-  deallocate(ipx)
-  deallocate(ipy)
-  deallocate(ipz)
-  deallocate(iie)
+  call os%deallocate(xx)
+  call os%deallocate(yy)
+  call os%deallocate(zz)
+
+  call deallocate_stagger()
 
   call trace%end(itimer)
 END SUBROUTINE read_stagger_snapshot
 
 !===============================================================================
-SUBROUTINE load_stagger_subregion(n, sub, pos, d, px, py, pz, tt, ne)
+SUBROUTINE load_stagger_subregion(n, sub, pos, d, px, py, pz, tt, ne, bot2pivot, vec)
   integer, intent(in) :: n(3)
   real(8), intent(in) :: sub(3), pos(3)
+  real(8), intent(in), optional :: bot2pivot, vec(3)
   real(4), intent(out), dimension(:,:,:) :: d, px, py, pz
   real(4), intent(out), dimension(:,:,:), optional :: tt, ne
   real(4), pointer, contiguous, dimension(:) :: xx, yy, zz
-  real(4), pointer, contiguous, dimension(:) :: newx, newy, newz
+  real(4), dimension(:), allocatable :: newx, newy, newz
   real(4) :: lower(3), ds(3)
   integer :: i, nx, ny, nz
-  integer, save :: itimer, loaded=0
+  integer, save :: itimer
   !-----------------------------------------------------------------------------
   call trace%begin('read_stagger_snapshot_mod%load_stagger_subregion', itimer=itimer)
   call read_stagger_mesh(nx, ny, nz, xx, yy, zz)
 
-  call os%allocate(newx, n(1))
-  call os%allocate(newy, n(2))
-  call os%allocate(newz, n(3))
+  allocate(newx(n(1)))
+  allocate(newy(n(2)))
+  allocate(newz(n(3)))
 
   lower = (pos - 0.5d0*sub) / uul
   ds = sub / (uul*n)
@@ -170,29 +173,30 @@ SUBROUTINE load_stagger_subregion(n, sub, pos, d, px, py, pz, tt, ne)
   newy = [ (ds(2)*i + lower(2), i=0, n(2)-1) ]
   newz = [ (ds(3)*i + lower(3), i=0, n(3)-1) ]
 
-  call interpolate_stagger(xx, yy, zz, newx, newy, newz, d, px, py, pz, tt=tt, ne=ne)
+  call interpolate_stagger(xx, yy, zz, newx, newy, newz, d, px, py, pz, tt=tt, ne=ne, bot2pivot=bot2pivot, vec=vec)
 
-  call os%deallocate(newx)
-  call os%deallocate(newy)
-  call os%deallocate(newz)
-
-  loaded = loaded + 1
-  if (loaded == size(stagger_levels)) then
-    deallocate(irho)
-    deallocate(itemp)
-    deallocate(ilne)
-    deallocate(ipx)
-    deallocate(ipy)
-    deallocate(ipz)
-    deallocate(iie)
-  endif
+  call os%deallocate(xx)
+  call os%deallocate(yy)
+  call os%deallocate(zz)
 
   call trace%end(itimer)
 END SUBROUTINE load_stagger_subregion
 
 !===============================================================================
-SUBROUTINE read_stagger_dim(nx, ny, nz, nnz, lunit_out)
-  integer, intent(out) :: nx, ny, nz, nnz
+SUBROUTINE deallocate_stagger()
+  !-----------------------------------------------------------------------------
+  deallocate(ilrho)
+  deallocate(iltemp)
+  deallocate(ilne)
+  deallocate(ipx)
+  deallocate(ipy)
+  deallocate(ipz)
+  deallocate(iie)
+END SUBROUTINE deallocate_stagger
+
+!===============================================================================
+SUBROUTINE read_stagger_dim(nx, ny, nz, lunit_out)
+  integer, intent(out) :: nx, ny, nz
   integer :: lunit, iostat
   integer, optional :: lunit_out
   !-----------------------------------------------------------------------------
@@ -200,10 +204,10 @@ SUBROUTINE read_stagger_dim(nx, ny, nz, nnz, lunit_out)
   open(newunit=lunit, file=mesh_file, iostat=iostat, convert='big_endian', form='unformatted')
 
   ! read first entry in mesh file
-  read(unit=lunit, iostat=iostat) nx, nnz, ny ! y is z in stagger
+  read(unit=lunit, iostat=iostat) nx, nz, ny ! y is z in stagger
 
   ! Index the ghost zones to be ommited 
-  nz = nnz - (2 * gz)
+  !nz = nnz - (2 * gz)
 
   if (present(lunit_out)) then
     lunit_out = lunit
@@ -222,53 +226,54 @@ SUBROUTINE read_stagger_mesh(nx, ny, nz, xx, yy, zz)
   real(4), allocatable, dimension(:) :: ydn, dyidyup, dyidydn, dy, dydn
   real(4), allocatable, dimension(:) :: zdn, dzidzup, dzidzdn, dz, dzdn
   real(4), allocatable, dimension(:) :: zm
-  integer :: lunit, iostat, nnz
+  integer :: lunit, iostat
   !-----------------------------------------------------------------------------
-  call read_stagger_dim(nx, ny, nz, nnz, lunit_out=lunit)
+  call read_stagger_dim(nx, ny, nz, lunit_out=lunit)
 
   call os%allocate(xx, nx)
   call os%allocate(yy, ny)
   call os%allocate(zz, nz)
 
-  allocate(zm(nnz))
   allocate(xdn, dxidxup, dxidxdn, dx, dxdn, mold=xx)
   allocate(ydn, dyidyup, dyidydn, dy, dydn, mold=yy)
-  allocate(zdn, dzidzup, dzidzdn, dz, dzdn, mold=zm)
+  allocate(zdn, dzidzup, dzidzdn, dz, dzdn, mold=zz)
 
   read (unit=lunit, iostat=iostat) dx, dxdn, xx, xdn, dxidxup, dxidxdn
-  read (unit=lunit, iostat=iostat) dz, dzdn, zm, zdn, dzidzup, dzidzdn ! y is z in stagger
+  read (unit=lunit, iostat=iostat) dz, dzdn, zz, zdn, dzidzup, dzidzdn ! y is z in stagger
   read (unit=lunit, iostat=iostat) dy, dydn, yy, ydn, dyidyup, dyidydn
   ! close mesh file
   close(unit=lunit)
-  zz = -zm(nnz-gz:gz+1:-1) ! flipping z-axis
+
+  zz = -zz(nz:1:-1) ! flipping z-axis
+
   xx = xx - xx(1) ! let the origin be zero
   yy = yy - yy(1) ! let the origin be zero
-  zz = zz - zz(1) ! let the origin be zero
+  zz = zz - zz(gz+1) ! let the origin be the layer above ghost zone
   mindz = minval(dz)
 END SUBROUTINE read_stagger_mesh
 
 !===============================================================================
 !> Reading data and aux file
 !===============================================================================
-SUBROUTINE read_stagger_data(rho, px, py, pz, ie, temp, lne)
-  real(4), intent(out), dimension(:,:,:), allocatable :: ie, temp, lne, rho
+SUBROUTINE read_stagger_data(lrho, px, py, pz, ie, ltemp, lne)
+  real(4), intent(out), dimension(:,:,:), allocatable :: ie, ltemp, lne, lrho
   real(4), intent(out), dimension(:,:,:), allocatable :: px, py, pz
   real(4), dimension(:,:,:), allocatable :: ppx, ppy, ppz
   integer :: iostat, lunit, recl
-  integer :: nx, ny, nz, nnz, m(3)
+  integer :: nx, ny, nz, m(3), i, j, zs, ze
   integer, save :: itimer
   !-----------------------------------------------------------------------------
   call trace%begin('read_stagger_data', itimer=itimer)
-  call read_stagger_dim(nx, ny, nz, nnz)
+  call read_stagger_dim(nx, ny, nz)
 
-  m = [nx, ny, nnz]
-  allocate(rho  (nx,ny,nnz))
-  allocate(ie   (nx,ny,nnz))
-  allocate(temp (nx,ny,nnz))
-  allocate(px   (nx,ny,nnz))
-  allocate(py   (nx,ny,nnz))
-  allocate(pz   (nx,ny,nnz))
-  allocate(lne  (nx,ny,nnz))
+  m = [nx, ny, nz]
+  allocate(lrho (nx,ny,nz))
+  allocate(ie   (nx,ny,nz))
+  allocate(ltemp(nx,ny,nz))
+  allocate(px   (nx,ny,nz))
+  allocate(py   (nx,ny,nz))
+  allocate(pz   (nx,ny,nz))
+  allocate(lne  (nx,ny,nz))
   allocate(ppx, mold=px)
   allocate(ppy, mold=py)
   allocate(ppz, mold=pz)
@@ -289,12 +294,12 @@ SUBROUTINE read_stagger_data(rho, px, py, pz, ie, temp, lne)
     ! 5: internal energy per unit volume
     ! 6: temperature
 
-  read (unit=lunit, iostat=iostat, rec=1) rho
+  read (unit=lunit, iostat=iostat, rec=1) lrho
   read (unit=lunit, iostat=iostat, rec=2) ppx
   read (unit=lunit, iostat=iostat, rec=3) ppz ! y is z in stagger
   read (unit=lunit, iostat=iostat, rec=4) ppy ! z is y in stagger
   read (unit=lunit, iostat=iostat, rec=5) ie
-  read (unit=lunit, iostat=iostat, rec=6) temp
+  !read (unit=lunit, iostat=iostat, rec=6) temp
   ! close data file
   close(unit=lunit)
 
@@ -312,19 +317,19 @@ SUBROUTINE read_stagger_data(rho, px, py, pz, ie, temp, lne)
     ! 5: ln Planck-averaged extinction coeff.
     ! 6: ln extinction coeff at 500 nm
 
+  read (unit=lunit, iostat=iostat, rec=3) ltemp
   read (unit=lunit, iostat=iostat, rec=4) lne
   ! close aux file
   close(unit=lunit)
   !=============================================================================
-  lne = exp(lne - 3*log(uul))
 
   ! "un"-staggering vectors relative to scalars
   call xup_set(ppx, px)
 
   ! transposing data (y to z)
-  call transpose_stagger(rho)
+  call transpose_stagger(lrho)
   call transpose_stagger(ie)
-  call transpose_stagger(temp)
+  call transpose_stagger(ltemp)
   call transpose_stagger(lne)
 
   call transpose_stagger(px)
@@ -334,37 +339,48 @@ SUBROUTINE read_stagger_data(rho, px, py, pz, ie, temp, lne)
   call yup_set(ppy, py)
   call zup_set(ppz, pz)
 
-  pz = -pz
+  do j=1, ny
+  do i=1, nx
+    lrho (i,j,:) = log(lrho(i,j, nz:1:-1))
+    ie   (i,j,:) =       ie(i,j, nz:1:-1)
+    ltemp(i,j,:) =    ltemp(i,j, nz:1:-1)
+    lne  (i,j,:) =      lne(i,j, nz:1:-1)
+    px   (i,j,:) =       px(i,j, nz:1:-1)
+    py   (i,j,:) =       py(i,j, nz:1:-1)
+    pz   (i,j,:) =     - pz(i,j, nz:1:-1)
+  end do
+  end do
+
   call trace%end(itimer)
 END SUBROUTINE read_stagger_data
 
 !===============================================================================
-SUBROUTINE read_stagger_size(n, box)
-  integer, intent(out) :: n(3)
+SUBROUTINE read_stagger_size(box)
   real(8), intent(out) :: box(3)
   real(4), pointer, contiguous, dimension(:) :: xx, yy, zz
   real(8) :: ds(3)
-  integer :: nx, ny, nz
+  integer :: n(3), nx, ny, nz
   !-----------------------------------------------------------------------------
   call read_stagger_mesh(nx, ny, nz, xx, yy, zz)
-  n = [nx, ny, nz]
+  n = [nx, ny, nz-2*gz]
   box(1) = dble(xx(nx) - xx(1))
   box(2) = dble(yy(ny) - yy(1))
-  box(3) = dble(zz(nz) - zz(1))
+  box(3) = dble(zz(nz-gz) - zz(1+gz))
   ds = box / (n-1)
   box = ds * n
   box = box * uul
 END SUBROUTINE read_stagger_size
 
 !===============================================================================
-SUBROUTINE get_stagger_subregion(ipos, n, ds, pos, zs)
+SUBROUTINE get_stagger_subregion(ipos, nbox, nsub, ds, pos, zs)
   integer, intent(in) :: ipos
-  integer, intent(out) :: n(3), zs
+  integer, intent(in) :: nbox(3)
+  integer, intent(inout) :: nsub(3)
+  integer, intent(out) :: zs
   real(8), intent(out) :: ds(3), pos(3)
   real(8) :: box(3), sub(3)
   real(4), pointer, contiguous, dimension(:) :: xx, yy, zz
-  integer :: i, nx, ny, nz, lvl
-  integer, parameter :: coarse = 5
+  integer :: i, nx, ny, nz, lvl, n(3)
   !-----------------------------------------------------------------------------
   call read_stagger_mesh(nx, ny, nz, xx, yy, zz)
   n = [nx, ny, nz]
@@ -376,57 +392,73 @@ SUBROUTINE get_stagger_subregion(ipos, n, ds, pos, zs)
   box = ds * n
   sub = box
 
-  lvl = stagger_levels(ipos+1)
-  n(1:2) = coarse * 2**(lvl-1)
-  !n(3) = ceiling(nz / norm)
-  n(3) = ceiling(box(3) / (mindz*uul*norm))
+  !lvl = stagger_levels(ipos+1)
+  lvl = 1
+  nsub(1:2) = nbox(1:2) * 2**(lvl-1)
   sub(3) = level_ratio(ipos+1) * box(3)
-  zs = n(3)*ipos
+  zs = nsub(3)*ipos
 
-  ds = sub / n
+  ds = sub / nsub
 
   pos = 0.5d0 * sub
   pos(3) = pos(3) + sum(level_ratio(1:ipos)) * box(3)
 END SUBROUTINE get_stagger_subregion
 
 !===============================================================================
-SUBROUTINE interpolate_stagger(xx, yy, zz, newx, newy, newz, d, px, py, pz, ee, tt, ne)
-  real(4), intent(in), pointer, contiguous, dimension(:) :: xx, yy, zz
-  real(4), intent(in), pointer, contiguous, dimension(:) :: newx, newy, newz
+SUBROUTINE interpolate_stagger(xx, yy, zz, newx, newy, newz, d, px, py, pz, ee, tt, ne, vec, bot2pivot)
+  real(4), intent(in), dimension(:) :: xx, yy, zz
+  real(4), intent(in), dimension(:) :: newx, newy, newz
   real(4), intent(out), dimension(:,:,:) :: d, px, py, pz
   real(4), intent(out), dimension(:,:,:), optional :: tt, ne, ee
-  !real(4), pointer, contiguous, dimension(:,:,:) :: ppx, ppy, ppz
-  !real(4), pointer, contiguous, dimension(:,:,:) :: irho, iie, itemp, ilne
-  integer :: nz
+  real(8), intent(in), optional :: vec(3), bot2pivot
+  real(4) :: dx, dy, dz
   integer, save :: itimer
   !-----------------------------------------------------------------------------
   call trace%begin('interpolate_stagger', itimer=itimer)
-  !call read_stagger_data(irho, ppx, ppy, ppz, iie, itemp, ilne)
 
-  nz = size(ipx,3) - 2*gz
-  call linterpolate_3d(irho(:,:, nz+gz:gz+1:-1), d,  xx, yy, zz, newx, newy, newz)
-  call linterpolate_3d( ipx(:,:, nz+gz:gz+1:-1), px, xx, yy, zz, newx, newy, newz)
-  call linterpolate_3d( ipy(:,:, nz+gz:gz+1:-1), py, xx, yy, zz, newx, newy, newz)
-  call linterpolate_3d( ipz(:,:, nz+gz:gz+1:-1), pz, xx, yy, zz, newx, newy, newz)
+  if (present(vec)) then
+    dx = xx(2)
+    dy = yy(2)
+    call linterpolate_3d_rotated(ilrho, d,  dx, dy, zz, newx, newy, newz, vec, bot2pivot, ray_offset)
+    call linterpolate_3d_rotated( ipx, px, dx, dy, zz, newx, newy, newz, vec, bot2pivot, ray_offset)
+    call linterpolate_3d_rotated( ipy, py, dx, dy, zz, newx, newy, newz, vec, bot2pivot, ray_offset)
+    call linterpolate_3d_rotated( ipz, pz, dx, dy, zz, newx, newy, newz, vec, bot2pivot, ray_offset)
 
-  if (present(ee)) then
-    call linterpolate_3d( iie(:,:, nz+gz:gz+1:-1), ee, xx, yy, zz, newx, newy, newz)
-    ee = ee / d + ee_offset
+    if (present(ee)) then
+      call linterpolate_3d_rotated( iie, ee, dx, dy, zz, newx, newy, newz, vec, bot2pivot, ray_offset)
+      ee = ee / d + ee_offset
+    endif
+
+    if (present(tt)) then
+      call linterpolate_3d_rotated(iltemp, tt, dx, dy, zz, newx, newy, newz, vec, bot2pivot, ray_offset)
+    endif
+
+    if (present(ne)) then
+      call linterpolate_3d_rotated(ilne, ne, dx, dy, zz, newx, newy, newz, vec, bot2pivot, ray_offset)
+    endif
+  else
+    call linterpolate_3d(ilrho, d,  xx, yy, zz, newx, newy, newz)
+    call linterpolate_3d( ipx, px, xx, yy, zz, newx, newy, newz)
+    call linterpolate_3d( ipy, py, xx, yy, zz, newx, newy, newz)
+    call linterpolate_3d( ipz, pz, xx, yy, zz, newx, newy, newz)
+
+    if (present(ee)) then
+      call linterpolate_3d( iie, ee, xx, yy, zz, newx, newy, newz)
+      ee = ee / d + ee_offset
+    endif
+
+    if (present(tt)) then
+      call linterpolate_3d(iltemp, tt, xx, yy, zz, newx, newy, newz)
+    endif
+
+    if (present(ne)) then
+      call linterpolate_3d(ilne, ne, xx, yy, zz, newx, newy, newz)
+    endif
   endif
 
-  if (present(tt)) then
-    call linterpolate_3d(itemp(:,:, nz+gz:gz+1:-1), tt, xx, yy, zz, newx, newy, newz)
-  endif
-
-  if (present(ne)) then
-    call linterpolate_3d(ilne(:,:, nz+gz:gz+1:-1), ne, xx, yy, zz, newx, newy, newz)
-  endif
-
-  call os%deallocate(xx)
-  call os%deallocate(yy)
-  call os%deallocate(zz)
-
-  d  = d  * uur
+  d  = exp(d + luur)
+  tt = exp(tt)
+  ne = exp(ne - 3*luul)
   px = px * uum
   py = py * uum
   pz = pz * uum

@@ -9,7 +9,7 @@ MODULE atom_patch_mod
     USE link_mod, only: nbor_t
     USE handyfuncs_mod
     USE atom_mod, only: atom_type, atomic_spectrum_type, use_classic_col, kramer_bf, debye_shield, &
-                        red_cut, blue_cut, logf_cut, local_data_t, m1d_legacy_mode, nq_fac
+                        red_cut, blue_cut, logf_cut, atom_data_t, m1d_legacy_mode, nq_fac
     USE trans_mod, only: line_type, cont_type
     USE mconst, only: CC
     USE ion_mod, only: ion_type, particle_type
@@ -19,7 +19,8 @@ MODULE atom_patch_mod
     USE composition_mod, only: composition_type
     USE m3d_patch_mod, only: m3d_patch_t, maxiter, check_NaN, cswitch, key_link_t, &
     global_maxerr, convlim, convmax, atom_update_counter, comoving_frame, global_pos, ng_step, ng_start, &
-    decouple_continuum, overlapping_bb, overlapping_bf, line_blanketing, converged, premature_finish
+    decouple_continuum, overlapping_bb, overlapping_bf, line_blanketing, converged, premature_finish, &
+    rotate_atmos, long_vec
     USE bftrans_mod, only: bftrans_type
     USE hprofl_mod, only: hydrogen_BPO
     USE osmet_mod, only:osmet_type
@@ -169,6 +170,9 @@ MODULE atom_patch_mod
 
     ! this pointer will be referenced by other atoms with same local data
     allocate(self%atom%data)
+    if (rotate_atmos) then
+      allocate(self%atom%rotated_data(size(long_vec, 2)))
+    endif
 
     if (use_atom_abnd .or. abundance > -99) then
       call self%composition%overwrite_abundance(atom%id, atom%abnd, atom%awgt)
@@ -260,125 +264,117 @@ MODULE atom_patch_mod
   END SUBROUTINE pre_init_spectrum
 
   !===============================================================================
-  SUBROUTINE init_atom_data (self)
+  SUBROUTINE init_atom_data (self, comp, adata)
     class(atom_patch_t), target :: self
     class(atom_type), pointer :: atom
+    class(composition_type), target :: comp
+    class(atom_data_t), target :: adata
     class(element_type), pointer :: element
     class(molec_type), pointer :: molec
-    real(4), dimension(:,:,:), pointer, contiguous :: dxi, df, saha
-    real(8), dimension(:,:,:), pointer, contiguous :: totn
-    real(4), dimension(:,:,:), pointer :: temp, ne
-    real(8), dimension(:,:,:,:), pointer, contiguous :: n, nstar
-    real(4), dimension(:,:,:,:), pointer :: nh
+    real(8), dimension(:,:,:), pointer, contiguous :: dxi
     real(4) :: nmax, nlim
     integer, save:: itimer=0
-    integer :: i
+    integer :: i, m(4)
     !-----------------------------------------------------------------------------
     call trace%begin('atom_patch_t%init_atom_data', itimer=itimer)
     atom => self%atom
-    ne   => self%m3d_parent%mem(:,:,:,self%i_ne,            self%it,1)
-    temp => self%m3d_parent%mem(:,:,:,self%i_temp,          self%it,1)
-    nh   => self%m3d_parent%mem(:,:,:,self%i_nh1:self%i_nh6,self%it,1)
 
-    n     => atom%data%n    
-    nstar => atom%data%nstar
-    totn  => atom%data%totn
+    if (debye_shield) then
+      dxi => comp%dxi
+    else
+      dxi => comp%zero
+    endif
 
-    element => null()
-    molec   => null()
+    m = [shape(comp%temp), atom%nlevel]
+    if (.not. associated(adata%nstar)) call os%allocate(adata%nstar, m, label='nstar')
+    if (.not. associated(adata%totn))  call os%allocate(adata%totn, m(1:3), label='totn')
+    if (.not. associated(adata%n))     call os%allocate(adata%n, m, label='n')
 
-    call self%composition%get_totn(atom%id, atom%abnd, totn, element, molec)
+    call comp%get_totn(atom%id, atom%abnd, adata%totn, element, molec)
     if (.not. (associated(element) .or. associated(molec))) then
       call self%save_abundance_to_file()
     endif
 
-    if (associated(molec)) atom%tmax_update = self%composition%tmolim
-
+    if (associated(molec)) atom%tmax_update = comp%tmolim
     if (level_partf) nullify(element)
-
-    call os%allocate(saha, self%n)
-    call os%allocate(dxi, self%n)
-    saha = real(self%composition%saha)
-    if (debye_shield) then
-      dxi = real(self%composition%dxi)
-    else
-      dxi = 0
-    endif
-
-    call atom%compute_lte_populations(nstar, totn, temp, saha, dxi, element, molec)
-
-    if (precomputed_depart /= '') then
-      call self%load_mem(precomputed_depart, self%kind)
-    else
-      do i=1, atom%nlevel
-        n(:,:,:,i) = nstar(:,:,:,i) 
-      end do
-    endif
-
-    call os%deallocate(dxi)
-    call os%deallocate(saha)
+    call atom%compute_lte_populations(adata%nstar, adata%totn, real(comp%temp), real(comp%saha), real(dxi), element, molec)
     call trace%end(itimer)
   END SUBROUTINE init_atom_data
 
   !===============================================================================
   SUBROUTINE execute (self)
     class(atom_patch_t) :: self
+    class(atom_type), pointer :: atom
+    class(atom_data_t), pointer :: adata
+    class(composition_type), pointer :: comp
     class(line_type), pointer :: line
     class(cont_type), pointer :: cont
+    class(element_type), pointer :: element
+    class(molec_type), pointer :: molec
     real(8), dimension(:,:,:,:), pointer, contiguous :: gamma_ij, gamma_ji, nstar
     real(4), dimension(:,:,:,:), pointer, contiguous :: wphi
-    integer :: i, l, p(3), ii, jj
+    integer :: i, j, l, p(3), ii, jj, m(4)
     integer, save:: count=0
-    real(8) :: global, gij
+    real(8) :: global, gij, vec(3)
     logical :: do_ng
     integer, save :: itimer=0
     !-----------------------------------------------------------------------------
     call trace%begin (trim(self%kind)//'%update', itimer=itimer)
+    atom => self%atom
+    adata => atom%data
+
     if (self%iter == 0) then
-      call self%init_atom_data()
+      call self%init_atom_data(self%composition, adata)
+      if (precomputed_depart /= '') then
+        call self%load_mem(precomputed_depart, self%kind)
+      else
+        do i=1, atom%nlevel
+          adata%n(:,:,:,i) = adata%nstar(:,:,:,i) 
+        end do
+      endif
     else
-      wphi => self%atom%data%wphi
-      nstar => self%atom%data%nstar
-      gamma_ij => self%atom%data%gamma_ij
-      gamma_ji => self%atom%data%gamma_ji
+      wphi => adata%wphi
+      nstar => adata%nstar
+      gamma_ij => adata%gamma_ij
+      gamma_ji => adata%gamma_ji
 
       if (self%iter == 1) then
         self%dtime = self%dt_fixed
 
         ! Normalize wphi
-        do i=1, self%atom%nline
+        do i=1, atom%nline
           wphi(:,:,:,i) = 1 / wphi(:,:,:,i)
         end do
       endif
 
-      if (self%atom%data%converged) then
+      if (adata%converged) then
         self%update_skipped = .true.
       else
-        do i=1, self%atom%nline
-          line => self%atom%line(i)
-          gij = self%atom%g(line%i) / self%atom%g(line%j)
+        do i=1, atom%nline
+          line => atom%line(i)
+          gij = atom%g(line%i) / atom%g(line%j)
           gamma_ij(:,:,:,i) = gamma_ij(:,:,:,i) * wphi(:,:,:,i)
           gamma_ji(:,:,:,i) = gamma_ji(:,:,:,i) * wphi(:,:,:,i)
           gamma_ji(:,:,:,i) = gamma_ji(:,:,:,i) * gij
         end do
-        do i=i, self%atom%nrad
-          cont => self%atom%cont(i-self%atom%nline)
+        do i=i, atom%nrad
+          cont => atom%cont(i-atom%nline)
           gamma_ji(:,:,:,i) = gamma_ji(:,:,:,i) * nstar(:,:,:,cont%i) / nstar(:,:,:,cont%j)
         end do
 
         if (ng_step > 0) then
-          do i=1, self%atom%nlevel
-            self%atom%data%oldn(:,:,:,i,1) = self%atom%data%oldn(:,:,:,i,2)
-            self%atom%data%oldn(:,:,:,i,2) = self%atom%data%oldn(:,:,:,i,3)
-            self%atom%data%oldn(:,:,:,i,3) = self%atom%data%n(:,:,:,i)
+          do i=1, atom%nlevel
+            adata%oldn(:,:,:,i,1) = adata%oldn(:,:,:,i,2)
+            adata%oldn(:,:,:,i,2) = adata%oldn(:,:,:,i,3)
+            adata%oldn(:,:,:,i,3) = adata%n(:,:,:,i)
           end do
         endif
 
         call self%update_populations(gamma_ij, gamma_ji)
-        self%atom%data%converged = self%maxerr < convmax
+        adata%converged = self%maxerr < convmax
         self%update_skipped = .false.
         do_ng = ng_step > 0 .and. mod(self%iter-ng_start, ng_step) == 0 .and. self%iter >= ng_start
-        if (self%atom%data%converged .and. premature_finish) then
+        if (adata%converged .and. premature_finish) then
           call self%finish()
         elseif (do_ng) then
           call self%ng_acceleration()
@@ -387,7 +383,7 @@ MODULE atom_patch_mod
     endif
 
     if (.not. self%update_skipped) then
-      call self%atom%compute_cont_factors()
+      call atom%compute_cont_factors(atom%data)
     endif
     
     if (self%iter > 0) then
@@ -405,28 +401,30 @@ MODULE atom_patch_mod
     if (self%print_update_info) then
       p = self%pcheck
       l = self%linecheck
-      memcheck(1) = self%atom%data%n(p(1),p(2),p(3),self%lvlcheck)
-      if (associated(self%atom%data%gamma_ij)) then
-        if (self%linecheck<=self%atom%nrad) then
-          memcheck(2) = self%atom%data%gamma_ij(p(1),p(2),p(3),l)
-          memcheck(3) = self%atom%data%gamma_ji(p(1),p(2),p(3),l)
-          if (l<=self%atom%nline) then
-            memcheck(4) = self%atom%data%wphi(p(1),p(2),p(3),l)
+      memcheck(1) = adata%n(p(1),p(2),p(3),self%lvlcheck)
+      if (associated(adata%gamma_ij)) then
+        if (self%linecheck<=atom%nrad) then
+          memcheck(2) = adata%gamma_ij(p(1),p(2),p(3),l)
+          memcheck(3) = adata%gamma_ji(p(1),p(2),p(3),l)
+          if (l<=atom%nline) then
+            memcheck(4) = adata%wphi(p(1),p(2),p(3),l)
           endif
         endif
       else
-        memcheck(2) = 10.0**(self%atom%abnd-12.0)
+        memcheck(2) = 10.0**(atom%abnd-12.0)
         memcheck(3) = self%composition%toth(p(1),p(2),p(3))
       endif
     endif
 
-    if ((self%is_finished() .or. self%iter==self%maxiter) .and. associated(self%atom%data%wphi)) then
-      call os%deallocate(self%atom%data%wphi, 'wphi')
+    if (associated(adata%gamma_ij)) then
+      call os%deallocate(adata%gamma_ij, label='atom%gamma_ij')
+      call os%deallocate(adata%gamma_ji, label='atom%gamma_ji')
     endif
 
-    if (associated(self%atom%data%gamma_ij)) then
-      call os%deallocate(self%atom%data%gamma_ij, label='atom%gamma_ij')
-      call os%deallocate(self%atom%data%gamma_ji, label='atom%gamma_ji')
+    if (self%is_finished() .or. self%iter==self%maxiter) then
+      if (associated(adata%wphi)) then
+        call os%deallocate(adata%wphi, 'wphi')
+      endif
     endif
     call trace%end(itimer)
   END SUBROUTINE execute
@@ -508,27 +506,49 @@ MODULE atom_patch_mod
   !===============================================================================
   SUBROUTINE finish (self)
     class(atom_patch_t):: self
+    class(atom_type), pointer :: atom
+    class(atom_data_t), pointer :: adata
+    class(composition_type), pointer :: comp
+    real(8) :: vec(3)
     integer :: i, j, k, l
     !-----------------------------------------------------------------------------
-    call os%allocate(self%out_mem, [self%n, self%atom%nlevel, 2])
-    do l=1, self%atom%nlevel
+    atom => self%atom
+    adata => atom%data
+
+    call os%allocate(self%out_mem, [self%n, atom%nlevel, 2])
+    do l=1, atom%nlevel
     do k=1, self%n(3)
     do j=1, self%n(2)
     do i=1, self%n(1)
-      self%out_mem(i,j,k,l,1) = real(self%atom%data%nstar(i,j,k,l))
-      self%out_mem(i,j,k,l,2) = real(self%atom%data%n(i,j,k,l) / self%atom%data%nstar(i,j,k,l))
+      self%out_mem(i,j,k,l,1) = real(adata%nstar(i,j,k,l))
+      self%out_mem(i,j,k,l,2) = real(adata%n(i,j,k,l) / adata%nstar(i,j,k,l))
     end do
     end do
     end do
     end do
     call self%m3d_patch_t%finish()
     call os%deallocate(self%out_mem)
+
+    if (rotate_atmos) then
+      do i=1, self%n_out
+        vec = long_vec(:,i)
+        adata => atom%rotated_data(i)
+        comp => self%m3d_parent%rotated_composition(i)
+        call self%init_atom_data(comp, adata)
+        do j=1, size(adata%nstar, 4)
+          adata%n(:,:,:,j) = atom%data%n(:,:,:,j) / atom%data%nstar(:,:,:,j)
+          call self%rotate_cube8(vec, adata%n(:,:,:,j))
+          adata%n(:,:,:,j) = adata%n(:,:,:,j) * adata%nstar(:,:,:,j)
+        end do
+        call atom%compute_cont_factors(adata)
+      end do
+    endif
   END SUBROUTINE finish
 
   !===============================================================================
   SUBROUTINE print_post_update_info (self)
     class(atom_patch_t):: self
-    class(local_data_t), pointer :: adata
+    class(atom_data_t), pointer :: adata
     character(len=64) :: text
     integer :: i, l, p(3), ipos
     real(8) :: global
@@ -562,13 +582,11 @@ MODULE atom_patch_mod
     class(atom_patch_t), target :: self
     class(atom_type), pointer :: atom
     integer, dimension(3) :: ep
-    real(4), dimension(:), pointer :: nh
     real(8), dimension(:), pointer :: Gij, Gji
     real(8), dimension(:), pointer :: n, nstar
     real(8), dimension(:,:,:,:), target :: gamma_ij, gamma_ji
     integer :: i, j, k, ii, ipos, il
-    real(4) :: temp, ne
-    real(8) :: global, totn
+    real(8) :: temp, ne, global, totn, nh1
     integer, save :: itimer=0
     ! ----------------------------------------------------------------------------
     call trace%begin('atom_patch_t%update_populations', itimer=itimer)
@@ -579,9 +597,9 @@ MODULE atom_patch_mod
     do k=1, self%n(3)
       do j=1, self%n(2)
         do i=1, self%n(1)
-          ne    = self%m3d_parent%mem(i,j,k,self%i_ne,            self%it,1)
-          temp  = self%m3d_parent%mem(i,j,k,self%i_temp,          self%it,1)
-          nh    => self%m3d_parent%mem(i,j,k,self%i_nh1:self%i_nh6,self%it,1)
+          ne    = self%composition%ne(i,j,k)
+          temp  = self%composition%temp(i,j,k)
+          nh1   = self%composition%elements(1)%ions(1)%levels(1)%n(i,j,k)
           totn  =  atom%data%totn  (i,j,k)
           n     => atom%data%n     (i,j,k,:)
           nstar => atom%data%nstar (i,j,k,:)
@@ -589,7 +607,7 @@ MODULE atom_patch_mod
           Gji   => gamma_ji   (i,j,k,:)
 
           if (totn > 0) then
-            call atom%solve_stat_equilibrium(temp, ne, totn, n, nstar, nh, Gij, Gji, cswitch, check_NaN)
+            call atom%solve_stat_equilibrium(temp, ne, totn, n, nstar, nh1, Gij, Gji, cswitch, check_NaN)
 
             ! keep track of maximum population change
             do ii=1,atom%nlevel
@@ -794,8 +812,10 @@ MODULE atom_patch_mod
   SUBROUTINE save_abundance_to_file (self)
     class(atom_patch_t), target :: self
     integer :: lunit, i
+    logical :: first_time=.true.
     !-----------------------------------------------------------------------------
-    if (self%ipos(3)==0) then
+    if (first_time) then
+      first_time = .false.
       open(newunit=lunit, file=trim(io%run_dir)//'abund.txt', form='FORMATTED', access='append')
       write(lunit, '(A3, F8.4)') self%atom%id, self%atom%abnd
       close(lunit)

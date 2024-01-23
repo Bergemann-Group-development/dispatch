@@ -8,7 +8,8 @@ MODULE composition_patch_mod
   USE optab_mod, only: optab
   USE element_mod, only: element_type
   USE m3d_patch_mod,   only: m3d_patch_t, comoving_frame, ilambd, decouple_continuum, dlam, &
-  use_density, use_ne, overlapping_bb, overlapping_bf, line_blanketing, binned_opac, save_Qrad, maxiter
+  use_density, use_ne, overlapping_bb, overlapping_bf, line_blanketing, binned_opac, &
+  save_Qrad, maxiter, rotate_atmos, long_vec
   USE composition_mod, only: composition_type, exclude_elements
   USE atom_patch_mod,  only: atom_patch_t
   USE nlte_patch_mod, only:nlte_patch_t
@@ -38,16 +39,17 @@ MODULE composition_patch_mod
   end type
   
   real(8), public :: FeH=0
+  logical, public :: save_atmos=.true.
+  type(composition_type), public, save :: composition
 
 contains
 
 !===============================================================================
 SUBROUTINE composition_pre_init (self)
   class(composition_patch_t), target:: self
-  type(composition_type), save :: composition
   class(atom_patch_t), pointer :: atom_patch
   class(atomic_spectrum_type), save, pointer :: output_sp
-  integer :: i, iostat, n_nu, nlists, mu
+  integer :: i, iostat, n_nu, nlists, mu, nw
   integer, save:: itimer=0, itimer2=0
   integer, save :: verbose=0
   character(len=256), save :: absdat_file='./input_multi3d/TS_absdat.dat'
@@ -66,7 +68,8 @@ SUBROUTINE composition_pre_init (self)
   call trace%begin('composition_patch_t%composition_pre_init', itimer=itimer)
   self%kind = 'composition'
   call self%m3d_patch_t%pre_init()
-  call self%set_nv_and_nw(9,1)
+  nw = merge(1+size(long_vec,2), 1, rotate_atmos)
+  call self%set_nv_and_nw(7,nw)
   self%static_mem=.true.
 
   if (first_time) then
@@ -188,34 +191,75 @@ END SUBROUTINE create_sub_patches
 SUBROUTINE execute (self)
   class(composition_patch_t) :: self
   real(4), dimension(:,:,:), pointer :: d, e, pe
-  real(4), dimension(:,:,:), pointer, contiguous :: ne, rho, temp
-  real(4), dimension(:,:,:,:), pointer :: nh
-  integer :: li(3), ui(3)
+  real(4), dimension(:,:,:,:), pointer, contiguous :: authority, chi
+  real(4), dimension(:,:,:), pointer, contiguous :: ne, rho, temp, vx, vy, vz, px, py, pz
+  real(8), dimension(:,:,:), allocatable :: ne8, rho8, temp8
+  real(8) :: vec(3), nu(1)
+  integer :: i, n(3), li(3), ui(3)
   integer, save:: itimer=0
   ! ----------------------------------------------------------------------------
   call trace%begin('composition_patch_t%execute', itimer=itimer)
+  n = self%n
 
   if (self%iter == 0) then
-    li = self%patch%li
-    ui = self%patch%ui
+    li = self%li
+    ui = self%ui
+
+    if (rotate_atmos) then
+      allocate(self%rotated_composition(self%n_out))
+    endif
+
+    do i=1, self%nw
+      authority => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),:,self%it,i)
+      e  => authority(:,:,:,self%patch%idx%e)
+      d  => authority(:,:,:,self%patch%idx%d)
+      px => authority(:,:,:,self%patch%idx%px)
+      py => authority(:,:,:,self%patch%idx%py)
+      pz => authority(:,:,:,self%patch%idx%pz)
+      pe => authority(:,:,:,6)
+    
+      authority => self%mem(:,:,:,:,self%it,i)
+      ne   => authority(:,:,:,self%i_ne)
+      rho  => authority(:,:,:,self%i_rho)
+      temp => authority(:,:,:,self%i_temp)
+      vx   => authority(:,:,:,self%i_vx)
+      vy   => authority(:,:,:,self%i_vy)
+      vz   => authority(:,:,:,self%i_vz)
+      chi(1:1,1:n(1),1:n(2),1:n(3)) => authority(:,:,:,7)
   
-    e  => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),self%patch%idx%e,self%it,1)
-    d  => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),self%patch%idx%d,self%it,1)
-    pe => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),6               ,self%it,1)
+      temp = e
+      rho  = d
+      ne   = pe / (cgs%k_b * temp)
+      vx   = px / (cgs%c * rho)
+      vy   = py / (cgs%c * rho)
+      vz   = pz / (cgs%c * rho)
+
+      if (i==1) then
+        allocate(temp8, source=dble(temp))
+        allocate(rho8, source=dble(rho))
+        allocate(ne8, source=dble(ne))
   
-    ne   => self%mem(:,:,:,self%i_ne,  self%it,1)
-    rho  => self%mem(:,:,:,self%i_rho, self%it,1)
-    temp => self%mem(:,:,:,self%i_temp,self%it,1)
-    nh   => self%mem(:,:,:,self%i_nh1:self%i_nh6,self%it,1)
-  
-    temp = e
-    rho  = d * scaling%d
-    ne   = pe * scaling%p / (cgs%k_b * temp)
-  
-    ! loading temp, ne and rho in to composition objekt
-    ! ion and molecule equilibrium are solved immediately
-    call self%composition%load_state_variables(dble(temp), dble(ne), dble(rho), use_rho=use_density, use_ne=use_ne)
-    call self%composition%get_nhyd(nh)
+        ! loading temp, ne and rho in to composition objekt
+        ! ion and molecule equilibrium are solved immediately
+        call self%composition%load_state_variables(temp8, ne8, rho8, use_rho=use_density, use_ne=use_ne)
+    
+        if (save_atmos) then
+          nu = 1d8 * cgs%c / 5000.d0
+          call self%composition%absorption(nu, chi, sorted=.true.)
+          call self%save4(authority, 'atmos')
+        endif
+      else
+        temp8 = authority(:,:,:,self%i_temp)
+        rho8  = authority(:,:,:,self%i_rho)
+        ne8   = authority(:,:,:,self%i_ne)
+        associate(comp => self%rotated_composition(i-1))
+          comp = self%composition
+          call comp%reassign_pointer()
+          call comp%load_state_variables(temp8, ne8, rho8, use_rho=use_density, use_ne=use_ne)
+        end associate
+      endif
+    end do
+
 
     self%dtime = max(self%dtime, io%end_time - self%dtime)
     self%out_ray = .true. ! so that it is still executed after convergence

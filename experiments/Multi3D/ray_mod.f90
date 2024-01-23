@@ -896,7 +896,10 @@ SUBROUTINE simps_weights(xx, wts)
   !-----------------------------------------------------------------------------
   n = size(xx)
 
-  if (n < 3) then
+  if (n == 1) then
+    wts = 1.
+    return
+  elseif (n < 3) then
     stop 'less than 3 weights in simps_weights'
   endif
 

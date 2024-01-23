@@ -1,6 +1,6 @@
 from .atom import atom_class
 from .trans import trans_class
-from .auxfuncs import vacuum2obs, continuum, freq_quad, convol, SBOL, CC, interp_tau, check_file
+from .auxfuncs import vacuum2obs, continuum, freq_quad, convol, SBOL, CC, interp_tau, check_file, compute_tau_scale
 import numpy as np
 import pandas as pd
 import dask.array as da
@@ -10,6 +10,7 @@ import f90nml
 from scipy.signal import argrelextrema
 from scipy.io import FortranFile
 from matplotlib.collections import LineCollection
+from matplotlib.ticker import MultipleLocator
 import os
 
 def launch(input_name, nml_settings=None, default=None, overwrite=False, threads=32, log_file=None):
@@ -134,20 +135,37 @@ class read(object):
             #print('Prepairing transitions')
             for trans in self.atom.trans:
                 trans.run = self
+
+        mesh = open(folder + 'atmos_mesh.txt', 'r')
+        nx, ny, nz = [int(i) for i in mesh.readline().split()]
+        dx, dy, dz = [float(i) for i in mesh.readline().split()]
+        mesh.close()
+
+        if nx*ny > 1:
+            self.dim = '3D'
+        else:
+            self.dim = '1D'
+
+        self.dx = dx
+        self.dy = dy
+        self.dz = dz
+        self.xx = np.linspace(0, (nx-1)*dx, nx)
+        self.yy = np.linspace(0, (ny-1)*dy, ny)
+        self.zz = np.linspace(0, (nz-1)*dz, nz)
+
+        if os.path.isfile(sfolder + 'atmos_meta.txt'):
+            mem = self.read_patch_save('atmos')[0]
+            self.ne   = mem[...,0].compute()
+            self.rho  = mem[...,1].compute()
+            self.temp = mem[...,2].compute()
+            self.vx   = mem[...,3].compute() * CC
+            self.vy   = mem[...,4].compute() * CC
+            self.vz   = mem[...,5].compute() * CC
+            self.chi  = mem[...,6].compute()
+            self.tau  = compute_tau_scale(self.chi, self.dz*1e8, axis=-1)
+            self.ltau = np.log10(self.tau)
             
-        if os.path.isfile(folder + 'atmos_mesh.txt'):
-            mesh = open(folder + 'atmos_mesh.txt', 'r')
-            nx, ny, nz = [int(i) for i in mesh.readline().split()]
-            dx, dy, dz = [float(i) for i in mesh.readline().split()]
-            mesh.close()
-            
-            self.dx = dx
-            self.dy = dy
-            self.dz = dz
-            self.xx = np.linspace(0, (nx-1)*dx, nx)
-            self.yy = np.linspace(0, (ny-1)*dy, ny)
-            self.zz = np.linspace(0, (nz-1)*dz, nz)
-            
+        if os.path.isfile(folder + 'atmos_data.txt'):
             dat = FortranFile(folder + 'atmos_data.bin')
             self.temp = dat.read_reals(np.float32)
             self.rho  = dat.read_reals(np.float32)
@@ -157,7 +175,6 @@ class read(object):
             self.pe   = dat.read_reals(np.float32)
             self.tau  = dat.read_reals(np.float32)
             self.chi  = dat.read_reals(np.float32)
-            self.eta  = dat.read_reals(np.float32)
             dat.close()
 
             if nx*ny > 1:
@@ -169,10 +186,6 @@ class read(object):
                 self.pe   = self.pe  .reshape((nx,ny,nz), order='F')
                 self.tau  = self.tau .reshape((nx,ny,nz), order='F')
                 self.chi  = self.chi .reshape((nx,ny,nz), order='F')
-                self.eta  = self.eta .reshape((nx,ny,nz), order='F')
-                self.dim = '3D'
-            else:
-                self.dim = '1D'
 
             self.ltau = np.log10(self.tau)
         
@@ -209,12 +222,15 @@ class read(object):
     #=====================================================================
     def set_xaxis(self, xx, dlam=None, set_labels=True):
         #-----------------------------------------------------------------
+        xmin = min(xx)
+        xmax = max(xx)
+        dxx = xmax - xmin
         if dlam is not None:
-            plt.xlim(min(xx), max(xx))
+            plt.xlim(xmin, xmax)
             if set_labels: plt.xlabel('$\Delta\lambda$ [Å]')
         else:
-            diff = 0.05*(xx[0] - xx[-1])
-            plt.xlim(xx[0]-diff, xx[-1]+diff)
+            diff = 0.05*dxx
+            plt.xlim(xmin-diff, xmax+diff)
             if set_labels: plt.xlabel('Wavelength [Å]')
 
         plt.ticklabel_format(useOffset=False)
@@ -236,11 +252,21 @@ class read(object):
 
         if set_labels:
             if norm or renorm:
-                plt.ylabel('Normalised ' + ylabel)
-            elif (per_aa):
-                plt.ylabel(ylabel + r' [erg/s/cm$^{2}$/Å]')
+                ylabel = 'Normalised ' + ylabel
             else:
-                plt.ylabel(ylabel + r' [erg/s/cm$^{2}$/Hz]')
+                units = 'erg/s/cm$^2$'
+
+                if ylabel!='Flux':
+                    units = units + '/sr'
+
+                if per_aa:
+                    units = units + '/Å'
+                else:
+                    units = units + '/Hz'
+
+                ylabel = ylabel + ' [' + units + ']'
+
+            plt.ylabel(ylabel)
 
     #=====================================================================
     def get_yy(self, ang=None, imu=None, norm=True, cont=False, LTE=False, mask=slice(None, None)):
@@ -419,7 +445,7 @@ class read(object):
     def plot_depart(self, ilvl, mean='optical', tau_in=None, **kwargs):
         #-----------------------------------------------------------------
         dep = self.get_depart(ilvl)
-        plt.title('Departure coefficient of level {:.2f}[eV]'.format(self.atom.level[ilvl].ev), fontsize='medium')
+        plt.title('Departure coefficient of level {:.2f}[eV]'.format(self.atom.level[ilvl].ev))
         plt.ylabel(r'$\rm n\,/\,n_{\rm LTE}$')
         if mean=='optical':
             if self.dim=='3D':
@@ -523,12 +549,12 @@ class read(object):
         meta.close()
 
         if concat:
-            return self.concat_patches(dct, kind, fdim=fdim)
+            return self.concat_patches(dct, kind, fdim)
         else:
             return dct
 
     #=====================================================================
-    def concat_patches(self, dct, kind, fdim=3):
+    def concat_patches(self, dct, kind, fdim):
         #-----------------------------------------------------------------
         all_iz  = np.unique([key[0] for key in dct.keys()])
         all_inu = np.unique([key[1] for key in dct.keys()])
@@ -548,7 +574,7 @@ class read(object):
                 
                 if len(merge_nu) > 0:
                     mem = da.concatenate(merge_nu, axis=fdim)
-                    mem = np.flip(mem, axis=fdim)
+                    if not f_indep: mem = np.flip(mem, axis=fdim)
                     merge.append(mem)
             
             if len(merge) > 1:

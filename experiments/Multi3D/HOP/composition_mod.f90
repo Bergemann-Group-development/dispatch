@@ -24,7 +24,7 @@ MODULE composition_mod
         type(bftrans_type), allocatable :: trans(:)
         type(osmet_type) :: osmet
         type(level_type), dimension(:), allocatable :: input_H_levels
-        real(dp), dimension(:,:,:), allocatable :: temp, ne, rho
+        real(dp), dimension(:,:,:), allocatable :: temp, ne, rho, zero
         real(dp), dimension(:,:,:), allocatable :: EK_over_temp, pe, dxi, toth, saha
         real(dp), dimension(:,:,:), allocatable :: teta, pg, E, p6, shield
     contains
@@ -47,7 +47,6 @@ MODULE composition_mod
         procedure :: scattering
         procedure :: reassign_pointer
         procedure :: get_totn
-        procedure :: get_nhyd
         procedure :: compute_grams_per_hydrogen
         procedure :: compute_p6
         procedure :: overwrite_abundance
@@ -216,6 +215,7 @@ contains
                 else ! IRWIN FORMAT
                     allocate(ion%irwin(6))
                     read(absdat, *) g0, ion%xion, ion%irwin
+                    ion%irwin(:) = ion%irwin(6:1:-1)
                 endif
             end do
         end do
@@ -780,7 +780,6 @@ contains
         real(4), dimension(:,:,:,:), pointer, contiguous :: eta, chi
         real(4), dimension(:,:,:,:), pointer :: cont
         real(4), dimension(:,:,:,:), allocatable, target :: chi_l
-        real(4), dimension(:,:,:,:), allocatable :: nh
         integer :: i, j, k, l, f, ired, iblue, nactive, prev_iso, m(3)
         real(8) :: cnt_ev, gf, awgt, iso_awgt, dl
         real(4) :: scalar, bnu
@@ -804,8 +803,6 @@ contains
         allocate(unsold,          mold=vproj)
         allocate(fmask(size(nu)), source=.false.)
         m = shape(vproj)
-        allocate(nh(m(1), m(2), m(3), 6))
-        call self%get_nhyd(nh)
 
         allocate(chi_l, mold=all_chi)
         chi_l = 0.
@@ -813,7 +810,7 @@ contains
         ne   = real(self%ne)
         temp = real(self%temp)
         EK_over_temp = real(self%EK_over_temp)
-        tothi = sum(nh(:,:,:,1:5), 4) ! total neutral hydrogen density
+        tothi = real(self%elements(1)%ions(1)%n) ! total neutral hydrogen density
         stark_pe = ne * temp**one_sixth
 
         do i=1, self%nel
@@ -1066,8 +1063,9 @@ contains
         logical, intent(in), optional :: use_rho, use_ne
         real(dp), dimension(:,:,:), allocatable :: ro
         integer :: i,j, nx, ny, nz, lunit
+        integer :: itimer=0
         !---------------------------------------------------------------------------
-        call trace%begin ('composition_type%load_state_variables')
+        call trace%begin ('composition_type%load_state_variables', itimer=itimer)
 
         if (.not. self%initialised) then
             print *, 'composition has not been initialised yet'
@@ -1078,12 +1076,14 @@ contains
             deallocate(self%temp)
             deallocate(self%ne, self%rho, self%pe, self%pg, self%E)
             deallocate(self%toth, self%saha, self%teta, self%dxi)
-            deallocate(self%EK_over_temp, self%p6)
+            deallocate(self%EK_over_temp, self%p6, self%zero)
         endif
 
         allocate(self%temp, self%ne, self%rho, self%pe, self%pg, self%E, mold=temp)
         allocate(self%toth, self%saha, self%teta, self%dxi, mold=temp)
-        allocate(self%EK_over_temp, self%p6, ro, mold=temp)
+        allocate(self%EK_over_temp, self%p6, ro, self%zero, mold=temp)
+
+        self%zero = 0.d0
         
         if (option(use_ne, .true.)) then
             self%ne = ne
@@ -1128,7 +1128,7 @@ contains
         call self%init_H_levels()
 
         self%loaded = .true.
-        call trace%end ()
+        call trace%end(itimer)
     END SUBROUTINE load_state_variables
 
     !=========================================================================
@@ -1141,8 +1141,9 @@ contains
         real(dp), intent(out), dimension(:,:,:), optional :: E
         real(dp), dimension(:,:,:), allocatable :: fe, xnen, xnecno, ejon
         real(dp), dimension(:,:,:), allocatable :: xerg, eh, toth
-        integer :: i, j
+        integer :: i, j, itimer=0, itimer2=0, itimer3=0
         !---------------------------------------------------------------------------
+        call trace%begin ('composition_type%thermal_equilibrium', itimer=itimer)
         allocate(fe, xnen, xnecno, ejon, xerg, eh, toth, mold=temp)
         call self%set_aux_data(temp, ne)
 
@@ -1152,7 +1153,13 @@ contains
 
         do i=1, self%nel
             element => self%elements(i)
+            call trace%begin ('composition_type%partition_functions', itimer=itimer2)
+            call element%compute_partition_functions(self%temp, self%EK_over_temp, self%ne)
+            call trace%end(itimer2)
+
+            call trace%begin ('composition_type%ion_equilibrium', itimer=itimer3)
             call element%compute_ion_equilibrium(self%EK_over_temp, self%ne, self%saha, self%dxi)
+            call trace%end(itimer3)
             
             do j=2, element%nion
                 ion => element%ions(j)
@@ -1195,6 +1202,7 @@ contains
             !ehm = (Hm%xion + HI%xion) * Hm%f
             E = 1.5*pg / rho + (ejon - eh)*EE / self%grph
         endif
+        call trace%end(itimer)
     END SUBROUTINE thermal_equilibrium
 
     !=========================================================================
@@ -1517,10 +1525,12 @@ contains
     END SUBROUTINE scattering
 
     !===============================================================================
-    SUBROUTINE get_totn(self, id, abund, totn, element, molec)
+    SUBROUTINE get_totn(self, id, abund, totn, el, mol)
         class(composition_type), target :: self
-        class(element_type), intent(out), pointer :: element
-        class(molec_type), intent(out), pointer :: molec
+        class(element_type), intent(out), optional, pointer :: el
+        class(molec_type), intent(out), optional, pointer :: mol
+        class(element_type), pointer :: element
+        class(molec_type), pointer :: molec
         character(len=*), intent(in) :: id
         real(dp), intent(in) :: abund
         real(dp), dimension(:,:,:) :: totn
@@ -1531,7 +1541,6 @@ contains
         molec   => null()
 
         call self%element_by_id(id, element)
-
         if (associated(element)) then
             totn = 0
             do j=1, element%nion
@@ -1545,35 +1554,13 @@ contains
                 totn = 10.0**(abund-12.0) * self%toth
             endif
         endif
+
+        if (present(el) .and. present(mol)) then
+            el => element
+            mol => molec
+        endif
         call trace%end ()
     END SUBROUTINE get_totn
-
-    !===============================================================================
-    SUBROUTINE get_nhyd(self, nhyd)
-        class(composition_type), target :: self
-        real(4), dimension(:,:,:,:), intent(out) :: nhyd
-        real(dp), dimension(:,:,:), pointer :: nh, blzfac
-        class(ion_type), pointer :: HI
-        type(level_type) :: level
-        integer :: k, nk
-        !---------------------------------------------------------------------------
-        call trace%begin ('composition_type%get_nhyd')
-        HI => self%elements(1)%ions(1)
-        nk = min(size(nhyd, 4), HI%nk)
-
-        !allocate(nh, blzfac, mold=self%temp)
-        !nh = 2*HI%part * HI%n
-
-        do k=1, nk
-            !level%xion = RYD * (1. - 1./k**2)
-            !blzfac = level%boltzmann(self%EK_over_temp, natural_log=.true.)
-            !nhyd(:,:,:,k) = k**2 * blzfac * nh
-            nhyd(:,:,:,k) = HI%levels(k)%n
-        end do
-
-        !deallocate (nh, blzfac)
-        call trace%end ()
-    END SUBROUTINE get_nhyd
 
     !===============================================================================
     SUBROUTINE molecular_equilibrium(self, temp, teta, pe, dxi, xnecno, eh, pg, fe)
@@ -1594,8 +1581,9 @@ contains
         real(dp), dimension(:,:,:), pointer :: Fi
         real(dp), dimension(:), allocatable :: Fold, Fnew
         logical, dimension(:,:,:), allocatable :: tmolim
+        integer :: itimer=0
         !---------------------------------------------------------------------------
-        call trace%begin ('composition_type%molecular_equilibrium')
+        call trace%begin ('composition_type%molecular_equilibrium', itimer=itimer)
 
         nx = size(temp, 1)
         ny = size(temp, 2)
@@ -1783,7 +1771,7 @@ contains
 
         where (tmolim) pg = pg * pefe
 
-        call trace%end ()
+        call trace%end(itimer)
     END SUBROUTINE molecular_equilibrium
 
     !===============================================================================
@@ -2074,6 +2062,7 @@ contains
                 read(lunit, *) mol%de
                 read(lunit, *) mol%dc ! always 5 numbers
                 read(lunit, *) mol%irwin
+                mol%irwin(:) = mol%irwin(n_irwin:1:-1)
             endif
             read(lunit, *, iostat=iostat) text
         end do

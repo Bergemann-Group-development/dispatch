@@ -18,9 +18,10 @@ MODULE experiment_mod
   USE scaling_mod, only: scaling
   USE handyfuncs_mod
   USE m3d_halo_mod, only: m3d_halo_t
-  USE m3d_patch_mod, only: verbose, print_execution_history
-  USE ray_patch_mod, only: maxvel
+  USE m3d_patch_mod, only: verbose, print_execution_history, use_density, use_ne, &
+  long_vec, pivot_z, rotate_atmos, atmos_format
   USE composition_patch_mod, only: composition_patch_t
+  USE composition_mod, only: composition_type
   USE read_stagger_snapshot_mod
   implicit none
   private
@@ -48,7 +49,6 @@ MODULE experiment_mod
     procedure:: init_nbors_hash
     procedure:: check_nbor
     procedure:: nbor_relations
-    !procedure:: save_mesh
   end type
   
 CONTAINS
@@ -64,34 +64,20 @@ SUBROUTINE pre_init (self)
   !-----------------------------------------------------------------------------
   call trace%begin('experiment_t%pre_init', itimer=itimer)
 
-  self%nv = 6
-  self%nt = 4 ! Download returns wrong stuff if nt <= 2
-  self%nw = 1
-
   self%periodic = [.true., .true., .false.]
 
-  if (irregular) then
-    call get_stagger_subregion(self%ipos(3), self%n, self%ds, self%position, self%zs)
-    self%ds = self%ds / scaling%l
-    self%position = self%position / scaling%l
-    self%size = self%ds * self%n
-  else
-    self%n = self%nbox / self%dims
-    md = mod(self%nbox, self%dims)
+  self%n = self%nbox / self%dims
+  md = mod(self%nbox, self%dims)
 
-    self%zs = self%ipos(3) * self%n(3) + min(md(3), self%ipos(3))
-    if (self%ipos(3)+1 <= md(3)) then
-      self%n(3) = self%n(3) + 1
-    endif
-
-    self%size = self%ds * self%n
-    self%position = 0.5d0*self%size
-    self%position(3) = self%position(3) + self%zs*self%ds(3)
+  self%zs = self%ipos(3) * self%n(3) + min(md(3), self%ipos(3))
+  if (self%ipos(3)+1 <= md(3)) then
+    self%n(3) = self%n(3) + 1
   endif
-
   self%ze = self%zs + self%n(3)
 
-  !call self%save_mesh()
+  self%size = self%ds * self%n
+  self%position = 0.5d0*self%size
+  self%position(3) = self%position(3) + self%zs*self%ds(3)
 
   !-----------------------------------------------------------------------------
   ! Preliminary region information, relative to the task position.
@@ -122,6 +108,11 @@ SUBROUTINE pre_init (self)
   self%composition%task_list => self%task_list
   self%composition%zs = self%zs
   call self%composition%pre_init()
+
+  self%nv = 6
+  self%nt = 4 ! Download returns wrong stuff if nt <= 2
+  self%nw = 1 + size(long_vec, 2)
+
   call trace%end (itimer=itimer)
 END SUBROUTINE pre_init
 
@@ -130,27 +121,29 @@ END SUBROUTINE pre_init
 !===============================================================================
 SUBROUTINE init (self)
   class(experiment_t):: self
+  class(composition_type), pointer:: composition
   real(4), dimension(:,:,:,:), pointer, contiguous :: authority
-  real(4), dimension(:,:,:), pointer, contiguous :: d, px, py, pz, tt, pe, vel
-  real(8) :: sub(3), pos(3)
-  integer :: li(3), ui(3), thread
+  real(4), dimension(:,:,:), pointer, contiguous :: d, px, py, pz, tt, pe
+  real(4), dimension(:,:,:), allocatable :: ne, vel
+  real(8), dimension(:,:,:), allocatable :: ne8, rho8, temp8
+  real(4), dimension(:,:,:,:), pointer, contiguous :: chi
+  real(8) :: nu(1), sub(3), pos(3), bottom, bot2pivot
+  integer :: i, n(3), li(3), ui(3), thread, loaded=0
   integer, save:: itimer=0
   !----------------------------------------------------------------------------
   call trace%begin('experiment_t%init', itimer=itimer)
   call self%patch_t%init()
 
-  !thread = mod(self%ipos(3),omp%nthreads)
-  !self%place = thread2place(thread, omp%ncores, omp%nthreads)+100
-  !self%place    = -1
-
   li = self%li
   ui = self%ui
+  n  = self%n
 
   self%authority_mem => self%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),:,:,:)
 
-  if (irregular) then
-    sub = self%size * scaling%l
-    pos = self%position * scaling%l
+  if (atmos_format == 'Stagger') then
+    sub = scaling%l * self%size
+    pos = scaling%l * self%position
+
     authority => self%authority_mem(:,:,:,:,self%it,1)
     d  => authority(:,:,:,self%idx%d)
     px => authority(:,:,:,self%idx%px)
@@ -158,24 +151,35 @@ SUBROUTINE init (self)
     pz => authority(:,:,:,self%idx%pz)
     tt => authority(:,:,:,self%idx%e)
     pe => authority(:,:,:,6)
-    call load_stagger_subregion(self%n, sub, pos, d, px, py, pz, tt, pe)
 
-    pe = pe * cgs%k_b * tt ! convert from electron density to electron pressure
+    allocate(ne, mold=pe)
+    call load_stagger_subregion(n, sub, pos, d, px, py, pz, tt, ne)
+    pe = ne * cgs%k_b * tt
 
-    pe = pe / scaling%p
-    d  = d  / scaling%d
-    px = px / (scaling%d * scaling%u)
-    py = py / (scaling%d * scaling%u)
-    pz = pz / (scaling%d * scaling%u)
+    if (rotate_atmos) then
+      do i=1, self%nw-1
+        authority => self%authority_mem(:,:,:,:,self%it,1+i)
+        d  => authority(:,:,:,self%idx%d)
+        px => authority(:,:,:,self%idx%px)
+        py => authority(:,:,:,self%idx%py)
+        pz => authority(:,:,:,self%idx%pz)
+        tt => authority(:,:,:,self%idx%e)
+        pe => authority(:,:,:,6)
+        bottom = self%position(3) - 0.5*self%size(3)
+        bot2pivot = pivot_z * self%ds(3) - bottom
+        call load_stagger_subregion(n, sub, pos, d, px, py, pz, tt, pe, bot2pivot, long_vec(:,i))
+        pe = ne * cgs%k_b * tt
+      end do
+    endif
 
-    call os%allocate(vel, self%n)
-    vel = sqrt(px**2 + py**2 + pz**2) / d
-    maxvel = max(maxvel, scaling%u / cgs%c * maxval(vel))
-    call os%deallocate(vel)
-
-    call os%allocate(self%filled, self%gn)
-    self%filled = -1
+    loaded = loaded + 1
+    if (loaded == self%dims(3)) then
+      call deallocate_stagger()
+    endif
   endif
+
+  call os%allocate(self%filled, self%gn)
+  self%filled = -1
 
   if (associated(self%boundaries)) then
     call self%init_bdries ()
@@ -284,12 +288,12 @@ END SUBROUTINE finish
 SUBROUTINE init_level (self)
   class(experiment_t):: self
   !-----------------------------------------------------------------------------
-  if (irregular) then
-    self%level = stagger_levels(self%ipos(3)+1)
-  elseif (any(self%n > 1)) then
+  !if (irregular) then
+  !  self%level = stagger_levels(self%ipos(3)+1)
+  !elseif (any(self%n > 1)) then
     ! The level does not depend on the patch size in non-regular grids
     self%level = 1
-  end if
+  !end if
 END SUBROUTINE init_level
 
 !===============================================================================

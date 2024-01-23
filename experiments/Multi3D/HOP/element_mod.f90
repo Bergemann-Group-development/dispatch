@@ -18,11 +18,50 @@ MODULE element_mod
         integer :: active
         character(len=3) :: id
     contains
+        procedure :: compute_partition_functions
         procedure :: compute_ion_equilibrium
         procedure :: print_info
     end type element_type
     
 contains
+
+!===============================================================================
+SUBROUTINE compute_partition_functions(self, temp, EK_over_temp, ne)
+    class(element_type), target :: self
+    type(ion_type), pointer :: ion
+    type(level_type), pointer :: lvl
+    real(dp), dimension(:,:,:), intent(in) :: temp, EK_over_temp, ne
+    real(dp), dimension(:,:,:), allocatable :: blz
+    integer :: i, j, l, u, x, y, z
+    !---------------------------------------------------------------------------
+    l = lbound(self%ions,1)
+    u = ubound(self%ions,1)
+
+    allocate(blz, mold=temp)
+
+    do j=l, u
+        ion => self%ions(j)
+        call ion%allocate(shape(ne))
+
+        if (ion%fixed_part) then
+            ion%part = ion%parco
+        elseif (allocated(ion%irwin)) then ! IRWIN FORMAT
+            ion%part = ion%irwin_partf(temp)
+        else
+            ion%part = 0
+            do i=1, ion%nk
+                lvl => ion%levels(i)
+                blz = lvl%g * lvl%boltzmann(EK_over_temp)
+                if (lvl%xl > 0) then
+                    blz = blz * lvl%fischel_sparks(ion%j, EK_over_temp, ne)
+                endif
+                ion%part = ion%part + blz
+            end do
+        endif
+
+        ion%part = 1 / ion%part
+    end do
+END SUBROUTINE compute_partition_functions
 
 !===============================================================================
 SUBROUTINE compute_ion_equilibrium(self, EK_over_temp, ne, saha, dxi)
@@ -36,12 +75,6 @@ SUBROUTINE compute_ion_equilibrium(self, EK_over_temp, ne, saha, dxi)
     ions => self%ions
     l = lbound(ions,1)
     u = ubound(ions,1)
-
-    do j=l, u
-        ion => self%ions(j)
-        call ion%allocate(shape(ne))
-        ion%part = 1 / ion%partition(EK_over_temp, ne)
-    end do
 
     fil = 1
     do j=u-1, l, -1

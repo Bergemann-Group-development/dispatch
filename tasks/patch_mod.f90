@@ -239,6 +239,10 @@ MODULE patch_mod
     procedure:: allocate_mem
     procedure:: deallocate_mem
     procedure:: copy_to
+    procedure :: save4
+    procedure :: save5
+    procedure :: save6
+    procedure :: save_meta
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -4139,5 +4143,84 @@ SUBROUTINE copy_to (self, tgt)
   !-----------------------------------------------------------------------------
   ! fallback
 END SUBROUTINE copy_to
+
+!===============================================================================
+SUBROUTINE save4 (self, mem, label)
+  class(patch_t):: self
+  real(4), dimension(:,:,:,:) :: mem
+  character(len=*) :: label
+  character(len=32) :: filename
+  integer :: lunit
+  integer, save :: itimer=0
+  ! ----------------------------------------------------------------------------
+  call trace%begin('patch_t%save4', itimer=itimer)
+  call self%save_meta(mem, label, filename, lunit)
+  write(lunit) mem
+  close(lunit)
+  call trace%end(itimer)
+END SUBROUTINE save4
+
+!===============================================================================
+SUBROUTINE save5 (self, mem, label)
+  class(patch_t):: self
+  real(4), dimension(:,:,:,:,:) :: mem
+  character(len=*) :: label
+  character(len=32) :: filename
+  integer :: lunit
+  integer, save :: itimer=0
+  ! ----------------------------------------------------------------------------
+  call trace%begin('patch_t%save5', itimer=itimer)
+  call self%save_meta(mem, label, filename, lunit)
+  write(lunit) mem
+  close(lunit)
+  call trace%end(itimer)
+END SUBROUTINE save5
+
+!===============================================================================
+SUBROUTINE save6 (self, mem, label)
+  class(patch_t):: self
+  real(4), dimension(:,:,:,:,:,:) :: mem
+  character(len=*) :: label
+  character(len=32) :: filename
+  integer :: lunit
+  integer, save :: itimer=0
+  ! ----------------------------------------------------------------------------
+  call trace%begin('patch_t%save6', itimer=itimer)
+  call self%save_meta(mem, label, filename, lunit)
+  write(lunit) mem
+  close(lunit)
+  call trace%end(itimer)
+END SUBROUTINE save6
+
+!===============================================================================
+SUBROUTINE save_meta(self, mem, label, filename, lunit)
+  class(patch_t):: self
+  real(4), dimension(..) :: mem
+  character(len=*) :: label
+  character(len=256) :: meta_file, folder
+  character(len=32) :: filename, fmt
+  integer :: i, lunit, ndim
+  ! ----------------------------------------------------------------------------
+  call io%lock%set('save_meta')
+  if (size(mem) == 0) then
+    call shared%abort('mem not associated in save')
+  endif
+  write(folder, '(A, A)') trim(io%run_dir), 'save/'
+  write(filename, '(A, A, 2(I3.3), A)') trim(label), '_', abs(self%key(1:2)), '.bin'
+  meta_file = trim(label) // '_meta.txt'
+  if (os%exists(trim(folder)//meta_file)) then
+    open(newunit=lunit, file=trim(folder)//meta_file, form='formatted', position='append')
+  else
+    call os%mkdir(folder)
+    open(newunit=lunit, file=trim(folder)//meta_file, form='formatted')
+    write(lunit, '(A, A9, A21, A5)') '*', ' filename', '', 'bytes'
+  endif
+  ndim = size(shape(mem))
+  write(fmt, '(I3,A)') ndim, '(I10))'
+  write(lunit, '(A32, I4, '//fmt) filename, storage_size(mem), shape(mem)
+  close(lunit)
+  call io%lock%unset('save_meta')
+  open(newunit=lunit, file=trim(folder)//filename, access='stream', status='replace')
+END SUBROUTINE save_meta
 
 END MODULE patch_mod

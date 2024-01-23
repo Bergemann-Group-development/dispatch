@@ -37,7 +37,7 @@ MODULE atom_mod
     end type atomic_spectrum_type
     !---------------------------------------------------------------------
 
-    type, public :: local_data_t
+    type, public :: atom_data_t
       ! LTE, NLTE and total population of active atom
       real(8), dimension(:,:,:,:), pointer, contiguous :: nstar => null()
       real(8), dimension(:,:,:,:), pointer, contiguous :: n     => null()
@@ -50,7 +50,7 @@ MODULE atom_mod
       real(8), dimension(:),   allocatable  :: e
       real(8), dimension(:,:), allocatable  :: C, W
       logical :: converged=.false.
-    end type local_data_t
+    end type atom_data_t
   
     type, public, extends(massive_type) :: atom_type
       integer :: nrad   ! total number of radiative transitions
@@ -80,7 +80,8 @@ MODULE atom_mod
       type(cont_type), dimension(:), pointer, contiguous :: cont
       type(coll_type), dimension(:), pointer, contiguous :: coll
       type(atomic_spectrum_type), pointer :: sp
-      type(local_data_t), pointer :: data
+      type(atom_data_t), pointer :: data
+      type(atom_data_t), dimension(:), pointer :: rotated_data
 
       real(8), dimension(:,:), pointer, contiguous :: tgrid, cgrid, dcdt
       real(4), dimension(:), pointer, contiguous :: cdata
@@ -122,12 +123,10 @@ MODULE atom_mod
   contains
   
   !====================================================================================
-  SUBROUTINE solve_stat_equilibrium (self, temp, ne, totn, n, nstar, nh, gamma_ij, gamma_ji, cswitch, check_NaN)
+  SUBROUTINE solve_stat_equilibrium (self, temp, ne, totn, n, nstar, nh1, gamma_ij, gamma_ji, cswitch, check_NaN)
     class(atom_type), target :: self
     class(transition_type), pointer :: trans
-    real(4), intent(in) :: temp, ne
-    real(8), intent(in) :: totn
-    real(4), dimension(:), intent(in) :: nh
+    real(8), intent(in) :: temp, ne, totn, nh1
     real(8), dimension(:), intent(in) :: gamma_ij, gamma_ji
     real(8), dimension(:), intent(in) :: nstar
     real(8), dimension(:), intent(inout) :: n
@@ -164,11 +163,11 @@ MODULE atom_mod
       self%data%c = 0.d0
 
       if (use_classic_col) then
-        call self%classic_col(temp,ne,nh,nstar)
+        call self%classic_col(temp,ne,nh1,nstar)
       endif
 
       call gencol(self%coll,self%id,self%nlevel,self%g,self%ev,self%ion,&
-                  self%data%c,dble(temp),dble(ne),nstar,dble(nh),self%tgrid,self%cgrid,self%dcdt)
+                  self%data%c,temp,ne,nstar,nh1,self%tgrid,self%cgrid,self%dcdt)
 
       call trace%end(itimer=itimer)
 
@@ -422,14 +421,15 @@ MODULE atom_mod
   !------------------------------------------------------------------------------------
    
   !====================================================================================
-  SUBROUTINE compute_cont_factors(self)
+  SUBROUTINE compute_cont_factors(self, adata)
     class(atom_type), target, intent(inout) :: self
+    class(atom_data_t) :: adata
     real(4) :: bj
     integer :: i, j, k, kr, n(4), x, y, z
     class(cont_type), pointer :: cont
     !---------------------------------------------------------------------------------
-    n = [shape(self%data%totn), self%ncont]
-    call os%allocate(self%data%nibj, n, label='data%nibj')
+    n = [shape(adata%totn), self%ncont]
+    call os%allocate(adata%nibj, n, label='data%nibj')
 
     do kr=1,self%ncont
       cont => self%cont(kr)
@@ -439,8 +439,8 @@ MODULE atom_mod
       do z=1, n(3)
       do y=1, n(2)
       do x=1, n(1)
-        bj = self%data%n(x,y,z,j) / self%data%nstar(x,y,z,j)
-        self%data%nibj(x,y,z,kr) = bj * self%data%nstar(x,y,z,i)
+        bj = adata%n(x,y,z,j) / adata%nstar(x,y,z,j)
+        adata%nibj(x,y,z,kr) = bj * adata%nstar(x,y,z,i)
       end do
       end do
       end do
@@ -993,10 +993,9 @@ MODULE atom_mod
   END SUBROUTINE prepare_Drawin
 
   !====================================================================================
-  SUBROUTINE classic_col(self,temp,ne,nh,nstar)
+  SUBROUTINE classic_col(self,temp,ne,nh1,nstar)
     class(atom_type), intent(inout) :: self
-    real(4), intent(in) :: temp, ne
-    real(4), dimension(:), intent(in) :: nh
+    real(8), intent(in) :: temp, ne, nh1
     real(8), dimension(:), intent(in) :: nstar
     real(8) :: ni, nj, nij, cup, cdn, EK_over_temp, divu
     real(8) :: dxi, dev, ex, u0, f, tmp, sqt, fac, nu0
@@ -1075,7 +1074,7 @@ MODULE atom_mod
             divu = (RydV/dev)**2
             tmp = 2.0/u0
             tmp = (1.0 + tmp) / (1.0 + (mu_e*tmp)**2)
-            cup = nh(1) * self%drawin * divu * tmp * ex * sqt
+            cup = nh1 * self%drawin * divu * tmp * ex * sqt
             
             if (.not. cont) then
               f = max(fac, 1e-5)

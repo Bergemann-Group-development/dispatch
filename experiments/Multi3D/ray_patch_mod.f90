@@ -46,7 +46,6 @@ MODULE ray_patch_mod
     procedure :: allocate_mesg
     procedure :: total_mesg_buffer_size
     procedure :: init_nbors_hash
-    procedure :: frequency_padding
     procedure :: init_bdries
     procedure :: bndries
   end type ray_patch_t
@@ -54,7 +53,6 @@ MODULE ray_patch_mod
   !-----------------------------------------------------------------------------
   integer, save:: verbose=0
   character(len=12), public, save :: formal_solver='linear'
-  real(4), public, save :: maxvel=0
 
 contains
 
@@ -142,28 +140,6 @@ SUBROUTINE set_freq_indices (self)
     counter = self%i_nu
   endif
 END SUBROUTINE set_freq_indices
-
-!===============================================================================
-SUBROUTINE frequency_padding (self)
-  class(ray_patch_t) :: self
-  real(8) :: max_nu, min_nu, dnu
-  integer :: li(3), ui(3), fs, fe, nv
-  !-----------------------------------------------------------------------------
-  if (use_vel) then
-    dnu = maxval(self%sp%nu) * maxvel
-    min_nu = self%sp%nu(self%fs) - dnu
-    max_nu = self%sp%nu(self%fe) + dnu
-    fs = searchsorted(self%sp%nu, min_nu, outbounds_ok=.true.)
-    fe = searchsorted(self%sp%nu, max_nu, outbounds_ok=.true.)
-    self%fs = max(1, fs)
-    self%fe = min(self%sp%nnu, fe)
-    self%padded = .true.
-  endif
-  
-  nv = self%fe-self%fs+1
-  call self%set_nv_and_nw (nv,self%nw)
-END SUBROUTINE frequency_padding
-
 
 !===============================================================================
 !> Determine if a task is upstream.  

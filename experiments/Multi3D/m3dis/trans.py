@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from .auxfuncs import vacuum2obs, _vacuum2obs, is_number, freq_quad, compute_tau_scale, find_close, interp_tau
+from .auxfuncs import convol, vacuum2obs, _vacuum2obs, is_number, freq_quad, compute_tau_scale, find_close, interp_tau
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 
@@ -181,11 +181,13 @@ class trans_class(object):
         slc = slice(self.ib, self.ir)
         self.lam  = self.run.lam[slc]
         self.flux = self.run.flux[slc]
+        self.flux_cnt = self.run.flux_cnt[slc]
         self.ie = self.run.ie[slc]
+        self.cnt = self.run.cnt[slc]
         self.prepared = True
 
     #=====================================================================
-    def plot(self, ang=None, imu=None, norm=True, dlam=None,
+    def plot(self, ang=None, imu=None, norm=True, dlam=None, label=None,
                 vdop=None, vshift=None, convolve=None, renorm=False,
                 LTE=False, title=None, set_labels=True, **kwargs):
         #-----------------------------------------------------------------
@@ -198,7 +200,12 @@ class trans_class(object):
         self.run.set_xaxis(xx, dlam, set_labels=set_labels)
         self.run.set_yaxis(ang, imu, norm, renorm, set_labels=set_labels)
 
-        plot = plt.plot(xx, yy, **kwargs)
+        if type(label) is str:
+            if '{WEQ}' in label:
+                weq = self.calc_weq(ang=ang, imu=imu, dlam=dlam, LTE=LTE)
+                label = label.replace('{WEQ}', '{:.2f}'.format(weq))
+
+        plot = plt.plot(xx, yy, label=label, **kwargs)
 
         if set_labels:
             set_title(title, default=self.title+', '+self.el.title)
@@ -230,16 +237,22 @@ class trans_class(object):
             yy = np.interp(ixx, sxx, syy)
         
         return xx, yy
-
+    
     #=====================================================================
-    def plot_clv(self, dlam=None, reduced=True, title=None, **kwargs):
+    def get_clv(self, reduced=True, **kwargs):
         #-----------------------------------------------------------------
         if reduced:
             xx = self.run.mus
-            yy = [self.calc_weq(imu=i, dlam=dlam) for i in range(self.run.nmu)]
+            yy = [self.calc_weq(imu=i, **kwargs) for i in range(self.run.nmu)]
         else:
             xx = self.run.vec[:,-1]
-            yy = [self.calc_weq(ang=i, dlam=dlam) for i in range(xx.size)]
+            yy = [self.calc_weq(ang=i, **kwargs) for i in range(xx.size)]
+        return xx, np.array(yy)
+
+    #=====================================================================
+    def plot_clv(self, dlam=None, LTE=False, reduced=True, title=None, **kwargs):
+        #-----------------------------------------------------------------
+        xx, yy = self.get_clv(dlam=dlam, LTE=LTE, reduced=reduced)
 
         if not 'linestyle' in kwargs:
             kwargs['linestyle'] = 'none'
@@ -247,14 +260,14 @@ class trans_class(object):
         if not 'marker' in kwargs:
             kwargs['marker'] = '.'
 
-        plt.plot(xx, yy, **kwargs)
+        
         plt.xlabel(r'$\mu$')
         plt.ylabel('Equivalent width [mÅ]')
 
         set_title(title, default=self.title+', '+self.el.title)
         set_legend(**kwargs)
 
-        return xx, yy
+        return plt.plot(xx, yy, **kwargs)
 
     #=====================================================================
     def get_xx(self, dlam):
@@ -405,7 +418,7 @@ class trans_class(object):
             cf = conversion * (lin_chi*cnt_inu - lin_eta) * np.exp(-tau)
 
             if get_mean:
-                yy = np.array(cf[...,::-1])
+                yy = np.array(cf[...,::-1]).copy()
                 xx = ltau[...,::-1].copy()
                 newcf = interp_tau(new_ltau, xx, yy)
                 cfunc = cfunc + w*np.mean(newcf, axis=(1,2))
@@ -458,7 +471,7 @@ def set_title(title, default=None):
         title = default
 
     if title is not None:
-        plt.title(title, fontsize='medium')
+        plt.title(title)
 
 def set_legend(**kwargs):
     if 'label' in kwargs:

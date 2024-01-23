@@ -27,7 +27,7 @@ EK  = EE/BK
 #HNY4P = HH*CC/QNORM/4./PI*1e-5
 
 def check_file(file):
-    if file is not '':
+    if file!='':
         if not os.path.exists(file):
             raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), file)
 
@@ -513,6 +513,8 @@ def interp_tau(newx, xx, yy):
 def find_close(arr, val):
     #-----------------------------------------------------------------
     i = np.searchsorted(arr, val)
-    if np.isclose(arr[i-1], val, rtol=1e-10): i = i-1
-    if np.isclose(arr[i+1], val, rtol=1e-10): i = i+1
+    if i>0:
+        if np.isclose(arr[i-1], val, rtol=1e-10): i = i-1
+    if i<len(arr)-1:
+        if np.isclose(arr[i+1], val, rtol=1e-10): i = i+1
     return i

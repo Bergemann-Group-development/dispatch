@@ -300,11 +300,35 @@ contains
   END FUNCTION interp1d_sorted
 
   !===============================================================================
+  FUNCTION interp1d_reg_period (dx, yy, newx) result(newy)
+    real(4), intent(in) :: dx
+    real(4), dimension(:), intent(in) :: yy, newx
+    real(4), dimension(:), allocatable :: newy
+    real(4) :: ratio, delta, over_dx
+    integer :: i, i1, i2, nnew, nold
+    !-----------------------------------------------------------------------------
+    nnew = size(newx, 1)
+    nold = size(yy, 1)
+    over_dx = 1 / dx
+    allocate(newy(nnew))
+  
+    do i=1, nnew
+      ratio = newx(i) * over_dx
+      i1 = int(ratio)
+      delta = ratio - i1
+      i1 = modulo(i1, nold) + 1
+      i2 = modulo(i1, nold) + 1
+      newy(i) = (1.0 - delta) * yy(i1) + delta * yy(i2)
+    end do
+  END FUNCTION interp1d_reg_period
+
+  !===============================================================================
   SUBROUTINE linterpolate_3d(f, fout, oldx, oldy, oldz, newx, newy, newz)
     real(4), intent(in),  dimension(:,:,:) :: f
     real(4), intent(out), dimension(:,:,:) :: fout
     real(4), dimension(:), intent(in) :: oldx, oldy, oldz, newx, newy, newz
-    real(4), dimension(:,:,:), allocatable :: fz, fy
+    real(4), dimension(:,:), allocatable :: fy
+    real(4), dimension(:,:,:), allocatable :: fz
     integer :: i,j,k, nx, ny, nz, ox,oy,oz
     !-----------------------------------------------------------------------------
     ox = size(oldx,1); nx = size(newx,1)
@@ -312,7 +336,7 @@ contains
     oz = size(oldz,1); nz = size(newz,1)
     
     allocate(fz(ox,oy,nz))
-    allocate(fy(ox,ny,nz))
+    allocate(fy(ox,ny))
 
     ! z-dimension linear interpolation
     do j = 1, oy
@@ -321,22 +345,63 @@ contains
       end do
     end do
 
-    ! y-dimension linear interpolation
     do k = 1, nz
+      ! y-dimension linear interpolation
       do i = 1, ox
-        fy(i,:,k) = interp1d_sorted(oldy, fz(i,:,k), newy)
+        fy(i,:) = interp1d_sorted(oldy, fz(i,:,k), newy)
+      end do
+      ! x-dimension linear interpolation
+      do j = 1, ny
+        fout(:,j,k) = interp1d_sorted(oldx, fy(:,j), newx)
       end do
     end do
+  END SUBROUTINE linterpolate_3d
+  
+  !===============================================================================
+  SUBROUTINE linterpolate_3d_rotated(f, fout, dx, dy, oldz, newx, newy, newz, vec, bot2pivot, ray_offset)
+    real(4), intent(in),  dimension(:,:,:) :: f
+    real(4), intent(out), dimension(:,:,:) :: fout
+    real(4), dimension(:), intent(in) :: oldz, newx, newy, newz
+    real(4), dimension(:,:), allocatable :: fy
+    real(4), dimension(:,:,:), allocatable :: fz
+    real(4), intent(in) :: dx, dy, ray_offset(2)
+    real(8), intent(in) :: vec(3), bot2pivot
+    real(4) :: dz, height, delta(2), deltak(2)
+    integer :: i,j,k, nx, ny, nz, ox,oy,oz
+    !-----------------------------------------------------------------------------
+    ox = size(f,1); nx = size(newx,1)
+    oy = size(f,2); ny = size(newy,1)
+    oz = size(f,3); nz = size(newz,1)
+
+    dz = newz(2) - newz(1)
+
+    allocate(fz(ox,oy,nz))
+    allocate(fy(ox,ny))
+
+    ! z-dimension linear interpolation
+    do j = 1, oy
+      do i = 1, ox
+        fz(i,j,:) = interp1d_sorted(oldz, f(i,j,:), newz)
+      end do
+    end do
+
+    delta = vec(1:2) / vec(3)
+
+    do k = 1, nz
+      height = (k-1)*dz ! height of plane as measured from bottom
+      deltak = (bot2pivot - height)*delta + ray_offset
+
+      ! y-dimension linear interpolation
+      do i = 1, ox
+        fy(i,:) = interp1d_reg_period(dy, fz(i,:,k), newy + deltak(2))
+      end do
 
     ! x-dimension linear interpolation
-    do k = 1, nz
       do j = 1, ny
-        fout(:,j,k) = interp1d_sorted(oldx, fy(:,j,k), newx)
+        fout(:,j,k) = interp1d_reg_period(dx, fy(:,j), newx + deltak(1))
       end do
     end do
-
-    !call os%deallocate(f)
-  END SUBROUTINE linterpolate_3d
+  END SUBROUTINE linterpolate_3d_rotated
 
   !===============================================================================
   SUBROUTINE interp1d_periodic(old, new)

@@ -46,7 +46,6 @@ MODULE ion_mod
         real(dp), dimension(:,:,:), allocatable :: pk, fil
         logical :: fixed_part = .false.
     contains
-        procedure :: partition
         procedure :: saha_eq
         procedure :: molecules_with
         procedure :: f_of_own_molecules
@@ -59,25 +58,6 @@ MODULE ion_mod
     real(dp), public :: vmic=-1.
 
 contains
-
-!===============================================================================
-elemental real(dp) FUNCTION partition(self, EK_over_temp, ne)
-    class(ion_type), intent(in) :: self
-    real(dp), intent(in) :: EK_over_temp, ne
-    real(dp), dimension(self%nk) :: blz, fis, g
-    !---------------------------------------------------------------------------
-    if (self%fixed_part) then
-        partition = self%parco
-    elseif (allocated(self%irwin)) then ! IRWIN FORMAT
-        partition = self%irwin_partf(EK / EK_over_temp)
-    else
-        fis = 1
-        g   = self%levels%g
-        blz = self%levels%boltzmann(EK_over_temp)
-        where(self%levels%xl > 0) fis = self%levels%fischel_sparks(self%j, EK_over_temp, ne)
-        partition = sum(g*fis*blz)
-    endif
-END FUNCTION partition
 
 !===============================================================================
 elemental real(dp) FUNCTION saha_eq(self, EK_over_temp, ne, saha, dxi, partition_ratio)
@@ -237,12 +217,11 @@ pure FUNCTION irwin_poly (self, temp) result(u)
     class(particle_type), intent(in) :: self
     real(dp), intent(in) :: temp
     real(dp) :: u
-    integer :: i, n
+    integer :: i
     !---------------------------------------------------------------------------
-    n = size(self%irwin)
-    u = self%irwin(n)
-    do i=n, 2, -1
-        u=u*temp + self%irwin(i-1)
+    u = self%irwin(1)
+    do i=1, size(self%irwin)-1
+        u=u*temp + self%irwin(i+1)
     end do
 END FUNCTION irwin_poly
 

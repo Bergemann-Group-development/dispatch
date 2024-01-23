@@ -23,13 +23,12 @@ MODULE read_external_mod
   USE experiment_mod
   USE ion_mod, only: vmic
   USE composition_mod
-  USE composition_patch_mod, only: FeH
+  USE composition_patch_mod, only: FeH, save_atmos
   USE patch_mod
   USE mconst, only:cc
   USE atom_mod, only: m1d_legacy_mode, NextEntry
-  USE ray_patch_mod, only: maxvel
   USE m3d_patch_mod, only: maxiter, ilambd, m3d_patch_t, atom_update_counter, &
-  global_maxerr, global_pos, nz_total, use_density, use_ne
+  global_maxerr, global_pos, nz_total, use_density, use_ne, atmos_format
   USE m3d_halo_mod, only: m3d_halo_t
   USE read_stagger_snapshot_mod
   USE read_marcs_mod, only: read_marcs, zfac
@@ -47,7 +46,6 @@ MODULE read_external_mod
     procedure:: read_multi_snapshot
     procedure:: setup_patch
     procedure:: load_authority
-    procedure:: save_atmos
     procedure:: save_multi_atmos
   end type read_external_t
 
@@ -70,12 +68,10 @@ SUBROUTINE init(self, task_list, name)
   class(experiment_t), pointer:: patch
   class(link_t), pointer:: link, next
   real(4) :: origin(3)=[0.0,0.0,0.0]
-  integer :: iostat, k, ip
+  integer :: lunit, iostat, k, ip
   integer :: patches_per_mpi=1
   integer :: dims=1, nx=5, ny=5, nz=256, snap=0
   integer :: verbose=0
-  logical :: save_atmos=.true.
-  character(len=126) :: atmos_format='Text'
   real(4), dimension(:,:,:), pointer, contiguous :: vel
   namelist /atmos_params/ atmos_file, dims, verbose, patches_per_mpi, FeH, save_atmos, &
   atmos_format, vmic, use_density, use_ne, nx, ny, nz, snap, legacy_stagger_interp
@@ -100,9 +96,9 @@ SUBROUTINE init(self, task_list, name)
 
   if (atmos_format == 'Stagger') then
     call read_stagger_params(atmos_file, snap, nx, ny, nz)
-    if (irregular) then
-      dims = size(stagger_levels)
-    endif
+    !if (irregular) then
+    !  dims = size(stagger_levels)
+    !endif
   endif
 
   if (patches_per_mpi > 1) then
@@ -132,15 +128,17 @@ SUBROUTINE init(self, task_list, name)
   allocate (task_list)
   self%task_list => task_list
 
-  if (irregular .and. atmos_format == 'Stagger') then
-    call read_stagger_size(self%n, self%size)
+  if (atmos_format == 'Stagger') then
+    call read_stagger_size(self%size)
     self%size = self%size / scaling%l
+    self%n = [nx, ny, nz]
+    self%ds = self%size / self%n
 
   else
     select case (atmos_format)
-    case ('Stagger')
-      call read_stagger_snapshot(self%ds, self%rho, self%px, self%py, &
-      self%pz, self%ee, self%temp, self%ne)
+    !case ('Stagger')
+    !  call read_stagger_snapshot(self%ds, self%rho, self%px, self%py, &
+    !  self%pz, self%ee, self%temp, self%ne)
     case ('Marcs')
       call read_marcs(atmos_file, nz, self%ds, self%rho, self%temp, self%pe, FeH, vmic)
     case ('Multi')
@@ -168,17 +166,11 @@ SUBROUTINE init(self, task_list, name)
     endif
 
     self%ds  = self%ds  / scaling%l
-    self%pe  = self%pe  / scaling%p
-    self%rho = self%rho / scaling%d
 
     if (.not. associated(self%pz)) then
       call os%allocate(self%px, self%n, zero=.true.)
       call os%allocate(self%py, self%n, zero=.true.)
       call os%allocate(self%pz, self%n, zero=.true.)
-    else
-      self%px = self%px / (scaling%d * scaling%u)
-      self%py = self%py / (scaling%d * scaling%u)
-      self%pz = self%pz / (scaling%d * scaling%u)
     endif
 
     if (self%rho(1,1,1) < self%rho(1,1,self%n(3))) then
@@ -190,13 +182,6 @@ SUBROUTINE init(self, task_list, name)
       self%py   =  self%py  (:,:,self%n(3):1:-1)
       self%pz   = -self%pz  (:,:,self%n(3):1:-1)
     endif
-
-    call os%allocate(vel, self%n)
-    vel = sqrt(self%px**2 + self%py**2 + self%pz**2) / self%rho
-    maxvel = scaling%u / cc * maxval(vel)
-    call os%deallocate(vel)
-
-    maxvel = max(1e-8, maxvel)
 
     self%size = self%n * self%ds
   endif
@@ -266,10 +251,10 @@ SUBROUTINE init(self, task_list, name)
     write (stdout,*) ip, 'tasks generated'
   endif
 
-  if (.not. irregular .and. save_atmos) then
-    call self%save_atmos(patch)
-    call self%save_multi_atmos()
-  endif
+  open(file=trim(io%run_dir)//'atmos_mesh.txt', newunit=lunit, form='FORMATTED')
+  write(lunit, *) self%n
+  write(lunit, *) self%ds
+  close(lunit)
 
   io%end_time = (maxiter + ilambd + 1) * patch%dtime
   io%print_every = huge(1)
@@ -359,10 +344,7 @@ SUBROUTINE setup_patch (self, patch)
   patch%nbox   = self%n
   patch%dims   = self%dims
   patch%origin = self%origin
-
-  if (.not. irregular) then
-    patch%ds = self%ds
-  endif
+  patch%ds     = self%ds
   
   call patch%pre_init()
   call trace%end ()
@@ -386,7 +368,7 @@ SUBROUTINE init_exp (self)
       select type (task)
       class is (experiment_t)
         call task%init()
-        if (.not. irregular) then
+        if (.not. atmos_format == 'Stagger') then
           call self%load_authority(task)
         endif
       end select
@@ -512,14 +494,11 @@ SUBROUTINE save_multi_atmos (self)
 
   ne   = self%ne  (:,:,self%n(3):1:-1)
   temp = self%temp(:,:,self%n(3):1:-1)
-  vx   = self%px  (:,:,self%n(3):1:-1) / scaling%u
-  vy   = self%py  (:,:,self%n(3):1:-1) / scaling%u
-  vz   = self%pz  (:,:,self%n(3):1:-1) / scaling%u
-  rho  = self%rho (:,:,self%n(3):1:-1) * scaling%d
+  rho  = self%rho (:,:,self%n(3):1:-1)
 
-  vx = vx / rho
-  vy = vy / rho
-  vz = vz / rho
+  vx   = self%px  (:,:,self%n(3):1:-1) / rho
+  vy   = self%py  (:,:,self%n(3):1:-1) / rho
+  vz   = self%pz  (:,:,self%n(3):1:-1) / rho
 
   recl = kind(1.0)*product(self%n)
 
@@ -568,9 +547,6 @@ SUBROUTINE load_authority(self, patch)
   elseif (associated(self%ee)) then
     patch%v5 = 'ee'
   endif
-
-  call os%allocate(patch%filled, patch%gn)
-  patch%filled = -1
 END SUBROUTINE
 
 !===============================================================================
@@ -796,51 +772,6 @@ SUBROUTINE add_nbor (self, link, nbors, nbor, added, by_quality, by_rank)
   call link%lock%unset ('add_nbor')
   !call trace%end (itimer)
 END SUBROUTINE add_nbor
-
-!===============================================================================
-SUBROUTINE save_atmos (self, patch)
-  class (read_external_t) :: self
-  class(experiment_t), pointer:: patch
-  class(composition_type), pointer:: composition
-  real(4), dimension(:,:,:,:), allocatable :: chi, abslte, sumsca, eta
-  real(4), dimension(:,:,:), allocatable :: tau
-  real(8), dimension(1) :: nu
-  real(8) :: dz
-  character(len=82) :: out_atmos_file='atmos_data.bin'
-  character(len=82) :: out_mesh_file='atmos_mesh.txt'
-  integer :: lunit, n,step, m(3), i, j, k
-  !-----------------------------------------------------------------------------
-  open(file=trim(io%run_dir)//out_mesh_file, newunit=lunit, form='FORMATTED')
-  write(lunit, *) self%n
-  write(lunit, *) self%ds
-  close(lunit)
-  
-  n = self%n(3)
-  m = shape(self%temp)
-  allocate(chi(1,m(1), m(2), m(3)))
-  allocate(abslte, sumsca, eta, mold=chi)
-  allocate(tau, mold=self%temp)
-  nu = 1e8 * cc / 5000.0
-  dz = self%ds(3) * scaling%l
-
-  composition => patch%composition%composition
-  call composition%load_state_variables(dble(self%temp), dble(self%ne), &
-      dble(self%rho)*scaling%d, use_rho=use_density, use_ne=use_ne)
-  call composition%absorption(nu, chi, sorted=.true.)
-  call compute_tau_scale(chi(1,:,:,n:1:-1), dz, tau(:,:,n:1:-1))
-
-  open(file=trim(io%run_dir)//out_atmos_file, newunit=lunit, form='UNFORMATTED')
-  write(lunit) self%temp
-  write(lunit) self%rho 
-  write(lunit) self%px  
-  write(lunit) self%py  
-  write(lunit) self%pz  
-  write(lunit) self%pe  
-  write(lunit) tau      
-  write(lunit) chi      
-  write(lunit) eta   
-  close(lunit)
-END SUBROUTINE save_atmos
 
 !===============================================================================
 SUBROUTINE compute_tau_scale (chi, ds, tau)

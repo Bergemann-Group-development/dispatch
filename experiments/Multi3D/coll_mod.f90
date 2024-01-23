@@ -45,15 +45,15 @@ MODULE coll_mod
  contains
 
    !====================================================================================
-   SUBROUTINE gencol(coll,id,nlevel,g,ev,ion,cij,temp,ne,nstar,nh,tgrid,cgrid,dcdt)
+   SUBROUTINE gencol(coll,id,nlevel,g,ev,ion,cij,temp,ne,nstar,nh1,tgrid,cgrid,dcdt)
       class(coll_type), dimension(:) :: coll
       character(len=*), intent(in) :: id
       integer, intent(in) :: nlevel
-      real(8), intent(in), dimension(:) :: g, ev, nh
+      real(8), intent(in), dimension(:) :: g, ev
       integer, intent(in), dimension(:) :: ion
       real(8), intent(in), dimension(:) :: nstar
       real(8), intent(out), dimension(nlevel,nlevel) :: cij
-      real(8), intent(in) :: temp, ne
+      real(8), intent(in) :: temp, ne, nh1
   
       real(8) :: ct,cup,cdn,dekt,de_k,de
       real(8) :: stg,nsr
@@ -67,7 +67,6 @@ MODULE coll_mod
       !---------------------------------------------------------------------
       ! get local copies for ease of notation
       stg=sqrt(temp)
-      nhlevels = size(nh, 1)
       saha = 1.5*log(temp) - log(saha_const*ne)
       dxi = 4.98e-4*5040./temp*sqrt(ne*bk*temp)
       ek_over_temp = e_k / temp
@@ -117,13 +116,13 @@ MODULE coll_mod
          case('CH')
             ! collisions with neutral hydrogen)
             ! these are downward rates (cdn); cup are upward rates
-            cdn = ct * nh(1)
+            cdn = ct * nh1
             cup = cdn * nsr
 
          case('CHI')
             ! b-f collisions with neutral hydrogen
             ! these are downward rates (cdn); cup are upward rates
-            cup = ct * nh(1)
+            cup = ct * nh1
             cdn = cup / nsr
 
          case('CI')
@@ -141,7 +140,7 @@ MODULE coll_mod
             ! in the QM papers, the inverse exothermic rates (neutralisation) 
             ! are derived from the detailed balance
             ! N_kj(T,E_k) = N_jk(t,E_k) * exp(-E_jk/ (k_B * T))
-            cup = ct * nh(1)
+            cup = ct * nh1
             cdn = cup / nsr
   
             !********************************************************************
@@ -193,55 +192,55 @@ MODULE coll_mod
             !AR85-CH is charge transfer with neutral hydrogen atom^+ + H -> atom + H^+
             if ( temp>=cgrid(1,i) .and. temp<=cgrid(2,i) )  then
                t4=temp/1.0d4
-               cdn = cgrid(3,i) * 1d-9 * t4**cgrid(4,i) * (1.0d0+cgrid(5,i)*exp(cgrid(6,i)*t4)) * nh(1)
+               cdn = cgrid(3,i) * 1d-9 * t4**cgrid(4,i) * (1.0d0+cgrid(5,i)*exp(cgrid(6,i)*t4)) * nh1
             endif
   
             !********************************************************************  
   
-         case('AR85-CH+')
-  
-            ! The AR85**** rates are based on 
-            ! Arnaud & Rothenflug
-            ! Astronomy and Astrophysics Supplement Series (ISSN 0365-0138), vol. 60, June 1985, p. 425-457
-            ! "An updated evaluation of recombination and ionization rates"
-  
-            ! ar85-ch+ is  charge transfer with ionized hydrogen atom + H^+ -> atom^+ + H
-            if ( temp>=cgrid(1,i) .and. temp<=cgrid(2,i) )  then
-               t4=temp/1.0d4
-               cdn = cgrid(3,i) * 1d-9 * t4**cgrid(4,i) * (1.0d0+cgrid(5,i)*exp(cgrid(6,i)*t4)) * nh(nhlevels)
-            endif
-  
-            !********************************************************************
-  
-         case('AR85-CHE')
-  
-            ! The AR85**** rates are based on 
-            ! Arnaud & Rothenflug
-            ! Astronomy and Astrophysics Supplement Series (ISSN 0365-0138), vol. 60, June 1985, p. 425-457
-            ! "An updated evaluation of recombination and ionization rates"
-  
-            !AR85-CHE is charge transfer with neutral helium atom^+ + He -> atom + He^+
-            if ( temp>=cgrid(1,i) .and. temp<=cgrid(2,i) ) then
-               t4=temp/1.0d4
-               call hepop(temp,sum(nh),he1,he2)
-               cdn = cgrid(3,i) * 1d-9 * t4**cgrid(4,i) * (1.0d0+cgrid(5,i)*exp(cgrid(6,i)*t4)) * he1 
-            endif
+         !case('AR85-CH+')
+         
+         !   ! The AR85**** rates are based on 
+         !   ! Arnaud & Rothenflug
+         !   ! Astronomy and Astrophysics Supplement Series (ISSN 0365-0138), vol. 60, June 1985, p. 425-457
+         !   ! "An updated evaluation of recombination and ionization rates"
+         
+         !   ! ar85-ch+ is  charge transfer with ionized hydrogen atom + H^+ -> atom^+ + H
+         !   if ( temp>=cgrid(1,i) .and. temp<=cgrid(2,i) )  then
+         !      t4=temp/1.0d4
+         !      cdn = cgrid(3,i) * 1d-9 * t4**cgrid(4,i) * (1.0d0+cgrid(5,i)*exp(cgrid(6,i)*t4)) * nh(nhlevels)
+         !   endif
   
             !********************************************************************
   
-         case('AR85-CHP')
+         !case('AR85-CHE')
   
-            ! The AR85**** rates are based on 
-            ! Arnaud & Rothenflug
-            ! Astronomy and Astrophysics Supplement Series (ISSN 0365-0138), vol. 60, June 1985, p. 425-457
-            ! "An updated evaluation of recombination and ionization rates"
+         !   ! The AR85**** rates are based on 
+         !   ! Arnaud & Rothenflug
+         !   ! Astronomy and Astrophysics Supplement Series (ISSN 0365-0138), vol. 60, June 1985, p. 425-457
+         !   ! "An updated evaluation of recombination and ionization rates"
   
-            ! ar85-chp or ar85-che+ is  charge transfer with ionized helium atom^+ + He^+ -> atom + He^2+
-            if ( temp>=cgrid(1,i) .and. temp<=cgrid(2,i) ) then
-               t4=temp/1.0d4
-               call hepop(temp,sum(nh),he1,he2)
-               cdn = cgrid(3,i) * 1d-9 * t4**cgrid(4,i) * (1.0d0+cgrid(5,i)*exp(cgrid(6,i)*t4)) * he2 
-            endif
+         !   !AR85-CHE is charge transfer with neutral helium atom^+ + He -> atom + He^+
+         !   if ( temp>=cgrid(1,i) .and. temp<=cgrid(2,i) ) then
+         !      t4=temp/1.0d4
+         !      call hepop(temp,sum(nh),he1,he2)
+         !      cdn = cgrid(3,i) * 1d-9 * t4**cgrid(4,i) * (1.0d0+cgrid(5,i)*exp(cgrid(6,i)*t4)) * he1 
+         !   endif
+  
+            !********************************************************************
+  
+         !case('AR85-CHP')
+         
+         !   ! The AR85**** rates are based on 
+         !   ! Arnaud & Rothenflug
+         !   ! Astronomy and Astrophysics Supplement Series (ISSN 0365-0138), vol. 60, June 1985, p. 425-457
+         !   ! "An updated evaluation of recombination and ionization rates"
+         
+         !   ! ar85-chp or ar85-che+ is  charge transfer with ionized helium atom^+ + He^+ -> atom + He^2+
+         !   if ( temp>=cgrid(1,i) .and. temp<=cgrid(2,i) ) then
+         !      t4=temp/1.0d4
+         !      call hepop(temp,sum(nh),he1,he2)
+         !      cdn = cgrid(3,i) * 1d-9 * t4**cgrid(4,i) * (1.0d0+cgrid(5,i)*exp(cgrid(6,i)*t4)) * he2 
+         !   endif
   
             !********************************************************************
   

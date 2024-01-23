@@ -6,13 +6,13 @@
 # --- CPU and node logistics ---
 #SBATCH --partition=debug
 #SBATCH --nodes=1                  # Number of MPI tasks (i.e. processes)
-#SBATCH --nodelist=gemini-node14
+##SBATCH --nodelist=gemini-node14
 #SBATCH --ntasks-per-node=1        # Maximum number of tasks on each node
 #SBATCH --cpus-per-task=32         # Number of cores per MPI task 
 #SBATCH --ntasks-per-core=1
 #SBATCH --exclusive
 # --- User notifications ---
-#SBATCH --time 3-00:00:00
+#SBATCH --time 00:20:00
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export KMP_STACKSIZE=256M
 #unset OMP_NUM_THREADS

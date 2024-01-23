@@ -15,18 +15,19 @@ MODULE nlte_patch_mod
   USE mmath, only: cc_kernel
   USE op_math_mod, only: pchip_mono
   USE handyfuncs_mod
-  USE atom_mod, only:atom_type
+  USE atom_mod, only:atom_type, atom_data_t
   USE ray_patch_mod, only:ray_patch_t
   USE m3d_halo_mod, only: lock_mem, unlock_mem
   USE m3d_patch_mod, only: all_vec=>vec, all_wmu=>wmu, use_vel, m3d_patch_t, &
   absmet_in_output, long_wmu, long_vec, ray_offset, pivot_z, dlam, &
   premature_finish, m3d_patch_pre_update=>pre_update, save_resolved, &
-  column_by_column
+  column_by_column, rotate_atmos, check_NaN
   USE ray_mod, only: one_dimensional, ray_type
   USE trans_mod, only:line_type, cont_type
   USE bbtrans_mod, only:voigt_function2, voigt_profile
   USE m3d_debug_mod
   USE shared_mod
+  USE composition_mod, only:composition_type
   implicit none
   private
 
@@ -54,13 +55,14 @@ MODULE nlte_patch_mod
     procedure :: bound_free_rates
     procedure :: back_to_work
     procedure :: eta_to_Snu
+    procedure :: Snu_to_eta
     procedure :: set_upstream_boundary
     procedure :: integrate_intensity
     procedure :: integrate_rates
     procedure :: work_to_mem
     procedure :: save_intensity 
     procedure :: save_contribution_function 
-    procedure :: rotate_cube
+    procedure :: rotate_array
     procedure :: short_char
     procedure :: long_char
     procedure :: get_vproj
@@ -195,12 +197,15 @@ END SUBROUTINE nlte_patch_pre_update
 !===============================================================================
 SUBROUTINE execute (self)
   class(nlte_patch_t) :: self
+  class(atom_data_t), pointer :: adata
+  class(composition_type), pointer :: comp
   real(4), dimension(:,:,:,:), allocatable :: gamma_ij, gamma_ji, adamp
   real(4), dimension(:,:,:), pointer, contiguous :: temp
   real(4), dimension(:,:,:), allocatable :: inv_df, vproj
-  real(4) :: wmu
+  real(4) :: wmu, nan_check(3)
   real(8) :: vec(3)
   logical :: skip, use_linelist, get_cntrbf, end_boundary, include_absmet
+  logical :: do_rotate_atmos
   integer :: i, j, i_mu, zs, ze, p(3), ng, i_set, l, nnu_cntrbf
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
@@ -218,6 +223,7 @@ SUBROUTINE execute (self)
   self%nu(fs:fe) => self%sp%nu(fs:fe)
   temp => self%m3d_parent%mem(:,:,:,self%i_temp,self%it,1)
 
+  do_rotate_atmos = rotate_atmos .and. self%out_ray
   use_linelist = self%out_ray .and. self%composition%ll_initialised
   get_cntrbf = self%out_ray .and. n_cntrbf>0
   end_boundary = self%patch%boundaries%is_set(bits%zl) .and. self%dir<0
@@ -236,16 +242,23 @@ SUBROUTINE execute (self)
 
   self%twohnu3_c2 = twoh_c2 * self%nu**3
 
+  include_absmet = (self%in_ray .and. self%i_nu > self%n_nu) .or. &
+                   (self%out_ray .and. absmet_in_output)
 
-  !include_absmet = self%in_ray .or. absmet_in_output
-  include_absmet = self%in_ray .and. self%i_nu > self%n_nu
-  call self%lte_background_opacities(temp, include_absmet=include_absmet)
-
+  comp => self%composition
+  adata => self%atom%data
+  
+  call self%lte_background_opacities(comp, include_absmet=include_absmet)
   if (self%use_atom) then
-    if (self%bound_free) call self%add_bound_free_opacities()
-    if (self%bound_bound) then
-      inv_df = self%atom%inverse_doppler_factor(temp)
-      call self%bound_bound_damping(adamp, temp, inv_df)
+    if (self%bound_free) call self%add_bound_free_opacities(adata)
+  endif
+
+  if (.not. do_rotate_atmos) then
+    if (self%use_atom) then
+      if (self%bound_bound) then
+        inv_df = self%atom%inverse_doppler_factor(real(comp%temp))
+        call self%bound_bound_damping(comp, adamp, inv_df)
+      endif
     endif
   endif
 
@@ -259,23 +272,41 @@ SUBROUTINE execute (self)
       vec = all_vec(:,i_mu)
     endif
     wmu = wmu * over_4pi
-    call self%get_vproj(vproj, vec)
+
+    call self%get_vproj(vproj, vec, do_rotate_atmos, i_mu)
+
+    if (do_rotate_atmos) then
+      comp => self%m3d_parent%rotated_composition(i_mu)
+      adata => self%atom%rotated_data(i_mu)
+      if (self%bound_bound) then
+        inv_df = self%atom%inverse_doppler_factor(real(comp%temp))
+        call self%bound_bound_damping(comp, adamp, inv_df)
+      endif
+    endif
 
     do i_set=1, self%n_set
       call self%back_to_work()
 
+      if (do_rotate_atmos) then
+        call self%eta_to_Snu()
+        call self%rotate_array(vec, work(:,:,:,1:nz,1:2))
+        call self%Snu_to_eta()
+      endif
+
       if (i_set < 3) then ! i_set==3 is the continuum only
-        if (self%bound_bound) call self%add_bound_bound_opacities(wmu, inv_df, vproj, adamp, LTE=i_set==2)
+        if (self%bound_bound) then
+          call self%add_bound_bound_opacities(adata, wmu, inv_df, vproj, adamp, LTE=i_set==2)
+        endif
         if (use_linelist) then
-          call self%composition%add_linelist_opacities(self%nu, work(:,:,:,1:nz,1), work(:,:,:,1:nz,2), back(:,:,:,:,3), vproj, dlam)
+          call comp%add_linelist_opacities(self%nu, work(:,:,:,1:nz,1), work(:,:,:,1:nz,2), back(:,:,:,:,3), vproj, dlam)
         endif
       endif
 
       call self%eta_to_Snu()
       call self%set_upstream_boundary(i_mu, i_set, ng)
 
-      if (self%out_ray .and. .not. (one_dimensional .or. column_by_column)) then
-        call self%rotate_cube(vec)
+      if (self%out_ray .and. .not. (one_dimensional .or. column_by_column .or. do_rotate_atmos)) then
+        call self%rotate_array(vec, work(:,:,:,1:nz,1:2))
       endif
 
       if (one_dimensional .or. self%out_ray) then
@@ -288,9 +319,17 @@ SUBROUTINE execute (self)
         call self%save_contribution_function(i_set, i_mu)
       endif
 
-      if (self%print_update_info .and. i_mu==self%mus) then
-        memcheck(1:3) = work(self%fcheck, p(1), p(2), p(3),:)
-        memcheck(2:3) = memcheck(2:3) * self%twohnu3_c2(self%fcheck)
+      if (self%print_update_info) then
+        if (check_NaN) then
+          nan_check = work(self%fcheck, p(1), p(2), p(3),1:3)
+          if (any(nan_check/=nan_check)) then
+            print *, 'NaN in nlte_patch', nan_check
+          endif
+        endif
+        if (i_mu==self%mus .and. i_set==1) then
+          memcheck(1:3) = work(self%fcheck, p(1), p(2), p(3),:)
+          memcheck(2:3) = memcheck(2:3) * self%twohnu3_c2(self%fcheck)
+        endif
       endif
 
       call self%work_to_mem(i_mu, i_set)
@@ -404,9 +443,9 @@ contains
 END SUBROUTINE execute
 
 !===============================================================================
-SUBROUTINE lte_background_opacities (self, temp, include_absmet)
+SUBROUTINE lte_background_opacities (self, comp, include_absmet)
   class(nlte_patch_t) :: self
-  real(4), contiguous, dimension(:,:,:) :: temp
+  class(composition_type) :: comp
   real(4) :: h_kT, hv_kT, bnu
   logical :: include_absmet
   integer, save :: itimer=0
@@ -416,7 +455,7 @@ SUBROUTINE lte_background_opacities (self, temp, include_absmet)
   do y=1, ny
   do x=1, nx
     ! computing boltzmann factor
-    h_kT = h_k / temp(x,y,z)
+    h_kT = h_k / real(comp%temp(x,y,z))
     do f=self%fs, self%fe
       hv_kT = self%nu(f) * h_kT
       back(f,x,y,z,3) = exp(-hv_kT)
@@ -426,7 +465,7 @@ SUBROUTINE lte_background_opacities (self, temp, include_absmet)
   end do
 
   ! getting background LTE absorption
-  call self%composition%absorption(self%nu, back(:,:,:,:,1), blz=back(:,:,:,:,3), &
+  call comp%absorption(self%nu, back(:,:,:,:,1), blz=back(:,:,:,:,3), &
   include_absmet=include_absmet, sorted=self%sp%sorted)
 
   do z=1, nz
@@ -445,18 +484,32 @@ SUBROUTINE lte_background_opacities (self, temp, include_absmet)
 END SUBROUTINE lte_background_opacities
 
 !===============================================================================
-SUBROUTINE add_bound_free_opacities (self)
+SUBROUTINE add_bound_free_opacities (self, adata)
   class(nlte_patch_t), target :: self
+  class(atom_data_t) :: adata
   class(cont_type), pointer :: cont
   real(8), contiguous, dimension(:,:,:,:), pointer :: n
   real(4), contiguous, dimension(:,:,:), pointer :: nibj
+  real(8), dimension(:,:,:,:), allocatable, target :: nrot
+  real(4), dimension(:,:,:), allocatable, target :: nibj_rot
   real(4) :: ni, nj, tmp, alpha
   integer :: i, icont, fsmin, femax
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('nlte_patch%add_bound_free_opacities', itimer=itimer)
   ! Summing contributions from all bound-free transitions
-  n => self%atom%data%n
+  n => adata%n
+
+  do i=1, size(work,5)
+  do z=lbound(work, 4), ubound(work,4)
+  do y=1, ny
+  do x=1, nx
+    work(:,x,y,z,i) = 0.
+  end do
+  end do
+  end do
+  end do
+
   fsmin = huge(1)
   femax = 1
   do i=1, self%ncont
@@ -466,7 +519,7 @@ SUBROUTINE add_bound_free_opacities (self)
     fsmin = min(fsmin, fs)
     femax = max(femax, fe)
     icont = cont%ntrans-self%atom%nline
-    nibj => self%atom%data%nibj(:,:,:,icont)
+    nibj => adata%nibj(:,:,:,icont)
 
     do z=1, nz
     do y=1, ny
@@ -505,23 +558,22 @@ SUBROUTINE add_bound_free_opacities (self)
 END SUBROUTINE add_bound_free_opacities
 
 !===============================================================================
-SUBROUTINE bound_bound_damping (self, adamp, temp, inv_df)
+SUBROUTINE bound_bound_damping (self, comp, adamp, inv_df)
   class(nlte_patch_t), target :: self
+  class(composition_type) :: comp
   class(line_type), pointer :: line
   real(4), contiguous, dimension(:,:,:,:) :: adamp
-  real(4), contiguous, dimension(:,:,:) :: temp, inv_df
-  real(4), dimension(:,:,:), allocatable :: tothi, vbar2
+  real(4), contiguous, dimension(:,:,:) :: inv_df
+  real(4), dimension(:,:,:), allocatable :: tothi, vbar2, ne, temp
   real(4), dimension(:,:,:), allocatable :: stark_pe, unsold, vproj
-  real(4), dimension(:,:,:), pointer, contiguous :: ne
-  real(4), dimension(:,:,:,:), pointer :: nh
   integer :: i
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin (trim(self%kind)//'%bound_bound_damping', itimer=itimer)
-  allocate(tothi, vbar2, stark_pe, unsold, vproj, mold=temp)
-  ne => self%m3d_parent%mem(:,:,:,self%i_ne,            self%it,1)
-  nh => self%m3d_parent%mem(:,:,:,self%i_nh1:self%i_nh6,self%it,1)
-  tothi = sum(nh(:,:,:,1:5), 4) ! total neutral hydrogen density
+  allocate(temp, ne, tothi, vbar2, stark_pe, unsold, vproj, mold=inv_df)
+  ne = real(comp%ne)
+  temp = real(comp%temp)
+  tothi = real(comp%elements(1)%ions(1)%n) ! total neutral hydrogen density
   vbar2 = self%atom%compute_vbar2(temp)
   stark_pe = ne * temp**one_sixth
   unsold = vbar2**0.3 * tothi
@@ -537,12 +589,14 @@ SUBROUTINE bound_bound_damping (self, adamp, temp, inv_df)
 END SUBROUTINE bound_bound_damping
 
 !===============================================================================
-SUBROUTINE add_bound_bound_opacities (self, wmu, inv_df, vproj, adamp, LTE)
+SUBROUTINE add_bound_bound_opacities (self, adata, wmu, inv_df, vproj, adamp, LTE)
   class(nlte_patch_t), target :: self
+  class(atom_data_t) :: adata
   class(line_type), pointer :: line
   real(4), contiguous, dimension(:,:,:) :: inv_df, vproj
   real(4), contiguous, dimension(:,:,:,:) :: adamp
   real(8), contiguous, dimension(:,:,:,:), pointer :: n
+  real(8), dimension(:,:,:,:), allocatable, target :: nrot
   real(4), dimension(:,:,:), allocatable :: wphi
   real(4), dimension(:), allocatable :: vphi
   real(4) :: wmu, idf, vpr, a, idf_4pi, ni, nj, Bji_nj, Bij_ni, widf, chi_fac, wp, amin, amax
@@ -553,9 +607,9 @@ SUBROUTINE add_bound_bound_opacities (self, wmu, inv_df, vproj, adamp, LTE)
   call trace%begin (trim(self%kind)//'%add_bound_bound_opacities', itimer=itimer)
   ! Copying continuum opacities to angle dependent opacities
   if (LTE) then
-    n => self%atom%data%nstar
+    n => adata%nstar
   else
-    n => self%atom%data%n
+    n => adata%n
   endif
 
   allocate(vphi(self%fs:self%fe))
@@ -607,7 +661,7 @@ SUBROUTINE add_bound_bound_opacities (self, wmu, inv_df, vproj, adamp, LTE)
 
     if (get_wphi) then
       call lock_mem(self%m3d_parent, 'wphi')
-      associate(sum_wphi => self%atom%data%wphi(:,:,:,line%ntrans))
+      associate(sum_wphi => adata%wphi(:,:,:,line%ntrans))
         sum_wphi = sum_wphi + wmu * wphi
       end associate
       call unlock_mem(self%m3d_parent, 'wphi')
@@ -914,15 +968,36 @@ SUBROUTINE eta_to_Snu (self)
 END SUBROUTINE eta_to_Snu
 
 !===============================================================================
-SUBROUTINE rotate_cube (self, vec)
+SUBROUTINE Snu_to_eta (self)
   class(nlte_patch_t) :: self
+  integer, save :: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin('nlte_patch%Snu_to_eta', itimer=itimer)
+  do z=1, nz
+  do y=1, ny
+  do x=1, nx
+    do f=self%fs, self%fe
+      work(f,x,y,z,2) = work(f,x,y,z,2) * work(f,x,y,z,1)
+    end do
+  end do
+  end do
+  end do
+  call trace%end(itimer)
+END SUBROUTINE Snu_to_eta
+
+!===============================================================================
+SUBROUTINE rotate_array (self, vec, array)
+  class(nlte_patch_t) :: self
+  real(8), intent(in) :: vec(3)
+  real(4), intent(inout), dimension(:,:,:,:,:) :: array
   real(4), dimension(2) :: delta, deltak
-  real(8) :: vec(3)
+  real(4), dimension(:,:,:), allocatable :: shifted
   real(4) :: bottom, bot2pivot, height, f1, f2, a, b, c, d
   integer :: up1, up2, x1, x2, y1, y2, i
   integer, save :: itimer=0
   ! ----------------------------------------------------------------------------
-  call trace%begin('net_opac_t%rotate_cube', itimer=itimer)
+  call trace%begin('net_opac_t%rotate_array', itimer=itimer)
+  allocate(shifted, mold=array(:,:,:,1,1))
   delta = vec(:2) / (vec(3) * self%ds(:2)) ! shift in units of grid cells
 
   ! bot2pivot is the distance between the bottom of the patch and the pivot plane
@@ -943,7 +1018,7 @@ SUBROUTINE rotate_cube (self, vec)
     c = (1.0-f1)*     f2 
     d =      f1 *     f2
 
-    do i=1, 2
+    do i=1, size(array, 5)
       do y=1, ny
         y1 = modulo(y+up2-1, ny)+1
         y2 = modulo(y+up2,   ny)+1
@@ -952,7 +1027,7 @@ SUBROUTINE rotate_cube (self, vec)
           x1 = modulo(x+up1-1, nx)+1
           x2 = modulo(x+up1,   nx)+1
 
-          associate(plane=>work(:,:,:,z,i), shifted=>work(:,:,:,z,3))
+          associate(plane=>array(:,:,:,z,i))
             shifted(:,x,y) = a*plane(:,x1,y1)
             shifted(:,x,y) = b*plane(:,x2,y1) + shifted(:,x,y)
             shifted(:,x,y) = c*plane(:,x1,y2) + shifted(:,x,y)
@@ -960,11 +1035,11 @@ SUBROUTINE rotate_cube (self, vec)
           end associate
         end do
       end do
-      work(:,:,:,z,i) = work(:,:,:,z,3)
+      array(:,:,:,z,i) = shifted
     end do
   end do
   call trace%end(itimer)
-END SUBROUTINE rotate_cube
+END SUBROUTINE rotate_array
 
 !===============================================================================
 SUBROUTINE short_char (self, vec)
@@ -1117,39 +1192,40 @@ SUBROUTINE long_char (self, vec)
 END SUBROUTINE long_char
 
 !===============================================================================
-SUBROUTINE get_vproj (self, vproj, vec)
+SUBROUTINE get_vproj (self, vproj, vec, rotate, i_mu)
   class(nlte_patch_t) :: self
   real(4), dimension(:,:,:) :: vproj
   real(8), dimension(:) :: vec
-  real(4), dimension(:,:,:), pointer :: d, px, py, pz
-  integer :: li(3), ui(3)
+  real(4), dimension(:,:,:), pointer :: vx, vy, vz
+  real(4), dimension(:,:,:,:), contiguous, pointer :: mem
+  integer :: i_mu
+  logical :: rotate
   !-----------------------------------------------------------------------------
   if (.not. use_vel) then
     vproj = 0
   else
-    li = self%patch%li
-    ui = self%patch%ui
-
-    call self%check_access(self%patch)
-    d  => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),self%patch%idx%d, self%it,1)
-    px => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),self%patch%idx%px,self%it,1)
-    py => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),self%patch%idx%py,self%it,1)
-    pz => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),self%patch%idx%pz,self%it,1)
-
-    if (self%out_ray) then
-      vproj = (-vec(1)*px - vec(2)*py + vec(3)*pz) * scaling%u / (d*cc)
+    if (rotate) then
+      mem => self%m3d_parent%mem(:,:,:,:,self%it,1+i_mu)
     else
-      vproj = (vec(1)*px + vec(2)*py + vec(3)*pz) * scaling%u / (d*cc)
+      mem => self%m3d_parent%mem(:,:,:,:,self%it,1)
     endif
+
+    vx => mem(:,:,:,self%i_vx)
+    vy => mem(:,:,:,self%i_vy)
+    vz => mem(:,:,:,self%i_vz)
+
+    vproj = -vec(1)*vx - vec(2)*vy + vec(3)*vz
   endif
 END SUBROUTINE get_vproj
 
 !===============================================================================
 SUBROUTINE save_contribution_function (self, i_set, i_mu)
   class(nlte_patch_t) :: self
-  integer :: i, j, i_set, i_mu
+  integer :: i, j, i_set, i_mu, ff
   real(4) :: net_chi, net_src, lin_chi, lin_eta
   real(4) :: cnt_inu, cnt_chi, cnt_eta
+  real(4), dimension(:,:,:,:,:), allocatable, target :: rotated_back
+  real(4), dimension(:,:,:,:,:), pointer :: back_ptr
   character(32) :: name
   logical :: skip
   !-----------------------------------------------------------------------------
@@ -1159,12 +1235,22 @@ SUBROUTINE save_contribution_function (self, i_set, i_mu)
       if (.not. line%active) cycle
       call line%check_range(self%fs, self%fe, fs, fe, skip)
       if (skip) cycle
+
+      if (one_dimensional .or. column_by_column) then
+        back_ptr => back
+      else
+        allocate(rotated_back(fs:fe,nx,ny,nz,2), source=back(fs:fe,:,:,:,1:2))
+        back_ptr => rotated_back
+        back_ptr(:,:,:,:,2) = back_ptr(:,:,:,:,2) / back_ptr(:,:,:,:,1)
+        call self%rotate_array(long_vec(:,i_mu), back_ptr)
+        back_ptr(:,:,:,:,2) = back_ptr(:,:,:,:,2) * back_ptr(:,:,:,:,1)
+      endif
       do z=1,nz
       do y=1,ny
       do x=1,nx
         do f=fs,fe
-          cnt_chi = back(f,x,y,z,1)
-          cnt_eta = back(f,x,y,z,2)
+          cnt_chi = back_ptr(f,x,y,z,1)
+          cnt_eta = back_ptr(f,x,y,z,2)
           associate(cf => cntrbf(i)%data(x,y,z,f,:,i_mu))
             if (i_set < 3) then
               net_chi = work(f,x,y,z,1)
@@ -1188,6 +1274,7 @@ SUBROUTINE save_contribution_function (self, i_set, i_mu)
       end do
       end do
       end do
+      if (allocated(rotated_back)) deallocate(rotated_back)
     end associate
     if (i_set==3 .and. i_mu==self%mue) then
       write(name, '(A,I6.6)') 'cntrbf_', j

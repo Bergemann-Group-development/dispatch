@@ -44,6 +44,7 @@ MODULE m3d_patch_mod
       class(gpatch_t),    pointer :: patch => null()         ! pointer to mhd patch
       class(m3d_patch_t), pointer :: m3d_parent => null()    ! pointer to parent patch
       type(composition_type), pointer :: composition => null()
+      type(composition_type), pointer :: rotated_composition(:) => null()
       class(atomic_spectrum_type), pointer :: sp => null()
       type(atom_type), pointer :: atom => null()
       class(key_link_t), pointer :: key_list => null()
@@ -61,7 +62,7 @@ MODULE m3d_patch_mod
       logical :: print_update_info, checked_bounds=.false.
       logical :: free_self=.false.
       integer :: i_nu=0, i_mu=0
-      integer :: i_ne=1, i_rho=2, i_temp=3, i_nh1=4, i_nh6=9
+      integer :: i_ne=1, i_rho=2, i_temp=3, i_vx=4, i_vy=5, i_vz=6
       integer :: i_chi=1, i_eta=2, i_snu=2
       integer :: i_Gij=1, i_Gji=2
       integer :: i_Inu=1
@@ -104,13 +105,11 @@ MODULE m3d_patch_mod
       procedure :: init_nbors_hash
       procedure :: check_nbor
       procedure :: hash_key
-      procedure :: save4
-      procedure :: save5
-      procedure :: save6
-      procedure :: save_meta
       procedure :: set_place
       procedure :: queue_before
       procedure :: sort_nbors
+      procedure :: rotate_cube8
+      procedure :: rotate_cube4
     end type m3d_patch_t
   
     !-----------------------------------------------------------------------------
@@ -130,13 +129,14 @@ MODULE m3d_patch_mod
     logical, public, save :: overlapping_bb=.true., overlapping_bf=.true.
     logical, public, save :: absmet_in_output=.false., column_by_column=.false.
     logical, public, save :: print_start=.false., print_send=.false.
-    logical, public, save:: make_opac_table=.false.
+    logical, public, save:: make_opac_table=.false., rotate_atmos=.true.
     real(8), public, save :: dlam=100.
     character(len=128), save :: save_patch_kind=''
     character(len=64), public, save:: custom_mu=''
     real(4), public :: vel_max=0.0
     real(4), public :: ray_offset(2)=[0.,0.]
     integer, public :: pivot_z=0, ng_step=-1, ng_start=8
+    character(len=126), public :: atmos_format='Text'
     type(mpi_counter_t), public :: atom_update_counter, global_maxerr, global_pos
       
     public :: hash_string, pre_update, update, print_execution_history
@@ -161,7 +161,8 @@ MODULE m3d_patch_mod
     print_finished, print_start, print_send, ray_offset, print_download, &
     lse_solver, decouple_continuum, m1d_legacy_mode, nu_tolerance, disable_stark, &
     disable_vdw, disable_ga, pivot_z, use_vel, save_Qrad, save_resolved, &
-    absmet_in_output, print_lock, make_opac_table, ng_step, ng_start, column_by_column
+    absmet_in_output, print_lock, make_opac_table, ng_step, ng_start, &
+    column_by_column, rotate_atmos
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%pre_init', itimer=itimer)
     self%type = trim(self%kind)
@@ -186,6 +187,7 @@ MODULE m3d_patch_mod
         call execute_command_line (trim(command), exitstat=iostat)
       endif
       one_dimensional = all(self%patch%n(1:2) == 1)
+      rotate_atmos = rotate_atmos .and. .not. (one_dimensional .or. column_by_column)
       !-------------------------------------------------------------------------
       ! Assign angles and integration weights
       !-------------------------------------------------------------------------
@@ -1089,84 +1091,138 @@ MODULE m3d_patch_mod
   END SUBROUTINE check_nbor
 
   !===============================================================================
-  SUBROUTINE save4 (self, mem, label)
-    class(m3d_patch_t):: self
-    real(4), dimension(:,:,:,:) :: mem
-    character(len=*) :: label
-    character(len=32) :: filename
-    integer :: lunit
+  SUBROUTINE rotate_cube8 (self, vec, cube, do_log)
+    class(m3d_patch_t) :: self
+    real(8), intent(in) :: vec(3)
+    real(8), intent(inout), dimension(:,:,:) :: cube
+    logical, intent(in), optional :: do_log
+    real(8), dimension(:,:), allocatable :: shifted
+    real(4), dimension(2) :: delta, deltak
+    real(4) :: bottom, bot2pivot, height, f1, f2, a, b, c, d
+    integer :: x, y, z, up1, up2, x1, x2, y1, y2, i, nx, ny, nz
     integer, save :: itimer=0
     ! ----------------------------------------------------------------------------
-    call trace%begin('m3d_patch_t%save4', itimer=itimer)
-    call self%save_meta(mem, label, filename, lunit)
-    write(lunit) mem
-    close(lunit)
-    call trace%end(itimer)
-  END SUBROUTINE save4
+    call trace%begin('m3d_patch_t%rotate_cube8', itimer=itimer)
+    delta = vec(:2) / (vec(3) * self%ds(:2)) ! shift in units of grid cells
+  
+    ! bot2pivot is the distance between the bottom of the patch and the pivot plane
+    bottom = self%position(3) - 0.5*self%size(3)
+    bot2pivot = pivot_z * self%ds(3) - bottom
+  
+    allocate(shifted, mold=cube(:,:,1))
+    nx = size(cube, 1)
+    ny = size(cube, 2)
+    nz = size(cube, 3)
 
-  !===============================================================================
-  SUBROUTINE save5 (self, mem, label)
-    class(m3d_patch_t):: self
-    real(4), dimension(:,:,:,:,:) :: mem
-    character(len=*) :: label
-    character(len=32) :: filename
-    integer :: lunit
-    integer, save :: itimer=0
-    ! ----------------------------------------------------------------------------
-    call trace%begin('m3d_patch_t%save5', itimer=itimer)
-    call self%save_meta(mem, label, filename, lunit)
-    write(lunit) mem
-    close(lunit)
-    call trace%end(itimer)
-  END SUBROUTINE save5
-
-  !===============================================================================
-  SUBROUTINE save6 (self, mem, label)
-    class(m3d_patch_t):: self
-    real(4), dimension(:,:,:,:,:,:) :: mem
-    character(len=*) :: label
-    character(len=32) :: filename
-    integer :: lunit
-    integer, save :: itimer=0
-    ! ----------------------------------------------------------------------------
-    call trace%begin('m3d_patch_t%save6', itimer=itimer)
-    call self%save_meta(mem, label, filename, lunit)
-    write(lunit) mem
-    close(lunit)
-    call trace%end(itimer)
-  END SUBROUTINE save6
-
-  !===============================================================================
-  SUBROUTINE save_meta(self, mem, label, filename, lunit)
-    class(m3d_patch_t):: self
-    real(4), dimension(..) :: mem
-    character(len=*) :: label
-    character(len=256) :: meta_file, folder
-    character(len=32) :: filename, fmt
-    integer :: i, lunit, ndim
-    ! ----------------------------------------------------------------------------
-    call io%lock%set('save_meta')
-    if (size(mem) == 0) then
-      call shared%abort('mem not associated in save')
+    if (option(do_log)) then
+      cube = log(cube)
     endif
-    write(folder, '(A, A)') trim(io%run_dir), 'save/'
-    write(filename, '(A, A, 2(I3.3), A)') trim(label), '_', abs(self%key(1:2)), '.bin'
-    meta_file = trim(label) // '_meta.txt'
-    if (os%exists(trim(folder)//meta_file)) then
-      open(newunit=lunit, file=trim(folder)//meta_file, form='formatted', position='append')
-    else
-      call os%mkdir(folder)
-      open(newunit=lunit, file=trim(folder)//meta_file, form='formatted')
-      write(lunit, '(A, A9, A21, A5)') '*', ' filename', '', 'bytes'
+  
+    do z=1, nz
+      height = (z-1)*self%ds(3) ! height of plane as measured from bottom
+      deltak = (bot2pivot - height)*delta + ray_offset
+      up1 = floor(deltak(1)) !integer part of shift
+      up2 = floor(deltak(2)) !integer part of shift
+      f1 = deltak(1) - up1 !fractional part
+      f2 = deltak(2) - up2 !fractional part
+  
+      ! bilinear interpolation to avoid overshooting
+      a = (1.0-f1)*(1.0-f2)
+      b =      f1 *(1.0-f2)
+      c = (1.0-f1)*     f2 
+      d =      f1 *     f2
+  
+      do y=1, ny
+        y1 = modulo(y+up2-1, ny)+1
+        y2 = modulo(y+up2,   ny)+1
+    
+        do x=1, nx
+          x1 = modulo(x+up1-1, nx)+1
+          x2 = modulo(x+up1,   nx)+1
+  
+          associate(plane=>cube(:,:,z))
+            shifted(x,y) = a*plane(x1,y1)
+            shifted(x,y) = b*plane(x2,y1) + shifted(x,y)
+            shifted(x,y) = c*plane(x1,y2) + shifted(x,y)
+            shifted(x,y) = d*plane(x2,y2) + shifted(x,y)
+          end associate
+        end do
+      end do
+      cube(:,:,z) = shifted
+    end do
+    deallocate(shifted)
+    if (option(do_log)) then
+      cube = exp(cube)
     endif
-    ndim = size(shape(mem))
-    write(fmt, '(I3,A)') ndim, '(I10))'
-    write(lunit, '(A32, I4, '//fmt) filename, storage_size(mem), shape(mem)
-    close(lunit)
-    call io%lock%unset('save_meta')
-    open(newunit=lunit, file=trim(folder)//filename, access='stream', status='replace')
-  END SUBROUTINE save_meta
+    call trace%end(itimer)
+  END SUBROUTINE rotate_cube8
 
+  !===============================================================================
+  SUBROUTINE rotate_cube4 (self, vec, cube, do_log)
+    class(m3d_patch_t) :: self
+    real(8), intent(in) :: vec(3)
+    real(4), intent(inout), dimension(:,:,:) :: cube
+    logical, intent(in), optional :: do_log
+    real(4), dimension(:,:), allocatable :: shifted
+    real(4), dimension(2) :: delta, deltak
+    real(4) :: bottom, bot2pivot, height, f1, f2, a, b, c, d
+    integer :: x, y, z, up1, up2, x1, x2, y1, y2, i, nx, ny, nz
+    integer, save :: itimer=0
+    ! ----------------------------------------------------------------------------
+    call trace%begin('m3d_patch_t%rotate_cube4', itimer=itimer)
+    delta = vec(:2) / (vec(3) * self%ds(:2)) ! shift in units of grid cells
+  
+    ! bot2pivot is the distance between the bottom of the patch and the pivot plane
+    bottom = self%position(3) - 0.5*self%size(3)
+    bot2pivot = pivot_z * self%ds(3) - bottom
+  
+    allocate(shifted, mold=cube(:,:,1))
+    nx = size(cube, 1)
+    ny = size(cube, 2)
+    nz = size(cube, 3)
+
+    if (option(do_log)) then
+      cube = log(cube)
+    endif
+  
+    do z=1, nz
+      height = (z-1)*self%ds(3) ! height of plane as measured from bottom
+      deltak = (bot2pivot - height)*delta + ray_offset
+      up1 = floor(deltak(1)) !integer part of shift
+      up2 = floor(deltak(2)) !integer part of shift
+      f1 = deltak(1) - up1 !fractional part
+      f2 = deltak(2) - up2 !fractional part
+  
+      ! bilinear interpolation to avoid overshooting
+      a = (1.0-f1)*(1.0-f2)
+      b =      f1 *(1.0-f2)
+      c = (1.0-f1)*     f2 
+      d =      f1 *     f2
+  
+      do y=1, ny
+        y1 = modulo(y+up2-1, ny)+1
+        y2 = modulo(y+up2,   ny)+1
+    
+        do x=1, nx
+          x1 = modulo(x+up1-1, nx)+1
+          x2 = modulo(x+up1,   nx)+1
+  
+          associate(plane=>cube(:,:,z))
+            shifted(x,y) = a*plane(x1,y1)
+            shifted(x,y) = b*plane(x2,y1) + shifted(x,y)
+            shifted(x,y) = c*plane(x1,y2) + shifted(x,y)
+            shifted(x,y) = d*plane(x2,y2) + shifted(x,y)
+          end associate
+        end do
+      end do
+      cube(:,:,z) = shifted
+    end do
+    deallocate(shifted)
+    if (option(do_log)) then
+      cube = exp(cube)
+    endif
+    call trace%end(itimer)
+  END SUBROUTINE rotate_cube4
 
   !===============================================================================
   SUBROUTINE add_to_key_list (self, other)
