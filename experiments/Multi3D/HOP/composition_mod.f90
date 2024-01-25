@@ -1571,14 +1571,13 @@ contains
         class(molec_type), pointer :: molecules(:), molecule
         class(molec_type), pointer :: H2, CN, H2p, CO, N2
         type(ion_pointer_t) :: ions(4)
-        class(ion_type), pointer :: H, C, N, O, ion, ioni, ionj
+        class(ion_type), pointer :: HI, CI, NI, OI, ion, ioni, ionj
         class(ion_type), pointer :: Hm
         integer :: i, j, nx, ny, nz, ix, iy, iz, np1, iter, nions
         real(dp) :: new_diff
         real(dp), dimension(:,:,:), allocatable :: diff
         real(dp), dimension(:,:,:,:)  , allocatable, target :: Fvec
         real(dp), dimension(:,:,:,:,:), allocatable, target :: Amat
-        real(dp), dimension(:,:,:), pointer :: Fi
         real(dp), dimension(:), allocatable :: Fold, Fnew
         logical, dimension(:,:,:), allocatable :: tmolim
         integer :: itimer=0
@@ -1595,11 +1594,11 @@ contains
             molecule%dis = molecule%pk(self%teta)
         end do
 
-        call self%ion_by_id('H I', H)
-        call self%ion_by_id('C I', C)
-        call self%ion_by_id('N I', N)
-        call self%ion_by_id('O I', O)
-        Hm => H%below
+        call self%ion_by_id('H I', HI)
+        call self%ion_by_id('C I', CI)
+        call self%ion_by_id('N I', NI)
+        call self%ion_by_id('O I', OI)
+        Hm => HI%below
 
         molecules => self%molecules
 
@@ -1609,10 +1608,10 @@ contains
         call self%molecule_by_id('CO' , CO)
         call self%molecule_by_id('H2+', H2p)
         
-        ions(1)%p => H
-        ions(2)%p => C
-        ions(3)%p => N
-        ions(4)%p => O
+        ions(1)%p => HI
+        ions(2)%p => CI
+        ions(3)%p => NI
+        ions(4)%p => OI
         nions = size(ions)
         np1 = nions + 1
 
@@ -1623,31 +1622,31 @@ contains
         allocate(tmolim(nx,ny,nz))
 
         if (allocated(Hm%pk)) then
-            deallocate(Hm%pk, H%fil, O%fil, C%fil, N%fil)
+            deallocate(Hm%pk, HI%fil, OI%fil, CI%fil, NI%fil)
         endif
 
-        allocate(Hm%pk, H%fil, O%fil, C%fil, N%fil, mold=temp)
+        allocate(Hm%pk, HI%fil, OI%fil, CI%fil, NI%fil, mold=temp)
 
         tmolim = temp < self%tmolim
 
         where (tmolim)
             Hm%pk = 1/Hm%saha
-            H%fil = 1 + H%saha + Hm%pk
+            HI%fil = 1 + HI%saha + Hm%pk
             fe = xnecno
             b = H2%dis * pe/fe
-            q = - H%abund/b
-            p = H%fil/b
-            H%f = solve_quadratic(p, q)
+            q = - HI%abund/b
+            p = HI%fil/b
+            HI%f = solve_quadratic(p, q)
 
-            fe = H%f * (H%saha - Hm%pk) + xnecno
+            fe = HI%f * (HI%saha - Hm%pk) + xnecno
 
             where (fe <= 0)
                 r = H2%dis * Hm%saha
-                s = r - H%fil
-                p = (H%fil*xnecno - Hm%pk - 2*xnecno*r) / s
+                s = r - HI%fil
+                p = (HI%fil*xnecno - Hm%pk - 2*xnecno*r) / s
                 q = r*xnecno*xnecno/s
                 fe = solve_quadratic(p, q, avoid_negative=.true.)
-                H%f = (xnecno - fe)*Hm%saha
+                HI%f = (xnecno - fe)*Hm%saha
             end where
         end where
 
@@ -1660,26 +1659,25 @@ contains
 
         where (tmolim)
             b = CO%dis * pefe
-            O%fil = 1 + O%saha + O%f_of_molecules_with(H)
-            C%fil = 1 + C%saha + C%f_of_molecules_with(H)
+            OI%fil = 1 + OI%saha + OI%f_of_molecules_with(HI) / OI%f
+            CI%fil = 1 + CI%saha + CI%f_of_molecules_with(HI) / CI%f
 
-            p = (C%abund-O%abund)/O%fil + C%fil/b
-            q = - O%abund/O%fil * C%fil/b
-            O%f = solve_quadratic(p, q)
-            C%f = C%abund / (C%fil + b*O%f)
+            p = (CI%abund-OI%abund)/OI%fil + CI%fil/b
+            q = - OI%abund/OI%fil * CI%fil/b
+            OI%f = solve_quadratic(p, q)
+            CI%f = CI%abund / (CI%fil + b*OI%f)
 
-            CN%f = CN%calc_f(pefe) ! has to be recalculated since C%f changed
+            CN%f = CN%calc_f(pefe) ! has to be recalculated since CI%f changed
             
-            N%fil = 1 + N%saha + N%f_of_molecules_with(H) + N%f_of_molecules_with(C)
+            NI%fil = 1 + NI%saha + (NI%f_of_molecules_with(HI) + NI%f_of_molecules_with(CI)) / Ni%f
             b = 2*N2%dis * pefe
-            q = -N%abund/b
-            p = N%fil/b
-            N%f = solve_quadratic(p, q)
-            where (N%f < 0) N%f = 0
+            q = -NI%abund/b
+            p = NI%fil/b
+            NI%f = solve_quadratic(p, q)
+            where (NI%f < 0) NI%f = 0
         end where
 
         diff = 0
-
         do iter=1, 100
             Amat = 0
             do i=1, self%nmolec
@@ -1688,18 +1686,17 @@ contains
 
             do i=1, nions
                 ioni => ions(i)%p
-                Fi  => Fvec(i,:,:,:)
 
                 where (tmolim) 
-                    Fi = ioni%f_of_own_molecules()
-                    Amat(i, np1,:,:,:) = - Fi / fe
+                    Fvec(i,:,:,:) = ioni%f_of_own_molecules()
+                    Amat(i, np1,:,:,:) = - Fvec(i,:,:,:) / fe
                 end where
 
                 if (i==1) then
                     where (tmolim) 
-                        Amat(i,  i,:,:,:) = 1 + H%saha + Hm%pk
-                        Amat(np1,i,:,:,:) = H%saha + 2*H2p%f /(H%f * pefe) - Hm%pk
-                        Fvec(np1,:,:,:) = H%f * (H%saha + H2p%f - Hm%pk) - fe + xnecno
+                        Amat(i,  i,:,:,:) = 1 + HI%saha + Hm%pk
+                        Amat(np1,i,:,:,:) = HI%saha + 2*H2p%f /(HI%f * pefe) - Hm%pk
+                        Fvec(np1,:,:,:) = HI%f * (HI%saha + H2p%f - Hm%pk) - fe + xnecno
                     end where
                 else
                     where (tmolim) 
@@ -1709,11 +1706,11 @@ contains
                     end where
                 endif
 
-                where (tmolim) Fi = Amat(i,i,:,:,:)*ioni%f + Fi - ioni%abund
+                where (tmolim) Fvec(i,:,:,:) = Amat(i,i,:,:,:)*ioni%f + Fvec(i,:,:,:) - ioni%abund
 
                 do j=1, nions
                     ionj => ions(j)%p
-                    where (tmolim) Amat(i,j,:,:,:) = Amat(i,j,:,:,:) + ionj%f_of_molecules_with(ioni, count_double=.true.)
+                    where (tmolim) Amat(i,j,:,:,:) = Amat(i,j,:,:,:) + ionj%f_of_molecules_with(ioni, count_double=.true.) / ionj%f
                 end do
             end do
 
@@ -1731,17 +1728,17 @@ contains
                 Fold(1:nions) = [(ions(i)%p%f(ix, iy, iz), i=1, nions)]
                 Fold(np1) = fe(ix,iy,iz)
 
-                call AINV2(Amat(:,:,ix,iy,iz),np1)
-                Fnew = Fold - matmul(Amat(:,:,ix,iy,iz),Fvec(:,ix,iy,iz))
+                call lineq_no_pivot(Amat(:,:,ix,iy,iz), Fvec(:,ix,iy,iz), np1)
+                Fnew = Fold - Fvec(:,ix,iy,iz)
+                diff(ix,iy,iz) = maxval(abs(1-Fold/Fnew))
 
                 do i=1, nions
                     ions(i)%p%f(ix, iy, iz) = Fnew(i)
                 end do
 
                 fe(ix,iy,iz) = Fnew(np1)
-                pefe(ix,iy,iz) = pe(ix,iy,iz) / fe(ix,iy,iz)
 
-                diff(ix,iy,iz) = maxval(abs(1-Fold/Fnew))
+                pefe(ix,iy,iz) = pe(ix,iy,iz) / fe(ix,iy,iz)
             end do
             end do
             end do
@@ -1751,7 +1748,7 @@ contains
 
         !print *, iter, 'iterations in molecular equilibrium calculations'
         where (tmolim)
-            eh = - H%f*((H%xion - dxi)*(1+Hm%pk) + (Hm%xion - 2*dxi)*Hm%pk)
+            eh = - HI%f*((HI%xion - dxi)*(1+Hm%pk) + (Hm%xion - 2*dxi)*Hm%pk)
             pg = fe + self%suma !sum(self%elements%abund)
         end where
 

@@ -106,7 +106,6 @@ FUNCTION f_of_molecules_with(self, other, count_double) result(fsum)
         molecule => mol_list(i)%p
         fsum = fsum + molecule%f
     end do
-    fsum = fsum / self%f
 END FUNCTION
 
 !===============================================================================

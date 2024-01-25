@@ -131,6 +131,7 @@ MODULE m3d_patch_mod
     logical, public, save :: print_start=.false., print_send=.false.
     logical, public, save:: make_opac_table=.false., rotate_atmos=.true.
     real(8), public, save :: dlam=100.
+    real(8), public, dimension(:), allocatable :: rank_lvlerr
     character(len=128), save :: save_patch_kind=''
     character(len=64), public, save:: custom_mu=''
     real(4), public :: vel_max=0.0

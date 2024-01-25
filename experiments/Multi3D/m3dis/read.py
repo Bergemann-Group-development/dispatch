@@ -188,6 +188,14 @@ class read(object):
                 self.chi  = self.chi .reshape((nx,ny,nz), order='F')
 
             self.ltau = np.log10(self.tau)
+
+        reports = glob.glob(folder + 'convergence_report_*.txt')
+        if len(reports)>0:
+            self.lvlerr = np.zeros(self.atom.nk)
+            for report in reports:
+                df = pd.read_csv(report, sep='\s+')
+                self.lvlerr = np.maximum(self.lvlerr, df.maxconv.values)
+
         
         maxiter = self.nml['m3d_params']['maxiter']
         depart = self.nml['atom_params']['precomputed_depart'].strip()

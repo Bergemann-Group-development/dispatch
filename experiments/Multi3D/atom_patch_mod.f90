@@ -20,7 +20,7 @@ MODULE atom_patch_mod
     USE m3d_patch_mod, only: m3d_patch_t, maxiter, check_NaN, cswitch, key_link_t, &
     global_maxerr, convlim, convmax, atom_update_counter, comoving_frame, global_pos, ng_step, ng_start, &
     decouple_continuum, overlapping_bb, overlapping_bf, line_blanketing, converged, premature_finish, &
-    rotate_atmos, long_vec
+    rotate_atmos, long_vec, rank_lvlerr
     USE bftrans_mod, only: bftrans_type
     USE hprofl_mod, only: hydrogen_BPO
     USE osmet_mod, only:osmet_type
@@ -142,6 +142,7 @@ MODULE atom_patch_mod
       call atom%read(atom_file, qnorm, in_lines=in_lines, read_coll=.true.)
       atom%name = 'input'
       atom%verbose = self%verbose
+      allocate(rank_lvlerr(atom%nlevel), source=0.d0)
 
       call os%copy_file(trim(atom_file), trim(io%run_dir)//'atom.txt')
       if (abundance > -99) atom%abnd = abundance
@@ -499,7 +500,7 @@ MODULE atom_patch_mod
       end do
       end do
     end do
-    print '(A, ES14.7, 4(I4))', 'NG acceleration ', emax, epos
+    print '(A, ES14.7, 4(I6))', 'NG acceleration ', emax, epos
     call trace%end(itimer)
   END SUBROUTINE ng_acceleration
 
@@ -543,6 +544,10 @@ MODULE atom_patch_mod
         call atom%compute_cont_factors(adata)
       end do
     endif
+
+    do i=1, atom%nlevel
+      rank_lvlerr(i) = max(rank_lvlerr(i), self%lvlerr(i))
+    end do
   END SUBROUTINE finish
 
   !===============================================================================

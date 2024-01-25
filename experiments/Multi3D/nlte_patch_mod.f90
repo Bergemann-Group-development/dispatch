@@ -21,7 +21,7 @@ MODULE nlte_patch_mod
   USE m3d_patch_mod, only: all_vec=>vec, all_wmu=>wmu, use_vel, m3d_patch_t, &
   absmet_in_output, long_wmu, long_vec, ray_offset, pivot_z, dlam, &
   premature_finish, m3d_patch_pre_update=>pre_update, save_resolved, &
-  column_by_column, rotate_atmos, check_NaN
+  column_by_column, rotate_atmos, check_NaN, rank_lvlerr
   USE ray_mod, only: one_dimensional, ray_type
   USE trans_mod, only:line_type, cont_type
   USE bbtrans_mod, only:voigt_function2, voigt_profile
@@ -61,6 +61,7 @@ MODULE nlte_patch_mod
     procedure :: integrate_rates
     procedure :: work_to_mem
     procedure :: save_intensity 
+    procedure :: save_convergence_report 
     procedure :: save_contribution_function 
     procedure :: rotate_array
     procedure :: short_char
@@ -349,6 +350,9 @@ SUBROUTINE execute (self)
   if (end_boundary) then
     if (self%out_ray) then
       call self%save_intensity()
+      if (self%use_atom) then
+        call self%save_convergence_report()
+      endif
     endif
     call self%deallocate_mem()
   endif
@@ -1433,6 +1437,21 @@ SUBROUTINE save_intensity (self)
   endif
   call io%lock%unset('save_quadrature')
 END SUBROUTINE save_intensity
+
+!===============================================================================
+SUBROUTINE save_convergence_report (self)
+  class(nlte_patch_t) :: self
+  integer :: lunit, i
+  character(len=256) :: conv_file
+  !-----------------------------------------------------------------------------
+  write(conv_file, '(A,A,I3.3,A)') trim(io%run_dir), 'convergence_report_', self%rank,'.txt'
+  open(newunit=lunit, file=conv_file, form='formatted')
+  write(lunit, '(A6, A12)') 'lvl', 'maxconv'
+  do i=1, size(rank_lvlerr)
+    write(lunit, '(I6, ES12.4)') i, rank_lvlerr(i)
+  end do
+  close(lunit)
+END SUBROUTINE save_convergence_report
 
 !===============================================================================
 SUBROUTINE copy_to (self, tgt)

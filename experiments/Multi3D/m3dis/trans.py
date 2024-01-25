@@ -184,6 +184,11 @@ class trans_class(object):
         self.flux_cnt = self.run.flux_cnt[slc]
         self.ie = self.run.ie[slc]
         self.cnt = self.run.cnt[slc]
+
+        if hasattr(self.run, 'lvlerr'):
+            self.ilvlerr = self.run.lvlerr[self.i]
+            self.jlvlerr = self.run.lvlerr[self.j]
+
         self.prepared = True
 
     #=====================================================================
