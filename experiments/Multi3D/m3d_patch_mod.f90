@@ -190,6 +190,7 @@ MODULE m3d_patch_mod
       one_dimensional = all(self%patch%n(1:2) == 1)
       rotate_atmos = rotate_atmos .and. .not. (one_dimensional .or. column_by_column)
       quad_scheme = lowercase(quad_scheme)
+      long_scheme = lowercase(long_scheme)
       !-------------------------------------------------------------------------
       ! Assign angles and integration weights
       !-------------------------------------------------------------------------

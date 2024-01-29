@@ -447,7 +447,7 @@ class read(object):
             dep = dep[...,ilvl]
 
         dep = np.array(dep)
-        if self.dim=='1D': dep = dep.flatten()
+        if self.dim=='1D': dep = dep.squeeze()
         return dep
     
     #=====================================================================
