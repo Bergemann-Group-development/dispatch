@@ -10,6 +10,7 @@ MODULE composition_patch_mod
   USE m3d_patch_mod,   only: m3d_patch_t, comoving_frame, ilambd, decouple_continuum, dlam, &
   use_density, use_ne, overlapping_bb, overlapping_bf, line_blanketing, binned_opac, &
   save_Qrad, maxiter, rotate_atmos, long_vec
+  USE m3d_debug_mod
   USE composition_mod, only: composition_type, exclude_elements
   USE atom_patch_mod,  only: atom_patch_t
   USE nlte_patch_mod, only:nlte_patch_t
@@ -49,7 +50,7 @@ SUBROUTINE composition_pre_init (self)
   class(composition_patch_t), target:: self
   class(atom_patch_t), pointer :: atom_patch
   class(atomic_spectrum_type), save, pointer :: output_sp
-  integer :: i, iostat, n_nu, nlists, mu, nw
+  integer :: i, iostat, n_nu, nlists, mu, nw, n_mu
   integer, save:: itimer=0, itimer2=0
   integer, save :: verbose=0
   character(len=256), save :: absdat_file='./input_multi3d/TS_absdat.dat'
@@ -138,6 +139,7 @@ SUBROUTINE composition_pre_init (self)
   call atom_patch%pre_init_spectrum(output_sp)
 
   n_nu = self%n_nu
+  n_mu = size(long_vec,2)
   if (associated(atom_patch%atom)) then
     call atom_patch%pre_init_and_link(self)
     self%atom_patch => atom_patch
@@ -153,13 +155,15 @@ SUBROUTINE composition_pre_init (self)
       end do
     endif
     
-    call self%create_sub_patches([-n_nu, -1], -1, output_sp, atom_patch%output_atom)
-  else
-    if (.not. external_sp) then
-      stop 'No atom nor output spectrum specified! Stopping...'
+    if (n_mu>0) then
+      call self%create_sub_patches([-n_nu, -1], -1, output_sp, atom_patch%output_atom)
     endif
+  else
     deallocate(atom_patch)
-    call self%create_sub_patches([-n_nu, -1], -1, output_sp)
+    if (external_sp .and. n_mu>0) then
+      call self%create_sub_patches([-n_nu, -1], -1, output_sp)
+      !stop 'No atom nor output spectrum specified! Stopping...'
+    endif
   endif
 
   
@@ -190,6 +194,7 @@ END SUBROUTINE create_sub_patches
 !===============================================================================
 SUBROUTINE execute (self)
   class(composition_patch_t) :: self
+  class(composition_type), pointer :: comp
   real(4), dimension(:,:,:), pointer :: d, e, pe
   real(4), dimension(:,:,:,:), pointer, contiguous :: authority, chi
   real(4), dimension(:,:,:), pointer, contiguous :: ne, rho, temp, vx, vy, vz, px, py, pz
@@ -208,6 +213,10 @@ SUBROUTINE execute (self)
     if (rotate_atmos) then
       allocate(self%rotated_composition(self%n_out))
     endif
+
+    allocate(temp8(n(1),n(2),n(3)))
+    allocate(rho8 (n(1),n(2),n(3)))
+    allocate(ne8  (n(1),n(2),n(3)))
 
     do i=1, self%nw
       authority => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),:,self%it,i)
@@ -234,32 +243,31 @@ SUBROUTINE execute (self)
       vy   = py / (cgs%c * rho)
       vz   = pz / (cgs%c * rho)
 
+      temp8 = dble(temp)
+      rho8  = dble(rho)
+      ne8   = dble(ne)
+
       if (i==1) then
-        allocate(temp8, source=dble(temp))
-        allocate(rho8, source=dble(rho))
-        allocate(ne8, source=dble(ne))
-  
-        ! loading temp, ne and rho in to composition objekt
-        ! ion and molecule equilibrium are solved immediately
-        call self%composition%load_state_variables(temp8, ne8, rho8, use_rho=use_density, use_ne=use_ne)
-    
-        if (save_atmos) then
-          nu = 1d8 * cgs%c / 5000.d0
-          call self%composition%absorption(nu, chi, sorted=.true.)
-          call self%save4(authority, 'atmos')
-        endif
+        comp => self%composition
       else
-        temp8 = authority(:,:,:,self%i_temp)
-        rho8  = authority(:,:,:,self%i_rho)
-        ne8   = authority(:,:,:,self%i_ne)
-        associate(comp => self%rotated_composition(i-1))
-          comp = self%composition
-          call comp%reassign_pointer()
-          call comp%load_state_variables(temp8, ne8, rho8, use_rho=use_density, use_ne=use_ne)
-        end associate
+        self%rotated_composition(i-1) = self%composition
+        comp => self%rotated_composition(i-1)
+        call comp%reassign_pointer()
+      endif
+      ! loading temp, ne and rho in to composition objekt
+      ! ion and molecule equilibrium are solved immediately
+      call comp%load_state_variables(temp8, ne8, rho8, use_rho=use_density, use_ne=use_ne)
+      if (.not. use_ne) ne = real(comp%ne)
+      if (.not. use_density) rho = real(comp%rho)
+      if (save_atmos) then
+        nu = 1d8 * cgs%c / 5000.d0
+        call comp%absorption(nu, chi, sorted=.true.)
       endif
     end do
-
+    
+    if (save_atmos) then
+      call self%save5(self%mem(:,:,:,:,self%it,:), 'atmos')
+    endif
 
     self%dtime = max(self%dtime, io%end_time - self%dtime)
     self%out_ray = .true. ! so that it is still executed after convergence
@@ -279,7 +287,10 @@ SUBROUTINE print_post_update_info (self)
   !-----------------------------------------------------------------------------
   if (self%verbose > 1) then
     p = self%pcheck
-    call self%print_to_stdout(arr=dble(self%mem(p(1),p(2),p(3),:self%i_temp,1,1)))
+    memcheck(1) = self%mem(p(1),p(2),p(3),self%i_temp,1,1)
+    memcheck(2) = self%mem(p(1),p(2),p(3),self%i_rho,1,1)
+    memcheck(3) = self%mem(p(1),p(2),p(3),self%i_ne,1,1)
+    call self%print_to_stdout(arr=memcheck(1:3))
   endif
 END SUBROUTINE print_post_update_info
 

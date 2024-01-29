@@ -189,6 +189,7 @@ MODULE m3d_patch_mod
       endif
       one_dimensional = all(self%patch%n(1:2) == 1)
       rotate_atmos = rotate_atmos .and. .not. (one_dimensional .or. column_by_column)
+      quad_scheme = lowercase(quad_scheme)
       !-------------------------------------------------------------------------
       ! Assign angles and integration weights
       !-------------------------------------------------------------------------
@@ -216,10 +217,15 @@ MODULE m3d_patch_mod
         call set_custom_quadratures (cust_mu, nphi, long_vec, long_wmu)
       case ('grid+', 'gridx', 'grid*')
         call set_grid_quadratures(long_scheme, self%patch%ds, long_vec, long_wmu, up_and_down=.false.)
+      case ('none')
+        allocate(long_vec(3,0))
+        allocate(long_wmu(0))
       case default
         print *, 'Quadrature keyword "'// trim(long_scheme) // '" not recognized for LC solver. Stopping...'
         stop
       end select
+
+      call save_angle_quadrature()
 
       if (m1d_legacy_mode) then
         decouple_continuum = .true.
@@ -568,6 +574,28 @@ MODULE m3d_patch_mod
     endif
     call trace%end(itimer)
   END SUBROUTINE post_update
+
+  !===============================================================================
+  SUBROUTINE save_angle_quadrature ()
+    integer :: lunit, iostat, i, nmu
+    character(len=256) :: meta_file
+    integer, save :: itimer=0
+    logical, save :: first_time = .true.
+    !-----------------------------------------------------------------------------
+    if (first_time) then
+      first_time = .false.
+      call trace%begin('m3d_patch_t%save_angle_quadrature', itimer=itimer)
+      meta_file = trim(io%run_dir) // 'angle_quadrature.txt'
+      open(newunit=lunit, file=meta_file, form='formatted')
+      nmu = size(long_wmu)
+      write(lunit, '(A3, 4(A12))') '#', 'weight', 'mux', 'muy', 'muz'
+      do i=1, nmu
+        write(lunit, '(I3, F12.8, SP, 3(F12.8))') i, long_wmu(i), long_vec(:,i)
+      end do
+      close(lunit)
+      call trace%end(itimer)
+    endif
+  END SUBROUTINE save_angle_quadrature
 
   !===============================================================================
   SUBROUTINE rotate (self)

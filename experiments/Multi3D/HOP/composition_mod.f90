@@ -33,6 +33,7 @@ MODULE composition_mod
         procedure :: load_state_variables
         procedure :: iterate_thermal_eq
         procedure :: thermal_equilibrium
+        procedure :: compute_energy_and_gas_pressure
         procedure :: set_aux_data
         procedure :: molecular_equilibrium
         procedure :: init_H_levels
@@ -784,8 +785,9 @@ contains
         real(8) :: cnt_ev, gf, awgt, iso_awgt, dl
         real(4) :: scalar, bnu
         logical, dimension(:), allocatable :: fmask
-        integer, save:: itimer=0, itimer2=0
+        integer, save:: itimer=0
         !---------------------------------------------------------------------------
+        call trace%begin ('composition_type%add_linelist_opacities', itimer=itimer)
         allocate(tothi,           mold=vproj)
         allocate(adamp,           mold=vproj)
         allocate(stark_pe,        mold=vproj)
@@ -853,10 +855,8 @@ contains
                       ipart => inv_part
                     endif
     
-                    call trace%begin('bbtrans_type%add_lte_opacities', itimer=itimer2)
                     call line%add_lte_opacities(ired, iblue, nu, &
                         vproj, idopf, EK_over_temp, dxij, ipart, ne, tothi, vb2, stark_pe, unsold, chi_l, all_chi)
-                    call trace%end(itimer2)
                 end do
             end do
         end do
@@ -879,10 +879,8 @@ contains
 
                 fmask(ired:iblue) = .true.
       
-                call trace%begin('bbtrans_type%add_lte_opacities', itimer=itimer2)
                 call line%add_lte_opacities(ired, iblue, nu, &
                     vproj, inv_df, EK_over_temp, dxij, inv_part, ne, tothi, vbar2, stark_pe, unsold, chi_l, all_chi)
-                call trace%end(itimer2)
             end do
         end do
 
@@ -902,6 +900,7 @@ contains
         end do
         end do
         end do
+        call trace%end(itimer)
     END SUBROUTINE add_linelist_opacities
 
     !===============================================================================
@@ -1061,7 +1060,7 @@ contains
         class(molec_type), pointer :: mol
         real(dp), dimension(:,:,:), intent(in) :: temp, ne, rho
         logical, intent(in), optional :: use_rho, use_ne
-        real(dp), dimension(:,:,:), allocatable :: ro
+        real(dp), dimension(:,:,:), allocatable :: ro, eh
         integer :: i,j, nx, ny, nz, lunit
         integer :: itimer=0
         !---------------------------------------------------------------------------
@@ -1080,32 +1079,22 @@ contains
         endif
 
         allocate(self%temp, self%ne, self%rho, self%pe, self%pg, self%E, mold=temp)
-        allocate(self%toth, self%saha, self%teta, self%dxi, mold=temp)
+        allocate(self%toth, self%saha, self%teta, self%dxi, eh, mold=temp)
         allocate(self%EK_over_temp, self%p6, ro, self%zero, mold=temp)
 
         self%zero = 0.d0
         
         if (option(use_ne, .true.)) then
             self%ne = ne
-            call self%thermal_equilibrium(temp, ne, self%rho, self%pg, self%E)
+            call self%thermal_equilibrium(temp, ne, self%rho)
         else
             call self%iterate_thermal_eq(temp, rho, self%ne, tol=1d-6)
-            call self%thermal_equilibrium(temp, self%ne, self%rho, self%pg, self%E)
+            call self%thermal_equilibrium(temp, self%ne, self%rho)
         endif
 
         if (option(use_rho, .true.)) then
             self%rho = rho
         endif
-
-        !call self%thermal_equilibrium(temp, ne, ro, self%pg)
-        !
-        !if (option(use_rho, .true.)) then
-        !    ! if rho is given, we compute toth from rho
-        !    self%rho = rho
-        !else
-        !    ! if rho is not given, we use the quantities computed by UOP
-        !    self%rho = ro
-        !endif
 
         self%toth = self%rho / self%grph
         call self%set_aux_data(temp, self%ne)
@@ -1124,6 +1113,7 @@ contains
             mol%part = 1.0 / mol%irwin_partf(self%temp)
         end do
 
+        call self%compute_energy_and_gas_pressure(eh, self%e, self%pg)
         call self%compute_p6(self%p6)
         call self%init_H_levels()
 
@@ -1132,13 +1122,12 @@ contains
     END SUBROUTINE load_state_variables
 
     !=========================================================================
-    SUBROUTINE thermal_equilibrium(self, temp, ne, rho, pg, E)
+    SUBROUTINE thermal_equilibrium(self, temp, ne, rho)
         class(composition_type), target :: self
         class(element_type), pointer :: element
         class(ion_type), pointer :: ion
         real(dp), intent(in),  dimension(:,:,:) :: temp, ne
-        real(dp), intent(out), dimension(:,:,:) :: rho, pg
-        real(dp), intent(out), dimension(:,:,:), optional :: E
+        real(dp), intent(out), dimension(:,:,:) :: rho
         real(dp), dimension(:,:,:), allocatable :: fe, xnen, xnecno, ejon
         real(dp), dimension(:,:,:), allocatable :: xerg, eh, toth
         integer :: i, j, itimer=0, itimer2=0, itimer3=0
@@ -1177,31 +1166,15 @@ contains
                     ! number of electrons from elements other than H, C, N, O
                     xnecno = xnecno + xnen
                 end select
-
-                xerg = ion%below%xion - self%dxi*(j-1)
-
-                if (element%id == 'H') then
-                    eh = ion%below%f * xerg
-                else
-                    ! energy of ionization (ejon). hydrogen is not included.
-                    ejon = ejon + ion%f * xerg
-                endif
             end do
         end do
 
-        pg = self%pe * (1 + self%suma/fe)
-
-        call self%molecular_equilibrium(self%temp, self%teta, self%pe, self%dxi, xnecno, eh, pg, fe)
+        call self%molecular_equilibrium(self%temp, self%teta, self%pe, self%dxi, xnecno, fe)
 
         ! total hydrogen number density, computed from scratch
         toth = ne / fe * (BK/uop_BK)
         ! mass density computed from scratch
         rho = toth * self%grph
-
-        if (present(E)) then
-            !ehm = (Hm%xion + HI%xion) * Hm%f
-            E = 1.5*pg / rho + (ejon - eh)*EE / self%grph
-        endif
         call trace%end(itimer)
     END SUBROUTINE thermal_equilibrium
 
@@ -1249,7 +1222,7 @@ contains
             ne = rho / self%grph * 1e-4
         end where
 
-        call self%thermal_equilibrium(temp, ne, ro, pg)
+        call self%thermal_equilibrium(temp, ne, ro)
 
         fa = log(ro / rho)
         ne_converged = abs(fa) < tol
@@ -1258,7 +1231,7 @@ contains
         b = a - 0.69*fa
         ne = exp(b)
 
-        call self%thermal_equilibrium(temp, ne, ro, pg)
+        call self%thermal_equilibrium(temp, ne, ro)
         fb = log(ro / rho)
         ne_converged = abs(fb) < tol
 
@@ -1266,7 +1239,7 @@ contains
 
         i = 0
         x = b
-        write(*,fmt="(5x,'it [',I2.2,']',1x,'n-converged:',1x,I3,1X,'/ total size: ',I3)") i, nconverged, arr_size
+        !write(*,fmt="(5x,'it [',I2.2,']',1x,'n-converged:',1x,I8,1X,'/ total size: ',I8)") i, nconverged, arr_size
 
         do while (nconverged < arr_size .and. i <= nmax)
             xold = x
@@ -1282,7 +1255,7 @@ contains
                 ne = exp(x)
             endwhere
 
-            call self%thermal_equilibrium(temp, ne, ro, pg)
+            call self%thermal_equilibrium(temp, ne, ro)
             fx = log(ro / rho)
             where (abs(a-x) < abs(b-x)) 
                 b = x 
@@ -1294,7 +1267,7 @@ contains
             i = i+1
         end do
 
-        write(*,fmt="(5x,'it [',I2.2,']',1x,'n-converged:',1x,I3,1X,'/ total size: ',I3)") i, nconverged, arr_size
+        write(*,fmt="(5x,'it [',I2.2,']',1x,'n-converged:',1x,I8,1X,'/ total size: ',I8)") i, nconverged, arr_size
 
         deallocate(ne_converged)
         deallocate(x,xold,a,b,fx,fa,fb)
@@ -1563,10 +1536,10 @@ contains
     END SUBROUTINE get_totn
 
     !===============================================================================
-    SUBROUTINE molecular_equilibrium(self, temp, teta, pe, dxi, xnecno, eh, pg, fe)
+    SUBROUTINE molecular_equilibrium(self, temp, teta, pe, dxi, xnecno, fe)
         class(composition_type), target :: self
         real(dp), dimension(:,:,:), intent(in) :: temp, pe, teta, dxi, xnecno
-        real(dp), dimension(:,:,:), intent(inout) :: eh, pg, fe
+        real(dp), dimension(:,:,:), intent(inout) :: fe
         real(dp), dimension(:,:,:), allocatable :: r, s, b, pefe, p, q
         class(molec_type), pointer :: molecules(:), molecule
         class(molec_type), pointer :: H2, CN, H2p, CO, N2
@@ -1591,7 +1564,7 @@ contains
         do i=1, self%nmolec
             molecule => self%molecules(i)
             call molecule%allocate(shape(temp))
-            molecule%dis = molecule%pk(self%teta)
+            molecule%dis = molecule%get_dis(self%teta)
         end do
 
         call self%ion_by_id('H I', HI)
@@ -1706,7 +1679,7 @@ contains
                     end where
                 endif
 
-                where (tmolim) Fvec(i,:,:,:) = Amat(i,i,:,:,:)*ioni%f + Fvec(i,:,:,:) - ioni%abund
+                where (tmolim) Fvec(i,:,:,:) = Fvec(i,:,:,:) + Amat(i,i,:,:,:)*ioni%f - ioni%abund
 
                 do j=1, nions
                     ionj => ions(j)%p
@@ -1746,30 +1719,64 @@ contains
             if (iter > 2 .and. all(diff < 0.001)) exit
         end do
 
-        !print *, iter, 'iterations in molecular equilibrium calculations'
-        where (tmolim)
-            eh = - HI%f*((HI%xion - dxi)*(1+Hm%pk) + (Hm%xion - 2*dxi)*Hm%pk)
-            pg = fe + self%suma !sum(self%elements%abund)
-        end where
-
-        do i=1, self%nmolec
-            where (tmolim)
-                molecules(i)%f = molecules(i)%calc_f(pefe) ! has to be called first
-                molecules(i)%e = molecules(i)%calc_e(teta, temp, dxi)
-                pg = pg + molecules(i)%f
-                eh = eh + molecules(i)%e
-            end where
-        end do
-
+        Hm%f = HI%f * Hm%pk
         do i=1, nions
             ion => ions(i)%p
-            where (tmolim) pg = pg + ion%f*(1+ion%saha) - ion%abund
+            do while (associated(ion%above))
+                ion%above%f = ion%f * ion%saha
+                ion => ion%above
+            end do
         end do
-
-        where (tmolim) pg = pg * pefe
-
+        do i=1, self%nmolec
+            where (tmolim)
+                molecules(i)%f = molecules(i)%calc_f(pefe)
+            end where
+        end do
         call trace%end(itimer)
     END SUBROUTINE molecular_equilibrium
+
+    !===============================================================================
+    SUBROUTINE compute_energy_and_gas_pressure(self, eh, e, pg)
+        class(composition_type), target :: self
+        class(element_type), pointer :: element
+        class(molec_type), pointer :: mol
+        class(ion_type), pointer :: ion, HI, Hm
+        real(dp), intent(out), dimension(:,:,:) :: eh, pg, e
+        real(dp), dimension(:,:,:), allocatable :: xerg, ejon
+        integer :: i, j
+        !---------------------------------------------------------------------------
+        allocate(xerg, ejon, mold=pg)
+        call self%ion_by_id('H I', HI)
+        call self%ion_by_id('H -', Hm)
+
+        pg = self%ne
+        eh = - (HI%xion - self%dxi)*(HI%n + Hm%n) - (Hm%xion - 2*self%dxi)*Hm%n
+
+        do i=1, self%nel
+            element => self%elements(i)
+            do j=1, element%nion
+                ion => element%ions(j)
+                pg = pg + ion%n
+                if (associated(ion%above)) then
+                    xerg = ion%xion - self%dxi*j
+                    ! energy of ionization (ejon). hydrogen is not included.
+                    ejon = ejon + ion%above%n * xerg
+                endif
+            end do
+        end do
+
+        do i=1, self%nmolec
+            mol => self%molecules(i)
+            pg = pg + mol%n
+            eh = eh + mol%calc_e(self%teta, self%temp, self%dxi)
+        end do
+
+        ! The gas pressure is Pg = NkT, where N is (Ne + Ni + Nmol)
+        pg = pg * BK * self%temp
+
+        !ehm = (Hm%xion + HI%xion) * Hm%f
+        E = (1.5*pg + EE*(ejon + eh)) / self%rho
+    END SUBROUTINE compute_energy_and_gas_pressure
 
     !===============================================================================
     SUBROUTINE molecule_by_id(self, id, molecule, verbose)

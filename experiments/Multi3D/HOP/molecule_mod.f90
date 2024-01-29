@@ -11,7 +11,7 @@ MODULE molecule_mod
         real(dp), dimension(:), allocatable :: de ! dissociation_energies
         real(dp), dimension(:,:,:), allocatable :: dis
     contains
-        procedure :: pk
+        procedure :: get_dis
         procedure :: calc_f
         procedure :: calc_e
         procedure :: allocate => allocate_molec
@@ -21,19 +21,19 @@ MODULE molecule_mod
 contains
 
 !===============================================================================
-! Computes dissociation constants N(AB) / (N(A)*N(B)) for molecules
+! Computes dissociation constants P(AB) / (P(A)*P(B)) for molecules
 !===============================================================================
-elemental real(dp) FUNCTION pk(self, teta)
+elemental real(dp) FUNCTION get_dis(self, teta)
     class(molec_type), intent(in) :: self
     real(dp), intent(in) :: teta
     !---------------------------------------------------------------------------
-    pk = 10**(-poly1d(teta, self%dc(1), self%dc(2), self%dc(3), self%dc(4), self%dc(5)))
+    get_dis = 10**(-poly1d(teta, self%dc(1), self%dc(2), self%dc(3), self%dc(4), self%dc(5)))
 END FUNCTION
 
 !===============================================================================
-FUNCTION calc_f(self, pe_over_fe) result(f)
+FUNCTION calc_f(self, pefe) result(f)
     class(molec_type), intent(in) :: self
-    real(dp), dimension(:,:,:) :: pe_over_fe
+    real(dp), dimension(:,:,:) :: pefe
     real(dp), dimension(self%m(1), self%m(2), self%m(3)) :: f
     type(ion_type), pointer :: ion
     integer :: j
@@ -43,7 +43,8 @@ FUNCTION calc_f(self, pe_over_fe) result(f)
     do j=1, self%nions
         ion => self%ions(j)%p
         f = f * ion%f
-        if (j > 1) f = f * pe_over_fe
+         ! pefe needed to convert from pressure to f, first pefe cancels out
+        if (j > 1) f = f * pefe
     end do
 END FUNCTION calc_f
 
@@ -73,7 +74,7 @@ FUNCTION calc_e(self, teta, temp, dxi) result(e)
         endif
     end do
 
-    e = -dis * self%f
+    e = - dis * self%n
 END FUNCTION calc_e
 
 !===============================================================================

@@ -20,7 +20,7 @@ MODULE read_external_mod
   USE list_mod
   USE shared_mod
   USE task_list_mod
-  USE experiment_mod
+  USE experiment_mod, only: experiment_t, interpolated_3d_atmos
   USE ion_mod, only: vmic
   USE composition_mod
   USE composition_patch_mod, only: FeH, save_atmos
@@ -32,6 +32,7 @@ MODULE read_external_mod
   USE m3d_halo_mod, only: m3d_halo_t
   USE read_stagger_snapshot_mod
   USE read_marcs_mod, only: read_marcs, zfac
+  USE handyfuncs_mod
   implicit none
 
   type, public:: read_external_t
@@ -94,13 +95,6 @@ SUBROUTINE init(self, task_list, name)
   call io%namelist_warning ('atmos_params', iostat)
   write (io%namelist, atmos_params)
 
-  if (atmos_format == 'Stagger') then
-    call read_stagger_params(atmos_file, snap, nx, ny, nz)
-    !if (irregular) then
-    !  dims = size(stagger_levels)
-    !endif
-  endif
-
   if (patches_per_mpi > 1) then
     if (dims > 1) then
       print *, 'Cannot give PATCHES_PER_MPI if DIMS is also specified in ATMOS_PARAMS. Stopping...'
@@ -128,31 +122,35 @@ SUBROUTINE init(self, task_list, name)
   allocate (task_list)
   self%task_list => task_list
 
-  if (atmos_format == 'Stagger') then
-    call read_stagger_size(self%size)
+  atmos_format = lowercase(atmos_format)
+  select case (atmos_format)
+  case ('stagger', 'co5bold')
+    interpolated_3d_atmos = .true.
+    select case (atmos_format)
+    case('stagger')
+      call read_stagger(atmos_file, snap, self%size)
+    case('co5bold')
+      call read_co5bold(atmos_file, self%size)
+    end select
     self%size = self%size / scaling%l
     self%n = [nx, ny, nz]
     self%ds = self%size / self%n
-
-  else
+  case default
     select case (atmos_format)
-    !case ('Stagger')
-    !  call read_stagger_snapshot(self%ds, self%rho, self%px, self%py, &
-    !  self%pz, self%ee, self%temp, self%ne)
-    case ('Marcs')
+    case ('marcs')
       call read_marcs(atmos_file, nz, self%ds, self%rho, self%temp, self%pe, FeH, vmic)
-    case ('Multi')
+    case ('multi')
       call self%read_multi_snapshot(atmos_file, self%ds, self%rho, self%temp, &
                                     self%ne, self%px, self%py, self%pz)
-    case ('Text')
+    case ('text')
       call self%read_1d_snapshot(atmos_file, self%ds, self%rho, self%temp, self%pe)
-    case ('MUST')
+    case ('must')
       call self%read_multi_snapshot(atmos_file, self%ds, self%rho, self%temp, &
                                     self%ne, self%px, self%py, self%pz)
       self%pz = - self%pz
     case default
       write(stdout, *) 'unknown atmos_format ', atmos_format, &
-      '. Options are: "Stagger", "Multi", "Marcs" and "Text".'
+      '. Options are: "Stagger", "Co5bold", "MUST", "Multi", "Marcs" and "Text".'
       stop
     end select
 
@@ -184,7 +182,7 @@ SUBROUTINE init(self, task_list, name)
     endif
 
     self%size = self%n * self%ds
-  endif
+  end select
 
   self%position = 0.5*self%size + self%origin
 
@@ -368,7 +366,7 @@ SUBROUTINE init_exp (self)
       select type (task)
       class is (experiment_t)
         call task%init()
-        if (.not. atmos_format == 'Stagger') then
+        if (.not. interpolated_3d_atmos) then
           call self%load_authority(task)
         endif
       end select

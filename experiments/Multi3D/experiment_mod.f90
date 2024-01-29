@@ -50,6 +50,8 @@ MODULE experiment_mod
     procedure:: check_nbor
     procedure:: nbor_relations
   end type
+
+  logical, public :: interpolated_3d_atmos=.false.
   
 CONTAINS
 
@@ -140,7 +142,7 @@ SUBROUTINE init (self)
 
   self%authority_mem => self%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),:,:,:)
 
-  if (atmos_format == 'Stagger') then
+  if (interpolated_3d_atmos) then
     sub = scaling%l * self%size
     pos = scaling%l * self%position
 
@@ -152,9 +154,7 @@ SUBROUTINE init (self)
     tt => authority(:,:,:,self%idx%e)
     pe => authority(:,:,:,6)
 
-    allocate(ne, mold=pe)
-    call load_stagger_subregion(n, sub, pos, d, px, py, pz, tt, ne)
-    pe = ne * cgs%k_b * tt
+    call load_atmos_subregion(n, sub, pos, d, px, py, pz, tt, pe)
 
     if (rotate_atmos) then
       do i=1, self%nw-1
@@ -166,9 +166,8 @@ SUBROUTINE init (self)
         tt => authority(:,:,:,self%idx%e)
         pe => authority(:,:,:,6)
         bottom = self%position(3) - 0.5*self%size(3)
-        bot2pivot = pivot_z * self%ds(3) - bottom
-        call load_stagger_subregion(n, sub, pos, d, px, py, pz, tt, pe, bot2pivot, long_vec(:,i))
-        pe = ne * cgs%k_b * tt
+        bot2pivot = scaling%l * (pivot_z * self%ds(3) - bottom)
+        call load_atmos_subregion(n, sub, pos, d, px, py, pz, tt, pe, bot2pivot, long_vec(:,i))
       end do
     endif
 

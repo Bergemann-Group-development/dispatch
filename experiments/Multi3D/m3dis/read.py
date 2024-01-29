@@ -65,9 +65,19 @@ class read(object):
         df = pd.read_csv(folder + 'abund.txt', header=None, sep='\s+', na_filter=False)
         self.abundances = {k.lower().capitalize():v for k, v in df.values}
         
-        if os.path.isfile(folder + 'atom.txt'):
+        maxiter = self.nml['m3d_params']['maxiter']
+        depart = self.nml['atom_params']['precomputed_depart'].strip()
+        if (maxiter > 0):
+            self.mode = 'NLTE'
+        elif(depart==''):
+            self.mode = 'LTE'
+        else:
+            self.mode = 'NLTE'
+        
+        atom_file = folder + 'atom.txt'
+        if os.path.isfile(atom_file):
             self.qnorm = self.nml['atom_params']['qnorm']
-            self.atom = atom_class(folder + 'atom.txt', qnorm=self.qnorm, verbose=verbose, **kwargs)
+            self.atom = atom_class(atom_file, qnorm=self.qnorm, verbose=verbose, **kwargs)
             loggf_cut = self.nml['atom_params']['logf_cut']
             red_cut   = self.nml['atom_params']['red_cut']
             blue_cut  = self.nml['atom_params']['blue_cut']
@@ -79,6 +89,9 @@ class read(object):
                 self.atom.abnd = in_abnd
 
             self.atom.title = 'A({}) = {:.2f}'.format(self.atom.id, self.atom.abnd)
+            
+            for trans in self.atom.trans:
+                trans.run = self
         
             lines = self.atom.trans[:self.atom.nline]
             if 'line_mask' in self.nml.keys():
@@ -92,11 +105,19 @@ class read(object):
             
             self.nline = len(lines)
             self.line = lines
+
+            reports = glob.glob(folder + 'convergence_report_*.txt')
+            if len(reports)>0:
+                self.lvlerr = np.zeros(self.atom.nk)
+                for report in reports:
+                    df = pd.read_csv(report, sep='\s+')
+                    self.lvlerr = np.maximum(self.lvlerr, df.maxconv.values)
         
-        if (verbose > 0): print('Reading wavelengths')
-        self.lam = np.fromfile(sfolder + 'out_lam.bin', dtype=np.float64)
-        self.lam = vacuum2obs(self.lam[::-1])
-        self.dlam = np.diff(self.lam)
+        if os.path.isfile(sfolder + 'out_lam.bin'):
+            if (verbose > 0): print('Reading wavelengths')
+            self.lam = np.fromfile(sfolder + 'out_lam.bin', dtype=np.float64)
+            self.lam = vacuum2obs(self.lam[::-1])
+            self.dlam = np.diff(self.lam)
 
         if os.path.isfile(sfolder + 'bb_lam.bin'):
             self.bb_lam = vacuum2obs(np.fromfile(sfolder + 'bb_lam.bin', dtype=np.float64))[::-1]
@@ -105,36 +126,33 @@ class read(object):
         if os.path.isfile(sfolder + 'all_lam.bin'):
             self.all_lam = vacuum2obs(np.fromfile(sfolder + 'all_lam.bin', dtype=np.float64))[::-1]
         
-        if (verbose > 0): print('Reading Intensities')
         file = folder + 'angle_quadrature.txt'
-        df = pd.read_csv(file, header=None, skiprows=1, sep='\s+', names=['ang', 'wmu', 'mux', 'muy', 'muz'])
-        self.vec = df.values[:,2:]
-        self.wts = df.values[:,1]
-        self.n_ang = self.wts.size
-        self.mus, self.imus = np.unique(1 - self.vec[:,-1], return_inverse=True)
-        self.mus = 1 - self.mus
-        self.nmu = self.mus.size
+        if os.path.isfile(file):
+            df = pd.read_csv(file, header=None, skiprows=1, sep='\s+', names=['ang', 'wmu', 'mux', 'muy', 'muz'])
+            self.vec = df.values[:,2:]
+            self.wts = df.values[:,1]
+            self.n_ang = self.wts.size
+            self.mus, self.imus = np.unique(1 - self.vec[:,-1], return_inverse=True)
+            self.mus = 1 - self.mus
+            self.nmu = self.mus.size
 
-        ie = self.read_patch_save('ie', fdim=0)[0]
+        if hasattr(self, 'lam'):
+            if (verbose > 0): print('Reading Intensities')
+            ie = self.read_patch_save('ie', fdim=0)[0]
 
-        self.ie     = np.array(ie[:,0,0,:,0])
-        self.ie_lte = np.array(ie[:,0,0,:,1])
-        self.cnt    = np.array(ie[:,0,0,:,2])
+            self.ie     = np.array(ie[:,0,0,:,0])
+            self.ie_lte = np.array(ie[:,0,0,:,1])
+            self.cnt    = np.array(ie[:,0,0,:,2])
 
-        self.flux     = np.sum(self.wts * self.ie    , axis=-1)
-        self.flux_lte = np.sum(self.wts * self.ie_lte, axis=-1)
-        self.flux_cnt = np.sum(self.wts * self.cnt   , axis=-1)
+            self.flux     = np.sum(self.wts * self.ie    , axis=-1)
+            self.flux_lte = np.sum(self.wts * self.ie_lte, axis=-1)
+            self.flux_cnt = np.sum(self.wts * self.cnt   , axis=-1)
 
-        if self.nml['m3d_params']['save_resolved']:
-            i3 = self.read_patch_save('i3', fdim=0)[0]
-            self.i3     = i3[...,0]
-            self.i3_lte = i3[...,1]
-            self.c3     = i3[...,2]
-            
-        if hasattr(self, 'atom'):
-            #print('Prepairing transitions')
-            for trans in self.atom.trans:
-                trans.run = self
+            if self.nml['m3d_params']['save_resolved']:
+                i3 = self.read_patch_save('i3', fdim=0)[0]
+                self.i3     = i3[...,0]
+                self.i3_lte = i3[...,1]
+                self.c3     = i3[...,2]
 
         mesh = open(folder + 'atmos_mesh.txt', 'r')
         nx, ny, nz = [int(i) for i in mesh.readline().split()]
@@ -155,13 +173,13 @@ class read(object):
 
         if os.path.isfile(sfolder + 'atmos_meta.txt'):
             mem = self.read_patch_save('atmos')[0]
-            self.ne   = mem[...,0].compute()
-            self.rho  = mem[...,1].compute()
-            self.temp = mem[...,2].compute()
-            self.vx   = mem[...,3].compute() * CC
-            self.vy   = mem[...,4].compute() * CC
-            self.vz   = mem[...,5].compute() * CC
-            self.chi  = mem[...,6].compute()
+            self.ne   = mem[...,0,0].compute()
+            self.rho  = mem[...,1,0].compute()
+            self.temp = mem[...,2,0].compute()
+            self.vx   = mem[...,3,0].compute() * CC
+            self.vy   = mem[...,4,0].compute() * CC
+            self.vz   = mem[...,5,0].compute() * CC
+            self.chi  = mem[...,6,0].compute()
             self.tau  = compute_tau_scale(self.chi, self.dz*1e8, axis=-1)
             self.ltau = np.log10(self.tau)
             
@@ -188,23 +206,6 @@ class read(object):
                 self.chi  = self.chi .reshape((nx,ny,nz), order='F')
 
             self.ltau = np.log10(self.tau)
-
-        reports = glob.glob(folder + 'convergence_report_*.txt')
-        if len(reports)>0:
-            self.lvlerr = np.zeros(self.atom.nk)
-            for report in reports:
-                df = pd.read_csv(report, sep='\s+')
-                self.lvlerr = np.maximum(self.lvlerr, df.maxconv.values)
-
-        
-        maxiter = self.nml['m3d_params']['maxiter']
-        depart = self.nml['atom_params']['precomputed_depart'].strip()
-        if (maxiter > 0):
-            self.mode = 'NLTE'
-        elif(depart==''):
-            self.mode = 'LTE'
-        else:
-            self.mode = 'NLTE'
 
     #=====================================================================
     def get_xx(self, lam, dlam=None, xmin=None, xmax=None):

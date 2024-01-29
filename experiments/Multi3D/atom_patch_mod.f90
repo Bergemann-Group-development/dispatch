@@ -180,6 +180,7 @@ MODULE atom_patch_mod
     else
       self%atom%abnd = self%atom%abnd + self%composition%FeH
     endif
+    
     if (exclude_trace_cont) then
       call self%exclude_double_continua()
     endif
@@ -208,12 +209,14 @@ MODULE atom_patch_mod
     type(atomic_spectrum_type), target :: output_sp
     type(atomic_spectrum_type), save, target :: sp, bb_sp, bf_sp
     logical, save :: first_time=.true.
+    logical :: save_sp
     integer, save :: itimer=0
     !-----------------------------------------------------------------------------
     call trace%begin('atom_patch_t%pre_init_spectrum', itimer=itimer)
     if (first_time) then
       first_time = .false.
       external_sp = output_sp%nnu > 0 
+      save_sp = external_sp .or. (associated(self%atom) .and. size(long_vec,2)>0)
       if (associated(self%atom)) then
         if (decouple_continuum) then
           bf_sp%name = 'bound-free'
@@ -222,19 +225,19 @@ MODULE atom_patch_mod
           endif
           call self%bf_atom%create_spectrum(bf_sp, bf=.true., sort=overlapping_bf)
           call self%bf_atom%set_ired_iblue(bf_sp, bf=.true., set_active=.true.)
-          call bf_sp%save('bf')
+          if (save_sp) call bf_sp%save('bf')
 
           bb_sp%name = 'bound-bound'
           call self%bb_atom%create_spectrum(bb_sp, bb=.true., sort=overlapping_bb)
           call self%bb_atom%set_ired_iblue(bb_sp, bb=.true., set_active=.true.)
-          call bb_sp%save('bb')
+          if (save_sp) call bb_sp%save('bb')
 
         else
           sp%name = 'all'
           if (detailed_absmet) call self%get_osmet_nu(sp, self%composition%osmet)
           call self%atom%create_spectrum(sp, bb=.true., bf=.true.)
           call self%atom%set_ired_iblue(sp, bb=.true., bf=.true., set_active=.true.)
-          call sp%save('all')
+          if (save_sp) call sp%save('all')
         endif
 
         if (external_sp) then
@@ -246,10 +249,12 @@ MODULE atom_patch_mod
         endif
       elseif (external_sp) then
         call self%output_atom%set_ired_iblue(output_sp, bb=.true., bf=.true.) 
-      else
-        stop 'Neither atom nor spectral range specified!'
+      !else
+      !  stop 'Neither atom nor spectral range specified!'
       endif
-      call output_sp%save('out')
+      if (save_sp) then
+        call output_sp%save('out')
+      endif
     endif
 
     self%output_sp => output_sp

@@ -60,7 +60,7 @@ MODULE nlte_patch_mod
     procedure :: integrate_intensity
     procedure :: integrate_rates
     procedure :: work_to_mem
-    procedure :: save_intensity 
+    procedure :: save_intensity
     procedure :: save_convergence_report 
     procedure :: save_contribution_function 
     procedure :: rotate_array
@@ -247,10 +247,10 @@ SUBROUTINE execute (self)
                    (self%out_ray .and. absmet_in_output)
 
   comp => self%composition
-  adata => self%atom%data
   
   call self%lte_background_opacities(comp, include_absmet=include_absmet)
   if (self%use_atom) then
+    adata => self%atom%data
     if (self%bound_free) call self%add_bound_free_opacities(adata)
   endif
 
@@ -278,8 +278,8 @@ SUBROUTINE execute (self)
 
     if (do_rotate_atmos) then
       comp => self%m3d_parent%rotated_composition(i_mu)
-      adata => self%atom%rotated_data(i_mu)
       if (self%bound_bound) then
+        adata => self%atom%rotated_data(i_mu)
         inv_df = self%atom%inverse_doppler_factor(real(comp%temp))
         call self%bound_bound_damping(comp, adamp, inv_df)
       endif
@@ -887,7 +887,9 @@ SUBROUTINE integrate_rates (self, gamma_ij, gamma_ji)
   class(atom_type), pointer :: atom
   integer :: m(4), i, j, k
   real(4), dimension(:,:,:,:), contiguous :: gamma_ij, gamma_ji
+  integer, save :: itimer=0
   !-----------------------------------------------------------------------------
+  call trace%begin('nlte_patch_t%integrate_rates', itimer=itimer)
   call lock_mem(self%m3d_parent, 'integrate_rates')
   atom => self%atom
   if (.not. associated(atom%data%gamma_ij)) then
@@ -907,6 +909,7 @@ SUBROUTINE integrate_rates (self, gamma_ij, gamma_ji)
     atom%data%gamma_ji(:,:,:,k) = atom%data%gamma_ji(:,:,:,k) + gamma_ji(:,:,:,j)
   end do
   call unlock_mem(self%m3d_parent, 'integrate_rates')
+  call trace%end(itimer)
 END SUBROUTINE integrate_rates
 
 !===============================================================================
@@ -1204,7 +1207,9 @@ SUBROUTINE get_vproj (self, vproj, vec, rotate, i_mu)
   real(4), dimension(:,:,:,:), contiguous, pointer :: mem
   integer :: i_mu
   logical :: rotate
+  integer, save :: itimer
   !-----------------------------------------------------------------------------
+  call trace%begin('nlte_patch_t%get_vproj', itimer=itimer)
   if (.not. use_vel) then
     vproj = 0
   else
@@ -1220,6 +1225,7 @@ SUBROUTINE get_vproj (self, vproj, vec, rotate, i_mu)
 
     vproj = -vec(1)*vx - vec(2)*vy + vec(3)*vz
   endif
+  call trace%end(itimer)
 END SUBROUTINE get_vproj
 
 !===============================================================================
@@ -1232,7 +1238,9 @@ SUBROUTINE save_contribution_function (self, i_set, i_mu)
   real(4), dimension(:,:,:,:,:), pointer :: back_ptr
   character(32) :: name
   logical :: skip
+  integer, save :: itimer=0
   !-----------------------------------------------------------------------------
+  call trace%begin('nlte_patch_t%save_contribution_function', itimer=itimer)
   do i=1, n_cntrbf
     j = cntrbf_lines(i)
     associate(line=>self%atom%line(j))
@@ -1285,6 +1293,7 @@ SUBROUTINE save_contribution_function (self, i_set, i_mu)
       call self%save6(cntrbf(i)%data, name)
     endif
   end do
+  call trace%end(itimer)
 END SUBROUTINE save_contribution_function
 
   !===============================================================================
@@ -1399,9 +1408,9 @@ END SUBROUTINE allocate_mem
 SUBROUTINE save_intensity (self)
   class(nlte_patch_t) :: self
   real(4), dimension(:,:,:,:,:), allocatable :: ie, i3
-  integer :: meta_unit, iostat, i, nmu
-  character(len=256) :: meta_file
+  integer, save :: itimer=0
   !-----------------------------------------------------------------------------
+  call trace%begin('nlte_patch_t%save_intensity', itimer=itimer)
   fs = self%fs
   fe = self%fe
   allocate(i3(fs:fe,nx,ny, self%mus:self%mue, self%n_set), source=0.)
@@ -1423,19 +1432,7 @@ SUBROUTINE save_intensity (self)
   if (save_resolved) then
     call self%save5(i3, 'i3')
   endif
-
-  meta_file = trim(io%run_dir) // 'angle_quadrature.txt'
-  call io%lock%set('save_quadrature')
-  if (.not. os%exists(meta_file)) then
-    open(newunit=meta_unit, file=meta_file, form='formatted')
-    nmu = size(long_wmu)
-    write(meta_unit, '(A3, 4(A12))') '#', 'weight', 'mux', 'muy', 'muz'
-    do i=1, nmu
-      write(meta_unit, '(I3, F12.8, SP, 3(F12.8))') i, long_wmu(i), long_vec(:,i)
-    end do
-    close(meta_unit)
-  endif
-  call io%lock%unset('save_quadrature')
+  call trace%end(itimer)
 END SUBROUTINE save_intensity
 
 !===============================================================================
@@ -1443,14 +1440,21 @@ SUBROUTINE save_convergence_report (self)
   class(nlte_patch_t) :: self
   integer :: lunit, i
   character(len=256) :: conv_file
+  integer, save :: itimer=0
+  logical, save :: first_time = .true.
   !-----------------------------------------------------------------------------
-  write(conv_file, '(A,A,I3.3,A)') trim(io%run_dir), 'convergence_report_', self%rank,'.txt'
-  open(newunit=lunit, file=conv_file, form='formatted')
-  write(lunit, '(A6, A12)') 'lvl', 'maxconv'
-  do i=1, size(rank_lvlerr)
-    write(lunit, '(I6, ES12.4)') i, rank_lvlerr(i)
-  end do
-  close(lunit)
+  if (first_time) then
+    first_time = .false.
+    call trace%begin('nlte_patch_t%save_convergence_report', itimer=itimer)
+    write(conv_file, '(A,A,I3.3,A)') trim(io%run_dir), 'convergence_report_', self%rank,'.txt'
+    open(newunit=lunit, file=conv_file, form='formatted')
+    write(lunit, '(A6, A12)') 'lvl', 'maxconv'
+    do i=1, size(rank_lvlerr)
+      write(lunit, '(I6, ES12.4)') i, rank_lvlerr(i)
+    end do
+    close(lunit)
+    call trace%end(itimer)
+  endif
 END SUBROUTINE save_convergence_report
 
 !===============================================================================

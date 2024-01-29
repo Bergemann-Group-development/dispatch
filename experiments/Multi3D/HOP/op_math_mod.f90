@@ -289,7 +289,8 @@ contains
       end do
   
       if (i == nold) then
-        newy(ii) = yy(i)
+        newy(ii:nnew) = yy(i)
+        exit
       elseif (xx(1) > newx(ii)) then
         newy(ii) = yy(1)
       else
@@ -389,7 +390,7 @@ contains
 
     do k = 1, nz
       height = (k-1)*dz ! height of plane as measured from bottom
-      deltak = (bot2pivot - height)*delta + ray_offset
+      deltak = (bot2pivot - height)*delta + ray_offset*[newx(2), newy(2)]
 
       ! y-dimension linear interpolation
       do i = 1, ox

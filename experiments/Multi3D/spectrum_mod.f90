@@ -31,12 +31,13 @@ MODULE spectrum_mod
     !===============================================================================
     SUBROUTINE init(self)
       class(spectrum_type) :: self
-      real(8), save:: daa=0, aa_red=0, aa_blue=0
+      real(8), save:: daa=0, aa_red=0, aa_blue=0, R=0
       real(8), dimension(:), allocatable :: lam
+      real(8) :: last, fac
       integer :: iostat, i, nnu=0
       logical :: give_lam=.false.
       logical :: in_log=.false.
-      namelist /spectrum_params/ daa, aa_red, aa_blue, nnu, give_lam, in_log
+      namelist /spectrum_params/ daa, aa_red, aa_blue, nnu, give_lam, in_log, R
       namelist /sp_wavelengths/ lam
       !-----------------------------------------------------------------------------
       rewind (io%input)
@@ -48,7 +49,7 @@ MODULE spectrum_mod
       call io%namelist_warning ('spectrum_params', iostat)
       write (io%namelist, spectrum_params)
 
-      if (daa==0 .and. nnu==0) return
+      if (daa==0 .and. nnu==0 .and. R==0) return
       if (give_lam .and. nnu>0) then
         allocate(lam(nnu))
         rewind (io%input)
@@ -73,20 +74,32 @@ MODULE spectrum_mod
           aa_red = air2vac(aa_red)
           aa_blue = air2vac(aa_blue)
         endif
-        if (daa /= 0) then
-          nnu = ceiling((aa_red - aa_blue) / daa)
+        if (R /= 0) then
+          fac = 1d0 + 1d0/R
+          nnu = ceiling(log(aa_red/aa_blue) / log(fac))
+          allocate(self%nu(nnu))
+          last = aa_blue
+          do i=0,nnu-1
+            last = last * fac
+            self%nu(nnu-i) = last
+          end do
         else
-          daa = (aa_red - aa_blue) / real(nnu-1)
-        endif
-        self%nnu = nnu
-        allocate(self%nu(nnu))
-        do i=0,nnu-1
-          if (in_log) then
-            self%nu(nnu-i) = CC / (exp(aa_blue + i*daa)) * 1e8
+          if (daa /= 0) then
+            nnu = ceiling((aa_red - aa_blue) / daa)
           else
-            self%nu(nnu-i) = CC / (aa_blue + i*daa) * 1e8
+            daa = (aa_red - aa_blue) / real(nnu-1)
           endif
-        end do
+          allocate(self%nu(nnu))
+          do i=0,nnu-1
+            if (in_log) then
+              self%nu(nnu-i) = exp(aa_blue + i*daa)
+            else
+              self%nu(nnu-i) = aa_blue + i*daa
+            endif
+          end do
+        endif
+        self%nu = CC / self%nu * 1e8
+        self%nnu = nnu
       else
         stop 'Give either wavelength set or aa_red and aa_blue in spectrum_params'
       endif
