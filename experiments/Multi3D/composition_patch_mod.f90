@@ -7,9 +7,10 @@ MODULE composition_patch_mod
   USE handyfuncs_mod
   USE optab_mod, only: optab
   USE element_mod, only: element_type
-  USE m3d_patch_mod,   only: m3d_patch_t, comoving_frame, ilambd, decouple_continuum, dlam, &
+  USE m3d_patch_mod,   only: m3d_patch_t, composition, comoving_frame, ilambd, dlam, &
   use_density, use_ne, overlapping_bb, overlapping_bf, line_blanketing, binned_opac, &
-  save_Qrad, maxiter, rotate_atmos, long_vec
+  save_Qrad, maxiter, rotate_atmos, long_vec, generate_absmet, decouple_continuum, &
+  linelist_in_output
   USE m3d_debug_mod
   USE composition_mod, only: composition_type, exclude_elements
   USE atom_patch_mod,  only: atom_patch_t
@@ -36,12 +37,12 @@ MODULE composition_patch_mod
     procedure :: create_sub_patches
     procedure :: print_post_update_info
     procedure :: save_abundances_to_file
+    procedure :: init_tabulated_comp
     procedure :: nbor_relations => composition_patch_nbor_relations
   end type
   
   real(8), public :: FeH=0
   logical, public :: save_atmos=.true.
-  type(composition_type), public, save :: composition
 
 contains
 
@@ -63,8 +64,10 @@ SUBROUTINE composition_pre_init (self)
   character(len=256), save :: line_lists(10)=''
   logical, save :: first_time=.true., absmet_big_end=.false., external_sp
   namelist /composition_params/ verbose, absdat_file, abund_file, absmet_file, &
-  absmet_big_end, isotope_file, molec_file, H_occupation_probability, opac_table
-  namelist /linelist_params/ dlam, exclude_elements, linelist_file, line_lists
+  absmet_big_end, isotope_file, molec_file, H_occupation_probability, opac_table, &
+  generate_absmet
+  namelist /linelist_params/ dlam, exclude_elements, linelist_file, line_lists, &
+  linelist_in_output
   ! ----------------------------------------------------------------------------
   call trace%begin('composition_patch_t%composition_pre_init', itimer=itimer)
   self%kind = 'composition'
@@ -125,16 +128,7 @@ SUBROUTINE composition_pre_init (self)
     call trace%end(itimer2)
   endif
 
-  ! copy composition with all the information from the abund
-  ! and absdat file into dispackage to make it threadprivate
-  allocate(self%composition)
-  self%composition = composition
-  ! this is needed, otherwise all pointers will still point
-  ! to ions and molecules in multi3d%composition
-  call self%composition%reassign_pointer()
-
   allocate(atom_patch)
-  atom_patch%composition => self%composition
   call atom_patch%pre_init_atom()
   call atom_patch%pre_init_spectrum(output_sp)
 
@@ -210,9 +204,8 @@ SUBROUTINE execute (self)
     li = self%li
     ui = self%ui
 
-    if (rotate_atmos) then
-      allocate(self%rotated_composition(self%n_out))
-    endif
+    allocate(self%composition)
+    if (rotate_atmos) allocate(self%rotated_composition(self%n_out))
 
     allocate(temp8(n(1),n(2),n(3)))
     allocate(rho8 (n(1),n(2),n(3)))
@@ -247,16 +240,23 @@ SUBROUTINE execute (self)
       rho8  = dble(rho)
       ne8   = dble(ne)
 
+      ! copy composition with all the information from the abund
+      ! and absdat file to make it threadprivate
       if (i==1) then
+        self%composition = composition
         comp => self%composition
       else
-        self%rotated_composition(i-1) = self%composition
+        self%rotated_composition(i-1) = composition
         comp => self%rotated_composition(i-1)
-        call comp%reassign_pointer()
       endif
+
+      ! this is needed, otherwise all pointers will still point
+      ! to ions and molecules in original composition
+      call comp%reassign_pointer()
       ! loading temp, ne and rho in to composition objekt
       ! ion and molecule equilibrium are solved immediately
       call comp%load_state_variables(temp8, ne8, rho8, use_rho=use_density, use_ne=use_ne)
+
       if (.not. use_ne) ne = real(comp%ne)
       if (.not. use_density) rho = real(comp%rho)
       if (save_atmos) then
@@ -269,6 +269,10 @@ SUBROUTINE execute (self)
       call self%save5(self%mem(:,:,:,:,self%it,:), 'atmos')
     endif
 
+    if (generate_absmet) then
+      call self%init_tabulated_comp(self%composition%temp, self%composition%ne)
+    endif
+
     self%dtime = max(self%dtime, io%end_time - self%dtime)
     self%out_ray = .true. ! so that it is still executed after convergence
   else
@@ -279,6 +283,39 @@ SUBROUTINE execute (self)
   endif
   call trace%end(itimer)
 END SUBROUTINE execute
+
+!===============================================================================
+SUBROUTINE init_tabulated_comp (self, temp, ne)
+    class(composition_patch_t), target :: self
+    real(8), dimension(:,:,:), intent(in) :: temp, ne
+    integer :: i, j, ntemp, nne, nnu
+    real(8), parameter :: dtemp=500.d0, ldne=1.d0
+    real(8), dimension(:,:,:), allocatable :: tab_temp, tab_ne, tab_rho
+    real(8) :: mint, maxt, mine, maxe
+    !---------------------------------------------------------------------------
+    allocate(self%tab_comp)
+    self%tab_comp = composition
+    call self%tab_comp%reassign_pointer()
+    mint = minval(temp)
+    maxt = maxval(temp)
+    mine = log(minval(ne))
+    maxe = log(maxval(ne))
+    ntemp = ceiling(maxt/dtemp) - floor(mint/dtemp) + 1
+    nne   = ceiling(maxe/ldne)  - floor(mine/ldne)  + 1
+    mint = floor(mint/dtemp)*dtemp
+    mine = floor(mine/ldne)*ldne
+    allocate(tab_temp(ntemp, nne, 1))
+    allocate(tab_rho (ntemp, nne, 1))
+    allocate(tab_ne  (ntemp, nne, 1))
+    do j=1, nne
+    do i=1, ntemp
+      tab_temp(i,j,1) = mint + (i-1)*dtemp
+      tab_ne  (i,j,1) = mine + (j-1)*ldne
+    end do
+    end do
+    tab_ne = exp(tab_ne)
+    call self%tab_comp%load_state_variables(tab_temp, tab_ne, tab_rho, use_rho=.false., use_ne=.true.)
+END SUBROUTINE init_tabulated_comp
 
 !===============================================================================
 SUBROUTINE print_post_update_info (self)
@@ -303,8 +340,8 @@ SUBROUTINE save_abundances_to_file (self)
   !-----------------------------------------------------------------------------
   if (self%ipos(3)==0) then
     open(newunit=lunit, file=trim(io%run_dir)//'abund.txt', form='FORMATTED')
-    do i=1, self%composition%nel
-      element => self%composition%elements(i)
+    do i=1, composition%nel
+      element => composition%elements(i)
       abnd = log10(element%abund) + 12.0
       abnd = max(abnd, -99.9)
       write(lunit, '(A3, F8.4)') element%id, abnd

@@ -764,7 +764,7 @@ contains
     END SUBROUTINE mask_linelist
 
     !===============================================================================
-    SUBROUTINE add_linelist_opacities(self, nu, all_chi, all_eta, blz, vproj, dlam)
+    SUBROUTINE add_linelist_opacities(self, nu, all_chi, dlam, vproj, all_eta, blz)
         class(composition_type), target :: self
         class(element_type), pointer :: element
         class(ion_type), pointer :: ion
@@ -772,12 +772,13 @@ contains
         class(isotope_type), pointer :: iso
         class(bbtrans_type), pointer :: line
         real(8), intent(in), dimension(:), pointer :: nu
-        real(4), intent(inout), dimension(:,:,:,:) :: all_chi, all_eta, blz
-        real(4), intent(in), dimension(:,:,:), contiguous :: vproj
+        real(4), intent(inout), dimension(:,:,:,:) :: all_chi
+        real(4), intent(inout), dimension(:,:,:,:), optional :: all_eta, blz
+        real(4), intent(in), dimension(:,:,:), contiguous, target, optional :: vproj
         real(8), intent(in) :: dlam
         real(4), dimension(:,:,:), allocatable :: tothi, adamp, stark_pe, ne, temp, EK_over_temp, dxij, chi_fac, unsold
         real(4), dimension(:,:,:), allocatable, target :: inv_part, vbar2, inv_df, iso_vbar2, iso_inv_df, iso_inv_part
-        real(4), dimension(:,:,:), pointer, contiguous :: vb2, idopf, ipart
+        real(4), dimension(:,:,:), pointer, contiguous :: vb2, idopf, ipart, vpr
         real(4), dimension(:,:,:,:), pointer, contiguous :: eta, chi
         real(4), dimension(:,:,:,:), pointer :: cont
         real(4), dimension(:,:,:,:), allocatable, target :: chi_l
@@ -788,26 +789,33 @@ contains
         integer, save:: itimer=0
         !---------------------------------------------------------------------------
         call trace%begin ('composition_type%add_linelist_opacities', itimer=itimer)
-        allocate(tothi,           mold=vproj)
-        allocate(adamp,           mold=vproj)
-        allocate(stark_pe,        mold=vproj)
-        allocate(ne,              mold=vproj)
-        allocate(temp,            mold=vproj)
-        allocate(EK_over_temp,    mold=vproj)
-        allocate(inv_df,          mold=vproj)
-        allocate(iso_inv_df,      mold=vproj)
-        allocate(inv_part,        mold=vproj)
-        allocate(iso_inv_part,    mold=vproj)
-        allocate(vbar2,           mold=vproj)
-        allocate(iso_vbar2,       mold=vproj)
-        allocate(dxij,            mold=vproj)
-        allocate(chi_fac,         mold=vproj)
-        allocate(unsold,          mold=vproj)
+        m = shape(self%ne)
+        allocate(tothi(m(1),m(2),m(3)))
+        allocate(adamp,        mold=tothi)
+        allocate(stark_pe,     mold=tothi)
+        allocate(ne,           mold=tothi)
+        allocate(temp,         mold=tothi)
+        allocate(EK_over_temp, mold=tothi)
+        allocate(inv_df,       mold=tothi)
+        allocate(iso_inv_df,   mold=tothi)
+        allocate(inv_part,     mold=tothi)
+        allocate(iso_inv_part, mold=tothi)
+        allocate(vbar2,        mold=tothi)
+        allocate(iso_vbar2,    mold=tothi)
+        allocate(dxij,         mold=tothi)
+        allocate(chi_fac,      mold=tothi)
+        allocate(unsold,       mold=tothi)
         allocate(fmask(size(nu)), source=.false.)
-        m = shape(vproj)
 
         allocate(chi_l, mold=all_chi)
         chi_l = 0.
+
+        if (present(vproj)) then
+            vpr => vproj
+        else
+            allocate(vpr, mold=tothi)
+            vpr = 0
+        endif
 
         ne   = real(self%ne)
         temp = real(self%temp)
@@ -856,7 +864,7 @@ contains
                     endif
     
                     call line%add_lte_opacities(ired, iblue, nu, &
-                        vproj, idopf, EK_over_temp, dxij, ipart, ne, tothi, vb2, stark_pe, unsold, chi_l, all_chi)
+                        vpr, idopf, EK_over_temp, dxij, ipart, ne, tothi, vb2, stark_pe, unsold, chi_l, all_chi)
                 end do
             end do
         end do
@@ -880,7 +888,7 @@ contains
                 fmask(ired:iblue) = .true.
       
                 call line%add_lte_opacities(ired, iblue, nu, &
-                    vproj, inv_df, EK_over_temp, dxij, inv_part, ne, tothi, vbar2, stark_pe, unsold, chi_l, all_chi)
+                    vpr, inv_df, EK_over_temp, dxij, inv_part, ne, tothi, vbar2, stark_pe, unsold, chi_l, all_chi)
             end do
         end do
 
@@ -889,17 +897,31 @@ contains
         do i=1, m(1)
             do f=1, size(nu)
                 if (fmask(f)) then
-                    bnu = blz(f,i,j,k)
-                    if (bnu > 1e-10) then
-                      bnu = bnu / (1.0 - bnu)
-                    endif
                     all_chi(f,i,j,k) = all_chi(f,i,j,k) + chi_l(f,i,j,k)
-                    all_eta(f,i,j,k) = all_eta(f,i,j,k) + chi_l(f,i,j,k) * bnu
                 endif
             end do
         end do
         end do
         end do
+
+        if (present(all_eta)) then
+            do k=1, m(3)
+            do j=1, m(2)
+            do i=1, m(1)
+                do f=1, size(nu)
+                    if (fmask(f)) then
+                        bnu = blz(f,i,j,k)
+                        if (bnu > 1e-10) then
+                        bnu = bnu / (1.0 - bnu)
+                        endif
+                        all_eta(f,i,j,k) = all_eta(f,i,j,k) + chi_l(f,i,j,k) * bnu
+                    endif
+                end do
+            end do
+            end do
+            end do
+        endif
+        if (.not. present(vproj)) deallocate(vpr)
         call trace%end(itimer)
     END SUBROUTINE add_linelist_opacities
 
@@ -1349,7 +1371,7 @@ contains
         call self%ion_by_id('H I', HI)
         call self%ion_by_id('HE I', HeI)
         
-        p6 = LOG10((HI%f + 0.41336*HeI%f + 0.85*(H2%f + H2p%f)) * self%toth * BK * self%temp)
+        p6 = LOG10((HI%n + 0.41336*HeI%n + 0.85*(H2%n + H2p%n)) * BK * self%temp)
     END SUBROUTINE compute_p6
 
     !===============================================================================
