@@ -2,6 +2,7 @@
 # --- Log file and error file names ---
 # --- Job name and working directory ---
 #SBATCH -D ./
+#SBATCH -O slurm/slurm-%j.out
 #SBATCH -J M3D_DIS
 # --- CPU and node logistics ---
 #SBATCH --partition=debug
@@ -12,7 +13,7 @@
 #SBATCH --ntasks-per-core=1
 #SBATCH --exclusive
 # --- User notifications ---
-#SBATCH --time 00:20:00
+#SBATCH --time 24:00:00
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export KMP_STACKSIZE=256M
 #unset OMP_NUM_THREADS

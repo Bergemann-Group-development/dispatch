@@ -61,6 +61,7 @@ class read(object):
         folder = folder + os.sep
         sfolder = folder + 'save' + os.sep
         self.sfolder = sfolder
+        self.folder = folder
         self.nml = f90nml.read(folder + 'params.nml')   
         df = pd.read_csv(folder + 'abund.txt', header=None, sep='\s+', na_filter=False)
         self.abundances = {k.lower().capitalize():v for k, v in df.values}
@@ -183,7 +184,7 @@ class read(object):
             self.tau  = compute_tau_scale(self.chi, self.dz*1e8, axis=-1)
             self.ltau = np.log10(self.tau)
             
-        if os.path.isfile(folder + 'atmos_data.txt'):
+        if os.path.isfile(folder + 'atmos_data.bin'):
             dat = FortranFile(folder + 'atmos_data.bin')
             self.temp = dat.read_reals(np.float32)
             self.rho  = dat.read_reals(np.float32)
@@ -463,7 +464,7 @@ class read(object):
                 else:
                     ltau = tau_in
 
-                dep = interp_tau(ltau, self.ltau[:,:,::-1], dep[:,:,::-1])
+                dep = interp_tau(ltau.copy(), self.ltau[:,:,::-1].copy(), dep[:,:,::-1].copy())
                 dep = np.mean(dep, axis=(0,1))
             else:
                 ltau = self.ltau

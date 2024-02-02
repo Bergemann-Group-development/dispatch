@@ -842,7 +842,7 @@ MODULE atom_patch_mod
       allocate(atom%data%C(atom%nlevel, atom%nlevel))
       allocate(atom%data%W(atom%nlevel, atom%nlevel))
       allocate(atom%data%e(atom%nlevel))
-      allocate(self%lvlerr(atom%nlevel))
+      allocate(self%lvlerr(atom%nlevel), source=0.d0)
       call os%allocate(atom%data%nstar, [self%n, atom%nlevel], label='nstar')
       call os%allocate(atom%data%n,     [self%n, atom%nlevel], label='n')
       call os%allocate(atom%data%totn, self%n, label='totn')

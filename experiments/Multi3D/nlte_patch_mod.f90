@@ -1012,7 +1012,7 @@ SUBROUTINE rotate_array (self, vec, array)
   bot2pivot = pivot_z * self%ds(3) - bottom
 
   do z=1, nz
-    height = (z-1)*self%ds(3) ! height of plane as measured from bottom
+    height = z*self%ds(3) ! height of plane as measured from bottom
     deltak = (bot2pivot - height)*delta + ray_offset
     up1 = floor(deltak(1)) !integer part of shift
     up2 = floor(deltak(2)) !integer part of shift

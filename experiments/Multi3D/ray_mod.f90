@@ -280,9 +280,8 @@ SUBROUTINE set_lobatto_quadratures(ntheta, nphi, vec, wts)
   ! setting indexes and hard-coded Lobatto coefficients
   select case (nrays)
   case (1)
-     vec(:,1) = (/0.0, 0.0, 1.0/)
+     mu  = 1.0
      wts = 1.0
-     return
      
   case (2)
      mu  = (/1.0,        0.44721360/)

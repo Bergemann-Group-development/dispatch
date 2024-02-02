@@ -118,18 +118,8 @@ SUBROUTINE load_atmos_subregion(n, sub, pos, d, px, py, pz, tt, pe, bot2pivot, v
   integer, save :: itimer
   !-----------------------------------------------------------------------------
   call trace%begin('read_stagger_snapshot_mod%load_atmos_subregion', itimer=itimer)
-  allocate(newx(n(1)))
-  allocate(newy(n(2)))
-  allocate(newz(n(3)))
 
-  lower = pos - 0.5d0*sub
-  ds = sub / n
-
-  newx = [ (ds(1)*i + lower(1), i=0, n(1)-1) ]
-  newy = [ (ds(2)*i + lower(2), i=0, n(2)-1) ]
-  newz = [ (ds(3)*i + lower(3), i=0, n(3)-1) ]
-
-  call interpolate_atmos(newx, newy, newz, d, px, py, pz, tt=tt, pe=pe, bot2pivot=bot2pivot, vec=vec)
+  call interpolate_atmos(n, sub, pos, d, px, py, pz, tt=tt, pe=pe, bot2pivot=bot2pivot, vec=vec)
   call trace%end(itimer)
 END SUBROUTINE load_atmos_subregion
 
@@ -302,19 +292,34 @@ SUBROUTINE read_stagger_data()
 END SUBROUTINE read_stagger_data
 
 !===============================================================================
-SUBROUTINE interpolate_atmos(newx, newy, newz, d, px, py, pz, ee, tt, pe, vec, bot2pivot)
-  real(4), intent(in), dimension(:) :: newx, newy, newz
+SUBROUTINE interpolate_atmos(n, sub, pos, d, px, py, pz, ee, tt, pe, vec, bot2pivot)
+  integer, intent(in) :: n(3)
+  real(8), intent(in) :: sub(3), pos(3)
   real(4), intent(out), dimension(:,:,:) :: d, px, py, pz
   real(4), intent(out), dimension(:,:,:), optional :: tt, pe, ee
   real(8), intent(in), optional :: vec(3), bot2pivot
-  real(4) :: dx, dy, dz
-  integer, save :: itimer
+  real(8), dimension(:), allocatable :: newx, newy, newz
+  real(8) :: lower(3), ds(3)
+  real(8) :: dx, dy, dz
+  integer :: i, itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('interpolate_atmos', itimer=itimer)
 
+  allocate(newx(n(1)))
+  allocate(newy(n(2)))
+  allocate(newz(n(3)))
+
+  lower = pos - 0.5d0*sub
+  ds = sub / n
+
+  newx = [ (ds(1)*i + lower(1), i=0, n(1)-1) ]
+  newy = [ (ds(2)*i + lower(2), i=0, n(2)-1) ]
+  newz = [ (ds(3)*i + lower(3), i=0, n(3)-1) ]
+  
+  dx = ixx(2)
+  dy = iyy(2)
+
   if (present(vec)) then
-    dx = ixx(2)
-    dy = iyy(2)
     call linterpolate_3d_rotated(ilrho, d,  dx, dy, izz, newx, newy, newz, vec, bot2pivot, ray_offset)
     call linterpolate_3d_rotated(  ipx, px, dx, dy, izz, newx, newy, newz, vec, bot2pivot, ray_offset)
     call linterpolate_3d_rotated(  ipy, py, dx, dy, izz, newx, newy, newz, vec, bot2pivot, ray_offset)
@@ -333,22 +338,22 @@ SUBROUTINE interpolate_atmos(newx, newy, newz, d, px, py, pz, ee, tt, pe, vec, b
       call linterpolate_3d_rotated(ilpe, pe, dx, dy, izz, newx, newy, newz, vec, bot2pivot, ray_offset)
     endif
   else
-    call linterpolate_3d(ilrho, d,  ixx, iyy, izz, newx, newy, newz)
-    call linterpolate_3d(  ipx, px, ixx, iyy, izz, newx, newy, newz)
-    call linterpolate_3d(  ipy, py, ixx, iyy, izz, newx, newy, newz)
-    call linterpolate_3d(  ipz, pz, ixx, iyy, izz, newx, newy, newz)
+    call linterpolate_3d(ilrho, d,  dx, dy, izz, newx, newy, newz)
+    call linterpolate_3d(  ipx, px, dx, dy, izz, newx, newy, newz)
+    call linterpolate_3d(  ipy, py, dx, dy, izz, newx, newy, newz)
+    call linterpolate_3d(  ipz, pz, dx, dy, izz, newx, newy, newz)
 
     if (present(ee)) then
-      call linterpolate_3d( iie, ee, ixx, iyy, izz, newx, newy, newz)
+      call linterpolate_3d( iie, ee, dx, dy, izz, newx, newy, newz)
       ee = ee / d + ee_offset
     endif
 
     if (present(tt)) then
-      call linterpolate_3d(iltemp, tt, ixx, iyy, izz, newx, newy, newz)
+      call linterpolate_3d(iltemp, tt, dx, dy, izz, newx, newy, newz)
     endif
 
     if (present(pe)) then
-      call linterpolate_3d(ilpe, pe, ixx, iyy, izz, newx, newy, newz)
+      call linterpolate_3d(ilpe, pe, dx, dy, izz, newx, newy, newz)
     endif
   endif
 

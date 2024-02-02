@@ -59,7 +59,7 @@ class trans_class(object):
         self.upper.trans[self.i] = self
         self.lower.trans[self.j] = self
         
-        self.alamb = 1 / (self.upper.ecm - self.lower.ecm) * 1e8
+        self.alamb = 1e8 / (self.upper.ecm - self.lower.ecm)
         self.u = CC / self.alamb * 1e8
         self.lam0 = _vacuum2obs(self.alamb)
 

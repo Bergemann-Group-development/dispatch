@@ -135,7 +135,7 @@ MODULE m3d_patch_mod
     character(len=128), save :: save_patch_kind=''
     character(len=64), public, save:: custom_mu=''
     real(4), public :: vel_max=0.0
-    real(4), public :: ray_offset(2)=[0.,0.]
+    real(8), public :: ray_offset(2)=[0.,0.]
     integer, public :: pivot_z=0, ng_step=-1, ng_start=8
     character(len=126), public :: atmos_format='Text'
     type(mpi_counter_t), public :: atom_update_counter, global_maxerr, global_pos
@@ -187,7 +187,7 @@ MODULE m3d_patch_mod
         write (command, *) 'rm -f ', trim(io%run_dir), 'save/*.txt ', trim(io%run_dir), 'save/*.bin'
         call execute_command_line (trim(command), exitstat=iostat)
       endif
-      one_dimensional = all(self%patch%n(1:2) == 1)
+      !one_dimensional = all(self%patch%n(1:2) == 1)
       rotate_atmos = rotate_atmos .and. .not. (one_dimensional .or. column_by_column)
       quad_scheme = lowercase(quad_scheme)
       long_scheme = lowercase(long_scheme)
@@ -1149,7 +1149,7 @@ MODULE m3d_patch_mod
     endif
   
     do z=1, nz
-      height = (z-1)*self%ds(3) ! height of plane as measured from bottom
+      height = z*self%ds(3) ! height of plane as measured from bottom
       deltak = (bot2pivot - height)*delta + ray_offset
       up1 = floor(deltak(1)) !integer part of shift
       up2 = floor(deltak(2)) !integer part of shift
@@ -1216,7 +1216,7 @@ MODULE m3d_patch_mod
     endif
   
     do z=1, nz
-      height = (z-1)*self%ds(3) ! height of plane as measured from bottom
+      height = z*self%ds(3) ! height of plane as measured from bottom
       deltak = (bot2pivot - height)*delta + ray_offset
       up1 = floor(deltak(1)) !integer part of shift
       up2 = floor(deltak(2)) !integer part of shift
