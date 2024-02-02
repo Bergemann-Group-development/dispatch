@@ -17,7 +17,7 @@ MODULE atom_patch_mod
     USE molecule_mod, only: molec_type
     USE bbtrans_mod, only: bbtrans_type
     USE composition_mod, only: composition_type
-    USE m3d_patch_mod, only: m3d_patch_t, maxiter, check_NaN, cswitch, key_link_t, &
+    USE m3d_patch_mod, only: m3d_patch_t, composition, maxiter, check_NaN, cswitch, key_link_t, &
     global_maxerr, convlim, convmax, atom_update_counter, comoving_frame, global_pos, ng_step, ng_start, &
     decouple_continuum, overlapping_bb, overlapping_bf, line_blanketing, converged, premature_finish, &
     rotate_atmos, long_vec, rank_lvlerr
@@ -52,6 +52,7 @@ MODULE atom_patch_mod
       procedure :: check_in_bounds
       procedure :: init_nbors_hash
       procedure :: save_abundance_to_file
+      procedure :: save_convergence_report
       procedure :: load_mem
       procedure :: allocate_mem
       procedure :: deallocate_mem
@@ -176,9 +177,9 @@ MODULE atom_patch_mod
     endif
 
     if (use_atom_abnd .or. abundance > -99) then
-      call self%composition%overwrite_abundance(atom%id, atom%abnd, atom%awgt)
+      call composition%overwrite_abundance(atom%id, atom%abnd, atom%awgt)
     else
-      self%atom%abnd = self%atom%abnd + self%composition%FeH
+      self%atom%abnd = self%atom%abnd + composition%FeH
     endif
     
     if (exclude_trace_cont) then
@@ -221,7 +222,7 @@ MODULE atom_patch_mod
         if (decouple_continuum) then
           bf_sp%name = 'bound-free'
           if (detailed_absmet .and. overlapping_bf) then
-             call self%get_osmet_nu(bf_sp, self%composition%osmet)
+             call self%get_osmet_nu(bf_sp, composition%osmet)
           endif
           call self%bf_atom%create_spectrum(bf_sp, bf=.true., sort=overlapping_bf)
           call self%bf_atom%set_ired_iblue(bf_sp, bf=.true., set_active=.true.)
@@ -234,7 +235,7 @@ MODULE atom_patch_mod
 
         else
           sp%name = 'all'
-          if (detailed_absmet) call self%get_osmet_nu(sp, self%composition%osmet)
+          if (detailed_absmet) call self%get_osmet_nu(sp, composition%osmet)
           call self%atom%create_spectrum(sp, bb=.true., bf=.true.)
           call self%atom%set_ired_iblue(sp, bb=.true., bf=.true., set_active=.true.)
           if (save_sp) call sp%save('all')
@@ -330,6 +331,7 @@ MODULE atom_patch_mod
     adata => atom%data
 
     if (self%iter == 0) then
+      self%composition => self%m3d_parent%composition
       call self%init_atom_data(self%composition, adata)
       if (precomputed_depart /= '') then
         call self%load_mem(precomputed_depart, self%kind)
@@ -517,6 +519,7 @@ MODULE atom_patch_mod
     class(composition_type), pointer :: comp
     real(8) :: vec(3)
     integer :: i, j, k, l
+    integer, save :: count=0
     !-----------------------------------------------------------------------------
     atom => self%atom
     adata => atom%data
@@ -553,7 +556,33 @@ MODULE atom_patch_mod
     do i=1, atom%nlevel
       rank_lvlerr(i) = max(rank_lvlerr(i), self%lvlerr(i))
     end do
+    count = count + 1
+    if (count == self%task_list%dims(3)) then
+      call self%save_convergence_report()
+    endif
   END SUBROUTINE finish
+
+  !===============================================================================
+  SUBROUTINE save_convergence_report (self)
+    class(atom_patch_t) :: self
+    integer :: lunit, i
+    character(len=256) :: conv_file
+    integer, save :: itimer=0
+    logical, save :: first_time = .true.
+    !-----------------------------------------------------------------------------
+    if (first_time) then
+      first_time = .false.
+      call trace%begin('atom_patch_t%save_convergence_report', itimer=itimer)
+      write(conv_file, '(A,A,I3.3,A)') trim(io%run_dir), 'convergence_report_', self%rank,'.txt'
+      open(newunit=lunit, file=conv_file, form='formatted')
+      write(lunit, '(A6, A12)') 'lvl', 'maxconv'
+      do i=1, size(rank_lvlerr)
+        write(lunit, '(I6, ES12.4)') i, rank_lvlerr(i)
+      end do
+      close(lunit)
+      call trace%end(itimer)
+    endif
+  END SUBROUTINE save_convergence_report
 
   !===============================================================================
   SUBROUTINE print_post_update_info (self)
@@ -676,8 +705,8 @@ MODULE atom_patch_mod
     logical :: same
     logical, save :: first_time=.true.
     !-----------------------------------------------------------------------------
-    do i=1, size(self%composition%trans)
-      trans => self%composition%trans(i)
+    do i=1, size(composition%trans)
+      trans => composition%trans(i)
       if (.not. trans%active) cycle
       select case(trans%label)
       case ('(H+H)', 'H2+', 'H- FF', 'H FF', 'H2-', 'H- BF')
@@ -720,9 +749,9 @@ MODULE atom_patch_mod
     integer :: i, j, l
     logical, save :: first_time=.true.
     !-----------------------------------------------------------------------------
-    call self%composition%element_by_id(trim(self%atom%id), element)
+    call composition%element_by_id(trim(self%atom%id), element)
     if (.not. associated(element)) then
-      call self%composition%molecule_by_id(trim(self%atom%id), molec)
+      call composition%molecule_by_id(trim(self%atom%id), molec)
       if (.not. associated(molec)) then
         return
       else

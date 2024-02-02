@@ -44,6 +44,7 @@ MODULE m3d_patch_mod
       class(gpatch_t),    pointer :: patch => null()         ! pointer to mhd patch
       class(m3d_patch_t), pointer :: m3d_parent => null()    ! pointer to parent patch
       type(composition_type), pointer :: composition => null()
+      type(composition_type), pointer :: tab_comp => null()
       type(composition_type), pointer :: rotated_composition(:) => null()
       class(atomic_spectrum_type), pointer :: sp => null()
       type(atom_type), pointer :: atom => null()
@@ -123,8 +124,8 @@ MODULE m3d_patch_mod
     logical, public, save :: converged=.false., use_vel=.true., premature_finish=.true.
     logical, public, save :: preconditioning=.true., binned_opac=.false., save_Qrad=.false.
     logical, public, save :: check_NaN=.false., save_resolved=.false.
-    logical, public, save :: decouple_continuum=.false.
-    logical, public, save :: comoving_frame=.false.
+    logical, public, save :: decouple_continuum=.false., generate_absmet=.false.
+    logical, public, save :: comoving_frame=.false., linelist_in_output=.true.
     logical, public, save :: use_density=.true., use_ne=.true., line_blanketing=.false.
     logical, public, save :: overlapping_bb=.true., overlapping_bf=.true.
     logical, public, save :: absmet_in_output=.false., column_by_column=.false.
@@ -139,6 +140,7 @@ MODULE m3d_patch_mod
     integer, public :: pivot_z=0, ng_step=-1, ng_start=8
     character(len=126), public :: atmos_format='Text'
     type(mpi_counter_t), public :: atom_update_counter, global_maxerr, global_pos
+    type(composition_type), public, save, target :: composition
       
     public :: hash_string, pre_update, update, print_execution_history
 
@@ -372,7 +374,6 @@ MODULE m3d_patch_mod
     if (present(i_nu)) self%i_nu = i_nu
     if (present(sp)) self%sp => sp
     if (present(atom)) self%atom => atom
-    self%composition => m3d_parent%composition
     self%patch => m3d_parent%patch
     self%m3d_parent => m3d_parent
     self%zs = m3d_parent%zs

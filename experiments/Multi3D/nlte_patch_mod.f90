@@ -21,7 +21,8 @@ MODULE nlte_patch_mod
   USE m3d_patch_mod, only: all_vec=>vec, all_wmu=>wmu, use_vel, m3d_patch_t, &
   absmet_in_output, long_wmu, long_vec, ray_offset, pivot_z, dlam, &
   premature_finish, m3d_patch_pre_update=>pre_update, save_resolved, &
-  column_by_column, rotate_atmos, check_NaN, rank_lvlerr
+  column_by_column, rotate_atmos, check_NaN, rank_lvlerr, generate_absmet, &
+  decouple_continuum, linelist_in_output
   USE ray_mod, only: one_dimensional, ray_type
   USE trans_mod, only:line_type, cont_type
   USE bbtrans_mod, only:voigt_function2, voigt_profile
@@ -38,6 +39,7 @@ MODULE nlte_patch_mod
     type(line_type), dimension(:), allocatable :: line
     type(cont_type), dimension(:), allocatable :: cont
     real(4), dimension(:,:,:,:), allocatable :: Jnu, Psi, PsiJ
+    real(4), dimension(:,:,:), allocatable :: opac_table
     real(4), dimension(:), allocatable :: twohnu3_c2
     real(8), dimension(:), pointer :: nu
     integer :: nline=0, ncont=0, mus, mue, n_set, nf, n_mu
@@ -48,6 +50,8 @@ MODULE nlte_patch_mod
     procedure :: pre_update => nlte_patch_pre_update
     procedure :: execute
     procedure :: lte_background_opacities
+    procedure :: generate_bound_bound_opacity_table
+    procedure :: interpolate_bound_bound_opacity_table
     procedure :: add_bound_free_opacities
     procedure :: bound_bound_damping
     procedure :: add_bound_bound_opacities
@@ -61,7 +65,6 @@ MODULE nlte_patch_mod
     procedure :: integrate_rates
     procedure :: work_to_mem
     procedure :: save_intensity
-    procedure :: save_convergence_report 
     procedure :: save_contribution_function 
     procedure :: rotate_array
     procedure :: short_char
@@ -224,8 +227,9 @@ SUBROUTINE execute (self)
   self%nu(fs:fe) => self%sp%nu(fs:fe)
   temp => self%m3d_parent%mem(:,:,:,self%i_temp,self%it,1)
 
+  self%composition => self%m3d_parent%composition
   do_rotate_atmos = rotate_atmos .and. self%out_ray
-  use_linelist = self%out_ray .and. self%composition%ll_initialised
+  use_linelist = self%out_ray .and. self%composition%ll_initialised .and. linelist_in_output
   get_cntrbf = self%out_ray .and. n_cntrbf>0
   end_boundary = self%patch%boundaries%is_set(bits%zl) .and. self%dir<0
   end_boundary = self%patch%boundaries%is_set(bits%zu) .and. self%dir>0 .or. end_boundary
@@ -243,12 +247,13 @@ SUBROUTINE execute (self)
 
   self%twohnu3_c2 = twoh_c2 * self%nu**3
 
-  include_absmet = (self%in_ray .and. self%i_nu > self%n_nu) .or. &
-                   (self%out_ray .and. absmet_in_output)
+  include_absmet = (self%in_ray .and. (self%i_nu > self%n_nu .or. .not. decouple_continuum)) &
+              .or. (self%out_ray .and. absmet_in_output)
 
   comp => self%composition
   
   call self%lte_background_opacities(comp, include_absmet=include_absmet)
+
   if (self%use_atom) then
     adata => self%atom%data
     if (self%bound_free) call self%add_bound_free_opacities(adata)
@@ -299,7 +304,7 @@ SUBROUTINE execute (self)
           call self%add_bound_bound_opacities(adata, wmu, inv_df, vproj, adamp, LTE=i_set==2)
         endif
         if (use_linelist) then
-          call comp%add_linelist_opacities(self%nu, work(:,:,:,1:nz,1), work(:,:,:,1:nz,2), back(:,:,:,:,3), vproj, dlam)
+          call comp%add_linelist_opacities(self%nu, work(:,:,:,1:nz,1), dlam, vproj, work(:,:,:,1:nz,2), back(:,:,:,:,3))
         endif
       endif
 
@@ -350,9 +355,6 @@ SUBROUTINE execute (self)
   if (end_boundary) then
     if (self%out_ray) then
       call self%save_intensity()
-      if (self%use_atom) then
-        call self%save_convergence_report()
-      endif
     endif
     call self%deallocate_mem()
   endif
@@ -472,6 +474,13 @@ SUBROUTINE lte_background_opacities (self, comp, include_absmet)
   call comp%absorption(self%nu, back(:,:,:,:,1), blz=back(:,:,:,:,3), &
   include_absmet=include_absmet, sorted=self%sp%sorted)
 
+  if (generate_absmet .and. include_absmet) then
+    if (self%iter==0) then
+      call self%generate_bound_bound_opacity_table(self%nu(fs:fe))
+    endif
+    call self%interpolate_bound_bound_opacity_table(comp%temp, comp%ne, comp%rho)
+  endif
+
   do z=1, nz
   do y=1, ny
   do x=1, nx
@@ -487,6 +496,79 @@ SUBROUTINE lte_background_opacities (self, comp, include_absmet)
   call trace%end(itimer)
 END SUBROUTINE lte_background_opacities
 
+!===============================================================================
+SUBROUTINE generate_bound_bound_opacity_table (self, nu)
+  class(nlte_patch_t), target :: self
+  class(composition_type), pointer :: comp
+  real(8), dimension(:), pointer, intent(in) :: nu
+  real(4), dimension(:,:,:,:), pointer :: view
+  real(4) :: over_rho
+  integer :: i,j,k, ntemp, nne, nnu
+  integer, save :: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin('nlte_patch%generate_bound_bound_opacity_table', itimer=itimer)
+  comp => self%m3d_parent%tab_comp
+  nnu = size(nu)
+  ntemp = size(comp%temp,1)
+  nne   = size(comp%temp,2)
+  allocate(self%opac_table(fs:fe, ntemp, nne), source=0.)
+  call mem_register(self%opac_table, label='opac_table')
+  view(1:nnu, 1:ntemp, 1:nne, 1:1) => self%opac_table
+  call comp%add_linelist_opacities(nu, view, dlam)
+  do k=1, nne
+  do j=1, ntemp
+    over_rho = 1 / comp%rho(j,k,1)
+    self%opac_table(:,j,k) = self%opac_table(:,j,k) * over_rho
+  end do
+  end do
+  call trace%end(itimer)
+END SUBROUTINE generate_bound_bound_opacity_table
+
+!===============================================================================
+SUBROUTINE interpolate_bound_bound_opacity_table (self, temp, ne, rho)
+  class(nlte_patch_t), target :: self
+  class(composition_type), pointer :: comp
+  real(8), dimension(:,:,:), intent(in) :: temp, ne, rho
+  real(8) :: e, t, mint, mine, kappa
+  real(8) :: dx, dy, a, b, c, d, fi1, fi2, fj1, fj2, ab, cd
+  integer :: f, i, j, nnu
+  integer, save :: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin('nlte_patch%interpolate_bound_bound_opacity_table', itimer=itimer)
+  comp => self%m3d_parent%tab_comp
+  dx = 1. / (comp%temp(2,1,1) - comp%temp(1,1,1))
+  dy = 1. / (log(comp%ne(1,2,1) / comp%ne(1,1,1)))
+  mint = comp%temp(1,1,1)
+  mine = log(comp%ne(1,1,1))
+  nnu = size(self%opac_table, 1)
+  do z=1, nz
+  do y=1, ny
+  do x=1, nx
+    t = temp(x,y,z)
+    e = log(ne(x,y,z))
+    fi1 = (t - mint) * dx + 1
+    fj1 = (e - mine) * dy + 1
+    i = floor(fi1)
+    j = floor(fj1)
+    fi1 = fi1 - i
+    fj1 = fj1 - j
+    fi2 = 1 - fi1
+    fj2 = 1 - fj1
+    do f=fs, fe
+      a = self%opac_table(f, i,   j)
+      b = self%opac_table(f, i+1, j)
+      c = self%opac_table(f, i,   j+1)
+      d = self%opac_table(f, i+1, j+1)
+      ab = fi1*a + fi2*b
+      cd = fi1*c + fi2*d
+      kappa = fj1*ab + fj2*cd
+      back(f,x,y,z,1) = back(f,x,y,z,1) + kappa*rho(x,y,z)
+    end do
+  end do
+  end do
+  end do
+  call trace%end(itimer)
+END SUBROUTINE interpolate_bound_bound_opacity_table
 !===============================================================================
 SUBROUTINE add_bound_free_opacities (self, adata)
   class(nlte_patch_t), target :: self
@@ -1434,28 +1516,6 @@ SUBROUTINE save_intensity (self)
   endif
   call trace%end(itimer)
 END SUBROUTINE save_intensity
-
-!===============================================================================
-SUBROUTINE save_convergence_report (self)
-  class(nlte_patch_t) :: self
-  integer :: lunit, i
-  character(len=256) :: conv_file
-  integer, save :: itimer=0
-  logical, save :: first_time = .true.
-  !-----------------------------------------------------------------------------
-  if (first_time) then
-    first_time = .false.
-    call trace%begin('nlte_patch_t%save_convergence_report', itimer=itimer)
-    write(conv_file, '(A,A,I3.3,A)') trim(io%run_dir), 'convergence_report_', self%rank,'.txt'
-    open(newunit=lunit, file=conv_file, form='formatted')
-    write(lunit, '(A6, A12)') 'lvl', 'maxconv'
-    do i=1, size(rank_lvlerr)
-      write(lunit, '(I6, ES12.4)') i, rank_lvlerr(i)
-    end do
-    close(lunit)
-    call trace%end(itimer)
-  endif
-END SUBROUTINE save_convergence_report
 
 !===============================================================================
 SUBROUTINE copy_to (self, tgt)
