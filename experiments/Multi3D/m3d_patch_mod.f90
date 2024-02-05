@@ -133,7 +133,7 @@ MODULE m3d_patch_mod
     real(8), public, save :: dlam=100.
     real(8), public, dimension(:), allocatable :: rank_lvlerr
     character(len=128), save :: save_patch_kind=''
-    character(len=64), public, save:: custom_mu=''
+    character(len=512), public, save:: custom_mu=''
     real(4), public :: vel_max=0.0
     real(8), public :: ray_offset(2)=[0.,0.]
     integer, public :: pivot_z=0, ng_step=-1, ng_start=8
