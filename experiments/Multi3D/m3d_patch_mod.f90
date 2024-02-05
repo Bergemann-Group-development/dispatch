@@ -50,7 +50,6 @@ MODULE m3d_patch_mod
       type(atom_type), pointer :: atom => null()
       class(key_link_t), pointer :: key_list => null()
       real(4), dimension(:,:,:,:,:,:), pointer :: authority_mem => null()
-      real(4), dimension(:,:,:,:,:), pointer :: out_mem => null()
       logical :: on=.false.       ! allows local turn-off
       logical :: in_task_list = .false.
       logical :: initialized  = .false.
@@ -189,7 +188,6 @@ MODULE m3d_patch_mod
         write (command, *) 'rm -f ', trim(io%run_dir), 'save/*.txt ', trim(io%run_dir), 'save/*.bin'
         call execute_command_line (trim(command), exitstat=iostat)
       endif
-      !one_dimensional = all(self%patch%n(1:2) == 1)
       rotate_atmos = rotate_atmos .and. .not. (one_dimensional .or. column_by_column)
       quad_scheme = lowercase(quad_scheme)
       long_scheme = lowercase(long_scheme)
@@ -644,9 +642,6 @@ MODULE m3d_patch_mod
     call self%set_place(self, -2)
     call self%set(bits%no_download)
     call self%set(bits%ignore)
-    if (self%save_output) then
-      call self%save5(self%out_mem, self%kind)
-    endif
     call trace%end()
   END SUBROUTINE finish
 
@@ -913,9 +908,6 @@ MODULE m3d_patch_mod
         ui(3) = 1 
       endif
       self%authority_mem => self%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),:,:,:)
-      if (self%save_output) then
-        self%out_mem => self%authority_mem(:,:,:,:,self%it,:)
-      endif
       call trace%end (itimer)
     endif
   END SUBROUTINE allocate_mem

@@ -2,7 +2,7 @@
 # --- Log file and error file names ---
 # --- Job name and working directory ---
 #SBATCH -D ./
-#SBATCH -O slurm/slurm-%j.out
+#SBATCH --output ./slurm/slurm-%j.out
 #SBATCH -J M3D_DIS
 # --- CPU and node logistics ---
 #SBATCH --partition=debug
@@ -19,4 +19,3 @@ export KMP_STACKSIZE=256M
 #unset OMP_NUM_THREADS
 unset I_MPI_PMI_LIBRARY
 mpirun ./dispatch.x $1
-#mpirun ./dispatch.x input_fe_nlte.nml

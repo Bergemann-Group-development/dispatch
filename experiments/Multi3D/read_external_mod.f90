@@ -33,6 +33,7 @@ MODULE read_external_mod
   USE read_stagger_snapshot_mod
   USE read_marcs_mod, only: read_marcs, zfac
   USE handyfuncs_mod
+  USE ray_mod, only: one_dimensional
   implicit none
 
   type, public:: read_external_t
@@ -122,10 +123,13 @@ SUBROUTINE init(self, task_list, name)
   allocate (task_list)
   self%task_list => task_list
 
+  one_dimensional = nx*ny == 1
+  
   atmos_format = lowercase(atmos_format)
   select case (atmos_format)
   case ('stagger', 'co5bold')
     interpolated_3d_atmos = .true.
+    one_dimensional = .false.
     select case (atmos_format)
     case('stagger')
       call read_stagger(atmos_file, snap, self%size)

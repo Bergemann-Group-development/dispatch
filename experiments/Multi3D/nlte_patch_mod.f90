@@ -304,7 +304,7 @@ SUBROUTINE execute (self)
           call self%add_bound_bound_opacities(adata, wmu, inv_df, vproj, adamp, LTE=i_set==2)
         endif
         if (use_linelist) then
-          call comp%add_linelist_opacities(self%nu, work(:,:,:,1:nz,1), dlam, vproj, work(:,:,:,1:nz,2), back(:,:,:,:,3))
+          call comp%add_linelist_opacities(self%nu, work(:,:,:,1:nz,1), dlam, vproj, work(:,:,:,1:nz,2))
         endif
       endif
 
@@ -1252,6 +1252,7 @@ SUBROUTINE long_char (self, vec)
         xx = work(f,x,y,z,1)
         ss = work(f,x,y,z,2)
         dt = dsup05 * ( xxup + xx ) ! upwind optical pathlength
+        dt = max(dt, 0.d0)
         if (dt < 80) then
           Inuup = work(f,x,y,zup,3)
           ex = exp(-dt)

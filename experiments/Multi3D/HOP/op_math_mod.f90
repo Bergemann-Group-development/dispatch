@@ -370,7 +370,7 @@ contains
     real(4), dimension(:,:,:), allocatable :: fz
     real(8), intent(in) :: dx, dy, ray_offset(2)
     real(8), intent(in) :: vec(3), bot2pivot
-    real(8) :: dz, height, delta(2), deltak(2)
+    real(8) :: dz, height, delta(2), deltak(2), offset(2)
     integer :: i,j,k, nx, ny, nz, ox,oy,oz
     !-----------------------------------------------------------------------------
     ox = size(f,1); nx = size(newx,1)
@@ -390,10 +390,13 @@ contains
     end do
 
     delta = vec(1:2) / vec(3)
+    offset = ray_offset
+    if (size(newx)>1) offset(1) = offset(1) * newx(2)
+    if (size(newy)>1) offset(2) = offset(2) * newy(2)
 
     do k = 1, nz
       height = k*dz ! height of plane as measured from bottom
-      deltak = (bot2pivot - height)*delta + ray_offset*[newx(2), newy(2)]
+      deltak = (bot2pivot - height)*delta + offset
 
       ! y-dimension linear interpolation
       do i = 1, ox

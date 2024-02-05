@@ -764,7 +764,7 @@ contains
     END SUBROUTINE mask_linelist
 
     !===============================================================================
-    SUBROUTINE add_linelist_opacities(self, nu, all_chi, dlam, vproj, all_eta, blz)
+    SUBROUTINE add_linelist_opacities(self, nu, all_chi, dlam, vproj, all_eta)
         class(composition_type), target :: self
         class(element_type), pointer :: element
         class(ion_type), pointer :: ion
@@ -773,7 +773,7 @@ contains
         class(bbtrans_type), pointer :: line
         real(8), intent(in), dimension(:), pointer :: nu
         real(4), intent(inout), dimension(:,:,:,:) :: all_chi
-        real(4), intent(inout), dimension(:,:,:,:), optional :: all_eta, blz
+        real(4), intent(inout), dimension(:,:,:,:), optional :: all_eta
         real(4), intent(in), dimension(:,:,:), contiguous, target, optional :: vproj
         real(8), intent(in) :: dlam
         real(4), dimension(:,:,:), allocatable :: tothi, adamp, stark_pe, ne, temp, EK_over_temp, dxij, chi_fac, unsold
@@ -784,7 +784,7 @@ contains
         real(4), dimension(:,:,:,:), allocatable, target :: chi_l
         integer :: i, j, k, l, f, ired, iblue, nactive, prev_iso, m(3)
         real(8) :: cnt_ev, gf, awgt, iso_awgt, dl
-        real(4) :: scalar, bnu
+        real(4) :: scalar, bnu, h_kT, hv_kT
         logical, dimension(:), allocatable :: fmask
         integer, save:: itimer=0
         !---------------------------------------------------------------------------
@@ -908,11 +908,14 @@ contains
             do k=1, m(3)
             do j=1, m(2)
             do i=1, m(1)
+                h_kT = h_k / temp(i,j,k)
                 do f=1, size(nu)
                     if (fmask(f)) then
-                        bnu = blz(f,i,j,k)
+                        ! computing boltzmann factor
+                        hv_kT = nu(f) * h_kT
+                        bnu = exp(-hv_kT)
                         if (bnu > 1e-10) then
-                        bnu = bnu / (1.0 - bnu)
+                            bnu = bnu / (1.0 - bnu)
                         endif
                         all_eta(f,i,j,k) = all_eta(f,i,j,k) + chi_l(f,i,j,k) * bnu
                     endif

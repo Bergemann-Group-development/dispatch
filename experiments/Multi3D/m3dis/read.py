@@ -37,7 +37,7 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
         os.environ['OMP_NUM_THREADS'] = str(threads)
         iostat = os.system(command)
         if iostat!=0 and log_file is not None: 
-            with open('{:}.log'.format(input_name)) as f:
+            with open(log_file) as f:
                 for line in f:
                     pass
                 last_line = line
@@ -442,7 +442,7 @@ class read(object):
     def get_depart(self, ilvl=None):
         #-----------------------------------------------------------------
         mem = self.read_patch_save('atom_patch')[0]
-        dep = mem[...,1]
+        dep = mem[...,1,0]
 
         if ilvl is not None:
             dep = dep[...,ilvl]

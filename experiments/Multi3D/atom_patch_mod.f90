@@ -517,26 +517,33 @@ MODULE atom_patch_mod
     class(atom_type), pointer :: atom
     class(atom_data_t), pointer :: adata
     class(composition_type), pointer :: comp
+    real(4), dimension(:,:,:,:,:,:), allocatable :: out_mem
+    real(8), dimension(:,:,:), allocatable :: norm, totn
     real(8) :: vec(3)
-    integer :: i, j, k, l
+    integer :: i, j, k, l, n(3)
     integer, save :: count=0
     !-----------------------------------------------------------------------------
     atom => self%atom
-    adata => atom%data
+    n = self%n
 
-    call os%allocate(self%out_mem, [self%n, atom%nlevel, 2])
+    if (rotate_atmos) then
+      allocate(norm, totn, mold=atom%data%totn)
+      allocate(out_mem(n(1), n(2), n(3), atom%nlevel, 2, 1+self%n_out))
+    else
+      allocate(out_mem(n(1), n(2), n(3), atom%nlevel, 2, 1))
+    endif
+
+    adata => atom%data
     do l=1, atom%nlevel
     do k=1, self%n(3)
     do j=1, self%n(2)
     do i=1, self%n(1)
-      self%out_mem(i,j,k,l,1) = real(adata%nstar(i,j,k,l))
-      self%out_mem(i,j,k,l,2) = real(adata%n(i,j,k,l) / adata%nstar(i,j,k,l))
+      out_mem(i,j,k,l,1,1) = real(adata%nstar(i,j,k,l))
+      out_mem(i,j,k,l,2,1) = real(adata%n(i,j,k,l) / adata%nstar(i,j,k,l))
     end do
     end do
     end do
     end do
-    call self%m3d_patch_t%finish()
-    call os%deallocate(self%out_mem)
 
     if (rotate_atmos) then
       do i=1, self%n_out
@@ -544,14 +551,25 @@ MODULE atom_patch_mod
         adata => atom%rotated_data(i)
         comp => self%m3d_parent%rotated_composition(i)
         call self%init_atom_data(comp, adata)
-        do j=1, size(adata%nstar, 4)
-          adata%n(:,:,:,j) = atom%data%n(:,:,:,j) / atom%data%nstar(:,:,:,j)
-          call self%rotate_cube8(vec, adata%n(:,:,:,j))
-          adata%n(:,:,:,j) = adata%n(:,:,:,j) * adata%nstar(:,:,:,j)
+        totn = 0
+        do l=1, size(adata%nstar, 4)
+          adata%n(:,:,:,l) = atom%data%n(:,:,:,l) / atom%data%nstar(:,:,:,l)
+          call self%rotate_cube8(vec, adata%n(:,:,:,l), do_log=.true.)
+          adata%n(:,:,:,l) = adata%n(:,:,:,l) * adata%nstar(:,:,:,l)
+          totn = totn + adata%n(:,:,:,l)
+        end do
+        norm = 1 / totn
+        do l=1, size(adata%nstar, 4)
+          adata%n(:,:,:,l) = adata%n(:,:,:,l) * adata%totn * norm
+          out_mem(:,:,:,l,1,1+i) = real(adata%nstar(:,:,:,l))
+          out_mem(:,:,:,l,2,1+i) = real(adata%n(:,:,:,l) / adata%nstar(:,:,:,l))
         end do
         call atom%compute_cont_factors(adata)
       end do
     endif
+
+    call self%save6(out_mem, label='atom_patch')
+    call self%m3d_patch_t%finish()
 
     do i=1, atom%nlevel
       rank_lvlerr(i) = max(rank_lvlerr(i), self%lvlerr(i))
