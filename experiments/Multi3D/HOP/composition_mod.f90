@@ -607,7 +607,7 @@ contains
             read(lunit,*,iostat=iostat) mass_id, j, nline
             if (iostat < 0) exit ! End-of-File
             call print_failed_line(lunit, iostat)
-            read(lunit,*,iostat=iostat) ion_id
+            read(lunit,'(A)',iostat=iostat) ion_id
             call print_failed_line(lunit, iostat)
             read(mass_id,*) mass
             isotope = mod(mass, 1.0) > 0

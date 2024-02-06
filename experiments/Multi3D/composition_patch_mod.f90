@@ -9,8 +9,8 @@ MODULE composition_patch_mod
   USE element_mod, only: element_type
   USE m3d_patch_mod,   only: m3d_patch_t, composition, comoving_frame, ilambd, dlam, &
   use_density, use_ne, overlapping_bb, overlapping_bf, line_blanketing, binned_opac, &
-  save_Qrad, maxiter, rotate_atmos, long_vec, generate_absmet, decouple_continuum, &
-  linelist_in_output
+  save_Qrad, maxiter, rotate_atmos, long_vec, sample_back_opac, decouple_continuum, &
+  linelist_in_output, sample_back_opac_in_output
   USE m3d_debug_mod
   USE composition_mod, only: composition_type, exclude_elements
   USE atom_patch_mod,  only: atom_patch_t
@@ -41,7 +41,7 @@ MODULE composition_patch_mod
     procedure :: nbor_relations => composition_patch_nbor_relations
   end type
   
-  real(8), public :: FeH=0
+  real(8), public :: FeH=0, dtemp=250., ldne=0.25
   logical, public :: save_atmos=.true.
 
 contains
@@ -65,7 +65,7 @@ SUBROUTINE composition_pre_init (self)
   logical, save :: first_time=.true., absmet_big_end=.false., external_sp
   namelist /composition_params/ verbose, absdat_file, abund_file, absmet_file, &
   absmet_big_end, isotope_file, molec_file, H_occupation_probability, opac_table, &
-  generate_absmet
+  sample_back_opac, sample_back_opac_in_output, dtemp, ldne
   namelist /linelist_params/ dlam, exclude_elements, linelist_file, line_lists, &
   linelist_in_output
   ! ----------------------------------------------------------------------------
@@ -269,8 +269,8 @@ SUBROUTINE execute (self)
       call self%save5(self%mem(:,:,:,:,self%it,:), 'atmos')
     endif
 
-    if (generate_absmet) then
-      call self%init_tabulated_comp(self%composition%temp, self%composition%ne)
+    if (sample_back_opac) then
+      call self%init_tabulated_comp(self%composition%temp, self%composition%ne, dtemp=dtemp, ldne=ldne)
     endif
 
     self%dtime = max(self%dtime, io%end_time - self%dtime)
@@ -285,11 +285,11 @@ SUBROUTINE execute (self)
 END SUBROUTINE execute
 
 !===============================================================================
-SUBROUTINE init_tabulated_comp (self, temp, ne)
+SUBROUTINE init_tabulated_comp (self, temp, ne, dtemp, ldne)
     class(composition_patch_t), target :: self
     real(8), dimension(:,:,:), intent(in) :: temp, ne
+    real(8), intent(in) :: dtemp, ldne
     integer :: i, j, ntemp, nne, nnu
-    real(8), parameter :: dtemp=500.d0, ldne=1.d0
     real(8), dimension(:,:,:), allocatable :: tab_temp, tab_ne, tab_rho
     real(8) :: mint, maxt, mine, maxe
     !---------------------------------------------------------------------------

@@ -34,6 +34,11 @@ FUNCTION trim_between_words(string) result(res)
     char = ' '
     j = 1
     do i=1, len(string)
+      if (string(i:i) == "'") then
+        string(i:i) = ' '
+      endif
+    end do
+    do i=1, len(string)
         if (string(i:i) == ' ') then
             if (char == ' ') then
                 cycle

@@ -21,8 +21,8 @@ MODULE nlte_patch_mod
   USE m3d_patch_mod, only: all_vec=>vec, all_wmu=>wmu, use_vel, m3d_patch_t, &
   absmet_in_output, long_wmu, long_vec, ray_offset, pivot_z, dlam, &
   premature_finish, m3d_patch_pre_update=>pre_update, save_resolved, &
-  column_by_column, rotate_atmos, check_NaN, rank_lvlerr, generate_absmet, &
-  decouple_continuum, linelist_in_output
+  column_by_column, rotate_atmos, check_NaN, rank_lvlerr, sample_back_opac, &
+  decouple_continuum, linelist_in_output, sample_back_opac_in_output
   USE ray_mod, only: one_dimensional, ray_type
   USE trans_mod, only:line_type, cont_type
   USE bbtrans_mod, only:voigt_function2, voigt_profile
@@ -50,8 +50,8 @@ MODULE nlte_patch_mod
     procedure :: pre_update => nlte_patch_pre_update
     procedure :: execute
     procedure :: lte_background_opacities
-    procedure :: generate_bound_bound_opacity_table
-    procedure :: interpolate_bound_bound_opacity_table
+    procedure :: generate_opacity_table
+    procedure :: interpolate_opacity_table
     procedure :: add_bound_free_opacities
     procedure :: bound_bound_damping
     procedure :: add_bound_bound_opacities
@@ -209,7 +209,7 @@ SUBROUTINE execute (self)
   real(4) :: wmu, nan_check(3)
   real(8) :: vec(3)
   logical :: skip, use_linelist, get_cntrbf, end_boundary, include_absmet
-  logical :: do_rotate_atmos
+  logical :: do_rotate_atmos, do_sample_opac
   integer :: i, j, i_mu, zs, ze, p(3), ng, i_set, l, nnu_cntrbf
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
@@ -247,12 +247,14 @@ SUBROUTINE execute (self)
 
   self%twohnu3_c2 = twoh_c2 * self%nu**3
 
+  do_sample_opac = sample_back_opac .and. (self%in_ray .or. sample_back_opac_in_output)
   include_absmet = (self%in_ray .and. (self%i_nu > self%n_nu .or. .not. decouple_continuum)) &
               .or. (self%out_ray .and. absmet_in_output)
+  
 
   comp => self%composition
   
-  call self%lte_background_opacities(comp, include_absmet=include_absmet)
+  call self%lte_background_opacities(comp, include_absmet=include_absmet, do_sample_opac=do_sample_opac)
 
   if (self%use_atom) then
     adata => self%atom%data
@@ -449,11 +451,11 @@ contains
 END SUBROUTINE execute
 
 !===============================================================================
-SUBROUTINE lte_background_opacities (self, comp, include_absmet)
+SUBROUTINE lte_background_opacities (self, comp, include_absmet, do_sample_opac)
   class(nlte_patch_t) :: self
   class(composition_type) :: comp
   real(4) :: h_kT, hv_kT, bnu
-  logical :: include_absmet
+  logical :: include_absmet, do_sample_opac
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('nlte_patch%lte_background_opacities', itimer=itimer)
@@ -471,14 +473,14 @@ SUBROUTINE lte_background_opacities (self, comp, include_absmet)
   end do
 
   ! getting background LTE absorption
-  call comp%absorption(self%nu, back(:,:,:,:,1), blz=back(:,:,:,:,3), &
-  include_absmet=include_absmet, sorted=self%sp%sorted)
-
-  if (generate_absmet .and. include_absmet) then
+  if (do_sample_opac) then
     if (self%iter==0) then
-      call self%generate_bound_bound_opacity_table(self%nu(fs:fe))
+      call self%generate_opacity_table(self%nu(fs:fe), include_absmet)
     endif
-    call self%interpolate_bound_bound_opacity_table(comp%temp, comp%ne, comp%rho)
+    call self%interpolate_opacity_table(comp%temp, comp%ne, comp%rho)
+  else
+    call comp%absorption(self%nu, back(:,:,:,:,1), blz=back(:,:,:,:,3), &
+    include_absmet=include_absmet, sorted=self%sp%sorted)
   endif
 
   do z=1, nz
@@ -497,16 +499,17 @@ SUBROUTINE lte_background_opacities (self, comp, include_absmet)
 END SUBROUTINE lte_background_opacities
 
 !===============================================================================
-SUBROUTINE generate_bound_bound_opacity_table (self, nu)
+SUBROUTINE generate_opacity_table (self, nu, include_absmet)
   class(nlte_patch_t), target :: self
   class(composition_type), pointer :: comp
   real(8), dimension(:), pointer, intent(in) :: nu
   real(4), dimension(:,:,:,:), pointer :: view
+  logical, intent(in) :: include_absmet
   real(4) :: over_rho
   integer :: i,j,k, ntemp, nne, nnu
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin('nlte_patch%generate_bound_bound_opacity_table', itimer=itimer)
+  call trace%begin('nlte_patch%generate_opacity_table', itimer=itimer)
   comp => self%m3d_parent%tab_comp
   nnu = size(nu)
   ntemp = size(comp%temp,1)
@@ -514,7 +517,10 @@ SUBROUTINE generate_bound_bound_opacity_table (self, nu)
   allocate(self%opac_table(fs:fe, ntemp, nne), source=0.)
   call mem_register(self%opac_table, label='opac_table')
   view(1:nnu, 1:ntemp, 1:nne, 1:1) => self%opac_table
-  call comp%add_linelist_opacities(nu, view, dlam)
+  call comp%absorption(nu, view, include_absmet=include_absmet, sorted=self%sp%sorted)
+  if (comp%ll_initialised) then
+    call comp%add_linelist_opacities(nu, view, dlam)
+  endif
   do k=1, nne
   do j=1, ntemp
     over_rho = 1 / comp%rho(j,k,1)
@@ -522,10 +528,10 @@ SUBROUTINE generate_bound_bound_opacity_table (self, nu)
   end do
   end do
   call trace%end(itimer)
-END SUBROUTINE generate_bound_bound_opacity_table
+END SUBROUTINE generate_opacity_table
 
 !===============================================================================
-SUBROUTINE interpolate_bound_bound_opacity_table (self, temp, ne, rho)
+SUBROUTINE interpolate_opacity_table (self, temp, ne, rho)
   class(nlte_patch_t), target :: self
   class(composition_type), pointer :: comp
   real(8), dimension(:,:,:), intent(in) :: temp, ne, rho
@@ -534,7 +540,7 @@ SUBROUTINE interpolate_bound_bound_opacity_table (self, temp, ne, rho)
   integer :: f, i, j, nnu
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin('nlte_patch%interpolate_bound_bound_opacity_table', itimer=itimer)
+  call trace%begin('nlte_patch%interpolate_opacity_table', itimer=itimer)
   comp => self%m3d_parent%tab_comp
   dx = 1. / (comp%temp(2,1,1) - comp%temp(1,1,1))
   dy = 1. / (log(comp%ne(1,2,1) / comp%ne(1,1,1)))
@@ -568,7 +574,7 @@ SUBROUTINE interpolate_bound_bound_opacity_table (self, temp, ne, rho)
   end do
   end do
   call trace%end(itimer)
-END SUBROUTINE interpolate_bound_bound_opacity_table
+END SUBROUTINE interpolate_opacity_table
 !===============================================================================
 SUBROUTINE add_bound_free_opacities (self, adata)
   class(nlte_patch_t), target :: self
