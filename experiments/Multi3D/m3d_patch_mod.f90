@@ -129,7 +129,7 @@ MODULE m3d_patch_mod
     logical, public, save :: overlapping_bb=.true., overlapping_bf=.true.
     logical, public, save :: absmet_in_output=.false., column_by_column=.false.
     logical, public, save :: print_start=.false., print_send=.false.
-    logical, public, save:: make_opac_table=.false., rotate_atmos=.true.
+    logical, public, save:: make_opac_table=.false., rotate_atmos=.false.
     real(8), public, save :: dlam=100.
     real(8), public, dimension(:), allocatable :: rank_lvlerr
     character(len=128), save :: save_patch_kind=''

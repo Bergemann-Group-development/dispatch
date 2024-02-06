@@ -520,7 +520,7 @@ MODULE atom_patch_mod
     real(4), dimension(:,:,:,:,:,:), allocatable :: out_mem
     real(8), dimension(:,:,:), allocatable :: norm, totn
     real(8) :: vec(3)
-    integer :: i, j, k, l, n(3)
+    integer :: i, j, k, l, imu, n(3)
     integer, save :: count=0
     !-----------------------------------------------------------------------------
     atom => self%atom
@@ -546,23 +546,47 @@ MODULE atom_patch_mod
     end do
 
     if (rotate_atmos) then
-      do i=1, self%n_out
-        vec = long_vec(:,i)
-        adata => atom%rotated_data(i)
-        comp => self%m3d_parent%rotated_composition(i)
+      do imu=1, self%n_out
+        vec = long_vec(:,imu)
+        adata => atom%rotated_data(imu)
+        comp => self%m3d_parent%rotated_composition(imu)
         call self%init_atom_data(comp, adata)
         totn = 0
-        do l=1, size(adata%nstar, 4)
-          adata%n(:,:,:,l) = atom%data%n(:,:,:,l) / atom%data%nstar(:,:,:,l)
+        do l=1, atom%nlevel
+          do k=1, self%n(3)
+          do j=1, self%n(2)
+          do i=1, self%n(1)
+            adata%n(i,j,k,l) = atom%data%n(i,j,k,l) / atom%data%nstar(i,j,k,l)
+          end do
+          end do
+          end do
           call self%rotate_cube8(vec, adata%n(:,:,:,l), do_log=.true.)
-          adata%n(:,:,:,l) = adata%n(:,:,:,l) * adata%nstar(:,:,:,l)
-          totn = totn + adata%n(:,:,:,l)
+          do k=1, self%n(3)
+          do j=1, self%n(2)
+          do i=1, self%n(1)
+            adata%n(i,j,k,l) = adata%n(i,j,k,l) * adata%nstar(i,j,k,l)
+            totn(i,j,k) = totn(i,j,k) + adata%n(i,j,k,l)
+          end do
+          end do
+          end do
         end do
-        norm = 1 / totn
-        do l=1, size(adata%nstar, 4)
-          adata%n(:,:,:,l) = adata%n(:,:,:,l) * adata%totn * norm
-          out_mem(:,:,:,l,1,1+i) = real(adata%nstar(:,:,:,l))
-          out_mem(:,:,:,l,2,1+i) = real(adata%n(:,:,:,l) / adata%nstar(:,:,:,l))
+        do k=1, self%n(3)
+        do j=1, self%n(2)
+        do i=1, self%n(1)
+          norm(i,j,k) = 1 / totn(i,j,k)
+        end do
+        end do
+        end do
+        do l=1, atom%nlevel
+          do k=1, self%n(3)
+          do j=1, self%n(2)
+          do i=1, self%n(1)
+            adata%n(i,j,k,l) = adata%n(i,j,k,l) * adata%totn(i,j,k) * norm(i,j,k)
+            out_mem(i,j,k,l,1,1+imu) = real(adata%nstar(i,j,k,l))
+            out_mem(i,j,k,l,2,1+imu) = real(adata%n(i,j,k,l) / adata%nstar(i,j,k,l))
+          end do
+          end do
+          end do
         end do
         call atom%compute_cont_factors(adata)
       end do

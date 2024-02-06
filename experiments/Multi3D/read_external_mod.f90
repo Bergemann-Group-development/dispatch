@@ -122,8 +122,6 @@ SUBROUTINE init(self, task_list, name)
 
   allocate (task_list)
   self%task_list => task_list
-
-  one_dimensional = nx*ny == 1
   
   atmos_format = lowercase(atmos_format)
   select case (atmos_format)
@@ -159,6 +157,7 @@ SUBROUTINE init(self, task_list, name)
     end select
 
     self%n = shape(self%rho)
+    one_dimensional = self%n(1)*self%n(2) == 1
     if (.not. associated(self%pe)) then
       call os%allocate(self%pe, self%n)
       self%pe = self%ne * cgs%k_b * self%temp
