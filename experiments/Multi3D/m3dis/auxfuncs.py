@@ -455,7 +455,8 @@ def compute_tau_scale (chi, ds, axis=-1):
     dchi = np.array(np.zeros_like(chi))
     tau1 = 0.5*(chi[1] + chi[0]) * ds
     tau2 = 0.5*(chi[2] + chi[1]) * ds + tau1
-    dchi[0] = tau1*tau1/tau2
+    mask = tau2>0
+    dchi[0, mask] = (tau1*tau1)[mask]/tau2[mask]
     dchi[1:] = 0.5*(chi[1:] + chi[:-1]) * ds
     tau = np.cumsum(dchi, axis=0)
     tau = tau[::-1]
