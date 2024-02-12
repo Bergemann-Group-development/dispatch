@@ -744,7 +744,7 @@ MODULE atom_patch_mod
     class(atom_patch_t), target :: self
     class(bftrans_type), pointer :: trans
     integer :: i, lower, kc
-    logical :: same
+    logical :: ok
     logical, save :: first_time=.true.
     !-----------------------------------------------------------------------------
     do i=1, size(composition%trans)
@@ -754,26 +754,31 @@ MODULE atom_patch_mod
       case ('(H+H)', 'H2+', 'H- FF', 'H FF', 'H2-', 'H- BF')
         ! do not exclude
       case default
+        ok = .false.
         if (trans%level%g > 0) then
           if (uppercase(trans%ion%id(1:2)) == self%atom%id) then
-            do kc=1, self%atom%ncont
-              if (.not. self%atom%cont(kc)%active) cycle
-              lower = self%atom%cont(kc)%i
+            if (trans%molecular) then
+              ok = .true.
+            else
+              do kc=1, self%atom%ncont
+                if (.not. self%atom%cont(kc)%active) cycle
+                lower = self%atom%cont(kc)%i
 
-              if (self%atom%ev(lower)==0) then
-                same = trans%level%xion == self%atom%ev(lower)
-              else
-                same = abs(trans%level%xion / self%atom%ev(lower) - 1) < 1d-2
-              endif
-
-              if (same) then
-                trans%active = .false.
-                if (first_time) then
-                  print *, 'excluding transition ', trans%label
+                if (self%atom%ev(lower)==0) then
+                  ok = trans%level%xion == self%atom%ev(lower)
+                else
+                  ok = abs(trans%level%xion / self%atom%ev(lower) - 1) < 1d-2
                 endif
-                exit
+                if (ok) exit
+              end do
+            endif
+            if (ok) then
+              trans%active = .false.
+              if (first_time) then
+                print *, 'excluding transition ', trans%label
               endif
-            end do
+              exit
+            endif
           endif
         endif
       end select
