@@ -442,19 +442,24 @@ class read(object):
     def get_depart(self, ilvl=None):
         #-----------------------------------------------------------------
         mem = self.read_patch_save('atom_patch')[0]
+        lte = mem[...,0,0]
         dep = mem[...,1,0]
 
         if ilvl is not None:
+            lte = lte[...,ilvl]
             dep = dep[...,ilvl]
 
+        lte = np.array(lte)
         dep = np.array(dep)
-        if self.dim=='1D': dep = dep.squeeze()
-        return dep
+        if self.dim=='1D':
+            lte = lte.squeeze()
+            dep = dep.squeeze()
+        return lte, dep
     
     #=====================================================================
     def plot_depart(self, ilvl, mean='optical', tau_in=None, **kwargs):
         #-----------------------------------------------------------------
-        dep = self.get_depart(ilvl)
+        _, dep = self.get_depart(ilvl)
         plt.title('Departure coefficient of level {:.2f}[eV]'.format(self.atom.level[ilvl].ev))
         plt.ylabel(r'$\rm n\,/\,n_{\rm LTE}$')
         if mean=='optical':

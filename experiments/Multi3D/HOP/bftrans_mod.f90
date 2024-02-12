@@ -275,6 +275,7 @@ contains
           if (do_exp) then
             yy = exp(yy)
           elseif(do_log) then
+            yy = max(yy, tiny(1.d0))
             yy = log(yy)
           endif
 

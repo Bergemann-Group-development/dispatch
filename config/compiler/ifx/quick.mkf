@@ -1,0 +1,5 @@
+# Shortest compile time
+OPT = -O0
+DEBUG = -g -traceback
+HW =
+PAR = -qopenmp

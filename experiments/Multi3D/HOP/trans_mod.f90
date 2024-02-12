@@ -103,10 +103,15 @@ contains
     real(8), intent(in), dimension(:) :: nu
     real(4), intent(inout), dimension(:) :: alpha
     real(8), allocatable, dimension(:) :: dalpha_dnu
+    real(8) :: minl, maxl
     !----------------------------------------------------------------------------------
     allocate(dalpha_dnu, mold=self%nu_input)
+    minl = minval(self%nu_input)
+    maxl = maxval(self%nu_input)
     call hermite_derivative(dalpha_dnu, self%nu_input, self%alpha_input)
     call hermite_interpolation(alpha, nu, self%nu_input, self%alpha_input, dalpha_dnu)
+    where (nu > maxl) alpha = 0
+    where (nu < minl) alpha = 0
     deallocate(dalpha_dnu)
   END SUBROUTINE hermite_interp
 

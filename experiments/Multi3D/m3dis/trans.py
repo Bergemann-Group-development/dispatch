@@ -306,6 +306,13 @@ class trans_class(object):
         yy, cnt = self.run.get_yy(ang, imu, norm=True, LTE=LTE, mask=mask)
         weq = np.trapz(1 - yy, x=xx) * 1e3
         return weq
+    
+    #=====================================================================
+    def calc_weq_depart(self, **kwargs):
+        #-----------------------------------------------------------------
+        NLTE = self.calc_weq(**kwargs)
+        LTE = self.calc_weq(LTE=True, **kwargs)
+        return NLTE/LTE
 
     #=====================================================================
     def calc_blueshift(self, imu=None):

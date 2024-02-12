@@ -1,0 +1,3 @@
+OPT = -O3
+HW = -xHost -align array64byte -assume norealloc_lhs
+DEBUG = -traceback
