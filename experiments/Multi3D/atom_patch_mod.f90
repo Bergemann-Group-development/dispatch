@@ -796,9 +796,9 @@ MODULE atom_patch_mod
     integer :: i, j, l
     logical, save :: first_time=.true.
     !-----------------------------------------------------------------------------
-    call composition%element_by_id(trim(self%atom%id), element)
+    call composition%element_by_id(trim(self%atom%id), element, verbose=.false.)
     if (.not. associated(element)) then
-      call composition%molecule_by_id(trim(self%atom%id), molec)
+      call composition%molecule_by_id(trim(self%atom%id), molec, verbose=.false.)
       if (.not. associated(molec)) then
         return
       else

@@ -1322,7 +1322,7 @@ MODULE atom_mod
       end do
     endif
 
-    call self%get_active_nlevels(sp)
+    !call self%get_active_nlevels(sp)
 
     write(*,'(a,I0,a)') 'sp_from_atom: frequency grid has ', sp%nnu, ' points.'
     if (self%verbose > 2) then

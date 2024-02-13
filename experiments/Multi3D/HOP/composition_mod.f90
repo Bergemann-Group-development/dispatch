@@ -771,7 +771,7 @@ contains
         class(molec_type), pointer :: mol
         class(isotope_type), pointer :: iso
         class(bbtrans_type), pointer :: line
-        real(8), intent(in), dimension(:), pointer :: nu
+        real(8), intent(in), dimension(:) :: nu
         real(4), intent(inout), dimension(:,:,:,:) :: all_chi
         real(4), intent(inout), dimension(:,:,:,:), optional :: all_eta
         real(4), intent(in), dimension(:,:,:), contiguous, target, optional :: vproj
@@ -1928,13 +1928,13 @@ contains
     SUBROUTINE overwrite_abundance(self, id, abnd, awgt)
         class(composition_type), target :: self
         class(element_type), pointer :: element
+        class(molec_type), pointer :: molec
         character(len=*), intent(in) :: id
         real(dp), intent(in) :: abnd, awgt
         real(dp) :: abund
         logical, save :: first_time=.true.
         !---------------------------------------------------------------------
-        call self%element_by_id(id(1:3), element, verbose=.true.)
-
+        call self%element_by_id(id(1:3), element, verbose=.false.)
         if (associated(element)) then
             abund = log10(element%abund) + 12.0
             if (abund /= abnd) then
@@ -1946,6 +1946,11 @@ contains
                 element%abund =  10**(abnd - 12.0)
                 element%awgt  =  awgt
                 call self%compute_grams_per_hydrogen(self%suma, self%xmy, self%grph)
+            endif
+        else
+            call self%molecule_by_id(id(1:3), molec, verbose=.false.)
+            if (.not. associated(molec)) then
+                print *, id(1:3), 'is not recognised by opacity package.'
             endif
         endif
     END SUBROUTINE overwrite_abundance

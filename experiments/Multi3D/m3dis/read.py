@@ -174,13 +174,14 @@ class read(object):
 
         if os.path.isfile(sfolder + 'atmos_meta.txt'):
             mem = self.read_patch_save('atmos')[0]
-            self.ne   = mem[...,0,0].compute()
-            self.rho  = mem[...,1,0].compute()
-            self.temp = mem[...,2,0].compute()
-            self.vx   = mem[...,3,0].compute() * CC
-            self.vy   = mem[...,4,0].compute() * CC
-            self.vz   = mem[...,5,0].compute() * CC
-            self.chi  = mem[...,6,0].compute()
+            mem = mem[..., 0].squeeze()
+            self.ne   = mem[...,0].compute()
+            self.rho  = mem[...,1].compute()
+            self.temp = mem[...,2].compute()
+            self.vx   = mem[...,3].compute() * CC
+            self.vy   = mem[...,4].compute() * CC
+            self.vz   = mem[...,5].compute() * CC
+            self.chi  = mem[...,6].compute()
             self.tau  = compute_tau_scale(self.chi, self.dz*1e8, axis=-1)
             self.ltau = np.log10(self.tau)
             
@@ -442,8 +443,9 @@ class read(object):
     def get_depart(self, ilvl=None):
         #-----------------------------------------------------------------
         mem = self.read_patch_save('atom_patch')[0]
-        lte = mem[...,0,0]
-        dep = mem[...,1,0]
+        if mem.ndim==6: mem = mem[...,0]
+        lte = mem[...,0]
+        dep = mem[...,1]
 
         if ilvl is not None:
             lte = lte[...,ilvl]
@@ -469,8 +471,8 @@ class read(object):
                 else:
                     ltau = tau_in
 
-                dep = interp_tau(ltau.copy(), self.ltau[:,:,::-1].copy(), dep[:,:,::-1].copy())
-                dep = np.mean(dep, axis=(0,1))
+                new_dep = interp_tau(ltau.copy(), self.ltau[...,::-1].copy(), dep[...,::-1].copy())
+                dep = np.mean(new_dep, axis=(0,1))
             else:
                 ltau = self.ltau
                 dep = self.get_depart(ilvl)
