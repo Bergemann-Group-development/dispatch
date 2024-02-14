@@ -161,17 +161,24 @@ def freq_quad(nnu, qmax, q0):
     
     elif qmax >= 0 and q0 >= 0:
         a = 10**(q0+0.5)
-        
         xmax = np.log10(a * max([0.5, qmax-q0-0.5]))
-        
         dx = 2 *  xmax / (nnu-1)
-        
         x = -xmax + dx * np.arange(nnu)
         x10 = 10**x
         q = x + (x10 - 1/x10) / a
         
     return q
 
+def get_qmax(qmax, q0):
+    q = qmax.copy()
+    # Mask for conditions where qmax >= 0 and q0 >= 0
+    mask = np.logical_and(qmax >= 0, q0 >= 0)
+    a = 10**(q0[mask] + 0.5)
+    x = np.log10(a * np.maximum(0.5, qmax[mask] - q0[mask] - 0.5))
+    x10 = 10**x
+    q[mask] = x + (x10 - 1/x10) / a
+
+    return q
 
 def LinArrayInterp(x, y, newx):
     if type(y) == list:

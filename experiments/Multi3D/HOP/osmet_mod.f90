@@ -29,7 +29,7 @@ contains
     !===============================================================================
     SUBROUTINE init (self, absmet_file, absmet_big_end)
         class(osmet_type) :: self
-        character(len=80), intent(in) :: absmet_file
+        character(len=*), intent(in) :: absmet_file
         logical, intent(in), optional :: absmet_big_end
         integer :: lunit, iostat, maxp6, maxtem
         real(4) :: orig_ostabl(mp6, mtem)

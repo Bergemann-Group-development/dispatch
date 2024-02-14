@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from .auxfuncs import convol, vacuum2obs, _vacuum2obs, is_number, freq_quad, compute_tau_scale, find_close, interp_tau
+from .auxfuncs import convol, vacuum2obs, _vacuum2obs, is_number, compute_tau_scale, find_close, interp_tau, get_qmax
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 
@@ -88,13 +88,6 @@ class trans_class(object):
             self.bij = self.fosc * 6.671e15 * self.alamb / HC2
             self.bji = self.bij * self.lower.g / self.upper.g
             
-            if self.qmax < 0 or self.q0 < 0:
-                q=np.zeros(self.nq)
-            #elif not self.iwide:
-            #    self.q = freq_quad((2*self.nq-1), self.qmax, self.q0)[self.nq-1:]
-            else:
-                q=freq_quad(self.nq, self.qmax, self.q0)
-            
             if self.iw > 0:
                 pos = self.atom.f.tell()
                 self.hyperfine = pd.read_csv(self.atom.f, nrows=self.iw, sep='\s+',
@@ -104,9 +97,10 @@ class trans_class(object):
             
             self.cont = False
             
-            lam = self.alamb / (q*atom.qnorm/(CC*1e-5) + 1)
-            self.lam_red  = lam[ 0]
-            self.lam_blue = lam[-1]
+            if self.qmax >= 0 and self.q0 >=0:
+                qmax = get_qmax(self.qmax, self.q0) * atom.qnorm
+                self.lam_red  = self.alamb / (1 - qmax)
+                self.lam_blue = self.alamb / (1 + qmax)
             
             #if (atom.level[-1].ion > atom.level[0].ion):
             #    self.prepare_VanderWaals(self.gw)
@@ -138,7 +132,7 @@ class trans_class(object):
         f = self.atom.f
         line = f.readline()
         while line.strip()=='' or line.strip().startswith('*'):
-            if (line.startswith('* i')):
+            if line.startswith('* i') and self.atom.sanity_check:
                 line = line.replace('=', ' ')
                 self.c_kr, self.c_lam0, self.c_loggf = [float(s) for s in line.split() if is_number(s)][:3]
 

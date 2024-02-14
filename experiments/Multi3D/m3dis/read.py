@@ -56,7 +56,7 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
 #=====================================================================
 class read(object):
     #=================================================================
-    def __init__(self, folder, verbose=0, **kwargs):
+    def __init__(self, folder, verbose=0, atom=None, **kwargs):
         #-------------------------------------------------------------
         folder = folder + os.sep
         sfolder = folder + 'save' + os.sep
@@ -78,7 +78,12 @@ class read(object):
         atom_file = folder + 'atom.txt'
         if os.path.isfile(atom_file):
             self.qnorm = self.nml['atom_params']['qnorm']
-            self.atom = atom_class(atom_file, qnorm=self.qnorm, verbose=verbose, **kwargs)
+
+            if atom is None:
+                self.atom = atom_class(atom_file, qnorm=self.qnorm, verbose=verbose, **kwargs)
+            else:
+                self.atom = atom
+
             loggf_cut = self.nml['atom_params']['logf_cut']
             red_cut   = self.nml['atom_params']['red_cut']
             blue_cut  = self.nml['atom_params']['blue_cut']
