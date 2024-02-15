@@ -499,7 +499,6 @@ class read(object):
                 dep = np.mean(new_dep, axis=(0,1))
             else:
                 ltau = self.ltau
-                dep = self.get_depart(ilvl)
 
             plt.xlabel(r'log$\tau_{500}$')
             return plt.plot(ltau, dep, **kwargs)
