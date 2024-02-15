@@ -271,7 +271,8 @@ class trans_class(object):
     #=====================================================================
     def get_xx(self, dlam):
         #-----------------------------------------------------------------
-        if not self.prepared: self.prepare()
+        if hasattr(self, 'prepared'):
+            if not self.prepared: self.prepare()
         xx = self.run.lam
 
         if dlam is None or isinstance(dlam, (bool)):
@@ -369,7 +370,8 @@ class trans_class(object):
     #=====================================================================
     def get_cntrbf(self, df=None, ang=None, imu=None, LTE=False, mean=False, fslice=None):
         #-----------------------------------------------------------------
-        if not self.prepared: self.prepare()
+        if hasattr(self, 'prepared'):
+            if not self.prepared: self.prepare()
         
         name = 'cntrbf_{:06}'.format(self.kr+1)
         mem  = self.run.read_patch_save(name, fdim=3)[-1]

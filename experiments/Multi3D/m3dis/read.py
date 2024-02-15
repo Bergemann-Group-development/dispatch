@@ -1,6 +1,8 @@
 from .atom import atom_class
 from .trans import trans_class
 from .auxfuncs import vacuum2obs, continuum, freq_quad, convol, SBOL, CC, interp_tau, check_file, compute_tau_scale
+from .fast_atom import fast_atom
+from .fast_trans import lines_class
 import numpy as np
 import pandas as pd
 import dask.array as da
@@ -56,7 +58,7 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
 #=====================================================================
 class read(object):
     #=================================================================
-    def __init__(self, folder, verbose=0, atom=None, **kwargs):
+    def __init__(self, folder, verbose=0, read_atmos=True, fast_read=False, **kwargs):
         #-------------------------------------------------------------
         folder = folder + os.sep
         sfolder = folder + 'save' + os.sep
@@ -75,50 +77,6 @@ class read(object):
         else:
             self.mode = 'NLTE'
         
-        atom_file = folder + 'atom.txt'
-        if os.path.isfile(atom_file):
-            self.qnorm = self.nml['atom_params']['qnorm']
-
-            if atom is None:
-                self.atom = atom_class(atom_file, qnorm=self.qnorm, verbose=verbose, **kwargs)
-            else:
-                self.atom = atom
-
-            loggf_cut = self.nml['atom_params']['logf_cut']
-            red_cut   = self.nml['atom_params']['red_cut']
-            blue_cut  = self.nml['atom_params']['blue_cut']
-            in_abnd   = self.nml['atom_params']['abundance']
-            
-            if self.atom.id in self.abundances:
-                self.atom.abnd = float(self.abundances[self.atom.id])
-            elif in_abnd > -99:
-                self.atom.abnd = in_abnd
-
-            self.atom.title = 'A({}) = {:.2f}'.format(self.atom.id, self.atom.abnd)
-            
-            for trans in self.atom.trans:
-                trans.run = self
-        
-            lines = self.atom.trans[:self.atom.nline]
-            if 'line_mask' in self.nml.keys():
-                if 'in_lines' in self.nml['line_mask'].keys():
-                    in_lines = self.nml['line_mask']['in_lines']
-                    if type(in_lines)==int: in_lines=[in_lines]
-                    lines = [self.atom.trans[i-1] for i in in_lines]
-                
-            lines = [line for line in lines if np.log10(line.fosc*line.lower.g) > loggf_cut]
-            lines = [line for line in lines if line.lam_red > blue_cut and line.lam_blue < red_cut]
-            
-            self.nline = len(lines)
-            self.line = lines
-
-            reports = glob.glob(folder + 'convergence_report_*.txt')
-            if len(reports)>0:
-                self.lvlerr = np.zeros(self.atom.nk)
-                for report in reports:
-                    df = pd.read_csv(report, sep='\s+')
-                    self.lvlerr = np.maximum(self.lvlerr, df.maxconv.values)
-        
         if os.path.isfile(sfolder + 'out_lam.bin'):
             if (verbose > 0): print('Reading wavelengths')
             self.lam = np.fromfile(sfolder + 'out_lam.bin', dtype=np.float64)
@@ -132,6 +90,67 @@ class read(object):
         if os.path.isfile(sfolder + 'all_lam.bin'):
             self.all_lam = vacuum2obs(np.fromfile(sfolder + 'all_lam.bin', dtype=np.float64))[::-1]
         
+        atom_file = folder + 'atom.txt'
+        if os.path.isfile(atom_file):
+            self.qnorm = self.nml['atom_params']['qnorm']
+            loggf_cut  = self.nml['atom_params']['logf_cut']
+            red_cut    = self.nml['atom_params']['red_cut']
+            blue_cut   = self.nml['atom_params']['blue_cut']
+            in_abnd    = self.nml['atom_params']['abundance']
+
+            if fast_read:
+                self.atom = fast_atom(atom_file, qnorm=self.qnorm, **kwargs)
+                
+                if (hasattr(self, 'lam')):
+                    bb = self.atom.bb
+                    lvls = self.atom.level
+                    self.atom.trans = lines_class(self.atom, bb, self)
+
+                    if 'line_mask' in self.nml.keys():
+                        if 'in_lines' in self.nml['line_mask'].keys():
+                            in_lines = self.nml['line_mask']['in_lines']
+
+                    bb = bb.iloc[np.array(in_lines)-1]
+                    mask = bb.loggf > loggf_cut
+                    mask = mask & (bb.lam_vac_red > blue_cut) 
+                    mask = mask & (bb.lam_vac_blue < red_cut) 
+                    lines = lines_class(self.atom, bb[mask], self)
+                    self.nline = len(lines)
+                    self.line = lines
+
+            else:
+                self.atom = atom_class(atom_file, qnorm=self.qnorm, verbose=verbose, **kwargs)
+
+                for trans in self.atom.trans:
+                    trans.run = self
+
+                lines = self.atom.trans[:self.atom.nline]
+
+                if 'line_mask' in self.nml.keys():
+                    if 'in_lines' in self.nml['line_mask'].keys():
+                        in_lines = self.nml['line_mask']['in_lines']
+                        if type(in_lines)==int: in_lines=[in_lines]
+                        lines = [self.atom.trans[i-1] for i in in_lines]
+                    
+                lines = [line for line in lines if np.log10(line.fosc*line.lower.g) > loggf_cut]
+                lines = [line for line in lines if line.lam_red > blue_cut and line.lam_blue < red_cut]
+                self.nline = len(lines)
+                self.line = lines
+
+            if self.atom.id in self.abundances:
+                self.atom.abnd = float(self.abundances[self.atom.id])
+            elif in_abnd > -99:
+                self.atom.abnd = in_abnd
+
+            self.atom.title = 'A({}) = {:.2f}'.format(self.atom.id.strip(), self.atom.abnd)
+
+            reports = glob.glob(folder + 'convergence_report_*.txt')
+            if len(reports)>0:
+                self.lvlerr = np.zeros(self.atom.nk)
+                for report in reports:
+                    df = pd.read_csv(report, sep='\s+')
+                    self.lvlerr = np.maximum(self.lvlerr, df.maxconv.values)
+
         file = folder + 'angle_quadrature.txt'
         if os.path.isfile(file):
             df = pd.read_csv(file, header=None, skiprows=1, sep='\s+', names=['ang', 'wmu', 'mux', 'muy', 'muz'])
@@ -144,11 +163,11 @@ class read(object):
 
         if hasattr(self, 'lam'):
             if (verbose > 0): print('Reading Intensities')
-            ie = self.read_patch_save('ie', fdim=0)[0]
+            ie = self.read_patch_save('ie', fdim=0, lazy=False)[0]
 
-            self.ie     = np.array(ie[:,0,0,:,0])
-            self.ie_lte = np.array(ie[:,0,0,:,1])
-            self.cnt    = np.array(ie[:,0,0,:,2])
+            self.ie     = ie[:,0,0,:,0]
+            self.ie_lte = ie[:,0,0,:,1]
+            self.cnt    = ie[:,0,0,:,2]
 
             self.flux     = np.sum(self.wts * self.ie    , axis=-1)
             self.flux_lte = np.sum(self.wts * self.ie_lte, axis=-1)
@@ -177,7 +196,7 @@ class read(object):
         self.yy = np.linspace(0, (ny-1)*dy, ny)
         self.zz = np.linspace(0, (nz-1)*dz, nz)
 
-        if os.path.isfile(sfolder + 'atmos_meta.txt'):
+        if os.path.isfile(sfolder + 'atmos_meta.txt') and read_atmos:
             mem = self.read_patch_save('atmos')[0]
             mem = mem[..., 0].squeeze()
             self.ne   = mem[...,0].compute()
@@ -190,7 +209,7 @@ class read(object):
             self.tau  = compute_tau_scale(self.chi, self.dz*1e8, axis=-1)
             self.ltau = np.log10(self.tau)
             
-        if os.path.isfile(folder + 'atmos_data.bin'):
+        if os.path.isfile(folder + 'atmos_data.bin') and read_atmos:
             dat = FortranFile(folder + 'atmos_data.bin')
             self.temp = dat.read_reals(np.float32)
             self.rho  = dat.read_reals(np.float32)
@@ -544,7 +563,7 @@ class read(object):
         return teff
 
     #=====================================================================
-    def read_patch_save(self, kind, concat=True, fdim=3):
+    def read_patch_save(self, kind, concat=True, fdim=3, lazy=True):
         #-----------------------------------------------------------------
         try:
             meta = open(self.sfolder + kind + '_meta.txt')
@@ -571,18 +590,23 @@ class read(object):
         meta.close()
 
         if concat:
-            return self.concat_patches(dct, kind, fdim)
+            return self.concat_patches(dct, kind, fdim, lazy=lazy)
         else:
             return dct
 
     #=====================================================================
-    def concat_patches(self, dct, kind, fdim):
+    def concat_patches(self, dct, kind, fdim, lazy):
         #-----------------------------------------------------------------
         all_iz  = np.unique([key[0] for key in dct.keys()])
         all_inu = np.unique([key[1] for key in dct.keys()])
         f_indep = all(all_inu == 0)
 
         n_nu = self.nml['m3d_params']['n_nu']
+
+        if lazy:
+            concat = da.concatenate
+        else:
+            concat = np.concatenate
 
         def merge_set(inus):
             merge = []
@@ -595,12 +619,12 @@ class read(object):
                         merge_nu.append(dct[key])
                 
                 if len(merge_nu) > 0:
-                    mem = da.concatenate(merge_nu, axis=fdim)
+                    mem = concat(merge_nu, axis=fdim)
                     if not f_indep: mem = np.flip(mem, axis=fdim)
                     merge.append(mem)
             
             if len(merge) > 1:
-                mem = da.concatenate(merge, axis=2)
+                mem = concat(merge, axis=2)
 
             return mem
 
