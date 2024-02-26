@@ -10,7 +10,7 @@ MODULE composition_patch_mod
   USE m3d_patch_mod,   only: m3d_patch_t, composition, comoving_frame, ilambd, dlam, &
   use_density, use_ne, overlapping_bb, overlapping_bf, line_blanketing, binned_opac, &
   save_Qrad, maxiter, rotate_atmos, long_vec, sample_back_opac, decouple_continuum, &
-  linelist_in_output, sample_back_opac_in_output
+  linelist_in_output, sample_back_opac_in_output, make_eos
   USE m3d_debug_mod
   USE composition_mod, only: composition_type, exclude_elements
   USE atom_patch_mod,  only: atom_patch_t
@@ -38,10 +38,11 @@ MODULE composition_patch_mod
     procedure :: print_post_update_info
     procedure :: save_abundances_to_file
     procedure :: init_tabulated_comp
+    procedure :: init_eos_comp
     procedure :: nbor_relations => composition_patch_nbor_relations
   end type
   
-  real(8), public :: FeH=0, dtemp=250., ldne=0.25
+  real(8), public :: FeH=0, dtemp=250., ldne=0.25, ldrho=0.25, ldtemp=0.1
   logical, public :: save_atmos=.true.
 
 contains
@@ -65,7 +66,8 @@ SUBROUTINE composition_pre_init (self)
   logical, save :: first_time=.true., absmet_big_end=.false., external_sp
   namelist /composition_params/ verbose, absdat_file, abund_file, absmet_file, &
   absmet_big_end, isotope_file, molec_file, H_occupation_probability, opac_table, &
-  sample_back_opac, sample_back_opac_in_output, dtemp, ldne
+  sample_back_opac, sample_back_opac_in_output, &
+  dtemp, ldne, ldrho, ldtemp
   namelist /linelist_params/ dlam, exclude_elements, linelist_file, line_lists, &
   linelist_in_output
   ! ----------------------------------------------------------------------------
@@ -271,6 +273,8 @@ SUBROUTINE execute (self)
 
     if (sample_back_opac) then
       call self%init_tabulated_comp(self%composition%temp, self%composition%ne, dtemp=dtemp, ldne=ldne)
+    elseif (make_eos) then
+      call self%init_eos_comp(self%composition%temp, self%composition%rho, ldtemp=ldtemp, ldrho=ldrho)
     endif
 
     self%dtime = max(self%dtime, io%end_time - self%dtime)
@@ -316,6 +320,50 @@ SUBROUTINE init_tabulated_comp (self, temp, ne, dtemp, ldne)
     tab_ne = exp(tab_ne)
     call self%tab_comp%load_state_variables(tab_temp, tab_ne, tab_rho, use_rho=.false., use_ne=.true.)
 END SUBROUTINE init_tabulated_comp
+
+!===============================================================================
+SUBROUTINE init_eos_comp (self, temp, rho, ldtemp, ldrho)
+  class(composition_patch_t), target :: self
+  real(8), dimension(:,:,:), intent(in) :: temp, rho
+  real(8), intent(in) :: ldtemp, ldrho
+  real(8) :: minTemp, maxTemp, minRho, maxRho
+  integer :: i, j, ntemp, nrho, nnu
+  real(8), dimension(:,:,:), allocatable :: tab_temp, tab_ne, tab_rho
+  real(8) :: minLnRho, maxLnRho, minLnT, maxLnT
+  !---------------------------------------------------------------------------
+  allocate(self%tab_comp)
+  self%tab_comp = composition
+  call self%tab_comp%reassign_pointer()
+
+  minTemp = minval(temp)
+  maxTemp = maxval(temp)
+  minRho = minval(rho)
+  maxRho = maxval(rho)
+
+  minLnRho = log(minRho)
+  maxLnRho = log(maxRho)
+  minLnT = log(minTemp)
+  maxLnT = log(maxTemp)
+
+  ntemp = ceiling((maxLnT - minLnT) / ldtemp) 
+  nrho  = ceiling((maxLnRho - minLnRho) / ldrho) 
+
+  allocate(tab_temp(ntemp, nrho, 1))
+  allocate(tab_rho (ntemp, nrho, 1))
+  allocate(tab_ne  (ntemp, nrho, 1))
+
+  do j=1, nrho
+  do i=1, ntemp
+    tab_temp(i,j,1) = minLnT + (i-1)*ldtemp
+    tab_rho  (i,j,1) = minLnRho + (j-1)*ldrho
+  end do
+  end do
+
+  tab_rho = exp(tab_rho)
+  tab_temp = exp(tab_temp)
+
+  call self%tab_comp%load_state_variables(tab_temp, tab_ne, tab_rho, use_rho=.true., use_ne=.false.)
+END SUBROUTINE init_eos_comp
 
 !===============================================================================
 SUBROUTINE print_post_update_info (self)
