@@ -265,14 +265,6 @@ SUBROUTINE execute (self)
   
   call self%lte_background_opacities(comp, include_absmet=include_absmet, do_sample_opac=do_sample_opac, do_make_eos=do_make_eos)
 
-  if (do_make_eos) then
-    call self%save_intensity()
-    call self%deallocate_mem()
-    call deallocate_arrays()
-    call trace%end(itimer)
-    return
-  endif
-
   if (ilambd > 0 .and. (self%iter > 0 .or. self%out_mu)) then
     call self%add_scattering(comp)
   endif
