@@ -44,7 +44,6 @@ MODULE nlte_patch_mod
     real(4), dimension(:,:,:,:,:), allocatable :: Jnu
     real(4), dimension(:,:,:,:), allocatable :: Psi, PsiJ
     real(4), dimension(:,:,:), allocatable :: opac_table
-    real(4), dimension(:,:,:), allocatable :: eta_table
     real(4), dimension(:), allocatable :: twohnu3_c2
     real(8), dimension(:), pointer :: nu
     integer :: nline=0, ncont=0, mus, mue, n_set, nf, n_mu
@@ -241,7 +240,7 @@ SUBROUTINE execute (self)
   get_cntrbf = self%out_mu .and. (n_cntrbf>0)
   end_boundary = self%patch%boundaries%is_set(bits%zl) .and. (self%dir<0)
   end_boundary = self%patch%boundaries%is_set(bits%zu) .and. (self%dir>0) .or. end_boundary
-  if (.not. end_boundary) then
+  if (.not. end_boundary .and. associated(self%dnstream)) then
     end_boundary = self%dnstream%is_finished()
   endif
 
@@ -256,7 +255,7 @@ SUBROUTINE execute (self)
   self%twohnu3_c2 = twoh_c2 * self%nu**3
 
   do_sample_opac = sample_back_opac .and. (self%in_ray .or. sample_back_opac_in_output)
-  do_make_eos = end_boundary .and. make_eos .and. self%out_ray !make_eos .and. self%in_ray
+  do_make_eos = make_eos .and. self%out_ray
   include_absmet = (self%in_ray .and. (self%i_nu > self%n_nu .or. .not. decouple_continuum)) &
               .or. (self%out_ray .and. absmet_in_output)
   
@@ -379,7 +378,7 @@ SUBROUTINE execute (self)
   endif
 
   if (end_boundary) then
-    if (self%out_mu) then
+    if (self%out_mu .and. self%n_mu > 0) then
       call self%save_intensity()
     endif
     call self%deallocate_mem()
@@ -623,40 +622,24 @@ SUBROUTINE generate_eos_table (self, nu, include_absmet)
   class(nlte_patch_t), target :: self
   class(composition_type), pointer :: comp
   real(8), dimension(:), pointer, intent(in) :: nu
-  real(4), dimension(:,:,:,:), allocatable :: eos
+  real(4), dimension(:,:,:), allocatable :: eos
   logical, intent(in) :: include_absmet
   real(4) :: over_rho
-  integer :: i,j,k, ntemp, nrho, nnu
+  integer :: i,j,k, ntemp, nrho
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('nlte_patch%generate_eos_table', itimer=itimer)
-
   comp => self%m3d_parent%tab_comp
-
-  nnu = size(self%opac_table, 1)
+  call self%save3(self%opac_table, 'opa')
   ntemp = size(self%opac_table, 2)
   nrho = size(self%opac_table, 3)
-  allocate(eos(nnu, ntemp, nrho, 2))
-
-  eos(:, :, :, 1) = self%opac_table
-  if (allocated(self%eta_table)) then
-    eos(:, :, :, 2) = self%eta_table
-  else
-    eos(:, :, :, 2) = 1.0
-  endif
-  call self%save4(eos, 'opa')
-  deallocate(eos)
-
-  allocate(eos(5, ntemp, nrho, 1))
-  eos(1, :, :, 1) = real(comp%temp(:, :, 1), kind=4)
-  eos(2, :, :, 1) = real(comp%rho(:, :, 1), kind=4)
-  eos(3, :, :, 1) = real(comp%ne(:, :, 1), kind=4)
-  eos(4, :, :, 1) = real(comp%pg(:, :, 1), kind=4)
-  eos(5, :, :, 1) = real(comp%E(:, :, 1), kind=4)
-
-  call self%save4(eos, 'eos')
-  deallocate(eos)
-
+  allocate(eos(5, ntemp, nrho))
+  eos(1, :, :) = real(comp%temp(:, :, 1), kind=4)
+  eos(2, :, :) = real(comp%rho(:, :, 1), kind=4)
+  eos(3, :, :) = real(comp%ne(:, :, 1), kind=4)
+  eos(4, :, :) = real(comp%pg(:, :, 1), kind=4)
+  eos(5, :, :) = real(comp%E(:, :, 1), kind=4)
+  call self%save3(eos, 'eos')
   call trace%end(itimer)
 END SUBROUTINE generate_eos_table
 

@@ -161,18 +161,21 @@ SUBROUTINE composition_pre_init (self)
     endif
   else
     deallocate(atom_patch)
-    if (external_sp .and. n_mu>0) then
-      if (ilambd > 0) then
-        do mu=1,2
-          call self%create_sub_patches([-n_nu, -1], mu, output_sp)
-        end do
+    if (external_sp) then
+      if (n_mu > 0) then
+        if (ilambd > 0) then
+          do mu=1,2
+            call self%create_sub_patches([-n_nu, -1], mu, output_sp)
+          end do
+        endif
+        call self%create_sub_patches([-n_nu, -1], -1, output_sp)
+        !stop 'No atom nor output spectrum specified! Stopping...'
+      elseif (make_eos .and. self%key(1)==1) then
+        call self%create_sub_patches([-n_nu, -1], -1, output_sp)
       endif
-      call self%create_sub_patches([-n_nu, -1], -1, output_sp)
-      !stop 'No atom nor output spectrum specified! Stopping...'
     endif
   endif
 
-  
   call self%save_abundances_to_file()
   call self%post_pre_init()
   call trace%end(itimer)
