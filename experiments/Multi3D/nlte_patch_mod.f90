@@ -23,7 +23,7 @@ MODULE nlte_patch_mod
   premature_finish, m3d_patch_pre_update=>pre_update, save_resolved, &
   column_by_column, rotate_atmos, check_NaN, rank_lvlerr, sample_back_opac, &
   decouple_continuum, linelist_in_output, sample_back_opac_in_output, ilambd, &
-  Jnu_to_file, preconditioning
+  Jnu_to_file, preconditioning, make_eos
   USE ray_mod, only: one_dimensional, ray_type
   USE trans_mod, only:line_type, cont_type
   USE bbtrans_mod, only:voigt_function2, voigt_profile
@@ -44,6 +44,7 @@ MODULE nlte_patch_mod
     real(4), dimension(:,:,:,:,:), allocatable :: Jnu
     real(4), dimension(:,:,:,:), allocatable :: Psi, PsiJ
     real(4), dimension(:,:,:), allocatable :: opac_table
+    real(4), dimension(:,:,:), allocatable :: eta_table
     real(4), dimension(:), allocatable :: twohnu3_c2
     real(8), dimension(:), pointer :: nu
     integer :: nline=0, ncont=0, mus, mue, n_set, nf, n_mu
@@ -56,6 +57,7 @@ MODULE nlte_patch_mod
     procedure :: lte_background_opacities
     procedure :: add_scattering
     procedure :: generate_opacity_table
+    procedure :: generate_eos_table
     procedure :: interpolate_opacity_table
     procedure :: add_bound_free_opacities
     procedure :: bound_bound_damping
@@ -215,7 +217,7 @@ SUBROUTINE execute (self)
   real(8) :: vec(3)
   character(8) :: Jnu_label
   logical :: skip, use_linelist, get_cntrbf, end_boundary, include_absmet
-  logical :: do_rotate_atmos, do_sample_opac
+  logical :: do_rotate_atmos, do_sample_opac, do_make_eos
   integer :: i, j, i_mu, zs, ze, p(3), ng, i_set, l, nnu_cntrbf
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
@@ -254,13 +256,22 @@ SUBROUTINE execute (self)
   self%twohnu3_c2 = twoh_c2 * self%nu**3
 
   do_sample_opac = sample_back_opac .and. (self%in_ray .or. sample_back_opac_in_output)
+  do_make_eos = end_boundary .and. make_eos .and. self%out_ray !make_eos .and. self%in_ray
   include_absmet = (self%in_ray .and. (self%i_nu > self%n_nu .or. .not. decouple_continuum)) &
               .or. (self%out_ray .and. absmet_in_output)
   
 
   comp => self%composition
   
-  call self%lte_background_opacities(comp, include_absmet=include_absmet, do_sample_opac=do_sample_opac)
+  call self%lte_background_opacities(comp, include_absmet=include_absmet, do_sample_opac=do_sample_opac, do_make_eos=do_make_eos)
+
+  if (do_make_eos) then
+    call self%save_intensity()
+    call self%deallocate_mem()
+    call deallocate_arrays()
+    call trace%end(itimer)
+    return
+  endif
 
   if (ilambd > 0 .and. (self%iter > 0 .or. self%out_mu)) then
     call self%add_scattering(comp)
@@ -479,11 +490,11 @@ contains
 END SUBROUTINE execute
 
 !===============================================================================
-SUBROUTINE lte_background_opacities (self, comp, include_absmet, do_sample_opac)
+SUBROUTINE lte_background_opacities (self, comp, include_absmet, do_sample_opac, do_make_eos)
   class(nlte_patch_t) :: self
   class(composition_type) :: comp
   real(4) :: h_kT, hv_kT, bnu
-  logical :: include_absmet, do_sample_opac
+  logical :: include_absmet, do_sample_opac, do_make_eos
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('nlte_patch%lte_background_opacities', itimer=itimer)
@@ -506,6 +517,11 @@ SUBROUTINE lte_background_opacities (self, comp, include_absmet, do_sample_opac)
       call self%generate_opacity_table(self%nu(fs:fe), include_absmet)
     endif
     call self%interpolate_opacity_table(comp%temp, comp%ne, comp%rho)
+  elseif (do_make_eos) then
+    if (self%iter==0) then
+      call self%generate_opacity_table(self%nu(fs:fe), include_absmet)
+      call self%generate_eos_table(self%nu(fs:fe), include_absmet)
+    endif
   else
     call comp%absorption(self%nu, back(:,:,:,:,1), blz=back(:,:,:,:,3), &
     include_absmet=include_absmet, sorted=self%sp%sorted)
@@ -580,7 +596,7 @@ SUBROUTINE generate_opacity_table (self, nu, include_absmet)
   class(nlte_patch_t), target :: self
   class(composition_type), pointer :: comp
   real(8), dimension(:), pointer, intent(in) :: nu
-  real(4), dimension(:,:,:,:), pointer :: view
+  real(4), dimension(:,:,:,:), pointer :: view, all_eta
   logical, intent(in) :: include_absmet
   real(4) :: over_rho
   integer :: i,j,k, ntemp, nne, nnu
@@ -593,11 +609,14 @@ SUBROUTINE generate_opacity_table (self, nu, include_absmet)
   nne   = size(comp%temp,2)
   allocate(self%opac_table(fs:fe, ntemp, nne), source=0.)
   call mem_register(self%opac_table, label='opac_table')
+
   view(1:nnu, 1:ntemp, 1:nne, 1:1) => self%opac_table
   call comp%absorption(nu, view, include_absmet=include_absmet, sorted=self%sp%sorted)
+
   if (comp%ll_initialised) then
     call comp%add_linelist_opacities(nu, view, dlam)
   endif
+
   do k=1, nne
   do j=1, ntemp
     over_rho = 1 / comp%rho(j,k,1)
@@ -606,6 +625,48 @@ SUBROUTINE generate_opacity_table (self, nu, include_absmet)
   end do
   call trace%end(itimer)
 END SUBROUTINE generate_opacity_table
+
+!===============================================================================
+SUBROUTINE generate_eos_table (self, nu, include_absmet)
+  class(nlte_patch_t), target :: self
+  class(composition_type), pointer :: comp
+  real(8), dimension(:), pointer, intent(in) :: nu
+  real(4), dimension(:,:,:,:), allocatable :: eos
+  logical, intent(in) :: include_absmet
+  real(4) :: over_rho
+  integer :: i,j,k, ntemp, nrho, nnu
+  integer, save :: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin('nlte_patch%generate_eos_table', itimer=itimer)
+
+  comp => self%m3d_parent%tab_comp
+
+  nnu = size(self%opac_table, 1)
+  ntemp = size(self%opac_table, 2)
+  nrho = size(self%opac_table, 3)
+  allocate(eos(nnu, ntemp, nrho, 2))
+
+  eos(:, :, :, 1) = self%opac_table
+  if (allocated(self%eta_table)) then
+    eos(:, :, :, 2) = self%eta_table
+  else
+    eos(:, :, :, 2) = 1.0
+  endif
+  call self%save4(eos, 'opa')
+  deallocate(eos)
+
+  allocate(eos(5, ntemp, nrho, 1))
+  eos(1, :, :, 1) = real(comp%temp(:, :, 1), kind=4)
+  eos(2, :, :, 1) = real(comp%rho(:, :, 1), kind=4)
+  eos(3, :, :, 1) = real(comp%ne(:, :, 1), kind=4)
+  eos(4, :, :, 1) = real(comp%pg(:, :, 1), kind=4)
+  eos(5, :, :, 1) = real(comp%E(:, :, 1), kind=4)
+
+  call self%save4(eos, 'eos')
+  deallocate(eos)
+
+  call trace%end(itimer)
+END SUBROUTINE generate_eos_table
 
 !===============================================================================
 SUBROUTINE interpolate_opacity_table (self, temp, ne, rho)
