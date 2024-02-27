@@ -138,7 +138,7 @@ SUBROUTINE composition_pre_init (self)
     call atom_patch%pre_init_and_link(self)
     self%atom_patch => atom_patch
 
-    if (ilambd + maxiter > 0) then
+    if (maxiter > 0) then
       do mu=1,2
         if (decouple_continuum) then
           call self%create_sub_patches([1, n_nu],      mu, atom_patch%bb_sp, atom_patch%bb_atom)
@@ -150,11 +150,21 @@ SUBROUTINE composition_pre_init (self)
     endif
     
     if (n_mu>0) then
+      if (ilambd > 0) then
+        do mu=1,2
+          call self%create_sub_patches([-n_nu, -1], mu, output_sp, atom_patch%output_atom)
+        end do
+      endif
       call self%create_sub_patches([-n_nu, -1], -1, output_sp, atom_patch%output_atom)
     endif
   else
     deallocate(atom_patch)
     if (external_sp .and. n_mu>0) then
+      if (ilambd > 0) then
+        do mu=1,2
+          call self%create_sub_patches([-n_nu, -1], mu, output_sp)
+        end do
+      endif
       call self%create_sub_patches([-n_nu, -1], -1, output_sp)
       !stop 'No atom nor output spectrum specified! Stopping...'
     endif

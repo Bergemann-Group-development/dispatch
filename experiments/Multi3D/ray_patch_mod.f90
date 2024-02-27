@@ -84,11 +84,11 @@ SUBROUTINE ray_patch_pre_init (self)
   
   if (self%i_mu == 0) then
     self%wmu = 1
-  elseif (self%out_ray) then
+  elseif (self%out_mu) then
     self%vec = long_vec(:,i_mu) 
     self%wmu = long_wmu(i_mu) / (2.0*PI)
     self%dir = 1
-  elseif(i_mu > 0) then
+  else
     self%vec = vec(:,i_mu)
     self%wmu = wmu(i_mu) * over_4pi
     self%dir = merge(1, -1, self%vec(3) > 0)
@@ -195,7 +195,7 @@ SUBROUTINE ray_nbor_relations(self, another, needed, needs_me, download)
         elseif (another%is_upstream(self)) then
           needed = .false.
           download = .false.
-        else
+        elseif (self%ipos(3) /= another%ipos(3)) then
           needed = .false.; needs_me = .false.; download = .false.
         endif
       endif

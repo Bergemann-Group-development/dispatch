@@ -9,7 +9,7 @@ MODULE atom_patch_mod
     USE link_mod, only: nbor_t
     USE handyfuncs_mod
     USE atom_mod, only: atom_type, atomic_spectrum_type, use_classic_col, kramer_bf, debye_shield, &
-                        red_cut, blue_cut, logf_cut, atom_data_t, m1d_legacy_mode, nq_fac
+                        red_cut, blue_cut, logf_cut, atom_data_t, m1d_legacy_mode, nq_fac, nq_min
     USE trans_mod, only: line_type, cont_type
     USE mconst, only: CC
     USE ion_mod, only: ion_type, particle_type
@@ -60,10 +60,12 @@ MODULE atom_patch_mod
       procedure :: ng_acceleration
     end type atom_patch_t
 
-    integer, save :: epos(3), elvl, ng_type=1
+    integer, save :: epos(3), elvl
     logical, save :: level_partf=.true.
     logical, save :: exclude_from_line_list=.true.
     logical, save :: detailed_absmet=.false.
+    logical, save :: pandas_format=.false.
+    logical, save :: save_populations=.true.
     character(len=256), save :: precomputed_depart=''
     character(len=256), public :: atom_file=''
     logical, public, save :: external_sp=.false.
@@ -106,7 +108,8 @@ MODULE atom_patch_mod
     namelist /atom_params/ atom_file, qnorm, convlim, exclude_trace_cont, level_partf, &
     use_atom_abnd, logf_cut, red_cut, blue_cut, n_in_lines, abundance, debye_shield, &
     exclude_from_line_list, precomputed_depart, use_classic_col, kramer_bf, overlapping_bf, &
-    overlapping_bb, nq_fac, hydrogen_BPO, detailed_absmet, n_cntrbf, convmax, premature_finish, ng_type
+    overlapping_bb, hydrogen_BPO, detailed_absmet, n_cntrbf, convmax, premature_finish, &
+    pandas_format, save_populations, nq_fac, nq_min
     namelist /line_mask/ in_lines, cntrbf_lines
     !-----------------------------------------------------------------------------
     call trace%begin('atom_patch_t%pre_init_atom', itimer=itimer)
@@ -140,7 +143,11 @@ MODULE atom_patch_mod
       endif
 
       write (*,*) ' - Reading atom'
-      call atom%read(atom_file, qnorm, in_lines=in_lines, read_coll=.true.)
+      if (pandas_format) then
+        call atom%read_pandas(atom_file, qnorm, in_lines=in_lines)
+      else
+        call atom%read(atom_file, qnorm, in_lines=in_lines, read_coll=.true.)
+      endif
       atom%name = 'input'
       atom%verbose = self%verbose
       allocate(rank_lvlerr(atom%nlevel), source=0.d0)
@@ -347,7 +354,7 @@ MODULE atom_patch_mod
       gamma_ji => adata%gamma_ji
 
       if (self%iter == 1) then
-        self%dtime = self%dt_fixed
+        !self%dtime = self%dt_fixed
 
         ! Normalize wphi
         do i=1, atom%nline
@@ -414,6 +421,8 @@ MODULE atom_patch_mod
         if (self%linecheck<=atom%nrad) then
           memcheck(2) = adata%gamma_ij(p(1),p(2),p(3),l)
           memcheck(3) = adata%gamma_ji(p(1),p(2),p(3),l)
+          !memcheck(2) = memcheck(3) / memcheck(2)
+          !memcheck(3) = adata%n(p(1),p(2),p(3),atom%line(l)%i) / adata%n(p(1),p(2),p(3),atom%line(l)%j)
           if (l<=atom%nline) then
             memcheck(4) = adata%wphi(p(1),p(2),p(3),l)
           endif
@@ -592,7 +601,9 @@ MODULE atom_patch_mod
       end do
     endif
 
-    call self%save6(out_mem, label='atom_patch')
+    if (save_populations) then
+      call self%save6(out_mem, label='atom_patch')
+    endif
     call self%m3d_patch_t%finish()
 
     do i=1, atom%nlevel

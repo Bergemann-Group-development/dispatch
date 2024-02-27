@@ -21,7 +21,6 @@ MODULE trans_mod
       integer :: ntrans ! transition identifier
       integer :: j=0 ! upper level  
       integer :: i=0 ! lower level
-      integer :: nq  ! number of input frequencies in the line
 
       real(8) :: upper_ev
 
@@ -49,7 +48,7 @@ MODULE trans_mod
                                       ! for now only 'voigt' or
                                       ! 'hlinop' for hydrogen
 
-    real(8) :: lambda0       ! line center vacuum wavelength [cm]
+    real(8) :: lam0       ! line center vacuum wavelength [cm]
     logical :: hydrogen
     real(4),dimension(:), pointer, contiguous :: q => null() ! frequencies [Doppler units]
     real(8),dimension(:), pointer, contiguous :: wq => null()  ! frequency quadrature weight [Doppler units]

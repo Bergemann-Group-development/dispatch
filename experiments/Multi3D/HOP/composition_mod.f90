@@ -684,7 +684,7 @@ contains
 
                 lam_vac = air2vac(lam0) * 1e-8
                 line%nu0 = CC / lam_vac
-                line%Aji = hh * f_to_Aji * 10**loggf / (line%upper_g * lam_vac**2)
+                line%Aji = f_to_Aji * 10**loggf / (line%upper_g * lam_vac**2)
                 line%Bji = c2_2h / line%nu0**3 * line%Aji
                 line%Bij = line%Bji * line%upper_g ! 1 / gi is missing but cancels when multiplying with ni
 
@@ -1498,28 +1498,29 @@ contains
     END SUBROUTINE absorption
 
     !===============================================================================
-    SUBROUTINE scattering (self, nu, abslte, eta, sumsca, Jnu)
+    SUBROUTINE scattering (self, nu, eta, Jnu)
         class(composition_type), target :: self
-        real(dp), dimension(:),     intent(in) :: nu
-        real(4), dimension(:,:,:,:), intent(in) :: abslte
+        real(dp), dimension(:), intent(in) :: nu
         real(4), dimension(:,:,:,:), intent(inout) :: eta
-        real(4), dimension(:,:,:,:), intent(in), optional :: Jnu, sumsca
-        integer :: f, nf
+        real(4), dimension(:,:,:,:), intent(in) :: Jnu
+        real(4), dimension(:,:,:,:), allocatable :: sumsca
+        real(4) :: bnu
+        integer :: f, i, j, k, n(4)
         !---------------------------------------------------------------------------
-        nf = size(nu, 1)
-        if (present(Jnu)) then
-            do f=1, nf
-                eta(:,:,:,f) = real((abslte(:,:,:,f)*planck(nu(f), self%temp) + sumsca(:,:,:,f)*Jnu(:,:,:,f)))
-            end do
-        elseif (present(sumsca)) then
-            do f=1, nf
-                eta(:,:,:,f) = real((abslte(:,:,:,f) + sumsca(:,:,:,f)) * planck(nu(f), self%temp))
-            end do
-        else
-            do f=1, nf
-                eta(:,:,:,f) = real(abslte(:,:,:,f) * planck(nu(f), self%temp))
-            end do
-        endif
+        n = shape(Jnu)
+        allocate(sumsca, mold=Jnu)
+        sumsca = 0
+        call self%electron_scattering(sumsca)
+        call self%rayleigh_scattering(cc / nu * 1e8, sumsca)
+        do k=1, n(4)
+        do j=1, n(3)
+        do i=1, n(2)
+        do f=1, n(1)
+            eta(f,i,j,k) = eta(f,i,j,k) + sumsca(f,i,j,k) * Jnu(f,i,j,k)
+        end do
+        end do
+        end do
+        end do
     END SUBROUTINE scattering
 
     !===============================================================================

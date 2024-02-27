@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from .auxfuncs import convol, vacuum2obs, _vacuum2obs, is_number, compute_tau_scale, find_close, interp_tau, get_qmax
+from .auxfuncs import continuum, convol, vacuum2obs, _vacuum2obs, is_number, compute_tau_scale, find_close, interp_tau, get_qmax
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 
@@ -64,7 +64,7 @@ class trans_class(object):
         self.lam0 = _vacuum2obs(self.alamb)
 
         if kr < atom.nline:
-            if not hasattr(atom, 'c_lam0'):
+            if not hasattr(self, 'c_lam0'):
                 self.c_lam0 = self.lam0
                 self.c_loggf = np.log10(self.fosc * self.lower.g)
 
@@ -190,8 +190,6 @@ class trans_class(object):
                 vdop=None, vshift=None, convolve=None, renorm=False,
                 LTE=False, title=None, set_labels=True, **kwargs):
         #-----------------------------------------------------------------
-        if self.run.n_ang == 1: ang=0
-
         xx, yy = self.crop(ang=ang, imu=imu, norm=norm, dlam=dlam,
                             vdop=vdop, vshift=vshift, convolve=convolve,
                             renorm=renorm, LTE=LTE)
@@ -201,7 +199,7 @@ class trans_class(object):
 
         if type(label) is str:
             if '{WEQ}' in label:
-                weq = self.calc_weq(ang=ang, imu=imu, dlam=dlam, LTE=LTE)
+                weq = self.calc_weq(ang=ang, imu=imu, dlam=dlam, renorm=renorm, LTE=LTE)
                 label = label.replace('{WEQ}', '{:.2f}'.format(weq))
 
         plot = plt.plot(xx, yy, label=label, **kwargs)
@@ -216,11 +214,12 @@ class trans_class(object):
     def crop(self, ang=None, imu=None, norm=True, dlam=None, \
                 vdop=None, vshift=None, convolve=None, renorm=False, LTE=False):
         #-----------------------------------------------------------------
+        xx, mask = self.get_xx(dlam)
+        
         if not LTE and self.run.mode=='LTE':
             print('Cannot get NLTE line profile, because run was in LTE!')
             LTE = True
 
-        xx, mask = self.get_xx(dlam)
         yy, cnt = self.run.get_yy(ang, imu, norm, LTE=LTE, mask=mask)
         
         if renorm:
@@ -273,6 +272,10 @@ class trans_class(object):
         #-----------------------------------------------------------------
         if hasattr(self, 'prepared'):
             if not self.prepared: self.prepare()
+
+        if not hasattr(self, 'run'):
+            self.run = self.atom.run
+
         xx = self.run.lam
 
         if dlam is None or isinstance(dlam, (bool)):
@@ -295,10 +298,11 @@ class trans_class(object):
         return xx, mask
         
     #=====================================================================
-    def calc_weq(self, dlam=None, ang=None, imu=None, LTE=False):
+    def calc_weq(self, dlam=None, ang=None, imu=None, renorm=False, LTE=False):
         #-----------------------------------------------------------------
         xx, mask = self.get_xx(dlam)
         yy, cnt = self.run.get_yy(ang, imu, norm=True, LTE=LTE, mask=mask)
+        if renorm: yy = yy / continuum(xx, yy)
         weq = np.trapz(1 - yy, x=xx) * 1e3
         return weq
     

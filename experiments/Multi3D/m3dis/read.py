@@ -1,8 +1,8 @@
 from .atom import atom_class
 from .trans import trans_class
 from .auxfuncs import vacuum2obs, continuum, freq_quad, convol, SBOL, CC, interp_tau, check_file, compute_tau_scale
-from .fast_atom import fast_atom
-from .fast_trans import lines_class
+from .fast_atom import fast_atom, pandas_atom
+from .fast_trans import fast_trans
 import numpy as np
 import pandas as pd
 import dask.array as da
@@ -91,6 +91,8 @@ class read(object):
             self.all_lam = vacuum2obs(np.fromfile(sfolder + 'all_lam.bin', dtype=np.float64))[::-1]
         
         atom_file = folder + 'atom.txt'
+        pandas_format = 'pandas_format' in self.nml['atom_params']
+        if pandas_format: pandas_format = pandas_format & self.nml['atom_params']['pandas_format']
         if os.path.isfile(atom_file):
             self.qnorm = self.nml['atom_params']['qnorm']
             loggf_cut  = self.nml['atom_params']['logf_cut']
@@ -98,25 +100,31 @@ class read(object):
             blue_cut   = self.nml['atom_params']['blue_cut']
             in_abnd    = self.nml['atom_params']['abundance']
 
-            if fast_read:
-                self.atom = fast_atom(atom_file, qnorm=self.qnorm, **kwargs)
-                
-                if (hasattr(self, 'lam')):
-                    bb = self.atom.bb
-                    lvls = self.atom.level
-                    self.atom.trans = lines_class(self.atom, bb, self)
+            self.in_lines = slice(None, None)
+            if 'line_mask' in self.nml.keys():
+                if 'in_lines' in self.nml['line_mask'].keys():
+                    in_lines = self.nml['line_mask']['in_lines']
+                    if type(in_lines)==int: in_lines=[in_lines]
+                    self.in_lines = np.array(in_lines)-1
 
-                    if 'line_mask' in self.nml.keys():
-                        if 'in_lines' in self.nml['line_mask'].keys():
-                            in_lines = self.nml['line_mask']['in_lines']
+            if pandas_format or fast_read:
+                if pandas_format:
+                    self.atom = pandas_atom.read(atom_file)
+                else:
+                    self.atom = fast_atom(atom_file, **kwargs)
 
-                    bb = bb.iloc[np.array(in_lines)-1]
-                    mask = bb.loggf > loggf_cut
-                    mask = mask & (bb.lam_vac_red > blue_cut) 
-                    mask = mask & (bb.lam_vac_blue < red_cut) 
-                    lines = lines_class(self.atom, bb[mask], self)
-                    self.nline = len(lines)
-                    self.line = lines
+                self.atom.run = self
+
+                if hasattr(self, 'lam'):
+                    self.atom.load_sp(self.lam, qnorm=self.qnorm)
+                    self.line = self.atom.trans[self.in_lines]
+
+                    #mask = bbt.loggf > loggf_cut
+                    #mask = mask & (bbt.lam_vac_red > blue_cut) 
+                    #mask = mask & (bbt.lam_vac_blue < red_cut) 
+                    #lines = lines_class(self.atom, bbt[mask], self)
+                    #self.nline = len(lines)
+                    #self.line = lines
 
             else:
                 self.atom = atom_class(atom_file, qnorm=self.qnorm, verbose=verbose, **kwargs)
@@ -126,14 +134,11 @@ class read(object):
 
                 lines = self.atom.trans[:self.atom.nline]
 
-                if 'line_mask' in self.nml.keys():
-                    if 'in_lines' in self.nml['line_mask'].keys():
-                        in_lines = self.nml['line_mask']['in_lines']
-                        if type(in_lines)==int: in_lines=[in_lines]
-                        lines = [self.atom.trans[i-1] for i in in_lines]
+                if hasattr(self, 'in_lines'):
+                    lines = np.array(self.atom.trans)[self.in_lines]
                     
-                lines = [line for line in lines if np.log10(line.fosc*line.lower.g) > loggf_cut]
-                lines = [line for line in lines if line.lam_red > blue_cut and line.lam_blue < red_cut]
+                #lines = [line for line in lines if np.log10(line.fosc*line.lower.g) > loggf_cut]
+                #lines = [line for line in lines if line.lam_red > blue_cut and line.lam_blue < red_cut]
                 self.nline = len(lines)
                 self.line = lines
 
@@ -347,13 +352,12 @@ class read(object):
         
         if norm:
             yy = yy / cnt
-
             
         return np.array(yy), np.array(cnt)
     
     #=====================================================================
     def crop(self, lam0=None, dlam=None, xmin=None, xmax=None, vdop=None, 
-             vshift=None, convolve=None, per_aa=False, **kwargs):
+             vshift=None, convolve=None, per_aa=False, renorm=False, **kwargs):
         #-----------------------------------------------------------------
         xx = self.lam
 
@@ -368,6 +372,10 @@ class read(object):
 
         xx, mask = self.get_xx(xx, dlam, xmin, xmax)
         yy, cnt = self.get_yy(mask=mask, **kwargs)
+
+        if renorm:
+            yy = yy / continuum(xx, yy)
+
         xx = xx + lam0
 
         if vdop is not None or vshift is not None or convolve is not None:
@@ -396,16 +404,16 @@ class read(object):
         return yy
 
     #=====================================================================
-    def plot_spectrum(self, ang=None, imu=None, norm=True, LTE=False,
+    def plot_spectrum(self, ang=None, imu=None, norm=True, renorm=False, LTE=False,
                       vdop=None, vshift=None, lam0=None, dlam=10, cont=False,
                       show_lines=False, xmin=None, xmax=None,  per_aa=False, **kwargs):
         #-----------------------------------------------------------------
-        xx, yy = self.crop(lam0=lam0, dlam=dlam, ang=ang, imu=imu, norm=norm,
+        xx, yy = self.crop(lam0=lam0, dlam=dlam, ang=ang, imu=imu, norm=norm, renorm=renorm,
                            xmin=xmin, xmax=xmax, LTE=LTE, vdop=vdop, vshift=vshift,
                            per_aa=per_aa, cont=cont)
         
         self.set_xaxis(xx, dlam)
-        self.set_yaxis(ang, imu, norm, per_aa=per_aa)
+        self.set_yaxis(ang, imu, norm, renorm=renorm, per_aa=per_aa)
 
         plt.xlabel('Wavelength [Å]')
 
@@ -486,7 +494,7 @@ class read(object):
     def plot_depart(self, ilvl, mean='optical', tau_in=None, **kwargs):
         #-----------------------------------------------------------------
         _, dep = self.get_depart(ilvl)
-        plt.title('Departure coefficient of level {:.2f}[eV]'.format(self.atom.level[ilvl].ev))
+        plt.title('Departure coefficient of level {:}'.format(ilvl))
         plt.ylabel(r'$\rm n\,/\,n_{\rm LTE}$')
         if mean=='optical':
             if self.dim=='3D':

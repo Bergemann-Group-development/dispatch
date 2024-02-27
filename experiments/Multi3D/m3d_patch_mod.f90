@@ -57,7 +57,7 @@ MODULE m3d_patch_mod
       integer :: iter=0, maxiter, master_maxiter, dir=0
       integer :: n_nu, n_omega, n_out, zs, ze
       integer :: fcheck, pcheck(3), linecheck, lvlcheck
-      logical :: out_ray=.false., in_ray=.false.
+      logical :: out_ray=.false., in_ray=.false., out_mu=.false.
       logical :: compressed=.false., save_output=.false., saved=.false.
       logical :: print_update_info, checked_bounds=.false.
       logical :: free_self=.false.
@@ -130,6 +130,7 @@ MODULE m3d_patch_mod
     logical, public, save :: overlapping_bb=.true., overlapping_bf=.true.
     logical, public, save :: absmet_in_output=.false., column_by_column=.false.
     logical, public, save :: print_start=.false., print_send=.false.
+    logical, public, save :: Jnu_to_file=.true.
     logical, public, save:: make_opac_table=.false., rotate_atmos=.false.
     real(8), public, save :: dlam=100.
     real(8), public, dimension(:), allocatable :: rank_lvlerr
@@ -165,7 +166,7 @@ MODULE m3d_patch_mod
     lse_solver, decouple_continuum, m1d_legacy_mode, nu_tolerance, disable_stark, &
     disable_vdw, disable_ga, pivot_z, use_vel, save_Qrad, save_resolved, &
     absmet_in_output, print_lock, make_opac_table, ng_step, ng_start, &
-    column_by_column, rotate_atmos
+    column_by_column, rotate_atmos, Jnu_to_file, preconditioning
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%pre_init', itimer=itimer)
     self%type = trim(self%kind)
@@ -263,6 +264,7 @@ MODULE m3d_patch_mod
     else
       self%n_nu = omp%nthreads
     endif
+    self%out_mu = self%i_mu < 0
     self%out_ray = self%i_nu < 0 .or. self%i_mu < 0
     self%in_ray = .not. self%out_ray
   
@@ -331,6 +333,7 @@ MODULE m3d_patch_mod
         call self%mem_lock(i)%init ('meml', self%id)
       end do
     endif
+    call self%save_lock%init ('save', self%id)
 
     call self%set_maxiter()
     call trace%end (itimer)
@@ -438,7 +441,11 @@ MODULE m3d_patch_mod
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%set_initial_time')
     if (self%out_ray) then
-      self%time = self%time + ilambd + maxiter
+      if (self%out_mu) then
+        self%time = self%time + maxiter + ilambd
+      else
+        self%time = self%time + maxiter
+      endif
     endif
 
     if (self%dir/=0) then
@@ -456,10 +463,10 @@ MODULE m3d_patch_mod
     self%iit(self%nt) = self%new   ! slot for new values
     self%time = self%t(self%it)    ! initial time
 
-    if (self%kind=='atom_patch') then
-      ! this is set back to 1 in update
-      self%dtime = self%dtime + self%dtime*ilambd
-    endif
+    !if (self%kind=='atom_patch') then
+    !  ! this is set back to 1 in update
+    !  self%dtime = self%dtime + self%dtime*ilambd
+    !endif
 
     call trace%end()
   END SUBROUTINE set_initial_time
@@ -477,11 +484,17 @@ MODULE m3d_patch_mod
     case ('atom_patch')
       self%maxiter = maxiter
     case ('nlte_patch')
-      self%maxiter = maxiter + ilambd - 1
-      self%iter = ilambd
+      self%maxiter = maxiter - 1
+      !self%iter = ilambd
     end select
 
-    if (self%out_ray) self%maxiter = 0
+    if (self%out_ray) then
+      if (self%out_mu) then
+        self%maxiter = 0
+      else
+        self%maxiter = ilambd - 1
+      endif
+    endif
     call trace%end()
   END SUBROUTINE set_maxiter
   
@@ -495,7 +508,7 @@ MODULE m3d_patch_mod
       allocate (self%boundaries)
       call self%boundaries%pre_init (self)
     endif
-    if (self%out_ray .and. maxiter==0) then
+    if (self%out_mu .and. maxiter==0) then
       call self%boundaries%clear(bits%zu)
     endif
   END SUBROUTINE init_bdries
@@ -603,7 +616,7 @@ MODULE m3d_patch_mod
     class(m3d_patch_t):: self
     !-----------------------------------------------------------------------------
     self%iter = self%iter + 1
-    if (self%iter > self%maxiter .or. self%nbors_finished()) then
+    if (self%iter > self%maxiter) then! .or. self%nbors_finished()) then
       call self%finish()
     endif
     call self%task_t%rotate
@@ -717,8 +730,8 @@ MODULE m3d_patch_mod
       class is(m3d_patch_t)
         if (another%kind == self%kind) then
           if (another%patch%id == self%patch%id) then
-            needed=.false. ; needs_me=.false. ; download=.false.
-          elseif((another%i_mu /= self%i_mu) .or. (another%i_nu /= self%i_nu)) then
+            download=.false.
+          elseif ((another%i_mu /= self%i_mu) .or. (another%i_nu /= self%i_nu)) then
             needed=.false. ; needs_me=.false. ; download=.false.
           endif
         else
@@ -726,13 +739,13 @@ MODULE m3d_patch_mod
           if (another%patch%id /= self%patch%id) then
             needed=.false. ; needs_me=.false.
           else
-            if(self%i_mu /= 0 .and. another%i_mu /= 0) then
+            if (self%i_mu /= 0 .and. another%i_mu /= 0) then
               if (another%i_mu /= self%i_mu) then
                 needed=.false. ; needs_me=.false. ; download=.false.
               endif
             endif
 
-            if(self%i_nu /= 0 .and. another%i_nu /= 0) then
+            if (self%i_nu /= 0 .and. another%i_nu /= 0) then
               if (another%i_nu /= self%i_nu) then
                 needed=.false. ; needs_me=.false. ; download=.false.
               endif
@@ -865,21 +878,21 @@ MODULE m3d_patch_mod
     class(task_t):: task
     real(8):: d(3), p(3)
     !-----------------------------------------------------------------------------
-    select type (task)
-    class is (m3d_patch_t)
-      if (self%i_mu /= 0 .and. task%i_mu /= 0) then
-        if (self%i_mu /= task%i_mu) then
-          d = huge(1.0)
-          return
-        endif
-      endif
-      if (self%i_nu /= 0 .and. task%i_nu /= 0) then
-        if (self%i_nu /= task%i_nu) then
-          d = huge(1.0)
-          return
-        endif
-      endif
-    end select
+    !select type (task)
+    !class is (m3d_patch_t)
+    !  if (self%i_mu /= 0 .and. task%i_mu /= 0) then
+    !    if (self%i_mu /= task%i_mu) then
+    !      d = huge(1.0)
+    !      return
+    !    endif
+    !  endif
+    !  if (self%i_nu /= 0 .and. task%i_nu /= 0) then
+    !    if (self%i_nu /= task%i_nu) then
+    !      d = huge(1.0)
+    !      return
+    !    endif
+    !  endif
+    !end select
     d = self%task_t%distance_to(task)
   END FUNCTION distance_to
 

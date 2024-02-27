@@ -44,7 +44,7 @@ def vacuum2obs(vac):
     vac = vac.astype(np.float64)
     return _vacuum2obs(vac)
 
-@njit
+#@njit
 def _vacuum2obs(vac):
     ivac2 = 1/vac**2
     convf = 1 + 2.735182e-4 + 131.4182 * ivac2 + 2.76249e8 * ivac2*ivac2
@@ -536,3 +536,16 @@ def find_close(arr, val):
     if i<len(arr)-1:
         if np.isclose(arr[i+1], val, rtol=1e-10): i = i+1
     return i
+
+def stagger_name_to_params(stagger_name):
+  _, teff, logg, feh = re.split('t|g|m', stagger_name)
+  if len(teff)==2: teff = int(teff)*100
+  teff = int(teff)
+  logg = float(logg)/10
+  if len(feh.strip())>2: feh = float(feh)/100
+  feh = float(feh)/10
+  feh = np.round(feh, 2)
+  if feh > 0: feh = -feh
+  if teff==5777 and logg==4.4:
+    teff=5750; logg=4.5
+  return teff, logg, feh
