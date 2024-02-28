@@ -9,6 +9,7 @@ MODULE composition_mod
     USE bbtrans_mod, only:bbtrans_type
     USE bftrans_mod, only:bftrans_type, H_occupation_probability
     USE molecule_mod, only:molec_type
+    USE hprofl_mod, only:prepare_hydrogen_damping, add_lte_h_opacities
     USE osmet_mod
     USE omp_lib
     USE os_mod
@@ -306,6 +307,7 @@ contains
         Hm => H%ions(0) ! H- is ion number 0
         HI => H%ions(1)
         HI%below => Hm
+        HI%nk = 15
 
         Hm%fixed_part = .true.
         Hm%parco = 1
@@ -589,10 +591,11 @@ contains
         character(20) :: ion_id
         character(len=512) :: line_text
         real(dp) :: lam0, gv, gq, loggf, ent8, ent9, mass, cnt_ev, lam_vac, vbar2e4
+        real(dp) :: upper_ev, lower_g
         character :: lower_orb, upper_orb
         character(len=150) :: label
         character :: char
-        integer :: lunit, iostat, j, nline, i, prev, iso_id, iso_idx
+        integer :: lunit, iostat, j, nline, i, prev, iso_id, iso_idx, nkh
         integer, save :: ntotal, nactive
         logical :: isotope, ok
         !-----------------------------------------------------------------------------
@@ -600,6 +603,7 @@ contains
         self%ll_initialised = .true.
         ntotal = 0
         nactive = 0
+        nkh = 0
 
         call os%check_file(linelist_file)
         open(newunit=lunit, file=linelist_file, iostat=iostat)
@@ -669,36 +673,56 @@ contains
             do i=1, nline
                 line => p%line(prev+i)
                 read(lunit,'(A)', iostat=iostat) line_text
-                ! Try to read with stark broadening parameter
-                read(line_text,*,iostat=iostat) lam0, line%lower_ev, loggf, gv, line%upper_g, &
-                    line%ga, gq, lower_orb, upper_orb, ent8, ent9, label
 
-                if (iostat > 0) then
-                    gq = 0.0
-                    ! Try to read without stark broadening parameter
-                    read(line_text, *, iostat=iostat) lam0, line%lower_ev, loggf, gv, line%upper_g, &
-                    line%ga, lower_orb, upper_orb, ent8, ent9, label
-                endif
-                ! Stop if nothing has worked
-                call print_failed_line(lunit, iostat)
+                if (p%id == 'H I') then
+                    read(line_text,*,iostat=iostat) lam0, line%i, line%j, line%lower_ev, upper_ev, loggf, label, line%ga
 
-                lam_vac = air2vac(lam0) * 1e-8
-                line%nu0 = CC / lam_vac
-                line%Aji = f_to_Aji * 10**loggf / (line%upper_g * lam_vac**2)
-                line%Bji = c2_2h / line%nu0**3 * line%Aji
-                line%Bij = line%Bji * line%upper_g ! 1 / gi is missing but cancels when multiplying with ni
+                    ! Stop if nothing has worked
+                    call print_failed_line(lunit, iostat)
 
-                call line%prepare_Stark(gq)
+                    nkh = max(line%j, nkh)
+                    lower_g = 2 * line%i**2
+                    line%upper_g = 2 * line%j**2
+                    lam_vac = air2vac(lam0) * 1e-8
+                    line%nu0 = CC / lam_vac
+                    line%Aji = f_to_Aji * 10**loggf / (line%upper_g * lam_vac**2)
+                    line%Bji = c2_2h / line%nu0**3 * line%Aji
+                    line%Bij = line%Bji * line%upper_g / lower_g
+    
+                    call prepare_hydrogen_damping(line) ! ga is overwritten
+                else
+                    ! Try to read with stark broadening parameter
+                    read(line_text,*,iostat=iostat) lam0, line%lower_ev, loggf, gv, line%upper_g, &
+                        line%ga, gq, lower_orb, upper_orb, ent8, ent9, label
 
-                if (associated(ion)) then
-                    cnt_ev = ion%xion
-                    if (isotope) then
-                        line%iso_idx = iso_idx
-                        vbar2e4 = element%isotope(iso_idx)%compute_vbar2(10000.)
-                    else
-                        vbar2e4 = element%compute_vbar2(10000.)
+                    if (iostat > 0) then
+                        gq = 0.0
+                        ! Try to read without stark broadening parameter
+                        read(line_text, *, iostat=iostat) lam0, line%lower_ev, loggf, gv, line%upper_g, &
+                        line%ga, lower_orb, upper_orb, ent8, ent9, label
                     endif
-                    call line%prepare_VanderWaals(gv, j, cnt_ev, vbar2e4)
+
+                    ! Stop if nothing has worked
+                    call print_failed_line(lunit, iostat)
+    
+                    lam_vac = air2vac(lam0) * 1e-8
+                    line%nu0 = CC / lam_vac
+                    line%Aji = f_to_Aji * 10**loggf / (line%upper_g * lam_vac**2)
+                    line%Bji = c2_2h / line%nu0**3 * line%Aji
+                    line%Bij = line%Bji * line%upper_g ! 1 / gi is missing but cancels when multiplying with ni
+    
+                    call line%prepare_Stark(gq)
+    
+                    if (associated(ion)) then
+                        cnt_ev = ion%xion
+                        if (isotope) then
+                            line%iso_idx = iso_idx
+                            vbar2e4 = element%isotope(iso_idx)%compute_vbar2(10000.)
+                        else
+                            vbar2e4 = element%compute_vbar2(10000.)
+                        endif
+                        call line%prepare_VanderWaals(gv, j, cnt_ev, vbar2e4)
+                    endif
                 endif
 
                 if (line%active) nactive = nactive + 1
@@ -708,6 +732,7 @@ contains
         close(lunit)
         print '(I12, a, I12, a, a)', nactive, ' of ', ntotal, ' lines read from linelist ', trim(linelist_file)
         self%nline = nactive
+        self%elements(1)%ions(1)%nk = max(self%elements(1)%ions(1)%nk, nkh)
         call self%mask_linelist()
 
     contains
@@ -767,7 +792,7 @@ contains
     SUBROUTINE add_linelist_opacities(self, nu, all_chi, dlam, vproj, all_eta)
         class(composition_type), target :: self
         class(element_type), pointer :: element
-        class(ion_type), pointer :: ion
+        class(ion_type), pointer :: ion, HeI
         class(molec_type), pointer :: mol
         class(isotope_type), pointer :: iso
         class(bbtrans_type), pointer :: line
@@ -778,9 +803,8 @@ contains
         real(8), intent(in) :: dlam
         real(4), dimension(:,:,:), allocatable :: tothi, adamp, stark_pe, ne, temp, EK_over_temp, dxij, chi_fac, unsold
         real(4), dimension(:,:,:), allocatable, target :: inv_part, vbar2, inv_df, iso_vbar2, iso_inv_df, iso_inv_part
-        real(4), dimension(:,:,:), pointer, contiguous :: vb2, idopf, ipart, vpr
+        real(4), dimension(:,:,:), pointer, contiguous :: vb2, idopf, ipart, vpr, fo, t3nhe, ni, nj
         real(4), dimension(:,:,:,:), pointer, contiguous :: eta, chi
-        real(4), dimension(:,:,:,:), pointer :: cont
         real(4), dimension(:,:,:,:), allocatable, target :: chi_l
         integer :: i, j, k, l, f, ired, iblue, nactive, prev_iso, m(3)
         real(8) :: cnt_ev, gf, awgt, iso_awgt, dl
@@ -805,6 +829,10 @@ contains
         allocate(dxij,         mold=tothi)
         allocate(chi_fac,      mold=tothi)
         allocate(unsold,       mold=tothi)
+        allocate(fo,           mold=tothi)
+        allocate(t3nhe,        mold=tothi)
+        allocate(ni,           mold=tothi)
+        allocate(nj,           mold=tothi)
         allocate(fmask(size(nu)), source=.false.)
 
         allocate(chi_l, mold=all_chi)
@@ -823,7 +851,31 @@ contains
         tothi = real(self%elements(1)%ions(1)%n) ! total neutral hydrogen density
         stark_pe = ne * temp**one_sixth
 
-        do i=1, self%nel
+        element => self%elements(1)
+        ion => element%ions(1)
+        if (ion%nline > 0) then
+            call self%ion_by_id('He I', HeI)
+            fo = 2.6031*EC * ne**two_third ! Holtsmark normal field strength
+            vbar2 = element%compute_vbar2(temp)
+            t3nhe = (temp/10000.)**0.3 * HeI%n
+            inv_df = element%inverse_doppler_factor(temp)
+
+            do l=1, ion%nline
+                line => ion%line(l)
+                if (.not. line%active) cycle
+                call line%get_range(nu, dlam, ired, iblue)
+                if (iblue == 0) cycle
+
+                ni = ion%levels(line%i)%n
+                nj = ion%levels(line%j)%n
+
+                fmask(ired:iblue) = .true.
+                call add_lte_h_opacities(line, ired, iblue, nu, vproj, inv_df, temp, &
+                ni, nj, ne, tothi, vbar2, fo, t3nhe, chi_l, all_chi)
+            end do
+        endif
+
+        do i=2, self%nel
             element => self%elements(i)
             if (.not. any(element%ions%in_linelist)) cycle
     
@@ -1317,7 +1369,7 @@ contains
         self%shield = 0.08989 * self%ne**0.16667d0 / sqrt(self%temp) ! the shielding parameter
         self%shield = (1.d0 + self%shield)**3.15d0 / self%ne
 
-        HI%nk = 15
+        !HI%nk = 15
         if (allocated(HI%levels)) deallocate(HI%levels)
         allocate(HI%levels(HI%nk))
         allocate(part, mold=self%temp)

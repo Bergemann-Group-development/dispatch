@@ -15,6 +15,14 @@ MODULE bbtrans_mod
                               ! level
     logical :: active=.true., unsold
     integer :: iso_idx=0 ! isotope index for lines in line list
+    ! Added to deal with multi component lines
+    ! IO > 1 leads to the following being read from the atom file
+    integer :: io ! number of components in term (lifted from Multi 2.3)
+    real(8), dimension(:), allocatable :: dq
+    real(8), dimension(:), allocatable :: wt 
+    real(8), dimension(:), allocatable :: da
+    integer :: j=0 ! upper level  
+    integer :: i=0 ! lower level
   contains
     procedure :: profile
     procedure :: damping => line_damping
@@ -144,7 +152,7 @@ contains
             lchi = voigt_function2(a, vs) * cf
             ! if line opacity below tolerance exit and save f
             if (lchi < ref) then
-              f1 = max(ired, f0-f)
+              f1 = max(ired, 2*f0-f)
               exit
             endif
             chi(f,i,j,k) = chi(f,i,j,k) + lchi

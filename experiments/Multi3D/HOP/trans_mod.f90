@@ -19,8 +19,6 @@ MODULE trans_mod
 
   type, extends(bbtrans_type) :: transition_type
       integer :: ntrans ! transition identifier
-      integer :: j=0 ! upper level  
-      integer :: i=0 ! lower level
 
       real(8) :: upper_ev
 
@@ -63,13 +61,7 @@ MODULE trans_mod
     real(8) :: qmax ! width of profile in doppler units
     real(8) :: q0   ! switch from linear to logarithmic frequency grid spacing
 
-    ! Added to deal with multi component lines
-    ! IO > 1 leads to the following being read from the atom file
-    integer :: io ! number of components in term (lifted from Multi 2.3)
-    real(8), dimension(:), allocatable :: dq
-    real(8), dimension(:), allocatable :: wt 
     real(8), dimension(:), allocatable :: fterm 
-    real(8), dimension(:), allocatable :: da
     real(8), dimension(:), allocatable :: gwterm
     real(8), dimension(:), allocatable :: gqterm
     integer :: fs, fe
