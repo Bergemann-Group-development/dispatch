@@ -104,27 +104,19 @@ contains
     do j=1, m(2)
     do i=1, m(1)
       ! Fixed Broadening
-      if (.not. disable_ga) then
-        a = self%ga
-      else
-        a = 0
-      endif
+      a = self%ga
       ! Van der Waals Broadening
-      if (.not. disable_vdw) then
-        if (self%unsold) then
-          a = a + self%gw1 * unsold(i,j,k)
-        else
-          a = a + self%gw1 * vbar2(i,j,k)**self%gw2 * tothi(i,j,k)
-        endif
+      if (self%unsold) then
+        a = a + self%gw1 * unsold(i,j,k)
+      else
+        a = a + self%gw1 * vbar2(i,j,k)**self%gw2 * tothi(i,j,k)
       endif
       ! Stark Broadening
-      if (.not. disable_stark) then
-        if (self%gq >= 0.0) then
-          a = a + self%gq * ne(i,j,k)
-        else! if line%gq < 0
-          a = a - self%gq * stark_pe(i,j,k)
-        end if
-      endif
+      if (self%gq >= 0.0) then
+        a = a + self%gq * ne(i,j,k)
+      else! if line%gq < 0
+        a = a - self%gq * stark_pe(i,j,k)
+      end if
 
       ! fetch variables
       idf = inv_df(i,j,k)
@@ -449,26 +441,20 @@ contains
     real(4), intent(inout) :: adamp
     !----------------------------------------------------------------------------------
     ! Van der Waals Broadening
-    if (.not. disable_vdw) then
-      if (self%unsold) then
-        adamp = adamp + self%gw1 * unsold
-      else
-        adamp = adamp + self%gw1 * vbar2**self%gw2 * tothi
-      endif
+    if (self%unsold) then
+      adamp = adamp + self%gw1 * unsold
+    else
+      adamp = adamp + self%gw1 * vbar2**self%gw2 * tothi
     endif
 
-    if (.not. disable_stark) then
-      ! Stark Broadening
-      if (self%gq >= 0.0) then
-        adamp = adamp + self%gq * ne
-      else! if line%gq < 0
-        adamp = adamp - self%gq * stark_pe
-      end if
-    endif
+    ! Stark Broadening
+    if (self%gq >= 0.0) then
+      adamp = adamp + self%gq * ne
+    else! if line%gq < 0
+      adamp = adamp - self%gq * stark_pe
+    end if
     
-    if (.not. disable_ga) then
-      adamp = adamp + self%ga
-    endif
+    adamp = adamp + self%ga
   END SUBROUTINE line_damping
   !------------------------------------------------------------------------------------ 
   
@@ -521,6 +507,8 @@ contains
     else
       self%gq = gq
     endif
+    if (disable_ga) self%ga = 0
+    if (disable_stark) self%gq = 0
   END SUBROUTINE prepare_Stark
   !------------------------------------------------------------------------------------
 
@@ -628,6 +616,10 @@ contains
     endif
     if (self%gw1 == 0) then
       call self%deactivate()
+    endif
+    if (disable_vdw) then
+      self%unsold = .true.
+      self%gw1 = 0
     endif
   END SUBROUTINE prepare_VanderWaals
   !------------------------------------------------------------------------------------

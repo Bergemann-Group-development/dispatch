@@ -393,30 +393,31 @@ contains
     end if
     self%ga = radamp/self%nu0 * over_4pi
 
-    !  Resonance broadening following Ali & Griem (1966, Phys Rev 144, 366).
-    !  RESONT is dnu/nu per unit H density. Only the lower state is included
-    !  (p-d approx for Balmer lines).  For N > 3 p-states play a very small
-    !  role, and van der Waals might even dominate, there is however no
-    !  available theory for this.  The lower state resonance broadening is
-    !  used as a guess.
-    if (n /= 1) then
-      resont = hfnm(1,n)/(1. - 1./n2)
-    else
-      resont = hfnm(1,m)/(1. - 1./m2)
-    end if
-    self%gw1 = resont * 2.07E-24*gnm
-    self%gw2 = 0
-    self%gw3 = 4.45E-26*gnm*(m2*(7.*m2+5.))**0.4
-
     if (hydrogen_BPO) then
       !  For low Balmer lines use Barklem, Piskunov & O'Mara (2000, A&A 363, 1091)
       !  instead of Ali & Griem for self-broadening. 
       if ((n == 2) .and. (m <= 5)) then
         resont = balfac(mmn)*sigma(mmn)
-        self%gw1 = resont/(self%nu0*2*pi) * 1e-12
         self%gw2 = 0.5*(1. - alf(mmn))
+        self%gw1 = 2 * resont * 10**(-12*self%gw2) / self%nu0 * over_4pi
       end if
+    else
+      !  Resonance broadening following Ali & Griem (1966, Phys Rev 144, 366).
+      !  RESONT is dnu/nu per unit H density. Only the lower state is included
+      !  (p-d approx for Balmer lines).  For N > 3 p-states play a very small
+      !  role, and van der Waals might even dominate, there is however no
+      !  available theory for this.  The lower state resonance broadening is
+      !  used as a guess.
+      if (n /= 1) then
+        resont = hfnm(1,n)/(1. - 1./n2)
+      else
+        resont = hfnm(1,m)/(1. - 1./m2)
+      end if
+      self%gw1 = resont * 2.07E-24*gnm
+      self%gw2 = 0
     endif
+
+    self%gw3 = 4.45E-26*gnm*(m2*(7.*m2+5.))**0.4
 
     !  Approximately include fine structure.  Exact pattern for alpha lines,
     !  M infinite pattern used for others.
@@ -452,7 +453,11 @@ contains
 
     if (disable_ga) self%ga = 0
     if (disable_stark) self%gq = 0
-    if (disable_vdw) self%gw3 = 0
+    if (disable_vdw) then
+      self%gw1 = 0
+      self%gw2 = 0
+      self%gw3 = 0
+    endif
   END SUBROUTINE prepare_hydrogen_damping
 
   !===============================================================================
