@@ -63,11 +63,12 @@ SUBROUTINE composition_pre_init (self)
   character(len=256), save :: absmet_file=''
   character(len=512), save :: linelist_file=''
   character(len=256), save :: line_lists(10)=''
+  real(4) :: tmolim=-99
   logical, save :: first_time=.true., absmet_big_end=.false., external_sp
   namelist /composition_params/ verbose, absdat_file, abund_file, absmet_file, &
   absmet_big_end, isotope_file, molec_file, H_occupation_probability, opac_table, &
   sample_back_opac, sample_back_opac_in_output, &
-  dtemp, ldne, ldrho, ldtemp
+  dtemp, ldne, ldrho, ldtemp, tmolim
   namelist /linelist_params/ dlam, exclude_elements, linelist_file, line_lists, &
   linelist_in_output
   ! ----------------------------------------------------------------------------
@@ -105,6 +106,10 @@ SUBROUTINE composition_pre_init (self)
     call trace%begin('compositiont%init', itimer=itimer2)
     call composition%init(absdat_file, abund_file, absmet_file, FeH, &
     isotope_file=isotope_file, molec_file=molec_file, absmet_big_end=absmet_big_end)
+
+    if (tmolim > -98) then
+      composition%tmolim = tmolim
+    endif
 
     if (linelist_file /= '') then
       call composition%init_linelist(linelist_file)

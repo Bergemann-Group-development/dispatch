@@ -870,7 +870,7 @@ contains
                 nj = ion%levels(line%j)%n
 
                 fmask(ired:iblue) = .true.
-                call add_lte_h_opacities(line, ired, iblue, nu, vproj, inv_df, temp, &
+                call add_lte_h_opacities(line, ired, iblue, nu, vpr, inv_df, temp, &
                 ni, nj, ne, tothi, vbar2, fo, t3nhe, chi_l, all_chi)
             end do
         endif
