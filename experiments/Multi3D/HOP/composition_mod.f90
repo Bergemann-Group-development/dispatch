@@ -1681,10 +1681,10 @@ contains
         tmolim = temp < self%tmolim
 
         where (tmolim)
+            fe = xnecno
             Hm%pk = 1/Hm%saha
             HI%fil = 1 + HI%saha + Hm%pk
-            fe = xnecno
-            b = H2%dis * pe/fe
+            b = 2 * H2%dis * pe/fe
             q = - HI%abund/b
             p = HI%fil/b
             HI%f = solve_quadratic(p, q)
@@ -1820,10 +1820,10 @@ contains
         class(molec_type), pointer :: mol
         class(ion_type), pointer :: ion, HI, Hm
         real(dp), intent(out), dimension(:,:,:) :: eh, pg, e
-        real(dp), dimension(:,:,:), allocatable :: xerg, ejon
+        real(dp), dimension(:,:,:), allocatable :: xerg, ejon, emol
         integer :: i, j
         !---------------------------------------------------------------------------
-        allocate(xerg, ejon, mold=pg)
+        allocate(xerg, ejon, emol, mold=pg)
         call self%ion_by_id('H I', HI)
         call self%ion_by_id('H -', Hm)
 
@@ -1835,7 +1835,7 @@ contains
             do j=1, element%nion
                 ion => element%ions(j)
                 pg = pg + ion%n
-                if (associated(ion%above)) then
+                if (i>1 .and. associated(ion%above)) then
                     xerg = ion%xion - self%dxi*j
                     ! energy of ionization (ejon). hydrogen is not included.
                     ejon = ejon + ion%above%n * xerg
@@ -1843,17 +1843,19 @@ contains
             end do
         end do
 
+        emol = 0
         do i=1, self%nmolec
             mol => self%molecules(i)
             pg = pg + mol%n
-            eh = eh + mol%calc_e(self%teta, self%temp, self%dxi)
+            emol = emol + mol%calc_e(self%teta, self%temp, self%dxi)
         end do
 
         ! The gas pressure is Pg = NkT, where N is (Ne + Ni + Nmol)
         pg = pg * BK * self%temp
 
         !ehm = (Hm%xion + HI%xion) * Hm%f
-        E = (1.5*pg + EE*(ejon + eh)) / self%rho
+        E = EE*(ejon + eh + emol)
+        E = (1.5*pg + E) / self%rho
     END SUBROUTINE compute_energy_and_gas_pressure
 
     !===============================================================================

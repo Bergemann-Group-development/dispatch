@@ -39,11 +39,12 @@ MODULE composition_patch_mod
     procedure :: save_abundances_to_file
     procedure :: init_tabulated_comp
     procedure :: init_eos_comp
+    procedure :: save_eos_variables
     procedure :: nbor_relations => composition_patch_nbor_relations
   end type
   
   real(8), public :: FeH=0, dtemp=250., ldne=0.25, ldrho=0.25, ldtemp=0.1
-  logical, public :: save_atmos=.true.
+  logical, public :: save_atmos=.true., save_eos=.false.
 
 contains
 
@@ -289,6 +290,10 @@ SUBROUTINE execute (self)
       call self%save5(self%mem(:,:,:,:,self%it,:), 'atmos')
     endif
 
+    if (save_eos) then
+      call self%save_eos_variables()
+    endif
+
     if (sample_back_opac) then
       call self%init_tabulated_comp(self%composition%temp, self%composition%ne, dtemp=dtemp, ldne=ldne)
     elseif (make_eos) then
@@ -382,6 +387,25 @@ SUBROUTINE init_eos_comp (self, temp, rho, ldtemp, ldrho)
 
   call self%tab_comp%load_state_variables(tab_temp, tab_ne, tab_rho, use_rho=.true., use_ne=.false.)
 END SUBROUTINE init_eos_comp
+
+SUBROUTINE save_eos_variables (self)
+  class(composition_patch_t), target :: self
+  class(composition_type), pointer :: comp
+  real(4), dimension(:,:,:,:), allocatable :: eos
+  integer :: nx, ny, nz
+  integer, save :: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin('nlte_patch%save_eos_variables', itimer=itimer)
+  comp => self%composition
+  nx = size(comp%temp,1)
+  ny = size(comp%temp,2)
+  nz = size(comp%temp,3)
+  allocate(eos(nx,ny,nz,2))
+  eos(:,:,:,1) = comp%pg
+  eos(:,:,:,2) = comp%E
+  call self%save4(eos, 'eos')
+  call trace%end(itimer)
+END SUBROUTINE save_eos_variables
 
 !===============================================================================
 SUBROUTINE print_post_update_info (self)

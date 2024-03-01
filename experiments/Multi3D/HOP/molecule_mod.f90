@@ -57,10 +57,10 @@ FUNCTION calc_e(self, teta, temp, dxi) result(e)
     integer :: i
     !---------------------------------------------------------------------------
     if (size(self%de) > 1) then
-        dis = poly1d(teta, self%de(1), self%de(2), self%de(3), self%de(4), self%de(5))*temp/EK
-        
-        if (trim(self%id) == 'H2' ) dis = - (dis - 4.476)
-        if (trim(self%id) == 'H2+') dis = - (dis - 2.648)
+        if (trim(self%id) == 'H2' ) dis = 4.476
+        if (trim(self%id) == 'H2+') dis = 2.648
+        ! rotational and vibrational energy has to be subtracted
+        dis = dis - poly1d(teta, self%de(1), self%de(2), self%de(3), self%de(4), self%de(5))*temp/EK
     else
         dis = self%de(1)
     endif
