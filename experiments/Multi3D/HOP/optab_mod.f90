@@ -59,7 +59,7 @@ contains
         class(optab_type) :: self
         real(4), contiguous, dimension(:,:,:,:), target :: chi, eta
         real(4), contiguous, dimension(:,:,:), target :: temp, rho
-        real(4), dimension(:), pointer, contiguous :: chi1, eta1, temp1, rho1
+        real(4), dimension(:), pointer :: chi1, eta1, temp1, rho1
         real(4), dimension(:), allocatable :: ltemp, lrho
         real(4), dimension(:,:), allocatable :: scratch
         integer :: i,j,k,t,r,f,m(4)

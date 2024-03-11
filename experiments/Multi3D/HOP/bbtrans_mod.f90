@@ -141,7 +141,7 @@ contains
             endif
             chi(f,i,j,k) = chi(f,i,j,k) + lchi
           end do
-          ! no do red wing, starting where blue wing left off
+          ! now do red wing, starting where blue wing left off
           do f=f1, f0-1
             vs = (qq(f) - v) * idf
             lchi = voigt_function2(a, vs) * cf

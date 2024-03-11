@@ -167,7 +167,7 @@ class read(object):
             self.nmu = self.mus.size
 
         make_eos = False
-        if 'make_eos' in self.nml['m3d_params']: make_eos = True
+        if 'make_eos' in self.nml['m3d_params']: make_eos = self.nml['m3d_params']['make_eos']
         
         if hasattr(self, 'lam') and not make_eos:
             if (verbose > 0): print('Reading Intensities')
