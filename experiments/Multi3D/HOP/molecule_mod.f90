@@ -69,8 +69,8 @@ FUNCTION calc_e(self, teta, temp, dxi) result(e)
         ion => self%ions(i)%p
 
         ! why only consider ionisation energy from H?
-        if (trim(ion%id) == 'H  I') then
-            dis = dis + ion%levels(1)%xion - dxi
+        if (trim(ion%id) == 'H I') then
+            dis = dis + ion%xion - dxi
         endif
     end do
 

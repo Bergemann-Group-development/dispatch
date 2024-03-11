@@ -511,9 +511,8 @@ contains
 
 
   !===============================================================================
-  elemental real(dp) FUNCTION solve_quadratic(p, q, avoid_negative) result(x)
+  elemental real(dp) FUNCTION solve_quadratic(p, q) result(x)
     real(dp), intent(in) :: p, q
-    logical, intent(in), optional :: avoid_negative
     real(dp) :: cam, root
     !----------------------------------------------------------------------------
     if (p > 0) then
@@ -523,11 +522,6 @@ contains
       cam = - 0.5d0*p
       root = sqrt(abs(cam*cam - q))
       x = cam + root
-    endif
-    if (x < 0) then
-      if (present(avoid_negative)) then
-        if (avoid_negative) x = cam - root
-      endif
     endif
   end FUNCTION solve_quadratic
     

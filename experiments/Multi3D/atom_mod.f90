@@ -1286,6 +1286,7 @@ MODULE atom_mod
     integer :: i,j, ii, jj, tri, n
     logical :: cont
     logical, save :: first_time=.true.
+    real(8), parameter :: sqr3_2pi = sqrt(3.d0) / (2.d0*PI)
     !---------------------------------------------------------------------
     if (debye_shield) then
       dxi = 4.98e-4*5040./temp*sqrt(ne*bk*temp)
@@ -1338,7 +1339,7 @@ MODULE atom_mod
               if (fac > 0) then
                 ! Van Regemorter
                 f = max(fac, 1e-5)
-                tmp = max(0.2*ex, 0.276*expin(u0))
+                tmp = max(0.2*ex, sqr3_2pi*expin(u0))
                 cup = regemorter * f * tmp / dev
               else
                 ! Allen

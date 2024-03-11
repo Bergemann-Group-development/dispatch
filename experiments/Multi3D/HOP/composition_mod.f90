@@ -65,11 +65,12 @@ contains
 
     !===============================================================================
     SUBROUTINE injon(self, absdat_file, abund_file, absmet_file, FeH, &
-        isotope_file, molec_file, absmet_big_end)
+        isotope_file, molec_file, absmet_big_end, tmolim)
         class(composition_type), target :: self
         character(len=*), intent(in) :: absdat_file, abund_file
         character(len=*), intent(in), optional :: absmet_file, isotope_file, molec_file
         logical, intent(in), optional :: absmet_big_end
+        real(4), intent(in), optional :: tmolim
         real(8), intent(in) :: FeH
         integer :: absdat, lunit, iostat
         integer :: i, j, k, m, nl, nk, n_iso
@@ -255,6 +256,12 @@ contains
         ! IN SUBR. MOLEQ (ONLY H2 AND H2+), ELSE MORE COMPLETE MOLECULAR
         ! FORMATION WILL BE EVALUATED IN SUBR. MOL.
         read(absdat, *) self%tmolim, self%molh
+
+        if (present(tmolim)) then
+            if (tmolim > -98) then
+                self%tmolim = tmolim
+            endif
+        endif
 
         read(absdat, '(A9)') text
         if (text(1:9)=='* CORONAL') then
@@ -1056,11 +1063,15 @@ contains
 
         mol_ids = ['H2 ', 'H2+', 'H2O', 'OH ', 'CH ', 'CO ', 'CN ', 'C2 ', 'N2 ', 'O2 ', 'NO ', 'NH ']
 
-        self%nmolec = size(mol_ids)
+        if (self%tmolim > 0) then
+            self%nmolec = size(mol_ids)
+        else
+            self%nmolec = 0
+        endif
 
         allocate(self%molecules(self%nmolec))
 
-        do i=1, size(mol_ids)
+        do i=1, self%nmolec
             molecule => self%molecules(i)
             molecule%nions = len(trim(mol_ids(i)))
             molecule%id = trim(mol_ids(i))
@@ -1103,7 +1114,7 @@ contains
             end do
         end do
 
-        do i=1, size(mol_ids)
+        do i=1, self%nmolec
             molecule => self%molecules(i)
 
             do j=1, molecule%nions
@@ -1137,7 +1148,7 @@ contains
         class(molec_type), pointer :: mol
         real(dp), dimension(:,:,:), intent(in) :: temp, ne, rho
         logical, intent(in), optional :: use_rho, use_ne
-        real(dp), dimension(:,:,:), allocatable :: ro, eh
+        real(dp), dimension(:,:,:), allocatable :: ro, eh, charge
         integer :: i,j, nx, ny, nz, lunit
         integer :: itimer=0
         !---------------------------------------------------------------------------
@@ -1190,6 +1201,16 @@ contains
             mol%part = 1.0 / mol%irwin_partf(self%temp)
         end do
 
+        allocate(charge, mold=self%temp)
+        charge = 0
+        do i=1, self%nel
+            element => self%elements(i)
+            do j=lbound(element%ions,1), ubound(element%ions,1)
+                ion => element%ions(j)
+                charge = charge + ion%n * (j-1)
+            end do
+        end do
+
         call self%compute_energy_and_gas_pressure(eh, self%e, self%pg)
         call self%compute_p6(self%p6)
         call self%init_H_levels()
@@ -1227,14 +1248,15 @@ contains
             call element%compute_ion_equilibrium(self%EK_over_temp, self%ne, self%saha, self%dxi)
             call trace%end(itimer3)
             
-            do j=2, element%nion
+            do j=lbound(element%ions, 1), ubound(element%ions, 1)
                 ion => element%ions(j)
 
                 ! number of electrons from ion
                 xnen = ion%f * (j-1)
                 
                 ! number of electrons from elements other than H
-                if (element%id /= 'H') fe = fe + xnen
+                !if (element%id /= 'H') fe = fe + xnen
+                fe = fe + xnen
 
                 select case (element%id)
                 case ('H','C','N','O')
@@ -1246,7 +1268,9 @@ contains
             end do
         end do
 
-        call self%molecular_equilibrium(self%temp, self%teta, self%pe, self%dxi, xnecno, fe)
+        if (self%nmolec > 0) then
+            call self%molecular_equilibrium(self%temp, self%teta, self%pe, self%dxi, xnecno, fe)
+        endif
 
         ! total hydrogen number density, computed from scratch
         toth = ne / fe * (BK/uop_BK)
@@ -1426,7 +1450,11 @@ contains
         call self%ion_by_id('H I', HI)
         call self%ion_by_id('HE I', HeI)
         
-        p6 = LOG10((HI%n + 0.41336*HeI%n + 0.85*(H2%n + H2p%n)) * BK * self%temp)
+        if (associated(H2) .and. associated(H2p)) then
+            p6 = LOG10((HI%n + 0.41336*HeI%n + 0.85*(H2%n + H2p%n)) * BK * self%temp)
+        else
+            p6 = LOG10((HI%n + 0.41336*HeI%n) * BK * self%temp)
+        endif
     END SUBROUTINE compute_p6
 
     !===============================================================================
@@ -1679,10 +1707,10 @@ contains
         allocate(Hm%pk, HI%fil, OI%fil, CI%fil, NI%fil, mold=temp)
 
         tmolim = temp < self%tmolim
+        Hm%pk = 1/Hm%saha
 
         where (tmolim)
             fe = xnecno
-            Hm%pk = 1/Hm%saha
             HI%fil = 1 + HI%saha + Hm%pk
             b = 2 * H2%dis * pe/fe
             q = - HI%abund/b
@@ -1692,11 +1720,11 @@ contains
             fe = HI%f * (HI%saha - Hm%pk) + xnecno
 
             where (fe <= 0)
-                r = H2%dis * Hm%saha
-                s = r - HI%fil
+                r = Hm%saha * pe * H2%dis
+                s = HI%fil - r
                 p = (HI%fil*xnecno - Hm%pk - 2*xnecno*r) / s
                 q = r*xnecno*xnecno/s
-                fe = solve_quadratic(p, q, avoid_negative=.true.)
+                fe = solve_quadratic(p, q)
                 HI%f = (xnecno - fe)*Hm%saha
             end where
         end where
@@ -1827,6 +1855,7 @@ contains
         call self%ion_by_id('H I', HI)
         call self%ion_by_id('H -', Hm)
 
+        ejon = 0
         pg = self%ne
         eh = - (HI%xion - self%dxi)*(HI%n + Hm%n) - (Hm%xion - 2*self%dxi)*Hm%n
 
@@ -2069,6 +2098,7 @@ contains
         real(4), dimension(:,:,:,:), intent(inout) :: chi
         real(dp), dimension(:), allocatable :: xray2, HeIscat
         real(dp) :: xr, ll, scalar, h2ray, rayh, rayh2, nHI, nH2, nHE
+        logical :: do_H2
         integer :: f, x, y, z
         !---------------------------------------------------------------------
         allocate(xray2, HeIscat,  mold=lam)
@@ -2077,6 +2107,7 @@ contains
         call self%ion_by_id('H I', HI)
         call self%ion_by_id('HE I', HE)
         call self%molecule_by_id('H2', H2)
+        do_H2 = associated(H2)
         
         xray2 = 0.
         where (lam > 911.27) xray2 = 1 / max(1026., lam)**2
@@ -2088,8 +2119,13 @@ contains
         do y=1, size(chi, 3)
         do x=1, size(chi, 2)
           nHI = HI%n(x,y,z)
-          nH2 = H2%n(x,y,z)
           nHE = HE%n(x,y,z)
+          if (do_H2) then
+            nH2 = H2%n(x,y,z)
+          else
+            nH2 = 0
+          endif
+
           do f=1, size(lam)
             xr = xray2(f)
             if (xr > 0.) then

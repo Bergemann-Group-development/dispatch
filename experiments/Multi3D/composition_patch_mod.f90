@@ -16,6 +16,7 @@ MODULE composition_patch_mod
   USE atom_patch_mod,  only: atom_patch_t
   USE nlte_patch_mod, only:nlte_patch_t
   USE bftrans_mod, only: H_occupation_probability
+  USE bbtrans_mod, only: tolerance
   USE trace_mod
   USE scaling_mod
   USE units_mod
@@ -71,7 +72,7 @@ SUBROUTINE composition_pre_init (self)
   sample_back_opac, sample_back_opac_in_output, &
   dtemp, ldne, ldrho, ldtemp, tmolim
   namelist /linelist_params/ dlam, exclude_elements, linelist_file, line_lists, &
-  linelist_in_output
+  linelist_in_output, tolerance
   ! ----------------------------------------------------------------------------
   call trace%begin('composition_patch_t%composition_pre_init', itimer=itimer)
   self%kind = 'composition'
@@ -106,11 +107,7 @@ SUBROUTINE composition_pre_init (self)
     line_blanketing = absmet_file /= ''
     call trace%begin('compositiont%init', itimer=itimer2)
     call composition%init(absdat_file, abund_file, absmet_file, FeH, &
-    isotope_file=isotope_file, molec_file=molec_file, absmet_big_end=absmet_big_end)
-
-    if (tmolim > -98) then
-      composition%tmolim = tmolim
-    endif
+    isotope_file=isotope_file, molec_file=molec_file, absmet_big_end=absmet_big_end, tmolim=tmolim)
 
     if (linelist_file /= '') then
       call composition%init_linelist(linelist_file)
