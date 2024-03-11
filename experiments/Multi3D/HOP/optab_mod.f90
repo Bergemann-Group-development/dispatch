@@ -38,8 +38,8 @@ contains
 
         allocate(self%lrho(self%nrho))
         allocate(self%ltemp(self%ntemp))
-        allocate(self%chi(self%ntemp, self%nrho, self%nbin))
-        allocate(self%src(self%ntemp, self%nrho, self%nbin))
+        allocate(self%chi(self%nbin, self%ntemp, self%nrho))
+        allocate(self%src(self%nbin, self%ntemp, self%nrho))
 
         call os%check_file(trim(opac_table)//'.bin')
         open(file=trim(opac_table)//'.bin', newunit=lunit, form='unformatted', access='stream')
@@ -73,16 +73,16 @@ contains
         allocate(scratch(size(ltemp), self%nrho))
 
         do f=1, size(chi, 4)
-            chi1(1:size(temp)) => chi(:,:,:,f)
-            eta1(1:size(temp)) => eta(:,:,:,f)
+            chi1(1:size(temp)) => chi(f,:,:,:)
+            eta1(1:size(temp)) => eta(f,:,:,:)
             do i=1, self%nrho
-                call pchip_mono(self%ltemp, self%chi(:, i, f), ltemp, scratch(:,i))
+                call pchip_mono(self%ltemp, self%chi(f, :, i), ltemp, scratch(:,i))
             end do
             do i=1, size(temp1)
                 call pchip_mono(self%lrho, scratch(i,:), lrho(i:i), chi1(i:i))
             end do
             do i=1, self%nrho
-                call pchip_mono(self%ltemp, self%src(:, i, f), ltemp, scratch(:,i))
+                call pchip_mono(self%ltemp, self%src(f, :, i), ltemp, scratch(:,i))
             end do
             do i=1, size(temp1)
                 call pchip_mono(self%lrho, scratch(i,:), lrho(i:i), eta1(i:i))
