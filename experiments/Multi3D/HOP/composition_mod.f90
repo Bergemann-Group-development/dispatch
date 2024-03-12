@@ -1302,23 +1302,25 @@ contains
     !=========================================================================
     SUBROUTINE iterate_thermal_eq(self, temp, rho, ne, tol)
         class(composition_type), target :: self
+        class(element_type), pointer :: element
         real(dp), dimension(:,:,:), intent(in) :: temp, rho
         real(dp), dimension(:,:,:), intent(out) :: ne
         real(dp), intent(in) :: tol ! stop criterion
         logical, dimension(:,:,:), allocatable :: ne_converged
-        real(dp), dimension(:,:,:), allocatable :: a, b, x, xold, fx, fa, fb, ro, pg
+        real(dp), dimension(:,:,:), allocatable :: a, b, c, x, xold, fx, fa, fb, ro, pg
+        real(dp), dimension(:,:,:), allocatable :: lim
         integer :: i, nconverged, arr_size, m(3)
-        integer, parameter :: nmax = 20 ! max number of iteration
+        integer, parameter :: nmax = 99 ! max number of iteration
         !---------------------------------------------------------------------------
         m = shape(temp)
         arr_size = size(temp)
 
         allocate(ne_converged(m(1),m(2),m(3)), source=.false.) ! cant use mold= on different kinds
-        allocate(x, xold, a, b, fx, fa, fb, ro, pg, mold=temp)
+        allocate(x, xold, a, b, c, fx, fa, fb, ro, pg, lim, mold=temp)
 
         ! set initial value for electron density
         where (temp > 1.0d4) ! fully ionized gas
-            ne = rho / self%grph
+            ne = rho / self%grph * 1e-1
         elsewhere ! neutrals only
             ne = rho / self%grph * 1e-4
         end where
@@ -1345,7 +1347,9 @@ contains
         do while (nconverged < arr_size .and. i <= nmax)
             xold = x
             where (.not.ne_converged)
-                x = a - (b-a)/(fb-fa)*fa
+                c = fb-fa ! log(ro2) - log(ro1)
+                c = (b-a)/c
+                x = a - c*fa
             end where
     
             ne_converged = abs(x-xold) < tol
