@@ -60,6 +60,7 @@ MODULE composition_mod
     end type
 
     character(128), public, save :: exclude_elements=''
+    logical, public :: scattering_absorption=.false.
 
 contains
 
@@ -1171,6 +1172,7 @@ contains
         allocate(self%EK_over_temp, self%p6, ro, self%zero, mold=temp)
 
         self%zero = 0.d0
+        self%E = 0
         
         if (option(use_ne, .true.)) then
             self%ne = ne
@@ -1211,7 +1213,7 @@ contains
             end do
         end do
 
-        call self%compute_energy_and_gas_pressure(eh, self%e, self%pg)
+        call self%compute_energy_and_gas_pressure(eh, self%E, self%pg)
         call self%compute_p6(self%p6)
         call self%init_H_levels()
 
@@ -1310,7 +1312,7 @@ contains
         real(dp), dimension(:,:,:), allocatable :: a, b, c, x, xold, fx, fa, fb, ro, pg
         real(dp), dimension(:,:,:), allocatable :: lim
         integer :: i, nconverged, arr_size, m(3)
-        integer, parameter :: nmax = 99 ! max number of iteration
+        integer, parameter :: nmax = 20 ! max number of iteration
         !---------------------------------------------------------------------------
         m = shape(temp)
         arr_size = size(temp)
@@ -1373,6 +1375,8 @@ contains
         end do
 
         write(*,fmt="(5x,'it [',I2.2,']',1x,'n-converged:',1x,I8,1X,'/ total size: ',I8)") i, nconverged, arr_size
+
+        where (.not. ne_converged) self%E = -99
 
         deallocate(ne_converged)
         deallocate(x,xold,a,b,fx,fa,fb)
@@ -1569,8 +1573,10 @@ contains
             endif
         end do
 
-        call self%electron_scattering(chi)
-        call self%rayleigh_scattering(lam, chi)
+        if (scattering_absorption) then
+            call self%electron_scattering(chi)
+            call self%rayleigh_scattering(lam, chi)
+        endif
 
         if (present(include_absmet)) then
             if (self%osmet%initialised .and. include_absmet) then
@@ -1851,7 +1857,8 @@ contains
         class(element_type), pointer :: element
         class(molec_type), pointer :: mol
         class(ion_type), pointer :: ion, HI, Hm
-        real(dp), intent(out), dimension(:,:,:) :: eh, pg, e
+        real(dp), intent(out), dimension(:,:,:) :: eh, pg
+        real(dp), intent(inout), dimension(:,:,:) :: e
         real(dp), dimension(:,:,:), allocatable :: xerg, ejon, emol
         integer :: i, j
         !---------------------------------------------------------------------------
@@ -1887,8 +1894,10 @@ contains
         pg = pg * BK * self%temp
 
         !ehm = (Hm%xion + HI%xion) * Hm%f
-        E = EE*(ejon + eh + emol)
-        E = (1.5*pg + E) / self%rho
+        where (E >= 0)
+            E = EE*(ejon + eh + emol)
+            E = (1.5*pg + E) / self%rho
+        end where
     END SUBROUTINE compute_energy_and_gas_pressure
 
     !===============================================================================

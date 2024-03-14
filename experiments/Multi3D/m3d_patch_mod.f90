@@ -26,7 +26,7 @@ MODULE m3d_patch_mod
     USE m3d_halo_mod, only: m3d_halo_t, print_finished, print_download, lock_mem, unlock_mem, print_lock
     USE spectrum_mod, only: nu_tolerance
     USE atom_mod, only: atom_type, atomic_spectrum_type, lse_no_pivot, lse_solver, m1d_legacy_mode, nq_fac
-    USE composition_mod, only: composition_type
+    USE composition_mod, only: composition_type, scattering_absorption
     USE ray_mod
     USE m3d_debug_mod
     USE bbtrans_mod, only: disable_stark, disable_vdw, disable_ga
@@ -165,7 +165,7 @@ MODULE m3d_patch_mod
     print_finished, print_start, print_send, ray_offset, print_download, &
     lse_solver, decouple_continuum, m1d_legacy_mode, nu_tolerance, disable_stark, &
     disable_vdw, disable_ga, pivot_z, use_vel, save_Qrad, save_resolved, &
-    absmet_in_output, print_lock, make_eos, ng_step, ng_start, &
+    absmet_in_output, print_lock, make_eos, ng_step, ng_start, scattering_absorption, &
     column_by_column, rotate_atmos, Jnu_to_file, preconditioning
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%pre_init', itimer=itimer)

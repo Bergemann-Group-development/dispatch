@@ -396,7 +396,7 @@ U
     0                                   NQFIX
     0                                   NQTEMP
          1                              IFISH
-3000000.      0                         TMOLIM, MOLH
+  15000.      0                         TMOLIM, MOLH
    KOMP=52   NEXTR=0   NUTZE=0   NEXTT=0   NUTZT=0    NULL=1
 H- BF   McLaughlin et al. 2017, JPhys B, 50, 114001         ( 1) [ 1]
    ILOGL=0   KVADL=1   MINEX=0   MAXEX=0  NLATB=73           26/04-2019 /BPz

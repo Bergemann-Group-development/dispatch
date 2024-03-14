@@ -29,7 +29,7 @@ MODULE nlte_patch_mod
   USE bbtrans_mod, only:voigt_function2, voigt_profile
   USE m3d_debug_mod
   USE shared_mod
-  USE composition_mod, only:composition_type
+  USE composition_mod, only:composition_type, scattering_absorption
   implicit none
   private
 
@@ -564,9 +564,11 @@ SUBROUTINE add_scattering (self, comp)
   do x=1, nx
   do f=fs, fe
     associate(Jnu=>self%Jnu(f,x,y,z,s), blz=>back(f,x,y,z,3))
-      Bnu = blz / (1 - blz)
       Jnu = 0.5*(Jup(f,x,y,z,s) + Jdn(f,x,y,z,s))
-      Jnu = Jnu - Bnu ! because we already included scattered opacities in chi
+      if (scattering_absorption) then
+        Bnu = blz / (1 - blz)
+        Jnu = Jnu - Bnu ! because we already included scattered opacities in chi
+      endif
     end associate
   end do
   end do
