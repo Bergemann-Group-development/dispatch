@@ -194,6 +194,12 @@ MODULE m3d_patch_mod
       quad_scheme = lowercase(quad_scheme)
       long_scheme = lowercase(long_scheme)
       !-------------------------------------------------------------------------
+      ! No scattering in absorption if make_eos
+      !-------------------------------------------------------------------------
+      if (make_eos) then
+        scattering_absorption = .false.
+      endif
+      !-------------------------------------------------------------------------
       ! Assign angles and integration weights
       !-------------------------------------------------------------------------
       select case (quad_scheme)

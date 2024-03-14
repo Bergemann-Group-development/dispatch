@@ -625,9 +625,10 @@ SUBROUTINE generate_eos_table (self, nu, include_absmet)
   class(composition_type), pointer :: comp
   real(8), dimension(:), pointer, intent(in) :: nu
   real(4), dimension(:,:,:), allocatable :: eos
+  real(4), dimension(:,:,:,:), pointer :: view
   logical, intent(in) :: include_absmet
   real(4) :: over_rho
-  integer :: i,j,k, ntemp, nrho
+  integer :: i,j,k, ntemp, nrho, nnu
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('nlte_patch%generate_eos_table', itimer=itimer)
@@ -635,6 +636,20 @@ SUBROUTINE generate_eos_table (self, nu, include_absmet)
   call self%save3(self%opac_table, 'opa')
   ntemp = size(self%opac_table, 2)
   nrho = size(self%opac_table, 3)
+  nnu = size(nu)
+
+  self%opac_table = 0.0
+  view(1:nnu, 1:ntemp, 1:nrho, 1:1) => self%opac_table
+  call comp%electron_scattering(view)
+  call comp%rayleigh_scattering(cc / nu * 1e8, view)
+  do k=1, nrho
+  do j=1, ntemp
+      over_rho = 1 / comp%rho(j,k,1)
+      self%opac_table(:,j,k) = self%opac_table(:,j,k) * over_rho
+  end do
+  end do
+  call self%save3(self%opac_table, 'scat')
+
   allocate(eos(5, ntemp, nrho))
   eos(1, :, :) = real(comp%temp(:, :, 1), kind=4)
   eos(2, :, :) = real(comp%rho(:, :, 1), kind=4)

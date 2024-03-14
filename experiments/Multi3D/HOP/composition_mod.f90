@@ -13,6 +13,7 @@ MODULE composition_mod
     USE osmet_mod
     USE omp_lib
     USE os_mod
+    use, intrinsic :: ieee_arithmetic
     implicit none
     private
 
@@ -1376,7 +1377,7 @@ contains
 
         write(*,fmt="(5x,'it [',I2.2,']',1x,'n-converged:',1x,I8,1X,'/ total size: ',I8)") i, nconverged, arr_size
 
-        where (.not. ne_converged) self%E = -99
+        where (.not. ne_converged) self%E = ieee_value(self%E, ieee_quiet_nan)
 
         deallocate(ne_converged)
         deallocate(x,xold,a,b,fx,fa,fb)
@@ -1894,7 +1895,7 @@ contains
         pg = pg * BK * self%temp
 
         !ehm = (Hm%xion + HI%xion) * Hm%f
-        where (E >= 0)
+        where (.not.ieee_is_nan(E))
             E = EE*(ejon + eh + emol)
             E = (1.5*pg + E) / self%rho
         end where
