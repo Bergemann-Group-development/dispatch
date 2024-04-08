@@ -59,22 +59,26 @@ contains
         class(optab_type) :: self
         real(4), contiguous, dimension(:,:,:,:), target :: chi, eta
         real(4), contiguous, dimension(:,:,:), target :: temp, rho
-        real(4), dimension(:), pointer :: chi1, eta1, temp1, rho1
+        real(4), dimension(:), pointer :: chi1, eta1, temp1, rho1, chip, etap
         real(4), dimension(:), allocatable :: ltemp, lrho
         real(4), dimension(:,:), allocatable :: scratch
-        integer :: i,j,k,t,r,f,m(4)
+        integer :: i,j,k,t,r,f,m(4), n
         !---------------------------------------------------------------------------
         temp1(1:size(temp)) => temp(:,:,:)
         rho1 (1:size(rho))  => rho (:,:,:)
         m = shape(chi)
+        n = product(m)
 
         allocate(ltemp, source=log(temp1))
         allocate(lrho , source=log(rho1))
         allocate(scratch(size(ltemp), self%nrho))
 
+        chip(1:n) => chi
+        etap(1:n) => eta
+
         do f=1, size(chi, 4)
-            chi1(1:size(temp)) => chi(f,:,:,:)
-            eta1(1:size(temp)) => eta(f,:,:,:)
+            chi1(1:size(temp)) => chip(f:n:m(1))
+            eta1(1:size(temp)) => etap(f:n:m(1))
             do i=1, self%nrho
                 call pchip_mono(self%ltemp, self%chi(f, :, i), ltemp, scratch(:,i))
             end do
