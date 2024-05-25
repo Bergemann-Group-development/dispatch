@@ -33,11 +33,11 @@ class CoG_line(object):
 
         return self.cog.abnds, weqs
     
-    def get_weq_corr(self, nlte_run, **kwargs):
-        abnds, weqs = self.get_cog(**kwargs)
+    def get_weq_corr(self, nlte_run, LTE=True, **kwargs):
+        abnds, weqs = self.get_cog(**kwargs, LTE=LTE)
         nlte_weq = nlte_run.atom.trans[self.kr].calc_weq(**kwargs)
-        func = PchipInterpolator(weqs,abnds)
-        corr = nlte_run.atom.abnd - func(nlte_weq)
+        func = PchipInterpolator(np.log(weqs),abnds)
+        corr = nlte_run.atom.abnd - func(np.log(nlte_weq))
         return corr
 
     #=================================================================

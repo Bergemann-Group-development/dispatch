@@ -146,9 +146,12 @@ contains
 
         do i=1, self%nel
             element => elements(i)
-            if (element%id /= 'H' .and. element%id /= 'He') then
+            select case (element%id)
+            case ('H', 'He', 'Li')
+                ! do not scale with FeH
+            case default
                 element%abund = element%abund + FeH
-            endif
+            end select
         end do
         self%FeH = FeH
 
