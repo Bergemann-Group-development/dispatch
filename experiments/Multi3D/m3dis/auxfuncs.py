@@ -10,6 +10,7 @@ import shlex
 import re
 import os
 import errno
+import copy
 
 EE = 1.602189E-12
 HH = 6.626176E-27
@@ -43,7 +44,7 @@ def vacuum2obs(vac):
     vac = vac.astype(np.float64)
     return _vacuum2obs(vac)
 
-@njit
+#@njit
 def _vacuum2obs(vac):
     ivac2 = 1/vac**2
     convf = 1 + 2.735182e-4 + 131.4182 * ivac2 + 2.76249e8 * ivac2*ivac2
@@ -161,17 +162,30 @@ def freq_quad(nnu, qmax, q0):
     
     elif qmax >= 0 and q0 >= 0:
         a = 10**(q0+0.5)
-        
         xmax = np.log10(a * max([0.5, qmax-q0-0.5]))
-        
         dx = 2 *  xmax / (nnu-1)
-        
         x = -xmax + dx * np.arange(nnu)
         x10 = 10**x
         q = x + (x10 - 1/x10) / a
         
     return q
 
+def get_qmax(qmax, q0):
+    q = copy.copy(qmax)
+    if hasattr(q, '__iter__'):
+        # Mask for conditions where qmax >= 0 and q0 >= 0
+        mask = np.logical_and(qmax >= 0, q0 >= 0)
+        a = 10**(q0[mask] + 0.5)
+        x = np.log10(a * np.maximum(0.5, qmax[mask] - q0[mask] - 0.5))
+        x10 = 10**x
+        q[mask] = x + (x10 - 1/x10) / a
+    elif qmax >= 0 and q0 >= 0:
+        a = 10**(q0 + 0.5)
+        x = np.log10(a * np.maximum(0.5, qmax - q0 - 0.5))
+        x10 = 10**x
+        q = x + (x10 - 1/x10) / a
+
+    return q
 
 def LinArrayInterp(x, y, newx):
     if type(y) == list:
@@ -522,3 +536,16 @@ def find_close(arr, val):
     if i<len(arr)-1:
         if np.isclose(arr[i+1], val, rtol=1e-10): i = i+1
     return i
+
+def stagger_name_to_params(stagger_name):
+  _, teff, logg, feh = re.split('t|g|m', stagger_name)
+  if len(teff)==2: teff = int(teff)*100
+  teff = int(teff)
+  logg = float(logg)/10
+  if len(feh.strip())>2: feh = float(feh)/100
+  feh = float(feh)/10
+  feh = np.round(feh, 2)
+  if feh > 0: feh = -feh
+  if teff==5777 and logg==4.4:
+    teff=5750; logg=4.5
+  return teff, logg, feh

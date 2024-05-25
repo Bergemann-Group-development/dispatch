@@ -126,6 +126,7 @@ MODULE patch_mod
     real(var_k), pointer, contiguous:: generic(:,:,:,:)         => null()
     class(patch_t)       , pointer:: patch_ptr                  => null()
     logical :: static_mem=.false.
+    type(lock_t) :: save_lock
   contains
     procedure, nopass:: cast2patch
     procedure:: init=>patch_t_init
@@ -239,10 +240,15 @@ MODULE patch_mod
     procedure:: allocate_mem
     procedure:: deallocate_mem
     procedure:: copy_to
+    procedure :: save1
+    procedure :: save3
     procedure :: save4
     procedure :: save5
     procedure :: save6
     procedure :: save_meta
+    procedure :: load4
+    procedure :: load5
+    procedure :: remove
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -4145,82 +4151,226 @@ SUBROUTINE copy_to (self, tgt)
 END SUBROUTINE copy_to
 
 !===============================================================================
-SUBROUTINE save4 (self, mem, label)
+SUBROUTINE save1 (self, mem, label, add2meta, key)
   class(patch_t):: self
-  real(4), dimension(:,:,:,:) :: mem
+  real(4), dimension(:) :: mem
   character(len=*) :: label
-  character(len=32) :: filename
+  logical, optional :: add2meta
+  integer, dimension(:), optional :: key
+  integer :: lunit
+  integer, save :: itimer=0
+  ! ----------------------------------------------------------------------------
+  call trace%begin('patch_t%save1', itimer=itimer)
+  call self%save_lock%set('save')
+  call self%save_meta(mem, label, lunit, add2meta, key)
+  write(lunit) mem
+  close(lunit)
+  call self%save_lock%unset('save')
+  call trace%end(itimer)
+END SUBROUTINE save1
+
+!===============================================================================
+SUBROUTINE save3 (self, mem, label, add2meta, key)
+  class(patch_t):: self
+  real(4), dimension(:,:,:) :: mem
+  character(len=*) :: label
+  logical, optional :: add2meta
+  integer, dimension(:), optional :: key
   integer :: lunit
   integer, save :: itimer=0
   ! ----------------------------------------------------------------------------
   call trace%begin('patch_t%save4', itimer=itimer)
-  call self%save_meta(mem, label, filename, lunit)
+  call self%save_lock%set('save')
+  call self%save_meta(mem, label, lunit, add2meta, key)
   write(lunit) mem
   close(lunit)
+  call self%save_lock%unset('save')
+  call trace%end(itimer)
+END SUBROUTINE save3
+
+!===============================================================================
+SUBROUTINE save4 (self, mem, label, add2meta, key)
+  class(patch_t):: self
+  real(4), dimension(:,:,:,:) :: mem
+  character(len=*) :: label
+  logical, optional :: add2meta
+  integer, dimension(:), optional :: key
+  integer :: lunit
+  integer, save :: itimer=0
+  ! ----------------------------------------------------------------------------
+  call trace%begin('patch_t%save4', itimer=itimer)
+  call self%save_lock%set('save')
+  call self%save_meta(mem, label, lunit, add2meta, key)
+  write(lunit) mem
+  close(lunit)
+  call self%save_lock%unset('save')
   call trace%end(itimer)
 END SUBROUTINE save4
 
 !===============================================================================
-SUBROUTINE save5 (self, mem, label)
+SUBROUTINE save5 (self, mem, label, add2meta, key)
   class(patch_t):: self
   real(4), dimension(:,:,:,:,:) :: mem
   character(len=*) :: label
-  character(len=32) :: filename
+  logical, optional :: add2meta
+  integer, dimension(:), optional :: key
   integer :: lunit
   integer, save :: itimer=0
   ! ----------------------------------------------------------------------------
   call trace%begin('patch_t%save5', itimer=itimer)
-  call self%save_meta(mem, label, filename, lunit)
+  call self%save_lock%set('save')
+  call self%save_meta(mem, label, lunit, add2meta, key)
   write(lunit) mem
   close(lunit)
+  call self%save_lock%unset('save')
   call trace%end(itimer)
 END SUBROUTINE save5
 
 !===============================================================================
-SUBROUTINE save6 (self, mem, label)
+SUBROUTINE save6 (self, mem, label, add2meta, key)
   class(patch_t):: self
   real(4), dimension(:,:,:,:,:,:) :: mem
   character(len=*) :: label
-  character(len=32) :: filename
+  logical, optional :: add2meta
+  integer, dimension(:), optional :: key
   integer :: lunit
   integer, save :: itimer=0
   ! ----------------------------------------------------------------------------
   call trace%begin('patch_t%save6', itimer=itimer)
-  call self%save_meta(mem, label, filename, lunit)
+  call self%save_lock%set('save')
+  call self%save_meta(mem, label, lunit, add2meta, key)
   write(lunit) mem
   close(lunit)
+  call self%save_lock%unset('save')
   call trace%end(itimer)
 END SUBROUTINE save6
 
 !===============================================================================
-SUBROUTINE save_meta(self, mem, label, filename, lunit)
-  class(patch_t):: self
+SUBROUTINE save_meta(self, mem, label, lunit, add2meta, key)
+  class(patch_t), target :: self
   real(4), dimension(..) :: mem
   character(len=*) :: label
+  integer, intent(inout) :: lunit
+  logical, intent(in), optional :: add2meta
+  integer, intent(in), optional, target :: key(:)
   character(len=256) :: meta_file, folder
   character(len=32) :: filename, fmt
-  integer :: i, lunit, ndim
+  integer, dimension(:), pointer :: k
+  integer :: i, ndim
+  integer, save :: itimer=0
   ! ----------------------------------------------------------------------------
-  call io%lock%set('save_meta')
-  if (size(mem) == 0) then
-    call shared%abort('mem not associated in save')
+  call trace%begin('patch_t%save_meta', itimer=itimer)
+  if (present(key)) then
+    k => key
+  else
+    k => self%key(1:2)
   endif
   write(folder, '(A, A)') trim(io%run_dir), 'save/'
-  write(filename, '(A, A, 2(I3.3), A)') trim(label), '_', abs(self%key(1:2)), '.bin'
-  meta_file = trim(label) // '_meta.txt'
-  if (os%exists(trim(folder)//meta_file)) then
-    open(newunit=lunit, file=trim(folder)//meta_file, form='formatted', position='append')
-  else
-    call os%mkdir(folder)
-    open(newunit=lunit, file=trim(folder)//meta_file, form='formatted')
-    write(lunit, '(A, A9, A21, A5)') '*', ' filename', '', 'bytes'
+  write(filename, '(A, A, 3(I3.3))') trim(label), '_', abs(k)
+  write(filename, '(A, A)') trim(filename), '.bin'
+  if (shared%option(add2meta, .true.)) then
+    call io%lock%set('save_meta')
+    if (size(mem) == 0) then
+      call shared%abort('mem not associated in save')
+    endif
+    meta_file = trim(label) // '_meta.txt'
+    if (os%exists(trim(folder)//meta_file)) then
+      open(newunit=lunit, file=trim(folder)//meta_file, form='formatted', position='append')
+    else
+      call os%mkdir(folder)
+      open(newunit=lunit, file=trim(folder)//meta_file, form='formatted')
+      write(lunit, '(A, A9, A21, A5)') '*', ' filename', '', 'bytes'
+    endif
+    ndim = size(shape(mem))
+    write(fmt, '(I3,A)') ndim, '(I10))'
+    write(lunit, '(A32, I4, '//fmt) filename, storage_size(mem), shape(mem)
+    close(lunit)
+    call io%lock%unset('save_meta')
   endif
-  ndim = size(shape(mem))
-  write(fmt, '(I3,A)') ndim, '(I10))'
-  write(lunit, '(A32, I4, '//fmt) filename, storage_size(mem), shape(mem)
-  close(lunit)
-  call io%lock%unset('save_meta')
+  call trace%end(itimer)
   open(newunit=lunit, file=trim(folder)//filename, access='stream', status='replace')
 END SUBROUTINE save_meta
+
+!===============================================================================
+SUBROUTINE load4 (self, mem, label, key)
+  class(patch_t), intent(inout), target :: self
+  real(4), intent(inout), dimension(:,:,:,:) :: mem
+  character(len=*), intent(in) :: label
+  integer, intent(in), optional, target :: key(:)
+  character(len=256) :: filename, folder
+  integer, dimension(:), pointer :: k
+  integer :: lunit
+  integer, save :: itimer=0
+  ! ----------------------------------------------------------------------------
+  call trace%begin('patch_t%load4', itimer=itimer)
+  if (present(key)) then
+    k => key
+  else
+    k => self%key(1:2)
+  endif
+  write(folder, '(A, A)') trim(io%run_dir), 'save/'
+  write(filename, '(A, A, 3(I3.3))') trim(label), '_', abs(k)
+  write(filename, '(A, A)') trim(filename), '.bin'
+  call self%save_lock%set_read('load')
+  open(newunit=lunit, file=trim(folder)//filename, access='stream', status='old', action='read')
+  read(lunit) mem
+  close(lunit)
+  call self%save_lock%unset_read('load')
+  call trace%end(itimer)
+END SUBROUTINE load4
+
+!===============================================================================
+SUBROUTINE load5 (self, mem, label, key)
+  class(patch_t), intent(inout), target :: self
+  real(4), intent(inout), dimension(:,:,:,:,:) :: mem
+  character(len=*), intent(in) :: label
+  integer, intent(in), optional, target :: key(:)
+  character(len=256) :: filename, folder
+  integer, dimension(:), pointer :: k
+  integer :: lunit
+  integer, save :: itimer=0
+  ! ----------------------------------------------------------------------------
+  call trace%begin('patch_t%load5', itimer=itimer)
+  if (present(key)) then
+    k => key
+  else
+    k => self%key(1:2)
+  endif
+  write(folder, '(A, A)') trim(io%run_dir), 'save/'
+  write(filename, '(A, A, 3(I3.3))') trim(label), '_', abs(k)
+  write(filename, '(A, A)') trim(filename), '.bin'
+  call self%save_lock%set_read('load')
+  open(newunit=lunit, file=trim(folder)//filename, access='stream', status='old', action='read')
+  read(lunit) mem
+  close(lunit)
+  call self%save_lock%unset_read('load')
+  call trace%end(itimer)
+END SUBROUTINE load5
+
+!===============================================================================
+SUBROUTINE remove (self, label, key)
+  class(patch_t), intent(inout), target :: self
+  character(len=*), intent(in) :: label
+  integer, intent(in), optional, target :: key(:)
+  character(len=256) :: filename, folder
+  integer, dimension(:), pointer :: k
+  integer :: lunit
+  integer, save :: itimer=0
+  ! ----------------------------------------------------------------------------
+  call trace%begin('patch_t%remove', itimer=itimer)
+  if (present(key)) then
+    k => key
+  else
+    k => self%key(1:2)
+  endif
+  write(folder, '(A, A)') trim(io%run_dir), 'save/'
+  write(filename, '(A, A, 3(I3.3))') trim(label), '_', abs(k)
+  write(filename, '(A, A)') trim(filename), '.bin'
+  call self%save_lock%set_read('remove')
+  open(newunit=lunit, file=trim(folder)//filename, status='old')
+  close(lunit, status='delete')
+  call self%save_lock%unset_read('remove')
+  call trace%end(itimer)
+END SUBROUTINE remove
 
 END MODULE patch_mod

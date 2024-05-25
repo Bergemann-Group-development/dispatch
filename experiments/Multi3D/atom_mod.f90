@@ -101,6 +101,7 @@ MODULE atom_mod
       procedure :: set_active_transitions
       procedure :: get_active_nlevels
       procedure :: read
+      procedure :: read_pandas
       procedure :: prepare_Drawin
       procedure :: classic_col
       procedure :: copy_to
@@ -116,7 +117,7 @@ MODULE atom_mod
     real(8), parameter :: ame=5.485799e-4, amh=1.0
     real(8), parameter :: mu_e=ame/(ame+amh)
     character(len=32), public :: lse_solver='lineq_no_pivot'
-    integer, public :: nq_fac=1
+    integer, public :: nq_fac=1, nq_min=0
 
     public :: unique_int, NextEntry
   
@@ -449,6 +450,296 @@ MODULE atom_mod
   !------------------------------------------------------------------------------------
 
   !====================================================================================
+  SUBROUTINE read_pandas (self, atom_file, qnorm, in_lines)
+    class(atom_type), target :: self
+    type(line_type), pointer :: lin => null()
+    type(cont_type), pointer :: cnt => null()
+    type(coll_type), pointer :: col => null()
+    character(len=*), intent(in) :: atom_file
+    real(8), intent(in) :: qnorm
+    integer, intent(in), optional, allocatable :: in_lines(:)
+    real(8), pointer, contiguous, dimension(:) :: bf_nu, bf_alpha
+    integer, pointer, contiguous, dimension(:) :: icont
+    integer :: i, j, ic, tri, idx, latom, nnu_bf, ncol, ntri, ii, jj
+    integer :: nnu, ncont, ntemp, l, u
+    real(8) :: scr, gv, gq, cnt_ev, nu_max, alpha0, thresh_aa, dnu
+    real(8) :: gij, red_fcut, blu_fcut, vbar2e4, loggf, lam_air
+    character(512) :: dummy_string
+    character(8) :: key, str1, str2, str3
+    logical :: abort
+    !---------------------------------------------------------------------------------
+    call os%check_file(atom_file)
+    abort = .false.
+    open(newunit=latom, file=atom_file, form='formatted')
+    call nextentry(latom)
+    read(latom,fmt='(a)') self%id
+    self%id=uppercase(adjustl(self%id))
+
+    call nextentry(latom)
+    read(latom,*) self%abnd, self%awgt
+    call self%prepare_Drawin()
+
+    call nextentry(latom)
+    read(latom,*) self%nlevel, self%nline, nnu_bf, ncol
+
+    allocate(self%ev    (self%nlevel))
+    allocate(self%g     (self%nlevel))
+    allocate(self%label (self%nlevel))
+    allocate(self%ion   (self%nlevel))
+
+    ntri = self%nlevel*(self%nlevel-1)/2
+    call os%allocate(self%cdata, ntri, zero=.true.)
+    call os%allocate(self%ecol , ntri, zero=.true.)
+    call os%allocate(self%hcol , ntri, zero=.true.)
+
+    call nextentry(latom)
+    read(latom,*) ! skip level header
+
+    do i=1, self%nlevel
+      call nextentry(latom)
+      read(latom,*) idx, self%ev(i), self%g(i), self%ion(i), self%label(i)
+    end do
+
+    call nextentry(latom)
+    read(latom,*) ! skip bbtrans header
+
+    allocate(self%line(self%nline)) 
+    call os%mem_register(storage_size(self%line), self%nline, label='atom%line')
+
+    do i=1, self%nline
+      lin => self%line(i)
+      call nextentry(latom)
+      read(latom,*) idx, lam_air, lin%i, lin%j, loggf, lin%nnu, lin%qmax, lin%q0, &
+            lin%ga, gv, gq, lin%profile_type
+            
+      lin%upper_g  = self%g(lin%j)
+      lin%lower_ev = self%ev(lin%i)
+      lin%upper_ev = self%ev(lin%j)
+      lin%hydrogen = trim(self%id) == 'h'
+
+      lin%lam0 = air2vac(lam_air) * AA_TO_CM ! [cm]
+      lin%nu0  = CC / lin%lam0               ! [Hz]
+
+      lin%f = 10**loggf / self%g(lin%i)
+      gij = self%g(lin%i) / self%g(lin%j)
+      lin%Aji = f_to_Aji * lin%f * gij / lin%lam0**2
+      lin%Bji = c2_2h / lin%nu0**3 * lin%Aji
+      lin%Bij = lin%Bji / gij
+      lin%Aij = lin%Aji / gij
+
+      ! make sure we always have an odd number of frequency points for a line
+      if (mod(lin%nnu,2) == 0) lin%nnu=lin%nnu+1
+      lin%nnu = nq_fac * (lin%nnu-1) + 1
+      lin%nnu = max(lin%nnu, nq_min)
+
+      tri = (lin%j-1)*(lin%j-2)/2 + lin%i
+      self%cdata(tri) = lin%f
+
+      if (size(in_lines) > 0) then
+        if (findloc(in_lines, i, 1) <= 0) then
+          call lin%deactivate()
+          cycle
+        endif
+      endif
+
+      if (logf_cut > -99) then
+        scr = log10(self%g(lin%i)*lin%f)
+        if (scr < logf_cut) then
+          call lin%deactivate()
+          cycle
+        endif
+      endif
+
+      call os%allocate(lin%nu_input, lin%nnu, 'line%nu_input')
+      call lin%get_nu(qnorm, lin%nu_input)
+      lin%nu_min = lin%nu_input(1)
+      lin%nu_max = lin%nu_input(lin%nnu)
+
+      if (red_cut < huge(1.0) .or. blue_cut > tiny(1.0)) then
+        red_fcut = cc*1e8 / red_cut
+        blu_fcut = cc*1e8 / blue_cut
+        if (lin%nu_max < red_fcut .or. lin%nu_min > blu_fcut) then
+          call lin%deactivate()
+          cycle
+        endif
+      endif
+      
+      ! find continuum level
+      do ic=lin%j+1, self%nlevel
+        if (self%ion(ic) .eq. self%ion(lin%j)+1) then
+          cnt_ev = self%ev(ic)
+          exit
+        endif
+      end do
+
+      lin%ntrans = i
+      lin%profile_type = trim(lowercase(lin%profile_type))
+
+      select case (lin%profile_type)
+      case ('voigt', 'hlinop')
+        continue
+      case default
+        write (*, fmt = '(a,1x,a,a)') 'Profile not recognised:', &
+                lin%profile_type, ' Setting it to VOIGT'
+        lin%profile_type = 'voigt'
+      end select
+
+      select case (lin%profile_type)
+      case ('hlinop')
+        call prepare_hydrogen_damping(lin)
+      case ('voigt')
+        call lin%prepare_Stark(gq)
+        vbar2e4 = self%compute_vbar2(10000.)
+        call lin%prepare_VanderWaals(gv, self%ion(lin%i), cnt_ev, vbar2e4)
+      end select
+    end do
+
+    ncont = count(self%ion < maxval(self%ion))
+    allocate(self%cont(ncont))
+    call os%mem_register(storage_size(self%cont), ncont, label='atom%cont')
+
+    do i=1, ncont
+      cnt => self%cont(i)
+      cnt%bf_type='Kramer'
+      ! find continuum level
+      do ic=i, self%nlevel
+        if (self%ion(ic) .eq. self%ion(i)+1) exit
+      end do
+      cnt%i = i
+      cnt%j = ic
+      cnt%ntrans = self%nline + i ! transition identifier for continua
+    end do
+
+    call nextentry(latom)
+    read(latom,*) ! skip bftrans header
+
+    call os%allocate(icont, nnu_bf)
+    call os%allocate(bf_nu, nnu_bf)
+    call os%allocate(bf_alpha, nnu_bf)
+
+    do i=1, nnu_bf
+      call nextentry(latom) 
+      read(latom,*) icont(i), bf_nu(i), bf_alpha(i)
+    end do
+
+    ! and convert to frequency [Hz]
+    bf_nu = cc / ( bf_nu * AA_TO_CM )
+
+    !  bound-free transitions in detail
+    do i=1, ncont
+      cnt => self%cont(i)
+      ii = findloc(icont, i, 1)
+      jj = findloc(icont, i, 1, back=.true.)
+
+      if (jj-ii > 0) then
+        cnt%nnu = jj-ii+1
+        cnt%nu_input => bf_nu(ii:jj)
+        cnt%alpha_input => bf_alpha(ii:jj)
+        cnt%alpha0 = cnt%alpha_input(1)
+        ! cross sections given in detail
+        cnt%bf_type='detail'
+      endif
+    end do
+
+    self%ncont = ncont
+    self%nrad = self%nline + self%ncont
+
+    j = 0
+    do i=1, self%ncont
+      cnt => self%cont(i)
+      cnt%lower_ev = self%ev(cnt%i)
+      cnt%upper_ev = self%ev(cnt%j)
+      cnt%nu0 = ( cnt%upper_ev - cnt%lower_ev ) / h_e ! [Hz]
+
+      if (cnt%bf_type == 'Kramer') then
+        if (kramer_bf) then
+          thresh_aa = cc / ( cnt%nu0 * AA_TO_CM )
+          thresh_aa = min(thresh_aa, red_thresh_aa)
+          nnu = ceiling((thresh_aa - blue_thresh_aa) / cont_step_aa) + 1
+          cnt%nnu = nnu
+          call os%allocate(cnt%nu_input, cnt%nnu, 'cont%nu_input')
+          call os%allocate(cnt%alpha_input, cnt%nnu, 'cont%alpha_input')
+          cnt%nu_input(nnu:2:-1) = (/ (blue_thresh_aa + j*cont_step_aa, j=0, nnu-2) /)
+          cnt%nu_input(1) = thresh_aa
+          cnt%nu_input = cc / ( cnt%nu_input * AA_TO_CM )
+          cnt%alpha_input = Kramer(cnt%nu_input, self%ev(cnt%j) - self%ev(cnt%i))
+          cnt%alpha0 = cnt%alpha_input(1)
+          j = j+1
+        else
+          call cnt%deactivate()
+          cycle
+        endif
+      endif
+
+      tri = (cnt%j-1)*(cnt%j-2)/2 + cnt%i
+      self%cdata(tri) = cnt%alpha0
+
+      cnt%nu_min = cnt%nu_input(1)
+      cnt%nu_max = cnt%nu_input(cnt%nnu)
+    end do
+
+    if (j>0) then
+      print *, j, " bound-free transitions auto-completed using Kramer's formula!"
+    endif
+
+    read(latom, '(A)') dummy_string
+    call count_words(dummy_string, ntemp)
+    ntemp = ntemp - 3
+
+    allocate( self%coll(ncol) )
+    call os%mem_register(storage_size(self%coll), ncol, label='atom%coll')
+    call os%allocate(self%tgrid, [ntemp, 1],  label='atom%tgrid')
+    call os%allocate(self%cgrid, [ntemp, ncol],    label='atom%cgrid')
+    call os%allocate(self%dcdt,  [ntemp, ncol],    label='atom%dcdt')
+
+    read(dummy_string, *), str1, str2, str3, self%tgrid(:, 1)
+
+    do i=1, ncol
+      call nextentry(latom) 
+      read(latom,*) idx, key, l, u, self%cgrid(1:ntemp,i)
+      
+      if (l==u) then
+        write(stdout, *) "ll==ul for process ", key, l, u
+        abort = .true.
+      endif
+
+      ! within level range
+      if(l < 0 .or. u > self%nlevel) then
+        write(stdout,*) 'key=', key
+        write(stdout,*) 'll=',  l 
+        write(stdout,*) 'ul=',  u 
+        write(stdout,*) 'nk=',  self%nlevel
+        write(stdout,*) 'read_atom:  level index outside range (1,nk)'
+        abort = .true.
+      endif
+
+      select case(trim(key))
+      case('OHMEGA','CE','CH','CI','FIXRAT','CH0','CHI')
+        col => self%coll(i)
+        col%key = key
+        col%ll = l
+        col%ul = u
+        
+        ! set derivatives for 3rd order hermite interpolation
+        call hermite_derivative(self%dcdt(1:ntemp,i), self%tgrid(1:ntemp,1), self%cgrid(1:ntemp,i))
+        col%nc = ntemp
+        col%itemp = 1
+        tri = (col%ul-1)*(col%ul-2)/2 + col%ll
+        !self%cdata(tri) = -1.0 ! flag non-classical recipe
+
+        select case(trim(key))
+        case ('CE', 'CI')
+          self%ecol(tri) = .true.
+        case ('CH', 'CHI')
+          self%hcol(tri) = .true.
+        end select
+      end select
+    end do
+    close(latom)
+    if (abort) stop
+  END SUBROUTINE read_pandas
+
+  !====================================================================================
   SUBROUTINE read (self, atom_file, qnorm, in_lines, read_coll)
     !---------------------------------------------------------------------
     !
@@ -548,22 +839,16 @@ MODULE atom_mod
 
       ! make sure we always have an odd number of frequency points for a line
       if (mod(lin%nnu,2) == 0) lin%nnu=lin%nnu+1
-
-      if (nq_fac /= 0) then
-        lin%nnu = nq_fac * (lin%nnu-1) + 1
-      endif
+      lin%nnu = nq_fac * (lin%nnu-1) + 1
+      lin%nnu = max(lin%nnu, nq_min)
 
       tri = (lin%j-1)*(lin%j-2)/2 + lin%i
       self%cdata(tri) = lin%f
 
-      if (present(in_lines)) then
-        if (allocated(in_lines)) then
-          if (size(in_lines) > 0) then
-            if (findloc(in_lines, i, 1) <= 0) then
-              call lin%deactivate()
-              cycle
-            endif
-          endif
+      if (size(in_lines) > 0) then
+        if (findloc(in_lines, i, 1) <= 0) then
+          call lin%deactivate()
+          cycle
         endif
       endif
 
@@ -580,8 +865,8 @@ MODULE atom_mod
       lin%upper_ev = self%ev(lin%j)
       lin%hydrogen = trim(self%id) == 'h'
 
-      lin%lambda0 = hc_e / ( lin%upper_ev - lin%lower_ev ) ! [cm]
-      lin%nu0 = cc / lin%lambda0    ! [Hz]
+      lin%lam0 = hc_e / ( lin%upper_ev - lin%lower_ev ) ! [cm]
+      lin%nu0 = cc / lin%lam0    ! [Hz]
 
       ! io is now modified so that multicomponent lines can be read
       ! io = 0: Normal line
@@ -621,8 +906,6 @@ MODULE atom_mod
       end if
 
       !allocate( lin%nu(lin%nnu) )
-      lin%nq = lin%nnu
-
       call os%allocate(lin%nu_input, lin%nnu, 'line%nu_input')
       !call os%allocate(lin%wq, lin%nnu, 'line%wq')
       call lin%get_nu(qnorm, lin%nu_input)
@@ -631,7 +914,7 @@ MODULE atom_mod
       !call set_weights(lin%wq, lin%nu_input / lin%nu0 - 1)
 
       gij = self%g(lin%i) / self%g(lin%j)
-      lin%Aji = f_to_Aji * lin%f * gij / lin%lambda0**2 * hh
+      lin%Aji = f_to_Aji * lin%f * gij / lin%lam0**2
       lin%Bji = c2_2h / lin%nu0**3 * lin%Aji
       lin%Bij = lin%Bji / gij
       lin%Aij = lin%Aji / gij
@@ -1003,6 +1286,7 @@ MODULE atom_mod
     integer :: i,j, ii, jj, tri, n
     logical :: cont
     logical, save :: first_time=.true.
+    real(8), parameter :: sqr3_2pi = sqrt(3.d0) / (2.d0*PI)
     !---------------------------------------------------------------------
     if (debye_shield) then
       dxi = 4.98e-4*5040./temp*sqrt(ne*bk*temp)
@@ -1055,7 +1339,7 @@ MODULE atom_mod
               if (fac > 0) then
                 ! Van Regemorter
                 f = max(fac, 1e-5)
-                tmp = max(0.2*ex, 0.276*expin(u0))
+                tmp = max(0.2*ex, sqr3_2pi*expin(u0))
                 cup = regemorter * f * tmp / dev
               else
                 ! Allen
@@ -1322,7 +1606,7 @@ MODULE atom_mod
       end do
     endif
 
-    call self%get_active_nlevels(sp)
+    !call self%get_active_nlevels(sp)
 
     write(*,'(a,I0,a)') 'sp_from_atom: frequency grid has ', sp%nnu, ' points.'
     if (self%verbose > 2) then

@@ -1,6 +1,8 @@
 from .atom import atom_class
 from .trans import trans_class
 from .auxfuncs import vacuum2obs, continuum, freq_quad, convol, SBOL, CC, interp_tau, check_file, compute_tau_scale
+from .fast_atom import fast_atom, pandas_atom
+from .fast_trans import fast_trans
 import numpy as np
 import pandas as pd
 import dask.array as da
@@ -56,7 +58,7 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
 #=====================================================================
 class read(object):
     #=================================================================
-    def __init__(self, folder, verbose=0, **kwargs):
+    def __init__(self, folder, verbose=0, read_atmos=True, fast_read=False, **kwargs):
         #-------------------------------------------------------------
         folder = folder + os.sep
         sfolder = folder + 'save' + os.sep
@@ -75,45 +77,6 @@ class read(object):
         else:
             self.mode = 'NLTE'
         
-        atom_file = folder + 'atom.txt'
-        if os.path.isfile(atom_file):
-            self.qnorm = self.nml['atom_params']['qnorm']
-            self.atom = atom_class(atom_file, qnorm=self.qnorm, verbose=verbose, **kwargs)
-            loggf_cut = self.nml['atom_params']['logf_cut']
-            red_cut   = self.nml['atom_params']['red_cut']
-            blue_cut  = self.nml['atom_params']['blue_cut']
-            in_abnd   = self.nml['atom_params']['abundance']
-            
-            if self.atom.id in self.abundances:
-                self.atom.abnd = float(self.abundances[self.atom.id])
-            elif in_abnd > -99:
-                self.atom.abnd = in_abnd
-
-            self.atom.title = 'A({}) = {:.2f}'.format(self.atom.id, self.atom.abnd)
-            
-            for trans in self.atom.trans:
-                trans.run = self
-        
-            lines = self.atom.trans[:self.atom.nline]
-            if 'line_mask' in self.nml.keys():
-                if 'in_lines' in self.nml['line_mask'].keys():
-                    in_lines = self.nml['line_mask']['in_lines']
-                    if type(in_lines)==int: in_lines=[in_lines]
-                    lines = [self.atom.trans[i-1] for i in in_lines]
-                
-            lines = [line for line in lines if np.log10(line.fosc*line.lower.g) > loggf_cut]
-            lines = [line for line in lines if line.lam_red > blue_cut and line.lam_blue < red_cut]
-            
-            self.nline = len(lines)
-            self.line = lines
-
-            reports = glob.glob(folder + 'convergence_report_*.txt')
-            if len(reports)>0:
-                self.lvlerr = np.zeros(self.atom.nk)
-                for report in reports:
-                    df = pd.read_csv(report, sep='\s+')
-                    self.lvlerr = np.maximum(self.lvlerr, df.maxconv.values)
-        
         if os.path.isfile(sfolder + 'out_lam.bin'):
             if (verbose > 0): print('Reading wavelengths')
             self.lam = np.fromfile(sfolder + 'out_lam.bin', dtype=np.float64)
@@ -127,6 +90,72 @@ class read(object):
         if os.path.isfile(sfolder + 'all_lam.bin'):
             self.all_lam = vacuum2obs(np.fromfile(sfolder + 'all_lam.bin', dtype=np.float64))[::-1]
         
+        atom_file = folder + 'atom.txt'
+        pandas_format = 'pandas_format' in self.nml['atom_params']
+        if pandas_format: pandas_format = pandas_format & self.nml['atom_params']['pandas_format']
+        if os.path.isfile(atom_file):
+            self.qnorm = self.nml['atom_params']['qnorm']
+            loggf_cut  = self.nml['atom_params']['logf_cut']
+            red_cut    = self.nml['atom_params']['red_cut']
+            blue_cut   = self.nml['atom_params']['blue_cut']
+            in_abnd    = self.nml['atom_params']['abundance']
+
+            self.in_lines = slice(None, None)
+            if 'line_mask' in self.nml.keys():
+                if 'in_lines' in self.nml['line_mask'].keys():
+                    in_lines = self.nml['line_mask']['in_lines']
+                    if type(in_lines)==int: in_lines=[in_lines]
+                    self.in_lines = np.array(in_lines)-1
+
+            if pandas_format or fast_read:
+                if pandas_format:
+                    self.atom = pandas_atom.read(atom_file)
+                else:
+                    self.atom = fast_atom(atom_file, **kwargs)
+
+                self.atom.run = self
+
+                if hasattr(self, 'lam'):
+                    self.atom.load_sp(self.lam, qnorm=self.qnorm)
+                    self.line = self.atom.trans[self.in_lines]
+
+                    #mask = bbt.loggf > loggf_cut
+                    #mask = mask & (bbt.lam_vac_red > blue_cut) 
+                    #mask = mask & (bbt.lam_vac_blue < red_cut) 
+                    #lines = lines_class(self.atom, bbt[mask], self)
+                    #self.nline = len(lines)
+                    #self.line = lines
+
+            else:
+                self.atom = atom_class(atom_file, qnorm=self.qnorm, verbose=verbose, **kwargs)
+
+                for trans in self.atom.trans:
+                    trans.run = self
+
+                lines = self.atom.trans[:self.atom.nline]
+
+                if hasattr(self, 'in_lines'):
+                    lines = np.array(self.atom.trans)[self.in_lines]
+                    
+                #lines = [line for line in lines if np.log10(line.fosc*line.lower.g) > loggf_cut]
+                #lines = [line for line in lines if line.lam_red > blue_cut and line.lam_blue < red_cut]
+                self.nline = len(lines)
+                self.line = lines
+
+            if self.atom.id in self.abundances:
+                self.atom.abnd = float(self.abundances[self.atom.id])
+            elif in_abnd > -99:
+                self.atom.abnd = in_abnd
+
+            self.atom.title = 'A({}) = {:.2f}'.format(self.atom.id.strip(), self.atom.abnd)
+
+            reports = glob.glob(folder + 'convergence_report_*.txt')
+            if len(reports)>0:
+                self.lvlerr = np.zeros(self.atom.nk)
+                for report in reports:
+                    df = pd.read_csv(report, sep='\s+')
+                    self.lvlerr = np.maximum(self.lvlerr, df.maxconv.values)
+
         file = folder + 'angle_quadrature.txt'
         if os.path.isfile(file):
             df = pd.read_csv(file, header=None, skiprows=1, sep='\s+', names=['ang', 'wmu', 'mux', 'muy', 'muz'])
@@ -137,13 +166,16 @@ class read(object):
             self.mus = 1 - self.mus
             self.nmu = self.mus.size
 
-        if hasattr(self, 'lam'):
+        make_eos = False
+        if 'make_eos' in self.nml['m3d_params']: make_eos = self.nml['m3d_params']['make_eos']
+        
+        if hasattr(self, 'lam') and not make_eos:
             if (verbose > 0): print('Reading Intensities')
-            ie = self.read_patch_save('ie', fdim=0)[0]
+            ie = self.read_patch_save('ie', fdim=0, lazy=False)[0]
 
-            self.ie     = np.array(ie[:,0,0,:,0])
-            self.ie_lte = np.array(ie[:,0,0,:,1])
-            self.cnt    = np.array(ie[:,0,0,:,2])
+            self.ie     = ie[:,0,0,:,0]
+            self.ie_lte = ie[:,0,0,:,1]
+            self.cnt    = ie[:,0,0,:,2]
 
             self.flux     = np.sum(self.wts * self.ie    , axis=-1)
             self.flux_lte = np.sum(self.wts * self.ie_lte, axis=-1)
@@ -172,19 +204,20 @@ class read(object):
         self.yy = np.linspace(0, (ny-1)*dy, ny)
         self.zz = np.linspace(0, (nz-1)*dz, nz)
 
-        if os.path.isfile(sfolder + 'atmos_meta.txt'):
+        if os.path.isfile(sfolder + 'atmos_meta.txt') and read_atmos:
             mem = self.read_patch_save('atmos')[0]
-            self.ne   = mem[...,0,0].compute()
-            self.rho  = mem[...,1,0].compute()
-            self.temp = mem[...,2,0].compute()
-            self.vx   = mem[...,3,0].compute() * CC
-            self.vy   = mem[...,4,0].compute() * CC
-            self.vz   = mem[...,5,0].compute() * CC
-            self.chi  = mem[...,6,0].compute()
+            mem = mem[..., 0].squeeze()
+            self.ne   = mem[...,0].compute()
+            self.rho  = mem[...,1].compute()
+            self.temp = mem[...,2].compute()
+            self.vx   = mem[...,3].compute() * CC
+            self.vy   = mem[...,4].compute() * CC
+            self.vz   = mem[...,5].compute() * CC
+            self.chi  = mem[...,6].compute()
             self.tau  = compute_tau_scale(self.chi, self.dz*1e8, axis=-1)
             self.ltau = np.log10(self.tau)
             
-        if os.path.isfile(folder + 'atmos_data.bin'):
+        if os.path.isfile(folder + 'atmos_data.bin') and read_atmos:
             dat = FortranFile(folder + 'atmos_data.bin')
             self.temp = dat.read_reals(np.float32)
             self.rho  = dat.read_reals(np.float32)
@@ -322,13 +355,12 @@ class read(object):
         
         if norm:
             yy = yy / cnt
-
             
         return np.array(yy), np.array(cnt)
     
     #=====================================================================
     def crop(self, lam0=None, dlam=None, xmin=None, xmax=None, vdop=None, 
-             vshift=None, convolve=None, per_aa=False, **kwargs):
+             vshift=None, convolve=None, per_aa=False, renorm=False, **kwargs):
         #-----------------------------------------------------------------
         xx = self.lam
 
@@ -343,6 +375,10 @@ class read(object):
 
         xx, mask = self.get_xx(xx, dlam, xmin, xmax)
         yy, cnt = self.get_yy(mask=mask, **kwargs)
+
+        if renorm:
+            yy = yy / continuum(xx, yy)
+
         xx = xx + lam0
 
         if vdop is not None or vshift is not None or convolve is not None:
@@ -371,16 +407,16 @@ class read(object):
         return yy
 
     #=====================================================================
-    def plot_spectrum(self, ang=None, imu=None, norm=True, LTE=False,
+    def plot_spectrum(self, ang=None, imu=None, norm=True, renorm=False, LTE=False,
                       vdop=None, vshift=None, lam0=None, dlam=10, cont=False,
                       show_lines=False, xmin=None, xmax=None,  per_aa=False, **kwargs):
         #-----------------------------------------------------------------
-        xx, yy = self.crop(lam0=lam0, dlam=dlam, ang=ang, imu=imu, norm=norm,
+        xx, yy = self.crop(lam0=lam0, dlam=dlam, ang=ang, imu=imu, norm=norm, renorm=renorm,
                            xmin=xmin, xmax=xmax, LTE=LTE, vdop=vdop, vshift=vshift,
                            per_aa=per_aa, cont=cont)
         
         self.set_xaxis(xx, dlam)
-        self.set_yaxis(ang, imu, norm, per_aa=per_aa)
+        self.set_yaxis(ang, imu, norm, renorm=renorm, per_aa=per_aa)
 
         plt.xlabel('Wavelength [Å]')
 
@@ -442,20 +478,26 @@ class read(object):
     def get_depart(self, ilvl=None):
         #-----------------------------------------------------------------
         mem = self.read_patch_save('atom_patch')[0]
-        dep = mem[...,1,0]
+        if mem.ndim==6: mem = mem[...,0]
+        lte = mem[...,0]
+        dep = mem[...,1]
 
         if ilvl is not None:
+            lte = lte[...,ilvl]
             dep = dep[...,ilvl]
 
+        lte = np.array(lte)
         dep = np.array(dep)
-        if self.dim=='1D': dep = dep.squeeze()
-        return dep
+        if self.dim=='1D':
+            lte = lte.squeeze()
+            dep = dep.squeeze()
+        return lte, dep
     
     #=====================================================================
     def plot_depart(self, ilvl, mean='optical', tau_in=None, **kwargs):
         #-----------------------------------------------------------------
-        dep = self.get_depart(ilvl)
-        plt.title('Departure coefficient of level {:.2f}[eV]'.format(self.atom.level[ilvl].ev))
+        _, dep = self.get_depart(ilvl)
+        plt.title('Departure coefficient of level {:}'.format(ilvl))
         plt.ylabel(r'$\rm n\,/\,n_{\rm LTE}$')
         if mean=='optical':
             if self.dim=='3D':
@@ -464,11 +506,10 @@ class read(object):
                 else:
                     ltau = tau_in
 
-                dep = interp_tau(ltau.copy(), self.ltau[:,:,::-1].copy(), dep[:,:,::-1].copy())
-                dep = np.mean(dep, axis=(0,1))
+                new_dep = interp_tau(ltau.copy(), self.ltau[...,::-1].copy(), dep[...,::-1].copy())
+                dep = np.mean(new_dep, axis=(0,1))
             else:
                 ltau = self.ltau
-                dep = self.get_depart(ilvl)
 
             plt.xlabel(r'log$\tau_{500}$')
             return plt.plot(ltau, dep, **kwargs)
@@ -532,7 +573,7 @@ class read(object):
         return teff
 
     #=====================================================================
-    def read_patch_save(self, kind, concat=True, fdim=3):
+    def read_patch_save(self, kind, concat=True, fdim=3, lazy=True):
         #-----------------------------------------------------------------
         try:
             meta = open(self.sfolder + kind + '_meta.txt')
@@ -559,18 +600,23 @@ class read(object):
         meta.close()
 
         if concat:
-            return self.concat_patches(dct, kind, fdim)
+            return self.concat_patches(dct, kind, fdim, lazy=lazy)
         else:
             return dct
 
     #=====================================================================
-    def concat_patches(self, dct, kind, fdim):
+    def concat_patches(self, dct, kind, fdim, lazy):
         #-----------------------------------------------------------------
         all_iz  = np.unique([key[0] for key in dct.keys()])
         all_inu = np.unique([key[1] for key in dct.keys()])
         f_indep = all(all_inu == 0)
 
         n_nu = self.nml['m3d_params']['n_nu']
+
+        if lazy:
+            concat = da.concatenate
+        else:
+            concat = np.concatenate
 
         def merge_set(inus):
             merge = []
@@ -583,12 +629,12 @@ class read(object):
                         merge_nu.append(dct[key])
                 
                 if len(merge_nu) > 0:
-                    mem = da.concatenate(merge_nu, axis=fdim)
+                    mem = concat(merge_nu, axis=fdim)
                     if not f_indep: mem = np.flip(mem, axis=fdim)
                     merge.append(mem)
             
             if len(merge) > 1:
-                mem = da.concatenate(merge, axis=2)
+                mem = concat(merge, axis=2)
 
             return mem
 

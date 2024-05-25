@@ -22,13 +22,14 @@ MODULE nlte_patch_mod
   absmet_in_output, long_wmu, long_vec, ray_offset, pivot_z, dlam, &
   premature_finish, m3d_patch_pre_update=>pre_update, save_resolved, &
   column_by_column, rotate_atmos, check_NaN, rank_lvlerr, sample_back_opac, &
-  decouple_continuum, linelist_in_output, sample_back_opac_in_output
+  decouple_continuum, linelist_in_output, sample_back_opac_in_output, ilambd, &
+  Jnu_to_file, preconditioning, make_eos
   USE ray_mod, only: one_dimensional, ray_type
   USE trans_mod, only:line_type, cont_type
   USE bbtrans_mod, only:voigt_function2, voigt_profile
   USE m3d_debug_mod
   USE shared_mod
-  USE composition_mod, only:composition_type
+  USE composition_mod, only:composition_type, scattering_absorption
   implicit none
   private
 
@@ -36,9 +37,12 @@ MODULE nlte_patch_mod
   type, public, extends(ray_patch_t) :: nlte_patch_t
     class(nlte_patch_t), pointer :: upstream=>null()
     class(nlte_patch_t), pointer :: dnstream=>null()
+    class(nlte_patch_t), pointer :: up_twin=>null()
+    class(nlte_patch_t), pointer :: dn_twin=>null()
     type(line_type), dimension(:), allocatable :: line
     type(cont_type), dimension(:), allocatable :: cont
-    real(4), dimension(:,:,:,:), allocatable :: Jnu, Psi, PsiJ
+    real(4), dimension(:,:,:,:,:), allocatable :: Jnu
+    real(4), dimension(:,:,:,:), allocatable :: Psi, PsiJ
     real(4), dimension(:,:,:), allocatable :: opac_table
     real(4), dimension(:), allocatable :: twohnu3_c2
     real(8), dimension(:), pointer :: nu
@@ -50,7 +54,9 @@ MODULE nlte_patch_mod
     procedure :: pre_update => nlte_patch_pre_update
     procedure :: execute
     procedure :: lte_background_opacities
+    procedure :: add_scattering
     procedure :: generate_opacity_table
+    procedure :: generate_eos_table
     procedure :: interpolate_opacity_table
     procedure :: add_bound_free_opacities
     procedure :: bound_bound_damping
@@ -104,7 +110,7 @@ SUBROUTINE nlte_patch_pre_init (self)
   call self%m3d_patch_t%pre_init()
 
   self%dir = merge(1, -1, abs(self%i_mu)==1)
-  self%n_mu = merge(size(long_wmu), size(all_wmu)/2, self%out_ray)
+  self%n_mu = merge(size(long_wmu), size(all_wmu)/2, self%out_mu)
   self%mus = merge(1, self%n_mu+1, self%dir>0)
   self%mue = merge(self%n_mu, size(all_wmu), self%dir>0)
 
@@ -119,7 +125,7 @@ SUBROUTINE nlte_patch_pre_init (self)
     self%bound_bound = .false.
     self%bound_free = .false.
   endif
-  self%get_rates = self%in_ray
+  self%get_rates = self%in_ray .and. self%i_nu>0
 
   self%ng(3) = 1
   call self%post_pre_init()
@@ -208,8 +214,9 @@ SUBROUTINE execute (self)
   real(4), dimension(:,:,:), allocatable :: inv_df, vproj
   real(4) :: wmu, nan_check(3)
   real(8) :: vec(3)
+  character(8) :: Jnu_label
   logical :: skip, use_linelist, get_cntrbf, end_boundary, include_absmet
-  logical :: do_rotate_atmos, do_sample_opac
+  logical :: do_rotate_atmos, do_sample_opac, do_make_eos
   integer :: i, j, i_mu, zs, ze, p(3), ng, i_set, l, nnu_cntrbf
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
@@ -228,12 +235,12 @@ SUBROUTINE execute (self)
   temp => self%m3d_parent%mem(:,:,:,self%i_temp,self%it,1)
 
   self%composition => self%m3d_parent%composition
-  do_rotate_atmos = rotate_atmos .and. self%out_ray
-  use_linelist = self%out_ray .and. self%composition%ll_initialised .and. linelist_in_output
-  get_cntrbf = self%out_ray .and. n_cntrbf>0
-  end_boundary = self%patch%boundaries%is_set(bits%zl) .and. self%dir<0
-  end_boundary = self%patch%boundaries%is_set(bits%zu) .and. self%dir>0 .or. end_boundary
-  if (.not. end_boundary) then
+  do_rotate_atmos = rotate_atmos .and. self%out_mu
+  use_linelist = self%out_mu .and. self%composition%ll_initialised .and. linelist_in_output
+  get_cntrbf = self%out_mu .and. (n_cntrbf>0)
+  end_boundary = self%patch%boundaries%is_set(bits%zl) .and. (self%dir<0)
+  end_boundary = self%patch%boundaries%is_set(bits%zu) .and. (self%dir>0) .or. end_boundary
+  if (.not. end_boundary .and. associated(self%dnstream)) then
     end_boundary = self%dnstream%is_finished()
   endif
 
@@ -248,13 +255,18 @@ SUBROUTINE execute (self)
   self%twohnu3_c2 = twoh_c2 * self%nu**3
 
   do_sample_opac = sample_back_opac .and. (self%in_ray .or. sample_back_opac_in_output)
+  do_make_eos = make_eos .and. self%out_ray
   include_absmet = (self%in_ray .and. (self%i_nu > self%n_nu .or. .not. decouple_continuum)) &
               .or. (self%out_ray .and. absmet_in_output)
   
 
   comp => self%composition
   
-  call self%lte_background_opacities(comp, include_absmet=include_absmet, do_sample_opac=do_sample_opac)
+  call self%lte_background_opacities(comp, include_absmet=include_absmet, do_sample_opac=do_sample_opac, do_make_eos=do_make_eos)
+
+  if (ilambd > 0 .and. (self%iter > 0 .or. self%out_mu)) then
+    call self%add_scattering(comp)
+  endif
 
   if (self%use_atom) then
     adata => self%atom%data
@@ -272,7 +284,7 @@ SUBROUTINE execute (self)
 
   ! Starting loop over angles
   do i_mu=self%mus, self%mue
-    if (self%out_ray) then
+    if (self%out_mu) then
       wmu = long_wmu(i_mu)
       vec = long_vec(:,i_mu)
     else
@@ -313,11 +325,11 @@ SUBROUTINE execute (self)
       call self%eta_to_Snu()
       call self%set_upstream_boundary(i_mu, i_set, ng)
 
-      if (self%out_ray .and. .not. (one_dimensional .or. column_by_column .or. do_rotate_atmos)) then
+      if (self%out_mu .and. .not. (one_dimensional .or. column_by_column .or. do_rotate_atmos)) then
         call self%rotate_array(vec, work(:,:,:,1:nz,1:2))
       endif
 
-      if (one_dimensional .or. self%out_ray) then
+      if (one_dimensional .or. self%out_mu) then
         call self%long_char(vec)
       else
         call self%short_char(vec)
@@ -336,14 +348,20 @@ SUBROUTINE execute (self)
         endif
         if (i_mu==self%mus .and. i_set==1) then
           memcheck(1:3) = work(self%fcheck, p(1), p(2), p(3),:)
-          memcheck(2:3) = memcheck(2:3) * self%twohnu3_c2(self%fcheck)
+          !memcheck(2:3) = memcheck(2:3) * self%twohnu3_c2(self%fcheck)
+          associate(blz=>back(self%fcheck, p(1), p(2), p(3), 3))
+            memcheck(2:3) = memcheck(2:3) * (1 - blz) / blz
+          end associate
         endif
       endif
 
       call self%work_to_mem(i_mu, i_set)
+
+      if ((self%get_rates .and. self%bound_free) .or. (self%iter < ilambd)) then
+        call self%integrate_intensity(wmu, i_set, save_PsiJ=self%get_rates)
+      endif
       
       if (self%get_rates) then
-        if (self%bound_free) call self%integrate_intensity(wmu)
         if (self%bound_bound) call self%bound_bound_rates(wmu, inv_df, vproj, adamp, gamma_ij, gamma_ji)
       endif
     end do
@@ -354,8 +372,13 @@ SUBROUTINE execute (self)
     if (self%use_atom) call self%integrate_rates(gamma_ij, gamma_ji)
   endif
 
+  if (ilambd > 0 .and. Jnu_to_file .and. .not. self%out_mu) then
+    Jnu_label = merge('Jnu_out', 'Jnu    ', self%out_ray)
+    call self%save5(self%Jnu, Jnu_label, key=self%key(1:3), add2meta=.false.)
+  endif
+
   if (end_boundary) then
-    if (self%out_ray) then
+    if (self%out_mu .and. self%n_mu > 0) then
       call self%save_intensity()
     endif
     call self%deallocate_mem()
@@ -363,7 +386,7 @@ SUBROUTINE execute (self)
 
   call deallocate_arrays()
 
-  if (self%use_atom) then
+  if (self%use_atom .and. self%iter > ilambd-1) then
     if (self%atom%data%converged .and. premature_finish) then
       call self%finish()
     endif
@@ -387,6 +410,12 @@ contains
       allocate(adamp(nx,ny,nz,self%nline), source=0.)
       call mem_register(adamp, label='adamp')
     endif
+    if (.not. allocated(self%Jnu)) then
+      if ((ilambd > 0) .or. (self%get_rates .and. self%bound_free)) then
+        allocate(self%Jnu(fs:fe,nx,ny,nz,self%n_set), source=0.)
+        call mem_register(self%Jnu,  label='Jnu')
+      endif
+    endif
     if (self%get_rates) then
       allocate(self%Psi(fs:fe,nx,ny,nz), source=0.)
       allocate(gamma_ij(nx, ny, nz, self%nline+self%ncont), source=0.)
@@ -395,9 +424,7 @@ contains
       call mem_register(gamma_ij, label='gamma_ij')
       call mem_register(gamma_ji, label='gamma_ji')
       if (self%bound_free) then
-        allocate(self%Jnu(fs:fe,nx,ny,nz), source=0.)
         allocate(self%PsiJ(fs:fe,nx,ny,nz), source=0.)
-        call mem_register(self%Jnu,  label='Jnu')
         call mem_register(self%PsiJ, label='PsiJ')
       endif
     endif
@@ -427,15 +454,18 @@ contains
       call mem_unregister(adamp, label='adamp')
       deallocate(adamp)
     endif
+    if (allocated(self%Jnu) .and. .not. (ilambd>0 .and. .not. Jnu_to_file)) then
+      call mem_unregister(self%Jnu , label='Jnu')
+      deallocate(self%Jnu)
+    endif
     if (self%get_rates) then
       call mem_unregister(self%Psi, label='Psi')
       call mem_unregister(gamma_ij, label='gamma_ij')
       call mem_unregister(gamma_ji, label='gamma_ji')
       deallocate(gamma_ij, gamma_ji, self%Psi)
       if (self%bound_free) then
-        call mem_unregister(self%Jnu , label='Jnu')
         call mem_unregister(self%PsiJ, label='PsiJ')
-        deallocate(self%Jnu, self%PsiJ)
+        deallocate(self%PsiJ)
       endif
     endif
     if (get_cntrbf) then
@@ -451,11 +481,11 @@ contains
 END SUBROUTINE execute
 
 !===============================================================================
-SUBROUTINE lte_background_opacities (self, comp, include_absmet, do_sample_opac)
+SUBROUTINE lte_background_opacities (self, comp, include_absmet, do_sample_opac, do_make_eos)
   class(nlte_patch_t) :: self
   class(composition_type) :: comp
   real(4) :: h_kT, hv_kT, bnu
-  logical :: include_absmet, do_sample_opac
+  logical :: include_absmet, do_sample_opac, do_make_eos
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('nlte_patch%lte_background_opacities', itimer=itimer)
@@ -478,6 +508,11 @@ SUBROUTINE lte_background_opacities (self, comp, include_absmet, do_sample_opac)
       call self%generate_opacity_table(self%nu(fs:fe), include_absmet)
     endif
     call self%interpolate_opacity_table(comp%temp, comp%ne, comp%rho)
+  elseif (do_make_eos) then
+    if (self%iter==0) then
+      call self%generate_opacity_table(self%nu(fs:fe), include_absmet)
+      call self%generate_eos_table(self%nu(fs:fe), include_absmet)
+    endif
   else
     call comp%absorption(self%nu, back(:,:,:,:,1), blz=back(:,:,:,:,3), &
     include_absmet=include_absmet, sorted=self%sp%sorted)
@@ -487,9 +522,9 @@ SUBROUTINE lte_background_opacities (self, comp, include_absmet, do_sample_opac)
   do y=1, ny
   do x=1, nx
     do f=self%fs, self%fe
-      associate(chi=>back(f,x,y,z,1), eta=>back(f,x,y,z,1), blz=>back(f,x,y,z,3))
+      associate(chi=>back(f,x,y,z,1), eta=>back(f,x,y,z,2), blz=>back(f,x,y,z,3))
         bnu = blz / (1 - blz)
-        back(f,x,y,z,2) = back(f,x,y,z,1) * bnu
+        eta = chi * bnu
       end associate
     end do
   end do
@@ -499,11 +534,62 @@ SUBROUTINE lte_background_opacities (self, comp, include_absmet, do_sample_opac)
 END SUBROUTINE lte_background_opacities
 
 !===============================================================================
+SUBROUTINE add_scattering (self, comp)
+  class(nlte_patch_t), target :: self
+  class(composition_type) :: comp
+  real(4), dimension(:,:,:,:,:), allocatable, target :: Jup_mem, Jdn_mem
+  real(4), dimension(:,:,:,:,:), pointer, contiguous :: Jup, Jdn
+  real(4) :: Bnu
+  character(8) :: Jnu_label
+  integer :: s
+  integer, save :: itimer
+  !-----------------------------------------------------------------------------
+  call trace%begin('nlte_patch%add_scattering', itimer=itimer)
+  if (.not. associated(self%up_twin)) self%up_twin => self
+  if (Jnu_to_file) then
+    Jnu_label = merge('Jnu_out', 'Jnu    ', self%out_ray)
+    allocate(Jup_mem, Jdn_mem, mold=self%Jnu)
+    call self%up_twin%load5(Jup_mem, Jnu_label, key=self%up_twin%key(1:3))
+    call self%dn_twin%load5(Jdn_mem, Jnu_label, key=self%dn_twin%key(1:3))
+    Jup => Jup_mem
+    Jdn => Jdn_mem
+  else
+    Jup => self%up_twin%Jnu
+    Jdn => self%dn_twin%Jnu
+  endif
+
+  do s=1, self%n_set
+  do z=1, nz
+  do y=1, ny
+  do x=1, nx
+  do f=fs, fe
+    associate(Jnu=>self%Jnu(f,x,y,z,s), blz=>back(f,x,y,z,3))
+      Jnu = 0.5*(Jup(f,x,y,z,s) + Jdn(f,x,y,z,s))
+      if (scattering_absorption) then
+        Bnu = blz / (1 - blz)
+        Jnu = Jnu - Bnu ! because we already included scattered opacities in chi
+      endif
+    end associate
+  end do
+  end do
+  end do
+  end do
+  end do
+
+  do s=1, self%n_set
+    call comp%scattering(self%nu, back(:,:,:,:,2), self%Jnu(:,:,:,:,s))
+  end do
+
+  self%Jnu = 0
+  call trace%end(itimer)
+END SUBROUTINE
+
+!===============================================================================
 SUBROUTINE generate_opacity_table (self, nu, include_absmet)
   class(nlte_patch_t), target :: self
   class(composition_type), pointer :: comp
   real(8), dimension(:), pointer, intent(in) :: nu
-  real(4), dimension(:,:,:,:), pointer :: view
+  real(4), dimension(:,:,:,:), pointer :: view, all_eta
   logical, intent(in) :: include_absmet
   real(4) :: over_rho
   integer :: i,j,k, ntemp, nne, nnu
@@ -516,11 +602,14 @@ SUBROUTINE generate_opacity_table (self, nu, include_absmet)
   nne   = size(comp%temp,2)
   allocate(self%opac_table(fs:fe, ntemp, nne), source=0.)
   call mem_register(self%opac_table, label='opac_table')
+
   view(1:nnu, 1:ntemp, 1:nne, 1:1) => self%opac_table
   call comp%absorption(nu, view, include_absmet=include_absmet, sorted=self%sp%sorted)
+
   if (comp%ll_initialised) then
     call comp%add_linelist_opacities(nu, view, dlam)
   endif
+
   do k=1, nne
   do j=1, ntemp
     over_rho = 1 / comp%rho(j,k,1)
@@ -529,6 +618,47 @@ SUBROUTINE generate_opacity_table (self, nu, include_absmet)
   end do
   call trace%end(itimer)
 END SUBROUTINE generate_opacity_table
+
+!===============================================================================
+SUBROUTINE generate_eos_table (self, nu, include_absmet)
+  class(nlte_patch_t), target :: self
+  class(composition_type), pointer :: comp
+  real(8), dimension(:), pointer, intent(in) :: nu
+  real(4), dimension(:,:,:), allocatable :: eos
+  real(4), dimension(:,:,:,:), pointer :: view
+  logical, intent(in) :: include_absmet
+  real(4) :: over_rho
+  integer :: i,j,k, ntemp, nrho, nnu
+  integer, save :: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin('nlte_patch%generate_eos_table', itimer=itimer)
+  comp => self%m3d_parent%tab_comp
+  call self%save3(self%opac_table, 'opa')
+  ntemp = size(self%opac_table, 2)
+  nrho = size(self%opac_table, 3)
+  nnu = size(nu)
+
+  self%opac_table = 0.0
+  view(1:nnu, 1:ntemp, 1:nrho, 1:1) => self%opac_table
+  call comp%electron_scattering(view)
+  call comp%rayleigh_scattering(cc / nu * 1e8, view)
+  do k=1, nrho
+  do j=1, ntemp
+      over_rho = 1 / comp%rho(j,k,1)
+      self%opac_table(:,j,k) = self%opac_table(:,j,k) * over_rho
+  end do
+  end do
+  call self%save3(self%opac_table, 'scat')
+
+  allocate(eos(5, ntemp, nrho))
+  eos(1, :, :) = real(comp%temp(:, :, 1), kind=4)
+  eos(2, :, :) = real(comp%rho(:, :, 1), kind=4)
+  eos(3, :, :) = real(comp%ne(:, :, 1), kind=4)
+  eos(4, :, :) = real(comp%pg(:, :, 1), kind=4)
+  eos(5, :, :) = real(comp%E(:, :, 1), kind=4)
+  call self%save3(eos, 'eos')
+  call trace%end(itimer)
+END SUBROUTINE generate_eos_table
 
 !===============================================================================
 SUBROUTINE interpolate_opacity_table (self, temp, ne, rho)
@@ -706,7 +836,7 @@ SUBROUTINE add_bound_bound_opacities (self, adata, wmu, inv_df, vproj, adamp, LT
 
   allocate(vphi(self%fs:self%fe))
   allocate(wphi, mold=vproj)
-  get_wphi = self%iter == 0 .and. self%in_ray
+  get_wphi = self%iter == 0 .and. self%get_rates
 
   do i=1, self%nline
     line => self%line(i)
@@ -770,8 +900,9 @@ SUBROUTINE bound_bound_rates (self, wmu, inv_df, vproj, adamp, gamma_ij, gamma_j
   real(4), contiguous, dimension(:,:,:,:) :: adamp, gamma_ij, gamma_ji
   real(8), contiguous, dimension(:,:,:,:), pointer :: n
   real(4), dimension(:), allocatable :: wmunu
-  real(4) :: wmu, idf, vpr, a, idf_4pi, ni, nj, chi_fac, Bji_nj, q, phi, vel, vgt
-  real(4) :: Bij_ni, g_ij, g_ji, vvv, ufac, a2
+  real(4) :: wmu, idf, vpr, a, idf_4pi, ni, nj, chi_fac, q, phi, vel, vgt
+  real(4) :: Bij_ni, Bji_nj, vvv, ufac, a2, tmp, tmp2, tmp3, tmp4
+  real(4) :: g_ij, g_ji
   integer :: i, l, ih
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
@@ -794,8 +925,15 @@ SUBROUTINE bound_bound_rates (self, wmu, inv_df, vproj, adamp, gamma_ij, gamma_j
       vpr = vproj(x,y,z)
       a = adamp(x,y,z,i)
 
-      Bji_nj = line%Bji * nj
-      Bij_ni = line%Bij * ni
+      if (preconditioning) then
+        Bji_nj = line%Bji * nj
+        Bij_ni = line%Bij * ni
+      else
+        Bji_nj = 0
+        Bij_ni = 0
+      endif
+
+      tmp = exp(HH*line%nu0 / (BK*self%composition%temp(x,y,z)))
 
       g_ij = 0
       g_ji = 0
@@ -811,7 +949,7 @@ SUBROUTINE bound_bound_rates (self, wmu, inv_df, vproj, adamp, gamma_ij, gamma_j
             end do
             vvv = phi * wmunu(f)
             phi = phi * Psi
-            g_ji = g_ji + vvv*(1. + Inu - phi*Bij_ni)
+            g_ji = g_ji + vvv*(Inu - phi*Bij_ni + 1.)
             g_ij = g_ij + vvv*(Inu - phi*Bji_nj)
           end associate
         end do
@@ -821,7 +959,7 @@ SUBROUTINE bound_bound_rates (self, wmu, inv_df, vproj, adamp, gamma_ij, gamma_j
             phi = voigt_profile(a, line%q(f), vpr, idf)
             vvv = phi * wmunu(f)
             phi = phi * Psi
-            g_ji = g_ji + vvv*(1. + Inu - phi*Bij_ni)
+            g_ji = g_ji + vvv*(Inu - phi*Bij_ni + 1.)
             g_ij = g_ij + vvv*(Inu - phi*Bji_nj)
           end associate
         end do
@@ -866,17 +1004,21 @@ SUBROUTINE bound_free_rates (self, gamma_ij, gamma_ji)
     do z=1,nz
     do y=1,ny
     do x=1,nx
-      tmp = nibj(x,y,z)   
-      ni = n(x,y,z,cont%i)
-      nj = n(x,y,z,cont%j)
+      if (preconditioning) then
+        tmp = nibj(x,y,z)   
+        ni = n(x,y,z,cont%i)
+      else
+        tmp = 0.
+        ni = 0.
+      endif
       g_ij = 0
       g_ji = 0
       do f=fs, fe
-        associate(Jnu=>self%Jnu(f,x,y,z), blz=>back(f,x,y,z,3), Psi=>self%PsiJ(f,x,y,z))
+        associate(Jnu=>self%Jnu(f,x,y,z,1), blz=>back(f,x,y,z,3), Psi=>self%PsiJ(f,x,y,z))
           vij = w_alpha(f)
           vji = vij * blz
           phi = Psi * cont%alpha(f)
-          g_ji = g_ji + vji*(1. + Jnu - phi*ni)
+          g_ji = g_ji + vji*(Jnu - phi*ni + 1.)
           g_ij = g_ij + vij*(Jnu - phi*blz*tmp)
         end associate
       end do
@@ -940,10 +1082,11 @@ SUBROUTINE set_upstream_boundary (self, i_mu, i_set, ng)
 END SUBROUTINE set_upstream_boundary
 
 !===============================================================================
-SUBROUTINE integrate_intensity (self, wmu)
+SUBROUTINE integrate_intensity (self, wmu, i_set, save_PsiJ)
   class(nlte_patch_t) :: self
   real(4) :: wmu, wmu2
-  integer :: x, y, z, f
+  logical :: save_PsiJ
+  integer :: i_set, x, y, z, f
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('nlte_patch%integrate_intensity', itimer=itimer)
@@ -952,20 +1095,22 @@ SUBROUTINE integrate_intensity (self, wmu)
   do y=1, self%patch%n(2)
   do x=1, self%patch%n(1)
   do f=self%fs, self%fe
-    self%Jnu(f,x,y,z) = self%Jnu(f,x,y,z) + wmu2 * work(f,x,y,z,3)
+    self%Jnu(f,x,y,z,i_set) = self%Jnu(f,x,y,z,i_set) + wmu2 * work(f,x,y,z,3)
   end do
   end do
   end do
   end do
-  do z=1, self%patch%n(3)
-  do y=1, self%patch%n(2)
-  do x=1, self%patch%n(1)
-  do f=self%fs, self%fe
-    self%PsiJ(f,x,y,z) = self%PsiJ(f,x,y,z) + wmu2 * self%Psi(f,x,y,z)
-  end do
-  end do
-  end do
-  end do
+  if (save_PsiJ) then
+    do z=1, self%patch%n(3)
+    do y=1, self%patch%n(2)
+    do x=1, self%patch%n(1)
+    do f=self%fs, self%fe
+      self%PsiJ(f,x,y,z) = self%PsiJ(f,x,y,z) + wmu2 * self%Psi(f,x,y,z)
+    end do
+    end do
+    end do
+    end do
+  endif
   call trace%end(itimer)
 END SUBROUTINE integrate_intensity
 
@@ -1410,11 +1555,26 @@ SUBROUTINE nlte_patch_nbor_relations(self, another, needed, needs_me, download)
     select type(another)
     class is (nlte_patch_t)
       ! do nothing
-      if (needed) then
-        self%upstream => another
-      endif
-      if (needs_me) then
-        self%dnstream => another
+      if (self%ipos(3) /= another%ipos(3)) then
+        if (needed) then
+          self%upstream => another
+        endif
+        if (needs_me) then
+          self%dnstream => another
+        endif
+      else
+        if (self%out_mu) then
+          needs_me = .false.
+          if (another%i_mu==1) then
+            self%up_twin => another
+          elseif (another%i_mu==2) then
+            self%dn_twin => another
+          endif
+        elseif(another%out_mu) then
+          needed = .false.
+        else
+          self%dn_twin => another
+        endif
       endif
     class is (m3d_patch_t)
       if (another%id == self%m3d_parent%id) then
@@ -1449,6 +1609,24 @@ SUBROUTINE init_nbors_hash (self, nbors)
   call self%ray_patch_t%init_nbors_hash(nbors)
 
   key = self%key
+  if (ilambd > 0) then
+    if (self%out_ray) then
+      if (self%out_mu) then
+        key(3) = 1
+        call self%check_nbor(key, nbors)
+        key(3) = 2
+        call self%check_nbor(key, nbors)
+      else
+        key(3) = -1
+        call self%check_nbor(key, nbors)
+      endif
+    endif
+    if (.not. self%out_mu) then
+      key(3) = merge(1, 2, self%i_mu==2)
+      call self%check_nbor(key, nbors)
+    endif
+  endif
+
   key(2) = 0
   key(3) = 0
   key(4) = hash_string('atom_patch')
@@ -1462,11 +1640,26 @@ END SUBROUTINE init_nbors_hash
 !===============================================================================
 SUBROUTINE finish(self)
   class(nlte_patch_t) :: self
+  character(8) :: Jnu_label
   ! ----------------------------------------------------------------------------
   call self%m3d_patch_t%finish()
   if (associated(self%upstream)) then
     if (associated(self%upstream%mem)) then
       call self%upstream%deallocate_mem()
+    endif
+  endif
+  if (ilambd > 0 .and. (self%in_ray .or. self%out_mu)) then
+    if (self%up_twin%is_finished() .and. self%dn_twin%is_finished()) then
+      if (Jnu_to_file) then
+        Jnu_label = merge('Jnu_out', 'Jnu    ', self%out_ray)
+        call self%up_twin%remove(Jnu_label, key=self%up_twin%key(1:3))
+        call self%dn_twin%remove(Jnu_label, key=self%dn_twin%key(1:3))
+      else
+        call mem_unregister(self%up_twin%Jnu, label='Jnu')
+        call mem_unregister(self%dn_twin%Jnu, label='Jnu')
+        deallocate(self%up_twin%Jnu)
+        deallocate(self%dn_twin%Jnu)
+      endif
     endif
   endif
 END SUBROUTINE finish

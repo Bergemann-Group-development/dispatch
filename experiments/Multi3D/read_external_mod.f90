@@ -23,7 +23,7 @@ MODULE read_external_mod
   USE experiment_mod, only: experiment_t, interpolated_3d_atmos
   USE ion_mod, only: vmic
   USE composition_mod
-  USE composition_patch_mod, only: FeH, save_atmos
+  USE composition_patch_mod, only: FeH, save_atmos, save_eos
   USE patch_mod
   USE mconst, only:cc
   USE atom_mod, only: m1d_legacy_mode, NextEntry
@@ -76,7 +76,7 @@ SUBROUTINE init(self, task_list, name)
   integer :: verbose=0
   real(4), dimension(:,:,:), pointer, contiguous :: vel
   namelist /atmos_params/ atmos_file, dims, verbose, patches_per_mpi, FeH, save_atmos, &
-  atmos_format, vmic, use_density, use_ne, nx, ny, nz, snap, legacy_stagger_interp
+  atmos_format, vmic, use_density, use_ne, nx, ny, nz, snap, legacy_stagger_interp, save_eos
   !-----------------------------------------------------------------------------
   if (associated(task_list)) return
   call trace%begin('read_external_t%init')

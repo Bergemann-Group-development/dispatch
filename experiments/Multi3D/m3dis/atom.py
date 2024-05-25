@@ -43,16 +43,12 @@ class atom_class(object):
         self.nk, self.nline, self.ncont, self.nrfix = self._read(dtype=int)
         self.nrad = self.nline + self.ncont
         
-        self.level = [None]*self.nk
-        self.trans = [None]*self.nrad
         self.colls = []
-        
-        self.qnorm = qnorm
+        self.qnorm = qnorm/(CC*1e-5)
         
         # Reading energy levels
         if (verbose > 0): print('Reading energy levels')
-        for i in range(self.nk):
-            self.level[i] = level_class(self, i)
+        self.level = [level_class(self, i) for i in range(self.nk)]
 
         self.ground_states = np.where(np.diff([level.ion for level in self.level], prepend=0) > 0)[0]
 
@@ -61,8 +57,7 @@ class atom_class(object):
         
         # Reading transitions
         if (verbose > 0): print('Reading transitions')
-        for kr in range(self.nrad):
-            self.trans[kr] = trans_class(self, kr, read_bf=read_bf)
+        self.trans = [trans_class(self, kr, read_bf=read_bf) for kr in range(self.nrad)]
             
             
         if read_coll:
@@ -79,6 +74,7 @@ class atom_class(object):
                     key = self._read()[0]
 
         self.f.close()
+        del self.f
                 
                 
     def partitionFunction(self, temp, ne):

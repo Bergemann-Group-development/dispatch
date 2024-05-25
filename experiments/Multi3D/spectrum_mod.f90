@@ -15,7 +15,7 @@ MODULE spectrum_mod
         integer :: nnu=0
         ! frequency [Hz]
         real(8), dimension(:), allocatable :: nu, wnu
-        logical :: sorted=.false., saved=.false.
+        logical :: sorted=.false.
         character(len=32) :: name=''
     contains
       procedure :: init
@@ -160,10 +160,11 @@ MODULE spectrum_mod
       character(len=*), intent(in) :: label
       character(len=256) :: filename
       integer :: lunit
+      logical :: exists
       !-----------------------------------------------------------------------------
-      if (.not. self%saved) then
-        self%saved = .true.
-        filename = trim(io%run_dir) // 'save/' // trim(label) // '_lam.bin'
+      filename = trim(io%run_dir) // 'save/' // trim(label) // '_lam.bin'
+      inquire(file=filename, exist=exists)
+      if (.not. exists) then
         open(newunit=lunit, file=filename, access='stream')
         write(lunit) 1d8 * dble(cc) / self%nu
         close(lunit)

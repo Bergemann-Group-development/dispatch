@@ -15,6 +15,14 @@ MODULE bbtrans_mod
                               ! level
     logical :: active=.true., unsold
     integer :: iso_idx=0 ! isotope index for lines in line list
+    ! Added to deal with multi component lines
+    ! IO > 1 leads to the following being read from the atom file
+    integer :: io ! number of components in term (lifted from Multi 2.3)
+    real(8), dimension(:), allocatable :: dq
+    real(8), dimension(:), allocatable :: wt 
+    real(8), dimension(:), allocatable :: da
+    integer :: j=0 ! upper level  
+    integer :: i=0 ! lower level
   contains
     procedure :: profile
     procedure :: damping => line_damping
@@ -30,15 +38,8 @@ MODULE bbtrans_mod
   end type
 
   integer, save :: count1, count2, count3, count4, count5, count6
-  real(4), save :: max_a=0, max_v=0
   logical, public :: disable_stark=.false., disable_vdw=.false., disable_ga=.false.
-
-  integer, parameter :: na=20, nv=20
-  real(4), dimension(na+1,nv+1) :: voigt_table
-  real(4), parameter :: amax=1.4, vmax=5.0
-  real(4), parameter :: da=amax/real(na), dv=vmax/real(nv)
-  real(4), parameter :: dai=1./da, dvi=1./dv
-  !$omp threadprivate(voigt_table)
+  real(4), public, save :: tolerance=1e-5
     
 contains
 
@@ -78,7 +79,6 @@ contains
     real(8), allocatable :: qq(:)
     real(4) :: ex, ni, nj, nij, upper_ev, nu0_ev, scalar, vs, lchi
     real(4) :: phi, a, idf, cf, v, ref, ekt, gj_Bji_4pi
-    real(4), parameter :: tol=1e-7
     integer :: i,j,k,f, f0, f1, m(3), hi, hj, itimer=0
     !----------------------------------------------------------------------------------
     !call trace%begin('add_lte_opacities_1', itimer=itimer)
@@ -96,27 +96,19 @@ contains
     do j=1, m(2)
     do i=1, m(1)
       ! Fixed Broadening
-      if (.not. disable_ga) then
-        a = self%ga
-      else
-        a = 0
-      endif
+      a = self%ga
       ! Van der Waals Broadening
-      if (.not. disable_vdw) then
-        if (self%unsold) then
-          a = a + self%gw1 * unsold(i,j,k)
-        else
-          a = a + self%gw1 * vbar2(i,j,k)**self%gw2 * tothi(i,j,k)
-        endif
+      if (self%unsold) then
+        a = a + self%gw1 * unsold(i,j,k)
+      else
+        a = a + self%gw1 * vbar2(i,j,k)**self%gw2 * tothi(i,j,k)
       endif
       ! Stark Broadening
-      if (.not. disable_stark) then
-        if (self%gq >= 0.0) then
-          a = a + self%gq * ne(i,j,k)
-        else! if line%gq < 0
-          a = a - self%gq * stark_pe(i,j,k)
-        end if
-      endif
+      if (self%gq >= 0.0) then
+        a = a + self%gq * ne(i,j,k)
+      else! if line%gq < 0
+        a = a - self%gq * stark_pe(i,j,k)
+      end if
 
       ! fetch variables
       idf = inv_df(i,j,k)
@@ -134,7 +126,7 @@ contains
         ! check if line peak is larger than continuum tolerance
         vs = (qq(f0) - v) * idf
         lchi = voigt_function2(a, vs) * cf
-        ref = tol * cont(f0,i,j,k)
+        ref = tolerance * cont(f0,i,j,k)
         if (lchi > ref) then
           ! if so, add and continue with blue wing
           chi(f0,i,j,k) = chi(f0,i,j,k) + lchi
@@ -144,12 +136,12 @@ contains
             lchi = voigt_function2(a, vs) * cf
             ! if line opacity below tolerance exit and save f
             if (lchi < ref) then
-              f1 = max(ired, f0-f)
+              f1 = max(ired, 2*f0-f)
               exit
             endif
             chi(f,i,j,k) = chi(f,i,j,k) + lchi
           end do
-          ! no do red wing, starting where blue wing left off
+          ! now do red wing, starting where blue wing left off
           do f=f1, f0-1
             vs = (qq(f) - v) * idf
             lchi = voigt_function2(a, vs) * cf
@@ -435,32 +427,60 @@ contains
   !------------------------------------------------------------------------------------
 
   !====================================================================================
+  ELEMENTAL FUNCTION dirty_voigt(a, x) result(h)
+    real(4), intent(in) :: a, x
+    real(4) :: h, z
+    ! Coefficients for the approximation function (Table A1, Smith+15)
+    real(4), parameter :: A0 = 15.75328153963877
+    real(4), parameter :: A1 = 286.9341762324778
+    real(4), parameter :: A2 = 19.05706700907019
+    real(4), parameter :: A3 = 28.22644017233441
+    real(4), parameter :: A4 = 9.526399802414186
+    real(4), parameter :: A5 = 35.29217026286130
+    real(4), parameter :: A6 = 0.8681020834678775
+    real(4), parameter :: B0 = 0.0003300469163682737
+    real(4), parameter :: B1 = 0.5403095364583999
+    real(4), parameter :: B2 = 2.676724102580895
+    real(4), parameter :: B3 = 12.82026082606220
+    real(4), parameter :: B4 = 3.21166435627278
+    real(4), parameter :: B5 = 32.032981933420
+    real(4), parameter :: B6 = 9.0328158696
+    real(4), parameter :: B7 = 23.7489999060
+    real(4), parameter :: B8 = 1.82106170570
+    real(4), parameter :: isqp = 0.5641895835 ! 1/pi**0.5
+    !----------------------------------------------------------------------------------
+    z = x * x
+    if (z <= 3.0) then
+        h = exp(-z) * (1.0 - a * (A0 + A1 / (z - A2 + A3 / (z - A4 + A5 / (z - A6)))))
+    else if (z < 25.0) then
+        h = exp(-z) + a * (B0 + B1 / (z - B2 + B3 / (z + B4 + B5 / (z - B6 + B7 / (z - B8)))))
+    else
+        h = 0.5 * sqrt(2.0 / pi) * a / (z - 1.5 - 1.5 / (z - 3.5 - 5.0 / (z - 5.5)))
+    end if
+    h = h * isqp
+  END FUNCTION dirty_voigt
+
+  !====================================================================================
   PURE ELEMENTAL SUBROUTINE line_damping (self, adamp, ne, tothi, vbar2, stark_pe, unsold)
     class(bbtrans_type), intent(in)  :: self
     real(4), intent(in)  :: ne, tothi, vbar2, stark_pe, unsold
     real(4), intent(inout) :: adamp
     !----------------------------------------------------------------------------------
     ! Van der Waals Broadening
-    if (.not. disable_vdw) then
-      if (self%unsold) then
-        adamp = adamp + self%gw1 * unsold
-      else
-        adamp = adamp + self%gw1 * vbar2**self%gw2 * tothi
-      endif
+    if (self%unsold) then
+      adamp = adamp + self%gw1 * unsold
+    else
+      adamp = adamp + self%gw1 * vbar2**self%gw2 * tothi
     endif
 
-    if (.not. disable_stark) then
-      ! Stark Broadening
-      if (self%gq >= 0.0) then
-        adamp = adamp + self%gq * ne
-      else! if line%gq < 0
-        adamp = adamp - self%gq * stark_pe
-      end if
-    endif
+    ! Stark Broadening
+    if (self%gq >= 0.0) then
+      adamp = adamp + self%gq * ne
+    else! if line%gq < 0
+      adamp = adamp - self%gq * stark_pe
+    end if
     
-    if (.not. disable_ga) then
-      adamp = adamp + self%ga
-    endif
+    adamp = adamp + self%ga
   END SUBROUTINE line_damping
   !------------------------------------------------------------------------------------ 
   
@@ -513,6 +533,8 @@ contains
     else
       self%gq = gq
     endif
+    if (disable_ga) self%ga = 0
+    if (disable_stark) self%gq = 0
   END SUBROUTINE prepare_Stark
   !------------------------------------------------------------------------------------
 
@@ -620,6 +642,10 @@ contains
     endif
     if (self%gw1 == 0) then
       call self%deactivate()
+    endif
+    if (disable_vdw) then
+      self%unsold = .true.
+      self%gw1 = 0
     endif
   END SUBROUTINE prepare_VanderWaals
   !------------------------------------------------------------------------------------

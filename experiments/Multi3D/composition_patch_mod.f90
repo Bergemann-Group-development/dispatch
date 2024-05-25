@@ -10,12 +10,13 @@ MODULE composition_patch_mod
   USE m3d_patch_mod,   only: m3d_patch_t, composition, comoving_frame, ilambd, dlam, &
   use_density, use_ne, overlapping_bb, overlapping_bf, line_blanketing, binned_opac, &
   save_Qrad, maxiter, rotate_atmos, long_vec, sample_back_opac, decouple_continuum, &
-  linelist_in_output, sample_back_opac_in_output
+  linelist_in_output, sample_back_opac_in_output, make_eos
   USE m3d_debug_mod
   USE composition_mod, only: composition_type, exclude_elements
   USE atom_patch_mod,  only: atom_patch_t
   USE nlte_patch_mod, only:nlte_patch_t
   USE bftrans_mod, only: H_occupation_probability
+  USE bbtrans_mod, only: tolerance
   USE trace_mod
   USE scaling_mod
   USE units_mod
@@ -38,11 +39,13 @@ MODULE composition_patch_mod
     procedure :: print_post_update_info
     procedure :: save_abundances_to_file
     procedure :: init_tabulated_comp
+    procedure :: init_eos_comp
+    procedure :: save_eos_variables
     procedure :: nbor_relations => composition_patch_nbor_relations
   end type
   
-  real(8), public :: FeH=0, dtemp=250., ldne=0.25
-  logical, public :: save_atmos=.true.
+  real(8), public :: FeH=0, dtemp=250., ldne=0.25, ldrho=0.25, ldtemp=0.1
+  logical, public :: save_atmos=.true., save_eos=.false.
 
 contains
 
@@ -62,12 +65,14 @@ SUBROUTINE composition_pre_init (self)
   character(len=256), save :: absmet_file=''
   character(len=512), save :: linelist_file=''
   character(len=256), save :: line_lists(10)=''
+  real(4) :: tmolim=-99
   logical, save :: first_time=.true., absmet_big_end=.false., external_sp
   namelist /composition_params/ verbose, absdat_file, abund_file, absmet_file, &
   absmet_big_end, isotope_file, molec_file, H_occupation_probability, opac_table, &
-  sample_back_opac, sample_back_opac_in_output, dtemp, ldne
+  sample_back_opac, sample_back_opac_in_output, &
+  dtemp, ldne, ldrho, ldtemp, tmolim
   namelist /linelist_params/ dlam, exclude_elements, linelist_file, line_lists, &
-  linelist_in_output
+  linelist_in_output, tolerance
   ! ----------------------------------------------------------------------------
   call trace%begin('composition_patch_t%composition_pre_init', itimer=itimer)
   self%kind = 'composition'
@@ -102,7 +107,7 @@ SUBROUTINE composition_pre_init (self)
     line_blanketing = absmet_file /= ''
     call trace%begin('compositiont%init', itimer=itimer2)
     call composition%init(absdat_file, abund_file, absmet_file, FeH, &
-    isotope_file=isotope_file, molec_file=molec_file, absmet_big_end=absmet_big_end)
+    isotope_file=isotope_file, molec_file=molec_file, absmet_big_end=absmet_big_end, tmolim=tmolim)
 
     if (linelist_file /= '') then
       call composition%init_linelist(linelist_file)
@@ -138,7 +143,7 @@ SUBROUTINE composition_pre_init (self)
     call atom_patch%pre_init_and_link(self)
     self%atom_patch => atom_patch
 
-    if (ilambd + maxiter > 0) then
+    if (maxiter > 0) then
       do mu=1,2
         if (decouple_continuum) then
           call self%create_sub_patches([1, n_nu],      mu, atom_patch%bb_sp, atom_patch%bb_atom)
@@ -150,17 +155,30 @@ SUBROUTINE composition_pre_init (self)
     endif
     
     if (n_mu>0) then
+      if (ilambd > 0) then
+        do mu=1,2
+          call self%create_sub_patches([-n_nu, -1], mu, output_sp, atom_patch%output_atom)
+        end do
+      endif
       call self%create_sub_patches([-n_nu, -1], -1, output_sp, atom_patch%output_atom)
     endif
   else
     deallocate(atom_patch)
-    if (external_sp .and. n_mu>0) then
-      call self%create_sub_patches([-n_nu, -1], -1, output_sp)
-      !stop 'No atom nor output spectrum specified! Stopping...'
+    if (external_sp) then
+      if (n_mu > 0) then
+        if (ilambd > 0) then
+          do mu=1,2
+            call self%create_sub_patches([-n_nu, -1], mu, output_sp)
+          end do
+        endif
+        call self%create_sub_patches([-n_nu, -1], -1, output_sp)
+        !stop 'No atom nor output spectrum specified! Stopping...'
+      elseif (make_eos .and. self%key(1)==1) then
+        call self%create_sub_patches([-n_nu, -1], -1, output_sp)
+      endif
     endif
   endif
 
-  
   call self%save_abundances_to_file()
   call self%post_pre_init()
   call trace%end(itimer)
@@ -269,8 +287,14 @@ SUBROUTINE execute (self)
       call self%save5(self%mem(:,:,:,:,self%it,:), 'atmos')
     endif
 
+    if (save_eos) then
+      call self%save_eos_variables()
+    endif
+
     if (sample_back_opac) then
       call self%init_tabulated_comp(self%composition%temp, self%composition%ne, dtemp=dtemp, ldne=ldne)
+    elseif (make_eos) then
+      call self%init_eos_comp(self%composition%temp, self%composition%rho, ldtemp=ldtemp, ldrho=ldrho)
     endif
 
     self%dtime = max(self%dtime, io%end_time - self%dtime)
@@ -316,6 +340,69 @@ SUBROUTINE init_tabulated_comp (self, temp, ne, dtemp, ldne)
     tab_ne = exp(tab_ne)
     call self%tab_comp%load_state_variables(tab_temp, tab_ne, tab_rho, use_rho=.false., use_ne=.true.)
 END SUBROUTINE init_tabulated_comp
+
+!===============================================================================
+SUBROUTINE init_eos_comp (self, temp, rho, ldtemp, ldrho)
+  class(composition_patch_t), target :: self
+  real(8), dimension(:,:,:), intent(in) :: temp, rho
+  real(8), intent(in) :: ldtemp, ldrho
+  real(8) :: minTemp, maxTemp, minRho, maxRho
+  integer :: i, j, ntemp, nrho, nnu
+  real(8), dimension(:,:,:), allocatable :: tab_temp, tab_ne, tab_rho
+  real(8) :: minLnRho, maxLnRho, minLnT, maxLnT
+  !---------------------------------------------------------------------------
+  allocate(self%tab_comp)
+  self%tab_comp = composition
+  call self%tab_comp%reassign_pointer()
+
+  minTemp = minval(temp)
+  maxTemp = maxval(temp)
+  minRho = minval(rho)
+  maxRho = maxval(rho)
+
+  minLnRho = log(minRho)
+  maxLnRho = log(maxRho)
+  minLnT = log(minTemp)
+  maxLnT = log(maxTemp)
+
+  ntemp = ceiling((maxLnT - minLnT) / ldtemp) 
+  nrho  = ceiling((maxLnRho - minLnRho) / ldrho) 
+
+  allocate(tab_temp(ntemp, nrho, 1))
+  allocate(tab_rho (ntemp, nrho, 1))
+  allocate(tab_ne  (ntemp, nrho, 1))
+
+  do j=1, nrho
+  do i=1, ntemp
+    tab_temp(i,j,1) = minLnT + (i-1)*ldtemp
+    tab_rho  (i,j,1) = minLnRho + (j-1)*ldrho
+  end do
+  end do
+
+  tab_rho = exp(tab_rho)
+  tab_temp = exp(tab_temp)
+
+  call self%tab_comp%load_state_variables(tab_temp, tab_ne, tab_rho, use_rho=.true., use_ne=.false.)
+END SUBROUTINE init_eos_comp
+
+SUBROUTINE save_eos_variables (self)
+  class(composition_patch_t), target :: self
+  class(composition_type), pointer :: comp
+  real(4), dimension(:,:,:,:), allocatable :: eos
+  integer :: nx, ny, nz
+  integer, save :: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin('nlte_patch%save_eos_variables', itimer=itimer)
+  comp => self%composition
+  nx = size(comp%temp,1)
+  ny = size(comp%temp,2)
+  nz = size(comp%temp,3)
+  allocate(eos(nx,ny,nz,2))
+  eos(:,:,:,1) = comp%pg
+  eos(:,:,:,2) = comp%E
+  call self%save4(eos, 'eos')
+  call trace%end(itimer)
+END SUBROUTINE save_eos_variables
 
 !===============================================================================
 SUBROUTINE print_post_update_info (self)

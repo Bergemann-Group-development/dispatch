@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from .auxfuncs import convol, vacuum2obs, _vacuum2obs, is_number, freq_quad, compute_tau_scale, find_close, interp_tau
+from .auxfuncs import continuum, convol, vacuum2obs, _vacuum2obs, is_number, compute_tau_scale, find_close, interp_tau, get_qmax
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 
@@ -64,7 +64,7 @@ class trans_class(object):
         self.lam0 = _vacuum2obs(self.alamb)
 
         if kr < atom.nline:
-            if not hasattr(atom, 'c_lam0'):
+            if not hasattr(self, 'c_lam0'):
                 self.c_lam0 = self.lam0
                 self.c_loggf = np.log10(self.fosc * self.lower.g)
 
@@ -88,13 +88,6 @@ class trans_class(object):
             self.bij = self.fosc * 6.671e15 * self.alamb / HC2
             self.bji = self.bij * self.lower.g / self.upper.g
             
-            if self.qmax < 0 or self.q0 < 0:
-                q=np.zeros(self.nq)
-            #elif not self.iwide:
-            #    self.q = freq_quad((2*self.nq-1), self.qmax, self.q0)[self.nq-1:]
-            else:
-                q=freq_quad(self.nq, self.qmax, self.q0)
-            
             if self.iw > 0:
                 pos = self.atom.f.tell()
                 self.hyperfine = pd.read_csv(self.atom.f, nrows=self.iw, sep='\s+',
@@ -104,9 +97,10 @@ class trans_class(object):
             
             self.cont = False
             
-            lam = self.alamb / (q*atom.qnorm/(CC*1e-5) + 1)
-            self.lam_red  = lam[ 0]
-            self.lam_blue = lam[-1]
+            if self.qmax >= 0 and self.q0 >=0:
+                qmax = get_qmax(self.qmax, self.q0) * atom.qnorm
+                self.lam_red  = self.alamb / (1 - qmax)
+                self.lam_blue = self.alamb / (1 + qmax)
             
             #if (atom.level[-1].ion > atom.level[0].ion):
             #    self.prepare_VanderWaals(self.gw)
@@ -138,7 +132,7 @@ class trans_class(object):
         f = self.atom.f
         line = f.readline()
         while line.strip()=='' or line.strip().startswith('*'):
-            if (line.startswith('* i')):
+            if line.startswith('* i') and self.atom.sanity_check:
                 line = line.replace('=', ' ')
                 self.c_kr, self.c_lam0, self.c_loggf = [float(s) for s in line.split() if is_number(s)][:3]
 
@@ -196,8 +190,6 @@ class trans_class(object):
                 vdop=None, vshift=None, convolve=None, renorm=False,
                 LTE=False, title=None, set_labels=True, **kwargs):
         #-----------------------------------------------------------------
-        if self.run.n_ang == 1: ang=0
-
         xx, yy = self.crop(ang=ang, imu=imu, norm=norm, dlam=dlam,
                             vdop=vdop, vshift=vshift, convolve=convolve,
                             renorm=renorm, LTE=LTE)
@@ -207,7 +199,7 @@ class trans_class(object):
 
         if type(label) is str:
             if '{WEQ}' in label:
-                weq = self.calc_weq(ang=ang, imu=imu, dlam=dlam, LTE=LTE)
+                weq = self.calc_weq(ang=ang, imu=imu, dlam=dlam, renorm=renorm, LTE=LTE)
                 label = label.replace('{WEQ}', '{:.2f}'.format(weq))
 
         plot = plt.plot(xx, yy, label=label, **kwargs)
@@ -222,11 +214,12 @@ class trans_class(object):
     def crop(self, ang=None, imu=None, norm=True, dlam=None, \
                 vdop=None, vshift=None, convolve=None, renorm=False, LTE=False):
         #-----------------------------------------------------------------
+        xx, mask = self.get_xx(dlam)
+        
         if not LTE and self.run.mode=='LTE':
             print('Cannot get NLTE line profile, because run was in LTE!')
             LTE = True
 
-        xx, mask = self.get_xx(dlam)
         yy, cnt = self.run.get_yy(ang, imu, norm, LTE=LTE, mask=mask)
         
         if renorm:
@@ -277,7 +270,12 @@ class trans_class(object):
     #=====================================================================
     def get_xx(self, dlam):
         #-----------------------------------------------------------------
-        if not self.prepared: self.prepare()
+        if hasattr(self, 'prepared'):
+            if not self.prepared: self.prepare()
+
+        if not hasattr(self, 'run'):
+            self.run = self.atom.run
+
         xx = self.run.lam
 
         if dlam is None or isinstance(dlam, (bool)):
@@ -300,12 +298,20 @@ class trans_class(object):
         return xx, mask
         
     #=====================================================================
-    def calc_weq(self, dlam=None, ang=None, imu=None, LTE=False):
+    def calc_weq(self, dlam=None, ang=None, imu=None, renorm=False, LTE=False):
         #-----------------------------------------------------------------
         xx, mask = self.get_xx(dlam)
         yy, cnt = self.run.get_yy(ang, imu, norm=True, LTE=LTE, mask=mask)
+        if renorm: yy = yy / continuum(xx, yy)
         weq = np.trapz(1 - yy, x=xx) * 1e3
         return weq
+    
+    #=====================================================================
+    def calc_weq_depart(self, **kwargs):
+        #-----------------------------------------------------------------
+        NLTE = self.calc_weq(**kwargs)
+        LTE = self.calc_weq(LTE=True, **kwargs)
+        return NLTE/LTE
 
     #=====================================================================
     def calc_blueshift(self, imu=None):
@@ -368,7 +374,8 @@ class trans_class(object):
     #=====================================================================
     def get_cntrbf(self, df=None, ang=None, imu=None, LTE=False, mean=False, fslice=None):
         #-----------------------------------------------------------------
-        if not self.prepared: self.prepare()
+        if hasattr(self, 'prepared'):
+            if not self.prepared: self.prepare()
         
         name = 'cntrbf_{:06}'.format(self.kr+1)
         mem  = self.run.read_patch_save(name, fdim=3)[-1]

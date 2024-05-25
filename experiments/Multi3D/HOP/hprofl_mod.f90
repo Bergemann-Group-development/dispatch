@@ -1,6 +1,5 @@
 MODULE hprofl_mod
-  USE bbtrans_mod, only: voigt_function2
-  USE trans_mod, only: line_type
+  USE bbtrans_mod, only: voigt_function2, bbtrans_type, disable_ga, disable_stark, disable_vdw
   USE prec_mod, only: RYD
   USE mconst
   implicit none
@@ -138,38 +137,234 @@ MODULE hprofl_mod
 contains
 
   !====================================================================================
-  SUBROUTINE hydrogen_profile(self, q, temp, ne, nh1, vproj, inv_df, he1n, phi)
-    class(line_type), intent(inout)  :: self
-    real(8), dimension(:), intent(in) :: q
-    real(4), dimension(:,:,:), intent(in) :: temp, ne, nh1, vproj, inv_df, he1n
-    real(4), dimension(:,:,:,:), intent(inout) :: phi
-    real(8) :: qproj
-    integer :: i,j,k,f
-    logical :: lymanalf
+  SUBROUTINE add_lte_h_opacities(self, ired, iblue, nu, vproj, inv_df, temp, ni, nj, &
+    ne, tothi, vbarh, fo, t3nhe, chi, cont)
+    class(bbtrans_type), intent(in) :: self
+    integer, intent(in) :: ired, iblue
+    real(8), dimension(:), intent(in), contiguous :: nu
+    real(4), dimension(:,:,:), intent(in), contiguous :: vproj, inv_df, ni, nj
+    real(4), dimension(:,:,:), intent(in), contiguous :: temp, ne, tothi, vbarh, fo, t3nhe
+    real(4), dimension(:,:,:,:), intent(inout) :: chi
+    real(4), dimension(:,:,:,:), intent(in) :: cont
+    real(8), allocatable :: qq(:)
+    real(4) :: lchi, phi, a, idf, cf, v, ref, a1, a2, nh1
+    real(4) :: resont, vdw, hwstk, adamp, hfwid, d, t, e, xv
+    real(8) :: q
+    real(4), parameter :: tol=1e-7
+    integer :: i,j,k,f, ii, f0, f1, m(3), hi, hj, itimer=0
+    logical lymanalf
     !----------------------------------------------------------------------------------
-    !  Lyman alpha wings require special treatment
+    ! Lyman alpha wings require special treatment
     lymanalf = (self%i == 1) .and. (self%j == 2)
+    m = shape(vproj)
 
-    !DIR$ FORCEINLINE
-    do f=1, size(q)
-      do k=1, size(temp, 3)
-      do j=1, size(temp, 2)
-      do i=1, size(temp, 1)
-        qproj = q(f) - vproj(i,j,k)
+    allocate(qq(ired:iblue))
+    qq(ired:iblue) = nu(ired:iblue) / self%nu0 - 1
+    f0 = minloc(abs(qq),1) + ired - 1
+
+    do k=1, m(3)
+    do j=1, m(2)
+    do i=1, m(1)
+      ! fetch variables
+      idf = inv_df(i,j,k)
+      v   = vproj(i,j,k)
+      t   = temp(i,j,k)
+      e   = ne(i,j,k)
+      nh1 = tothi(i,j,k)
+
+      cf = (self%Bij*ni(i,j,k) - self%Bji*nj(i,j,k)) * over_4pi
+  
+      resont = nh1 * self%gw1
+      if (self%gw2 /= 0) then
+        resont = resont * vbarh(i,j,k)**self%gw2
+      endif
+  
+      hwstk = self%gq * fo(i,j,k)
+      vdw = self%gw3 * t3nhe(i,j,k)
+      adamp = resont + vdw + self%ga + hwstk
+  
+      hfwid = 1/idf + adamp ! defines where we switch from Voigt to adding
+
+      ! compute level populations
+      a1 = (adamp - hwstk) * idf
+      a2 = adamp * idf
+
+      ref = tol * cont(f0,i,j,k)
+      f1 = ired
+
+      do f=f0, iblue
+        q = qq(f) - v
         if (lymanalf) then
-          phi(i,j,k,f) = LymanA_profile(self, qproj, temp(i,j,k), ne(i,j,k), nh1(i,j,k), he1n(i,j,k), inv_df(i,j,k))
+          call lyman_voigt(self, q, a2, resont, t, e, nh1, hfwid, hwstk, idf, phi)
         else
-          phi(i,j,k,f) = hprofl(self, qproj, temp(i,j,k), ne(i,j,k), nh1(i,j,k), he1n(i,j,k), inv_df(i,j,k))
+          call hvoigt(self, q, a1, a2, t, e, hfwid, hwstk, idf, phi)
         endif
+        lchi = phi * cf
+        if (lchi < ref) then
+          f1 = max(ired, 2*f0-f)
+          exit
+        endif
+        chi(f,i,j,k) = chi(f,i,j,k) + lchi
       end do
+      
+      do f=f1, f0-1
+        q = qq(f) - v
+        if (lymanalf) then
+          call lyman_voigt(self, q, a2, resont, t, e, nh1, hfwid, hwstk, idf, phi)
+        else
+          call hvoigt(self, q, a1, a2, t, e, hfwid, hwstk, idf, phi)
+        endif
+        lchi = phi * cf
+        chi(f,i,j,k) = chi(f,i,j,k) + lchi
       end do
-      end do
-    end do 
-  END SUBROUTINE hydrogen_profile
+    end do
+    end do
+    end do
+  END SUBROUTINE add_lte_h_opacities
+
+  !====================================================================================
+  SUBROUTINE hvoigt (self, q, a1, a2, temp, ne, hfwid, hwstk, idf, phi)
+    class(bbtrans_type), intent(in)  :: self
+    real(8), intent(in) :: q
+    real(4), intent(in) :: a1, a2, temp, ne, hfwid, hwstk, idf
+    real(4), intent(out) :: phi
+    real(4) :: a, d, xv
+    integer :: i
+    !----------------------------------------------------------------------------------
+    if (abs(q) > hfwid) then
+      !  Treat stark broadening separately
+      phi = stark1(self%i,self%j,q,self%nu0,temp,ne,hwstk)
+      a = a1
+    else
+      phi = 0.d0
+      a = a2
+    endif
+
+    !  Including fine structure
+    do i=1, self%io
+      d = (q - self%dq(i)) * idf
+      xv = voigt_function2(a,d) * idf
+      phi = phi + self%wt(i)*xv
+    end do
+  END SUBROUTINE
+
+  !====================================================================================
+  SUBROUTINE lyman_voigt (self, q, adamp, resont, temp, ne, tothi, hfwid, hwstk, idf, phi)
+    class(bbtrans_type), intent(in)  :: self
+    real(8), intent(in) :: q
+    real(4), intent(in) :: adamp, resont, temp, ne, tothi, hfwid, hwstk, idf
+    real(4), intent(out) :: phi
+    real(4) :: a, d, xv
+    real(4) :: xfac, xlymanh2
+    real(8) :: q4000, htotal, xstark, xholt4000, sat4000
+    integer :: i
+    real(8), parameter :: LyA0 = 82259.105 ! wavenumber
+    real(8), parameter :: rayqcut = (1e8/1240.d0 - LyA0)/LyA0
+    real(8), parameter :: redthresh = 20000./LyA0 - 1d0
+    !----------------------------------------------------------------------------------
+    q4000 = -4000./LyA0
+
+    if (abs(q) > hfwid) then
+      a = 0
+      !  Lyman alpha:
+      if (q > rayqcut) then
+        !  Natural broadening
+        !  This is cut at some specified detuning in the red.
+        a = self%ga*(q+1d0)**2
+      endif
+      if (q > q4000) then
+        !  Self broadening of Lyman alpha:
+        !  Red wing of Lyman Alpha before the satellite region and blue wing
+        !  (ie. redward of ~1190 A).
+        !  The impact approximation breaks down quickly here validity is ~ 1 A
+        !  at temp~5000 K (Lortet & Roueff 1969, A&A 3, 462) but we use Ali & Griem
+        !  anyway (~ Barklem et al for 2p).
+        !  A factor 1.13 is needed to match this region to the far red wing
+        !  (below) at -4000 cm^-1 (62 A) detuning. A linear transition is used.
+        xfac = 1.0
+        if (q < 0) xfac = xfac + 0.13*q/q4000
+        !adamp = adamp + (xfac*resont + vdw*t3nhe)
+        a = a + xfac*resont
+      endif
+      a = a * idf
+    else
+      a = adamp
+    endif
+
+    phi = 0.d0
+
+    !  Doppler core including fine structure
+    do i=1, self%io
+      d = (q - self%dq(i)) * idf
+      !  if INSIDE HFWID WE USE VOIGT FUNCTION WITH DOP, STARK AND LOR
+      !  if OUTSIDE JUST ADD THE DOPPLER PART - REST IS ADDED LATER IN DETAIL
+      xv = voigt_function2(a,d) * idf
+      phi = phi + self%wt(i)*xv
+    end do
+
+    if (abs(q) > hfwid) then
+      if (q > redthresh) then
+        !  Far red wing of Lyman Alpha in satellite region:
+        !  Self-broadening following Kurucz's implementation of Allard et al
+        !  (A&A 335, 1124, 1998), see Castelli & Kurucz (A&A 372, 260 2001) for
+        !  more details.
+        !  Tables LYMANH2() are on a delta wavenumber grid spacing of 200
+        !  waves/cm -22000, -21800, ...., -4000 waves/cm (91 points). The
+        !  profiles store log10(I(d omega)) for N(H) = 1e14 cm^-3. Assumed
+        !  insensitive to temp, and linear scaling with N(H).  Note I(d nu) =
+        !  I(d omega)/c
+        if (q <= q4000) then
+          !  If redward of last point (1660 -> 5000 Angstrom) extrapolate,
+          !  otherwise (1278 -> 1660 Angstrom) linear (in log10 profiles)
+          !  interpolation
+          xlymanh2 = lyman_interp(lymanh2, 200., -22000., q*LyA0)
+          phi = phi + LyA0 * tothi * 10.**xlymanh2
+
+        !  Stark section
+
+          !  Stark wings due to protons in the satellite region:
+          !  Following Kurucz's implementation of Allard et al (A&A 335, 1124,
+          !  1998), see Castelli & Kurucz (A&A 372, 260 2001) for more details.
+          !  Tables LYMANH2PLUS() are on a delta wavenumber grid spacing of 100
+          !  waves/cm -15000, -14900, ...., -4000 waves/cm (111 points).
+          !  The profiles store log10(I(d omega)) for N(H+) = 1e14 cm^-3. Assumed
+          !  insensitive to temp, and linear scaling with N(H+). Note I(d nu) =
+          !  I(d omega)/c and we assume N(H+) = N(e-).
+
+          !  If redward of last point (1487 -> 5000 Angstroem) extrapolate,
+          !  otherwise (1278 -> 1487 Angstroem) interpolation.
+          xlymanh2 = lyman_interp(lymanh2plus, 100., -15000., q*LyA0)
+          phi = phi + LyA0 * ne * 10.**xlymanh2
+
+          !  There may be a contribution due to electrons also at long range.
+          !  The static Holtsmark profile (1/2 the total STARK1) is used noting
+          !  that the correction for quantum effects suggested by Stehle (1994,
+          !  A&AS 104, 509 eqn 7) has been applied already.
+          phi = phi + 0.5*stark1(self%i,self%j,q,self%nu0,temp,ne,hwstk)
+
+        else
+          !  Stark wings due to ions and electrons.  If Lyman alpha this is for
+          !  before (blueward of) the satellite region.
+          xstark = 0.5*stark1(self%i,self%j,q,self%nu0,temp,ne,hwstk)
+
+          !  If Lyman alpha we match the static ion part to the Allard et al
+          !  value at -4000 cm^-1 detuning on red wing.
+          if (q < 0 .and. xstark > 0) then
+            xholt4000 = 0.5*stark1(self%i,self%j,q4000,self%nu0,temp,ne,hwstk)
+            sat4000 = LyA0 * ne * 10.**lymanh2plus(111)
+            xfac = 1. + (sat4000/xholt4000 - 1.)*q/q4000
+            xstark = xstark * (1. + xfac)
+          end if
+          phi = phi + xstark
+        end if
+      endif
+      !  End Stark section
+    end if
+  END SUBROUTINE
   
   !====================================================================================
   SUBROUTINE prepare_hydrogen_damping (self)
-    class(line_type), intent(inout)  :: self
+    class(bbtrans_type), intent(inout)  :: self
     integer :: n, m, mmn, n2, m2, mn2, gnm, ipos, i, k, ifins
     real(4) :: xknm, radamp, resont, vdw
     real(8), save, dimension(14) :: finest, finswt
@@ -198,30 +393,31 @@ contains
     end if
     self%ga = radamp/self%nu0 * over_4pi
 
-    !  Resonance broadening following Ali & Griem (1966, Phys Rev 144, 366).
-    !  RESONT is dnu/nu per unit H density. Only the lower state is included
-    !  (p-d approx for Balmer lines).  For N > 3 p-states play a very small
-    !  role, and van der Waals might even dominate, there is however no
-    !  available theory for this.  The lower state resonance broadening is
-    !  used as a guess.
-    if (n /= 1) then
-      resont = hfnm(1,n)/(1. - 1./n2)
-    else
-      resont = hfnm(1,m)/(1. - 1./m2)
-    end if
-    self%gw1 = resont * 2.07E-24*gnm
-    self%gw2 = 0
-    self%gw3 = 4.45E-26*gnm*(m2*(7.*m2+5.))**0.4
-
     if (hydrogen_BPO) then
       !  For low Balmer lines use Barklem, Piskunov & O'Mara (2000, A&A 363, 1091)
       !  instead of Ali & Griem for self-broadening. 
       if ((n == 2) .and. (m <= 5)) then
         resont = balfac(mmn)*sigma(mmn)
-        self%gw1 = resont/self%nu0/(2*pi)
         self%gw2 = 0.5*(1. - alf(mmn))
+        self%gw1 = 2 * resont * 10**(-12*self%gw2) / self%nu0 * over_4pi
       end if
+    else
+      !  Resonance broadening following Ali & Griem (1966, Phys Rev 144, 366).
+      !  RESONT is dnu/nu per unit H density. Only the lower state is included
+      !  (p-d approx for Balmer lines).  For N > 3 p-states play a very small
+      !  role, and van der Waals might even dominate, there is however no
+      !  available theory for this.  The lower state resonance broadening is
+      !  used as a guess.
+      if (n /= 1) then
+        resont = hfnm(1,n)/(1. - 1./n2)
+      else
+        resont = hfnm(1,m)/(1. - 1./m2)
+      end if
+      self%gw1 = resont * 2.07E-24*gnm
+      self%gw2 = 0
     endif
+
+    self%gw3 = 4.45E-26*gnm*(m2*(7.*m2+5.))**0.4
 
     !  Approximately include fine structure.  Exact pattern for alpha lines,
     !  M infinite pattern used for others.
@@ -252,15 +448,23 @@ contains
     allocate(self%wt(ifins))
 
     self%dq = finest(1:ifins) / self%nu0
-    self%wt  = finswt(1:ifins)
+    self%wt = finswt(1:ifins)
     self%da = 0
+
+    if (disable_ga) self%ga = 0
+    if (disable_stark) self%gq = 0
+    if (disable_vdw) then
+      self%gw1 = 0
+      self%gw2 = 0
+      self%gw3 = 0
+    endif
   END SUBROUTINE prepare_hydrogen_damping
 
   !===============================================================================
   !  Based on code by Deane Peterson and Bob Kurucz
   !===============================================================================
   FUNCTION hprofl(self, q, temp, ne, h1frc, he1frc, inv_df)
-    class(line_type), intent(inout)  :: self
+    class(bbtrans_type), intent(inout)  :: self
     real(8), intent(in) :: q
     real(4), intent(in) :: temp
     real(4), intent(in) :: ne
@@ -282,7 +486,7 @@ contains
     if (self%gw2 == 0) then
       resont = self%gw1 * h1frc
     else
-      vbarh = 42008.e-8*temp
+      vbarh = 42008.e-8*temp * 1e12
       resont = self%gw1 * vbarh**self%gw2 * h1frc
     endif
 
@@ -298,8 +502,8 @@ contains
 
     if (abs(q) > hfwid) then
       !  Treat stark broadening separately
-      adamp = adamp - hwstk
       hprofl = stark1(n,m,q,self%nu0,temp,ne,hwstk)
+      adamp = adamp - hwstk
     else
       hprofl = 0.d0
     endif
@@ -318,7 +522,7 @@ contains
   !  Based on code by Deane Peterson and Bob Kurucz
   !===============================================================================
   FUNCTION LymanA_profile(self, q, temp, ne, h1frc, he1frc, inv_df) result(hprofl)
-    class(line_type), intent(inout)  :: self
+    class(bbtrans_type), intent(inout)  :: self
     real(8), intent(in) :: q
     real(4), intent(in) :: temp
     real(4), intent(in) :: ne
@@ -353,19 +557,19 @@ contains
     if (self%gw2 == 0) then
       resont = self%gw1 * h1frc
     else
-      vbarh = 42008.e-8*temp
+      vbarh = 42008.e-8*temp * 1e12
       resont = self%gw1 * vbarh**self%gw2 * h1frc
     endif
 
     t3nhe = (temp/10000.)**0.3 * he1frc
     vdw = self%gw3 * t3nhe
     radamp = self%ga
-    hwlor = resont + radamp + vdw
+    hwlor = resont + radamp + vdw + hwstk
 
     !  Assume for core stark is approx lorentzian
     !  and use voigt function
     
-    hfwid = 1/inv_df + hwlor + hwstk ! defines where we switch from Voigt TO adding
+    hfwid = 1/inv_df + hwlor ! defines where we switch from Voigt TO adding
     q4000 = -4000./LyA0
 
     adamp = 0
@@ -391,7 +595,7 @@ contains
         adamp = adamp + xfac*resont
       endif
     else
-      adamp = hwlor + hwstk             ! VOIGT "a"
+      adamp = hwlor             ! VOIGT "a"
     endif
     adamp = adamp * inv_df
 
@@ -467,23 +671,20 @@ contains
     end if
 
     hprofl = htotal
-
-  contains
-
-    !===============================================================================
-    function lyman_interp(arr, dx, x0, newx) result(out)
-      real(8), intent(in), dimension(:) :: arr
-      real(4), intent(in) :: dx, x0
-      real(8), intent(in) :: newx
-      real(8) :: out, x
-      integer :: i
-      !---------------------------------------------------------------------------
-      x = (newx - x0)/dx
-      i = max(0.0, x)
-      out = (arr(i+2) - arr(i+1))*(x - dble(i)) + arr(i+1)
-    end function lyman_interp
-
   END FUNCTION LymanA_profile
+
+  !===============================================================================
+  FUNCTION lyman_interp(arr, dx, x0, newx) result(out)
+    real(8), intent(in), dimension(:) :: arr
+    real(4), intent(in) :: dx, x0
+    real(8), intent(in) :: newx
+    real(8) :: out, x
+    integer :: i
+    !---------------------------------------------------------------------------
+    x = (newx - x0)/dx
+    i = max(0.0, x)
+    out = (arr(i+2) - arr(i+1))*(x - dble(i)) + arr(i+1)
+  END FUNCTION lyman_interp
 
   !===============================================================================
   !  HFNM calculates hydrogen oscillator strengths
@@ -548,6 +749,10 @@ contains
 
     real(4), dimension(2,2), parameter :: y1wtm = reshape([1.e18, 1.e17, 1.e16, 1.e14], [2,2])
     !---------------------------------------------------------------------------
+    if (hwstk==0) then
+      stark1 = 0
+      return
+    endif
     !  Variables depending on conditions
     t4 = temp/10000.
     xne16 = ne**0.1666667

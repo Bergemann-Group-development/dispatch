@@ -19,9 +19,6 @@ MODULE trans_mod
 
   type, extends(bbtrans_type) :: transition_type
       integer :: ntrans ! transition identifier
-      integer :: j=0 ! upper level  
-      integer :: i=0 ! lower level
-      integer :: nq  ! number of input frequencies in the line
 
       real(8) :: upper_ev
 
@@ -49,7 +46,7 @@ MODULE trans_mod
                                       ! for now only 'voigt' or
                                       ! 'hlinop' for hydrogen
 
-    real(8) :: lambda0       ! line center vacuum wavelength [cm]
+    real(8) :: lam0       ! line center vacuum wavelength [cm]
     logical :: hydrogen
     real(4),dimension(:), pointer, contiguous :: q => null() ! frequencies [Doppler units]
     real(8),dimension(:), pointer, contiguous :: wq => null()  ! frequency quadrature weight [Doppler units]
@@ -64,13 +61,7 @@ MODULE trans_mod
     real(8) :: qmax ! width of profile in doppler units
     real(8) :: q0   ! switch from linear to logarithmic frequency grid spacing
 
-    ! Added to deal with multi component lines
-    ! IO > 1 leads to the following being read from the atom file
-    integer :: io ! number of components in term (lifted from Multi 2.3)
-    real(8), dimension(:), allocatable :: dq
-    real(8), dimension(:), allocatable :: wt 
     real(8), dimension(:), allocatable :: fterm 
-    real(8), dimension(:), allocatable :: da
     real(8), dimension(:), allocatable :: gwterm
     real(8), dimension(:), allocatable :: gqterm
     integer :: fs, fe
@@ -103,10 +94,15 @@ contains
     real(8), intent(in), dimension(:) :: nu
     real(4), intent(inout), dimension(:) :: alpha
     real(8), allocatable, dimension(:) :: dalpha_dnu
+    real(8) :: minl, maxl
     !----------------------------------------------------------------------------------
     allocate(dalpha_dnu, mold=self%nu_input)
+    minl = minval(self%nu_input)
+    maxl = maxval(self%nu_input)
     call hermite_derivative(dalpha_dnu, self%nu_input, self%alpha_input)
     call hermite_interpolation(alpha, nu, self%nu_input, self%alpha_input, dalpha_dnu)
+    where (nu > maxl) alpha = 0
+    where (nu < minl) alpha = 0
     deallocate(dalpha_dnu)
   END SUBROUTINE hermite_interp
 

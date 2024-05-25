@@ -49,7 +49,7 @@ SUBROUTINE compute_partition_functions(self, temp, EK_over_temp, ne)
             ion%part = ion%irwin_partf(temp)
         else
             ion%part = 0
-            do i=1, ion%nk
+            do i=1, ubound(ion%levels, 1)
                 lvl => ion%levels(i)
                 blz = lvl%g * lvl%boltzmann(EK_over_temp)
                 if (lvl%xl > 0) then

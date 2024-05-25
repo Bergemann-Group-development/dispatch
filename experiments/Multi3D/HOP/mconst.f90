@@ -46,7 +46,7 @@ MODULE mconst
   
   ! convenient compound constants
   
-  real(8), parameter :: f_to_Aji = 8.0d0 * pi**2 * ec**2 / em / cc
+  real(8), parameter :: f_to_Aji = 8.0d0 * pi**2 * ec**2 * hh / em / cc
   real(8), parameter :: hc      = hh * cc
   real(8), parameter :: hc2     = hh * cc**2
   real(8), parameter :: h_e     = hh / ee
