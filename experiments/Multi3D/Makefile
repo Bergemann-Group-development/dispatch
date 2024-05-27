@@ -1,8 +1,8 @@
 # Option groups
-OPTS = full_debug
+#OPTS = full_debug
 #OPTS = vscode
 #OPTS = debug
-#OPTS =
+OPTS =
 #OPTS = hoppe
 #OPTS = optimized
 
@@ -15,8 +15,8 @@ ifndef mpiifort
   MPI=
 endif
 
-COMPILER        = gfort10
-#COMPILER        = ifort
+#COMPILER        = gfort10
+COMPILER        = ifort
 SOLVER          = ramses/hlld_eos
 RT_SOLVER       = short_characteristics
 #EOS             = microphysics/eos/itable
