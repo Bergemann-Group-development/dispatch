@@ -472,7 +472,7 @@ def compute_tau_scale (chi, zz, axis=-1):
     tau2 = 0.5*(chi[2] + chi[1]) * dz[1] + tau1
     mask = tau2>0
     dchi[0, mask] = (tau1*tau1)[mask]/tau2[mask]
-    dchi[1:] = 0.5*(chi[1:] + chi[:-1]) * dz
+    dchi[1:] = (0.5*(chi[1:] + chi[:-1]).T * dz).T
     tau = np.cumsum(dchi, axis=0)
     tau = tau[::-1]
     tau = np.moveaxis(tau, 0, axis)
