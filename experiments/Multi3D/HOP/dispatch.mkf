@@ -12,7 +12,7 @@ bbtrans_mod.o       : op_math_mod.o level_mod.o
 op_math_mod.o		    : prec_mod.o
 osmet_mod.o         : prec_mod.o op_math_mod.o
 optab_mod.o         : prec_mod.o spectrum_mod.o
-prec_mod.o          : mconst.o trace_mod.o
+prec_mod.o          : const_mod.o trace_mod.o
 handyfuncs_mod.o    : op_math_mod.o
-hprofl_mod.o        : mconst.o trans_mod.o
-trans_mod.o         : bbtrans_mod.o mmath.o
+hprofl_mod.o        : const_mod.o trans_mod.o
+trans_mod.o         : bbtrans_mod.o mmath_mod.o

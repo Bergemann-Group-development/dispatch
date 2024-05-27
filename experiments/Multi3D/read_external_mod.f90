@@ -20,12 +20,12 @@ MODULE read_external_mod
   USE list_mod
   USE shared_mod
   USE task_list_mod
-  USE experiment_mod, only: experiment_t, interpolated_3d_atmos
+  USE experiment_mod, only: experiment_t, interpolated_3d_atmos, amr
   USE ion_mod, only: vmic
   USE composition_mod
   USE composition_patch_mod, only: FeH, save_atmos, save_eos
   USE patch_mod
-  USE mconst, only:cc
+  USE const_mod, only:cc
   USE atom_mod, only: m1d_legacy_mode, NextEntry
   USE m3d_patch_mod, only: maxiter, ilambd, m3d_patch_t, atom_update_counter, &
   global_maxerr, global_pos, nz_total, use_density, use_ne, atmos_format
@@ -76,7 +76,7 @@ SUBROUTINE init(self, task_list, name)
   integer :: verbose=0
   real(4), dimension(:,:,:), pointer, contiguous :: vel
   namelist /atmos_params/ atmos_file, dims, verbose, patches_per_mpi, FeH, save_atmos, &
-  atmos_format, vmic, use_density, use_ne, nx, ny, nz, snap, legacy_stagger_interp, save_eos
+  atmos_format, vmic, use_density, use_ne, nx, ny, nz, snap, legacy_stagger_interp, save_eos, amr
   !-----------------------------------------------------------------------------
   if (associated(task_list)) return
   call trace%begin('read_external_t%init')
@@ -137,6 +137,10 @@ SUBROUTINE init(self, task_list, name)
     self%size = self%size / scaling%l
     self%n = [nx, ny, nz]
     self%ds = self%size / self%n
+
+    if (amr) then
+      call setup_amr_mesh(dims)
+    endif
   case default
     select case (atmos_format)
     case ('marcs')
@@ -224,6 +228,7 @@ SUBROUTINE init(self, task_list, name)
   ! id, rank, size, position, integer position, and status bits.  Discard
   ! external patches and add the rest to the task_list.
   !-----------------------------------------------------------------------------
+
   ip = 0
   do k=0, self%dims(3)-1
     allocate (patch)
@@ -237,6 +242,13 @@ SUBROUTINE init(self, task_list, name)
     end if
     if (all(self%dims==1)) call patch%task_t%set(bits%root_grid)
     call self%setup_patch(patch)
+
+    if (amr) then
+      open(file=trim(io%run_dir)//'atmos_mesh.txt', newunit=lunit, form='FORMATTED', access='append')
+      write(lunit, *) patch%n
+      write(lunit, *) patch%ds
+      close(lunit)
+    endif
 
     if (verbose > 0) then
       if (k==0) write(stdout,'(I2, A28)') self%dims(3), ' subdomains in z-direction:'
@@ -252,10 +264,12 @@ SUBROUTINE init(self, task_list, name)
     write (stdout,*) ip, 'tasks generated'
   endif
 
-  open(file=trim(io%run_dir)//'atmos_mesh.txt', newunit=lunit, form='FORMATTED')
-  write(lunit, *) self%n
-  write(lunit, *) self%ds
-  close(lunit)
+  if (.not. amr) then
+    open(file=trim(io%run_dir)//'atmos_mesh.txt', newunit=lunit, form='FORMATTED')
+    write(lunit, *) self%n
+    write(lunit, *) self%ds
+    close(lunit)
+  endif
 
   io%end_time = (maxiter + ilambd + 1) * patch%dtime
   io%print_every = huge(1)

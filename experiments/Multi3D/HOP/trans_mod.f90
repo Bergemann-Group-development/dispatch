@@ -1,9 +1,9 @@
 ! *******************************************************************
 MODULE trans_mod
-  USE mconst
+  USE const_mod
   USE bbtrans_mod
   USE op_math_mod, only: searchsorted
-  USE mmath, only: hermite_interpolation, hermite_derivative
+  USE mmath_mod, only: hermite_interpolation, hermite_derivative
   ! *******************************************************************
   !
   !     Contains variables connected to the atom(s) 

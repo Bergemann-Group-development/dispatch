@@ -10,9 +10,9 @@ MODULE nlte_patch_mod
   USE trace_mod
   USE bits_mod
   USE os_mod
-  USE mconst
+  USE const_mod
   USE patch_mod, only: patch_t
-  USE mmath, only: cc_kernel
+  USE mmath_mod, only: cc_kernel
   USE op_math_mod, only: pchip_mono
   USE handyfuncs_mod
   USE atom_mod, only:atom_type, atom_data_t
@@ -705,6 +705,7 @@ SUBROUTINE interpolate_opacity_table (self, temp, ne, rho)
   end do
   call trace%end(itimer)
 END SUBROUTINE interpolate_opacity_table
+
 !===============================================================================
 SUBROUTINE add_bound_free_opacities (self, adata)
   class(nlte_patch_t), target :: self

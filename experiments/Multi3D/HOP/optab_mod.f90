@@ -1,7 +1,7 @@
 MODULE optab_mod
     USE os_mod
     USE prec_mod
-    USE mconst
+    USE const_mod
     USE spectrum_mod, only: spectrum_type
     USE op_math_mod, only: searchsorted, pchip_mono
     implicit none

@@ -11,7 +11,7 @@ MODULE atom_patch_mod
     USE atom_mod, only: atom_type, atomic_spectrum_type, use_classic_col, kramer_bf, debye_shield, &
                         red_cut, blue_cut, logf_cut, atom_data_t, m1d_legacy_mode, nq_fac, nq_min
     USE trans_mod, only: line_type, cont_type
-    USE mconst, only: CC
+    USE const_mod, only: CC
     USE ion_mod, only: ion_type, particle_type
     USE element_mod, only: element_type
     USE molecule_mod, only: molec_type

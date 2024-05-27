@@ -52,6 +52,7 @@ MODULE experiment_mod
   end type
 
   logical, public :: interpolated_3d_atmos=.false.
+  logical, public :: amr=.false.
   
 CONTAINS
 
@@ -75,11 +76,18 @@ SUBROUTINE pre_init (self)
   if (self%ipos(3)+1 <= md(3)) then
     self%n(3) = self%n(3) + 1
   endif
-  self%ze = self%zs + self%n(3)
 
+  self%ze = self%zs + self%n(3)
   self%size = self%ds * self%n
   self%position = 0.5d0*self%size
-  self%position(3) = self%position(3) + self%zs*self%ds(3)
+
+  if (amr) then
+    self%size(3) = sub_size(self%ipos(3)+1) / scaling%l
+    self%position(3) = sub_pos(self%ipos(3)+1) / scaling%l
+    self%ds(3) = self%size(3) / self%n(3)
+  else
+    self%position(3) = self%position(3) + self%zs*self%ds(3)
+  endif
 
   !-----------------------------------------------------------------------------
   ! Preliminary region information, relative to the task position.
@@ -154,7 +162,7 @@ SUBROUTINE init (self)
     tt => authority(:,:,:,self%idx%e)
     pe => authority(:,:,:,6)
 
-    call load_atmos_subregion(n, sub, pos, d, px, py, pz, tt, pe)
+    call interpolate_atmos(n, sub, pos, d, px, py, pz, tt=tt, pe=pe)
 
     if (rotate_atmos) then
       do i=1, self%nw-1
@@ -167,7 +175,7 @@ SUBROUTINE init (self)
         pe => authority(:,:,:,6)
         bottom = self%position(3) - 0.5*self%size(3)
         bot2pivot = scaling%l * (pivot_z * self%ds(3) - bottom)
-        call load_atmos_subregion(n, sub, pos, d, px, py, pz, tt, pe, bot2pivot, long_vec(:,i))
+        call interpolate_atmos(n, sub, pos, d, px, py, pz, tt=tt, pe=pe, vec=long_vec(:,i), bot2pivot=bot2pivot)
       end do
     endif
 

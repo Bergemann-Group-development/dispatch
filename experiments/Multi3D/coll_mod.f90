@@ -1,8 +1,8 @@
 MODULE coll_mod
     USE io_mod
     USE os_mod
-    USE mmath,only:ei1,hermite_interpolation,hermite_derivative
-    USE mconst
+    USE mmath_mod,only:ei1,hermite_interpolation,hermite_derivative
+    USE const_mod
     USE prec_mod
     implicit none
 
@@ -307,7 +307,7 @@ MODULE coll_mod
    !**********************************************************************
 
    function ftwo(x)
-      USE mconst,only:pi,euler_const
+      USE const_mod,only:pi,euler_const
       implicit none
       ! new routine 24-jan-1994  p. judge
       ! calculates f2(x) needed for collisional rates of arnaud and rothenflug 
@@ -407,7 +407,7 @@ MODULE coll_mod
    !*********************************************************************
 
    SUBROUTINE hepop(tg,hpop,he1,he2)
-      USE mmath,only:linear1d
+      USE mmath_mod,only:linear1d
       implicit none
       !Ratio of Helium ionization fraction from table IV of Arnaud and Rothenflug
       !ABHE is abundance of Helium- assumed =0.1

@@ -1,7 +1,7 @@
 MODULE hprofl_mod
   USE bbtrans_mod, only: voigt_function2, bbtrans_type, disable_ga, disable_stark, disable_vdw
   USE prec_mod, only: RYD
-  USE mconst
+  USE const_mod
   implicit none
 
   real(4), dimension(4,3), parameter ::  xknmtb = reshape([&

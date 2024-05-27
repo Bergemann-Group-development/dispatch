@@ -3,7 +3,7 @@ MODULE read_stagger_snapshot_mod
   USE os_mod
   USE trace_mod
   USE handyfuncs_mod
-  USE mconst
+  USE const_mod
   USE op_math_mod, only: linspace, linterpolate_3d
   USE m3d_patch_mod, only: pivot_z, ray_offset
   implicit none
@@ -31,11 +31,14 @@ MODULE read_stagger_snapshot_mod
   real(4), dimension(:,:,:), allocatable, save :: iie, iltemp, ilpe, ilrho
   real(4), dimension(:,:,:), allocatable, save :: ipx, ipy, ipz
   real(4), dimension(:), allocatable, save :: ixx, iyy, izz
+  real(4), public, dimension(:), allocatable, save :: amr_ref
+  real(8), public, dimension(:), allocatable, save :: sub_pos, sub_size
 
   public :: read_stagger
   public :: read_co5bold
-  public :: load_atmos_subregion
   public :: deallocate_stagger
+  public :: interpolate_atmos
+  public :: setup_amr_mesh
     
 contains
 
@@ -104,24 +107,6 @@ SUBROUTINE read_co5bold(atmos_file, box)
   ds = box / (n-1)
   box = ds * n
 END SUBROUTINE read_co5bold
-
-!===============================================================================
-SUBROUTINE load_atmos_subregion(n, sub, pos, d, px, py, pz, tt, pe, bot2pivot, vec)
-  integer, intent(in) :: n(3)
-  real(8), intent(in) :: sub(3), pos(3)
-  real(8), intent(in), optional :: bot2pivot, vec(3)
-  real(4), intent(out), dimension(:,:,:) :: d, px, py, pz
-  real(4), intent(out), dimension(:,:,:), optional :: tt, pe
-  real(4), dimension(:), allocatable :: newx, newy, newz
-  real(4) :: lower(3), ds(3)
-  integer :: i
-  integer, save :: itimer
-  !-----------------------------------------------------------------------------
-  call trace%begin('read_stagger_snapshot_mod%load_atmos_subregion', itimer=itimer)
-
-  call interpolate_atmos(n, sub, pos, d, px, py, pz, tt=tt, pe=pe, bot2pivot=bot2pivot, vec=vec)
-  call trace%end(itimer)
-END SUBROUTINE load_atmos_subregion
 
 !===============================================================================
 SUBROUTINE deallocate_stagger()
@@ -314,7 +299,11 @@ SUBROUTINE interpolate_atmos(n, sub, pos, d, px, py, pz, ee, tt, pe, vec, bot2pi
 
   newx = [ (ds(1)*i + lower(1), i=0, n(1)-1) ]
   newy = [ (ds(2)*i + lower(2), i=0, n(2)-1) ]
-  newz = [ (ds(3)*i + lower(3), i=0, n(3)-1) ]
+
+  !newz = [ (ds(3)*i + lower(3), i=0, n(3)-1) ]
+  newz = [ (ds(3)*i + lower(3), i=1, n(3)) ]
+  ! this way the distance to the patch below is ds of the current patch, otherwise it is ds of the patch below
+  ! this is needed for the amr setup in order to avoid additional interpolations for the final spectrum.
   
   dx = ixx(2)
   dy = iyy(2)
@@ -440,5 +429,37 @@ SUBROUTINE transpose_stagger(f)
   end do
   call trace%end(itimer)
 END SUBROUTINE transpose_stagger
+
+!===============================================================================
+SUBROUTINE setup_amr_mesh(nsub)
+  integer, intent(in) :: nsub
+  integer :: i, j, k, nx, ny, nz
+  real(8), dimension(nsub+1) :: var_edge
+  real(4), dimension(nsub+1) :: sub_edge
+  real(4) :: vmin, vmax
+  !-----------------------------------------------------------------------------
+  nx = size(ixx)
+  ny = size(iyy)
+  nz = size(izz)-2*gz
+  allocate(amr_ref(nz), source=0.0)
+  allocate(sub_pos(nsub), sub_size(nsub))
+
+  do k=1, nz
+  do j=1, ny
+  do i=1, nx
+    ! we use minus here, because interp1d_sorted expects increasing values
+    amr_ref(k) = amr_ref(k) - ilpe(i,j,k+gz)
+  end do
+  end do
+  end do
+  amr_ref = amr_ref / (nx*ny)
+
+  vmin = amr_ref(1)
+  vmax = amr_ref(nz)
+  var_edge = linspace(vmin, vmax, nsub+1)
+  call interp1d_sorted(amr_ref, izz(gz+1:nz+gz), var_edge, sub_edge)
+  sub_size = sub_edge(2:nsub+1) - sub_edge(1:nsub)
+  sub_pos = sub_edge(1:nsub) + 0.5d0*sub_size
+END SUBROUTINE setup_amr_mesh
 
 END MODULE read_stagger_snapshot_mod

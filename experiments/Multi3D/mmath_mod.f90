@@ -1,4 +1,4 @@
-MODULE mmath
+MODULE mmath_mod
   USE refsor_mod
   USE unista_mod
 
@@ -261,7 +261,7 @@ contains
     ! Ibgui et al. 2013,A&A, "IRIS,a generic 3D radiative transfer code"
     ! x can be nonequidistant
     ! *******************************************************************
-    USE mconst    
+    USE const_mod    
     implicit none
 
     real(8),dimension(3),intent(in)  :: x,y
@@ -294,7 +294,7 @@ contains
     ! Ibgui et al. 2012,A&A, "IRIS,a generic 3D radiative transfer code"
     ! x axis is assumed equidistant, so only dx is given
     ! *******************************************************************
-    USE mconst
+    USE const_mod
     implicit none
 
     real(8),dimension(3),intent(in)  :: y
@@ -937,7 +937,7 @@ contains
   !---------------------------------------------------------------------
 
                  function splin(t, x, y, n, nnn)
-                   USE mconst
+                   USE const_mod
                    !
                    ! Splin interpolation of t in a given table of points (x[i],y[i]) 
                    !
@@ -1100,5 +1100,5 @@ contains
                                       !
                                       !---------------------------------------------------------------------
 
-END MODULE mmath
+END MODULE mmath_mod
 ! *******************************************************************j

@@ -19,7 +19,7 @@ MODULE m3d_patch_mod
     USE omp_timer_mod
     USE math_mod
     USE bits_mod
-    USE mconst
+    USE const_mod
     USE handyfuncs_mod
     USE prec_mod, only: inf4
     USE patch_mod, only: patch_t, patch_t_init

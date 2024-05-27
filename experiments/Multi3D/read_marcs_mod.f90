@@ -3,7 +3,7 @@ MODULE read_marcs_mod
   USE prec_mod, only: dp
   USE os_mod
   USE op_math_mod, only: interp1d, pchip_mono
-  USE mconst
+  USE const_mod
   implicit none
 
   integer, public :: zfac=4

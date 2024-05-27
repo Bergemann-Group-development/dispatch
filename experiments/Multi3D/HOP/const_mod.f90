@@ -1,4 +1,4 @@
-MODULE mconst
+MODULE const_mod
   ! *******************************************************************
   !
   ! physical and mathematical constants
@@ -84,5 +84,5 @@ contains
           bnu = c1 * exp(-x)
       endif
   end FUNCTION planck
-END MODULE mconst
+END MODULE const_mod
 

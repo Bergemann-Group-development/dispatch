@@ -425,8 +425,8 @@ class trans_class(object):
             lin_chi, lin_eta, net_chi = cntrbf[:, ang]
             cnt_inu = cnt_inus[ang]
             mu = self.run.vec[ang, -1]
-            ds = self.run.dz / mu * 1e8
-            tau = compute_tau_scale(net_chi, ds, axis=-1)
+            zz = self.run.zz / mu * 1e8
+            tau = compute_tau_scale(net_chi, zz, axis=-1)
             cf = conversion * (lin_chi*cnt_inu - lin_eta) * np.exp(-tau)
 
             if get_mean:

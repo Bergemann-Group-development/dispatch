@@ -35,8 +35,8 @@ MODULE ion_mod
     
     type, extends(particle_type) :: ion_type
         integer :: j, nmolec=0, mcount, n_iso=0
-        type(ion_type), pointer :: above
-        type(ion_type), pointer :: below
+        type(ion_type), pointer :: above => null()
+        type(ion_type), pointer :: below => null()
         class(particle_pointer_t), allocatable :: molecules(:)
         integer :: active
         real(dp) :: parco

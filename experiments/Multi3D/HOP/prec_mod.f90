@@ -1,6 +1,6 @@
 MODULE prec_mod
     USE, intrinsic :: iso_fortran_env
-    USE mconst
+    USE const_mod
     implicit none
 
     !integer, parameter :: sp = REAL32 ! in conflict with spectrum object

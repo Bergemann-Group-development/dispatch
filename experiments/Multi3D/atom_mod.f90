@@ -3,10 +3,10 @@ MODULE atom_mod
     USE io_mod
     USE handyfuncs_mod
     USE prec_mod, only: inf8
-    USE mconst
+    USE const_mod
     USE coll_mod
     USE trans_mod
-    USE mmath, only: refsor, unista
+    USE mmath_mod, only: refsor, unista
     USE op_math_mod, only: lineq, get_interval, eqsyst, lineq_no_pivot
     USE ion_mod, only: ion_type, massive_type
     USE element_mod, only: element_type
@@ -76,16 +76,19 @@ MODULE atom_mod
       real(8), dimension(:), allocatable :: ev ! energy of level above ground state [eV]
       real(8), dimension(:), allocatable :: g ! multiplicity of level
 
-      type(line_type), dimension(:), pointer, contiguous :: line
-      type(cont_type), dimension(:), pointer, contiguous :: cont
-      type(coll_type), dimension(:), pointer, contiguous :: coll
-      type(atomic_spectrum_type), pointer :: sp
-      type(atom_data_t), pointer :: data
-      type(atom_data_t), dimension(:), pointer :: rotated_data
+      type(line_type), dimension(:), pointer, contiguous :: line => null()
+      type(cont_type), dimension(:), pointer, contiguous :: cont => null()
+      type(coll_type), dimension(:), pointer, contiguous :: coll => null()
+      type(atomic_spectrum_type), pointer :: sp => null()
+      type(atom_data_t), pointer :: data => null()
+      type(atom_data_t), dimension(:), pointer :: rotated_data => null()
 
-      real(8), dimension(:,:), pointer, contiguous :: tgrid, cgrid, dcdt
-      real(4), dimension(:), pointer, contiguous :: cdata
-      logical, dimension(:), pointer, contiguous :: ecol, hcol
+      real(8), dimension(:,:), pointer, contiguous :: tgrid => null()
+      real(8), dimension(:,:), pointer, contiguous :: cgrid => null()
+      real(8), dimension(:,:), pointer, contiguous :: dcdt  => null()
+      real(4), dimension(:), pointer, contiguous :: cdata => null()
+      logical, dimension(:), pointer, contiguous :: ecol => null()
+      logical, dimension(:), pointer, contiguous :: hcol => null()
       
       real(8) :: qnorm
       real(8) :: drawin, mu_e
@@ -845,7 +848,8 @@ MODULE atom_mod
       tri = (lin%j-1)*(lin%j-2)/2 + lin%i
       self%cdata(tri) = lin%f
 
-      if (size(in_lines) > 0) then
+      ! in gfortran the size of an unallocated allocatable array can be larger than 0
+      if (allocated(in_lines) .and. size(in_lines) > 0) then
         if (findloc(in_lines, i, 1) <= 0) then
           call lin%deactivate()
           cycle
@@ -1456,7 +1460,7 @@ MODULE atom_mod
     integer, save:: itimer=0
     !-----------------------------------------------------------------------------
     call trace%begin('atom_type%set_ired_iblue', itimer=itimer)
-    if (option(bf)) then
+    if (option(bf) .and. associated(self%cont)) then
       do i=1, size(self%cont)
         cnt => self%cont(i)
         if (.not. cnt%active) cycle
@@ -1496,7 +1500,7 @@ MODULE atom_mod
       end do
     endif
 
-    if (option(bb)) then
+    if (option(bb) .and. associated(self%line)) then
       do i=1, size(self%line)
         lin => self%line(i)
         if (.not. lin%active) cycle

@@ -1,8 +1,8 @@
 # Option groups
-#OPTS = full_debug
+OPTS = full_debug
 #OPTS = vscode
 #OPTS = debug
-OPTS =
+#OPTS =
 #OPTS = hoppe
 #OPTS = optimized
 
@@ -15,7 +15,8 @@ ifndef mpiifort
   MPI=
 endif
 
-COMPILER        = ifort
+COMPILER        = gfort10
+#COMPILER        = ifort
 SOLVER          = ramses/hlld_eos
 RT_SOLVER       = short_characteristics
 #EOS             = microphysics/eos/itable
@@ -33,7 +34,7 @@ HOP             = ./HOP
 sinclude $(TOP)/config/Makefile
 sinclude $(HOP)/dispatch.mkf
 
-OPT += -diag-disable=10448
+#OPT += -diag-disable=10448
 #OPT = -O0 -fimplicit-none  -Wall  -Wline-truncation  -Wcharacter-truncation  -Wsurprising  -Waliasing  -Wimplicit-interface  -Wunused-parameter  -fwhole-file  -fcheck=all  -fbacktrace
 
 # List the .o files the main program depends on after the colon:
@@ -47,11 +48,12 @@ read_external_mod.o         : io_mod.o mesh_mod.o task_list_mod.o experiment_mod
 read_stagger_snapshot_mod.o : io_mod.o os_mod.o eos_mod.o scaling_mod.o m3d_patch_mod.o
 experiment_mod.o            : trace_mod.o io_mod.o solver_mod.o kinds_mod.o m3d_halo_mod.o composition_patch_mod.o read_stagger_snapshot_mod.o
 dispatch.o                  : io_mod.o
+mmath_mod.o                 : refsor_mod.o unista_mod.o const_mod.o prec_mod.o search_mod.o
 guards_mod.o                : math_mod.o
 coll_var.o                  : coll_mod.o
-coll_mod.o                  : mmath.o 
+coll_mod.o                  : mmath_mod.o 
 atom_mod.o                  : trans_mod.o coll_mod.o op_math_mod.o spectrum_mod.o element_mod.o molecule_mod.o handyfuncs_mod.o hprofl_mod.o
-spectrum_mod.o              : io_mod.o timer_mod.o trace_mod.o mconst.o trans_mod.o handyfuncs_mod.o
+spectrum_mod.o              : io_mod.o timer_mod.o trace_mod.o const_mod.o trans_mod.o handyfuncs_mod.o
 m3d_halo_mod.o              : halo_mod.o guards_mod.o gpatch_mod.o handyfuncs_mod.o
 m3d_patch_mod.o             : gpatch_mod.o atom_mod.o ray_mod.o m3d_halo_mod.o handyfuncs_mod.o m3d_debug_mod.o composition_mod.o
 ray_patch_mod.o             : m3d_patch_mod.o
@@ -60,11 +62,9 @@ atom_patch_mod.o            : nlte_patch_mod.o
 composition_patch_mod.o     : atom_patch_mod.o nlte_patch_mod.o
 bftrans_mod.o               : os_mod.o
 bbtrans_mod.o               : trace_mod.o
-mmath.o                     : search_mod.o
 unista_mod.o                : refsor_mod.o
-ray_mod.o                   : mmath.o radau_mod.o
-prec_mod.o                  : mconst.o os_mod.o
+ray_mod.o                   : mmath_mod.o radau_mod.o
+prec_mod.o                  : const_mod.o os_mod.o
 patch_mod.o                 : os_mod.o
 mpi_debug_mod.o             : mpi_mod.o io_mod.o
-mmath.o                     : refsor_mod.o unista_mod.o mconst.o prec_mod.o
 read_marcs_mod.o            : io_mod.o prec_mod.o op_math_mod.o os_mod.o

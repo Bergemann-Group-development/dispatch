@@ -23,7 +23,7 @@ MODULE ray_patch_mod
   USE ray_mod, only: ray_type, one_dimensional
   USE m3d_patch_mod, only: m3d_patch_t, vec, wmu, long_vec, long_wmu, &
   converged, print_send, atom_update_counter, comoving_frame, use_vel
-  USE mconst, only: cc, over_4pi, PI
+  USE const_mod, only: cc, over_4pi, PI
   implicit none
   private
 

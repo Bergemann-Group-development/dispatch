@@ -1,5 +1,5 @@
 MODULE ray_mod
-  USE mconst
+  USE const_mod
   USE radau_mod
   implicit none
 
@@ -825,7 +825,7 @@ END SUBROUTINE SetLongKern
 
 !---------------------------------------------------------------------
 SUBROUTINE SetCcKern(kern,h1,h2)
-  USE mmath,only:cc_kernel
+  USE mmath_mod,only:cc_kernel
   !---------------------------------------------------------------------
   !
   ! set a 2D cubic convulution kernel as the multiplication

@@ -3,7 +3,7 @@ MODULE spectrum_mod
     USE io_mod
     USE timer_mod
     USE trace_mod
-    USE mconst
+    USE const_mod
     USE handyfuncs_mod, only:air2vac
     USE op_math_mod, only: get_ivl=>get_interval
     USE trans_mod, only: transition_type
@@ -115,7 +115,9 @@ MODULE spectrum_mod
       integer :: j, n
       !-----------------------------------------------------------------------------
       n = size(nu, 1)
-      if (n==1) then
+      if (n==0) then
+        return
+      elseif (n==1) then
         print *, 'weight for single frequency wanted!'
         weight(1) = 1.0
         return

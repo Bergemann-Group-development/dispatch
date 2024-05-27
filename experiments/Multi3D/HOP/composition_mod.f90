@@ -426,7 +426,9 @@ contains
 
             if (.not. associated(trans%ion)) then
                 trans%active = .false.
-                print *, trans%key,  ' deactivated!'
+                if (trans%key /= 'ME') then
+                    print *, trans%key,  ' deactivated!'
+                endif
             endif
 
             !read(absdat,999) ilogl,kvadl,minex,maxex,nnu

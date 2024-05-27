@@ -187,22 +187,39 @@ class read(object):
                 self.i3_lte = i3[...,1]
                 self.c3     = i3[...,2]
 
+        atmos_params =self.nml['atmos_params']
         mesh = open(folder + 'atmos_mesh.txt', 'r')
-        nx, ny, nz = [int(i) for i in mesh.readline().split()]
-        dx, dy, dz = [float(i) for i in mesh.readline().split()]
+        amr = 'amr' in atmos_params
+        if amr: amr = atmos_params['amr']
+
+        if amr:
+            nz = atmos_params['nz']
+            self.zz = np.zeros(nz)
+            j = 0
+            off = 0
+            for k in range(atmos_params['dims']):
+                nx, ny, nnz = [int(i) for i in mesh.readline().split()]
+                dx, dy, dz = [float(i) for i in mesh.readline().split()]
+                self.zz[j:j+nnz] = np.arange(1,nnz+1)*dz + off
+                j += nnz
+                off = self.zz[j-1]
+
+        else:
+            nx, ny, nz = [int(i) for i in mesh.readline().split()]
+            dx, dy, dz = [float(i) for i in mesh.readline().split()]
+            self.zz = np.arange(nz)*dz
+
+        self.dx = dx
+        self.dy = dy
+        self.dz = dz
+        self.xx = np.arange(nx)*dx
+        self.yy = np.arange(ny)*dy
         mesh.close()
 
         if nx*ny > 1:
             self.dim = '3D'
         else:
             self.dim = '1D'
-
-        self.dx = dx
-        self.dy = dy
-        self.dz = dz
-        self.xx = np.linspace(0, (nx-1)*dx, nx)
-        self.yy = np.linspace(0, (ny-1)*dy, ny)
-        self.zz = np.linspace(0, (nz-1)*dz, nz)
 
         if os.path.isfile(sfolder + 'atmos_meta.txt') and read_atmos:
             mem = self.read_patch_save('atmos')[0]
@@ -214,7 +231,7 @@ class read(object):
             self.vy   = mem[...,4].compute() * CC
             self.vz   = mem[...,5].compute() * CC
             self.chi  = mem[...,6].compute()
-            self.tau  = compute_tau_scale(self.chi, self.dz*1e8, axis=-1)
+            self.tau  = compute_tau_scale(self.chi, self.zz*1e8, axis=-1)
             self.ltau = np.log10(self.tau)
             
         if os.path.isfile(folder + 'atmos_data.bin') and read_atmos:
