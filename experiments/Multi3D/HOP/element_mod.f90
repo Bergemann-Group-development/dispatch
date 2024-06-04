@@ -11,7 +11,7 @@ MODULE element_mod
 
     type, extends(isotope_type) :: element_type
         integer :: np, nion, nmolec, mcount
-        real(dp) :: abund
+        real(dp) :: abund=-100
         type(ion_type), allocatable :: ions(:)
         class(isotope_type), allocatable :: isotope(:)
         !type(mol_pointer_t), allocatable :: molecules(:)
