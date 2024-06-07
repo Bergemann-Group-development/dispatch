@@ -558,7 +558,7 @@ SUBROUTINE add_scattering (self, comp)
     Jdn => self%dn_twin%Jnu
   endif
 
-  do s=1, self%n_set
+  s = 1 ! only include scattering for the NLTE set
   do z=1, nz
   do y=1, ny
   do x=1, nx
@@ -574,11 +574,8 @@ SUBROUTINE add_scattering (self, comp)
   end do
   end do
   end do
-  end do
 
-  do s=1, self%n_set
-    call comp%scattering(self%nu, back(:,:,:,:,2), self%Jnu(:,:,:,:,s))
-  end do
+  call comp%scattering(self%nu, back(:,:,:,:,2), self%Jnu(:,:,:,:,s))
 
   self%Jnu = 0
   call trace%end(itimer)
