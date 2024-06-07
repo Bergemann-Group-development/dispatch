@@ -409,7 +409,7 @@ class trans_class(object):
             cntrbf = cntrbf.squeeze()
             cfunc = np.zeros_like(cnt_inus[0])
 
-        all_angs = np.array(range(self.run.n_ang))
+        all_angs = np.arange(self.run.n_ang)
         if ang is None and imu is None:
             angs = all_angs
         elif imu is not None:
@@ -418,11 +418,11 @@ class trans_class(object):
         elif ang is not None:
             angs = np.array([ang])
 
-        wts = np.ones(angs.size) / angs.size
+        wts = self.run.wts[angs]
             
         conversion = np.log(10) * self.run.tau / self.run.chi
         for ang, w in zip(angs, wts):
-            lin_chi, lin_eta, net_chi = cntrbf[:, ang]
+            lin_chi, lin_eta, net_chi = np.array(cntrbf[:, ang])
             cnt_inu = cnt_inus[ang]
             mu = self.run.vec[ang, -1]
             zz = self.run.zz / mu * 1e8
