@@ -36,7 +36,6 @@ MODULE ray_patch_mod
     integer :: pre_pad_fs, pre_pad_fe
     logical :: padded, level_boundary=.false.
   contains
-    procedure :: pre_init => ray_patch_pre_init
     procedure :: check_in_bounds
     procedure :: nbor_relations => ray_nbor_relations
     procedure :: set_freq_indices
@@ -52,51 +51,8 @@ MODULE ray_patch_mod
 
   !-----------------------------------------------------------------------------
   integer, save:: verbose=0
-  character(len=12), public, save :: formal_solver='linear'
 
 contains
-
-!===============================================================================
-SUBROUTINE ray_patch_pre_init (self)
-  class(ray_patch_t), target :: self
-  integer :: iostat, i_mu
-  logical, save :: first_time=.true.
-  integer, save :: itimer=0
-  namelist /formal_solver_params/ formal_solver
-  ! ----------------------------------------------------------------------------
-  call trace%begin('ray_patch_t%pre_init', itimer=itimer)
-
-  if (first_time) then
-    rewind (io%input)
-    read (io%input, formal_solver_params, iostat=iostat)
-    if (iostat > 0) then
-      rewind (io%input)
-      read (io%input, formal_solver_params)
-    end if
-    call io%namelist_warning ('formal_solver_params', iostat)
-    write (io%namelist, formal_solver_params)
-    first_time = .false.
-  endif
-
-  call self%m3d_patch_t%pre_init()
-
-  i_mu = abs(self%i_mu)
-  
-  if (self%i_mu == 0) then
-    self%wmu = 1
-  elseif (self%out_mu) then
-    self%vec = long_vec(:,i_mu) 
-    self%wmu = long_wmu(i_mu) / (2.0*PI)
-    self%dir = 1
-  else
-    self%vec = vec(:,i_mu)
-    self%wmu = wmu(i_mu) * over_4pi
-    self%dir = merge(1, -1, self%vec(3) > 0)
-  endif
-
-  call self%set_freq_indices()
-  call trace%end(itimer)
-END SUBROUTINE ray_patch_pre_init
 
 !===============================================================================
 SUBROUTINE set_freq_indices (self)

@@ -458,6 +458,7 @@ SUBROUTINE setup_amr_mesh(nsub)
   vmax = amr_ref(nz)
   var_edge = linspace(vmin, vmax, nsub+1)
   call interp1d_sorted(amr_ref, izz(gz+1:nz+gz), var_edge, sub_edge)
+  sub_edge = sub_edge * nz / (nz-1)
   sub_size = sub_edge(2:nsub+1) - sub_edge(1:nsub)
   sub_pos = sub_edge(1:nsub) + 0.5d0*sub_size
 END SUBROUTINE setup_amr_mesh

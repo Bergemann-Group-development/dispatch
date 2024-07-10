@@ -61,6 +61,7 @@ SUBROUTINE compute_partition_functions(self, temp, EK_over_temp, ne)
 
         ion%part = 1 / ion%part
     end do
+    deallocate(blz)
 END SUBROUTINE compute_partition_functions
 
 !===============================================================================
@@ -92,6 +93,7 @@ SUBROUTINE compute_ion_equilibrium(self, EK_over_temp, ne, saha, dxi)
     do j=l+1, u
         ions(j)%f = ions(j-1)%f * ions(j-1)%saha
     end do
+    deallocate(fil, partition_ratio, partp)
 END SUBROUTINE compute_ion_equilibrium
 
 !===============================================================================

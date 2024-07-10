@@ -42,3 +42,5 @@ experiments/Multi3D/data*
 *.tmp
 *.out
 vtune*
+*.i90
+*.pdf

@@ -12,6 +12,8 @@ import os
 import errno
 import copy
 
+CB_colors = ['#377eb8', '#ff7f00', '#4daf4a', '#f781bf', '#a65628', '#984ea3', '#999999', '#e41a1c', '#dede00']
+
 EE = 1.602189E-12
 HH = 6.626176E-27
 CC = 2.99792458E10
@@ -128,10 +130,14 @@ def convol(sx, sy, vrot=None, zeta_rt=None, vshift=None, vdop=None, custom=None)
         sxn, syn = conv_profile(sxn, syn, px, py)
         
     if vdop is not None:
-        width = vdop/cc
-             
-        py = np.exp(- (px/width)**2 ) / (np.sqrt(np.pi)*width)
-        sxn, syn = conv_profile(sxn, syn, px, py)
+        if vdop > 0:
+            width = vdop/cc
+                
+            py = np.exp(- (px/width)**2 ) / (np.sqrt(np.pi)*width)
+            sxn, syn = conv_profile(sxn, syn, px, py)
+        elif vdop < 0:
+            print('Negative vdop not implemented!')
+
         
     xx = np.exp(sxn)
     yy = syn
@@ -529,12 +535,12 @@ def interp_tau(newx, xx, yy):
     return newy
 
 #=====================================================================
-def find_close(arr, val):
+def find_close(arr, val, side='left'):
     #-----------------------------------------------------------------
     i = np.searchsorted(arr, val)
-    if i>0:
+    if side=='left' and i>0:
         if np.isclose(arr[i-1], val, rtol=1e-10): i = i-1
-    if i<len(arr)-1:
+    if side=='right' and i<len(arr)-1:
         if np.isclose(arr[i+1], val, rtol=1e-10): i = i+1
     return i
 
@@ -550,3 +556,161 @@ def stagger_name_to_params(stagger_name):
   if teff==5777 and logg==4.4:
     teff=5750; logg=4.5
   return teff, logg, feh
+
+@njit
+def rotate_array(xx, yy, zz, array, vec, pivot_z=None, ray_offset=None):
+  if pivot_z is None: pivot_z = zz[-1]
+  if ray_offset is None: ray_offset = np.zeros(2)
+  
+  nx = xx.size
+  ny = yy.size
+  nz = zz.size
+  ds = np.array([xx[1], yy[1]])
+  delta = vec[:2] / (vec[2] * ds) # shift in units of grid cells
+  
+
+  deltak = (pivot_z - zz)*delta[:, None] + ray_offset[:, None]
+  up1 = np.floor(deltak[0]) #integer part of shift
+  up2 = np.floor(deltak[1]) #integer part of shift
+  f1 = deltak[0] - up1 #fractional part
+  f2 = deltak[1] - up2 #fractional part
+  # bilinear interpolation to avoid overshooting
+  a = (1.0-f1)*(1.0-f2)
+  b =      f1 *(1.0-f2)
+  c = (1.0-f1)*     f2 
+  d =      f1 *     f2
+
+  rotated = np.zeros_like(array)
+  
+  for z in range(nz):
+    for y in range(ny):
+      y1 = int(np.mod(y+up2[z], ny))
+      y2 = int(np.mod(y+up2[z]+1, ny))
+  
+      for x in range(nx):
+        x1 = int(np.mod(x+up1[z], nx))
+        x2 = int(np.mod(x+up1[z]+1, nx))
+
+        rotated[...,x,y,z] = a[z]*array[...,x1,y1,z]
+        rotated[...,x,y,z] = b[z]*array[...,x2,y1,z] + rotated[...,x,y,z]
+        rotated[...,x,y,z] = c[z]*array[...,x1,y2,z] + rotated[...,x,y,z]
+        rotated[...,x,y,z] = d[z]*array[...,x2,y2,z] + rotated[...,x,y,z]
+
+  return rotated
+
+#=====================================================================
+class memmap_list:
+    #-----------------------------------------------------------------
+    def __init__(self, memmaps, axis=-1):
+        self.mlist = [m for m in memmaps if m.size > 0]
+        self.shape = np.array(self.mlist[0].shape)
+        self.shape[axis] = np.sum([m.shape[axis] for m in self.mlist])
+        self.size = np.prod(self.shape)
+        self.ndim = self.shape.size
+        self.caxis = axis
+        if axis == -1: self.caxis = self.shape.size - 1
+        self.cstart = np.cumsum([0,] + [m.shape[axis] for m in self.mlist[:-1]])
+
+    def __getitem__(self, index):
+    #-----------------------------------------------------------------
+        if self.ndim == 1:
+            return np.array(self)[index]
+        
+        if np.issubdtype(type(index), np.integer):
+            index = (index,)
+
+        if type(index) == slice:
+            index = (index,)
+
+        if Ellipsis in index:
+            Edim = self.ndim - len(index) + 1
+            iE = index.index(Ellipsis)
+            index = index[:iE] + (slice(None),)*Edim + index[iE+1:]
+
+        dim = len([i for i in index if i != None])
+        if dim > self.ndim:
+            raise IndexError("too many indices")
+        elif dim-1 >= self.caxis:
+            cutc = index[self.caxis] != slice(None)
+        else:
+            cutc = False
+
+        idim = [i for i, v in enumerate(index) if isinstance(v, int)]
+        ncut = len([i for i in idim if i < self.caxis])
+            
+        if cutc:
+            slc = index[self.caxis]
+            idx = np.array(index)
+            if np.issubdtype(type(slc), np.integer):
+                if slc < 0: slc += self.shape[self.caxis]
+                i = np.searchsorted(self.cstart, slc, side='right') - 1
+                m = self.mlist[i]
+                idx[self.caxis] = slc - self.cstart[i]
+                return self.mlist[i][tuple(idx)]
+            else:
+                mlist = []
+                for i, m in enumerate(self.mlist):
+                    #start = slc.start
+                    #stop = slc.stop
+                    #if start is not None: start = max(0, start - self.cstart[i])
+                    #if stop is not None: stop = max(0, stop - self.cstart[i])
+
+                    i1 = self.cstart[i]
+                    o1 = i1 + m.shape[self.caxis]
+                    i2 = slc.start
+                    o2 = slc.stop
+                    s2 = slc.step
+                    n = m.shape[self.caxis]
+
+                    if s2 is None: s2 = 1
+                    if s2 > 0:
+                        start = np.ceil(i1/s2).astype(int)*s2 - i1
+                        stop  = np.ceil(o1/s2).astype(int)*s2 - i1
+                        if i2 is not None: start = max(start, i2 - i1)
+                        if o2 is not None: stop  = min(stop,  o2 - i1)
+                        if stop < 0: stop = 0
+                    else:
+                        start = n - np.floor((n-o1)/s2).astype(int)*s2 - i1 - 1
+                        stop  = n - np.floor((n-i1)/s2).astype(int)*s2 - i1 - 1
+                        if i2 is not None: start = min(start, i2 - i1)
+                        if o2 is not None: stop  = max(stop,  o2 - i1)
+                        if stop < 0: stop = None
+
+                    idx[self.caxis] = slice(start, stop, slc.step)
+                    mlist.append(m[tuple(idx)])
+
+                if slc.step is not None:
+                    if slc.step < 0: mlist = mlist[::-1]
+
+        else:
+            mlist = [m[index] for m in self.mlist]
+
+        if len(mlist)>1:
+            return memmap_list(mlist, axis=self.caxis-ncut)
+        else:
+            return mlist[0]
+        
+    def __array__(self, dtype=None):
+        return np.concatenate(self.mlist, axis=self.caxis)
+    
+    def squeeze(self, axis=None):
+        slc = np.array([slice(None)]*self.ndim)
+        slc[self.shape==1] = 0
+        slc[self.caxis] = slice(None)
+        return self[tuple(slc)]
+    
+    def ravel(self, axis=None):
+        return self.squeeze(axis=axis)
+
+    def __add__(self, other):
+        return np.array(self) + other
+
+    def __sub__(self, other):
+        return np.array(self) - other
+
+    def __mul__(self, other):
+        return np.array(self) * other
+
+    def __truediv__(self, other):
+        return np.array(self) / other
+        

@@ -1,8 +1,9 @@
 import numpy as np
 import pandas as pd
-from .auxfuncs import continuum, convol, vacuum2obs, _vacuum2obs, is_number, compute_tau_scale, find_close, interp_tau, get_qmax
+from .auxfuncs import continuum, convol, vacuum2obs, _vacuum2obs, is_number, compute_tau_scale, find_close, interp_tau, get_qmax, rotate_array
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
+from scipy.signal import argrelextrema
 
 EE = 1.602189E-12
 HH = 6.626176E-27
@@ -90,7 +91,7 @@ class trans_class(object):
             
             if self.iw > 0:
                 pos = self.atom.f.tell()
-                self.hyperfine = pd.read_csv(self.atom.f, nrows=self.iw, sep='\s+',
+                self.hyperfine = pd.read_csv(self.atom.f, nrows=self.iw, sep=r'\s+',
                                              names=['de', 'w', 'f', 'ga', 'gw', 'gq'])
                 self.atom.f.seek(pos)
                 for i in range(self.iw): self.atom.f.readline() # skip lines
@@ -170,7 +171,7 @@ class trans_class(object):
 
         self.i0 = find_close(self.run.lam, self.lam0)
         self.ib = find_close(self.run.lam, self.lb)
-        self.ir = find_close(self.run.lam, self.lr)
+        self.ir = find_close(self.run.lam, self.lr, side='right')
 
         slc = slice(self.ib, self.ir)
         self.lam  = self.run.lam[slc]
@@ -188,13 +189,13 @@ class trans_class(object):
     #=====================================================================
     def plot(self, ang=None, imu=None, norm=True, dlam=None, label=None,
                 vdop=None, vshift=None, convolve=None, renorm=False,
-                LTE=False, title=None, set_labels=True, **kwargs):
+                LTE=False, title=None, set_labels=True, velocity_units=False, **kwargs):
         #-----------------------------------------------------------------
         xx, yy = self.crop(ang=ang, imu=imu, norm=norm, dlam=dlam,
                             vdop=vdop, vshift=vshift, convolve=convolve,
-                            renorm=renorm, LTE=LTE)
+                            renorm=renorm, LTE=LTE, velocity_units=velocity_units)
 
-        self.run.set_xaxis(xx, dlam, set_labels=set_labels)
+        self.run.set_xaxis(xx, dlam, velocity_units=velocity_units, set_labels=set_labels)
         self.run.set_yaxis(ang, imu, norm, renorm, set_labels=set_labels)
 
         if type(label) is str:
@@ -211,10 +212,10 @@ class trans_class(object):
         return plot
     
     #=====================================================================
-    def crop(self, ang=None, imu=None, norm=True, dlam=None, \
+    def crop(self, ang=None, imu=None, norm=True, dlam=None, velocity_units=False, \
                 vdop=None, vshift=None, convolve=None, renorm=False, LTE=False):
         #-----------------------------------------------------------------
-        xx, mask = self.get_xx(dlam)
+        xx, mask = self.get_xx(dlam, velocity_units=velocity_units)
         
         if not LTE and self.run.mode=='LTE':
             print('Cannot get NLTE line profile, because run was in LTE!')
@@ -268,7 +269,7 @@ class trans_class(object):
         return plt.plot(xx, yy, **kwargs)
 
     #=====================================================================
-    def get_xx(self, dlam):
+    def get_xx(self, dlam, velocity_units=False):
         #-----------------------------------------------------------------
         if hasattr(self, 'prepared'):
             if not self.prepared: self.prepare()
@@ -295,6 +296,13 @@ class trans_class(object):
         if dlam is not None:
             xx = xx - self.lam0
 
+        if velocity_units:
+            xx = xx / self.lam0
+            if dlam is None:
+                xx = xx - 1
+
+            xx = xx * CC * 1e-5
+
         return xx, mask
         
     #=====================================================================
@@ -314,30 +322,39 @@ class trans_class(object):
         return NLTE/LTE
 
     #=====================================================================
-    def calc_blueshift(self, imu=None):
+    def calc_blueshift(self, **kwargs):
         #-----------------------------------------------------------------
-        nflux = self.get_yy(imu=imu, norm=True)
-        
-        xx, indices = np.unique(self.lam.round(decimals=8), return_index=True)
-        yy = nflux[indices]
-        
+        xx, yy = self.crop(**kwargs)
+        #xx, mask = self.get_xx(dlam=dlam)
+        #yy, cnt = self.run.get_yy(mask=mask, **kwargs)
         ex = argrelextrema(yy, np.less_equal)[0]
         iex = ex[np.argmin(np.abs(ex - self.i0 + self.ib))]
-        imin3 = iex + np.array([-1, 0, 1])
-        dep = 1 - yy[iex]
+        slc = slice(iex-1, iex+2)
+        dep = 1 - yy[slc]
         
-        p = np.polyfit(xx[imin3], yy[imin3], deg=2, rcond=1e-18)
+        p = np.polyfit(xx[slc], yy[slc], deg=2)
         xmin = np.roots(np.polyder(p))[0]
-        blue = (xmin / self.lam0 - 1) * cc * 1e-2
+
+        if 'dlam' in kwargs:
+            if kwargs['dlam'] is not None:
+                xmin = xmin + self.lam0
+
+        blue = (xmin / self.lam0 - 1) * CC * 1e-5
         
         return blue, dep
 
     #=====================================================================
-    def plot_resolved(self, ang=0, norm=True, dlam=None,
+    def plot_resolved(self, ang=0, norm=True, dlam=None, velocity_units=False, 
                 vdop=None, vshift=None, LTE=False, title=None,
-                color='k', linewidth=1, alpha=0.2, **kwargs):
+                color='k', linewidth=1, alpha=0.2, step=1, **kwargs):
         #-----------------------------------------------------------------
-        xx, mask = self.get_xx(dlam)
+        if not self.run.nml['m3d_params']['save_resolved']:
+            print('Resolved profiles were not saved!')
+            return None
+
+        xx, mask = self.get_xx(dlam, velocity_units=velocity_units)
+        self.run.set_xaxis(xx, dlam=dlam, velocity_units=velocity_units)
+        
         cnt = self.run.c3[...,ang]
 
         if LTE:
@@ -346,13 +363,13 @@ class trans_class(object):
             yy = self.run.i3[...,ang]
 
         nnu = xx.size
-        yy  = yy [:,:,mask].reshape((-1, nnu))
-        cnt = cnt[:,:,mask].reshape((-1, nnu))
+        yy  = yy [mask, ::step, ::step]
+        cnt = cnt[mask, ::step, ::step]
 
         if norm:
-            yy = yy / np.mean(cnt, axis=0)
+            yy = yy / np.mean(cnt, axis=(1,2))[:,None,None]
         
-        plt.plot(xx, yy.T, color=color, linewidth=linewidth,
+        plt.plot(xx, yy.reshape((nnu, -1)), color=color, linewidth=linewidth,
                  alpha=alpha, **kwargs)
         
         set_title(title, default=self.title+', '+self.el.title)
@@ -372,44 +389,33 @@ class trans_class(object):
         return xx, yy
 
     #=====================================================================
-    def get_cntrbf(self, df=None, ang=None, imu=None, LTE=False, mean=False, fslice=None):
+    def get_cntrbf(self, df=None, ang=None, imu=None, LTE=False, mean=False, fslice=None, norm=False):
         #-----------------------------------------------------------------
         if hasattr(self, 'prepared'):
             if not self.prepared: self.prepare()
         
         name = 'cntrbf_{:06}'.format(self.kr+1)
-        mem  = self.run.read_patch_save(name, fdim=3)[-1]
-
-        # dims are [nx, ny, nz, nf, set, ang]
-        mem = np.moveaxis(mem, [4, 5, 3], [0,1,2])
-        # dims are [set, ang, nf, nx, ny, nz]
+        mem  = self.run.read_patch_save(name, fdim=0, zdim=3, lazy=True)[-1]
 
         if df is not None:
             f = self.i0 - self.ib + df
-            mem = mem[:,:,f:f+1]
+            mem = mem[f:f+1]
         elif fslice is not None:
-            mem = mem[:,:,fslice]
+            mem = mem[fslice]
 
         if LTE:
-            cntrbf = mem[3:6]
+            cntrbf = mem[..., 2:4, :]
         else:
-            cntrbf = mem[0:3]
-
-        cnt_inus = mem[6]
+            cntrbf = mem[..., 0:2, :]
         
-        nset, nang, nf, nx, ny, nz = cntrbf.shape
+        nf, nx, ny, nz, nset, nang = cntrbf.shape
         ltau = self.run.ltau
         get_mean = mean and self.run.dim == '3D'
 
         if get_mean:
             new_ltau = np.mean(ltau, axis=(0,1))[::-1]
-            cfunc = np.zeros((nf, nz))
-        else:
-            cnt_inus = cnt_inus.squeeze()
-            cntrbf = cntrbf.squeeze()
-            cfunc = np.zeros_like(cnt_inus[0])
 
-        all_angs = np.array(range(self.run.n_ang))
+        all_angs = np.arange(self.run.n_ang)
         if ang is None and imu is None:
             angs = all_angs
         elif imu is not None:
@@ -418,45 +424,55 @@ class trans_class(object):
         elif ang is not None:
             angs = np.array([ang])
 
-        wts = np.ones(angs.size) / angs.size
+        wts = self.run.wts[angs]
+        wts = wts / np.sum(wts)
             
         conversion = np.log(10) * self.run.tau / self.run.chi
+
+        first_time = True
         for ang, w in zip(angs, wts):
-            lin_chi, lin_eta, net_chi = cntrbf[:, ang]
-            cnt_inu = cnt_inus[ang]
-            mu = self.run.vec[ang, -1]
-            zz = self.run.zz / mu * 1e8
+            cang = np.array(cntrbf[..., ang])
+            cf, net_chi = np.moveaxis(cang, -1, 0)
+            vec = self.run.vec[ang]
+            zz = self.run.zz / vec[-1] * 1e8
             tau = compute_tau_scale(net_chi, zz, axis=-1)
-            cf = conversion * (lin_chi*cnt_inu - lin_eta) * np.exp(-tau)
+            cf = conversion * cf * np.exp(-tau)
+            vec = vec * np.array([-1, -1, 1])
+            cf = rotate_array(self.run.xx, self.run.yy, self.run.zz, cf, vec)
 
             if get_mean:
                 yy = np.array(cf[...,::-1]).copy()
                 xx = ltau[...,::-1].copy()
                 newcf = interp_tau(new_ltau, xx, yy)
-                cfunc = cfunc + w*np.mean(newcf, axis=(1,2))
-            else:
-                cfunc = cfunc + w*cf
+                cf = np.mean(newcf, axis=(1,2))
+
+            if first_time:
+                cfunc = np.zeros_like(cf)
+                first_time = False
+
+            cfunc = cfunc + w*cf
 
         if get_mean: ltau = new_ltau
-        return ltau, cfunc.squeeze()
+        if norm: cfunc = cfunc / np.max(cfunc)
+        return ltau, cfunc.squeeze(), net_chi
 
     #=====================================================================
-    def plot_cntrbf(self, df=0, imu=None, ang=None, LTE=False, title=None, **kwargs):
+    def plot_cntrbf(self, df=0, imu=None, ang=None, LTE=False, title=None, norm=False, **kwargs):
         #-----------------------------------------------------------------
-        ltau, cf = self.get_cntrbf(df=df, imu=imu, ang=ang, LTE=LTE, mean=True)
+        ltau, cf = self.get_cntrbf(df=df, imu=imu, ang=ang, LTE=LTE, mean=True, norm=norm)
             
         f = self.i0 - self.ib + df
         plt.xlabel(r'log$\tau_{500}$')
         plt.ylabel('Contribution function')
 
-        wave = '$\lambda=${:.3f}[Å]'.format(self.lam[f])
+        wave = r'$\lambda=${:.3f}[Å]'.format(self.lam[f])
         if ang is None and imu is None:
             angle = 'flux'
         else:
             if ang is not None:
                 imu = self.run.imus[ang]
 
-            angle = '$\mu=${:.2f}'.format(self.run.mus[imu])
+            angle = r'$\mu=${:.2f}'.format(self.run.mus[imu])
 
         set_title(title, default=wave + ', ' + angle)
         return plt.plot(ltau, cf, **kwargs)

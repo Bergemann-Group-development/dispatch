@@ -1,12 +1,13 @@
 from .atom import atom_class
 from .trans import trans_class
-from .auxfuncs import vacuum2obs, continuum, freq_quad, convol, SBOL, CC, interp_tau, check_file, compute_tau_scale
+from .auxfuncs import vacuum2obs, continuum, freq_quad, convol, SBOL, CC, interp_tau, check_file, compute_tau_scale, memmap_list
 from .fast_atom import fast_atom, pandas_atom
 from .fast_trans import fast_trans
 import numpy as np
 import pandas as pd
 import dask.array as da
 import matplotlib.pyplot as plt
+from matplotlib import colors as mpl
 import glob
 import f90nml
 from scipy.signal import argrelextrema
@@ -15,11 +16,14 @@ from matplotlib.collections import LineCollection
 from matplotlib.ticker import MultipleLocator
 import os
 
-def launch(input_name, nml_settings=None, default=None, overwrite=False, threads=32, log_file=None):
+def launch(input_name, nml_settings=None, default=None, overwrite=False, threads=32, log_file=None, slurm_script=None):
     cwd = os.getcwd()
     check_file(cwd + '/dispatch.x')
     if default is not None:
-        input = f90nml.read(default + '/params.nml')
+        if default.endswith('.nml'):
+            input = f90nml.read(default)
+        else:
+            input = f90nml.read(default + '/params.nml')
     else:
         input = f90nml.Namelist()
 
@@ -30,10 +34,13 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
 
         input.write(input_file, force=True)
 
-        if log_file is None:
-            command = './dispatch.x {:}'.format(input_file)
+        if slurm_script is None:
+            if log_file is None:
+                command = './dispatch.x {:}'.format(input_file)
+            else:
+                command = './dispatch.x {:} > {:}'.format(input_file, log_file)
         else:
-            command = './dispatch.x {:} > {:}'.format(input_file, log_file)
+            command = 'sbatch {:} {:}'.format(slurm_script, input_file)
 
         print(input_file, ' launched')
         os.environ['OMP_NUM_THREADS'] = str(threads)
@@ -65,7 +72,7 @@ class read(object):
         self.sfolder = sfolder
         self.folder = folder
         self.nml = f90nml.read(folder + 'params.nml')   
-        df = pd.read_csv(folder + 'abund.txt', header=None, sep='\s+', na_filter=False)
+        df = pd.read_csv(folder + 'abund.txt', header=None, sep=r'\s+', na_filter=False)
         self.abundances = {k.lower().capitalize():v for k, v in df.values}
         
         maxiter = self.nml['m3d_params']['maxiter']
@@ -153,12 +160,12 @@ class read(object):
             if len(reports)>0:
                 self.lvlerr = np.zeros(self.atom.nk)
                 for report in reports:
-                    df = pd.read_csv(report, sep='\s+')
+                    df = pd.read_csv(report, sep=r'\s+')
                     self.lvlerr = np.maximum(self.lvlerr, df.maxconv.values)
 
         file = folder + 'angle_quadrature.txt'
         if os.path.isfile(file):
-            df = pd.read_csv(file, header=None, skiprows=1, sep='\s+', names=['ang', 'wmu', 'mux', 'muy', 'muz'])
+            df = pd.read_csv(file, header=None, skiprows=1, sep=r'\s+', names=['ang', 'wmu', 'mux', 'muy', 'muz'])
             self.vec = df.values[:,2:]
             self.wts = df.values[:,1]
             self.n_ang = self.wts.size
@@ -171,7 +178,7 @@ class read(object):
         
         if hasattr(self, 'lam') and not make_eos:
             if (verbose > 0): print('Reading Intensities')
-            ie = self.read_patch_save('ie', fdim=0, lazy=False)[0]
+            ie = self.read_patch_save('ie', lazy=False)[0]
 
             self.ie     = ie[:,0,0,:,0]
             self.ie_lte = ie[:,0,0,:,1]
@@ -182,7 +189,7 @@ class read(object):
             self.flux_cnt = np.sum(self.wts * self.cnt   , axis=-1)
 
             if self.nml['m3d_params']['save_resolved']:
-                i3 = self.read_patch_save('i3', fdim=0)[0]
+                i3 = self.read_patch_save('i3')[0]
                 self.i3     = i3[...,0]
                 self.i3_lte = i3[...,1]
                 self.c3     = i3[...,2]
@@ -222,15 +229,15 @@ class read(object):
             self.dim = '1D'
 
         if os.path.isfile(sfolder + 'atmos_meta.txt') and read_atmos:
-            mem = self.read_patch_save('atmos')[0]
+            mem = self.read_patch_save('atmos', zdim=2)[0]
             mem = mem[..., 0].squeeze()
-            self.ne   = mem[...,0].compute()
-            self.rho  = mem[...,1].compute()
-            self.temp = mem[...,2].compute()
-            self.vx   = mem[...,3].compute() * CC
-            self.vy   = mem[...,4].compute() * CC
-            self.vz   = mem[...,5].compute() * CC
-            self.chi  = mem[...,6].compute()
+            self.ne   = np.array(mem[...,0])
+            self.rho  = np.array(mem[...,1])
+            self.temp = np.array(mem[...,2])
+            self.vx   = np.array(mem[...,3]) * CC
+            self.vy   = np.array(mem[...,4]) * CC
+            self.vz   = np.array(mem[...,5]) * CC
+            self.chi  = np.array(mem[...,6])
             self.tau  = compute_tau_scale(self.chi, self.zz*1e8, axis=-1)
             self.ltau = np.log10(self.tau)
             
@@ -280,18 +287,20 @@ class read(object):
         return lam[mask], mask
 
     #=====================================================================
-    def set_xaxis(self, xx, dlam=None, set_labels=True):
+    def set_xaxis(self, xx, dlam=None, velocity_units=False, set_labels=True):
         #-----------------------------------------------------------------
         xmin = min(xx)
         xmax = max(xx)
         dxx = xmax - xmin
         if dlam is not None:
             plt.xlim(xmin, xmax)
-            if set_labels: plt.xlabel('$\Delta\lambda$ [Å]')
+            if set_labels: plt.xlabel(r'$\Delta\lambda$ [Å]')
         else:
             diff = 0.05*dxx
             plt.xlim(xmin-diff, xmax+diff)
             if set_labels: plt.xlabel('Wavelength [Å]')
+
+        if set_labels and velocity_units: plt.xlabel(r'$v_{\rm dop}$ [km/s]')
 
         plt.ticklabel_format(useOffset=False)
 
@@ -494,7 +503,7 @@ class read(object):
     #=====================================================================
     def get_depart(self, ilvl=None):
         #-----------------------------------------------------------------
-        mem = self.read_patch_save('atom_patch')[0]
+        mem = self.read_patch_save('atom_patch', zdim=2)[0]
         if mem.ndim==6: mem = mem[...,0]
         lte = mem[...,0]
         dep = mem[...,1]
@@ -590,7 +599,7 @@ class read(object):
         return teff
 
     #=====================================================================
-    def read_patch_save(self, kind, concat=True, fdim=3, lazy=True):
+    def read_patch_save(self, kind, concat=True, fdim=0, zdim=3, lazy=True):
         #-----------------------------------------------------------------
         try:
             meta = open(self.sfolder + kind + '_meta.txt')
@@ -617,12 +626,12 @@ class read(object):
         meta.close()
 
         if concat:
-            return self.concat_patches(dct, kind, fdim, lazy=lazy)
+            return self.concat_patches(dct, kind, fdim, zdim, lazy=lazy)
         else:
             return dct
 
     #=====================================================================
-    def concat_patches(self, dct, kind, fdim, lazy):
+    def concat_patches(self, dct, kind, fdim, zdim, lazy):
         #-----------------------------------------------------------------
         all_iz  = np.unique([key[0] for key in dct.keys()])
         all_inu = np.unique([key[1] for key in dct.keys()])
@@ -631,7 +640,8 @@ class read(object):
         n_nu = self.nml['m3d_params']['n_nu']
 
         if lazy:
-            concat = da.concatenate
+            #concat = da.concatenate
+            concat = memmap_list
         else:
             concat = np.concatenate
 
@@ -651,7 +661,7 @@ class read(object):
                     merge.append(mem)
             
             if len(merge) > 1:
-                mem = concat(merge, axis=2)
+                mem = concat(merge, axis=zdim)
 
             return mem
 
@@ -664,6 +674,46 @@ class read(object):
             sets = [s for s in [set1, set2, set3] if len(s)>0]
         
             return [merge_set(s) for s in sets]
+        
+
+    #=====================================================================
+    def interp_ltau_surf(self, cube):
+        #-----------------------------------------------------------------
+        ltau = self.ltau[...,::-1].copy()
+        ltau1d = np.mean(ltau, axis=(0,1))[::-1]
+        yy = cube[...,::-1].copy()
+        newy = interp_tau(ltau1d, ltau, yy)[...,::-1]
+        ltau1d = ltau1d[::-1]
+        return ltau1d, newy
+    
+    #=====================================================================
+    def plot_ltau_cube(self, cube, s=1, alpha=0.01, xmin=None, xmax=None, ymin=None, ymax=None, **kwargs):
+        #-----------------------------------------------------------------
+        xx = self.ltau.ravel()
+        yy = cube.ravel()
+        if xmin is None: xmin = xx.min()
+        if xmax is None: xmax = xx.max()
+        if ymin is None: ymin = yy.min()
+        if ymax is None: ymax = yy.max()
+        mask = (xx > xmin) * (xx < xmax) * (yy > ymin) * (yy < ymax)
+        xx = xx[mask]
+        yy = yy[mask]
+        plt.xlim(xx.min(), xx.max())
+        plt.ylim(yy.min(), yy.max())
+        return plt.scatter(xx, yy, s=s, rasterized=True, alpha=alpha, **kwargs)
+
+    #=====================================================================
+    def get_ltau_mean(self, cube):
+        #-----------------------------------------------------------------
+        ltau1d, yy3d = self.interp_ltau_surf(cube)
+        yy1d = np.mean(yy3d, axis=(0,1))
+        return ltau1d, yy1d
+    
+    #=====================================================================
+    def plot_ltau_mean(self, cube, **kwargs):
+        #-----------------------------------------------------------------
+        xx, yy = self.get_ltau_mean(cube)
+        return plt.plot(xx, yy, **kwargs)
 
 #=====================================================================
 def weq_diff(run1, run2, marker='.', linestyle='none', **kwargs):

@@ -98,6 +98,7 @@ MODULE coll_mod
             nc = coll(i)%nc
             itemp = coll(i)%itemp
             call hermite_interpolation(ct,temp,tgrid(1:nc,itemp),cgrid(1:nc,i),dcdt(1:nc,i))
+            ct = exp(ct)
          end select
   
          !********************************************************************

@@ -19,7 +19,7 @@ MODULE experiment_mod
   USE handyfuncs_mod
   USE m3d_halo_mod, only: m3d_halo_t
   USE m3d_patch_mod, only: verbose, print_execution_history, use_density, use_ne, &
-  long_vec, pivot_z, rotate_atmos, atmos_format
+  long_vec, pivot_z, rotate_atmos, atmos_format, amr, interpolated_3d_atmos
   USE composition_patch_mod, only: composition_patch_t
   USE composition_mod, only: composition_type
   USE read_stagger_snapshot_mod
@@ -50,9 +50,6 @@ MODULE experiment_mod
     procedure:: check_nbor
     procedure:: nbor_relations
   end type
-
-  logical, public :: interpolated_3d_atmos=.false.
-  logical, public :: amr=.false.
   
 CONTAINS
 
@@ -174,7 +171,7 @@ SUBROUTINE init (self)
         tt => authority(:,:,:,self%idx%e)
         pe => authority(:,:,:,6)
         bottom = self%position(3) - 0.5*self%size(3)
-        bot2pivot = scaling%l * (pivot_z * self%ds(3) - bottom)
+        bot2pivot = scaling%l * (pivot_z - bottom)
         call interpolate_atmos(n, sub, pos, d, px, py, pz, tt=tt, pe=pe, vec=long_vec(:,i), bot2pivot=bot2pivot)
       end do
     endif

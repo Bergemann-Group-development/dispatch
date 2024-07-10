@@ -137,10 +137,11 @@ contains
   !------------------------------------------------------------------------------------
 
   !====================================================================================
-  SUBROUTINE get_nu(self, qnorm, nu)
+  SUBROUTINE get_nu(self, qnorm, nu, legacy)
     class(line_type), intent(in)  :: self
     real(8), intent(in) :: qnorm
     real(8), intent(out), dimension(:) :: nu
+    logical, intent(in) :: legacy
     real(8), dimension(:), allocatable :: q
     real(8) :: dq, a, qmax, q0
     integer :: i, nnu
@@ -162,7 +163,11 @@ contains
     q = [(i*dq - qmax, i=0, nnu-1)]
 
     if(.not. linear) then
-      q = q + a*(10.**q - 10.**(-q))
+      if (legacy) then
+        q = q + a*sign(1.d0, q)*(10.**abs(q) - 1)
+      else
+        q = q + a*(10.**q - 10.**(-q))
+      endif
     endif
 
     ! convert to [Hz]

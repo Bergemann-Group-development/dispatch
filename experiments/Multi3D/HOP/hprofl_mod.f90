@@ -172,7 +172,7 @@ contains
       e   = ne(i,j,k)
       nh1 = tothi(i,j,k)
 
-      cf = (self%Bij*ni(i,j,k) - self%Bji*nj(i,j,k)) * over_4pi
+      cf = self%Bij*ni(i,j,k) - self%Bji*nj(i,j,k)
   
       resont = nh1 * self%gw1
       if (self%gw2 /= 0) then

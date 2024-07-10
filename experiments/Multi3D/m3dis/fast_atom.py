@@ -15,7 +15,7 @@ def read(text, dtype):
   return np.array(next(text).strip().split()).astype(dtype)
 
 def read_table(file, **kwargs):
-  return pd.read_csv(file, sep='\s+', comment='*', quotechar="'", **kwargs)
+  return pd.read_csv(file, sep=r'\s+', comment='*', quotechar="'", **kwargs)
 
 class fast_atom(object):
   def __init__(self, atom_file):
@@ -81,7 +81,7 @@ class pandas_atom(object):
     cls.nk, cls.nline, nnu_bf, cls.ncol = read(f, int)
     f.close()
 
-    pdkwargs = {'filepath_or_buffer':atom_file, 'sep':'\s+', 'quotechar':"'", 'comment':'*'}
+    pdkwargs = {'filepath_or_buffer':atom_file, 'sep':r'\s+', 'quotechar':"'", 'comment':'*'}
     pdkwargs['header'] = 3
     cls.lvl = pd.read_csv(nrows=cls.nk, **pdkwargs)
     pdkwargs['header'] = 3+cls.nk+1

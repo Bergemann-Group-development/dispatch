@@ -25,11 +25,13 @@ MODULE m3d_patch_mod
     USE patch_mod, only: patch_t, patch_t_init
     USE m3d_halo_mod, only: m3d_halo_t, print_finished, print_download, lock_mem, unlock_mem, print_lock
     USE spectrum_mod, only: nu_tolerance
-    USE atom_mod, only: atom_type, atomic_spectrum_type, lse_no_pivot, lse_solver, m1d_legacy_mode, nq_fac
+    USE atom_mod, only: atom_type, atomic_spectrum_type, lse_no_pivot, lse_solver, m1d_legacy_mode, nq_fac, &
+                        use_classic_col
     USE composition_mod, only: composition_type, scattering_absorption
     USE ray_mod
     USE m3d_debug_mod
     USE bbtrans_mod, only: disable_stark, disable_vdw, disable_ga
+    USE bftrans_mod, only: h_occupation_probability
     implicit none
     private
 
@@ -130,15 +132,17 @@ MODULE m3d_patch_mod
     logical, public, save :: overlapping_bb=.true., overlapping_bf=.true.
     logical, public, save :: absmet_in_output=.false., column_by_column=.false.
     logical, public, save :: print_start=.false., print_send=.false.
-    logical, public, save :: Jnu_to_file=.true.
-    logical, public, save :: make_eos=.false., rotate_atmos=.false.
+    logical, public, save :: Jnu_to_file=.true., amr=.false.
+    logical, public, save :: rotate_atmos=.false., rotate_continuum=.false.
+    logical, public, save :: interpolated_3d_atmos=.false., make_eos=.false.
+    logical, public, save :: save_Inu=.false., save_chi=.false.
     real(8), public, save :: dlam=100.
     real(8), public, dimension(:), allocatable :: rank_lvlerr
     character(len=128), save :: save_patch_kind=''
     character(len=512), public, save:: custom_mu=''
     real(4), public :: vel_max=0.0
-    real(8), public :: ray_offset(2)=[0.,0.]
-    integer, public :: pivot_z=0, ng_step=-1, ng_start=8
+    real(8), public :: ray_offset(2)=[0.,0.], pivot_z=-1
+    integer, public :: ng_step=-1, ng_start=8
     character(len=126), public :: atmos_format='Text'
     type(mpi_counter_t), public :: atom_update_counter, global_maxerr, global_pos
     type(composition_type), public, save, target :: composition
@@ -155,18 +159,19 @@ MODULE m3d_patch_mod
     logical, save :: on=.true.
     integer :: iostat, m(6), i
     character(len=512) :: command
-    integer, save :: n_nu=0, itimer=0, ntheta=3, nphi=4
-    character(len=32), save :: quad_scheme='radau2'
+    integer, save :: n_nu=0, itimer=0, long_ntheta=4, long_nphi=4, short_ntheta=2, short_nphi=4
+    character(len=32), save :: short_scheme='radau'
     character(len=32), save :: long_scheme='lobatto'
     real(8), dimension(:), allocatable:: cust_mu
-    namelist /m3d_params/ on, verbose, fcheck, linecheck, pcheck, quad_scheme, &
-    long_scheme, n_nu, maxiter, ilambd, lvlcheck, comoving_frame, save_id, &
-    ntheta, nphi, check_NaN, custom_mu, lse_no_pivot, save_patch_kind, cswitch, &
+    namelist /m3d_params/ on, verbose, fcheck, linecheck, pcheck, &
+    n_nu, maxiter, ilambd, lvlcheck, comoving_frame, save_id, &
+    check_NaN, custom_mu, lse_no_pivot, save_patch_kind, cswitch, &
     print_finished, print_start, print_send, ray_offset, print_download, &
     lse_solver, decouple_continuum, m1d_legacy_mode, nu_tolerance, disable_stark, &
-    disable_vdw, disable_ga, pivot_z, use_vel, save_Qrad, save_resolved, &
+    disable_vdw, disable_ga, pivot_z, use_vel, save_Qrad, save_resolved, rotate_continuum, &
     absmet_in_output, print_lock, make_eos, ng_step, ng_start, scattering_absorption, &
-    column_by_column, rotate_atmos, Jnu_to_file, preconditioning
+    column_by_column, rotate_atmos, Jnu_to_file, preconditioning, save_inu, save_chi, &
+    long_scheme, long_ntheta, long_nphi, short_scheme, short_ntheta, short_nphi
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%pre_init', itimer=itimer)
     self%type = trim(self%kind)
@@ -190,8 +195,8 @@ MODULE m3d_patch_mod
         write (command, *) 'rm -f ', trim(io%run_dir), 'save/*.txt ', trim(io%run_dir), 'save/*.bin'
         call execute_command_line (trim(command), exitstat=iostat)
       endif
-      rotate_atmos = rotate_atmos .and. .not. (one_dimensional .or. column_by_column)
-      quad_scheme = lowercase(quad_scheme)
+      rotate_atmos = rotate_atmos .and. interpolated_3d_atmos .and. .not. column_by_column
+      short_scheme = lowercase(short_scheme)
       long_scheme = lowercase(long_scheme)
       !-------------------------------------------------------------------------
       ! No scattering in absorption if make_eos
@@ -202,30 +207,36 @@ MODULE m3d_patch_mod
       !-------------------------------------------------------------------------
       ! Assign angles and integration weights
       !-------------------------------------------------------------------------
-      select case (quad_scheme)
+      select case (short_scheme)
       case ('disk_center', 'set_a2', 'set_a4', 'set_a6', 'set_a8', 'set_b4', 'set_b6', 'set_b8')
-        call set_carlson_quadratures (quad_scheme, vec, wmu, up_and_down=.true.)
-      case ('radau1', 'radau2', 'radau3', 'radau4', 'radau5')
-        call set_radau_quadratures (quad_scheme, vec, wmu, up_and_down=.true.)
+        call set_carlson_quadratures (short_scheme, vec, wmu, up_and_down=.true.)
+      case ('radau')
+        call set_radau_quadratures (short_ntheta, short_nphi, vec, wmu, up_and_down=.true.)
+      case ('lobatto')
+        call set_lobatto_quadratures (short_ntheta, short_nphi, vec, wmu, up_and_down=.true.)
+      case ('gauss')
+        call set_gauss_quadratures (short_ntheta, short_nphi, vec, wmu, up_and_down=.true.)
       case default
-        print *, 'Quadrature keyword "'// trim(quad_scheme) // '" not recognized for SC solver. Stopping...'
+        print *, 'Quadrature keyword "'// trim(short_scheme) // '" not recognized for SC solver. Stopping...'
         stop
       end select
 
       select case (long_scheme)
+      case ('radau')
+        call set_radau_quadratures (long_ntheta, long_nphi, long_vec, long_wmu, up_and_down=.false.)
       case ('lobatto')
-        call set_lobatto_quadratures (ntheta, nphi, long_vec, long_wmu)
+        call set_lobatto_quadratures (long_ntheta, long_nphi, long_vec, long_wmu, up_and_down=.false.)
+      case ('gauss')
+        call set_gauss_quadratures (long_ntheta, long_nphi, long_vec, long_wmu, up_and_down=.false.)
       case ('disk_center', 'set_a2', 'set_a4', 'set_a6', 'set_a8', 'set_b4', 'set_b6', 'set_b8')
         call set_carlson_quadratures (long_scheme, long_vec, long_wmu, up_and_down=.false.)
-      case ('radau1', 'radau2', 'radau3', 'radau4', 'radau5')
-        call set_radau_quadratures (long_scheme, long_vec, long_wmu, up_and_down=.false.)
       case ('custom')
-        call count_words(custom_mu, ntheta)
-        allocate(cust_mu(ntheta))
+        call count_words(custom_mu, long_ntheta)
+        allocate(cust_mu(long_ntheta))
         read(custom_mu, *) cust_mu 
-        call set_custom_quadratures (cust_mu, nphi, long_vec, long_wmu)
+        call set_custom_quadratures (cust_mu, long_nphi, long_vec, long_wmu)
       case ('grid+', 'gridx', 'grid*')
-        call set_grid_quadratures(long_scheme, self%patch%ds, long_vec, long_wmu, up_and_down=.false.)
+        call set_grid_quadratures(long_scheme, self%patch%ds, long_vec, long_wmu)
       case ('none')
         allocate(long_vec(3,0))
         allocate(long_wmu(0))
@@ -242,14 +253,16 @@ MODULE m3d_patch_mod
         overlapping_bf = .false.
         use_density = .false.
         use_vel = .false.
-        comoving_frame = .true.
-        preconditioning = .false.
-        nq_fac = 2
+        sample_back_opac = .false.
+        h_occupation_probability = .false.
+        use_classic_col = .false.
+        !comoving_frame = .true.
+        !preconditioning = .false.
       endif
 
-      if (pivot_z == 0) then
+      if (pivot_z < 0) then
         ! taking the top as the pivot plane
-        pivot_z = nint(self%patch%box(3) / self%patch%ds(3))
+        pivot_z = self%patch%box(3)
       endif
 
       if (ng_step > 0) then
@@ -1150,7 +1163,7 @@ MODULE m3d_patch_mod
   
     ! bot2pivot is the distance between the bottom of the patch and the pivot plane
     bottom = self%position(3) - 0.5*self%size(3)
-    bot2pivot = pivot_z * self%ds(3) - bottom
+    bot2pivot = pivot_z - bottom
   
     allocate(shifted, mold=cube(:,:,1))
     nx = size(cube, 1)
@@ -1217,7 +1230,7 @@ MODULE m3d_patch_mod
   
     ! bot2pivot is the distance between the bottom of the patch and the pivot plane
     bottom = self%position(3) - 0.5*self%size(3)
-    bot2pivot = pivot_z * self%ds(3) - bottom
+    bot2pivot = pivot_z - bottom
   
     allocate(shifted, mold=cube(:,:,1))
     nx = size(cube, 1)

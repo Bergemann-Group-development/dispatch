@@ -1,5 +1,6 @@
 MODULE bbtrans_mod
   USE prec_mod
+  USE const_mod
   USE op_math_mod, only: searchsorted
   USE trace_mod
   implicit none
@@ -24,6 +25,7 @@ MODULE bbtrans_mod
     integer :: j=0 ! upper level  
     integer :: i=0 ! lower level
   contains
+    procedure :: init_einstein_coefficients
     procedure :: profile
     procedure :: damping => line_damping
     procedure :: dampingH => line_dampingH
@@ -42,6 +44,20 @@ MODULE bbtrans_mod
   real(4), public, save :: tolerance=1e-5
     
 contains
+
+  !====================================================================================
+  SUBROUTINE init_einstein_coefficients(self, f, gij)
+    class(bbtrans_type), intent(inout) :: self
+    real(8), intent(in) :: f, gij
+    real(8), parameter :: f_to_Aji = 8.0d0 * pi**2 * ec**2 / em / cc**3
+    !----------------------------------------------------------------------------------
+    ! Einstein coefficients include an additional factor of h_4pi for convenience
+    self%Aij = f_to_Aji * f * self%nu0**2
+    self%Aij = self%Aij * h_4pi
+    self%Bij = c2_2h / self%nu0**3 * self%Aij
+    self%Aji = self%Aij * gij
+    self%Bji = self%Bij * gij
+  END SUBROUTINE init_einstein_coefficients
 
   !====================================================================================
   SUBROUTINE profile(self, q, vproj, inv_df, adamp, phi)
@@ -86,7 +102,7 @@ contains
     scalar = over_4pi / self%nu0
     nu0_ev = H_E * self%nu0
     upper_ev = self%lower_ev + nu0_ev
-    gj_Bji_4pi = self%upper_g * self%Bji * over_4pi
+    gj_Bji_4pi = self%upper_g * self%Bji
 
     allocate(qq(ired:iblue))
     qq(ired:iblue) = nu(ired:iblue) / self%nu0 - 1
@@ -294,7 +310,7 @@ contains
       ex = exp(-v2)
       h = (h*a + ex*(1. + a*a*(1. - 2.*v2))) * isqp
     endif
-    h = h * idf * over_4pi * (q + 1)
+    h = h * idf * (q + 1)
   END FUNCTION voigt_profile
   !------------------------------------------------------------------------------------
 

@@ -103,13 +103,12 @@ SUBROUTINE set_carlson_quadratures (quad_scheme, vec, wts, up_and_down)
       allocate(vec(3, 2), wts(2))
       vec(:,1) = [0.0, 0.0, 1.0]
       vec(:,2) = [0.0, 0.0,-1.0]
-      wts = 1.0
+      wts = 0.5
     else
       allocate(vec(3, 1), wts(1))
       vec(:,1) = [0.0, 0.0, 1.0]
       wts = 1.0
     endif
-    wts = wts * 2 * pi
     return
 
   case('set_a2')
@@ -184,10 +183,6 @@ SUBROUTINE set_carlson_quadratures (quad_scheme, vec, wts, up_and_down)
     stop
   end select
 
-  ! Normalize, so that integration over 8 octants yields 4 pi
-  ! the above sets are normalized so that integration over one octant yields 1.
-  wmu = wmu * 0.5 * pi
-
   if (mirror) then
     nmu = 8*nro
   else
@@ -215,30 +210,30 @@ SUBROUTINE set_carlson_quadratures (quad_scheme, vec, wts, up_and_down)
   vec(2,2*nro+1:4*nro) = -vec(2,1:2*nro)
   vec(3,2*nro+1:4*nro) =  vec(3,1:2*nro)
 
+  ! Normalize, so that integration over 8 octants yields 1
+  ! the above sets are normalized so that integration over one octant yields 1.
+
   if (mirror) then
     ! Fill the other octants with inverted rays 
     wts(  4*nro+1:8*nro) =  wts(  1:4*nro)
     vec(:,4*nro+1:8*nro) = -vec(:,1:4*nro)
+    wts = wts / 8
+  else
+    wts = wts / 4
+    wts = wts * vec(:,3)
   endif
 END SUBROUTINE set_carlson_quadratures
 !---------------------------------------------------------------------
 
 !===============================================================================
-SUBROUTINE set_grid_quadratures (quad_scheme, ds, vec, wts, up_and_down)
+SUBROUTINE set_grid_quadratures (quad_scheme, ds, vec, wts)
   character(len=*), intent(in) :: quad_scheme
   real(8), intent(in) :: ds(3)
-  integer :: m, i, nro, nmu
   real(8), dimension(:), allocatable :: mu, zrot
   real(8), dimension(:), allocatable, intent(out) :: wts
   real(8), dimension(:,:), allocatable, intent(out) :: vec
   real(8) :: plus, cross
-  logical, optional :: up_and_down
-  logical :: mirror=.true.
   ! ----------------------------------------------------------------------------
-  if (present(up_and_down)) then
-    mirror = up_and_down
-  endif
-
   plus = ds(1)/ds(3)
   cross = sqrt(ds(1)**2 + ds(2)**2)/ds(3)
 
@@ -256,12 +251,11 @@ SUBROUTINE set_grid_quadratures (quad_scheme, ds, vec, wts, up_and_down)
   end select
 
   mu = cos(mu)
-
   call set_custom_quadratures(mu, nphi=4, vec=vec, wts=wts, zrot=zrot)
 END SUBROUTINE set_grid_quadratures
 
 !===============================================================================
-SUBROUTINE set_lobatto_quadratures(ntheta, nphi, vec, wts)
+SUBROUTINE set_lobatto_quadratures(ntheta, nphi, vec, wts, up_and_down)
   ! -------------------------------------------------------------------
   ! Computes Lobatto quadratures for a given number of theta and phi
   ! angles. It then converts the spherical geometry into cartesian geometry
@@ -270,15 +264,13 @@ SUBROUTINE set_lobatto_quadratures(ntheta, nphi, vec, wts)
   real(8), intent(out), dimension(:), allocatable :: wts
   real(8), intent(out), dimension(:,:), allocatable :: vec
   real(8), dimension(:), allocatable :: mu, wmu
-  integer :: nrays
+  logical, optional :: up_and_down
   ! -------------------------------------------------------------------
-  nrays  = ntheta + 1
-
-  allocate(mu(nrays))
-  allocate(wmu(nrays))
+  allocate(mu(ntheta))
+  allocate(wmu(ntheta))
 
   ! setting indexes and hard-coded Lobatto coefficients
-  select case (nrays)
+  select case (ntheta)
   case (1)
      mu  = 1.0
      wts = 1.0
@@ -308,13 +300,59 @@ SUBROUTINE set_lobatto_quadratures(ntheta, nphi, vec, wts)
              0.212508417834, 0.251275603210, 0.271405240910/)
      
   case default
-     stop 'Error: ntheta is set too high. *ntheta<5*'
-
+     stop 'Error: ntheta is set too high. *ntheta<=5*'
   end select
 
-  wmu = wmu * mu * 2 * PI
-  call nphi_copies(nphi, mu, wmu, vec, wts)
+  call nphi_copies(nphi, mu, wmu, vec, wts, up_and_down=up_and_down)
 END SUBROUTINE set_lobatto_quadratures
+
+!===============================================================================
+SUBROUTINE set_gauss_quadratures(ntheta, nphi, vec, wts, up_and_down)
+  ! -------------------------------------------------------------------
+  ! Computes Gauss-Legendre quadratures for a given number of theta and phi
+  ! angles. It then converts the spherical geometry into cartesian geometry
+  ! -------------------------------------------------------------------
+  integer, intent(in) :: ntheta, nphi
+  real(8), intent(out), dimension(:), allocatable :: wts
+  real(8), intent(out), dimension(:,:), allocatable :: vec
+  real(8), dimension(:), allocatable :: mu, wmu
+  logical, optional :: up_and_down
+  ! -------------------------------------------------------------------
+  allocate(mu(ntheta))
+  allocate(wmu(ntheta))
+
+  ! setting indexes and hard-coded Lobatto coefficients
+  select case (ntheta)
+  case (1)
+     mu  = 1.0
+     wts = 1.0
+     
+  case (2)
+     mu  = (/0.78867513, 0.21132487/)
+     wmu = (/0.50000000, 0.50000000/)
+     
+  case (3)
+     mu  = (/0.88729833, 0.50000000, 0.11270167/)
+     wmu = (/0.27777778, 0.44444444, 0.27777778/)
+
+  case (4)
+     mu  = (/0.93056816, 0.66999052, 0.33000948, 0.06943184/)
+     wmu = (/0.17392742, 0.32607258, 0.32607258, 0.17392742/)
+
+  case (5)
+     mu  = (/0.95308992, 0.76923466, 0.50000000, 0.23076534, 0.04691008/)
+     wmu = (/0.11846344, 0.23931434, 0.28444444, 0.23931434, 0.11846344/)
+
+  case (6)
+     mu  = (/0.96623476, 0.83060469, 0.61930959, 0.38069041, 0.16939531, 0.03376524/)
+     wmu = (/0.08566225, 0.18038079, 0.23395697, 0.23395697, 0.18038079, 0.08566225/)
+     
+  case default
+     stop 'Error: ntheta is set too high. *ntheta<=6*'
+  end select
+
+  call nphi_copies(nphi, mu, wmu, vec, wts, up_and_down=up_and_down)
+END SUBROUTINE set_gauss_quadratures
 
 !===============================================================================
 SUBROUTINE set_custom_quadratures(mu, nphi, vec, wts, zrot)
@@ -351,39 +389,21 @@ SUBROUTINE set_custom_quadratures(mu, nphi, vec, wts, zrot)
 
   wmu = swts(nrays+1:2:-1)
   mu = mu(nrays:1:-1)
-  wmu = wmu * mu * 2 * PI
-  if (present(zrot)) zrot = zrot(order(nrays:1:-1))
 
-  call nphi_copies(nphi, mu, wmu, vec, wts, zrot)
+  if (present(zrot)) zrot = zrot(order(nrays:1:-1))
+  call nphi_copies(nphi, mu, wmu, vec, wts, zrot, up_and_down=.false.)
 END SUBROUTINE set_custom_quadratures
 
 !===============================================================================
-SUBROUTINE set_radau_quadratures(quad_scheme, vec, wts, up_and_down)
-  character(len=*), intent(in) :: quad_scheme
+SUBROUTINE set_radau_quadratures(ntheta, nphi, vec, wts, up_and_down)
+  integer, intent(in) :: ntheta, nphi
   real(8), intent(out), dimension(:), allocatable :: wts
   real(8), intent(out), dimension(:,:), allocatable :: vec
+  logical, intent(in), optional :: up_and_down
   real(4), dimension(:), allocatable :: wmu2, mu2
   real(8), dimension(:), allocatable :: wmu, mu
-  real(8), dimension(:), allocatable :: wts2, zrot
-  real(8), dimension(:,:), allocatable :: vec2
-  integer :: nrays, ntheta, nphi
-  logical, optional :: up_and_down
-  logical :: mirror=.true.
+  real(8), dimension(:), allocatable :: zrot
   ! -------------------------------------------------------------------
-  select case (quad_scheme)
-  case ('radau1')
-    ntheta = 1
-  case ('radau2')
-    ntheta = 2
-  case ('radau3')
-    ntheta = 3
-  case ('radau4')
-    ntheta = 4
-  case ('radau5')
-    ntheta = 5
-  end select
-  nphi = 4
-
   allocate(mu(ntheta), wmu(ntheta))
   allocate(mu2(ntheta), wmu2(ntheta))
   allocate(zrot(ntheta))
@@ -391,31 +411,11 @@ SUBROUTINE set_radau_quadratures(quad_scheme, vec, wts, up_and_down)
   mu = mu2(ntheta:1:-1)
   wmu = wmu2(ntheta:1:-1)
   zrot = PI/4.
-  call nphi_copies(nphi, mu, wmu, vec2, wts2, zrot=zrot)
-  nrays = size(wts2)
-
-  if (present(up_and_down)) then
-    mirror = up_and_down
-  endif
-
-  if (mirror) then
-    allocate(wts(2*nrays))
-    allocate(vec(3, 2*nrays))
-    wts(  1:nrays) = wts2
-    vec(:,1:nrays) = vec2
-    wts(  nrays+1:2*nrays) =  wts2
-    vec(:,nrays+1:2*nrays) = -vec2
-    wts = wts * 2*PI
-  else
-    allocate(wts(nrays))
-    allocate(vec(3, nrays))
-    wts = wts2
-    vec = vec2
-  endif
+  call nphi_copies(nphi, mu, wmu, vec, wts, zrot, up_and_down=up_and_down)
 END SUBROUTINE set_radau_quadratures
 
 !===============================================================================
-SUBROUTINE nphi_copies (nphi_in, mu, wmu, vec, wts, zrot)
+SUBROUTINE nphi_copies (nphi_in, mu, wmu, vec, wts, zrot, up_and_down)
   integer, intent(in) :: nphi_in
   real(8), intent(inout), dimension(:) :: mu, wmu
   real(8), intent(out), dimension(:), allocatable :: wts
@@ -423,8 +423,13 @@ SUBROUTINE nphi_copies (nphi_in, mu, wmu, vec, wts, zrot)
   real(8), intent(in), optional, dimension(:) :: zrot
   real(8) :: xphi, theta, xoff
   integer :: nrays, ntheta, i, nt, np, nmuphi, n1, nphi
-  logical :: includes_mu1
+  logical :: includes_mu1, mirror=.false.
+  logical, optional :: up_and_down
   ! -------------------------------------------------------------------
+  if (present(up_and_down)) then
+    mirror = up_and_down
+  endif
+
   nrays = size(mu)
   includes_mu1 = findloc(mu, 1.0, 1) > 0
 
@@ -437,6 +442,7 @@ SUBROUTINE nphi_copies (nphi_in, mu, wmu, vec, wts, zrot)
     nmuphi = nrays*nphi
   endif
 
+  if (mirror) nmuphi = 2*nmuphi
   allocate(wts(nmuphi))
   allocate(vec(3, nmuphi))
 
@@ -448,7 +454,6 @@ SUBROUTINE nphi_copies (nphi_in, mu, wmu, vec, wts, zrot)
   else
     n1 = 1
   endif
-
 
   ! storing the rest of vec and wts indexes
   do nt = n1, nrays
@@ -474,6 +479,15 @@ SUBROUTINE nphi_copies (nphi_in, mu, wmu, vec, wts, zrot)
 
   ! Remove computational anomalies
   where (abs(vec) < 1d-3) vec = 0d0
+
+  if (mirror) then
+    wts(  nmuphi/2+1:nmuphi) =  wts(1:nmuphi/2)
+    vec(:,nmuphi/2+1:nmuphi) = -vec(:,1:nmuphi/2)
+    !wts = wts * 2*PI
+    wts = wts / 2
+  else
+    wts = wts * vec(3,:)
+  endif
 END SUBROUTINE nphi_copies
 
 !===============================================================================
@@ -517,7 +531,7 @@ SUBROUTINE ray_init(ray, vec)
 END SUBROUTINE ray_init
 
 !---------------------------------------------------------------------
-SUBROUTINE set_stencil(ray, ds)
+SUBROUTINE set_stencil(ray, ds, vec)
   !---------------------------------------------------------------------
   !     Calculates the interpolation weights, the physical length of the
   !     ray, and the side the ray hits.
@@ -543,48 +557,17 @@ SUBROUTINE set_stencil(ray, ds)
   !
   !---------------------------------------------------------------------
   class(ray_type) :: ray
-  real(8), intent(in) :: ds(3)
-  integer :: i,j,ncrossXZ,ncrossYZ,slct
-  integer :: count,Nvalid,nmc
-  integer, parameter :: mb=3
-  real(8) :: dx,dy,dz, mux,muy,muz
-  real(8) :: wt1, wt2, rx, ry, rz
-  character(len=130) :: txt
+  real(8), intent(in) :: ds(3), vec(3)
+  real(8) :: wt1, wt2, h1, h2
   !---------------------------------------------------------------------
-  ! first we determine the downwind quantities
-
-  ! cell sizes in the downwind direction
-  dx=ds(1)
-  dy=ds(2)
-  dz=ds(3)
-
-  ! directional cosines divided by cell size
-  mux = ray%mux
-  muy = ray%muy
-  muz = ray%muz
-  rx = mux / dx
-  ry = muy / dy
-  rz = muz / dz          
-  
-  call GetIntersect(rx,ry,rz,ray%dnplane)
-  call CalcFrac(wt1,wt2,rx,ry,rz,ray%dnplane)
-  call CalcDistance(ray%dsdn,ray%dnplane,rx,ry,rz)       
-  call SetShortKern(ray,wt1,wt2,.false.)
-
-  ! now we determine the upwind quantities
-  ! the upwind point has the angles reversed
-  mux=-mux
-  muy=-muy
-  muz=-muz
-  rx=mux / dx
-  ry=muy / dy
-  rz=muz / dz          
-
-  call GetIntersect(rx,ry,rz,ray%upplane)
-  call CalcFrac(wt1,wt2,rx,ry,rz,ray%upplane)
-  call CalcDistance(ray%dsup,ray%upplane,rx,ry,rz) 
-  call SetShortKern(ray,wt1,wt2,.true.)
-  ray%long=.false.
+  ray%dsup = ds(3) / abs(vec(3))
+  wt1 = -vec(1) / ds(1) * ray%dsup
+  wt2 = -vec(2) / ds(2) * ray%dsup
+  h1 = merge(wt1, wt1+1, wt1>0)
+  h2 = merge(wt2, wt2+1, wt2>0)
+  ray%upo1 = merge(-1, -2, wt1>0)
+  ray%upo2 = merge(-1, -2, wt2>0)
+  call SetCcKern(ray%upkern,h1,h2)
 END SUBROUTINE set_stencil
 !---------------------------------------------------------------------
 

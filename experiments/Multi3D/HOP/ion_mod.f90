@@ -96,12 +96,12 @@ FUNCTION f_of_molecules_with(self, other, count_double) result(fsum)
     type(particle_type), pointer :: molecule
     type(particle_pointer_t), allocatable :: mol_list(:)
     integer :: i
-    real(dp), dimension(self%m(1), self%m(2), self%m(3)) :: fsum
+    real(dp), dimension(:,:,:), allocatable :: fsum
     logical, optional :: count_double
     !---------------------------------------------------------------------------
     call self%molecules_with(other, mol_list, count_double)
 
-    fsum = 0
+    allocate(fsum(self%m(1),self%m(2),self%m(3)), source=0.d0)
     do i=1, size(mol_list)
         molecule => mol_list(i)%p
         fsum = fsum + molecule%f
@@ -115,12 +115,12 @@ FUNCTION e_of_molecules_with(self, other, count_double) result(esum)
     class(particle_type), pointer :: molecule
     type(particle_pointer_t), allocatable :: mol_list(:)
     integer :: i
-    real(dp), dimension(self%m(1), self%m(2), self%m(3)) :: esum
+    real(dp), dimension(:,:,:), allocatable :: esum
     logical, optional :: count_double
     !---------------------------------------------------------------------------
     call self%molecules_with(other, mol_list, count_double)
 
-    esum = 0
+    allocate(esum(self%m(1),self%m(2),self%m(3)), source=0.d0)
     do i=1, size(mol_list)
         molecule => mol_list(i)%p
         esum = esum + molecule%e

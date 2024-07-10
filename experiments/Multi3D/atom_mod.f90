@@ -518,17 +518,14 @@ MODULE atom_mod
       lin%upper_g  = self%g(lin%j)
       lin%lower_ev = self%ev(lin%i)
       lin%upper_ev = self%ev(lin%j)
-      lin%hydrogen = trim(self%id) == 'h'
+      lin%hydrogen = uppercase(trim(self%id)) == 'H'
 
       lin%lam0 = air2vac(lam_air) * AA_TO_CM ! [cm]
       lin%nu0  = CC / lin%lam0               ! [Hz]
 
       lin%f = 10**loggf / self%g(lin%i)
       gij = self%g(lin%i) / self%g(lin%j)
-      lin%Aji = f_to_Aji * lin%f * gij / lin%lam0**2
-      lin%Bji = c2_2h / lin%nu0**3 * lin%Aji
-      lin%Bij = lin%Bji / gij
-      lin%Aij = lin%Aji / gij
+      call lin%init_einstein_coefficients(lin%f, gij)
 
       ! make sure we always have an odd number of frequency points for a line
       if (mod(lin%nnu,2) == 0) lin%nnu=lin%nnu+1
@@ -554,7 +551,7 @@ MODULE atom_mod
       endif
 
       call os%allocate(lin%nu_input, lin%nnu, 'line%nu_input')
-      call lin%get_nu(qnorm, lin%nu_input)
+      call lin%get_nu(qnorm, lin%nu_input, legacy=.false.)
       lin%nu_min = lin%nu_input(1)
       lin%nu_max = lin%nu_input(lin%nnu)
 
@@ -700,6 +697,7 @@ MODULE atom_mod
     do i=1, ncol
       call nextentry(latom) 
       read(latom,*) idx, key, l, u, self%cgrid(1:ntemp,i)
+      self%cgrid(1:ntemp,i) = log(self%cgrid(1:ntemp,i))
       
       if (l==u) then
         write(stdout, *) "ll==ul for process ", key, l, u
@@ -840,34 +838,26 @@ MODULE atom_mod
         ij_check(lin%i, lin%j) = .true.
       endif
 
+      if (lin%j > self%nlevel) then
+        print *, 'Transition to non-existing level!', i, lin%i, lin%j
+        abort = .true.
+      endif
+
       ! make sure we always have an odd number of frequency points for a line
       if (mod(lin%nnu,2) == 0) lin%nnu=lin%nnu+1
       lin%nnu = nq_fac * (lin%nnu-1) + 1
+      if (lin%io <= 1 .and. m1d_legacy_mode) then
+        lin%nnu = 2 * (lin%nnu-1) + 1
+      endif
       lin%nnu = max(lin%nnu, nq_min)
 
       tri = (lin%j-1)*(lin%j-2)/2 + lin%i
       self%cdata(tri) = lin%f
 
-      ! in gfortran the size of an unallocated allocatable array can be larger than 0
-      if (allocated(in_lines) .and. size(in_lines) > 0) then
-        if (findloc(in_lines, i, 1) <= 0) then
-          call lin%deactivate()
-          cycle
-        endif
-      endif
-
-      if (logf_cut > -99) then
-        scr = log10(self%g(lin%i)*lin%f)
-        if (scr < logf_cut) then
-          call lin%deactivate()
-          cycle
-        endif
-      endif
-
       lin%upper_g  = self%g(lin%j)
       lin%lower_ev = self%ev(lin%i)
       lin%upper_ev = self%ev(lin%j)
-      lin%hydrogen = trim(self%id) == 'h'
+      lin%hydrogen = uppercase(trim(self%id)) == 'H'
 
       lin%lam0 = hc_e / ( lin%upper_ev - lin%lower_ev ) ! [cm]
       lin%nu0 = cc / lin%lam0    ! [Hz]
@@ -909,19 +899,29 @@ MODULE atom_mod
         lin%da = (lin%da - lin%ga) * over_4pi / lin%nu0
       end if
 
-      !allocate( lin%nu(lin%nnu) )
+      ! in gfortran the size of an unallocated allocatable array can be larger than 0
+      if (allocated(in_lines) .and. size(in_lines) > 0) then
+        if (findloc(in_lines, i, 1) <= 0) then
+          call lin%deactivate()
+          cycle
+        endif
+      endif
+
+      if (logf_cut > -99) then
+        scr = log10(self%g(lin%i)*lin%f)
+        if (scr < logf_cut) then
+          call lin%deactivate()
+          cycle
+        endif
+      endif
+
       call os%allocate(lin%nu_input, lin%nnu, 'line%nu_input')
-      !call os%allocate(lin%wq, lin%nnu, 'line%wq')
-      call lin%get_nu(qnorm, lin%nu_input)
+      call lin%get_nu(qnorm, lin%nu_input, legacy=nterm<=1 .and. m1d_legacy_mode)
       lin%nu_min = lin%nu_input(1)
       lin%nu_max = lin%nu_input(lin%nnu)
-      !call set_weights(lin%wq, lin%nu_input / lin%nu0 - 1)
 
       gij = self%g(lin%i) / self%g(lin%j)
-      lin%Aji = f_to_Aji * lin%f * gij / lin%lam0**2
-      lin%Bji = c2_2h / lin%nu0**3 * lin%Aji
-      lin%Bij = lin%Bji / gij
-      lin%Aij = lin%Aji / gij
+      call lin%init_einstein_coefficients(lin%f, gij)
 
       if (red_cut < huge(1.0) .or. blue_cut > tiny(1.0)) then
         red_fcut = cc*1e8 / red_cut
@@ -1233,6 +1233,13 @@ MODULE atom_mod
           abort = .true.
         endif
 
+        if (any(self%cgrid(1:nc,i) <= 0)) then
+          write(stdout, *) "Non-positive cross sections for process ", key, l, u
+          abort = .true.
+        else
+          self%cgrid(1:nc,i) = log(self%cgrid(1:nc,i))
+        endif
+
         select case(trim(key))
         case('OHMEGA','CE','CH','CI','FIXRAT','CH0','CHI')
           ! set derivatives for 3rd order hermite interpolation
@@ -1532,7 +1539,6 @@ MODULE atom_mod
           allocate(lin%wq(ired:iblue))
           call os%mem_register(storage_size(lin%wq), nnu)
           call set_weights(lin%wq, dble(lin%q))
-          lin%wq = lin%wq * pi4
         endif
       end do
     endif

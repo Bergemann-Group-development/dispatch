@@ -61,7 +61,7 @@ MODULE composition_mod
     end type
 
     character(128), public, save :: exclude_elements=''
-    logical, public :: scattering_absorption=.false.
+    logical, public :: scattering_absorption=.true.
 
 contains
 
@@ -605,7 +605,7 @@ contains
         character(20) :: ion_id
         character(len=512) :: line_text
         real(dp) :: lam0, gv, gq, loggf, ent8, ent9, mass, cnt_ev, lam_vac, vbar2e4
-        real(dp) :: upper_ev, lower_g
+        real(dp) :: upper_ev, lower_g, gij, f
         character :: lower_orb, upper_orb
         character(len=150) :: label
         character :: char
@@ -699,10 +699,9 @@ contains
                     line%upper_g = 2 * line%j**2
                     lam_vac = air2vac(lam0) * 1e-8
                     line%nu0 = CC / lam_vac
-                    line%Aji = f_to_Aji * 10**loggf / (line%upper_g * lam_vac**2)
-                    line%Bji = c2_2h / line%nu0**3 * line%Aji
-                    line%Bij = line%Bji * line%upper_g / lower_g
-    
+                    gij = lower_g / line%upper_g
+                    f = 10**loggf / lower_g
+                    call line%init_einstein_coefficients(f, gij)
                     call prepare_hydrogen_damping(line) ! ga is overwritten
                 else
                     ! Try to read with stark broadening parameter
@@ -721,10 +720,12 @@ contains
     
                     lam_vac = air2vac(lam0) * 1e-8
                     line%nu0 = CC / lam_vac
-                    line%Aji = f_to_Aji * 10**loggf / (line%upper_g * lam_vac**2)
-                    line%Bji = c2_2h / line%nu0**3 * line%Aji
-                    line%Bij = line%Bji * line%upper_g ! 1 / gi is missing but cancels when multiplying with ni
-    
+
+                     ! 1 / gi is missing but cancels when multiplying with ni
+                    gij = line%upper_g
+                    f = 10**loggf
+                    
+                    call line%init_einstein_coefficients(f, gij)
                     call line%prepare_Stark(gq)
     
                     if (associated(ion)) then
@@ -1200,6 +1201,7 @@ contains
             do j=lbound(element%ions,1), ubound(element%ions,1)
                 ion => element%ions(j)
                 ion%n = ion%f * self%toth
+                deallocate(ion%f, ion%saha)
             end do
         end do
 
@@ -1263,8 +1265,8 @@ contains
                 xnen = ion%f * (j-1)
                 
                 ! number of electrons from elements other than H
-                !if (element%id /= 'H') fe = fe + xnen
-                fe = fe + xnen
+                if (element%id /= 'H') fe = fe + xnen
+                !fe = fe + xnen
 
                 select case (element%id)
                 case ('H','C','N','O')
@@ -1728,7 +1730,7 @@ contains
         where (tmolim)
             fe = xnecno
             HI%fil = 1 + HI%saha + Hm%pk
-            b = 2 * H2%dis * pe/fe
+            b = H2%dis * pe/fe * 2
             q = - HI%abund/b
             p = HI%fil/b
             HI%f = solve_quadratic(p, q)

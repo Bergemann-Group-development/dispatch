@@ -20,7 +20,7 @@ MODULE read_external_mod
   USE list_mod
   USE shared_mod
   USE task_list_mod
-  USE experiment_mod, only: experiment_t, interpolated_3d_atmos, amr
+  USE experiment_mod, only: experiment_t
   USE ion_mod, only: vmic
   USE composition_mod
   USE composition_patch_mod, only: FeH, save_atmos, save_eos
@@ -28,7 +28,8 @@ MODULE read_external_mod
   USE const_mod, only:cc
   USE atom_mod, only: m1d_legacy_mode, NextEntry
   USE m3d_patch_mod, only: maxiter, ilambd, m3d_patch_t, atom_update_counter, &
-  global_maxerr, global_pos, nz_total, use_density, use_ne, atmos_format
+  global_maxerr, global_pos, nz_total, use_density, use_ne, atmos_format, amr, &
+  interpolated_3d_atmos
   USE m3d_halo_mod, only: m3d_halo_t
   USE read_stagger_snapshot_mod
   USE read_marcs_mod, only: read_marcs, zfac
@@ -127,7 +128,6 @@ SUBROUTINE init(self, task_list, name)
   select case (atmos_format)
   case ('stagger', 'co5bold')
     interpolated_3d_atmos = .true.
-    one_dimensional = .false.
     select case (atmos_format)
     case('stagger')
       call read_stagger(atmos_file, snap, self%size)
@@ -160,8 +160,9 @@ SUBROUTINE init(self, task_list, name)
       stop
     end select
 
+    amr = .false.
+
     self%n = shape(self%rho)
-    one_dimensional = self%n(1)*self%n(2) == 1
     if (.not. associated(self%pe)) then
       call os%allocate(self%pe, self%n)
       self%pe = self%ne * cgs%k_b * self%temp
@@ -191,6 +192,7 @@ SUBROUTINE init(self, task_list, name)
     self%size = self%n * self%ds
   end select
 
+  one_dimensional = self%n(1)*self%n(2) == 1
   self%position = 0.5*self%size + self%origin
 
   !-----------------------------------------------------------------------------

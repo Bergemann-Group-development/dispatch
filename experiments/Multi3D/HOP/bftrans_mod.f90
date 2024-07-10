@@ -134,7 +134,7 @@ contains
       integer, intent(in) :: idx
       fits_in = idx > 0 .and. idx < self%nnu
       if (fits_in) then
-        fits_in = x > self%lam(idx) .and. x < self%lam(idx+1)
+        fits_in = x >= self%lam(idx) .and. x < self%lam(idx+1)
       endif
     end function fits_in
   END SUBROUTINE load_lam_interp_weights
@@ -282,18 +282,20 @@ contains
           i = 0
           ab = 0
           do f=fs,fe
-            if (i /= iw(f)) then
-              i = iw(f)
-              y1 = yy(i)
-              y2 = yy(i+1)
-              if (quad(f)) then
-                y3 = yy(i+2)
-              else
-                y3 = 0
+            if (iw(f) > 0) then
+              if (i /= iw(f)) then
+                i = iw(f)
+                y1 = yy(i)
+                y2 = yy(i+1)
+                if (quad(f)) then
+                  y3 = yy(i+2)
+                else
+                  y3 = 0
+                endif
               endif
-            endif
-            if (i /= 0) then
-              ab(f) = sum([y1, y2, y3]*lagrange(:,f))
+              if (i /= 0) then
+                ab(f) = sum([y1, y2, y3]*lagrange(:,f))
+              endif
             endif
           end do
           fakt1 = fakt(x,y,z)
@@ -315,14 +317,17 @@ contains
 
       do f=fs,fe
         i = iw(f)
-        if (i==0) cycle
-        if (quad(f)) then
-            ab(f) = sum(yy(i:i+2) * lagrange(1:3,f))
+        if (i<=0) then
+          ab(f) = 0
         else
-            ab(f) = sum(yy(i:i+1) * lagrange(1:2,f))
+          if (quad(f)) then
+              ab(f) = sum(yy(i:i+2) * lagrange(1:3,f))
+          else
+              ab(f) = sum(yy(i:i+1) * lagrange(1:2,f))
+          endif
+          if (self%ilogl) ab(f) = exp(ab(f))
         endif
       end do
-      if (self%ilogl) ab = exp(ab)
 
       if (H_occupation_probability .and. self%key == 'H BF') then
         lvl => self%ion%levels(self%k)
@@ -412,7 +417,7 @@ contains
       if (.not. self%active) return
       nf = size(lam)
       allocate(quad(nf))
-      allocate(iw(nf))
+      allocate(iw(nf), source=-1)
       allocate(lagrange(3,nf), source=0.d0)
       call os%allocate(pvt_xkap, shape(self%xkap))
       allocate(fakt, mold=temp)

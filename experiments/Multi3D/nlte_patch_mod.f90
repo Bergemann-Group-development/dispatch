@@ -23,7 +23,7 @@ MODULE nlte_patch_mod
   premature_finish, m3d_patch_pre_update=>pre_update, save_resolved, &
   column_by_column, rotate_atmos, check_NaN, rank_lvlerr, sample_back_opac, &
   decouple_continuum, linelist_in_output, sample_back_opac_in_output, ilambd, &
-  Jnu_to_file, preconditioning, make_eos
+  Jnu_to_file, preconditioning, make_eos, amr, save_Inu, save_chi, rotate_continuum
   USE ray_mod, only: one_dimensional, ray_type
   USE trans_mod, only:line_type, cont_type
   USE bbtrans_mod, only:voigt_function2, voigt_profile
@@ -93,9 +93,9 @@ MODULE nlte_patch_mod
   integer, public :: n_cntrbf=0
   integer, public, dimension(:), allocatable :: cntrbf_lines
   integer :: f, x, y, z, nx, ny, nz, fs, fe, nf
-  real(4), dimension(:,:,:,:,:), allocatable, target :: work, back
+  real(4), dimension(:,:,:,:,:), allocatable, target :: work, back, cf_tmp
   type(line_cntrbf), dimension(:), allocatable :: cntrbf
-  !$omp threadprivate(work, back, x, y, z, nx, ny, nz, f, fs, fe, nf)
+  !$omp threadprivate(work, back, x, y, z, nx, ny, nz, f, fs, fe, nf, cf_tmp)
   !$omp threadprivate(cntrbf)
     
 contains
@@ -215,8 +215,9 @@ SUBROUTINE execute (self)
   real(4) :: wmu, nan_check(3)
   real(8) :: vec(3)
   character(8) :: Jnu_label
+  character(6) :: sav_label
   logical :: skip, use_linelist, get_cntrbf, end_boundary, include_absmet
-  logical :: do_rotate_atmos, do_sample_opac, do_make_eos
+  logical :: do_rotate_atmos, do_sample_opac, do_make_eos, do_rotate_continuum
   integer :: i, j, i_mu, zs, ze, p(3), ng, i_set, l, nnu_cntrbf
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
@@ -236,6 +237,7 @@ SUBROUTINE execute (self)
 
   self%composition => self%m3d_parent%composition
   do_rotate_atmos = rotate_atmos .and. self%out_mu
+  do_rotate_continuum = rotate_atmos .and. rotate_continuum
   use_linelist = self%out_mu .and. self%composition%ll_initialised .and. linelist_in_output
   get_cntrbf = self%out_mu .and. (n_cntrbf>0)
   end_boundary = self%patch%boundaries%is_set(bits%zl) .and. (self%dir<0)
@@ -261,21 +263,19 @@ SUBROUTINE execute (self)
   
 
   comp => self%composition
+
+  if (.not. do_rotate_continuum) then
+    call self%lte_background_opacities(comp, include_absmet=include_absmet, do_sample_opac=do_sample_opac, do_make_eos=do_make_eos)
   
-  call self%lte_background_opacities(comp, include_absmet=include_absmet, do_sample_opac=do_sample_opac, do_make_eos=do_make_eos)
+    if (ilambd > 0 .and. (self%iter > 0 .or. self%out_mu)) then
+      call self%add_scattering(comp)
+    endif
 
-  if (ilambd > 0 .and. (self%iter > 0 .or. self%out_mu)) then
-    call self%add_scattering(comp)
-  endif
-
-  if (self%use_atom) then
-    adata => self%atom%data
-    if (self%bound_free) call self%add_bound_free_opacities(adata)
-  endif
-
-  if (.not. do_rotate_atmos) then
     if (self%use_atom) then
-      if (self%bound_bound) then
+      adata => self%atom%data
+      if (self%bound_free) call self%add_bound_free_opacities(adata)
+
+      if (self%bound_bound .and. .not. do_rotate_atmos) then
         inv_df = self%atom%inverse_doppler_factor(real(comp%temp))
         call self%bound_bound_damping(comp, adamp, inv_df)
       endif
@@ -291,23 +291,34 @@ SUBROUTINE execute (self)
       wmu = all_wmu(i_mu)
       vec = all_vec(:,i_mu)
     endif
-    wmu = wmu * over_4pi
 
     call self%get_vproj(vproj, vec, do_rotate_atmos, i_mu)
 
     if (do_rotate_atmos) then
       comp => self%m3d_parent%rotated_composition(i_mu)
-      if (self%bound_bound) then
+
+      if (do_rotate_continuum) then
+        call self%lte_background_opacities(comp, include_absmet=include_absmet, do_sample_opac=do_sample_opac, do_make_eos=do_make_eos)
+      
+        if (ilambd > 0 .and. (self%iter > 0 .or. self%out_mu)) then
+          call self%add_scattering(comp)
+        endif
+      endif
+
+      if (self%use_atom) then
         adata => self%atom%rotated_data(i_mu)
-        inv_df = self%atom%inverse_doppler_factor(real(comp%temp))
-        call self%bound_bound_damping(comp, adamp, inv_df)
+        if (self%bound_free .and. do_rotate_continuum) call self%add_bound_free_opacities(adata)
+        if (self%bound_bound) then
+          inv_df = self%atom%inverse_doppler_factor(real(comp%temp))
+          call self%bound_bound_damping(comp, adamp, inv_df)
+        endif
       endif
     endif
 
     do i_set=1, self%n_set
       call self%back_to_work()
 
-      if (do_rotate_atmos) then
+      if (do_rotate_atmos .and. .not. do_rotate_continuum) then
         call self%eta_to_Snu()
         call self%rotate_array(vec, work(:,:,:,1:nz,1:2))
         call self%Snu_to_eta()
@@ -358,14 +369,30 @@ SUBROUTINE execute (self)
       call self%work_to_mem(i_mu, i_set)
 
       if ((self%get_rates .and. self%bound_free) .or. (self%iter < ilambd)) then
-        call self%integrate_intensity(wmu, i_set, save_PsiJ=self%get_rates)
+        call self%integrate_intensity(wmu, i_set, save_PsiJ=(self%get_rates .and. self%bound_free))
       endif
       
       if (self%get_rates) then
         if (self%bound_bound) call self%bound_bound_rates(wmu, inv_df, vproj, adamp, gamma_ij, gamma_ji)
       endif
-    end do
-  end do
+
+      if (save_Inu .and. self%out_mu .and. self%n_mu > 0) then
+        if (i_set==1) then
+          write(sav_label, '(A, I2.2)') 'Inu_', i_mu
+          call self%save4(work(fs:fe,:,:,1:nz,3), sav_label, key=self%key(1:3))
+        elseif (i_set==3) then
+          write(sav_label, '(A, I2.2)') 'Cnt_', i_mu
+          call self%save4(work(fs:fe,:,:,1:nz,3), sav_label, key=self%key(1:3))
+        endif
+      endif
+      if (save_chi .and. self%out_mu .and. self%n_mu > 0) then
+        if (i_set==1) then
+          write(sav_label, '(A, I2.2)') 'chi_', i_mu
+          call self%save4(work(fs:fe,:,:,1:nz,1), sav_label, key=self%key(1:3))
+        endif
+      endif
+    end do ! NLTE-LTE_CONTINUUM loop
+  end do ! Angle loop
 
   if (self%get_rates) then
     if (self%bound_free) call self%bound_free_rates(gamma_ij, gamma_ji)
@@ -436,8 +463,10 @@ contains
           if (.not. line%active) cycle
           call line%check_range(self%fs, self%fe, fs, fe, skip)
           if (.not. skip) then
-            allocate(cntrbf(i)%data(nx,ny,nz,fs:fe,7,self%mus:self%mue))
+            allocate(cntrbf(i)%data(fs:fe,nx,ny,nz,4,self%mus:self%mue))
             call mem_register(cntrbf(i)%data, 'cntrbf')
+            allocate(cf_tmp(fs:fe,nx,ny,nz,4))
+            call mem_register(cf_tmp, 'cf_tmp')
           endif
         end associate
       end do
@@ -473,6 +502,8 @@ contains
         if (allocated(cntrbf(i)%data)) then
           call mem_unregister(cntrbf(i)%data, label='cntrbf')
           deallocate(cntrbf(i)%data)
+          call mem_unregister(cf_tmp, label='cf_tmp')
+          deallocate(cf_tmp)
         endif
       end do
       deallocate(cntrbf)
@@ -502,17 +533,17 @@ SUBROUTINE lte_background_opacities (self, comp, include_absmet, do_sample_opac,
   end do
   end do
 
+  if (do_sample_opac .or. do_make_eos) then
+    if (.not. allocated(self%opac_table)) then
+      call self%generate_opacity_table(self%nu(fs:fe), include_absmet)
+    endif
+  endif
+
   ! getting background LTE absorption
   if (do_sample_opac) then
-    if (self%iter==0) then
-      call self%generate_opacity_table(self%nu(fs:fe), include_absmet)
-    endif
     call self%interpolate_opacity_table(comp%temp, comp%ne, comp%rho)
-  elseif (do_make_eos) then
-    if (self%iter==0) then
-      call self%generate_opacity_table(self%nu(fs:fe), include_absmet)
-      call self%generate_eos_table(self%nu(fs:fe), include_absmet)
-    endif
+  elseif (do_make_eos .and. self%iter==0) then
+    call self%generate_eos_table(self%nu(fs:fe), include_absmet)
   else
     call comp%absorption(self%nu, back(:,:,:,:,1), blz=back(:,:,:,:,3), &
     include_absmet=include_absmet, sorted=self%sp%sorted)
@@ -934,8 +965,6 @@ SUBROUTINE bound_bound_rates (self, wmu, inv_df, vproj, adamp, gamma_ij, gamma_j
         Bij_ni = 0
       endif
 
-      tmp = exp(HH*line%nu0 / (BK*self%composition%temp(x,y,z)))
-
       g_ij = 0
       g_ji = 0
       if (line%io > 1) then
@@ -1243,7 +1272,7 @@ SUBROUTINE rotate_array (self, vec, array)
 
   ! bot2pivot is the distance between the bottom of the patch and the pivot plane
   bottom = self%position(3) - 0.5*self%size(3)
-  bot2pivot = pivot_z * self%ds(3) - bottom
+  bot2pivot = pivot_z - bottom
 
   do z=1, nz
     height = z*self%ds(3) ! height of plane as measured from bottom
@@ -1285,45 +1314,65 @@ END SUBROUTINE rotate_array
 !===============================================================================
 SUBROUTINE short_char (self, vec)
   class(nlte_patch_t) :: self
-  type(ray_type) :: ray
-  real(8) :: vec(3)
-  real(4) :: Inuup, xxup, ssup, xxmin, ssmin, Inumin, dsup05, xx, ss, Inu, u0, Psi
+  type(ray_type) :: ray, amr_ray
+  real(8) :: vec(3), ds(3)
+  real(4) :: Inuup, xxup, ssup, xxmin, ssmin, Inumin
+  real(4) :: dsup1, dsup2, dsup05, xx, ss, Inu, u0, Psi
   real(8) :: dt, ex ! important
-  real(4), dimension(:,:), allocatable :: kernel, work_up, work_min
-  integer :: dx, dy, zs, ze, xup, yup, zup, x1, y1, i, ii, jj
-  logical :: inner
+  real(4), dimension(4,4), target :: kernel1, kernel2
+  real(4), dimension(:,:), pointer, contiguous :: kernel
+  real(4), dimension(:,:), allocatable :: work_up, work_min
+  integer :: zs, ze, xup, yup, zup, x1, y1, i, ii, jj, upo1, upo2
+  logical :: inner, amr_boundary
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('nlte_patch%short_char', itimer=itimer)
-  call ray%init(vec)
-  call ray%set_stencil(self%ds * scaling%l)
-
-  allocate(kernel, source=real(ray%upkern))
   allocate(work_up(self%fs:self%fe,3))
   allocate(work_min(self%fs:self%fe,3))
-
-  dsup05 = 0.5*real(ray%dsup)
-
-  dx = size(kernel, 1)
-  dy = size(kernel, 2)
 
   zs = merge(1, nz, self%dir > 0)
   ze = merge(nz, 1, self%dir > 0)
 
+  call ray%set_stencil(self%ds * scaling%l, vec)
+  kernel1 = real(ray%upkern)
+  dsup1 = 0.5*real(ray%dsup)
+
+  amr_boundary = amr .and. self%dir < 0
+  if (amr_boundary) then
+    ds = self%ds
+    if (associated(self%upstream)) ds = self%upstream%ds
+    call amr_ray%set_stencil(ds * scaling%l, vec)
+    kernel2 = real(amr_ray%upkern)
+    dsup2 = 0.5*real(amr_ray%dsup)
+  endif
+
   do z=zs, ze, self%dir
     zup = z - self%dir
+
+    if (amr_boundary) then
+      kernel => kernel2
+      dsup05 = dsup2
+      upo1 = amr_ray%upo1-1
+      upo2 = amr_ray%upo2-1
+      amr_boundary = .false.
+    else
+      kernel => kernel1
+      dsup05 = dsup1
+      upo1 = ray%upo1-1
+      upo2 = ray%upo2-1
+    endif
     
     do y=1, ny
-      y1 = y + ray%upo2 - 1
+      y1 = y + upo2
   
       do x=1, nx
-        x1 = x + ray%upo1 - 1
+        x1 = x + upo1
         
         work_up = 0
         work_min = huge(1.0)
-        do jj=1,dy
-          do ii=1,dx
-            inner = ii>1 .and. ii<dx .and. jj>1 .and. jj<dy
+        do jj=1,4
+          do ii=1,4
+            inner = ii>1 .and. ii<4 .and. jj>1 .and. jj<4
             xup = modulo(ii+x1-1, nx) + 1
             yup = modulo(jj+y1-1, ny) + 1
             work_up(:,1) = work_up(:,1) + kernel(ii,jj)*work(:, xup, yup, zup,1)
@@ -1425,7 +1474,10 @@ SUBROUTINE long_char (self, vec)
         endif
 
         work(f,x,y,z,3) = Inu
-        if (self%get_rates) self%Psi(f,x,y,z) = Psi / xx
+        if (self%get_rates) then
+          !Psi = Psi + Inuup*ex*exp(-dsup05*xx*ss)*dsup05*xx
+          self%Psi(f,x,y,z) = Psi / xx
+        endif
       end do ! f-loop
     end do
     end do
@@ -1466,9 +1518,9 @@ END SUBROUTINE get_vproj
 !===============================================================================
 SUBROUTINE save_contribution_function (self, i_set, i_mu)
   class(nlte_patch_t) :: self
-  integer :: i, j, i_set, i_mu, ff
+  integer :: i, j, i_set, i_mu, ff, im
   real(4) :: net_chi, net_src, lin_chi, lin_eta
-  real(4) :: cnt_inu, cnt_chi, cnt_eta
+  real(4) :: cnt_inu_r, cnt_chi, cnt_eta
   real(4), dimension(:,:,:,:,:), allocatable, target :: rotated_back
   real(4), dimension(:,:,:,:,:), pointer :: back_ptr
   character(32) :: name
@@ -1482,46 +1534,41 @@ SUBROUTINE save_contribution_function (self, i_set, i_mu)
       if (.not. line%active) cycle
       call line%check_range(self%fs, self%fe, fs, fe, skip)
       if (skip) cycle
-
-      if (one_dimensional .or. column_by_column) then
-        back_ptr => back
-      else
-        allocate(rotated_back(fs:fe,nx,ny,nz,2), source=back(fs:fe,:,:,:,1:2))
-        back_ptr => rotated_back
-        back_ptr(:,:,:,:,2) = back_ptr(:,:,:,:,2) / back_ptr(:,:,:,:,1)
-        call self%rotate_array(long_vec(:,i_mu), back_ptr)
-        back_ptr(:,:,:,:,2) = back_ptr(:,:,:,:,2) * back_ptr(:,:,:,:,1)
-      endif
       do z=1,nz
       do y=1,ny
       do x=1,nx
         do f=fs,fe
-          cnt_chi = back_ptr(f,x,y,z,1)
-          cnt_eta = back_ptr(f,x,y,z,2)
-          associate(cf => cntrbf(i)%data(x,y,z,f,:,i_mu))
+          associate(cf => cf_tmp(f,x,y,z,:), cf_out => cntrbf(i)%data(f,x,y,z,:,i_mu))
             if (i_set < 3) then
               net_chi = work(f,x,y,z,1)
               net_src = work(f,x,y,z,2)
-              lin_chi = net_chi - cnt_chi
-              lin_eta = net_src*net_chi - cnt_eta
               if (i_set == 1) then
-                cf(1) = lin_chi
-                cf(2) = lin_eta
-                cf(3) = net_chi
+                cf(1) = net_chi
+                cf(2) = net_src*net_chi
               elseif (i_set == 2) then
-                cf(4) = lin_chi
-                cf(5) = lin_eta
-                cf(6) = net_chi
+                cf(3) = net_chi
+                cf(4) = net_src*net_chi
               endif
             else
-              cf(7) = work(f,x,y,z,3) !cnt_inu
+              cnt_chi = work(f,x,y,z,1)
+              cnt_eta = work(f,x,y,z,2)*cnt_chi
+              cnt_inu_r = 1/work(f,x,y,z,3)
+
+              lin_chi = cf(1) - cnt_chi
+              lin_eta = cf(2) - cnt_eta
+              cf_out(1) = lin_chi - cnt_inu_r*lin_eta
+              cf_out(2) = lin_chi + cnt_inu_r*cnt_eta
+
+              lin_chi = cf(3) - cnt_chi
+              lin_eta = cf(4) - cnt_eta
+              cf_out(3) = lin_chi - cnt_inu_r*lin_eta
+              cf_out(4) = lin_chi + cnt_inu_r*cnt_eta
             endif
           end associate
         end do
       end do
       end do
       end do
-      if (allocated(rotated_back)) deallocate(rotated_back)
     end associate
     if (i_set==3 .and. i_mu==self%mue) then
       write(name, '(A,I6.6)') 'cntrbf_', j

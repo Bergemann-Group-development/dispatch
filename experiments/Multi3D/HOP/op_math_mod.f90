@@ -385,7 +385,8 @@ contains
     ! z-dimension linear interpolation
     do j = 1, oy
       do i = 1, ox
-        call interp1d_sorted(oldz, f(i,j,:), newz, fz(i,j,:))
+        !call interp1d_sorted(oldz, f(i,j,:), newz, fz(i,j,:))
+        call pchip_mono4(oldz, f(i,j,:), real(newz), fz(i,j,:), sorted=.true.)
       end do
     end do
 
@@ -400,12 +401,14 @@ contains
 
       ! y-dimension linear interpolation
       do i = 1, ox
-        call interp1d_reg_period(dy, fz(i,:,k), newy + deltak(2), fy(i,:))
+        !call interp1d_reg_period(dy, fz(i,:,k), newy + deltak(2), fy(i,:))
+        call pchip_mono4_reg_period(real(dy), fz(i,:,k), real(newy + deltak(2)), fy(i,:))
       end do
 
     ! x-dimension linear interpolation
       do j = 1, ny
-        call interp1d_reg_period(dx, fy(:,j), newx + deltak(1), fout(:,j,k))
+        !call interp1d_reg_period(dx, fy(:,j), newx + deltak(1), fout(:,j,k))
+        call pchip_mono4_reg_period(real(dx), fy(:,j), real(newx + deltak(1)), fout(:,j,k))
       end do
     end do
   END SUBROUTINE linterpolate_3d_rotated
@@ -873,7 +876,8 @@ contains
     integer :: n_interp          ! Number of interpolation points
     integer :: j                 ! Loop index for interpolation points
     integer :: i                 ! Loop index for data points
-    real(4) :: d1, d2, alpha, t1, t2, t3, p, a
+    real(4) :: alpha, t1, t2, t3, p, a
+    real(8) :: dydx8, d1, d2
     !-----------------------------------------------------------------------------
     n = size(xx)
     n_interp = size(newx)
@@ -895,7 +899,8 @@ contains
       if (sign(1., d1) == sign(1., d2)) then
           ! harmonic mean derivative
           alpha = (1. + dx(i-1)/(dx(i) + dx(i-1))) / 3.0
-          dydx(i) = 1. / ((1. - alpha)/d2 + alpha/d1)
+          dydx8 = d1*d2 / ((1. - alpha)*d1 + alpha*d2)
+          dydx(i) = real(dydx8)
       endif
     end do
     
@@ -1008,4 +1013,65 @@ contains
     end do
     deallocate(dydx, dx, dy)
   END SUBROUTINE pchip_mono8
+
+  !===============================================================================
+  ! Monotonic piecewise cubic hermite interpolation
+  ! Coded by Richard Hoppe, July 2023
+  !===============================================================================
+  PURE SUBROUTINE pchip_mono4_reg_period(dx, yy, newx, newy)
+    real(4), intent(in) :: dx               ! X spacing of the data points
+    real(4), intent(in) :: yy(:)            ! Y values of the data points
+    real(4), intent(in) :: newx(:)          ! X values to interpolate at
+    real(4), intent(out) :: newy(:)         ! Interpolated Y values
+    real(4), allocatable :: dydx(:)         ! derivative
+    real(4), allocatable :: dy(:)
+    integer :: n                 ! Number of data points
+    integer :: n_interp          ! Number of interpolation points
+    integer :: j                 ! Loop index for interpolation points
+    integer :: i, i1, i2         ! Loop index for data points
+    real(4) :: t1, t2, t3, p, over_dx, ratio
+    real(8) :: dydx8, d1, d2
+    !-----------------------------------------------------------------------------
+    n = size(yy)
+    n_interp = size(newx)
+    
+    allocate(dydx(n), source=0.)
+    allocate(dy(n))
+    
+    over_dx = 1/dx
+    dy(1:n-1) = yy(2:n) - yy(1:n-1)
+    dy(n) = yy(1) - yy(n)
+    
+    do i=1, n
+      i1 = modulo(i-1, n) + 1
+      i2 = modulo(i,   n) + 1
+      if (dy(i1) == 0 .or. dy(i2) == 0) cycle
+
+      d1 = dy(i1) * over_dx
+      d2 = dy(i2) * over_dx
+      
+      if (sign(1., d1) == sign(1., d2)) then
+          ! harmonic mean derivative
+          dydx8 = 2*d1*d2 / (d1 + d2)
+          dydx(i) = real(dydx8)
+      endif
+    end do
+    
+    do j=1, n_interp
+      ratio = newx(j) * over_dx
+      i = int(ratio)
+      i1 = modulo(i,   n) + 1
+      i2 = modulo(i+1, n) + 1
+
+      ! Calculate the interpolation parameter
+      t1 = ratio - i
+
+      t2 = t1*t1
+      t3 = t2*t1
+      p = 3.0*t2 - 2.0*t3
+  
+      newy(j) = (1.0 - p)*yy(i1) + p*yy(i2) + dx*((t3 - 2.0*t2 + t1)*dydx(i1) + (t3-t2)*dydx(i2)) 
+    end do
+    deallocate(dydx, dy)
+  END SUBROUTINE pchip_mono4_reg_period
 END MODULE op_math_mod
