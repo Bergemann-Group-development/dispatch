@@ -26,6 +26,7 @@ MODULE atom_patch_mod
     USE osmet_mod, only:osmet_type
     USE nlte_patch_mod, only:nlte_patch_t, n_cntrbf, cntrbf_lines
     USE m3d_debug_mod
+    USE shared_mod
     implicit none
   
     !-----------------------------------------------------------------------------
@@ -716,6 +717,10 @@ MODULE atom_patch_mod
         end do
       end do
     end do
+
+    if (self%maxerr /= self%maxerr) then
+      call shared%abort('NaN in convergence error')
+    endif
 
     !$omp critical (maxerr_reset)
     global = global_maxerr%update(0.d0)
