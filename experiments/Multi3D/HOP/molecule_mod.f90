@@ -34,12 +34,11 @@ END FUNCTION
 FUNCTION calc_f(self, pefe) result(f)
     class(molec_type), intent(in) :: self
     real(dp), dimension(:,:,:) :: pefe
-    real(dp), dimension(self%m(1), self%m(2), self%m(3)) :: f
+    real(dp), dimension(:,:,:), allocatable :: f
     type(ion_type), pointer :: ion
     integer :: j
     !---------------------------------------------------------------------------
-    f = self%dis
-
+    allocate(f, source=self%dis)
     do j=1, self%nions
         ion => self%ions(j)%p
         f = f * ion%f
@@ -53,9 +52,11 @@ FUNCTION calc_e(self, teta, temp, dxi) result(e)
     class(molec_type), intent(in) :: self
     class(ion_type), pointer :: ion
     real(dp), dimension(:,:,:) :: teta, temp, dxi
-    real(dp), dimension(self%m(1), self%m(2), self%m(3)) :: dis, e
+    real(dp), dimension(:,:,:), allocatable :: dis, e
     integer :: i
     !---------------------------------------------------------------------------
+    allocate(dis, e, mold=self%n)
+
     if (size(self%de) > 1) then
         if (trim(self%id) == 'H2' ) dis = 4.476
         if (trim(self%id) == 'H2+') dis = 2.648
