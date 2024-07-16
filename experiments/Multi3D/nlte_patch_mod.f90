@@ -540,10 +540,10 @@ SUBROUTINE lte_background_opacities (self, comp, include_absmet, do_sample_opac,
   endif
 
   ! getting background LTE absorption
-  if (do_sample_opac) then
-    call self%interpolate_opacity_table(comp%temp, comp%ne, comp%rho)
-  elseif (do_make_eos .and. self%iter==0) then
+  if (do_make_eos .and. self%iter==0) then
     call self%generate_eos_table(self%nu(fs:fe), include_absmet)
+  elseif (do_sample_opac) then
+      call self%interpolate_opacity_table(comp%temp, comp%ne, comp%rho)
   else
     call comp%absorption(self%nu, back(:,:,:,:,1), blz=back(:,:,:,:,3), &
     include_absmet=include_absmet, sorted=self%sp%sorted)
@@ -678,12 +678,14 @@ SUBROUTINE generate_eos_table (self, nu, include_absmet)
   end do
   call self%save3(self%opac_table, 'scat')
 
-  allocate(eos(5, ntemp, nrho))
+  allocate(eos(7, ntemp, nrho))
   eos(1, :, :) = real(comp%temp(:, :, 1), kind=4)
   eos(2, :, :) = real(comp%rho(:, :, 1), kind=4)
   eos(3, :, :) = real(comp%ne(:, :, 1), kind=4)
   eos(4, :, :) = real(comp%pg(:, :, 1), kind=4)
   eos(5, :, :) = real(comp%E(:, :, 1), kind=4)
+  eos(6, :, :) = real(comp%elements(1)%ions(1)%n(:, :, 1), kind=4)
+  eos(7, :, :) = real(comp%elements(1)%ions(2)%n(:, :, 1), kind=4)
   call self%save3(eos, 'eos')
   call trace%end(itimer)
 END SUBROUTINE generate_eos_table

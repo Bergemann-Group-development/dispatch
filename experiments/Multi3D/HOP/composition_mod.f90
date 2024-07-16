@@ -4,7 +4,7 @@ MODULE composition_mod
     USE op_math_mod
     USE handyfuncs_mod
     USE element_mod
-    USE ion_mod
+    USE ion_mod, only: ion_type, debye_shield
     USE level_mod, only: level_type, wcalc
     USE bbtrans_mod, only:bbtrans_type
     USE bftrans_mod, only:bftrans_type, H_occupation_probability
@@ -39,6 +39,7 @@ MODULE composition_mod
         procedure :: set_aux_data
         procedure :: molecular_equilibrium
         procedure :: init_H_levels
+        procedure :: Hoccupation_partition
         procedure :: molecule_by_id
         procedure :: element_by_id
         procedure :: trans_by_id
@@ -67,13 +68,14 @@ contains
 
     !===============================================================================
     SUBROUTINE injon(self, absdat_file, abund_file, absmet_file, FeH, &
-        isotope_file, molec_file, absmet_big_end, tmolim)
+        isotope_file, molec_file, absmet_big_end, tmolim, external_abund)
         class(composition_type), target :: self
         character(len=*), intent(in) :: absdat_file, abund_file
         character(len=*), intent(in), optional :: absmet_file, isotope_file, molec_file
         logical, intent(in), optional :: absmet_big_end
         real(4), intent(in), optional :: tmolim
         real(8), intent(in) :: FeH
+        real(4), intent(in), optional :: external_abund(:)
         integer :: absdat, lunit, iostat
         integer :: i, j, k, m, nl, nk, n_iso
         integer :: lvl_count, skip_back
@@ -146,6 +148,13 @@ contains
 
         if (elements(1)%abund == 1) then
             elements%abund = log10(elements%abund) + 12.0
+        endif
+
+        if (present(external_abund)) then
+            do i=1, size(external_abund)
+                call self%element_by_id(element_ids(i), element, verbose=.true.)
+                if(associated(element)) element%abund = external_abund(i)
+            end do
         endif
 
         do i=1, self%nel
@@ -1233,20 +1242,20 @@ contains
     SUBROUTINE thermal_equilibrium(self, temp, ne, rho)
         class(composition_type), target :: self
         class(element_type), pointer :: element
-        class(ion_type), pointer :: ion
+        class(ion_type), pointer :: ion, HI, HeI
         real(dp), intent(in),  dimension(:,:,:) :: temp, ne
         real(dp), intent(out), dimension(:,:,:) :: rho
-        real(dp), dimension(:,:,:), allocatable :: fe, xnen, xnecno, ejon
-        real(dp), dimension(:,:,:), allocatable :: xerg, eh, toth
+        real(dp), dimension(:,:,:), allocatable :: fe, xnen, xnecno, toth
         integer :: i, j, itimer=0, itimer2=0, itimer3=0
         !---------------------------------------------------------------------------
         call trace%begin ('composition_type%thermal_equilibrium', itimer=itimer)
-        allocate(fe, xnen, xnecno, ejon, xerg, eh, toth, mold=temp)
+        allocate(fe, xnen, xnecno, toth, mold=temp)
         call self%set_aux_data(temp, ne)
+        call self%ion_by_id('H I', HI)
+        call self%ion_by_id('He I', HeI)
 
         fe = 0
         xnecno = 0
-        ejon = 0
 
         do i=1, self%nel
             element => self%elements(i)
@@ -1263,10 +1272,7 @@ contains
 
                 ! number of electrons from ion
                 xnen = ion%f * (j-1)
-                
-                ! number of electrons from elements other than H
                 if (element%id /= 'H') fe = fe + xnen
-                !fe = fe + xnen
 
                 select case (element%id)
                 case ('H','C','N','O')
@@ -1278,12 +1284,23 @@ contains
             end do
         end do
 
+        !if (H_occupation_probability) then
+        !  do i=1, 3
+        !    toth = ne / (fe + HI%above%f)
+        !    HI%n = HI%f * toth
+        !    HeI%n = HeI%f * toth
+        !    call self%Hoccupation_partition(HI%n, HeI%n)
+        !    call self%elements(1)%compute_ion_equilibrium(self%EK_over_temp, self%ne, self%saha, dxi=self%zero)
+        !  end do
+        !endif
+        fe = fe + HI%above%f
+
         if (self%nmolec > 0) then
             call self%molecular_equilibrium(self%temp, self%teta, self%pe, self%dxi, xnecno, fe)
         endif
 
         ! total hydrogen number density, computed from scratch
-        toth = ne / fe * (BK/uop_BK)
+        toth = ne / fe
         ! mass density computed from scratch
         rho = toth * self%grph
         call trace%end(itimer)
@@ -1300,11 +1317,15 @@ contains
         self%EK_over_temp = EK / temp
         self%pe = temp * BK * ne
         self%saha = 2 * op_saha_const * temp*sqrt(temp) / ne
-
-        self%dxi = 4.98e-4*self%teta*sqrt(self%pe)
-        ! --- this only shows up in the Oslo legacy code ---!
-        !self%dxi=min(self%dxi,0.747*0.5)
-        ! --------------------------------------------------!
+        
+        if (debye_shield) then
+          self%dxi = 4.98e-4*self%teta*sqrt(self%pe)
+          ! --- this only shows up in the Oslo legacy code ---!
+          !self%dxi=min(self%dxi,0.747*0.5)
+          ! --------------------------------------------------!
+        else
+          self%dxi = 0
+        endif
     END SUBROUTINE set_aux_data
 
     !=========================================================================
@@ -1390,6 +1411,45 @@ contains
         deallocate(x,xold,a,b,fx,fa,fb)
     END SUBROUTINE iterate_thermal_eq
 
+    !===============================================================================
+    SUBROUTINE Hoccupation_partition(self, nh, nhe)
+        class(composition_type), target :: self
+        real(dp), intent(in), dimension(:,:,:) :: nh, nhe
+        class(ion_type), pointer :: HI
+        class(level_type), pointer :: lvl
+        real(dp), dimension(:,:,:), allocatable :: h1, part
+        integer, dimension(:,:,:), allocatable :: nniv
+        integer :: i, itimer=0, itimer2=0
+        !---------------------------------------------------------------------------
+        call trace%begin ('composition_type%compute_occupation_weights', itimer=itimer)
+        call self%ion_by_id('H I', HI)
+        allocate(part, mold=self%temp)
+        if (.not. allocated(HI%levels)) allocate(HI%levels(HI%nk))
+        if (.not. allocated(self%shield)) then
+            allocate(self%shield, mold=self%temp)
+            self%shield = 0.08989 * self%ne**0.16667d0 / sqrt(self%temp) ! the shielding parameter
+            self%shield = (1.d0 + self%shield)**3.15d0 / self%ne
+        endif
+
+        part = 0.
+        do i=1, HI%nk
+          lvl => HI%levels(i)
+          if (.not. allocated(lvl%f)) then
+            allocate(lvl%f, mold=self%temp)
+            lvl%i = i
+            lvl%xion = RYD * (1. - 1./i**2)
+            lvl%g = 2 * i**2
+            lvl%f = lvl%g * lvl%boltzmann(self%EK_over_temp, natural_log=.true.)
+          endif
+          if (.not. allocated(lvl%w)) allocate(lvl%w, mold=self%temp)
+          call trace%begin ('composition_type%compute_occupation_weights%wcalc', itimer=itimer2)
+          call wcalc(nh, nhe, self%ne, self%shield, dble(i), lvl%w)
+          call trace%end (itimer2)
+          part = part + lvl%w * lvl%f
+        end do
+        HI%part = 1.d0 / part
+        call trace%end (itimer)
+    END SUBROUTINE Hoccupation_partition
 
     !===============================================================================
     SUBROUTINE init_H_levels(self)
@@ -1434,7 +1494,7 @@ contains
             part = part + lvl%w * lvl%n
           end do
           part = 1.d0 / part
-        else
+        elseif (self%dxi(1,1,1) > 0) then
           part = HI%part
           allocate(h1,   source = sqrt(RYD/self%dxi) )
           allocate(nniv, source = int(h1)            )
@@ -2077,14 +2137,16 @@ contains
             dxi = self%dxi(x,y,z)
             fakt = HI%boltzmann(EK_over_temp, dxi, natural_log=.true.)
             fakt = 2.0898E-26 / (2*RYD*EK_over_temp) * fakt * HI%part(x,y,z) * HI%n(x,y,z)
-            h1 = sqrt(RYD/dxi)
-            nniv = (min(int(h1), 15) + 0.5)**2
-            if (h1 > 15.5) then
+            if (RYD > (15.5*dxi)**2) then
+              if (dxi > 0) then
+                h1 = sqrt(RYD/dxi)
+                nniv = (int(h1) + 0.5)**2
                 !umc = 2.3026 * self%dxi * self%teta
                 !hrest = fakt * (exp(31.30364*self%teta/nniv-umc)-1.)
                 hrest = exp(EK_over_temp*(RYD/nniv - dxi))
                 hrest = fakt * (hrest - 1)
                 chi(:,x,y,z) = chi(:,x,y,z) + hrest
+              endif
             endif
         end do
         end do

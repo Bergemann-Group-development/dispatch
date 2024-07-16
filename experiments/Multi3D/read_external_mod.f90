@@ -23,7 +23,7 @@ MODULE read_external_mod
   USE experiment_mod, only: experiment_t
   USE ion_mod, only: vmic
   USE composition_mod
-  USE composition_patch_mod, only: FeH, save_atmos, save_eos
+  USE composition_patch_mod, only: FeH, save_atmos, save_eos, external_abund
   USE patch_mod
   USE const_mod, only:cc
   USE atom_mod, only: m1d_legacy_mode, NextEntry
@@ -75,9 +75,11 @@ SUBROUTINE init(self, task_list, name)
   integer :: patches_per_mpi=1
   integer :: dims=1, nx=5, ny=5, nz=256, snap=0
   integer :: verbose=0
+  logical :: use_abnd=.false.
   real(4), dimension(:,:,:), pointer, contiguous :: vel
-  namelist /atmos_params/ atmos_file, dims, verbose, patches_per_mpi, FeH, save_atmos, &
-  atmos_format, vmic, use_density, use_ne, nx, ny, nz, snap, legacy_stagger_interp, save_eos, amr
+  namelist /atmos_params/ atmos_file, dims, verbose, patches_per_mpi, FeH, &
+  save_atmos, atmos_format, vmic, use_density, use_ne, nx, ny, nz, snap, &
+  legacy_stagger_interp, save_eos, amr, use_abnd
   !-----------------------------------------------------------------------------
   if (associated(task_list)) return
   call trace%begin('read_external_t%init')
@@ -144,7 +146,8 @@ SUBROUTINE init(self, task_list, name)
   case default
     select case (atmos_format)
     case ('marcs')
-      call read_marcs(atmos_file, nz, self%ds, self%rho, self%temp, self%pe, FeH, vmic)
+      call read_marcs(atmos_file, nz, self%ds, self%rho, self%temp, self%pe, FeH, vmic, external_abund)
+      if (.not. use_abnd) deallocate(external_abund)
     case ('multi')
       call self%read_multi_snapshot(atmos_file, self%ds, self%rho, self%temp, &
                                     self%ne, self%px, self%py, self%pz)
@@ -429,9 +432,9 @@ SUBROUTINE read_1d_snapshot(self, atmos_file, ds, rho, temp, pe)
 
   ds(1) = 1d10
   ds(2) = 1d10 
-  ds(3) = zi(2) - zi(1)
+  ds(3) = abs(zi(2) - zi(1))
 
-  if (abs(ds(3) - (zi(nz) - zi(nz-1))) > 1d-4) then
+  if (abs(ds(3) - abs(zi(nz) - zi(nz-1))) > 1d-4) then
     write(stdout,*) 'read_external_t%read_1d_snapshot: Warning: Non-equidistant atmosphere grid!'
   endif
 END SUBROUTINE read_1d_snapshot

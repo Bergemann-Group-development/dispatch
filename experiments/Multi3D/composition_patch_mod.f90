@@ -46,6 +46,7 @@ MODULE composition_patch_mod
   
   real(8), public :: FeH=0, dtemp=250., ldne=0.25, ldrho=0.25, ldtemp=0.1
   logical, public :: save_atmos=.true., save_eos=.false.
+  real(4), public, dimension(:), allocatable :: external_abund
 
 contains
 
@@ -107,7 +108,8 @@ SUBROUTINE composition_pre_init (self)
     line_blanketing = absmet_file /= ''
     call trace%begin('compositiont%init', itimer=itimer2)
     call composition%init(absdat_file, abund_file, absmet_file, FeH, &
-    isotope_file=isotope_file, molec_file=molec_file, absmet_big_end=absmet_big_end, tmolim=tmolim)
+    isotope_file=isotope_file, molec_file=molec_file, absmet_big_end=absmet_big_end, &
+    tmolim=tmolim, external_abund=external_abund)
 
     if (linelist_file /= '') then
       call composition%init_linelist(linelist_file)

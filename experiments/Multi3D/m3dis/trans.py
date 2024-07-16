@@ -227,11 +227,7 @@ class trans_class(object):
             yy = yy / continuum(xx, yy)
             
         if vdop is not None or vshift is not None or convolve is not None:
-            if dlam is not None:
-                ixx = xx + self.lam0
-            else:
-                ixx = xx
-                
+            ixx, _ = self.get_xx(dlam=False, velocity_units=False)
             sxx, syy = convol(ixx, yy, vdop=vdop, vshift=vshift, custom=convolve)
             yy = np.interp(ixx, sxx, syy)
         
@@ -293,7 +289,7 @@ class trans_class(object):
         mask = slice(ib, ir)
         xx = xx[mask]
 
-        if dlam is not None:
+        if dlam is not None and bool(dlam):
             xx = xx - self.lam0
 
         if velocity_units:
@@ -387,6 +383,29 @@ class trans_class(object):
             plt.legend(newHandles, newLabels, frameon=False)
         
         return xx, yy
+    
+    #=====================================================================
+    def get_bisector(self, n=100, frac=0.99, **kwargs):
+        #-----------------------------------------------------------------
+        xx, yy = self.crop(**kwargs)
+        imin = np.argmin(yy)
+        ymin = np.max(yy[imin-1:imin+2])
+        ymax = ymin + (yy.max() - ymin)*frac
+        newy = np.linspace(ymax, ymin, n)
+        lwing = np.interp(newy, yy[imin:None:-1], xx[imin:None:-1])
+        rwing = np.interp(newy, yy[imin:], xx[imin:])
+        newx = 0.5*(lwing + rwing)
+        return newx, newy
+    
+    #=====================================================================
+    def plot_bisector(self, n=100, frac=0.99, ang=None, imu=None, norm=True,
+                      dlam=None, velocity_units=False, vdop=None, vshift=None,
+                      convolve=None, renorm=False, LTE=False, **kwargs):
+        #-----------------------------------------------------------------
+        xx, yy = self.get_bisector(n=n, frac=frac, ang=ang, imu=imu, norm=norm,
+                      dlam=dlam, velocity_units=velocity_units, vdop=vdop,
+                      vshift=vshift, convolve=convolve, renorm=renorm, LTE=LTE)
+        return plt.plot(xx, yy, **kwargs)
 
     #=====================================================================
     def get_cntrbf(self, df=None, ang=None, imu=None, LTE=False, mean=False, fslice=None, norm=False):

@@ -8,11 +8,11 @@ MODULE atom_patch_mod
     USE task_mod, only: task_t
     USE link_mod, only: nbor_t
     USE handyfuncs_mod
-    USE atom_mod, only: atom_type, atomic_spectrum_type, use_classic_col, kramer_bf, debye_shield, &
+    USE atom_mod, only: atom_type, atomic_spectrum_type, use_classic_col, kramer_bf, &
                         red_cut, blue_cut, logf_cut, atom_data_t, m1d_legacy_mode, nq_fac, nq_min
     USE trans_mod, only: line_type, cont_type
     USE const_mod, only: CC
-    USE ion_mod, only: ion_type, particle_type
+    USE ion_mod, only: ion_type, particle_type, debye_shield
     USE element_mod, only: element_type
     USE molecule_mod, only: molec_type
     USE bbtrans_mod, only: bbtrans_type
@@ -107,7 +107,7 @@ MODULE atom_patch_mod
     logical, save :: first_time=.true., exclude_trace_cont=.true., use_atom_abnd=.true.
     integer :: i, iostat
     namelist /atom_params/ atom_file, qnorm, convlim, exclude_trace_cont, level_partf, &
-    use_atom_abnd, logf_cut, red_cut, blue_cut, n_in_lines, abundance, debye_shield, &
+    use_atom_abnd, logf_cut, red_cut, blue_cut, n_in_lines, abundance, &
     exclude_from_line_list, precomputed_depart, use_classic_col, kramer_bf, overlapping_bf, &
     overlapping_bb, hydrogen_BPO, detailed_absmet, n_cntrbf, convmax, premature_finish, &
     pandas_format, save_populations, nq_fac, nq_min
@@ -293,12 +293,7 @@ MODULE atom_patch_mod
     !-----------------------------------------------------------------------------
     call trace%begin('atom_patch_t%init_atom_data', itimer=itimer)
     atom => self%atom
-
-    if (debye_shield) then
-      dxi => comp%dxi
-    else
-      dxi => comp%zero
-    endif
+    dxi => comp%dxi
 
     m = [shape(comp%temp), atom%nlevel]
     if (.not. associated(adata%nstar)) call os%allocate(adata%nstar, m, label='nstar')

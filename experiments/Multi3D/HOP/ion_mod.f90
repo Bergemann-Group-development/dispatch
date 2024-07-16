@@ -12,7 +12,7 @@ MODULE ion_mod
     end type
 
     type, extends(massive_type) :: particle_type
-        real(dp), dimension(:,:,:), allocatable :: f, e, part
+        real(dp), dimension(:,:,:), allocatable :: e, part
         integer :: m(3)=[0,0,0], nk, nline=0
         character(len=6) :: id
         type(level_type), allocatable :: levels(:)
@@ -56,6 +56,7 @@ MODULE ion_mod
     end type
 
     real(dp), public :: vmic=-1.
+    logical, public :: debye_shield=.True.
 
 contains
 

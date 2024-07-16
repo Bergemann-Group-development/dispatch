@@ -8,7 +8,7 @@ MODULE atom_mod
     USE trans_mod
     USE mmath_mod, only: refsor, unista
     USE op_math_mod, only: lineq, get_interval, eqsyst, lineq_no_pivot
-    USE ion_mod, only: ion_type, massive_type
+    USE ion_mod, only: ion_type, massive_type, debye_shield
     USE element_mod, only: element_type
     USE molecule_mod, only: molec_type
     USE os_mod
@@ -112,7 +112,7 @@ MODULE atom_mod
     end type atom_type
 
     logical, public :: use_classic_col = .True., m1d_legacy_mode=.False.
-    logical, public :: lse_no_pivot = .True., kramer_bf=.False., debye_shield=.True.
+    logical, public :: lse_no_pivot = .True., kramer_bf=.False.
     real(8), public :: red_thresh_aa  = 20000
     real(8), public :: blue_thresh_aa = 500
     real(8), public :: cont_step_aa = 50
@@ -315,35 +315,34 @@ MODULE atom_mod
     real(8), intent(inout), dimension(:,:,:,:) :: nstar
     real(8), intent(inout), dimension(:,:,:) :: totn
     real(4), intent(in), dimension(:,:,:) :: temp, saha, dxi
-    real(4), dimension(:,:,:), allocatable :: partition, f
+    real(4), dimension(:,:,:), allocatable :: partition, partition2, f, ev_off
     integer :: ijk(3)
     logical :: zero_pop
     integer, save :: itimer=0
     !---------------------------------------------------------------------------------
     call trace%begin('atom_mod%compute_lte_populations', itimer=itimer)
-    allocate(partition, f, mold=temp)
+    allocate(partition, partition2, ev_off, f, mold=temp)
+    partition = self%partition_function(temp, dxi, saha, totn)
     if (associated(element)) then
-      do i=1, self%nlevel
-        j = self%ion(i)
-        if (j <= ubound(element%ions,1)) then
-          ion => element%ions(j)
-          ! ion%anjon already takes saha factor into account
-          ! it also takes into account reductions in abundances due to molecules
-          partition = ion%n * ion%part
-          nstar(:,:,:,i) = self%lte_pop(i, temp, dxi, 1.0, partition)
-        else
-          print *, 'ion stage larger than max ion stage from UOP!'
-        endif
+      partition2 = 1 / element%ions(1)%part
+      do j=2, element%nion
+        ion => element%ions(j)
+        ev_off = e_k/temp * (ion%below%xion - (j-1)*dxi) 
+        partition2 = partition2 + (j-1)*saha * exp(-ev_off) / ion%part
       end do
+      partition2 = totn / partition2
+      do i=1, self%nlevel
+        nstar(:,:,:,i) = self%lte_pop(i, temp, dxi, 1.0, partition2)
+      end do
+      ! correct for the use of a different partition function
+      totn = partition2 / partition * totn
     else
-      partition = self%partition_function(temp, dxi, saha, totn)
       if (associated(mol)) then
-        nstar(:,:,:,1) = partition ! store partition function from levels
-        partition = totn / qjorg(temp)
+        partition2 = totn / qjorg(temp)
         !partition = totn / mol%irwin_partf(dble(temp))
-        partition = partition * self%g(1)*exp(-self%ev(1)*e_k/temp)
+        partition2 = partition2 * self%g(1)*exp(-self%ev(1)*e_k/temp)
          ! correct for the use of a different partition function
-        totn = partition / nstar(:,:,:,1) * totn
+        totn = partition2 / partition * totn
       endif
 
       do i=1, self%nlevel
@@ -730,8 +729,14 @@ MODULE atom_mod
 
         select case(trim(key))
         case ('CE', 'CI')
+          if (self%ecol(tri)) then
+            print '(A, I4, I4, A4)', 'Collisional rate already set for transition ', col%ll, col%ul, trim(key)
+          endif
           self%ecol(tri) = .true.
         case ('CH', 'CHI')
+          if (self%hcol(tri)) then
+            print '(A, I4, I4, A4)', 'Collisional rate already set for transition ', col%ll, col%ul, trim(key)
+          endif
           self%hcol(tri) = .true.
         end select
       end select
@@ -1255,8 +1260,14 @@ MODULE atom_mod
 
         select case(trim(key))
         case ('CE', 'CI')
+          if (self%ecol(tri)) then
+            print '(A, I4, I4, A4)', 'Collisional rate already set for transition ', col%ll, col%ul, trim(key)
+          endif
           self%ecol(tri) = .true.
         case ('CH', 'CHI')
+          if (self%hcol(tri)) then
+            print '(A, I4, I4, A4)', 'Collisional rate already set for transition ', col%ll, col%ul, trim(key)
+          endif
           self%hcol(tri) = .true.
         end select
 

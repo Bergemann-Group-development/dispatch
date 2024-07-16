@@ -635,7 +635,7 @@ class read(object):
         #-----------------------------------------------------------------
         all_iz  = np.unique([key[0] for key in dct.keys()])
         all_inu = np.unique([key[1] for key in dct.keys()])
-        f_indep = all(all_inu == 0)
+        f_indep = all(all_inu == 0) or fdim is None
 
         n_nu = self.nml['m3d_params']['n_nu']
 
@@ -656,7 +656,11 @@ class read(object):
                         merge_nu.append(dct[key])
                 
                 if len(merge_nu) > 0:
-                    mem = concat(merge_nu, axis=fdim)
+                    if len(merge_nu) == 1:
+                        mem = merge_nu[0]
+                    else:
+                        mem = concat(merge_nu, axis=fdim)
+                        
                     if not f_indep: mem = np.flip(mem, axis=fdim)
                     merge.append(mem)
             
@@ -666,7 +670,7 @@ class read(object):
             return mem
 
         if f_indep:
-            return [merge_set([0])]
+            return [merge_set(all_inu)]
         else:
             set1 = [inu for inu in all_inu if inu > 0 and inu <= n_nu]
             set2 = [inu for inu in all_inu if inu > 0 and inu > n_nu]

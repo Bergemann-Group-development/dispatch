@@ -344,7 +344,8 @@ contains
     ! z-dimension linear interpolation
     do j = 1, oy
       do i = 1, ox
-        call interp1d_sorted(oldz, f(i,j,:), newz, fz(i,j,:))
+        !call interp1d_sorted(oldz, f(i,j,:), newz, fz(i,j,:))
+        call pchip_mono4(oldz, f(i,j,:), real(newz), fz(i,j,:), sorted=.true.)
       end do
     end do
 
@@ -876,6 +877,7 @@ contains
     integer :: n_interp          ! Number of interpolation points
     integer :: j                 ! Loop index for interpolation points
     integer :: i                 ! Loop index for data points
+    integer :: imin, imax
     real(4) :: alpha, t1, t2, t3, p, a
     real(8) :: dydx8, d1, d2
     !-----------------------------------------------------------------------------
@@ -889,8 +891,13 @@ contains
     
     dx = xx(2:n) - xx(1:n-1)
     dy = yy(2:n) - yy(1:n-1)
+
+    imin = searchsorted(xx, minval(newx), outbounds_ok=.true.)
+    imax = searchsorted(xx, maxval(newx), outbounds_ok=.true.)+1
+    imin = max(imin, 1)
+    imax = min(imax, n)
     
-    do i=2, n-1
+    do i=max(imin, 2), min(imax, n-1)
       if (dy(i-1) == 0 .or. dy(i) == 0) cycle
 
       d1 = dy(i-1)/dx(i-1)
@@ -905,11 +912,15 @@ contains
     end do
     
     ! boundary slopes from quadratic polynomial using 2 points and 1 dydx
-    a = (dy(1) - dx(1)*dydx(2)) / (xx(2)**2 - xx(1)**2 - 2.*xx(2)*dx(1))
-    dydx(1) = dydx(2) - 2.*a*dx(1)
+    if (imin == 1) then
+      a = (dy(1) - dx(1)*dydx(2)) / (xx(2)**2 - xx(1)**2 - 2.*xx(2)*dx(1))
+      dydx(1) = dydx(2) - 2.*a*dx(1)
+    endif
     
-    a = (dy(n-1) - dx(n-1)*dydx(n-1)) / (xx(n)**2 - xx(n-1)**2 - 2.*xx(n-1)*dx(n-1))
-    dydx(n) = dydx(n-1) + 2.*a*dx(n-1)
+    if (imax == n) then
+      a = (dy(n-1) - dx(n-1)*dydx(n-1)) / (xx(n)**2 - xx(n-1)**2 - 2.*xx(n-1)*dx(n-1))
+      dydx(n) = dydx(n-1) + 2.*a*dx(n-1)
+    endif
     
     i = 1
     do j=1, n_interp
@@ -955,6 +966,7 @@ contains
     integer :: n_interp          ! Number of interpolation points
     integer :: j                 ! Loop index for interpolation points
     integer :: i                 ! Loop index for data points
+    integer :: imin, imax
     real(8) :: d1, d2, alpha, t1, t2, t3, p, a
     !-----------------------------------------------------------------------------
     n = size(xx)
@@ -967,8 +979,13 @@ contains
     
     dx = xx(2:n) - xx(1:n-1)
     dy = yy(2:n) - yy(1:n-1)
+
+    imin = searchsorted(xx, minval(newx), outbounds_ok=.true.)
+    imax = searchsorted(xx, maxval(newx), outbounds_ok=.true.)+1
+    imin = max(imin, 1)
+    imax = min(imax, n)
     
-    do i=2, n-1
+    do i=max(imin, 2), min(imax, n-1)
       if (dy(i-1) == 0 .or. dy(i) == 0) cycle
       
       d1 = dy(i-1)/dx(i-1)
@@ -982,11 +999,15 @@ contains
     end do
     
     ! boundary slopes from quadratic polynomial using 2 points and 1 dydx
-    a = (dy(1) - dx(1)*dydx(2)) / (xx(2)**2 - xx(1)**2 - 2.*xx(2)*dx(1))
-    dydx(1) = dydx(2) - 2.*a*dx(1)
+    if (imin == 1) then
+      a = (dy(1) - dx(1)*dydx(2)) / (xx(2)**2 - xx(1)**2 - 2.*xx(2)*dx(1))
+      dydx(1) = dydx(2) - 2.*a*dx(1)
+    endif
     
-    a = (dy(n-1) - dx(n-1)*dydx(n-1)) / (xx(n)**2 - xx(n-1)**2 - 2.*xx(n-1)*dx(n-1))
-    dydx(n) = dydx(n-1) + 2.*a*dx(n-1)
+    if (imax == n) then
+      a = (dy(n-1) - dx(n-1)*dydx(n-1)) / (xx(n)**2 - xx(n-1)**2 - 2.*xx(n-1)*dx(n-1))
+      dydx(n) = dydx(n-1) + 2.*a*dx(n-1)
+    endif
     
     i = 1
     do j=1, n_interp

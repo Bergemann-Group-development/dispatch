@@ -34,7 +34,10 @@ HOP             = ./HOP
 sinclude $(TOP)/config/Makefile
 sinclude $(HOP)/dispatch.mkf
 
-#OPT += -diag-disable=10448
+ifeq ($(COMPILER), ifort)
+  OPT += -diag-disable=10448
+endif
+
 #OPT = -O0 -fimplicit-none  -Wall  -Wline-truncation  -Wcharacter-truncation  -Wsurprising  -Waliasing  -Wimplicit-interface  -Wunused-parameter  -fwhole-file  -fcheck=all  -fbacktrace
 
 # List the .o files the main program depends on after the colon:

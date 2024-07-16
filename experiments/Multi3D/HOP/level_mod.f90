@@ -4,7 +4,7 @@ MODULE level_mod
 
     type :: state_type
         real(dp) :: xion
-        real(dp), dimension(:,:,:), allocatable :: n
+        real(dp), dimension(:,:,:), allocatable :: n, f
     contains
         procedure :: boltzmann
     end type
@@ -101,8 +101,8 @@ contains
         real(dp), intent(in) :: ns
         real(dp), intent(out), dimension(:,:,:) :: w
         real(dp) :: ns2, rih, x1, x2, neutr, k1, k2, x, f, charg, res
-        real(dp), parameter :: a0=5.29177d-9
-        real(dp), parameter :: pi43=4.18879d0  ! 4.18879 is 4*pi/3
+        real(dp), parameter :: a0=5.29177d-9  ! Bohr radius in cm
+        real(dp), parameter :: pi43=4.18879d0 ! 4*pi/3
         integer :: i,j,k, m(3)
         !---------------------------------------------------------------------------
         ns2 = ns*ns
@@ -152,8 +152,8 @@ contains
       real(dp), dimension(:), allocatable :: x1, x2, kk, lfac, cutfac
       real(dp) :: ns, ns2, rih, neutr, k1, k2, x, charg, res, nh43, nhe43
       real(dp) :: redcut, nu, w, n, frac
-      real(dp), parameter :: a0=5.29177d-9
-      real(dp), parameter :: pi43=4.18879d0  ! 4.18879 is 4*pi/3
+      real(dp), parameter :: a0=5.29177d-9  ! Bohr radius in cm
+      real(dp), parameter :: pi43=4.18879d0 ! 4*pi/3
       integer :: f,i,j,k, m(3), nf
       !---------------------------------------------------------------------------
       m = shape(fakt)
