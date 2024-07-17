@@ -340,7 +340,6 @@ MODULE atom_mod
       if (associated(mol)) then
         partition2 = totn / qjorg(temp)
         !partition = totn / mol%irwin_partf(dble(temp))
-        partition2 = partition2 * self%g(1)*exp(-self%ev(1)*e_k/temp)
          ! correct for the use of a different partition function
         totn = partition2 / partition * totn
       endif
@@ -374,18 +373,18 @@ MODULE atom_mod
   !------------------------------------------------------------------------------------
 
   !====================================================================================
-  elemental function lte_pop(self, i_lvl, temp, dxi, saha, partition) result(nstar)
+  elemental function lte_pop(self, i, temp, dxi, saha, partition) result(nstar)
     class(atom_type), intent(in) :: self
     real(4), intent(in) :: temp, dxi, saha, partition
-    integer, intent(in) :: i_lvl
+    integer, intent(in) :: i
     real(8) :: evi, tns
     real(8) :: nstar
     logical :: molec
-    integer :: i, j, l
+    integer :: j, l
     !---------------------------------------------------------------------------------
-    j = self%ion(i_lvl)
-    evi = self%ev(i_lvl) - self%ev(1) - dxi * 0.5*(j-1)*j
-    tns = log(self%g(i_lvl)/self%g(1)) - e_k/temp*evi
+    j = self%ion(i)
+    evi = self%ev(i) - dxi * 0.5*(j-1)*j
+    tns = log(self%g(i)) - e_k/temp*evi
 
     if(j > self%ion(1)) then
       l = j - self%ion(1)
@@ -408,9 +407,8 @@ MODULE atom_mod
     sumn = 0.
     do i=1, self%nlevel
       j = self%ion(i)
-      evi = self%ev(i) - self%ev(1) - dxi * 0.5*(j-1)*j
-
-      tns = log(self%g(i)/self%g(1)) - e_k/temp*evi
+      evi = self%ev(i) - dxi * 0.5*(j-1)*j
+      tns = log(self%g(i)) - e_k/temp*evi
 
       if(j > self%ion(1)) then
         l = j - self%ion(1)

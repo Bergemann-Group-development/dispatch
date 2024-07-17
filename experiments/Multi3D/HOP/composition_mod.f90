@@ -730,8 +730,8 @@ contains
                     lam_vac = air2vac(lam0) * 1e-8
                     line%nu0 = CC / lam_vac
 
-                     ! 1 / gi is missing but cancels when multiplying with ni
-                    gij = line%upper_g
+                    ! gi is missing but cancels later
+                    gij = 1/line%upper_g
                     f = 10**loggf
                     
                     call line%init_einstein_coefficients(f, gij)
@@ -924,8 +924,11 @@ contains
     
                     fmask(ired:iblue) = .true.
     
-                    if (line%iso_idx /= prev_iso) then
-                      prev_iso = line%iso_idx
+                    if (line%iso_idx == 0) then
+                      vb2 => vbar2
+                      idopf => inv_df
+                      ipart => inv_part
+                    elseif (line%iso_idx /= prev_iso) then
                       iso => element%isotope(line%iso_idx)
                       iso_inv_df = iso%inverse_doppler_factor(temp)
                       iso_vbar2 = iso%compute_vbar2(temp)
@@ -933,11 +936,8 @@ contains
                       vb2 => iso_vbar2
                       idopf => iso_inv_df
                       ipart => iso_inv_part
-                    elseif (line%iso_idx == 0) then
-                      vb2 => vbar2
-                      idopf => inv_df
-                      ipart => inv_part
                     endif
+                    prev_iso = line%iso_idx
     
                     call line%add_lte_opacities(ired, iblue, nu, &
                         vpr, idopf, EK_over_temp, dxij, ipart, ne, tothi, vb2, stark_pe, unsold, chi_l, all_chi)

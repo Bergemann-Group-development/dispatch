@@ -94,7 +94,7 @@ contains
     real(4), dimension(:,:,:,:), intent(in) :: cont
     real(8), allocatable :: qq(:)
     real(4) :: ex, ni, nj, nij, upper_ev, nu0_ev, scalar, vs, lchi
-    real(4) :: phi, a, idf, cf, v, ref, ekt, gj_Bji_4pi
+    real(4) :: phi, a, idf, cf, v, ref, ekt, gj_Bji
     integer :: i,j,k,f, f0, f1, m(3), hi, hj, itimer=0
     !----------------------------------------------------------------------------------
     !call trace%begin('add_lte_opacities_1', itimer=itimer)
@@ -102,7 +102,7 @@ contains
     scalar = over_4pi / self%nu0
     nu0_ev = H_E * self%nu0
     upper_ev = self%lower_ev + nu0_ev
-    gj_Bji_4pi = self%upper_g * self%Bji
+    gj_Bji = self%upper_g * self%Bji
 
     allocate(qq(ired:iblue))
     qq(ired:iblue) = nu(ired:iblue) / self%nu0 - 1
@@ -135,9 +135,10 @@ contains
       if (ex < 85.) then
         ! compute level populations
         a = a * scalar * idf
-        nij = exp(nu0_ev * ekt)
-        nj = inv_part(i,j,k) * exp(-ex)
-        cf = idf * nj * gj_Bji_4pi * (nij - 1.)
+        nij = exp(nu0_ev * ekt)             ! this is ni/nj gj/gi
+        nj = inv_part(i,j,k) * exp(-ex)     ! this is nj/gj
+        cf = nj * gj_Bji * (nij - 1.)       ! this is (ni*Bij - nj*Bji)*h/4pi
+        cf = cf * idf
         
         ! check if line peak is larger than continuum tolerance
         vs = (qq(f0) - v) * idf
