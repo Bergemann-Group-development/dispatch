@@ -410,6 +410,10 @@ class trans_class(object):
     #=====================================================================
     def get_cntrbf(self, df=None, ang=None, imu=None, LTE=False, mean=False, fslice=None, norm=False):
         #-----------------------------------------------------------------
+        cntrbf_lines = np.array(self.run.nml['line_mask']['cntrbf_lines']).ravel() - 1
+        if not self.kr in cntrbf_lines:
+            raise ValueError('Contribution function was not saved for this line!')
+
         if hasattr(self, 'prepared'):
             if not self.prepared: self.prepare()
         
@@ -457,7 +461,8 @@ class trans_class(object):
             tau = compute_tau_scale(net_chi, zz, axis=-1)
             cf = conversion * cf * np.exp(-tau)
             vec = vec * np.array([-1, -1, 1])
-            cf = rotate_array(self.run.xx, self.run.yy, self.run.zz, cf, vec)
+            if self.run.dim == '3D':
+                cf = rotate_array(self.run.xx, self.run.yy, self.run.zz, cf, vec)
 
             if get_mean:
                 yy = np.array(cf[...,::-1]).copy()
@@ -473,7 +478,7 @@ class trans_class(object):
 
         if get_mean: ltau = new_ltau
         if norm: cfunc = cfunc / np.max(cfunc)
-        return ltau, cfunc.squeeze(), net_chi
+        return ltau, cfunc.squeeze()
 
     #=====================================================================
     def plot_cntrbf(self, df=0, imu=None, ang=None, LTE=False, title=None, norm=False, **kwargs):
