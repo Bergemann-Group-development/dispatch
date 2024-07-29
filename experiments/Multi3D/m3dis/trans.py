@@ -400,11 +400,16 @@ class trans_class(object):
     #=====================================================================
     def plot_bisector(self, n=100, frac=0.99, ang=None, imu=None, norm=True,
                       dlam=None, velocity_units=False, vdop=None, vshift=None,
-                      convolve=None, renorm=False, LTE=False, **kwargs):
+                      convolve=None, renorm=False, LTE=False, set_labels=True,
+                      **kwargs):
         #-----------------------------------------------------------------
         xx, yy = self.get_bisector(n=n, frac=frac, ang=ang, imu=imu, norm=norm,
                       dlam=dlam, velocity_units=velocity_units, vdop=vdop,
                       vshift=vshift, convolve=convolve, renorm=renorm, LTE=LTE)
+
+        self.run.set_xaxis(xx, dlam, velocity_units=velocity_units, set_labels=set_labels)
+        self.run.set_yaxis(ang, imu, norm, renorm, set_labels=set_labels)
+
         return plt.plot(xx, yy, **kwargs)
 
     #=====================================================================
