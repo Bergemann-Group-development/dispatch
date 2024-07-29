@@ -477,7 +477,7 @@ class trans_class(object):
             cfunc = cfunc + w*cf
 
         if get_mean: ltau = new_ltau
-        if norm: cfunc = cfunc / np.max(cfunc)
+        if norm: cfunc = cfunc / np.trapz(cfunc[::-1], x=ltau[::-1])
         return ltau, cfunc.squeeze()
 
     #=====================================================================
