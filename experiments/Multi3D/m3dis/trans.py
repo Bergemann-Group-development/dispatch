@@ -460,8 +460,8 @@ class trans_class(object):
             zz = self.run.zz / vec[-1] * 1e8
             tau = compute_tau_scale(net_chi, zz, axis=-1)
             cf = conversion * cf * np.exp(-tau)
-            vec = vec * np.array([-1, -1, 1])
             if self.run.dim == '3D':
+                vec = vec * np.array([-1, -1, 1])
                 cf = rotate_array(self.run.xx, self.run.yy, self.run.zz, cf, vec)
 
             if get_mean:
@@ -477,7 +477,9 @@ class trans_class(object):
             cfunc = cfunc + w*cf
 
         if get_mean: ltau = new_ltau
-        if norm: cfunc = cfunc / np.trapz(cfunc[::-1], x=ltau[::-1])
+        if norm:
+            normalisation = abs(np.trapz(cfunc, x=ltau))
+            cfunc = cfunc / normalisation
         return ltau, cfunc.squeeze()
 
     #=====================================================================
