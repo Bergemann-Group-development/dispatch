@@ -400,16 +400,25 @@ class trans_class(object):
     #=====================================================================
     def plot_bisector(self, n=100, frac=0.99, ang=None, imu=None, norm=True,
                       dlam=None, velocity_units=False, vdop=None, vshift=None,
-                      convolve=None, renorm=False, LTE=False, **kwargs):
+                      convolve=None, renorm=False, LTE=False, set_labels=True,
+                      **kwargs):
         #-----------------------------------------------------------------
         xx, yy = self.get_bisector(n=n, frac=frac, ang=ang, imu=imu, norm=norm,
                       dlam=dlam, velocity_units=velocity_units, vdop=vdop,
                       vshift=vshift, convolve=convolve, renorm=renorm, LTE=LTE)
+
+        self.run.set_xaxis(xx, dlam, velocity_units=velocity_units, set_labels=set_labels)
+        self.run.set_yaxis(ang, imu, norm, renorm, set_labels=set_labels)
+
         return plt.plot(xx, yy, **kwargs)
 
     #=====================================================================
     def get_cntrbf(self, df=None, ang=None, imu=None, LTE=False, mean=False, fslice=None, norm=False):
         #-----------------------------------------------------------------
+        cntrbf_lines = np.array(self.run.nml['line_mask']['cntrbf_lines']).ravel() - 1
+        if not self.kr in cntrbf_lines:
+            raise ValueError('Contribution function was not saved for this line!')
+
         if hasattr(self, 'prepared'):
             if not self.prepared: self.prepare()
         
@@ -456,8 +465,9 @@ class trans_class(object):
             zz = self.run.zz / vec[-1] * 1e8
             tau = compute_tau_scale(net_chi, zz, axis=-1)
             cf = conversion * cf * np.exp(-tau)
-            vec = vec * np.array([-1, -1, 1])
-            cf = rotate_array(self.run.xx, self.run.yy, self.run.zz, cf, vec)
+            if self.run.dim == '3D':
+                vec = vec * np.array([-1, -1, 1])
+                cf = rotate_array(self.run.xx, self.run.yy, self.run.zz, cf, vec)
 
             if get_mean:
                 yy = np.array(cf[...,::-1]).copy()
@@ -472,7 +482,9 @@ class trans_class(object):
             cfunc = cfunc + w*cf
 
         if get_mean: ltau = new_ltau
-        if norm: cfunc = cfunc / np.max(cfunc)
+        if norm:
+            normalisation = abs(np.trapz(cfunc, x=ltau))
+            cfunc = cfunc / normalisation
         return ltau, cfunc.squeeze()
 
     #=====================================================================

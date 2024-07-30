@@ -557,7 +557,7 @@ def stagger_name_to_params(stagger_name):
     teff=5750; logg=4.5
   return teff, logg, feh
 
-@njit
+@jit
 def rotate_array(xx, yy, zz, array, vec, pivot_z=None, ray_offset=None):
   if pivot_z is None: pivot_z = zz[-1]
   if ray_offset is None: ray_offset = np.zeros(2)
