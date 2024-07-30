@@ -6,6 +6,7 @@ MODULE composition_patch_mod
   USE gpatch_mod
   USE handyfuncs_mod
   USE optab_mod, only: optab
+  USE ion_mod, only: ion_type
   USE element_mod, only: element_type
   USE m3d_patch_mod,   only: m3d_patch_t, composition, comoving_frame, ilambd, dlam, &
   use_density, use_ne, overlapping_bb, overlapping_bf, line_blanketing, binned_opac, &
@@ -16,7 +17,7 @@ MODULE composition_patch_mod
   USE atom_patch_mod,  only: atom_patch_t
   USE nlte_patch_mod, only:nlte_patch_t
   USE bftrans_mod, only: H_occupation_probability
-  USE bbtrans_mod, only: tolerance
+  USE bbtrans_mod, only: tolerance, bbtrans_type
   USE trace_mod
   USE scaling_mod
   USE units_mod
@@ -41,6 +42,7 @@ MODULE composition_patch_mod
     procedure :: init_tabulated_comp
     procedure :: init_eos_comp
     procedure :: save_eos_variables
+    procedure :: print_linelist
     procedure :: nbor_relations => composition_patch_nbor_relations
   end type
   
@@ -120,6 +122,8 @@ SUBROUTINE composition_pre_init (self)
         i = i + 1
       end do
     endif
+
+    call self%print_linelist(composition)
     
     allocate(output_sp)
     binned_opac = opac_table /= ''
@@ -464,5 +468,38 @@ SUBROUTINE composition_patch_nbor_relations(self, another, needed, needs_me, dow
   endif
   call trace%end()
 END SUBROUTINE composition_patch_nbor_relations
+
+!===============================================================================
+SUBROUTINE print_linelist (self, comp)
+  class(composition_patch_t), target :: self
+  class(composition_type), target :: comp
+  class(element_type), pointer :: element
+  class(ion_type), pointer :: ion
+  !class(molec_type), pointer :: mol
+  class(bbtrans_type), pointer :: line
+  integer :: lunit, i, j, l
+  character(len=256) :: linelist_out_file
+  ! ----------------------------------------------------------------------------
+  linelist_out_file = trim(io%run_dir) // 'linelist_out.txt'
+  open(newunit=lunit, file=linelist_out_file, form='formatted')
+
+  do i=1, comp%nel
+    element => comp%elements(i)
+    if (.not. any(element%ions%in_linelist)) cycle
+
+    do j=lbound(element%ions,1), ubound(element%ions,1)
+      ion => element%ions(j)
+      if (ion%nline == 0) cycle
+
+      do l=1, ion%nline
+        line => ion%line(l)
+        if (.not. line%active) cycle
+
+        write(lunit, "(A1, A6, A1, I3, 3(ES16.8))") "'", ion%id, "'", line%iso_idx, CC/line%nu0*1e8, line%Bji/h_4pi, line%lower_ev
+      end do
+    end do
+  end do
+  close(lunit)
+END SUBROUTINE print_linelist
 
 END MODULE composition_patch_mod

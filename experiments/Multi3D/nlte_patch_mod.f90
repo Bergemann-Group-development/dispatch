@@ -86,6 +86,7 @@ MODULE nlte_patch_mod
 
   type :: line_cntrbf
     real(4), dimension(:,:,:,:,:,:), allocatable :: data
+    real(4), dimension(:,:,:,:,:), allocatable :: tmp
   end type
 
   !-----------------------------------------------------------------------------
@@ -93,9 +94,9 @@ MODULE nlte_patch_mod
   integer, public :: n_cntrbf=0
   integer, public, dimension(:), allocatable :: cntrbf_lines
   integer :: f, x, y, z, nx, ny, nz, fs, fe, nf
-  real(4), dimension(:,:,:,:,:), allocatable, target :: work, back, cf_tmp
+  real(4), dimension(:,:,:,:,:), allocatable, target :: work, back
   type(line_cntrbf), dimension(:), allocatable :: cntrbf
-  !$omp threadprivate(work, back, x, y, z, nx, ny, nz, f, fs, fe, nf, cf_tmp)
+  !$omp threadprivate(work, back, x, y, z, nx, ny, nz, f, fs, fe, nf)
   !$omp threadprivate(cntrbf)
     
 contains
@@ -465,8 +466,8 @@ contains
           if (.not. skip) then
             allocate(cntrbf(i)%data(fs:fe,nx,ny,nz,4,self%mus:self%mue))
             call mem_register(cntrbf(i)%data, 'cntrbf')
-            allocate(cf_tmp(fs:fe,nx,ny,nz,4))
-            call mem_register(cf_tmp, 'cf_tmp')
+            allocate(cntrbf(i)%tmp(fs:fe,nx,ny,nz,4))
+            call mem_register(cntrbf(i)%tmp, 'cntrbf%tmp')
           endif
         end associate
       end do
@@ -502,8 +503,8 @@ contains
         if (allocated(cntrbf(i)%data)) then
           call mem_unregister(cntrbf(i)%data, label='cntrbf')
           deallocate(cntrbf(i)%data)
-          call mem_unregister(cf_tmp, label='cf_tmp')
-          deallocate(cf_tmp)
+          call mem_unregister(cntrbf(i)%tmp, label='cntrbf%tmp')
+          deallocate(cntrbf(i)%tmp)
         endif
       end do
       deallocate(cntrbf)
@@ -1519,7 +1520,7 @@ SUBROUTINE save_contribution_function (self, i_set, i_mu)
   class(nlte_patch_t) :: self
   integer :: i, j, i_set, i_mu, ff, im
   real(4) :: net_chi, net_src, lin_chi, lin_eta
-  real(4) :: cnt_inu_r, cnt_chi, cnt_eta
+  real(4) :: cnt_inu, cnt_chi, cnt_eta
   real(4), dimension(:,:,:,:,:), allocatable, target :: rotated_back
   real(4), dimension(:,:,:,:,:), pointer :: back_ptr
   character(32) :: name
@@ -1537,7 +1538,7 @@ SUBROUTINE save_contribution_function (self, i_set, i_mu)
       do y=1,ny
       do x=1,nx
         do f=fs,fe
-          associate(cf => cf_tmp(f,x,y,z,:), cf_out => cntrbf(i)%data(f,x,y,z,:,i_mu))
+          associate(cf => cntrbf(i)%tmp(f,x,y,z,:), cf_out => cntrbf(i)%data(f,x,y,z,:,i_mu))
             if (i_set < 3) then
               net_chi = work(f,x,y,z,1)
               net_src = work(f,x,y,z,2)
@@ -1551,17 +1552,17 @@ SUBROUTINE save_contribution_function (self, i_set, i_mu)
             else
               cnt_chi = work(f,x,y,z,1)
               cnt_eta = work(f,x,y,z,2)*cnt_chi
-              cnt_inu_r = 1/work(f,x,y,z,3)
-
+              cnt_inu = work(f,x,y,z,3)
+              
               lin_chi = cf(1) - cnt_chi
               lin_eta = cf(2) - cnt_eta
-              cf_out(1) = lin_chi - cnt_inu_r*lin_eta
-              cf_out(2) = lin_chi + cnt_inu_r*cnt_eta
-
+              cf_out(1) = cnt_inu*lin_chi - lin_eta
+              cf_out(2) = cf(1)
+              
               lin_chi = cf(3) - cnt_chi
               lin_eta = cf(4) - cnt_eta
-              cf_out(3) = lin_chi - cnt_inu_r*lin_eta
-              cf_out(4) = lin_chi + cnt_inu_r*cnt_eta
+              cf_out(3) = cnt_inu*lin_chi - lin_eta
+              cf_out(4) = cf(3)
             endif
           end associate
         end do
