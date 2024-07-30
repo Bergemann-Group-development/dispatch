@@ -473,7 +473,7 @@ class trans_class(object):
 
         if get_mean: ltau = new_ltau
         if norm: cfunc = cfunc / np.max(cfunc)
-        return ltau, cfunc.squeeze(), net_chi
+        return ltau, cfunc.squeeze()
 
     #=====================================================================
     def plot_cntrbf(self, df=0, imu=None, ang=None, LTE=False, title=None, norm=False, **kwargs):
