@@ -61,9 +61,9 @@ MODULE ion_mod
 contains
 
 !===============================================================================
-elemental real(dp) FUNCTION saha_eq(self, EK_over_temp, ne, saha, dxi, partition_ratio)
+elemental real(dp) FUNCTION saha_eq(self, EK_over_temp, saha, dxi, partition_ratio)
     class(ion_type), intent(in) :: self
-    real(dp), intent(in) :: EK_over_temp, ne, saha, dxi
+    real(dp), intent(in) :: EK_over_temp, saha, dxi
     real(dp), intent(in), optional :: partition_ratio
     real(dp) :: dxi_j, partp
     !---------------------------------------------------------------------------

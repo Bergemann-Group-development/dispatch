@@ -65,14 +65,14 @@ SUBROUTINE compute_partition_functions(self, temp, EK_over_temp, ne)
 END SUBROUTINE compute_partition_functions
 
 !===============================================================================
-SUBROUTINE compute_ion_equilibrium(self, EK_over_temp, ne, saha, dxi)
+SUBROUTINE compute_ion_equilibrium(self, EK_over_temp, saha, dxi)
     class(element_type), target :: self
     type(ion_type), pointer :: ions(:), ion
-    real(dp), dimension(:,:,:), intent(in) :: EK_over_temp, ne, dxi, saha
+    real(dp), dimension(:,:,:), intent(in) :: EK_over_temp, dxi, saha
     real(dp), dimension(:,:,:), allocatable :: fil, partition_ratio, partp
-    integer :: j, l, u
+    integer :: j, l, u, x, y, z
     !---------------------------------------------------------------------------
-    allocate(fil, partition_ratio, partp, mold=ne)
+    allocate(fil, partition_ratio, partp, mold=dxi)
     ions => self%ions
     l = lbound(ions,1)
     u = ubound(ions,1)
@@ -84,7 +84,7 @@ SUBROUTINE compute_ion_equilibrium(self, EK_over_temp, ne, saha, dxi)
         !partp = max(1d-3, partp)
         ! --------------------------------------------------!
         partition_ratio = ions(j)%part / partp
-        ions(j)%saha = ions(j)%saha_eq(EK_over_temp, ne, saha, dxi, partition_ratio)
+        ions(j)%saha = ions(j)%saha_eq(EK_over_temp, saha, dxi, partition_ratio)
         fil = 1 + fil * ions(j)%saha
     end do
 

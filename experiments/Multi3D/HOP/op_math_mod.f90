@@ -896,6 +896,11 @@ contains
     imax = searchsorted(xx, maxval(newx), outbounds_ok=.true.)+1
     imin = max(imin, 1)
     imax = min(imax, n)
+
+    if (n == 2) then
+      dydx(1) = dy(1)/dx(1)
+      dydx(2) = dydx(1)
+    endif
     
     do i=max(imin, 2), min(imax, n-1)
       if (dy(i-1) == 0 .or. dy(i) == 0) cycle
@@ -984,6 +989,11 @@ contains
     imax = searchsorted(xx, maxval(newx), outbounds_ok=.true.)+1
     imin = max(imin, 1)
     imax = min(imax, n)
+
+    if (n == 2) then
+      dydx(1) = dy(1)/dx(1)
+      dydx(2) = dydx(1)
+    endif
     
     do i=max(imin, 2), min(imax, n-1)
       if (dy(i-1) == 0 .or. dy(i) == 0) cycle

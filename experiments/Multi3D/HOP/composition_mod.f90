@@ -1265,7 +1265,7 @@ contains
             call trace%end(itimer2)
 
             call trace%begin ('composition_type%ion_equilibrium', itimer=itimer3)
-            call element%compute_ion_equilibrium(self%EK_over_temp, self%ne, self%saha, self%dxi)
+            call element%compute_ion_equilibrium(self%EK_over_temp, self%saha, self%dxi)
             call trace%end(itimer3)
             
             do j=lbound(element%ions, 1), ubound(element%ions, 1)
@@ -1291,7 +1291,7 @@ contains
         !    HI%n = HI%f * toth
         !    HeI%n = HeI%f * toth
         !    call self%Hoccupation_partition(HI%n, HeI%n)
-        !    call self%elements(1)%compute_ion_equilibrium(self%EK_over_temp, self%ne, self%saha, dxi=self%zero)
+        !    call self%elements(1)%compute_ion_equilibrium(self%EK_over_temp, self%saha, dxi=self%zero)
         !  end do
         !endif
         fe = fe + HI%above%f
@@ -1340,7 +1340,7 @@ contains
         real(dp), intent(in) :: tol ! stop criterion
         logical, dimension(:,:,:), allocatable :: ne_converged
         real(dp), dimension(:,:,:), allocatable :: a, b, c, x, xold, fx, fa, fb, ro, pg
-        real(dp), dimension(:,:,:), allocatable :: lim
+        real(dp), dimension(:,:,:), allocatable :: lrho
         integer :: i, nconverged, arr_size, m(3)
         integer, parameter :: nmax = 20 ! max number of iteration
         !---------------------------------------------------------------------------
@@ -1348,18 +1348,20 @@ contains
         arr_size = size(temp)
 
         allocate(ne_converged(m(1),m(2),m(3)), source=.false.) ! cant use mold= on different kinds
-        allocate(x, xold, a, b, c, fx, fa, fb, ro, pg, lim, mold=temp)
+        allocate(x, xold, a, b, c, fx, fa, fb, ro, pg, lrho, mold=temp)
 
         ! set initial value for electron density
-        where (temp > 1.0d4) ! fully ionized gas
+        where (temp > 2.0d4) ! fully ionized gas
+            ! threshold used to be 1d4, but led to convergence issues in some cases
             ne = rho / self%grph * 1e-1
         elsewhere ! neutrals only
             ne = rho / self%grph * 1e-4
         end where
 
-        call self%thermal_equilibrium(temp, ne, ro)
+        lrho = log(rho)
 
-        fa = log(ro / rho)
+        call self%thermal_equilibrium(temp, ne, ro)
+        fa = log(ro) - lrho
         ne_converged = abs(fa) < tol
 
         a = log(ne)
@@ -1367,7 +1369,7 @@ contains
         ne = exp(b)
 
         call self%thermal_equilibrium(temp, ne, ro)
-        fb = log(ro / rho)
+        fb = log(ro) - lrho
         ne_converged = abs(fb) < tol
 
         nconverged = count(ne_converged)
@@ -1378,22 +1380,24 @@ contains
 
         do while (nconverged < arr_size .and. i <= nmax)
             xold = x
-            where (.not.ne_converged)
+            where (.not. ne_converged)
                 c = fb-fa ! log(ro2) - log(ro1)
                 c = (b-a)/c
                 x = a - c*fa
+                x = max(x, min(a,b)-2.d0)
+                x = min(x, max(a,b)+2.d0)
             end where
     
             ne_converged = abs(x-xold) < tol
             nconverged = count(ne_converged)
             if (arr_size == nconverged) exit ! all good !
 
-            where (.not.ne_converged)
+            where (.not. ne_converged)
                 ne = exp(x)
             endwhere
 
             call self%thermal_equilibrium(temp, ne, ro)
-            fx = log(ro / rho)
+            fx = log(ro) - lrho
             where (abs(a-x) < abs(b-x)) 
                 b = x 
                 fb = fx
@@ -1404,9 +1408,13 @@ contains
             i = i+1
         end do
 
-        write(*,fmt="(5x,'it [',I2.2,']',1x,'n-converged:',1x,I8,1X,'/ total size: ',I8)") i, nconverged, arr_size
+        write(*,fmt="(5x,'it [',I3.3,']',1x,'n-converged:',1x,I8,1X,'/ total size: ',I8)") i, nconverged, arr_size
 
-        where (.not. ne_converged) self%E = ieee_value(self%E, ieee_quiet_nan)
+        where (.not. ne_converged)
+            self%ne = ieee_value(self%ne, ieee_quiet_nan)
+            self%pg = ieee_value(self%pg, ieee_quiet_nan)
+            self%E  = ieee_value(self%E,  ieee_quiet_nan)
+        end where
 
         deallocate(ne_converged)
         deallocate(x,xold,a,b,fx,fa,fb)
@@ -1521,6 +1529,7 @@ contains
         class(ion_type), pointer :: HeI, HI
         class(molec_type), pointer :: H2, H2p
         real(dp), dimension(:,:,:), intent(out) :: p6
+        integer :: x, y, z
         !---------------------------------------------------------------------------
         call self%molecule_by_id('H2',  H2)
         call self%molecule_by_id('H2+', H2p)

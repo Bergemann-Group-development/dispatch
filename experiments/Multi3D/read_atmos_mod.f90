@@ -5,7 +5,7 @@ MODULE read_atmos_mod
   USE handyfuncs_mod
   USE const_mod
   USE op_math_mod, only: linspace, linterpolate_3d, pchip_mono4, interp1d_sorted
-  USE m3d_patch_mod, only: pivot_z, ray_offset
+  USE m3d_patch_mod, only: pivot_z, ray_offset, amr
   USE ray_mod, only: one_dimensional
   implicit none
   private
@@ -365,9 +365,9 @@ SUBROUTINE read_1d_snapshot(atmos_file)
   end do
   close(lunit)
 
-  ia%ltemp(1,1,:) = log(temp)
-  ia%lpe  (1,1,:) = log(pe)
-  ia%lrho (1,1,:) = log(rho)
+  where (temp > 0) ia%ltemp(1,1,:) = log(temp)
+  where (rho  > 0) ia%lrho (1,1,:) = log(rho)
+  where (pe   > 0) ia%lpe  (1,1,:) = log(pe)
 END SUBROUTINE read_1d_snapshot
 
 !===============================================================================
@@ -582,11 +582,13 @@ SUBROUTINE interpolate_atmos(n, sub, pos, rho, px, py, pz, temp, pe, vec, bot2pi
   ds = sub / n
   
   allocate(newz(nz))
-  !newz = [ (ds(3)*i + lower(3), i=0, nz-1) ]
-  newz = [ (ds(3)*i + lower(3), i=1, nz) ]
-  ! this way the distance to the patch below is ds of the current patch, otherwise it is ds of the patch below
-  ! this is needed for the amr setup in order to avoid additional interpolations for the final spectrum.
-
+  if (amr) then
+    ! this way the distance to the patch below is ds of the current patch, otherwise it is ds of the patch below
+    ! this is needed for the amr setup in order to avoid additional interpolations for the final spectrum.  
+    newz = [ (ds(3)*i + lower(3), i=1, nz) ]
+  else
+    newz = [ (ds(3)*i + lower(3), i=0, nz-1) ]
+  endif
   if (one_dimensional) then
     call pchip_mono4(ia%zz, ia%ltemp(1,1,:), real(newz), temp(1,1,:), sorted=.true.)
     call pchip_mono4(ia%zz, ia%lrho (1,1,:), real(newz), rho (1,1,:), sorted=.true.)
