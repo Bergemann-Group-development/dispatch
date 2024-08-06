@@ -1,11 +1,10 @@
 from .atom import atom_class
 from .trans import trans_class
-from .auxfuncs import vacuum2obs, continuum, freq_quad, convol, SBOL, CC, interp_tau, check_file, compute_tau_scale, memmap_list
+from .auxfuncs import vacuum2obs, continuum, freq_quad, convol, SBOL, CC, interp_tau, check_file, compute_tau_scale, memmap_list, match_kwargs
 from .fast_atom import fast_atom, pandas_atom
-from .fast_trans import fast_trans
+from .fast_trans import fast_trans, llist_trans
 import numpy as np
 import pandas as pd
-import dask.array as da
 import matplotlib.pyplot as plt
 from matplotlib import colors as mpl
 import glob
@@ -15,6 +14,7 @@ from scipy.io import FortranFile
 from matplotlib.collections import LineCollection
 from matplotlib.ticker import MultipleLocator
 import os
+import copy
 
 def launch(input_name, nml_settings=None, default=None, overwrite=False, threads=32, log_file=None, slurm_script=None):
     cwd = os.getcwd()
@@ -63,10 +63,12 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
     return os.path.join(datadir, input_name)
 
 #=====================================================================
-class read(object):
+class m3dis(object):
+    @classmethod
     #=================================================================
-    def __init__(self, folder, verbose=0, read_atmos=True, fast_read=False, **kwargs):
+    def read(self, folder, verbose=0, read_atmos=True, fast_read=False, read_llist=False, **kwargs):
         #-------------------------------------------------------------
+        self = m3dis()
         folder = folder + os.sep
         sfolder = folder + 'save' + os.sep
         self.sfolder = sfolder
@@ -194,6 +196,12 @@ class read(object):
                 self.i3_lte = i3[...,1]
                 self.c3     = i3[...,2]
 
+        if os.path.isfile(folder + 'linelist_out.txt') and read_llist:
+            self.llist = pd.read_csv(folder + 'linelist_out.txt', sep=r'\s+', quotechar="'")
+            self.llist['lam0'] = vacuum2obs(self.llist.lam_vac)
+            self.llist = self.llist.sort_values(by='lam0')
+            self.llist_line = [llist_trans(i, self) for i in range(len(self.llist))]
+
         atmos_params =self.nml['atmos_params']
         mesh = open(folder + 'atmos_mesh.txt', 'r')
         amr = 'amr' in atmos_params
@@ -214,7 +222,7 @@ class read(object):
         else:
             nx, ny, nz = [int(i) for i in mesh.readline().split()]
             dx, dy, dz = [float(i) for i in mesh.readline().split()]
-            self.zz = np.arange(nz)*dz
+            self.zz = np.arange(1, nz+1)*dz
 
         self.dx = dx
         self.dy = dy
@@ -265,43 +273,99 @@ class read(object):
 
             self.ltau = np.log10(self.tau)
 
+        return self
+
+    @classmethod
+    #=================================================================
+    def combine(self, runs):
+        #-------------------------------------------------------------
+        self = m3dis()
+        run0 = runs[0]
+
+        def check_and_combine(key):
+            if hasattr(run0, key):
+                atts = [getattr(run, key) for run in runs]
+                same = all([np.array_equal(a, atts[0]) for a in atts])
+                if not same:
+                    print('Warning: {:} is not the same for all runs!'.format(key))
+                else:
+                    setattr(self, key, atts[0])
+
+        self.runs = runs
+        self.nml = run0.nml
+        check_and_combine('mode')
+        check_and_combine('mus')
+        check_and_combine('imus')
+        check_and_combine('nmu')
+        check_and_combine('n_ang')
+        check_and_combine('vec')
+        check_and_combine('wts')
+        check_and_combine('nline')
+        
+        if hasattr(run0, 'atom'):
+            self.atom = run0.atom
+            self.line = [copy.copy(line) for line in run0.line]
+            for line in self.line:
+                line.run = self
+
+        if hasattr(run0, 'lam'):
+            self.lam    = run0.lam
+            self.ie     = np.mean([run.ie     for run in runs], axis=0)
+            self.ie_lte = np.mean([run.ie_lte for run in runs], axis=0)
+            self.cnt    = np.mean([run.cnt    for run in runs], axis=0)
+
+            self.flux     = np.mean([run.flux     for run in runs], axis=0)
+            self.flux_lte = np.mean([run.flux_lte for run in runs], axis=0)
+            self.flux_cnt = np.mean([run.flux_cnt for run in runs], axis=0)
+
+
+        return self
+
     #=====================================================================
-    def get_xx(self, lam, dlam=None, xmin=None, xmax=None):
+    def get_xx(self, lam, slc=None, dlam=None, xmin=None, xmax=None):
         #-----------------------------------------------------------------
-        ib = None
-        ir = None
+        if slc is None:
+            ib = None
+            ir = None
+        else:
+            ib = slc.start
+            ir = slc.stop
+
         if dlam is not None:
-            if isinstance(dlam, tuple):
-                dl = dlam[:]
+            if not isinstance(dlam, (bool)):
+                if isinstance(dlam, tuple):
+                    dl = dlam[:]
+                else:
+                    dl = (-dlam, dlam)
 
-            elif not isinstance(dlam, (bool)):
-                dl = (-dlam, dlam)
-
-            ib = np.searchsorted(lam, dl[0])
-            ir = np.searchsorted(lam, dl[1])
+                ib = np.searchsorted(lam, dl[0])
+                ir = np.searchsorted(lam, dl[1])
 
         if xmin is not None: ib = np.searchsorted(lam, xmin)
         if xmax is not None: ir = np.searchsorted(lam, xmax)
 
         mask = slice(ib, ir)
-        return lam[mask], mask
+        xx = lam[mask]
+        return xx, mask
 
     #=====================================================================
-    def set_xaxis(self, xx, dlam=None, velocity_units=False, set_labels=True):
+    def set_xaxis(self, xx, dlam=None, velocity_units=False,
+                  set_labels=True, lam_offset=True):
         #-----------------------------------------------------------------
         xmin = min(xx)
         xmax = max(xx)
         dxx = xmax - xmin
-        if dlam is not None:
-            plt.xlim(xmin, xmax)
-            if set_labels: plt.xlabel(r'$\Delta\lambda$ [Å]')
-        else:
-            diff = 0.05*dxx
-            plt.xlim(xmin-diff, xmax+diff)
-            if set_labels: plt.xlabel('Wavelength [Å]')
+        offset = lam_offset and dlam is not None and dlam is not False
 
-        if set_labels and velocity_units: plt.xlabel(r'$v_{\rm dop}$ [km/s]')
+        if set_labels:
+            if velocity_units: 
+                plt.xlabel(r'$v_{\rm dop}$ [km/s]')
+            elif offset:
+                plt.xlabel(r'$\Delta\lambda$ [Å]')
+            else:
+                plt.xlabel('Wavelength [Å]')
 
+        plt.xlim(xmin, xmax)
         plt.ticklabel_format(useOffset=False)
 
     #=====================================================================
@@ -340,6 +404,10 @@ class read(object):
     #=====================================================================
     def get_yy(self, ang=None, imu=None, norm=True, cont=False, LTE=False, mask=slice(None, None)):
         #-----------------------------------------------------------------
+        if not LTE and self.mode=='LTE':
+            print('Cannot get NLTE spectrum, because run was in LTE!')
+            LTE = True
+
         if imu is not None:
             if imu >= self.nmu:
                 raise ValueError('imu is out of range. Nmu = {:}'.format(self.nmu))
@@ -385,9 +453,13 @@ class read(object):
         return np.array(yy), np.array(cnt)
     
     #=====================================================================
-    def crop(self, lam0=None, dlam=None, xmin=None, xmax=None, vdop=None, 
-             vshift=None, convolve=None, per_aa=False, renorm=False, **kwargs):
+    def crop(self, slc=None, lam0=None, dlam=None, xmin=None, xmax=None, vdop=None,
+             vrot=None, vshift=None, convolve=None, zeta_rt=None, lam_offset=True,
+             per_aa=False, renorm=False, velocity_units=False, **kwargs):
         #-----------------------------------------------------------------
+        if per_aa:
+            kwargs['norm'] = False
+
         xx = self.lam
 
         if lam0 is not None:
@@ -396,10 +468,7 @@ class read(object):
             dlam = None
             lam0 = 0
 
-        if per_aa:
-            kwargs['norm'] = False
-
-        xx, mask = self.get_xx(xx, dlam, xmin, xmax)
+        xx, mask = self.get_xx(xx, slc, dlam, xmin=xmin, xmax=xmax)
         yy, cnt = self.get_yy(mask=mask, **kwargs)
 
         if renorm:
@@ -407,9 +476,20 @@ class read(object):
 
         xx = xx + lam0
 
-        if vdop is not None or vshift is not None or convolve is not None:
-            sxx, syy = convol(xx, yy, vdop=vdop, vshift=vshift, custom=convolve)
+        if set([vdop, vrot, vshift, zeta_rt, convolve]) != {None}:
+            sxx, syy = convol(xx, yy, vdop=vdop, vrot=vrot, zeta_rt=zeta_rt, vshift=vshift, custom=convolve)
             yy = np.interp(xx, sxx, syy)
+
+        if lam0 is not None:
+            offset = lam_offset and dlam is not None and dlam is not False
+            if offset:
+                xx = xx - lam0
+
+            if velocity_units:
+                xx = xx / lam0
+                if dlam is None or dlam is False:
+                    xx = xx - 1
+                xx = xx * CC * 1e-5
 
         if per_aa:
             yy = yy * CC / (xx**2) * 1e8
@@ -417,37 +497,31 @@ class read(object):
         return xx, yy
     
     #=====================================================================
-    def interp(self, newx, vdop=None, vshift=None, convolve=None, **kwargs):
+    def interp(self, newx, **kwargs):
         #-----------------------------------------------------------------
-        ib = np.searchsorted(self.lam, newx[0])
-        ir = np.searchsorted(self.lam, newx[-1])
-        mask = slice(ib, ir)
-
-        xx = self.lam[mask]
-        yy, cnt = self.get_yy(mask=mask, **kwargs)
-
-        if vdop is not None or vshift is not None or convolve is not None:
-            xx, yy = convol(xx, yy, vdop=vdop, vshift=vshift, custom=convolve)
-
+        xx, yy = self.crop(**kwargs)
         yy = np.interp(newx, xx, yy)
         return yy
 
     #=====================================================================
     def plot_spectrum(self, ang=None, imu=None, norm=True, renorm=False, LTE=False,
                       vdop=None, vshift=None, lam0=None, dlam=10, cont=False,
-                      show_lines=False, xmin=None, xmax=None,  per_aa=False, **kwargs):
+                      show_lines=False, xmin=None, xmax=None, per_aa=False, 
+                      convolve=None, vrot=None, zeta_rt=None, velocity_units=False,
+                      set_labels=True, lam_offset=False, **kwargs):
         #-----------------------------------------------------------------
         xx, yy = self.crop(lam0=lam0, dlam=dlam, ang=ang, imu=imu, norm=norm, renorm=renorm,
-                           xmin=xmin, xmax=xmax, LTE=LTE, vdop=vdop, vshift=vshift,
-                           per_aa=per_aa, cont=cont)
+                           xmin=xmin, xmax=xmax, LTE=LTE, vdop=vdop, vrot=vrot, vshift=vshift,
+                           zeta_rt=zeta_rt, convolve=convolve, per_aa=per_aa, cont=cont,
+                           velocity_units=velocity_units, lam_offset=lam_offset)
         
-        self.set_xaxis(xx, dlam)
+        self.set_xaxis(xx, dlam, velocity_units=velocity_units, set_labels=set_labels,
+                       lam_offset=lam_offset)
+        
         self.set_yaxis(ang, imu, norm, renorm=renorm, per_aa=per_aa)
 
-        plt.xlabel('Wavelength [Å]')
-
         if show_lines:
-            self.plot_line_labels()
+            self.plot_lline_labels()
 
         return plt.plot(xx, yy, **kwargs)
     
@@ -640,7 +714,6 @@ class read(object):
         n_nu = self.nml['m3d_params']['n_nu']
 
         if lazy:
-            #concat = da.concatenate
             concat = memmap_list
         else:
             concat = np.concatenate
@@ -691,7 +764,7 @@ class read(object):
         return ltau1d, newy
     
     #=====================================================================
-    def plot_ltau_cube(self, cube, s=1, alpha=0.01, xmin=None, xmax=None, ymin=None, ymax=None, **kwargs):
+    def plot_ltau_cube(self, cube, marker=',', xmin=None, xmax=None, ymin=None, ymax=None, **kwargs):
         #-----------------------------------------------------------------
         xx = self.ltau.ravel()
         yy = cube.ravel()
@@ -704,7 +777,7 @@ class read(object):
         yy = yy[mask]
         plt.xlim(xx.min(), xx.max())
         plt.ylim(yy.min(), yy.max())
-        return plt.scatter(xx, yy, s=s, rasterized=True, alpha=alpha, **kwargs)
+        return plt.plot(xx, yy, linestyle='none', marker=marker, rasterized=True, **kwargs)
 
     #=====================================================================
     def get_ltau_mean(self, cube):
@@ -718,6 +791,70 @@ class read(object):
         #-----------------------------------------------------------------
         xx, yy = self.get_ltau_mean(cube)
         return plt.plot(xx, yy, **kwargs)
+    
+    #=====================================================================
+    def plot_lline_labels(self, xx=None, labels=None, ha='center', va='bottom',
+                         rotation=90, fontfamily='serif', color='k', 
+                         linewidth=0.8, **kwargs):
+        #-----------------------------------------------------------------
+        if xx is None: xx = self.llist.lam0.values
+        if labels is None: labels = self.llist.ion.values
+
+        ax = plt.gca()
+        xmin, xmax = ax.get_xlim()
+        ymin, ymax = ax.get_ylim()
+        h = 0.1 * (ymax - ymin)
+
+        t = ax.text(xmin, ymin, 'Mg IV', ha=ha, va=va, rotation=rotation, fontfamily=fontfamily, **kwargs)
+        bbox = t.get_window_extent().transformed(ax.transData.inverted())
+        t.remove()
+
+        mask = (xx > xmin) & (xx < xmax)
+        xx = xx[mask]
+        labels = np.array(labels)[mask]
+
+        n = xx.size
+
+        if rotation == 90:
+            pad = 1.4
+        else:
+            pad = 1.2
+
+        dxmin = bbox.width*pad
+        newn = int((xmax - xmin) / dxmin)
+        newn = max(newn, n)
+        nn = np.ones(n)
+
+        newx = np.linspace(xmin, xmax, newn+2)[1:-1]
+
+        xlist = list(xx)
+        binlist = list(newx)
+
+        newx = []
+        for x in xlist:
+            i = np.argmin(np.abs(binlist - x))
+            newx.append(binlist[i])
+            del binlist[i]
+
+        oldx = xx
+        newx = np.sort(newx)
+
+        xl = np.vstack([newx, newx, oldx, oldx])
+        yl = ymax*nn + np.vstack([h*nn, 0.8*h*nn, 0.2*h*nn, 0*nn])
+
+        plt.plot(xl, yl, color=color, linewidth=linewidth)
+
+        for x, label in zip(newx, labels):
+            plt.text(x, ymax+1.2*h, label, ha=ha, va=va, rotation=rotation,
+                     fontfamily=fontfamily, color=color, **kwargs)
+
+        if rotation == 90:
+            pad = 1.5
+        else:
+            pad = 2.5
+
+        plt.ylim(top=ymax+1.2*h + bbox.height*pad)
+
 
 #=====================================================================
 def weq_diff(run1, run2, marker='.', linestyle='none', **kwargs):

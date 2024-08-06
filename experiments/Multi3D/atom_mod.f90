@@ -120,9 +120,9 @@ MODULE atom_mod
     real(8), parameter :: ame=5.485799e-4, amh=1.0
     real(8), parameter :: mu_e=ame/(ame+amh)
     character(len=32), public :: lse_solver='lineq_no_pivot'
-    integer, public :: nq_fac=1, nq_min=0
+    integer, public :: nq_fac=1, nq_min=0, nq_max=huge(1)
 
-    public :: unique_int, NextEntry
+    public :: unique_int
   
   contains
   
@@ -528,6 +528,7 @@ MODULE atom_mod
       if (mod(lin%nnu,2) == 0) lin%nnu=lin%nnu+1
       lin%nnu = nq_fac * (lin%nnu-1) + 1
       lin%nnu = max(lin%nnu, nq_min)
+      lin%nnu = min(lin%nnu, nq_max)
 
       tri = (lin%j-1)*(lin%j-2)/2 + lin%i
       self%cdata(tri) = lin%f
@@ -853,6 +854,7 @@ MODULE atom_mod
         lin%nnu = 2 * (lin%nnu-1) + 1
       endif
       lin%nnu = max(lin%nnu, nq_min)
+      lin%nnu = min(lin%nnu, nq_max)
 
       tri = (lin%j-1)*(lin%j-2)/2 + lin%i
       self%cdata(tri) = lin%f
@@ -1804,41 +1806,6 @@ MODULE atom_mod
     a = (y1 - y0)/(x1 - x0)
     qjorg = a*(temp - x0) + b
   END FUNCTION qjorg
-
-  !====================================================================================
-  SUBROUTINE NextEntry(fileunit, comment)
-    ! ***********************************************************************
-    ! --- Reads an input line, returns when it is not a 
-    ! --- comment or an empty line.
-    ! --- Feb 21 2005: 
-    ! ---   Created by Jorrit Leenaarts (j.leenaarts@astro.uu.nl)
-    ! --- May 28 2008 :
-    !       jorritl: updated, will now also check for empty lines,
-    !       and allow data in the first column of the file.
-    ! ***********************************************************************
-    integer,intent(in) :: fileunit
-    character(len=132) :: instring
-    character(len=1)   :: token1, cmt
-    character(len=*),intent(in), optional :: comment
-    !---------------------------------------------------------------------------------
-    if (present(comment)) then
-      cmt = comment
-    else
-      cmt = '*'
-    endif
-    do 
-       ! read the line
-       read(unit=fileunit,fmt='(A72)') instring
-       instring=adjustl(instring)
-       token1=instring(1:1)
-
-       ! exit if line is not a comment and not empty
-       if (token1 .ne. cmt .and. token1 .ne. ' ') then
-          backspace(fileunit)
-          exit
-       endif
-    end do
-  END SUBROUTINE NextEntry
 
 END MODULE atom_mod
   

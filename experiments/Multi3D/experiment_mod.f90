@@ -19,10 +19,10 @@ MODULE experiment_mod
   USE handyfuncs_mod
   USE m3d_halo_mod, only: m3d_halo_t
   USE m3d_patch_mod, only: verbose, print_execution_history, use_density, use_ne, &
-  long_vec, pivot_z, rotate_atmos, atmos_format, amr, interpolated_3d_atmos
+  long_vec, pivot_z, rotate_atmos, atmos_format, amr
   USE composition_patch_mod, only: composition_patch_t
   USE composition_mod, only: composition_type
-  USE read_stagger_snapshot_mod
+  USE read_atmos_mod, only: ia, interpolate_atmos
   implicit none
   private
   type, public, extends(solver_t):: experiment_t
@@ -73,17 +73,20 @@ SUBROUTINE pre_init (self)
   if (self%ipos(3)+1 <= md(3)) then
     self%n(3) = self%n(3) + 1
   endif
-
   self%ze = self%zs + self%n(3)
-  self%size = self%ds * self%n
-  self%position = 0.5d0*self%size
+
+  self%size(1:2) = self%box(1:2)
+  self%ds(1:2) = self%size(1:2) / self%n(1:2)
+  self%position(1:2) = 0.5d0*self%size(1:2)
 
   if (amr) then
-    self%size(3) = sub_size(self%ipos(3)+1) / scaling%l
-    self%position(3) = sub_pos(self%ipos(3)+1) / scaling%l
-    self%ds(3) = self%size(3) / self%n(3)
+    self%size(3)     = ia%sub_size(self%ipos(3)+1) / scaling%l
+    self%position(3) = ia%sub_pos (self%ipos(3)+1) / scaling%l
+    self%ds(3)       = self%size(3) / self%n(3)
   else
-    self%position(3) = self%position(3) + self%zs*self%ds(3)
+    self%ds(3)       = self%box(3) / self%nbox(3)
+    self%size(3)     = self%ds(3) * self%n(3)
+    self%position(3) = 0.5*self%size(3) + self%zs*self%ds(3)
   endif
 
   !-----------------------------------------------------------------------------
@@ -92,8 +95,8 @@ SUBROUTINE pre_init (self)
   !-----------------------------------------------------------------------------
   self%authority%l = - self%size*0.5_8
   self%authority%u = + self%size*0.5_8
-  self%interest%l  = self%authority%l - self%ng*self%size/self%n
-  self%interest%u  = self%authority%u + self%ng*self%size/self%n
+  self%interest%l  = self%authority%l - self%ng*self%ds
+  self%interest%u  = self%authority%u + self%ng*self%ds
 
   allocate (self%boundaries)
   if (self%ipos(3)==0)              call self%boundaries%set(bits%zl)
@@ -147,39 +150,37 @@ SUBROUTINE init (self)
 
   self%authority_mem => self%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),:,:,:)
 
-  if (interpolated_3d_atmos) then
-    sub = scaling%l * self%size
-    pos = scaling%l * self%position
+  sub = scaling%l * self%size
+  pos = scaling%l * self%position
 
-    authority => self%authority_mem(:,:,:,:,self%it,1)
-    d  => authority(:,:,:,self%idx%d)
-    px => authority(:,:,:,self%idx%px)
-    py => authority(:,:,:,self%idx%py)
-    pz => authority(:,:,:,self%idx%pz)
-    tt => authority(:,:,:,self%idx%e)
-    pe => authority(:,:,:,6)
+  authority => self%authority_mem(:,:,:,:,self%it,1)
+  d  => authority(:,:,:,self%idx%d)
+  px => authority(:,:,:,self%idx%px)
+  py => authority(:,:,:,self%idx%py)
+  pz => authority(:,:,:,self%idx%pz)
+  tt => authority(:,:,:,self%idx%e)
+  pe => authority(:,:,:,6)
 
-    call interpolate_atmos(n, sub, pos, d, px, py, pz, tt=tt, pe=pe)
+  call interpolate_atmos(n, sub, pos, d, px, py, pz, tt, pe)
 
-    if (rotate_atmos) then
-      do i=1, self%nw-1
-        authority => self%authority_mem(:,:,:,:,self%it,1+i)
-        d  => authority(:,:,:,self%idx%d)
-        px => authority(:,:,:,self%idx%px)
-        py => authority(:,:,:,self%idx%py)
-        pz => authority(:,:,:,self%idx%pz)
-        tt => authority(:,:,:,self%idx%e)
-        pe => authority(:,:,:,6)
-        bottom = self%position(3) - 0.5*self%size(3)
-        bot2pivot = scaling%l * (pivot_z - bottom)
-        call interpolate_atmos(n, sub, pos, d, px, py, pz, tt=tt, pe=pe, vec=long_vec(:,i), bot2pivot=bot2pivot)
-      end do
-    endif
+  if (rotate_atmos) then
+    do i=1, self%nw-1
+      authority => self%authority_mem(:,:,:,:,self%it,1+i)
+      d  => authority(:,:,:,self%idx%d)
+      px => authority(:,:,:,self%idx%px)
+      py => authority(:,:,:,self%idx%py)
+      pz => authority(:,:,:,self%idx%pz)
+      tt => authority(:,:,:,self%idx%e)
+      pe => authority(:,:,:,6)
+      bottom = self%position(3) - 0.5*self%size(3)
+      bot2pivot = scaling%l * (pivot_z - bottom)
+      call interpolate_atmos(n, sub, pos, d, px, py, pz, tt, pe, vec=long_vec(:,i), bot2pivot=bot2pivot)
+    end do
+  endif
 
-    loaded = loaded + 1
-    if (loaded == self%dims(3)) then
-      call deallocate_stagger()
-    endif
+  loaded = loaded + 1
+  if (loaded == self%dims(3)) then
+    call ia%deallocate()
   endif
 
   call os%allocate(self%filled, self%gn)

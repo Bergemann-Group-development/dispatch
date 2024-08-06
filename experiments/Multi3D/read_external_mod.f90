@@ -26,13 +26,12 @@ MODULE read_external_mod
   USE composition_patch_mod, only: FeH, save_atmos, save_eos, external_abund
   USE patch_mod
   USE const_mod, only:cc
-  USE atom_mod, only: m1d_legacy_mode, NextEntry
+  USE atom_mod, only: m1d_legacy_mode
   USE m3d_patch_mod, only: maxiter, ilambd, m3d_patch_t, atom_update_counter, &
-  global_maxerr, global_pos, nz_total, use_density, use_ne, atmos_format, amr, &
-  interpolated_3d_atmos
+  global_maxerr, global_pos, nz_total, use_density, use_ne, atmos_format, amr
   USE m3d_halo_mod, only: m3d_halo_t
-  USE read_stagger_snapshot_mod
-  USE read_marcs_mod, only: read_marcs, zfac
+  USE read_atmos_mod, only: ia, read_stagger, read_co5bold, &
+  legacy_stagger_interp, read_marcs, read_multi_snapshot, read_1d_snapshot
   USE handyfuncs_mod
   USE ray_mod, only: one_dimensional
   implicit none
@@ -40,16 +39,11 @@ MODULE read_external_mod
   type, public:: read_external_t
     class(task_list_t), pointer:: task_list
     integer :: dims(3)=[1,1,1], n(3), verbose
-    real(4), dimension(:,:,:), pointer, contiguous :: temp, ne, pe, rho, px, py, pz, ee
-    real(8) :: ds(3), size(3), position(3), origin(3)
+    real(8) :: ds(3), size(3)
   contains
     procedure:: init
     procedure:: init_exp
-    procedure:: read_1d_snapshot
-    procedure:: read_multi_snapshot
     procedure:: setup_patch
-    procedure:: load_authority
-    procedure:: save_multi_atmos
   end type read_external_t
 
   type, public, extends(task_t):: rank_t
@@ -58,6 +52,7 @@ MODULE read_external_mod
   type(read_external_t), public:: read_external
   type(rank_t) :: rank
   character(len=256), public :: atmos_file='./input_multi3d/atmos/atmos.sun_MARCS_50'
+  real(4) :: origin(3) = [0., 0., 0.]
 
 contains
 
@@ -70,12 +65,12 @@ SUBROUTINE init(self, task_list, name)
   !-----------------------------------------------------------------------------
   class(experiment_t), pointer:: patch
   class(link_t), pointer:: link, next
-  real(4) :: origin(3)=[0.0,0.0,0.0]
   integer :: lunit, iostat, k, ip
   integer :: patches_per_mpi=1
-  integer :: dims=1, nx=5, ny=5, nz=256, snap=0
+  integer :: dims=1, nx=5, ny=5, nz=128, snap=0
   integer :: verbose=0
   logical :: use_abnd=.false.
+  character(len=512) :: command
   real(4), dimension(:,:,:), pointer, contiguous :: vel
   namelist /atmos_params/ atmos_file, dims, verbose, patches_per_mpi, FeH, &
   save_atmos, atmos_format, vmic, use_density, use_ne, nx, ny, nz, snap, &
@@ -97,7 +92,21 @@ SUBROUTINE init(self, task_list, name)
     read (io%input, atmos_params)
   end if
   call io%namelist_warning ('atmos_params', iostat)
+
+  if (amr) then
+    ! making sure that dims is not 1, otherwise amr has no effect
+    dims = max(dims, 8)
+  endif
+
   write (io%namelist, atmos_params)
+
+  if (mpi%master) then
+    call os%mkdir(trim(io%run_dir)//'save')
+    write (command, *) 'rm -f ', trim(io%run_dir), '*.txt ', trim(io%run_dir), '*.bin'
+    call execute_command_line (trim(command), exitstat=iostat)
+    write (command, *) 'rm -f ', trim(io%run_dir), 'save/*.txt ', trim(io%run_dir), 'save/*.bin'
+    call execute_command_line (trim(command), exitstat=iostat)
+  endif
 
   if (patches_per_mpi > 1) then
     if (dims > 1) then
@@ -120,83 +129,48 @@ SUBROUTINE init(self, task_list, name)
   endif
 
   self%verbose = verbose
-  self%origin = origin
   call io%lock%unset
-
-  allocate (task_list)
-  self%task_list => task_list
   
   atmos_format = lowercase(atmos_format)
+  ia%kind = atmos_format
+
   select case (atmos_format)
-  case ('stagger', 'co5bold')
-    interpolated_3d_atmos = .true.
-    select case (atmos_format)
-    case('stagger')
-      call read_stagger(atmos_file, snap, self%size)
-    case('co5bold')
-      call read_co5bold(atmos_file, self%size)
-    end select
-    self%size = self%size / scaling%l
-    self%n = [nx, ny, nz]
-    self%ds = self%size / self%n
-
-    if (amr) then
-      call setup_amr_mesh(dims)
-    endif
+  case('stagger')
+    call read_stagger(atmos_file, snap)
+  case('co5bold')
+    call read_co5bold(atmos_file)
+  case ('marcs')
+    call read_marcs(atmos_file, FeH, vmic, external_abund)
+    if (.not. use_abnd) deallocate(external_abund)
+  case ('multi', 'must')
+    call read_multi_snapshot(atmos_file)
+  case ('text')
+    call read_1d_snapshot(atmos_file)
   case default
-    select case (atmos_format)
-    case ('marcs')
-      call read_marcs(atmos_file, nz, self%ds, self%rho, self%temp, self%pe, FeH, vmic, external_abund)
-      if (.not. use_abnd) deallocate(external_abund)
-    case ('multi')
-      call self%read_multi_snapshot(atmos_file, self%ds, self%rho, self%temp, &
-                                    self%ne, self%px, self%py, self%pz)
-    case ('text')
-      call self%read_1d_snapshot(atmos_file, self%ds, self%rho, self%temp, self%pe)
-    case ('must')
-      call self%read_multi_snapshot(atmos_file, self%ds, self%rho, self%temp, &
-                                    self%ne, self%px, self%py, self%pz)
-      self%pz = - self%pz
-    case default
-      write(stdout, *) 'unknown atmos_format ', atmos_format, &
-      '. Options are: "Stagger", "Co5bold", "MUST", "Multi", "Marcs" and "Text".'
-      stop
-    end select
-
-    amr = .false.
-
-    self%n = shape(self%rho)
-    if (.not. associated(self%pe)) then
-      call os%allocate(self%pe, self%n)
-      self%pe = self%ne * cgs%k_b * self%temp
-    elseif (.not. associated(self%ne)) then
-      call os%allocate(self%ne, self%n)
-      self%ne = self%pe / (cgs%k_b * self%temp)
-    endif
-
-    self%ds  = self%ds  / scaling%l
-
-    if (.not. associated(self%pz)) then
-      call os%allocate(self%px, self%n, zero=.true.)
-      call os%allocate(self%py, self%n, zero=.true.)
-      call os%allocate(self%pz, self%n, zero=.true.)
-    endif
-
-    if (self%rho(1,1,1) < self%rho(1,1,self%n(3))) then
-      self%temp =  self%temp(:,:,self%n(3):1:-1)
-      self%rho  =  self%rho (:,:,self%n(3):1:-1)
-      self%ne   =  self%ne  (:,:,self%n(3):1:-1)
-      self%pe   =  self%pe  (:,:,self%n(3):1:-1)
-      self%px   =  self%px  (:,:,self%n(3):1:-1)
-      self%py   =  self%py  (:,:,self%n(3):1:-1)
-      self%pz   = -self%pz  (:,:,self%n(3):1:-1)
-    endif
-
-    self%size = self%n * self%ds
+    write(stdout, *) 'unknown atmos_format ', atmos_format, &
+    '. Options are: "Stagger", "Co5bold", "MUST", "Multi", "Marcs" and "Text".'
+    stop
   end select
 
-  one_dimensional = self%n(1)*self%n(2) == 1
-  self%position = 0.5*self%size + self%origin
+  call ia%thick2thin()
+  call ia%get_box(self%size)
+  self%size = self%size / scaling%l
+
+  if (.not. ia%is_3d) then
+    nx = 1; ny = 1
+  endif
+  one_dimensional = nx*ny == 1
+  self%n = [nx, ny, nz]
+
+  if (amr) then
+    call ia%setup_amr_mesh(dims)
+  else
+    self%ds = self%size / self%n
+    open(file=trim(io%run_dir)//'atmos_mesh.txt', newunit=lunit, form='FORMATTED')
+    write(lunit, *) self%n
+    write(lunit, *) self%ds
+    close(lunit)
+  endif
 
   !-----------------------------------------------------------------------------
   ! Generate a (periodic) MPI geometry, with dims specified in the input file,
@@ -218,14 +192,16 @@ SUBROUTINE init(self, task_list, name)
   rank%size = rank%box/mpi_coords%dims
   rank%ds(1:2) = rank%size(1:2)
   rank%ds(3) = rank%size(3)/patches_per_mpi
-  rank%position = (mpi_coords%rank_to_coords(mpi%rank) + 0.5_8)*rank%size + self%origin
+  rank%position = (mpi_coords%rank_to_coords(mpi%rank) + 0.5_8)*rank%size + origin
   !-----------------------------------------------------------------------------
   ! Begin on task list
   !-----------------------------------------------------------------------------
+  allocate (task_list)
+  self%task_list => task_list
   call self%task_list%init ('read_external_mod')
   self%task_list%size = self%size
   self%task_list%dims = self%dims
-  self%task_list%position = self%position
+  self%task_list%position = 0.5*self%size + origin
   self%task_list%n_tasks = product(self%dims)
 
   !-----------------------------------------------------------------------------
@@ -267,13 +243,6 @@ SUBROUTINE init(self, task_list, name)
   if (verbose > 0) then
     write (stdout, '(A, 3(F10.4))') 'box = ', patch%box
     write (stdout,*) ip, 'tasks generated'
-  endif
-
-  if (.not. amr) then
-    open(file=trim(io%run_dir)//'atmos_mesh.txt', newunit=lunit, form='FORMATTED')
-    write(lunit, *) self%n
-    write(lunit, *) self%ds
-    close(lunit)
   endif
 
   io%end_time = (maxiter + ilambd + 1) * patch%dtime
@@ -322,14 +291,6 @@ SUBROUTINE init(self, task_list, name)
   !$omp parallel default(shared)
   call self%init_exp()
   !$omp end parallel
-
-  call os%deallocate(self%temp)
-  call os%deallocate(self%rho)
-  call os%deallocate(self%ne)
-  call os%deallocate(self%pe)
-  call os%deallocate(self%px)
-  call os%deallocate(self%py)
-  call os%deallocate(self%pz)
   
   call print_list(task_list)
   !-----------------------------------------------------------------------------
@@ -363,8 +324,7 @@ SUBROUTINE setup_patch (self, patch)
   patch%box    = self%size
   patch%nbox   = self%n
   patch%dims   = self%dims
-  patch%origin = self%origin
-  patch%ds     = self%ds
+  patch%origin = origin
   
   call patch%pre_init()
   call trace%end ()
@@ -388,186 +348,11 @@ SUBROUTINE init_exp (self)
       select type (task)
       class is (experiment_t)
         call task%init()
-        if (.not. interpolated_3d_atmos) then
-          call self%load_authority(task)
-        endif
       end select
     endif
     link => link%next
   end do
 END SUBROUTINE init_exp
-
-!===============================================================================
-!> Reads the actual text files and stores variables under self
-!===============================================================================
-SUBROUTINE read_1d_snapshot(self, atmos_file, ds, rho, temp, pe)
-  class(read_external_t):: self
-  real(4), intent(out), dimension(:,:,:), pointer, contiguous :: rho, temp, pe
-  real(8), intent(out), dimension(:) :: ds
-  integer :: nz, lunit, i, iostat
-  character(len=*) :: atmos_file
-  real(4), dimension(:), allocatable :: zi
-  real(4) :: vturb
-  !-----------------------------------------------------------------------------
-  ! Open atmosphere file and read MHD variables
-  !-----------------------------------------------------------------------------
-  call os%check_file(atmos_file)
-  open(file=atmos_file, newunit=lunit)
-  call nextentry(lunit)
-  read(lunit, *) ! skip name
-  call nextentry(lunit)
-  read(lunit, *) nz
-
-  allocate(zi(nz))
-  call os%allocate(temp, [1,1,nz])
-  call os%allocate(rho , [1,1,nz])
-  call os%allocate(pe  , [1,1,nz])
-
-  do i=1, nz
-    call nextentry(lunit)
-    read(lunit, *) zi(i), temp(1,1,i), pe(1,1,i), rho(1,1,i), vturb
-  end do
-
-  close(lunit)
-
-  ds(1) = 1d10
-  ds(2) = 1d10 
-  ds(3) = abs(zi(2) - zi(1))
-
-  if (abs(ds(3) - abs(zi(nz) - zi(nz-1))) > 1d-4) then
-    write(stdout,*) 'read_external_t%read_1d_snapshot: Warning: Non-equidistant atmosphere grid!'
-  endif
-END SUBROUTINE read_1d_snapshot
-
-!===============================================================================
-SUBROUTINE read_multi_snapshot(self, atmos_file, ds, rho, temp, ne, px, py, pz)
-  class(read_external_t):: self
-  real(4), intent(out), dimension(:,:,:), pointer, contiguous :: rho, temp, ne, px, py, pz
-  real(8), intent(out), dimension(:) :: ds
-  integer :: lunit, n(3)
-  character(len=*) :: atmos_file
-  real(4) :: test
-  real(4), dimension(:), allocatable :: xi, yi, zi
-  !-----------------------------------------------------------------------------
-  ! Open atmosphere file and read MHD variables
-  !-----------------------------------------------------------------------------
-  call os%check_file(trim(atmos_file) // '.mesh')
-  open(file=trim(atmos_file) // '.mesh', newunit=lunit, form='FORMATTED')
-  read(lunit, *) n
-  allocate(xi(n(1)))
-  allocate(yi(n(2)))
-  allocate(zi(n(3)))
-  read(lunit, *) xi
-  read(lunit, *) yi
-  read(lunit, *) zi
-  close(lunit)
-
-  ds(1) = xi(2) - xi(1)
-  ds(2) = yi(2) - yi(1)
-  ds(3) = zi(2) - zi(1)
-
-  if (abs(ds(3) / (zi(n(3)) - zi(n(3)-1)) - 1) > 1d-4) then
-    write(stdout,*) 'read_external_t%read_1d_snapshot: Warning: Non-equidistant atmosphere grid! Stopping!'
-    stop
-  endif
-
-  ds = abs(ds)
-
-  call os%allocate(temp, n)
-  call os%allocate(rho, n)
-  call os%allocate(ne, n)
-  call os%allocate(px, n)
-  call os%allocate(py, n)
-  call os%allocate(pz, n)
-
-  call os%check_file(trim(atmos_file) // '.atmos')
-  open(file=trim(atmos_file) // '.atmos', newunit=lunit, form='UNFORMATTED', access='stream')
-  read(lunit) ne 
-  read(lunit) temp
-  read(lunit) px
-  read(lunit) py
-  read(lunit) pz
-  read(lunit) rho
-  close(lunit)
-
-  px =   px * rho
-  py =   py * rho
-  pz = - pz * rho ! z-velocity is flipped in Multi format
-END SUBROUTINE read_multi_snapshot
-
-!===============================================================================
-SUBROUTINE save_multi_atmos (self)
-  class (read_external_t) :: self
-  real(4), dimension(:,:,:), allocatable :: ne, temp, vx, vy, vz, rho
-  real(8) :: ds(3)
-  integer :: lunit, i, j, recl
-  !-----------------------------------------------------------------------------
-  open(file=trim(io%run_dir)//'multi.mesh', newunit=lunit, form='FORMATTED')
-  ds = self%ds * scaling%l
-  do i=1, 3
-    write(lunit, *) self%n(i)
-    write(lunit, '(E14.8)') [(ds(i)*j, j=0, self%n(i)-1)]
-  end do
-  close(lunit)
-
-  allocate(ne, temp, vx, vy, vz, rho, mold=self%temp)
-
-  ne   = self%ne  (:,:,self%n(3):1:-1)
-  temp = self%temp(:,:,self%n(3):1:-1)
-  rho  = self%rho (:,:,self%n(3):1:-1)
-
-  vx   = self%px  (:,:,self%n(3):1:-1) / rho
-  vy   = self%py  (:,:,self%n(3):1:-1) / rho
-  vz   = self%pz  (:,:,self%n(3):1:-1) / rho
-
-  recl = kind(1.0)*product(self%n)
-
-  open(file=trim(io%run_dir)//'multi.atmos', newunit=lunit, form='UNFORMATTED', access='direct', recl=recl)
-  write(lunit, rec=1) ne  
-  write(lunit, rec=2) temp
-  write(lunit, rec=3) vx  
-  write(lunit, rec=4) vy  
-  write(lunit, rec=5) vz  
-  write(lunit, rec=6) rho 
-  close(lunit)
-END SUBROUTINE save_multi_atmos
-
-!===============================================================================
-!> Takes variables from self and loads them into patch memory
-!===============================================================================
-SUBROUTINE load_authority(self, patch)
-  class (read_external_t) :: self
-  class (experiment_t) :: patch
-  integer :: i,j,k, it, iz, xs, xe, ys, ye, zs, ze
-  !-----------------------------------------------------------------------------
-  it = 1 ! time index, it=1 is the initial condition
-  xs = patch%li(1); xe = patch%ui(1)
-  ys = patch%li(2); ye = patch%ui(2)
-  zs = patch%li(3); ze = patch%ui(3)
-
-  do k=zs,ze
-    iz = patch%zs+1 + k - zs
-
-    patch%mem(xs:xe,ys:ye,k,patch%idx%d ,it,1) = self%rho(:,:,iz)
-    patch%mem(xs:xe,ys:ye,k,patch%idx%px,it,1) = self%px(:,:,iz)
-    patch%mem(xs:xe,ys:ye,k,patch%idx%py,it,1) = self%py(:,:,iz)
-    patch%mem(xs:xe,ys:ye,k,patch%idx%pz,it,1) = self%pz(:,:,iz)
-
-    if (associated(self%temp)) then
-      patch%mem(xs:xe,ys:ye,k,patch%idx%e,it,1) = self%temp(:,:,iz)
-    elseif (associated(self%ee)) then
-      patch%mem(xs:xe,ys:ye,k,patch%idx%e,it,1) = self%ee(:,:,iz)
-    endif
-    
-    patch%mem(xs:xe,ys:ye,k,6,it,1) = self%pe(:,:,iz)
-  end do
-
-  if (associated(self%temp)) then
-    patch%v5 = 'tt'
-  elseif (associated(self%ee)) then
-    patch%v5 = 'ee'
-  endif
-END SUBROUTINE
 
 !===============================================================================
 SUBROUTINE init_all_nbors (self)
@@ -792,22 +577,6 @@ SUBROUTINE add_nbor (self, link, nbors, nbor, added, by_quality, by_rank)
   call link%lock%unset ('add_nbor')
   !call trace%end (itimer)
 END SUBROUTINE add_nbor
-
-!===============================================================================
-SUBROUTINE compute_tau_scale (chi, ds, tau)
-  real(4), dimension(:,:,:), intent(in) :: chi
-  real(4), dimension(:,:,:), intent(out):: tau
-  real(8) :: ds
-  integer :: k
-  !-----------------------------------------------------------------------------
-  tau(:,:,2) = 0.5*(chi(:,:,2) + chi(:,:,1)) * ds
-  tau(:,:,3) = 0.5*(chi(:,:,3) + chi(:,:,2)) * ds + tau(:,:,2)
-  tau(:,:,1) = exp(2*log(tau(:,:,2))-log(tau(:,:,3)))
-
-  do k=2, size(chi,3)
-    tau(:,:,k) = tau(:,:,k-1) + 0.5*(chi(:,:,k) + chi(:,:,k-1)) * ds
-  end do
-END SUBROUTINE compute_tau_scale
 
 !===============================================================================
 SUBROUTINE init_ids (list)

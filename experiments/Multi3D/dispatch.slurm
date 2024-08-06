@@ -10,10 +10,10 @@
 ##SBATCH --nodelist=mpia-slurm-node[81-90]
 #SBATCH --exclude=mpia-slurm-node[71,74]
 #SBATCH --ntasks-per-node=1        # Maximum number of tasks on each node
-#SBATCH --cpus-per-task=1          # Number of cores per MPI task 
+#SBATCH --cpus-per-task=32         # Number of cores per MPI task 
 #SBATCH --ntasks-per-core=1
 #SBATCH --exclusive
-##SBATCH --mem=225G
+#SBATCH --mem=180G
 # --- User notifications ---
 ##SBATCH --time 24:00:00
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK

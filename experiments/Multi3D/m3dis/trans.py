@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from .auxfuncs import continuum, convol, vacuum2obs, _vacuum2obs, is_number, compute_tau_scale, find_close, interp_tau, get_qmax, rotate_array
+from .auxfuncs import vacuum2obs, _vacuum2obs, is_number, compute_tau_scale, find_close, interp_tau, get_qmax, rotate_array
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 from scipy.signal import argrelextrema
@@ -179,8 +179,9 @@ class trans_class(object):
         self.flux_cnt = self.run.flux_cnt[slc]
         self.ie = self.run.ie[slc]
         self.cnt = self.run.cnt[slc]
+        self.slc = slc
 
-        if hasattr(self.run, 'lvlerr'):
+        if hasattr(self.run, 'lvlerr') and hasattr(self, 'i'):
             self.ilvlerr = self.run.lvlerr[self.i]
             self.jlvlerr = self.run.lvlerr[self.j]
 
@@ -189,48 +190,45 @@ class trans_class(object):
     #=====================================================================
     def plot(self, ang=None, imu=None, norm=True, dlam=None, label=None,
                 vdop=None, vshift=None, convolve=None, renorm=False,
-                LTE=False, title=None, set_labels=True, velocity_units=False, **kwargs):
+                LTE=False, title=None, set_labels=True, velocity_units=False,
+                lam_offset=True, **kwargs):
         #-----------------------------------------------------------------
         xx, yy = self.crop(ang=ang, imu=imu, norm=norm, dlam=dlam,
                             vdop=vdop, vshift=vshift, convolve=convolve,
-                            renorm=renorm, LTE=LTE, velocity_units=velocity_units)
+                            renorm=renorm, LTE=LTE, velocity_units=velocity_units,
+                            lam_offset=lam_offset)
 
-        self.run.set_xaxis(xx, dlam, velocity_units=velocity_units, set_labels=set_labels)
+        self.run.set_xaxis(xx, dlam, velocity_units=velocity_units, set_labels=set_labels,
+                           lam_offset=lam_offset)
+        
         self.run.set_yaxis(ang, imu, norm, renorm, set_labels=set_labels)
 
         if type(label) is str:
             if '{WEQ}' in label:
                 weq = self.calc_weq(ang=ang, imu=imu, dlam=dlam, renorm=renorm, LTE=LTE)
                 label = label.replace('{WEQ}', '{:.2f}'.format(weq))
+            
+            if '{BLU}' in label:
+                blues, depth = self.calc_blueshift(ang=ang, imu=imu, LTE=LTE)
+                label = label.replace('{BLU}', '{:.2f}'.format(blues))
 
         plot = plt.plot(xx, yy, label=label, **kwargs)
 
         if set_labels:
-            set_title(title, default=self.title+', '+self.el.title)
+            default = self.title
+            if hasattr(self, 'el'): default = default + ', ' + self.el.title
+            set_title(title, default=default)
             set_legend(**kwargs)
 
         return plot
     
     #=====================================================================
-    def crop(self, ang=None, imu=None, norm=True, dlam=None, velocity_units=False, \
-                vdop=None, vshift=None, convolve=None, renorm=False, LTE=False):
+    def crop(self, **kwargs):
         #-----------------------------------------------------------------
-        xx, mask = self.get_xx(dlam, velocity_units=velocity_units)
-        
-        if not LTE and self.run.mode=='LTE':
-            print('Cannot get NLTE line profile, because run was in LTE!')
-            LTE = True
-
-        yy, cnt = self.run.get_yy(ang, imu, norm, LTE=LTE, mask=mask)
-        
-        if renorm:
-            yy = yy / continuum(xx, yy)
-            
-        if vdop is not None or vshift is not None or convolve is not None:
-            ixx, _ = self.get_xx(dlam=False, velocity_units=False)
-            sxx, syy = convol(ixx, yy, vdop=vdop, vshift=vshift, custom=convolve)
-            yy = np.interp(ixx, sxx, syy)
-        
+        if hasattr(self, 'prepared'):
+            if not self.prepared: self.prepare()
+                
+        xx, yy = self.run.crop(slc=self.slc, lam0=self.lam0, **kwargs)
         return xx, yy
     
     #=====================================================================
@@ -265,7 +263,7 @@ class trans_class(object):
         return plt.plot(xx, yy, **kwargs)
 
     #=====================================================================
-    def get_xx(self, dlam, velocity_units=False):
+    def get_xx(self, dlam, velocity_units=False, **kwargs):
         #-----------------------------------------------------------------
         if hasattr(self, 'prepared'):
             if not self.prepared: self.prepare()
@@ -274,39 +272,23 @@ class trans_class(object):
             self.run = self.atom.run
 
         xx = self.run.lam
-
-        if dlam is None or isinstance(dlam, (bool)):
-            ib = self.ib
-            ir = self.ir
-        else:
-            if isinstance(dlam, tuple):
-                ib = np.searchsorted(xx - self.lam0, dlam[0])
-                ir = np.searchsorted(xx - self.lam0, dlam[1])
-            else:
-                ib = np.searchsorted(xx - self.lam0, -dlam)
-                ir = np.searchsorted(xx - self.lam0,  dlam)
-
-        mask = slice(ib, ir)
-        xx = xx[mask]
-
-        if dlam is not None and bool(dlam):
+        if dlam is not None and dlam is not False:
             xx = xx - self.lam0
+
+        xx, mask = self.run.get_xx(xx, slc=self.slc, **kwargs)
 
         if velocity_units:
             xx = xx / self.lam0
-            if dlam is None:
+            if dlam is None or dlam is False:
                 xx = xx - 1
-
             xx = xx * CC * 1e-5
 
         return xx, mask
         
     #=====================================================================
-    def calc_weq(self, dlam=None, ang=None, imu=None, renorm=False, LTE=False):
+    def calc_weq(self, **kwargs):
         #-----------------------------------------------------------------
-        xx, mask = self.get_xx(dlam)
-        yy, cnt = self.run.get_yy(ang, imu, norm=True, LTE=LTE, mask=mask)
-        if renorm: yy = yy / continuum(xx, yy)
+        xx, yy = self.crop(norm=True, **kwargs)
         weq = np.trapz(1 - yy, x=xx) * 1e3
         return weq
     
@@ -318,26 +300,18 @@ class trans_class(object):
         return NLTE/LTE
 
     #=====================================================================
-    def calc_blueshift(self, **kwargs):
+    def calc_blueshift(self, dvel=4, **kwargs):
         #-----------------------------------------------------------------
-        xx, yy = self.crop(**kwargs)
-        #xx, mask = self.get_xx(dlam=dlam)
-        #yy, cnt = self.run.get_yy(mask=mask, **kwargs)
-        ex = argrelextrema(yy, np.less_equal)[0]
-        iex = ex[np.argmin(np.abs(ex - self.i0 + self.ib))]
-        slc = slice(iex-1, iex+2)
-        dep = 1 - yy[slc]
-        
-        p = np.polyfit(xx[slc], yy[slc], deg=2)
-        xmin = np.roots(np.polyder(p))[0]
-
-        if 'dlam' in kwargs:
-            if kwargs['dlam'] is not None:
-                xmin = xmin + self.lam0
-
-        blue = (xmin / self.lam0 - 1) * CC * 1e-5
-        
-        return blue, dep
+        xx, yy = self.crop(velocity_units=True, norm=True, **kwargs)
+        mask = (xx > -dvel) & (xx < dvel)
+        xx = xx[mask]
+        yy = yy[mask]
+        p = np.polyfit(xx, yy, 2)
+        pdiff = np.polyder(p)
+        poly_root = np.roots(pdiff)
+        blues = poly_root[0]
+        depth = 1 - np.polyval(p, blues)
+        return blues, depth
 
     #=====================================================================
     def plot_resolved(self, ang=0, norm=True, dlam=None, velocity_units=False, 
@@ -388,12 +362,18 @@ class trans_class(object):
     def get_bisector(self, n=100, frac=0.99, **kwargs):
         #-----------------------------------------------------------------
         xx, yy = self.crop(**kwargs)
-        imin = np.argmin(yy)
-        ymin = np.max(yy[imin-1:imin+2])
-        ymax = ymin + (yy.max() - ymin)*frac
+        ex = argrelextrema(yy, np.less_equal)[0]
+        i0 = ex[np.argmin(np.abs(ex - self.i0 + self.ib))]
+        ex = argrelextrema(yy, np.greater_equal)[0]
+        i = np.searchsorted(ex, i0)
+        ib = ex[i-1]
+        ir = ex[i]
+        ymin = np.max(yy[i0-1:i0+2])
+        ymax = np.min([yy[ib], yy[ir]])
+        ymax = ymin + (ymax - ymin)*frac
         newy = np.linspace(ymax, ymin, n)
-        lwing = np.interp(newy, yy[imin:None:-1], xx[imin:None:-1])
-        rwing = np.interp(newy, yy[imin:], xx[imin:])
+        lwing = np.interp(newy, yy[i0:ib:-1], xx[i0:ib:-1])
+        rwing = np.interp(newy, yy[i0:ir], xx[i0:ir])
         newx = 0.5*(lwing + rwing)
         return newx, newy
     
@@ -401,13 +381,15 @@ class trans_class(object):
     def plot_bisector(self, n=100, frac=0.99, ang=None, imu=None, norm=True,
                       dlam=None, velocity_units=False, vdop=None, vshift=None,
                       convolve=None, renorm=False, LTE=False, set_labels=True,
-                      **kwargs):
+                      lam_offset=True, **kwargs):
         #-----------------------------------------------------------------
         xx, yy = self.get_bisector(n=n, frac=frac, ang=ang, imu=imu, norm=norm,
                       dlam=dlam, velocity_units=velocity_units, vdop=vdop,
                       vshift=vshift, convolve=convolve, renorm=renorm, LTE=LTE)
 
-        self.run.set_xaxis(xx, dlam, velocity_units=velocity_units, set_labels=set_labels)
+        self.run.set_xaxis(xx, dlam, velocity_units=velocity_units, set_labels=set_labels,
+                           lam_offset=lam_offset)
+        
         self.run.set_yaxis(ang, imu, norm, renorm, set_labels=set_labels)
 
         return plt.plot(xx, yy, **kwargs)

@@ -3,7 +3,9 @@ import numpy as np
 import pandas as pd
 
 class fast_trans(trans_class):
+  #=====================================================================
   def __init__(self, kr, atom):
+    #-----------------------------------------------------------------
     self.kr = kr
     self.atom = atom
     self.el = atom
@@ -18,3 +20,15 @@ class fast_trans(trans_class):
     
   def __repr__(self):
     return self.bbt.loc[self.kr].__repr__()
+  
+class llist_trans(fast_trans):
+  #=====================================================================
+  def __init__(self, kr, run):
+    #-----------------------------------------------------------------
+    self.kr = kr
+    self.run = run
+    self.bbt = run.llist
+    self.title = 'Line = {:.2f} [Å], {:}'.format(self.lam0, self.ion)
+    self.prepared = False
+    self.lam_blue = self.lam_vac - 1.0
+    self.lam_red  = self.lam_vac + 1.0

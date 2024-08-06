@@ -613,7 +613,7 @@ contains
         character(20) :: mass_id
         character(20) :: ion_id
         character(len=512) :: line_text
-        real(dp) :: lam0, gv, gq, loggf, ent8, ent9, mass, cnt_ev, lam_vac, vbar2e4
+        real(dp) :: lam0, ent8, ent9, mass, cnt_ev, lam_vac, vbar2e4
         real(dp) :: upper_ev, lower_g, gij, f
         character :: lower_orb, upper_orb
         character(len=150) :: label
@@ -698,7 +698,7 @@ contains
                 read(lunit,'(A)', iostat=iostat) line_text
 
                 if (p%id == 'H I') then
-                    read(line_text,*,iostat=iostat) lam0, line%i, line%j, line%lower_ev, upper_ev, loggf, label, line%ga
+                    read(line_text,*,iostat=iostat) lam0, line%i, line%j, line%lower_ev, upper_ev, line%loggf, label, line%ga
 
                     ! Stop if nothing has worked
                     call print_failed_line(lunit, iostat)
@@ -709,18 +709,18 @@ contains
                     lam_vac = air2vac(lam0) * 1e-8
                     line%nu0 = CC / lam_vac
                     gij = lower_g / line%upper_g
-                    f = 10**loggf / lower_g
+                    f = 10**line%loggf / lower_g
                     call line%init_einstein_coefficients(f, gij)
                     call prepare_hydrogen_damping(line) ! ga is overwritten
                 else
                     ! Try to read with stark broadening parameter
-                    read(line_text,*,iostat=iostat) lam0, line%lower_ev, loggf, gv, line%upper_g, &
-                        line%ga, gq, lower_orb, upper_orb, ent8, ent9, label
+                    read(line_text,*,iostat=iostat) lam0, line%lower_ev, line%loggf, line%gv, line%upper_g, &
+                        line%ga, line%gq, lower_orb, upper_orb, ent8, ent9, label
 
                     if (iostat > 0) then
-                        gq = 0.0
+                        line%gq = 0.0
                         ! Try to read without stark broadening parameter
-                        read(line_text, *, iostat=iostat) lam0, line%lower_ev, loggf, gv, line%upper_g, &
+                        read(line_text, *, iostat=iostat) lam0, line%lower_ev, line%loggf, line%gv, line%upper_g, &
                         line%ga, lower_orb, upper_orb, ent8, ent9, label
                     endif
 
@@ -732,10 +732,10 @@ contains
 
                     ! gi is missing but cancels later
                     gij = 1/line%upper_g
-                    f = 10**loggf
+                    f = 10**line%loggf
                     
                     call line%init_einstein_coefficients(f, gij)
-                    call line%prepare_Stark(gq)
+                    call line%prepare_Stark(line%gq)
     
                     if (associated(ion)) then
                         cnt_ev = ion%xion
@@ -745,10 +745,11 @@ contains
                         else
                             vbar2e4 = element%compute_vbar2(10000.)
                         endif
-                        call line%prepare_VanderWaals(gv, j, cnt_ev, vbar2e4)
+                        call line%prepare_VanderWaals(line%gv, j, cnt_ev, vbar2e4)
                     endif
                 endif
 
+                line%used_ptr => line%used
                 if (line%active) nactive = nactive + 1
                 ntotal = ntotal + 1
             end do

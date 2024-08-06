@@ -315,7 +315,7 @@ contains
   
     do i=1, nnew
       ratio = newx(i) * over_dx
-      i1 = int(ratio)
+      i1 = floor(ratio)
       delta = ratio - i1
       i1 = modulo(i1, nold) + 1
       i2 = modulo(i1, nold) + 1
@@ -428,7 +428,7 @@ contains
     
     do i = 1, nnew
       interp_index = (i - 1) * delta + 1.0
-      j = modulo(int(interp_index) - 1, nold) + 1
+      j = modulo(floor(interp_index) - 1, nold) + 1
       frac = interp_index - real(j)
       new(i) = (1.0 - frac) * old(j) + frac * old(modulo(j, nold) + 1)
     end do
@@ -1080,7 +1080,7 @@ contains
     
     do j=1, n_interp
       ratio = newx(j) * over_dx
-      i = int(ratio)
+      i = floor(ratio)
       i1 = modulo(i,   n) + 1
       i2 = modulo(i+1, n) + 1
 

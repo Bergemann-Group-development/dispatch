@@ -9,7 +9,8 @@ MODULE atom_patch_mod
     USE link_mod, only: nbor_t
     USE handyfuncs_mod
     USE atom_mod, only: atom_type, atomic_spectrum_type, use_classic_col, kramer_bf, &
-                        red_cut, blue_cut, logf_cut, atom_data_t, m1d_legacy_mode, nq_fac, nq_min
+                        red_cut, blue_cut, logf_cut, atom_data_t, m1d_legacy_mode, &
+                        nq_fac, nq_min, nq_max
     USE trans_mod, only: line_type, cont_type
     USE const_mod, only: CC
     USE ion_mod, only: ion_type, particle_type, debye_shield
@@ -110,7 +111,7 @@ MODULE atom_patch_mod
     use_atom_abnd, logf_cut, red_cut, blue_cut, n_in_lines, abundance, &
     exclude_from_line_list, precomputed_depart, use_classic_col, kramer_bf, overlapping_bf, &
     overlapping_bb, hydrogen_BPO, detailed_absmet, n_cntrbf, convmax, premature_finish, &
-    pandas_format, save_populations, nq_fac, nq_min
+    pandas_format, save_populations, nq_fac, nq_min, nq_max
     namelist /line_mask/ in_lines, cntrbf_lines
     !-----------------------------------------------------------------------------
     call trace%begin('atom_patch_t%pre_init_atom', itimer=itimer)

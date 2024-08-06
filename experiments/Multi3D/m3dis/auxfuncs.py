@@ -33,6 +33,17 @@ def check_file(file):
     if file!='':
         if not os.path.exists(file):
             raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), file)
+        
+def get_kwargs(func):
+    arg_names = func.__code__.co_varnames[:func.__code__.co_argcount]
+    defaults = func.__defaults__ or ()
+    kwargs = dict(zip(arg_names[-len(defaults):], defaults))
+    return kwargs
+
+def match_kwargs(func, kwargs):
+    func_kwargs = get_kwargs(func)
+    matched_kwargs = {k: v for k, v in kwargs.items() if k in func_kwargs}
+    return matched_kwargs
 
 def planck(lam, temp):
     return HC2/lam**3/(np.exp(HCK/np.outer(temp, lam)) - 1)

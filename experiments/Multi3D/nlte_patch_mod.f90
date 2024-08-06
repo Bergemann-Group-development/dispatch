@@ -23,7 +23,8 @@ MODULE nlte_patch_mod
   premature_finish, m3d_patch_pre_update=>pre_update, save_resolved, &
   column_by_column, rotate_atmos, check_NaN, rank_lvlerr, sample_back_opac, &
   decouple_continuum, linelist_in_output, sample_back_opac_in_output, ilambd, &
-  Jnu_to_file, preconditioning, make_eos, amr, save_Inu, save_chi, rotate_continuum
+  Jnu_to_file, preconditioning, make_eos, amr, save_Inu, save_chi, &
+  rotate_continuum, long_solver
   USE ray_mod, only: one_dimensional, ray_type
   USE trans_mod, only:line_type, cont_type
   USE bbtrans_mod, only:voigt_function2, voigt_profile
@@ -74,7 +75,9 @@ MODULE nlte_patch_mod
     procedure :: save_contribution_function 
     procedure :: rotate_array
     procedure :: short_char
-    procedure :: long_char
+    procedure :: long_char_linear
+    procedure :: long_char_quadratic
+    procedure :: long_char_quadratic2
     procedure :: get_vproj
     procedure :: print_post_update_info
     procedure :: nbor_relations => nlte_patch_nbor_relations
@@ -341,10 +344,23 @@ SUBROUTINE execute (self)
         call self%rotate_array(vec, work(:,:,:,1:nz,1:2))
       endif
 
-      if (one_dimensional .or. self%out_mu) then
-        call self%long_char(vec)
+      if (self%out_mu) then
+        select case(long_solver)
+        case('linear')
+          call self%long_char_linear(vec)
+        case('quadratic')
+          call self%long_char_quadratic(vec)
+        case('quadratic2')
+          call self%long_char_quadratic2(vec)
+        case default
+          stop 'Unknown long_solver, use "linear" or "quadratic"'
+        end select
       else
-        call self%short_char(vec)
+        if (one_dimensional) then
+          call self%long_char_linear(vec)
+        else
+          call self%short_char(vec)
+        endif
       endif
 
       if (get_cntrbf) then
@@ -392,7 +408,7 @@ SUBROUTINE execute (self)
           call self%save4(work(fs:fe,:,:,1:nz,1), sav_label, key=self%key(1:3))
         endif
       endif
-    end do ! NLTE-LTE_CONTINUUM loop
+    end do ! NLTE-LTE-CONTINUUM loop
   end do ! Angle loop
 
   if (self%get_rates) then
@@ -408,6 +424,9 @@ SUBROUTINE execute (self)
   if (end_boundary) then
     if (self%out_mu .and. self%n_mu > 0) then
       call self%save_intensity()
+      if (self%i_nu == -1) then
+        call self%print_linelist(self%composition)
+      endif
     endif
     call self%deallocate_mem()
   endif
@@ -1423,28 +1442,42 @@ SUBROUTINE short_char (self, vec)
 END SUBROUTINE short_char
 
 !===============================================================================
-SUBROUTINE long_char (self, vec)
+SUBROUTINE long_char_linear (self, vec)
   class(nlte_patch_t) :: self
   real(8) :: vec(3)
-  real(4) :: ds, Inuup, xxup, ssup, dsup05, xx, ss, Inu, u0, Psi
+  real(4) :: ds, Inuup, xxup, ssup, dsup05, dsup1, dsup2, xx, ss, Inu, u0, Psi
   real(8) :: dt, ex ! important
-  real(4), allocatable, dimension(:,:) :: kernel
-  integer :: nx, ny, nz, dx, dy, x, y, z, f, zs, ze, xup, yup, zup, x1, y1, ii, jj
+  integer :: nx, ny, nz, dx, dy, x, y, z, f, zs, ze, zup
+  logical :: amr_boundary
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin('nlte_patch%long_char', itimer=itimer)
+  call trace%begin('nlte_patch%long_char_linear', itimer=itimer)
   nx = self%patch%n(1)
   ny = self%patch%n(2)
   nz = self%patch%n(3)
 
   ds = self%ds(3) * scaling%l
-  dsup05 = 0.5*ds/abs(vec(3))
+  dsup1 = 0.5*ds/abs(vec(3))
+
+  amr_boundary = amr .and. self%dir < 0
+  if (amr_boundary) then
+    if (associated(self%upstream)) ds = self%upstream%ds(3) * scaling%l
+    dsup2 = 0.5*ds/abs(vec(3))
+  endif
 
   zs = merge(1, nz, self%dir > 0)
   ze = merge(nz, 1, self%dir > 0)
 
   do z=zs, ze, self%dir
     zup = z - self%dir
+
+    if (amr_boundary) then
+      dsup05 = dsup2
+      amr_boundary = .false.
+    else
+      dsup05 = dsup1
+    endif
+
     do y=1, ny
     do x=1, nx
       do f=self%fs, self%fe
@@ -1483,7 +1516,211 @@ SUBROUTINE long_char (self, vec)
     end do
   end do ! z-loop
   call trace%end(itimer)
-END SUBROUTINE long_char
+END SUBROUTINE long_char_linear
+
+!===============================================================================
+SUBROUTINE long_char_quadratic (self, vec)
+  class(nlte_patch_t) :: self
+  real(8) :: vec(3)
+  real(4) :: ds, dsup, rdsup, dsup1, dsup2
+  real(4) :: xx, ss, Inu, Psi
+  real(4) :: Inuup, xxup, ssup
+  real(4) :: xxdn, ssdn
+  real(4) :: t1, t2, t3, dtup, dtdn, dt2, dt3, U0, U1, U2, a, b, c
+  real(8) :: dt, ex ! important
+  integer :: nx, ny, nz, dx, dy, x, y, z, f, zs, ze, z0, zup, zdn
+  logical :: edge
+  integer, save :: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin('nlte_patch%long_char_quadratic', itimer=itimer)
+  nx = self%patch%n(1)
+  ny = self%patch%n(2)
+  nz = self%patch%n(3)
+
+  ds = self%ds(3) * scaling%l
+  dsup = ds / abs(vec(3))
+  rdsup = 1./ dsup
+  dsup1 = 0.5*dsup
+  dsup2 = 1./6.*dsup*dsup
+
+  zs = merge(1, nz, self%dir > 0)
+  ze = merge(nz, 1, self%dir > 0)
+
+  do z=zs, ze, self%dir
+    edge = z==ze
+    z0 = merge(z-1, z, edge)
+    zup = z0 - self%dir
+    zdn = z0 + self%dir
+    do y=1, ny
+    do x=1, nx
+      do f=self%fs, self%fe
+        xx = work(f,x,y,z0,1)
+        xxup = work(f,x,y,zup,1)
+        xxdn = work(f,x,y,zdn,1)
+        Inuup = work(f,x,y,z-self%dir,3)
+
+        ! one sided dchi/ds at upwind point
+        t1 = (xx - xxup) * rdsup
+        ! one sided dchi/ds at dnwind point
+        t3 = (xxdn - xx) * rdsup
+
+        t2 = 0.5*(t1 + t3)
+        t2 = (sign(1.0, t1) + sign(1.0, t3)) * min(abs(t1), abs(t3), abs(0.5*t2))
+      
+        dtup = dsup1*(xxup + xx) + dsup2*(t1-t2)
+        dtdn = dsup1*(xxdn + xx) + dsup2*(t2-t3)
+
+        dt = merge(dtdn, dtup, edge)
+        dt2 = dt*dt
+        ex=exp(-dt) 
+
+        ! Compute the U functions, use Taylor expansion for small dt
+        ! to avoid accuracy issues with 1-(number slightly smaller than one)
+        if ( dt > 1e-3 ) then
+          U0 = 1.0d0 - ex
+          U1 = dt - U0
+          U2 = dt2 - 2.0d0 * U1 
+        else
+          dt3 = dt2*dt
+          U1 = half * dt2 - one_sixth * dt3
+          U0 = dt - U1
+          U2 = one_third * dt3
+        end if
+
+        ss = work(f,x,y,z0,2)
+        ssdn = work(f,x,y,zdn,2)
+        ssup = work(f,x,y,zup,2)
+
+        ! one sided dS/dt at upwind point
+        t1 = (ss - ssup) / dtup
+        t3 = (ssdn - ss) / dtdn
+
+        t2 = 0.5*(t1 + t3)
+        t2 = (sign(1.0, t1) + sign(1.0, t3)) * min(abs(t1), abs(t3), abs(0.5*t2))
+
+        if (edge) then
+          a = (t3-t2) / dt
+          b = 2*t2 - t3
+          c = ss
+        else
+          a = (t2-t1) / dt
+          b = 2*t1 - t2
+          c = ssup
+        endif
+
+        ! intensity at center point
+        Inu = Inuup*ex + a*U2 + b*U1 + c*U0
+        work(f,x,y,z,3) = Inu
+      end do ! f-loop
+    end do
+    end do
+  end do ! z-loop
+  call trace%end(itimer)
+END SUBROUTINE long_char_quadratic
+
+!===============================================================================
+SUBROUTINE long_char_quadratic2 (self, vec)
+  class(nlte_patch_t) :: self
+  real(8) :: vec(3)
+  real(4) :: ds, dsup, rdsup, dsup1, dsup2
+  real(4) :: xx, ss, Inu, Psi
+  real(4) :: Inuup, xxup, ssup
+  real(4) :: xxdn, ssdn
+  real(4) :: t1, t2, t3, dtup, dtdn, dt2, dt3, U0, U1, U2, a, b, c
+  real(8) :: dt, ex ! important
+  integer :: nx, ny, nz, dx, dy, x, y, z, f, zs, ze, z0, zup, zdn
+  logical :: edge
+  integer, save :: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin('nlte_patch%long_char_quadratic2', itimer=itimer)
+  nx = self%patch%n(1)
+  ny = self%patch%n(2)
+  nz = self%patch%n(3)
+
+  ds = self%ds(3) * scaling%l
+  dsup = ds / abs(vec(3))
+  rdsup = 1./ dsup
+  dsup1 = 0.5*dsup
+  dsup2 = 1./6.*dsup*dsup
+
+  zs = merge(1, nz, self%dir > 0)
+  ze = merge(nz, 1, self%dir > 0)
+
+  do z=zs, ze, self%dir
+    edge = z==ze
+    z0 = merge(z-1, z, edge)
+    zup = z0 - self%dir
+    zdn = z0 + self%dir
+    do y=1, ny
+    do x=1, nx
+      do f=self%fs, self%fe
+        xx = work(f,x,y,z0,1)
+        xxup = work(f,x,y,zup,1)
+        xxdn = work(f,x,y,zdn,1)
+        Inuup = work(f,x,y,z-self%dir,3)
+
+        ! one sided dchi/ds at upwind point
+        t1 = (xx - xxup) * rdsup
+        ! one sided dchi/ds at dnwind point
+        t3 = (xxdn - xx) * rdsup
+
+        t2 = 0.5*(t1 + t3)
+        t2 = (sign(1.0, t1) + sign(1.0, t3)) * min(abs(t1), abs(t3), abs(0.5*t2))
+      
+        dtup = dsup1*(xxup + xx) + dsup2*(t1-t2)
+        dtdn = dsup1*(xxdn + xx) + dsup2*(t2-t3)
+
+        dt = merge(dtdn, dtup, edge)
+        dt2 = dt*dt
+        ex=exp(-dt) 
+
+        ! Compute the U functions, use Taylor expansion for small dt
+        ! to avoid accuracy issues with 1-(number slightly smaller than one)
+        if ( dt > 1e-3 ) then
+          U0 = 1.0d0 - ex
+          U1 = dt - U0
+          U2 = dt2 - 2.0d0 * U1 
+        else
+          dt3 = dt2*dt
+          U1 = half * dt2 - one_sixth * dt3
+          U0 = dt - U1
+          U2 = one_third * dt3
+        end if
+
+        ss = work(f,x,y,z0,2)
+        ssdn = work(f,x,y,zdn,2)
+        ssup = work(f,x,y,zup,2)
+
+        ! one sided dS/dt at upwind point
+        t1 = ss - ssup
+        t3 = ssdn - ss
+
+        t2 = 0.5*(t1 + t3)
+        t2 = (sign(1.0, t1) + sign(1.0, t3)) * min(abs(t1), abs(t3), abs(0.5*t2))
+
+        if (edge) then
+          t3 = t3 / dtdn
+          t2 = t2 * rdsup / xx
+          a = (t3-t2) / dtdn
+          b = 2*t2 - t3
+          c = ss
+        else
+          t1 = t1 / dtup
+          t2 = t2 * rdsup / xx
+          a = (t2-t1) / dtup
+          b = 2*t1 - t2
+          c = ssup
+        endif
+
+        ! intensity at center point
+        Inu = Inuup*ex + a*U2 + b*U1 + c*U0
+        work(f,x,y,z,3) = Inu
+      end do ! f-loop
+    end do
+    end do
+  end do ! z-loop
+  call trace%end(itimer)
+END SUBROUTINE long_char_quadratic2
 
 !===============================================================================
 SUBROUTINE get_vproj (self, vproj, vec, rotate, i_mu)

@@ -26,19 +26,21 @@ MODULE spectrum_mod
 
     public :: set_weights
     real(8), public :: nu_tolerance = 1d6
+    logical :: give_lam=.false.
+    logical :: in_log=.false.
+    real(8) :: daa=0, aa_red=0, aa_blue=0, R=0
+    integer :: nnu=0
+    character(len=256) :: lam_file=''
 
   contains
     !===============================================================================
     SUBROUTINE init(self)
       class(spectrum_type) :: self
-      real(8), save:: daa=0, aa_red=0, aa_blue=0, R=0
       real(8), dimension(:), allocatable :: lam
       real(8) :: last, fac
-      integer :: iostat, i, nnu=0
-      logical :: give_lam=.false.
-      logical :: in_log=.false.
+      integer :: iostat, i, lunit
       namelist /spectrum_params/ daa, aa_red, aa_blue, nnu, give_lam, in_log, R
-      namelist /sp_wavelengths/ lam
+      namelist /sp_wavelengths/ lam, lam_file
       !-----------------------------------------------------------------------------
       rewind (io%input)
       read (io%input, spectrum_params, iostat=iostat)
@@ -54,6 +56,11 @@ MODULE spectrum_mod
         allocate(lam(nnu))
         rewind (io%input)
         read (io%input, sp_wavelengths, iostat=iostat)
+        if (lam_file /= '') then
+          open(newunit=lunit, file=trim(lam_file), form='FORMATTED')
+          read(lunit,*) lam
+          close(lunit)
+        endif
         if (iostat > 0) then
           rewind (io%input)
           read (io%input, sp_wavelengths)

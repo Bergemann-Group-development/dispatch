@@ -8,13 +8,14 @@ MODULE bbtrans_mod
   type :: bbtrans_type
     real(dp) :: nu0
     integer :: nnu ! number of frequencies in the line
-    real(dp) :: ga=0, gw1=0, gw2=0, gw3=0, gq=0 ! line broadening (damping) constants
-    real(dp) :: lower_ev, upper_g
+    real(dp) :: ga=0, gw1=0, gw2=0, gw3=0, gq=0, gv=0 ! line broadening (damping) constants
+    real(dp) :: lower_ev, upper_g, loggf
     !real(dp) :: gf
     real(dp) :: Aji, Aij, Bji, Bij ! Einstein coefficients, Bij is the
                               ! transition from the lower to the upper
                               ! level
-    logical :: active=.true., unsold
+    logical :: active=.true., unsold, used=.false.
+    logical, pointer :: used_ptr => null()
     integer :: iso_idx=0 ! isotope index for lines in line list
     ! Added to deal with multi component lines
     ! IO > 1 leads to the following being read from the atom file
@@ -26,7 +27,6 @@ MODULE bbtrans_mod
     integer :: i=0 ! lower level
   contains
     procedure :: init_einstein_coefficients
-    procedure :: profile
     procedure :: damping => line_damping
     procedure :: dampingH => line_dampingH
     procedure :: add_lte_opacities
@@ -60,32 +60,9 @@ contains
   END SUBROUTINE init_einstein_coefficients
 
   !====================================================================================
-  SUBROUTINE profile(self, q, vproj, inv_df, adamp, phi)
-    class(bbtrans_type), intent(in) :: self
-    real(8), dimension(:), intent(in) :: q
-    real(4), dimension(:,:,:), intent(in) :: vproj, inv_df, adamp
-    real(4), dimension(:,:,:,:), intent(inout) :: phi
-    real(4), dimension(:,:,:), allocatable :: psi, damp
-    real(4) :: scalar
-    integer :: f
-    !----------------------------------------------------------------------------------
-    allocate(psi, damp, mold=inv_df)
-    scalar = over_4pi / self%nu0
-    damp = adamp * inv_df * scalar
-
-    !DIR$ FORCEINLINE
-    do f=1, size(q)
-      phi(:,:,:,f) = (q(f) - vproj) * inv_df
-      phi(:,:,:,f) = voigt_function2(damp, phi(:,:,:,f))
-      phi(:,:,:,f) = phi(:,:,:,f) * inv_df
-    end do 
-  END SUBROUTINE profile
-  !------------------------------------------------------------------------------------
-
-  !====================================================================================
   SUBROUTINE add_lte_opacities(self, ired, iblue, nu, vproj, inv_df, EK_over_temp, dxij, inv_part, &
     ne, tothi, vbar2, stark_pe, unsold, chi, cont)
-    class(bbtrans_type), intent(in) :: self
+    class(bbtrans_type), intent(inout) :: self
     integer, intent(in) :: ired, iblue
     real(8), dimension(:), intent(in), contiguous :: nu
     real(4), dimension(:,:,:), intent(in), contiguous :: vproj, inv_df, inv_part
@@ -139,12 +116,15 @@ contains
         nj = inv_part(i,j,k) * exp(-ex)     ! this is nj/gj
         cf = nj * gj_Bji * (nij - 1.)       ! this is (ni*Bij - nj*Bji)*h/4pi
         cf = cf * idf
-        
+
         ! check if line peak is larger than continuum tolerance
+        ref = tolerance * cont(f0,i,j,k)
+        !call scater_voigt(f0,ired,iblue,a,qq,v,cf,idf,ref,chi(:,i,j,k))
+        
         vs = (qq(f0) - v) * idf
         lchi = voigt_function2(a, vs) * cf
-        ref = tolerance * cont(f0,i,j,k)
         if (lchi > ref) then
+          self%used_ptr = .true.
           ! if so, add and continue with blue wing
           chi(f0,i,j,k) = chi(f0,i,j,k) + lchi
           f1 = ired
@@ -476,6 +456,151 @@ contains
     end if
     h = h * isqp
   END FUNCTION dirty_voigt
+
+  !====================================================================================
+  SUBROUTINE scater_voigt(f0,ired,iblue,a,qq,vel,cf,idf,ref,chi)
+    integer, intent(in) :: f0, ired, iblue
+    real(4), intent(in) :: a, vel, cf, idf, ref
+    real(8), intent(in), dimension(:), contiguous :: qq
+    real(4), intent(inout), dimension(:), contiguous :: chi
+    ! this vectorizable voigt function is based on the paper by
+    ! hui, armstrong and wray, jqsrt 19, 509 (1977). it has been
+    ! checked agains the old landolt & boernstein standard voigt. errors
+    ! become significant (at the < 1 % level) around the "knee" between
+    ! the dopler core and the damping wings for a smaller than 1.e-3.
+    ! note that, as written here, the routine has no provision for
+    ! the trivial case a=0. the normalization is such that the integral
+    ! is sqrt(pi); i.e., a plain exp(-x**2) should be used at a=0.
+    ! the new landolt & boernstein gives a useful expression for the
+    ! small but finite a case.
+
+    ! coded by: a. nordlund/16-dec-82.
+    
+    ! WH: reprogrammed the algorithm:
+    ! - expanding the complex expression allows the loop to vectorize
+    ! - interleaving the evaluation of real and imaginary parts, as well
+    !   as the numerator and denominator reduces dependencies and thus
+    !   improves pipelining
+    !
+    ! The original expression was:
+    !
+    !    z=cmplx(a(i),-abs(v(i)))
+    !    h(i)=real(((((((   a6 *z+a5)*z+a4)*z+a3)*z+a2)*z+a1)*z+a0)/
+    !            & (((((((z+b6)*z+b5)*z+b4)*z+b3)*z+b2)*z+b1)*z+b0))
+    !
+
+    ! Single precision coefficients for the Hui et al. recipe
+    real(4), parameter :: a0 = 122.6079
+    real(4), parameter :: a1 = 214.3824
+    real(4), parameter :: a2 = 181.9285
+    real(4), parameter :: a3 = 93.15558
+    real(4), parameter :: a4 = 30.18014
+    real(4), parameter :: a5 = 5.912626
+    real(4), parameter :: a6 = 0.5641896
+    real(4), parameter :: b0 = 122.6079
+    real(4), parameter :: b1 = 352.7306
+    real(4), parameter :: b2 = 457.3345
+    real(4), parameter :: b3 = 348.7039
+    real(4), parameter :: b4 = 170.3540
+    real(4), parameter :: b5 = 53.99291
+    real(4), parameter :: b6 = 10.47986
+    real(4), parameter :: isqp = 0.5641895835 !1/sqrt(pi)
+    ! Compute denominator and numerator of the complex
+    ! expression in an alternating manner to improve the
+    ! pipelining:
+    ! c-prefixes: numerator
+    ! d-prefixes: denominator
+    real(4) :: vabs,zre,zim,cre1,cim1,cre2,cim2,dre1,dim1,dre2,dim2
+    real(4) :: fac, lchi
+    integer :: f, f1
+    !----------------------------------------------------------------------------------
+    fac = cf * isqp
+    lchi = voigt(a, qq(f0))
+    if (lchi > ref) then
+      ! if so, add and continue with blue wing
+      chi(f0) = chi(f0) + lchi
+      f1 = ired
+      do f=f0+1, iblue
+        lchi = voigt(a, qq(f))
+        ! if line opacity below tolerance exit and save f
+        if (lchi < ref) then
+          f1 = max(ired, 2*f0-f)
+          exit
+        endif
+        chi(f) = chi(f) + lchi
+      end do
+      ! now do red wing, starting where blue wing left off
+      do f=f1, f0-1
+        lchi = voigt(a, qq(f))
+        chi(f) = chi(f) + lchi
+      end do
+    endif
+
+  contains
+    function voigt(a,q) result(h)
+      real(4), intent(in) :: a
+      real(8), intent(in) :: q
+      real(4) :: v, h
+      !----------------------------------------------------------------------------------
+      v = (q - vel) * idf
+      vabs=abs(v)
+      zre=a
+      zim=-vabs
+
+      dre2=zre+b6
+
+      cim1=a6  *zim
+      dim1=(zre+dre2)*zim
+
+      cre1=a6  *zre        +a5
+      dre1=dre2*zre-zim*zim+b5
+
+      cim2=cim1*zre+cre1*zim
+      dim2=dim1*zre+dre1*zim
+
+      cre2=cre1*zre-cim1*zim+a4
+      dre2=dre1*zre-dim1*zim+b4
+
+      cim1=cim2*zre+cre2*zim
+      dim1=dim2*zre+dre2*zim
+
+      cre1=cre2*zre-cim2*zim+a3
+      dre1=dre2*zre-dim2*zim+b3
+
+      cim2=cim1*zre+cre1*zim
+      dim2=dim1*zre+dre1*zim
+
+      cre2=cre1*zre-cim1*zim+a2
+      dre2=dre1*zre-dim1*zim+b2
+
+      cim1=cim2*zre+cre2*zim
+      dim1=dim2*zre+dre2*zim
+
+      cre1=cre2*zre-cim2*zim+a1
+      dre1=dre2*zre-dim2*zim+b1
+
+      cim2=cim1*zre+cre1*zim
+      dim2=dim1*zre+dre1*zim
+
+      cre2=cre1*zre-cim1*zim+a0
+      dre2=dre1*zre-dim1*zim+b0
+
+      ! Gather numbers
+      cim2=cim2*dim2
+      dim2=dim2*dim2
+
+      cre2=cre2*dre2
+      dre2=dre2*dre2
+
+      ! Build the denominator and numerator
+      dre2=dre2+dim2
+      cre2=cre2+cim2
+
+      ! Divide
+      h=cre2/dre2
+      h = h * fac
+    end function voigt
+  END SUBROUTINE scater_voigt
 
   !====================================================================================
   PURE ELEMENTAL SUBROUTINE line_damping (self, adamp, ne, tothi, vbar2, stark_pe, unsold)

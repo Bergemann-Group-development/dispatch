@@ -46,10 +46,10 @@ $(EXEC): read_external_mod.o mpi_debug_mod.o
 # Dependencies
 read_external_mod.o         : io_mod.o mesh_mod.o task_list_mod.o experiment_mod.o \
                               trace_mod.o task_mod.o link_mod.o bits_mod.o halo_mod.o scaling_mod.o \
-                              units_mod.o timer_mod.o patch_mod.o download_mod.o list_mod.o read_marcs_mod.o \
-                              ray_patch_mod.o read_stagger_snapshot_mod.o
-read_stagger_snapshot_mod.o : io_mod.o os_mod.o eos_mod.o scaling_mod.o m3d_patch_mod.o
-experiment_mod.o            : trace_mod.o io_mod.o solver_mod.o kinds_mod.o m3d_halo_mod.o composition_patch_mod.o read_stagger_snapshot_mod.o
+                              units_mod.o timer_mod.o patch_mod.o download_mod.o list_mod.o \
+                              ray_patch_mod.o read_atmos_mod.o
+read_atmos_mod.o            : io_mod.o os_mod.o eos_mod.o scaling_mod.o m3d_patch_mod.o
+experiment_mod.o            : trace_mod.o io_mod.o solver_mod.o kinds_mod.o m3d_halo_mod.o composition_patch_mod.o read_atmos_mod.o
 dispatch.o                  : io_mod.o
 mmath_mod.o                 : refsor_mod.o unista_mod.o const_mod.o prec_mod.o search_mod.o
 guards_mod.o                : math_mod.o
@@ -70,4 +70,3 @@ ray_mod.o                   : mmath_mod.o radau_mod.o
 prec_mod.o                  : const_mod.o os_mod.o
 patch_mod.o                 : os_mod.o
 mpi_debug_mod.o             : mpi_mod.o io_mod.o
-read_marcs_mod.o            : io_mod.o prec_mod.o op_math_mod.o os_mod.o

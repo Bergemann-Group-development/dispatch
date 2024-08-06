@@ -29,10 +29,13 @@ MODULE m3d_patch_mod
                         use_classic_col
     USE ion_mod, only: debye_shield
     USE composition_mod, only: composition_type, scattering_absorption
-    USE ray_mod
+    USE ray_mod, only: one_dimensional, set_carlson_quadratures, set_radau_quadratures, set_lobatto_quadratures, &
+                       set_gauss_quadratures, set_custom_quadratures, set_grid_quadratures
     USE m3d_debug_mod
-    USE bbtrans_mod, only: disable_stark, disable_vdw, disable_ga
+    USE bbtrans_mod, only: bbtrans_type, disable_stark, disable_vdw, disable_ga
     USE bftrans_mod, only: h_occupation_probability
+    USE element_mod, only: element_type
+    USE ion_mod, only: ion_type
     implicit none
     private
 
@@ -113,6 +116,7 @@ MODULE m3d_patch_mod
       procedure :: sort_nbors
       procedure :: rotate_cube8
       procedure :: rotate_cube4
+      procedure :: print_linelist
     end type m3d_patch_t
   
     !-----------------------------------------------------------------------------
@@ -133,14 +137,15 @@ MODULE m3d_patch_mod
     logical, public, save :: overlapping_bb=.true., overlapping_bf=.true.
     logical, public, save :: absmet_in_output=.false., column_by_column=.false.
     logical, public, save :: print_start=.false., print_send=.false.
-    logical, public, save :: Jnu_to_file=.true., amr=.false.
+    logical, public, save :: Jnu_to_file=.true., amr=.true.
     logical, public, save :: rotate_atmos=.false., rotate_continuum=.false.
-    logical, public, save :: interpolated_3d_atmos=.false., make_eos=.false.
+    logical, public, save :: make_eos=.false.
     logical, public, save :: save_Inu=.false., save_chi=.false.
     real(8), public, save :: dlam=100.
     real(8), public, dimension(:), allocatable :: rank_lvlerr
     character(len=128), save :: save_patch_kind=''
     character(len=512), public, save:: custom_mu=''
+    character(len=128), public, save :: long_solver='linear'
     real(4), public :: vel_max=0.0
     real(8), public :: ray_offset(2)=[0.,0.], pivot_z=-1
     integer, public :: ng_step=-1, ng_start=8
@@ -159,7 +164,6 @@ MODULE m3d_patch_mod
     logical, save :: first_time=.true.
     logical, save :: on=.true.
     integer :: iostat, m(6), i
-    character(len=512) :: command
     integer, save :: n_nu=0, itimer=0, long_ntheta=4, long_nphi=4, short_ntheta=2, short_nphi=4
     character(len=32), save :: short_scheme='radau'
     character(len=32), save :: long_scheme='lobatto'
@@ -172,7 +176,8 @@ MODULE m3d_patch_mod
     disable_vdw, disable_ga, pivot_z, use_vel, save_Qrad, save_resolved, rotate_continuum, &
     absmet_in_output, print_lock, make_eos, ng_step, ng_start, scattering_absorption, &
     column_by_column, rotate_atmos, Jnu_to_file, preconditioning, save_inu, save_chi, &
-    long_scheme, long_ntheta, long_nphi, short_scheme, short_ntheta, short_nphi, debye_shield
+    long_scheme, long_ntheta, long_nphi, short_scheme, short_ntheta, short_nphi, &
+    debye_shield, long_solver
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%pre_init', itimer=itimer)
     self%type = trim(self%kind)
@@ -189,14 +194,7 @@ MODULE m3d_patch_mod
         read (io%input, m3d_params)
       end if
       call io%namelist_warning ('m3d_params', iostat)
-      if (mpi%master) then
-        call os%mkdir(trim(io%run_dir)//'save')
-        write (command, *) 'rm -f ', trim(io%run_dir), '*.txt ', trim(io%run_dir), '*.bin'
-        call execute_command_line (trim(command), exitstat=iostat)
-        write (command, *) 'rm -f ', trim(io%run_dir), 'save/*.txt ', trim(io%run_dir), 'save/*.bin'
-        call execute_command_line (trim(command), exitstat=iostat)
-      endif
-      rotate_atmos = rotate_atmos .and. interpolated_3d_atmos .and. .not. column_by_column
+      rotate_atmos = rotate_atmos .and. .not. (one_dimensional .or. column_by_column)
       short_scheme = lowercase(short_scheme)
       long_scheme = lowercase(long_scheme)
       !-------------------------------------------------------------------------
@@ -945,6 +943,44 @@ MODULE m3d_patch_mod
       call trace%end (itimer)
     endif
   END SUBROUTINE allocate_mem
+
+  !===============================================================================
+  SUBROUTINE print_linelist (self, comp)
+    class(m3d_patch_t), target :: self
+    class(composition_type), target :: comp
+    class(element_type), pointer :: element
+    class(ion_type), pointer :: ion
+    !class(molec_type), pointer :: mol
+    class(bbtrans_type), pointer :: line
+    integer :: lunit, i, j, l
+    character(len=256) :: linelist_out_file
+    real(8) :: lam_vac
+    ! ----------------------------------------------------------------------------
+    linelist_out_file = trim(io%run_dir) // 'linelist_out.txt'
+    open(newunit=lunit, file=linelist_out_file, form='formatted')
+    write(lunit, "(A8, A4, A12, 2(A8), A5, 3(A11))") &
+    'ion', 'iso', 'lam_vac', 'loggf', 'ev_i', 'g_j', 'ga', 'gv', 'gq'
+  
+    do i=1, comp%nel
+      element => comp%elements(i)
+      if (.not. any(element%ions%in_linelist)) cycle
+  
+      do j=lbound(element%ions,1), ubound(element%ions,1)
+        ion => element%ions(j)
+        if (ion%nline == 0) cycle
+  
+        do l=1, ion%nline
+          line => ion%line(l)
+          if (.not. line%active .or. .not. line%used_ptr) cycle
+  
+          lam_vac = CC/line%nu0*1e8
+          write(lunit, "(A1, A6, A1, I4, F12.4, 2(F8.3), F5.1, 3(ES11.3))") "'", ion%id, "'", &
+          line%iso_idx, lam_vac, line%loggf, line%lower_ev, line%upper_g, line%ga, line%gv, line%gq
+        end do
+      end do
+    end do
+    close(lunit)
+  END SUBROUTINE print_linelist
 
   !===============================================================================
   SUBROUTINE check_mem_NaN (self)
