@@ -6,14 +6,14 @@ MODULE composition_patch_mod
   USE gpatch_mod
   USE handyfuncs_mod
   USE optab_mod, only: optab
-  USE ion_mod, only: ion_type
+  USE ion_mod, only: ion_type, debye_shield
   USE element_mod, only: element_type
   USE m3d_patch_mod,   only: m3d_patch_t, composition, comoving_frame, ilambd, dlam, &
   use_density, use_ne, overlapping_bb, overlapping_bf, line_blanketing, binned_opac, &
   save_Qrad, maxiter, rotate_atmos, long_vec, sample_back_opac, decouple_continuum, &
   linelist_in_output, sample_back_opac_in_output, make_eos
   USE m3d_debug_mod
-  USE composition_mod, only: composition_type, exclude_elements
+  USE composition_mod, only: composition_type, exclude_elements, switch, mhd_eos
   USE atom_patch_mod,  only: atom_patch_t
   USE nlte_patch_mod, only:nlte_patch_t
   USE bftrans_mod, only: H_occupation_probability
@@ -71,7 +71,7 @@ SUBROUTINE composition_pre_init (self)
   logical, save :: first_time=.true., absmet_big_end=.false., external_sp
   namelist /composition_params/ verbose, absdat_file, abund_file, absmet_file, &
   absmet_big_end, isotope_file, molec_file, H_occupation_probability, opac_table, &
-  sample_back_opac, sample_back_opac_in_output, &
+  sample_back_opac, sample_back_opac_in_output, switch, mhd_eos, debye_shield, &
   dtemp, ldne, ldrho, ldtemp, tmolim
   namelist /linelist_params/ dlam, exclude_elements, linelist_file, line_lists, &
   linelist_in_output, tolerance

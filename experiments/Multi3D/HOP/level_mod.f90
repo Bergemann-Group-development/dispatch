@@ -35,17 +35,18 @@ contains
             dum = -EK_over_temp*self%xion
         endif 
 
-        if (dum < -100.d0) then
-            boltzmann = 0
-        else
-            if (.not. present(natural_log)) then
-                boltzmann = exp(dum * prec_err) ! keep error for consistency here
-            elseif(natural_log) then
-                boltzmann = exp(dum)
-            else
-                boltzmann = exp(dum * prec_err)
-            endif
-        endif
+        boltzmann = exp(dum)
+        !if (dum < -100.d0) then
+        !    boltzmann = 0
+        !else
+        !    if (.not. present(natural_log)) then
+        !        boltzmann = exp(dum * prec_err) ! keep error for consistency here
+        !    elseif(natural_log) then
+        !        boltzmann = exp(dum)
+        !    else
+        !        boltzmann = exp(dum * prec_err)
+        !    endif
+        !endif
     end FUNCTION boltzmann
 
     !===============================================================================

@@ -27,7 +27,6 @@ MODULE m3d_patch_mod
     USE spectrum_mod, only: nu_tolerance
     USE atom_mod, only: atom_type, atomic_spectrum_type, lse_no_pivot, lse_solver, m1d_legacy_mode, nq_fac, &
                         use_classic_col
-    USE ion_mod, only: debye_shield
     USE composition_mod, only: composition_type, scattering_absorption
     USE ray_mod, only: one_dimensional, set_carlson_quadratures, set_radau_quadratures, set_lobatto_quadratures, &
                        set_gauss_quadratures, set_custom_quadratures, set_grid_quadratures
@@ -177,7 +176,7 @@ MODULE m3d_patch_mod
     absmet_in_output, print_lock, make_eos, ng_step, ng_start, scattering_absorption, &
     column_by_column, rotate_atmos, Jnu_to_file, preconditioning, save_inu, save_chi, &
     long_scheme, long_ntheta, long_nphi, short_scheme, short_ntheta, short_nphi, &
-    debye_shield, long_solver
+    long_solver
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%pre_init', itimer=itimer)
     self%type = trim(self%kind)

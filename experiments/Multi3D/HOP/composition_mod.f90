@@ -62,7 +62,8 @@ MODULE composition_mod
     end type
 
     character(128), public, save :: exclude_elements=''
-    logical, public :: scattering_absorption=.true.
+    logical, public :: scattering_absorption=.true., mhd_eos=.false.
+    integer, public :: switch=1
 
 contains
 
@@ -177,6 +178,7 @@ contains
             do j=1, elements(i)%nion
                 ion => element%ions(j)
                 ion%j = j
+                ion%dxi_fac = j
 
                 !g0 = THE STATISTICAL WEIGHT OF THE GROUND LEVEL
                 !nk = THE NUMBER OF ELECTRON CONFIGURATIONS CONSIDERED.
@@ -333,6 +335,7 @@ contains
         Hm%fixed_part = .true.
         Hm%parco = 1
         Hm%xion = 0.754
+        Hm%dxi_fac = 2
         ! --- Different Hm ionisation in Oslo legacy code ---!
         !Hm%xion = 0.747
         ! --------------------------------------------------!
@@ -1246,7 +1249,7 @@ contains
         class(ion_type), pointer :: ion, HI, HeI
         real(dp), intent(in),  dimension(:,:,:) :: temp, ne
         real(dp), intent(out), dimension(:,:,:) :: rho
-        real(dp), dimension(:,:,:), allocatable :: fe, xnen, xnecno, toth
+        real(dp), dimension(:,:,:), allocatable :: fe, xnen, xnecno, toth, dxi, hpart
         integer :: i, j, itimer=0, itimer2=0, itimer3=0
         !---------------------------------------------------------------------------
         call trace%begin ('composition_type%thermal_equilibrium', itimer=itimer)
@@ -1273,7 +1276,14 @@ contains
 
                 ! number of electrons from ion
                 xnen = ion%f * (j-1)
-                if (element%id /= 'H') fe = fe + xnen
+                !if (element%id /= 'H') fe = fe + xnen
+
+                select case (element%id)
+                case ('H','He')
+                  ! do not add
+                case default
+                  fe = fe + xnen
+                end select
 
                 select case (element%id)
                 case ('H','C','N','O')
@@ -1285,16 +1295,21 @@ contains
             end do
         end do
 
-        !if (H_occupation_probability) then
-        !  do i=1, 3
-        !    toth = ne / (fe + HI%above%f)
-        !    HI%n = HI%f * toth
-        !    HeI%n = HeI%f * toth
-        !    call self%Hoccupation_partition(HI%n, HeI%n)
-        !    call self%elements(1)%compute_ion_equilibrium(self%EK_over_temp, self%saha, dxi=self%zero)
-        !  end do
-        !endif
-        fe = fe + HI%above%f
+        if (mhd_eos) then
+          allocate(dxi, hpart, mold=self%temp)
+          do i=1, 5
+            toth = ne / (fe + HI%above%f + HeI%above%f + 2*HeI%above%above%f)
+            HI%n = HI%f * toth
+            HeI%n = HeI%f * toth
+            call self%Hoccupation_partition(HI%n, HeI%n, hpart)
+            hpart = max(1e-40, hpart)
+            dxi = - log(hpart*HI%part) / self%EK_over_temp
+            call self%elements(1)%compute_ion_equilibrium(self%EK_over_temp, self%saha, dxi=dxi)
+            call self%elements(2)%compute_ion_equilibrium(self%EK_over_temp, self%saha, dxi=dxi)
+          end do
+        endif
+
+        fe = fe + HI%above%f + HeI%above%f + 2*HeI%above%above%f
 
         if (self%nmolec > 0) then
             call self%molecular_equilibrium(self%temp, self%teta, self%pe, self%dxi, xnecno, fe)
@@ -1421,18 +1436,16 @@ contains
     END SUBROUTINE iterate_thermal_eq
 
     !===============================================================================
-    SUBROUTINE Hoccupation_partition(self, nh, nhe)
+    SUBROUTINE Hoccupation_partition(self, nh, nhe, part)
         class(composition_type), target :: self
         real(dp), intent(in), dimension(:,:,:) :: nh, nhe
+        real(dp), intent(out), dimension(:,:,:) :: part
         class(ion_type), pointer :: HI
         class(level_type), pointer :: lvl
-        real(dp), dimension(:,:,:), allocatable :: h1, part
-        integer, dimension(:,:,:), allocatable :: nniv
         integer :: i, itimer=0, itimer2=0
         !---------------------------------------------------------------------------
         call trace%begin ('composition_type%compute_occupation_weights', itimer=itimer)
         call self%ion_by_id('H I', HI)
-        allocate(part, mold=self%temp)
         if (.not. allocated(HI%levels)) allocate(HI%levels(HI%nk))
         if (.not. allocated(self%shield)) then
             allocate(self%shield, mold=self%temp)
@@ -1456,7 +1469,6 @@ contains
           call trace%end (itimer2)
           part = part + lvl%w * lvl%f
         end do
-        HI%part = 1.d0 / part
         call trace%end (itimer)
     END SUBROUTINE Hoccupation_partition
 

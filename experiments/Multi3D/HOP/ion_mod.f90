@@ -38,7 +38,7 @@ MODULE ion_mod
         type(ion_type), pointer :: above => null()
         type(ion_type), pointer :: below => null()
         class(particle_pointer_t), allocatable :: molecules(:)
-        integer :: active
+        integer :: active, dxi_fac
         real(dp) :: parco
         real(dp), pointer :: abund
         real(dp) :: acolc, tcolc, aradc, xradc, adic, bdic, t0c, t1c
@@ -65,14 +65,9 @@ elemental real(dp) FUNCTION saha_eq(self, EK_over_temp, saha, dxi, partition_rat
     class(ion_type), intent(in) :: self
     real(dp), intent(in) :: EK_over_temp, saha, dxi
     real(dp), intent(in), optional :: partition_ratio
-    real(dp) :: dxi_j, partp
+    real(dp) :: dxi_j, tmp
     !---------------------------------------------------------------------------
-    if (self%id == 'H -') then
-        dxi_j = 2*dxi
-    else
-        dxi_j = dxi*self%j
-    endif
-
+    dxi_j = dxi*self%dxi_fac
     saha_eq = saha * self%boltzmann(EK_over_temp, dxi=dxi_j) * partition_ratio
 END FUNCTION saha_eq
 
