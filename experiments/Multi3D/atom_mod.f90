@@ -680,66 +680,68 @@ MODULE atom_mod
       print *, j, " bound-free transitions auto-completed using Kramer's formula!"
     endif
 
-    read(latom, '(A)') dummy_string
-    call count_words(dummy_string, ntemp)
-    ntemp = ntemp - 3
+    if (ncol > 0) then
+      read(latom, '(A)') dummy_string
+      call count_words(dummy_string, ntemp)
+      ntemp = ntemp - 3
 
-    allocate( self%coll(ncol) )
-    call os%mem_register(storage_size(self%coll), ncol, label='atom%coll')
-    call os%allocate(self%tgrid, [ntemp, 1],  label='atom%tgrid')
-    call os%allocate(self%cgrid, [ntemp, ncol],    label='atom%cgrid')
-    call os%allocate(self%dcdt,  [ntemp, ncol],    label='atom%dcdt')
+      allocate( self%coll(ncol) )
+      call os%mem_register(storage_size(self%coll), ncol, label='atom%coll')
+      call os%allocate(self%tgrid, [ntemp, 1],  label='atom%tgrid')
+      call os%allocate(self%cgrid, [ntemp, ncol],    label='atom%cgrid')
+      call os%allocate(self%dcdt,  [ntemp, ncol],    label='atom%dcdt')
 
-    read(dummy_string, *), str1, str2, str3, self%tgrid(:, 1)
+      read(dummy_string, *), str1, str2, str3, self%tgrid(:, 1)
 
-    do i=1, ncol
-      call nextentry(latom) 
-      read(latom,*) idx, key, l, u, self%cgrid(1:ntemp,i)
-      self%cgrid(1:ntemp,i) = log(self%cgrid(1:ntemp,i))
-      
-      if (l==u) then
-        write(stdout, *) "ll==ul for process ", key, l, u
-        abort = .true.
-      endif
-
-      ! within level range
-      if(l < 0 .or. u > self%nlevel) then
-        write(stdout,*) 'key=', key
-        write(stdout,*) 'll=',  l 
-        write(stdout,*) 'ul=',  u 
-        write(stdout,*) 'nk=',  self%nlevel
-        write(stdout,*) 'read_atom:  level index outside range (1,nk)'
-        abort = .true.
-      endif
-
-      select case(trim(key))
-      case('OHMEGA','CE','CH','CI','FIXRAT','CH0','CHI')
-        col => self%coll(i)
-        col%key = key
-        col%ll = l
-        col%ul = u
+      do i=1, ncol
+        call nextentry(latom) 
+        read(latom,*) idx, key, l, u, self%cgrid(1:ntemp,i)
+        self%cgrid(1:ntemp,i) = log(self%cgrid(1:ntemp,i))
         
-        ! set derivatives for 3rd order hermite interpolation
-        call hermite_derivative(self%dcdt(1:ntemp,i), self%tgrid(1:ntemp,1), self%cgrid(1:ntemp,i))
-        col%nc = ntemp
-        col%itemp = 1
-        tri = (col%ul-1)*(col%ul-2)/2 + col%ll
-        !self%cdata(tri) = -1.0 ! flag non-classical recipe
+        if (l==u) then
+          write(stdout, *) "ll==ul for process ", key, l, u
+          abort = .true.
+        endif
+
+        ! within level range
+        if(l < 0 .or. u > self%nlevel) then
+          write(stdout,*) 'key=', key
+          write(stdout,*) 'll=',  l 
+          write(stdout,*) 'ul=',  u 
+          write(stdout,*) 'nk=',  self%nlevel
+          write(stdout,*) 'read_atom:  level index outside range (1,nk)'
+          abort = .true.
+        endif
 
         select case(trim(key))
-        case ('CE', 'CI')
-          if (self%ecol(tri)) then
-            print '(A, I4, I4, A4)', 'Collisional rate already set for transition ', col%ll, col%ul, trim(key)
-          endif
-          self%ecol(tri) = .true.
-        case ('CH', 'CHI')
-          if (self%hcol(tri)) then
-            print '(A, I4, I4, A4)', 'Collisional rate already set for transition ', col%ll, col%ul, trim(key)
-          endif
-          self%hcol(tri) = .true.
+        case('OHMEGA','CE','CH','CI','FIXRAT','CH0','CHI')
+          col => self%coll(i)
+          col%key = key
+          col%ll = l
+          col%ul = u
+          
+          ! set derivatives for 3rd order hermite interpolation
+          call hermite_derivative(self%dcdt(1:ntemp,i), self%tgrid(1:ntemp,1), self%cgrid(1:ntemp,i))
+          col%nc = ntemp
+          col%itemp = 1
+          tri = (col%ul-1)*(col%ul-2)/2 + col%ll
+          !self%cdata(tri) = -1.0 ! flag non-classical recipe
+
+          select case(trim(key))
+          case ('CE', 'CI')
+            if (self%ecol(tri)) then
+              print '(A, I4, I4, A4)', 'Collisional rate already set for transition ', col%ll, col%ul, trim(key)
+            endif
+            self%ecol(tri) = .true.
+          case ('CH', 'CHI')
+            if (self%hcol(tri)) then
+              print '(A, I4, I4, A4)', 'Collisional rate already set for transition ', col%ll, col%ul, trim(key)
+            endif
+            self%hcol(tri) = .true.
+          end select
         end select
-      end select
-    end do
+      end do
+    endif
     close(latom)
     if (abort) stop
   END SUBROUTINE read_pandas

@@ -751,8 +751,7 @@ contains
                         call line%prepare_VanderWaals(line%gv, j, cnt_ev, vbar2e4)
                     endif
                 endif
-
-                line%used_ptr => line%used
+                allocate(line%used, source=.false.)
                 if (line%active) nactive = nactive + 1
                 ntotal = ntotal + 1
             end do
@@ -1312,7 +1311,7 @@ contains
         fe = fe + HI%above%f + HeI%above%f + 2*HeI%above%above%f
 
         if (self%nmolec > 0) then
-            call self%molecular_equilibrium(self%temp, self%teta, self%pe, self%dxi, xnecno, fe)
+            call self%molecular_equilibrium(self%temp, self%teta, self%pe, xnecno, fe)
         endif
 
         ! total hydrogen number density, computed from scratch
@@ -1742,9 +1741,9 @@ contains
     END SUBROUTINE get_totn
 
     !===============================================================================
-    SUBROUTINE molecular_equilibrium(self, temp, teta, pe, dxi, xnecno, fe)
+    SUBROUTINE molecular_equilibrium(self, temp, teta, pe, xnecno, fe)
         class(composition_type), target :: self
-        real(dp), dimension(:,:,:), intent(in) :: temp, pe, teta, dxi, xnecno
+        real(dp), dimension(:,:,:), intent(in) :: temp, pe, teta, xnecno
         real(dp), dimension(:,:,:), intent(inout) :: fe
         real(dp), dimension(:,:,:), allocatable :: r, s, b, pefe, p, q
         class(molec_type), pointer :: molecules(:), molecule

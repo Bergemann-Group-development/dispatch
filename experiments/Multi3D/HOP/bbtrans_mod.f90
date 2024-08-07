@@ -14,8 +14,8 @@ MODULE bbtrans_mod
     real(dp) :: Aji, Aij, Bji, Bij ! Einstein coefficients, Bij is the
                               ! transition from the lower to the upper
                               ! level
-    logical :: active=.true., unsold, used=.false.
-    logical, pointer :: used_ptr => null()
+    logical :: active=.true., unsold
+    logical, pointer :: used => null()
     integer :: iso_idx=0 ! isotope index for lines in line list
     ! Added to deal with multi component lines
     ! IO > 1 leads to the following being read from the atom file
@@ -73,6 +73,7 @@ contains
     real(4) :: ex, ni, nj, nij, upper_ev, nu0_ev, scalar, vs, lchi
     real(4) :: phi, a, idf, cf, v, ref, ekt, gj_Bji
     integer :: i,j,k,f, f0, f1, m(3), hi, hj, itimer=0
+    logical :: used
     !----------------------------------------------------------------------------------
     !call trace%begin('add_lte_opacities_1', itimer=itimer)
     m = shape(vproj)
@@ -84,6 +85,7 @@ contains
     allocate(qq(ired:iblue))
     qq(ired:iblue) = nu(ired:iblue) / self%nu0 - 1
     f0 = minloc(abs(qq),1) + ired - 1
+    used = .false.
     
     do k=1, m(3)
     do j=1, m(2)
@@ -124,7 +126,7 @@ contains
         vs = (qq(f0) - v) * idf
         lchi = voigt_function2(a, vs) * cf
         if (lchi > ref) then
-          self%used_ptr = .true.
+          used = .true.
           ! if so, add and continue with blue wing
           chi(f0,i,j,k) = chi(f0,i,j,k) + lchi
           f1 = ired
@@ -149,6 +151,7 @@ contains
     end do
     end do
     end do
+    self%used = used
     !call trace%end(itimer)
   END SUBROUTINE add_lte_opacities
   !------------------------------------------------------------------------------------

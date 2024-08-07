@@ -2,6 +2,7 @@ import io, types
 import pandas as pd
 from .fast_trans import fast_trans
 from .auxfuncs import *
+from .atom import atom_class
 
 formatters = {'ga':'{:.3e}'.format,
               'ev':'{:.6f}'.format,
@@ -66,9 +67,9 @@ class pandas_atom(object):
     self.awgt = self.ai * UU
 
     self.lvl_tab = self.lvl.columns
-    self.bbt_tab = self.bbt.columns
-    self.bft_tab = self.bft.columns
-    self.col_tab = self.col.columns
+    if hasattr(self, 'bbt'): self.bbt_tab = self.bbt.columns
+    if hasattr(self, 'bft'): self.bft_tab = self.bft.columns
+    if hasattr(self, 'col'): self.col_tab = self.col.columns
 
     init = np.frompyfunc(fast_trans, 2, 1)
     self.trans = init(np.arange(self.nline), self)
@@ -88,19 +89,21 @@ class pandas_atom(object):
     cls.bbt = pd.read_csv(nrows=cls.nline, **pdkwargs)
     pdkwargs['header'] = 3+cls.nk+1+cls.nline+1
     cls.bft = pd.read_csv(nrows=nnu_bf, **pdkwargs)
-    pdkwargs['header'] = 3+cls.nk+1+cls.nline+1+nnu_bf+1
-    cls.col = pd.read_csv(nrows=cls.ncol, **pdkwargs)
+    if cls.ncol > 0:
+      pdkwargs['header'] = 3+cls.nk+1+cls.nline+1+nnu_bf+1
+      cls.col = pd.read_csv(nrows=cls.ncol, **pdkwargs)
     cls.bbt = cls.bbt.rename(columns={'lam_air':'lam0'})
     return cls()
   
   @classmethod
   def from_old(cls, atom_file):
     atom = atom_class(atom_file, qnorm=10., read_bf=True, read_coll=True, sanity_check=True)
-    fast = fast_atom(atom_file, qnorm=10.)
+    fast = fast_atom(atom_file)
     cls.id = atom.id
     cls.abnd = atom.abnd
     cls.ai = atom.ai
     cls.nk = atom.nk
+    cls.nline = atom.nline
     cls.lvl = fast.level[['ev', 'g', 'ion', 'label']]
 
     bb = fast.bbt.copy()
@@ -116,34 +119,48 @@ class pandas_atom(object):
     bf['alpha'] = np.concatenate([c.alfac for c in cont])
     cls.bft = bf
 
-    ctemp = atom.colls[0].coltemp
-    crate = np.array([c.colrate for c in atom.colls])
-    cl = pd.DataFrame(data=crate, columns=ctemp)
-    cl['key'] = [c.key for c in atom.colls]
-    cl['i'] = [c.lower.i+1 for c in atom.colls]
-    cl['j'] = [c.upper.i+1 for c in atom.colls]
-    index = list(cl.columns[-3:]) + list(cl.columns[:-3])
-    cls.col = cl[index]
+    if len(atom.colls) > 0:
+      ctemp = atom.colls[0].coltemp
+      crate = np.array([c.colrate for c in atom.colls])
+      cl = pd.DataFrame(data=crate, columns=ctemp)
+      cl['key'] = [c.key for c in atom.colls]
+      cl['i'] = [c.lower.i+1 for c in atom.colls]
+      cl['j'] = [c.upper.i+1 for c in atom.colls]
+      index = list(cl.columns[-3:]) + list(cl.columns[:-3])
+      cls.col = cl[index]
     return cls()
 
   def write(self, out_file):
-    for t in self.col.columns[3:].values:
-      formatters[t]='{:.2e}'.format
-    lvl = self.lvl[self.lvl_tab].sort_values('ev', ignore_index=True)
-    bbt = self.bbt[self.bbt_tab].sort_values('lam0', ignore_index=True)
-    bft = self.bft[self.bft_tab].sort_values(['i', 'lam_air'], ascending=[True, False], ignore_index=True)
-    col = self.col[self.col_tab].sort_values(['key', 'i', 'j'], ascending=[True, True, True], ignore_index=True)
 
-    bbt = bbt.rename(columns={'lam0':'lam_air'})
+    lvl = self.lvl[self.lvl_tab].sort_values('ev', ignore_index=True)
+
+    if hasattr(self, 'bbt'):
+      bbt = self.bbt[self.bbt_tab].sort_values('lam0', ignore_index=True)
+      bbt = bbt.rename(columns={'lam0':'lam_air'})
+    else:
+      bbt = []
+
+    if hasattr(self, 'bft'):
+      bft = self.bft[self.bft_tab].sort_values(['i', 'lam_air'], ascending=[True, False], ignore_index=True)
+    else:
+      bft = []
+
+    if hasattr(self, 'col'):
+      for t in self.col.columns[3:].values:
+        formatters[t]='{:.2e}'.format
+
+      col = self.col[self.col_tab].sort_values(['key', 'i', 'j'], ascending=[True, True, True], ignore_index=True)
+    else:
+      col = []
 
     f = open(out_file, 'w+')
     f.write(f'{self.id:}\n')
     f.write(f'{self.abnd:} {self.ai:}\n')
     f.write(f'{len(lvl):} {len(bbt):} {len(bft):} {len(col):}\n')
     f.write(lvl.to_string(formatters=formatters) + '\n')
-    f.write(bbt.to_string(formatters=formatters) + '\n')
-    f.write(bft.to_string(formatters=formatters, index=False) + '\n')
-    f.write(col.to_string(formatters=formatters) + '\n')
+    if len(bbt)>0: f.write(bbt.to_string(formatters=formatters) + '\n')
+    if len(bft)>0: f.write(bft.to_string(formatters=formatters, index=False) + '\n')
+    if len(col)>0: f.write(col.to_string(formatters=formatters) + '\n')
     f.close()
 
   def load_sp(self, lam, qnorm):

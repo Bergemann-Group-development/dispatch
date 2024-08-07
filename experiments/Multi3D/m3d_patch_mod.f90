@@ -970,7 +970,7 @@ MODULE m3d_patch_mod
   
         do l=1, ion%nline
           line => ion%line(l)
-          if (.not. line%active .or. .not. line%used_ptr) cycle
+          if (.not. line%active .or. .not. line%used) cycle
   
           lam_vac = CC/line%nu0*1e8
           write(lunit, "(A1, A6, A1, I4, F12.4, 2(F8.3), F5.1, 3(ES11.3))") "'", ion%id, "'", &

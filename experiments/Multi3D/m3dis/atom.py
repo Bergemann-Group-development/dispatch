@@ -109,19 +109,22 @@ class atom_class(object):
 
         if trans is None: trans = self.trans
 
-        labels = [lvl.label.strip("'").split()[-1] for lvl in levels]
-        labels = [convert_label_to_x_axis(label) for label in labels]
-        labels = np.array([label.replace('*', r'$^o$') for label in labels if label is not None])
-        ev  = np.array([lvl.ev  for lvl, label in zip(levels, labels) if label is not None])
+        ev = np.array([lvl.ev for lvl in levels])
+        olabels = np.array([lvl.label.strip("'").split()[-1] for lvl in levels])
+        labels = [convert_label_to_x_axis(label) for label in olabels]
+        mask = np.array([label is None for label in labels])
+        labels = np.array([label.replace('*', r'$^o$') if label is not None else None for label in labels])
 
-        ulabels, idx, xlabel = np.unique([l
-                                    .replace('S', '1')
-                                    .replace('P', '2')
-                                    .replace('D', '3')
-                                    .replace('F', '4')
-                                    for l in labels],
-                                    return_index=True,
-                                    return_inverse=True)
+        num_labels = [l
+                .replace('S', '1')
+                .replace('P', '2')
+                .replace('D', '3')
+                .replace('F', '4')
+                if l is not None else '0'
+                for l in labels]
+        
+        labels[mask] = olabels[mask]
+        ulabels, idx, xlabel = np.unique(num_labels, return_index=True, return_inverse=True)
 
         lower = np.array([line.lower.i for line in trans])
         upper = np.array([line.upper.i for line in trans])
