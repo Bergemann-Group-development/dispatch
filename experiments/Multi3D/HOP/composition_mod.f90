@@ -63,6 +63,7 @@ MODULE composition_mod
 
     character(128), public, save :: exclude_elements=''
     logical, public :: scattering_absorption=.true., mhd_eos=.false.
+    logical, public :: irwin_dis=.true.
     integer, public :: switch=1
 
 contains
@@ -617,7 +618,7 @@ contains
         character(20) :: ion_id
         character(len=512) :: line_text
         real(dp) :: lam0, ent8, ent9, mass, cnt_ev, lam_vac, vbar2e4
-        real(dp) :: upper_ev, lower_g, gij, f
+        real(dp) :: upper_ev, upper_g, lower_g, gij, f
         character :: lower_orb, upper_orb
         character(len=150) :: label
         character :: char
@@ -717,13 +718,13 @@ contains
                     call prepare_hydrogen_damping(line) ! ga is overwritten
                 else
                     ! Try to read with stark broadening parameter
-                    read(line_text,*,iostat=iostat) lam0, line%lower_ev, line%loggf, line%gv, line%upper_g, &
+                    read(line_text,*,iostat=iostat) lam0, line%lower_ev, line%loggf, line%gv, upper_g, &
                         line%ga, line%gq, lower_orb, upper_orb, ent8, ent9, label
 
                     if (iostat > 0) then
                         line%gq = 0.0
                         ! Try to read without stark broadening parameter
-                        read(line_text, *, iostat=iostat) lam0, line%lower_ev, line%loggf, line%gv, line%upper_g, &
+                        read(line_text, *, iostat=iostat) lam0, line%lower_ev, line%loggf, line%gv, upper_g, &
                         line%ga, lower_orb, upper_orb, ent8, ent9, label
                     endif
 
@@ -733,11 +734,8 @@ contains
                     lam_vac = air2vac(lam0) * 1e-8
                     line%nu0 = CC / lam_vac
 
-                    ! gi is missing but cancels later
-                    gij = 1/line%upper_g
                     f = 10**line%loggf
-                    
-                    call line%init_einstein_coefficients(f, gij)
+                    call line%init_einstein_coefficients(f, 1.d0)
                     call line%prepare_Stark(line%gq)
     
                     if (associated(ion)) then
@@ -749,6 +747,12 @@ contains
                             vbar2e4 = element%compute_vbar2(10000.)
                         endif
                         call line%prepare_VanderWaals(line%gv, j, cnt_ev, vbar2e4)
+                    elseif (associated(mol)) then
+                        if (size(mol%de)==1) then
+                            cnt_ev = mol%de(1)
+                            vbar2e4 = mol%compute_vbar2(10000.)
+                            call line%prepare_VanderWaals(line%gv, j, cnt_ev, vbar2e4)
+                        endif
                     endif
                 endif
                 allocate(line%used, source=.false.)
@@ -954,6 +958,7 @@ contains
 
             inv_df = mol%inverse_doppler_factor(temp)
             vbar2 = mol%compute_vbar2(temp)
+            unsold = vbar2**0.3 * tothi
 
             inv_part = mol%n * mol%part
             dxij = 0.0
@@ -1220,7 +1225,7 @@ contains
         do i=1, self%nmolec
             mol => self%molecules(i)
             mol%n = mol%f * self%toth
-            mol%part = 1.0 / mol%irwin_partf(self%temp)
+            !mol%part = 1.0 / mol%irwin_partf(self%temp)
         end do
 
         allocate(charge, mold=self%temp)
@@ -1727,7 +1732,7 @@ contains
         else
             call self%molecule_by_id(id, molec)
             if (associated(molec)) then
-                totn = molec%f * self%toth
+                totn = molec%n
             else
                 totn = 10.0**(abund-12.0) * self%toth
             endif
@@ -1746,14 +1751,14 @@ contains
         real(dp), dimension(:,:,:), intent(in) :: temp, pe, teta, xnecno
         real(dp), dimension(:,:,:), intent(inout) :: fe
         real(dp), dimension(:,:,:), allocatable :: r, s, b, pefe, p, q
-        class(molec_type), pointer :: molecules(:), molecule
+        class(molec_type), pointer :: molecules(:), mol
         class(molec_type), pointer :: H2, CN, H2p, CO, N2
         type(ion_pointer_t) :: ions(4)
         class(ion_type), pointer :: HI, CI, NI, OI, ion, ioni, ionj
         class(ion_type), pointer :: Hm
         integer :: i, j, nx, ny, nz, ix, iy, iz, np1, iter, nions
         real(dp) :: new_diff
-        real(dp), dimension(:,:,:), allocatable :: diff
+        real(dp), dimension(:,:,:), allocatable :: diff, dis
         real(dp), dimension(:,:,:,:)  , allocatable, target :: Fvec
         real(dp), dimension(:,:,:,:,:), allocatable, target :: Amat
         real(dp), dimension(:), allocatable :: Fold, Fnew
@@ -1766,10 +1771,17 @@ contains
         ny = size(temp, 2)
         nz = size(temp, 3)
 
+        allocate(dis, mold=temp)
         do i=1, self%nmolec
-            molecule => self%molecules(i)
-            call molecule%allocate(shape(temp))
-            molecule%dis = molecule%get_dis(self%teta)
+            mol => self%molecules(i)
+            call mol%allocate(shape(temp))
+            mol%part = 1.0 / mol%irwin_partf(self%temp)
+            dis = mol%get_dis(self%teta)
+            if (irwin_dis .and. size(mol%de)==1 .and. mol%nions==2) then
+                call mol%get_dis2(self%temp, mol%dis)
+            else
+               mol%dis = mol%get_dis(self%teta)
+            endif
         end do
 
         call self%ion_by_id('H I', HI)
@@ -2114,29 +2126,40 @@ contains
     SUBROUTINE overwrite_abundance(self, id, abnd, awgt)
         class(composition_type), target :: self
         class(element_type), pointer :: element
-        class(molec_type), pointer :: molec
+        class(molec_type), pointer :: mol
+        class(ion_type), pointer :: ion
         character(len=*), intent(in) :: id
         real(dp), intent(in) :: abnd, awgt
         real(dp) :: abund
+        integer :: j
         logical, save :: first_time=.true.
         !---------------------------------------------------------------------
         call self%element_by_id(id(1:3), element, verbose=.false.)
+        if (.not. associated(element)) then
+            call self%molecule_by_id(id(1:3), mol, verbose=.false.)
+            if (.not. associated(mol)) then
+                print *, id(1:3), 'is not recognised by opacity package.'
+            else
+                do j=1, mol%nions
+                  ion => mol%ions(j)%p
+                  if (ion%id(1:2) /= 'H ') then
+                    call self%element_by_id(ion%id(1:2), element, verbose=.false.)
+                    exit
+                  endif
+                end do
+            endif
+        endif
         if (associated(element)) then
             abund = log10(element%abund) + 12.0
             if (abund /= abnd) then
                 if (first_time) then
                     first_time = .false.
-                    print '(A, A, A, F5.2, A, F5.2)', 'Changing abundance of ', trim(id), ' from ', abund, ' to ', abnd
+                    print '(A, A, A, F5.2, A, F5.2)', 'Changing abundance of ', trim(element%id), ' from ', abund, ' to ', abnd
                 endif
 
                 element%abund =  10**(abnd - 12.0)
                 element%awgt  =  awgt
                 call self%compute_grams_per_hydrogen(self%suma, self%xmy, self%grph)
-            endif
-        else
-            call self%molecule_by_id(id(1:3), molec, verbose=.false.)
-            if (.not. associated(molec)) then
-                print *, id(1:3), 'is not recognised by opacity package.'
             endif
         endif
     END SUBROUTINE overwrite_abundance

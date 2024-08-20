@@ -787,6 +787,7 @@ SUBROUTINE add_bound_free_opacities (self, adata)
   femax = 1
   do i=1, self%ncont
     cont => self%cont(i)
+    if (.not. cont%active) cycle
     fs = cont%ired
     fe = cont%iblue
     fsmin = min(fsmin, fs)
@@ -1041,8 +1042,9 @@ SUBROUTINE bound_free_rates (self, gamma_ij, gamma_ji)
   ! Computing bound-free radiative rates based on half integrated mean intensity
   n => self%atom%data%n
   do j=1, self%ncont
-    i = j + self%nline
     cont => self%cont(j)
+    if (.not. cont%active) cycle
+    i = j + self%nline
     fs = cont%ired
     fe = cont%iblue
     icont = cont%ntrans-self%atom%nline

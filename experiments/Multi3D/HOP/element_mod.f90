@@ -79,13 +79,15 @@ SUBROUTINE compute_ion_equilibrium(self, EK_over_temp, saha, dxi)
 
     fil = 1
     do j=u-1, l, -1
-        partp = ions(j+1)%part
-        ! --- this only shows up in the Oslo legacy code ---!
-        !partp = max(1d-3, partp)
-        ! --------------------------------------------------!
-        partition_ratio = ions(j)%part / partp
-        ions(j)%saha = ions(j)%saha_eq(EK_over_temp, saha, dxi, partition_ratio)
-        fil = 1 + fil * ions(j)%saha
+        ion => ions(j)
+        !partp = ions(j+1)%part
+        !! --- this only shows up in the Oslo legacy code ---!
+        !!partp = max(1d-3, partp)
+        !! --------------------------------------------------!
+        !partition_ratio = ions(j)%part / partp
+        !ions(j)%saha = ions(j)%saha_eq(EK_over_temp, saha, dxi, partition_ratio)
+        call ion%saha_ratio(EK_over_temp, saha, dxi, ion%saha)
+        fil = 1 + fil * ion%saha
     end do
 
     ions(l)%f = self%abund / fil

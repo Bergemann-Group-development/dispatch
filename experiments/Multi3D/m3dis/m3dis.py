@@ -1,6 +1,6 @@
 from .atom import atom_class
 from .trans import trans_class
-from .auxfuncs import vacuum2obs, continuum, freq_quad, convol, SBOL, CC, interp_tau, check_file, compute_tau_scale, memmap_list, match_kwargs
+from .auxfuncs import *
 from .fast_atom import fast_atom, pandas_atom
 from .fast_trans import fast_trans, llist_trans
 import numpy as np
@@ -169,7 +169,7 @@ class m3dis(object):
         if os.path.isfile(file):
             df = pd.read_csv(file, header=None, skiprows=1, sep=r'\s+', names=['ang', 'wmu', 'mux', 'muy', 'muz'])
             self.vec = df.values[:,2:]
-            self.wts = df.values[:,1]
+            self.wts = df.values[:,1] * 2*np.pi
             self.n_ang = self.wts.size
             self.mus, self.imus = np.unique(1 - self.vec[:,-1], return_inverse=True)
             self.mus = 1 - self.mus
@@ -200,7 +200,15 @@ class m3dis(object):
             self.llist = pd.read_csv(folder + 'linelist_out.txt', sep=r'\s+', quotechar="'")
             self.llist['lam0'] = vacuum2obs(self.llist.lam_vac)
             self.llist = self.llist.sort_values(by='lam0')
-            self.llist_line = [llist_trans(i, self) for i in range(len(self.llist))]
+
+            init = np.frompyfunc(llist_trans, 2, 1)
+            self.llist_line = init(np.arange(len(self.llist)), self)
+
+            T = 4000
+            elements = [ion.split()[0] for ion in self.llist.ion]
+            abnd = np.array([self.abundances[el] if el in self.abundances.keys() else np.nan for el in elements])
+            strength = np.log10(self.llist.lam_vac*1e-8 * np.exp(-self.llist.ev_i*EK/T)) + self.llist.loggf + abnd
+            self.llist['strength'] = strength
 
         atmos_params =self.nml['atmos_params']
         mesh = open(folder + 'atmos_mesh.txt', 'r')
@@ -272,52 +280,6 @@ class m3dis(object):
                 self.chi  = self.chi .reshape((nx,ny,nz), order='F')
 
             self.ltau = np.log10(self.tau)
-
-        return self
-
-    @classmethod
-    #=================================================================
-    def combine(self, runs):
-        #-------------------------------------------------------------
-        self = m3dis()
-        run0 = runs[0]
-
-        def check_and_combine(key):
-            if hasattr(run0, key):
-                atts = [getattr(run, key) for run in runs]
-                same = all([np.array_equal(a, atts[0]) for a in atts])
-                if not same:
-                    print('Warning: {:} is not the same for all runs!'.format(key))
-                else:
-                    setattr(self, key, atts[0])
-
-        self.runs = runs
-        self.nml = run0.nml
-        check_and_combine('mode')
-        check_and_combine('mus')
-        check_and_combine('imus')
-        check_and_combine('nmu')
-        check_and_combine('n_ang')
-        check_and_combine('vec')
-        check_and_combine('wts')
-        check_and_combine('nline')
-        
-        if hasattr(run0, 'atom'):
-            self.atom = run0.atom
-            self.line = [copy.copy(line) for line in run0.line]
-            for line in self.line:
-                line.run = self
-
-        if hasattr(run0, 'lam'):
-            self.lam    = run0.lam
-            self.ie     = np.mean([run.ie     for run in runs], axis=0)
-            self.ie_lte = np.mean([run.ie_lte for run in runs], axis=0)
-            self.cnt    = np.mean([run.cnt    for run in runs], axis=0)
-
-            self.flux     = np.mean([run.flux     for run in runs], axis=0)
-            self.flux_lte = np.mean([run.flux_lte for run in runs], axis=0)
-            self.flux_cnt = np.mean([run.flux_cnt for run in runs], axis=0)
-
 
         return self
 
@@ -502,18 +464,19 @@ class m3dis(object):
         xx, yy = self.crop(**kwargs)
         yy = np.interp(newx, xx, yy)
         return yy
-
+    
     #=====================================================================
-    def plot_spectrum(self, ang=None, imu=None, norm=True, renorm=False, LTE=False,
-                      vdop=None, vshift=None, lam0=None, dlam=10, cont=False,
-                      show_lines=False, xmin=None, xmax=None, per_aa=False, 
-                      convolve=None, vrot=None, zeta_rt=None, velocity_units=False,
-                      set_labels=True, lam_offset=False, **kwargs):
+    def plot_spectrum(self, velocity_units=None, set_labels=True,
+                      lam_offset=None, ang=None, imu=None, norm=True,
+                      dlam=None, renorm=False, per_aa=False, show_lines=False,
+                      **kwargs):
         #-----------------------------------------------------------------
-        xx, yy = self.crop(lam0=lam0, dlam=dlam, ang=ang, imu=imu, norm=norm, renorm=renorm,
-                           xmin=xmin, xmax=xmax, LTE=LTE, vdop=vdop, vrot=vrot, vshift=vshift,
-                           zeta_rt=zeta_rt, convolve=convolve, per_aa=per_aa, cont=cont,
-                           velocity_units=velocity_units, lam_offset=lam_offset)
+        crop_kwargs = {k:v for k, v in kwargs.items() if k not in plt_kwargs}
+        plot_kwargs = {k:v for k, v in kwargs.items() if k not in crop_kwargs}
+        
+        xx, yy = self.crop(dlam=dlam, ang=ang, imu=imu, norm=norm, renorm=renorm,
+                           per_aa=per_aa, velocity_units=velocity_units, lam_offset=lam_offset,
+                           **crop_kwargs)
         
         self.set_xaxis(xx, dlam, velocity_units=velocity_units, set_labels=set_labels,
                        lam_offset=lam_offset)
@@ -523,7 +486,7 @@ class m3dis(object):
         if show_lines:
             self.plot_lline_labels()
 
-        return plt.plot(xx, yy, **kwargs)
+        return plt.plot(xx, yy, **plot_kwargs)
     
     #=====================================================================
     def plot_line_labels(self, lam0=None, nbins=4):
@@ -575,8 +538,10 @@ class m3dis(object):
         plt.imshow(i3[:,:,i], cmap=cmap, extent=extent, **kwargs)
 
     #=====================================================================
-    def get_depart(self, ilvl=None):
+    def get_pop(self, ilvl=None):
         #-----------------------------------------------------------------
+        if ilvl is not None:
+            if ilvl < 0: ilvl = self.atom.nk + ilvl
         mem = self.read_patch_save('atom_patch', zdim=2)[0]
         if mem.ndim==6: mem = mem[...,0]
         lte = mem[...,0]
@@ -586,40 +551,42 @@ class m3dis(object):
             lte = lte[...,ilvl]
             dep = dep[...,ilvl]
 
-        lte = np.array(lte)
+        lte = np.array(lte).squeeze()
+        dep = np.array(dep).squeeze()
+        nlte = dep*lte
+
+        return lte, nlte
+
+    #=====================================================================
+    def get_depart(self, ilvl=None, mean=False):
+        #-----------------------------------------------------------------
+        if ilvl is not None:
+            if ilvl < 0: ilvl = self.atom.nk + ilvl
+        mem = self.read_patch_save('atom_patch', zdim=2)[0]
+        if mem.ndim==6: mem = mem[...,0]
+        dep = mem[...,1]
+
+        if ilvl is not None:
+            dep = dep[...,ilvl]
+
         dep = np.array(dep)
+        ltau = self.ltau
+
         if self.dim=='1D':
-            lte = lte.squeeze()
             dep = dep.squeeze()
-        return lte, dep
+        elif mean:
+            ltau, dep = self.get_ltau_mean(dep, zaxis=2)
+
+        return ltau, dep
     
     #=====================================================================
-    def plot_depart(self, ilvl, mean='optical', tau_in=None, **kwargs):
+    def plot_depart(self, ilvl, mean=True, **kwargs):
         #-----------------------------------------------------------------
-        _, dep = self.get_depart(ilvl)
+        xx, yy = self.get_depart(ilvl, mean=mean)
         plt.title('Departure coefficient of level {:}'.format(ilvl))
         plt.ylabel(r'$\rm n\,/\,n_{\rm LTE}$')
-        if mean=='optical':
-            if self.dim=='3D':
-                if tau_in is None:
-                    ltau = np.mean(self.ltau, axis=(0, 1))[::-1]
-                else:
-                    ltau = tau_in
-
-                new_dep = interp_tau(ltau.copy(), self.ltau[...,::-1].copy(), dep[...,::-1].copy())
-                dep = np.mean(new_dep, axis=(0,1))
-            else:
-                ltau = self.ltau
-
-            plt.xlabel(r'log$\tau_{500}$')
-            return plt.plot(ltau, dep, **kwargs)
-        
-        elif mean=='geometrical':
-            if self.dim=='3D':
-                dep = np.mean(dep, axis=(0,1))
-
-            plt.xlabel('Height [Mm]')
-            return plt.plot(self.zz, dep, **kwargs)
+        plt.xlabel(r'log$\tau_{500}$')
+        return plt.plot(xx, yy, **kwargs)
     
     
     #=====================================================================
@@ -667,7 +634,7 @@ class m3dis(object):
         if self.n_ang == 1:
             raise ValueError('n_ang = 1! Cannot return effective Temperature from disk center intensity only!')
 
-        xx, yy = self.crop(per_aa=True)
+        xx, yy = self.crop(norm=False, per_aa=True)
         bol = np.trapz(yy , x=xx)
         teff = (bol / SBOL)**0.25
         return teff
@@ -754,35 +721,38 @@ class m3dis(object):
         
 
     #=====================================================================
-    def interp_ltau_surf(self, cube):
+    def interp_ltau_surf(self, cube, zaxis=-1):
         #-----------------------------------------------------------------
-        ltau = self.ltau[...,::-1].copy()
-        ltau1d = np.mean(ltau, axis=(0,1))[::-1]
+        if zaxis != -1: cube = np.moveaxis(cube, zaxis, -1)
+        ltau = self.ltau
+        xx = ltau[...,::-1].copy()
         yy = cube[...,::-1].copy()
-        newy = interp_tau(ltau1d, ltau, yy)[...,::-1]
-        ltau1d = ltau1d[::-1]
-        return ltau1d, newy
+        newx = np.mean(ltau, axis=(0,1))[::-1]
+        newy = interp_tau(newx, xx, yy)[...,::-1]
+        newx = newx[::-1]
+        if zaxis != -1: newy = np.moveaxis(newy, -1, zaxis)
+        return newx, newy
     
     #=====================================================================
     def plot_ltau_cube(self, cube, marker=',', xmin=None, xmax=None, ymin=None, ymax=None, **kwargs):
         #-----------------------------------------------------------------
         xx = self.ltau.ravel()
         yy = cube.ravel()
-        if xmin is None: xmin = xx.min()
-        if xmax is None: xmax = xx.max()
-        if ymin is None: ymin = yy.min()
-        if ymax is None: ymax = yy.max()
+        if xmin is None: xmin = np.nanmin(xx)
+        if xmax is None: xmax = np.nanmax(xx)
+        if ymin is None: ymin = np.nanmin(yy)
+        if ymax is None: ymax = np.nanmax(yy)
         mask = (xx > xmin) * (xx < xmax) * (yy > ymin) * (yy < ymax)
         xx = xx[mask]
         yy = yy[mask]
-        plt.xlim(xx.min(), xx.max())
-        plt.ylim(yy.min(), yy.max())
+        plt.xlim(np.nanmin(xx), np.nanmax(xx))
+        plt.ylim(np.nanmin(yy), np.nanmax(yy))
         return plt.plot(xx, yy, linestyle='none', marker=marker, rasterized=True, **kwargs)
 
     #=====================================================================
-    def get_ltau_mean(self, cube):
+    def get_ltau_mean(self, cube, zaxis=-1):
         #-----------------------------------------------------------------
-        ltau1d, yy3d = self.interp_ltau_surf(cube)
+        ltau1d, yy3d = self.interp_ltau_surf(cube, zaxis=zaxis)
         yy1d = np.mean(yy3d, axis=(0,1))
         return ltau1d, yy1d
     
@@ -795,25 +765,24 @@ class m3dis(object):
     #=====================================================================
     def plot_lline_labels(self, xx=None, labels=None, ha='center', va='bottom',
                          rotation=90, fontfamily='serif', color='k', 
-                         linewidth=0.8, **kwargs):
+                         linewidth=0.8, ntop=-1, **kwargs):
         #-----------------------------------------------------------------
         if xx is None: xx = self.llist.lam0.values
         if labels is None: labels = self.llist.ion.values
+        strength = self.llist.strength.values
 
         ax = plt.gca()
         xmin, xmax = ax.get_xlim()
         ymin, ymax = ax.get_ylim()
         h = 0.1 * (ymax - ymin)
 
+        mask = (xx > xmin) & (xx < xmax)
+        labels = np.array(labels)[mask]
+        llist = self.llist[mask].reset_index(drop=True)
+
         t = ax.text(xmin, ymin, 'Mg IV', ha=ha, va=va, rotation=rotation, fontfamily=fontfamily, **kwargs)
         bbox = t.get_window_extent().transformed(ax.transData.inverted())
         t.remove()
-
-        mask = (xx > xmin) & (xx < xmax)
-        xx = xx[mask]
-        labels = np.array(labels)[mask]
-
-        n = xx.size
 
         if rotation == 90:
             pad = 1.4
@@ -822,6 +791,16 @@ class m3dis(object):
 
         dxmin = bbox.width*pad
         newn = int((xmax - xmin) / dxmin)
+
+        if ntop == -1: ntop = newn
+        if ntop is not None:
+            mask = llist.nlargest(ntop, 'strength').sort_values('lam0').index
+            llist = llist.loc[mask]
+            labels = labels[mask]
+
+        xx = llist.lam0.values
+        n = xx.size
+
         newn = max(newn, n)
         nn = np.ones(n)
 
@@ -854,6 +833,80 @@ class m3dis(object):
             pad = 2.5
 
         plt.ylim(top=ymax+1.2*h + bbox.height*pad)
+    
+    #=================================================================
+    def fit_observed(self, oxx, oyy, fit=[], bounds=None, p0=None, **kwargs):
+        lbounds = {'vshift':-3, 'vdop':1e-3, 'vrot':1e-3, 'zeta_rt':1e-3}
+        ubounds = {'vshift':+3, 'vdop':1e2,  'vrot':1e2,  'zeta_rt':1e2 }
+        p0s     = {'vshift':0,  'vdop':1,    'vrot':1,    'zeta_rt':1   }
+        if bounds is None: bounds = ([lbounds[f] for f in fit], [ubounds[f] for f in fit])
+        if p0 is None: p0 = [p0s[f] for f in fit]
+
+        xmin = oxx.min()
+        xmax = oxx.max()
+        
+        def opt_func(newx, *args):
+            ka = {f:args[i] for i, f in enumerate(fit)}
+            return np.interp(newx, *self.crop(xmin=xmin, xmax=xmax, **ka, **kwargs))
+        
+        pfit, _ = optimize.curve_fit(opt_func, oxx, oyy, p0=p0, bounds=bounds)
+        fitted = opt_func(oxx, *pfit)
+        return {f:pfit[i] for i, f in enumerate(fit)}, fitted
+    
+    def plot_fit(self, oxx, oyy, fit=[], bounds=None, p0=None, label=None, **kwargs):
+        crop_kwargs = {k:v for k, v in kwargs.items() if k not in plt_kwargs}
+        plot_kwargs = {k:v for k, v in kwargs.items() if k not in crop_kwargs}
+        p, fitted = self.fit_observed(oxx, oyy, fit=fit, bounds=bounds, p0=p0, **crop_kwargs)
+        if label is None:
+            label = ', '.join([f'{k}={v:.2f}' for k, v in p.items()])
+        else:
+            label = ', '.join([label,] + [f'{k}={v:.2f}' for k, v in p.items()])
+        return plt.plot(oxx, fitted, label=label, **plot_kwargs)
+
+    @classmethod
+    #=================================================================
+    def combine(self, runs):
+        #-------------------------------------------------------------
+        self = m3dis()
+        run0 = runs[0]
+
+        def check_and_combine(key):
+            if hasattr(run0, key):
+                atts = [getattr(run, key) for run in runs]
+                same = all([np.array_equal(a, atts[0]) for a in atts])
+                if not same:
+                    print('Warning: {:} is not the same for all runs!'.format(key))
+                else:
+                    setattr(self, key, atts[0])
+
+        self.runs = runs
+        self.nml = run0.nml
+        check_and_combine('mode')
+        check_and_combine('mus')
+        check_and_combine('imus')
+        check_and_combine('nmu')
+        check_and_combine('n_ang')
+        check_and_combine('vec')
+        check_and_combine('wts')
+        check_and_combine('nline')
+        
+        if hasattr(run0, 'atom'):
+            self.atom = run0.atom
+            self.line = [copy.copy(line) for line in run0.line]
+            for line in self.line:
+                line.run = self
+
+        if hasattr(run0, 'lam'):
+            self.lam    = run0.lam
+            self.ie     = np.mean([run.ie     for run in runs], axis=0)
+            self.ie_lte = np.mean([run.ie_lte for run in runs], axis=0)
+            self.cnt    = np.mean([run.cnt    for run in runs], axis=0)
+
+            self.flux     = np.mean([run.flux     for run in runs], axis=0)
+            self.flux_lte = np.mean([run.flux_lte for run in runs], axis=0)
+            self.flux_cnt = np.mean([run.flux_cnt for run in runs], axis=0)
+
+        return self
 
 
 #=====================================================================

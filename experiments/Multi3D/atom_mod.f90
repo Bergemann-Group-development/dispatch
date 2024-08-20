@@ -15,6 +15,7 @@ MODULE atom_mod
     USE trace_mod
     USE spectrum_mod, only: spectrum_type, set_weights, nu_tolerance
     USE hprofl_mod, only:prepare_hydrogen_damping
+    USE, intrinsic :: ieee_arithmetic
     ! *******************************************************************
     !
     !     Contains variables connected to the atom(s) 
@@ -94,7 +95,7 @@ MODULE atom_mod
       real(8) :: drawin, mu_e
         
     contains
-      procedure :: partition_function
+      procedure :: check_ionisation_thresholds
       procedure :: lte_pop
       procedure :: compute_lte_populations
       procedure :: compute_cont_factors
@@ -112,13 +113,16 @@ MODULE atom_mod
     end type atom_type
 
     logical, public :: use_classic_col = .True., m1d_legacy_mode=.False.
-    logical, public :: lse_no_pivot = .True., kramer_bf=.False.
+    logical, public :: lse_no_pivot = .True., kramer_bf=.False., disable_bf=.False.
+    logical, public :: level_partf=.true.
     real(8), public :: red_thresh_aa  = 20000
     real(8), public :: blue_thresh_aa = 500
     real(8), public :: cont_step_aa = 50
     real(8), public :: logf_cut = -99.9, red_cut=huge(1.0), blue_cut=tiny(1.0)
     real(8), parameter :: ame=5.485799e-4, amh=1.0
     real(8), parameter :: mu_e=ame/(ame+amh)
+    real(8), public :: cbbesc=1., cbfesc=1., cbbhsc=1., cbfhsc=1.
+    real(8), public :: fmin =1e-6
     character(len=32), public :: lse_solver='lineq_no_pivot'
     integer, public :: nq_fac=1, nq_min=0, nq_max=huge(1)
 
@@ -158,8 +162,8 @@ MODULE atom_mod
         i = self%cont(kr-self%nline)%i
         j = self%cont(kr-self%nline)%j
       endif
-      self%data%w(j,i) = gamma_ij(kr)
-      self%data%w(i,j) = gamma_ji(kr)
+      self%data%w(j,i) = self%data%w(j,i) + gamma_ij(kr)
+      self%data%w(i,j) = self%data%w(i,j) + gamma_ji(kr)
     enddo
 
     if (cswitch > 0) then
@@ -170,8 +174,10 @@ MODULE atom_mod
         call self%classic_col(temp,ne,nh1,nstar)
       endif
 
-      call gencol(self%coll,self%id,self%nlevel,self%g,self%ev,self%ion,&
-                  self%data%c,temp,ne,nstar,nh1,self%tgrid,self%cgrid,self%dcdt)
+      if (associated(self%coll)) then
+        call gencol(self%coll,self%id,self%nlevel,self%g,self%ev,self%ion,&
+                    self%data%c,temp,ne,nstar,nh1,self%tgrid,self%cgrid,self%dcdt)
+      endif
 
       call trace%end(itimer=itimer)
 
@@ -304,6 +310,38 @@ MODULE atom_mod
     self%data%e = self%data%e - 1.0d0
   END SUBROUTINE solve_stat_equilibrium
   !------------------------------------------------------------------------------------
+
+  !====================================================================================
+  SUBROUTINE check_ionisation_thresholds(self, element)
+    class(atom_type), intent(inout) :: self
+    class(element_type), pointer :: element
+    integer :: nions, j1, j2, i, j
+    real(4), dimension(:), allocatable :: xion
+    real(4) :: prev
+    logical :: first_time=.true.
+    !---------------------------------------------------------------------------------
+    if (.not. first_time) return
+    j1 = minval(self%ion)
+    j2 = maxval(self%ion)
+    allocate(xion(j1:j2))
+    i = 1
+    do j=j1, j2
+      do i=i, self%nlevel
+        if (self%ion(i) == j) then
+          xion(j) = self%ev(i)
+          exit
+        endif
+      end do
+    end do
+    xion(j1:j2-1) = xion(j1+1:j2) - xion(j1:j2-1)
+    do j=j1, min(j2-1, element%nion-1)
+      if (abs(xion(j)/element%ions(j)%xion - 1) > 0.1) then
+        print *, 'WARNING: ionisation threshold for this ion differs from EOS value!'
+        print '(I3, 2(F12.4))', j, xion(j), element%ions(j)%xion
+      end if
+    end do
+    first_time = .false.
+  END SUBROUTINE check_ionisation_thresholds
   
   !====================================================================================
   SUBROUTINE compute_lte_populations(self, nstar, totn, temp, saha, dxi, element, mol)
@@ -315,110 +353,105 @@ MODULE atom_mod
     real(8), intent(inout), dimension(:,:,:,:) :: nstar
     real(8), intent(inout), dimension(:,:,:) :: totn
     real(4), intent(in), dimension(:,:,:) :: temp, saha, dxi
-    real(4), dimension(:,:,:), allocatable :: partition, partition2, f, ev_off
-    integer :: ijk(3)
-    logical :: zero_pop
+    real(4), dimension(:,:,:), allocatable :: partition, lvl_part, norm, EK_over_temp
+    real(4), dimension(:,:,:), allocatable :: ev_off, ex, lsaha
+    real(4) :: xion
+    integer :: ijk(3), idis
+    logical :: molec
     integer, save :: itimer=0
     !---------------------------------------------------------------------------------
     call trace%begin('atom_mod%compute_lte_populations', itimer=itimer)
-    allocate(partition, partition2, ev_off, f, mold=temp)
-    partition = self%partition_function(temp, dxi, saha, totn)
-    if (associated(element)) then
-      partition2 = 1 / element%ions(1)%part
-      do j=2, element%nion
-        ion => element%ions(j)
-        ev_off = e_k/temp * (ion%below%xion - (j-1)*dxi) 
-        partition2 = partition2 + (j-1)*saha * exp(-ev_off) / ion%part
-      end do
-      partition2 = totn / partition2
-      do i=1, self%nlevel
-        nstar(:,:,:,i) = self%lte_pop(i, temp, dxi, 1.0, partition2)
-      end do
-      ! correct for the use of a different partition function
-      totn = partition2 / partition * totn
+    allocate(partition, lvl_part, norm, lsaha, mold=temp)
+    allocate(EK_over_temp, ev_off, ex, mold=temp)
+    EK_over_temp = e_k / temp
+    lsaha = log(saha)
+    molec = associated(mol)
+    if (molec) idis = findloc(self%ion, 2, 1)
+  
+    nstar = 0
+    do i=1, self%nlevel
+      if (molec .and. i==idis) cycle
+      nstar(:,:,:,i) = self%lte_pop(i, EK_over_temp, dxi, lsaha)
+    end do
+    lvl_part = sum(nstar, dim=4)
+  
+    if (.not. level_partf) then
+      if (associated(element)) then
+        partition = 0
+        ev_off = 0
+        do j=1, element%nion
+          ion => element%ions(j)
+          ex = float(j-1)*lsaha - ev_off*EK_over_temp
+          where (ex < -80.)
+            ex = 0
+          elsewhere
+            ex = exp(ex)
+          endwhere
+          partition = partition + ex / ion%part
+          ev_off = ev_off + ion%xion - j*dxi
+        end do
+      elseif (molec) then
+        partition = 1 / mol%part
+      endif
+    elseif (self%id == 'CH') then
+      partition = qjorg(temp)
     else
-      if (associated(mol)) then
-        partition2 = totn / qjorg(temp)
-        !partition = totn / mol%irwin_partf(dble(temp))
-         ! correct for the use of a different partition function
-        totn = partition2 / partition * totn
-      endif
-
-      do i=1, self%nlevel
-        nstar(:,:,:,i) = self%lte_pop(i, temp, dxi, saha, partition)
-      end do
-
-      do i=1, self%nlevel
-        where(totn == 0) nstar(:,:,:,i) = 0
-        ijk = findloc(nstar(:,:,:,i), tiny(1.d0), mask=totn>0)
-        if (any(ijk > 0)) then
-          print '(A, I5, A, 3(I4))', ' WARNING: ltepop: level ',i,' has zero lte population at', ijk
-          !stop
-        end if
-      end do
-      if (associated(mol)) then
-        associate(ndis => nstar(:,:,:,self%nlevel))
-          totn = totn - ndis
-          ndis = huge(1.e0)
-          do j=1, mol%nions
-            ion => mol%ions(j)%p
-            ndis = min(ndis, ion%n*ion%part)
-          end do
-          totn = totn + ndis
-        end associate
-      endif
+      partition = lvl_part
     endif
+    
+    norm = totn / partition
+    
+    do i=1, self%nlevel
+      nstar(:,:,:,i) = norm * nstar(:,:,:,i)
+    end do
+    
+    do i=1, self%nlevel
+      where(totn == 0) nstar(:,:,:,i) = 0 !ieee_value(nstar(:,:,:,i), ieee_quiet_nan)
+      ijk = findloc(nstar(:,:,:,i), tiny(1.d0), mask=totn>0)
+      if (any(ijk > 0)) then
+        print '(A, I5, A, 3(I4))', ' WARNING: ltepop: level ',i,' has zero lte population at', ijk
+        !stop
+      end if
+    end do
+    if (molec) then
+      ! replace dissociated state with the ground state population of rarest component
+      ! a factor of g0 is missing, which is the statistical weight of the ground state
+      ! for carbon this happens to be 1, but for other molecules it may not be
+      associate(ndis => nstar(:,:,:,idis))
+        ndis = huge(1.e0)
+        do j=1, mol%nions
+          ion => mol%ions(j)%p
+          ndis = min(ndis, ion%n*ion%part)
+        end do
+      end associate
+    endif
+  
+    ! this is important for number conservation in the SE solver
+    totn = sum(nstar, dim=4)
     call trace%end(itimer)
   END SUBROUTINE compute_lte_populations
   !------------------------------------------------------------------------------------
 
   !====================================================================================
-  elemental function lte_pop(self, i, temp, dxi, saha, partition) result(nstar)
+  elemental function lte_pop(self, i, EK_over_temp, dxi, lsaha) result(nstar)
     class(atom_type), intent(in) :: self
-    real(4), intent(in) :: temp, dxi, saha, partition
+    real(4), intent(in) :: EK_over_temp, dxi, lsaha
     integer, intent(in) :: i
     real(8) :: evi, tns
     real(8) :: nstar
-    logical :: molec
     integer :: j, l
     !---------------------------------------------------------------------------------
     j = self%ion(i)
     evi = self%ev(i) - dxi * 0.5*(j-1)*j
-    tns = log(self%g(i)) - e_k/temp*evi
+    tns = log(self%g(i)) - EK_over_temp*evi
 
     if(j > self%ion(1)) then
       l = j - self%ion(1)
-      tns = tns + float(l)*log(saha)
+      tns = tns + float(l)*lsaha
     endif
 
-    nstar = exp(tns) * partition
+    nstar = exp(tns)
   end function lte_pop
-  !------------------------------------------------------------------------------------
-  
-  !====================================================================================
-  elemental function partition_function(self, temp, dxi, saha, totn) result(sumn)
-    class(atom_type), intent(in) :: self
-    real(4), intent(in) :: temp, dxi, saha
-    real(8), intent(in) :: totn
-    real(8) :: evi, tns
-    real(4) :: sumn
-    integer :: i, j, l
-    !--------------------------------------------------------------------------------
-    sumn = 0.
-    do i=1, self%nlevel
-      j = self%ion(i)
-      evi = self%ev(i) - dxi * 0.5*(j-1)*j
-      tns = log(self%g(i)) - e_k/temp*evi
-
-      if(j > self%ion(1)) then
-        l = j - self%ion(1)
-        tns = tns + float(l)*log(saha)
-      endif
-
-      sumn = sumn + exp(tns)
-    enddo 
-    sumn = totn / sumn
-  end function
   !------------------------------------------------------------------------------------
    
   !====================================================================================
@@ -430,7 +463,7 @@ MODULE atom_mod
     class(cont_type), pointer :: cont
     !---------------------------------------------------------------------------------
     n = [shape(adata%totn), self%ncont]
-    call os%allocate(adata%nibj, n, label='data%nibj')
+    call os%allocate(adata%nibj, n, label='data%nibj', zero=.true.)
 
     do kr=1,self%ncont
       cont => self%cont(kr)
@@ -440,8 +473,10 @@ MODULE atom_mod
       do z=1, n(3)
       do y=1, n(2)
       do x=1, n(1)
-        bj = adata%n(x,y,z,j) / adata%nstar(x,y,z,j)
-        adata%nibj(x,y,z,kr) = bj * adata%nstar(x,y,z,i)
+        if (adata%nstar(x,y,z,i) /= 0) then
+          bj = adata%n(x,y,z,j) / adata%nstar(x,y,z,j)
+          adata%nibj(x,y,z,kr) = bj * adata%nstar(x,y,z,i)
+        endif
       end do
       end do
       end do
@@ -509,16 +544,16 @@ MODULE atom_mod
     do i=1, self%nline
       lin => self%line(i)
       call nextentry(latom)
-      read(latom,*) idx, lam_air, lin%i, lin%j, loggf, lin%nnu, lin%qmax, lin%q0, &
-            lin%ga, gv, gq, lin%profile_type
+      read(latom,*) idx, lin%i, lin%j, lam_air, lin%lower_ev, loggf, &
+            lin%ga, lin%gv, gq, lin%nnu, lin%qmax, lin%q0, lin%profile_type
             
-      lin%upper_g  = self%g(lin%j)
-      lin%lower_ev = self%ev(lin%i)
-      lin%upper_ev = self%ev(lin%j)
-      lin%hydrogen = uppercase(trim(self%id)) == 'H'
+      lin%i = lin%i + 1
+      lin%j = lin%j + 1
 
       lin%lam0 = air2vac(lam_air) * AA_TO_CM ! [cm]
       lin%nu0  = CC / lin%lam0               ! [Hz]
+      lin%upper_ev = lin%lower_ev + H_E*lin%nu0
+      lin%hydrogen = uppercase(trim(self%id)) == 'H'
 
       lin%f = 10**loggf / self%g(lin%i)
       gij = self%g(lin%i) / self%g(lin%j)
@@ -563,7 +598,9 @@ MODULE atom_mod
       endif
       
       ! find continuum level
-      do ic=lin%j+1, self%nlevel
+      ic = findloc(self%ion, self%ion(lin%j)+1, 1)
+      if (ic > 0) cnt_ev = self%ev(ic)
+      do ic=1, self%nlevel
         if (self%ion(ic) .eq. self%ion(lin%j)+1) then
           cnt_ev = self%ev(ic)
           exit
@@ -588,11 +625,11 @@ MODULE atom_mod
       case ('voigt')
         call lin%prepare_Stark(gq)
         vbar2e4 = self%compute_vbar2(10000.)
-        call lin%prepare_VanderWaals(gv, self%ion(lin%i), cnt_ev, vbar2e4)
+        call lin%prepare_VanderWaals(lin%gv, self%ion(lin%i), cnt_ev, vbar2e4)
       end select
     end do
 
-    ncont = count(self%ion < maxval(self%ion))
+    ncont = self%nlevel
     allocate(self%cont(ncont))
     call os%mem_register(storage_size(self%cont), ncont, label='atom%cont')
 
@@ -600,44 +637,46 @@ MODULE atom_mod
       cnt => self%cont(i)
       cnt%bf_type='Kramer'
       ! find continuum level
-      do ic=i, self%nlevel
-        if (self%ion(ic) .eq. self%ion(i)+1) exit
-      end do
+      ic = findloc(self%ion, self%ion(i)+1, 1)
       cnt%i = i
       cnt%j = ic
       cnt%ntrans = self%nline + i ! transition identifier for continua
+      if (ic == 0) call cnt%deactivate()
     end do
-
-    call nextentry(latom)
-    read(latom,*) ! skip bftrans header
 
     call os%allocate(icont, nnu_bf)
     call os%allocate(bf_nu, nnu_bf)
     call os%allocate(bf_alpha, nnu_bf)
 
-    do i=1, nnu_bf
-      call nextentry(latom) 
-      read(latom,*) icont(i), bf_nu(i), bf_alpha(i)
-    end do
+    if (nnu_bf > 0) then
+      call nextentry(latom)
+      read(latom,*) ! skip bftrans header
 
-    ! and convert to frequency [Hz]
-    bf_nu = cc / ( bf_nu * AA_TO_CM )
+      do i=1, nnu_bf
+        call nextentry(latom) 
+        read(latom,*) icont(i), bf_nu(i), bf_alpha(i)
+        icont(i) = icont(i)+1
+      end do
 
-    !  bound-free transitions in detail
-    do i=1, ncont
-      cnt => self%cont(i)
-      ii = findloc(icont, i, 1)
-      jj = findloc(icont, i, 1, back=.true.)
+      ! and convert to frequency [Hz]
+      bf_nu = cc / ( bf_nu * AA_TO_CM )
 
-      if (jj-ii > 0) then
-        cnt%nnu = jj-ii+1
-        cnt%nu_input => bf_nu(ii:jj)
-        cnt%alpha_input => bf_alpha(ii:jj)
-        cnt%alpha0 = cnt%alpha_input(1)
-        ! cross sections given in detail
-        cnt%bf_type='detail'
-      endif
-    end do
+      !  bound-free transitions in detail
+      do i=1, ncont
+        cnt => self%cont(i)
+        ii = findloc(icont, i, 1)
+        jj = findloc(icont, i, 1, back=.true.)
+
+        if (jj-ii > 0) then
+          cnt%nnu = jj-ii+1
+          cnt%nu_input => bf_nu(ii:jj)
+          cnt%alpha_input => bf_alpha(ii:jj)
+          cnt%alpha0 = cnt%alpha_input(1)
+          ! cross sections given in detail
+          cnt%bf_type='detail'
+        endif
+      end do
+    endif
 
     self%ncont = ncont
     self%nrad = self%nline + self%ncont
@@ -645,6 +684,8 @@ MODULE atom_mod
     j = 0
     do i=1, self%ncont
       cnt => self%cont(i)
+      if (disable_bf) call cnt%deactivate()
+      if (.not. cnt%active) cycle
       cnt%lower_ev = self%ev(cnt%i)
       cnt%upper_ev = self%ev(cnt%j)
       cnt%nu0 = ( cnt%upper_ev - cnt%lower_ev ) / h_e ! [Hz]
@@ -670,7 +711,7 @@ MODULE atom_mod
       endif
 
       tri = (cnt%j-1)*(cnt%j-2)/2 + cnt%i
-      self%cdata(tri) = cnt%alpha0
+      self%cdata(tri) = self%cdata(tri) + cnt%alpha0
 
       cnt%nu_min = cnt%nu_input(1)
       cnt%nu_max = cnt%nu_input(cnt%nnu)
@@ -696,7 +737,8 @@ MODULE atom_mod
       do i=1, ncol
         call nextentry(latom) 
         read(latom,*) idx, key, l, u, self%cgrid(1:ntemp,i)
-        self%cgrid(1:ntemp,i) = log(self%cgrid(1:ntemp,i))
+        l = l+1
+        u = u+1
         
         if (l==u) then
           write(stdout, *) "ll==ul for process ", key, l, u
@@ -719,6 +761,7 @@ MODULE atom_mod
           col%key = key
           col%ll = l
           col%ul = u
+          self%cgrid(1:ntemp,i) = log(self%cgrid(1:ntemp,i))
           
           ! set derivatives for 3rd order hermite interpolation
           call hermite_derivative(self%dcdt(1:ntemp,i), self%tgrid(1:ntemp,1), self%cgrid(1:ntemp,i))
@@ -739,6 +782,10 @@ MODULE atom_mod
             endif
             self%hcol(tri) = .true.
           end select
+        case('FOSC')
+          self%coll(i)%nc = 0
+          tri = (u-1)*(u-2)/2 + l
+          self%cdata(tri) = self%cgrid(1,i)
         end select
       end do
     endif
@@ -831,7 +878,7 @@ MODULE atom_mod
       ! whether a line is wide or not. In the RH formulation all lines are wide
 
       read(latom,*) jj, ii, lin%f , lin%nnu, lin%qmax, lin%q0, lin%io, &
-            lin%ga, gv, gq, lin%profile_type
+            lin%ga, lin%gv, gq, lin%profile_type
 
       lin%i = min(ii, jj)
       lin%j = max(ii, jj)
@@ -965,7 +1012,7 @@ MODULE atom_mod
       case ('voigt')
         call lin%prepare_Stark(gq)
         vbar2e4 = self%compute_vbar2(10000.)
-        call lin%prepare_VanderWaals(gv, self%ion(lin%i), cnt_ev, vbar2e4)
+        call lin%prepare_VanderWaals(lin%gv, self%ion(lin%i), cnt_ev, vbar2e4)
       end select
     end do
 
@@ -1052,7 +1099,10 @@ MODULE atom_mod
     j = 0
     do i=1, self%ncont
       cnt => self%cont(i)
-
+      if (disable_bf) then
+        call cnt%deactivate()
+        cycle
+      endif
       cnt%lower_ev = self%ev(cnt%i)
       cnt%upper_ev = self%ev(cnt%j)
       cnt%nu0 = ( cnt%upper_ev - cnt%lower_ev ) / h_e ! [Hz]
@@ -1292,11 +1342,12 @@ MODULE atom_mod
   SUBROUTINE prepare_Drawin(self)
     class(atom_type), intent(inout) :: self
     real(8) :: drmu, mu_h, ama
+    real(8), parameter :: const=16*PI*Rbohr**2 ! 1.40758E-15
     !---------------------------------------------------------------------
     ama = self%awgt
     mu_h = amh/(ama+amh)
     drmu = PI*MH*ama*mu_h
-    self%drawin = 1.40758E-15 * sqrt(2.0*BK/drmu) * mu_e/mu_h
+    self%drawin = const * sqrt(2.0*BK/drmu) * mu_e/mu_h
   END SUBROUTINE prepare_Drawin
 
   !====================================================================================
@@ -1311,6 +1362,7 @@ MODULE atom_mod
     logical :: cont
     logical, save :: first_time=.true.
     real(8), parameter :: sqr3_2pi = sqrt(3.d0) / (2.d0*PI)
+    real(8), parameter :: c0 = PI*Rbohr**2 * sqrt(8*BK/EM/PI)
     !---------------------------------------------------------------------
     if (debye_shield) then
       dxi = 4.98e-4*5040./temp*sqrt(ne*bk*temp)
@@ -1318,7 +1370,8 @@ MODULE atom_mod
       dxi = 0
     endif
     sqt = sqrt(temp)
-    allen = 5.465e-11 * Rydk * ne / sqt
+    ! See Hubeny % Mihalas 2014, p. 276 for these recipes
+    allen = c0 * Rydk * ne / sqt
     regemorter = 14.5 * allen * Rydk / e_k
     seaton = 1.55e13 * ne / sqt
     EK_over_temp = e_k / temp
@@ -1331,18 +1384,22 @@ MODULE atom_mod
 
         cont = self%ion(j) > self%ion(i)
         if (.not. self%ecol(tri) .or. .not. self%hcol(tri)) then
-          fac = self%cdata(tri)! / self%g(j)
+          fac = self%cdata(tri)
           nj = nstar(j)
           nij = ni / nj
 
           dev = self%ev(j) - self%ev(i)
-          !if (dev == 0) cycle
+          if (dev < 0) then
+            cycle
+          endif
           dev = max(dev, 1d-8) ! to avoid division by zero
 
           if (cont) then
             jj = self%ion(j) * (self%ion(j)-1)
             ii = self%ion(i) * (self%ion(i)-1)
             dev = dev - dxi*0.5*(jj-ii)
+          else
+            f = max(fac, fmin*self%g(j))
           endif
 
           u0 = dev * EK_over_temp
@@ -1354,23 +1411,24 @@ MODULE atom_mod
               ! ionization by electron collisions
               if (fac == 0) then
                 nu0 = dev * EE/HH
-                fac = Kramer(nu0, dev)! / self%g(j)
+                fac = Kramer(nu0, dev)
               endif
               tmp = min(0.1*self%ion(i), 0.3)
               cup = seaton * fac * tmp / u0 * ex
+              cup = cup * cbfesc
             else
               ! excitation of neutrals by electron collisions 
-              if (fac > 0) then
+              !if (fac > 0) then
                 ! Van Regemorter
-                f = max(fac, 1e-5)
                 tmp = max(0.2*ex, sqr3_2pi*expin(u0))
                 cup = regemorter * f * tmp / dev
-              else
+              !else
                 ! Allen
-                cup = allen * ex / self%g(i)
-              endif
+                ! This recipe is flawed as it does not work with superlevels
+                !cup = allen * ex / self%g(i)
+              !endif
+              cup = cup * cbbesc
             endif
-            !cup = cup * self%g(j)
             cdn = cup * nij
             self%data%c(j,i) = self%data%c(j,i) + cup ! upward rate
             self%data%c(i,j) = self%data%c(i,j) + cdn ! downward rate
@@ -1384,11 +1442,12 @@ MODULE atom_mod
             tmp = (1.0 + tmp) / (1.0 + (mu_e*tmp)**2)
             cup = nh1 * self%drawin * divu * tmp * ex * sqt
             
-            if (.not. cont) then
-              f = max(fac, 1e-5)
+            if (cont) then
+              cup = cup * cbfhsc
+            else
               cup = cup * f
+              cup = cup * cbbhsc
             endif
-            !cup = cup * self%g(j)
             cdn = cup * nij
             self%data%c(j,i) = self%data%c(j,i) + cup ! upward rate
             self%data%c(i,j) = self%data%c(i,j) + cdn ! downward rate

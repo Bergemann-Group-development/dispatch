@@ -47,6 +47,7 @@ MODULE ion_mod
         logical :: fixed_part = .false.
     contains
         procedure :: saha_eq
+        procedure :: saha_ratio
         procedure :: molecules_with
         procedure :: f_of_own_molecules
         procedure :: f_of_molecules_with
@@ -65,11 +66,20 @@ elemental real(dp) FUNCTION saha_eq(self, EK_over_temp, saha, dxi, partition_rat
     class(ion_type), intent(in) :: self
     real(dp), intent(in) :: EK_over_temp, saha, dxi
     real(dp), intent(in), optional :: partition_ratio
-    real(dp) :: dxi_j, tmp
+    real(dp) :: dxi_j
     !---------------------------------------------------------------------------
     dxi_j = dxi*self%dxi_fac
     saha_eq = saha * self%boltzmann(EK_over_temp, dxi=dxi_j) * partition_ratio
 END FUNCTION saha_eq
+
+!===============================================================================
+SUBROUTINE saha_ratio(self, EK_over_temp, saha, dxi, ratio)
+    class(ion_type), intent(in) :: self
+    real(dp), intent(in), dimension(:,:,:) :: EK_over_temp, saha, dxi
+    real(dp), intent(out), dimension(:,:,:) :: ratio
+    !---------------------------------------------------------------------------
+    ratio = self%part / self%above%part * saha * self%boltzmann(EK_over_temp, dxi=dxi*self%dxi_fac)
+END SUBROUTINE saha_ratio
 
 !===============================================================================
 FUNCTION f_of_own_molecules(self) result(fsum)

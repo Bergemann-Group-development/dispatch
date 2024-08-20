@@ -11,6 +11,9 @@ import re
 import os
 import errno
 import copy
+from inspect import signature
+import matplotlib
+import matplotlib.pyplot as plt
 
 CB_colors = ['#377eb8', '#ff7f00', '#4daf4a', '#f781bf', '#a65628', '#984ea3', '#999999', '#e41a1c', '#dede00']
 
@@ -27,7 +30,15 @@ HCE = HH*CC/EE*1e8
 HC2 = 2.*HH*CC *1e24
 HCK = HH*CC/BK*1e8
 EK  = EE/BK
-#HNY4P = HH*CC/QNORM/4./PI*1e-5
+#HNY4P = HH*CC/QNORM/4./PI*1e-5from matplotlib.lines import Line2D
+
+plot_kwargs = signature(plt.plot).parameters
+line2d_kwargs = signature(matplotlib.lines.Line2D).parameters
+artist_properties = {
+    'alpha', 'zorder', 'label', 'visible', 'animated', 'clip_on', 
+    'clip_box', 'clip_path', 'transform', 'agg_filter', 'figure'}
+combined_kwargs = {**plot_kwargs, **line2d_kwargs}
+plt_kwargs = set(combined_kwargs.keys()).union(artist_properties)
 
 def check_file(file):
     if file!='':
@@ -44,6 +55,12 @@ def match_kwargs(func, kwargs):
     func_kwargs = get_kwargs(func)
     matched_kwargs = {k: v for k, v in kwargs.items() if k in func_kwargs}
     return matched_kwargs
+
+def split_kwargs(func, kwargs):
+    func_kwargs = get_kwargs(func)
+    matched = {k: v for k, v in kwargs.items() if k in func_kwargs}
+    unmatched = {k: v for k, v in kwargs.items() if k not in func_kwargs}
+    return matched, unmatched
 
 def planck(lam, temp):
     return HC2/lam**3/(np.exp(HCK/np.outer(temp, lam)) - 1)
@@ -521,26 +538,21 @@ def shift_interp2(xx, yy, newx):
     out = [shift_interp(yy[i1], yy[i2], d) for d, i1, i2 in zip(dx, ii1, ii2)]
     return np.array(out)
 
-
 @njit
-#=====================================================================
 def interp_tau(newx, xx, yy):
     #-----------------------------------------------------------------
     xshape = np.shape(xx)
     yshape = np.shape(yy)
-    nnew = len(newx)
     nold = xshape[-1]
-    dimdiff = len(yshape) - len(xshape)
-    extra = list(yshape)[:dimdiff]
     xx = xx.reshape((-1, nold))
-    n = np.shape(xx)[0]
-    nextra = np.prod(np.array(extra))
-    yy = yy.reshape((nextra, n, nold))
-    newy = np.empty((nextra, n, nnew))
+    yy = yy.reshape((-1, nold))
+    nx = np.shape(xx)[0]
+    ny = np.shape(yy)[0]
+    nnew = len(newx)
+    newy = np.empty((ny, nnew))
 
-    for i in range(nextra):
-        for j in range(n):
-            newy[i,j] = np.interp(newx, xx[j], yy[i,j])
+    for i in range(ny):
+        newy[i] = np.interp(newx, xx[i%nx], yy[i])
     
     newy = newy.reshape(yshape[:-1] + (nnew,))
     return newy

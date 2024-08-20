@@ -12,6 +12,7 @@ MODULE molecule_mod
         real(dp), dimension(:,:,:), allocatable :: dis
     contains
         procedure :: get_dis
+        procedure :: get_dis2
         procedure :: calc_f
         procedure :: calc_e
         procedure :: allocate => allocate_molec
@@ -29,6 +30,31 @@ elemental real(dp) FUNCTION get_dis(self, teta)
     !---------------------------------------------------------------------------
     get_dis = 10**(-poly1d(teta, self%dc(1), self%dc(2), self%dc(3), self%dc(4), self%dc(5)))
 END FUNCTION
+
+!===============================================================================
+! Computes dissociation constants P(AB) / (P(A)*P(B)) for molecules
+!===============================================================================
+SUBROUTINE get_dis2(self, temp, dis)
+    class(molec_type), intent(in) :: self
+    real(dp), intent(in), dimension(:,:,:) :: temp
+    real(dp), intent(out), dimension(:,:,:) :: dis
+    type(ion_type), pointer :: ion
+    real(dp) :: awgt15, scalar
+    real(dp), parameter :: const=(2*PI*BK*UU/HH**2)**(-1.5)
+    integer :: j
+    !---------------------------------------------------------------------------
+    if (size(self%de) > 1) return
+    dis = 1.d0
+    do j=1, self%nions
+        ion => self%ions(j)%p
+        awgt15 = ion%awgt**(-1.5)
+        dis = dis * awgt15 * ion%part
+    end do
+    scalar = const * self%awgt**(1.5) / BK
+    dis = dis * scalar
+    dis = dis * exp(self%de(1)*EK/temp)
+    dis = dis / (self%part * temp**2.5)
+END SUBROUTINE get_dis2
 
 !===============================================================================
 FUNCTION calc_f(self, pefe) result(f)
@@ -52,18 +78,18 @@ FUNCTION calc_e(self, teta, temp, dxi) result(e)
     class(molec_type), intent(in) :: self
     class(ion_type), pointer :: ion
     real(dp), dimension(:,:,:) :: teta, temp, dxi
-    real(dp), dimension(:,:,:), allocatable :: dis, e
+    real(dp), dimension(:,:,:), allocatable :: de, e
     integer :: i
     !---------------------------------------------------------------------------
-    allocate(dis, e, mold=self%n)
+    allocate(de, e, mold=self%n)
 
     if (size(self%de) > 1) then
-        if (trim(self%id) == 'H2' ) dis = 4.476
-        if (trim(self%id) == 'H2+') dis = 2.648
+        if (trim(self%id) == 'H2' ) de = 4.476
+        if (trim(self%id) == 'H2+') de = 2.648
         ! rotational and vibrational energy has to be subtracted
-        dis = dis - poly1d(teta, self%de(1), self%de(2), self%de(3), self%de(4), self%de(5))*temp/EK
+        de = de - poly1d(teta, self%de(1), self%de(2), self%de(3), self%de(4), self%de(5))*temp/EK
     else
-        dis = self%de(1)
+        de = self%de(1)
     endif
 
     do i=1, self%nions
@@ -71,11 +97,11 @@ FUNCTION calc_e(self, teta, temp, dxi) result(e)
 
         ! why only consider ionisation energy from H?
         if (trim(ion%id) == 'H I') then
-            dis = dis + ion%xion - dxi
+            de = de + ion%xion - dxi
         endif
     end do
 
-    e = - dis * self%n
+    e = - de * self%n
 END FUNCTION calc_e
 
 !===============================================================================

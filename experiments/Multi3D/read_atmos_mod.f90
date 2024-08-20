@@ -593,6 +593,9 @@ SUBROUTINE interpolate_atmos(n, sub, pos, rho, px, py, pz, temp, pe, vec, bot2pi
     call pchip_mono4(ia%zz, ia%ltemp(1,1,:), real(newz), temp(1,1,:), sorted=.true.)
     call pchip_mono4(ia%zz, ia%lrho (1,1,:), real(newz), rho (1,1,:), sorted=.true.)
     call pchip_mono4(ia%zz, ia%lpe  (1,1,:), real(newz), pe  (1,1,:), sorted=.true.)
+    px = 0
+    py = 0
+    pz = 0
   else
     allocate(newx(nx))
     allocate(newy(ny))

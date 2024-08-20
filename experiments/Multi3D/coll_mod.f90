@@ -73,7 +73,7 @@ MODULE coll_mod
   
       ! loop over all the transitions
       do i=1, size(coll, 1)
-  
+         if (coll(i)%nc == 0) cycle
          cup=0.0d0
          cdn=0.0d0
          ll=coll(i)%ll
