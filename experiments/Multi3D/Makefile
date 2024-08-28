@@ -68,5 +68,5 @@ bbtrans_mod.o               : trace_mod.o
 unista_mod.o                : refsor_mod.o
 ray_mod.o                   : mmath_mod.o radau_mod.o
 prec_mod.o                  : const_mod.o os_mod.o
-patch_mod.o                 : os_mod.o
+patch_mod.o                 : os_mod.o handyfuncs_mod.o
 mpi_debug_mod.o             : mpi_mod.o io_mod.o
