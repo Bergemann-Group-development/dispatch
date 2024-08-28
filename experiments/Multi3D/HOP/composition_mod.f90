@@ -65,6 +65,7 @@ MODULE composition_mod
     logical, public :: scattering_absorption=.true., mhd_eos=.false.
     logical, public :: irwin_dis=.true.
     integer, public :: switch=1
+    real(4), public :: vmic=-1., opac_table_vmic=1.0
 
 contains
 
@@ -820,7 +821,7 @@ contains
     END SUBROUTINE mask_linelist
 
     !===============================================================================
-    SUBROUTINE add_linelist_opacities(self, nu, all_chi, dlam, vproj, all_eta)
+    SUBROUTINE add_linelist_opacities(self, nu, all_chi, dlam, vproj, all_eta, vmic)
         class(composition_type), target :: self
         class(element_type), pointer :: element
         class(ion_type), pointer :: ion, HeI
@@ -832,6 +833,7 @@ contains
         real(4), intent(inout), dimension(:,:,:,:), optional :: all_eta
         real(4), intent(in), dimension(:,:,:), contiguous, target, optional :: vproj
         real(8), intent(in) :: dlam
+        real(4), intent(in), optional :: vmic
         real(4), dimension(:,:,:), allocatable :: tothi, adamp, stark_pe, ne, temp, EK_over_temp, dxij, chi_fac, unsold
         real(4), dimension(:,:,:), allocatable, target :: inv_part, vbar2, inv_df, iso_vbar2, iso_inv_df, iso_inv_part
         real(4), dimension(:,:,:), pointer, contiguous :: vb2, idopf, ipart, vpr, fo, t3nhe, ni, nj
@@ -889,7 +891,7 @@ contains
             fo = 2.6031*EC * ne**two_third ! Holtsmark normal field strength
             vbar2 = element%compute_vbar2(temp)
             t3nhe = (temp/10000.)**0.3 * HeI%n
-            inv_df = element%inverse_doppler_factor(temp)
+            inv_df = element%inverse_doppler_factor(temp, vmic)
 
             do l=1, ion%nline
                 line => ion%line(l)
@@ -910,7 +912,7 @@ contains
             element => self%elements(i)
             if (.not. any(element%ions%in_linelist)) cycle
     
-            inv_df = element%inverse_doppler_factor(temp)
+            inv_df = element%inverse_doppler_factor(temp, vmic)
             vbar2 = element%compute_vbar2(temp)
             unsold = vbar2**0.3 * tothi
             prev_iso = 0
@@ -937,7 +939,7 @@ contains
                       ipart => inv_part
                     elseif (line%iso_idx /= prev_iso) then
                       iso => element%isotope(line%iso_idx)
-                      iso_inv_df = iso%inverse_doppler_factor(temp)
+                      iso_inv_df = iso%inverse_doppler_factor(temp, vmic)
                       iso_vbar2 = iso%compute_vbar2(temp)
                       iso_inv_part = inv_part * iso%frac
                       vb2 => iso_vbar2
@@ -956,7 +958,7 @@ contains
             mol => self%molecules(i)
             if (.not. mol%in_linelist) cycle
 
-            inv_df = mol%inverse_doppler_factor(temp)
+            inv_df = mol%inverse_doppler_factor(temp, vmic)
             vbar2 = mol%compute_vbar2(temp)
             unsold = vbar2**0.3 * tothi
 
@@ -1219,6 +1221,8 @@ contains
                 ion => element%ions(j)
                 ion%n = ion%f * self%toth
                 deallocate(ion%f, ion%saha)
+                call os%mem_register(storage_size(ion%f), -product(ion%m), 'ion%f')
+                call os%mem_register(storage_size(ion%saha), -product(ion%m), 'ion%saha')
             end do
         end do
 
@@ -1226,6 +1230,9 @@ contains
             mol => self%molecules(i)
             mol%n = mol%f * self%toth
             !mol%part = 1.0 / mol%irwin_partf(self%temp)
+            deallocate(mol%f, mol%dis)
+            call os%mem_register(storage_size(mol%f), -product(mol%m), 'mol%f')
+            call os%mem_register(storage_size(mol%dis), -product(mol%m), 'mol%dis')
         end do
 
         allocate(charge, mold=self%temp)
@@ -1462,12 +1469,16 @@ contains
           lvl => HI%levels(i)
           if (.not. allocated(lvl%f)) then
             allocate(lvl%f, mold=self%temp)
+            call os%mem_register(storage_size(lvl%f), product(HI%m), 'lvl%f')
             lvl%i = i
             lvl%xion = RYD * (1. - 1./i**2)
             lvl%g = 2 * i**2
             lvl%f = lvl%g * lvl%boltzmann(self%EK_over_temp, natural_log=.true.)
           endif
-          if (.not. allocated(lvl%w)) allocate(lvl%w, mold=self%temp)
+          if (.not. allocated(lvl%w)) then
+            allocate(lvl%w, mold=self%temp)
+            call os%mem_register(storage_size(lvl%w), product(HI%m), 'lvl%w')
+          endif
           call trace%begin ('composition_type%compute_occupation_weights%wcalc', itimer=itimer2)
           call wcalc(nh, nhe, self%ne, self%shield, dble(i), lvl%w)
           call trace%end (itimer2)
@@ -1502,6 +1513,7 @@ contains
         do i=1, HI%nk
           lvl => HI%levels(i)
           allocate(lvl%n, mold=self%temp)
+          call os%mem_register(storage_size(lvl%n), product(HI%m), 'lvl%n')
           lvl%i = i
           lvl%xion = RYD * (1. - 1./i**2)
           lvl%g = 2 * i**2
@@ -1513,6 +1525,7 @@ contains
           do i=1, HI%nk
             lvl => HI%levels(i)
             allocate(lvl%w, mold=self%temp)
+            call os%mem_register(storage_size(lvl%w), product(HI%m), 'lvl%w')
             call trace%begin ('composition_type%init_H_levels%wcalc', itimer=itimer2)
             call wcalc(HI%n, HeI%n, self%ne, self%shield, dble(i), lvl%w)
             call trace%end (itimer2)

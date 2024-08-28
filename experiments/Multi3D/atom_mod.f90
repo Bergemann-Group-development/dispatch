@@ -121,7 +121,6 @@ MODULE atom_mod
     real(8), public :: logf_cut = -99.9, red_cut=huge(1.0), blue_cut=tiny(1.0)
     real(8), parameter :: ame=5.485799e-4, amh=1.0
     real(8), parameter :: mu_e=ame/(ame+amh)
-    real(8), public :: cbbesc=1., cbfesc=1., cbbhsc=1., cbfhsc=1.
     real(8), public :: fmin =1e-6
     character(len=32), public :: lse_solver='lineq_no_pivot'
     integer, public :: nq_fac=1, nq_min=0, nq_max=huge(1)
@@ -761,7 +760,11 @@ MODULE atom_mod
           col%key = key
           col%ll = l
           col%ul = u
-          self%cgrid(1:ntemp,i) = log(self%cgrid(1:ntemp,i))
+
+          select case(trim(key))
+          case('OHMEGA','CE','CI','CH0')
+            self%cgrid(1:ntemp,i) = log(self%cgrid(1:ntemp,i))
+          end select
           
           ! set derivatives for 3rd order hermite interpolation
           call hermite_derivative(self%dcdt(1:ntemp,i), self%tgrid(1:ntemp,1), self%cgrid(1:ntemp,i))
@@ -1294,7 +1297,10 @@ MODULE atom_mod
           write(stdout, *) "Non-positive cross sections for process ", key, l, u
           abort = .true.
         else
-          self%cgrid(1:nc,i) = log(self%cgrid(1:nc,i))
+          select case(trim(key))
+          case('OHMEGA','CE','CI','CH0')
+            self%cgrid(1:ntemp,i) = log(self%cgrid(1:ntemp,i))
+          end select
         endif
 
         select case(trim(key))

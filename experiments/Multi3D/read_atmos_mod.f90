@@ -278,7 +278,7 @@ END SUBROUTINE read_multi_snapshot
 SUBROUTINE read_marcs (file, FeH, vmic, abund)
   character(len=*), intent(in) :: file
   real(8), intent(out) :: FeH
-  real(8), intent(inout) :: vmic
+  real(4), intent(inout) :: vmic
   real(4), intent(inout), dimension(:), allocatable :: abund
   integer :: lunit, nz, kk, k
   real(8) :: FeH_marcs

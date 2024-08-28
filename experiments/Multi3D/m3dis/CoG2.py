@@ -20,9 +20,14 @@ class CoG(m3dis):
     to given observations.
     """
     #=================================================================
-    def __init__(self, runs, **kwargs):
+    def __init__(self, runs, read_line=True, abnds=None, **kwargs):
         self.nruns = len(runs)
-        self.abnds = np.array([run.atom.abnd for run in runs])
+
+        if abnds is None:
+            self.abnds = np.array([run.atom.abnd for run in runs])
+        else:
+            self.abnds = abnds
+
         order = np.argsort(self.abnds)
         self.runs = np.array(runs)[order]
         self.abnds = self.abnds[order]
@@ -33,7 +38,7 @@ class CoG(m3dis):
           if not same:
             raise ValueError('All runs should have the same wavelength grid.')
           
-        if hasattr(self.run0, 'atom'):
+        if read_line and hasattr(self.run0, 'atom'):
             self.atom = self.run0.atom
 
             init = np.frompyfunc(fast_trans, 2, 1)
@@ -85,17 +90,41 @@ class CoG(m3dis):
         return m3dis.fit_observed(self, oxx, oyy, fit=fit, bounds=bounds, p0=p0, **kwargs)
     
     #=================================================================
-    def get_weq_corr(self, nlte_run, LTE=True, **kwargs):
-        weqs = []
-        for run in self.runs:
-            xx, yy = run.crop(LTE=LTE, **kwargs)
-            weq = np.trapz(1-yy, x=xx)*1e3
-            weqs.append(weq)
+    def get_weq_corr(self, nlte_run, kr=None, abnd=None, LTE=False, log=True, **kwargs):
+        if kr is not None:
+            line = self.atom.trans[kr]
+            kwargs['slc'] = slice(line.ib, line.ir)
 
-        xx, yy = nlte_run.crop(LTE=False, **kwargs)
-        nlte_weq = np.trapz(1-yy, x=xx)*1e3
+        weqs = [run.calc_weq(LTE=True, **kwargs) for run in self.runs]
+        weqs = np.array(weqs)
 
-        func = PchipInterpolator(np.log(weqs), self.abnds)
-        corr = nlte_run.atom.abnd - func(np.log(nlte_weq))
+        if any(np.diff(weqs) <= 0):
+            print('Warning: weq values are not monotonically increasing.')
+            return np.nan
+        elif any(weqs<0):
+            print('Warning: weq values are negative.')
+            return np.nan
+        elif any(np.isnan(weqs)):
+            print('Warning: weq values are NaN.')
+            return np.nan
+
+        if kr is not None:
+            line = nlte_run.atom.trans[kr]
+            kwargs['slc'] = slice(line.ib, line.ir)
+
+        nlte_weq = nlte_run.calc_weq(LTE=LTE, **kwargs)
+        if nlte_weq < 0: return np.nan
+
+        if any(weqs==0) or nlte_weq==0: log=False
+
+        if abnd is None:
+            abnd = nlte_run.atom.abnd
+
+        if log:
+            weqs = np.log(weqs)
+            nlte_weq = np.log(nlte_weq)
+
+        func = PchipInterpolator(weqs, self.abnds)
+        corr = abnd - func(nlte_weq)
 
         return corr

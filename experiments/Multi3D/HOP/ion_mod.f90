@@ -1,4 +1,5 @@
 MODULE ion_mod
+    USE os_mod
     USE prec_mod
     USE level_mod
     USE bbtrans_mod, only: bbtrans_type
@@ -12,7 +13,7 @@ MODULE ion_mod
     end type
 
     type, extends(massive_type) :: particle_type
-        real(dp), dimension(:,:,:), allocatable :: e, part
+        real(dp), dimension(:,:,:), allocatable :: part
         integer :: m(3)=[0,0,0], nk, nline=0
         character(len=6) :: id
         type(level_type), allocatable :: levels(:)
@@ -51,12 +52,10 @@ MODULE ion_mod
         procedure :: molecules_with
         procedure :: f_of_own_molecules
         procedure :: f_of_molecules_with
-        procedure :: e_of_molecules_with
         procedure :: allocate => allocate_particle
         !procedure :: absorption_factor => ion_absorption_factor
     end type
 
-    real(dp), public :: vmic=-1.
     logical, public :: debye_shield=.True.
 
 contains
@@ -115,25 +114,6 @@ FUNCTION f_of_molecules_with(self, other, count_double) result(fsum)
 END FUNCTION
 
 !===============================================================================
-FUNCTION e_of_molecules_with(self, other, count_double) result(esum)
-    class(ion_type) :: self
-    type(ion_type) :: other
-    class(particle_type), pointer :: molecule
-    type(particle_pointer_t), allocatable :: mol_list(:)
-    integer :: i
-    real(dp), dimension(:,:,:), allocatable :: esum
-    logical, optional :: count_double
-    !---------------------------------------------------------------------------
-    call self%molecules_with(other, mol_list, count_double)
-
-    allocate(esum(self%m(1),self%m(2),self%m(3)), source=0.d0)
-    do i=1, size(mol_list)
-        molecule => mol_list(i)%p
-        esum = esum + molecule%e
-    end do
-END FUNCTION
-
-!===============================================================================
 SUBROUTINE molecules_with (self, other, mol_list, count_double)
     class(ion_type), target, intent(in) :: self
     type(ion_type), intent(in) :: other
@@ -185,13 +165,24 @@ END SUBROUTINE molecules_with
 !===============================================================================
 SUBROUTINE allocate_particle (self, m)
     class(ion_type) :: self
-    integer :: m(3)
+    integer :: m(3), mold(3)
     !---------------------------------------------------------------------------
     if (all(m == self%m)) return
     self%m = m
-    if (self%allocated) deallocate(self%f, self%saha, self%part, self%n)
+    if (self%allocated) then
+        mold = shape(self%f)
+        deallocate(self%f, self%saha, self%part, self%n)
+        call os%mem_register(storage_size(self%f), -product(mold), label='ion%f')
+        call os%mem_register(storage_size(self%n), -product(mold), label='ion%n')
+        call os%mem_register(storage_size(self%saha), -product(mold), label='ion%saha')
+        call os%mem_register(storage_size(self%part), -product(mold), label='ion%part')
+    endif
     allocate(self%f(m(1),m(2),m(3)))
     allocate(self%saha, self%part, self%n, mold=self%f)
+    call os%mem_register(storage_size(self%f), product(m), label='ion%f')
+    call os%mem_register(storage_size(self%n), product(m), label='ion%n')
+    call os%mem_register(storage_size(self%saha), product(m), label='ion%saha')
+    call os%mem_register(storage_size(self%part), product(m), label='ion%part')
     self%allocated = .true.
 END SUBROUTINE allocate_particle
 
@@ -231,9 +222,9 @@ pure FUNCTION irwin_poly (self, temp) result(u)
 END FUNCTION irwin_poly
 
 !====================================================================================
-pure elemental function inverse_doppler_factor(self, temp) result(inv_df)
+pure elemental function inverse_doppler_factor(self, temp, vmic) result(inv_df)
   class(massive_type), intent(in) :: self
-  real(4), intent(in)  :: temp
+  real(4), intent(in)  :: temp, vmic
   real(4) :: dop, inv_df
   real(4), parameter :: const=2.0d0*BK/UU
   !---------------------------------------------------------------------------------

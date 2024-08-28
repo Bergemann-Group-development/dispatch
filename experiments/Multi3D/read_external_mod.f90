@@ -21,7 +21,6 @@ MODULE read_external_mod
   USE shared_mod
   USE task_list_mod
   USE experiment_mod, only: experiment_t
-  USE ion_mod, only: vmic
   USE composition_mod
   USE composition_patch_mod, only: FeH, save_atmos, save_eos, external_abund
   USE patch_mod

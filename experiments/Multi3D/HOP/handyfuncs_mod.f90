@@ -40,16 +40,38 @@ SUBROUTINE NextEntry(fileunit, comment)
 END SUBROUTINE NextEntry
 
 !===============================================================================
-SUBROUTINE count_words (string, nwords)
+SUBROUTINE replace_char (string, out, in)
+  character(len=*), intent(inout) :: string
+  character, intent(in) :: out, in
+  integer :: i, n
+  !-----------------------------------------------------------------------------
+  n = len(string)
+  do i=1, n
+  if (string(i:i) == out) then
+    string(i:i) = in
+  endif
+  end do
+END SUBROUTINE replace_char
+
+!===============================================================================
+SUBROUTINE count_words (string, nwords, sep)
   character(len=*), intent(in) :: string
   integer, intent(out) :: nwords
+  character, intent(in), optional :: sep
+  character :: seperator
   integer :: i, n
   logical :: new_word=.true.
   !-----------------------------------------------------------------------------
+  if (present(sep)) then
+    seperator = sep
+  else
+    seperator = ' '
+  endif
+
   n = len(string)
   nwords = 0
   do i=1, n
-  if (string(i:i) == ' ') then
+  if (string(i:i) == seperator) then
       new_word = .true.
   elseif(new_word) then
       nwords = nwords + 1

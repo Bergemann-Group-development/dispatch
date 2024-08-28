@@ -16,6 +16,12 @@ from matplotlib.ticker import MultipleLocator
 import os
 import copy
 
+def option(nml, key):
+    if key in nml.keys():
+        return nml[key]
+    else:
+        return False
+
 def launch(input_name, nml_settings=None, default=None, overwrite=False, threads=32, log_file=None, slurm_script=None):
     cwd = os.getcwd()
     check_file(cwd + '/dispatch.x')
@@ -66,7 +72,7 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
 class m3dis(object):
     @classmethod
     #=================================================================
-    def read(self, folder, verbose=0, read_atmos=True, fast_read=False, read_llist=False, **kwargs):
+    def read(self, folder, verbose=0, read_atmos=True, read_atom=True, fast_read=False, read_llist=False, **kwargs):
         #-------------------------------------------------------------
         self = m3dis()
         folder = folder + os.sep
@@ -102,7 +108,7 @@ class m3dis(object):
         atom_file = folder + 'atom.txt'
         pandas_format = 'pandas_format' in self.nml['atom_params']
         if pandas_format: pandas_format = pandas_format & self.nml['atom_params']['pandas_format']
-        if os.path.isfile(atom_file):
+        if read_atom and os.path.isfile(atom_file):
             self.qnorm = self.nml['atom_params']['qnorm']
             loggf_cut  = self.nml['atom_params']['logf_cut']
             red_cut    = self.nml['atom_params']['red_cut']
@@ -125,7 +131,23 @@ class m3dis(object):
                 self.atom.run = self
 
                 if hasattr(self, 'lam'):
-                    self.atom.load_sp(self.lam, qnorm=self.qnorm)
+                    if option(self.nml['atom_params'], 'overlapping_bb_in_output'):
+                        self.atom.load_sp(self.lam, qnorm=self.qnorm)
+                    else:
+                        nnu = self.lam.size
+                        nq_fac = self.nml['atom_params']['nq_fac']
+                        nq = self.atom.bbt.nq.values[self.in_lines]
+                        nq = nq + (1-nq%2)
+                        nq = nq_fac * (nq-1) + 1
+                        ir = np.ones_like(nq)*nnu
+                        ir[1:] = nnu - np.cumsum(nq[:-1])
+                        ib = ir - nq
+                        self.atom.bbt['ir'] = 0
+                        self.atom.bbt['ib'] = 0
+                        self.atom.bbt.loc[self.in_lines, 'ir'] = ir
+                        self.atom.bbt.loc[self.in_lines, 'ib'] = ib
+
+
                     self.line = self.atom.trans[self.in_lines]
 
                     #mask = bbt.loggf > loggf_cut
@@ -245,7 +267,7 @@ class m3dis(object):
             self.dim = '1D'
 
         if os.path.isfile(sfolder + 'atmos_meta.txt') and read_atmos:
-            mem = self.read_patch_save('atmos', zdim=2)[0]
+            mem = self.read_patch_save('atmos')[0]
             mem = mem[..., 0].squeeze()
             self.ne   = np.array(mem[...,0])
             self.rho  = np.array(mem[...,1])
@@ -466,10 +488,17 @@ class m3dis(object):
         return yy
     
     #=====================================================================
+    def calc_weq(self, **kwargs):
+        #-----------------------------------------------------------------
+        xx, yy = self.crop(**kwargs)
+        yy = np.trapz(1-yy, x=xx)*1e3
+        return yy
+    
+    #=====================================================================
     def plot_spectrum(self, velocity_units=None, set_labels=True,
                       lam_offset=None, ang=None, imu=None, norm=True,
                       dlam=None, renorm=False, per_aa=False, show_lines=False,
-                      **kwargs):
+                      label=None, **kwargs):
         #-----------------------------------------------------------------
         crop_kwargs = {k:v for k, v in kwargs.items() if k not in plt_kwargs}
         plot_kwargs = {k:v for k, v in kwargs.items() if k not in crop_kwargs}
@@ -486,44 +515,12 @@ class m3dis(object):
         if show_lines:
             self.plot_lline_labels()
 
-        return plt.plot(xx, yy, **plot_kwargs)
-    
-    #=====================================================================
-    def plot_line_labels(self, lam0=None, nbins=4):
-        xmin, xmax, ymin, ymax = plt.axis()
-        x = np.array([line.lam0 for line in self.line])
-        if lam0 is not None: x = x - lam0
-        mask = np.where((x > xmin) * (x < xmax))[0]
-        mask = mask[np.argsort(x[mask])[::-1]]
-        x = x[mask]
-        n = x.size
+        if type(label) is str:
+            if '{WEQ}' in label:
+                weq = np.trapz(1-yy, x=xx)*1e3
+                label = label.replace('{WEQ}', '{:.2f}'.format(weq))
 
-        edges = np.linspace(xmin, xmax, nbins+1)
-        bins = np.zeros_like(edges, dtype=int)
-        ibin = np.digitize(x, edges)
-        occu = np.zeros_like(x)
-
-        for i, idx in enumerate(ibin):
-            bins[idx] += 1
-            occu[i] = bins[idx]
-
-        occu = 1 + occu*(ymax-ymin)/20
-
-        segs = np.zeros((n, 2, 2))
-        segs[:, 0, 1] = 1.0
-        segs[:, 1, 1] = occu
-        segs[:, :, 0] = x[:, None]
-
-        line_segments = LineCollection(segs, color='lightgrey')
-        plt.gca().add_collection(line_segments)
-
-        for i, idx in enumerate(mask):
-            line = self.line[idx]
-            x = line.lam0
-            if lam0 is not None: x = x - lam0
-            plt.text(x=x, y=occu[i], s=idx, rotation=45, color='grey', fontsize=8)
-
-        plt.ylim(ymin, occu.max() + (ymax-ymin)/5)
+        return plt.plot(xx, yy, label=label, **plot_kwargs)
 
     #=====================================================================
     def plot_surface(self, i, cmap='hot', **kwargs):
@@ -536,6 +533,15 @@ class m3dis(object):
                 plt.ylabel('Mm')
 
         plt.imshow(i3[:,:,i], cmap=cmap, extent=extent, **kwargs)
+
+    #=====================================================================
+    def get_toth(self):
+        #-----------------------------------------------------------------
+        xmy = np.array([10**(self.abundances[key]-12)*atomic_weigths[key]
+                        for key in self.abundances.keys()])
+        grph = np.sum(xmy) * UU
+        toth = self.rho / grph
+        return toth
 
     #=====================================================================
     def get_pop(self, ilvl=None):
@@ -592,16 +598,14 @@ class m3dis(object):
     #=====================================================================
     def get_cog_corr(self, element, LTE_runs, **kwargs):
         #-----------------------------------------------------------------
-        xx, yy = self.crop(norm=True, **kwargs)
-        weq = np.trapz(1-yy, x=xx)*1e3
+        weq = self.calc_weq(norm=True, **kwargs)
         abnd = self.abundances[element]
 
         lte_abnd = np.zeros(len(LTE_runs))
         lte_weqs = np.zeros(len(LTE_runs))
         for i, run in enumerate(LTE_runs):
             lte_abnd[i] = run.abundances[element]
-            xx, yy = run.crop(norm=True, LTE=True, **kwargs)
-            lte_weqs [i] = np.trapz(1-yy, x=xx)*1e3
+            lte_weqs[i] = run.calc_weq(norm=True, LTE=True, **kwargs)
 
         order = np.argsort(lte_weqs)
         lte_weqs = lte_weqs[order]
@@ -629,18 +633,18 @@ class m3dis(object):
         plt.legend(loc='lower right')
 
     #=====================================================================
-    def calc_teff(self):
+    def calc_teff(self, **kwargs):
         #-----------------------------------------------------------------
         if self.n_ang == 1:
             raise ValueError('n_ang = 1! Cannot return effective Temperature from disk center intensity only!')
 
-        xx, yy = self.crop(norm=False, per_aa=True)
+        xx, yy = self.crop(norm=False, per_aa=True, **kwargs)
         bol = np.trapz(yy , x=xx)
         teff = (bol / SBOL)**0.25
         return teff
 
     #=====================================================================
-    def read_patch_save(self, kind, concat=True, fdim=0, zdim=3, lazy=True):
+    def read_patch_save(self, kind, concat=True, fdim=0, zdim=None, lazy=True):
         #-----------------------------------------------------------------
         try:
             meta = open(self.sfolder + kind + '_meta.txt')
@@ -665,6 +669,7 @@ class m3dis(object):
                 dct[tuple(key)] = np.memmap(self.sfolder + file, dtype=dtype, mode='r', shape=dims, order='F')
 
         meta.close()
+        if zdim is None: zdim = len(dims)-1
 
         if concat:
             return self.concat_patches(dct, kind, fdim, zdim, lazy=lazy)
@@ -734,7 +739,8 @@ class m3dis(object):
         return newx, newy
     
     #=====================================================================
-    def plot_ltau_cube(self, cube, marker=',', xmin=None, xmax=None, ymin=None, ymax=None, **kwargs):
+    def plot_ltau_cube(self, cube, marker=',', linestyle='none', rasterized=True,
+                       xmin=None, xmax=None, ymin=None, ymax=None, **kwargs):
         #-----------------------------------------------------------------
         xx = self.ltau.ravel()
         yy = cube.ravel()
@@ -747,13 +753,19 @@ class m3dis(object):
         yy = yy[mask]
         plt.xlim(np.nanmin(xx), np.nanmax(xx))
         plt.ylim(np.nanmin(yy), np.nanmax(yy))
-        return plt.plot(xx, yy, linestyle='none', marker=marker, rasterized=True, **kwargs)
+        return plt.plot(xx, yy, marker=marker, linestyle=linestyle,
+                        rasterized=rasterized, **kwargs)
 
     #=====================================================================
     def get_ltau_mean(self, cube, zaxis=-1):
         #-----------------------------------------------------------------
-        ltau1d, yy3d = self.interp_ltau_surf(cube, zaxis=zaxis)
-        yy1d = np.mean(yy3d, axis=(0,1))
+        if self.dim == '3D':
+            ltau1d, yy3d = self.interp_ltau_surf(cube, zaxis=zaxis)
+            yy1d = np.mean(yy3d, axis=(0,1))
+        else:
+            ltau1d = self.ltau
+            yy1d = cube
+
         return ltau1d, yy1d
     
     #=====================================================================
@@ -763,22 +775,41 @@ class m3dis(object):
         return plt.plot(xx, yy, **kwargs)
     
     #=====================================================================
-    def plot_lline_labels(self, xx=None, labels=None, ha='center', va='bottom',
-                         rotation=90, fontfamily='serif', color='k', 
-                         linewidth=0.8, ntop=-1, **kwargs):
+    def plot_line_labels(self, xx=None, labels=None, weights=None, **kwargs):
+        #-----------------------------------------------------------------
+        if xx is None: xx = np.array([line.lam0 for line in self.line])
+        if labels is None: labels = np.array([self.atom.id for line in self.line])
+        if weights is None:
+            T = 4000
+            loggf = np.array([line.loggf for line in self.line])
+            lam0s = np.array([line.lam0 for line in self.line])*1e-8
+            evis = np.array([line.evi for line in self.line])
+            weights = np.log10(lam0s * np.exp(-evis*EK/T)) + loggf
+
+        return self.plot_line_annotations(xx, labels, weights=weights, **kwargs)
+    
+    #=====================================================================
+    def plot_lline_labels(self, xx=None, labels=None, weights=None, **kwargs):
         #-----------------------------------------------------------------
         if xx is None: xx = self.llist.lam0.values
         if labels is None: labels = self.llist.ion.values
-        strength = self.llist.strength.values
-
+        if weights is None: weights = self.llist.strength.values
+        return self.plot_line_annotations(xx, labels, weights=weights, **kwargs)
+    
+    #=====================================================================
+    def plot_line_annotations(self, xx, labels, weights=None, ha='center', va='bottom',
+                         rotation=90, fontfamily='serif', color='k', 
+                         linewidth=0.8, ntop=-1, **kwargs):
+        #-----------------------------------------------------------------
         ax = plt.gca()
         xmin, xmax = ax.get_xlim()
         ymin, ymax = ax.get_ylim()
         h = 0.1 * (ymax - ymin)
 
         mask = (xx > xmin) & (xx < xmax)
+        xx = xx[mask]
         labels = np.array(labels)[mask]
-        llist = self.llist[mask].reset_index(drop=True)
+        if weights is not None: weights = weights[mask]
 
         t = ax.text(xmin, ymin, 'Mg IV', ha=ha, va=va, rotation=rotation, fontfamily=fontfamily, **kwargs)
         bbox = t.get_window_extent().transformed(ax.transData.inverted())
@@ -793,12 +824,15 @@ class m3dis(object):
         newn = int((xmax - xmin) / dxmin)
 
         if ntop == -1: ntop = newn
-        if ntop is not None:
-            mask = llist.nlargest(ntop, 'strength').sort_values('lam0').index
-            llist = llist.loc[mask]
+        if ntop is not None and weights is not None:
+            mask = np.argsort(weights)[::-1][:ntop]
+            mask = np.isin(np.arange(xx.size), mask)
+            #mask = llist.nlargest(ntop, 'strength').sort_values('lam0').index
+            #llist = llist.loc[mask]
             labels = labels[mask]
+            xx = xx[mask]
 
-        xx = llist.lam0.values
+        #xx = llist.lam0.values
         n = xx.size
 
         newn = max(newn, n)
@@ -862,6 +896,32 @@ class m3dis(object):
         else:
             label = ', '.join([label,] + [f'{k}={v:.2f}' for k, v in p.items()])
         return plt.plot(oxx, fitted, label=label, **plot_kwargs)
+    
+    def to_multi1d_atmos(self, dir, name, vz=0.0, vmic=1.0):
+        df = pd.DataFrame()
+        df['Height'] = self.zz*1e3
+        df['Temp'] = self.temp
+        df['Ne'] = self.ne
+        df['V'] = vz
+        df['Vturb'] = vmic
+
+        f = open(dir + f'atmos.{name:}', 'w+')
+        f.write(f'{name:}\n')
+        f.write('HEIGHT\n')
+        f.write('4.4\n')
+        f.write(f'{len(df):}\n')
+        text = df[::-1].to_string(index=False, float_format='%.4e')
+        text = '*' + text[1:]
+        f.write(text)
+        f.close()
+
+        f = open(dir + f'dscale.{name:}', 'w+')
+        f.write(f'{name:}\n')
+        f.write('HEIGHT\n')
+        f.write(f'{len(df):} -1.0000e+01\n')
+        text = df.Height[::-1].to_string(index=False, float_format='%.4e')
+        f.write(text)
+        f.close()
 
     @classmethod
     #=================================================================

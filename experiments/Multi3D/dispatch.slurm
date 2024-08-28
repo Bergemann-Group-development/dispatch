@@ -20,4 +20,8 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export KMP_STACKSIZE=256M
 #unset OMP_NUM_THREADS
 unset I_MPI_PMI_LIBRARY
-mpirun ./dispatch.x $1
+
+for arg in "$@"
+do
+  mpirun ./dispatch.x $arg
+done

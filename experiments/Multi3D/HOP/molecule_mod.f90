@@ -1,4 +1,5 @@
 MODULE molecule_mod
+    USE os_mod
     USE prec_mod
     USE op_math_mod
     USE ion_mod
@@ -107,13 +108,24 @@ END FUNCTION calc_e
 !===============================================================================
 SUBROUTINE allocate_molec (self, m)
     class(molec_type) :: self
-    integer :: m(3)
+    integer :: m(3), mold(3)
     !---------------------------------------------------------------------------
     if (all(m == self%m)) return
     self%m = m
-    if (self%allocated) deallocate(self%f, self%e, self%dis, self%part, self%n)
+    if (self%allocated) then
+        mold = shape(self%f)
+        deallocate(self%f, self%dis, self%part, self%n)
+        call os%mem_register(storage_size(self%f), -product(mold), label='mol%f')
+        call os%mem_register(storage_size(self%n), -product(mold), label='mol%n')
+        call os%mem_register(storage_size(self%dis), -product(mold), label='mol%dis')
+        call os%mem_register(storage_size(self%part), -product(mold), label='mol%part')
+    endif
     allocate(self%f(m(1),m(2),m(3)), source=0.d0)
-    allocate(self%e, self%n, self%dis, self%part, source=self%f)
+    allocate(self%n, self%dis, self%part, source=self%f)
+    call os%mem_register(storage_size(self%f), product(m), label='mol%f')
+    call os%mem_register(storage_size(self%n), product(m), label='mol%n')
+    call os%mem_register(storage_size(self%dis), product(m), label='mol%dis')
+    call os%mem_register(storage_size(self%part), product(m), label='mol%part')
     self%allocated = .true.
 END SUBROUTINE allocate_molec
 

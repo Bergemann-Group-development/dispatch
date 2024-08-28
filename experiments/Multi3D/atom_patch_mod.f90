@@ -10,8 +10,8 @@ MODULE atom_patch_mod
     USE handyfuncs_mod
     USE atom_mod, only: atom_type, atomic_spectrum_type, use_classic_col, kramer_bf, &
                         red_cut, blue_cut, logf_cut, atom_data_t, m1d_legacy_mode, &
-                        nq_fac, nq_min, nq_max, cbbesc, cbfesc, cbbhsc, cbfhsc, &
-                        disable_bf, level_partf
+                        nq_fac, nq_min, nq_max, disable_bf, level_partf
+    USE coll_mod, only: cbbesc, cbfesc, cbbhsc, cbfhsc
     USE trans_mod, only: line_type, cont_type
     USE const_mod, only: CC
     USE ion_mod, only: ion_type, particle_type, debye_shield
@@ -22,7 +22,7 @@ MODULE atom_patch_mod
     USE m3d_patch_mod, only: m3d_patch_t, composition, maxiter, check_NaN, cswitch, key_link_t, &
     global_maxerr, convlim, convmax, atom_update_counter, comoving_frame, global_pos, ng_step, ng_start, &
     decouple_continuum, overlapping_bb, overlapping_bf, line_blanketing, converged, premature_finish, &
-    rotate_atmos, long_vec, rank_lvlerr
+    rotate_atmos, long_vec, rank_lvlerr, overlapping_bb_in_output, long_scheme
     USE bftrans_mod, only: bftrans_type
     USE hprofl_mod, only: hydrogen_BPO
     USE osmet_mod, only:osmet_type
@@ -113,7 +113,7 @@ MODULE atom_patch_mod
     exclude_from_line_list, precomputed_depart, use_classic_col, kramer_bf, overlapping_bf, &
     overlapping_bb, hydrogen_BPO, detailed_absmet, n_cntrbf, convmax, premature_finish, &
     pandas_format, save_populations, nq_fac, nq_min, nq_max, cbbesc, cbfesc, cbbhsc, cbfhsc, &
-    disable_bf
+    disable_bf, overlapping_bb_in_output
     namelist /line_mask/ in_lines, cntrbf_lines
     !-----------------------------------------------------------------------------
     call trace%begin('atom_patch_t%pre_init_atom', itimer=itimer)
@@ -256,7 +256,7 @@ MODULE atom_patch_mod
           call self%output_atom%set_ired_iblue(output_sp, bb=.true., bf=.true.) 
         else
           output_sp%name = 'output based on atom'
-          call self%output_atom%create_spectrum(output_sp, bb=.true.)
+          call self%output_atom%create_spectrum(output_sp, bb=.true., sort=overlapping_bb_in_output)
           call self%output_atom%set_ired_iblue(output_sp, bb=.true., bf=.true.) 
         endif
       elseif (external_sp) then
@@ -400,7 +400,7 @@ MODULE atom_patch_mod
     endif
 
     if (.not. self%update_skipped) then
-      call atom%compute_cont_factors(atom%data)
+      if (.not. (maxiter==0 .and. long_scheme=='none')) call atom%compute_cont_factors(atom%data)
     endif
     
     if (self%iter > 0) then
@@ -606,7 +606,7 @@ MODULE atom_patch_mod
           end do
           end do
         end do
-        call atom%compute_cont_factors(adata)
+        if (.not. (maxiter==0 .and. long_scheme=='none')) call atom%compute_cont_factors(adata)
       end do
     endif
 

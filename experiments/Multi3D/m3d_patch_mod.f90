@@ -26,7 +26,7 @@ MODULE m3d_patch_mod
     USE m3d_halo_mod, only: m3d_halo_t, print_finished, print_download, lock_mem, unlock_mem, print_lock
     USE spectrum_mod, only: nu_tolerance
     USE atom_mod, only: atom_type, atomic_spectrum_type, lse_no_pivot, lse_solver, m1d_legacy_mode, nq_fac, &
-                        use_classic_col
+                        use_classic_col, level_partf
     USE composition_mod, only: composition_type, scattering_absorption, irwin_dis
     USE ray_mod, only: one_dimensional, set_carlson_quadratures, set_radau_quadratures, set_lobatto_quadratures, &
                        set_gauss_quadratures, set_custom_quadratures, set_grid_quadratures
@@ -136,6 +136,7 @@ MODULE m3d_patch_mod
     logical, public, save :: comoving_frame=.false., linelist_in_output=.true.
     logical, public, save :: use_density=.true., use_ne=.true., line_blanketing=.false.
     logical, public, save :: overlapping_bb=.true., overlapping_bf=.true.
+    logical, public, save :: overlapping_bb_in_output=.true.
     logical, public, save :: absmet_in_output=.false., column_by_column=.false.
     logical, public, save :: print_start=.false., print_send=.false.
     logical, public, save :: Jnu_to_file=.true., amr=.true.
@@ -147,6 +148,8 @@ MODULE m3d_patch_mod
     character(len=128), save :: save_patch_kind=''
     character(len=512), public, save:: custom_mu=''
     character(len=128), public, save :: long_solver='linear'
+    character(len=32), public, save :: short_scheme='radau'
+    character(len=32), public, save :: long_scheme='lobatto'
     real(4), public :: vel_max=0.0
     real(8), public :: ray_offset(2)=[0.,0.], pivot_z=-1
     integer, public :: ng_step=-1, ng_start=8
@@ -166,8 +169,6 @@ MODULE m3d_patch_mod
     logical, save :: on=.true.
     integer :: iostat, m(6), i
     integer, save :: n_nu=0, itimer=0, long_ntheta=4, long_nphi=4, short_ntheta=2, short_nphi=4
-    character(len=32), save :: short_scheme='radau'
-    character(len=32), save :: long_scheme='lobatto'
     real(8), dimension(:), allocatable:: cust_mu
     namelist /m3d_params/ on, verbose, fcheck, linecheck, pcheck, &
     n_nu, maxiter, ilambd, lvlcheck, comoving_frame, save_id, &
@@ -257,6 +258,7 @@ MODULE m3d_patch_mod
         h_occupation_probability = .false.
         use_classic_col = .false.
         irwin_dis = .false.
+        level_partf = .true.
         !comoving_frame = .true.
         !preconditioning = .false.
       endif

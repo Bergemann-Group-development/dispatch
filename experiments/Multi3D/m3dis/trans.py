@@ -63,6 +63,7 @@ class trans_class(object):
         self.alamb = 1e8 / (self.upper.ecm - self.lower.ecm)
         self.u = CC / self.alamb * 1e8
         self.lam0 = _vacuum2obs(self.alamb)
+        self.evi = self.lower.ev
 
         if kr < atom.nline:
             if not hasattr(self, 'c_lam0'):
@@ -396,6 +397,9 @@ class trans_class(object):
     #=====================================================================
     def get_cntrbf(self, df=None, ang=None, imu=None, LTE=False, mean=False, fslice=None, norm=False):
         #-----------------------------------------------------------------
+        if hasattr(self, 'prepared'):
+            if not self.prepared: self.prepare()
+
         cntrbf_lines = np.array(self.run.nml['line_mask']['cntrbf_lines']).ravel() - 1
         if not self.kr in cntrbf_lines:
             raise ValueError('Contribution function was not saved for this line!')
@@ -477,7 +481,8 @@ class trans_class(object):
         plt.xlabel(r'log$\tau_{500}$')
         plt.ylabel('Contribution function')
 
-        wave = r'$\lambda=${:.3f}[Å]'.format(self.lam[f])
+        lam = self.run.lam[self.ib:self.ir]
+        wave = r'$\lambda=${:.3f}[Å]'.format(lam[f])
         if ang is None and imu is None:
             angle = 'flux'
         else:

@@ -22,18 +22,18 @@ def read_table(file, **kwargs):
 
 class fast_atom(object):
   def __init__(self, atom_file):
-    f = open(atom_file, 'r')
-    condition = lambda x: not x.strip().startswith('*')
-    text = filter(condition, f)
-    self.id = next(text).strip()
-    self.molec = self.id in ['H2', 'C2', 'N2', 'O2', 'CH', 'OH', 'NH', 'CN', 'CO', 'NO', 'H2O']
-    if not self.molec: self.id = self.id.capitalize()
+    with open(atom_file, 'r') as f:
+      condition = lambda x: not x.strip().startswith('*')
+      text = filter(condition, f)
+      self.id = next(text).strip()
+      self.molec = self.id in ['H2', 'C2', 'N2', 'O2', 'CH', 'OH', 'NH', 'CN', 'CO', 'NO', 'H2O']
+      if not self.molec: self.id = self.id.capitalize()
 
-    self.abnd, self.ai = read(text, float)
-    self.awgt = self.ai * UU
-    self.nk, self.nline, self.ncont, self.nrfix = read(text, int)
-    self.nrad = self.nline + self.ncont
-    f.close()
+      self.abnd, self.ai = read(text, float)
+      self.awgt = self.ai * UU
+      self.nk, self.nline, self.ncont, self.nrfix = read(text, int)
+      self.nrad = self.nline + self.ncont
+      
     levels = read_table(atom_file, header=2, nrows=self.nk, names=['ecm', 'g', 'label', 'ion'])
     bb     = read_table(atom_file, header=2+self.nk, nrows=self.nline, names=['j', 'i', 'f', 'nq', 'qmax', 'q0', 'iw', 'ga', 'gv', 'gq', 'profile'])
     levels['ev'] = levels.ecm * CC*HH/EE
@@ -82,11 +82,13 @@ class pandas_atom(object):
   @classmethod
   def read(cls, atom_file):
     self = cls()
-    f = open(atom_file, 'r')
-    self.id = next(f).strip()
-    self.abnd, self.ai = read(f, float)
-    self.nk, self.nline, nnu_bf, self.ncol = read(f, int)
-    f.close()
+    
+    with open(atom_file, 'r') as f:
+      condition = lambda x: not x.strip().startswith('*')
+      text = filter(condition, f)
+      self.id = next(text).strip()
+      self.abnd, self.ai = read(text, float)
+      self.nk, self.nline, nnu_bf, self.ncol = read(text, int)
 
     pdkwargs = {'filepath_or_buffer':atom_file, 'sep':r'\s+', 'quotechar':"'", 'comment':'*'}
     pdkwargs['header'] = 3
