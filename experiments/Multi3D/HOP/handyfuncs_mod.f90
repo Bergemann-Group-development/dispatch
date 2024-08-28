@@ -60,7 +60,7 @@ SUBROUTINE count_words (string, nwords, sep)
   character, intent(in), optional :: sep
   character :: seperator
   integer :: i, n
-  logical :: new_word=.true.
+  logical :: new_word
   !-----------------------------------------------------------------------------
   if (present(sep)) then
     seperator = sep
@@ -70,6 +70,7 @@ SUBROUTINE count_words (string, nwords, sep)
 
   n = len(string)
   nwords = 0
+  new_word = .true.
   do i=1, n
   if (string(i:i) == seperator) then
       new_word = .true.
