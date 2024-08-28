@@ -742,8 +742,11 @@ class memmap_list:
         slc[self.caxis] = slice(None)
         return self[tuple(slc)]
     
-    def ravel(self, axis=None):
-        return self.squeeze(axis=axis)
+    def flatten(self):
+        return np.array(self).flatten()
+    
+    def ravel(self):
+        return self.flatten()
 
     def __add__(self, other):
         return np.array(self) + other
