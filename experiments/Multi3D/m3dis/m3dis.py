@@ -267,7 +267,7 @@ class m3dis(object):
             self.dim = '1D'
 
         if os.path.isfile(sfolder + 'atmos_meta.txt') and read_atmos:
-            mem = self.read_patch_save('atmos')[0]
+            mem = self.read_patch_save('atmos', zdim=2)[0]
             mem = mem[..., 0].squeeze()
             self.ne   = np.array(mem[...,0])
             self.rho  = np.array(mem[...,1])
