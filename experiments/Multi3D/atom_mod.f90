@@ -1388,6 +1388,9 @@ MODULE atom_mod
       do j=i+1, self%nlevel
         tri = (j-1)*(j-2)/2 + i
 
+         ! inverted bound-free transitions are unclear at the moment
+        if (self%ion(j) < self%ion(i)) cycle
+
         cont = self%ion(j) > self%ion(i)
         if (.not. self%ecol(tri) .or. .not. self%hcol(tri)) then
           fac = self%cdata(tri)
@@ -1395,9 +1398,6 @@ MODULE atom_mod
           nij = ni / nj
 
           dev = self%ev(j) - self%ev(i)
-          if (dev < 0) then
-            cycle
-          endif
           dev = max(dev, 1d-8) ! to avoid division by zero
 
           if (cont) then
