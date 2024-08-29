@@ -10,7 +10,7 @@ MODULE atom_patch_mod
     USE handyfuncs_mod
     USE atom_mod, only: atom_type, atomic_spectrum_type, use_classic_col, kramer_bf, &
                         red_cut, blue_cut, logf_cut, atom_data_t, m1d_legacy_mode, &
-                        nq_fac, nq_min, nq_max, disable_bf, level_partf
+                        nq_fac, nq_min, nq_max, disable_bf, disable_bb, level_partf
     USE coll_mod, only: cbbesc, cbfesc, cbbhsc, cbfhsc
     USE trans_mod, only: line_type, cont_type
     USE const_mod, only: CC
@@ -113,7 +113,7 @@ MODULE atom_patch_mod
     exclude_from_line_list, precomputed_depart, use_classic_col, kramer_bf, overlapping_bf, &
     overlapping_bb, hydrogen_BPO, detailed_absmet, n_cntrbf, convmax, premature_finish, &
     pandas_format, save_populations, nq_fac, nq_min, nq_max, cbbesc, cbfesc, cbbhsc, cbfhsc, &
-    disable_bf, overlapping_bb_in_output
+    disable_bf, disable_bb, overlapping_bb_in_output
     namelist /line_mask/ in_lines, cntrbf_lines
     !-----------------------------------------------------------------------------
     call trace%begin('atom_patch_t%pre_init_atom', itimer=itimer)
@@ -708,7 +708,7 @@ MODULE atom_patch_mod
           Gji   => gamma_ji   (i,j,k,:)
 
           if (totn > 0) then
-            call atom%solve_stat_equilibrium(temp, ne, totn, n, nstar, nh1, Gij, Gji, cswitch, check_NaN)
+            call atom%solve_stat_equilibrium(temp, ne, totn, n, nstar, nh1, Gij, Gji, cswitch, check_NaN, k)
 
             ! keep track of maximum population change
             do ii=1,atom%nlevel

@@ -113,7 +113,8 @@ MODULE atom_mod
     end type atom_type
 
     logical, public :: use_classic_col = .True., m1d_legacy_mode=.False.
-    logical, public :: lse_no_pivot = .True., kramer_bf=.False., disable_bf=.False.
+    logical, public :: lse_no_pivot = .True., kramer_bf=.False.
+    logical, public :: disable_bf=.False., disable_bb=.False.
     logical, public :: level_partf=.true.
     real(8), public :: red_thresh_aa  = 20000
     real(8), public :: blue_thresh_aa = 500
@@ -130,7 +131,7 @@ MODULE atom_mod
   contains
   
   !====================================================================================
-  SUBROUTINE solve_stat_equilibrium (self, temp, ne, totn, n, nstar, nh1, gamma_ij, gamma_ji, cswitch, check_NaN)
+  SUBROUTINE solve_stat_equilibrium (self, temp, ne, totn, n, nstar, nh1, gamma_ij, gamma_ji, cswitch, check_NaN, k)
     class(atom_type), target :: self
     class(transition_type), pointer :: trans
     real(8), intent(in) :: temp, ne, totn, nh1
@@ -139,7 +140,7 @@ MODULE atom_mod
     real(8), dimension(:), intent(inout) :: n
     integer, intent(in) :: cswitch
     logical, intent(in) :: check_NaN
-    integer :: kr, pos, i, j
+    integer :: kr, pos, i, j, k
     integer, save :: itimer=0, itimer2=0
     logical :: zero_pop, abort
     logical, save :: first_time=.true.
@@ -155,12 +156,13 @@ MODULE atom_mod
     ! Add radiative rates to W
     do kr=1, self%nrad
       if (kr <= self%nline) then
-        i = self%line(kr)%i
-        j = self%line(kr)%j
+        trans => self%line(kr)
       else
-        i = self%cont(kr-self%nline)%i
-        j = self%cont(kr-self%nline)%j
+        trans => self%cont(kr-self%nline)
       endif
+      if (.not. trans%active) cycle
+      i = trans%i
+      j = trans%j
       self%data%w(j,i) = self%data%w(j,i) + gamma_ij(kr)
       self%data%w(i,j) = self%data%w(i,j) + gamma_ji(kr)
     enddo
@@ -534,8 +536,10 @@ MODULE atom_mod
       read(latom,*) idx, self%ev(i), self%g(i), self%ion(i), self%label(i)
     end do
 
-    call nextentry(latom)
-    read(latom,*) ! skip bbtrans header
+    if (self%nline > 0) then
+      call nextentry(latom)
+      read(latom,*) ! skip bbtrans header
+    endif
 
     allocate(self%line(self%nline)) 
     call os%mem_register(storage_size(self%line), self%nline, label='atom%line')
@@ -545,6 +549,8 @@ MODULE atom_mod
       call nextentry(latom)
       read(latom,*) idx, lin%i, lin%j, lam_air, lin%lower_ev, loggf, &
             lin%ga, lin%gv, gq, lin%nnu, lin%qmax, lin%q0, lin%profile_type
+
+      if (disable_bb) call lin%deactivate()
             
       lin%i = lin%i + 1
       lin%j = lin%j + 1

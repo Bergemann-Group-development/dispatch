@@ -94,14 +94,15 @@ class pandas_atom(object):
     pdkwargs['header'] = 3
     self.lvl = pd.read_csv(nrows=self.nk, **pdkwargs)
     pdkwargs['header'] = 3+self.nk+1
-    self.bbt = pd.read_csv(nrows=self.nline, **pdkwargs)
-    pdkwargs['header'] = 3+self.nk+1+self.nline+1
+    if self.nline > 0:
+      self.bbt = pd.read_csv(nrows=self.nline, **pdkwargs)
+      self.bbt = self.bbt.rename(columns={'lam_air':'lam0'})
+      pdkwargs['header'] = 3+self.nk+1+self.nline+1
     if nnu_bf > 0:
       self.bft = pd.read_csv(nrows=nnu_bf, **pdkwargs)
-    if self.ncol > 0:
       pdkwargs['header'] = 3+self.nk+1+self.nline+1+nnu_bf+1
+    if self.ncol > 0:
       self.col = pd.read_csv(nrows=self.ncol, **pdkwargs)
-    self.bbt = self.bbt.rename(columns={'lam_air':'lam0'})
     self.post_init()
     return self
   

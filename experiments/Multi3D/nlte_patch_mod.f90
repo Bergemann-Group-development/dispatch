@@ -24,7 +24,7 @@ MODULE nlte_patch_mod
   column_by_column, rotate_atmos, check_NaN, rank_lvlerr, sample_back_opac, &
   decouple_continuum, linelist_in_output, sample_back_opac_in_output, ilambd, &
   Jnu_to_file, preconditioning, make_eos, amr, save_Inu, save_chi, &
-  rotate_continuum, long_solver
+  rotate_continuum, long_solver, fixed_Jnu
   USE ray_mod, only: one_dimensional, ray_type
   USE trans_mod, only:line_type, cont_type
   USE bbtrans_mod, only:voigt_function2, voigt_profile
@@ -75,6 +75,7 @@ MODULE nlte_patch_mod
     procedure :: save_contribution_function 
     procedure :: rotate_array
     procedure :: short_char
+    procedure :: set_fixed_Jnu
     procedure :: long_char_linear
     procedure :: long_char_quadratic
     procedure :: long_char_quadratic2
@@ -320,51 +321,55 @@ SUBROUTINE execute (self)
     endif
 
     do i_set=1, self%n_set
-      call self%back_to_work()
-
-      if (do_rotate_atmos .and. .not. do_rotate_continuum) then
-        call self%eta_to_Snu()
-        call self%rotate_array(vec, work(:,:,:,1:nz,1:2))
-        call self%Snu_to_eta()
-      endif
-
-      if (i_set < 3) then ! i_set==3 is the continuum only
-        if (self%bound_bound) then
-          call self%add_bound_bound_opacities(adata, wmu, inv_df, vproj, adamp, LTE=i_set==2)
-        endif
-        if (use_linelist) then
-          call comp%add_linelist_opacities(self%nu, work(:,:,:,1:nz,1), dlam, vproj, work(:,:,:,1:nz,2), vmic=vmic)
-        endif
-      endif
-
-      call self%eta_to_Snu()
-      call self%set_upstream_boundary(i_mu, i_set, ng)
-
-      if (self%out_mu .and. .not. (one_dimensional .or. column_by_column .or. do_rotate_atmos)) then
-        call self%rotate_array(vec, work(:,:,:,1:nz,1:2))
-      endif
-
-      if (self%out_mu) then
-        select case(long_solver)
-        case('linear')
-          call self%long_char_linear(vec)
-        case('quadratic')
-          call self%long_char_quadratic(vec)
-        case('quadratic2')
-          call self%long_char_quadratic2(vec)
-        case default
-          stop 'Unknown long_solver, use "linear" or "quadratic"'
-        end select
+      if (.not. self%out_mu .and. fixed_Jnu > 0) then
+        call self%set_fixed_Jnu(adata)
       else
-        if (one_dimensional) then
-          call self%long_char_linear(vec)
-        else
-          call self%short_char(vec)
-        endif
-      endif
+        call self%back_to_work()
 
-      if (get_cntrbf) then
-        call self%save_contribution_function(i_set, i_mu)
+        if (do_rotate_atmos .and. .not. do_rotate_continuum) then
+          call self%eta_to_Snu()
+          call self%rotate_array(vec, work(:,:,:,1:nz,1:2))
+          call self%Snu_to_eta()
+        endif
+
+        if (i_set < 3) then ! i_set==3 is the continuum only
+          if (self%bound_bound) then
+            call self%add_bound_bound_opacities(adata, wmu, inv_df, vproj, adamp, LTE=i_set==2)
+          endif
+          if (use_linelist) then
+            call comp%add_linelist_opacities(self%nu, work(:,:,:,1:nz,1), dlam, vproj, work(:,:,:,1:nz,2), vmic=vmic)
+          endif
+        endif
+
+        call self%eta_to_Snu()
+        call self%set_upstream_boundary(i_mu, i_set, ng)
+
+        if (self%out_mu .and. .not. (one_dimensional .or. column_by_column .or. do_rotate_atmos)) then
+          call self%rotate_array(vec, work(:,:,:,1:nz,1:2))
+        endif
+
+        if (self%out_mu) then
+          select case(long_solver)
+          case('linear')
+            call self%long_char_linear(vec)
+          case('quadratic')
+            call self%long_char_quadratic(vec)
+          case('quadratic2')
+            call self%long_char_quadratic2(vec)
+          case default
+            stop 'Unknown long_solver, use "linear" or "quadratic"'
+          end select
+        else
+          if (one_dimensional) then
+            call self%long_char_linear(vec)
+          else
+            call self%short_char(vec)
+          endif
+        endif
+
+        if (get_cntrbf) then
+          call self%save_contribution_function(i_set, i_mu)
+        endif
       endif
 
       if (self%print_update_info) then
@@ -1333,6 +1338,30 @@ SUBROUTINE rotate_array (self, vec, array)
 END SUBROUTINE rotate_array
 
 !===============================================================================
+SUBROUTINE set_fixed_Jnu (self, adata)
+  class(nlte_patch_t) :: self
+  class(atom_data_t) :: adata
+  real(4) :: Bnu
+  integer, save :: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin('nlte_patch%set_fixed_Jnu', itimer=itimer)
+  do z=1, nz
+  do y=1, ny
+  do x=1, nx
+    do f=self%fs, self%fe
+      associate(blz=>back(f,x,y,z,3), Inu=>work(f,x,y,z,3))
+        Bnu = blz / (1 - blz)
+        Inu = fixed_Jnu * Bnu
+      end associate
+    end do
+    adata%wphi(x,y,z,:) = 1
+  end do
+  end do
+  end do
+  call trace%end(itimer)
+END SUBROUTINE set_fixed_Jnu
+
+!===============================================================================
 SUBROUTINE short_char (self, vec)
   class(nlte_patch_t) :: self
   type(ray_type) :: ray, amr_ray
@@ -1811,7 +1840,7 @@ SUBROUTINE save_contribution_function (self, i_set, i_mu)
     end associate
     if (i_set==3 .and. i_mu==self%mue) then
       write(name, '(A,I6.6)') 'cntrbf_', j
-      call self%save6(cntrbf(i)%data, name)
+      call self%save6(cntrbf(i)%data, trim(name))
     endif
   end do
   call trace%end(itimer)

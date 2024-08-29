@@ -4255,7 +4255,7 @@ SUBROUTINE save_meta(self, mem, label, lunit, add2meta, key)
   logical, intent(in), optional :: add2meta
   integer, intent(in), optional, target :: key(:)
   character(len=256) :: meta_file, folder
-  character(len=32) :: filename, fmt
+  character(len=256) :: filename, fmt
   integer, dimension(:), pointer :: k
   integer :: i, ndim
   integer, save :: itimer=0

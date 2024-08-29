@@ -150,7 +150,7 @@ MODULE m3d_patch_mod
     character(len=128), public, save :: long_solver='linear'
     character(len=32), public, save :: short_scheme='radau'
     character(len=32), public, save :: long_scheme='lobatto'
-    real(4), public :: vel_max=0.0
+    real(4), public :: fixed_Jnu=-1.0
     real(8), public :: ray_offset(2)=[0.,0.], pivot_z=-1
     integer, public :: ng_step=-1, ng_start=8
     character(len=126), public :: atmos_format='Text'
@@ -179,7 +179,7 @@ MODULE m3d_patch_mod
     absmet_in_output, print_lock, make_eos, ng_step, ng_start, scattering_absorption, &
     column_by_column, rotate_atmos, Jnu_to_file, preconditioning, save_inu, save_chi, &
     long_scheme, long_ntheta, long_nphi, short_scheme, short_ntheta, short_nphi, &
-    long_solver
+    long_solver, fixed_Jnu
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%pre_init', itimer=itimer)
     self%type = trim(self%kind)
