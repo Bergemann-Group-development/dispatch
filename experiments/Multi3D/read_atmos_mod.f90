@@ -46,6 +46,7 @@ MODULE read_atmos_mod
   type(input_atmos_t), public, save :: ia
 
   public :: read_stagger
+  public :: read_stagger2
   public :: read_co5bold
   public :: read_marcs
   public :: read_multi_snapshot
@@ -273,6 +274,57 @@ SUBROUTINE read_multi_snapshot(atmos_file)
   ia%ltemp = log(temp)
   ia%lrho  = log(rho)
 END SUBROUTINE read_multi_snapshot
+
+!===============================================================================
+SUBROUTINE read_stagger2(atmos_file)
+  integer :: lunit, nx, ny, nz, pos
+  character(len=*) :: atmos_file
+  real(4), dimension(:), allocatable :: xx, yy, zz
+  real(4), dimension(:,:,:), allocatable :: ne, temp, rho, vx, vy, vz
+  !-----------------------------------------------------------------------------
+  ! Open atmosphere file and read MHD variables
+  !-----------------------------------------------------------------------------
+  pos = index(atmos_file, 'atm3d.')
+  mesh_file = atmos_file(1:pos-1) // 'mesh.' // atmos_file(pos+6:)
+  call os%check_file(mesh_file)
+  open(file=mesh_file, newunit=lunit, form='FORMATTED')
+
+  read(lunit, *) nx
+  allocate(xx(nx))
+  read(lunit, *) xx
+
+  read(lunit, *) ny
+  allocate(yy(ny))
+  read(lunit, *) yy
+
+  read(lunit, *) nz
+  allocate(zz(nz))
+  read(lunit, *) zz
+  close(lunit)
+
+  call ia%allocate(nx, ny, nz)
+  ia%xx = xx
+  ia%yy = yy
+  ia%zz = zz
+  
+  allocate(temp, ne, vx, vy, vz, rho, mold=ia%lrho)
+  call os%check_file(atmos_file)
+  open(file=atmos_file, newunit=lunit, form='unformatted', access='stream')
+  read(lunit) ne
+  read(lunit) temp
+  read(lunit) vx
+  read(lunit) vy
+  read(lunit) vz
+  read(lunit) rho
+  close(lunit)
+
+  ia%px = vx * rho
+  ia%py = vy * rho
+  ia%pz = vz * rho
+  ia%lpe = log(ne * BK * temp)
+  ia%ltemp = log(temp)
+  ia%lrho  = log(rho)
+END SUBROUTINE read_stagger2
 
 !===============================================================================
 SUBROUTINE read_marcs (file, FeH, vmic, abund)
@@ -517,7 +569,10 @@ SUBROUTINE thick2thin(self)
       self%pz   (i,j,:) = -self%pz   (i,j,nz:1:-1)
     end do
     end do
-    self%zz = -self%zz (nz:1:-1)
+    self%zz = self%zz (nz:1:-1)
+    if (self%zz(1) > self%zz(nz)) then
+      self%zz = -self%zz
+    endif
   endif
   self%xx = self%xx - self%xx(1)         ! let the origin be zero
   self%yy = self%yy - self%yy(1)         ! let the origin be zero
