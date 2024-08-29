@@ -59,7 +59,7 @@ SUBROUTINE output (self)
   integer:: l(3), u(3), snap, rec, it(1), recl, unit
   real(var_k), pointer:: buffer(:,:,:,:)
   real(8):: start
-  character(len=64) filename
+  character(len=256) filename
   class(snapshot_t), pointer:: snapshot
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -148,7 +148,7 @@ SUBROUTINE write_out (buffer, snap, rec, unit, start)
   integer:: snap, rec, unit
   real(8):: start
   !.............................................................................
-  character(len=64) filename
+  character(len=256) filename
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('background_io%write_out', itimer=itimer)
@@ -181,7 +181,7 @@ SUBROUTINE input (self, ok)
   class(snapshot_t), pointer:: snapshot
   logical:: ok
   !.............................................................................
-  character(len=64) filename
+  character(len=256) filename
   real, pointer:: buffer(:,:,:,:)
   integer:: unit, l(3), u(3), recl, iostat
   !-----------------------------------------------------------------------------
