@@ -6,14 +6,16 @@ MODULE composition_patch_mod
   USE gpatch_mod
   USE handyfuncs_mod
   USE optab_mod, only: optab
-  USE ion_mod, only: ion_type, debye_shield
+  USE ion_mod, only: particle_type, ion_type, debye_shield
+  USE molecule_mod, only: molec_type
   USE element_mod, only: element_type
   USE m3d_patch_mod,   only: m3d_patch_t, composition, comoving_frame, ilambd, dlam, &
   use_density, use_ne, overlapping_bb, overlapping_bf, line_blanketing, binned_opac, &
   save_Qrad, maxiter, rotate_atmos, long_vec, sample_back_opac, decouple_continuum, &
-  linelist_in_output, sample_back_opac_in_output, make_eos
+  linelist_in_output, sample_back_opac_in_output, make_eos, overlapping_bb_in_output
   USE m3d_debug_mod
-  USE composition_mod, only: composition_type, exclude_elements, switch, mhd_eos
+  USE composition_mod, only: composition_type, exclude_elements, switch, mhd_eos, &
+  irwin_dis, vmic, opac_table_vmic
   USE atom_patch_mod,  only: atom_patch_t
   USE nlte_patch_mod, only:nlte_patch_t
   USE bftrans_mod, only: H_occupation_probability
@@ -42,12 +44,14 @@ MODULE composition_patch_mod
     procedure :: init_tabulated_comp
     procedure :: init_eos_comp
     procedure :: save_eos_variables
+    procedure :: save_number_densities
     procedure :: nbor_relations => composition_patch_nbor_relations
   end type
   
   real(8), public :: FeH=0, dtemp=250., ldne=0.25, ldrho=0.25, ldtemp=0.1
   logical, public :: save_atmos=.true., save_eos=.false.
   real(4), public, dimension(:), allocatable :: external_abund
+  character(len=256), save :: save_species=''
 
 contains
 
@@ -72,7 +76,7 @@ SUBROUTINE composition_pre_init (self)
   namelist /composition_params/ verbose, absdat_file, abund_file, absmet_file, &
   absmet_big_end, isotope_file, molec_file, H_occupation_probability, opac_table, &
   sample_back_opac, sample_back_opac_in_output, switch, mhd_eos, debye_shield, &
-  dtemp, ldne, ldrho, ldtemp, tmolim
+  dtemp, ldne, ldrho, ldtemp, tmolim, irwin_dis, opac_table_vmic, save_species
   namelist /linelist_params/ dlam, exclude_elements, linelist_file, line_lists, &
   linelist_in_output, tolerance
   ! ----------------------------------------------------------------------------
@@ -124,6 +128,7 @@ SUBROUTINE composition_pre_init (self)
 
     allocate(output_sp)
     binned_opac = opac_table /= ''
+    if (vmic > 0) opac_table_vmic = vmic
       
     if (binned_opac) then
       call optab%init(opac_table, output_sp)
@@ -294,6 +299,10 @@ SUBROUTINE execute (self)
       call self%save_eos_variables()
     endif
 
+    if (save_species /= '') then
+      call self%save_number_densities()
+    endif
+
     if (sample_back_opac) then
       call self%init_tabulated_comp(self%composition%temp, self%composition%ne, dtemp=dtemp, ldne=ldne)
     elseif (make_eos) then
@@ -439,6 +448,40 @@ SUBROUTINE save_abundances_to_file (self)
     close(lunit)
   endif
 END SUBROUTINE save_abundances_to_file
+
+!===============================================================================
+SUBROUTINE save_number_densities (self)
+  class(composition_patch_t), target :: self
+  class(ion_type), pointer :: ion
+  class(molec_type), pointer :: mol
+  class(particle_type), pointer :: p
+  integer :: i, nspecies
+  character(len=256) :: local_text
+  character(len=6), dimension(:), allocatable :: species
+  character(len=6) :: key
+  !-----------------------------------------------------------------------------
+  local_text = save_species
+  call count_words(local_text, nspecies, sep=',')
+  allocate(species(nspecies))
+  call replace_char(local_text, ' ', '*')
+  call replace_char(local_text, ',', ' ')
+  read(local_text, *) species
+
+  do i=1, nspecies
+    key = species(i)
+    call replace_char(key, '*', ' ')
+    key = adjustl(key)
+    call self%composition%ion_by_id(trim(key), ion)
+    p => ion
+    if (.not. associated(p)) then
+      call self%composition%molecule_by_id(trim(key), mol)
+      p => mol
+    endif
+    if (associated(p)) then
+      call self%save3(real(p%n), trim(key))
+    endif
+  end do
+END SUBROUTINE save_number_densities
 
 !===============================================================================
 SUBROUTINE composition_patch_nbor_relations(self, another, needed, needs_me, download)

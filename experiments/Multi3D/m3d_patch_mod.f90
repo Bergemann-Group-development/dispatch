@@ -26,8 +26,8 @@ MODULE m3d_patch_mod
     USE m3d_halo_mod, only: m3d_halo_t, print_finished, print_download, lock_mem, unlock_mem, print_lock
     USE spectrum_mod, only: nu_tolerance
     USE atom_mod, only: atom_type, atomic_spectrum_type, lse_no_pivot, lse_solver, m1d_legacy_mode, nq_fac, &
-                        use_classic_col
-    USE composition_mod, only: composition_type, scattering_absorption
+                        use_classic_col, level_partf
+    USE composition_mod, only: composition_type, scattering_absorption, irwin_dis
     USE ray_mod, only: one_dimensional, set_carlson_quadratures, set_radau_quadratures, set_lobatto_quadratures, &
                        set_gauss_quadratures, set_custom_quadratures, set_grid_quadratures
     USE m3d_debug_mod
@@ -35,6 +35,8 @@ MODULE m3d_patch_mod
     USE bftrans_mod, only: h_occupation_probability
     USE element_mod, only: element_type
     USE ion_mod, only: ion_type
+    USE molecule_mod, only: molec_type
+    USE, intrinsic :: ieee_arithmetic
     implicit none
     private
 
@@ -134,6 +136,7 @@ MODULE m3d_patch_mod
     logical, public, save :: comoving_frame=.false., linelist_in_output=.true.
     logical, public, save :: use_density=.true., use_ne=.true., line_blanketing=.false.
     logical, public, save :: overlapping_bb=.true., overlapping_bf=.true.
+    logical, public, save :: overlapping_bb_in_output=.true.
     logical, public, save :: absmet_in_output=.false., column_by_column=.false.
     logical, public, save :: print_start=.false., print_send=.false.
     logical, public, save :: Jnu_to_file=.true., amr=.true.
@@ -145,6 +148,8 @@ MODULE m3d_patch_mod
     character(len=128), save :: save_patch_kind=''
     character(len=512), public, save:: custom_mu=''
     character(len=128), public, save :: long_solver='linear'
+    character(len=32), public, save :: short_scheme='radau'
+    character(len=32), public, save :: long_scheme='lobatto'
     real(4), public :: vel_max=0.0
     real(8), public :: ray_offset(2)=[0.,0.], pivot_z=-1
     integer, public :: ng_step=-1, ng_start=8
@@ -164,8 +169,6 @@ MODULE m3d_patch_mod
     logical, save :: on=.true.
     integer :: iostat, m(6), i
     integer, save :: n_nu=0, itimer=0, long_ntheta=4, long_nphi=4, short_ntheta=2, short_nphi=4
-    character(len=32), save :: short_scheme='radau'
-    character(len=32), save :: long_scheme='lobatto'
     real(8), dimension(:), allocatable:: cust_mu
     namelist /m3d_params/ on, verbose, fcheck, linecheck, pcheck, &
     n_nu, maxiter, ilambd, lvlcheck, comoving_frame, save_id, &
@@ -254,6 +257,8 @@ MODULE m3d_patch_mod
         sample_back_opac = .false.
         h_occupation_probability = .false.
         use_classic_col = .false.
+        irwin_dis = .false.
+        level_partf = .true.
         !comoving_frame = .true.
         !preconditioning = .false.
       endif
@@ -948,8 +953,8 @@ MODULE m3d_patch_mod
     class(m3d_patch_t), target :: self
     class(composition_type), target :: comp
     class(element_type), pointer :: element
+    class(molec_type), pointer :: mol
     class(ion_type), pointer :: ion
-    !class(molec_type), pointer :: mol
     class(bbtrans_type), pointer :: line
     integer :: lunit, i, j, l
     character(len=256) :: linelist_out_file
@@ -957,8 +962,8 @@ MODULE m3d_patch_mod
     ! ----------------------------------------------------------------------------
     linelist_out_file = trim(io%run_dir) // 'linelist_out.txt'
     open(newunit=lunit, file=linelist_out_file, form='formatted')
-    write(lunit, "(A8, A4, A12, 2(A8), A5, 3(A11))") &
-    'ion', 'iso', 'lam_vac', 'loggf', 'ev_i', 'g_j', 'ga', 'gv', 'gq'
+    write(lunit, "(A8, A4, A12, 2(A8), 3(A11))") &
+    'ion', 'iso', 'lam_vac', 'loggf', 'ev_i', 'ga', 'gv', 'gq'
   
     do i=1, comp%nel
       element => comp%elements(i)
@@ -973,9 +978,21 @@ MODULE m3d_patch_mod
           if (.not. line%active .or. .not. line%used) cycle
   
           lam_vac = CC/line%nu0*1e8
-          write(lunit, "(A1, A6, A1, I4, F12.4, 2(F8.3), F5.1, 3(ES11.3))") "'", ion%id, "'", &
-          line%iso_idx, lam_vac, line%loggf, line%lower_ev, line%upper_g, line%ga, line%gv, line%gq
+          write(lunit, "(A1, A6, A1, I4, F12.4, 2(F8.3), 3(ES11.3))") "'", ion%id, "'", &
+          line%iso_idx, lam_vac, line%loggf, line%lower_ev, line%ga, line%gv, line%gq
         end do
+      end do
+    end do
+    do i=1, comp%nmolec
+      mol => comp%molecules(i)
+      if (mol%nline == 0) cycle
+      do l=1, mol%nline
+        line => mol%line(l)
+        if (.not. line%active .or. .not. line%used) cycle
+
+        lam_vac = CC/line%nu0*1e8
+        write(lunit, "(A1, A6, A1, I4, F12.4, 2(F8.3), 3(ES11.3))") "'", mol%id, "'", &
+        line%iso_idx, lam_vac, line%loggf, line%lower_ev, line%ga, line%gv, line%gq
       end do
     end do
     close(lunit)

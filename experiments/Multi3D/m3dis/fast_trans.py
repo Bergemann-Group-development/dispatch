@@ -11,6 +11,7 @@ class fast_trans(trans_class):
     self.el = atom
     self.bbt = atom.bbt
     self.title = 'Line = {:.2f} [Å]'.format(self.lam0)
+    self.prepared = False
   
   def __getattr__(self, attr):
     if attr in self.bbt:
@@ -20,6 +21,9 @@ class fast_trans(trans_class):
     
   def __repr__(self):
     return self.bbt.loc[self.kr].__repr__()
+
+  def prepare(self):
+    self.run = self.atom.run
   
 class llist_trans(fast_trans):
   #=====================================================================
@@ -32,3 +36,6 @@ class llist_trans(fast_trans):
     self.prepared = False
     self.lam_blue = self.lam_vac - 1.0
     self.lam_red  = self.lam_vac + 1.0
+
+  def prepare(self):
+    return trans_class.prepare(self)

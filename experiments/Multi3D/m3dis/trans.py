@@ -30,10 +30,10 @@ class trans_class(object):
             try:
                 pos = self.atom.f.tell()
                 data = self._read()
-                j, i, fosc, nq, qmax, q0, iw, ga, gw, gq = data[:10]
+                j, i, fosc, nq, qmax, q0, iw, ga, gv, gq = data[:10]
                 if (len(data) > 10): self.profile = data[10]
                 self.j, self.i, self.nq, self.iw = map(int, [j, i, nq, iw])
-                self.fosc, self.qmax, self.q0, self.ga, self.gw, self.gq = map(float, [fosc, qmax, q0, ga, gw, gq])
+                self.fosc, self.qmax, self.q0, self.ga, self.gv, self.gq = map(float, [fosc, qmax, q0, ga, gv, gq])
             except:
                 self.atom.f.seek(pos)
                 data = self._read()
@@ -63,6 +63,7 @@ class trans_class(object):
         self.alamb = 1e8 / (self.upper.ecm - self.lower.ecm)
         self.u = CC / self.alamb * 1e8
         self.lam0 = _vacuum2obs(self.alamb)
+        self.evi = self.lower.ev
 
         if kr < atom.nline:
             if not hasattr(self, 'c_lam0'):
@@ -92,7 +93,7 @@ class trans_class(object):
             if self.iw > 0:
                 pos = self.atom.f.tell()
                 self.hyperfine = pd.read_csv(self.atom.f, nrows=self.iw, sep=r'\s+',
-                                             names=['de', 'w', 'f', 'ga', 'gw', 'gq'])
+                                             names=['de', 'w', 'f', 'ga', 'gv', 'gq'])
                 self.atom.f.seek(pos)
                 for i in range(self.iw): self.atom.f.readline() # skip lines
             
@@ -104,7 +105,7 @@ class trans_class(object):
                 self.lam_blue = self.alamb / (1 + qmax)
             
             #if (atom.level[-1].ion > atom.level[0].ion):
-            #    self.prepare_VanderWaals(self.gw)
+            #    self.prepare_VanderWaals(self.gv)
             #cont = np.searchsorted(atom.ground_states, self.upper.i)
             #if len(atom.ground_states)>1:
             #    cont = atom.level[cont]
@@ -179,7 +180,6 @@ class trans_class(object):
         self.flux_cnt = self.run.flux_cnt[slc]
         self.ie = self.run.ie[slc]
         self.cnt = self.run.cnt[slc]
-        self.slc = slc
 
         if hasattr(self.run, 'lvlerr') and hasattr(self, 'i'):
             self.ilvlerr = self.run.lvlerr[self.i]
@@ -191,17 +191,17 @@ class trans_class(object):
     def plot(self, ang=None, imu=None, norm=True, dlam=None, label=None,
                 vdop=None, vshift=None, convolve=None, renorm=False,
                 LTE=False, title=None, set_labels=True, velocity_units=False,
-                lam_offset=True, **kwargs):
+                lam_offset=True, per_aa=False, **kwargs):
         #-----------------------------------------------------------------
         xx, yy = self.crop(ang=ang, imu=imu, norm=norm, dlam=dlam,
                             vdop=vdop, vshift=vshift, convolve=convolve,
                             renorm=renorm, LTE=LTE, velocity_units=velocity_units,
-                            lam_offset=lam_offset)
+                            lam_offset=lam_offset, per_aa=per_aa)
 
         self.run.set_xaxis(xx, dlam, velocity_units=velocity_units, set_labels=set_labels,
                            lam_offset=lam_offset)
         
-        self.run.set_yaxis(ang, imu, norm, renorm, set_labels=set_labels)
+        self.run.set_yaxis(ang=ang, imu=imu, norm=norm, renorm=renorm, set_labels=set_labels, per_aa=per_aa)
 
         if type(label) is str:
             if '{WEQ}' in label:
@@ -228,7 +228,7 @@ class trans_class(object):
         if hasattr(self, 'prepared'):
             if not self.prepared: self.prepare()
                 
-        xx, yy = self.run.crop(slc=self.slc, lam0=self.lam0, **kwargs)
+        xx, yy = self.run.crop(slc=slice(self.ib, self.ir), lam0=self.lam0, **kwargs)
         return xx, yy
     
     #=====================================================================
@@ -275,7 +275,7 @@ class trans_class(object):
         if dlam is not None and dlam is not False:
             xx = xx - self.lam0
 
-        xx, mask = self.run.get_xx(xx, slc=self.slc, **kwargs)
+        xx, mask = self.run.get_xx(xx, slc=slice(self.ib, self.ir), **kwargs)
 
         if velocity_units:
             xx = xx / self.lam0
@@ -397,6 +397,9 @@ class trans_class(object):
     #=====================================================================
     def get_cntrbf(self, df=None, ang=None, imu=None, LTE=False, mean=False, fslice=None, norm=False):
         #-----------------------------------------------------------------
+        if hasattr(self, 'prepared'):
+            if not self.prepared: self.prepare()
+
         cntrbf_lines = np.array(self.run.nml['line_mask']['cntrbf_lines']).ravel() - 1
         if not self.kr in cntrbf_lines:
             raise ValueError('Contribution function was not saved for this line!')
@@ -478,7 +481,8 @@ class trans_class(object):
         plt.xlabel(r'log$\tau_{500}$')
         plt.ylabel('Contribution function')
 
-        wave = r'$\lambda=${:.3f}[Å]'.format(self.lam[f])
+        lam = self.run.lam[self.ib:self.ir]
+        wave = r'$\lambda=${:.3f}[Å]'.format(lam[f])
         if ang is None and imu is None:
             angle = 'flux'
         else:

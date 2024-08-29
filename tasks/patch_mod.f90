@@ -26,6 +26,7 @@ MODULE patch_mod
   USE lagrange_mod
   USE dll_mod
   USE bdry_interface_mod
+  USE handyfuncs_mod, only: replace_char
   implicit none
   private
   intrinsic :: log
@@ -4265,6 +4266,7 @@ SUBROUTINE save_meta(self, mem, label, lunit, add2meta, key)
   else
     k => self%key(1:2)
   endif
+  call replace_char(label, ' ', '_')
   write(folder, '(A, A)') trim(io%run_dir), 'save/'
   write(filename, '(A, A, 3(I3.3))') trim(label), '_', abs(k)
   write(filename, '(A, A)') trim(filename), '.bin'

@@ -30,7 +30,7 @@ MODULE nlte_patch_mod
   USE bbtrans_mod, only:voigt_function2, voigt_profile
   USE m3d_debug_mod
   USE shared_mod
-  USE composition_mod, only:composition_type, scattering_absorption
+  USE composition_mod, only:composition_type, scattering_absorption, vmic, opac_table_vmic
   implicit none
   private
 
@@ -280,7 +280,7 @@ SUBROUTINE execute (self)
       if (self%bound_free) call self%add_bound_free_opacities(adata)
 
       if (self%bound_bound .and. .not. do_rotate_atmos) then
-        inv_df = self%atom%inverse_doppler_factor(real(comp%temp))
+        inv_df = self%atom%inverse_doppler_factor(real(comp%temp), vmic)
         call self%bound_bound_damping(comp, adamp, inv_df)
       endif
     endif
@@ -313,7 +313,7 @@ SUBROUTINE execute (self)
         adata => self%atom%rotated_data(i_mu)
         if (self%bound_free .and. do_rotate_continuum) call self%add_bound_free_opacities(adata)
         if (self%bound_bound) then
-          inv_df = self%atom%inverse_doppler_factor(real(comp%temp))
+          inv_df = self%atom%inverse_doppler_factor(real(comp%temp), vmic)
           call self%bound_bound_damping(comp, adamp, inv_df)
         endif
       endif
@@ -333,7 +333,7 @@ SUBROUTINE execute (self)
           call self%add_bound_bound_opacities(adata, wmu, inv_df, vproj, adamp, LTE=i_set==2)
         endif
         if (use_linelist) then
-          call comp%add_linelist_opacities(self%nu, work(:,:,:,1:nz,1), dlam, vproj, work(:,:,:,1:nz,2))
+          call comp%add_linelist_opacities(self%nu, work(:,:,:,1:nz,1), dlam, vproj, work(:,:,:,1:nz,2), vmic=vmic)
         endif
       endif
 
@@ -655,7 +655,7 @@ SUBROUTINE generate_opacity_table (self, nu, include_absmet)
   call comp%absorption(nu, view, include_absmet=include_absmet, sorted=self%sp%sorted)
 
   if (comp%ll_initialised) then
-    call comp%add_linelist_opacities(nu, view, dlam)
+    call comp%add_linelist_opacities(nu, view, dlam, vmic=opac_table_vmic)
   endif
 
   do k=1, nne
@@ -787,6 +787,7 @@ SUBROUTINE add_bound_free_opacities (self, adata)
   femax = 1
   do i=1, self%ncont
     cont => self%cont(i)
+    if (.not. cont%active) cycle
     fs = cont%ired
     fe = cont%iblue
     fsmin = min(fsmin, fs)
@@ -1041,8 +1042,9 @@ SUBROUTINE bound_free_rates (self, gamma_ij, gamma_ji)
   ! Computing bound-free radiative rates based on half integrated mean intensity
   n => self%atom%data%n
   do j=1, self%ncont
-    i = j + self%nline
     cont => self%cont(j)
+    if (.not. cont%active) cycle
+    i = j + self%nline
     fs = cont%ired
     fe = cont%iblue
     icont = cont%ntrans-self%atom%nline

@@ -10,7 +10,6 @@ MODULE bbtrans_mod
     integer :: nnu ! number of frequencies in the line
     real(dp) :: ga=0, gw1=0, gw2=0, gw3=0, gq=0, gv=0 ! line broadening (damping) constants
     real(dp) :: lower_ev, upper_g, loggf
-    !real(dp) :: gf
     real(dp) :: Aji, Aij, Bji, Bij ! Einstein coefficients, Bij is the
                               ! transition from the lower to the upper
                               ! level
@@ -71,8 +70,8 @@ contains
     real(4), dimension(:,:,:,:), intent(in) :: cont
     real(8), allocatable :: qq(:)
     real(4) :: ex, ni, nj, nij, upper_ev, nu0_ev, scalar, vs, lchi
-    real(4) :: phi, a, idf, cf, v, ref, ekt, gj_Bji
-    integer :: i,j,k,f, f0, f1, m(3), hi, hj, itimer=0
+    real(4) :: a, idf, cf, v, ref, ekt, Bji
+    integer :: i,j,k,f, f0, m(3), itimer=0
     logical :: used
     !----------------------------------------------------------------------------------
     !call trace%begin('add_lte_opacities_1', itimer=itimer)
@@ -80,7 +79,7 @@ contains
     scalar = over_4pi / self%nu0
     nu0_ev = H_E * self%nu0
     upper_ev = self%lower_ev + nu0_ev
-    gj_Bji = self%upper_g * self%Bji
+    Bji = self%Bji
 
     allocate(qq(ired:iblue))
     qq(ired:iblue) = nu(ired:iblue) / self%nu0 - 1
@@ -116,7 +115,7 @@ contains
         a = a * scalar * idf
         nij = exp(nu0_ev * ekt)             ! this is ni/nj gj/gi
         nj = inv_part(i,j,k) * exp(-ex)     ! this is nj/gj
-        cf = nj * gj_Bji * (nij - 1.)       ! this is (ni*Bij - nj*Bji)*h/4pi
+        cf = nj * Bji * (nij - 1.)          ! this is (ni*Bij - nj*Bji)*h/4pi
         cf = cf * idf
 
         ! check if line peak is larger than continuum tolerance
@@ -127,31 +126,25 @@ contains
         lchi = voigt_function2(a, vs) * cf
         if (lchi > ref) then
           used = .true.
-          ! if so, add and continue with blue wing
           chi(f0,i,j,k) = chi(f0,i,j,k) + lchi
-          f1 = ired
           do f=f0+1, iblue
             vs = (qq(f) - v) * idf
             lchi = voigt_function2(a, vs) * cf
-            ! if line opacity below tolerance exit and save f
-            if (lchi < ref) then
-              f1 = max(ired, 2*f0-f)
-              exit
-            endif
             chi(f,i,j,k) = chi(f,i,j,k) + lchi
+            if (lchi < ref) exit ! if line opacity below tolerance exit
           end do
-          ! now do red wing, starting where blue wing left off
-          do f=f1, f0-1
+          do f=f0-1, ired, -1
             vs = (qq(f) - v) * idf
             lchi = voigt_function2(a, vs) * cf
             chi(f,i,j,k) = chi(f,i,j,k) + lchi
+            if (lchi < ref) exit ! if line opacity below tolerance exit
           end do
         endif
       endif
     end do
     end do
     end do
-    self%used = used
+    if (used) self%used = used
     !call trace%end(itimer)
   END SUBROUTINE add_lte_opacities
   !------------------------------------------------------------------------------------
@@ -782,11 +775,10 @@ contains
         if (c1 > 0) then
           c625 = (lower_ion**2 * c1)**0.4 ! c6^(2/5) impact approximation
           self%gw1 = gv * 8.411 * 1.283984e-12 * c625
+        else
+          self%gw1 = 0
         endif
       endif
-    endif
-    if (self%gw1 == 0) then
-      call self%deactivate()
     endif
     if (disable_vdw) then
       self%unsold = .true.

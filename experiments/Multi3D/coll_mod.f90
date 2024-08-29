@@ -20,27 +20,28 @@ MODULE coll_mod
 
    ! *******************************************************************
  
-    integer,parameter :: ncdi=5,nbadnell=2
-    
-    !********************************************************************
-    real(8), parameter :: c0=((Eryd/sqrt(em)) * pi*Rbohr**2) * sqrt(8.0/(pi*bk))
- 
-    real(8), parameter :: sumscl=1.0d0
- 
-    ! the following paramters are for Burgess rates.
-    ! actelc=1 to be replaced later by routine that computes number
-    ! of active electrons from term information
-    real(8), parameter :: cbar=2.3d0, x100=5.0d2
-    real(8), parameter :: actelc=1.d0
- 
-    character(len=8),dimension(13),parameter :: theprocesses = &
-          (/'OHMEGA  ','CI      ','CH      ','CE      ', &
-             'FIXRAT  ','SHULL82 ','AR85-CEA',&
-             'BURGESS ','AR85-CH ','AR85-CHE','AR85-CHP',&
-             'CH0     ','CHI     '/)
-    
-    !integer :: n_coll_processes! number of keywords 
-    type(coll_type),dimension(:),allocatable :: coll
+   integer,parameter :: ncdi=5,nbadnell=2
+   
+   !********************************************************************
+   real(8), parameter :: c0=((Eryd/sqrt(em)) * pi*Rbohr**2) * sqrt(8.0/(pi*bk))
+
+   real(8), parameter :: sumscl=1.0d0
+
+   ! the following paramters are for Burgess rates.
+   ! actelc=1 to be replaced later by routine that computes number
+   ! of active electrons from term information
+   real(8), parameter :: cbar=2.3d0, x100=5.0d2
+   real(8), parameter :: actelc=1.d0
+
+   character(len=8),dimension(13),parameter :: theprocesses = &
+         (/'OHMEGA  ','CI      ','CH      ','CE      ', &
+            'FIXRAT  ','SHULL82 ','AR85-CEA',&
+            'BURGESS ','AR85-CH ','AR85-CHE','AR85-CHP',&
+            'CH0     ','CHI     '/)
+   
+   !integer :: n_coll_processes! number of keywords 
+   type(coll_type),dimension(:),allocatable :: coll
+   real(8), public :: cbbesc=1., cbfesc=1., cbbhsc=1., cbfhsc=1.
      
  contains
 
@@ -73,7 +74,7 @@ MODULE coll_mod
   
       ! loop over all the transitions
       do i=1, size(coll, 1)
-  
+         if (coll(i)%nc == 0) cycle
          cup=0.0d0
          cdn=0.0d0
          ll=coll(i)%ll
@@ -98,7 +99,11 @@ MODULE coll_mod
             nc = coll(i)%nc
             itemp = coll(i)%itemp
             call hermite_interpolation(ct,temp,tgrid(1:nc,itemp),cgrid(1:nc,i),dcdt(1:nc,i))
-            ct = exp(ct)
+
+            select case(trim(coll(i)%key))
+            case('OHMEGA','CE','CI','CH0')
+               ct = exp(ct)
+            end select
          end select
   
          !********************************************************************
@@ -112,23 +117,27 @@ MODULE coll_mod
          case('CE')
             ! excitation of neutrals by electron collisions 
             cdn = g(ll)/g(ul) * ct * ne * stg
+            cdn = cdn * cbbesc
             cup = cdn * nsr
 
          case('CH')
             ! collisions with neutral hydrogen)
             ! these are downward rates (cdn); cup are upward rates
             cdn = ct * nh1
+            cdn = cdn * cbbhsc
             cup = cdn * nsr
 
          case('CHI')
             ! b-f collisions with neutral hydrogen
             ! these are downward rates (cdn); cup are upward rates
             cup = ct * nh1
+            cup = cup * cbfhsc
             cdn = cup / nsr
 
          case('CI')
             ! ionization by electron collisions
             cup = ct * ne * stg * exp(-dev*ek_over_temp) 
+            cup = cup * cbfesc
             cdn = cup / nsr
 
          case('CH0')

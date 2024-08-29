@@ -11,6 +11,9 @@ import re
 import os
 import errno
 import copy
+from inspect import signature
+import matplotlib
+import matplotlib.pyplot as plt
 
 CB_colors = ['#377eb8', '#ff7f00', '#4daf4a', '#f781bf', '#a65628', '#984ea3', '#999999', '#e41a1c', '#dede00']
 
@@ -22,12 +25,40 @@ UU = 1.6605655E-24
 BK = 1.380662E-16
 PI = 3.14159265359
 SBOL = 5.6704e-5
+XMH = 1.67339e-24
 
 HCE = HH*CC/EE*1e8
 HC2 = 2.*HH*CC *1e24
 HCK = HH*CC/BK*1e8
 EK  = EE/BK
-#HNY4P = HH*CC/QNORM/4./PI*1e-5
+
+atomic_weigths = {'H':  1.008, 'He': 4.003, 'Li': 6.94,  'Be': 9.01,  'B':  10.81, 
+                  'C':  12.01, 'N':  14.01, 'O':  16.0,  'F':  19.0,  'Ne': 20.18, 
+                  'Na': 22.99, 'Mg': 24.31, 'Al': 26.98, 'Si': 28.08, 'P':  30.97, 
+                  'S':  32.06, 'Cl': 35.45, 'Ar': 39.95, 'K':  39.1,  'Ca': 40.08, 
+                  'Sc': 44.96, 'Ti': 47.9,  'V':  50.94, 'Cr': 52.0,  'Mn': 54.94, 
+                  'Fe': 55.85, 'Co': 58.93, 'Ni': 58.7,  'Cu': 63.54, 'Zn': 65.37, 
+                  'Ga': 69.72, 'Ge': 72.59, 'As': 74.92, 'Se': 78.96, 'Br': 79.9, 
+                  'Kr': 83.8,  'Rb': 85.47, 'Sr': 87.62, 'Y':  88.91, 'Zr': 91.22, 
+                  'Nb': 92.91, 'Mo': 95.94, 'Tc': 98.91, 'Ru': 101.0, 'Rh': 102.9, 
+                  'Pd': 106.4, 'Ag': 107.9, 'Cd': 112.4, 'In': 114.8, 'Sn': 118.7, 
+                  'Sb': 121.8, 'Te': 127.6, 'I':  126.9, 'Xe': 131.3, 'Cs': 132.9, 
+                  'Ba': 137.3, 'La': 138.9, 'Ce': 140.1, 'Pr': 140.9, 'Nd': 144.2, 
+                  'Pm': 146.0, 'Sm': 150.4, 'Eu': 152.0, 'Gd': 157.3, 'Tb': 158.9, 
+                  'Dy': 162.5, 'Ho': 164.9, 'Er': 167.3, 'Tm': 168.9, 'Yb': 170.0, 
+                  'Lu': 175.0, 'Hf': 178.5, 'Ta': 180.9, 'W':  183.9, 'Re': 186.0, 
+                  'Os': 190.0, 'Ir': 192.2, 'Pt': 195.1, 'Au': 197.0, 'Hg': 200.6, 
+                  'Tl': 204.4, 'Pb': 207.2, 'Bi': 209.0, 'Po': 210.0, 'At': 210.0, 
+                  'Rn': 222.0, 'Fr': 223.0, 'Ra': 226.0, 'Ac': 227.0, 'Th': 232.0, 
+                  'Pa': 230.4, 'U': 238.0}
+
+plot_kwargs = signature(plt.plot).parameters
+line2d_kwargs = signature(matplotlib.lines.Line2D).parameters
+artist_properties = {
+    'alpha', 'zorder', 'label', 'visible', 'animated', 'clip_on', 
+    'clip_box', 'clip_path', 'transform', 'agg_filter', 'figure'}
+combined_kwargs = {**plot_kwargs, **line2d_kwargs}
+plt_kwargs = set(combined_kwargs.keys()).union(artist_properties)
 
 def check_file(file):
     if file!='':
@@ -44,6 +75,12 @@ def match_kwargs(func, kwargs):
     func_kwargs = get_kwargs(func)
     matched_kwargs = {k: v for k, v in kwargs.items() if k in func_kwargs}
     return matched_kwargs
+
+def split_kwargs(func, kwargs):
+    func_kwargs = get_kwargs(func)
+    matched = {k: v for k, v in kwargs.items() if k in func_kwargs}
+    unmatched = {k: v for k, v in kwargs.items() if k not in func_kwargs}
+    return matched, unmatched
 
 def planck(lam, temp):
     return HC2/lam**3/(np.exp(HCK/np.outer(temp, lam)) - 1)
@@ -521,26 +558,21 @@ def shift_interp2(xx, yy, newx):
     out = [shift_interp(yy[i1], yy[i2], d) for d, i1, i2 in zip(dx, ii1, ii2)]
     return np.array(out)
 
-
 @njit
-#=====================================================================
 def interp_tau(newx, xx, yy):
     #-----------------------------------------------------------------
     xshape = np.shape(xx)
     yshape = np.shape(yy)
-    nnew = len(newx)
     nold = xshape[-1]
-    dimdiff = len(yshape) - len(xshape)
-    extra = list(yshape)[:dimdiff]
     xx = xx.reshape((-1, nold))
-    n = np.shape(xx)[0]
-    nextra = np.prod(np.array(extra))
-    yy = yy.reshape((nextra, n, nold))
-    newy = np.empty((nextra, n, nnew))
+    yy = yy.reshape((-1, nold))
+    nx = np.shape(xx)[0]
+    ny = np.shape(yy)[0]
+    nnew = len(newx)
+    newy = np.empty((ny, nnew))
 
-    for i in range(nextra):
-        for j in range(n):
-            newy[i,j] = np.interp(newx, xx[j], yy[i,j])
+    for i in range(ny):
+        newy[i] = np.interp(newx, xx[i%nx], yy[i])
     
     newy = newy.reshape(yshape[:-1] + (nnew,))
     return newy
@@ -710,8 +742,11 @@ class memmap_list:
         slc[self.caxis] = slice(None)
         return self[tuple(slc)]
     
-    def ravel(self, axis=None):
-        return self.squeeze(axis=axis)
+    def flatten(self):
+        return np.array(self).flatten()
+    
+    def ravel(self):
+        return self.flatten()
 
     def __add__(self, other):
         return np.array(self) + other

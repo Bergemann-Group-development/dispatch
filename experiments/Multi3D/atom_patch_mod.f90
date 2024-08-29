@@ -10,7 +10,8 @@ MODULE atom_patch_mod
     USE handyfuncs_mod
     USE atom_mod, only: atom_type, atomic_spectrum_type, use_classic_col, kramer_bf, &
                         red_cut, blue_cut, logf_cut, atom_data_t, m1d_legacy_mode, &
-                        nq_fac, nq_min, nq_max
+                        nq_fac, nq_min, nq_max, disable_bf, level_partf
+    USE coll_mod, only: cbbesc, cbfesc, cbbhsc, cbfhsc
     USE trans_mod, only: line_type, cont_type
     USE const_mod, only: CC
     USE ion_mod, only: ion_type, particle_type, debye_shield
@@ -21,13 +22,14 @@ MODULE atom_patch_mod
     USE m3d_patch_mod, only: m3d_patch_t, composition, maxiter, check_NaN, cswitch, key_link_t, &
     global_maxerr, convlim, convmax, atom_update_counter, comoving_frame, global_pos, ng_step, ng_start, &
     decouple_continuum, overlapping_bb, overlapping_bf, line_blanketing, converged, premature_finish, &
-    rotate_atmos, long_vec, rank_lvlerr
+    rotate_atmos, long_vec, rank_lvlerr, overlapping_bb_in_output, long_scheme
     USE bftrans_mod, only: bftrans_type
     USE hprofl_mod, only: hydrogen_BPO
     USE osmet_mod, only:osmet_type
     USE nlte_patch_mod, only:nlte_patch_t, n_cntrbf, cntrbf_lines
     USE m3d_debug_mod
     USE shared_mod
+    USE, intrinsic :: ieee_arithmetic
     implicit none
   
     !-----------------------------------------------------------------------------
@@ -63,7 +65,6 @@ MODULE atom_patch_mod
     end type atom_patch_t
 
     integer, save :: epos(3), elvl
-    logical, save :: level_partf=.true.
     logical, save :: exclude_from_line_list=.true.
     logical, save :: detailed_absmet=.false.
     logical, save :: pandas_format=.false.
@@ -111,7 +112,8 @@ MODULE atom_patch_mod
     use_atom_abnd, logf_cut, red_cut, blue_cut, n_in_lines, abundance, &
     exclude_from_line_list, precomputed_depart, use_classic_col, kramer_bf, overlapping_bf, &
     overlapping_bb, hydrogen_BPO, detailed_absmet, n_cntrbf, convmax, premature_finish, &
-    pandas_format, save_populations, nq_fac, nq_min, nq_max
+    pandas_format, save_populations, nq_fac, nq_min, nq_max, cbbesc, cbfesc, cbbhsc, cbfhsc, &
+    disable_bf, overlapping_bb_in_output
     namelist /line_mask/ in_lines, cntrbf_lines
     !-----------------------------------------------------------------------------
     call trace%begin('atom_patch_t%pre_init_atom', itimer=itimer)
@@ -254,7 +256,7 @@ MODULE atom_patch_mod
           call self%output_atom%set_ired_iblue(output_sp, bb=.true., bf=.true.) 
         else
           output_sp%name = 'output based on atom'
-          call self%output_atom%create_spectrum(output_sp, bb=.true.)
+          call self%output_atom%create_spectrum(output_sp, bb=.true., sort=overlapping_bb_in_output)
           call self%output_atom%set_ired_iblue(output_sp, bb=.true., bf=.true.) 
         endif
       elseif (external_sp) then
@@ -307,7 +309,7 @@ MODULE atom_patch_mod
     endif
 
     if (associated(molec)) atom%tmax_update = comp%tmolim
-    if (level_partf) nullify(element)
+    if (associated(element)) call atom%check_ionisation_thresholds(element)
     call atom%compute_lte_populations(adata%nstar, adata%totn, real(comp%temp), real(comp%saha), real(dxi), element, molec)
     call trace%end(itimer)
   END SUBROUTINE init_atom_data
@@ -355,6 +357,7 @@ MODULE atom_patch_mod
 
         ! Normalize wphi
         do i=1, atom%nline
+          if (.not. atom%line(i)%active) cycle
           wphi(:,:,:,i) = 1 / wphi(:,:,:,i)
         end do
       endif
@@ -364,6 +367,7 @@ MODULE atom_patch_mod
       else
         do i=1, atom%nline
           line => atom%line(i)
+          if (.not. line%active) cycle
           gij = atom%g(line%i) / atom%g(line%j)
           gamma_ij(:,:,:,i) = gamma_ij(:,:,:,i) * wphi(:,:,:,i)
           gamma_ji(:,:,:,i) = gamma_ji(:,:,:,i) * wphi(:,:,:,i)
@@ -371,6 +375,7 @@ MODULE atom_patch_mod
         end do
         do i=i, atom%nrad
           cont => atom%cont(i-atom%nline)
+          if (.not. cont%active) cycle
           gamma_ji(:,:,:,i) = gamma_ji(:,:,:,i) * nstar(:,:,:,cont%i) / nstar(:,:,:,cont%j)
         end do
 
@@ -395,7 +400,7 @@ MODULE atom_patch_mod
     endif
 
     if (.not. self%update_skipped) then
-      call atom%compute_cont_factors(atom%data)
+      if (.not. (maxiter==0 .and. long_scheme=='none')) call atom%compute_cont_factors(atom%data)
     endif
     
     if (self%iter > 0) then
@@ -525,7 +530,7 @@ MODULE atom_patch_mod
     class(composition_type), pointer :: comp
     real(4), dimension(:,:,:,:,:,:), allocatable :: out_mem
     real(8), dimension(:,:,:), allocatable :: norm, totn
-    real(8) :: vec(3)
+    real(8) :: vec(3), tmp
     integer :: i, j, k, l, imu, n(3)
     integer, save :: count=0
     !-----------------------------------------------------------------------------
@@ -544,8 +549,10 @@ MODULE atom_patch_mod
     do k=1, self%n(3)
     do j=1, self%n(2)
     do i=1, self%n(1)
+      tmp = adata%nstar(i,j,k,l)
+      tmp = merge(ieee_value(tmp, ieee_quiet_nan), tmp, tmp==0)
       out_mem(i,j,k,l,1,1) = real(adata%nstar(i,j,k,l))
-      out_mem(i,j,k,l,2,1) = real(adata%n(i,j,k,l) / adata%nstar(i,j,k,l))
+      out_mem(i,j,k,l,2,1) = real(adata%n(i,j,k,l) / tmp)
     end do
     end do
     end do
@@ -562,7 +569,9 @@ MODULE atom_patch_mod
           do k=1, self%n(3)
           do j=1, self%n(2)
           do i=1, self%n(1)
-            adata%n(i,j,k,l) = atom%data%n(i,j,k,l) / atom%data%nstar(i,j,k,l)
+            tmp = atom%data%nstar(i,j,k,l)
+            tmp = merge(ieee_value(tmp, ieee_quiet_nan), tmp, tmp==0)
+            adata%n(i,j,k,l) = atom%data%n(i,j,k,l) / tmp
           end do
           end do
           end do
@@ -587,14 +596,17 @@ MODULE atom_patch_mod
           do k=1, self%n(3)
           do j=1, self%n(2)
           do i=1, self%n(1)
-            adata%n(i,j,k,l) = adata%n(i,j,k,l) * adata%totn(i,j,k) * norm(i,j,k)
+            tmp = adata%n(i,j,k,l) * adata%totn(i,j,k) * norm(i,j,k)
+            adata%n(i,j,k,l) = merge(tmp, 0.d0, tmp==tmp)
+            tmp = adata%nstar(i,j,k,l)
+            tmp = merge(ieee_value(tmp, ieee_quiet_nan), tmp, tmp==0)
             out_mem(i,j,k,l,1,1+imu) = real(adata%nstar(i,j,k,l))
-            out_mem(i,j,k,l,2,1+imu) = real(adata%n(i,j,k,l) / adata%nstar(i,j,k,l))
+            out_mem(i,j,k,l,2,1+imu) = real(adata%n(i,j,k,l) / tmp)
           end do
           end do
           end do
         end do
-        call atom%compute_cont_factors(adata)
+        if (.not. (maxiter==0 .and. long_scheme=='none')) call atom%compute_cont_factors(adata)
       end do
     endif
 
@@ -998,6 +1010,7 @@ MODULE atom_patch_mod
       read(lunit) mem
       do i=1, self%atom%nlevel
         self%atom%data%n(:,:,:,i) = dble(mem(:,:,:,i,2)) * self%atom%data%nstar(:,:,:,i)
+        where(self%atom%data%n(:,:,:,i) /= self%atom%data%n(:,:,:,i)) self%atom%data%n(:,:,:,i) = 0
       end do
       call os%deallocate(mem)
     !elseif (all(oldm(3:5) == newm(3:5))) then

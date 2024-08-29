@@ -102,14 +102,13 @@ contains
         real(dp), intent(in) :: ns
         real(dp), intent(out), dimension(:,:,:) :: w
         real(dp) :: ns2, rih, x1, x2, neutr, k1, k2, x, f, charg, res
-        real(dp), parameter :: a0=5.29177d-9  ! Bohr radius in cm
         real(dp), parameter :: pi43=4.18879d0 ! 4*pi/3
         integer :: i,j,k, m(3)
         !---------------------------------------------------------------------------
         ns2 = ns*ns
         rih = ns * sqrt(2.5*ns2 + 0.5)
-        x1 = (a0*(rih + 1.73))**3
-        x2 = (a0*(rih + 1.02))**3
+        x1 = (Rbohr*(rih + 1.73))**3
+        x2 = (Rbohr*(rih + 1.02))**3
 
         k1 = 8.3e14 / (ns2*ns2)
         if(ns > 3.) then
@@ -153,7 +152,6 @@ contains
       real(dp), dimension(:), allocatable :: x1, x2, kk, lfac, cutfac
       real(dp) :: ns, ns2, rih, neutr, k1, k2, x, charg, res, nh43, nhe43
       real(dp) :: redcut, nu, w, n, frac
-      real(dp), parameter :: a0=5.29177d-9  ! Bohr radius in cm
       real(dp), parameter :: pi43=4.18879d0 ! 4*pi/3
       integer :: f,i,j,k, m(3), nf
       !---------------------------------------------------------------------------
@@ -179,8 +177,8 @@ contains
             ns = 1.d0/sqrt(ns)
             ns2 = ns*ns
             rih = ns * sqrt(2.5*ns2 + 0.5)
-            x1(f) = (a0*(rih + 1.73))**3
-            x2(f) = (a0*(rih + 1.02))**3
+            x1(f) = (Rbohr*(rih + 1.73))**3
+            x2(f) = (Rbohr*(rih + 1.02))**3
             k1 = 8.3e14 / (ns2*ns2)
             if(ns > 3.) then
               k1 = k1 * 5.33333333*ns / (ns + 1.d0)**2

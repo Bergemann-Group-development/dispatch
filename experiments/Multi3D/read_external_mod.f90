@@ -21,7 +21,6 @@ MODULE read_external_mod
   USE shared_mod
   USE task_list_mod
   USE experiment_mod, only: experiment_t
-  USE ion_mod, only: vmic
   USE composition_mod
   USE composition_patch_mod, only: FeH, save_atmos, save_eos, external_abund
   USE patch_mod
@@ -30,7 +29,7 @@ MODULE read_external_mod
   USE m3d_patch_mod, only: maxiter, ilambd, m3d_patch_t, atom_update_counter, &
   global_maxerr, global_pos, nz_total, use_density, use_ne, atmos_format, amr
   USE m3d_halo_mod, only: m3d_halo_t
-  USE read_atmos_mod, only: ia, read_stagger, read_co5bold, &
+  USE read_atmos_mod, only: ia, read_stagger, read_co5bold, read_stagger2, &
   legacy_stagger_interp, read_marcs, read_multi_snapshot, read_1d_snapshot
   USE handyfuncs_mod
   USE ray_mod, only: one_dimensional
@@ -137,6 +136,8 @@ SUBROUTINE init(self, task_list, name)
   select case (atmos_format)
   case('stagger')
     call read_stagger(atmos_file, snap)
+  case('stagger2')
+    call read_stagger2(atmos_file)
   case('co5bold')
     call read_co5bold(atmos_file)
   case ('marcs')
