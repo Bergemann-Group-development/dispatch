@@ -12,7 +12,7 @@ MODULE atom_patch_mod
                         red_cut, blue_cut, logf_cut, atom_data_t, m1d_legacy_mode, &
                         nq_fac, nq_min, nq_max, disable_bf, disable_bb, level_partf
     USE coll_mod, only: cbbesc, cbfesc, cbbhsc, cbfhsc
-    USE trans_mod, only: line_type, cont_type
+    USE trans_mod, only: line_type, cont_type, transition_type
     USE const_mod, only: CC
     USE ion_mod, only: ion_type, particle_type, debye_shield
     USE element_mod, only: element_type
@@ -69,6 +69,7 @@ MODULE atom_patch_mod
     logical, save :: detailed_absmet=.false.
     logical, save :: pandas_format=.false.
     logical, save :: save_populations=.true.
+    logical, save :: save_rates=.false.
     character(len=256), save :: precomputed_depart=''
     character(len=256), public :: atom_file=''
     logical, public, save :: external_sp=.false.
@@ -113,7 +114,7 @@ MODULE atom_patch_mod
     exclude_from_line_list, precomputed_depart, use_classic_col, kramer_bf, overlapping_bf, &
     overlapping_bb, hydrogen_BPO, detailed_absmet, n_cntrbf, convmax, premature_finish, &
     pandas_format, save_populations, nq_fac, nq_min, nq_max, cbbesc, cbfesc, cbbhsc, cbfhsc, &
-    disable_bf, disable_bb, overlapping_bb_in_output
+    disable_bf, disable_bb, overlapping_bb_in_output, save_rates
     namelist /line_mask/ in_lines, cntrbf_lines
     !-----------------------------------------------------------------------------
     call trace%begin('atom_patch_t%pre_init_atom', itimer=itimer)
@@ -682,11 +683,13 @@ MODULE atom_patch_mod
   SUBROUTINE update_populations (self, gamma_ij, gamma_ji)
     class(atom_patch_t), target :: self
     class(atom_type), pointer :: atom
+    class(transition_type), pointer :: trans
     integer, dimension(3) :: ep
     real(8), dimension(:), pointer :: Gij, Gji
     real(8), dimension(:), pointer :: n, nstar
     real(8), dimension(:,:,:,:), target :: gamma_ij, gamma_ji
-    integer :: i, j, k, ii, ipos, il
+    real(4), dimension(:,:,:), allocatable :: cij, cji
+    integer :: x, y, z, i, j, ii, ipos, il, nx, ny, nz, it, jt
     real(8) :: temp, ne, global, totn, nh1
     integer, save :: itimer=0
     ! ----------------------------------------------------------------------------
@@ -694,21 +697,36 @@ MODULE atom_patch_mod
     atom => self%atom
     self%lvlerr = 0.0d0
     self%maxerr = 0.0d0
+    nx = self%n(1)
+    ny = self%n(2)
+    nz = self%n(3)
 
-    do k=1, self%n(3)
-      do j=1, self%n(2)
-        do i=1, self%n(1)
-          ne    = self%composition%ne(i,j,k)
-          temp  = self%composition%temp(i,j,k)
-          nh1   = self%composition%elements(1)%ions(1)%levels(1)%n(i,j,k)
-          totn  =  atom%data%totn  (i,j,k)
-          n     => atom%data%n     (i,j,k,:)
-          nstar => atom%data%nstar (i,j,k,:)
-          Gij   => gamma_ij   (i,j,k,:)
-          Gji   => gamma_ji   (i,j,k,:)
+    if (save_rates) then
+      allocate(cij(nx,ny,nz), source=0.0)
+      allocate(cji(nx,ny,nz), source=0.0)
+      if (linecheck <= atom%nline) then
+        trans => atom%line(linecheck)
+      else
+        trans => atom%cont(linecheck-atom%nline)
+      endif
+      i = trans%i
+      j = trans%j
+    endif
+
+    do z=1, nz
+      do y=1, ny
+        do x=1, nx
+          ne    = self%composition%ne(x,y,z)
+          temp  = self%composition%temp(x,y,z)
+          nh1   = self%composition%elements(1)%ions(1)%levels(1)%n(x,y,z)
+          totn  =  atom%data%totn  (x,y,z)
+          n     => atom%data%n     (x,y,z,:)
+          nstar => atom%data%nstar (x,y,z,:)
+          Gij   => gamma_ij   (x,y,z,:)
+          Gji   => gamma_ji   (x,y,z,:)
 
           if (totn > 0) then
-            call atom%solve_stat_equilibrium(temp, ne, totn, n, nstar, nh1, Gij, Gji, cswitch, check_NaN, k)
+            call atom%solve_stat_equilibrium(temp, ne, totn, n, nstar, nh1, Gij, Gji, cswitch, check_NaN, z)
 
             ! keep track of maximum population change
             do ii=1,atom%nlevel
@@ -716,15 +734,27 @@ MODULE atom_patch_mod
                   self%lvlerr(ii) = abs(atom%data%e(ii))
                   if (self%lvlerr(ii) > self%maxerr) then
                     self%maxerr = self%lvlerr(ii)
-                    ep = [i, j, k + self%zs]
+                    ep = [x, y, z + self%zs]
                     il = ii
                   endif
               end if
             end do
+
+            if (save_rates) then
+              cij(x,y,z) = atom%data%c(j, i)
+              cji(x,y,z) = atom%data%c(i, j)
+            endif
           endif
         end do
       end do
     end do
+
+    if (save_rates) then
+      call self%save3(real(gamma_ij(:,:,:,linecheck)), label='rij')
+      call self%save3(real(gamma_ji(:,:,:,linecheck)), label='rji')
+      call self%save3(cij, label='cij')
+      call self%save3(cji, label='cji')
+    endif
 
     if (self%maxerr /= self%maxerr) then
       call shared%abort('NaN in convergence error')

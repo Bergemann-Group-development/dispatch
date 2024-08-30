@@ -1466,7 +1466,6 @@ MODULE atom_mod
             n = n + 1
           endif
         endif
-        if (cont) exit
       end do
     end do
     if (first_time .and. n>0) then
