@@ -1520,6 +1520,7 @@ contains
           lvl%n = lvl%g * lvl%boltzmann(self%EK_over_temp, natural_log=.true.)
         end do
 
+        part = HI%part
         if (H_occupation_probability) then
           part = 0.
           do i=1, HI%nk
@@ -1533,7 +1534,6 @@ contains
           end do
           part = 1.d0 / part
         elseif (self%dxi(1,1,1) > 0) then
-          part = HI%part
           allocate(h1,   source = sqrt(RYD/self%dxi) )
           allocate(nniv, source = int(h1)            )
           do i=1, HI%nk
