@@ -1200,8 +1200,8 @@ contains
         self%zero = 0.d0
         self%E = 0
         
+        self%ne = ne
         if (option(use_ne, .true.)) then
-            self%ne = ne
             call self%thermal_equilibrium(temp, ne, self%rho)
         else
             call self%iterate_thermal_eq(temp, rho, self%ne, tol=1d-6)
@@ -1376,13 +1376,15 @@ contains
         allocate(ne_converged(m(1),m(2),m(3)), source=.false.) ! cant use mold= on different kinds
         allocate(x, xold, a, b, c, fx, fa, fb, ro, pg, lrho, mold=temp)
 
-        ! set initial value for electron density
-        where (temp > 2.0d4) ! fully ionized gas
-            ! threshold used to be 1d4, but led to convergence issues in some cases
-            ne = rho / self%grph * 1e-1
-        elsewhere ! neutrals only
-            ne = rho / self%grph * 1e-4
-        end where
+        if (ne(1,1,1) == 0) then
+            ! set initial value for electron density
+            where (temp > 2.0d4) ! fully ionized gas
+                ! threshold used to be 1d4, but led to convergence issues in some cases
+                ne = rho / self%grph * 1e-1
+            elsewhere ! neutrals only
+                ne = rho / self%grph * 1e-4
+            end where
+        endif
 
         lrho = log(rho)
 
