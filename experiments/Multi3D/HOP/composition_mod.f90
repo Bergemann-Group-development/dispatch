@@ -28,7 +28,7 @@ MODULE composition_mod
         type(level_type), dimension(:), allocatable :: input_H_levels
         real(dp), dimension(:,:,:), allocatable :: temp, ne, rho, zero
         real(dp), dimension(:,:,:), allocatable :: EK_over_temp, pe, dxi, toth, saha
-        real(dp), dimension(:,:,:), allocatable :: teta, pg, E, p6, shield
+        real(dp), dimension(:,:,:), allocatable :: teta, pg, E, p6, shield, chi500
     contains
         procedure :: init => injon
         procedure :: init_molecules

@@ -703,14 +703,13 @@ SUBROUTINE generate_eos_table (self, nu, include_absmet)
   end do
   call self%save3(self%opac_table, 'scat')
 
-  allocate(eos(7, ntemp, nrho))
+  allocate(eos(6, ntemp, nrho))
   eos(1, :, :) = real(comp%temp(:, :, 1), kind=4)
   eos(2, :, :) = real(comp%rho(:, :, 1), kind=4)
   eos(3, :, :) = real(comp%ne(:, :, 1), kind=4)
   eos(4, :, :) = real(comp%pg(:, :, 1), kind=4)
   eos(5, :, :) = real(comp%E(:, :, 1), kind=4)
-  eos(6, :, :) = real(comp%elements(1)%ions(1)%n(:, :, 1), kind=4)
-  eos(7, :, :) = real(comp%elements(1)%ions(2)%n(:, :, 1), kind=4)
+  eos(6, :, :) = real(comp%chi500(:, :, 1), kind=4)
   call self%save3(eos, 'eos')
   call trace%end(itimer)
 END SUBROUTINE generate_eos_table

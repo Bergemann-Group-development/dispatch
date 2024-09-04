@@ -288,6 +288,7 @@ SUBROUTINE execute (self)
       if (save_atmos) then
         nu = 1d8 * cgs%c / 5000.d0
         call comp%absorption(nu, chi, sorted=.true.)
+        comp%chi500 = chi(1,:,:,:)
       endif
     end do
     
