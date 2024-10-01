@@ -837,29 +837,6 @@ contains
   END SUBROUTINE
 
   !===============================================================================
-  SUBROUTINE argSort(n, a, order)
-    integer :: n, i, j
-    integer, intent(in) :: a(n)
-    integer, intent(out) :: order(n)
-    real :: scr(n)
-    !-----------------------------------------------------------------------------
-    scr = a
-    order = 1
-  
-    do i = 2, n
-      j = i - 1
-      do while (j >= 1)
-        if (scr(j) <= a(i)) exit
-        scr(j + 1) = scr(j)
-        order(j+1) = order(j)
-        j = j - 1
-      end do
-      scr(j + 1) = a(i)
-      order(j+1) = i
-    end do
-  END SUBROUTINE argSort
-
-  !===============================================================================
   ! Monotonic piecewise cubic hermite interpolation
   ! Coded by Richard Hoppe, July 2023
   !===============================================================================

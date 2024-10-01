@@ -30,7 +30,8 @@ MODULE nlte_patch_mod
   USE bbtrans_mod, only:voigt_function2, voigt_profile
   USE m3d_debug_mod
   USE shared_mod
-  USE composition_mod, only:composition_type, scattering_absorption, vmic, opac_table_vmic
+  USE composition_mod, only:composition_type, vmic, opac_table_vmic, &
+  scattering_absorption, ref_lam
   implicit none
   private
 
@@ -47,8 +48,8 @@ MODULE nlte_patch_mod
     real(4), dimension(:,:,:), allocatable :: opac_table
     real(4), dimension(:), allocatable :: twohnu3_c2
     real(8), dimension(:), pointer :: nu
-    integer :: nline=0, ncont=0, mus, mue, n_set, nf, n_mu
-    logical :: use_atom, bound_bound, bound_free, get_rates
+    integer :: nline=0, ncont=0, mus, mue, n_set, n_mu
+    logical :: bound_bound, bound_free, get_rates
   contains
     procedure :: pre_init => nlte_patch_pre_init
     procedure :: init_patch_trans
@@ -79,6 +80,7 @@ MODULE nlte_patch_mod
     procedure :: long_char_linear
     procedure :: long_char_quadratic
     procedure :: long_char_quadratic2
+    procedure :: long_char_quadratic3
     procedure :: get_vproj
     procedure :: print_post_update_info
     procedure :: nbor_relations => nlte_patch_nbor_relations
@@ -118,18 +120,10 @@ SUBROUTINE nlte_patch_pre_init (self)
   self%n_mu = merge(size(long_wmu), size(all_wmu)/2, self%out_mu)
   self%mus = merge(1, self%n_mu+1, self%dir>0)
   self%mue = merge(self%n_mu, size(all_wmu), self%dir>0)
-
-  call self%set_freq_indices()
-  self%nf = self%fe-self%fs+1
   self%n_set = merge(3, 1, self%out_ray)
 
-  self%use_atom = associated(self%atom)
-  if (self%use_atom) then
-    call self%init_patch_trans()
-  else
-    self%bound_bound = .false.
-    self%bound_free = .false.
-  endif
+  call self%set_freq_indices()
+  call self%init_patch_trans()
   self%get_rates = self%in_ray .and. self%i_nu>0
 
   self%ng(3) = 1
@@ -146,6 +140,11 @@ SUBROUTINE init_patch_trans (self)
   integer :: i, j
   logical :: skip
   !-----------------------------------------------------------------------------
+  if (.not. self%has_atom) then
+    self%bound_bound = .false.
+    self%bound_free = .false.
+    return
+  endif
   self%bound_bound = associated(self%atom%line)
   if (self%bound_bound) then
     self%nline = 0
@@ -202,7 +201,7 @@ SUBROUTINE nlte_patch_pre_update (self)
   class(nlte_patch_t), target :: self
   !-----------------------------------------------------------------------------
   call m3d_patch_pre_update(self)
-  if (self%use_atom .and. self%in_ray) then
+  if (self%has_atom .and. self%in_ray) then
     if (premature_finish .and. self%atom%data%converged) then
       self%static_mem = .true.
     endif
@@ -251,7 +250,7 @@ SUBROUTINE execute (self)
     end_boundary = self%dnstream%is_finished()
   endif
 
-  if (self%use_atom) then
+  if (self%has_atom) then
     if (self%atom%data%converged) then
       self%get_rates = .false.
     endif
@@ -276,7 +275,7 @@ SUBROUTINE execute (self)
       call self%add_scattering(comp)
     endif
 
-    if (self%use_atom) then
+    if (self%has_atom) then
       adata => self%atom%data
       if (self%bound_free) call self%add_bound_free_opacities(adata)
 
@@ -310,7 +309,7 @@ SUBROUTINE execute (self)
         endif
       endif
 
-      if (self%use_atom) then
+      if (self%has_atom) then
         adata => self%atom%rotated_data(i_mu)
         if (self%bound_free .and. do_rotate_continuum) call self%add_bound_free_opacities(adata)
         if (self%bound_bound) then
@@ -356,6 +355,8 @@ SUBROUTINE execute (self)
             call self%long_char_quadratic(vec)
           case('quadratic2')
             call self%long_char_quadratic2(vec)
+          case('quadratic3')
+            call self%long_char_quadratic3(comp, vec)
           case default
             stop 'Unknown long_solver, use "linear" or "quadratic"'
           end select
@@ -418,7 +419,7 @@ SUBROUTINE execute (self)
 
   if (self%get_rates) then
     if (self%bound_free) call self%bound_free_rates(gamma_ij, gamma_ji)
-    if (self%use_atom) call self%integrate_rates(gamma_ij, gamma_ji)
+    if (self%has_atom) call self%integrate_rates(gamma_ij, gamma_ji)
   endif
 
   if (ilambd > 0 .and. Jnu_to_file .and. .not. self%out_mu) then
@@ -438,7 +439,7 @@ SUBROUTINE execute (self)
 
   call deallocate_arrays()
 
-  if (self%use_atom .and. self%iter > ilambd-1) then
+  if (self%has_atom .and. self%iter > ilambd-1) then
     if (self%atom%data%converged .and. premature_finish) then
       call self%finish()
     endif
@@ -568,10 +569,10 @@ SUBROUTINE lte_background_opacities (self, comp, include_absmet, do_sample_opac,
   if (do_make_eos .and. self%iter==0) then
     call self%generate_eos_table(self%nu(fs:fe), include_absmet)
   elseif (do_sample_opac) then
-      call self%interpolate_opacity_table(comp%temp, comp%ne, comp%rho)
+    call self%interpolate_opacity_table(comp%temp, comp%ne, comp%chi500)
   else
-    call comp%absorption(self%nu, back(:,:,:,:,1), blz=back(:,:,:,:,3), &
-    include_absmet=include_absmet, sorted=self%sp%sorted)
+    call comp%absorption(self%nu, back(:,:,:,:,1), &
+    blz=back(:,:,:,:,3), include_absmet=include_absmet, sorted=self%sp%sorted)
   endif
 
   do z=1, nz
@@ -665,7 +666,7 @@ SUBROUTINE generate_opacity_table (self, nu, include_absmet)
 
   do k=1, nne
   do j=1, ntemp
-    over_rho = 1 / comp%rho(j,k,1)
+    over_rho = 1 / comp%chi500(j,k,1)
     self%opac_table(:,j,k) = self%opac_table(:,j,k) * over_rho
   end do
   end do
@@ -718,7 +719,8 @@ END SUBROUTINE generate_eos_table
 SUBROUTINE interpolate_opacity_table (self, temp, ne, rho)
   class(nlte_patch_t), target :: self
   class(composition_type), pointer :: comp
-  real(8), dimension(:,:,:), intent(in) :: temp, ne, rho
+  real(8), dimension(:,:,:), intent(in) :: temp, ne
+  real(4), dimension(:,:,:), intent(in) :: rho
   real(8) :: e, t, mint, mine, kappa
   real(8) :: dx, dy, a, b, c, d, fi1, fi2, fj1, fj2, ab, cd
   integer :: f, i, j, nnu
@@ -1751,6 +1753,189 @@ SUBROUTINE long_char_quadratic2 (self, vec)
   end do ! z-loop
   call trace%end(itimer)
 END SUBROUTINE long_char_quadratic2
+
+!===============================================================================
+SUBROUTINE long_char_quadratic3 (self, comp, vec)
+  class(nlte_patch_t) :: self
+  class(composition_type) :: comp
+  real(8), dimension(:,:,:), allocatable :: chi500, dchi500, Bnu500, dBnu500
+  real(8), dimension(:) :: xxold(3), xxnew(2)
+  real(8), dimension(:), allocatable :: ds3
+  real(8) :: vec(3), hnu
+  real(4) :: ds, dsup, rdsup, dsup1, dsup2
+  real(4) :: xx, ss, Inu, Psi, blz
+  real(4) :: Inuup, xxup, ssup
+  real(4) :: xxdn, ssdn
+  real(4) :: xx500, xxup500, dt500
+  real(4) :: ss500, ssup500, dS500, dSup500
+  real(4) :: t1, t2, t3, dtup, dtdn, U0, U1, U2, a, b, c, dt2, dt3, tt2
+  real(8) :: dt, ex ! important
+  integer :: nx, ny, nz, dx, dy, x, y, z, f, zs, ze, z0, zup, zdn
+  integer :: i, nz_up
+  logical :: edge
+  integer, save :: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin('nlte_patch%long_char_quadratic3', itimer=itimer)
+  nx = self%patch%n(1)
+  ny = self%patch%n(2)
+  nz = self%patch%n(3)
+
+  ds = self%ds(3) * scaling%l
+  dsup = ds / abs(vec(3))
+  dsup1 = 0.5*dsup
+  dsup2 = 1./12.*dsup*dsup
+
+  zs = merge(1, nz, self%dir > 0)
+  ze = merge(nz, 1, self%dir > 0)
+
+  allocate(ds3(0:nz+1))
+  allocate(chi500(nx,ny,-1:nz+1), dchi500(nx,ny,0:nz))
+  allocate(Bnu500(nx,ny,-1:nz+1), dBnu500(nx,ny,0:nz))
+  ds3(1:nz) = self%ds(3)
+  chi500(:,:,1:nz) = comp%chi500
+
+  hnu = h_k * CC / air2vac(ref_lam) * 1e8
+  Bnu500(:,:,1:nz) = exp(-hnu / comp%temp)
+  Bnu500(:,:,1:nz) = Bnu500(:,:,1:nz) / (1 - Bnu500(:,:,1:nz))
+
+  if (associated(self%upstream)) then
+    nz_up = size(self%upstream%composition%chi500, 3)
+    ds3(0) = self%upstream%ds(3)
+    chi500(:,:,-1:0) = self%upstream%composition%chi500(:,:,nz_up-1:nz_up)
+    Bnu500(:,:,-1:0) = exp(-hnu / self%upstream%composition%temp(:,:,nz_up-1:nz_up))
+    Bnu500(:,:,-1:0) = Bnu500(:,:,-1:0) / (1 - Bnu500(:,:,-1:0))
+  else
+    ds3(0) = self%ds(3)
+    xxold = [(i*self%ds(3), i= 1, 3)]
+    xxnew = [(i*self%ds(3), i=-1, 0)] 
+    do y=1, ny
+    do x=1, nx
+      call pchip_mono(xxold, chi500(x,y,1:3), xxnew, chi500(x,y,-1:0), sorted=.true.)
+      call pchip_mono(xxold, Bnu500(x,y,1:3), xxnew, Bnu500(x,y,-1:0), sorted=.true.)
+    end do
+    end do
+  endif
+  if (associated(self%dnstream)) then
+    ds3(nz+1) = self%dnstream%ds(3)
+    chi500(:,:,nz+1) = self%dnstream%m3d_parent%composition%chi500(:,:,1)
+    Bnu500(:,:,nz+1) = exp(-hnu / self%dnstream%m3d_parent%composition%temp(:,:,1))
+    Bnu500(:,:,nz+1) = Bnu500(:,:,nz+1) / (1 - Bnu500(:,:,nz+1))
+  else
+    ds3(nz+1) = self%ds(3)
+    xxold = [(i*self%ds(3), i=1, 3)]
+    xxnew(1:1) = [(i*self%ds(3), i=4, 4)]
+    do y=1, ny
+    do x=1, nx
+      call pchip_mono(xxold, chi500(x,y,nz-2:nz), xxnew(1:1), chi500(x,y,nz+1:nz+1), sorted=.true.)
+      call pchip_mono(xxold, Bnu500(x,y,nz-2:nz), xxnew(1:1), Bnu500(x,y,nz+1:nz+1), sorted=.true.)
+    end do
+    end do
+  endif
+
+  ds3 = ds3 * (scaling%l / abs(vec(3)))
+
+  do z=0, nz
+  do y=1, ny
+  do x=1, nx
+    xx = chi500(x,y,z)
+    xxup = chi500(x,y,z-1)
+    xxdn = chi500(x,y,z+1)
+    t1 = (xx - xxup) / ds3(z)
+    t3 = (xxdn - xx) / ds3(z+1)
+    t2 = 0.5*(t1 + t3)
+    t2 = (sign(1.0, t1) + sign(1.0, t3)) * min(abs(t1), abs(t3), abs(0.5*t2))
+    dchi500(x,y,z) = t2
+
+    ss = Bnu500(x,y,z)
+    ssup = Bnu500(x,y,z-1)
+    ssdn = Bnu500(x,y,z+1)
+    t1 = (ss - ssup) / ds3(z)
+    t3 = (ssdn - ss) / ds3(z+1)
+    t2 = 0.5*(t1 + t3)
+    t2 = (sign(1.0, t1) + sign(1.0, t3)) * min(abs(t1), abs(t3), abs(0.5*t2))
+    dBnu500(x,y,z) = t2
+  end do
+  end do
+  end do
+
+  do z=zs, ze, self%dir
+    zup = z - self%dir
+    zdn = z + self%dir
+    do y=1, ny
+    do x=1, nx
+      xx500   = chi500(x,y,z)
+      xxup500 = chi500(x,y,zup)
+      ss500   = Bnu500(x,y,z)
+      ssup500 = Bnu500(x,y,zup)
+      dS500   = dBnu500(x,y,z)
+      dSup500 = dBnu500(x,y,zup)
+      t1      = dchi500(x,y,zup)
+      t2      = dchi500(x,y,z)
+
+      dt500 = dsup1*(xxup500 + xx500) + dsup2*(t1-t2)
+      dt500 = 0.5*dt500
+      xxup500 = dt500 / xxup500
+      xx500   = dt500 / xx500
+      dS500   = (ss500 - ssup500) / dS500
+      dSup500 = (ss500 - ssup500) / dSup500
+
+      do f=self%fs, self%fe
+        xx   = work(f,x,y,z,1)
+        xxup = work(f,x,y,zup,1)
+        ss   = work(f,x,y,z,2)
+        ssup = work(f,x,y,zup,2)
+        Inuup = work(f,x,y,z-self%dir,3)
+
+        dt = xxup*xxup500 + xx*xx500
+        ex=exp(-dt) 
+        ! Compute the U functions, use Taylor expansion for small dt
+        ! to avoid accuracy issues with 1-(number slightly smaller than one)
+        !dt2 = dt*dt
+        !if ( dt > 1e-3 ) then
+        !  U0 = 1.0d0 - ex
+        !  U1 = dt - U0
+        !  U2 = dt2 - 2.0d0 * U1 
+        !else
+        !  dt3 = dt2*dt
+        !  U1 = half * dt2 - one_sixth * dt3
+        !  U0 = dt - U1
+        !  U2 = one_third * dt3
+        !end if
+        !
+        !t1 = ss - ssup
+        !t2 = t1 / (xx*dS500)
+        !t1 = t1 / dt
+        !
+        !a = (t2-t1) / dt
+        !b = 2*t1 - t2
+        !c = ssup
+        !
+        !! intensity at center point
+        !Inu = Inuup*ex + a*U2 + b*U1 + c*U0
+        !work(f,x,y,z,3) = Inu
+
+        if (dt > 1e-3) then
+          U0 = 1. - ex  
+          U1 = U0 - dt*ex 
+        else
+          dt2 = 0.5*dt*dt
+          U1 = dt2 * (1. - one_sixth*dt)
+          U0 = dt - U1 + dt2*dt
+        endif
+
+        t1 = (ss - ssup) / dt
+        t2 = (ss - ssup) / (xx*dS500)
+        tt2 = 2*(t2 - t1) / dt
+
+        ! intensity at center point
+        Inu = (Inuup - ssup)*ex - U0*t2 + U1*tt2 + ss
+        work(f,x,y,z,3) = Inu
+      end do ! f-loop
+    end do
+    end do
+  end do ! z-loop
+  call trace%end(itimer)
+END SUBROUTINE long_char_quadratic3
 
 !===============================================================================
 SUBROUTINE get_vproj (self, vproj, vec, rotate, i_mu)

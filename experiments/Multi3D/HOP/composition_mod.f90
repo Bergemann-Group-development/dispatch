@@ -13,6 +13,7 @@ MODULE composition_mod
     USE osmet_mod
     USE omp_lib
     USE os_mod
+    USE io_mod
     use, intrinsic :: ieee_arithmetic
     implicit none
     private
@@ -28,7 +29,8 @@ MODULE composition_mod
         type(level_type), dimension(:), allocatable :: input_H_levels
         real(dp), dimension(:,:,:), allocatable :: temp, ne, rho, zero
         real(dp), dimension(:,:,:), allocatable :: EK_over_temp, pe, dxi, toth, saha
-        real(dp), dimension(:,:,:), allocatable :: teta, pg, E, p6, shield, chi500
+        real(dp), dimension(:,:,:), allocatable :: teta, pg, E, p6, shield
+        real(4), dimension(:,:,:), allocatable :: chi500
     contains
         procedure :: init => injon
         procedure :: init_molecules
@@ -59,13 +61,31 @@ MODULE composition_mod
         procedure :: add_linelist_opacities
         procedure :: print_ion_table
         procedure :: read_molec_data
+        procedure :: print_opacity_contributions
     end type
 
     character(128), public, save :: exclude_elements=''
     logical, public :: scattering_absorption=.true., mhd_eos=.false.
-    logical, public :: irwin_dis=.true.
+    logical, public :: irwin_dis=.true., helium_scattering=.true.
+    logical, public :: debug_opac=.false.
     integer, public :: switch=1
     real(4), public :: vmic=-1., opac_table_vmic=1.0
+    real(dp), public :: ref_lam=5000.d0
+    character(len=512), public :: abundances
+
+    character(len=3), save :: & 
+        element_ids(92) = [ &
+        'H ','He','Li','Be','B ','C ','N ','O ','F ', &
+        'Ne','Na','Mg','Al','Si','P ','S ','Cl','Ar', &
+        'K ','Ca','Sc','Ti','V ','Cr','Mn','Fe','Co', &
+        'Ni','Cu','Zn','Ga','Ge','As','Se','Br','Kr', &
+        'Rb','Sr','Y ','Zr','Nb','Mo','Tc','Ru','Rh', &
+        'Pd','Ag','Cd','In','Sn','Sb','Te','I ','Xe', &
+        'Cs','Ba','La','Ce','Pr','Nd','Pm','Sm','Eu', &
+        'Gd','Tb','Dy','Ho','Er','Tm','Yb','Lu','Hf', &
+        'Ta','W ','Re','Os','Ir','Pt','Au','Hg','Tl', &
+        'Pb','Bi','Po','At','Rn','Fr','Ra','Ac','Th', &
+        'Pa','U ']
 
 contains
 
@@ -80,7 +100,7 @@ contains
         real(8), intent(in) :: FeH
         real(4), intent(in), optional :: external_abund(:)
         integer :: absdat, lunit, iostat
-        integer :: i, j, k, m, nl, nk, n_iso
+        integer :: i, j, k, l, m, nl, nk, n_iso
         integer :: lvl_count, skip_back
         real(dp) :: abund, xion, g2, dump, tecor, decor
         character(len=3) :: id
@@ -92,19 +112,6 @@ contains
         integer :: nkomp,nextl,nutzl,nextt,nutzt,null
         integer :: ilogl, kvadl, minex, maxex, nnu, iscal
         integer :: ilogt, kvadt, minet, maxet, ntt, iteta, istim
-        character(len=3), save :: & 
-            element_ids(92) = [ &
-            'H ','He','Li','Be','B ','C ','N ','O ','F ', &
-            'Ne','Na','Mg','Al','Si','P ','S ','Cl','Ar', &
-            'K ','Ca','Sc','Ti','V ','Cr','Mn','Fe','Co', &
-            'Ni','Cu','Zn','Ga','Ge','As','Se','Br','Kr', &
-            'Rb','Sr','Y ','Zr','Nb','Mo','Tc','Ru','Rh', &
-            'Pd','Ag','Cd','In','Sn','Sb','Te','I ','Xe', &
-            'Cs','Ba','La','Ce','Pr','Nd','Pm','Sm','Eu', &
-            'Gd','Tb','Dy','Ho','Er','Tm','Yb','Lu','Hf', &
-            'Ta','W ','Re','Os','Ir','Pt','Au','Hg','Tl', &
-            'Pb','Bi','Po','At','Rn','Fr','Ra','Ac','Th', &
-            'Pa','U ']
 
         class(element_type),    pointer :: elements(:)
         class(element_type),    pointer :: element, H
@@ -160,16 +167,25 @@ contains
             end do
         endif
 
+        self%FeH = merge(FeH, 0.0, FeH > -99)
         do i=1, self%nel
             element => elements(i)
             select case (element%id)
             case ('H', 'He', 'Li')
                 ! do not scale with FeH
             case default
-                element%abund = element%abund + FeH
+                element%abund = element%abund + self%FeH
             end select
+            if (len_trim(abundances)>0) then
+                j = index(abundances, trim(element%id)//'=')
+                if (j > 0) then
+                    l = len(abundances)
+                    l = j + index(abundances(j:l), ' ') - 1
+                    j = j + len_trim(element%id) + 1
+                    read(abundances(j:l), *) element%abund
+                endif
+            endif
         end do
-        self%FeH = FeH
 
         elements%abund = 10**(elements%abund - elements(1)%abund)
         call self%compute_grams_per_hydrogen(self%suma, self%xmy, self%grph)
@@ -367,6 +383,9 @@ contains
         allocate(self%trans(nkomp))
         self%trans%verbose = self%verbose
 
+        self%elements(1)%ions%in_opac = .true.
+        self%elements(2)%ions%in_opac = .true.
+
         do i=1, nkomp
             trans => self%trans(i)
 
@@ -374,7 +393,8 @@ contains
             text = uppercase(text)
             trans%label = text(:20)
             trans%key = text(1:5)
-            trans%free_free = index(trans%label, 'FF') > 0
+            trans%peach = index(trans%label, 'PEACH') > 0
+            trans%lam3 = trans%peach
             
             select case(trim(trans%key))
             case('H- BF')
@@ -383,7 +403,11 @@ contains
                 trans%ion => HI
                 ! hydrogen energy level
                 trans%k = extract_int(text(1:10))
-            case('H- FF', 'H FF', '(H+H)', 'H2+')
+                trans%lam3 = .true.
+            case('H FF')
+                trans%ion => HI
+                trans%lam3 = .true.
+            case('H- FF', '(H+H)', 'H2+')
                 trans%ion => HI
             case('H2-')
                 call self%molecule_by_id('H2', molecule)
@@ -426,7 +450,7 @@ contains
                             call self%ion_by_id(trans%key, ion)
                             if (associated(ion)) then
                                 trans%ion => ion
-                                if (trans%free_free) trans%ion => ion%above
+                                if (trans%peach) trans%ion => ion%above
                             endif
                         endif
                         trans%level%xion = 0
@@ -443,6 +467,8 @@ contains
                 if (trans%key /= 'ME') then
                     print *, trans%key,  ' deactivated!'
                 endif
+            else
+                trans%ion%in_opac = .true.
             endif
 
             !read(absdat,999) ilogl,kvadl,minex,maxex,nnu
@@ -920,7 +946,8 @@ contains
             do j=lbound(element%ions,1), ubound(element%ions,1)
                 ion => element%ions(j)
                 if (ion%nline == 0) cycle
-    
+                if (.not. allocated(ion%n)) stop 'ion%n not allocated'
+
                 ! ion%part is actually the inverse partition
                 inv_part = ion%n * ion%part
                 dxij = real(self%dxi) * (ion%j-1)
@@ -957,6 +984,7 @@ contains
         do i=1, self%nmolec
             mol => self%molecules(i)
             if (.not. mol%in_linelist) cycle
+            if (.not. allocated(mol%n)) stop 'mol%n not allocated'
 
             inv_df = mol%inverse_doppler_factor(temp, vmic)
             vbar2 = mol%compute_vbar2(temp)
@@ -1176,7 +1204,9 @@ contains
         real(dp), dimension(:,:,:), intent(in) :: temp, ne, rho
         logical, intent(in), optional :: use_rho, use_ne
         real(dp), dimension(:,:,:), allocatable :: ro, eh, charge
-        integer :: i,j, nx, ny, nz, lunit
+        real(4), dimension(:,:,:,:), pointer :: chi500
+        real(dp) :: nu500(1)
+        integer :: i,j, nx, ny, nz, lunit, m(3)
         integer :: itimer=0
         !---------------------------------------------------------------------------
         call trace%begin ('composition_type%load_state_variables', itimer=itimer)
@@ -1220,34 +1250,40 @@ contains
             do j=lbound(element%ions,1), ubound(element%ions,1)
                 ion => element%ions(j)
                 ion%n = ion%f * self%toth
-                deallocate(ion%f, ion%saha)
-                call os%mem_register(storage_size(ion%f), -product(ion%m), 'ion%f')
-                call os%mem_register(storage_size(ion%saha), -product(ion%m), 'ion%saha')
             end do
         end do
 
         do i=1, self%nmolec
             mol => self%molecules(i)
             mol%n = mol%f * self%toth
-            !mol%part = 1.0 / mol%irwin_partf(self%temp)
-            deallocate(mol%f, mol%dis)
-            call os%mem_register(storage_size(mol%f), -product(mol%m), 'mol%f')
-            call os%mem_register(storage_size(mol%dis), -product(mol%m), 'mol%dis')
-        end do
-
-        allocate(charge, mold=self%temp)
-        charge = 0
-        do i=1, self%nel
-            element => self%elements(i)
-            do j=lbound(element%ions,1), ubound(element%ions,1)
-                ion => element%ions(j)
-                charge = charge + ion%n * (j-1)
-            end do
         end do
 
         call self%compute_energy_and_gas_pressure(eh, self%E, self%pg)
         call self%compute_p6(self%p6)
         call self%init_H_levels()
+
+        do i=1, self%nel
+            element => self%elements(i)
+            do j=lbound(element%ions,1), ubound(element%ions,1)
+                ion => element%ions(j)
+                call ion%deallocate()
+            end do
+        end do
+
+        do i=1, self%nmolec
+            mol => self%molecules(i)
+            call mol%deallocate()
+        end do
+
+        m = shape(self%temp)
+        allocate(self%chi500(m(1),m(2),m(3)))
+        chi500(1:1,1:m(1),1:m(2),1:m(3)) => self%chi500
+        nu500 = 1d8 * CC / air2vac(ref_lam)
+        call self%absorption(nu500, chi500, sorted=.true.)
+
+        if (debug_opac) then
+            call self%print_opacity_contributions(nu500)
+        endif
 
         self%loaded = .true.
         call trace%end(itimer)
@@ -1575,7 +1611,7 @@ contains
     END SUBROUTINE compute_p6
 
     !===============================================================================
-    SUBROUTINE absorption(self, nu, chi, blz, include_absmet, absmet_big_end, sorted)
+    SUBROUTINE absorption(self, nu, chi, blz, include_absmet, sorted)
         !use phys_mod, only:planck
         class(composition_type), target :: self
         class(bftrans_type), pointer :: trans
@@ -1583,15 +1619,15 @@ contains
         real(dp), dimension(:), intent(in) :: nu
         real(4), dimension(:,:,:,:), contiguous, intent(inout) :: chi
         real(4), dimension(:,:,:,:), contiguous, intent(in), optional :: blz
-        real(dp), dimension(:), allocatable :: lam
-        logical, optional :: include_absmet, absmet_big_end, sorted
+        real(dp), dimension(:), allocatable :: lam, hnu
+        logical, optional :: include_absmet, sorted
         real(dp) :: xray2, epsln, stim
         integer :: i, x, y, z, f, nf, nx, ny, nz
         integer :: p(4)=pp
         logical :: ok
         !---------------------------------------------------------------------------
         call trace%begin ('composition_type%absorption')
-        allocate(lam, mold=nu)
+        allocate(lam, hnu, mold=nu)
         call self%ion_by_id('HE I', HeI)
 
         nx = size(self%temp, 1)
@@ -1599,43 +1635,16 @@ contains
         nz = size(self%temp, 3)
         nf = size(nu, 1)
         lam = cc / nu * 1e8
+        hnu = h_e * nu
         chi = 0
+        call self%add_hrest(chi, lam)
 
-        call self%add_hrest(chi)
-
-        ! add absorption from all tables, which do not include stimulated emission or lam^3 factor
+        ! add absorption from all tables, which do not include stimulated emission
         do i=1, size(self%trans)
             trans => self%trans(i)
-            select case (trans%key)
-            case ('H BF', 'H FF')
-                ok = .true.
-            case default
-                ok = trans%free_free .and. (.not. trans%istim)
-            end select
-            if (ok) then
+            if (.not. trans%istim) then
                 call trans%add_absorption(chi, lam, self%temp, self%EK_over_temp, self%teta, &
                                           self%pe, self%dxi, ne=self%ne, nhe=HeI%n, shield=self%shield, sorted=sorted)
-            endif
-        end do
-
-        do f=1, nf
-            ! Hrest, H BF and H FF are multiplied by lam**3
-            !------------------------------------------------------
-            chi(f,:,:,:) = chi(f,:,:,:) * lam(f)**3
-        end do
-
-        ! add absorption from all tables, which do not include stimulated emission or lam^3 factor
-        do i=1, size(self%trans)
-            trans => self%trans(i)
-            select case (trim(trans%key))
-            case ('H FF', 'H BF')
-                ok = .false.
-            case default
-                ok = (.not. trans%free_free) .and. (.not. trans%istim)
-            end select
-            if (ok) then
-                call trans%add_absorption(chi, lam, self%temp, self%EK_over_temp, self%teta, &
-                self%pe, self%dxi, sorted=sorted)
             endif
         end do
 
@@ -1658,7 +1667,7 @@ contains
             do y=1, ny
             do x=1, nx
             do f=1, nf
-                stim = 1. - exp(- h_e * nu(f) * self%EK_over_temp(x,y,z))
+                stim = 1. - exp(-hnu(f) * self%EK_over_temp(x,y,z))
                 chi(f,x,y,z) = chi(f,x,y,z) * stim
             end do
             end do
@@ -1668,15 +1677,7 @@ contains
 
         do i=1, size(self%trans)
             trans => self%trans(i)
-            select case (trim(trans%key))
-            case ('H FF', 'H BF')
-                ok = .false.
-            case ('CO -')
-                ok = .true.
-            case default
-                ok = trans%istim
-            end select
-            if (ok) then
+            if (trans%istim) then
                 call trans%add_absorption(chi, lam, self%temp, self%EK_over_temp, self%teta, &
                 self%pe, self%dxi, sorted=sorted)
             endif
@@ -2157,6 +2158,7 @@ contains
             else
                 do j=1, mol%nions
                   ion => mol%ions(j)%p
+                  ion%in_opac = .true.
                   if (ion%id(1:2) /= 'H ') then
                     call self%element_by_id(ion%id(1:2), element, verbose=.false.)
                     exit
@@ -2166,6 +2168,7 @@ contains
         endif
         if (associated(element)) then
             abund = log10(element%abund) + 12.0
+            element%ions%in_opac = .true.
             if (abund /= abnd) then
                 if (first_time) then
                     first_time = .false.
@@ -2180,15 +2183,19 @@ contains
     END SUBROUTINE overwrite_abundance
 
     !=========================================================================
-    SUBROUTINE add_hrest(self, chi)
+    SUBROUTINE add_hrest(self, chi, lam)
         class(composition_type), target :: self
         class(ion_type), pointer :: HI
         real(4), dimension(:,:,:,:), intent(inout) :: chi
+        real(dp), dimension(:), intent(in) :: lam
+        real(dp), dimension(:), allocatable :: lam3
         real(dp) :: hrest, umc, h1, nniv, fakt, EK_over_temp, dxi
         integer :: f, x,y,z
         integer :: p(4)=pp
         !---------------------------------------------------------------------
         call self%ion_by_id('H I', HI)
+        allocate(lam3, mold=lam)
+        lam3 = lam**3
         do z=1, size(self%temp,3)
         do y=1, size(self%temp,2)
         do x=1, size(self%temp,1)
@@ -2204,7 +2211,8 @@ contains
                 !hrest = fakt * (exp(31.30364*self%teta/nniv-umc)-1.)
                 hrest = exp(EK_over_temp*(RYD/nniv - dxi))
                 hrest = fakt * (hrest - 1)
-                chi(:,x,y,z) = chi(:,x,y,z) + hrest
+                !chi(:,x,y,z) = chi(:,x,y,z) + hrest
+                chi(:,x,y,z) = chi(:,x,y,z) + hrest*lam3
               endif
             endif
         end do
@@ -2254,8 +2262,12 @@ contains
         xray2 = 0.
         where (lam > 911.27) xray2 = 1 / max(1026., lam)**2
 
+        if (helium_scattering) then
         ! Scattering by HeI in cm**2/atom, from Bues & Wehrse, 1976, A&A 51, 461
-        HeIscat = 0.66520e-24*4.*(500./lam)**4
+            HeIscat = 0.66520e-24*4.*(500./lam)**4
+        else
+            HeIscat = 0
+        endif
 
         do z=1, size(chi, 4)
         do y=1, size(chi, 3)
@@ -2352,4 +2364,111 @@ contains
             n_skipped = n_skipped + 1
         end do
     END SUBROUTINE check_for_comment
+
+    !===============================================================================
+    SUBROUTINE print_opacity_contributions(self, nu)
+        class(composition_type), target :: self
+        class(bftrans_type), pointer :: trans
+        class(ion_type), pointer :: HeI
+        real(dp), dimension(:), intent(in) :: nu
+        real(4), dimension(:,:,:,:), allocatable :: stim, tchi
+        real(4), dimension(:,:,:,:,:), allocatable :: chi
+        real(dp), dimension(:), allocatable :: lam, hnu
+        real(4) :: ref
+        character(len=1024) :: text
+        integer, dimension(:), allocatable :: bin, nel, order
+        character(6), dimension(:), allocatable :: key
+        integer :: f, x, y, z, i, j, ib, nb, nh, nx, ny, nz, nf, nt, lunit
+        logical :: first_time = .true.
+        integer, save :: itimer=0
+        !---------------------------------------------------------------------------
+        call trace%begin('composition_type%print_opacity_contributions', itimer=itimer)
+        nx = size(self%temp, 1)
+        ny = size(self%temp, 2)
+        nz = size(self%temp, 3)
+        nf = size(nu, 1)
+        nt = size(self%trans)
+        allocate(stim(nf,nx,ny,nz))
+        allocate(tchi(nf,nx,ny,nz))
+        allocate(bin(nt))
+        allocate(key(nt))
+        allocate(nel(nt), order(nt))
+
+        do i=1, nt
+            trans=> self%trans(i)
+            if (associated(trans%ion)) then
+                nel(i) = findloc(element_ids, trans%ion%id(1:2), 1)
+            else
+                nel(i) = 0
+            endif
+            if (nel(i) == 0) nel(i) = nt+1
+        end do
+        call argsort_int(nel, order)
+
+        nb = 3
+        key(1:3) = ['Hrest', 'Escat', 'Rscat']
+        do i=1, nt
+            trans => self%trans(order(i))
+            ib = findloc(key(1:nb), trim(trans%key), 1)
+            if (ib == 0) then
+                nb = nb + 1
+                ib = nb
+                key(ib) = trim(trans%key)
+            endif
+            bin(i) = ib
+        end do
+        
+        allocate(chi(nf, nx, ny, nz, nb))
+        call self%ion_by_id('HE I', HeI)
+        lam = CC / nu * 1e8
+        hnu = h_e * nu
+        chi = 0
+
+        do z=1, nz
+        do y=1, ny
+        do x=1, nx
+        do f=1, nf
+            stim(f,x,y,z) = 1. - exp(-hnu(f) * self%EK_over_temp(x,y,z))
+        end do
+        end do
+        end do
+        end do
+
+        call self%add_hrest(chi(:,:,:,:,1), lam)
+        chi(:,:,:,:,1) = chi(:,:,:,:,1) * stim
+
+        if (scattering_absorption) then
+            call self%electron_scattering(chi(:,:,:,:,2))
+            call self%rayleigh_scattering(lam, chi(:,:,:,:,3))
+        end if
+
+        ! add absorption from all tables, which do not include stimulated emission
+        do i=1, nt
+            trans => self%trans(order(i))
+            ib = bin(i)
+            tchi = 0
+            call trans%add_absorption(tchi, lam, self%temp, self%EK_over_temp, self%teta, &
+                                        self%pe, self%dxi, ne=self%ne, nhe=HeI%n, shield=self%shield, sorted=.true.)
+            if (.not. trans%istim) tchi = tchi * stim
+            chi(:,:,:,:,ib) = chi(:,:,:,:,ib) + tchi
+        end do
+
+        open(newunit=lunit, file=trim(io%run_dir)//'opacity_contributions.txt', access='append')
+        if (first_time) then
+            first_time = .false.
+            write(lunit, '(A8, A12, 300(A7))') 'Temp', 'Chi500/Rho', (trim(key(i)), i=1, nb)
+        endif
+
+        do z=1, nz
+            associate(chi=>chi(1,1,1,z,:), rho=>self%rho(1,1,z), t=>self%temp(1,1,z))
+                ref = sum(chi)
+                write(text, '(F8.2, ES12.3, 300(F7.2))') t, ref/rho, (chi(i)/ref*100, i=1, nb)
+            end associate
+            call replace_substring(text, '-0.00', '     ')
+            call replace_substring(text,  '0.00',  '    ')
+            write(lunit, '(A)') text(1:18+7*nb)
+        end do
+        close(lunit)
+        call trace%end(itimer)
+    END SUBROUTINE print_opacity_contributions
 END MODULE composition_mod

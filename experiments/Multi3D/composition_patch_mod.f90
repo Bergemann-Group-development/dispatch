@@ -15,7 +15,7 @@ MODULE composition_patch_mod
   linelist_in_output, sample_back_opac_in_output, make_eos, overlapping_bb_in_output
   USE m3d_debug_mod
   USE composition_mod, only: composition_type, exclude_elements, switch, mhd_eos, &
-  irwin_dis, vmic, opac_table_vmic
+  irwin_dis, vmic, opac_table_vmic, ref_lam, debug_opac, abundances
   USE atom_patch_mod,  only: atom_patch_t
   USE nlte_patch_mod, only:nlte_patch_t
   USE bftrans_mod, only: H_occupation_probability
@@ -48,7 +48,7 @@ MODULE composition_patch_mod
     procedure :: nbor_relations => composition_patch_nbor_relations
   end type
   
-  real(8), public :: FeH=0, dtemp=250., ldne=0.25, ldrho=0.25, ldtemp=0.1
+  real(8), public :: FeH=-99.9, dtemp=250., ldne=0.25, ldrho=0.25, ldtemp=0.1
   logical, public :: save_atmos=.true., save_eos=.false.
   real(4), public, dimension(:), allocatable :: external_abund
   character(len=256), save :: save_species=''
@@ -76,7 +76,8 @@ SUBROUTINE composition_pre_init (self)
   namelist /composition_params/ verbose, absdat_file, abund_file, absmet_file, &
   absmet_big_end, isotope_file, molec_file, H_occupation_probability, opac_table, &
   sample_back_opac, sample_back_opac_in_output, switch, mhd_eos, debye_shield, &
-  dtemp, ldne, ldrho, ldtemp, tmolim, irwin_dis, opac_table_vmic, save_species
+  dtemp, ldne, ldrho, ldtemp, tmolim, irwin_dis, opac_table_vmic, save_species, &
+  ref_lam, debug_opac, abundances
   namelist /linelist_params/ dlam, exclude_elements, linelist_file, line_lists, &
   linelist_in_output, tolerance
   ! ----------------------------------------------------------------------------
@@ -215,8 +216,8 @@ END SUBROUTINE create_sub_patches
 SUBROUTINE execute (self)
   class(composition_patch_t) :: self
   class(composition_type), pointer :: comp
-  real(4), dimension(:,:,:), pointer :: d, e, pe
-  real(4), dimension(:,:,:,:), pointer, contiguous :: authority, chi
+  real(4), dimension(:,:,:), pointer :: d, e, pe, chi
+  real(4), dimension(:,:,:,:), pointer, contiguous :: authority
   real(4), dimension(:,:,:), pointer, contiguous :: ne, rho, temp, vx, vy, vz, px, py, pz
   real(8), dimension(:,:,:), allocatable :: ne8, rho8, temp8
   real(8) :: vec(3), nu(1)
@@ -253,7 +254,7 @@ SUBROUTINE execute (self)
       vx   => authority(:,:,:,self%i_vx)
       vy   => authority(:,:,:,self%i_vy)
       vz   => authority(:,:,:,self%i_vz)
-      chi(1:1,1:n(1),1:n(2),1:n(3)) => authority(:,:,:,7)
+      chi  => authority(:,:,:,7)
   
       temp = e
       rho  = d
@@ -286,9 +287,7 @@ SUBROUTINE execute (self)
       if (.not. use_ne) ne = real(comp%ne)
       if (.not. use_density) rho = real(comp%rho)
       if (save_atmos) then
-        nu = 1d8 * cgs%c / 5000.d0
-        call comp%absorption(nu, chi, sorted=.true.)
-        comp%chi500 = chi(1,:,:,:)
+        chi = comp%chi500
       endif
     end do
     

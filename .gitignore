@@ -27,15 +27,12 @@ fort.*
 .ipynb_checkpoints
 .d/
 .vscode/
-experiments/Multi3D/out/*
-experiments/Multi3D/saved_outputs/*
-experiments/Multi3D/runs/*
-experiments/Multi3D/input_multi3d/*
 *.err
 *.log
 *.slurm
 experiments/Multi3D/TABGEN
 experiments/Multi3D/data*
+experiments/Multi3D/input_multi3d/*
 *.ipynb
 *.lock
 *.eps
@@ -44,3 +41,4 @@ experiments/Multi3D/data*
 vtune*
 *.i90
 *.pdf
+*.txt

@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from .auxfuncs import vacuum2obs, _vacuum2obs, is_number, compute_tau_scale, find_close, interp_tau, get_qmax, rotate_array
+from .auxfuncs import *
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 from scipy.signal import argrelextrema
@@ -170,9 +170,14 @@ class trans_class(object):
         self.lb = vacuum2obs(self.lam_blue)
         self.lr = vacuum2obs(self.lam_red)
 
-        self.i0 = find_close(self.run.lam, self.lam0)
-        self.ib = find_close(self.run.lam, self.lb)
-        self.ir = find_close(self.run.lam, self.lr, side='right')
+        if hasattr(self.atom, 'ib'):
+            self.ib = self.atom.ib[self.kr]
+            self.ir = self.atom.ir[self.kr]
+            self.i0 = (self.ib + self.ir) // 2
+        else:
+            self.i0 = find_close(self.run.lam, self.lam0)
+            self.ib = find_close(self.run.lam, self.lb)
+            self.ir = find_close(self.run.lam, self.lr, side='right')
 
         slc = slice(self.ib, self.ir)
         self.lam  = self.run.lam[slc]
@@ -288,9 +293,7 @@ class trans_class(object):
     #=====================================================================
     def calc_weq(self, **kwargs):
         #-----------------------------------------------------------------
-        xx, yy = self.crop(norm=True, **kwargs)
-        weq = np.trapz(1 - yy, x=xx) * 1e3
-        return weq
+        return calc_weq(self, **kwargs)
     
     #=====================================================================
     def calc_weq_depart(self, **kwargs):

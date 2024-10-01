@@ -70,7 +70,7 @@ contains
     real(4), dimension(:,:,:,:), intent(in) :: cont
     real(8), allocatable :: qq(:)
     real(4) :: ex, ni, nj, nij, upper_ev, nu0_ev, scalar, vs, lchi
-    real(4) :: a, idf, cf, v, ref, ekt, Bji
+    real(4) :: a, idf, cf, v, ref, ekt, Bji, hum(1)
     integer :: i,j,k,f, f0, m(3), itimer=0
     logical :: used
     !----------------------------------------------------------------------------------
@@ -124,6 +124,7 @@ contains
         
         vs = (qq(f0) - v) * idf
         lchi = voigt_function2(a, vs) * cf
+        !call hum1zpf16  (1, [a],[vs], hum)
         if (lchi > ref) then
           used = .true.
           chi(f0,i,j,k) = chi(f0,i,j,k) + lchi
@@ -840,4 +841,62 @@ contains
     !----------------------------------------------------------------------------------
     self%active = .false.
   END SUBROUTINE deactivate
+                             
+  !====================================================================================                                                                                     !!
+  SUBROUTINE hum1zpf16  (nx, x,y, w)
+    !  complex probability function for complex argument Z=X+iY                               
+    !  real part = voigt function K(x,y)                                                      
+    !                                                                                         
+    !  large x+y     J  Humlicek, JQSRT 27, 437, 1982       asymptotic region I approximation 
+    !  small x+y:    J  Humlicek, JQSRT 21, 309-313, 1979   16-term rational approximation Eq. (6)
+    !====================================================================================
+    real(4), parameter ::  sqrtpi    = 1.7724538509055159d0 ! sqrt(pi)
+    real(4), parameter ::  recsqrtpi = one/sqrtpi
+    integer, intent(in) :: nx
+    real(4), intent(in) :: x(nx), y
+    complex(8), intent(out) ::  w(nx)
+    ! humlicek prbfct region i bounds
+    real(4), parameter :: s15=15.d0
+    real(4) ::            x12, x21
+    ! humlicek zpf16 constants
+    complex(8), parameter ::  a(16) = &
+      [(41445.0374210222, 0.0),   (0.0, -136631.072925829),  &
+        (-191726.143960199, 0.0),  (0.0, 268628.568621291),   &
+        (173247.907201704,  0.0),  (0.0, -179862.56759178),   &
+        (-63310.0020563537, 0.0),  (0.0, 56893.7798630723),   &
+        (11256.4939105413,  0.0),  (0.0, -9362.62673144278),  &
+        (-1018.67334277366, 0.0),  (0.0, 810.629101627698),   &
+        (44.5707404545965, 0.0),   (0.0, -34.5401929182016),  &
+        (-0.740120821385939, 0.0), (0.0, 0.564189583547714)]
+    real(4), parameter ::  b(8) =  &
+        [ 7918.06640624997, -126689.0625, 295607.8125, &
+          -236486.25, 84459.375, -15015.0, 1365.0, -60.0]
+    integer :: i
+    complex(8) :: t, z,zz, numer, denom
+    !----------------------------------------------------------------------------------
+    x12 = y - s15 !        left wing -- center
+    x21 = -x12    ! 15-y   center -- right wing
+    if (y>s15 .or. x(1)>x21 .or. x(nx)<x12) then
+      ! all points are in humlicek's region i
+      do i=1,nx
+          t    = cmplx(y,-x(i))
+          w(i) = (recsqrtpi*t) / (half + t*t)
+      end do
+    else
+      do i=1,nx
+        if (abs(x(i))>x21) then
+          t    = cmplx(y,-x(i))
+          w(i) = (recsqrtpi*t) / (half + t*t)
+        else
+          z     = cmplx(x(i), y+1.31183)
+          zz    = z*z
+          numer = ((((((a(16)*z+a(15))*z+a(14))*z+a(13))*z+a(12))*z+a(11))*z+a(10))*z+a(9)
+          numer = ((((((((numer*z+a(8))*z+a(7))*z+a(6))*z+a(5))*z+a(4))*z+a(3))*z+a(2))*z+a(1)) 
+          denom = b(1)+(b(2)+(b(3)+(b(4)+(b(5)+(b(6)+(b(7)+b(8)*zz)*zz)*zz)*zz)*zz)*zz)*zz
+          w(i)  = numer/denom
+        end if
+      end do
+    end if
+    w = w * recsqrtpi
+  END SUBROUTINE hum1zpf16
 END MODULE bbtrans_mod

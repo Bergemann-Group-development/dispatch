@@ -124,7 +124,8 @@ MODULE atom_mod
     real(8), parameter :: mu_e=ame/(ame+amh)
     real(8), public :: fmin =1e-6
     character(len=32), public :: lse_solver='lineq_no_pivot'
-    integer, public :: nq_fac=1, nq_min=0, nq_max=huge(1)
+    integer, public :: nq_min=0, nq_max=huge(1)
+    real(4), public :: nq_fac=1.0
 
     public :: unique_int
   
@@ -503,7 +504,9 @@ MODULE atom_mod
     character(512) :: dummy_string
     character(8) :: key, str1, str2, str3
     logical :: abort
+    integer, save :: itimer=0
     !---------------------------------------------------------------------------------
+    call trace%begin('atom_mod%read_pandas', itimer=itimer)
     call os%check_file(atom_file)
     abort = .false.
     open(newunit=latom, file=atom_file, form='formatted')
@@ -547,6 +550,14 @@ MODULE atom_mod
     do i=1, self%nline
       lin => self%line(i)
       call nextentry(latom)
+      if (size(in_lines) > 0) then
+        if (findloc(in_lines, i, 1) <= 0) then
+          call lin%deactivate()
+          read(latom,*) ! skip line
+          cycle
+        endif
+      endif
+
       read(latom,*) idx, lin%i, lin%j, lam_air, lin%lower_ev, loggf, &
             lin%ga, lin%gv, gq, lin%nnu, lin%qmax, lin%q0, lin%profile_type
 
@@ -567,18 +578,14 @@ MODULE atom_mod
       ! make sure we always have an odd number of frequency points for a line
       if (mod(lin%nnu,2) == 0) lin%nnu=lin%nnu+1
       lin%nnu = nq_fac * (lin%nnu-1) + 1
+      if (lin%io <= 1 .and. m1d_legacy_mode) then
+        lin%nnu = 2 * (lin%nnu-1) + 1
+      endif
       lin%nnu = max(lin%nnu, nq_min)
       lin%nnu = min(lin%nnu, nq_max)
 
       tri = (lin%j-1)*(lin%j-2)/2 + lin%i
       self%cdata(tri) = lin%f
-
-      if (size(in_lines) > 0) then
-        if (findloc(in_lines, i, 1) <= 0) then
-          call lin%deactivate()
-          cycle
-        endif
-      endif
 
       if (logf_cut > -99) then
         scr = log10(self%g(lin%i)*lin%f)
@@ -589,7 +596,7 @@ MODULE atom_mod
       endif
 
       call os%allocate(lin%nu_input, lin%nnu, 'line%nu_input')
-      call lin%get_nu(qnorm, lin%nu_input, legacy=.false.)
+      call lin%get_nu(qnorm, lin%nu_input, legacy=m1d_legacy_mode)
       lin%nu_min = lin%nu_input(1)
       lin%nu_max = lin%nu_input(lin%nnu)
 
@@ -800,6 +807,7 @@ MODULE atom_mod
     endif
     close(latom)
     if (abort) stop
+    call trace%end(itimer)
   END SUBROUTINE read_pandas
 
   !====================================================================================
@@ -833,7 +841,9 @@ MODULE atom_mod
     character(len=20) :: txt
     character(len=26),parameter :: upcase_alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     logical :: abort
+    integer, save :: itimer=0
     !---------------------------------------------------------------------
+    call trace%begin('atom_mod%read', itimer=itimer)
     call os%check_file(atom_file)
     open(newunit=latom, file=atom_file, form='formatted')
     abort = .false.
@@ -1348,6 +1358,7 @@ MODULE atom_mod
     end do
     close(latom)
     if (abort) stop
+    call trace%end(itimer)
   END SUBROUTINE read
 
   !====================================================================================

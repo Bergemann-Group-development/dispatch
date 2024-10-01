@@ -79,7 +79,7 @@ class CoG(m3dis):
         return plt.plot(xx, yy, **plot_kwargs)
     
     #=================================================================
-    def fit_observed(self, oxx, oyy, fit=[], bounds=None, p0=None, **kwargs):
+    def fit_observed(self, oxx, oyy, fit=[], bounds=None, p0=None, sigma=None, **kwargs):
         abnds = self.abnds
         lbounds = {'abnd':abnds[0],  'vshift':-3, 'vdop':1e-3, 'vrot':1e-3, 'zeta_rt':1e-3}
         ubounds = {'abnd':abnds[-1], 'vshift':+3, 'vdop':1e2,  'vrot':1e2,  'zeta_rt':1e2 }
@@ -87,15 +87,16 @@ class CoG(m3dis):
         fit = ['abnd',] + fit
         if bounds is None: bounds = ([lbounds[f] for f in fit], [ubounds[f] for f in fit])
         if p0 is None: p0 = [p0s[f] for f in fit]
-        return m3dis.fit_observed(self, oxx, oyy, fit=fit, bounds=bounds, p0=p0, **kwargs)
+        return m3dis.fit_observed(self, oxx, oyy, fit=fit, bounds=bounds, p0=p0, sigma=sigma, **kwargs)
     
     #=================================================================
-    def get_weq_corr(self, nlte_run, kr=None, abnd=None, LTE=False, log=True, **kwargs):
+    def interp_abnd(self, weq, kr=None, log=True, **kwargs):
         if kr is not None:
             line = self.atom.trans[kr]
             kwargs['slc'] = slice(line.ib, line.ir)
+            kwargs['lam0'] = line.lam0
 
-        weqs = [run.calc_weq(LTE=True, **kwargs) for run in self.runs]
+        weqs = [run.calc_weq(**kwargs) for run in self.runs]
         weqs = np.array(weqs)
 
         if any(np.diff(weqs) <= 0):
@@ -108,23 +109,25 @@ class CoG(m3dis):
             print('Warning: weq values are NaN.')
             return np.nan
 
-        if kr is not None:
-            line = nlte_run.atom.trans[kr]
-            kwargs['slc'] = slice(line.ib, line.ir)
-
-        nlte_weq = nlte_run.calc_weq(LTE=LTE, **kwargs)
-        if nlte_weq < 0: return np.nan
-
-        if any(weqs==0) or nlte_weq==0: log=False
-
-        if abnd is None:
-            abnd = nlte_run.atom.abnd
+        if any(weqs==0) or weq==0: log=False
 
         if log:
             weqs = np.log(weqs)
-            nlte_weq = np.log(nlte_weq)
+            weq = np.log(weq)
 
         func = PchipInterpolator(weqs, self.abnds)
-        corr = abnd - func(nlte_weq)
+        return func(weq)
+    
+    #=================================================================
+    def get_weq_corr(self, nlte_run, kr=None, abnd=None, LTE=False, log=True, **kwargs):
+        if kr is not None:
+            line = nlte_run.atom.trans[kr]
+            kwargs['slc'] = slice(line.ib, line.ir)
+            kwargs['lam0'] = line.lam0
 
+        nlte_weq = nlte_run.calc_weq(LTE=LTE, **kwargs)
+        if nlte_weq < 0: return np.nan
+        if abnd is None: abnd = nlte_run.atom.abnd
+        anew = self.interp_abnd(nlte_weq, kr=kr, log=log, LTE=True, **kwargs)
+        corr = abnd - anew
         return corr

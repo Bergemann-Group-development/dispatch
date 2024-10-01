@@ -22,7 +22,8 @@ MODULE bftrans_mod
       real(dp), dimension(:,:), allocatable :: xkap
       real(dp), dimension(:,:), allocatable :: log_xkap
       logical, dimension(:), allocatable :: ldisk!, tdisk
-      logical :: free_free=.false., regular=.false., molecular=.false.
+      logical :: peach=.false., regular=.false., molecular=.false.
+      logical :: lam3=.false.
       logical :: active=.true.
       character(len=5) :: key
       character(len=20) :: label
@@ -34,21 +35,21 @@ MODULE bftrans_mod
       procedure :: load_lam_interp_weights
   end type
 
-  logical :: active
   integer :: fs, fe
   logical, public :: H_occupation_probability=.true.
   integer, dimension(:), allocatable :: iw
   logical, dimension(:), allocatable :: quad
   real(dp), dimension(:,:), allocatable :: lagrange
   real(dp), dimension(:,:), pointer, contiguous :: pvt_xkap => null()
-  !$omp threadprivate(active, fs, fe, iw, quad, lagrange, pvt_xkap)
+  !$omp threadprivate(fs, fe, iw, quad, lagrange, pvt_xkap)
 
 contains
 
     !===============================================================================
-  SUBROUTINE load_lam_interp_weights(self, lam)
+  SUBROUTINE load_lam_interp_weights(self, lam, active)
     class(bftrans_type), target :: self
     real(dp), dimension(:), intent(in) :: lam
+    logical, intent(out) :: active
     real(dp), dimension(:), pointer, contiguous :: xx
     real(dp) :: x
     integer :: nf, f
@@ -172,7 +173,7 @@ contains
     real(dp), intent(in), dimension(:) :: lam
     real(dp), intent(in), dimension(:,:,:), optional :: ne, nhe, shield
     real(dp), dimension(:,:,:), pointer :: newt
-    real(dp), dimension(:), allocatable :: ab
+    real(dp), dimension(:), allocatable :: ab, lam3
     real(dp), dimension(:,:), pointer :: xkap
     real(dp), dimension(3,self%ntt-1) :: dtdt
     real(dp), dimension(self%ntt-1) :: dtdt1
@@ -186,7 +187,9 @@ contains
     nx = size(temp, 1)
     ny = size(temp, 2)
     nz = size(temp, 3)
-    allocate(ab(fs:fe), mold=lam(fs:fe))
+    allocate(ab(fs:fe))
+    allocate(lam3(fs:fe))
+    lam3 = lam**3
     
     if (self%ntt > 1) then
       call trace%begin('interp_xkap_1', itimer=itimer1)
@@ -298,6 +301,11 @@ contains
               endif
             endif
           end do
+
+          if (self%lam3) then
+            ab(fs:fe) = ab(fs:fe) * lam3(fs:fe)
+          endif
+          
           fakt1 = fakt(x,y,z)
           if (self%ilogl) ab = exp(ab)
           chi(fs:fe,x,y,z) = chi(fs:fe,x,y,z) + fakt1*ab(fs:fe)
@@ -328,6 +336,10 @@ contains
           if (self%ilogl) ab(f) = exp(ab(f))
         endif
       end do
+
+      if (self%lam3) then
+        ab(fs:fe) = ab(fs:fe) * lam3(fs:fe)
+      endif
 
       if (H_occupation_probability .and. self%key == 'H BF') then
         lvl => self%ion%levels(self%k)
@@ -390,7 +402,7 @@ contains
       case default
         if (self%pedep) then
           fakt = pe * ion%n
-          if (self%free_free) then
+          if (self%peach) then
             fakt = (1d-40 / EE) * EK_over_temp * fakt
           endif
         elseif (self%molecular) then
@@ -411,8 +423,9 @@ contains
       real(dp), dimension(:), intent(in) :: lam
       real(dp), dimension(:,:,:), allocatable :: fakt
       logical, optional :: sorted
-      real(dp) :: prev
-      integer :: i,j,k,nf, m(2), p(4)=pp
+      logical :: active
+      real(dp) :: prev, post
+      integer :: i,j,k,f,nf, m(2), p(4)=pp
       !---------------------------------------------------------------------------
       if (.not. self%active) return
       nf = size(lam)
@@ -422,15 +435,20 @@ contains
       call os%allocate(pvt_xkap, shape(self%xkap))
       allocate(fakt, mold=temp)
       fakt = huge(1d0)
-
-      call self%load_lam_interp_weights(lam)
+      if (.not. allocated(self%ion%n)) stop 'add_absorption: ion%n not allocated'
+      call self%load_lam_interp_weights(lam, active)
 
       if (active) then
           !if (nf > 1) prev = chi(p(1), p(2), p(3), p(4))
+
           call self%absorption_factor(EK_over_temp, teta, pe, dxi, fakt)
           call self%interp_xkap(chi, temp, teta, fakt, lam, ne, nhe, shield)
-          !if (nf > 1) print '(A8, 2x, A12, 2x, A, 8(ES14.6))', self%key, self%label, self%ion%id, &
-          ! fakt(p(1),p(2),p(3)), chi(p(1),p(2),p(3),p(4)) - prev, chi(p(1),p(2),p(3),p(4))
+
+          !if (nf > 1) then
+          !  post = chi(p(1),p(2),p(3),p(4))
+          !  print '(A8, 2x, A12, 2x, A, 8(ES14.6))', self%key, self%label, self%ion%id, &
+          !  fakt(p(1),p(2),p(3)), post - prev, post
+          !endif
       endif
 
       deallocate(quad)

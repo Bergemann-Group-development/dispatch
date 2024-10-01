@@ -217,7 +217,7 @@ class pandas_atom(object):
 
   def to_linelist(self, file):
     f = open(file, 'w+')
-    ions = np.unique(self.lvl.ion)
+    ions = np.unique(self.lvl.ion).astype(int)
     for ion in ions:
       ll = pd.DataFrame()
       mask = np.array(self.lvl.ion[self.bbt.i] == ion)
@@ -254,3 +254,12 @@ class pandas_atom(object):
     if hasattr(self, 'col'): self.col['i'] = index_map[self.col.i].values
     if hasattr(self, 'col'): self.col['j'] = index_map[self.col.j].values
     return dropped
+
+  def get_non_overlapping_indices(self, lines, nnu, nq_fac):
+      nq = np.array([line.nq for line in lines])
+      nq = nq + (1-nq%2)
+      nq = nq_fac * (nq-1) + 1
+      ir = np.ones_like(nq)*nnu
+      ir[1:] = nnu - np.cumsum(nq[:-1])
+      ib = ir - nq
+      return ib, ir

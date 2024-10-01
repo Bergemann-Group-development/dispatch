@@ -19,7 +19,7 @@ MODULE ion_mod
         type(level_type), allocatable :: levels(:)
         type(bbtrans_type), dimension(:), allocatable :: line
         real(dp), allocatable, dimension(:) :: irwin
-        logical :: in_linelist
+        logical :: in_linelist=.false., in_opac=.false.
         logical :: allocated=.false.
     contains
         procedure :: irwin_partf
@@ -53,7 +53,7 @@ MODULE ion_mod
         procedure :: f_of_own_molecules
         procedure :: f_of_molecules_with
         procedure :: allocate => allocate_particle
-        !procedure :: absorption_factor => ion_absorption_factor
+        procedure :: deallocate => deallocate_particle
     end type
 
     logical, public :: debye_shield=.True.
@@ -165,26 +165,50 @@ END SUBROUTINE molecules_with
 !===============================================================================
 SUBROUTINE allocate_particle (self, m)
     class(ion_type) :: self
-    integer :: m(3), mold(3)
+    integer :: m(3), mold(3), s, p
     !---------------------------------------------------------------------------
     if (all(m == self%m)) return
     self%m = m
+    s = storage_size(self%f)
     if (self%allocated) then
         mold = shape(self%f)
+        p = product(mold)
         deallocate(self%f, self%saha, self%part, self%n)
-        call os%mem_register(storage_size(self%f), -product(mold), label='ion%f')
-        call os%mem_register(storage_size(self%n), -product(mold), label='ion%n')
-        call os%mem_register(storage_size(self%saha), -product(mold), label='ion%saha')
-        call os%mem_register(storage_size(self%part), -product(mold), label='ion%part')
+        call os%mem_register(s, -p, label='ion%f')
+        call os%mem_register(s, -p, label='ion%n')
+        call os%mem_register(s, -p, label='ion%saha')
+        call os%mem_register(s, -p, label='ion%part')
     endif
+    p = product(m)
     allocate(self%f(m(1),m(2),m(3)))
     allocate(self%saha, self%part, self%n, mold=self%f)
-    call os%mem_register(storage_size(self%f), product(m), label='ion%f')
-    call os%mem_register(storage_size(self%n), product(m), label='ion%n')
-    call os%mem_register(storage_size(self%saha), product(m), label='ion%saha')
-    call os%mem_register(storage_size(self%part), product(m), label='ion%part')
+    call os%mem_register(s, p, label='ion%f')
+    call os%mem_register(s, p, label='ion%n')
+    call os%mem_register(s, p, label='ion%saha')
+    call os%mem_register(s, p, label='ion%part')
     self%allocated = .true.
 END SUBROUTINE allocate_particle
+
+!===============================================================================
+SUBROUTINE deallocate_particle (self)
+    class(ion_type) :: self
+    integer :: m(3), s, p
+    !---------------------------------------------------------------------------
+    m = self%m
+    p = product(m)
+    s = storage_size(self%f)
+    if (self%allocated) then
+        deallocate(self%f, self%saha)
+        call os%mem_register(s, -p, label='ion%f')
+        call os%mem_register(s, -p, label='ion%saha')
+        if (.not. (self%in_opac .or. self%in_linelist)) then
+            deallocate(self%n, self%part)
+            call os%mem_register(s, -p, label='ion%n')
+            call os%mem_register(s, -p, label='ion%part')
+        endif
+    endif
+    self%allocated = .false.
+END SUBROUTINE deallocate_particle
 
 !===============================================================================
 elemental FUNCTION irwin_partf (self, temp) result(u)
