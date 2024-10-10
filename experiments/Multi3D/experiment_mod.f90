@@ -67,13 +67,8 @@ SUBROUTINE pre_init (self)
   self%periodic = [.true., .true., .false.]
 
   self%n = self%nbox / self%dims
-  md = mod(self%nbox, self%dims)
-
-  self%zs = self%ipos(3) * self%n(3) + min(md(3), self%ipos(3))
-  if (self%ipos(3)+1 <= md(3)) then
-    self%n(3) = self%n(3) + 1
-  endif
-  self%ze = self%zs + self%n(3)
+  call unequal_intervals(self%nbox(3), self%ipos(3)+1, self%dims(3), self%zs, self%ze)
+  self%n(3) = self%ze - self%zs + 1
 
   self%size(1:2) = self%box(1:2)
   self%ds(1:2) = self%size(1:2) / self%n(1:2)

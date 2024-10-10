@@ -94,14 +94,15 @@ class pandas_atom(object):
     pdkwargs['header'] = 3
     self.lvl = pd.read_csv(nrows=self.nk, **pdkwargs)
     pdkwargs['header'] = 3+self.nk+1
-    self.bbt = pd.read_csv(nrows=self.nline, **pdkwargs)
-    pdkwargs['header'] = 3+self.nk+1+self.nline+1
+    if self.nline > 0:
+      self.bbt = pd.read_csv(nrows=self.nline, **pdkwargs)
+      self.bbt = self.bbt.rename(columns={'lam_air':'lam0'})
+      pdkwargs['header'] = 3+self.nk+1+self.nline+1
     if nnu_bf > 0:
       self.bft = pd.read_csv(nrows=nnu_bf, **pdkwargs)
-    if self.ncol > 0:
       pdkwargs['header'] = 3+self.nk+1+self.nline+1+nnu_bf+1
+    if self.ncol > 0:
       self.col = pd.read_csv(nrows=self.ncol, **pdkwargs)
-    self.bbt = self.bbt.rename(columns={'lam_air':'lam0'})
     self.post_init()
     return self
   
@@ -216,7 +217,7 @@ class pandas_atom(object):
 
   def to_linelist(self, file):
     f = open(file, 'w+')
-    ions = np.unique(self.lvl.ion)
+    ions = np.unique(self.lvl.ion).astype(int)
     for ion in ions:
       ll = pd.DataFrame()
       mask = np.array(self.lvl.ion[self.bbt.i] == ion)
@@ -253,3 +254,12 @@ class pandas_atom(object):
     if hasattr(self, 'col'): self.col['i'] = index_map[self.col.i].values
     if hasattr(self, 'col'): self.col['j'] = index_map[self.col.j].values
     return dropped
+
+  def get_non_overlapping_indices(self, lines, nnu, nq_fac):
+      nq = np.array([line.nq for line in lines])
+      nq = nq + (1-nq%2)
+      nq = nq_fac * (nq-1) + 1
+      ir = np.ones_like(nq)*nnu
+      ir[1:] = nnu - np.cumsum(nq[:-1])
+      ib = ir - nq
+      return ib, ir

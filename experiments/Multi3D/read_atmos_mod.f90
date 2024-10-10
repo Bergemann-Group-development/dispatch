@@ -318,9 +318,9 @@ SUBROUTINE read_stagger2(atmos_file)
   read(lunit) rho
   close(lunit)
 
-  ia%px = vx * rho
-  ia%py = vy * rho
-  ia%pz = vz * rho
+  ia%px = vx * rho * 1e5
+  ia%py = vy * rho * 1e5
+  ia%pz = vz * rho * 1e5
   ia%lpe = log(ne * BK * temp)
   ia%ltemp = log(temp)
   ia%lrho  = log(rho)
@@ -360,7 +360,7 @@ SUBROUTINE read_marcs (file, FeH, vmic, abund)
   read(lunit,*) ! skip comment
   read(lunit,*) ! skip comment
 
-  if (FeH /= FeH_marcs) then
+  if (FeH < -99) then
     FeH = FeH_marcs
     write(stdout, '(A, F6.2)') 'FeH was overwritten by Marcs model: [Fe/H] =', FeH
   endif

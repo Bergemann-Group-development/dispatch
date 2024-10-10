@@ -17,6 +17,7 @@ MODULE molecule_mod
         procedure :: calc_f
         procedure :: calc_e
         procedure :: allocate => allocate_molec
+        procedure :: deallocate => deallocate_molec
         procedure :: init_mol_dissociation
     end type
     
@@ -108,26 +109,50 @@ END FUNCTION calc_e
 !===============================================================================
 SUBROUTINE allocate_molec (self, m)
     class(molec_type) :: self
-    integer :: m(3), mold(3)
+    integer :: m(3), mold(3), s, p
     !---------------------------------------------------------------------------
     if (all(m == self%m)) return
     self%m = m
+    s = storage_size(self%f)
     if (self%allocated) then
         mold = shape(self%f)
+        p = product(mold)
         deallocate(self%f, self%dis, self%part, self%n)
-        call os%mem_register(storage_size(self%f), -product(mold), label='mol%f')
-        call os%mem_register(storage_size(self%n), -product(mold), label='mol%n')
-        call os%mem_register(storage_size(self%dis), -product(mold), label='mol%dis')
-        call os%mem_register(storage_size(self%part), -product(mold), label='mol%part')
+        call os%mem_register(s, -p, label='mol%f')
+        call os%mem_register(s, -p, label='mol%n')
+        call os%mem_register(s, -p, label='mol%dis')
+        call os%mem_register(s, -p, label='mol%part')
     endif
+    p = product(m)
     allocate(self%f(m(1),m(2),m(3)), source=0.d0)
     allocate(self%n, self%dis, self%part, source=self%f)
-    call os%mem_register(storage_size(self%f), product(m), label='mol%f')
-    call os%mem_register(storage_size(self%n), product(m), label='mol%n')
-    call os%mem_register(storage_size(self%dis), product(m), label='mol%dis')
-    call os%mem_register(storage_size(self%part), product(m), label='mol%part')
+    call os%mem_register(s, p, label='mol%f')
+    call os%mem_register(s, p, label='mol%n')
+    call os%mem_register(s, p, label='mol%dis')
+    call os%mem_register(s, p, label='mol%part')
     self%allocated = .true.
 END SUBROUTINE allocate_molec
+
+!===============================================================================
+SUBROUTINE deallocate_molec (self)
+    class(molec_type) :: self
+    integer :: m(3), s, p
+    !---------------------------------------------------------------------------
+    m = self%m
+    p = product(m)
+    s = storage_size(self%f)
+    if (self%allocated) then
+        deallocate(self%f, self%dis)
+        call os%mem_register(s, -p, label='mol%f')
+        call os%mem_register(s, -p, label='mol%dis')
+        if (.not. (self%in_opac .or. self%in_linelist)) then
+            deallocate(self%n, self%part)
+            call os%mem_register(s, -p, label='mol%n')
+            call os%mem_register(s, -p, label='mol%part')
+        endif
+    endif
+    self%allocated = .false.
+END SUBROUTINE deallocate_molec
 
 !===============================================================================
 SUBROUTINE init_mol_dissociation (self)

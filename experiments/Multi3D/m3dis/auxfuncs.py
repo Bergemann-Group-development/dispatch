@@ -4,7 +4,7 @@ from numpy.fft import fft, ifft
 from scipy.signal import argrelextrema
 from scipy.special import voigt_profile
 from scipy import integrate, stats, optimize
-from scipy.interpolate import interp1d
+from scipy.interpolate import interp1d, PchipInterpolator
 from numba import njit, jit
 import shlex
 import re
@@ -60,31 +60,49 @@ artist_properties = {
 combined_kwargs = {**plot_kwargs, **line2d_kwargs}
 plt_kwargs = set(combined_kwargs.keys()).union(artist_properties)
 
+#=====================================================================
 def check_file(file):
     if file!='':
         if not os.path.exists(file):
             raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), file)
         
+#=====================================================================
 def get_kwargs(func):
     arg_names = func.__code__.co_varnames[:func.__code__.co_argcount]
     defaults = func.__defaults__ or ()
     kwargs = dict(zip(arg_names[-len(defaults):], defaults))
     return kwargs
 
+#=====================================================================
 def match_kwargs(func, kwargs):
     func_kwargs = get_kwargs(func)
     matched_kwargs = {k: v for k, v in kwargs.items() if k in func_kwargs}
     return matched_kwargs
 
+#=====================================================================
 def split_kwargs(func, kwargs):
     func_kwargs = get_kwargs(func)
     matched = {k: v for k, v in kwargs.items() if k in func_kwargs}
     unmatched = {k: v for k, v in kwargs.items() if k not in func_kwargs}
     return matched, unmatched
 
+#=====================================================================
+def calc_weq(self, method='linear', **kwargs):
+    #-----------------------------------------------------------------
+    if method == 'linear':
+        xx, yy = self.crop(**kwargs)
+        return np.trapz(1-yy, x=xx)*1e3
+    if method == 'pchip':
+        xx, yy = self.crop(**kwargs)
+        xxx = np.linspace(xx[0], xx[-1], xx.size*10)
+        f = PchipInterpolator(xx, 1-yy)
+        return np.trapz(f(xxx), x=xxx)*1e3
+
+#=====================================================================
 def planck(lam, temp):
     return HC2/lam**3/(np.exp(HCK/np.outer(temp, lam)) - 1)
 
+#=====================================================================
 def vacuum2obs(vac):
     """
     Converts vacuum wavelength to observed wavelengths
@@ -95,12 +113,14 @@ def vacuum2obs(vac):
     return _vacuum2obs(vac)
 
 #@njit
+#=====================================================================
 def _vacuum2obs(vac):
     ivac2 = 1/vac**2
     convf = 1 + 2.735182e-4 + 131.4182 * ivac2 + 2.76249e8 * ivac2*ivac2
     obs = vac / convf
     return obs
 
+#=====================================================================
 def air2vac(air):
     if type(air) != np.ndarray:
         air = np.array(air)
@@ -113,7 +133,7 @@ def air2vac(air):
           + 0.0001599740894897 / (38.92568793293 - s2)
     return air*n
 
-
+#=====================================================================
 def conv_profile(xx, yy, px, py):
     norm = np.trapz(py, x=px)
     n = len(xx)
@@ -209,6 +229,7 @@ def convol(sx, sy, vrot=None, zeta_rt=None, vshift=None, vdop=None, custom=None)
     return xx, yy
 
 @njit
+#=====================================================================
 def freq_quad(nnu, qmax, q0):
     if qmax <= q0:
         dq = 2 * qmax / (nnu - 1)
@@ -224,6 +245,7 @@ def freq_quad(nnu, qmax, q0):
         
     return q
 
+#=====================================================================
 def get_qmax(qmax, q0):
     q = copy.copy(qmax)
     if hasattr(q, '__iter__'):
@@ -241,6 +263,7 @@ def get_qmax(qmax, q0):
 
     return q
 
+#=====================================================================
 def LinArrayInterp(x, y, newx):
     if type(y) == list:
         y = np.array(y)
@@ -273,7 +296,7 @@ def LinArrayInterp(x, y, newx):
         
     return (y2-y1)/(x2-x1) * (newx - x1) + y1
 
-
+#=====================================================================
 def idl_tabulate(x, f, p=5):
     def newton_cotes(x, f):
         if x.shape[0] < 2:
@@ -286,6 +309,7 @@ def idl_tabulate(x, f, p=5):
         ret += newton_cotes(x[idx:idx + p], f[idx:idx + p])
     return ret
 
+#=====================================================================
 def continuum(xx, yy, axis=-1):
     yspace = yy.take([0, -1], axis)
     xspace = xx.take([0, -1], axis)
@@ -296,7 +320,7 @@ def continuum(xx, yy, axis=-1):
     
     return np.moveaxis(output, -1, axis)
 
-
+#=====================================================================
 def between_ext(arr, pos, criterion=np.greater_equal):
     ext = argrelextrema(arr, criterion)[0]
     ext = np.pad(ext, 1, constant_values=[0,len(arr)])
@@ -310,7 +334,28 @@ def between_ext(arr, pos, criterion=np.greater_equal):
     
     return mask.astype(np.bool)
 
+#=====================================================================
+def polyfit(xy, dydx=[]):
+  n1 = len(xy)
+  n2 = len(dydx)
+  n = n1+n2
+  A = np.zeros((n,n))
+  x = np.zeros(n)
+  y = np.zeros(n)
+  x[0:n1] = [point[0] for point in xy]
+  y[0:n1] = [point[1] for point in xy]
+  x[n1:n] = [point[0] for point in dydx]
+  y[n1:n] = [point[1] for point in dydx]
+  A[0:n1] = np.vander(x[0:n1], n)
 
+  if n2 > 0:
+    A[n1:n, :-1] = np.vander(x[n1:n], n-1) * np.arange(1, n)[::-1]
+
+  p = np.linalg.solve(A, y)
+  
+  return p
+
+#=====================================================================
 def simps_weights(xx):
     n = len(xx)
     h = np.diff(xx)
@@ -353,8 +398,7 @@ def simps_weights(xx):
         
     return weights
 
-
-
+#=====================================================================
 def synth_blends(obs_xx, obs_yy, order=20, blank_lam=None):
     exts = np.array(argrelextrema(obs_yy, np.less, order=order))[0]
     
@@ -398,7 +442,7 @@ def synth_blends(obs_xx, obs_yy, order=20, blank_lam=None):
     
     return yy
 
-
+#=====================================================================
 def _read(f, dtype=None, quotes=None):
     line = f.readline()
     line = line.replace(',','')
@@ -426,7 +470,7 @@ def _read(f, dtype=None, quotes=None):
                 
     return out
 
-
+#=====================================================================
 def _read_arr(f, n, dtype=None):
     out = []
     while len(out) < n:
@@ -439,7 +483,7 @@ def _read_arr(f, n, dtype=None):
         
     return out
 
-
+#=====================================================================
 def _read_fix(f, length, n, dtype=None):
     out = []
     
@@ -456,7 +500,7 @@ def _read_fix(f, length, n, dtype=None):
         
     return out
 
-
+#=====================================================================
 def is_number(s):
     try:
         float(s)
@@ -464,55 +508,10 @@ def is_number(s):
     except ValueError:
         return False
 
-
-def voigt_num(a, v):
-    AK = np.array([ -1.12470432, -0.15516677,  3.28867591, -2.34357915,
-                     0.42139162, -4.48480194,  9.39456063, -6.61487486,  1.98919585,
-                    -0.22041650, 0.554153432, 0.278711796,-0.188325687, 0.042991293,
-                    -0.003278278, 0.979895023,-0.962846325, 0.532770573,-0.122727278])
-    
-    SQP = 1.772453851
-    SQ2 = 1.414213562
-    PQS = 2/SQP
-    
-    v = np.abs(v)
-    u = a + v
-    v2 = v**2
-    
-    ex = np.exp(-v2)
-    quo = 1/(v2-1.5)
-    
-    h = np.exp(-v2)
-    
-    maskv13 = v < 1.3
-    maskv24 = (v > 1.3) * (v < 2.4)
-    
-    h1 = quo * np.poly1d(AK[10:15][::-1])(v)
-    h1[maskv13] = np.poly1d(AK[:5][::-1])(v)[maskv13]
-    h1[maskv24] = np.poly1d(AK[5:10][::-1])(v)[maskv24]
-    
-    mask1 = (a < 0.2) * (v < 5.0)
-    mask2 = (a > 0.2) * (a < 1.4) * (u > 3.2)
-    mask3 = (a < 0.2) * (v > 5.0)
-    mask4 = (a > 1.4) + (u > 3.2)
-    
-    h1p = h1 + PQS*ex
-    h2p = PQS*h1p - 2*v2*ex
-    h3p = (PQS * (1 - ex*(1 - 2*v2)) - 2*v2*h1p)/3 + PQS*h2p
-    h4p = (2*v2*v2*ex - PQS*h1p)/3 + PQS*h3p
-    psi = np.poly1d(AK[15:][::-1])(a)
-    
-    h[mask1] = (h1*a + ex*(1. + a**2*(1. - 2.*v2)))[mask1]
-    h[mask2] = (psi*(ex + a*(h1p + a*(h2p + a*(h3p + a*h4p)))))[mask2]
-    h[mask3] = (a*(15. + 6.*v2 + 4.*v2*v2)/(4.*v2**3*SQP))[mask3]
-    
-    a2 = a**2
-    u = SQ2*(a2+v2)
-    u2 = 1/u**2
-    
-    h[mask4] = (SQ2/SQP*a/u*(1. + u2*(3.*v2 - a2) + u2*u2*(15.*v2*v2 - 30.*v2*a2 + 3.*a2*a2)))[mask4]
-    
-    return h
+#=====================================================================
+def voigt_function(a, v):
+  s2 = np.sqrt(2)
+  return voigt_profile(v*s2, 1, a*s2) * s2
 
 #=====================================================================
 def compute_tau_scale (chi, zz, axis=-1):
@@ -587,6 +586,14 @@ def find_close(arr, val, side='left'):
         if np.isclose(arr[i+1], val, rtol=1e-10): i = i+1
     return i
 
+#=====================================================================
+def get_adjacent_peaks(yy, i):
+  #-----------------------------------------------------------------
+  ex = argrelextrema(yy, np.greater_equal, order=1)[0]
+  ex = np.array([0, *ex, len(yy)-1])
+  idx = np.searchsorted(ex, i)
+  return ex[idx-1:idx+1]
+
 def stagger_name_to_params(stagger_name):
   _, teff, logg, feh = re.split('t|g|m', stagger_name)
   if len(teff)==2: teff = int(teff)*100
@@ -640,6 +647,15 @@ def rotate_array(xx, yy, zz, array, vec, pivot_z=None, ray_offset=None):
         rotated[...,x,y,z] = d[z]*array[...,x2,y2,z] + rotated[...,x,y,z]
 
   return rotated
+
+#-----------------------------------------------------------------
+def near_equal_split(nbox, ndim):
+  n = nbox//ndim
+  md = nbox%ndim
+  ipos = np.arange(ndim)+1
+  nn = n*np.ones(ndim).astype(int)
+  nn[ipos <= md] += 1
+  return nn
 
 #=====================================================================
 class memmap_list:

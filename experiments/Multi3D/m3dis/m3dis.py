@@ -22,11 +22,13 @@ def option(nml, key):
     else:
         return False
 
-def launch(input_name, nml_settings=None, default=None, overwrite=False, threads=32, log_file=None, slurm_script=None):
+def launch(input_name, nml_settings=None, default=None, overwrite=False, threads=32, log_file=None, slurm_script=None, verbose=True):
     cwd = os.getcwd()
     check_file(cwd + '/dispatch.x')
     if default is not None:
-        if default.endswith('.nml'):
+        if type(default) is f90nml.namelist.Namelist:
+            input = copy.deepcopy(default)
+        elif default.endswith('.nml'):
             input = f90nml.read(default)
         else:
             input = f90nml.read(default + '/params.nml')
@@ -48,7 +50,11 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
         else:
             command = 'sbatch {:} {:}'.format(slurm_script, input_file)
 
-        print(input_file, ' launched')
+        if verbose:
+            print(input_file, ' launched')
+        else:
+            command = command + ' 2> /dev/null'
+
         os.environ['OMP_NUM_THREADS'] = str(threads)
         iostat = os.system(command)
         if iostat!=0 and log_file is not None: 
@@ -66,7 +72,7 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
         if 'datadir' in input['io_params']:
             datadir = input['io_params']['datadir']
 
-    return os.path.join(datadir, input_name)
+    return os.path.join(datadir.strip(), input_name)
 
 #=====================================================================
 class m3dis(object):
@@ -115,7 +121,9 @@ class m3dis(object):
             blue_cut   = self.nml['atom_params']['blue_cut']
             in_abnd    = self.nml['atom_params']['abundance']
 
-            self.in_lines = slice(None, None)
+            nq_fac = self.nml['atom_params']['nq_fac']
+            if self.nml['m3d_params']['m1d_legacy_mode']: nq_fac *= 2
+
             if 'line_mask' in self.nml.keys():
                 if 'in_lines' in self.nml['line_mask'].keys():
                     in_lines = self.nml['line_mask']['in_lines']
@@ -129,26 +137,20 @@ class m3dis(object):
                     self.atom = fast_atom(atom_file, **kwargs)
 
                 self.atom.run = self
+                if not hasattr(self, 'in_lines'): self.in_lines = slice(None, self.atom.nline)
 
                 if hasattr(self, 'lam'):
+                    self.line = self.atom.trans[self.in_lines]
+
                     if option(self.nml['atom_params'], 'overlapping_bb_in_output'):
                         self.atom.load_sp(self.lam, qnorm=self.qnorm)
                     else:
                         nnu = self.lam.size
-                        nq_fac = self.nml['atom_params']['nq_fac']
-                        nq = self.atom.bbt.nq.values[self.in_lines]
-                        nq = nq + (1-nq%2)
-                        nq = nq_fac * (nq-1) + 1
-                        ir = np.ones_like(nq)*nnu
-                        ir[1:] = nnu - np.cumsum(nq[:-1])
-                        ib = ir - nq
+                        ib, ir = self.atom.get_non_overlapping_indices(self.line, nnu, nq_fac)
                         self.atom.bbt['ir'] = 0
                         self.atom.bbt['ib'] = 0
                         self.atom.bbt.loc[self.in_lines, 'ir'] = ir
                         self.atom.bbt.loc[self.in_lines, 'ib'] = ib
-
-
-                    self.line = self.atom.trans[self.in_lines]
 
                     #mask = bbt.loggf > loggf_cut
                     #mask = mask & (bbt.lam_vac_red > blue_cut) 
@@ -163,15 +165,21 @@ class m3dis(object):
                 for trans in self.atom.trans:
                     trans.run = self
 
-                lines = self.atom.trans[:self.atom.nline]
-
-                if hasattr(self, 'in_lines'):
-                    lines = np.array(self.atom.trans)[self.in_lines]
+                if not hasattr(self, 'in_lines'): self.in_lines = slice(None, self.atom.nline)
+                lines = np.array(self.atom.trans)[self.in_lines]
                     
                 #lines = [line for line in lines if np.log10(line.fosc*line.lower.g) > loggf_cut]
                 #lines = [line for line in lines if line.lam_red > blue_cut and line.lam_blue < red_cut]
                 self.nline = len(lines)
                 self.line = lines
+
+                if hasattr(self, 'lam'):
+                    if not option(self.nml['atom_params'], 'overlapping_bb_in_output'):
+                        nnu = self.lam.size
+                        ib, ir = self.atom.get_non_overlapping_indices(self.line, nnu, nq_fac)
+                        self.atom.ib = ib.astype(int)
+                        self.atom.ir = ir.astype(int)
+
 
             if self.atom.id in self.abundances:
                 self.atom.abnd = float(self.abundances[self.atom.id])
@@ -237,22 +245,29 @@ class m3dis(object):
         amr = 'amr' in atmos_params
         if amr: amr = atmos_params['amr']
 
+        dims = atmos_params['dims']
+        self.atmos_cuts = []
         if amr:
             nz = atmos_params['nz']
             self.zz = np.zeros(nz)
             j = 0
             off = 0
-            for k in range(atmos_params['dims']):
+            for k in range(dims):
                 nx, ny, nnz = [int(i) for i in mesh.readline().split()]
                 dx, dy, dz = [float(i) for i in mesh.readline().split()]
                 self.zz[j:j+nnz] = np.arange(1,nnz+1)*dz + off
                 j += nnz
                 off = self.zz[j-1]
+                self.atmos_cuts.append(nnz)
+
+            self.atmos_cuts = np.cumsum(self.atmos_cuts)
 
         else:
             nx, ny, nz = [int(i) for i in mesh.readline().split()]
             dx, dy, dz = [float(i) for i in mesh.readline().split()]
             self.zz = np.arange(1, nz+1)*dz
+            self.atmos_cuts = np.cumsum(near_equal_split(nz, dims))
+
 
         self.dx = dx
         self.dy = dy
@@ -446,6 +461,11 @@ class m3dis(object):
 
         xx = self.lam
 
+        if vshift is not None:
+            vshift = vshift / (CC*1e-5) # vshift has to be given in km/s
+            lshift = xx * vshift / (1+vshift)
+            xx = xx + lshift
+    
         if lam0 is not None:
             xx = xx - lam0
         else:
@@ -460,8 +480,8 @@ class m3dis(object):
 
         xx = xx + lam0
 
-        if set([vdop, vrot, vshift, zeta_rt, convolve]) != {None}:
-            sxx, syy = convol(xx, yy, vdop=vdop, vrot=vrot, zeta_rt=zeta_rt, vshift=vshift, custom=convolve)
+        if set([vdop, vrot, zeta_rt, convolve]) != {None}:
+            sxx, syy = convol(xx, yy, vdop=vdop, vrot=vrot, zeta_rt=zeta_rt, custom=convolve)
             yy = np.interp(xx, sxx, syy)
 
         if lam0 is not None:
@@ -483,16 +503,21 @@ class m3dis(object):
     #=====================================================================
     def interp(self, newx, **kwargs):
         #-----------------------------------------------------------------
-        xx, yy = self.crop(**kwargs)
+        xmin = newx.min()
+        xmax = newx.max()
+        if 'vdop' in kwargs.keys():
+            xmin = xmin-kwargs['vdop']
+            xmax = xmax+kwargs['vdop']
+
+        xx, yy = self.crop(xmin=xmin, xmax=xmax, **kwargs)
         yy = np.interp(newx, xx, yy)
         return yy
     
     #=====================================================================
     def calc_weq(self, **kwargs):
         #-----------------------------------------------------------------
-        xx, yy = self.crop(**kwargs)
-        yy = np.trapz(1-yy, x=xx)*1e3
-        return yy
+        return calc_weq(self, **kwargs)
+            
     
     #=====================================================================
     def plot_spectrum(self, velocity_units=None, set_labels=True,
@@ -775,9 +800,10 @@ class m3dis(object):
         return plt.plot(xx, yy, **kwargs)
     
     #=====================================================================
-    def plot_line_labels(self, xx=None, labels=None, weights=None, **kwargs):
+    def plot_line_labels(self, xx=None, labels=None, weights=None, offset=None, **kwargs):
         #-----------------------------------------------------------------
         if xx is None: xx = np.array([line.lam0 for line in self.line])
+        if offset is not None: xx = xx + offset
         if labels is None: labels = np.array([self.atom.id for line in self.line])
         if weights is None:
             T = 4000
@@ -789,9 +815,10 @@ class m3dis(object):
         return self.plot_line_annotations(xx, labels, weights=weights, **kwargs)
     
     #=====================================================================
-    def plot_lline_labels(self, xx=None, labels=None, weights=None, **kwargs):
+    def plot_lline_labels(self, xx=None, labels=None, weights=None, offset=None, **kwargs):
         #-----------------------------------------------------------------
         if xx is None: xx = self.llist.lam0.values
+        if offset is not None: xx = xx + offset
         if labels is None: labels = self.llist.ion.values
         if weights is None: weights = self.llist.strength.values
         return self.plot_line_annotations(xx, labels, weights=weights, **kwargs)
@@ -869,28 +896,25 @@ class m3dis(object):
         plt.ylim(top=ymax+1.2*h + bbox.height*pad)
     
     #=================================================================
-    def fit_observed(self, oxx, oyy, fit=[], bounds=None, p0=None, **kwargs):
+    def fit_observed(self, oxx, oyy, fit=[], bounds=None, p0=None, sigma=None, **kwargs):
         lbounds = {'vshift':-3, 'vdop':1e-3, 'vrot':1e-3, 'zeta_rt':1e-3}
         ubounds = {'vshift':+3, 'vdop':1e2,  'vrot':1e2,  'zeta_rt':1e2 }
         p0s     = {'vshift':0,  'vdop':1,    'vrot':1,    'zeta_rt':1   }
         if bounds is None: bounds = ([lbounds[f] for f in fit], [ubounds[f] for f in fit])
         if p0 is None: p0 = [p0s[f] for f in fit]
-
-        xmin = oxx.min()
-        xmax = oxx.max()
         
         def opt_func(newx, *args):
             ka = {f:args[i] for i, f in enumerate(fit)}
-            return np.interp(newx, *self.crop(xmin=xmin, xmax=xmax, **ka, **kwargs))
+            return self.interp(newx, **ka, **kwargs)
         
-        pfit, _ = optimize.curve_fit(opt_func, oxx, oyy, p0=p0, bounds=bounds)
+        pfit, _ = optimize.curve_fit(opt_func, oxx, oyy, p0=p0, bounds=bounds, sigma=sigma)
         fitted = opt_func(oxx, *pfit)
         return {f:pfit[i] for i, f in enumerate(fit)}, fitted
     
-    def plot_fit(self, oxx, oyy, fit=[], bounds=None, p0=None, label=None, **kwargs):
+    def plot_fit(self, oxx, oyy, fit=[], bounds=None, p0=None, sigma=None, label=None, **kwargs):
         crop_kwargs = {k:v for k, v in kwargs.items() if k not in plt_kwargs}
         plot_kwargs = {k:v for k, v in kwargs.items() if k not in crop_kwargs}
-        p, fitted = self.fit_observed(oxx, oyy, fit=fit, bounds=bounds, p0=p0, **crop_kwargs)
+        p, fitted = self.fit_observed(oxx, oyy, fit=fit, bounds=bounds, p0=p0, sigma=sigma, **crop_kwargs)
         if label is None:
             label = ', '.join([f'{k}={v:.2f}' for k, v in p.items()])
         else:
@@ -967,7 +991,6 @@ class m3dis(object):
             self.flux_cnt = np.mean([run.flux_cnt for run in runs], axis=0)
 
         return self
-
 
 #=====================================================================
 def weq_diff(run1, run2, marker='.', linestyle='none', **kwargs):

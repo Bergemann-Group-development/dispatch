@@ -27,7 +27,7 @@ MODULE m3d_patch_mod
     USE spectrum_mod, only: nu_tolerance
     USE atom_mod, only: atom_type, atomic_spectrum_type, lse_no_pivot, lse_solver, m1d_legacy_mode, nq_fac, &
                         use_classic_col, level_partf
-    USE composition_mod, only: composition_type, scattering_absorption, irwin_dis
+    USE composition_mod, only: composition_type, scattering_absorption, irwin_dis, helium_scattering
     USE ray_mod, only: one_dimensional, set_carlson_quadratures, set_radau_quadratures, set_lobatto_quadratures, &
                        set_gauss_quadratures, set_custom_quadratures, set_grid_quadratures
     USE m3d_debug_mod
@@ -68,6 +68,7 @@ MODULE m3d_patch_mod
       logical :: compressed=.false., save_output=.false., saved=.false.
       logical :: print_update_info, checked_bounds=.false.
       logical :: free_self=.false.
+      logical :: has_atom=.false.
       integer :: i_nu=0, i_mu=0
       integer :: i_ne=1, i_rho=2, i_temp=3, i_vx=4, i_vy=5, i_vz=6
       integer :: i_chi=1, i_eta=2, i_snu=2
@@ -150,7 +151,7 @@ MODULE m3d_patch_mod
     character(len=128), public, save :: long_solver='linear'
     character(len=32), public, save :: short_scheme='radau'
     character(len=32), public, save :: long_scheme='lobatto'
-    real(4), public :: vel_max=0.0
+    real(4), public :: fixed_Jnu=-1.0
     real(8), public :: ray_offset(2)=[0.,0.], pivot_z=-1
     integer, public :: ng_step=-1, ng_start=8
     character(len=126), public :: atmos_format='Text'
@@ -179,7 +180,7 @@ MODULE m3d_patch_mod
     absmet_in_output, print_lock, make_eos, ng_step, ng_start, scattering_absorption, &
     column_by_column, rotate_atmos, Jnu_to_file, preconditioning, save_inu, save_chi, &
     long_scheme, long_ntheta, long_nphi, short_scheme, short_ntheta, short_nphi, &
-    long_solver
+    long_solver, fixed_Jnu
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%pre_init', itimer=itimer)
     self%type = trim(self%kind)
@@ -259,6 +260,7 @@ MODULE m3d_patch_mod
         use_classic_col = .false.
         irwin_dis = .false.
         level_partf = .true.
+        helium_scattering = .false.
         !comoving_frame = .true.
         !preconditioning = .false.
       endif
@@ -322,7 +324,7 @@ MODULE m3d_patch_mod
     self%ze = self%zs + self%n(3)
 
     select case (self%kind)
-    case ('atom_patch', 'out_rad')
+    case ('atom_patch')
       self%save_output = .true.
     case default
       self%save_output = string_in_text(save_patch_kind, self%kind)
@@ -398,6 +400,7 @@ MODULE m3d_patch_mod
     if (present(i_nu)) self%i_nu = i_nu
     if (present(sp)) self%sp => sp
     if (present(atom)) self%atom => atom
+    self%has_atom = associated(self%atom)
     self%patch => m3d_parent%patch
     self%m3d_parent => m3d_parent
     self%zs = m3d_parent%zs

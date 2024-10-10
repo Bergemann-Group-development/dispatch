@@ -76,6 +76,15 @@ class atom_class(object):
 
         self.f.close()
         del self.f
+
+    def get_non_overlapping_indices(self, lines, nnu, nq_fac):
+        nq = np.array([line.nq for line in lines])
+        nq = nq + (1-nq%2)
+        nq = nq_fac * (nq-1) + 1
+        ir = np.ones_like(nq)*nnu
+        ir[1:] = nnu - np.cumsum(nq[:-1])
+        ib = ir - nq
+        return ib, ir
                 
                 
     def partitionFunction(self, temp, ne):

@@ -23,7 +23,7 @@ MODULE prec_mod
     ! This is public so it can be overwritten by input from absdat
     real(dp), public :: RYD = 13.598408 ! Rydberg constant [eV]
 
-    integer, public, parameter :: pp(4)=[1,1,224,1]
+    integer, public, parameter :: pp(4)=[1,1,1,1]
     
 contains
     

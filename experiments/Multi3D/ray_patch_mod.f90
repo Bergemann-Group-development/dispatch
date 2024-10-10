@@ -32,7 +32,7 @@ MODULE ray_patch_mod
   type, public, extends(m3d_patch_t) :: ray_patch_t
     type(ray_type) :: ray
     real(8) :: vec(3), wmu
-    integer :: fs, fe
+    integer :: fs, fe, nf
     integer :: pre_pad_fs, pre_pad_fe
     logical :: padded, level_boundary=.false.
   contains
@@ -57,31 +57,18 @@ contains
 !===============================================================================
 SUBROUTINE set_freq_indices (self)
   class(ray_patch_t) :: self
-  integer :: fs, fe, nv, md, i_nu
+  integer :: fs, fe, i, nv
   integer, pointer :: counter
   character(len=16) :: label
+  integer, dimension(:), allocatable :: order
   integer, save, target :: counter1=-999, counter2=-999
   !-----------------------------------------------------------------------------
-  if (self%kind == 'out_rad') then
-    self%fs = 1
-    self%fe = self%sp%nnu
-    return
-  endif
-  if (.not. associated(self%sp)) then
-    print *, ''
-  endif
-  nv = self%sp%nnu / self%n_nu
-  md = mod(self%sp%nnu, self%n_nu)
-  i_nu = mod(abs(self%i_nu)-1, self%n_nu)+1
-  fs = (i_nu-1) * nv + 1 + min(md, i_nu-1)
-  if (i_nu <= md) then
-    nv = nv + 1
-  endif
-  fe = fs + nv - 1
+  call unequal_intervals(self%sp%nnu, self%i_nu, self%n_nu, fs, fe)
   self%fs = fs
   self%fe = fe
   self%pre_pad_fs = fs
   self%pre_pad_fe = fe
+  self%nf = self%fe - self%fs + 1
 
   if (self%out_ray) then
     counter => counter2
@@ -92,9 +79,19 @@ SUBROUTINE set_freq_indices (self)
   endif
   if (self%i_nu > counter .and. self%verbose > 2) then
     if (counter == -999) write(stdout,'(I2, A10, A18)') self%n_nu, trim(label), 'frequency splits'
-    write(stdout,'(I4, I10,A3,I8)') i_nu, fs, ' - ', fe
+    write(stdout,'(I4, I10,A3,I8)') self%i_nu, fs, ' - ', fe
     counter = self%i_nu
   endif
+  !if (self%has_atom .and. self%in_ray) then
+  !  if (associated(self%atom%line) .and. .not. associated(self%atom%cont)) then
+  !    nv = size(self%atom%line)
+  !    call unequal_intervals(nv, self%i_nu, self%n_nu, fs, fe)
+  !    allocate(order(nv))
+  !    call argsort(self%atom%line%nu0, order)
+  !    fs = self%atom%line(order(fs))%ired
+  !    fe = self%atom%line(order(fe))%iblue
+  !  endif
+  !endif
 END SUBROUTINE set_freq_indices
 
 !===============================================================================

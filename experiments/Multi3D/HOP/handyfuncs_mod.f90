@@ -1,6 +1,10 @@
 MODULE handyfuncs_mod
   USE op_math_mod
   implicit none
+
+  interface argsort
+     module procedure argsort_int, argsort_r4, argsort_r8
+  end interface argsort
   
 contains
 
@@ -40,6 +44,22 @@ SUBROUTINE NextEntry(fileunit, comment)
 END SUBROUTINE NextEntry
 
 !===============================================================================
+SUBROUTINE unequal_intervals(n, i, ni, start, end)
+  integer, intent(in) :: n, i, ni
+  integer, intent(out) :: start, end
+  integer :: nv, md, j
+  !-----------------------------------------------------------------------------
+  nv = n / ni
+  md = mod(n, ni)
+  j = mod(abs(i)-1, ni)+1
+  start = (j-1)*nv + 1 + min(md, j-1)
+  if (j <= md) then
+    nv = nv + 1
+  endif
+  end = start + nv - 1
+END SUBROUTINE unequal_intervals
+
+!===============================================================================
 SUBROUTINE replace_char (string, out, in)
   character(len=*), intent(inout) :: string
   character, intent(in) :: out, in
@@ -52,6 +72,33 @@ SUBROUTINE replace_char (string, out, in)
   endif
   end do
 END SUBROUTINE replace_char
+
+!===============================================================================
+SUBROUTINE replace_substring (string, out, in)
+  character(len=*), intent(inout) :: string
+  character(len=*), intent(in) :: out, in
+  character(:), allocatable :: tmp
+  integer :: i, j, n, no, ni
+  !-----------------------------------------------------------------------------
+  n = len(string)
+  no = len(out)
+  ni = len(in)
+  allocate(tmp, mold=string)
+  i = 1
+  j = 1
+  do while (i<=n-no+1)
+      if (string(i:i+no-1) == out) then
+        tmp(j:j+ni-1) = in
+        j = j + ni
+        i = i + no
+      else
+        tmp(j:j) = string(i:i)
+        i = i + 1
+        j = j + 1
+      endif
+  end do
+  string = tmp
+END SUBROUTINE replace_substring
 
 !===============================================================================
 SUBROUTINE count_words (string, nwords, sep)
@@ -160,6 +207,78 @@ FUNCTION hash_string(text) result(hashed)
   end do
   hashed = abs( IEOR( hashed, magic_numb ) )
 END FUNCTION hash_string 
+
+!===============================================================================
+SUBROUTINE argsort_int(a, order)
+  integer, intent(in) :: a(:)
+  integer, intent(out) :: order(:)
+  integer, allocatable :: scr(:)
+  integer :: i, j, n
+  !-----------------------------------------------------------------------------
+  allocate(scr, source=a)
+  n = size(a, 1)
+  order = 1
+
+  do i = 2, n
+    j = i - 1
+    do while (j >= 1)
+      if (scr(j) <= a(i)) exit
+      scr(j + 1) = scr(j)
+      order(j+1) = order(j)
+      j = j - 1
+    end do
+    scr(j + 1) = a(i)
+    order(j+1) = i
+  end do
+END SUBROUTINE argsort_int
+
+!===============================================================================
+SUBROUTINE argsort_r4(a, order)
+  real(4), intent(in) :: a(:)
+  integer, intent(out) :: order(:)
+  real(4), allocatable :: scr(:)
+  integer :: i, j, n
+  !-----------------------------------------------------------------------------
+  allocate(scr, source=a)
+  n = size(a, 1)
+  order = 1
+
+  do i = 2, n
+    j = i - 1
+    do while (j >= 1)
+      if (scr(j) <= a(i)) exit
+      scr(j + 1) = scr(j)
+      order(j+1) = order(j)
+      j = j - 1
+    end do
+    scr(j + 1) = a(i)
+    order(j+1) = i
+  end do
+END SUBROUTINE argsort_r4
+
+!===============================================================================
+SUBROUTINE argsort_r8(a, order)
+  real(8), intent(in) :: a(:)
+  integer, intent(out) :: order(:)
+  real(8), allocatable :: scr(:)
+  integer :: i, j, n
+  !-----------------------------------------------------------------------------
+  allocate(scr, source=a)
+  n = size(a, 1)
+  order = 1
+
+  do i = 2, n
+    j = i - 1
+    do while (j >= 1)
+      if (scr(j) <= a(i)) exit
+      scr(j + 1) = scr(j)
+      order(j+1) = order(j)
+      j = j - 1
+    end do
+    scr(j + 1) = a(i)
+    order(j+1) = i
+  end do
+END SUBROUTINE argsort_r8
 
 !===============================================================================
 FUNCTION thread2place(thread, ncores, nthreads) result(place)
