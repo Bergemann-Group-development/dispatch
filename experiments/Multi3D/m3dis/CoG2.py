@@ -47,11 +47,11 @@ class CoG(m3dis):
     #=================================================================
     def crop(self, abnd, **kwargs):
         runs = self.runs
-        xxx, yyy = np.moveaxis([run.crop(**kwargs) for run in runs], 1, 0)
+        xx, yy = runs[0].crop(**kwargs)
+        yy = [yy, *[run.crop(**kwargs)[1] for run in runs[1:]]]
 
-        func = PchipInterpolator(self.abnds, yyy, axis=0)
+        func = PchipInterpolator(self.abnds, yy, axis=0)
         yy = func(abnd)
-        xx = xxx[0]
 
         return xx, yy
     
@@ -79,15 +79,15 @@ class CoG(m3dis):
         return plt.plot(xx, yy, **plot_kwargs)
     
     #=================================================================
-    def fit_observed(self, oxx, oyy, fit=[], bounds=None, p0=None, sigma=None, **kwargs):
+    def fit_observed(self, oxx, oyy, fit=[], bounds=None, p0=None, sigma=None, method='curve_fit', tol=None, **kwargs):
         abnds = self.abnds
-        lbounds = {'abnd':abnds[0],  'vshift':-3, 'vdop':1e-3, 'vrot':1e-3, 'zeta_rt':1e-3}
-        ubounds = {'abnd':abnds[-1], 'vshift':+3, 'vdop':1e2,  'vrot':1e2,  'zeta_rt':1e2 }
-        p0s = {'abnd':np.mean(abnds),'vshift':0,  'vdop':1,    'vrot':1,    'zeta_rt':1   }
+        lbounds = {'abnd':abnds[0],  'vshift':-3, 'vdop':1e-3, 'vrot':1e-3, 'zeta_rt':1e-3, 'fac':0.5}
+        ubounds = {'abnd':abnds[-1], 'vshift':+3, 'vdop':1e2,  'vrot':1e2,  'zeta_rt':1e2,  'fac':2.0}
+        p0s = {'abnd':np.mean(abnds),'vshift':0,  'vdop':1,    'vrot':1,    'zeta_rt':1,    'fac':1.0}
         fit = ['abnd',] + fit
         if bounds is None: bounds = ([lbounds[f] for f in fit], [ubounds[f] for f in fit])
         if p0 is None: p0 = [p0s[f] for f in fit]
-        return m3dis.fit_observed(self, oxx, oyy, fit=fit, bounds=bounds, p0=p0, sigma=sigma, **kwargs)
+        return m3dis.fit_observed(self, oxx, oyy, fit=fit, bounds=bounds, p0=p0, sigma=sigma, method=method, tol=tol, **kwargs)
     
     #=================================================================
     def interp_abnd(self, weq, kr=None, log=True, **kwargs):

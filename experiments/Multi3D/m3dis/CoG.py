@@ -51,7 +51,7 @@ class CoG_line(object):
         yy = np.ones((len(runs), xx.size))
         
         for i, run in enumerate(runs):
-            yy[i], _ = run.get_yy(mask=mask, **kwargs)
+            yy[i] = run.get_yy(mask=mask, **kwargs)
 
         func = PchipInterpolator(self.cog.abnds, yy, axis=0)
         yy = func(abnd)

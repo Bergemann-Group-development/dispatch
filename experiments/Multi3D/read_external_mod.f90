@@ -135,7 +135,7 @@ SUBROUTINE init(self, task_list, name)
 
   select case (atmos_format)
   case('stagger')
-    call read_stagger(atmos_file, snap)
+    call read_stagger(atmos_file, snap, use_ne)
   case('stagger2')
     call read_stagger2(atmos_file)
   case('co5bold')
@@ -164,7 +164,7 @@ SUBROUTINE init(self, task_list, name)
   self%n = [nx, ny, nz]
 
   if (amr) then
-    call ia%setup_amr_mesh(dims)
+    call ia%setup_amr_mesh(dims, use_ne)
   else
     self%ds = self%size / self%n
     open(file=trim(io%run_dir)//'atmos_mesh.txt', newunit=lunit, form='FORMATTED')

@@ -424,7 +424,7 @@ SUBROUTINE execute (self)
 
   if (ilambd > 0 .and. Jnu_to_file .and. .not. self%out_mu) then
     Jnu_label = merge('Jnu_out', 'Jnu    ', self%out_ray)
-    call self%save5(self%Jnu, Jnu_label, key=self%key(1:3), add2meta=.false.)
+    call self%save5(self%Jnu, trim(Jnu_label), key=self%key(1:3), add2meta=.false.)
   endif
 
   if (end_boundary) then

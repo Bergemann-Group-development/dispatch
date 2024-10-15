@@ -16,7 +16,7 @@ MODULE read_atmos_mod
     integer :: gz=0 ! ghost zones
     logical :: is_3d=.false.
     real(4), dimension(:,:,:), allocatable :: ltemp, lpe, lrho
-    real(4), dimension(:,:,:), allocatable :: px, py, pz
+    real(4), dimension(:,:,:), allocatable :: vx, vy, vz
     real(4), dimension(:),     allocatable :: xx, yy, zz
     real(8), dimension(:),     allocatable :: sub_pos, sub_size
   contains
@@ -58,6 +58,7 @@ contains
 !===============================================================================
 SUBROUTINE read_co5bold(atmos_file)
   character(len=*), intent(in) :: atmos_file
+  real(4), dimension(:,:,:), allocatable :: over_rho
   integer :: lunit, iostat, nsub
   real(4) :: model_time
   real(8) :: ds(3)
@@ -73,16 +74,22 @@ SUBROUTINE read_co5bold(atmos_file)
   read(lunit) ia%ltemp
   read(lunit) ia%lrho 
   read(lunit) ia%lpe  
-  read(lunit) ia%px
-  read(lunit) ia%py
-  read(lunit) ia%pz
+  read(lunit) ia%vx
+  read(lunit) ia%vy
+  read(lunit) ia%vz
+
+  allocate(over_rho, source=exp(-ia%lrho))
+  ia%vx = ia%vx * over_rho
+  ia%vy = ia%vy * over_rho
+  ia%vz = ia%vz * over_rho
   close(lunit)
 END SUBROUTINE read_co5bold
 
 !===============================================================================
-SUBROUTINE read_stagger(stagger_file, snap)
+SUBROUTINE read_stagger(stagger_file, snap, use_ne)
   character(len=*), intent(in) :: stagger_file
   integer, intent(in) :: snap
+  logical, intent(inout) :: use_ne
   real(8) :: ds(3)
   integer :: n(3), nx, ny, nz
   !-----------------------------------------------------------------------------
@@ -91,7 +98,7 @@ SUBROUTINE read_stagger(stagger_file, snap)
   write(data_file, '(A,A)') trim(snap_file), '.dat'
   write(aux_file,  '(A,A)') trim(snap_file), '.aux'
   call read_stagger_mesh()
-  call read_stagger_data()
+  call read_stagger_data(use_ne)
 END SUBROUTINE read_stagger
 
 !===============================================================================
@@ -144,12 +151,13 @@ END SUBROUTINE read_stagger_mesh
 !===============================================================================
 !> Reading data and aux file
 !===============================================================================
-SUBROUTINE read_stagger_data()
+SUBROUTINE read_stagger_data(use_ne)
+  logical, intent(inout) :: use_ne
   real(4), dimension(:,:,:), allocatable :: ppx, ppy, ppz, lne, rho
   integer :: iostat, lunit, recl
   integer :: nx, ny, nz, m(3), i, j, k
   integer, save :: itimer
-  real(4) :: const
+  real(4) :: const, over_rho
   !-----------------------------------------------------------------------------
   call trace%begin('read_stagger_data', itimer=itimer)
   call read_stagger_dim(nx, ny, nz)
@@ -162,6 +170,7 @@ SUBROUTINE read_stagger_data()
   allocate(lne(nx,ny,nz))
 
   recl = kind(1.0)*product(m)
+  use_ne = use_ne .and. os%exists(aux_file)
 
   !=============================================================================
   ! Reading data file
@@ -182,54 +191,64 @@ SUBROUTINE read_stagger_data()
   read (unit=lunit, iostat=iostat, rec=3) ppz ! y is z in stagger
   read (unit=lunit, iostat=iostat, rec=4) ppy ! z is y in stagger
   !read (unit=lunit, iostat=iostat, rec=5) ie
-  !read (unit=lunit, iostat=iostat, rec=6) temp
+  if (.not. use_ne) then
+    read (unit=lunit, iostat=iostat, rec=6) ia%ltemp ! this is temp
+    ia%ltemp = log(ia%ltemp)
+  endif
   ! close data file
   close(unit=lunit)
 
-  !=============================================================================
-  ! Reading aux file
-  !-----------------------------------------------------------------------------
-  call os%check_file(aux_file)
-  open(newunit=lunit, file=aux_file, iostat=iostat, convert='big_endian', &
-        form='unformatted', status='old', access='direct', recl=recl)
+  if (use_ne) then
+    !=============================================================================
+    ! Reading aux file
+    !-----------------------------------------------------------------------------
+    call os%check_file(aux_file)
+    open(newunit=lunit, file=aux_file, iostat=iostat, convert='big_endian', &
+          form='unformatted', status='old', access='direct', recl=recl)
 
-    ! 1: ln total pressure (gas + rad)
-    ! 2: ln Rosseland extinction coeff.
-    ! 3: ln Temperature
-    ! 4: ln electron number density
-    ! 5: ln Planck-averaged extinction coeff.
-    ! 6: ln extinction coeff at 500 nm
+      ! 1: ln total pressure (gas + rad)
+      ! 2: ln Rosseland extinction coeff.
+      ! 3: ln Temperature
+      ! 4: ln electron number density
+      ! 5: ln Planck-averaged extinction coeff.
+      ! 6: ln extinction coeff at 500 nm
 
-  read (unit=lunit, iostat=iostat, rec=3) ia%ltemp
-  read (unit=lunit, iostat=iostat, rec=4) lne
-  ! close aux file
-  close(unit=lunit)
-  !=============================================================================
+    read (unit=lunit, iostat=iostat, rec=3) ia%ltemp
+    read (unit=lunit, iostat=iostat, rec=4) lne
+    ! close aux file
+    close(unit=lunit)
+    !=============================================================================
+  else
+    ia%lpe = 0
+  endif
 
   ! "un"-staggering vectors relative to scalars
-  call xup_set(ppx, ia%px)
+  call xup_set(ppx, ia%vx)
 
   ! transposing data (y to z)
   call transpose_stagger(rho)
   call transpose_stagger(ia%ltemp)
-  call transpose_stagger(lne)
+  if (use_ne) call transpose_stagger(lne)
 
-  call transpose_stagger(ia%px)
+  call transpose_stagger(ia%vx)
   call transpose_stagger(ppy)
   call transpose_stagger(ppz)
 
-  call yup_set(ppy, ia%py)
-  call zup_set(ppz, ia%pz)
+  call yup_set(ppy, ia%vy)
+  call zup_set(ppz, ia%vz)
 
   const = -3.0 * luul + log(BK)
   do k=1, nz
   do j=1, ny
   do i=1, nx
-    ia%lrho (i,j,k) =  log(rho(i,j,k)) + luur
-    ia%lpe  (i,j,k) =      lne(i,j,k)  + const + ia%ltemp(i,j,k)
-    ia%px   (i,j,k) =    ia%px(i,j,k)  * uum
-    ia%py   (i,j,k) =    ia%py(i,j,k)  * uum
-    ia%pz   (i,j,k) =    ia%pz(i,j,k)  * uum
+    over_rho = uuv / rho(i,j,k)
+    ia%lrho (i,j,k) = log(rho(i,j,k)) + luur
+    ia%vx   (i,j,k) =   ia%vx(i,j,k) * over_rho
+    ia%vy   (i,j,k) =   ia%vy(i,j,k) * over_rho
+    ia%vz   (i,j,k) =   ia%vz(i,j,k) * over_rho
+    if (use_ne) then
+      ia%lpe(i,j,k) = lne(i,j,k) + const + ia%ltemp(i,j,k)
+    endif
   end do
   end do
   end do
@@ -261,15 +280,12 @@ SUBROUTINE read_multi_snapshot(atmos_file)
   open(file=trim(atmos_file) // '.atmos', newunit=lunit, form='UNFORMATTED', access='stream')
   read(lunit) ne
   read(lunit) temp
-  read(lunit) vx
-  read(lunit) vy
-  read(lunit) vz
+  read(lunit) ia%vx
+  read(lunit) ia%vy
+  read(lunit) ia%vz
   read(lunit) rho
   close(lunit)
 
-  ia%px = vx * rho
-  ia%py = vy * rho
-  ia%pz = vz * rho
   ia%lpe = log(ne * BK * temp)
   ia%ltemp = log(temp)
   ia%lrho  = log(rho)
@@ -318,9 +334,9 @@ SUBROUTINE read_stagger2(atmos_file)
   read(lunit) rho
   close(lunit)
 
-  ia%px = vx * rho * 1e5
-  ia%py = vy * rho * 1e5
-  ia%pz = vz * rho * 1e5
+  ia%vx = vx * 1e5
+  ia%vy = vy * 1e5
+  ia%vz = vz * 1e5
   ia%lpe = log(ne * BK * temp)
   ia%ltemp = log(temp)
   ia%lrho  = log(rho)
@@ -513,9 +529,9 @@ SUBROUTINE allocate_input_atmos(self, nx, ny, nz)
   allocate(self%xx(nx), source=0.)
   allocate(self%yy(ny), source=0.)
   allocate(self%zz(nz), source=0.)
-  allocate(self%px   (nx,ny,nz), source=0.)
-  allocate(self%py   (nx,ny,nz), source=0.)
-  allocate(self%pz   (nx,ny,nz), source=0.)
+  allocate(self%vx   (nx,ny,nz), source=0.)
+  allocate(self%vy   (nx,ny,nz), source=0.)
+  allocate(self%vz   (nx,ny,nz), source=0.)
   allocate(self%lrho (nx,ny,nz))
   allocate(self%ltemp(nx,ny,nz))
   allocate(self%lpe  (nx,ny,nz))
@@ -528,9 +544,9 @@ SUBROUTINE deallocate_input_atmos(self)
   if (allocated(self%lrho))  deallocate(self%lrho)
   if (allocated(self%ltemp)) deallocate(self%ltemp)
   if (allocated(self%lpe))   deallocate(self%lpe)
-  if (allocated(self%px))    deallocate(self%px)
-  if (allocated(self%py))    deallocate(self%py)
-  if (allocated(self%pz))    deallocate(self%pz)
+  if (allocated(self%vx))    deallocate(self%vx)
+  if (allocated(self%vy))    deallocate(self%vy)
+  if (allocated(self%vz))    deallocate(self%vz)
 END SUBROUTINE deallocate_input_atmos
 
 !===============================================================================
@@ -564,9 +580,9 @@ SUBROUTINE thick2thin(self)
       self%ltemp(i,j,:) =  self%ltemp(i,j,nz:1:-1)
       self%lrho (i,j,:) =  self%lrho (i,j,nz:1:-1)
       self%lpe  (i,j,:) =  self%lpe  (i,j,nz:1:-1)
-      self%px   (i,j,:) =  self%px   (i,j,nz:1:-1)
-      self%py   (i,j,:) =  self%py   (i,j,nz:1:-1)
-      self%pz   (i,j,:) = -self%pz   (i,j,nz:1:-1)
+      self%vx   (i,j,:) =  self%vx   (i,j,nz:1:-1)
+      self%vy   (i,j,:) =  self%vy   (i,j,nz:1:-1)
+      self%vz   (i,j,:) = -self%vz   (i,j,nz:1:-1)
     end do
     end do
     self%zz = self%zz (nz:1:-1)
@@ -580,9 +596,10 @@ SUBROUTINE thick2thin(self)
 END SUBROUTINE thick2thin
 
 !===============================================================================
-SUBROUTINE setup_amr_mesh(self, nsub)
+SUBROUTINE setup_amr_mesh(self, nsub, use_ne)
   class(input_atmos_t), intent(inout), target :: self
   integer, intent(in) :: nsub
+  logical, intent(in) :: use_ne
   integer :: i, j, k, nx, ny, nz
   real(8), dimension(nsub+1) :: var_edge
   real(4), dimension(nsub+1) :: sub_edge
@@ -598,7 +615,11 @@ SUBROUTINE setup_amr_mesh(self, nsub)
   allocate(self%sub_pos(nsub), self%sub_size(nsub))
 
   zz  => self%zz     (1+self%gz:nz+self%gz)
-  lpe => self%lpe(:,:,1+self%gz:nz+self%gz)
+  if (use_ne) then
+    lpe => self%lpe(:,:,1+self%gz:nz+self%gz)
+  else
+    lpe => self%ltemp(:,:,1+self%gz:nz+self%gz)
+  endif
 
   do k=1, nz
   do j=1, ny
@@ -612,6 +633,12 @@ SUBROUTINE setup_amr_mesh(self, nsub)
 
   vmin = amr_ref(1)
   vmax = amr_ref(nz)
+  if (.not. use_ne) then
+    amr_ref = (amr_ref - vmin) / (vmax - vmin)
+    amr_ref = 1 - (1-amr_ref)**(2.d0/3.d0)
+    vmin = 0
+    vmax = 1
+  endif
   var_edge = linspace(vmin, vmax, nsub+1)
   call interp1d_sorted(amr_ref, zz, var_edge, sub_edge)
   sub_edge = sub_edge * nz / (nz-1)
@@ -664,22 +691,25 @@ SUBROUTINE interpolate_atmos(n, sub, pos, rho, px, py, pz, temp, pe, vec, bot2pi
       call linterpolate_3d_rotated(ia%ltemp, temp, dx, dy, ia%zz, newx, newy, newz, vec, bot2pivot, ray_offset)
       call linterpolate_3d_rotated(ia%lrho,  rho,  dx, dy, ia%zz, newx, newy, newz, vec, bot2pivot, ray_offset)
       call linterpolate_3d_rotated(ia%lpe,   pe,   dx, dy, ia%zz, newx, newy, newz, vec, bot2pivot, ray_offset)
-      call linterpolate_3d_rotated(ia%px,    px,   dx, dy, ia%zz, newx, newy, newz, vec, bot2pivot, ray_offset)
-      call linterpolate_3d_rotated(ia%py,    py,   dx, dy, ia%zz, newx, newy, newz, vec, bot2pivot, ray_offset)
-      call linterpolate_3d_rotated(ia%pz,    pz,   dx, dy, ia%zz, newx, newy, newz, vec, bot2pivot, ray_offset)
+      call linterpolate_3d_rotated(ia%vx,    px,   dx, dy, ia%zz, newx, newy, newz, vec, bot2pivot, ray_offset)
+      call linterpolate_3d_rotated(ia%vy,    py,   dx, dy, ia%zz, newx, newy, newz, vec, bot2pivot, ray_offset)
+      call linterpolate_3d_rotated(ia%vz,    pz,   dx, dy, ia%zz, newx, newy, newz, vec, bot2pivot, ray_offset)
     else
       call linterpolate_3d(ia%ltemp, temp, dx, dy, ia%zz, newx, newy, newz)
       call linterpolate_3d(ia%lrho,  rho,  dx, dy, ia%zz, newx, newy, newz)
       call linterpolate_3d(ia%lpe,   pe,   dx, dy, ia%zz, newx, newy, newz)
-      call linterpolate_3d(ia%px,    px,   dx, dy, ia%zz, newx, newy, newz)
-      call linterpolate_3d(ia%py,    py,   dx, dy, ia%zz, newx, newy, newz)
-      call linterpolate_3d(ia%pz,    pz,   dx, dy, ia%zz, newx, newy, newz)
+      call linterpolate_3d(ia%vx,    px,   dx, dy, ia%zz, newx, newy, newz)
+      call linterpolate_3d(ia%vy,    py,   dx, dy, ia%zz, newx, newy, newz)
+      call linterpolate_3d(ia%vz,    pz,   dx, dy, ia%zz, newx, newy, newz)
     endif
   endif
 
   temp = exp(temp)
   rho  = exp(rho)
   pe   = exp(pe)
+  px   = px * rho
+  py   = py * rho
+  pz   = pz * rho
   call trace%end(itimer)
 END SUBROUTINE interpolate_atmos
 

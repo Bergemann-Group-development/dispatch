@@ -1384,8 +1384,11 @@ MODULE atom_mod
     integer :: i,j, ii, jj, tri, n
     logical :: cont
     logical, save :: first_time=.true.
-    real(8), parameter :: sqr3_2pi = sqrt(3.d0) / (2.d0*PI)
-    real(8), parameter :: c0 = PI*Rbohr**2 * sqrt(8*BK/EM/PI)
+    real(8), parameter :: sq32 = sqrt(3.d0) / (2.d0)
+    real(8), parameter :: sqr3_2pi = sq32 / PI
+    real(8), parameter :: sq8bmp = sqrt(8*BK/EM/PI)
+    real(8), parameter :: c0 = PI*Rbohr**2 * sq8bmp
+    real(8), parameter :: cseaton = sq8bmp/sq32/(1.d0/137.d0)*Rydk !1.55e13
     !---------------------------------------------------------------------
     if (debye_shield) then
       dxi = 4.98e-4*5040./temp*sqrt(ne*bk*temp)

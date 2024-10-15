@@ -340,8 +340,13 @@ class m3dis(object):
                 ib = np.searchsorted(lam, dl[0])
                 ir = np.searchsorted(lam, dl[1])
 
-        if xmin is not None: ib = np.searchsorted(lam, xmin)
-        if xmax is not None: ir = np.searchsorted(lam, xmax)
+        if xmin is not None:
+            ib = max(np.searchsorted(lam, xmin)-1, 0)
+            if lam[ib] < xmin-10: ib += 1
+
+        if xmax is not None:
+            ir = min(np.searchsorted(lam, xmax)+1, lam.size-1)
+            if lam[ir-1] > xmax+10: ir -= 1
 
         mask = slice(ib, ir)
         xx = lam[mask]
@@ -449,12 +454,13 @@ class m3dis(object):
         if norm:
             yy = yy / cnt
             
-        return np.array(yy), np.array(cnt)
+        return yy
     
     #=====================================================================
     def crop(self, slc=None, lam0=None, dlam=None, xmin=None, xmax=None, vdop=None,
              vrot=None, vshift=None, convolve=None, zeta_rt=None, lam_offset=True,
-             per_aa=False, renorm=False, velocity_units=False, **kwargs):
+             per_aa=False, renorm=False, fac=None, velocity_units=False, 
+             ang=None, imu=None, norm=True, cont=False, LTE=False, **kwargs):
         #-----------------------------------------------------------------
         if per_aa:
             kwargs['norm'] = False
@@ -473,7 +479,15 @@ class m3dis(object):
             lam0 = 0
 
         xx, mask = self.get_xx(xx, slc, dlam, xmin=xmin, xmax=xmax)
-        yy, cnt = self.get_yy(mask=mask, **kwargs)
+
+        if hasattr(ang, '__iter__'):
+            yy = [self.get_yy(ang=i, norm=norm, cont=cont, LTE=LTE, mask=mask) for i in ang]
+        elif hasattr(imu, '__iter__'):
+            yy = [self.get_yy(imu=i, norm=norm, cont=cont, LTE=LTE, mask=mask) for i in imu]
+        else:
+            yy = [self.get_yy(ang=ang, imu=imu, norm=norm, cont=cont, LTE=LTE, mask=mask)]
+
+        yy = np.array(yy)
 
         if renorm:
             yy = yy / continuum(xx, yy)
@@ -481,8 +495,11 @@ class m3dis(object):
         xx = xx + lam0
 
         if set([vdop, vrot, zeta_rt, convolve]) != {None}:
-            sxx, syy = convol(xx, yy, vdop=vdop, vrot=vrot, zeta_rt=zeta_rt, custom=convolve)
-            yy = np.interp(xx, sxx, syy)
+            newy = []
+            for y in yy:
+                sxx, syy = convol(xx, y, vdop=vdop, vrot=vrot, zeta_rt=zeta_rt, custom=convolve)
+                newy.append(np.interp(xx, sxx, syy))
+            yy = np.array(newy)
 
         if lam0 is not None:
             offset = lam_offset and dlam is not None and dlam is not False
@@ -498,6 +515,12 @@ class m3dis(object):
         if per_aa:
             yy = yy * CC / (xx**2) * 1e8
 
+        if fac is not None:
+            yy = yy * fac
+
+        if len(yy)==1:
+            yy = yy[0]
+
         return xx, yy
     
     #=====================================================================
@@ -510,7 +533,12 @@ class m3dis(object):
             xmax = xmax+kwargs['vdop']
 
         xx, yy = self.crop(xmin=xmin, xmax=xmax, **kwargs)
-        yy = np.interp(newx, xx, yy)
+
+        if yy.ndim==1:
+            yy = np.interp(newx, xx, yy)
+        else:
+            yy = np.array([np.interp(newx, xx, y) for y in yy])
+
         return yy
     
     #=====================================================================
@@ -751,23 +779,25 @@ class m3dis(object):
         
 
     #=====================================================================
-    def interp_ltau_surf(self, cube, zaxis=-1):
+    def interp_ltau_surf(self, cube, log=False, zaxis=-1):
         #-----------------------------------------------------------------
         if zaxis != -1: cube = np.moveaxis(cube, zaxis, -1)
         ltau = self.ltau
         xx = ltau[...,::-1].copy()
         yy = cube[...,::-1].copy()
+        if log: yy = np.log(yy)
         newx = np.mean(ltau, axis=(0,1))[::-1]
         newy = interp_tau(newx, xx, yy)[...,::-1]
         newx = newx[::-1]
+        if log: newy = np.exp(newy)
         if zaxis != -1: newy = np.moveaxis(newy, -1, zaxis)
         return newx, newy
     
     #=====================================================================
-    def plot_ltau_cube(self, cube, marker=',', linestyle='none', rasterized=True,
+    def plot_geo_cube(self, cube, marker=',', linestyle='none', rasterized=True,
                        xmin=None, xmax=None, ymin=None, ymax=None, **kwargs):
         #-----------------------------------------------------------------
-        xx = self.ltau.ravel()
+        xx = (self.zz * np.ones_like(self.ltau)).ravel()
         yy = cube.ravel()
         if xmin is None: xmin = np.nanmin(xx)
         if xmax is None: xmax = np.nanmax(xx)
@@ -780,13 +810,27 @@ class m3dis(object):
         plt.ylim(np.nanmin(yy), np.nanmax(yy))
         return plt.plot(xx, yy, marker=marker, linestyle=linestyle,
                         rasterized=rasterized, **kwargs)
+    
+    #=====================================================================
+    def plot_ltau_cube(self, cube, marker=',', linestyle='none', rasterized=True,
+                       xmin=None, xmax=None, ymin=None, ymax=None, **kwargs):
+        #-----------------------------------------------------------------
+        xx = self.ltau.ravel()
+        yy = cube.ravel()
+        xx, yy = crop_inputs(xx, yy, xmin, xmax, ymin, ymax)
+        plt.xlim(np.nanmin(xx), np.nanmax(xx))
+        plt.ylim(np.nanmin(yy), np.nanmax(yy))
+        return plt.plot(xx, yy, marker=marker, linestyle=linestyle,
+                        rasterized=rasterized, **kwargs)
 
     #=====================================================================
-    def get_ltau_mean(self, cube, zaxis=-1):
+    def get_ltau_mean(self, cube, log=False, zaxis=-1):
         #-----------------------------------------------------------------
         if self.dim == '3D':
-            ltau1d, yy3d = self.interp_ltau_surf(cube, zaxis=zaxis)
+            ltau1d, yy3d = self.interp_ltau_surf(cube, log=log, zaxis=zaxis)
+            if log: yy3d = np.log(yy3d)
             yy1d = np.mean(yy3d, axis=(0,1))
+            if log: yy1d = np.exp(yy1d)
         else:
             ltau1d = self.ltau
             yy1d = cube
@@ -794,9 +838,22 @@ class m3dis(object):
         return ltau1d, yy1d
     
     #=====================================================================
-    def plot_ltau_mean(self, cube, **kwargs):
+    def plot_ltau_mean(self, yy, log=False, xmin=None, xmax=None,
+                       ymin=None, ymax=None, **kwargs):
         #-----------------------------------------------------------------
-        xx, yy = self.get_ltau_mean(cube)
+        xx, yy = self.get_ltau_mean(yy, log=log)
+        xx, yy = crop_inputs(xx, yy, xmin, xmax, ymin, ymax)
+        return plt.plot(xx, yy, **kwargs)
+    
+    #=====================================================================
+    def plot_geo_mean(self, yy, log=False, xmin=None, xmax=None,
+                       ymin=None, ymax=None, **kwargs):
+        #-----------------------------------------------------------------
+        if log: yy = np.log(yy)
+        yy = np.mean(yy, axis=(0,1))
+        if log: yy = np.exp(yy)
+        xx = self.zz
+        xx, yy = crop_inputs(xx, yy, xmin, xmax, ymin, ymax)
         return plt.plot(xx, yy, **kwargs)
     
     #=====================================================================
@@ -896,25 +953,35 @@ class m3dis(object):
         plt.ylim(top=ymax+1.2*h + bbox.height*pad)
     
     #=================================================================
-    def fit_observed(self, oxx, oyy, fit=[], bounds=None, p0=None, sigma=None, **kwargs):
-        lbounds = {'vshift':-3, 'vdop':1e-3, 'vrot':1e-3, 'zeta_rt':1e-3}
-        ubounds = {'vshift':+3, 'vdop':1e2,  'vrot':1e2,  'zeta_rt':1e2 }
-        p0s     = {'vshift':0,  'vdop':1,    'vrot':1,    'zeta_rt':1   }
+    def fit_observed(self, oxx, oyy, fit=[], bounds=None, p0=None, sigma=None, method='curve_fit', tol=None, **kwargs):
+        lbounds = {'vshift':-3, 'vdop':1e-3, 'vrot':1e-3, 'zeta_rt':1e-3, 'fac':0.5}
+        ubounds = {'vshift':+3, 'vdop':1e2,  'vrot':1e2,  'zeta_rt':1e2,  'fac':2.0}
+        p0s     = {'vshift':0,  'vdop':1,    'vrot':1,    'zeta_rt':1,    'fac':1.0}
         if bounds is None: bounds = ([lbounds[f] for f in fit], [ubounds[f] for f in fit])
         if p0 is None: p0 = [p0s[f] for f in fit]
-        
+
         def opt_func(newx, *args):
             ka = {f:args[i] for i, f in enumerate(fit)}
             return self.interp(newx, **ka, **kwargs)
         
-        pfit, _ = optimize.curve_fit(opt_func, oxx, oyy, p0=p0, bounds=bounds, sigma=sigma)
+        if method == 'curve_fit':
+            pfit, _ = optimize.curve_fit(opt_func, oxx, oyy, p0=p0, bounds=bounds, sigma=sigma)
+
+        elif method == 'minimize':
+            bounds = np.vstack(bounds).T
+            def opt_func2(params, newx):
+                res = oyy - opt_func(newx, *params)
+                if sigma is not None: res = res/sigma
+                return np.sum(res**2)
+            pfit = optimize.minimize(opt_func2, p0, args=(oxx), bounds=bounds, method='Nelder-Mead', tol=tol).x
+
         fitted = opt_func(oxx, *pfit)
         return {f:pfit[i] for i, f in enumerate(fit)}, fitted
     
-    def plot_fit(self, oxx, oyy, fit=[], bounds=None, p0=None, sigma=None, label=None, **kwargs):
+    def plot_fit(self, oxx, oyy, fit=[], bounds=None, p0=None, sigma=None, method='curve_fit', label=None, **kwargs):
         crop_kwargs = {k:v for k, v in kwargs.items() if k not in plt_kwargs}
         plot_kwargs = {k:v for k, v in kwargs.items() if k not in crop_kwargs}
-        p, fitted = self.fit_observed(oxx, oyy, fit=fit, bounds=bounds, p0=p0, sigma=sigma, **crop_kwargs)
+        p, fitted = self.fit_observed(oxx, oyy, fit=fit, bounds=bounds, p0=p0, sigma=sigma, method=method, **crop_kwargs)
         if label is None:
             label = ', '.join([f'{k}={v:.2f}' for k, v in p.items()])
         else:
@@ -976,7 +1043,13 @@ class m3dis(object):
         
         if hasattr(run0, 'atom'):
             self.atom = run0.atom
-            self.line = [copy.copy(line) for line in run0.line]
+            if self.nml['atom_params']['pandas_format']:
+                if hasattr(run0, 'in_lines'):
+                    self.in_lines = run0.in_lines
+                    self.line = self.atom.trans[self.in_lines]
+            else:
+                self.line = [copy.copy(line) for line in run0.line]
+
             for line in self.line:
                 line.run = self
 

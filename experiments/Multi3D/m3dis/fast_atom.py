@@ -229,8 +229,8 @@ class pandas_atom(object):
         ll['lam0'] = bbt['lam0']
         ll['evi'] = bbt['evi'] - ev0
         ll['loggf'] = bbt['loggf']
-        ll['g_j'] = self.lvl.g[self.bbt.j[mask]].values
         ll['gv'] = bbt['gv']
+        ll['g_j'] = self.lvl.g[self.bbt.j[mask]].values
         ll['ga'] = bbt['ga']
         ll['gq'] = bbt['gq']
         ll['lower_orb'] = 'x'

@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from .auxfuncs import *
+from .auxfuncs import _vacuum2obs
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 from scipy.signal import argrelextrema
@@ -194,12 +195,12 @@ class trans_class(object):
 
     #=====================================================================
     def plot(self, ang=None, imu=None, norm=True, dlam=None, label=None,
-                vdop=None, vshift=None, convolve=None, renorm=False,
+                vdop=None, vshift=None, convolve=None, renorm=False, fac=None,
                 LTE=False, title=None, set_labels=True, velocity_units=False,
                 lam_offset=True, per_aa=False, **kwargs):
         #-----------------------------------------------------------------
         xx, yy = self.crop(ang=ang, imu=imu, norm=norm, dlam=dlam,
-                            vdop=vdop, vshift=vshift, convolve=convolve,
+                            vdop=vdop, vshift=vshift, convolve=convolve, fac=fac,
                             renorm=renorm, LTE=LTE, velocity_units=velocity_units,
                             lam_offset=lam_offset, per_aa=per_aa)
 
@@ -398,7 +399,7 @@ class trans_class(object):
         return plt.plot(xx, yy, **kwargs)
 
     #=====================================================================
-    def get_cntrbf(self, df=None, ang=None, imu=None, LTE=False, mean=False, fslice=None, norm=False):
+    def get_cntrbf(self, df=None, dlam=None, ang=None, imu=None, LTE=False, fmean=False, gmean=False, slc=None, norm=False):
         #-----------------------------------------------------------------
         if hasattr(self, 'prepared'):
             if not self.prepared: self.prepare()
@@ -413,11 +414,18 @@ class trans_class(object):
         name = 'cntrbf_{:06}'.format(self.kr+1)
         mem  = self.run.read_patch_save(name, fdim=0, zdim=3, lazy=True)[-1]
 
-        if df is not None:
+        if dlam is not None:
+            lam = self.run.lam[self.ib:self.ir+1]
+            ib = np.searchsorted(lam, self.lam0-dlam)
+            ir = np.searchsorted(lam, self.lam0+dlam)
+            slc = slice(ib, ir)
+            lam = lam[slc]
+            mem = mem[slc]
+        elif df is not None:
             f = self.i0 - self.ib + df
             mem = mem[f:f+1]
-        elif fslice is not None:
-            mem = mem[fslice]
+        elif slc is not None:
+            mem = mem[slc]
 
         if LTE:
             cntrbf = mem[..., 2:4, :]
@@ -426,7 +434,7 @@ class trans_class(object):
         
         nf, nx, ny, nz, nset, nang = cntrbf.shape
         ltau = self.run.ltau
-        get_mean = mean and self.run.dim == '3D'
+        get_mean = gmean and self.run.dim == '3D'
 
         if get_mean:
             new_ltau = np.mean(ltau, axis=(0,1))[::-1]
@@ -470,22 +478,27 @@ class trans_class(object):
             cfunc = cfunc + w*cf
 
         if get_mean: ltau = new_ltau
+        if cfunc.shape[0]>1 and fmean: cfunc = np.trapz(cfunc, x=lam, axis=0)
         if norm:
             normalisation = abs(np.trapz(cfunc, x=ltau))
             cfunc = cfunc / normalisation
         return ltau, cfunc.squeeze()
 
     #=====================================================================
-    def plot_cntrbf(self, df=0, imu=None, ang=None, LTE=False, title=None, norm=False, **kwargs):
+    def plot_cntrbf(self, df=0, dlam=None, imu=None, ang=None, LTE=False, title=None, norm=False, **kwargs):
         #-----------------------------------------------------------------
-        ltau, cf = self.get_cntrbf(df=df, imu=imu, ang=ang, LTE=LTE, mean=True, norm=norm)
+        if dlam is not None: df = None
+        ltau, cf = self.get_cntrbf(df=df, dlam=dlam, imu=imu, ang=ang, LTE=LTE, gmean=True, fmean=True, norm=norm)
             
-        f = self.i0 - self.ib + df
-        plt.xlabel(r'log$\tau_{500}$')
-        plt.ylabel('Contribution function')
-
-        lam = self.run.lam[self.ib:self.ir]
-        wave = r'$\lambda=${:.3f}[Å]'.format(lam[f])
+        lam = self.run.lam[self.ib:self.ir+1]
+        if dlam is not None:
+            ib = np.searchsorted(lam, self.lam0-dlam)
+            ir = np.searchsorted(lam, self.lam0+dlam)
+            wave = r'$\lambda=${:.2f}-{:.2f}[Å]'.format(lam[ib], lam[ir-1])
+        else:
+            f = self.i0 - self.ib + df
+            wave = r'$\lambda=${:.3f}[Å]'.format(lam[f])
+            
         if ang is None and imu is None:
             angle = 'flux'
         else:
@@ -494,6 +507,8 @@ class trans_class(object):
 
             angle = r'$\mu=${:.2f}'.format(self.run.mus[imu])
 
+        plt.xlabel(r'log$\tau_{500}$')
+        plt.ylabel('Contribution function')
         set_title(title, default=wave + ', ' + angle)
         return plt.plot(ltau, cf, **kwargs)
     

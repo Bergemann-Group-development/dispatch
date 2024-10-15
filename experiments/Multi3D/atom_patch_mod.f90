@@ -342,10 +342,13 @@ MODULE atom_patch_mod
       call self%init_atom_data(self%composition, adata)
       if (precomputed_depart /= '') then
         call self%load_mem(precomputed_depart, self%kind)
-      else
+      elseif (maxiter > 0) then
         do i=1, atom%nlevel
           adata%n(:,:,:,i) = adata%nstar(:,:,:,i) 
         end do
+      else
+        call os%deallocate(adata%n, 'n')
+        adata%n => adata%nstar
       endif
     else
       wphi => adata%wphi
@@ -565,48 +568,53 @@ MODULE atom_patch_mod
         adata => atom%rotated_data(imu)
         comp => self%m3d_parent%rotated_composition(imu)
         call self%init_atom_data(comp, adata)
-        totn = 0
-        do l=1, atom%nlevel
+        if (associated(self%atom%data%n, self%atom%data%nstar)) then
+          call os%deallocate(adata%n, 'n')
+          adata%n => adata%nstar
+        else
+          totn = 0
+          do l=1, atom%nlevel
+            do k=1, self%n(3)
+            do j=1, self%n(2)
+            do i=1, self%n(1)
+              tmp = atom%data%nstar(i,j,k,l)
+              tmp = merge(ieee_value(tmp, ieee_quiet_nan), tmp, tmp==0)
+              adata%n(i,j,k,l) = atom%data%n(i,j,k,l) / tmp
+            end do
+            end do
+            end do
+            call self%rotate_cube8(vec, adata%n(:,:,:,l), do_log=.true.)
+            do k=1, self%n(3)
+            do j=1, self%n(2)
+            do i=1, self%n(1)
+              adata%n(i,j,k,l) = adata%n(i,j,k,l) * adata%nstar(i,j,k,l)
+              totn(i,j,k) = totn(i,j,k) + adata%n(i,j,k,l)
+            end do
+            end do
+            end do
+          end do
           do k=1, self%n(3)
           do j=1, self%n(2)
           do i=1, self%n(1)
-            tmp = atom%data%nstar(i,j,k,l)
-            tmp = merge(ieee_value(tmp, ieee_quiet_nan), tmp, tmp==0)
-            adata%n(i,j,k,l) = atom%data%n(i,j,k,l) / tmp
+            norm(i,j,k) = 1 / totn(i,j,k)
           end do
           end do
           end do
-          call self%rotate_cube8(vec, adata%n(:,:,:,l), do_log=.true.)
-          do k=1, self%n(3)
-          do j=1, self%n(2)
-          do i=1, self%n(1)
-            adata%n(i,j,k,l) = adata%n(i,j,k,l) * adata%nstar(i,j,k,l)
-            totn(i,j,k) = totn(i,j,k) + adata%n(i,j,k,l)
+          do l=1, atom%nlevel
+            do k=1, self%n(3)
+            do j=1, self%n(2)
+            do i=1, self%n(1)
+              tmp = adata%n(i,j,k,l) * adata%totn(i,j,k) * norm(i,j,k)
+              adata%n(i,j,k,l) = merge(tmp, 0.d0, tmp==tmp)
+              tmp = adata%nstar(i,j,k,l)
+              tmp = merge(ieee_value(tmp, ieee_quiet_nan), tmp, tmp==0)
+              out_mem(i,j,k,l,1,1+imu) = real(adata%nstar(i,j,k,l))
+              out_mem(i,j,k,l,2,1+imu) = real(adata%n(i,j,k,l) / tmp)
+            end do
+            end do
+            end do
           end do
-          end do
-          end do
-        end do
-        do k=1, self%n(3)
-        do j=1, self%n(2)
-        do i=1, self%n(1)
-          norm(i,j,k) = 1 / totn(i,j,k)
-        end do
-        end do
-        end do
-        do l=1, atom%nlevel
-          do k=1, self%n(3)
-          do j=1, self%n(2)
-          do i=1, self%n(1)
-            tmp = adata%n(i,j,k,l) * adata%totn(i,j,k) * norm(i,j,k)
-            adata%n(i,j,k,l) = merge(tmp, 0.d0, tmp==tmp)
-            tmp = adata%nstar(i,j,k,l)
-            tmp = merge(ieee_value(tmp, ieee_quiet_nan), tmp, tmp==0)
-            out_mem(i,j,k,l,1,1+imu) = real(adata%nstar(i,j,k,l))
-            out_mem(i,j,k,l,2,1+imu) = real(adata%n(i,j,k,l) / tmp)
-          end do
-          end do
-          end do
-        end do
+        endif
         if (.not. (maxiter==0 .and. long_scheme=='none')) call atom%compute_cont_factors(adata)
       end do
     endif

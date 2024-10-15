@@ -5,6 +5,7 @@ from scipy.signal import argrelextrema
 from scipy.special import voigt_profile
 from scipy import integrate, stats, optimize
 from scipy.interpolate import interp1d, PchipInterpolator
+from scipy.ndimage import convolve
 from numba import njit, jit
 import shlex
 import re
@@ -587,12 +588,12 @@ def find_close(arr, val, side='left'):
     return i
 
 #=====================================================================
-def get_adjacent_peaks(yy, i):
+def get_adjacent_peaks(yy, i, order=1, pad=0):
   #-----------------------------------------------------------------
-  ex = argrelextrema(yy, np.greater_equal, order=1)[0]
+  ex = argrelextrema(yy, np.greater_equal, order=order)[0]
   ex = np.array([0, *ex, len(yy)-1])
   idx = np.searchsorted(ex, i)
-  return ex[idx-1:idx+1]
+  return ex[idx-1:idx+1] + [-pad, pad]
 
 def stagger_name_to_params(stagger_name):
   _, teff, logg, feh = re.split('t|g|m', stagger_name)
@@ -776,3 +777,68 @@ class memmap_list:
     def __truediv__(self, other):
         return np.array(self) / other
         
+
+#=====================================================================
+def scatter_density(xx, yy, radius=0, cmap='binary', vmin=0, vmax=None, aspect='auto',
+            xmin=None, xmax=None, ymin=None, ymax=None, **kwargs):
+  #-----------------------------------------------------------------
+  
+  mask = np.isnan(xx) | np.isnan(yy) | np.isinf(xx) | np.isinf(yy)
+  xx = xx[~mask]
+  yy = yy[~mask]
+  
+  if xmin is None: xmin = xx.min()
+  if xmax is None: xmax = xx.max()
+  if ymin is None: ymin = yy.min()
+  if ymax is None: ymax = yy.max()
+
+  fig = plt.gcf()
+  nx, ny = fig.get_size_inches() * fig.get_dpi()
+
+  nx = np.ceil(nx).astype(int)
+  ny = np.ceil(ny).astype(int)
+  dx = (xmax - xmin) / (nx-1)
+  dy = (ymax - ymin) / (ny-1)
+  
+  ix = (xx - xmin) / dx
+  iy = (yy - ymin) / dy
+  iix = np.floor(ix).astype(int)
+  iiy = np.floor(iy).astype(int)
+  mask = (iix >= 0) & (iix < nx-1) & (iiy >= 0) & (iiy < ny-1)
+  ix = ix[mask]
+  iy = iy[mask]
+  iix = iix[mask]
+  iiy = iiy[mask]
+  fx = ix - iix
+  fy = iy - iiy
+
+  # Image
+  image = np.zeros((nx, ny))  # Replace with your actual image
+  np.add.at(image, (iix-1, iiy-1), (1-fx)*(1-fy))
+  np.add.at(image, (iix, iiy-1), fx*(1-fy))
+  np.add.at(image, (iix-1, iiy), (1-fx)*fy)
+  np.add.at(image, (iix, iiy), fx*fy)
+
+  if radius > 0:
+    # Circle convolution kernel
+    x = np.arange(-radius, radius+1)
+    y = np.arange(-radius, radius+1)
+    x, y = np.meshgrid(x, y)
+    circle = np.sqrt(x**2 + y**2)
+    circle = np.interp(circle.ravel(), [radius, radius+1], [1, 0]).reshape(circle.shape)
+    circle = circle / circle.sum()
+    image = convolve(image, circle)
+
+  image = np.log(image)
+  if vmax is None: vmax = image.max()
+  return plt.imshow(image.T, origin='lower', extent=(xmin, xmax, ymin, ymax), vmin=vmin, vmax=vmax, aspect=aspect, cmap=cmap, **kwargs)
+
+#=====================================================================
+def crop_inputs(xx, yy, xmin=None, xmax=None, ymin=None, ymax=None):
+    #-----------------------------------------------------------------
+    if xmin is None: xmin = np.nanmin(xx)
+    if xmax is None: xmax = np.nanmax(xx)
+    if ymin is None: ymin = np.nanmin(yy)
+    if ymax is None: ymax = np.nanmax(yy)
+    mask = (xx >= xmin) & (xx <= xmax) & (yy >= ymin) & (yy <= ymax)
+    return xx[mask], yy[mask]

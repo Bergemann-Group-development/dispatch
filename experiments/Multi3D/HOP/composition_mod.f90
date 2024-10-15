@@ -1472,7 +1472,9 @@ contains
             i = i+1
         end do
 
-        write(*,fmt="(5x,'it [',I3.3,']',1x,'n-converged:',1x,I8,1X,'/ total size: ',I8)") i, nconverged, arr_size
+        if (nconverged /= arr_size) then
+            write(*,fmt="(5x,'it [',I3.3,']',1x,'n-converged:',1x,I8,1X,'/ total size: ',I8)") i, nconverged, arr_size
+        endif
 
         where (.not. ne_converged)
             self%ne = ieee_value(self%ne, ieee_quiet_nan)
@@ -2453,6 +2455,7 @@ contains
             chi(:,:,:,:,ib) = chi(:,:,:,:,ib) + tchi
         end do
 
+        call io%lock%set('opacity_contributions')
         open(newunit=lunit, file=trim(io%run_dir)//'opacity_contributions.txt', access='append')
         if (first_time) then
             first_time = .false.
@@ -2469,6 +2472,7 @@ contains
             write(lunit, '(A)') text(1:18+7*nb)
         end do
         close(lunit)
+        call io%lock%unset('opacity_contributions')
         call trace%end(itimer)
     END SUBROUTINE print_opacity_contributions
 END MODULE composition_mod
