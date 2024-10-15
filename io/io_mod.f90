@@ -38,13 +38,13 @@ MODULE io_mod
     !integer:: dims(3)=0         ! FIXME
     integer:: mpi_dims(3)=1     ! FIXME
     integer:: print_every=0, iprint=0       ! print cadence
-    character(len=256):: inputname          ! input namelist file (e.g. run.nml)
-    character(len=256):: inputdir='data/'   ! input directory (restart_mod)
-    character(len=256):: run_name=''        ! run part of input file
-    character(len=256):: data_dir='data/'   ! data
-    character(len=256):: run_dir='data/'    ! data/run
-    character(len=256):: outputname         ! same as run_dir, for compatibily
-    character(len=256):: top                ! base name
+    character(len=512):: inputname          ! input namelist file (e.g. run.nml)
+    character(len=512):: inputdir='data/'   ! input directory (restart_mod)
+    character(len=512):: run_name=''        ! run part of input file
+    character(len=512):: data_dir='data/'   ! data
+    character(len=512):: run_dir='data/'    ! data/run
+    character(len=512):: outputname         ! same as run_dir, for compatibily
+    character(len=512):: top                ! base name
     character(len=1):: sep = '/'
     character(len=72):: &
     hl='-------------------------------------------------------------------------'

@@ -153,7 +153,7 @@ MODULE org_lock_mod
   !===============================================================================
   SUBROUTINE init_unit (self)
     class(org_lock_t):: self
-    character(len=64):: filename
+    character(len=256):: filename
     !-----------------------------------------------------------------------------
     ! This part is executed once per thread, choosing unit, depending on params
     !-----------------------------------------------------------------------------

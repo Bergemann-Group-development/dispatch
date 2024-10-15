@@ -70,7 +70,7 @@ SUBROUTINE composition_pre_init (self)
   character(len=256), save :: opac_table=''
   character(len=256), save :: absmet_file=''
   character(len=512), save :: linelist_file=''
-  character(len=256), save :: line_lists(10)=''
+  character(len=256), save :: line_lists(100)=''
   real(4) :: tmolim=-99
   logical, save :: first_time=.true., absmet_big_end=.false., external_sp
   namelist /composition_params/ verbose, absdat_file, abund_file, absmet_file, &
