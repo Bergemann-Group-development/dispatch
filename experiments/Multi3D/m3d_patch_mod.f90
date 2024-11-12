@@ -57,7 +57,6 @@ MODULE m3d_patch_mod
       type(atom_type), pointer :: atom => null()
       class(key_link_t), pointer :: key_list => null()
       real(4), dimension(:,:,:,:,:,:), pointer :: authority_mem => null()
-      logical :: on=.false.       ! allows local turn-off
       logical :: in_task_list = .false.
       logical :: initialized  = .false.
       real(8) :: t_offset=0
@@ -126,6 +125,7 @@ MODULE m3d_patch_mod
     integer, public :: maxiter=0, ilambd, nz_total
     integer, public :: cswitch=1
     integer, public, save :: save_id=-1
+    integer, public, save :: n_nu=-1
     real(8), public, save, dimension(:), allocatable:: wmu, long_wmu
     real(8), public, save, dimension(:,:), allocatable:: vec, long_vec
     real(8), public:: convlim=1d-3, convmax=tiny(1.0)
@@ -135,7 +135,7 @@ MODULE m3d_patch_mod
     logical, public, save :: decouple_continuum=.false., sample_back_opac=.false.
     logical, public, save :: sample_back_opac_in_output=.false.
     logical, public, save :: comoving_frame=.false., linelist_in_output=.true.
-    logical, public, save :: use_density=.true., use_ne=.true., line_blanketing=.false.
+    logical, public, save :: use_rho=.true., use_ne=.true., line_blanketing=.false.
     logical, public, save :: overlapping_bb=.true., overlapping_bf=.true.
     logical, public, save :: overlapping_bb_in_output=.true.
     logical, public, save :: absmet_in_output=.false., column_by_column=.false.
@@ -152,26 +152,18 @@ MODULE m3d_patch_mod
     character(len=32), public, save :: short_scheme='radau'
     character(len=32), public, save :: long_scheme='lobatto'
     real(4), public :: fixed_Jnu=-1.0
+    real(4), public :: vmic=-1, opac_table_vmic=-1
     real(8), public :: ray_offset(2)=[0.,0.], pivot_z=-1
     integer, public :: ng_step=-1, ng_start=8
-    character(len=126), public :: atmos_format='Text'
+    integer, save :: long_ntheta=4, long_nphi=4, short_ntheta=2, short_nphi=4
+    character(len=128), public :: atmos_format='Text'
+    character(len=512), public :: atmos_file='./input_multi3d/atmos/atmos.sun_MARCS_50'
     type(mpi_counter_t), public :: atom_update_counter, global_maxerr, global_pos
     type(composition_type), public, save, target :: composition
       
     public :: hash_string, pre_update, update, print_execution_history
 
-  contains
-  
-  !===============================================================================
-  SUBROUTINE pre_init (self)
-    class(m3d_patch_t), target:: self
-    !-----------------------------------------------------------------------------
-    logical, save :: first_time=.true.
-    logical, save :: on=.true.
-    integer :: iostat, m(6), i
-    integer, save :: n_nu=0, itimer=0, long_ntheta=4, long_nphi=4, short_ntheta=2, short_nphi=4
-    real(8), dimension(:), allocatable:: cust_mu
-    namelist /m3d_params/ on, verbose, fcheck, linecheck, pcheck, &
+    namelist /m3d_params/ verbose, fcheck, linecheck, pcheck, &
     n_nu, maxiter, ilambd, lvlcheck, comoving_frame, save_id, &
     check_NaN, custom_mu, lse_no_pivot, save_patch_kind, cswitch, &
     print_finished, print_start, print_send, ray_offset, print_download, &
@@ -181,6 +173,16 @@ MODULE m3d_patch_mod
     column_by_column, rotate_atmos, Jnu_to_file, preconditioning, save_inu, save_chi, &
     long_scheme, long_ntheta, long_nphi, short_scheme, short_ntheta, short_nphi, &
     long_solver, fixed_Jnu
+
+  contains
+  
+  !===============================================================================
+  SUBROUTINE pre_init (self)
+    class(m3d_patch_t), target:: self
+    integer :: iostat, m(6), i
+    real(8), dimension(:), allocatable:: cust_mu
+    logical, save :: first_time=.true.
+    integer, save :: itimer=0
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%pre_init', itimer=itimer)
     self%type = trim(self%kind)
@@ -253,7 +255,7 @@ MODULE m3d_patch_mod
         decouple_continuum = .true.
         overlapping_bb = .false.
         overlapping_bf = .false.
-        use_density = .false.
+        use_rho = .false.
         use_vel = .false.
         sample_back_opac = .false.
         h_occupation_probability = .false.
@@ -276,18 +278,11 @@ MODULE m3d_patch_mod
           ng_step = 3
         endif
       endif
-
-      write (io%namelist, m3d_params)
     end if
   
     self%verbose = verbose
 
     self%n_out = size(long_vec, 2)
-    if (n_nu > 0) then
-      self%n_nu = n_nu
-    else
-      self%n_nu = omp%nthreads
-    endif
     self%out_mu = self%i_mu < 0
     self%out_ray = self%i_nu < 0 .or. self%i_mu < 0
     self%in_ray = .not. self%out_ray
@@ -298,7 +293,6 @@ MODULE m3d_patch_mod
     call self%patch_t%pre_init()
 
     self%id = 0 ! this is assigned later
-    self%on = on
     self%in_task_list = .false.
   
     ! ----------------------------------------------------------------------------
@@ -366,9 +360,15 @@ MODULE m3d_patch_mod
   !===============================================================================
   SUBROUTINE post_pre_init (self)
     class(m3d_patch_t) :: self
+    logical, save :: first_time=.true.
     integer, save :: itimer=0
     !-----------------------------------------------------------------------------
     call trace%begin('m3d_patch_t%post_pre_init', itimer=itimer)
+    if (first_time) then
+      ! this is done here, so that overwritten parameters are saved accordingly
+      write (io%namelist, m3d_params)
+      first_time = .false.
+    endif
     !-----------------------------------------------------------------------------
     ! Preliminary region information, relative to the task position.  This may
     ! change in patch_t%init, but the settings below allow overlap() calls to work

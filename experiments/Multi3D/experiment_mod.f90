@@ -18,8 +18,8 @@ MODULE experiment_mod
   USE scaling_mod, only: scaling
   USE handyfuncs_mod
   USE m3d_halo_mod, only: m3d_halo_t
-  USE m3d_patch_mod, only: verbose, print_execution_history, use_density, use_ne, &
-  long_vec, pivot_z, rotate_atmos, atmos_format, amr
+  USE m3d_patch_mod, only: verbose, print_execution_history, use_rho, use_ne, &
+  long_vec, pivot_z, rotate_atmos, atmos_format, amr, atmos_format
   USE composition_patch_mod, only: composition_patch_t
   USE composition_mod, only: composition_type
   USE read_atmos_mod, only: ia, interpolate_atmos
@@ -81,7 +81,7 @@ SUBROUTINE pre_init (self)
   else
     self%ds(3)       = self%box(3) / self%nbox(3)
     self%size(3)     = self%ds(3) * self%n(3)
-    self%position(3) = 0.5*self%size(3) + self%zs*self%ds(3)
+    self%position(3) = 0.5*self%size(3) + (self%zs - 1)*self%ds(3)
   endif
 
   !-----------------------------------------------------------------------------
@@ -114,7 +114,7 @@ SUBROUTINE pre_init (self)
   self%composition%zs = self%zs
   call self%composition%pre_init()
 
-  self%nv = 6
+  self%nv = 7
   self%nt = 4 ! Download returns wrong stuff if nt <= 2
   self%nw = 1 + size(long_vec, 2)
 
@@ -128,12 +128,13 @@ SUBROUTINE init (self)
   class(experiment_t):: self
   class(composition_type), pointer:: composition
   real(4), dimension(:,:,:,:), pointer, contiguous :: authority
-  real(4), dimension(:,:,:), pointer, contiguous :: d, px, py, pz, tt, pe
+  real(4), dimension(:,:,:), pointer, contiguous :: d, px, py, pz, tt, pe, vmic
   real(4), dimension(:,:,:), allocatable :: ne, vel
   real(8), dimension(:,:,:), allocatable :: ne8, rho8, temp8
   real(4), dimension(:,:,:,:), pointer, contiguous :: chi
   real(8) :: nu(1), sub(3), pos(3), bottom, bot2pivot
   integer :: i, n(3), li(3), ui(3), thread, loaded=0
+  character(512) :: patch_file
   integer, save:: itimer=0
   !----------------------------------------------------------------------------
   call trace%begin('experiment_t%init', itimer=itimer)
@@ -141,41 +142,45 @@ SUBROUTINE init (self)
 
   li = self%li
   ui = self%ui
-  n  = self%n
 
   self%authority_mem => self%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),:,:,:)
 
-  sub = scaling%l * self%size
-  pos = scaling%l * self%position
+  if (atmos_format /= 'save') then
+    n = self%n
+    sub = scaling%l * self%size
+    pos = scaling%l * self%position
+  
+    authority => self%authority_mem(:,:,:,:,self%it,1)
+    d  => authority(:,:,:,self%idx%d)
+    px => authority(:,:,:,self%idx%px)
+    py => authority(:,:,:,self%idx%py)
+    pz => authority(:,:,:,self%idx%pz)
+    tt => authority(:,:,:,self%idx%e)
+    pe => authority(:,:,:,6)
+    vmic => authority(:,:,:,7)
 
-  authority => self%authority_mem(:,:,:,:,self%it,1)
-  d  => authority(:,:,:,self%idx%d)
-  px => authority(:,:,:,self%idx%px)
-  py => authority(:,:,:,self%idx%py)
-  pz => authority(:,:,:,self%idx%pz)
-  tt => authority(:,:,:,self%idx%e)
-  pe => authority(:,:,:,6)
+    call interpolate_atmos(n, sub, pos, d, px, py, pz, tt, pe, vmic)
 
-  call interpolate_atmos(n, sub, pos, d, px, py, pz, tt, pe)
+    if (rotate_atmos) then
+      do i=1, self%nw-1
+        authority => self%authority_mem(:,:,:,:,self%it,1+i)
+        d  => authority(:,:,:,self%idx%d)
+        px => authority(:,:,:,self%idx%px)
+        py => authority(:,:,:,self%idx%py)
+        pz => authority(:,:,:,self%idx%pz)
+        tt => authority(:,:,:,self%idx%e)
+        pe => authority(:,:,:,6)
+        vmic => authority(:,:,:,7)
+        bottom = self%position(3) - 0.5*self%size(3)
+        bot2pivot = scaling%l * (pivot_z - bottom)
+        call interpolate_atmos(n, sub, pos, d, px, py, pz, tt, pe, vmic, vec=long_vec(:,i), bot2pivot=bot2pivot)
+      end do
+    endif
 
-  if (rotate_atmos) then
-    do i=1, self%nw-1
-      authority => self%authority_mem(:,:,:,:,self%it,1+i)
-      d  => authority(:,:,:,self%idx%d)
-      px => authority(:,:,:,self%idx%px)
-      py => authority(:,:,:,self%idx%py)
-      pz => authority(:,:,:,self%idx%pz)
-      tt => authority(:,:,:,self%idx%e)
-      pe => authority(:,:,:,6)
-      bottom = self%position(3) - 0.5*self%size(3)
-      bot2pivot = scaling%l * (pivot_z - bottom)
-      call interpolate_atmos(n, sub, pos, d, px, py, pz, tt, pe, vec=long_vec(:,i), bot2pivot=bot2pivot)
-    end do
-  endif
-
-  loaded = loaded + 1
-  if (loaded == self%dims(3)) then
-    call ia%deallocate()
+    loaded = loaded + 1
+    if (loaded == self%dims(3)) then
+      call ia%deallocate()
+    endif
   endif
 
   call os%allocate(self%filled, self%gn)

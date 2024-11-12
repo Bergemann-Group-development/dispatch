@@ -62,6 +62,10 @@ class fast_atom(object):
     self.bbt['ib'] = np.searchsorted(lam, self.bbt.lb)
     self.bbt['ir'] = np.searchsorted(lam, self.bbt.lr)
 
+  def get_title(self, abnd=None):
+      if abnd is None: abnd = self.abnd
+      return 'A({}) = {:.2f}'.format(self.id.strip(), abnd)
+
 class pandas_atom(object):
   def __init__(self):
     pass
@@ -164,6 +168,10 @@ class pandas_atom(object):
       self.ncol = len(col)
     self.post_init()
     return self
+  
+  def get_title(self, abnd=None):
+      if abnd is None: abnd = self.abnd
+      return 'A({}) = {:.2f}'.format(self.id.strip(), abnd)
 
   def write(self, out_file):
     lvl = self.lvl[self.lvl_tab].sort_values('ev').reset_index()
@@ -215,24 +223,25 @@ class pandas_atom(object):
     self.bbt['ib'] = np.searchsorted(lam, self.bbt.lb)
     self.bbt['ir'] = np.searchsorted(lam, self.bbt.lr)
 
-  def to_linelist(self, file):
+  def to_linelist(self, file, bbt=None):
+    if bbt is None: bbt = self.bbt
     f = open(file, 'w+')
     ions = np.unique(self.lvl.ion).astype(int)
     for ion in ions:
       ll = pd.DataFrame()
-      mask = np.array(self.lvl.ion[self.bbt.i] == ion)
+      mask = np.array(self.lvl.ion[bbt.i] == ion)
       ev0 = self.lvl.ev[self.lvl.ion == ion].values[0]
       if any(mask):
         f.write(f"'  {np.round(self.ai).astype(int):<16.3f}' {ion:d} {np.sum(mask):d}\n")
         f.write(f"'{self.id:3} {'I'*ion:<3}'\n")
-        bbt = self.bbt[mask]
-        ll['lam0'] = bbt['lam0']
-        ll['evi'] = bbt['evi'] - ev0
-        ll['loggf'] = bbt['loggf']
-        ll['gv'] = bbt['gv']
-        ll['g_j'] = self.lvl.g[self.bbt.j[mask]].values
-        ll['ga'] = bbt['ga']
-        ll['gq'] = bbt['gq']
+        bb = bbt[mask]
+        ll['lam0'] = bb['lam0']
+        ll['evi'] = bb['evi'] - ev0
+        ll['loggf'] = bb['loggf']
+        ll['gv'] = bb['gv']
+        ll['g_j'] = self.lvl.g[bb.j].values
+        ll['ga'] = bb['ga']
+        ll['gq'] = bb['gq']
         ll['lower_orb'] = 'x'
         ll['upper_orb'] = 'x'
         ll['ent8'] = 0

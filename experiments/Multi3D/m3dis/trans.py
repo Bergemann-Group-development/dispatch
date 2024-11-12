@@ -23,7 +23,6 @@ EK  = EE/BK
 class trans_class(object):
     def __init__(self, atom, kr, read_bf=True):
         self.kr = kr
-        self.el = atom
         self.atom  = atom
         self.prepared = False
         
@@ -168,6 +167,10 @@ class trans_class(object):
     #=====================================================================
     def prepare(self):
         #-----------------------------------------------------------------
+        if hasattr(self, 'prepared'):
+            if self.prepared: return
+
+        self.run = self.atom.run
         self.lb = vacuum2obs(self.lam_blue)
         self.lr = vacuum2obs(self.lam_red)
 
@@ -195,14 +198,14 @@ class trans_class(object):
 
     #=====================================================================
     def plot(self, ang=None, imu=None, norm=True, dlam=None, label=None,
-                vdop=None, vshift=None, convolve=None, renorm=False, fac=None,
+                vdop=None, vshift=None, convolve=None, renorm=None, fac=None,
                 LTE=False, title=None, set_labels=True, velocity_units=False,
-                lam_offset=True, per_aa=False, **kwargs):
+                lam_offset=True, per_aa=False, tilt=None, abnd=None, **kwargs):
         #-----------------------------------------------------------------
-        xx, yy = self.crop(ang=ang, imu=imu, norm=norm, dlam=dlam,
+        xx, yy = self.crop(ang=ang, imu=imu, norm=norm, dlam=dlam, tilt=tilt,
                             vdop=vdop, vshift=vshift, convolve=convolve, fac=fac,
                             renorm=renorm, LTE=LTE, velocity_units=velocity_units,
-                            lam_offset=lam_offset, per_aa=per_aa)
+                            lam_offset=lam_offset, per_aa=per_aa, abnd=abnd)
 
         self.run.set_xaxis(xx, dlam, velocity_units=velocity_units, set_labels=set_labels,
                            lam_offset=lam_offset)
@@ -222,7 +225,7 @@ class trans_class(object):
 
         if set_labels:
             default = self.title
-            if hasattr(self, 'el'): default = default + ', ' + self.el.title
+            if hasattr(self, 'atom'): default = default + ', ' + self.atom.get_title(abnd)
             set_title(title, default=default)
             set_legend(**kwargs)
 
@@ -234,24 +237,19 @@ class trans_class(object):
         if hasattr(self, 'prepared'):
             if not self.prepared: self.prepare()
                 
-        xx, yy = self.run.crop(slc=slice(self.ib, self.ir), lam0=self.lam0, **kwargs)
+        xx, yy = self.run.crop(kr=self.kr, **kwargs)
         return xx, yy
     
     #=====================================================================
-    def get_clv(self, reduced=True, **kwargs):
+    def get_clv(self, **kwargs):
         #-----------------------------------------------------------------
-        if reduced:
-            xx = self.run.mus
-            yy = [self.calc_weq(imu=i, **kwargs) for i in range(self.run.nmu)]
-        else:
-            xx = self.run.vec[:,-1]
-            yy = [self.calc_weq(ang=i, **kwargs) for i in range(xx.size)]
-        return xx, np.array(yy)
+        xx, yy = self.run.get_clv(kr=self.kr, **kwargs)
+        return xx, yy
 
     #=====================================================================
-    def plot_clv(self, dlam=None, LTE=False, reduced=True, title=None, **kwargs):
+    def plot_clv(self, dlam=None, LTE=False, title=None, **kwargs):
         #-----------------------------------------------------------------
-        xx, yy = self.get_clv(dlam=dlam, LTE=LTE, reduced=reduced)
+        xx, yy = self.get_clv(dlam=dlam, LTE=LTE)
 
         if not 'linestyle' in kwargs:
             kwargs['linestyle'] = 'none'
@@ -260,10 +258,10 @@ class trans_class(object):
             kwargs['marker'] = '.'
 
         
-        plt.xlabel(r'$\mu$')
+        plt.xlabel(r'μ')
         plt.ylabel('Equivalent width [mÅ]')
 
-        set_title(title, default=self.title+', '+self.el.title)
+        set_title(title, default=self.title+', ' + self.atom.get_title())
         set_legend(**kwargs)
 
         return plt.plot(xx, yy, **kwargs)
@@ -271,11 +269,7 @@ class trans_class(object):
     #=====================================================================
     def get_xx(self, dlam, velocity_units=False, **kwargs):
         #-----------------------------------------------------------------
-        if hasattr(self, 'prepared'):
-            if not self.prepared: self.prepare()
-
-        if not hasattr(self, 'run'):
-            self.run = self.atom.run
+        self.prepare()
 
         xx = self.run.lam
         if dlam is not None and dlam is not False:
@@ -346,7 +340,7 @@ class trans_class(object):
         plt.plot(xx, yy.reshape((nnu, -1)), color=color, linewidth=linewidth,
                  alpha=alpha, **kwargs)
         
-        set_title(title, default=self.title+', '+self.el.title)
+        set_title(title, default=self.title+', '+self.atom.get_title())
         set_legend(**kwargs)
         
         if 'label' in kwargs:
@@ -384,7 +378,7 @@ class trans_class(object):
     #=====================================================================
     def plot_bisector(self, n=100, frac=0.99, ang=None, imu=None, norm=True,
                       dlam=None, velocity_units=False, vdop=None, vshift=None,
-                      convolve=None, renorm=False, LTE=False, set_labels=True,
+                      convolve=None, renorm=None, LTE=False, set_labels=True,
                       lam_offset=True, **kwargs):
         #-----------------------------------------------------------------
         xx, yy = self.get_bisector(n=n, frac=frac, ang=ang, imu=imu, norm=norm,
@@ -401,15 +395,11 @@ class trans_class(object):
     #=====================================================================
     def get_cntrbf(self, df=None, dlam=None, ang=None, imu=None, LTE=False, fmean=False, gmean=False, slc=None, norm=False):
         #-----------------------------------------------------------------
-        if hasattr(self, 'prepared'):
-            if not self.prepared: self.prepare()
+        self.prepare()
 
         cntrbf_lines = np.array(self.run.nml['line_mask']['cntrbf_lines']).ravel() - 1
         if not self.kr in cntrbf_lines:
             raise ValueError('Contribution function was not saved for this line!')
-
-        if hasattr(self, 'prepared'):
-            if not self.prepared: self.prepare()
         
         name = 'cntrbf_{:06}'.format(self.kr+1)
         mem  = self.run.read_patch_save(name, fdim=0, zdim=3, lazy=True)[-1]
@@ -446,7 +436,8 @@ class trans_class(object):
             if imu < 0: imu = self.run.imus.max()+imu+1
             angs = all_angs[self.run.imus==imu]
         elif ang is not None:
-            angs = np.array([ang])
+            angs = np.array(ang).squeeze()
+            if angs.ndim == 0: angs = np.array([angs])
 
         wts = self.run.wts[angs]
         wts = wts / np.sum(wts)
@@ -494,10 +485,10 @@ class trans_class(object):
         if dlam is not None:
             ib = np.searchsorted(lam, self.lam0-dlam)
             ir = np.searchsorted(lam, self.lam0+dlam)
-            wave = r'$\lambda=${:.2f}-{:.2f}[Å]'.format(lam[ib], lam[ir-1])
+            wave = r'λ={:.2f}-{:.2f}[Å]'.format(lam[ib], lam[ir-1])
         else:
             f = self.i0 - self.ib + df
-            wave = r'$\lambda=${:.3f}[Å]'.format(lam[f])
+            wave = r'λ={:.3f}[Å]'.format(lam[f])
             
         if ang is None and imu is None:
             angle = 'flux'
@@ -505,7 +496,7 @@ class trans_class(object):
             if ang is not None:
                 imu = self.run.imus[ang]
 
-            angle = r'$\mu=${:.2f}'.format(self.run.mus[imu])
+            angle = r'μ={:.2f}'.format(self.run.mus[imu])
 
         plt.xlabel(r'log$\tau_{500}$')
         plt.ylabel('Contribution function')

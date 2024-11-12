@@ -149,6 +149,7 @@ SUBROUTINE init (self, name)
   character(len=16), save:: solver=''
   character(len=32), save:: branch='', opts=''
   character(len=128), save:: compiler=''
+  character(len=512):: command
   character(len=120):: ids = &
   '$Id$'
   namelist /io_params/ verbose, do_debug, do_trace, do_output, do_flags, &
@@ -223,8 +224,8 @@ SUBROUTINE init (self, name)
     call ensure_dirname (datadir)
     self%run_dir = trim(datadir)//trim(self%run_name)
     call ensure_dirname (self%run_dir)
-    call os%mkdir (trim(datadir))
-    call os%mkdir (trim(self%run_dir))
+    write (command, *) 'mkdir -p ', trim(self%run_dir)
+    call execute_command_line (trim(command), exitstat=iostat)
     call os%copy_file (trim(self%run_dir)//'params.nml', &
                        trim(self%run_dir)//'restart.nml')
     if (mpi%master) then

@@ -39,8 +39,8 @@ MODULE spectrum_mod
       real(8), dimension(:), allocatable :: lam
       real(8) :: last, fac
       integer :: iostat, i, lunit
-      namelist /spectrum_params/ daa, aa_red, aa_blue, nnu, give_lam, in_log, R
-      namelist /sp_wavelengths/ lam, lam_file
+      namelist /spectrum_params/ daa, aa_red, aa_blue, nnu, give_lam, in_log, R, lam_file
+      namelist /sp_wavelengths/ lam
       !-----------------------------------------------------------------------------
       rewind (io%input)
       read (io%input, spectrum_params, iostat=iostat)
@@ -51,16 +51,11 @@ MODULE spectrum_mod
       call io%namelist_warning ('spectrum_params', iostat)
       write (io%namelist, spectrum_params)
 
-      if (daa==0 .and. nnu==0 .and. R==0) return
+      if (daa==0 .and. nnu==0 .and. R==0 .and. lam_file=='') return
       if (give_lam .and. nnu>0) then
         allocate(lam(nnu))
         rewind (io%input)
         read (io%input, sp_wavelengths, iostat=iostat)
-        if (lam_file /= '') then
-          open(newunit=lunit, file=trim(lam_file), form='FORMATTED')
-          read(lunit,*) lam
-          close(lunit)
-        endif
         if (iostat > 0) then
           rewind (io%input)
           read (io%input, sp_wavelengths)
@@ -69,6 +64,24 @@ MODULE spectrum_mod
         write (io%namelist, sp_wavelengths)
         self%nnu = nnu
         allocate(self%nu(nnu))
+        lam = air2vac(lam)
+        do i=0,nnu-1
+          self%nu(nnu-i) = CC / (lam(i+1)) * 1e8
+        end do
+      elseif (lam_file /= '') then
+        nnu = 0
+        open(newunit=lunit, file=trim(lam_file), form='FORMATTED')
+        read(lunit,'(A)', iostat=iostat)
+        do while (iostat == 0)
+          nnu = nnu + 1
+          read(lunit,'(A)', iostat=iostat)
+        end do
+        rewind(lunit)
+        allocate(lam(nnu))
+        allocate(self%nu(nnu))
+        read(lunit,*) lam
+        close(lunit)
+        self%nnu = nnu
         lam = air2vac(lam)
         do i=0,nnu-1
           self%nu(nnu-i) = CC / (lam(i+1)) * 1e8

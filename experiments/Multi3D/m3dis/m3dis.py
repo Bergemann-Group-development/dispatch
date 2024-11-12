@@ -13,6 +13,7 @@ from scipy.signal import argrelextrema
 from scipy.io import FortranFile
 from matplotlib.collections import LineCollection
 from matplotlib.ticker import MultipleLocator
+from matplotlib.colors import LogNorm
 import os
 import copy
 
@@ -89,15 +90,6 @@ class m3dis(object):
         df = pd.read_csv(folder + 'abund.txt', header=None, sep=r'\s+', na_filter=False)
         self.abundances = {k.lower().capitalize():v for k, v in df.values}
         
-        maxiter = self.nml['m3d_params']['maxiter']
-        depart = self.nml['atom_params']['precomputed_depart'].strip()
-        if (maxiter > 0):
-            self.mode = 'NLTE'
-        elif(depart==''):
-            self.mode = 'LTE'
-        else:
-            self.mode = 'NLTE'
-        
         if os.path.isfile(sfolder + 'out_lam.bin'):
             if (verbose > 0): print('Reading wavelengths')
             self.lam = np.fromfile(sfolder + 'out_lam.bin', dtype=np.float64)
@@ -111,15 +103,18 @@ class m3dis(object):
         if os.path.isfile(sfolder + 'all_lam.bin'):
             self.all_lam = vacuum2obs(np.fromfile(sfolder + 'all_lam.bin', dtype=np.float64))[::-1]
         
+        depart = ''
         atom_file = folder + 'atom.txt'
-        pandas_format = 'pandas_format' in self.nml['atom_params']
-        if pandas_format: pandas_format = pandas_format & self.nml['atom_params']['pandas_format']
         if read_atom and os.path.isfile(atom_file):
             self.qnorm = self.nml['atom_params']['qnorm']
             loggf_cut  = self.nml['atom_params']['logf_cut']
             red_cut    = self.nml['atom_params']['red_cut']
             blue_cut   = self.nml['atom_params']['blue_cut']
             in_abnd    = self.nml['atom_params']['abundance']
+            depart     = self.nml['atom_params']['precomputed_depart'].strip()
+
+            pandas_format = 'pandas_format' in self.nml['atom_params']
+            if pandas_format: pandas_format = pandas_format & self.nml['atom_params']['pandas_format']
 
             nq_fac = self.nml['atom_params']['nq_fac']
             if self.nml['m3d_params']['m1d_legacy_mode']: nq_fac *= 2
@@ -161,9 +156,7 @@ class m3dis(object):
 
             else:
                 self.atom = atom_class(atom_file, qnorm=self.qnorm, verbose=verbose, **kwargs)
-
-                for trans in self.atom.trans:
-                    trans.run = self
+                self.atom.run = self
 
                 if not hasattr(self, 'in_lines'): self.in_lines = slice(None, self.atom.nline)
                 lines = np.array(self.atom.trans)[self.in_lines]
@@ -186,7 +179,7 @@ class m3dis(object):
             elif in_abnd > -99:
                 self.atom.abnd = in_abnd
 
-            self.atom.title = 'A({}) = {:.2f}'.format(self.atom.id.strip(), self.atom.abnd)
+            #self.atom.title = 'A({}) = {:.2f}'.format(self.atom.id.strip(), self.atom.abnd)
 
             reports = glob.glob(folder + 'convergence_report_*.txt')
             if len(reports)>0:
@@ -194,6 +187,13 @@ class m3dis(object):
                 for report in reports:
                     df = pd.read_csv(report, sep=r'\s+')
                     self.lvlerr = np.maximum(self.lvlerr, df.maxconv.values)
+            
+        if (self.nml['m3d_params']['maxiter'] > 0):
+            self.mode = 'NLTE'
+        elif(depart==''):
+            self.mode = 'LTE'
+        else:
+            self.mode = 'NLTE'
 
         file = folder + 'angle_quadrature.txt'
         if os.path.isfile(file):
@@ -240,8 +240,15 @@ class m3dis(object):
             strength = np.log10(self.llist.lam_vac*1e-8 * np.exp(-self.llist.ev_i*EK/T)) + self.llist.loggf + abnd
             self.llist['strength'] = strength
 
-        atmos_params =self.nml['atmos_params']
-        mesh = open(folder + 'atmos_mesh.txt', 'r')
+        atmos_params = self.nml['atmos_params']
+
+        if atmos_params['atmos_format'].strip().lower() == 'save':
+            mesh = open(atmos_params['atmos_file'].strip() + '/atmos_mesh.txt', 'r')
+            afolder = atmos_params['atmos_file'].strip() + '/save/'
+        else:
+            mesh = open(folder + 'atmos_mesh.txt', 'r')
+            afolder = sfolder
+
         amr = 'amr' in atmos_params
         if amr: amr = atmos_params['amr']
 
@@ -265,13 +272,12 @@ class m3dis(object):
         else:
             nx, ny, nz = [int(i) for i in mesh.readline().split()]
             dx, dy, dz = [float(i) for i in mesh.readline().split()]
+            self.dz = dz
             self.zz = np.arange(1, nz+1)*dz
             self.atmos_cuts = np.cumsum(near_equal_split(nz, dims))
 
-
         self.dx = dx
         self.dy = dy
-        self.dz = dz
         self.xx = np.arange(nx)*dx
         self.yy = np.arange(ny)*dy
         mesh.close()
@@ -281,9 +287,10 @@ class m3dis(object):
         else:
             self.dim = '1D'
 
-        if os.path.isfile(sfolder + 'atmos_meta.txt') and read_atmos:
-            mem = self.read_patch_save('atmos', zdim=2)[0]
-            mem = mem[..., 0].squeeze()
+        if os.path.isfile(afolder + 'atmos_meta.txt') and read_atmos:
+            mem = self.read_patch_save('atmos', folder=afolder, zdim=2)[0]
+            mem = mem[..., 0]
+            if self.dim=='1D': mem = mem.squeeze()
             self.ne   = np.array(mem[...,0])
             self.rho  = np.array(mem[...,1])
             self.temp = np.array(mem[...,2])
@@ -362,18 +369,22 @@ class m3dis(object):
         offset = lam_offset and dlam is not None and dlam is not False
 
         if set_labels:
-            if velocity_units: 
-                plt.xlabel(r'$v_{\rm dop}$ [km/s]')
-            elif offset:
-                plt.xlabel(r'$\Delta\lambda$ [Å]')
-            else:
-                plt.xlabel('Wavelength [Å]')
+            ax = plt.gca()
+            sub = ax.get_subplotspec()
+            grid = sub.get_gridspec()
+            if sub.rowspan.stop == grid._nrows:
+                if velocity_units: 
+                    plt.xlabel(r'$v_{\rm dop}$ [km/s]')
+                elif offset:
+                    plt.xlabel(r'∆λ [Å]')
+                else:
+                    plt.xlabel('Wavelength [Å]')
 
         plt.xlim(xmin, xmax)
         plt.ticklabel_format(useOffset=False)
 
     #=====================================================================
-    def set_yaxis(self, ang, imu, norm, per_aa=False, renorm=False, set_labels=True):
+    def set_yaxis(self, ang, imu, norm, per_aa=False, renorm=None, set_labels=True):
         #-----------------------------------------------------------------
         if ang is not None:
             ylabel = 'Intensity µ={:.2f}'.format(self.vec[ang,-1])
@@ -388,22 +399,25 @@ class m3dis(object):
         if per_aa: norm=False
 
         if set_labels:
-            if norm or renorm:
-                ylabel = 'Normalised ' + ylabel
-            else:
-                units = 'erg/s/cm$^2$'
-
-                if ylabel!='Flux':
-                    units = units + '/sr'
-
-                if per_aa:
-                    units = units + '/Å'
+            ax = plt.gca()
+            sub = ax.get_subplotspec()
+            if sub.colspan.start == 0:
+                if norm or renorm is not None:
+                    ylabel = 'Normalised ' + ylabel
                 else:
-                    units = units + '/Hz'
+                    units = 'erg/s/cm$^2$'
 
-                ylabel = ylabel + ' [' + units + ']'
+                    if ylabel!='Flux':
+                        units = units + '/sr'
 
-            plt.ylabel(ylabel)
+                    if per_aa:
+                        units = units + '/Å'
+                    else:
+                        units = units + '/Hz'
+
+                    ylabel = ylabel + ' [' + units + ']'
+
+                plt.ylabel(ylabel)
 
     #=====================================================================
     def get_yy(self, ang=None, imu=None, norm=True, cont=False, LTE=False, mask=slice(None, None)):
@@ -459,11 +473,17 @@ class m3dis(object):
     #=====================================================================
     def crop(self, slc=None, lam0=None, dlam=None, xmin=None, xmax=None, vdop=None,
              vrot=None, vshift=None, convolve=None, zeta_rt=None, lam_offset=True,
-             per_aa=False, renorm=False, fac=None, velocity_units=False, 
-             ang=None, imu=None, norm=True, cont=False, LTE=False, **kwargs):
+             per_aa=False, renorm=None, fac=None, tilt=None, velocity_units=False, 
+             ang=None, imu=None, norm=True, cont=False, LTE=False, kr=None, **kwargs):
         #-----------------------------------------------------------------
+        if kr is not None:
+            line = self.atom.trans[kr]
+            line.prepare()
+            slc = slice(line.ib, line.ir)
+            lam0 = line.lam0
+
         if per_aa:
-            kwargs['norm'] = False
+            norm = False
 
         xx = self.lam
 
@@ -489,8 +509,11 @@ class m3dis(object):
 
         yy = np.array(yy)
 
-        if renorm:
-            yy = yy / continuum(xx, yy)
+        if renorm is not None:
+            if renorm == 0:
+                yy = yy / np.max(yy)
+            elif renorm > 0:
+                yy = yy / continuum(xx, yy)
 
         xx = xx + lam0
 
@@ -517,6 +540,9 @@ class m3dis(object):
 
         if fac is not None:
             yy = yy * fac
+        
+        if tilt is not None:
+            yy = yy * (1 + tilt*(xx - (xx[0]+xx[-1])/2))
 
         if len(yy)==1:
             yy = yy[0]
@@ -529,8 +555,9 @@ class m3dis(object):
         xmin = newx.min()
         xmax = newx.max()
         if 'vdop' in kwargs.keys():
-            xmin = xmin-kwargs['vdop']
-            xmax = xmax+kwargs['vdop']
+            if kwargs['vdop'] is not None:
+                xmin = xmin-kwargs['vdop']
+                xmax = xmax+kwargs['vdop']
 
         xx, yy = self.crop(xmin=xmin, xmax=xmax, **kwargs)
 
@@ -550,7 +577,7 @@ class m3dis(object):
     #=====================================================================
     def plot_spectrum(self, velocity_units=None, set_labels=True,
                       lam_offset=None, ang=None, imu=None, norm=True,
-                      dlam=None, renorm=False, per_aa=False, show_lines=False,
+                      dlam=None, renorm=None, per_aa=False, show_lines=False,
                       label=None, **kwargs):
         #-----------------------------------------------------------------
         crop_kwargs = {k:v for k, v in kwargs.items() if k not in plt_kwargs}
@@ -576,16 +603,47 @@ class m3dis(object):
         return plt.plot(xx, yy, label=label, **plot_kwargs)
 
     #=====================================================================
-    def plot_surface(self, i, cmap='hot', **kwargs):
-        i3 = self.i3[0]
+    def plot_resolved(self, ang=0, f=0, LTE=False, cont=False, rasterized=True,
+                  shading='nearest', show_labels=True, cmap='hot', rot90=0, **kwargs):
 
-        if not 'extent' in kwargs.keys():
-            if self.xx.size > 1 and self.yy.size > 1:
-                extent = [0, self.xx[-1], 0, self.yy[-1]]
-                plt.xlabel('Mm')
-                plt.ylabel('Mm')
+        if LTE:
+            i3 = self.i3_lte
+        elif cont:
+            i3 = self.c3
+        else:
+            i3 = self.i3
 
-        plt.imshow(i3[:,:,i], cmap=cmap, extent=extent, **kwargs)
+        Z = i3[f, :, :, ang].T
+        
+        xx = self.xx
+        yy = self.yy
+        mux, muy, muz = self.vec[ang]
+
+        for i in range(rot90):
+            tmp = -xx
+            xx = yy
+            yy = tmp
+
+            tmp = -mux
+            mux = muy
+            muy = tmp
+            Z = np.rot90(Z, k=1)
+
+        X, Y = np.meshgrid(xx, yy)
+        plt.pcolormesh(X, Y, Z, shading=shading, rasterized=rasterized, cmap=cmap, **kwargs)
+        ax = plt.gca()
+
+        xfac = np.sqrt( (1 - mux**2)**2 + (mux*muy)**2 + (mux*muz)**2 )
+        yfac = np.sqrt( (1 - muy**2)**2 + (mux*muy)**2 + (muy*muz)**2 )
+        ax.set_aspect(yfac/xfac)
+
+        if show_labels:
+            plt.xlabel('X [Mm]')
+            plt.ylabel('Y [Mm]')
+            plt.title(f'({mux:.2f},{muy:.2f},{muz:.2f})')
+        else:
+            plt.xticks([])
+            plt.yticks([])
 
     #=====================================================================
     def get_toth(self):
@@ -697,12 +755,14 @@ class m3dis(object):
         return teff
 
     #=====================================================================
-    def read_patch_save(self, kind, concat=True, fdim=0, zdim=None, lazy=True):
+    def read_patch_save(self, kind, folder=None, concat=True, fdim=0, zdim=None, lazy=True):
         #-----------------------------------------------------------------
+        if folder is None: folder = self.sfolder
+
         try:
-            meta = open(self.sfolder + kind + '_meta.txt')
+            meta = open(folder + kind + '_meta.txt')
         except FileNotFoundError:
-            print('{:} not found!'.format(self.sfolder + kind + '_meta.txt'))
+            print('{:} not found!'.format(folder + kind + '_meta.txt'))
             if (not kind in self.nml['m3d_params']['save_patch_kind'].split()):
                 print('The patch was not saved. Check the save_patch_kind parameter in the m3d_params namelist.')
             raise FileNotFoundError()
@@ -719,7 +779,7 @@ class m3dis(object):
 
                 key = file.split('.')[0].split('_')[-1]
                 key = np.array([int(k) for k in [key[0:3], key[3:6]]])
-                dct[tuple(key)] = np.memmap(self.sfolder + file, dtype=dtype, mode='r', shape=dims, order='F')
+                dct[tuple(key)] = np.memmap(folder + file, dtype=dtype, mode='r', shape=dims, order='F')
 
         meta.close()
         if zdim is None: zdim = len(dims)-1
@@ -826,6 +886,16 @@ class m3dis(object):
     #=====================================================================
     def get_ltau_mean(self, cube, log=False, zaxis=-1):
         #-----------------------------------------------------------------
+        if hasattr(self, 'runs'):
+            xy = np.array([run.get_ltau_mean(cube, log=log, zaxis=zaxis) for run in self.runs])
+            ltau = np.mean(xy[:,0], axis=0)
+            yy1d = [np.interp(ltau, xy[i,0,::-1], xy[i,1,::-1]) for i in range(len(xy))]
+            yy1d = np.mean(yy1d, axis=0)
+            return ltau[::-1], yy1d[::-1]
+
+        if type(cube) is str:
+            cube = getattr(self, cube)
+
         if self.dim == '3D':
             ltau1d, yy3d = self.interp_ltau_surf(cube, log=log, zaxis=zaxis)
             if log: yy3d = np.log(yy3d)
@@ -855,6 +925,12 @@ class m3dis(object):
         xx = self.zz
         xx, yy = crop_inputs(xx, yy, xmin, xmax, ymin, ymax)
         return plt.plot(xx, yy, **kwargs)
+    
+    #=================================================================
+    def get_clv(self, **kwargs):
+        xx = self.mus
+        yy = self.calc_weq(imu=np.arange(len(xx)), **kwargs)
+        return xx, yy
     
     #=====================================================================
     def plot_line_labels(self, xx=None, labels=None, weights=None, offset=None, **kwargs):
@@ -954,9 +1030,9 @@ class m3dis(object):
     
     #=================================================================
     def fit_observed(self, oxx, oyy, fit=[], bounds=None, p0=None, sigma=None, method='curve_fit', tol=None, **kwargs):
-        lbounds = {'vshift':-3, 'vdop':1e-3, 'vrot':1e-3, 'zeta_rt':1e-3, 'fac':0.5}
-        ubounds = {'vshift':+3, 'vdop':1e2,  'vrot':1e2,  'zeta_rt':1e2,  'fac':2.0}
-        p0s     = {'vshift':0,  'vdop':1,    'vrot':1,    'zeta_rt':1,    'fac':1.0}
+        lbounds = {'vshift':-3, 'vdop':1e-3, 'vrot':1e-3, 'zeta_rt':1e-3, 'fac':0.5, 'tilt':-0.2}
+        ubounds = {'vshift':+3, 'vdop':1e1,  'vrot':1e1,  'zeta_rt':1e1,  'fac':2.0, 'tilt':+0.2}
+        p0s     = {'vshift':0,  'vdop':1,    'vrot':1,    'zeta_rt':1,    'fac':1.0, 'tilt':0.0}
         if bounds is None: bounds = ([lbounds[f] for f in fit], [ubounds[f] for f in fit])
         if p0 is None: p0 = [p0s[f] for f in fit]
 
@@ -967,17 +1043,18 @@ class m3dis(object):
         if method == 'curve_fit':
             pfit, _ = optimize.curve_fit(opt_func, oxx, oyy, p0=p0, bounds=bounds, sigma=sigma)
 
-        elif method == 'minimize':
+        else:
             bounds = np.vstack(bounds).T
             def opt_func2(params, newx):
                 res = oyy - opt_func(newx, *params)
                 if sigma is not None: res = res/sigma
                 return np.sum(res**2)
-            pfit = optimize.minimize(opt_func2, p0, args=(oxx), bounds=bounds, method='Nelder-Mead', tol=tol).x
+            pfit = optimize.minimize(opt_func2, p0, args=(oxx), bounds=bounds, method=method, tol=tol).x
 
         fitted = opt_func(oxx, *pfit)
         return {f:pfit[i] for i, f in enumerate(fit)}, fitted
     
+    #=================================================================
     def plot_fit(self, oxx, oyy, fit=[], bounds=None, p0=None, sigma=None, method='curve_fit', label=None, **kwargs):
         crop_kwargs = {k:v for k, v in kwargs.items() if k not in plt_kwargs}
         plot_kwargs = {k:v for k, v in kwargs.items() if k not in crop_kwargs}
@@ -988,6 +1065,7 @@ class m3dis(object):
             label = ', '.join([label,] + [f'{k}={v:.2f}' for k, v in p.items()])
         return plt.plot(oxx, fitted, label=label, **plot_kwargs)
     
+    #=================================================================
     def to_multi1d_atmos(self, dir, name, vz=0.0, vmic=1.0):
         df = pd.DataFrame()
         df['Height'] = self.zz*1e3
@@ -1013,6 +1091,110 @@ class m3dis(object):
         text = df.Height[::-1].to_string(index=False, float_format='%.4e')
         f.write(text)
         f.close()
+
+    #=================================================================
+    def to_dispatch1d_atmos(self, dir, name, vmic=1.0):
+        ltau, chi = self.get_ltau_mean('chi',  log=True)
+        _, temp   = self.get_ltau_mean('temp', log=True)
+        _, ne     = self.get_ltau_mean('ne',   log=True)
+        _, rho    = self.get_ltau_mean('rho',  log=True)
+        tau = 10**(ltau)
+
+        # Flip the arrays to get them in increasing tau order
+        tau = tau[::-1]
+        chi = chi[::-1]
+
+        # Calculate dz = - d_tau / chi at the midpoint between each pair of tau values
+        dz = - np.diff(tau) * 2 / (chi[:-1] + chi[1:])
+
+        # Compute z by cumulatively summing dz
+        zz = np.concatenate(([0], np.cumsum(dz)))  # Start from z0 = 0 or any other initial condition
+        zz = - zz[::-1]
+        zz = zz - np.interp(1, tau, zz)
+
+        df = pd.DataFrame()
+        df['Depth'] = zz
+        df['Temp'] = temp
+        df['Pe'] = ne*temp*BK
+        df['Rho'] = rho
+        df['Vturb'] = vmic
+
+        f = open(dir + f'{name:}.txt', 'w+')
+        f.write(f'{name:}\n')
+        f.write(f'{len(df):}\n')
+        text = df[::-1].to_string(index=False, float_format='%.4e')
+        text = '*' + text[1:]
+        f.write(text)
+        f.close()
+
+    #=================================================================    
+    def plot_slice(self, var, ix=None, iy=None, iz=None, shading='nearest',
+                cmap='hot', rasterized=True, logNorm=False, contrast=False,
+                show_cuts=False, title=None, tau_contours=False):
+    
+        if type(var) is str:
+            var = getattr(self, var)
+
+        if self.dim == '3D':
+            ltau = np.mean(self.ltau, axis=(0,1))
+        else:
+            ltau = self.ltau
+
+        order = np.argsort(ltau)
+        z0 = np.interp(0, ltau[order], self.zz[order])
+
+        xx = self.xx
+        yy = self.yy
+        zz = self.zz - z0
+
+        if ix is not None:
+            slc = (ix, slice(None), slice(None))
+            X, Y = np.meshgrid(yy, zz)
+            tle = f'X = {xx[ix]:.1f} Mm'
+            plt.xlabel('Y [Mm]')
+            plt.ylabel('Z [Mm]')
+        elif iy is not None:
+            slc = (slice(None), iy, slice(None))
+            X, Y = np.meshgrid(xx, zz)
+            tle = f'Y = {yy[iy]:.1f} Mm'
+            plt.xlabel('X [Mm]')
+            plt.ylabel('Z [Mm]')
+        elif iz is not None:
+            slc = (slice(None), slice(None), iz)
+            X, Y = np.meshgrid(xx, yy)
+            tle = f'Z = {zz[iz]:.1f} Mm'
+            plt.xlabel('X [Mm]')
+            plt.ylabel('Y [Mm]')
+
+        Z = var[slc]
+
+        if iz is None and contrast:
+            Z = Z / np.mean(var, axis=(0,1))
+
+        norm = [None, LogNorm()][logNorm]
+        title = [title, tle] [title is None]
+
+        pmsh = plt.pcolormesh(X, Y, Z.T, shading=shading, cmap=cmap, rasterized=rasterized, norm=norm)
+        plt.title(title)
+
+        if iz is None:
+            if show_cuts:
+                [plt.axhline(zz[i-1], lw=0.5, color='k') for i in self.atmos_cuts]
+
+            if tau_contours:
+                ax = plt.gca()
+                ax2 = ax.twinx()
+                Z = self.ltau[slc]
+                levels = np.arange(int(np.min(Z)), int(np.max(Z))+1)
+                cm = plt.cm.__dict__[cmap]
+                cmap2 = ['binary', 'binary_r'][cm(1) < cm(0)]
+                ax2.contour(X, Y, Z.T, levels=levels, cmap=cmap2, linewidths=1, linestyles=':')
+                ax2.set_ylabel(r'$\log \tau_{500}$')
+                zlevels = np.interp(levels, Z[-1,:][::-1], zz[::-1])
+                ax2.set_yticks(zlevels)
+                ax2.set_yticklabels(levels)
+
+        return pmsh
 
     @classmethod
     #=================================================================

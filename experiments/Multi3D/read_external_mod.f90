@@ -22,12 +22,13 @@ MODULE read_external_mod
   USE task_list_mod
   USE experiment_mod, only: experiment_t
   USE composition_mod
-  USE composition_patch_mod, only: FeH, save_atmos, save_eos, external_abund
+  USE composition_patch_mod, only: FeH, save_atmos, save_eos, external_abund, read_composition_params
   USE patch_mod
   USE const_mod, only:cc
   USE atom_mod, only: m1d_legacy_mode
   USE m3d_patch_mod, only: maxiter, ilambd, m3d_patch_t, atom_update_counter, &
-  global_maxerr, global_pos, nz_total, use_density, use_ne, atmos_format, amr
+  global_maxerr, global_pos, nz_total, use_rho, use_ne, atmos_format, amr, vmic, &
+  opac_table_vmic, atmos_file
   USE m3d_halo_mod, only: m3d_halo_t
   USE read_atmos_mod, only: ia, read_stagger, read_co5bold, read_stagger2, &
   legacy_stagger_interp, read_marcs, read_multi_snapshot, read_1d_snapshot
@@ -43,6 +44,7 @@ MODULE read_external_mod
     procedure:: init
     procedure:: init_exp
     procedure:: setup_patch
+    procedure:: read_saved_snapshot
   end type read_external_t
 
   type, public, extends(task_t):: rank_t
@@ -50,7 +52,6 @@ MODULE read_external_mod
 
   type(read_external_t), public:: read_external
   type(rank_t) :: rank
-  character(len=256), public :: atmos_file='./input_multi3d/atmos/atmos.sun_MARCS_50'
   real(4) :: origin(3) = [0., 0., 0.]
 
 contains
@@ -70,9 +71,9 @@ SUBROUTINE init(self, task_list, name)
   integer :: verbose=0
   logical :: use_abnd=.false.
   character(len=512) :: command
-  real(4), dimension(:,:,:), pointer, contiguous :: vel
+  character(len=512) :: save_file
   namelist /atmos_params/ atmos_file, dims, verbose, patches_per_mpi, FeH, &
-  save_atmos, atmos_format, vmic, use_density, use_ne, nx, ny, nz, snap, &
+  save_atmos, atmos_format, vmic, use_rho, use_ne, nx, ny, nz, snap, &
   legacy_stagger_interp, save_eos, amr, use_abnd
   !-----------------------------------------------------------------------------
   if (associated(task_list)) return
@@ -92,12 +93,13 @@ SUBROUTINE init(self, task_list, name)
   end if
   call io%namelist_warning ('atmos_params', iostat)
 
+  ! this is read here, in case atmosphere has optical depth scale
+  call read_composition_params()
+
   if (amr) then
     ! making sure that dims is not 1, otherwise amr has no effect
     dims = max(dims, 8)
   endif
-
-  write (io%namelist, atmos_params)
 
   if (mpi%master) then
     call os%mkdir(trim(io%run_dir)//'save')
@@ -133,45 +135,62 @@ SUBROUTINE init(self, task_list, name)
   atmos_format = lowercase(atmos_format)
   ia%kind = atmos_format
 
-  select case (atmos_format)
-  case('stagger')
-    call read_stagger(atmos_file, snap, use_ne)
-  case('stagger2')
-    call read_stagger2(atmos_file)
-  case('co5bold')
-    call read_co5bold(atmos_file)
-  case ('marcs')
-    call read_marcs(atmos_file, FeH, vmic, external_abund)
-    if (.not. use_abnd) deallocate(external_abund)
-  case ('multi', 'must')
-    call read_multi_snapshot(atmos_file)
-  case ('text')
-    call read_1d_snapshot(atmos_file)
-  case default
-    write(stdout, *) 'unknown atmos_format ', atmos_format, &
-    '. Options are: "Stagger", "Co5bold", "MUST", "Multi", "Marcs" and "Text".'
-    stop
-  end select
+  if (vmic > 0) opac_table_vmic = vmic
 
-  call ia%thick2thin()
-  call ia%get_box(self%size)
-  self%size = self%size / scaling%l
-
-  if (.not. ia%is_3d) then
-    nx = 1; ny = 1
-  endif
-  one_dimensional = nx*ny == 1
-  self%n = [nx, ny, nz]
-
-  if (amr) then
-    call ia%setup_amr_mesh(dims, use_ne)
-  else
-    self%ds = self%size / self%n
-    open(file=trim(io%run_dir)//'atmos_mesh.txt', newunit=lunit, form='FORMATTED')
-    write(lunit, *) self%n
-    write(lunit, *) self%ds
+  if (atmos_format == 'save') then
+    save_file = atmos_file
+    open(file=trim(save_file)//'/params.nml', newunit=lunit, form='FORMATTED')
+    read (lunit, nml=atmos_params, iostat=iostat)
     close(lunit)
+    atmos_file = save_file
+    atmos_format = 'save'
+    call self%read_saved_snapshot(atmos_file, dims)
+  else
+    select case (atmos_format)
+    case('stagger')
+      call read_stagger(atmos_file, snap, use_ne)
+    case('stagger2')
+      call read_stagger2(atmos_file)
+    case('co5bold')
+      call read_co5bold(atmos_file)
+    case ('marcs')
+      call read_marcs(atmos_file, FeH, vmic, external_abund)
+      if (.not. use_abnd) deallocate(external_abund)
+    case ('multi', 'must')
+      call read_multi_snapshot(atmos_file)
+    case ('text')
+      call read_1d_snapshot(atmos_file, vmic)
+    case default
+      write(stdout, *) 'unknown atmos_format ', atmos_format, &
+      '. Options are: "Stagger", "Co5bold", "MUST", "Multi", "Marcs" and "Text".'
+      stop
+    end select
+
+    call ia%thick2thin()
+    call ia%get_box(self%size)
+
+    if (.not. ia%is_3d) then
+      nx = 1; ny = 1
+    endif
+    self%n = [nx, ny, nz]
+
+    if (amr) then
+      call ia%setup_amr_mesh(dims, use_ne)
+    else
+      self%ds = self%size / self%n
+      if (save_atmos) then
+        open(file=trim(io%run_dir)//'atmos_mesh.txt', newunit=lunit, form='FORMATTED')
+        write(lunit, *) self%n
+        write(lunit, *) self%ds
+        close(lunit)
+      endif
+    endif
   endif
+
+  self%size = self%size / scaling%l
+  one_dimensional = self%n(1)*self%n(2) == 1
+
+  write (io%namelist, atmos_params)
 
   !-----------------------------------------------------------------------------
   ! Generate a (periodic) MPI geometry, with dims specified in the input file,
@@ -225,7 +244,7 @@ SUBROUTINE init(self, task_list, name)
     if (all(self%dims==1)) call patch%task_t%set(bits%root_grid)
     call self%setup_patch(patch)
 
-    if (amr) then
+    if (amr .and. save_atmos) then
       open(file=trim(io%run_dir)//'atmos_mesh.txt', newunit=lunit, form='FORMATTED', access='append')
       write(lunit, *) patch%n
       write(lunit, *) patch%ds
@@ -308,6 +327,35 @@ SUBROUTINE init(self, task_list, name)
   !-----------------------------------------------------------------------------
   call trace%end()
 END SUBROUTINE init
+
+!===============================================================================
+SUBROUTINE read_saved_snapshot (self, atmos_file, dims)
+  class(read_external_t):: self
+  character(len=*), intent(in):: atmos_file
+  integer, intent(in):: dims
+  integer:: lunit, iostat, i, nz
+  !-----------------------------------------------------------------------------
+  save_atmos = .false.
+  self%dims(3) = dims
+  allocate(ia%sub_size(dims))
+  allocate(ia%sub_pos(dims))
+
+  call os%check_file(trim(atmos_file)//'/atmos_mesh.txt')
+  open(file=trim(atmos_file)//'/atmos_mesh.txt', newunit=lunit, form='FORMATTED', iostat=iostat)
+  nz = 0
+  self%size = 0
+  do i=1, dims
+    read(lunit, *) self%n
+    read(lunit, *) self%ds
+    nz = nz + self%n(3)
+    ia%sub_size(i) = self%n(3) * self%ds(3)
+    ia%sub_pos(i) = 0.5*ia%sub_size(i) + self%size(3)
+    self%size(3) = self%size(3) + self%n(3)*self%ds(3)
+  end do
+  self%n(3) = nz
+  self%size(1:2) = self%n(1:2)*self%ds(1:2)
+  close(lunit)
+END SUBROUTINE read_saved_snapshot
 
 !===============================================================================
 !> Initialize a minimum amount of patch information in a Cartesian arrangement

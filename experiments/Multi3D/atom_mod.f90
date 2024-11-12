@@ -581,7 +581,13 @@ MODULE atom_mod
       if (lin%io <= 1 .and. m1d_legacy_mode) then
         lin%nnu = 2 * (lin%nnu-1) + 1
       endif
-      lin%nnu = max(lin%nnu, nq_min)
+
+      if (nq_min < 0) then
+        lin%nnu = max(lin%nnu, int(abs(nq_min) + 10*(loggf+5)))
+        if (mod(lin%nnu,2) == 0) lin%nnu=lin%nnu+1
+      else
+        lin%nnu = max(lin%nnu, nq_min)
+      endif
       lin%nnu = min(lin%nnu, nq_max)
 
       tri = (lin%j-1)*(lin%j-2)/2 + lin%i
@@ -836,7 +842,7 @@ MODULE atom_mod
     logical, dimension(:,:), allocatable :: ij_check
     real(8), allocatable, dimension(:) :: nu, alpha, tgrid
     real(8) :: scr, gv, gq, cnt_ev, nu_max, alpha0, thresh_aa, dnu
-    real(8) :: gij, red_fcut, blu_fcut, vbar2e4
+    real(8) :: gij, red_fcut, blu_fcut, vbar2e4, loggf
     integer :: ncont, nnu
     character(len=20) :: txt
     character(len=26),parameter :: upcase_alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -917,11 +923,19 @@ MODULE atom_mod
 
       ! make sure we always have an odd number of frequency points for a line
       if (mod(lin%nnu,2) == 0) lin%nnu=lin%nnu+1
+
       lin%nnu = nq_fac * (lin%nnu-1) + 1
       if (lin%io <= 1 .and. m1d_legacy_mode) then
         lin%nnu = 2 * (lin%nnu-1) + 1
       endif
-      lin%nnu = max(lin%nnu, nq_min)
+
+      if (nq_min < 0) then
+        loggf = log10(lin%f*self%g(lin%i))
+        lin%nnu = max(lin%nnu, int(abs(nq_min) + 10*(loggf+5)))
+        if (mod(lin%nnu,2) == 0) lin%nnu=lin%nnu+1
+      else
+        lin%nnu = max(lin%nnu, nq_min)
+      endif
       lin%nnu = min(lin%nnu, nq_max)
 
       tri = (lin%j-1)*(lin%j-2)/2 + lin%i

@@ -8,7 +8,6 @@ class fast_trans(trans_class):
     #-----------------------------------------------------------------
     self.kr = kr
     self.atom = atom
-    self.el = atom
     self.bbt = atom.bbt
     self.title = 'Line = {:.2f} [Å]'.format(self.lam0)
     self.prepared = False
@@ -23,6 +22,9 @@ class fast_trans(trans_class):
     return self.bbt.loc[self.kr].__repr__()
 
   def prepare(self):
+    if hasattr(self, 'prepared'):
+      if self.prepared: return
+      
     self.run = self.atom.run
   
 class llist_trans(fast_trans):

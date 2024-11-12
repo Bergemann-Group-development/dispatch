@@ -30,7 +30,7 @@ class CoG(m3dis):
 
         order = np.argsort(self.abnds)
         self.runs = np.array(runs)[order]
-        self.abnds = self.abnds[order]
+        self.abnds = np.array(self.abnds)[order]
         self.run0 = self.runs[0]
 
         for run in runs:
@@ -39,10 +39,14 @@ class CoG(m3dis):
             raise ValueError('All runs should have the same wavelength grid.')
           
         if read_line and hasattr(self.run0, 'atom'):
-            self.atom = self.run0.atom
+            self.atom = copy.copy(self.run0.atom)
+            self.atom.run = self
 
-            init = np.frompyfunc(fast_trans, 2, 1)
-            self.line = init(np.arange(self.atom.nline)[self.run0.in_lines], self.atom)
+            if type(self.atom.trans[0]) is fast_trans:
+                init = np.frompyfunc(fast_trans, 2, 1)
+                self.line = init(np.arange(self.atom.nline)[self.run0.in_lines], self.atom)
+            else:
+                self.line = [copy.copy(line) for line in self.run0.line]
 
     #=================================================================
     def crop(self, abnd, **kwargs):
@@ -58,7 +62,7 @@ class CoG(m3dis):
     #=====================================================================
     def plot_spectrum(self, abnd, velocity_units=None, set_labels=None,
                       lam_offset=None, ang=None, imu=None, norm=True,
-                      dlam=None, renorm=False, per_aa=False, show_lines=False,
+                      dlam=None, renorm=None, per_aa=False, show_lines=False,
                       **kwargs):
         #-----------------------------------------------------------------
         crop_kwargs = {k:v for k, v in kwargs.items() if k not in plt_kwargs}
@@ -81,21 +85,15 @@ class CoG(m3dis):
     #=================================================================
     def fit_observed(self, oxx, oyy, fit=[], bounds=None, p0=None, sigma=None, method='curve_fit', tol=None, **kwargs):
         abnds = self.abnds
-        lbounds = {'abnd':abnds[0],  'vshift':-3, 'vdop':1e-3, 'vrot':1e-3, 'zeta_rt':1e-3, 'fac':0.5}
-        ubounds = {'abnd':abnds[-1], 'vshift':+3, 'vdop':1e2,  'vrot':1e2,  'zeta_rt':1e2,  'fac':2.0}
-        p0s = {'abnd':np.mean(abnds),'vshift':0,  'vdop':1,    'vrot':1,    'zeta_rt':1,    'fac':1.0}
-        fit = ['abnd',] + fit
+        lbounds = {'abnd':abnds[0],  'vshift':-3, 'vdop':1e-3, 'vrot':1e-3, 'zeta_rt':1e-3, 'fac':0.5, 'tilt':-0.2}
+        ubounds = {'abnd':abnds[-1], 'vshift':+3, 'vdop':1e1,  'vrot':1e1,  'zeta_rt':1e1,  'fac':2.0, 'tilt':+0.2}
+        p0s = {'abnd':np.mean(abnds),'vshift':0,  'vdop':1,    'vrot':1,    'zeta_rt':1,    'fac':1.0, 'tilt':0.0}
         if bounds is None: bounds = ([lbounds[f] for f in fit], [ubounds[f] for f in fit])
         if p0 is None: p0 = [p0s[f] for f in fit]
         return m3dis.fit_observed(self, oxx, oyy, fit=fit, bounds=bounds, p0=p0, sigma=sigma, method=method, tol=tol, **kwargs)
     
     #=================================================================
-    def interp_abnd(self, weq, kr=None, log=True, **kwargs):
-        if kr is not None:
-            line = self.atom.trans[kr]
-            kwargs['slc'] = slice(line.ib, line.ir)
-            kwargs['lam0'] = line.lam0
-
+    def interp_abnd(self, weq, log=True, **kwargs):
         weqs = [run.calc_weq(**kwargs) for run in self.runs]
         weqs = np.array(weqs)
 
@@ -111,6 +109,12 @@ class CoG(m3dis):
 
         if any(weqs==0) or weq==0: log=False
 
+        if weq < weqs.min():
+            print('Warning: EW value is below the minimum CoG value.')
+
+        if weq > weqs.max():
+            print('Warning: EW value is above the maximum CoG value.')
+
         if log:
             weqs = np.log(weqs)
             weq = np.log(weq)
@@ -119,15 +123,35 @@ class CoG(m3dis):
         return func(weq)
     
     #=================================================================
-    def get_weq_corr(self, nlte_run, kr=None, abnd=None, LTE=False, log=True, **kwargs):
-        if kr is not None:
-            line = nlte_run.atom.trans[kr]
-            kwargs['slc'] = slice(line.ib, line.ir)
-            kwargs['lam0'] = line.lam0
-
+    def get_weq_corr(self, nlte_run, abnd=None, LTE=False, cog_LTE=True, log=True, **kwargs):
         nlte_weq = nlte_run.calc_weq(LTE=LTE, **kwargs)
         if nlte_weq < 0: return np.nan
         if abnd is None: abnd = nlte_run.atom.abnd
-        anew = self.interp_abnd(nlte_weq, kr=kr, log=log, LTE=True, **kwargs)
+        anew = self.interp_abnd(nlte_weq, kr=kr, log=log, LTE=cog_LTE, **kwargs)
         corr = abnd - anew
         return corr
+
+    #=================================================================
+    def fit_clv(self, xx, yy, sigma=None, **kwargs):
+        weqs = np.zeros([len(self.runs), len(xx)])
+        for i, run in enumerate(self.runs):
+            mus, ww = run.get_clv(**kwargs)
+            weqs[i] = np.interp(xx, mus[::-1], ww[::-1])
+
+        func = PchipInterpolator(self.abnds, weqs)
+
+        def opt_func(xx, abnd):
+            return func(abnd)
+        
+        pfit, pcov = optimize.curve_fit(opt_func, xx, yy, p0=8.43, bounds=(8.03, 8.83), sigma=sigma)
+        fitted = opt_func(xx, pfit[0])
+        return pfit[0], pcov[0,0]**2, fitted
+    
+    #=================================================================
+    def __getattr__(self, attr):
+        if attr in self.__dict__:
+            return self.__dict__[attr]
+        elif hasattr(self.run0, attr):
+            return self.run0.__dict__[attr]
+        else:
+            raise AttributeError('CoG object does not have attribute ', attr)

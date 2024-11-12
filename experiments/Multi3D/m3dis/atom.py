@@ -60,7 +60,6 @@ class atom_class(object):
         if (verbose > 0): print('Reading transitions')
         self.trans = [trans_class(self, kr, read_bf=read_bf) for kr in range(self.nrad)]
             
-            
         if read_coll:
             colfunc = self._read()[0]
             if colfunc == 'GENCOL':
@@ -76,6 +75,10 @@ class atom_class(object):
 
         self.f.close()
         del self.f
+
+    def get_title(self, abnd=None):
+        if abnd is None: abnd = self.abnd
+        return 'A({}) = {:.2f}'.format(self.id.strip(), abnd)
 
     def get_non_overlapping_indices(self, lines, nnu, nq_fac):
         nq = np.array([line.nq for line in lines])

@@ -36,7 +36,9 @@ MODULE atom_patch_mod
   
     type, public, extends(m3d_patch_t) :: atom_patch_t
       type(atom_type) :: output_atom, bb_atom, bf_atom
-      class(atomic_spectrum_type), pointer :: output_sp, bf_sp, bb_sp
+      class(atomic_spectrum_type), pointer :: output_sp=>null()
+      class(atomic_spectrum_type), pointer :: bf_sp=>null()
+      class(atomic_spectrum_type), pointer :: bb_sp=>null()
       real(8) :: maxerr=huge(1.0)
       real(8), dimension(:), allocatable :: lvlerr
       logical :: update_skipped=.false., atom_allocated=.false., molec
@@ -128,7 +130,6 @@ MODULE atom_patch_mod
         read (io%input, atom_params)
       end if
       call io%namelist_warning ('atom_params', iostat)
-      write (io%namelist, atom_params)
 
       if (atom_file == '') then
         print *, 'WARNING: no atom specified'
@@ -171,6 +172,8 @@ MODULE atom_patch_mod
       allocate(out_cont(atom%ncont))
       out_line = atom%line
       out_cont = atom%cont
+
+      write (io%namelist, atom_params)
     endif
 
     if (atom_file == '') then

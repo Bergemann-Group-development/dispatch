@@ -5,8 +5,9 @@ MODULE read_atmos_mod
   USE handyfuncs_mod
   USE const_mod
   USE op_math_mod, only: linspace, linterpolate_3d, pchip_mono4, interp1d_sorted
-  USE m3d_patch_mod, only: pivot_z, ray_offset, amr
+  USE m3d_patch_mod, only: pivot_z, ray_offset, amr, composition, use_ne, use_rho
   USE ray_mod, only: one_dimensional
+  USE composition_mod, only: composition_type
   implicit none
   private
 
@@ -16,7 +17,7 @@ MODULE read_atmos_mod
     integer :: gz=0 ! ghost zones
     logical :: is_3d=.false.
     real(4), dimension(:,:,:), allocatable :: ltemp, lpe, lrho
-    real(4), dimension(:,:,:), allocatable :: vx, vy, vz
+    real(4), dimension(:,:,:), allocatable :: vx, vy, vz, vmic
     real(4), dimension(:),     allocatable :: xx, yy, zz
     real(8), dimension(:),     allocatable :: sub_pos, sub_size
   contains
@@ -74,9 +75,9 @@ SUBROUTINE read_co5bold(atmos_file)
   read(lunit) ia%ltemp
   read(lunit) ia%lrho 
   read(lunit) ia%lpe  
-  read(lunit) ia%vx
-  read(lunit) ia%vy
-  read(lunit) ia%vz
+  read(lunit) ia%vx ! this is px
+  read(lunit) ia%vy ! this is py
+  read(lunit) ia%vz ! this is pz
 
   allocate(over_rho, source=exp(-ia%lrho))
   ia%vx = ia%vx * over_rho
@@ -346,7 +347,7 @@ END SUBROUTINE read_stagger2
 SUBROUTINE read_marcs (file, FeH, vmic, abund)
   character(len=*), intent(in) :: file
   real(8), intent(out) :: FeH
-  real(4), intent(inout) :: vmic
+  real(4), intent(in) :: vmic
   real(4), intent(inout), dimension(:), allocatable :: abund
   integer :: lunit, nz, kk, k
   real(8) :: FeH_marcs
@@ -376,17 +377,20 @@ SUBROUTINE read_marcs (file, FeH, vmic, abund)
   read(lunit,*) ! skip comment
   read(lunit,*) ! skip comment
 
+  call ia%allocate(1,1,nz)
+  allocate(temp(nz), pe(nz), rho(nz))
+
   if (FeH < -99) then
     FeH = FeH_marcs
     write(stdout, '(A, F6.2)') 'FeH was overwritten by Marcs model: [Fe/H] =', FeH
   endif
+
   if (vmic < 0) then
-    vmic = vmic_Marcs
-    write(stdout, '(A, F6.2)') 'Vmic was overwritten by Marcs model: Vmic =', vmic
+    ia%vmic (1,1,:) = vmic_Marcs
+    write(stdout, '(A, F6.2)') 'Vmic was overwritten by Marcs model: Vmic =', vmic_Marcs
+  else
+    ia%vmic (1,1,:) = vmic
   endif
-  
-  call ia%allocate(1,1,nz)
-  allocate(temp(nz), pe(nz), rho(nz))
   
   do kk=1, nz
     read(lunit,*) k, lgTauR, lgTau5, ia%zz(k), temp(k), pe(k), pg, prad, pturb
@@ -409,10 +413,10 @@ END SUBROUTINE read_marcs
 !===============================================================================
 !> Reads the actual text files and stores variables under self
 !===============================================================================
-SUBROUTINE read_1d_snapshot(atmos_file)
-  integer :: nz, lunit, i
+SUBROUTINE read_1d_snapshot(atmos_file, vmic)
   character(len=*) :: atmos_file
-  real(4) :: vturb
+  real(4), intent(in) :: vmic
+  integer :: nz, lunit, i
   real(4), dimension(:), allocatable :: temp, pe, rho
   !-----------------------------------------------------------------------------
   ! Open atmosphere file and read MHD variables
@@ -429,10 +433,17 @@ SUBROUTINE read_1d_snapshot(atmos_file)
 
   do i=1, nz
     call nextentry(lunit)
-    read(lunit, *) ia%zz(i), temp(i), pe(i), rho(i), vturb
+    read(lunit, *) ia%zz(i), temp(i), pe(i), rho(i), ia%vmic(1,1,i)
   end do
   close(lunit)
 
+  if (vmic >= 0) then
+    ia%vmic = vmic
+    write(stdout, '(A, F6.2)') 'Vmic was overwritten by namelist: Vmic =', vmic
+  endif
+
+  use_ne = use_ne .and. pe(1) /= 0
+  use_rho = use_rho .and. rho(1) /= 0
   where (temp > 0) ia%ltemp(1,1,:) = log(temp)
   where (rho  > 0) ia%lrho (1,1,:) = log(rho)
   where (pe   > 0) ia%lpe  (1,1,:) = log(pe)
@@ -532,6 +543,7 @@ SUBROUTINE allocate_input_atmos(self, nx, ny, nz)
   allocate(self%vx   (nx,ny,nz), source=0.)
   allocate(self%vy   (nx,ny,nz), source=0.)
   allocate(self%vz   (nx,ny,nz), source=0.)
+  allocate(self%vmic (nx,ny,nz), source=0.)
   allocate(self%lrho (nx,ny,nz))
   allocate(self%ltemp(nx,ny,nz))
   allocate(self%lpe  (nx,ny,nz))
@@ -547,6 +559,7 @@ SUBROUTINE deallocate_input_atmos(self)
   if (allocated(self%vx))    deallocate(self%vx)
   if (allocated(self%vy))    deallocate(self%vy)
   if (allocated(self%vz))    deallocate(self%vz)
+  if (allocated(self%vmic))  deallocate(self%vmic)
 END SUBROUTINE deallocate_input_atmos
 
 !===============================================================================
@@ -571,25 +584,57 @@ END SUBROUTINE get_box
 !===============================================================================
 SUBROUTINE thick2thin(self)
   class(input_atmos_t), intent(inout) :: self
-  integer :: i, j, nz
+  type(composition_type) :: comp
+  real(8), dimension(:,:,:), allocatable :: temp8, ne8, rho8
+  real(8), dimension(:), allocatable :: chi, tau
+  real(8) :: dz
+  integer :: i, j, nx, ny, nz
   !-----------------------------------------------------------------------------
-  if (self%lrho(1,1,1) < self%lrho(1,1,self%nz)) then
-    nz = self%nz
-    do j=1, self%ny
-    do i=1, self%nx
+  nx = self%nx
+  ny = self%ny
+  nz = self%nz
+  if (self%lrho(1,1,1) < self%lrho(1,1,nz)) then
+    do j=1, ny
+    do i=1, nx
       self%ltemp(i,j,:) =  self%ltemp(i,j,nz:1:-1)
       self%lrho (i,j,:) =  self%lrho (i,j,nz:1:-1)
       self%lpe  (i,j,:) =  self%lpe  (i,j,nz:1:-1)
       self%vx   (i,j,:) =  self%vx   (i,j,nz:1:-1)
       self%vy   (i,j,:) =  self%vy   (i,j,nz:1:-1)
       self%vz   (i,j,:) = -self%vz   (i,j,nz:1:-1)
+      self%vmic (i,j,:) =  self%vmic (i,j,nz:1:-1)
     end do
     end do
     self%zz = self%zz (nz:1:-1)
-    if (self%zz(1) > self%zz(nz)) then
-      self%zz = -self%zz
-    endif
   endif
+
+  if (nx*ny==1 .and. abs(ia%zz(1) - ia%zz(nz)) < 1e4) then
+    ! log tau scale
+    allocate(temp8(nx, ny, nz))
+    allocate(rho8 (nx, ny, nz))
+    allocate(ne8  (nx, ny, nz))
+    allocate(chi(nz))
+    allocate(tau(nz))
+    temp8 = exp(dble(self%ltemp))
+    rho8  = exp(dble(self%lrho))
+    ne8   = exp(dble(self%lpe)) / (BK * temp8)
+    comp = composition
+    call comp%reassign_pointer()
+    call comp%load_state_variables(temp8, ne8, rho8, use_rho=use_rho, use_ne=use_ne)
+    chi=comp%chi500(1,1,:)
+    tau=10**(dble(ia%zz))
+
+    ia%zz(nz) = 0
+    do i=nz-1, 1, -1
+      dz = (tau(i) - tau(i+1)) * 2 / (chi(i) + chi(i+1))
+      ia%zz(i) = ia%zz(i+1) + dz
+    end do
+  endif
+
+  if (self%zz(1) > self%zz(nz)) then
+    self%zz = -self%zz
+  endif
+
   self%xx = self%xx - self%xx(1)         ! let the origin be zero
   self%yy = self%yy - self%yy(1)         ! let the origin be zero
   self%zz = self%zz - self%zz(self%gz+1) ! let the origin be the layer above ghost zone
@@ -603,7 +648,7 @@ SUBROUTINE setup_amr_mesh(self, nsub, use_ne)
   integer :: i, j, k, nx, ny, nz
   real(8), dimension(nsub+1) :: var_edge
   real(4), dimension(nsub+1) :: sub_edge
-  real(4), dimension(:), allocatable :: amr_ref
+  real(4), dimension(:), allocatable :: amr_ref, tmp
   real(4), dimension(:), pointer, contiguous :: zz
   real(4), dimension(:,:,:), pointer, contiguous :: lpe
   real(4) :: vmin, vmax
@@ -612,6 +657,7 @@ SUBROUTINE setup_amr_mesh(self, nsub, use_ne)
   ny = self%ny
   nz = self%nz - 2*self%gz
   allocate(amr_ref(nz), source=0.0)
+  allocate(tmp(nz), source=0.0)
   allocate(self%sub_pos(nsub), self%sub_size(nsub))
 
   zz  => self%zz     (1+self%gz:nz+self%gz)
@@ -631,6 +677,14 @@ SUBROUTINE setup_amr_mesh(self, nsub, use_ne)
   end do
   amr_ref = amr_ref / (nx*ny)
 
+  ! we want to sample finely where the gradient is large
+  ! it is ok to ensure monotonicity here by taking the absolute value of the gradient
+  tmp(1) = amr_ref(1)
+  do k=2, nz
+    tmp(k) = tmp(k-1) + abs(amr_ref(k) - amr_ref(k-1))
+  end do
+  amr_ref = tmp
+
   vmin = amr_ref(1)
   vmax = amr_ref(nz)
   if (.not. use_ne) then
@@ -641,16 +695,16 @@ SUBROUTINE setup_amr_mesh(self, nsub, use_ne)
   endif
   var_edge = linspace(vmin, vmax, nsub+1)
   call interp1d_sorted(amr_ref, zz, var_edge, sub_edge)
-  sub_edge = sub_edge * nz / (nz-1)
+  !sub_edge = sub_edge * nz / (nz-1)
   self%sub_size = sub_edge(2:nsub+1) - sub_edge(1:nsub)
   self%sub_pos  = sub_edge(1:nsub) + 0.5*self%sub_size
 END SUBROUTINE setup_amr_mesh
 
 !===============================================================================
-SUBROUTINE interpolate_atmos(n, sub, pos, rho, px, py, pz, temp, pe, vec, bot2pivot)
+SUBROUTINE interpolate_atmos(n, sub, pos, rho, px, py, pz, temp, pe, vmic, vec, bot2pivot)
   integer, intent(in) :: n(3)
   real(8), intent(in) :: sub(3), pos(3)
-  real(4), intent(out), dimension(:,:,:) :: rho, px, py, pz, temp, pe
+  real(4), intent(out), dimension(:,:,:) :: rho, px, py, pz, temp, pe, vmic
   real(8), intent(in), optional :: vec(3), bot2pivot
   real(8), dimension(:), allocatable :: newx, newy, newz
   real(8) :: lower(3), ds(3)
@@ -675,6 +729,7 @@ SUBROUTINE interpolate_atmos(n, sub, pos, rho, px, py, pz, temp, pe, vec, bot2pi
     call pchip_mono4(ia%zz, ia%ltemp(1,1,:), real(newz), temp(1,1,:), sorted=.true.)
     call pchip_mono4(ia%zz, ia%lrho (1,1,:), real(newz), rho (1,1,:), sorted=.true.)
     call pchip_mono4(ia%zz, ia%lpe  (1,1,:), real(newz), pe  (1,1,:), sorted=.true.)
+    call pchip_mono4(ia%zz, ia%vmic (1,1,:), real(newz), vmic(1,1,:), sorted=.true.)
     px = 0
     py = 0
     pz = 0

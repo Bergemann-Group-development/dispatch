@@ -92,7 +92,7 @@ lines.linewidth: 3                  # line width in points
 #lines.markerfacecolor: auto        # the default marker face color
 #lines.markeredgecolor: auto        # the default marker edge color
 #lines.markeredgewidth: 1.0         # the line width around the marker symbol
-#lines.markersize:      6           # marker size, in points
+lines.markersize:      10           # marker size, in points
 #lines.dash_joinstyle:  round       # {miter, round, bevel}
 #lines.dash_capstyle:   butt        # {butt, round, projecting}
 #lines.solid_joinstyle: round       # {miter, round, bevel}
@@ -251,7 +251,7 @@ font.size:    10.0
 ## ***************************************************************************
 ## For more information on LaTex properties, see
 ## https://matplotlib.org/tutorials/text/usetex.html
-#text.usetex: False  # use latex for all text handling. The following fonts
+#text.usetex: True  # use latex for all text handling. The following fonts
                      # are supported through the usual rc parameter settings:
                      # new century schoolbook, bookman, times, palatino,
                      # zapf chancery, charter, serif, sans-serif, helvetica,
@@ -260,7 +260,7 @@ font.size:    10.0
                      # If another font is desired which can loaded using the
                      # LaTeX \usepackage command, please inquire at the
                      # matplotlib mailing list
-#text.latex.preamble:   # IMPROPER USE OF THIS FEATURE WILL LEAD TO LATEX FAILURES
+#text.latex.preamble: \usepackage{bm}\everymath{\bm}\everydisplay{\bm}  # IMPROPER USE OF THIS FEATURE WILL LEAD TO LATEX FAILURES
                         # AND IS THEREFORE UNSUPPORTED. PLEASE DO NOT ASK FOR HELP
                         # IF THIS FEATURE DOES NOT DO WHAT YOU EXPECT IT TO.
                         # text.latex.preamble is a single line of LaTeX code that

@@ -69,7 +69,6 @@ MODULE composition_mod
     logical, public :: irwin_dis=.true., helium_scattering=.true.
     logical, public :: debug_opac=.false.
     integer, public :: switch=1
-    real(4), public :: vmic=-1., opac_table_vmic=1.0
     real(dp), public :: ref_lam=5000.d0
     character(len=512), public :: abundances
 
@@ -165,18 +164,23 @@ contains
                 call self%element_by_id(element_ids(i), element, verbose=.true.)
                 if(associated(element)) element%abund = external_abund(i)
             end do
+            ! do not overwrite external abundances with FeH
+        else
+            self%FeH = merge(FeH, 0.0, FeH > -99)
+            do i=1, self%nel
+                element => elements(i)
+                select case (element%id)
+                case ('H', 'He', 'Li')
+                    ! do not scale with FeH
+                case default
+                    element%abund = element%abund + self%FeH
+                end select
+            end do
         endif
 
-        self%FeH = merge(FeH, 0.0, FeH > -99)
-        do i=1, self%nel
-            element => elements(i)
-            select case (element%id)
-            case ('H', 'He', 'Li')
-                ! do not scale with FeH
-            case default
-                element%abund = element%abund + self%FeH
-            end select
-            if (len_trim(abundances)>0) then
+        if (len_trim(abundances) > 0) then
+            do i=1, self%nel
+                element => elements(i)
                 j = index(abundances, trim(element%id)//'=')
                 if (j > 0) then
                     l = len(abundances)
@@ -184,8 +188,8 @@ contains
                     j = j + len_trim(element%id) + 1
                     read(abundances(j:l), *) element%abund
                 endif
-            endif
-        end do
+            end do
+        endif
 
         elements%abund = 10**(elements%abund - elements(1)%abund)
         call self%compute_grams_per_hydrogen(self%suma, self%xmy, self%grph)
@@ -847,7 +851,7 @@ contains
     END SUBROUTINE mask_linelist
 
     !===============================================================================
-    SUBROUTINE add_linelist_opacities(self, nu, all_chi, dlam, vproj, all_eta, vmic)
+    SUBROUTINE add_linelist_opacities(self, nu, all_chi, dlam, vproj, vmic, all_eta)
         class(composition_type), target :: self
         class(element_type), pointer :: element
         class(ion_type), pointer :: ion, HeI
@@ -857,9 +861,8 @@ contains
         real(8), intent(in), dimension(:) :: nu
         real(4), intent(inout), dimension(:,:,:,:) :: all_chi
         real(4), intent(inout), dimension(:,:,:,:), optional :: all_eta
-        real(4), intent(in), dimension(:,:,:), contiguous, target, optional :: vproj
+        real(4), intent(in), dimension(:,:,:), contiguous, target, optional :: vproj, vmic
         real(8), intent(in) :: dlam
-        real(4), intent(in), optional :: vmic
         real(4), dimension(:,:,:), allocatable :: tothi, adamp, stark_pe, ne, temp, EK_over_temp, dxij, chi_fac, unsold
         real(4), dimension(:,:,:), allocatable, target :: inv_part, vbar2, inv_df, iso_vbar2, iso_inv_df, iso_inv_part
         real(4), dimension(:,:,:), pointer, contiguous :: vb2, idopf, ipart, vpr, fo, t3nhe, ni, nj

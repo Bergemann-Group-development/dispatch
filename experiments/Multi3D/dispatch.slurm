@@ -13,7 +13,7 @@
 #SBATCH --cpus-per-task=32         # Number of cores per MPI task 
 #SBATCH --ntasks-per-core=1
 #SBATCH --exclusive
-#SBATCH --mem=180G
+#SBATCH --mem=100G
 # --- User notifications ---
 ##SBATCH --time 24:00:00
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK

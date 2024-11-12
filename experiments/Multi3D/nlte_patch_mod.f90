@@ -24,13 +24,13 @@ MODULE nlte_patch_mod
   column_by_column, rotate_atmos, check_NaN, rank_lvlerr, sample_back_opac, &
   decouple_continuum, linelist_in_output, sample_back_opac_in_output, ilambd, &
   Jnu_to_file, preconditioning, make_eos, amr, save_Inu, save_chi, &
-  rotate_continuum, long_solver, fixed_Jnu
+  rotate_continuum, long_solver, fixed_Jnu, opac_table_vmic, n_nu
   USE ray_mod, only: one_dimensional, ray_type
   USE trans_mod, only:line_type, cont_type
   USE bbtrans_mod, only:voigt_function2, voigt_profile
   USE m3d_debug_mod
   USE shared_mod
-  USE composition_mod, only:composition_type, vmic, opac_table_vmic, &
+  USE composition_mod, only:composition_type, &
   scattering_absorption, ref_lam
   implicit none
   private
@@ -117,6 +117,7 @@ SUBROUTINE nlte_patch_pre_init (self)
   call self%m3d_patch_t%pre_init()
 
   self%dir = merge(1, -1, abs(self%i_mu)==1)
+  self%n_nu = n_nu
   self%n_mu = merge(size(long_wmu), size(all_wmu)/2, self%out_mu)
   self%mus = merge(1, self%n_mu+1, self%dir>0)
   self%mue = merge(self%n_mu, size(all_wmu), self%dir>0)
@@ -214,7 +215,7 @@ SUBROUTINE execute (self)
   class(atom_data_t), pointer :: adata
   class(composition_type), pointer :: comp
   real(4), dimension(:,:,:,:), allocatable :: gamma_ij, gamma_ji, adamp
-  real(4), dimension(:,:,:), pointer, contiguous :: temp
+  real(4), dimension(:,:,:), pointer :: vmic
   real(4), dimension(:,:,:), allocatable :: inv_df, vproj
   real(4) :: wmu, nan_check(3)
   real(8) :: vec(3)
@@ -237,7 +238,7 @@ SUBROUTINE execute (self)
   p = self%pcheck
 
   self%nu(fs:fe) => self%sp%nu(fs:fe)
-  temp => self%m3d_parent%mem(:,:,:,self%i_temp,self%it,1)
+  vmic => self%m3d_parent%authority_mem(:,:,:,8,self%it,1)
 
   self%composition => self%m3d_parent%composition
   do_rotate_atmos = rotate_atmos .and. self%out_mu
@@ -336,7 +337,7 @@ SUBROUTINE execute (self)
             call self%add_bound_bound_opacities(adata, wmu, inv_df, vproj, adamp, LTE=i_set==2)
           endif
           if (use_linelist) then
-            call comp%add_linelist_opacities(self%nu, work(:,:,:,1:nz,1), dlam, vproj, work(:,:,:,1:nz,2), vmic=vmic)
+            call comp%add_linelist_opacities(self%nu, work(:,:,:,1:nz,1), dlam, vproj, vmic, work(:,:,:,1:nz,2))
           endif
         endif
 
@@ -456,7 +457,8 @@ contains
     allocate(back(fs:fe,nx,ny,nz,3), source=0.)
     allocate(work(fs:fe,nx,ny,zs:ze,3), source=0.)
     allocate(self%twohnu3_c2(fs:fe))
-    allocate(inv_df, vproj, mold=temp)
+    allocate(inv_df(nx,ny,nz))
+    allocate(vproj(nx,ny,nz))
     call mem_register(back,      label='back')
     call mem_register(work,      label='work')
     if (self%bound_bound) then
@@ -644,6 +646,7 @@ SUBROUTINE generate_opacity_table (self, nu, include_absmet)
   class(composition_type), pointer :: comp
   real(8), dimension(:), pointer, intent(in) :: nu
   real(4), dimension(:,:,:,:), pointer :: view, all_eta
+  real(4), dimension(:,:,:), allocatable :: vmic
   logical, intent(in) :: include_absmet
   real(4) :: over_rho
   integer :: i,j,k, ntemp, nne, nnu
@@ -661,7 +664,9 @@ SUBROUTINE generate_opacity_table (self, nu, include_absmet)
   call comp%absorption(nu, view, include_absmet=include_absmet, sorted=self%sp%sorted)
 
   if (comp%ll_initialised) then
-    call comp%add_linelist_opacities(nu, view, dlam, vmic=opac_table_vmic)
+    allocate(vmic, mold=comp%chi500)
+    vmic = opac_table_vmic
+    call comp%add_linelist_opacities(nu, view, dlam, vmic=vmic)
   endif
 
   do k=1, nne

@@ -1,6 +1,7 @@
 MODULE composition_patch_mod
   USE io_mod
   USE os_mod
+  USE omp_mod
   USE task_mod, only: task_t
   USE link_mod, only: nbor_t
   USE gpatch_mod
@@ -10,12 +11,13 @@ MODULE composition_patch_mod
   USE molecule_mod, only: molec_type
   USE element_mod, only: element_type
   USE m3d_patch_mod,   only: m3d_patch_t, composition, comoving_frame, ilambd, dlam, &
-  use_density, use_ne, overlapping_bb, overlapping_bf, line_blanketing, binned_opac, &
+  use_rho, use_ne, overlapping_bb, overlapping_bf, line_blanketing, binned_opac, &
   save_Qrad, maxiter, rotate_atmos, long_vec, sample_back_opac, decouple_continuum, &
-  linelist_in_output, sample_back_opac_in_output, make_eos, overlapping_bb_in_output
+  linelist_in_output, sample_back_opac_in_output, make_eos, overlapping_bb_in_output, &
+  opac_table_vmic, atmos_format, atmos_file, n_nu
   USE m3d_debug_mod
   USE composition_mod, only: composition_type, exclude_elements, switch, mhd_eos, &
-  irwin_dis, vmic, opac_table_vmic, ref_lam, debug_opac, abundances
+  irwin_dis, ref_lam, debug_opac, abundances
   USE atom_patch_mod,  only: atom_patch_t
   USE nlte_patch_mod, only:nlte_patch_t
   USE bftrans_mod, only: H_occupation_probability
@@ -52,17 +54,6 @@ MODULE composition_patch_mod
   logical, public :: save_atmos=.true., save_eos=.false.
   real(4), public, dimension(:), allocatable :: external_abund
   character(len=256), save :: save_species=''
-
-contains
-
-!===============================================================================
-SUBROUTINE composition_pre_init (self)
-  class(composition_patch_t), target:: self
-  class(atom_patch_t), pointer :: atom_patch
-  class(atomic_spectrum_type), save, pointer :: output_sp
-  integer :: i, iostat, n_nu, nlists, mu, nw, n_mu
-  integer, save:: itimer=0, itimer2=0
-  integer, save :: verbose=0
   character(len=256), save :: absdat_file='./input_multi3d/TS_absdat.dat'
   character(len=256), save :: abund_file='./input_multi3d/abund_magg'
   character(len=256), save :: isotope_file=''!'./input_multi3d/isotopes_abund.txt'
@@ -71,8 +62,17 @@ SUBROUTINE composition_pre_init (self)
   character(len=256), save :: absmet_file=''
   character(len=512), save :: linelist_file=''
   character(len=256), save :: line_lists(100)=''
+  
+  public :: read_composition_params
+
+contains
+
+!===============================================================================
+SUBROUTINE read_composition_params ()
+  integer :: i, iostat
+  logical :: absmet_big_end=.false.
   real(4) :: tmolim=-99
-  logical, save :: first_time=.true., absmet_big_end=.false., external_sp
+  integer, save:: itimer=0, verbose=0
   namelist /composition_params/ verbose, absdat_file, abund_file, absmet_file, &
   absmet_big_end, isotope_file, molec_file, H_occupation_probability, opac_table, &
   sample_back_opac, sample_back_opac_in_output, switch, mhd_eos, debye_shield, &
@@ -81,55 +81,65 @@ SUBROUTINE composition_pre_init (self)
   namelist /linelist_params/ dlam, exclude_elements, linelist_file, line_lists, &
   linelist_in_output, tolerance
   ! ----------------------------------------------------------------------------
+  call trace%begin('compositiont%init', itimer=itimer)
+  rewind (io%input)
+  read (io%input, composition_params, iostat=iostat)
+  if (iostat > 0) then
+    rewind (io%input)
+    read (io%input, composition_params)
+  end if
+  call io%namelist_warning ('composition_params', iostat)
+  write (io%namelist, composition_params)
+
+  rewind (io%input)
+  read (io%input, linelist_params, iostat=iostat)
+  if (iostat > 0) then
+    rewind (io%input)
+    read (io%input, linelist_params)
+  end if
+  call io%namelist_warning ('linelist_params', iostat)
+  write (io%namelist, linelist_params)
+
+  if (verbose > 0) write (*,*) ' - Initializing the NEW opacity package'
+  composition%verbose = verbose
+
+  line_blanketing = absmet_file /= ''
+  call composition%init(absdat_file, abund_file, absmet_file, FeH, &
+  isotope_file=isotope_file, molec_file=molec_file, absmet_big_end=absmet_big_end, &
+  tmolim=tmolim, external_abund=external_abund)
+
+  if (linelist_file /= '') then
+    call composition%init_linelist(linelist_file)
+  else
+    i = 1
+    do while (line_lists(i) /= '' .and. i <= size(line_lists))
+      call composition%init_linelist(line_lists(i))
+      i = i + 1
+    end do
+  endif
+  call trace%end(itimer)
+END SUBROUTINE read_composition_params
+
+!===============================================================================
+SUBROUTINE composition_pre_init (self)
+  class(composition_patch_t), target:: self
+  class(atom_patch_t), pointer :: atom_patch
+  class(atomic_spectrum_type), save, pointer :: output_sp
+  integer :: i, mu, nw, n_mu
+  integer, save:: itimer=0
+  logical, save :: first_time=.true., external_sp
+  ! ----------------------------------------------------------------------------
   call trace%begin('composition_patch_t%composition_pre_init', itimer=itimer)
   self%kind = 'composition'
   call self%m3d_patch_t%pre_init()
   nw = merge(1+size(long_vec,2), 1, rotate_atmos)
-  call self%set_nv_and_nw(7,nw)
+  call self%set_nv_and_nw(8,nw)
   self%static_mem=.true.
 
   if (first_time) then
     first_time = .false.
-    rewind (io%input)
-    read (io%input, composition_params, iostat=iostat)
-    if (iostat > 0) then
-      rewind (io%input)
-      read (io%input, composition_params)
-    end if
-    call io%namelist_warning ('composition_params', iostat)
-    write (io%namelist, composition_params)
-
-    rewind (io%input)
-    read (io%input, linelist_params, iostat=iostat)
-    if (iostat > 0) then
-      rewind (io%input)
-      read (io%input, linelist_params)
-    end if
-    call io%namelist_warning ('linelist_params', iostat)
-    write (io%namelist, linelist_params)
-
-    if (verbose > 0) write (*,*) ' - Initializing the NEW opacity package'
-    composition%verbose = verbose
-
-    line_blanketing = absmet_file /= ''
-    call trace%begin('compositiont%init', itimer=itimer2)
-    call composition%init(absdat_file, abund_file, absmet_file, FeH, &
-    isotope_file=isotope_file, molec_file=molec_file, absmet_big_end=absmet_big_end, &
-    tmolim=tmolim, external_abund=external_abund)
-
-    if (linelist_file /= '') then
-      call composition%init_linelist(linelist_file)
-    else
-      i = 1
-      do while (line_lists(i) /= '' .and. i <= size(line_lists))
-        call composition%init_linelist(line_lists(i))
-        i = i + 1
-      end do
-    endif
-
     allocate(output_sp)
     binned_opac = opac_table /= ''
-    if (vmic > 0) opac_table_vmic = vmic
       
     if (binned_opac) then
       call optab%init(opac_table, output_sp)
@@ -139,14 +149,25 @@ SUBROUTINE composition_pre_init (self)
     endif
 
     external_sp = output_sp%nnu > 0
-    call trace%end(itimer2)
+
+    if (n_nu < 0) then
+      n_nu = omp%nthreads
+    endif
   endif
 
   allocate(atom_patch)
   call atom_patch%pre_init_atom()
   call atom_patch%pre_init_spectrum(output_sp)
 
-  n_nu = self%n_nu
+  if (output_sp%nnu > 0) n_nu = min(n_nu, output_sp%nnu)
+  if (decouple_continuum) then
+    if (atom_patch%bb_sp%nnu > 0) n_nu = min(n_nu,  atom_patch%bb_sp%nnu)
+    if (atom_patch%bf_sp%nnu > 0) n_nu = min(n_nu,  atom_patch%bf_sp%nnu)
+  else
+    if (atom_patch%sp%nnu > 0) n_nu = min(n_nu,  atom_patch%sp%nnu)
+  endif
+
+  self%n_nu = n_nu
   n_mu = size(long_vec,2)
   if (associated(atom_patch%atom)) then
     call atom_patch%pre_init_and_link(self)
@@ -218,7 +239,8 @@ SUBROUTINE execute (self)
   class(composition_type), pointer :: comp
   real(4), dimension(:,:,:), pointer :: d, e, pe, chi
   real(4), dimension(:,:,:,:), pointer, contiguous :: authority
-  real(4), dimension(:,:,:), pointer, contiguous :: ne, rho, temp, vx, vy, vz, px, py, pz
+  real(4), dimension(:,:,:), pointer, contiguous :: ne, rho, temp, vx, vy, vz
+  real(4), dimension(:,:,:), pointer, contiguous :: px, py, pz, vmic
   real(8), dimension(:,:,:), allocatable :: ne8, rho8, temp8
   real(8) :: vec(3), nu(1)
   integer :: i, n(3), li(3), ui(3)
@@ -238,31 +260,45 @@ SUBROUTINE execute (self)
     allocate(rho8 (n(1),n(2),n(3)))
     allocate(ne8  (n(1),n(2),n(3)))
 
-    do i=1, self%nw
-      authority => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),:,self%it,i)
-      e  => authority(:,:,:,self%patch%idx%e)
-      d  => authority(:,:,:,self%patch%idx%d)
-      px => authority(:,:,:,self%patch%idx%px)
-      py => authority(:,:,:,self%patch%idx%py)
-      pz => authority(:,:,:,self%patch%idx%pz)
-      pe => authority(:,:,:,6)
+    if (atmos_format == 'save') then
+      call self%load5(self%mem(:,:,:,:,self%it,:), 'atmos', run_dir=atmos_file)
+    else
+      do i=1, self%nw
+        authority => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),:,self%it,i)
+        e  => authority(:,:,:,self%patch%idx%e)
+        d  => authority(:,:,:,self%patch%idx%d)
+        px => authority(:,:,:,self%patch%idx%px)
+        py => authority(:,:,:,self%patch%idx%py)
+        pz => authority(:,:,:,self%patch%idx%pz)
+        pe => authority(:,:,:,6)
+        vmic => authority(:,:,:,7)
+      
+        authority => self%mem(:,:,:,:,self%it,i)
+        ne   => authority(:,:,:,self%i_ne)
+        rho  => authority(:,:,:,self%i_rho)
+        temp => authority(:,:,:,self%i_temp)
+        vx   => authority(:,:,:,self%i_vx)
+        vy   => authority(:,:,:,self%i_vy)
+        vz   => authority(:,:,:,self%i_vz)
+        chi  => authority(:,:,:,7)
+        authority(:,:,:,8) = vmic
     
+        temp = e
+        rho  = d
+        ne   = pe / (cgs%k_b * temp)
+        vx   = px / (cgs%c * rho)
+        vy   = py / (cgs%c * rho)
+        vz   = pz / (cgs%c * rho)
+      end do
+    endif
+
+    do i=1, self%nw
       authority => self%mem(:,:,:,:,self%it,i)
       ne   => authority(:,:,:,self%i_ne)
       rho  => authority(:,:,:,self%i_rho)
       temp => authority(:,:,:,self%i_temp)
-      vx   => authority(:,:,:,self%i_vx)
-      vy   => authority(:,:,:,self%i_vy)
-      vz   => authority(:,:,:,self%i_vz)
       chi  => authority(:,:,:,7)
-  
-      temp = e
-      rho  = d
-      ne   = pe / (cgs%k_b * temp)
-      vx   = px / (cgs%c * rho)
-      vy   = py / (cgs%c * rho)
-      vz   = pz / (cgs%c * rho)
-
+      
       temp8 = dble(temp)
       rho8  = dble(rho)
       ne8   = dble(ne)
@@ -282,10 +318,10 @@ SUBROUTINE execute (self)
       call comp%reassign_pointer()
       ! loading temp, ne and rho in to composition objekt
       ! ion and molecule equilibrium are solved immediately
-      call comp%load_state_variables(temp8, ne8, rho8, use_rho=use_density, use_ne=use_ne)
+      call comp%load_state_variables(temp8, ne8, rho8, use_rho=use_rho, use_ne=use_ne)
 
       if (.not. use_ne) ne = real(comp%ne)
-      if (.not. use_density) rho = real(comp%rho)
+      if (.not. use_rho) rho = real(comp%rho)
       if (save_atmos) then
         chi = comp%chi500
       endif

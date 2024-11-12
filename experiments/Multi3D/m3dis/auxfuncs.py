@@ -1,6 +1,7 @@
 import numpy as np
 import warnings
 from numpy.fft import fft, ifft
+from scipy.optimize import curve_fit
 from scipy.signal import argrelextrema
 from scipy.special import voigt_profile
 from scipy import integrate, stats, optimize
@@ -90,14 +91,22 @@ def split_kwargs(func, kwargs):
 #=====================================================================
 def calc_weq(self, method='linear', **kwargs):
     #-----------------------------------------------------------------
+    xx, yy = self.crop(**kwargs)
+
     if method == 'linear':
-        xx, yy = self.crop(**kwargs)
         return np.trapz(1-yy, x=xx)*1e3
+    
     if method == 'pchip':
-        xx, yy = self.crop(**kwargs)
         xxx = np.linspace(xx[0], xx[-1], xx.size*10)
         f = PchipInterpolator(xx, 1-yy)
         return np.trapz(f(xxx), x=xxx)*1e3
+    
+    if method == 'gauss':
+        if yy.ndim == 2:
+            weq = [fit_gaussian_profile(xx, y)[2] for y in yy]
+        else:
+            pfit, fitted, weq, err_weq = fit_gaussian_profile(xx, yy)
+        return weq
 
 #=====================================================================
 def planck(lam, temp):
@@ -439,7 +448,7 @@ def synth_blends(obs_xx, obs_yy, order=20, blank_lam=None):
         yy = model_func(obs_xx, *pfit_blank)
         
     else:
-        yy = model_func(obs_xx, pfit)
+        yy = model_func(obs_xx, *pfit)
     
     return yy
 
@@ -583,8 +592,8 @@ def find_close(arr, val, side='left'):
     i = np.searchsorted(arr, val)
     if side=='left' and i>0:
         if np.isclose(arr[i-1], val, rtol=1e-10): i = i-1
-    if side=='right' and i<len(arr)-1:
-        if np.isclose(arr[i+1], val, rtol=1e-10): i = i+1
+    if side=='right' and i<len(arr):
+        if np.isclose(arr[i], val, rtol=1e-10): i = i+1
     return i
 
 #=====================================================================
@@ -616,9 +625,19 @@ def rotate_array(xx, yy, zz, array, vec, pivot_z=None, ray_offset=None):
   nx = xx.size
   ny = yy.size
   nz = zz.size
-  ds = np.array([xx[1], yy[1]])
-  delta = vec[:2] / (vec[2] * ds) # shift in units of grid cells
-  
+  if len(xx) > 1:
+    dx = xx[1] - xx[0]
+    dx = vec[0] / (vec[2] * dx) # shift in units of grid cells
+  else:
+    dx = 0
+
+  if len(yy) > 1:
+    dy = yy[1] - yy[0]
+    dy = vec[1] / (vec[2] * dy)
+  else:
+    dy = 0
+
+  delta = np.array([dx, dy])
 
   deltak = (pivot_z - zz)*delta[:, None] + ray_offset[:, None]
   up1 = np.floor(deltak[0]) #integer part of shift
@@ -842,3 +861,54 @@ def crop_inputs(xx, yy, xmin=None, xmax=None, ymin=None, ymax=None):
     if ymax is None: ymax = np.nanmax(yy)
     mask = (xx >= xmin) & (xx <= xmax) & (yy >= ymin) & (yy <= ymax)
     return xx[mask], yy[mask]
+
+#=====================================================================
+def gaussian_profile(x, dx, sigma, scale):
+    return 1 - scale*np.exp(-0.5*((x-dx)/sigma)**2)
+
+#=====================================================================
+def fit_gaussian_profile(xx, yy, sigma=None):
+    if hasattr(xx, 'values'): xx = xx.values
+    if hasattr(yy, 'values'): yy = yy.values
+
+    x = xx - xx[xx.size//2]
+    scale = 1 - np.min(yy)
+    s2p = np.sqrt(2*np.pi)
+    sig = np.trapz(1-yy, x) / (s2p*scale)
+
+    p0 = [0, sig, scale]
+    bounds = [[-0.5, 1e-4, 0], [0.5, 1, 1]]
+    pfit, pcov = curve_fit(gaussian_profile, x, yy, p0=p0, bounds=bounds, sigma=sigma)
+    perr = np.sqrt(np.diag(pcov))
+
+    fitted = gaussian_profile(x, *pfit)
+    weq = s2p*pfit[1]*pfit[2]*1e3 # equivalent width in mÅ
+    err_weq = s2p * 1e3 * np.sqrt((pfit[2] * perr[1])**2 + (pfit[1] * perr[2])**2)
+    return pfit, fitted, weq, err_weq
+
+#=====================================================================
+def fit_gaussian_profile2(xx, yy, sigma=None):
+    if hasattr(xx, 'values'): xx = xx.values
+    if hasattr(yy, 'values'): yy = yy.values
+    if sigma is None: sigma=1
+
+    x = xx - xx[xx.size//2]
+    scale = 1 - np.min(yy)
+    s2p = np.sqrt(2*np.pi)
+    sig = np.trapz(1-yy, x) / (s2p*scale)
+
+    p0 = [0, sig, scale]
+    bounds = np.array([[-0.5, 1e-4, 0.01], [0.5, 1, 1]])
+  
+    bounds = np.vstack(bounds).T
+    def opt_funct(params, newx):
+        newy = gaussian_profile(newx, *params)
+        dep = np.trapz(newy, newx)
+        penalty = np.sum(((newy - yy)**2)[newy < yy])
+        return dep + 0.5*penalty
+
+    pfit = optimize.minimize(opt_funct, p0, args=(x,), bounds=bounds, method='Nelder-Mead').x
+
+    fitted = gaussian_profile(x, *pfit)
+    weq = s2p*pfit[1]*pfit[2]*1e3 # equivalent width in mÅ
+    return pfit, fitted, weq

@@ -247,8 +247,10 @@ MODULE patch_mod
     procedure :: save5
     procedure :: save6
     procedure :: save_meta
+    procedure :: get_meta_name
     procedure :: load4
     procedure :: load5
+    procedure :: load6
     procedure :: remove
   end type
   !-----------------------------------------------------------------------------
@@ -4247,6 +4249,31 @@ SUBROUTINE save6 (self, mem, label, add2meta, key)
 END SUBROUTINE save6
 
 !===============================================================================
+SUBROUTINE get_meta_name(self, filename, folder, label, key, run_dir)
+  class(patch_t), target :: self
+  character(len=*) :: label
+  integer, intent(in), optional, target :: key(:)
+  character(len=256), intent(in), optional :: run_dir
+  character(len=256), intent(out) :: filename, folder
+  character(len=256), pointer :: dir
+  integer, dimension(:), pointer :: k
+  ! ----------------------------------------------------------------------------
+  if (present(key)) then
+    k => key
+  else
+    k => self%key(1:2)
+  endif
+  if (present(run_dir)) then
+    write(folder, '(A, A)') trim(run_dir), '/save/'
+  else
+    write(folder, '(A, A)') trim(io%run_dir), '/save/'
+  endif
+  call replace_char(label, ' ', '_')
+  write(filename, '(A, A, 3(I3.3))') trim(label), '_', abs(k)
+  write(filename, '(A, A)') trim(filename), '.bin'
+END SUBROUTINE get_meta_name
+
+!===============================================================================
 SUBROUTINE save_meta(self, mem, label, lunit, add2meta, key)
   class(patch_t), target :: self
   real(4), dimension(..) :: mem
@@ -4261,15 +4288,7 @@ SUBROUTINE save_meta(self, mem, label, lunit, add2meta, key)
   integer, save :: itimer=0
   ! ----------------------------------------------------------------------------
   call trace%begin('patch_t%save_meta', itimer=itimer)
-  if (present(key)) then
-    k => key
-  else
-    k => self%key(1:2)
-  endif
-  call replace_char(label, ' ', '_')
-  write(folder, '(A, A)') trim(io%run_dir), 'save/'
-  write(filename, '(A, A, 3(I3.3))') trim(label), '_', abs(k)
-  write(filename, '(A, A)') trim(filename), '.bin'
+  call self%get_meta_name(filename, folder, label, key)
   if (shared%option(add2meta, .true.)) then
     call io%lock%set('save_meta')
     if (size(mem) == 0) then
@@ -4294,25 +4313,19 @@ SUBROUTINE save_meta(self, mem, label, lunit, add2meta, key)
 END SUBROUTINE save_meta
 
 !===============================================================================
-SUBROUTINE load4 (self, mem, label, key)
+SUBROUTINE load4 (self, mem, label, key, run_dir)
   class(patch_t), intent(inout), target :: self
   real(4), intent(inout), dimension(:,:,:,:) :: mem
   character(len=*), intent(in) :: label
   integer, intent(in), optional, target :: key(:)
+  character(len=256), intent(in), optional :: run_dir
   character(len=256) :: filename, folder
   integer, dimension(:), pointer :: k
   integer :: lunit
   integer, save :: itimer=0
   ! ----------------------------------------------------------------------------
   call trace%begin('patch_t%load4', itimer=itimer)
-  if (present(key)) then
-    k => key
-  else
-    k => self%key(1:2)
-  endif
-  write(folder, '(A, A)') trim(io%run_dir), 'save/'
-  write(filename, '(A, A, 3(I3.3))') trim(label), '_', abs(k)
-  write(filename, '(A, A)') trim(filename), '.bin'
+  call self%get_meta_name(filename, folder, label, key, run_dir)
   call self%save_lock%set_read('load')
   open(newunit=lunit, file=trim(folder)//filename, access='stream', status='old', action='read')
   read(lunit) mem
@@ -4322,25 +4335,19 @@ SUBROUTINE load4 (self, mem, label, key)
 END SUBROUTINE load4
 
 !===============================================================================
-SUBROUTINE load5 (self, mem, label, key)
+SUBROUTINE load5 (self, mem, label, key, run_dir)
   class(patch_t), intent(inout), target :: self
   real(4), intent(inout), dimension(:,:,:,:,:) :: mem
   character(len=*), intent(in) :: label
   integer, intent(in), optional, target :: key(:)
+  character(len=256), intent(in), optional :: run_dir
   character(len=256) :: filename, folder
   integer, dimension(:), pointer :: k
   integer :: lunit
   integer, save :: itimer=0
   ! ----------------------------------------------------------------------------
   call trace%begin('patch_t%load5', itimer=itimer)
-  if (present(key)) then
-    k => key
-  else
-    k => self%key(1:2)
-  endif
-  write(folder, '(A, A)') trim(io%run_dir), 'save/'
-  write(filename, '(A, A, 3(I3.3))') trim(label), '_', abs(k)
-  write(filename, '(A, A)') trim(filename), '.bin'
+  call self%get_meta_name(filename, folder, label, key, run_dir)
   call self%save_lock%set_read('load')
   open(newunit=lunit, file=trim(folder)//filename, access='stream', status='old', action='read')
   read(lunit) mem
@@ -4348,6 +4355,28 @@ SUBROUTINE load5 (self, mem, label, key)
   call self%save_lock%unset_read('load')
   call trace%end(itimer)
 END SUBROUTINE load5
+
+!===============================================================================
+SUBROUTINE load6 (self, mem, label, key, run_dir)
+  class(patch_t), intent(inout), target :: self
+  real(4), intent(inout), dimension(:,:,:,:,:,:) :: mem
+  character(len=*), intent(in) :: label
+  integer, intent(in), optional, target :: key(:)
+  character(len=256), intent(in), optional :: run_dir
+  character(len=256) :: filename, folder
+  integer, dimension(:), pointer :: k
+  integer :: lunit
+  integer, save :: itimer=0
+  ! ----------------------------------------------------------------------------
+  call trace%begin('patch_t%load6', itimer=itimer)
+  call self%get_meta_name(filename, folder, label, key, run_dir)
+  call self%save_lock%set_read('load')
+  open(newunit=lunit, file=trim(folder)//filename, access='stream', status='old', action='read')
+  read(lunit) mem
+  close(lunit)
+  call self%save_lock%unset_read('load')
+  call trace%end(itimer)
+END SUBROUTINE load6
 
 !===============================================================================
 SUBROUTINE remove (self, label, key)
