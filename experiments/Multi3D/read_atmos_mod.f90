@@ -573,8 +573,7 @@ SUBROUTINE get_box(self, box)
   box(1) = self%xx(self%nx)
   box(2) = self%yy(self%ny)
   box(3) = self%zz(self%nz-self%gz)
-  ds = box / max(n-1, 1)
-  box = ds * n
+  box(1:2) = box(1:2) * n(1:2) / max(n(1:2)-1, 1)
   if (self%nx == 1) box(1) = 1d8
   if (self%ny == 1) box(2) = 1d8
 END SUBROUTINE get_box

@@ -22,7 +22,7 @@ MODULE atom_patch_mod
     USE m3d_patch_mod, only: m3d_patch_t, composition, maxiter, check_NaN, cswitch, key_link_t, &
     global_maxerr, convlim, convmax, atom_update_counter, comoving_frame, global_pos, ng_step, ng_start, &
     decouple_continuum, overlapping_bb, overlapping_bf, line_blanketing, converged, premature_finish, &
-    rotate_atmos, long_vec, rank_lvlerr, overlapping_bb_in_output, long_scheme
+    rotate_atmos, long_vec, rank_lvlerr, overlapping_bb_in_output, long_scheme, n_nu
     USE bftrans_mod, only: bftrans_type
     USE hprofl_mod, only: hydrogen_BPO
     USE osmet_mod, only:osmet_type
@@ -184,6 +184,7 @@ MODULE atom_patch_mod
     allocate(self%atom)
     self%atom = atom
     self%atom%name = 'main'
+    self%n_nu = n_nu
 
     ! this pointer will be referenced by other atoms with same local data
     allocate(self%atom%data)
