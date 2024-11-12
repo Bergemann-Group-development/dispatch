@@ -168,6 +168,7 @@ SUBROUTINE init(self, task_list, name)
 
     call ia%thick2thin()
     call ia%get_box(self%size)
+    self%size = self%size / scaling%l
 
     if (.not. ia%is_3d) then
       nx = 1; ny = 1
@@ -187,7 +188,6 @@ SUBROUTINE init(self, task_list, name)
     endif
   endif
 
-  self%size = self%size / scaling%l
   one_dimensional = self%n(1)*self%n(2) == 1
 
   write (io%namelist, atmos_params)
