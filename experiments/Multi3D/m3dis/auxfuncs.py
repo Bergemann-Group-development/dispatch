@@ -16,6 +16,7 @@ import copy
 from inspect import signature
 import matplotlib
 import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
 
 CB_colors = ['#377eb8', '#ff7f00', '#4daf4a', '#f781bf', '#a65628', '#984ea3', '#999999', '#e41a1c', '#dede00']
 
@@ -799,7 +800,7 @@ class memmap_list:
 
 #=====================================================================
 def scatter_density(xx, yy, radius=0, cmap='binary', vmin=0, vmax=None, aspect='auto',
-            xmin=None, xmax=None, ymin=None, ymax=None, **kwargs):
+            xmin=None, xmax=None, ymin=None, ymax=None, interpolation='nearest', **kwargs):
   #-----------------------------------------------------------------
   
   mask = np.isnan(xx) | np.isnan(yy) | np.isinf(xx) | np.isinf(yy)
@@ -850,7 +851,9 @@ def scatter_density(xx, yy, radius=0, cmap='binary', vmin=0, vmax=None, aspect='
 
   image = np.log(image)
   if vmax is None: vmax = image.max()
-  return plt.imshow(image.T, origin='lower', extent=(xmin, xmax, ymin, ymax), vmin=vmin, vmax=vmax, aspect=aspect, cmap=cmap, **kwargs)
+  return plt.imshow(image.T, origin='lower', extent=(xmin, xmax, ymin, ymax),
+                    vmin=vmin, vmax=vmax, aspect=aspect, cmap=cmap, 
+                    interpolation=interpolation, **kwargs)
 
 #=====================================================================
 def crop_inputs(xx, yy, xmin=None, xmax=None, ymin=None, ymax=None):
@@ -861,6 +864,64 @@ def crop_inputs(xx, yy, xmin=None, xmax=None, ymin=None, ymax=None):
     if ymax is None: ymax = np.nanmax(yy)
     mask = (xx >= xmin) & (xx <= xmax) & (yy >= ymin) & (yy <= ymax)
     return xx[mask], yy[mask]
+
+#=====================================================================
+def alpha_cmap(cmap_name, clip=None):
+    # Load the original colormap and extract RGB values
+    cmap = plt.get_cmap(cmap_name)
+    colors = cmap(np.linspace(0, 1, cmap.N))
+    
+    # Separate RGB and calculate alpha based on lightness
+    rgba_colors = np.zeros_like(colors)
+    rgba_colors[:, :3] = colors[:, :3]  # Copy the RGB values
+    alphas = 1 - colors[:, :3].mean(axis=1)  # Higher lightness -> lower alpha
+
+    # Ensure alpha is in [0, 1] range
+    if clip is not None:
+      alphas = np.clip(alphas, clip, 1.0)  # Preventing 0 alpha for visibility
+    
+    # Adjust RGB based on alpha to blend correctly over white
+    rgba_colors[:, 3] = alphas # Set the alpha channel
+    alphas = alphas[:, None]
+    rgba_colors[:, 0:3] = (colors[:, 0:3] - 1 + alphas) / alphas
+
+    # Clip RGB to stay within valid range [0, 1]
+    rgba_colors[:, :3] = np.clip(rgba_colors[:, :3], 0, 1)
+
+    # Create a new colormap with the adjusted RGBA values
+    new_cmap = LinearSegmentedColormap.from_list('custom_map', rgba_colors)
+    return new_cmap
+
+#=====================================================================
+def plot_arrow(start, end, color=None, linewidth=None, markersize=None):
+    """
+    Plots an arrow from `start` to `end` with a line and a rotated 'v' marker.
+
+    Parameters:
+    - start: tuple (x0, y0), starting point of the arrow.
+    - end: tuple (x1, y1), ending point of the arrow.
+    - color: color of the line and marker.
+    - linewidth: width of the line.
+    - markersize: size of the 'v' marker.
+    """
+    # Calculate the direction vector in data coordinates
+    dx, dy = end[0] - start[0], end[1] - start[1]
+    
+    # Get axis data limits and aspect ratio correction
+    ax = plt.gca()
+    xlim = ax.get_xlim()
+    ylim = ax.get_ylim()
+    data_ratio = ax.get_data_ratio()  # Ratio of y-unit to x-unit
+
+    # Scale dy by the data ratio to account for aspect ratio
+    dy_corrected = dy / data_ratio
+
+    # Calculate the angle in degrees from the corrected vector
+    angle = np.degrees(np.arctan2(dy_corrected, dx)) - 90
+
+    # Plot the line segment
+    p, = plt.plot([start[0], end[0]], [start[1], end[1]], color=color, linewidth=linewidth)
+    plt.plot(end[0], end[1], marker=(3, 0, angle), color=p.get_color(), markersize=markersize)
 
 #=====================================================================
 def gaussian_profile(x, dx, sigma, scale):

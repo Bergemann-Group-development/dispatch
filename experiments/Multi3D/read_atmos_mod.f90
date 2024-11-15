@@ -5,7 +5,7 @@ MODULE read_atmos_mod
   USE handyfuncs_mod
   USE const_mod
   USE op_math_mod, only: linspace, linterpolate_3d, pchip_mono4, interp1d_sorted
-  USE m3d_patch_mod, only: pivot_z, ray_offset, amr, composition, use_ne, use_rho
+  USE m3d_patch_mod, only: pivot_z, ray_offset, amr, composition, use_ne, use_rho, make_eos
   USE ray_mod, only: one_dimensional
   USE composition_mod, only: composition_type
   implicit none
@@ -724,7 +724,16 @@ SUBROUTINE interpolate_atmos(n, sub, pos, rho, px, py, pz, temp, pe, vmic, vec, 
   else
     newz = [ (ds(3)*i + lower(3), i=0, nz-1) ]
   endif
-  if (one_dimensional) then
+  if (make_eos) then
+    ! no interpolation
+    temp = ia%ltemp
+    rho  = ia%lrho 
+    pe   = ia%lpe  
+    vmic = ia%vmic 
+    px = 0
+    py = 0
+    pz = 0
+  elseif (one_dimensional) then
     call pchip_mono4(ia%zz, ia%ltemp(1,1,:), real(newz), temp(1,1,:), sorted=.true.)
     call pchip_mono4(ia%zz, ia%lrho (1,1,:), real(newz), rho (1,1,:), sorted=.true.)
     call pchip_mono4(ia%zz, ia%lpe  (1,1,:), real(newz), pe  (1,1,:), sorted=.true.)

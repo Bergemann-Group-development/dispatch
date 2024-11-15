@@ -67,7 +67,7 @@ MODULE composition_mod
     character(128), public, save :: exclude_elements=''
     logical, public :: scattering_absorption=.true., mhd_eos=.false.
     logical, public :: irwin_dis=.true., helium_scattering=.true.
-    logical, public :: debug_opac=.false.
+    real(dp), public :: debug_opac=0
     integer, public :: switch=1
     real(dp), public :: ref_lam=5000.d0
     character(len=512), public :: abundances
@@ -1208,7 +1208,7 @@ contains
         logical, intent(in), optional :: use_rho, use_ne
         real(dp), dimension(:,:,:), allocatable :: ro, eh, charge
         real(4), dimension(:,:,:,:), pointer :: chi500
-        real(dp) :: nu500(1)
+        real(dp) :: nu500(1), nudebug(1)
         integer :: i,j, nx, ny, nz, lunit, m(3)
         integer :: itimer=0
         !---------------------------------------------------------------------------
@@ -1284,8 +1284,9 @@ contains
         nu500 = 1d8 * CC / air2vac(ref_lam)
         call self%absorption(nu500, chi500, sorted=.true.)
 
-        if (debug_opac) then
-            call self%print_opacity_contributions(nu500)
+        if (debug_opac > 0) then
+            nudebug = 1d8 * CC / air2vac(debug_opac)
+            call self%print_opacity_contributions(nudebug)
         endif
 
         self%loaded = .true.
@@ -1363,6 +1364,9 @@ contains
 
         if (self%nmolec > 0) then
             call self%molecular_equilibrium(self%temp, self%teta, self%pe, xnecno, fe)
+            where (fe < 0)
+                fe = ieee_value(fe, ieee_quiet_nan)
+            endwhere
         endif
 
         ! total hydrogen number density, computed from scratch
@@ -1948,7 +1952,6 @@ contains
                 end do
 
                 fe(ix,iy,iz) = Fnew(np1)
-
                 pefe(ix,iy,iz) = pe(ix,iy,iz) / fe(ix,iy,iz)
             end do
             end do
@@ -2161,6 +2164,7 @@ contains
             if (.not. associated(mol)) then
                 print *, id(1:3), 'is not recognised by opacity package.'
             else
+                mol%in_opac = .true.
                 do j=1, mol%nions
                   ion => mol%ions(j)%p
                   ion%in_opac = .true.

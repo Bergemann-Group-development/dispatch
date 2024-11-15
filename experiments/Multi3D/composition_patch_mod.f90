@@ -397,6 +397,7 @@ SUBROUTINE init_eos_comp (self, temp, rho, ldtemp, ldrho)
   real(8) :: minTemp, maxTemp, minRho, maxRho
   integer :: i, j, ntemp, nrho, nnu
   real(8), dimension(:,:,:), allocatable :: tab_temp, tab_ne, tab_rho
+  real(4), dimension(:,:,:), allocatable :: eos
   real(8) :: minLnRho, maxLnRho, minLnT, maxLnT
   !---------------------------------------------------------------------------
   allocate(self%tab_comp)
@@ -431,8 +432,18 @@ SUBROUTINE init_eos_comp (self, temp, rho, ldtemp, ldrho)
   tab_temp = exp(tab_temp)
 
   call self%tab_comp%load_state_variables(tab_temp, tab_ne, tab_rho, use_rho=.true., use_ne=.false.)
+
+  allocate(eos(6, ntemp, nrho))
+  eos(1, :, :) = real(self%tab_comp%temp(:, :, 1), kind=4)
+  eos(2, :, :) = real(self%tab_comp%rho(:, :, 1), kind=4)
+  eos(3, :, :) = real(self%tab_comp%ne(:, :, 1), kind=4)
+  eos(4, :, :) = real(self%tab_comp%pg(:, :, 1), kind=4)
+  eos(5, :, :) = real(self%tab_comp%E(:, :, 1), kind=4)
+  eos(6, :, :) = real(self%tab_comp%chi500(:, :, 1), kind=4)
+  call self%save3(eos, 'eos')
 END SUBROUTINE init_eos_comp
 
+!===============================================================================
 SUBROUTINE save_eos_variables (self)
   class(composition_patch_t), target :: self
   class(composition_type), pointer :: comp
@@ -440,7 +451,7 @@ SUBROUTINE save_eos_variables (self)
   integer :: nx, ny, nz
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin('nlte_patch%save_eos_variables', itimer=itimer)
+  call trace%begin('composition_patch%save_eos_variables', itimer=itimer)
   comp => self%composition
   nx = size(comp%temp,1)
   ny = size(comp%temp,2)

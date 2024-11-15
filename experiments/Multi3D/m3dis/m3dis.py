@@ -205,125 +205,135 @@ class m3dis(object):
             self.mus = 1 - self.mus
             self.nmu = self.mus.size
 
-        make_eos = False
-        if 'make_eos' in self.nml['m3d_params']: make_eos = self.nml['m3d_params']['make_eos']
+        make_eos = 'make_eos' in self.nml['m3d_params']
+        if make_eos: make_eos = self.nml['m3d_params']['make_eos']
         
-        if hasattr(self, 'lam') and not make_eos:
-            if (verbose > 0): print('Reading Intensities')
-            ie = self.read_patch_save('ie', lazy=False)[0]
+        if make_eos:
+            mem = self.read_patch_save('eos', fdim=None, lazy=False)[0]
+            self.temp = mem[0]
+            self.rho = mem[1]
+            self.ne = mem[2]
+            self.pg = mem[3]
+            self.E = mem[4]
+            self.chi = mem[5]
 
-            self.ie     = ie[:,0,0,:,0]
-            self.ie_lte = ie[:,0,0,:,1]
-            self.cnt    = ie[:,0,0,:,2]
-
-            self.flux     = np.sum(self.wts * self.ie    , axis=-1)
-            self.flux_lte = np.sum(self.wts * self.ie_lte, axis=-1)
-            self.flux_cnt = np.sum(self.wts * self.cnt   , axis=-1)
-
-            if self.nml['m3d_params']['save_resolved']:
-                i3 = self.read_patch_save('i3')[0]
-                self.i3     = i3[...,0]
-                self.i3_lte = i3[...,1]
-                self.c3     = i3[...,2]
-
-        if os.path.isfile(folder + 'linelist_out.txt') and read_llist:
-            self.llist = pd.read_csv(folder + 'linelist_out.txt', sep=r'\s+', quotechar="'")
-            self.llist['lam0'] = vacuum2obs(self.llist.lam_vac)
-            self.llist = self.llist.sort_values(by='lam0')
-
-            init = np.frompyfunc(llist_trans, 2, 1)
-            self.llist_line = init(np.arange(len(self.llist)), self)
-
-            T = 4000
-            elements = [ion.split()[0] for ion in self.llist.ion]
-            abnd = np.array([self.abundances[el] if el in self.abundances.keys() else np.nan for el in elements])
-            strength = np.log10(self.llist.lam_vac*1e-8 * np.exp(-self.llist.ev_i*EK/T)) + self.llist.loggf + abnd
-            self.llist['strength'] = strength
-
-        atmos_params = self.nml['atmos_params']
-
-        if atmos_params['atmos_format'].strip().lower() == 'save':
-            mesh = open(atmos_params['atmos_file'].strip() + '/atmos_mesh.txt', 'r')
-            afolder = atmos_params['atmos_file'].strip() + '/save/'
         else:
-            mesh = open(folder + 'atmos_mesh.txt', 'r')
-            afolder = sfolder
+            if hasattr(self, 'lam'):
+                if (verbose > 0): print('Reading Intensities')
+                ie = self.read_patch_save('ie', lazy=False)[0]
 
-        amr = 'amr' in atmos_params
-        if amr: amr = atmos_params['amr']
+                self.ie     = ie[:,0,0,:,0]
+                self.ie_lte = ie[:,0,0,:,1]
+                self.cnt    = ie[:,0,0,:,2]
 
-        dims = atmos_params['dims']
-        self.atmos_cuts = []
-        if amr:
-            nz = atmos_params['nz']
-            self.zz = np.zeros(nz)
-            j = 0
-            off = 0
-            for k in range(dims):
-                nx, ny, nnz = [int(i) for i in mesh.readline().split()]
+                self.flux     = np.sum(self.wts * self.ie    , axis=-1)
+                self.flux_lte = np.sum(self.wts * self.ie_lte, axis=-1)
+                self.flux_cnt = np.sum(self.wts * self.cnt   , axis=-1)
+
+                if self.nml['m3d_params']['save_resolved']:
+                    i3 = self.read_patch_save('i3')[0]
+                    self.i3     = i3[...,0]
+                    self.i3_lte = i3[...,1]
+                    self.c3     = i3[...,2]
+
+            if os.path.isfile(folder + 'linelist_out.txt') and read_llist:
+                self.llist = pd.read_csv(folder + 'linelist_out.txt', sep=r'\s+', quotechar="'")
+                self.llist['lam0'] = vacuum2obs(self.llist.lam_vac)
+                self.llist = self.llist.sort_values(by='lam0')
+
+                init = np.frompyfunc(llist_trans, 2, 1)
+                self.llist_line = init(np.arange(len(self.llist)), self)
+
+                T = 4000
+                elements = [ion.split()[0] for ion in self.llist.ion]
+                abnd = np.array([self.abundances[el] if el in self.abundances.keys() else np.nan for el in elements])
+                strength = np.log10(self.llist.lam_vac*1e-8 * np.exp(-self.llist.ev_i*EK/T)) + self.llist.loggf + abnd
+                self.llist['strength'] = strength
+
+            atmos_params = self.nml['atmos_params']
+
+            if atmos_params['atmos_format'].strip().lower() == 'save':
+                mesh = open(atmos_params['atmos_file'].strip() + '/atmos_mesh.txt', 'r')
+                afolder = atmos_params['atmos_file'].strip() + '/save/'
+            else:
+                mesh = open(folder + 'atmos_mesh.txt', 'r')
+                afolder = sfolder
+
+            amr = 'amr' in atmos_params
+            if amr: amr = atmos_params['amr']
+
+            dims = atmos_params['dims']
+            self.atmos_cuts = []
+            if amr:
+                nz = atmos_params['nz']
+                self.zz = np.zeros(nz)
+                j = 0
+                off = 0
+                for k in range(dims):
+                    nx, ny, nnz = [int(i) for i in mesh.readline().split()]
+                    dx, dy, dz = [float(i) for i in mesh.readline().split()]
+                    self.zz[j:j+nnz] = np.arange(1,nnz+1)*dz + off
+                    j += nnz
+                    off = self.zz[j-1]
+                    self.atmos_cuts.append(nnz)
+
+                self.atmos_cuts = np.cumsum(self.atmos_cuts)
+
+            else:
+                nx, ny, nz = [int(i) for i in mesh.readline().split()]
                 dx, dy, dz = [float(i) for i in mesh.readline().split()]
-                self.zz[j:j+nnz] = np.arange(1,nnz+1)*dz + off
-                j += nnz
-                off = self.zz[j-1]
-                self.atmos_cuts.append(nnz)
+                self.dz = dz
+                self.zz = np.arange(1, nz+1)*dz
+                self.atmos_cuts = np.cumsum(near_equal_split(nz, dims))
 
-            self.atmos_cuts = np.cumsum(self.atmos_cuts)
-
-        else:
-            nx, ny, nz = [int(i) for i in mesh.readline().split()]
-            dx, dy, dz = [float(i) for i in mesh.readline().split()]
-            self.dz = dz
-            self.zz = np.arange(1, nz+1)*dz
-            self.atmos_cuts = np.cumsum(near_equal_split(nz, dims))
-
-        self.dx = dx
-        self.dy = dy
-        self.xx = np.arange(nx)*dx
-        self.yy = np.arange(ny)*dy
-        mesh.close()
-
-        if nx*ny > 1:
-            self.dim = '3D'
-        else:
-            self.dim = '1D'
-
-        if os.path.isfile(afolder + 'atmos_meta.txt') and read_atmos:
-            mem = self.read_patch_save('atmos', folder=afolder, zdim=2)[0]
-            mem = mem[..., 0]
-            if self.dim=='1D': mem = mem.squeeze()
-            self.ne   = np.array(mem[...,0])
-            self.rho  = np.array(mem[...,1])
-            self.temp = np.array(mem[...,2])
-            self.vx   = np.array(mem[...,3]) * CC
-            self.vy   = np.array(mem[...,4]) * CC
-            self.vz   = np.array(mem[...,5]) * CC
-            self.chi  = np.array(mem[...,6])
-            self.tau  = compute_tau_scale(self.chi, self.zz*1e8, axis=-1)
-            self.ltau = np.log10(self.tau)
-            
-        if os.path.isfile(folder + 'atmos_data.bin') and read_atmos:
-            dat = FortranFile(folder + 'atmos_data.bin')
-            self.temp = dat.read_reals(np.float32)
-            self.rho  = dat.read_reals(np.float32)
-            self.px   = dat.read_reals(np.float32)
-            self.py   = dat.read_reals(np.float32)
-            self.pz   = dat.read_reals(np.float32)
-            self.pe   = dat.read_reals(np.float32)
-            self.tau  = dat.read_reals(np.float32)
-            self.chi  = dat.read_reals(np.float32)
-            dat.close()
+            self.dx = dx
+            self.dy = dy
+            self.xx = np.arange(nx)*dx
+            self.yy = np.arange(ny)*dy
+            mesh.close()
 
             if nx*ny > 1:
-                self.temp = self.temp.reshape((nx,ny,nz), order='F')
-                self.rho  = self.rho .reshape((nx,ny,nz), order='F')
-                self.px   = self.px  .reshape((nx,ny,nz), order='F')
-                self.py   = self.py  .reshape((nx,ny,nz), order='F')
-                self.pz   = self.pz  .reshape((nx,ny,nz), order='F')
-                self.pe   = self.pe  .reshape((nx,ny,nz), order='F')
-                self.tau  = self.tau .reshape((nx,ny,nz), order='F')
-                self.chi  = self.chi .reshape((nx,ny,nz), order='F')
+                self.dim = '3D'
+            else:
+                self.dim = '1D'
 
-            self.ltau = np.log10(self.tau)
+            if os.path.isfile(afolder + 'atmos_meta.txt') and read_atmos:
+                mem = self.read_patch_save('atmos', folder=afolder, zdim=2)[0]
+                mem = mem[..., 0]
+                if self.dim=='1D': mem = mem.squeeze()
+                self.ne   = np.array(mem[...,0])
+                self.rho  = np.array(mem[...,1])
+                self.temp = np.array(mem[...,2])
+                self.vx   = np.array(mem[...,3]) * CC
+                self.vy   = np.array(mem[...,4]) * CC
+                self.vz   = np.array(mem[...,5]) * CC
+                self.chi  = np.array(mem[...,6])
+                self.tau  = compute_tau_scale(self.chi, self.zz*1e8, axis=-1)
+                self.ltau = np.log10(self.tau)
+                
+            if os.path.isfile(folder + 'atmos_data.bin') and read_atmos:
+                dat = FortranFile(folder + 'atmos_data.bin')
+                self.temp = dat.read_reals(np.float32)
+                self.rho  = dat.read_reals(np.float32)
+                self.px   = dat.read_reals(np.float32)
+                self.py   = dat.read_reals(np.float32)
+                self.pz   = dat.read_reals(np.float32)
+                self.pe   = dat.read_reals(np.float32)
+                self.tau  = dat.read_reals(np.float32)
+                self.chi  = dat.read_reals(np.float32)
+                dat.close()
+
+                if nx*ny > 1:
+                    self.temp = self.temp.reshape((nx,ny,nz), order='F')
+                    self.rho  = self.rho .reshape((nx,ny,nz), order='F')
+                    self.px   = self.px  .reshape((nx,ny,nz), order='F')
+                    self.py   = self.py  .reshape((nx,ny,nz), order='F')
+                    self.pz   = self.pz  .reshape((nx,ny,nz), order='F')
+                    self.pe   = self.pe  .reshape((nx,ny,nz), order='F')
+                    self.tau  = self.tau .reshape((nx,ny,nz), order='F')
+                    self.chi  = self.chi .reshape((nx,ny,nz), order='F')
+
+                self.ltau = np.log10(self.tau)
 
         return self
 
@@ -559,6 +569,11 @@ class m3dis(object):
                 xmin = xmin-kwargs['vdop']
                 xmax = xmax+kwargs['vdop']
 
+        if 'vrot' in kwargs.keys():
+            if kwargs['vrot'] is not None:
+                xmin = xmin-kwargs['vrot']
+                xmax = xmax+kwargs['vrot']
+
         xx, yy = self.crop(xmin=xmin, xmax=xmax, **kwargs)
 
         if yy.ndim==1:
@@ -679,6 +694,18 @@ class m3dis(object):
         #-----------------------------------------------------------------
         if ilvl is not None:
             if ilvl < 0: ilvl = self.atom.nk + ilvl
+
+        if hasattr(self, 'runs'):
+            xy = np.array([run.get_depart(ilvl, mean=mean) for run in self.runs])
+
+            if mean:
+                ltau = np.mean(xy[:,0], axis=0)
+                yy1d = [np.interp(ltau, xy[i,0,::-1], xy[i,1,::-1]) for i in range(len(xy))]
+                yy1d = np.mean(yy1d, axis=0)
+                return ltau[::-1], yy1d[::-1]
+            else:
+                return xy[:,0], xy[:,1]
+
         mem = self.read_patch_save('atom_patch', zdim=2)[0]
         if mem.ndim==6: mem = mem[...,0]
         dep = mem[...,1]

@@ -58,7 +58,7 @@ MODULE nlte_patch_mod
     procedure :: lte_background_opacities
     procedure :: add_scattering
     procedure :: generate_opacity_table
-    procedure :: generate_eos_table
+    procedure :: save_opac_table
     procedure :: interpolate_opacity_table
     procedure :: add_bound_free_opacities
     procedure :: bound_bound_damping
@@ -569,7 +569,7 @@ SUBROUTINE lte_background_opacities (self, comp, include_absmet, do_sample_opac,
 
   ! getting background LTE absorption
   if (do_make_eos .and. self%iter==0) then
-    call self%generate_eos_table(self%nu(fs:fe), include_absmet)
+    call self%save_opac_table(self%nu(fs:fe), include_absmet)
   elseif (do_sample_opac) then
     call self%interpolate_opacity_table(comp%temp, comp%ne, comp%chi500)
   else
@@ -679,7 +679,7 @@ SUBROUTINE generate_opacity_table (self, nu, include_absmet)
 END SUBROUTINE generate_opacity_table
 
 !===============================================================================
-SUBROUTINE generate_eos_table (self, nu, include_absmet)
+SUBROUTINE save_opac_table (self, nu, include_absmet)
   class(nlte_patch_t), target :: self
   class(composition_type), pointer :: comp
   real(8), dimension(:), pointer, intent(in) :: nu
@@ -690,7 +690,7 @@ SUBROUTINE generate_eos_table (self, nu, include_absmet)
   integer :: i,j,k, ntemp, nrho, nnu
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin('nlte_patch%generate_eos_table', itimer=itimer)
+  call trace%begin('nlte_patch%save_opac_table', itimer=itimer)
   comp => self%m3d_parent%tab_comp
   call self%save3(self%opac_table, 'opa')
   ntemp = size(self%opac_table, 2)
@@ -708,17 +708,8 @@ SUBROUTINE generate_eos_table (self, nu, include_absmet)
   end do
   end do
   call self%save3(self%opac_table, 'scat')
-
-  allocate(eos(6, ntemp, nrho))
-  eos(1, :, :) = real(comp%temp(:, :, 1), kind=4)
-  eos(2, :, :) = real(comp%rho(:, :, 1), kind=4)
-  eos(3, :, :) = real(comp%ne(:, :, 1), kind=4)
-  eos(4, :, :) = real(comp%pg(:, :, 1), kind=4)
-  eos(5, :, :) = real(comp%E(:, :, 1), kind=4)
-  eos(6, :, :) = real(comp%chi500(:, :, 1), kind=4)
-  call self%save3(eos, 'eos')
   call trace%end(itimer)
-END SUBROUTINE generate_eos_table
+END SUBROUTINE save_opac_table
 
 !===============================================================================
 SUBROUTINE interpolate_opacity_table (self, temp, ne, rho)
