@@ -93,9 +93,6 @@ SUBROUTINE init(self, task_list, name)
   end if
   call io%namelist_warning ('atmos_params', iostat)
 
-  ! this is read here, in case atmosphere has optical depth scale
-  call read_composition_params()
-
   if (amr) then
     ! making sure that dims is not 1, otherwise amr has no effect
     dims = max(dims, 8)
@@ -165,7 +162,12 @@ SUBROUTINE init(self, task_list, name)
       '. Options are: "Stagger", "Co5bold", "MUST", "Multi", "Marcs" and "Text".'
       stop
     end select
+  endif
 
+  ! this is read here, in case atmosphere has optical depth scale
+  call read_composition_params()
+
+  if (atmos_format /= 'save') then
     call ia%thick2thin()
     call ia%get_box(self%size)
     self%size = self%size / scaling%l

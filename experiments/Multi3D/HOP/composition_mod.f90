@@ -389,6 +389,8 @@ contains
 
         self%elements(1)%ions%in_opac = .true.
         self%elements(2)%ions%in_opac = .true.
+        call self%molecule_by_id('H2', molecule)
+        molecule%in_opac = .true.
 
         do i=1, nkomp
             trans => self%trans(i)
@@ -2215,7 +2217,7 @@ contains
             if (RYD > (15.5*dxi)**2) then
               if (dxi > 0) then
                 h1 = sqrt(RYD/dxi)
-                nniv = (int(h1) + 0.5)**2
+                nniv = (min(int(h1), 15) + 0.5)**2
                 !umc = 2.3026 * self%dxi * self%teta
                 !hrest = fakt * (exp(31.30364*self%teta/nniv-umc)-1.)
                 hrest = exp(EK_over_temp*(RYD/nniv - dxi))
