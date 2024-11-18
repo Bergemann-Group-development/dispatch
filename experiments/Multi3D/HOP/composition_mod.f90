@@ -2200,7 +2200,8 @@ contains
         real(4), dimension(:,:,:,:), intent(inout) :: chi
         real(dp), dimension(:), intent(in) :: lam
         real(dp), dimension(:), allocatable :: lam3
-        real(dp) :: hrest, umc, h1, nniv, fakt, EK_over_temp, dxi
+        real(dp) :: hrest, umc, fakt, EK_over_temp, dxi
+        real(dp), parameter :: nniv2 = 15.5**2
         integer :: f, x,y,z
         integer :: p(4)=pp
         !---------------------------------------------------------------------
@@ -2214,17 +2215,16 @@ contains
             dxi = self%dxi(x,y,z)
             fakt = HI%boltzmann(EK_over_temp, dxi, natural_log=.true.)
             fakt = 2.0898E-26 / (2*RYD*EK_over_temp) * fakt * HI%part(x,y,z) * HI%n(x,y,z)
-            if (RYD > (15.5*dxi)**2) then
-              if (dxi > 0) then
-                h1 = sqrt(RYD/dxi)
-                nniv = (min(int(h1), 15) + 0.5)**2
-                !umc = 2.3026 * self%dxi * self%teta
-                !hrest = fakt * (exp(31.30364*self%teta/nniv-umc)-1.)
-                hrest = exp(EK_over_temp*(RYD/nniv - dxi))
+            if (RYD >= nniv2 * dxi) then
+                !NNIV=15
+                !XNIV=15.
+                !IF(H(1).LT.XNIV)NNIV=INT(H(1))
+                !ADDF=EXP(TETA31/((FLOAT(NNIV)+0.5)**2)-UMC)-1.
+                !IF(H(1).LT.XNIV+0.5)ADDF=0.
+                !HREST(NTP)=EXPJ*ADDF
+                hrest = exp(EK_over_temp*(RYD/nniv2 - dxi))
                 hrest = fakt * (hrest - 1)
-                !chi(:,x,y,z) = chi(:,x,y,z) + hrest
                 chi(:,x,y,z) = chi(:,x,y,z) + hrest*lam3
-              endif
             endif
         end do
         end do
