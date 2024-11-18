@@ -648,7 +648,7 @@ SUBROUTINE generate_opacity_table (self, nu, include_absmet)
   real(4), dimension(:,:,:,:), pointer :: view, all_eta
   real(4), dimension(:,:,:), allocatable :: vmic
   logical, intent(in) :: include_absmet
-  real(4) :: over_rho
+  real(4) :: over_chi500
   integer :: i,j,k, ntemp, nne, nnu
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
@@ -671,8 +671,8 @@ SUBROUTINE generate_opacity_table (self, nu, include_absmet)
 
   do k=1, nne
   do j=1, ntemp
-    over_rho = 1 / comp%chi500(j,k,1)
-    self%opac_table(:,j,k) = self%opac_table(:,j,k) * over_rho
+    over_chi500 = 1 / comp%chi500(j,k,1)
+    self%opac_table(:,j,k) = self%opac_table(:,j,k) * over_chi500
   end do
   end do
   call trace%end(itimer)
@@ -692,11 +692,20 @@ SUBROUTINE save_opac_table (self, nu, include_absmet)
   !-----------------------------------------------------------------------------
   call trace%begin('nlte_patch%save_opac_table', itimer=itimer)
   comp => self%m3d_parent%tab_comp
-  call self%save3(self%opac_table, 'opa')
   ntemp = size(self%opac_table, 2)
   nrho = size(self%opac_table, 3)
   nnu = size(nu)
 
+  ! save absorption part first (which has been normalised by chi500)
+  do k=1, nrho
+  do j=1, ntemp
+      over_rho = comp%chi500(j,k,1) / comp%rho(j,k,1)
+      self%opac_table(:,j,k) = self%opac_table(:,j,k) * over_rho
+  end do
+  end do
+  call self%save3(self%opac_table, 'opa')
+
+  ! then save scattering part
   self%opac_table = 0.0
   view(1:nnu, 1:ntemp, 1:nrho, 1:1) => self%opac_table
   call comp%electron_scattering(view)
