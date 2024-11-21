@@ -200,12 +200,13 @@ class trans_class(object):
     def plot(self, ang=None, imu=None, norm=True, dlam=None, label=None,
                 vdop=None, vshift=None, convolve=None, renorm=None, fac=None,
                 LTE=False, title=None, set_labels=True, velocity_units=False,
-                lam_offset=True, per_aa=False, tilt=None, abnd=None, **kwargs):
+                lam_offset=True, per_aa=False, tilt=None, abnd=None, vrot=None,
+                **kwargs):
         #-----------------------------------------------------------------
         xx, yy = self.crop(ang=ang, imu=imu, norm=norm, dlam=dlam, tilt=tilt,
                             vdop=vdop, vshift=vshift, convolve=convolve, fac=fac,
                             renorm=renorm, LTE=LTE, velocity_units=velocity_units,
-                            lam_offset=lam_offset, per_aa=per_aa, abnd=abnd)
+                            lam_offset=lam_offset, per_aa=per_aa, abnd=abnd, vrot=vrot)
 
         self.run.set_xaxis(xx, dlam, velocity_units=velocity_units, set_labels=set_labels,
                            lam_offset=lam_offset)

@@ -41,12 +41,15 @@ class CoG(m3dis):
         if read_line and hasattr(self.run0, 'atom'):
             self.atom = copy.copy(self.run0.atom)
             self.atom.run = self
+            self.in_lines = self.run0.in_lines
 
             if type(self.atom.trans[0]) is fast_trans:
                 init = np.frompyfunc(fast_trans, 2, 1)
-                self.line = init(np.arange(self.atom.nline)[self.run0.in_lines], self.atom)
+                self.atom.trans = init(np.arange(self.atom.nline), self.atom)
             else:
-                self.line = [copy.copy(line) for line in self.run0.line]
+                self.atom.trans = [copy.copy(trans) for trans in self.run0.atom.trans]
+
+            self.line = np.array(self.atom.trans)[self.in_lines]
 
     #=================================================================
     def crop(self, abnd, **kwargs):

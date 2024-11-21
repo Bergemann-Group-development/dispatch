@@ -495,20 +495,34 @@ class m3dis(object):
         if per_aa:
             norm = False
 
-        xx = self.lam
+        oxx = self.lam
 
         if vshift is not None:
-            vshift = vshift / (CC*1e-5) # vshift has to be given in km/s
-            lshift = xx * vshift / (1+vshift)
-            xx = xx + lshift
+            vshift = vshift / CC_KMS # vshift has to be given in km/s
+            lshift = oxx * vshift / (1+vshift)
+            oxx = oxx + lshift
     
         if lam0 is not None:
-            xx = xx - lam0
+            oxx = oxx - lam0
+            if xmin is not None: xmin = xmin - lam0
+            if xmax is not None: xmax = xmax - lam0
         else:
             dlam = None
             lam0 = 0
 
-        xx, mask = self.get_xx(xx, slc, dlam, xmin=xmin, xmax=xmax)
+        newx, mask = self.get_xx(oxx, slc=slc, dlam=dlam, xmin=xmin, xmax=xmax)
+
+        vels = np.array([vdop, vrot, zeta_rt])
+        vmask = vels != None
+        if any(vmask): # we need to add padding to avoid convolution artefacts at the edges
+            uconv = 5*(newx[newx.size//2] + lam0)/CC_KMS
+            pad = uconv * np.sum(vels[vmask])
+
+            if dlam is not None: dlam = dlam + pad
+            if xmin is not None: xmin = xmin - pad
+            if xmax is not None: xmax = xmax + pad
+
+        xx, mask = self.get_xx(oxx, slc=slc, dlam=dlam, xmin=xmin, xmax=xmax)
 
         if hasattr(ang, '__iter__'):
             yy = [self.get_yy(ang=i, norm=norm, cont=cont, LTE=LTE, mask=mask) for i in ang]
@@ -524,15 +538,23 @@ class m3dis(object):
                 yy = yy / np.max(yy)
             elif renorm > 0:
                 yy = yy / continuum(xx, yy)
+            elif renorm < 0:
+                xnorm, mnorm = self.get_xx(oxx, dlam=-renorm)
+                ynorm = self.get_yy(ang=ang, imu=imu, norm=norm, cont=cont, LTE=LTE, mask=mnorm)
+                yy = yy / np.max(ynorm)
 
         xx = xx + lam0
+        newx = newx + lam0
 
         if set([vdop, vrot, zeta_rt, convolve]) != {None}:
             newy = []
             for y in yy:
                 sxx, syy = convol(xx, y, vdop=vdop, vrot=vrot, zeta_rt=zeta_rt, custom=convolve)
-                newy.append(np.interp(xx, sxx, syy))
+                newy.append(np.interp(newx, sxx, syy))
+
             yy = np.array(newy)
+
+        xx = newx
 
         if lam0 is not None:
             offset = lam_offset and dlam is not None and dlam is not False
@@ -543,7 +565,7 @@ class m3dis(object):
                 xx = xx / lam0
                 if dlam is None or dlam is False:
                     xx = xx - 1
-                xx = xx * CC * 1e-5
+                xx = xx * CC_KMS
 
         if per_aa:
             yy = yy * CC / (xx**2) * 1e8
@@ -564,15 +586,15 @@ class m3dis(object):
         #-----------------------------------------------------------------
         xmin = newx.min()
         xmax = newx.max()
-        if 'vdop' in kwargs.keys():
-            if kwargs['vdop'] is not None:
-                xmin = xmin-kwargs['vdop']
-                xmax = xmax+kwargs['vdop']
 
-        if 'vrot' in kwargs.keys():
-            if kwargs['vrot'] is not None:
-                xmin = xmin-kwargs['vrot']
-                xmax = xmax+kwargs['vrot']
+        #if 'vdop' in kwargs.keys():
+        #    if kwargs['vdop'] is not None:
+        #        xmin = xmin-kwargs['vdop']
+        #        xmax = xmax+kwargs['vdop']
+        #if 'vrot' in kwargs.keys():
+        #    if kwargs['vrot'] is not None:
+        #        xmin = xmin-kwargs['vrot']
+        #        xmax = xmax+kwargs['vrot']
 
         xx, yy = self.crop(xmin=xmin, xmax=xmax, **kwargs)
 
@@ -1228,10 +1250,11 @@ class m3dis(object):
     def combine(self, runs):
         #-------------------------------------------------------------
         self = m3dis()
-        run0 = runs[0]
+        self.run0 = runs[0]
+        self.folder = '\n'.join([run.folder for run in runs])
 
         def check_and_combine(key):
-            if hasattr(run0, key):
+            if hasattr(self.run0, key):
                 atts = [getattr(run, key) for run in runs]
                 same = all([np.array_equal(a, atts[0]) for a in atts])
                 if not same:
@@ -1240,7 +1263,7 @@ class m3dis(object):
                     setattr(self, key, atts[0])
 
         self.runs = runs
-        self.nml = run0.nml
+        self.nml = self.run0.nml
         check_and_combine('mode')
         check_and_combine('mus')
         check_and_combine('imus')
@@ -1250,20 +1273,21 @@ class m3dis(object):
         check_and_combine('wts')
         check_and_combine('nline')
         
-        if hasattr(run0, 'atom'):
-            self.atom = run0.atom
-            if self.nml['atom_params']['pandas_format']:
-                if hasattr(run0, 'in_lines'):
-                    self.in_lines = run0.in_lines
-                    self.line = self.atom.trans[self.in_lines]
+        if hasattr(self.run0, 'atom'):
+            self.atom = copy.copy(self.run0.atom)
+            self.atom.run = self
+            self.in_lines = self.run0.in_lines
+
+            if type(self.atom.trans[0]) is fast_trans:
+                init = np.frompyfunc(fast_trans, 2, 1)
+                self.atom.trans = init(np.arange(self.atom.nline), self.atom)
             else:
-                self.line = [copy.copy(line) for line in run0.line]
+                self.atom.trans = [copy.copy(trans) for trans in self.run0.atom.trans]
 
-            for line in self.line:
-                line.run = self
+            self.line = np.array(self.atom.trans)[self.in_lines]
 
-        if hasattr(run0, 'lam'):
-            self.lam    = run0.lam
+        if hasattr(self.run0, 'lam'):
+            self.lam    = self.run0.lam
             self.ie     = np.mean([run.ie     for run in runs], axis=0)
             self.ie_lte = np.mean([run.ie_lte for run in runs], axis=0)
             self.cnt    = np.mean([run.cnt    for run in runs], axis=0)

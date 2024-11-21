@@ -655,7 +655,7 @@ contains
         character :: lower_orb, upper_orb
         character(len=150) :: label
         character :: char
-        integer :: lunit, iostat, j, nline, i, prev, iso_id, iso_idx, nkh
+        integer :: lunit, iostat, iostat2, j, nline, i, prev, iso_id, iso_idx, nkh
         integer, save :: ntotal, nactive
         logical :: isotope, ok
         !-----------------------------------------------------------------------------
@@ -682,9 +682,15 @@ contains
             nullify(p)
             call self%ion_by_id(ion_id(1:6), ion, element_out=element)
             ok = associated(ion)
+            
             if (.not. ok) then
                 call self%molecule_by_id(ion_id(1:6), mol)
                 ok = associated(mol)
+                if (ok .and. abs(mass-mol%awgt) > 0.1) then
+                    ok = .false. ! mass does not match
+                    print *, 'WARNING: ', trim(ion_id), ' mass does not match ', mol%id
+                    print *, 'disabling ', trim(ion_id), ' ', mass_id
+                endif
             endif
             
             if (associated(ion) .and. isotope) then
@@ -735,10 +741,10 @@ contains
                 read(lunit,'(A)', iostat=iostat) line_text
 
                 if (p%id == 'H I') then
-                    read(line_text,*,iostat=iostat) lam0, line%i, line%j, line%lower_ev, upper_ev, line%loggf, label, line%ga
+                    read(line_text, *, iostat=iostat2) lam0, line%i, line%j, line%lower_ev, upper_ev, line%loggf, label, line%ga
 
                     ! Stop if nothing has worked
-                    call print_failed_line(lunit, iostat)
+                    call print_failed_line(lunit, iostat2)
 
                     nkh = max(line%j, nkh)
                     lower_g = 2 * line%i**2
@@ -751,18 +757,18 @@ contains
                     call prepare_hydrogen_damping(line) ! ga is overwritten
                 else
                     ! Try to read with stark broadening parameter
-                    read(line_text,*,iostat=iostat) lam0, line%lower_ev, line%loggf, line%gv, upper_g, &
+                    read(line_text, *, iostat=iostat2) lam0, line%lower_ev, line%loggf, line%gv, upper_g, &
                         line%ga, line%gq, lower_orb, upper_orb, ent8, ent9, label
 
-                    if (iostat > 0) then
+                    if (iostat2 > 0) then
                         line%gq = 0.0
                         ! Try to read without stark broadening parameter
-                        read(line_text, *, iostat=iostat) lam0, line%lower_ev, line%loggf, line%gv, upper_g, &
+                        read(line_text, *, iostat=iostat2) lam0, line%lower_ev, line%loggf, line%gv, upper_g, &
                         line%ga, lower_orb, upper_orb, ent8, ent9, label
                     endif
 
                     ! Stop if nothing has worked
-                    call print_failed_line(lunit, iostat)
+                    call print_failed_line(lunit, iostat2)
     
                     lam_vac = air2vac(lam0) * 1e-8
                     line%nu0 = CC / lam_vac

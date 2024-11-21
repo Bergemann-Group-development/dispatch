@@ -29,6 +29,7 @@ BK = 1.380662E-16
 PI = 3.14159265359
 SBOL = 5.6704e-5
 XMH = 1.67339e-24
+CC_KMS  = 299792.458 # VELOCITY OF LIGHT (KM/S)
 
 HCE = HH*CC/EE*1e8
 HC2 = 2.*HH*CC *1e24
@@ -162,11 +163,10 @@ def convol(sx, sy, vrot=None, zeta_rt=None, vshift=None, vdop=None, custom=None)
     Give vshift in km/s for blue/red - dopplershift.
     Give vdop in km/s for gaussian doppler broadening.
     """
-    cc  = 299792.458 # VELOCITY OF LIGHT (KM/S)
     sxx = np.log(sx.astype(np.float64)) # original xscale in
     syy =        sy.astype(np.float64)
     
-    min_rd = 0.1 / cc    # RESAMPLING-DISTANCE
+    min_rd = 0.1 / CC_KMS    # RESAMPLING-DISTANCE
     
     rd = 0.5 * np.min(np.diff(sxx))
     rd = np.max([rd, min_rd])
@@ -181,9 +181,8 @@ def convol(sx, sy, vrot=None, zeta_rt=None, vshift=None, vdop=None, custom=None)
         
     px = (np.arange(npresn) - npresn//2) * rd
     
-    
     if vrot is not None:
-        normf = cc/vrot
+        normf = CC_KMS/vrot
         beta = 1.5
         xi = normf*px
         
@@ -199,7 +198,7 @@ def convol(sx, sy, vrot=None, zeta_rt=None, vshift=None, vdop=None, custom=None)
                   0.101,0.070,0.052,0.037,0.024,0.017,0.012,0.010,0.009,0.007]
         wave_rt = np.concatenate([-wave_rt[:0:-1],wave_rt])
         flux_rt = np.concatenate([ flux_rt[:0:-1],flux_rt])
-        zeta_rt1 = zeta_rt/cc
+        zeta_rt1 = zeta_rt/CC_KMS
         wave_rt = wave_rt * zeta_rt1
         flux_rt = flux_rt / zeta_rt1 
         py = interp1d(wave_rt, flux_rt, bounds_error=False, fill_value=0)(px)
@@ -210,7 +209,7 @@ def convol(sx, sy, vrot=None, zeta_rt=None, vshift=None, vdop=None, custom=None)
         
     if vdop is not None:
         if vdop > 0:
-            width = vdop/cc
+            width = vdop/CC_KMS
                 
             py = np.exp(- (px/width)**2 ) / (np.sqrt(np.pi)*width)
             sxn, syn = conv_profile(sxn, syn, px, py)
@@ -232,7 +231,7 @@ def convol(sx, sy, vrot=None, zeta_rt=None, vshift=None, vdop=None, custom=None)
         #yy = dxn * np.convolve(yy, py, mode='same')
     
     if vshift is not None:
-        vshift = vshift / cc # vshift has to be given in km/s
+        vshift = vshift / CC_KMS # vshift has to be given in km/s
         lshift = xx * vshift / (1+vshift)
         
         xx = xx + lshift
@@ -928,11 +927,17 @@ def gaussian_profile(x, dx, sigma, scale):
     return 1 - scale*np.exp(-0.5*((x-dx)/sigma)**2)
 
 #=====================================================================
-def fit_gaussian_profile(xx, yy, sigma=None):
+def fit_gaussian_profile(xx, yy, sigma=None, x0=None):
     if hasattr(xx, 'values'): xx = xx.values
     if hasattr(yy, 'values'): yy = yy.values
 
-    x = xx - xx[xx.size//2]
+    if x0 is None:
+        if xx[0] < 0:
+            x0 = 0
+        else:
+            x0 = xx[xx.size//2]
+
+    x = xx - x0
     scale = 1 - np.min(yy)
     s2p = np.sqrt(2*np.pi)
     sig = np.trapz(1-yy, x) / (s2p*scale)
