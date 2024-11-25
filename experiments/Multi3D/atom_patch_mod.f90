@@ -106,6 +106,9 @@ MODULE atom_patch_mod
     type(atom_type), save, target :: atom, output_atom
     type(line_type), save, dimension(:), pointer, contiguous :: dc_line, out_line
     type(cont_type), save, dimension(:), pointer, contiguous :: dc_cont, out_cont
+    class(element_type), pointer :: element
+    class(molec_type), pointer :: molecule
+    class(ion_type), pointer :: ion
     real(8), save :: qnorm=10.0, abundance=-99.9
     integer, save :: itimer=0, n_in_lines=0
     integer, save, allocatable :: in_lines(:)
@@ -190,6 +193,20 @@ MODULE atom_patch_mod
     allocate(self%atom%data)
     if (rotate_atmos) then
       allocate(self%atom%rotated_data(size(long_vec, 2)))
+    endif
+
+    call composition%element_by_id(atom%id(1:3), element, verbose=.false.)
+    if (associated(element)) then
+      element%ions%in_opac = .true.
+    else
+      call composition%molecule_by_id(atom%id(1:3), molecule, verbose=.false.)
+      if (associated(molecule)) then
+        molecule%in_opac = .true.
+        do i=1, molecule%nions
+          ion => molecule%ions(i)%p
+          ion%in_opac = .true.
+        end do
+      endif
     endif
 
     if (use_atom_abnd .or. abundance > -99) then

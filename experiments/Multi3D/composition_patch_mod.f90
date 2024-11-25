@@ -56,7 +56,7 @@ MODULE composition_patch_mod
   character(len=256), save :: save_species=''
   character(len=256), save :: absdat_file='./input_multi3d/TS_absdat.dat'
   character(len=256), save :: abund_file='./input_multi3d/abund_magg'
-  character(len=256), save :: isotope_file=''!'./input_multi3d/isotopes_abund.txt'
+  character(len=256), save :: isotope_file='./input_multi3d/isotopes'
   character(len=256), save :: molec_file='./input_multi3d/molec_data.txt'
   character(len=256), save :: opac_table=''
   character(len=256), save :: absmet_file=''

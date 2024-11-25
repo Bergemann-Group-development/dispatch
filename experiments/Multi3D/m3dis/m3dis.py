@@ -23,7 +23,7 @@ def option(nml, key):
     else:
         return False
 
-def launch(input_name, nml_settings=None, default=None, overwrite=False, threads=32, log_file=None, slurm_script=None, verbose=True):
+def launch(input_name, nml_settings=None, default=None, overwrite=False, threads=32, log_file=None, slurm_script=None, verbose=True, dry=False):
     cwd = os.getcwd()
     check_file(cwd + '/dispatch.x')
     if default is not None:
@@ -43,27 +43,31 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
 
         input.write(input_file, force=True)
 
-        if slurm_script is None:
-            if log_file is None:
-                command = './dispatch.x {:}'.format(input_file)
+        if not dry:
+            if slurm_script is None:
+                if log_file is None:
+                    command = './dispatch.x {:}'.format(input_file)
+                else:
+                    command = './dispatch.x {:} > {:}'.format(input_file, log_file)
             else:
-                command = './dispatch.x {:} > {:}'.format(input_file, log_file)
-        else:
-            command = 'sbatch {:} {:}'.format(slurm_script, input_file)
+                command = 'sbatch {:} {:}'.format(slurm_script, input_file)
 
-        if verbose:
-            print(input_file, ' launched')
-        else:
-            command = command + ' 2> /dev/null'
+            if verbose:
+                print(input_file, ' launched')
+            else:
+                command = command + ' 2> /dev/null'
 
-        os.environ['OMP_NUM_THREADS'] = str(threads)
-        iostat = os.system(command)
-        if iostat!=0 and log_file is not None: 
-            with open(log_file) as f:
-                for line in f:
-                    pass
-                last_line = line
-                print(last_line)
+            os.environ['OMP_NUM_THREADS'] = str(threads)
+            iostat = os.system(command)
+            if iostat!=0 and log_file is not None: 
+                with open(log_file) as f:
+                    for line in f:
+                        pass
+                    last_line = line
+                    print(last_line)
+        else:
+            print(input_file, ' written')
+
     else:
         print(input_file, ' already exists')
         input = f90nml.read(input_file)
@@ -640,9 +644,8 @@ class m3dis(object):
         return plt.plot(xx, yy, label=label, **plot_kwargs)
 
     #=====================================================================
-    def plot_resolved(self, ang=0, f=0, LTE=False, cont=False, rasterized=True,
-                  shading='nearest', show_labels=True, cmap='hot', rot90=0, **kwargs):
-
+    def plot_resolved(self, ang=0, f=0, LTE=False, cont=False, **kwargs):
+        #-----------------------------------------------------------------
         if LTE:
             i3 = self.i3_lte
         elif cont:
@@ -651,7 +654,12 @@ class m3dis(object):
             i3 = self.i3
 
         Z = i3[f, :, :, ang].T
-        
+        self.plot_surface(Z, ang=ang, **kwargs)
+
+    #=====================================================================
+    def plot_surface(self, Z, ang=0, rasterized=True, shading='nearest', 
+                     show_labels=True, cmap='hot', rot90=0, **kwargs):
+        #-----------------------------------------------------------------
         xx = self.xx
         yy = self.yy
         mux, muy, muz = self.vec[ang]

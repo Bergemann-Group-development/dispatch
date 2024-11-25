@@ -2172,10 +2172,8 @@ contains
             if (.not. associated(mol)) then
                 print *, id(1:3), 'is not recognised by opacity package.'
             else
-                mol%in_opac = .true.
                 do j=1, mol%nions
                   ion => mol%ions(j)%p
-                  ion%in_opac = .true.
                   if (ion%id(1:2) /= 'H ') then
                     call self%element_by_id(ion%id(1:2), element, verbose=.false.)
                     exit
@@ -2185,7 +2183,6 @@ contains
         endif
         if (associated(element)) then
             abund = log10(element%abund) + 12.0
-            element%ions%in_opac = .true.
             if (abund /= abnd) then
                 if (first_time) then
                     first_time = .false.

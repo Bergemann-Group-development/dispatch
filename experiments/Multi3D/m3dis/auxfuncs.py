@@ -604,15 +604,16 @@ def get_adjacent_peaks(yy, i, order=1, pad=0):
   idx = np.searchsorted(ex, i)
   return ex[idx-1:idx+1] + [-pad, pad]
 
+#=====================================================================
 def stagger_name_to_params(stagger_name):
-  _, teff, logg, feh = re.split('t|g|m', stagger_name)
+  _, teff, logg, feh = re.split('t|g|m|p', stagger_name)
   if len(teff)==2: teff = int(teff)*100
   teff = int(teff)
   logg = float(logg)/10
   if len(feh.strip())>2: feh = float(feh)/100
   feh = float(feh)/10
   feh = np.round(feh, 2)
-  if feh > 0: feh = -feh
+  if 'm' in stagger_name: feh = -feh
   if teff==5777 and logg==4.4:
     teff=5750; logg=4.5
   return teff, logg, feh
@@ -927,7 +928,7 @@ def gaussian_profile(x, dx, sigma, scale):
     return 1 - scale*np.exp(-0.5*((x-dx)/sigma)**2)
 
 #=====================================================================
-def fit_gaussian_profile(xx, yy, sigma=None, x0=None):
+def fit_gaussian_profile(xx, yy, x0=None, sigma=None, syst=None):
     if hasattr(xx, 'values'): xx = xx.values
     if hasattr(yy, 'values'): yy = yy.values
 
@@ -942,14 +943,24 @@ def fit_gaussian_profile(xx, yy, sigma=None, x0=None):
     s2p = np.sqrt(2*np.pi)
     sig = np.trapz(1-yy, x) / (s2p*scale)
 
+    absolute = sigma is not None
     p0 = [0, sig, scale]
     bounds = [[-0.5, 1e-4, 0], [0.5, 1, 1]]
-    pfit, pcov = curve_fit(gaussian_profile, x, yy, p0=p0, bounds=bounds, sigma=sigma)
+    pfit, pcov = curve_fit(gaussian_profile, x, yy, p0=p0, bounds=bounds, sigma=sigma, absolute_sigma=absolute)
     perr = np.sqrt(np.diag(pcov))
-
-    fitted = gaussian_profile(x, *pfit)
     weq = s2p*pfit[1]*pfit[2]*1e3 # equivalent width in mÅ
     err_weq = s2p * 1e3 * np.sqrt((pfit[2] * perr[1])**2 + (pfit[1] * perr[2])**2)
+
+    if syst is not None:
+      dy = 0.1*syst
+      pfit, pcov = curve_fit(gaussian_profile, x, yy+dy, p0=p0, bounds=bounds, sigma=sigma, absolute_sigma=absolute)
+      weq2 = s2p*pfit[1]*pfit[2]*1e3 # equivalent width in mÅ
+      dw = (weq2 - weq) / dy
+      sys_err = syst*dw
+      if hasattr(sys_err, '__iter__'): sys_err = np.mean(sys_err)
+      err_weq = np.sqrt(err_weq**2 + sys_err**2)
+
+    fitted = gaussian_profile(x, *pfit)
     return pfit, fitted, weq, err_weq
 
 #=====================================================================

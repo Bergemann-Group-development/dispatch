@@ -130,12 +130,12 @@ class CoG(m3dis):
         nlte_weq = nlte_run.calc_weq(LTE=LTE, **kwargs)
         if nlte_weq < 0: return np.nan
         if abnd is None: abnd = nlte_run.atom.abnd
-        anew = self.interp_abnd(nlte_weq, kr=kr, log=log, LTE=cog_LTE, **kwargs)
+        anew = self.interp_abnd(nlte_weq, log=log, LTE=cog_LTE, **kwargs)
         corr = abnd - anew
         return corr
 
     #=================================================================
-    def fit_clv(self, xx, yy, sigma=None, **kwargs):
+    def fit_clv(self, xx, yy, sigma=None, syst=None, **kwargs):
         weqs = np.zeros([len(self.runs), len(xx)])
         for i, run in enumerate(self.runs):
             mus, ww = run.get_clv(**kwargs)
@@ -146,9 +146,23 @@ class CoG(m3dis):
         def opt_func(xx, abnd):
             return func(abnd)
         
-        pfit, pcov = optimize.curve_fit(opt_func, xx, yy, p0=8.43, bounds=(8.03, 8.83), sigma=sigma)
+        p0 = np.mean(self.abnds)
+        bounds = (self.abnds[0], self.abnds[-1])
+        absolute = sigma is not None
+        pfit, pcov = optimize.curve_fit(opt_func, xx, yy, p0=p0, bounds=bounds, sigma=sigma, absolute_sigma=absolute)
+        afit = pfit[0]
+        err = np.sqrt(pcov[0,0])
+
+        if syst is not None:
+            dy = 0.1*syst
+            pfit, pcov = optimize.curve_fit(opt_func, xx, yy+dy, p0=pfit, bounds=bounds, sigma=sigma, absolute_sigma=absolute)
+            da = (afit - pfit[0]) / dy
+            sys_err = syst*da
+            if hasattr(sys_err, '__iter__'): sys_err = np.mean(sys_err)
+            err = np.sqrt(err**2 + sys_err**2)
+
         fitted = opt_func(xx, pfit[0])
-        return pfit[0], pcov[0,0]**2, fitted
+        return afit, err, fitted
     
     #=================================================================
     def __getattr__(self, attr):
