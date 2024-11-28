@@ -618,6 +618,13 @@ def stagger_name_to_params(stagger_name):
     teff=5750; logg=4.5
   return teff, logg, feh
 
+#=====================================================================
+def marcs_name_to_params(marcs_name):
+  data = re.split('s|p|_p|_g|_m|_t|_st|_z|_a|_c|_n|_o|_r|_s|.mod', marcs_name)
+  data = [float(d) for d in data if d]
+  teff, logg, mass, vmic, feh, alpha, c, n, o, r, s = data
+  return teff, logg, feh, vmic
+
 @jit
 def rotate_array(xx, yy, zz, array, vec, pivot_z=None, ray_offset=None):
   if pivot_z is None: pivot_z = zz[-1]
@@ -796,6 +803,9 @@ class memmap_list:
 
     def __truediv__(self, other):
         return np.array(self) / other
+    
+    def __transpose__(self):
+        return np.array(self).transpose()
         
 
 #=====================================================================

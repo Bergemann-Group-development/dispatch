@@ -96,7 +96,7 @@ class CoG(m3dis):
         return m3dis.fit_observed(self, oxx, oyy, fit=fit, bounds=bounds, p0=p0, sigma=sigma, method=method, tol=tol, **kwargs)
     
     #=================================================================
-    def interp_abnd(self, weq, log=True, **kwargs):
+    def interp_abnd(self, weq, log=True, sigma=None, **kwargs):
         weqs = [run.calc_weq(**kwargs) for run in self.runs]
         weqs = np.array(weqs)
 
@@ -123,15 +123,22 @@ class CoG(m3dis):
             weq = np.log(weq)
 
         func = PchipInterpolator(weqs, self.abnds)
-        return func(weq)
+        abnd = func(weq)
+
+        if sigma is None:
+            return abnd
+        else:
+            dadw = func.derivative(1)(weq)
+            err = np.abs(dadw) * sigma
+            return abnd, err
     
     #=================================================================
-    def get_weq_corr(self, nlte_run, abnd=None, LTE=False, cog_LTE=True, log=True, **kwargs):
-        nlte_weq = nlte_run.calc_weq(LTE=LTE, **kwargs)
-        if nlte_weq < 0: return np.nan
-        if abnd is None: abnd = nlte_run.atom.abnd
-        anew = self.interp_abnd(nlte_weq, log=log, LTE=cog_LTE, **kwargs)
-        corr = abnd - anew
+    def get_weq_corr(self, run, abnd=None, LTE=True, cog_LTE=False, log=True, **kwargs):
+        weq = run.calc_weq(LTE=LTE, **kwargs)
+        if weq < 0: return np.nan
+        if abnd is None: abnd = run.atom.abnd
+        anew = self.interp_abnd(weq, log=log, LTE=cog_LTE, **kwargs)
+        corr = anew - abnd
         return corr
 
     #=================================================================

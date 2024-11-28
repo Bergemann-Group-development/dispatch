@@ -686,10 +686,12 @@ contains
             if (.not. ok) then
                 call self%molecule_by_id(ion_id(1:6), mol)
                 ok = associated(mol)
-                if (ok .and. abs(mass-mol%awgt) > 0.1) then
-                    ok = .false. ! mass does not match
-                    print *, 'WARNING: ', trim(ion_id), ' mass does not match ', mol%id
-                    print *, 'disabling ', trim(ion_id), ' ', mass_id
+                if (ok) then
+                    if (abs(mass-mol%awgt) > 0.1) then
+                        ok = .false. ! mass does not match
+                        print *, 'WARNING: ', trim(ion_id), ' mass does not match ', mol%id
+                        print *, 'disabling ', trim(ion_id), ' ', mass_id, mol%awgt
+                    endif
                 endif
             endif
             
@@ -1154,9 +1156,7 @@ contains
                     ion_id(3:3) = 'I'
                     call self%ion_by_id(ion_id, ion)
                 case ('2')
-                    molecule%ions(j)%p => ion ! use previous ion a second time
-                    ion%nmolec = ion%nmolec + 1 
-                    cycle
+                    ion => ion ! use previous ion a second time
                 case ('+')
                     molecule%nions = molecule%nions - 1
                     molecule%ions(j-1)%p => ion%above

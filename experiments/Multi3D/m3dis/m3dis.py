@@ -434,7 +434,8 @@ class m3dis(object):
                 plt.ylabel(ylabel)
 
     #=====================================================================
-    def get_yy(self, ang=None, imu=None, norm=True, cont=False, LTE=False, mask=slice(None, None)):
+    def get_yy(self, ang=None, imu=None, norm=True, cont=False, LTE=False,
+               resolved=False, mask=slice(None, None)):
         #-----------------------------------------------------------------
         if not LTE and self.mode=='LTE':
             print('Cannot get NLTE spectrum, because run was in LTE!')
@@ -462,21 +463,36 @@ class m3dis(object):
 
         else:
             cnt = self.cnt
-            if cont:
-                yy = self.cnt
-            elif LTE:
-                yy = self.ie_lte
-            else:
-                yy = self.ie
+            if resolved:
+                if cont:
+                    yy = self.c3
+                elif LTE:
+                    yy = self.i3_lte
+                else:
+                    yy = self.i3
 
-            if ang is not None:
-                cnt = cnt[mask,ang]
-                yy = yy[mask,ang]
-            
-            elif imu is not None:
-                mu_mask = self.imus==imu
-                cnt = np.mean(cnt[mask, mu_mask], axis=-1)
-                yy  = np.mean(yy [mask, mu_mask], axis=-1)
+                if ang is None:
+                    raise ValueError('ang is required for resolved spectrum')
+                else:
+                    cnt = np.array(cnt[mask, ..., ang]).T
+                    yy = np.array(yy[mask, ..., ang]).T
+
+            else:
+                if cont:
+                    yy = self.cnt
+                elif LTE:
+                    yy = self.ie_lte
+                else:
+                    yy = self.ie
+
+                if ang is not None:
+                    cnt = cnt[mask,ang]
+                    yy = yy[mask,ang]
+                
+                elif imu is not None:
+                    mu_mask = self.imus==imu
+                    cnt = np.mean(cnt[mask, mu_mask], axis=-1)
+                    yy  = np.mean(yy [mask, mu_mask], axis=-1)
                 
         
         if norm:
@@ -488,7 +504,8 @@ class m3dis(object):
     def crop(self, slc=None, lam0=None, dlam=None, xmin=None, xmax=None, vdop=None,
              vrot=None, vshift=None, convolve=None, zeta_rt=None, lam_offset=True,
              per_aa=False, renorm=None, fac=None, tilt=None, velocity_units=False, 
-             ang=None, imu=None, norm=True, cont=False, LTE=False, kr=None, **kwargs):
+             ang=None, imu=None, norm=True, cont=False, LTE=False, kr=None, 
+             resolved=False, **kwargs):
         #-----------------------------------------------------------------
         if kr is not None:
             line = self.atom.trans[kr]
@@ -528,12 +545,13 @@ class m3dis(object):
 
         xx, mask = self.get_xx(oxx, slc=slc, dlam=dlam, xmin=xmin, xmax=xmax)
 
+        get_yy_dict = {'LTE':LTE, 'norm':norm, 'cont':cont, 'resolved':resolved, 'mask':mask}
         if hasattr(ang, '__iter__'):
-            yy = [self.get_yy(ang=i, norm=norm, cont=cont, LTE=LTE, mask=mask) for i in ang]
+            yy = [self.get_yy(ang=i, **get_yy_dict) for i in ang]
         elif hasattr(imu, '__iter__'):
-            yy = [self.get_yy(imu=i, norm=norm, cont=cont, LTE=LTE, mask=mask) for i in imu]
+            yy = [self.get_yy(imu=i, **get_yy_dict) for i in imu]
         else:
-            yy = [self.get_yy(ang=ang, imu=imu, norm=norm, cont=cont, LTE=LTE, mask=mask)]
+            yy = [self.get_yy(ang=ang, imu=imu, **get_yy_dict)]
 
         yy = np.array(yy)
 
@@ -660,8 +678,8 @@ class m3dis(object):
     def plot_surface(self, Z, ang=0, rasterized=True, shading='nearest', 
                      show_labels=True, cmap='hot', rot90=0, **kwargs):
         #-----------------------------------------------------------------
-        xx = self.xx
-        yy = self.yy
+        xx = self.xx + self.dx/2
+        yy = self.yy + self.dy/2
         mux, muy, muz = self.vec[ang]
 
         for i in range(rot90):
@@ -930,15 +948,20 @@ class m3dis(object):
     
     #=====================================================================
     def plot_ltau_cube(self, cube, marker=',', linestyle='none', rasterized=True,
-                       xmin=None, xmax=None, ymin=None, ymax=None, **kwargs):
+                       xmin=None, xmax=None, ymin=None, ymax=None, density=False,
+                       cmap='GnBu', **kwargs):
         #-----------------------------------------------------------------
         xx = self.ltau.ravel()
         yy = cube.ravel()
         xx, yy = crop_inputs(xx, yy, xmin, xmax, ymin, ymax)
         plt.xlim(np.nanmin(xx), np.nanmax(xx))
         plt.ylim(np.nanmin(yy), np.nanmax(yy))
-        return plt.plot(xx, yy, marker=marker, linestyle=linestyle,
-                        rasterized=rasterized, **kwargs)
+
+        if density:
+            return scatter_density(xx, yy, cmap=cmap, **kwargs)
+        else:
+            return plt.plot(xx, yy, marker=marker, linestyle=linestyle,
+                            rasterized=rasterized, **kwargs)
 
     #=====================================================================
     def get_ltau_mean(self, cube, log=False, zaxis=-1):
