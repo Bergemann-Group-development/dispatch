@@ -2166,6 +2166,8 @@ contains
         integer :: j
         logical, save :: first_time=.true.
         !---------------------------------------------------------------------
+        element => null()
+        mol => null()
         call self%element_by_id(id(1:3), element, verbose=.false.)
         if (.not. associated(element)) then
             call self%molecule_by_id(id(1:3), mol, verbose=.false.)
@@ -2189,8 +2191,8 @@ contains
                     print '(A, A, A, F5.2, A, F5.2)', 'Changing abundance of ', trim(element%id), ' from ', abund, ' to ', abnd
                 endif
 
-                element%abund =  10**(abnd - 12.0)
-                element%awgt  =  awgt
+                element%abund = 10**(abnd - 12.0)
+                if (.not. associated(mol)) element%awgt = awgt
                 call self%compute_grams_per_hydrogen(self%suma, self%xmy, self%grph)
             endif
         endif

@@ -91,23 +91,36 @@ def split_kwargs(func, kwargs):
     return matched, unmatched
 
 #=====================================================================
-def calc_weq(self, method='linear', **kwargs):
+def calc_weq(self, method='linear', return_err=False, **kwargs):
     #-----------------------------------------------------------------
     xx, yy = self.crop(**kwargs)
+    eweq = 0
 
     if method == 'linear':
-        return np.trapz(1-yy, x=xx)*1e3
+        weq = np.trapz(1-yy, x=xx)*1e3
     
     if method == 'pchip':
         xxx = np.linspace(xx[0], xx[-1], xx.size*10)
         f = PchipInterpolator(xx, 1-yy)
-        return np.trapz(f(xxx), x=xxx)*1e3
+        weq = np.trapz(f(xxx), x=xxx)*1e3
     
     if method == 'gauss':
         if yy.ndim == 2:
-            weq = [fit_gaussian_profile(xx, y)[2] for y in yy]
+            tup = [fit_gaussian_profile(xx, y)[2:] for y in yy]
+            weq, eweq = np.array(tup).T
         else:
-            pfit, fitted, weq, err_weq = fit_gaussian_profile(xx, yy)
+            weq, eweq = fit_gaussian_profile(xx, yy)[2:]
+    
+    if method == 'asym_gauss':
+        if yy.ndim == 2:
+            tup = [fit_asym_gaussian_profile(xx, y)[2:] for y in yy]
+            weq, eweq = np.array(tup).T
+        else:
+            weq, eweq = fit_asym_gaussian_profile(xx, yy)[2:]
+
+    if return_err:
+        return weq, eweq
+    else:
         return weq
 
 #=====================================================================
@@ -934,68 +947,77 @@ def plot_arrow(start, end, color=None, linewidth=None, markersize=None):
     plt.plot(end[0], end[1], marker=(3, 0, angle), color=p.get_color(), markersize=markersize)
 
 #=====================================================================
-def gaussian_profile(x, dx, sigma, scale):
-    return 1 - scale*np.exp(-0.5*((x-dx)/sigma)**2)
+def gaussian_profile(x, x0, sig, amp):
+    return 1 - amp*np.exp(-0.5*((x-x0)/sig)**2)
 
 #=====================================================================
 def fit_gaussian_profile(xx, yy, x0=None, sigma=None, syst=None):
     if hasattr(xx, 'values'): xx = xx.values
     if hasattr(yy, 'values'): yy = yy.values
+    absolute = sigma is not None
 
-    if x0 is None:
-        if xx[0] < 0:
-            x0 = 0
-        else:
-            x0 = xx[xx.size//2]
-
+    if x0 is None: x0 = 0 if xx[0] < 0 else xx[xx.size//2]
     x = xx - x0
     scale = 1 - np.min(yy)
     s2p = np.sqrt(2*np.pi)
     sig = np.trapz(1-yy, x) / (s2p*scale)
 
-    absolute = sigma is not None
     p0 = [0, sig, scale]
     bounds = [[-0.5, 1e-4, 0], [0.5, 1, 1]]
-    pfit, pcov = curve_fit(gaussian_profile, x, yy, p0=p0, bounds=bounds, sigma=sigma, absolute_sigma=absolute)
-    perr = np.sqrt(np.diag(pcov))
-    weq = s2p*pfit[1]*pfit[2]*1e3 # equivalent width in mÅ
-    err_weq = s2p * 1e3 * np.sqrt((pfit[2] * perr[1])**2 + (pfit[1] * perr[2])**2)
+    popt, pcov = curve_fit(gaussian_profile, x, yy, p0=p0, bounds=bounds, sigma=sigma, absolute_sigma=absolute)
+    x0, sig, amp = popt
+    weq = 1e3*s2p*amp*sig # equivalent width in mÅ
+    partials = 1e3*s2p*np.array([0, amp, sig]) # dweq/dx0, dweq/dsig, dweq/damp
+    eweq = np.sqrt(np.dot(partials, np.dot(pcov, partials)))
 
     if syst is not None:
       dy = 0.1*syst
-      pfit, pcov = curve_fit(gaussian_profile, x, yy+dy, p0=p0, bounds=bounds, sigma=sigma, absolute_sigma=absolute)
-      weq2 = s2p*pfit[1]*pfit[2]*1e3 # equivalent width in mÅ
+      (x0, sig, amp), pcov = curve_fit(gaussian_profile, x, yy+dy, p0=popt, bounds=bounds, sigma=sigma, absolute_sigma=absolute)
+      weq2 = 1e3*s2p*amp*sig # equivalent width in mÅ
       dw = (weq2 - weq) / dy
-      sys_err = syst*dw
-      if hasattr(sys_err, '__iter__'): sys_err = np.mean(sys_err)
-      err_weq = np.sqrt(err_weq**2 + sys_err**2)
+      esys = syst*dw
+      if hasattr(esys, '__iter__'): esys = np.mean(esys)
+      eweq = np.sqrt(eweq**2 + esys**2)
 
-    fitted = gaussian_profile(x, *pfit)
-    return pfit, fitted, weq, err_weq
+    fitted = gaussian_profile(x, *popt)
+    return popt, fitted, weq, eweq
 
 #=====================================================================
-def fit_gaussian_profile2(xx, yy, sigma=None):
+def asym_gaussian_profile(x, x0, sig_left, sig_right, amp):
+    y = np.zeros_like(x)
+    mask = x < x0
+    y[mask] = (x[mask]-x0)/sig_left
+    y[~mask] = (x[~mask]-x0)/sig_right
+    return 1-amp*np.exp(-0.5*y**2)
+
+#=====================================================================
+def fit_asym_gaussian_profile(xx, yy, x0=None, sigma=None, syst=None):
     if hasattr(xx, 'values'): xx = xx.values
     if hasattr(yy, 'values'): yy = yy.values
-    if sigma is None: sigma=1
+    absolute = sigma is not None
 
-    x = xx - xx[xx.size//2]
+    if x0 is None: x0 = 0 if xx[0] < 0 else xx[xx.size//2]
+    x = xx - x0
     scale = 1 - np.min(yy)
     s2p = np.sqrt(2*np.pi)
     sig = np.trapz(1-yy, x) / (s2p*scale)
+    
+    p0 = [0, sig, sig, scale]
+    bounds = [[-0.5, 1e-4, 1e-4, 0], [0.5, 1, 1, 1]]
+    popt, pcov = curve_fit(asym_gaussian_profile, x, yy, p0=p0, bounds=bounds, sigma=sigma, absolute_sigma=absolute)
+    x0, L, R, A = popt
+    weq = 1e3*s2p/2*A*(L + R) # equivalent width in mÅ
+    partials = 1e3*s2p/2*np.array([0, A, A, (L + R)])
+    eweq = np.sqrt(np.dot(partials, np.dot(pcov, partials)))
 
-    p0 = [0, sig, scale]
-    bounds = np.array([[-0.5, 1e-4, 0.01], [0.5, 1, 1]])
-  
-    bounds = np.vstack(bounds).T
-    def opt_funct(params, newx):
-        newy = gaussian_profile(newx, *params)
-        dep = np.trapz(newy, newx)
-        penalty = np.sum(((newy - yy)**2)[newy < yy])
-        return dep + 0.5*penalty
+    if syst is not None:
+      dy = 0.1*syst
+      (x0, L, R, A), pcov = curve_fit(asym_gaussian_profile, x, yy+dy, p0=popt, bounds=bounds, sigma=sigma, absolute_sigma=absolute)
+      weq2 = 1e3*s2p/2*A*(L + R) # equivalent width in mÅ
+      dw = (weq2 - weq) / dy
+      esys = syst*dw
+      if hasattr(esys, '__iter__'): esys = np.mean(esys)
+      eweq = np.sqrt(eweq**2 + esys**2)
 
-    pfit = optimize.minimize(opt_funct, p0, args=(x,), bounds=bounds, method='Nelder-Mead').x
-
-    fitted = gaussian_profile(x, *pfit)
-    weq = s2p*pfit[1]*pfit[2]*1e3 # equivalent width in mÅ
-    return pfit, fitted, weq
+    fitted = asym_gaussian_profile(x, *popt)
+    return popt, fitted, weq, eweq

@@ -182,6 +182,10 @@ class m3dis(object):
                 self.atom.abnd = float(self.abundances[self.atom.id])
             elif in_abnd > -99:
                 self.atom.abnd = in_abnd
+            elif self.atom.molec:
+                moldict = {'CH':'C', 'OH':'O', 'NH':'N', 'CN':'N', 'CO':'C',
+                           'NO':'N', 'H2O':'O', 'C2':'C', 'N2':'N', 'O2':'O'}
+                self.atom.abnd = self.abundances[moldict[self.atom.id]]
 
             #self.atom.title = 'A({}) = {:.2f}'.format(self.atom.id.strip(), self.atom.abnd)
 
@@ -314,6 +318,10 @@ class m3dis(object):
                 self.chi  = np.array(mem[...,6])
                 self.tau  = compute_tau_scale(self.chi, self.zz*1e8, axis=-1)
                 self.ltau = np.log10(self.tau)
+
+                zz = np.tile(self.zz, (nx, ny, 1)).squeeze()
+                self.z0 = np.mean(self.get_ltau_surface(0, zz))
+                self.height = self.zz - self.z0
                 
             if os.path.isfile(folder + 'atmos_data.bin') and read_atmos:
                 dat = FortranFile(folder + 'atmos_data.bin')
@@ -914,16 +922,16 @@ class m3dis(object):
         
 
     #=====================================================================
-    def interp_ltau_surf(self, cube, log=False, zaxis=-1):
+    def interp_ltau_surf(self, cube, newx=None, log=False, zaxis=-1):
         #-----------------------------------------------------------------
         if zaxis != -1: cube = np.moveaxis(cube, zaxis, -1)
         ltau = self.ltau
-        xx = ltau[...,::-1].copy()
-        yy = cube[...,::-1].copy()
+        step = -1 if ltau[0,0,0] > ltau[0,0,-1] else 1
+        xx = ltau[...,::step].copy()
+        yy = cube[...,::step].copy()
         if log: yy = np.log(yy)
-        newx = np.mean(ltau, axis=(0,1))[::-1]
-        newy = interp_tau(newx, xx, yy)[...,::-1]
-        newx = newx[::-1]
+        if newx is None: newx = np.mean(xx, axis=(0,1))
+        newy = interp_tau(newx, xx, yy)
         if log: newy = np.exp(newy)
         if zaxis != -1: newy = np.moveaxis(newy, -1, zaxis)
         return newx, newy
@@ -932,7 +940,7 @@ class m3dis(object):
     def plot_geo_cube(self, cube, marker=',', linestyle='none', rasterized=True,
                        xmin=None, xmax=None, ymin=None, ymax=None, **kwargs):
         #-----------------------------------------------------------------
-        xx = (self.zz * np.ones_like(self.ltau)).ravel()
+        xx = (self.height * np.ones_like(self.ltau)).ravel()
         yy = cube.ravel()
         if xmin is None: xmin = np.nanmin(xx)
         if xmax is None: xmax = np.nanmax(xx)
@@ -964,20 +972,20 @@ class m3dis(object):
                             rasterized=rasterized, **kwargs)
 
     #=====================================================================
-    def get_ltau_mean(self, cube, log=False, zaxis=-1):
+    def get_ltau_mean(self, cube, log=False, **kwargs):
         #-----------------------------------------------------------------
         if hasattr(self, 'runs'):
-            xy = np.array([run.get_ltau_mean(cube, log=log, zaxis=zaxis) for run in self.runs])
-            ltau = np.mean(xy[:,0], axis=0)
-            yy1d = [np.interp(ltau, xy[i,0,::-1], xy[i,1,::-1]) for i in range(len(xy))]
+            newx = np.mean([run.ltau for run in self.runs], axis=(0,1,2))
+            kwargs['newx'] = newx
+            yy1d = [run.get_ltau_mean(cube, log=log, **kwargs)[1] for run in self.runs]
             yy1d = np.mean(yy1d, axis=0)
-            return ltau[::-1], yy1d[::-1]
+            return newx, yy1d
 
         if type(cube) is str:
             cube = getattr(self, cube)
 
         if self.dim == '3D':
-            ltau1d, yy3d = self.interp_ltau_surf(cube, log=log, zaxis=zaxis)
+            ltau1d, yy3d = self.interp_ltau_surf(cube, log=log, **kwargs)
             if log: yy3d = np.log(yy3d)
             yy1d = np.mean(yy3d, axis=(0,1))
             if log: yy1d = np.exp(yy1d)
@@ -996,15 +1004,61 @@ class m3dis(object):
         return plt.plot(xx, yy, **kwargs)
     
     #=====================================================================
-    def plot_geo_mean(self, yy, log=False, xmin=None, xmax=None,
-                       ymin=None, ymax=None, **kwargs):
-        #-----------------------------------------------------------------
+    def get_geo_mean(self, yy, log=False):
+        if hasattr(self, 'runs'):
+            yy1d = [run.get_geo_mean(yy, log=log)[1] for run in self.runs]
+            yy1d = np.mean(yy1d, axis=0)
+            newx = self.runs[0].zz - np.mean([run.z0 for run in self.runs])
+            return newx, yy1d
+        
+        if type(yy) is str:
+            yy = getattr(self, yy)
+
         if log: yy = np.log(yy)
         yy = np.mean(yy, axis=(0,1))
         if log: yy = np.exp(yy)
-        xx = self.zz
+        xx = self.height
+        return xx, yy
+    
+    #=====================================================================
+    def plot_geo_mean(self, yy, log=False, xmin=None, xmax=None,
+                       ymin=None, ymax=None, **kwargs):
+        #-----------------------------------------------------------------
+        xx, yy = self.get_geo_mean(yy, log=log)
         xx, yy = crop_inputs(xx, yy, xmin, xmax, ymin, ymax)
         return plt.plot(xx, yy, **kwargs)
+    
+    #=================================================================
+    def get_ltau_surface(self, ltau, cube, log=False, zaxis=-1):
+        if hasattr(self, 'runs'):
+            yy = np.array([run.get_ltau_surface(ltau, cube, log=log, zaxis=zaxis) for run in self.runs])
+        else:
+            if type(cube) is str:
+                cube = getattr(self, cube)
+
+            if self.dim == '3D':
+                newx = np.array([ltau])
+                _, yy = self.interp_ltau_surf(cube, newx=newx, log=log, zaxis=zaxis)
+            else:
+                ltau1d = self.ltau
+                step = -1 if ltau1d[0] > ltau1d[-1] else 1
+                yy = np.interp(ltau, ltau1d[::step], cube[::step])
+                
+        return yy
+
+    #=================================================================
+    def plot_ltau_hist(self, ltau, cube, log=False, zaxis=-1, show_mean=False, color=None, **kwargs):
+        yy = self.get_ltau_surface(ltau, cube, log=log, zaxis=zaxis)
+
+        if show_mean:
+            if log:
+                mean = 10**np.mean(np.log10(yy))
+            else:
+                mean = np.mean(yy)
+                
+            plt.axvline(mean, ls='--', color=color)
+
+        return plt.hist(yy.ravel(), color=color, **kwargs)
     
     #=================================================================
     def get_clv(self, **kwargs):
@@ -1220,8 +1274,8 @@ class m3dis(object):
         else:
             ltau = self.ltau
 
-        order = np.argsort(ltau)
-        z0 = np.interp(0, ltau[order], self.zz[order])
+        step = -1 if ltau[0] > ltau[-1] else 1
+        z0 = np.interp(0, ltau[::step], self.zz[::step])
 
         xx = self.xx
         yy = self.yy
@@ -1270,7 +1324,7 @@ class m3dis(object):
                 cmap2 = ['binary', 'binary_r'][cm(1) < cm(0)]
                 ax2.contour(X, Y, Z.T, levels=levels, cmap=cmap2, linewidths=1, linestyles=':')
                 ax2.set_ylabel(r'$\log \tau_{500}$')
-                zlevels = np.interp(levels, Z[-1,:][::-1], zz[::-1])
+                zlevels = np.interp(levels, Z[-1,:][::step], zz[::step])
                 ax2.set_yticks(zlevels)
                 ax2.set_yticklabels(levels)
 
