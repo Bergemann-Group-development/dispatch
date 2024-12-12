@@ -67,7 +67,7 @@ SUBROUTINE init(self, task_list, name)
   class(link_t), pointer:: link, next
   integer :: lunit, iostat, k, ip
   integer :: patches_per_mpi=1
-  integer :: dims=1, nx=5, ny=5, nz=128, snap=0
+  integer :: dims=1, nx=-1, ny=-1, nz=128, snap=0
   integer :: verbose=0
   logical :: use_abnd=.false.
   character(len=512) :: command
@@ -174,6 +174,8 @@ SUBROUTINE init(self, task_list, name)
 
     if (.not. ia%is_3d) then
       nx = 1; ny = 1
+    elseif (nx < 0 .or. ny < 0) then
+      nx = ia%nx; ny = ia%ny
     endif
     self%n = [nx, ny, nz]
 
