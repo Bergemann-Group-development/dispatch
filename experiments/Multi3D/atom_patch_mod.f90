@@ -14,7 +14,7 @@ MODULE atom_patch_mod
     USE coll_mod, only: cbbesc, cbfesc, cbbhsc, cbfhsc
     USE trans_mod, only: line_type, cont_type, transition_type
     USE const_mod, only: CC
-    USE ion_mod, only: ion_type, particle_type, debye_shield
+    USE ion_mod, only: ion_type, particle_type, debye_shield, massive_type
     USE element_mod, only: element_type
     USE molecule_mod, only: molec_type
     USE bbtrans_mod, only: bbtrans_type
@@ -109,6 +109,7 @@ MODULE atom_patch_mod
     class(element_type), pointer :: element
     class(molec_type), pointer :: molecule
     class(ion_type), pointer :: ion
+    class(massive_type), pointer :: species
     real(8), save :: qnorm=10.0, abundance=-99.9
     integer, save :: itimer=0, n_in_lines=0
     integer, save, allocatable :: in_lines(:)
@@ -164,6 +165,37 @@ MODULE atom_patch_mod
       call os%copy_file(trim(atom_file), trim(io%run_dir)//'atom.txt')
       if (abundance > -99) atom%abnd = abundance
 
+      write (io%namelist, atom_params)
+
+      call composition%element_by_id(atom%id(1:3), element, verbose=.false.)
+      if (associated(element)) then
+        species => element
+        element%ions%in_opac = .true.
+      else
+        call composition%molecule_by_id(atom%id(1:3), molecule, verbose=.false.)
+        if (associated(molecule)) then
+          species => molecule
+          molecule%in_opac = .true.
+          do i=1, molecule%nions
+            ion => molecule%ions(i)%p
+            ion%in_opac = .true.
+          end do
+        endif
+      endif
+  
+      call atom%prepare_damping(species)
+
+      if (use_atom_abnd .or. abundance > -99) then
+        call composition%overwrite_abundance(species, atom%abnd, atom%awgt)
+      else
+        atom%abnd = atom%abnd + composition%FeH
+      endif
+      
+      if (exclude_trace_cont) then
+        call self%exclude_double_continua(atom)
+      endif
+      call self%exclude_double_lines(atom, species)
+
       if (decouple_continuum) then
         allocate(dc_line(atom%nline))
         allocate(dc_cont(atom%ncont))
@@ -175,8 +207,6 @@ MODULE atom_patch_mod
       allocate(out_cont(atom%ncont))
       out_line = atom%line
       out_cont = atom%cont
-
-      write (io%namelist, atom_params)
     endif
 
     if (atom_file == '') then
@@ -194,31 +224,6 @@ MODULE atom_patch_mod
     if (rotate_atmos) then
       allocate(self%atom%rotated_data(size(long_vec, 2)))
     endif
-
-    call composition%element_by_id(atom%id(1:3), element, verbose=.false.)
-    if (associated(element)) then
-      element%ions%in_opac = .true.
-    else
-      call composition%molecule_by_id(atom%id(1:3), molecule, verbose=.false.)
-      if (associated(molecule)) then
-        molecule%in_opac = .true.
-        do i=1, molecule%nions
-          ion => molecule%ions(i)%p
-          ion%in_opac = .true.
-        end do
-      endif
-    endif
-
-    if (use_atom_abnd .or. abundance > -99) then
-      call composition%overwrite_abundance(atom%id, atom%abnd, atom%awgt)
-    else
-      self%atom%abnd = self%atom%abnd + composition%FeH
-    endif
-    
-    if (exclude_trace_cont) then
-      call self%exclude_double_continua()
-    endif
-    call self%exclude_double_lines()
 
     if (decouple_continuum) then
       self%bb_atom = self%atom
@@ -823,8 +828,9 @@ MODULE atom_patch_mod
   END SUBROUTINE get_osmet_nu
 
   !===============================================================================
-  SUBROUTINE exclude_double_continua (self)
+  SUBROUTINE exclude_double_continua (self, atom)
     class(atom_patch_t), target :: self
+    type(atom_type) :: atom
     class(bftrans_type), pointer :: trans
     integer :: i, lower, kc
     logical :: ok
@@ -839,18 +845,18 @@ MODULE atom_patch_mod
       case default
         ok = .false.
         if (trans%level%g > 0) then
-          if (uppercase(trans%ion%id(1:2)) == self%atom%id) then
+          if (uppercase(trans%ion%id(1:2)) == atom%id) then
             if (trans%molecular) then
               ok = .true.
             else
-              do kc=1, self%atom%ncont
-                if (.not. self%atom%cont(kc)%active) cycle
-                lower = self%atom%cont(kc)%i
+              do kc=1, atom%ncont
+                if (.not. atom%cont(kc)%active) cycle
+                lower = atom%cont(kc)%i
 
-                if (self%atom%ev(lower)==0) then
-                  ok = trans%level%xion == self%atom%ev(lower)
+                if (atom%ev(lower)==0) then
+                  ok = trans%level%xion == atom%ev(lower)
                 else
-                  ok = abs(trans%level%xion / self%atom%ev(lower) - 1) < 1d-2
+                  ok = abs(trans%level%xion / atom%ev(lower) - 1) < 1d-2
                 endif
                 if (ok) exit
               end do
@@ -870,8 +876,10 @@ MODULE atom_patch_mod
   END SUBROUTINE exclude_double_continua
 
   !===============================================================================
-  SUBROUTINE exclude_double_lines (self)
+  SUBROUTINE exclude_double_lines (self, atom, species)
     class(atom_patch_t), target :: self
+    type(atom_type) :: atom
+    class(massive_type), pointer :: species
     class(element_type), pointer :: element
     class(molec_type), pointer :: molec
     class(ion_type), pointer :: ion
@@ -879,46 +887,38 @@ MODULE atom_patch_mod
     integer :: i, j, l
     logical, save :: first_time=.true.
     !-----------------------------------------------------------------------------
-    call composition%element_by_id(trim(self%atom%id), element, verbose=.false.)
-    if (.not. associated(element)) then
-      call composition%molecule_by_id(trim(self%atom%id), molec, verbose=.false.)
-      if (.not. associated(molec)) then
-        return
-      else
-        if (molec%nline == 0) return
-      endif
-    else
+    select type (species)
+    class is (element_type)
+      element => species
       if (all(element%ions%nline == 0)) return
-    endif
-
-    if (exclude_from_line_list) then
-      if (associated(element)) then
+      if (exclude_from_line_list) then
         element%ions%in_linelist = .false.
       else
-        molec%in_linelist = .false.
-      endif
-      if (first_time) then
-        first_time = .false.
-        print *, 'excluding all ', trim(self%atom%id), ' lines from line list'
-      endif
-    else
-      do j=lbound(element%ions,1), ubound(element%ions,1) - 1
-        ion => element%ions(j)
-        if (ion%nline == 0) cycle
-
-        do l=1, ion%nline
-          ll_line => ion%line(l)
-          
-          do i=1, self%atom%nline
-            line => self%atom%line(i)
-            if (abs(line%nu0 / ll_line%nu0 -1) < 1e-6 &
-                .and. abs(line%Aji / ll_line%Aji - 1) < 1e-4) then
-              call ll_line%deactivate()
-              print '(A, F10.2)', 'excluding linelist line at ', CC / ll_line%nu0 *1e8
-            endif
+        do j=lbound(element%ions,1), ubound(element%ions,1) - 1
+          ion => element%ions(j)
+          if (ion%nline == 0) cycle
+  
+          do l=1, ion%nline
+            ll_line => ion%line(l)
+            
+            do i=1, atom%nline
+              line => atom%line(i)
+              if (abs(line%nu0 / ll_line%nu0 -1) < 1e-6 &
+                  .and. abs(line%Aji / ll_line%Aji - 1) < 1e-4) then
+                call ll_line%deactivate()
+                print '(A, F10.2)', 'excluding linelist line at ', CC / ll_line%nu0 *1e8
+              endif
+            end do
           end do
         end do
-      end do
+      endif
+    class is (molec_type)
+      molec => species
+      if (molec%nline == 0) return
+      if (exclude_from_line_list) molec%in_linelist = .false.
+    end select
+    if (exclude_from_line_list) then
+        print *, 'excluding all ', trim(atom%id), ' lines from line list'
     endif
   END SUBROUTINE exclude_double_lines
   

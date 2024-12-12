@@ -1954,21 +1954,21 @@ SUBROUTINE get_vproj (self, vproj, vec, rotate, i_mu)
   integer, save :: itimer
   !-----------------------------------------------------------------------------
   call trace%begin('nlte_patch_t%get_vproj', itimer=itimer)
-  if (.not. use_vel) then
-    vproj = 0
+  if (rotate) then
+    mem => self%m3d_parent%mem(:,:,:,:,self%it,1+i_mu)
   else
-    if (rotate) then
-      mem => self%m3d_parent%mem(:,:,:,:,self%it,1+i_mu)
-    else
-      mem => self%m3d_parent%mem(:,:,:,:,self%it,1)
-    endif
-
-    vx => mem(:,:,:,self%i_vx)
-    vy => mem(:,:,:,self%i_vy)
-    vz => mem(:,:,:,self%i_vz)
-
-    vproj = -vec(1)*vx - vec(2)*vy + vec(3)*vz
+    mem => self%m3d_parent%mem(:,:,:,:,self%it,1)
   endif
+
+  vx => mem(:,:,:,self%i_vx)
+  vy => mem(:,:,:,self%i_vy)
+  vz => mem(:,:,:,self%i_vz)
+
+  if (.not. use_vel(1)) vx = 0
+  if (.not. use_vel(2)) vy = 0
+  if (.not. use_vel(3)) vz = 0
+  
+  vproj = -vec(1)*vx - vec(2)*vy + vec(3)*vz
   call trace%end(itimer)
 END SUBROUTINE get_vproj
 

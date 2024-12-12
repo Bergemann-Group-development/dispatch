@@ -756,9 +756,9 @@ class m3dis(object):
 
             if mean:
                 ltau = np.mean(xy[:,0], axis=0)
-                yy1d = [np.interp(ltau, xy[i,0,::-1], xy[i,1,::-1]) for i in range(len(xy))]
+                yy1d = [np.interp(ltau, xy[i,0], xy[i,1]) for i in range(len(xy))]
                 yy1d = np.mean(yy1d, axis=0)
-                return ltau[::-1], yy1d[::-1]
+                return ltau, yy1d
             else:
                 return xy[:,0], xy[:,1]
 
@@ -1061,9 +1061,10 @@ class m3dis(object):
         return plt.hist(yy.ravel(), color=color, **kwargs)
     
     #=================================================================
-    def get_clv(self, **kwargs):
+    def get_clv(self, center_diff=False, **kwargs):
         xx = self.mus
         yy = self.calc_weq(imu=np.arange(len(xx)), **kwargs)
+        if center_diff: yy = yy - yy[0]
         return xx, yy
     
     #=====================================================================
@@ -1357,6 +1358,16 @@ class m3dis(object):
         check_and_combine('vec')
         check_and_combine('wts')
         check_and_combine('nline')
+
+        self.ne = np.array([run.ne for run in runs])
+        self.rho = np.array([run.rho for run in runs])
+        self.temp = np.array([run.temp for run in runs])
+        self.vx = np.array([run.vx for run in runs])
+        self.vy = np.array([run.vy for run in runs])
+        self.vz = np.array([run.vz for run in runs])
+        self.chi = np.array([run.chi for run in runs])
+        self.tau = np.array([run.tau for run in runs])
+        self.ltau = np.array([run.ltau for run in runs])
         
         if hasattr(self.run0, 'atom'):
             self.atom = copy.copy(self.run0.atom)

@@ -129,7 +129,7 @@ MODULE m3d_patch_mod
     real(8), public, save, dimension(:), allocatable:: wmu, long_wmu
     real(8), public, save, dimension(:,:), allocatable:: vec, long_vec
     real(8), public:: convlim=1d-3, convmax=tiny(1.0)
-    logical, public, save :: converged=.false., use_vel=.true., premature_finish=.true.
+    logical, public, save :: converged=.false., use_vel(3)=.true., premature_finish=.true.
     logical, public, save :: preconditioning=.true., binned_opac=.false., save_Qrad=.false.
     logical, public, save :: check_NaN=.false., save_resolved=.false.
     logical, public, save :: decouple_continuum=.false., sample_back_opac=.false.
@@ -256,7 +256,7 @@ MODULE m3d_patch_mod
         overlapping_bb = .false.
         overlapping_bf = .false.
         use_rho = .false.
-        use_vel = .false.
+        use_vel(1:3) = .false.
         sample_back_opac = .false.
         h_occupation_probability = .false.
         use_classic_col = .false.
@@ -266,7 +266,6 @@ MODULE m3d_patch_mod
         !comoving_frame = .true.
         !preconditioning = .false.
       endif
-
       if (pivot_z < 0) then
         ! taking the top as the pivot plane
         pivot_z = self%patch%box(3)

@@ -8,7 +8,7 @@ MODULE atom_mod
     USE trans_mod
     USE mmath_mod, only: refsor, unista
     USE op_math_mod, only: lineq, get_interval, eqsyst, lineq_no_pivot
-    USE ion_mod, only: ion_type, massive_type, debye_shield
+    USE ion_mod, only: ion_type, massive_type, debye_shield, massive_type
     USE element_mod, only: element_type
     USE molecule_mod, only: molec_type
     USE os_mod
@@ -106,6 +106,7 @@ MODULE atom_mod
       procedure :: get_active_nlevels
       procedure :: read
       procedure :: read_pandas
+      procedure :: prepare_damping
       procedure :: prepare_Drawin
       procedure :: classic_col
       procedure :: copy_to
@@ -499,7 +500,7 @@ MODULE atom_mod
     integer, pointer, contiguous, dimension(:) :: icont
     integer :: i, j, ic, tri, idx, latom, nnu_bf, ncol, ntri, ii, jj
     integer :: nnu, ncont, ntemp, l, u
-    real(8) :: scr, gv, gq, cnt_ev, nu_max, alpha0, thresh_aa, dnu
+    real(8) :: scr, gv, cnt_ev, nu_max, alpha0, thresh_aa, dnu
     real(8) :: gij, red_fcut, blu_fcut, vbar2e4, loggf, lam_air
     character(512) :: dummy_string
     character(8) :: key, str1, str2, str3
@@ -559,7 +560,7 @@ MODULE atom_mod
       endif
 
       read(latom,*) idx, lin%i, lin%j, lam_air, lin%lower_ev, loggf, &
-            lin%ga, lin%gv, gq, lin%nnu, lin%qmax, lin%q0, lin%profile_type
+            lin%ga, lin%gv, lin%gq, lin%nnu, lin%qmax, lin%q0, lin%profile_type
 
       if (disable_bb) call lin%deactivate()
             
@@ -614,16 +615,6 @@ MODULE atom_mod
           cycle
         endif
       endif
-      
-      ! find continuum level
-      ic = findloc(self%ion, self%ion(lin%j)+1, 1)
-      if (ic > 0) cnt_ev = self%ev(ic)
-      do ic=1, self%nlevel
-        if (self%ion(ic) .eq. self%ion(lin%j)+1) then
-          cnt_ev = self%ev(ic)
-          exit
-        endif
-      end do
 
       lin%ntrans = i
       lin%profile_type = trim(lowercase(lin%profile_type))
@@ -635,15 +626,6 @@ MODULE atom_mod
         write (*, fmt = '(a,1x,a,a)') 'Profile not recognised:', &
                 lin%profile_type, ' Setting it to VOIGT'
         lin%profile_type = 'voigt'
-      end select
-
-      select case (lin%profile_type)
-      case ('hlinop')
-        call prepare_hydrogen_damping(lin)
-      case ('voigt')
-        call lin%prepare_Stark(gq)
-        vbar2e4 = self%compute_vbar2(10000.)
-        call lin%prepare_VanderWaals(lin%gv, self%ion(lin%i), cnt_ev, vbar2e4)
       end select
     end do
 
@@ -841,7 +823,7 @@ MODULE atom_mod
     type(coll_type), pointer :: col => null()
     logical, dimension(:,:), allocatable :: ij_check
     real(8), allocatable, dimension(:) :: nu, alpha, tgrid
-    real(8) :: scr, gv, gq, cnt_ev, nu_max, alpha0, thresh_aa, dnu
+    real(8) :: scr, gv, cnt_ev, nu_max, alpha0, thresh_aa, dnu
     real(8) :: gij, red_fcut, blu_fcut, vbar2e4, loggf
     integer :: ncont, nnu
     character(len=20) :: txt
@@ -903,7 +885,7 @@ MODULE atom_mod
       ! whether a line is wide or not. In the RH formulation all lines are wide
 
       read(latom,*) jj, ii, lin%f , lin%nnu, lin%qmax, lin%q0, lin%io, &
-            lin%ga, lin%gv, gq, lin%profile_type
+            lin%ga, lin%gv, lin%gq, lin%profile_type
 
       lin%i = min(ii, jj)
       lin%j = max(ii, jj)
@@ -1018,14 +1000,6 @@ MODULE atom_mod
           cycle
         endif
       endif
-      
-      ! find continuum level
-      do ic=lin%j+1, self%nlevel
-        if (self%ion(ic) .eq. self%ion(lin%j)+1) then
-          cnt_ev = self%ev(ic)
-          exit
-        endif
-      end do
 
       lin%ntrans = i
       lin%profile_type = trim(lowercase(lin%profile_type))
@@ -1037,15 +1011,6 @@ MODULE atom_mod
         write (*, fmt = '(a,1x,a,a)') 'Profile not recognised:', &
                 lin%profile_type, ' Setting it to VOIGT'
         lin%profile_type = 'voigt'
-      end select
-
-      select case (lin%profile_type)
-      case ('hlinop')
-        call prepare_hydrogen_damping(lin)
-      case ('voigt')
-        call lin%prepare_Stark(gq)
-        vbar2e4 = self%compute_vbar2(10000.)
-        call lin%prepare_VanderWaals(lin%gv, self%ion(lin%i), cnt_ev, vbar2e4)
       end select
     end do
 
@@ -1374,6 +1339,51 @@ MODULE atom_mod
     if (abort) stop
     call trace%end(itimer)
   END SUBROUTINE read
+
+  !====================================================================================
+  SUBROUTINE prepare_damping(self, species)
+    class(atom_type), intent(inout) :: self
+    class(massive_type), intent(in), pointer :: species
+    class(ion_type), pointer :: ions(:)
+    class(line_type), pointer :: line
+    logical :: is_element
+    integer :: i, j, ic
+    real(8) :: vbar2e4, cnt_ev
+    !---------------------------------------------------------------------
+    select type(species)
+    class is (element_type)
+      is_element = .true.
+      ions => species%ions
+    class default
+      is_element = .false.
+    end select
+
+    do i=1, self%nline
+      line => self%line(i)
+      if (.not. line%active) cycle
+      j = self%ion(line%j)
+
+      select case (line%profile_type)
+      case ('hlinop')
+        call prepare_hydrogen_damping(line)
+      case ('voigt')
+        call line%prepare_Stark(line%gq)
+        vbar2e4 = self%compute_vbar2(10000.)
+        if (associated(species)) then
+          if (is_element) then
+            cnt_ev = ions(j)%xion
+          else
+            cnt_ev = species%xion
+          endif
+        else
+          ! find continuum level
+          ic = findloc(self%ion, j+1, 1)
+          cnt_ev = merge(self%ev(ic), 999.99, ic > 0)
+        endif
+        call line%prepare_VanderWaals(line%gv, self%ion(line%i), cnt_ev, vbar2e4)
+      end select
+    end do
+  END SUBROUTINE prepare_damping
 
   !====================================================================================
   SUBROUTINE prepare_Drawin(self)

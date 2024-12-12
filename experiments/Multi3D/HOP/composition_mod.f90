@@ -779,22 +779,12 @@ contains
                     call line%init_einstein_coefficients(f, 1.d0)
                     call line%prepare_Stark(line%gq)
     
-                    if (associated(ion)) then
-                        cnt_ev = ion%xion
-                        if (isotope) then
-                            line%iso_idx = iso_idx
-                            vbar2e4 = element%isotope(iso_idx)%compute_vbar2(10000.)
-                        else
-                            vbar2e4 = element%compute_vbar2(10000.)
-                        endif
-                        call line%prepare_VanderWaals(line%gv, j, cnt_ev, vbar2e4)
-                    elseif (associated(mol)) then
-                        if (size(mol%de)==1) then
-                            cnt_ev = mol%de(1)
-                            vbar2e4 = mol%compute_vbar2(10000.)
-                            call line%prepare_VanderWaals(line%gv, j, cnt_ev, vbar2e4)
-                        endif
+                    vbar2e4 = p%compute_vbar2(10000.)
+                    if (associated(ion) .and. isotope) then
+                        line%iso_idx = iso_idx
+                        vbar2e4 = element%isotope(iso_idx)%compute_vbar2(10000.)
                     endif
+                    call line%prepare_VanderWaals(line%gv, j, p%xion, vbar2e4)
                 endif
                 allocate(line%used, source=.false.)
                 if (line%active) nactive = nactive + 1
@@ -2155,46 +2145,40 @@ contains
     END SUBROUTINE compute_grams_per_hydrogen
 
     !=========================================================================
-    SUBROUTINE overwrite_abundance(self, id, abnd, awgt)
+    SUBROUTINE overwrite_abundance(self, species, abnd, awgt)
         class(composition_type), target :: self
+        class(massive_type), pointer :: species
         class(element_type), pointer :: element
         class(molec_type), pointer :: mol
         class(ion_type), pointer :: ion
-        character(len=*), intent(in) :: id
         real(dp), intent(in) :: abnd, awgt
         real(dp) :: abund
         integer :: j
-        logical, save :: first_time=.true.
         !---------------------------------------------------------------------
-        element => null()
-        mol => null()
-        call self%element_by_id(id(1:3), element, verbose=.false.)
-        if (.not. associated(element)) then
-            call self%molecule_by_id(id(1:3), mol, verbose=.false.)
-            if (.not. associated(mol)) then
-                print *, id(1:3), 'is not recognised by opacity package.'
-            else
-                do j=1, mol%nions
-                  ion => mol%ions(j)%p
-                  if (ion%id(1:2) /= 'H ') then
+        select type (species)
+        class is (element_type)
+            element => species
+        class is (molec_type)
+            mol => species
+            do j=1, mol%nions
+                ion => mol%ions(j)%p
+                if (ion%id(1:2) /= 'H ') then
                     call self%element_by_id(ion%id(1:2), element, verbose=.false.)
                     exit
-                  endif
-                end do
-            endif
-        endif
-        if (associated(element)) then
-            abund = log10(element%abund) + 12.0
-            if (abund /= abnd) then
-                if (first_time) then
-                    first_time = .false.
-                    print '(A, A, A, F5.2, A, F5.2)', 'Changing abundance of ', trim(element%id), ' from ', abund, ' to ', abnd
                 endif
+            end do
+        class default
+            print *, 'Particle is not recognised by opacity package.'
+            return
+        end select
 
-                element%abund = 10**(abnd - 12.0)
-                if (.not. associated(mol)) element%awgt = awgt
-                call self%compute_grams_per_hydrogen(self%suma, self%xmy, self%grph)
-            endif
+        abund = log10(element%abund) + 12.0
+        if (abund /= abnd) then
+            print '(A, A, A, F5.2, A, F5.2)', 'Changing abundance of ', trim(element%id), ' from ', abund, ' to ', abund
+
+            element%abund = 10**(abnd - 12.0)
+            if (.not. associated(mol)) element%awgt = awgt
+            call self%compute_grams_per_hydrogen(self%suma, self%xmy, self%grph)
         endif
     END SUBROUTINE overwrite_abundance
 
@@ -2358,6 +2342,7 @@ contains
                 read(lunit, *) mol%dc ! always 5 numbers
                 read(lunit, *) mol%irwin
                 mol%irwin(:) = mol%irwin(n_irwin:1:-1)
+                read(lunit, *) mol%xion
             endif
             read(lunit, *, iostat=iostat) text
         end do

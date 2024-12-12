@@ -190,7 +190,6 @@ contains
       a2 = adamp * idf
 
       ref = tol * cont(f0,i,j,k)
-      f1 = ired
 
       do f=f0, iblue
         q = qq(f) - v
@@ -200,14 +199,11 @@ contains
           call hvoigt(self, q, a1, a2, t, e, hfwid, hwstk, idf, phi)
         endif
         lchi = phi * cf
-        if (lchi < ref) then
-          f1 = max(ired, 2*f0-f)
-          exit
-        endif
         chi(f,i,j,k) = chi(f,i,j,k) + lchi
+        if (lchi < ref) exit
       end do
       
-      do f=f1, f0-1
+      do f=f0-1, ired, -1
         q = qq(f) - v
         if (lymanalf) then
           call lyman_voigt(self, q, a2, resont, t, e, nh1, hfwid, hwstk, idf, phi)
@@ -216,6 +212,7 @@ contains
         endif
         lchi = phi * cf
         chi(f,i,j,k) = chi(f,i,j,k) + lchi
+        if (lchi < ref) exit
       end do
     end do
     end do
