@@ -1,4 +1,5 @@
 MODULE read_atmos_mod
+  USE, intrinsic :: ieee_arithmetic
   USE io_mod
   USE os_mod
   USE trace_mod
@@ -43,6 +44,7 @@ MODULE read_atmos_mod
   character(len=256), save :: mesh_file, snap_file, data_file, aux_file
   real(4), save :: maxTemp=huge(1.0)
   real(4), save :: ee_offset=3.2122
+  real(4), public :: timestamp=-1.0
   logical, public, save :: legacy_stagger_interp=.false.
   type(input_atmos_t), public, save :: ia
 
@@ -51,7 +53,8 @@ MODULE read_atmos_mod
   public :: read_co5bold
   public :: read_marcs
   public :: read_multi_snapshot
-  public :: read_1d_snapshot
+  public :: read_text_1d
+  public :: read_multi_1d
   public :: interpolate_atmos
     
 contains
@@ -61,12 +64,11 @@ SUBROUTINE read_co5bold(atmos_file)
   character(len=*), intent(in) :: atmos_file
   real(4), dimension(:,:,:), allocatable :: over_rho
   integer :: lunit, iostat, nsub
-  real(4) :: model_time
   real(8) :: ds(3)
   integer :: n(3), nx, ny, nz
   !-----------------------------------------------------------------------------
   open(newunit=lunit, file=atmos_file, form='unformatted', access='stream')
-  read(lunit) model_time
+  read(lunit) timestamp
   read(lunit) nx, ny, nz
 
   call ia%allocate(nx, ny, nz)
@@ -413,10 +415,13 @@ END SUBROUTINE read_marcs
 !===============================================================================
 !> Reads the actual text files and stores variables under self
 !===============================================================================
-SUBROUTINE read_1d_snapshot(atmos_file, vmic)
+SUBROUTINE read_text_1d(atmos_file, vmic, FeH)
   character(len=*) :: atmos_file
   real(4), intent(in) :: vmic
-  integer :: nz, lunit, i
+  real(8), intent(out) :: FeH
+  real(8) :: feh_model
+  integer :: nwords, nz, lunit, i
+  character(128) :: text
   real(4), dimension(:), allocatable :: temp, pe, rho
   !-----------------------------------------------------------------------------
   ! Open atmosphere file and read MHD variables
@@ -426,7 +431,19 @@ SUBROUTINE read_1d_snapshot(atmos_file, vmic)
   call nextentry(lunit)
   read(lunit, *) ! skip name
   call nextentry(lunit)
-  read(lunit, *) nz
+
+  read(lunit, '(A)') text
+  call count_words(text, nwords)
+  if (nwords > 1) then
+    read(text, *) nz, feh_model
+
+    if (FeH < -99) then
+      FeH = feh_model
+      write(stdout, '(A, F6.2)') 'FeH was overwritten by model: [Fe/H] =', FeH
+    endif
+  else
+    read(text, *) nz
+  endif
 
   call ia%allocate(1,1,nz)
   allocate(temp(nz), pe(nz), rho(nz))
@@ -447,7 +464,57 @@ SUBROUTINE read_1d_snapshot(atmos_file, vmic)
   where (temp > 0) ia%ltemp(1,1,:) = log(temp)
   where (rho  > 0) ia%lrho (1,1,:) = log(rho)
   where (pe   > 0) ia%lpe  (1,1,:) = log(pe)
-END SUBROUTINE read_1d_snapshot
+END SUBROUTINE read_text_1d
+
+!===============================================================================
+!> Reads the actual text files and stores variables under self
+!===============================================================================
+SUBROUTINE read_multi_1d(atmos_file, vmic)
+  character(len=*) :: atmos_file
+  real(4), intent(in) :: vmic
+  real(8) :: feh_model
+  integer :: nwords, nz, lunit, i
+  character(128) :: text
+  real(4), dimension(:), allocatable :: temp, ne, vz
+  !-----------------------------------------------------------------------------
+  ! Open atmosphere file and read MHD variables
+  !-----------------------------------------------------------------------------
+  call os%check_file(atmos_file)
+  open(file=atmos_file, newunit=lunit)
+  call nextentry(lunit)
+  read(lunit, *) ! skip name
+  call nextentry(lunit)
+
+  read(lunit, '(A)') text ! scale name
+  text = trim(text)
+  if (lowercase(text(1:1))=='m') then
+    stop 'Mass scale not supported in multi 1D atm format'
+  endif
+  call nextentry(lunit)
+  read(lunit, '(A)') text ! logg
+  call nextentry(lunit)
+  read(lunit, *) nz
+
+  call ia%allocate(1,1,nz)
+  allocate(temp(nz), ne(nz))
+
+  do i=1, nz
+    call nextentry(lunit)
+    read(lunit, *) ia%zz(i), temp(i), ne(i), ia%vz(1,1,i), ia%vmic(1,1,i)
+  end do
+  close(lunit)
+
+  if (vmic >= 0) then
+    ia%vmic = vmic
+    write(stdout, '(A, F6.2)') 'Vmic was overwritten by namelist: Vmic =', vmic
+  endif
+
+  use_ne = .true.
+  use_rho = .false.
+  ia%ltemp(1,1,:) = log(temp)
+  ia%lpe  (1,1,:) = log(ne * BK * temp)
+  ia%lrho = ieee_value( ia%lrho, ieee_signaling_nan )
+END SUBROUTINE read_multi_1d
 
 !===============================================================================
 SUBROUTINE xup_set (f, fp)
@@ -586,13 +653,21 @@ SUBROUTINE thick2thin(self)
   type(composition_type) :: comp
   real(8), dimension(:,:,:), allocatable :: temp8, ne8, rho8
   real(8), dimension(:), allocatable :: chi, tau
-  real(8) :: dz
+  real(8) :: dz, v1, vn
   integer :: i, j, nx, ny, nz
   !-----------------------------------------------------------------------------
   nx = self%nx
   ny = self%ny
   nz = self%nz
-  if (self%lrho(1,1,1) < self%lrho(1,1,nz)) then
+  if (use_rho) then
+    v1 = self%lrho(1,1,1)
+    vn = self%lrho(1,1,nz)
+  else
+    v1 = self%lpe(1,1,1)
+    vn = self%lpe(1,1,nz)
+  endif
+
+  if (v1 < vn) then
     do j=1, ny
     do i=1, nx
       self%ltemp(i,j,:) =  self%ltemp(i,j,nz:1:-1)
@@ -615,7 +690,7 @@ SUBROUTINE thick2thin(self)
     allocate(chi(nz))
     allocate(tau(nz))
     temp8 = exp(dble(self%ltemp))
-    rho8  = exp(dble(self%lrho))
+    if (use_rho) rho8  = exp(dble(self%lrho))
     ne8   = exp(dble(self%lpe)) / (BK * temp8)
     comp = composition
     call comp%reassign_pointer()
@@ -722,7 +797,7 @@ SUBROUTINE interpolate_atmos(n, sub, pos, rho, px, py, pz, temp, pe, vmic, vec, 
     ! this is needed for the amr setup in order to avoid additional interpolations for the final spectrum.  
     newz = [ (ds(3)*i + lower(3), i=1, nz) ]
   else
-    newz = [ (ds(3)*i + lower(3), i=0, nz-1) ]
+    newz = [ (ds(3)*i + lower(3), i=1, nz) ]
   endif
   if (make_eos) then
     ! no interpolation
@@ -735,8 +810,8 @@ SUBROUTINE interpolate_atmos(n, sub, pos, rho, px, py, pz, temp, pe, vmic, vec, 
     pz = 0
   elseif (one_dimensional) then
     call pchip_mono4(ia%zz, ia%ltemp(1,1,:), real(newz), temp(1,1,:), sorted=.true.)
-    call pchip_mono4(ia%zz, ia%lrho (1,1,:), real(newz), rho (1,1,:), sorted=.true.)
-    call pchip_mono4(ia%zz, ia%lpe  (1,1,:), real(newz), pe  (1,1,:), sorted=.true.)
+    if (use_rho) call pchip_mono4(ia%zz, ia%lrho (1,1,:), real(newz), rho (1,1,:), sorted=.true.)
+    if (use_ne)  call pchip_mono4(ia%zz, ia%lpe  (1,1,:), real(newz), pe  (1,1,:), sorted=.true.)
     call pchip_mono4(ia%zz, ia%vmic (1,1,:), real(newz), vmic(1,1,:), sorted=.true.)
     px = 0
     py = 0
@@ -752,15 +827,15 @@ SUBROUTINE interpolate_atmos(n, sub, pos, rho, px, py, pz, temp, pe, vmic, vec, 
 
     if (present(vec)) then
       call linterpolate_3d_rotated(ia%ltemp, temp, dx, dy, ia%zz, newx, newy, newz, vec, bot2pivot, ray_offset)
-      call linterpolate_3d_rotated(ia%lrho,  rho,  dx, dy, ia%zz, newx, newy, newz, vec, bot2pivot, ray_offset)
-      call linterpolate_3d_rotated(ia%lpe,   pe,   dx, dy, ia%zz, newx, newy, newz, vec, bot2pivot, ray_offset)
+      if (use_rho) call linterpolate_3d_rotated(ia%lrho,  rho,  dx, dy, ia%zz, newx, newy, newz, vec, bot2pivot, ray_offset)
+      if (use_ne ) call linterpolate_3d_rotated(ia%lpe,   pe,   dx, dy, ia%zz, newx, newy, newz, vec, bot2pivot, ray_offset)
       call linterpolate_3d_rotated(ia%vx,    px,   dx, dy, ia%zz, newx, newy, newz, vec, bot2pivot, ray_offset)
       call linterpolate_3d_rotated(ia%vy,    py,   dx, dy, ia%zz, newx, newy, newz, vec, bot2pivot, ray_offset)
       call linterpolate_3d_rotated(ia%vz,    pz,   dx, dy, ia%zz, newx, newy, newz, vec, bot2pivot, ray_offset)
     else
       call linterpolate_3d(ia%ltemp, temp, dx, dy, ia%zz, newx, newy, newz)
-      call linterpolate_3d(ia%lrho,  rho,  dx, dy, ia%zz, newx, newy, newz)
-      call linterpolate_3d(ia%lpe,   pe,   dx, dy, ia%zz, newx, newy, newz)
+      if (use_rho) call linterpolate_3d(ia%lrho,  rho,  dx, dy, ia%zz, newx, newy, newz)
+      if (use_ne ) call linterpolate_3d(ia%lpe,   pe,   dx, dy, ia%zz, newx, newy, newz)
       call linterpolate_3d(ia%vx,    px,   dx, dy, ia%zz, newx, newy, newz)
       call linterpolate_3d(ia%vy,    py,   dx, dy, ia%zz, newx, newy, newz)
       call linterpolate_3d(ia%vz,    pz,   dx, dy, ia%zz, newx, newy, newz)
@@ -768,11 +843,9 @@ SUBROUTINE interpolate_atmos(n, sub, pos, rho, px, py, pz, temp, pe, vmic, vec, 
   endif
 
   temp = exp(temp)
-  rho  = exp(rho)
-  pe   = exp(pe)
-  px   = px * rho
-  py   = py * rho
-  pz   = pz * rho
+  if (use_rho) rho = exp(rho)
+  if (use_ne ) pe  = exp(pe)
+
   call trace%end(itimer)
 END SUBROUTINE interpolate_atmos
 

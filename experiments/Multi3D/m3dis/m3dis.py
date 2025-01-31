@@ -23,69 +23,12 @@ def option(nml, key):
     else:
         return False
 
-def launch(input_name, nml_settings=None, default=None, overwrite=False, threads=32, log_file=None, slurm_script=None, verbose=True, dry=False):
-    cwd = os.getcwd()
-    check_file(cwd + '/dispatch.x')
-    if default is not None:
-        if type(default) is f90nml.namelist.Namelist:
-            input = copy.deepcopy(default)
-        elif default.endswith('.nml'):
-            input = f90nml.read(default)
-        else:
-            input = f90nml.read(default + '/params.nml')
-    else:
-        input = f90nml.Namelist()
-
-    input_file = input_name + '.nml'
-    if not os.path.isfile(input_file) or overwrite:
-        if nml_settings is not None:
-            input.patch(nml_settings)
-
-        input.write(input_file, force=True)
-
-        if not dry:
-            if slurm_script is None:
-                if log_file is None:
-                    command = './dispatch.x {:}'.format(input_file)
-                else:
-                    command = './dispatch.x {:} > {:}'.format(input_file, log_file)
-            else:
-                command = 'sbatch {:} {:}'.format(slurm_script, input_file)
-
-            if verbose:
-                print(input_file, ' launched')
-            else:
-                command = command + ' 2> /dev/null'
-
-            os.environ['OMP_NUM_THREADS'] = str(threads)
-            iostat = os.system(command)
-            if iostat!=0 and log_file is not None: 
-                with open(log_file) as f:
-                    for line in f:
-                        pass
-                    last_line = line
-                    print(last_line)
-        else:
-            print(input_file, ' written')
-
-    else:
-        print(input_file, ' already exists')
-        input = f90nml.read(input_file)
-
-    datadir = 'data/'
-    if 'io_params' in input:
-        if 'datadir' in input['io_params']:
-            datadir = input['io_params']['datadir']
-
-    return os.path.join(datadir.strip(), input_name)
-
 #=====================================================================
 class m3dis(object):
     @classmethod
     #=================================================================
     def read(self, folder, verbose=0, read_atmos=True, read_atom=True, fast_read=False, read_llist=False, **kwargs):
-        #-------------------------------------------------------------
-        self = m3dis()
+        self = m3dis() # create a new instance of the class
         folder = folder + os.sep
         sfolder = folder + 'save' + os.sep
         self.sfolder = sfolder
@@ -109,75 +52,91 @@ class m3dis(object):
         
         depart = ''
         atom_file = folder + 'atom.txt'
-        if read_atom and os.path.isfile(atom_file):
-            self.qnorm = self.nml['atom_params']['qnorm']
-            loggf_cut  = self.nml['atom_params']['logf_cut']
-            red_cut    = self.nml['atom_params']['red_cut']
-            blue_cut   = self.nml['atom_params']['blue_cut']
-            in_abnd    = self.nml['atom_params']['abundance']
-            depart     = self.nml['atom_params']['precomputed_depart'].strip()
+        if os.path.isfile(atom_file):
+            if not read_atom:
+                self.atom = empty()
+                with open(atom_file, 'r') as f:
+                    line = f.readline()
+                    while line.startswith('*'):
+                        line = f.readline()
 
-            pandas_format = 'pandas_format' in self.nml['atom_params']
-            if pandas_format: pandas_format = pandas_format & self.nml['atom_params']['pandas_format']
-
-            nq_fac = self.nml['atom_params']['nq_fac']
-            if self.nml['m3d_params']['m1d_legacy_mode']: nq_fac *= 2
-
-            if 'line_mask' in self.nml.keys():
-                if 'in_lines' in self.nml['line_mask'].keys():
-                    in_lines = self.nml['line_mask']['in_lines']
-                    if type(in_lines)==int: in_lines=[in_lines]
-                    self.in_lines = np.array(in_lines)-1
-
-            if pandas_format or fast_read:
-                if pandas_format:
-                    self.atom = pandas_atom.read(atom_file)
-                else:
-                    self.atom = fast_atom(atom_file, **kwargs)
-
-                self.atom.run = self
-                if not hasattr(self, 'in_lines'): self.in_lines = slice(None, self.atom.nline)
-
-                if hasattr(self, 'lam'):
-                    self.line = self.atom.trans[self.in_lines]
-
-                    if option(self.nml['atom_params'], 'overlapping_bb_in_output'):
-                        self.atom.load_sp(self.lam, qnorm=self.qnorm)
-                    else:
-                        nnu = self.lam.size
-                        ib, ir = self.atom.get_non_overlapping_indices(self.line, nnu, nq_fac)
-                        self.atom.bbt['ir'] = 0
-                        self.atom.bbt['ib'] = 0
-                        self.atom.bbt.loc[self.in_lines, 'ir'] = ir
-                        self.atom.bbt.loc[self.in_lines, 'ib'] = ib
-
-                    #mask = bbt.loggf > loggf_cut
-                    #mask = mask & (bbt.lam_vac_red > blue_cut) 
-                    #mask = mask & (bbt.lam_vac_blue < red_cut) 
-                    #lines = lines_class(self.atom, bbt[mask], self)
-                    #self.nline = len(lines)
-                    #self.line = lines
+                    self.atom.id = line.split()[0]
 
             else:
-                self.atom = atom_class(atom_file, qnorm=self.qnorm, verbose=verbose, **kwargs)
-                self.atom.run = self
+                self.qnorm = self.nml['atom_params']['qnorm']
+                loggf_cut  = self.nml['atom_params']['logf_cut']
+                red_cut    = self.nml['atom_params']['red_cut']
+                blue_cut   = self.nml['atom_params']['blue_cut']
 
-                if not hasattr(self, 'in_lines'): self.in_lines = slice(None, self.atom.nline)
-                lines = np.array(self.atom.trans)[self.in_lines]
-                    
-                #lines = [line for line in lines if np.log10(line.fosc*line.lower.g) > loggf_cut]
-                #lines = [line for line in lines if line.lam_red > blue_cut and line.lam_blue < red_cut]
-                self.nline = len(lines)
-                self.line = lines
+                pandas_format = 'pandas_format' in self.nml['atom_params']
+                if pandas_format: pandas_format = pandas_format & self.nml['atom_params']['pandas_format']
 
-                if hasattr(self, 'lam'):
-                    if not option(self.nml['atom_params'], 'overlapping_bb_in_output'):
-                        nnu = self.lam.size
-                        ib, ir = self.atom.get_non_overlapping_indices(self.line, nnu, nq_fac)
-                        self.atom.ib = ib.astype(int)
-                        self.atom.ir = ir.astype(int)
+                nq_fac = self.nml['atom_params']['nq_fac']
+                if self.nml['m3d_params']['m1d_legacy_mode']: nq_fac *= 2
 
+                if 'line_mask' in self.nml.keys():
+                    if 'in_lines' in self.nml['line_mask'].keys():
+                        in_lines = self.nml['line_mask']['in_lines']
+                        if type(in_lines)==int: in_lines=[in_lines]
+                        self.in_lines = np.array(in_lines)-1
 
+                if pandas_format or fast_read:
+                    if pandas_format:
+                        self.atom = pandas_atom.read(atom_file)
+                    else:
+                        self.atom = fast_atom(atom_file, **kwargs)
+
+                    self.atom.run = self
+                    if not hasattr(self, 'in_lines'): self.in_lines = slice(None, self.atom.nline)
+
+                    if hasattr(self, 'lam'):
+                        self.line = self.atom.trans[self.in_lines]
+
+                        if option(self.nml['atom_params'], 'overlapping_bb_in_output'):
+                            self.atom.load_sp(self.lam, qnorm=self.qnorm)
+                        else:
+                            nnu = self.lam.size
+                            ib, ir = self.atom.get_non_overlapping_indices(self.line, nnu, nq_fac)
+                            self.atom.bbt['ir'] = 0
+                            self.atom.bbt['ib'] = 0
+                            self.atom.bbt.loc[self.in_lines, 'ir'] = ir
+                            self.atom.bbt.loc[self.in_lines, 'ib'] = ib
+
+                        #mask = bbt.loggf > loggf_cut
+                        #mask = mask & (bbt.lam_vac_red > blue_cut) 
+                        #mask = mask & (bbt.lam_vac_blue < red_cut) 
+                        #lines = lines_class(self.atom, bbt[mask], self)
+                        #self.nline = len(lines)
+                        #self.line = lines
+
+                else:
+                    self.atom = atom_class(atom_file, qnorm=self.qnorm, verbose=verbose, **kwargs)
+                    self.atom.run = self
+
+                    if not hasattr(self, 'in_lines'): self.in_lines = slice(None, self.atom.nline)
+                    lines = np.array(self.atom.trans)[self.in_lines]
+                        
+                    #lines = [line for line in lines if np.log10(line.fosc*line.lower.g) > loggf_cut]
+                    #lines = [line for line in lines if line.lam_red > blue_cut and line.lam_blue < red_cut]
+                    self.nline = len(lines)
+                    self.line = lines
+
+                    if hasattr(self, 'lam'):
+                        if not option(self.nml['atom_params'], 'overlapping_bb_in_output'):
+                            nnu = self.lam.size
+                            ib, ir = self.atom.get_non_overlapping_indices(self.line, nnu, nq_fac)
+                            self.atom.ib = ib.astype(int)
+                            self.atom.ir = ir.astype(int)
+
+                reports = glob.glob(folder + 'convergence_report_*.txt')
+                if len(reports)>0:
+                    self.lvlerr = np.zeros(self.atom.nk)
+                    for report in reports:
+                        df = pd.read_csv(report, sep=r'\s+')
+                        self.lvlerr = np.maximum(self.lvlerr, df.maxconv.values)
+
+            in_abnd = self.nml['atom_params']['abundance']
+            depart = self.nml['atom_params']['precomputed_depart'].strip()
             if self.atom.id in self.abundances:
                 self.atom.abnd = float(self.abundances[self.atom.id])
             elif in_abnd > -99:
@@ -189,12 +148,6 @@ class m3dis(object):
 
             #self.atom.title = 'A({}) = {:.2f}'.format(self.atom.id.strip(), self.atom.abnd)
 
-            reports = glob.glob(folder + 'convergence_report_*.txt')
-            if len(reports)>0:
-                self.lvlerr = np.zeros(self.atom.nk)
-                for report in reports:
-                    df = pd.read_csv(report, sep=r'\s+')
-                    self.lvlerr = np.maximum(self.lvlerr, df.maxconv.values)
             
         if (self.nml['m3d_params']['maxiter'] > 0):
             self.mode = 'NLTE'
@@ -202,6 +155,8 @@ class m3dis(object):
             self.mode = 'LTE'
         else:
             self.mode = 'NLTE'
+
+        self.has_spectrum = hasattr(self, 'lam') and not self.nml['m3d_params']['long_scheme'].strip() == 'none'
 
         file = folder + 'angle_quadrature.txt'
         if os.path.isfile(file):
@@ -226,7 +181,7 @@ class m3dis(object):
             self.chi = mem[5]
 
         else:
-            if hasattr(self, 'lam'):
+            if self.has_spectrum:
                 if (verbose > 0): print('Reading Intensities')
                 ie = self.read_patch_save('ie', lazy=False)[0]
 
@@ -254,9 +209,9 @@ class m3dis(object):
 
                 T = 4000
                 elements = [ion.split()[0] for ion in self.llist.ion]
-                abnd = np.array([self.abundances[el] if el in self.abundances.keys() else np.nan for el in elements])
-                strength = np.log10(self.llist.lam_vac*1e-8 * np.exp(-self.llist.ev_i*EK/T)) + self.llist.loggf + abnd
-                self.llist['strength'] = strength
+                abnd = np.array([self.abundances[el] if el in self.abundances.keys() else -np.inf for el in elements])
+                strength = np.log10(self.llist.lam_vac*1e-8 * np.exp(-self.llist.evi*EK/T)) + self.llist.loggf + abnd
+                self.llist['strength2'] = strength
 
             atmos_params = self.nml['atmos_params']
 
@@ -324,30 +279,39 @@ class m3dis(object):
                 self.height = self.zz - self.z0
                 
             if os.path.isfile(folder + 'atmos_data.bin') and read_atmos:
-                dat = FortranFile(folder + 'atmos_data.bin')
-                self.temp = dat.read_reals(np.float32)
-                self.rho  = dat.read_reals(np.float32)
-                self.px   = dat.read_reals(np.float32)
-                self.py   = dat.read_reals(np.float32)
-                self.pz   = dat.read_reals(np.float32)
-                self.pe   = dat.read_reals(np.float32)
-                self.tau  = dat.read_reals(np.float32)
-                self.chi  = dat.read_reals(np.float32)
-                dat.close()
-
-                if nx*ny > 1:
-                    self.temp = self.temp.reshape((nx,ny,nz), order='F')
-                    self.rho  = self.rho .reshape((nx,ny,nz), order='F')
-                    self.px   = self.px  .reshape((nx,ny,nz), order='F')
-                    self.py   = self.py  .reshape((nx,ny,nz), order='F')
-                    self.pz   = self.pz  .reshape((nx,ny,nz), order='F')
-                    self.pe   = self.pe  .reshape((nx,ny,nz), order='F')
-                    self.tau  = self.tau .reshape((nx,ny,nz), order='F')
-                    self.chi  = self.chi .reshape((nx,ny,nz), order='F')
-
-                self.ltau = np.log10(self.tau)
-
+                self.read_atmos()
+                
         return self
+    
+    #=====================================================================
+    def read_atmos(self):
+        dat = FortranFile(self.folder + 'atmos_data.bin')
+        self.temp = dat.read_reals(np.float32)
+        self.rho  = dat.read_reals(np.float32)
+        self.px   = dat.read_reals(np.float32)
+        self.py   = dat.read_reals(np.float32)
+        self.pz   = dat.read_reals(np.float32)
+        self.pe   = dat.read_reals(np.float32)
+        self.tau  = dat.read_reals(np.float32)
+        self.chi  = dat.read_reals(np.float32)
+        dat.close()
+
+        nx = self.xx.size
+        ny = self.yy.size
+        nz = self.zz.size
+
+        if nx*ny > 1:
+            self.temp = self.temp.reshape((nx,ny,nz), order='F')
+            self.rho  = self.rho .reshape((nx,ny,nz), order='F')
+            self.px   = self.px  .reshape((nx,ny,nz), order='F')
+            self.py   = self.py  .reshape((nx,ny,nz), order='F')
+            self.pz   = self.pz  .reshape((nx,ny,nz), order='F')
+            self.pe   = self.pe  .reshape((nx,ny,nz), order='F')
+            self.tau  = self.tau .reshape((nx,ny,nz), order='F')
+            self.chi  = self.chi .reshape((nx,ny,nz), order='F')
+
+        self.ltau = np.log10(self.tau)
+
 
     #=====================================================================
     def get_xx(self, lam, slc=None, dlam=None, xmin=None, xmax=None):
@@ -361,7 +325,7 @@ class m3dis(object):
 
         if dlam is not None:
             if not isinstance(dlam, (bool)):
-                if isinstance(dlam, tuple):
+                if hasattr(dlam, '__iter__'):
                     dl = dlam[:]
                 else:
                     dl = (-dlam, dlam)
@@ -547,7 +511,12 @@ class m3dis(object):
             uconv = 5*(newx[newx.size//2] + lam0)/CC_KMS
             pad = uconv * np.sum(vels[vmask])
 
-            if dlam is not None: dlam = dlam + pad
+            if dlam is not None:
+                if hasattr(dlam, '__iter__'):
+                    dlam = dlam + np.array([-pad, pad])
+                else:
+                    dlam = dlam + pad
+
             if xmin is not None: xmin = xmin - pad
             if xmax is not None: xmax = xmax + pad
 
@@ -719,7 +688,7 @@ class m3dis(object):
     #=====================================================================
     def get_toth(self):
         #-----------------------------------------------------------------
-        xmy = np.array([10**(self.abundances[key]-12)*atomic_weigths[key]
+        xmy = np.array([10**(self.abundances[key]-12)*atomic_weights[key]
                         for key in self.abundances.keys()])
         grph = np.sum(xmy) * UU
         toth = self.rho / grph
@@ -926,11 +895,13 @@ class m3dis(object):
         #-----------------------------------------------------------------
         if zaxis != -1: cube = np.moveaxis(cube, zaxis, -1)
         ltau = self.ltau
-        step = -1 if ltau[0,0,0] > ltau[0,0,-1] else 1
+        step = -1 if ltau[...,0].ravel()[0] > ltau[...,-1].ravel()[0] else 1
         xx = ltau[...,::step].copy()
         yy = cube[...,::step].copy()
         if log: yy = np.log(yy)
-        if newx is None: newx = np.mean(xx, axis=(0,1))
+        if newx is None:
+            axis = tuple(i for i in range(xx.ndim-1))
+            newx = np.mean(xx, axis=axis)
         newy = interp_tau(newx, xx, yy)
         if log: newy = np.exp(newy)
         if zaxis != -1: newy = np.moveaxis(newy, -1, zaxis)
@@ -972,52 +943,52 @@ class m3dis(object):
                             rasterized=rasterized, **kwargs)
 
     #=====================================================================
-    def get_ltau_mean(self, cube, log=False, **kwargs):
+    def get_ltau_mean(self, cube, log=False, newx=None, **kwargs):
         #-----------------------------------------------------------------
-        if hasattr(self, 'runs'):
-            newx = np.mean([run.ltau for run in self.runs], axis=(0,1,2))
-            kwargs['newx'] = newx
-            yy1d = [run.get_ltau_mean(cube, log=log, **kwargs)[1] for run in self.runs]
-            yy1d = np.mean(yy1d, axis=0)
-            return newx, yy1d
-
         if type(cube) is str:
             cube = getattr(self, cube)
 
         if self.dim == '3D':
-            ltau1d, yy3d = self.interp_ltau_surf(cube, log=log, **kwargs)
+            newx, yy3d = self.interp_ltau_surf(cube, log=log, newx=newx, **kwargs)
             if log: yy3d = np.log(yy3d)
-            yy1d = np.mean(yy3d, axis=(0,1))
+            axis = tuple(i for i in range(yy3d.ndim-1))
+            yy1d = np.mean(yy3d, axis=axis)
             if log: yy1d = np.exp(yy1d)
         else:
-            ltau1d = self.ltau
-            yy1d = cube
+            if newx is None: newx = self.ltau
+            yy1d = np.interp(newx, self.ltau[::-1], cube[::-1])
 
-        return ltau1d, yy1d
+        return newx, yy1d
     
     #=====================================================================
-    def plot_ltau_mean(self, yy, log=False, xmin=None, xmax=None,
+    def plot_ltau_mean(self, yy, log=False, newx=None, xmin=None, xmax=None,
                        ymin=None, ymax=None, **kwargs):
         #-----------------------------------------------------------------
-        xx, yy = self.get_ltau_mean(yy, log=log)
+        xx, yy = self.get_ltau_mean(yy, log=log, newx=newx)
         xx, yy = crop_inputs(xx, yy, xmin, xmax, ymin, ymax)
         return plt.plot(xx, yy, **kwargs)
     
     #=====================================================================
-    def get_geo_mean(self, yy, log=False):
+    def get_geo_mean(self, yy, newx=None, log=False):
         if hasattr(self, 'runs'):
-            yy1d = [run.get_geo_mean(yy, log=log)[1] for run in self.runs]
-            yy1d = np.mean(yy1d, axis=0)
-            newx = self.runs[0].zz - np.mean([run.z0 for run in self.runs])
-            return newx, yy1d
+            xx = np.mean([run.height for run in self.runs], axis=0)
+            yy = np.mean([run.get_geo_mean(yy, newx=xx) for run in self.runs], axis=0)
+            return xx, yy
         
         if type(yy) is str:
             yy = getattr(self, yy)
 
-        if log: yy = np.log(yy)
-        yy = np.mean(yy, axis=(0,1))
-        if log: yy = np.exp(yy)
-        xx = self.height
+        if newx is None:
+            xx = self.height
+
+        if self.dim == '3D':
+            if log: yy = np.log(yy)
+            yy = np.mean(yy, axis=(0,1))
+            if log: yy = np.exp(yy)
+            
+        if xx is not self.height:
+            yy = np.interp(xx, self.height, yy)
+
         return xx, yy
     
     #=====================================================================
@@ -1164,7 +1135,8 @@ class m3dis(object):
         plt.ylim(top=ymax+1.2*h + bbox.height*pad)
     
     #=================================================================
-    def fit_observed(self, oxx, oyy, fit=[], bounds=None, p0=None, sigma=None, method='curve_fit', tol=None, **kwargs):
+    def fit_observed(self, oxx, oyy, fit=[], bounds=None, p0=None, sigma=None,
+                     method='curve_fit', tol=None, **kwargs):
         lbounds = {'vshift':-3, 'vdop':1e-3, 'vrot':1e-3, 'zeta_rt':1e-3, 'fac':0.5, 'tilt':-0.2}
         ubounds = {'vshift':+3, 'vdop':1e1,  'vrot':1e1,  'zeta_rt':1e1,  'fac':2.0, 'tilt':+0.2}
         p0s     = {'vshift':0,  'vdop':1,    'vrot':1,    'zeta_rt':1,    'fac':1.0, 'tilt':0.0}
@@ -1330,12 +1302,25 @@ class m3dis(object):
                 ax2.set_yticklabels(levels)
 
         return pmsh
+    
+    #=================================================================
+    def get_duration(self, string=True):
+        from datetime import timedelta
+
+        file = self.folder + 'rank_00000.disp'
+        with open(file, 'rb') as f:
+            lines = f.readlines()
+            seconds = float(lines[-1].strip().split()[0])
+            time_delta = timedelta(seconds=seconds)
+            if string: time_delta = str(time_delta)
+            return time_delta
+
 
     @classmethod
     #=================================================================
-    def combine(self, runs):
+    def combine(self, runs, weights=None):
         #-------------------------------------------------------------
-        self = m3dis()
+        self = m3dis() # create a new instance of the class
         self.run0 = runs[0]
         self.folder = '\n'.join([run.folder for run in runs])
 
@@ -1358,39 +1343,43 @@ class m3dis(object):
         check_and_combine('vec')
         check_and_combine('wts')
         check_and_combine('nline')
+        check_and_combine('dim')
 
-        self.ne = np.array([run.ne for run in runs])
-        self.rho = np.array([run.rho for run in runs])
-        self.temp = np.array([run.temp for run in runs])
-        self.vx = np.array([run.vx for run in runs])
-        self.vy = np.array([run.vy for run in runs])
-        self.vz = np.array([run.vz for run in runs])
-        self.chi = np.array([run.chi for run in runs])
-        self.tau = np.array([run.tau for run in runs])
-        self.ltau = np.array([run.ltau for run in runs])
-        
-        if hasattr(self.run0, 'atom'):
-            self.atom = copy.copy(self.run0.atom)
-            self.atom.run = self
-            self.in_lines = self.run0.in_lines
+        if weights is None:
+            check_and_combine('abundances')
+            self.ne = np.array([run.ne for run in runs])
+            self.rho = np.array([run.rho for run in runs])
+            self.temp = np.array([run.temp for run in runs])
+            self.vx = np.array([run.vx for run in runs])
+            self.vy = np.array([run.vy for run in runs])
+            self.vz = np.array([run.vz for run in runs])
+            self.chi = np.array([run.chi for run in runs])
+            self.tau = np.array([run.tau for run in runs])
+            self.ltau = np.array([run.ltau for run in runs])
+            weights = np.ones(len(runs))/len(runs)
 
-            if type(self.atom.trans[0]) is fast_trans:
-                init = np.frompyfunc(fast_trans, 2, 1)
-                self.atom.trans = init(np.arange(self.atom.nline), self.atom)
-            else:
-                self.atom.trans = [copy.copy(trans) for trans in self.run0.atom.trans]
+            if hasattr(self.run0, 'atom'):
+                self.atom = copy.copy(self.run0.atom)
+                self.atom.run = self
+                self.in_lines = self.run0.in_lines
 
-            self.line = np.array(self.atom.trans)[self.in_lines]
+                if type(self.atom.trans[0]) is fast_trans:
+                    init = np.frompyfunc(fast_trans, 2, 1)
+                    self.atom.trans = init(np.arange(self.atom.nline), self.atom)
+                else:
+                    self.atom.trans = [copy.copy(trans) for trans in self.run0.atom.trans]
 
-        if hasattr(self.run0, 'lam'):
+                self.line = np.array(self.atom.trans)[self.in_lines]
+
+        if self.run0.has_spectrum:
             self.lam    = self.run0.lam
-            self.ie     = np.mean([run.ie     for run in runs], axis=0)
-            self.ie_lte = np.mean([run.ie_lte for run in runs], axis=0)
-            self.cnt    = np.mean([run.cnt    for run in runs], axis=0)
+            self.ie     = np.sum([run.ie*w for run, w in zip(runs, weights)], axis=0)
+            self.ie_lte = np.sum([run.ie_lte*w for run, w in zip(runs, weights)], axis=0)
+            self.cnt    = np.sum([run.cnt*w for run, w in zip(runs, weights)], axis=0)
 
-            self.flux     = np.mean([run.flux     for run in runs], axis=0)
-            self.flux_lte = np.mean([run.flux_lte for run in runs], axis=0)
-            self.flux_cnt = np.mean([run.flux_cnt for run in runs], axis=0)
+            self.flux     = np.sum([run.flux*w for run, w in zip(runs, weights)], axis=0)
+            self.flux_lte = np.sum([run.flux_lte*w for run, w in zip(runs, weights)], axis=0)
+            self.flux_cnt = np.sum([run.flux_cnt*w for run, w in zip(runs, weights)], axis=0)
 
         return self
 

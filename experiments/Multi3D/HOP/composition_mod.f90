@@ -29,7 +29,7 @@ MODULE composition_mod
         type(level_type), dimension(:), allocatable :: input_H_levels
         real(dp), dimension(:,:,:), allocatable :: temp, ne, rho, zero
         real(dp), dimension(:,:,:), allocatable :: EK_over_temp, pe, dxi, toth, saha
-        real(dp), dimension(:,:,:), allocatable :: teta, pg, E, p6, shield
+        real(dp), dimension(:,:,:), allocatable :: teta, pg, E, p6, shield, fo, vbarh, t3nhe
         real(4), dimension(:,:,:), allocatable :: chi500
     contains
         procedure :: init => injon
@@ -90,14 +90,14 @@ contains
 
     !===============================================================================
     SUBROUTINE injon(self, absdat_file, abund_file, absmet_file, FeH, &
-        isotope_file, molec_file, absmet_big_end, tmolim, external_abund)
+        isotope_file, molec_file, tmolim, external_abund, alpha_enhancement, &
+        r_process_enhancement)
         class(composition_type), target :: self
         character(len=*), intent(in) :: absdat_file, abund_file
         character(len=*), intent(in), optional :: absmet_file, isotope_file, molec_file
-        logical, intent(in), optional :: absmet_big_end
         real(4), intent(in), optional :: tmolim
         real(8), intent(in) :: FeH
-        real(4), intent(in), optional :: external_abund(:)
+        real(4), intent(in), optional :: external_abund(:), alpha_enhancement, r_process_enhancement
         integer :: absdat, lunit, iostat
         integer :: i, j, k, l, m, nl, nk, n_iso
         integer :: lvl_count, skip_back
@@ -148,6 +148,7 @@ contains
 
         call os%check_file(abund_file)
         open(file=abund_file, newunit=lunit, iostat=iostat)
+        call nextentry(lunit)
         do while (iostat==0)
             read(lunit, *, iostat=iostat) id, abund
             call self%element_by_id(id, element, verbose=.true.)
@@ -159,22 +160,38 @@ contains
             elements%abund = log10(elements%abund) + 12.0
         endif
 
+        self%FeH = merge(FeH, 0.0, FeH > -99)
+        do i=1, self%nel
+            element => elements(i)
+            select case (element%id)
+            case ('H', 'He', 'Li')
+                ! do not scale with FeH
+            case default
+                element%abund = element%abund + self%FeH
+            end select
+            if (present(alpha_enhancement)) then
+                select case (element%id)
+                case ('O', 'Ne', 'Mg', 'Si', 'S', 'Ar', 'Ca', 'Ti')
+                    element%abund = element%abund + alpha_enhancement
+                end select
+            endif
+            if (present(r_process_enhancement)) then
+                select case (element%id)
+                case ('Ga', 'Ge', 'As', 'Se', 'Br', 'Kr', 'Rb', 'Sr', 'Y',  'Zr', 'Nb', &
+                      'Mo', 'Ru', 'Rh', 'Pd', 'Ag', 'Cd', 'In', 'Sn', 'Sb', 'Te', 'I',  &
+                      'Xe', 'Cs', 'Ba', 'La', 'Ce', 'Pr', 'Nd', 'Sm', 'Eu', 'Gd', 'Tb', &
+                      'Dy', 'Ho', 'Er', 'Tm', 'Yb', 'Lu', 'Hf', 'Ta', 'W',  'Re', 'Os', &
+                      'Ir', 'Pt', 'Au', 'Hg', 'Tl', 'Pb', 'Bi', 'T', 'U')
+                    element%abund = element%abund + r_process_enhancement
+                end select
+            endif
+        end do
+
         if (present(external_abund)) then
+            ! do not overwrite external abundances with FeH
             do i=1, size(external_abund)
                 call self%element_by_id(element_ids(i), element, verbose=.true.)
                 if(associated(element)) element%abund = external_abund(i)
-            end do
-            ! do not overwrite external abundances with FeH
-        else
-            self%FeH = merge(FeH, 0.0, FeH > -99)
-            do i=1, self%nel
-                element => elements(i)
-                select case (element%id)
-                case ('H', 'He', 'Li')
-                    ! do not scale with FeH
-                case default
-                    element%abund = element%abund + self%FeH
-                end select
             end do
         endif
 
@@ -186,13 +203,14 @@ contains
                     l = len(abundances)
                     l = j + index(abundances(j:l), ' ') - 1
                     j = j + len_trim(element%id) + 1
+                    print *, 'Changing abundance of ', trim(element%id), ' to ', abundances(j:l)
                     read(abundances(j:l), *) element%abund
                 endif
             end do
         endif
 
         elements%abund = 10**(elements%abund - elements(1)%abund)
-        call self%compute_grams_per_hydrogen(self%suma, self%xmy, self%grph)
+        call self%compute_grams_per_hydrogen()
 
         do i=1, self%nel
             element => elements(i)
@@ -587,7 +605,7 @@ contains
 
         if (present(absmet_file)) then
             if (absmet_file /= '') then
-                call self%osmet%init(absmet_file, absmet_big_end=absmet_big_end)
+                call self%osmet%init(absmet_file)
                 self%osmet%eosmet = 0.5
             endif
         endif
@@ -654,6 +672,7 @@ contains
         real(dp) :: upper_ev, upper_g, lower_g, gij, f
         character :: lower_orb, upper_orb
         character(len=150) :: label
+        character(len=32) :: gq
         character :: char
         integer :: lunit, iostat, iostat2, j, nline, i, prev, iso_id, iso_idx, nkh
         integer, save :: ntotal, nactive
@@ -686,13 +705,13 @@ contains
             if (.not. ok) then
                 call self%molecule_by_id(ion_id(1:6), mol)
                 ok = associated(mol)
-                if (ok) then
-                    if (abs(mass-mol%awgt) > 0.1) then
-                        ok = .false. ! mass does not match
-                        print *, 'WARNING: ', trim(ion_id), ' mass does not match ', mol%id
-                        print *, 'disabling ', trim(ion_id), ' ', mass_id, mol%awgt
-                    endif
-                endif
+                !if (ok) then
+                !    if (abs(mass-mol%awgt) > 0.1) then
+                !        ok = .false. ! mass does not match
+                !        print *, 'WARNING: ', trim(ion_id), ' mass does not match ', mol%id
+                !        print *, 'disabling ', trim(ion_id), ' ', mass_id, mol%awgt
+                !    endif
+                !endif
             endif
             
             if (associated(ion) .and. isotope) then
@@ -758,19 +777,13 @@ contains
                     call line%init_einstein_coefficients(f, gij)
                     call prepare_hydrogen_damping(line) ! ga is overwritten
                 else
-                    ! Try to read with stark broadening parameter
-                    read(line_text, *, iostat=iostat2) lam0, line%lower_ev, line%loggf, line%gv, upper_g, &
-                        line%ga, line%gq, lower_orb, upper_orb, ent8, ent9, label
-
-                    if (iostat2 > 0) then
-                        line%gq = 0.0
-                        ! Try to read without stark broadening parameter
-                        read(line_text, *, iostat=iostat2) lam0, line%lower_ev, line%loggf, line%gv, upper_g, &
-                        line%ga, lower_orb, upper_orb, ent8, ent9, label
-                    endif
-
-                    ! Stop if nothing has worked
+                    ! It will try to read as many of these parameters as possible,
+                    ! but only lam0 lower_ev and loggf are required.
+                    ! Broadening parameters are zero by default if not overwritten here.
+                    read(line_text, *, iostat=iostat2) lam0, line%lower_ev, line%loggf, line%gv, upper_g, line%ga, gq
                     call print_failed_line(lunit, iostat2)
+                    ! read gq if it is there
+                    read(gq, *, iostat=iostat2) line%gq
     
                     lam_vac = air2vac(lam0) * 1e-8
                     line%nu0 = CC / lam_vac
@@ -787,6 +800,7 @@ contains
                     call line%prepare_VanderWaals(line%gv, j, p%xion, vbar2e4)
                 endif
                 allocate(line%used, source=.false.)
+                allocate(line%strength, source=0.d0)
                 if (line%active) nactive = nactive + 1
                 ntotal = ntotal + 1
             end do
@@ -868,6 +882,7 @@ contains
         real(4), dimension(:,:,:), pointer, contiguous :: vb2, idopf, ipart, vpr, fo, t3nhe, ni, nj
         real(4), dimension(:,:,:,:), pointer, contiguous :: eta, chi
         real(4), dimension(:,:,:,:), allocatable, target :: chi_l
+        real(8), dimension(:), allocatable :: qq
         integer :: i, j, k, l, f, ired, iblue, nactive, prev_iso, m(3)
         real(8) :: cnt_ev, gf, awgt, iso_awgt, dl
         real(4) :: scalar, bnu, h_kT, hv_kT
@@ -896,6 +911,7 @@ contains
         allocate(ni,           mold=tothi)
         allocate(nj,           mold=tothi)
         allocate(fmask(size(nu)), source=.false.)
+        allocate(qq(size(nu)))
 
         allocate(chi_l, mold=all_chi)
         chi_l = 0.
@@ -916,10 +932,9 @@ contains
         element => self%elements(1)
         ion => element%ions(1)
         if (ion%nline > 0) then
-            call self%ion_by_id('He I', HeI)
-            fo = 2.6031*EC * ne**two_third ! Holtsmark normal field strength
-            vbar2 = element%compute_vbar2(temp)
-            t3nhe = (temp/10000.)**0.3 * HeI%n
+            fo = self%fo
+            vbar2 = self%vbarh
+            t3nhe = self%t3nhe
             inv_df = element%inverse_doppler_factor(temp, vmic)
 
             do l=1, ion%nline
@@ -978,7 +993,7 @@ contains
                     endif
                     prev_iso = line%iso_idx
     
-                    call line%add_lte_opacities(ired, iblue, nu, &
+                    call line%add_lte_opacities(ired, iblue, nu, qq, &
                         vpr, idopf, EK_over_temp, dxij, ipart, ne, tothi, vb2, stark_pe, unsold, chi_l, all_chi)
                 end do
             end do
@@ -1004,7 +1019,7 @@ contains
 
                 fmask(ired:iblue) = .true.
       
-                call line%add_lte_opacities(ired, iblue, nu, &
+                call line%add_lte_opacities(ired, iblue, nu, qq, &
                     vpr, inv_df, EK_over_temp, dxij, inv_part, ne, tothi, vbar2, stark_pe, unsold, chi_l, all_chi)
             end do
         end do
@@ -1385,6 +1400,7 @@ contains
         self%EK_over_temp = EK / temp
         self%pe = temp * BK * ne
         self%saha = 2 * op_saha_const * temp*sqrt(temp) / ne
+        self%fo = 2.6031*EC * ne**two_third ! Holtsmark normal field strength
         
         if (debye_shield) then
           self%dxi = 4.98e-4*self%teta*sqrt(self%pe)
@@ -1609,6 +1625,9 @@ contains
         call self%molecule_by_id('H2+', H2p)
         call self%ion_by_id('H I', HI)
         call self%ion_by_id('HE I', HeI)
+
+        self%vbarh = HI%compute_vbar2(real(self%temp))
+        self%t3nhe = (self%temp/10000.)**0.3 * HeI%n
         
         if (associated(H2) .and. associated(H2p)) then
             p6 = LOG10((HI%n + 0.41336*HeI%n + 0.85*(H2%n + H2p%n)) * BK * self%temp)
@@ -2132,27 +2151,27 @@ contains
     END SUBROUTINE trans_by_id
 
     !=========================================================================
-    SUBROUTINE compute_grams_per_hydrogen(self, suma, xmy, grph)
+    SUBROUTINE compute_grams_per_hydrogen(self)
         class(composition_type), target :: self
-        real(dp), intent(out) :: suma, xmy, grph
         !---------------------------------------------------------------------
         ! Abundances should not be in log units when they enter here!
         ! XMY = GRAMS OF STELLAR MATTER / GRAMS OF HYDROGEN
         !---------------------------------------------------------------------
-        suma = sum(self%elements%abund)
-        xmy  = sum(self%elements%abund*self%elements%awgt) / self%elements(1)%awgt
-        grph = XMH*xmy
+        self%suma = sum(self%elements%abund)
+        self%xmy  = sum(self%elements%abund*self%elements%awgt) / self%elements(1)%awgt
+        self%grph = XMH*self%xmy
     END SUBROUTINE compute_grams_per_hydrogen
 
     !=========================================================================
-    SUBROUTINE overwrite_abundance(self, species, abnd, awgt)
+    SUBROUTINE overwrite_abundance(self, species, abnd, awgt, relative_abundance)
         class(composition_type), target :: self
         class(massive_type), pointer :: species
         class(element_type), pointer :: element
         class(molec_type), pointer :: mol
         class(ion_type), pointer :: ion
         real(dp), intent(in) :: abnd, awgt
-        real(dp) :: abund
+        logical, intent(in) :: relative_abundance
+        real(dp) :: abund, a
         integer :: j
         !---------------------------------------------------------------------
         select type (species)
@@ -2173,12 +2192,16 @@ contains
         end select
 
         abund = log10(element%abund) + 12.0
-        if (abund /= abnd) then
-            print '(A, A, A, F5.2, A, F5.2)', 'Changing abundance of ', trim(element%id), ' from ', abund, ' to ', abund
-
-            element%abund = 10**(abnd - 12.0)
-            if (.not. associated(mol)) element%awgt = awgt
-            call self%compute_grams_per_hydrogen(self%suma, self%xmy, self%grph)
+        if (relative_abundance) then
+            a = abund + abnd
+        else
+            a = abnd
+        endif
+        if (abund /= a) then
+            print '(A, A, A, F5.2, A, F5.2)', 'Changing abundance of ', trim(element%id), ' from ', abund, ' to ', a
+            element%abund = 10.0**(a - 12.0)
+            !if (.not. associated(mol)) element%awgt = awgt
+            call self%compute_grams_per_hydrogen()
         endif
     END SUBROUTINE overwrite_abundance
 

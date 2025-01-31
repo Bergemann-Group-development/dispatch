@@ -53,9 +53,10 @@ MODULE composition_patch_mod
   real(8), public :: FeH=-99.9, dtemp=250., ldne=0.25, ldrho=0.25, ldtemp=0.1
   logical, public :: save_atmos=.true., save_eos=.false.
   real(4), public, dimension(:), allocatable :: external_abund
+  real(4), public :: alpha_enhancement=0.0, r_process_enhancement=0.0
   character(len=256), save :: save_species=''
   character(len=256), save :: absdat_file='./input_multi3d/TS_absdat.dat'
-  character(len=256), save :: abund_file='./input_multi3d/abund_magg'
+  character(len=256), save :: abund_file='./input_multi3d/abund/abund_magg'
   character(len=256), save :: isotope_file='./input_multi3d/isotopes'
   character(len=256), save :: molec_file='./input_multi3d/molec_data.txt'
   character(len=256), save :: opac_table=''
@@ -70,14 +71,13 @@ contains
 !===============================================================================
 SUBROUTINE read_composition_params ()
   integer :: i, iostat
-  logical :: absmet_big_end=.false.
   real(4) :: tmolim=-99
   integer, save:: itimer=0, verbose=0
   namelist /composition_params/ verbose, absdat_file, abund_file, absmet_file, &
-  absmet_big_end, isotope_file, molec_file, H_occupation_probability, opac_table, &
+  isotope_file, molec_file, H_occupation_probability, opac_table, &
   sample_back_opac, sample_back_opac_in_output, switch, mhd_eos, debye_shield, &
   dtemp, ldne, ldrho, ldtemp, tmolim, irwin_dis, opac_table_vmic, save_species, &
-  ref_lam, debug_opac, abundances
+  ref_lam, debug_opac, abundances, alpha_enhancement, r_process_enhancement
   namelist /linelist_params/ dlam, exclude_elements, linelist_file, line_lists, &
   linelist_in_output, tolerance
   ! ----------------------------------------------------------------------------
@@ -105,8 +105,9 @@ SUBROUTINE read_composition_params ()
 
   line_blanketing = absmet_file /= ''
   call composition%init(absdat_file, abund_file, absmet_file, FeH, &
-  isotope_file=isotope_file, molec_file=molec_file, absmet_big_end=absmet_big_end, &
-  tmolim=tmolim, external_abund=external_abund)
+  isotope_file=isotope_file, molec_file=molec_file, tmolim=tmolim, &
+  external_abund=external_abund, alpha_enhancement=alpha_enhancement, &
+  r_process_enhancement=r_process_enhancement)
 
   if (linelist_file /= '') then
     call composition%init_linelist(linelist_file)
@@ -209,6 +210,10 @@ SUBROUTINE composition_pre_init (self)
     endif
   endif
 
+  if (save_species /= '') then
+    call self%save_number_densities(composition, pre_init=.true.)
+  endif
+
   call self%save_abundances_to_file()
   call self%post_pre_init()
   call trace%end(itimer)
@@ -240,7 +245,7 @@ SUBROUTINE execute (self)
   real(4), dimension(:,:,:), pointer :: d, e, pe, chi
   real(4), dimension(:,:,:,:), pointer, contiguous :: authority
   real(4), dimension(:,:,:), pointer, contiguous :: ne, rho, temp, vx, vy, vz
-  real(4), dimension(:,:,:), pointer, contiguous :: px, py, pz, vmic
+  real(4), dimension(:,:,:), pointer, contiguous :: ux, uy, uz, vmic
   real(8), dimension(:,:,:), allocatable :: ne8, rho8, temp8
   real(8) :: vec(3), nu(1)
   integer :: i, n(3), li(3), ui(3)
@@ -267,9 +272,9 @@ SUBROUTINE execute (self)
         authority => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),:,self%it,i)
         e  => authority(:,:,:,self%patch%idx%e)
         d  => authority(:,:,:,self%patch%idx%d)
-        px => authority(:,:,:,self%patch%idx%px)
-        py => authority(:,:,:,self%patch%idx%py)
-        pz => authority(:,:,:,self%patch%idx%pz)
+        ux => authority(:,:,:,self%patch%idx%px)
+        uy => authority(:,:,:,self%patch%idx%py)
+        uz => authority(:,:,:,self%patch%idx%pz)
         pe => authority(:,:,:,6)
         vmic => authority(:,:,:,7)
       
@@ -286,9 +291,9 @@ SUBROUTINE execute (self)
         temp = e
         rho  = d
         ne   = pe / (cgs%k_b * temp)
-        vx   = px / (cgs%c * rho)
-        vy   = py / (cgs%c * rho)
-        vz   = pz / (cgs%c * rho)
+        vx   = ux / cgs%c
+        vy   = uy / cgs%c
+        vz   = uz / cgs%c
       end do
     endif
 
@@ -336,7 +341,7 @@ SUBROUTINE execute (self)
     endif
 
     if (save_species /= '') then
-      call self%save_number_densities()
+      call self%save_number_densities(self%composition, pre_init=.false.)
     endif
 
     if (sample_back_opac) then
@@ -497,12 +502,14 @@ SUBROUTINE save_abundances_to_file (self)
 END SUBROUTINE save_abundances_to_file
 
 !===============================================================================
-SUBROUTINE save_number_densities (self)
+SUBROUTINE save_number_densities (self, comp, pre_init)
   class(composition_patch_t), target :: self
+  class(composition_type) :: comp
   class(ion_type), pointer :: ion
   class(molec_type), pointer :: mol
   class(particle_type), pointer :: p
   integer :: i, nspecies
+  logical, intent(in) :: pre_init
   character(len=256) :: local_text
   character(len=6), dimension(:), allocatable :: species
   character(len=6) :: key
@@ -518,14 +525,18 @@ SUBROUTINE save_number_densities (self)
     key = species(i)
     call replace_char(key, '*', ' ')
     key = adjustl(key)
-    call self%composition%ion_by_id(trim(key), ion)
+    call comp%ion_by_id(trim(key), ion)
     p => ion
     if (.not. associated(p)) then
-      call self%composition%molecule_by_id(trim(key), mol)
+      call comp%molecule_by_id(trim(key), mol)
       p => mol
     endif
     if (associated(p)) then
-      call self%save3(real(p%n), trim(key))
+      if (pre_init) then
+        p%in_opac = .true.
+      else
+        call self%save3(real(p%n), trim(key))
+      endif
     endif
   end do
 END SUBROUTINE save_number_densities

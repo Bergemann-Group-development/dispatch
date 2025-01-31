@@ -28,6 +28,7 @@ MODULE nlte_patch_mod
   USE ray_mod, only: one_dimensional, ray_type
   USE trans_mod, only:line_type, cont_type
   USE bbtrans_mod, only:voigt_function2, voigt_profile
+  USE hprofl_mod, only: hprofl
   USE m3d_debug_mod
   USE shared_mod
   USE composition_mod, only:composition_type, &
@@ -242,7 +243,7 @@ SUBROUTINE execute (self)
 
   self%composition => self%m3d_parent%composition
   do_rotate_atmos = rotate_atmos .and. self%out_mu
-  do_rotate_continuum = rotate_atmos .and. rotate_continuum
+  do_rotate_continuum = do_rotate_atmos .and. rotate_continuum
   use_linelist = self%out_mu .and. self%composition%ll_initialised .and. linelist_in_output
   get_cntrbf = self%out_mu .and. (n_cntrbf>0)
   end_boundary = self%patch%boundaries%is_set(bits%zl) .and. (self%dir<0)
@@ -303,7 +304,7 @@ SUBROUTINE execute (self)
       comp => self%m3d_parent%rotated_composition(i_mu)
 
       if (do_rotate_continuum) then
-        call self%lte_background_opacities(comp, include_absmet=include_absmet, do_sample_opac=do_sample_opac, do_make_eos=do_make_eos)
+        call self%lte_background_opacities(comp, include_absmet, do_sample_opac, do_make_eos)
       
         if (ilambd > 0 .and. (self%iter > 0 .or. self%out_mu)) then
           call self%add_scattering(comp)
@@ -312,7 +313,9 @@ SUBROUTINE execute (self)
 
       if (self%has_atom) then
         adata => self%atom%rotated_data(i_mu)
-        if (self%bound_free .and. do_rotate_continuum) call self%add_bound_free_opacities(adata)
+        if (self%bound_free .and. do_rotate_continuum) then
+          call self%add_bound_free_opacities(adata)
+        endif
         if (self%bound_bound) then
           inv_df = self%atom%inverse_doppler_factor(real(comp%temp), vmic)
           call self%bound_bound_damping(comp, adamp, inv_df)
@@ -334,7 +337,7 @@ SUBROUTINE execute (self)
 
         if (i_set < 3) then ! i_set==3 is the continuum only
           if (self%bound_bound) then
-            call self%add_bound_bound_opacities(adata, wmu, inv_df, vproj, adamp, LTE=i_set==2)
+            call self%add_bound_bound_opacities(comp, adata, wmu, inv_df, vproj, adamp, LTE=i_set==2)
           endif
           if (use_linelist) then
             call comp%add_linelist_opacities(self%nu, work(:,:,:,1:nz,1), dlam, vproj, vmic, work(:,:,:,1:nz,2))
@@ -397,7 +400,7 @@ SUBROUTINE execute (self)
       endif
       
       if (self%get_rates) then
-        if (self%bound_bound) call self%bound_bound_rates(wmu, inv_df, vproj, adamp, gamma_ij, gamma_ji)
+        if (self%bound_bound) call self%bound_bound_rates(comp, wmu, inv_df, vproj, adamp, gamma_ij, gamma_ji)
       endif
 
       if (save_Inu .and. self%out_mu .and. self%n_mu > 0) then
@@ -849,16 +852,17 @@ SUBROUTINE bound_bound_damping (self, comp, adamp, inv_df)
   class(line_type), pointer :: line
   real(4), contiguous, dimension(:,:,:,:) :: adamp
   real(4), contiguous, dimension(:,:,:) :: inv_df
-  real(4), dimension(:,:,:), allocatable :: tothi, vbar2, ne, temp
+  real(4), dimension(:,:,:), allocatable :: tothi, vbar2, ne, temp, nh6
   real(4), dimension(:,:,:), allocatable :: stark_pe, unsold, vproj
   integer :: i
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin (trim(self%kind)//'%bound_bound_damping', itimer=itimer)
-  allocate(temp, ne, tothi, vbar2, stark_pe, unsold, vproj, mold=inv_df)
+  allocate(temp, ne, tothi, vbar2, stark_pe, unsold, vproj, nh6, mold=inv_df)
   ne = real(comp%ne)
   temp = real(comp%temp)
   tothi = real(comp%elements(1)%ions(1)%n) ! total neutral hydrogen density
+  nh6 = real(comp%elements(1)%ions(1)%levels(6)%n) ! neutral hydrogen density in level 6
   vbar2 = self%atom%compute_vbar2(temp)
   stark_pe = ne * temp**one_sixth
   unsold = vbar2**0.3 * tothi
@@ -867,6 +871,9 @@ SUBROUTINE bound_bound_damping (self, comp, adamp, inv_df)
   do i=1, self%nline
     line => self%line(i)
     if (.not. line%active) cycle
+    if (line%hydrogen) then
+      call line%dampingH(adamp(:,:,:,i), temp, ne, nh6)
+    endif
     call line%damping(adamp(:,:,:,i), ne, tothi, vbar2, stark_pe, unsold)
     adamp(:,:,:,i) = adamp(:,:,:,i) * inv_df * over_4pi / line%nu0
   end do
@@ -874,17 +881,19 @@ SUBROUTINE bound_bound_damping (self, comp, adamp, inv_df)
 END SUBROUTINE bound_bound_damping
 
 !===============================================================================
-SUBROUTINE add_bound_bound_opacities (self, adata, wmu, inv_df, vproj, adamp, LTE)
+SUBROUTINE add_bound_bound_opacities (self, comp, adata, wmu, inv_df, vproj, adamp, LTE)
   class(nlte_patch_t), target :: self
+  class(composition_type) :: comp
   class(atom_data_t) :: adata
   class(line_type), pointer :: line
   real(4), contiguous, dimension(:,:,:) :: inv_df, vproj
   real(4), contiguous, dimension(:,:,:,:) :: adamp
   real(8), contiguous, dimension(:,:,:,:), pointer :: n
   real(8), dimension(:,:,:,:), allocatable, target :: nrot
-  real(4), dimension(:,:,:), allocatable :: wphi
+  real(4), dimension(:,:,:), allocatable :: wphi, temp, ne, fo, vbarh, tothi, t3nhe
   real(4), dimension(:), allocatable :: vphi
   real(4) :: wmu, idf, vpr, a, idf_4pi, ni, nj, Bji_nj, Bij_ni, widf, chi_fac, wp, amin, amax
+  real(8) :: q
   integer :: i, ih
   logical :: LTE, get_wphi
   integer, save :: itimer=0, itimer1=0
@@ -901,6 +910,16 @@ SUBROUTINE add_bound_bound_opacities (self, adata, wmu, inv_df, vproj, adamp, LT
   allocate(wphi, mold=vproj)
   get_wphi = self%iter == 0 .and. self%get_rates
 
+  if (any(self%line%hydrogen)) then
+    allocate(temp, ne, fo, vbarh, tothi, t3nhe, mold=inv_df)
+    temp = comp%temp
+    ne = comp%ne
+    fo = comp%fo
+    vbarh = comp%vbarh
+    tothi = comp%elements(1)%ions(1)%n ! total neutral hydrogen density
+    t3nhe = comp%t3nhe
+  endif
+
   do i=1, self%nline
     line => self%line(i)
     fs = line%ired
@@ -915,7 +934,13 @@ SUBROUTINE add_bound_bound_opacities (self, adata, wmu, inv_df, vproj, adamp, LT
       idf = inv_df(x,y,z)
 
       associate(phi => vphi(fs:fe))
-        if (line%io > 1) then
+        if (line%hydrogen) then
+          do f=fs, fe
+            q = line%q(f) - vproj(x,y,z)
+            vphi(f) = hprofl(line, q, temp(x,y,z), ne(x,y,z), fo(x,y,z), &
+                             vbarh(x,y,z), tothi(x,y,z), t3nhe(x,y,z), idf)
+          end do
+        elseif (line%io > 1) then
           phi = 0
           do ih=1, line%io
             a = adamp(x,y,z,i) + idf*line%da(ih)
@@ -956,16 +981,18 @@ SUBROUTINE add_bound_bound_opacities (self, adata, wmu, inv_df, vproj, adamp, LT
 END SUBROUTINE add_bound_bound_opacities
 
 !===============================================================================
-SUBROUTINE bound_bound_rates (self, wmu, inv_df, vproj, adamp, gamma_ij, gamma_ji)
+SUBROUTINE bound_bound_rates (self, comp, wmu, inv_df, vproj, adamp, gamma_ij, gamma_ji)
   class(nlte_patch_t), target :: self
+  class(composition_type) :: comp
   class(line_type), pointer :: line
   real(4), contiguous, dimension(:,:,:) :: inv_df, vproj
   real(4), contiguous, dimension(:,:,:,:) :: adamp, gamma_ij, gamma_ji
   real(8), contiguous, dimension(:,:,:,:), pointer :: n
+  real(4), dimension(:,:,:), allocatable :: temp, ne, fo, vbarh, tothi, t3nhe
   real(4), dimension(:), allocatable :: wmunu
-  real(4) :: wmu, idf, vpr, a, idf_4pi, ni, nj, chi_fac, q, phi, vel, vgt
+  real(4) :: wmu, idf, vpr, a, idf_4pi, ni, nj, chi_fac, phi, vel, vgt
   real(4) :: Bij_ni, Bji_nj, vvv, ufac, a2, tmp, tmp2, tmp3, tmp4
-  real(4) :: g_ij, g_ji
+  real(4) :: g_ij, g_ji, q
   integer :: i, l, ih
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
@@ -973,6 +1000,17 @@ SUBROUTINE bound_bound_rates (self, wmu, inv_df, vproj, adamp, gamma_ij, gamma_j
   allocate(wmunu(self%fs:self%fe))
   ! Computing bound-bound radiative rates
   n => self%atom%data%n
+
+  if (any(self%line%hydrogen)) then
+    allocate(temp, ne, fo, vbarh, tothi, t3nhe, mold=inv_df)
+    temp = comp%temp
+    ne = comp%ne
+    fo = comp%fo
+    vbarh = comp%vbarh
+    tothi = comp%elements(1)%ions(1)%n ! total neutral hydrogen density
+    t3nhe = comp%t3nhe
+  endif
+
   do i=1, self%nline
     line => self%line(i)
     fs = line%ired
@@ -998,7 +1036,19 @@ SUBROUTINE bound_bound_rates (self, wmu, inv_df, vproj, adamp, gamma_ij, gamma_j
 
       g_ij = 0
       g_ji = 0
-      if (line%io > 1) then
+      if (line%hydrogen) then
+        do f=fs, fe
+          associate(Inu=>work(f,x,y,z,3), Psi=>self%Psi(f,x,y,z))
+            q = line%q(f) - vpr
+            phi = hprofl(line, dble(q), temp(x,y,z), ne(x,y,z), fo(x,y,z), &
+                         vbarh(x,y,z), tothi(x,y,z), t3nhe(x,y,z), idf)
+            vvv = phi * wmunu(f)
+            phi = phi * Psi
+            g_ji = g_ji + vvv*(Inu - phi*Bij_ni + 1.)
+            g_ij = g_ij + vvv*(Inu - phi*Bji_nj)
+          end associate
+        end do
+      elseif (line%io > 1) then
         do f=fs, fe
           associate(Inu=>work(f,x,y,z,3), Psi=>self%Psi(f,x,y,z))
             phi = 0
@@ -1348,9 +1398,12 @@ SUBROUTINE set_fixed_Jnu (self, adata)
   class(nlte_patch_t) :: self
   class(atom_data_t) :: adata
   real(4) :: Bnu
+  integer :: nl, i
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('nlte_patch%set_fixed_Jnu', itimer=itimer)
+  nl = size(adata%wphi, 4)
+  if (.not. associated(adata%wphi)) nl = 0
   do z=1, nz
   do y=1, ny
   do x=1, nx
@@ -1360,7 +1413,9 @@ SUBROUTINE set_fixed_Jnu (self, adata)
         Inu = fixed_Jnu * Bnu
       end associate
     end do
-    adata%wphi(x,y,z,:) = 1
+    do i=1, nl
+      adata%wphi(x,y,z,i) = 1
+    end do
   end do
   end do
   end do

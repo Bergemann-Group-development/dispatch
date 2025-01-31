@@ -9,12 +9,13 @@ MODULE bbtrans_mod
     real(dp) :: nu0
     integer :: nnu ! number of frequencies in the line
     real(dp) :: ga=0, gw1=0, gw2=0, gw3=0, gq=0, gv=0 ! line broadening (damping) constants
-    real(dp) :: lower_ev, upper_g, loggf
+    real(dp) :: lower_ev, upper_g=1, loggf
     real(dp) :: Aji, Aij, Bji, Bij ! Einstein coefficients, Bij is the
                               ! transition from the lower to the upper
                               ! level
     logical :: active=.true., unsold
     logical, pointer :: used => null()
+    real(dp), pointer :: strength => null()
     integer :: iso_idx=0 ! isotope index for lines in line list
     ! Added to deal with multi component lines
     ! IO > 1 leads to the following being read from the atom file
@@ -59,32 +60,38 @@ contains
   END SUBROUTINE init_einstein_coefficients
 
   !====================================================================================
-  SUBROUTINE add_lte_opacities(self, ired, iblue, nu, vproj, inv_df, EK_over_temp, dxij, inv_part, &
+  SUBROUTINE add_lte_opacities(self, ired, iblue, nu, qq_scr, vproj, inv_df, EK_over_temp, dxij, inv_part, &
     ne, tothi, vbar2, stark_pe, unsold, chi, cont)
     class(bbtrans_type), intent(inout) :: self
     integer, intent(in) :: ired, iblue
     real(8), dimension(:), intent(in), contiguous :: nu
+    real(8), dimension(:), intent(in), contiguous, target :: qq_scr
     real(4), dimension(:,:,:), intent(in), contiguous :: vproj, inv_df, inv_part
     real(4), dimension(:,:,:), intent(in), contiguous :: EK_over_temp, dxij, ne, tothi, vbar2, stark_pe, unsold
     real(4), dimension(:,:,:,:), intent(inout) :: chi
     real(4), dimension(:,:,:,:), intent(in) :: cont
-    real(8), allocatable :: qq(:)
+    real(8), dimension(:), pointer :: qq
     real(4) :: ex, ni, nj, nij, upper_ev, nu0_ev, scalar, vs, lchi
-    real(4) :: a, idf, cf, v, ref, ekt, Bji, hum(1)
-    integer :: i,j,k,f, f0, m(3), itimer=0
+    real(4) :: a, idf, cf, v, ref, ekt, Bji, inv_nu0, strength
+    integer :: i,j,k,f, nf, f0, m(3), itimer=0
     logical :: used
     !----------------------------------------------------------------------------------
     !call trace%begin('add_lte_opacities_1', itimer=itimer)
     m = shape(vproj)
-    scalar = over_4pi / self%nu0
+    nf = iblue - ired + 1
+    inv_nu0 = 1.0 / self%nu0
+    scalar = over_4pi * inv_nu0
     nu0_ev = H_E * self%nu0
     upper_ev = self%lower_ev + nu0_ev
-    Bji = self%Bji
+    Bji = self%Bji * self%nu0
 
-    allocate(qq(ired:iblue))
-    qq(ired:iblue) = nu(ired:iblue) / self%nu0 - 1
-    f0 = minloc(abs(qq),1) + ired - 1
+    !qq(ired:iblue) => qq_scr(ired:iblue)
+    !qq(ired:iblue) = nu(ired:iblue) * inv_nu0 - 1
+    !f0 = searchsorted(qq(ired:iblue), 0.d0, outbounds_ok=.true.)
+    f0 = searchsorted(nu(ired:iblue), self%nu0, outbounds_ok=.true.)
+    f0 = max(1, min(f0, nf)) + ired - 1
     used = .false.
+    strength = 0.0
     
     do k=1, m(3)
     do j=1, m(2)
@@ -105,14 +112,16 @@ contains
       end if
 
       ! fetch variables
-      idf = inv_df(i,j,k)
-      v   = vproj(i,j,k)
+      !df = inv_df(i,j,k)
+      !v   = vproj(i,j,k)
+      idf = inv_df(i,j,k) * inv_nu0
+      v   = (vproj(i,j,k) + 1)*self%nu0
       ekt = EK_over_temp(i,j,k)
       ex  = (upper_ev - dxij(i,j,k)) * ekt
 
       if (ex < 85.) then
         ! compute level populations
-        a = a * scalar * idf
+        a = a * over_4pi * idf
         nij = exp(nu0_ev * ekt)             ! this is ni/nj gj/gi
         nj = inv_part(i,j,k) * exp(-ex)     ! this is nj/gj
         cf = nj * Bji * (nij - 1.)          ! this is (ni*Bij - nj*Bji)*h/4pi
@@ -122,20 +131,25 @@ contains
         ref = tolerance * cont(f0,i,j,k)
         !call scater_voigt(f0,ired,iblue,a,qq,v,cf,idf,ref,chi(:,i,j,k))
         
-        vs = (qq(f0) - v) * idf
+        !vs = (qq(f0) - v) * idf
+        vs = (nu(f0) - v) * idf
         lchi = voigt_function2(a, vs) * cf
         !call hum1zpf16  (1, [a],[vs], hum)
         if (lchi > ref) then
           used = .true.
+          strength = max(strength, lchi / cont(f0,i,j,k))
+
           chi(f0,i,j,k) = chi(f0,i,j,k) + lchi
           do f=f0+1, iblue
-            vs = (qq(f) - v) * idf
+            !vs = (qq(f) - v) * idf
+            vs = (nu(f) - v) * idf
             lchi = voigt_function2(a, vs) * cf
             chi(f,i,j,k) = chi(f,i,j,k) + lchi
             if (lchi < ref) exit ! if line opacity below tolerance exit
           end do
           do f=f0-1, ired, -1
-            vs = (qq(f) - v) * idf
+            !vs = (qq(f) - v) * idf
+            vs = (nu(f) - v) * idf
             lchi = voigt_function2(a, vs) * cf
             chi(f,i,j,k) = chi(f,i,j,k) + lchi
             if (lchi < ref) exit ! if line opacity below tolerance exit
@@ -145,7 +159,10 @@ contains
     end do
     end do
     end do
-    if (used) self%used = used
+    if (used) then
+      self%used = used
+      self%strength = max(self%strength, strength)
+    endif
     !call trace%end(itimer)
   END SUBROUTINE add_lte_opacities
   !------------------------------------------------------------------------------------

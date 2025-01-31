@@ -5,8 +5,8 @@ from .auxfuncs import *
 from .atom import atom_class
 
 formatters = {'ga':'{:.3e}'.format,
-              'gv':'{:.3e}'.format,
-              'gq':'{:.2e}'.format,
+              'gv':'{:.8g}'.format,
+              'gq':'{:.3g}'.format,
               'ev':'{:.6f}'.format,
               'evi':'{:.6f}'.format,
               'lam_air':'{:.3f}'.format,
@@ -111,7 +111,7 @@ class pandas_atom(object):
     return self
   
   @classmethod
-  def from_old(cls, atom_file):
+  def from_old(cls, atom_file, use_comment_lam0=True):
     self = cls()
     atom = atom_class(atom_file, qnorm=10., read_bf=True, read_coll=True, sanity_check=True)
     fast = fast_atom(atom_file)
@@ -123,6 +123,9 @@ class pandas_atom(object):
     self.lvl = fast.level[['ev', 'g', 'ion', 'label']]
 
     bb = fast.bbt.copy()
+    if use_comment_lam0:
+      bb['lam0'] = [line.c_lam0 for line in atom.trans[:atom.nline]]
+
     bb['evi'] = self.lvl.ev[bb.i].values
     bb = bb[['i', 'j', 'lam0', 'evi', 'loggf', 'ga', 'gv', 'gq', 'nq', 'qmax', 'q0', 'profile']]
     bb.i = bb.i

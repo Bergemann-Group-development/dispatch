@@ -38,24 +38,30 @@ class CoG(m3dis):
           if not same:
             raise ValueError('All runs should have the same wavelength grid.')
           
-        if read_line and hasattr(self.run0, 'atom'):
+        if hasattr(self.run0, 'atom'):
             self.atom = copy.copy(self.run0.atom)
             self.atom.run = self
-            self.in_lines = self.run0.in_lines
+            self.atom.abnd = np.mean(self.abnds)
 
-            if type(self.atom.trans[0]) is fast_trans:
-                init = np.frompyfunc(fast_trans, 2, 1)
-                self.atom.trans = init(np.arange(self.atom.nline), self.atom)
-            else:
-                self.atom.trans = [copy.copy(trans) for trans in self.run0.atom.trans]
+            if read_line and hasattr(self.run0.atom, 'in_lines'):
+                self.in_lines = self.run0.in_lines
 
-            self.line = np.array(self.atom.trans)[self.in_lines]
+                if type(self.atom.trans[0]) is fast_trans:
+                    init = np.frompyfunc(fast_trans, 2, 1)
+                    self.atom.trans = init(np.arange(self.atom.nline), self.atom)
+                else:
+                    self.atom.trans = [copy.copy(trans) for trans in self.run0.atom.trans]
+
+                self.line = np.array(self.atom.trans)[self.in_lines]
 
     #=================================================================
-    def crop(self, abnd, **kwargs):
+    def crop(self, abnd=None, **kwargs):
         runs = self.runs
         xx, yy = runs[0].crop(**kwargs)
         yy = [yy, *[run.crop(**kwargs)[1] for run in runs[1:]]]
+
+        if abnd is None:
+            abnd = np.mean(self.abnds)
 
         func = PchipInterpolator(self.abnds, yy, axis=0)
         yy = func(abnd)
@@ -63,7 +69,7 @@ class CoG(m3dis):
         return xx, yy
     
     #=====================================================================
-    def plot_spectrum(self, abnd, velocity_units=None, set_labels=None,
+    def plot_spectrum(self, abnd=None, velocity_units=None, set_labels=None,
                       lam_offset=None, ang=None, imu=None, norm=True,
                       dlam=None, renorm=None, per_aa=False, show_lines=False,
                       **kwargs):
@@ -101,13 +107,13 @@ class CoG(m3dis):
         weqs = np.array(weqs)
 
         if any(np.diff(weqs) <= 0):
-            print('Warning: weq values are not monotonically increasing.')
+            print('Warning: weq values are not monotonically increasing. Returning NaN')
             return np.nan
         elif any(weqs<0):
-            print('Warning: weq values are negative.')
+            print('Warning: weq values are negative. Returning NaN')
             return np.nan
         elif any(np.isnan(weqs)):
-            print('Warning: weq values are NaN.')
+            print('Warning: weq values are NaN. Returning NaN')
             return np.nan
 
         if any(weqs==0) or weq==0: log=False
@@ -134,9 +140,9 @@ class CoG(m3dis):
     
     #=================================================================
     def get_weq_corr(self, run, abnd=None, LTE=True, cog_LTE=False, log=True, **kwargs):
-        weq = run.calc_weq(LTE=LTE, **kwargs)
-        if weq < 0: return np.nan
         if abnd is None: abnd = run.atom.abnd
+        weq = run.calc_weq(abnd=abnd, LTE=LTE, **kwargs)
+        if weq < 0: return np.nan
         anew = self.interp_abnd(weq, log=log, LTE=cog_LTE, **kwargs)
         corr = anew - abnd
         return corr

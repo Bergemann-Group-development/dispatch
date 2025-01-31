@@ -64,7 +64,7 @@ MODULE trans_mod
     real(8), dimension(:), allocatable :: fterm 
     real(8), dimension(:), allocatable :: gwterm
     real(8), dimension(:), allocatable :: gqterm
-    integer :: fs, fe
+    integer :: fs, fe, iso=0
     logical :: get_cntrbf=.false.
 
   contains

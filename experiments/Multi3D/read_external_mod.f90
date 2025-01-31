@@ -31,7 +31,8 @@ MODULE read_external_mod
   opac_table_vmic, atmos_file
   USE m3d_halo_mod, only: m3d_halo_t
   USE read_atmos_mod, only: ia, read_stagger, read_co5bold, read_stagger2, &
-  legacy_stagger_interp, read_marcs, read_multi_snapshot, read_1d_snapshot
+  legacy_stagger_interp, read_marcs, read_multi_snapshot, read_text_1d, read_multi_1d, &
+  timestamp
   USE handyfuncs_mod
   USE ray_mod, only: one_dimensional
   implicit none
@@ -74,7 +75,7 @@ SUBROUTINE init(self, task_list, name)
   character(len=512) :: save_file
   namelist /atmos_params/ atmos_file, dims, verbose, patches_per_mpi, FeH, &
   save_atmos, atmos_format, vmic, use_rho, use_ne, nx, ny, nz, snap, &
-  legacy_stagger_interp, save_eos, amr, use_abnd
+  legacy_stagger_interp, save_eos, amr, use_abnd, timestamp
   !-----------------------------------------------------------------------------
   if (associated(task_list)) return
   call trace%begin('read_external_t%init')
@@ -156,7 +157,9 @@ SUBROUTINE init(self, task_list, name)
     case ('multi', 'must')
       call read_multi_snapshot(atmos_file)
     case ('text')
-      call read_1d_snapshot(atmos_file, vmic)
+      call read_text_1d(atmos_file, vmic, FeH)
+    case ('multi1d')
+      call read_multi_1d(atmos_file, vmic)
     case default
       write(stdout, *) 'unknown atmos_format ', atmos_format, &
       '. Options are: "Stagger", "Co5bold", "MUST", "Multi", "Marcs" and "Text".'

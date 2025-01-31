@@ -9,7 +9,7 @@ MODULE atom_mod
     USE mmath_mod, only: refsor, unista
     USE op_math_mod, only: lineq, get_interval, eqsyst, lineq_no_pivot
     USE ion_mod, only: ion_type, massive_type, debye_shield, massive_type
-    USE element_mod, only: element_type
+    USE element_mod, only: element_type, isotope_type
     USE molecule_mod, only: molec_type
     USE os_mod
     USE trace_mod
@@ -113,7 +113,7 @@ MODULE atom_mod
       procedure :: link_transitions
     end type atom_type
 
-    logical, public :: use_classic_col = .True., m1d_legacy_mode=.False.
+    logical, public :: use_classic_col = .False., m1d_legacy_mode=.False.
     logical, public :: lse_no_pivot = .True., kramer_bf=.False.
     logical, public :: disable_bf=.False., disable_bb=.False.
     logical, public :: level_partf=.true.
@@ -499,10 +499,10 @@ MODULE atom_mod
     real(8), pointer, contiguous, dimension(:) :: bf_nu, bf_alpha
     integer, pointer, contiguous, dimension(:) :: icont
     integer :: i, j, ic, tri, idx, latom, nnu_bf, ncol, ntri, ii, jj
-    integer :: nnu, ncont, ntemp, l, u
+    integer :: iostat, nnu, ncont, ntemp, l, u
     real(8) :: scr, gv, cnt_ev, nu_max, alpha0, thresh_aa, dnu
     real(8) :: gij, red_fcut, blu_fcut, vbar2e4, loggf, lam_air
-    character(512) :: dummy_string
+    character(512) :: dummy_string, text
     character(8) :: key, str1, str2, str3
     logical :: abort
     integer, save :: itimer=0
@@ -559,8 +559,15 @@ MODULE atom_mod
         endif
       endif
 
-      read(latom,*) idx, lin%i, lin%j, lam_air, lin%lower_ev, loggf, &
-            lin%ga, lin%gv, lin%gq, lin%nnu, lin%qmax, lin%q0, lin%profile_type
+      read(latom, '(A)') text
+      read(text, *, iostat=iostat) idx, lin%i, lin%j, lam_air, lin%lower_ev, loggf, &
+            lin%ga, lin%gv, lin%gq, lin%nnu, lin%qmax, lin%q0, lin%profile_type, lin%iso
+
+      if (iostat > 0) then
+        write(stdout,*) 'Error reading following line '
+        write(stdout,*) text
+        abort = .true.
+      endif
 
       if (disable_bb) call lin%deactivate()
             
@@ -591,8 +598,10 @@ MODULE atom_mod
       endif
       lin%nnu = min(lin%nnu, nq_max)
 
-      tri = (lin%j-1)*(lin%j-2)/2 + lin%i
-      self%cdata(tri) = lin%f
+      if (lin%iso == 0) then
+        tri = (lin%j-1)*(lin%j-2)/2 + lin%i
+        self%cdata(tri) = lin%f
+      endif
 
       if (logf_cut > -99) then
         scr = log10(self%g(lin%i)*lin%f)
@@ -1345,15 +1354,17 @@ MODULE atom_mod
     class(atom_type), intent(inout) :: self
     class(massive_type), intent(in), pointer :: species
     class(ion_type), pointer :: ions(:)
+    class(isotope_type), pointer :: isotopes(:)
     class(line_type), pointer :: line
     logical :: is_element
-    integer :: i, j, ic
-    real(8) :: vbar2e4, cnt_ev
+    integer :: i, j, ic, iso, tri
+    real(8) :: vbar2e4, cnt_ev, gij
     !---------------------------------------------------------------------
     select type(species)
     class is (element_type)
       is_element = .true.
       ions => species%ions
+      isotopes => species%isotope
     class default
       is_element = .false.
     end select
@@ -1363,10 +1374,24 @@ MODULE atom_mod
       if (.not. line%active) cycle
       j = self%ion(line%j)
 
-      select case (line%profile_type)
-      case ('hlinop')
+      if (is_element .and. line%iso > 0) then
+        iso = findloc(isotopes%iso, line%iso, 1)
+        if (iso > 0) then
+          line%f = line%f * isotopes(iso)%frac
+          gij = self%g(line%i) / self%g(line%j)
+          call line%init_einstein_coefficients(line%f, gij)
+          tri = (line%j-1)*(line%j-2)/2 + line%i
+          self%cdata(tri) = self%cdata(tri) + line%f
+        else
+          print *, 'isotope', line%iso, ' not found. Deactivating line ', i
+          call line%deactivate()
+          cycle
+        endif
+      endif
+
+      if (line%hydrogen) then
         call prepare_hydrogen_damping(line)
-      case ('voigt')
+      else
         call line%prepare_Stark(line%gq)
         vbar2e4 = self%compute_vbar2(10000.)
         if (associated(species)) then
@@ -1381,7 +1406,7 @@ MODULE atom_mod
           cnt_ev = merge(self%ev(ic), 999.99, ic > 0)
         endif
         call line%prepare_VanderWaals(line%gv, self%ion(line%i), cnt_ev, vbar2e4)
-      end select
+      endif
     end do
   END SUBROUTINE prepare_damping
 
@@ -1596,8 +1621,10 @@ MODULE atom_mod
         call sp%get_interval(cnt, ired, iblue)
         if (iblue == 0 .or. ired >= sp%nnu) then
           call cnt%deactivate()
+        elseif (iblue==ired) then
+          print *, 'WARNING, single frequency for cont', i
+          call cnt%deactivate()
         else
-          if (iblue==ired) print *, 'WARNING, single frequency for cont', i
           ! total number of frequencies where this continuum is active
           nnu=iblue-ired+1
           cnt%nnu = nnu

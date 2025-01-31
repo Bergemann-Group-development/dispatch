@@ -115,6 +115,8 @@ class trans_class(object):
         elif read_bf:
             if self.qmax < 0:
                 self.lam, self.alfac = np.loadtxt(atom.f, dtype=float, max_rows=self.nq).T
+                self.lam = np.array([self.lam]).ravel() # in case there is only one frequency
+                self.alfac = np.array([self.alfac]).ravel() # in case there is only one frequency
                 lam = self.lam
                     
             else:

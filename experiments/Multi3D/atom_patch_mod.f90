@@ -22,9 +22,8 @@ MODULE atom_patch_mod
     USE m3d_patch_mod, only: m3d_patch_t, composition, maxiter, check_NaN, cswitch, key_link_t, &
     global_maxerr, convlim, convmax, atom_update_counter, comoving_frame, global_pos, ng_step, ng_start, &
     decouple_continuum, overlapping_bb, overlapping_bf, line_blanketing, converged, premature_finish, &
-    rotate_atmos, long_vec, rank_lvlerr, overlapping_bb_in_output, long_scheme, n_nu
+    rotate_atmos, long_vec, rank_lvlerr, overlapping_bb_in_output, long_scheme, n_nu, detailed_absmet
     USE bftrans_mod, only: bftrans_type
-    USE hprofl_mod, only: hydrogen_BPO
     USE osmet_mod, only:osmet_type
     USE nlte_patch_mod, only:nlte_patch_t, n_cntrbf, cntrbf_lines
     USE m3d_debug_mod
@@ -68,7 +67,6 @@ MODULE atom_patch_mod
 
     integer, save :: epos(3), elvl
     logical, save :: exclude_from_line_list=.true.
-    logical, save :: detailed_absmet=.false.
     logical, save :: pandas_format=.false.
     logical, save :: save_populations=.true.
     logical, save :: save_rates=.false.
@@ -114,11 +112,12 @@ MODULE atom_patch_mod
     integer, save :: itimer=0, n_in_lines=0
     integer, save, allocatable :: in_lines(:)
     logical, save :: first_time=.true., exclude_trace_cont=.true., use_atom_abnd=.true.
+    logical, save :: relative_abundance = .false.
     integer :: i, iostat
     namelist /atom_params/ atom_file, qnorm, convlim, exclude_trace_cont, level_partf, &
-    use_atom_abnd, logf_cut, red_cut, blue_cut, n_in_lines, abundance, &
+    use_atom_abnd, logf_cut, red_cut, blue_cut, n_in_lines, abundance, relative_abundance, &
     exclude_from_line_list, precomputed_depart, use_classic_col, kramer_bf, overlapping_bf, &
-    overlapping_bb, hydrogen_BPO, detailed_absmet, n_cntrbf, convmax, premature_finish, &
+    overlapping_bb, detailed_absmet, n_cntrbf, convmax, premature_finish, &
     pandas_format, save_populations, nq_fac, nq_min, nq_max, cbbesc, cbfesc, cbbhsc, cbfhsc, &
     disable_bf, disable_bb, overlapping_bb_in_output, save_rates
     namelist /line_mask/ in_lines, cntrbf_lines
@@ -154,6 +153,7 @@ MODULE atom_patch_mod
 
       write (*,*) ' - Reading atom'
       if (pandas_format) then
+        level_partf = .false.
         call atom%read_pandas(atom_file, qnorm, in_lines=in_lines)
       else
         call atom%read(atom_file, qnorm, in_lines=in_lines, read_coll=.true.)
@@ -164,8 +164,6 @@ MODULE atom_patch_mod
 
       call os%copy_file(trim(atom_file), trim(io%run_dir)//'atom.txt')
       if (abundance > -99) atom%abnd = abundance
-
-      write (io%namelist, atom_params)
 
       call composition%element_by_id(atom%id(1:3), element, verbose=.false.)
       if (associated(element)) then
@@ -186,7 +184,7 @@ MODULE atom_patch_mod
       call atom%prepare_damping(species)
 
       if (use_atom_abnd .or. abundance > -99) then
-        call composition%overwrite_abundance(species, atom%abnd, atom%awgt)
+        call composition%overwrite_abundance(species, atom%abnd, atom%awgt, relative_abundance)
       else
         atom%abnd = atom%abnd + composition%FeH
       endif
@@ -207,6 +205,8 @@ MODULE atom_patch_mod
       allocate(out_cont(atom%ncont))
       out_line = atom%line
       out_cont = atom%cont
+
+      write (io%namelist, atom_params)
     endif
 
     if (atom_file == '') then

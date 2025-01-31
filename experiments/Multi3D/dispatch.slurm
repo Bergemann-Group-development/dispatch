@@ -14,6 +14,7 @@
 #SBATCH --ntasks-per-core=1
 #SBATCH --exclusive
 #SBATCH --mem=100G
+#SBATCH --profile task
 # --- User notifications ---
 ##SBATCH --time 24:00:00
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK

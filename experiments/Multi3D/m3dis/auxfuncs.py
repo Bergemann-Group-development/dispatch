@@ -1,9 +1,10 @@
 import numpy as np
+import pandas as pd
 import warnings
 from numpy.fft import fft, ifft
 from scipy.optimize import curve_fit
 from scipy.signal import argrelextrema
-from scipy.special import voigt_profile
+from scipy.special import voigt_profile as scipy_voigt_profile
 from scipy import integrate, stats, optimize
 from scipy.interpolate import interp1d, PchipInterpolator
 from scipy.ndimage import convolve
@@ -16,7 +17,10 @@ import copy
 from inspect import signature
 import matplotlib
 import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.colors import LinearSegmentedColormap, ListedColormap, BoundaryNorm
+from astropy.io import fits
+from io import StringIO
+from scipy.cluster.hierarchy import fcluster, linkage
 
 CB_colors = ['#377eb8', '#ff7f00', '#4daf4a', '#f781bf', '#a65628', '#984ea3', '#999999', '#e41a1c', '#dede00']
 
@@ -36,7 +40,7 @@ HC2 = 2.*HH*CC *1e24
 HCK = HH*CC/BK*1e8
 EK  = EE/BK
 
-atomic_weigths = {'H':  1.008, 'He': 4.003, 'Li': 6.94,  'Be': 9.01,  'B':  10.81, 
+atomic_weights = {'H':  1.008, 'He': 4.003, 'Li': 6.94,  'Be': 9.01,  'B':  10.81, 
                   'C':  12.01, 'N':  14.01, 'O':  16.0,  'F':  19.0,  'Ne': 20.18, 
                   'Na': 22.99, 'Mg': 24.31, 'Al': 26.98, 'Si': 28.08, 'P':  30.97, 
                   'S':  32.06, 'Cl': 35.45, 'Ar': 39.95, 'K':  39.1,  'Ca': 40.08, 
@@ -65,6 +69,17 @@ combined_kwargs = {**plot_kwargs, **line2d_kwargs}
 plt_kwargs = set(combined_kwargs.keys()).union(artist_properties)
 
 #=====================================================================
+class empty: pass
+
+#=====================================================================
+def comparison_scatter(xx, yy, linestyle='none', marker='.', rasterized=True, **kwargs):
+  p = plt.plot(xx, yy, linestyle=linestyle, marker=marker, rasterized=rasterized, **kwargs)
+  xmin = min(np.nanmin(xx), np.nanmin(yy))
+  xmax = max(np.nanmax(xx), np.nanmax(yy))
+  plt.plot([xmin, xmax], [xmin, xmax], zorder=-10, ls='--', color='lightgrey')
+  return p
+
+#=====================================================================
 def check_file(file):
     if file!='':
         if not os.path.exists(file):
@@ -91,7 +106,7 @@ def split_kwargs(func, kwargs):
     return matched, unmatched
 
 #=====================================================================
-def calc_weq(self, method='linear', return_err=False, **kwargs):
+def calc_weq(self, method='linear', return_err=False, plot=False, **kwargs):
     #-----------------------------------------------------------------
     xx, yy = self.crop(**kwargs)
     eweq = 0
@@ -103,20 +118,21 @@ def calc_weq(self, method='linear', return_err=False, **kwargs):
         xxx = np.linspace(xx[0], xx[-1], xx.size*10)
         f = PchipInterpolator(xx, 1-yy)
         weq = np.trapz(f(xxx), x=xxx)*1e3
-    
-    if method == 'gauss':
+
+    if method in ['gauss', 'voigt', 'asym_gauss']:
+        if method == 'gauss':
+            func = fit_gaussian_profile
+        if method == 'voigt':
+            func = fit_voigt_profile
+        if method == 'asym_gauss':
+            func = fit_asym_gaussian_profile
+
         if yy.ndim == 2:
-            tup = [fit_gaussian_profile(xx, y)[2:] for y in yy]
+            tup = [func(xx, y)[2:] for y in yy]
             weq, eweq = np.array(tup).T
         else:
-            weq, eweq = fit_gaussian_profile(xx, yy)[2:]
-    
-    if method == 'asym_gauss':
-        if yy.ndim == 2:
-            tup = [fit_asym_gaussian_profile(xx, y)[2:] for y in yy]
-            weq, eweq = np.array(tup).T
-        else:
-            weq, eweq = fit_asym_gaussian_profile(xx, yy)[2:]
+            pfit, fit, weq, eweq = func(xx, yy)
+            if plot: plt.plot(xx, fit, ls='--', color='dimgrey', zorder=10)
 
     if return_err:
         return weq, eweq
@@ -437,7 +453,7 @@ def synth_blends(obs_xx, obs_yy, order=20, blank_lam=None):
             ext = exts[i]
             
             sxx = xdata - xdata[ext] + shift
-            voigt = voigt_profile(sxx, sigma, gamma)
+            voigt = scipy_voigt_profile(sxx, sigma, gamma)
             
             sk_xx = sxx+np.abs(sxx)*skew
             sk_voigt = np.interp(sxx, sk_xx, voigt)
@@ -534,7 +550,13 @@ def is_number(s):
 #=====================================================================
 def voigt_function(a, v):
   s2 = np.sqrt(2)
-  return voigt_profile(v*s2, 1, a*s2) * s2
+  return scipy_voigt_profile(v*s2, 1, a*s2) * s2
+
+#=====================================================================
+def voigt_profile(xx, x0, a, sigma, amp):
+  s2 = np.sqrt(2)
+  vv = (xx-x0) / sigma
+  return 1 - amp*voigt_function(a, vv)
 
 #=====================================================================
 def compute_tau_scale (chi, zz, axis=-1):
@@ -620,6 +642,7 @@ def get_adjacent_peaks(yy, i, order=1, pad=0):
 #=====================================================================
 def stagger_name_to_params(stagger_name):
   _, teff, logg, feh = re.split('t|g|m|p', stagger_name)
+  feh = feh[:2]
   if len(teff)==2: teff = int(teff)*100
   teff = int(teff)
   logg = float(logg)/10
@@ -872,7 +895,9 @@ def scatter_density(xx, yy, radius=0, cmap='binary', vmin=0, vmax=None, aspect='
     circle = circle / circle.sum()
     image = convolve(image, circle)
 
-  image = np.log(image)
+  with np.errstate(divide='ignore', invalid='ignore'):
+    image = np.log(image)
+
   if vmax is None: vmax = image.max()
   return plt.imshow(image.T, origin='lower', extent=(xmin, xmax, ymin, ymax),
                     vmin=vmin, vmax=vmax, aspect=aspect, cmap=cmap, 
@@ -951,20 +976,37 @@ def gaussian_profile(x, x0, sig, amp):
     return 1 - amp*np.exp(-0.5*((x-x0)/sig)**2)
 
 #=====================================================================
-def fit_gaussian_profile(xx, yy, x0=None, sigma=None, syst=None):
+def fit_gaussian_profile(xx, yy, x0=None, dlam=None, sigma=None, syst=None):
     if hasattr(xx, 'values'): xx = xx.values
     if hasattr(yy, 'values'): yy = yy.values
+
     absolute = sigma is not None
 
     if x0 is None: x0 = 0 if xx[0] < 0 else xx[xx.size//2]
-    x = xx - x0
-    scale = 1 - np.min(yy)
+    xx = xx - x0
+
+    if dlam is not None:
+        mask = np.abs(xx) < dlam
+        x = xx[mask]
+        y = yy[mask]
+    else:
+        x = xx
+        y = yy
+
+    scale = 1 - np.min(y)
     s2p = np.sqrt(2*np.pi)
-    sig = np.trapz(1-yy, x) / (s2p*scale)
+    sig = np.trapz(1-y, x) / (s2p*scale)
 
     p0 = [0, sig, scale]
     bounds = [[-0.5, 1e-4, 0], [0.5, 1, 1]]
-    popt, pcov = curve_fit(gaussian_profile, x, yy, p0=p0, bounds=bounds, sigma=sigma, absolute_sigma=absolute)
+
+    try:
+        popt, pcov = curve_fit(gaussian_profile, x, y, p0=p0, bounds=bounds, sigma=sigma, absolute_sigma=absolute)
+    except Exception as e:
+        # Print the error message
+        print(f"An error occurred: {e}")
+        return None, None, np.nan, np.nan
+
     x0, sig, amp = popt
     weq = 1e3*s2p*amp*sig # equivalent width in mÅ
     partials = 1e3*s2p*np.array([0, amp, sig]) # dweq/dx0, dweq/dsig, dweq/damp
@@ -972,14 +1014,14 @@ def fit_gaussian_profile(xx, yy, x0=None, sigma=None, syst=None):
 
     if syst is not None:
       dy = 0.1*syst
-      (x0, sig, amp), pcov = curve_fit(gaussian_profile, x, yy+dy, p0=popt, bounds=bounds, sigma=sigma, absolute_sigma=absolute)
+      (x0, sig, amp), pcov = curve_fit(gaussian_profile, x, y+dy, p0=popt, bounds=bounds, sigma=sigma, absolute_sigma=absolute)
       weq2 = 1e3*s2p*amp*sig # equivalent width in mÅ
       dw = (weq2 - weq) / dy
       esys = syst*dw
       if hasattr(esys, '__iter__'): esys = np.mean(esys)
       eweq = np.sqrt(eweq**2 + esys**2)
 
-    fitted = gaussian_profile(x, *popt)
+    fitted = gaussian_profile(xx, *popt)
     return popt, fitted, weq, eweq
 
 #=====================================================================
@@ -1021,3 +1063,258 @@ def fit_asym_gaussian_profile(xx, yy, x0=None, sigma=None, syst=None):
 
     fitted = asym_gaussian_profile(x, *popt)
     return popt, fitted, weq, eweq
+
+#=====================================================================
+def fit_voigt_profile(xx, yy, x0=None, dlam=None, sigma=None, syst=None):
+    if hasattr(xx, 'values'): xx = xx.values
+    if hasattr(yy, 'values'): yy = yy.values
+
+    absolute = sigma is not None
+
+    if x0 is None: x0 = 0 if xx[0] < 0 else xx[xx.size//2]
+    xx = xx - x0
+
+    if dlam is not None:
+        mask = np.abs(xx) < dlam
+        x = xx[mask]
+        y = yy[mask]
+    else:
+        x = xx
+        y = yy
+
+    scale = 1 - np.min(y)
+    s2p = np.sqrt(2*np.pi)
+    sig = np.trapz(1-y, x) / (s2p*scale)
+
+    p0 = [0, 0, sig, scale]
+    bounds = [[-0.5, 0, 1e-6, 0], [0.5, 1e2, 1e2, 1e2]]
+
+    try:
+        popt, pcov = curve_fit(voigt_profile, x, y, p0=p0, bounds=bounds, sigma=sigma, absolute_sigma=absolute)
+    except Exception as e:
+        # Print the error message
+        print(f"An error occurred: {e}")
+        return None, None, np.nan, np.nan
+
+    x0, a, sig, amp = popt
+    weq = 1e3*amp*sig # equivalent width in mÅ
+    partials = 1e3*np.array([0, 0, amp, sig]) # dweq/dx0, dweq/da, dweq/dsig, dweq/damp
+    eweq = np.sqrt(np.dot(partials, np.dot(pcov, partials)))
+
+    if syst is not None:
+      dy = 0.1*syst
+      (x0, sig, amp), pcov = curve_fit(voigt_profile, x, y+dy, p0=popt, bounds=bounds, sigma=sigma, absolute_sigma=absolute)
+      weq2 = 1e3*amp*sig # equivalent width in mÅ
+      dw = (weq2 - weq) / dy
+      esys = syst*dw
+      if hasattr(esys, '__iter__'): esys = np.mean(esys)
+      eweq = np.sqrt(eweq**2 + esys**2)
+
+    fitted = voigt_profile(xx, *popt)
+    return popt, fitted, weq, eweq
+
+#=====================================================================
+def marcs_to_pandas(file):
+    with open(file) as f:
+        lines = f.readlines()
+
+    nrows = int(lines[22].split()[0])
+    h1 = 24
+    h2 = h1 + nrows + 1
+    # Create StringIO objects for the two sections
+    section1 = StringIO('\n'.join(lines[h1:h1+nrows+1]))
+    section2 = StringIO('\n'.join(lines[h2:h2+nrows+1]))
+
+    # Read the sections into DataFrames
+    df1 = pd.read_csv(section1, sep=r'\s+')
+    df2 = pd.read_csv(section2, sep=r'\s+')
+
+    df2 = df2.loc[:, ~df2.columns.isin(df1.columns)]
+    df = pd.concat([df1, df2], axis=1)
+    return df
+
+#=====================================================================
+def tbdfits(file, ext=None, survey=None, verbose=True):
+    """
+    Reads a FITS file and extracts wavelength and flux data.
+
+    Parameters:
+        file (str): Path to the FITS file.
+        ext (int): Extension number in the FITS file.
+        survey (str): Survey type ("apo", "ges", "harps").
+
+    Returns:
+        tuple: (wavel, flux) where
+            - wavel is a NumPy array of wavelengths
+            - flux is a NumPy array of flux values
+    """
+    if ext is None or survey is None:
+        print("Usage: ext: 0 ... 6, survey: apo, ges, harps")
+        return
+
+    # Read the FITS file
+    with fits.open(file) as hdul:
+        header = hdul[ext].header
+        flux = hdul[ext].data
+
+    # Retrieve the wavelength zero point (CRVAL1)
+    cr = header.get('CRVAL1')
+    if cr is None:
+        raise ValueError("CRVAL1 not found in the header.")
+
+    if verbose: print("CRVAL1 (wavelength zero point):", cr)
+
+    # Determine the wavelength increment based on the survey
+    if survey == "ges":
+        cdelt = header.get('CD1_1')
+    elif survey in ["apo", "harps"]:
+        cdelt = header.get('CDELT1')
+    else:
+        raise ValueError(f"Unknown survey type: {survey}")
+
+    if cdelt is None:
+        raise ValueError("CDELT1/CD1_1 not found in the header.")
+
+    if verbose: print("Wavelength increment (CDELT1/CD1_1):", cdelt)
+
+    # Check for SNR in the header
+    snr_keys = [key for key in header if key.startswith("SNR")]
+    if len(snr_keys) == 1:
+        snr = header[snr_keys[0]]
+        if verbose: print("SNR:", snr)
+
+    lam = np.arange(len(flux)) * cdelt + cr
+    if survey == "apo":
+        lam = 10 ** lam
+
+    return lam, flux, header
+
+#=====================================================================
+def subplot_labels(ax, xlabel=None, ylabel=None):
+  sub = ax.get_subplotspec()
+  grid = sub.get_gridspec()
+  if xlabel is not None:
+    if sub.rowspan.stop == grid._nrows:
+        ax.set_xlabel(xlabel)
+  if ylabel is not None:
+    if sub.colspan.start == 0:
+        ax.set_ylabel(ylabel)
+
+#=====================================================================
+def pad_boolean(arr, pad=1):
+  # Convert Boolean to integers (True -> 1, False -> 0)
+  int_arr = arr.astype(int)
+  # Create a kernel of size 2N + 1 for the rolling product
+  kernel = np.ones(2 * pad + 1, dtype=int)
+  # Perform convolution (mode='same' ensures output size matches input size)
+  convolved = np.convolve(int_arr, kernel, mode='same')
+  # Convert back to Boolean: Any value less than the kernel size indicates a 0 was in the window
+  result = convolved == (2 * pad + 1)
+  return result
+
+#=====================================================================
+# Calculate angular distance between the target and table entries
+def angular_distance(ra1, dec1, ra2, dec2):
+    """Calculate angular distance between two celestial coordinates."""
+    ra1, dec1, ra2, dec2 = map(np.radians, [ra1, dec1, ra2, dec2])
+    return np.sqrt((np.cos(dec2) * (ra2 - ra1))**2 + (dec2 - dec1)**2)
+
+#=====================================================================
+def lowpass(xx, yy, thresh=15, force_period=False):
+  newx = np.linspace(xx[0], xx[-1], len(xx)*3)
+  dx = newx[1] - newx[0]
+  yy = np.interp(newx, xx, yy)
+
+  if force_period:
+    cnt = continuum(newx, yy)
+    yy = yy / cnt
+
+  # Perform Fourier Transform
+  signal_fft = np.fft.fft(yy)
+  frequencies = np.fft.fftfreq(len(yy), dx)  # Get frequency components
+
+  # Apply the low-pass filter (set high-frequency components to zero)
+  filtered_fft = signal_fft.copy()
+  filtered_fft[np.abs(frequencies) > thresh] = 0
+
+  # Perform inverse Fourier Transform to get the filtered signal
+  filtered_signal = np.fft.ifft(filtered_fft).real
+
+  if force_period:
+    filtered_signal = filtered_signal * cnt
+
+  newy = np.interp(xx, newx, filtered_signal)
+  return newy
+
+#=====================================================================
+def split_words(text):
+  pattern = r'(?:"[^"]*"|\'[^\']*\'|\S+)'
+  words = re.findall(pattern, text)
+  return words
+
+#=====================================================================
+def read_llist(filename):
+  llist = pd.DataFrame()
+  with open(filename) as f:
+    lines = f.readlines()
+    names = ['lam0', 'evi', 'loggf', 'gv', 'upper_g', 'ga', 'gq']
+    ncol_max = len(names)
+
+    while len(lines) > 0:
+      line = lines.pop(0).strip()
+      mass_id, ion, nlines = split_words(line)
+      line = lines.pop(0).strip()
+      species = line.strip("'").strip()[:6]
+      nlines = int(nlines)
+      table = ''.join(lines[:nlines])
+      df = pd.read_fwf(StringIO(table), header=None)
+      del lines[:nlines]
+      ncolumns = min(ncol_max, len(df.columns))
+      df = df.iloc[:, :ncolumns]
+      df.columns = names[:ncolumns]
+      if 'gq' in df.columns:
+        if df.gq.dtype != float:
+          df.drop(columns='gq', inplace=True)
+      df['id'] = species
+      df['ion'] = int(ion)
+      df['iso'] = int(mass_id.strip("'").split('.')[-1])
+      llist = pd.concat([llist, df])
+      
+  return llist
+
+#=====================================================================
+def nearest_sorted(array, values):
+  array = np.array(array)
+  values = np.array(values)
+  idx = np.searchsorted(array, values)
+  idx = np.clip(idx, 1, len(array)-1)
+  left = array[idx-1]
+  right = array[idx]
+  idx -= values - left < right - values
+  return idx
+
+#=====================================================================
+def create_centered_colormap(cmap_name, centers):
+    # Get the colormap from the specified name
+    cmap = plt.get_cmap(cmap_name)
+    
+    # Define the boundaries for the levels
+    bounds = np.array(centers)
+    diff = np.diff(centers)
+    bounds = np.concatenate([bounds - diff[0]/2, [bounds[-1] + diff[-1]/2]])
+    num_levels = len(bounds)
+    
+    # Create the normalization
+    norm = BoundaryNorm(bounds, num_levels)
+    
+    # Create the stepwise colormap
+    stepwise_cmap = ListedColormap(cmap(np.linspace(0, 1, num_levels)))
+    
+    return stepwise_cmap, norm
+
+#=====================================================================
+def assign_group_indices(values, tolerance):
+    values = np.sort(values)  # Ensure values are sorted
+    Z = linkage(values[:, None], method='single')  # Perform hierarchical clustering
+    group_indices = fcluster(Z, t=tolerance, criterion='distance')  # Assign cluster indices
+    return group_indices

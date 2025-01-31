@@ -36,6 +36,7 @@ MODULE m3d_patch_mod
     USE element_mod, only: element_type
     USE ion_mod, only: ion_type
     USE molecule_mod, only: molec_type
+    USE hprofl_mod, only: hydrogen_BPO
     USE, intrinsic :: ieee_arithmetic
     implicit none
     private
@@ -132,12 +133,12 @@ MODULE m3d_patch_mod
     logical, public, save :: converged=.false., use_vel(3)=.true., premature_finish=.true.
     logical, public, save :: preconditioning=.true., binned_opac=.false., save_Qrad=.false.
     logical, public, save :: check_NaN=.false., save_resolved=.false.
-    logical, public, save :: decouple_continuum=.false., sample_back_opac=.false.
+    logical, public, save :: decouple_continuum=.true., sample_back_opac=.false.
     logical, public, save :: sample_back_opac_in_output=.false.
     logical, public, save :: comoving_frame=.false., linelist_in_output=.true.
     logical, public, save :: use_rho=.true., use_ne=.true., line_blanketing=.false.
     logical, public, save :: overlapping_bb=.true., overlapping_bf=.true.
-    logical, public, save :: overlapping_bb_in_output=.true.
+    logical, public, save :: overlapping_bb_in_output=.true., detailed_absmet=.true.
     logical, public, save :: absmet_in_output=.false., column_by_column=.false.
     logical, public, save :: print_start=.false., print_send=.false.
     logical, public, save :: Jnu_to_file=.true., amr=.true.
@@ -172,7 +173,7 @@ MODULE m3d_patch_mod
     absmet_in_output, print_lock, make_eos, ng_step, ng_start, scattering_absorption, &
     column_by_column, rotate_atmos, Jnu_to_file, preconditioning, save_inu, save_chi, &
     long_scheme, long_ntheta, long_nphi, short_scheme, short_ntheta, short_nphi, &
-    long_solver, fixed_Jnu
+    long_solver, fixed_Jnu, hydrogen_BPO
 
   contains
   
@@ -263,6 +264,7 @@ MODULE m3d_patch_mod
         irwin_dis = .false.
         level_partf = .true.
         helium_scattering = .false.
+        detailed_absmet = .false.
         !comoving_frame = .true.
         !preconditioning = .false.
       endif
@@ -964,8 +966,8 @@ MODULE m3d_patch_mod
     ! ----------------------------------------------------------------------------
     linelist_out_file = trim(io%run_dir) // 'linelist_out.txt'
     open(newunit=lunit, file=linelist_out_file, form='formatted')
-    write(lunit, "(A8, A4, A12, 2(A8), 3(A11))") &
-    'ion', 'iso', 'lam_vac', 'loggf', 'ev_i', 'ga', 'gv', 'gq'
+    write(lunit, "(A8, A4, A12, 2(A8), 4(A11))") &
+    'ion', 'iso', 'lam_vac', 'loggf', 'evi', 'ga', 'gv', 'gq', 'strength'
   
     do i=1, comp%nel
       element => comp%elements(i)
@@ -980,8 +982,8 @@ MODULE m3d_patch_mod
           if (.not. line%active .or. .not. line%used) cycle
   
           lam_vac = CC/line%nu0*1e8
-          write(lunit, "(A1, A6, A1, I4, F12.4, 2(F8.3), 3(ES11.3))") "'", ion%id, "'", &
-          line%iso_idx, lam_vac, line%loggf, line%lower_ev, line%ga, line%gv, line%gq
+          write(lunit, "(A1, A6, A1, I4, F12.4, 2(F8.3), 4(ES11.3))") "'", ion%id, "'", &
+          line%iso_idx, lam_vac, line%loggf, line%lower_ev, line%ga, line%gv, line%gq, line%strength
         end do
       end do
     end do
@@ -993,8 +995,8 @@ MODULE m3d_patch_mod
         if (.not. line%active .or. .not. line%used) cycle
 
         lam_vac = CC/line%nu0*1e8
-        write(lunit, "(A1, A6, A1, I4, F12.4, 2(F8.3), 3(ES11.3))") "'", mol%id, "'", &
-        line%iso_idx, lam_vac, line%loggf, line%lower_ev, line%ga, line%gv, line%gq
+        write(lunit, "(A1, A6, A1, I4, F12.4, 2(F8.3), 4(ES11.3))") "'", mol%id, "'", &
+        line%iso_idx, lam_vac, line%loggf, line%lower_ev, line%ga, line%gv, line%gq, line%strength
       end do
     end do
     close(lunit)

@@ -895,13 +895,11 @@ contains
     
     ! boundary slopes from quadratic polynomial using 2 points and 1 dydx
     if (imin == 1) then
-      a = (dy(1) - dx(1)*dydx(2)) / (xx(2)**2 - xx(1)**2 - 2.*xx(2)*dx(1))
-      dydx(1) = dydx(2) - 2.*a*dx(1)
+      dydx(1) = 2.*dy(1)/dx(1) - dydx(2)
     endif
     
     if (imax == n) then
-      a = (dy(n-1) - dx(n-1)*dydx(n-1)) / (xx(n)**2 - xx(n-1)**2 - 2.*xx(n-1)*dx(n-1))
-      dydx(n) = dydx(n-1) + 2.*a*dx(n-1)
+      dydx(n) = 2.*dy(n-1)/dx(n-1) - dydx(n-1)
     endif
     
     i = 1
@@ -987,13 +985,11 @@ contains
     
     ! boundary slopes from quadratic polynomial using 2 points and 1 dydx
     if (imin == 1) then
-      a = (dy(1) - dx(1)*dydx(2)) / (xx(2)**2 - xx(1)**2 - 2.*xx(2)*dx(1))
-      dydx(1) = dydx(2) - 2.*a*dx(1)
+      dydx(1) = 2.*dy(1)/dx(1) - dydx(2)
     endif
     
     if (imax == n) then
-      a = (dy(n-1) - dx(n-1)*dydx(n-1)) / (xx(n)**2 - xx(n-1)**2 - 2.*xx(n-1)*dx(n-1))
-      dydx(n) = dydx(n-1) + 2.*a*dx(n-1)
+      dydx(n) = 2.*dy(n-1)/dx(n-1) - dydx(n-1)
     endif
     
     i = 1

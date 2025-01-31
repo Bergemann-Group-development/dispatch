@@ -27,29 +27,33 @@ contains
     !===============================================================================
     ! initialises osmet type.
     !===============================================================================
-    SUBROUTINE init (self, absmet_file, absmet_big_end)
+    SUBROUTINE init (self, absmet_file)
         class(osmet_type) :: self
         character(len=*), intent(in) :: absmet_file
-        logical, intent(in), optional :: absmet_big_end
         integer :: lunit, iostat, maxp6, maxtem
         real(4) :: orig_ostabl(mp6, mtem)
         real(4), allocatable :: p6(:), temp(:)
         real(8) :: wnum
-        integer :: nnu, nt, np
+        integer :: nnu
         !---------------------------------------------------------------------------
         print *, 'Reading absmet file: ' // trim(absmet_file)
 
         call os%check_file(absmet_file)
-        if (absmet_big_end) then
-            open(file=absmet_file, newunit=lunit, form='unformatted', convert='big_endian')
-        else
-            open(file=absmet_file, newunit=lunit, form='unformatted')
-        endif
+        open(file=absmet_file, newunit=lunit, form='unformatted')
 
-        read(lunit) !textatom
-        read(lunit) !textatom
-        read(lunit) !ispec
-        read(lunit) !xiturb
+        read(lunit, iostat=iostat) !textatom
+        read(lunit, iostat=iostat) !textatom
+        read(lunit, iostat=iostat) !ispec
+        read(lunit, iostat=iostat) !xiturb
+
+        if (iostat == -1) then
+            close(lunit)
+            open(file=absmet_file, newunit=lunit, form='unformatted', convert='big_endian')
+            read(lunit, iostat=iostat) !textatom
+            read(lunit, iostat=iostat) !textatom
+            read(lunit, iostat=iostat) !ispec
+            read(lunit, iostat=iostat) !xiturb
+        endif
 
         read(lunit) maxp6
         allocate(self%p6(maxp6), p6(maxp6))
