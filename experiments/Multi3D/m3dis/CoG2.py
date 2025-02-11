@@ -89,7 +89,8 @@ class CoG(m3dis):
         if show_lines:
             self.plot_lline_labels()
 
-        return plt.plot(xx, yy, **plot_kwargs)
+        plt.plot(xx, yy, **plot_kwargs)
+        return xx, yy
     
     #=================================================================
     def fit_observed(self, oxx, oyy, fit=[], bounds=None, p0=None, sigma=None, method='curve_fit', tol=None, **kwargs):
@@ -103,17 +104,20 @@ class CoG(m3dis):
     
     #=================================================================
     def interp_abnd(self, weq, log=True, sigma=None, **kwargs):
+        abnds = self.abnds
         weqs = [run.calc_weq(**kwargs) for run in self.runs]
         weqs = np.array(weqs)
+        mask = np.isnan(weqs)
+        if any(mask):
+            print('Warning: NaN values in weqs')
+            weqs = weqs[~mask]
+            abnds = abnds[~mask]
 
         if any(np.diff(weqs) <= 0):
             print('Warning: weq values are not monotonically increasing. Returning NaN')
             return np.nan
         elif any(weqs<0):
             print('Warning: weq values are negative. Returning NaN')
-            return np.nan
-        elif any(np.isnan(weqs)):
-            print('Warning: weq values are NaN. Returning NaN')
             return np.nan
 
         if any(weqs==0) or weq==0: log=False
@@ -128,7 +132,7 @@ class CoG(m3dis):
             weqs = np.log(weqs)
             weq = np.log(weq)
 
-        func = PchipInterpolator(weqs, self.abnds)
+        func = PchipInterpolator(weqs, abnds)
         abnd = func(weq)
 
         if sigma is None:

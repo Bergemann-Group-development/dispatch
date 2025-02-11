@@ -7,17 +7,18 @@ MODULE composition_patch_mod
   USE gpatch_mod
   USE handyfuncs_mod
   USE optab_mod, only: optab
+  USE osmet_mod, only: osmet
   USE ion_mod, only: particle_type, ion_type, debye_shield
   USE molecule_mod, only: molec_type
   USE element_mod, only: element_type
   USE m3d_patch_mod,   only: m3d_patch_t, composition, comoving_frame, ilambd, dlam, &
-  use_rho, use_ne, overlapping_bb, overlapping_bf, line_blanketing, binned_opac, &
+  use_rho, use_ne, overlapping_bb, overlapping_bf, binned_opac, &
   save_Qrad, maxiter, rotate_atmos, long_vec, sample_back_opac, decouple_continuum, &
   linelist_in_output, sample_back_opac_in_output, make_eos, overlapping_bb_in_output, &
   opac_table_vmic, atmos_format, atmos_file, n_nu
   USE m3d_debug_mod
   USE composition_mod, only: composition_type, exclude_elements, switch, mhd_eos, &
-  irwin_dis, ref_lam, debug_opac, abundances
+  irwin_dis, ref_lam, debug_opac, abundances, relative_abundances
   USE atom_patch_mod,  only: atom_patch_t
   USE nlte_patch_mod, only:nlte_patch_t
   USE bftrans_mod, only: H_occupation_probability
@@ -77,7 +78,7 @@ SUBROUTINE read_composition_params ()
   isotope_file, molec_file, H_occupation_probability, opac_table, &
   sample_back_opac, sample_back_opac_in_output, switch, mhd_eos, debye_shield, &
   dtemp, ldne, ldrho, ldtemp, tmolim, irwin_dis, opac_table_vmic, save_species, &
-  ref_lam, debug_opac, abundances, alpha_enhancement, r_process_enhancement
+  ref_lam, debug_opac, abundances, relative_abundances, alpha_enhancement, r_process_enhancement
   namelist /linelist_params/ dlam, exclude_elements, linelist_file, line_lists, &
   linelist_in_output, tolerance
   ! ----------------------------------------------------------------------------
@@ -103,8 +104,11 @@ SUBROUTINE read_composition_params ()
   if (verbose > 0) write (*,*) ' - Initializing the NEW opacity package'
   composition%verbose = verbose
 
-  line_blanketing = absmet_file /= ''
-  call composition%init(absdat_file, abund_file, absmet_file, FeH, &
+  if (absmet_file /= '') then
+      call osmet%init(absmet_file)
+  endif
+
+  call composition%init(absdat_file, abund_file, FeH, &
   isotope_file=isotope_file, molec_file=molec_file, tmolim=tmolim, &
   external_abund=external_abund, alpha_enhancement=alpha_enhancement, &
   r_process_enhancement=r_process_enhancement)

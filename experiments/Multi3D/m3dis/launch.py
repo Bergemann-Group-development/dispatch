@@ -2,6 +2,7 @@ import os
 import f90nml
 import copy
 from .auxfuncs import check_file
+from .m3dis import m3dis
 
 def launch(input_name, nml_settings=None, default=None, overwrite=False, threads=32,
            log_file=None, slurm_script=None, verbose=2, dry=False):
@@ -16,12 +17,26 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
             input = f90nml.read(default + '/params.nml')
     else:
         input = f90nml.Namelist()
+    
+    if nml_settings is not None:
+        input.patch(nml_settings)
+
+    datadir = 'data/'
+    if 'io_params' in input:
+        if 'datadir' in input['io_params']:
+            datadir = input['io_params']['datadir']
 
     input_file = input_name + '.nml'
-    if not os.path.isfile(input_file) or overwrite:
-        if nml_settings is not None:
-            input.patch(nml_settings)
+    output_folder = os.path.join(datadir.strip(), input_name)
 
+    ok = overwrite
+    if not ok:
+        try:
+            run = m3dis.read(output_folder, read_atmos=False, read_atom=False)
+        except:
+            ok = True
+
+    if ok:
         input.write(input_file, force=True)
 
         if not dry:
@@ -48,14 +63,8 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
                     print(last_line)
         elif verbose>0:
             print(input_file, ' written')
-
     else:
-        if verbose>0: print(input_file, ' already exists')
-        input = f90nml.read(input_file)
+        if verbose>0:
+            print(output_folder, ' already exists')
 
-    datadir = 'data/'
-    if 'io_params' in input:
-        if 'datadir' in input['io_params']:
-            datadir = input['io_params']['datadir']
-
-    return os.path.join(datadir.strip(), input_name)
+    return output_folder, ok

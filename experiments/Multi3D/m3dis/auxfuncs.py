@@ -21,6 +21,7 @@ from matplotlib.colors import LinearSegmentedColormap, ListedColormap, BoundaryN
 from astropy.io import fits
 from io import StringIO
 from scipy.cluster.hierarchy import fcluster, linkage
+import collections.abc
 
 CB_colors = ['#377eb8', '#ff7f00', '#4daf4a', '#f781bf', '#a65628', '#984ea3', '#999999', '#e41a1c', '#dede00']
 
@@ -72,8 +73,8 @@ plt_kwargs = set(combined_kwargs.keys()).union(artist_properties)
 class empty: pass
 
 #=====================================================================
-def comparison_scatter(xx, yy, linestyle='none', marker='.', rasterized=True, **kwargs):
-  p = plt.plot(xx, yy, linestyle=linestyle, marker=marker, rasterized=rasterized, **kwargs)
+def comparison_scatter(xx, yy, marker='.', rasterized=True, **kwargs):
+  p = plt.scatter(xx, yy, marker=marker, rasterized=rasterized, **kwargs)
   xmin = min(np.nanmin(xx), np.nanmin(yy))
   xmax = max(np.nanmax(xx), np.nanmax(yy))
   plt.plot([xmin, xmax], [xmin, xmax], zorder=-10, ls='--', color='lightgrey')
@@ -106,9 +107,33 @@ def split_kwargs(func, kwargs):
     return matched, unmatched
 
 #=====================================================================
-def calc_weq(self, method='linear', return_err=False, plot=False, **kwargs):
+def calc_weq(self, method='linear', return_err=False, plot=False,
+             get_func=False, **kwargs):
     #-----------------------------------------------------------------
+    auto_crop = ('dlam' not in kwargs) and ('lam0' in kwargs)
+    
+    if auto_crop:
+        kwargs['dlam'] = 10.0
+
     xx, yy = self.crop(**kwargs)
+    return get_weq(xx, yy, method=method, return_err=return_err, plot=plot,
+                    get_func=get_func, auto_crop=auto_crop)
+
+#=====================================================================
+def get_weq(xx, yy, method='linear', return_err=False, plot=False,
+             get_func=False, auto_crop=False):
+    #-----------------------------------------------------------------
+    if auto_crop:
+        syy = lowpass(xx, yy, thresh=15)
+        ex = argrelextrema(syy, np.greater_equal)[0]
+        xex = xx[ex]
+        idx = np.searchsorted(xx[ex], 0)
+        xleft = 2./3. * xex[idx-1]
+        xright = 2./3. * xex[idx]
+        slc = slice(np.searchsorted(xx, xleft), np.searchsorted(xx, xright))
+        xx = xx[slc]
+        yy = yy[slc]
+
     eweq = 0
 
     if method == 'linear':
@@ -122,10 +147,13 @@ def calc_weq(self, method='linear', return_err=False, plot=False, **kwargs):
     if method in ['gauss', 'voigt', 'asym_gauss']:
         if method == 'gauss':
             func = fit_gaussian_profile
+            rf = gaussian_profile
         if method == 'voigt':
             func = fit_voigt_profile
+            rf = voigt_profile
         if method == 'asym_gauss':
             func = fit_asym_gaussian_profile
+            rf = asym_gaussian_profile
 
         if yy.ndim == 2:
             tup = [func(xx, y)[2:] for y in yy]
@@ -134,10 +162,15 @@ def calc_weq(self, method='linear', return_err=False, plot=False, **kwargs):
             pfit, fit, weq, eweq = func(xx, yy)
             if plot: plt.plot(xx, fit, ls='--', color='dimgrey', zorder=10)
 
-    if return_err:
-        return weq, eweq
-    else:
-        return weq
+            if get_func:
+                def weq_func(x):
+                    return rf(x-kwargs['lam0'], *pfit)
+
+    res = (weq,)
+    if return_err: res = (*res, eweq)
+    if get_func: res = (*res, weq_func)
+    if len(res)==1: res = res[0]
+    return res
 
 #=====================================================================
 def planck(lam, temp):
@@ -1007,6 +1040,7 @@ def fit_gaussian_profile(xx, yy, x0=None, dlam=None, sigma=None, syst=None):
         print(f"An error occurred: {e}")
         return None, None, np.nan, np.nan
 
+    popt[0] += x0
     x0, sig, amp = popt
     weq = 1e3*s2p*amp*sig # equivalent width in mÅ
     partials = 1e3*s2p*np.array([0, amp, sig]) # dweq/dx0, dweq/dsig, dweq/damp
@@ -1047,6 +1081,8 @@ def fit_asym_gaussian_profile(xx, yy, x0=None, sigma=None, syst=None):
     p0 = [0, sig, sig, scale]
     bounds = [[-0.5, 1e-4, 1e-4, 0], [0.5, 1, 1, 1]]
     popt, pcov = curve_fit(asym_gaussian_profile, x, yy, p0=p0, bounds=bounds, sigma=sigma, absolute_sigma=absolute)
+    
+    popt[0] += x0
     x0, L, R, A = popt
     weq = 1e3*s2p/2*A*(L + R) # equivalent width in mÅ
     partials = 1e3*s2p/2*np.array([0, A, A, (L + R)])
@@ -1087,7 +1123,7 @@ def fit_voigt_profile(xx, yy, x0=None, dlam=None, sigma=None, syst=None):
     sig = np.trapz(1-y, x) / (s2p*scale)
 
     p0 = [0, 0, sig, scale]
-    bounds = [[-0.5, 0, 1e-6, 0], [0.5, 1e2, 1e2, 1e2]]
+    bounds = [[-0.5, 0, 1e-8, 0], [0.5, 1e3, 1e3, 1e3]]
 
     try:
         popt, pcov = curve_fit(voigt_profile, x, y, p0=p0, bounds=bounds, sigma=sigma, absolute_sigma=absolute)
@@ -1096,6 +1132,7 @@ def fit_voigt_profile(xx, yy, x0=None, dlam=None, sigma=None, syst=None):
         print(f"An error occurred: {e}")
         return None, None, np.nan, np.nan
 
+    popt[0] += x0
     x0, a, sig, amp = popt
     weq = 1e3*amp*sig # equivalent width in mÅ
     partials = 1e3*np.array([0, 0, amp, sig]) # dweq/dx0, dweq/da, dweq/dsig, dweq/damp
@@ -1314,7 +1351,22 @@ def create_centered_colormap(cmap_name, centers):
 
 #=====================================================================
 def assign_group_indices(values, tolerance):
-    values = np.sort(values)  # Ensure values are sorted
     Z = linkage(values[:, None], method='single')  # Perform hierarchical clustering
     group_indices = fcluster(Z, t=tolerance, criterion='distance')  # Assign cluster indices
     return group_indices
+
+#=====================================================================
+def update_dict(d, u, dry=False):
+    for k, v in u.items():
+        if isinstance(v, collections.abc.Mapping):
+            d[k] = update_dict(d.get(k, {}), v, dry=dry)
+        elif dry:
+            if d[k] != v:
+              old = d[k]
+              new = v
+              if type(old) == str: old = "'" + old.strip() + "'"
+              if type(new) == str: new = "'" + new.strip() + "'"
+              print(f'{k}={old} differs from {new}') 
+        else:
+            d[k] = v
+    return d

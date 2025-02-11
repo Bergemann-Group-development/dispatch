@@ -50,8 +50,126 @@ class m3dis(object):
         if os.path.isfile(sfolder + 'all_lam.bin'):
             self.all_lam = vacuum2obs(np.fromfile(sfolder + 'all_lam.bin', dtype=np.float64))[::-1]
         
-        depart = ''
-        atom_file = folder + 'atom.txt'
+        self.read_atom(read_atom, fast_read, verbose, **kwargs)
+        self.has_spectrum = hasattr(self, 'lam') and not self.nml['m3d_params']['long_scheme'].strip() == 'none'
+
+        file = folder + 'angle_quadrature.txt'
+        if os.path.isfile(file):
+            df = pd.read_csv(file, header=None, skiprows=1, sep=r'\s+', names=['ang', 'wmu', 'mux', 'muy', 'muz'])
+            self.vec = df.values[:,2:]
+            self.wts = df.values[:,1] * 2*np.pi
+            self.n_ang = self.wts.size
+            self.mus, self.imus = np.unique(1 - self.vec[:,-1], return_inverse=True)
+            self.mus = 1 - self.mus
+            self.nmu = self.mus.size
+
+        make_eos = 'make_eos' in self.nml['m3d_params']
+        if make_eos: make_eos = self.nml['m3d_params']['make_eos']
+        
+        if make_eos:
+            mem = self.read_patch_save('eos', fdim=None, lazy=False)[0]
+            self.temp = mem[0]
+            self.rho = mem[1]
+            self.ne = mem[2]
+            self.pg = mem[3]
+            self.E = mem[4]
+            self.chi = mem[5]
+
+        else:
+            if self.has_spectrum:
+                if (verbose > 0): print('Reading Intensities')
+                ie = self.read_patch_save('ie', lazy=False)[0]
+
+                self.ie     = ie[:,0,0,:,0]
+                self.ie_lte = ie[:,0,0,:,1]
+                self.cnt    = ie[:,0,0,:,2]
+
+                self.flux     = np.sum(self.wts * self.ie    , axis=-1)
+                self.flux_lte = np.sum(self.wts * self.ie_lte, axis=-1)
+                self.flux_cnt = np.sum(self.wts * self.cnt   , axis=-1)
+
+                if self.nml['m3d_params']['save_resolved']:
+                    i3 = self.read_patch_save('i3')[0]
+                    self.i3     = i3[...,0]
+                    self.i3_lte = i3[...,1]
+                    self.c3     = i3[...,2]
+
+            if os.path.isfile(folder + 'linelist_out.txt') and read_llist:
+                self.read_llist()
+
+            atmos_params = self.nml['atmos_params']
+
+            if atmos_params['atmos_format'].strip().lower() == 'save':
+                mesh = open(atmos_params['atmos_file'].strip() + '/atmos_mesh.txt', 'r')
+                afolder = atmos_params['atmos_file'].strip() + '/save/'
+            else:
+                mesh = open(folder + 'atmos_mesh.txt', 'r')
+                afolder = sfolder
+
+            amr = 'amr' in atmos_params
+            if amr: amr = atmos_params['amr']
+
+            dims = atmos_params['dims']
+            self.atmos_cuts = []
+            if amr:
+                nz = atmos_params['nz']
+                self.zz = np.zeros(nz)
+                j = 0
+                off = 0
+                for k in range(dims):
+                    nx, ny, nnz = [int(i) for i in mesh.readline().split()]
+                    dx, dy, dz = [float(i) for i in mesh.readline().split()]
+                    self.zz[j:j+nnz] = np.arange(1,nnz+1)*dz + off
+                    j += nnz
+                    off = self.zz[j-1]
+                    self.atmos_cuts.append(nnz)
+
+                self.atmos_cuts = np.cumsum(self.atmos_cuts)
+
+            else:
+                nx, ny, nz = [int(i) for i in mesh.readline().split()]
+                dx, dy, dz = [float(i) for i in mesh.readline().split()]
+                self.dz = dz
+                self.zz = np.arange(1, nz+1)*dz
+                self.atmos_cuts = np.cumsum(near_equal_split(nz, dims))
+
+            self.dx = dx
+            self.dy = dy
+            self.xx = np.arange(nx)*dx
+            self.yy = np.arange(ny)*dy
+            mesh.close()
+
+            if nx*ny > 1:
+                self.dim = '3D'
+            else:
+                self.dim = '1D'
+
+            if os.path.isfile(afolder + 'atmos_meta.txt') and read_atmos:
+                mem = self.read_patch_save('atmos', folder=afolder, zdim=2)[0]
+                mem = mem[..., 0]
+                if self.dim=='1D': mem = mem.squeeze()
+                self.ne   = np.array(mem[...,0])
+                self.rho  = np.array(mem[...,1])
+                self.temp = np.array(mem[...,2])
+                self.vx   = np.array(mem[...,3]) * CC
+                self.vy   = np.array(mem[...,4]) * CC
+                self.vz   = np.array(mem[...,5]) * CC
+                self.chi  = np.array(mem[...,6])
+                self.tau  = compute_tau_scale(self.chi, self.zz*1e8, axis=-1)
+                self.ltau = np.log10(self.tau)
+
+                zz = np.tile(self.zz, (nx, ny, 1)).squeeze()
+                self.z0 = np.mean(self.get_ltau_surface(0, zz))
+                self.height = self.zz - self.z0
+                
+            if os.path.isfile(folder + 'atmos_data.bin') and read_atmos:
+                self.read_atmos()
+                
+        return self
+
+    #=====================================================================
+    def read_atom(self, read_atom=True, fast_read=True, verbose=True, **kwargs):
+        atom_file = self.folder + 'atom.txt'
         if os.path.isfile(atom_file):
             if not read_atom:
                 self.atom = empty()
@@ -128,160 +246,34 @@ class m3dis(object):
                             self.atom.ib = ib.astype(int)
                             self.atom.ir = ir.astype(int)
 
-                reports = glob.glob(folder + 'convergence_report_*.txt')
+                reports = glob.glob(self.folder + 'convergence_report_*.txt')
                 if len(reports)>0:
                     self.lvlerr = np.zeros(self.atom.nk)
                     for report in reports:
                         df = pd.read_csv(report, sep=r'\s+')
                         self.lvlerr = np.maximum(self.lvlerr, df.maxconv.values)
 
-            in_abnd = self.nml['atom_params']['abundance']
-            depart = self.nml['atom_params']['precomputed_depart'].strip()
             if self.atom.id in self.abundances:
                 self.atom.abnd = float(self.abundances[self.atom.id])
             elif in_abnd > -99:
                 self.atom.abnd = in_abnd
             elif self.atom.molec:
                 moldict = {'CH':'C', 'OH':'O', 'NH':'N', 'CN':'N', 'CO':'C',
-                           'NO':'N', 'H2O':'O', 'C2':'C', 'N2':'N', 'O2':'O'}
+                            'NO':'N', 'H2O':'O', 'C2':'C', 'N2':'N', 'O2':'O'}
                 self.atom.abnd = self.abundances[moldict[self.atom.id]]
-
-            #self.atom.title = 'A({}) = {:.2f}'.format(self.atom.id.strip(), self.atom.abnd)
-
             
+        if 'atom_params' in self.nml:
+            depart = self.nml['atom_params']['precomputed_depart'].strip()
+            in_abnd = self.nml['atom_params']['abundance']
+        else:
+            depart = ''
+
         if (self.nml['m3d_params']['maxiter'] > 0):
             self.mode = 'NLTE'
         elif(depart==''):
             self.mode = 'LTE'
         else:
             self.mode = 'NLTE'
-
-        self.has_spectrum = hasattr(self, 'lam') and not self.nml['m3d_params']['long_scheme'].strip() == 'none'
-
-        file = folder + 'angle_quadrature.txt'
-        if os.path.isfile(file):
-            df = pd.read_csv(file, header=None, skiprows=1, sep=r'\s+', names=['ang', 'wmu', 'mux', 'muy', 'muz'])
-            self.vec = df.values[:,2:]
-            self.wts = df.values[:,1] * 2*np.pi
-            self.n_ang = self.wts.size
-            self.mus, self.imus = np.unique(1 - self.vec[:,-1], return_inverse=True)
-            self.mus = 1 - self.mus
-            self.nmu = self.mus.size
-
-        make_eos = 'make_eos' in self.nml['m3d_params']
-        if make_eos: make_eos = self.nml['m3d_params']['make_eos']
-        
-        if make_eos:
-            mem = self.read_patch_save('eos', fdim=None, lazy=False)[0]
-            self.temp = mem[0]
-            self.rho = mem[1]
-            self.ne = mem[2]
-            self.pg = mem[3]
-            self.E = mem[4]
-            self.chi = mem[5]
-
-        else:
-            if self.has_spectrum:
-                if (verbose > 0): print('Reading Intensities')
-                ie = self.read_patch_save('ie', lazy=False)[0]
-
-                self.ie     = ie[:,0,0,:,0]
-                self.ie_lte = ie[:,0,0,:,1]
-                self.cnt    = ie[:,0,0,:,2]
-
-                self.flux     = np.sum(self.wts * self.ie    , axis=-1)
-                self.flux_lte = np.sum(self.wts * self.ie_lte, axis=-1)
-                self.flux_cnt = np.sum(self.wts * self.cnt   , axis=-1)
-
-                if self.nml['m3d_params']['save_resolved']:
-                    i3 = self.read_patch_save('i3')[0]
-                    self.i3     = i3[...,0]
-                    self.i3_lte = i3[...,1]
-                    self.c3     = i3[...,2]
-
-            if os.path.isfile(folder + 'linelist_out.txt') and read_llist:
-                self.llist = pd.read_csv(folder + 'linelist_out.txt', sep=r'\s+', quotechar="'")
-                self.llist['lam0'] = vacuum2obs(self.llist.lam_vac)
-                self.llist = self.llist.sort_values(by='lam0')
-
-                init = np.frompyfunc(llist_trans, 2, 1)
-                self.llist_line = init(np.arange(len(self.llist)), self)
-
-                T = 4000
-                elements = [ion.split()[0] for ion in self.llist.ion]
-                abnd = np.array([self.abundances[el] if el in self.abundances.keys() else -np.inf for el in elements])
-                strength = np.log10(self.llist.lam_vac*1e-8 * np.exp(-self.llist.evi*EK/T)) + self.llist.loggf + abnd
-                self.llist['strength2'] = strength
-
-            atmos_params = self.nml['atmos_params']
-
-            if atmos_params['atmos_format'].strip().lower() == 'save':
-                mesh = open(atmos_params['atmos_file'].strip() + '/atmos_mesh.txt', 'r')
-                afolder = atmos_params['atmos_file'].strip() + '/save/'
-            else:
-                mesh = open(folder + 'atmos_mesh.txt', 'r')
-                afolder = sfolder
-
-            amr = 'amr' in atmos_params
-            if amr: amr = atmos_params['amr']
-
-            dims = atmos_params['dims']
-            self.atmos_cuts = []
-            if amr:
-                nz = atmos_params['nz']
-                self.zz = np.zeros(nz)
-                j = 0
-                off = 0
-                for k in range(dims):
-                    nx, ny, nnz = [int(i) for i in mesh.readline().split()]
-                    dx, dy, dz = [float(i) for i in mesh.readline().split()]
-                    self.zz[j:j+nnz] = np.arange(1,nnz+1)*dz + off
-                    j += nnz
-                    off = self.zz[j-1]
-                    self.atmos_cuts.append(nnz)
-
-                self.atmos_cuts = np.cumsum(self.atmos_cuts)
-
-            else:
-                nx, ny, nz = [int(i) for i in mesh.readline().split()]
-                dx, dy, dz = [float(i) for i in mesh.readline().split()]
-                self.dz = dz
-                self.zz = np.arange(1, nz+1)*dz
-                self.atmos_cuts = np.cumsum(near_equal_split(nz, dims))
-
-            self.dx = dx
-            self.dy = dy
-            self.xx = np.arange(nx)*dx
-            self.yy = np.arange(ny)*dy
-            mesh.close()
-
-            if nx*ny > 1:
-                self.dim = '3D'
-            else:
-                self.dim = '1D'
-
-            if os.path.isfile(afolder + 'atmos_meta.txt') and read_atmos:
-                mem = self.read_patch_save('atmos', folder=afolder, zdim=2)[0]
-                mem = mem[..., 0]
-                if self.dim=='1D': mem = mem.squeeze()
-                self.ne   = np.array(mem[...,0])
-                self.rho  = np.array(mem[...,1])
-                self.temp = np.array(mem[...,2])
-                self.vx   = np.array(mem[...,3]) * CC
-                self.vy   = np.array(mem[...,4]) * CC
-                self.vz   = np.array(mem[...,5]) * CC
-                self.chi  = np.array(mem[...,6])
-                self.tau  = compute_tau_scale(self.chi, self.zz*1e8, axis=-1)
-                self.ltau = np.log10(self.tau)
-
-                zz = np.tile(self.zz, (nx, ny, 1)).squeeze()
-                self.z0 = np.mean(self.get_ltau_surface(0, zz))
-                self.height = self.zz - self.z0
-                
-            if os.path.isfile(folder + 'atmos_data.bin') and read_atmos:
-                self.read_atmos()
-                
-        return self
     
     #=====================================================================
     def read_atmos(self):
@@ -312,6 +304,25 @@ class m3dis(object):
 
         self.ltau = np.log10(self.tau)
 
+    def read_llist(self):
+        self.llist = pd.read_csv(self.folder + 'linelist_out.txt', sep=r'\s+', quotechar="'")
+        self.llist['lam0'] = vacuum2obs(self.llist.lam_vac)
+        self.llist = self.llist.sort_values(by='lam0')
+
+        init = np.frompyfunc(llist_trans, 2, 1)
+        self.llist_line = init(np.arange(len(self.llist)), self)
+
+        T = 4000
+        elements = [ion.split()[0] for ion in self.llist.ion]
+        abnd = np.array([self.abundances[el] if el in self.abundances.keys() else -np.inf for el in elements])
+        strength = np.log10(self.llist.lam_vac*1e-8 * np.exp(-self.llist.evi*EK/T)) + self.llist.loggf + abnd
+        self.llist['strength2'] = strength
+
+    #=====================================================================
+    def get_line(self, lam0):
+        if not hasattr(self, 'line'): self.read_atom()
+        i = np.argmin([abs(line.lam0-lam0) for line in self.line])
+        return self.line[i]
 
     #=====================================================================
     def get_xx(self, lam, slc=None, dlam=None, xmin=None, xmax=None):
@@ -636,7 +647,8 @@ class m3dis(object):
                 weq = np.trapz(1-yy, x=xx)*1e3
                 label = label.replace('{WEQ}', '{:.2f}'.format(weq))
 
-        return plt.plot(xx, yy, label=label, **plot_kwargs)
+        plt.plot(xx, yy, label=label, **plot_kwargs)
+        return xx, yy
 
     #=====================================================================
     def plot_resolved(self, ang=0, f=0, LTE=False, cont=False, **kwargs):
@@ -1039,37 +1051,103 @@ class m3dis(object):
         return xx, yy
     
     #=====================================================================
-    def plot_line_labels(self, xx=None, labels=None, weights=None, offset=None, **kwargs):
+    def plot_line_labels(self, offset=None, tol=0.02, show_atom=True,
+                         dry=False, xmin=None, xmax=None, **kwargs):
         #-----------------------------------------------------------------
-        if xx is None: xx = np.array([line.lam0 for line in self.line])
-        if offset is not None: xx = xx + offset
-        if labels is None: labels = np.array([self.atom.id for line in self.line])
-        if weights is None:
-            T = 4000
-            loggf = np.array([line.loggf for line in self.line])
-            lam0s = np.array([line.lam0 for line in self.line])*1e-8
-            evis = np.array([line.evi for line in self.line])
-            weights = np.log10(lam0s * np.exp(-evis*EK/T)) + loggf
+        if xmin is None or xmax is None:
+            ax = plt.gca()
+            xmin, xmax = ax.get_xlim()
 
-        return self.plot_line_annotations(xx, labels, weights=weights, **kwargs)
+        if tol is None:
+            llist = self.llist
+            mask = (llist.lam0 > xmin) & (llist.lam0 < xmax)
+            llist = llist[mask]
+        else:
+            df = self.llist[['ion', 'lam0', 'strength']]
+            mask = (df.lam0 > xmin) & (df.lam0 < xmax)
+            df = df[mask]
+            df = df.sort_values(by=['ion', 'lam0']).reset_index(drop=True)
+            species = np.unique(df['ion'])
+
+            llist = pd.DataFrame()
+            for s in species:
+                sub = df[df['ion'] == s]
+                if len(sub) == 0:
+                    continue
+                elif len(sub) == 1:
+                    llist = pd.concat([llist, sub])
+                else:
+                    groups = assign_group_indices(sub['lam0'].values, tol) - 1
+                    for i in range(groups.max()+1):
+                        group = sub[groups == i]
+                        if len(group) == 1:
+                            llist = pd.concat([llist, group])
+                        else:
+                            strength = group.strength.sum()
+                            wts = group.strength / strength
+                            lam0 = np.sum(group.lam0 * wts)
+                            new_row = pd.DataFrame({'ion': [s], 'lam0': [lam0], 'strength': [strength]})
+                            llist = pd.concat([llist, new_row])
+
+        if hasattr(self, 'atom') and show_atom:
+            bbt = self.atom.bbt[['lam0']].copy()
+            mask = (bbt.lam0 > xmin) & (bbt.lam0 < xmax)
+            bbt = bbt[mask]
+            bbt['ion'] = self.atom.id
+            bbt['strength'] = llist.strength.max()
+            if len(bbt) == 1:
+                llist = pd.concat([llist, bbt])
+            elif len(bbt) > 1:
+                groups = assign_group_indices(bbt['lam0'].values, tol) - 1
+                for i in range(groups.max()+1):
+                    group = bbt[groups == i]
+                    if len(group) == 1:
+                        llist = pd.concat([llist, group])
+                    else:
+                        strength = group.strength.sum()
+                        wts = group.strength / strength
+                        lam0 = np.sum(group.lam0 * wts)
+                        new_row = pd.DataFrame({'ion': [self.atom.id], 'lam0': [lam0], 'strength': [strength]})
+                        llist = pd.concat([llist, new_row])
+            
+        llist = llist.sort_values(by='lam0').reset_index(drop=True)
+        if offset is not None: llist['lam0'] = llist['lam0'] + offset
+        if not dry:
+            self.plot_line_annotations(llist.lam0.values, llist.ion.values, llist.strength.values, **kwargs)
+        return llist
     
-    #=====================================================================
-    def plot_lline_labels(self, xx=None, labels=None, weights=None, offset=None, **kwargs):
-        #-----------------------------------------------------------------
-        if xx is None: xx = self.llist.lam0.values
-        if offset is not None: xx = xx + offset
-        if labels is None: labels = self.llist.ion.values
-        if weights is None: weights = self.llist.strength.values
-        return self.plot_line_annotations(xx, labels, weights=weights, **kwargs)
+    def plot_line_stem(self, bottom=1.0, scale=None, offset=None, xmin=None, xmax=None, **kwargs):
+        def cog_func(xx):
+            mask = xx < np.exp(0.5)
+            yy = np.zeros_like(xx)
+            yy[mask] = xx[mask] / (2*np.exp(1))**0.5
+            yy[~mask] = np.log(xx[~mask])**0.5
+            return yy
+        
+        if scale is None:
+            ymin, ymax = plt.gca().get_ylim()
+            scale = - 0.2 * (ymax - ymin)
+        
+        llist = self.plot_line_labels(offset=offset, xmin=xmin, xmax=xmax, show_atom=False, dry=True)
+        xx = llist.lam0
+        yy = cog_func(llist.strength.values)
+        yy = yy - np.min(yy)
+        yy = yy / np.max(yy)
+        yy = bottom + yy * scale
+        plt.plot([xx, xx], [bottom*np.ones_like(xx), yy], **kwargs)
     
     #=====================================================================
     def plot_line_annotations(self, xx, labels, weights=None, ha='center', va='bottom',
-                         rotation=90, fontfamily='serif', color='k', 
-                         linewidth=0.8, ntop=-1, **kwargs):
+                         rotation=90, fontfamily='serif', color='k', xmin=None, xmax=None,
+                         ymin=None, ymax=None, linewidth=0.8, ntop=-1, **kwargs):
         #-----------------------------------------------------------------
         ax = plt.gca()
-        xmin, xmax = ax.get_xlim()
-        ymin, ymax = ax.get_ylim()
+        xmn, xmx = ax.get_xlim()
+        ymn, ymx = ax.get_ylim()
+        if xmin is None: xmin = xmn
+        if xmax is None: xmax = xmx
+        if ymin is None: ymin = ymn
+        if ymax is None: ymax = ymx
         h = 0.1 * (ymax - ymin)
 
         mask = (xx > xmin) & (xx < xmax)

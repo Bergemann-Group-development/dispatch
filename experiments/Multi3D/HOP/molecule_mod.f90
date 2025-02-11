@@ -3,6 +3,7 @@ MODULE molecule_mod
     USE prec_mod
     USE op_math_mod
     USE ion_mod
+    USE handyfuncs_mod
     implicit none
 
     type, extends(particle_type) :: molec_type
@@ -19,6 +20,7 @@ MODULE molecule_mod
         procedure :: allocate => allocate_molec
         procedure :: deallocate => deallocate_molec
         procedure :: init_mol_dissociation
+        procedure :: generate_isotopic_combinations
     end type
     
 contains
@@ -205,4 +207,79 @@ SUBROUTINE init_mol_dissociation (self)
         self%de = [       3.21 ]
     end select
 END SUBROUTINE init_mol_dissociation
+
+!===============================================================================
+SUBROUTINE generate_isotopic_combinations(self)
+    class(molec_type), intent(inout) :: self
+    class(ion_type), pointer :: ion
+    class(isotope_type), pointer :: iso, iso2
+    integer :: i, j, k
+    integer, allocatable :: indices(:), order(:)
+    real(8) :: total_mass, total_frac
+    character(16) :: mass_id
+    logical :: done
+    !---------------------------------------------------------------------------
+    ! Estimate number of isotopic combinations (upper bound)
+    self%niso = 1
+    do i = 1, self%nions
+        self%niso = self%niso * self%ions(i)%p%niso
+    end do
+
+    allocate(self%isotope(self%niso))
+
+    ! Initialize index tracking for each ion
+    allocate(indices(self%nions))
+    allocate(order(self%nions))
+    indices = 1
+    k = 1
+    done = .false.
+
+    ! Generate all isotopic combinations
+    do while (.not. done)
+        ! Compute total mass and fraction
+        total_mass = 0.0d0
+        total_frac = 1.0d0
+        mass_id = ''
+        call argsort_int([(nint(self%ions(i)%p%awgt), i=1, self%nions)], order)
+        do i=1, self%nions
+            ion => self%ions(order(i))%p
+            if (associated(ion%isotope)) then
+                iso => ion%isotope(indices(i))
+                total_mass = total_mass + iso%awgt
+                total_frac = total_frac * iso%frac
+                write(mass_id, '(A, I0)') trim(mass_id), nint(iso%awgt)
+            else
+                total_mass = total_mass + ion%awgt
+                write(mass_id, '(A, I0)') trim(mass_id), nint(ion%awgt)
+            endif
+        end do
+
+        ! Store computed isotope in molecule
+        self%isotope(k)%awgt = total_mass
+        self%isotope(k)%frac = total_frac
+        read(mass_id, *) self%isotope(k)%iso
+        k = k + 1
+
+        ! Generate next combination
+        do i=self%nions, 1, -1
+            ion => self%ions(order(i))%p
+            indices(i) = indices(i) + 1
+            if (indices(i) <= ion%niso) exit
+            indices(i) = 1
+            if (i == 1) done = .true.
+        end do
+    end do
+    do i=1, self%niso
+        iso => self%isotope(i)
+        do k=i+1, self%niso
+            iso2 => self%isotope(k)
+            if (iso%awgt == iso2%awgt .and. iso%frac == iso2%frac) then
+                iso%frac = iso%frac + iso2%frac
+                iso2%frac = iso%frac
+            endif
+        end do
+    end do
+    deallocate(indices)
+END SUBROUTINE generate_isotopic_combinations
+
 END MODULE molecule_mod

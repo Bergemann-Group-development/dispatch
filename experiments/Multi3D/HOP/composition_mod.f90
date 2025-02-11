@@ -10,7 +10,7 @@ MODULE composition_mod
     USE bftrans_mod, only:bftrans_type, H_occupation_probability
     USE molecule_mod, only:molec_type
     USE hprofl_mod, only:prepare_hydrogen_damping, add_lte_h_opacities
-    USE osmet_mod
+    USE osmet_mod, only:osmet
     USE omp_lib
     USE os_mod
     USE io_mod
@@ -25,7 +25,6 @@ MODULE composition_mod
         type(element_type), allocatable :: elements(:)
         type(molec_type),   allocatable :: molecules(:)
         type(bftrans_type), allocatable :: trans(:)
-        type(osmet_type) :: osmet
         type(level_type), dimension(:), allocatable :: input_H_levels
         real(dp), dimension(:,:,:), allocatable :: temp, ne, rho, zero
         real(dp), dimension(:,:,:), allocatable :: EK_over_temp, pe, dxi, toth, saha
@@ -70,7 +69,8 @@ MODULE composition_mod
     real(dp), public :: debug_opac=0
     integer, public :: switch=1
     real(dp), public :: ref_lam=5000.d0
-    character(len=512), public :: abundances
+    character(len=1024), public :: abundances
+    logical, public :: relative_abundances=.false.
 
     character(len=3), save :: & 
         element_ids(92) = [ &
@@ -89,17 +89,17 @@ MODULE composition_mod
 contains
 
     !===============================================================================
-    SUBROUTINE injon(self, absdat_file, abund_file, absmet_file, FeH, &
+    SUBROUTINE injon(self, absdat_file, abund_file, FeH, &
         isotope_file, molec_file, tmolim, external_abund, alpha_enhancement, &
         r_process_enhancement)
         class(composition_type), target :: self
         character(len=*), intent(in) :: absdat_file, abund_file
-        character(len=*), intent(in), optional :: absmet_file, isotope_file, molec_file
+        character(len=*), intent(in), optional :: isotope_file, molec_file
         real(4), intent(in), optional :: tmolim
         real(8), intent(in) :: FeH
         real(4), intent(in), optional :: external_abund(:), alpha_enhancement, r_process_enhancement
         integer :: absdat, lunit, iostat
-        integer :: i, j, k, l, m, nl, nk, n_iso
+        integer :: i, j, k, l, m, nl, nk, niso
         integer :: lvl_count, skip_back
         real(dp) :: abund, xion, g2, dump, tecor, decor
         character(len=3) :: id
@@ -203,8 +203,13 @@ contains
                     l = len(abundances)
                     l = j + index(abundances(j:l), ' ') - 1
                     j = j + len_trim(element%id) + 1
-                    print *, 'Changing abundance of ', trim(element%id), ' to ', abundances(j:l)
-                    read(abundances(j:l), *) element%abund
+                    read(abundances(j:l), *) abund
+                    if (relative_abundances) then
+                        element%abund = element%abund + abund
+                    else
+                        element%abund = abund
+                    endif
+                    print *, 'Changing abundance of ', trim(element%id), ' to ', element%abund
                 endif
             end do
         endif
@@ -603,13 +608,6 @@ contains
 
         close(absdat)
 
-        if (present(absmet_file)) then
-            if (absmet_file /= '') then
-                call self%osmet%init(absmet_file)
-                self%osmet%eosmet = 0.5
-            endif
-        endif
-
         if (present(isotope_file)) then
           if (isotope_file /= '') then
             call os%check_file(isotope_file)
@@ -620,18 +618,27 @@ contains
                     read(lunit, *, iostat=iostat) text
                 end do
                 backspace lunit
-                read(lunit, *, iostat=iostat) id, n_iso
+                read(lunit, *, iostat=iostat) id, niso
                 call self%element_by_id(id, element)
                 if (associated(element)) then
-                    allocate(element%isotope(n_iso))
-                    do i=1, n_iso
+                    element%niso = niso
+                    allocate(element%isotope(element%niso))
+                    do i=1, element%niso
                         iso => element%isotope(i)
                         read(lunit, *) iso%iso, iso%awgt, iso%frac
+                    end do
+                    do j=1, element%nion
+                        element%ions(j)%isotope => element%isotope
+                        element%ions(j)%niso = element%niso
                     end do
                 endif
                 read(lunit, *, iostat=iostat) text
             end do
             close(lunit)
+            do i=1, self%nmolec
+              molecule => self%molecules(i)
+              call molecule%generate_isotopic_combinations()
+            end do
           endif
         endif
     
@@ -668,13 +675,14 @@ contains
         character(20) :: mass_id
         character(20) :: ion_id
         character(len=512) :: line_text
-        real(dp) :: lam0, ent8, ent9, mass, cnt_ev, lam_vac, vbar2e4
+        real(dp) :: lam0, ent8, ent9, cnt_ev, lam_vac, vbar2e4
         real(dp) :: upper_ev, upper_g, lower_g, gij, f
         character :: lower_orb, upper_orb
         character(len=150) :: label
         character(len=32) :: gq
         character :: char
-        integer :: lunit, iostat, iostat2, j, nline, i, prev, iso_id, iso_idx, nkh
+        integer :: np, iso
+        integer :: lunit, iostat, iostat2, j, nline, i, prev, iso_idx, nkh
         integer, save :: ntotal, nactive
         logical :: isotope, ok
         !-----------------------------------------------------------------------------
@@ -692,52 +700,45 @@ contains
             call print_failed_line(lunit, iostat)
             read(lunit,'(A)',iostat=iostat) ion_id
             call print_failed_line(lunit, iostat)
-            read(mass_id,*) mass
-            isotope = mod(mass, 1.0) > 0
-            if (isotope) iso_id = nint((mass - int(mass))*1000)
-            !ion_id = adjustl(trim(ion_id))
+            call replace_char(mass_id, '.', ' ')
+            read(mass_id, *) np, iso
+            isotope = iso > 0
             ion_id = trim_between_words(ion_id)
             nullify(mol)
             nullify(p)
-            call self%ion_by_id(ion_id(1:6), ion, element_out=element)
+            call self%ion_by_id(ion_id(1:6), ion)
             ok = associated(ion)
             
             if (.not. ok) then
                 call self%molecule_by_id(ion_id(1:6), mol)
                 ok = associated(mol)
-                !if (ok) then
-                !    if (abs(mass-mol%awgt) > 0.1) then
-                !        ok = .false. ! mass does not match
-                !        print *, 'WARNING: ', trim(ion_id), ' mass does not match ', mol%id
-                !        print *, 'disabling ', trim(ion_id), ' ', mass_id, mol%awgt
-                !    endif
-                !endif
-            endif
-            
-            if (associated(ion) .and. isotope) then
-                if (allocated(element%isotope)) then
-                    iso_idx = findloc(element%isotope%iso, iso_id, 1)
-                    ok = iso_idx > 0
-                else
-                    ok = .false.
-                endif
-            endif
-
-            if (.not. ok) then
-                if (associated(ion) .and. isotope) then
-                    print *, ion%id, ' isotope', iso_id, 'not found'
-                endif
-                do i=1, nline
-                    read(lunit, *, iostat=iostat) ! skipping this ion
-                    call print_failed_line(lunit, iostat)
-                end do
-                cycle
             endif
 
             if (associated(ion)) then
                 p => ion
             elseif (associated(mol)) then
                 p => mol
+            endif
+            
+            if (associated(p) .and. isotope) then
+                if (associated(p%isotope)) then
+                    iso_idx = findloc(p%isotope%iso, iso, 1)
+                    ok = iso_idx > 0
+                else
+                    ok = iso == nint(p%awgt)
+                    isotope = .false.
+                endif
+            endif
+
+            if (.not. ok) then
+                if (associated(p) .and. isotope) then
+                    print *, p%id, ' isotope ', iso, ' not found!'
+                endif
+                do i=1, nline
+                    read(lunit, *, iostat=iostat) ! skipping this ion
+                    call print_failed_line(lunit, iostat)
+                end do
+                cycle
             endif
             
             p%in_linelist=.true.
@@ -789,14 +790,15 @@ contains
                     line%nu0 = CC / lam_vac
 
                     f = 10**line%loggf
+                    vbar2e4 = p%compute_vbar2(10000.)
+                    if (isotope) then
+                        line%iso_idx = iso_idx
+                        vbar2e4 = p%isotope(iso_idx)%compute_vbar2(10000.)
+                        f = f * p%isotope(iso_idx)%frac
+                    endif
+
                     call line%init_einstein_coefficients(f, 1.d0)
                     call line%prepare_Stark(line%gq)
-    
-                    vbar2e4 = p%compute_vbar2(10000.)
-                    if (associated(ion) .and. isotope) then
-                        line%iso_idx = iso_idx
-                        vbar2e4 = element%isotope(iso_idx)%compute_vbar2(10000.)
-                    endif
                     call line%prepare_VanderWaals(line%gv, j, p%xion, vbar2e4)
                 endif
                 allocate(line%used, source=.false.)
@@ -955,73 +957,15 @@ contains
         do i=2, self%nel
             element => self%elements(i)
             if (.not. any(element%ions%in_linelist)) cycle
-    
-            inv_df = element%inverse_doppler_factor(temp, vmic)
-            vbar2 = element%compute_vbar2(temp)
-            unsold = vbar2**0.3 * tothi
-            prev_iso = 0
-    
             do j=lbound(element%ions,1), ubound(element%ions,1)
                 ion => element%ions(j)
-                if (ion%nline == 0) cycle
-                if (.not. allocated(ion%n)) stop 'ion%n not allocated'
-
-                ! ion%part is actually the inverse partition
-                inv_part = ion%n * ion%part
-                dxij = real(self%dxi) * (ion%j-1)
-    
-                do l=1, ion%nline
-                    line => ion%line(l)
-                    if (.not. line%active) cycle
-                    call line%get_range(nu, dlam, ired, iblue)
-                    if (iblue == 0) cycle
-    
-                    fmask(ired:iblue) = .true.
-    
-                    if (line%iso_idx == 0) then
-                      vb2 => vbar2
-                      idopf => inv_df
-                      ipart => inv_part
-                    elseif (line%iso_idx /= prev_iso) then
-                      iso => element%isotope(line%iso_idx)
-                      iso_inv_df = iso%inverse_doppler_factor(temp, vmic)
-                      iso_vbar2 = iso%compute_vbar2(temp)
-                      iso_inv_part = inv_part * iso%frac
-                      vb2 => iso_vbar2
-                      idopf => iso_inv_df
-                      ipart => iso_inv_part
-                    endif
-                    prev_iso = line%iso_idx
-    
-                    call line%add_lte_opacities(ired, iblue, nu, qq, &
-                        vpr, idopf, EK_over_temp, dxij, ipart, ne, tothi, vb2, stark_pe, unsold, chi_l, all_chi)
-                end do
+                call particle_add_lte_opacities(ion)
             end do
         end do
 
         do i=1, self%nmolec
             mol => self%molecules(i)
-            if (.not. mol%in_linelist) cycle
-            if (.not. allocated(mol%n)) stop 'mol%n not allocated'
-
-            inv_df = mol%inverse_doppler_factor(temp, vmic)
-            vbar2 = mol%compute_vbar2(temp)
-            unsold = vbar2**0.3 * tothi
-
-            inv_part = mol%n * mol%part
-            dxij = 0.0
-      
-            do l=1, mol%nline
-                line => mol%line(l)
-                if (.not. line%active) cycle
-                call line%get_range(nu, dlam, ired, iblue)
-                if (iblue == 0) cycle
-
-                fmask(ired:iblue) = .true.
-      
-                call line%add_lte_opacities(ired, iblue, nu, qq, &
-                    vpr, inv_df, EK_over_temp, dxij, inv_part, ne, tothi, vbar2, stark_pe, unsold, chi_l, all_chi)
-            end do
+            call particle_add_lte_opacities(mol)
         end do
 
         do k=1, m(3)
@@ -1058,6 +1002,48 @@ contains
         endif
         if (.not. present(vproj)) deallocate(vpr)
         call trace%end(itimer)
+
+    contains
+        ! --------------------------------------------------------------------------
+        subroutine particle_add_lte_opacities(ptc)
+            class(particle_type), target :: ptc
+            !---------------------------------------------------------------------------
+            if (.not. ptc%in_linelist) return
+            if (.not. allocated(ptc%n)) stop 'particle density not allocated'
+
+            inv_df = ptc%inverse_doppler_factor(temp, vmic)
+            vbar2 = ptc%compute_vbar2(temp)
+            unsold = vbar2**0.3 * tothi
+            prev_iso = 0
+
+            ! ptc%part is actually the inverse partition
+            inv_part = ptc%n * ptc%part
+            dxij = real(self%dxi) * (ptc%j-1)
+
+            do l=1, ptc%nline
+                line => ptc%line(l)
+                if (.not. line%active) cycle
+                call line%get_range(nu, dlam, ired, iblue)
+                if (iblue == 0) cycle
+
+                fmask(ired:iblue) = .true.
+
+                if (line%iso_idx == 0) then
+                    vb2 => vbar2
+                    idopf => inv_df
+                elseif (line%iso_idx /= prev_iso) then
+                    iso => ptc%isotope(line%iso_idx)
+                    iso_inv_df = iso%inverse_doppler_factor(temp, vmic)
+                    iso_vbar2 = iso%compute_vbar2(temp)
+                    vb2 => iso_vbar2
+                    idopf => iso_inv_df
+                endif
+                prev_iso = line%iso_idx
+
+                call line%add_lte_opacities(ired, iblue, nu, qq, &
+                    vpr, idopf, EK_over_temp, dxij, inv_part, ne, tothi, vb2, stark_pe, unsold, chi_l, all_chi)
+            end do
+        end subroutine particle_add_lte_opacities
     END SUBROUTINE add_linelist_opacities
 
     !===============================================================================
@@ -1649,10 +1635,10 @@ contains
         logical, optional :: include_absmet, sorted
         real(dp) :: xray2, epsln, stim
         integer :: i, x, y, z, f, nf, nx, ny, nz
-        integer :: p(4)=pp
+        integer :: p(4)=pp, itimer=0, itimer2=0
         logical :: ok
         !---------------------------------------------------------------------------
-        call trace%begin ('composition_type%absorption')
+        call trace%begin ('composition_type%absorption', itimer=itimer)
         allocate(lam, hnu, mold=nu)
         call self%ion_by_id('HE I', HeI)
 
@@ -1715,12 +1701,14 @@ contains
         endif
 
         if (present(include_absmet)) then
-            if (self%osmet%initialised .and. include_absmet) then
-                call self%osmet%add_line_opacities(nu, self%p6, self%temp, self%rho, chi)
+            if (osmet%initialised .and. include_absmet) then
+                call trace%begin('osmet%add_line_opacities', itimer=itimer2)
+                call osmet%add_line_opacities(nu, self%p6, self%temp, self%rho, chi)
+                call trace%end(itimer2)
             endif
         endif
 
-        call trace%end ()
+        call trace%end(itimer)
     END SUBROUTINE absorption
 
     !===============================================================================

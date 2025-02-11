@@ -9,3 +9,4 @@
 &m3d_params         verbose=2 maxiter=99/
 !&linelist_params    linelist_file='./input_multi3d/nlte_ges_linelist_jmg17feb2022_I_II.txt' /
 !&spectrum_params    daa=0.01 aa_blue=4840 aa_red=4880 /
+!&composition_params absmet_file='input_multi3d/absmet' /

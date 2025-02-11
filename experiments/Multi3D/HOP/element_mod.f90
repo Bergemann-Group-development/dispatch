@@ -4,17 +4,11 @@ MODULE element_mod
     USE ion_mod
     implicit none
 
-    type, extends(massive_type) :: isotope_type
-        integer  :: iso
-        real(dp) :: frac
-    end type isotope_type
-
     type, extends(isotope_type) :: element_type
-        integer :: np, nion, nmolec, mcount
+        integer :: np, nion, nmolec, niso=1, mcount
         real(dp) :: abund=-100
         type(ion_type), allocatable :: ions(:)
         class(isotope_type), allocatable :: isotope(:)
-        !type(mol_pointer_t), allocatable :: molecules(:)
         integer :: active
         character(len=3) :: id
     contains

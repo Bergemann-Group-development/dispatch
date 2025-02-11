@@ -14,13 +14,13 @@ MODULE osmet_mod
         logical, dimension(:), pointer, contiguous :: active
         integer :: lunit, np6, ntemp, nnu, maxrec
         logical :: initialised=.false.
-        real(dp) :: eosmet
-
+        real(dp) :: eosmet=0.5
     contains
         procedure :: init
         procedure :: add_line_opacities
-
     end type
+
+    type(osmet_type), public :: osmet
 
 contains
     
@@ -82,6 +82,7 @@ contains
         
         allocate(self%nu(mnu))
         allocate(self%active(mnu), source=.false.)
+        call os%mem_register(storage_size(self%ostabl), maxp6*maxtem*mnu, label='osmet')
         allocate(self%ostabl(maxp6, maxtem, mnu))
 
         do nnu=mnu, 1, -1

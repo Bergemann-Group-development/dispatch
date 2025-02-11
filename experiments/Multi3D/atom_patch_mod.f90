@@ -21,11 +21,11 @@ MODULE atom_patch_mod
     USE composition_mod, only: composition_type
     USE m3d_patch_mod, only: m3d_patch_t, composition, maxiter, check_NaN, cswitch, key_link_t, &
     global_maxerr, convlim, convmax, atom_update_counter, comoving_frame, global_pos, ng_step, ng_start, &
-    decouple_continuum, overlapping_bb, overlapping_bf, line_blanketing, converged, premature_finish, &
+    decouple_continuum, overlapping_bb, overlapping_bf, converged, premature_finish, &
     rotate_atmos, long_vec, rank_lvlerr, overlapping_bb_in_output, long_scheme, n_nu, detailed_absmet
     USE bftrans_mod, only: bftrans_type
-    USE osmet_mod, only:osmet_type
-    USE nlte_patch_mod, only:nlte_patch_t, n_cntrbf, cntrbf_lines
+    USE osmet_mod, only: osmet_type, osmet
+    USE nlte_patch_mod, only: nlte_patch_t, n_cntrbf, cntrbf_lines
     USE m3d_debug_mod
     USE shared_mod
     USE, intrinsic :: ieee_arithmetic
@@ -260,7 +260,7 @@ MODULE atom_patch_mod
         if (decouple_continuum) then
           bf_sp%name = 'bound-free'
           if (detailed_absmet .and. overlapping_bf) then
-             call self%get_osmet_nu(bf_sp, composition%osmet)
+             call self%get_osmet_nu(bf_sp)
           endif
           call self%bf_atom%create_spectrum(bf_sp, bf=.true., sort=overlapping_bf)
           call self%bf_atom%set_ired_iblue(bf_sp, bf=.true., set_active=.true.)
@@ -273,7 +273,7 @@ MODULE atom_patch_mod
 
         else
           sp%name = 'all'
-          if (detailed_absmet) call self%get_osmet_nu(sp, composition%osmet)
+          if (detailed_absmet) call self%get_osmet_nu(sp)
           call self%atom%create_spectrum(sp, bb=.true., bf=.true.)
           call self%atom%set_ired_iblue(sp, bb=.true., bf=.true., set_active=.true.)
           if (save_sp) call sp%save('all')
@@ -808,10 +808,9 @@ MODULE atom_patch_mod
   END SUBROUTINE update_populations
 
   !===============================================================================
-  SUBROUTINE get_osmet_nu (self, sp, osmet)
+  SUBROUTINE get_osmet_nu (self, sp)
     class(atom_patch_t), target :: self
     class(atomic_spectrum_type) :: sp
-    class(osmet_type) :: osmet
     integer :: i, fs, fe
     !-----------------------------------------------------------------------------
     if (.not. osmet%initialised) return

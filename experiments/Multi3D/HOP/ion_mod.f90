@@ -12,10 +12,18 @@ MODULE ion_mod
         procedure :: compute_vbar2
     end type
 
-    type, extends(massive_type) :: particle_type
+    type, extends(massive_type) :: isotope_type
+        integer  :: iso
+        real(dp) :: frac
+    end type isotope_type
+
+    type, extends(isotope_type) :: particle_type
         real(dp), dimension(:,:,:), allocatable :: part
+        integer :: j=1 ! ionisation stage (1 is neutral)
         integer :: m(3)=[0,0,0], nk, nline=0
         character(len=6) :: id
+        integer :: niso=1
+        class(isotope_type), dimension(:), pointer :: isotope
         type(level_type), allocatable :: levels(:)
         type(bbtrans_type), dimension(:), allocatable :: line
         real(dp), allocatable, dimension(:) :: irwin
@@ -35,7 +43,7 @@ MODULE ion_mod
     end type ion_pointer_t
     
     type, extends(particle_type) :: ion_type
-        integer :: j, nmolec=0, mcount, n_iso=0
+        integer :: nmolec=0, mcount
         type(ion_type), pointer :: above => null()
         type(ion_type), pointer :: below => null()
         class(particle_pointer_t), allocatable :: molecules(:)

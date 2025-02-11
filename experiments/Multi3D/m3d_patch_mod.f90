@@ -136,7 +136,7 @@ MODULE m3d_patch_mod
     logical, public, save :: decouple_continuum=.true., sample_back_opac=.false.
     logical, public, save :: sample_back_opac_in_output=.false.
     logical, public, save :: comoving_frame=.false., linelist_in_output=.true.
-    logical, public, save :: use_rho=.true., use_ne=.true., line_blanketing=.false.
+    logical, public, save :: use_rho=.true., use_ne=.true.
     logical, public, save :: overlapping_bb=.true., overlapping_bf=.true.
     logical, public, save :: overlapping_bb_in_output=.true., detailed_absmet=.true.
     logical, public, save :: absmet_in_output=.false., column_by_column=.false.
