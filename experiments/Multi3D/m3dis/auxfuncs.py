@@ -120,7 +120,7 @@ def calc_weq(self, method='linear', return_err=False, plot=False,
                     get_func=get_func, auto_crop=auto_crop)
 
 #=====================================================================
-def get_weq(xx, yy, method='linear', return_err=False, plot=False,
+def get_weq(xx, yy, method='gauss', return_err=False, plot=False,
              get_func=False, auto_crop=False):
     #-----------------------------------------------------------------
     if auto_crop:
@@ -164,7 +164,7 @@ def get_weq(xx, yy, method='linear', return_err=False, plot=False,
 
             if get_func:
                 def weq_func(x):
-                    return rf(x-kwargs['lam0'], *pfit)
+                    return rf(x, *pfit)
 
     res = (weq,)
     if return_err: res = (*res, eweq)
@@ -1370,3 +1370,11 @@ def update_dict(d, u, dry=False):
         else:
             d[k] = v
     return d
+
+#=====================================================================
+def sort_cntm(yy):
+  sorted = np.sort(yy)
+  half = sorted[sorted.size // 2 : -sorted.size // 8]
+  p = np.polyfit(np.arange(half.size), half, 1)
+  norm = 1 / np.polyval(p, half.size + sorted.size // 8)
+  return norm

@@ -322,7 +322,11 @@ class m3dis(object):
     def get_line(self, lam0):
         if not hasattr(self, 'line'): self.read_atom()
         i = np.argmin([abs(line.lam0-lam0) for line in self.line])
-        return self.line[i]
+        line = self.line[i]
+        if abs(line.lam0 - lam0) > 0.05:
+            print(f'WARNING: Line not found! Closest line to {lam0:.2f}Å found at {line.lam0:.2f}Å')
+
+        return line
 
     #=====================================================================
     def get_xx(self, lam, slc=None, dlam=None, xmin=None, xmax=None):

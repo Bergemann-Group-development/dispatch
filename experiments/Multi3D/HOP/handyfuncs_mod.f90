@@ -9,6 +9,20 @@ MODULE handyfuncs_mod
 contains
 
 !====================================================================================
+SUBROUTINE print_failed_line(lunit, iostat)
+  integer, intent(in) :: lunit, iostat
+  character(len=512) :: line_text
+  ! ----------------------------------------------------------------------
+  if (iostat > 0) then
+      backspace lunit
+      read(lunit,'(A)') line_text
+      print '(I4, 1x, A)', iostat, "Failed to read a line in the linelist:"
+      print '(A)', line_text
+      stop
+  endif
+END SUBROUTINE print_failed_line
+
+!====================================================================================
 SUBROUTINE NextEntry(fileunit, comment)
   ! ***********************************************************************
   ! --- Reads an input line, returns when it is not a 

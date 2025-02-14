@@ -138,7 +138,7 @@ MODULE m3d_patch_mod
     logical, public, save :: comoving_frame=.false., linelist_in_output=.true.
     logical, public, save :: use_rho=.true., use_ne=.true.
     logical, public, save :: overlapping_bb=.true., overlapping_bf=.true.
-    logical, public, save :: overlapping_bb_in_output=.true., detailed_absmet=.true.
+    logical, public, save :: overlapping_bb_in_output=.true., detailed_absmet=.false.
     logical, public, save :: absmet_in_output=.false., column_by_column=.false.
     logical, public, save :: print_start=.false., print_send=.false.
     logical, public, save :: Jnu_to_file=.true., amr=.true.
@@ -264,7 +264,6 @@ MODULE m3d_patch_mod
         irwin_dis = .false.
         level_partf = .true.
         helium_scattering = .false.
-        detailed_absmet = .false.
         !comoving_frame = .true.
         !preconditioning = .false.
       endif

@@ -765,14 +765,14 @@ MODULE atom_mod
         endif
 
         select case(trim(key))
-        case('OHMEGA','CE','CH','CI','FIXRAT','CH0','CHI')
+        case('OHM','OHMEGA','CE','CH','CI','FIXRAT','CH0','CH_CE','CHI')
           col => self%coll(i)
           col%key = key
           col%ll = l
           col%ul = u
 
           select case(trim(key))
-          case('OHMEGA','CE','CI','CH0')
+          case('OHM','OHMEGA','CE','CI','CH0','CH_CE')
             self%cgrid(1:ntemp,i) = log(self%cgrid(1:ntemp,i))
           end select
           
@@ -850,11 +850,13 @@ MODULE atom_mod
     self%id=uppercase(adjustl(self%id))
 
     call nextentry(latom)
-    read(latom,*) self%abnd, self%awgt
+    read(latom,*,iostat=ios) self%abnd, self%awgt
+    call print_failed_line(latom, ios)
     call self%prepare_Drawin()
 
     call nextentry(latom)
-    read(latom,*) self%nlevel, self%nline, self%ncont, self%nrfix
+    read(latom,*,iostat=ios) self%nlevel, self%nline, self%ncont, self%nrfix
+    call print_failed_line(latom, ios)
 
     allocate(  self%ev    ( self%nlevel) ) ; self%ev = 0.0d0
     allocate(  self%g     ( self%nlevel) ) ; self%g = 0
@@ -867,8 +869,9 @@ MODULE atom_mod
 
     do i=1, self%nlevel
       call nextentry(latom)
-      read(latom,*) self%ev(i),self%g(i), self%label(i), self%ion(i)
+      read(latom,*,iostat=ios) self%ev(i),self%g(i), self%label(i), self%ion(i)
       self%ev(i)=self%ev(i)*hc_e  ! [eV]  
+      call print_failed_line(latom, ios)
     end do
 
     ! sanity check on level energies
@@ -893,8 +896,9 @@ MODULE atom_mod
       ! io WAS present for historical reasons, in MULTI io determines
       ! whether a line is wide or not. In the RH formulation all lines are wide
 
-      read(latom,*) jj, ii, lin%f , lin%nnu, lin%qmax, lin%q0, lin%io, &
+      read(latom,*,iostat=ios) jj, ii, lin%f , lin%nnu, lin%qmax, lin%q0, lin%io, &
             lin%ga, lin%gv, lin%gq, lin%profile_type
+      call print_failed_line(latom, ios)
 
       lin%i = min(ii, jj)
       lin%j = max(ii, jj)
@@ -969,8 +973,9 @@ MODULE atom_mod
         !allocate(lin%adterm, xs, xe, ys, ye, zs1, ze1, 1, nterm, rname)
 
         do iterm = 1, nterm
-          read(latom,*) lin%dq(iterm), lin%wt(iterm),  lin%fterm(iterm), &
+          read(latom,iostat=ios) lin%dq(iterm), lin%wt(iterm),  lin%fterm(iterm), &
                         lin%da(iterm), lin%gwterm(iterm), lin%gqterm(iterm)
+          call print_failed_line(latom, ios)
         end do
 
         lin%dq = cc/lin%nu0 * lin%dq
@@ -1017,8 +1022,12 @@ MODULE atom_mod
       case ('voigt', 'hlinop')
         continue
       case default
-        write (*, fmt = '(a,1x,a,a)') 'Profile not recognised:', &
-                lin%profile_type, ' Setting it to VOIGT'
+        if (index(lin%profile_type, '.')>0) then
+          continue
+        else
+          write (*, fmt = '(a,1x,a,a)') 'Profile not recognised:', &
+                  lin%profile_type, ' Setting it to VOIGT'
+        endif
         lin%profile_type = 'voigt'
       end select
     end do
@@ -1047,7 +1056,8 @@ MODULE atom_mod
     !  threshold and decreasing) and crossections in cm2 are read.
     do i=1,self%ncont
       call nextentry(latom) 
-      read(latom,*) jj, ii, alpha0, nnu, nu_max
+      read(latom,*,iostat=ios) jj, ii, alpha0, nnu, nu_max
+      call print_failed_line(latom, ios)
 
       if (self%ion(ii) == self%ion(jj)) then
         print *, 'Bound-free transition', i, ' is between two levels of the same ion', ii, jj
@@ -1080,14 +1090,19 @@ MODULE atom_mod
 
         do j=1,cnt%nnu
           call nextentry(latom) 
-          read(latom,*)  cnt%nu_input(j), cnt%alpha_input(j)
+          read(latom,*,iostat=ios)  cnt%nu_input(j), cnt%alpha_input(j)
+          call print_failed_line(latom, ios)
         end do
         
         do j=2,cnt%nnu
           if ( cnt%nu_input(j) > cnt%nu_input(j-1) ) then
             write(stdout,*) 'read_atom: continuum transition nr', i, &
-                          ' wavelengths not decreasing'
+                          ' wavelengths not decreasing!'
             abort = .true.
+          elseif ( cnt%nu_input(j) == cnt%nu_input(j-1) ) then
+            write(stdout,*) 'read_atom: continuum transition nr', i, &
+                          ' wavelengths are not unique!'
+            cnt%nu_input(j:nnu) = cnt%nu_input(j:nnu) - 1.0d-6
           endif
         end do
 
@@ -1194,13 +1209,14 @@ MODULE atom_mod
       if (ios<0) then
         stop 'read_collisions: keyword "END" not found in collision file'
       endif
-      key = uppercase(adjustl(key))
+      key = trim(uppercase(adjustl(key)))
 
       ! read next non-comment line if key doesnt start with a letter
       if (scan(key(1:1),upcase_alphabet)==0) cycle 
+      
 
       ! we found a keyword, so interpret it
-      select case(trim(key))
+      select case(key)
       case('END')
         exit
 
@@ -1246,19 +1262,20 @@ MODULE atom_mod
         stop
       endif
 
-      key = uppercase(adjustl(key))
+      key = trim(uppercase(adjustl(key)))
 
-      if (trim(key) == 'END') then
+      if (key == 'END') then
         !write(*,*) "read_collisions: read all collisions."
         exit
       else
         call nextentry(latom)
       endif
       
-      select case(trim(key))
+      select case(key)
       case('TEMP')
         itemp = itemp + 1
-        read(latom,*) ntemp, tgrid(1:ntemp)
+        read(latom,*,iostat=ios) ntemp, tgrid(1:ntemp)
+        call print_failed_line(latom, ios)
         self%tgrid(1:ntemp, itemp) = tgrid(1:ntemp)
         if (ntemp < 2) then
             stop "read_collisions: ntemp < 2"
@@ -1266,7 +1283,7 @@ MODULE atom_mod
 
       ! MB  5.04.2018 - added CH0 keyword
       ! RH 25.03.2022 - added CHI keyword
-      case('OHMEGA','CE','CH','CI','FIXRAT','CH0','CHI')
+      case('OHM','OHMEGA','CE','CH','CI','FIXRAT','CH0','CH_CE','CHI')
         nc = ntemp
       case('AR85-CEA','BURGESS') 
         nc = 1
@@ -1290,7 +1307,8 @@ MODULE atom_mod
         col => self%coll(i)
         col%key = key
         col%nc = nc
-        read(latom,*) l, u, self%cgrid(1:nc,i)
+        read(latom,*,iostat=ios) l, u, self%cgrid(1:nc,i)
+        call print_failed_line(latom, ios)
         
         if (l==u) then
           write(stdout, *) "ll==ul for process ", key, l, u
@@ -1302,13 +1320,13 @@ MODULE atom_mod
           abort = .true.
         else
           select case(trim(key))
-          case('OHMEGA','CE','CI','CH0')
+          case('OHM','OHMEGA','CE','CI','CH0','CH_CE')
             self%cgrid(1:ntemp,i) = log(self%cgrid(1:ntemp,i))
           end select
         endif
 
         select case(trim(key))
-        case('OHMEGA','CE','CH','CI','FIXRAT','CH0','CHI')
+        case('OHM','OHMEGA','CE','CH','CI','FIXRAT','CH0','CH_CE','CHI')
           ! set derivatives for 3rd order hermite interpolation
           call hermite_derivative(self%dcdt(1:ntemp,i), tgrid(1:ntemp), self%cgrid(1:ntemp,i))
           col%itemp = itemp

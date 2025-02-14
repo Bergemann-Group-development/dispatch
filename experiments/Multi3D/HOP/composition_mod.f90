@@ -812,21 +812,6 @@ contains
         self%nline = nactive
         self%elements(1)%ions(1)%nk = max(self%elements(1)%ions(1)%nk, nkh)
         call self%mask_linelist()
-
-    contains
-        ! --------------------------------------------------------------------------
-        subroutine print_failed_line(lunit, iostat)
-            integer, intent(in) :: lunit, iostat
-            character(len=512) :: line_text
-            ! ----------------------------------------------------------------------
-            if (iostat > 0) then
-                backspace lunit
-                read(lunit,'(A)') line_text
-                print '(I4, 1x, A)', iostat, "Failed to read a line in the linelist:"
-                print '(A)', line_text
-                stop
-            endif
-        end subroutine print_failed_line
     END SUBROUTINE init_linelist
 
     !===============================================================================

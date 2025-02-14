@@ -33,11 +33,11 @@ MODULE coll_mod
    real(8), parameter :: cbar=2.3d0, x100=5.0d2
    real(8), parameter :: actelc=1.d0
 
-   character(len=8),dimension(13),parameter :: theprocesses = &
-         (/'OHMEGA  ','CI      ','CH      ','CE      ', &
-            'FIXRAT  ','SHULL82 ','AR85-CEA',&
+   character(len=8),dimension(15),parameter :: theprocesses = &
+          (/'OHMEGA  ','CI      ','CH      ','CE      ', &
+            'FIXRAT  ','SHULL82 ','AR85-CEA','OHM     ',&
             'BURGESS ','AR85-CH ','AR85-CHE','AR85-CHP',&
-            'CH0     ','CHI     '/)
+            'CH0     ','CHI     ','CH_CE   '/)
    
    !integer :: n_coll_processes! number of keywords 
    type(coll_type),dimension(:),allocatable :: coll
@@ -55,6 +55,7 @@ MODULE coll_mod
       real(8), intent(in), dimension(:) :: nstar
       real(8), intent(out), dimension(nlevel,nlevel) :: cij
       real(8), intent(in) :: temp, ne, nh1
+      character(8) :: key
   
       real(8) :: ct,cup,cdn,dekt,de_k,de
       real(8) :: stg,nsr
@@ -94,22 +95,23 @@ MODULE coll_mod
             nsr = g(ul)/g(ll) * exp(tns)
          endif
 
-         select case (trim(coll(i)%key))
-         case ('OHMEGA','CE','CH','CI','FIXRAT','CH0','CHI')
+         key = trim(adjustl(coll(i)%key))
+         select case (key)
+         case ('OHM','OHMEGA','CE','CH','CI','FIXRAT','CH0','CH_CE','CHI')
             nc = coll(i)%nc
             itemp = coll(i)%itemp
             call hermite_interpolation(ct,temp,tgrid(1:nc,itemp),cgrid(1:nc,i),dcdt(1:nc,i))
 
-            select case(trim(coll(i)%key))
-            case('OHMEGA','CE','CI','CH0')
+            select case(key)
+            case('OHM','OHMEGA','CE','CI','CH0','CH_CE')
                ct = exp(ct)
             end select
          end select
   
          !********************************************************************
   
-         select case (trim(coll(i)%key))
-         case('OHMEGA')
+         select case (key)
+         case('OHM','OHMEGA')
             !  excitation of  electron collisons with positive ions
             cdn = c0 / g(ul) * ct * ne / stg
             cup = cdn * nsr
@@ -140,7 +142,7 @@ MODULE coll_mod
             cup = cup * cbfesc
             cdn = cup / nsr
 
-         case('CH0')
+         case('CH0','CH_CE')
             ! MB 5.04.2018 - charge transfer with H-, A+H <--> A+ + H-
             ! these are upwards rates (CT ionisation or ion-pair formation)
             ! also assumed for CI; but the difference is that CI downwards rates 

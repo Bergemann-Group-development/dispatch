@@ -4,11 +4,12 @@ import pandas as pd
 from scipy.interpolate import PchipInterpolator
 from scipy import integrate, stats, optimize
 import matplotlib.pyplot as plt
+from matplotlib.patches import Polygon
 from .m3dis import m3dis
 from .auxfuncs import plt_kwargs
 from .fast_trans import fast_trans
 import copy
-from scipy.spatial import Delaunay
+from scipy.spatial import Delaunay, ConvexHull, Voronoi
 import re
 from .CoG2 import CoG
 from .auxfuncs import *
@@ -56,7 +57,8 @@ class grid(CoG):
     self.runs = np.array(runs)
     self.cogs = np.array(cogs)
     self.points = np.array(points)
-    self.delaunay = Delaunay(points)
+    self.points[:,0] /= 1e3
+    self.delaunay = Delaunay(self.points)
 
   #=====================================================================
   def get_weights(self, query_point, verbose=True):
@@ -89,8 +91,13 @@ class grid(CoG):
     return xx, yy
   
   #=====================================================================
-  def get_CoG(self, star):
-    weights, cogs = self.get_weights(star, verbose=True)
+  def get_CoG(self, star, method='Delaunay'):
+    if method=='Delaunay':
+      weights, cogs = self.get_weights(star, verbose=True)
+    elif method=='NaturalNeighbor':
+      weights, nbors = compute_weights(self.points, star)
+      cogs = self.cogs[nbors]
+
     if cogs is None: return None
     if len(cogs) == 1: return cogs[0]
     if weights is None: return None
@@ -108,14 +115,16 @@ class grid(CoG):
     return CoG(runs, abnds=abnds)
   
   #=====================================================================
-  def plot_nodes(self, size=5, color='k', cmap='Viridis', opacity=0.8, **kwargs):
+  def plot_nodes(self, fig=None, size=5, color='black', cmap='Viridis', opacity=0.8, **kwargs):
     teff = self.points[:,0]
     logg = self.points[:,1]
     feh = self.points[:,2]
 
+    if fig is None:
+      fig = go.Figure()
+
     # Create a 3D scatter plot
-    fig = go.Figure(data=[
-      go.Scatter3d(
+    fig.add_trace(go.Scatter3d(
         x=teff,
         y=feh,
         z=logg,
@@ -127,7 +136,7 @@ class grid(CoG):
             opacity=opacity,
             **kwargs
         )),
-    ])
+    )
 
     # Set labels
     fig.update_layout(
@@ -142,5 +151,103 @@ class grid(CoG):
         margin=dict(l=0, r=0, b=0, t=0)  # Reduce padding around the plot
     )
 
-    # Show plot
-    fig.show()
+    return fig
+  
+  #=====================================================================
+  def plot_point(self, teff, logg, feh, fig=None, **kwargs):
+    if fig is None:
+      fig = go.Figure()
+
+    fig.add_trace(go.Scatter3d(
+      x=[teff],
+      y=[feh],
+      z=[logg],
+      **kwargs,
+      ),
+    )
+
+    return fig
+
+
+#=====================================================================
+def is_point_in_array(point, points, tol=1e-9):
+    point = np.asarray(point)
+    points = np.asarray(points)
+    # Ensure point shape matches array dimensions
+    if point.shape != (points[0].shape):
+        raise ValueError(f"Point must have shape ({points[0].shape},), but got {point.shape}")
+    
+    # Find matching rows
+    matches = np.all(np.isclose(points, point, atol=tol), axis=1)
+    if np.any(matches):
+        return np.where(matches)[0][0]
+    else:
+        return -1
+
+#=====================================================================
+def get_nbors(vor, query_index):
+    """ Find neighbors of the query point in the Voronoi diagram. """
+    if query_index < 0: query_index += len(vor.points)
+    mask = np.any(vor.ridge_points == query_index, axis=1)
+    point_ridges = vor.ridge_points[mask]
+    nbors = np.sum(point_ridges, axis=1) - query_index
+    ridge_vertices = [vor.ridge_vertices[i] for i in np.where(mask)[0]]
+    return nbors, ridge_vertices
+
+#=====================================================================
+def point_in_convex_hull(point, hull):
+    # Use the hull equations to check if the point lies inside
+    return np.all(np.dot(hull.equations[:, :-1], point) + hull.equations[:, -1] <= 0)
+
+#=====================================================================  
+def compute_enclosed_measure(points):
+    points = np.asarray(points)
+    dim = points.shape[1]  # Number of columns determines dimension
+    if dim == 1:  # 1D: Compute length
+        return np.max(points) - np.min(points)
+    elif dim >= 2:  # 2D, 3D, or higher: Use ConvexHull
+        hull = ConvexHull(points)
+        return hull.volume if dim > 2 else hull.area  # Area for 2D, Volume for 3D+
+    else:
+        raise ValueError("Invalid input: The input points must have at least 1 dimension.")
+
+#=====================================================================
+def compute_weights(points, query, draw=False):
+    idx = is_point_in_array(query, points)
+    if idx >= 0:
+        return np.array([1]), idx
+    
+    hull = ConvexHull(points)
+    if not point_in_convex_hull(query, hull):
+        return np.array([0]), -1
+    
+    vor1 = Voronoi(points)
+    vor2 = Voronoi(np.vstack([points, query]))
+    query_region = vor2.regions[vor2.point_region[-1]]
+    query_hull = ConvexHull(vor2.vertices[query_region])
+    nbors, ridge_verts = get_nbors(vor2, -1)
+    areas = np.zeros(len(nbors))
+
+    if draw:
+        colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+
+    for n, nbor in enumerate(nbors):
+        region = vor1.regions[vor1.point_region[nbor]]
+        vertices = vor2.vertices[ridge_verts[n]]
+        removed_vertices = []
+        for i in region:
+            if i >= 0:
+                point = vor1.vertices[i]
+                if point_in_convex_hull(point, query_hull):
+                    removed_vertices.append(point)
+
+        
+        vertices = np.vstack([vertices, removed_vertices])
+        areas[n] = compute_enclosed_measure(vertices)
+        if draw:
+            hull = ConvexHull(vertices)
+            vertices = vertices[hull.vertices]
+            plt.gca().add_patch(Polygon(vertices, color=colors[n], alpha=0.5))
+
+    weights = areas / np.sum(areas)
+    return weights, nbors
