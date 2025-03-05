@@ -23,7 +23,7 @@ MODULE nlte_patch_mod
   premature_finish, m3d_patch_pre_update=>pre_update, save_resolved, &
   column_by_column, rotate_atmos, check_NaN, rank_lvlerr, sample_back_opac, &
   decouple_continuum, linelist_in_output, sample_back_opac_in_output, ilambd, &
-  Jnu_to_file, preconditioning, make_eos, amr, save_Inu, save_chi, &
+  Jnu_to_file, preconditioning, make_eos, amr, save_Inu, save_chi, save_Snu, &
   rotate_continuum, long_solver, fixed_Jnu, opac_table_vmic, n_nu
   USE ray_mod, only: one_dimensional, ray_type
   USE trans_mod, only:line_type, cont_type
@@ -403,19 +403,27 @@ SUBROUTINE execute (self)
         if (self%bound_bound) call self%bound_bound_rates(comp, wmu, inv_df, vproj, adamp, gamma_ij, gamma_ji)
       endif
 
-      if (save_Inu .and. self%out_mu .and. self%n_mu > 0) then
-        if (i_set==1) then
-          write(sav_label, '(A, I2.2)') 'Inu_', i_mu
-          call self%save4(work(fs:fe,:,:,1:nz,3), sav_label, key=self%key(1:3))
-        elseif (i_set==3) then
-          write(sav_label, '(A, I2.2)') 'Cnt_', i_mu
-          call self%save4(work(fs:fe,:,:,1:nz,3), sav_label, key=self%key(1:3))
+      if (self%out_mu .and. self%n_mu > 0) then
+        if (save_chi) then
+          if (i_set==1) then
+            write(sav_label, '(A, I2.2)') 'chi_', i_mu
+            call self%save4(work(:,:,:,1:nz,1), sav_label, key=self%key(1:3))
+          endif
         endif
-      endif
-      if (save_chi .and. self%out_mu .and. self%n_mu > 0) then
-        if (i_set==1) then
-          write(sav_label, '(A, I2.2)') 'chi_', i_mu
-          call self%save4(work(fs:fe,:,:,1:nz,1), sav_label, key=self%key(1:3))
+        if (save_Snu) then
+          if (i_set==1) then
+            write(sav_label, '(A, I2.2)') 'Snu_', i_mu
+            call self%save4(work(:,:,:,1:nz,2), sav_label, key=self%key(1:3))
+          endif
+        endif
+        if (save_Inu) then
+          if (i_set==1) then
+            write(sav_label, '(A, I2.2)') 'Inu_', i_mu
+            call self%save4(work(:,:,:,1:nz,3), sav_label, key=self%key(1:3))
+          elseif (i_set==3) then
+            write(sav_label, '(A, I2.2)') 'Cnt_', i_mu
+            call self%save4(work(:,:,:,1:nz,3), sav_label, key=self%key(1:3))
+          endif
         endif
       endif
     end do ! NLTE-LTE-CONTINUUM loop
@@ -894,6 +902,7 @@ SUBROUTINE add_bound_bound_opacities (self, comp, adata, wmu, inv_df, vproj, ada
   real(4), dimension(:), allocatable :: vphi
   real(4) :: wmu, idf, vpr, a, idf_4pi, ni, nj, Bji_nj, Bij_ni, widf, chi_fac, wp, amin, amax
   real(8) :: q
+  real(4) :: lower_off, upper_off, ekt
   integer :: i, ih
   logical :: LTE, get_wphi
   integer, save :: itimer=0, itimer1=0
@@ -925,12 +934,13 @@ SUBROUTINE add_bound_bound_opacities (self, comp, adata, wmu, inv_df, vproj, ada
     fs = line%ired
     fe = line%iblue
 
+    lower_off = line%lower_ev - self%atom%ev(line%i)
+    upper_off = line%upper_ev - self%atom%ev(line%j)
+
     ! Adding bound-bound opacities
     do z=1, nz
     do y=1, ny
     do x=1, nx
-      ni = n(x,y,z,line%i)
-      nj = n(x,y,z,line%j)
       idf = inv_df(x,y,z)
 
       associate(phi => vphi(fs:fe))
@@ -953,9 +963,15 @@ SUBROUTINE add_bound_bound_opacities (self, comp, adata, wmu, inv_df, vproj, ada
           phi = voigt_profile(a, line%q(fs:fe), vpr, idf)
         endif
 
+        ekt = comp%e_kT(x,y,z)
+        ni = n(x,y,z,line%i)
+        nj = n(x,y,z,line%j)
+        if (lower_off /= 0) ni = ni * exp(-lower_off*ekt)
+        if (upper_off /= 0) nj = nj * exp(-upper_off*ekt)
         Bji_nj = line%Bji * nj
         Bij_ni = line%Bij * ni
         chi_fac = Bij_ni - Bji_nj
+
         associate(chi=>work(fs:fe,x,y,z,1), eta=>work(fs:fe,x,y,z,2))
           chi = chi + phi * chi_fac
           eta = eta + phi * Bji_nj
@@ -993,6 +1009,7 @@ SUBROUTINE bound_bound_rates (self, comp, wmu, inv_df, vproj, adamp, gamma_ij, g
   real(4) :: wmu, idf, vpr, a, idf_4pi, ni, nj, chi_fac, phi, vel, vgt
   real(4) :: Bij_ni, Bji_nj, vvv, ufac, a2, tmp, tmp2, tmp3, tmp4
   real(4) :: g_ij, g_ji, q
+  real(4) :: lower_off, upper_off, ekt
   integer :: i, l, ih
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
@@ -1016,6 +1033,8 @@ SUBROUTINE bound_bound_rates (self, comp, wmu, inv_df, vproj, adamp, gamma_ij, g
     fs = line%ired
     fe = line%iblue
     wmunu(fs:fe) = wmu * line%wnu(fs:fe) * line%Aij
+    lower_off = line%lower_ev - self%atom%ev(line%i)
+    upper_off = line%upper_ev - self%atom%ev(line%j)
 
     do z=1,nz
     do y=1,ny
@@ -1025,6 +1044,9 @@ SUBROUTINE bound_bound_rates (self, comp, wmu, inv_df, vproj, adamp, gamma_ij, g
       idf = inv_df(x,y,z)
       vpr = vproj(x,y,z)
       a = adamp(x,y,z,i)
+      ekt = comp%e_kT(x,y,z)
+      if (lower_off /= 0) ni = ni * exp(-lower_off*ekt)
+      if (upper_off /= 0) nj = nj * exp(-upper_off*ekt)
 
       if (preconditioning) then
         Bji_nj = line%Bji * nj

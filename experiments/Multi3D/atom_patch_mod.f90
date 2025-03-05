@@ -337,7 +337,7 @@ MODULE atom_patch_mod
 
     if (associated(molec)) atom%tmax_update = comp%tmolim
     if (associated(element)) call atom%check_ionisation_thresholds(element)
-    call atom%compute_lte_populations(adata%nstar, adata%totn, real(comp%temp), real(comp%saha), real(dxi), element, molec)
+    call atom%compute_lte_populations(adata%nstar, adata%totn, real(comp%temp), real(comp%lsaha), real(dxi), element, molec)
     call trace%end(itimer)
   END SUBROUTINE init_atom_data
 

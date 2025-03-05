@@ -27,7 +27,7 @@ MODULE composition_mod
         type(bftrans_type), allocatable :: trans(:)
         type(level_type), dimension(:), allocatable :: input_H_levels
         real(dp), dimension(:,:,:), allocatable :: temp, ne, rho, zero
-        real(dp), dimension(:,:,:), allocatable :: EK_over_temp, pe, dxi, toth, saha
+        real(dp), dimension(:,:,:), allocatable :: e_kT, pe, dxi, toth, saha, lsaha
         real(dp), dimension(:,:,:), allocatable :: teta, pg, E, p6, shield, fo, vbarh, t3nhe
         real(4), dimension(:,:,:), allocatable :: chi500
     contains
@@ -864,7 +864,7 @@ contains
         real(4), intent(inout), dimension(:,:,:,:), optional :: all_eta
         real(4), intent(in), dimension(:,:,:), contiguous, target, optional :: vproj, vmic
         real(8), intent(in) :: dlam
-        real(4), dimension(:,:,:), allocatable :: tothi, adamp, stark_pe, ne, temp, EK_over_temp, dxij, chi_fac, unsold
+        real(4), dimension(:,:,:), allocatable :: tothi, adamp, stark_pe, ne, temp, e_kT, dxij, chi_fac, unsold
         real(4), dimension(:,:,:), allocatable, target :: inv_part, vbar2, inv_df, iso_vbar2, iso_inv_df, iso_inv_part
         real(4), dimension(:,:,:), pointer, contiguous :: vb2, idopf, ipart, vpr, fo, t3nhe, ni, nj
         real(4), dimension(:,:,:,:), pointer, contiguous :: eta, chi
@@ -883,7 +883,7 @@ contains
         allocate(stark_pe,     mold=tothi)
         allocate(ne,           mold=tothi)
         allocate(temp,         mold=tothi)
-        allocate(EK_over_temp, mold=tothi)
+        allocate(e_kT, mold=tothi)
         allocate(inv_df,       mold=tothi)
         allocate(iso_inv_df,   mold=tothi)
         allocate(inv_part,     mold=tothi)
@@ -912,7 +912,7 @@ contains
 
         ne   = real(self%ne)
         temp = real(self%temp)
-        EK_over_temp = real(self%EK_over_temp)
+        e_kT = real(self%e_kT)
         tothi = real(self%elements(1)%ions(1)%n) ! total neutral hydrogen density
         stark_pe = ne * temp**one_sixth
 
@@ -1026,7 +1026,7 @@ contains
                 prev_iso = line%iso_idx
 
                 call line%add_lte_opacities(ired, iblue, nu, qq, &
-                    vpr, idopf, EK_over_temp, dxij, inv_part, ne, tothi, vb2, stark_pe, unsold, chi_l, all_chi)
+                    vpr, idopf, e_kT, dxij, inv_part, ne, tothi, vb2, stark_pe, unsold, chi_l, all_chi)
             end do
         end subroutine particle_add_lte_opacities
     END SUBROUTINE add_linelist_opacities
@@ -1206,13 +1206,13 @@ contains
         if (self%loaded) then
             deallocate(self%temp)
             deallocate(self%ne, self%rho, self%pe, self%pg, self%E)
-            deallocate(self%toth, self%saha, self%teta, self%dxi)
-            deallocate(self%EK_over_temp, self%p6, self%zero)
+            deallocate(self%toth, self%saha, self%teta, self%dxi, self%lsaha)
+            deallocate(self%e_kT, self%p6, self%zero)
         endif
 
         allocate(self%temp, self%ne, self%rho, self%pe, self%pg, self%E, mold=temp)
-        allocate(self%toth, self%saha, self%teta, self%dxi, eh, mold=temp)
-        allocate(self%EK_over_temp, self%p6, ro, self%zero, mold=temp)
+        allocate(self%toth, self%saha, self%teta, self%dxi, self%lsaha, eh, mold=temp)
+        allocate(self%e_kT, self%p6, ro, self%zero, mold=temp)
 
         self%zero = 0.d0
         self%E = 0
@@ -1299,11 +1299,11 @@ contains
         do i=1, self%nel
             element => self%elements(i)
             call trace%begin ('composition_type%partition_functions', itimer=itimer2)
-            call element%compute_partition_functions(self%temp, self%EK_over_temp, self%ne)
+            call element%compute_partition_functions(self%temp, self%e_kT, self%ne)
             call trace%end(itimer2)
 
             call trace%begin ('composition_type%ion_equilibrium', itimer=itimer3)
-            call element%compute_ion_equilibrium(self%EK_over_temp, self%saha, self%dxi)
+            call element%compute_ion_equilibrium(self%e_kT, self%saha, self%dxi)
             call trace%end(itimer3)
             
             do j=lbound(element%ions, 1), ubound(element%ions, 1)
@@ -1338,9 +1338,9 @@ contains
             HeI%n = HeI%f * toth
             call self%Hoccupation_partition(HI%n, HeI%n, hpart)
             hpart = max(1e-40, hpart)
-            dxi = - log(hpart*HI%part) / self%EK_over_temp
-            call self%elements(1)%compute_ion_equilibrium(self%EK_over_temp, self%saha, dxi=dxi)
-            call self%elements(2)%compute_ion_equilibrium(self%EK_over_temp, self%saha, dxi=dxi)
+            dxi = - log(hpart*HI%part) / self%e_kT
+            call self%elements(1)%compute_ion_equilibrium(self%e_kT, self%saha, dxi=dxi)
+            call self%elements(2)%compute_ion_equilibrium(self%e_kT, self%saha, dxi=dxi)
           end do
         endif
 
@@ -1368,7 +1368,7 @@ contains
         self%ne = ne
         self%temp = temp
         self%teta = temp_to_theta / temp
-        self%EK_over_temp = EK / temp
+        self%e_kT = EK / temp
         self%pe = temp * BK * ne
         self%saha = 2 * op_saha_const * temp*sqrt(temp) / ne
         self%fo = 2.6031*EC * ne**two_third ! Holtsmark normal field strength
@@ -1381,6 +1381,8 @@ contains
         else
           self%dxi = 0
         endif
+
+        self%lsaha = log(self%saha)
     END SUBROUTINE set_aux_data
 
     !=========================================================================
@@ -1505,7 +1507,7 @@ contains
             lvl%i = i
             lvl%xion = RYD * (1. - 1./i**2)
             lvl%g = 2 * i**2
-            lvl%f = lvl%g * lvl%boltzmann(self%EK_over_temp, natural_log=.true.)
+            lvl%f = lvl%g * lvl%boltzmann(self%e_kT, natural_log=.true.)
           endif
           if (.not. allocated(lvl%w)) then
             allocate(lvl%w, mold=self%temp)
@@ -1549,7 +1551,7 @@ contains
           lvl%i = i
           lvl%xion = RYD * (1. - 1./i**2)
           lvl%g = 2 * i**2
-          lvl%n = lvl%g * lvl%boltzmann(self%EK_over_temp, natural_log=.true.)
+          lvl%n = lvl%g * lvl%boltzmann(self%e_kT, natural_log=.true.)
         end do
 
         part = HI%part
@@ -1640,7 +1642,7 @@ contains
         do i=1, size(self%trans)
             trans => self%trans(i)
             if (.not. trans%istim) then
-                call trans%add_absorption(chi, lam, self%temp, self%EK_over_temp, self%teta, &
+                call trans%add_absorption(chi, lam, self%temp, self%e_kT, self%teta, &
                                           self%pe, self%dxi, ne=self%ne, nhe=HeI%n, shield=self%shield, sorted=sorted)
             endif
         end do
@@ -1664,7 +1666,7 @@ contains
             do y=1, ny
             do x=1, nx
             do f=1, nf
-                stim = 1. - exp(-hnu(f) * self%EK_over_temp(x,y,z))
+                stim = 1. - exp(-hnu(f) * self%e_kT(x,y,z))
                 chi(f,x,y,z) = chi(f,x,y,z) * stim
             end do
             end do
@@ -1675,7 +1677,7 @@ contains
         do i=1, size(self%trans)
             trans => self%trans(i)
             if (trans%istim) then
-                call trans%add_absorption(chi, lam, self%temp, self%EK_over_temp, self%teta, &
+                call trans%add_absorption(chi, lam, self%temp, self%e_kT, self%teta, &
                 self%pe, self%dxi, sorted=sorted)
             endif
         end do
@@ -2185,7 +2187,7 @@ contains
         real(4), dimension(:,:,:,:), intent(inout) :: chi
         real(dp), dimension(:), intent(in) :: lam
         real(dp), dimension(:), allocatable :: lam3
-        real(dp) :: hrest, umc, fakt, EK_over_temp, dxi
+        real(dp) :: hrest, umc, fakt, e_kT, dxi
         real(dp), parameter :: nniv2 = 15.5**2
         integer :: f, x,y,z
         integer :: p(4)=pp
@@ -2196,10 +2198,10 @@ contains
         do z=1, size(self%temp,3)
         do y=1, size(self%temp,2)
         do x=1, size(self%temp,1)
-            EK_over_temp = self%EK_over_temp(x,y,z)
+            e_kT = self%e_kT(x,y,z)
             dxi = self%dxi(x,y,z)
-            fakt = HI%boltzmann(EK_over_temp, dxi, natural_log=.true.)
-            fakt = 2.0898E-26 / (2*RYD*EK_over_temp) * fakt * HI%part(x,y,z) * HI%n(x,y,z)
+            fakt = HI%boltzmann(e_kT, dxi, natural_log=.true.)
+            fakt = 2.0898E-26 / (2*RYD*e_kT) * fakt * HI%part(x,y,z) * HI%n(x,y,z)
             if (RYD >= nniv2 * dxi) then
                 !NNIV=15
                 !XNIV=15.
@@ -2207,7 +2209,7 @@ contains
                 !ADDF=EXP(TETA31/((FLOAT(NNIV)+0.5)**2)-UMC)-1.
                 !IF(H(1).LT.XNIV+0.5)ADDF=0.
                 !HREST(NTP)=EXPJ*ADDF
-                hrest = exp(EK_over_temp*(RYD/nniv2 - dxi))
+                hrest = exp(e_kT*(RYD/nniv2 - dxi))
                 hrest = fakt * (hrest - 1)
                 chi(:,x,y,z) = chi(:,x,y,z) + hrest*lam3
             endif
@@ -2425,7 +2427,7 @@ contains
         do y=1, ny
         do x=1, nx
         do f=1, nf
-            stim(f,x,y,z) = 1. - exp(-hnu(f) * self%EK_over_temp(x,y,z))
+            stim(f,x,y,z) = 1. - exp(-hnu(f) * self%e_kT(x,y,z))
         end do
         end do
         end do
@@ -2444,7 +2446,7 @@ contains
             trans => self%trans(order(i))
             ib = bin(i)
             tchi = 0
-            call trans%add_absorption(tchi, lam, self%temp, self%EK_over_temp, self%teta, &
+            call trans%add_absorption(tchi, lam, self%temp, self%e_kT, self%teta, &
                                         self%pe, self%dxi, ne=self%ne, nhe=HeI%n, shield=self%shield, sorted=.true.)
             if (.not. trans%istim) tchi = tchi * stim
             chi(:,:,:,:,ib) = chi(:,:,:,:,ib) + tchi

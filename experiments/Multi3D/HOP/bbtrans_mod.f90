@@ -60,14 +60,14 @@ contains
   END SUBROUTINE init_einstein_coefficients
 
   !====================================================================================
-  SUBROUTINE add_lte_opacities(self, ired, iblue, nu, qq_scr, vproj, inv_df, EK_over_temp, dxij, inv_part, &
+  SUBROUTINE add_lte_opacities(self, ired, iblue, nu, qq_scr, vproj, inv_df, e_kT, dxij, inv_part, &
     ne, tothi, vbar2, stark_pe, unsold, chi, cont)
     class(bbtrans_type), intent(inout) :: self
     integer, intent(in) :: ired, iblue
     real(8), dimension(:), intent(in), contiguous :: nu
     real(8), dimension(:), intent(in), contiguous, target :: qq_scr
     real(4), dimension(:,:,:), intent(in), contiguous :: vproj, inv_df, inv_part
-    real(4), dimension(:,:,:), intent(in), contiguous :: EK_over_temp, dxij, ne, tothi, vbar2, stark_pe, unsold
+    real(4), dimension(:,:,:), intent(in), contiguous :: e_kT, dxij, ne, tothi, vbar2, stark_pe, unsold
     real(4), dimension(:,:,:,:), intent(inout) :: chi
     real(4), dimension(:,:,:,:), intent(in) :: cont
     real(8), dimension(:), pointer :: qq
@@ -116,7 +116,7 @@ contains
       !v   = vproj(i,j,k)
       idf = inv_df(i,j,k) * inv_nu0
       v   = (vproj(i,j,k) + 1)*self%nu0
-      ekt = EK_over_temp(i,j,k)
+      ekt = e_kT(i,j,k)
       ex  = (upper_ev - dxij(i,j,k)) * ekt
 
       if (ex < 85.) then

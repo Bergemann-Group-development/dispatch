@@ -144,7 +144,7 @@ MODULE m3d_patch_mod
     logical, public, save :: Jnu_to_file=.true., amr=.true.
     logical, public, save :: rotate_atmos=.false., rotate_continuum=.false.
     logical, public, save :: make_eos=.false.
-    logical, public, save :: save_Inu=.false., save_chi=.false.
+    logical, public, save :: save_Inu=.false., save_chi=.false., save_Snu=.false.
     real(8), public, save :: dlam=100.
     real(8), public, dimension(:), allocatable :: rank_lvlerr
     character(len=128), save :: save_patch_kind=''
@@ -171,7 +171,7 @@ MODULE m3d_patch_mod
     lse_solver, decouple_continuum, m1d_legacy_mode, nu_tolerance, disable_stark, &
     disable_vdw, disable_ga, pivot_z, use_vel, save_Qrad, save_resolved, rotate_continuum, &
     absmet_in_output, print_lock, make_eos, ng_step, ng_start, scattering_absorption, &
-    column_by_column, rotate_atmos, Jnu_to_file, preconditioning, save_inu, save_chi, &
+    column_by_column, rotate_atmos, Jnu_to_file, preconditioning, save_inu, save_chi, save_Snu, &
     long_scheme, long_ntheta, long_nphi, short_scheme, short_ntheta, short_nphi, &
     long_solver, fixed_Jnu, hydrogen_BPO
 

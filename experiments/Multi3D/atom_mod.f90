@@ -347,7 +347,7 @@ MODULE atom_mod
   END SUBROUTINE check_ionisation_thresholds
   
   !====================================================================================
-  SUBROUTINE compute_lte_populations(self, nstar, totn, temp, saha, dxi, element, mol)
+  SUBROUTINE compute_lte_populations(self, nstar, totn, temp, lsaha, dxi, element, mol)
     class(atom_type), intent(inout) :: self
     class(element_type), pointer :: element
     class(ion_type), pointer :: ion
@@ -355,26 +355,25 @@ MODULE atom_mod
     integer :: i, j, x,y,z
     real(8), intent(inout), dimension(:,:,:,:) :: nstar
     real(8), intent(inout), dimension(:,:,:) :: totn
-    real(4), intent(in), dimension(:,:,:) :: temp, saha, dxi
-    real(4), dimension(:,:,:), allocatable :: partition, lvl_part, norm, EK_over_temp
-    real(4), dimension(:,:,:), allocatable :: ev_off, ex, lsaha
+    real(4), intent(in), dimension(:,:,:) :: temp, lsaha, dxi
+    real(4), dimension(:,:,:), allocatable :: partition, lvl_part, e_kT
+    real(4), dimension(:,:,:), allocatable :: ev_off, ex, norm
     real(4) :: xion
     integer :: ijk(3), idis
     logical :: molec
     integer, save :: itimer=0
     !---------------------------------------------------------------------------------
     call trace%begin('atom_mod%compute_lte_populations', itimer=itimer)
-    allocate(partition, lvl_part, norm, lsaha, mold=temp)
-    allocate(EK_over_temp, ev_off, ex, mold=temp)
-    EK_over_temp = e_k / temp
-    lsaha = log(saha)
+    allocate(partition, lvl_part, norm, mold=temp)
+    allocate(e_kT, ev_off, ex, mold=temp)
+    e_kT = e_k / temp
     molec = associated(mol)
     if (molec) idis = findloc(self%ion, 2, 1)
   
     nstar = 0
     do i=1, self%nlevel
       if (molec .and. i==idis) cycle
-      nstar(:,:,:,i) = self%lte_pop(i, EK_over_temp, dxi, lsaha)
+      nstar(:,:,:,i) = self%lte_pop(i, e_kT, dxi, lsaha)
     end do
     lvl_part = sum(nstar, dim=4)
   
@@ -384,7 +383,7 @@ MODULE atom_mod
         ev_off = 0
         do j=1, element%nion
           ion => element%ions(j)
-          ex = float(j-1)*lsaha - ev_off*EK_over_temp
+          ex = float(j-1)*lsaha - ev_off*e_kT
           where (ex < -80.)
             ex = 0
           elsewhere
@@ -436,9 +435,9 @@ MODULE atom_mod
   !------------------------------------------------------------------------------------
 
   !====================================================================================
-  elemental function lte_pop(self, i, EK_over_temp, dxi, lsaha) result(nstar)
+  elemental function lte_pop(self, i, e_kT, dxi, lsaha) result(nstar)
     class(atom_type), intent(in) :: self
-    real(4), intent(in) :: EK_over_temp, dxi, lsaha
+    real(4), intent(in) :: e_kT, dxi, lsaha
     integer, intent(in) :: i
     real(8) :: evi, tns
     real(8) :: nstar
@@ -446,7 +445,7 @@ MODULE atom_mod
     !---------------------------------------------------------------------------------
     j = self%ion(i)
     evi = self%ev(i) - dxi * 0.5*(j-1)*j
-    tns = log(self%g(i)) - EK_over_temp*evi
+    tns = log(self%g(i)) - e_kT*evi
 
     if(j > self%ion(1)) then
       l = j - self%ion(1)
@@ -1445,7 +1444,7 @@ MODULE atom_mod
     class(atom_type), intent(inout) :: self
     real(8), intent(in) :: temp, ne, nh1
     real(8), dimension(:), intent(in) :: nstar
-    real(8) :: ni, nj, nij, cup, cdn, EK_over_temp, divu
+    real(8) :: ni, nj, nij, cup, cdn, e_kT, divu
     real(8) :: dxi, dev, ex, u0, f, tmp, sqt, fac, nu0
     real(8) :: seaton, allen, regemorter
     integer :: i,j, ii, jj, tri, n
@@ -1467,7 +1466,7 @@ MODULE atom_mod
     allen = c0 * Rydk * ne / sqt
     regemorter = 14.5 * allen * Rydk / e_k
     seaton = 1.55e13 * ne / sqt
-    EK_over_temp = e_k / temp
+    e_kT = e_k / temp
 
     n = 0
     do i=1, self%nlevel
@@ -1495,7 +1494,7 @@ MODULE atom_mod
             f = max(fac, fmin*self%g(j))
           endif
 
-          u0 = dev * EK_over_temp
+          u0 = dev * e_kT
           ex = exp(-u0)
 
           ! collisions with electrons

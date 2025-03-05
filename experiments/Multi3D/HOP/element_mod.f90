@@ -20,11 +20,11 @@ MODULE element_mod
 contains
 
 !===============================================================================
-SUBROUTINE compute_partition_functions(self, temp, EK_over_temp, ne)
+SUBROUTINE compute_partition_functions(self, temp, e_kT, ne)
     class(element_type), target :: self
     type(ion_type), pointer :: ion
     type(level_type), pointer :: lvl
-    real(dp), dimension(:,:,:), intent(in) :: temp, EK_over_temp, ne
+    real(dp), dimension(:,:,:), intent(in) :: temp, e_kT, ne
     real(dp), dimension(:,:,:), allocatable :: blz
     integer :: i, j, l, u, x, y, z
     !---------------------------------------------------------------------------
@@ -45,9 +45,9 @@ SUBROUTINE compute_partition_functions(self, temp, EK_over_temp, ne)
             ion%part = 0
             do i=1, ubound(ion%levels, 1)
                 lvl => ion%levels(i)
-                blz = lvl%g * lvl%boltzmann(EK_over_temp)
+                blz = lvl%g * lvl%boltzmann(e_kT)
                 if (lvl%xl > 0) then
-                    blz = blz * lvl%fischel_sparks(ion%j, EK_over_temp, ne)
+                    blz = blz * lvl%fischel_sparks(ion%j, e_kT, ne)
                 endif
                 ion%part = ion%part + blz
             end do
@@ -59,10 +59,10 @@ SUBROUTINE compute_partition_functions(self, temp, EK_over_temp, ne)
 END SUBROUTINE compute_partition_functions
 
 !===============================================================================
-SUBROUTINE compute_ion_equilibrium(self, EK_over_temp, saha, dxi)
+SUBROUTINE compute_ion_equilibrium(self, e_kT, saha, dxi)
     class(element_type), target :: self
     type(ion_type), pointer :: ions(:), ion
-    real(dp), dimension(:,:,:), intent(in) :: EK_over_temp, dxi, saha
+    real(dp), dimension(:,:,:), intent(in) :: e_kT, dxi, saha
     real(dp), dimension(:,:,:), allocatable :: fil, partition_ratio, partp
     integer :: j, l, u, x, y, z
     !---------------------------------------------------------------------------
@@ -79,8 +79,8 @@ SUBROUTINE compute_ion_equilibrium(self, EK_over_temp, saha, dxi)
         !!partp = max(1d-3, partp)
         !! --------------------------------------------------!
         !partition_ratio = ions(j)%part / partp
-        !ions(j)%saha = ions(j)%saha_eq(EK_over_temp, saha, dxi, partition_ratio)
-        call ion%saha_ratio(EK_over_temp, saha, dxi, ion%saha)
+        !ions(j)%saha = ions(j)%saha_eq(e_kT, saha, dxi, partition_ratio)
+        call ion%saha_ratio(e_kT, saha, dxi, ion%saha)
         fil = 1 + fil * ion%saha
     end do
 

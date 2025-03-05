@@ -253,6 +253,7 @@ class m3dis(object):
                         df = pd.read_csv(report, sep=r'\s+')
                         self.lvlerr = np.maximum(self.lvlerr, df.maxconv.values)
 
+            in_abnd    = self.nml['atom_params']['abundance']
             if self.atom.id in self.abundances:
                 self.atom.abnd = float(self.abundances[self.atom.id])
             elif in_abnd > -99:
@@ -264,7 +265,6 @@ class m3dis(object):
             
         if 'atom_params' in self.nml:
             depart = self.nml['atom_params']['precomputed_depart'].strip()
-            in_abnd = self.nml['atom_params']['abundance']
         else:
             depart = ''
 
@@ -1056,49 +1056,56 @@ class m3dis(object):
     
     #=====================================================================
     def plot_line_labels(self, offset=None, tol=0.02, show_atom=True,
-                         dry=False, xmin=None, xmax=None, **kwargs):
+                         show_llist=True, dry=False, xmin=None, xmax=None, **kwargs):
         #-----------------------------------------------------------------
         if xmin is None or xmax is None:
             ax = plt.gca()
             xmin, xmax = ax.get_xlim()
 
-        if tol is None:
-            llist = self.llist
-            mask = (llist.lam0 > xmin) & (llist.lam0 < xmax)
-            llist = llist[mask]
-        else:
-            df = self.llist[['ion', 'lam0', 'strength']]
-            mask = (df.lam0 > xmin) & (df.lam0 < xmax)
-            df = df[mask]
-            df = df.sort_values(by=['ion', 'lam0']).reset_index(drop=True)
-            species = np.unique(df['ion'])
+        if hasattr(self, 'llist') and show_llist:
+            if tol is None:
+                llist = self.llist
+                mask = (llist.lam0 > xmin) & (llist.lam0 < xmax)
+                llist = llist[mask]
+            else:
+                df = self.llist[['ion', 'lam0', 'strength', 'loggf', 'ga']]
+                mask = (df.lam0 > xmin) & (df.lam0 < xmax)
+                df = df[mask]
+                df = df.sort_values(by=['ion', 'lam0']).reset_index(drop=True)
+                species = np.unique(df['ion'])
 
+                llist = pd.DataFrame()
+                for s in species:
+                    sub = df[df['ion'] == s]
+                    if len(sub) == 0:
+                        continue
+                    elif len(sub) == 1:
+                        llist = pd.concat([llist, sub])
+                    else:
+                        groups = assign_group_indices(sub['lam0'].values, tol) - 1
+                        for i in range(groups.max()+1):
+                            group = sub[groups == i]
+                            if len(group) == 1:
+                                llist = pd.concat([llist, group])
+                            else:
+                                strength = group.strength.sum()
+                                wts = group.strength / strength
+                                lam0 = np.sum(group.lam0 * wts)
+                                new_row = pd.DataFrame({'ion': [s], 'lam0': [lam0], 'strength': [strength]})
+                                llist = pd.concat([llist, new_row])
+
+            max_strength = llist.strength.max()
+        else:
+            show_atom = True
+            max_strength = 0.1
             llist = pd.DataFrame()
-            for s in species:
-                sub = df[df['ion'] == s]
-                if len(sub) == 0:
-                    continue
-                elif len(sub) == 1:
-                    llist = pd.concat([llist, sub])
-                else:
-                    groups = assign_group_indices(sub['lam0'].values, tol) - 1
-                    for i in range(groups.max()+1):
-                        group = sub[groups == i]
-                        if len(group) == 1:
-                            llist = pd.concat([llist, group])
-                        else:
-                            strength = group.strength.sum()
-                            wts = group.strength / strength
-                            lam0 = np.sum(group.lam0 * wts)
-                            new_row = pd.DataFrame({'ion': [s], 'lam0': [lam0], 'strength': [strength]})
-                            llist = pd.concat([llist, new_row])
 
         if hasattr(self, 'atom') and show_atom:
-            bbt = self.atom.bbt[['lam0']].copy()
+            bbt = self.atom.bbt[['lam0', 'loggf', 'ga']].copy().reset_index(drop=True)
             mask = (bbt.lam0 > xmin) & (bbt.lam0 < xmax)
             bbt = bbt[mask]
             bbt['ion'] = self.atom.id
-            bbt['strength'] = llist.strength.max()
+            bbt['strength'] = max_strength
             if len(bbt) == 1:
                 llist = pd.concat([llist, bbt])
             elif len(bbt) > 1:
@@ -1113,11 +1120,13 @@ class m3dis(object):
                         lam0 = np.sum(group.lam0 * wts)
                         new_row = pd.DataFrame({'ion': [self.atom.id], 'lam0': [lam0], 'strength': [strength]})
                         llist = pd.concat([llist, new_row])
-            
-        llist = llist.sort_values(by='lam0').reset_index(drop=True)
-        if offset is not None: llist['lam0'] = llist['lam0'] + offset
-        if not dry:
-            self.plot_line_annotations(llist.lam0.values, llist.ion.values, llist.strength.values, **kwargs)
+
+        if len(llist) > 0:    
+            llist = llist.sort_values(by='lam0').reset_index(drop=True)
+            if offset is not None: llist['lam0'] = llist['lam0'] + offset
+            if not dry:
+                self.plot_line_annotations(llist.lam0.values, llist.ion.values, llist.strength.values, **kwargs)
+        
         return llist
     
     def plot_line_stem(self, bottom=1.0, scale=None, offset=None, xmin=None, xmax=None, **kwargs):

@@ -22,17 +22,17 @@ MODULE level_mod
 contains
 
     !===============================================================================
-    elemental real(dp) FUNCTION boltzmann(self, EK_over_temp, dxi, natural_log)
+    elemental real(dp) FUNCTION boltzmann(self, e_kT, dxi, natural_log)
         class(state_type), intent(in) :: self
-        real(dp), intent(in) :: EK_over_temp
+        real(dp), intent(in) :: e_kT
         real(dp), intent(in), optional :: dxi
         logical, intent(in), optional :: natural_log
         real(dp) :: dum
         !---------------------------------------------------------------------------
         if (present(dxi)) then
-            dum = -EK_over_temp*(self%xion - dxi)
+            dum = -e_kT*(self%xion - dxi)
         else
-            dum = -EK_over_temp*self%xion
+            dum = -e_kT*self%xion
         endif 
 
         boltzmann = exp(dum)
@@ -50,16 +50,16 @@ contains
     end FUNCTION boltzmann
 
     !===============================================================================
-    elemental real(dp) FUNCTION fischel_sparks(self, ion, EK_over_temp, ne)
+    elemental real(dp) FUNCTION fischel_sparks(self, ion, e_kT, ne)
         class(level_type), intent(in) :: self
-        real(dp), intent(in) :: EK_over_temp, ne
+        real(dp), intent(in) :: e_kT, ne
         integer, intent(in) :: ion
         real(dp) :: a, a2, r, r2, r3, axl2, p, p2, p3, p4
         real(dp) :: bk_err
         !---------------------------------------------------------------------------
         bk_err = BK / uop_BK ! keep around for consistency
 
-        a = 31.321*ion**2 * log10e * EK_over_temp * prec_err
+        a = 31.321*ion**2 * log10e * e_kT * prec_err
         p = ion * 4.2E3 / (ne*bk_err)**0.166666667
     
         if (p <= self%xl) then

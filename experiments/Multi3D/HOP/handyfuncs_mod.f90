@@ -11,12 +11,14 @@ contains
 !====================================================================================
 SUBROUTINE print_failed_line(lunit, iostat)
   integer, intent(in) :: lunit, iostat
-  character(len=512) :: line_text
+  character(len=512) :: line_text, filename
   ! ----------------------------------------------------------------------
   if (iostat > 0) then
+      inquire(unit=lunit, name=filename)
       backspace lunit
       read(lunit,'(A)') line_text
-      print '(I4, 1x, A)', iostat, "Failed to read a line in the linelist:"
+      print '(I4, 1x, A)', iostat, "Failed to read a line in file:"
+      print '(A)', trim(filename)
       print '(A)', line_text
       stop
   endif

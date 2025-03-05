@@ -363,10 +363,10 @@ contains
   END SUBROUTINE interp_xkap
 
   !===============================================================================
-  SUBROUTINE absorption_factor(self, EK_over_temp, teta, pe, dxi, fakt)
+  SUBROUTINE absorption_factor(self, e_kT, teta, pe, dxi, fakt)
       class(bftrans_type), intent(in) :: self
       class(particle_type), pointer :: ion
-      real(dp), dimension(:,:,:), intent(in) :: EK_over_temp, teta, pe, dxi
+      real(dp), dimension(:,:,:), intent(in) :: e_kT, teta, pe, dxi
       real(dp), dimension(:,:,:), intent(out) :: fakt
       real(dp), dimension(:,:,:), allocatable :: h1
       integer, dimension(:,:,:), allocatable :: nniv
@@ -389,8 +389,8 @@ contains
           endif
       case('H FF')
           !fakt = 2.0898E-26 / 2 * ion%part * ion%n * exp(-31.30364*teta + 2.3026*dxi*teta) / (31.30364*teta)
-          fakt = ion%boltzmann(EK_over_temp, dxi, natural_log=.true.)
-          fakt = 2.0898E-26 / (2*RYD*EK_over_temp) * fakt * ion%part * ion%n
+          fakt = ion%boltzmann(e_kT, dxi, natural_log=.true.)
+          fakt = 2.0898E-26 / (2*RYD*e_kT) * fakt * ion%part * ion%n
       case('(H+H)')
           ! see Doyle 1968 "The astrophysical significance of the continuous spectrum of the hydrogen quasi-molecule"
           fakt = (1d-25 * ion%n)**2
@@ -403,22 +403,22 @@ contains
         if (self%pedep) then
           fakt = pe * ion%n
           if (self%peach) then
-            fakt = (1d-40 / EE) * EK_over_temp * fakt
+            fakt = (1d-40 / EE) * e_kT * fakt
           endif
         elseif (self%molecular) then
             fakt = ion%n * ion%awgt / 6.023d23
         elseif (self%regular) then
-            fakt = self%level%g * self%level%boltzmann(EK_over_temp, natural_log=.true.)
+            fakt = self%level%g * self%level%boltzmann(e_kT, natural_log=.true.)
             fakt = fakt * ion%part * ion%n
         endif
       end select
   END SUBROUTINE absorption_factor
 
   !===============================================================================
-  SUBROUTINE add_absorption(self, chi, lam, temp, EK_over_temp, teta, pe, dxi, ne, nhe, shield, sorted)
+  SUBROUTINE add_absorption(self, chi, lam, temp, e_kT, teta, pe, dxi, ne, nhe, shield, sorted)
       class(bftrans_type), intent(in) :: self
       real(4), dimension(:,:,:,:), contiguous, intent(inout) :: chi
-      real(dp), dimension(:,:,:), intent(in) :: temp, EK_over_temp, teta, pe, dxi
+      real(dp), dimension(:,:,:), intent(in) :: temp, e_kT, teta, pe, dxi
       real(dp), dimension(:,:,:), intent(in), optional :: ne, nhe, shield
       real(dp), dimension(:), intent(in) :: lam
       real(dp), dimension(:,:,:), allocatable :: fakt
@@ -441,7 +441,7 @@ contains
       if (active) then
           !if (nf > 1) prev = chi(p(1), p(2), p(3), p(4))
 
-          call self%absorption_factor(EK_over_temp, teta, pe, dxi, fakt)
+          call self%absorption_factor(e_kT, teta, pe, dxi, fakt)
           call self%interp_xkap(chi, temp, teta, fakt, lam, ne, nhe, shield)
 
           !if (nf > 1) then

@@ -69,23 +69,23 @@ MODULE ion_mod
 contains
 
 !===============================================================================
-elemental real(dp) FUNCTION saha_eq(self, EK_over_temp, saha, dxi, partition_ratio)
+elemental real(dp) FUNCTION saha_eq(self, e_kT, saha, dxi, partition_ratio)
     class(ion_type), intent(in) :: self
-    real(dp), intent(in) :: EK_over_temp, saha, dxi
+    real(dp), intent(in) :: e_kT, saha, dxi
     real(dp), intent(in), optional :: partition_ratio
     real(dp) :: dxi_j
     !---------------------------------------------------------------------------
     dxi_j = dxi*self%dxi_fac
-    saha_eq = saha * self%boltzmann(EK_over_temp, dxi=dxi_j) * partition_ratio
+    saha_eq = saha * self%boltzmann(e_kT, dxi=dxi_j) * partition_ratio
 END FUNCTION saha_eq
 
 !===============================================================================
-SUBROUTINE saha_ratio(self, EK_over_temp, saha, dxi, ratio)
+SUBROUTINE saha_ratio(self, e_kT, saha, dxi, ratio)
     class(ion_type), intent(in) :: self
-    real(dp), intent(in), dimension(:,:,:) :: EK_over_temp, saha, dxi
+    real(dp), intent(in), dimension(:,:,:) :: e_kT, saha, dxi
     real(dp), intent(out), dimension(:,:,:) :: ratio
     !---------------------------------------------------------------------------
-    ratio = self%part / self%above%part * saha * self%boltzmann(EK_over_temp, dxi=dxi*self%dxi_fac)
+    ratio = self%part / self%above%part * saha * self%boltzmann(e_kT, dxi=dxi*self%dxi_fac)
 END SUBROUTINE saha_ratio
 
 !===============================================================================

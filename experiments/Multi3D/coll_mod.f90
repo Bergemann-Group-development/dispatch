@@ -64,14 +64,14 @@ MODULE coll_mod
       real(8) :: t4,summrs
       real(8) :: betab,ddekt,wlog,wb,dexin1,xj,fac,fxj
       real(8) :: dekti,qb,he1,he2
-      real(8) :: saha, dxi, dev, tns, ek_over_temp
+      real(8) :: saha, dxi, dev, tns, e_kT
       integer :: ul,ll,i,j,k,z, nhlevels, ii, jj, nc, itemp
       !---------------------------------------------------------------------
       ! get local copies for ease of notation
       stg=sqrt(temp)
       saha = 1.5*log(temp) - log(saha_const*ne)
       dxi = 4.98e-4*5040./temp*sqrt(ne*bk*temp)
-      ek_over_temp = e_k / temp
+      e_kT = e_k / temp
   
       ! loop over all the transitions
       do i=1, size(coll, 1)
@@ -91,7 +91,7 @@ MODULE coll_mod
          if (nstar(ll) > 0) then
             nsr = nstar(ul) / nstar(ll)
          else
-            tns = - dev*ek_over_temp + (ion(ul) - ion(ll))*saha
+            tns = - dev*e_kT + (ion(ul) - ion(ll))*saha
             nsr = g(ul)/g(ll) * exp(tns)
          endif
 
@@ -138,7 +138,7 @@ MODULE coll_mod
 
          case('CI')
             ! ionization by electron collisions
-            cup = ct * ne * stg * exp(-dev*ek_over_temp) 
+            cup = ct * ne * stg * exp(-dev*e_kT) 
             cup = cup * cbfesc
             cdn = cup / nsr
 
