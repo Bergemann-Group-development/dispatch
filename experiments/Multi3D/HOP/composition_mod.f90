@@ -1926,7 +1926,12 @@ contains
 
                 call lineq_no_pivot(Amat(:,:,ix,iy,iz), Fvec(:,ix,iy,iz), np1)
                 Fnew = Fold - Fvec(:,ix,iy,iz)
-                diff(ix,iy,iz) = maxval(abs(1-Fold/Fnew))
+
+                if (any(Fnew == 0)) then
+                    diff(ix,iy,iz) = huge(1.0)
+                else
+                    diff(ix,iy,iz) = maxval(abs(1-Fold/Fnew))
+                endif
 
                 do i=1, nions
                     ions(i)%p%f(ix, iy, iz) = Fnew(i)

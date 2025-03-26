@@ -4292,7 +4292,7 @@ SUBROUTINE save_meta(self, mem, label, lunit, add2meta, key)
   if (shared%option(add2meta, .true.)) then
     call io%lock%set('save_meta')
     if (size(mem) == 0) then
-      call shared%abort('mem not associated in save')
+      call shared%abort('mem not associated in save '//label)
     endif
     meta_file = trim(label) // '_meta.txt'
     if (os%exists(trim(folder)//meta_file)) then

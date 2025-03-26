@@ -440,7 +440,7 @@ SUBROUTINE execute (self)
   endif
 
   if (end_boundary) then
-    if (self%out_mu) then
+    if (self%out_mu .and. self%n_mu>0) then
       call self%save_intensity()
       if (self%i_nu == -1) then
         call self%print_linelist(self%composition)
