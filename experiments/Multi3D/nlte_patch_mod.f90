@@ -24,7 +24,7 @@ MODULE nlte_patch_mod
   column_by_column, rotate_atmos, check_NaN, rank_lvlerr, sample_back_opac, &
   decouple_continuum, linelist_in_output, sample_back_opac_in_output, ilambd, &
   Jnu_to_file, preconditioning, make_eos, amr, save_Inu, save_chi, save_Snu, &
-  rotate_continuum, long_solver, fixed_Jnu, opac_table_vmic, n_nu
+  rotate_continuum, long_solver, fixed_Jnu, opac_table_vmic, n_nu, save_Jnu
   USE ray_mod, only: one_dimensional, ray_type
   USE trans_mod, only:line_type, cont_type
   USE bbtrans_mod, only:voigt_function2, voigt_profile
@@ -403,7 +403,7 @@ SUBROUTINE execute (self)
         if (self%bound_bound) call self%bound_bound_rates(comp, wmu, inv_df, vproj, adamp, gamma_ij, gamma_ji)
       endif
 
-      if (self%out_mu .and. self%n_mu > 0) then
+      if (self%out_mu) then
         if (save_chi) then
           if (i_set==1) then
             write(sav_label, '(A, I2.2)') 'chi_', i_mu
@@ -434,13 +434,13 @@ SUBROUTINE execute (self)
     if (self%has_atom) call self%integrate_rates(gamma_ij, gamma_ji)
   endif
 
-  if (ilambd > 0 .and. Jnu_to_file .and. .not. self%out_mu) then
+  if (Jnu_to_file) then
     Jnu_label = merge('Jnu_out', 'Jnu    ', self%out_ray)
-    call self%save5(self%Jnu, trim(Jnu_label), key=self%key(1:3), add2meta=.false.)
+    call self%save5(self%Jnu, trim(Jnu_label), key=self%key(1:3), add2meta=save_Jnu)
   endif
 
   if (end_boundary) then
-    if (self%out_mu .and. self%n_mu > 0) then
+    if (self%out_mu) then
       call self%save_intensity()
       if (self%i_nu == -1) then
         call self%print_linelist(self%composition)
@@ -2233,9 +2233,11 @@ SUBROUTINE finish(self)
   if (ilambd > 0 .and. (self%in_ray .or. self%out_mu)) then
     if (self%up_twin%is_finished() .and. self%dn_twin%is_finished()) then
       if (Jnu_to_file) then
-        Jnu_label = merge('Jnu_out', 'Jnu    ', self%out_ray)
-        call self%up_twin%remove(Jnu_label, key=self%up_twin%key(1:3))
-        call self%dn_twin%remove(Jnu_label, key=self%dn_twin%key(1:3))
+        if (.not. save_Jnu) then
+          Jnu_label = merge('Jnu_out', 'Jnu    ', self%out_ray)
+          call self%up_twin%remove(Jnu_label, key=self%up_twin%key(1:3))
+          call self%dn_twin%remove(Jnu_label, key=self%dn_twin%key(1:3))
+        endif
       else
         call mem_unregister(self%up_twin%Jnu, label='Jnu')
         call mem_unregister(self%dn_twin%Jnu, label='Jnu')

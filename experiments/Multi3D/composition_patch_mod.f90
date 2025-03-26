@@ -13,7 +13,7 @@ MODULE composition_patch_mod
   USE element_mod, only: element_type
   USE m3d_patch_mod,   only: m3d_patch_t, composition, comoving_frame, ilambd, dlam, &
   use_rho, use_ne, overlapping_bb, overlapping_bf, binned_opac, &
-  save_Qrad, maxiter, rotate_atmos, long_vec, sample_back_opac, decouple_continuum, &
+  maxiter, rotate_atmos, long_vec, sample_back_opac, decouple_continuum, &
   linelist_in_output, sample_back_opac_in_output, make_eos, overlapping_bb_in_output, &
   opac_table_vmic, atmos_format, atmos_file, n_nu
   USE m3d_debug_mod
@@ -22,7 +22,7 @@ MODULE composition_patch_mod
   USE atom_patch_mod,  only: atom_patch_t
   USE nlte_patch_mod, only:nlte_patch_t
   USE bftrans_mod, only: H_occupation_probability
-  USE bbtrans_mod, only: tolerance, bbtrans_type
+  USE bbtrans_mod, only: tolerance, bbtrans_type, disable_ga, disable_stark, disable_vdw
   USE trace_mod
   USE scaling_mod
   USE units_mod
@@ -78,7 +78,8 @@ SUBROUTINE read_composition_params ()
   isotope_file, molec_file, H_occupation_probability, opac_table, &
   sample_back_opac, sample_back_opac_in_output, switch, mhd_eos, debye_shield, &
   dtemp, ldne, ldrho, ldtemp, tmolim, irwin_dis, opac_table_vmic, save_species, &
-  ref_lam, debug_opac, abundances, relative_abundances, alpha_enhancement, r_process_enhancement
+  ref_lam, debug_opac, abundances, relative_abundances, alpha_enhancement, r_process_enhancement, &
+  disable_ga, disable_stark, disable_vdw
   namelist /linelist_params/ dlam, exclude_elements, linelist_file, line_lists, &
   linelist_in_output, tolerance
   ! ----------------------------------------------------------------------------
@@ -433,7 +434,7 @@ SUBROUTINE init_eos_comp (self, temp, rho, ldtemp, ldrho)
   do j=1, nrho
   do i=1, ntemp
     tab_temp(i,j,1) = minLnT + (i-1)*ldtemp
-    tab_rho  (i,j,1) = minLnRho + (j-1)*ldrho
+    tab_rho (i,j,1) = minLnRho + (j-1)*ldrho
   end do
   end do
 
@@ -511,7 +512,7 @@ SUBROUTINE save_number_densities (self, comp, pre_init)
   class(composition_type) :: comp
   class(ion_type), pointer :: ion
   class(molec_type), pointer :: mol
-  class(particle_type), pointer :: p
+  class(particle_type), pointer :: particle
   integer :: i, nspecies
   logical, intent(in) :: pre_init
   character(len=256) :: local_text
@@ -529,17 +530,12 @@ SUBROUTINE save_number_densities (self, comp, pre_init)
     key = species(i)
     call replace_char(key, '*', ' ')
     key = adjustl(key)
-    call comp%ion_by_id(trim(key), ion)
-    p => ion
-    if (.not. associated(p)) then
-      call comp%molecule_by_id(trim(key), mol)
-      p => mol
-    endif
-    if (associated(p)) then
+    call comp%particle_by_id(trim(key), particle, verbose=.true.)
+    if (associated(particle)) then
       if (pre_init) then
-        p%in_opac = .true.
+        particle%in_opac = .true.
       else
-        call self%save3(real(p%n), trim(key))
+        call self%save3(real(particle%n), trim(key))
       endif
     endif
   end do

@@ -2,6 +2,7 @@ MODULE hprofl_mod
   USE bbtrans_mod, only: voigt_function2, bbtrans_type, disable_ga, disable_stark, disable_vdw
   USE prec_mod, only: RYD
   USE const_mod
+  USE op_math_mod, only: interp1d_sorted
   implicit none
 
   real(4), dimension(4,3), parameter ::  xknmtb = reshape([&
@@ -132,7 +133,7 @@ MODULE hprofl_mod
   integer, dimension(4), parameter :: lnghal = [2, 7, 11, 14]
   integer, dimension(4), parameter :: lncomp = [1, 3,  4,  5]
 
-  logical, public :: hydrogen_BPO=.true.
+  logical, public :: hydrogen_BPO=.true., stark_convolution=.false.
 
 contains
 
@@ -147,8 +148,9 @@ contains
     real(4), dimension(:,:,:,:), intent(inout) :: chi
     real(4), dimension(:,:,:,:), intent(in) :: cont
     real(8), allocatable :: qq(:)
+    real(4), allocatable :: phis(:)
     real(4) :: lchi, phi, idf, cf, v, ref, nh1
-    real(4) :: resont, vdw, hwstk, adamp, hfwid, t, e
+    real(4) :: resont, vdw, hwstk, hwlor, hfwid, t, e
     real(8) :: q
     real(4), parameter :: tol=1e-7
     integer :: i,j,k,f, f0, m(3), itimer=0
@@ -159,6 +161,7 @@ contains
     m = shape(vproj)
 
     allocate(qq(ired:iblue))
+    allocate(phis(ired:iblue))
     qq(ired:iblue) = nu(ired:iblue) / self%nu0 - 1
     f0 = minloc(abs(qq),1) + ired - 1
 
@@ -173,53 +176,123 @@ contains
       nh1 = tothi(i,j,k)
 
       cf = self%Bij*ni(i,j,k) - self%Bji*nj(i,j,k)
-  
-      resont = nh1 * self%gw1
-      if (self%gw2 /= 0) then
-        resont = resont * vbarh(i,j,k)**self%gw2
+
+      if (.not. lymanalf .and. stark_convolution) then
+        call convolve_h_profiles(self, qq-v, t, e, idf, nh1, vbarh(i,j,k), fo(i,j,k), t3nhe(i,j,k), phis)
+        do f=ired, iblue
+          lchi = phis(f) * cf
+          chi(f,i,j,k) = chi(f,i,j,k) + lchi
+        end do
+      else
+        resont = nh1 * self%gw1
+        if (self%gw2 /= 0) then
+          resont = resont * vbarh(i,j,k)**self%gw2
+        endif
+
+        hwstk = self%gq * fo(i,j,k)
+        vdw = self%gw3 * t3nhe(i,j,k)
+        hwlor = self%ga + resont + vdw
+
+        hfwid = max(1/idf, hwlor, hwstk) ! defines where we switch from Voigt to adding
+
+        ref = tol * cont(f0,i,j,k)
+        do f=f0, iblue
+          q = qq(f) - v
+          if (lymanalf) then
+            call lyman_voigt(self, q, hwlor, resont, t, e, nh1, hfwid, hwstk, idf, phi)
+          else
+            call hvoigt(self, q, hwlor, t, e, hfwid, hwstk, idf, phi)
+          endif
+          lchi = phi * cf
+          chi(f,i,j,k) = chi(f,i,j,k) + lchi
+          if (lchi < ref) exit
+        end do
+        
+        do f=f0-1, ired, -1
+          q = qq(f) - v
+          if (lymanalf) then
+            call lyman_voigt(self, q, hwlor, resont, t, e, nh1, hfwid, hwstk, idf, phi)
+          else
+            call hvoigt(self, q, hwlor, t, e, hfwid, hwstk, idf, phi)
+          endif
+          lchi = phi * cf
+          chi(f,i,j,k) = chi(f,i,j,k) + lchi
+          if (lchi < ref) exit
+        end do
       endif
-  
-      hwstk = self%gq * fo(i,j,k)
-      vdw = self%gw3 * t3nhe(i,j,k)
-      adamp = self%ga + resont + vdw + hwstk
-  
-      hfwid = 1/idf + adamp ! defines where we switch from Voigt to adding
-
-      ref = tol * cont(f0,i,j,k)
-
-      do f=f0, iblue
-        q = qq(f) - v
-        if (lymanalf) then
-          call lyman_voigt(self, q, adamp, resont, t, e, nh1, hfwid, hwstk, idf, phi)
-        else
-          call hvoigt(self, q, adamp, t, e, hfwid, hwstk, idf, phi)
-        endif
-        lchi = phi * cf
-        chi(f,i,j,k) = chi(f,i,j,k) + lchi
-        if (lchi < ref) exit
-      end do
-      
-      do f=f0-1, ired, -1
-        q = qq(f) - v
-        if (lymanalf) then
-          call lyman_voigt(self, q, adamp, resont, t, e, nh1, hfwid, hwstk, idf, phi)
-        else
-          call hvoigt(self, q, adamp, t, e, hfwid, hwstk, idf, phi)
-        endif
-        lchi = phi * cf
-        chi(f,i,j,k) = chi(f,i,j,k) + lchi
-        if (lchi < ref) exit
-      end do
     end do
     end do
     end do
   END SUBROUTINE add_lte_h_opacities
 
   !====================================================================================
-  SUBROUTINE hvoigt (self, q, adamp, temp, ne, hfwid, hwstk, idf, phi)
+  SUBROUTINE convolve_h_profiles (self, q, temp, ne, idf, nh1, vbarh, fo, t3nhe, phis)
+    class(bbtrans_type), intent(in)  :: self
+    real(8), intent(in) :: q(:)
+    real(4), intent(in) :: temp, ne, idf, nh1, vbarh, fo, t3nhe
+    !integer, parameter :: n=256, nh=16
+    integer, parameter :: n=512, nh=8
+    real(4) :: qgrid(n)
+    real(4) :: vgt(n), stk(n), con(n), c
+    real(4), intent(inout) :: phis(:)
+    real(4) :: a, d, xv, resont, hwstk, vdw, hwlor, hfwid
+    real(4) :: qstep
+    integer :: i, j, k
+    !----------------------------------------------------------------------------------
+    resont = nh1 * self%gw1
+    if (self%gw2 /= 0) then
+      resont = resont * vbarh**self%gw2
+    endif
+
+    hwstk = self%gq * fo
+    vdw = self%gw3 * t3nhe
+    hwlor = self%ga + resont + vdw
+
+    hfwid = max(1/idf, hwlor, hwstk) ! defines where we switch from Voigt to adding
+
+    qstep = 2*nh/real(n)*hfwid
+    do i=1, n
+      qgrid(i) = -nh*hfwid + i*qstep
+    end do
+
+    do i=1, n
+      stk(i) = stark1(self%i,self%j,dble(qgrid(i)),self%nu0,temp,ne,hwstk)
+    end do
+
+    a = hwlor * idf * over_4pi
+
+    !  Including fine structure
+    vgt = 0.0
+    do j=1, self%io
+      do i=1, n
+        d = (qgrid(i) - self%dq(j)) * idf
+        xv = voigt_function2(a,d) * idf
+        vgt(i) = vgt(i) + self%wt(j)*xv
+      end do
+    end do
+
+    ! Compute convolution of Voigt and Stark profiles
+    do i = 1, n
+      c = 0.0
+      do j = 1, n
+        k = i - j + n/2
+        
+        if (k >= 1 .and. k <= n) then
+          c = c + vgt(j) * stk(k)
+        end if
+      end do
+      con(i) = c * qstep
+    end do
+
+    !print *, sum(vgt)*qstep, sum(stk)*qstep, sum(con)*qstep
+    call interp1d_sorted(qgrid, con, q, phis, fill=0.)
+  END SUBROUTINE convolve_h_profiles
+
+  !====================================================================================
+  SUBROUTINE hvoigt (self, q, hwlor, temp, ne, hfwid, hwstk, idf, phi)
     class(bbtrans_type), intent(in)  :: self
     real(8), intent(in) :: q
-    real(4), intent(in) :: adamp, temp, ne, hfwid, hwstk, idf
+    real(4), intent(in) :: hwlor, temp, ne, hfwid, hwstk, idf
     real(4), intent(out) :: phi
     real(4) :: a, d, xv
     integer :: i
@@ -227,10 +300,10 @@ contains
     if (abs(q) > hfwid) then
       !  Treat stark broadening separately
       phi = stark1(self%i,self%j,q,self%nu0,temp,ne,hwstk)
-      a = adamp - hwstk
+      a = hwlor
     else
       phi = 0.d0
-      a = adamp
+      a = hwlor + hwstk
     endif
 
     a = a * idf * over_4pi
@@ -244,10 +317,10 @@ contains
   END SUBROUTINE
 
   !====================================================================================
-  SUBROUTINE lyman_voigt (self, q, adamp, resont, temp, ne, tothi, hfwid, hwstk, idf, phi)
+  SUBROUTINE lyman_voigt (self, q, hwlor, resont, temp, ne, tothi, hfwid, hwstk, idf, phi)
     class(bbtrans_type), intent(in)  :: self
     real(8), intent(in) :: q
-    real(4), intent(in) :: adamp, resont, temp, ne, tothi, hfwid, hwstk, idf
+    real(4), intent(in) :: hwlor, resont, temp, ne, tothi, hfwid, hwstk, idf
     real(4), intent(out) :: phi
     real(4) :: a, d, xv
     real(4) :: xfac, xlymanh2
@@ -278,12 +351,11 @@ contains
         !  (below) at -4000 cm^-1 (62 A) detuning. A linear transition is used.
         xfac = 1.0
         if (q < 0) xfac = xfac + 0.13*q/q4000
-        !adamp = adamp + (xfac*resont + vdw*t3nhe)
         a = a + xfac*resont
       endif
       a = a * idf
     else
-      a = adamp
+      a = hwlor + hwstk
     endif
 
     phi = 0.d0
@@ -468,7 +540,7 @@ contains
     real(4), intent(in) :: t3nhe
     real(4), intent(in) :: idf
     real(8) :: hprofl
-    real(4) :: vdw, resont, hwstk, hfwid, adamp, phi
+    real(4) :: vdw, resont, hwstk, hfwid, hwlor, phi
     !---------------------------------------------------------------------------
     hwstk = self%gq * fo
 
@@ -482,10 +554,10 @@ contains
     !  and use voigt function
 
     vdw = self%gw3 * t3nhe
-    adamp = self%ga + resont + vdw + hwstk
+    hwlor = self%ga + resont + vdw
 
-    hfwid = 1/idf + adamp ! defines where we switch from Voigt to adding
-    call hvoigt(self, q, adamp, temp, ne, hfwid, hwstk, idf, phi)
+    hfwid = max(1/idf, hwlor, hwstk) ! defines where we switch from Voigt to adding
+    call hvoigt(self, q, hwlor, temp, ne, hfwid, hwstk, idf, phi)
     hprofl = phi
   END FUNCTION hprofl
   
@@ -506,7 +578,7 @@ contains
     integer, save :: n1=0, m1=0, ifins
     logical, save :: lymanalf
     real(4), save :: vdw, resont, radamp, stark, xknm
-    real(4) :: hwstk, vbarh, hwlor, t3nhe, hfwid, xfac, xlymanh2, adamp, d
+    real(4) :: hwstk, vbarh, hwlor, t3nhe, hfwid, xfac, xlymanh2, a, d
     real(8) :: nu, q4000, fo, htotal, xv, xstark, xholt4000, sat4000
 
     !  Most model atmosphere codes include Rayleigh scattering by H atoms
@@ -535,21 +607,21 @@ contains
     t3nhe = (temp/10000.)**0.3 * he1frc
     vdw = self%gw3 * t3nhe
     radamp = self%ga
-    hwlor = resont + radamp + vdw + hwstk
+    hwlor = resont + radamp + vdw
 
     !  Assume for core stark is approx lorentzian
     !  and use voigt function
     
-    hfwid = 1/inv_df + hwlor ! defines where we switch from Voigt TO adding
+    hfwid = max(1/inv_df, hwlor, hwstk) ! defines where we switch from Voigt TO adding
     q4000 = -4000./LyA0
 
-    adamp = 0
+    a = 0
     if (abs(q) > hfwid) then
       !  Lyman alpha:
       if (q > rayqcut) then
         !  Natural broadening
         !  This is cut at some specified detuning in the red.
-        adamp = radamp*(q+1d0)**2
+        a = radamp*(q+1d0)**2
       endif
       if (q > q4000) then
         !  Self broadening of Lyman alpha:
@@ -562,13 +634,12 @@ contains
         !  (below) at -4000 cm^-1 (62 A) detuning. A linear transition is used.
         xfac = 1.0
         if (q < 0) xfac = xfac + 0.13*q/q4000
-        !adamp = adamp + (xfac*resont + vdw*t3nhe)
-        adamp = adamp + xfac*resont
+        a = a + xfac*resont
       endif
     else
-      adamp = hwlor             ! VOIGT "a"
+      a = hwlor + hwstk            ! VOIGT "a"
     endif
-    adamp = adamp * inv_df
+    a = a * inv_df
 
     !  HTOTAL is the profile.
     htotal=0.d0
@@ -578,7 +649,7 @@ contains
       d = (q - self%dq(i)) * inv_df
       !  if INSIDE HFWID WE USE VOIGT FUNCTION WITH DOP, STARK AND LOR
       !  if OUTSIDE JUST ADD THE DOPPLER PART - REST IS ADDED LATER IN DETAIL
-      xv = voigt_function2(adamp,d) * inv_df
+      xv = voigt_function2(a,d) * inv_df
       htotal = htotal + self%wt(i)*xv
     end do
 
@@ -948,17 +1019,17 @@ contains
     DATA beta/1.,1.259,1.585,1.995,2.512,3.162,3.981,5.012,6.310,  &
          7.943,10.,12.59,15.85,19.95,25.12/
     !---------------------------------------------------------------------------
+    b2=b*b
+    sb=sqrt(b)
+
     if(b > 500.) then
       !  Very large B
-      b2=b*b
-      holtsmark=(1.5/sqrt(b)+27./b2)/b2
+      holtsmark=(1.5/sb + 27./b2)/b2
       return
     end if
 
     !  Other cases
     corr=1.
-    b2=b*b
-    sb=sqrt(b)
     indx=7
     mmn=m-n
     if(n <= 3.and.mmn <= 2) indx=2*(n-1)+mmn

@@ -35,6 +35,7 @@ PI = 3.14159265359
 SBOL = 5.6704e-5
 XMH = 1.67339e-24
 CC_KMS  = 299792.458 # VELOCITY OF LIGHT (KM/S)
+RYDV = 13.605
 
 HCE = HH*CC/EE*1e8
 HC2 = 2.*HH*CC *1e24
@@ -174,7 +175,9 @@ def get_weq(xx, yy, method='gauss', return_err=False, plot=False,
 
 #=====================================================================
 def planck(lam, temp):
-    return HC2/lam**3/(np.exp(HCK/np.outer(temp, lam)) - 1)
+    Bnu =  HC2/lam**3/(np.exp(HCK/(lam*temp[...,None])) - 1)
+    Bnu = np.moveaxis(Bnu, -1, 0)
+    return Bnu
 
 #=====================================================================
 def vacuum2obs(vac):
@@ -894,6 +897,13 @@ def scatter_density(xx, yy, radius=0, cmap='binary', vmin=0, vmax=None, aspect='
   fig = plt.gcf()
   nx, ny = fig.get_size_inches() * fig.get_dpi()
 
+  # Get the bounding box of the axes in figure-relative coordinates
+  bbox = plt.gca().get_position()
+
+  # Compute the size of the axes in inches
+  nx = bbox.width * nx
+  ny = bbox.height * ny
+
   nx = np.ceil(nx).astype(int)
   ny = np.ceil(ny).astype(int)
   dx = (xmax - xmin) / (nx-1)
@@ -1227,7 +1237,8 @@ def tbdfits(file, ext=None, survey=None, verbose=True):
     return lam, flux, header
 
 #=====================================================================
-def subplot_labels(ax, xlabel=None, ylabel=None):
+def subplot_labels(ax=None, xlabel=None, ylabel=None):
+  if ax == None: ax = plt.gca()
   sub = ax.get_subplotspec()
   grid = sub.get_gridspec()
   if xlabel is not None:
@@ -1378,3 +1389,14 @@ def sort_cntm(yy):
   p = np.polyfit(np.arange(half.size), half, 1)
   norm = 1 / np.polyval(p, half.size + sorted.size // 8)
   return norm
+
+#=====================================================================
+def adjust_max_xticks():
+    ax = plt.gca()
+    transform = ax.transData.inverted()
+    xticklabels = ax.get_xticklabels()
+    widths = [label.get_window_extent().transformed(transform).width for label in xticklabels]
+    axwidth = ax.get_window_extent().transformed(transform).width
+    if np.sum(widths) > axwidth:
+        n = np.floor(axwidth / np.mean(widths))
+        ax.xaxis.set_major_locator(plt.MaxNLocator(n))

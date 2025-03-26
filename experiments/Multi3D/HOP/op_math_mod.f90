@@ -267,16 +267,24 @@ contains
   END FUNCTION normspace
 
   !===============================================================================
-  SUBROUTINE interp1d_sorted (xx, yy, newx, newy)
+  SUBROUTINE interp1d_sorted (xx, yy, newx, newy, fill)
     real(8), dimension(:), intent(in) :: newx
     real(4), dimension(:), intent(in) :: xx, yy
     real(4), dimension(:), intent(out) :: newy
     real(4) :: m
-    integer :: ii, i, nnew, nold
-    logical :: p
+    real(4), optional :: fill
+    integer :: ii, i, nnew, nold, left, right
     !-----------------------------------------------------------------------------
     nnew = size(newx, 1)
     nold = size(xx, 1)
+    
+    if (present(fill)) then
+      left = fill
+      right = fill
+    else
+      left = yy(1)
+      right = yy(nold)
+    endif
   
     i = 1
     do ii=1, nnew
@@ -289,10 +297,10 @@ contains
       end do
   
       if (i == nold) then
-        newy(ii:nnew) = yy(i)
+        newy(ii:nnew) = right
         exit
       elseif (xx(1) > newx(ii)) then
-        newy(ii) = yy(1)
+        newy(ii) = left
       else
         m = (yy(i+1) - yy(i)) /  (xx(i+1) - xx(i))
         newy(ii) = m * (newx(ii) - xx(i)) + yy(i)

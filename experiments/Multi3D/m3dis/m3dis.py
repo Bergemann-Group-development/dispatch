@@ -16,6 +16,7 @@ from matplotlib.ticker import MultipleLocator
 from matplotlib.colors import LogNorm
 import os
 import copy
+import textwrap
 
 def option(nml, key):
     if key in nml.keys():
@@ -50,8 +51,13 @@ class m3dis(object):
         if os.path.isfile(sfolder + 'all_lam.bin'):
             self.all_lam = vacuum2obs(np.fromfile(sfolder + 'all_lam.bin', dtype=np.float64))[::-1]
         
+        self.has_spectrum = hasattr(self, 'lam')
+        if self.has_spectrum:
+            if len(self.lam) == 0: self.has_spectrum = False
+            if self.nml['m3d_params']['long_scheme'].strip() == 'none': self.has_spectrum = False
+
         self.read_atom(read_atom, fast_read, verbose, **kwargs)
-        self.has_spectrum = hasattr(self, 'lam') and not self.nml['m3d_params']['long_scheme'].strip() == 'none'
+
 
         file = folder + 'angle_quadrature.txt'
         if os.path.isfile(file):
@@ -207,7 +213,7 @@ class m3dis(object):
                     self.atom.run = self
                     if not hasattr(self, 'in_lines'): self.in_lines = slice(None, self.atom.nline)
 
-                    if hasattr(self, 'lam'):
+                    if self.has_spectrum:
                         self.line = self.atom.trans[self.in_lines]
 
                         if option(self.nml['atom_params'], 'overlapping_bb_in_output'):
@@ -239,7 +245,7 @@ class m3dis(object):
                     self.nline = len(lines)
                     self.line = lines
 
-                    if hasattr(self, 'lam'):
+                    if self.has_spectrum:
                         if not option(self.nml['atom_params'], 'overlapping_bb_in_output'):
                             nnu = self.lam.size
                             ib, ir = self.atom.get_non_overlapping_indices(self.line, nnu, nq_fac)
@@ -383,6 +389,7 @@ class m3dis(object):
 
         plt.xlim(xmin, xmax)
         plt.ticklabel_format(useOffset=False)
+        adjust_max_xticks()
 
     #=====================================================================
     def set_yaxis(self, ang, imu, norm, per_aa=False, renorm=None, set_labels=True):
@@ -570,6 +577,9 @@ class m3dis(object):
 
         xx = newx
 
+        if per_aa:
+            yy = yy * CC / (xx**2) * 1e8
+
         if lam0 is not None:
             offset = lam_offset and dlam is not None and dlam is not False
             if offset:
@@ -580,9 +590,6 @@ class m3dis(object):
                 if dlam is None or dlam is False:
                     xx = xx - 1
                 xx = xx * CC_KMS
-
-        if per_aa:
-            yy = yy * CC / (xx**2) * 1e8
 
         if fac is not None:
             yy = yy * fac
@@ -668,12 +675,16 @@ class m3dis(object):
         self.plot_surface(Z, ang=ang, **kwargs)
 
     #=====================================================================
-    def plot_surface(self, Z, ang=0, rasterized=True, shading='nearest', 
+    def plot_surface(self, Z, ang=None, rasterized=True, shading='nearest', 
                      show_labels=True, cmap='hot', rot90=0, **kwargs):
         #-----------------------------------------------------------------
         xx = self.xx + self.dx/2
         yy = self.yy + self.dy/2
-        mux, muy, muz = self.vec[ang]
+
+        if ang is None:
+            mux, muy, muz = (0.0, 0.0, 1.0)
+        else:
+            mux, muy, muz = self.vec[ang]
 
         for i in range(rot90):
             tmp = -xx
@@ -846,7 +857,7 @@ class m3dis(object):
                 dims = tuple([int(d) for d in info[2:]])
 
                 key = file.split('.')[0].split('_')[-1]
-                key = np.array([int(k) for k in [key[0:3], key[3:6]]])
+                key = np.array([int(k) for k in textwrap.wrap(key, 3)])
                 dct[tuple(key)] = np.memmap(folder + file, dtype=dtype, mode='r', shape=dims, order='F')
 
         meta.close()

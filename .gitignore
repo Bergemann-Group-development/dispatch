@@ -42,3 +42,4 @@ vtune*
 *.i90
 *.pdf
 *.txt
+*__genmod.f90

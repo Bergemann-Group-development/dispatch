@@ -43,6 +43,7 @@ MODULE composition_mod
         procedure :: Hoccupation_partition
         procedure :: molecule_by_id
         procedure :: element_by_id
+        procedure :: particle_by_id
         procedure :: trans_by_id
         procedure :: ion_by_id
         procedure :: absorption
@@ -667,7 +668,7 @@ contains
         class(composition_type) :: self
         class(ion_type), pointer :: ion
         class(molec_type), pointer :: mol
-        class(particle_type), pointer :: p
+        class(particle_type), pointer :: particle
         class(element_type), pointer :: element
         class(bbtrans_type), dimension(:), allocatable :: lines
         class(bbtrans_type), pointer :: line
@@ -704,35 +705,23 @@ contains
             read(mass_id, *) np, iso
             isotope = iso > 0
             ion_id = trim_between_words(ion_id)
-            nullify(mol)
-            nullify(p)
-            call self%ion_by_id(ion_id(1:6), ion)
-            ok = associated(ion)
+            nullify(particle)
+            call self%particle_by_id(ion_id(1:6), particle, verbose=.true.)
+            ok = associated(particle)
             
-            if (.not. ok) then
-                call self%molecule_by_id(ion_id(1:6), mol)
-                ok = associated(mol)
-            endif
-
-            if (associated(ion)) then
-                p => ion
-            elseif (associated(mol)) then
-                p => mol
-            endif
-            
-            if (associated(p) .and. isotope) then
-                if (associated(p%isotope)) then
-                    iso_idx = findloc(p%isotope%iso, iso, 1)
+            if (ok .and. isotope) then
+                if (associated(particle%isotope)) then
+                    iso_idx = findloc(particle%isotope%iso, iso, 1)
                     ok = iso_idx > 0
                 else
-                    ok = iso == nint(p%awgt)
+                    ok = iso == nint(particle%awgt)
                     isotope = .false.
                 endif
             endif
 
             if (.not. ok) then
-                if (associated(p) .and. isotope) then
-                    print *, p%id, ' isotope ', iso, ' not found!'
+                if (isotope) then
+                    print *, ion_id(1:6), ' isotope ', iso, ' not found!'
                 endif
                 do i=1, nline
                     read(lunit, *, iostat=iostat) ! skipping this ion
@@ -741,28 +730,28 @@ contains
                 cycle
             endif
             
-            p%in_linelist=.true.
+            particle%in_linelist=.true.
 
-            if (p%nline == 0) then
-                allocate(p%line(nline))
-                p%nline = nline
+            if (particle%nline == 0) then
+                allocate(particle%line(nline))
+                particle%nline = nline
                 prev = 0
             else
                 allocate(lines(nline))
-                lines = p%line
-                deallocate(p%line)
-                prev = p%nline
-                p%nline = p%nline + nline
-                allocate(p%line(p%nline))
-                p%line(1:prev) = lines
+                lines = particle%line
+                deallocate(particle%line)
+                prev = particle%nline
+                particle%nline = particle%nline + nline
+                allocate(particle%line(particle%nline))
+                particle%line(1:prev) = lines
                 deallocate(lines)
             endif
 
             do i=1, nline
-                line => p%line(prev+i)
+                line => particle%line(prev+i)
                 read(lunit,'(A)', iostat=iostat) line_text
 
-                if (p%id == 'H I') then
+                if (particle%id == 'H I') then
                     read(line_text, *, iostat=iostat2) lam0, line%i, line%j, line%lower_ev, upper_ev, line%loggf, label, line%ga
 
                     ! Stop if nothing has worked
@@ -790,16 +779,16 @@ contains
                     line%nu0 = CC / lam_vac
 
                     f = 10**line%loggf
-                    vbar2e4 = p%compute_vbar2(10000.)
+                    vbar2e4 = particle%compute_vbar2(10000.)
                     if (isotope) then
                         line%iso_idx = iso_idx
-                        vbar2e4 = p%isotope(iso_idx)%compute_vbar2(10000.)
-                        f = f * p%isotope(iso_idx)%frac
+                        vbar2e4 = particle%isotope(iso_idx)%compute_vbar2(10000.)
+                        f = f * particle%isotope(iso_idx)%frac
                     endif
 
                     call line%init_einstein_coefficients(f, 1.d0)
                     call line%prepare_Stark(line%gq)
-                    call line%prepare_VanderWaals(line%gv, j, p%xion, vbar2e4)
+                    call line%prepare_VanderWaals(line%gv, j, particle%xion, vbar2e4)
                 endif
                 allocate(line%used, source=.false.)
                 allocate(line%strength, source=0.d0)
@@ -2104,6 +2093,48 @@ contains
         endif
         call trace%end ()
     END SUBROUTINE ion_by_id
+
+    !===============================================================================
+    SUBROUTINE particle_by_id(self, id, particle, verbose, np, ion, mol)
+        class(composition_type), target :: self
+        class(element_type), pointer :: element
+        character(len=*), intent(in) :: id
+        class(particle_type), pointer, intent(out) :: particle
+        logical, intent(in), optional :: verbose
+        integer, intent(out), optional :: np, ion, mol
+        character(3) :: id1, id2
+        character(6) :: trim_id
+        integer :: idx, iostat
+        !---------------------------------------------------------------------------
+        call trace%begin ('composition_type%init')
+        particle => null()
+        read(id, *) id1
+        call self%element_by_id(id1, element)
+        if (.not. associated(element)) then ! molecule
+            id1 = uppercase(id1)
+            idx = findloc(self%molecules%id, id1, 1)
+            if (idx > 0) then
+                particle => self%molecules(idx)
+                if (present(mol)) mol = idx
+            endif
+        else ! ion
+            read(id, *) id1, id2
+            id1 = capitalize(id1)
+            id2 = uppercase(id2)
+            trim_id = trim(id1)//' '//trim(id2)
+            idx = findloc(element%ions%id, trim_id, 1)
+            if (idx > 0) then
+                idx = idx + (lbound(element%ions,1)-1)
+                particle => element%ions(idx)
+                if (present(np)) np = element%np
+                if (present(ion)) ion = idx
+            endif
+        endif
+        if (option(verbose) .and. .not. associated(particle)) then
+            print *, 'Particle id = ', id, ' is not recognised by opacity package.'
+        endif
+        call trace%end ()
+    END SUBROUTINE particle_by_id
 
     !===============================================================================
     SUBROUTINE trans_by_id(self, id, trans)

@@ -31,12 +31,12 @@ MODULE m3d_patch_mod
     USE ray_mod, only: one_dimensional, set_carlson_quadratures, set_radau_quadratures, set_lobatto_quadratures, &
                        set_gauss_quadratures, set_custom_quadratures, set_grid_quadratures
     USE m3d_debug_mod
-    USE bbtrans_mod, only: bbtrans_type, disable_stark, disable_vdw, disable_ga
+    USE bbtrans_mod, only: bbtrans_type
     USE bftrans_mod, only: h_occupation_probability
     USE element_mod, only: element_type
     USE ion_mod, only: ion_type
     USE molecule_mod, only: molec_type
-    USE hprofl_mod, only: hydrogen_BPO
+    USE hprofl_mod, only: hydrogen_BPO, stark_convolution
     USE, intrinsic :: ieee_arithmetic
     implicit none
     private
@@ -131,7 +131,7 @@ MODULE m3d_patch_mod
     real(8), public, save, dimension(:,:), allocatable:: vec, long_vec
     real(8), public:: convlim=1d-3, convmax=tiny(1.0)
     logical, public, save :: converged=.false., use_vel(3)=.true., premature_finish=.true.
-    logical, public, save :: preconditioning=.true., binned_opac=.false., save_Qrad=.false.
+    logical, public, save :: preconditioning=.true., binned_opac=.false.
     logical, public, save :: check_NaN=.false., save_resolved=.false.
     logical, public, save :: decouple_continuum=.true., sample_back_opac=.false.
     logical, public, save :: sample_back_opac_in_output=.false.
@@ -144,7 +144,8 @@ MODULE m3d_patch_mod
     logical, public, save :: Jnu_to_file=.true., amr=.true.
     logical, public, save :: rotate_atmos=.false., rotate_continuum=.false.
     logical, public, save :: make_eos=.false.
-    logical, public, save :: save_Inu=.false., save_chi=.false., save_Snu=.false.
+    logical, public, save :: save_Inu=.false., save_chi=.false.
+    logical, public, save :: save_Snu=.false., save_Jnu=.false.
     real(8), public, save :: dlam=100.
     real(8), public, dimension(:), allocatable :: rank_lvlerr
     character(len=128), save :: save_patch_kind=''
@@ -168,12 +169,13 @@ MODULE m3d_patch_mod
     n_nu, maxiter, ilambd, lvlcheck, comoving_frame, save_id, &
     check_NaN, custom_mu, lse_no_pivot, save_patch_kind, cswitch, &
     print_finished, print_start, print_send, ray_offset, print_download, &
-    lse_solver, decouple_continuum, m1d_legacy_mode, nu_tolerance, disable_stark, &
-    disable_vdw, disable_ga, pivot_z, use_vel, save_Qrad, save_resolved, rotate_continuum, &
+    lse_solver, decouple_continuum, m1d_legacy_mode, nu_tolerance, &
+    pivot_z, use_vel, save_resolved, rotate_continuum, &
     absmet_in_output, print_lock, make_eos, ng_step, ng_start, scattering_absorption, &
-    column_by_column, rotate_atmos, Jnu_to_file, preconditioning, save_inu, save_chi, save_Snu, &
+    column_by_column, rotate_atmos, Jnu_to_file, preconditioning, &
+    save_inu, save_chi, save_Snu, save_Jnu, &
     long_scheme, long_ntheta, long_nphi, short_scheme, short_ntheta, short_nphi, &
-    long_solver, fixed_Jnu, hydrogen_BPO
+    long_solver, fixed_Jnu, hydrogen_BPO, stark_convolution
 
   contains
   
@@ -203,12 +205,6 @@ MODULE m3d_patch_mod
       rotate_atmos = rotate_atmos .and. .not. (one_dimensional .or. column_by_column)
       short_scheme = lowercase(short_scheme)
       long_scheme = lowercase(long_scheme)
-      !-------------------------------------------------------------------------
-      ! No scattering in absorption if make_eos
-      !-------------------------------------------------------------------------
-      if (make_eos) then
-        scattering_absorption = .false.
-      endif
       !-------------------------------------------------------------------------
       ! Assign angles and integration weights
       !-------------------------------------------------------------------------
@@ -271,6 +267,8 @@ MODULE m3d_patch_mod
         ! taking the top as the pivot plane
         pivot_z = self%patch%box(3)
       endif
+
+      Jnu_to_file = (ilambd > 0) .and. (Jnu_to_file .or. save_Jnu)
 
       if (ng_step > 0) then
         if (ng_step < 3) then

@@ -4268,7 +4268,7 @@ SUBROUTINE get_meta_name(self, filename, folder, label, key, run_dir)
   else
     write(folder, '(A, A)') trim(io%run_dir), '/save/'
   endif
-  call replace_char(label, ' ', '_')
+  call replace_char(label(1:len_trim(label)), ' ', '_')
   write(filename, '(A, A, 3(I3.3))') trim(label), '_', abs(k)
   write(filename, '(A, A)') trim(filename), '.bin'
 END SUBROUTINE get_meta_name

@@ -10,8 +10,8 @@ MODULE atom_patch_mod
     USE handyfuncs_mod
     USE atom_mod, only: atom_type, atomic_spectrum_type, use_classic_col, kramer_bf, &
                         red_cut, blue_cut, logf_cut, atom_data_t, m1d_legacy_mode, &
-                        nq_fac, nq_min, nq_max, disable_bf, disable_bb, level_partf
-    USE coll_mod, only: cbbesc, cbfesc, cbbhsc, cbfhsc
+                        nq_fac, nq_min, nq_max, disable_bf, disable_bb, level_partf, &
+                        fmin, cbbesc, cbfesc, cbbhsc, cbfhsc
     USE trans_mod, only: line_type, cont_type, transition_type
     USE const_mod, only: CC
     USE ion_mod, only: ion_type, particle_type, debye_shield, massive_type
@@ -73,6 +73,7 @@ MODULE atom_patch_mod
     character(len=256), save :: precomputed_depart=''
     character(len=256), public :: atom_file=''
     logical, public, save :: external_sp=.false.
+    real(8) :: tmax_update=1.0d7
 
     !-----------------------------------------------------------------------------
   
@@ -119,7 +120,7 @@ MODULE atom_patch_mod
     exclude_from_line_list, precomputed_depart, use_classic_col, kramer_bf, overlapping_bf, &
     overlapping_bb, detailed_absmet, n_cntrbf, convmax, premature_finish, &
     pandas_format, save_populations, nq_fac, nq_min, nq_max, cbbesc, cbfesc, cbbhsc, cbfhsc, &
-    disable_bf, disable_bb, overlapping_bb_in_output, save_rates
+    disable_bf, disable_bb, overlapping_bb_in_output, save_rates, fmin
     namelist /line_mask/ in_lines, cntrbf_lines
     !-----------------------------------------------------------------------------
     call trace%begin('atom_patch_t%pre_init_atom', itimer=itimer)
@@ -155,6 +156,7 @@ MODULE atom_patch_mod
       if (pandas_format) then
         level_partf = .false.
         call atom%read_pandas(atom_file, qnorm, in_lines=in_lines)
+        call atom%set_colliders(composition)
       else
         call atom%read(atom_file, qnorm, in_lines=in_lines, read_coll=.true.)
       endif
@@ -335,7 +337,7 @@ MODULE atom_patch_mod
       call self%save_abundance_to_file()
     endif
 
-    if (associated(molec)) atom%tmax_update = comp%tmolim
+    if (associated(molec)) tmax_update = comp%tmolim
     if (associated(element)) call atom%check_ionisation_thresholds(element)
     call atom%compute_lte_populations(adata%nstar, adata%totn, real(comp%temp), real(comp%lsaha), real(dxi), element, molec)
     call trace%end(itimer)
@@ -720,11 +722,10 @@ MODULE atom_patch_mod
     class(transition_type), pointer :: trans
     integer, dimension(3) :: ep
     real(8), dimension(:), pointer :: Gij, Gji
-    real(8), dimension(:), pointer :: n, nstar
     real(8), dimension(:,:,:,:), target :: gamma_ij, gamma_ji
     real(4), dimension(:,:,:), allocatable :: cij, cji
     integer :: x, y, z, i, j, ii, ipos, il, nx, ny, nz, it, jt
-    real(8) :: temp, ne, global, totn, nh1
+    real(8) :: global
     integer, save :: itimer=0
     ! ----------------------------------------------------------------------------
     call trace%begin('atom_patch_t%update_populations', itimer=itimer)
@@ -750,17 +751,11 @@ MODULE atom_patch_mod
     do z=1, nz
       do y=1, ny
         do x=1, nx
-          ne    = self%composition%ne(x,y,z)
-          temp  = self%composition%temp(x,y,z)
-          nh1   = self%composition%elements(1)%ions(1)%levels(1)%n(x,y,z)
-          totn  =  atom%data%totn  (x,y,z)
-          n     => atom%data%n     (x,y,z,:)
-          nstar => atom%data%nstar (x,y,z,:)
-          Gij   => gamma_ij   (x,y,z,:)
-          Gji   => gamma_ji   (x,y,z,:)
+          Gij => gamma_ij(x,y,z,:)
+          Gji => gamma_ji(x,y,z,:)
 
-          if (totn > 0) then
-            call atom%solve_stat_equilibrium(temp, ne, totn, n, nstar, nh1, Gij, Gji, cswitch, check_NaN, z)
+          if (atom%data%totn(x,y,z) > 0 .and. self%composition%temp(x,y,z) < tmax_update) then
+            call atom%solve_stat_equilibrium(self%composition, x,y,z, Gij, Gji, cswitch, check_NaN, z)
 
             ! keep track of maximum population change
             do ii=1,atom%nlevel

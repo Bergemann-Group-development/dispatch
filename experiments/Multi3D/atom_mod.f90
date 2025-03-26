@@ -4,13 +4,14 @@ MODULE atom_mod
     USE handyfuncs_mod
     USE prec_mod, only: inf8
     USE const_mod
-    USE coll_mod
     USE trans_mod
     USE mmath_mod, only: refsor, unista
     USE op_math_mod, only: lineq, get_interval, eqsyst, lineq_no_pivot
-    USE ion_mod, only: ion_type, massive_type, debye_shield, massive_type
+    USE level_mod, only: state_type
+    USE ion_mod, only: ion_type, massive_type, debye_shield, massive_type, particle_type
     USE element_mod, only: element_type, isotope_type
     USE molecule_mod, only: molec_type
+    USE composition_mod, only: composition_type
     USE os_mod
     USE trace_mod
     USE spectrum_mod, only: spectrum_type, set_weights, nu_tolerance
@@ -72,7 +73,6 @@ MODULE atom_mod
   
       real(8) :: abnd ! abundance ( in the [hydrogen]=12 scale)
       !real(8) :: awgt ! atomic weight [g]
-      real(8) :: tmax_update=1.0d7
   
       real(8), dimension(:), allocatable :: ev ! energy of level above ground state [eV]
       real(8), dimension(:), allocatable :: g ! multiplicity of level
@@ -109,10 +109,27 @@ MODULE atom_mod
       procedure :: prepare_damping
       procedure :: prepare_Drawin
       procedure :: classic_col
+      procedure :: gencol
+      procedure :: set_colliders
       procedure :: copy_to
       procedure :: link_transitions
     end type atom_type
 
+    type coll_type
+      character(len=16) :: key ! transition type 
+      integer :: nc ! size of coefficient grid
+      integer :: ll,ul ! lower/upper level for transition
+      integer :: itemp
+      integer :: dir=0
+      logical :: log = .false.
+      integer :: np=0, ion=0, mol=0 ! collider identification
+    end type coll_type
+
+    character(len=8), dimension(7), parameter :: theprocesses = &
+    (/'OHMEGA  ','CI      ','CH      ','CE      ', &
+      'OHM     ','CH0     ','CHI     '/)
+
+    real(8), public :: cbbesc=1., cbfesc=1., cbbhsc=1., cbfhsc=1.
     logical, public :: use_classic_col = .False., m1d_legacy_mode=.False.
     logical, public :: lse_no_pivot = .True., kramer_bf=.False.
     logical, public :: disable_bf=.False., disable_bb=.False.
@@ -133,28 +150,26 @@ MODULE atom_mod
   contains
   
   !====================================================================================
-  SUBROUTINE solve_stat_equilibrium (self, temp, ne, totn, n, nstar, nh1, gamma_ij, gamma_ji, cswitch, check_NaN, k)
+  SUBROUTINE solve_stat_equilibrium (self, comp, x,y,z, gamma_ij, gamma_ji, cswitch, check_NaN, k)
     class(atom_type), target :: self
+    class(composition_type) :: comp
     class(transition_type), pointer :: trans
-    real(8), intent(in) :: temp, ne, totn, nh1
     real(8), dimension(:), intent(in) :: gamma_ij, gamma_ji
-    real(8), dimension(:), intent(in) :: nstar
-    real(8), dimension(:), intent(inout) :: n
     integer, intent(in) :: cswitch
     logical, intent(in) :: check_NaN
-    integer :: kr, pos, i, j, k
+    real(8), dimension(:), pointer :: n
+    real(8) :: totn
+    integer :: kr, pos, i, j, k, x,y,z
     integer, save :: itimer=0, itimer2=0
     logical :: zero_pop, abort
     logical, save :: first_time=.true.
     !------------------------------------------------------------------------------------
-    if (temp > self%tmax_update) then
-        self%data%e = 0.0d0
-        return
-    endif
+    totn = self%data%totn(x,y,z)
+    n => self%data%n(x,y,z,:)
 
     self%data%w=0.0d0
     self%data%e=0.0d0
-    
+
     ! Add radiative rates to W
     do kr=1, self%nrad
       if (kr <= self%nline) then
@@ -170,19 +185,15 @@ MODULE atom_mod
     enddo
 
     if (cswitch > 0) then
-      call trace%begin('gencol', itimer=itimer)
       self%data%c = 0.d0
 
       if (use_classic_col) then
-        call self%classic_col(temp,ne,nh1,nstar)
+        call self%classic_col(comp,x,y,z)
       endif
 
       if (associated(self%coll)) then
-        call gencol(self%coll,self%id,self%nlevel,self%g,self%ev,self%ion,&
-                    self%data%c,temp,ne,nstar,nh1,self%tgrid,self%cgrid,self%dcdt)
+        call self%gencol(comp,x,y,z)
       endif
-
-      call trace%end(itimer=itimer)
 
       !open(newunit=kr, file='debug.bin', form='unformatted')
       !write(kr) nstar
@@ -239,7 +250,6 @@ MODULE atom_mod
         end do
       end do
       if (abort) then
-        print *, 'Temp = ', temp
         print *, 'Totn  = ', totn
         stop
       endif
@@ -264,7 +274,6 @@ MODULE atom_mod
       do i=1,self%nlevel
         if (self%data%e(i) /= self%data%e(i)) then
           print *, 'NaN in error vector at i = ', i
-          print *, 'Temp  = ', temp
           stop
         endif
       end do
@@ -295,7 +304,6 @@ MODULE atom_mod
       do i=1,self%nlevel
         if (n(i) < 0) then
           print *, 'Below zero in populations at i = ', i
-          print *, 'Temp  = ', temp
           print *, n(i)
           print *, self%data%e(i)
           !print *, zero_pop, self%data%oldn(i)
@@ -744,9 +752,15 @@ MODULE atom_mod
 
       do i=1, ncol
         call nextentry(latom) 
-        read(latom,*) idx, key, l, u, self%cgrid(1:ntemp,i)
+        read(latom, *, iostat=iostat) idx, key, l, u, self%cgrid(1:ntemp,i)
+        call print_failed_line(latom, iostat)
         l = l+1
         u = u+1
+        if (u > l) then
+          tri = (u-1)*(u-2)/2 + l
+        else
+          tri = (l-1)*(l-2)/2 + u
+        endif
         
         if (l==u) then
           write(stdout, *) "ll==ul for process ", key, l, u
@@ -763,23 +777,24 @@ MODULE atom_mod
           abort = .true.
         endif
 
+        col => self%coll(i)
+        col%key = key
+
         select case(trim(key))
-        case('OHM','OHMEGA','CE','CH','CI','FIXRAT','CH0','CH_CE','CHI')
-          col => self%coll(i)
-          col%key = key
+        case('FOSC')
+          col%nc = 0
+          self%cdata(tri) = self%cgrid(1,i)
+        case default
           col%ll = l
           col%ul = u
 
-          select case(trim(key))
-          case('OHM','OHMEGA','CE','CI','CH0','CH_CE')
-            self%cgrid(1:ntemp,i) = log(self%cgrid(1:ntemp,i))
-          end select
+          self%cgrid(1:ntemp,i) = log(self%cgrid(1:ntemp,i))
+          col%log = .true.
           
           ! set derivatives for 3rd order hermite interpolation
           call hermite_derivative(self%dcdt(1:ntemp,i), self%tgrid(1:ntemp,1), self%cgrid(1:ntemp,i))
           col%nc = ntemp
           col%itemp = 1
-          tri = (col%ul-1)*(col%ul-2)/2 + col%ll
           !self%cdata(tri) = -1.0 ! flag non-classical recipe
 
           select case(trim(key))
@@ -794,10 +809,6 @@ MODULE atom_mod
             endif
             self%hcol(tri) = .true.
           end select
-        case('FOSC')
-          self%coll(i)%nc = 0
-          tri = (u-1)*(u-2)/2 + l
-          self%cdata(tri) = self%cgrid(1,i)
         end select
       end do
     endif
@@ -1282,16 +1293,8 @@ MODULE atom_mod
 
       ! MB  5.04.2018 - added CH0 keyword
       ! RH 25.03.2022 - added CHI keyword
-      case('OHM','OHMEGA','CE','CH','CI','FIXRAT','CH0','CH_CE','CHI')
+      case('OHM','OHMEGA','CE','CH','CI','CH0','CHI')
         nc = ntemp
-      case('AR85-CEA','BURGESS') 
-        nc = 1
-      case('AR85-RR') 
-        nc = 2
-      case('AR85-CH','AR85-CH+','AR85-CHE','AR85-CHP','AR85-CHE+') 
-        nc = 6
-      case('SHULL82') 
-        nc = 8
 
       case default
         if (.not.is_valid_process(key)) then
@@ -1319,13 +1322,14 @@ MODULE atom_mod
           abort = .true.
         else
           select case(trim(key))
-          case('OHM','OHMEGA','CE','CI','CH0','CH_CE')
+          case('OHM','OHMEGA','CE','CI','CH0')
             self%cgrid(1:ntemp,i) = log(self%cgrid(1:ntemp,i))
+            col%log = .true.
           end select
         endif
 
         select case(trim(key))
-        case('OHM','OHMEGA','CE','CH','CI','FIXRAT','CH0','CH_CE','CHI')
+        case('OHM','OHMEGA','CE','CH','CI','CH0','CHI')
           ! set derivatives for 3rd order hermite interpolation
           call hermite_derivative(self%dcdt(1:ntemp,i), tgrid(1:ntemp), self%cgrid(1:ntemp,i))
           col%itemp = itemp
@@ -1440,14 +1444,14 @@ MODULE atom_mod
   END SUBROUTINE prepare_Drawin
 
   !====================================================================================
-  SUBROUTINE classic_col(self,temp,ne,nh1,nstar)
+  SUBROUTINE classic_col(self, comp, x, y, z)
     class(atom_type), intent(inout) :: self
-    real(8), intent(in) :: temp, ne, nh1
-    real(8), dimension(:), intent(in) :: nstar
+    class(composition_type) :: comp
+    real(8) :: temp, ne, nh1
     real(8) :: ni, nj, nij, cup, cdn, e_kT, divu
     real(8) :: dxi, dev, ex, u0, f, tmp, sqt, fac, nu0
     real(8) :: seaton, allen, regemorter
-    integer :: i,j, ii, jj, tri, n
+    integer :: x, y, z, i, j, ii, jj, tri, n
     logical :: cont
     logical, save :: first_time=.true.
     real(8), parameter :: sq32 = sqrt(3.d0) / (2.d0)
@@ -1455,22 +1459,23 @@ MODULE atom_mod
     real(8), parameter :: sq8bmp = sqrt(8*BK/EM/PI)
     real(8), parameter :: c0 = PI*Rbohr**2 * sq8bmp
     real(8), parameter :: cseaton = sq8bmp/sq32/(1.d0/137.d0)*Rydk !1.55e13
+    integer, save :: itimer=0
     !---------------------------------------------------------------------
-    if (debye_shield) then
-      dxi = 4.98e-4*5040./temp*sqrt(ne*bk*temp)
-    else
-      dxi = 0
-    endif
+    call trace%begin('classic_col', itimer=itimer)
+    dxi = comp%dxi(x,y,z)
+    temp = comp%temp(x,y,z)
+    ne = comp%ne(x,y,z)
+    e_kT = comp%e_kT(x,y,z)
+    nh1 = comp%elements(1)%ions(1)%levels(1)%n(x,y,z)
     sqt = sqrt(temp)
     ! See Hubeny % Mihalas 2014, p. 276 for these recipes
     allen = c0 * Rydk * ne / sqt
     regemorter = 14.5 * allen * Rydk / e_k
     seaton = 1.55e13 * ne / sqt
-    e_kT = e_k / temp
 
     n = 0
     do i=1, self%nlevel
-      ni = nstar(i)
+      ni = self%data%nstar(x,y,z,i)
       do j=i+1, self%nlevel
         tri = (j-1)*(j-2)/2 + i
 
@@ -1480,7 +1485,7 @@ MODULE atom_mod
         cont = self%ion(j) > self%ion(i)
         if (.not. self%ecol(tri) .or. .not. self%hcol(tri)) then
           fac = self%cdata(tri)
-          nj = nstar(j)
+          nj = self%data%nstar(x,y,z,j)
           nij = ni / nj
 
           dev = self%ev(j) - self%ev(i)
@@ -1521,10 +1526,12 @@ MODULE atom_mod
               !endif
               cup = cup * cbbesc
             endif
-            cdn = cup * nij
-            self%data%c(j,i) = self%data%c(j,i) + cup ! upward rate
-            self%data%c(i,j) = self%data%c(i,j) + cdn ! downward rate
-            n = n + 1
+            if (cup /= 0) then
+              cdn = cup * nij
+              self%data%c(j,i) = self%data%c(j,i) + cup ! upward rate
+              self%data%c(i,j) = self%data%c(i,j) + cdn ! downward rate
+              n = n + 1
+            endif
           endif
 
           ! collisions with hydrogen (Drawin)
@@ -1540,10 +1547,12 @@ MODULE atom_mod
               cup = cup * f
               cup = cup * cbbhsc
             endif
-            cdn = cup * nij
-            self%data%c(j,i) = self%data%c(j,i) + cup ! upward rate
-            self%data%c(i,j) = self%data%c(i,j) + cdn ! downward rate
-            n = n + 1
+            if (cup /= 0) then
+              cdn = cup * nij
+              self%data%c(j,i) = self%data%c(j,i) + cup ! upward rate
+              self%data%c(i,j) = self%data%c(i,j) + cdn ! downward rate
+              n = n + 1
+            endif
           endif
         endif
       end do
@@ -1552,6 +1561,7 @@ MODULE atom_mod
       first_time = .false.
       write(stdout, *) n, ' collisional transitions filled with classical recipes.'
     endif
+    call trace%end(itimer)
   END SUBROUTINE classic_col
 
   !===============================================================================
@@ -1960,6 +1970,260 @@ MODULE atom_mod
     a = (y1 - y0)/(x1 - x0)
     qjorg = a*(temp - x0) + b
   END FUNCTION qjorg
+
+  !====================================================================================
+  SUBROUTINE set_colliders(self, comp)
+    class(atom_type) :: self
+    class(composition_type) :: comp
+    class(particle_type), pointer :: collider
+    integer :: i, s, l
+    integer, save :: itimer=0
+    !---------------------------------------------------------------------
+    call trace%begin('atom_type%set_colliders', itimer=itimer)
+    do i=1, size(self%coll)
+      associate(col => self%coll(i))
+          select case (trim(col%key))
+          case ('CH','CHI','CH0','OHM','OHMEGA','CE','CI','FOSC')
+            ! no collider needed
+          case default
+            l = len(col%key)
+            s = index(lowercase(col%key), 'up')
+            if (s > 0) then
+                s = s + 2
+                col%dir = +1
+            else
+                s = index(lowercase(col%key), 'dn')
+                if (s > 0) then
+                  s = s + 2
+                  col%dir = -1
+                end if
+            endif
+            call comp%particle_by_id(trim(col%key(s:l)), collider, verbose=.true., &
+                                     np=col%np, ion=col%ion, mol=col%mol)
+          end select
+      end associate
+    end do
+    call trace%end(itimer)
+  END SUBROUTINE set_colliders
+
+  !====================================================================================
+  SUBROUTINE gencol(self, comp, x, y, z)
+    class(atom_type) :: self
+    class(composition_type) :: comp
+    character(8) :: key
+    real(8) :: temp, ne
+    real(8) :: ct, cup, cdn, dekt, de_k, de
+    real(8) :: stg, nji, fac, nh1, n_collider
+    real(8) :: lsaha, dxi, dev, tns, e_kT
+    integer :: x,y,z,ul,ll,i,j,k,iz, nhlevels, ii, jj, nc, itemp
+    real(8), parameter :: c0=((Eryd/sqrt(em)) * pi*Rbohr**2) * sqrt(8.0/(pi*bk))
+    integer, save :: itimer=0
+    !---------------------------------------------------------------------
+    call trace%begin('gencol', itimer=itimer)
+    ! get local copies for ease of notation
+    temp = comp%temp(x,y,z)
+    ne = comp%ne(x,y,z)
+    dxi = comp%dxi(x,y,z)
+    e_kT = comp%e_kT(x,y,z)
+    lsaha = comp%lsaha(x,y,z)
+    stg=sqrt(temp)
+    nh1 = comp%elements(1)%ions(1)%levels(1)%n(x,y,z)
+
+    ! loop over all the transitions
+    do i=1, size(self%coll, 1)
+      associate(col => self%coll(i))
+        if (col%nc == 0) cycle
+        cup=0.0d0
+        cdn=0.0d0
+        ll=col%ll
+        ul=col%ul
+
+        dev = self%ev(ul) - self%ev(ll)
+        if (self%ion(ul) > self%ion(ll)) then
+          ii = self%ion(ll) * (self%ion(ll)-1)
+          jj = self%ion(ul) * (self%ion(ul)-1)
+          dev = dev - dxi*0.5*(jj-ii)
+        endif
+
+        if (self%data%nstar(x,y,z,ll) > 0) then
+          nji = self%data%nstar(x,y,z,ul) / self%data%nstar(x,y,z,ll)
+        else
+          tns = - dev*e_kT + (self%ion(ul) - self%ion(ll))*lsaha
+          nji = self%g(ul)/self%g(ll) * exp(tns)
+        endif
+
+        nc = col%nc
+        if (nc > 0) then
+          itemp = col%itemp
+          call hermite_interpolation(ct,temp,self%tgrid(1:nc,itemp),self%cgrid(1:nc,i),self%dcdt(1:nc,i))
+
+          if (col%log) then
+              ct = exp(ct)
+          endif
+        endif
+
+        if (col%np /= 0) then
+          n_collider = comp%elements(col%np)%ions(col%ion)%n(x,y,z)
+        elseif (col%mol /= 0) then
+          n_collider = comp%molecules(col%mol)%n(x,y,z)
+        endif
+
+        key = trim(adjustl(col%key))
+        select case (key)
+        case('OHM','OHMEGA')
+          !  excitation of electron collisons with positive ions
+          cdn = c0 / self%g(ul) * ct * ne / stg
+          cup = cdn * nji
+
+        case('CE')
+          ! excitation of neutrals by electron collisions 
+          cdn = self%g(ll)/self%g(ul) * ct * ne * stg
+          cdn = cdn * cbbesc
+          cup = cdn * nji
+
+        case('CH')
+          ! b-b collisions with neutral hydrogen
+          ! these are downward rates (cdn); cup are upward rates
+          cdn = ct * nh1
+          cdn = cdn * cbbhsc
+          cup = cdn * nji
+
+        case('CHI')
+          ! b-f collisions with neutral hydrogen
+          ! these are upwards rates (cup); cdn are upward rates
+          cup = ct * nh1
+          cup = cup * cbfhsc
+          cdn = cup / nji
+
+        case('CI')
+          ! ionization by electron collisions
+          cup = ct * ne * stg * exp(-(self%ev(ul) - self%ev(ll))*e_kT)
+          cup = cup * cbfesc
+          cdn = cup / nji
+
+        case('CH0')
+          ! MB 5.04.2018 - charge transfer with H-, A+H <--> A+ + H-
+          ! these are upwards rates (CT ionisation or ion-pair formation)
+          ! also assumed for CI; but the difference is that CI downwards rates 
+          ! are computed from detailed balance (they are bi-directional);
+          ! CH0 are one-directional and the levels must be in the correct order
+          !  in the atom (, i.e. ll  --> lu for ioninisation)
+          ! in the QM papers, the inverse exothermic rates (neutralisation) 
+          ! are derived from the detailed balance
+          ! N_kj(T,E_k) = N_jk(t,E_k) * exp(-E_jk/ (k_B * T))
+          cup = ct * nh1
+          cdn = cup / nji
+
+        case default
+          if (col%dir == -1) then ! downwards transition
+            cdn = ct * n_collider
+            cup = cdn * nji
+
+          elseif (col%dir == 1) then ! upwards transition
+            cup = ct * n_collider
+            cup = cdn / nji
+          end if
+        end select
+
+        !********************************************************************
+
+        self%data%c(ul,ll) = self%data%c(ul,ll) + cup ! upward rate Cll->ul 
+        self%data%c(ll,ul) = self%data%c(ll,ul) + cdn ! downward rate Cul->ll
+      end associate
+    end do ! transition loop 
+    call trace%end(itimer)
+  END SUBROUTINE gencol
+
+  !====================================================================================
+  logical function is_valid_process(key)
+    character(len=8),intent(in) :: key
+    integer :: i
+    !---------------------------------------------------------------------
+    is_valid_process=.false.
+    do i=1,size(theprocesses)
+        if ( key(1:len_trim(key)) == trim(theprocesses(i)))  then
+          is_valid_process=.true.
+          exit
+        end if
+    end do
+  end function is_valid_process
+
+  !====================================================================================
+  ELEMENTAL FUNCTION expin (x) result(ex1)
+    real(8), intent(in) :: x
+    real(8) :: ex, ex1
+    real(8), parameter, dimension(6) :: &
+    a = [-44178.5471728217,57721.7247139444,9938.31388962037,    &
+          1842.11088668000,101.093806161906,5.03416184097568]
+    real(8), parameter, dimension(5) :: &
+    b = [76537.3323337614,32597.1881290275,6106.10794245759,     &
+          635.419418378382,37.2298352833327]
+    real(8), parameter, dimension(7) :: &
+    c = [ 4.65627107975096e-7,.999979577051595,9.04161556946329, &
+        24.3784088791317,23.0192559391333,6.90522522784444,     &
+          .430967839469389]
+    real(8), parameter, dimension(6) :: &
+    d = [10.0411643829054,32.4264210695138, 41.2807841891424,    &
+        20.4494785013794,3.31909213593302, .103400130404874]
+    real(8), parameter, dimension(7) :: &
+    e = [-.999999999998447,-26.6271060431811,-241.055827097015,  &
+        -895.927957772937,-1298.85688746484,-545.374158883133,  &
+          -5.66575206533869]
+    real(8), parameter, dimension(6) :: &
+    f = [28.6271060422192,292.310039388533,1332.78537748257,     &
+        2777.61949509163,2404.01713225909, 631.657483280800]
+    !---------------------------------------------------------------------
+    ex = exp(-x)
+    if (x > 4) then
+      ex1 = (ex+ex*(e(1)+(e(2)+(e(3)+(e(4)+(e(5)+(e(6)+e(7)/x)/x)/x)/x)/x)/x)/  &
+            (x+f(1)+(f(2)+(f(3)+(f(4)+(f(5)+f(6)/x)/x)/x)/x)/x))/x
+    elseif (x > 1) then
+      ex1 = ex*(c(7)+(c(6)+(c(5)+(c(4)+(c(3)+(c(2)+c(1)*x)*x)*x)*x)*x)*x)/      &
+            (d(6)+(d(5)+(d(4)+(d(3)+(d(2)+(d(1)+x)*x)*x)*x)*x)*x)
+    elseif (x > 0) then
+      ex1 = (a(1)+(a(2)+(a(3)+(a(4)+(a(5)+a(6)*x)*x)*x)*x)*x)/                  &
+            (b(1)+(b(2)+(b(3)+(b(4)+(b(5)+x)*x)*x)*x)*x) - log(x)
+    else
+      ex1 = 0.d0
+    endif
+  END FUNCTION expin
+
+  !====================================================================================
+  ELEMENTAL FUNCTION Kramer (nu, dev) result(hyd)
+    real(8), intent(in) :: nu, dev
+    real(8) :: nl, hyd
+    !---------------------------------------------------------------------
+    if (dev > 0) then
+      nl = sqrt(RydV/dev)
+      hyd = 2.815e29 * gaunt(nu,ceiling(nl)) / (nl**5 * nu**3)
+    else
+      hyd = 0.
+    endif
+  END FUNCTION Kramer
+
+  !====================================================================================
+  ELEMENTAL FUNCTION gaunt (nu, n)
+    real(8), intent(in) :: nu
+    integer, intent(in) :: n
+    real(8) :: gaunt
+    real(8), parameter, dimension(6) :: &
+    a1 = [ 1.078e00, 1.0926e0, 1.0983e0, 1.0954e0, 1.0912e0, 1.0925e0], &
+    b1 = [-8.754e14,-2.019e14,-9.45e13, -5.188e13,-3.2e13,  -2.331e13], &
+    c1 = [-1.791e29, 1.836e28, 9.177e27, 3.552e27, 1.576e27, 9.325e26], &
+    a2 = [ 0.798e00, 0.768e00, 0.793e00, 0.831e00, 0.758e00, 0.79e00],  &
+    b2 = [ 5.358e15, 6.242e15, 5.48e15,  4.094e15, 6.633e15, 5.808e15], &
+    c2 = [-3.484e31,-3.208e31,-2.318e31,-1.43e31, -3.32e31, -2.844e31]
+    !---------------------------------------------------------------------
+    if (n > 6) then
+      gaunt = 1
+    else
+      if (nu <= 1e16) then
+          gaunt = a1(n) + (b1(n) + c1(n)/nu) / nu
+      else
+          gaunt = a2(n) + (b2(n) + c2(n)/nu) / nu
+      endif
+    endif
+  END FUNCTION gaunt
 
 END MODULE atom_mod
   

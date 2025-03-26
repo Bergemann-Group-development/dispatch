@@ -53,9 +53,7 @@ experiment_mod.o            : trace_mod.o io_mod.o solver_mod.o kinds_mod.o m3d_
 dispatch.o                  : io_mod.o
 mmath_mod.o                 : refsor_mod.o unista_mod.o const_mod.o prec_mod.o search_mod.o
 guards_mod.o                : math_mod.o
-coll_var.o                  : coll_mod.o
-coll_mod.o                  : mmath_mod.o 
-atom_mod.o                  : trans_mod.o coll_mod.o op_math_mod.o spectrum_mod.o element_mod.o molecule_mod.o handyfuncs_mod.o hprofl_mod.o
+atom_mod.o                  : composition_mod.o trans_mod.o op_math_mod.o spectrum_mod.o element_mod.o molecule_mod.o handyfuncs_mod.o hprofl_mod.o
 spectrum_mod.o              : io_mod.o timer_mod.o trace_mod.o const_mod.o trans_mod.o handyfuncs_mod.o
 m3d_halo_mod.o              : halo_mod.o guards_mod.o gpatch_mod.o handyfuncs_mod.o
 m3d_patch_mod.o             : gpatch_mod.o atom_mod.o ray_mod.o m3d_halo_mod.o handyfuncs_mod.o m3d_debug_mod.o composition_mod.o

@@ -68,30 +68,6 @@ class CoG(m3dis):
 
         return xx, yy
     
-    #=====================================================================
-    def plot_spectrum(self, abnd=None, velocity_units=None, set_labels=None,
-                      lam_offset=None, ang=None, imu=None, norm=True,
-                      dlam=None, renorm=None, per_aa=False, show_lines=False,
-                      **kwargs):
-        #-----------------------------------------------------------------
-        crop_kwargs = {k:v for k, v in kwargs.items() if k not in plt_kwargs}
-        plot_kwargs = {k:v for k, v in kwargs.items() if k not in crop_kwargs}
-        
-        xx, yy = self.crop(abnd, dlam=dlam, ang=ang, imu=imu, norm=norm, renorm=renorm,
-                           per_aa=per_aa, velocity_units=velocity_units, lam_offset=lam_offset,
-                           **crop_kwargs)
-        
-        self.set_xaxis(xx, dlam, velocity_units=velocity_units, set_labels=set_labels,
-                       lam_offset=lam_offset)
-        
-        self.set_yaxis(ang, imu, norm, renorm=renorm, per_aa=per_aa)
-
-        if show_lines:
-            self.plot_lline_labels()
-
-        plt.plot(xx, yy, **plot_kwargs)
-        return xx, yy
-    
     #=================================================================
     def fit_observed(self, oxx, oyy, fit=[], bounds=None, p0=None, sigma=None, method='curve_fit', tol=None, **kwargs):
         abnds = self.abnds
