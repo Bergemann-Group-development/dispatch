@@ -443,7 +443,7 @@ contains
                 call self%molecule_by_id('H2', molecule)
                 trans%ion => molecule
             case('HE-')
-                call self%element_by_id('HE', element)
+                call self%element_by_id('He', element)
                 trans%ion => element%ions(1)
             case ('H2O-')
                 call self%molecule_by_id('H2O', molecule)
@@ -2109,20 +2109,27 @@ contains
         integer, intent(out), optional :: np, ion, mol
         character(3) :: id1, id2
         character(6) :: trim_id
-        integer :: idx, iostat
+        integer :: idx, iostat, imol, iele
         !---------------------------------------------------------------------------
         call trace%begin ('composition_type%init')
         particle => null()
         read(id, *) id1
-        call self%element_by_id(id1, element)
-        if (.not. associated(element)) then ! molecule
-            id1 = uppercase(id1)
-            idx = findloc(self%molecules%id, id1, 1)
-            if (idx > 0) then
-                particle => self%molecules(idx)
-                if (present(mol)) mol = idx
+        iele = findloc(self%elements%id, capitalize(id1), 1)
+        imol = findloc(self%molecules%id, uppercase(id1), 1)
+
+        if (iele > 0 .and. .not. imol > 0) then
+            element => self%elements(iele)
+        elseif (imol > 0 .and. .not. iele > 0) then
+            particle => self%molecules(imol)
+        elseif (imol > 0 .and. iele > 0) then
+            if (findloc(self%elements%id, id, 1) > 0) then
+                element => self%elements(iele)
+            else
+                particle => self%molecules(imol)
             endif
-        else ! ion
+        endif
+
+        if (associated(element)) then
             read(id, *) id1, id2
             id1 = capitalize(id1)
             id2 = uppercase(id2)

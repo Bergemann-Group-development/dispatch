@@ -109,31 +109,39 @@ def split_kwargs(func, kwargs):
 
 #=====================================================================
 def calc_weq(self, method='linear', return_err=False, plot=False,
-             get_func=False, **kwargs):
+             get_func=False, auto_crop=False, **kwargs):
     #-----------------------------------------------------------------
-    auto_crop = ('dlam' not in kwargs) and ('lam0' in kwargs)
-    
-    if auto_crop:
-        kwargs['dlam'] = 10.0
-
     xx, yy = self.crop(**kwargs)
     return get_weq(xx, yy, method=method, return_err=return_err, plot=plot,
                     get_func=get_func, auto_crop=auto_crop)
 
 #=====================================================================
+def find_surrounding_inflection_points(xx, yy, x0):
+    # Compute second derivative to find inflection points
+    ddy = np.diff(np.diff(yy))
+    turns = np.where(np.diff(np.sign(ddy)) != 0)[0] + 1
+    i0 = np.searchsorted(xx[turns], x0)
+    left_idx = np.searchsorted(xx, xx[turns[i0-1]])
+    right_idx = np.searchsorted(xx, xx[turns[i0]])
+    return left_idx, right_idx
+
+#=====================================================================
+def auto_crop_core(xx, yy):
+    syy = lowpass(xx, yy, thresh=15)
+    li, ri = find_surrounding_inflection_points(xx, syy, x0=0)
+    slc = slice(li, ri)
+    xx = xx[slc]
+    yy = yy[slc]
+    return xx, yy
+
+#=====================================================================
 def get_weq(xx, yy, method='gauss', return_err=False, plot=False,
              get_func=False, auto_crop=False):
     #-----------------------------------------------------------------
+    xplot = xx.copy()
+
     if auto_crop:
-        syy = lowpass(xx, yy, thresh=15)
-        ex = argrelextrema(syy, np.greater_equal)[0]
-        xex = xx[ex]
-        idx = np.searchsorted(xx[ex], 0)
-        xleft = 2./3. * xex[idx-1]
-        xright = 2./3. * xex[idx]
-        slc = slice(np.searchsorted(xx, xleft), np.searchsorted(xx, xright))
-        xx = xx[slc]
-        yy = yy[slc]
+        xx, yy = auto_crop_core(xx, yy)
 
     eweq = 0
 
@@ -157,11 +165,14 @@ def get_weq(xx, yy, method='gauss', return_err=False, plot=False,
             rf = asym_gaussian_profile
 
         if yy.ndim == 2:
-            tup = [func(xx, y)[2:] for y in yy]
+            tup = [func(xx, y, x0=0)[2:] for y in yy]
             weq, eweq = np.array(tup).T
         else:
-            pfit, fit, weq, eweq = func(xx, yy)
-            if plot: plt.plot(xx, fit, ls='--', color='dimgrey', zorder=10)
+            pfit, fit, weq, eweq = func(xx, yy, x0=0)
+            if plot:
+                plt.plot(xplot, rf(xplot, *pfit), ls='--', zorder=10, label=rf'{weq:.2f} $\pm$ {eweq:.2f}')
+                plt.axvline(xx[0],  color='k', ls=':', lw=0.5)
+                plt.axvline(xx[-1], color='k', ls=':', lw=0.5)
 
             if get_func:
                 def weq_func(x):
@@ -1019,7 +1030,7 @@ def gaussian_profile(x, x0, sig, amp):
     return 1 - amp*np.exp(-0.5*((x-x0)/sig)**2)
 
 #=====================================================================
-def fit_gaussian_profile(xx, yy, x0=None, dlam=None, sigma=None, syst=None):
+def fit_gaussian_profile(xx, yy, x0=None, sigma=None, syst=None, dlam=None, auto_crop=False):
     if hasattr(xx, 'values'): xx = xx.values
     if hasattr(yy, 'values'): yy = yy.values
 
@@ -1032,15 +1043,19 @@ def fit_gaussian_profile(xx, yy, x0=None, dlam=None, sigma=None, syst=None):
         mask = np.abs(xx) < dlam
         x = xx[mask]
         y = yy[mask]
+    elif auto_crop:
+        x, y = auto_crop_core(xx, yy)
     else:
         x = xx
         y = yy
 
-    scale = 1 - np.min(y)
+    xmin, ymin = parabolic_min(x, y)
+    if xmin is None: return None, None, np.nan, np.nan
+    scale = 1 - ymin
     s2p = np.sqrt(2*np.pi)
     sig = np.trapz(1-y, x) / (s2p*scale)
 
-    p0 = [0, sig, scale]
+    p0 = [xmin, sig, scale]
     bounds = [[-0.5, 1e-4, 0], [0.5, 1, 1]]
 
     try:
@@ -1050,15 +1065,14 @@ def fit_gaussian_profile(xx, yy, x0=None, dlam=None, sigma=None, syst=None):
         print(f"An error occurred: {e}")
         return None, None, np.nan, np.nan
 
-    popt[0] += x0
-    x0, sig, amp = popt
+    dx, sig, amp = popt
     weq = 1e3*s2p*amp*sig # equivalent width in mÅ
     partials = 1e3*s2p*np.array([0, amp, sig]) # dweq/dx0, dweq/dsig, dweq/damp
     eweq = np.sqrt(np.dot(partials, np.dot(pcov, partials)))
 
     if syst is not None:
       dy = 0.1*syst
-      (x0, sig, amp), pcov = curve_fit(gaussian_profile, x, y+dy, p0=popt, bounds=bounds, sigma=sigma, absolute_sigma=absolute)
+      (dx, sig, amp), pcov = curve_fit(gaussian_profile, x, y+dy, p0=popt, bounds=bounds, sigma=sigma, absolute_sigma=absolute)
       weq2 = 1e3*s2p*amp*sig # equivalent width in mÅ
       dw = (weq2 - weq) / dy
       esys = syst*dw
@@ -1066,6 +1080,7 @@ def fit_gaussian_profile(xx, yy, x0=None, dlam=None, sigma=None, syst=None):
       eweq = np.sqrt(eweq**2 + esys**2)
 
     fitted = gaussian_profile(xx, *popt)
+    popt[0] += x0
     return popt, fitted, weq, eweq
 
 #=====================================================================
@@ -1077,41 +1092,54 @@ def asym_gaussian_profile(x, x0, sig_left, sig_right, amp):
     return 1-amp*np.exp(-0.5*y**2)
 
 #=====================================================================
-def fit_asym_gaussian_profile(xx, yy, x0=None, sigma=None, syst=None):
+def fit_asym_gaussian_profile(xx, yy, x0=None, sigma=None, syst=None, dlam=None, auto_crop=False):
     if hasattr(xx, 'values'): xx = xx.values
     if hasattr(yy, 'values'): yy = yy.values
     absolute = sigma is not None
 
     if x0 is None: x0 = 0 if xx[0] < 0 else xx[xx.size//2]
-    x = xx - x0
-    scale = 1 - np.min(yy)
+    xx = xx - x0
+
+    if dlam is not None:
+        mask = np.abs(xx) < dlam
+        x = xx[mask]
+        y = yy[mask]
+    elif auto_crop:
+        x, y = auto_crop_core(xx, yy)
+    else:
+        x = xx
+        y = yy
+
+    xmin, ymin = parabolic_min(x, y)
+    if xmin is None: return None, None, np.nan, np.nan
+    scale = 1 - ymin
     s2p = np.sqrt(2*np.pi)
-    sig = np.trapz(1-yy, x) / (s2p*scale)
+    sig = np.trapz(1-y, x) / (s2p*scale)
     
-    p0 = [0, sig, sig, scale]
+    p0 = [xmin, sig, sig, scale]
     bounds = [[-0.5, 1e-4, 1e-4, 0], [0.5, 1, 1, 1]]
-    popt, pcov = curve_fit(asym_gaussian_profile, x, yy, p0=p0, bounds=bounds, sigma=sigma, absolute_sigma=absolute)
+    popt, pcov = curve_fit(asym_gaussian_profile, x, y, p0=p0, bounds=bounds, sigma=sigma, absolute_sigma=absolute)
     
-    popt[0] += x0
-    x0, L, R, A = popt
+    dx, L, R, A = popt
     weq = 1e3*s2p/2*A*(L + R) # equivalent width in mÅ
     partials = 1e3*s2p/2*np.array([0, A, A, (L + R)])
     eweq = np.sqrt(np.dot(partials, np.dot(pcov, partials)))
 
     if syst is not None:
       dy = 0.1*syst
-      (x0, L, R, A), pcov = curve_fit(asym_gaussian_profile, x, yy+dy, p0=popt, bounds=bounds, sigma=sigma, absolute_sigma=absolute)
+      (dx, L, R, A), pcov = curve_fit(asym_gaussian_profile, x, y+dy, p0=popt, bounds=bounds, sigma=sigma, absolute_sigma=absolute)
       weq2 = 1e3*s2p/2*A*(L + R) # equivalent width in mÅ
       dw = (weq2 - weq) / dy
       esys = syst*dw
       if hasattr(esys, '__iter__'): esys = np.mean(esys)
       eweq = np.sqrt(eweq**2 + esys**2)
 
-    fitted = asym_gaussian_profile(x, *popt)
+    fitted = asym_gaussian_profile(xx, *popt)
+    popt[0] += x0
     return popt, fitted, weq, eweq
 
 #=====================================================================
-def fit_voigt_profile(xx, yy, x0=None, dlam=None, sigma=None, syst=None):
+def fit_voigt_profile(xx, yy, x0=None, dlam=None, sigma=None, syst=None, auto_crop=False):
     if hasattr(xx, 'values'): xx = xx.values
     if hasattr(yy, 'values'): yy = yy.values
 
@@ -1124,15 +1152,19 @@ def fit_voigt_profile(xx, yy, x0=None, dlam=None, sigma=None, syst=None):
         mask = np.abs(xx) < dlam
         x = xx[mask]
         y = yy[mask]
+    elif auto_crop:
+        x, y = auto_crop_core(xx, yy)
     else:
         x = xx
         y = yy
 
-    scale = 1 - np.min(y)
+    xmin, ymin = parabolic_min(x, y)
+    if xmin is None: return None, None, np.nan, np.nan
+    scale = 1 - ymin
     s2p = np.sqrt(2*np.pi)
     sig = np.trapz(1-y, x) / (s2p*scale)
 
-    p0 = [0, 0, sig, scale]
+    p0 = [xmin, 0, sig, scale]
     bounds = [[-0.5, 0, 1e-8, 0], [0.5, 1e3, 1e3, 1e3]]
 
     try:
@@ -1142,15 +1174,14 @@ def fit_voigt_profile(xx, yy, x0=None, dlam=None, sigma=None, syst=None):
         print(f"An error occurred: {e}")
         return None, None, np.nan, np.nan
 
-    popt[0] += x0
-    x0, a, sig, amp = popt
+    dx, a, sig, amp = popt
     weq = 1e3*amp*sig # equivalent width in mÅ
     partials = 1e3*np.array([0, 0, amp, sig]) # dweq/dx0, dweq/da, dweq/dsig, dweq/damp
     eweq = np.sqrt(np.dot(partials, np.dot(pcov, partials)))
 
     if syst is not None:
       dy = 0.1*syst
-      (x0, sig, amp), pcov = curve_fit(voigt_profile, x, y+dy, p0=popt, bounds=bounds, sigma=sigma, absolute_sigma=absolute)
+      (dx, sig, amp), pcov = curve_fit(voigt_profile, x, y+dy, p0=popt, bounds=bounds, sigma=sigma, absolute_sigma=absolute)
       weq2 = 1e3*amp*sig # equivalent width in mÅ
       dw = (weq2 - weq) / dy
       esys = syst*dw
@@ -1158,6 +1189,7 @@ def fit_voigt_profile(xx, yy, x0=None, dlam=None, sigma=None, syst=None):
       eweq = np.sqrt(eweq**2 + esys**2)
 
     fitted = voigt_profile(xx, *popt)
+    popt[0] += x0
     return popt, fitted, weq, eweq
 
 #=====================================================================
@@ -1400,3 +1432,21 @@ def adjust_max_xticks():
     if np.sum(widths) > axwidth:
         n = np.floor(axwidth / np.mean(widths))
         ax.xaxis.set_major_locator(plt.MaxNLocator(n))
+
+#=====================================================================
+def parabolic_min(xx, yy):
+  imin = np.argmin(yy)
+  slc = slice(imin-1, imin+2)
+  x = xx[slc]
+  y = yy[slc]
+  
+  if len(x) < 3:
+    print('parabolic_min: Failed to find a minimum')
+    return None, None
+  
+  p = np.polyfit(x, y, 2)
+  pdiff = np.polyder(p)
+  poly_root = np.roots(pdiff)
+  xmin = poly_root[0]
+  ymin = np.polyval(p, xmin)
+  return xmin, ymin

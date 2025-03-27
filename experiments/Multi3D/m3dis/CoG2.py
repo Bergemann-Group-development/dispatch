@@ -81,7 +81,15 @@ class CoG(m3dis):
     #=================================================================
     def interp_abnd(self, weq, log=True, sigma=None, **kwargs):
         abnds = self.abnds
-        weqs = [run.calc_weq(**kwargs) for run in self.runs]
+
+        if np.diff(abnds).max() < 0.2:
+            weqs = [run.calc_weq(**kwargs) for run in self.runs]
+        else:
+            amin = abnds.min()
+            amax = abnds.max()
+            abnds = np.linspace(amin, amax, int(np.ceil((amax - amin) / 0.2 + 1)))
+            weqs = [self.calc_weq(abnd=abnd, **kwargs) for abnd in abnds]
+
         weqs = np.array(weqs)
         mask = np.isnan(weqs)
         if any(mask):

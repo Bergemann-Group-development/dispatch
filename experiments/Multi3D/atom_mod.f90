@@ -983,7 +983,7 @@ MODULE atom_mod
         !allocate(lin%adterm, xs, xe, ys, ye, zs1, ze1, 1, nterm, rname)
 
         do iterm = 1, nterm
-          read(latom,iostat=ios) lin%dq(iterm), lin%wt(iterm),  lin%fterm(iterm), &
+          read(latom, *, iostat=ios) lin%dq(iterm), lin%wt(iterm),  lin%fterm(iterm), &
                         lin%da(iterm), lin%gwterm(iterm), lin%gqterm(iterm)
           call print_failed_line(latom, ios)
         end do

@@ -271,9 +271,9 @@ contains
     real(8), dimension(:), intent(in) :: newx
     real(4), dimension(:), intent(in) :: xx, yy
     real(4), dimension(:), intent(out) :: newy
-    real(4) :: m
+    real(4) :: m, left, right
     real(4), optional :: fill
-    integer :: ii, i, nnew, nold, left, right
+    integer :: ii, i, nnew, nold
     !-----------------------------------------------------------------------------
     nnew = size(newx, 1)
     nold = size(xx, 1)
