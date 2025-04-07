@@ -17,8 +17,15 @@ import multiprocessing as mp
 from tqdm import tqdm
 import plotly.graph_objs as go
 
+#=====================================================================
 def read_run(folder):
   return m3dis.read(folder, read_atmos=False, read_atom=False)
+
+#=====================================================================
+def read_list(folders):
+  with mp.Pool() as pool:
+    run_list = list(tqdm(pool.imap(read_run, folders), total=len(folders)))
+    return np.array(run_list)
 
 #=====================================================================
 class grid(CoG):

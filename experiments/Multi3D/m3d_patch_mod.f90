@@ -25,8 +25,7 @@ MODULE m3d_patch_mod
     USE patch_mod, only: patch_t, patch_t_init
     USE m3d_halo_mod, only: m3d_halo_t, print_finished, print_download, lock_mem, unlock_mem, print_lock
     USE spectrum_mod, only: nu_tolerance
-    USE atom_mod, only: atom_type, atomic_spectrum_type, lse_no_pivot, lse_solver, m1d_legacy_mode, nq_fac, &
-                        use_classic_col, level_partf
+    USE atom_mod, only: atom_type, atomic_spectrum_type, lse_no_pivot, lse_solver, m1d_legacy_mode, nq_fac
     USE composition_mod, only: composition_type, scattering_absorption, irwin_dis, helium_scattering
     USE ray_mod, only: one_dimensional, set_carlson_quadratures, set_radau_quadratures, set_lobatto_quadratures, &
                        set_gauss_quadratures, set_custom_quadratures, set_grid_quadratures
@@ -170,7 +169,7 @@ MODULE m3d_patch_mod
     check_NaN, custom_mu, lse_no_pivot, save_patch_kind, cswitch, &
     print_finished, print_start, print_send, ray_offset, print_download, &
     lse_solver, decouple_continuum, m1d_legacy_mode, nu_tolerance, &
-    pivot_z, use_vel, save_resolved, rotate_continuum, &
+    pivot_z, save_resolved, rotate_continuum, &
     absmet_in_output, print_lock, make_eos, ng_step, ng_start, scattering_absorption, &
     column_by_column, rotate_atmos, Jnu_to_file, preconditioning, &
     save_inu, save_chi, save_Snu, save_Jnu, &
@@ -248,21 +247,6 @@ MODULE m3d_patch_mod
 
       call save_angle_quadrature()
 
-      if (m1d_legacy_mode) then
-        decouple_continuum = .true.
-        overlapping_bb = .false.
-        overlapping_bf = .false.
-        use_rho = .false.
-        use_vel(1:3) = .false.
-        sample_back_opac = .false.
-        h_occupation_probability = .false.
-        use_classic_col = .false.
-        irwin_dis = .false.
-        level_partf = .true.
-        helium_scattering = .false.
-        !comoving_frame = .true.
-        !preconditioning = .false.
-      endif
       if (pivot_z < 0) then
         ! taking the top as the pivot plane
         pivot_z = self%patch%box(3)

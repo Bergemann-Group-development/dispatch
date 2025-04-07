@@ -64,7 +64,7 @@ MODULE composition_mod
         procedure :: print_opacity_contributions
     end type
 
-    character(128), public, save :: exclude_elements=''
+    character(128), public, save :: exclude_elements='', only_elements=''
     logical, public :: scattering_absorption=.true., mhd_eos=.false.
     logical, public :: irwin_dis=.true., helium_scattering=.true.
     real(dp), public :: debug_opac=0
@@ -772,7 +772,9 @@ contains
                     ! Broadening parameters are zero by default if not overwritten here.
                     read(line_text, *, iostat=iostat2) lam0, line%lower_ev, line%loggf, line%gv, upper_g, line%ga, gq
                     call print_failed_line(lunit, iostat2)
-                    ! read gq if it is there
+                    ! read gq if it is convertable to real
+                    gq = trim(gq)
+                    call replace_char(gq(1:len_trim(gq)), ' ', '_')
                     read(gq, *, iostat=iostat2) line%gq
     
                     lam_vac = air2vac(lam0) * 1e-8
@@ -810,34 +812,58 @@ contains
       class(molec_type), pointer :: mol
       integer :: n_excluded, i, ii, p
       character(len=3) :: id
-      logical :: new_word
+      character(len=512) :: drop, only
+      logical :: new_word, in_drop, no_only
       ! ----------------------------------------------------------------------------
-      call count_words(exclude_elements, n_excluded)
-      p = 1
-      do i=1, n_excluded
-        id = ''
-        do ii=1, 3
-          new_word = .false.
-          do while (exclude_elements(p:p) == ' ' .and. p < len(exclude_elements))
-            new_word = .true.
-            p = p + 1
-          end do
-          if (new_word) exit
-          id(ii:ii) = exclude_elements(p:p)
-          p = p + 1
-        end do
-        call self%element_by_id(id, element)
-        if (associated(element)) then
+      drop = ''
+      only = ''
+      drop(2:len(drop)-1) = trim_between_words(exclude_elements)
+      only(2:len(only)-1) = trim_between_words(only_elements)
+      do i=1, self%nel
+        element => self%elements(i)
+        in_drop = index(drop, ' '//trim(element%id)//' ') > 0
+        no_only = index(only, ' '//trim(element%id)//' ') == 0 .and. only_elements /= ''
+        if (in_drop .or. no_only) then
           element%ions%in_linelist = .false.
           print *, 'removing ', trim(element%id), ' from linelist'
-        else
-          call self%molecule_by_id(id, mol)
-          if (associated(mol)) then
-            mol%in_linelist = .false.
-            print *, 'removing ', trim(mol%id), ' from linelist'
-          endif
         endif
       end do
+      do i=1, self%nmolec
+        mol => self%molecules(i)
+        in_drop = index(drop, ' '//trim(mol%id)//' ') > 0
+        no_only = index(only, ' '//trim(mol%id)//' ') == 0 .and. only_elements /= ''
+        if (in_drop .or. no_only) then
+          mol%in_linelist = .false.
+          print *, 'removing ', trim(mol%id), ' from linelist'
+        endif
+      end do
+
+      !call count_words(exclude_elements, n_excluded)
+      !p = 1
+      !do i=1, n_excluded
+      !  id = ''
+      !  do ii=1, 3
+      !    new_word = .false.
+      !    do while (exclude_elements(p:p) == ' ' .and. p < len(exclude_elements))
+      !      new_word = .true.
+      !      p = p + 1
+      !    end do
+      !    if (new_word) exit
+      !    id(ii:ii) = exclude_elements(p:p)
+      !    p = p + 1
+      !  end do
+      !  call self%element_by_id(id, element)
+      !  if (associated(element)) then
+      !    element%ions%in_linelist = .false.
+      !    print *, 'removing ', trim(element%id), ' from linelist'
+      !  else
+      !    call self%molecule_by_id(id, mol)
+      !    if (associated(mol)) then
+      !      mol%in_linelist = .false.
+      !      print *, 'removing ', trim(mol%id), ' from linelist'
+      !    endif
+      !  endif
+      !end do
     END SUBROUTINE mask_linelist
 
     !===============================================================================

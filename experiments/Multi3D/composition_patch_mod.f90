@@ -15,10 +15,11 @@ MODULE composition_patch_mod
   use_rho, use_ne, overlapping_bb, overlapping_bf, binned_opac, &
   maxiter, rotate_atmos, long_vec, sample_back_opac, decouple_continuum, &
   linelist_in_output, sample_back_opac_in_output, make_eos, overlapping_bb_in_output, &
-  opac_table_vmic, atmos_format, atmos_file, n_nu
+  opac_table_vmic, atmos_format, atmos_file, n_nu, use_vel
   USE m3d_debug_mod
-  USE composition_mod, only: composition_type, exclude_elements, switch, mhd_eos, &
-  irwin_dis, ref_lam, debug_opac, abundances, relative_abundances
+  USE composition_mod, only: composition_type, exclude_elements, only_elements, switch, &
+  irwin_dis, ref_lam, debug_opac, abundances, relative_abundances, mhd_eos, helium_scattering
+  USE atom_mod, only: m1d_legacy_mode, use_classic_col, level_partf
   USE atom_patch_mod,  only: atom_patch_t
   USE nlte_patch_mod, only:nlte_patch_t
   USE bftrans_mod, only: H_occupation_probability
@@ -75,13 +76,13 @@ SUBROUTINE read_composition_params ()
   real(4) :: tmolim=-99
   integer, save:: itimer=0, verbose=0
   namelist /composition_params/ verbose, absdat_file, abund_file, absmet_file, &
-  isotope_file, molec_file, H_occupation_probability, opac_table, &
+  isotope_file, molec_file, H_occupation_probability, opac_table, m1d_legacy_mode, &
   sample_back_opac, sample_back_opac_in_output, switch, mhd_eos, debye_shield, &
   dtemp, ldne, ldrho, ldtemp, tmolim, irwin_dis, opac_table_vmic, save_species, &
   ref_lam, debug_opac, abundances, relative_abundances, alpha_enhancement, r_process_enhancement, &
-  disable_ga, disable_stark, disable_vdw
+  disable_ga, disable_stark, disable_vdw, helium_scattering
   namelist /linelist_params/ dlam, exclude_elements, linelist_file, line_lists, &
-  linelist_in_output, tolerance
+  linelist_in_output, tolerance, only_elements
   ! ----------------------------------------------------------------------------
   call trace%begin('compositiont%init', itimer=itimer)
   rewind (io%input)
@@ -91,6 +92,23 @@ SUBROUTINE read_composition_params ()
     read (io%input, composition_params)
   end if
   call io%namelist_warning ('composition_params', iostat)
+
+  if (m1d_legacy_mode) then
+    decouple_continuum = .true.
+    overlapping_bb = .false.
+    overlapping_bf = .false.
+    use_rho = .false.
+    use_vel(1:3) = .false.
+    sample_back_opac = .false.
+    h_occupation_probability = .false.
+    use_classic_col = .false.
+    irwin_dis = .false.
+    level_partf = .true.
+    helium_scattering = .false.
+    !comoving_frame = .true.
+    !preconditioning = .false.
+  endif
+
   write (io%namelist, composition_params)
 
   rewind (io%input)

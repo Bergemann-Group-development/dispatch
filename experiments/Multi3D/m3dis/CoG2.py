@@ -124,6 +124,8 @@ class CoG(m3dis):
         else:
             dadw = func.derivative(1)(weq)
             err = np.abs(dadw) * sigma
+            if log: err = err/np.exp(weq)
+
             return abnd, err
     
     #=================================================================

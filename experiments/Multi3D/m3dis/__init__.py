@@ -1,7 +1,7 @@
 from .m3dis import m3dis
 from .launch import launch
 from .CoG2 import CoG
-from .grid import grid
+from .grid import grid, read_list
 from .linelist import linelist
 from .const import *
 from .auxfuncs import *

@@ -9,7 +9,7 @@ MODULE atom_patch_mod
     USE link_mod, only: nbor_t
     USE handyfuncs_mod
     USE atom_mod, only: atom_type, atomic_spectrum_type, use_classic_col, kramer_bf, &
-                        red_cut, blue_cut, logf_cut, atom_data_t, m1d_legacy_mode, &
+                        red_cut, blue_cut, logf_cut, atom_data_t, &
                         nq_fac, nq_min, nq_max, disable_bf, disable_bb, level_partf, &
                         fmin, cbbesc, cbfesc, cbbhsc, cbfhsc
     USE trans_mod, only: line_type, cont_type, transition_type

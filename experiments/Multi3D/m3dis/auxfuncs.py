@@ -109,40 +109,100 @@ def split_kwargs(func, kwargs):
 
 #=====================================================================
 def calc_weq(self, method='linear', return_err=False, plot=False,
-             get_func=False, auto_crop=False, **kwargs):
+             get_func=False, lam0=None, dlam='auto', **kwargs):
     #-----------------------------------------------------------------
-    xx, yy = self.crop(**kwargs)
-    return get_weq(xx, yy, method=method, return_err=return_err, plot=plot,
-                    get_func=get_func, auto_crop=auto_crop)
+    if dlam == 'auto':
+        dl = 3
+    else:
+        dl = dlam
+
+    xx, yy = self.crop(lam0=lam0, lam_offset=False, dlam=dl, **kwargs)
+    return get_weq(xx, yy, lam0=lam0, dlam=dlam, method=method,
+                    get_func=get_func, return_err=return_err, plot=plot)
+
+##=====================================================================
+#def find_surrounding_inflection_points(xx, yy, x0):
+#    # Compute second derivative to find inflection points
+#    dydx = np.diff(yy) / np.diff(xx)
+#    dydx = np.pad(dydx, 1, 'edge')
+#    dd = np.sign(np.diff(dydx))
+#    turns = np.where(np.diff(dd) != 0)[0]
+#    i0 = np.searchsorted(xx[turns], x0)
+#    left_idx = np.searchsorted(xx, xx[turns[i0-1]])
+#    right_idx = np.searchsorted(xx, xx[turns[i0]]) + 1
+#    return left_idx, right_idx
+
+##=====================================================================
+#def auto_crop_core(xx, yy, x0, thresh=15):
+#    syy = lowpass(xx, yy, thresh=thresh)
+#    li, ri = find_surrounding_inflection_points(xx, syy, x0=x0)
+#    slc = slice(li, ri+1)
+#    xx = xx[slc]
+#    yy = yy[slc]
+#    return xx, yy
 
 #=====================================================================
-def find_surrounding_inflection_points(xx, yy, x0):
-    # Compute second derivative to find inflection points
-    ddy = np.diff(np.diff(yy))
-    turns = np.where(np.diff(np.sign(ddy)) != 0)[0] + 1
-    i0 = np.searchsorted(xx[turns], x0)
-    left_idx = np.searchsorted(xx, xx[turns[i0-1]])
-    right_idx = np.searchsorted(xx, xx[turns[i0]])
-    return left_idx, right_idx
+def auto_crop_core(xx, yy, x0, thresh=15):
+    # remove high frequency noise to get smooth signal
+    ss = lowpass(xx, yy, thresh=thresh)
+    ex = argrelextrema(ss, np.greater_equal)[0]
+    i0 = np.searchsorted(xx[ex], x0)
+    lex = ex[i0-1]
+    rex = ex[i0]
+
+    # crop between surrounding maxima
+    x = xx[lex:rex+1]
+    y = yy[lex:rex+1]
+    s = ss[lex:rex+1]
+
+    # identify if wings extend to continuum
+    lim = 0.2
+    xmin, ymin = parabolic_min(x, s)
+    mask = 1-s > lim*(1-ymin)
+
+    # get second derivative to find inflection points
+    # here we also use the smoothed signal
+    dydx = np.diff(s) / np.diff(x)
+    dydx = np.pad(dydx, 1, 'edge')
+    dd = np.sign(np.diff(dydx))
+    turns = np.where(abs(np.diff(dd)) > 1)[0]
+    turns = turns[mask[turns]]
+    i0 = np.searchsorted(x[turns], x0)
+    ltn = turns[i0-1]
+    rtn = turns[i0] + 1
+
+    # extend fitting area at least to first inflection points
+    # or to continuum if no other inflection points are found
+    # between core and continuum
+    mask[0:ltn] *= mask[0] != True and ltn == turns[0]
+    mask[rtn:] *= mask[-1] != True and rtn == turns[-1] + 1
+    x = x[mask]
+    y = y[mask]
+    return x, y
 
 #=====================================================================
-def auto_crop_core(xx, yy):
-    syy = lowpass(xx, yy, thresh=15)
-    li, ri = find_surrounding_inflection_points(xx, syy, x0=0)
-    slc = slice(li, ri)
-    xx = xx[slc]
-    yy = yy[slc]
-    return xx, yy
-
-#=====================================================================
-def get_weq(xx, yy, method='gauss', return_err=False, plot=False,
-             get_func=False, auto_crop=False):
+def get_weq(xx, yy, lam0=None, dlam=None, method='gauss', return_err=False, plot=False,
+             get_func=False, thresh=15, sigma=None, syst=None):
     #-----------------------------------------------------------------
     xplot = xx.copy()
+    if lam0 is None: lam0 = 0
 
-    if auto_crop:
-        xx, yy = auto_crop_core(xx, yy)
+    if dlam is not None:
+        if dlam == 'auto':
+            xx, yy = auto_crop_core(xx, yy, x0=lam0, thresh=thresh)
+                
+        elif dlam > 0:
+            mask = np.abs(xx-lam0) < dlam
+            xx = xx[mask]
+            yy = yy[mask]
 
+        if len(xx) < 3:
+            print('Not enough points to calculate equivalent width after cropping!')
+            if return_err:
+                return np.nan, np.nan
+            else:
+                return np.nan
+            
     eweq = 0
 
     if method == 'linear':
@@ -165,11 +225,11 @@ def get_weq(xx, yy, method='gauss', return_err=False, plot=False,
             rf = asym_gaussian_profile
 
         if yy.ndim == 2:
-            tup = [func(xx, y, x0=0)[2:] for y in yy]
+            tup = [func(xx, y, x0=lam0, sigma=sigma, syst=syst)[2:] for y in yy]
             weq, eweq = np.array(tup).T
         else:
-            pfit, fit, weq, eweq = func(xx, yy, x0=0)
-            if plot:
+            pfit, fit, weq, eweq = func(xx, yy, x0=lam0, sigma=sigma, syst=syst)
+            if plot and pfit is not None:
                 plt.plot(xplot, rf(xplot, *pfit), ls='--', zorder=10, label=rf'{weq:.2f} $\pm$ {eweq:.2f}')
                 plt.axvline(xx[0],  color='k', ls=':', lw=0.5)
                 plt.axvline(xx[-1], color='k', ls=':', lw=0.5)
@@ -1044,25 +1104,30 @@ def fit_gaussian_profile(xx, yy, x0=None, sigma=None, syst=None, dlam=None, auto
         x = xx[mask]
         y = yy[mask]
     elif auto_crop:
-        x, y = auto_crop_core(xx, yy)
+        x, y = auto_crop_core(xx, yy, 0)
     else:
         x = xx
         y = yy
 
     xmin, ymin = parabolic_min(x, y)
     if xmin is None: return None, None, np.nan, np.nan
+    if ymin > 1:
+        print("Fit failed: ymin > 1")
+        return None, None, np.nan, np.nan
+    
     scale = 1 - ymin
     s2p = np.sqrt(2*np.pi)
     sig = np.trapz(1-y, x) / (s2p*scale)
 
     p0 = [xmin, sig, scale]
     bounds = [[-0.5, 1e-4, 0], [0.5, 1, 1]]
+    p0 = np.clip(p0, bounds[0], bounds[1])
 
     try:
         popt, pcov = curve_fit(gaussian_profile, x, y, p0=p0, bounds=bounds, sigma=sigma, absolute_sigma=absolute)
     except Exception as e:
         # Print the error message
-        print(f"An error occurred: {e}")
+        print(f"Fit failed: {e}")
         return None, None, np.nan, np.nan
 
     dx, sig, amp = popt
@@ -1105,20 +1170,31 @@ def fit_asym_gaussian_profile(xx, yy, x0=None, sigma=None, syst=None, dlam=None,
         x = xx[mask]
         y = yy[mask]
     elif auto_crop:
-        x, y = auto_crop_core(xx, yy)
+        x, y = auto_crop_core(xx, yy, 0)
     else:
         x = xx
         y = yy
 
     xmin, ymin = parabolic_min(x, y)
     if xmin is None: return None, None, np.nan, np.nan
+    if ymin > 1:
+        print("Fit failed: ymin > 1")
+        return None, None, np.nan, np.nan
+    
     scale = 1 - ymin
     s2p = np.sqrt(2*np.pi)
     sig = np.trapz(1-y, x) / (s2p*scale)
     
     p0 = [xmin, sig, sig, scale]
     bounds = [[-0.5, 1e-4, 1e-4, 0], [0.5, 1, 1, 1]]
-    popt, pcov = curve_fit(asym_gaussian_profile, x, y, p0=p0, bounds=bounds, sigma=sigma, absolute_sigma=absolute)
+    p0 = np.clip(p0, bounds[0], bounds[1])
+
+    try:
+        popt, pcov = curve_fit(asym_gaussian_profile, x, y, p0=p0, bounds=bounds, sigma=sigma, absolute_sigma=absolute)
+    except Exception as e:
+        # Print the error message
+        print(f"Fit failed: {e}")
+        return None, None, np.nan, np.nan
     
     dx, L, R, A = popt
     weq = 1e3*s2p/2*A*(L + R) # equivalent width in mÅ
@@ -1153,25 +1229,30 @@ def fit_voigt_profile(xx, yy, x0=None, dlam=None, sigma=None, syst=None, auto_cr
         x = xx[mask]
         y = yy[mask]
     elif auto_crop:
-        x, y = auto_crop_core(xx, yy)
+        x, y = auto_crop_core(xx, yy, 0)
     else:
         x = xx
         y = yy
 
     xmin, ymin = parabolic_min(x, y)
     if xmin is None: return None, None, np.nan, np.nan
+    if ymin > 1:
+        print("Fit failed: ymin > 1")
+        return None, None, np.nan, np.nan
+    
     scale = 1 - ymin
     s2p = np.sqrt(2*np.pi)
     sig = np.trapz(1-y, x) / (s2p*scale)
 
     p0 = [xmin, 0, sig, scale]
     bounds = [[-0.5, 0, 1e-8, 0], [0.5, 1e3, 1e3, 1e3]]
+    p0 = np.clip(p0, bounds[0], bounds[1])
 
     try:
-        popt, pcov = curve_fit(voigt_profile, x, y, p0=p0, bounds=bounds, sigma=sigma, absolute_sigma=absolute)
+        popt, pcov = curve_fit(voigt_profile, x, y, p0=p0, bounds=bounds, sigma=sigma, absolute_sigma=absolute, maxfev=5000)
     except Exception as e:
         # Print the error message
-        print(f"An error occurred: {e}")
+        print(f"Fit failed: {e}")
         return None, None, np.nan, np.nan
 
     dx, a, sig, amp = popt
@@ -1301,7 +1382,7 @@ def angular_distance(ra1, dec1, ra2, dec2):
 
 #=====================================================================
 def lowpass(xx, yy, thresh=15, force_period=False):
-  newx = np.linspace(xx[0], xx[-1], len(xx)*3)
+  newx = np.linspace(xx.min(), xx.max(), len(xx)*3)
   dx = newx[1] - newx[0]
   yy = np.interp(newx, xx, yy)
 
@@ -1436,6 +1517,11 @@ def adjust_max_xticks():
 #=====================================================================
 def parabolic_min(xx, yy):
   imin = np.argmin(yy)
+  if imin == 0:
+    imin = 1
+  elif imin == len(yy)-1:
+    imin = max(0, len(yy)-2)
+
   slc = slice(imin-1, imin+2)
   x = xx[slc]
   y = yy[slc]

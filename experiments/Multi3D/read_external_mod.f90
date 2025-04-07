@@ -25,10 +25,9 @@ MODULE read_external_mod
   USE composition_patch_mod, only: FeH, save_atmos, save_eos, external_abund, read_composition_params
   USE patch_mod
   USE const_mod, only:cc
-  USE atom_mod, only: m1d_legacy_mode
   USE m3d_patch_mod, only: maxiter, ilambd, m3d_patch_t, atom_update_counter, &
   global_maxerr, global_pos, nz_total, use_rho, use_ne, atmos_format, amr, vmic, &
-  opac_table_vmic, atmos_file
+  opac_table_vmic, atmos_file, use_vel
   USE m3d_halo_mod, only: m3d_halo_t
   USE read_atmos_mod, only: ia, read_stagger, read_co5bold, read_stagger2, &
   legacy_stagger_interp, read_marcs, read_multi_snapshot, read_text_1d, read_multi_1d, &
@@ -75,7 +74,7 @@ SUBROUTINE init(self, task_list, name)
   character(len=512) :: save_file
   namelist /atmos_params/ atmos_file, dims, verbose, patches_per_mpi, FeH, &
   save_atmos, atmos_format, vmic, use_rho, use_ne, nx, ny, nz, snap, &
-  legacy_stagger_interp, save_eos, amr, use_abnd, timestamp
+  legacy_stagger_interp, save_eos, amr, use_abnd, timestamp, use_vel
   !-----------------------------------------------------------------------------
   if (associated(task_list)) return
   call trace%begin('read_external_t%init')
