@@ -33,6 +33,7 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
     if not ok:
         try:
             run = m3dis.read(output_folder, read_atmos=False, read_atom=False)
+            existed = True
         except:
             ok = True
 
@@ -48,9 +49,8 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
             else:
                 command = 'sbatch {:} {:}'.format(slurm_script, input_file)
 
-            if verbose>1:
+            if verbose < 2:
                 print(input_file, ' launched')
-            else:
                 command = command + ' > /dev/null 2>&1'
 
             os.environ['OMP_NUM_THREADS'] = str(threads)
@@ -67,4 +67,4 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
         if verbose>0:
             print(output_folder, ' already exists')
 
-    return output_folder, ok
+    return output_folder, ok or existed

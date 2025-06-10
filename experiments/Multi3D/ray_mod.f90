@@ -371,24 +371,28 @@ SUBROUTINE set_custom_quadratures(mu, nphi, vec, wts, zrot)
   allocate(smus(nrays+1))
   allocate(swts(nrays+1))
 
-  call sort_array(mu, mu, order)
-  smus(1) = 0.d0
-  smus(2:nrays+1) = mu
-
-  if (mod(size(smus), 2) == 1) then
-    call simps_weights(smus, swts)
+  if (nrays==1) then
+    wmu = 1
   else
-    allocate(swts2(nrays))
-    call simps_weights(smus(1:nrays), swts(1:nrays))
-    call simps_weights(smus(2:nrays+1), swts2)
-    swts(1:2) = swts(1:2) + 0.5*(smus(2)-smus(1))
-    swts2(nrays-1:nrays) = swts2(nrays-1:nrays) + 0.5*(smus(nrays+1)-smus(nrays))
-    swts(2:nrays+1) = swts(2:nrays+1) + swts2
-    swts = swts / 2
-  endif
+    call sort_array(mu, mu, order)
+    smus(1) = 0.d0
+    smus(2:nrays+1) = mu
 
-  wmu = swts(nrays+1:2:-1)
-  mu = mu(nrays:1:-1)
+    if (mod(size(smus), 2) == 1) then
+      call simps_weights(smus, swts)
+    else
+      allocate(swts2(nrays))
+      call simps_weights(smus(1:nrays), swts(1:nrays))
+      call simps_weights(smus(2:nrays+1), swts2)
+      swts(1:2) = swts(1:2) + 0.5*(smus(2)-smus(1))
+      swts2(nrays-1:nrays) = swts2(nrays-1:nrays) + 0.5*(smus(nrays+1)-smus(nrays))
+      swts(2:nrays+1) = swts(2:nrays+1) + swts2
+      swts = swts / 2
+    endif
+
+    wmu = swts(nrays+1:2:-1)
+    mu = mu(nrays:1:-1)
+  endif
 
   if (present(zrot)) zrot = zrot(order(nrays:1:-1))
   call nphi_copies(nphi, mu, wmu, vec, wts, zrot, up_and_down=.false.)

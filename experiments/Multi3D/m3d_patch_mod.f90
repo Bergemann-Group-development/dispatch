@@ -143,6 +143,7 @@ MODULE m3d_patch_mod
     logical, public, save :: Jnu_to_file=.true., amr=.true.
     logical, public, save :: rotate_atmos=.false., rotate_continuum=.false.
     logical, public, save :: make_eos=.false.
+    logical, public, save :: overrelax=.false.
     logical, public, save :: save_Inu=.false., save_chi=.false.
     logical, public, save :: save_Snu=.false., save_Jnu=.false.
     real(8), public, save :: dlam=100.
@@ -157,8 +158,8 @@ MODULE m3d_patch_mod
     real(8), public :: ray_offset(2)=[0.,0.], pivot_z=-1
     integer, public :: ng_step=-1, ng_start=8
     integer, save :: long_ntheta=4, long_nphi=4, short_ntheta=2, short_nphi=4
-    character(len=128), public :: atmos_format='Text'
-    character(len=512), public :: atmos_file='./input_multi3d/atmos/atmos.sun_MARCS_50'
+    character(len=128), public :: atmos_format='Marcs'
+    character(len=512), public :: atmos_file='./input_multi3d/atmos/p5777_g+4.4_m0.0_t01_st_z+0.00_a+0.00_c+0.00_n+0.00_o+0.00_r+0.00_s+0.00.mod'
     type(mpi_counter_t), public :: atom_update_counter, global_maxerr, global_pos
     type(composition_type), public, save, target :: composition
       
@@ -169,7 +170,7 @@ MODULE m3d_patch_mod
     check_NaN, custom_mu, lse_no_pivot, save_patch_kind, cswitch, &
     print_finished, print_start, print_send, ray_offset, print_download, &
     lse_solver, decouple_continuum, m1d_legacy_mode, nu_tolerance, &
-    pivot_z, save_resolved, rotate_continuum, &
+    pivot_z, save_resolved, rotate_continuum, overrelax, &
     absmet_in_output, print_lock, make_eos, ng_step, ng_start, scattering_absorption, &
     column_by_column, rotate_atmos, Jnu_to_file, preconditioning, &
     save_inu, save_chi, save_Snu, save_Jnu, &
@@ -432,11 +433,10 @@ MODULE m3d_patch_mod
     self%linecheck = linecheck
     self%lvlcheck = lvlcheck
     
-    self%pcheck(3) = self%pcheck(3) - self%zs
-
     where (pcheck < 0)
-      self%pcheck = self%pcheck + nz_total + 1
+      self%pcheck = pcheck + [self%n(1:2), nz_total] + 1
     endwhere
+    self%pcheck(3) = self%pcheck(3) - self%zs + 1
     call trace%end(itimer)
   END SUBROUTINE init
 

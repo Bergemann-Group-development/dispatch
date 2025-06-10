@@ -76,6 +76,7 @@ MODULE atom_mod
   
       real(8), dimension(:), allocatable :: ev ! energy of level above ground state [eV]
       real(8), dimension(:), allocatable :: g ! multiplicity of level
+      integer, dimension(:), allocatable :: irad, jrad ! indices of levels in radiative transition
 
       type(line_type), dimension(:), pointer, contiguous :: line => null()
       type(cont_type), dimension(:), pointer, contiguous :: cont => null()
@@ -150,22 +151,24 @@ MODULE atom_mod
   contains
   
   !====================================================================================
-  SUBROUTINE solve_stat_equilibrium (self, comp, x,y,z, gamma_ij, gamma_ji, cswitch, check_NaN, k)
+  SUBROUTINE solve_stat_equilibrium (self, comp, x,y,z, gamma_ij, gamma_ji, cswitch, check_NaN)
     class(atom_type), target :: self
     class(composition_type) :: comp
     class(transition_type), pointer :: trans
-    real(8), dimension(:), intent(in) :: gamma_ij, gamma_ji
+    real(8), dimension(:,:,:,:), intent(in), target :: gamma_ij, gamma_ji
     integer, intent(in) :: cswitch
     logical, intent(in) :: check_NaN
-    real(8), dimension(:), pointer :: n
+    real(8), dimension(:), pointer :: n, rij, rji
     real(8) :: totn
-    integer :: kr, pos, i, j, k, x,y,z
+    integer :: kr, pos, i, j, x,y,z
     integer, save :: itimer=0, itimer2=0
-    logical :: zero_pop, abort
+    logical :: abort
     logical, save :: first_time=.true.
     !------------------------------------------------------------------------------------
     totn = self%data%totn(x,y,z)
     n => self%data%n(x,y,z,:)
+    rij => self%data%gamma_ij(x,y,z,:)
+    rji => self%data%gamma_ji(x,y,z,:)
 
     self%data%w=0.0d0
     self%data%e=0.0d0
@@ -180,10 +183,11 @@ MODULE atom_mod
       if (.not. trans%active) cycle
       i = trans%i
       j = trans%j
-      self%data%w(j,i) = self%data%w(j,i) + gamma_ij(kr)
-      self%data%w(i,j) = self%data%w(i,j) + gamma_ji(kr)
+      self%data%w(j,i) = self%data%w(j,i) + rij(kr)
+      self%data%w(i,j) = self%data%w(i,j) + rji(kr)
     enddo
 
+    ! one can switch off the collisional rates by setting cswitch to 0
     if (cswitch > 0) then
       self%data%c = 0.d0
 
@@ -194,13 +198,6 @@ MODULE atom_mod
       if (associated(self%coll)) then
         call self%gencol(comp,x,y,z)
       endif
-
-      !open(newunit=kr, file='debug.bin', form='unformatted')
-      !write(kr) nstar
-      !write(kr) n
-      !write(kr) totn
-      !write(kr) self%data%w
-      !write(kr) self%data%c
 
       do j=1, self%nlevel
       do i=1, self%nlevel
@@ -214,22 +211,15 @@ MODULE atom_mod
       self%data%w(i,i) = -sum(self%data%w(:,i))
     end do
 
-    ! replace row with largest population with particle conservation
-    ! equation.
-    pos = maxloc(n,1)
+    ! replace row with largest population with particle conservation equation.
+    pos = maxloc(n, dim=1)
     self%data%e(pos) = totn
-    !zero_pop = any(n==0)
 
-    !if (zero_pop) then
-    !  self%data%oldn = n
-    !  self%data%w(pos,:) = 1
-    !else
-      ! go from rate coefficients to actual rates   
-      do i=1,self%nlevel
-        self%data%w(i,:) = self%data%w(i,:) * n
-      enddo
-      self%data%w(pos,:) = n
-    !endif
+    ! go from rate coefficients to actual rates   
+    do i=1,self%nlevel
+      self%data%w(i,:) = self%data%w(i,:) * n
+    enddo
+    self%data%w(pos,:) = n
 
     if (check_NaN .or. first_time) then
       first_time = .false.
@@ -269,56 +259,6 @@ MODULE atom_mod
     end select
 
     call trace%end(itimer2)
-
-    if (check_NaN) then
-      do i=1,self%nlevel
-        if (self%data%e(i) /= self%data%e(i)) then
-          print *, 'NaN in error vector at i = ', i
-          stop
-        endif
-      end do
-    endif
-
-    !if (zero_pop) then
-    !  self%data%oldn = n
-    !  n = self%data%e
-    !  do i=1,self%nlevel
-    !    if (self%data%oldn(i) > 0) then
-    !      self%data%e(i) = n(i) / self%data%oldn(i)
-    !    elseif (n(i) == 0) then
-    !      self%data%e(i) = 1.d0
-    !    else
-    !      self%data%e(i) = huge(1.0)
-    !    endif
-    !  end do
-    !  n = max(n, 0.)
-    !else
-      ! set limits on corrections
-      self%data%e = max(self%data%e, 0.001d0)
-      !self%data%e = max(self%data%e, tiny(1.0))
-      ! update the populations
-      n = n * self%data%e
-    !endif
-
-    if (check_NaN) then
-      do i=1,self%nlevel
-        if (n(i) < 0) then
-          print *, 'Below zero in populations at i = ', i
-          print *, n(i)
-          print *, self%data%e(i)
-          !print *, zero_pop, self%data%oldn(i)
-          stop
-        endif
-      end do
-    endif
-
-    !write(kr) self%data%e
-    !write(kr) n
-    !close(kr)
-    !stop
-
-    ! set e to the relative change in the populations 
-    self%data%e = self%data%e - 1.0d0
   END SUBROUTINE solve_stat_equilibrium
   !------------------------------------------------------------------------------------
 
@@ -736,6 +676,12 @@ MODULE atom_mod
     if (j>0) then
       print *, j, " bound-free transitions auto-completed using Kramer's formula!"
     endif
+
+    allocate(self%irad(self%nrad), self%jrad(self%nrad))
+    self%irad(1:self%nline) = self%line%i
+    self%jrad(1:self%nline) = self%line%j
+    self%irad(self%nline+1:self%nrad) = self%cont%i
+    self%jrad(self%nline+1:self%nrad) = self%cont%j
 
     if (ncol > 0) then
       read(latom, '(A)') dummy_string
@@ -1176,6 +1122,12 @@ MODULE atom_mod
     if (j>0) then
       print *, j, " bound-free transitions auto-completed using Kramer's formula!"
     endif
+
+    allocate(self%irad(self%nrad), self%jrad(self%nrad))
+    self%irad(1:self%nline) = self%line%i
+    self%jrad(1:self%nline) = self%line%j
+    self%irad(self%nline+1:self%nrad) = self%cont%i
+    self%jrad(self%nline+1:self%nrad) = self%cont%j
 
     ! read collisional data
     if (.not. read_coll) then

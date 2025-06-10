@@ -3,6 +3,7 @@ MODULE bbtrans_mod
   USE const_mod
   USE op_math_mod, only: searchsorted
   USE trace_mod
+  USE handyfuncs_mod, only: find_closest_from_center
   implicit none
 
   type :: bbtrans_type
@@ -85,11 +86,8 @@ contains
     upper_ev = self%lower_ev + nu0_ev
     Bji = self%Bji * self%nu0
 
-    !qq(ired:iblue) => qq_scr(ired:iblue)
-    !qq(ired:iblue) = nu(ired:iblue) * inv_nu0 - 1
-    !f0 = searchsorted(qq(ired:iblue), 0.d0, outbounds_ok=.true.)
-    f0 = searchsorted(nu(ired:iblue), self%nu0, outbounds_ok=.true.)
-    f0 = max(1, min(f0, nf)) + ired - 1
+    f0 = find_closest_from_center(nu(ired:iblue), self%nu0)
+    f0 = f0 + ired - 1
     used = .false.
     strength = 0.0
     
@@ -133,8 +131,8 @@ contains
         
         !vs = (qq(f0) - v) * idf
         vs = (nu(f0) - v) * idf
+        !lchi = pseudo_voigt_function(a, vs, ref=ref, norm=cf)
         lchi = voigt_function2(a, vs) * cf
-        !call hum1zpf16  (1, [a],[vs], hum)
         if (lchi > ref) then
           used = .true.
           strength = max(strength, lchi / cont(f0,i,j,k))
@@ -143,6 +141,7 @@ contains
           do f=f0+1, iblue
             !vs = (qq(f) - v) * idf
             vs = (nu(f) - v) * idf
+            !lchi = pseudo_voigt_function(a, vs, ref=ref, norm=cf)
             lchi = voigt_function2(a, vs) * cf
             chi(f,i,j,k) = chi(f,i,j,k) + lchi
             if (lchi < ref) exit ! if line opacity below tolerance exit
@@ -150,6 +149,7 @@ contains
           do f=f0-1, ired, -1
             !vs = (qq(f) - v) * idf
             vs = (nu(f) - v) * idf
+            !lchi = pseudo_voigt_function(a, vs, ref=ref, norm=cf)
             lchi = voigt_function2(a, vs) * cf
             chi(f,i,j,k) = chi(f,i,j,k) + lchi
             if (lchi < ref) exit ! if line opacity below tolerance exit
@@ -195,7 +195,7 @@ contains
         u = 1 / (a2 + v2)
         u2 = 0.5 * u*u
         ! a gt 1.4  or  a + v gt 3.2
-        h = ipi*a*u * (1. + u2*((3.*v2 - a2) + u2*(15.*v2*v2 - 30.*v2*a2 + 3.*a2*a2)))
+        h = ipi*a*u * (1. + u2*(7.5 - a2 + 3.*v2 - 12*u2*a2**2))
 
       else
         tav = cmplx(a,-v)
@@ -916,4 +916,96 @@ contains
     end if
     w = w * recsqrtpi
   END SUBROUTINE hum1zpf16
+
+  !====================================================================================
+  !DIR$ ATTRIBUTES FORCEINLINE :: pseudo_voigt_function
+  FUNCTION pseudo_voigt_function(a, v, ref, norm) result(pseudo)
+    ! Inputs
+    real(4), intent(in) :: a
+    real(4), intent(in) :: v
+    real(4), intent(in) :: ref, norm
+
+    ! Output
+    real(4) :: pseudo
+
+    ! Constants
+    real(4), parameter :: l2 = log(2.0)
+    real(4), parameter :: sql2 = sqrt(l2)
+    real(4), parameter :: ipi  = 0.3183098862 ! 1/pi
+    real(4), parameter :: beta = 2.0**(2.0/3.0) - 1.0
+
+    ! Polynomial coefficients
+    real(4), parameter, dimension(6) :: p_hwhm = [ 0.60821676, -0.59442469, -0.21801016, -0.2297061 , -0.39863041,  0.83255461]
+    real(4), parameter, dimension(3) :: p_peak = [ 0.0400737 , -0.19149496,  0.46973115]
+    real(4), parameter, dimension(2) :: p_eta1 = [ 0.34072301,  0.65927699]
+    real(4), parameter, dimension(2) :: p_eta2 = [-0.37862863,  0.37862863]
+
+    ! Intermediate variables
+    real(4), save :: a_old=0, eta0, eta1, eta2, peak, inv_hwhm ! a dependent
+    real(4) :: rho, hwhm, r ! a dependent
+    real(4) :: a2, u, v2, v4, u2 ! a and v dependent
+    real(4) :: x, G, L, I ! a and v dependent
+    !$omp threadprivate(a_old, eta0, eta1, eta2, peak, inv_hwhm)
+    !----------------------------------------------------------------------------------
+    pseudo = 0
+    
+    if (a /= a_old) then
+      a_old = a
+      ! Compute rho
+      rho = a / (sql2 + a)
+
+      ! Polynomial evaluation for hwhm
+      hwhm = p_hwhm(1)
+      hwhm = p_hwhm(2) + hwhm * rho
+      hwhm = p_hwhm(3) + hwhm * rho
+      hwhm = p_hwhm(4) + hwhm * rho
+      hwhm = p_hwhm(5) + hwhm * rho
+      hwhm = p_hwhm(6) + hwhm * rho
+      hwhm = hwhm + a
+
+      inv_hwhm = 1 / hwhm
+      r = a * inv_hwhm
+
+      ! Polynomial evaluation for peak
+      peak = p_peak(1)
+      peak = p_peak(2) + peak * r
+      peak = p_peak(3) + peak * r
+      peak = peak * inv_hwhm
+      peak = peak * norm
+
+      ! Polynomial evaluation for eta1
+      eta1 = p_eta1(1)
+      eta1 = p_eta1(2) + eta1 * r
+      eta1 = eta1 * r
+
+      ! Polynomial evaluation for eta2
+      eta2 = p_eta2(1)
+      eta2 = p_eta2(2) + eta2 * r
+      eta2 = eta2 * r
+
+      eta0 = 1.0 - eta1 - eta2
+    endif
+    if (peak < ref) return
+
+    ! Compute x, Gaussian (G), and Lorentzian (L), and Irrational (I)
+    x = v*inv_hwhm
+    x = x*x
+    if (eta0 > 1e-4 .and. x < 75.0) then
+      G = exp(-l2*x)
+      pseudo = pseudo + eta0*G
+    endif
+    if (eta1 > 1e-4) then
+      L = 1.0 / (1.0 + x)
+      pseudo = pseudo + eta1*L
+    endif
+    if (eta2 > 1e-4) then
+      I = 1.0 / (1.0 + beta*x)
+      I = I * sqrt(I)
+      pseudo = pseudo + eta2*I
+    endif
+    
+    ! Normalize pseudo-Voigt profile
+    pseudo = pseudo * peak
+  END FUNCTION pseudo_voigt_function
+
 END MODULE bbtrans_mod

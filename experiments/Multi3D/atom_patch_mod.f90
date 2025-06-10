@@ -21,7 +21,7 @@ MODULE atom_patch_mod
     USE composition_mod, only: composition_type
     USE m3d_patch_mod, only: m3d_patch_t, composition, maxiter, check_NaN, cswitch, key_link_t, &
     global_maxerr, convlim, convmax, atom_update_counter, comoving_frame, global_pos, ng_step, ng_start, &
-    decouple_continuum, overlapping_bb, overlapping_bf, converged, premature_finish, &
+    decouple_continuum, overlapping_bb, overlapping_bf, converged, premature_finish, overrelax, &
     rotate_atmos, long_vec, rank_lvlerr, overlapping_bb_in_output, long_scheme, n_nu, detailed_absmet
     USE bftrans_mod, only: bftrans_type
     USE osmet_mod, only: osmet_type, osmet
@@ -38,9 +38,11 @@ MODULE atom_patch_mod
       class(atomic_spectrum_type), pointer :: output_sp=>null()
       class(atomic_spectrum_type), pointer :: bf_sp=>null()
       class(atomic_spectrum_type), pointer :: bb_sp=>null()
-      real(8) :: maxerr=huge(1.0)
+      real(8) :: maxerr=huge(1.0), prev_global=huge(1.d0), prev_prev_global=huge(1.d0)
       real(8), dimension(:), allocatable :: lvlerr
+      real(8) :: local, sor_w
       logical :: update_skipped=.false., atom_allocated=.false., molec
+      logical :: overrelax=.false.
     contains
       procedure :: pre_init => atom_patch_pre_init
       procedure :: execute
@@ -420,7 +422,7 @@ MODULE atom_patch_mod
         endif
 
         call self%update_populations(gamma_ij, gamma_ji)
-        adata%converged = self%maxerr < convmax
+        adata%converged = abs(self%maxerr) < convmax
         self%update_skipped = .false.
         do_ng = ng_step > 0 .and. mod(self%iter-ng_start, ng_step) == 0 .and. self%iter >= ng_start
         if (adata%converged .and. premature_finish) then
@@ -440,7 +442,7 @@ MODULE atom_patch_mod
     endif
     if (count >= self%task_list%dims(3)) then
       global = global_maxerr%update(0.d0)
-      if ((global > 0) .and. global < convlim .and. self%maxerr < convlim) then
+      if ((abs(global) > 0) .and. abs(global) < convlim .and. abs(self%maxerr) < convlim) then
         !write(stdout, *) self%ipos(3)+1, 'Converged!', global
         if (self%iter < self%maxiter) converged = .true.
         call self%finish()
@@ -484,30 +486,34 @@ MODULE atom_patch_mod
   SUBROUTINE ng_acceleration (self)
     class(atom_patch_t):: self
     integer :: i, x, y, z, k, epos(4), nvec
-    real(8), dimension(:), allocatable :: n1, n2, n3, n4, n5, d0, d1, d2, e
+    real(8), dimension(:), allocatable :: n1, n2, n3, n4, n5, d0, d1, d2, e, w
     real(8) :: d01, d02, d11, d12, d21, d22, a, b, den, emax, enew
     integer, save :: itimer=0
     ! ----------------------------------------------------------------------------
     call trace%begin ('atom_patch_t%ng_acceleration', itimer=itimer)
     nvec = self%atom%nlevel * product(self%n(1:2))
     allocate(e(nvec))
-    allocate(n1, n2, n3, n4, n5, d0, d1, d2, mold=e)
-    emax = 1e-3
+    allocate(n1, n2, n3, n4, n5, d0, d1, d2, w, mold=e)
+    emax = 0
     do z=1, self%n(3)
       i = 0
       do y=1, self%n(2)
       do x=1, self%n(1)
       do k=1, self%atom%nlevel
         i = i+1
-        n4(i) = self%atom%data%n(x,y,z,k)
-        n1(i) = self%atom%data%oldn(x,y,z,k,1) / n4(i)
-        n2(i) = self%atom%data%oldn(x,y,z,k,2) / n4(i)
-        n3(i) = self%atom%data%oldn(x,y,z,k,3) / n4(i)
+        ! the weight can be chose freely, but 1/n is the "best" choice according to Olson+1986
+        !w(i) = 1.d0
+        !w(i) =  abs(self%atom%data%n(x,y,z,k) / self%atom%data%oldn(x,y,z,k,3) - 1.d0)
+        w(i) = 1.d0 / self%atom%data%n(x,y,z,k)
+        n1(i) = self%atom%data%oldn(x,y,z,k,1) * w(i)
+        n2(i) = self%atom%data%oldn(x,y,z,k,2) * w(i)
+        n3(i) = self%atom%data%oldn(x,y,z,k,3) * w(i)
+        n4(i) = self%atom%data%n(x,y,z,k) * w(i)
       end do
       end do
       end do
 
-      d0 = 1. - n3
+      d0 = n4 - n3
       d1 = n3 - n2
       d2 = n2 - n1
 
@@ -527,22 +533,20 @@ MODULE atom_patch_mod
         a = (d01*d22 - d02*d21) / den
         b = (d02*d11 - d01*d21) / den
 
-        e = 1.d0 - a - b + a*n3 + b*n2
+        e = (1.d0 - a - b)*n4 + a*n3 + b*n2
       else
-        e = 1.d0
+        e = n4
       endif
-
-      e = max(e, 0.001d0)
 
       i = 0
       do y=1, self%n(2)
       do x=1, self%n(1)
       do k=1,self%atom%nlevel
         i = i+1
-        self%atom%data%n(x,y,z,k) = e(i)*n4(i)
-        enew = e(i) - 1.d0
+        self%atom%data%n(x,y,z,k) = e(i)/w(i)
+        enew = e(i)/n4(i)  - 1.d0
 
-        if (abs(enew) > emax) then
+        if (abs(enew) > abs(emax)) then
           emax = enew
           epos = [k, x, y, z]
         endif
@@ -688,7 +692,7 @@ MODULE atom_patch_mod
     class(atom_patch_t):: self
     class(atom_data_t), pointer :: adata
     character(len=64) :: text
-    integer :: i, l, p(3), ipos
+    integer :: i, ipos
     real(8) :: global
     !-----------------------------------------------------------------------------
     if (self%iter == 0) then
@@ -709,23 +713,28 @@ MODULE atom_patch_mod
     global = global_maxerr%update(0.d0)
     ipos = global_pos%update(+0)
     write(stdout,'(A, ES12.4, A10, ES12.4, A, I4, A, "[", 3I4, "]")') &
-      '  local =', self%maxerr,  ', global =', global, &
+      '  local =', self%local,  ', global =', global, &
       ', lvl =',elvl, ', pos=', epos
-    write(stdout,'(1X, A80)') &
-    '................................................................................'
+    if (self%overrelax) then
+      write(stdout,'(A, 3(ES12.4))') '  omega =', self%sor_w, self%prev_prev_global, self%prev_global
+    endif
+
+    if (self%verbose > 1) then
+      write(stdout,'(1X, A80)') &
+      '................................................................................'
+    endif
   END SUBROUTINE print_post_update_info
 
   !===============================================================================
   SUBROUTINE update_populations (self, gamma_ij, gamma_ji)
     class(atom_patch_t), target :: self
     class(atom_type), pointer :: atom
-    class(transition_type), pointer :: trans
     integer, dimension(3) :: ep
-    real(8), dimension(:), pointer :: Gij, Gji
-    real(8), dimension(:,:,:,:), target :: gamma_ij, gamma_ji
+    real(8), dimension(:,:,:,:) :: gamma_ij, gamma_ji
     real(4), dimension(:,:,:), allocatable :: cij, cji
     integer :: x, y, z, i, j, ii, ipos, il, nx, ny, nz, it, jt
     real(8) :: global
+    logical :: relax
     integer, save :: itimer=0
     ! ----------------------------------------------------------------------------
     call trace%begin('atom_patch_t%update_populations', itimer=itimer)
@@ -739,39 +748,61 @@ MODULE atom_patch_mod
     if (save_rates) then
       allocate(cij(nx,ny,nz), source=0.0)
       allocate(cji(nx,ny,nz), source=0.0)
-      if (linecheck <= atom%nline) then
-        trans => atom%line(linecheck)
-      else
-        trans => atom%cont(linecheck-atom%nline)
-      endif
-      i = trans%i
-      j = trans%j
     endif
 
+    global = global_maxerr%update(0.d0)
+    if (overrelax .and. .not. self%overrelax) then
+      relax = abs((self%prev_prev_global/self%prev_global) / (self%prev_global/global) - 1) < 0.02
+      self%overrelax = relax .and. self%iter > ng_start
+    endif
+
+    self%sor_w = calc_omega(self%prev_prev_global, self%prev_global, global)
+    
     do z=1, nz
       do y=1, ny
         do x=1, nx
-          Gij => gamma_ij(x,y,z,:)
-          Gji => gamma_ji(x,y,z,:)
-
           if (atom%data%totn(x,y,z) > 0 .and. self%composition%temp(x,y,z) < tmax_update) then
-            call atom%solve_stat_equilibrium(self%composition, x,y,z, Gij, Gji, cswitch, check_NaN, z)
+            call atom%solve_stat_equilibrium(self%composition, x,y,z, gamma_ij, gamma_ji, cswitch, check_NaN)
 
-            ! keep track of maximum population change
-            do ii=1,atom%nlevel
-              if (abs(atom%data%e(ii)) > self%lvlerr(ii)) then
-                  self%lvlerr(ii) = abs(atom%data%e(ii))
-                  if (self%lvlerr(ii) > self%maxerr) then
-                    self%maxerr = self%lvlerr(ii)
-                    ep = [x, y, z + self%zs]
-                    il = ii
-                  endif
+            ! e contains the correction n/n_old 
+            associate(e=>atom%data%e(:), n=>atom%data%n(x,y,z,:))
+              i = findloc(e/=e, .true., dim=1)
+              if (check_NaN .and. i > 0) then
+                  print *, 'NaN in error vector at i = ', i
+                  stop
+              endif
+
+              ! set limits on corrections
+              e = max(e, 0.001d0)
+
+              ! update the populations
+              if (self%overrelax) then
+                n = n * (1 + self%sor_w*(e - 1))
+              else
+                n = n * e
+              endif
+  
+              ! set e to the relative change in the populations 
+              e = e - 1.0d0
+
+              ! keep track of maximum population change
+              self%lvlerr = merge(e, self%lvlerr, abs(e) > abs(self%lvlerr))
+              i = maxloc(abs(self%lvlerr), dim=1)
+
+              if (abs(self%lvlerr(i)) > abs(self%maxerr)) then
+                self%maxerr = self%lvlerr(i)
+                ep = [x, y, z]
+                il = i
+              endif
+
+              if (all([x, y, z] == self%pcheck)) then
+                self%local = e(self%lvlcheck)
               end if
-            end do
+            end associate
 
             if (save_rates) then
-              cij(x,y,z) = atom%data%c(j, i)
-              cji(x,y,z) = atom%data%c(i, j)
+              cij(x,y,z) = atom%data%c(atom%jrad(linecheck), atom%irad(linecheck))
+              cji(x,y,z) = atom%data%c(atom%irad(linecheck), atom%jrad(linecheck))
             endif
           endif
         end do
@@ -790,9 +821,10 @@ MODULE atom_patch_mod
     endif
 
     !$omp critical (maxerr_reset)
-    global = global_maxerr%update(0.d0)
+    self%prev_prev_global = self%prev_global
+    self%prev_global = global_maxerr%update(0.d0)
     ipos = global_pos%update(+0)
-    if (ipos == self%ipos(3) .or. self%maxerr > global) then
+    if (ipos == self%ipos(3) .or. abs(self%maxerr) > abs(self%prev_global)) then
       if (ipos /= self%ipos(3)) call global_pos%reset(self%ipos(3))
       call global_maxerr%reset(self%maxerr)
       epos = ep
@@ -800,6 +832,21 @@ MODULE atom_patch_mod
     endif
     !$omp end critical (maxerr_reset)
     call trace%end(itimer)
+
+  contains
+    function calc_omega(e0, e1, e2) result(omega)
+      real(8), intent(in) :: e0, e1, e2
+      real(8) :: rho ! spectral radius
+      real(8) :: omega ! relaxation factor (see Trujillo Bueno 1995)
+      !--------------------------------------------------------------------------------
+      omega = 1.0
+      if (e0/e1 < 1.0) return ! do not over-relax if the previous iteration was not converged
+      if (e1 == 0.0) return ! to avoid division by zero, if the solution already converged
+      rho = e2 * (1 + 1/e1)
+      rho = rho*rho
+      if (rho > 1.0) return ! do not over-relax if error is diverging
+      omega = 2.0 / (1.0 + sqrt(1.0 - rho))
+    end function calc_omega
   END SUBROUTINE update_populations
 
   !===============================================================================
@@ -1036,7 +1083,7 @@ MODULE atom_patch_mod
     character(len=256), intent(in) :: folder
     character(len=*), intent(in) :: label
     character(len=256) :: filename, sfolder, metafile, file
-    real(4), dimension(:,:,:,:,:), pointer, contiguous :: mem
+    real(4), dimension(:,:,:,:,:), allocatable :: mem
     integer :: lunit, file_size, mem_size, iostat, prec, oldm(5), newm(5), iv, iw, k, i
     logical, save :: first_time=.true.
     ! ----------------------------------------------------------------------------
@@ -1059,13 +1106,12 @@ MODULE atom_patch_mod
     newm = [self%n, self%atom%nlevel, 2]
     open(newunit=lunit, file=trim(sfolder)//filename, access='stream')
     if (all(oldm == newm)) then
-      call os%allocate(mem, newm)
+      allocate(mem(oldm(1), oldm(2), oldm(3), oldm(4), oldm(5)))
       read(lunit) mem
       do i=1, self%atom%nlevel
         self%atom%data%n(:,:,:,i) = dble(mem(:,:,:,i,2)) * self%atom%data%nstar(:,:,:,i)
         where(self%atom%data%n(:,:,:,i) /= self%atom%data%n(:,:,:,i)) self%atom%data%n(:,:,:,i) = 0
       end do
-      call os%deallocate(mem)
     !elseif (all(oldm(3:5) == newm(3:5))) then
     !  if (first_time) then
     !    first_time = .false.

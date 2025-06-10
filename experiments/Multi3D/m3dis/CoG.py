@@ -1,7 +1,7 @@
 import os
 import numpy as np
 import pandas as pd
-from .auxfuncs import continuum, convol
+from .auxfuncs import continuum, convol, pchip_mono
 from IPython.display import clear_output, display
 from scipy.interpolate import interp1d
 from scipy.interpolate import PchipInterpolator
@@ -36,7 +36,7 @@ class CoG_line(object):
     def get_weq_corr(self, nlte_run, LTE=True, **kwargs):
         abnds, weqs = self.get_cog(**kwargs, LTE=LTE)
         nlte_weq = nlte_run.atom.trans[self.kr].calc_weq(**kwargs)
-        func = PchipInterpolator(np.log(weqs),abnds)
+        func = pchip_mono(np.log(weqs),abnds)
         corr = nlte_run.atom.abnd - func(np.log(nlte_weq))
         return corr
 

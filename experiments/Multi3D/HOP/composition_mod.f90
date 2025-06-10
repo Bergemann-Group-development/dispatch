@@ -898,7 +898,7 @@ contains
         allocate(stark_pe,     mold=tothi)
         allocate(ne,           mold=tothi)
         allocate(temp,         mold=tothi)
-        allocate(e_kT, mold=tothi)
+        allocate(e_kT,         mold=tothi)
         allocate(inv_df,       mold=tothi)
         allocate(iso_inv_df,   mold=tothi)
         allocate(inv_part,     mold=tothi)
@@ -2148,7 +2148,7 @@ contains
         elseif (imol > 0 .and. .not. iele > 0) then
             particle => self%molecules(imol)
         elseif (imol > 0 .and. iele > 0) then
-            if (findloc(self%elements%id, id, 1) > 0) then
+            if (findloc(self%elements%id, id1, 1) > 0) then
                 element => self%elements(iele)
             else
                 particle => self%molecules(imol)

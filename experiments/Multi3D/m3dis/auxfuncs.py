@@ -1,23 +1,19 @@
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 import warnings
 from numpy.fft import fft, ifft
 from scipy.optimize import curve_fit
 from scipy.signal import argrelextrema
 from scipy.special import voigt_profile as scipy_voigt_profile
 from scipy import integrate, stats, optimize
-from scipy.interpolate import interp1d, PchipInterpolator
-from scipy.ndimage import convolve
+from scipy.interpolate import interp1d, CubicHermiteSpline
 from numba import njit, jit
 import shlex
 import re
 import os
 import errno
 import copy
-from inspect import signature
-import matplotlib
-import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap, ListedColormap, BoundaryNorm
 from astropy.io import fits
 from io import StringIO
 from scipy.cluster.hierarchy import fcluster, linkage
@@ -62,24 +58,8 @@ atomic_weights = {'H':  1.008, 'He': 4.003, 'Li': 6.94,  'Be': 9.01,  'B':  10.8
                   'Rn': 222.0, 'Fr': 223.0, 'Ra': 226.0, 'Ac': 227.0, 'Th': 232.0, 
                   'Pa': 230.4, 'U': 238.0}
 
-plot_kwargs = signature(plt.plot).parameters
-line2d_kwargs = signature(matplotlib.lines.Line2D).parameters
-artist_properties = {
-    'alpha', 'zorder', 'label', 'visible', 'animated', 'clip_on', 
-    'clip_box', 'clip_path', 'transform', 'agg_filter', 'figure'}
-combined_kwargs = {**plot_kwargs, **line2d_kwargs}
-plt_kwargs = set(combined_kwargs.keys()).union(artist_properties)
-
 #=====================================================================
 class empty: pass
-
-#=====================================================================
-def comparison_scatter(xx, yy, marker='.', rasterized=True, **kwargs):
-  p = plt.scatter(xx, yy, marker=marker, rasterized=rasterized, **kwargs)
-  xmin = min(np.nanmin(xx), np.nanmin(yy))
-  xmax = max(np.nanmax(xx), np.nanmax(yy))
-  plt.plot([xmin, xmax], [xmin, xmax], zorder=-10, ls='--', color='lightgrey')
-  return p
 
 #=====================================================================
 def check_file(file):
@@ -109,7 +89,7 @@ def split_kwargs(func, kwargs):
 
 #=====================================================================
 def calc_weq(self, method='linear', return_err=False, plot=False,
-             get_func=False, lam0=None, dlam='auto', **kwargs):
+             get_func=False, lam0=None, dlam=None, **kwargs):
     #-----------------------------------------------------------------
     if dlam == 'auto':
         dl = 3
@@ -120,29 +100,8 @@ def calc_weq(self, method='linear', return_err=False, plot=False,
     return get_weq(xx, yy, lam0=lam0, dlam=dlam, method=method,
                     get_func=get_func, return_err=return_err, plot=plot)
 
-##=====================================================================
-#def find_surrounding_inflection_points(xx, yy, x0):
-#    # Compute second derivative to find inflection points
-#    dydx = np.diff(yy) / np.diff(xx)
-#    dydx = np.pad(dydx, 1, 'edge')
-#    dd = np.sign(np.diff(dydx))
-#    turns = np.where(np.diff(dd) != 0)[0]
-#    i0 = np.searchsorted(xx[turns], x0)
-#    left_idx = np.searchsorted(xx, xx[turns[i0-1]])
-#    right_idx = np.searchsorted(xx, xx[turns[i0]]) + 1
-#    return left_idx, right_idx
-
-##=====================================================================
-#def auto_crop_core(xx, yy, x0, thresh=15):
-#    syy = lowpass(xx, yy, thresh=thresh)
-#    li, ri = find_surrounding_inflection_points(xx, syy, x0=x0)
-#    slc = slice(li, ri+1)
-#    xx = xx[slc]
-#    yy = yy[slc]
-#    return xx, yy
-
 #=====================================================================
-def auto_crop_core(xx, yy, x0, thresh=15):
+def auto_crop_core(xx, yy, x0, thresh=15, exclude_wing=False):
     # remove high frequency noise to get smooth signal
     ss = lowpass(xx, yy, thresh=thresh)
     ex = argrelextrema(ss, np.greater_equal)[0]
@@ -156,7 +115,7 @@ def auto_crop_core(xx, yy, x0, thresh=15):
     s = ss[lex:rex+1]
 
     # identify if wings extend to continuum
-    lim = 0.2
+    lim = 0.125
     xmin, ymin = parabolic_min(x, s)
     mask = 1-s > lim*(1-ymin)
 
@@ -174,8 +133,8 @@ def auto_crop_core(xx, yy, x0, thresh=15):
     # extend fitting area at least to first inflection points
     # or to continuum if no other inflection points are found
     # between core and continuum
-    mask[0:ltn] *= mask[0] != True and ltn == turns[0]
-    mask[rtn:] *= mask[-1] != True and rtn == turns[-1] + 1
+    mask[0:ltn] *= mask[0] != True and ltn == turns[0] and not exclude_wing
+    mask[rtn+1:] *= mask[-1] != True and rtn == turns[-1] + 1 and not exclude_wing
     x = x[mask]
     y = y[mask]
     return x, y
@@ -193,8 +152,8 @@ def get_weq(xx, yy, lam0=None, dlam=None, method='gauss', return_err=False, plot
                 
         elif dlam > 0:
             mask = np.abs(xx-lam0) < dlam
-            xx = xx[mask]
-            yy = yy[mask]
+            xx = xx[..., mask]
+            yy = yy[..., mask]
 
         if len(xx) < 3:
             print('Not enough points to calculate equivalent width after cropping!')
@@ -210,7 +169,7 @@ def get_weq(xx, yy, lam0=None, dlam=None, method='gauss', return_err=False, plot
     
     if method == 'pchip':
         xxx = np.linspace(xx[0], xx[-1], xx.size*10)
-        f = PchipInterpolator(xx, 1-yy)
+        f = pchip_mono(xx, 1-yy)
         weq = np.trapz(f(xxx), x=xxx)*1e3
 
     if method in ['gauss', 'voigt', 'asym_gauss']:
@@ -306,7 +265,6 @@ def convol(sx, sy, vrot=None, zeta_rt=None, vshift=None, vdop=None, custom=None)
     
     rd = 0.5 * np.min(np.diff(sxx))
     rd = np.max([rd, min_rd])
-    
     
     npres = ((sxx[-1] - sxx[0]) // rd) + 1
     npresn = npres + npres%2
@@ -949,73 +907,6 @@ class memmap_list:
     
     def __transpose__(self):
         return np.array(self).transpose()
-        
-
-#=====================================================================
-def scatter_density(xx, yy, radius=0, cmap='binary', vmin=0, vmax=None, aspect='auto',
-            xmin=None, xmax=None, ymin=None, ymax=None, interpolation='nearest', **kwargs):
-  #-----------------------------------------------------------------
-  
-  mask = np.isnan(xx) | np.isnan(yy) | np.isinf(xx) | np.isinf(yy)
-  xx = xx[~mask]
-  yy = yy[~mask]
-  
-  if xmin is None: xmin = xx.min()
-  if xmax is None: xmax = xx.max()
-  if ymin is None: ymin = yy.min()
-  if ymax is None: ymax = yy.max()
-
-  fig = plt.gcf()
-  nx, ny = fig.get_size_inches() * fig.get_dpi()
-
-  # Get the bounding box of the axes in figure-relative coordinates
-  bbox = plt.gca().get_position()
-
-  # Compute the size of the axes in inches
-  nx = bbox.width * nx
-  ny = bbox.height * ny
-
-  nx = np.ceil(nx).astype(int)
-  ny = np.ceil(ny).astype(int)
-  dx = (xmax - xmin) / (nx-1)
-  dy = (ymax - ymin) / (ny-1)
-  
-  ix = (xx - xmin) / dx
-  iy = (yy - ymin) / dy
-  iix = np.floor(ix).astype(int)
-  iiy = np.floor(iy).astype(int)
-  mask = (iix >= 0) & (iix < nx-1) & (iiy >= 0) & (iiy < ny-1)
-  ix = ix[mask]
-  iy = iy[mask]
-  iix = iix[mask]
-  iiy = iiy[mask]
-  fx = ix - iix
-  fy = iy - iiy
-
-  # Image
-  image = np.zeros((nx, ny))  # Replace with your actual image
-  np.add.at(image, (iix-1, iiy-1), (1-fx)*(1-fy))
-  np.add.at(image, (iix, iiy-1), fx*(1-fy))
-  np.add.at(image, (iix-1, iiy), (1-fx)*fy)
-  np.add.at(image, (iix, iiy), fx*fy)
-
-  if radius > 0:
-    # Circle convolution kernel
-    x = np.arange(-radius, radius+1)
-    y = np.arange(-radius, radius+1)
-    x, y = np.meshgrid(x, y)
-    circle = np.sqrt(x**2 + y**2)
-    circle = np.interp(circle.ravel(), [radius, radius+1], [1, 0]).reshape(circle.shape)
-    circle = circle / circle.sum()
-    image = convolve(image, circle)
-
-  with np.errstate(divide='ignore', invalid='ignore'):
-    image = np.log(image)
-
-  if vmax is None: vmax = image.max()
-  return plt.imshow(image.T, origin='lower', extent=(xmin, xmax, ymin, ymax),
-                    vmin=vmin, vmax=vmax, aspect=aspect, cmap=cmap, 
-                    interpolation=interpolation, **kwargs)
 
 #=====================================================================
 def crop_inputs(xx, yy, xmin=None, xmax=None, ymin=None, ymax=None):
@@ -1026,64 +917,6 @@ def crop_inputs(xx, yy, xmin=None, xmax=None, ymin=None, ymax=None):
     if ymax is None: ymax = np.nanmax(yy)
     mask = (xx >= xmin) & (xx <= xmax) & (yy >= ymin) & (yy <= ymax)
     return xx[mask], yy[mask]
-
-#=====================================================================
-def alpha_cmap(cmap_name, clip=None):
-    # Load the original colormap and extract RGB values
-    cmap = plt.get_cmap(cmap_name)
-    colors = cmap(np.linspace(0, 1, cmap.N))
-    
-    # Separate RGB and calculate alpha based on lightness
-    rgba_colors = np.zeros_like(colors)
-    rgba_colors[:, :3] = colors[:, :3]  # Copy the RGB values
-    alphas = 1 - colors[:, :3].mean(axis=1)  # Higher lightness -> lower alpha
-
-    # Ensure alpha is in [0, 1] range
-    if clip is not None:
-      alphas = np.clip(alphas, clip, 1.0)  # Preventing 0 alpha for visibility
-    
-    # Adjust RGB based on alpha to blend correctly over white
-    rgba_colors[:, 3] = alphas # Set the alpha channel
-    alphas = alphas[:, None]
-    rgba_colors[:, 0:3] = (colors[:, 0:3] - 1 + alphas) / alphas
-
-    # Clip RGB to stay within valid range [0, 1]
-    rgba_colors[:, :3] = np.clip(rgba_colors[:, :3], 0, 1)
-
-    # Create a new colormap with the adjusted RGBA values
-    new_cmap = LinearSegmentedColormap.from_list('custom_map', rgba_colors)
-    return new_cmap
-
-#=====================================================================
-def plot_arrow(start, end, color=None, linewidth=None, markersize=None):
-    """
-    Plots an arrow from `start` to `end` with a line and a rotated 'v' marker.
-
-    Parameters:
-    - start: tuple (x0, y0), starting point of the arrow.
-    - end: tuple (x1, y1), ending point of the arrow.
-    - color: color of the line and marker.
-    - linewidth: width of the line.
-    - markersize: size of the 'v' marker.
-    """
-    # Calculate the direction vector in data coordinates
-    dx, dy = end[0] - start[0], end[1] - start[1]
-    
-    # Get axis data limits and aspect ratio correction
-    ax = plt.gca()
-    xlim = ax.get_xlim()
-    ylim = ax.get_ylim()
-    data_ratio = ax.get_data_ratio()  # Ratio of y-unit to x-unit
-
-    # Scale dy by the data ratio to account for aspect ratio
-    dy_corrected = dy / data_ratio
-
-    # Calculate the angle in degrees from the corrected vector
-    angle = np.degrees(np.arctan2(dy_corrected, dx)) - 90
-
-    # Plot the line segment
-    p, = plt.plot([start[0], end[0]], [start[1], end[1]], color=color, linewidth=linewidth)
-    plt.plot(end[0], end[1], marker=(3, 0, angle), color=p.get_color(), markersize=markersize)
 
 #=====================================================================
 def gaussian_profile(x, x0, sig, amp):
@@ -1350,18 +1183,6 @@ def tbdfits(file, ext=None, survey=None, verbose=True):
     return lam, flux, header
 
 #=====================================================================
-def subplot_labels(ax=None, xlabel=None, ylabel=None):
-  if ax == None: ax = plt.gca()
-  sub = ax.get_subplotspec()
-  grid = sub.get_gridspec()
-  if xlabel is not None:
-    if sub.rowspan.stop == grid._nrows:
-        ax.set_xlabel(xlabel)
-  if ylabel is not None:
-    if sub.colspan.start == 0:
-        ax.set_ylabel(ylabel)
-
-#=====================================================================
 def pad_boolean(arr, pad=1):
   # Convert Boolean to integers (True -> 1, False -> 0)
   int_arr = arr.astype(int)
@@ -1455,25 +1276,6 @@ def nearest_sorted(array, values):
   return idx
 
 #=====================================================================
-def create_centered_colormap(cmap_name, centers):
-    # Get the colormap from the specified name
-    cmap = plt.get_cmap(cmap_name)
-    
-    # Define the boundaries for the levels
-    bounds = np.array(centers)
-    diff = np.diff(centers)
-    bounds = np.concatenate([bounds - diff[0]/2, [bounds[-1] + diff[-1]/2]])
-    num_levels = len(bounds)
-    
-    # Create the normalization
-    norm = BoundaryNorm(bounds, num_levels)
-    
-    # Create the stepwise colormap
-    stepwise_cmap = ListedColormap(cmap(np.linspace(0, 1, num_levels)))
-    
-    return stepwise_cmap, norm
-
-#=====================================================================
 def assign_group_indices(values, tolerance):
     Z = linkage(values[:, None], method='single')  # Perform hierarchical clustering
     group_indices = fcluster(Z, t=tolerance, criterion='distance')  # Assign cluster indices
@@ -1504,17 +1306,6 @@ def sort_cntm(yy):
   return norm
 
 #=====================================================================
-def adjust_max_xticks():
-    ax = plt.gca()
-    transform = ax.transData.inverted()
-    xticklabels = ax.get_xticklabels()
-    widths = [label.get_window_extent().transformed(transform).width for label in xticklabels]
-    axwidth = ax.get_window_extent().transformed(transform).width
-    if np.sum(widths) > axwidth:
-        n = np.floor(axwidth / np.mean(widths))
-        ax.xaxis.set_major_locator(plt.MaxNLocator(n))
-
-#=====================================================================
 def parabolic_min(xx, yy):
   imin = np.argmin(yy)
   if imin == 0:
@@ -1536,3 +1327,40 @@ def parabolic_min(xx, yy):
   xmin = poly_root[0]
   ymin = np.polyval(p, xmin)
   return xmin, ymin
+
+#=====================================================================
+def pchip_mono(xx, yy, axis=0, **kwargs):
+  xx = np.moveaxis(xx, axis, -1)
+  yy = np.moveaxis(yy, axis, -1)
+  
+  dx = np.diff(xx)
+  dy = np.diff(yy)
+  dlin = dy / dx
+  if len(dlin) > 1:
+    dyup = dlin[..., :-1]
+    dydn = dlin[..., 1:]
+    dxup = dx[..., :-1]
+    dxdn = dx[..., 1:]
+    dydx = (dydn*dxup + dyup*dxdn) / (dxup + dxdn)
+    lim1 = 2*dlin[..., :1]
+    limn = 2*dlin[..., -1:]
+    d1 = lim1 - dydx[..., :1]
+    dn = limn - dydx[..., -1:]
+    d1 = np.sign(d1) * np.min([abs(d1), abs(lim1)], axis=0)
+    dn = np.sign(dn) * np.min([abs(dn), abs(limn)], axis=0)
+    dydx = (np.sign(dyup) + np.sign(dydn)) * np.min([abs(dyup), abs(dydn), abs(0.5*dydx)], axis=0)
+    dydx = np.concatenate([d1, dydx, dn], axis=-1)
+  else:
+    dydx = np.concatenate([dlin, dlin], axis=-1)
+
+  dydx = np.moveaxis(dydx, -1, axis)
+  xx = np.moveaxis(xx, -1, axis)
+  yy = np.moveaxis(yy, -1, axis)
+
+  return CubicHermiteSpline(xx, yy, dydx, axis=axis, **kwargs)
+
+#=====================================================================
+def pchip_sigma(xx, yy, x, dx):
+  func = pchip_mono(xx, yy)
+  dy = func.derivative(1)(x)*dx
+  return np.abs(dy)

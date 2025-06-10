@@ -1,8 +1,10 @@
 from .atom import atom_class
 from .trans import trans_class
 from .auxfuncs import *
+from .plotting_scripts import *
 from .fast_atom import fast_atom, pandas_atom
 from .fast_trans import fast_trans, llist_trans
+from .bokeh_scripts import bkh
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -58,7 +60,6 @@ class m3dis(object):
 
         self.read_atom(read_atom, fast_read, verbose, **kwargs)
 
-
         file = folder + 'angle_quadrature.txt'
         if os.path.isfile(file):
             df = pd.read_csv(file, header=None, skiprows=1, sep=r'\s+', names=['ang', 'wmu', 'mux', 'muy', 'muz'])
@@ -113,6 +114,7 @@ class m3dis(object):
         atom_file = self.folder + 'atom.txt'
         if os.path.isfile(atom_file):
             if not read_atom:
+                self.has_atom = False
                 self.atom = empty()
                 with open(atom_file, 'r') as f:
                     line = f.readline()
@@ -122,6 +124,7 @@ class m3dis(object):
                     self.atom.id = line.split()[0]
 
             else:
+                self.has_atom = True
                 self.qnorm = self.nml['atom_params']['qnorm']
                 loggf_cut  = self.nml['atom_params']['logf_cut']
                 red_cut    = self.nml['atom_params']['red_cut']
@@ -311,6 +314,7 @@ class m3dis(object):
 
             self.ltau = np.log10(self.tau)
 
+    #=====================================================================
     def read_llist(self):
         self.llist = pd.read_csv(self.folder + 'linelist_out.txt', sep=r'\s+', quotechar="'")
         self.llist['lam0'] = vacuum2obs(self.llist.lam_vac)
@@ -336,97 +340,178 @@ class m3dis(object):
         return line
 
     #=====================================================================
-    def get_xx(self, lam, slc=None, dlam=None, xmin=None, xmax=None):
+    def plot_spectrum(self, set_labels=True, show_lines=False, lam_offset=False,
+                      label=None, bokeh=False, **kwargs):
         #-----------------------------------------------------------------
-        if slc is None:
-            ib = None
-            ir = None
+        if bokeh:
+            pkwargs = bkh.plot_kwargs
         else:
-            ib = slc.start
-            ir = slc.stop
+            pkwargs = plt_kwargs
 
-        if dlam is not None:
-            if not isinstance(dlam, (bool)):
-                if hasattr(dlam, '__iter__'):
-                    dl = dlam[:]
-                else:
-                    dl = (-dlam, dlam)
+        crop_kwargs = {k:v for k, v in kwargs.items() if k not in pkwargs}
+        plot_kwargs = {k:v for k, v in kwargs.items() if k not in crop_kwargs}
 
-                ib = np.searchsorted(lam, dl[0])
-                ir = np.searchsorted(lam, dl[1])
+        if bokeh:
+            fig = bkh.figure(tools='xpan, xwheel_zoom, box_zoom, reset')
+            xcrop, _ = self.get_xx(lam_offset=lam_offset, **crop_kwargs)
+            self.set_xaxis(xcrop, lam_offset=lam_offset, set_labels=set_labels,
+                           bokeh=bokeh, **crop_kwargs)
+            crop_kwargs['dlam'] = None
+            xx, yy = self.crop(lam_offset=lam_offset, **crop_kwargs)
+        else:
+            xx, yy = self.crop(lam_offset=lam_offset, **crop_kwargs)
+            
+            self.set_xaxis(xx, lam_offset=lam_offset, set_labels=set_labels,
+                           bokeh=bokeh, **crop_kwargs)
+            
+        self.set_yaxis(bokeh=bokeh, **crop_kwargs)
 
-        if xmin is not None:
-            ib = max(np.searchsorted(lam, xmin)-1, 0)
-            if lam[ib] < xmin-10: ib += 1
+        if show_lines:
+            self.plot_lline_labels()
 
-        if xmax is not None:
-            ir = min(np.searchsorted(lam, xmax)+1, lam.size-1)
-            if lam[ir-1] > xmax+10: ir -= 1
+        if type(label) is str:
+            if '{WEQ}' in label:
+                weq = np.trapz(1-yy, x=xx)*1e3
+                label = label.replace('{WEQ}', '{:.2f}'.format(weq))
 
-        mask = slice(ib, ir)
-        xx = lam[mask]
-        return xx, mask
+        if bokeh:
+            p = bkh.plot(xx, yy, label=label, **plot_kwargs)
+        else:
+            p = plt.plot(xx, yy, label=label, **plot_kwargs)
+            
+        return xyplot(p, xx, yy)
+
 
     #=====================================================================
     def set_xaxis(self, xx, dlam=None, velocity_units=False,
-                  set_labels=True, lam_offset=True):
+                  set_labels=True, lam_offset=True, bokeh=False, **kwargs):
         #-----------------------------------------------------------------
         xmin = min(xx)
         xmax = max(xx)
         dxx = xmax - xmin
-        offset = lam_offset and dlam is not None and dlam is not False
+        offset = lam_offset and dlam
 
-        if set_labels:
-            ax = plt.gca()
-            sub = ax.get_subplotspec()
-            grid = sub.get_gridspec()
-            if sub.rowspan.stop == grid._nrows:
-                if velocity_units: 
-                    plt.xlabel(r'$v_{\rm dop}$ [km/s]')
-                elif offset:
-                    plt.xlabel(r'∆λ [Å]')
-                else:
-                    plt.xlabel('Wavelength [Å]')
+        if velocity_units: 
+            xlabel = r'$v_{\rm dop}$ [km/s]'
+        elif offset:
+            xlabel = r'∆λ [Å]'
+        else:
+            xlabel = 'Wavelength [Å]'
 
-        plt.xlim(xmin, xmax)
-        plt.ticklabel_format(useOffset=False)
-        adjust_max_xticks()
+        if bokeh:
+            if set_labels:
+                bkh.xlabel(xlabel)
+
+            bkh.xlim(xmin, xmax)
+        else:
+            if set_labels:
+                ax = plt.gca()
+                sub = ax.get_subplotspec()
+                grid = sub.get_gridspec()
+                if sub.rowspan.stop == grid._nrows:
+                    plt.xlabel(xlabel)
+
+            plt.xlim(xmin, xmax)
+            plt.ticklabel_format(useOffset=False)
+            adjust_max_xticks()
 
     #=====================================================================
-    def set_yaxis(self, ang, imu, norm, per_aa=False, renorm=None, set_labels=True):
+    def set_yaxis(self, ang=None, imu=None, norm=True, per_aa=False, renorm=None,
+                  set_labels=True, bokeh=False, **kwargs):
         #-----------------------------------------------------------------
-        if ang is not None:
+        if ang:
             ylabel = 'Intensity µ={:.2f}'.format(self.vec[ang,-1])
-            
-        elif imu is not None:
+        elif imu:
             if imu < 0: imu = self.imus.max() + imu + 1
             ylabel = 'Intensity µ={:.2f}'.format(self.mus[imu])
-            
         else:
             ylabel = 'Flux'
 
         if per_aa: norm=False
 
+        if norm or renorm:
+            ylabel = 'Normalised ' + ylabel
+        else:
+            units = 'erg/s/cm$^2$'
+
+            if ylabel!='Flux':
+                units = units + '/sr'
+
+            if per_aa:
+                units = units + '/Å'
+            else:
+                units = units + '/Hz'
+
+            ylabel = ylabel + ' [' + units + ']'
+
         if set_labels:
-            ax = plt.gca()
-            sub = ax.get_subplotspec()
-            if sub.colspan.start == 0:
-                if norm or renorm is not None:
-                    ylabel = 'Normalised ' + ylabel
+            if bokeh:
+                bkh.ylabel(ylabel)
+            else:
+                ax = plt.gca()
+                sub = ax.get_subplotspec()
+                if sub.colspan.start == 0:
+                    plt.ylabel(ylabel)
+
+    #=====================================================================
+    def get_xx(self, slc=None, lam0=None, dlam=None, xmin=None, xmax=None,
+               vshift=None, velocity_units=False, lam_offset=True, **kwargs):
+        #-----------------------------------------------------------------
+        lam = self.lam
+
+        if vshift:
+            vshift = vshift / CC_KMS # vshift has to be given in km/s
+            lshift = 1 + vshift
+            lam = lam * lshift
+    
+        if lam0:
+            lam = lam - lam0
+            if xmin: xmin = xmin - lam0
+            if xmax: xmax = xmax - lam0
+        else:
+            dlam = None
+            lam0 = 0
+
+        if slc:
+            ib = slc.start
+            ir = slc.stop
+        else:
+            ib = None
+            ir = None
+
+        if dlam:
+            if not isinstance(dlam, (bool)):
+                if hasattr(dlam, '__iter__'):
+                    dl = dlam[:]
                 else:
-                    units = 'erg/s/cm$^2$'
+                    dl = (dlam, dlam)
 
-                    if ylabel!='Flux':
-                        units = units + '/sr'
+                ib = np.searchsorted(lam, -dl[0])
+                ir = np.searchsorted(lam, dl[1])
 
-                    if per_aa:
-                        units = units + '/Å'
-                    else:
-                        units = units + '/Hz'
+        if xmin:
+            ib = max(np.searchsorted(lam, xmin)-1, 0)
+            if lam[ib] < xmin-10: ib += 1
 
-                    ylabel = ylabel + ' [' + units + ']'
+        if xmax:
+            ir = min(np.searchsorted(lam, xmax)+1, lam.size-1)
+            if lam[ir-1] > xmax+10: ir -= 1
 
-                plt.ylabel(ylabel)
+        mask = slice(ib, ir)
+        xx = lam[mask]
+
+        if lam0:
+            xx = xx + lam0
+
+            if velocity_units:
+                xx = xx / lam0
+                if dlam: xx = xx - 1
+                xx = xx * CC_KMS
+                
+            elif lam_offset and dlam:
+                xx = xx - lam0
+
+        return xx, mask
 
     #=====================================================================
     def get_yy(self, ang=None, imu=None, norm=True, cont=False, LTE=False,
@@ -511,48 +596,34 @@ class m3dis(object):
         if per_aa:
             norm = False
 
-        oxx = self.lam
+        xx, mask1 = self.get_xx(slc=slc, lam0=lam0, dlam=dlam, xmin=xmin, xmax=xmax,
+                               vshift=vshift, velocity_units=velocity_units, lam_offset=lam_offset)
+        lam = self.lam[mask1]
 
-        if vshift is not None:
-            vshift = vshift / CC_KMS # vshift has to be given in km/s
-            lshift = oxx * vshift / (1+vshift)
-            oxx = oxx + lshift
-
-        if Res is not None:
+        if Res:
             Res = CC_KMS / Res
             if vdop is None:
                 vdop = Res
             else:
                 vdop = np.sqrt(vdop**2 + Res**2)
-    
-        if lam0 is not None:
-            oxx = oxx - lam0
-            if xmin is not None: xmin = xmin - lam0
-            if xmax is not None: xmax = xmax - lam0
-        else:
-            dlam = None
-            lam0 = 0
-
-        newx, mask = self.get_xx(oxx, slc=slc, dlam=dlam, xmin=xmin, xmax=xmax)
 
         vels = np.array([vdop, vrot, zeta_rt])
         vmask = vels != None
         if any(vmask): # we need to add padding to avoid convolution artefacts at the edges
-            uconv = 5*(newx[newx.size//2] + lam0)/CC_KMS
+            uconv = 5*lam[lam.size//2]/CC_KMS
             pad = uconv * np.sum(vels[vmask])
 
-            if dlam is not None:
-                if hasattr(dlam, '__iter__'):
-                    dlam = dlam + np.array([-pad, pad])
-                else:
-                    dlam = dlam + pad
+            if dlam:
+                dlam = list(dlam + np.array([pad, pad]))
 
-            if xmin is not None: xmin = xmin - pad
-            if xmax is not None: xmax = xmax + pad
+            if xmin: xmin = xmin - pad
+            if xmax: xmax = xmax + pad
 
-        xx, mask = self.get_xx(oxx, slc=slc, dlam=dlam, xmin=xmin, xmax=xmax)
+        _, mask2 = self.get_xx(slc=slc, lam0=lam0, dlam=dlam, xmin=xmin, xmax=xmax,
+                               vshift=vshift, velocity_units=velocity_units, lam_offset=lam_offset)
+        padded_lam = self.lam[mask2]
 
-        get_yy_dict = {'LTE':LTE, 'norm':norm, 'cont':cont, 'resolved':resolved, 'mask':mask}
+        get_yy_dict = {'LTE':LTE, 'norm':norm, 'cont':cont, 'resolved':resolved, 'mask':mask2}
         if hasattr(ang, '__iter__'):
             yy = [self.get_yy(ang=i, **get_yy_dict) for i in ang]
         elif hasattr(imu, '__iter__'):
@@ -562,47 +633,31 @@ class m3dis(object):
 
         yy = np.array(yy)
 
-        if renorm is not None:
-            if renorm == 0:
+        if renorm:
+            if renorm == 'max':
                 yy = yy / np.max(yy)
-            elif renorm > 0:
+            elif renorm == 'edge':
                 yy = yy / continuum(xx, yy)
-            elif renorm < 0:
-                xnorm, mnorm = self.get_xx(oxx, dlam=-renorm)
+            elif renorm > 0:
+                _, mnorm = self.get_xx(lam0=lam0, dlam=renorm)
                 ynorm = self.get_yy(ang=ang, imu=imu, norm=norm, cont=cont, LTE=LTE, mask=mnorm)
                 yy = yy / np.max(ynorm)
-
-        xx = xx + lam0
-        newx = newx + lam0
 
         if set([vdop, vrot, zeta_rt, convolve]) != {None}:
             newy = []
             for y in yy:
-                sxx, syy = convol(xx, y, vdop=vdop, vrot=vrot, zeta_rt=zeta_rt, custom=convolve)
-                newy.append(np.interp(newx, sxx, syy))
+                sxx, syy = convol(padded_lam, y, vdop=vdop, vrot=vrot, zeta_rt=zeta_rt, custom=convolve)
+                newy.append(np.interp(lam, sxx, syy))
 
             yy = np.array(newy)
 
-        xx = newx
-
         if per_aa:
-            yy = yy * CC / (xx**2) * 1e8
+            yy = yy * CC / (lam**2) * 1e8
 
-        if lam0 is not None:
-            offset = lam_offset and dlam is not None and dlam is not False
-            if offset:
-                xx = xx - lam0
-
-            if velocity_units:
-                xx = xx / lam0
-                if dlam is None or dlam is False:
-                    xx = xx - 1
-                xx = xx * CC_KMS
-
-        if fac is not None:
+        if fac:
             yy = yy * fac
         
-        if tilt is not None:
+        if tilt:
             yy = yy * (1 + tilt*(xx - (xx[0]+xx[-1])/2))
 
         if len(yy)==1:
@@ -630,35 +685,6 @@ class m3dis(object):
         #-----------------------------------------------------------------
         return calc_weq(self, **kwargs)
             
-    
-    #=====================================================================
-    def plot_spectrum(self, velocity_units=None, set_labels=True,
-                      lam_offset=None, ang=None, imu=None, norm=True,
-                      dlam=None, renorm=None, per_aa=False, show_lines=False,
-                      label=None, **kwargs):
-        #-----------------------------------------------------------------
-        crop_kwargs = {k:v for k, v in kwargs.items() if k not in plt_kwargs}
-        plot_kwargs = {k:v for k, v in kwargs.items() if k not in crop_kwargs}
-        
-        xx, yy = self.crop(dlam=dlam, ang=ang, imu=imu, norm=norm, renorm=renorm,
-                           per_aa=per_aa, velocity_units=velocity_units, lam_offset=lam_offset,
-                           **crop_kwargs)
-        
-        self.set_xaxis(xx, dlam, velocity_units=velocity_units, set_labels=set_labels,
-                       lam_offset=lam_offset)
-        
-        self.set_yaxis(ang, imu, norm, renorm=renorm, per_aa=per_aa)
-
-        if show_lines:
-            self.plot_lline_labels()
-
-        if type(label) is str:
-            if '{WEQ}' in label:
-                weq = np.trapz(1-yy, x=xx)*1e3
-                label = label.replace('{WEQ}', '{:.2f}'.format(weq))
-
-        plt.plot(xx, yy, label=label, **plot_kwargs)
-        return xx, yy
 
     #=====================================================================
     def plot_resolved(self, ang=0, f=0, LTE=False, cont=False, **kwargs):
@@ -764,8 +790,8 @@ class m3dis(object):
         if ilvl is not None:
             dep = dep[...,ilvl]
 
-        dep = np.array(dep)
-        ltau = self.ltau
+        dep = np.array(dep)[:,:,::-1]
+        ltau = self.ltau[...,::-1]
 
         if self.dim=='1D':
             dep = dep.squeeze()
@@ -781,7 +807,7 @@ class m3dis(object):
         plt.title('Departure coefficient of level {:}'.format(ilvl))
         plt.ylabel(r'$\rm n\,/\,n_{\rm LTE}$')
         plt.xlabel(r'log$\tau_{500}$')
-        return plt.plot(xx, yy, **kwargs)
+        return plt.plot(xx.ravel(), yy.ravel(), **kwargs)
     
     
     #=====================================================================
@@ -981,7 +1007,7 @@ class m3dis(object):
             yy1d = np.mean(yy3d, axis=axis)
             if log: yy1d = np.exp(yy1d)
         else:
-            if newx is None: newx = self.ltau
+            if newx is None: newx = self.ltau[::-1]
             yy1d = np.interp(newx, self.ltau[::-1], cube[::-1])
 
         return newx, yy1d
@@ -1104,7 +1130,8 @@ class m3dis(object):
                                 strength = group.strength.sum()
                                 wts = group.strength / strength
                                 lam0 = np.sum(group.lam0 * wts)
-                                new_row = pd.DataFrame({'ion': [s], 'lam0': [lam0], 'strength': [strength]})
+                                loggf = np.log10(np.sum(10**group.loggf))
+                                new_row = pd.DataFrame({'ion': [s], 'lam0': [lam0], 'strength': [strength], 'loggf': [loggf]})
                                 llist = pd.concat([llist, new_row])
 
             max_strength = llist.strength.max()
@@ -1113,7 +1140,7 @@ class m3dis(object):
             max_strength = 0.1
             llist = pd.DataFrame()
 
-        if hasattr(self, 'atom') and show_atom:
+        if self.has_atom and show_atom:
             bbt = self.atom.bbt[['lam0', 'loggf', 'ga']].copy().reset_index(drop=True)
             mask = (bbt.lam0 > xmin) & (bbt.lam0 < xmax)
             bbt = bbt[mask]
@@ -1121,7 +1148,7 @@ class m3dis(object):
             bbt['strength'] = max_strength
             if len(bbt) == 1:
                 llist = pd.concat([llist, bbt])
-            elif len(bbt) > 1:
+            elif len(bbt) > 1 and tol is not None:
                 groups = assign_group_indices(bbt['lam0'].values, tol) - 1
                 for i in range(groups.max()+1):
                     group = bbt[groups == i]
@@ -1131,17 +1158,19 @@ class m3dis(object):
                         strength = group.strength.sum()
                         wts = group.strength / strength
                         lam0 = np.sum(group.lam0 * wts)
-                        new_row = pd.DataFrame({'ion': [self.atom.id], 'lam0': [lam0], 'strength': [strength]})
+                        loggf = np.log10(np.sum(10**group.loggf))
+                        new_row = pd.DataFrame({'ion': [self.atom.id], 'lam0': [lam0], 'strength': [strength], 'loggf': [loggf]})
                         llist = pd.concat([llist, new_row])
 
         if len(llist) > 0:    
             llist = llist.sort_values(by='lam0').reset_index(drop=True)
             if offset is not None: llist['lam0'] = llist['lam0'] + offset
             if not dry:
-                self.plot_line_annotations(llist.lam0.values, llist.ion.values, llist.strength.values, **kwargs)
+                plot_line_annotations(llist.lam0.values, llist.ion.values, llist.strength.values, **kwargs)
         
         return llist
     
+    #=====================================================================
     def plot_line_stem(self, bottom=1.0, scale=None, offset=None, xmin=None, xmax=None, **kwargs):
         def cog_func(xx):
             mask = xx < np.exp(0.5)
@@ -1162,108 +1191,56 @@ class m3dis(object):
         yy = bottom + yy * scale
         plt.plot([xx, xx], [bottom*np.ones_like(xx), yy], **kwargs)
     
-    #=====================================================================
-    def plot_line_annotations(self, xx, labels, weights=None, ha='center', va='bottom',
-                         rotation=90, fontfamily='serif', color='k', xmin=None, xmax=None,
-                         ymin=None, ymax=None, linewidth=0.8, ntop=-1, **kwargs):
-        #-----------------------------------------------------------------
-        ax = plt.gca()
-        xmn, xmx = ax.get_xlim()
-        ymn, ymx = ax.get_ylim()
-        if xmin is None: xmin = xmn
-        if xmax is None: xmax = xmx
-        if ymin is None: ymin = ymn
-        if ymax is None: ymax = ymx
-        h = 0.1 * (ymax - ymin)
-
-        mask = (xx > xmin) & (xx < xmax)
-        xx = xx[mask]
-        labels = np.array(labels)[mask]
-        if weights is not None: weights = weights[mask]
-
-        t = ax.text(xmin, ymin, 'Mg IV', ha=ha, va=va, rotation=rotation, fontfamily=fontfamily, **kwargs)
-        bbox = t.get_window_extent().transformed(ax.transData.inverted())
-        t.remove()
-
-        if rotation == 90:
-            pad = 1.4
-        else:
-            pad = 1.2
-
-        dxmin = bbox.width*pad
-        newn = int((xmax - xmin) / dxmin)
-
-        if ntop == -1: ntop = newn
-        if ntop is not None and weights is not None:
-            mask = np.argsort(weights)[::-1][:ntop]
-            mask = np.isin(np.arange(xx.size), mask)
-            #mask = llist.nlargest(ntop, 'strength').sort_values('lam0').index
-            #llist = llist.loc[mask]
-            labels = labels[mask]
-            xx = xx[mask]
-
-        #xx = llist.lam0.values
-        n = xx.size
-
-        newn = max(newn, n)
-        nn = np.ones(n)
-
-        newx = np.linspace(xmin, xmax, newn+2)[1:-1]
-
-        xlist = list(xx)
-        binlist = list(newx)
-
-        newx = []
-        for x in xlist:
-            i = np.argmin(np.abs(binlist - x))
-            newx.append(binlist[i])
-            del binlist[i]
-
-        oldx = xx
-        newx = np.sort(newx)
-
-        xl = np.vstack([newx, newx, oldx, oldx])
-        yl = ymax*nn + np.vstack([h*nn, 0.8*h*nn, 0.2*h*nn, 0*nn])
-
-        plt.plot(xl, yl, color=color, linewidth=linewidth)
-
-        for x, label in zip(newx, labels):
-            plt.text(x, ymax+1.2*h, label, ha=ha, va=va, rotation=rotation,
-                     fontfamily=fontfamily, color=color, **kwargs)
-
-        if rotation == 90:
-            pad = 1.5
-        else:
-            pad = 2.5
-
-        plt.ylim(top=ymax+1.2*h + bbox.height*pad)
-    
     #=================================================================
     def fit_observed(self, oxx, oyy, fit=[], bounds=None, p0=None, sigma=None,
-                     method='curve_fit', tol=None, **kwargs):
+                     syst=None, method='curve_fit', tol=None, Res='auto', **kwargs):
         lbounds = {'vshift':-3, 'vdop':1e-3, 'vrot':1e-3, 'zeta_rt':1e-3, 'fac':0.5, 'tilt':-0.2}
         ubounds = {'vshift':+3, 'vdop':1e1,  'vrot':1e1,  'zeta_rt':1e1,  'fac':2.0, 'tilt':+0.2}
         p0s     = {'vshift':0,  'vdop':1,    'vrot':1,    'zeta_rt':1,    'fac':1.0, 'tilt':0.0}
         if bounds is None: bounds = ([lbounds[f] for f in fit], [ubounds[f] for f in fit])
         if p0 is None: p0 = [p0s[f] for f in fit]
 
+        if method != 'curve_fit':
+            bounds = np.vstack(bounds).T
+
+        if Res == 'auto':
+            Res = np.mean(oxx) / np.mean(np.diff(oxx))
+
         def opt_func(newx, *args):
             ka = {f:args[i] for i, f in enumerate(fit)}
-            return self.interp(newx, **ka, **kwargs)
+            return self.interp(newx, **ka, Res=Res, **kwargs)
         
-        if method == 'curve_fit':
-            pfit, _ = optimize.curve_fit(opt_func, oxx, oyy, p0=p0, bounds=bounds, sigma=sigma)
+        def fit_params(x, y):
+            if method == 'curve_fit':
+                pfit, _ = optimize.curve_fit(opt_func, x, y, p0=p0, bounds=bounds, sigma=sigma)
 
-        else:
-            bounds = np.vstack(bounds).T
-            def opt_func2(params, newx):
-                res = oyy - opt_func(newx, *params)
-                if sigma is not None: res = res/sigma
-                return np.sum(res**2)
-            pfit = optimize.minimize(opt_func2, p0, args=(oxx), bounds=bounds, method=method, tol=tol).x
+            else:
+                def opt_func2(params, newx):
+                    res = y - opt_func(newx, *params)
+                    if sigma is not None: res = res/sigma
+                    return np.sum(res**2)
+                
+                pfit = optimize.minimize(opt_func2, p0, args=(x), bounds=bounds, method=method, tol=tol).x
 
+            return pfit
+
+        pfit = fit_params(oxx, oyy)
         fitted = opt_func(oxx, *pfit)
-        return {f:pfit[i] for i, f in enumerate(fit)}, fitted
+        best = {f:pfit[i] for i, f in enumerate(fit)}
+
+        if syst is None:
+            return best, fitted
+        else:
+            pfits = np.zeros((len(pfit), 3))
+            pfits[:, 0] = fit_params(oxx, oyy*(1-syst))
+            pfits[:, 1] = pfit
+            pfits[:, 2] = fit_params(oxx, oyy*(1+syst))
+            perr = [pchip_sigma([-syst, 0, syst], p, 0, syst) for p in pfits]
+            perr = {f:perr[i] for i, f in enumerate(fit)}
+            return best, fitted, perr
+
+
+
     
     #=================================================================
     def plot_fit(self, oxx, oyy, fit=[], bounds=None, p0=None, sigma=None, method='curve_fit', label=None, **kwargs):
@@ -1451,21 +1428,23 @@ class m3dis(object):
 
         if weights is None:
             check_and_combine('abundances')
-            self.ne = np.array([run.ne for run in runs])
-            self.rho = np.array([run.rho for run in runs])
-            self.temp = np.array([run.temp for run in runs])
-            self.vx = np.array([run.vx for run in runs])
-            self.vy = np.array([run.vy for run in runs])
-            self.vz = np.array([run.vz for run in runs])
-            self.chi = np.array([run.chi for run in runs])
-            self.tau = np.array([run.tau for run in runs])
-            self.ltau = np.array([run.ltau for run in runs])
+
+            if hasattr(runs[0], 'temp'):
+                self.ne = np.array([run.ne for run in runs])
+                self.rho = np.array([run.rho for run in runs])
+                self.temp = np.array([run.temp for run in runs])
+                self.vx = np.array([run.vx for run in runs])
+                self.vy = np.array([run.vy for run in runs])
+                self.vz = np.array([run.vz for run in runs])
+                self.chi = np.array([run.chi for run in runs])
+                self.tau = np.array([run.tau for run in runs])
+                self.ltau = np.array([run.ltau for run in runs])
+
             weights = np.ones(len(runs))/len(runs)
 
-            if hasattr(self.run0, 'atom'):
+            if self.run0.has_atom:
                 self.atom = copy.copy(self.run0.atom)
                 self.atom.run = self
-                self.in_lines = self.run0.in_lines
 
                 if type(self.atom.trans[0]) is fast_trans:
                     init = np.frompyfunc(fast_trans, 2, 1)
@@ -1473,6 +1452,7 @@ class m3dis(object):
                 else:
                     self.atom.trans = [copy.copy(trans) for trans in self.run0.atom.trans]
 
+                self.in_lines = self.run0.in_lines
                 self.line = np.array(self.atom.trans)[self.in_lines]
 
         if self.run0.has_spectrum:

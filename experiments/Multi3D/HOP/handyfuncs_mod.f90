@@ -5,6 +5,13 @@ MODULE handyfuncs_mod
   interface argsort
      module procedure argsort_int, argsort_r4, argsort_r8
   end interface argsort
+
+  abstract interface
+    function generic_func(input) result(f)
+      real(8), intent(in) :: input
+      real(8) :: f
+    end function generic_func
+  end interface
   
 contains
 
@@ -453,5 +460,81 @@ elemental FUNCTION air2vac (air) result(vac)
         + 0.0001599740894897d0 / (38.92568793293d0 - s2)
   vac = air*n
 END FUNCTION air2vac
+
+!===============================================================================
+FUNCTION find_closest_from_center(arr, tar) result(closest_index)
+  real(8), intent(in) :: arr(:)
+  real(8), intent(in) :: tar
+  integer :: closest_index
+  integer :: n, i, center
+  real(8) :: min_diff, current_diff
+  !-----------------------------------------------------------------------------
+  ! Start from the center
+  n = size(arr)
+  center = (n + 1) / 2
+  closest_index = center
+  min_diff = abs(arr(center) - tar)
+
+  ! Move right from center
+  do i = center + 1, n
+      current_diff = abs(arr(i) - tar)
+      if (current_diff < min_diff) then
+          min_diff = current_diff
+          closest_index = i
+      else
+          exit  ! Stop if values start diverging
+      end if
+  end do
+
+  ! Move left from updated closest_index
+  do i = closest_index - 1, 1, -1
+      current_diff = abs(arr(i) - tar)
+      if (current_diff < min_diff) then
+          min_diff = current_diff
+          closest_index = i
+      else
+          exit
+      end if
+  end do
+END FUNCTION find_closest_from_center
+
+!===============================================================================
+FUNCTION bisect(f_ptr, a, b, tol) result(c)
+  procedure(generic_func), pointer :: f_ptr
+  real(8), intent(in) :: a, b, tol
+  real(8) :: c
+  real(8) :: fa, fb, fc
+  real(8) :: left, right
+  !-----------------------------------------------------------------------------
+  left = a
+  right = b
+  fa = f_ptr(left)
+  fb = f_ptr(right)
+
+  if (fa * fb > 0.0) then
+     print *, "Root not bracketed"
+     c = -1.0
+     return
+  elseif (fa == 0.0) then
+     c = left
+     return
+  elseif (fb == 0.0) then
+     c = right
+     return
+  end if
+
+  do
+     c = 0.5 * (left + right)
+     fc = f_ptr(c)
+     if (abs(fc) < tol .or. abs(right - left) < tol) exit
+     if (fa * fc < 0.0) then
+        right = c
+        fb = fc
+     else
+        left = c
+        fa = fc
+     end if
+  end do
+END FUNCTION bisect
 
 END MODULE handyfuncs_mod

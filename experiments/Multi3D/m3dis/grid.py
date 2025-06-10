@@ -1,12 +1,10 @@
 import os
 import numpy as np
 import pandas as pd
-from scipy.interpolate import PchipInterpolator
 from scipy import integrate, stats, optimize
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
 from .m3dis import m3dis
-from .auxfuncs import plt_kwargs
 from .fast_trans import fast_trans
 import copy
 from scipy.spatial import Delaunay, ConvexHull, Voronoi
@@ -16,6 +14,7 @@ from .auxfuncs import *
 import multiprocessing as mp
 from tqdm import tqdm
 import plotly.graph_objs as go
+from functools import partial
 
 #=====================================================================
 def read_run(folder):

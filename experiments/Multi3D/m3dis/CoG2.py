@@ -1,11 +1,9 @@
 import os
 import numpy as np
 import pandas as pd
-from scipy.interpolate import PchipInterpolator
 from scipy import integrate, stats, optimize
-import matplotlib.pyplot as plt
 from .m3dis import m3dis
-from .auxfuncs import plt_kwargs
+from .auxfuncs import pchip_mono
 from .fast_trans import fast_trans
 import copy
 
@@ -63,7 +61,7 @@ class CoG(m3dis):
         if abnd is None:
             abnd = np.mean(self.abnds)
 
-        func = PchipInterpolator(self.abnds, yy, axis=0)
+        func = pchip_mono(self.abnds, yy, axis=0)
         yy = func(abnd)
 
         return xx, yy
@@ -116,7 +114,7 @@ class CoG(m3dis):
             weqs = np.log(weqs)
             weq = np.log(weq)
 
-        func = PchipInterpolator(weqs, abnds)
+        func = pchip_mono(weqs, abnds)
         abnd = func(weq)
 
         if sigma is None:
@@ -144,7 +142,7 @@ class CoG(m3dis):
             mus, ww = run.get_clv(**kwargs)
             weqs[i] = np.interp(xx, mus[::-1], ww[::-1])
 
-        func = PchipInterpolator(self.abnds, weqs)
+        func = pchip_mono(self.abnds, weqs)
 
         def opt_func(xx, abnd):
             return func(abnd)
