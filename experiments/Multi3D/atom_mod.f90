@@ -2,10 +2,10 @@
 MODULE atom_mod
     USE io_mod
     USE handyfuncs_mod
+    USE m3d_debug_mod
     USE prec_mod, only: inf8
     USE const_mod
     USE trans_mod
-    USE mmath_mod, only: refsor, unista
     USE op_math_mod, only: lineq, get_interval, eqsyst, lineq_no_pivot
     USE level_mod, only: state_type
     USE ion_mod, only: ion_type, massive_type, debye_shield, massive_type, particle_type
@@ -14,7 +14,7 @@ MODULE atom_mod
     USE composition_mod, only: composition_type
     USE os_mod
     USE trace_mod
-    USE spectrum_mod, only: spectrum_type, set_weights, nu_tolerance
+    USE spectrum_mod, only: spectrum_type, set_weights
     USE hprofl_mod, only:prepare_hydrogen_damping
     USE, intrinsic :: ieee_arithmetic
     ! *******************************************************************
@@ -26,7 +26,7 @@ MODULE atom_mod
     implicit none
     private
 
-    !-------------------------------------------------------------------------------
+    !---------------------------------------------------------------------
     type, public, extends(spectrum_type) :: atomic_spectrum_type
       ! maximum number of active lines or continua at any given frequency
       integer :: maxal=0, maxac=0, nmax=0, nlower, nupper
@@ -34,26 +34,50 @@ MODULE atom_mod
       integer, dimension(:,:), contiguous, pointer :: ac,al
       ! how many continua (nac) and lines (nal) are active at each frequency
       integer, dimension(:), contiguous, pointer :: nac,nal
+      ! how many different atoms are active at each frequency
+      integer, dimension(:), contiguous, pointer :: na
       ! has this frequency an active prd line
       !logical,dimension(:),allocatable :: hasPRDline
     end type atomic_spectrum_type
     !---------------------------------------------------------------------
 
+    !---------------------------------------------------------------------
     type, public :: atom_data_t
       ! LTE, NLTE and total population of active atom
-      real(8), dimension(:,:,:,:), pointer, contiguous :: nstar => null()
-      real(8), dimension(:,:,:,:), pointer, contiguous :: n     => null()
-      real(8), dimension(:,:,:,:), pointer, contiguous :: gamma_ij => null()
-      real(8), dimension(:,:,:,:), pointer, contiguous :: gamma_ji => null()
-      real(4), dimension(:,:,:,:), pointer, contiguous :: nibj => null()
-      real(4), dimension(:,:,:,:), pointer, contiguous :: wphi => null()
-      real(8), dimension(:,:,:),   pointer, contiguous :: totn => null() 
-      real(8), dimension(:,:,:,:,:), pointer, contiguous :: oldn => null()
+      real(8), dimension(:,:,:),   allocatable :: totn
+      real(8), dimension(:,:,:,:), allocatable :: nstar
+      real(8), dimension(:,:,:,:), pointer, contiguous :: n
+      real(8), dimension(:,:,:,:,:), allocatable :: oldn
+      real(8), dimension(:,:,:,:), allocatable :: gamma_ij
+      real(8), dimension(:,:,:,:), allocatable :: gamma_ji
+      real(4), dimension(:,:,:,:), allocatable :: nibj
+      real(4), dimension(:,:,:,:), allocatable :: wphi
+      real(4), dimension(:,:,:),   allocatable :: inv_df
       real(8), dimension(:),   allocatable  :: e
       real(8), dimension(:,:), allocatable  :: C, W
+      real(8), dimension(:), allocatable :: lvlerr
+      real(8) :: maxerr
       logical :: converged=.false.
+      integer :: elvl, epos(3)
     end type atom_data_t
+    !---------------------------------------------------------------------
+
+    !---------------------------------------------------------------------
+    type, public :: atom_trans_t
+      type(line_type), dimension(:), pointer, contiguous :: line => null()
+      type(cont_type), dimension(:), pointer, contiguous :: cont => null()
+      real(4), dimension(:,:,:,:), allocatable :: adamp
+      real(4), dimension(:,:,:,:), allocatable :: gamma_ij
+      real(4), dimension(:,:,:,:), allocatable :: gamma_ji
+    contains
+      procedure :: allocate => allocate_trans
+      procedure :: set_ired_iblue
+      procedure :: set_active_transitions
+      procedure :: append_transitions
+    end type atom_trans_t
+    !---------------------------------------------------------------------
   
+    !---------------------------------------------------------------------
     type, public, extends(massive_type) :: atom_type
       integer :: nrad   ! total number of radiative transitions
       integer :: nrfix  ! number of fixed transitions
@@ -78,12 +102,10 @@ MODULE atom_mod
       real(8), dimension(:), allocatable :: g ! multiplicity of level
       integer, dimension(:), allocatable :: irad, jrad ! indices of levels in radiative transition
 
-      type(line_type), dimension(:), pointer, contiguous :: line => null()
-      type(cont_type), dimension(:), pointer, contiguous :: cont => null()
-      type(coll_type), dimension(:), pointer, contiguous :: coll => null()
-      type(atomic_spectrum_type), pointer :: sp => null()
+      type(atom_trans_t), pointer :: trans => null()
       type(atom_data_t), pointer :: data => null()
       type(atom_data_t), dimension(:), pointer :: rotated_data => null()
+      type(coll_type), dimension(:), pointer, contiguous :: coll => null()
 
       real(8), dimension(:,:), pointer, contiguous :: tgrid => null()
       real(8), dimension(:,:), pointer, contiguous :: cgrid => null()
@@ -94,17 +116,17 @@ MODULE atom_mod
       
       real(8) :: qnorm
       real(8) :: drawin, mu_e
+      logical :: check=.false.
         
     contains
+      procedure :: init_atom_data
       procedure :: check_ionisation_thresholds
       procedure :: lte_pop
       procedure :: compute_lte_populations
       procedure :: compute_cont_factors
+      procedure :: normalize_profiles
+      procedure :: update_populations
       procedure :: solve_stat_equilibrium
-      procedure :: create_spectrum
-      procedure :: set_ired_iblue
-      procedure :: set_active_transitions
-      procedure :: get_active_nlevels
       procedure :: read
       procedure :: read_pandas
       procedure :: prepare_damping
@@ -112,10 +134,11 @@ MODULE atom_mod
       procedure :: classic_col
       procedure :: gencol
       procedure :: set_colliders
-      procedure :: copy_to
-      procedure :: link_transitions
+      procedure :: ng_acceleration
     end type atom_type
+    !---------------------------------------------------------------------
 
+    !---------------------------------------------------------------------
     type coll_type
       character(len=16) :: key ! transition type 
       integer :: nc ! size of coefficient grid
@@ -125,6 +148,7 @@ MODULE atom_mod
       logical :: log = .false.
       integer :: np=0, ion=0, mol=0 ! collider identification
     end type coll_type
+    !---------------------------------------------------------------------
 
     character(len=8), dimension(7), parameter :: theprocesses = &
     (/'OHMEGA  ','CI      ','CH      ','CE      ', &
@@ -141,22 +165,217 @@ MODULE atom_mod
     real(8), public :: logf_cut = -99.9, red_cut=huge(1.0), blue_cut=tiny(1.0)
     real(8), parameter :: ame=5.485799e-4, amh=1.0
     real(8), parameter :: mu_e=ame/(ame+amh)
-    real(8), public :: fmin =1e-6
+    real(8), public :: fmin=1e-6
+    real(8) :: tmax_update=1.0d7
     character(len=32), public :: lse_solver='lineq_no_pivot'
     integer, public :: nq_min=0, nq_max=huge(1)
     real(4), public :: nq_fac=1.0
+    integer, public :: cswitch=1
+    integer, public :: ng_step=-1, ng_start=8
 
     public :: unique_int
   
   contains
+
+  !====================================================================================
+  SUBROUTINE allocate_trans(self, nb, nf, bb, bf)
+    class(atom_trans_t), target :: self
+    integer, intent(in), optional :: nb, nf
+    type(line_type), intent(in), dimension(:), optional :: bb
+    type(cont_type), intent(in), dimension(:), optional :: bf
+    !---------------------------------------------------------------------------------
+    if (present(nb)) then
+      allocate(self%line(nb))
+    endif
+    if (present(nf)) then
+      allocate(self%cont(nf))
+    endif
+    if (present(bb)) then
+      allocate(self%line(size(bb)))
+      self%line = bb
+    endif
+    if (present(bf)) then
+      allocate(self%cont(size(bf)))
+      self%cont = bf
+    endif
+    call os%mem_register(storage_size(self%line), size(self%line), label='atom%line')
+    call os%mem_register(storage_size(self%cont), size(self%cont), label='atom%cont')
+  END SUBROUTINE allocate_trans
+
+  !===============================================================================
+  SUBROUTINE init_atom_data (self, comp, adata, iterate, found)
+    class(atom_type), target :: self
+    class(composition_type), target :: comp
+    class(atom_data_t), target :: adata
+    class(element_type), pointer :: element
+    class(molec_type), pointer :: molec
+    logical, intent(in) :: iterate
+    logical, intent(out), optional :: found
+    real(4) :: nmax, nlim
+    integer, save:: itimer=0
+    integer :: i, j, m(4), nl
+    !-----------------------------------------------------------------------------
+    call trace%begin('atom_type%init_atom_data', itimer=itimer)
+    nl = self%nlevel
+    m = [shape(comp%temp), nl]
+    call os%allocate(adata%nstar, m, label='nstar')
+    call os%allocate(adata%totn, m(1:3), label='totn')
+    call os%allocate(adata%inv_df, m(1:3), label='inv_df')
+    call os%allocate(adata%nibj, [m(1:3), self%ncont], label='data%nibj')
+    
+    call comp%get_totn(self%id, self%abnd, adata%totn, element, molec)
+    if (present(found)) found = associated(element) .or. associated(molec)
+    
+    if (associated(molec)) tmax_update = comp%tmolim
+    if (associated(element)) call self%check_ionisation_thresholds(element)
+    call self%compute_lte_populations(adata%nstar, adata%totn, real(comp%temp), real(comp%lsaha), real(comp%dxi), element, molec)
+    adata%inv_df = self%inverse_doppler_factor(real(comp%temp), comp%vmic)
+    
+    if (iterate) then
+      call os%allocate(adata%C, [nl, nl])
+      call os%allocate(adata%W, [nl, nl])
+      call os%allocate(adata%e, nl)
+      call os%allocate(adata%lvlerr, nl)
+      call os%allocate(adata%wphi, [m(1:3), self%nline], label='wphi', zero=.true.)
+      call os%allocate(adata%n, m, label='n')
+      do j=1, self%nlevel
+        adata%n(:,:,:,j) = adata%nstar(:,:,:,j) 
+      end do
+      if (ng_step > 0) then
+        call os%allocate(adata%oldn, [m, 3], label='oldn')
+      endif
+    else
+      adata%n => adata%nstar
+    endif
+    call trace%end(itimer)
+  END SUBROUTINE init_atom_data
+
+  !===============================================================================
+  SUBROUTINE normalize_profiles(self, iter)
+    class(atom_type), target :: self
+    class(atom_data_t), pointer :: adata
+    class(transition_type), pointer :: line, cont
+    integer, intent(in) :: iter
+    real(8), dimension(:,:,:,:), pointer, contiguous :: gamma_ij, gamma_ji, nstar
+    real(4), dimension(:,:,:,:), pointer, contiguous :: wphi
+    real(8) :: gij
+    integer :: i
+    ! ----------------------------------------------------------------------------
+    adata => self%data
+    wphi => adata%wphi
+    nstar => adata%nstar
+    gamma_ij => adata%gamma_ij
+    gamma_ji => adata%gamma_ji
+
+    if (iter == 1) then
+      ! Normalize wphi
+      do i=1, self%nline
+        if (.not. self%trans%line(i)%active) cycle
+        wphi(:,:,:,i) = 1 / wphi(:,:,:,i)
+      end do
+    endif
+
+    do i=1, self%nline
+      line => self%trans%line(i)
+      if (.not. line%active) cycle
+      gij = self%g(line%i) / self%g(line%j)
+      gamma_ij(:,:,:,i) = gamma_ij(:,:,:,i) * wphi(:,:,:,i)
+      gamma_ji(:,:,:,i) = gamma_ji(:,:,:,i) * wphi(:,:,:,i)
+      gamma_ji(:,:,:,i) = gamma_ji(:,:,:,i) * gij
+    end do
+    
+    do i=i, self%nrad
+      cont => self%trans%cont(i-self%nline)
+      if (.not. cont%active) cycle
+      gamma_ji(:,:,:,i) = gamma_ji(:,:,:,i) * nstar(:,:,:,cont%i) / nstar(:,:,:,cont%j)
+    end do
+
+    if (allocated(adata%oldn)) then
+      do i=1, self%nlevel
+        adata%oldn(:,:,:,i,1) = adata%oldn(:,:,:,i,2)
+        adata%oldn(:,:,:,i,2) = adata%oldn(:,:,:,i,3)
+        adata%oldn(:,:,:,i,3) = adata%n(:,:,:,i)
+      end do
+    endif
+  END SUBROUTINE normalize_profiles
+
+  !===============================================================================
+  SUBROUTINE update_populations (self, comp, local, pcheck, cij, cji)
+    class(atom_type), target :: self
+    class(composition_type) :: comp
+    class(atom_data_t), pointer :: adata
+    real(8), intent(out) :: local
+    integer, intent(in) :: pcheck(3)
+    real(4), intent(out), optional, dimension(:,:,:) :: cij, cji
+    integer :: i, m(3), x, y, z
+    real(8) :: global
+    logical :: relax
+    integer, save :: itimer=0
+    ! ----------------------------------------------------------------------------
+    call trace%begin('atom_type%update_populations', itimer=itimer)
+    adata => self%data
+    m = shape(adata%totn)
+    adata%maxerr = 0
+    adata%lvlerr = 0
+    
+    do z=1, m(3)
+      do y=1, m(2)
+        do x=1, m(1)
+          if (adata%totn(x,y,z) > 0 .and. comp%temp(x,y,z) < tmax_update) then
+            call self%solve_stat_equilibrium(comp, x,y,z, check_NaN)
+
+            ! e contains the correction n/n_old 
+            associate(e=>adata%e(:), n=>adata%n(x,y,z,:), &
+                      maxerr=>adata%maxerr, lvlerr=>adata%lvlerr)
+
+              i = findloc(e/=e, .true., dim=1)
+              if (check_NaN .and. i > 0) then
+                  print *, 'NaN in error vector at i = ', i
+                  stop
+              endif
+
+              ! set limits on corrections
+              e = max(e, 0.001d0)
+
+              ! update the populations
+              n = n * e
+  
+              ! set e to the relative change in the populations 
+              e = e - 1.0d0
+
+              ! keep track of maximum population change
+              lvlerr = merge(e, lvlerr, abs(e) > abs(lvlerr))
+              i = maxloc(abs(lvlerr), dim=1)
+
+              if (abs(lvlerr(i)) > abs(maxerr)) then
+                maxerr = lvlerr(i)
+                adata%epos = [x, y, z]
+                adata%elvl = i
+              endif
+
+              if (self%check) then
+                if (all([x, y, z] == pcheck)) then
+                  local = e(lvlcheck)
+                end if
+                if (present(cij)) then
+                  cij(x,y,z) = adata%c(self%jrad(linecheck), self%irad(linecheck))
+                  cji(x,y,z) = adata%c(self%irad(linecheck), self%jrad(linecheck))
+                endif
+              endif
+            end associate
+          endif
+        end do
+      end do
+    end do
+
+    call trace%end(itimer)
+  END SUBROUTINE update_populations
   
   !====================================================================================
-  SUBROUTINE solve_stat_equilibrium (self, comp, x,y,z, gamma_ij, gamma_ji, cswitch, check_NaN)
+  SUBROUTINE solve_stat_equilibrium (self, comp, x,y,z, check_NaN)
     class(atom_type), target :: self
     class(composition_type) :: comp
     class(transition_type), pointer :: trans
-    real(8), dimension(:,:,:,:), intent(in), target :: gamma_ij, gamma_ji
-    integer, intent(in) :: cswitch
     logical, intent(in) :: check_NaN
     real(8), dimension(:), pointer :: n, rij, rji
     real(8) :: totn
@@ -176,9 +395,9 @@ MODULE atom_mod
     ! Add radiative rates to W
     do kr=1, self%nrad
       if (kr <= self%nline) then
-        trans => self%line(kr)
+        trans => self%trans%line(kr)
       else
-        trans => self%cont(kr-self%nline)
+        trans => self%trans%cont(kr-self%nline)
       endif
       if (.not. trans%active) cycle
       i = trans%i
@@ -406,17 +625,16 @@ MODULE atom_mod
    
   !====================================================================================
   SUBROUTINE compute_cont_factors(self, adata)
-    class(atom_type), target, intent(inout) :: self
+    class(atom_type) :: self
     class(atom_data_t) :: adata
     real(4) :: bj
     integer :: i, j, k, kr, n(4), x, y, z
     class(cont_type), pointer :: cont
     !---------------------------------------------------------------------------------
     n = [shape(adata%totn), self%ncont]
-    call os%allocate(adata%nibj, n, label='data%nibj', zero=.true.)
 
-    do kr=1,self%ncont
-      cont => self%cont(kr)
+    do kr=1, self%ncont
+      cont => self%trans%cont(kr)
       if (.not. cont%active) cycle
       i = cont%i
       j = cont%j
@@ -492,11 +710,12 @@ MODULE atom_mod
       read(latom,*) ! skip bbtrans header
     endif
 
-    allocate(self%line(self%nline)) 
-    call os%mem_register(storage_size(self%line), self%nline, label='atom%line')
+    ncont = self%nlevel
+    allocate(self%trans)
+    call self%trans%allocate(self%nline, ncont)
 
     do i=1, self%nline
-      lin => self%line(i)
+      lin => self%trans%line(i)
       call nextentry(latom)
       if (size(in_lines) > 0) then
         if (findloc(in_lines, i, 1) <= 0) then
@@ -585,12 +804,8 @@ MODULE atom_mod
       end select
     end do
 
-    ncont = self%nlevel
-    allocate(self%cont(ncont))
-    call os%mem_register(storage_size(self%cont), ncont, label='atom%cont')
-
     do i=1, ncont
-      cnt => self%cont(i)
+      cnt => self%trans%cont(i)
       cnt%bf_type='Kramer'
       ! find continuum level
       ic = findloc(self%ion, self%ion(i)+1, 1)
@@ -619,7 +834,7 @@ MODULE atom_mod
 
       !  bound-free transitions in detail
       do i=1, ncont
-        cnt => self%cont(i)
+        cnt => self%trans%cont(i)
         ii = findloc(icont, i, 1)
         jj = findloc(icont, i, 1, back=.true.)
 
@@ -639,7 +854,7 @@ MODULE atom_mod
 
     j = 0
     do i=1, self%ncont
-      cnt => self%cont(i)
+      cnt => self%trans%cont(i)
       if (disable_bf) call cnt%deactivate()
       if (.not. cnt%active) cycle
       cnt%lower_ev = self%ev(cnt%i)
@@ -678,10 +893,10 @@ MODULE atom_mod
     endif
 
     allocate(self%irad(self%nrad), self%jrad(self%nrad))
-    self%irad(1:self%nline) = self%line%i
-    self%jrad(1:self%nline) = self%line%j
-    self%irad(self%nline+1:self%nrad) = self%cont%i
-    self%jrad(self%nline+1:self%nrad) = self%cont%j
+    self%irad(1:self%nline) = self%trans%line%i
+    self%jrad(1:self%nline) = self%trans%line%j
+    self%irad(self%nline+1:self%nrad) = self%trans%cont%i
+    self%jrad(self%nline+1:self%nrad) = self%trans%cont%j
 
     if (ncol > 0) then
       read(latom, '(A)') dummy_string
@@ -841,12 +1056,18 @@ MODULE atom_mod
       endif
     end do
 
+    ncont = count(self%ion < maxval(self%ion))
+    if (ncont < self%ncont) then
+        print *, 'Unrealisticly many bound-free transitions. Something is wrong!'
+    endif
+
     allocate(ij_check(self%nlevel, self%nlevel), source=.false.)
-    allocate(self%line(self%nline)) 
-    call os%mem_register(storage_size(self%line), self%nline, label='atom%line')
+
+    allocate(self%trans)
+    call self%trans%allocate(self%nline, ncont)
 
     do i=1,self%nline
-      lin => self%line(i)
+      lin => self%trans%line(i)
       call nextentry(latom) 
 
       ! io WAS present for historical reasons, in MULTI io determines
@@ -988,15 +1209,8 @@ MODULE atom_mod
       end select
     end do
 
-    ncont = count(self%ion < maxval(self%ion))
-    if (ncont < self%ncont) then
-        print *, 'Unrealisticly many bound-free transitions. Something is wrong!'
-    endif
-    allocate(self%cont(ncont))
-    call os%mem_register(storage_size(self%cont), ncont, label='atom%cont')
-
     do i=1, ncont
-      cnt => self%cont(i)
+      cnt => self%trans%cont(i)
       cnt%bf_type='Kramer'
       ! find continuum level
       do ic=i, self%nlevel
@@ -1023,7 +1237,7 @@ MODULE atom_mod
       j  = max(ii,jj)
       ii = min(ii,jj)
 
-      cnt => self%cont(ii)
+      cnt => self%trans%cont(ii)
 
       if (cnt%bf_type /= 'Kramer') then
         print *, 'Multiple bound-free transitions from lower state', ii, 'Not implemented!'
@@ -1076,7 +1290,7 @@ MODULE atom_mod
 
     j = 0
     do i=1, self%ncont
-      cnt => self%cont(i)
+      cnt => self%trans%cont(i)
       if (disable_bf) then
         call cnt%deactivate()
         cycle
@@ -1124,10 +1338,10 @@ MODULE atom_mod
     endif
 
     allocate(self%irad(self%nrad), self%jrad(self%nrad))
-    self%irad(1:self%nline) = self%line%i
-    self%jrad(1:self%nline) = self%line%j
-    self%irad(self%nline+1:self%nrad) = self%cont%i
-    self%jrad(self%nline+1:self%nrad) = self%cont%j
+    self%irad(1:self%nline) = self%trans%line%i
+    self%jrad(1:self%nline) = self%trans%line%j
+    self%irad(self%nline+1:self%nrad) = self%trans%cont%i
+    self%jrad(self%nline+1:self%nrad) = self%trans%cont%j
 
     ! read collisional data
     if (.not. read_coll) then
@@ -1343,7 +1557,7 @@ MODULE atom_mod
     end select
 
     do i=1, self%nline
-      line => self%line(i)
+      line => self%trans%line(i)
       if (.not. line%active) cycle
       j = self%ion(line%j)
 
@@ -1376,7 +1590,7 @@ MODULE atom_mod
         else
           ! find continuum level
           ic = findloc(self%ion, j+1, 1)
-          cnt_ev = merge(self%ev(ic), 999.99, ic > 0)
+          cnt_ev = merge(self%ev(ic), 999.99d0, ic > 0)
         endif
         call line%prepare_VanderWaals(line%gv, self%ion(line%i), cnt_ev, vbar2e4)
       endif
@@ -1519,8 +1733,8 @@ MODULE atom_mod
   !===============================================================================
   ! initialises the spectrum structure
   !===============================================================================
-  SUBROUTINE create_spectrum (self, sp, bb, bf, sort)
-    class(atom_type), target :: self
+  SUBROUTINE append_transitions (self, sp, bb, bf, sort)
+    class(atom_trans_t), target :: self
     class(spectrum_type) :: sp
     logical, intent(in), optional :: bb, bf, sort
     type(line_type), pointer :: lin
@@ -1529,7 +1743,7 @@ MODULE atom_mod
     real(8), dimension(:), allocatable :: nu
     integer, save:: itimer=0
     !-----------------------------------------------------------------------------
-    call trace%begin('atom_type%create_spectrum', itimer=itimer)
+    call trace%begin('atom_trans_t%append_transitions', itimer=itimer)
     ! compute total number of frequencies
     nnu = sp%nnu
     if (option(bb)) nnu = nnu + sum(self%line%nnu, self%line%active)
@@ -1541,7 +1755,7 @@ MODULE atom_mod
 
     je=sp%nnu
     if (option(bb)) then
-      do i=1,self%nline
+      do i=1, size(self%line)
         lin => self%line(i)
         if (.not. lin%active) cycle
         js=je+1
@@ -1552,7 +1766,7 @@ MODULE atom_mod
       end do
     endif
     if (option(bf)) then
-      do i=1,self%ncont
+      do i=1, size(self%cont)
         cnt => self%cont(i)
         if (.not. cnt%active) cycle
         js=je+1
@@ -1563,27 +1777,17 @@ MODULE atom_mod
       end do
     endif
 
-    ! sort frequencies into ascending order 
-    if (option(sort, .true.)) then
-      sp%sorted = .true.
-      call refsor(nu)
-
-      ! discard duplicates, nnu contains number of unique elements on exit
-      !call unista(nu,nnu)
-      call remove_close_entries(nu, nu_tolerance)
-    endif
-
     ! now set overall frequency grid
     if (allocated(sp%nu)) deallocate(sp%nu)
     allocate(sp%nu, source=nu)
     sp%nnu = size(nu)
 
     call trace%end(itimer)
-  END SUBROUTINE create_spectrum
+  END SUBROUTINE append_transitions
 
   !===============================================================================
   SUBROUTINE set_ired_iblue (self, sp, bb, bf, set_active)
-    class(atom_type), target :: self
+    class(atom_trans_t), target :: self
     class(atomic_spectrum_type), target :: sp
     logical, intent(in), optional :: bb, bf, set_active
     type(line_type), pointer :: lin
@@ -1591,7 +1795,7 @@ MODULE atom_mod
     integer :: i, j, nnu, ired, iblue
     integer, save:: itimer=0
     !-----------------------------------------------------------------------------
-    call trace%begin('atom_type%set_ired_iblue', itimer=itimer)
+    call trace%begin('atom_trans_t%set_ired_iblue', itimer=itimer)
     if (option(bf) .and. associated(self%cont)) then
       do i=1, size(self%cont)
         cnt => self%cont(i)
@@ -1652,7 +1856,6 @@ MODULE atom_mod
           lin%iblue = iblue
 
           lin%nu => sp%nu(ired:iblue)
-          !call os%allocate(lin%q, lin%nnu)
           allocate(lin%q(ired:iblue))
           call os%mem_register(storage_size(lin%q), nnu)
           lin%q(ired:iblue) = lin%nu/lin%nu0 - 1.0d0
@@ -1678,7 +1881,7 @@ MODULE atom_mod
 
   !===============================================================================
   SUBROUTINE set_active_transitions (self, sp, bb, bf)
-    class(atom_type), target :: self
+    class(atom_trans_t), target :: self
     class(atomic_spectrum_type), target :: sp
     logical, intent(in), optional :: bb, bf
     type(line_type), pointer :: lin
@@ -1686,11 +1889,7 @@ MODULE atom_mod
     integer :: i, j, nnu, ired, iblue
     integer, save:: itimer=0
     !-----------------------------------------------------------------------------
-    call trace%begin('atom_type%set_active_transitions', itimer=itimer)
-    
-    ! allocate list of active continua and lines
-    call os%allocate(sp%nac, sp%nnu, zero=.true.)
-    call os%allocate(sp%nal, sp%nnu, zero=.true.)
+    call trace%begin('atom_trans_t%set_active_transitions', itimer=itimer)
 
     if (option(bf)) then
       do i=1, size(self%cont)
@@ -1708,98 +1907,42 @@ MODULE atom_mod
       end do
     endif
 
-    sp%maxac = maxval(sp%nac)
-    sp%maxal = maxval(sp%nal)
-    sp%nmax  = maxval(sp%nac+sp%nal)
+    ! sp%maxac = maxval(sp%nac)
+    ! sp%maxal = maxval(sp%nal)
+    ! sp%nmax  = maxval(sp%nac+sp%nal)
 
-    call os%allocate(sp%ac, [sp%maxac, sp%nnu], zero=.true., label='sp%ac')
-    call os%allocate(sp%al, [sp%maxal, sp%nnu], zero=.true., label='sp%al')
-    sp%nac = 0
-    sp%nal = 0
+    ! call os%allocate(sp%ac, [sp%maxac, sp%nnu], zero=.true., label='sp%ac')
+    ! call os%allocate(sp%al, [sp%maxal, sp%nnu], zero=.true., label='sp%al')
+    ! sp%nac = 0
+    ! sp%nal = 0
 
-    if (option(bf)) then    
-      do i=1, size(self%cont)
-        cnt => self%cont(i)
-        if (.not. cnt%active) cycle
-        ! add to number of active continua
-        do j=cnt%ired,cnt%iblue
-          sp%nac(j) = sp%nac(j) + 1 ! number of active continua at frequency index j
-          sp%ac( sp%nac(j), j ) = i ! the index of this active continuum
-        end do
-      end do
-    endif
+    ! if (option(bf)) then    
+    !   do i=1, size(self%cont)
+    !     cnt => self%cont(i)
+    !     if (.not. cnt%active) cycle
+    !     ! add to number of active continua
+    !     do j=cnt%ired,cnt%iblue
+    !       sp%nac(j) = sp%nac(j) + 1 ! number of active continua at frequency index j
+    !       sp%ac( sp%nac(j), j ) = i ! the index of this active continuum
+    !     end do
+    !   end do
+    ! endif
 
-    if (option(bb)) then
-      do i=1, size(self%line)
-        lin => self%line(i)
-        if (.not. lin%active) cycle
-        ! find minimum and maximum index of this continuum in the sp%nu grid
-        call sp%get_interval(lin, ired, iblue)
-        ! add to number of active lines
-        do j=lin%ired,lin%iblue
-          sp%nal(j) = sp%nal(j) + 1
-          sp%al( sp%nal(j), j ) = i
-        end do
-      end do
-    endif
-
-    !call self%get_active_nlevels(sp)
-
-    write(*,'(a,I0,a)') 'sp_from_atom: frequency grid has ', sp%nnu, ' points.'
-    if (self%verbose > 2) then
-      write(*,'(a,I0,a)') 'sp_from_atom: ', sum(sp%nac+sp%nal), ' active transition-frequency points'
-    endif
+    ! if (option(bb)) then
+    !   do i=1, size(self%line)
+    !     lin => self%line(i)
+    !     if (.not. lin%active) cycle
+    !     ! find minimum and maximum index of this continuum in the sp%nu grid
+    !     call sp%get_interval(lin, ired, iblue)
+    !     ! add to number of active lines
+    !     do j=lin%ired,lin%iblue
+    !       sp%nal(j) = sp%nal(j) + 1
+    !       sp%al( sp%nal(j), j ) = i
+    !     end do
+    !   end do
+    ! endif
     call trace%end(itimer)
   END SUBROUTINE set_active_transitions
-
-  !===============================================================================
-  SUBROUTINE get_active_nlevels(self, sp)
-    class(atom_type), target :: self
-    class(atomic_spectrum_type), intent(inout) :: sp
-    integer, dimension(:), allocatable :: lower, upper
-    integer :: f, i, j, n, kr, kc, kl
-    integer, save :: itimer=0
-    !-----------------------------------------------------------------------------
-    call trace%begin('atom_type%get_active_nlevels', itimer=itimer)
-    sp%nlower = 0
-    sp%nupper = 0
-
-    allocate(lower(sp%nmax))
-    allocate(upper(sp%nmax))
-
-    do f=1, sp%nnu
-      if (f > 1) then
-        if (all(sp%al(:,f) == sp%al(:,f-1))) then
-          if (all(sp%ac(:,f) == sp%ac(:,f-1))) then
-            cycle
-          endif
-        endif
-      endif
-
-      n = sp%nac(f) + sp%nal(f)
-      
-      do kr=1, n
-        if (kr <= sp%nac(f)) then
-          kc = sp%ac(kr,f)
-          lower(kr) = self%cont(kc)%i
-          upper(kr) = self%cont(kc)%j
-        else
-          kl = sp%al(kr - sp%nac(f),f)
-          lower(kr) = self%line(kl)%i
-          upper(kr) = self%line(kl)%j
-        endif
-      end do
-      
-      call unique_int(lower(1:n), i)
-      call unique_int(upper(1:n), j)
-      sp%nlower = max(i, sp%nlower)
-      sp%nupper = max(j, sp%nupper)
-    end do
-
-    deallocate(lower)
-    deallocate(upper)
-    call trace%end(itimer)
-  END SUBROUTINE get_active_nlevels
 
   !===============================================================================
   ! returns arr without duplicate elements (assumes that all entries are positive!)
@@ -1844,34 +1987,6 @@ MODULE atom_mod
 
     arr(1:nout) = scratch(1:nout)
   END SUBROUTINE unique_int
-
-  !===============================================================================
-  SUBROUTINE copy_to (self, other)
-    class(atom_type) :: self
-    type(atom_type) :: other
-    !-----------------------------------------------------------------------------
-    ! deep copy
-    other = self
-
-    allocate(other%line, source=self%line)
-    call os%mem_register(storage_size(self%line), self%nline, label='atom%line')
-    
-    allocate(other%cont, source=self%cont)
-    call os%mem_register(storage_size(self%cont), self%ncont, label='atom%cont')
-  END SUBROUTINE
-
-  !===============================================================================
-  SUBROUTINE link_transitions (self, cont, line)
-    class(atom_type) :: self
-    type(cont_type), dimension(:), pointer :: cont
-    type(line_type), dimension(:), pointer :: line
-    !-----------------------------------------------------------------------------
-    self%cont => cont
-    self%line => line
-    !self%ncont = size(cont)
-    !self%nline = size(line)
-    !self%nrad  = self%ncont + self%nline
-  END SUBROUTINE
 
   !===============================================================================
   !     calculates partition function for ch
@@ -2176,6 +2291,84 @@ MODULE atom_mod
       endif
     endif
   END FUNCTION gaunt
+
+  !===============================================================================
+  SUBROUTINE ng_acceleration (self)
+    class(atom_type):: self
+    integer :: i, x, y, z, k, epos(4), nvec, m(3)
+    real(8), dimension(:), allocatable :: n1, n2, n3, n4, n5, d0, d1, d2, e, w
+    real(8) :: d01, d02, d11, d12, d21, d22, a, b, den, emax, enew
+    integer, save :: itimer=0
+    ! ----------------------------------------------------------------------------
+    call trace%begin ('atom_type%ng_acceleration', itimer=itimer)
+    m = shape(self%data%totn)
+    nvec = self%nlevel * product(m(1:2))
+    allocate(e(nvec))
+    allocate(n1, n2, n3, n4, n5, d0, d1, d2, w, mold=e)
+    emax = 0
+    do z=1, m(3)
+      i = 0
+      do y=1, m(2)
+      do x=1, m(1)
+      do k=1, self%nlevel
+        i = i+1
+        ! the weight can be chose freely, but 1/n is the
+        ! "best" choice according to Olson+1986
+        !w(i) = 1.d0
+        !w(i) =  abs(self%data%n(x,y,z,k) / self%data%oldn(x,y,z,k,3) - 1.d0)
+        w(i) = 1.d0 / self%data%n(x,y,z,k)
+        n1(i) = self%data%oldn(x,y,z,k,1) * w(i)
+        n2(i) = self%data%oldn(x,y,z,k,2) * w(i)
+        n3(i) = self%data%oldn(x,y,z,k,3) * w(i)
+        n4(i) = self%data%n(x,y,z,k) * w(i)
+      end do
+      end do
+      end do
+
+      d0 = n4 - n3
+      d1 = n3 - n2
+      d2 = n2 - n1
+
+      d1 = d0 - d1
+      d2 = d0 - d2
+
+      d01 = dot_product(d0, d1)
+      d02 = dot_product(d0, d2)
+      d11 = dot_product(d1, d1)
+      d22 = dot_product(d2, d2)
+      d12 = dot_product(d1, d2)
+      d21 = d12
+
+      den = d11*d22 - d12*d21
+
+      if (abs(den) > 0) then
+        a = (d01*d22 - d02*d21) / den
+        b = (d02*d11 - d01*d21) / den
+
+        e = (1.d0 - a - b)*n4 + a*n3 + b*n2
+      else
+        e = n4
+      endif
+
+      i = 0
+      do y=1, m(2)
+      do x=1, m(1)
+      do k=1,self%nlevel
+        i = i+1
+        self%data%n(x,y,z,k) = e(i)/w(i)
+        enew = e(i)/n4(i)  - 1.d0
+
+        if (abs(enew) > abs(emax)) then
+          emax = enew
+          epos = [k, x, y, z]
+        endif
+      end do
+      end do
+      end do
+    end do
+    print '(A, ES14.7, 4(I6))', 'NG acceleration ', emax, epos
+    call trace%end(itimer)
+  END SUBROUTINE ng_acceleration
 
 END MODULE atom_mod
   

@@ -5,7 +5,7 @@ MODULE m3d_patch_mod
     USE gpatch_mod
     USE link_mod
     USE task_mod
-    USE guards_mod
+    ! USE guards_mod
     USE snapshots_mod
     USE mesh_mod
     USE io_mod
@@ -25,7 +25,8 @@ MODULE m3d_patch_mod
     USE patch_mod, only: patch_t, patch_t_init
     USE m3d_halo_mod, only: m3d_halo_t, print_finished, print_download, lock_mem, unlock_mem, print_lock
     USE spectrum_mod, only: nu_tolerance
-    USE atom_mod, only: atom_type, atomic_spectrum_type, lse_no_pivot, lse_solver, m1d_legacy_mode, nq_fac
+    USE atom_mod, only: atom_type, atomic_spectrum_type, lse_no_pivot, lse_solver, m1d_legacy_mode, &
+                        nq_fac, cswitch, ng_step, ng_start
     USE composition_mod, only: composition_type, scattering_absorption, irwin_dis, helium_scattering
     USE ray_mod, only: one_dimensional, set_carlson_quadratures, set_radau_quadratures, set_lobatto_quadratures, &
                        set_gauss_quadratures, set_custom_quadratures, set_grid_quadratures
@@ -54,7 +55,7 @@ MODULE m3d_patch_mod
       type(composition_type), pointer :: tab_comp => null()
       type(composition_type), pointer :: rotated_composition(:) => null()
       class(atomic_spectrum_type), pointer :: sp => null()
-      type(atom_type), pointer :: atom => null()
+      type(atom_type), dimension(:), pointer :: atom => null()
       class(key_link_t), pointer :: key_list => null()
       real(4), dimension(:,:,:,:,:,:), pointer :: authority_mem => null()
       logical :: in_task_list = .false.
@@ -123,7 +124,6 @@ MODULE m3d_patch_mod
     !-----------------------------------------------------------------------------
     integer, save, public:: verbose=2
     integer, public :: maxiter=0, ilambd, nz_total
-    integer, public :: cswitch=1
     integer, public, save :: save_id=-1
     integer, public, save :: n_nu=-1
     real(8), public, save, dimension(:), allocatable:: wmu, long_wmu
@@ -131,7 +131,7 @@ MODULE m3d_patch_mod
     real(8), public:: convlim=1d-3, convmax=tiny(1.0)
     logical, public, save :: converged=.false., use_vel(3)=.true., premature_finish=.true.
     logical, public, save :: preconditioning=.true., binned_opac=.false.
-    logical, public, save :: check_NaN=.false., save_resolved=.false.
+    logical, public, save :: save_resolved=.false.
     logical, public, save :: decouple_continuum=.true., sample_back_opac=.false.
     logical, public, save :: sample_back_opac_in_output=.false.
     logical, public, save :: comoving_frame=.false., linelist_in_output=.true.
@@ -141,7 +141,7 @@ MODULE m3d_patch_mod
     logical, public, save :: absmet_in_output=.false., column_by_column=.false.
     logical, public, save :: print_start=.false., print_send=.false.
     logical, public, save :: Jnu_to_file=.true., amr=.true.
-    logical, public, save :: rotate_atmos=.false., rotate_continuum=.false.
+    logical, public, save :: rotate_atmos=.false.
     logical, public, save :: make_eos=.false.
     logical, public, save :: overrelax=.false.
     logical, public, save :: save_Inu=.false., save_chi=.false.
@@ -156,7 +156,6 @@ MODULE m3d_patch_mod
     real(4), public :: fixed_Jnu=-1.0
     real(4), public :: vmic=-1, opac_table_vmic=-1
     real(8), public :: ray_offset(2)=[0.,0.], pivot_z=-1
-    integer, public :: ng_step=-1, ng_start=8
     integer, save :: long_ntheta=4, long_nphi=4, short_ntheta=2, short_nphi=4
     character(len=128), public :: atmos_format='Marcs'
     character(len=512), public :: atmos_file='./input_multi3d/atmos/p5777_g+4.4_m0.0_t01_st_z+0.00_a+0.00_c+0.00_n+0.00_o+0.00_r+0.00_s+0.00.mod'
@@ -170,7 +169,7 @@ MODULE m3d_patch_mod
     check_NaN, custom_mu, lse_no_pivot, save_patch_kind, cswitch, &
     print_finished, print_start, print_send, ray_offset, print_download, &
     lse_solver, decouple_continuum, m1d_legacy_mode, nu_tolerance, &
-    pivot_z, save_resolved, rotate_continuum, overrelax, &
+    pivot_z, save_resolved, overrelax, &
     absmet_in_output, print_lock, make_eos, ng_step, ng_start, scattering_absorption, &
     column_by_column, rotate_atmos, Jnu_to_file, preconditioning, &
     save_inu, save_chi, save_Snu, save_Jnu, &
@@ -376,7 +375,7 @@ MODULE m3d_patch_mod
   recursive SUBROUTINE pre_init_and_link (self, m3d_parent, i_mu, i_nu, sp, atom)
     class(m3d_patch_t), target :: self, m3d_parent
     class(atomic_spectrum_type), pointer, optional :: sp
-    class(atom_type), target, optional :: atom
+    class(atom_type), target, optional :: atom(:)
     integer, optional :: i_mu, i_nu
     !-----------------------------------------------------------------------------
     if (present(i_mu)) self%i_mu = i_mu
@@ -430,8 +429,6 @@ MODULE m3d_patch_mod
 
     self%pcheck = pcheck
     self%fcheck = fcheck
-    self%linecheck = linecheck
-    self%lvlcheck = lvlcheck
     
     where (pcheck < 0)
       self%pcheck = pcheck + [self%n(1:2), nz_total] + 1

@@ -1,4 +1,0 @@
-mesa_star_mod.o:
-	cd $(MESA)/standard_work_dir/ && ./mk_mesa_star_mod
-
-stellar_evolution.o : amr_parameters.o amr_commons.o mesa_star_mod.o

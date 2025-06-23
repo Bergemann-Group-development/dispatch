@@ -28,7 +28,7 @@ MODULE trans_mod
 
       real(8), dimension(:), pointer, contiguous :: nu => null()  ! frequencies [Hz]
       real(8), dimension(:), pointer, contiguous :: nu_input => null()
-      real(8), dimension(:), pointer, contiguous :: wnu => null() ! frequency quadrature weight [Hz]
+      real(8), dimension(:), allocatable :: wnu ! frequency quadrature weight [Hz]
 
       integer, dimension(:), pointer, contiguous :: if => null()
       !real(8),dimension(:,:,:),  allocatable :: rij,rji
@@ -48,8 +48,8 @@ MODULE trans_mod
 
     real(8) :: lam0       ! line center vacuum wavelength [cm]
     logical :: hydrogen
-    real(4),dimension(:), pointer, contiguous :: q => null() ! frequencies [Doppler units]
-    real(8),dimension(:), pointer, contiguous :: wq => null()  ! frequency quadrature weight [Doppler units]
+    real(4),dimension(:), allocatable :: q  ! frequencies [Doppler units]
+    real(8),dimension(:), allocatable :: wq ! frequency quadrature weight [Doppler units]
 
     real(4),dimension(:,:,:,:), pointer :: phi => null() ! actual line profile data
     real(4),dimension(:,:,:), pointer, contiguous :: wphi => null() ! normalization such that
@@ -64,7 +64,7 @@ MODULE trans_mod
     real(8), dimension(:), allocatable :: fterm 
     real(8), dimension(:), allocatable :: gwterm
     real(8), dimension(:), allocatable :: gqterm
-    integer :: fs, fe, iso=0
+    integer :: iso=0
     logical :: get_cntrbf=.false.
 
   contains

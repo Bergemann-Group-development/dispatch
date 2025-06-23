@@ -243,7 +243,7 @@ SUBROUTINE generate_isotopic_combinations(self)
         call argsort_int([(nint(self%ions(i)%p%awgt), i=1, self%nions)], order)
         do i=1, self%nions
             ion => self%ions(order(i))%p
-            if (associated(ion%isotope)) then
+            if (size(ion%isotope)>0) then
                 iso => ion%isotope(indices(i))
                 total_mass = total_mass + iso%awgt
                 total_frac = total_frac * iso%frac

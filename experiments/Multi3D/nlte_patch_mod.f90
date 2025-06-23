@@ -15,24 +15,23 @@ MODULE nlte_patch_mod
   USE mmath_mod, only: cc_kernel
   USE op_math_mod, only: pchip_mono
   USE handyfuncs_mod
-  USE atom_mod, only:atom_type, atom_data_t
-  USE ray_patch_mod, only:ray_patch_t
+  USE atom_mod, only: atom_type, atom_data_t, atom_trans_t
+  USE ray_patch_mod, only: ray_patch_t
   USE m3d_halo_mod, only: lock_mem, unlock_mem
   USE m3d_patch_mod, only: all_vec=>vec, all_wmu=>wmu, use_vel, m3d_patch_t, &
   absmet_in_output, long_wmu, long_vec, ray_offset, pivot_z, dlam, &
   premature_finish, m3d_patch_pre_update=>pre_update, save_resolved, &
-  column_by_column, rotate_atmos, check_NaN, rank_lvlerr, sample_back_opac, &
+  column_by_column, rotate_atmos, rank_lvlerr, sample_back_opac, &
   decouple_continuum, linelist_in_output, sample_back_opac_in_output, ilambd, &
   Jnu_to_file, preconditioning, make_eos, amr, save_Inu, save_chi, save_Snu, &
-  rotate_continuum, long_solver, fixed_Jnu, opac_table_vmic, n_nu, save_Jnu
+  long_solver, fixed_Jnu, opac_table_vmic, n_nu, save_Jnu
   USE ray_mod, only: one_dimensional, ray_type
-  USE trans_mod, only:line_type, cont_type
-  USE bbtrans_mod, only:voigt_function2, voigt_profile
+  USE trans_mod, only: line_type, cont_type
+  USE bbtrans_mod, only: voigt_function2, voigt_profile
   USE hprofl_mod, only: hprofl
   USE m3d_debug_mod
   USE shared_mod
-  USE composition_mod, only:composition_type, &
-  scattering_absorption, ref_lam
+  USE composition_mod, only: composition_type, scattering_absorption, ref_lam
   implicit none
   private
 
@@ -42,15 +41,15 @@ MODULE nlte_patch_mod
     class(nlte_patch_t), pointer :: dnstream=>null()
     class(nlte_patch_t), pointer :: up_twin=>null()
     class(nlte_patch_t), pointer :: dn_twin=>null()
-    type(line_type), dimension(:), allocatable :: line
-    type(cont_type), dimension(:), allocatable :: cont
+    class(atom_trans_t), dimension(:), pointer :: trans=>null()
     real(4), dimension(:,:,:,:,:), allocatable :: Jnu
     real(4), dimension(:,:,:,:), allocatable :: Psi, PsiJ
     real(4), dimension(:,:,:), allocatable :: opac_table
     real(4), dimension(:), allocatable :: twohnu3_c2
     real(8), dimension(:), pointer :: nu
-    integer :: nline=0, ncont=0, mus, mue, n_set, n_mu
-    logical :: bound_bound, bound_free, get_rates
+    integer :: nline=0, ncont=0, mus, mue, n_set, n_mu, natom
+    logical :: bound_bound, bound_free
+    logical, dimension(:), allocatable :: get_rates
   contains
     procedure :: pre_init => nlte_patch_pre_init
     procedure :: init_patch_trans
@@ -74,7 +73,7 @@ MODULE nlte_patch_mod
     procedure :: integrate_rates
     procedure :: work_to_mem
     procedure :: save_intensity
-    procedure :: save_contribution_function 
+    !procedure :: save_contribution_function 
     procedure :: rotate_array
     procedure :: short_char
     procedure :: set_fixed_Jnu
@@ -123,9 +122,11 @@ SUBROUTINE nlte_patch_pre_init (self)
   self%mus = merge(1, self%n_mu+1, self%dir>0)
   self%mue = merge(self%n_mu, size(all_wmu), self%dir>0)
   self%n_set = merge(3, 1, self%out_ray)
+  self%natom = merge(size(self%atom), 0, associated(self%atom))
 
   call self%set_freq_indices()
   call self%init_patch_trans()
+  allocate(self%get_rates(self%natom))
   self%get_rates = self%in_ray .and. self%i_nu>0
 
   self%ng(3) = 1
@@ -139,7 +140,7 @@ SUBROUTINE init_patch_trans (self)
   class(nlte_patch_t) :: self
   class(line_type), pointer :: line
   class(cont_type), pointer :: cont
-  integer :: i, j
+  integer :: i, j, k, nline, ncont
   logical :: skip
   !-----------------------------------------------------------------------------
   if (.not. self%has_atom) then
@@ -147,64 +148,74 @@ SUBROUTINE init_patch_trans (self)
     self%bound_free = .false.
     return
   endif
-  self%bound_bound = associated(self%atom%line)
-  if (self%bound_bound) then
-    self%nline = 0
-    do i=1, self%atom%nline
-      line => self%atom%line(i)
-      if (.not. line%active) cycle
-      call line%check_range(self%fs, self%fe, fs, fe, skip)
-      if (skip) cycle
-      self%nline = self%nline + 1
-    end do
-    allocate(self%line(self%nline))
 
-    j = 1
-    do i=1, self%atom%nline
-      line => self%atom%line(i)
-      if (.not. line%active) cycle
-      call line%check_range(self%fs, self%fe, fs, fe, skip)
-      if (skip) cycle
-      self%line(j) = line
-      self%line(j)%ired = fs
-      self%line(j)%iblue = fe
-      j = j + 1
-    end do
-  endif
-
-  self%bound_free = associated(self%atom%cont)
-  if (self%bound_free) then
-    self%ncont = 0
-    do i=1, self%atom%ncont
-      cont => self%atom%cont(i)
-      if (.not. cont%active) cycle
-      call cont%check_range(self%fs, self%fe, fs, fe, skip)
-      if (skip) cycle
-      self%ncont = self%ncont + 1
-    end do
-    allocate(self%cont(self%ncont))
-
-    j = 1
-    do i=1, self%atom%ncont
-      cont => self%atom%cont(i)
-      if (.not. cont%active) cycle
-      call cont%check_range(self%fs, self%fe, fs, fe, skip)
-      if (skip) cycle
-      self%cont(j) = cont
-      self%cont(j)%ired = fs
-      self%cont(j)%iblue = fe
-      j = j + 1
-    end do
-  endif
+  self%bound_bound = any([(associated(self%atom(i)%trans%line), i=1, self%natom)])
+  self%bound_free = any([(associated(self%atom(i)%trans%cont), i=1, self%natom)])
+  allocate(self%trans(self%natom))
+  
+  do k=1, self%natom
+    associate(atom=>self%atom(k), trans=>self%trans(k))
+      nline = 0
+      ncont = 0
+      if (self%bound_bound) then
+        do i=1, atom%nline
+          line => atom%trans%line(i)
+          if (.not. line%active) cycle
+          call line%check_range(self%fs, self%fe, fs, fe, skip)
+          if (skip) cycle
+          nline = nline + 1
+        end do
+      endif
+      if (self%bound_free) then
+        do i=1, atom%ncont
+          cont => atom%trans%cont(i)
+          if (.not. cont%active) cycle
+          call cont%check_range(self%fs, self%fe, fs, fe, skip)
+          if (skip) cycle
+          ncont = ncont + 1
+        end do
+      endif
+      call trans%allocate(nline, ncont)
+      if (self%bound_bound) then
+        j = 1
+        do i=1, atom%nline
+          line => atom%trans%line(i)
+          if (.not. line%active) cycle
+          call line%check_range(self%fs, self%fe, fs, fe, skip)
+          if (skip) cycle
+          trans%line(j) = line
+          trans%line(j)%ired = fs
+          trans%line(j)%iblue = fe
+          j = j + 1
+        end do
+      endif
+      if (self%bound_free) then
+        j = 1
+        do i=1, atom%ncont
+          cont => atom%trans%cont(i)
+          if (.not. cont%active) cycle
+          call cont%check_range(self%fs, self%fe, fs, fe, skip)
+          if (skip) cycle
+          trans%cont(j) = cont
+          trans%cont(j)%ired = fs
+          trans%cont(j)%iblue = fe
+          j = j + 1
+        end do
+      endif
+    end associate
+  end do
 END SUBROUTINE init_patch_trans
 
 !===============================================================================
 SUBROUTINE nlte_patch_pre_update (self)
   class(nlte_patch_t), target :: self
+  logical :: conv
+  integer :: i
   !-----------------------------------------------------------------------------
   call m3d_patch_pre_update(self)
   if (self%has_atom .and. self%in_ray) then
-    if (premature_finish .and. self%atom%data%converged) then
+    conv = all([(self%atom(i)%data%converged, i=1, self%natom)])
+    if (premature_finish .and. conv) then
       self%static_mem = .true.
     endif
   endif
@@ -213,18 +224,20 @@ END SUBROUTINE nlte_patch_pre_update
 !===============================================================================
 SUBROUTINE execute (self)
   class(nlte_patch_t) :: self
+  class(atom_type), pointer :: atom
+  class(atom_trans_t), pointer :: trans
   class(atom_data_t), pointer :: adata
   class(composition_type), pointer :: comp
-  real(4), dimension(:,:,:,:), allocatable :: gamma_ij, gamma_ji, adamp
+  real(4), dimension(:,:,:,:), allocatable :: gamma_ij, gamma_ji
   real(4), dimension(:,:,:), pointer :: vmic
-  real(4), dimension(:,:,:), allocatable :: inv_df, vproj
+  real(4), dimension(:,:,:), allocatable :: vproj
   real(4) :: wmu, nan_check(3)
   real(8) :: vec(3)
   character(8) :: Jnu_label
   character(6) :: sav_label
   logical :: skip, use_linelist, get_cntrbf, end_boundary, include_absmet
   logical :: do_rotate_atmos, do_sample_opac, do_make_eos, do_rotate_continuum
-  integer :: i, j, i_mu, zs, ze, p(3), ng, i_set, l, nnu_cntrbf
+  integer :: i, j, i_mu, zs, ze, p(3), ng, i_set, l, nnu_cntrbf, nrad
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('nlte_patch%execute', itimer=itimer)
@@ -240,11 +253,11 @@ SUBROUTINE execute (self)
 
   self%nu(fs:fe) => self%sp%nu(fs:fe)
   vmic => self%m3d_parent%authority_mem(:,:,:,8,self%it,1)
+  comp => self%m3d_parent%composition
 
-  self%composition => self%m3d_parent%composition
   do_rotate_atmos = rotate_atmos .and. self%out_mu
-  do_rotate_continuum = do_rotate_atmos .and. rotate_continuum
-  use_linelist = self%out_mu .and. self%composition%ll_initialised .and. linelist_in_output
+  do_rotate_continuum = do_rotate_atmos
+  use_linelist = self%out_mu .and. comp%ll_initialised .and. linelist_in_output
   get_cntrbf = self%out_mu .and. (n_cntrbf>0)
   end_boundary = self%patch%boundaries%is_set(bits%zl) .and. (self%dir<0)
   end_boundary = self%patch%boundaries%is_set(bits%zu) .and. (self%dir>0) .or. end_boundary
@@ -252,23 +265,15 @@ SUBROUTINE execute (self)
     end_boundary = self%dnstream%is_finished()
   endif
 
-  if (self%has_atom) then
-    if (self%atom%data%converged) then
-      self%get_rates = .false.
-    endif
-  endif
-
-  call allocate_arrays()
-
-  self%twohnu3_c2 = twoh_c2 * self%nu**3
-
   do_sample_opac = sample_back_opac .and. (self%in_ray .or. sample_back_opac_in_output)
   do_make_eos = make_eos .and. self%out_ray
   include_absmet = (self%in_ray .and. (self%i_nu > self%n_nu .or. .not. decouple_continuum)) &
               .or. (self%out_ray .and. absmet_in_output)
-  
 
-  comp => self%composition
+  self%get_rates = self%get_rates .and. [(.not. self%atom(i)%data%converged, i=1, self%natom)]
+
+  call allocate_arrays()
+  self%twohnu3_c2 = twoh_c2 * self%nu**3
 
   if (.not. do_rotate_continuum) then
     call self%lte_background_opacities(comp, include_absmet=include_absmet, do_sample_opac=do_sample_opac, do_make_eos=do_make_eos)
@@ -277,15 +282,16 @@ SUBROUTINE execute (self)
       call self%add_scattering(comp)
     endif
 
-    if (self%has_atom) then
-      adata => self%atom%data
-      if (self%bound_free) call self%add_bound_free_opacities(adata)
+    do i=1, self%natom
+      atom => self%atom(i)
+      trans => self%trans(i)
+      adata => atom%data
+      if (self%bound_free) call self%add_bound_free_opacities(atom, trans, adata)
 
       if (self%bound_bound .and. .not. do_rotate_atmos) then
-        inv_df = self%atom%inverse_doppler_factor(real(comp%temp), vmic)
-        call self%bound_bound_damping(comp, adamp, inv_df)
+        call self%bound_bound_damping(comp, atom, trans, adata)
       endif
-    endif
+    end do
   endif
 
   ! Starting loop over angles
@@ -311,16 +317,21 @@ SUBROUTINE execute (self)
         endif
       endif
 
-      if (self%has_atom) then
-        adata => self%atom%rotated_data(i_mu)
+      do i=1, self%natom
+        atom => self%atom(i)
+        trans => self%trans(i)
+        if (do_rotate_atmos) then
+          adata => atom%rotated_data(i_mu)
+        else
+          adata => atom%data
+        endif
         if (self%bound_free .and. do_rotate_continuum) then
-          call self%add_bound_free_opacities(adata)
+          call self%add_bound_free_opacities(atom, trans, adata)
         endif
         if (self%bound_bound) then
-          inv_df = self%atom%inverse_doppler_factor(real(comp%temp), vmic)
-          call self%bound_bound_damping(comp, adamp, inv_df)
+          call self%bound_bound_damping(comp, atom, trans, adata)
         endif
-      endif
+      end do
     endif
 
     do i_set=1, self%n_set
@@ -336,11 +347,20 @@ SUBROUTINE execute (self)
         endif
 
         if (i_set < 3) then ! i_set==3 is the continuum only
-          if (self%bound_bound) then
-            call self%add_bound_bound_opacities(comp, adata, wmu, inv_df, vproj, adamp, LTE=i_set==2)
-          endif
+          do i=1, self%natom
+            atom => self%atom(i)
+            trans => self%trans(i)
+            if (do_rotate_atmos) then
+              adata => atom%rotated_data(i_mu)
+            else
+              adata => atom%data
+            endif
+            if (self%bound_bound) then
+              call self%add_bound_bound_opacities(comp, atom, trans, adata, wmu, vproj, LTE=i_set==2)
+            endif
+          end do
           if (use_linelist) then
-            call comp%add_linelist_opacities(self%nu, work(:,:,:,1:nz,1), dlam, vproj, vmic, work(:,:,:,1:nz,2))
+            call comp%add_linelist_opacities(self%nu, work(:,:,:,1:nz,1), dlam, vproj, work(:,:,:,1:nz,2))
           endif
         endif
 
@@ -372,9 +392,9 @@ SUBROUTINE execute (self)
           endif
         endif
 
-        if (get_cntrbf) then
-          call self%save_contribution_function(i_set, i_mu)
-        endif
+        !if (get_cntrbf) then
+        !  call self%save_contribution_function(i_set, i_mu)
+        !endif
       endif
 
       if (self%print_update_info) then
@@ -395,13 +415,22 @@ SUBROUTINE execute (self)
 
       call self%work_to_mem(i_mu, i_set)
 
-      if ((self%get_rates .and. self%bound_free) .or. (self%iter < ilambd)) then
-        call self%integrate_intensity(wmu, i_set, save_PsiJ=(self%get_rates .and. self%bound_free))
+      if ((any(self%get_rates) .and. self%bound_free) .or. (self%iter < ilambd)) then
+        call self%integrate_intensity(wmu, i_set, save_PsiJ=(any(self%get_rates) .and. self%bound_free))
       endif
       
-      if (self%get_rates) then
-        if (self%bound_bound) call self%bound_bound_rates(comp, wmu, inv_df, vproj, adamp, gamma_ij, gamma_ji)
-      endif
+      do i=1, self%natom
+        atom => self%atom(i)
+        trans => self%trans(i)
+        if (do_rotate_atmos) then
+          adata => atom%rotated_data(i_mu)
+        else
+          adata => atom%data
+        endif
+        if (self%get_rates(i) .and. self%bound_bound) then
+          call self%bound_bound_rates(comp, atom, trans, adata, wmu, vproj)
+        endif
+      end do
 
       if (self%out_mu) then
         if (save_chi) then
@@ -429,10 +458,14 @@ SUBROUTINE execute (self)
     end do ! NLTE-LTE-CONTINUUM loop
   end do ! Angle loop
 
-  if (self%get_rates) then
-    if (self%bound_free) call self%bound_free_rates(gamma_ij, gamma_ji)
-    if (self%has_atom) call self%integrate_rates(gamma_ij, gamma_ji)
-  endif
+  do i=1, self%natom
+    atom => self%atom(i)
+    trans => self%trans(i)
+    if (self%get_rates(i)) then
+      if (self%bound_free) call self%bound_free_rates(atom, trans, atom%data)
+      call self%integrate_rates(atom, trans, atom%data)
+    endif
+  end do
 
   if (Jnu_to_file) then
     Jnu_label = merge('Jnu_out', 'Jnu    ', self%out_ray)
@@ -443,7 +476,7 @@ SUBROUTINE execute (self)
     if (self%out_mu .and. self%n_mu>0) then
       call self%save_intensity()
       if (self%i_nu == -1) then
-        call self%print_linelist(self%composition)
+        call self%print_linelist(comp)
       endif
     endif
     call self%deallocate_mem()
@@ -452,7 +485,7 @@ SUBROUTINE execute (self)
   call deallocate_arrays()
 
   if (self%has_atom .and. self%iter > ilambd-1) then
-    if (self%atom%data%converged .and. premature_finish) then
+    if (all([(self%atom(i)%data%converged, i=1, self%natom)]) .and. premature_finish) then
       call self%finish()
     endif
   endif
@@ -468,48 +501,50 @@ contains
     allocate(back(fs:fe,nx,ny,nz,3), source=0.)
     allocate(work(fs:fe,nx,ny,zs:ze,3), source=0.)
     allocate(self%twohnu3_c2(fs:fe))
-    allocate(inv_df(nx,ny,nz))
     allocate(vproj(nx,ny,nz))
     call mem_register(back,      label='back')
     call mem_register(work,      label='work')
-    if (self%bound_bound) then
-      allocate(adamp(nx,ny,nz,self%nline), source=0.)
-      call mem_register(adamp, label='adamp')
-    endif
     if (.not. allocated(self%Jnu)) then
-      if ((ilambd > 0) .or. (self%get_rates .and. self%bound_free)) then
+      if ((ilambd > 0) .or. (any(self%get_rates) .and. self%bound_free)) then
         allocate(self%Jnu(fs:fe,nx,ny,nz,self%n_set), source=0.)
-        call mem_register(self%Jnu,  label='Jnu')
+        call mem_register(self%Jnu, label='Jnu')
       endif
     endif
-    if (self%get_rates) then
+    do i=1, self%natom
+      trans => self%trans(i)
+      if (self%bound_bound) then
+        call os%allocate(trans%adamp, [nx,ny,nz,size(trans%line)], label='adamp', zero=.true.)
+      endif
+      if (self%get_rates(i)) then
+        nrad = size(trans%line) + size(trans%cont)
+        call os%allocate(trans%gamma_ij, [nx,ny,nz,nrad], label='gamma_ij', zero=.true.)
+        call os%allocate(trans%gamma_ji, [nx,ny,nz,nrad], label='gamma_ji', zero=.true.)
+      endif
+    end do
+    if (any(self%get_rates)) then
       allocate(self%Psi(fs:fe,nx,ny,nz), source=0.)
-      allocate(gamma_ij(nx, ny, nz, self%nline+self%ncont), source=0.)
-      allocate(gamma_ji(nx, ny, nz, self%nline+self%ncont), source=0.)
       call mem_register(self%Psi, label='Psi')
-      call mem_register(gamma_ij, label='gamma_ij')
-      call mem_register(gamma_ji, label='gamma_ji')
       if (self%bound_free) then
         allocate(self%PsiJ(fs:fe,nx,ny,nz), source=0.)
         call mem_register(self%PsiJ, label='PsiJ')
       endif
     endif
-    if (get_cntrbf) then
-      allocate(cntrbf(n_cntrbf))
-      do i=1, n_cntrbf
-        j = cntrbf_lines(i)
-        associate(line=>self%atom%line(j))
-          if (.not. line%active) cycle
-          call line%check_range(self%fs, self%fe, fs, fe, skip)
-          if (.not. skip) then
-            allocate(cntrbf(i)%data(fs:fe,nx,ny,nz,4,self%mus:self%mue))
-            call mem_register(cntrbf(i)%data, 'cntrbf')
-            allocate(cntrbf(i)%tmp(fs:fe,nx,ny,nz,4))
-            call mem_register(cntrbf(i)%tmp, 'cntrbf%tmp')
-          endif
-        end associate
-      end do
-    endif
+    !if (get_cntrbf) then
+    !  allocate(cntrbf(n_cntrbf))
+    !  do i=1, n_cntrbf
+    !    j = cntrbf_lines(i)
+    !    associate(line=>self%atom%line(j))
+    !      if (.not. line%active) cycle
+    !      call line%check_range(self%fs, self%fe, fs, fe, skip)
+    !      if (.not. skip) then
+    !        allocate(cntrbf(i)%data(fs:fe,nx,ny,nz,4,self%mus:self%mue))
+    !        call mem_register(cntrbf(i)%data, 'cntrbf')
+    !        allocate(cntrbf(i)%tmp(fs:fe,nx,ny,nz,4))
+    !        call mem_register(cntrbf(i)%tmp, 'cntrbf%tmp')
+    !      endif
+    !    end associate
+    !  end do
+    !endif
   end subroutine allocate_arrays
 
   !-----------------------------------------------------------------------------
@@ -518,35 +553,39 @@ contains
     call mem_unregister(back     , label='back')
     deallocate(work, back)
     deallocate(self%twohnu3_c2)
-    if (self%bound_bound) then
-      call mem_unregister(adamp, label='adamp')
-      deallocate(adamp)
-    endif
+    do i=1, self%natom
+      trans => self%trans(i)
+      if (self%bound_bound) then
+        call os%deallocate(trans%adamp, label='adamp')
+      endif
+      if (self%get_rates(i)) then
+        call os%deallocate(trans%gamma_ij, label='gamma_ij')
+        call os%deallocate(trans%gamma_ji, label='gamma_ji')
+      endif
+    end do
     if (allocated(self%Jnu) .and. .not. (ilambd>0 .and. .not. Jnu_to_file)) then
       call mem_unregister(self%Jnu , label='Jnu')
       deallocate(self%Jnu)
     endif
-    if (self%get_rates) then
+    if (any(self%get_rates)) then
       call mem_unregister(self%Psi, label='Psi')
-      call mem_unregister(gamma_ij, label='gamma_ij')
-      call mem_unregister(gamma_ji, label='gamma_ji')
-      deallocate(gamma_ij, gamma_ji, self%Psi)
+      deallocate(self%Psi)
       if (self%bound_free) then
         call mem_unregister(self%PsiJ, label='PsiJ')
         deallocate(self%PsiJ)
       endif
     endif
-    if (get_cntrbf) then
-      do i=1, n_cntrbf
-        if (allocated(cntrbf(i)%data)) then
-          call mem_unregister(cntrbf(i)%data, label='cntrbf')
-          deallocate(cntrbf(i)%data)
-          call mem_unregister(cntrbf(i)%tmp, label='cntrbf%tmp')
-          deallocate(cntrbf(i)%tmp)
-        endif
-      end do
-      deallocate(cntrbf)
-    endif
+    !if (get_cntrbf) then
+    !  do i=1, n_cntrbf
+    !    if (allocated(cntrbf(i)%data)) then
+    !      call mem_unregister(cntrbf(i)%data, label='cntrbf')
+    !      deallocate(cntrbf(i)%data)
+    !      call mem_unregister(cntrbf(i)%tmp, label='cntrbf%tmp')
+    !      deallocate(cntrbf(i)%tmp)
+    !    endif
+    !  end do
+    !  deallocate(cntrbf)
+    !endif
   end subroutine deallocate_arrays
 END SUBROUTINE execute
 
@@ -571,6 +610,8 @@ SUBROUTINE lte_background_opacities (self, comp, include_absmet, do_sample_opac,
   end do
   end do
   end do
+
+  call comp%get_table_frequencies(self%nu(fs:fe))
 
   if (do_sample_opac .or. do_make_eos) then
     if (.not. allocated(self%opac_table)) then
@@ -657,7 +698,6 @@ SUBROUTINE generate_opacity_table (self, nu, include_absmet)
   class(composition_type), pointer :: comp
   real(8), dimension(:), pointer, intent(in) :: nu
   real(4), dimension(:,:,:,:), pointer :: view, all_eta
-  real(4), dimension(:,:,:), allocatable :: vmic
   logical, intent(in) :: include_absmet
   real(4) :: over_chi500
   integer :: i,j,k, ntemp, nne, nnu
@@ -675,9 +715,7 @@ SUBROUTINE generate_opacity_table (self, nu, include_absmet)
   call comp%absorption(nu, view, include_absmet=include_absmet, sorted=self%sp%sorted)
 
   if (comp%ll_initialised) then
-    allocate(vmic, mold=comp%chi500)
-    vmic = opac_table_vmic
-    call comp%add_linelist_opacities(nu, view, dlam, vmic=vmic)
+    call comp%add_linelist_opacities(nu, view, dlam)
   endif
 
   do k=1, nne
@@ -779,11 +817,12 @@ SUBROUTINE interpolate_opacity_table (self, temp, ne, rho)
 END SUBROUTINE interpolate_opacity_table
 
 !===============================================================================
-SUBROUTINE add_bound_free_opacities (self, adata)
+SUBROUTINE add_bound_free_opacities (self, atom, trans, adata)
   class(nlte_patch_t), target :: self
-  class(atom_data_t) :: adata
+  class(atom_type) :: atom
+  class(atom_trans_t) :: trans
+  class(atom_data_t), target :: adata
   class(cont_type), pointer :: cont
-  real(8), contiguous, dimension(:,:,:,:), pointer :: n
   real(4), contiguous, dimension(:,:,:), pointer :: nibj
   real(8), dimension(:,:,:,:), allocatable, target :: nrot
   real(4), dimension(:,:,:), allocatable, target :: nibj_rot
@@ -793,8 +832,6 @@ SUBROUTINE add_bound_free_opacities (self, adata)
   !-----------------------------------------------------------------------------
   call trace%begin('nlte_patch%add_bound_free_opacities', itimer=itimer)
   ! Summing contributions from all bound-free transitions
-  n => adata%n
-
   do i=1, size(work,5)
   do z=lbound(work, 4), ubound(work,4)
   do y=1, ny
@@ -807,20 +844,20 @@ SUBROUTINE add_bound_free_opacities (self, adata)
 
   fsmin = huge(1)
   femax = 1
-  do i=1, self%ncont
-    cont => self%cont(i)
+  do i=1, size(trans%cont)
+    cont => trans%cont(i)
     if (.not. cont%active) cycle
     fs = cont%ired
     fe = cont%iblue
     fsmin = min(fsmin, fs)
     femax = max(femax, fe)
-    icont = cont%ntrans-self%atom%nline
+    icont = cont%ntrans-atom%nline
     nibj => adata%nibj(:,:,:,icont)
 
     do z=1, nz
     do y=1, ny
     do x=1, nx
-      ni  = n(x,y,z,cont%i)
+      ni  = adata%n(x,y,z,cont%i)
       tmp = nibj(x,y,z)
       do f=fs, fe
         alpha = cont%alpha(f)
@@ -854,48 +891,52 @@ SUBROUTINE add_bound_free_opacities (self, adata)
 END SUBROUTINE add_bound_free_opacities
 
 !===============================================================================
-SUBROUTINE bound_bound_damping (self, comp, adamp, inv_df)
+SUBROUTINE bound_bound_damping (self, comp, atom, trans, adata)
   class(nlte_patch_t), target :: self
   class(composition_type) :: comp
+  class(atom_type) :: atom
+  class(atom_trans_t) :: trans
+  class(atom_data_t) :: adata
   class(line_type), pointer :: line
-  real(4), contiguous, dimension(:,:,:,:) :: adamp
-  real(4), contiguous, dimension(:,:,:) :: inv_df
   real(4), dimension(:,:,:), allocatable :: tothi, vbar2, ne, temp, nh6
   real(4), dimension(:,:,:), allocatable :: stark_pe, unsold, vproj
+  real(8) :: scalar
   integer :: i
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin (trim(self%kind)//'%bound_bound_damping', itimer=itimer)
-  allocate(temp, ne, tothi, vbar2, stark_pe, unsold, vproj, nh6, mold=inv_df)
+  allocate(temp, ne, tothi, vbar2, stark_pe, unsold, vproj, nh6, mold=adata%inv_df)
   ne = real(comp%ne)
   temp = real(comp%temp)
   tothi = real(comp%elements(1)%ions(1)%n) ! total neutral hydrogen density
   nh6 = real(comp%elements(1)%ions(1)%levels(6)%n) ! neutral hydrogen density in level 6
-  vbar2 = self%atom%compute_vbar2(temp)
   stark_pe = ne * temp**one_sixth
+  vbar2 = atom%compute_vbar2(temp)
   unsold = vbar2**0.3 * tothi
 
   ! computing damping coefficients for all bb-transitions
-  do i=1, self%nline
-    line => self%line(i)
+  do i=1, size(trans%line)
+    line => trans%line(i)
     if (.not. line%active) cycle
+    scalar = over_4pi / line%nu0
     if (line%hydrogen) then
-      call line%dampingH(adamp(:,:,:,i), temp, ne, nh6)
+      call line%dampingH(trans%adamp(:,:,:,i), temp, ne, nh6)
     endif
-    call line%damping(adamp(:,:,:,i), ne, tothi, vbar2, stark_pe, unsold)
-    adamp(:,:,:,i) = adamp(:,:,:,i) * inv_df * over_4pi / line%nu0
+    call line%damping(trans%adamp(:,:,:,i), ne, tothi, vbar2, stark_pe, unsold)
+    trans%adamp(:,:,:,i) = scalar * trans%adamp(:,:,:,i) * adata%inv_df
   end do
   call trace%end(itimer)
 END SUBROUTINE bound_bound_damping
 
 !===============================================================================
-SUBROUTINE add_bound_bound_opacities (self, comp, adata, wmu, inv_df, vproj, adamp, LTE)
+SUBROUTINE add_bound_bound_opacities (self, comp, atom, trans, adata, wmu, vproj, LTE)
   class(nlte_patch_t), target :: self
   class(composition_type) :: comp
-  class(atom_data_t) :: adata
+  class(atom_type) :: atom
+  class(atom_trans_t) :: trans
+  class(atom_data_t), target :: adata
   class(line_type), pointer :: line
-  real(4), contiguous, dimension(:,:,:) :: inv_df, vproj
-  real(4), contiguous, dimension(:,:,:,:) :: adamp
+  real(4), contiguous, dimension(:,:,:) :: vproj
   real(8), contiguous, dimension(:,:,:,:), pointer :: n
   real(8), dimension(:,:,:,:), allocatable, target :: nrot
   real(4), dimension(:,:,:), allocatable :: wphi, temp, ne, fo, vbarh, tothi, t3nhe
@@ -917,10 +958,10 @@ SUBROUTINE add_bound_bound_opacities (self, comp, adata, wmu, inv_df, vproj, ada
 
   allocate(vphi(self%fs:self%fe))
   allocate(wphi, mold=vproj)
-  get_wphi = self%iter == 0 .and. self%get_rates
+  get_wphi = self%iter == 0 .and. .not. self%out_ray
 
-  if (any(self%line%hydrogen)) then
-    allocate(temp, ne, fo, vbarh, tothi, t3nhe, mold=inv_df)
+  if (any(trans%line%hydrogen)) then
+    allocate(temp, ne, fo, vbarh, tothi, t3nhe, mold=adata%inv_df)
     temp = comp%temp
     ne = comp%ne
     fo = comp%fo
@@ -929,19 +970,19 @@ SUBROUTINE add_bound_bound_opacities (self, comp, adata, wmu, inv_df, vproj, ada
     t3nhe = comp%t3nhe
   endif
 
-  do i=1, self%nline
-    line => self%line(i)
+  do i=1, size(trans%line)
+    line => trans%line(i)
     fs = line%ired
     fe = line%iblue
 
-    lower_off = line%lower_ev - self%atom%ev(line%i)
-    upper_off = line%upper_ev - self%atom%ev(line%j)
+    lower_off = line%lower_ev - atom%ev(line%i)
+    upper_off = line%upper_ev - atom%ev(line%j)
 
     ! Adding bound-bound opacities
     do z=1, nz
     do y=1, ny
     do x=1, nx
-      idf = inv_df(x,y,z)
+      idf = adata%inv_df(x,y,z)
 
       associate(phi => vphi(fs:fe))
         if (line%hydrogen) then
@@ -953,13 +994,13 @@ SUBROUTINE add_bound_bound_opacities (self, comp, adata, wmu, inv_df, vproj, ada
         elseif (line%io > 1) then
           phi = 0
           do ih=1, line%io
-            a = adamp(x,y,z,i) + idf*line%da(ih)
+            a = trans%adamp(x,y,z,i) + idf*line%da(ih)
             vpr = vproj(x,y,z) + line%dq(ih)
             phi = phi + voigt_profile(a, line%q(fs:fe), vpr, idf) * line%wt(ih)
           end do
         else
           vpr = vproj(x,y,z)
-          a = adamp(x,y,z,i)
+          a = trans%adamp(x,y,z,i)
           phi = voigt_profile(a, line%q(fs:fe), vpr, idf)
         endif
 
@@ -997,13 +1038,14 @@ SUBROUTINE add_bound_bound_opacities (self, comp, adata, wmu, inv_df, vproj, ada
 END SUBROUTINE add_bound_bound_opacities
 
 !===============================================================================
-SUBROUTINE bound_bound_rates (self, comp, wmu, inv_df, vproj, adamp, gamma_ij, gamma_ji)
+SUBROUTINE bound_bound_rates (self, comp, atom, trans, adata, wmu, vproj)
   class(nlte_patch_t), target :: self
   class(composition_type) :: comp
+  class(atom_type) :: atom
+  class(atom_trans_t) :: trans
+  class(atom_data_t), target :: adata
   class(line_type), pointer :: line
-  real(4), contiguous, dimension(:,:,:) :: inv_df, vproj
-  real(4), contiguous, dimension(:,:,:,:) :: adamp, gamma_ij, gamma_ji
-  real(8), contiguous, dimension(:,:,:,:), pointer :: n
+  real(4), contiguous, dimension(:,:,:) :: vproj
   real(4), dimension(:,:,:), allocatable :: temp, ne, fo, vbarh, tothi, t3nhe
   real(4), dimension(:), allocatable :: wmunu
   real(4) :: wmu, idf, vpr, a, idf_4pi, ni, nj, chi_fac, phi, vel, vgt
@@ -1016,10 +1058,9 @@ SUBROUTINE bound_bound_rates (self, comp, wmu, inv_df, vproj, adamp, gamma_ij, g
   call trace%begin (trim(self%kind)//'%bound_bound_rates', itimer=itimer)
   allocate(wmunu(self%fs:self%fe))
   ! Computing bound-bound radiative rates
-  n => self%atom%data%n
 
-  if (any(self%line%hydrogen)) then
-    allocate(temp, ne, fo, vbarh, tothi, t3nhe, mold=inv_df)
+  if (any(trans%line%hydrogen)) then
+    allocate(temp, ne, fo, vbarh, tothi, t3nhe, mold=adata%inv_df)
     temp = comp%temp
     ne = comp%ne
     fo = comp%fo
@@ -1028,22 +1069,22 @@ SUBROUTINE bound_bound_rates (self, comp, wmu, inv_df, vproj, adamp, gamma_ij, g
     t3nhe = comp%t3nhe
   endif
 
-  do i=1, self%nline
-    line => self%line(i)
+  do i=1, size(trans%line)
+    line => trans%line(i)
     fs = line%ired
     fe = line%iblue
     wmunu(fs:fe) = wmu * line%wnu(fs:fe) * line%Aij
-    lower_off = line%lower_ev - self%atom%ev(line%i)
-    upper_off = line%upper_ev - self%atom%ev(line%j)
+    lower_off = line%lower_ev - atom%ev(line%i)
+    upper_off = line%upper_ev - atom%ev(line%j)
 
     do z=1,nz
     do y=1,ny
     do x=1,nx
-      ni = n(x,y,z,line%i)
-      nj = n(x,y,z,line%j)
-      idf = inv_df(x,y,z)
+      ni = adata%n(x,y,z,line%i)
+      nj = adata%n(x,y,z,line%j)
+      idf = adata%inv_df(x,y,z)
       vpr = vproj(x,y,z)
-      a = adamp(x,y,z,i)
+      a = trans%adamp(x,y,z,i)
       ekt = comp%e_kT(x,y,z)
       if (lower_off /= 0) ni = ni * exp(-lower_off*ekt)
       if (upper_off /= 0) nj = nj * exp(-upper_off*ekt)
@@ -1097,8 +1138,8 @@ SUBROUTINE bound_bound_rates (self, comp, wmu, inv_df, vproj, adamp, gamma_ij, g
           end associate
         end do
       endif
-      gamma_ji(x,y,z,i) = gamma_ji(x,y,z,i) + g_ji
-      gamma_ij(x,y,z,i) = gamma_ij(x,y,z,i) + g_ij
+      trans%gamma_ji(x,y,z,i) = trans%gamma_ji(x,y,z,i) + g_ji
+      trans%gamma_ij(x,y,z,i) = trans%gamma_ij(x,y,z,i) + g_ij
     end do
     end do
     end do
@@ -1107,10 +1148,12 @@ SUBROUTINE bound_bound_rates (self, comp, wmu, inv_df, vproj, adamp, gamma_ij, g
 END SUBROUTINE bound_bound_rates
 
 !===============================================================================
-SUBROUTINE bound_free_rates (self, gamma_ij, gamma_ji)
+SUBROUTINE bound_free_rates (self, atom, trans, adata)
   class(nlte_patch_t), target :: self
+  class(atom_type) :: atom
+  class(atom_trans_t) :: trans
+  class(atom_data_t), target :: adata
   class(cont_type), pointer :: cont
-  real(4), contiguous, dimension(:,:,:,:) :: gamma_ij, gamma_ji
   real(8), contiguous, dimension(:,:,:,:), pointer :: n
   real(4), contiguous, dimension(:,:,:), pointer :: nibj
   real(4), dimension(:), allocatable :: w_alpha, wmunu
@@ -1123,15 +1166,14 @@ SUBROUTINE bound_free_rates (self, gamma_ij, gamma_ji)
   allocate(wmunu(self%fs:self%fe))
   allocate(w_alpha(self%fs:self%fe))
   ! Computing bound-free radiative rates based on half integrated mean intensity
-  n => self%atom%data%n
-  do j=1, self%ncont
-    cont => self%cont(j)
+  do j=1, size(trans%cont)
+    cont => trans%cont(j)
     if (.not. cont%active) cycle
     i = j + self%nline
     fs = cont%ired
     fe = cont%iblue
-    icont = cont%ntrans-self%atom%nline
-    nibj => self%atom%data%nibj(:,:,:,icont)
+    icont = cont%ntrans-atom%nline
+    nibj => adata%nibj(:,:,:,icont)
     wmunu(fs:fe) = 0.5 * cont%wnu(fs:fe)
     w_alpha(fs:fe) = self%twohnu3_c2(fs:fe) * cont%alpha(fs:fe) * wmunu(fs:fe)
     
@@ -1140,7 +1182,7 @@ SUBROUTINE bound_free_rates (self, gamma_ij, gamma_ji)
     do x=1,nx
       if (preconditioning) then
         tmp = nibj(x,y,z)   
-        ni = n(x,y,z,cont%i)
+        ni = adata%n(x,y,z,cont%i)
       else
         tmp = 0.
         ni = 0.
@@ -1156,8 +1198,8 @@ SUBROUTINE bound_free_rates (self, gamma_ij, gamma_ji)
           g_ij = g_ij + vij*(Jnu - phi*blz*tmp)
         end associate
       end do
-      gamma_ji(x,y,z,i) = gamma_ji(x,y,z,i) + g_ji
-      gamma_ij(x,y,z,i) = gamma_ij(x,y,z,i) + g_ij
+      trans%gamma_ji(x,y,z,i) = trans%gamma_ji(x,y,z,i) + g_ji
+      trans%gamma_ij(x,y,z,i) = trans%gamma_ij(x,y,z,i) + g_ij
     end do
     end do
     end do
@@ -1249,31 +1291,31 @@ SUBROUTINE integrate_intensity (self, wmu, i_set, save_PsiJ)
 END SUBROUTINE integrate_intensity
 
 !===============================================================================
-SUBROUTINE integrate_rates (self, gamma_ij, gamma_ji)
+SUBROUTINE integrate_rates (self, atom, trans, adata)
   class(nlte_patch_t) :: self
-  class(atom_type), pointer :: atom
+  class(atom_type) :: atom
+  class(atom_trans_t) :: trans
+  class(atom_data_t) :: adata
   integer :: m(4), i, j, k
-  real(4), dimension(:,:,:,:), contiguous :: gamma_ij, gamma_ji
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('nlte_patch_t%integrate_rates', itimer=itimer)
   call lock_mem(self%m3d_parent, 'integrate_rates')
-  atom => self%atom
-  if (.not. associated(atom%data%gamma_ij)) then
+  if (.not. allocated(adata%gamma_ij)) then
     m = [self%patch%n, atom%nrad]
-    call os%allocate(atom%data%gamma_ij, m, zero=.true., label='atom%gamma_ij')
-    call os%allocate(atom%data%gamma_ji, m, zero=.true., label='atom%gamma_ji')
+    call os%allocate(adata%gamma_ij, m, label='atom%gamma_ij', zero=.true.)
+    call os%allocate(adata%gamma_ji, m, label='atom%gamma_ji', zero=.true.)
   endif
-  do i=1, self%nline
-    k = self%line(i)%ntrans
-    atom%data%gamma_ij(:,:,:,k) = atom%data%gamma_ij(:,:,:,k) + gamma_ij(:,:,:,i)
-    atom%data%gamma_ji(:,:,:,k) = atom%data%gamma_ji(:,:,:,k) + gamma_ji(:,:,:,i)
+  do i=1, size(trans%line)
+    k = trans%line(i)%ntrans
+    adata%gamma_ij(:,:,:,k) = adata%gamma_ij(:,:,:,k) + trans%gamma_ij(:,:,:,i)
+    adata%gamma_ji(:,:,:,k) = adata%gamma_ji(:,:,:,k) + trans%gamma_ji(:,:,:,i)
   end do
-  do i=1, self%ncont
+  do i=1, size(trans%cont)
     j = i + self%nline
-    k = self%cont(i)%ntrans
-    atom%data%gamma_ij(:,:,:,k) = atom%data%gamma_ij(:,:,:,k) + gamma_ij(:,:,:,j)
-    atom%data%gamma_ji(:,:,:,k) = atom%data%gamma_ji(:,:,:,k) + gamma_ji(:,:,:,j)
+    k = trans%cont(i)%ntrans
+    adata%gamma_ij(:,:,:,k) = adata%gamma_ij(:,:,:,k) + trans%gamma_ij(:,:,:,j)
+    adata%gamma_ji(:,:,:,k) = adata%gamma_ji(:,:,:,k) + trans%gamma_ji(:,:,:,j)
   end do
   call unlock_mem(self%m3d_parent, 'integrate_rates')
   call trace%end(itimer)
@@ -1425,7 +1467,7 @@ SUBROUTINE set_fixed_Jnu (self, adata)
   !-----------------------------------------------------------------------------
   call trace%begin('nlte_patch%set_fixed_Jnu', itimer=itimer)
   nl = size(adata%wphi, 4)
-  if (.not. associated(adata%wphi)) nl = 0
+  if (.not. allocated(adata%wphi)) nl = 0
   do z=1, nz
   do y=1, ny
   do x=1, nx
@@ -1547,7 +1589,7 @@ SUBROUTINE short_char (self, vec)
           endif
 
           work(f,x,y,z,3) = Inu
-          if (self%get_rates) self%Psi(f,x,y,z) = Psi / work(f,x,y,z,1)
+          if (any(self%get_rates)) self%Psi(f,x,y,z) = Psi / work(f,x,y,z,1)
         end do ! f-loop
       end do
     end do
@@ -1621,7 +1663,7 @@ SUBROUTINE long_char_linear (self, vec)
         endif
 
         work(f,x,y,z,3) = Inu
-        if (self%get_rates) then
+        if (any(self%get_rates)) then
           !Psi = Psi + Inuup*ex*exp(-dsup05*xx*ss)*dsup05*xx
           self%Psi(f,x,y,z) = Psi / xx
         endif
@@ -2050,67 +2092,67 @@ SUBROUTINE get_vproj (self, vproj, vec, rotate, i_mu)
 END SUBROUTINE get_vproj
 
 !===============================================================================
-SUBROUTINE save_contribution_function (self, i_set, i_mu)
-  class(nlte_patch_t) :: self
-  integer :: i, j, i_set, i_mu, ff, im
-  real(4) :: net_chi, net_src, lin_chi, lin_eta
-  real(4) :: cnt_inu, cnt_chi, cnt_eta
-  real(4), dimension(:,:,:,:,:), allocatable, target :: rotated_back
-  real(4), dimension(:,:,:,:,:), pointer :: back_ptr
-  character(32) :: name
-  logical :: skip
-  integer, save :: itimer=0
-  !-----------------------------------------------------------------------------
-  call trace%begin('nlte_patch_t%save_contribution_function', itimer=itimer)
-  do i=1, n_cntrbf
-    j = cntrbf_lines(i)
-    associate(line=>self%atom%line(j))
-      if (.not. line%active) cycle
-      call line%check_range(self%fs, self%fe, fs, fe, skip)
-      if (skip) cycle
-      do z=1,nz
-      do y=1,ny
-      do x=1,nx
-        do f=fs,fe
-          associate(cf => cntrbf(i)%tmp(f,x,y,z,:), cf_out => cntrbf(i)%data(f,x,y,z,:,i_mu))
-            if (i_set < 3) then
-              net_chi = work(f,x,y,z,1)
-              net_src = work(f,x,y,z,2)
-              if (i_set == 1) then
-                cf(1) = net_chi
-                cf(2) = net_src*net_chi
-              elseif (i_set == 2) then
-                cf(3) = net_chi
-                cf(4) = net_src*net_chi
-              endif
-            else
-              cnt_chi = work(f,x,y,z,1)
-              cnt_eta = work(f,x,y,z,2)*cnt_chi
-              cnt_inu = work(f,x,y,z,3)
-              
-              lin_chi = cf(1) - cnt_chi
-              lin_eta = cf(2) - cnt_eta
-              cf_out(1) = cnt_inu*lin_chi - lin_eta
-              cf_out(2) = cf(1)
-              
-              lin_chi = cf(3) - cnt_chi
-              lin_eta = cf(4) - cnt_eta
-              cf_out(3) = cnt_inu*lin_chi - lin_eta
-              cf_out(4) = cf(3)
-            endif
-          end associate
-        end do
-      end do
-      end do
-      end do
-    end associate
-    if (i_set==3 .and. i_mu==self%mue) then
-      write(name, '(A,I6.6)') 'cntrbf_', j
-      call self%save6(cntrbf(i)%data, trim(name))
-    endif
-  end do
-  call trace%end(itimer)
-END SUBROUTINE save_contribution_function
+!SUBROUTINE save_contribution_function (self, i_set, i_mu)
+!  class(nlte_patch_t) :: self
+!  integer :: i, j, i_set, i_mu, ff, im
+!  real(4) :: net_chi, net_src, lin_chi, lin_eta
+!  real(4) :: cnt_inu, cnt_chi, cnt_eta
+!  real(4), dimension(:,:,:,:,:), allocatable, target :: rotated_back
+!  real(4), dimension(:,:,:,:,:), pointer :: back_ptr
+!  character(32) :: name
+!  logical :: skip
+!  integer, save :: itimer=0
+!  !-----------------------------------------------------------------------------
+!  call trace%begin('nlte_patch_t%save_contribution_function', itimer=itimer)
+!  do i=1, n_cntrbf
+!    j = cntrbf_lines(i)
+!    associate(line=>self%atom%line(j))
+!      if (.not. line%active) cycle
+!      call line%check_range(self%fs, self%fe, fs, fe, skip)
+!      if (skip) cycle
+!      do z=1,nz
+!      do y=1,ny
+!      do x=1,nx
+!        do f=fs,fe
+!          associate(cf => cntrbf(i)%tmp(f,x,y,z,:), cf_out => cntrbf(i)%data(f,x,y,z,:,i_mu))
+!            if (i_set < 3) then
+!              net_chi = work(f,x,y,z,1)
+!              net_src = work(f,x,y,z,2)
+!              if (i_set == 1) then
+!                cf(1) = net_chi
+!                cf(2) = net_src*net_chi
+!              elseif (i_set == 2) then
+!                cf(3) = net_chi
+!                cf(4) = net_src*net_chi
+!              endif
+!            else
+!              cnt_chi = work(f,x,y,z,1)
+!              cnt_eta = work(f,x,y,z,2)*cnt_chi
+!              cnt_inu = work(f,x,y,z,3)
+!              
+!              lin_chi = cf(1) - cnt_chi
+!              lin_eta = cf(2) - cnt_eta
+!              cf_out(1) = cnt_inu*lin_chi - lin_eta
+!              cf_out(2) = cf(1)
+!              
+!              lin_chi = cf(3) - cnt_chi
+!              lin_eta = cf(4) - cnt_eta
+!              cf_out(3) = cnt_inu*lin_chi - lin_eta
+!              cf_out(4) = cf(3)
+!            endif
+!          end associate
+!        end do
+!      end do
+!      end do
+!      end do
+!    end associate
+!    if (i_set==3 .and. i_mu==self%mue) then
+!      write(name, '(A,I6.6)') 'cntrbf_', j
+!      call self%save6(cntrbf(i)%data, trim(name))
+!    endif
+!  end do
+!  call trace%end(itimer)
+!END SUBROUTINE save_contribution_function
 
   !===============================================================================
 SUBROUTINE print_post_update_info (self)

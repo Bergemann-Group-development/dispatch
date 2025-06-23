@@ -36,7 +36,6 @@ PROGRAM dispatch
   USE read_external_mod
   USE timer_mod
   USE mpi_debug_mod
-  USE atom_patch_mod, only: atom_file
   !type(cartesian_t):: cartesian                 ! Use Cartesian patch arrangement
   class(task_list_t), pointer:: task_list => null()
   !integer :: i
@@ -53,7 +52,6 @@ PROGRAM dispatch
   if (timer%verbose > 0) call timer%print() 
   call mpi%barrier()
   write(*,'(a, I3, a, F7.2, a)') 'maximum memory on rank', mpi%rank, ' was', os%max_mem, 'Gb'
-  write(*, '(a,3x,a)') trim(atmos_file), trim(atom_file)
   write(*,'(a, I3, a, F7.2, a)') 'Multi3D terminated normally.'
   !call os%print_tracked_mem()
   !i = findloc(os%labels(1:os%nlabels), 'nlte_patch%mem', 1)

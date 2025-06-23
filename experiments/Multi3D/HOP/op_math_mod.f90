@@ -893,7 +893,7 @@ contains
       d1 = dy(i-1)/dx(i-1)
       d2 = dy(i)/dx(i)
       
-      if (sign(1., d1) == sign(1., d2)) then
+      if (sign(1.d0, d1) == sign(1.d0, d2)) then
           ! harmonic mean derivative
           alpha = (1. + dx(i-1)/(dx(i) + dx(i-1))) / 3.0
           dydx8 = d1*d2 / ((1. - alpha)*d1 + alpha*d2)
@@ -1062,7 +1062,7 @@ contains
       d1 = dy(i1) * over_dx
       d2 = dy(i2) * over_dx
       
-      if (sign(1., d1) == sign(1., d2)) then
+      if (sign(1.d0, d1) == sign(1.d0, d2)) then
           ! harmonic mean derivative
           dydx8 = 2*d1*d2 / (d1 + d2)
           dydx(i) = real(dydx8)

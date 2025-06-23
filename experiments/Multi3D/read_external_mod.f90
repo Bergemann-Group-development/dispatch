@@ -104,6 +104,9 @@ SUBROUTINE init(self, task_list, name)
     call execute_command_line (trim(command), exitstat=iostat)
     write (command, *) 'rm -f ', trim(io%run_dir), 'save/*.txt ', trim(io%run_dir), 'save/*.bin'
     call execute_command_line (trim(command), exitstat=iostat)
+    call os%mkdir(trim(io%run_dir)//'atoms')
+    write (command, *) 'rm -f ', trim(io%run_dir), 'atoms/*.txt'
+    call execute_command_line (trim(command), exitstat=iostat)
   endif
 
   if (patches_per_mpi > 1) then

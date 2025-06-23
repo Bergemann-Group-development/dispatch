@@ -25,7 +25,7 @@ MODULE patch_mod
   USE region_mod
   USE lagrange_mod
   USE dll_mod
-  USE bdry_interface_mod
+  !USE bdry_interface_mod
   USE handyfuncs_mod, only: replace_char
   implicit none
   private
@@ -37,7 +37,7 @@ MODULE patch_mod
     ! typically used by methods called from the extras_t data type procedures.
     !---------------------------------------------------------------------------
     !dir$ attributes align: 64 :: filled
-    type(nbor_dll_t) :: bdry_interface  ! boundary interface for flux corrections
+    !type(nbor_dll_t) :: bdry_interface  ! boundary interface for flux corrections
     class(mesh_t), dimension(:), pointer:: mesh => null()
     real:: courant                      ! courant number
     real(8):: pdf_next=0.0              ! next PDF output time

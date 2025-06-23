@@ -1,10 +1,16 @@
 MODULE handyfuncs_mod
   USE op_math_mod
+  USE os_mod
   implicit none
 
   interface argsort
      module procedure argsort_int, argsort_r4, argsort_r8
   end interface argsort
+
+  interface truncate_array
+    module procedure truncate_string_array, truncate_float_array, &
+      truncate_dble_array, truncate_int_array, truncate_bool_array
+  end interface truncate_array
 
   abstract interface
     function generic_func(input) result(f)
@@ -536,5 +542,110 @@ FUNCTION bisect(f_ptr, a, b, tol) result(c)
      end if
   end do
 END FUNCTION bisect
+
+!===============================================================================
+FUNCTION rindex(text, str) result(index)
+  character(len=*), intent(in) :: text, str
+  integer :: index
+  integer :: i, ntext, nstr
+  !-----------------------------------------------------------------------------
+  ntext = len_trim(text)
+  nstr = len_trim(str)
+  index = 0
+
+  if (nstr > ntext) return
+
+  do i = ntext - nstr + 1, 1, -1
+    if (text(i:i+nstr-1) == str) then
+      index = i
+      exit
+    end if
+  end do
+END FUNCTION rindex
+
+!===============================================================================
+FUNCTION startswith(text, prefix)
+  character(len=*), intent(in) :: text, prefix
+  logical :: startswith
+  integer :: text_len, prefix_len
+  !-----------------------------------------------------------------------------
+  text_len = len_trim(text)
+  prefix_len = len_trim(prefix)
+  if (prefix_len > text_len) then
+    startswith = .false.
+  else
+    startswith = (text(1:prefix_len) == prefix)
+  end if
+END FUNCTION startswith
+
+!===============================================================================
+FUNCTION endswith(text, suffix)
+  character(len=*), intent(in) :: text, suffix
+  logical :: endswith
+  integer :: text_len, suffix_len
+  !-----------------------------------------------------------------------------
+  text_len = len_trim(text)
+  suffix_len = len_trim(suffix)
+  if (suffix_len > text_len) then
+    endswith = .false.
+  else
+    endswith = (text(text_len - suffix_len + 1:text_len) == suffix)
+  end if
+END FUNCTION endswith
+
+!====================================================================================
+SUBROUTINE truncate_string_array(array, nkeep)
+  character(len=*), intent(inout), dimension(:), allocatable :: array
+  character(len=len(array(1))), dimension(:), allocatable :: tmp
+  integer, intent(in) :: nkeep
+  ! ----------------------------------------------------------------------
+  allocate(tmp, source=array(1:nkeep))
+  deallocate(array)
+  call move_alloc(tmp, array)
+END SUBROUTINE truncate_string_array
+
+!====================================================================================
+SUBROUTINE truncate_float_array(array, nkeep)
+  real(4), intent(inout), dimension(:), allocatable :: array
+  real(4), dimension(:), allocatable :: tmp
+  integer, intent(in) :: nkeep
+  ! ----------------------------------------------------------------------
+  allocate(tmp(nkeep), source=array(1:nkeep))
+  deallocate(array)
+  call move_alloc(tmp, array)
+END SUBROUTINE truncate_float_array
+
+!====================================================================================
+SUBROUTINE truncate_dble_array(array, nkeep)
+  real(8), intent(inout), dimension(:), allocatable :: array
+  real(8), dimension(:), allocatable :: tmp
+  integer, intent(in) :: nkeep
+  ! ----------------------------------------------------------------------
+  allocate(tmp(nkeep), source=array(1:nkeep))
+  deallocate(array)
+  call move_alloc(tmp, array)
+END SUBROUTINE truncate_dble_array
+
+!====================================================================================
+SUBROUTINE truncate_int_array(array, nkeep)
+  integer, intent(inout), dimension(:), allocatable :: array
+  integer, dimension(:), allocatable :: tmp
+  integer, intent(in) :: nkeep
+  ! ----------------------------------------------------------------------
+  allocate(tmp(nkeep), source=array(1:nkeep))
+  deallocate(array)
+  call move_alloc(tmp, array)
+END SUBROUTINE truncate_int_array
+
+!====================================================================================
+SUBROUTINE truncate_bool_array(array, nkeep)
+  logical, intent(inout), dimension(:), allocatable :: array
+  logical, dimension(:), allocatable :: tmp
+  integer, intent(in) :: nkeep
+  ! ----------------------------------------------------------------------
+  allocate(tmp(nkeep), source=array(1:nkeep))
+  deallocate(array)
+  call move_alloc(tmp, array)
+END SUBROUTINE truncate_bool_array
 
 END MODULE handyfuncs_mod

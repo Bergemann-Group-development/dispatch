@@ -4,9 +4,10 @@ MODULE spectrum_mod
     USE timer_mod
     USE trace_mod
     USE const_mod
-    USE handyfuncs_mod, only:air2vac
+    USE handyfuncs_mod, only: air2vac, remove_close_entries
     USE op_math_mod, only: get_ivl=>get_interval
     USE trans_mod, only: transition_type
+    USE mmath_mod, only: refsor
     implicit none
 
     !-------------------------------------------------------------------------------
@@ -20,6 +21,7 @@ MODULE spectrum_mod
     contains
       procedure :: init
       procedure :: get_interval
+      procedure :: sort
       procedure :: save
     end type spectrum_type
     !---------------------------------------------------------------------
@@ -175,6 +177,17 @@ MODULE spectrum_mod
         iblue = trans%iblue
       endif
     END SUBROUTINE get_interval
+
+    !===============================================================================
+    SUBROUTINE sort (self)
+      class(spectrum_type), intent(inout):: self
+      !-----------------------------------------------------------------------------
+      self%sorted = .true.
+      call refsor(self%nu)
+
+      ! discard duplicates, nnu contains number of unique elements on exit
+      call remove_close_entries(self%nu, nu_tolerance)
+    END SUBROUTINE
 
     !===============================================================================
     SUBROUTINE save (self, label)

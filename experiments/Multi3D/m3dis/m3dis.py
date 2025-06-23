@@ -111,106 +111,101 @@ class m3dis(object):
 
     #=====================================================================
     def read_atom(self, read_atom=True, fast_read=True, verbose=True, **kwargs):
-        atom_file = self.folder + 'atom.txt'
-        if os.path.isfile(atom_file):
-            if not read_atom:
-                self.has_atom = False
-                self.atom = empty()
-                with open(atom_file, 'r') as f:
-                    line = f.readline()
-                    while line.startswith('*'):
-                        line = f.readline()
+        self.atoms = []
+        atom_files = glob.glob(self.folder + 'atoms/*')
 
-                    self.atom.id = line.split()[0]
-
-            else:
-                self.has_atom = True
-                self.qnorm = self.nml['atom_params']['qnorm']
-                loggf_cut  = self.nml['atom_params']['logf_cut']
-                red_cut    = self.nml['atom_params']['red_cut']
-                blue_cut   = self.nml['atom_params']['blue_cut']
-
-                pandas_format = 'pandas_format' in self.nml['atom_params']
-                if pandas_format: pandas_format = pandas_format & self.nml['atom_params']['pandas_format']
-
-                nq_fac = self.nml['atom_params']['nq_fac']
-                if self.nml['m3d_params']['m1d_legacy_mode']: nq_fac *= 2
-
-                if 'line_mask' in self.nml.keys():
-                    if 'in_lines' in self.nml['line_mask'].keys():
-                        in_lines = self.nml['line_mask']['in_lines']
-                        if type(in_lines)==int: in_lines=[in_lines]
-                        self.in_lines = np.array(in_lines)-1
-
-                if pandas_format or fast_read:
-                    if pandas_format:
-                        self.atom = pandas_atom.read(atom_file)
-                    else:
-                        self.atom = fast_atom(atom_file, **kwargs)
-
-                    self.atom.run = self
-                    if not hasattr(self, 'in_lines'): self.in_lines = slice(None, self.atom.nline)
-
-                    if self.has_spectrum:
-                        self.line = self.atom.trans[self.in_lines]
-
-                        if option(self.nml['atom_params'], 'overlapping_bb_in_output'):
-                            self.atom.load_sp(self.lam, qnorm=self.qnorm)
-                        else:
-                            nnu = self.lam.size
-                            ib, ir = self.atom.get_non_overlapping_indices(self.line, nnu, nq_fac)
-                            self.atom.bbt['ir'] = 0
-                            self.atom.bbt['ib'] = 0
-                            self.atom.bbt.loc[self.in_lines, 'ir'] = ir
-                            self.atom.bbt.loc[self.in_lines, 'ib'] = ib
-
-                        #mask = bbt.loggf > loggf_cut
-                        #mask = mask & (bbt.lam_vac_red > blue_cut) 
-                        #mask = mask & (bbt.lam_vac_blue < red_cut) 
-                        #lines = lines_class(self.atom, bbt[mask], self)
-                        #self.nline = len(lines)
-                        #self.line = lines
-
-                else:
-                    self.atom = atom_class(atom_file, qnorm=self.qnorm, verbose=verbose, **kwargs)
-                    self.atom.run = self
-
-                    if not hasattr(self, 'in_lines'): self.in_lines = slice(None, self.atom.nline)
-                    lines = np.array(self.atom.trans)[self.in_lines]
-                        
-                    #lines = [line for line in lines if np.log10(line.fosc*line.lower.g) > loggf_cut]
-                    #lines = [line for line in lines if line.lam_red > blue_cut and line.lam_blue < red_cut]
-                    self.nline = len(lines)
-                    self.line = lines
-
-                    if self.has_spectrum:
-                        if not option(self.nml['atom_params'], 'overlapping_bb_in_output'):
-                            nnu = self.lam.size
-                            ib, ir = self.atom.get_non_overlapping_indices(self.line, nnu, nq_fac)
-                            self.atom.ib = ib.astype(int)
-                            self.atom.ir = ir.astype(int)
-
-                reports = glob.glob(self.folder + 'convergence_report_*.txt')
-                if len(reports)>0:
-                    self.lvlerr = np.zeros(self.atom.nk)
-                    for report in reports:
-                        df = pd.read_csv(report, sep=r'\s+')
-                        self.lvlerr = np.maximum(self.lvlerr, df.maxconv.values)
-
-            in_abnd    = self.nml['atom_params']['abundance']
-            if self.atom.id in self.abundances:
-                self.atom.abnd = float(self.abundances[self.atom.id])
-            elif in_abnd > -99:
-                self.atom.abnd = in_abnd
-            elif self.atom.molec:
-                moldict = {'CH':'C', 'OH':'O', 'NH':'N', 'CN':'N', 'CO':'C',
-                            'NO':'N', 'H2O':'O', 'C2':'C', 'N2':'N', 'O2':'O'}
-                self.atom.abnd = self.abundances[moldict[self.atom.id]]
-            
         if 'atom_params' in self.nml:
+            self.qnorm = self.nml['atom_params']['qnorm']
+            nq_fac = self.nml['atom_params']['nq_fac']
+            if self.nml['m3d_params']['m1d_legacy_mode']: nq_fac *= 2
+            in_abnd = self.nml['atom_params']['abundance']
             depart = self.nml['atom_params']['precomputed_depart'].strip()
+            #loggf_cut  = self.nml['atom_params']['logf_cut']
+            #red_cut    = self.nml['atom_params']['red_cut']
+            #blue_cut   = self.nml['atom_params']['blue_cut']
         else:
             depart = ''
+
+        for i, atom_file in enumerate(atom_files):
+            if os.path.isfile(atom_file):
+                if not read_atom:
+                    with open(atom_file, 'r') as f:
+                        line = f.readline()
+                        while line.startswith('*'):
+                            line = f.readline()
+
+                        atom = empty()
+                        atom.id = line.split()[0]
+
+                else:
+                    j = atom_file.rindex('/')+1
+                    pandas_format = not atom_file[j:].startswith('atom.')
+
+                    #if 'line_mask' in self.nml.keys():
+                    #    if 'in_lines' in self.nml['line_mask'].keys():
+                    #        in_lines = self.nml['line_mask']['in_lines']
+                    #        if type(in_lines)==int: in_lines=[in_lines]
+                    #        self.in_lines = np.array(in_lines)-1
+
+                    if pandas_format or fast_read:
+                        if pandas_format:
+                            atom = pandas_atom.read(atom_file)
+                        else:
+                            atom = fast_atom(atom_file, **kwargs)
+
+                        atom.run = self
+                        if not hasattr(atom, 'in_lines'): atom.in_lines = slice(None, atom.nline)
+
+                        if self.has_spectrum:
+                            atom.line = atom.trans[atom.in_lines]
+
+                            if option(self.nml['atom_params'], 'overlapping_bb_in_output'):
+                                atom.load_sp(self.lam, qnorm=self.qnorm)
+                            else:
+                                nnu = self.lam.size
+                                ib, ir = atom.get_non_overlapping_indices(atom.line, nnu, nq_fac)
+                                atom.bbt['ir'] = 0
+                                atom.bbt['ib'] = 0
+                                atom.bbt.loc[atom.in_lines, 'ir'] = ir
+                                atom.bbt.loc[atom.in_lines, 'ib'] = ib
+
+                            #mask = bbt.loggf > loggf_cut
+                            #mask = mask & (bbt.lam_vac_red > blue_cut) 
+                            #mask = mask & (bbt.lam_vac_blue < red_cut) 
+                            #lines = lines_class(self.atom, bbt[mask], self)
+                            #self.nline = len(lines)
+                            #self.line = lines
+
+                    else:
+                        atom = atom_class(atom_file, qnorm=self.qnorm, verbose=verbose, **kwargs)
+                        atom.run = self
+
+                        if not hasattr(atom, 'in_lines'): atom.in_lines = slice(None, atom.nline)
+                        atom.line = np.array(atom.trans)[atom.in_lines]
+                        atom.nline = len(atom.line)
+                            
+                        #lines = [line for line in lines if np.log10(line.fosc*line.lower.g) > loggf_cut]
+                        #lines = [line for line in lines if line.lam_red > blue_cut and line.lam_blue < red_cut]
+
+                        if self.has_spectrum:
+                            if not option(self.nml['atom_params'], 'overlapping_bb_in_output'):
+                                nnu = self.lam.size
+                                ib, ir = self.atom.get_non_overlapping_indices(atom.line, nnu, nq_fac)
+                                atom.ib = ib.astype(int)
+                                atom.ir = ir.astype(int)
+
+                if atom.id in self.abundances:
+                    atom.abnd = float(self.abundances[atom.id])
+                elif in_abnd[i] > -99:
+                    atom.abnd = in_abnd[i]
+                elif atom.molec:
+                    moldict = {'CH':'C', 'OH':'O', 'NH':'N', 'CN':'N', 'CO':'C',
+                                'NO':'N', 'H2O':'O', 'C2':'C', 'N2':'N', 'O2':'O'}
+                    atom.abnd = self.abundances[moldict[atom.id]]
+
+                self.atoms.append(atom)
+
+        self.atoms = np.array(self.atoms)[np.argsort([atom.id for atom in self.atoms])]
 
         if (self.nml['m3d_params']['maxiter'] > 0):
             self.mode = 'NLTE'
@@ -218,6 +213,15 @@ class m3dis(object):
             self.mode = 'LTE'
         else:
             self.mode = 'NLTE'
+
+        reports = glob.glob(self.folder + 'convergence_report_*.txt')
+        self.conv_report = []
+        if len(reports)>0:
+            for report in reports:
+                df = pd.read_csv(report, sep=r'\s+')
+                self.conv_report.append(df)
+
+        self.has_atom = read_atom and len(self.atoms) > 0
     
     #=====================================================================
     def read_atmos(self):
@@ -330,11 +334,13 @@ class m3dis(object):
         self.llist['strength2'] = strength
 
     #=====================================================================
-    def get_line(self, lam0):
-        if not hasattr(self, 'line'): self.read_atom()
-        i = np.argmin([abs(line.lam0-lam0) for line in self.line])
-        line = self.line[i]
-        if abs(line.lam0 - lam0) > 0.05:
+    def get_line(self, lam0, tol=0.05):
+        if not hasattr(self.atoms[0], 'line'): self.read_atom()
+        all_lines = np.concatenate([[line for line in atom.line] for atom in self.atoms])
+        all_lam0 = np.array([line.lam0 for line in all_lines])
+        i = np.argmin(abs(all_lam0-lam0))
+        line = all_lines[i]
+        if abs(line.lam0 - lam0) > tol:
             print(f'WARNING: Line not found! Closest line to {lam0:.2f}Å found at {line.lam0:.2f}Å')
 
         return line

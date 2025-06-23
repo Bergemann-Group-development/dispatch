@@ -44,6 +44,16 @@ MODULE os_mod
     procedure, nopass:: allocate_3d_d
     procedure, nopass:: allocate_4d_d
     procedure, nopass:: allocate_5d_d
+    procedure, nopass:: allocate_1d_ra
+    procedure, nopass:: allocate_2d_ra
+    procedure, nopass:: allocate_3d_ra
+    procedure, nopass:: allocate_4d_ra
+    procedure, nopass:: allocate_5d_ra
+    procedure, nopass:: allocate_1d_da
+    procedure, nopass:: allocate_2d_da
+    procedure, nopass:: allocate_3d_da
+    procedure, nopass:: allocate_4d_da
+    procedure, nopass:: allocate_5d_da
     procedure, nopass:: allocate_1d_i
     procedure, nopass:: allocate_2d_i
     procedure, nopass:: allocate_3d_i
@@ -60,18 +70,32 @@ MODULE os_mod
       allocate_5d_d, &
       allocate_1d_i, allocate_2d_i, allocate_3d_i, allocate_4d_i, &
       allocate_5d_r, allocate_6d_r, allocate_3d_l, allocate_1d_l, &
-      allocate_3d_int8, allocate_4d_l, allocate_3d_i2, allocate_2d_i2
+      allocate_3d_int8, allocate_4d_l, allocate_3d_i2, allocate_2d_i2, &
+      allocate_1d_ra, allocate_2d_ra, allocate_3d_ra, allocate_4d_ra, &
+      allocate_5d_ra, &
+      allocate_1d_da, allocate_2d_da, allocate_3d_da, allocate_4d_da, &
+      allocate_5d_da
     procedure, nopass:: deallocate_1d_r
     procedure, nopass:: deallocate_2d_r
     procedure, nopass:: deallocate_3d_r
     procedure, nopass:: deallocate_4d_r
     procedure, nopass:: deallocate_5d_r
     procedure, nopass:: deallocate_6d_r
+    procedure, nopass:: deallocate_1d_ra
+    procedure, nopass:: deallocate_2d_ra
+    procedure, nopass:: deallocate_3d_ra
+    procedure, nopass:: deallocate_4d_ra
+    procedure, nopass:: deallocate_5d_ra
     procedure, nopass:: deallocate_1d_d
     procedure, nopass:: deallocate_2d_d
     procedure, nopass:: deallocate_3d_d
     procedure, nopass:: deallocate_4d_d
     procedure, nopass:: deallocate_5d_d
+    procedure, nopass:: deallocate_1d_da
+    procedure, nopass:: deallocate_2d_da
+    procedure, nopass:: deallocate_3d_da
+    procedure, nopass:: deallocate_4d_da
+    procedure, nopass:: deallocate_5d_da
     procedure, nopass:: deallocate_1d_i
     procedure, nopass:: deallocate_2d_i
     procedure, nopass:: deallocate_3d_i
@@ -88,7 +112,11 @@ MODULE os_mod
       deallocate_5d_d, &
       deallocate_1d_i, deallocate_2d_i, deallocate_3d_i, deallocate_4d_i, &
       deallocate_5d_r, deallocate_6d_r, deallocate_3d_l, deallocate_1d_l, &
-      deallocate_3d_int8, deallocate_4d_l, deallocate_3d_i2, deallocate_2d_i2
+      deallocate_3d_int8, deallocate_4d_l, deallocate_3d_i2, deallocate_2d_i2, &
+      deallocate_1d_ra, deallocate_2d_ra, deallocate_3d_ra, deallocate_4d_ra, &
+      deallocate_5d_ra, &
+      deallocate_1d_da, deallocate_2d_da, deallocate_3d_da, deallocate_4d_da, &
+      deallocate_5d_da
     procedure, nopass:: mem => mem_register
     procedure, nopass:: mem_register
     procedure:: memory_info
@@ -736,6 +764,146 @@ SUBROUTINE allocate_5d_d (a, m, label, zero)
 END SUBROUTINE allocate_5d_d
 
 !===============================================================================
+!> Allocate a 1-D double array
+!===============================================================================
+SUBROUTINE allocate_1d_ra (a, m, label, zero)
+  real(4), allocatable:: a(:)
+  integer:: m
+  character(*), optional:: label
+  logical, optional:: zero
+  !-----------------------------------------------------------------------------
+  allocate (a(m))
+  call mem_register (storage_size(a), product(shape(a)), label)
+  if (option(zero)) a = 0.0
+END SUBROUTINE allocate_1d_ra
+
+!===============================================================================
+!> Allocate a 2-D double array
+!===============================================================================
+SUBROUTINE allocate_2d_ra (a, m, label, zero)
+  real(4), allocatable:: a(:,:)
+  integer, intent(in) :: m(:)
+  character(*), optional:: label
+  logical, optional:: zero
+  !-----------------------------------------------------------------------------
+  allocate (a(m(1),m(2)))
+  call mem_register (storage_size(a), product(shape(a)), label)
+  if (option(zero)) a = 0.0
+END SUBROUTINE allocate_2d_ra
+
+!===============================================================================
+!> Allocate a 3-D double array
+!===============================================================================
+SUBROUTINE allocate_3d_ra (a, m, label, zero)
+  real(4), allocatable:: a(:,:,:)
+  integer:: m(:)
+  character(*), optional:: label
+  logical, optional:: zero
+  !-----------------------------------------------------------------------------
+  allocate (a(m(1),m(2),m(3)))
+  call mem_register (storage_size(a), product(shape(a)), label)
+  if (option(zero)) a = 0.0
+END SUBROUTINE allocate_3d_ra
+
+!===============================================================================
+!> Allocate a 4-D double array
+!===============================================================================
+SUBROUTINE allocate_4d_ra (a, m, label, zero)
+  real(4), allocatable:: a(:,:,:,:)
+  integer:: m(:)
+  character(*), optional:: label
+  logical, optional:: zero
+  !-----------------------------------------------------------------------------
+  allocate (a(m(1),m(2),m(3),m(4)))
+  call mem_register (storage_size(a), product(shape(a)), label)
+  if (option(zero)) a = 0.0
+END SUBROUTINE allocate_4d_ra
+
+!===============================================================================
+!> Allocate a 5-D double array
+!===============================================================================
+SUBROUTINE allocate_5d_ra (a, m, label, zero)
+  real(4), allocatable:: a(:,:,:,:,:)
+  integer:: m(:)
+  character(*), optional:: label
+  logical, optional:: zero
+  !-----------------------------------------------------------------------------
+  allocate (a(m(1),m(2),m(3),m(4),m(5)))
+  call mem_register (storage_size(a), product(shape(a)), label)
+  if (option(zero)) a = 0.0
+END SUBROUTINE allocate_5d_ra
+
+!===============================================================================
+!> Allocate a 1-D double array
+!===============================================================================
+SUBROUTINE allocate_1d_da (a, m, label, zero)
+  real(8), allocatable:: a(:)
+  integer:: m
+  character(*), optional:: label
+  logical, optional:: zero
+  !-----------------------------------------------------------------------------
+  allocate (a(m))
+  call mem_register (storage_size(a), product(shape(a)), label)
+  if (option(zero)) a = 0.0
+END SUBROUTINE allocate_1d_da
+
+!===============================================================================
+!> Allocate a 2-D double array
+!===============================================================================
+SUBROUTINE allocate_2d_da (a, m, label, zero)
+  real(8), allocatable:: a(:,:)
+  integer, intent(in) :: m(:)
+  character(*), optional:: label
+  logical, optional:: zero
+  !-----------------------------------------------------------------------------
+  allocate (a(m(1),m(2)))
+  call mem_register (storage_size(a), product(shape(a)), label)
+  if (option(zero)) a = 0.0
+END SUBROUTINE allocate_2d_da
+
+!===============================================================================
+!> Allocate a 3-D double array
+!===============================================================================
+SUBROUTINE allocate_3d_da (a, m, label, zero)
+  real(8), allocatable:: a(:,:,:)
+  integer:: m(:)
+  character(*), optional:: label
+  logical, optional:: zero
+  !-----------------------------------------------------------------------------
+  allocate (a(m(1),m(2),m(3)))
+  call mem_register (storage_size(a), product(shape(a)), label)
+  if (option(zero)) a = 0.0
+END SUBROUTINE allocate_3d_da
+
+!===============================================================================
+!> Allocate a 4-D double array
+!===============================================================================
+SUBROUTINE allocate_4d_da (a, m, label, zero)
+  real(8), allocatable:: a(:,:,:,:)
+  integer:: m(:)
+  character(*), optional:: label
+  logical, optional:: zero
+  !-----------------------------------------------------------------------------
+  allocate (a(m(1),m(2),m(3),m(4)))
+  call mem_register (storage_size(a), product(shape(a)), label)
+  if (option(zero)) a = 0.0
+END SUBROUTINE allocate_4d_da
+
+!===============================================================================
+!> Allocate a 5-D double array
+!===============================================================================
+SUBROUTINE allocate_5d_da (a, m, label, zero)
+  real(8), allocatable:: a(:,:,:,:,:)
+  integer:: m(:)
+  character(*), optional:: label
+  logical, optional:: zero
+  !-----------------------------------------------------------------------------
+  allocate (a(m(1),m(2),m(3),m(4),m(5)))
+  call mem_register (storage_size(a), product(shape(a)), label)
+  if (option(zero)) a = 0.0
+END SUBROUTINE allocate_5d_da
+
+!===============================================================================
 !> Dealloccate a 1-D integer array
 !===============================================================================
 SUBROUTINE deallocate_1d_r (a, label)
@@ -1007,6 +1175,136 @@ SUBROUTINE deallocate_5d_d (a, label)
     deallocate (a)
   end if
 END SUBROUTINE deallocate_5d_d
+
+!===============================================================================
+!> Dealloccate a 1-D double array
+!===============================================================================
+SUBROUTINE deallocate_1d_da (a, label)
+  real(8), allocatable:: a(:)
+  character(*), optional:: label
+  !-----------------------------------------------------------------------------
+  if (allocated(a)) then
+    call mem_register (storage_size(a), -product(shape(a)), label)
+    deallocate (a)
+  end if
+END SUBROUTINE deallocate_1d_da
+
+!===============================================================================
+!> Dealloccate a 2-D double array
+!===============================================================================
+SUBROUTINE deallocate_2d_da (a, label)
+  real(8), allocatable:: a(:,:)
+  character(*), optional:: label
+  !-----------------------------------------------------------------------------
+  if (allocated(a)) then
+    call mem_register (storage_size(a), -product(shape(a)), label)
+    deallocate (a)
+  end if
+END SUBROUTINE deallocate_2d_da
+
+!===============================================================================
+!> Dealloccate a 3-D double array
+!===============================================================================
+SUBROUTINE deallocate_3d_da (a, label)
+  real(8), allocatable:: a(:,:,:)
+  character(*), optional:: label
+  !-----------------------------------------------------------------------------
+  if (allocated(a)) then
+    call mem_register (storage_size(a), -product(shape(a)), label)
+    deallocate (a)
+  end if
+END SUBROUTINE deallocate_3d_da
+
+!===============================================================================
+!> Dealloccate a 4-D double array
+!===============================================================================
+SUBROUTINE deallocate_4d_da (a, label)
+  real(8), allocatable:: a(:,:,:,:)
+  character(*), optional:: label
+  !-----------------------------------------------------------------------------
+  if (allocated(a)) then
+    call mem_register (storage_size(a), -product(shape(a)), label)
+    deallocate (a)
+  end if
+END SUBROUTINE deallocate_4d_da
+
+!===============================================================================
+!> Dealloccate a 5-D double array
+!===============================================================================
+SUBROUTINE deallocate_5d_da (a, label)
+  real(8), allocatable:: a(:,:,:,:,:)
+  character(*), optional:: label
+  !-----------------------------------------------------------------------------
+  if (allocated(a)) then
+    call mem_register (storage_size(a), -product(shape(a)), label)
+    deallocate (a)
+  end if
+END SUBROUTINE deallocate_5d_da
+
+!===============================================================================
+!> Dealloccate a 1-D double array
+!===============================================================================
+SUBROUTINE deallocate_1d_ra (a, label)
+  real(4), allocatable:: a(:)
+  character(*), optional:: label
+  !-----------------------------------------------------------------------------
+  if (allocated(a)) then
+    call mem_register (storage_size(a), -product(shape(a)), label)
+    deallocate (a)
+  end if
+END SUBROUTINE deallocate_1d_ra
+
+!===============================================================================
+!> Dealloccate a 2-D double array
+!===============================================================================
+SUBROUTINE deallocate_2d_ra (a, label)
+  real(4), allocatable:: a(:,:)
+  character(*), optional:: label
+  !-----------------------------------------------------------------------------
+  if (allocated(a)) then
+    call mem_register (storage_size(a), -product(shape(a)), label)
+    deallocate (a)
+  end if
+END SUBROUTINE deallocate_2d_ra
+
+!===============================================================================
+!> Dealloccate a 3-D double array
+!===============================================================================
+SUBROUTINE deallocate_3d_ra (a, label)
+  real(4), allocatable:: a(:,:,:)
+  character(*), optional:: label
+  !-----------------------------------------------------------------------------
+  if (allocated(a)) then
+    call mem_register (storage_size(a), -product(shape(a)), label)
+    deallocate (a)
+  end if
+END SUBROUTINE deallocate_3d_ra
+
+!===============================================================================
+!> Dealloccate a 4-D double array
+!===============================================================================
+SUBROUTINE deallocate_4d_ra (a, label)
+  real(4), allocatable:: a(:,:,:,:)
+  character(*), optional:: label
+  !-----------------------------------------------------------------------------
+  if (allocated(a)) then
+    call mem_register (storage_size(a), -product(shape(a)), label)
+    deallocate (a)
+  end if
+END SUBROUTINE deallocate_4d_ra
+
+!===============================================================================
+!> Dealloccate a 5-D double array
+!===============================================================================
+SUBROUTINE deallocate_5d_ra (a, label)
+  real(4), allocatable:: a(:,:,:,:,:)
+  character(*), optional:: label
+  !-----------------------------------------------------------------------------
+  if (allocated(a)) then
+    call mem_register (storage_size(a), -product(shape(a)), label)
+    deallocate (a)
+  end if
+END SUBROUTINE deallocate_5d_ra
 
 !===============================================================================
 !> For verbose==0 no checking is done

@@ -7,7 +7,7 @@ MODULE m3d_halo_mod
     USE patch_mod, only:patch_t
     USE gpatch_mod, only:gpatch_t
     USE mesh_mod, only:mesh_t
-    USE interp_mod
+    ! USE interp_mod
     USE io_mod
     USE timer_mod
     USE trace_mod
@@ -17,7 +17,6 @@ MODULE m3d_halo_mod
     USE omp_lock_mod
     USE omp_timer_mod
     USE bits_mod
-    USE guards_mod
     USE handyfuncs_mod, only:option
     implicit none
     private
@@ -162,9 +161,6 @@ CONTAINS
               target%id, target%key, source%id, source%key
             flush (unit)
           end if
-          !call guards%source_to_target (source, target, n_op=self%n_op, &
-          !  only=only, all_src=all_src, all_tgt=all_tgt, &
-          !  nbstep=nbor%check_step)
           select type (target)
           class is (patch_t)
             select type (source)

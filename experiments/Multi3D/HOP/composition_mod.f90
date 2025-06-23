@@ -2,6 +2,7 @@ MODULE composition_mod
     USE trace_mod
     USE prec_mod
     USE op_math_mod
+    USE mmath_mod, only: refsor
     USE handyfuncs_mod
     USE element_mod
     USE ion_mod, only: ion_type, debye_shield
@@ -29,7 +30,7 @@ MODULE composition_mod
         real(dp), dimension(:,:,:), allocatable :: temp, ne, rho, zero
         real(dp), dimension(:,:,:), allocatable :: e_kT, pe, dxi, toth, saha, lsaha
         real(dp), dimension(:,:,:), allocatable :: teta, pg, E, p6, shield, fo, vbarh, t3nhe
-        real(4), dimension(:,:,:), allocatable :: chi500
+        real(4), dimension(:,:,:), allocatable :: chi500, vmic
     contains
         procedure :: init => injon
         procedure :: init_molecules
@@ -62,6 +63,7 @@ MODULE composition_mod
         procedure :: print_ion_table
         procedure :: read_molec_data
         procedure :: print_opacity_contributions
+        procedure :: get_table_frequencies
     end type
 
     character(128), public, save :: exclude_elements='', only_elements=''
@@ -161,7 +163,7 @@ contains
             elements%abund = log10(elements%abund) + 12.0
         endif
 
-        self%FeH = merge(FeH, 0.0, FeH > -99)
+        self%FeH = merge(FeH, 0.d0, FeH > -99)
         do i=1, self%nel
             element => elements(i)
             select case (element%id)
@@ -867,7 +869,7 @@ contains
     END SUBROUTINE mask_linelist
 
     !===============================================================================
-    SUBROUTINE add_linelist_opacities(self, nu, all_chi, dlam, vproj, vmic, all_eta)
+    SUBROUTINE add_linelist_opacities(self, nu, all_chi, dlam, vproj, all_eta)
         class(composition_type), target :: self
         class(element_type), pointer :: element
         class(ion_type), pointer :: ion, HeI
@@ -877,7 +879,7 @@ contains
         real(8), intent(in), dimension(:) :: nu
         real(4), intent(inout), dimension(:,:,:,:) :: all_chi
         real(4), intent(inout), dimension(:,:,:,:), optional :: all_eta
-        real(4), intent(in), dimension(:,:,:), contiguous, target, optional :: vproj, vmic
+        real(4), intent(in), dimension(:,:,:), contiguous, target, optional :: vproj
         real(8), intent(in) :: dlam
         real(4), dimension(:,:,:), allocatable :: tothi, adamp, stark_pe, ne, temp, e_kT, dxij, chi_fac, unsold
         real(4), dimension(:,:,:), allocatable, target :: inv_part, vbar2, inv_df, iso_vbar2, iso_inv_df, iso_inv_part
@@ -937,7 +939,7 @@ contains
             fo = self%fo
             vbar2 = self%vbarh
             t3nhe = self%t3nhe
-            inv_df = element%inverse_doppler_factor(temp, vmic)
+            inv_df = element%inverse_doppler_factor(temp, self%vmic)
 
             do l=1, ion%nline
                 line => ion%line(l)
@@ -1011,7 +1013,7 @@ contains
             if (.not. ptc%in_linelist) return
             if (.not. allocated(ptc%n)) stop 'particle density not allocated'
 
-            inv_df = ptc%inverse_doppler_factor(temp, vmic)
+            inv_df = ptc%inverse_doppler_factor(temp, self%vmic)
             vbar2 = ptc%compute_vbar2(temp)
             unsold = vbar2**0.3 * tothi
             prev_iso = 0
@@ -1033,7 +1035,7 @@ contains
                     idopf => inv_df
                 elseif (line%iso_idx /= prev_iso) then
                     iso => ptc%isotope(line%iso_idx)
-                    iso_inv_df = iso%inverse_doppler_factor(temp, vmic)
+                    iso_inv_df = iso%inverse_doppler_factor(temp, self%vmic)
                     iso_vbar2 = iso%compute_vbar2(temp)
                     vb2 => iso_vbar2
                     idopf => iso_inv_df
@@ -1198,13 +1200,14 @@ contains
     END SUBROUTINE init_molecules
 
     !===============================================================================
-    SUBROUTINE load_state_variables(self, temp, ne, rho, use_rho, use_ne)
+    SUBROUTINE load_state_variables(self, temp, ne, rho, use_rho, use_ne, vmic)
         class(composition_type), target :: self
         class(element_type), pointer :: element
         class(ion_type), pointer :: ion
         class(molec_type), pointer :: mol
-        real(dp), dimension(:,:,:), intent(in) :: temp, ne, rho
+        real(dp), intent(in), dimension(:,:,:) :: temp, ne, rho
         logical, intent(in), optional :: use_rho, use_ne
+        real(4), intent(in), dimension(:,:,:), optional :: vmic
         real(dp), dimension(:,:,:), allocatable :: ro, eh, charge
         real(4), dimension(:,:,:,:), pointer :: chi500
         real(dp) :: nu500(1), nudebug(1)
@@ -1223,11 +1226,13 @@ contains
             deallocate(self%ne, self%rho, self%pe, self%pg, self%E)
             deallocate(self%toth, self%saha, self%teta, self%dxi, self%lsaha)
             deallocate(self%e_kT, self%p6, self%zero)
+            if (allocated(self%vmic)) deallocate(self%vmic)
         endif
 
         allocate(self%temp, self%ne, self%rho, self%pe, self%pg, self%E, mold=temp)
         allocate(self%toth, self%saha, self%teta, self%dxi, self%lsaha, eh, mold=temp)
         allocate(self%e_kT, self%p6, ro, self%zero, mold=temp)
+        if (present(vmic)) allocate(self%vmic, source=vmic)
 
         self%zero = 0.d0
         self%E = 0
@@ -2415,6 +2420,36 @@ contains
         end do
         close(lunit)
     END SUBROUTINE read_molec_data
+
+    !===============================================================================
+    SUBROUTINE get_table_frequencies(self, new_nu)
+        class(composition_type) :: self
+        real(dp), dimension(:), intent(in) :: new_nu
+        real(dp), dimension(:), allocatable :: lam, new_lam, out_lam
+        logical, dimension(:), allocatable :: needed
+        integer :: i, j, nnu, pos
+        !---------------------------------------------------------------------------
+        nnu = sum(self%trans%nnu)
+        allocate(lam(nnu))
+        i=1
+        do j=1, size(self%trans)
+            associate(trans=>self%trans(j))
+                lam(i:i+trans%nnu-1) = trans%lam
+                i = i + trans%nnu
+            end associate
+        end do
+        call refsor(lam)
+        call remove_close_entries(lam, threshold=0.5d0)
+        nnu = size(lam)
+        allocate(needed(nnu), source=.false.)
+        allocate(new_lam, source=cc/new_nu*1e8)
+        do i=1, size(new_lam)
+            pos = searchsorted(lam, new_lam(i), outbounds_ok=.true.)
+            needed(max(1, pos)) = .true.
+            needed(min(pos+1, nnu)) = .true.
+        end do
+        allocate(out_lam, source=pack(lam, needed))
+    END SUBROUTINE get_table_frequencies
 
     !===============================================================================
     SUBROUTINE check_for_comment(lunit, comment, n_skipped)

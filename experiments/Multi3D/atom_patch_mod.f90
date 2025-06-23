@@ -9,9 +9,9 @@ MODULE atom_patch_mod
     USE link_mod, only: nbor_t
     USE handyfuncs_mod
     USE atom_mod, only: atom_type, atomic_spectrum_type, use_classic_col, kramer_bf, &
-                        red_cut, blue_cut, logf_cut, atom_data_t, &
+                        red_cut, blue_cut, logf_cut, atom_data_t, atom_trans_t, &
                         nq_fac, nq_min, nq_max, disable_bf, disable_bb, level_partf, &
-                        fmin, cbbesc, cbfesc, cbbhsc, cbfhsc
+                        fmin, cbbesc, cbfesc, cbbhsc, cbfhsc, ng_step, ng_start
     USE trans_mod, only: line_type, cont_type, transition_type
     USE const_mod, only: CC
     USE ion_mod, only: ion_type, particle_type, debye_shield, massive_type
@@ -19,8 +19,8 @@ MODULE atom_patch_mod
     USE molecule_mod, only: molec_type
     USE bbtrans_mod, only: bbtrans_type
     USE composition_mod, only: composition_type
-    USE m3d_patch_mod, only: m3d_patch_t, composition, maxiter, check_NaN, cswitch, key_link_t, &
-    global_maxerr, convlim, convmax, atom_update_counter, comoving_frame, global_pos, ng_step, ng_start, &
+    USE m3d_patch_mod, only: m3d_patch_t, composition, maxiter, key_link_t, &
+    global_maxerr, convlim, convmax, atom_update_counter, comoving_frame, global_pos, &
     decouple_continuum, overlapping_bb, overlapping_bf, converged, premature_finish, overrelax, &
     rotate_atmos, long_vec, rank_lvlerr, overlapping_bb_in_output, long_scheme, n_nu, detailed_absmet
     USE bftrans_mod, only: bftrans_type
@@ -34,24 +34,24 @@ MODULE atom_patch_mod
     !-----------------------------------------------------------------------------
   
     type, public, extends(m3d_patch_t) :: atom_patch_t
-      type(atom_type) :: output_atom, bb_atom, bf_atom
+      type(atom_type), dimension(:), pointer :: output_atom, bb_atom, bf_atom
       class(atomic_spectrum_type), pointer :: output_sp=>null()
       class(atomic_spectrum_type), pointer :: bf_sp=>null()
       class(atomic_spectrum_type), pointer :: bb_sp=>null()
       real(8) :: maxerr=huge(1.0), prev_global=huge(1.d0), prev_prev_global=huge(1.d0)
       real(8), dimension(:), allocatable :: lvlerr
       real(8) :: local, sor_w
+      integer :: natom=0
       logical :: update_skipped=.false., atom_allocated=.false., molec
       logical :: overrelax=.false.
     contains
       procedure :: pre_init => atom_patch_pre_init
       procedure :: execute
       procedure :: finish
+      procedure :: project_populations
       procedure :: nbor_relations => atom_patch_nbor_relations
       procedure :: pre_init_atom
       procedure :: pre_init_spectrum
-      procedure :: init_atom_data
-      procedure :: update_populations
       procedure :: get_osmet_nu
       procedure :: exclude_double_continua
       procedure :: exclude_double_lines
@@ -60,23 +60,18 @@ MODULE atom_patch_mod
       procedure :: init_nbors_hash
       procedure :: save_abundance_to_file
       procedure :: save_convergence_report
-      procedure :: load_mem
+      !procedure :: load_mem
       procedure :: allocate_mem
       procedure :: deallocate_mem
       procedure :: check_mem_NaN
-      procedure :: ng_acceleration
     end type atom_patch_t
 
-    integer, save :: epos(3), elvl
+    integer, save :: epos(3), elvl, eatom=1
     logical, save :: exclude_from_line_list=.true.
-    logical, save :: pandas_format=.false.
     logical, save :: save_populations=.true.
-    logical, save :: save_rates=.false.
+    integer, save :: save_rates=0
     character(len=256), save :: precomputed_depart=''
-    character(len=256), public :: atom_file=''
     logical, public, save :: external_sp=.false.
-    real(8) :: tmax_update=1.0d7
-
     !-----------------------------------------------------------------------------
   
   contains
@@ -94,7 +89,7 @@ MODULE atom_patch_mod
       call trace%end(itimer)
       return
     endif
-    call self%set_nv_and_nw(self%atom%nlevel, 2)
+    call self%set_nv_and_nw(sum(self%atom%nlevel), 2)
     self%static_mem=.true.
 
     call self%post_pre_init()
@@ -104,30 +99,35 @@ MODULE atom_patch_mod
   !===============================================================================
   SUBROUTINE pre_init_atom (self)
     class(atom_patch_t) :: self
-    type(atom_type), save, target :: atom, output_atom
-    type(line_type), save, dimension(:), pointer, contiguous :: dc_line, out_line
-    type(cont_type), save, dimension(:), pointer, contiguous :: dc_cont, out_cont
+    type(atom_type), save, dimension(:), allocatable :: atom
+    type(atom_trans_t), save, dimension(:), pointer :: dc_trans, out_trans
     class(element_type), pointer :: element
     class(molec_type), pointer :: molecule
     class(ion_type), pointer :: ion
     class(massive_type), pointer :: species
-    real(8), save :: qnorm=10.0, abundance=-99.9
-    integer, save :: itimer=0, n_in_lines=0
+    character(len=256), save, dimension(:), allocatable :: atom_file
+    real(8), dimension(:), allocatable :: abundance
+    real(8), save :: qnorm=10.0
+    integer, save :: itimer=0, natom=0, n_in_lines=0
     integer, save, allocatable :: in_lines(:)
     logical, save :: first_time=.true., exclude_trace_cont=.true., use_atom_abnd=.true.
     logical, save :: relative_abundance = .false.
-    integer :: i, iostat
+    logical :: pandas_format
+    integer :: i, j, iostat
     namelist /atom_params/ atom_file, qnorm, convlim, exclude_trace_cont, level_partf, &
     use_atom_abnd, logf_cut, red_cut, blue_cut, n_in_lines, abundance, relative_abundance, &
     exclude_from_line_list, precomputed_depart, use_classic_col, kramer_bf, overlapping_bf, &
     overlapping_bb, detailed_absmet, n_cntrbf, convmax, premature_finish, &
-    pandas_format, save_populations, nq_fac, nq_min, nq_max, cbbesc, cbfesc, cbbhsc, cbfhsc, &
+    save_populations, nq_fac, nq_min, nq_max, cbbesc, cbfesc, cbbhsc, cbfhsc, &
     disable_bf, disable_bb, overlapping_bb_in_output, save_rates, fmin
     namelist /line_mask/ in_lines, cntrbf_lines
     !-----------------------------------------------------------------------------
     call trace%begin('atom_patch_t%pre_init_atom', itimer=itimer)
     if (first_time) then
       first_time = .false.
+      allocate(atom_file(64))
+      allocate(abundance(64), source=-99.9d0)
+      atom_file = ''
 
       rewind (io%input)
       read (io%input, atom_params, iostat=iostat)
@@ -137,10 +137,25 @@ MODULE atom_patch_mod
       end if
       call io%namelist_warning ('atom_params', iostat)
 
-      if (atom_file == '') then
+      natom = count(atom_file /= '')
+      if (natom == 0) then
         print *, 'WARNING: no atom specified'
         call trace%end(itimer)
         return
+      else
+         ! this is the atom to be read
+        allocate(atom(natom))
+
+        allocate(out_trans(natom))
+        if (decouple_continuum) then
+          allocate(self%bb_atom(natom))
+          allocate(self%bf_atom(natom))
+          allocate(dc_trans(natom))
+        endif
+
+        atom(atomcheck)%check = .true.
+        call truncate_array(atom_file, natom)
+        call truncate_array(abundance, natom)
       endif
 
       if (n_in_lines+n_cntrbf > 0) then
@@ -154,95 +169,121 @@ MODULE atom_patch_mod
         write (io%namelist, line_mask)
       endif
 
-      write (*,*) ' - Reading atom'
-      if (pandas_format) then
-        level_partf = .false.
-        call atom%read_pandas(atom_file, qnorm, in_lines=in_lines)
-        call atom%set_colliders(composition)
-      else
-        call atom%read(atom_file, qnorm, in_lines=in_lines, read_coll=.true.)
-      endif
-      atom%name = 'input'
-      atom%verbose = self%verbose
-      allocate(rank_lvlerr(atom%nlevel), source=0.d0)
+      write (*,*) ' - Reading atoms'
+      do i=1, natom
+        associate(atom_file=>atom_file(i), atom=>atom(i))
+          j = rindex(atom_file, '/')+1
+          pandas_format = .not. startswith(atom_file(j:len_trim(atom_file)), 'atom.')
+          if (pandas_format) then
+            level_partf = .false.
+            call atom%read_pandas(atom_file, qnorm, in_lines=in_lines)
+            call atom%set_colliders(composition)
+          else
+            call atom%read(atom_file, qnorm, in_lines=in_lines, read_coll=.true.)
+          endif
+          atom%name = 'input'
+          atom%verbose = self%verbose
 
-      call os%copy_file(trim(atom_file), trim(io%run_dir)//'atom.txt')
-      if (abundance > -99) atom%abnd = abundance
-
-      call composition%element_by_id(atom%id(1:3), element, verbose=.false.)
-      if (associated(element)) then
-        species => element
-        element%ions%in_opac = .true.
-      else
-        call composition%molecule_by_id(atom%id(1:3), molecule, verbose=.false.)
-        if (associated(molecule)) then
-          species => molecule
-          molecule%in_opac = .true.
-          do i=1, molecule%nions
-            ion => molecule%ions(i)%p
-            ion%in_opac = .true.
-          end do
-        endif
-      endif
-  
-      call atom%prepare_damping(species)
-
-      if (use_atom_abnd .or. abundance > -99) then
-        call composition%overwrite_abundance(species, atom%abnd, atom%awgt, relative_abundance)
-      else
-        atom%abnd = atom%abnd + composition%FeH
-      endif
+          call composition%element_by_id(atom%id(1:3), element, verbose=.false.)
+          if (associated(element)) then
+            species => element
+            element%ions%in_opac = .true.
+            atom%id = element%id
+          else
+            call composition%molecule_by_id(atom%id(1:3), molecule, verbose=.false.)
+            if (associated(molecule)) then
+              species => molecule
+              molecule%in_opac = .true.
+              atom%id = molecule%id
+              do j=1, molecule%nions
+                ion => molecule%ions(j)%p
+                ion%in_opac = .true.
+              end do
+            endif
+          endif
       
-      if (exclude_trace_cont) then
-        call self%exclude_double_continua(atom)
-      endif
-      call self%exclude_double_lines(atom, species)
+          call atom%prepare_damping(species)
 
-      if (decouple_continuum) then
-        allocate(dc_line(atom%nline))
-        allocate(dc_cont(atom%ncont))
-        dc_line = atom%line
-        dc_cont = atom%cont
-      endif
+          if (abundance(i) > -99) atom%abnd = abundance(i)
+          if (use_atom_abnd .or. abundance(i) > -99) then
+            call composition%overwrite_abundance(species, atom%abnd, atom%awgt, relative_abundance)
+          else
+            atom%abnd = atom%abnd + composition%FeH
+          endif
+          
+          if (exclude_trace_cont) then
+            call self%exclude_double_continua(atom)
+          endif
+          call self%exclude_double_lines(atom, species)
 
-      allocate(out_line(atom%nline))
-      allocate(out_cont(atom%ncont))
-      out_line = atom%line
-      out_cont = atom%cont
+          ! here we create copies of the line and cont arrays,
+          ! which will have altered ired and iblue for example
+          ! they will be pointed at later
+          call out_trans(i)%allocate(bb=atom%trans%line, bf=atom%trans%cont)
+          if (decouple_continuum) then
+            call dc_trans(i)%allocate(bb=atom%trans%line, bf=atom%trans%cont)
+          endif
 
+          if (pandas_format) then
+            call os%copy_file(trim(atom_file), trim(io%run_dir)//'atoms/'//trim(atom%id)//'.txt')
+          else
+            call os%copy_file(trim(atom_file), trim(io%run_dir)//'atoms/'//'atom.'//trim(atom%id))
+          endif
+        end associate
+      end do
+      allocate(rank_lvlerr(sum(atom%nlevel, 1)), source=0.d0)
       write (io%namelist, atom_params)
     endif
 
-    if (atom_file == '') then
+    if (natom == 0) then
       call trace%end(itimer)
       return
     endif
 
-    allocate(self%atom)
+    ! this is the patch atom, which contains local data
+    allocate(self%atom(natom))
+
+    ! this is the output atom, which contains local data
+    ! shared with self%atom, but with different transitions
+    allocate(self%output_atom(natom))
+
+    ! here we create a copy of atom, but the transitions will
+    ! still be linked to the original atom
     self%atom = atom
     self%atom%name = 'main'
     self%n_nu = n_nu
 
-    ! this pointer will be referenced by other atoms with same local data
-    allocate(self%atom%data)
-    if (rotate_atmos) then
-      allocate(self%atom%rotated_data(size(long_vec, 2)))
-    endif
-
     if (decouple_continuum) then
-      self%bb_atom = self%atom
-      self%bf_atom = self%atom
-      call self%bb_atom%link_transitions(null(), dc_line)
-      call self%bf_atom%link_transitions(dc_cont, null())
-      self%bb_atom%name = 'bound-bound'
-      self%bf_atom%name = 'bound-free'
+      allocate(self%bb_atom(natom))
+      allocate(self%bf_atom(natom))
     endif
 
-    self%output_atom = self%atom
-    call self%output_atom%link_transitions(out_cont, out_line)
-    self%output_atom%name = 'output'
+    do i=1, natom
+      ! this pointer will be referenced by other atoms with same local data
+      allocate(self%atom(i)%data)
+      if (rotate_atmos) then
+        allocate(self%atom(i)%rotated_data(size(long_vec, 2)))
+      endif
 
+      ! here we create a copy of the patch atom, which will share the same
+      ! atom%data array, but we link it to the output transitions
+      self%output_atom(i) = self%atom(i)
+      self%output_atom(i)%trans => out_trans(i)
+      self%output_atom(i)%name = 'output'
+
+      if (decouple_continuum) then
+        self%bb_atom(i) = self%atom(i)
+        self%bf_atom(i) = self%atom(i)
+        allocate(self%bb_atom(i)%trans) ! this will detach the original pointer and 
+        allocate(self%bf_atom(i)%trans) ! create a new one, to be pointed elsewhere
+        self%bb_atom(i)%trans%line => dc_trans(i)%line
+        self%bf_atom(i)%trans%cont => dc_trans(i)%cont
+        self%bb_atom(i)%name = 'bound-bound'
+        self%bf_atom(i)%name = 'bound-free'
+      endif
+    end do
     self%atom_allocated = .true.
+    self%natom = natom
     call trace%end(itimer)
   END SUBROUTINE pre_init_atom
 
@@ -252,7 +293,8 @@ MODULE atom_patch_mod
     type(atomic_spectrum_type), target :: output_sp
     type(atomic_spectrum_type), save, target :: sp, bb_sp, bf_sp
     logical, save :: first_time=.true.
-    logical :: save_sp
+    logical :: save_sp, saved_already
+    integer :: i
     integer, save :: itimer=0
     !-----------------------------------------------------------------------------
     call trace%begin('atom_patch_t%pre_init_spectrum', itimer=itimer)
@@ -262,40 +304,20 @@ MODULE atom_patch_mod
       save_sp = external_sp .or. (associated(self%atom) .and. size(long_vec,2)>0)
       if (associated(self%atom)) then
         if (decouple_continuum) then
-          bf_sp%name = 'bound-free'
-          if (detailed_absmet .and. overlapping_bf) then
-             call self%get_osmet_nu(bf_sp)
-          endif
-          call self%bf_atom%create_spectrum(bf_sp, bf=.true., sort=overlapping_bf)
-          call self%bf_atom%set_ired_iblue(bf_sp, bf=.true., set_active=.true.)
-          if (save_sp) call bf_sp%save('bf')
-
-          bb_sp%name = 'bound-bound'
-          call self%bb_atom%create_spectrum(bb_sp, bb=.true., sort=overlapping_bb)
-          call self%bb_atom%set_ired_iblue(bb_sp, bb=.true., set_active=.true.)
-          if (save_sp) call bb_sp%save('bb')
-
+          if (detailed_absmet .and. overlapping_bf) call self%get_osmet_nu(bf_sp)
+          call setup_spectrum(bf_sp, 'bf', self%bf_atom, bf=.true., bb=.false., sort=overlapping_bf, set_active=.true.)
+          call setup_spectrum(bb_sp, 'bb', self%bb_atom, bf=.false., bb=.true., sort=overlapping_bb, set_active=.true.)
         else
-          sp%name = 'all'
           if (detailed_absmet) call self%get_osmet_nu(sp)
-          call self%atom%create_spectrum(sp, bb=.true., bf=.true.)
-          call self%atom%set_ired_iblue(sp, bb=.true., bf=.true., set_active=.true.)
-          if (save_sp) call sp%save('all')
+          call setup_spectrum(sp, 'all', self%atom, bb=.true., bf=.true., sort=.true., set_active=.true.)
         endif
 
-        if (external_sp) then
-          call self%output_atom%set_ired_iblue(output_sp, bb=.true., bf=.true.) 
-        else
-          output_sp%name = 'output based on atom'
-          call self%output_atom%create_spectrum(output_sp, bb=.true., sort=overlapping_bb_in_output)
-          call self%output_atom%set_ired_iblue(output_sp, bb=.true., bf=.true.) 
+        if (.not. external_sp) then
+          call setup_spectrum(output_sp, 'out', self%output_atom, bb=.true., bf=.true., sort=overlapping_bb_in_output, set_active=.false.)
+          saved_already = .true.
         endif
-      elseif (external_sp) then
-        call self%output_atom%set_ired_iblue(output_sp, bb=.true., bf=.true.) 
-      !else
-      !  stop 'Neither atom nor spectral range specified!'
       endif
-      if (save_sp) then
+      if (save_sp .and. .not. saved_already) then
         call output_sp%save('out')
       endif
     endif
@@ -310,40 +332,42 @@ MODULE atom_patch_mod
     endif
 
     call trace%end(itimer)
+  contains
+    !===============================================================================
+    subroutine setup_spectrum(sp, name, atoms, bb, bf, sort, set_active)
+      class(atomic_spectrum_type), target :: sp
+      character(len=*), intent(in) :: name
+      class(atom_type), intent(in), dimension(:) :: atoms
+      integer, dimension(:,:), pointer, contiguous :: nac, nal
+      logical, intent(in) :: bb, bf, sort, set_active
+      integer :: i
+      !-----------------------------------------------------------------------------
+      sp%name = name
+      ! allocate list of active continua and lines
+      do i=1, size(atoms)
+        call atoms(i)%trans%append_transitions(sp, bf=bf, bb=bb)
+      end do
+      if (sort) call sp%sort()
+      call os%allocate(nac, [sp%nnu, size(atoms)], zero=.true.)
+      call os%allocate(nal, [sp%nnu, size(atoms)], zero=.true.)
+      call os%allocate(sp%na, sp%nnu, zero=.true.)
+      do i=1, size(atoms)
+        sp%nac => nac(:,i)
+        sp%nal => nal(:,i)
+        call atoms(i)%trans%set_ired_iblue(sp, bf=bf, bb=bb, set_active=set_active)
+      end do
+      sp%na = sum(min(nal+nac, 1), dim=2)
+      if (save_sp) then
+        call sp%save(name)
+      endif
+      if (set_active) then
+        write(*,'(a,I0,a)') 'sp_from_atom: frequency grid has ', sp%nnu, ' points.'
+        write(*,'(a,I0,a)') 'sp_from_atom: ', sum(nac+nal), ' active transition-frequency points'
+      endif
+      call os%deallocate(nac)
+      call os%deallocate(nal)
+    end subroutine setup_spectrum
   END SUBROUTINE pre_init_spectrum
-
-  !===============================================================================
-  SUBROUTINE init_atom_data (self, comp, adata)
-    class(atom_patch_t), target :: self
-    class(atom_type), pointer :: atom
-    class(composition_type), target :: comp
-    class(atom_data_t), target :: adata
-    class(element_type), pointer :: element
-    class(molec_type), pointer :: molec
-    real(8), dimension(:,:,:), pointer, contiguous :: dxi
-    real(4) :: nmax, nlim
-    integer, save:: itimer=0
-    integer :: i, m(4)
-    !-----------------------------------------------------------------------------
-    call trace%begin('atom_patch_t%init_atom_data', itimer=itimer)
-    atom => self%atom
-    dxi => comp%dxi
-
-    m = [shape(comp%temp), atom%nlevel]
-    if (.not. associated(adata%nstar)) call os%allocate(adata%nstar, m, label='nstar')
-    if (.not. associated(adata%totn))  call os%allocate(adata%totn, m(1:3), label='totn')
-    if (.not. associated(adata%n))     call os%allocate(adata%n, m, label='n')
-
-    call comp%get_totn(atom%id, atom%abnd, adata%totn, element, molec)
-    if (.not. (associated(element) .or. associated(molec))) then
-      call self%save_abundance_to_file()
-    endif
-
-    if (associated(molec)) tmax_update = comp%tmolim
-    if (associated(element)) call atom%check_ionisation_thresholds(element)
-    call atom%compute_lte_populations(adata%nstar, adata%totn, real(comp%temp), real(comp%lsaha), real(dxi), element, molec)
-    call trace%end(itimer)
-  END SUBROUTINE init_atom_data
 
   !===============================================================================
   SUBROUTINE execute (self)
@@ -355,87 +379,84 @@ MODULE atom_patch_mod
     class(cont_type), pointer :: cont
     class(element_type), pointer :: element
     class(molec_type), pointer :: molec
-    real(8), dimension(:,:,:,:), pointer, contiguous :: gamma_ij, gamma_ji, nstar
-    real(4), dimension(:,:,:,:), pointer, contiguous :: wphi
-    integer :: i, j, l, p(3), ii, jj, m(4)
+    real(4), dimension(:,:,:), allocatable :: cij, cji
+    integer :: i, j, k, l, p(3), m(3), ipos
     integer, save:: count=0
-    real(8) :: global, gij, vec(3)
-    logical :: do_ng
+    real(8) :: global
+    logical :: do_ng, locally_converged, found
     integer, save :: itimer=0
     !-----------------------------------------------------------------------------
     call trace%begin (trim(self%kind)//'%update', itimer=itimer)
-    atom => self%atom
-    adata => atom%data
+    do_ng = ng_step > 0 .and. self%iter >= ng_start .and. mod(self%iter-ng_start, ng_step) == 0
+    comp => self%m3d_parent%composition
+    self%maxerr = 0
+    locally_converged = premature_finish
+    m = self%n
 
-    if (self%iter == 0) then
-      self%composition => self%m3d_parent%composition
-      call self%init_atom_data(self%composition, adata)
-      if (precomputed_depart /= '') then
-        call self%load_mem(precomputed_depart, self%kind)
-      elseif (maxiter > 0) then
-        do i=1, atom%nlevel
-          adata%n(:,:,:,i) = adata%nstar(:,:,:,i) 
-        end do
-      else
-        call os%deallocate(adata%n, 'n')
-        adata%n => adata%nstar
-      endif
-    else
-      wphi => adata%wphi
-      nstar => adata%nstar
-      gamma_ij => adata%gamma_ij
-      gamma_ji => adata%gamma_ji
-
-      if (self%iter == 1) then
-        !self%dtime = self%dt_fixed
-
-        ! Normalize wphi
-        do i=1, atom%nline
-          if (.not. atom%line(i)%active) cycle
-          wphi(:,:,:,i) = 1 / wphi(:,:,:,i)
-        end do
-      endif
-
-      if (adata%converged) then
-        self%update_skipped = .true.
-      else
-        do i=1, atom%nline
-          line => atom%line(i)
-          if (.not. line%active) cycle
-          gij = atom%g(line%i) / atom%g(line%j)
-          gamma_ij(:,:,:,i) = gamma_ij(:,:,:,i) * wphi(:,:,:,i)
-          gamma_ji(:,:,:,i) = gamma_ji(:,:,:,i) * wphi(:,:,:,i)
-          gamma_ji(:,:,:,i) = gamma_ji(:,:,:,i) * gij
-        end do
-        do i=i, atom%nrad
-          cont => atom%cont(i-atom%nline)
-          if (.not. cont%active) cycle
-          gamma_ji(:,:,:,i) = gamma_ji(:,:,:,i) * nstar(:,:,:,cont%i) / nstar(:,:,:,cont%j)
-        end do
-
-        if (ng_step > 0) then
-          do i=1, atom%nlevel
-            adata%oldn(:,:,:,i,1) = adata%oldn(:,:,:,i,2)
-            adata%oldn(:,:,:,i,2) = adata%oldn(:,:,:,i,3)
-            adata%oldn(:,:,:,i,3) = adata%n(:,:,:,i)
-          end do
-        endif
-
-        call self%update_populations(gamma_ij, gamma_ji)
-        adata%converged = abs(self%maxerr) < convmax
-        self%update_skipped = .false.
-        do_ng = ng_step > 0 .and. mod(self%iter-ng_start, ng_step) == 0 .and. self%iter >= ng_start
-        if (adata%converged .and. premature_finish) then
-          call self%finish()
-        elseif (do_ng) then
-          call self%ng_acceleration()
-        endif
-      endif
+    if (save_rates>0) then
+      allocate(cij(m(1),m(2),m(3)), source=0.0)
+      allocate(cji(m(1),m(2),m(3)), source=0.0)
     endif
 
-    if (.not. self%update_skipped) then
-      if (.not. (maxiter==0 .and. long_scheme=='none')) call atom%compute_cont_factors(atom%data)
+    do k=1, self%natom
+      atom => self%atom(k)
+      adata => atom%data
+
+      if (self%iter == 0) then
+        call atom%init_atom_data(comp, adata, self%maxiter>0, found)
+        if (.not. found) call self%save_abundance_to_file(atom)
+        !if (precomputed_depart /= '') then
+        !  call self%load_mem(precomputed_depart, self%kind)
+        !endif
+      elseif (.not. adata%converged) then
+        call atom%normalize_profiles(self%iter)
+        call atom%update_populations(comp, self%local, self%pcheck, cij, cji)
+
+        if (save_rates==k) then
+          call self%save3(real(adata%gamma_ij(:,:,:,linecheck)), label='rij')
+          call self%save3(real(adata%gamma_ji(:,:,:,linecheck)), label='rji')
+          call self%save3(cij, label='cij')
+          call self%save3(cji, label='cji')
+        endif
+        
+        call os%deallocate(adata%gamma_ij, label='atom%gamma_ij')
+        call os%deallocate(adata%gamma_ji, label='atom%gamma_ji')
+
+        if (adata%maxerr /= adata%maxerr) then
+          call shared%abort('NaN in convergence error')
+        endif
+
+        adata%converged = abs(adata%maxerr) < convmax
+        if (abs(self%maxerr) < abs(adata%maxerr)) then
+          self%maxerr = adata%maxerr
+          epos = adata%epos + [0,0,self%zs-1]
+          elvl = adata%elvl
+          eatom = k
+        endif
+
+        if (do_ng .and. .not. adata%converged) then
+          call atom%ng_acceleration()
+        endif
+      endif
+      if (.not. (maxiter==0 .or. long_scheme=='none')) then
+        call atom%compute_cont_factors(atom%data)
+      endif
+      locally_converged = locally_converged .and. adata%converged
+    end do
+
+    if (locally_converged) then
+      call self%finish()
     endif
+
+    !$omp critical (maxerr_reset)
+    self%prev_prev_global = self%prev_global
+    self%prev_global = global_maxerr%update(0.d0)
+    ipos = global_pos%update(+0)
+    if (ipos == self%ipos(3) .or. abs(self%maxerr) > abs(self%prev_global)) then
+      if (ipos /= self%ipos(3)) call global_pos%reset(self%ipos(3))
+      call global_maxerr%reset(self%maxerr)
+    endif
+    !$omp end critical (maxerr_reset)
     
     if (self%iter > 0) then
       count = atom_update_counter%update(+1)
@@ -452,8 +473,9 @@ MODULE atom_patch_mod
     if (self%print_update_info) then
       p = self%pcheck
       l = self%linecheck
-      memcheck(1) = adata%n(p(1),p(2),p(3),self%lvlcheck)
-      if (associated(adata%gamma_ij)) then
+      adata => self%atom(atomcheck)%data
+      memcheck(1) = adata%n(p(1),p(2),p(3),lvlcheck)
+      if (allocated(adata%gamma_ij)) then
         if (self%linecheck<=atom%nrad) then
           memcheck(2) = adata%gamma_ij(p(1),p(2),p(3),l)
           memcheck(3) = adata%gamma_ji(p(1),p(2),p(3),l)
@@ -465,98 +487,17 @@ MODULE atom_patch_mod
         endif
       else
         memcheck(2) = 10.0**(atom%abnd-12.0)
-        memcheck(3) = self%composition%toth(p(1),p(2),p(3))
+        memcheck(3) = comp%toth(p(1),p(2),p(3))
       endif
-    endif
-
-    if (associated(adata%gamma_ij)) then
-      call os%deallocate(adata%gamma_ij, label='atom%gamma_ij')
-      call os%deallocate(adata%gamma_ji, label='atom%gamma_ji')
     endif
 
     if (self%is_finished() .or. self%iter==self%maxiter) then
-      if (associated(adata%wphi)) then
-        call os%deallocate(adata%wphi, 'wphi')
-      endif
+      do i=1, self%natom
+        call os%deallocate(self%atom(i)%data%wphi, label='wphi')
+      end do
     endif
     call trace%end(itimer)
   END SUBROUTINE execute
-
-  !===============================================================================
-  SUBROUTINE ng_acceleration (self)
-    class(atom_patch_t):: self
-    integer :: i, x, y, z, k, epos(4), nvec
-    real(8), dimension(:), allocatable :: n1, n2, n3, n4, n5, d0, d1, d2, e, w
-    real(8) :: d01, d02, d11, d12, d21, d22, a, b, den, emax, enew
-    integer, save :: itimer=0
-    ! ----------------------------------------------------------------------------
-    call trace%begin ('atom_patch_t%ng_acceleration', itimer=itimer)
-    nvec = self%atom%nlevel * product(self%n(1:2))
-    allocate(e(nvec))
-    allocate(n1, n2, n3, n4, n5, d0, d1, d2, w, mold=e)
-    emax = 0
-    do z=1, self%n(3)
-      i = 0
-      do y=1, self%n(2)
-      do x=1, self%n(1)
-      do k=1, self%atom%nlevel
-        i = i+1
-        ! the weight can be chose freely, but 1/n is the "best" choice according to Olson+1986
-        !w(i) = 1.d0
-        !w(i) =  abs(self%atom%data%n(x,y,z,k) / self%atom%data%oldn(x,y,z,k,3) - 1.d0)
-        w(i) = 1.d0 / self%atom%data%n(x,y,z,k)
-        n1(i) = self%atom%data%oldn(x,y,z,k,1) * w(i)
-        n2(i) = self%atom%data%oldn(x,y,z,k,2) * w(i)
-        n3(i) = self%atom%data%oldn(x,y,z,k,3) * w(i)
-        n4(i) = self%atom%data%n(x,y,z,k) * w(i)
-      end do
-      end do
-      end do
-
-      d0 = n4 - n3
-      d1 = n3 - n2
-      d2 = n2 - n1
-
-      d1 = d0 - d1
-      d2 = d0 - d2
-
-      d01 = dot_product(d0, d1)
-      d02 = dot_product(d0, d2)
-      d11 = dot_product(d1, d1)
-      d22 = dot_product(d2, d2)
-      d12 = dot_product(d1, d2)
-      d21 = d12
-
-      den = d11*d22 - d12*d21
-
-      if (abs(den) > 0) then
-        a = (d01*d22 - d02*d21) / den
-        b = (d02*d11 - d01*d21) / den
-
-        e = (1.d0 - a - b)*n4 + a*n3 + b*n2
-      else
-        e = n4
-      endif
-
-      i = 0
-      do y=1, self%n(2)
-      do x=1, self%n(1)
-      do k=1,self%atom%nlevel
-        i = i+1
-        self%atom%data%n(x,y,z,k) = e(i)/w(i)
-        enew = e(i)/n4(i)  - 1.d0
-
-        if (abs(enew) > abs(emax)) then
-          emax = enew
-          epos = [k, x, y, z]
-        endif
-      end do
-      end do
-      end do
-    end do
-    print '(A, ES14.7, 4(I6))', 'NG acceleration ', emax, epos
-    call trace%end(itimer)
-  END SUBROUTINE ng_acceleration
 
   !===============================================================================
   SUBROUTINE finish (self)
@@ -565,26 +506,56 @@ MODULE atom_patch_mod
     class(atom_data_t), pointer :: adata
     class(composition_type), pointer :: comp
     real(4), dimension(:,:,:,:,:,:), allocatable :: out_mem
-    real(8), dimension(:,:,:), allocatable :: norm, totn
-    real(8) :: vec(3), tmp
-    integer :: i, j, k, l, imu, n(3)
+    integer :: i, j, l
     integer, save :: count=0
     !-----------------------------------------------------------------------------
-    atom => self%atom
-    n = self%n
+    if (self%is_finished()) return
+    l = 1
+    do i=1, self%natom
+      atom => self%atom(i)
+      adata => atom%data
+      call self%project_populations(atom, out_mem)
+      if (save_populations) then
+        call self%save6(out_mem, label='pop_'//trim(atom%id))
+      endif
+      deallocate(out_mem)
+      do j=1, atom%nlevel
+        rank_lvlerr(l) = merge(rank_lvlerr(l), adata%lvlerr(j), abs(rank_lvlerr(l)) > abs(adata%lvlerr(j)))
+        l = l +1
+      end do
+    end do
+    call self%m3d_patch_t%finish()
+    count = count + 1
+    if (count == self%task_list%dims(3)) then
+      call self%save_convergence_report()
+    endif
+  END SUBROUTINE finish
 
-    if (rotate_atmos) then
-      allocate(norm, totn, mold=atom%data%totn)
-      allocate(out_mem(n(1), n(2), n(3), atom%nlevel, 2, 1+self%n_out))
-    else
-      allocate(out_mem(n(1), n(2), n(3), atom%nlevel, 2, 1))
+  !====================================================================================
+  SUBROUTINE project_populations(self, atom, out_mem)
+    class(atom_patch_t), intent(inout) :: self
+    class(atom_type), intent(in) :: atom
+    class(composition_type), pointer :: comp
+    class(atom_data_t), pointer :: adata
+    real(4), intent(out), dimension(:,:,:,:,:,:), allocatable :: out_mem
+    real(8), dimension(:,:,:), allocatable :: norm, totn
+    real(8) :: vec(3), tmp
+    integer :: i,j,k,l, n(3), imu, nmu
+    logical :: iterated
+    !---------------------------------------------------------------------------------
+    adata => atom%data
+    n = shape(adata%totn)
+    nmu = merge(size(atom%rotated_data), 0, associated(atom%rotated_data))
+    allocate(out_mem(n(1), n(2), n(3), atom%nlevel, 2, 1+nmu))
+
+    if (nmu > 0) then
+      allocate(norm, totn, mold=adata%totn)
     endif
 
-    adata => atom%data
     do l=1, atom%nlevel
-    do k=1, self%n(3)
-    do j=1, self%n(2)
-    do i=1, self%n(1)
+    do k=1, n(3)
+    do j=1, n(2)
+    do i=1, n(1)
       tmp = adata%nstar(i,j,k,l)
       tmp = merge(ieee_value(tmp, ieee_quiet_nan), tmp, tmp==0)
       out_mem(i,j,k,l,1,1) = real(adata%nstar(i,j,k,l))
@@ -594,76 +565,59 @@ MODULE atom_patch_mod
     end do
     end do
 
-    if (rotate_atmos) then
-      do imu=1, self%n_out
-        vec = long_vec(:,imu)
-        adata => atom%rotated_data(imu)
-        comp => self%m3d_parent%rotated_composition(imu)
-        call self%init_atom_data(comp, adata)
-        if (associated(self%atom%data%n, self%atom%data%nstar)) then
-          call os%deallocate(adata%n, 'n')
-          adata%n => adata%nstar
-        else
-          totn = 0
-          do l=1, atom%nlevel
-            do k=1, self%n(3)
-            do j=1, self%n(2)
-            do i=1, self%n(1)
-              tmp = atom%data%nstar(i,j,k,l)
-              tmp = merge(ieee_value(tmp, ieee_quiet_nan), tmp, tmp==0)
-              adata%n(i,j,k,l) = atom%data%n(i,j,k,l) / tmp
-            end do
-            end do
-            end do
-            call self%rotate_cube8(vec, adata%n(:,:,:,l), do_log=.true.)
-            do k=1, self%n(3)
-            do j=1, self%n(2)
-            do i=1, self%n(1)
-              adata%n(i,j,k,l) = adata%n(i,j,k,l) * adata%nstar(i,j,k,l)
-              totn(i,j,k) = totn(i,j,k) + adata%n(i,j,k,l)
-            end do
-            end do
-            end do
-          end do
-          do k=1, self%n(3)
-          do j=1, self%n(2)
-          do i=1, self%n(1)
-            norm(i,j,k) = 1 / totn(i,j,k)
+    do imu=1, nmu
+      vec = long_vec(:,imu)
+      adata => atom%rotated_data(imu)
+      comp => self%m3d_parent%rotated_composition(imu)
+      iterated = .not. associated(adata%n, adata%nstar)
+      call atom%init_atom_data(comp, adata, iterated)
+      if (iterated) then
+        totn = 0
+        do l=1, atom%nlevel
+          do k=1, n(3)
+          do j=1, n(2)
+          do i=1, n(1)
+            tmp = adata%nstar(i,j,k,l)
+            tmp = merge(ieee_value(tmp, ieee_quiet_nan), tmp, tmp==0)
+            adata%n(i,j,k,l) = adata%n(i,j,k,l) / tmp
           end do
           end do
           end do
-          do l=1, atom%nlevel
-            do k=1, self%n(3)
-            do j=1, self%n(2)
-            do i=1, self%n(1)
-              tmp = adata%n(i,j,k,l) * adata%totn(i,j,k) * norm(i,j,k)
-              adata%n(i,j,k,l) = merge(tmp, 0.d0, tmp==tmp)
-              tmp = adata%nstar(i,j,k,l)
-              tmp = merge(ieee_value(tmp, ieee_quiet_nan), tmp, tmp==0)
-              out_mem(i,j,k,l,1,1+imu) = real(adata%nstar(i,j,k,l))
-              out_mem(i,j,k,l,2,1+imu) = real(adata%n(i,j,k,l) / tmp)
-            end do
-            end do
-            end do
+          call self%rotate_cube8(vec, adata%n(:,:,:,l), do_log=.true.)
+          do k=1, n(3)
+          do j=1, n(2)
+          do i=1, n(1)
+            adata%n(i,j,k,l) = adata%n(i,j,k,l) * adata%nstar(i,j,k,l)
+            totn(i,j,k) = totn(i,j,k) + adata%n(i,j,k,l)
           end do
-        endif
-        if (.not. (maxiter==0 .and. long_scheme=='none')) call atom%compute_cont_factors(adata)
-      end do
-    endif
-
-    if (save_populations) then
-      call self%save6(out_mem, label='atom_patch')
-    endif
-    call self%m3d_patch_t%finish()
-
-    do i=1, atom%nlevel
-      rank_lvlerr(i) = max(rank_lvlerr(i), self%lvlerr(i))
+          end do
+          end do
+        end do
+        do k=1, n(3)
+        do j=1, n(2)
+        do i=1, n(1)
+          norm(i,j,k) = 1 / totn(i,j,k)
+        end do
+        end do
+        end do
+        do l=1, atom%nlevel
+          do k=1, n(3)
+          do j=1, n(2)
+          do i=1, n(1)
+            tmp = adata%n(i,j,k,l) * adata%totn(i,j,k) * norm(i,j,k)
+            adata%n(i,j,k,l) = merge(tmp, 0.d0, tmp==tmp)
+            tmp = adata%nstar(i,j,k,l)
+            tmp = merge(ieee_value(tmp, ieee_quiet_nan), tmp, tmp==0)
+            out_mem(i,j,k,l,1,1+imu) = real(adata%nstar(i,j,k,l))
+            out_mem(i,j,k,l,2,1+imu) = real(adata%n(i,j,k,l) / tmp)
+          end do
+          end do
+          end do
+        end do
+        call atom%compute_cont_factors(adata)
+      endif
     end do
-    count = count + 1
-    if (count == self%task_list%dims(3)) then
-      call self%save_convergence_report()
-    endif
-  END SUBROUTINE finish
+  END SUBROUTINE project_populations
 
   !===============================================================================
   SUBROUTINE save_convergence_report (self)
@@ -712,9 +666,9 @@ MODULE atom_patch_mod
     endif
     global = global_maxerr%update(0.d0)
     ipos = global_pos%update(+0)
-    write(stdout,'(A, ES12.4, A10, ES12.4, A, I4, A, "[", 3I4, "]")') &
+    write(stdout,'(A, ES12.4, A10, ES12.4, A, I4, A, "[", 3I4, "] ", A)') &
       '  local =', self%local,  ', global =', global, &
-      ', lvl =',elvl, ', pos=', epos
+      ', lvl =',elvl, ', pos=', epos, self%atom(eatom)%id
     if (self%overrelax) then
       write(stdout,'(A, 3(ES12.4))') '  omega =', self%sor_w, self%prev_prev_global, self%prev_global
     endif
@@ -726,142 +680,22 @@ MODULE atom_patch_mod
   END SUBROUTINE print_post_update_info
 
   !===============================================================================
-  SUBROUTINE update_populations (self, gamma_ij, gamma_ji)
-    class(atom_patch_t), target :: self
-    class(atom_type), pointer :: atom
-    integer, dimension(3) :: ep
-    real(8), dimension(:,:,:,:) :: gamma_ij, gamma_ji
-    real(4), dimension(:,:,:), allocatable :: cij, cji
-    integer :: x, y, z, i, j, ii, ipos, il, nx, ny, nz, it, jt
-    real(8) :: global
-    logical :: relax
-    integer, save :: itimer=0
-    ! ----------------------------------------------------------------------------
-    call trace%begin('atom_patch_t%update_populations', itimer=itimer)
-    atom => self%atom
-    self%lvlerr = 0.0d0
-    self%maxerr = 0.0d0
-    nx = self%n(1)
-    ny = self%n(2)
-    nz = self%n(3)
-
-    if (save_rates) then
-      allocate(cij(nx,ny,nz), source=0.0)
-      allocate(cji(nx,ny,nz), source=0.0)
-    endif
-
-    global = global_maxerr%update(0.d0)
-    if (overrelax .and. .not. self%overrelax) then
-      relax = abs((self%prev_prev_global/self%prev_global) / (self%prev_global/global) - 1) < 0.02
-      self%overrelax = relax .and. self%iter > ng_start
-    endif
-
-    self%sor_w = calc_omega(self%prev_prev_global, self%prev_global, global)
-    
-    do z=1, nz
-      do y=1, ny
-        do x=1, nx
-          if (atom%data%totn(x,y,z) > 0 .and. self%composition%temp(x,y,z) < tmax_update) then
-            call atom%solve_stat_equilibrium(self%composition, x,y,z, gamma_ij, gamma_ji, cswitch, check_NaN)
-
-            ! e contains the correction n/n_old 
-            associate(e=>atom%data%e(:), n=>atom%data%n(x,y,z,:))
-              i = findloc(e/=e, .true., dim=1)
-              if (check_NaN .and. i > 0) then
-                  print *, 'NaN in error vector at i = ', i
-                  stop
-              endif
-
-              ! set limits on corrections
-              e = max(e, 0.001d0)
-
-              ! update the populations
-              if (self%overrelax) then
-                n = n * (1 + self%sor_w*(e - 1))
-              else
-                n = n * e
-              endif
-  
-              ! set e to the relative change in the populations 
-              e = e - 1.0d0
-
-              ! keep track of maximum population change
-              self%lvlerr = merge(e, self%lvlerr, abs(e) > abs(self%lvlerr))
-              i = maxloc(abs(self%lvlerr), dim=1)
-
-              if (abs(self%lvlerr(i)) > abs(self%maxerr)) then
-                self%maxerr = self%lvlerr(i)
-                ep = [x, y, z]
-                il = i
-              endif
-
-              if (all([x, y, z] == self%pcheck)) then
-                self%local = e(self%lvlcheck)
-              end if
-            end associate
-
-            if (save_rates) then
-              cij(x,y,z) = atom%data%c(atom%jrad(linecheck), atom%irad(linecheck))
-              cji(x,y,z) = atom%data%c(atom%irad(linecheck), atom%jrad(linecheck))
-            endif
-          endif
-        end do
-      end do
-    end do
-
-    if (save_rates) then
-      call self%save3(real(gamma_ij(:,:,:,linecheck)), label='rij')
-      call self%save3(real(gamma_ji(:,:,:,linecheck)), label='rji')
-      call self%save3(cij, label='cij')
-      call self%save3(cji, label='cji')
-    endif
-
-    if (self%maxerr /= self%maxerr) then
-      call shared%abort('NaN in convergence error')
-    endif
-
-    !$omp critical (maxerr_reset)
-    self%prev_prev_global = self%prev_global
-    self%prev_global = global_maxerr%update(0.d0)
-    ipos = global_pos%update(+0)
-    if (ipos == self%ipos(3) .or. abs(self%maxerr) > abs(self%prev_global)) then
-      if (ipos /= self%ipos(3)) call global_pos%reset(self%ipos(3))
-      call global_maxerr%reset(self%maxerr)
-      epos = ep
-      elvl = il
-    endif
-    !$omp end critical (maxerr_reset)
-    call trace%end(itimer)
-
-  contains
-    function calc_omega(e0, e1, e2) result(omega)
-      real(8), intent(in) :: e0, e1, e2
-      real(8) :: rho ! spectral radius
-      real(8) :: omega ! relaxation factor (see Trujillo Bueno 1995)
-      !--------------------------------------------------------------------------------
-      omega = 1.0
-      if (e0/e1 < 1.0) return ! do not over-relax if the previous iteration was not converged
-      if (e1 == 0.0) return ! to avoid division by zero, if the solution already converged
-      rho = e2 * (1 + 1/e1)
-      rho = rho*rho
-      if (rho > 1.0) return ! do not over-relax if error is diverging
-      omega = 2.0 / (1.0 + sqrt(1.0 - rho))
-    end function calc_omega
-  END SUBROUTINE update_populations
-
-  !===============================================================================
   SUBROUTINE get_osmet_nu (self, sp)
     class(atom_patch_t), target :: self
+    class(atom_type), pointer :: atom
     class(atomic_spectrum_type) :: sp
-    integer :: i, fs, fe
+    integer :: i, j, fs, fe
     !-----------------------------------------------------------------------------
     if (.not. osmet%initialised) return
-    do i=1, self%atom%ncont
-      associate(cont => self%atom%cont(i))
-        fs = searchsorted(osmet%nu, cont%nu_min, outbounds_ok=.true.)+1
-        fe = searchsorted(osmet%nu, cont%nu_max, outbounds_ok=.true.)
-        osmet%active(fs:fe) = .true.
-      end associate
+    do j=1, self%natom
+      atom => self%atom(j)
+      do i=1, atom%ncont
+        associate(cont => atom%trans%cont(i))
+          fs = searchsorted(osmet%nu, cont%nu_min, outbounds_ok=.true.)+1
+          fe = searchsorted(osmet%nu, cont%nu_max, outbounds_ok=.true.)
+          osmet%active(fs:fe) = .true.
+        end associate
+      end do
     end do
     sp%nnu = count(osmet%active)
     allocate(sp%nu(sp%nnu))
@@ -891,8 +725,8 @@ MODULE atom_patch_mod
               ok = .true.
             else
               do kc=1, atom%ncont
-                if (.not. atom%cont(kc)%active) cycle
-                lower = atom%cont(kc)%i
+                if (.not. atom%trans%cont(kc)%active) cycle
+                lower = atom%trans%cont(kc)%i
 
                 if (atom%ev(lower)==0) then
                   ok = trans%level%xion == atom%ev(lower)
@@ -943,7 +777,7 @@ MODULE atom_patch_mod
             ll_line => ion%line(l)
             
             do i=1, atom%nline
-              line => atom%line(i)
+              line => atom%trans%line(i)
               if (abs(line%nu0 / ll_line%nu0 -1) < 1e-6 &
                   .and. abs(line%Aji / ll_line%Aji - 1) < 1e-4) then
                 call ll_line%deactivate()
@@ -996,7 +830,7 @@ MODULE atom_patch_mod
     logical :: cib
     !-----------------------------------------------------------------------------
     cib = self%m3d_patch_t%check_in_bounds()
-    cib = cib .and. self%lvlcheck > 0 .and. self%lvlcheck <= self%atom%nlevel
+    cib = cib .and. lvlcheck > 0 .and. lvlcheck <= self%atom(atomcheck)%nlevel
   END FUNCTION check_in_bounds
 
   !===============================================================================
@@ -1019,15 +853,14 @@ MODULE atom_patch_mod
   END SUBROUTINE init_nbors_hash
 
   !===============================================================================
-  SUBROUTINE save_abundance_to_file (self)
+  SUBROUTINE save_abundance_to_file (self, atom)
     class(atom_patch_t), target :: self
+    class(atom_type) :: atom
     integer :: lunit, i
-    logical :: first_time=.true.
     !-----------------------------------------------------------------------------
-    if (first_time) then
-      first_time = .false.
+    if (self%ipos(3)==0) then
       open(newunit=lunit, file=trim(io%run_dir)//'abund.txt', form='FORMATTED', access='append')
-      write(lunit, '(A3, F8.4)') self%atom%id, self%atom%abnd
+      write(lunit, '(A3, F8.4)') atom%id, atom%abnd
       close(lunit)
     endif
   END SUBROUTINE save_abundance_to_file
@@ -1036,112 +869,85 @@ MODULE atom_patch_mod
   SUBROUTINE allocate_mem(self, m_in)
     class(atom_patch_t) :: self
     integer, intent(in), optional :: m_in(6)
-    integer :: m(4)
+    integer :: i, m(4), nl
     ! ----------------------------------------------------------------------------
-    associate(atom=>self%atom)
-      allocate(atom%data%C(atom%nlevel, atom%nlevel))
-      allocate(atom%data%W(atom%nlevel, atom%nlevel))
-      allocate(atom%data%e(atom%nlevel))
-      allocate(self%lvlerr(atom%nlevel), source=0.d0)
-      call os%allocate(atom%data%nstar, [self%n, atom%nlevel], label='nstar')
-      call os%allocate(atom%data%n,     [self%n, atom%nlevel], label='n')
-      call os%allocate(atom%data%totn, self%n, label='totn')
-      if (self%maxiter > 0) then
-        call os%allocate(atom%data%wphi,  [self%n, atom%nline],  label='wphi', zero=.true.)
-        if (ng_step > 0) then
-          call os%allocate(atom%data%oldn,  [self%n, atom%nlevel, 3],  label='oldn')
-        endif
-      endif
-    end associate
+    ! This patch has no memory data to be allocated. Everything is in atom%data.
+    return
   END SUBROUTINE allocate_mem
 
   !===============================================================================
   SUBROUTINE deallocate_mem(self)
     class(atom_patch_t) :: self
+    integer :: i
     ! ----------------------------------------------------------------------------
-    associate(atom=>self%atom)
-      deallocate(atom%data%C)
-      deallocate(atom%data%W)
-      deallocate(atom%data%e)
-      deallocate(atom%data%oldn)
-      deallocate(self%lvlerr)
-      call os%deallocate(self%atom%data%nstar, label='nstar')
-      call os%deallocate(self%atom%data%n,     label='n')
-      call os%deallocate(atom%data%totn,       label='totn')
-      if (self%maxiter > 0) then
-        call os%deallocate(atom%data%wphi, label='wphi')
-        if (ng_step > 0) then
-          call os%deallocate(atom%data%oldn, label='oldn')
-        endif
-      endif
-    end associate
+    return
   END SUBROUTINE deallocate_mem
 
   !===============================================================================
-  SUBROUTINE load_mem (self, folder, label)
-    class(atom_patch_t), intent(inout) :: self
-    character(len=256), intent(in) :: folder
-    character(len=*), intent(in) :: label
-    character(len=256) :: filename, sfolder, metafile, file
-    real(4), dimension(:,:,:,:,:), allocatable :: mem
-    integer :: lunit, file_size, mem_size, iostat, prec, oldm(5), newm(5), iv, iw, k, i
-    logical, save :: first_time=.true.
-    ! ----------------------------------------------------------------------------
-    write(sfolder, '(A, A)') trim(folder), '/save/'
-    write(filename, '(A, A, 2(I3.3), A)') trim(label), '_', self%key(1:2), '.bin'
-    write(metafile, '(A, A)') trim(label), '_meta.txt'
-    call os%check_file(trim(sfolder)//filename)
-    call os%check_file(trim(sfolder)//metafile)
-    open(newunit=lunit, file=trim(sfolder)//metafile, form='formatted', iostat=iostat)
-    read(lunit,*) ! skip header
-    do while (iostat==0)
-      read(lunit, *, iostat=iostat) file, prec, oldm
-      if (file == filename) exit
-    end do
-    close(lunit)
-    if (iostat /= 0) then
-      print *, 'file not found in metafile! Stopping...'
-      stop
-    endif
-    newm = [self%n, self%atom%nlevel, 2]
-    open(newunit=lunit, file=trim(sfolder)//filename, access='stream')
-    if (all(oldm == newm)) then
-      allocate(mem(oldm(1), oldm(2), oldm(3), oldm(4), oldm(5)))
-      read(lunit) mem
-      do i=1, self%atom%nlevel
-        self%atom%data%n(:,:,:,i) = dble(mem(:,:,:,i,2)) * self%atom%data%nstar(:,:,:,i)
-        where(self%atom%data%n(:,:,:,i) /= self%atom%data%n(:,:,:,i)) self%atom%data%n(:,:,:,i) = 0
-      end do
-    !elseif (all(oldm(3:5) == newm(3:5))) then
-    !  if (first_time) then
-    !    first_time = .false.
-    !    write(stdout, '(A, 2(I6,"x",I4))') 'Interpolating patch memory when loading', oldm(1:2), newm(1:2)
-    !  endif
-    !  call os%allocate(mem2, oldm)
-    !  read(lunit) mem2
-    !
-    !  !mem2(:,:,:,:,2) = mem2(:,:,:,:,2) / mem2(:,:,:,:,1)
-    !
-    !  do iw=1, newm(5)
-    !  do iv=1, newm(4)
-    !  do  k=1, newm(3)
-    !    call interp2d_periodic(mem2(:,:,k,iv,iw), mem(:,:,k,iv,iw))
-    !  end do
-    !  end do
-    !  end do
-    !
-    !  mem(:,:,:,:,2) = mem(:,:,:,:,2) * mem(:,:,:,:,1)
-    !
-    !  call os%deallocate(mem2)
-    else
-      write(stdout, *) 'Cannot load patch save ', trim(sfolder)//trim(filename), &
-      'Memory sizes do not match!'
-      print *, oldm
-      print *, newm
-      stop
-    endif
-    close(lunit)
-  END SUBROUTINE load_mem
+  !SUBROUTINE load_mem (self, folder, label)
+  !  class(atom_patch_t), intent(inout) :: self
+  !  character(len=256), intent(in) :: folder
+  !  character(len=*), intent(in) :: label
+  !  character(len=256) :: filename, sfolder, metafile, file
+  !  real(4), dimension(:,:,:,:,:), allocatable :: mem
+  !  integer :: lunit, file_size, mem_size, iostat, prec, oldm(5), newm(5), iv, iw, k, i
+  !  logical, save :: first_time=.true.
+  !  ! ----------------------------------------------------------------------------
+  !  write(sfolder, '(A, A)') trim(folder), '/save/'
+  !  write(filename, '(A, A, 2(I3.3), A)') trim(label), '_', self%key(1:2), '.bin'
+  !  write(metafile, '(A, A)') trim(label), '_meta.txt'
+  !  call os%check_file(trim(sfolder)//filename)
+  !  call os%check_file(trim(sfolder)//metafile)
+  !  open(newunit=lunit, file=trim(sfolder)//metafile, form='formatted', iostat=iostat)
+  !  read(lunit,*) ! skip header
+  !  do while (iostat==0)
+  !    read(lunit, *, iostat=iostat) file, prec, oldm
+  !    if (file == filename) exit
+  !  end do
+  !  close(lunit)
+  !  if (iostat /= 0) then
+  !    print *, 'file not found in metafile! Stopping...'
+  !    stop
+  !  endif
+  !  newm = [self%n, self%atom%nlevel, 2]
+  !  open(newunit=lunit, file=trim(sfolder)//filename, access='stream')
+  !  if (all(oldm == newm)) then
+  !    allocate(mem(oldm(1), oldm(2), oldm(3), oldm(4), oldm(5)))
+  !    read(lunit) mem
+  !    do i=1, self%atom%nlevel
+  !      self%atom%data%n(:,:,:,i) = dble(mem(:,:,:,i,2)) * self%atom%data%nstar(:,:,:,i)
+  !      where(self%atom%data%n(:,:,:,i) /= self%atom%data%n(:,:,:,i)) self%atom%data%n(:,:,:,i) = 0
+  !    end do
+  !  !elseif (all(oldm(3:5) == newm(3:5))) then
+  !  !  if (first_time) then
+  !  !    first_time = .false.
+  !  !    write(stdout, '(A, 2(I6,"x",I4))') 'Interpolating patch memory when loading', oldm(1:2), newm(1:2)
+  !  !  endif
+  !  !  call os%allocate(mem2, oldm)
+  !  !  read(lunit) mem2
+  !  !
+  !  !  !mem2(:,:,:,:,2) = mem2(:,:,:,:,2) / mem2(:,:,:,:,1)
+  !  !
+  !  !  do iw=1, newm(5)
+  !  !  do iv=1, newm(4)
+  !  !  do  k=1, newm(3)
+  !  !    call interp2d_periodic(mem2(:,:,k,iv,iw), mem(:,:,k,iv,iw))
+  !  !  end do
+  !  !  end do
+  !  !  end do
+  !  !
+  !  !  mem(:,:,:,:,2) = mem(:,:,:,:,2) * mem(:,:,:,:,1)
+  !  !
+  !  !  call os%deallocate(mem2)
+  !  else
+  !    write(stdout, *) 'Cannot load patch save ', trim(sfolder)//trim(filename), &
+  !    'Memory sizes do not match!'
+  !    print *, oldm
+  !    print *, newm
+  !    stop
+  !  endif
+  !  close(lunit)
+  !END SUBROUTINE load_mem
 
   !===============================================================================
   SUBROUTINE check_mem_NaN (self)
@@ -1150,25 +956,27 @@ MODULE atom_patch_mod
     integer, save :: itimer
     !-----------------------------------------------------------------------------
     call trace%begin ('atom_patch_t%check_mem_NaN', itimer=itimer)
-    associate(n=>self%atom%data%n)
-      if (associated(self%atom%data%n)) then
-        do v=lbound(n, 4), ubound(n, 4)
-        do k=lbound(n, 3), ubound(n, 3)
-        do j=lbound(n, 2), ubound(n, 2)
-        do i=lbound(n, 1), ubound(n, 1)
-          if (n(i,j,k,v) /= n(i,j,k,v)) then
-            write(stdout, '(A,A,3(I4),I5,I3,I3)') self%m3d_patch_info(), '  NaN', i,j,k,v
-            stop
-          elseif (n(i,j,k,v) > inf4) then
-            write(stdout, '(A,A,3(I4),I5,I3,I3)') self%m3d_patch_info(), '  Infinity', i,j,k,v
-            stop
-          endif
-        end do
-        end do
-        end do
-        end do
-      endif
-    end associate
+    do w=1, self%natom
+      associate(n=>self%atom(w)%data%n)
+        if (associated(self%atom(w)%data%n)) then
+          do v=lbound(n, 4), ubound(n, 4)
+          do k=lbound(n, 3), ubound(n, 3)
+          do j=lbound(n, 2), ubound(n, 2)
+          do i=lbound(n, 1), ubound(n, 1)
+            if (n(i,j,k,v) /= n(i,j,k,v)) then
+              write(stdout, '(A,A,3(I4),I5,I3,I3)') self%m3d_patch_info(), '  NaN', i,j,k,v
+              stop
+            elseif (n(i,j,k,v) > inf4) then
+              write(stdout, '(A,A,3(I4),I5,I3,I3)') self%m3d_patch_info(), '  Infinity', i,j,k,v
+              stop
+            endif
+          end do
+          end do
+          end do
+          end do
+        endif
+      end associate
+    end do
     call trace%end(itimer)
   END SUBROUTINE check_mem_NaN
 

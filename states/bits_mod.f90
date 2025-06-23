@@ -87,6 +87,16 @@ MODULE bits_mod
   contains
     procedure, nopass:: print
   end type
+
+  type, public:: has_bits_t
+    integer :: bits = 0
+  contains
+    procedure :: set
+    procedure :: clear
+    procedure :: is_set
+    procedure :: is_clear
+  end type has_bits_t
+
   type(bits_t), public:: bits
 CONTAINS
 
@@ -113,5 +123,53 @@ SUBROUTINE print (unit, label, status)
   end do
   write (unit,1) 'status', cstatus, label
 END SUBROUTINE print
+
+!===============================================================================
+!> Set bits in the status word
+!===============================================================================
+SUBROUTINE set (self, bits)
+  class(has_bits_t) :: self
+  integer                      :: bits
+  !-----------------------------------------------------------------------------
+  !$omp atomic
+  self%bits = ior (self%bits, bits)
+END SUBROUTINE set
+
+!===============================================================================
+!> Set bits in the status word
+!===============================================================================
+SUBROUTINE clear (self, bits)
+  class(has_bits_t) :: self
+  integer                      :: bits
+  !-----------------------------------------------------------------------------
+  !$omp atomic
+  self%bits = iand (self%bits, not(bits))
+END SUBROUTINE clear
+
+!===============================================================================
+!> Check bits in the status word
+!===============================================================================
+FUNCTION is_set (self, bits) RESULT (out)
+  class(has_bits_t) :: self
+  integer                      :: b, bits
+  logical                      :: out
+  !-----------------------------------------------------------------------------
+  !$omp atomic read
+  b = self%bits
+  out = (iand (b, bits) /=0)
+END FUNCTION is_set
+
+!===============================================================================
+!> Check bits in the status word
+!===============================================================================
+FUNCTION is_clear (self, bits) RESULT (out)
+  class(has_bits_t) :: self
+  integer                      :: b, bits
+  logical                      :: out
+  !-----------------------------------------------------------------------------
+  !$omp atomic read
+  b = self%bits
+  out = (iand (b, bits) ==0)
+END FUNCTION is_clear
 
 END MODULE bits_mod

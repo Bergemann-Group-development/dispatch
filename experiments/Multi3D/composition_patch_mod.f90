@@ -64,7 +64,7 @@ MODULE composition_patch_mod
   character(len=256), save :: opac_table=''
   character(len=256), save :: absmet_file=''
   character(len=512), save :: linelist_file=''
-  character(len=256), save :: line_lists(100)=''
+  character(len=256), save, dimension(:), allocatable :: line_lists
   
   public :: read_composition_params
 
@@ -85,6 +85,10 @@ SUBROUTINE read_composition_params ()
   linelist_in_output, tolerance, only_elements
   ! ----------------------------------------------------------------------------
   call trace%begin('compositiont%init', itimer=itimer)
+
+  allocate(line_lists(128))
+  line_lists = ''
+
   rewind (io%input)
   read (io%input, composition_params, iostat=iostat)
   if (iostat > 0) then
@@ -109,6 +113,7 @@ SUBROUTINE read_composition_params ()
     !preconditioning = .false.
   endif
 
+  call truncate_array(line_lists, count(line_lists/=''))
   write (io%namelist, composition_params)
 
   rewind (io%input)
@@ -136,8 +141,10 @@ SUBROUTINE read_composition_params ()
     call composition%init_linelist(linelist_file)
   else
     i = 1
-    do while (line_lists(i) /= '' .and. i <= size(line_lists))
-      call composition%init_linelist(line_lists(i))
+    do while (i <= size(line_lists))
+      if (line_lists(i) /= '') then
+        call composition%init_linelist(line_lists(i))
+      endif
       i = i + 1
     end do
   endif
@@ -198,37 +205,31 @@ SUBROUTINE composition_pre_init (self)
     self%atom_patch => atom_patch
 
     if (maxiter > 0) then
-      do mu=1,2
-        if (decouple_continuum) then
-          call self%create_sub_patches([1, n_nu],      mu, atom_patch%bb_sp, atom_patch%bb_atom)
-          call self%create_sub_patches([1, n_nu]+n_nu, mu, atom_patch%bf_sp, atom_patch%bf_atom)
-        else
-          call self%create_sub_patches([1, n_nu], mu, atom_patch%sp, atom_patch%atom)
-        endif
-      end do
+      if (decouple_continuum) then
+        call self%create_sub_patches([1, n_nu],      [1,2], atom_patch%bb_sp, atom_patch%bb_atom)
+        call self%create_sub_patches([1, n_nu]+n_nu, [1,2], atom_patch%bf_sp, atom_patch%bf_atom)
+      else
+        call self%create_sub_patches([1, n_nu], [1,2], atom_patch%sp, atom_patch%atom)
+      endif
     endif
     
     if (n_mu>0) then
       if (ilambd > 0) then
-        do mu=1,2
-          call self%create_sub_patches([-n_nu, -1], mu, output_sp, atom_patch%output_atom)
-        end do
+        call self%create_sub_patches([-n_nu, -1], [1,2], output_sp, atom_patch%output_atom)
       endif
-      call self%create_sub_patches([-n_nu, -1], -1, output_sp, atom_patch%output_atom)
+      call self%create_sub_patches([-n_nu, -1], [-1,-1], output_sp, atom_patch%output_atom)
     endif
   else
     deallocate(atom_patch)
     if (external_sp) then
       if (n_mu > 0) then
         if (ilambd > 0) then
-          do mu=1,2
-            call self%create_sub_patches([-n_nu, -1], mu, output_sp)
-          end do
+          call self%create_sub_patches([-n_nu, -1], [1,2], output_sp)
         endif
-        call self%create_sub_patches([-n_nu, -1], -1, output_sp)
+        call self%create_sub_patches([-n_nu, -1], [-1,-1], output_sp)
         !stop 'No atom nor output spectrum specified! Stopping...'
       elseif (make_eos .and. self%key(1)==1) then
-        call self%create_sub_patches([-n_nu, -1], -1, output_sp)
+        call self%create_sub_patches([-n_nu, -1], [-1,-1], output_sp)
       endif
     endif
   endif
@@ -245,19 +246,20 @@ END SUBROUTINE composition_pre_init
 !===============================================================================
 SUBROUTINE create_sub_patches (self, nu, mu, sp, atom)
   class(composition_patch_t) :: self
-  integer, intent(in) :: nu(2), mu
+  integer, intent(in) :: nu(2), mu(2)
   class(atomic_spectrum_type), intent(in), pointer :: sp
-  type(atom_type), intent(in), pointer, optional :: atom
-  class(nlte_patch_t), pointer :: nlte
-  integer :: n
+  type(atom_type), intent(in), pointer, optional :: atom(:)
+  class(nlte_patch_t), pointer :: nlte_patch
+  integer :: n, m
   logical :: new_nlte
   !-----------------------------------------------------------------------------
   if (.not. associated(sp)) return
   if (sp%nnu == 0) return
-  do n=nu(1), nu(2)
-    allocate(nlte)
-    if (present(atom)) nlte%atom => atom
-    call nlte%pre_init_and_link(self, i_mu=mu, i_nu=n, sp=sp)
+  do m=mu(1), mu(2)
+    do n=nu(1), nu(2)
+      allocate(nlte_patch)
+      call nlte_patch%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp, atom=atom)
+    end do
   end do
 END SUBROUTINE create_sub_patches
 
@@ -270,7 +272,7 @@ SUBROUTINE execute (self)
   real(4), dimension(:,:,:), pointer, contiguous :: ne, rho, temp, vx, vy, vz
   real(4), dimension(:,:,:), pointer, contiguous :: ux, uy, uz, vmic
   real(8), dimension(:,:,:), allocatable :: ne8, rho8, temp8
-  real(8) :: vec(3), nu(1)
+  real(8) :: vec(3)
   integer :: i, n(3), li(3), ui(3)
   integer, save:: itimer=0
   ! ----------------------------------------------------------------------------
@@ -326,6 +328,7 @@ SUBROUTINE execute (self)
       rho  => authority(:,:,:,self%i_rho)
       temp => authority(:,:,:,self%i_temp)
       chi  => authority(:,:,:,7)
+      vmic => authority(:,:,:,8)
       
       temp8 = dble(temp)
       rho8  = dble(rho)
@@ -346,7 +349,7 @@ SUBROUTINE execute (self)
       call comp%reassign_pointer()
       ! loading temp, ne and rho in to composition objekt
       ! ion and molecule equilibrium are solved immediately
-      call comp%load_state_variables(temp8, ne8, rho8, use_rho=use_rho, use_ne=use_ne)
+      call comp%load_state_variables(temp8, ne8, rho8, use_rho=use_rho, use_ne=use_ne, vmic=vmic)
 
       if (.not. use_ne) ne = real(comp%ne)
       if (.not. use_rho) rho = real(comp%rho)
@@ -391,6 +394,7 @@ SUBROUTINE init_tabulated_comp (self, temp, ne, dtemp, ldne)
     real(8), intent(in) :: dtemp, ldne
     integer :: i, j, ntemp, nne, nnu
     real(8), dimension(:,:,:), allocatable :: tab_temp, tab_ne, tab_rho
+    real(4), dimension(:,:,:), allocatable :: tab_vmic
     real(8) :: mint, maxt, mine, maxe
     !---------------------------------------------------------------------------
     allocate(self%tab_comp)
@@ -407,6 +411,7 @@ SUBROUTINE init_tabulated_comp (self, temp, ne, dtemp, ldne)
     allocate(tab_temp(ntemp, nne, 1))
     allocate(tab_rho (ntemp, nne, 1))
     allocate(tab_ne  (ntemp, nne, 1))
+    allocate(tab_vmic(ntemp, nne, 1))
     do j=1, nne
     do i=1, ntemp
       tab_temp(i,j,1) = mint + (i-1)*dtemp
@@ -414,7 +419,9 @@ SUBROUTINE init_tabulated_comp (self, temp, ne, dtemp, ldne)
     end do
     end do
     tab_ne = exp(tab_ne)
-    call self%tab_comp%load_state_variables(tab_temp, tab_ne, tab_rho, use_rho=.false., use_ne=.true.)
+    tab_vmic = opac_table_vmic
+    call self%tab_comp%load_state_variables(tab_temp, tab_ne, tab_rho, vmic=tab_vmic, &
+                                            use_ne=.true., use_rho=.false.)
 END SUBROUTINE init_tabulated_comp
 
 !===============================================================================

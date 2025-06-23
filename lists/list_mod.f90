@@ -67,7 +67,7 @@ MODULE list_mod
   USE task_mod
   USE patch_mod
   USE link_mod
-  USE guards_mod
+  ! USE guards_mod
   USE halo_mod
   USE timer_mod
   USE running_mean_mod

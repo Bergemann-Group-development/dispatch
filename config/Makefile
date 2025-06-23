@@ -149,8 +149,8 @@ ifeq ($(MPI),mpi)
 endif
 sinclude $(TOP)/io/Makefile
 sinclude $(TOP)/solvers/Makefile
-sinclude $(TOP)/extras/Makefile
-sinclude $(TOP)/components/Makefile
+#sinclude $(TOP)/extras/Makefile
+#sinclude $(TOP)/components/Makefile
 sinclude $(TOP)/dispatchers/Makefile
 sinclude $(TOP)/offload/Makefile
 sinclude $(TOP)/lists/Makefile
@@ -158,10 +158,10 @@ sinclude $(TOP)/interpolation/Makefile
 sinclude $(TOP)/tasks/Makefile
 sinclude $(TOP)/meshes/Makefile
 sinclude $(TOP)/microphysics/Makefile
-sinclude $(TOP)/timestep/$(UPD)/Makefile
-sinclude $(TOP)/particles/Makefile
+#sinclude $(TOP)/timestep/$(UPD)/Makefile
+#sinclude $(TOP)/particles/Makefile
 sinclude $(TOP)/states/Makefile
-sinclude $(TOP)/boundaries/Makefile
+#sinclude $(TOP)/boundaries/Makefile
 
 #############################################################################
 # Optional patches and extra dependencies
