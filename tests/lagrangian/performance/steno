@@ -1,2 +1,0 @@
- 0.017s      800000      20.7  ns/pt allocate
- 0.042s     1012000      41.2  ns/pt deallocate

@@ -1,7 +1,0 @@
-stagger operations via function calls      :    2.2   ns/upd    4.0   Gfl/s
-stagger operations via local function calls:    2.2   ns/upd    4.1   Gfl/s
-stagger operations via temporary arrays    :    3.2   ns/upd    2.8   Gfl/s
-stagger operations merged                  :    1.0   ns/upd    9.3   Gfl/s
-temporary scalars eliminated               :    0.8   ns/upd   10.6   Gfl/s
-two expressions merged                     :    1.6   ns/upd   11.1   Gfl/s
-local scalar functions                     :   15.8   ns/upd    0.6   Gfl/s

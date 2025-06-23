@@ -1,5 +1,0 @@
-&io_params
- verbose=0
- omp_trace=f
- do_trace=f
-/

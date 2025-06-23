@@ -1,4 +1,0 @@
-! Note that the number of points must be divisible by the refinement factor
-
-&patch_params n=3*15 /
-

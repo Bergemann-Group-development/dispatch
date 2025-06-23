@@ -1,5 +1,0 @@
-&io_params
-omp_trace=t
-/
-&eos_params
-/

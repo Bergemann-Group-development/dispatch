@@ -13,7 +13,7 @@ MODULE experiment_mod
   USE link_mod, only: nbor_t, link_t
   USE list_mod, only: list_t
   USE halo_mod, only: halo_t
-  USE solver_mod, only: solver_t
+  USE gpatch_mod, only: gpatch_t
   USE units_mod, only: cgs
   USE scaling_mod, only: scaling
   USE handyfuncs_mod
@@ -25,7 +25,7 @@ MODULE experiment_mod
   USE read_atmos_mod, only: ia, interpolate_atmos
   implicit none
   private
-  type, public, extends(solver_t):: experiment_t
+  type, public, extends(gpatch_t):: experiment_t
     class(composition_patch_t), pointer :: composition => null()
     real(4), dimension(:,:,:,:,:,:), pointer :: authority_mem => null()
     integer :: iter=0, maxiter, zs, ze
@@ -103,7 +103,6 @@ SUBROUTINE pre_init (self)
   self%out_next = huge(1.0)
 
   !self%mhd = .false.
-  !call self%solver_t%pre_init ()
   call self%idx%init (energy=5, mhd=.false.)
 
   call self%append_to(self%task_list)

@@ -1,4 +1,0 @@
-&io_params                 do_trace=f /
-&volleyball_layers_params  nlayer=2 /
-&volleyball_layer_params   ntheta=20 /
-&volleyball_layer_params   ntheta=10 /

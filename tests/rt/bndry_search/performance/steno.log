@@ -1,4 +1,0 @@
-Linux astro06.cluster 2.6.32-504.3.3.el6.x86_64 #1 SMP Wed Dec 17 01:55:02 UTC 2014 x86_64 x86_64 x86_64 GNU/Linux
-model name	: Intel(R) Xeon(R) CPU E5-4650 0 @ 2.70GHz
-   void:  133. ms,  0.22 ns/upd,  3.00E+08 updates
- search:  400. ms,  0.66 ns/upd,  3.00E+08 updates

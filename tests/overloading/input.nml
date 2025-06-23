@@ -1,7 +1,0 @@
-&io_params
- verbose=0
- do_trace=f
-/
-&test_params
- n=30
-/
