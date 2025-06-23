@@ -219,7 +219,7 @@ MODULE atom_patch_mod
           ! here we create copies of the line and cont arrays,
           ! which will have altered ired and iblue for example
           ! they will be pointed at later
-          call out_trans(i)%allocate(bb=atom%trans%line, bf=atom%trans%cont)
+          call out_trans(i)%allocate(bb=atom%trans%line)
           if (decouple_continuum) then
             call dc_trans(i)%allocate(bb=atom%trans%line, bf=atom%trans%cont)
           endif
