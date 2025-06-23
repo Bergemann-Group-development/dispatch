@@ -313,7 +313,7 @@ MODULE atom_patch_mod
         endif
 
         if (.not. external_sp) then
-          call setup_spectrum(output_sp, 'out', self%output_atom, bb=.true., bf=.true., sort=overlapping_bb_in_output, set_active=.false.)
+          call setup_spectrum(output_sp, 'out', self%output_atom, bb=.true., bf=.false., sort=overlapping_bb_in_output, set_active=.false.)
           saved_already = .true.
         endif
       endif
