@@ -240,13 +240,13 @@ class trans_class(object):
         if hasattr(self, 'prepared'):
             if not self.prepared: self.prepare()
                 
-        xx, yy = self.run.crop(kr=self.kr, **kwargs)
+        xx, yy = self.run.crop(line=self, **kwargs)
         return xx, yy
     
     #=====================================================================
     def get_clv(self, **kwargs):
         #-----------------------------------------------------------------
-        xx, yy = self.run.get_clv(kr=self.kr, **kwargs)
+        xx, yy = self.run.get_clv(line=self, **kwargs)
         return xx, yy
 
     #=====================================================================

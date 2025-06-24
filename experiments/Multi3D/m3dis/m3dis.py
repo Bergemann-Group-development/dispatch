@@ -590,11 +590,10 @@ class m3dis(object):
     def crop(self, slc=None, lam0=None, dlam=None, xmin=None, xmax=None, vdop=None,
              vrot=None, vshift=None, convolve=None, zeta_rt=None, lam_offset=True,
              per_aa=False, renorm=None, fac=None, tilt=None, velocity_units=False, 
-             ang=None, imu=None, norm=True, cont=False, LTE=False, kr=None, Res=None,  
+             ang=None, imu=None, norm=True, cont=False, LTE=False, line=None, Res=None,  
              resolved=False, **kwargs):
         #-----------------------------------------------------------------
-        if kr is not None:
-            line = self.atom.trans[kr]
+        if line is not None:
             line.prepare()
             slc = slice(line.ib, line.ir)
             lam0 = line.lam0
@@ -773,11 +772,11 @@ class m3dis(object):
         return lte, nlte
 
     #=====================================================================
-    def get_depart(self, ilvl=None, mean=False):
+    def get_depart(self, atom=0, ilvl=None, mean=False):
         #-----------------------------------------------------------------
+        if type(atom) is int: atom = self.atoms[atom]
         if ilvl is not None:
-            if ilvl < 0: ilvl = self.atom.nk + ilvl
-
+            if ilvl < 0: ilvl = atom.nk + ilvl
         if hasattr(self, 'runs'):
             xy = np.array([run.get_depart(ilvl, mean=mean) for run in self.runs])
 
@@ -789,7 +788,7 @@ class m3dis(object):
             else:
                 return xy[:,0], xy[:,1]
 
-        mem = self.read_patch_save('atom_patch', zdim=2)[0]
+        mem = self.read_patch_save(f'pop_{atom.id}', zdim=2)[0]
         if mem.ndim==6: mem = mem[...,0]
         dep = mem[...,1]
 
@@ -807,10 +806,11 @@ class m3dis(object):
         return ltau, dep
     
     #=====================================================================
-    def plot_depart(self, ilvl, mean=True, **kwargs):
+    def plot_depart(self, atom=0, ilvl=0, mean=True, **kwargs):
         #-----------------------------------------------------------------
-        xx, yy = self.get_depart(ilvl, mean=mean)
-        plt.title('Departure coefficient of level {:}'.format(ilvl))
+        if type(atom) is int: atom = self.atoms[atom]
+        xx, yy = self.get_depart(atom, ilvl, mean=mean)
+        plt.title(f'Departure coefficient of {atom.id:} level {ilvl:}')
         plt.ylabel(r'$\rm n\,/\,n_{\rm LTE}$')
         plt.xlabel(r'log$\tau_{500}$')
         return plt.plot(xx.ravel(), yy.ravel(), **kwargs)

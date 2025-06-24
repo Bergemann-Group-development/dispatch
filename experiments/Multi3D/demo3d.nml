@@ -1,0 +1,9 @@
+! -- Parameters defining the run -----------------------------------------------
+&io_params          datadir='data' gb_step=6.0 do_trace=F /
+&timer_params       sec_per_report=1e8 verbose=2 /
+&atmos_params       nx=30 ny=30 atmos_format='MUST' atmos_file='input_multi3d/atmos/SunLTE_t5777_g4.440_z0.000_sn779_m3dis' /
+&atom_params        atom_file='./input_multi3d/atoms/atom.ba06' use_atom_abnd=T convlim=1d-2 convmax=1d-3 /
+&m3d_params         verbose=1 maxiter=99 lvlcheck=4 ng_step=20 /
+!&linelist_params    linelist_file='./input_multi3d/nlte_ges_linelist_jmg17feb2022_I_II.txt' /
+!&spectrum_params    daa=0.01 aa_blue=4840 aa_red=4880 /
+!&composition_params absmet_file='input_multi3d/absmet' /

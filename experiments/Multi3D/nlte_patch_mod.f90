@@ -611,7 +611,7 @@ SUBROUTINE lte_background_opacities (self, comp, include_absmet, do_sample_opac,
   end do
   end do
 
-  call comp%get_table_frequencies(self%nu(fs:fe))
+  ! call comp%get_table_frequencies(self%nu(fs:fe))
 
   if (do_sample_opac .or. do_make_eos) then
     if (.not. allocated(self%opac_table)) then
