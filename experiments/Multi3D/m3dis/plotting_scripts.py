@@ -4,9 +4,12 @@ from matplotlib.colors import LinearSegmentedColormap, ListedColormap, BoundaryN
 from inspect import signature
 import numpy as np
 from scipy.ndimage import convolve
+import os
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
 
 plt.style.use('default')
-plt.style.use('m3dis/Bergemann2020.mplstyle')
+plt.style.use(os.path.join(current_dir, 'Bergemann2020.mplstyle'))
 
 plot_kwargs = signature(plt.plot).parameters
 line2d_kwargs = signature(matplotlib.lines.Line2D).parameters

@@ -187,6 +187,7 @@ MODULE spectrum_mod
 
       ! discard duplicates, nnu contains number of unique elements on exit
       call remove_close_entries(self%nu, nu_tolerance)
+      self%nnu = size(self%nu)
     END SUBROUTINE
 
     !===============================================================================
