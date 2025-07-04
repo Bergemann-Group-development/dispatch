@@ -375,7 +375,7 @@ MODULE m3d_patch_mod
   recursive SUBROUTINE pre_init_and_link (self, m3d_parent, i_mu, i_nu, sp, atom)
     class(m3d_patch_t), target :: self, m3d_parent
     class(atomic_spectrum_type), pointer, optional :: sp
-    class(atom_type), target, optional :: atom(:)
+    type(atom_type), pointer, optional :: atom(:)
     integer, optional :: i_mu, i_nu
     !-----------------------------------------------------------------------------
     if (present(i_mu)) self%i_mu = i_mu

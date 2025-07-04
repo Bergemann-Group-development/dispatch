@@ -105,7 +105,7 @@ SUBROUTINE init(self, task_list, name)
     write (command, *) 'rm -f ', trim(io%run_dir), 'save/*.txt ', trim(io%run_dir), 'save/*.bin'
     call execute_command_line (trim(command), exitstat=iostat)
     call os%mkdir(trim(io%run_dir)//'atoms')
-    write (command, *) 'rm -f ', trim(io%run_dir), 'atoms/*.txt'
+    write (command, *) 'rm -f ', trim(io%run_dir), 'atoms/*'
     call execute_command_line (trim(command), exitstat=iostat)
   endif
 

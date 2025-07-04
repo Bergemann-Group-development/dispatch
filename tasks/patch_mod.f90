@@ -242,6 +242,7 @@ MODULE patch_mod
     procedure:: deallocate_mem
     procedure:: copy_to
     procedure :: save1
+    procedure :: save2
     procedure :: save3
     procedure :: save4
     procedure :: save5
@@ -4173,6 +4174,25 @@ SUBROUTINE save1 (self, mem, label, add2meta, key)
 END SUBROUTINE save1
 
 !===============================================================================
+SUBROUTINE save2 (self, mem, label, add2meta, key)
+  class(patch_t):: self
+  real(4), dimension(:,:) :: mem
+  character(len=*) :: label
+  logical, optional :: add2meta
+  integer, dimension(:), optional :: key
+  integer :: lunit
+  integer, save :: itimer=0
+  ! ----------------------------------------------------------------------------
+  call trace%begin('patch_t%save2', itimer=itimer)
+  call self%save_lock%set('save')
+  call self%save_meta(mem, label, lunit, add2meta, key)
+  write(lunit) mem
+  close(lunit)
+  call self%save_lock%unset('save')
+  call trace%end(itimer)
+END SUBROUTINE save2
+
+!===============================================================================
 SUBROUTINE save3 (self, mem, label, add2meta, key)
   class(patch_t):: self
   real(4), dimension(:,:,:) :: mem
@@ -4182,7 +4202,7 @@ SUBROUTINE save3 (self, mem, label, add2meta, key)
   integer :: lunit
   integer, save :: itimer=0
   ! ----------------------------------------------------------------------------
-  call trace%begin('patch_t%save4', itimer=itimer)
+  call trace%begin('patch_t%save3', itimer=itimer)
   call self%save_lock%set('save')
   call self%save_meta(mem, label, lunit, add2meta, key)
   write(lunit) mem

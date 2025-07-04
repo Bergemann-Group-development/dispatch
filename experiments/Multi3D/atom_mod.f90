@@ -126,7 +126,7 @@ MODULE atom_mod
       procedure :: compute_cont_factors
       procedure :: normalize_profiles
       procedure :: update_populations
-      procedure :: solve_stat_equilibrium
+      procedure :: setup_transition_matrix
       procedure :: read
       procedure :: read_pandas
       procedure :: prepare_damping
@@ -172,6 +172,7 @@ MODULE atom_mod
     real(4), public :: nq_fac=1.0
     integer, public :: cswitch=1
     integer, public :: ng_step=-1, ng_start=8
+    logical, public :: save_rate_matrix=.false.
 
     public :: unique_int
   
@@ -300,34 +301,56 @@ MODULE atom_mod
   END SUBROUTINE normalize_profiles
 
   !===============================================================================
-  SUBROUTINE update_populations (self, comp, local, pcheck, cij, cji)
+  SUBROUTINE update_populations (self, comp, local, pcheck, cij, cji, w, c)
     class(atom_type), target :: self
     class(composition_type) :: comp
     class(atom_data_t), pointer :: adata
     real(8), intent(out) :: local
     integer, intent(in) :: pcheck(3)
     real(4), intent(out), optional, dimension(:,:,:) :: cij, cji
-    integer :: i, m(3), x, y, z
+    real(8), intent(out), optional, dimension(:,:) :: w, c
+    integer :: i, m(3), x, y, z, nk
     real(8) :: global
     logical :: relax
-    integer, save :: itimer=0
+    integer, save :: itimer=0, itimer2=0
     ! ----------------------------------------------------------------------------
     call trace%begin('atom_type%update_populations', itimer=itimer)
     adata => self%data
     m = shape(adata%totn)
     adata%maxerr = 0
     adata%lvlerr = 0
+    nk = self%nlevel
     
     do z=1, m(3)
       do y=1, m(2)
         do x=1, m(1)
           if (adata%totn(x,y,z) > 0 .and. comp%temp(x,y,z) < tmax_update) then
-            call self%solve_stat_equilibrium(comp, x,y,z, check_NaN)
+            call self%setup_transition_matrix(comp, x,y,z, check_NaN)
 
             ! e contains the correction n/n_old 
             associate(e=>adata%e(:), n=>adata%n(x,y,z,:), &
                       maxerr=>adata%maxerr, lvlerr=>adata%lvlerr)
 
+              if (self%check .and. save_rate_matrix) then
+                if (all([x, y, z] == pcheck)) then
+                  forall(i=1:nk) w(i,:) = adata%w(i,:) / n
+                  c = adata%c
+                end if
+              endif
+
+              call trace%begin('lse_solver', itimer=itimer2)
+              ! solve w n . x = e
+              ! e contains the solution vector x on exit
+              select case (lse_solver)
+              case('eqsyst')
+                call eqsyst(adata%w, e, nk)
+              case('lineq_no_pivot')
+                call lineq_no_pivot(adata%w, e, nk)
+              case('lineq')
+                call lineq(adata%w, e, nk)
+              end select
+              call trace%end(itimer2)
+              
               i = findloc(e/=e, .true., dim=1)
               if (check_NaN .and. i > 0) then
                   print *, 'NaN in error vector at i = ', i
@@ -372,7 +395,7 @@ MODULE atom_mod
   END SUBROUTINE update_populations
   
   !====================================================================================
-  SUBROUTINE solve_stat_equilibrium (self, comp, x,y,z, check_NaN)
+  SUBROUTINE setup_transition_matrix (self, comp, x,y,z, check_NaN)
     class(atom_type), target :: self
     class(composition_type) :: comp
     class(transition_type), pointer :: trans
@@ -463,22 +486,7 @@ MODULE atom_mod
         stop
       endif
     endif
-
-    call trace%begin('lse_solver', itimer=itimer2)
-
-    ! solve w n . x = e
-    ! e contains the solution vector x on exit
-    select case (lse_solver)
-    case('eqsyst')
-      call eqsyst(self%data%w, self%data%e, self%nlevel)
-    case('lineq_no_pivot')
-      call lineq_no_pivot(self%data%w, self%data%e, self%nlevel)
-    case('lineq')
-      call lineq(self%data%w, self%data%e, self%nlevel)
-    end select
-
-    call trace%end(itimer2)
-  END SUBROUTINE solve_stat_equilibrium
+  END SUBROUTINE setup_transition_matrix
   !------------------------------------------------------------------------------------
 
   !====================================================================================

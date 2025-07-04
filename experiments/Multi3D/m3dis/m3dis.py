@@ -752,11 +752,12 @@ class m3dis(object):
         return toth
 
     #=====================================================================
-    def get_pop(self, ilvl=None):
+    def get_pop(self, atom=0, ilvl=None):
         #-----------------------------------------------------------------
+        if type(atom) is int: atom = self.atoms[atom]
         if ilvl is not None:
-            if ilvl < 0: ilvl = self.atom.nk + ilvl
-        mem = self.read_patch_save('atom_patch', zdim=2)[0]
+            if ilvl < 0: ilvl = atom.nk + ilvl
+        mem = self.read_patch_save(f'pop_{atom.id}', zdim=2)[0]
         if mem.ndim==6: mem = mem[...,0]
         lte = mem[...,0]
         dep = mem[...,1]

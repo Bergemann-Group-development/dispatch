@@ -11,7 +11,7 @@ MODULE atom_patch_mod
     USE atom_mod, only: atom_type, atomic_spectrum_type, use_classic_col, kramer_bf, &
                         red_cut, blue_cut, logf_cut, atom_data_t, atom_trans_t, &
                         nq_fac, nq_min, nq_max, disable_bf, disable_bb, level_partf, &
-                        fmin, cbbesc, cbfesc, cbbhsc, cbfhsc, ng_step, ng_start
+                        fmin, cbbesc, cbfesc, cbbhsc, cbfhsc, ng_step, ng_start, save_rate_matrix
     USE trans_mod, only: line_type, cont_type, transition_type
     USE const_mod, only: CC
     USE ion_mod, only: ion_type, particle_type, debye_shield, massive_type
@@ -119,7 +119,7 @@ MODULE atom_patch_mod
     exclude_from_line_list, precomputed_depart, use_classic_col, kramer_bf, overlapping_bf, &
     overlapping_bb, detailed_absmet, n_cntrbf, convmax, premature_finish, &
     save_populations, nq_fac, nq_min, nq_max, cbbesc, cbfesc, cbbhsc, cbfhsc, &
-    disable_bf, disable_bb, overlapping_bb_in_output, save_rates, fmin
+    disable_bf, disable_bb, overlapping_bb_in_output, save_rates, save_rate_matrix, fmin
     namelist /line_mask/ in_lines, cntrbf_lines
     !-----------------------------------------------------------------------------
     call trace%begin('atom_patch_t%pre_init_atom', itimer=itimer)
@@ -300,6 +300,7 @@ MODULE atom_patch_mod
     call trace%begin('atom_patch_t%pre_init_spectrum', itimer=itimer)
     if (first_time) then
       first_time = .false.
+      saved_already = .false.
       external_sp = output_sp%nnu > 0 
       save_sp = external_sp .or. (associated(self%atom) .and. size(long_vec,2)>0)
       if (associated(self%atom)) then
@@ -380,6 +381,7 @@ MODULE atom_patch_mod
     class(element_type), pointer :: element
     class(molec_type), pointer :: molec
     real(4), dimension(:,:,:), allocatable :: cij, cji
+    real(8), dimension(:,:), allocatable :: w, c
     integer :: i, j, k, l, p(3), m(3), ipos
     integer, save:: count=0
     real(8) :: global
@@ -409,14 +411,26 @@ MODULE atom_patch_mod
         !  call self%load_mem(precomputed_depart, self%kind)
         !endif
       elseif (.not. adata%converged) then
+        if (save_rate_matrix) then
+          allocate(w(atom%nlevel, atom%nlevel), source=0.d0)
+          allocate(c(atom%nlevel, atom%nlevel), source=0.d0)
+        endif
+
         call atom%normalize_profiles(self%iter)
-        call atom%update_populations(comp, self%local, self%pcheck, cij, cji)
+        call atom%update_populations(comp, self%local, self%pcheck, cij, cji, w, c)
 
         if (save_rates==k) then
           call self%save3(real(adata%gamma_ij(:,:,:,linecheck)), label='rij')
           call self%save3(real(adata%gamma_ji(:,:,:,linecheck)), label='rji')
           call self%save3(cij, label='cij')
           call self%save3(cji, label='cji')
+        endif
+
+        if (save_rate_matrix) then
+          if (self%iter==1 .and. w(1,1)/=0.d0) then
+            call self%save2(real(w), label=trim(atom%id)//'_w')
+            call self%save2(real(c), label=trim(atom%id)//'_c')
+          endif
         endif
         
         call os%deallocate(adata%gamma_ij, label='atom%gamma_ij')
