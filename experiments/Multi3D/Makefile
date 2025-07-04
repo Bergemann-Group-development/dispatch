@@ -23,7 +23,7 @@ EOS             = microphysics/None
 STAGGER         = 
 
 sinclude $(TOP)/config/Makefile
-VPATH := $(VPATH):./SRC:./HOP
+VPATH := ./SRC:./HOP:$(VPATH) # Search SRC and HOP first
 sinclude ./SRC/Makefile
 sinclude ./HOP/Makefile
 
