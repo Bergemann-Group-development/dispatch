@@ -101,7 +101,7 @@ SUBROUTINE execute (self, task_list, test)
   !-----------------------------------------------------------------------------
   call trace%begin ('dispatcher0_t%execute', itimer=itimer)
   call io%header ('dispatcher0: begin execution:')
-  call timer%tic (time=sec)
+  ! call timer%tic (time=sec)
 !  call timer%print()
   !-----------------------------------------------------------------------------
   ! Loop over tasks, keeping track of the shortest queue size until finish
@@ -124,7 +124,7 @@ SUBROUTINE execute (self, task_list, test)
   !$omp end parallel
 !  call timer%print()
   n = timer%n_update
-  call timer%toc ('wall time', n, time=sec, verbose=.true.)
+  ! call timer%toc ('wall time', n, time=sec, verbose=.true.)
   write (io_unit%mpi,*) 'at mpi%barrier'
   flush (io_unit%mpi)
   if (validate%mode == "write") then

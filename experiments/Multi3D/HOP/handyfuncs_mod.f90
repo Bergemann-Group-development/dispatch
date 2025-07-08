@@ -22,14 +22,19 @@ MODULE handyfuncs_mod
 contains
 
 !====================================================================================
-SUBROUTINE print_failed_line(lunit, iostat)
+SUBROUTINE print_failed_line(lunit, iostat, text)
   integer, intent(in) :: lunit, iostat
   character(len=512) :: line_text, filename
+  character(len=*), intent(in), optional :: text
   ! ----------------------------------------------------------------------
   if (iostat > 0) then
-      inquire(unit=lunit, name=filename)
-      backspace lunit
-      read(lunit,'(A)') line_text
+      if (present(text)) then
+        read(text,'(A)') line_text
+      else
+        inquire(unit=lunit, name=filename)
+        backspace lunit
+        read(lunit,'(A)') line_text
+      endif
       print '(I4, 1x, A)', iostat, "Failed to read a line in file:"
       print '(A)', trim(filename)
       print '(A)', line_text
