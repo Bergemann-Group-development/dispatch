@@ -81,7 +81,7 @@ SUBROUTINE read_composition_params ()
   dtemp, ldne, ldrho, ldtemp, tmolim, irwin_dis, opac_table_vmic, save_species, &
   ref_lam, debug_opac, abundances, relative_abundances, alpha_enhancement, r_process_enhancement, &
   disable_ga, disable_stark, disable_vdw, helium_scattering
-  namelist /linelist_params/ dlam, exclude_elements, linelist_file, line_lists, &
+  namelist /linelist_params/ dlam, exclude_elements, line_lists, &
   linelist_in_output, tolerance, only_elements
   ! ----------------------------------------------------------------------------
   call trace%begin('compositiont%init', itimer=itimer)
@@ -113,7 +113,6 @@ SUBROUTINE read_composition_params ()
     !preconditioning = .false.
   endif
 
-  call truncate_array(line_lists, count(line_lists/=''))
   write (io%namelist, composition_params)
 
   rewind (io%input)
@@ -123,6 +122,7 @@ SUBROUTINE read_composition_params ()
     read (io%input, linelist_params)
   end if
   call io%namelist_warning ('linelist_params', iostat)
+  call truncate_array(line_lists, count(line_lists/=''))
   write (io%namelist, linelist_params)
 
   if (verbose > 0) write (*,*) ' - Initializing the NEW opacity package'
@@ -136,18 +136,6 @@ SUBROUTINE read_composition_params ()
   isotope_file=isotope_file, molec_file=molec_file, tmolim=tmolim, &
   external_abund=external_abund, alpha_enhancement=alpha_enhancement, &
   r_process_enhancement=r_process_enhancement)
-
-  if (linelist_file /= '') then
-    call composition%init_linelist(linelist_file)
-  else
-    i = 1
-    do while (i <= size(line_lists))
-      if (line_lists(i) /= '') then
-        call composition%init_linelist(line_lists(i))
-      endif
-      i = i + 1
-    end do
-  endif
   call trace%end(itimer)
 END SUBROUTINE read_composition_params
 
@@ -190,6 +178,11 @@ SUBROUTINE composition_pre_init (self)
   call atom_patch%pre_init_atom()
   call atom_patch%pre_init_spectrum(output_sp)
 
+  do i=1, size(line_lists)
+    call composition%init_linelist(line_lists(i), dlam, output_sp%nu)
+  end do
+
+  ! make sure there are no more f-domain splits than threads
   if (output_sp%nnu > 0) n_nu = min(n_nu, output_sp%nnu)
   if (decouple_continuum) then
     if (atom_patch%bb_sp%nnu > 0) n_nu = min(n_nu,  atom_patch%bb_sp%nnu)

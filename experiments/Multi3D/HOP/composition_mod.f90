@@ -666,7 +666,7 @@ contains
     END SUBROUTINE injon
 
     !===============================================================================
-    SUBROUTINE init_linelist (self, linelist_file)
+    SUBROUTINE init_linelist (self, linelist_file, dlam, nu)
         class(composition_type) :: self
         class(ion_type), pointer :: ion
         class(molec_type), pointer :: mol
@@ -675,11 +675,14 @@ contains
         class(bbtrans_type), dimension(:), allocatable :: lines
         class(bbtrans_type), pointer :: line
         character(len=*) :: linelist_file
+        real(dp), intent(in) :: dlam
+        real(dp), intent(in), dimension(:), optional :: nu
         character(20) :: mass_id
         character(20) :: ion_id
-        character(len=512) :: line_text
+        character(len=512) :: line_text, prev_line
         real(dp) :: lam0, ent8, ent9, cnt_ev, lam_vac, vbar2e4
         real(dp) :: upper_ev, upper_g, lower_g, gij, f
+        real(dp) :: nu_min, nu_max, lam_min, lam_max
         character :: lower_orb, upper_orb
         character(len=150) :: label
         character(len=32) :: gq
@@ -687,21 +690,32 @@ contains
         integer :: np, iso
         integer :: lunit, iostat, iostat2, j, nline, i, prev, iso_idx, nkh
         integer, save :: ntotal, nactive
-        logical :: isotope, ok
+        logical :: isotope, ok, skip, lam_mask
+        integer :: pos, npost, nskipped
+        integer :: itimer=0
         !-----------------------------------------------------------------------------
         if (linelist_file == '' .and. .not. self%ll_initialised) return
+        call trace%begin ('composition_type%init_linelist', itimer=itimer)
         self%ll_initialised = .true.
+        lam_mask = present(nu)
         ntotal = 0
         nactive = 0
         nkh = 0
 
+        if (lam_mask) then
+            nu_min = nu(1)
+            nu_max = nu(size(nu))
+            lam_min = 1e8 * CC / nu_max - dlam
+            lam_max = 1e8 * CC / nu_min + dlam
+        endif
+        
         call os%check_file(linelist_file)
         open(newunit=lunit, file=linelist_file, iostat=iostat)
         do while (iostat==0)
-            read(lunit,*,iostat=iostat) mass_id, j, nline
+            read(lunit, *, iostat=iostat) mass_id, j, nline
             if (iostat < 0) exit ! End-of-File
             call print_failed_line(lunit, iostat)
-            read(lunit,'(A)',iostat=iostat) ion_id
+            read(lunit, '(A)', iostat=iostat) ion_id
             call print_failed_line(lunit, iostat)
             call replace_char(mass_id, '.', ' ')
             read(mass_id, *) np, iso
@@ -710,6 +724,7 @@ contains
             nullify(particle)
             call self%particle_by_id(ion_id(1:6), particle, verbose=.true.)
             ok = associated(particle)
+            ntotal = ntotal + nline
             
             if (ok .and. isotope) then
                 if (associated(particle%isotope)) then
@@ -717,7 +732,7 @@ contains
                     ok = iso_idx > 0
                 else
                     ok = iso == nint(particle%awgt)
-                    isotope = .false.
+                    isotope = .not. ok
                 endif
             endif
 
@@ -731,8 +746,37 @@ contains
                 end do
                 cycle
             endif
-            
-            particle%in_linelist=.true.
+
+            if (lam_mask) then
+                nskipped = 0
+                npost = 0
+                pos = nline+1
+                do i=1, nline
+                    ! check if line is outside of range
+                    read(lunit, *, iostat=iostat2) lam0
+                    skip = lam0 < lam_min .or. lam0 > lam_max
+                    if (skip) then
+                        if (pos<=nline) then
+                            ! we are past the lines within range
+                            npost = nline - i + 1
+                            exit
+                        endif
+                        nskipped = nskipped + 1
+                    elseif (pos>nline) then
+                        ! first line in range has been found
+                        pos = i
+                    endif
+                end do
+                ! jump back to the first line within range
+                do i=pos, min(i, nline)
+                    backspace(lunit)
+                end do
+                nskipped = nskipped + npost
+                nline = nline - nskipped
+            endif
+
+            if (nline == 0) cycle
+            particle%in_linelist = .true.
 
             if (particle%nline == 0) then
                 allocate(particle%line(nline))
@@ -751,13 +795,13 @@ contains
 
             do i=1, nline
                 line => particle%line(prev+i)
-                read(lunit,'(A)', iostat=iostat) line_text
+                read(lunit, '(A)', iostat=iostat) line_text
 
                 if (particle%id == 'H I') then
                     read(line_text, *, iostat=iostat2) lam0, line%i, line%j, line%lower_ev, upper_ev, line%loggf, label, line%ga
 
                     ! Stop if nothing has worked
-                    call print_failed_line(lunit, iostat2)
+                    call print_failed_line(lunit, iostat2, line_text)
 
                     nkh = max(line%j, nkh)
                     lower_g = 2 * line%i**2
@@ -773,7 +817,7 @@ contains
                     ! but only lam0 lower_ev and loggf are required.
                     ! Broadening parameters are zero by default if not overwritten here.
                     read(line_text, *, iostat=iostat2) lam0, line%lower_ev, line%loggf, line%gv, upper_g, line%ga, gq
-                    call print_failed_line(lunit, iostat2)
+                    call print_failed_line(lunit, iostat2, line_text)
                     ! read gq if it is convertable to real
                     gq = trim(gq)
                     call replace_char(gq(1:len_trim(gq)), ' ', '_')
@@ -797,7 +841,10 @@ contains
                 allocate(line%used, source=.false.)
                 allocate(line%strength, source=0.d0)
                 if (line%active) nactive = nactive + 1
-                ntotal = ntotal + 1
+            end do
+            ! skip the rest of the lines outside of range
+            do i=i, nline+npost
+                read(lunit, *)
             end do
         end do
         close(lunit)
@@ -805,6 +852,7 @@ contains
         self%nline = nactive
         self%elements(1)%ions(1)%nk = max(self%elements(1)%ions(1)%nk, nkh)
         call self%mask_linelist()
+        call trace%end(itimer)
     END SUBROUTINE init_linelist
 
     !===============================================================================

@@ -419,7 +419,7 @@ contains
         write (unit,*) 'W: much of the item time may be due to timer calls'
     end if
     musppt=0 ! hot-fix
-    write (unit,'(a38,1p,6x,3g13.3,g16.2,a,0p,f11.2,a,f9.0,a)') &
+    write (unit,'(a38,1p,6x,3g13.3,g16.2,a,0p,f11.2,a,f9.1,a)') &
       "TOTAL updates, thread time", updates, total, 100., &
       self%time-self%prev, ' time advance', &
       musppt, ' core-mus/cell-upd', wc, ' wall sec'
