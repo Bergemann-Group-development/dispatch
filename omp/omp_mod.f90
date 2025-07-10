@@ -148,6 +148,9 @@ FUNCTION get_stacksize() result(stacksize)
 #else
   call getenv ('OMP_STACKSIZE', envvar)
   n = len_trim(envvar)
+  if (n == 0) then
+    stop 'OMP_STACKSIZE environment variable not set!'
+  endif
   select case(envvar(n:n))
   case('0','1','2','3','4','5','6','7','8','9')
     factor = 1

@@ -84,7 +84,7 @@ SUBROUTINE read_composition_params ()
   namelist /linelist_params/ dlam, exclude_elements, line_lists, &
   linelist_in_output, tolerance, only_elements
   ! ----------------------------------------------------------------------------
-  call trace%begin('compositiont%init', itimer=itimer)
+  call trace%begin('composition%init', itimer=itimer)
 
   allocate(line_lists(128))
   line_lists = ''
@@ -156,7 +156,6 @@ SUBROUTINE composition_pre_init (self)
   self%static_mem=.true.
 
   if (first_time) then
-    first_time = .false.
     allocate(output_sp)
     binned_opac = opac_table /= ''
       
@@ -178,9 +177,12 @@ SUBROUTINE composition_pre_init (self)
   call atom_patch%pre_init_atom()
   call atom_patch%pre_init_spectrum(output_sp)
 
-  do i=1, size(line_lists)
-    call composition%init_linelist(line_lists(i), dlam, output_sp%nu)
-  end do
+  if (first_time) then
+    first_time = .false.
+    do i=1, size(line_lists)
+      call composition%init_linelist(line_lists(i), dlam, output_sp%nu)
+    end do
+  endif
 
   ! make sure there are no more f-domain splits than threads
   if (output_sp%nnu > 0) n_nu = min(n_nu, output_sp%nnu)

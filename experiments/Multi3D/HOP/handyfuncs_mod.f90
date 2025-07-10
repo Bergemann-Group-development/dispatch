@@ -172,11 +172,8 @@ FUNCTION trim_between_words(string) result(res)
     res = ''
     char = ' '
     j = 1
-    do i=1, len(string)
-      if (string(i:i) == "'") then
-        string(i:i) = ' '
-      endif
-    end do
+    call replace_char(string, "'", ' ')
+    call replace_char(string, ",", ' ')
     do i=1, len(string)
         if (string(i:i) == ' ') then
             if (char == ' ') then

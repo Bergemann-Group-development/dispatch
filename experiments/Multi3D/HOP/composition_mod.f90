@@ -747,9 +747,9 @@ contains
                 cycle
             endif
 
+            npost = 0
+            nskipped = 0
             if (lam_mask) then
-                nskipped = 0
-                npost = 0
                 pos = nline+1
                 do i=1, nline
                     ! check if line is outside of range
