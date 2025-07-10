@@ -1,0 +1,54 @@
+.EditableLabel {
+    flex: 1;
+}
+
+.EditableLabel .widget-text {
+    width: 100%;
+    margin: 0;
+}
+
+.EditableLabel .widget-input {
+    width: 100%;
+}
+
+.EditableList .del-btn {
+    margin: 0;
+    padding: 0;
+    width: 20px;
+    background-color: transparent;
+}
+
+.EditableLabel .widget-button {
+    text-align: left;
+    margin: 0;
+    /* Remove click effects */
+    transition: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    background-color: transparent !important;
+    border-color: transparent !important;
+}
+
+.EditableLabel .widget-button:hover {
+    background-color: transparent !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
+}
+
+.EditableLabel .widget-button:active {
+    background-color: transparent !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
+    transform: none !important;
+}
+
+.EditableLabel .widget-button:focus {
+    background-color: transparent !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
+    outline: none !important;
+}
+
+.EditableList .row-box.selected {
+    background-color: var(--ifk-layout-color3);
+}

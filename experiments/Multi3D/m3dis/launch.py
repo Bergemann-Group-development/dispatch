@@ -51,7 +51,7 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
 
             if verbose < 2:
                 print(input_file, ' launched')
-                command = command + ' > /dev/null 2>&1'
+                if log_file is None: command = command + ' > /dev/null 2>&1'
 
             os.environ['OMP_NUM_THREADS'] = str(threads)
             iostat = os.system(command)

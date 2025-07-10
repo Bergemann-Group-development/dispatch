@@ -1,0 +1,149 @@
+:root {
+    --ifk-layout-color0: var(--colab-primary-surface-color,
+                          var(--vscode-editor-background,
+                          var(--jp-layout-color0,
+                          #ffffff)));
+
+    --ifk-layout-color1: var(--colab-secondary-surface-color,
+                          var(--vscode-editorWidget-background,
+                          var(--jp-cell-editor-background,
+                          #f7f7f7)));
+
+    --ifk-layout-color2: var(--colab-highlighted-surface-color,
+                          var(--vscode-descriptionForeground,
+                          var(--jp-layout-color3,
+                          #e0e0e0)));
+
+    --ifk-layout-color3: var(--colab-border-color,
+                          var(--vscode-editorWidget-border,
+                          var(--jp-cell-editor-border-color,
+                          #dadada)));
+    
+    --ifk-form-border-color: var(--colab-border-color,
+                              var(--vscode-editorWidget-border,
+                              var(--jp-cell-editor-border-color,
+                              #dadada)));
+
+    --ifk-widget-input-color: var(--colab-primary-text-color,
+                                var(--vscode-foreground,
+                                var(--jp-ui-font-color0,
+                                #1f1f1f)));
+
+    --ifk-widget-label-color: var(--colab-secondary-text-color,
+                                var(--vscode-descriptionForeground,
+                                var(--jp-ui-font-color1,
+                                #444746)));
+  }
+               
+.cell-output-ipywidget-background {
+  background-color: var(--ifk-layout-color0) !important;
+  padding: var(--notebook-output-node-padding) 0 0 0 !important;
+  margin: 0;
+}
+
+.tum-gui {
+    border: 1px solid var(--ifk-form-border-color);
+    background-color: var(--ifk-layout-color1);
+    color: var(--ifk-layout-color0);
+}
+
+.tum-settings {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    background-color: var(--ifk-layout-color1);
+    border-bottom: var(--ifk-form-border-color);
+    z-index: 2;
+    visibility: hidden;
+}
+
+.tum-settings.in-front {
+    visibility: visible;
+}
+
+.tum-gui .canvas {
+    flex: 1;
+    margin: 0;
+}
+
+.tum-gui .header {
+    padding-left: 10px;
+    border-bottom: 1px solid var(--ifk-form-border-color);
+    background-color: var(--ifk-layout-color0);
+}
+
+.tum-gui .header .widget-label {
+    flex: 1;
+}
+
+.tum-gui .header .widget-button {
+    width: 25px;
+    padding: 0;
+    background: transparent;
+}
+
+.tum-gui .footer {
+    height: 25px;
+    padding-left: 10px;
+    border-top: 1px solid var(--ifk-form-border-color);
+}
+
+.tum-gui .footer .widget-label {
+    font-size: 8pt;
+    height: 100%;
+    margin: 0;
+}
+
+.tum-gui .editor {
+    flex: 1;
+    height: 100%;
+}
+
+.tum-gui .content {
+    flex: 1;
+}
+
+.tum-gui .sidebar {
+    background-color: var(--ifk-layout-color1);
+}
+
+.tum-gui .left-sidebar {
+    width: 150px;
+    border-right: 1px solid var(--ifk-form-border-color);
+}
+
+.tum-gui .right-sidebar {
+    width: 300px;
+    overflow-x: hidden;
+    border-left: 1px solid var(--ifk-form-border-color);
+}
+
+.tum-gui .canvas .jp-OutputArea-output {
+    padding: 0;
+    overflow: visible;
+}
+
+.tum-gui .canvas .jp-OutputArea,
+.tum-gui .canvas .jp-OutputArea-output,
+.tum-gui .canvas .jp-OutputArea-child {
+    height: 100%;
+}
+
+.tum-gui .ifk-form {
+    border: none;
+    padding-top: 0;
+}
+
+.tum-gui .controls .widget-label {
+    padding: 0 10px;
+}
+
+.tum-gui .left-sidebar .widget-label {
+    padding: 0 10px;
+    border-bottom: 1px solid var(--ifk-form-border-color);
+}
+
+.tum-gui .controls .widget-button {
+    border-radius: 0;
+    margin: var(--jp-widgets-margin) 1px;
+}

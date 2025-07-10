@@ -1201,6 +1201,7 @@ class m3dis(object):
     #=================================================================
     def fit_observed(self, oxx, oyy, fit=[], bounds=None, p0=None, sigma=None,
                      syst=None, method='curve_fit', tol=None, Res='auto', **kwargs):
+        if len(fit)==0: return {}, None
         lbounds = {'vshift':-3, 'vdop':1e-3, 'vrot':1e-3, 'zeta_rt':1e-3, 'fac':0.5, 'tilt':-0.2}
         ubounds = {'vshift':+3, 'vdop':1e1,  'vrot':1e1,  'zeta_rt':1e1,  'fac':2.0, 'tilt':+0.2}
         p0s     = {'vshift':0,  'vdop':1,    'vrot':1,    'zeta_rt':1,    'fac':1.0, 'tilt':0.0}

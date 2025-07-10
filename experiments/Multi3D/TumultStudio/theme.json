@@ -1,0 +1,58 @@
+{
+  "attrs": {
+    "Figure": {
+      "width": 450,
+      "height": 333,
+      "background_fill_color": "white",
+      "outline_line_color": null
+    },
+    "Axis": {
+      "major_tick_line_color": "black",
+      "minor_tick_line_color": "black",
+      "major_tick_in": 10,
+      "minor_tick_in": 5,
+      "major_tick_out": 0,
+      "minor_tick_out": 0,
+      "major_tick_line_width": 0.8,
+      "minor_tick_line_width": 0.6,
+      "axis_line_color": "black",
+      "major_label_text_font_size": "10pt",
+      "major_label_text_font": "sans-serif",
+      "axis_label_text_font_size": "10pt",
+      "axis_label_text_font_style": "normal"
+    },
+    "Legend": {
+      "background_fill_alpha": 0.0,
+      "border_line_width": 0.0,
+      "label_text_font_size": "10pt",
+      "label_text_font": "sans-serif",
+      "spacing": 10
+    },
+    "Title": {
+      "text_font_size": "12pt",
+      "text_font": "sans-serif"
+    },
+    "ColorBar": {
+      "title_text_font_size": "12pt",
+      "major_label_text_font_size": "10pt"
+    },
+    "Grid": {
+      "grid_line_color": null
+    },
+    "Line": {
+      "line_width": 2
+    }
+  },
+  "palette": [
+    "#006BA4",
+    "#FF800E", 
+    "#ABABAB",
+    "#595959",
+    "#5F9ED1",
+    "#C85200",
+    "#898989",
+    "#A2C8EC",
+    "#FFBC79",
+    "#CFCFCF"
+  ]
+}

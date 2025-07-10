@@ -275,7 +275,7 @@ def convol(sx, sy, vrot=None, zeta_rt=None, vshift=None, vdop=None, custom=None)
         
     px = (np.arange(npresn) - npresn//2) * rd
     
-    if vrot is not None:
+    if vrot:
         normf = CC_KMS/vrot
         beta = 1.5
         xi = normf*px
@@ -286,7 +286,7 @@ def convol(sx, sy, vrot=None, zeta_rt=None, vshift=None, vdop=None, custom=None)
         
         sxn, syn = conv_profile(sxn, syn, px, py)
         
-    if zeta_rt is not None:
+    if zeta_rt:
         wave_rt = np.arange(20)/10.   
         flux_rt = [1.128,0.939,0.773,0.628,0.504,0.399,0.312,0.240,0.182,0.133,
                   0.101,0.070,0.052,0.037,0.024,0.017,0.012,0.010,0.009,0.007]
@@ -301,14 +301,11 @@ def convol(sx, sy, vrot=None, zeta_rt=None, vshift=None, vdop=None, custom=None)
         
         sxn, syn = conv_profile(sxn, syn, px, py)
         
-    if vdop is not None:
-        if vdop > 0:
-            width = vdop/CC_KMS
-                
-            py = np.exp(- (px/width)**2 ) / (np.sqrt(np.pi)*width)
-            sxn, syn = conv_profile(sxn, syn, px, py)
-        elif vdop < 0:
-            print('Negative vdop not implemented!')
+    if vdop:
+        width = vdop/CC_KMS
+            
+        py = np.exp(- (px/width)**2 ) / (np.sqrt(np.pi)*width)
+        sxn, syn = conv_profile(sxn, syn, px, py)
 
         
     xx = np.exp(sxn)
