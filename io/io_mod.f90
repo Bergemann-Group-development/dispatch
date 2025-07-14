@@ -450,9 +450,9 @@ SUBROUTINE open_rank_file (unit, ext, form, thread)
     filename = trim(io_unit%rankbase)//ext
   end if
   if (unit==0) then
-    open (newunit=unit, file=trim(filename), form=form, status='unknown')
+    open (newunit=unit, file=trim(filename), form=form, status='replace', action='write')
   else
-    open (unit=unit, file=trim(filename), form=form, status='unknown')
+    open (unit=unit, file=trim(filename), form=form, status='replace', action='write')
   end if
 END SUBROUTINE open_rank_file
 
