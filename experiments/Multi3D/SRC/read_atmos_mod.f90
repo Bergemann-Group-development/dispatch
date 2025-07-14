@@ -55,6 +55,7 @@ MODULE read_atmos_mod
   public :: read_multi_snapshot
   public :: read_text_1d
   public :: read_multi_1d
+  public :: read_siu_bin
   public :: interpolate_atmos
     
 contains
@@ -467,7 +468,7 @@ SUBROUTINE read_text_1d(atmos_file, vmic, FeH)
 END SUBROUTINE read_text_1d
 
 !===============================================================================
-!> Reads the actual text files and stores variables under self
+!> Reads the actual text files and stores variables under ia
 !===============================================================================
 SUBROUTINE read_multi_1d(atmos_file, vmic)
   character(len=*) :: atmos_file
@@ -515,6 +516,47 @@ SUBROUTINE read_multi_1d(atmos_file, vmic)
   ia%lpe  (1,1,:) = log(ne * BK * temp)
   ia%lrho = ieee_value( ia%lrho, ieee_signaling_nan )
 END SUBROUTINE read_multi_1d
+
+!===============================================================================
+SUBROUTINE read_siu_bin(atmos_file)
+  character(len=*) :: atmos_file
+  real(8) :: feh_model
+  integer :: lunit, nz, nel, nmol, nbreak
+  integer :: i, j, k, recl
+  character(128) :: text
+  real(4), parameter :: ln10 = log(10.0)
+  integer, dimension(:), allocatable :: at_idx, at_nion, break
+  real(4), dimension(:), allocatable :: kappa500, pgas
+  !-----------------------------------------------------------------------------
+  call os%check_file(atmos_file)
+  open(file=atmos_file, newunit=lunit, form='unformatted', access='stream')
+
+  read(lunit) recl ! skip the record length in stream access
+  read(lunit) nz, nel, nmol, nbreak
+
+  call ia%allocate(1,1,nz)
+  allocate(kappa500(nz), pgas(nz))
+  allocate(at_idx(nel), at_nion(nel))
+  allocate(break(nbreak))
+
+  read(lunit) at_idx   ! Atomic number of the elements
+  read(lunit) at_nion  ! Number of ionisation stages considered for each element
+  read(lunit) break    ! break points in tau scale for MARCS
+  read(lunit) ia%zz    ! log10(tau500)
+  read(lunit) ia%ltemp ! log10(temperature)
+  read(lunit) kappa500 ! log10(kappa500)
+  read(lunit) ia%lpe   ! log10(electron pressure)
+  read(lunit) pgas     ! p gas MARCS 
+  read(lunit) pgas     ! p gas MARCS (not sure why this appears twice)
+  read(lunit) ia%lrho  ! log10(density)
+  ! the data goes on, but we have everything we need
+  close(lunit)
+
+  ! convert from log10() to ln
+  ia%ltemp = ia%ltemp * ln10
+  ia%lpe   = ia%lpe   * ln10
+  ia%lrho  = ia%lrho  * ln10
+END SUBROUTINE read_siu_bin
 
 !===============================================================================
 SUBROUTINE xup_set (f, fp)

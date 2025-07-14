@@ -31,7 +31,7 @@ MODULE read_external_mod
   USE m3d_halo_mod, only: m3d_halo_t
   USE read_atmos_mod, only: ia, read_stagger, read_co5bold, read_stagger2, &
   legacy_stagger_interp, read_marcs, read_multi_snapshot, read_text_1d, read_multi_1d, &
-  timestamp
+  read_siu_bin, timestamp
   USE handyfuncs_mod
   USE ray_mod, only: one_dimensional
   implicit none
@@ -162,9 +162,12 @@ SUBROUTINE init(self, task_list, name)
       call read_text_1d(atmos_file, vmic, FeH)
     case ('multi1d')
       call read_multi_1d(atmos_file, vmic)
+    case ('siu_bin')
+      call read_siu_bin(atmos_file)
     case default
-      write(stdout, *) 'unknown atmos_format ', atmos_format, &
-      '. Options are: "Stagger", "Co5bold", "MUST", "Multi", "Marcs" and "Text".'
+      write(stdout, *) 'unknown atmos_format ', trim(atmos_format), &
+      ". Options are: 'Stagger', 'Co5bold', 'MUST', 'Multi', &
+      &'Marcs', 'SIU-bin', 'Multi1D' and 'Text'."
       stop
     end select
   endif
