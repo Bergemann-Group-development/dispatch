@@ -46,7 +46,7 @@ MODULE atom_mod
       ! LTE, NLTE and total population of active atom
       real(8), dimension(:,:,:),   allocatable :: totn
       real(8), dimension(:,:,:,:), allocatable :: nstar
-      real(8), dimension(:,:,:,:), pointer, contiguous :: n
+      real(8), dimension(:,:,:,:), pointer, contiguous :: n => null()
       real(8), dimension(:,:,:,:,:), allocatable :: oldn
       real(8), dimension(:,:,:,:), allocatable :: gamma_ij
       real(8), dimension(:,:,:,:), allocatable :: gamma_ji

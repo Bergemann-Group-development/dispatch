@@ -43,3 +43,4 @@ vtune*
 *.pdf
 *.txt
 *__genmod.f90
+dispatch.x.*

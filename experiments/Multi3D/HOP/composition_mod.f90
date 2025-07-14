@@ -416,7 +416,7 @@ contains
         self%elements(1)%ions%in_opac = .true.
         self%elements(2)%ions%in_opac = .true.
         call self%molecule_by_id('H2', molecule)
-        molecule%in_opac = .true.
+        if (associated(molecule)) molecule%in_opac = .true.
 
         do i=1, nkomp
             trans => self%trans(i)

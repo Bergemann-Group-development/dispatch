@@ -23,7 +23,7 @@ MODULE ion_mod
         integer :: m(3)=[0,0,0], nk, nline=0
         character(len=6) :: id
         integer :: niso=1
-        class(isotope_type), dimension(:), pointer :: isotope
+        class(isotope_type), dimension(:), pointer :: isotope=>null()
         type(level_type), allocatable :: levels(:)
         type(bbtrans_type), dimension(:), allocatable :: line
         real(dp), allocatable, dimension(:) :: irwin

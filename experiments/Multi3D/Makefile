@@ -15,9 +15,16 @@ ifndef mpiifort
   MPI=
 endif
 
-#COMPILER        = ifx
+OS := $(shell uname -s)
+
+ifeq ($(OS),Darwin)
+    COMPILER = gfort10
+else
+    COMPILER = ifort
+endif
+
 #COMPILER        = gfort10
-COMPILER        = ifort
+#COMPILER        = ifort
 SOLVER          = None
 EOS             = microphysics/None
 STAGGER         = 
@@ -31,7 +38,7 @@ ifeq ($(COMPILER), ifort)
   OPT += -diag-disable=10448
 endif
 
-#OPT += -fsanitize=address
+#OPT += -fsanitize=address -fsanitize=undefined 
 #OPT = -O0 -fimplicit-none  -Wall  -Wline-truncation  -Wcharacter-truncation  -Wsurprising  -Waliasing  -Wimplicit-interface  -Wunused-parameter  -fwhole-file  -fcheck=all  -fbacktrace
 
 # List the .o files the main program depends on after the colon:

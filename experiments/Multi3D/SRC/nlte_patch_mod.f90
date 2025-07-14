@@ -24,7 +24,7 @@ MODULE nlte_patch_mod
   column_by_column, rotate_atmos, rank_lvlerr, sample_back_opac, &
   decouple_continuum, linelist_in_output, sample_back_opac_in_output, ilambd, &
   Jnu_to_file, preconditioning, make_eos, amr, save_Inu, save_chi, save_Snu, &
-  long_solver, fixed_Jnu, opac_table_vmic, n_nu, save_Jnu
+  long_solver, fixed_Jnu, opac_table_vmic, n_nu, save_Jnu, maxiter
   USE ray_mod, only: one_dimensional, ray_type
   USE trans_mod, only: line_type, cont_type
   USE bbtrans_mod, only: voigt_function2, voigt_profile
@@ -121,7 +121,7 @@ SUBROUTINE nlte_patch_pre_init (self)
   self%n_mu = merge(size(long_wmu), size(all_wmu)/2, self%out_mu)
   self%mus = merge(1, self%n_mu+1, self%dir>0)
   self%mue = merge(self%n_mu, size(all_wmu), self%dir>0)
-  self%n_set = merge(3, 1, self%out_ray)
+  self%n_set = merge(merge(3, 2, maxiter>0), 1, self%out_ray)
   self%natom = merge(size(self%atom), 0, associated(self%atom))
 
   call self%set_freq_indices()
@@ -346,7 +346,7 @@ SUBROUTINE execute (self)
           call self%Snu_to_eta()
         endif
 
-        if (i_set < 3) then ! i_set==3 is the continuum only
+        if (i_set /= 2) then ! i_set==2 is the continuum only
           do i=1, self%natom
             atom => self%atom(i)
             trans => self%trans(i)
@@ -356,7 +356,7 @@ SUBROUTINE execute (self)
               adata => atom%data
             endif
             if (self%bound_bound) then
-              call self%add_bound_bound_opacities(comp, atom, trans, adata, wmu, vproj, LTE=i_set==2)
+              call self%add_bound_bound_opacities(comp, atom, trans, adata, wmu, vproj, LTE=i_set==3)
             endif
           end do
           if (use_linelist) then
@@ -449,7 +449,7 @@ SUBROUTINE execute (self)
           if (i_set==1) then
             write(sav_label, '(A, I2.2)') 'Inu_', i_mu
             call self%save4(work(:,:,:,1:nz,3), sav_label, key=self%key(1:3))
-          elseif (i_set==3) then
+          elseif (i_set==2) then
             write(sav_label, '(A, I2.2)') 'Cnt_', i_mu
             call self%save4(work(:,:,:,1:nz,3), sav_label, key=self%key(1:3))
           endif
@@ -2115,7 +2115,7 @@ END SUBROUTINE get_vproj
 !      do x=1,nx
 !        do f=fs,fe
 !          associate(cf => cntrbf(i)%tmp(f,x,y,z,:), cf_out => cntrbf(i)%data(f,x,y,z,:,i_mu))
-!            if (i_set < 3) then
+!            if (i_set /= 2) then
 !              net_chi = work(f,x,y,z,1)
 !              net_src = work(f,x,y,z,2)
 !              if (i_set == 1) then
@@ -2146,7 +2146,7 @@ END SUBROUTINE get_vproj
 !      end do
 !      end do
 !    end associate
-!    if (i_set==3 .and. i_mu==self%mue) then
+!    if (i_set==2 .and. i_mu==self%mue) then
 !      write(name, '(A,I6.6)') 'cntrbf_', j
 !      call self%save6(cntrbf(i)%data, trim(name))
 !    endif

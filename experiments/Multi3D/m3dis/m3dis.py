@@ -86,20 +86,24 @@ class m3dis(object):
             if self.has_spectrum:
                 if (verbose > 0): print('Reading Intensities')
                 ie = self.read_patch_save('ie', lazy=False)[0]
+                saved_LTE = ie.shape[-1] == 3
 
                 self.ie     = ie[:,0,0,:,0]
-                self.ie_lte = ie[:,0,0,:,1]
-                self.cnt    = ie[:,0,0,:,2]
+                self.cnt    = ie[:,0,0,:,1]
 
                 self.flux     = np.sum(self.wts * self.ie    , axis=-1)
-                self.flux_lte = np.sum(self.wts * self.ie_lte, axis=-1)
                 self.flux_cnt = np.sum(self.wts * self.cnt   , axis=-1)
+
+                if saved_LTE:
+                    self.ie_lte = ie[:,0,0,:,2]
+                    self.flux_lte = np.sum(self.wts * self.ie_lte, axis=-1)
 
                 if self.nml['m3d_params']['save_resolved']:
                     i3 = self.read_patch_save('i3')[0]
                     self.i3     = i3[...,0]
-                    self.i3_lte = i3[...,1]
-                    self.c3     = i3[...,2]
+                    self.c3     = i3[...,1]
+                    if saved_LTE:
+                        self.i3_lte = i3[...,2]
 
             if os.path.isfile(folder + 'linelist_out.txt') and read_llist:
                 self.read_llist()
@@ -526,6 +530,8 @@ class m3dis(object):
         if not LTE and self.mode=='LTE':
             print('Cannot get NLTE spectrum, because run was in LTE!')
             LTE = True
+
+        LTE = LTE and hasattr(self, 'ie_lte')
 
         if imu is not None:
             if imu >= self.nmu:
@@ -1466,12 +1472,14 @@ class m3dis(object):
         if self.run0.has_spectrum:
             self.lam    = self.run0.lam
             self.ie     = np.sum([run.ie*w for run, w in zip(runs, weights)], axis=0)
-            self.ie_lte = np.sum([run.ie_lte*w for run, w in zip(runs, weights)], axis=0)
             self.cnt    = np.sum([run.cnt*w for run, w in zip(runs, weights)], axis=0)
 
             self.flux     = np.sum([run.flux*w for run, w in zip(runs, weights)], axis=0)
-            self.flux_lte = np.sum([run.flux_lte*w for run, w in zip(runs, weights)], axis=0)
             self.flux_cnt = np.sum([run.flux_cnt*w for run, w in zip(runs, weights)], axis=0)
+
+            if hasattr(self.run0, 'ie_lte'):
+                self.ie_lte = np.sum([run.ie_lte*w for run, w in zip(runs, weights)], axis=0)
+                self.flux_lte = np.sum([run.flux_lte*w for run, w in zip(runs, weights)], axis=0)
 
         return self
 
