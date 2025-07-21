@@ -799,7 +799,7 @@ END SUBROUTINE prepare_Radiative
     elseif (gv < -20.0) then
       ! recipe c6 SIU
       self%unsold = .true.
-      c625 = 10**gv
+      c625 = 10**(0.4 * gv)
       self%gw1 = 17. * c625
       self%gw2 = 0.0
     
