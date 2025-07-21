@@ -33,6 +33,8 @@
                                 var(--vscode-descriptionForeground,
                                 var(--jp-ui-font-color1,
                                 #444746)));
+    /* --ifk-widget-input-color: yellow;
+    --ifk-widget-label-color: red; */
   }
                
 .cell-output-ipywidget-background {
@@ -44,7 +46,18 @@
 .tum-gui {
     border: 1px solid var(--ifk-form-border-color);
     background-color: var(--ifk-layout-color1);
-    color: var(--ifk-layout-color0);
+    color: var(--ifk-widget-label-color);
+}
+
+.tum-gui .widget-label, 
+.tum-gui .widget-button {
+    color: var(--ifk-widget-label-color);
+}
+
+.tum-gui input,
+.tum-gui select,
+.tum-gui textarea {
+    color: var(--ifk-widget-input-color);
 }
 
 .tum-settings {
@@ -84,14 +97,33 @@
 
 .tum-gui .footer {
     height: 25px;
-    padding-left: 10px;
+    line-height: 25px;
+    padding: 0 10px;
     border-top: 1px solid var(--ifk-form-border-color);
+    gap: 10px;
+    align-items: center;
+}
+
+.tum-gui .footer .status {
+    flex: 1;
 }
 
 .tum-gui .footer .widget-label {
-    font-size: 8pt;
+    width: 200px;
     height: 100%;
+    line-height: inherit;
     margin: 0;
+}
+
+.tum-gui .footer .widget-hprogress {
+    width: 400px;
+    height: 100%;
+    line-height: inherit;
+    margin: 0;
+}
+
+.tum-gui .footer .widget-hprogress .progress {
+    margin: 5px !important;
 }
 
 .tum-gui .editor {
@@ -115,7 +147,30 @@
 .tum-gui .right-sidebar {
     width: 300px;
     overflow-x: hidden;
+    margin: 0;
+}
+
+.tum-gui .dataframe {
+    margin: 0;
+}
+
+.tum-gui :not(.jp-RenderedMarkdown).jp-RenderedHTMLCommon td {
+    white-space: nowrap;
+}
+
+/* .tum-gui .right-sidebar:has(.llist-table:not(.lm-mod-hidden)) {
+    width: auto;
+} */
+
+.tum-gui .right-sidebar .jupyter-widget-TabPanel-tabContents {
+    border: none;
+    border-top: 1px solid var(--ifk-form-border-color);
     border-left: 1px solid var(--ifk-form-border-color);
+    padding: 0;
+}
+
+.tum-gui .right-sidebar .lm-TabBar-tab {
+    border-top: none !important;
 }
 
 .tum-gui .canvas .jp-OutputArea-output {

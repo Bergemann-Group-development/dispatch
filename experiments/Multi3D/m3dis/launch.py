@@ -1,11 +1,12 @@
 import os
 import f90nml
 import copy
+import subprocess
 from .auxfuncs import check_file
 from .m3dis import m3dis
 
-def launch(input_name, nml_settings=None, default=None, overwrite=False, threads=32,
-           log_file=None, slurm_script=None, verbose=2, dry=False):
+def launch(input_name, nml_settings=None, default=None, overwrite=False, threads=None,
+           log_file=None, slurm_script=None, verbose=2, dry=False, subprocess=False):
     cwd = os.getcwd()
     check_file(cwd + '/dispatch.x')
     if default is not None:
@@ -49,12 +50,23 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
             else:
                 command = 'sbatch {:} {:}'.format(slurm_script, input_file)
 
-            if verbose < 2:
+            if verbose == 1:
                 print(input_file, ' launched')
-                if log_file is None: command = command + ' > /dev/null 2>&1'
 
-            os.environ['OMP_NUM_THREADS'] = str(threads)
-            iostat = os.system(command)
+            if verbose < 2 and log_file is None:
+                command = command + ' > /dev/null 2>&1'
+
+            sthreads = str(threads) if threads else ''
+            os.environ['OMP_NUM_THREADS'] = sthreads
+            os.environ['OMP_STACKSIZE'] = '256M'
+
+            if subprocess:
+                env = os.environ.copy()
+                process = subprocess.Popen(command, shell=True, env=env)
+                iostat = process.returncode
+            else:
+                iostat = os.system(command)
+
             if iostat!=0 and log_file is not None: 
                 with open(log_file) as f:
                     for line in f:
@@ -68,3 +80,24 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
             print(output_folder, ' already exists')
 
     return output_folder, ok or existed
+
+
+def monitor(folder):
+    n = 0
+    nmax = 1
+
+    file = folder + os.sep + 'rank_00000.que'
+    if os.path.isfile(file):
+        f = open(file, mode='r')
+        lines = f.readlines()
+        lines = [l for l in lines if 'nlte_patch' in l and '-' in l]
+        nmax = len(lines)
+
+    file = folder + os.sep  + 'rank_00000.disp'
+    if os.path.isfile(file):
+        f = open(file, mode='r')
+        lines = f.readlines()
+        lines = [l for l in lines if 'END   nlte_patch' in l]
+        n = len(lines)
+
+    return n, nmax

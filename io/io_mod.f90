@@ -452,7 +452,7 @@ SUBROUTINE open_rank_file (unit, ext, form, thread)
   if (unit==0) then
     open (newunit=unit, file=trim(filename), form=form, status='replace', action='write')
   else
-    open (unit=unit, file=trim(filename), form=form, status='replace', action='write')
+    open (unit=unit, file=trim(filename), form=form, status='unknown', action='write')
   end if
 END SUBROUTINE open_rank_file
 

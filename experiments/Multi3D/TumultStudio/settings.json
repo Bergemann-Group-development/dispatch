@@ -1,5 +1,5 @@
 {
-    "linelist file": "input_multi3d/linelists/vald_2490-25540.list",
+    "synthesis folder": "TumultStudio/tmp/",
     "atmospheres folder": "input_multi3d/atmos/",
     "bokeh palette": "Light"
 }

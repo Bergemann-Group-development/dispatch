@@ -18,7 +18,7 @@ disable = {'vshift': lambda d: d['fit vshift']==True,
            'tilt': lambda d: d['fit tilt']==True,
           }
 
-fit_form = ifk.Form(fields, title='Fit Settings', disable=disable)
+fit_form = ifk.Form(fields, disable=disable)
 
 def fit_synth(run):
     values = fit_form.check_and_return_values()

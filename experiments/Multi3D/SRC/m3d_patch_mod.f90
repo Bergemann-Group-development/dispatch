@@ -961,7 +961,7 @@ MODULE m3d_patch_mod
   
           lam_vac = CC/line%nu0*1e8
           write(lunit, "(A1, A6, A1, I4, F12.4, 2(F8.3), 4(ES11.3))") "'", ion%id, "'", &
-          line%iso_idx, lam_vac, line%loggf, line%lower_ev, line%ga, line%gv, line%gq, line%strength
+          line%iso_idx, lam_vac, line%loggf, line%lower_ev, line%ga_in, line%gv_in, line%gq_in, line%strength
         end do
       end do
     end do
@@ -974,7 +974,7 @@ MODULE m3d_patch_mod
 
         lam_vac = CC/line%nu0*1e8
         write(lunit, "(A1, A6, A1, I4, F12.4, 2(F8.3), 4(ES11.3))") "'", mol%id, "'", &
-        line%iso_idx, lam_vac, line%loggf, line%lower_ev, line%ga, line%gv, line%gq, line%strength
+        line%iso_idx, lam_vac, line%loggf, line%lower_ev, line%ga_in, line%gv_in, line%gq_in, line%strength
       end do
     end do
     close(lunit)
@@ -1112,6 +1112,7 @@ MODULE m3d_patch_mod
     write(io_unit%dispatcher, &
     '(F17.8, 2(I3, 1x), 1x, A3, 1x, A12, 1x, I8, 1x, 3(I3,1x), F17.8)') &
     wallclock(), mpi%rank, omp%thread, status, trim(self%kind), self%id, self%key(1:3), self%time
+    flush(io_unit%dispatcher)
     !$omp end critical (cr_print_execution_history)
   END SUBROUTINE print_execution_history
 

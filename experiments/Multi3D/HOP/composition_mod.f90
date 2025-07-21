@@ -816,12 +816,13 @@ contains
                     ! It will try to read as many of these parameters as possible,
                     ! but only lam0 lower_ev and loggf are required.
                     ! Broadening parameters are zero by default if not overwritten here.
-                    read(line_text, *, iostat=iostat2) lam0, line%lower_ev, line%loggf, line%gv, upper_g, line%ga, gq
+                    read(line_text, *, iostat=iostat2) lam0, line%lower_ev, line%loggf, &
+                                                       line%gv_in, upper_g, line%ga_in, gq
                     call print_failed_line(lunit, iostat2, line_text)
                     ! read gq if it is convertable to real
                     gq = trim(gq)
                     call replace_char(gq(1:len_trim(gq)), ' ', '_')
-                    read(gq, *, iostat=iostat2) line%gq
+                    read(gq, *, iostat=iostat2) line%gq_in
     
                     lam_vac = air2vac(lam0) * 1e-8
                     line%nu0 = CC / lam_vac
@@ -835,8 +836,9 @@ contains
                     endif
 
                     call line%init_einstein_coefficients(f, 1.d0)
-                    call line%prepare_Stark(line%gq)
-                    call line%prepare_VanderWaals(line%gv, j, particle%xion, vbar2e4)
+                    call line%prepare_Radiative(line%ga_in)
+                    call line%prepare_Stark(line%gq_in)
+                    call line%prepare_VanderWaals(line%gv_in, j, particle%xion, vbar2e4)
                 endif
                 allocate(line%used, source=.false.)
                 allocate(line%strength, source=0.d0)

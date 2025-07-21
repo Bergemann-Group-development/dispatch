@@ -735,7 +735,7 @@ MODULE atom_mod
 
       read(latom, '(A)') text
       read(text, *, iostat=iostat) idx, lin%i, lin%j, lam_air, lin%lower_ev, loggf, &
-            lin%ga, lin%gv, lin%gq, lin%nnu, lin%qmax, lin%q0, lin%profile_type, lin%iso
+            lin%ga_in, lin%gv_in, lin%gq_in, lin%nnu, lin%qmax, lin%q0, lin%profile_type, lin%iso
 
       if (iostat > 0) then
         write(stdout,*) 'Error reading following line '
@@ -1082,7 +1082,7 @@ MODULE atom_mod
       ! whether a line is wide or not. In the RH formulation all lines are wide
 
       read(latom,*,iostat=ios) jj, ii, lin%f , lin%nnu, lin%qmax, lin%q0, lin%io, &
-            lin%ga, lin%gv, lin%gq, lin%profile_type
+            lin%ga_in, lin%gv_in, lin%gq_in, lin%profile_type
       call print_failed_line(latom, ios)
 
       lin%i = min(ii, jj)
@@ -1164,7 +1164,7 @@ MODULE atom_mod
         end do
 
         lin%dq = cc/lin%nu0 * lin%dq
-        lin%da = (lin%da - lin%ga) * over_4pi / lin%nu0
+        lin%da = (lin%da - lin%ga_in) * over_4pi / lin%nu0
       end if
 
       ! in gfortran the size of an unallocated allocatable array can be larger than 0
@@ -1587,7 +1587,8 @@ MODULE atom_mod
       if (line%hydrogen) then
         call prepare_hydrogen_damping(line)
       else
-        call line%prepare_Stark(line%gq)
+        call line%prepare_Radiative(line%ga_in)
+        call line%prepare_Stark(line%gq_in)
         vbar2e4 = self%compute_vbar2(10000.)
         if (associated(species)) then
           if (is_element) then
@@ -1600,7 +1601,7 @@ MODULE atom_mod
           ic = findloc(self%ion, j+1, 1)
           cnt_ev = merge(self%ev(ic), 999.99d0, ic > 0)
         endif
-        call line%prepare_VanderWaals(line%gv, self%ion(line%i), cnt_ev, vbar2e4)
+        call line%prepare_VanderWaals(line%gv_in, self%ion(line%i), cnt_ev, vbar2e4)
       endif
     end do
   END SUBROUTINE prepare_damping

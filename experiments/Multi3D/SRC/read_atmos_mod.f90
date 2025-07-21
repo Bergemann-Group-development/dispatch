@@ -518,9 +518,9 @@ SUBROUTINE read_multi_1d(atmos_file, vmic)
 END SUBROUTINE read_multi_1d
 
 !===============================================================================
-SUBROUTINE read_siu_bin(atmos_file)
+SUBROUTINE read_siu_bin(atmos_file, vmic)
   character(len=*) :: atmos_file
-  real(8) :: feh_model
+  real(4), intent(in) :: vmic
   integer :: lunit, nz, nel, nmol, nbreak
   integer :: i, j, k, recl
   character(128) :: text
@@ -556,6 +556,9 @@ SUBROUTINE read_siu_bin(atmos_file)
   ia%ltemp = ia%ltemp * ln10
   ia%lpe   = ia%lpe   * ln10
   ia%lrho  = ia%lrho  * ln10
+  if (vmic >= 0) then
+    ia%vmic  = vmic
+  endif
 END SUBROUTINE read_siu_bin
 
 !===============================================================================

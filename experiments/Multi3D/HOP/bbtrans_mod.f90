@@ -10,6 +10,7 @@ MODULE bbtrans_mod
     real(dp) :: nu0
     integer :: nnu ! number of frequencies in the line
     real(dp) :: ga=0, gw1=0, gw2=0, gw3=0, gq=0, gv=0 ! line broadening (damping) constants
+    real(dp) :: ga_in=0, gq_in=0, gv_in=0 ! input values for line broadening
     real(dp) :: lower_ev, upper_g=1, loggf
     real(dp) :: Aji, Aij, Bji, Bij ! Einstein coefficients, Bij is the
                               ! transition from the lower to the upper
@@ -33,6 +34,7 @@ MODULE bbtrans_mod
     procedure :: add_lte_opacities
     procedure :: LinearStarkH
     procedure :: IonicH
+    procedure :: prepare_Radiative
     procedure :: prepare_Stark
     procedure :: prepare_VanderWaals
     procedure :: estimate_qmax
@@ -680,16 +682,19 @@ contains
   PURE ELEMENTAL SUBROUTINE prepare_Stark(self, gq)
     class(bbtrans_type), intent(inout)  :: self
     real(dp), intent(in) :: gq
+    real(dp), parameter :: scale=1e-4*one_sixth
+    real(dp), parameter :: c19=log10(39.*(8./(PI*EM*BK**5))**one_sixth) ! 19.4
     !----------------------------------------------------------------------------------
-    if (gq < 0) then
+    if (gq < -10) then
+      ! recipe c4 SIU (formula from gray, p.237)
       ! make negative to mark this recipe
-      ! formula from Gray
-      !self%gq = - BK * 10**(19.4 + 2./3.*gq)
-      self%gq = - 10**gq * 1e-4**one_sixth
+      self%gq = - BK * 10**(c19 + two_third*gq)
+    elseif (gq < 0) then
+      ! make negative to mark this recipe
+      self%gq = - 10**gq * scale
     else
       self%gq = gq
     endif
-    if (disable_ga) self%ga = 0
     if (disable_stark) self%gq = 0
   END SUBROUTINE prepare_Stark
   !------------------------------------------------------------------------------------
@@ -753,6 +758,22 @@ contains
     endif
   END SUBROUTINE IonicH
   !------------------------------------------------------------------------------------
+  
+  !====================================================================================
+  PURE ELEMENTAL SUBROUTINE prepare_Radiative(self, ga)
+  class(bbtrans_type), intent(inout)  :: self
+  real(dp), intent(in) :: ga
+  real(dp), parameter :: coeff = 2.223d15/(CC*1e8)**2
+  !----------------------------------------------------------------------------------
+  if (ga == 0) then
+    ! approximation from MOOG
+    self%ga = coeff*self%nu0**2
+  else
+    self%ga = ga
+  endif
+  if (disable_ga) self%ga = 0
+END SUBROUTINE prepare_Radiative
+!------------------------------------------------------------------------------------
 
   !====================================================================================
   PURE SUBROUTINE prepare_VanderWaals(self, gv, lower_ion, cnt_ev, vbar2e4)
@@ -760,6 +781,7 @@ contains
     integer, intent(in) :: lower_ion
     real(dp), intent(in) :: gv, cnt_ev, vbar2e4
     real(dp) :: upper_ev, sigma, alpha, gx, gammaf, balfac, c1, c625, vbar2
+    real(dp), parameter :: uns=8.411*1.283984e-12 !8.411~(13.598**2)**0.4, 1.283984e-12~17*(1.61e-33)**0.4
     !----------------------------------------------------------------------------------
     ! compute van der waals broadening due to hydrogen
     ! following Barklem
@@ -773,6 +795,13 @@ contains
 
       self%gw2 = 0.5*(1 - alpha)
       self%gw1 = balfac * sigma * 10**(-12*self%gw2)
+
+    elseif (gv < -20.0) then
+      ! recipe c6 SIU
+      self%unsold = .true.
+      c625 = 10**gv
+      self%gw1 = 17. * c625
+      self%gw2 = 0.0
     
     elseif (gv < 0.0) then
       ! recipe 'W' Turbospectrum
@@ -792,7 +821,7 @@ contains
         c1 = 1./(cnt_ev - upper_ev)**2 - 1./(cnt_ev - self%lower_ev)**2
         if (c1 > 0) then
           c625 = (lower_ion**2 * c1)**0.4 ! c6^(2/5) impact approximation
-          self%gw1 = gv * 8.411 * 1.283984e-12 * c625
+          self%gw1 = gv * uns * c625
         else
           self%gw1 = 0
         endif

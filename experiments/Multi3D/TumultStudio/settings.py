@@ -7,7 +7,7 @@ import m3dis
 import json
 
 
-fields = {'linelist file':'input_multi3d/linelists/',
+fields = {'synthesis folder': 'TumultStudio/tmp/',
           'atmospheres folder':'input_multi3d/atmos/',
           'bokeh palette': 'Light',
           'save':None}

@@ -163,7 +163,7 @@ SUBROUTINE init(self, task_list, name)
     case ('multi1d')
       call read_multi_1d(atmos_file, vmic)
     case ('siu_bin')
-      call read_siu_bin(atmos_file)
+      call read_siu_bin(atmos_file, vmic)
     case default
       write(stdout, *) 'unknown atmos_format ', trim(atmos_format), &
       ". Options are: 'Stagger', 'Co5bold', 'MUST', 'Multi', &
@@ -718,6 +718,7 @@ SUBROUTINE print_list (list)
     link => link%next
   end do
   call list%lock%unset ('print_list')
+  flush(io_unit%queue)
   call trace%end(itimer)
 END SUBROUTINE print_list
 

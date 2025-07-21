@@ -1,12 +1,26 @@
 import bokeh.palettes
 from functools import wraps
 import logging
+import threading
 import numpy as np
 import os
 from line_profiler import LineProfiler
 
 module_dir = os.path.dirname(os.path.abspath(__file__)) + os.sep
 logger = logging.getLogger(__name__)
+
+def run_in_thread(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        out = {}
+        def runner():
+            out['result'] = func(*args, **kwargs)
+
+        thread = threading.Thread(target=runner)
+        thread.start()
+        thread.out = out
+        return thread  # so you can optionally join or check .is_alive()
+    return wrapper
 
 def log_callback_errors(func):
     """Minimal decorator to log exceptions in callbacks."""

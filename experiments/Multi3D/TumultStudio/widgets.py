@@ -230,7 +230,7 @@ class EditableList(widgets.VBox, HasTraits):
             label_widget.value = change['new']
         
         # Bind label changes to object
-        label_widget.observe(on_label_change, 'value')
+        label_widget.observe(on_label_change, 'description')
         
         # Bind object changes to label (if object supports observation)
         if hasattr(obj, 'observe'):
