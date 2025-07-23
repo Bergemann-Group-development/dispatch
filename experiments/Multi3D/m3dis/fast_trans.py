@@ -36,8 +36,8 @@ class llist_trans(fast_trans):
     self.bbt = run.llist
     self.title = 'Line = {:.2f} [Å], {:}'.format(self.lam0, self.ion)
     self.prepared = False
-    self.lam_blue = self.lam_vac - 1.0
-    self.lam_red  = self.lam_vac + 1.0
+    self.lam_blue = self.lam0 - 1.0
+    self.lam_red  = self.lam0 + 1.0
 
   def prepare(self):
     return trans_class.prepare(self)

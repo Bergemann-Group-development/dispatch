@@ -940,12 +940,11 @@ MODULE m3d_patch_mod
     class(bbtrans_type), pointer :: line
     integer :: lunit, i, j, l
     character(len=256) :: linelist_out_file
-    real(8) :: lam_vac
     ! ----------------------------------------------------------------------------
     linelist_out_file = trim(io%run_dir) // 'linelist_out.txt'
     open(newunit=lunit, file=linelist_out_file, form='formatted')
     write(lunit, "(A8, A4, A12, 2(A8), 4(A11))") &
-    'ion', 'iso', 'lam_vac', 'loggf', 'evi', 'ga', 'gv', 'gq', 'strength'
+    'ion', 'iso', 'lam_air', 'loggf', 'evi', 'ga', 'gv', 'gq', 'strength'
   
     do i=1, comp%nel
       element => comp%elements(i)
@@ -959,9 +958,8 @@ MODULE m3d_patch_mod
           line => ion%line(l)
           if (.not. line%active .or. .not. line%used) cycle
   
-          lam_vac = CC/line%nu0*1e8
           write(lunit, "(A1, A6, A1, I4, F12.4, 2(F8.3), 4(ES11.3))") "'", ion%id, "'", &
-          line%iso_idx, lam_vac, line%loggf, line%lower_ev, line%ga_in, line%gv_in, line%gq_in, line%strength
+          line%iso_idx, line%lam_air, line%loggf, line%lower_ev, line%ga_in, line%gv_in, line%gq_in, line%strength
         end do
       end do
     end do
@@ -972,9 +970,8 @@ MODULE m3d_patch_mod
         line => mol%line(l)
         if (.not. line%active .or. .not. line%used) cycle
 
-        lam_vac = CC/line%nu0*1e8
         write(lunit, "(A1, A6, A1, I4, F12.4, 2(F8.3), 4(ES11.3))") "'", mol%id, "'", &
-        line%iso_idx, lam_vac, line%loggf, line%lower_ev, line%ga_in, line%gv_in, line%gq_in, line%strength
+        line%iso_idx, line%lam_air, line%loggf, line%lower_ev, line%ga_in, line%gv_in, line%gq_in, line%strength
       end do
     end do
     close(lunit)

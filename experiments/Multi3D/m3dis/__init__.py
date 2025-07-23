@@ -2,7 +2,7 @@ from .m3dis import m3dis
 from .launch import launch, monitor
 from .CoG2 import CoG
 from .grid import grid, read_list
-from .linelist import linelist
+from .linelist import LineList
 from .const import *
 from .auxfuncs import *
 from .plotting_scripts import *

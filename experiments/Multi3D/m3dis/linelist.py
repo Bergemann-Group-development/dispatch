@@ -23,13 +23,14 @@ mol_dict = {101:'H2', 106:'CH', 107:'NH', 108:'OH',
             606:'C2', 707:'N2', 808:'O2', 607:'CN',
             708:'NO', 608:'CO', 10108:'H2O'}
 
-class linelist():
-  def __init__(self, df, filename=None):
-    self.df = df
-    self.filename = filename
+class LineList(pd.DataFrame):
+  # Required for pandas to return instances of LineList on slicing, etc.
+  @property
+  def _constructor(self):
+      return LineList
 
   @classmethod
-  def from_ts_format(self, filename):
+  def from_ts_format(cls, filename):
     llist = pd.DataFrame()
     with open(filename) as f:
       lines = f.readlines()
@@ -54,17 +55,17 @@ class linelist():
         df['ion'] = species.strip()
         df['iso'] = int(mass_id.strip("'").split('.')[-1])
         llist = pd.concat([llist, df])
-    return linelist(llist, filename=filename)
+    return cls(llist)
   
   @classmethod
-  def from_dispatch_format(self, filename):
+  def from_dispatch_format(cls, filename):
     llist = pd.read_csv(filename, sep=r'\s+', quotechar="'")
-    llist['lam0'] = vacuum2obs(llist.lam_vac)
+    llist = llist.rename(columns={'lam_air':'lam0'})
     llist = llist.sort_values(by='lam0')
-    return linelist(llist, filename=filename)
+    return cls(llist)
   
   @classmethod
-  def from_linemake(self, file):
+  def from_linemake(cls, file):
     llist = pd.read_fwf(file, widths=[10,10,10,10,20,20], sep=r'\s+', header=None, dtype={1:str})
     llist.rename(columns={0: 'lam0', 1: 'id', 2: 'evi', 3: 'loggf', llist.shape[1]-1: 'label'}, inplace=True)
     llist = llist[['lam0', 'id', 'evi', 'loggf', 'label']]
@@ -85,17 +86,16 @@ class linelist():
 
     mask = mols | atom
     llist = llist[mask]
-    return linelist(llist, filename=file)
+    return cls(llist)
   
   def write_to_ts_format(self, filename):
-    df = self.df
-    species = self.df[['ion', 'iso']].drop_duplicates().values
+    species = self[['ion', 'iso']].drop_duplicates().values
     head = ['lam0', 'evi', 'loggf', 'gv', 'ga', 'gq']
-    head = [h for h in head if h in df.columns]
-    if hasattr(df, 'label'): head.append('label')
+    head = [h for h in head if h in self.columns]
+    if hasattr(self, 'label'): head.append('label')
     with open(filename, 'w+') as f:
       for s, iso in species:
-        sub = df[(df.ion == s) & (df.iso == iso)]
+        sub = self[(self.ion == s) & (self.iso == iso)]
         nlines = sub.shape[0]
         if len(s.split()) == 2:
           id, ion = s.split()

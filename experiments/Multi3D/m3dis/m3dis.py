@@ -5,6 +5,7 @@ from .plotting_scripts import *
 from .fast_atom import fast_atom, pandas_atom
 from .fast_trans import fast_trans, llist_trans
 from .bokeh_scripts import bkh
+from .linelist import LineList
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -324,18 +325,15 @@ class m3dis(object):
 
     #=====================================================================
     def read_llist(self):
-        self.llist = pd.read_csv(self.folder + 'linelist_out.txt', sep=r'\s+', quotechar="'")
-        self.llist['lam0'] = vacuum2obs(self.llist.lam_vac)
-        self.llist = self.llist.sort_values(by='lam0')
-
+        self.llist = LineList.from_dispatch_format(self.folder + 'linelist_out.txt')
         init = np.frompyfunc(llist_trans, 2, 1)
         self.llist_line = init(np.arange(len(self.llist)), self)
 
         T = 4000
         elements = [ion.split()[0] for ion in self.llist.ion]
         abnd = np.array([self.abundances[el] if el in self.abundances.keys() else -np.inf for el in elements])
-        strength = np.log10(self.llist.lam_vac*1e-8 * np.exp(-self.llist.evi*EK/T)) + self.llist.loggf + abnd
-        self.llist['strength2'] = strength
+        #strength = np.log10(self.llist.lam0*1e-8 * np.exp(-self.llist.evi*EK/T)) + self.llist.loggf + abnd
+        #self.llist['strength2'] = strength
 
     #=====================================================================
     def get_line(self, lam0, tol=0.05):

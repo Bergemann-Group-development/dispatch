@@ -9,7 +9,7 @@ fmt = {
     'evi': lambda x: f'{x:.3f}',
     'ga': lambda x: f'{x:.2e}'}
 
-head = ['ion', 'iso', 'lam0', 'loggf', 'evi', 'ga', 'gv', 'gq']
+head = ['ion', 'lam0', 'loggf', 'evi', 'ga', 'gv', 'gq', 'iso']
 
 #=====================================================================
 def get_llist_table(run):

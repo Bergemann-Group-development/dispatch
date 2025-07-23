@@ -8,6 +8,7 @@ MODULE bbtrans_mod
 
   type :: bbtrans_type
     real(dp) :: nu0
+    real(dp) :: lam_air
     integer :: nnu ! number of frequencies in the line
     real(dp) :: ga=0, gw1=0, gw2=0, gw3=0, gq=0, gv=0 ! line broadening (damping) constants
     real(dp) :: ga_in=0, gq_in=0, gv_in=0 ! input values for line broadening

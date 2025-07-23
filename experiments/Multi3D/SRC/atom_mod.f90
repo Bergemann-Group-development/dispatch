@@ -674,7 +674,7 @@ MODULE atom_mod
     integer :: i, j, ic, tri, idx, latom, nnu_bf, ncol, ntri, ii, jj
     integer :: iostat, nnu, ncont, ntemp, l, u
     real(8) :: scr, gv, cnt_ev, nu_max, alpha0, thresh_aa, dnu
-    real(8) :: gij, red_fcut, blu_fcut, vbar2e4, loggf, lam_air
+    real(8) :: gij, red_fcut, blu_fcut, vbar2e4, loggf
     character(512) :: dummy_string, text
     character(8) :: key, str1, str2, str3
     logical :: abort
@@ -734,7 +734,7 @@ MODULE atom_mod
       endif
 
       read(latom, '(A)') text
-      read(text, *, iostat=iostat) idx, lin%i, lin%j, lam_air, lin%lower_ev, loggf, &
+      read(text, *, iostat=iostat) idx, lin%i, lin%j, lin%lam_air, lin%lower_ev, loggf, &
             lin%ga_in, lin%gv_in, lin%gq_in, lin%nnu, lin%qmax, lin%q0, lin%profile_type, lin%iso
 
       if (iostat > 0) then
@@ -748,7 +748,7 @@ MODULE atom_mod
       lin%i = lin%i + 1
       lin%j = lin%j + 1
 
-      lin%lam0 = air2vac(lam_air) * AA_TO_CM ! [cm]
+      lin%lam0 = air2vac(lin%lam_air) * AA_TO_CM ! [cm]
       lin%nu0  = CC / lin%lam0               ! [Hz]
       lin%upper_ev = lin%lower_ev + H_E*lin%nu0
       lin%hydrogen = uppercase(trim(self%id)) == 'H'

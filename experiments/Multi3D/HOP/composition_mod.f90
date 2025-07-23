@@ -798,7 +798,7 @@ contains
                 read(lunit, '(A)', iostat=iostat) line_text
 
                 if (particle%id == 'H I') then
-                    read(line_text, *, iostat=iostat2) lam0, line%i, line%j, line%lower_ev, upper_ev, line%loggf, label, line%ga
+                    read(line_text, *, iostat=iostat2) line%lam_air, line%i, line%j, line%lower_ev, upper_ev, line%loggf, label, line%ga
 
                     ! Stop if nothing has worked
                     call print_failed_line(lunit, iostat2, line_text)
@@ -806,7 +806,7 @@ contains
                     nkh = max(line%j, nkh)
                     lower_g = 2 * line%i**2
                     line%upper_g = 2 * line%j**2
-                    lam_vac = air2vac(lam0) * 1e-8
+                    lam_vac = air2vac(line%lam_air) * 1e-8
                     line%nu0 = CC / lam_vac
                     gij = lower_g / line%upper_g
                     f = 10**line%loggf / lower_g
@@ -816,7 +816,7 @@ contains
                     ! It will try to read as many of these parameters as possible,
                     ! but only lam0 lower_ev and loggf are required.
                     ! Broadening parameters are zero by default if not overwritten here.
-                    read(line_text, *, iostat=iostat2) lam0, line%lower_ev, line%loggf, &
+                    read(line_text, *, iostat=iostat2) line%lam_air, line%lower_ev, line%loggf, &
                                                        line%gv_in, upper_g, line%ga_in, gq
                     call print_failed_line(lunit, iostat2, line_text)
                     ! read gq if it is convertable to real
@@ -824,7 +824,7 @@ contains
                     call replace_char(gq(1:len_trim(gq)), ' ', '_')
                     read(gq, *, iostat=iostat2) line%gq_in
     
-                    lam_vac = air2vac(lam0) * 1e-8
+                    lam_vac = air2vac(line%lam_air) * 1e-8
                     line%nu0 = CC / lam_vac
 
                     f = 10**line%loggf
