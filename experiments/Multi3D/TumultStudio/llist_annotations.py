@@ -1,4 +1,5 @@
 from .auxfuncs import *
+from .widgets import EditableTable
 import ipywidgets as widgets
 import numpy as np
 
@@ -16,12 +17,9 @@ def get_llist_table(run):
     """
     Returns a table of the line list with formatted values.
     """
-    html_table = run.llist.to_html(columns=head, index=False, formatters=fmt)
-    html_widget = widgets.HTML(value=html_table)
-    html_widget.add_class('jp-RenderedHTMLCommon')
-    html_widget.add_class('llist-table')
-    html_widget.style.margin = '0'
-    html_widget.style.padding = '0'
+    html_widget = EditableTable(run.llist, columns=head, index=False, formatters=fmt)
+    html_widget.layout.max_height = 'none'
+    html_widget.layout.width = '100%'
     return html_widget
 
 #=====================================================================

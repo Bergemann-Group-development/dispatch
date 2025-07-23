@@ -768,6 +768,8 @@ contains
   if (ga == 0) then
     ! approximation from MOOG
     self%ga = coeff*self%nu0**2
+  elseif (ga < 100) then
+    self%ga = ga*1e8
   else
     self%ga = ga
   endif

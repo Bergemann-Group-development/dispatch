@@ -1,5 +1,9 @@
 import ipywidgets as widgets
 from traitlets import Unicode, observe, List, HasTraits, Instance
+from IPython.display import display, Javascript
+from io import StringIO
+import pandas as pd
+import uuid
 import time
 import os
 
@@ -275,3 +279,80 @@ class EditableList(widgets.VBox, HasTraits):
     def set_objects(self, objects_list):
         """Set the list of objects."""
         self.objects = objects_list
+
+
+class EditableTable(widgets.VBox):
+    def __init__(self, df: pd.DataFrame, max_height='350px', **kwargs):
+        self.df = df.reset_index(drop=True)
+        self.sid = str(uuid.uuid4()).replace('-', '_')
+        self.tid = f"editable_table_{self.sid}"
+        self.tid_class = f"table_export_{self.sid}"
+        self.script_injected = False
+
+        # Create editable HTML table
+        html_table = self.df.to_html(table_id=self.tid, **kwargs)
+        html_table = html_table.replace('<td>', '<td contenteditable="true">')
+
+        # Create widgets
+        self.html_widget = widgets.HTML(value=html_table)
+        self.html_widget.add_class('jp-RenderedHTMLCommon')
+
+        self.export_widget = widgets.Textarea(layout={'display': 'none'})
+        self.export_widget.add_class(self.tid_class)
+
+        # Output widget to trigger JavaScript after DOM is ready
+        self.js_output = widgets.Output(layout={'display': 'none'})
+
+        super().__init__([self.html_widget, self.export_widget, self.js_output])
+        self.layout.max_height = max_height
+        self.add_class('EditableTable')
+        self._inject_styling()
+        self._inject_javascript()
+
+    def _inject_javascript(self):
+            js = f"""
+                    setTimeout(function() {{
+                        var table = document.getElementById('{self.tid}');
+                        var textarea = document.querySelector('.{self.tid_class} textarea');
+            
+                        if (!table || !textarea) {{
+                            console.warn("EditableTable: Elements not found");
+                            return;
+                        }}
+            
+                        textarea.value = table.outerHTML;
+                        textarea.dispatchEvent(new Event('input', {{ bubbles: true }}));
+            
+                        table.addEventListener("focusout", function() {{
+                            textarea.value = table.outerHTML;
+                            textarea.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        }});
+                    }}, 50);
+                """
+            with self.js_output:
+                display(Javascript(js))
+                self.js_output.clear_output(wait=True)
+
+    def _inject_styling(self):
+        css = """
+            .EditableTable {
+                width: fit-content;
+            }
+            .EditableTable .jp-RenderedHTMLCommon {
+                padding: 0;
+            }
+            .EditableTable .dataframe {
+                margin: 0;
+            }
+        """
+        styling = widgets.HTML(value=f'<style>{css}</style>')
+        display(styling)
+
+    def get_dataframe(self):
+        """Returns the current state of the table as a DataFrame"""
+        try:
+            html = StringIO(self.export_widget.value)
+            return pd.read_html(html)[0]
+        except Exception as e:
+            print("⚠️ Failed to parse table HTML:", e)
+            return self.df.copy()

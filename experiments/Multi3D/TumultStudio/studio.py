@@ -20,7 +20,8 @@ class TumultStudio(HasTraits):
         self.source = source
         self.xdata = source.data['x'] # original data
         self.ydata = source.data['y'] # original data
-        self.nav_source = ColumnDataSource(dict(x=self.xdata, y=self.ydata))
+        self.nav_source = ColumnDataSource(dict(x=[], y=[]))
+        self.fig_source = ColumnDataSource(dict(x=[], y=[]))
         self.synth_source = ColumnDataSource(dict(xs=[], ys=[], colors=[], labels=[], run_ids=[]))
         self.llist_source = ColumnDataSource(dict(xs=[], ys=[], x=[], y=[], text=[]))
         self.nlam = len(self.xdata)
@@ -95,6 +96,7 @@ class TumultStudio(HasTraits):
         self.left_sidebar.children += (self.browser,)
         self.right_sidebar.children = (synth_form.vbox,)
         self.right_sidebar.titles = ['Synthesis Settings']
+        self.rerun_button = widgets.Button(description='Rerun')
 
         def set_right_sidebar(change):
             sel = self.browser.selected
@@ -114,8 +116,9 @@ class TumultStudio(HasTraits):
                     reset_xaxis(self.nav, [xmin, xmax], margin=2)
                     if hasattr(obj, 'fit_params'):
                         fit_form.set_values(obj.fit_params)
-                    html_table = get_llist_table(obj)
-                    self.right_sidebar.children = (fit_form.vbox, html_table)
+                    llist_vbox = widgets.VBox([obj.llist_html, self.rerun_button])
+                    llist_vbox.add_class('llist-vbox')
+                    self.right_sidebar.children = (fit_form.vbox, llist_vbox)
                     self.right_sidebar.titles = ['Fit Settings', 'Line List']
                 elif typ==LineMask:
                     lm = obj
@@ -136,36 +139,33 @@ class TumultStudio(HasTraits):
         
                 
     def init_controls(self):
-        #self.init_norm_buttons()
         self.init_line_mask_button()
         
         
     def init_canvas(self, xmin=None, xmax=None):
-        x0 = self.xdata[0]
-        x1 = self.xdata[-1]
-        
         # Create plot with box select tool AND tap tool
-        self.fig = init_main_canvas(sizing_mode='stretch_both',
+        self.fig = self.init_main_canvas(xmin, xmax, sizing_mode='stretch_both',
                                tools="xbox_select,tap,xbox_zoom,pan")
         
-        self.nav = init_nav_canvas(sizing_mode='stretch_width', height=100,
+        self.nav = self.init_nav_canvas(sizing_mode='stretch_width', height=100,
                               tools="xbox_select,xwheel_zoom,reset",
                               toolbar_sticky=False)
         
         self.nav.line('x', 'y', source=self.nav_source, color='dimgrey')
-        self.nav.x_range = Range1d(x0, x1, bounds=(x0, x1))
-        
-        self.fig.line('x', 'y', source=self.source, color='lightgrey')
-        self.fig.scatter('x', 'y', size=4, source=self.source, color='dimgrey', 
+
+        self.fig.line('x', 'y', source=self.fig_source, color='lightgrey')
+        self.fig.scatter('x', 'y', size=4, source=self.fig_source, color='dimgrey', 
                     selection_color='black', nonselection_color='lightgrey', nonselection_alpha=1)
         
         self.synth_line = self.fig.multi_line('xs', 'ys', line_color='colors', legend_field='labels',
                                               source=self.synth_source, line_width=3,
-                                              nonselection_line_alpha=1.0)
+                                              nonselection_line_alpha=1.0,
+                                              hover_line_width=5)
         
         self.llist_line = self.fig.multi_line('xs', 'ys', line_color='black',
                                               source=self.llist_source, line_width=0.8,
-                                              nonselection_line_alpha=1.0)
+                                              nonselection_line_alpha=1.0,
+                                              hover_line_width=3, )
         
         self.llist_labels = LabelSet(x='x', y='y', text='text',
                                      text_font_size='10pt',
@@ -174,30 +174,12 @@ class TumultStudio(HasTraits):
                                      text_color='black',
                                      source=self.llist_source, angle=np.pi/2)
         
-        self.fig.add_layout(self.llist_labels)
-        self.fig.legend.location = "bottom_left"
-
-        def yrange_update_callback(attr, new, old):
-            slc = get_crop_range(self.source.data['x'], self.fig.x_range)
-            yvis = self.ydata[slc]
-            for i, x in enumerate(self.synth_source.data['xs']):
-                slc = get_crop_range(x, self.fig.x_range)
-                yvis = np.concatenate((yvis, self.synth_source.data['ys'][i][slc]))
-            if len(yvis)>0: reset_yaxis(self.fig, yvis, on_server=True)
-            remove_line_annotations(self.llist_source)
-            selected = self.browser.selected
-            if selected:
-                obj = selected.object
-                if type(obj)==m3dis.m3dis:
-                    plot_line_annotations(self.fig, obj, self.llist_source)
-
-        self.fig.x_range.on_change('start', yrange_update_callback)
-        self.fig.x_range.on_change('end', yrange_update_callback)
+        hover = HoverTool(renderers=[self.llist_line, self.synth_line],
+                  tooltips=None, mode='mouse')  # You can add tooltips if needed
         
-        if xmin: self.fig.x_range.start = xmin
-        if xmax: self.fig.x_range.end   = xmax
-        self.saved_xmin = self.fig.x_range.start
-        self.saved_xmax = self.fig.x_range.end
+        self.fig.add_layout(self.llist_labels)
+        self.fig.add_tools(hover)
+        self.fig.legend.location = "bottom_left"
             
         @log_callback_errors
         def nav_drag_callback(event):
@@ -213,7 +195,9 @@ class TumultStudio(HasTraits):
         self.nav.on_event(SelectionGeometry, nav_drag_callback)
 
         def synth_selection(attr, old, new):
-            idx = list(new.keys())[0] # last clicked line
+            selected = new
+            if not selected: return
+            idx = selected[0] # last clicked line
             rid = self.synth_source.data['run_ids'][idx]
             item = [item for item in self.browser.list_items if id(item.object)==rid]
             if item:
@@ -221,7 +205,23 @@ class TumultStudio(HasTraits):
             else:
                 self.browser.selected = None
 
-        self.synth_source.selected.on_change('multiline_indices', synth_selection)
+        self.synth_source.selected.on_change('indices', synth_selection)
+
+        def synth_line_selection(attr, old, new):
+            selected = new
+            if not selected: return
+            idx = selected[0] # last clicked line
+            run = self.browser.selected.object
+            llist = run.llist
+            lam0 = self.llist_source.data['xs'][idx][0]
+            i = llist.reset_index().index[llist.lam0==lam0][0]
+            frame = run.llist_html.html_widget
+            new = frame.value
+            new = new.replace('<tr class="highlighted-row">', '<tr>')
+            new = replace_nth(new, '<tr>', '<tr class="highlighted-row">', i+1)
+            frame.value = new
+
+        self.llist_source.selected.on_change('indices', synth_line_selection)
         
         # Canvas layout
         bk_canvas = column(
@@ -235,48 +235,13 @@ class TumultStudio(HasTraits):
         canvas.add_class('canvas')
         return canvas
 
-        
-    def init_norm_buttons(self):
-        norm_button = widgets.Button(description='Normalise')
-        norm_reset_button = widgets.Button(description='Reset Normalisation')
-        norm_button.layout.display = 'none'
-        norm_reset_button.layout.display = 'none'
-
-        @log_callback_errors
-        def selection_callback(attr, old, new):
-            nothing_selected = len(self.source.selected.indices)==0
-            display = 'none' if nothing_selected else 'block'
-            norm_button.layout.display = display
-        
-        @log_callback_errors
-        def norm_clicked(btn):
-            islc = np.array(self.source.selected.indices)
-            selection = self.source.data['x'][islc]
-            xmin = np.min(selection)
-            xmax = np.max(selection)
-            newy = renorm(self.xdata, self.ydata, xmin, xmax)
-            update_cds(self.source, 'y', newy)
-            norm_reset_button.layout.display = 'block'
-            reset_yaxis(self.fig, self.source.data['y'][islc])
-            
-        @log_callback_errors
-        def norm_reset_clicked(btn):
-            update_cds(self.source, 'y', self.ydata)
-            reset_yaxis(self.fig, self.ydata)
-            btn.layout.display = 'none'
-
-        self.source.selected.on_change('indices', selection_callback)
-        norm_button.on_click(norm_clicked)
-        norm_reset_button.on_click(norm_reset_clicked)
-        self.controls.children += (norm_button, norm_reset_button)
-
     def init_line_mask_button(self):
         new_line_mask_button = widgets.Button(description='New Line Mask')
         new_line_mask_button.layout.display = 'none'
         
         @log_callback_errors
         def selection_callback(attr, old, new):
-            nothing_selected = len(self.source.selected.indices)==0
+            nothing_selected = len(self.fig_source.selected.indices)==0
             display = 'none' if nothing_selected else 'block'
             new_line_mask_button.layout.display = display
             
@@ -285,13 +250,13 @@ class TumultStudio(HasTraits):
             line_masks = self._get_objects_by_type(LineMask)
             i = find_smallest_missing([lm.ic for lm in line_masks])
             label = f'LineMask_{i:03d}'
-            new_mask = LineMask(self.source, label=label)
+            new_mask = LineMask(self.fig_source, label=label)
             new_mask.ic = i
             self.browser.add_object(new_mask)
             color = ColorCycle(saved_settings['bokeh palette'])[i]
             new_mask.draw_boxes(self.nav, self.fig, line_color=None, fill_color=color, fill_alpha=0.1)
         
-        self.source.selected.on_change('indices', selection_callback)
+        self.fig_source.selected.on_change('indices', selection_callback)
         new_line_mask_button.on_click(new_line_mask)
         self.controls.children += (new_line_mask_button,)
 
@@ -397,36 +362,74 @@ class TumultStudio(HasTraits):
         return objects
         
         
+    def init_main_canvas(self, xmin, xmax, xlabel='Wavelength [Å]', ylabel='Flux', **kwargs):
+        p = figure(output_backend='svg',
+                x_range=[0, 1],
+                y_range=[-0.05, 1.05],
+                **kwargs)
+        p.add_layout(LinearAxis(), 'above')
+        p.add_layout(LinearAxis(), 'right')
+        # Optional: show ticks but not labels on the top/right
+        p.axis[0].major_label_text_font_size = '0pt'  # Top
+        p.axis[3].major_label_text_font_size = '0pt'  # Right
+        p.xaxis[1].axis_label = xlabel
+        p.yaxis[0].axis_label = ylabel
+        p.toolbar.logo = None
+        tools = {type(tool):tool for tool in p.toolbar.tools}
+        p.toolbar.active_drag = tools[BoxSelectTool]
 
-def init_main_canvas(xlabel='Wavelength [Å]', ylabel='Flux', **kwargs):
-    p = figure(output_backend='svg',
-               x_range=[0, 1],
-               y_range=[-0.05, 1.05],
-               **kwargs)
-    p.add_layout(LinearAxis(), 'above')
-    p.add_layout(LinearAxis(), 'right')
-    # Optional: show ticks but not labels on the top/right
-    p.axis[0].major_label_text_font_size = '0pt'  # Top
-    p.axis[3].major_label_text_font_size = '0pt'  # Right
-    p.xaxis[1].axis_label = xlabel
-    p.yaxis[0].axis_label = ylabel
-    p.toolbar.logo = None
-    tools = {type(tool):tool for tool in p.toolbar.tools}
-    p.toolbar.active_drag = tools[BoxSelectTool]
-    return p
+        def xrange_update_callback(attr, new, old):
+            slc = get_crop_range(self.xdata, p.x_range, nmax=1000)
+            self.fig_source.data = dict(x=self.xdata[slc], y=self.ydata[slc])
 
-def init_nav_canvas(**kwargs):
-    p = figure(toolbar_location='above',
-               x_axis_location='above',
-               **kwargs)
-    p.yaxis.visible = False
-    p.xaxis.axis_line_color = None
-    p.xaxis.major_tick_line_color = None
-    p.xaxis.minor_tick_line_color = None
-    p.toolbar.logo = None
-    tools = {type(tool):tool for tool in p.toolbar.tools}
-    p.toolbar.active_scroll = tools[WheelZoomTool]
-    return p
+        def yrange_update_callback(attr, new, old):
+            yvis = self.fig_source.data['y']
+            for i, x in enumerate(self.synth_source.data['xs']):
+                slc = get_crop_range(x, p.x_range)
+                yvis = np.concatenate((yvis, self.synth_source.data['ys'][i][slc]))
+            if len(yvis)>0: reset_yaxis(p, yvis, on_server=True)
+            remove_line_annotations(self.llist_source)
+            selected = self.browser.selected
+            if selected:
+                obj = selected.object
+                if type(obj)==m3dis.m3dis:
+                    plot_line_annotations(p, obj, self.llist_source)
+
+        p.x_range.on_change('start', xrange_update_callback)
+        p.x_range.on_change('end', xrange_update_callback)
+        p.x_range.on_change('start', yrange_update_callback)
+        p.x_range.on_change('end', yrange_update_callback)
+        
+        if xmin: p.x_range.start = xmin
+        if xmax: p.x_range.end   = xmax
+        self.saved_xmin = p.x_range.start
+        self.saved_xmax = p.x_range.end
+        return p
+
+    def init_nav_canvas(self, **kwargs):
+        x0 = self.xdata[0]
+        x1 = self.xdata[-1]
+        p = figure(toolbar_location='above',
+                x_axis_location='above',
+                **kwargs)
+        p.yaxis.visible = False
+        p.xaxis.axis_line_color = None
+        p.xaxis.major_tick_line_color = None
+        p.xaxis.minor_tick_line_color = None
+        p.toolbar.logo = None
+        tools = {type(tool):tool for tool in p.toolbar.tools}
+        p.toolbar.active_scroll = tools[WheelZoomTool]
+
+        def xrange_update_callback(attr, new, old):
+            slc = get_crop_range(self.xdata, p.x_range, nmax=10000)
+            self.nav_source.data = dict(x=self.xdata[slc], y=self.ydata[slc])
+
+        p.x_range = Range1d(0, 1, bounds=(x0, x1))
+        p.x_range.on_change('start', xrange_update_callback)
+        p.x_range.on_change('end', xrange_update_callback)
+        p.x_range.start = x0
+        p.x_range.end = x1
+        return p
 
 def reset_xaxis(p, xx, margin=0, on_server=False):
     xmin = np.min(xx)

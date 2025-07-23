@@ -62,18 +62,28 @@ class ColorCycle():
         i = np.mod(index, self.n)
         return self.palette[i]
 
-def get_crop_range(data, range_type):
+def get_crop_range(data, range_type, nmax=None):
     vmin = range_type.start
     vmax = range_type.end
     imin = np.searchsorted(data, vmin)
     imax = np.searchsorted(data, vmax)-1
-    return slice(imin, imax)
+    if nmax:
+        step = max(1, (imax-imin)//nmax)
+        return slice(imin, imax, step)
+    else:
+        return slice(imin, imax)
 
 def find_smallest_missing(nums):
     return min(set(range(0, max(nums, default=0) + 2)) - set(nums))
 
 def get_common_suffix_files(files, suffixes):
     return np.unique([[f[:-len(s)] for f in files if f.endswith(s)] for s in suffixes])
+
+def replace_nth(string, sub, replacement, n):
+    parts = string.split(sub)
+    if n < 1 or n >= len(parts):
+        return string  # nth occurrence doesn't exist
+    return sub.join(parts[:n]) + replacement + sub.join(parts[n:])
     
 def combine_selections(selected_indices, current_indices, mode='replace'):
     """

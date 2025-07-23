@@ -2,6 +2,7 @@ from .auxfuncs import *
 from .ServerManager import *
 from .settings import saved_settings
 from .LineMask import LineMask
+from .llist_annotations import get_llist_table
 import ipyformkit as ifk
 import m3dis
 import numpy as np
@@ -95,6 +96,7 @@ def launch_synth(name):
                                   log_file='test.log', threads=nthreads, overwrite=True, verbose=0)
     new_run = m3dis.read(folder, read_llist=True)
     new_run.line_mask = line_mask
+    new_run.llist_html = get_llist_table(new_run)
     return new_run
 
 def monitor_synth(name, progress):

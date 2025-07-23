@@ -145,13 +145,31 @@
 }
 
 .tum-gui .right-sidebar {
-    width: 300px;
+    width: fit-content;
     overflow-x: hidden;
     margin: 0;
 }
 
-.tum-gui .dataframe {
-    margin: 0;
+.tum-gui .llist-vbox {
+    height: 100%;
+}
+
+.tum-gui .llist-vbox .widget-button {
+    flex-shrink: 0;
+}
+
+.tum-gui .EditableTable thead {
+    position: sticky;
+    top: 0;
+    background-color: var(--ifk-layout-color1);
+}
+
+.tum-gui .EditableTable .highlighted-row {
+    background-color: var(--ifk-layout-color3);
+}
+
+.tum-gui .jp-RenderedHTMLCommon {
+    padding: 0;
 }
 
 .tum-gui :not(.jp-RenderedMarkdown).jp-RenderedHTMLCommon td {
@@ -187,6 +205,10 @@
 .tum-gui .ifk-form {
     border: none;
     padding-top: 0;
+}
+
+.tum-gui .right-sidebar .ifk-form {
+    width: 300px;
 }
 
 .tum-gui .controls .widget-label {
