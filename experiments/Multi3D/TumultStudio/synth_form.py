@@ -86,7 +86,7 @@ def launch_synth(name):
 
     values = synth_form.check_and_return_values()
     line_mask = values['line_mask']
-    lam = line_mask.source.data['x'][line_mask.islc]
+    lam = line_mask.xdata
     nthreads = 2
     
     with tempfile.NamedTemporaryFile(mode='w+', suffix='.txt', delete=False) as lam_file:

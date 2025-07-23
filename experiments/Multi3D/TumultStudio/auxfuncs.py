@@ -72,6 +72,11 @@ def get_crop_range(data, range_type, nmax=None):
         return slice(imin, imax, step)
     else:
         return slice(imin, imax)
+    
+def slicesorted(data, vmin, vmax):
+    imin = np.searchsorted(data, vmin, side='left')
+    imax = np.searchsorted(data, vmax, side='right')
+    return data[imin:imax]
 
 def find_smallest_missing(nums):
     return min(set(range(0, max(nums, default=0) + 2)) - set(nums))

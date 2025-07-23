@@ -1,21 +1,32 @@
 from bokeh.models import *
 from .ServerManager import *
+from .auxfuncs import *
 import numpy as np
 
 class LineMask():
-    def __init__(self, source, label='untitled'):
-        self.source = source
-        self.islc = np.sort(np.array(source.selected.indices))
-        self.splits = np.where(np.diff(self.islc)>1)[0]+1
-        self.regions = np.split(self.islc, self.splits)
+    def __init__(self, source, xdata, label='untitled'):
+        xx = source.data['x']
+        islc = np.sort(np.array(source.selected.indices))
+        splits = np.where(np.diff(islc)>1)[0]+1
+        regions = np.split(islc, splits)
+        self.xmin = xx[islc[0]]
+        self.xmax = xx[islc[-1]]
+
+        self.regions = []
+        self.xdata = []
+        for reg in regions:
+            xmin = xx[reg[0]]
+            xmax = xx[reg[-1]]
+            self.regions.append((xmin, xmax))
+            xd = slicesorted(xdata, xmin, xmax)
+            self.xdata = np.concatenate([self.xdata, xd])
+
         self.label = label
         self.boxes = []
 
     def draw_boxes(self, *args, **kwargs):
         for p in args:
-            for reg in self.regions:
-                xmin = self.source.data['x'][reg[0]]
-                xmax = self.source.data['x'][reg[-1]]
+            for xmin, xmax in self.regions:
                 box = BoxAnnotation(left=xmin, right=xmax, **kwargs)
                 self.boxes.append((p, box))
             
@@ -25,12 +36,9 @@ class LineMask():
         server_manager.next_tick_update(update)
 
     def jump_to_mask(self, p):
-        xmin = self.source.data['x'][self.islc[0]]
-        xmax = self.source.data['x'][self.islc[-1]]
-
         def update():
-            p.x_range.start = xmin
-            p.x_range.end = xmax
+            p.x_range.start = self.xmin
+            p.x_range.end = self.xmax
         
         server_manager.next_tick_update(update)
 

@@ -110,10 +110,8 @@ class TumultStudio(HasTraits):
                 typ = type(obj)
                 if typ==m3dis.m3dis:
                     lm = obj.line_mask
-                    xmin = lm.source.data['x'][lm.islc[0]]
-                    xmax = lm.source.data['x'][lm.islc[-1]]
-                    reset_xaxis(self.fig, [xmin, xmax])
-                    reset_xaxis(self.nav, [xmin, xmax], margin=2)
+                    reset_xaxis(self.fig, [lm.xmin, lm.xmax])
+                    reset_xaxis(self.nav, [lm.xmin, lm.xmax], margin=2)
                     if hasattr(obj, 'fit_params'):
                         fit_form.set_values(obj.fit_params)
                     llist_vbox = widgets.VBox([obj.llist_html, self.rerun_button])
@@ -122,10 +120,8 @@ class TumultStudio(HasTraits):
                     self.right_sidebar.titles = ['Fit Settings', 'Line List']
                 elif typ==LineMask:
                     lm = obj
-                    xmin = lm.source.data['x'][lm.islc[0]]
-                    xmax = lm.source.data['x'][lm.islc[-1]]
-                    reset_xaxis(self.fig, [xmin, xmax], margin=0.05)
-                    reset_xaxis(self.nav, [xmin, xmax], margin=2)
+                    reset_xaxis(self.fig, [lm.xmin, lm.xmax], margin=0.05)
+                    reset_xaxis(self.nav, [lm.xmin, lm.xmax], margin=2)
                     synth_form.widgets_dict['line_mask'].wid.value = lm
                     self.right_sidebar.children = (synth_form.vbox,)
                     self.right_sidebar.titles = ['Synthesis Settings']
@@ -250,7 +246,7 @@ class TumultStudio(HasTraits):
             line_masks = self._get_objects_by_type(LineMask)
             i = find_smallest_missing([lm.ic for lm in line_masks])
             label = f'LineMask_{i:03d}'
-            new_mask = LineMask(self.fig_source, label=label)
+            new_mask = LineMask(self.fig_source, self.xdata, label=label)
             new_mask.ic = i
             self.browser.add_object(new_mask)
             color = ColorCycle(saved_settings['bokeh palette'])[i]
