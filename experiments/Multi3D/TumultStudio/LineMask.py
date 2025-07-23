@@ -4,7 +4,7 @@ from .auxfuncs import *
 import numpy as np
 
 class LineMask():
-    def __init__(self, source, xdata, label='untitled'):
+    def __init__(self, source, data, label='untitled'):
         xx = source.data['x']
         islc = np.sort(np.array(source.selected.indices))
         splits = np.where(np.diff(islc)>1)[0]+1
@@ -14,12 +14,14 @@ class LineMask():
 
         self.regions = []
         self.xdata = []
+        self.ydata = []
         for reg in regions:
             xmin = xx[reg[0]]
             xmax = xx[reg[-1]]
             self.regions.append((xmin, xmax))
-            xd = slicesorted(xdata, xmin, xmax)
-            self.xdata = np.concatenate([self.xdata, xd])
+            slc = slicesorted(data['x'], xmin, xmax)
+            self.xdata = np.concatenate([self.xdata, data['x'][slc]])
+            self.ydata = np.concatenate([self.ydata, data['y'][slc]])
 
         self.label = label
         self.boxes = []

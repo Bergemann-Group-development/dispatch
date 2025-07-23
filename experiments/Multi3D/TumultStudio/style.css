@@ -18,6 +18,11 @@
                           var(--vscode-editorWidget-border,
                           var(--jp-cell-editor-border-color,
                           #dadada)));
+
+    --ifk-accent-color: var(--colab-accent-color,
+                          var(--vscode-editorAccentColor,
+                          var(--jp-brand-color1,
+                          #007bff)));
     
     --ifk-form-border-color: var(--colab-border-color,
                               var(--vscode-editorWidget-border,
@@ -165,7 +170,7 @@
 }
 
 .tum-gui .EditableTable .highlighted-row {
-    background-color: var(--ifk-layout-color3);
+    background-color: var(--ifk-accent-color);
 }
 
 .tum-gui .jp-RenderedHTMLCommon {

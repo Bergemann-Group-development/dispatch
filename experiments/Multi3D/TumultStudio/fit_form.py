@@ -20,15 +20,17 @@ disable = {'vshift': lambda d: d['fit vshift']==True,
 
 fit_form = ifk.Form(fields, disable=disable)
 
-def fit_synth(run):
+def fit_synth(run, source):
     values = fit_form.check_and_return_values()
-    line_mask = run.line_mask
-    source = line_mask.source
+    lm = run.line_mask
 
     if values['fitting region'] == 'line mask':
-        islc = line_mask.islc
+        oxx = lm.xdata
+        oyy = lm.ydata
     elif values['fitting region'] == 'selection':
         islc = np.array(source.selected.indices)
+        oxx = source.data['x'][islc]
+        oyy = source.data['y'][islc]
 
     fit = []
     if values['fit vshift']: fit.append('vshift')
@@ -44,8 +46,6 @@ def fit_synth(run):
     if not values['fit fac']: kwargs['fac']=values['fac']
     if not values['fit tilt']: kwargs['tilt']=values['tilt']
     
-    oxx = source.data['x'][islc]
-    oyy = source.data['y'][islc]
 
     LTE = run.mode == 'LTE'
     p, _ = run.fit_observed(oxx, oyy, LTE=LTE, **kwargs)

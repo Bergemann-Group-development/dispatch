@@ -246,7 +246,7 @@ class TumultStudio(HasTraits):
             line_masks = self._get_objects_by_type(LineMask)
             i = find_smallest_missing([lm.ic for lm in line_masks])
             label = f'LineMask_{i:03d}'
-            new_mask = LineMask(self.fig_source, self.xdata, label=label)
+            new_mask = LineMask(self.fig_source, self.source.data, label=label)
             new_mask.ic = i
             self.browser.add_object(new_mask)
             color = ColorCycle(saved_settings['bokeh palette'])[i]
@@ -342,7 +342,7 @@ class TumultStudio(HasTraits):
     def fit_synth(self, btn):
         run = self.browser.selected.object
         i = self.synth_source.data['run_ids'].index(id(run))
-        xfit, yfit = fit_synth(run)
+        xfit, yfit = fit_synth(run, self.fig_source)
 
         def update():
             current_data = self.synth_source.data.copy()
