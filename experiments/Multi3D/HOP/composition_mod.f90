@@ -2193,6 +2193,7 @@ contains
         integer :: idx, iostat, imol, iele
         !---------------------------------------------------------------------------
         call trace%begin ('composition_type%init')
+        element => null()
         particle => null()
         read(id, *) id1
         iele = findloc(self%elements%id, capitalize(id1), 1)
