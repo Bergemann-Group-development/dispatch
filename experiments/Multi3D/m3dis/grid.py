@@ -9,7 +9,7 @@ from .fast_trans import fast_trans
 import copy
 from scipy.spatial import Delaunay, ConvexHull, Voronoi
 import re
-from .CoG2 import CoG
+from .CoG import CoG
 from .auxfuncs import *
 import multiprocessing as mp
 from tqdm import tqdm

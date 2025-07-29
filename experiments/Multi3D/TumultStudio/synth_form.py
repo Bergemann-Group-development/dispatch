@@ -3,6 +3,7 @@ from .ServerManager import *
 from .settings import saved_settings
 from .LineMask import LineMask
 from .llist_annotations import get_llist_table
+from m3dis.auxfuncs import update_dict
 import ipyformkit as ifk
 import m3dis
 import numpy as np
@@ -64,40 +65,67 @@ def list_atmospheres(change):
 atmos_fmt.observe(list_atmospheres, names='value')
 list_atmospheres({'new':atmos_fmt.value})
 
-def get_synth_settings(values, lam_file):
+def get_synth_settings(values):
     atmos_file = saved_settings['atmospheres folder'] + os.sep + values['atmosphere file']
     settings = {'atmos_params':{'atmos_file':atmos_file,
                                 'atmos_format':values['atmosphere format'],
                                 'feh':values['FeH'],
                                 'vmic':values['vmic'],
                                },
-                'spectrum_params':{'lam_file':lam_file.name},
                 'composition_params':{'abundances':values['abundances'],
                                       'relative_abundances':values['relative']},
                 'linelist_params':{'exclude_elements':values['exclude elements'],
                                    'only_elements':values['only elements']}}
     return settings
 
-def launch_synth(name):
-    folder = saved_settings['synthesis folder'] + os.sep
-    os.path.exists(folder) or os.makedirs(folder)
-    default = module_dir + 'default.nml'
-    input_name = folder + name
-
+def launch_synth(name, progress=None):
     values = synth_form.check_and_return_values()
     line_mask = values['line_mask']
-    lam = line_mask.xdata
-    nthreads = 2
-    
-    with tempfile.NamedTemporaryFile(mode='w+', suffix='.txt', delete=False) as lam_file:
-        np.savetxt(lam_file.name, lam)
-        settings = get_synth_settings(values, lam_file)
-        folder, ok = m3dis.launch(input_name, nml_settings=settings, default=default,
-                                  log_file='test.log', threads=nthreads, overwrite=True, verbose=0)
-    new_run = m3dis.read(folder, read_llist=True)
-    new_run.line_mask = line_mask
-    new_run.llist_html = get_llist_table(new_run)
-    return new_run
+    settings = get_synth_settings(values)
+    run = run_synth(name, settings, line_mask, progress=progress)
+    return run
+
+def run_synth(name, settings, line_mask, default=None, llist=None, progress=None):
+    folder = saved_settings['synthesis folder'] + os.sep
+    os.path.exists(folder) or os.makedirs(folder)
+    input_name = folder + name
+    lam = line_mask.get_wavelength_grid(daa=0.01)
+
+    if default:
+        update_dict(settings, {
+            'atmos_params': {'FeH': 0},
+            'composition_params': {'abund_file': default + 'abund.txt'}})
+    else:
+        default = module_dir + 'default.nml'
+
+    with tempfile.NamedTemporaryFile(mode='w+', suffix='.txt', delete=False) as llist_file:
+        if llist is not None: llist.write_to_ts_format(llist_file.name)
+
+        with tempfile.NamedTemporaryFile(mode='w+', suffix='.txt', delete=False) as lam_file:
+            np.savetxt(lam_file.name, lam)
+            settings['spectrum_params'] = {'lam_file':lam_file.name}
+            if llist is not None: settings['linelist_params'] = {'line_lists':llist_file.name}
+
+            @run_in_thread
+            def execute_m3dis():
+                folder, ok = m3dis.launch(input_name, nml_settings=settings, default=default,
+                                        log_file='test.log', threads=2, overwrite=True, verbose=0)
+                return folder, ok
+            
+            thread = execute_m3dis()
+
+            if progress:
+                while thread.is_alive():
+                    monitor_synth(name, progress)
+                    time.sleep(0.25)
+
+            folder, ok = thread.out['result']
+        
+    run = m3dis.read(folder, read_llist=True)
+    run.line_mask = line_mask
+    run.llist_html = get_llist_table(run)
+    run.label = name
+    return run
 
 def monitor_synth(name, progress):
     folder = 'data' + os.sep + saved_settings['synthesis folder'] + os.sep + name

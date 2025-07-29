@@ -1209,8 +1209,18 @@ class m3dis(object):
         lbounds = {'vshift':-3, 'vdop':1e-3, 'vrot':1e-3, 'zeta_rt':1e-3, 'fac':0.5, 'tilt':-0.2}
         ubounds = {'vshift':+3, 'vdop':1e1,  'vrot':1e1,  'zeta_rt':1e1,  'fac':2.0, 'tilt':+0.2}
         p0s     = {'vshift':0,  'vdop':1,    'vrot':1,    'zeta_rt':1,    'fac':1.0, 'tilt':0.0}
-        if bounds is None: bounds = ([lbounds[f] for f in fit], [ubounds[f] for f in fit])
-        if p0 is None: p0 = [p0s[f] for f in fit]
+        
+        if p0:
+            p0s.update(p0)
+
+        if bounds:
+            lb = {k:v[0] for k, v in bounds.items()}
+            ub = {k:v[1] for k, v in bounds.items()}
+            lbounds.update(lb)
+            ubounds.update(ub)
+
+        p0 = [p0s[f] for f in fit]
+        bounds = ([lbounds[f] for f in fit], [ubounds[f] for f in fit])
 
         if method != 'curve_fit':
             bounds = np.vstack(bounds).T

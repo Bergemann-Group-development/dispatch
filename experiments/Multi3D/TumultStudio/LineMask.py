@@ -1,5 +1,5 @@
 from bokeh.models import *
-from .ServerManager import *
+from . import ServerManager
 from .auxfuncs import *
 import numpy as np
 
@@ -26,6 +26,13 @@ class LineMask():
         self.label = label
         self.boxes = []
 
+    def get_wavelength_grid(self, daa=0.01):
+        xdata = []
+        for xmin, xmax in self.regions:
+            n = np.ceil((xmax-xmin)/daa).astype(int) + 1 
+            xdata = np.concatenate([xdata, np.linspace(xmin, xmax, n)])
+        return xdata
+
     def draw_boxes(self, *args, **kwargs):
         for p in args:
             for xmin, xmax in self.regions:
@@ -35,20 +42,20 @@ class LineMask():
         def update():
             [p.add_layout(box) for p, box in self.boxes]
             
-        server_manager.next_tick_update(update)
+        ServerManager.server.next_tick_update(update)
 
     def jump_to_mask(self, p):
         def update():
             p.x_range.start = self.xmin
             p.x_range.end = self.xmax
         
-        server_manager.next_tick_update(update)
+        ServerManager.server.next_tick_update(update)
 
     def delete(self):
         def update():
             for _, box in self.boxes:
                     box.visible = False
-        server_manager.next_tick_update(update)
+        ServerManager.server.next_tick_update(update)
 
     def __str__(self):
         return self.label

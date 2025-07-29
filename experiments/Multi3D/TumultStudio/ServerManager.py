@@ -11,7 +11,7 @@ from bokeh.themes import Theme
 from bokeh.models import *
 from bokeh.io import curdoc
 import json
-import atexit
+import inspect
 from contextlib import closing
 import numpy as np
 import os
@@ -94,30 +94,17 @@ class BokehServerManager:
             doc.add_root(layout)
         
         def start_server_thread():
-            try:
-                # Create new event loop for this thread
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                
-                self._server = Server(
-                    {'/': bokeh_app}, 
-                    port=port, 
-                    allow_websocket_origin=[f"localhost:{port}"]
-                )
-                self._server.start()
-                self._server.io_loop.start()
-            except Exception as e:
-                print(f"Server error on port {port}: {e}")
-                # Try to find another port if this one fails
-                if auto_find_port:
-                    try:
-                        new_port = self.find_free_port(port + 1)
-                        print(f"Retrying with port {new_port}")
-                        self._current_port = new_port
-                        # Recursive retry with new port
-                        self.start_server(layout, new_port, auto_find_port=False)
-                    except:
-                        print("Failed to find alternative port")
+            # Create new event loop for this thread
+            self.loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self.loop)
+            
+            self._server = Server(
+                {'/': bokeh_app}, 
+                port=port, 
+                allow_websocket_origin=[f"localhost:{port}"]
+            )
+            self._server.start()
+            self._server.io_loop.start()
         
         self._server_thread = threading.Thread(target=start_server_thread, daemon=True)
         self._server_thread.start()
@@ -129,11 +116,24 @@ class BokehServerManager:
         return self._current_port
 
     def next_tick_update(self, update):
-        self.doc.add_next_tick_callback(update)
+        sig = inspect.signature(update)
+        nparams = len(sig.parameters.keys())
+        params = [None,]*nparams
+
+        def wrapper(*args, **kwargs):
+            update(*params)
+
+        self.doc.add_next_tick_callback(wrapper)
+
+    def same_loop(self):
+        if hasattr(self, 'loop'):
+            return asyncio.get_event_loop() == self.loop
+        else:
+            return True
 
 def iframe_server(layout, PORT=5008, width='100%', height='100%'):
-    server_manager.stop_existing_server()
-    port = server_manager.start_server(layout, PORT)
+    server.stop_existing_server()
+    port = server.start_server(layout, PORT)
     # Wait for server to start
     #time.sleep(2)
     # Display iframe
@@ -149,9 +149,40 @@ def update_cds(cds, key, val):
     def update():
         cds.data[key] = val
         
-    doc = server_manager.doc
+    doc = server.doc
     doc.add_next_tick_callback(update)
 
-# Global server manager instance
-server_manager = BokehServerManager()
-    
+def reset_xaxis(p, xx, margin=0):
+    xmin = np.min(xx)
+    xmax = np.max(xx)
+    d = (xmax-xmin)*margin
+    on_server = server.same_loop()
+
+    def update():
+        p.x_range.start = xmin-d
+        p.x_range.end   = xmax+d
+
+    if on_server:
+        update()
+    else:
+        server.next_tick_update(update)
+        
+def reset_yaxis(p, yy, margin=0.05):
+    ymin = np.min(yy)
+    ymax = np.max(yy)
+    d = (ymax-ymin)*margin
+    on_server = server.same_loop()
+
+    def update():
+        p.y_range.start = ymin-d
+        p.y_range.end   = ymax+d
+
+    if on_server:
+        update()
+    else:
+        server.next_tick_update(update)
+
+# Global server manager instance+
+def create_global():
+    global server
+    server = BokehServerManager()

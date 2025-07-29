@@ -58,6 +58,10 @@ atomic_weights = {'H':  1.008, 'He': 4.003, 'Li': 6.94,  'Be': 9.01,  'B':  10.8
                   'Rn': 222.0, 'Fr': 223.0, 'Ra': 226.0, 'Ac': 227.0, 'Th': 232.0, 
                   'Pa': 230.4, 'U': 238.0}
 
+molecule_dict = {'H2':['H', 'H'], 'C2':['C', 'C'], 'N2':['N', 'N'], 'O2':['O', 'O'],
+                 'CH':['C', 'H'], 'NH':['N', 'H'], 'OH':['O', 'H'], 'CO':['C', 'O'],
+                 'CN':['C', 'N'], 'NO':['N', 'O'], 'H2O':['H', 'H', 'O']}
+
 #=====================================================================
 class empty: pass
 
@@ -1333,7 +1337,7 @@ def pchip_mono(xx, yy, axis=0, **kwargs):
   dx = np.diff(xx)
   dy = np.diff(yy)
   dlin = dy / dx
-  if len(dlin) > 1:
+  if dlin.shape[-1] > 1:
     dyup = dlin[..., :-1]
     dydn = dlin[..., 1:]
     dxup = dx[..., :-1]

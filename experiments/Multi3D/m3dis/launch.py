@@ -28,6 +28,9 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
             datadir = input['io_params']['datadir']
 
     input_file = input_name + '.nml'
+    input_folder = os.path.dirname(input_file)
+    if not os.path.exists(input_folder):
+        os.makedirs(input_folder)
     output_folder = os.path.join(datadir.strip(), input_name)
 
     ok = overwrite

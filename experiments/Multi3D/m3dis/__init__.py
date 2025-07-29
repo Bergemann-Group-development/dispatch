@@ -1,6 +1,6 @@
 from .m3dis import m3dis
 from .launch import launch, monitor
-from .CoG2 import CoG
+from .CoG import CoG
 from .grid import grid, read_list
 from .linelist import LineList
 from .const import *

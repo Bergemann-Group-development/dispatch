@@ -1,9 +1,11 @@
 from .auxfuncs import *
-from .ServerManager import *
+from . import ServerManager
+from .ServerManager import reset_xaxis, reset_yaxis
 from .LineMask import *
 from .widgets import *
 from .synth_form import synth_form, launch_synth, monitor_synth
-from .fit_form import fit_form, fit_synth
+from .fit_form import fit_form, set_fit_form, fit_synth
+from .rerun_form import rerun_form, rerun_synth
 from .settings import settings_form, settings_page, saved_settings
 from .llist_annotations import plot_line_annotations, remove_line_annotations, get_llist_table
 from bokeh.models import *
@@ -22,7 +24,8 @@ class TumultStudio(HasTraits):
         self.ydata = source.data['y'] # original data
         self.nav_source = ColumnDataSource(dict(x=[], y=[]))
         self.fig_source = ColumnDataSource(dict(x=[], y=[]))
-        self.synth_source = ColumnDataSource(dict(xs=[], ys=[], colors=[], labels=[], run_ids=[]))
+        self.synth_source = ColumnDataSource(dict(xs=[], ys=[], colors=[], labels=[],
+                                                  vmic=[], FeH=[], atmos=[], run_ids=[]))
         self.llist_source = ColumnDataSource(dict(xs=[], ys=[], x=[], y=[], text=[]))
         self.nlam = len(self.xdata)
         self.max_points = 1000
@@ -69,6 +72,7 @@ class TumultStudio(HasTraits):
                             synth_form.load_tooltip_script()]
 
     def launch(self, xmin=None, xmax=None, height=500):
+        ServerManager.create_global()
         self.init_settings()
         self.init_controls()
         self.init_sidebars()
@@ -93,10 +97,10 @@ class TumultStudio(HasTraits):
     def init_sidebars(self):
         self.init_synth_form()
         self.init_fit_form()
+        self.init_rerun_form()
         self.left_sidebar.children += (self.browser,)
         self.right_sidebar.children = (synth_form.vbox,)
         self.right_sidebar.titles = ['Synthesis Settings']
-        self.rerun_button = widgets.Button(description='Rerun')
 
         def set_right_sidebar(change):
             sel = self.browser.selected
@@ -107,29 +111,31 @@ class TumultStudio(HasTraits):
                 self.right_sidebar.titles = ['Synthesis Settings']
             else:
                 obj = sel.object
-                typ = type(obj)
-                if typ==m3dis.m3dis:
-                    lm = obj.line_mask
+                if isinstance(obj, m3dis.m3dis):
+                    run = obj
+                    lm = run.line_mask
                     reset_xaxis(self.fig, [lm.xmin, lm.xmax])
                     reset_xaxis(self.nav, [lm.xmin, lm.xmax], margin=2)
-                    if hasattr(obj, 'fit_params'):
-                        fit_form.set_values(obj.fit_params)
-                    llist_vbox = widgets.VBox([obj.llist_html, self.rerun_button])
+                    set_fit_form(run)
+                    llist_vbox = widgets.VBox([run.llist_html, rerun_form.vbox])
                     llist_vbox.add_class('llist-vbox')
                     self.right_sidebar.children = (fit_form.vbox, llist_vbox)
                     self.right_sidebar.titles = ['Fit Settings', 'Line List']
-                elif typ==LineMask:
+                elif isinstance(obj, LineMask):
                     lm = obj
-                    reset_xaxis(self.fig, [lm.xmin, lm.xmax], margin=0.05)
+                    reset_xaxis(self.fig, [lm.xmin, lm.xmax])
                     reset_xaxis(self.nav, [lm.xmin, lm.xmax], margin=2)
                     synth_form.widgets_dict['line_mask'].wid.value = lm
                     self.right_sidebar.children = (synth_form.vbox,)
                     self.right_sidebar.titles = ['Synthesis Settings']
-                elif typ==ColumnDataSource:
+                elif isinstance(obj, ColumnDataSource):
                     reset_xaxis(self.fig, [self.saved_xmin, self.saved_xmax])
                     reset_xaxis(self.nav, [self.xdata[0], self.xdata[-1]])
                     self.right_sidebar.children = (synth_form.vbox,)
                     self.right_sidebar.titles = ['Synthesis Settings']
+            
+            ServerManager.server.next_tick_update(self.yrange_update_callback)
+            ServerManager.server.next_tick_update(self.update_annotations)
                 
         self.browser.observe(set_right_sidebar, names='selected')
         
@@ -140,12 +146,12 @@ class TumultStudio(HasTraits):
         
     def init_canvas(self, xmin=None, xmax=None):
         # Create plot with box select tool AND tap tool
-        self.fig = self.init_main_canvas(xmin, xmax, sizing_mode='stretch_both',
-                               tools="xbox_select,tap,xbox_zoom,pan")
+        self.init_main_canvas(xmin, xmax, sizing_mode='stretch_both',
+                              tools="xbox_select,tap,xbox_zoom,pan")
         
-        self.nav = self.init_nav_canvas(sizing_mode='stretch_width', height=100,
-                              tools="xbox_select,xwheel_zoom,reset",
-                              toolbar_sticky=False)
+        self.init_nav_canvas(sizing_mode='stretch_width', height=100,
+                             tools="xbox_select,xwheel_zoom,reset",
+                             toolbar_sticky=False)
         
         self.nav.line('x', 'y', source=self.nav_source, color='dimgrey')
 
@@ -170,6 +176,12 @@ class TumultStudio(HasTraits):
                                      text_color='black',
                                      source=self.llist_source, angle=np.pi/2)
         
+        # TOOLTIPS = [
+        #     ('λ', '$x{0.000}'),
+        #     ('[Fe/H]', '@FeH{0.00}'),
+        #     ('vmic', '@vmic{0.00}'),
+        # ]
+        
         hover = HoverTool(renderers=[self.llist_line, self.synth_line],
                   tooltips=None, mode='mouse')  # You can add tooltips if needed
         
@@ -185,8 +197,8 @@ class TumultStudio(HasTraits):
                 
             self.saved_xmin = xmin
             self.saved_xmax = xmax
-            reset_xaxis(self.fig, [xmin, xmax], on_server=True)
-            reset_xaxis(self.nav, [xmin, xmax], on_server=True, margin=2)
+            reset_xaxis(self.fig, [xmin, xmax])
+            reset_xaxis(self.nav, [xmin, xmax], margin=2)
             
         self.nav.on_event(SelectionGeometry, nav_drag_callback)
 
@@ -211,11 +223,8 @@ class TumultStudio(HasTraits):
             llist = run.llist
             lam0 = self.llist_source.data['xs'][idx][0]
             i = llist.reset_index().index[llist.lam0==lam0][0]
-            frame = run.llist_html.html_widget
-            new = frame.value
-            new = new.replace('<tr class="highlighted-row">', '<tr>')
-            new = replace_nth(new, '<tr>', '<tr class="highlighted-row">', i+1)
-            frame.value = new
+            run.llist_html.highlight_row(i)
+            self.right_sidebar.selected_index = 1  # switch to Line List tab
 
         self.llist_source.selected.on_change('indices', synth_line_selection)
         
@@ -227,7 +236,7 @@ class TumultStudio(HasTraits):
         )
         
         # Create main layout with plot on left, sidebar on right
-        canvas = iframe_server(bk_canvas)
+        canvas = ServerManager.iframe_server(bk_canvas)
         canvas.add_class('canvas')
         return canvas
 
@@ -258,8 +267,11 @@ class TumultStudio(HasTraits):
 
     
     def init_synth_form(self):
+        def launch_on_click(btn):
+            self.plot_synth(launch_synth)
+
         launch_button = synth_form.widgets_dict['launch'].wid
-        launch_button.on_click(self.plot_synth)
+        launch_button.on_click(launch_on_click)
     
         def update_line_mask_dropdown(change):
             line_masks = self._get_objects_by_type(LineMask)
@@ -271,36 +283,44 @@ class TumultStudio(HasTraits):
                 wid.options = ('no line masks yet',)
     
         self.browser.observe(update_line_mask_dropdown, names='objects')
+        update_line_mask_dropdown(None)
 
     
     def init_fit_form(self):
-        fit_button = fit_form.widgets_dict['fit'].wid
+        fit_button = fit_form.widgets_dict['apply'].wid
         fit_button.on_click(self.fit_synth)
+
+
+    def init_rerun_form(self):
+        def rerun_on_click(btn):
+            run = self.browser.selected.object
+            self.plot_synth(rerun_synth, run)
+        
+        rerun_button = rerun_form.widgets_dict['rerun'].wid
+        rerun_button.on_click(rerun_on_click)
 
     
     @log_callback_errors
-    def plot_synth(self, btn):
+    def plot_synth(self, launch_function, *args):
         synth_runs = self._get_objects_by_type(m3dis.m3dis)
         i = find_smallest_missing([sr.ic for sr in synth_runs])
         color = ColorCycle(saved_settings['bokeh palette'])[i]
         name = f'SynthRun_{i:03d}'
+
         self.progress.description = f'Running {name}:'
-
-        thread = run_in_thread(launch_synth)(name)
-
-        while thread.is_alive():
-            monitor_synth(name, self.progress)
-            time.sleep(0.25)
-
-        new_run = thread.out['result']
-        new_run.label = name
+        new_run = launch_function(name, *args, progress=self.progress)
         new_run.ic = i
         
         self.progress.description = f'Plotting {name}:'
         self.browser.add_object(new_run)
         widget_label = self.browser.list_items[-1].children[0].label
-        x, y = new_run.crop(LTE=True)
-        rid = id(new_run)
+
+        if hasattr(new_run, 'fit_params'):
+            crop_params = new_run.fit_params
+        else:
+            crop_params = {}
+
+        x, y = new_run.crop(LTE=True, **crop_params)
     
         @log_callback_errors
         def draw_synth():
@@ -309,10 +329,44 @@ class TumultStudio(HasTraits):
             current_data['ys'].append(y)
             current_data['colors'].append(color)
             current_data['labels'].append(new_run.label)
-            current_data['run_ids'].append(rid)
+            current_data['vmic'].append(new_run.nml['atmos_params']['vmic'])
+            current_data['FeH'].append(new_run.nml['atmos_params']['FeH'])
+            current_data['atmos'].append(new_run.nml['atmos_params']['atmos_file'])
+            current_data['run_ids'].append(id(new_run))
             self.synth_source.data = current_data
-            self.progress.description = f'Done!'
             self.progress.value = self.progress.max
+            self.progress.description = f'Done!'
+    
+        ServerManager.server.next_tick_update(draw_synth)
+        self.set_synth_controls(new_run, widget_label)
+
+    
+    @log_callback_errors
+    def fit_synth(self, btn):
+        old_run = self.browser.selected.object
+        i = self.synth_source.data['run_ids'].index(id(old_run))
+        self.progress.description = f'Fitting {old_run.label}:'
+        new_run, xfit, yfit = fit_synth(old_run, self.fig_source, self.progress)
+        self.browser.remove_object(old_run)
+        self.browser.add_object(new_run)
+        self.browser.selected = self.browser.list_items[-1]  # select the new run
+        widget_label = self.browser.selected.children[0].label
+
+        def update():
+            current_data = self.synth_source.data.copy()
+            current_data['xs'][i] = xfit
+            current_data['ys'][i] = yfit
+            current_data['run_ids'][i] = id(new_run)
+            current_data['labels'][i] = new_run.label
+            self.synth_source.data = current_data
+            self.progress.value = self.progress.max
+            self.progress.description = f'Done!'
+
+        ServerManager.server.next_tick_update(update)
+        self.set_synth_controls(new_run, widget_label)
+
+    def set_synth_controls(self, run, widget_label=None):
+        rid = id(run)
 
         @log_callback_errors
         def delete_synth():
@@ -322,39 +376,26 @@ class TumultStudio(HasTraits):
                 for key in current_data:
                     current_data[key].pop(i)
                 self.synth_source.data = current_data
-            server_manager.next_tick_update(update)
+            ServerManager.server.next_tick_update(update)
 
-        @log_callback_errors
-        def update_label(change):
-            def update():
-                i = self.synth_source.data['run_ids'].index(rid)
-                current_data = self.synth_source.data.copy()
-                current_data['labels'][i] = change['new']
-                self.synth_source.data = current_data
-            server_manager.next_tick_update(update)
-    
-        new_run.delete = delete_synth
-        server_manager.next_tick_update(draw_synth)
-        widget_label.observe(update_label, names='description')
+        run.delete = delete_synth
 
-    
-    @log_callback_errors
-    def fit_synth(self, btn):
-        run = self.browser.selected.object
-        i = self.synth_source.data['run_ids'].index(id(run))
-        xfit, yfit = fit_synth(run, self.fig_source)
+        if widget_label:
+            @log_callback_errors
+            def update_label(change):
+                def update():
+                    i = self.synth_source.data['run_ids'].index(rid)
+                    current_data = self.synth_source.data.copy()
+                    current_data['labels'][i] = change['new']
+                    self.synth_source.data = current_data
+                ServerManager.server.next_tick_update(update)
 
-        def update():
-            current_data = self.synth_source.data.copy()
-            current_data['xs'][i] = xfit
-            current_data['ys'][i] = yfit
-            self.synth_source.data = current_data
+            widget_label.observe(update_label, names='description')
 
-        server_manager.next_tick_update(update)
         
 
     def _get_objects_by_type(self, typ):
-        objects = [o for o in self.browser.objects if type(o)==typ]
+        objects = [o for o in self.browser.objects if isinstance(o, typ)]
         return objects
         
         
@@ -363,6 +404,8 @@ class TumultStudio(HasTraits):
                 x_range=[0, 1],
                 y_range=[-0.05, 1.05],
                 **kwargs)
+        
+        self.fig = p
         p.add_layout(LinearAxis(), 'above')
         p.add_layout(LinearAxis(), 'right')
         # Optional: show ticks but not labels on the top/right
@@ -375,39 +418,50 @@ class TumultStudio(HasTraits):
         p.toolbar.active_drag = tools[BoxSelectTool]
 
         def xrange_update_callback(attr, new, old):
-            slc = get_crop_range(self.xdata, p.x_range, nmax=1000)
+            slc = get_crop_range(self.xdata, p.x_range, nmax=1000, margin=0.01)
             self.fig_source.data = dict(x=self.xdata[slc], y=self.ydata[slc])
-
-        def yrange_update_callback(attr, new, old):
-            yvis = self.fig_source.data['y']
-            for i, x in enumerate(self.synth_source.data['xs']):
-                slc = get_crop_range(x, p.x_range)
-                yvis = np.concatenate((yvis, self.synth_source.data['ys'][i][slc]))
-            if len(yvis)>0: reset_yaxis(p, yvis, on_server=True)
-            remove_line_annotations(self.llist_source)
-            selected = self.browser.selected
-            if selected:
-                obj = selected.object
-                if type(obj)==m3dis.m3dis:
-                    plot_line_annotations(p, obj, self.llist_source)
+            if hasattr(self, 'fig_slc'):
+                off = self.fig_slc.start - slc.start
+                idx = np.array(self.fig_source.selected.indices) + off
+                self.fig_source.selected.indices = list(idx)
+            self.fig_slc = slc
 
         p.x_range.on_change('start', xrange_update_callback)
         p.x_range.on_change('end', xrange_update_callback)
-        p.x_range.on_change('start', yrange_update_callback)
-        p.x_range.on_change('end', yrange_update_callback)
+        p.x_range.on_change('start', self.yrange_update_callback)
+        p.x_range.on_change('end', self.yrange_update_callback)
+        p.x_range.on_change('start', self.update_annotations)
+        p.x_range.on_change('end', self.update_annotations)
         
         if xmin: p.x_range.start = xmin
         if xmax: p.x_range.end   = xmax
         self.saved_xmin = p.x_range.start
         self.saved_xmax = p.x_range.end
-        return p
+    
+    def yrange_update_callback(self, attr, old, new):
+        yvis = self.fig_source.data['y']
+        for i, x in enumerate(self.synth_source.data['xs']):
+            slc = get_crop_range(x, self.fig.x_range)
+            yvis = np.concatenate((yvis, self.synth_source.data['ys'][i][slc]))
+        if len(yvis)>0:
+            reset_yaxis(self.fig, yvis)
+
+    def update_annotations(self, attr, old, new):
+        remove_line_annotations(self.llist_source)
+        selected = self.browser.selected
+        if selected:
+            obj = selected.object
+            if isinstance(obj, m3dis.m3dis):
+                plot_line_annotations(self.fig, obj, self.llist_source)
 
     def init_nav_canvas(self, **kwargs):
         x0 = self.xdata[0]
         x1 = self.xdata[-1]
-        p = figure(toolbar_location='above',
-                x_axis_location='above',
-                **kwargs)
+        p = figure(output_backend='svg',
+                   toolbar_location='above',
+                   x_axis_location='above',
+                   **kwargs)
+        self.nav = p
         p.yaxis.visible = False
         p.xaxis.axis_line_color = None
         p.xaxis.major_tick_line_color = None
@@ -426,31 +480,3 @@ class TumultStudio(HasTraits):
         p.x_range.start = x0
         p.x_range.end = x1
         return p
-
-def reset_xaxis(p, xx, margin=0, on_server=False):
-    xmin = np.min(xx)
-    xmax = np.max(xx)
-    d = (xmax-xmin)*margin
-
-    def update():
-        p.x_range.start = xmin-d
-        p.x_range.end   = xmax+d
-
-    if on_server:
-        update()
-    else:
-        server_manager.next_tick_update(update)
-        
-def reset_yaxis(p, yy, margin=0.05, on_server=False):
-    ymin = np.min(yy)
-    ymax = np.max(yy)
-    d = (ymax-ymin)*margin
-
-    def update():
-        p.y_range.start = ymin-d
-        p.y_range.end   = ymax+d
-
-    if on_server:
-        update()
-    else:
-        server_manager.next_tick_update(update)

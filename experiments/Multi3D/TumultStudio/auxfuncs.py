@@ -51,6 +51,26 @@ def profile_lines(func):
     
     return wrapper
 
+
+def debounce(delay=0.5):
+    def decorator(func):
+        timer = None
+        
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            nonlocal timer
+            
+            # Cancel existing timer
+            if timer is not None:
+                timer.cancel()
+                
+            # Start new timer
+            timer = threading.Timer(delay, func, args=args, kwargs=kwargs)
+            timer.start()
+            
+        return wrapper
+    return decorator
+
 class ColorCycle():
     def __init__(self, palette='Light'):
         pal = bokeh.palettes.__dict__[palette]
@@ -61,22 +81,31 @@ class ColorCycle():
     def __getitem__(self, index):
         i = np.mod(index, self.n)
         return self.palette[i]
-
-def get_crop_range(data, range_type, nmax=None):
-    vmin = range_type.start
-    vmax = range_type.end
-    imin = np.searchsorted(data, vmin)
-    imax = np.searchsorted(data, vmax)-1
-    if nmax:
-        step = max(1, (imax-imin)//nmax)
-        return slice(imin, imax, step)
-    else:
-        return slice(imin, imax)
     
 def slicesorted(data, vmin, vmax):
     imin = np.searchsorted(data, vmin, side='left')
     imax = np.searchsorted(data, vmax, side='right')
     return slice(imin, imax)
+
+def get_crop_range(data, range_type, nmax=None, margin=0):
+    vmin = range_type.start
+    vmax = range_type.end
+    dv = (vmax - vmin)*margin
+    slc = slicesorted(data, vmin-dv, vmax+dv)
+    
+    if nmax:
+        step = max(1, (slc.stop-slc.start)//nmax)
+        slc = slice(slc.start, slc.stop, step)
+    
+    return slc
+
+def find_nearest(array, value):
+    array = np.asarray(array)
+    idx = (np.abs(array - value)).argmin()
+    return array[idx]
+
+def beyond_sorted(data, val):
+    return (val < data[0]) or (val > data[-1])
 
 def find_smallest_missing(nums):
     return min(set(range(0, max(nums, default=0) + 2)) - set(nums))

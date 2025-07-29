@@ -1,11 +1,12 @@
 import ipywidgets as widgets
-from traitlets import Unicode, observe, List, HasTraits, Instance
+from traitlets import Unicode, observe, List, HasTraits, Instance, Integer
 from IPython.display import display, Javascript
 from io import StringIO
 import pandas as pd
 import uuid
 import time
 import os
+from .auxfuncs import replace_nth
 
 class StyleSheet(widgets.HTML):
     def __init__(self, file):
@@ -281,17 +282,37 @@ class EditableList(widgets.VBox, HasTraits):
         self.objects = objects_list
 
 
-class EditableTable(widgets.VBox):
+
+class EditableTable(widgets.VBox, HasTraits):
+    style = """
+        <style>
+        .EditableTable {
+            width: fit-content;
+        }
+        .EditableTable .jp-RenderedHTMLCommon {
+            padding: 0;
+        }
+        .EditableTable .dataframe {
+            margin: 0;
+        }
+        .EditableTable .highlighted-row {
+            background-color: var(--jp-brand-color1);
+        }
+        </style>
+    """
+
     def __init__(self, df: pd.DataFrame, max_height='350px', **kwargs):
         self.df = df.reset_index(drop=True)
         self.sid = str(uuid.uuid4()).replace('-', '_')
         self.tid = f"editable_table_{self.sid}"
         self.tid_class = f"table_export_{self.sid}"
-        self.script_injected = False
+        self.container_class = f"EditableTable-{self.sid}"  # Unique container class
 
         # Create editable HTML table
         html_table = self.df.to_html(table_id=self.tid, **kwargs)
         html_table = html_table.replace('<td>', '<td contenteditable="true">')
+        html_table += self.style
+        self.initial_table = html_table
 
         # Create widgets
         self.html_widget = widgets.HTML(value=html_table)
@@ -300,58 +321,168 @@ class EditableTable(widgets.VBox):
         self.export_widget = widgets.Textarea(layout={'display': 'none'})
         self.export_widget.add_class(self.tid_class)
 
-        # Output widget to trigger JavaScript after DOM is ready
+        # JavaScript output widget
         self.js_output = widgets.Output(layout={'display': 'none'})
+
+        def sync_table(change):
+            self._value = self.export_widget.value
+
+        self.export_widget.observe(sync_table, names='value')
 
         super().__init__([self.html_widget, self.export_widget, self.js_output])
         self.layout.max_height = max_height
         self.add_class('EditableTable')
-        self._inject_styling()
-        self._inject_javascript()
+        self.add_class(self.container_class)  # Add unique class for targeting
+        
+        # Store the current value privately
+        self._value = html_table
+        
+        # Set up event listener and mutation observer on this specific container
+        self._setup_container_functionality()
 
-    def _inject_javascript(self):
-            js = f"""
+    def _setup_container_functionality(self):
+        """Set up both event listener and mutation observer for this container"""
+        js = f"""
+            function scrollToElementInContainer(element, container) {{
+                    // Calculate the position of the element relative to the container
+                    var elementRect = element.getBoundingClientRect();
+                    var containerRect = container.getBoundingClientRect();
+                    
+                    // Calculate the scroll position needed to center the element
+                    var relativeTop = elementRect.top - containerRect.top + container.scrollTop;
+                    var centerPosition = relativeTop - (container.clientHeight / 2) + (element.offsetHeight / 2);
+                    
+                    // Smooth scroll to the calculated position
+                    container.scrollTo({{
+                        top: Math.max(0, centerPosition),
+                        behavior: 'smooth'
+                    }});
+                }}
+            setTimeout(function() {{
+                // Find this specific container by unique class
+                var container = document.querySelector('.{self.container_class}');
+                
+                if (!container) {{
+                    console.warn("EditableTable: Container not found for {self.container_class}");
+                    return;
+                }}
+                
+                console.log("Setting up functionality for {self.container_class}");
+                
+                // 1. Set up focusout event listener for content sync
+                container.addEventListener('focusout', function(event) {{
+                    var target = event.target;
+                    
+                    // Check if this focusout is from a contenteditable cell
+                    if (!target.contentEditable || target.contentEditable !== 'true') {{
+                        return;
+                    }}
+                    
+                    // Find the table within this container
+                    var table = container.querySelector('table[id="{self.tid}"]');
+                    if (!table) {{
+                        return;
+                    }}
+                    
+                    // Find the textarea within this container
+                    var textarea = container.querySelector('.{self.tid_class} textarea');
+                    if (!textarea) {{
+                        console.warn("EditableTable: Textarea not found in {self.container_class}");
+                        return;
+                    }}
+                    
+                    // Sync the table content to textarea
                     setTimeout(function() {{
-                        var table = document.getElementById('{self.tid}');
-                        var textarea = document.querySelector('.{self.tid_class} textarea');
-            
-                        if (!table || !textarea) {{
-                            console.warn("EditableTable: Elements not found");
-                            return;
-                        }}
-            
                         textarea.value = table.outerHTML;
                         textarea.dispatchEvent(new Event('input', {{ bubbles: true }}));
-            
-                        table.addEventListener("focusout", function() {{
-                            textarea.value = table.outerHTML;
-                            textarea.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                        }});
-                    }}, 50);
-                """
-            with self.js_output:
-                display(Javascript(js))
-                self.js_output.clear_output(wait=True)
-
-    def _inject_styling(self):
-        css = """
-            .EditableTable {
-                width: fit-content;
-            }
-            .EditableTable .jp-RenderedHTMLCommon {
-                padding: 0;
-            }
-            .EditableTable .dataframe {
-                margin: 0;
-            }
+                        console.log("Table content synced for {self.tid}");
+                    }}, 10);
+                    
+                }}, true); // Use capture phase
+                
+                // 2. Set up MutationObserver for highlighted row scrolling
+                var observer = new MutationObserver(function(mutations) {{
+                    mutations.forEach(function(mutation) {{
+                        // Check for class changes on table rows
+                        if (mutation.type === 'attributes' && mutation.attributeName === 'class') {{
+                            var target = mutation.target;
+                            
+                            // Check if this is a table row with highlighted-row class
+                            if (target.tagName === 'TR' && target.classList.contains('highlighted-row')) {{
+                                console.log("Highlighted row detected, scrolling to view");
+                                scrollToElementInContainer(target, container);
+                            }}
+                        }}
+                        
+                        // Also check for newly added nodes that might have highlighted-row class
+                        if (mutation.type === 'childList') {{
+                            mutation.addedNodes.forEach(function(node) {{
+                                if (node.nodeType === Node.ELEMENT_NODE) {{
+                                    // Check if the added node itself is a highlighted row
+                                    if (node.tagName === 'TR' && node.classList.contains('highlighted-row')) {{
+                                        console.log("New highlighted row added, scrolling to view");
+                                        setTimeout(function() {{
+                                            scrollToElementInContainer(node, container);
+                                        }}, 100); // Small delay to ensure DOM is settled
+                                    }}
+                                    
+                                    // Check for highlighted rows within the added node
+                                    var highlightedRows = node.querySelectorAll && node.querySelectorAll('tr.highlighted-row');
+                                    if (highlightedRows && highlightedRows.length > 0) {{
+                                        console.log("Highlighted rows found in new content, scrolling to first one");
+                                        setTimeout(function() {{
+                                            scrollToElementInContainer(highlightedRows[0], container);
+                                        }}, 100);
+                                    }}
+                                }}
+                            }});
+                        }}
+                    }});
+                }});
+                
+                // Start observing the container for changes
+                observer.observe(container, {{
+                    attributes: true,           // Watch for attribute changes
+                    attributeFilter: ['class'], // Only watch class attribute changes
+                    childList: true,           // Watch for added/removed nodes
+                    subtree: true              // Watch all descendants
+                }});
+                
+                // Store the observer reference for potential cleanup
+                container.highlightObserver = observer;
+                
+                console.log("Event listener and MutationObserver attached to {self.container_class}");
+                
+            }}, 100); // Small delay to ensure DOM is ready
         """
-        styling = widgets.HTML(value=f'<style>{css}</style>')
-        display(styling)
+        
+        with self.js_output:
+            display(Javascript(js))
+
+    @property
+    def value(self):
+        return getattr(self, '_value', self.html_widget.value)
+    
+    @value.setter
+    def value(self, new_value):
+        self._value = new_value
+        self.html_widget.value = new_value
+
+    def reset_html(self):
+        self.value = ''
+        self.value = self.initial_table
+
+    def highlight_row(self, idx):
+        new = self.value
+        new = new.replace('<tr class="highlighted-row">', '<tr>')
+        new = replace_nth(new, '<tr>', '<tr class="highlighted-row">', idx+1)
+        self.value = new
+        # The MutationObserver will automatically handle scrolling!
 
     def get_dataframe(self):
         """Returns the current state of the table as a DataFrame"""
         try:
-            html = StringIO(self.export_widget.value)
+            html = StringIO(self.value)
             return pd.read_html(html)[0]
         except Exception as e:
             print("⚠️ Failed to parse table HTML:", e)

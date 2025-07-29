@@ -4,7 +4,7 @@ import ipywidgets as widgets
 import numpy as np
 
 fmt = {
-    'lam0': lambda x: f'{x:.2f}',
+    'lam0': lambda x: f'{x:.3f}',
     'loggf': lambda x: f'{x:.3f}',
     'evi': lambda x: f'{x:.3f}',
     'ga': lambda x: f'{x:.2e}'}
@@ -114,5 +114,6 @@ def plot_line_annotations(p, run, source):
     current_data['y'] += [y[-1]+0.1*h for y in yl.T]
     current_data['text'] += labels.tolist()
     source.data = current_data
+    
     
     p.y_range.end = pymax + 3*h
