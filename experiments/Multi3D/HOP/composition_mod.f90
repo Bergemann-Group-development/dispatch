@@ -690,7 +690,7 @@ contains
         integer :: np, iso
         integer :: lunit, iostat, iostat2, j, nline, i, prev, iso_idx, nkh
         integer, save :: ntotal, nactive
-        logical :: isotope, ok, skip, lam_mask
+        logical :: isotope, ok, skip, lam_mask, hlinedata
         integer :: pos, npost, nskipped
         integer :: itimer=0
         !-----------------------------------------------------------------------------
@@ -701,6 +701,7 @@ contains
         ntotal = 0
         nactive = 0
         nkh = 0
+        hlinedata = endswith(linelist_file, 'Hlinedata')
 
         if (lam_mask) then
             nu_min = nu(1)
@@ -797,36 +798,39 @@ contains
                 line => particle%line(prev+i)
                 read(lunit, '(A)', iostat=iostat) line_text
 
-                if (particle%id == 'H I') then
-                    read(line_text, *, iostat=iostat2) line%lam_air, line%i, line%j, line%lower_ev, upper_ev, line%loggf, label, line%ga
-
-                    ! Stop if nothing has worked
-                    call print_failed_line(lunit, iostat2, line_text)
-
-                    nkh = max(line%j, nkh)
-                    lower_g = 2 * line%i**2
-                    line%upper_g = 2 * line%j**2
-                    lam_vac = air2vac(line%lam_air) * 1e-8
-                    line%nu0 = CC / lam_vac
-                    gij = lower_g / line%upper_g
-                    f = 10**line%loggf / lower_g
-                    call line%init_einstein_coefficients(f, gij)
-                    call prepare_hydrogen_damping(line) ! ga is overwritten
+                if (hlinedata) then
+                    ! this is a specific Hlinedata format
+                    read(line_text, *, iostat=iostat2) line%lam_air, line%i, line%j, line%lower_ev, upper_ev, line%loggf, label, line%ga_in
                 else
                     ! It will try to read as many of these parameters as possible,
                     ! but only lam0 lower_ev and loggf are required.
                     ! Broadening parameters are zero by default if not overwritten here.
                     read(line_text, *, iostat=iostat2) line%lam_air, line%lower_ev, line%loggf, &
                                                        line%gv_in, upper_g, line%ga_in, gq
-                    call print_failed_line(lunit, iostat2, line_text)
-                    ! read gq if it is convertable to real
+                                                       ! read gq if it is convertable to real
                     gq = trim(gq)
                     call replace_char(gq(1:len_trim(gq)), ' ', '_')
                     read(gq, *, iostat=iostat2) line%gq_in
+                endif
+                call print_failed_line(lunit, iostat2, line_text)
     
-                    lam_vac = air2vac(line%lam_air) * 1e-8
-                    line%nu0 = CC / lam_vac
+                lam_vac = air2vac(line%lam_air) * 1e-8
+                line%nu0 = CC / lam_vac
 
+                if (particle%id == 'H I') then
+                    if (.not. hlinedata) then
+                        upper_ev = line%lower_ev + H_E*line%nu0
+                        line%i = nint(sqrt(RydV / (RydV-line%lower_ev)))
+                        line%j = nint(sqrt(RydV / (RydV-upper_ev)))
+                    endif
+                    lower_g = 2 * line%i**2
+                    line%upper_g = 2 * line%j**2
+                    gij = lower_g / line%upper_g
+                    f = 10**line%loggf / lower_g
+                    call line%init_einstein_coefficients(f, gij)
+                    call prepare_hydrogen_damping(line) ! ga is overwritten
+                    nkh = max(line%j, nkh)
+                else
                     f = 10**line%loggf
                     vbar2e4 = particle%compute_vbar2(10000.)
                     if (isotope) then

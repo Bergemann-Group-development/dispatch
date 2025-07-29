@@ -90,8 +90,12 @@ class LineList(pd.DataFrame):
   
   def write_to_ts_format(self, filename):
     species = self[['ion', 'iso']].drop_duplicates().values
-    head = ['lam0', 'evi', 'loggf', 'gv', 'ga', 'gq']
-    head = [h for h in head if h in self.columns]
+    head = ['lam0', 'evi', 'loggf', 'gv', 'upper_g', 'ga', 'gq']
+
+    for key in head:
+      if not hasattr(self, key):
+        self[key] = 0
+
     if hasattr(self, 'label'): head.append('label')
     with open(filename, 'w+') as f:
       for s, iso in species:

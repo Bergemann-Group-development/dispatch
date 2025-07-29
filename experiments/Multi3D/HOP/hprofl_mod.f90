@@ -149,12 +149,12 @@ contains
     real(4), dimension(:,:,:,:), intent(in) :: cont
     real(8), allocatable :: qq(:)
     real(4), allocatable :: phis(:)
-    real(4) :: lchi, phi, idf, cf, v, ref, nh1
+    real(4) :: lchi, phi, idf, cf, v, ref, nh1, strength
     real(4) :: resont, vdw, hwstk, hwlor, hfwid, t, e
     real(8) :: q
     real(4), parameter :: tol=1e-7
     integer :: i,j,k,f, f0, m(3), itimer=0
-    logical lymanalf
+    logical lymanalf, used
     !----------------------------------------------------------------------------------
     ! Lyman alpha wings require special treatment
     lymanalf = (self%i == 1) .and. (self%j == 2)
@@ -164,6 +164,8 @@ contains
     allocate(phis(ired:iblue))
     qq(ired:iblue) = nu(ired:iblue) / self%nu0 - 1
     f0 = minloc(abs(qq),1) + ired - 1
+    used = .false.
+    strength = 0.0
 
     do k=1, m(3)
     do j=1, m(2)
@@ -206,6 +208,10 @@ contains
           lchi = phi * cf
           chi(f,i,j,k) = chi(f,i,j,k) + lchi
           if (lchi < ref) exit
+          if (f==f0) then
+            used = .true.
+            strength = max(strength, lchi / cont(f0,i,j,k))
+          endif
         end do
         
         do f=f0-1, ired, -1
@@ -223,6 +229,10 @@ contains
     end do
     end do
     end do
+    if (used) then
+      self%used = used
+      self%strength = max(self%strength, strength)
+    endif
   END SUBROUTINE add_lte_h_opacities
 
   !====================================================================================
