@@ -172,6 +172,8 @@ SUBROUTINE init(self, task_list, name)
     end select
   endif
 
+  one_dimensional = .not. ia%is_3d
+
   ! this is read here, in case atmosphere has optical depth scale
   call read_composition_params()
 
@@ -180,7 +182,7 @@ SUBROUTINE init(self, task_list, name)
     call ia%get_box(self%size)
     self%size = self%size / scaling%l
 
-    if (.not. ia%is_3d) then
+    if (one_dimensional) then
       nx = 1; ny = 1
     elseif (nx < 0 .or. ny < 0) then
       nx = ia%nx; ny = ia%ny
@@ -199,8 +201,6 @@ SUBROUTINE init(self, task_list, name)
       endif
     endif
   endif
-
-  one_dimensional = self%n(1)*self%n(2) == 1
 
   write (io%namelist, atmos_params)
 

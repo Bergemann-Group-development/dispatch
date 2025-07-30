@@ -2,6 +2,7 @@
 &io_params          datadir='data' gb_step=6.0 do_trace=F /
 &timer_params       sec_per_report=1e8 verbose=2 /
 &atmos_params       atmos_format='Marcs' atmos_file='input_multi3d/atmos/p5777_g+4.4_m0.0_t01_st_z+0.00_a+0.00_c+0.00_n+0.00_o+0.00_r+0.00_s+0.00.mod'
+!&atmos_params       atmos_format='Must' atmos_file='input_multi3d/atmos/SunLTE_t5777_g4.440_z0.000_sn779_m3dis'
                     nx=30 ny=30 /
 &m3d_params         verbose=1 maxiter=0 rotate_atmos=T /
 &composition_params sample_back_opac=T sample_back_opac_in_output=T / 

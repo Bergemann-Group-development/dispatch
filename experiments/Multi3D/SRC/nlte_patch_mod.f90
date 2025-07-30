@@ -630,7 +630,7 @@ SUBROUTINE lte_background_opacities (self, comp, include_absmet, do_sample_opac,
   if (do_make_eos .and. self%iter==0) then
     call self%save_opac_table()
   elseif (do_sample_opac) then
-    call self%interpolate_opacity_table(comp%temp, comp%ne, comp%chi500, self%nu(fs:fe))
+    call self%interpolate_opacity_table(comp%temp, comp%ne, comp%chi500)
   else
     call comp%absorption(self%nu, back(:,:,:,:,1), &
     blz=back(:,:,:,:,3), include_absmet=include_absmet, sorted=self%sp%sorted)
@@ -778,18 +778,17 @@ SUBROUTINE save_opac_table (self)
 END SUBROUTINE save_opac_table
 
 !===============================================================================
-SUBROUTINE interpolate_opacity_table (self, temp, ne, rho, nu)
+SUBROUTINE interpolate_opacity_table (self, temp, ne, chi500)
   class(nlte_patch_t), target :: self
   class(composition_type), pointer :: comp
   real(8), dimension(:,:,:), intent(in) :: temp, ne
-  real(4), dimension(:,:,:), intent(in) :: rho
-  real(8), dimension(:), intent(in) :: nu
+  real(4), dimension(:,:,:), intent(in) :: chi500
   integer, dimension(:), allocatable :: inu
   real(4), dimension(:), allocatable :: wnu
   real(8), dimension(:), pointer :: tab_nu
   real(8) :: w1, w2, e, t, mint, mine, kappa
   real(8) :: dx, dy, a, b, c, d, fi1, fi2, fj1, fj2, ab, cd
-  integer :: f, i, j, k, nnu
+  integer :: f, i, j, k
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('nlte_patch%interpolate_opacity_table', itimer=itimer)
@@ -798,12 +797,11 @@ SUBROUTINE interpolate_opacity_table (self, temp, ne, rho, nu)
   dy = 1. / (log(comp%ne(1,2,1) / comp%ne(1,1,1)))
   mint = comp%temp(1,1,1)
   mine = log(comp%ne(1,1,1))
-  nnu = size(nu)
   tab_nu => self%opac_table_nu
 
-  allocate(inu(nnu), wnu(nnu))
-  inu = [(searchsorted(tab_nu, nu(f)), f=1, nnu)]
-  wnu = [((nu(f) - tab_nu(inu(f))) / (tab_nu(inu(f)+1) - tab_nu(inu(f))), f=1, nnu)]
+  allocate(inu(fs:fe), wnu(fs:fe))
+  inu(fs:fe) = [(searchsorted(tab_nu, self%sp%nu(f)), f=fs, fe)]
+  wnu(fs:fe) = [((self%sp%nu(f) - tab_nu(inu(f))) / (tab_nu(inu(f)+1) - tab_nu(inu(f))), f=fs, fe)]
 
   do z=1, nz
   do y=1, ny
@@ -818,7 +816,7 @@ SUBROUTINE interpolate_opacity_table (self, temp, ne, rho, nu)
     fj1 = fj1 - j
     fi2 = 1 - fi1
     fj2 = 1 - fj1
-    do f=1, nnu
+    do f=fs, fe
       w2 = wnu(f)
       w1 = 1 - w2
       k = inu(f)
@@ -829,7 +827,7 @@ SUBROUTINE interpolate_opacity_table (self, temp, ne, rho, nu)
       ab = fi1*a + fi2*b
       cd = fi1*c + fi2*d
       kappa = fj1*ab + fj2*cd
-      back(f,x,y,z,1) = back(f,x,y,z,1) + kappa*rho(x,y,z)
+      back(f,x,y,z,1) = kappa*chi500(x,y,z)
     end do
   end do
   end do
