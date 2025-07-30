@@ -3,9 +3,9 @@ from .ServerManager import *
 from .settings import saved_settings
 from .LineMask import LineMask
 from .llist_annotations import get_llist_table
-from m3dis.auxfuncs import update_dict
+from tumult.auxfuncs import update_dict
 import ipyformkit as ifk
-import m3dis
+import tumult
 import numpy as np
 import tempfile
 import glob
@@ -108,7 +108,7 @@ def run_synth(name, settings, line_mask, default=None, llist=None, progress=None
 
             @run_in_thread
             def execute_m3dis():
-                folder, ok = m3dis.launch(input_name, nml_settings=settings, default=default,
+                folder, ok = tumult.launch(input_name, nml_settings=settings, default=default,
                                         log_file='test.log', threads=2, overwrite=True, verbose=0)
                 return folder, ok
             
@@ -121,7 +121,7 @@ def run_synth(name, settings, line_mask, default=None, llist=None, progress=None
 
             folder, ok = thread.out['result']
         
-    run = m3dis.read(folder, read_llist=True)
+    run = tumult.read(folder, read_llist=True)
     run.line_mask = line_mask
     run.llist_html = get_llist_table(run)
     run.label = name
@@ -129,6 +129,6 @@ def run_synth(name, settings, line_mask, default=None, llist=None, progress=None
 
 def monitor_synth(name, progress):
     folder = 'data' + os.sep + saved_settings['synthesis folder'] + os.sep + name
-    n, nmax = m3dis.monitor(folder)
+    n, nmax = tumult.monitor(folder)
     progress.value = n
     progress.max = nmax+1

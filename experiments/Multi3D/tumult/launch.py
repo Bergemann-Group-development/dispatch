@@ -3,7 +3,7 @@ import f90nml
 import copy
 import subprocess
 from .auxfuncs import check_file
-from .m3dis import m3dis
+from .tumult import tumult
 
 def launch(input_name, nml_settings=None, default=None, overwrite=False, threads=None,
            log_file=None, slurm_script=None, verbose=2, dry=False, subprocess=False):
@@ -36,7 +36,7 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
     ok = overwrite
     if not ok:
         try:
-            run = m3dis.read(output_folder, read_atmos=False, read_atom=False)
+            run = tumult.read(output_folder, read_atmos=False, read_atom=False)
             existed = True
         except:
             ok = True

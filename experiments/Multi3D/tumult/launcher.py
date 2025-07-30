@@ -3,7 +3,7 @@ from IPython.display import display, HTML, clear_output
 import ipyformkit as ifk
 import os, copy
 from .launch import launch
-from .m3dis import m3dis
+from .tumult import tumult
 
 params = {}
 hides = {}
@@ -127,7 +127,7 @@ class launcher():
                   name = name.split(os.sep)[-1]
 
                 print('reading ' + output_folder)
-                self.__dict__[name] = m3dis.read(output_folder)
+                self.__dict__[name] = tumult.read(output_folder)
           else:
             print("Please enter a name for the input file.")
 

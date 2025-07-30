@@ -2,8 +2,8 @@
 &io_params          datadir='data' gb_step=6.0 do_trace=F /
 &timer_params       sec_per_report=1e8 verbose=2 /
 &atmos_params       atmos_format='Marcs' atmos_file='input_multi3d/atmos/p5777_g+4.4_m0.0_t01_st_z+0.00_a+0.00_c+0.00_n+0.00_o+0.00_r+0.00_s+0.00.mod'
-                    nx=10 ny=10 /
-&m3d_params         verbose=1 maxiter=0 /
+                    nx=30 ny=30 /
+&m3d_params         verbose=1 maxiter=0 rotate_atmos=T sample_bg_opac=T /
 &linelist_params    line_lists=
                                !'./input_multi3d/linelists/vald_2490-25540.list',
                                './input_multi3d/linelists/master_line.txt',

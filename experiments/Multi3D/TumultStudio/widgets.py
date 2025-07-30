@@ -153,11 +153,20 @@ class EditableList(widgets.VBox, HasTraits):
             tooltip='Delete item'
         )
         delete_button.add_class('del-btn')
+
+        # Create delete button
+        hide_button = widgets.Button(
+            description='',
+            icon='eye',
+            tooltip='Hide/Display item'
+        )
+        hide_button.add_class('hide-btn')
         
         # Create container for label + delete button
         item_container = widgets.HBox([
             label_widget,
-            delete_button
+            hide_button,
+            delete_button,
         ])
         item_container.add_class('row-box')
         item_container.object = obj
@@ -168,6 +177,7 @@ class EditableList(widgets.VBox, HasTraits):
         
         # Setup bindings
         self._setup_binding(label_widget, obj)
+        self._setup_hide_button(hide_button, obj)
         self._setup_delete_button(delete_button, obj)
 
         def select_container(btn):
@@ -243,10 +253,7 @@ class EditableList(widgets.VBox, HasTraits):
     
     def _setup_delete_button(self, delete_button, obj):
         """Setup delete button click handler."""
-        
         def on_delete_click(button):
-            
-            # Call object's delete method if available
             if hasattr(obj, 'delete') and callable(getattr(obj, 'delete')):
                 try:
                     obj.delete()
@@ -257,6 +264,19 @@ class EditableList(widgets.VBox, HasTraits):
             self.remove_object(obj)
         
         delete_button.on_click(on_delete_click)
+
+    def _setup_hide_button(self, hide_button, obj):
+        """Setup hide button click handler."""
+        def on_hide_click(button):
+            if button.icon == 'eye':
+                if hasattr(obj, 'hide') and callable(getattr(obj, 'hide')):
+                    obj.hide()
+            else:
+                if hasattr(obj, 'show') and callable(getattr(obj, 'show')):
+                    obj.show()
+            button.icon = 'eye-slash' if button.icon == 'eye' else 'eye'
+        
+        hide_button.on_click(on_hide_click)
     
     def add_object(self, obj, label=None):
         """Add a new object to the list."""

@@ -4,7 +4,7 @@ import pandas as pd
 from scipy import integrate, stats, optimize
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
-from .m3dis import m3dis
+from .tumult import tumult
 from .fast_trans import fast_trans
 import copy
 from scipy.spatial import Delaunay, ConvexHull, Voronoi
@@ -18,7 +18,7 @@ from functools import partial
 
 #=====================================================================
 def read_run(folder):
-  return m3dis.read(folder, read_atmos=False, read_atom=False)
+  return tumult.read(folder, read_atmos=False, read_atom=False)
 
 #=====================================================================
 def read_list(folders):
@@ -114,7 +114,7 @@ class grid(CoG):
 
     runs = []
     for i in range(nabnds):
-      runs.append(m3dis.combine([cog.runs[i] for cog in cogs], weights=weights))
+      runs.append(tumult.combine([cog.runs[i] for cog in cogs], weights=weights))
 
     abnds = np.dot(weights, [cog.abnds for cog in cogs])
 

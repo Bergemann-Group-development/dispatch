@@ -57,5 +57,17 @@ class LineMask():
                     box.visible = False
         ServerManager.server.next_tick_update(update)
 
+    def hide(self):
+        def update():
+            for _, box in self.boxes:
+                    box.visible = False
+        ServerManager.server.next_tick_update(update)
+
+    def show(self):
+        def update():
+            for _, box in self.boxes:
+                    box.visible = True
+        ServerManager.server.next_tick_update(update)
+
     def __str__(self):
         return self.label

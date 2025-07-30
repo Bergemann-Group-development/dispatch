@@ -2477,33 +2477,34 @@ contains
     END SUBROUTINE read_molec_data
 
     !===============================================================================
-    SUBROUTINE get_table_frequencies(self, new_nu)
+    SUBROUTINE get_table_frequencies(self, nu, out_nu)
         class(composition_type) :: self
-        real(dp), dimension(:), intent(in) :: new_nu
-        real(dp), dimension(:), allocatable :: lam, new_lam, out_lam
+        real(dp), dimension(:), intent(in) :: nu
+        real(dp), dimension(:), intent(out), allocatable :: out_nu
+        real(dp), dimension(:), allocatable :: tab_lam, tab_nu
         logical, dimension(:), allocatable :: needed
         integer :: i, j, nnu, pos
         !---------------------------------------------------------------------------
         nnu = sum(self%trans%nnu)
-        allocate(lam(nnu))
+        allocate(tab_lam(nnu))
         i=1
         do j=1, size(self%trans)
             associate(trans=>self%trans(j))
-                lam(i:i+trans%nnu-1) = trans%lam
+                tab_lam(i:i+trans%nnu-1) = trans%lam
                 i = i + trans%nnu
             end associate
         end do
-        call refsor(lam)
-        call remove_close_entries(lam, threshold=0.5d0)
-        nnu = size(lam)
+        call refsor(tab_lam)
+        call remove_close_entries(tab_lam, threshold=0.5d0)
+        allocate(tab_nu, source=cc/tab_lam(nnu:1:-1)*1e8)
+        nnu = size(tab_nu)
         allocate(needed(nnu), source=.false.)
-        allocate(new_lam, source=cc/new_nu*1e8)
-        do i=1, size(new_lam)
-            pos = searchsorted(lam, new_lam(i), outbounds_ok=.true.)
+        do i=1, size(nu)
+            pos = searchsorted(tab_nu, nu(i), outbounds_ok=.true.)
             needed(max(1, pos)) = .true.
             needed(min(pos+1, nnu)) = .true.
         end do
-        allocate(out_lam, source=pack(lam, needed))
+        allocate(out_nu, source=pack(tab_nu, needed))
     END SUBROUTINE get_table_frequencies
 
     !===============================================================================

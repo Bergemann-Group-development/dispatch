@@ -4,9 +4,9 @@ from .synth_form import run_synth
 import ipyformkit as ifk
 import numpy as np
 import copy
-import m3dis
-from m3dis.auxfuncs import atomic_weights, molecule_dict
-from m3dis.linelist import LineList
+import tumult
+from tumult.auxfuncs import atomic_weights, molecule_dict
+from tumult.linelist import LineList
 
 element_ids = ('None',) + tuple(atomic_weights.keys())
 fields = {('fitting region', 'element'): (('line mask', 'selection'), element_ids),
@@ -109,7 +109,7 @@ def fit_synth(run, source, progress=None):
         else:
             runs = [run, new_run]
         abnds = [r.abundances[eid] for r in runs]
-        cog = m3dis.CoG(runs, abnds=abnds)
+        cog = tumult.CoG(runs, abnds=abnds)
         cog.a0 = run.a0
         cog.cog_name = run.cog_name
         p, _ = cog.fit_observed(oxx, oyy, LTE=LTE, bounds=bounds, **kwargs)
@@ -122,7 +122,7 @@ def fit_synth(run, source, progress=None):
             afit = p['abnd']
         return cog, p
 
-    if isinstance(run, m3dis.CoG):
+    if isinstance(run, tumult.CoG):
         cog = run
         if values['fit abnd']:
             p, _ = cog.fit_observed(oxx, oyy, LTE=LTE, bounds=bounds, **kwargs)

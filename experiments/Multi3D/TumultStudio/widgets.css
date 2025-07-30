@@ -11,11 +11,13 @@
     width: 100%;
 }
 
-.EditableList .del-btn {
+.EditableList .del-btn,
+.EditableList .hide-btn {
     margin: 0;
     padding: 0;
     width: 20px;
     background-color: transparent;
+    opacity: 0.5;
 }
 
 .EditableLabel .widget-button {

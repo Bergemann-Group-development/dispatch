@@ -2,15 +2,15 @@ import os
 import numpy as np
 import pandas as pd
 from scipy import integrate, stats, optimize
-from .m3dis import m3dis
+from .tumult import tumult
 from .auxfuncs import pchip_mono
 from .fast_trans import fast_trans
 import copy
 
 #=====================================================================
-class CoG(m3dis):
+class CoG(tumult):
     """
-    Read multiple m3dis runs of different abundance to create curve-of-growth class.
+    Read multiple tumult runs of different abundance to create curve-of-growth class.
     If multiple m3d runs want to be read, need to supply either runs or folder.
     If folder is given all subfolders are read as m3d directories.
     If multiple m1d want to be read, read them using m1d first and supply the objects in list "runs".
@@ -84,7 +84,7 @@ class CoG(m3dis):
 
         p0 = {f:p0s[f] for f in fit}
         bounds = {f:(lbounds[f], ubounds[f]) for f in fit}
-        return m3dis.fit_observed(self, oxx, oyy, fit=fit, bounds=bounds, p0=p0, sigma=sigma, method=method, tol=tol, **kwargs)
+        return tumult.fit_observed(self, oxx, oyy, fit=fit, bounds=bounds, p0=p0, sigma=sigma, method=method, tol=tol, **kwargs)
     
     #=================================================================
     def interp_abnd(self, weq, log=True, sigma=None, **kwargs):

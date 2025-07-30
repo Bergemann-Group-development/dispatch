@@ -28,11 +28,11 @@ def option(nml, key):
         return False
 
 #=====================================================================
-class m3dis(object):
+class tumult(object):
     @classmethod
     #=================================================================
     def read(self, folder, verbose=0, read_atmos=True, read_atom=True, fast_read=False, read_llist=False, **kwargs):
-        self = m3dis() # create a new instance of the class
+        self = tumult() # create a new instance of the class
         folder = folder + os.sep
         sfolder = folder + 'save' + os.sep
         self.sfolder = sfolder
@@ -1423,7 +1423,7 @@ class m3dis(object):
     #=================================================================
     def combine(self, runs, weights=None):
         #-------------------------------------------------------------
-        self = m3dis() # create a new instance of the class
+        self = tumult() # create a new instance of the class
         self.run0 = runs[0]
         self.folder = '\n'.join([run.folder for run in runs])
 

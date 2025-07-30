@@ -4,8 +4,8 @@ from .settings import saved_settings
 from .LineMask import LineMask
 from .synth_form import run_synth
 import ipyformkit as ifk
-import m3dis
-from m3dis.linelist import LineList
+import tumult
+from tumult.linelist import LineList
 import copy
 
 fields = {('rerun', 'use ga', 'use gv', 'use gq'): (None, True, True, True)}
@@ -24,7 +24,7 @@ def rerun_synth(name, old_run, progress=None):
     }}
   
   if hasattr(old_run, 'fit_params'):
-    if isinstance(old_run, m3dis.CoG) and 'abnd' in old_run.fit_params:
+    if isinstance(old_run, tumult.CoG) and 'abnd' in old_run.fit_params:
       settings['composition_params']['abundances'] = f'{old_run.element_id}={old_run.fit_params["abnd"]:.2f}'
 
   run = run_synth(name, settings, line_mask, default, llist, progress=progress)

@@ -142,6 +142,7 @@ MODULE m3d_patch_mod
     logical, public, save :: print_start=.false., print_send=.false.
     logical, public, save :: Jnu_to_file=.true., amr=.true.
     logical, public, save :: rotate_atmos=.false.
+    logical, public, save :: sample_bg_opac=.false.
     logical, public, save :: make_eos=.false.
     logical, public, save :: overrelax=.false.
     logical, public, save :: save_Inu=.false., save_chi=.false.
@@ -169,7 +170,7 @@ MODULE m3d_patch_mod
     check_NaN, custom_mu, lse_no_pivot, save_patch_kind, cswitch, &
     print_finished, print_start, print_send, ray_offset, print_download, &
     lse_solver, decouple_continuum, m1d_legacy_mode, nu_tolerance, &
-    pivot_z, save_resolved, overrelax, &
+    pivot_z, save_resolved, overrelax, sample_bg_opac, &
     absmet_in_output, print_lock, make_eos, ng_step, ng_start, scattering_absorption, &
     column_by_column, rotate_atmos, Jnu_to_file, preconditioning, &
     save_inu, save_chi, save_Snu, save_Jnu, &

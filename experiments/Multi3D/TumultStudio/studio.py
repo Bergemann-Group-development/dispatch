@@ -12,8 +12,9 @@ from bokeh.models import *
 from bokeh.layouts import *
 from bokeh.events import *
 from bokeh.plotting import figure
+from functools import wraps
 import numpy as np
-import m3dis
+import tumult
 import time
 from traitlets import HasTraits
 
@@ -24,7 +25,7 @@ class TumultStudio(HasTraits):
         self.ydata = source.data['y'] # original data
         self.nav_source = ColumnDataSource(dict(x=[], y=[]))
         self.fig_source = ColumnDataSource(dict(x=[], y=[]))
-        self.synth_source = ColumnDataSource(dict(xs=[], ys=[], colors=[], labels=[],
+        self.synth_source = ColumnDataSource(dict(xs=[], ys=[], colors=[], labels=[], alphas=[],
                                                   vmic=[], FeH=[], atmos=[], run_ids=[]))
         self.llist_source = ColumnDataSource(dict(xs=[], ys=[], x=[], y=[], text=[]))
         self.nlam = len(self.xdata)
@@ -63,25 +64,37 @@ class TumultStudio(HasTraits):
         self.footer.add_class('footer')
 
         self._gui = [settings_page, self.header, self.content, self.footer]
-        self.gui = widgets.VBox(self._gui)
-        self.gui.add_class('tum-gui')
         
         self.stylesheets = [*synth_form.load_stylesheets(),
                             StyleSheet(module_dir + 'style.css'),
                             StyleSheet(module_dir + 'widgets.css'),
                             synth_form.load_tooltip_script()]
+        
+        # Load image from file
+        with open(module_dir + 'SplashScreen.png', 'rb') as f:
+            image_data = f.read()
+
+        # Create splash screen with image
+        splash_image = widgets.Image(value=image_data, format='png')
+        splash_image.add_class('splash-image')
+
+        splash_text = widgets.Label('TumultStudio')
+        splash_text.add_class('splash-text')
+
+        self.gui = widgets.VBox([])
+        #self.gui.children = [splash_image, splash_text]
+        self.gui.add_class('tum-gui')
 
     def launch(self, xmin=None, xmax=None, height=500):
         ServerManager.create_global()
+        self.gui.layout.height = f'{height}px'
+        display(self.gui, *self.stylesheets)
         self.init_settings()
         self.init_controls()
         self.init_sidebars()
         canvas = self.init_canvas(xmin=xmin, xmax=xmax)
         self.editor.children += (canvas,)
-        self.gui.layout.height = f'{height}px'
-        
-        return display(self.gui, *self.stylesheets)
-
+        self.gui.children = self._gui
     
     def init_settings(self):
         def open_settings(btn):
@@ -111,9 +124,12 @@ class TumultStudio(HasTraits):
                 self.right_sidebar.titles = ['Synthesis Settings']
             else:
                 obj = sel.object
-                if isinstance(obj, m3dis.m3dis):
+                if isinstance(obj, tumult.tumult):
                     run = obj
                     lm = run.line_mask
+                    ids = self.synth_source.data['run_ids']
+                    i = ids.index(id(run))
+                    reorder_data(self.synth_source, i, len(ids))  # move to back to display on top
                     reset_xaxis(self.fig, [lm.xmin, lm.xmax])
                     reset_xaxis(self.nav, [lm.xmin, lm.xmax], margin=2)
                     set_fit_form(run)
@@ -147,7 +163,7 @@ class TumultStudio(HasTraits):
     def init_canvas(self, xmin=None, xmax=None):
         # Create plot with box select tool AND tap tool
         self.init_main_canvas(xmin, xmax, sizing_mode='stretch_both',
-                              tools="xbox_select,tap,xbox_zoom,pan")
+                              tools="xbox_select,tap,xbox_zoom,pan,save")
         
         self.init_nav_canvas(sizing_mode='stretch_width', height=100,
                              tools="xbox_select,xwheel_zoom,reset",
@@ -155,12 +171,12 @@ class TumultStudio(HasTraits):
         
         self.nav.line('x', 'y', source=self.nav_source, color='dimgrey')
 
-        self.fig.line('x', 'y', source=self.fig_source, color='lightgrey')
-        self.fig.scatter('x', 'y', size=4, source=self.fig_source, color='dimgrey', 
+        self.obs_line = self.fig.line('x', 'y', source=self.fig_source, color='lightgrey')
+        self.obs_scatter = self.fig.scatter('x', 'y', size=4, source=self.fig_source, color='dimgrey', 
                     selection_color='black', nonselection_color='lightgrey', nonselection_alpha=1)
         
         self.synth_line = self.fig.multi_line('xs', 'ys', line_color='colors', legend_field='labels',
-                                              source=self.synth_source, line_width=3,
+                                              source=self.synth_source, line_width=3, line_alpha='alphas',
                                               nonselection_line_alpha=1.0,
                                               hover_line_width=5)
         
@@ -302,7 +318,7 @@ class TumultStudio(HasTraits):
     
     @log_callback_errors
     def plot_synth(self, launch_function, *args):
-        synth_runs = self._get_objects_by_type(m3dis.m3dis)
+        synth_runs = self._get_objects_by_type(tumult.tumult)
         i = find_smallest_missing([sr.ic for sr in synth_runs])
         color = ColorCycle(saved_settings['bokeh palette'])[i]
         name = f'SynthRun_{i:03d}'
@@ -321,24 +337,23 @@ class TumultStudio(HasTraits):
             crop_params = {}
 
         x, y = new_run.crop(LTE=True, **crop_params)
-    
-        @log_callback_errors
-        def draw_synth():
-            current_data = self.synth_source.data.copy()
-            current_data['xs'].append(x)
-            current_data['ys'].append(y)
-            current_data['colors'].append(color)
-            current_data['labels'].append(new_run.label)
-            current_data['vmic'].append(new_run.nml['atmos_params']['vmic'])
-            current_data['FeH'].append(new_run.nml['atmos_params']['FeH'])
-            current_data['atmos'].append(new_run.nml['atmos_params']['atmos_file'])
-            current_data['run_ids'].append(id(new_run))
-            self.synth_source.data = current_data
-            self.progress.value = self.progress.max
-            self.progress.description = f'Done!'
-    
-        ServerManager.server.next_tick_update(draw_synth)
+
+        @update_data_source(self.synth_source)
+        def draw_synth(data):
+            data['xs'].append(x)
+            data['ys'].append(y)
+            data['colors'].append(color)
+            data['labels'].append(new_run.label)
+            data['vmic'].append(new_run.nml['atmos_params']['vmic'])
+            data['FeH'].append(new_run.nml['atmos_params']['FeH'])
+            data['atmos'].append(new_run.nml['atmos_params']['atmos_file'])
+            data['run_ids'].append(id(new_run))
+            data['alphas'].append(1.0)
+
+        draw_synth()
         self.set_synth_controls(new_run, widget_label)
+        self.progress.value = self.progress.max
+        self.progress.description = f'Done!'
 
     
     @log_callback_errors
@@ -347,52 +362,58 @@ class TumultStudio(HasTraits):
         i = self.synth_source.data['run_ids'].index(id(old_run))
         self.progress.description = f'Fitting {old_run.label}:'
         new_run, xfit, yfit = fit_synth(old_run, self.fig_source, self.progress)
-        self.browser.remove_object(old_run)
-        self.browser.add_object(new_run)
-        self.browser.selected = self.browser.list_items[-1]  # select the new run
-        widget_label = self.browser.selected.children[0].label
 
-        def update():
-            current_data = self.synth_source.data.copy()
-            current_data['xs'][i] = xfit
-            current_data['ys'][i] = yfit
-            current_data['run_ids'][i] = id(new_run)
-            current_data['labels'][i] = new_run.label
-            self.synth_source.data = current_data
-            self.progress.value = self.progress.max
-            self.progress.description = f'Done!'
+        @update_data_source(self.synth_source)
+        def update_synth(data):
+            data['xs'][i] = xfit
+            data['ys'][i] = yfit
+            data['run_ids'][i] = id(new_run)
+            data['labels'][i] = new_run.label
 
-        ServerManager.server.next_tick_update(update)
-        self.set_synth_controls(new_run, widget_label)
+            if new_run is not old_run:
+                self.browser.remove_object(old_run)
+                self.browser.add_object(new_run)
+                self.browser.selected = self.browser.list_items[-1]  # select the new run
+                widget_label = self.browser.selected.children[0].label
+                self.set_synth_controls(new_run, widget_label)
+
+        update_synth()
+        self.progress.value = self.progress.max
+        self.progress.description = f'Done!'
 
     def set_synth_controls(self, run, widget_label=None):
         rid = id(run)
 
-        @log_callback_errors
-        def delete_synth():
-            def update():
-                i = self.synth_source.data['run_ids'].index(rid)
-                current_data = self.synth_source.data.copy()
-                for key in current_data:
-                    current_data[key].pop(i)
-                self.synth_source.data = current_data
-            ServerManager.server.next_tick_update(update)
+        @update_data_source(self.synth_source)
+        def delete_synth(data):
+            i = data['run_ids'].index(rid)
+            for key in data:
+                data[key].pop(i)
+        
+        @update_data_source(self.synth_source)
+        def hide_synth(data):
+            i = data['run_ids'].index(rid)
+            data['alphas'][i] = 0.0
+
+        @update_data_source(self.synth_source)
+        def show_synth(data):
+            i = data['run_ids'].index(rid)
+            data['alphas'][i] = 1.0
 
         run.delete = delete_synth
+        run.hide = hide_synth
+        run.show = show_synth
 
         if widget_label:
-            @log_callback_errors
             def update_label(change):
-                def update():
-                    i = self.synth_source.data['run_ids'].index(rid)
-                    current_data = self.synth_source.data.copy()
-                    current_data['labels'][i] = change['new']
-                    self.synth_source.data = current_data
-                ServerManager.server.next_tick_update(update)
+                @update_data_source(self.synth_source)
+                def update(data):
+                    i = data['run_ids'].index(rid)
+                    data['labels'][i] = change['new']
+                update()
 
             widget_label.observe(update_label, names='description')
 
-        
 
     def _get_objects_by_type(self, typ):
         objects = [o for o in self.browser.objects if isinstance(o, typ)]
@@ -451,7 +472,7 @@ class TumultStudio(HasTraits):
         selected = self.browser.selected
         if selected:
             obj = selected.object
-            if isinstance(obj, m3dis.m3dis):
+            if isinstance(obj, tumult.tumult):
                 plot_line_annotations(self.fig, obj, self.llist_source)
 
     def init_nav_canvas(self, **kwargs):
@@ -480,3 +501,27 @@ class TumultStudio(HasTraits):
         p.x_range.start = x0
         p.x_range.end = x1
         return p
+
+def reorder_data(source, iold, inew):
+    @update_data_source(source)
+    def reorder(data):
+        for key in data:
+            item = data[key].pop(iold)
+            data[key].insert(inew, item)
+    reorder()
+
+
+def update_data_source(source):
+    def decorator(update_func):
+        @wraps(update_func)
+        def wrapper():
+            @log_callback_errors
+            def update():
+                current_data = source.data.copy()
+                # Call the specific update function
+                update_func(current_data)
+                source.data = current_data
+                        
+            ServerManager.server.next_tick_update(update)
+        return wrapper
+    return decorator
