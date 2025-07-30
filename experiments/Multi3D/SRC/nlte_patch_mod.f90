@@ -24,7 +24,7 @@ MODULE nlte_patch_mod
   column_by_column, rotate_atmos, rank_lvlerr, sample_back_opac, &
   decouple_continuum, linelist_in_output, sample_back_opac_in_output, ilambd, &
   Jnu_to_file, preconditioning, make_eos, amr, save_Inu, save_chi, save_Snu, &
-  long_solver, fixed_Jnu, opac_table_vmic, n_nu, save_Jnu, maxiter, sample_bg_opac
+  long_solver, fixed_Jnu, opac_table_vmic, n_nu, save_Jnu, maxiter
   USE ray_mod, only: one_dimensional, ray_type
   USE trans_mod, only: line_type, cont_type
   USE bbtrans_mod, only: voigt_function2, voigt_profile
@@ -614,18 +614,22 @@ SUBROUTINE lte_background_opacities (self, comp, include_absmet, do_sample_opac,
   end do
 
   if (.not. allocated(self%opac_table)) then
-    if (do_sample_opac .or. do_make_eos) then
+    if (do_make_eos) then
       call self%generate_opacity_table(self%nu(fs:fe), include_absmet, comp%ll_initialised)
-    elseif (sample_bg_opac) then
-      call comp%get_table_frequencies(self%nu(fs:fe), tab_nu)
-      call self%generate_opacity_table(tab_nu, include_absmet=.false., include_llist=.false.)
+    elseif (do_sample_opac) then
+      if (include_absmet) then
+        tab_nu = self%nu(fs:fe)
+      else
+        call comp%get_table_frequencies(self%nu(fs:fe), tab_nu)
+      endif
+      call self%generate_opacity_table(tab_nu, include_absmet=include_absmet, include_llist=.false.)
     endif
   endif
 
   ! getting background LTE absorption
   if (do_make_eos .and. self%iter==0) then
     call self%save_opac_table()
-  elseif (do_sample_opac .or. sample_bg_opac) then
+  elseif (do_sample_opac) then
     call self%interpolate_opacity_table(comp%temp, comp%ne, comp%chi500, self%nu(fs:fe))
   else
     call comp%absorption(self%nu, back(:,:,:,:,1), &
@@ -785,7 +789,7 @@ SUBROUTINE interpolate_opacity_table (self, temp, ne, rho, nu)
   real(8), dimension(:), pointer :: tab_nu
   real(8) :: w1, w2, e, t, mint, mine, kappa
   real(8) :: dx, dy, a, b, c, d, fi1, fi2, fj1, fj2, ab, cd
-  integer :: f, i, j, nnu
+  integer :: f, i, j, k, nnu
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('nlte_patch%interpolate_opacity_table', itimer=itimer)
@@ -817,10 +821,11 @@ SUBROUTINE interpolate_opacity_table (self, temp, ne, rho, nu)
     do f=1, nnu
       w2 = wnu(f)
       w1 = 1 - w2
-      a = w1*self%opac_table(f, i,   j)   + w2*self%opac_table(f+1, i,   j)
-      b = w1*self%opac_table(f, i+1, j)   + w2*self%opac_table(f+1, i+1, j)
-      c = w1*self%opac_table(f, i,   j+1) + w2*self%opac_table(f+1, i,   j+1)
-      d = w1*self%opac_table(f, i+1, j+1) + w2*self%opac_table(f+1, i+1, j+1)
+      k = inu(f)
+      a = w1*self%opac_table(k, i,   j)   + w2*self%opac_table(k+1, i,   j)
+      b = w1*self%opac_table(k, i+1, j)   + w2*self%opac_table(k+1, i+1, j)
+      c = w1*self%opac_table(k, i,   j+1) + w2*self%opac_table(k+1, i,   j+1)
+      d = w1*self%opac_table(k, i+1, j+1) + w2*self%opac_table(k+1, i+1, j+1)
       ab = fi1*a + fi2*b
       cd = fi1*c + fi2*d
       kappa = fj1*ab + fj2*cd

@@ -366,7 +366,9 @@ SUBROUTINE execute (self)
     endif
 
     if (sample_back_opac) then
-      call self%init_tabulated_comp(self%composition%temp, self%composition%ne, dtemp=dtemp, ldne=ldne)
+      call self%init_tabulated_comp(self%mem(:,:,:,self%i_temp,self%it,:), &
+                                    self%mem(:,:,:,self%i_ne,  self%it,:), &
+                                    dtemp=dtemp, ldne=ldne)
     elseif (make_eos) then
       call self%init_eos_comp(self%composition%temp, self%composition%rho, ldtemp=ldtemp, ldrho=ldrho)
     endif
@@ -385,7 +387,7 @@ END SUBROUTINE execute
 !===============================================================================
 SUBROUTINE init_tabulated_comp (self, temp, ne, dtemp, ldne)
     class(composition_patch_t), target :: self
-    real(8), dimension(:,:,:), intent(in) :: temp, ne
+    real(4), dimension(:,:,:,:), intent(in) :: temp, ne
     real(8), intent(in) :: dtemp, ldne
     integer :: i, j, ntemp, nne, nnu
     real(8), dimension(:,:,:), allocatable :: tab_temp, tab_ne, tab_rho

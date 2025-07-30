@@ -2494,10 +2494,11 @@ contains
                 i = i + trans%nnu
             end associate
         end do
+        tab_lam = max(1d0, tab_lam) ! remove zero values
         call refsor(tab_lam)
         call remove_close_entries(tab_lam, threshold=0.5d0)
+        nnu = size(tab_lam)
         allocate(tab_nu, source=cc/tab_lam(nnu:1:-1)*1e8)
-        nnu = size(tab_nu)
         allocate(needed(nnu), source=.false.)
         do i=1, size(nu)
             pos = searchsorted(tab_nu, nu(i), outbounds_ok=.true.)
