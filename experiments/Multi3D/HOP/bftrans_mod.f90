@@ -14,7 +14,7 @@ MODULE bftrans_mod
   type, public :: bftrans_type
       integer :: k, ntt, nnu, verbose
       type(level_type) :: level
-      class(particle_type), pointer :: ion
+      class(particle_type), pointer :: ion => null()
       real(dp) :: mint, maxt, minl, maxl
       logical :: ilogl, kvadl, minex, maxex, loglam=.false.
       logical :: ilogt, kvadt, minet, maxet, iteta, pedep, istim

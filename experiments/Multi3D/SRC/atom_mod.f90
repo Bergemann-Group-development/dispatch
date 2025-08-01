@@ -239,9 +239,10 @@ MODULE atom_mod
       call os%allocate(adata%lvlerr, nl)
       call os%allocate(adata%wphi, [m(1:3), self%nline], label='wphi', zero=.true.)
       call os%allocate(adata%n, m, label='n')
-      do j=1, self%nlevel
-        adata%n(:,:,:,j) = adata%nstar(:,:,:,j) 
+      do i=1, self%nlevel
+        adata%n(:,:,:,i) = adata%nstar(:,:,:,i) 
       end do
+      call self%compute_cont_factors(adata)
       if (ng_step > 0) then
         call os%allocate(adata%oldn, [m, 3], label='oldn')
       endif
