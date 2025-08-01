@@ -18,6 +18,11 @@ import os
 
 theme_file = module_dir + 'theme.json'
 
+# Global server manager instance+
+def create_global():
+    global server
+    server = BokehServerManager()
+
 def load_theme_from_file(filepath):
     with open(filepath) as f:
         return Theme(json=json.load(f))
@@ -123,7 +128,11 @@ class BokehServerManager:
         def wrapper(*args, **kwargs):
             update(*params)
 
-        self.doc.add_next_tick_callback(wrapper)
+        if hasattr(self, 'doc'):
+            self.doc.add_next_tick_callback(wrapper)
+        else:
+            # If not on server, run immediately
+            wrapper()
 
     def same_loop(self):
         if hasattr(self, 'loop'):
@@ -144,15 +153,10 @@ def iframe_server(layout, PORT=5008, width='100%', height='100%'):
     with iframe_output:
         display(iframe)
     return iframe_output
-    
-def update_cds(cds, key, val):
-    def update():
-        cds.data[key] = val
-        
-    doc = server.doc
-    doc.add_next_tick_callback(update)
 
 def reset_xaxis(p, xx, margin=0):
+    xx = np.array(xx)
+    xx = xx[~np.isnan(xx)]
     xmin = np.min(xx)
     xmax = np.max(xx)
     d = (xmax-xmin)*margin
@@ -168,6 +172,8 @@ def reset_xaxis(p, xx, margin=0):
         server.next_tick_update(update)
         
 def reset_yaxis(p, yy, margin=0.05):
+    yy = np.array(yy)
+    yy = yy[~np.isnan(yy)]
     ymin = np.min(yy)
     ymax = np.max(yy)
     d = (ymax-ymin)*margin
@@ -182,7 +188,25 @@ def reset_yaxis(p, yy, margin=0.05):
     else:
         server.next_tick_update(update)
 
-# Global server manager instance+
-def create_global():
-    global server
-    server = BokehServerManager()
+def update_data_source(source):
+    def decorator(update_func):
+        @wraps(update_func)
+        def wrapper():
+            @log_callback_errors
+            def update():
+                current_data = source.data.copy()
+                # Call the specific update function
+                update_func(current_data)
+                source.data = current_data
+                        
+            server.next_tick_update(update)
+        return wrapper
+    return decorator
+
+def reorder_data(source, iold, inew):
+    @update_data_source(source)
+    def reorder(data):
+        for key in data:
+            item = data[key].pop(iold)
+            data[key].insert(inew, item)
+    reorder()

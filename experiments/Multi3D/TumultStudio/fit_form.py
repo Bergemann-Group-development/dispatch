@@ -34,6 +34,35 @@ formatters = {'abnd': lambda x: f'{x:.2f}',
 fit_form = ifk.Form(fields, disable=disable)
 element_wid = fit_form.widgets_dict['element'].wid
 abundance_wid = fit_form.widgets_dict['abnd'].wid
+fit_button = fit_form.widgets_dict['apply'].wid
+    
+def init_fit_form(studio):
+    @log_callback_errors
+    def on_fit_click(btn):
+        old_run = studio.browser.selected.object
+        i = studio.synth_source.data['run_ids'].index(id(old_run))
+        studio.progress.description = f'Fitting {old_run.label}:'
+        new_run, xfit, yfit = fit_synth(old_run, studio.fig_source, studio.progress)
+
+        @update_data_source(studio.synth_source)
+        def update_synth(data):
+            data['xs'][i] = xfit
+            data['ys'][i] = yfit
+            data['run_ids'][i] = id(new_run)
+            data['labels'][i] = new_run.label
+
+            if new_run is not old_run:
+                studio.browser.remove_object(old_run)
+                studio.browser.add_object(new_run)
+                studio.browser.selected = studio.browser.list_items[-1]  # select the new run
+                widget_label = studio.browser.selected.children[0].label
+                studio.set_synth_controls(new_run, widget_label)
+
+        update_synth()
+        studio.progress.value = studio.progress.max
+        studio.progress.description = f'Done!'
+
+    fit_button.on_click(on_fit_click)
 
 def set_fit_form_values(values):
     """Set the values of the fit form."""
@@ -66,13 +95,14 @@ def fit_synth(run, source, progress=None):
     values = fit_form.check_and_return_values()
     lm = run.line_mask
 
+    # LineMask data is always normalised
     if values['fitting region'] == 'line mask':
         oxx = lm.xdata
         oyy = lm.ydata
     elif values['fitting region'] == 'selection':
         islc = np.array(source.selected.indices)
         oxx = source.data['x'][islc]
-        oyy = source.data['y'][islc]
+        oyy = np.interp(oxx, lm.xdata, lm.ydata)
 
     fit = []
     bounds = {}
