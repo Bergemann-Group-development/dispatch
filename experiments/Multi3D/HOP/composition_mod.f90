@@ -2155,11 +2155,12 @@ contains
         read(id, *, iostat=iostat) eid, iid
         eid = capitalize(eid)
         iid = uppercase(iid)
+        ion => null()
+        element => null()
         if (iostat /= 0) then
             if (option(verbose)) then
                 print *, 'ion with id = ' // id // ' was not found.'
             endif
-            ion => null()
         else
             trim_id = trim(eid)//' '//trim(iid)
             call self%element_by_id(eid, element)
@@ -2169,13 +2170,10 @@ contains
                     idx = idx + lbound(element%ions,1) - 1
                 endif
                 if (idx < lbound(element%ions,1) .or. idx>ubound(element%ions,1)) then
-                    ion => null()
                     print *, 'ion with id = ' // trim_id // ' was not found.'
                 else
                     ion => element%ions(idx)
                 endif
-            else
-                ion => null()
             endif
             if (present(element_out)) then
                 element_out => element
@@ -2242,6 +2240,7 @@ contains
         integer :: i, idx
         !---------------------------------------------------------------------------
         call trace%begin ('composition_type%init')
+        trans => null()
         do i=1, size(self%trans)
             if (trim(self%trans(i)%key) == id) then
                 trans => self%trans(i)
