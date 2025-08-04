@@ -11,6 +11,14 @@ import copy
 fields = {('rerun', 'use ga', 'use gv', 'use gq'): (None, True, True, True)}
 rerun_form = ifk.Form(fields)
 rerun_form.vbox.add_class('rerun-form')
+rerun_button = rerun_form.widgets_dict['rerun'].wid
+
+def init_rerun_form(studio):
+    def rerun_on_click(btn):
+        run = studio.browser.selected.object
+        studio.plot_synth(rerun_synth, run)
+        
+    rerun_button.on_click(rerun_on_click)
 
 def rerun_synth(name, old_run, progress=None):
   default = old_run.folder

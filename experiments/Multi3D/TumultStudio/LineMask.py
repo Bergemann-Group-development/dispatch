@@ -2,6 +2,33 @@ from bokeh.models import *
 from . import ServerManager
 from .auxfuncs import *
 import numpy as np
+import ipywidgets as widgets
+from .settings import saved_settings
+
+def init_line_mask_button(studio):
+    new_line_mask_button = widgets.Button(description='New Line Mask')
+    new_line_mask_button.layout.display = 'none'
+    
+    @log_callback_errors
+    def selection_callback(attr, old, new):
+        nothing_selected = len(studio.fig_source.selected.indices)==0
+        display = 'none' if nothing_selected else 'block'
+        new_line_mask_button.layout.display = display
+        
+    @log_callback_errors
+    def new_line_mask(btn):
+        line_masks = studio._get_objects_by_type(LineMask)
+        i = find_smallest_missing([lm.ic for lm in line_masks])
+        label = f'LineMask_{i:03d}'
+        new_mask = LineMask(studio.fig_source, studio.source.data, label=label)
+        new_mask.ic = i
+        studio.browser.add_object(new_mask)
+        color = ColorCycle(saved_settings['bokeh palette'])[i]
+        new_mask.draw_boxes(studio.nav, studio.fig, line_color=None, fill_color=color, fill_alpha=0.1)
+    
+    studio.fig_source.selected.on_change('indices', selection_callback)
+    new_line_mask_button.on_click(new_line_mask)
+    return new_line_mask_button
 
 class LineMask():
     def __init__(self, source, data, label='untitled'):
@@ -25,6 +52,14 @@ class LineMask():
 
         self.label = label
         self.boxes = []
+        self.cntm = np.ones_like(self.xdata)
+
+    def normalise(self, spline):
+        # Line Mask data is always normalised
+        # If renormalised, the old normalisation is undone
+        self.ydata *= self.cntm
+        self.cntm = spline(self.xdata)
+        self.ydata /= self.cntm
 
     def get_wavelength_grid(self, daa=0.01):
         xdata = []
@@ -42,13 +77,6 @@ class LineMask():
         def update():
             [p.add_layout(box) for p, box in self.boxes]
             
-        ServerManager.server.next_tick_update(update)
-
-    def jump_to_mask(self, p):
-        def update():
-            p.x_range.start = self.xmin
-            p.x_range.end = self.xmax
-        
         ServerManager.server.next_tick_update(update)
 
     def delete(self):

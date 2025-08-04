@@ -42,7 +42,25 @@ synth_form.update_disable()
 
 atmos_wid = synth_form.widgets_dict['atmosphere file'].wid
 atmos_fmt = synth_form.widgets_dict['atmosphere format'].wid
-launch_btn = synth_form.widgets_dict['launch'].wid
+launch_button = synth_form.widgets_dict['launch'].wid
+
+def init_synth_form(studio):
+    def launch_on_click(btn):
+        studio.plot_synth(launch_synth)
+
+    launch_button.on_click(launch_on_click)
+
+    def update_line_mask_dropdown(change):
+        line_masks = studio._get_objects_by_type(LineMask)
+        wid = synth_form.widgets_dict['line_mask'].wid
+        if line_masks:
+            wid.options = tuple(line_masks)
+            wid.value = line_masks[-1]
+        else:
+            wid.options = ('no line masks yet',)
+
+    studio.browser.observe(update_line_mask_dropdown, names='objects')
+    update_line_mask_dropdown(None)
 
 def list_atmospheres(change):
     fmt = change['new']

@@ -1,14 +1,16 @@
 from .auxfuncs import *
 from . import ServerManager
-from .ServerManager import reset_xaxis, reset_yaxis
+from .ServerManager import *
 from .LineMask import *
 from .widgets import *
-from .synth_form import synth_form, launch_synth, monitor_synth
-from .fit_form import fit_form, set_fit_form, fit_synth
-from .rerun_form import rerun_form, rerun_synth
+from .synth_form import synth_form, init_synth_form
+from .fit_form import fit_form, set_fit_form, init_fit_form
+from .rerun_form import rerun_form, init_rerun_form
+from .norm_form import *
 from .settings import settings_form, settings_page, saved_settings
 from .llist_annotations import plot_line_annotations, remove_line_annotations, get_llist_table
 from bokeh.models import *
+from bokeh.models import ColumnDataSource as CDS
 from bokeh.layouts import *
 from bokeh.events import *
 from bokeh.plotting import figure
@@ -17,17 +19,23 @@ import numpy as np
 import tumult
 import time
 from traitlets import HasTraits
+import traceback
+
 
 class TumultStudio(HasTraits):
     def __init__(self, source):
-        self.source = source
-        self.xdata = source.data['x'] # original data
-        self.ydata = source.data['y'] # original data
-        self.nav_source = ColumnDataSource(dict(x=[], y=[]))
-        self.fig_source = ColumnDataSource(dict(x=[], y=[]))
-        self.synth_source = ColumnDataSource(dict(xs=[], ys=[], colors=[], labels=[], alphas=[],
-                                                  vmic=[], FeH=[], atmos=[], run_ids=[]))
-        self.llist_source = ColumnDataSource(dict(xs=[], ys=[], x=[], y=[], text=[]))
+        self.source = prepare_source(source)
+        self.xdata = self.source.data['x'] # original data
+        self.ydata = self.source.data['y'] # original data
+        self.cntm = np.ones_like(self.xdata)  # normalisation spline
+        self.nav_source = CDS(dict(x=[], y=[]))
+        self.fig_source = CDS(dict(x=[], y=[]))
+        self.fig_line_source = CDS(dict(x=[], y=[]))
+        self.synth_source = CDS(dict(xs=[], ys=[], colors=[], labels=[], alphas=[],
+                                     vmic=[], FeH=[], atmos=[], run_ids=[]))
+        self.llist_source = CDS(dict(xs=[], ys=[], x=[], y=[], text=[]))
+        self.cntm_source = CDS(dict(x=[], y=[]))
+        self.spline_source = CDS(dict(x=[], y=[]))
         self.nlam = len(self.xdata)
         self.max_points = 1000
         self.browser = EditableList()
@@ -91,8 +99,8 @@ class TumultStudio(HasTraits):
         display(self.gui, *self.stylesheets)
         self.init_settings()
         self.init_controls()
-        self.init_sidebars()
         canvas = self.init_canvas(xmin=xmin, xmax=xmax)
+        self.init_sidebars()
         self.editor.children += (canvas,)
         self.gui.children = self._gui
     
@@ -108,9 +116,10 @@ class TumultStudio(HasTraits):
 
     
     def init_sidebars(self):
-        self.init_synth_form()
-        self.init_fit_form()
-        self.init_rerun_form()
+        init_synth_form(self)
+        init_fit_form(self)
+        init_rerun_form(self)
+        init_norm_form(self)
         self.left_sidebar.children += (self.browser,)
         self.right_sidebar.children = (synth_form.vbox,)
         self.right_sidebar.titles = ['Synthesis Settings']
@@ -118,8 +127,6 @@ class TumultStudio(HasTraits):
         def set_right_sidebar(change):
             sel = self.browser.selected
             if not sel:
-                reset_xaxis(self.fig, [self.saved_xmin, self.saved_xmax])
-                reset_xaxis(self.nav, [self.xdata[0], self.xdata[-1]])
                 self.right_sidebar.children = (synth_form.vbox,)
                 self.right_sidebar.titles = ['Synthesis Settings']
             else:
@@ -144,26 +151,27 @@ class TumultStudio(HasTraits):
                     synth_form.widgets_dict['line_mask'].wid.value = lm
                     self.right_sidebar.children = (synth_form.vbox,)
                     self.right_sidebar.titles = ['Synthesis Settings']
-                elif isinstance(obj, ColumnDataSource):
-                    reset_xaxis(self.fig, [self.saved_xmin, self.saved_xmax])
-                    reset_xaxis(self.nav, [self.xdata[0], self.xdata[-1]])
-                    self.right_sidebar.children = (synth_form.vbox,)
-                    self.right_sidebar.titles = ['Synthesis Settings']
+                elif isinstance(obj, CDS):
+                    self.right_sidebar.children = (norm_form.vbox,)
+                    self.right_sidebar.titles = ['Norm Settings']
             
-            ServerManager.server.next_tick_update(self.yrange_update_callback)
-            ServerManager.server.next_tick_update(self.update_annotations)
+            self.reset_yaxis_and_annotations()
                 
         self.browser.observe(set_right_sidebar, names='selected')
+        self.browser.selected = self.browser.list_items[0]
         
                 
     def init_controls(self):
-        self.init_line_mask_button()
+        new_line_mask_button = init_line_mask_button(self)
+        norm_checkbox = init_norm_checkbox(self)
+
+        self.controls.children += (norm_checkbox, new_line_mask_button,)
         
         
     def init_canvas(self, xmin=None, xmax=None):
         # Create plot with box select tool AND tap tool
         self.init_main_canvas(xmin, xmax, sizing_mode='stretch_both',
-                              tools="xbox_select,tap,xbox_zoom,pan,save")
+                              tools="xbox_select,tap,xbox_zoom,pan,save,reset,undo")
         
         self.init_nav_canvas(sizing_mode='stretch_width', height=100,
                              tools="xbox_select,xwheel_zoom,reset",
@@ -171,7 +179,7 @@ class TumultStudio(HasTraits):
         
         self.nav.line('x', 'y', source=self.nav_source, color='dimgrey')
 
-        self.obs_line = self.fig.line('x', 'y', source=self.fig_source, color='lightgrey')
+        self.obs_line = self.fig.line('x', 'y', source=self.fig_line_source, color='lightgrey')
         self.obs_scatter = self.fig.scatter('x', 'y', size=4, source=self.fig_source, color='dimgrey', 
                     selection_color='black', nonselection_color='lightgrey', nonselection_alpha=1)
         
@@ -192,6 +200,9 @@ class TumultStudio(HasTraits):
                                      text_color='black',
                                      source=self.llist_source, angle=np.pi/2)
         
+        self.spline_line = self.fig.line('x', 'y', source=self.cntm_source, color='red', alpha=0.5)
+        self.spline_knots = self.fig.scatter('x', 'y', source=self.spline_source, size=6, color='red')
+        
         # TOOLTIPS = [
         #     ('λ', '$x{0.000}'),
         #     ('[Fe/H]', '@FeH{0.00}'),
@@ -201,22 +212,11 @@ class TumultStudio(HasTraits):
         hover = HoverTool(renderers=[self.llist_line, self.synth_line],
                   tooltips=None, mode='mouse')  # You can add tooltips if needed
         
+        draw_tool = PointDrawTool(renderers=[self.spline_knots])
+        
         self.fig.add_layout(self.llist_labels)
-        self.fig.add_tools(hover)
+        self.fig.add_tools(hover, draw_tool)
         self.fig.legend.location = "bottom_left"
-            
-        @log_callback_errors
-        def nav_drag_callback(event):
-            geo = event.geometry
-            xmin = geo['x0']
-            xmax = geo['x1']
-                
-            self.saved_xmin = xmin
-            self.saved_xmax = xmax
-            reset_xaxis(self.fig, [xmin, xmax])
-            reset_xaxis(self.nav, [xmin, xmax], margin=2)
-            
-        self.nav.on_event(SelectionGeometry, nav_drag_callback)
 
         def synth_selection(attr, old, new):
             selected = new
@@ -256,66 +256,7 @@ class TumultStudio(HasTraits):
         canvas.add_class('canvas')
         return canvas
 
-    def init_line_mask_button(self):
-        new_line_mask_button = widgets.Button(description='New Line Mask')
-        new_line_mask_button.layout.display = 'none'
-        
-        @log_callback_errors
-        def selection_callback(attr, old, new):
-            nothing_selected = len(self.fig_source.selected.indices)==0
-            display = 'none' if nothing_selected else 'block'
-            new_line_mask_button.layout.display = display
-            
-        @log_callback_errors
-        def new_line_mask(btn):
-            line_masks = self._get_objects_by_type(LineMask)
-            i = find_smallest_missing([lm.ic for lm in line_masks])
-            label = f'LineMask_{i:03d}'
-            new_mask = LineMask(self.fig_source, self.source.data, label=label)
-            new_mask.ic = i
-            self.browser.add_object(new_mask)
-            color = ColorCycle(saved_settings['bokeh palette'])[i]
-            new_mask.draw_boxes(self.nav, self.fig, line_color=None, fill_color=color, fill_alpha=0.1)
-        
-        self.fig_source.selected.on_change('indices', selection_callback)
-        new_line_mask_button.on_click(new_line_mask)
-        self.controls.children += (new_line_mask_button,)
 
-    
-    def init_synth_form(self):
-        def launch_on_click(btn):
-            self.plot_synth(launch_synth)
-
-        launch_button = synth_form.widgets_dict['launch'].wid
-        launch_button.on_click(launch_on_click)
-    
-        def update_line_mask_dropdown(change):
-            line_masks = self._get_objects_by_type(LineMask)
-            wid = synth_form.widgets_dict['line_mask'].wid
-            if line_masks:
-                wid.options = tuple(line_masks)
-                wid.value = line_masks[-1]
-            else:
-                wid.options = ('no line masks yet',)
-    
-        self.browser.observe(update_line_mask_dropdown, names='objects')
-        update_line_mask_dropdown(None)
-
-    
-    def init_fit_form(self):
-        fit_button = fit_form.widgets_dict['apply'].wid
-        fit_button.on_click(self.fit_synth)
-
-
-    def init_rerun_form(self):
-        def rerun_on_click(btn):
-            run = self.browser.selected.object
-            self.plot_synth(rerun_synth, run)
-        
-        rerun_button = rerun_form.widgets_dict['rerun'].wid
-        rerun_button.on_click(rerun_on_click)
-
-    
     @log_callback_errors
     def plot_synth(self, launch_function, *args):
         synth_runs = self._get_objects_by_type(tumult.tumult)
@@ -338,6 +279,10 @@ class TumultStudio(HasTraits):
 
         x, y = new_run.crop(LTE=True, **crop_params)
 
+        # run data is always normalised, so we need to transform
+        # to view coordinates if the view is set to unnormalised
+        y = conditional_denormalisation(x, y)
+
         @update_data_source(self.synth_source)
         def draw_synth(data):
             data['xs'].append(x)
@@ -355,31 +300,6 @@ class TumultStudio(HasTraits):
         self.progress.value = self.progress.max
         self.progress.description = f'Done!'
 
-    
-    @log_callback_errors
-    def fit_synth(self, btn):
-        old_run = self.browser.selected.object
-        i = self.synth_source.data['run_ids'].index(id(old_run))
-        self.progress.description = f'Fitting {old_run.label}:'
-        new_run, xfit, yfit = fit_synth(old_run, self.fig_source, self.progress)
-
-        @update_data_source(self.synth_source)
-        def update_synth(data):
-            data['xs'][i] = xfit
-            data['ys'][i] = yfit
-            data['run_ids'][i] = id(new_run)
-            data['labels'][i] = new_run.label
-
-            if new_run is not old_run:
-                self.browser.remove_object(old_run)
-                self.browser.add_object(new_run)
-                self.browser.selected = self.browser.list_items[-1]  # select the new run
-                widget_label = self.browser.selected.children[0].label
-                self.set_synth_controls(new_run, widget_label)
-
-        update_synth()
-        self.progress.value = self.progress.max
-        self.progress.description = f'Done!'
 
     def set_synth_controls(self, run, widget_label=None):
         rid = id(run)
@@ -420,10 +340,10 @@ class TumultStudio(HasTraits):
         return objects
         
         
-    def init_main_canvas(self, xmin, xmax, xlabel='Wavelength [Å]', ylabel='Flux', **kwargs):
+    def init_main_canvas(self, xmin=None, xmax=None, xlabel='Wavelength [Å]', ylabel='Flux', **kwargs):
         p = figure(output_backend='svg',
-                x_range=[0, 1],
-                y_range=[-0.05, 1.05],
+                x_range=(0,1), # for some reason this is crucial
+                y_range=(-0.5, 1.05), # for some reason this is crucial
                 **kwargs)
         
         self.fig = p
@@ -439,13 +359,7 @@ class TumultStudio(HasTraits):
         p.toolbar.active_drag = tools[BoxSelectTool]
 
         def xrange_update_callback(attr, new, old):
-            slc = get_crop_range(self.xdata, p.x_range, nmax=1000, margin=0.01)
-            self.fig_source.data = dict(x=self.xdata[slc], y=self.ydata[slc])
-            if hasattr(self, 'fig_slc'):
-                off = self.fig_slc.start - slc.start
-                idx = np.array(self.fig_source.selected.indices) + off
-                self.fig_source.selected.indices = list(idx)
-            self.fig_slc = slc
+            self.update_data_views()
 
         p.x_range.on_change('start', xrange_update_callback)
         p.x_range.on_change('end', xrange_update_callback)
@@ -453,18 +367,38 @@ class TumultStudio(HasTraits):
         p.x_range.on_change('end', self.yrange_update_callback)
         p.x_range.on_change('start', self.update_annotations)
         p.x_range.on_change('end', self.update_annotations)
-        
-        if xmin: p.x_range.start = xmin
-        if xmax: p.x_range.end   = xmax
-        self.saved_xmin = p.x_range.start
-        self.saved_xmax = p.x_range.end
+
+        xmin = xmin or self.xdata[0]
+        xmax = xmax or self.xdata[-1]
+        p.x_range.start = xmin
+        p.x_range.end   = xmax
+
+    def update_data_views(self):
+        slc1 = get_crop_range(self.xdata, self.fig.x_range, nmax=10000, margin=0.01)
+        slc2 = get_crop_range(self.xdata, self.fig.x_range, nmax=1000, margin=0.01)
+
+        # ydata is always unnormalised, so we need to normalise if view is normed
+        y1 = conditional_normalisation(self.xdata[slc1], self.ydata[slc1])
+        y2 = conditional_normalisation(self.xdata[slc2], self.ydata[slc2])
+        self.fig_line_source.data = dict(x=self.xdata[slc1], y=y1)
+        self.fig_source.data = dict(x=self.xdata[slc2], y=y2)
+        self.cntm_source.data = dict(x=self.xdata[slc1], y=self.cntm[slc1])
+        self.fig_source.selected.indices = []
+
+    def reset_yaxis_and_annotations(self):
+        ServerManager.server.next_tick_update(self.yrange_update_callback)
+        ServerManager.server.next_tick_update(self.update_annotations)
     
     def yrange_update_callback(self, attr, old, new):
         yvis = self.fig_source.data['y']
-        for i, x in enumerate(self.synth_source.data['xs']):
+        xs = self.synth_source.data['xs']
+        ys = self.synth_source.data['ys']
+        
+        for x, y in zip(xs, ys):
             slc = get_crop_range(x, self.fig.x_range)
-            yvis = np.concatenate((yvis, self.synth_source.data['ys'][i][slc]))
-        if len(yvis)>0:
+            yvis = np.concatenate((yvis, y[slc]))
+
+        if len(yvis) > 0:
             reset_yaxis(self.fig, yvis)
 
     def update_annotations(self, attr, old, new):
@@ -491,37 +425,43 @@ class TumultStudio(HasTraits):
         tools = {type(tool):tool for tool in p.toolbar.tools}
         p.toolbar.active_scroll = tools[WheelZoomTool]
 
-        def xrange_update_callback(attr, new, old):
+        def nav_xrange_update_callback(attr, new, old):
             slc = get_crop_range(self.xdata, p.x_range, nmax=10000)
             self.nav_source.data = dict(x=self.xdata[slc], y=self.ydata[slc])
 
         p.x_range = Range1d(0, 1, bounds=(x0, x1))
-        p.x_range.on_change('start', xrange_update_callback)
-        p.x_range.on_change('end', xrange_update_callback)
+        p.x_range.on_change('start', nav_xrange_update_callback)
+        p.x_range.on_change('end', nav_xrange_update_callback)
         p.x_range.start = x0
         p.x_range.end = x1
-        return p
+            
+        @log_callback_errors
+        def nav_drag_callback(event):
+            geo = event.geometry
+            xmin = geo['x0']
+            xmax = geo['x1']
 
-def reorder_data(source, iold, inew):
-    @update_data_source(source)
-    def reorder(data):
-        for key in data:
-            item = data[key].pop(iold)
-            data[key].insert(inew, item)
-    reorder()
+            reset_xaxis(self.nav, [xmin, xmax], margin=2)
+            reset_xaxis(self.fig, [xmin, xmax])
+            
+        p.on_event(SelectionGeometry, nav_drag_callback)
 
+def prepare_source(source):
+    if not isinstance(source, CDS):
+        source = CDS(source)
 
-def update_data_source(source):
-    def decorator(update_func):
-        @wraps(update_func)
-        def wrapper():
-            @log_callback_errors
-            def update():
-                current_data = source.data.copy()
-                # Call the specific update function
-                update_func(current_data)
-                source.data = current_data
-                        
-            ServerManager.server.next_tick_update(update)
-        return wrapper
-    return decorator
+    if 'x' not in source.data:
+        raise ValueError("Source data must contain 'x' key.")
+    
+    if 'y' not in source.data:
+        raise ValueError("Source data must contain 'y' key.")
+    
+    data = source.data.copy()
+    xdata = source.data['x']
+    ydata = source.data['y']
+    mask = np.isfinite(ydata) * (ydata > 0)
+    for key in data:
+        data[key] = np.array(data[key])[mask]
+    data['y'] /= data['y'].max()  # normalise y data
+    source.data = data 
+    return source
