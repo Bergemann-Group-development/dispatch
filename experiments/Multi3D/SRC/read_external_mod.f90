@@ -179,8 +179,7 @@ SUBROUTINE init(self, task_list, name)
 
   if (atmos_format /= 'save') then
     call ia%thick2thin()
-    call ia%get_box(self%size)
-    self%size = self%size / scaling%l
+    call ia%scale_box(box=self%size, scale=scaling%l)
 
     if (one_dimensional) then
       nx = 1; ny = 1

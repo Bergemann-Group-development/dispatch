@@ -24,7 +24,7 @@ MODULE read_atmos_mod
   contains
     procedure :: allocate   => allocate_input_atmos
     procedure :: deallocate => deallocate_input_atmos
-    procedure :: get_box
+    procedure :: scale_box
     procedure :: thick2thin
     procedure :: setup_amr_mesh
   end type input_atmos_t
@@ -675,20 +675,24 @@ SUBROUTINE deallocate_input_atmos(self)
 END SUBROUTINE deallocate_input_atmos
 
 !===============================================================================
-SUBROUTINE get_box(self, box)
+SUBROUTINE scale_box(self, box, scale)
   class(input_atmos_t), intent(inout) :: self
   real(8), intent(out) :: box(3)
+  real(8), intent(in) :: scale
   real(8) :: ds(3)
   integer :: n(3)
   !-----------------------------------------------------------------------------
   n = [self%nx, self%ny, self%nz-2*self%gz]
+  self%xx = self%xx/scale
+  self%yy = self%yy/scale
+  self%zz = self%zz/scale
   box(1) = self%xx(self%nx)
   box(2) = self%yy(self%ny)
   box(3) = self%zz(self%nz-self%gz)
   box(1:2) = box(1:2) * n(1:2) / max(n(1:2)-1, 1)
-  if (self%nx == 1) box(1) = 1d8
-  if (self%ny == 1) box(2) = 1d8
-END SUBROUTINE get_box
+  if (self%nx == 1) box(1) = 0.01
+  if (self%ny == 1) box(2) = 0.01
+END SUBROUTINE scale_box
 
 !===============================================================================
 ! This makes sure that the atmosphere is flipped properly
@@ -727,7 +731,7 @@ SUBROUTINE thick2thin(self)
     self%zz = self%zz (nz:1:-1)
   endif
 
-  if (nx*ny==1 .and. abs(ia%zz(1) - ia%zz(nz)) < 1e4) then
+  if (one_dimensional .and. abs(ia%zz(1) - ia%zz(nz)) < 1e4) then
     ! log tau scale
     allocate(temp8(nx, ny, nz))
     allocate(rho8 (nx, ny, nz))

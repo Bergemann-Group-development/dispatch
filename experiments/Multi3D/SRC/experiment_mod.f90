@@ -75,8 +75,8 @@ SUBROUTINE pre_init (self)
   self%position(1:2) = 0.5d0*self%size(1:2)
 
   if (amr) then
-    self%size(3)     = ia%sub_size(self%ipos(3)+1) / scaling%l
-    self%position(3) = ia%sub_pos (self%ipos(3)+1) / scaling%l
+    self%size(3)     = ia%sub_size(self%ipos(3)+1)
+    self%position(3) = ia%sub_pos (self%ipos(3)+1)
     self%ds(3)       = self%size(3) / self%n(3)
   else
     self%ds(3)       = self%box(3) / self%nbox(3)
@@ -146,8 +146,8 @@ SUBROUTINE init (self)
 
   if (atmos_format /= 'save') then
     n = self%n
-    sub = scaling%l * self%size
-    pos = scaling%l * self%position
+    sub = self%size
+    pos = self%position
   
     authority => self%authority_mem(:,:,:,:,self%it,1)
     d  => authority(:,:,:,self%idx%d)
@@ -171,7 +171,7 @@ SUBROUTINE init (self)
         pe => authority(:,:,:,6)
         vmic => authority(:,:,:,7)
         bottom = self%position(3) - 0.5*self%size(3)
-        bot2pivot = scaling%l * (pivot_z - bottom)
+        bot2pivot = pivot_z - bottom
         call interpolate_atmos(n, sub, pos, d, px, py, pz, tt, pe, vmic, vec=long_vec(:,i), bot2pivot=bot2pivot)
       end do
     endif
