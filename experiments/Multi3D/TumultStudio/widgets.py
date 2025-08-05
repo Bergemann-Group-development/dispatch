@@ -83,9 +83,10 @@ class EditableList(widgets.VBox, HasTraits):
     objects = List()
     selected = Instance(widgets.HBox, allow_none=True)
     
-    def __init__(self, objects=None, **kwargs):
+    def __init__(self, objects=None, buttons=None, **kwargs):
         super().__init__(**kwargs)
         self.add_class('EditableList')
+        self.buttons = buttons  # List of buttons to show for each item
 
         self.selected = None
         self.list_items = []  # Stores HBox containers with label + delete button
@@ -147,29 +148,33 @@ class EditableList(widgets.VBox, HasTraits):
         # Create label widget
         label_widget = EditableLabel(value=obj.label)
         
-        # Create delete button
-        delete_button = widgets.Button(
-            description='×',
-            tooltip='Delete item'
-        )
-        delete_button.add_class('del-btn')
-
-        # Create delete button
-        hide_button = widgets.Button(
-            description='',
-            icon='eye',
-            tooltip='Hide/Display item'
-        )
-        hide_button.add_class('hide-btn')
-        
         # Create container for label + delete button
         item_container = widgets.HBox([
             label_widget,
-            hide_button,
-            delete_button,
         ])
+
         item_container.add_class('row-box')
         item_container.object = obj
+
+        if 'hide' in self.buttons:
+            # Create delete button
+            hide_button = widgets.Button(
+                description='',
+                icon='eye',
+                tooltip='Hide/Display item'
+            )
+            hide_button.add_class('hide-btn')
+            item_container.children += (hide_button,)
+
+        if 'delete' in self.buttons:
+            # Create delete button
+            delete_button = widgets.Button(
+                description='×',
+                tooltip='Delete item'
+            )
+            delete_button.add_class('del-btn')
+            item_container.children += (delete_button,)
+
         
         # Store mapping
         self.label_to_object[label_widget] = obj

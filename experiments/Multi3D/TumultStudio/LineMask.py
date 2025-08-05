@@ -1,6 +1,8 @@
 from bokeh.models import *
 from . import ServerManager
+from .ServerManager import reset_xaxis
 from .auxfuncs import *
+from .synth_form import synth_form
 import numpy as np
 import ipywidgets as widgets
 from .settings import saved_settings
@@ -18,9 +20,9 @@ def init_line_mask_button(studio):
     @log_callback_errors
     def new_line_mask(btn):
         line_masks = studio._get_objects_by_type(LineMask)
+        new_mask = LineMask(studio.fig_source, studio.source.data)
         i = find_smallest_missing([lm.ic for lm in line_masks])
-        label = f'LineMask_{i:03d}'
-        new_mask = LineMask(studio.fig_source, studio.source.data, label=label)
+        new_mask.label = f'{new_mask.xmin:.1f}-{new_mask.xmax:.1f}'
         new_mask.ic = i
         studio.browser.add_object(new_mask)
         color = ColorCycle(saved_settings['bokeh palette'])[i]
@@ -31,7 +33,7 @@ def init_line_mask_button(studio):
     return new_line_mask_button
 
 class LineMask():
-    def __init__(self, source, data, label='untitled'):
+    def __init__(self, source, data):
         xx = source.data['x']
         islc = np.sort(np.array(source.selected.indices))
         splits = np.where(np.diff(islc)>1)[0]+1
@@ -50,9 +52,14 @@ class LineMask():
             self.xdata = np.concatenate([self.xdata, data['x'][slc]])
             self.ydata = np.concatenate([self.ydata, data['y'][slc]])
 
-        self.label = label
         self.boxes = []
         self.cntm = np.ones_like(self.xdata)
+
+    def chosen(self, studio):
+        reset_xaxis(self.fig, [self.xmin, self.xmax])
+        reset_xaxis(self.nav, [self.xmin, self.xmax], margin=2)
+        self.right_sidebar.children = (synth_form.vbox,)
+        self.right_sidebar.titles = ['Synthesis Settings']
 
     def normalise(self, spline):
         # Line Mask data is always normalised

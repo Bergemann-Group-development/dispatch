@@ -12,7 +12,6 @@ from .LineMask import LineMask
 
 fields = {'method': ('spline',),
           'peak distance': 5.0,
-          'vshift': 0.0,
           'Normalise': None,
          }
 

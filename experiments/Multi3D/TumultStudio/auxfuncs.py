@@ -3,36 +3,119 @@ from functools import wraps
 import logging
 import threading
 import numpy as np
-import os
+import ipywidgets as widgets
 from line_profiler import LineProfiler
+import tempfile
+import shutil
+import atexit
+import pathlib
+import sys
+from io import StringIO
+import traceback
 
-module_dir = os.path.dirname(os.path.abspath(__file__)) + os.sep
+module_dir = pathlib.Path(__file__).parent
 logger = logging.getLogger(__name__)
 
 def run_in_thread(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
-        out = {}
+        out = {
+            'result': None,
+            'error': None,
+            'traceback': None,
+            'stdout': None,
+            'stderr': None,
+            'logs': []
+        }
+        
         def runner():
-            out['result'] = func(*args, **kwargs)
-
+            # Capture stdout/stderr
+            old_stdout = sys.stdout
+            old_stderr = sys.stderr
+            stdout_capture = StringIO()
+            stderr_capture = StringIO()
+            
+            # Capture logging
+            log_capture = StringIO()
+            log_handler = logging.StreamHandler(log_capture)
+            log_handler.setLevel(logging.DEBUG)
+            
+            # Get the root logger
+            root_logger = logging.getLogger()
+            original_level = root_logger.level
+            root_logger.addHandler(log_handler)
+            root_logger.setLevel(logging.DEBUG)
+            
+            try:
+                sys.stdout = stdout_capture
+                sys.stderr = stderr_capture
+                
+                out['result'] = func(*args, **kwargs)
+                
+            except Exception as e:
+                out['error'] = e
+                out['traceback'] = traceback.format_exc()
+                logging.error(f"Error in thread: {e}")
+                
+            finally:
+                # Restore everything
+                sys.stdout = old_stdout
+                sys.stderr = old_stderr
+                root_logger.removeHandler(log_handler)
+                root_logger.setLevel(original_level)
+                
+                # Store captured output
+                out['stdout'] = stdout_capture.getvalue()
+                out['stderr'] = stderr_capture.getvalue()
+                out['logs'] = log_capture.getvalue()
+        
         thread = threading.Thread(target=runner)
         thread.start()
         thread.out = out
-        return thread  # so you can optionally join or check .is_alive()
+        
+        # Add the same convenience methods as before
+        def get_result(timeout=None):
+            thread.join(timeout)
+            if thread.is_alive():
+                raise TimeoutError(f"Thread did not complete within {timeout} seconds")
+            if out['error']:
+                raise out['error']
+            return out['result']
+        
+        def print_output():
+            if out['stdout']:
+                print("=== Thread stdout ===")
+                print(out['stdout'])
+            if out['stderr']:
+                print("=== Thread stderr ===", file=sys.stderr)
+                print(out['stderr'], file=sys.stderr)
+            if out['logs']:
+                print("=== Thread logs ===")
+                print(out['logs'])
+            if out['error']:
+                print("=== Thread error ===", file=sys.stderr)
+                print(out['traceback'], file=sys.stderr)
+        
+        thread.get_result = get_result
+        thread.print_output = print_output
+
+        return thread
+    
     return wrapper
 
 def log_callback_errors(func):
     """Minimal decorator to log exceptions in callbacks."""
     @wraps(func)
     def wrapper(*args, **kwargs):
+        if len(args)>0 and isinstance(args[0], widgets.Button):
+            logging.info(f"Button '{args[0].description}' clicked.")
+
         try:
             return func(*args, **kwargs)
         except Exception as e:
             logger.exception(f"Error in callback '{func.__name__}'")
     return wrapper
 
-    from line_profiler import LineProfiler
 
 def profile_lines(func):
     @wraps(func)
@@ -119,49 +202,59 @@ def replace_nth(string, sub, replacement, n):
         return string  # nth occurrence doesn't exist
     return sub.join(parts[:n]) + replacement + sub.join(parts[n:])
     
-def combine_selections(selected_indices, current_indices, mode='replace'):
-    """
-    Combine two lists of indices based on different selection modes.
+def unique_folder_name(folder):
+    folder = pathlib.Path(folder)
     
-    Parameters:
-    -----------
-    selected_indices : list
-        New indices to be combined
-    current_indices : list  
-        Existing selected indices (e.g., source.selected.indices)
-    mode : str
-        Selection mode - 'replace', 'append', 'subtract', 'intersect', or 'toggle'
-        
-    Returns:
-    --------
-    list : Combined indices sorted in ascending order
-    """
-    # Convert to sets for efficient operations
-    new_set = set(selected_indices)
-    current_set = set(current_indices)
+    if folder.exists():
+        i = 1
+        while True:
+            new_folder = folder.with_name(f"{folder.name}_{i}")
+            if not new_folder.exists():
+                break
+            i += 1
+        folder = new_folder
     
-    if mode == 'replace':
-        # Replace current selection with new selection
-        result = new_set
-        
-    elif mode == 'append' or mode == 'union':
-        # Add new indices to current selection (union)
-        result = current_set.union(new_set)
-        
-    elif mode == 'subtract' or mode == 'remove':
-        # Remove new indices from current selection
-        result = current_set.difference(new_set)
-        
-    elif mode == 'intersect':
-        # Keep only indices that are in both selections
-        result = current_set.intersection(new_set)
-        
-    elif mode == 'toggle' or mode == 'xor':
-        # Toggle: add if not present, remove if present (symmetric difference)
-        result = current_set.symmetric_difference(new_set)
-        
-    else:
-        raise ValueError(f"Unknown mode: {mode}. Use 'replace', 'append', 'subtract', 'intersect', or 'toggle'")
+    return folder
+
+
+def create_temp_dir_for_kernel(base_path):
+    """Create a temporary directory that gets cleaned up when the kernel exits"""
+    temp_dir = pathlib.Path(tempfile.mkdtemp(dir=base_path))
+    data_path = 'data' / temp_dir
+    data_path.mkdir(parents=True, exist_ok=True)
+    logging.info(f"Created temporary directory: {temp_dir}")
+    logging.info(f"Created temporary directory: {data_path}")
     
-    # Convert back to sorted list
-    return sorted(list(result))
+    def cleanup():
+        for td in [temp_dir, data_path]:
+            if td.exists():
+                logging.info(f"Cleaning up temporary directory: {td}")
+                shutil.rmtree(td)
+    
+    # Register cleanup for kernel shutdown
+    atexit.register(cleanup)
+    return temp_dir
+
+
+def link_files(source_dir, target_dir, pattern):
+    """Create symbolic links for all files starting with 'pop_' from source to target"""
+    source_path = pathlib.Path(source_dir)
+    target_path = pathlib.Path(target_dir)
+    
+    # Create target directory if it doesn't exist
+    target_path.mkdir(parents=True, exist_ok=True)
+    
+    # Find all files with pattern
+    files = source_path.glob(pattern)
+    
+    for source_file in files:
+        if source_file.is_file():  # Only link files, not directories
+            target_link = target_path / source_file.name
+            
+            # Remove existing link/file if it exists
+            if target_link.exists() or target_link.is_symlink():
+                target_link.unlink()
+            
+            # Create symbolic link
+            target_link.symlink_to(source_file.resolve())
+            logging.info(f"Linked: {source_file.name} -> {target_link}")

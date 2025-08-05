@@ -29,6 +29,7 @@ MODULE os_mod
     procedure:: exists
     procedure:: exists_dir
     procedure:: check_file
+    procedure:: get_filenames
     procedure, nopass:: mkdir_next_output
     procedure, nopass:: copy_file
     procedure:: gb_mem
@@ -235,6 +236,53 @@ SUBROUTINE check_file (self, name)
     error stop 'File not found'
   endif
 END SUBROUTINE check_file
+
+!===============================================================================
+!> Obtain array of files within a directory
+!===============================================================================
+subroutine get_filenames(self, directory, filenames, pattern)
+  class(os_t):: self
+  character(len=*), intent(in) :: directory
+  character(len=256), allocatable, intent(out) :: filenames(:)
+  character(len=*), intent(in), optional :: pattern
+  integer :: num_files
+  character(len=512) :: command
+  character(len=256) :: line
+  integer :: unit, iostat, status, i
+  !-----------------------------------------------------------------------------
+  num_files = 0
+    
+  ! Build command with optional pattern filtering
+  if (present(pattern)) then
+      write(command, '(A)') 'ls -1 "' // trim(directory) // '"/' // &
+                            trim(pattern) // ' 2>/dev/null | xargs -n1 basename > .temp_files'
+  else
+      write(command, '(A)') 'ls -1 "' // trim(directory) // '" > .temp_files'
+  end if
+  
+  call execute_command_line(command, wait=.true., exitstat=status)
+  if (status /= 0) return
+  
+  ! Count files
+  open(newunit=unit, file='.temp_files', status='old', action='read')
+  do
+      read(unit, '(A)', iostat=iostat) line
+      if (iostat /= 0) exit
+      if (len_trim(line) > 0) num_files = num_files + 1
+  end do
+  close(unit)
+  
+  ! Read filenames
+  allocate(filenames(num_files))
+  open(newunit=unit, file='.temp_files', status='old', action='read')
+  do i = 1, num_files
+      read(unit, '(A)', iostat=iostat) filenames(i)
+      if (iostat /= 0) exit
+  end do
+  close(unit)
+  
+  call execute_command_line('rm .temp_files', wait=.true.)
+end subroutine get_filenames
 
 !===============================================================================
 !> Utility to create a new directory

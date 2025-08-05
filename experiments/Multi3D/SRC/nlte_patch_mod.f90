@@ -31,7 +31,8 @@ MODULE nlte_patch_mod
   USE hprofl_mod, only: hprofl
   USE m3d_debug_mod
   USE shared_mod
-  USE composition_mod, only: composition_type, scattering_absorption, ref_lam
+  USE composition_mod, only: composition_type, scattering_absorption, ref_lam, &
+  departure_pointer_t
   implicit none
   private
 
@@ -229,6 +230,7 @@ SUBROUTINE execute (self)
   class(atom_trans_t), pointer :: trans
   class(atom_data_t), pointer :: adata
   class(composition_type), pointer :: comp
+  class(departure_pointer_t), pointer :: departures(:)
   real(4), dimension(:,:,:,:), allocatable :: gamma_ij, gamma_ji
   real(4), dimension(:,:,:), pointer :: vmic
   real(4), dimension(:,:,:), allocatable :: vproj
@@ -361,7 +363,12 @@ SUBROUTINE execute (self)
             endif
           end do
           if (use_linelist) then
-            call comp%add_linelist_opacities(self%nu, work(:,:,:,1:nz,1), dlam, vproj, work(:,:,:,1:nz,2))
+            departures => self%m3d_parent%departures(:,i_mu)
+            associate(chi=>work(:,:,:,1:nz,1), &
+                      eta=>work(:,:,:,1:nz,2), &
+                      blz=>work(:,:,:,1:nz,3))
+              call comp%add_linelist_opacities(self%nu, chi, dlam, vproj, eta, blz, departures=departures)
+            end associate
           endif
         endif
 

@@ -16,7 +16,7 @@ from contextlib import closing
 import numpy as np
 import os
 
-theme_file = module_dir + 'theme.json'
+theme_file = module_dir / 'theme.json'
 
 # Global server manager instance+
 def create_global():
@@ -210,3 +210,10 @@ def reorder_data(source, iold, inew):
             item = data[key].pop(iold)
             data[key].insert(inew, item)
     reorder()
+
+def clear_data(source):
+    @update_data_source(source)
+    def clear(data):
+        for key in data:
+            data[key] = []
+    clear()

@@ -3,10 +3,14 @@ from . import ServerManager
 from .ServerManager import *
 from .LineMask import *
 from .widgets import *
+from .synth import StudioSynth
 from .synth_form import synth_form, init_synth_form
 from .fit_form import fit_form, set_fit_form, init_fit_form
 from .rerun_form import rerun_form, init_rerun_form
 from .norm_form import *
+from .nlte_form import init_nlte_form
+from .atmos_form import init_import_atmos_button
+from .StudioAtmos import StudioAtmos, init_atmos_plot_form
 from .settings import settings_form, settings_page, saved_settings
 from .llist_annotations import plot_line_annotations, remove_line_annotations, get_llist_table
 from bokeh.models import *
@@ -19,26 +23,30 @@ import numpy as np
 import tumult
 import time
 from traitlets import HasTraits
-import traceback
+import pathlib
 
 
 class TumultStudio(HasTraits):
+    nav_source = CDS(dict(x=[], y=[]))
+    fig_source = CDS(dict(x=[], y=[]))
+    fig_line_source = CDS(dict(x=[], y=[]))
+    synth_source = CDS(dict(xs=[], ys=[], colors=[], labels=[], alphas=[],
+                                    vmic=[], FeH=[], atmos=[], run_ids=[]))
+    llist_source = CDS(dict(xs=[], ys=[], x=[], y=[], text=[]))
+    cntm_source = CDS(dict(x=[], y=[]))
+    spline_source = CDS(dict(x=[], y=[]))
+    atmos_source = CDS(dict(x=[], y=[]))
+    
+    synth_folder = create_temp_dir_for_kernel(saved_settings['synthesis folder'])
+
     def __init__(self, source):
         self.source = prepare_source(source)
         self.xdata = self.source.data['x'] # original data
         self.ydata = self.source.data['y'] # original data
         self.cntm = np.ones_like(self.xdata)  # normalisation spline
-        self.nav_source = CDS(dict(x=[], y=[]))
-        self.fig_source = CDS(dict(x=[], y=[]))
-        self.fig_line_source = CDS(dict(x=[], y=[]))
-        self.synth_source = CDS(dict(xs=[], ys=[], colors=[], labels=[], alphas=[],
-                                     vmic=[], FeH=[], atmos=[], run_ids=[]))
-        self.llist_source = CDS(dict(xs=[], ys=[], x=[], y=[], text=[]))
-        self.cntm_source = CDS(dict(x=[], y=[]))
-        self.spline_source = CDS(dict(x=[], y=[]))
         self.nlam = len(self.xdata)
         self.max_points = 1000
-        self.browser = EditableList()
+        self.browser = EditableList(buttons=['hide', 'delete'])
         self.browser.add_object(self.source, label='Observations')
 
         title = widgets.Label('Controls:')
@@ -74,12 +82,12 @@ class TumultStudio(HasTraits):
         self._gui = [settings_page, self.header, self.content, self.footer]
         
         self.stylesheets = [*synth_form.load_stylesheets(),
-                            StyleSheet(module_dir + 'style.css'),
-                            StyleSheet(module_dir + 'widgets.css'),
+                            StyleSheet(module_dir / 'style.css'),
+                            StyleSheet(module_dir / 'widgets.css'),
                             synth_form.load_tooltip_script()]
         
         # Load image from file
-        with open(module_dir + 'SplashScreen.png', 'rb') as f:
+        with open(module_dir / 'SplashScreen.png', 'rb') as f:
             image_data = f.read()
 
         # Create splash screen with image
@@ -101,6 +109,7 @@ class TumultStudio(HasTraits):
         self.init_controls()
         canvas = self.init_canvas(xmin=xmin, xmax=xmax)
         self.init_sidebars()
+        self.init_browser()
         self.editor.children += (canvas,)
         self.gui.children = self._gui
     
@@ -120,18 +129,44 @@ class TumultStudio(HasTraits):
         init_fit_form(self)
         init_rerun_form(self)
         init_norm_form(self)
+        init_atmos_plot_form(self)
+        init_nlte_form(self)
         self.left_sidebar.children += (self.browser,)
         self.right_sidebar.children = (synth_form.vbox,)
         self.right_sidebar.titles = ['Synthesis Settings']
+        
+                
+    def init_controls(self):
+        new_line_mask_button = init_line_mask_button(self)
+        norm_checkbox = init_norm_checkbox(self)
+        import_atmos_button = init_import_atmos_button(self)
 
-        def set_right_sidebar(change):
+        self.controls.children += (norm_checkbox,
+                                   import_atmos_button,
+                                   new_line_mask_button,)
+        
+    def init_browser(self):
+        def on_browser_selection(change):
             sel = self.browser.selected
-            if not sel:
+
+            def update_canvas():
+                show_atmos = sel is not None and isinstance(sel.object, StudioAtmos)
+                self.atmos_fig.visible = show_atmos
+                self.nav.visible = not show_atmos
+                self.fig.visible = not show_atmos
+            
+            ServerManager.server.next_tick_update(update_canvas)
+
+            if sel is None:
                 self.right_sidebar.children = (synth_form.vbox,)
                 self.right_sidebar.titles = ['Synthesis Settings']
             else:
                 obj = sel.object
-                if isinstance(obj, tumult.tumult):
+
+                if isinstance(obj, StudioAtmos):
+                    obj.chosen(self)
+
+                elif isinstance(obj, StudioSynth):
                     run = obj
                     lm = run.line_mask
                     ids = self.synth_source.data['run_ids']
@@ -144,28 +179,22 @@ class TumultStudio(HasTraits):
                     llist_vbox.add_class('llist-vbox')
                     self.right_sidebar.children = (fit_form.vbox, llist_vbox)
                     self.right_sidebar.titles = ['Fit Settings', 'Line List']
+
                 elif isinstance(obj, LineMask):
                     lm = obj
                     reset_xaxis(self.fig, [lm.xmin, lm.xmax])
                     reset_xaxis(self.nav, [lm.xmin, lm.xmax], margin=2)
-                    synth_form.widgets_dict['line_mask'].wid.value = lm
                     self.right_sidebar.children = (synth_form.vbox,)
                     self.right_sidebar.titles = ['Synthesis Settings']
+
                 elif isinstance(obj, CDS):
                     self.right_sidebar.children = (norm_form.vbox,)
                     self.right_sidebar.titles = ['Norm Settings']
             
             self.reset_yaxis_and_annotations()
                 
-        self.browser.observe(set_right_sidebar, names='selected')
+        self.browser.observe(on_browser_selection, names='selected')
         self.browser.selected = self.browser.list_items[0]
-        
-                
-    def init_controls(self):
-        new_line_mask_button = init_line_mask_button(self)
-        norm_checkbox = init_norm_checkbox(self)
-
-        self.controls.children += (norm_checkbox, new_line_mask_button,)
         
         
     def init_canvas(self, xmin=None, xmax=None):
@@ -176,6 +205,8 @@ class TumultStudio(HasTraits):
         self.init_nav_canvas(sizing_mode='stretch_width', height=100,
                              tools="xbox_select,xwheel_zoom,reset",
                              toolbar_sticky=False)
+        
+        self.init_atmos_canvas(sizing_mode='stretch_both')
         
         self.nav.line('x', 'y', source=self.nav_source, color='dimgrey')
 
@@ -202,6 +233,8 @@ class TumultStudio(HasTraits):
         
         self.spline_line = self.fig.line('x', 'y', source=self.cntm_source, color='red', alpha=0.5)
         self.spline_knots = self.fig.scatter('x', 'y', source=self.spline_source, size=6, color='red')
+
+        self.atmos_scatter = self.atmos_fig.scatter('x', 'y', source=self.atmos_source, size=4, color='black')
         
         # TOOLTIPS = [
         #     ('λ', '$x{0.000}'),
@@ -248,6 +281,7 @@ class TumultStudio(HasTraits):
         bk_canvas = column(
             self.nav,
             self.fig,
+            self.atmos_fig,
             sizing_mode='stretch_both',
         )
         
@@ -259,13 +293,13 @@ class TumultStudio(HasTraits):
 
     @log_callback_errors
     def plot_synth(self, launch_function, *args):
-        synth_runs = self._get_objects_by_type(tumult.tumult)
+        synth_runs = self._get_objects_by_type(StudioSynth, exclude=StudioAtmos)
         i = find_smallest_missing([sr.ic for sr in synth_runs])
         color = ColorCycle(saved_settings['bokeh palette'])[i]
         name = f'SynthRun_{i:03d}'
 
         self.progress.description = f'Running {name}:'
-        new_run = launch_function(name, *args, progress=self.progress)
+        new_run = launch_function(self, name, *args)
         new_run.ic = i
         
         self.progress.description = f'Plotting {name}:'
@@ -335,8 +369,10 @@ class TumultStudio(HasTraits):
             widget_label.observe(update_label, names='description')
 
 
-    def _get_objects_by_type(self, typ):
+    def _get_objects_by_type(self, typ, exclude=None):
         objects = [o for o in self.browser.objects if isinstance(o, typ)]
+        if exclude:
+            objects = [o for o in objects if not isinstance(o, exclude)]
         return objects
         
         
@@ -406,7 +442,7 @@ class TumultStudio(HasTraits):
         selected = self.browser.selected
         if selected:
             obj = selected.object
-            if isinstance(obj, tumult.tumult):
+            if isinstance(obj, tumult.tumult) and hasattr(obj, 'llist'):
                 plot_line_annotations(self.fig, obj, self.llist_source)
 
     def init_nav_canvas(self, **kwargs):
@@ -445,6 +481,14 @@ class TumultStudio(HasTraits):
             reset_xaxis(self.fig, [xmin, xmax])
             
         p.on_event(SelectionGeometry, nav_drag_callback)
+
+    def init_atmos_canvas(self, **kwargs):
+        p = figure(output_backend='svg', **kwargs)
+        self.atmos_fig = p
+        p.xaxis.axis_label = 'log(tau500)'
+        p.yaxis.axis_label = 'misc'
+        p.toolbar.logo = None
+
 
 def prepare_source(source):
     if not isinstance(source, CDS):

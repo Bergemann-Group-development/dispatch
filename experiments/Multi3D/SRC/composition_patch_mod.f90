@@ -18,7 +18,8 @@ MODULE composition_patch_mod
   opac_table_vmic, atmos_format, atmos_file, n_nu, use_vel
   USE m3d_debug_mod
   USE composition_mod, only: composition_type, exclude_elements, only_elements, switch, &
-  irwin_dis, ref_lam, debug_opac, abundances, relative_abundances, mhd_eos, helium_scattering
+  irwin_dis, ref_lam, debug_opac, abundances, relative_abundances, mhd_eos, helium_scattering, &
+  departure_pointer_t
   USE atom_mod, only: m1d_legacy_mode, use_classic_col, level_partf
   USE atom_patch_mod,  only: atom_patch_t
   USE nlte_patch_mod, only:nlte_patch_t
@@ -49,6 +50,7 @@ MODULE composition_patch_mod
     procedure :: init_eos_comp
     procedure :: save_eos_variables
     procedure :: save_number_densities
+    procedure :: load_departures
     procedure :: nbor_relations => composition_patch_nbor_relations
   end type
   
@@ -287,6 +289,7 @@ SUBROUTINE execute (self)
 
     if (atmos_format == 'save') then
       call self%load5(self%mem(:,:,:,:,self%it,:), 'atmos', run_dir=atmos_file)
+      call self%load_departures(run_dir=atmos_file)
     else
       do i=1, self%nw
         authority => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),:,self%it,i)
@@ -562,6 +565,43 @@ SUBROUTINE save_number_densities (self, comp, pre_init)
     endif
   end do
 END SUBROUTINE save_number_densities
+
+!===============================================================================
+SUBROUTINE load_departures(self, run_dir)
+  class(composition_patch_t), target :: self
+  character(len=*), intent(in) :: run_dir
+  class(departure_pointer_t), pointer :: dep
+  character(len=256) :: save_folder, atom_file
+  character(len=256), allocatable :: atom_files(:)
+  character(len=6) :: key
+  real(4), dimension(:,:,:,:,:,:), pointer, contiguous :: mem
+  integer :: i, j, i1, i2, natoms
+  integer :: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin('composition_patch_t%load_departures', itimer=itimer)
+  save_folder = trim(run_dir)//'/save/'
+  if (os%exists(save_folder)) then
+    call os%get_filenames(save_folder, atom_files, pattern='pop_*_meta.txt')
+    natoms = size(atom_files)
+    allocate(self%departures(natoms, self%nw))
+    do i=1, natoms
+      atom_file = atom_files(i)
+      i1 = index(atom_file, 'pop_') + 4
+      i2 = index(atom_file, '_meta.txt') - 1
+      key = trim(atom_file(i1:i2))
+      call self%load6(mem, 'pop_'//trim(key), run_dir=run_dir)
+      call os%mem_register(storage_size(mem), size(mem), label='departures')
+      do j=1, self%nw
+        dep => self%departures(i,j)
+        dep%key = key
+        dep%mem => mem(:,:,:,:,2,j)
+      end do
+    end do
+  else
+    print *, ' - No folder found ', save_folder
+  endif
+  call trace%end(itimer)
+END SUBROUTINE load_departures
 
 !===============================================================================
 SUBROUTINE composition_patch_nbor_relations(self, another, needed, needs_me, download)

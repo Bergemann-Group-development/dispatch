@@ -26,8 +26,8 @@ MODULE bbtrans_mod
     real(8), dimension(:), allocatable :: dq
     real(8), dimension(:), allocatable :: wt 
     real(8), dimension(:), allocatable :: da
-    integer :: j=0 ! upper level  
-    integer :: i=0 ! lower level
+    integer :: j=-1 ! upper level  
+    integer :: i=-1 ! lower level
   contains
     procedure :: init_einstein_coefficients
     procedure :: damping => line_damping

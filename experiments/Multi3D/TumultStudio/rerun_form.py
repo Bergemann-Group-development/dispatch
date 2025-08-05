@@ -2,7 +2,7 @@ from .auxfuncs import *
 from .ServerManager import *
 from .settings import saved_settings
 from .LineMask import LineMask
-from .synth_form import run_synth
+from .synth import run_synth
 import ipyformkit as ifk
 import tumult
 from tumult.linelist import LineList
@@ -20,7 +20,7 @@ def init_rerun_form(studio):
         
     rerun_button.on_click(rerun_on_click)
 
-def rerun_synth(name, old_run, progress=None):
+def rerun_synth(studio, name, old_run):
   default = old_run.folder
   line_mask = old_run.line_mask
   llist = LineList(old_run.llist_html.get_dataframe())
@@ -35,7 +35,7 @@ def rerun_synth(name, old_run, progress=None):
     if isinstance(old_run, tumult.CoG) and 'abnd' in old_run.fit_params:
       settings['composition_params']['abundances'] = f'{old_run.element_id}={old_run.fit_params["abnd"]:.2f}'
 
-  run = run_synth(name, settings, line_mask, default, llist, progress=progress)
+  run = run_synth(studio.synth_folder, name, settings, line_mask, default, llist, progress=studio.progress)
   run.llist_html.reset_html()
   if hasattr(old_run, 'fit_params'):
     run.fit_params = copy.deepcopy(old_run.fit_params)

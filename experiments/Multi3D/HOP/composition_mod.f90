@@ -66,6 +66,11 @@ MODULE composition_mod
         procedure :: get_table_frequencies
     end type
 
+    type, public :: departure_pointer_t
+      character(len=6) :: key=''
+      real(4), pointer :: mem(:,:,:,:) => null()
+    end type departure_pointer_t
+
     character(128), public, save :: exclude_elements='', only_elements=''
     logical, public :: scattering_absorption=.true., mhd_eos=.false.
     logical, public :: irwin_dis=.true., helium_scattering=.true.
@@ -923,19 +928,21 @@ contains
     END SUBROUTINE mask_linelist
 
     !===============================================================================
-    SUBROUTINE add_linelist_opacities(self, nu, all_chi, dlam, vproj, all_eta)
+    SUBROUTINE add_linelist_opacities(self, nu, all_chi, dlam, vproj, all_eta, all_blz, departures)
         class(composition_type), target :: self
         class(element_type), pointer :: element
         class(ion_type), pointer :: ion, HeI
         class(molec_type), pointer :: mol
         class(isotope_type), pointer :: iso
         class(bbtrans_type), pointer :: line
+        class(departure_pointer_t), intent(in), dimension(:), pointer, optional :: departures
         real(8), intent(in), dimension(:) :: nu
         real(4), intent(inout), dimension(:,:,:,:) :: all_chi
-        real(4), intent(inout), dimension(:,:,:,:), optional :: all_eta
-        real(4), intent(in), dimension(:,:,:), contiguous, target, optional :: vproj
         real(8), intent(in) :: dlam
-        real(4), dimension(:,:,:), allocatable :: tothi, adamp, stark_pe, ne, temp, e_kT, dxij, chi_fac, unsold
+        real(4), intent(in), dimension(:,:,:), contiguous, target, optional :: vproj
+        real(4), intent(inout), dimension(:,:,:,:), optional :: all_eta
+        real(4), intent(in), dimension(:,:,:,:), target, optional :: all_blz
+        real(4), dimension(:,:,:), allocatable :: tothi, adamp, stark_pe, ne, temp, e_kT, dxij, chi_fac, unsold, nlte_corr
         real(4), dimension(:,:,:), allocatable, target :: inv_part, vbar2, inv_df, iso_vbar2, iso_inv_df, iso_inv_part
         real(4), dimension(:,:,:), pointer, contiguous :: vb2, idopf, ipart, vpr, fo, t3nhe, ni, nj
         real(4), dimension(:,:,:,:), pointer, contiguous :: eta, chi
@@ -945,6 +952,7 @@ contains
         real(8) :: cnt_ev, gf, awgt, iso_awgt, dl
         real(4) :: scalar, bnu, h_kT, hv_kT
         logical, dimension(:), allocatable :: fmask
+        logical :: nlte_correction
         integer, save:: itimer=0
         !---------------------------------------------------------------------------
         call trace%begin ('composition_type%add_linelist_opacities', itimer=itimer)
@@ -979,6 +987,12 @@ contains
         else
             allocate(vpr, mold=tothi)
             vpr = 0
+        endif
+
+        nlte_correction = present(departures)
+        if (nlte_correction) nlte_correction = associated(departures)
+        if (nlte_correction) then
+            allocate(nlte_corr, mold=tothi)
         endif
 
         ne   = real(self%ne)
@@ -1063,6 +1077,9 @@ contains
         ! --------------------------------------------------------------------------
         subroutine particle_add_lte_opacities(ptc)
             class(particle_type), target :: ptc
+            class(departure_pointer_t), pointer :: dep
+            real(4), dimension(:,:,:), pointer :: blz0, bi, bj
+            integer :: di, f0
             !---------------------------------------------------------------------------
             if (.not. ptc%in_linelist) return
             if (.not. allocated(ptc%n)) stop 'particle density not allocated'
@@ -1075,6 +1092,13 @@ contains
             ! ptc%part is actually the inverse partition
             inv_part = ptc%n * ptc%part
             dxij = real(self%dxi) * (ptc%j-1)
+
+            if (nlte_correction) then
+                di = findloc([(index(ptc%id, departures(i)%key)>0, i=1, size(departures))], .true., 1)
+                dep => departures(di)
+            else
+                di = 0
+            endif
 
             do l=1, ptc%nline
                 line => ptc%line(l)
@@ -1095,6 +1119,15 @@ contains
                     idopf => iso_inv_df
                 endif
                 prev_iso = line%iso_idx
+
+                if (di>0 .and. line%i>0 .and. line%j>0) then
+                    f0 = 0.5*(ired + iblue)
+                    blz0 => all_blz(f0, :, :, :)
+                    bi => dep%mem(:,:,:,line%i)
+                    bj => dep%mem(:,:,:,line%j)
+                    nlte_corr = (bi - bj*blz0) / (1 - blz0)
+                    inv_part = ptc%n * ptc%part * nlte_corr
+                endif
 
                 call line%add_lte_opacities(ired, iblue, nu, qq, &
                     vpr, idopf, e_kT, dxij, inv_part, ne, tothi, vb2, stark_pe, unsold, chi_l, all_chi)
@@ -1191,7 +1224,6 @@ contains
             molecule%nions = len(trim(mol_ids(i)))
             molecule%id = trim(mol_ids(i))
             molecule%awgt = 0
-            !call molecule%init_mol_dissociation()
 
             allocate(molecule%ions(molecule%nions))
 

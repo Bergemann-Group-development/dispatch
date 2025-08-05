@@ -365,6 +365,7 @@ SUBROUTINE read_saved_snapshot (self, atmos_file, dims)
   end do
   self%n(3) = nz
   self%size(1:2) = self%n(1:2)*self%ds(1:2)
+  ia%is_3d = self%n(1)*self%n(2) > 1
   close(lunit)
 END SUBROUTINE read_saved_snapshot
 

@@ -1,5 +1,8 @@
 {
     "synthesis folder": "TumultStudio/tmp/",
     "atmospheres folder": "input_multi3d/atmos/",
+    "atom folder": "input_multi3d/atoms/",
+    "linelist folder": "input_multi3d/linelists/",
+    "abundance file": "input_multi3d/abund/abund_magg",
     "bokeh palette": "Light"
 }

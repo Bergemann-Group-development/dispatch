@@ -1,6 +1,6 @@
 from .auxfuncs import *
 from .ServerManager import *
-from .synth_form import run_synth
+from .synth import run_synth, StudioSynth, StudioCoG
 import ipyformkit as ifk
 import numpy as np
 import copy
@@ -42,7 +42,7 @@ def init_fit_form(studio):
         old_run = studio.browser.selected.object
         i = studio.synth_source.data['run_ids'].index(id(old_run))
         studio.progress.description = f'Fitting {old_run.label}:'
-        new_run, xfit, yfit = fit_synth(old_run, studio.fig_source, studio.progress)
+        new_run, xfit, yfit = fit_synth(old_run, studio.synth_folder, studio.fig_source, studio.progress)
 
         @update_data_source(studio.synth_source)
         def update_synth(data):
@@ -60,7 +60,7 @@ def init_fit_form(studio):
 
         update_synth()
         studio.progress.value = studio.progress.max
-        studio.progress.description = f'Done!'
+        studio.progress.description = 'Done!'
 
     fit_button.on_click(on_fit_click)
 
@@ -91,7 +91,7 @@ def set_fit_form(run):
 
     element_wid.options = ('None',) + tuple(output_ids)
 
-def fit_synth(run, source, progress=None):
+def fit_synth(run, folder, source, progress=None):
     values = fit_form.check_and_return_values()
     lm = run.line_mask
 
@@ -133,13 +133,14 @@ def fit_synth(run, source, progress=None):
         suffix = f'_{off*100:+04.0f}'
         name = run.cog_name + suffix
         settings = {'composition_params': {'abundances': f'{eid}={anew:.2f}'}}
-        new_run = run_synth(name, settings, run.line_mask, run.folder, run.llist, progress=progress)
+        new_run = run_synth(folder, name, settings, run.line_mask, run.folder, run.llist, progress=progress)
         if hasattr(run, 'runs'):
             runs = list(run.runs) + [new_run]
         else:
             runs = [run, new_run]
         abnds = [r.abundances[eid] for r in runs]
         cog = tumult.CoG(runs, abnds=abnds)
+        cog = StudioCoG.from_run(cog)
         cog.a0 = run.a0
         cog.cog_name = run.cog_name
         p, _ = cog.fit_observed(oxx, oyy, LTE=LTE, bounds=bounds, **kwargs)
@@ -152,7 +153,7 @@ def fit_synth(run, source, progress=None):
             afit = p['abnd']
         return cog, p
 
-    if isinstance(run, tumult.CoG):
+    if isinstance(run, StudioCoG):
         cog = run
         if values['fit abnd']:
             p, _ = cog.fit_observed(oxx, oyy, LTE=LTE, bounds=bounds, **kwargs)
@@ -201,33 +202,13 @@ def fit_synth(run, source, progress=None):
     return run, xfit, yfit
 
 
-def get_run_folder(run):
-    folder = run.folder.strip(os.sep)
-    topfolder = os.path.dirname(folder) + os.sep
-    return topfolder, folder
-    
-def rename_run(run, new_folder):
-    topfolder, folder = get_run_folder(run)
-    os.rename(folder, new_folder)
-    run.folder = new_folder + os.sep
-    run.sfolder = run.folder + 'save' + os.sep
-
 def init_cog_folder(run, suffix):
-    topfolder, folder = get_run_folder(run)
-    name = folder.split(os.sep)[-1]
-    cog_folder = unique_folder_name(topfolder + 'CoG_' + name)
-    os.mkdir(cog_folder)
-    new_folder = unique_folder_name(cog_folder + name + suffix)
-    rename_run(run, new_folder)
-    return cog_folder.split(topfolder)[-1] + name
-
-def unique_folder_name(folder):
-    folder = folder.strip(os.sep)
-    if os.path.exists(folder):
-        i = 1
-        while True:
-            new_folder = f"{folder}_{i}"
-            if not os.path.exists(new_folder): break
-            i += 1
-        folder = new_folder
-    return folder + os.sep
+    parent, name = (run.folder.parent, run.folder.name)
+    cog_folder = unique_folder_name(parent / f'CoG_{name}')
+    logging.info(f'Creating folder {cog_folder}.')
+    cog_folder.mkdir()
+    new_folder = unique_folder_name(cog_folder / f'{name}{suffix}')
+    logging.info(f'Renaming {run.folder} to {new_folder}.')
+    run.rename_folder(new_folder)
+    # without the suffix and possible unique suffixes
+    return cog_folder.name.split(suffix)[0]

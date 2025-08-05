@@ -51,6 +51,12 @@
     outline: none !important;
 }
 
+.EditableList .row-box {
+    height: 2em;
+    overflow: hidden;
+    align-items: center;
+}
+
 .EditableList .row-box.selected {
     background-color: var(--ifk-layout-color3);
 }

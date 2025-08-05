@@ -25,6 +25,7 @@ MODULE ion_mod
         integer :: niso=1
         class(isotope_type), dimension(:), pointer :: isotope=>null()
         type(level_type), allocatable :: levels(:)
+        type(level_type), allocatable :: nlte_levels(:)
         type(bbtrans_type), dimension(:), allocatable :: line
         real(dp), allocatable, dimension(:) :: irwin
         logical :: in_linelist=.false., in_opac=.false.

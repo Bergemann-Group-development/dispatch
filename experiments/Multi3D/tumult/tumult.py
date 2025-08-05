@@ -10,7 +10,6 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib import colors as mpl
-import glob
 import f90nml
 from scipy.signal import argrelextrema
 from scipy.io import FortranFile
@@ -20,6 +19,7 @@ from matplotlib.colors import LogNorm
 import os
 import copy
 import textwrap
+import pathlib
 
 def option(nml, key):
     if key in nml.keys():
@@ -33,26 +33,26 @@ class tumult(object):
     #=================================================================
     def read(self, folder, verbose=0, read_atmos=True, read_atom=True, fast_read=False, read_llist=False, **kwargs):
         self = tumult() # create a new instance of the class
-        folder = folder + os.sep
-        sfolder = folder + 'save' + os.sep
+        folder = pathlib.Path(folder)
+        sfolder = folder / 'save'
         self.sfolder = sfolder
         self.folder = folder
-        self.nml = f90nml.read(folder + 'params.nml')   
-        df = pd.read_csv(folder + 'abund.txt', header=None, sep=r'\s+', na_filter=False)
+        self.nml = f90nml.read(folder / 'params.nml')   
+        df = pd.read_csv(folder / 'abund.txt', header=None, sep=r'\s+', na_filter=False)
         self.abundances = {k.lower().capitalize():v for k, v in df.values}
         
-        if os.path.isfile(sfolder + 'out_lam.bin'):
+        if os.path.isfile(sfolder / 'out_lam.bin'):
             if (verbose > 0): print('Reading wavelengths')
-            self.lam = np.fromfile(sfolder + 'out_lam.bin', dtype=np.float64)
+            self.lam = np.fromfile(sfolder / 'out_lam.bin', dtype=np.float64)
             self.lam = vacuum2obs(self.lam[::-1])
             self.dlam = np.diff(self.lam)
 
-        if os.path.isfile(sfolder + 'bb_lam.bin'):
-            self.bb_lam = vacuum2obs(np.fromfile(sfolder + 'bb_lam.bin', dtype=np.float64))[::-1]
-        if os.path.isfile(sfolder + 'bf_lam.bin'):
-            self.bf_lam = vacuum2obs(np.fromfile(sfolder + 'bf_lam.bin', dtype=np.float64))[::-1]
-        if os.path.isfile(sfolder + 'all_lam.bin'):
-            self.all_lam = vacuum2obs(np.fromfile(sfolder + 'all_lam.bin', dtype=np.float64))[::-1]
+        if os.path.isfile(sfolder / 'bb_lam.bin'):
+            self.bb_lam = vacuum2obs(np.fromfile(sfolder / 'bb_lam.bin', dtype=np.float64))[::-1]
+        if os.path.isfile(sfolder / 'bf_lam.bin'):
+            self.bf_lam = vacuum2obs(np.fromfile(sfolder / 'bf_lam.bin', dtype=np.float64))[::-1]
+        if os.path.isfile(sfolder / 'all_lam.bin'):
+            self.all_lam = vacuum2obs(np.fromfile(sfolder / 'all_lam.bin', dtype=np.float64))[::-1]
         
         self.has_spectrum = hasattr(self, 'lam')
         if self.has_spectrum:
@@ -61,7 +61,7 @@ class tumult(object):
 
         self.read_atom(read_atom, fast_read, verbose, **kwargs)
 
-        file = folder + 'angle_quadrature.txt'
+        file = folder / 'angle_quadrature.txt'
         if os.path.isfile(file):
             df = pd.read_csv(file, header=None, skiprows=1, sep=r'\s+', names=['ang', 'wmu', 'mux', 'muy', 'muz'])
             self.vec = df.values[:,2:]
@@ -106,7 +106,7 @@ class tumult(object):
                     if saved_LTE:
                         self.i3_lte = i3[...,2]
 
-            if os.path.isfile(folder + 'linelist_out.txt') and read_llist:
+            if os.path.isfile(folder / 'linelist_out.txt') and read_llist:
                 self.read_llist()
                 
             if read_atmos:
@@ -117,7 +117,7 @@ class tumult(object):
     #=====================================================================
     def read_atom(self, read_atom=True, fast_read=True, verbose=True, **kwargs):
         self.atoms = []
-        atom_files = glob.glob(self.folder + 'atoms/*')
+        atom_files = self.folder.glob('atoms/*')
 
         if 'atom_params' in self.nml:
             self.qnorm = self.nml['atom_params']['qnorm']
@@ -132,7 +132,7 @@ class tumult(object):
             depart = ''
 
         for i, atom_file in enumerate(atom_files):
-            if os.path.isfile(atom_file):
+            if atom_file.is_file():
                 if not read_atom:
                     with open(atom_file, 'r') as f:
                         line = f.readline()
@@ -143,8 +143,7 @@ class tumult(object):
                         atom.id = line.split()[0]
 
                 else:
-                    j = atom_file.rindex('/')+1
-                    pandas_format = not atom_file[j:].startswith('atom.')
+                    pandas_format = not atom_file.name.startswith('atom.')
 
                     #if 'line_mask' in self.nml.keys():
                     #    if 'in_lines' in self.nml['line_mask'].keys():
@@ -219,12 +218,11 @@ class tumult(object):
         else:
             self.mode = 'NLTE'
 
-        reports = glob.glob(self.folder + 'convergence_report_*.txt')
+        reports = self.folder.glob('convergence_report_*.txt')
         self.conv_report = []
-        if len(reports)>0:
-            for report in reports:
-                df = pd.read_csv(report, sep=r'\s+')
-                self.conv_report.append(df)
+        for report in reports:
+            df = pd.read_csv(report, sep=r'\s+')
+            self.conv_report.append(df)
 
         self.has_atom = read_atom and len(self.atoms) > 0
     
@@ -233,10 +231,11 @@ class tumult(object):
         atmos_params = self.nml['atmos_params']
 
         if atmos_params['atmos_format'].strip().lower() == 'save':
-            mesh = open(atmos_params['atmos_file'].strip() + '/atmos_mesh.txt', 'r')
-            afolder = atmos_params['atmos_file'].strip() + '/save/'
+            atmos_folder = pathlib.Path(atmos_params['atmos_file'].strip())
+            mesh = open(atmos_folder / 'atmos_mesh.txt', 'r')
+            afolder = atmos_folder / 'save'
         else:
-            mesh = open(self.folder + 'atmos_mesh.txt', 'r')
+            mesh = open(self.folder / 'atmos_mesh.txt', 'r')
             afolder = self.sfolder
 
         amr = 'amr' in atmos_params
@@ -277,7 +276,7 @@ class tumult(object):
         else:
             self.dim = '1D'
 
-        if os.path.isfile(afolder + 'atmos_meta.txt'):
+        if os.path.isfile(afolder / 'atmos_meta.txt'):
                 mem = self.read_patch_save('atmos', folder=afolder, zdim=2)[0]
                 mem = mem[..., 0]
                 if self.dim=='1D': mem = mem.squeeze()
@@ -288,6 +287,7 @@ class tumult(object):
                 self.vy   = np.array(mem[...,4]) * CC
                 self.vz   = np.array(mem[...,5]) * CC
                 self.chi  = np.array(mem[...,6])
+                self.vmic = np.array(mem[...,7])
                 self.tau  = compute_tau_scale(self.chi, self.zz*1e8, axis=-1)
                 self.ltau = np.log10(self.tau)
 
@@ -295,37 +295,9 @@ class tumult(object):
                 self.z0 = np.mean(self.get_ltau_surface(0, zz))
                 self.height = self.zz - self.z0
 
-        elif os.path.isfile(self.folder + 'atmos_data.bin'):
-            dat = FortranFile(self.folder + 'atmos_data.bin')
-            self.temp = dat.read_reals(np.float32)
-            self.rho  = dat.read_reals(np.float32)
-            self.px   = dat.read_reals(np.float32)
-            self.py   = dat.read_reals(np.float32)
-            self.pz   = dat.read_reals(np.float32)
-            self.pe   = dat.read_reals(np.float32)
-            self.tau  = dat.read_reals(np.float32)
-            self.chi  = dat.read_reals(np.float32)
-            dat.close()
-
-            nx = self.xx.size
-            ny = self.yy.size
-            nz = self.zz.size
-
-            if nx*ny > 1:
-                self.temp = self.temp.reshape((nx,ny,nz), order='F')
-                self.rho  = self.rho .reshape((nx,ny,nz), order='F')
-                self.px   = self.px  .reshape((nx,ny,nz), order='F')
-                self.py   = self.py  .reshape((nx,ny,nz), order='F')
-                self.pz   = self.pz  .reshape((nx,ny,nz), order='F')
-                self.pe   = self.pe  .reshape((nx,ny,nz), order='F')
-                self.tau  = self.tau .reshape((nx,ny,nz), order='F')
-                self.chi  = self.chi .reshape((nx,ny,nz), order='F')
-
-            self.ltau = np.log10(self.tau)
-
     #=====================================================================
     def read_llist(self):
-        self.llist = LineList.from_dispatch_format(self.folder + 'linelist_out.txt')
+        self.llist = LineList.from_dispatch_format(self.folder / 'linelist_out.txt')
         init = np.frompyfunc(llist_trans, 2, 1)
         self.llist_line = init(np.arange(len(self.llist)), self)
 
@@ -779,9 +751,11 @@ class tumult(object):
     #=====================================================================
     def get_depart(self, atom=0, ilvl=None, mean=False):
         #-----------------------------------------------------------------
-        if type(atom) is int: atom = self.atoms[atom]
-        if ilvl is not None:
-            if ilvl < 0: ilvl = atom.nk + ilvl
+        if type(atom) is int:
+            atomid = self.atoms[atom].id
+        else:
+            atomid = atom
+
         if hasattr(self, 'runs'):
             xy = np.array([run.get_depart(ilvl, mean=mean) for run in self.runs])
 
@@ -792,8 +766,9 @@ class tumult(object):
                 return ltau, yy1d
             else:
                 return xy[:,0], xy[:,1]
+            
+        mem = self.read_patch_save(f'pop_{atomid}', zdim=2)[0]
 
-        mem = self.read_patch_save(f'pop_{atom.id}', zdim=2)[0]
         if mem.ndim==6: mem = mem[...,0]
         dep = mem[...,1]
 
@@ -813,9 +788,13 @@ class tumult(object):
     #=====================================================================
     def plot_depart(self, atom=0, ilvl=0, mean=True, **kwargs):
         #-----------------------------------------------------------------
-        if type(atom) is int: atom = self.atoms[atom]
-        xx, yy = self.get_depart(atom, ilvl, mean=mean)
-        plt.title(f'Departure coefficient of {atom.id:} level {ilvl:}')
+        if type(atom) is int:
+            atomid = self.atoms[atom].id
+        else:
+            atomid = atom
+
+        xx, yy = self.get_depart(atomid, ilvl, mean=mean)
+        plt.title(f'Departure coefficient of {atomid:} level {ilvl:}')
         plt.ylabel(r'$\rm n\,/\,n_{\rm LTE}$')
         plt.xlabel(r'log$\tau_{500}$')
         return plt.plot(xx.ravel(), yy.ravel(), **kwargs)
@@ -872,18 +851,22 @@ class tumult(object):
     #=====================================================================
     def read_patch_save(self, kind, folder=None, concat=True, fdim=0, zdim=None, lazy=True):
         #-----------------------------------------------------------------
-        if folder is None: folder = self.sfolder
+        if folder: 
+            folder = pathlib.Path(folder)
+        else:
+            folder = self.sfolder
+
+        meta_file = folder / f'{kind}_meta.txt'
 
         try:
-            meta = open(folder + kind + '_meta.txt')
+            meta = open(meta_file)
         except FileNotFoundError:
-            print('{:} not found!'.format(folder + kind + '_meta.txt'))
+            print(f'{meta_file} not found!')
             if (not kind in self.nml['m3d_params']['save_patch_kind'].split()):
                 print('The patch was not saved. Check the save_patch_kind parameter in the m3d_params namelist.')
             raise FileNotFoundError()
 
         dct = {}
-        dct_out = {}
         for line in meta:
             if not line.strip().startswith('*'):
                 info = line.split()
@@ -894,7 +877,7 @@ class tumult(object):
 
                 key = file.split('.')[0].split('_')[-1]
                 key = np.array([int(k) for k in textwrap.wrap(key, 3)])
-                dct[tuple(key)] = np.memmap(folder + file, dtype=dtype, mode='r', shape=dims, order='F')
+                dct[tuple(key)] = np.memmap(folder / file, dtype=dtype, mode='r', shape=dims, order='F')
 
         meta.close()
         if zdim is None: zdim = len(dims)-1
@@ -1410,7 +1393,7 @@ class tumult(object):
     def get_duration(self, string=True):
         from datetime import timedelta
 
-        file = self.folder + 'rank_00000.disp'
+        file = self.folder / 'rank_00000.disp'
         with open(file, 'rb') as f:
             lines = f.readlines()
             seconds = float(lines[-1].strip().split()[0])
@@ -1418,6 +1401,17 @@ class tumult(object):
             if string: time_delta = str(time_delta)
             return time_delta
 
+    def __str__(self):
+        if hasattr(self, 'label'):
+            return self.label
+        else:
+            return self.folder
+        
+    def rename_folder(self, new_folder):
+        new_folder = pathlib.Path(new_folder)
+        self.folder = self.folder.rename(new_folder)
+        self.sfolder = new_folder / 'save'
+    
 
     @classmethod
     #=================================================================

@@ -18,6 +18,7 @@ from astropy.io import fits
 from io import StringIO
 from scipy.cluster.hierarchy import fcluster, linkage
 import collections.abc
+import pathlib
 
 CB_colors = ['#377eb8', '#ff7f00', '#4daf4a', '#f781bf', '#a65628', '#984ea3', '#999999', '#e41a1c', '#dede00']
 
@@ -1365,3 +1366,19 @@ def pchip_sigma(xx, yy, x, dx):
   func = pchip_mono(xx, yy)
   dy = func.derivative(1)(x)*dx
   return np.abs(dy)
+
+#=====================================================================
+def convert_paths_to_strings(obj):
+    """
+    Recursively convert all Path objects in a nested dictionary/list structure to strings.
+    """
+    if isinstance(obj, pathlib.Path):
+        return str(obj)
+    elif isinstance(obj, dict):
+        return {key: convert_paths_to_strings(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_paths_to_strings(item) for item in obj]
+    elif isinstance(obj, tuple):
+        return tuple(convert_paths_to_strings(item) for item in obj)
+    else:
+        return obj

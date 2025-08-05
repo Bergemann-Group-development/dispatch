@@ -183,6 +183,10 @@
     background-color: var(--ifk-accent-color);
 }
 
+.tum-gui .widget-select select {
+    padding-left: 5px;
+}
+
 .tum-gui .jp-RenderedHTMLCommon {
     padding: 0;
 }
@@ -218,14 +222,15 @@
 }
 
 .tum-gui .controls {
-    gap: 10px
+    gap: 1px
 }
 
 .tum-gui .controls .widget-checkbox {
     width: fit-content;
 }
 
-.tum-gui .controls .widget-label {
+.tum-gui .controls .widget-label,
+.tum-gui .controls .widget-label-basic {
     padding: 0 10px;
 }
 

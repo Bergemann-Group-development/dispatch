@@ -6,22 +6,18 @@ import numpy as np
 import tumult
 import json
 
-
-fields = {'synthesis folder': 'TumultStudio/tmp/',
-          'atmospheres folder':'input_multi3d/atmos/',
-          'bokeh palette': 'Light',
-          'save':None}
-
-with open(module_dir + 'settings.json', 'r') as f:
+with open(module_dir / 'settings.json', 'r') as f:
     saved_settings = json.load(f)
     
 def save_settings(btn):
     new_settings = settings_form.check_and_return_values()
     saved_settings.update(new_settings)
-    with open(module_dir + 'settings.json', 'w') as f:
+    del saved_settings['save']
+    with open(module_dir / 'settings.json', 'w') as f:
         json.dump(saved_settings, f, indent=4)
 
-settings_form = ifk.Form(fields)
+saved_settings.update({'save':None})
+settings_form = ifk.Form(saved_settings)
 settings_form.set_values(saved_settings)
 save_settings_button = settings_form.widgets_dict['save'].wid
 save_settings_button.on_click(save_settings)
