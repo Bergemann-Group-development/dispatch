@@ -88,6 +88,7 @@ class tumult(object):
                 if (verbose > 0): print('Reading Intensities')
                 ie = self.read_patch_save('ie', lazy=False)[0]
                 saved_LTE = ie.shape[-1] == 3
+                self.mode = 'NLTE' if saved_LTE else 'LTE'
 
                 self.ie     = ie[:,0,0,:,0]
                 self.cnt    = ie[:,0,0,:,1]
@@ -124,7 +125,6 @@ class tumult(object):
             nq_fac = self.nml['atom_params']['nq_fac']
             if self.nml['m3d_params']['m1d_legacy_mode']: nq_fac *= 2
             in_abnd = self.nml['atom_params']['abundance']
-            depart = self.nml['atom_params']['precomputed_depart'].strip()
             #loggf_cut  = self.nml['atom_params']['logf_cut']
             #red_cut    = self.nml['atom_params']['red_cut']
             #blue_cut   = self.nml['atom_params']['blue_cut']
@@ -210,14 +210,6 @@ class tumult(object):
                 self.atoms.append(atom)
 
         self.atoms = np.array(self.atoms)[np.argsort([atom.id for atom in self.atoms])]
-
-        if (self.nml['m3d_params']['maxiter'] > 0):
-            self.mode = 'NLTE'
-        elif(depart==''):
-            self.mode = 'LTE'
-        else:
-            self.mode = 'NLTE'
-
         reports = self.folder.glob('convergence_report_*.txt')
         self.conv_report = []
         for report in reports:

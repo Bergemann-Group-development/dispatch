@@ -18,7 +18,7 @@ MODULE atom_patch_mod
     USE element_mod, only: element_type
     USE molecule_mod, only: molec_type
     USE bbtrans_mod, only: bbtrans_type
-    USE composition_mod, only: composition_type
+    USE composition_mod, only: composition_type, departure_pointer_t
     USE m3d_patch_mod, only: m3d_patch_t, composition, maxiter, key_link_t, &
     global_maxerr, convlim, convmax, atom_update_counter, comoving_frame, global_pos, &
     decouple_continuum, overlapping_bb, overlapping_bf, converged, premature_finish, overrelax, &
@@ -70,7 +70,6 @@ MODULE atom_patch_mod
     logical, save :: exclude_from_line_list=.true.
     logical, save :: save_populations=.true.
     integer, save :: save_rates=0
-    character(len=256), save :: precomputed_depart=''
     logical, public, save :: external_sp=.false.
     !-----------------------------------------------------------------------------
   
@@ -116,7 +115,7 @@ MODULE atom_patch_mod
     integer :: i, j, iostat
     namelist /atom_params/ atom_file, qnorm, convlim, exclude_trace_cont, level_partf, &
     use_atom_abnd, logf_cut, red_cut, blue_cut, n_in_lines, abundance, relative_abundance, &
-    exclude_from_line_list, precomputed_depart, use_classic_col, kramer_bf, overlapping_bf, &
+    exclude_from_line_list, use_classic_col, kramer_bf, overlapping_bf, &
     overlapping_bb, detailed_absmet, n_cntrbf, convmax, premature_finish, &
     save_populations, nq_fac, nq_min, nq_max, cbbesc, cbfesc, cbbhsc, cbfhsc, &
     disable_bf, disable_bb, overlapping_bb_in_output, save_rates, save_rate_matrix, fmin
@@ -316,6 +315,10 @@ MODULE atom_patch_mod
         if (.not. external_sp) then
           call setup_spectrum(output_sp, 'out', self%output_atom, bb=.true., bf=.false., sort=overlapping_bb_in_output, set_active=.false.)
           saved_already = .true.
+        else
+          do i=1, size(self%output_atom)
+            call self%output_atom(i)%trans%set_ired_iblue(output_sp, bf=.false., bb=.true., set_active=.false.)
+          end do
         endif
       endif
       if (save_sp .and. .not. saved_already) then
@@ -407,9 +410,6 @@ MODULE atom_patch_mod
       if (self%iter == 0) then
         call atom%init_atom_data(comp, adata, self%maxiter>0, found)
         if (.not. found) call self%save_abundance_to_file(atom)
-        !if (precomputed_depart /= '') then
-        !  call self%load_mem(precomputed_depart, self%kind)
-        !endif
       elseif (.not. adata%converged) then
         if (save_rate_matrix) then
           allocate(w(atom%nlevel, atom%nlevel), source=0.d0)
@@ -533,10 +533,12 @@ MODULE atom_patch_mod
         call self%save6(out_mem, label='pop_'//trim(atom%id))
       endif
       deallocate(out_mem)
-      do j=1, atom%nlevel
-        rank_lvlerr(l) = merge(rank_lvlerr(l), adata%lvlerr(j), abs(rank_lvlerr(l)) > abs(adata%lvlerr(j)))
-        l = l +1
-      end do
+      if (allocated(adata%lvlerr)) then
+        do j=1, atom%nlevel
+          rank_lvlerr(l) = merge(rank_lvlerr(l), adata%lvlerr(j), abs(rank_lvlerr(l)) > abs(adata%lvlerr(j)))
+          l = l +1
+        end do
+      endif
     end do
     call self%m3d_patch_t%finish()
     count = count + 1
@@ -551,11 +553,12 @@ MODULE atom_patch_mod
     class(atom_type), intent(in) :: atom
     class(composition_type), pointer :: comp
     class(atom_data_t), pointer :: adata
+    class(departure_pointer_t), pointer :: departures(:,:), dep
     real(4), intent(out), dimension(:,:,:,:,:,:), allocatable :: out_mem
     real(8), dimension(:,:,:), allocatable :: norm, totn
     real(8) :: vec(3), tmp
-    integer :: i,j,k,l, n(3), imu, nmu
-    logical :: iterated
+    integer :: i,j,k,l, n(3), imu, nmu, di
+    logical :: iterated, has_departures
     !---------------------------------------------------------------------------------
     adata => atom%data
     n = shape(adata%totn)
@@ -564,6 +567,27 @@ MODULE atom_patch_mod
 
     if (nmu > 0) then
       allocate(norm, totn, mold=adata%totn)
+    endif
+
+    has_departures = allocated(self%m3d_parent%departures)
+    if (has_departures) then
+      departures => self%m3d_parent%departures
+      di = findloc([(index(atom%id, trim(departures(i,1)%key))>0, i=1, size(departures))], .true., 1)
+      has_departures = di > 0
+    endif
+
+    if (has_departures) then
+      dep => departures(di, 1)
+      call os%allocate(adata%n, shape(adata%nstar), label='n')
+      do l=1, atom%nlevel
+      do k=1, n(3)
+      do j=1, n(2)
+      do i=1, n(1)
+        adata%n(i,j,k,l) = adata%nstar(i,j,k,l) * dep%mem(i,j,k,l)
+      end do
+      end do
+      end do
+      end do
     endif
 
     do l=1, atom%nlevel
@@ -585,7 +609,22 @@ MODULE atom_patch_mod
       comp => self%m3d_parent%rotated_composition(imu)
       iterated = .not. associated(adata%n, adata%nstar)
       call atom%init_atom_data(comp, adata, iterated)
-      if (iterated) then
+
+      if (has_departures) then
+        dep => departures(di, imu+1)
+        call os%allocate(adata%n, shape(adata%nstar), label='n')
+        do l=1, atom%nlevel
+        do k=1, n(3)
+        do j=1, n(2)
+        do i=1, n(1)
+          adata%n(i,j,k,l) = adata%nstar(i,j,k,l) * dep%mem(i,j,k,l)
+        end do
+        end do
+        end do
+        end do
+      endif
+
+      if (iterated .and. .not. has_departures) then
         totn = 0
         do l=1, atom%nlevel
           do k=1, n(3)
@@ -628,6 +667,8 @@ MODULE atom_patch_mod
           end do
           end do
         end do
+      endif
+      if (iterated) then
         call atom%compute_cont_factors(adata)
       endif
     end do

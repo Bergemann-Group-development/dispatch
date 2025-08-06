@@ -252,6 +252,7 @@ MODULE patch_mod
     procedure :: load4
     procedure :: load5
     procedure :: load6
+    procedure :: get_mem_dimensions
     procedure :: remove
   end type
   !-----------------------------------------------------------------------------
@@ -4333,70 +4334,111 @@ SUBROUTINE save_meta(self, mem, label, lunit, add2meta, key)
 END SUBROUTINE save_meta
 
 !===============================================================================
-SUBROUTINE load4 (self, mem, label, key, run_dir)
+SUBROUTINE load4 (self, label, key, run_dir, mem, alloc)
   class(patch_t), intent(inout), target :: self
-  real(4), intent(inout), dimension(:,:,:,:) :: mem
+  real(4), intent(inout), dimension(:,:,:,:), optional :: mem
+  real(4), intent(inout), dimension(:,:,:,:), allocatable, optional :: alloc
   character(len=*), intent(in) :: label
   integer, intent(in), optional, target :: key(:)
   character(len=256), intent(in), optional :: run_dir
   character(len=256) :: filename, folder
-  integer, dimension(:), pointer :: k
-  integer :: lunit
+  integer :: lunit, m(4)
   integer, save :: itimer=0
   ! ----------------------------------------------------------------------------
   call trace%begin('patch_t%load4', itimer=itimer)
   call self%get_meta_name(filename, folder, label, key, run_dir)
   call self%save_lock%set_read('load')
   open(newunit=lunit, file=trim(folder)//filename, access='stream', status='old', action='read')
-  read(lunit) mem
+  if (present(alloc)) then
+    call self%get_mem_dimensions(folder, filename, label, m)
+    allocate(alloc(m(1),m(2),m(3),m(4)))
+    read(lunit) alloc
+  else
+    read(lunit) mem
+  endif
   close(lunit)
   call self%save_lock%unset_read('load')
   call trace%end(itimer)
 END SUBROUTINE load4
 
 !===============================================================================
-SUBROUTINE load5 (self, mem, label, key, run_dir)
+SUBROUTINE load5 (self, label, key, run_dir, mem, alloc)
   class(patch_t), intent(inout), target :: self
-  real(4), intent(inout), dimension(:,:,:,:,:) :: mem
+  real(4), intent(inout), dimension(:,:,:,:,:), optional :: mem
+  real(4), intent(inout), dimension(:,:,:,:,:), allocatable, optional :: alloc
   character(len=*), intent(in) :: label
   integer, intent(in), optional, target :: key(:)
   character(len=256), intent(in), optional :: run_dir
   character(len=256) :: filename, folder
-  integer, dimension(:), pointer :: k
-  integer :: lunit
+  integer :: lunit, m(5)
   integer, save :: itimer=0
   ! ----------------------------------------------------------------------------
   call trace%begin('patch_t%load5', itimer=itimer)
   call self%get_meta_name(filename, folder, label, key, run_dir)
   call self%save_lock%set_read('load')
   open(newunit=lunit, file=trim(folder)//filename, access='stream', status='old', action='read')
-  read(lunit) mem
+  if (present(alloc)) then
+    call self%get_mem_dimensions(folder, filename, label, m)
+    allocate(alloc(m(1),m(2),m(3),m(4),m(5)))
+    read(lunit) alloc
+  else
+    read(lunit) mem
+  endif
   close(lunit)
   call self%save_lock%unset_read('load')
   call trace%end(itimer)
 END SUBROUTINE load5
 
 !===============================================================================
-SUBROUTINE load6 (self, mem, label, key, run_dir)
+SUBROUTINE load6 (self, label, key, run_dir, mem, alloc)
   class(patch_t), intent(inout), target :: self
-  real(4), intent(inout), dimension(:,:,:,:,:,:) :: mem
+  real(4), intent(inout), dimension(:,:,:,:,:,:), optional :: mem
+  real(4), intent(inout), dimension(:,:,:,:,:,:), allocatable, optional :: alloc
   character(len=*), intent(in) :: label
   integer, intent(in), optional, target :: key(:)
   character(len=256), intent(in), optional :: run_dir
   character(len=256) :: filename, folder
-  integer, dimension(:), pointer :: k
-  integer :: lunit
+  integer :: lunit, m(6)
   integer, save :: itimer=0
   ! ----------------------------------------------------------------------------
   call trace%begin('patch_t%load6', itimer=itimer)
   call self%get_meta_name(filename, folder, label, key, run_dir)
   call self%save_lock%set_read('load')
   open(newunit=lunit, file=trim(folder)//filename, access='stream', status='old', action='read')
-  read(lunit) mem
+  if (present(alloc)) then
+    call self%get_mem_dimensions(folder, filename, label, m)
+    allocate(alloc(m(1),m(2),m(3),m(4),m(5),m(6)))
+    read(lunit) alloc
+  else
+    read(lunit) mem
+  endif
   close(lunit)
   call self%save_lock%unset_read('load')
   call trace%end(itimer)
 END SUBROUTINE load6
+
+!===============================================================================
+SUBROUTINE get_mem_dimensions(self, sfolder, filename, label, oldm)
+  class(patch_t), intent(inout), target :: self
+  character(len=*) :: filename, sfolder, label
+  character(len=256) :: metafile, file
+  integer, dimension(:) :: oldm
+  integer :: lunit, iostat, prec
+  integer, save :: itimer=0
+  ! ----------------------------------------------------------------------------
+  write(metafile, '(A, A)') trim(label), '_meta.txt'
+  open(newunit=lunit, file=trim(sfolder)//metafile, form='formatted', iostat=iostat)
+  read(lunit,*) ! skip header
+  do while (iostat==0)
+    read(lunit, *, iostat=iostat) file, prec, oldm
+    if (file == filename) exit
+  end do
+  close(lunit)
+  if (iostat /= 0) then
+    print *, 'file not found in metafile! Stopping...'
+    stop
+  endif
+END SUBROUTINE get_mem_dimensions
 
 !===============================================================================
 SUBROUTINE remove (self, label, key)

@@ -288,7 +288,7 @@ SUBROUTINE execute (self)
     allocate(ne8  (n(1),n(2),n(3)))
 
     if (atmos_format == 'save') then
-      call self%load5(self%mem(:,:,:,:,self%it,:), 'atmos', run_dir=atmos_file)
+      call self%load5('atmos', run_dir=atmos_file, mem=self%mem(:,:,:,:,self%it,:))
       call self%load_departures(run_dir=atmos_file)
     else
       do i=1, self%nw
@@ -574,13 +574,13 @@ SUBROUTINE load_departures(self, run_dir)
   character(len=256) :: save_folder, atom_file
   character(len=256), allocatable :: atom_files(:)
   character(len=6) :: key
-  real(4), dimension(:,:,:,:,:,:), pointer, contiguous :: mem
+  real(4), dimension(:,:,:,:,:,:), allocatable, target :: mem
   integer :: i, j, i1, i2, natoms
   integer :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('composition_patch_t%load_departures', itimer=itimer)
   save_folder = trim(run_dir)//'/save/'
-  if (os%exists(save_folder)) then
+  if (os%exists_dir(save_folder)) then
     call os%get_filenames(save_folder, atom_files, pattern='pop_*_meta.txt')
     natoms = size(atom_files)
     allocate(self%departures(natoms, self%nw))
@@ -589,12 +589,12 @@ SUBROUTINE load_departures(self, run_dir)
       i1 = index(atom_file, 'pop_') + 4
       i2 = index(atom_file, '_meta.txt') - 1
       key = trim(atom_file(i1:i2))
-      call self%load6(mem, 'pop_'//trim(key), run_dir=run_dir)
-      call os%mem_register(storage_size(mem), size(mem), label='departures')
+      call self%load6('pop_'//trim(key), run_dir=run_dir, alloc=mem)
       do j=1, self%nw
         dep => self%departures(i,j)
         dep%key = key
-        dep%mem => mem(:,:,:,:,2,j)
+        allocate(dep%mem, source=mem(:,:,:,:,2,j))
+        call os%mem_register(storage_size(dep%mem), size(dep%mem), label='departures')
       end do
     end do
   else

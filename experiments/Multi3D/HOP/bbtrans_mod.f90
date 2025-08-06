@@ -26,8 +26,8 @@ MODULE bbtrans_mod
     real(8), dimension(:), allocatable :: dq
     real(8), dimension(:), allocatable :: wt 
     real(8), dimension(:), allocatable :: da
-    integer :: j=-1 ! upper level  
-    integer :: i=-1 ! lower level
+    integer :: i=0 ! lower level
+    integer :: j=0 ! upper level  
   contains
     procedure :: init_einstein_coefficients
     procedure :: damping => line_damping
@@ -64,27 +64,25 @@ contains
   END SUBROUTINE init_einstein_coefficients
 
   !====================================================================================
-  SUBROUTINE add_lte_opacities(self, ired, iblue, nu, qq_scr, vproj, inv_df, e_kT, dxij, inv_part, &
-    ne, tothi, vbar2, stark_pe, unsold, chi, cont)
+  SUBROUTINE add_lte_opacities(self, ired, iblue, nu, vproj, inv_df, e_kT, dxij, inv_part, &
+    ne, tothi, vbar2, stark_pe, unsold, bi, bj, chi, eta, cont, do_nlte)
     class(bbtrans_type), intent(inout) :: self
     integer, intent(in) :: ired, iblue
     real(8), dimension(:), intent(in), contiguous :: nu
-    real(8), dimension(:), intent(in), contiguous, target :: qq_scr
     real(4), dimension(:,:,:), intent(in), contiguous :: vproj, inv_df, inv_part
+    real(4), dimension(:,:,:), intent(in), pointer :: bi, bj
     real(4), dimension(:,:,:), intent(in), contiguous :: e_kT, dxij, ne, tothi, vbar2, stark_pe, unsold
-    real(4), dimension(:,:,:,:), intent(inout) :: chi
+    real(4), dimension(:,:,:,:), intent(inout) :: chi, eta
     real(4), dimension(:,:,:,:), intent(in) :: cont
-    real(8), dimension(:), pointer :: qq
-    real(4) :: ex, ni, nj, nij, upper_ev, nu0_ev, scalar, vs, lchi
-    real(4) :: a, idf, cf, v, ref, ekt, Bji, inv_nu0, strength
+    real(4) :: ex, ni, nj, nij, upper_ev, nu0_ev, vs, phi, lchi, leta, rc, re, ceta, cchi
+    real(4) :: a, idf, cf, v, ref, ekt, Bji, inv_nu0, strength, blz, rchi
     integer :: i,j,k,f, nf, f0, m(3), itimer=0
-    logical :: used
+    logical :: used, do_nlte
     !----------------------------------------------------------------------------------
     !call trace%begin('add_lte_opacities_1', itimer=itimer)
     m = shape(vproj)
     nf = iblue - ired + 1
     inv_nu0 = 1.0 / self%nu0
-    scalar = over_4pi * inv_nu0
     nu0_ev = H_E * self%nu0
     upper_ev = self%lower_ev + nu0_ev
     Bji = self%Bji * self%nu0
@@ -113,8 +111,6 @@ contains
       end if
 
       ! fetch variables
-      !df = inv_df(i,j,k)
-      !v   = vproj(i,j,k)
       idf = inv_df(i,j,k) * inv_nu0
       v   = (vproj(i,j,k) + 1)*self%nu0
       ekt = e_kT(i,j,k)
@@ -123,38 +119,52 @@ contains
       if (ex < 85.) then
         ! compute level populations
         a = a * over_4pi * idf
-        nij = exp(nu0_ev * ekt)             ! this is ni/nj gj/gi
-        nj = inv_part(i,j,k) * exp(-ex)     ! this is nj/gj
-        cf = nj * Bji * (nij - 1.)          ! this is (ni*Bij - nj*Bji)*h/4pi
-        cf = cf * idf
+        blz = exp(-ex)
+        nij = exp(nu0_ev * ekt)          ! this is ni/nj gj/gi
+        nj = inv_part(i,j,k) * blz       ! this is nj/gj
+        cf = nj * Bji * (nij - 1.)       ! this is (ni*Bij - nj*Bji)*h/4pi
+        cf = cf * idf                    ! this chi_lte / phi
+
+        if (do_nlte) then
+          associate(bi=>bi(i,j,k), bj=>bj(i,j,k))
+            rchi = (bi - bj*blz) / (1 - blz) ! this is chi / chi_lte
+            cchi = cf * rchi                 ! this is chi / phi
+            ceta = cf * bj                   ! this is chi_lte * bj / phi
+          end associate
+        else
+          cchi = cf
+          ceta = cf
+        endif
 
         ! check if line peak is larger than continuum tolerance
         ref = tolerance * cont(f0,i,j,k)
-        !call scater_voigt(f0,ired,iblue,a,qq,v,cf,idf,ref,chi(:,i,j,k))
         
-        !vs = (qq(f0) - v) * idf
         vs = (nu(f0) - v) * idf
-        !lchi = pseudo_voigt_function(a, vs, ref=ref, norm=cf)
-        lchi = voigt_function2(a, vs) * cf
+        phi = voigt_function2(a, vs)
+        lchi = phi * cchi 
+        leta = phi * ceta
         if (lchi > ref) then
           used = .true.
           strength = max(strength, lchi / cont(f0,i,j,k))
 
           chi(f0,i,j,k) = chi(f0,i,j,k) + lchi
+          eta(f0,i,j,k) = eta(f0,i,j,k) + leta
           do f=f0+1, iblue
-            !vs = (qq(f) - v) * idf
             vs = (nu(f) - v) * idf
-            !lchi = pseudo_voigt_function(a, vs, ref=ref, norm=cf)
-            lchi = voigt_function2(a, vs) * cf
+            phi = voigt_function2(a, vs)
+            lchi = phi * cchi
+            leta = phi * ceta
             chi(f,i,j,k) = chi(f,i,j,k) + lchi
+            eta(f,i,j,k) = eta(f,i,j,k) + leta
             if (lchi < ref) exit ! if line opacity below tolerance exit
           end do
           do f=f0-1, ired, -1
-            !vs = (qq(f) - v) * idf
             vs = (nu(f) - v) * idf
-            !lchi = pseudo_voigt_function(a, vs, ref=ref, norm=cf)
-            lchi = voigt_function2(a, vs) * cf
+            phi = voigt_function2(a, vs)
+            lchi = phi * cchi
+            leta = phi * ceta
             chi(f,i,j,k) = chi(f,i,j,k) + lchi
+            eta(f,i,j,k) = eta(f,i,j,k) + leta
             if (lchi < ref) exit ! if line opacity below tolerance exit
           end do
         endif

@@ -1,6 +1,7 @@
 !---------------------------------------------------------------------
 MODULE spectrum_mod 
     USE io_mod
+    USE os_mod
     USE timer_mod
     USE trace_mod
     USE const_mod
@@ -72,6 +73,7 @@ MODULE spectrum_mod
         end do
       elseif (lam_file /= '') then
         nnu = 0
+        call os%check_file(lam_file)
         open(newunit=lunit, file=trim(lam_file), form='FORMATTED')
         read(lunit,'(A)', iostat=iostat)
         do while (iostat == 0)

@@ -74,7 +74,7 @@ SUBROUTINE init(self, task_list, name)
   character(len=512) :: save_file
   namelist /atmos_params/ atmos_file, dims, verbose, patches_per_mpi, FeH, &
   save_atmos, atmos_format, vmic, use_rho, use_ne, nx, ny, nz, snap, &
-  legacy_stagger_interp, save_eos, amr, use_abnd, timestamp, use_vel
+  legacy_stagger_interp, save_eos, amr, use_abnd, timestamp, use_vel, read_departures
   !-----------------------------------------------------------------------------
   if (associated(task_list)) return
   call trace%begin('read_external_t%init')

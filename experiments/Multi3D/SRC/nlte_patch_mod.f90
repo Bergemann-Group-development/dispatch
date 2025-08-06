@@ -32,7 +32,7 @@ MODULE nlte_patch_mod
   USE m3d_debug_mod
   USE shared_mod
   USE composition_mod, only: composition_type, scattering_absorption, ref_lam, &
-  departure_pointer_t
+  departure_pointer_t, read_departures
   implicit none
   private
 
@@ -113,6 +113,7 @@ contains
 SUBROUTINE nlte_patch_pre_init (self)
   class(nlte_patch_t), target:: self
   integer, save :: itimer=0
+  logical :: is_nlte
   ! ----------------------------------------------------------------------------
   call trace%begin('nlte_patch_t%_pre_init', itimer=itimer)
   self%kind = 'nlte_patch'
@@ -123,8 +124,9 @@ SUBROUTINE nlte_patch_pre_init (self)
   self%n_mu = merge(size(long_wmu), size(all_wmu)/2, self%out_mu)
   self%mus = merge(1, self%n_mu+1, self%dir>0)
   self%mue = merge(self%n_mu, size(all_wmu), self%dir>0)
-  self%n_set = merge(merge(3, 2, maxiter>0), 1, self%out_ray)
   self%natom = merge(size(self%atom), 0, associated(self%atom))
+  is_nlte = maxiter > 0 .or. read_departures
+  self%n_set = merge(merge(3, 2, is_nlte), 1, self%out_ray)
 
   call self%set_freq_indices()
   call self%init_patch_trans()
@@ -363,10 +365,15 @@ SUBROUTINE execute (self)
             endif
           end do
           if (use_linelist) then
-            departures => self%m3d_parent%departures(:,i_mu)
+            if (allocated(self%m3d_parent%departures) .and. i_set==1) then
+              i = merge(i_mu, 1, do_rotate_atmos)
+              departures => self%m3d_parent%departures(:,i)
+            else
+              departures => null()
+            endif
             associate(chi=>work(:,:,:,1:nz,1), &
                       eta=>work(:,:,:,1:nz,2), &
-                      blz=>work(:,:,:,1:nz,3))
+                      blz=>back(:,:,:,1:nz,3))
               call comp%add_linelist_opacities(self%nu, chi, dlam, vproj, eta, blz, departures=departures)
             end associate
           endif
@@ -673,9 +680,8 @@ SUBROUTINE add_scattering (self, comp)
   if (.not. associated(self%up_twin)) self%up_twin => self
   if (Jnu_to_file) then
     Jnu_label = merge('Jnu_out', 'Jnu    ', self%out_ray)
-    allocate(Jup_mem, Jdn_mem, mold=self%Jnu)
-    call self%up_twin%load5(Jup_mem, Jnu_label, key=self%up_twin%key(1:3))
-    call self%dn_twin%load5(Jdn_mem, Jnu_label, key=self%dn_twin%key(1:3))
+    call self%up_twin%load5(Jnu_label, key=self%up_twin%key(1:3), alloc=Jup_mem)
+    call self%dn_twin%load5(Jnu_label, key=self%dn_twin%key(1:3), alloc=Jdn_mem)
     Jup => Jup_mem
     Jdn => Jdn_mem
   else
@@ -934,7 +940,7 @@ SUBROUTINE bound_bound_damping (self, comp, atom, trans, adata)
   allocate(temp, ne, tothi, vbar2, stark_pe, unsold, vproj, nh6, mold=adata%inv_df)
   ne = real(comp%ne)
   temp = real(comp%temp)
-  tothi = real(comp%elements(1)%ions(1)%n) ! total neutral hydrogen density
+  tothi = real(comp%tothi) ! total neutral hydrogen density
   nh6 = real(comp%elements(1)%ions(1)%levels(6)%n) ! neutral hydrogen density in level 6
   stark_pe = ne * temp**one_sixth
   vbar2 = atom%compute_vbar2(temp)
@@ -992,7 +998,7 @@ SUBROUTINE add_bound_bound_opacities (self, comp, atom, trans, adata, wmu, vproj
     ne = comp%ne
     fo = comp%fo
     vbarh = comp%vbarh
-    tothi = comp%elements(1)%ions(1)%n ! total neutral hydrogen density
+    tothi = comp%tothi
     t3nhe = comp%t3nhe
   endif
 
@@ -1091,7 +1097,7 @@ SUBROUTINE bound_bound_rates (self, comp, atom, trans, adata, wmu, vproj)
     ne = comp%ne
     fo = comp%fo
     vbarh = comp%vbarh
-    tothi = comp%elements(1)%ions(1)%n ! total neutral hydrogen density
+    tothi = comp%tothi
     t3nhe = comp%t3nhe
   endif
 

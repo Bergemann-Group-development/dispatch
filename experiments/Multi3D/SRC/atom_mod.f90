@@ -158,7 +158,7 @@ MODULE atom_mod
     logical, public :: use_classic_col = .False., m1d_legacy_mode=.False.
     logical, public :: lse_no_pivot = .True., kramer_bf=.False.
     logical, public :: disable_bf=.False., disable_bb=.False.
-    logical, public :: level_partf=.true.
+    logical, public :: level_partf=.false.
     real(8), public :: red_thresh_aa  = 20000
     real(8), public :: blue_thresh_aa = 500
     real(8), public :: cont_step_aa = 50

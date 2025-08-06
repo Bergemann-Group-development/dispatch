@@ -1,0 +1,18 @@
+name: TUMStudio
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - ipykernel
+  - numpy=2.1
+  - matplotlib
+  - scipy
+  - pandas
+  - f90nml
+  - numba
+  - plotly
+  - bokeh
+  - astropy
+  - line_profiler
+  - tqdm
+  - lxml
