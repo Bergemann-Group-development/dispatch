@@ -42,6 +42,8 @@ def toggle_normalisation(x, y):
     return y
 
 def init_norm_checkbox(studio):
+    if studio.normalised: return
+
     @log_callback_errors
     def on_norm_toggle(change):
         # A couple of things have to be updated
@@ -67,9 +69,11 @@ def init_norm_checkbox(studio):
         studio.reset_yaxis_and_annotations()
 
     norm_checkbox.observe(on_norm_toggle, names='value')
-    return norm_checkbox
+    studio.controls.children += (norm_checkbox,)
 
 def init_norm_form(studio):
+    if studio.normalised: return
+
     @log_callback_errors
     def on_norm_click(btn):
         values = norm_form.check_and_return_values()

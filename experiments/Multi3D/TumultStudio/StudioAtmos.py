@@ -51,8 +51,8 @@ class StudioAtmos(StudioSynth):
         @update_data_source(studio.atmos_source)
         def update_atmos_data(data):
             if val == 'Atmosphere':
-                data['x'] = self.__dict__[xquantity_wid.value]
-                data['y'] = self.__dict__[yquantity_wid.value]
+                data['x'] = self.__dict__[xquantity_wid.value].ravel()
+                data['y'] = self.__dict__[yquantity_wid.value].ravel()
                 studio.atmos_fig.xaxis.axis_label = xquantity_wid.value
                 studio.atmos_fig.yaxis.axis_label = yquantity_wid.value
             else:

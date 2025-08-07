@@ -1129,7 +1129,7 @@ def marcs_to_pandas(file):
     return df
 
 #=====================================================================
-def tbdfits(file, ext=None, survey=None, verbose=True):
+def tbdfits(file, ext=0, survey=None):
     """
     Reads a FITS file and extracts wavelength and flux data.
 
@@ -1143,9 +1143,6 @@ def tbdfits(file, ext=None, survey=None, verbose=True):
             - wavel is a NumPy array of wavelengths
             - flux is a NumPy array of flux values
     """
-    if ext is None or survey is None:
-        print("Usage: ext: 0 ... 6, survey: apo, ges, harps")
-        return
 
     # Read the FITS file
     with fits.open(file) as hdul:
@@ -1157,26 +1154,13 @@ def tbdfits(file, ext=None, survey=None, verbose=True):
     if cr is None:
         raise ValueError("CRVAL1 not found in the header.")
 
-    if verbose: print("CRVAL1 (wavelength zero point):", cr)
-
     # Determine the wavelength increment based on the survey
-    if survey == "ges":
-        cdelt = header.get('CD1_1')
-    elif survey in ["apo", "harps"]:
-        cdelt = header.get('CDELT1')
-    else:
-        raise ValueError(f"Unknown survey type: {survey}")
+    cd1_1 = header.get('CD1_1')
+    cdelt1 = header.get('CDELT1')
+    cdelt = cd1_1 or cdelt1
 
     if cdelt is None:
         raise ValueError("CDELT1/CD1_1 not found in the header.")
-
-    if verbose: print("Wavelength increment (CDELT1/CD1_1):", cdelt)
-
-    # Check for SNR in the header
-    snr_keys = [key for key in header if key.startswith("SNR")]
-    if len(snr_keys) == 1:
-        snr = header[snr_keys[0]]
-        if verbose: print("SNR:", snr)
 
     lam = np.arange(len(flux)) * cdelt + cr
     if survey == "apo":

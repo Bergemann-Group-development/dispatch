@@ -30,7 +30,7 @@ def init_line_mask_button(studio):
     
     studio.fig_source.selected.on_change('indices', selection_callback)
     new_line_mask_button.on_click(new_line_mask)
-    return new_line_mask_button
+    studio.controls.children += (new_line_mask_button,)
 
 class LineMask():
     def __init__(self, source, data):

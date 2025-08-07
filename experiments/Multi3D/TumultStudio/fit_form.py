@@ -192,6 +192,7 @@ def fit_synth(run, folder, source, progress=None):
                 cog, p = add_run_to_cog(run, anew)
 
             cog.element_id = eid
+            cog.ic = run.ic
             run = cog # replace original run by cog
 
     del kwargs['fit']

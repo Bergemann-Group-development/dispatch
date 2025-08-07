@@ -24,7 +24,7 @@ def run_synth(folder, name, settings, line_mask=None, default=None, llist=None, 
         default = module_dir / 'default.nml'
 
     with tempfile.NamedTemporaryFile(mode='w+', suffix='.txt', delete=False) as llist_file:
-        if llist is not None: llist.write_to_ts_format(llist_file.name)
+        if llist is not None: llist.write_to_nlte_format(llist_file.name)
 
         with tempfile.NamedTemporaryFile(mode='w+', suffix='.txt', delete=False) as lam_file:
             if line_mask is not None:

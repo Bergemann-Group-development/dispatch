@@ -60,3 +60,23 @@
 .EditableList .row-box.selected {
     background-color: var(--ifk-layout-color3);
 }
+
+.EditableTable thead,
+.HTMLDataFrame thead {
+    position: sticky;
+    top: 0;
+    background-color: var(--ifk-layout-color1);
+}
+
+.HTMLDataFrame {
+    max-width: 500px;
+}
+
+.HTMLDataFrame table {
+    width: 100%;
+}
+
+.HTMLDataFrame td {
+    word-wrap: break-word;
+    white-space: normal;
+}

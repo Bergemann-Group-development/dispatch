@@ -306,7 +306,14 @@ class EditableList(widgets.VBox, HasTraits):
         """Set the list of objects."""
         self.objects = objects_list
 
-
+class HTMLDataFrame(widgets.HTML):
+    def __init__(self, df, **kwargs):
+        """Create an HTML representation of a DataFrame."""
+        super().__init__(**kwargs)
+        self.df = df.reset_index(drop=True)
+        self.value = self.df.to_html(index=False)
+        self.add_class('HTMLDataFrame')
+        self.add_class('jp-RenderedHTMLCommon')
 
 class EditableTable(widgets.VBox, HasTraits):
     style = """

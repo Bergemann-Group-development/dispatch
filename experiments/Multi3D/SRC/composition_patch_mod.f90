@@ -19,7 +19,7 @@ MODULE composition_patch_mod
   USE m3d_debug_mod
   USE composition_mod, only: composition_type, exclude_elements, only_elements, switch, &
   irwin_dis, ref_lam, debug_opac, abundances, relative_abundances, mhd_eos, helium_scattering, &
-  departure_pointer_t
+  departure_pointer_t, read_departures
   USE atom_mod, only: m1d_legacy_mode, use_classic_col, level_partf
   USE atom_patch_mod,  only: atom_patch_t
   USE nlte_patch_mod, only:nlte_patch_t
@@ -289,7 +289,9 @@ SUBROUTINE execute (self)
 
     if (atmos_format == 'save') then
       call self%load5('atmos', run_dir=atmos_file, mem=self%mem(:,:,:,:,self%it,:))
-      call self%load_departures(run_dir=atmos_file)
+      if (read_departures) then
+        call self%load_departures(run_dir=atmos_file)
+      endif
     else
       do i=1, self%nw
         authority => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),:,self%it,i)

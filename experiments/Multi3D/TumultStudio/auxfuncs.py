@@ -194,7 +194,7 @@ def find_smallest_missing(nums):
     return min(set(range(0, max(nums, default=0) + 2)) - set(nums))
 
 def get_common_suffix_files(files, suffixes):
-    return np.unique([[f[:-len(s)] for f in files if f.endswith(s)] for s in suffixes])
+    return np.unique([[f.with_suffix('') for f in files if f.suffix == s] for s in suffixes])
 
 def replace_nth(string, sub, replacement, n):
     parts = string.split(sub)

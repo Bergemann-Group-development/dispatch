@@ -155,6 +155,7 @@ def iframe_server(layout, PORT=5008, width='100%', height='100%'):
     return iframe_output
 
 def reset_xaxis(p, xx, margin=0):
+    if len(xx) == 0: return
     xx = np.array(xx)
     xx = xx[~np.isnan(xx)]
     xmin = np.min(xx)
@@ -172,6 +173,7 @@ def reset_xaxis(p, xx, margin=0):
         server.next_tick_update(update)
         
 def reset_yaxis(p, yy, margin=0.05):
+    if len(yy) == 0: return
     yy = np.array(yy)
     yy = yy[~np.isnan(yy)]
     ymin = np.min(yy)

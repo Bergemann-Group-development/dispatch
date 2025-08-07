@@ -88,6 +88,35 @@ class LineList(pd.DataFrame):
     llist = llist[mask]
     return cls(llist)
   
+  def write_to_nlte_format(self, filename):
+    species = self[['ion', 'iso']].drop_duplicates().values
+    head = ['lam0', 'evi', 'loggf', 'gv', 'ga', 'gq', 'i', 'j']
+
+    for key in head:
+      if not hasattr(self, key):
+        self[key] = 0
+
+    if hasattr(self, 'label'): head.append('label')
+    with open(filename, 'w+') as f:
+      for s, iso in species:
+        sub = self[(self.ion == s) & (self.iso == iso)]
+        nlines = sub.shape[0]
+        if len(s.split()) == 2:
+          id, ion = s.split()
+          ion = ion_inv[ion]
+        else:
+          id = s
+          ion = 1
+
+        if id in element_ids:
+          p = element_ids.index(id) + 1
+        else:
+          p = 0
+
+        f.write(f"'{p}.{iso}' {ion} {nlines}\n")
+        f.write(f"'{s}'\n")
+        f.write(sub[head].to_string(index=False, header=False) + '\n')
+  
   def write_to_ts_format(self, filename):
     species = self[['ion', 'iso']].drop_duplicates().values
     head = ['lam0', 'evi', 'loggf', 'gv', 'upper_g', 'ga', 'gq']

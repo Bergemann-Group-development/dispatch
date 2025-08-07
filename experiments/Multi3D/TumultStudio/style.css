@@ -110,18 +110,17 @@
 }
 
 .tum-gui .footer .status {
-    flex: 1;
+    /* flex: 1; */
 }
 
 .tum-gui .footer .widget-label {
-    width: 200px;
     height: 100%;
     line-height: inherit;
     margin: 0;
 }
 
 .tum-gui .footer .widget-hprogress {
-    width: 400px;
+    flex: 1;
     height: 100%;
     line-height: inherit;
     margin: 0;
@@ -129,6 +128,12 @@
 
 .tum-gui .footer .widget-hprogress .progress {
     margin: 5px !important;
+    width: 200px;
+    flex-grow: 0;
+}
+
+.tum-gui .footer .widget-hprogress .widget-label {
+    flex: 1;
 }
 
 .tum-gui .editor {
@@ -150,9 +155,21 @@
 }
 
 .tum-gui .right-sidebar {
+    min-width: 300px;
     width: fit-content;
     overflow-x: hidden;
     margin: 0;
+}
+
+.tum-gui .info-area {
+    width: 100%;
+    height: 100%;
+    resize: none;
+}
+
+.tum-gui .info-area textarea {
+    border: none;
+    opacity: 1;
 }
 
 .tum-gui .ifk-form {
@@ -173,12 +190,6 @@
     width: 100%;
 }
 
-.tum-gui .EditableTable thead {
-    position: sticky;
-    top: 0;
-    background-color: var(--ifk-layout-color1);
-}
-
 .tum-gui .EditableTable .highlighted-row {
     background-color: var(--ifk-accent-color);
 }
@@ -191,7 +202,7 @@
     padding: 0;
 }
 
-.tum-gui :not(.jp-RenderedMarkdown).jp-RenderedHTMLCommon td {
+.tum-gui .EditableTable td {
     white-space: nowrap;
 }
 

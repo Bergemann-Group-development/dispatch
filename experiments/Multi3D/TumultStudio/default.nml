@@ -1,12 +1,7 @@
 ! -- Parameters defining the run -----------------------------------------------
 &io_params          datadir='data' gb_step=6.0 do_trace=F /
 &timer_params       sec_per_report=1e8 verbose=2 /
-&atmos_params       atmos_format='save' atmos_file=''
-!&atmos_params       atmos_format='Must' atmos_file='input_multi3d/atmos/SunLTE_t5777_g4.440_z0.000_sn779_m3dis'
-                    nx=30 ny=30 /
+&atmos_params       atmos_format='save' atmos_file='' read_departures=T /
 &m3d_params         verbose=1 maxiter=0 rotate_atmos=T long_scheme='radau' /
 &composition_params sample_back_opac=T sample_back_opac_in_output=T / 
-&linelist_params    line_lists=
-                               !'./input_multi3d/linelists/vald_2490-25540.list',
-                               './input_multi3d/linelists/master_line.txt',
-                               './input_multi3d/linelists/Hlinedata' /
+&linelist_params    line_lists='./input_multi3d/linelists/master_line.txt' /

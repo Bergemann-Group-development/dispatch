@@ -21,10 +21,12 @@ from bokeh.plotting import figure
 from functools import wraps
 import numpy as np
 import tumult
+from tumult.auxfuncs import tbdfits
 import time
 from traitlets import HasTraits
 import pathlib
 
+first_time = True
 
 class TumultStudio(HasTraits):
     nav_source = CDS(dict(x=[], y=[]))
@@ -39,13 +41,8 @@ class TumultStudio(HasTraits):
     
     synth_folder = create_temp_dir_for_kernel(saved_settings['synthesis folder'])
 
-    def __init__(self, source):
-        self.source = prepare_source(source)
-        self.xdata = self.source.data['x'] # original data
-        self.ydata = self.source.data['y'] # original data
-        self.cntm = np.ones_like(self.xdata)  # normalisation spline
-        self.nlam = len(self.xdata)
-        self.max_points = 1000
+    def __init__(self, **kwargs):
+        self.source = self.prepare_source(**kwargs)
         self.browser = EditableList(buttons=['hide', 'delete'])
         self.browser.add_object(self.source, label='Observations')
 
@@ -102,9 +99,14 @@ class TumultStudio(HasTraits):
         self.gui.add_class('tum-gui')
 
     def launch(self, xmin=None, xmax=None, height=500):
+        global first_time
+        if first_time:
+            first_time = False
+        else:
+            raise RuntimeError("Studio can only be launched once per kernel session.")
+        
         ServerManager.create_global()
         self.gui.layout.height = f'{height}px'
-        display(self.gui, *self.stylesheets)
         self.init_settings()
         self.init_controls()
         canvas = self.init_canvas(xmin=xmin, xmax=xmax)
@@ -112,6 +114,7 @@ class TumultStudio(HasTraits):
         self.init_browser()
         self.editor.children += (canvas,)
         self.gui.children = self._gui
+        display(self.gui, *self.stylesheets)
     
     def init_settings(self):
         def open_settings(btn):
@@ -123,7 +126,6 @@ class TumultStudio(HasTraits):
         self.settings_button.on_click(open_settings)
         settings_page.close_button.on_click(close_settings)
 
-    
     def init_sidebars(self):
         init_synth_form(self)
         init_fit_form(self)
@@ -134,16 +136,11 @@ class TumultStudio(HasTraits):
         self.left_sidebar.children += (self.browser,)
         self.right_sidebar.children = (synth_form.vbox,)
         self.right_sidebar.titles = ['Synthesis Settings']
-        
                 
     def init_controls(self):
-        new_line_mask_button = init_line_mask_button(self)
-        norm_checkbox = init_norm_checkbox(self)
-        import_atmos_button = init_import_atmos_button(self)
-
-        self.controls.children += (norm_checkbox,
-                                   import_atmos_button,
-                                   new_line_mask_button,)
+        init_norm_checkbox(self)
+        init_line_mask_button(self)
+        init_import_atmos_button(self)
         
     def init_browser(self):
         def on_browser_selection(change):
@@ -178,18 +175,27 @@ class TumultStudio(HasTraits):
                     llist_vbox = widgets.VBox([run.llist_html, rerun_form.vbox])
                     llist_vbox.add_class('llist-vbox')
                     self.right_sidebar.children = (fit_form.vbox, llist_vbox)
-                    self.right_sidebar.titles = ['Fit Settings', 'Line List']
+                    self.right_sidebar.titles = ('Fit Settings', 'Line List')
 
                 elif isinstance(obj, LineMask):
                     lm = obj
                     reset_xaxis(self.fig, [lm.xmin, lm.xmax])
                     reset_xaxis(self.nav, [lm.xmin, lm.xmax], margin=2)
                     self.right_sidebar.children = (synth_form.vbox,)
-                    self.right_sidebar.titles = ['Synthesis Settings']
+                    self.right_sidebar.titles = ('Synthesis Settings',)
 
                 elif isinstance(obj, CDS):
-                    self.right_sidebar.children = (norm_form.vbox,)
-                    self.right_sidebar.titles = ['Norm Settings']
+                    tabs = (self.obs_info,)
+                    titles = (' Info',)
+                    if not self.normalised:
+                        tabs += (norm_form.vbox,)
+                        titles += ('Norm Settings',)
+                    if hasattr(self, 'obs_meta'):
+                        tabs += (self.obs_meta,)
+                        titles += ('Metadata',)
+
+                    self.right_sidebar.children = tabs
+                    self.right_sidebar.titles = titles
             
             self.reset_yaxis_and_annotations()
                 
@@ -230,9 +236,13 @@ class TumultStudio(HasTraits):
                                      text_align='left', text_baseline='middle',
                                      text_color='black',
                                      source=self.llist_source, angle=np.pi/2)
+        self.fig.add_layout(self.llist_labels)
         
-        self.spline_line = self.fig.line('x', 'y', source=self.cntm_source, color='red', alpha=0.5)
-        self.spline_knots = self.fig.scatter('x', 'y', source=self.spline_source, size=6, color='red')
+        if not self.normalised:
+            self.spline_line = self.fig.line('x', 'y', source=self.cntm_source, color='red', alpha=0.5)
+            self.spline_knots = self.fig.scatter('x', 'y', source=self.spline_source, size=6, color='red')
+            draw_tool = PointDrawTool(renderers=[self.spline_knots])
+            self.fig.add_tools(draw_tool)
 
         self.atmos_scatter = self.atmos_fig.scatter('x', 'y', source=self.atmos_source, size=4, color='black')
         
@@ -245,10 +255,7 @@ class TumultStudio(HasTraits):
         hover = HoverTool(renderers=[self.llist_line, self.synth_line],
                   tooltips=None, mode='mouse')  # You can add tooltips if needed
         
-        draw_tool = PointDrawTool(renderers=[self.spline_knots])
-        
-        self.fig.add_layout(self.llist_labels)
-        self.fig.add_tools(hover, draw_tool)
+        self.fig.add_tools(hover)
         self.fig.legend.location = "bottom_left"
 
         def synth_selection(attr, old, new):
@@ -311,7 +318,8 @@ class TumultStudio(HasTraits):
         else:
             crop_params = {}
 
-        x, y = new_run.crop(LTE=True, **crop_params)
+        LTE = new_run.mode == 'LTE'
+        x, y = new_run.crop(LTE=LTE, **crop_params)
 
         # run data is always normalised, so we need to transform
         # to view coordinates if the view is set to unnormalised
@@ -451,6 +459,8 @@ class TumultStudio(HasTraits):
         p = figure(output_backend='svg',
                    toolbar_location='above',
                    x_axis_location='above',
+                   x_range=(0,1), # for some reason this is crucial
+                   y_range=(-0.5, 1.05), # for some reason this is crucial
                    **kwargs)
         self.nav = p
         p.yaxis.visible = False
@@ -464,6 +474,7 @@ class TumultStudio(HasTraits):
         def nav_xrange_update_callback(attr, new, old):
             slc = get_crop_range(self.xdata, p.x_range, nmax=10000)
             self.nav_source.data = dict(x=self.xdata[slc], y=self.ydata[slc])
+            reset_yaxis(self.nav, self.ydata[slc])
 
         p.x_range = Range1d(0, 1, bounds=(x0, x1))
         p.x_range.on_change('start', nav_xrange_update_callback)
@@ -476,36 +487,87 @@ class TumultStudio(HasTraits):
             geo = event.geometry
             xmin = geo['x0']
             xmax = geo['x1']
-
             reset_xaxis(self.nav, [xmin, xmax], margin=2)
             reset_xaxis(self.fig, [xmin, xmax])
             
         p.on_event(SelectionGeometry, nav_drag_callback)
 
     def init_atmos_canvas(self, **kwargs):
-        p = figure(output_backend='svg', **kwargs)
+        p = figure(output_backend='webgl', **kwargs)
         self.atmos_fig = p
-        p.xaxis.axis_label = 'log(tau500)'
-        p.yaxis.axis_label = 'misc'
         p.toolbar.logo = None
 
 
-def prepare_source(source):
-    if not isinstance(source, CDS):
-        source = CDS(source)
+    def prepare_source(self, file=None, dataframe=None, cds=None, normalised=False, **kwargs):
+        if all(v is None for v in [cds, dataframe, file]):
+            raise ValueError("No source data provided. Please provide a source, dataframe, or file.")
 
-    if 'x' not in source.data:
-        raise ValueError("Source data must contain 'x' key.")
-    
-    if 'y' not in source.data:
-        raise ValueError("Source data must contain 'y' key.")
-    
-    data = source.data.copy()
-    xdata = source.data['x']
-    ydata = source.data['y']
-    mask = np.isfinite(ydata) * (ydata > 0)
-    for key in data:
-        data[key] = np.array(data[key])[mask]
-    data['y'] /= data['y'].max()  # normalise y data
-    source.data = data 
-    return source
+        snr = None
+
+        if file:
+            if file.endswith('.fits'):
+                out = tbdfits(file, **kwargs)
+                if out is None:
+                    raise ValueError(f"Error reading file {file}")
+                else:
+                    lam, flux, header = out
+                    source = CDS(dict(x=lam, y=flux))
+                    meta = pd.DataFrame(data=np.array(header.cards), columns=['key', 'value', 'comment'])
+                    self.obs_meta = HTMLDataFrame(meta)
+
+                    # Check for SNR in the header
+                    snr_keys = [key for key in header if key.startswith("SNR")]
+                    if len(snr_keys) == 1:
+                        snr = header[snr_keys[0]]
+
+            elif file.endswith('.txt') or file.endswith('.csv'):
+                df = pd.read_csv(file, **kwargs)
+                source = CDS(dict(x=df.iloc[:,0], y=df.iloc[:,1]))
+
+        elif isinstance(dataframe, pd.DataFrame):
+            df = dataframe
+            source = CDS(dict(x=df.iloc[:,0], y=df.iloc[:,1]))
+
+        elif isinstance(cds, CDS):
+            if 'x' not in cds.data:
+                raise ValueError("Source data must contain 'x' key.")
+            if 'y' not in cds.data:
+                raise ValueError("Source data must contain 'y' key.")
+            source = cds
+        
+        self.normalised = normalised
+
+        if not normalised:
+            data = source.data.copy()
+            xdata = source.data['x']
+            ydata = source.data['y']
+            mask = np.isfinite(ydata) * (ydata > 0)
+            for key in data:
+                data[key] = np.array(data[key])[mask]
+            data['y'] /= data['y'].max()  # normalise y data
+            source.data = data
+
+        self.xdata = source.data['x'] # original data
+        self.ydata = source.data['y'] # original data
+        self.cntm = np.ones_like(self.xdata)  # normalisation spline
+
+        name = file or dataframe or cds
+        info = f"""Source:
+                {name}
+                \nPoints:
+                {len(source.data["x"])}
+                \nxmin:
+                {source.data["x"][0]:.3f} Å
+                \nxmax:
+                {source.data["x"][-1]:.3f} Å
+                \nNormalised:
+                {normalised}
+                """
+        
+        if snr: 
+            info += f"\nSNR:\n{snr:.2f}\n"
+
+        self.obs_info = widgets.Textarea(info, disabled=True)
+        self.obs_info.add_class('info-area')
+
+        return source

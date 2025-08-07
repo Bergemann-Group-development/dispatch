@@ -281,7 +281,9 @@ subroutine get_filenames(self, directory, filenames, pattern)
   end do
   close(unit)
   
-  call execute_command_line('rm .temp_files', wait=.true.)
+  if (self%exists('.temp_files')) then
+    call execute_command_line('rm .temp_files', wait=.true., exitstat=status)
+  endif
 end subroutine get_filenames
 
 !===============================================================================
