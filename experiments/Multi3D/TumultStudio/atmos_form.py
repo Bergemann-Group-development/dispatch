@@ -49,7 +49,7 @@ def list_atmospheres(change, wid):
         files = get_common_suffix_files(files, ['.atmos', '.mesh'])
     
     # Convert to relative paths (names only)
-    files = [f.name for f in files]
+    files = sorted([f.name for f in files])
     
     wid.options = files
     wid.value = files[0] if files else None

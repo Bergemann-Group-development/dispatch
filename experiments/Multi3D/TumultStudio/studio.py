@@ -520,7 +520,7 @@ class TumultStudio(HasTraits):
                     if len(snr_keys) == 1:
                         snr = header[snr_keys[0]]
 
-            elif file.endswith('.txt') or file.endswith('.csv'):
+            else:
                 df = pd.read_csv(file, **kwargs)
                 source = CDS(dict(x=df.iloc[:,0], y=df.iloc[:,1]))
 
