@@ -39,7 +39,9 @@ class TumultStudio(HasTraits):
     atmos_scatter_source = CDS(dict(x=[], y=[]))
     atmos_line_source = CDS(dict(x=[], y=[]))
     
-    synth_folder = create_temp_dir_for_kernel(saved_settings['synthesis folder'])
+    synth_folder = pathlib.Path(saved_settings['synthesis folder'])
+    synth_folder.mkdir(parents=True, exist_ok=True)
+    synth_folder = create_temp_dir_for_kernel(synth_folder)
 
     def __init__(self, **kwargs):
         self.obs = StudioObs(**kwargs)
@@ -83,16 +85,16 @@ class TumultStudio(HasTraits):
                             StyleSheet(module_dir / 'widgets.css'),
                             synth_form.load_tooltip_script()]
         
-        # Load image from file
-        with open(module_dir / 'SplashScreen.png', 'rb') as f:
-            image_data = f.read()
+        # # Load image from file
+        # with open(module_dir / 'SplashScreen.png', 'rb') as f:
+        #     image_data = f.read()
 
-        # Create splash screen with image
-        splash_image = widgets.Image(value=image_data, format='png')
-        splash_image.add_class('splash-image')
+        # # Create splash screen with image
+        # splash_image = widgets.Image(value=image_data, format='png')
+        # splash_image.add_class('splash-image')
 
-        splash_text = widgets.Label('TumultStudio')
-        splash_text.add_class('splash-text')
+        # splash_text = widgets.Label('TumultStudio')
+        # splash_text.add_class('splash-text')
 
         self.gui = widgets.VBox([])
         #self.gui.children = [splash_image, splash_text]

@@ -6,7 +6,6 @@ from tumult.linelist import LineList
 from tumult.auxfuncs import pchip_mono
 import copy
 from scipy.signal import argrelextrema
-from scipy.interpolate import make_splrep
 import ipywidgets as widgets
 from .LineMask import LineMask
 

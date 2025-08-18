@@ -1,6 +1,6 @@
 {
   "attrs": {
-    "Figure": {
+    "figure": {
       "width": 450,
       "height": 333,
       "background_fill_color": "white",
