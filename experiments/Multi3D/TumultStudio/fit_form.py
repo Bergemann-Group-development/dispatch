@@ -1,6 +1,6 @@
 from .auxfuncs import *
 from .ServerManager import *
-from .synth import run_synth, StudioSynth, StudioCoG
+from .threading import execute_in_thread
 import ipyformkit as ifk
 import numpy as np
 import copy
@@ -14,6 +14,7 @@ fields = {('fitting region', 'element'): (('line mask', 'selection'), element_id
           ('vrot', 'fac', 'tilt'): (0.0, 1.0, 0.0),
           ('fit abnd', 'fit vshift', 'fit vdop'): (False, True, False),
           ('fit vrot', 'fit fac', 'fit tilt'): (False, False, False),
+          'NLTE elements': ('No departures in atmos!',),
           'apply': None}
 
 disable = {'vshift': lambda d: d['fit vshift']==True,
@@ -32,37 +33,57 @@ formatters = {'abnd': lambda x: f'{x:.2f}',
               'tilt': lambda x: f'{x:.4f}'}
 
 fit_form = ifk.Form(fields, disable=disable)
+defaults = fit_form.get_values()
 element_wid = fit_form.widgets_dict['element'].wid
+nlte_wid = fit_form.widgets_dict['NLTE elements'].wid
 abundance_wid = fit_form.widgets_dict['abnd'].wid
 fit_button = fit_form.widgets_dict['apply'].wid
     
 def init_fit_form(studio):
     @log_callback_errors
     def on_fit_click(btn):
-        old_run = studio.browser.selected.object
-        i = studio.synth_source.data['run_ids'].index(id(old_run))
+        old_run = studio.current
         studio.progress.description = f'Fitting {old_run.label}:'
-        new_run, xfit, yfit = fit_synth(old_run, studio.synth_folder, studio.fig_source, studio.progress)
+        container = studio.browser.selected
 
-        @update_data_source(studio.synth_source)
-        def update_synth(data):
-            data['xs'][i] = xfit
-            data['ys'][i] = yfit
-            data['run_ids'][i] = id(new_run)
-            data['labels'][i] = new_run.label
+        @execute_in_thread(spinner=container.label)
+        def async_callback(execution):
+            new_run, xfit, yfit = fit_synth(old_run, studio.synth_folder, studio.fig_source, runner=execution.run_command)
 
-            if new_run is not old_run:
-                studio.browser.remove_object(old_run)
-                studio.browser.add_object(new_run)
-                studio.browser.selected = studio.browser.list_items[-1]  # select the new run
-                widget_label = studio.browser.selected.children[0].label
-                studio.set_synth_controls(new_run, widget_label)
+            @update_source_data(studio.synth_source)
+            def update_synth(data):
+                i = data['run_ids'].index(id(old_run))
+                data['xs'][i] = xfit
+                data['ys'][i] = yfit
+                data['run_ids'][i] = id(new_run)
+                data['labels'][i] = new_run.label
 
-        update_synth()
-        studio.progress.value = studio.progress.max
-        studio.progress.description = 'Done!'
+                if new_run is not old_run:
+                    studio.browser.replace_object(old_run, new_run)
+                    studio.set_synth_controls(new_run)
+
+            update_synth()
+            studio.progress.value = studio.progress.max
+            studio.progress.description = 'Done!'
+
+        async_callback()
 
     fit_button.on_click(on_fit_click)
+
+    @log_callback_errors
+    def on_element_change(change):
+        eid = element_wid.value
+        if eid == 'None':
+            abundance_wid.value = 0.0
+        else:
+            run = studio.current
+            if hasattr(run, 'eid') and eid == run.eid:
+                abnd = run.fit_params['abnd']
+            else:
+                abnd = run.abundances[eid]
+            abundance_wid.value = abnd
+
+    element_wid.observe(on_element_change, names='value')
 
 def set_fit_form_values(values):
     """Set the values of the fit form."""
@@ -74,9 +95,6 @@ def set_fit_form_values(values):
     fit_form.set_values(val)
 
 def set_fit_form(run):
-    if hasattr(run, 'fit_params'):
-        set_fit_form_values(run.fit_params)
-
     llist = run.llist.sort_values(by='strength', ascending=False)
     eids = llist.ion.str.split(expand=True)[0].unique()
     output_ids = []
@@ -91,7 +109,24 @@ def set_fit_form(run):
 
     element_wid.options = ('None',) + tuple(output_ids)
 
-def fit_synth(run, folder, source, progress=None):
+    atomids = [atom.id for atom in run.atmos.atoms]
+    if len(atomids) == 0:
+        nlte_wid.options = ('No departures in atmos!',)
+    else:
+        value = ', '.join(atomids)
+        nlte_wid.options = ('LTE it is!', value,)
+    nlte_wid.value = nlte_wid.options[-1]
+
+    if hasattr(run, 'fit_params'):
+        set_fit_form_values(run.fit_params)
+
+    if hasattr(run, 'eid'):
+        element_wid.value = run.eid
+    else:
+        element_wid.value = 'None'
+
+
+def fit_synth(run, folder, source, runner=None):
     values = fit_form.check_and_return_values()
     lm = run.line_mask
 
@@ -105,7 +140,6 @@ def fit_synth(run, folder, source, progress=None):
         oyy = np.interp(oxx, lm.xdata, lm.ydata)
 
     fit = []
-    bounds = {}
     if values['fit vshift']: fit.append('vshift')
     if values['fit vdop']: fit.append('vdop')
     if values['fit vrot']: fit.append('vrot')
@@ -119,97 +153,48 @@ def fit_synth(run, folder, source, progress=None):
     if not values['fit vrot']: kwargs['vrot']=values['vrot']
     if not values['fit fac']: kwargs['fac']=values['fac']
     if not values['fit tilt']: kwargs['tilt']=values['tilt']
-    if not values['fit abnd'] and 'abnd' in values:
+    if not values['fit abnd'] and 'abnd' in values and 'eid' != 'None':
         kwargs['abnd']=values['abnd']
 
-    LTE = run.mode=='LTE'
+    kwargs['LTE'] = 'LTE' in nlte_wid.value or 'No departures' in nlte_wid.value
     eid = values['element']
 
-    if 'abnd' in fit:
-        bounds['abnd'] = (-10.0, 12.0)
-
-    def add_run_to_cog(run, anew):
-        off = anew - run.a0
-        suffix = f'_{off*100:+04.0f}'
-        name = run.cog_name + suffix
-        settings = {'composition_params': {'abundances': f'{eid}={anew:.2f}'}}
-        new_run = run_synth(folder, name, settings, run.line_mask, run.folder, run.llist, progress=progress)
-        if hasattr(run, 'runs'):
-            runs = list(run.runs) + [new_run]
+    if isinstance(run, tumult.CoG):
+        if eid == 'None':
+            kwargs['abnd'] = run.a0
+            p, _ = run.fit_observed(oxx, oyy, **kwargs)  
         else:
-            runs = [run, new_run]
-        abnds = [r.abundances[eid] for r in runs]
-        cog = tumult.CoG(runs, abnds=abnds)
-        cog = StudioCoG.from_run(cog)
-        cog.a0 = run.a0
-        cog.cog_name = run.cog_name
-        p, _ = cog.fit_observed(oxx, oyy, LTE=LTE, bounds=bounds, **kwargs)
-        return cog, p
-    
-    def iterate_fit(cog, p, afit, anew):
-        while (abs(afit - anew) > 0.005):
-            anew = afit
-            cog, p = add_run_to_cog(cog, anew)
-            afit = p['abnd']
-        return cog, p
-
-    if isinstance(run, StudioCoG):
-        cog = run
-        if values['fit abnd']:
-            p, _ = cog.fit_observed(oxx, oyy, LTE=LTE, bounds=bounds, **kwargs)
-            afit = p['abnd']
-            anew = find_nearest(cog.abnds, afit)
-            cog, p = iterate_fit(cog, p, afit, anew)
-        elif 'abnd' in kwargs:
-            add_run = beyond_sorted(cog.abnds, kwargs['abnd'])
-            add_run = add_run or len(cog.abnds) < 3
-            add_run = add_run or np.min(abs(cog.abnds - kwargs['abnd'])) > 0.2
-            add_run = add_run and not kwargs['abnd'] in cog.abnds
-            if add_run:
-                cog, p = add_run_to_cog(cog, kwargs['abnd'])
-            else:
-                p, _ = cog.fit_observed(oxx, oyy, LTE=LTE, bounds=bounds, **kwargs)
-        else:
-            kwargs['abnd'] = cog.a0
-            p, _ = cog.fit_observed(oxx, oyy, LTE=LTE, bounds=bounds, **kwargs)
+            cog = run
+            if values['fit abnd']:
+                p = cog.iterate_fit(oxx, oyy, runner=runner, **kwargs)
+            elif 'abnd' in kwargs:
+                if beyond_sorted(cog.abnds, kwargs['abnd']) or len(cog.abnds) < 3:
+                    cog.add_abnd(kwargs['abnd'], tol=0.2, runner=runner)
+                p, _ = cog.fit_observed(oxx, oyy, **kwargs)
                 
-        run = cog # replace original run by cog
+            run = cog # replace original run by cog
     else:
         if eid == 'None':
-            p, _ = run.fit_observed(oxx, oyy, LTE=LTE, bounds=bounds, **kwargs)
+            p, _ = run.fit_observed(oxx, oyy, **kwargs)
         else:
-            name = init_cog_folder(run, '_+000')
-            a0 = run.abundances[eid]
-            run.a0 = a0
-            run.cog_name = name
+            cog = run.convert_to_CoG(eid)
             
             if values['fit abnd']:
-                anew = a0+0.1
-                cog, p = add_run_to_cog(run, anew)
-                cog, p = iterate_fit(cog, p, p['abnd'], anew)
+                anew = cog.a0+0.1
+                cog.add_abnd(anew, runner=runner)
+                p = cog.iterate_fit(oxx, oyy, runner=runner, **kwargs)
             else:
-                anew = kwargs['abnd']
-                cog, p = add_run_to_cog(run, anew)
+                anew = values['abnd']
+                cog.add_abnd(anew, runner=runner)
+                p, _ = cog.fit_observed(oxx, oyy, **kwargs)
 
-            cog.element_id = eid
-            cog.ic = run.ic
             run = cog # replace original run by cog
 
     del kwargs['fit']
     kwargs.update(p)
-    xfit, yfit = run.crop(LTE=LTE, **kwargs)
-    run.fit_params = kwargs
-    set_fit_form_values(run.fit_params)
+    xfit, yfit = run.crop(**kwargs)
+    run.fit_params = {k:v for k, v in kwargs.items()}
+    del kwargs['LTE']
+    set_fit_form_values(kwargs)
     return run, xfit, yfit
 
-
-def init_cog_folder(run, suffix):
-    parent, name = (run.folder.parent, run.folder.name)
-    cog_folder = unique_folder_name(parent / f'CoG_{name}')
-    logging.info(f'Creating folder {cog_folder}.')
-    cog_folder.mkdir()
-    new_folder = unique_folder_name(cog_folder / f'{name}{suffix}')
-    logging.info(f'Renaming {run.folder} to {new_folder}.')
-    run.rename_folder(new_folder)
-    # without the suffix and possible unique suffixes
-    return cog_folder.name.split(suffix)[0]

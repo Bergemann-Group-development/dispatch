@@ -19,7 +19,7 @@ MODULE composition_patch_mod
   USE m3d_debug_mod
   USE composition_mod, only: composition_type, exclude_elements, only_elements, switch, &
   irwin_dis, ref_lam, debug_opac, abundances, relative_abundances, mhd_eos, helium_scattering, &
-  departure_pointer_t, read_departures
+  departure_pointer_t, read_departures, departure_indices
   USE atom_mod, only: m1d_legacy_mode, use_classic_col, level_partf
   USE atom_patch_mod,  only: atom_patch_t
   USE nlte_patch_mod, only:nlte_patch_t
@@ -184,6 +184,7 @@ SUBROUTINE composition_pre_init (self)
     do i=1, size(line_lists)
       call composition%init_linelist(line_lists(i), dlam, output_sp%nu)
     end do
+    read_departures = read_departures .and. departure_indices
   endif
 
   ! make sure there are no more f-domain splits than threads

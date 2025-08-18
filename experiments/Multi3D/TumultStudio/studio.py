@@ -3,26 +3,25 @@ from . import ServerManager
 from .ServerManager import *
 from .LineMask import *
 from .widgets import *
+from .browser import Browser
 from .synth import StudioSynth
+from .StudioObs import StudioObs
+from .StudioProcess import StudioProcess
 from .synth_form import synth_form, init_synth_form
 from .fit_form import fit_form, set_fit_form, init_fit_form
 from .rerun_form import rerun_form, init_rerun_form
 from .norm_form import *
-from .nlte_form import init_nlte_form
+from .departure_form import init_departure_form
 from .atmos_form import init_import_atmos_button
 from .StudioAtmos import StudioAtmos, init_atmos_plot_form
 from .settings import settings_form, settings_page, saved_settings
-from .llist_annotations import plot_line_annotations, remove_line_annotations, get_llist_table
+from .threading import execute_in_thread
 from bokeh.models import *
 from bokeh.models import ColumnDataSource as CDS
 from bokeh.layouts import *
 from bokeh.events import *
 from bokeh.plotting import figure
-from functools import wraps
 import numpy as np
-import tumult
-from tumult.auxfuncs import tbdfits
-import time
 from traitlets import HasTraits
 import pathlib
 
@@ -37,14 +36,15 @@ class TumultStudio(HasTraits):
     llist_source = CDS(dict(xs=[], ys=[], x=[], y=[], text=[]))
     cntm_source = CDS(dict(x=[], y=[]))
     spline_source = CDS(dict(x=[], y=[]))
-    atmos_source = CDS(dict(x=[], y=[]))
+    atmos_scatter_source = CDS(dict(x=[], y=[]))
+    atmos_line_source = CDS(dict(x=[], y=[]))
     
     synth_folder = create_temp_dir_for_kernel(saved_settings['synthesis folder'])
 
     def __init__(self, **kwargs):
-        self.source = self.prepare_source(**kwargs)
-        self.browser = EditableList(buttons=['hide', 'delete'])
-        self.browser.add_object(self.source, label='Observations')
+        self.obs = StudioObs(**kwargs)
+        self.browser = Browser(buttons=['hide', 'delete'])
+        self.browser.add_object(self.obs, label='Observations')
 
         title = widgets.Label('Controls:')
         self.controls = widgets.HBox([title])
@@ -99,17 +99,17 @@ class TumultStudio(HasTraits):
         self.gui.add_class('tum-gui')
 
     def launch(self, xmin=None, xmax=None, height=500):
-        global first_time
-        if first_time:
-            first_time = False
-        else:
-            raise RuntimeError("Studio can only be launched once per kernel session.")
+        #global first_time
+        #if first_time:
+        #    first_time = False
+        #else:
+        #    raise RuntimeError("Studio can only be launched once per kernel session.")
         
         ServerManager.create_global()
         self.gui.layout.height = f'{height}px'
         self.init_settings()
-        self.init_controls()
         canvas = self.init_canvas(xmin=xmin, xmax=xmax)
+        self.init_controls()
         self.init_sidebars()
         self.init_browser()
         self.editor.children += (canvas,)
@@ -132,70 +132,40 @@ class TumultStudio(HasTraits):
         init_rerun_form(self)
         init_norm_form(self)
         init_atmos_plot_form(self)
-        init_nlte_form(self)
+        init_departure_form(self)
         self.left_sidebar.children += (self.browser,)
         self.right_sidebar.children = (synth_form.vbox,)
         self.right_sidebar.titles = ['Synthesis Settings']
                 
     def init_controls(self):
         init_norm_checkbox(self)
-        init_line_mask_button(self)
         init_import_atmos_button(self)
+        init_line_mask_button(self)
         
     def init_browser(self):
         def on_browser_selection(change):
-            sel = self.browser.selected
+            obj = self.current
 
             def update_canvas():
-                show_atmos = sel is not None and isinstance(sel.object, StudioAtmos)
+                show_atmos = isinstance(obj, StudioAtmos)
                 self.atmos_fig.visible = show_atmos
                 self.nav.visible = not show_atmos
                 self.fig.visible = not show_atmos
             
             ServerManager.server.next_tick_update(update_canvas)
 
-            if sel is None:
+            if obj is None:
                 self.right_sidebar.children = (synth_form.vbox,)
                 self.right_sidebar.titles = ['Synthesis Settings']
             else:
-                obj = sel.object
+                d = obj.chosen(self)
+                if d is not None:
+                    self.right_sidebar.children = d['tabs']
+                    self.right_sidebar.titles = d['titles']
 
-                if isinstance(obj, StudioAtmos):
-                    obj.chosen(self)
-
-                elif isinstance(obj, StudioSynth):
-                    run = obj
-                    lm = run.line_mask
-                    ids = self.synth_source.data['run_ids']
-                    i = ids.index(id(run))
-                    reorder_data(self.synth_source, i, len(ids))  # move to back to display on top
-                    reset_xaxis(self.fig, [lm.xmin, lm.xmax])
-                    reset_xaxis(self.nav, [lm.xmin, lm.xmax], margin=2)
-                    set_fit_form(run)
-                    llist_vbox = widgets.VBox([run.llist_html, rerun_form.vbox])
-                    llist_vbox.add_class('llist-vbox')
-                    self.right_sidebar.children = (fit_form.vbox, llist_vbox)
-                    self.right_sidebar.titles = ('Fit Settings', 'Line List')
-
-                elif isinstance(obj, LineMask):
-                    lm = obj
-                    reset_xaxis(self.fig, [lm.xmin, lm.xmax])
-                    reset_xaxis(self.nav, [lm.xmin, lm.xmax], margin=2)
-                    self.right_sidebar.children = (synth_form.vbox,)
-                    self.right_sidebar.titles = ('Synthesis Settings',)
-
-                elif isinstance(obj, CDS):
-                    tabs = (self.obs_info,)
-                    titles = (' Info',)
-                    if not self.normalised:
-                        tabs += (norm_form.vbox,)
-                        titles += ('Norm Settings',)
-                    if hasattr(self, 'obs_meta'):
-                        tabs += (self.obs_meta,)
-                        titles += ('Metadata',)
-
-                    self.right_sidebar.children = tabs
-                    self.right_sidebar.titles = titles
+                    if 'xmin' in d and 'xmax' in d:
+                        reset_xaxis(self.fig, [d['xmin'], d['xmax']])
+                        reset_xaxis(self.nav, [d['xmin'], d['xmax']], margin=2)
             
             self.reset_yaxis_and_annotations()
                 
@@ -238,13 +208,15 @@ class TumultStudio(HasTraits):
                                      source=self.llist_source, angle=np.pi/2)
         self.fig.add_layout(self.llist_labels)
         
-        if not self.normalised:
+        if not self.obs.normalised:
             self.spline_line = self.fig.line('x', 'y', source=self.cntm_source, color='red', alpha=0.5)
             self.spline_knots = self.fig.scatter('x', 'y', source=self.spline_source, size=6, color='red')
             draw_tool = PointDrawTool(renderers=[self.spline_knots])
             self.fig.add_tools(draw_tool)
 
-        self.atmos_scatter = self.atmos_fig.scatter('x', 'y', source=self.atmos_source, size=4, color='black')
+        self.atmos_scatter = self.atmos_fig.scatter('x', 'y', source=self.atmos_scatter_source, size=4,
+                                                    color='black')
+        self.atmos_line = self.atmos_fig.line('x', 'y', source=self.atmos_line_source, color='red')
         
         # TOOLTIPS = [
         #     ('λ', '$x{0.000}'),
@@ -257,6 +229,7 @@ class TumultStudio(HasTraits):
         
         self.fig.add_tools(hover)
         self.fig.legend.location = "bottom_left"
+        self.fig.legend.spacing = 0
 
         def synth_selection(attr, old, new):
             selected = new
@@ -275,7 +248,7 @@ class TumultStudio(HasTraits):
             selected = new
             if not selected: return
             idx = selected[0] # last clicked line
-            run = self.browser.selected.object
+            run = self.current
             llist = run.llist
             lam0 = self.llist_source.data['xs'][idx][0]
             i = llist.reset_index().index[llist.lam0==lam0][0]
@@ -300,89 +273,62 @@ class TumultStudio(HasTraits):
 
     @log_callback_errors
     def plot_synth(self, launch_function, *args):
-        synth_runs = self._get_objects_by_type(StudioSynth, exclude=StudioAtmos)
-        i = find_smallest_missing([sr.ic for sr in synth_runs])
-        color = ColorCycle(saved_settings['bokeh palette'])[i]
-        name = f'SynthRun_{i:03d}'
-
+        name = self.browser.get_unique_label('Synth')
         self.progress.description = f'Running {name}:'
-        new_run = launch_function(self, name, *args)
-        new_run.ic = i
+        dummy = StudioProcess(name)
+        self.browser.add_object(dummy)
+        container = self.browser.get_container_by_object(dummy)
+
+        @execute_in_thread(cancel=container.delete, spinner=container.label)
+        def async_callback(execution):
+            run = launch_function(self, name, *args, runner=execution.run_command)
+            if run:
+                crop_params = getattr(run, 'fit_params', {})
+                x, y = run.crop(**crop_params)
+
+                # run data is always normalised, so we need to transform
+                # to view coordinates if the view is set to unnormalised
+                y = conditional_denormalisation(x, y)
+
+                @update_source_data(self.synth_source)
+                def draw_synth(data):
+                    color_cylce = ColorCycle(saved_settings['bokeh palette'])
+                    color = color_cylce.get_new_color(data['colors'])
+                    data['xs'].append(x)
+                    data['ys'].append(y)
+                    data['colors'].append(color)
+                    data['labels'].append(run.label)
+                    data['vmic'].append(run.nml['atmos_params']['vmic'])
+                    data['FeH'].append(run.nml['atmos_params']['FeH'])
+                    data['atmos'].append(run.nml['atmos_params']['atmos_file'])
+                    data['run_ids'].append(id(run))
+                    data['alphas'].append(1.0)
+
+                draw_synth()
+                self.browser.add_object(run)
+                self.set_synth_controls(run)
+
+            self.progress.value = self.progress.max
+            self.progress.description = f'Done!'
+            self.browser.remove_object(dummy)
+
+        async_callback()
         
-        self.progress.description = f'Plotting {name}:'
-        self.browser.add_object(new_run)
-        widget_label = self.browser.list_items[-1].children[0].label
 
-        if hasattr(new_run, 'fit_params'):
-            crop_params = new_run.fit_params
-        else:
-            crop_params = {}
-
-        LTE = new_run.mode == 'LTE'
-        x, y = new_run.crop(LTE=LTE, **crop_params)
-
-        # run data is always normalised, so we need to transform
-        # to view coordinates if the view is set to unnormalised
-        y = conditional_denormalisation(x, y)
-
-        @update_data_source(self.synth_source)
-        def draw_synth(data):
-            data['xs'].append(x)
-            data['ys'].append(y)
-            data['colors'].append(color)
-            data['labels'].append(new_run.label)
-            data['vmic'].append(new_run.nml['atmos_params']['vmic'])
-            data['FeH'].append(new_run.nml['atmos_params']['FeH'])
-            data['atmos'].append(new_run.nml['atmos_params']['atmos_file'])
-            data['run_ids'].append(id(new_run))
-            data['alphas'].append(1.0)
-
-        draw_synth()
-        self.set_synth_controls(new_run, widget_label)
-        self.progress.value = self.progress.max
-        self.progress.description = f'Done!'
-
-
-    def set_synth_controls(self, run, widget_label=None):
+    def set_synth_controls(self, run):
         rid = id(run)
+        container = self.browser.get_container_by_object(run)
+        widget_label = container.label.label
 
-        @update_data_source(self.synth_source)
-        def delete_synth(data):
-            i = data['run_ids'].index(rid)
-            for key in data:
-                data[key].pop(i)
-        
-        @update_data_source(self.synth_source)
-        def hide_synth(data):
-            i = data['run_ids'].index(rid)
-            data['alphas'][i] = 0.0
+        def update_label(change):
+            @update_source_data(self.synth_source)
+            def update(data):
+                i = data['run_ids'].index(rid)
+                data['labels'][i] = change['new']
+            update()
 
-        @update_data_source(self.synth_source)
-        def show_synth(data):
-            i = data['run_ids'].index(rid)
-            data['alphas'][i] = 1.0
-
-        run.delete = delete_synth
-        run.hide = hide_synth
-        run.show = show_synth
-
-        if widget_label:
-            def update_label(change):
-                @update_data_source(self.synth_source)
-                def update(data):
-                    i = data['run_ids'].index(rid)
-                    data['labels'][i] = change['new']
-                update()
-
-            widget_label.observe(update_label, names='description')
-
-
-    def _get_objects_by_type(self, typ, exclude=None):
-        objects = [o for o in self.browser.objects if isinstance(o, typ)]
-        if exclude:
-            objects = [o for o in objects if not isinstance(o, exclude)]
-        return objects
-        
+        widget_label.observe(update_label, names='description')
+        self.browser._register_observer(widget_label, update_label, 'description')
         
     def init_main_canvas(self, xmin=None, xmax=None, xlabel='Wavelength [Å]', ylabel='Flux', **kwargs):
         p = figure(output_backend='svg',
@@ -430,6 +376,7 @@ class TumultStudio(HasTraits):
         self.fig_source.selected.indices = []
 
     def reset_yaxis_and_annotations(self):
+        logging.info('Updating yrange and line list annotations')
         ServerManager.server.next_tick_update(self.yrange_update_callback)
         ServerManager.server.next_tick_update(self.update_annotations)
     
@@ -446,12 +393,15 @@ class TumultStudio(HasTraits):
             reset_yaxis(self.fig, yvis)
 
     def update_annotations(self, attr, old, new):
-        remove_line_annotations(self.llist_source)
-        selected = self.browser.selected
-        if selected:
-            obj = selected.object
-            if isinstance(obj, tumult.tumult) and hasattr(obj, 'llist'):
-                plot_line_annotations(self.fig, obj, self.llist_source)
+        logging.info('Updating line list annotations')
+        clear_data(self.llist_source)
+        obj = self.current
+        if isinstance(obj, StudioSynth) and hasattr(obj, 'llist'):
+            logging.info(f'Plotting line list for {obj.label}')
+            fig_width = max(self.fig.inner_width, self.atmos_fig.inner_width)
+            ymin, ymax = obj.plot_llist(self.fig, self.llist_source, fig_width)
+            if ymin and ymax:
+                reset_yaxis(self.fig, [ymin, ymax])
 
     def init_nav_canvas(self, **kwargs):
         x0 = self.xdata[0]
@@ -487,7 +437,7 @@ class TumultStudio(HasTraits):
             geo = event.geometry
             xmin = geo['x0']
             xmax = geo['x1']
-            reset_xaxis(self.nav, [xmin, xmax], margin=2)
+            reset_xaxis(self.nav, [xmin, xmax], margin=0.05)
             reset_xaxis(self.fig, [xmin, xmax])
             
         p.on_event(SelectionGeometry, nav_drag_callback)
@@ -497,77 +447,22 @@ class TumultStudio(HasTraits):
         self.atmos_fig = p
         p.toolbar.logo = None
 
-
-    def prepare_source(self, file=None, dataframe=None, cds=None, normalised=False, **kwargs):
-        if all(v is None for v in [cds, dataframe, file]):
-            raise ValueError("No source data provided. Please provide a source, dataframe, or file.")
-
-        snr = None
-
-        if file:
-            if file.endswith('.fits'):
-                out = tbdfits(file, **kwargs)
-                if out is None:
-                    raise ValueError(f"Error reading file {file}")
-                else:
-                    lam, flux, header = out
-                    source = CDS(dict(x=lam, y=flux))
-                    meta = pd.DataFrame(data=np.array(header.cards), columns=['key', 'value', 'comment'])
-                    self.obs_meta = HTMLDataFrame(meta)
-
-                    # Check for SNR in the header
-                    snr_keys = [key for key in header if key.startswith("SNR")]
-                    if len(snr_keys) == 1:
-                        snr = header[snr_keys[0]]
-
-            else:
-                df = pd.read_csv(file, **kwargs)
-                source = CDS(dict(x=df.iloc[:,0], y=df.iloc[:,1]))
-
-        elif isinstance(dataframe, pd.DataFrame):
-            df = dataframe
-            source = CDS(dict(x=df.iloc[:,0], y=df.iloc[:,1]))
-
-        elif isinstance(cds, CDS):
-            if 'x' not in cds.data:
-                raise ValueError("Source data must contain 'x' key.")
-            if 'y' not in cds.data:
-                raise ValueError("Source data must contain 'y' key.")
-            source = cds
-        
-        self.normalised = normalised
-
-        if not normalised:
-            data = source.data.copy()
-            xdata = source.data['x']
-            ydata = source.data['y']
-            mask = np.isfinite(ydata) * (ydata > 0)
-            for key in data:
-                data[key] = np.array(data[key])[mask]
-            data['y'] /= data['y'].max()  # normalise y data
-            source.data = data
-
-        self.xdata = source.data['x'] # original data
-        self.ydata = source.data['y'] # original data
-        self.cntm = np.ones_like(self.xdata)  # normalisation spline
-
-        name = file or dataframe or cds
-        info = f"""Source:
-                {name}
-                \nPoints:
-                {len(source.data["x"])}
-                \nxmin:
-                {source.data["x"][0]:.3f} Å
-                \nxmax:
-                {source.data["x"][-1]:.3f} Å
-                \nNormalised:
-                {normalised}
-                """
-        
-        if snr: 
-            info += f"\nSNR:\n{snr:.2f}\n"
-
-        self.obs_info = widgets.Textarea(info, disabled=True)
-        self.obs_info.add_class('info-area')
-
-        return source
+    @property
+    def xdata(self):
+        return self.obs.xdata
+    
+    @property
+    def ydata(self):
+        return self.obs.ydata
+    
+    @property
+    def cntm(self):
+        return self.obs.cntm
+    
+    @cntm.setter
+    def cntm(self, value):
+        self.obs.cntm = value
+    
+    @property
+    def current(self):
+        return self.browser.selected.object if self.browser.selected else None

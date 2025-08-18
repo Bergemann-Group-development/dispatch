@@ -944,8 +944,8 @@ MODULE m3d_patch_mod
     ! ----------------------------------------------------------------------------
     linelist_out_file = trim(io%run_dir) // 'linelist_out.txt'
     open(newunit=lunit, file=linelist_out_file, form='formatted')
-    write(lunit, "(A8, A4, A12, 2(A8), 3(A11), 2(A6), 1(A11))") &
-    'ion', 'iso', 'lam_air', 'loggf', 'evi', 'ga', 'gv', 'gq', 'i', 'j', 'strength'
+    write(lunit, "(A8, A4, A12, 3(A8), 2(A11), 2(A6), 1(A11))") &
+    'ion', 'iso', 'lam_air', 'loggf', 'evi', 'gv', 'ga', 'gq', 'i', 'j', 'strength'
   
     do i=1, comp%nel
       element => comp%elements(i)
@@ -959,8 +959,8 @@ MODULE m3d_patch_mod
           line => ion%line(l)
           if (.not. line%active .or. .not. line%used) cycle
   
-          write(lunit, "(A1, A6, A1, I4, F12.4, 2(F8.3), 3(ES11.3), 2(I6), 1(ES11.3))") "'", ion%id, "'", &
-          line%iso_idx, line%lam_air, line%loggf, line%lower_ev, line%ga_in, line%gv_in, line%gq_in, line%i, line%j, line%strength
+          write(lunit, "(A1, A6, A1, I4, F12.4, 3(F8.3), 2(ES11.3), 2(I6), 1(ES11.3))") "'", ion%id, "'", &
+          line%iso_idx, line%lam_air, line%loggf, line%lower_ev, line%gv_in, line%ga_in, line%gq_in, line%i, line%j, line%strength
         end do
       end do
     end do
@@ -971,8 +971,8 @@ MODULE m3d_patch_mod
         line => mol%line(l)
         if (.not. line%active .or. .not. line%used) cycle
 
-        write(lunit, "(A1, A6, A1, I4, F12.4, 2(F8.3), 3(ES11.3), 2(I6), 1(ES11.3))") "'", mol%id, "'", &
-        line%iso_idx, line%lam_air, line%loggf, line%lower_ev, line%ga_in, line%gv_in, line%gq_in, line%i, line%j, line%strength
+        write(lunit, "(A1, A6, A1, I4, F12.4, 3(F8.3), 2(ES11.3), 2(I6), 1(ES11.3))") "'", mol%id, "'", &
+        line%iso_idx, line%lam_air, line%loggf, line%lower_ev, line%gv_in, line%ga_in, line%gq_in, line%i, line%j, line%strength
       end do
     end do
     close(lunit)

@@ -74,9 +74,11 @@
 
 .HTMLDataFrame table {
     width: 100%;
+    table-layout: auto;
 }
 
 .HTMLDataFrame td {
     word-wrap: break-word;
     white-space: normal;
+    max-width: 200px;
 }

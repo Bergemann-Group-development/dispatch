@@ -18,39 +18,42 @@ class CoG(tumult):
     to given observations.
     """
     #=================================================================
-    def __init__(self, runs, read_line=True, abnds=None, **kwargs):
+    def __init__(self, runs, abnds, read_line=True, **kwargs):
         self.nruns = len(runs)
-
-        if abnds is None:
-            self.abnds = np.array([run.atom.abnd for run in runs])
-        else:
-            self.abnds = abnds
-
+        self.abnds = abnds
         order = np.argsort(self.abnds)
         self.runs = np.array(runs)[order]
         self.abnds = np.array(self.abnds)[order]
         self.run0 = self.runs[0]
+        self.check_wavelengths()
 
-        for run in runs:
-          same = all(self.run0.lam == run.lam)
-          if not same:
-            raise ValueError('All runs should have the same wavelength grid.')
-          
-        if hasattr(self.run0, 'atom'):
-            self.atom = copy.copy(self.run0.atom)
-            self.atom.run = self
-            self.atom.abnd = np.mean(self.abnds)
+    #=================================================================
+    def add_run(self, run, abnd):
+        """
+        Add a run to the CoG object.
+        If abnd is given, it will be used as the abundance of the run.
+        If not given, the abundance of the run will be used.
+        """
+        if abnd in self.abnds:
+            print(f'Abundance {abnd} already exists in CoG. Not adding.')
+            return self
+        
+        idx = np.searchsorted(self.abnds, abnd)
+        self.runs = np.insert(self.runs, idx, run)
+        self.abnds = np.insert(self.abnds, idx, abnd)
+        self.nruns += 1
+        self.check_wavelengths()
 
-            if read_line and hasattr(self.run0.atom, 'in_lines'):
-                self.in_lines = self.run0.in_lines
+    #=================================================================
+    def check_wavelengths(self):
+        """
+        Check if all runs have the same wavelength grid.
+        If not, raise ValueError.
+        """
+        for run in self.runs:
+            if not np.array_equal(self.run0.lam, run.lam):
+                raise ValueError('All runs should have the same wavelength grid.')
 
-                if type(self.atom.trans[0]) is fast_trans:
-                    init = np.frompyfunc(fast_trans, 2, 1)
-                    self.atom.trans = init(np.arange(self.atom.nline), self.atom)
-                else:
-                    self.atom.trans = [copy.copy(trans) for trans in self.run0.atom.trans]
-
-                self.line = np.array(self.atom.trans)[self.in_lines]
 
     #=================================================================
     def crop(self, abnd=None, **kwargs):
@@ -67,24 +70,17 @@ class CoG(tumult):
         return xx, yy
     
     #=================================================================
-    def fit_observed(self, oxx, oyy, fit=[], bounds=None, p0=None, sigma=None, method='curve_fit', tol=None, **kwargs):
+    def fit_observed(self, oxx, oyy, bounds=None, p0=None, **kwargs):
+        #-----------------------------------------------------------------
+        bounds = bounds or {}
+        p0 = p0 or {}
+
         abnds = self.abnds
-        p0s = {'abnd':np.mean(abnds),'vshift':0,  'vdop':1,    'vrot':1,    'zeta_rt':1,    'fac':1.0, 'tilt':0.0}
-        lbounds = {'abnd':abnds[0],  'vshift':-3, 'vdop':1e-3, 'vrot':1e-3, 'zeta_rt':1e-3, 'fac':0.5, 'tilt':-0.2}
-        ubounds = {'abnd':abnds[-1], 'vshift':+3, 'vdop':1e1,  'vrot':1e1,  'zeta_rt':1e1,  'fac':2.0, 'tilt':+0.2}
-
-        if p0:
-            p0s.update(p0)
-
-        if bounds:
-            lb = {k:v[0] for k, v in bounds.items()}
-            ub = {k:v[1] for k, v in bounds.items()}
-            lbounds.update(lb)
-            ubounds.update(ub)
-
-        p0 = {f:p0s[f] for f in fit}
-        bounds = {f:(lbounds[f], ubounds[f]) for f in fit}
-        return tumult.fit_observed(self, oxx, oyy, fit=fit, bounds=bounds, p0=p0, sigma=sigma, method=method, tol=tol, **kwargs)
+        p = {'abnd':np.mean(abnds)}
+        b = {'abnd':(abnds[0], abnds[-1])}
+        p.update(p0)
+        b.update(bounds)
+        return super().fit_observed(oxx, oyy, bounds=b, p0=p, **kwargs)
     
     #=================================================================
     def interp_abnd(self, weq, log=True, sigma=None, **kwargs):
@@ -137,8 +133,7 @@ class CoG(tumult):
             return abnd, err
     
     #=================================================================
-    def get_weq_corr(self, run, abnd=None, LTE=True, cog_LTE=False, log=True, **kwargs):
-        if abnd is None: abnd = run.atom.abnd
+    def get_weq_corr(self, run, abnd, LTE=True, cog_LTE=False, log=True, **kwargs):
         weq = run.calc_weq(abnd=abnd, LTE=LTE, **kwargs)
         if weq < 0: return np.nan
         anew = self.interp_abnd(weq, log=log, LTE=cog_LTE, **kwargs)

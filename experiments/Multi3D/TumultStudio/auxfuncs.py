@@ -3,6 +3,7 @@ from functools import wraps
 import logging
 import threading
 import numpy as np
+import pandas as pd
 import ipywidgets as widgets
 from line_profiler import LineProfiler
 import tempfile
@@ -15,6 +16,7 @@ import traceback
 
 module_dir = pathlib.Path(__file__).parent
 logger = logging.getLogger(__name__)
+spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
 
 def run_in_thread(func):
     @wraps(func)
@@ -34,17 +36,18 @@ def run_in_thread(func):
             old_stderr = sys.stderr
             stdout_capture = StringIO()
             stderr_capture = StringIO()
+            level = logging.getLogger().getEffectiveLevel()
             
             # Capture logging
             log_capture = StringIO()
             log_handler = logging.StreamHandler(log_capture)
-            log_handler.setLevel(logging.DEBUG)
+            log_handler.setLevel(level)
             
             # Get the root logger
             root_logger = logging.getLogger()
             original_level = root_logger.level
             root_logger.addHandler(log_handler)
-            root_logger.setLevel(logging.DEBUG)
+            root_logger.setLevel(level)
             
             try:
                 sys.stdout = stdout_capture
@@ -158,12 +161,19 @@ class ColorCycle():
     def __init__(self, palette='Light'):
         pal = bokeh.palettes.__dict__[palette]
         n = max(list(pal.keys()))
-        self.palette = pal[n]
+        self.palette = np.array(pal[n])
         self.n = n
 
     def __getitem__(self, index):
         i = np.mod(index, self.n)
         return self.palette[i]
+    
+    def get_new_color(self, used_colors):
+        """Get the next unused color from the palette."""
+        colors = self[np.arange(self.n)]
+        used_colors = np.array(used_colors)
+        i = np.argmin([np.sum(used_colors == c) for c in colors])
+        return self[i]
     
 def slicesorted(data, vmin, vmax):
     imin = np.searchsorted(data, vmin, side='left')
@@ -216,6 +226,18 @@ def unique_folder_name(folder):
     
     return folder
 
+def get_unique_name(name, existing_names, fmt):
+    """Generate a unique name by appending a number if necessary."""
+    if name not in existing_names:
+        return name
+    
+    i = 1
+    while True:
+        new_name = name + fmt.format(i)
+        if new_name not in existing_names:
+            return new_name
+        i += 1
+
 
 def create_temp_dir_for_kernel(base_path):
     """Create a temporary directory that gets cleaned up when the kernel exits"""
@@ -258,3 +280,93 @@ def link_files(source_dir, target_dir, pattern):
             # Create symbolic link
             target_link.symlink_to(source_file.resolve())
             logging.info(f"Linked: {source_file.name} -> {target_link}")
+
+
+def advance_spinner(spinner, key):
+    val = getattr(spinner, key, ' ')
+    s = val[0]
+    if s not in spinner_chars:
+        val = spinner_chars[0] + ' ' + val
+    else:
+        i = spinner_chars.index(s)
+        i = (i + 1) % len(spinner_chars)
+        s = spinner_chars[i]
+        val = s + val[1:]
+    setattr(spinner, key, val)
+
+
+def cross_match_dataframes(df1, df2, on, by=None, direction='nearest', tolerance=0, **kwargs):
+    """
+    Merge columns from df2 to df1 using exact matches on 'by' columns and 
+    nearest/backward/forward matches on 'on' column.
+    
+    Parameters:
+    -----------
+    df1 : pd.DataFrame
+        Left dataframe (base dataframe to merge to)
+    df2 : pd.DataFrame
+        Right dataframe (source of additional columns)
+    on : str
+        Column name for nearest matching (usually numerical/datetime)
+    by : str or list of str, optional
+        Column(s) that must match exactly before applying nearest match
+    direction : str, default 'nearest'
+        Direction for merge_asof ('backward', 'forward', 'nearest')
+    tolerance : pd.Timedelta or float, default 0
+        Maximum distance between matches for the 'on' column (passed to merge_asof)
+    **kwargs
+        Additional arguments passed to pd.merge_asof
+    
+    Returns:
+    --------
+    pd.DataFrame
+        Merged dataframe
+    """
+    
+    # Convert by to list if it's a single column
+    if by is not None:
+        if isinstance(by, str):
+            by = [by]
+    
+    if by:
+        dfs = []
+        # Group both dataframes by the exact match columns
+        for vals, g1 in df1.groupby(by):
+            # Handle single column case (vals will be scalar, not tuple)
+            if len(by) == 1:
+                filter_condition = df2[by[0]] == vals
+            else:
+                # Multiple columns - create filter condition
+                filter_condition = pd.Series([True] * len(df2))
+                for col, val in zip(by, vals):
+                    filter_condition &= (df2[col] == val)
+            
+            g2 = df2[filter_condition].drop(columns=by)
+            
+            # Skip if no matching rows in df2
+            if g2.empty:
+                # Add rows with NaN values for df2 columns
+                g1_extended = g1.copy()
+                for col in df2.columns:
+                    if col not in g1.columns:
+                        g1_extended[col] = pd.NA
+                dfs.append(g1_extended)
+                continue
+            
+            # Sort both groups by the 'on' column
+            g1 = g1.sort_values(on)
+            g2 = g2.sort_values(on)
+            
+            # Perform merge_asof
+            matched = pd.merge_asof(g1, g2, on=on, direction=direction, tolerance=tolerance, **kwargs)
+            dfs.append(matched)
+        
+        df = pd.concat(dfs, ignore_index=True)
+    else:
+        # No groupby needed - direct merge_asof
+        df1_sorted = df1.sort_values(on)
+        df2_sorted = df2.sort_values(on)
+        
+        df = pd.merge_asof(df1_sorted, df2_sorted, on=on, direction=direction, tolerance=tolerance, **kwargs)
+    
+    return df

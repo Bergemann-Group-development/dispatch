@@ -61,7 +61,35 @@ atomic_weights = {'H':  1.008, 'He': 4.003, 'Li': 6.94,  'Be': 9.01,  'B':  10.8
 
 molecule_dict = {'H2':['H', 'H'], 'C2':['C', 'C'], 'N2':['N', 'N'], 'O2':['O', 'O'],
                  'CH':['C', 'H'], 'NH':['N', 'H'], 'OH':['O', 'H'], 'CO':['C', 'O'],
-                 'CN':['C', 'N'], 'NO':['N', 'O'], 'H2O':['H', 'H', 'O']}
+                 'CN':['C', 'N'], 'NO':['N', 'O'], 'H2O':['H', 'H', 'O'], 'MgH':['Mg', 'H'],
+                 'SiH':['Si', 'H'], 'SiO':['Si', 'O'], 'FeH':['Fe', 'H'], 'TiO':['Ti', 'O'],}
+
+ion_dict = {1:'I', 2:'II', 3:'III', 4:'IV', 5:'V', 6:'VI', 7:'VII', 8:'VIII',}
+
+#=====================================================================
+def get_particle_weight(ptc):
+    if ptc in atomic_weights:
+        weight = atomic_weights[ptc]
+    elif ptc in molecule_dict:
+        weight = np.sum([atomic_weights[e] for e in molecule_dict[ptc]])
+    else:
+        print(ptc + ' particle not found!')
+        weight = np.inf
+    return weight
+
+#=====================================================================
+def get_ion_weight(ion):
+    weight = 0
+    if len(ion.split()) == 2:
+        ptc, ion = ion.split()
+        if ion in ion_dict.values():
+            j = list(ion_dict.values()).index(ion) + 1
+            weight += EM/UU * j
+    else:
+        ptc = ion.split()[0]
+    
+    weight += get_particle_weight(ptc)
+    return weight
 
 #=====================================================================
 class empty: pass

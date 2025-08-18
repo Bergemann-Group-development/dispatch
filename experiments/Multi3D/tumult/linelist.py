@@ -44,7 +44,7 @@ class LineList(pd.DataFrame):
         species = line.strip("'").strip()[:6]
         nlines = int(nlines)
         table = ''.join(lines[:nlines])
-        df = pd.read_fwf(StringIO(table), header=None)
+        df = pd.read_csv(StringIO(table), header=None, sep=r'\s+')
         del lines[:nlines]
         ncolumns = min(ncol_max, len(df.columns))
         df = df.iloc[:, :ncolumns]
@@ -55,6 +55,38 @@ class LineList(pd.DataFrame):
         df['ion'] = species.strip()
         df['iso'] = int(mass_id.strip("'").split('.')[-1])
         llist = pd.concat([llist, df])
+    return cls(llist)
+  
+  @classmethod
+  def from_tumult_format(cls, filename):
+    llist = pd.DataFrame()
+    with open(filename) as f:
+        lines = f.readlines()
+        names = ['lam0', 'evi', 'loggf', 'gv', 'ga', 'gq', 'i', 'j']
+        ncol_max = len(names)
+        df_dict = {}
+
+        while len(lines) > 0:
+            line = lines.pop(0).strip()
+            mass_id, ion, nlines = split_words(line)
+            line = lines.pop(0).strip()
+            species = line.strip("'").strip()[:6]
+            nlines = int(nlines)
+            table = ''.join(lines[:nlines])
+            df = pd.read_csv(StringIO(table), header=None, sep=r'\s+')
+            del lines[:nlines]
+            ncolumns = min(ncol_max, len(df.columns))
+            df = df.iloc[:, :ncolumns]
+            df.columns = names[:ncolumns]
+
+            ion = species.strip()
+            iso = int(mass_id.strip("'").split('.')[-1])
+            df['iso'] = iso
+            df_dict[ion] = df
+        
+        llist = pd.concat(df_dict, names=['ion', None])
+        llist = llist.sort_index()
+
     return cls(llist)
   
   @classmethod
@@ -88,7 +120,7 @@ class LineList(pd.DataFrame):
     llist = llist[mask]
     return cls(llist)
   
-  def write_to_nlte_format(self, filename):
+  def write_to_tumult_format(self, filename):
     species = self[['ion', 'iso']].drop_duplicates().values
     head = ['lam0', 'evi', 'loggf', 'gv', 'ga', 'gq', 'i', 'j']
 

@@ -78,7 +78,8 @@ MODULE composition_mod
     integer, public :: switch=1
     real(dp), public :: ref_lam=5000.d0
     character(len=1024), public :: abundances
-    logical, public :: relative_abundances=.false., read_departures=.false.
+    logical, public :: relative_abundances=.false.
+    logical, public :: read_departures=.false., departure_indices=.false.
 
     character(len=3), save :: & 
         element_ids(92) = [ &
@@ -812,10 +813,7 @@ contains
                     ! Broadening parameters are zero by default if not overwritten here.
                     read(line_text, *, iostat=iostat2) line%lam_air, line%lower_ev, line%loggf, &
                                                        line%gv_in, line%ga_in, line%gq_in, line%i, line%j
-                                                       ! read gq if it is convertable to real
-                    !gq = trim(gq)
-                    !call replace_char(gq(1:len_trim(gq)), ' ', '_')
-                    !read(gq, *, iostat=iostat3) line%gq_in
+                    departure_indices = departure_indices .or. line%i>0 .or. line%j>0
                 endif
                 call print_failed_line(lunit, iostat2, line_text)
     

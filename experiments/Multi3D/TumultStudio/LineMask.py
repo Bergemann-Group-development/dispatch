@@ -19,21 +19,20 @@ def init_line_mask_button(studio):
         
     @log_callback_errors
     def new_line_mask(btn):
-        line_masks = studio._get_objects_by_type(LineMask)
-        new_mask = LineMask(studio.fig_source, studio.source.data)
-        i = find_smallest_missing([lm.ic for lm in line_masks])
+        line_masks = studio.browser.get_objects_by_type(LineMask)
+        color_cycle = ColorCycle(saved_settings['bokeh palette'])
+        color = color_cycle.get_new_color([lm.color for lm in line_masks])
+        new_mask = LineMask(studio.fig_source, studio.obs.source.data, color=color)
         new_mask.label = f'{new_mask.xmin:.1f}-{new_mask.xmax:.1f}'
-        new_mask.ic = i
         studio.browser.add_object(new_mask)
-        color = ColorCycle(saved_settings['bokeh palette'])[i]
-        new_mask.draw_boxes(studio.nav, studio.fig, line_color=None, fill_color=color, fill_alpha=0.1)
+        new_mask.draw_boxes(studio.nav, studio.fig)
     
     studio.fig_source.selected.on_change('indices', selection_callback)
     new_line_mask_button.on_click(new_line_mask)
     studio.controls.children += (new_line_mask_button,)
 
 class LineMask():
-    def __init__(self, source, data):
+    def __init__(self, source, data, color=None):
         xx = source.data['x']
         islc = np.sort(np.array(source.selected.indices))
         splits = np.where(np.diff(islc)>1)[0]+1
@@ -54,12 +53,14 @@ class LineMask():
 
         self.boxes = []
         self.cntm = np.ones_like(self.xdata)
+        self.color = color
 
     def chosen(self, studio):
-        reset_xaxis(self.fig, [self.xmin, self.xmax])
-        reset_xaxis(self.nav, [self.xmin, self.xmax], margin=2)
-        self.right_sidebar.children = (synth_form.vbox,)
-        self.right_sidebar.titles = ['Synthesis Settings']
+        instructions = {'xmin': self.xmin,
+                        'xmax': self.xmax,
+                        'tabs': (synth_form.vbox,),
+                        'titles': ('Synthesis Settings',)}
+        return instructions
 
     def normalise(self, spline):
         # Line Mask data is always normalised
@@ -75,10 +76,11 @@ class LineMask():
             xdata = np.concatenate([xdata, np.linspace(xmin, xmax, n)])
         return xdata
 
-    def draw_boxes(self, *args, **kwargs):
+    def draw_boxes(self, *args):
         for p in args:
             for xmin, xmax in self.regions:
-                box = BoxAnnotation(left=xmin, right=xmax, **kwargs)
+                box = BoxAnnotation(left=xmin, right=xmax, line_color=None,
+                                    fill_color=self.color, fill_alpha=0.1)
                 self.boxes.append((p, box))
             
         def update():

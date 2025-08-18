@@ -36,10 +36,9 @@ def init_synth_form(studio):
     launch_button.on_click(launch_on_click)
 
     def update_atmos_dropdown(change):
-        atmospheres = studio._get_objects_by_type(StudioAtmos)
+        atmospheres = studio.browser.get_objects_by_type(StudioAtmos)
         if atmospheres:
             atmos_wid.options = tuple(atmospheres)
-            atmos_wid.value = atmospheres[-1]
         else:
             atmos_wid.options = ('no atmospheres imported yet',)
 
@@ -64,12 +63,14 @@ def get_synth_settings():
         return None
 
 
-def launch_synth(studio, name):
+def launch_synth(studio, name, **kwargs):
     logging.info('Launching synth computation...')
     line_mask = studio.browser.selected.object
+    atmos = atmos_wid.value 
     settings = get_synth_settings()
-    if settings:
-        run = run_synth(studio.synth_folder, name, settings, line_mask, progress=studio.progress)
-        return run
-    else:
+    if not settings:
         return None
+    
+    run = run_synth(studio, name, settings, line_mask, **kwargs)
+    if run: run.atmos = atmos
+    return run

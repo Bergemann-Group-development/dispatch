@@ -31,13 +31,15 @@ def option(nml, key):
 class tumult(object):
     @classmethod
     #=================================================================
-    def read(self, folder, verbose=0, read_atmos=True, read_atom=True, fast_read=False, read_llist=False, **kwargs):
-        self = tumult() # create a new instance of the class
+    def read(cls, folder, verbose=0, read_atmos=True, read_atom=True, fast_read=False, read_llist=False, **kwargs):
+        self = cls() # create a new instance of the class
         folder = pathlib.Path(folder)
         sfolder = folder / 'save'
         self.sfolder = sfolder
         self.folder = folder
-        self.nml = f90nml.read(folder / 'params.nml')   
+        self.nml = f90nml.read(folder / 'params.nml')
+        self.datadir = pathlib.Path(self.nml['io_params']['datadir'].strip())
+        
         df = pd.read_csv(folder / 'abund.txt', header=None, sep=r'\s+', na_filter=False)
         self.abundances = {k.lower().capitalize():v for k, v in df.values}
         
@@ -1178,21 +1180,21 @@ class tumult(object):
         plt.plot([xx, xx], [bottom*np.ones_like(xx), yy], **kwargs)
     
     #=================================================================
-    def fit_observed(self, oxx, oyy, fit=[], bounds=None, p0=None, sigma=None,
+    def fit_observed(self, oxx, oyy, fit=None, bounds=None, p0=None, sigma=None,
                      syst=None, method='curve_fit', tol=None, Res='auto', **kwargs):
+        #-----------------------------------------------------------------
+        fit = fit or []
+        bounds = bounds or {}
+        p0 = p0 or {}
+        
         if len(fit)==0: return {}, None
         lbounds = {'vshift':-3, 'vdop':1e-3, 'vrot':1e-3, 'zeta_rt':1e-3, 'fac':0.5, 'tilt':-0.2}
         ubounds = {'vshift':+3, 'vdop':1e1,  'vrot':1e1,  'zeta_rt':1e1,  'fac':2.0, 'tilt':+0.2}
         p0s     = {'vshift':0,  'vdop':1,    'vrot':1,    'zeta_rt':1,    'fac':1.0, 'tilt':0.0}
         
-        if p0:
-            p0s.update(p0)
-
-        if bounds:
-            lb = {k:v[0] for k, v in bounds.items()}
-            ub = {k:v[1] for k, v in bounds.items()}
-            lbounds.update(lb)
-            ubounds.update(ub)
+        p0s.update(p0)
+        for key in bounds.keys():
+            lbounds[key], ubounds[key] = bounds[key]
 
         p0 = [p0s[f] for f in fit]
         bounds = ([lbounds[f] for f in fit], [ubounds[f] for f in fit])

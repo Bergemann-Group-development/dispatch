@@ -42,7 +42,7 @@ def toggle_normalisation(x, y):
     return y
 
 def init_norm_checkbox(studio):
-    if studio.normalised: return
+    if studio.obs.normalised: return
 
     @log_callback_errors
     def on_norm_toggle(change):
@@ -63,16 +63,16 @@ def init_norm_checkbox(studio):
           studio.spline_line.visible = not norm
           studio.spline_knots.visible = not norm
 
-        update_data_source(studio.fig_source)(norm_data)()
-        update_data_source(studio.fig_line_source)(norm_data)()
-        update_data_source(studio.synth_source)(norm_data)()
+        update_source_data(studio.fig_source)(norm_data)()
+        update_source_data(studio.fig_line_source)(norm_data)()
+        update_source_data(studio.synth_source)(norm_data)()
         studio.reset_yaxis_and_annotations()
 
     norm_checkbox.observe(on_norm_toggle, names='value')
     studio.controls.children += (norm_checkbox,)
 
 def init_norm_form(studio):
-    if studio.normalised: return
+    if studio.obs.normalised: return
 
     @log_callback_errors
     def on_norm_click(btn):
@@ -89,12 +89,12 @@ def init_norm_form(studio):
         ky = np.array(knots['y'])[order]
         cntm_spline = pchip_mono(kx, ky)
         studio.cntm = cntm_spline(studio.xdata)
-        line_masks = studio._get_objects_by_type(LineMask)
+        line_masks = studio.browser.get_objects_by_type(LineMask)
         for lm in line_masks:
             lm.normalise(cntm_spline)
         studio.update_data_views()
 
-    @update_data_source(studio.spline_source)
+    @update_source_data(studio.spline_source)
     def init_spline_knots(data):
         data['x'] = [studio.xdata[0], studio.xdata[-1]]
         data['y'] = [1, 1]
@@ -110,7 +110,7 @@ def spline_normalisation(studio):
     nstep = int(peak_distance/dx)
     ex = argrelextrema(studio.ydata, np.greater_equal, order=nstep)[0]
 
-    @update_data_source(studio.spline_source)
+    @update_source_data(studio.spline_source)
     def update_spline_knots(data):
         data['x'] = studio.xdata[ex]
         data['y'] = studio.ydata[ex]

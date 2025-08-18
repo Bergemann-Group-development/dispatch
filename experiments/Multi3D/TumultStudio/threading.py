@@ -1,0 +1,125 @@
+import subprocess
+import threading
+from functools import wraps
+import time
+import sys
+import logging
+from .auxfuncs import *
+from . import ServerManager
+import signal
+
+class CancellableExecution:
+    def __init__(self, cancel_button=None, spinner_widget=None):
+        self.cancel_event = threading.Event()
+        self.process = None                  
+        self._process_lock = threading.Lock()
+        self.reset_spinner = None
+        
+        if cancel_button:
+            cancel_button.on_click(self.cancel_callback)
+            
+        if spinner_widget:
+            initial_value = spinner_widget.value
+            def spin():
+                advance_spinner(spinner_widget, 'value')
+            cid = ServerManager.server.doc.add_periodic_callback(spin, 100)
+            
+            def reset_spinner():
+                try:
+                    ServerManager.server.doc.remove_periodic_callback(cid)
+                    spinner_widget.value = initial_value
+                except Exception as e:
+                    logging.warning(f"Failed to reset spinner: {e}")
+            self.reset_spinner = reset_spinner
+
+    @property
+    def cancelled(self):
+        return self.cancel_event.is_set()
+
+    def run_command(self, command, **kwargs):
+        if self.cancelled:
+            return None
+            
+        try:
+            with self._process_lock:
+                self.process = subprocess.Popen(
+                    command,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    **kwargs
+                )
+            
+            # Wait for completion or cancellation
+            while self.process.poll() is None:
+                if self.cancelled:
+                    self._terminate_current_process()
+                    break
+                threading.Event().wait(0.1)
+            
+            # Process completed naturally
+            return self._log_and_return_process()
+            
+        except Exception as e:
+            logging.error(f"Failed to run command: {e}")
+            return None
+
+    def _terminate_current_process(self):
+        with self._process_lock:
+            if self.process and self.process.poll() is None:
+                self.process.terminate()
+                try:
+                    self.process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    self.process.kill()
+
+    def _log_and_return_process(self):
+        if not self.cancelled:
+            stdout, stderr = self.process.communicate()
+            
+        if self.process.returncode == 0:
+            final_message = "✅ Command completed successfully"
+            if stdout:
+                final_message += f"\nOutput: {stdout.strip()[:100]}..."
+        elif self.process.returncode == -signal.SIGTERM:
+            final_message = "🛑 Command was cancelled by user"
+        elif self.process.returncode == -signal.SIGKILL:
+            final_message = "🛑 Command was forcefully killed"
+        else:
+            final_message = f"❌ Command failed (exit code: {self.process.returncode})"
+            if stderr:
+                final_message += f"\nError: {stderr.strip()[:100]}..."
+        
+        logging.info(final_message)
+        return self.process
+
+    @log_callback_errors
+    def cancel_callback(self, btn):
+        logging.info("Cancellation requested")
+        self.cancel_event.set()
+        self._terminate_current_process()
+
+    def finalize(self):
+        if self.reset_spinner:
+            self.reset_spinner()
+
+
+def execute_in_thread(cancel=None, spinner=None):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            # Create context manager
+            ctx = CancellableExecution(cancel, spinner)
+
+            def async_execution():
+                try:
+                    # Call function with context manager
+                    func(*args, execution=ctx, **kwargs)
+                    ctx.finalize()
+                    
+                except Exception as e:
+                    print(f"Error: {e}")
+
+            threading.Thread(target=async_execution, daemon=True).start()
+        
+        return wrapper
+    return decorator

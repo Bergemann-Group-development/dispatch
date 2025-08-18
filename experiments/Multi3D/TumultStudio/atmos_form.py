@@ -1,13 +1,14 @@
 from bokeh.models import *
 from . import ServerManager
-from .ServerManager import update_data_source
+from .StudioProcess import StudioProcess
 from .auxfuncs import *
 from .StudioAtmos import StudioAtmos
+from .threading import execute_in_thread
 import numpy as np
 import ipywidgets as widgets
 from .settings import saved_settings
 import ipyformkit as ifk
-from .synth import run_synth
+from .synth import *
 import pathlib
 
 fields = {'atmosphere format':('Marcs', 'Must', 'Stagger', 'Stagger2', 'Text', 'Multi1D', 'Siu_bin'),
@@ -62,9 +63,9 @@ def init_import_atmos_button(studio):
         
     @log_callback_errors
     def on_import_atmos_click(btn):
-        studio.browser.selected = None
         studio.right_sidebar.children = (atmos_import_form.vbox,)
         studio.right_sidebar.titles = ['Atmos Settings']
+        studio.browser.selected = None
 
     @log_callback_errors
     def on_import_click(btn):
@@ -93,14 +94,21 @@ def get_atmos_settings():
     return settings
 
 def import_atmosphere(studio):
-    atmospheres = studio._get_objects_by_type(StudioAtmos)
-    i = find_smallest_missing([a.ic for a in atmospheres])
-    name = f'Atmos_{i:03d}'
+    name = studio.browser.get_unique_label('Atmos')
     settings = get_atmos_settings()
-    folder = studio.synth_folder
     studio.progress.description = f'Importing atmosphere: {name}...'
-    run = run_synth(folder, name, settings, progress=studio.progress)
-    new_atmos = StudioAtmos.from_run(run, studio=studio)
-    new_atmos.ic = i
-    studio.browser.add_object(new_atmos)
-    studio.progress.description = f'Done!'
+    dummy = StudioProcess(name)
+    studio.browser.add_object(dummy)
+    container = studio.browser.get_container_by_object(dummy)
+
+    @execute_in_thread(cancel=container.delete, spinner=container.label)
+    def async_callback(execution):
+        run = run_synth(studio, name, settings, runner=execution.run_command)
+        if run:
+            new_atmos = StudioAtmos.from_run(run)
+            studio.browser.replace_object(dummy, new_atmos)
+            studio.progress.description = f'Done!'
+        else:
+            studio.browser.remove_object(dummy)
+
+    async_callback()

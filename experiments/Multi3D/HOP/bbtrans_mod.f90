@@ -795,12 +795,13 @@ END SUBROUTINE prepare_Radiative
     real(dp), intent(in) :: gv, cnt_ev, vbar2e4
     real(dp) :: upper_ev, sigma, alpha, gx, gammaf, balfac, c1, c625, vbar2
     real(dp), parameter :: uns=8.411*1.283984e-12 !8.411~(13.598**2)**0.4, 1.283984e-12~17*(1.61e-33)**0.4
+    real(dp), parameter :: barklem = (1e-2*Rbohr)**2 ! 2.80028e-21 bohr radius in m and squared
     !----------------------------------------------------------------------------------
     ! compute van der waals broadening due to hydrogen
     ! following Barklem
     self%unsold = .false.
     if(gv >= 20.0) then
-      sigma = 2.80028e-21*int(gv)
+      sigma = barklem*int(gv)
       alpha = gv - int(gv)
       gx = 1.0 - 0.5*alpha
       gammaf = 1+(-.5748646+(.9512363+(-.6998588+(.4245549-.1010678*gx)*gx)*gx)*gx)*gx

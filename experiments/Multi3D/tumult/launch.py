@@ -9,7 +9,7 @@ import numpy as np
 import pathlib
 
 def launch(input_name, nml_settings=None, default=None, overwrite=False, threads=None,
-           log_file=None, slurm_script=None, verbose=2, dry=False, subprocess=False):
+           log_file=None, slurm_script=None, verbose=2, dry=False, subprocess=False, runner=None):
     input_name = pathlib.Path(input_name)
     input_name.parent.mkdir(parents=True, exist_ok=True)
     cwd = os.getcwd()
@@ -68,11 +68,16 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
             sthreads = str(threads) if threads else ''
             os.environ['OMP_NUM_THREADS'] = sthreads
             os.environ['OMP_STACKSIZE'] = '256M'
+            env = os.environ.copy()
 
-            if subprocess:
-                env = os.environ.copy()
+            if runner:
+                process = runner(command, shell=True, env=env, text=True)
+                return output_folder, process
+
+            elif subprocess:
                 process = subproc.Popen(command, shell=True, env=env)
-                iostat = process.returncode
+                return output_folder, process
+
             else:
                 iostat = os.system(command)
 

@@ -263,8 +263,8 @@ subroutine get_filenames(self, directory, filenames, pattern)
   call execute_command_line(command, wait=.true., exitstat=status)
   if (status /= 0) return
   
-  ! Count files
   open(newunit=unit, file='.temp_files', status='old', action='read')
+  ! Count files
   do
       read(unit, '(A)', iostat=iostat) line
       if (iostat /= 0) exit
@@ -280,10 +280,8 @@ subroutine get_filenames(self, directory, filenames, pattern)
       if (iostat /= 0) exit
   end do
   close(unit)
-  
-  if (self%exists('.temp_files')) then
-    call execute_command_line('rm .temp_files', wait=.true., exitstat=status)
-  endif
+
+  call execute_command_line('rm .temp_files 2>/dev/null', wait=.true., exitstat=status)
 end subroutine get_filenames
 
 !===============================================================================

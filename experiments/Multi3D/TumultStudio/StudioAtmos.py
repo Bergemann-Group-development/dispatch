@@ -1,10 +1,12 @@
 import tumult
-from .ServerManager import update_data_source, clear_data
-from .nlte_form import nlte_form
+from .ServerManager import update_source_data, clear_data
+from .departure_form import departure_form, set_departure_form
 from .auxfuncs import *
+from .widgets import HTMLDataFrame
 from .synth import StudioSynth
 import ipyformkit as ifk
 import numpy as np
+import pandas as pd
 
 mhd_vars = ('ltau', 'temp', 'rho', 'ne', 'chi', 'vx', 'vy', 'vz')
 
@@ -42,29 +44,70 @@ def init_atmos_plot_form(studio):
     xquantity_wid.observe(on_quantity_change, names='value')
     yquantity_wid.observe(on_quantity_change, names='value')
 
+def set_atmos_plot_form(atmos):
+    source_wid.options = ('Atmosphere',)
+    source_wid.value = source_wid.options[0]
+
 class StudioAtmos(StudioSynth):
-    def add_plot_source(self, source):
-        source_wid.options += (source,)
+    #=================================================================
+    def _init_source(self):
+        pass
+
+    def add_plot_option(self, option):
+        source_wid.options += (option,)
 
     def draw_atmos_data(self, studio):
         val = source_wid.value
-        @update_data_source(studio.atmos_source)
-        def update_atmos_data(data):
-            if val == 'Atmosphere':
-                data['x'] = self.__dict__[xquantity_wid.value].ravel()
-                data['y'] = self.__dict__[yquantity_wid.value].ravel()
-                studio.atmos_fig.xaxis.axis_label = xquantity_wid.value
-                studio.atmos_fig.yaxis.axis_label = yquantity_wid.value
-            else:
-                ilvl = yquantity_wid.value
-                data['x'] = self.__dict__[xquantity_wid.value]
-                studio.atmos_fig.xaxis.axis_label = xquantity_wid.value
-                _, dep = self.get_depart(atom=val, ilvl=ilvl)
-                data['y'] = dep[..., ::-1]
-                studio.atmos_fig.yaxis.axis_label = f'b_{ilvl}'
-        update_atmos_data()
+        xval = xquantity_wid.value
+        yval = yquantity_wid.value
+        xlabel = xval
+
+        xscat = self.__dict__[xval]
+        if val == 'Atmosphere':
+            yscat = self.__dict__[yval]
+            ylabel = yval
+        else:
+            _, dep = self.get_depart(atom=val, ilvl=yval)
+            yscat = dep[..., ::-1]
+            ylabel = f'b_{yval}'
+
+        @update_source_data(studio.atmos_scatter_source)
+        def update_atmos_scatter(data):
+            data['x'] = np.ravel(xscat)
+            data['y'] = np.ravel(yscat)
+            studio.atmos_fig.xaxis.axis_label = xlabel
+            studio.atmos_fig.yaxis.axis_label = ylabel
+        update_atmos_scatter()
+
+        if xval == 'ltau':
+            xline, yline = self.get_ltau_mean(yscat)
+        else:
+            xline = []
+            yline = []
+
+        @update_source_data(studio.atmos_line_source)
+        def update_atmos_line(data):
+            data['x'] = xline
+            data['y'] = yline
+        update_atmos_line()
+
     
     def chosen(self, studio):
+        set_atmos_plot_form(self)
+        set_departure_form(self)
         self.draw_atmos_data(studio)
-        studio.right_sidebar.children = (nlte_form.vbox, atmos_plot_form.vbox)
-        studio.right_sidebar.titles = ['NLTE Settings', 'Plot Settings']
+        instructions = {'tabs':(departure_form.vbox, atmos_plot_form.vbox, self.info),
+                        'titles':('NLTE Settings', 'Plot Settings', 'Info'),}
+        return instructions
+
+    @property
+    def info(self):
+        data = {'File': self.nml['atmos_params']['atmos_file'].strip(),
+                'Format': self.nml['atmos_params']['atmos_format'].strip(),
+                'FeH': self.nml['atmos_params']['feh'],
+                'vmic': self.nml['atmos_params']['vmic'],}
+        if 'nx' in self.nml['atmos_params']:
+            data['nx'] = self.nml['atmos_params']['nx']
+            data['ny'] = self.nml['atmos_params']['ny']
+        df = pd.DataFrame(list(data.items()), columns=['key', 'value'])
+        return HTMLDataFrame(df)

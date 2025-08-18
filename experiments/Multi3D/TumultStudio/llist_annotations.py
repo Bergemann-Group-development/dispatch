@@ -2,6 +2,8 @@ from .auxfuncs import *
 from .widgets import EditableTable
 import ipywidgets as widgets
 import numpy as np
+import logging
+from .ServerManager import update_source_data, clear_data
 
 fmt = {
     'lam0': lambda x: f'{x:.3f}',
@@ -12,26 +14,18 @@ fmt = {
 head = ['ion', 'lam0', 'loggf', 'evi', 'ga', 'gv', 'gq', 'i', 'j', 'iso']
 
 #=====================================================================
-def get_llist_table(run):
+def get_llist_table(llist):
     #-----------------------------------------------------------------
     """
     Returns a table of the line list with formatted values.
     """
-    html_widget = EditableTable(run.llist, columns=head, index=False, formatters=fmt)
+    html_widget = EditableTable(llist, columns=head, index=False, formatters=fmt)
     html_widget.layout.max_height = 'none'
     html_widget.layout.width = '100%'
     return html_widget
 
 #=====================================================================
-def remove_line_annotations(source):
-    #-----------------------------------------------------------------
-    cdata = source.data.copy()
-    for key in source.data:
-        cdata[key] = []
-    source.data = cdata
-
-#=====================================================================
-def plot_line_annotations(p, run, source):
+def plot_line_annotations(run, p, source, fig_width):
     #-----------------------------------------------------------------
     xx = run.llist.lam0.values
     labels = run.llist.ion.values
@@ -50,8 +44,9 @@ def plot_line_annotations(p, run, source):
     rmask = (rxmin < xx) & (xx < rxmax)
     mask = pmask & rmask
     if not np.any(mask):
-        remove_line_annotations(source)
-        return
+        clear_data(source)
+        logging.info("No line annotations in the current range.")
+        return None, None
 
     xx = xx[mask]
     labels = np.array(labels)[mask]
@@ -60,7 +55,7 @@ def plot_line_annotations(p, run, source):
     lxmin = np.min(xx)
     lxmax = np.max(xx)
     wratio = (lxmax - lxmin) / (pxmax - pxmin)
-    wpix = p.inner_width * wratio
+    wpix = fig_width * wratio
     ntop = int(wpix / 20)  # 50 pixels per label
 
     arr = labels
@@ -107,13 +102,13 @@ def plot_line_annotations(p, run, source):
     xl = np.vstack([oldx, oldx, newx, newx])
     yl = pymax*nn + h*np.vstack([0*nn, 0.2*nn, 0.8*nn, 1*nn])
 
-    current_data = source.data.copy()
-    current_data['xs'] += [x for x in xl.T]
-    current_data['ys'] += [y for y in yl.T]
-    current_data['x'] += [x[-1] for x in xl.T]
-    current_data['y'] += [y[-1]+0.1*h for y in yl.T]
-    current_data['text'] += labels.tolist()
-    source.data = current_data
-    
-    
-    p.y_range.end = pymax + 3*h
+    @update_source_data(source)
+    def update_llist_source(data):
+        data['xs'] += [x for x in xl.T]
+        data['ys'] += [y for y in yl.T]
+        data['x'] += [x[-1] for x in xl.T]
+        data['y'] += [y[-1]+0.1*h for y in yl.T]
+        data['text'] += labels.tolist()
+    update_llist_source()
+
+    return pymin, pymax + 3*h

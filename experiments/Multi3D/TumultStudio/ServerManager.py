@@ -66,9 +66,6 @@ class BokehServerManager:
                 pass
             self._server = None
         
-        #if self._server_thread and self._server_thread.is_alive():
-        #    time.sleep(0.5)
-        
         self._server_thread = None
         self._current_port = None
     
@@ -97,22 +94,17 @@ class BokehServerManager:
             # Add your main layout
             self.doc = doc
             doc.add_root(layout)
+
+        self._server = Server(
+            {'/': bokeh_app},
+            port=port,
+            allow_websocket_origin=[f"localhost:{port}"],
+            io_loop=None  # Use default event loop
+        )
         
-        def start_server_thread():
-            # Create new event loop for this thread
-            self.loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(self.loop)
-            
-            self._server = Server(
-                {'/': bokeh_app}, 
-                port=port, 
-                allow_websocket_origin=[f"localhost:{port}"]
-            )
-            self._server.start()
-            self._server.io_loop.start()
-        
-        self._server_thread = threading.Thread(target=start_server_thread, daemon=True)
-        self._server_thread.start()
+        # Start server
+        self._server.start()
+        self.loop = self._server.io_loop
         
         return port
     
@@ -125,20 +117,22 @@ class BokehServerManager:
         nparams = len(sig.parameters.keys())
         params = [None,]*nparams
 
-        def wrapper(*args, **kwargs):
+        if not hasattr(self, 'doc'):
+            logging.info('server has no doc')
             update(*params)
-
-        if hasattr(self, 'doc'):
+        elif self.on_server():
+            logging.info('immediate callback')
+            update(*params)
+        else:
+            #logging.info(self.doc._pending_writes)
+            @log_callback_errors
+            def wrapper(*args, **kwargs):
+                logging.info('tick callback')
+                update(*params)
             self.doc.add_next_tick_callback(wrapper)
-        else:
-            # If not on server, run immediately
-            wrapper()
 
-    def same_loop(self):
-        if hasattr(self, 'loop'):
-            return asyncio.get_event_loop() == self.loop
-        else:
-            return True
+    def on_server(self):
+        return self.doc._session_context()._session._pending_writes is not None
 
 def iframe_server(layout, PORT=5008, width='100%', height='100%'):
     server.stop_existing_server()
@@ -161,16 +155,13 @@ def reset_xaxis(p, xx, margin=0):
     xmin = np.min(xx)
     xmax = np.max(xx)
     d = (xmax-xmin)*margin
-    on_server = server.same_loop()
 
     def update():
         p.x_range.start = xmin-d
         p.x_range.end   = xmax+d
 
-    if on_server:
-        update()
-    else:
-        server.next_tick_update(update)
+    server.next_tick_update(update)
+    logging.info(f'Resetting x-axis to {xmin-d} - {xmax+d}')
         
 def reset_yaxis(p, yy, margin=0.05):
     if len(yy) == 0: return
@@ -179,18 +170,15 @@ def reset_yaxis(p, yy, margin=0.05):
     ymin = np.min(yy)
     ymax = np.max(yy)
     d = (ymax-ymin)*margin
-    on_server = server.same_loop()
 
     def update():
         p.y_range.start = ymin-d
         p.y_range.end   = ymax+d
 
-    if on_server:
-        update()
-    else:
-        server.next_tick_update(update)
+    server.next_tick_update(update)
+    logging.info(f'Resetting y-axis to {ymin-d} - {ymax+d}')
 
-def update_data_source(source):
+def update_source_data(source):
     def decorator(update_func):
         @wraps(update_func)
         def wrapper():
@@ -206,7 +194,7 @@ def update_data_source(source):
     return decorator
 
 def reorder_data(source, iold, inew):
-    @update_data_source(source)
+    @update_source_data(source)
     def reorder(data):
         for key in data:
             item = data[key].pop(iold)
@@ -214,8 +202,28 @@ def reorder_data(source, iold, inew):
     reorder()
 
 def clear_data(source):
-    @update_data_source(source)
+    @update_source_data(source)
     def clear(data):
         for key in data:
             data[key] = []
     clear()
+
+
+def spinning(spinner=None):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            if spinner:
+                def spin():
+                    advance_spinner(spinner, 'value')
+                spinner_value = spinner.value
+                cid = server.doc.add_periodic_callback(spin, 100)
+
+            result = func(*args, **kwargs)
+
+            if spinner:
+                server.doc.remove_periodic_callback(cid)
+                spinner.value = spinner_value
+            return result
+        return wrapper
+    return decorator
