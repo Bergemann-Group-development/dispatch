@@ -42,13 +42,13 @@ fit_button = fit_form.widgets_dict['apply'].wid
 def init_fit_form(studio):
     @log_callback_errors
     def on_fit_click(btn):
-        old_run = studio.current
+        item = studio.browser.selected
+        old_run = item.obj
         studio.progress.description = f'Fitting {old_run.label}:'
-        container = studio.browser.selected
 
-        @execute_in_thread(spinner=container.label)
+        @execute_in_thread(spinner=item.icon)
         def async_callback(execution):
-            new_run, xfit, yfit = fit_synth(old_run, studio.synth_folder, studio.fig_source, runner=execution.run_command)
+            new_run, xfit, yfit = fit_synth(old_run, studio.synth_folder, studio.fig_source, runner=execution)
 
             @update_source_data(studio.synth_source)
             def update_synth(data):
@@ -59,11 +59,10 @@ def init_fit_form(studio):
                 data['labels'][i] = new_run.label
 
                 if new_run is not old_run:
-                    studio.browser.replace_object(old_run, new_run)
-                    studio.set_synth_controls(new_run)
+                    item.replace_object(new_run)
+                    #studio.set_synth_controls(new_run)
 
             update_synth()
-            studio.progress.value = studio.progress.max
             studio.progress.description = 'Done!'
 
         async_callback()
@@ -109,7 +108,8 @@ def set_fit_form(run):
 
     element_wid.options = ('None',) + tuple(output_ids)
 
-    atomids = [atom.id for atom in run.atmos.atoms]
+    atomids = [atom.id for atom in run.atmos.atoms if atom.id in eids]
+
     if len(atomids) == 0:
         nlte_wid.options = ('No departures in atmos!',)
     else:

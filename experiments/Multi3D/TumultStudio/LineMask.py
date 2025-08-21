@@ -23,8 +23,8 @@ def init_line_mask_button(studio):
         color_cycle = ColorCycle(saved_settings['bokeh palette'])
         color = color_cycle.get_new_color([lm.color for lm in line_masks])
         new_mask = LineMask(studio.fig_source, studio.obs.source.data, color=color)
-        new_mask.label = f'{new_mask.xmin:.1f}-{new_mask.xmax:.1f}'
-        studio.browser.add_object(new_mask)
+        label = f'{new_mask.xmin:.1f}-{new_mask.xmax:.1f}'
+        studio.browser.add_object(new_mask, label=label)
         new_mask.draw_boxes(studio.nav, studio.fig)
     
     studio.fig_source.selected.on_change('indices', selection_callback)
@@ -32,6 +32,8 @@ def init_line_mask_button(studio):
     studio.controls.children += (new_line_mask_button,)
 
 class LineMask():
+    icon = 'mask'
+
     def __init__(self, source, data, color=None):
         xx = source.data['x']
         islc = np.sort(np.array(source.selected.indices))
@@ -83,28 +85,28 @@ class LineMask():
                                     fill_color=self.color, fill_alpha=0.1)
                 self.boxes.append((p, box))
             
-        def update():
+        def add_line_mask_boxes():
             [p.add_layout(box) for p, box in self.boxes]
             
-        ServerManager.server.next_tick_update(update)
+        ServerManager.server.next_tick_update(add_line_mask_boxes)
 
     def delete(self):
-        def update():
+        def deleting_line_mask_boxes():
             for _, box in self.boxes:
                     box.visible = False
-        ServerManager.server.next_tick_update(update)
+        ServerManager.server.next_tick_update(deleting_line_mask_boxes)
 
     def hide(self):
-        def update():
+        def hiding_line_mask_boxes():
             for _, box in self.boxes:
                     box.visible = False
-        ServerManager.server.next_tick_update(update)
+        ServerManager.server.next_tick_update(hiding_line_mask_boxes)
 
     def show(self):
-        def update():
+        def unhiding_line_mask_boxes():
             for _, box in self.boxes:
                     box.visible = True
-        ServerManager.server.next_tick_update(update)
+        ServerManager.server.next_tick_update(unhiding_line_mask_boxes)
 
     def __str__(self):
         return self.label

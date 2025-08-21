@@ -1,6 +1,7 @@
 {
     "synthesis folder": "TumultStudio/tmp/",
     "atmospheres folder": "input_multi3d/atmos/",
+    "atmosphere grid folder": "/mnt/beegfs/gemini/groups/bergemann/users/storm/data/MARCS/",
     "atom folder": "input_multi3d/atoms/",
     "linelist folder": "input_multi3d/linelists/",
     "master linelist": "input_multi3d/linelists/master_line.txt",

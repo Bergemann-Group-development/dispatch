@@ -11,13 +11,28 @@
     width: 100%;
 }
 
-.EditableList .del-btn,
-.EditableList .hide-btn {
+.browser-widget .item-row > .widget-button {
     margin: 0;
     padding: 0;
     width: 20px;
     background-color: transparent;
     opacity: 0.5;
+}
+
+.browser-widget .item-row > .EditableLabel > .widget-button,
+.browser-widget .item-row > .EditableLabel > .widget-input {
+    padding-left: 5px;
+}
+
+.browser-widget .browser-item .widget-hprogress {
+    width: 100%;
+    margin: 0;
+    height: 3px;
+    margin-top: -3px;
+}
+
+.browser-widget .browser-item .progress {
+    margin: 0;
 }
 
 .EditableLabel .widget-button {
@@ -51,13 +66,13 @@
     outline: none !important;
 }
 
-.EditableList .row-box {
+.browser-widget .item-row {
     height: 2em;
     overflow: hidden;
     align-items: center;
 }
 
-.EditableList .row-box.selected {
+.browser-widget .item-row.selected {
     background-color: var(--ifk-layout-color3);
 }
 

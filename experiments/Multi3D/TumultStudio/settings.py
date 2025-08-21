@@ -26,7 +26,7 @@ title = widgets.Label('Global Settings')
 close_button = widgets.Button(icon='times')
 header = widgets.HBox([title, close_button])
 header.add_class('header')
-content = settings_form.vbox
+content = widgets.VBox([settings_form.vbox])
 settings_page = widgets.VBox([header, content])
 settings_page.add_class('tum-settings')
 settings_page.close_button = close_button

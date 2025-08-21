@@ -88,6 +88,7 @@
     padding-left: 10px;
     border-bottom: 1px solid var(--ifk-form-border-color);
     background-color: var(--ifk-layout-color0);
+    overflow: visible;
 }
 
 .tum-gui .header .widget-label {
@@ -176,6 +177,7 @@
 .tum-gui .ifk-form {
     border: none;
     padding-top: 0;
+    overflow-y: visible;
 }
 
 .tum-gui .right-sidebar .ifk-form {

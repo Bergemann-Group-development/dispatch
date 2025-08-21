@@ -996,7 +996,8 @@ class tumult(object):
             if log: yy1d = np.exp(yy1d)
         else:
             if newx is None: newx = self.ltau[::-1]
-            yy1d = np.interp(newx, self.ltau[::-1], cube[::-1])
+            step = -1 if self.ltau[0] > self.ltau[-1] else 1
+            yy1d = np.interp(newx, self.ltau[::step], cube[::step])
 
         return newx, yy1d
     
@@ -1280,35 +1281,23 @@ class tumult(object):
         f.close()
 
     #=================================================================
-    def to_dispatch1d_atmos(self, dir, name, vmic=1.0):
-        ltau, chi = self.get_ltau_mean('chi',  log=True)
-        _, temp   = self.get_ltau_mean('temp', log=True)
-        _, ne     = self.get_ltau_mean('ne',   log=True)
-        _, rho    = self.get_ltau_mean('rho',  log=True)
-        tau = 10**(ltau)
-
-        # Flip the arrays to get them in increasing tau order
-        tau = tau[::-1]
-        chi = chi[::-1]
-
-        # Calculate dz = - d_tau / chi at the midpoint between each pair of tau values
-        dz = - np.diff(tau) * 2 / (chi[:-1] + chi[1:])
-
-        # Compute z by cumulatively summing dz
-        zz = np.concatenate(([0], np.cumsum(dz)))  # Start from z0 = 0 or any other initial condition
-        zz = - zz[::-1]
-        zz = zz - np.interp(1, tau, zz)
+    def to_dispatch1d_atmos(self, file, vmic=1.0, FeH=''):
+        ltau, temp = self.get_ltau_mean('temp', log=True)
+        _, ne      = self.get_ltau_mean('ne',   log=True)
+        _, rho     = self.get_ltau_mean('rho',  log=True)
 
         df = pd.DataFrame()
-        df['Depth'] = zz
+        df['lTau'] = ltau
         df['Temp'] = temp
         df['Pe'] = ne*temp*BK
         df['Rho'] = rho
         df['Vturb'] = vmic
 
-        f = open(dir + f'{name:}.txt', 'w+')
-        f.write(f'{name:}\n')
-        f.write(f'{len(df):}\n')
+        file = pathlib.Path(file)
+        file.parent.mkdir(parents=True, exist_ok=True)
+        f = open(file, 'w+')
+        f.write(f'{file.with_suffix("").name:}\n')
+        f.write(f'{len(df):} {FeH}\n')
         text = df[::-1].to_string(index=False, float_format='%.4e')
         text = '*' + text[1:]
         f.write(text)
@@ -1413,7 +1402,7 @@ class tumult(object):
         #-------------------------------------------------------------
         self = tumult() # create a new instance of the class
         self.run0 = runs[0]
-        self.folder = '\n'.join([run.folder for run in runs])
+        self.folder = '\n'.join([str(run.folder) for run in runs])
 
         def check_and_combine(key):
             if hasattr(self.run0, key):
@@ -1425,6 +1414,7 @@ class tumult(object):
                     setattr(self, key, atts[0])
 
         self.runs = runs
+        self.weights = weights
         self.nml = self.run0.nml
         check_and_combine('mode')
         check_and_combine('mus')
@@ -1436,10 +1426,27 @@ class tumult(object):
         check_and_combine('nline')
         check_and_combine('dim')
 
-        if weights is None:
-            check_and_combine('abundances')
+        if hasattr(runs[0], 'ltau'):
+            if weights is not None:
+                taumin = np.min([run.ltau for run in runs])
+                taumax = np.max([run.ltau for run in runs])
+                ltau = np.linspace(taumin, taumax, 128)
 
-            if hasattr(runs[0], 'temp'):
+                def average_atmos(var):
+                    return np.sum(self.get_ltau_surface(ltau, var).T * weights, axis=-1)
+
+                self.ne = average_atmos('ne')
+                self.rho = average_atmos('rho')
+                self.temp = average_atmos('temp')
+                self.vx = average_atmos('vx')
+                self.vy = average_atmos('vy')
+                self.vz = average_atmos('vz')
+                self.chi = average_atmos('chi')
+                self.tau = 10**ltau
+                self.ltau = ltau
+
+            else:
+                check_and_combine('abundances')
                 self.ne = np.array([run.ne for run in runs])
                 self.rho = np.array([run.rho for run in runs])
                 self.temp = np.array([run.temp for run in runs])
@@ -1449,21 +1456,20 @@ class tumult(object):
                 self.chi = np.array([run.chi for run in runs])
                 self.tau = np.array([run.tau for run in runs])
                 self.ltau = np.array([run.ltau for run in runs])
+                weights = np.ones(len(runs))/len(runs)
 
-            weights = np.ones(len(runs))/len(runs)
+        if self.run0.has_atom:
+            self.atom = copy.copy(self.run0.atom)
+            self.atom.run = self
 
-            if self.run0.has_atom:
-                self.atom = copy.copy(self.run0.atom)
-                self.atom.run = self
+            if type(self.atom.trans[0]) is fast_trans:
+                init = np.frompyfunc(fast_trans, 2, 1)
+                self.atom.trans = init(np.arange(self.atom.nline), self.atom)
+            else:
+                self.atom.trans = [copy.copy(trans) for trans in self.run0.atom.trans]
 
-                if type(self.atom.trans[0]) is fast_trans:
-                    init = np.frompyfunc(fast_trans, 2, 1)
-                    self.atom.trans = init(np.arange(self.atom.nline), self.atom)
-                else:
-                    self.atom.trans = [copy.copy(trans) for trans in self.run0.atom.trans]
-
-                self.in_lines = self.run0.in_lines
-                self.line = np.array(self.atom.trans)[self.in_lines]
+            self.in_lines = self.run0.in_lines
+            self.line = np.array(self.atom.trans)[self.in_lines]
 
         if self.run0.has_spectrum:
             self.lam    = self.run0.lam

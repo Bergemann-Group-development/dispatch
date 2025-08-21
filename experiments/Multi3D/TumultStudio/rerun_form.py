@@ -15,7 +15,8 @@ xmatch_button = rerun_form.widgets_dict['x-match levels'].wid
 def init_rerun_form(studio):
     def rerun_on_click(btn):
         run = studio.current
-        studio.plot_synth(rerun_synth, run)
+        studio.add_object('Synth', studio.plot_synth, rerun_synth, run)
+        
     rerun_button.on_click(rerun_on_click)
 
     def xmatch_on_click(btn):

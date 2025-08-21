@@ -75,12 +75,12 @@ def init_LineNavigator(obs, studio):
     xmin = lam0 - dlam/2
     xmax = lam0 + dlam/2
 
-    def update():
+    def jump_to_navigator_line():
       reset_xaxis(studio.fig, [xmin, xmax])
       reset_xaxis(studio.nav, [xmin, xmax], margin=2)
       show_vertical_line_with_timeout(studio.fig, indicator_source, lam0)
 
-    ServerManager.server.next_tick_update(update)
+    ServerManager.server.next_tick_update(jump_to_navigator_line)
 
   ion_wid.observe(ion_selected, names='value')
   sort_wid.observe(ion_selected, names='value')

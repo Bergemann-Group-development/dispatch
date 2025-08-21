@@ -13,6 +13,7 @@ import pathlib
 import sys
 from io import StringIO
 import traceback
+import parse
 
 module_dir = pathlib.Path(__file__).parent
 logger = logging.getLogger(__name__)
@@ -110,9 +111,7 @@ def log_callback_errors(func):
     """Minimal decorator to log exceptions in callbacks."""
     @wraps(func)
     def wrapper(*args, **kwargs):
-        if len(args)>0 and isinstance(args[0], widgets.Button):
-            logging.info(f"Button '{args[0].description}' clicked.")
-
+        logging.info(f"Running callback '{func.__name__}'")
         try:
             return func(*args, **kwargs)
         except Exception as e:
@@ -295,78 +294,20 @@ def advance_spinner(spinner, key):
     setattr(spinner, key, val)
 
 
-def cross_match_dataframes(df1, df2, on, by=None, direction='nearest', tolerance=0, **kwargs):
-    """
-    Merge columns from df2 to df1 using exact matches on 'by' columns and 
-    nearest/backward/forward matches on 'on' column.
+def filter_atmospheres(folder, fmt):
+    folder = pathlib.Path(folder)
+    # Get all files in the folder
+    files = list(folder.iterdir())
     
-    Parameters:
-    -----------
-    df1 : pd.DataFrame
-        Left dataframe (base dataframe to merge to)
-    df2 : pd.DataFrame
-        Right dataframe (source of additional columns)
-    on : str
-        Column name for nearest matching (usually numerical/datetime)
-    by : str or list of str, optional
-        Column(s) that must match exactly before applying nearest match
-    direction : str, default 'nearest'
-        Direction for merge_asof ('backward', 'forward', 'nearest')
-    tolerance : pd.Timedelta or float, default 0
-        Maximum distance between matches for the 'on' column (passed to merge_asof)
-    **kwargs
-        Additional arguments passed to pd.merge_asof
-    
-    Returns:
-    --------
-    pd.DataFrame
-        Merged dataframe
-    """
-    
-    # Convert by to list if it's a single column
-    if by is not None:
-        if isinstance(by, str):
-            by = [by]
-    
-    if by:
-        dfs = []
-        # Group both dataframes by the exact match columns
-        for vals, g1 in df1.groupby(by):
-            # Handle single column case (vals will be scalar, not tuple)
-            if len(by) == 1:
-                filter_condition = df2[by[0]] == vals
-            else:
-                # Multiple columns - create filter condition
-                filter_condition = pd.Series([True] * len(df2))
-                for col, val in zip(by, vals):
-                    filter_condition &= (df2[col] == val)
-            
-            g2 = df2[filter_condition].drop(columns=by)
-            
-            # Skip if no matching rows in df2
-            if g2.empty:
-                # Add rows with NaN values for df2 columns
-                g1_extended = g1.copy()
-                for col in df2.columns:
-                    if col not in g1.columns:
-                        g1_extended[col] = pd.NA
-                dfs.append(g1_extended)
-                continue
-            
-            # Sort both groups by the 'on' column
-            g1 = g1.sort_values(on)
-            g2 = g2.sort_values(on)
-            
-            # Perform merge_asof
-            matched = pd.merge_asof(g1, g2, on=on, direction=direction, tolerance=tolerance, **kwargs)
-            dfs.append(matched)
-        
-        df = pd.concat(dfs, ignore_index=True)
-    else:
-        # No groupby needed - direct merge_asof
-        df1_sorted = df1.sort_values(on)
-        df2_sorted = df2.sort_values(on)
-        
-        df = pd.merge_asof(df1_sorted, df2_sorted, on=on, direction=direction, tolerance=tolerance, **kwargs)
-    
-    return df
+    if fmt == 'Marcs':
+        files = [f for f in files if f.suffix == '.mod']
+    elif fmt == 'Multi1D':
+        files = [f for f in files if f.name.startswith('atmos.')]
+    elif fmt == 'Siu_bin':
+        files = [f for f in files if f.suffix == '.dat']
+    elif fmt == 'Must':
+        files = get_common_suffix_files(files, ['.atmos', '.mesh'])
+    return sorted(files)
+
+def chunk_tuple(t, chunk_size=3):
+    return [t[i:i+chunk_size] for i in range(0, len(t), chunk_size)]

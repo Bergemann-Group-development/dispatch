@@ -9,6 +9,7 @@ from .norm_form import norm_form
 import pandas as pd
 
 class StudioObs(traitlets.HasTraits):
+    icon = 'satellite-dish'
     meta = None
     file = None
     normalised = False

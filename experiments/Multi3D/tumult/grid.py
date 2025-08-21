@@ -101,7 +101,7 @@ class grid(CoG):
     if method=='Delaunay':
       weights, cogs = self.get_weights(star, verbose=True)
     elif method=='NaturalNeighbor':
-      weights, nbors = compute_weights(self.points, star)
+      weights, nbors = compute_nn_weights(self.points, star)
       cogs = self.cogs[nbors]
 
     if cogs is None: return None
@@ -218,14 +218,14 @@ def compute_enclosed_measure(points):
         raise ValueError("Invalid input: The input points must have at least 1 dimension.")
 
 #=====================================================================
-def compute_weights(points, query, draw=False):
+def compute_nn_weights(points, query, draw=False):
     idx = is_point_in_array(query, points)
     if idx >= 0:
-        return np.array([1]), idx
+        return np.array([1]), np.array([idx])
     
     hull = ConvexHull(points)
     if not point_in_convex_hull(query, hull):
-        return np.array([0]), -1
+        return np.array([0]), np.array([-1])
     
     vor1 = Voronoi(points)
     vor2 = Voronoi(np.vstack([points, query]))
@@ -257,3 +257,44 @@ def compute_weights(points, query, draw=False):
 
     weights = areas / np.sum(areas)
     return weights, nbors
+
+
+#=====================================================================
+def compute_delaunay_weights(points, query, delaunay=None):
+    idx = is_point_in_array(query, points)
+    if idx >= 0:
+        return np.array([1]), np.array([idx])
+    
+    hull = ConvexHull(points)
+    if not point_in_convex_hull(query, hull):
+        return np.array([0]), np.array([-1])
+    
+    if delaunay is None:
+      delaunay = Delaunay(points)
+
+    simplex = delaunay.find_simplex(query)
+
+    if simplex == -1:
+        return np.array([0]), -1
+
+    vertices = delaunay.simplices[simplex]
+    simplex_points = points[vertices]
+    
+    A = np.hstack((simplex_points, np.ones((len(simplex_points), 1))))
+    b = np.append(query, 1)
+    
+    weights = np.linalg.solve(A.T, b)
+    mask = weights > 1e-10
+    weights = weights[mask]
+    
+    return weights, vertices[mask]
+
+def keep_k_closest(points, query, k=100):
+    """Keep only the k closest points to query_point"""
+    # Calculate distances
+    distances = np.linalg.norm(points - query, axis=1)
+    
+    # Get indices of k smallest distances (O(n) operation)
+    k_closest_indices = np.argpartition(distances, k)[:k]
+    
+    return points[k_closest_indices], k_closest_indices

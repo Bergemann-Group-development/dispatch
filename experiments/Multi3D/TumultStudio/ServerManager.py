@@ -118,16 +118,16 @@ class BokehServerManager:
         params = [None,]*nparams
 
         if not hasattr(self, 'doc'):
-            logging.info('server has no doc')
+            logging.info(f'server has no doc: {update.__name__}')
             update(*params)
         elif self.on_server():
-            logging.info('immediate callback')
+            logging.info(f'immediate callback: {update.__name__}')
             update(*params)
         else:
             #logging.info(self.doc._pending_writes)
             @log_callback_errors
             def wrapper(*args, **kwargs):
-                logging.info('tick callback')
+                logging.info(f'tick callback: {update.__name__}')
                 update(*params)
             self.doc.add_next_tick_callback(wrapper)
 
@@ -156,11 +156,11 @@ def reset_xaxis(p, xx, margin=0):
     xmax = np.max(xx)
     d = (xmax-xmin)*margin
 
-    def update():
+    def resetting_x_axis():
         p.x_range.start = xmin-d
         p.x_range.end   = xmax+d
 
-    server.next_tick_update(update)
+    server.next_tick_update(resetting_x_axis)
     logging.info(f'Resetting x-axis to {xmin-d} - {xmax+d}')
         
 def reset_yaxis(p, yy, margin=0.05):
@@ -171,11 +171,11 @@ def reset_yaxis(p, yy, margin=0.05):
     ymax = np.max(yy)
     d = (ymax-ymin)*margin
 
-    def update():
+    def resetting_y_axis():
         p.y_range.start = ymin-d
         p.y_range.end   = ymax+d
 
-    server.next_tick_update(update)
+    server.next_tick_update(resetting_y_axis)
     logging.info(f'Resetting y-axis to {ymin-d} - {ymax+d}')
 
 def update_source_data(source):
@@ -183,13 +183,14 @@ def update_source_data(source):
         @wraps(update_func)
         def wrapper():
             @log_callback_errors
-            def update():
+            def source_data_update():
+                logging.info(f'Updating source data for {source}')
                 current_data = source.data.copy()
                 # Call the specific update function
                 update_func(current_data)
                 source.data = current_data
                         
-            server.next_tick_update(update)
+            server.next_tick_update(source_data_update)
         return wrapper
     return decorator
 
@@ -207,7 +208,6 @@ def clear_data(source):
         for key in data:
             data[key] = []
     clear()
-
 
 def spinning(spinner=None):
     def decorator(func):

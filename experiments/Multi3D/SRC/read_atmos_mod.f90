@@ -745,12 +745,12 @@ SUBROUTINE thick2thin(self)
     call comp%reassign_pointer()
     call comp%load_state_variables(temp8, ne8, rho8, use_rho=use_rho, use_ne=use_ne)
     chi=comp%chi500(1,1,:)
-    tau=10**(dble(ia%zz))
+    tau=10**(dble(self%zz))
 
-    ia%zz(nz) = 0
+    self%zz(nz) = 0
     do i=nz-1, 1, -1
       dz = (tau(i) - tau(i+1)) * 2 / (chi(i) + chi(i+1))
-      ia%zz(i) = ia%zz(i+1) + dz
+      self%zz(i) = self%zz(i+1) + dz
     end do
   endif
 

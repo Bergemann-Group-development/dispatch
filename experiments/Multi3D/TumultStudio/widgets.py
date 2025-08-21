@@ -7,7 +7,6 @@ import uuid
 import time
 import os
 from .auxfuncs import *
-import logging
 
 class StyleSheet(widgets.HTML):
     def __init__(self, file):
@@ -18,6 +17,42 @@ class StyleSheet(widgets.HTML):
                 self.value = f'<style>{css}</style>'
         else:
             print(f"Warning: {file} not found.")
+
+class SpinnerWidget(widgets.HTML):
+    """A simple spinner icon that can be used to indicate loading or processing."""
+    def __init__(self, icon, color='auto', style=None):
+        super().__init__()
+        self.add_class('spinner-widget')
+        style = style or {}
+        styling = ';'.join(f'{k}: {v}' for k, v in style.items()) + ';'
+        icon_string = f'<i class="fa fa-{icon}" style="color: {color}; transform: rotate(0deg); {styling}"></i>'
+        self.value = icon_string
+
+    def spin(self):
+        val = self.value
+        rot = parse.search('rotate({rot:d}deg)', val)['rot']
+        new_rot = (rot + 45) % 360
+        self.value = val.replace(f'rotate({rot:d}deg)', f'rotate({new_rot:d}deg)')
+
+    def reset(self):
+        val = self.value
+        rot = parse.search('rotate({rot:d}deg)', val)['rot']
+        self.value = val.replace(f'rotate({rot:d}deg)', 'rotate(0deg)')
+
+    @property
+    def icon(self):
+        return parse.search('class="fa fa-{icon}"', self.value)['icon']
+    @icon.setter
+    def icon(self, new_icon):
+        self.value = self.value.replace(f'fa fa-{self.icon}', f'fa fa-{new_icon}')
+
+    @property
+    def color(self):
+        return parse.search('color: {color};', self.value)['color']
+    @color.setter
+    def color(self, new_color):
+        self.value = self.value.replace(f'color: {self.color};', f'color: {new_color};')
+
 
 class EditableLabel(widgets.VBox):
     """A label that becomes editable when double-clicked."""
@@ -76,296 +111,6 @@ class EditableLabel(widgets.VBox):
         """Update label when value changes."""
         self.label.description = change["new"]
         self.editor.value = change["new"]
-
-
-class EditableList(widgets.VBox, HasTraits):
-    """A list widget that displays objects as EditableLabel widgets."""
-    
-    objects = List()
-    selected = Instance(widgets.HBox, allow_none=True)
-    
-    def __init__(self, objects=None, buttons=None, **kwargs):
-        super().__init__(**kwargs)
-        self.add_class('EditableList')
-        self.buttons = buttons  # List of buttons to show for each item
-
-        self.selected = None
-        self.list_items = []  # Stores HBox containers with label + delete button
-        self.label_to_object = {}  # Maps EditableLabel to original object
-        self.object_to_container = {} # Maps object to its container widget
-        self.container_pool = []  # Pool of reusable containers
-        self.objects = objects or []
-        self._observers = {}  # Track observers for cleanup
-        
-        # Initial population
-        self.update_list()
-    
-    @observe('objects')
-    def _on_objects_change(self, change):
-        """Update the list when objects change."""
-        self.update_list_incremental()
-    
-    def update_list(self):
-        """Full update - recreate all widgets (for initial setup)."""
-        # Clear existing widgets but keep containers in pool
-        self.children = []
-        self._clear_all_bindings()
-        self.list_items.clear()
-        
-        # Ensure we have enough containers
-        self._ensure_container_pool_size(len(self.objects))
-        
-        # Assign objects to containers
-        for i, obj in enumerate(self.objects):
-            self._assign_object_to_container(obj, self.container_pool[i])
-        
-        # Update list_items and children
-        self.list_items = self.container_pool[:len(self.objects)]
-        self.children = self.list_items
-    
-    @log_callback_errors
-    def update_list_incremental(self):
-        """Incremental update - reuse existing containers."""
-        # Clear all current bindings
-        self._clear_all_bindings()
-        
-        # Ensure we have enough containers for the new object count
-        self._ensure_container_pool_size(len(self.objects))
-        
-        # Assign new objects to containers (reusing existing ones)
-        for i, obj in enumerate(self.objects):
-            container = self.container_pool[i]
-            self._assign_object_to_container(obj, container)
-        
-        # Update list_items to match current objects
-        self.list_items = self.container_pool[:len(self.objects)]
-        
-        # Update children
-        self.children = self.list_items
-        
-        logging.info(f'Updated list with {len(self.objects)} objects using {len(self.list_items)} containers')
-    
-    def _ensure_container_pool_size(self, needed_size):
-        """Ensure the container pool has at least needed_size containers."""
-        while len(self.container_pool) < needed_size:
-            container = self._create_empty_container()
-            self.container_pool.append(container)
-    
-    def _create_empty_container(self):
-        """Create a new empty container widget."""
-        # Create label widget
-        label_widget = EditableLabel(value="")
-        
-        # Create container for label + buttons
-        item_container = widgets.HBox([label_widget])
-        item_container.add_class('row-box')
-        item_container.label = label_widget
-
-        # Add buttons based on configuration
-        hide_button = widgets.Button(
-            description='',
-            icon='eye',
-            tooltip='Hide/Display item'
-        )
-        hide_button.add_class('hide-btn')
-        item_container.children += (hide_button,)
-        item_container.hide = hide_button
-
-        delete_button = widgets.Button(
-            description='×',
-            tooltip='Delete item'
-        )
-        delete_button.add_class('del-btn')
-        item_container.children += (delete_button,)
-        item_container.delete = delete_button
-        
-        return item_container
-    
-    def _assign_object_to_container(self, obj, container):
-        """Assign an object to a specific container and set up bindings."""
-        # Update label
-        container.label.value = getattr(obj, 'label', str(obj))
-        
-        # Store mappings
-        container.object = obj
-        self.label_to_object[container.label] = obj
-        self.object_to_container[obj] = container
-        
-        # Setup bindings
-        self._setup_binding(container.label, obj)
-        has_hide = hasattr(obj, 'hide') and callable(obj.hide)
-        has_delete = hasattr(obj, 'delete') and callable(obj.delete)
-        container.hide.layout.display = 'block' if has_hide else 'none'
-        container.delete.layout.display = 'block' if has_delete else 'none'
-        
-        # Setup button handlers
-        if has_hide:
-            self._setup_hide_button(container.hide, obj)
-        if has_delete:
-            self._setup_delete_button(container.delete, obj)
-
-        # Setup selection handlers
-        def select_container(btn):
-            self.selected = container
-
-        def delete_selection(btn):
-            if self.selected is container:
-                self.selected = None
-
-        container.label.label.on_click(select_container)
-        if hasattr(container, 'delete'):
-            container.delete.on_click(delete_selection)
-
-    def _clear_all_bindings(self):
-        """Clear all current object-to-container bindings and observers."""
-        # Ensure _observers exists
-        if not hasattr(self, '_observers'):
-            self._observers = {}
-
-        # Clean up all observers
-        for obj_id in list(self._observers.keys()):
-            self._cleanup_object_observers_by_id(obj_id)
-        
-        # Clear mappings
-        self.label_to_object.clear()
-        self.object_to_container.clear()
-        
-        # Clear object references from containers
-        for container in self.container_pool:
-            if hasattr(container, 'object'):
-                delattr(container, 'object')
-
-    @observe('selected')
-    def _update_selected(self, change):
-        selected = change['new']
-        for cnt in self.list_items:
-            if cnt is selected:
-                cnt.add_class('selected')
-            else:
-                cnt.remove_class('selected')
-    
-    def _register_observer(self, target, handler, name):
-        """Register an observer for later cleanup."""
-        obj_id = id(target)
-        if obj_id not in self._observers:
-            self._observers[obj_id] = []
-        self._observers[obj_id].append({
-            'target': target,
-            'handler': handler,
-            'name': name
-        })
-
-    def _cleanup_object_observers_by_id(self, obj_id):
-        """Clean up observers for a specific object ID."""
-        if obj_id in self._observers:
-            for observer_info in self._observers[obj_id]:
-                try:
-                    if hasattr(observer_info['target'], 'unobserve'):
-                        observer_info['target'].unobserve(
-                            observer_info['handler'], 
-                            observer_info['name']
-                        )
-                except Exception:
-                    pass  # Ignore cleanup errors
-            del self._observers[obj_id]
-
-    def _cleanup_object_observers(self, obj):
-        """Clean up observers for a specific object."""
-        self._cleanup_object_observers_by_id(id(obj))
-    
-    def _setup_binding(self, label_widget, obj):
-        """Setup two-way binding between EditableLabel and object."""
-        
-        @log_callback_errors
-        def on_label_change(change):
-            # Update object when label changes
-            obj.label = change['new']
-        
-        @log_callback_errors
-        def on_object_change(change):
-            # Update label when object changes
-            label_widget.value = change['new']
-        
-        # Bind label changes to object
-        label_widget.observe(on_label_change, 'description')
-        self._register_observer(label_widget, on_label_change, 'description')
-        
-        # Bind object changes to label (if object supports observation)
-        if hasattr(obj, 'observe'):
-            obj.observe(on_object_change, 'label')
-            self._register_observer(obj, on_object_change, 'label')
-    
-    def _setup_delete_button(self, delete_button, obj):
-        """Setup delete button click handler."""
-        @log_callback_errors
-        def on_delete_click(button):
-            logging.info(f"Deleting object: {getattr(obj, 'label', str(obj))}")
-            if hasattr(obj, 'delete') and callable(getattr(obj, 'delete')):
-                try:
-                    obj.delete()
-                except Exception as e:
-                    print(f"Error calling delete method on object: {e}")
-            
-            # Remove object from list
-            self.remove_object(obj)
-        
-        # Clear any existing handlers to avoid duplicates
-        delete_button._click_handlers.callbacks.clear()
-        delete_button.on_click(on_delete_click)
-
-    def _setup_hide_button(self, hide_button, obj):
-        """Setup hide button click handler."""
-        @log_callback_errors
-        def on_hide_click(button):
-            if button.icon == 'eye':
-                if hasattr(obj, 'hide') and callable(getattr(obj, 'hide')):
-                    obj.hide()
-            else:
-                if hasattr(obj, 'show') and callable(getattr(obj, 'show')):
-                    obj.show()
-            button.icon = 'eye-slash' if button.icon == 'eye' else 'eye'
-        
-        # Clear any existing handlers to avoid duplicates
-        hide_button._click_handlers.callbacks.clear()
-        hide_button.on_click(on_hide_click)
-    
-    def add_object(self, obj, label=None):
-        """Add a new object to the list."""
-        if label: 
-            obj.__dict__['label'] = label
-        self.objects = self.objects + [obj]  # Trigger trait change
-
-    def remove_object(self, obj):
-        """Remove an object from the list."""
-        if obj in self.objects:
-            new_objects = [o for o in self.objects if o != obj]
-            self.objects = new_objects
-    
-    def clear(self):
-        """Clear all objects from the list."""
-        self.objects = []
-    
-    def get_object_by_label(self, label_widget):
-        """Get the original object associated with a label widget."""
-        return self.label_to_object.get(label_widget)
-    
-    def get_container_by_object(self, obj):
-        """Get the container widget for a specific object."""
-        return self.object_to_container.get(obj)
-    
-    def replace_object(self, old_obj, new_obj):
-        """Replace an object in the list, triggering proper updates."""
-        try:
-            idx = self.objects.index(old_obj)
-            new_objects = list(self.objects)
-            new_objects[idx] = new_obj
-            self.objects = new_objects  # Trigger trait change
-        except ValueError:
-            raise ValueError(f"Object {old_obj} not found in list")
-    
-    def set_objects(self, objects_list):
-        """Set the list of objects."""
-        self.objects = objects_list
 
 class HTMLDataFrame(widgets.HTML):
     def __init__(self, df, **kwargs):

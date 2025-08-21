@@ -6,6 +6,7 @@ from .fit_form import fit_form, set_fit_form
 from .rerun_form import rerun_form, set_rerun_form
 from .llist_annotations import plot_line_annotations
 from . import ServerManager
+from types import SimpleNamespace
 import tumult
 import numpy as np
 import tempfile
@@ -45,10 +46,12 @@ def run_synth(studio, name, settings, line_mask=None, default=None, llist=None, 
 
             if llist is not None:
                 settings['linelist_params'] = {'line_lists':llist_file.name}
+            
+            runner.monitor = lambda: monitor_synth(name, log_file, runner.progress)
 
             ofolder, process = tumult.launch(input_name, nml_settings=settings, default=default,
                                     log_file=log_file, threads=2, overwrite=True, verbose=0,
-                                    runner=runner)
+                                    runner=runner.run_command)
 
     if process and process.returncode == 0:
         logging.info(f'Reading run from {ofolder}')
@@ -80,6 +83,8 @@ def monitor_synth(name, log_file, progress):
 
 
 class StudioSynth(tumult.tumult):
+    icon = 'wave-square'
+
     @classmethod
     #=================================================================
     def from_run(cls, run, source=None, **kwargs):
@@ -100,10 +105,6 @@ class StudioSynth(tumult.tumult):
     #=================================================================
     def label(self):
         return self.folder.name
-    
-    #=================================================================
-    def delete(self):
-        pass
     
     #=================================================================
     def _init_source(self):

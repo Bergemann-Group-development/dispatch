@@ -31,10 +31,11 @@ launch_button = synth_form.widgets_dict['launch'].wid
 
 def init_synth_form(studio):
     def launch_on_click(btn):
-        studio.plot_synth(launch_synth)
+        studio.add_object('Synth', studio.plot_synth, launch_synth)
 
     launch_button.on_click(launch_on_click)
 
+    @log_callback_errors
     def update_atmos_dropdown(change):
         atmospheres = studio.browser.get_objects_by_type(StudioAtmos)
         if atmospheres:
@@ -42,7 +43,7 @@ def init_synth_form(studio):
         else:
             atmos_wid.options = ('no atmospheres imported yet',)
 
-    studio.browser.observe(update_atmos_dropdown, names='objects')
+    studio.browser.observe(update_atmos_dropdown, names='items')
     update_atmos_dropdown(None)
 
 
@@ -65,7 +66,7 @@ def get_synth_settings():
 
 def launch_synth(studio, name, **kwargs):
     logging.info('Launching synth computation...')
-    line_mask = studio.browser.selected.object
+    line_mask = studio.current
     atmos = atmos_wid.value 
     settings = get_synth_settings()
     if not settings:

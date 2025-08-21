@@ -3,19 +3,22 @@ from . import ServerManager
 from .ServerManager import *
 from .LineMask import *
 from .widgets import *
-from .browser import Browser
+from .browser import BrowserWidget
 from .synth import StudioSynth
 from .StudioObs import StudioObs
-from .StudioProcess import StudioProcess
+from types import SimpleNamespace
 from .synth_form import synth_form, init_synth_form
 from .fit_form import fit_form, set_fit_form, init_fit_form
 from .rerun_form import rerun_form, init_rerun_form
+from .atmos_grid_form import init_interp_atmos_form
 from .norm_form import *
 from .departure_form import init_departure_form
+from .StudioDepartures import StudioDeparture, init_departure_plot_form
 from .atmos_form import init_import_atmos_button
 from .StudioAtmos import StudioAtmos, init_atmos_plot_form
+from .StudioGrid import StudioGrid
 from .settings import settings_form, settings_page, saved_settings
-from .threading import execute_in_thread
+from .threading import execute_in_thread, profile_checkbox, get_profile_results
 from bokeh.models import *
 from bokeh.models import ColumnDataSource as CDS
 from bokeh.layouts import *
@@ -38,6 +41,7 @@ class TumultStudio(HasTraits):
     spline_source = CDS(dict(x=[], y=[]))
     atmos_scatter_source = CDS(dict(x=[], y=[]))
     atmos_line_source = CDS(dict(x=[], y=[]))
+    atmos_interp_source = CDS(dict(x=[], y=[]))
     
     synth_folder = pathlib.Path(saved_settings['synthesis folder'])
     synth_folder.mkdir(parents=True, exist_ok=True)
@@ -45,8 +49,8 @@ class TumultStudio(HasTraits):
 
     def __init__(self, **kwargs):
         self.obs = StudioObs(**kwargs)
-        self.browser = Browser(buttons=['hide', 'delete'])
-        self.browser.add_object(self.obs, label='Observations')
+        self.browser = BrowserWidget()
+        self.browser.add_object(self.obs, label='Observations', deletable=False)
 
         title = widgets.Label('Controls:')
         self.controls = widgets.HBox([title])
@@ -69,7 +73,7 @@ class TumultStudio(HasTraits):
         
         self.header_title = widgets.Label('TUMULT Studio')
         self.settings_button = widgets.Button(icon='gear')
-        self.header = widgets.HBox([self.header_title, self.settings_button])
+        self.header = widgets.HBox([self.header_title, profile_checkbox, self.settings_button])
         self.header.add_class('header')
 
         self.status = widgets.Label('Status')
@@ -135,6 +139,8 @@ class TumultStudio(HasTraits):
         init_norm_form(self)
         init_atmos_plot_form(self)
         init_departure_form(self)
+        init_interp_atmos_form(self)
+        init_departure_plot_form(self)
         self.left_sidebar.children += (self.browser,)
         self.right_sidebar.children = (synth_form.vbox,)
         self.right_sidebar.titles = ['Synthesis Settings']
@@ -148,18 +154,18 @@ class TumultStudio(HasTraits):
         def on_browser_selection(change):
             obj = self.current
 
-            def update_canvas():
-                show_atmos = isinstance(obj, StudioAtmos)
-                self.atmos_fig.visible = show_atmos
-                self.nav.visible = not show_atmos
-                self.fig.visible = not show_atmos
-            
-            ServerManager.server.next_tick_update(update_canvas)
-
             if obj is None:
                 self.right_sidebar.children = (synth_form.vbox,)
                 self.right_sidebar.titles = ['Synthesis Settings']
-            else:
+            elif hasattr(obj, 'chosen'):
+                def update_canvas():
+                    show_atmos = isinstance(obj, (StudioAtmos, StudioDeparture, StudioGrid))
+                    self.atmos_fig.visible = show_atmos
+                    self.nav.visible = not show_atmos
+                    self.fig.visible = not show_atmos
+                
+                ServerManager.server.next_tick_update(update_canvas)
+
                 d = obj.chosen(self)
                 if d is not None:
                     self.right_sidebar.children = d['tabs']
@@ -172,7 +178,7 @@ class TumultStudio(HasTraits):
             self.reset_yaxis_and_annotations()
                 
         self.browser.observe(on_browser_selection, names='selected')
-        self.browser.selected = self.browser.list_items[0]
+        self.browser.selected = self.browser.items[0]
         
         
     def init_canvas(self, xmin=None, xmax=None):
@@ -217,8 +223,12 @@ class TumultStudio(HasTraits):
             self.fig.add_tools(draw_tool)
 
         self.atmos_scatter = self.atmos_fig.scatter('x', 'y', source=self.atmos_scatter_source, size=4,
-                                                    color='black')
+                                                    color='black', nonselection_fill_color='lightgray', nonselection_alpha=1,
+                                                    nonselection_line_color='none', selection_color='cornflowerblue')
+
         self.atmos_line = self.atmos_fig.line('x', 'y', source=self.atmos_line_source, color='red')
+        self.atmos_interp_scatter = self.atmos_fig.scatter('x', 'y', source=self.atmos_interp_source, size=15,
+                                                           color='red', alpha=0.5)
         
         # TOOLTIPS = [
         #     ('λ', '$x{0.000}'),
@@ -238,7 +248,7 @@ class TumultStudio(HasTraits):
             if not selected: return
             idx = selected[0] # last clicked line
             rid = self.synth_source.data['run_ids'][idx]
-            item = [item for item in self.browser.list_items if id(item.object)==rid]
+            item = [item for item in self.browser.items if id(item.obj)==rid]
             if item:
                 self.browser.selected = item[0]
             else:
@@ -274,53 +284,39 @@ class TumultStudio(HasTraits):
 
 
     @log_callback_errors
-    def plot_synth(self, launch_function, *args):
-        name = self.browser.get_unique_label('Synth')
-        self.progress.description = f'Running {name}:'
-        dummy = StudioProcess(name)
-        self.browser.add_object(dummy)
-        container = self.browser.get_container_by_object(dummy)
+    def plot_synth(self, studio, name, launch_function, *args, runner=None):
+        run = launch_function(self, name, *args, runner=runner)
+        if run:
+            crop_params = getattr(run, 'fit_params', {})
+            x, y = run.crop(**crop_params)
 
-        @execute_in_thread(cancel=container.delete, spinner=container.label)
-        def async_callback(execution):
-            run = launch_function(self, name, *args, runner=execution.run_command)
-            if run:
-                crop_params = getattr(run, 'fit_params', {})
-                x, y = run.crop(**crop_params)
+            # run data is always normalised, so we need to transform
+            # to view coordinates if the view is set to unnormalised
+            y = conditional_denormalisation(x, y)
 
-                # run data is always normalised, so we need to transform
-                # to view coordinates if the view is set to unnormalised
-                y = conditional_denormalisation(x, y)
+            @update_source_data(self.synth_source)
+            def draw_synth(data):
+                color_cylce = ColorCycle(saved_settings['bokeh palette'])
+                color = color_cylce.get_new_color(data['colors'])
+                data['xs'].append(x)
+                data['ys'].append(y)
+                data['colors'].append(color)
+                data['labels'].append(run.label)
+                data['vmic'].append(run.nml['atmos_params']['vmic'])
+                data['FeH'].append(run.nml['atmos_params']['FeH'])
+                data['atmos'].append(run.nml['atmos_params']['atmos_file'])
+                data['run_ids'].append(id(run))
+                data['alphas'].append(1.0)
 
-                @update_source_data(self.synth_source)
-                def draw_synth(data):
-                    color_cylce = ColorCycle(saved_settings['bokeh palette'])
-                    color = color_cylce.get_new_color(data['colors'])
-                    data['xs'].append(x)
-                    data['ys'].append(y)
-                    data['colors'].append(color)
-                    data['labels'].append(run.label)
-                    data['vmic'].append(run.nml['atmos_params']['vmic'])
-                    data['FeH'].append(run.nml['atmos_params']['FeH'])
-                    data['atmos'].append(run.nml['atmos_params']['atmos_file'])
-                    data['run_ids'].append(id(run))
-                    data['alphas'].append(1.0)
-
-                draw_synth()
-                self.browser.add_object(run)
-                self.set_synth_controls(run)
-
-            self.progress.value = self.progress.max
-            self.progress.description = f'Done!'
-            self.browser.remove_object(dummy)
-
-        async_callback()
+            draw_synth()
+            #self.set_synth_controls(run)
+            return run
         
 
     def set_synth_controls(self, run):
         rid = id(run)
-        container = self.browser.get_container_by_object(run)
-        widget_label = container.label.label
+        item = self.browser.get_item_by_object(run)
+        widget_label = item.label.label
 
         def update_label(change):
             @update_source_data(self.synth_source)
@@ -330,7 +326,6 @@ class TumultStudio(HasTraits):
             update()
 
         widget_label.observe(update_label, names='description')
-        self.browser._register_observer(widget_label, update_label, 'description')
         
     def init_main_canvas(self, xmin=None, xmax=None, xlabel='Wavelength [Å]', ylabel='Flux', **kwargs):
         p = figure(output_backend='svg',
@@ -467,4 +462,30 @@ class TumultStudio(HasTraits):
     
     @property
     def current(self):
-        return self.browser.selected.object if self.browser.selected else None
+        return self.browser.selected.obj if self.browser.selected else None
+
+    def get_profile_results(self):
+        return get_profile_results()
+    
+    def add_object(self, name, func, *args, parent=None, **kwargs):
+        # first we create a dummy object and add it to the browser
+        dummy = SimpleNamespace()
+        uname = self.browser.get_unique_label(name)
+
+        if parent:
+            item = parent.add_child(dummy, label=uname)
+        else:
+            item = self.browser.add_object(dummy, label=name)
+
+        # then we define the async callback that will run the function
+        @execute_in_thread(cancel=item.delete, spinner=item.icon, progress=item.progress)
+        def async_callback(execution):
+            obj = func(self, uname, *args, runner=execution, **kwargs)
+            if obj and not execution.cancelled:
+                # if the function returned an object, we replace the dummy with it
+                item.replace_object(obj)
+            else:
+                # if the function did not return an object, we remove the dummy
+                self.browser.remove_object(dummy)
+
+        async_callback()
