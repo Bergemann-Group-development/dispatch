@@ -19,15 +19,15 @@ fields = {'atmosphere format':('Marcs', 'Text', 'Multi1D', 'Siu_bin'),
                 'custom'
                 ),
             'pattern':'type parse pattern here', 
-            'import grid':None}
+            'import grid': void}
 
 hide = {'pattern': lambda d: d['pattern preset'] != 'custom'}
 atmos_grid_form = ifk.Form(fields, hide=hide)
-import_btn = atmos_grid_form.widgets_dict['import grid'].wid
-atmos_fmt = atmos_grid_form.widgets_dict['atmosphere format'].wid
-grid_folder = atmos_grid_form.widgets_dict['grid folder'].wid
-pattern_wid = atmos_grid_form.widgets_dict['pattern'].wid
-preset_wid = atmos_grid_form.widgets_dict['pattern preset'].wid
+import_btn = atmos_grid_form.inputs_dict['import grid']
+atmos_fmt = atmos_grid_form.inputs_dict['atmosphere format']
+grid_folder = atmos_grid_form.inputs_dict['grid folder']
+pattern_wid = atmos_grid_form.inputs_dict['pattern']
+preset_wid = atmos_grid_form.inputs_dict['pattern preset']
 
 @log_callback_errors
 def on_preset_change(change):

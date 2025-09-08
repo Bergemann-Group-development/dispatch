@@ -16,17 +16,15 @@ def save_settings(btn):
     with open(module_dir / 'settings.json', 'w') as f:
         json.dump(saved_settings, f, indent=4)
 
-saved_settings.update({'save':None})
+saved_settings.update({'save': save_settings})
 settings_form = ifk.Form(saved_settings)
-settings_form.set_values(saved_settings)
-save_settings_button = settings_form.widgets_dict['save'].wid
-save_settings_button.on_click(save_settings)
+settings_form.set_values({k:v for k,v in saved_settings.items() if k!='save'})
 
 title = widgets.Label('Global Settings')
 close_button = widgets.Button(icon='times')
 header = widgets.HBox([title, close_button])
 header.add_class('header')
-content = widgets.VBox([settings_form.vbox])
+content = widgets.VBox([settings_form])
 settings_page = widgets.VBox([header, content])
 settings_page.add_class('tum-settings')
 settings_page.close_button = close_button

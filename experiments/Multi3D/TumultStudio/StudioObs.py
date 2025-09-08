@@ -62,7 +62,7 @@ class StudioObs(traitlets.HasTraits):
         tabs = (self.navigator, self.info,)
         titles = ('Line Navigator', 'Info',)
         if not self.normalised:
-            tabs += (norm_form.vbox,)
+            tabs += (norm_form,)
             titles += ('Norm Settings',)
         if hasattr(self, 'metadata'):
             tabs += (self.meta,)

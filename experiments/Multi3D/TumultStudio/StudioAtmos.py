@@ -14,8 +14,8 @@ fields = {
     ('x-axis', 'y-axis'): (mhd_vars, mhd_vars),}
 
 atmos_plot_form = ifk.Form(fields)
-xaxis_wid = atmos_plot_form.widgets_dict['x-axis'].wid
-yaxis_wid = atmos_plot_form.widgets_dict['y-axis'].wid
+xaxis_wid = atmos_plot_form.inputs_dict['x-axis']
+yaxis_wid = atmos_plot_form.inputs_dict['y-axis']
 
 def init_atmos_plot_form(studio):
     @log_callback_errors
@@ -54,7 +54,7 @@ class StudioAtmos(StudioSynth):
 
     def chosen(self, studio):
         self.draw_atmos_data(studio)
-        instructions = {'tabs':(departure_form.vbox, atmos_plot_form.vbox, self.info),
+        instructions = {'tabs':(departure_form, atmos_plot_form, self.info),
                         'titles':('NLTE Settings', 'Plot Settings', 'Info'),}
         return instructions
 

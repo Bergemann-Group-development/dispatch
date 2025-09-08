@@ -16,16 +16,15 @@ atom_files = [f for f in os.listdir(saved_settings['atom folder']) if not f.star
 
 fields = {'atom file': tuple(atom_files),
           ('abundance', 'relative'): (0.0, True),
-          'Compute Departures': None}
+          'Compute Departures': void}
 
 departure_form = ifk.Form(fields)
-compute_departures_btn = departure_form.widgets_dict['Compute Departures'].wid
-atom_file_wid = departure_form.widgets_dict['atom file'].wid
+compute_departures_btn = departure_form.inputs_dict['Compute Departures']
 
 def init_departure_form(studio):
     @log_callback_errors
     def on_compute_click(btn):
-        name = atom_file_wid.value
+        name = departure_form['atom file']
         item = studio.browser.selected
         studio.add_object(name, compute_departures, parent=item)
         

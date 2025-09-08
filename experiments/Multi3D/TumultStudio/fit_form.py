@@ -15,7 +15,7 @@ fields = {('fitting region', 'element'): (('line mask', 'selection'), element_id
           ('fit abnd', 'fit vshift', 'fit vdop'): (False, True, False),
           ('fit vrot', 'fit fac', 'fit tilt'): (False, False, False),
           'NLTE elements': ('No departures in atmos!',),
-          'apply': None}
+          'apply': void}
 
 disable = {'vshift': lambda d: d['fit vshift']==True,
            'vdop': lambda d: d['fit vdop']==True,
@@ -32,12 +32,11 @@ formatters = {'abnd': lambda x: f'{x:.2f}',
               'fac': lambda x: f'{x:.4f}',
               'tilt': lambda x: f'{x:.4f}'}
 
-fit_form = ifk.Form(fields, disable=disable)
+fit_form = ifk.Form(fields, disable=disable, formatters=formatters)
 defaults = fit_form.get_values()
-element_wid = fit_form.widgets_dict['element'].wid
-nlte_wid = fit_form.widgets_dict['NLTE elements'].wid
-abundance_wid = fit_form.widgets_dict['abnd'].wid
-fit_button = fit_form.widgets_dict['apply'].wid
+element_wid = fit_form.inputs_dict['element']
+nlte_wid = fit_form.inputs_dict['NLTE elements']
+fit_button = fit_form.inputs_dict['apply']
     
 def init_fit_form(studio):
     @log_callback_errors
@@ -73,25 +72,16 @@ def init_fit_form(studio):
     def on_element_change(change):
         eid = element_wid.value
         if eid == 'None':
-            abundance_wid.value = 0.0
+            fit_form['abnd'] = 0.0
         else:
             run = studio.current
             if hasattr(run, 'eid') and eid == run.eid:
                 abnd = run.fit_params['abnd']
             else:
                 abnd = run.abundances[eid]
-            abundance_wid.value = abnd
+            fit_form['abnd'] = abnd
 
     element_wid.observe(on_element_change, names='value')
-
-def set_fit_form_values(values):
-    """Set the values of the fit form."""
-    val = copy.deepcopy(values)
-    for k, v in val.items():
-        if k in formatters and type(v) is not str:
-            val[k] = formatters[k](v)
-    
-    fit_form.set_values(val)
 
 def set_fit_form(run):
     llist = run.llist.sort_values(by='strength', ascending=False)
@@ -118,7 +108,7 @@ def set_fit_form(run):
     nlte_wid.value = nlte_wid.options[-1]
 
     if hasattr(run, 'fit_params'):
-        set_fit_form_values(run.fit_params)
+        fit_form.set_values(run.fit_params)
 
     if hasattr(run, 'eid'):
         element_wid.value = run.eid
@@ -195,6 +185,6 @@ def fit_synth(run, folder, source, runner=None):
     xfit, yfit = run.crop(**kwargs)
     run.fit_params = {k:v for k, v in kwargs.items()}
     del kwargs['LTE']
-    set_fit_form_values(kwargs)
+    fit_form.set_values(kwargs)
     return run, xfit, yfit
 

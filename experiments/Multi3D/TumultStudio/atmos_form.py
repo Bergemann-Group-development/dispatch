@@ -14,7 +14,7 @@ fields = {'atmosphere format':('Marcs', 'Must', 'Stagger', 'Stagger2', 'Text', '
           'atmosphere file': ('no atmosphere picked',),
           ('nx', 'ny'): (10, 10),
           ('FeH', 'vmic'): (0.0, -1.0),
-          'import':None}
+          'import': void}
 
 tooltips = {
     'FeH':'Metallicity of the atmosphere, zero being solar metallicity',
@@ -27,9 +27,9 @@ hide = {'nx': lambda d: d['atmosphere format'] not in mhd_formats,
 
 mandatory = ['atmosphere file']
 atmos_import_form = ifk.Form(fields, mandatory=mandatory, tooltips=tooltips, hide=hide)
-import_button = atmos_import_form.widgets_dict['import'].wid
-atmos_wid = atmos_import_form.widgets_dict['atmosphere file'].wid
-atmos_fmt = atmos_import_form.widgets_dict['atmosphere format'].wid
+import_button = atmos_import_form.inputs_dict['import']
+atmos_wid = atmos_import_form.inputs_dict['atmosphere file']
+atmos_fmt = atmos_import_form.inputs_dict['atmosphere format']
     
 @log_callback_errors
 def update_atmos_fmt(change):
@@ -49,7 +49,7 @@ def init_import_atmos_button(studio):
     @log_callback_errors
     def on_import_atmos_click(btn):
         studio.browser.selected = None
-        studio.right_sidebar.children = (atmos_import_form.vbox, atmos_grid_form.vbox)
+        studio.right_sidebar.children = (atmos_import_form, atmos_grid_form)
         studio.right_sidebar.titles = ['Direct Import', 'Import Grid']
 
     @log_callback_errors

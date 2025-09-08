@@ -15,8 +15,8 @@ fields = {('sort by', 'window size [Å]'):
 
 check = {'window size [Å]': lambda d: d['window size [Å]'] > 0}
 inputs = ifk.Form(fields, check=check)
-sort_wid = inputs.widgets_dict['sort by'].wid
-range_wid = inputs.widgets_dict['window size [Å]'].wid
+sort_wid = inputs.inputs_dict['sort by']
+range_wid = inputs.inputs_dict['window size [Å]']
 
 ion_wid = widgets.Select(options=[])
 line_wid = widgets.Select(option=[])

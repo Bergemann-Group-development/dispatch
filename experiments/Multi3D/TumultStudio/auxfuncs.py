@@ -311,3 +311,6 @@ def filter_atmospheres(folder, fmt):
 
 def chunk_tuple(t, chunk_size=3):
     return [t[i:i+chunk_size] for i in range(0, len(t), chunk_size)]
+
+def void(*args, **kwargs):
+    pass

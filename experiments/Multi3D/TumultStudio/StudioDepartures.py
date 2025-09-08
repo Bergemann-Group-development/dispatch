@@ -13,8 +13,8 @@ fields = {
     ('x-axis', 'y-axis'): (mhd_vars, (0,)),}
 
 departure_plot_form = ifk.Form(fields)
-xaxis_wid = departure_plot_form.widgets_dict['x-axis'].wid
-yaxis_wid = departure_plot_form.widgets_dict['y-axis'].wid
+xaxis_wid = departure_plot_form.inputs_dict['x-axis']
+yaxis_wid = departure_plot_form.inputs_dict['y-axis']
 
 def init_departure_plot_form(studio):
     xaxis_wid.options = mhd_vars
@@ -58,6 +58,6 @@ class StudioDeparture(StudioSynth):
     def chosen(self, studio):
         yaxis_wid.options = np.arange(self.atoms[0].nk)
         self.draw_departure_data(studio)
-        instructions = {'tabs':(departure_plot_form.vbox,),
+        instructions = {'tabs':(departure_plot_form,),
                         'titles':('Plot Settings',),}
         return instructions

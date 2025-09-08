@@ -9,7 +9,7 @@ import numpy as np
 fields = {'atmosphere':('no atmospheres imported yet',),
           ('abundances', 'relative'):('O=8.70, Fe=7.50', False),
           ('exclude elements','only elements'):('O, Fe', 'O, Fe'),
-          'launch':None}
+          'launch': void}
 
 tooltips = {
     'relative':'If true please specify abundances as [X/Fe], otherwise please specify absolute abundances X/H',
@@ -25,13 +25,12 @@ check = {'atmosphere': lambda d: isinstance(d['atmosphere'], StudioAtmos),
          }
 
 synth_form = ifk.Form(fields, tooltips=tooltips, disable=disable, check=check)
-atmos_wid = synth_form.widgets_dict['atmosphere'].wid
-launch_button = synth_form.widgets_dict['launch'].wid
-
+atmos_wid = synth_form.inputs_dict['atmosphere']
+launch_button = synth_form.inputs_dict['launch']
 
 def init_synth_form(studio):
     def launch_on_click(btn):
-        studio.add_object('Synth', studio.plot_synth, launch_synth)
+        studio.add_object('Synth', studio.plot_synth, launch_synth, parent=studio.browser.selected)
 
     launch_button.on_click(launch_on_click)
 

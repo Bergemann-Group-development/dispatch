@@ -6,11 +6,11 @@ from .llist_annotations import get_llist_table
 
 ion_ids = np.array(['I', 'II', 'III', 'IV', 'V ', 'VI', 'VII', 'VIII'])
 
-fields = {('rerun', 'x-match levels'): (None, None)}
+fields = {('rerun', 'x-match levels'): (void, void)}
 rerun_form = ifk.Form(fields)
-rerun_form.vbox.add_class('rerun-form')
-rerun_button = rerun_form.widgets_dict['rerun'].wid
-xmatch_button = rerun_form.widgets_dict['x-match levels'].wid
+rerun_form.add_class('rerun-form')
+rerun_button = rerun_form.inputs_dict['rerun']
+xmatch_button = rerun_form.inputs_dict['x-match levels']
 
 def init_rerun_form(studio):
     def rerun_on_click(btn):

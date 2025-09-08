@@ -11,12 +11,12 @@ from .LineMask import LineMask
 
 fields = {'method': ('spline',),
           'peak distance': 5.0,
-          'Normalise': None,
+          'Normalise': void,
          }
 
 norm_form = ifk.Form(fields)
-norm_form.vbox.add_class('norm-form')
-norm_button = norm_form.widgets_dict['Normalise'].wid
+norm_form.add_class('norm-form')
+norm_button = norm_form.inputs_dict['Normalise']
 norm_checkbox = widgets.Checkbox(value=False, description='View normalised', indent=False)
 norm_checkbox.add_class('norm-checkbox')
 cntm_spline = None

@@ -23,8 +23,8 @@ class StudioGrid(object):
         columns = tuple(self.df.columns)
         fields = {('x-axis', 'y-axis'): (columns, columns[1:])}
         plot_form = ifk.Form(fields)
-        self.xaxis_wid = plot_form.widgets_dict['x-axis'].wid
-        self.yaxis_wid = plot_form.widgets_dict['y-axis'].wid
+        self.xaxis_wid = plot_form.inputs_dict['x-axis']
+        self.yaxis_wid = plot_form.inputs_dict['y-axis']
         if len(columns) > 0:
             self.yaxis_wid.value = columns[1]
 
@@ -54,14 +54,14 @@ class StudioGrid(object):
         interp_fields = {k:v for k,v in zip(keys, vals)}
         interp_fields['interpolate'] = None
         atmos_interp_form = ifk.Form(interp_fields)
-        interp_btn = atmos_interp_form.widgets_dict['interpolate'].wid
+        interp_btn = atmos_interp_form.inputs_dict['interpolate']
 
         @log_callback_errors
         def on_val_change(change):
             xval = self.xaxis_wid.value
             yval = self.yaxis_wid.value
-            xwid = atmos_interp_form.widgets_dict[xval].wid
-            ywid = atmos_interp_form.widgets_dict[yval].wid
+            xwid = atmos_interp_form.inputs_dict[xval]
+            ywid = atmos_interp_form.inputs_dict[yval]
             self.indices, self.wts = self.get_nbors()
             selection = self.df.loc[self.indices][[xval, yval]].drop_duplicates()
             indices = self.plot_df.reset_index().merge(selection)['index'].tolist()
@@ -72,7 +72,7 @@ class StudioGrid(object):
                 studio.atmos_scatter_source.selected.indices = indices
             update_atmos_interp()
 
-        for wid in [v.wid for v in atmos_interp_form.widgets_dict.values() if v.wid is not interp_btn]:
+        for wid in [v for v in atmos_interp_form.inputs_dict.values() if v is not interp_btn]:
             wid.observe(on_val_change, names='value')
 
         self.xaxis_wid.observe(on_val_change, names='value')
@@ -97,7 +97,7 @@ class StudioGrid(object):
             self.atmos_interp_form = self.init_interp_form(studio)
 
         self.draw_grid_data(studio)
-        instructions = {'tabs': (self.atmos_interp_form.vbox, self.plot_form.vbox, self.info),
+        instructions = {'tabs': (self.atmos_interp_form, self.plot_form, self.info),
                         'titles': ('Interpolate atmosphere', 'Plot Settings', 'Info')}
         return instructions
     
