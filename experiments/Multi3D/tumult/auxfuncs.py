@@ -197,13 +197,17 @@ def get_weq(xx, yy, lam0=None, dlam=None, method='gauss', return_err=False, plot
             
     eweq = 0
 
-    if method == 'linear':
+    if method == 'trapz':
         weq = np.trapz(1-yy, x=xx)*1e3
+
+        def weq_func(x):
+            return np.interp(x, xx, yy)
     
     if method == 'pchip':
         xxx = np.linspace(xx[0], xx[-1], xx.size*10)
-        f = pchip_mono(xx, 1-yy)
-        weq = np.trapz(f(xxx), x=xxx)*1e3
+        f = pchip_mono(xx, yy)
+        weq = np.trapz(1-f(xxx), x=xxx)*1e3
+        weq_func = f
 
     if method in ['gauss', 'voigt', 'asym_gauss']:
         if method == 'gauss':
@@ -226,9 +230,8 @@ def get_weq(xx, yy, lam0=None, dlam=None, method='gauss', return_err=False, plot
                 plt.axvline(xx[0],  color='k', ls=':', lw=0.5)
                 plt.axvline(xx[-1], color='k', ls=':', lw=0.5)
 
-            if get_func:
-                def weq_func(x):
-                    return rf(x, *pfit)
+            def weq_func(x):
+                return rf(x, *pfit)
 
     res = (weq,)
     if return_err: res = (*res, eweq)
