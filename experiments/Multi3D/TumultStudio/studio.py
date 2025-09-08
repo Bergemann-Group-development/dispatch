@@ -1,9 +1,10 @@
 from .auxfuncs import *
 from . import ServerManager
 from .ServerManager import *
-from .LineMask import *
 from .widgets import *
 from .browser import BrowserWidget
+from .LineMask import init_line_mask_button, LineMask
+from .EquivalentWidth import init_ew_button, EquivalentWidth
 from .synth import StudioSynth
 from .StudioObs import StudioObs
 from types import SimpleNamespace
@@ -84,10 +85,8 @@ class TumultStudio(HasTraits):
 
         self._gui = [settings_page, self.header, self.content, self.footer]
         
-        self.stylesheets = [*synth_form.load_stylesheets(),
-                            StyleSheet(module_dir / 'style.css'),
-                            StyleSheet(module_dir / 'widgets.css'),
-                            synth_form.load_tooltip_script()]
+        self.stylesheets = [StyleSheet(module_dir / 'style.css'),
+                            StyleSheet(module_dir / 'widgets.css')]
         
         # # Load image from file
         # with open(module_dir / 'SplashScreen.png', 'rb') as f:
@@ -142,20 +141,21 @@ class TumultStudio(HasTraits):
         init_interp_atmos_form(self)
         init_departure_plot_form(self)
         self.left_sidebar.children += (self.browser,)
-        self.right_sidebar.children = (synth_form.vbox,)
+        self.right_sidebar.children = (synth_form,)
         self.right_sidebar.titles = ['Synthesis Settings']
                 
     def init_controls(self):
         init_norm_checkbox(self)
         init_import_atmos_button(self)
         init_line_mask_button(self)
+        init_ew_button(self)
         
     def init_browser(self):
         def on_browser_selection(change):
             obj = self.current
 
             if obj is None:
-                self.right_sidebar.children = (synth_form.vbox,)
+                self.right_sidebar.children = (synth_form,)
                 self.right_sidebar.titles = ['Synthesis Settings']
             elif hasattr(obj, 'chosen'):
                 def update_canvas():
@@ -288,6 +288,7 @@ class TumultStudio(HasTraits):
         run = launch_function(self, name, *args, runner=runner)
         if run:
             crop_params = getattr(run, 'fit_params', {})
+            crop_params['LTE'] = run.mode == 'LTE'
             x, y = run.crop(**crop_params)
 
             # run data is always normalised, so we need to transform
@@ -470,12 +471,13 @@ class TumultStudio(HasTraits):
     def add_object(self, name, func, *args, parent=None, **kwargs):
         # first we create a dummy object and add it to the browser
         dummy = SimpleNamespace()
-        uname = self.browser.get_unique_label(name)
 
         if parent:
+            uname = parent.browser.get_unique_label(name) if parent.browser else name
             item = parent.add_child(dummy, label=uname)
         else:
-            item = self.browser.add_object(dummy, label=name)
+            uname = self.browser.get_unique_label(name)
+            item = self.browser.add_object(dummy, label=uname)
 
         # then we define the async callback that will run the function
         @execute_in_thread(cancel=item.delete, spinner=item.icon, progress=item.progress)

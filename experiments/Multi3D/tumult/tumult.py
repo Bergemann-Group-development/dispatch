@@ -121,6 +121,8 @@ class tumult(object):
     def read_atom(self, read_atom=True, fast_read=True, verbose=True, **kwargs):
         self.atoms = []
         atom_files = self.folder.glob('atoms/*')
+        moldict = {'CH':'C', 'OH':'O', 'NH':'N', 'CN':'N', 'CO':'C',
+                    'NO':'N', 'H2O':'O', 'C2':'C', 'N2':'N', 'O2':'O'}
 
         if 'atom_params' in self.nml:
             self.qnorm = self.nml['atom_params']['qnorm']
@@ -132,6 +134,7 @@ class tumult(object):
             #blue_cut   = self.nml['atom_params']['blue_cut']
         else:
             depart = ''
+            in_abnd = None
 
         for i, atom_file in enumerate(atom_files):
             if atom_file.is_file():
@@ -142,7 +145,8 @@ class tumult(object):
                             line = f.readline()
 
                         atom = empty()
-                        atom.id = line.split()[0]
+                        atom.id = line.split()[0].capitalize()
+                        atom.molec = atom.id in moldict.keys()
 
                 else:
                     pandas_format = not atom_file.name.startswith('atom.')
@@ -202,12 +206,10 @@ class tumult(object):
 
                 if atom.id in self.abundances:
                     atom.abnd = float(self.abundances[atom.id])
-                elif in_abnd[i] > -99:
-                    atom.abnd = in_abnd[i]
                 elif atom.molec:
-                    moldict = {'CH':'C', 'OH':'O', 'NH':'N', 'CN':'N', 'CO':'C',
-                                'NO':'N', 'H2O':'O', 'C2':'C', 'N2':'N', 'O2':'O'}
                     atom.abnd = self.abundances[moldict[atom.id]]
+                elif in_abnd and in_abnd[i] > -99:
+                    atom.abnd = in_abnd[i]
 
                 self.atoms.append(atom)
 

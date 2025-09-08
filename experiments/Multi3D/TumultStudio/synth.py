@@ -47,13 +47,14 @@ def run_synth(studio, name, settings, line_mask=None, default=None, llist=None, 
             if llist is not None:
                 settings['linelist_params'] = {'line_lists':llist_file.name}
             
-            runner.monitor = lambda: monitor_synth(name, log_file, runner.progress)
+            if runner and runner.progress:
+                runner.monitor = lambda: monitor_synth(input_name, log_file, runner.progress)
 
             ofolder, process = tumult.launch(input_name, nml_settings=settings, default=default,
                                     log_file=log_file, threads=2, overwrite=True, verbose=0,
-                                    runner=runner.run_command)
+                                    runner=runner)
 
-    if process and process.returncode == 0:
+    if process and (runner is None or process.returncode == 0):
         logging.info(f'Reading run from {ofolder}')
         run = tumult.read(ofolder, read_llist=True)
         run.studio = studio
@@ -63,7 +64,6 @@ def run_synth(studio, name, settings, line_mask=None, default=None, llist=None, 
         return run
     else:
         return None
-
 
 def monitor_synth(name, log_file, progress):
     folder = pathlib.Path('data') / name
@@ -77,6 +77,8 @@ def monitor_synth(name, log_file, progress):
     # do not drop below previous progress
     nprev = int(old_n*new_nmax/old_nmax)
     new_n = max(n, nprev, nmin)
+
+    logging.info(f'Progress {new_n}/{new_nmax}')
 
     progress.value = new_n
     progress.max = new_nmax
@@ -145,11 +147,11 @@ class StudioSynth(tumult.tumult):
         if hasattr(self, 'llist') and not hasattr(self, 'llist_html'):
             self.llist_html = get_llist_table(self.llist)
 
-        llist_vbox = widgets.VBox([self.llist_html, rerun_form.vbox])
+        llist_vbox = widgets.VBox([self.llist_html, rerun_form])
         llist_vbox.add_class('llist-vbox')
         instructions = {'xmin': lm.xmin,
                         'xmax': lm.xmax,
-                        'tabs': (fit_form.vbox, llist_vbox),
+                        'tabs': (fit_form, llist_vbox),
                         'titles': ('Fit Settings', 'Line List')}
         return instructions
     

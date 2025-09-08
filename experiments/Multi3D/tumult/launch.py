@@ -71,7 +71,7 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
             env = os.environ.copy()
 
             if runner:
-                process = runner(command, shell=True, env=env, text=True)
+                process = runner.run_command(command, shell=True, env=env, text=True)
                 return output_folder, process
 
             elif subprocess:
@@ -134,17 +134,16 @@ def monitor(folder, log_file=None):
     if file.is_file():
         f = open(file, mode='r')
         lines = f.readlines()
-        # only select output spectrum patches
-        lines = [l for l in lines if 'nlte_patch' in l and '-' in l]
-        nmax += len(lines)
+        nmax += len([l for l in lines if 'mhd_patch'  in l])
+        nmax += len([l for l in lines if 'nlte_patch' in l and '-' in l])
         f.close()
 
     file = folder / 'rank_00000.disp'
     if file.is_file():
         f = open(file, mode='r')
         lines = f.readlines()
-        lines = [l for l in lines if 'END   nlte_patch' in l and '-' in l]
-        n += len(lines)
+        n += len([l for l in lines if 'END    mhd_patch' in l])
+        n += len([l for l in lines if 'END   nlte_patch' in l and '-' in l])
         f.close()
 
     return n, nmax

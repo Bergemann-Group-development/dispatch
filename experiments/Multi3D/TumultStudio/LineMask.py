@@ -25,7 +25,7 @@ def init_line_mask_button(studio):
         new_mask = LineMask(studio.fig_source, studio.obs.source.data, color=color)
         label = f'{new_mask.xmin:.1f}-{new_mask.xmax:.1f}'
         studio.browser.add_object(new_mask, label=label)
-        new_mask.draw_boxes(studio.nav, studio.fig)
+        new_mask.draw(studio.nav, studio.fig)
     
     studio.fig_source.selected.on_change('indices', selection_callback)
     new_line_mask_button.on_click(new_line_mask)
@@ -53,14 +53,14 @@ class LineMask():
             self.xdata = np.concatenate([self.xdata, data['x'][slc]])
             self.ydata = np.concatenate([self.ydata, data['y'][slc]])
 
-        self.boxes = []
+        self.glyphs = []
         self.cntm = np.ones_like(self.xdata)
         self.color = color
 
     def chosen(self, studio):
         instructions = {'xmin': self.xmin,
                         'xmax': self.xmax,
-                        'tabs': (synth_form.vbox,),
+                        'tabs': (synth_form,),
                         'titles': ('Synthesis Settings',)}
         return instructions
 
@@ -78,35 +78,32 @@ class LineMask():
             xdata = np.concatenate([xdata, np.linspace(xmin, xmax, n)])
         return xdata
 
-    def draw_boxes(self, *args):
+    def draw(self, *args):
         for p in args:
             for xmin, xmax in self.regions:
                 box = BoxAnnotation(left=xmin, right=xmax, line_color=None,
                                     fill_color=self.color, fill_alpha=0.1)
-                self.boxes.append((p, box))
+                self.glyphs.append((p, box))
             
         def add_line_mask_boxes():
-            [p.add_layout(box) for p, box in self.boxes]
+            [p.add_layout(box) for p, box in self.glyphs]
             
         ServerManager.server.next_tick_update(add_line_mask_boxes)
 
+    def set_visbility(self, visible):
+        def setting_visibility():
+            for _, g in self.glyphs:
+                g.visible = visible
+        ServerManager.server.next_tick_update(setting_visibility)
+
     def delete(self):
-        def deleting_line_mask_boxes():
-            for _, box in self.boxes:
-                    box.visible = False
-        ServerManager.server.next_tick_update(deleting_line_mask_boxes)
+        self.set_visbility(False)
 
     def hide(self):
-        def hiding_line_mask_boxes():
-            for _, box in self.boxes:
-                    box.visible = False
-        ServerManager.server.next_tick_update(hiding_line_mask_boxes)
+        self.set_visbility(False)
 
     def show(self):
-        def unhiding_line_mask_boxes():
-            for _, box in self.boxes:
-                    box.visible = True
-        ServerManager.server.next_tick_update(unhiding_line_mask_boxes)
+        self.set_visbility(True)
 
     def __str__(self):
         return self.label

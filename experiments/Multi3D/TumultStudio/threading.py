@@ -43,7 +43,7 @@ class CancellableExecution:
 
         if self.progress:
             self.progress_initial = self.progress.layout.display
-            self.progress.layout.display = 'block'
+            self.progress.layout.display = 'flex'
 
     @property
     def cancelled(self):
@@ -116,6 +116,8 @@ class CancellableExecution:
 
         if self.progress:
             self.progress.layout.display = self.progress_initial
+            self.progress.value = 0
+            self.progress.max = 1
 
 
 def execute_in_thread(cancel=None, spinner=None, progress=None):
