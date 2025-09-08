@@ -346,29 +346,29 @@ contains
     oy = size(f,2); ny = size(newy,1)
     oz = size(f,3); nz = size(newz,1)
     
-    allocate(fz(ox,oy,nz))
-    allocate(fy(ox,ny))
+    allocate(fz(nx,ny,oz))
+    allocate(fy(nx,oy))
 
-    ! z-dimension linear interpolation
-    do j = 1, oy
-      do i = 1, ox
-        !call interp1d_sorted(oldz, f(i,j,:), newz, fz(i,j,:))
-        call pchip_mono4(oldz, f(i,j,:), real(newz), fz(i,j,:), sorted=.true.)
+    do k=1, oz
+      ! x-dimension interpolation
+      do j=1, oy
+        call interp1d_reg_period(dx, f(:,j,k), newx, fy(:,j))
+      end do
+      ! y-dimension interpolation
+      do i=1, nx
+        call interp1d_reg_period(dy, fy(i,:), newy, fz(i,:,k))
       end do
     end do
 
-    do k = 1, nz
-      ! y-dimension linear interpolation
-      do i = 1, ox
-        call interp1d_reg_period(dy, fz(i,:,k), newy, fy(i,:))
-      end do
-      ! x-dimension linear interpolation
-      do j = 1, ny
-        call interp1d_reg_period(dx, fy(:,j), newx, fout(:,j,k))
+    ! z-dimension interpolation
+    do j=1, ny
+      do i=1, nx
+        !call interp1d_sorted(oldz, f(i,j,:), newz, fz(i,j,:))
+        call pchip_mono4(oldz, fz(i,j,:), real(newz), fout(i,j,:), sorted=.true.)
       end do
     end do
   END SUBROUTINE linterpolate_3d
-  
+
   !===============================================================================
   SUBROUTINE linterpolate_3d_rotated(f, fout, dx, dy, oldz, newx, newy, newz, vec, bot2pivot, ray_offset)
     real(4), intent(in),  dimension(:,:,:) :: f
@@ -386,38 +386,37 @@ contains
     oy = size(f,2); ny = size(newy,1)
     oz = size(f,3); nz = size(newz,1)
 
-    dz = newz(2) - newz(1)
-
-    allocate(fz(ox,oy,nz))
-    allocate(fy(ox,ny))
-
-    ! z-dimension linear interpolation
-    do j = 1, oy
-      do i = 1, ox
-        !call interp1d_sorted(oldz, f(i,j,:), newz, fz(i,j,:))
-        call pchip_mono4(oldz, f(i,j,:), real(newz), fz(i,j,:), sorted=.true.)
-      end do
-    end do
+    allocate(fz(nx,ny,oz))
+    allocate(fy(nx,oy))
 
     delta = vec(1:2) / vec(3)
     offset = ray_offset
     if (size(newx)>1) offset(1) = offset(1) * newx(2)
     if (size(newy)>1) offset(2) = offset(2) * newy(2)
 
-    do k = 1, nz
+    dz = oldz(2) - oldz(1)
+    do k=1, oz
       height = k*dz ! height of plane as measured from bottom
       deltak = (bot2pivot - height)*delta + offset
 
-      ! y-dimension linear interpolation
-      do i = 1, ox
-        !call interp1d_reg_period(dy, fz(i,:,k), newy + deltak(2), fy(i,:))
-        call pchip_mono4_reg_period(real(dy), fz(i,:,k), real(newy + deltak(2)), fy(i,:))
+      ! x-dimension interpolation
+      do j=1, oy
+        call interp1d_reg_period(dx, f(:,j,k), newx + deltak(1), fy(:,j))
+        !call pchip_mono4_reg_period(real(dx), f(:,j,k), real(newx + deltak(1)), fy(:,j))
       end do
 
-    ! x-dimension linear interpolation
-      do j = 1, ny
-        !call interp1d_reg_period(dx, fy(:,j), newx + deltak(1), fout(:,j,k))
-        call pchip_mono4_reg_period(real(dx), fy(:,j), real(newx + deltak(1)), fout(:,j,k))
+      ! y-dimension interpolation
+      do i=1, nx
+        call interp1d_reg_period(dy, fy(i,:), newy + deltak(2), fz(i,:,k))
+        !call pchip_mono4_reg_period(real(dy), fy(i,:), real(newy + deltak(2)), fz(i,:,k))
+      end do
+    end do
+
+    ! z-dimension interpolation
+    do j=1, ny
+      do i=1, nx
+        !call interp1d_sorted(oldz, fz(i,j,:), newz, fout(i,j,:))
+        call pchip_mono4(oldz, fz(i,j,:), real(newz), fout(i,j,:), sorted=.true.)
       end do
     end do
   END SUBROUTINE linterpolate_3d_rotated

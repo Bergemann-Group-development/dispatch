@@ -690,11 +690,13 @@ contains
   !------------------------------------------------------------------------------------
 
   !====================================================================================
-  PURE ELEMENTAL SUBROUTINE prepare_Stark(self, gq)
+  PURE ELEMENTAL SUBROUTINE prepare_Stark(self, gq, j, cnt_ev)
     class(bbtrans_type), intent(inout)  :: self
-    real(dp), intent(in) :: gq
+    real(dp), intent(in) :: gq, cnt_ev
+    integer, intent(in) :: j
     real(dp), parameter :: scale=1e-4*one_sixth
     real(dp), parameter :: c19=log10(39.*(8./(PI*EM*BK**5))**one_sixth) ! 19.4
+    real(dp) :: nu0_ev, upper_ev, c1
     !----------------------------------------------------------------------------------
     if (gq < -10) then
       ! recipe c4 SIU (formula from gray, p.237)
@@ -703,6 +705,18 @@ contains
     elseif (gq < 0) then
       ! make negative to mark this recipe
       self%gq = - 10**gq * scale
+    elseif (gq == 0) then
+      nu0_ev = H_E * self%nu0
+      upper_ev = self%lower_ev + nu0_ev
+      if (self%lower_ev < cnt_ev) then
+        c1 = (j/(cnt_ev - upper_ev))**2
+        if (j == 1) then
+          c1 = 2.26e-7 * c1
+        else
+          c1 = 5.42e-7 / (j+1)**2
+        endif
+        self%gq = RydV*c1
+      endif
     else
       self%gq = gq
     endif

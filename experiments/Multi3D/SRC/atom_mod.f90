@@ -1589,7 +1589,6 @@ MODULE atom_mod
         call prepare_hydrogen_damping(line)
       else
         call line%prepare_Radiative(line%ga_in)
-        call line%prepare_Stark(line%gq_in)
         vbar2e4 = self%compute_vbar2(10000.)
         if (associated(species)) then
           if (is_element) then
@@ -1602,6 +1601,7 @@ MODULE atom_mod
           ic = findloc(self%ion, j+1, 1)
           cnt_ev = merge(self%ev(ic), 999.99d0, ic > 0)
         endif
+        call line%prepare_Stark(line%gq_in, self%ion(line%i), cnt_ev)
         call line%prepare_VanderWaals(line%gv_in, self%ion(line%i), cnt_ev, vbar2e4)
       endif
     end do

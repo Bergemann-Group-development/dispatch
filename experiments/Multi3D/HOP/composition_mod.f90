@@ -844,7 +844,7 @@ contains
 
                     call line%init_einstein_coefficients(f, 1.d0)
                     call line%prepare_Radiative(line%ga_in)
-                    call line%prepare_Stark(line%gq_in)
+                    call line%prepare_Stark(line%gq_in, j, particle%xion)
                     call line%prepare_VanderWaals(line%gv_in, j, particle%xion, vbar2e4)
                 endif
                 allocate(line%used, source=.false.)
