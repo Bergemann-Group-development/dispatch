@@ -104,7 +104,8 @@ class SpectrumClass(object):
     @broadcast_arguments(convolve=1, newx=1, numeric=False)
     def crop(self, slc=None, lam0=None, dlam=None, xmin=None, xmax=None, vdop=None,
               vrot=None, vshift=None, convolve=None, zeta_rt=None, relative=True, res=None,
-              renorm=None, continuum=None, tilt=None, doppler_ref=None, newx=None):
+              renorm=None, continuum=None, tilt=None, doppler_ref=None, newx=None,
+              wave_unit=None):
         #-----------------------------------------------------------------
         lam = self.xdata
         val = self.ydata
@@ -165,6 +166,11 @@ class SpectrumClass(object):
         columns = self.data.columns
         if renorm:
            columns = [(c[1:], dimension_less) for c in columns]
+        
+        wave_unit = u.Unit(wave_unit or code_wave_unit)
+        if wave_unit != code_wave_unit:
+          xx = xx * code_wave_unit.to(wave_unit, equivalencies=u.spectral())
+        xkey = (xkey, wave_unit.to_string('unicode'))
 
         data = {}
         for col, y in zip(columns, yy):
@@ -223,11 +229,15 @@ class SpectrumClass(object):
         xmax = np.max(xx)
 
         if self.wave.columns[0] == 'dlam':
-          xlabel = r'∆λ [Å]'
+          xlabel = r'∆λ '
         #elif self.doppler_ref is not None: 
         #  xlabel = r'$v_{\rm dop}$ [km/s]'
         else:
-          xlabel = 'Wavelength [Å]'
+          xlabel = 'Wavelength'
+
+        unit = u.Unit(self.wave.columns.get_level_values(-1)[0])
+        if unit != dimension_less:
+          xlabel += f' [{unit.to_string("unicode")}]'
 
         if set_labels:
           ax = plt.gca()
