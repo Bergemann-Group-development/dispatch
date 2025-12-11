@@ -1,70 +1,47 @@
-import os
+from .auxfuncs import pchip_mono
+from .spectrum import SpectrumClass
 import numpy as np
 import pandas as pd
-from scipy import integrate, stats, optimize
-import matplotlib.pyplot as plt
-from matplotlib.patches import Polygon
-from .tumult import tumult
-from .fast_trans import fast_trans
-import copy
 from scipy.spatial import Delaunay, ConvexHull, Voronoi
-import re
-from .CoG import CoG
-from .auxfuncs import *
-import multiprocessing as mp
-from tqdm import tqdm
-import plotly.graph_objs as go
-from functools import partial
+from matplotlib.patches import Polygon
+import matplotlib.pyplot as plt
 
-#=====================================================================
-def read_run(folder):
-  return tumult.read(folder, read_atmos=False, read_atom=False)
+class SpectrumGrid(object):
+  """
+  A class to hold a grid of spectra.
+  """
+  def __init__(self, spectra, params, normalize=True, param_names=None):
+    self.spectra = spectra
+    self.params = np.array(params)
+    self.npoints = len(self.spectra)
+    if self.npoints != self.params.shape[0]:
+      raise ValueError("Number of spectra and parameters must have the same first dimension.")
+    
+    if self.params.ndim == 1:
+      self.ndim = 1
+      self.param_names = [param_names] or ['param_0']
+    else:
+      self.ndim = self.params.shape[-1]
+      self.param_names = param_names or [f'param_{i}' for i in range(self.ndim)]
 
-#=====================================================================
-def read_list(folders):
-  with mp.Pool() as pool:
-    run_list = list(tqdm(pool.imap(read_run, folders), total=len(folders)))
-    return np.array(run_list)
-
-#=====================================================================
-class grid(CoG):
-  def __init__(self, runs, params=None):
-    if type(runs[0]) == str:
-      with mp.Pool() as pool:
-        runs = list(tqdm(pool.imap(read_run, runs), total=len(runs)))
-
-    cogs = []
-    points = []
-    atmos_files = np.unique([run.nml['atmos_params']['atmos_file'] for run in runs])
-    for i, atmos_file in enumerate(atmos_files):
-      cog = CoG([run for run in runs if run.nml['atmos_params']['atmos_file'] == atmos_file])
-
-      if params is None:
-        sname = re.findall(r't\d{2,4}g\d{2}[mp]\d{2}', atmos_file)
-        mname = re.findall(r'[sp]\d{4}.+g.+m.+t.+z.+\.mod', atmos_file)
-
-        if len(sname) > 0:
-          cog.star = stagger_name_to_params(sname[0])
-        elif len(mname) > 0:
-          cog.star = marcs_name_to_params(mname[0])
-        else:
-          print(atmos_file)
-          raise ValueError('Atmos name could not be converted into stellar parameters')
-      else:
-        cog.star = params[i]
-
-      cog.label = 'Teff={:.0f}, logg={:.1f}, feh={:+.1f}'.format(*cog.star[:3])
-      if len(cog.star) > 3:
-        cog.label += ', vmic={:.1f}'.format(cog.star[3])
-
-      points.append(cog.star)
-      cogs.append(cog)
-
-    self.runs = np.array(runs)
-    self.cogs = np.array(cogs)
-    self.points = np.array(points)
-    self.points[:,0] /= 1e3
-    self.delaunay = Delaunay(self.points)
+    if normalize:
+       def normalize_params(p):
+          return (p - np.min(params, axis=0)) / np.ptp(params, axis=0)
+       
+       # establish normalization routine
+       self.normalize_params = normalize_params
+       self.points = self.normalize_params(self.params)
+    else:
+        self.points = self.params
+    
+    if self.points.ndim > 1 and self.points.shape[-1] > 1:
+      self.delaunay = Delaunay(self.points)
+    else:
+      self.delaunay = None
+      self.points = self.points.ravel()
+      order = np.argsort(self.points)
+      self.points = self.points[order]
+      self.spectra = [self.spectra[i] for i in order]
 
   #=====================================================================
   def get_weights(self, query_point, verbose=True):
@@ -85,43 +62,62 @@ class grid(CoG):
     weights = np.linalg.solve(A.T, b)  # Solve for barycentric coordinates
     mask = weights > 1e-10  # Mask for vertices with non-zero weight
     weights = weights[mask]
-    cogs = self.cogs[vertices[mask]]
-    return weights, cogs
-
-  #=====================================================================
-  def crop(self, star, **kwargs):
-    weights, runs = self.get_weights(star)
-    xy = np.array([run.crop(**kwargs) for run in runs])
-    xx = xy[0, 0]
-    yy = np.sum(xy[:,1].T * weights, axis=1)
-    return xx, yy
+    spectra = [self.spectra[i] for i in vertices[mask]]
+    return weights, spectra
   
   #=====================================================================
-  def get_CoG(self, star, method='Delaunay'):
-    if method=='Delaunay':
-      weights, cogs = self.get_weights(star, verbose=True)
-    elif method=='NaturalNeighbor':
-      weights, nbors = compute_nn_weights(self.points, star)
-      cogs = self.cogs[nbors]
+  def crop(self, *args, method='Delaunay', **kwargs):
+    if args:
+      p = np.array(args)
+    else:
+      p = np.array([kwargs.pop(name) for name in self.param_names])
 
-    if cogs is None: return None
-    if len(cogs) == 1: return cogs[0]
-    if weights is None: return None
-    nabnds = np.array([len(cog.runs) for cog in cogs]) # number of abnds in each CoG
-    if not np.all(nabnds == nabnds[0]):
-      print('Warning: Not all CoGs have the same number of runs.')
-    nabnds = nabnds[0]
+    if hasattr(self, 'normalize_params'):
+      p = self.normalize_params(p)
 
-    runs = []
-    for i in range(nabnds):
-      runs.append(tumult.combine([cog.runs[i] for cog in cogs], weights=weights))
+    if self.delaunay is not None:
+      if method=='Delaunay':
+        weights, spectra = self.get_weights(p)
+      elif method=='NaturalNeighbor':
+        weights, spectra = compute_nn_weights(self.points, p)
 
-    abnds = np.dot(weights, [cog.abnds for cog in cogs])
+      spectra = [s.crop(**kwargs) for s in spectra]
+      yy = np.array([spec.ydata for spec in spectra])
+      yy = np.sum(yy * weights[:, None], axis=0)
+    else:
+      i = np.searchsorted(self.points, p)[0]
+      slc = slice(max(i-2,0), min(i+2,self.npoints))
+      spectra = [s.crop(**kwargs) for s in self.spectra[slc]]
+      yy = np.array([spec.ydata for spec in spectra])
+      func = pchip_mono(self.points[slc], yy, axis=0)
+      yy = func(p).squeeze()
 
-    return CoG(runs, abnds=abnds)
+    spec = SpectrumClass()
+    spec.wave = spectra[0].wave
+    data = {spectra[0].data.columns[0]:yy}
+    spec.data = pd.DataFrame(data)
+    return spec
+    
+  #=================================================================
+  def fit(self, oxx, oyy, bounds=None, p0=None, **kwargs):
+    #-----------------------------------------------------------------
+    bounds = bounds or {}
+    p0 = p0 or {}
+
+    p = {}
+    b = {}
+    for i, name in enumerate(self.param_names):
+      vals = self.params[:,i] if self.ndim > 1 else self.params
+      p[name] = np.mean(vals)
+      b[name] = (np.min(vals), np.max(vals))
+
+    p.update(p0)
+    b.update(bounds)
+    return SpectrumClass.fit(self, oxx, oyy, bounds=b, p0=p, **kwargs)
   
   #=====================================================================
   def plot_nodes(self, fig=None, size=5, color='black', cmap='Viridis', opacity=0.8, **kwargs):
+    import plotly.graph_objs as go
     teff = self.points[:,0]
     logg = self.points[:,1]
     feh = self.points[:,2]
@@ -161,6 +157,7 @@ class grid(CoG):
   
   #=====================================================================
   def plot_point(self, teff, logg, feh, fig=None, **kwargs):
+    import plotly.graph_objs as go
     if fig is None:
       fig = go.Figure()
 
@@ -286,8 +283,8 @@ def compute_delaunay_weights(points, query, delaunay=None):
     weights = np.linalg.solve(A.T, b)
     mask = weights > 1e-10
     weights = weights[mask]
-    
     return weights, vertices[mask]
+
 
 def keep_k_closest(points, query, k=100):
     """Keep only the k closest points to query_point"""

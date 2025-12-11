@@ -1,25 +1,23 @@
-from .atom import atom_class
-from .trans import trans_class
+from .atom import AtomClass
 from .auxfuncs import *
+from .decorators import broadcast_arguments
 from .plotting_scripts import *
-from .fast_atom import fast_atom, pandas_atom
-from .fast_trans import fast_trans, llist_trans
-from .bokeh_scripts import bkh
+from .fast_atom import FastAtom, PandasAtom
 from .linelist import LineList
+from .NameList import NameList
+from .spectrum import SpectrumClass
+from .spectrum_grid import SpectrumGrid
+from .memmap_list import MemmapList
+from .atmos import AtmosClass
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from matplotlib import colors as mpl
-import f90nml
-from scipy.signal import argrelextrema
-from scipy.io import FortranFile
-from matplotlib.collections import LineCollection
-from matplotlib.ticker import MultipleLocator
-from matplotlib.colors import LogNorm
-import os
-import copy
+from astropy import units as u
 import textwrap
 import pathlib
+import functools
+from tqdm import tqdm
+import multiprocessing as mp
 
 def option(nml, key):
     if key in nml.keys():
@@ -28,56 +26,77 @@ def option(nml, key):
         return False
 
 #=====================================================================
+def read_run(folder):
+  return tumult.read(folder, read_atom=False)
+
+#=====================================================================
+def read_list(folders):
+  with mp.Pool() as pool:
+    run_list = list(tqdm(pool.imap(read_run, folders), total=len(folders)))
+    return np.array(run_list)
+
+#=====================================================================
+class grid(SpectrumGrid):
+  def __init__(self, runs, *args, **kwargs):
+    if type(runs[0]) == str:
+      runs = read_list(runs)
+    
+    return super().__init__(runs, *args, **kwargs)
+
+#=====================================================================
 class tumult(object):
+    @property
+    def flux(self):
+        return self.spectrum[[('lam', '', ''), ('NLTE', 'Flux', '')]]
+
+    @property
+    def atmos(self):
+        if not hasattr(self, '_atmos'):
+            self._atmos = AtmosClass.from_run(self)
+        return self._atmos
+    
     @classmethod
     #=================================================================
-    def read(cls, folder, verbose=0, read_atmos=True, read_atom=True, fast_read=False, read_llist=False, **kwargs):
+    def read(cls, folder, verbose=0, read_atom=True, fast_read=False, read_llist=False, **kwargs):
         self = cls() # create a new instance of the class
         folder = pathlib.Path(folder)
         sfolder = folder / 'save'
         self.sfolder = sfolder
         self.folder = folder
-        self.nml = f90nml.read(folder / 'params.nml')
+        self.nml = NameList.from_file(folder / 'params.nml')
         self.datadir = pathlib.Path(self.nml['io_params']['datadir'].strip())
         
         df = pd.read_csv(folder / 'abund.txt', header=None, sep=r'\s+', na_filter=False)
         self.abundances = {k.lower().capitalize():v for k, v in df.values}
-        
-        if os.path.isfile(sfolder / 'out_lam.bin'):
-            if (verbose > 0): print('Reading wavelengths')
-            self.lam = np.fromfile(sfolder / 'out_lam.bin', dtype=np.float64)
-            self.lam = vacuum2obs(self.lam[::-1])
-            self.dlam = np.diff(self.lam)
 
-        if os.path.isfile(sfolder / 'bb_lam.bin'):
-            self.bb_lam = vacuum2obs(np.fromfile(sfolder / 'bb_lam.bin', dtype=np.float64))[::-1]
-        if os.path.isfile(sfolder / 'bf_lam.bin'):
-            self.bf_lam = vacuum2obs(np.fromfile(sfolder / 'bf_lam.bin', dtype=np.float64))[::-1]
-        if os.path.isfile(sfolder / 'all_lam.bin'):
-            self.all_lam = vacuum2obs(np.fromfile(sfolder / 'all_lam.bin', dtype=np.float64))[::-1]
+        def read_wavelength_file(file):
+            if (self.sfolder / file).exists():
+                return vac2air(np.fromfile(sfolder / file, dtype=np.float64))[::-1]
         
-        self.has_spectrum = hasattr(self, 'lam')
+        self.lam = read_wavelength_file('out_lam.bin')
+        self.bb_lam = read_wavelength_file('bb_lam.bin')
+        self.bf_lam = read_wavelength_file('bf_lam.bin')
+        self.all_lam = read_wavelength_file('all_lam.bin')
+        self.has_spectrum = self.lam is not None and self.lam.size > 0
+        self.legacy = not 'read_departures' in self.nml['atmos_params']
+        
         if self.has_spectrum:
-            if len(self.lam) == 0: self.has_spectrum = False
-            if self.nml['m3d_params']['long_scheme'].strip() == 'none': self.has_spectrum = False
+            self.has_spectrum = self.nml['m3d_params']['long_scheme'].strip() != 'none'
 
         self.read_atom(read_atom, fast_read, verbose, **kwargs)
 
         file = folder / 'angle_quadrature.txt'
-        if os.path.isfile(file):
+        if file.exists():
             df = pd.read_csv(file, header=None, skiprows=1, sep=r'\s+', names=['ang', 'wmu', 'mux', 'muy', 'muz'])
             self.vec = df.values[:,2:]
             self.wts = df.values[:,1] * 2*np.pi
             self.n_ang = self.wts.size
-            self.mus, self.imus = np.unique(1 - self.vec[:,-1], return_inverse=True)
-            self.mus = 1 - self.mus
+            self.mus, self.imus = np.unique(-self.vec[:,-1], return_inverse=True)
+            self.mus = -self.mus
             self.nmu = self.mus.size
-
-        make_eos = 'make_eos' in self.nml['m3d_params']
-        if make_eos: make_eos = self.nml['m3d_params']['make_eos']
         
-        if make_eos:
-            mem = self.read_patch_save('eos', fdim=None, lazy=False)[0]
+        if self.nml.get_item('m3d_params', 'make_eos', False):
+            mem = self.read_patch_save('eos', fdim=None, lazy=False)
             self.temp = mem[0]
             self.rho = mem[1]
             self.ne = mem[2]
@@ -90,17 +109,40 @@ class tumult(object):
                 if (verbose > 0): print('Reading Intensities')
                 ie = self.read_patch_save('ie', lazy=False)[0]
                 saved_LTE = ie.shape[-1] == 3
-                self.mode = 'NLTE' if saved_LTE else 'LTE'
+                
+                if self.lam.shape[0] != ie.shape[0]:
+                    print(f'Wavelength and Intensity dimensions do not match!\nRun {folder} might have never completed!')
 
-                self.ie     = ie[:,0,0,:,0]
-                self.cnt    = ie[:,0,0,:,1]
+                if self.legacy:
+                    self.ie     = ie[:,0,0,:,0]
+                    self.ie_lte = ie[:,0,0,:,1]
+                    self.cnt    = ie[:,0,0,:,2]
+                    self.mode = 'LTE' if np.all(self.ie_lte == self.ie) else 'NLTE'
+                else:
+                    self.ie     = ie[:,0,0,:,0]
+                    self.cnt    = ie[:,0,0,:,1]
+                    if saved_LTE:
+                        self.ie_lte = ie[:,0,0,:,2]
+                    else:
+                        self.ie_lte = self.ie
 
-                self.flux     = np.sum(self.wts * self.ie    , axis=-1)
-                self.flux_cnt = np.sum(self.wts * self.cnt   , axis=-1)
+                    self.mode = 'NLTE' if saved_LTE else 'LTE'
 
-                if saved_LTE:
-                    self.ie_lte = ie[:,0,0,:,2]
-                    self.flux_lte = np.sum(self.wts * self.ie_lte, axis=-1)
+                mus = [f'µ={mu:.2f}' for mu in self.vec[:,-1]]
+
+                flux = {}
+                flux[('NLTE','Flux', '')] = np.sum(self.wts * self.ie    , axis=-1)
+                flux[('LTE' ,'Flux', '')] = np.sum(self.wts * self.ie_lte, axis=-1)
+                flux[('Cont','Flux', '')] = np.sum(self.wts * self.cnt   , axis=-1)
+                ints = {}
+                ints.update({('NLTE', mu, ang): self.ie[:,ang] for ang, mu in enumerate(mus)})
+                ints.update({('LTE' , mu, ang): self.ie_lte[:,ang] for ang, mu in enumerate(mus)})
+                ints.update({('Cont', mu, ang): self.cnt[:,ang] for ang, mu in enumerate(mus)})
+
+                #columns = pd.MultiIndex.from_tuples(data.keys())
+                self.spectrum = SpectrumClass.from_arrays(wave=self.lam, flux=flux, ints=ints,
+                                                   wave_unit=u.angstrom, flux_unit=u.erg/(u.s*u.cm**2*u.Hz))
+                #self.spectrum = self.spectrum.sort_index(axis=1, ascending=[False, False, True])
 
                 if self.nml['m3d_params']['save_resolved']:
                     i3 = self.read_patch_save('i3')[0]
@@ -112,15 +154,13 @@ class tumult(object):
             if os.path.isfile(folder / 'linelist_out.txt') and read_llist:
                 self.read_llist()
                 
-            if read_atmos:
-                self.read_atmos()
-                
         return self
 
     #=====================================================================
     def read_atom(self, read_atom=True, fast_read=True, verbose=True, **kwargs):
         self.atoms = []
-        atom_files = self.folder.glob('atoms/*')
+        atom_files = list(self.folder.glob('atoms/*'))
+        atom_files += list(self.folder.glob('atom.txt'))
         moldict = {'CH':'C', 'OH':'O', 'NH':'N', 'CN':'N', 'CO':'C',
                     'NO':'N', 'H2O':'O', 'C2':'C', 'N2':'N', 'O2':'O'}
 
@@ -129,6 +169,7 @@ class tumult(object):
             nq_fac = self.nml['atom_params']['nq_fac']
             if self.nml['m3d_params']['m1d_legacy_mode']: nq_fac *= 2
             in_abnd = self.nml['atom_params']['abundance']
+            in_abnd = [in_abnd] if not hasattr(in_abnd, '__iter__') else in_abnd
             #loggf_cut  = self.nml['atom_params']['logf_cut']
             #red_cut    = self.nml['atom_params']['red_cut']
             #blue_cut   = self.nml['atom_params']['blue_cut']
@@ -149,7 +190,8 @@ class tumult(object):
                         atom.molec = atom.id in moldict.keys()
 
                 else:
-                    pandas_format = not atom_file.name.startswith('atom.')
+                    pf = self.nml['atom_params'].get('pandas_format', None)
+                    pandas_format = not atom_file.name.startswith('atom.') if pf is None else pf
 
                     #if 'line_mask' in self.nml.keys():
                     #    if 'in_lines' in self.nml['line_mask'].keys():
@@ -159,15 +201,15 @@ class tumult(object):
 
                     if pandas_format or fast_read:
                         if pandas_format:
-                            atom = pandas_atom.read(atom_file)
+                            atom = PandasAtom.read(atom_file)
                         else:
-                            atom = fast_atom(atom_file, **kwargs)
+                            atom = FastAtom(atom_file, **kwargs)
 
                         atom.run = self
-                        if not hasattr(atom, 'in_lines'): atom.in_lines = slice(None, atom.nline)
+                        if not hasattr(atom, 'in_lines'): atom.in_lines = slice(None, None)
 
                         if self.has_spectrum:
-                            atom.line = atom.trans[atom.in_lines]
+                            atom.line = atom.trans.get_lines(atom.in_lines)
 
                             if option(self.nml['atom_params'], 'overlapping_bb_in_output'):
                                 atom.load_sp(self.lam, qnorm=self.qnorm)
@@ -187,7 +229,7 @@ class tumult(object):
                             #self.line = lines
 
                     else:
-                        atom = atom_class(atom_file, qnorm=self.qnorm, verbose=verbose, **kwargs)
+                        atom = AtomClass(atom_file, qnorm=self.qnorm, verbose=verbose, **kwargs)
                         atom.run = self
 
                         if not hasattr(atom, 'in_lines'): atom.in_lines = slice(None, atom.nline)
@@ -221,90 +263,14 @@ class tumult(object):
             self.conv_report.append(df)
 
         self.has_atom = read_atom and len(self.atoms) > 0
-    
-    #=====================================================================
-    def read_atmos(self):
-        atmos_params = self.nml['atmos_params']
-
-        if atmos_params['atmos_format'].strip().lower() == 'save':
-            atmos_folder = pathlib.Path(atmos_params['atmos_file'].strip())
-            mesh = open(atmos_folder / 'atmos_mesh.txt', 'r')
-            afolder = atmos_folder / 'save'
-        else:
-            mesh = open(self.folder / 'atmos_mesh.txt', 'r')
-            afolder = self.sfolder
-
-        amr = 'amr' in atmos_params
-        if amr: amr = atmos_params['amr']
-
-        dims = atmos_params['dims']
-        self.atmos_cuts = []
-        if amr:
-            nz = atmos_params['nz']
-            self.zz = np.zeros(nz)
-            j = 0
-            off = 0
-            for k in range(dims):
-                nx, ny, nnz = [int(i) for i in mesh.readline().split()]
-                dx, dy, dz = [float(i) for i in mesh.readline().split()]
-                self.zz[j:j+nnz] = np.arange(1,nnz+1)*dz + off
-                j += nnz
-                off = self.zz[j-1]
-                self.atmos_cuts.append(nnz)
-
-            self.atmos_cuts = np.cumsum(self.atmos_cuts)
-
-        else:
-            nx, ny, nz = [int(i) for i in mesh.readline().split()]
-            dx, dy, dz = [float(i) for i in mesh.readline().split()]
-            self.dz = dz
-            self.zz = np.arange(1, nz+1)*dz
-            self.atmos_cuts = np.cumsum(near_equal_split(nz, dims))
-
-        self.dx = dx
-        self.dy = dy
-        self.xx = np.arange(nx)*dx
-        self.yy = np.arange(ny)*dy
-        mesh.close()
-
-        if nx*ny > 1:
-            self.dim = '3D'
-        else:
-            self.dim = '1D'
-
-        if os.path.isfile(afolder / 'atmos_meta.txt'):
-                mem = self.read_patch_save('atmos', folder=afolder, zdim=2)[0]
-                mem = mem[..., 0]
-                if self.dim=='1D': mem = mem.squeeze()
-                self.ne   = np.array(mem[...,0])
-                self.rho  = np.array(mem[...,1])
-                self.temp = np.array(mem[...,2])
-                self.vx   = np.array(mem[...,3]) * CC
-                self.vy   = np.array(mem[...,4]) * CC
-                self.vz   = np.array(mem[...,5]) * CC
-                self.chi  = np.array(mem[...,6])
-                self.vmic = np.array(mem[...,7])
-                self.tau  = compute_tau_scale(self.chi, self.zz*1e8, axis=-1)
-                self.ltau = np.log10(self.tau)
-
-                zz = np.tile(self.zz, (nx, ny, 1)).squeeze()
-                self.z0 = np.mean(self.get_ltau_surface(0, zz))
-                self.height = self.zz - self.z0
 
     #=====================================================================
     def read_llist(self):
         self.llist = LineList.from_dispatch_format(self.folder / 'linelist_out.txt')
-        init = np.frompyfunc(llist_trans, 2, 1)
-        self.llist_line = init(np.arange(len(self.llist)), self)
-
-        T = 4000
-        elements = [ion.split()[0] for ion in self.llist.ion]
-        abnd = np.array([self.abundances[el] if el in self.abundances.keys() else -np.inf for el in elements])
-        #strength = np.log10(self.llist.lam0*1e-8 * np.exp(-self.llist.evi*EK/T)) + self.llist.loggf + abnd
-        #self.llist['strength2'] = strength
 
     #=====================================================================
     def get_line(self, lam0, tol=0.05):
+        #-----------------------------------------------------------------
         if not hasattr(self.atoms[0], 'line'): self.read_atom()
         all_lines = np.concatenate([[line for line in atom.line] for atom in self.atoms])
         all_lam0 = np.array([line.lam0 for line in all_lines])
@@ -314,190 +280,20 @@ class tumult(object):
             print(f'WARNING: Line not found! Closest line to {lam0:.2f}Å found at {line.lam0:.2f}Å')
 
         return line
-
-    #=====================================================================
-    def plot_spectrum(self, set_labels=True, show_lines=False, lam_offset=False,
-                      label=None, bokeh=False, **kwargs):
-        #-----------------------------------------------------------------
-        if bokeh:
-            pkwargs = bkh.plot_kwargs
-        else:
-            pkwargs = plt_kwargs
-
-        crop_kwargs = {k:v for k, v in kwargs.items() if k not in pkwargs}
-        plot_kwargs = {k:v for k, v in kwargs.items() if k not in crop_kwargs}
-
-        if bokeh:
-            fig = bkh.figure(tools='xpan, xwheel_zoom, box_zoom, reset')
-            xcrop, _ = self.get_xx(lam_offset=lam_offset, **crop_kwargs)
-            self.set_xaxis(xcrop, lam_offset=lam_offset, set_labels=set_labels,
-                           bokeh=bokeh, **crop_kwargs)
-            crop_kwargs['dlam'] = None
-            xx, yy = self.crop(lam_offset=lam_offset, **crop_kwargs)
-        else:
-            xx, yy = self.crop(lam_offset=lam_offset, **crop_kwargs)
-            
-            self.set_xaxis(xx, lam_offset=lam_offset, set_labels=set_labels,
-                           bokeh=bokeh, **crop_kwargs)
-            
-        self.set_yaxis(bokeh=bokeh, **crop_kwargs)
-
-        if show_lines:
-            self.plot_lline_labels()
-
-        if type(label) is str:
-            if '{WEQ}' in label:
-                weq = np.trapz(1-yy, x=xx)*1e3
-                label = label.replace('{WEQ}', '{:.2f}'.format(weq))
-
-        if bokeh:
-            p = bkh.plot(xx, yy, label=label, **plot_kwargs)
-        else:
-            p = plt.plot(xx, yy, label=label, **plot_kwargs)
-            
-        return xyplot(p, xx, yy)
-
-
-    #=====================================================================
-    def set_xaxis(self, xx, dlam=None, velocity_units=False,
-                  set_labels=True, lam_offset=True, bokeh=False, **kwargs):
-        #-----------------------------------------------------------------
-        xmin = min(xx)
-        xmax = max(xx)
-        dxx = xmax - xmin
-        offset = lam_offset and dlam
-
-        if velocity_units: 
-            xlabel = r'$v_{\rm dop}$ [km/s]'
-        elif offset:
-            xlabel = r'∆λ [Å]'
-        else:
-            xlabel = 'Wavelength [Å]'
-
-        if bokeh:
-            if set_labels:
-                bkh.xlabel(xlabel)
-
-            bkh.xlim(xmin, xmax)
-        else:
-            if set_labels:
-                ax = plt.gca()
-                sub = ax.get_subplotspec()
-                grid = sub.get_gridspec()
-                if sub.rowspan.stop == grid._nrows:
-                    plt.xlabel(xlabel)
-
-            plt.xlim(xmin, xmax)
-            plt.ticklabel_format(useOffset=False)
-            adjust_max_xticks()
-
-    #=====================================================================
-    def set_yaxis(self, ang=None, imu=None, norm=True, per_aa=False, renorm=None,
-                  set_labels=True, bokeh=False, **kwargs):
-        #-----------------------------------------------------------------
-        if ang:
-            ylabel = 'Intensity µ={:.2f}'.format(self.vec[ang,-1])
-        elif imu:
-            if imu < 0: imu = self.imus.max() + imu + 1
-            ylabel = 'Intensity µ={:.2f}'.format(self.mus[imu])
-        else:
-            ylabel = 'Flux'
-
-        if per_aa: norm=False
-
-        if norm or renorm:
-            ylabel = 'Normalised ' + ylabel
-        else:
-            units = 'erg/s/cm$^2$'
-
-            if ylabel!='Flux':
-                units = units + '/sr'
-
-            if per_aa:
-                units = units + '/Å'
-            else:
-                units = units + '/Hz'
-
-            ylabel = ylabel + ' [' + units + ']'
-
-        if set_labels:
-            if bokeh:
-                bkh.ylabel(ylabel)
-            else:
-                ax = plt.gca()
-                sub = ax.get_subplotspec()
-                if sub.colspan.start == 0:
-                    plt.ylabel(ylabel)
-
-    #=====================================================================
-    def get_xx(self, slc=None, lam0=None, dlam=None, xmin=None, xmax=None,
-               vshift=None, velocity_units=False, lam_offset=True, **kwargs):
-        #-----------------------------------------------------------------
-        lam = self.lam
-
-        if vshift:
-            vshift = vshift / CC_KMS # vshift has to be given in km/s
-            lshift = 1 + vshift
-            lam = lam * lshift
     
-        if lam0:
-            lam = lam - lam0
-            if xmin: xmin = xmin - lam0
-            if xmax: xmax = xmax - lam0
-        else:
-            dlam = None
-            lam0 = 0
-
-        if slc:
-            ib = slc.start
-            ir = slc.stop
-        else:
-            ib = None
-            ir = None
-
-        if dlam:
-            if not isinstance(dlam, (bool)):
-                if hasattr(dlam, '__iter__'):
-                    dl = dlam[:]
-                else:
-                    dl = (dlam, dlam)
-
-                ib = np.searchsorted(lam, -dl[0])
-                ir = np.searchsorted(lam, dl[1])
-
-        if xmin:
-            ib = max(np.searchsorted(lam, xmin)-1, 0)
-            if lam[ib] < xmin-10: ib += 1
-
-        if xmax:
-            ir = min(np.searchsorted(lam, xmax)+1, lam.size-1)
-            if lam[ir-1] > xmax+10: ir -= 1
-
-        mask = slice(ib, ir)
-        xx = lam[mask]
-
-        if lam0:
-            xx = xx + lam0
-
-            if velocity_units:
-                xx = xx / lam0
-                if dlam: xx = xx - 1
-                xx = xx * CC_KMS
-                
-            elif lam_offset and dlam:
-                xx = xx - lam0
-
-        return xx, mask
-
     #=====================================================================
-    def get_yy(self, ang=None, imu=None, norm=True, cont=False, LTE=False,
-               resolved=False, mask=slice(None, None)):
+    @broadcast_arguments(numeric=False)
+    def crop(self, slc=None, lam0=None, ang=None, imu=None, norm=True, 
+             cont=False, LTE=False, line=None, resolved=False, **kwargs):
         #-----------------------------------------------------------------
+        if line is not None:
+            line.prepare()
+            slc = slice(line.ib, line.ir)
+            lam0 = line.lam0
+
         if not LTE and self.mode=='LTE':
             print('Cannot get NLTE spectrum, because run was in LTE!')
             LTE = True
-
-        LTE = LTE and hasattr(self, 'ie_lte')
 
         if imu is not None:
             if imu >= self.nmu:
@@ -507,161 +303,59 @@ class tumult(object):
 
         if self.n_ang == 1: ang=0
 
-        if ang is None and imu is None:
-            cnt = self.flux_cnt
-            if cont:
-                yy = self.flux_cnt
-            elif LTE:
-                yy = self.flux_lte
-            else:   
-                yy = self.flux
+        if cont: key = ('Cont',)
+        elif LTE: key = ('LTE',)
+        else: key = ('NLTE',)
 
-            cnt = cnt[mask]
-            yy  = yy[mask]
+        if ang is None and imu is None:
+            key += ('Flux', '')
+            cnt = self.spectrum[('Cont', 'Flux', '')]
+            yy = self.spectrum[key]
 
         else:
-            cnt = self.cnt
-            if resolved:
-                if cont:
-                    yy = self.c3
-                elif LTE:
-                    yy = self.i3_lte
-                else:
-                    yy = self.i3
+            #if resolved:
+            #    if cont:
+            #        yy = self.c3
+            #    elif LTE:
+            #        yy = self.i3_lte
+            #    else:
+            #        yy = self.i3
 
-                if ang is None:
-                    raise ValueError('ang is required for resolved spectrum')
-                else:
-                    cnt = np.array(cnt[mask, ..., ang]).T
-                    yy = np.array(yy[mask, ..., ang]).T
+            #    if ang is None:
+            #        raise ValueError('ang is required for resolved spectrum')
+            #    else:
+            #        cnt = np.array(cnt[..., ang]).T
+            #        yy = np.array(yy[..., ang]).T
 
+            if ang is not None:
+                mu = f'µ={self.vec[ang,-1]:.2f}'
+                key += (mu, ang)
+                yy = self.spectrum[key]
+                cnt = self.spectrum[('Cont', mu, ang)]
+            elif imu is not None:
+                mu = f'µ={self.mus[imu]:.2f}'
+                cnt = self.get_imu_mean(('Cont', mu))
+                yy = self.get_imu_mean(key + (mu,))
+                key += (mu, '')
             else:
-                if cont:
-                    yy = self.cnt
-                elif LTE:
-                    yy = self.ie_lte
-                else:
-                    yy = self.ie
-
-                if ang is not None:
-                    cnt = cnt[mask,ang]
-                    yy = yy[mask,ang]
+                cnt = self.spectrum[('Cont', 'Flux', '')]
                 
-                elif imu is not None:
-                    mu_mask = self.imus==imu
-                    cnt = np.mean(cnt[mask, mu_mask], axis=-1)
-                    yy  = np.mean(yy [mask, mu_mask], axis=-1)
-                
-        
         if norm:
             yy = yy / cnt
-            
-        return yy
+            yy.data.columns = [u.dimensionless_unscaled]
+
+        spec = yy.crop(slc=slc, lam0=lam0, **kwargs)
+        return spec
     
     #=====================================================================
-    def crop(self, slc=None, lam0=None, dlam=None, xmin=None, xmax=None, vdop=None,
-             vrot=None, vshift=None, convolve=None, zeta_rt=None, lam_offset=True,
-             per_aa=False, renorm=None, fac=None, tilt=None, velocity_units=False, 
-             ang=None, imu=None, norm=True, cont=False, LTE=False, line=None, Res=None,  
-             resolved=False, **kwargs):
+    #@functools.cache
+    def get_imu_mean(self, key):
         #-----------------------------------------------------------------
-        if line is not None:
-            line.prepare()
-            slc = slice(line.ib, line.ir)
-            lam0 = line.lam0
-
-        if per_aa:
-            norm = False
-
-        xx, mask1 = self.get_xx(slc=slc, lam0=lam0, dlam=dlam, xmin=xmin, xmax=xmax,
-                               vshift=vshift, velocity_units=velocity_units, lam_offset=lam_offset)
-        lam = self.lam[mask1]
-
-        if Res:
-            Res = CC_KMS / Res
-            if vdop is None:
-                vdop = Res
-            else:
-                vdop = np.sqrt(vdop**2 + Res**2)
-
-        vels = np.array([vdop, vrot, zeta_rt])
-        vmask = vels != None
-        if any(vmask): # we need to add padding to avoid convolution artefacts at the edges
-            uconv = 5*lam[lam.size//2]/CC_KMS
-            pad = uconv * np.sum(vels[vmask])
-
-            if dlam:
-                dlam = list(dlam + np.array([pad, pad]))
-
-            if xmin: xmin = xmin - pad
-            if xmax: xmax = xmax + pad
-
-        _, mask2 = self.get_xx(slc=slc, lam0=lam0, dlam=dlam, xmin=xmin, xmax=xmax,
-                               vshift=vshift, velocity_units=velocity_units, lam_offset=lam_offset)
-        padded_lam = self.lam[mask2]
-
-        get_yy_dict = {'LTE':LTE, 'norm':norm, 'cont':cont, 'resolved':resolved, 'mask':mask2}
-        if hasattr(ang, '__iter__'):
-            yy = [self.get_yy(ang=i, **get_yy_dict) for i in ang]
-        elif hasattr(imu, '__iter__'):
-            yy = [self.get_yy(imu=i, **get_yy_dict) for i in imu]
-        else:
-            yy = [self.get_yy(ang=ang, imu=imu, **get_yy_dict)]
-
-        yy = np.array(yy)
-
-        if renorm:
-            if renorm == 'max':
-                yy = yy / np.max(yy)
-            elif renorm == 'edge':
-                yy = yy / continuum(xx, yy)
-            elif renorm > 0:
-                _, mnorm = self.get_xx(lam0=lam0, dlam=renorm)
-                ynorm = self.get_yy(ang=ang, imu=imu, norm=norm, cont=cont, LTE=LTE, mask=mnorm)
-                yy = yy / np.max(ynorm)
-
-        if set([vdop, vrot, zeta_rt, convolve]) != {None}:
-            newy = []
-            for y in yy:
-                sxx, syy = convol(padded_lam, y, vdop=vdop, vrot=vrot, zeta_rt=zeta_rt, custom=convolve)
-                newy.append(np.interp(lam, sxx, syy))
-
-            yy = np.array(newy)
-
-        if per_aa:
-            yy = yy * CC / (lam**2) * 1e8
-
-        if fac:
-            yy = yy * fac
-        
-        if tilt:
-            yy = yy * (1 + tilt*(xx - (xx[0]+xx[-1])/2))
-
-        if len(yy)==1:
-            yy = yy[0]
-
-        return xx, yy
-    
-    #=====================================================================
-    def interp(self, newx, **kwargs):
-        #-----------------------------------------------------------------
-        xmin = newx.min()
-        xmax = newx.max()
-
-        xx, yy = self.crop(xmin=xmin, xmax=xmax, **kwargs)
-
-        if yy.ndim==1:
-            yy = np.interp(newx, xx, yy)
-        else:
-            yy = np.array([np.interp(newx, xx, y) for y in yy])
-
-        return yy
-    
-    #=====================================================================
-    def calc_weq(self, **kwargs):
-        #-----------------------------------------------------------------
-        return calc_weq(self, **kwargs)
-            
+        spec = self.spectrum[key]
+        columns = spec.data.columns
+        unit = columns[0][-1]
+        spec.data = pd.DataFrame({unit:spec.data.mean(axis=1)})
+        return spec
 
     #=====================================================================
     def plot_resolved(self, ang=0, f=0, LTE=False, cont=False, **kwargs):
@@ -674,14 +368,37 @@ class tumult(object):
             i3 = self.i3
 
         Z = i3[f, :, :, ang].T
-        self.plot_surface(Z, ang=ang, **kwargs)
+        self.plot_cube_slice(Z, ang=ang, **kwargs)
 
     #=====================================================================
-    def plot_surface(self, Z, ang=None, rasterized=True, shading='nearest', 
-                     show_labels=True, cmap='hot', rot90=0, **kwargs):
+    def plot_cube_slice(self, cube, ix=None, iy=None, iz=None,
+                        ang=None, rasterized=True, shading='nearest', 
+                        show_labels=True, cmap='hot', rot90=0, **kwargs):
         #-----------------------------------------------------------------
-        xx = self.xx + self.dx/2
-        yy = self.yy + self.dy/2
+        if iz is not None:
+            xx = self.xx + self.dx/2
+            yy = self.yy + self.dy/2
+            Z = cube[:,:,iz].T
+            xlabel = 'X [Mm]'
+            ylabel = 'Y [Mm]'
+        elif iy is not None:
+            xx = self.xx + self.dx/2
+            yy = self.zz - self.z0
+            Z = cube[:,iy,:].T
+            xlabel = 'X [Mm]'
+            ylabel = 'Z [Mm]'
+        elif ix is not None:
+            xx = self.yy + self.dy/2
+            yy = self.zz - self.z0
+            Z = cube[ix,:,:].T
+            xlabel = 'Y [Mm]'
+            ylabel = 'Z [Mm]'
+        elif cube.ndim == 2:
+            xx = self.xx + self.dx/2
+            yy = self.yy + self.dy/2
+            Z = cube.T
+            xlabel = 'X [Mm]'
+            ylabel = 'Y [Mm]'
 
         if ang is None:
             mux, muy, muz = (0.0, 0.0, 1.0)
@@ -707,21 +424,13 @@ class tumult(object):
         ax.set_aspect(yfac/xfac)
 
         if show_labels:
-            plt.xlabel('X [Mm]')
-            plt.ylabel('Y [Mm]')
-            plt.title(f'({mux:.2f},{muy:.2f},{muz:.2f})')
+            plt.xlabel(xlabel)
+            plt.ylabel(ylabel)
+            if ang is not None:
+                plt.title(f'({mux:.2f},{muy:.2f},{muz:.2f})')
         else:
             plt.xticks([])
             plt.yticks([])
-
-    #=====================================================================
-    def get_toth(self):
-        #-----------------------------------------------------------------
-        xmy = np.array([10**(self.abundances[key]-12)*atomic_weights[key]
-                        for key in self.abundances.keys()])
-        grph = np.sum(xmy) * UU
-        toth = self.rho / grph
-        return toth
 
     #=====================================================================
     def get_pop(self, atom=0, ilvl=None):
@@ -729,7 +438,7 @@ class tumult(object):
         if type(atom) is int: atom = self.atoms[atom]
         if ilvl is not None:
             if ilvl < 0: ilvl = atom.nk + ilvl
-        mem = self.read_patch_save(f'pop_{atom.id}', zdim=2)[0]
+        mem = self.read_patch_save(f'pop_{atom.id}', zdim=2)
         if mem.ndim==6: mem = mem[...,0]
         lte = mem[...,0]
         dep = mem[...,1]
@@ -763,7 +472,7 @@ class tumult(object):
             else:
                 return xy[:,0], xy[:,1]
             
-        mem = self.read_patch_save(f'pop_{atomid}', zdim=2)[0]
+        mem = self.read_patch_save(f'pop_{atomid}', zdim=2)
 
         if mem.ndim==6: mem = mem[...,0]
         dep = mem[...,1]
@@ -771,13 +480,13 @@ class tumult(object):
         if ilvl is not None:
             dep = dep[...,ilvl]
 
-        dep = np.array(dep)[:,:,::-1]
-        ltau = self.ltau[...,::-1]
+        dep = np.array(dep)
 
-        if self.dim=='1D':
-            dep = dep.squeeze()
-        elif mean:
-            ltau, dep = self.get_ltau_mean(dep, zaxis=2)
+        if self.dim=='3D' and mean:
+            ltau, dep = self.atmos.get_ltau_mean(dep, zaxis=2)
+        else:
+            ltau = self.atmos.ltau[...,::-1].squeeze()
+            dep = dep[:,:,::-1].squeeze()
 
         return ltau, dep
     
@@ -834,51 +543,32 @@ class tumult(object):
         plt.legend(loc='lower right')
 
     #=====================================================================
-    def calc_teff(self, **kwargs):
-        #-----------------------------------------------------------------
-        if self.n_ang == 1:
-            raise ValueError('n_ang = 1! Cannot return effective Temperature from disk center intensity only!')
-
-        xx, yy = self.crop(norm=False, per_aa=True, **kwargs)
-        bol = np.trapz(yy , x=xx)
-        teff = (bol / SBOL)**0.25
-        return teff
-
-    #=====================================================================
     def read_patch_save(self, kind, folder=None, concat=True, fdim=0, zdim=None, lazy=True):
         #-----------------------------------------------------------------
-        if folder: 
-            folder = pathlib.Path(folder)
-        else:
-            folder = self.sfolder
-
-        meta_file = folder / f'{kind}_meta.txt'
+        folder = pathlib.Path(folder) if folder else self.sfolder
+        resolved_folder = str(folder.resolve()) + os.sep
+        meta_file = resolved_folder + f'{kind.replace(' ', '_')}_meta.txt'
+        dct = {}
 
         try:
-            meta = open(meta_file)
+            with open(meta_file) as meta:
+                for line in meta:
+                    if line.strip().startswith('*'): continue
+                    info = line.split()
+                    file = info[0]
+                    dtype = f'<f{int(info[1]) // 8}'
+                    dims  = tuple(map(int, info[2:]))
+                    key = file.split('.')[0].split('_')[-1]
+                    key = tuple(map(int, textwrap.wrap(key, 3)))
+                    dct[key] = np.memmap(resolved_folder + file, dtype=dtype, mode='r', shape=dims, order='F')
+
         except FileNotFoundError:
-            print(f'{meta_file} not found!')
             if (not kind in self.nml['m3d_params']['save_patch_kind'].split()):
                 print('The patch was not saved. Check the save_patch_kind parameter in the m3d_params namelist.')
-            raise FileNotFoundError()
-
-        dct = {}
-        for line in meta:
-            if not line.strip().startswith('*'):
-                info = line.split()
-                file = info[0]
-                prec = int(info[1])
-                dtype = '<f{:d}'.format(prec//8)
-                dims = tuple([int(d) for d in info[2:]])
-
-                key = file.split('.')[0].split('_')[-1]
-                key = np.array([int(k) for k in textwrap.wrap(key, 3)])
-                dct[tuple(key)] = np.memmap(folder / file, dtype=dtype, mode='r', shape=dims, order='F')
-
-        meta.close()
-        if zdim is None: zdim = len(dims)-1
+            raise FileNotFoundError(f'{meta_file} not found!')
 
         if concat:
+            zdim = zdim or len(dims)-1
             return self.concat_patches(dct, kind, fdim, zdim, lazy=lazy)
         else:
             return dct
@@ -891,38 +581,20 @@ class tumult(object):
         f_indep = all(all_inu == 0) or fdim is None
 
         n_nu = self.nml['m3d_params']['n_nu']
-
-        if lazy:
-            concat = memmap_list
-        else:
-            concat = np.concatenate
+        concat = MemmapList if lazy else np.concatenate
 
         def merge_set(inus):
-            merge = []
+            merged = []
             for iz in all_iz:
-                merge_nu = []
-
-                for inu in inus:
-                    key = (iz, inu)
-                    if key in dct:
-                        merge_nu.append(dct[key])
-                
-                if len(merge_nu) > 0:
-                    if len(merge_nu) == 1:
-                        mem = merge_nu[0]
-                    else:
-                        mem = concat(merge_nu, axis=fdim)
-                        
-                    if not f_indep: mem = np.flip(mem, axis=fdim)
-                    merge.append(mem)
-            
-            if len(merge) > 1:
-                mem = concat(merge, axis=zdim)
-
-            return mem
+                parts = [dct[(iz, inu)] for inu in inus if (iz, inu) in dct]
+                if not parts: continue
+                mem = parts[0] if len(parts) == 1 else concat(parts, axis=fdim)
+                if not f_indep: mem = np.flip(mem, axis=fdim)
+                merged.append(mem)
+            return merged[0] if len(merged) == 1 else concat(merged, axis=zdim)
 
         if f_indep:
-            return [merge_set(all_inu)]
+            return merge_set(all_inu)
         else:
             set1 = [inu for inu in all_inu if inu > 0 and inu <= n_nu]
             set2 = [inu for inu in all_inu if inu > 0 and inu > n_nu]
@@ -930,149 +602,6 @@ class tumult(object):
             sets = [s for s in [set1, set2, set3] if len(s)>0]
         
             return [merge_set(s) for s in sets]
-        
-
-    #=====================================================================
-    def interp_ltau_surf(self, cube, newx=None, log=False, zaxis=-1):
-        #-----------------------------------------------------------------
-        if zaxis != -1: cube = np.moveaxis(cube, zaxis, -1)
-        ltau = self.ltau
-        step = -1 if ltau[...,0].ravel()[0] > ltau[...,-1].ravel()[0] else 1
-        xx = ltau[...,::step].copy()
-        yy = cube[...,::step].copy()
-        if log: yy = np.log(yy)
-        if newx is None:
-            axis = tuple(i for i in range(xx.ndim-1))
-            newx = np.mean(xx, axis=axis)
-        newy = interp_tau(newx, xx, yy)
-        if log: newy = np.exp(newy)
-        if zaxis != -1: newy = np.moveaxis(newy, -1, zaxis)
-        return newx, newy
-    
-    #=====================================================================
-    def plot_geo_cube(self, cube, marker=',', linestyle='none', rasterized=True,
-                       xmin=None, xmax=None, ymin=None, ymax=None, **kwargs):
-        #-----------------------------------------------------------------
-        xx = (self.height * np.ones_like(self.ltau)).ravel()
-        yy = cube.ravel()
-        if xmin is None: xmin = np.nanmin(xx)
-        if xmax is None: xmax = np.nanmax(xx)
-        if ymin is None: ymin = np.nanmin(yy)
-        if ymax is None: ymax = np.nanmax(yy)
-        mask = (xx > xmin) * (xx < xmax) * (yy > ymin) * (yy < ymax)
-        xx = xx[mask]
-        yy = yy[mask]
-        plt.xlim(np.nanmin(xx), np.nanmax(xx))
-        plt.ylim(np.nanmin(yy), np.nanmax(yy))
-        return plt.plot(xx, yy, marker=marker, linestyle=linestyle,
-                        rasterized=rasterized, **kwargs)
-    
-    #=====================================================================
-    def plot_ltau_cube(self, cube, marker=',', linestyle='none', rasterized=True,
-                       xmin=None, xmax=None, ymin=None, ymax=None, density=False,
-                       cmap='GnBu', **kwargs):
-        #-----------------------------------------------------------------
-        xx = self.ltau.ravel()
-        yy = cube.ravel()
-        xx, yy = crop_inputs(xx, yy, xmin, xmax, ymin, ymax)
-        plt.xlim(np.nanmin(xx), np.nanmax(xx))
-        plt.ylim(np.nanmin(yy), np.nanmax(yy))
-
-        if density:
-            return scatter_density(xx, yy, cmap=cmap, **kwargs)
-        else:
-            return plt.plot(xx, yy, marker=marker, linestyle=linestyle,
-                            rasterized=rasterized, **kwargs)
-
-    #=====================================================================
-    def get_ltau_mean(self, cube, log=False, newx=None, **kwargs):
-        #-----------------------------------------------------------------
-        if type(cube) is str:
-            cube = getattr(self, cube)
-
-        if self.dim == '3D':
-            newx, yy3d = self.interp_ltau_surf(cube, log=log, newx=newx, **kwargs)
-            if log: yy3d = np.log(yy3d)
-            axis = tuple(i for i in range(yy3d.ndim-1))
-            yy1d = np.mean(yy3d, axis=axis)
-            if log: yy1d = np.exp(yy1d)
-        else:
-            if newx is None: newx = self.ltau[::-1]
-            step = -1 if self.ltau[0] > self.ltau[-1] else 1
-            yy1d = np.interp(newx, self.ltau[::step], cube[::step])
-
-        return newx, yy1d
-    
-    #=====================================================================
-    def plot_ltau_mean(self, yy, log=False, newx=None, xmin=None, xmax=None,
-                       ymin=None, ymax=None, **kwargs):
-        #-----------------------------------------------------------------
-        xx, yy = self.get_ltau_mean(yy, log=log, newx=newx)
-        xx, yy = crop_inputs(xx, yy, xmin, xmax, ymin, ymax)
-        return plt.plot(xx, yy, **kwargs)
-    
-    #=====================================================================
-    def get_geo_mean(self, yy, newx=None, log=False):
-        if hasattr(self, 'runs'):
-            xx = np.mean([run.height for run in self.runs], axis=0)
-            yy = np.mean([run.get_geo_mean(yy, newx=xx) for run in self.runs], axis=0)
-            return xx, yy
-        
-        if type(yy) is str:
-            yy = getattr(self, yy)
-
-        if newx is None:
-            xx = self.height
-
-        if self.dim == '3D':
-            if log: yy = np.log(yy)
-            yy = np.mean(yy, axis=(0,1))
-            if log: yy = np.exp(yy)
-            
-        if xx is not self.height:
-            yy = np.interp(xx, self.height, yy)
-
-        return xx, yy
-    
-    #=====================================================================
-    def plot_geo_mean(self, yy, log=False, xmin=None, xmax=None,
-                       ymin=None, ymax=None, **kwargs):
-        #-----------------------------------------------------------------
-        xx, yy = self.get_geo_mean(yy, log=log)
-        xx, yy = crop_inputs(xx, yy, xmin, xmax, ymin, ymax)
-        return plt.plot(xx, yy, **kwargs)
-    
-    #=================================================================
-    def get_ltau_surface(self, ltau, cube, log=False, zaxis=-1):
-        if hasattr(self, 'runs'):
-            yy = np.array([run.get_ltau_surface(ltau, cube, log=log, zaxis=zaxis) for run in self.runs])
-        else:
-            if type(cube) is str:
-                cube = getattr(self, cube)
-
-            if self.dim == '3D':
-                newx = np.array([ltau])
-                _, yy = self.interp_ltau_surf(cube, newx=newx, log=log, zaxis=zaxis)
-            else:
-                ltau1d = self.ltau
-                step = -1 if ltau1d[0] > ltau1d[-1] else 1
-                yy = np.interp(ltau, ltau1d[::step], cube[::step])
-                
-        return yy
-
-    #=================================================================
-    def plot_ltau_hist(self, ltau, cube, log=False, zaxis=-1, show_mean=False, color=None, **kwargs):
-        yy = self.get_ltau_surface(ltau, cube, log=log, zaxis=zaxis)
-
-        if show_mean:
-            if log:
-                mean = 10**np.mean(np.log10(yy))
-            else:
-                mean = np.mean(yy)
-                
-            plt.axvline(mean, ls='--', color=color)
-
-        return plt.hist(yy.ravel(), color=color, **kwargs)
     
     #=================================================================
     def get_clv(self, center_diff=False, **kwargs):
@@ -1184,16 +713,21 @@ class tumult(object):
     
     #=================================================================
     def fit_observed(self, oxx, oyy, fit=None, bounds=None, p0=None, sigma=None,
-                     syst=None, method='curve_fit', tol=None, Res='auto', **kwargs):
+                     syst=None, method='L-BFGS-B', tol=None, res='auto', **kwargs):
         #-----------------------------------------------------------------
+        if len(oxx) == 0:
+            raise ValueError('empty oxx array in fit_observed!')
+        if len(oxx) != len(oyy):
+            raise ValueError('oxx and oyy must have the same length!')
+
         fit = fit or []
         bounds = bounds or {}
         p0 = p0 or {}
         
         if len(fit)==0: return {}, None
-        lbounds = {'vshift':-3, 'vdop':1e-3, 'vrot':1e-3, 'zeta_rt':1e-3, 'fac':0.5, 'tilt':-0.2}
-        ubounds = {'vshift':+3, 'vdop':1e1,  'vrot':1e1,  'zeta_rt':1e1,  'fac':2.0, 'tilt':+0.2}
-        p0s     = {'vshift':0,  'vdop':1,    'vrot':1,    'zeta_rt':1,    'fac':1.0, 'tilt':0.0}
+        lbounds = {'vshift':-3, 'vdop':1e-3, 'vrot':1e-3, 'zeta_rt':1e-3, 'continuum':0.5, 'tilt':-0.2}
+        ubounds = {'vshift':+3, 'vdop':1e1,  'vrot':1e1,  'zeta_rt':1e1,  'continuum':2.0, 'tilt':+0.2}
+        p0s     = {'vshift':0,  'vdop':1,    'vrot':1,    'zeta_rt':1,    'continuum':1.0, 'tilt':0.0}
         
         p0s.update(p0)
         for key in bounds.keys():
@@ -1201,33 +735,29 @@ class tumult(object):
 
         p0 = [p0s[f] for f in fit]
         bounds = ([lbounds[f] for f in fit], [ubounds[f] for f in fit])
+        bounds = np.vstack(bounds).T
 
-        if method != 'curve_fit':
-            bounds = np.vstack(bounds).T
+        if res == 'auto':
+            res = np.mean(oxx) / np.mean(np.diff(oxx))
 
-        if Res == 'auto':
-            Res = np.mean(oxx) / np.mean(np.diff(oxx))
-
-        def opt_func(newx, *args):
+        def evaluate(newx, *args):
             ka = {f:args[i] for i, f in enumerate(fit)}
-            return self.interp(newx, **ka, Res=Res, **kwargs)
+            newy = self.crop(newx=newx, **ka, res=res, **kwargs).ydata
+            if len(newy) == 0:
+                raise ValueError('Observations outside of model wavelength range!')
+            return newy
         
         def fit_params(x, y):
-            if method == 'curve_fit':
-                pfit, _ = optimize.curve_fit(opt_func, x, y, p0=p0, bounds=bounds, sigma=sigma)
-
-            else:
-                def opt_func2(params, newx):
-                    res = y - opt_func(newx, *params)
-                    if sigma is not None: res = res/sigma
-                    return np.sum(res**2)
-                
-                pfit = optimize.minimize(opt_func2, p0, args=(x), bounds=bounds, method=method, tol=tol).x
-
+            def residuals(params, newx):
+                r = y - evaluate(newx, *params)
+                if sigma is not None: r = r/sigma
+                return np.sum(r**2)
+            
+            pfit = optimize.minimize(residuals, p0, args=(x), bounds=bounds, method=method, tol=tol).x
             return pfit
 
         pfit = fit_params(oxx, oyy)
-        fitted = opt_func(oxx, *pfit)
+        fitted = evaluate(oxx, *pfit)
         best = {f:pfit[i] for i, f in enumerate(fit)}
 
         if syst is None:
@@ -1240,8 +770,142 @@ class tumult(object):
             perr = [pchip_sigma([-syst, 0, syst], p, 0, syst) for p in pfits]
             perr = {f:perr[i] for i, f in enumerate(fit)}
             return best, fitted, perr
+        
+    #=====================================================================
+    def get_slice(self, line=None, dlam=None, lam0=None, xmin=None, xmax=None):
+        #-----------------------------------------------------------------
+        slc = slice(None, None)
 
+        if line is not None:
+            line.prepare()
+            slc = slice(line.ib, line.ir)
+            lam0 = line.lam0
 
+        if dlam is not None and lam0 is not None:
+            xmin = lam0 - dlam
+            xmax = lam0 + dlam
+
+        if xmin is not None:
+            ib = np.searchsorted(self.lam, xmin)
+            slc = slice(ib, slc.stop)
+
+        if xmax is not None:
+            ir = np.searchsorted(self.lam, xmax)
+            slc = slice(slc.start, ir)
+
+        return slc
+
+    #=====================================================================
+    def get_cntrbf(self, ang=None, imu=None, fmean=False, gmean=False,
+                   slc=None, norm=False, **kwargs):
+        #-----------------------------------------------------------------
+        mem  = self.read_patch_save('cntrbf', fdim=0, zdim=3, lazy=True)[-1]
+        slc = slc if slc is not None else self.get_slice(**kwargs)
+
+        lam = self.lam[slc]
+        cntrbf = mem[slc]
+
+        #if LTE:
+        #    cntrbf = mem[..., 2:4, :]
+        #else:
+        #    cntrbf = mem[..., 0:2, :]
+        
+        #nf, nx, ny, nz, nset, nang = cntrbf.shape
+        ltau = self.atmos.ltau
+        get_mean = gmean and self.dim == '3D'
+
+        if get_mean:
+            new_ltau = np.mean(ltau, axis=(0,1))[::-1]
+
+        all_angs = np.arange(self.n_ang)
+        if ang is None and imu is None:
+            angs = all_angs
+        elif imu is not None:
+            if imu < 0: imu = self.imus.max()+imu+1
+            angs = all_angs[self.imus==imu]
+        elif ang is not None:
+            angs = np.array(ang).squeeze()
+            if angs.ndim == 0: angs = np.array([angs])
+
+        wts = self.wts[angs]
+        wts = wts / np.sum(wts)
+            
+        conversion = np.log(10) * self.tau / self.chi
+
+        first_time = True
+        for ang, w in zip(angs, wts):
+            cang = np.array(cntrbf[..., ang])
+            cf, net_chi = np.moveaxis(cang, -1, 0)
+            vec = self.vec[ang]
+            zz = self.zz / vec[-1] * 1e8
+            tau = compute_tau_scale(net_chi, zz, axis=-1)
+            cf = conversion * cf * np.exp(-tau)
+            if self.dim == '3D':
+                vec = vec * np.array([-1, -1, 1])
+                cf = rotate_array(self.xx, self.yy, self.zz, cf, vec)
+
+            if get_mean:
+                yy = np.array(cf[...,::-1]).copy()
+                xx = ltau[...,::-1].copy()
+                newcf = interp_tau(new_ltau, xx, yy)
+                cf = np.mean(newcf, axis=(1,2))
+
+            if first_time:
+                cfunc = np.zeros_like(cf)
+                first_time = False
+
+            cfunc = cfunc + w*cf
+
+        if get_mean: ltau = new_ltau
+        if cfunc.shape[0]>1 and fmean: cfunc = np.trapz(cfunc, x=lam, axis=0)
+        if norm:
+            normalisation = abs(np.trapz(cfunc, x=ltau))
+            cfunc = cfunc / normalisation
+        return ltau, cfunc.squeeze()
+
+    #=====================================================================
+    def plot_cntrbf(self, line=None, lam0=None, dlam=None, xmin=None, xmax=None,
+                    slc=None, imu=None, ang=None, title=None, norm=False, **kwargs):
+        #-----------------------------------------------------------------
+        if slc is None:
+            slc = self.get_slice(line=line, dlam=dlam, lam0=lam0, xmin=xmin, xmax=xmax)
+
+        lam = self.lam[slc]
+        ltau, cf = self.get_cntrbf(slc=slc, imu=imu, ang=ang, gmean=True, fmean=True, norm=norm)
+
+        if type(slc) == int:
+            wave = rf'λ={lam:.3f}[Å]'
+        else:
+            wave = rf'λ={lam[0]:.2f}-{lam[-1]:.2f}[Å]'
+            
+        if ang is None and imu is None:
+            angle = 'Flux'
+        else:
+            if ang is not None:
+                imu = self.imus[ang]
+
+            angle = r'μ={:.2f}'.format(self.mus[imu])
+
+        plt.xlabel(r'log$\tau_{500}$')
+        plt.ylabel('Contribution function')
+        set_title(title, default=wave + ', ' + angle)
+        return plt.plot(ltau, cf, **kwargs)
+    
+
+    #=====================================================================
+    def hist_cntrbf(self, imu=None, ang=None, LTE=False, dlam=0.5, title=None, cmap='binary', **kwargs):
+        #-----------------------------------------------------------------
+        xx, slc = self.get_xx(dlam=dlam)
+        slc = slice(slc.start-self.ib, slc.stop-self.ib)
+
+        ltau, cf = self.get_cntrbf(imu=imu, ang=ang, LTE=LTE, mean=True, fslice=slc)
+            
+        self.set_xaxis(xx, dlam=dlam)
+        plt.ylabel(r'log$\tau_{500}$')
+        set_title(title, default='Contribution function of ' + self.title)
+
+        X, Y, Z = *np.meshgrid(xx, ltau), cf.T
+        return plt.pcolormesh(X, Y, Z, cmap=cmap, edgecolors='face', **kwargs)
 
     
     #=================================================================
@@ -1304,75 +968,6 @@ class tumult(object):
         text = '*' + text[1:]
         f.write(text)
         f.close()
-
-    #=================================================================    
-    def plot_slice(self, var, ix=None, iy=None, iz=None, shading='nearest',
-                cmap='hot', rasterized=True, logNorm=False, contrast=False,
-                show_cuts=False, title=None, tau_contours=False):
-    
-        if type(var) is str:
-            var = getattr(self, var)
-
-        if self.dim == '3D':
-            ltau = np.mean(self.ltau, axis=(0,1))
-        else:
-            ltau = self.ltau
-
-        step = -1 if ltau[0] > ltau[-1] else 1
-        z0 = np.interp(0, ltau[::step], self.zz[::step])
-
-        xx = self.xx
-        yy = self.yy
-        zz = self.zz - z0
-
-        if ix is not None:
-            slc = (ix, slice(None), slice(None))
-            X, Y = np.meshgrid(yy, zz)
-            tle = f'X = {xx[ix]:.1f} Mm'
-            plt.xlabel('Y [Mm]')
-            plt.ylabel('Z [Mm]')
-        elif iy is not None:
-            slc = (slice(None), iy, slice(None))
-            X, Y = np.meshgrid(xx, zz)
-            tle = f'Y = {yy[iy]:.1f} Mm'
-            plt.xlabel('X [Mm]')
-            plt.ylabel('Z [Mm]')
-        elif iz is not None:
-            slc = (slice(None), slice(None), iz)
-            X, Y = np.meshgrid(xx, yy)
-            tle = f'Z = {zz[iz]:.1f} Mm'
-            plt.xlabel('X [Mm]')
-            plt.ylabel('Y [Mm]')
-
-        Z = var[slc]
-
-        if iz is None and contrast:
-            Z = Z / np.mean(var, axis=(0,1))
-
-        norm = [None, LogNorm()][logNorm]
-        title = [title, tle] [title is None]
-
-        pmsh = plt.pcolormesh(X, Y, Z.T, shading=shading, cmap=cmap, rasterized=rasterized, norm=norm)
-        plt.title(title)
-
-        if iz is None:
-            if show_cuts:
-                [plt.axhline(zz[i-1], lw=0.5, color='k') for i in self.atmos_cuts]
-
-            if tau_contours:
-                ax = plt.gca()
-                ax2 = ax.twinx()
-                Z = self.ltau[slc]
-                levels = np.arange(int(np.min(Z)), int(np.max(Z))+1)
-                cm = plt.cm.__dict__[cmap]
-                cmap2 = ['binary', 'binary_r'][cm(1) < cm(0)]
-                ax2.contour(X, Y, Z.T, levels=levels, cmap=cmap2, linewidths=1, linestyles=':')
-                ax2.set_ylabel(r'$\log \tau_{500}$')
-                zlevels = np.interp(levels, Z[-1,:][::step], zz[::step])
-                ax2.set_yticks(zlevels)
-                ax2.set_yticklabels(levels)
-
-        return pmsh
     
     #=================================================================
     def get_duration(self, string=True):
@@ -1400,9 +995,9 @@ class tumult(object):
 
     @classmethod
     #=================================================================
-    def combine(self, runs, weights=None):
+    def combine(cls, runs, weights=None):
         #-------------------------------------------------------------
-        self = tumult() # create a new instance of the class
+        self = cls() # create a new instance of the class
         self.run0 = runs[0]
         self.folder = '\n'.join([str(run.folder) for run in runs])
 
@@ -1427,63 +1022,15 @@ class tumult(object):
         check_and_combine('wts')
         check_and_combine('nline')
         check_and_combine('dim')
+        check_and_combine('abundances')
 
-        if hasattr(runs[0], 'ltau'):
-            if weights is not None:
-                taumin = np.min([run.ltau for run in runs])
-                taumax = np.max([run.ltau for run in runs])
-                ltau = np.linspace(taumin, taumax, 128)
+        if hasattr(runs[0], 'atmos'):
+            self.atmos = AtmosClass.combine([run.atmos for run in runs], weights=weights)
 
-                def average_atmos(var):
-                    return np.sum(self.get_ltau_surface(ltau, var).T * weights, axis=-1)
-
-                self.ne = average_atmos('ne')
-                self.rho = average_atmos('rho')
-                self.temp = average_atmos('temp')
-                self.vx = average_atmos('vx')
-                self.vy = average_atmos('vy')
-                self.vz = average_atmos('vz')
-                self.chi = average_atmos('chi')
-                self.tau = 10**ltau
-                self.ltau = ltau
-
-            else:
-                check_and_combine('abundances')
-                self.ne = np.array([run.ne for run in runs])
-                self.rho = np.array([run.rho for run in runs])
-                self.temp = np.array([run.temp for run in runs])
-                self.vx = np.array([run.vx for run in runs])
-                self.vy = np.array([run.vy for run in runs])
-                self.vz = np.array([run.vz for run in runs])
-                self.chi = np.array([run.chi for run in runs])
-                self.tau = np.array([run.tau for run in runs])
-                self.ltau = np.array([run.ltau for run in runs])
-                weights = np.ones(len(runs))/len(runs)
-
-        if self.run0.has_atom:
-            self.atom = copy.copy(self.run0.atom)
-            self.atom.run = self
-
-            if type(self.atom.trans[0]) is fast_trans:
-                init = np.frompyfunc(fast_trans, 2, 1)
-                self.atom.trans = init(np.arange(self.atom.nline), self.atom)
-            else:
-                self.atom.trans = [copy.copy(trans) for trans in self.run0.atom.trans]
-
-            self.in_lines = self.run0.in_lines
-            self.line = np.array(self.atom.trans)[self.in_lines]
+        weights = weights or np.ones(len(runs))/len(runs)
 
         if self.run0.has_spectrum:
-            self.lam    = self.run0.lam
-            self.ie     = np.sum([run.ie*w for run, w in zip(runs, weights)], axis=0)
-            self.cnt    = np.sum([run.cnt*w for run, w in zip(runs, weights)], axis=0)
-
-            self.flux     = np.sum([run.flux*w for run, w in zip(runs, weights)], axis=0)
-            self.flux_cnt = np.sum([run.flux_cnt*w for run, w in zip(runs, weights)], axis=0)
-
-            if hasattr(self.run0, 'ie_lte'):
-                self.ie_lte = np.sum([run.ie_lte*w for run, w in zip(runs, weights)], axis=0)
-                self.flux_lte = np.sum([run.flux_lte*w for run, w in zip(runs, weights)], axis=0)
+            self.spectrum = SpectrumClass.combine([run.spectrum for run in runs], weights=weights)
 
         return self
 

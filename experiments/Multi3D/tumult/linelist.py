@@ -1,7 +1,9 @@
 
+from requests import head
 from tumult.auxfuncs import *
 import numpy as np
 import pandas as pd
+import textwrap
 
 element_ids = [
         'H' ,'He','Li','Be','B' ,'C' ,'N' ,'O' ,'F ',
@@ -23,6 +25,17 @@ mol_dict = {101:'H2', 106:'CH', 107:'NH', 108:'OH',
             606:'C2', 707:'N2', 808:'O2', 607:'CN',
             708:'NO', 608:'CO', 10108:'H2O'}
 
+formatters = {'ga':'{:.3e}'.format,
+              'gv':'{:.8g}'.format,
+              'gq':'{:.3g}'.format,
+              'ev':'{:.6f}'.format,
+              'evi':'{:.3f}'.format,
+              'lam_air':'{:.3f}'.format,
+              'lam0':'{:.3f}'.format,
+              'alpha':'{:.3e}'.format,
+              'label':"'{:}'".format,
+              'loggf':'{:.3f}'.format}
+
 class LineList(pd.DataFrame):
   # Required for pandas to return instances of LineList on slicing, etc.
   @property
@@ -35,26 +48,55 @@ class LineList(pd.DataFrame):
     with open(filename) as f:
       lines = f.readlines()
       names = ['lam0', 'evi', 'loggf', 'gv', 'upper_g', 'ga', 'gq']
-      ncol_max = len(names)
+      df_dict = {}
+      usecols = lambda col: col is None or col < len(names)
 
       while len(lines) > 0:
+        try:
+          line = lines.pop(0).strip()
+          mass_id, ion, nlines = split_words(line)
+        except Exception as e:
+          print(f"Error parsing line list header in {filename}: {line}")
+          raise e
+        
         line = lines.pop(0).strip()
-        mass_id, ion, nlines = split_words(line)
-        line = lines.pop(0).strip()
-        species = line.strip("'").strip()[:6]
+        label = line.strip("'").strip()
+        label = ' '.join(label.split())
         nlines = int(nlines)
         table = ''.join(lines[:nlines])
-        df = pd.read_csv(StringIO(table), header=None, sep=r'\s+')
+
+        try:
+          try:
+            df = pd.read_csv(StringIO(table), header=None, sep=r'\s+', quotechar="'", usecols=usecols)
+          except Exception as e:
+            print(f"Retrying with fixed-width format for {label} due to error: {e}")
+            df = pd.read_fwf(StringIO(table), header=None, infer_nrows=nlines).iloc[:, :len(names)]
+          
+          df.columns = names[:df.shape[1]]
+
+          if 'gq' in df.columns:
+            if df.gq.dtype != float:
+              df.drop(columns='gq', inplace=True)
+
+          npro = mass_id.strip("'").split('.')[0]
+          iso = mass_id.strip("'").split('.')[-1]
+          
+          if int(npro) > 100:
+            iso = textwrap.wrap(iso, 3)
+            iso = sorted([max(1, int(i)) for i in iso])
+            iso = ''.join([str(i) for i in iso])
+          else:
+            iso = int(iso)
+
+          df_dict[(label, iso)] = df
+        except Exception as e:
+          print(f"Error reading line list {filename} for {label}: {e}")
+
         del lines[:nlines]
-        ncolumns = min(ncol_max, len(df.columns))
-        df = df.iloc[:, :ncolumns]
-        df.columns = names[:ncolumns]
-        if 'gq' in df.columns:
-          if df.gq.dtype != float:
-            df.drop(columns='gq', inplace=True)
-        df['ion'] = species.strip()
-        df['iso'] = int(mass_id.strip("'").split('.')[-1])
-        llist = pd.concat([llist, df])
+      
+      llist = pd.concat(df_dict, names=['ion', 'iso', None])
+      llist = llist.sort_index()
+
     return cls(llist)
   
   @classmethod
@@ -63,28 +105,30 @@ class LineList(pd.DataFrame):
     with open(filename) as f:
         lines = f.readlines()
         names = ['lam0', 'evi', 'loggf', 'gv', 'ga', 'gq', 'i', 'j']
-        ncol_max = len(names)
         df_dict = {}
+        usecols = lambda col: col is None or col < len(names)
 
         while len(lines) > 0:
+            species = lines.pop(0).strip()
             line = lines.pop(0).strip()
-            mass_id, ion, nlines = split_words(line)
-            line = lines.pop(0).strip()
-            species = line.strip("'").strip()[:6]
+            iso_id, nlines = split_words(line)
+            iso = int(iso_id.strip("'").split('.')[-1])
             nlines = int(nlines)
             table = ''.join(lines[:nlines])
-            df = pd.read_csv(StringIO(table), header=None, sep=r'\s+')
+
+            try:
+              df = pd.read_csv(StringIO(table), header=None, sep=r'\s+', quotechar="'", usecols=usecols)
+            except Exception as e:
+              print(f"Retrying with fixed-width format for {species} due to error: {e}")
+              df = pd.read_fwf(StringIO(table), header=None, infer_nrows=nlines).iloc[:, :len(names)]
+              
+            df.columns = names[:df.shape[1]]
             del lines[:nlines]
-            ncolumns = min(ncol_max, len(df.columns))
-            df = df.iloc[:, :ncolumns]
-            df.columns = names[:ncolumns]
 
             ion = species.strip()
-            iso = int(mass_id.strip("'").split('.')[-1])
-            df['iso'] = iso
-            df_dict[ion] = df
+            df_dict[(ion, iso)] = df
         
-        llist = pd.concat(df_dict, names=['ion', None])
+        llist = pd.concat(df_dict, names=['ion', 'iso', None])
         llist = llist.sort_index()
 
     return cls(llist)
@@ -120,60 +164,53 @@ class LineList(pd.DataFrame):
     llist = llist[mask]
     return cls(llist)
   
-  def write_to_tumult_format(self, filename):
-    species = self[['ion', 'iso']].drop_duplicates().values
-    head = ['lam0', 'evi', 'loggf', 'gv', 'ga', 'gq', 'i', 'j']
+  def write_to_tumult_format(self, filename, label=None):
+    # work with a copy so slice/view issues don't matter
+    df = self.copy()
+    head = ['lam0', 'evi', 'loggf', 'gv', 'ga', 'gq', 'i', 'j', 'label']
+    present = [col for col in head if col in df.columns]
+    head = head[:head.index(present[-1]) + 1]
+    df = df.reindex(columns=df.columns.union(head), fill_value=0)
+    df = df.fillna(0)
 
-    for key in head:
-      if not hasattr(self, key):
-        self[key] = 0
-
-    if hasattr(self, 'label'): head.append('label')
     with open(filename, 'w+') as f:
-      for s, iso in species:
-        sub = self[(self.ion == s) & (self.iso == iso)]
-        nlines = sub.shape[0]
-        if len(s.split()) == 2:
-          id, ion = s.split()
-          ion = ion_inv[ion]
-        else:
-          id = s
-          ion = 1
+      for (s, iso), sub in df.groupby(['ion', 'iso']):
+        nlines = len(sub)
+        sub = sub[head].sort_values(by='lam0')
 
-        if id in element_ids:
-          p = element_ids.index(id) + 1
-        else:
-          p = 0
-
-        f.write(f"'{p}.{iso}' {ion} {nlines}\n")
-        f.write(f"'{s}'\n")
-        f.write(sub[head].to_string(index=False, header=False) + '\n')
+        if f.tell() > 0: f.write('\n')
+        f.write(f"'{s}'")
+        if label: f.write(f" '{label}'")
+        f.write("\n")
+        f.write(f"'{iso}' {nlines}\n")
+        f.write(sub.to_string(index=False, header=False, na_rep='', formatters=formatters))
   
   def write_to_ts_format(self, filename):
-    species = self[['ion', 'iso']].drop_duplicates().values
+    # work with a copy so slice/view issues don't matter
+    df = self.copy()
+
+    # ensure all required columns exist (fill missing with 0)
     head = ['lam0', 'evi', 'loggf', 'gv', 'upper_g', 'ga', 'gq']
+    df = df.reindex(columns=df.columns.union(head), fill_value=0)
+    df['upper_g'] = np.maximum(df.upper_g, 1.0)  # avoid zero upper_g
 
-    for key in head:
-      if not hasattr(self, key):
-        self[key] = 0
+    if 'label' in df.columns:
+      head.append('label')
 
-    if hasattr(self, 'label'): head.append('label')
     with open(filename, 'w+') as f:
-      for s, iso in species:
-        sub = self[(self.ion == s) & (self.iso == iso)]
-        nlines = sub.shape[0]
-        if len(s.split()) == 2:
-          id, ion = s.split()
-          ion = ion_inv[ion]
-        else:
-          id = s
-          ion = 1
+      for (s, iso), sub in df.groupby(['ion', 'iso']):
+        nlines = len(sub)
 
-        if id in element_ids:
-          p = element_ids.index(id) + 1
+        # parse species string into element + ion
+        if len(s.split()) == 2:
+          el_id, ion = s.split()
+          ion = ion_inv.get(ion, 1)
         else:
-          p = 0
+          el_id, ion = s, 1
+
+        # map element id to integer code
+        p = element_ids.index(el_id) + 1 if el_id in element_ids else 0
 
         f.write(f"'{p}.{iso}' {ion} {nlines}\n")
         f.write(f"'{s}'\n")
-        f.write(sub[head].to_string(index=False, header=False) + '\n')
+        f.write(sub[head].to_string(index=False, header=False, na_rep='', formatters=formatters) + '\n')

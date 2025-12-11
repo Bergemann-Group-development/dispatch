@@ -20,23 +20,17 @@ combined_kwargs = {**plot_kwargs, **line2d_kwargs}
 plt_kwargs = set(combined_kwargs.keys()).union(artist_properties)
 
 #=====================================================================
-class xyplot:
-    def __init__(self, plot, x, y):
-        self.x = x
-        self.y = y
-        self.p = plot
-    
-    def __iter__(self):
-        yield self.p
-        yield self.x
-        yield self.y
-        
-    # Acts like the plot object when used directly
-    def __getattr__(self, attr):
-        return getattr(self.p, attr)
-    
-    def __repr__(self):
-        return repr(self.p)  # Optional: make it look like p in the console
+def set_title(title, default=None):
+    if title is None:
+        title = default
+
+    if title is not None:
+        plt.title(title)
+
+#=====================================================================
+def set_legend(**kwargs):
+    if 'label' in kwargs:
+        plt.legend(frameon=False)
 
 #=====================================================================
 def subplot_labels(ax=None, xlabel=None, ylabel=None, title=None):
@@ -289,3 +283,43 @@ def plot_line_annotations(xx, labels, weights=None, ha='center', va='bottom',
         pad = 2.5
 
     plt.ylim(top=ymax+1.2*h + bbox.height*pad)
+
+
+def quickplot(x, y, ax=None, color=None, trendline=None, xerr=None, yerr=None,
+              xline=None, yline=None, xlabel=None, ylabel=None, margins=None,
+              xlog=False, ylog=False, trend_color=None, trend_alpha=1, 
+              **kwargs):
+
+  # Error propagation for log scaling
+  if xlog:
+      xerr = np.asarray(xerr) / x if xerr is not None else None
+      x = np.log(x)
+
+  if ylog:
+      yerr = np.asarray(yerr) / y if yerr is not None else None
+      y = np.log(y)
+
+  ax = ax or plt.gca()
+  pt = ax.errorbar(x, y, xerr=xerr, yerr=yerr, color=color, **kwargs)
+
+  if trendline:
+    c = trend_color or pt.lines[0]._color
+    w = 1/yerr**2 if yerr is not None else None
+    p = np.polyfit(x, y, w=w, deg=trendline)
+    newx = np.linspace(np.min(x), np.max(x), 200)
+    f = np.polyval(p, newx)
+    ax.plot(newx, f, color=c, alpha=trend_alpha, ls='--')
+
+  xline = xline or []
+  yline = yline or []
+  xline = [xline] if not hasattr(xline, '__iter__') else xline
+  yline = [yline] if not hasattr(yline, '__iter__') else yline
+
+  [ax.axhline(y, color='lightgrey', ls='--') for y in yline]
+  [ax.axvline(x, color='lightgrey', ls='--') for x in xline]
+
+  if xlabel: ax.set_xlabel(xlabel)
+  if ylabel: ax.set_ylabel(ylabel)
+  if margins: ax.margins(*margins)
+
+  return pt

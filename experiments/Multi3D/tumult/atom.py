@@ -22,7 +22,7 @@ HCK = HH*CC/BK*1e8
 EK  = EE/BK
 saha_const=0.5*(HH/np.sqrt(2.*PI*EM)/np.sqrt(BK))**3
         
-class atom_class(object):
+class AtomClass(object):
     def _read(self, **kwargs):
         return _read(self.f, **kwargs)
     

@@ -1,6 +1,22 @@
 from .trans import trans_class
 import numpy as np
 import pandas as pd
+import functools
+
+class TransFactory(object):
+  def __init__(self, atom, in_lines=None):
+    self.atom = atom
+    self.in_lines = in_lines or slice(None, None)
+    self.krs = np.arange(len(atom.bbt))[self.in_lines]
+
+  @functools.cache
+  def __getitem__(self, key):
+    kr = self.krs[key]
+    return fast_trans(kr, self.atom)
+  
+  def get_lines(self, in_lines):
+    return TransFactory(self.atom, in_lines=in_lines)
+
 
 class fast_trans(trans_class):
   #=====================================================================
@@ -26,18 +42,3 @@ class fast_trans(trans_class):
       if self.prepared: return
       
     self.run = self.atom.run
-  
-class llist_trans(fast_trans):
-  #=====================================================================
-  def __init__(self, kr, run):
-    #-----------------------------------------------------------------
-    self.kr = kr
-    self.run = run
-    self.bbt = run.llist
-    self.title = 'Line = {:.2f} [Å], {:}'.format(self.lam0, self.ion)
-    self.prepared = False
-    self.lam_blue = self.lam0 - 1.0
-    self.lam_red  = self.lam0 + 1.0
-
-  def prepare(self):
-    return trans_class.prepare(self)

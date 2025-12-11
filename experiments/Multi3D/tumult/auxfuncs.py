@@ -1,13 +1,11 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import warnings
-from numpy.fft import fft, ifft
 from scipy.optimize import curve_fit
 from scipy.signal import argrelextrema
 from scipy.special import voigt_profile as scipy_voigt_profile
-from scipy import integrate, stats, optimize
-from scipy.interpolate import interp1d, CubicHermiteSpline
+from scipy import integrate, optimize
+from scipy.interpolate import CubicHermiteSpline
 from numba import njit, jit
 import shlex
 import re
@@ -18,7 +16,9 @@ from astropy.io import fits
 from io import StringIO
 from scipy.cluster.hierarchy import fcluster, linkage
 import collections.abc
-import pathlib
+from .convolutions import convolve_crop
+from .decorators import broadcast_arguments
+import tempfile
 
 CB_colors = ['#377eb8', '#ff7f00', '#4daf4a', '#f781bf', '#a65628', '#984ea3', '#999999', '#e41a1c', '#dede00']
 
@@ -26,8 +26,10 @@ EE = 1.602189E-12
 HH = 6.626176E-27
 CC = 2.99792458E10
 EM = 9.109534E-28
+EC = 4.80325E-10
 UU = 1.6605655E-24
 BK = 1.380662E-16
+MH = 1.6726e-24
 PI = 3.14159265359
 SBOL = 5.6704e-5
 XMH = 1.67339e-24
@@ -35,7 +37,7 @@ CC_KMS  = 299792.458 # VELOCITY OF LIGHT (KM/S)
 RYDV = 13.605
 
 HCE = HH*CC/EE*1e8
-HC2 = 2.*HH*CC *1e24
+HC2 = 2.*HH*CC*1e24
 HCK = HH*CC/BK*1e8
 EK  = EE/BK
 
@@ -121,7 +123,7 @@ def split_kwargs(func, kwargs):
     return matched, unmatched
 
 #=====================================================================
-def calc_weq(self, method='linear', return_err=False, plot=False,
+def calc_weq(self, method='trapz', return_err=False, plot=False,
              get_func=False, lam0=None, dlam=None, **kwargs):
     #-----------------------------------------------------------------
     if dlam == 'auto':
@@ -129,7 +131,7 @@ def calc_weq(self, method='linear', return_err=False, plot=False,
     else:
         dl = dlam
 
-    xx, yy = self.crop(lam0=lam0, lam_offset=False, dlam=dl, **kwargs)
+    xx, yy = self.crop(lam0=lam0, relative=False, dlam=dl, **kwargs)
     return get_weq(xx, yy, lam0=lam0, dlam=dlam, method=method,
                     get_func=get_func, return_err=return_err, plot=plot)
 
@@ -173,9 +175,13 @@ def auto_crop_core(xx, yy, x0, thresh=15, exclude_wing=False):
     return x, y
 
 #=====================================================================
+@broadcast_arguments(xx=1, yy=1)
 def get_weq(xx, yy, lam0=None, dlam=None, method='gauss', return_err=False, plot=False,
              get_func=False, thresh=15, sigma=None, syst=None):
     #-----------------------------------------------------------------
+    if method not in ['trapz', 'pchip', 'gauss', 'voigt', 'asym_gauss']:
+        raise ValueError(f'Unknown method {method} for equivalent width calculation!')
+    
     xplot = xx.copy()
     if lam0 is None: lam0 = 0
 
@@ -240,130 +246,42 @@ def get_weq(xx, yy, lam0=None, dlam=None, method='gauss', return_err=False, plot
     return res
 
 #=====================================================================
+def tmp_txtfile(stack):
+    return stack.enter_context(tempfile.NamedTemporaryFile(mode='w+', suffix='.txt')).name
+
+#=====================================================================
 def planck(lam, temp):
-    Bnu =  HC2/lam**3/(np.exp(HCK/(lam*temp[...,None])) - 1)
+    temp = np.array(temp)
+    Bnu =  1e8*CC*HC2/lam/(np.exp(HCK/(lam*temp[...,None])) - 1)
     Bnu = np.moveaxis(Bnu, -1, 0)
     return Bnu
 
 #=====================================================================
-def vacuum2obs(vac):
+def vac2air(vac):
     """
     Converts vacuum wavelength to observed wavelengths
     """
     if type(vac) != np.ndarray:
         vac = np.array(vac)
     vac = vac.astype(np.float64)
-    return _vacuum2obs(vac)
-
-#@njit
-#=====================================================================
-def _vacuum2obs(vac):
-    ivac2 = 1/vac**2
-    convf = 1 + 2.735182e-4 + 131.4182 * ivac2 + 2.76249e8 * ivac2*ivac2
-    obs = vac / convf
-    return obs
+    return vac/_air2vac(vac)
 
 #=====================================================================
 def air2vac(air):
     if type(air) != np.ndarray:
         air = np.array(air)
-        
     air = air.astype(np.float64)
-        
-    s = 1e4 / air
-    s2 = s**2
-    n = 1 + 0.00008336624212083 + 0.02408926869968 / (130.1065924522 - s2) \
-          + 0.0001599740894897 / (38.92568793293 - s2)
-    return air*n
+    w = air*_air2vac(air)
+    w = air*_air2vac(w)
+    return air*_air2vac(w)
 
 #=====================================================================
-def conv_profile(xx, yy, px, py):
-    norm = np.trapz(py, x=px)
-    n = len(xx)
-    dxn = (xx[-1] - xx[0]) / (n - 1)
-    conv = dxn * ifft(fft(yy)*fft(np.roll(py/norm, int(n/2))))
-    
-    return xx, np.real(conv)
-
-
-def convol(sx, sy, vrot=None, zeta_rt=None, vshift=None, vdop=None, custom=None):
-    """
-    Applies convolutions to data sx, sy.
-    Give vrot in km/s for convolution with a rotational profile.
-    Give zeta_rt in km/s for convolution with macroturbulence.
-    Give vshift in km/s for blue/red - dopplershift.
-    Give vdop in km/s for gaussian doppler broadening.
-    """
-    sxx = np.log(sx.astype(np.float64)) # original xscale in
-    syy =        sy.astype(np.float64)
-    
-    min_rd = 0.1 / CC_KMS    # RESAMPLING-DISTANCE
-    
-    rd = 0.5 * np.min(np.diff(sxx))
-    rd = np.max([rd, min_rd])
-    
-    npres = ((sxx[-1] - sxx[0]) // rd) + 1
-    npresn = npres + npres%2
-    
-    rd  = (sxx[-1] - sxx[0]) / (npresn-1)
-    sxn = sxx[0] + np.arange(npresn) * rd
-    syn = interp1d(sxx, syy)(sxn)
-        
-    px = (np.arange(npresn) - npresn//2) * rd
-    
-    if vrot:
-        normf = CC_KMS/vrot
-        beta = 1.5
-        xi = normf*px
-        
-        xi[abs(xi) > 1] = 1
-        
-        py = (2*np.sqrt(1-xi**2) / np.pi + beta*(1-xi**2) / 2) * normf / (1 + 6/9*beta)
-        
-        sxn, syn = conv_profile(sxn, syn, px, py)
-        
-    if zeta_rt:
-        wave_rt = np.arange(20)/10.   
-        flux_rt = [1.128,0.939,0.773,0.628,0.504,0.399,0.312,0.240,0.182,0.133,
-                  0.101,0.070,0.052,0.037,0.024,0.017,0.012,0.010,0.009,0.007]
-        wave_rt = np.concatenate([-wave_rt[:0:-1],wave_rt])
-        flux_rt = np.concatenate([ flux_rt[:0:-1],flux_rt])
-        zeta_rt1 = zeta_rt/CC_KMS
-        wave_rt = wave_rt * zeta_rt1
-        flux_rt = flux_rt / zeta_rt1 
-        py = interp1d(wave_rt, flux_rt, bounds_error=False, fill_value=0)(px)
-        mask = (px < wave_rt[0]) + (px > wave_rt[-1])
-        py[mask] = 0
-        
-        sxn, syn = conv_profile(sxn, syn, px, py)
-        
-    if vdop:
-        width = vdop/CC_KMS
-            
-        py = np.exp(- (px/width)**2 ) / (np.sqrt(np.pi)*width)
-        sxn, syn = conv_profile(sxn, syn, px, py)
-
-        
-    xx = np.exp(sxn)
-    yy = syn
-    
-    if custom is not None:
-        if not hasattr(custom, '__iter__'):
-            print('Custom convolution profile must be an array!')
-
-        py = interp1d(*custom, bounds_error=False, fill_value=0)(xx - np.mean(xx))
-        xx, yy = conv_profile(xx, yy, xx, py)
-        #py = py / np.trapz(py, x=xx)
-        #dxn = (xx[-1] - xx[0]) / (xx.size - 1)
-        #yy = dxn * np.convolve(yy, py, mode='same')
-    
-    if vshift is not None:
-        vshift = vshift / CC_KMS # vshift has to be given in km/s
-        lshift = xx * vshift / (1+vshift)
-        
-        xx = xx + lshift
-        
-    return xx, yy
+def _air2vac(air):
+    s = 1e4 / air
+    s2 = s**2
+    n = 1.00008336624212083 + 0.02408926869968 / (130.1065924522 - s2) \
+          + 0.0001599740894897 / (38.92568793293 - s2)
+    return n
 
 @njit
 #=====================================================================
@@ -447,7 +365,7 @@ def idl_tabulate(x, f, p=5):
     return ret
 
 #=====================================================================
-def continuum(xx, yy, axis=-1):
+def linear_edge_normalisation(xx, yy, axis=-1):
     yspace = yy.take([0, -1], axis)
     xspace = xx.take([0, -1], axis)
 
@@ -820,128 +738,6 @@ def near_equal_split(nbox, ndim):
   return nn
 
 #=====================================================================
-class memmap_list:
-    #-----------------------------------------------------------------
-    def __init__(self, memmaps, axis=-1):
-        self.mlist = [m for m in memmaps if m.size > 0]
-        self.shape = np.array(self.mlist[0].shape)
-        self.shape[axis] = np.sum([m.shape[axis] for m in self.mlist])
-        self.size = np.prod(self.shape)
-        self.ndim = self.shape.size
-        self.caxis = axis
-        if axis == -1: self.caxis = self.shape.size - 1
-        self.cstart = np.cumsum([0,] + [m.shape[axis] for m in self.mlist[:-1]])
-
-    def __getitem__(self, index):
-    #-----------------------------------------------------------------
-        if self.ndim == 1:
-            return np.array(self)[index]
-        
-        if np.issubdtype(type(index), np.integer):
-            index = (index,)
-
-        if type(index) == slice:
-            index = (index,)
-
-        if Ellipsis in index:
-            Edim = self.ndim - len(index) + 1
-            iE = index.index(Ellipsis)
-            index = index[:iE] + (slice(None),)*Edim + index[iE+1:]
-
-        dim = len([i for i in index if i != None])
-        if dim > self.ndim:
-            raise IndexError("too many indices")
-        elif dim-1 >= self.caxis:
-            cutc = index[self.caxis] != slice(None)
-        else:
-            cutc = False
-
-        idim = [i for i, v in enumerate(index) if isinstance(v, int)]
-        ncut = len([i for i in idim if i < self.caxis])
-            
-        if cutc:
-            slc = index[self.caxis]
-            idx = np.array(index)
-            if np.issubdtype(type(slc), np.integer):
-                if slc < 0: slc += self.shape[self.caxis]
-                i = np.searchsorted(self.cstart, slc, side='right') - 1
-                m = self.mlist[i]
-                idx[self.caxis] = slc - self.cstart[i]
-                return self.mlist[i][tuple(idx)]
-            else:
-                mlist = []
-                for i, m in enumerate(self.mlist):
-                    #start = slc.start
-                    #stop = slc.stop
-                    #if start is not None: start = max(0, start - self.cstart[i])
-                    #if stop is not None: stop = max(0, stop - self.cstart[i])
-
-                    i1 = self.cstart[i]
-                    o1 = i1 + m.shape[self.caxis]
-                    i2 = slc.start
-                    o2 = slc.stop
-                    s2 = slc.step
-                    n = m.shape[self.caxis]
-
-                    if s2 is None: s2 = 1
-                    if s2 > 0:
-                        start = np.ceil(i1/s2).astype(int)*s2 - i1
-                        stop  = np.ceil(o1/s2).astype(int)*s2 - i1
-                        if i2 is not None: start = max(start, i2 - i1)
-                        if o2 is not None: stop  = min(stop,  o2 - i1)
-                        if stop < 0: stop = 0
-                    else:
-                        start = n - np.floor((n-o1)/s2).astype(int)*s2 - i1 - 1
-                        stop  = n - np.floor((n-i1)/s2).astype(int)*s2 - i1 - 1
-                        if i2 is not None: start = min(start, i2 - i1)
-                        if o2 is not None: stop  = max(stop,  o2 - i1)
-                        if stop < 0: stop = None
-
-                    idx[self.caxis] = slice(start, stop, slc.step)
-                    mlist.append(m[tuple(idx)])
-
-                if slc.step is not None:
-                    if slc.step < 0: mlist = mlist[::-1]
-
-        else:
-            mlist = [m[index] for m in self.mlist]
-
-        if len(mlist)>1:
-            return memmap_list(mlist, axis=self.caxis-ncut)
-        else:
-            return mlist[0]
-        
-    def __array__(self, dtype=None):
-        return np.concatenate(self.mlist, axis=self.caxis)
-    
-    def squeeze(self, axis=None):
-        slc = np.array([slice(None)]*self.ndim)
-        slc[self.shape==1] = 0
-        slc[self.caxis] = slice(None)
-        return self[tuple(slc)]
-    
-    def flatten(self):
-        return np.array(self).flatten()
-    
-    def ravel(self):
-        return self.flatten()
-
-    def __add__(self, other):
-        return np.array(self) + other
-
-    def __sub__(self, other):
-        return np.array(self) - other
-
-    def __mul__(self, other):
-        return np.array(self) * other
-
-    def __truediv__(self, other):
-        return np.array(self) / other
-    
-    def __transpose__(self):
-        return np.array(self).transpose()
-
-#=====================================================================
 def crop_inputs(xx, yy, xmin=None, xmax=None, ymin=None, ymax=None):
     #-----------------------------------------------------------------
     if xmin is None: xmin = np.nanmin(xx)
@@ -1128,7 +924,7 @@ def fit_voigt_profile(xx, yy, x0=None, dlam=None, sigma=None, syst=None, auto_cr
 
     if syst is not None:
       dy = 0.1*syst
-      (dx, sig, amp), pcov = curve_fit(voigt_profile, x, y+dy, p0=popt, bounds=bounds, sigma=sigma, absolute_sigma=absolute)
+      (dx, a, sig, amp), pcov = curve_fit(voigt_profile, x, y+dy, p0=popt, bounds=bounds, sigma=sigma, absolute_sigma=absolute)
       weq2 = 1e3*amp*sig # equivalent width in mÅ
       dw = (weq2 - weq) / dy
       esys = syst*dw
@@ -1225,7 +1021,7 @@ def lowpass(xx, yy, thresh=15, force_period=False):
   yy = np.interp(newx, xx, yy)
 
   if force_period:
-    cnt = continuum(newx, yy)
+    cnt = linear_edge_normalisation(newx, yy)
     yy = yy / cnt
 
   # Perform Fourier Transform
@@ -1250,36 +1046,6 @@ def split_words(text):
   pattern = r'(?:"[^"]*"|\'[^\']*\'|\S+)'
   words = re.findall(pattern, text)
   return words
-
-#=====================================================================
-def read_llist(filename):
-  llist = pd.DataFrame()
-  with open(filename) as f:
-    lines = f.readlines()
-    names = ['lam0', 'evi', 'loggf', 'gv', 'upper_g', 'ga', 'gq']
-    ncol_max = len(names)
-
-    while len(lines) > 0:
-      line = lines.pop(0).strip()
-      mass_id, ion, nlines = split_words(line)
-      line = lines.pop(0).strip()
-      species = line.strip("'").strip()[:6]
-      nlines = int(nlines)
-      table = ''.join(lines[:nlines])
-      df = pd.read_fwf(StringIO(table), header=None)
-      del lines[:nlines]
-      ncolumns = min(ncol_max, len(df.columns))
-      df = df.iloc[:, :ncolumns]
-      df.columns = names[:ncolumns]
-      if 'gq' in df.columns:
-        if df.gq.dtype != float:
-          df.drop(columns='gq', inplace=True)
-      df['id'] = species
-      df['ion'] = int(ion)
-      df['iso'] = int(mass_id.strip("'").split('.')[-1])
-      llist = pd.concat([llist, df])
-      
-  return llist
 
 #=====================================================================
 def nearest_sorted(array, values):
@@ -1383,17 +1149,123 @@ def pchip_sigma(xx, yy, x, dx):
   return np.abs(dy)
 
 #=====================================================================
-def convert_paths_to_strings(obj):
-    """
-    Recursively convert all Path objects in a nested dictionary/list structure to strings.
-    """
-    if isinstance(obj, pathlib.Path):
-        return str(obj)
-    elif isinstance(obj, dict):
-        return {key: convert_paths_to_strings(value) for key, value in obj.items()}
-    elif isinstance(obj, list):
-        return [convert_paths_to_strings(item) for item in obj]
-    elif isinstance(obj, tuple):
-        return tuple(convert_paths_to_strings(item) for item in obj)
+def pad_boolean(arr, pad=1):
+  # Convert Boolean to integers (True -> 1, False -> 0)
+  int_arr = arr.astype(int)
+  # Create a kernel of size 2N + 1 for the rolling product
+  kernel = np.ones(2 * pad + 1, dtype=int)
+  # Perform convolution (mode='same' ensures output size matches input size)
+  convolved = np.convolve(int_arr, kernel, mode='same')
+  # Convert back to Boolean: Any value less than the kernel size indicates a 0 was in the window
+  result = convolved == (2 * pad + 1)
+  return result
+
+#=====================================================================
+def calc_teff(xx, yy, planck_thresh=None):
+    mnan = np.isfinite(yy)
+
+    if planck_thresh is not None:
+        def opt_func(x, Teff):
+            y = crop_spectrum(x, np.pi*planck(x, Teff), per_aa=True)[1]
+            return y
+        
+        mask = (xx > planck_thresh) & mnan
+        mx = xx[mask]
+        my = yy[mask]
+
+        popt, _ = curve_fit(opt_func, mx, my, bounds=([2000],[10000]))
+
+        trailx = np.geomspace(xx[-1], 1e6)[1:]
+        traily = opt_func(trailx, *popt)
+
+        newx = np.concatenate((xx[mnan], trailx))
+        newy = np.concatenate((yy[mnan], traily))
     else:
-        return obj
+        newx = xx[mnan]
+        newy = yy[mnan]
+
+    bol = np.trapz(newy , x=newx)
+    teff = (bol / SBOL)**0.25
+    return teff
+
+#=====================================================================
+def get_bisector(xx, yy, x0, n=100, frac=0.99):
+    #-----------------------------------------------------------------
+    ex = argrelextrema(yy, np.less_equal)[0]
+    i0 = ex[np.argmin(np.abs(xx[ex] - x0))]
+    ex = argrelextrema(yy, np.greater_equal)[0]
+    i = np.searchsorted(ex, i0)
+    ib = ex[i-1]
+    ir = ex[i]
+    ymin = np.max(yy[i0-1:i0+2])
+    ymax = np.min([yy[ib], yy[ir]])
+    ymax = ymin + (ymax - ymin)*frac
+    newy = np.linspace(ymax, ymin, n)
+    lwing = np.interp(newy, yy[i0:ib:-1], xx[i0:ib:-1])
+    rwing = np.interp(newy, yy[i0:ir], xx[i0:ir])
+    newx = 0.5*(lwing + rwing)
+    return newx, newy
+
+#=====================================================================
+@broadcast_arguments(lam=1, val=1, convolve=1)
+def crop_spectrum(lam, val, slc=None, lam0=None, dlam=None, xmin=None, xmax=None, vdop=None,
+             vrot=None, vshift=None, convolve=None, zeta_rt=None, relative=True, res=None,
+             per_aa=False, renorm=None, continuum=None, tilt=None, velocity_units=False):
+    #-----------------------------------------------------------------
+    if hasattr(lam, 'values'): lam = lam.values
+    if hasattr(val, 'values'): val = val.values
+
+    if slc:
+        xmin = lam[slc.start] if slc.start else xmin
+        xmax = lam[slc.stop-1] if slc.stop else xmax
+    
+    if lam0 and dlam:
+        if not isinstance(dlam, (bool)):
+            if hasattr(dlam, '__iter__'):
+                xmin = lam0 - dlam[0]
+                xmax = lam0 + dlam[1]
+            else:
+                xmin = lam0 - dlam
+                xmax = lam0 + dlam
+
+    else:
+        dlam = None
+        lam0 = None
+
+    xx, yy = convolve_crop(lam, val, xmin=xmin, xmax=xmax, res=res, vshift=vshift,
+                            vdop=vdop, vrot=vrot, zeta_rt=zeta_rt, custom=convolve)
+    
+    if renorm:
+        if renorm == 'max':
+            yy = yy / np.max(yy)
+        elif renorm == 'edge':
+            yy = yy / linear_edge_normalisation(xx, yy)
+        elif renorm > 0:
+            rmin = xmin - renorm if xmin else None
+            rmax = xmax + renorm if xmax else None
+            rx, ry = crop_spectrum(lam, val, xmin=rmin, xmax=rmax, vshift=vshift, res=res,
+                                   vdop=vdop, vrot=vrot, zeta_rt=zeta_rt, convolve=convolve)
+            yy = yy / np.max(ry)
+
+    if per_aa:
+        yy = yy * CC / (xx**2) * 1e8
+
+    if continuum:
+        yy = yy * continuum
+    
+    if tilt:
+        yy = yy * (1 + tilt*(xx - (xx[0]+xx[-1])/2))
+
+    if lam0:
+        if velocity_units:
+            xx = xx / lam0
+            if relative: xx = xx - 1
+            xx *= CC_KMS
+            
+        elif relative and dlam:
+            xx = xx - lam0
+
+    return xx, yy
+
+
+        

@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 from .auxfuncs import *
-from .auxfuncs import _vacuum2obs
+from .auxfuncs import vac2air
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 from scipy.signal import argrelextrema
@@ -62,7 +62,7 @@ class trans_class(object):
         
         self.alamb = 1e8 / (self.upper.ecm - self.lower.ecm)
         self.u = CC / self.alamb * 1e8
-        self.lam0 = _vacuum2obs(self.alamb)
+        self.lam0 = vac2air(self.alamb)
         self.evi = self.lower.ev
 
         if kr < atom.nline:
@@ -173,8 +173,8 @@ class trans_class(object):
             if self.prepared: return
 
         self.run = self.atom.run
-        self.lb = vacuum2obs(self.lam_blue)
-        self.lr = vacuum2obs(self.lam_red)
+        self.lb = vac2air(self.lam_blue)
+        self.lr = vac2air(self.lam_red)
 
         if hasattr(self.atom, 'ib'):
             self.ib = self.atom.ib[self.kr]
@@ -186,53 +186,13 @@ class trans_class(object):
             self.ir = find_close(self.run.lam, self.lr, side='right')
 
         slc = slice(self.ib, self.ir)
-        self.lam  = self.run.lam[slc]
-        self.flux = self.run.flux[slc]
-        self.flux_cnt = self.run.flux_cnt[slc]
-        self.ie = self.run.ie[slc]
-        self.cnt = self.run.cnt[slc]
+        self.spectrum = self.run.spectrum.crop(slc=slc)
 
         if hasattr(self.run, 'lvlerr') and hasattr(self, 'i'):
             self.ilvlerr = self.run.lvlerr[self.i]
             self.jlvlerr = self.run.lvlerr[self.j]
 
         self.prepared = True
-
-    #=====================================================================
-    def plot(self, ang=None, imu=None, norm=True, dlam=None, label=None,
-                vdop=None, vshift=None, convolve=None, renorm=None, fac=None,
-                LTE=False, title=None, set_labels=True, velocity_units=False,
-                lam_offset=True, per_aa=False, tilt=None, abnd=None, vrot=None,
-                **kwargs):
-        #-----------------------------------------------------------------
-        xx, yy = self.crop(ang=ang, imu=imu, norm=norm, dlam=dlam, tilt=tilt,
-                            vdop=vdop, vshift=vshift, convolve=convolve, fac=fac,
-                            renorm=renorm, LTE=LTE, velocity_units=velocity_units,
-                            lam_offset=lam_offset, per_aa=per_aa, abnd=abnd, vrot=vrot)
-
-        self.run.set_xaxis(xx, dlam, velocity_units=velocity_units, set_labels=set_labels,
-                           lam_offset=lam_offset)
-        
-        self.run.set_yaxis(ang=ang, imu=imu, norm=norm, renorm=renorm, set_labels=set_labels, per_aa=per_aa)
-
-        if type(label) is str:
-            if '{WEQ}' in label:
-                weq = self.calc_weq(ang=ang, imu=imu, dlam=dlam, renorm=renorm, LTE=LTE)
-                label = label.replace('{WEQ}', '{:.2f}'.format(weq))
-            
-            if '{BLU}' in label:
-                blues, depth = self.calc_blueshift(ang=ang, imu=imu, LTE=LTE)
-                label = label.replace('{BLU}', '{:.2f}'.format(blues))
-
-        plot = plt.plot(xx, yy, label=label, **kwargs)
-
-        if set_labels:
-            default = self.title
-            if hasattr(self, 'atom'): default = default + ', ' + self.atom.get_title(abnd)
-            set_title(title, default=default)
-            set_legend(**kwargs)
-
-        return plot
     
     #=====================================================================
     def crop(self, **kwargs):
@@ -240,8 +200,8 @@ class trans_class(object):
         if hasattr(self, 'prepared'):
             if not self.prepared: self.prepare()
                 
-        xx, yy = self.run.crop(line=self, **kwargs)
-        return xx, yy
+        spec = self.run.crop(line=self, **kwargs)
+        return spec
     
     #=====================================================================
     def get_clv(self, **kwargs):
@@ -377,159 +337,3 @@ class trans_class(object):
         rwing = np.interp(newy, yy[i0:ir], xx[i0:ir])
         newx = 0.5*(lwing + rwing)
         return newx, newy
-    
-    #=====================================================================
-    def plot_bisector(self, n=100, frac=0.99, ang=None, imu=None, norm=True,
-                      dlam=None, velocity_units=False, vdop=None, vshift=None,
-                      convolve=None, renorm=None, LTE=False, set_labels=True,
-                      lam_offset=True, **kwargs):
-        #-----------------------------------------------------------------
-        xx, yy = self.get_bisector(n=n, frac=frac, ang=ang, imu=imu, norm=norm,
-                      dlam=dlam, velocity_units=velocity_units, vdop=vdop,
-                      vshift=vshift, convolve=convolve, renorm=renorm, LTE=LTE)
-
-        self.run.set_xaxis(xx, dlam, velocity_units=velocity_units, set_labels=set_labels,
-                           lam_offset=lam_offset)
-        
-        self.run.set_yaxis(ang, imu, norm, renorm, set_labels=set_labels)
-
-        return plt.plot(xx, yy, **kwargs)
-
-    #=====================================================================
-    def get_cntrbf(self, df=None, dlam=None, ang=None, imu=None, LTE=False, fmean=False, gmean=False, slc=None, norm=False):
-        #-----------------------------------------------------------------
-        self.prepare()
-
-        cntrbf_lines = np.array(self.run.nml['line_mask']['cntrbf_lines']).ravel() - 1
-        if not self.kr in cntrbf_lines:
-            raise ValueError('Contribution function was not saved for this line!')
-        
-        name = 'cntrbf_{:06}'.format(self.kr+1)
-        mem  = self.run.read_patch_save(name, fdim=0, zdim=3, lazy=True)[-1]
-
-        if dlam is not None:
-            lam = self.run.lam[self.ib:self.ir+1]
-            ib = np.searchsorted(lam, self.lam0-dlam)
-            ir = np.searchsorted(lam, self.lam0+dlam)
-            slc = slice(ib, ir)
-            lam = lam[slc]
-            mem = mem[slc]
-        elif df is not None:
-            f = self.i0 - self.ib + df
-            mem = mem[f:f+1]
-        elif slc is not None:
-            mem = mem[slc]
-
-        if LTE:
-            cntrbf = mem[..., 2:4, :]
-        else:
-            cntrbf = mem[..., 0:2, :]
-        
-        nf, nx, ny, nz, nset, nang = cntrbf.shape
-        ltau = self.run.ltau
-        get_mean = gmean and self.run.dim == '3D'
-
-        if get_mean:
-            new_ltau = np.mean(ltau, axis=(0,1))[::-1]
-
-        all_angs = np.arange(self.run.n_ang)
-        if ang is None and imu is None:
-            angs = all_angs
-        elif imu is not None:
-            if imu < 0: imu = self.run.imus.max()+imu+1
-            angs = all_angs[self.run.imus==imu]
-        elif ang is not None:
-            angs = np.array(ang).squeeze()
-            if angs.ndim == 0: angs = np.array([angs])
-
-        wts = self.run.wts[angs]
-        wts = wts / np.sum(wts)
-            
-        conversion = np.log(10) * self.run.tau / self.run.chi
-
-        first_time = True
-        for ang, w in zip(angs, wts):
-            cang = np.array(cntrbf[..., ang])
-            cf, net_chi = np.moveaxis(cang, -1, 0)
-            vec = self.run.vec[ang]
-            zz = self.run.zz / vec[-1] * 1e8
-            tau = compute_tau_scale(net_chi, zz, axis=-1)
-            cf = conversion * cf * np.exp(-tau)
-            if self.run.dim == '3D':
-                vec = vec * np.array([-1, -1, 1])
-                cf = rotate_array(self.run.xx, self.run.yy, self.run.zz, cf, vec)
-
-            if get_mean:
-                yy = np.array(cf[...,::-1]).copy()
-                xx = ltau[...,::-1].copy()
-                newcf = interp_tau(new_ltau, xx, yy)
-                cf = np.mean(newcf, axis=(1,2))
-
-            if first_time:
-                cfunc = np.zeros_like(cf)
-                first_time = False
-
-            cfunc = cfunc + w*cf
-
-        if get_mean: ltau = new_ltau
-        if cfunc.shape[0]>1 and fmean: cfunc = np.trapz(cfunc, x=lam, axis=0)
-        if norm:
-            normalisation = abs(np.trapz(cfunc, x=ltau))
-            cfunc = cfunc / normalisation
-        return ltau, cfunc.squeeze()
-
-    #=====================================================================
-    def plot_cntrbf(self, df=0, dlam=None, imu=None, ang=None, LTE=False, title=None, norm=False, **kwargs):
-        #-----------------------------------------------------------------
-        if dlam is not None: df = None
-        ltau, cf = self.get_cntrbf(df=df, dlam=dlam, imu=imu, ang=ang, LTE=LTE, gmean=True, fmean=True, norm=norm)
-            
-        lam = self.run.lam[self.ib:self.ir+1]
-        if dlam is not None:
-            ib = np.searchsorted(lam, self.lam0-dlam)
-            ir = np.searchsorted(lam, self.lam0+dlam)
-            wave = r'λ={:.2f}-{:.2f}[Å]'.format(lam[ib], lam[ir-1])
-        else:
-            f = self.i0 - self.ib + df
-            wave = r'λ={:.3f}[Å]'.format(lam[f])
-            
-        if ang is None and imu is None:
-            angle = 'flux'
-        else:
-            if ang is not None:
-                imu = self.run.imus[ang]
-
-            angle = r'μ={:.2f}'.format(self.run.mus[imu])
-
-        plt.xlabel(r'log$\tau_{500}$')
-        plt.ylabel('Contribution function')
-        set_title(title, default=wave + ', ' + angle)
-        return plt.plot(ltau, cf, **kwargs)
-    
-
-    #=====================================================================
-    def hist_cntrbf(self, imu=None, ang=None, LTE=False, dlam=0.5, title=None, cmap='binary', **kwargs):
-        #-----------------------------------------------------------------
-        xx, slc = self.get_xx(dlam=dlam)
-        slc = slice(slc.start-self.ib, slc.stop-self.ib)
-
-        ltau, cf = self.get_cntrbf(imu=imu, ang=ang, LTE=LTE, mean=True, fslice=slc)
-            
-        self.run.set_xaxis(xx, dlam=dlam)
-        plt.ylabel(r'log$\tau_{500}$')
-        set_title(title, default='Contribution function of ' + self.title)
-
-        X, Y, Z = *np.meshgrid(xx, ltau), cf.T
-        return plt.pcolormesh(X, Y, Z, cmap=cmap, edgecolors='face', **kwargs)
-
-
-def set_title(title, default=None):
-    if title is None:
-        title = default
-
-    if title is not None:
-        plt.title(title)
-
-def set_legend(**kwargs):
-    if 'label' in kwargs:
-        plt.legend(frameon=False)

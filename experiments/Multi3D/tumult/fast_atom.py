@@ -1,8 +1,8 @@
 import io, types
 import pandas as pd
-from .fast_trans import fast_trans
+from .fast_trans import TransFactory
 from .auxfuncs import *
-from .atom import atom_class
+from .atom import AtomClass
 
 formatters = {'ga':'{:.3e}'.format,
               'gv':'{:.8g}'.format,
@@ -20,7 +20,7 @@ def read(text, dtype):
 def read_table(file, **kwargs):
   return pd.read_csv(file, sep=r'\s+', comment='*', quotechar="'", **kwargs)
 
-class fast_atom(object):
+class FastAtom(object):
   def __init__(self, atom_file):
     with open(atom_file, 'r') as f:
       condition = lambda x: not x.strip().startswith('*')
@@ -44,14 +44,12 @@ class fast_atom(object):
     bb['kr'] = range(self.nline)
     bb['nu0'] = CC * (Ej - Ei)
     bb['lam_vac'] = 1e8 * CC / bb.nu0
-    bb['lam0'] = vacuum2obs(bb.lam_vac)
+    bb['lam0'] = vac2air(bb.lam_vac)
     bb['loggf'] = np.log10(bb.f*levels.iloc[bb.i].g.values)
 
     self.level = levels
     self.bbt = bb
-
-    init = np.frompyfunc(fast_trans, 2, 1)
-    self.trans = init(np.arange(self.nline), self)
+    self.trans = TransFactory(self)
 
   def load_sp(self, lam, qnorm):
     self.qnorm = qnorm * 1e5 / CC
@@ -66,7 +64,7 @@ class fast_atom(object):
       if abnd is None: abnd = self.abnd
       return 'A({}) = {:.2f}'.format(self.id.strip(), abnd)
 
-class pandas_atom(object):
+class PandasAtom(object):
   def __init__(self):
     pass
 
@@ -80,8 +78,7 @@ class pandas_atom(object):
     if hasattr(self, 'col'): self.col_tab = self.col.columns
     if hasattr(self, 'bbt'):
       self.bbt_tab = self.bbt.columns
-      init = np.frompyfunc(fast_trans, 2, 1)
-      self.trans = init(np.arange(self.nline), self)
+      self.trans = TransFactory(self)
   
   @classmethod
   def read(cls, atom_file):
@@ -113,8 +110,8 @@ class pandas_atom(object):
   @classmethod
   def from_old(cls, atom_file, use_comment_lam0=True):
     self = cls()
-    atom = atom_class(atom_file, qnorm=10., read_bf=True, read_coll=True, sanity_check=True)
-    fast = fast_atom(atom_file)
+    atom = AtomClass(atom_file, qnorm=10., read_bf=True, read_coll=True, sanity_check=True)
+    fast = FastAtom(atom_file)
     self.id = atom.id
     self.abnd = atom.abnd
     self.ai = atom.ai

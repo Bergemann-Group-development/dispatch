@@ -1,42 +1,39 @@
 import os
-import f90nml
 import copy
 import subprocess as subproc
-from .auxfuncs import check_file, convert_paths_to_strings
+from .auxfuncs import check_file, update_dict
 from .tumult import tumult
 import re
 import numpy as np
 import pathlib
+from tumult.NameList import NameList
 
 def launch(input_name, nml_settings=None, default=None, overwrite=False, threads=None,
            log_file=None, slurm_script=None, verbose=2, dry=False, subprocess=False, runner=None):
+    
     input_name = pathlib.Path(input_name)
     input_name.parent.mkdir(parents=True, exist_ok=True)
+
     cwd = os.getcwd()
     check_file(cwd + '/dispatch.x')
+    input = NameList()
+
     if default is not None:
-        if isinstance(default, f90nml.namelist.Namelist):
-            input = copy.deepcopy(default)
-        else:
+        if not isinstance(default, NameList) and isinstance(default, (str, pathlib.Path)):
             default = pathlib.Path(default)
-            if default.is_dir():
-                input = f90nml.read(default / 'params.nml')
-            elif default.with_suffix('.nml').is_file():
-                input = f90nml.read(default)
-            else:
-                raise ValueError(default, ' was not found!')
-    else:
-        input = f90nml.Namelist()
+            params_nml = default / 'params.nml' if default.is_dir() else default
+            default = NameList.from_file(params_nml)
+            
+        update_dict(input, default)
     
     if nml_settings is not None:
-        nml_settings = convert_paths_to_strings(nml_settings)
-        input.patch(nml_settings)
+        update_dict(input, nml_settings)
 
-    datadir = 'data'
-    if 'io_params' in input:
-        if 'datadir' in input['io_params']:
-            datadir = input['io_params']['datadir'].strip()
+    datadir = input.get('io_params', {'datadir':'data'}).get('datadir', 'data').strip()
     output_folder = datadir / input_name
+
+    if log_file is None and verbose < 2:
+        log_file = '/dev/null 2>&1'
 
     ok = overwrite
     if not ok:
@@ -48,25 +45,21 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
 
     if ok:
         input_file = input_name.with_suffix('.nml')
-        input.write(input_file, force=True)
+        input.to_file(input_file)
 
         if not dry:
             if slurm_script is None:
                 if log_file is None:
-                    command = './dispatch.x {:}'.format(input_file)
+                    command = f'./dispatch.x {input_file}'
                 else:
-                    command = './dispatch.x {:} > {:}'.format(input_file, log_file)
+                    command = f'./dispatch.x {input_file} > {log_file}'
             else:
-                command = 'sbatch {:} {:}'.format(slurm_script, input_file)
+                command = f'sbatch {slurm_script} {input_file}'
 
             if verbose == 1:
                 print(input_file, ' launched')
 
-            if verbose < 2 and log_file is None:
-                command = command + ' > /dev/null 2>&1'
-
-            sthreads = str(threads) if threads else ''
-            os.environ['OMP_NUM_THREADS'] = sthreads
+            os.environ['OMP_NUM_THREADS'] = str(threads) if threads else ''
             os.environ['OMP_STACKSIZE'] = '256M'
             env = os.environ.copy()
 
@@ -87,10 +80,12 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
                         pass
                     last_line = line
                     print(last_line)
-        elif verbose>0:
+
+        elif verbose > 0:
             print(input_file, ' written')
+            
     else:
-        if verbose>0:
+        if verbose > 0:
             print(output_folder, ' already exists')
 
     return output_folder, ok or existed
@@ -106,7 +101,7 @@ def monitor(folder, log_file=None):
 
     if os.path.isfile(nml_file):
         f = open(log_file, mode='r')
-        nml = f90nml.read(nml_file)
+        nml = NameList.from_file(nml_file)
         if 'atom_params' in nml and 'm3d_params' in nml:
             maxiter = nml['m3d_params']['maxiter']
             convlim = np.log10(nml['atom_params']['convlim'])

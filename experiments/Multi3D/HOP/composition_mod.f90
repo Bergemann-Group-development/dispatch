@@ -1955,6 +1955,7 @@ contains
             if (ion%nmolec > 0) then
                 nions = nions + 1
                 ions(nions)%p => ion
+                if (allocated(ion%fil)) deallocate(ion%fil)
                 allocate(ion%fil, mold=temp)
             endif
         end do
