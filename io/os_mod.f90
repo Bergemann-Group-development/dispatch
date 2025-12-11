@@ -245,25 +245,27 @@ subroutine get_filenames(self, directory, filenames, pattern)
   character(len=*), intent(in) :: directory
   character(len=256), allocatable, intent(out) :: filenames(:)
   character(len=*), intent(in), optional :: pattern
+  character(len=256) :: temp_file
   integer :: num_files
   character(len=512) :: command
   character(len=256) :: line
   integer :: unit, iostat, status, i
   !-----------------------------------------------------------------------------
   num_files = 0
+  write(temp_file, '(A, I3.3)') '.temp_files', omp%thread
     
   ! Build command with optional pattern filtering
   if (present(pattern)) then
       write(command, '(A)') 'ls -1 "' // trim(directory) // '"/' // &
-                            trim(pattern) // ' 2>/dev/null | xargs -n1 basename > .temp_files'
+                            trim(pattern) // ' 2>/dev/null | xargs -n1 basename > ' // temp_file
   else
-      write(command, '(A)') 'ls -1 "' // trim(directory) // '" > .temp_files'
+      write(command, '(A)') 'ls -1 "' // trim(directory) // '" > ' // temp_file
   end if
   
   call execute_command_line(command, wait=.true., exitstat=status)
   if (status /= 0) return
   
-  open(newunit=unit, file='.temp_files', status='old', action='read')
+  open(newunit=unit, file=temp_file, status='old', action='read')
   ! Count files
   do
       read(unit, '(A)', iostat=iostat) line
@@ -274,14 +276,14 @@ subroutine get_filenames(self, directory, filenames, pattern)
   
   ! Read filenames
   allocate(filenames(num_files))
-  open(newunit=unit, file='.temp_files', status='old', action='read')
+  open(newunit=unit, file=temp_file, status='old', action='read')
   do i = 1, num_files
       read(unit, '(A)', iostat=iostat) filenames(i)
       if (iostat /= 0) exit
   end do
   close(unit)
 
-  call execute_command_line('rm .temp_files 2>/dev/null', wait=.true., exitstat=status)
+  call execute_command_line('rm ' // trim(temp_file) // ' 2>/dev/null', wait=.true., exitstat=status)
 end subroutine get_filenames
 
 !===============================================================================

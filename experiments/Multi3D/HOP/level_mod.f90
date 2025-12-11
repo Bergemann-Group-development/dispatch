@@ -3,7 +3,7 @@ MODULE level_mod
     implicit none
 
     type :: state_type
-        real(dp) :: xion
+        real(dp) :: xion=999.99
         real(dp), dimension(:,:,:), allocatable :: n, f
     contains
         procedure :: boltzmann
@@ -82,6 +82,24 @@ contains
     end FUNCTION fischel_sparks
 
     !===============================================================================
+    PURE SUBROUTINE calc_x_and_k(ns, x1, x2, k)
+        real(dp), intent(in) :: ns
+        real(dp), intent(out) :: x1, x2, k
+        real(dp) :: ns2, rih
+        !---------------------------------------------------------------------------
+        ns2 = ns*ns
+        rih = ns * sqrt(2.5*ns2 + 0.5)
+        x1 = (Rbohr*(rih + 1.73))**3
+        x2 = (Rbohr*(rih + 1.02))**3
+
+        k = 8.3e14 / (ns2*ns2)
+        if(ns > 3.) then
+          k = k * 5.33333333*ns / (ns + 1.d0)**2
+        endif
+        k = k*sqrt(k)
+    END SUBROUTINE calc_x_and_k
+
+    !===============================================================================
     ! Computes the occupation probability for a H atom in 
     ! state with effective principle quantum number NS in a plasma
     ! enviroment with NH, NE, NHE number densities of H, ions,
@@ -101,20 +119,11 @@ contains
         real(dp), intent(in) , dimension(:,:,:) :: nh, nhe, ne, shield
         real(dp), intent(in) :: ns
         real(dp), intent(out), dimension(:,:,:) :: w
-        real(dp) :: ns2, rih, x1, x2, neutr, k1, k2, x, f, charg, res
+        real(dp) :: x1, x2, neutr, k1, k2, x, frac, charg, res
         real(dp), parameter :: pi43=4.18879d0 ! 4*pi/3
         integer :: i,j,k, m(3)
         !---------------------------------------------------------------------------
-        ns2 = ns*ns
-        rih = ns * sqrt(2.5*ns2 + 0.5)
-        x1 = (Rbohr*(rih + 1.73))**3
-        x2 = (Rbohr*(rih + 1.02))**3
-
-        k1 = 8.3e14 / (ns2*ns2)
-        if(ns > 3.) then
-          k1 = k1 * 5.33333333*ns / (ns + 1.d0)**2
-        endif
-        k1 = k1*sqrt(k1)
+        call calc_x_and_k(ns, x1, x2, k1)
         k2 = k1*k1
 
         m = shape(ne)
@@ -132,8 +141,8 @@ contains
           ! charged perturbers
           x = shield(i,j,k)
           if (k1*x < 1e4) then
-            f = 0.1402d0*x*k2 / (ne(i,j,k) * (1. + 0.1285*x*k1))
-            charg = f / (1.d0 + f)
+            frac = 0.1402d0*x*k2 / (ne(i,j,k) * (1. + 0.1285*x*k1))
+            charg = frac / (1.d0 + frac)
             res = res * charg
           endif
 
@@ -144,18 +153,18 @@ contains
     END SUBROUTINE wcalc
 
     !===============================================================================
-    SUBROUTINE wcalc2(self, chi, lam, ab, fakt, nh, nhe, ne, shield)
+    SUBROUTINE wcalc2(self, chi, lam, ab, nh, nhe, ne, shield)
       class(level_type) :: self
       real(4), intent(inout), dimension(:,:,:,:) :: chi
       real(dp), intent(in), dimension(:) :: lam, ab
-      real(dp), intent(in) , dimension(:,:,:) :: fakt, nh, nhe, ne, shield
+      real(dp), intent(in) , dimension(:,:,:) :: nh, nhe, ne, shield
       real(dp), dimension(:), allocatable :: x1, x2, kk, lfac, cutfac
       real(dp) :: ns, ns2, rih, neutr, k1, k2, x, charg, res, nh43, nhe43
-      real(dp) :: redcut, nu, w, n, frac
+      real(dp) :: redcut, nu, w, n, frac, wstar
       real(dp), parameter :: pi43=4.18879d0 ! 4*pi/3
       integer :: f,i,j,k, m(3), nf
       !---------------------------------------------------------------------------
-      m = shape(fakt)
+      m = shape(ne)
       nf = size(lam)
       allocate(x1, x2, kk, lfac, cutfac, mold=lam)
       kk = 0.
@@ -175,15 +184,7 @@ contains
           ns = 1. - (self%xion + h_e*nu)/RYD
           if(ns > 0) then
             ns = 1.d0/sqrt(ns)
-            ns2 = ns*ns
-            rih = ns * sqrt(2.5*ns2 + 0.5)
-            x1(f) = (Rbohr*(rih + 1.73))**3
-            x2(f) = (Rbohr*(rih + 1.02))**3
-            k1 = 8.3e14 / (ns2*ns2)
-            if(ns > 3.) then
-              k1 = k1 * 5.33333333*ns / (ns + 1.d0)**2
-            endif
-            kk(f) = k1*sqrt(k1)
+            call calc_x_and_k(ns, x1(f), x2(f), kk(f))
           endif
         endif
       end do
@@ -202,9 +203,9 @@ contains
               ! neutral perturbers
               neutr = nh43*x1(f) + nhe43*x2(f)
               if (neutr > 1e-5) then
-                res = exp(-neutr)
+                wstar = exp(-neutr)
               else
-                res = 1.0
+                wstar = 1.0
               endif
               
               ! charged perturbers
@@ -213,14 +214,17 @@ contains
                 k2 = k1*k1
                 frac = 0.1402d0*x*k2 / (ne(i,j,k) * (1. + 0.1285*x*k1))
                 charg = frac / (1.d0 + frac)
-                res = res * charg
+                wstar = wstar * charg
               endif
 
-              res = w - res
+              res = w - wstar
             else
               res = w
             endif
-    
+
+            ! n does not contain the occupation probability, therefore the
+            ! (1 - wstar/wi) from the original hbop code becomes (wi - wstar)
+            ! which is more efficient as we avoid division for a frequency dependent quantity
             res = res * lfac(f) * n
             chi(f,i,j,k) = chi(f,i,j,k) + res*ab(f)
           endif

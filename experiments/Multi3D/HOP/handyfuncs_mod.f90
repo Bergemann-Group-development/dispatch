@@ -458,16 +458,33 @@ SUBROUTINE remove_close_entries(array, threshold)
 END SUBROUTINE remove_close_entries
 
 !===============================================================================
+elemental FUNCTION vac2air (vac) result(air)
+  real(8), intent(in) :: vac
+  real(8) :: air
+  !-----------------------------------------------------------------------------
+  air = vac/airvac_corr(vac)
+END FUNCTION vac2air
+
+!===============================================================================
 elemental FUNCTION air2vac (air) result(vac)
   real(8), intent(in) :: air
-  real(8) :: vac, n, s, s2
+  real(8) :: vac, w
+  !-----------------------------------------------------------------------------
+  w = air*airvac_corr(air)
+  w = air*airvac_corr(w)
+  vac = air*airvac_corr(w)
+END FUNCTION air2vac
+
+!===============================================================================
+elemental FUNCTION airvac_corr (air) result(n)
+  real(8), intent(in) :: air
+  real(8) :: n, s, s2
   !-----------------------------------------------------------------------------
   s = 1d4 / air
   s2 = s*s
-  n = 1d0 + 0.00008336624212083d0 + 0.02408926869968d0 / (130.1065924522d0 - s2) &
-        + 0.0001599740894897d0 / (38.92568793293d0 - s2)
-  vac = air*n
-END FUNCTION air2vac
+  n = 1.00008336624212083d0 + 0.02408926869968d0 / (130.1065924522d0 - s2) &
+    + 0.0001599740894897d0 / (38.92568793293d0 - s2)
+END FUNCTION airvac_corr
 
 !===============================================================================
 FUNCTION find_closest_from_center(arr, tar) result(closest_index)

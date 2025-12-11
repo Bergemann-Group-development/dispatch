@@ -1,7 +1,7 @@
 MODULE bbtrans_mod
   USE prec_mod
   USE const_mod
-  USE op_math_mod, only: searchsorted
+  USE op_math_mod, only: searchsorted, find_closest
   USE trace_mod
   USE handyfuncs_mod, only: find_closest_from_center
   implicit none
@@ -32,7 +32,8 @@ MODULE bbtrans_mod
     procedure :: init_einstein_coefficients
     procedure :: damping => line_damping
     procedure :: dampingH => line_dampingH
-    procedure :: add_lte_opacities
+    procedure :: add_opacities
+    procedure :: add_opacities2
     procedure :: LinearStarkH
     procedure :: IonicH
     procedure :: prepare_Radiative
@@ -40,12 +41,18 @@ MODULE bbtrans_mod
     procedure :: prepare_VanderWaals
     procedure :: estimate_qmax
     procedure :: get_range
+    procedure :: get_center
     procedure :: deactivate
   end type
 
   integer, save :: count1, count2, count3, count4, count5, count6
   logical, public :: disable_stark=.false., disable_vdw=.false., disable_ga=.false.
+  logical, public :: ga_fallback=.false.
   real(4), public, save :: tolerance=1e-5
+  real(4), parameter :: pqs  = 1.128379167  ! 2./pi**0.5
+  real(4), parameter :: isqp = 0.5641895835 ! 1/pi**0.5
+  real(4), parameter :: ipi  = 0.3183098862 ! 1/pi
+  real(8), parameter :: f_to_Aji = 8.0d0 * pi**2 * ec**2 / em / cc**3
     
 contains
 
@@ -53,7 +60,6 @@ contains
   SUBROUTINE init_einstein_coefficients(self, f, gij)
     class(bbtrans_type), intent(inout) :: self
     real(8), intent(in) :: f, gij
-    real(8), parameter :: f_to_Aji = 8.0d0 * pi**2 * ec**2 / em / cc**3
     !----------------------------------------------------------------------------------
     ! Einstein coefficients include an additional factor of h_4pi for convenience
     self%Aij = f_to_Aji * f * self%nu0**2
@@ -64,31 +70,29 @@ contains
   END SUBROUTINE init_einstein_coefficients
 
   !====================================================================================
-  SUBROUTINE add_lte_opacities(self, ired, iblue, nu, vproj, inv_df, e_kT, dxij, inv_part, &
+  SUBROUTINE add_opacities(self, f0, nu, vproj, inv_df, e_kT, dxij, inv_part, &
     ne, tothi, vbar2, stark_pe, unsold, bi, bj, chi, eta, cont, do_nlte)
     class(bbtrans_type), intent(inout) :: self
-    integer, intent(in) :: ired, iblue
+    integer, intent(in) :: f0
     real(8), dimension(:), intent(in), contiguous :: nu
     real(4), dimension(:,:,:), intent(in), contiguous :: vproj, inv_df, inv_part
     real(4), dimension(:,:,:), intent(in), pointer :: bi, bj
     real(4), dimension(:,:,:), intent(in), contiguous :: e_kT, dxij, ne, tothi, vbar2, stark_pe, unsold
     real(4), dimension(:,:,:,:), intent(inout) :: chi, eta
     real(4), dimension(:,:,:,:), intent(in) :: cont
+    logical, intent(in) :: do_nlte
     real(4) :: ex, ni, nj, nij, upper_ev, nu0_ev, vs, phi, lchi, leta, rc, re, ceta, cchi
     real(4) :: a, idf, cf, v, ref, ekt, Bji, inv_nu0, strength, blz, rchi
-    integer :: i,j,k,f, nf, f0, m(3), itimer=0
-    logical :: used, do_nlte
+    integer :: i,j,k,f, nf, m(3), itimer=0
+    logical :: used
     !----------------------------------------------------------------------------------
     !call trace%begin('add_lte_opacities_1', itimer=itimer)
     m = shape(vproj)
-    nf = iblue - ired + 1
+    nf = size(nu)
     inv_nu0 = 1.0 / self%nu0
     nu0_ev = H_E * self%nu0
     upper_ev = self%lower_ev + nu0_ev
     Bji = self%Bji * self%nu0
-
-    f0 = find_closest_from_center(nu(ired:iblue), self%nu0)
-    f0 = f0 + ired - 1
     used = .false.
     strength = 0.0
     
@@ -149,23 +153,28 @@ contains
 
           chi(f0,i,j,k) = chi(f0,i,j,k) + lchi
           eta(f0,i,j,k) = eta(f0,i,j,k) + leta
-          do f=f0+1, iblue
+
+          f = f0+1
+          do while (lchi >= ref .and. f <= nf) ! if line opacity below tolerance exit
             vs = (nu(f) - v) * idf
             phi = voigt_function2(a, vs)
             lchi = phi * cchi
             leta = phi * ceta
             chi(f,i,j,k) = chi(f,i,j,k) + lchi
             eta(f,i,j,k) = eta(f,i,j,k) + leta
-            if (lchi < ref) exit ! if line opacity below tolerance exit
+            f = f + 1
           end do
-          do f=f0-1, ired, -1
+
+          f = f0-1
+          lchi = ref
+          do while (lchi >= ref .and. f >= 1) ! if line opacity below tolerance exit
             vs = (nu(f) - v) * idf
             phi = voigt_function2(a, vs)
             lchi = phi * cchi
             leta = phi * ceta
             chi(f,i,j,k) = chi(f,i,j,k) + lchi
             eta(f,i,j,k) = eta(f,i,j,k) + leta
-            if (lchi < ref) exit ! if line opacity below tolerance exit
+            f = f - 1
           end do
         endif
       endif
@@ -177,29 +186,162 @@ contains
       self%strength = max(self%strength, strength)
     endif
     !call trace%end(itimer)
-  END SUBROUTINE add_lte_opacities
+  END SUBROUTINE add_opacities
+  !------------------------------------------------------------------------------------
+
+  !====================================================================================
+  SUBROUTINE add_opacities2(self, f0, nu, vproj, inv_df, e_kT, dxij, inv_part, &
+    ne, tothi, vbar2, stark_pe, unsold, bi, bj, chi, eta, cont, do_nlte)
+    class(bbtrans_type), intent(inout) :: self
+    integer, intent(in) :: f0
+    real(8), dimension(:), intent(in), contiguous :: nu
+    real(4), dimension(:,:,:), intent(in), contiguous :: vproj, inv_df, inv_part
+    real(4), dimension(:,:,:), intent(in), pointer :: bi, bj
+    real(4), dimension(:,:,:), intent(in), contiguous :: e_kT, dxij, ne, tothi, vbar2, stark_pe, unsold
+    real(4), dimension(:,:,:,:), intent(inout) :: chi, eta
+    real(4), dimension(:,:,:,:), intent(in) :: cont
+    real(4) :: ex, ni, nj, nij, upper_ev, nu0_ev, vs, phi, lchi, leta, rc, re, ceta, cchi
+    real(4) :: a, idf, cf, v, ref, ekt, Bji, inv_nu0, strength, blz, rchi
+    integer :: i,j,k,f, nf, m(3), itimer=0
+    logical :: used, do_nlte
+    real(4), parameter, dimension(5) :: p_r = [-8.93752476e-02,  6.96418351e-03, -7.65337535e-02,  3.26641827e-01, 8.32302991e-01]
+    real(4), parameter, dimension(5) :: p_peak = [ 0.15888826, -0.2693657 ,  0.06420922, -0.17305457,  0.21932279]
+    real(4), parameter, dimension(5) :: p_eta1 = [ 2.23590202e-01, -1.71625643e-01,  2.36095687e-01,  1.52685456e-01, 5.59254298e-01]
+    real(4), parameter, dimension(5) :: p_eta2 = [ 1.06500517, -3.80670939,  4.47438274, -3.83215328,  2.09947476]
+    real(4), parameter :: sl2=sqrt(log(2.0)), log2e=1.4426950408889634
+    real(4) :: rho, r, peak, invh, eta0, eta1, eta2, L, G, x, x2, rough_peak, isqpa
+    !----------------------------------------------------------------------------------
+    !call trace%begin('add_lte_opacities_1', itimer=itimer)
+    m = shape(vproj)
+    nf = size(nu)
+    inv_nu0 = 1.0 / self%nu0
+    nu0_ev = H_E * self%nu0
+    upper_ev = self%lower_ev + nu0_ev
+    Bji = self%Bji * self%nu0
+    used = .false.
+    strength = 0.0
+    
+    do k=1, m(3)
+    do j=1, m(2)
+    do i=1, m(1)
+      ! Fixed Broadening
+      a = self%ga
+      ! Van der Waals Broadening
+      if (self%unsold) then
+        a = a + self%gw1 * unsold(i,j,k)
+      else
+        a = a + self%gw1 * vbar2(i,j,k)**self%gw2 * tothi(i,j,k)
+      endif
+      ! Stark Broadening
+      if (self%gq >= 0.0) then
+        a = a + self%gq * ne(i,j,k)
+      else! if line%gq < 0
+        a = a - self%gq * stark_pe(i,j,k)
+      end if
+
+      ! fetch variables
+      idf = inv_df(i,j,k) * inv_nu0
+      v   = (vproj(i,j,k) + 1)*self%nu0
+      ekt = e_kT(i,j,k)
+      ex  = (upper_ev - dxij(i,j,k)) * ekt
+
+      if (ex < 85.) then
+        ! compute level populations
+        a = a * over_4pi * idf
+        blz = exp(-ex)
+        nij = exp(nu0_ev * ekt)          ! this is ni/nj gj/gi
+        nj = inv_part(i,j,k) * blz       ! this is nj/gj
+        cf = nj * Bji * (nij - 1.)       ! this is (ni*Bij - nj*Bji)*h/4pi
+        cf = cf * idf                    ! this chi_lte / phi
+
+        if (do_nlte) then
+          associate(bi=>bi(i,j,k), bj=>bj(i,j,k))
+            rchi = (bi - bj*blz) / (1 - blz) ! this is chi / chi_lte
+            cchi = cf * rchi                 ! this is chi / phi
+            ceta = cf * bj                   ! this is chi_lte * bj / phi
+          end associate
+        else
+          cchi = cf
+          ceta = cf
+        endif
+
+        ! check if line peak is larger than continuum tolerance
+        ref = tolerance * cont(f0,i,j,k)
+
+        isqpa = 1 / (isqp + a)
+        rough_peak = ipi * isqpa
+
+        if (rough_peak > ref) then
+          used = .true.
+          strength = max(strength, peak / cont(f0,i,j,k))
+
+          rho = a / (sl2 + a)
+          peak = r*(p_peak(5) + r*(p_peak(4) + r*(p_peak(3) + r*(p_peak(2) + r*p_peak(1)))))
+          peak = (ipi + peak) * isqpa
+
+          r = rho*(p_r(5) + rho*(p_r(4) + rho*(p_r(3) + rho*(p_r(2) + rho*p_r(1)))))
+
+          eta1 = r*(p_eta1(5) + r*(p_eta1(4) + r*(p_eta1(3) + r*(p_eta1(2) + r*p_eta1(1)))))
+          eta2 = r*(p_eta2(5) + r*(p_eta2(4) + r*(p_eta2(3) + r*(p_eta2(2) + r*p_eta2(1)))))
+          eta0 = 1 - eta1 - eta2
+
+          invh = merge(1.0, r/a, a == 0.0)
+          idf = idf * invh
+
+          f = f0
+          lchi = ref
+          do while (lchi >= ref .and. f <= nf)
+            x = (nu(f) - v) * idf
+            phi = pseudo_voigt(x, peak, eta0, eta1, eta2)
+            lchi = phi * cchi
+            leta = phi * ceta
+            chi(f,i,j,k) = chi(f,i,j,k) + lchi
+            eta(f,i,j,k) = eta(f,i,j,k) + leta
+            f = f + 1
+          end do
+          
+          f = f0-1
+          lchi = ref
+          do while (lchi >= ref .and. f >= 1)
+            x = (nu(f) - v) * idf
+            phi = pseudo_voigt(x, peak, eta0, eta1, eta2)
+            lchi = phi * cchi
+            leta = phi * ceta
+            chi(f,i,j,k) = chi(f,i,j,k) + lchi
+            eta(f,i,j,k) = eta(f,i,j,k) + leta
+            f = f - 1
+          end do
+        endif
+      endif
+    end do
+    end do
+    end do
+    if (used) then
+      self%used = used
+      self%strength = max(self%strength, strength)
+    endif
+    !call trace%end(itimer)
+  END SUBROUTINE add_opacities2
   !------------------------------------------------------------------------------------
 
   !====================================================================================
   !DIR$ ATTRIBUTES FORCEINLINE :: voigt_function2
-  ELEMENTAL FUNCTION voigt_function2(a,vs) result(h)
+  ELEMENTAL FUNCTION voigt_function2(as,vs) result(h)
     !---------------------------------------------------------------------
     !  computes a voigt function  h = h(a,v)
     !  a=gamma/(4*pi*dnud)   and  v=(nu-nu0)/dnud.  this  is  done after
     !  traving (landolt-b\rnstein, p. 449).
     !  coded by: kjell eriksson  (apr-1974). revised: (july-1975).
     !---------------------------------------------------------------------
-    real(4), intent(in) :: a,vs
-    real(4) :: h
+    real(4), intent(in) :: as,vs
+    real(4) :: h, a
     real(4) :: v,u,v2,v4,ex
     real(4) :: a2,u2
     complex(8) :: tav,uav,w4,u4 
-    real(4), parameter :: pqs  = 1.128379167  ! 2./pi**0.5
-    real(4), parameter :: isqp = 0.5641895835 ! 1/pi**0.5
-    real(4), parameter :: ipi  = 0.3183098862 ! 1/pi
     !----------------------------------------------------------------------------------
     v = abs(vs)
-    u = a + v
+    a = as
+    u = v + a
     v2 = v*v
 
     if (a > 0.2) then
@@ -263,9 +405,6 @@ contains
     real(4) :: v,u,v2,v4,ex
     real(4) :: a2,u2
     complex(8) :: tav,uav,w4,u4,num,den
-    real(4), parameter :: pqs  = 1.128379167  ! 2./pi**0.5
-    real(4), parameter :: isqp = 0.5641895835 ! 1/pi**0.5
-    real(4), parameter :: ipi  = 0.3183098862 ! 1/pi
     !----------------------------------------------------------------------------------
     v = abs(q - vpr) * idf
     u = a + v
@@ -412,18 +551,16 @@ contains
   !------------------------------------------------------------------------------------
 
   !====================================================================================
-  ELEMENTAL FUNCTION new_voigt(a,v,f) result(h)
+  ELEMENTAL FUNCTION new_voigt(a,v) result(h)
     ! Champion Voigt routine in speed and accuracy test by BE+NP 97-11-18
     !  VOIGT FUNCTION CALCULATION: HUMLICEK'S APPROXIMATION 
     ! The results are normalized to an area of 1/sqrt(pi).
-    real(4), intent(in) :: f
     real(4), intent(in) :: a, v
     complex(8) :: tav,uav,w4,v4 
     real(4)    :: sav,aa,vv,h
-    real(4), parameter :: isqp = 0.5641895835 ! 1/pi**0.5
     integer :: i,j,k
     !----------------------------------------------------------------------------------
-    aa = a
+    aa = 0.01! a
     vv = abs(v)
     tav = cmplx(aa,-vv) 
     sav = vv + aa 
@@ -446,7 +583,7 @@ contains
         - uav*(61.57037e0 - uav*(1.841439e0 - uav)))))))
       w4 = exp(uav) - w4/v4
     endif
-    h = real(w4) * f ! * isqp
+    h = real(w4) * isqp
   END FUNCTION new_voigt
   !------------------------------------------------------------------------------------
 
@@ -471,7 +608,6 @@ contains
     real(4), parameter :: B6 = 9.0328158696
     real(4), parameter :: B7 = 23.7489999060
     real(4), parameter :: B8 = 1.82106170570
-    real(4), parameter :: isqp = 0.5641895835 ! 1/pi**0.5
     !----------------------------------------------------------------------------------
     z = x * x
     if (z <= 3.0) then
@@ -531,7 +667,6 @@ contains
     real(4), parameter :: b4 = 170.3540
     real(4), parameter :: b5 = 53.99291
     real(4), parameter :: b6 = 10.47986
-    real(4), parameter :: isqp = 0.5641895835 !1/sqrt(pi)
     ! Compute denominator and numerator of the complex
     ! expression in an alternating manner to improve the
     ! pipelining:
@@ -786,27 +921,29 @@ contains
   
   !====================================================================================
   PURE ELEMENTAL SUBROUTINE prepare_Radiative(self, ga)
-  class(bbtrans_type), intent(inout)  :: self
-  real(dp), intent(in) :: ga
-  real(dp), parameter :: coeff = 2.223d15/(CC*1e8)**2
-  !----------------------------------------------------------------------------------
-  if (ga == 0) then
-    ! approximation from MOOG
-    self%ga = coeff*self%nu0**2
-  elseif (ga < 100) then
-    self%ga = ga*1e8
-  else
-    self%ga = ga
-  endif
-  if (disable_ga) self%ga = 0
-END SUBROUTINE prepare_Radiative
-!------------------------------------------------------------------------------------
+    class(bbtrans_type), intent(inout)  :: self
+    real(dp), intent(in) :: ga
+    !----------------------------------------------------------------------------------
+    if (ga == 0) then
+      ! Here we assume Aji for the radiative broadening, Turbospectrum devides this by 
+      ! the upper statistical weight, but KORG does not. MOOg assumes GF/GU=3 instead.
+      ! We cannot reuse Aji at this point, because it may contain isotope fractions.
+      self%ga = f_to_Aji * 10**self%loggf * self%nu0**2
+    elseif (ga < 100) then
+      self%ga = ga*1e8
+    else
+      self%ga = ga
+    endif
+    if (disable_ga) self%ga = 0
+  END SUBROUTINE prepare_Radiative
+  !------------------------------------------------------------------------------------
 
   !====================================================================================
-  PURE SUBROUTINE prepare_VanderWaals(self, gv, lower_ion, cnt_ev, vbar2e4)
+  PURE SUBROUTINE prepare_VanderWaals(self, gv, lower_ion, cnt_ev, vbar2e4, is_mol)
     class(bbtrans_type), intent(inout)  :: self
     integer, intent(in) :: lower_ion
     real(dp), intent(in) :: gv, cnt_ev, vbar2e4
+    logical, intent(in) :: is_mol
     real(dp) :: upper_ev, sigma, alpha, gx, gammaf, balfac, c1, c625, vbar2
     real(dp), parameter :: uns=8.411*1.283984e-12 !8.411~(13.598**2)**0.4, 1.283984e-12~17*(1.61e-33)**0.4
     real(dp), parameter :: barklem = (1e-2*Rbohr)**2 ! 2.80028e-21 bohr radius in m and squared
@@ -823,35 +960,30 @@ END SUBROUTINE prepare_Radiative
 
       self%gw2 = 0.5*(1 - alpha)
       self%gw1 = balfac * sigma * 10**(-12*self%gw2)
-
-    elseif (gv < -20.0) then
-      ! recipe c6 SIU
+    elseif (.not. is_mol) then ! cannot use Unsold for molecules
       self%unsold = .true.
-      c625 = 10**(0.4 * gv)
-      self%gw1 = 17. * c625
-      self%gw2 = 0.0
-    
-    elseif (gv < 0.0) then
-      ! recipe 'W' Turbospectrum
-      self%unsold = .true.
-      self%gw1 = 10**gv / (vbar2e4)**0.3
-      self%gw2 = 0.0
-
-    elseif(gv.ne.0.0) then
-      self%unsold = .true.
-      upper_ev = self%lower_ev + H_E * self%nu0
-      ! Unsold approximation
-      ! Jul  5 2010 jorritl: I'm sceptical about the numerical 
-      ! constant  1.283984e-12. According to Gray it should be 
-      ! 0.3d-30^0.4 = 6.1780059e-13 and  8.411 should be 17
-      ! I haven't found the original reference to Unsold 1955 yet...
-      if (self%lower_ev < cnt_ev) then
-        c1 = 1./(cnt_ev - upper_ev)**2 - 1./(cnt_ev - self%lower_ev)**2
-        if (c1 > 0) then
-          c625 = (lower_ion**2 * c1)**0.4 ! c6^(2/5) impact approximation
-          self%gw1 = gv * uns * c625
-        else
-          self%gw1 = 0
+      if (gv < -20.0) then
+        ! recipe c6 SIU
+        c625 = 10**(0.4 * gv)
+        self%gw1 = 17. * c625
+      elseif (gv < 0.0) then
+        ! recipe 'W' Turbospectrum
+        self%gw1 = 10**gv / (vbar2e4)**0.3
+      elseif (gv.ne.0.0) then
+        upper_ev = self%lower_ev + H_E * self%nu0
+        ! Unsold approximation
+        ! Jul  5 2010 jorritl: I'm sceptical about the numerical 
+        ! constant  1.283984e-12. According to Gray it should be 
+        ! 0.3d-30^0.4 = 6.1780059e-13 and  8.411 should be 17
+        ! I haven't found the original reference to Unsold 1955 yet...
+        if (self%lower_ev < cnt_ev) then
+          c1 = 1./(cnt_ev - upper_ev)**2 - 1./(cnt_ev - self%lower_ev)**2
+          if (c1 > 0) then
+            c625 = (lower_ion**2 * c1)**0.4 ! c6^(2/5) impact approximation
+            self%gw1 = gv * uns * c625
+          else
+            self%gw1 = 0
+          endif
         endif
       endif
     endif
@@ -909,6 +1041,23 @@ END SUBROUTINE prepare_Radiative
   END SUBROUTINE get_range
   !------------------------------------------------------------------------------------
 
+  !====================================================================================
+  SUBROUTINE get_center(self, nu, dnu, i0)
+    class(bbtrans_type), intent(in)  :: self
+    real(dp), dimension(:), intent(in) :: nu
+    real(dp), intent(in) :: dnu
+    integer, intent(out) :: i0
+    !----------------------------------------------------------------------------------
+    if (dnu == 0) then
+      i0 = findloc(nu, self%nu0, 1)
+    else
+      i0 = find_closest(nu, self%nu0)
+      if ( abs(nu(i0) - self%nu0) > dnu*nu(i0)*self%nu0 ) then
+        i0  = 0
+      endif
+    endif
+  END SUBROUTINE get_center
+  !------------------------------------------------------------------------------------
   !====================================================================================
   PURE SUBROUTINE deactivate(self)
     class(bbtrans_type), intent(inout) :: self
@@ -975,94 +1124,31 @@ END SUBROUTINE prepare_Radiative
   END SUBROUTINE hum1zpf16
 
   !====================================================================================
-  !DIR$ ATTRIBUTES FORCEINLINE :: pseudo_voigt_function
-  FUNCTION pseudo_voigt_function(a, v, ref, norm) result(pseudo)
-    ! Inputs
-    real(4), intent(in) :: a
-    real(4), intent(in) :: v
-    real(4), intent(in) :: ref, norm
-
-    ! Output
-    real(4) :: pseudo
-
-    ! Constants
-    real(4), parameter :: l2 = log(2.0)
-    real(4), parameter :: sql2 = sqrt(l2)
-    real(4), parameter :: ipi  = 0.3183098862 ! 1/pi
-    real(4), parameter :: beta = 2.0**(2.0/3.0) - 1.0
-
-    ! Polynomial coefficients
-    real(4), parameter, dimension(6) :: p_hwhm = [ 0.60821676, -0.59442469, -0.21801016, -0.2297061 , -0.39863041,  0.83255461]
-    real(4), parameter, dimension(3) :: p_peak = [ 0.0400737 , -0.19149496,  0.46973115]
-    real(4), parameter, dimension(2) :: p_eta1 = [ 0.34072301,  0.65927699]
-    real(4), parameter, dimension(2) :: p_eta2 = [-0.37862863,  0.37862863]
-
-    ! Intermediate variables
-    real(4), save :: a_old=0, eta0, eta1, eta2, peak, inv_hwhm ! a dependent
-    real(4) :: rho, hwhm, r ! a dependent
-    real(4) :: a2, u, v2, v4, u2 ! a and v dependent
-    real(4) :: x, G, L, I ! a and v dependent
-    !$omp threadprivate(a_old, eta0, eta1, eta2, peak, inv_hwhm)
+  !DIR$ ATTRIBUTES FORCEINLINE :: pseudo_voigt
+  PURE FUNCTION pseudo_voigt(x, peak, eta0, eta1, eta2) result(phi)
+    real, intent(in) :: x, peak, eta0, eta1, eta2
+    real :: x2, L, G, psd, phi, e
+    integer :: ix
+    real, parameter :: iln2 = 1/log(2.0)
     !----------------------------------------------------------------------------------
-    pseudo = 0
-    
-    if (a /= a_old) then
-      a_old = a
-      ! Compute rho
-      rho = a / (sql2 + a)
+    x2 = x*x
+    L = 1 / (1 + x2)
+    psd = L*(eta1 + L*eta2)
 
-      ! Polynomial evaluation for hwhm
-      hwhm = p_hwhm(1)
-      hwhm = p_hwhm(2) + hwhm * rho
-      hwhm = p_hwhm(3) + hwhm * rho
-      hwhm = p_hwhm(4) + hwhm * rho
-      hwhm = p_hwhm(5) + hwhm * rho
-      hwhm = p_hwhm(6) + hwhm * rho
-      hwhm = hwhm + a
+    ! Reinterpret the bits of ref as integer
+    ix = transfer(psd, ix)
+    ! Shift right to get exponent bits and subtract bias (127)
+    ! and subtract extra 10 to check if k is larger than e*2^-10 
+    e = 137 - ishft(ix, -23)
 
-      inv_hwhm = 1 / hwhm
-      r = a * inv_hwhm
-
-      ! Polynomial evaluation for peak
-      peak = p_peak(1)
-      peak = p_peak(2) + peak * r
-      peak = p_peak(3) + peak * r
-      peak = peak * inv_hwhm
-      peak = peak * norm
-
-      ! Polynomial evaluation for eta1
-      eta1 = p_eta1(1)
-      eta1 = p_eta1(2) + eta1 * r
-      eta1 = eta1 * r
-
-      ! Polynomial evaluation for eta2
-      eta2 = p_eta2(1)
-      eta2 = p_eta2(2) + eta2 * r
-      eta2 = eta2 * r
-
-      eta0 = 1.0 - eta1 - eta2
+    if (x2*iln2 < e) then
+      G = exp(-x2)
+    else
+      G = 0
     endif
-    if (peak < ref) return
 
-    ! Compute x, Gaussian (G), and Lorentzian (L), and Irrational (I)
-    x = v*inv_hwhm
-    x = x*x
-    if (eta0 > 1e-4 .and. x < 75.0) then
-      G = exp(-l2*x)
-      pseudo = pseudo + eta0*G
-    endif
-    if (eta1 > 1e-4) then
-      L = 1.0 / (1.0 + x)
-      pseudo = pseudo + eta1*L
-    endif
-    if (eta2 > 1e-4) then
-      I = 1.0 / (1.0 + beta*x)
-      I = I * sqrt(I)
-      pseudo = pseudo + eta2*I
-    endif
-    
-    ! Normalize pseudo-Voigt profile
-    pseudo = pseudo * peak
-  END FUNCTION pseudo_voigt_function
+    psd = psd + eta0*G
+    phi = peak*psd
+  END FUNCTION pseudo_voigt
 
 END MODULE bbtrans_mod

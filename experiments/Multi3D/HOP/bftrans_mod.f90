@@ -345,7 +345,7 @@ contains
         lvl => self%ion%levels(self%k)
         lvl%i = self%k
         call trace%begin('wcalc2', itimer=itimer3)
-        call wcalc2(lvl, chi, lam(fs:fe), ab, fakt, self%ion%n, nhe, ne, shield)
+        call wcalc2(lvl, chi, lam(fs:fe), ab, self%ion%n, nhe, ne, shield)
         call trace%end(itimer3)
       else
         do z=1, nz
@@ -435,7 +435,9 @@ contains
       call os%allocate(pvt_xkap, shape(self%xkap))
       allocate(fakt, mold=temp)
       fakt = huge(1d0)
-      if (.not. allocated(self%ion%n)) stop 'add_absorption: ion%n not allocated'
+      if (.not. allocated(self%ion%n)) then
+        stop 'add_absorption: ion%n not allocated'
+      endif
       call self%load_lam_interp_weights(lam, active)
 
       if (active) then

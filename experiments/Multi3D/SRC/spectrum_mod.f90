@@ -29,7 +29,7 @@ MODULE spectrum_mod
 
     public :: set_weights
     real(8), public :: nu_tolerance = 1d6
-    logical :: give_lam=.false.
+    logical :: give_lam=.false., in_air=.true.
     logical :: in_log=.false.
     real(8) :: daa=0, aa_red=0, aa_blue=0, R=0
     integer :: nnu=0
@@ -40,9 +40,10 @@ MODULE spectrum_mod
     SUBROUTINE init(self)
       class(spectrum_type) :: self
       real(8), dimension(:), allocatable :: lam
-      real(8) :: last, fac
+      real(8) :: fac
       integer :: iostat, i, lunit
-      namelist /spectrum_params/ daa, aa_red, aa_blue, nnu, give_lam, in_log, R, lam_file
+      namelist /spectrum_params/ daa, aa_red, aa_blue, nnu, give_lam, in_log, R, &
+      lam_file, in_air
       namelist /sp_wavelengths/ lam
       !-----------------------------------------------------------------------------
       rewind (io%input)
@@ -65,12 +66,6 @@ MODULE spectrum_mod
         end if
         call io%namelist_warning ('spectrum_params', iostat)
         write (io%namelist, sp_wavelengths)
-        self%nnu = nnu
-        allocate(self%nu(nnu))
-        lam = air2vac(lam)
-        do i=0,nnu-1
-          self%nu(nnu-i) = CC / (lam(i+1)) * 1e8
-        end do
       elseif (lam_file /= '') then
         nnu = 0
         call os%check_file(lam_file)
@@ -82,54 +77,38 @@ MODULE spectrum_mod
         end do
         rewind(lunit)
         allocate(lam(nnu))
-        allocate(self%nu(nnu))
         read(lunit,*) lam
         close(lunit)
-        self%nnu = nnu
-        lam = air2vac(lam)
-        do i=0,nnu-1
-          self%nu(nnu-i) = CC / (lam(i+1)) * 1e8
-        end do
       elseif (aa_red /= 0 .and. aa_blue /= 0) then
-        if (in_log) then
-          aa_red = log(air2vac(exp(aa_red)))
-          aa_blue = log(air2vac(exp(aa_blue)))
-        else
-          aa_red = air2vac(aa_red)
-          aa_blue = air2vac(aa_blue)
-        endif
         if (R /= 0) then
           fac = 1d0 + 1d0/R
           nnu = ceiling(log(aa_red/aa_blue) / log(fac))
-          allocate(self%nu(nnu))
-          last = aa_blue
-          do i=0,nnu-1
-            last = last * fac
-            self%nu(nnu-i) = last
+          allocate(lam(nnu))
+          lam(1) = aa_blue
+          do i=2, nnu
+            lam(i) = lam(i-1) * fac
           end do
         else
           if (daa /= 0) then
-            nnu = ceiling((aa_red - aa_blue) / daa)
+            nnu = nint((aa_red - aa_blue) / daa) + 1
           else
             daa = (aa_red - aa_blue) / real(nnu-1)
           endif
-          allocate(self%nu(nnu))
-          do i=0,nnu-1
-            if (in_log) then
-              self%nu(nnu-i) = exp(aa_blue + i*daa)
-            else
-              self%nu(nnu-i) = aa_blue + i*daa
-            endif
-          end do
+          allocate(lam(nnu))
+          lam = [(aa_blue + i*daa, i=0,nnu-1)]
         endif
-        self%nu = CC / self%nu * 1e8
-        self%nnu = nnu
       else
         stop 'Give either wavelength set or aa_red and aa_blue in spectrum_params'
       endif
+      allocate(self%nu, source=lam(nnu:1:-1))
+      if (in_log) self%nu = exp(self%nu)
+      if (in_air) self%nu = air2vac(self%nu)
+      self%nu = CC / self%nu * 1e8
+      self%nnu = nnu
       allocate(self%wnu(nnu))
       call set_weights(self%wnu, self%nu)
       self%sorted=.true.
+      deallocate(lam)
     END SUBROUTINE init
 
     !===============================================================================

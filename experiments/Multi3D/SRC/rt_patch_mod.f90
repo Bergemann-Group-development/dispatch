@@ -1,4 +1,4 @@
-MODULE nlte_patch_mod
+MODULE rt_patch_mod
   USE os_mod
   USE halo_mod
   USE gpatch_mod
@@ -21,27 +21,29 @@ MODULE nlte_patch_mod
   USE m3d_patch_mod, only: all_vec=>vec, all_wmu=>wmu, use_vel, m3d_patch_t, &
   absmet_in_output, long_wmu, long_vec, ray_offset, pivot_z, dlam, &
   premature_finish, m3d_patch_pre_update=>pre_update, save_resolved, &
-  column_by_column, rotate_atmos, rank_lvlerr, sample_back_opac, &
-  decouple_continuum, linelist_in_output, sample_back_opac_in_output, ilambd, &
+  column_by_column, rotate_atmos, rank_lvlerr, save_cntrbf, &
+  decouple_continuum, linelist_in_output, ilambd, &
   Jnu_to_file, preconditioning, make_eos, amr, save_Inu, save_chi, save_Snu, &
-  long_solver, fixed_Jnu, opac_table_vmic, n_nu, save_Jnu, maxiter
-  USE ray_mod, only: one_dimensional, ray_type
+  long_solver, fixed_Jnu, n_nu, save_Jnu, maxiter
+  USE ray_mod, only: one_dimensional, ray_type, rstar, rorigin
   USE trans_mod, only: line_type, cont_type
   USE bbtrans_mod, only: voigt_function2, voigt_profile
+  USE bftrans_mod, only: H_occupation_probability
   USE hprofl_mod, only: hprofl
   USE m3d_debug_mod
   USE shared_mod
   USE composition_mod, only: composition_type, scattering_absorption, ref_lam, &
-  departure_pointer_t, read_departures
+  departure_pointer_t, read_departures, sample_back_opac, &
+  sample_linelist, sample_back_opac_in_output
   implicit none
   private
 
   !-----------------------------------------------------------------------------
-  type, public, extends(ray_patch_t) :: nlte_patch_t
-    class(nlte_patch_t), pointer :: upstream=>null()
-    class(nlte_patch_t), pointer :: dnstream=>null()
-    class(nlte_patch_t), pointer :: up_twin=>null()
-    class(nlte_patch_t), pointer :: dn_twin=>null()
+  type, public, extends(ray_patch_t) :: rt_patch_t
+    class(rt_patch_t), pointer :: upstream=>null()
+    class(rt_patch_t), pointer :: dnstream=>null()
+    class(rt_patch_t), pointer :: up_twin=>null()
+    class(rt_patch_t), pointer :: dn_twin=>null()
     class(atom_trans_t), dimension(:), pointer :: trans=>null()
     real(4), dimension(:,:,:,:,:), allocatable :: Jnu
     real(4), dimension(:,:,:,:), allocatable :: Psi, PsiJ
@@ -53,9 +55,9 @@ MODULE nlte_patch_mod
     logical :: bound_bound, bound_free
     logical, dimension(:), allocatable :: get_rates
   contains
-    procedure :: pre_init => nlte_patch_pre_init
+    procedure :: pre_init => rt_patch_pre_init
     procedure :: init_patch_trans
-    procedure :: pre_update => nlte_patch_pre_update
+    procedure :: pre_update => rt_patch_pre_update
     procedure :: execute
     procedure :: lte_background_opacities
     procedure :: add_scattering
@@ -75,27 +77,23 @@ MODULE nlte_patch_mod
     procedure :: integrate_rates
     procedure :: work_to_mem
     procedure :: save_intensity
-    !procedure :: save_contribution_function 
+    procedure :: save_contribution_function 
     procedure :: rotate_array
     procedure :: short_char
     procedure :: set_fixed_Jnu
     procedure :: long_char_linear
+    procedure :: long_char_linear_spherical
     procedure :: long_char_quadratic
     procedure :: long_char_quadratic2
     procedure :: long_char_quadratic3
     procedure :: get_vproj
     procedure :: print_post_update_info
-    procedure :: nbor_relations => nlte_patch_nbor_relations
+    procedure :: nbor_relations => rt_patch_nbor_relations
     procedure :: init_nbors_hash
     procedure :: finish
     procedure :: allocate_mem
     procedure :: copy_to
-  end type nlte_patch_t
-
-  type :: line_cntrbf
-    real(4), dimension(:,:,:,:,:,:), allocatable :: data
-    real(4), dimension(:,:,:,:,:), allocatable :: tmp
-  end type
+  end type rt_patch_t
 
   !-----------------------------------------------------------------------------
   integer, save:: verbose=0                           ! verbosity
@@ -103,20 +101,21 @@ MODULE nlte_patch_mod
   integer, public, dimension(:), allocatable :: cntrbf_lines
   integer :: f, x, y, z, nx, ny, nz, fs, fe, nf
   real(4), dimension(:,:,:,:,:), allocatable, target :: work, back
-  type(line_cntrbf), dimension(:), allocatable :: cntrbf
+  real(4), dimension(:,:,:,:,:,:), allocatable :: cntrbf_data
+  real(4), dimension(:,:,:,:,:), allocatable :: cntrbf_tmp
   !$omp threadprivate(work, back, x, y, z, nx, ny, nz, f, fs, fe, nf)
-  !$omp threadprivate(cntrbf)
+  !$omp threadprivate(cntrbf_data, cntrbf_tmp)
     
 contains
 
 !===============================================================================
-SUBROUTINE nlte_patch_pre_init (self)
-  class(nlte_patch_t), target:: self
+SUBROUTINE rt_patch_pre_init (self)
+  class(rt_patch_t), target:: self
   integer, save :: itimer=0
   logical :: is_nlte
   ! ----------------------------------------------------------------------------
-  call trace%begin('nlte_patch_t%_pre_init', itimer=itimer)
-  self%kind = 'nlte_patch'
+  call trace%begin('rt_patch_t%_pre_init', itimer=itimer)
+  self%kind = 'rt_patch'
   call self%m3d_patch_t%pre_init()
 
   self%dir = merge(1, -1, abs(self%i_mu)==1)
@@ -124,7 +123,7 @@ SUBROUTINE nlte_patch_pre_init (self)
   self%n_mu = merge(size(long_wmu), size(all_wmu)/2, self%out_mu)
   self%mus = merge(1, self%n_mu+1, self%dir>0)
   self%mue = merge(self%n_mu, size(all_wmu), self%dir>0)
-  self%natom = merge(size(self%atom), 0, associated(self%atom))
+  self%natom = merge(size(self%atoms), 0, associated(self%atoms))
   is_nlte = maxiter > 0 .or. read_departures
   self%n_set = merge(merge(3, 2, is_nlte), 1, self%out_ray)
 
@@ -137,11 +136,11 @@ SUBROUTINE nlte_patch_pre_init (self)
   call self%post_pre_init()
 
   call trace%end(itimer)
-END SUBROUTINE nlte_patch_pre_init
+END SUBROUTINE rt_patch_pre_init
 
 !===============================================================================
 SUBROUTINE init_patch_trans (self)
-  class(nlte_patch_t) :: self
+  class(rt_patch_t) :: self
   class(line_type), pointer :: line
   class(cont_type), pointer :: cont
   integer :: i, j, k, nline, ncont
@@ -153,12 +152,12 @@ SUBROUTINE init_patch_trans (self)
     return
   endif
 
-  self%bound_bound = any([(associated(self%atom(i)%trans%line), i=1, self%natom)])
-  self%bound_free = any([(associated(self%atom(i)%trans%cont), i=1, self%natom)])
+  self%bound_bound = any([(associated(self%atoms(i)%trans%line), i=1, self%natom)])
+  self%bound_free = any([(associated(self%atoms(i)%trans%cont), i=1, self%natom)])
   allocate(self%trans(self%natom))
   
   do k=1, self%natom
-    associate(atom=>self%atom(k), trans=>self%trans(k))
+    associate(atom=>self%atoms(k), trans=>self%trans(k))
       nline = 0
       ncont = 0
       if (self%bound_bound) then
@@ -211,23 +210,23 @@ SUBROUTINE init_patch_trans (self)
 END SUBROUTINE init_patch_trans
 
 !===============================================================================
-SUBROUTINE nlte_patch_pre_update (self)
-  class(nlte_patch_t), target :: self
+SUBROUTINE rt_patch_pre_update (self)
+  class(rt_patch_t), target :: self
   logical :: conv
   integer :: i
   !-----------------------------------------------------------------------------
   call m3d_patch_pre_update(self)
   if (self%has_atom .and. self%in_ray) then
-    conv = all([(self%atom(i)%data%converged, i=1, self%natom)])
+    conv = all([(self%atoms(i)%data%converged, i=1, self%natom)])
     if (premature_finish .and. conv) then
       self%static_mem = .true.
     endif
   endif
-END SUBROUTINE nlte_patch_pre_update
+END SUBROUTINE rt_patch_pre_update
 
 !===============================================================================
 SUBROUTINE execute (self)
-  class(nlte_patch_t) :: self
+  class(rt_patch_t) :: self
   class(atom_type), pointer :: atom
   class(atom_trans_t), pointer :: trans
   class(atom_data_t), pointer :: adata
@@ -242,10 +241,10 @@ SUBROUTINE execute (self)
   character(6) :: sav_label
   logical :: skip, use_linelist, get_cntrbf, end_boundary, include_absmet
   logical :: do_rotate_atmos, do_sample_opac, do_make_eos, do_rotate_continuum
-  integer :: i, j, i_mu, zs, ze, p(3), ng, i_set, l, nnu_cntrbf, nrad
+  integer :: i, j, i_mu, zs, ze, p(3), ng, i_set, l, nrad
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin('nlte_patch%execute', itimer=itimer)
+  call trace%begin('rt_patch%execute', itimer=itimer)
   ng = self%ng(3)
   fs = self%fs
   fe = self%fe
@@ -262,20 +261,20 @@ SUBROUTINE execute (self)
 
   do_rotate_atmos = rotate_atmos .and. self%out_mu
   do_rotate_continuum = do_rotate_atmos
-  use_linelist = self%out_mu .and. comp%ll_initialised .and. linelist_in_output
-  get_cntrbf = self%out_mu .and. (n_cntrbf>0)
+  use_linelist = self%out_mu .and. comp%ll_initialised .and. linelist_in_output .and. .not. sample_linelist
+  get_cntrbf = self%out_mu .and. save_cntrbf
   end_boundary = self%patch%boundaries%is_set(bits%zl) .and. (self%dir<0)
   end_boundary = self%patch%boundaries%is_set(bits%zu) .and. (self%dir>0) .or. end_boundary
   if (.not. end_boundary .and. associated(self%dnstream)) then
     end_boundary = self%dnstream%is_finished()
   endif
 
-  do_sample_opac = sample_back_opac .and. (self%in_ray .or. sample_back_opac_in_output)
+  do_sample_opac = (self%in_ray .and. sample_back_opac) .or. (self%out_ray .and. sample_back_opac_in_output)
   do_make_eos = make_eos .and. self%out_ray
   include_absmet = (self%in_ray .and. (self%i_nu > self%n_nu .or. .not. decouple_continuum)) &
               .or. (self%out_ray .and. absmet_in_output)
 
-  self%get_rates = self%get_rates .and. [(.not. self%atom(i)%data%converged, i=1, self%natom)]
+  self%get_rates = self%get_rates .and. [(.not. self%atoms(i)%data%converged, i=1, self%natom)]
 
   call allocate_arrays()
   self%twohnu3_c2 = twoh_c2 * self%nu**3
@@ -288,7 +287,7 @@ SUBROUTINE execute (self)
     endif
 
     do i=1, self%natom
-      atom => self%atom(i)
+      atom => self%atoms(i)
       trans => self%trans(i)
       adata => atom%data
       if (self%bound_free) call self%add_bound_free_opacities(atom, trans, adata)
@@ -323,7 +322,7 @@ SUBROUTINE execute (self)
       endif
 
       do i=1, self%natom
-        atom => self%atom(i)
+        atom => self%atoms(i)
         trans => self%trans(i)
         if (do_rotate_atmos) then
           adata => atom%rotated_data(i_mu)
@@ -353,7 +352,7 @@ SUBROUTINE execute (self)
 
         if (i_set /= 2) then ! i_set==2 is the continuum only
           do i=1, self%natom
-            atom => self%atom(i)
+            atom => self%atoms(i)
             trans => self%trans(i)
             if (do_rotate_atmos) then
               adata => atom%rotated_data(i_mu)
@@ -365,7 +364,7 @@ SUBROUTINE execute (self)
             endif
           end do
           if (use_linelist) then
-            if (allocated(self%m3d_parent%departures) .and. i_set==1) then
+            if (associated(self%m3d_parent%departures) .and. i_set==1) then
               i = merge(i_mu, 1, do_rotate_atmos)
               departures => self%m3d_parent%departures(:,i)
             else
@@ -389,7 +388,11 @@ SUBROUTINE execute (self)
         if (self%out_mu) then
           select case(long_solver)
           case('linear')
-            call self%long_char_linear(vec)
+            !if (one_dimensional .and. rstar > 2) then
+            !  call self%long_char_linear_spherical(vec)
+            !else
+              call self%long_char_linear(vec)
+            !endif
           case('quadratic')
             call self%long_char_quadratic(vec)
           case('quadratic2')
@@ -407,16 +410,16 @@ SUBROUTINE execute (self)
           endif
         endif
 
-        !if (get_cntrbf) then
-        !  call self%save_contribution_function(i_set, i_mu)
-        !endif
+        if (get_cntrbf) then
+          call self%save_contribution_function(i_set, i_mu)
+        endif
       endif
 
       if (self%print_update_info) then
         if (check_NaN) then
           nan_check = work(self%fcheck, p(1), p(2), p(3),1:3)
           if (any(nan_check/=nan_check)) then
-            print *, 'NaN in nlte_patch', nan_check
+            print *, 'NaN in rt_patch', nan_check
           endif
         endif
         if (i_mu==self%mus .and. i_set==1) then
@@ -435,7 +438,7 @@ SUBROUTINE execute (self)
       endif
       
       do i=1, self%natom
-        atom => self%atom(i)
+        atom => self%atoms(i)
         trans => self%trans(i)
         if (do_rotate_atmos) then
           adata => atom%rotated_data(i_mu)
@@ -474,7 +477,7 @@ SUBROUTINE execute (self)
   end do ! Angle loop
 
   do i=1, self%natom
-    atom => self%atom(i)
+    atom => self%atoms(i)
     trans => self%trans(i)
     if (self%get_rates(i)) then
       if (self%bound_free) call self%bound_free_rates(atom, trans, atom%data)
@@ -500,7 +503,7 @@ SUBROUTINE execute (self)
   call deallocate_arrays()
 
   if (self%has_atom .and. self%iter > ilambd-1) then
-    if (all([(self%atom(i)%data%converged, i=1, self%natom)]) .and. premature_finish) then
+    if (all([(self%atoms(i)%data%converged, i=1, self%natom)]) .and. premature_finish) then
       call self%finish()
     endif
   endif
@@ -544,22 +547,12 @@ contains
         call mem_register(self%PsiJ, label='PsiJ')
       endif
     endif
-    !if (get_cntrbf) then
-    !  allocate(cntrbf(n_cntrbf))
-    !  do i=1, n_cntrbf
-    !    j = cntrbf_lines(i)
-    !    associate(line=>self%atom%line(j))
-    !      if (.not. line%active) cycle
-    !      call line%check_range(self%fs, self%fe, fs, fe, skip)
-    !      if (.not. skip) then
-    !        allocate(cntrbf(i)%data(fs:fe,nx,ny,nz,4,self%mus:self%mue))
-    !        call mem_register(cntrbf(i)%data, 'cntrbf')
-    !        allocate(cntrbf(i)%tmp(fs:fe,nx,ny,nz,4))
-    !        call mem_register(cntrbf(i)%tmp, 'cntrbf%tmp')
-    !      endif
-    !    end associate
-    !  end do
-    !endif
+    if (get_cntrbf) then
+      allocate(cntrbf_data(fs:fe,nx,ny,nz,2,self%mus:self%mue))
+      call mem_register(cntrbf_data, 'cntrbf_data')
+      allocate(cntrbf_tmp(fs:fe,nx,ny,nz,2))
+      call mem_register(cntrbf_tmp, 'cntrbf_tmp')
+    endif
   end subroutine allocate_arrays
 
   !-----------------------------------------------------------------------------
@@ -590,30 +583,25 @@ contains
         deallocate(self%PsiJ)
       endif
     endif
-    !if (get_cntrbf) then
-    !  do i=1, n_cntrbf
-    !    if (allocated(cntrbf(i)%data)) then
-    !      call mem_unregister(cntrbf(i)%data, label='cntrbf')
-    !      deallocate(cntrbf(i)%data)
-    !      call mem_unregister(cntrbf(i)%tmp, label='cntrbf%tmp')
-    !      deallocate(cntrbf(i)%tmp)
-    !    endif
-    !  end do
-    !  deallocate(cntrbf)
-    !endif
+    if (get_cntrbf) then
+      call mem_unregister(cntrbf_data, label='cntrbf_data')
+      deallocate(cntrbf_data)
+      call mem_unregister(cntrbf_tmp, label='cntrbf_tmp')
+      deallocate(cntrbf_tmp)
+    endif
   end subroutine deallocate_arrays
 END SUBROUTINE execute
 
 !===============================================================================
 SUBROUTINE lte_background_opacities (self, comp, include_absmet, do_sample_opac, do_make_eos)
-  class(nlte_patch_t) :: self
+  class(rt_patch_t) :: self
   class(composition_type) :: comp
   real(4) :: h_kT, hv_kT, bnu
   real(8), dimension(:), allocatable, target :: tab_nu
   logical :: include_absmet, do_sample_opac, do_make_eos
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin('nlte_patch%lte_background_opacities', itimer=itimer)
+  call trace%begin('rt_patch%lte_background_opacities', itimer=itimer)
   do z=1, nz
   do y=1, ny
   do x=1, nx
@@ -631,12 +619,12 @@ SUBROUTINE lte_background_opacities (self, comp, include_absmet, do_sample_opac,
     if (do_make_eos) then
       call self%generate_opacity_table(self%nu(fs:fe), include_absmet, comp%ll_initialised)
     elseif (do_sample_opac) then
-      if (include_absmet) then
+      if (include_absmet .or. sample_linelist) then
         tab_nu = self%nu(fs:fe)
       else
         call comp%get_table_frequencies(self%nu(fs:fe), tab_nu)
       endif
-      call self%generate_opacity_table(tab_nu, include_absmet=include_absmet, include_llist=.false.)
+      call self%generate_opacity_table(tab_nu, include_absmet, include_llist=sample_linelist)
     endif
   endif
 
@@ -667,7 +655,7 @@ END SUBROUTINE lte_background_opacities
 
 !===============================================================================
 SUBROUTINE add_scattering (self, comp)
-  class(nlte_patch_t), target :: self
+  class(rt_patch_t), target :: self
   class(composition_type) :: comp
   real(4), dimension(:,:,:,:,:), allocatable, target :: Jup_mem, Jdn_mem
   real(4), dimension(:,:,:,:,:), pointer, contiguous :: Jup, Jdn
@@ -676,7 +664,7 @@ SUBROUTINE add_scattering (self, comp)
   integer :: s
   integer, save :: itimer
   !-----------------------------------------------------------------------------
-  call trace%begin('nlte_patch%add_scattering', itimer=itimer)
+  call trace%begin('rt_patch%add_scattering', itimer=itimer)
   if (.not. associated(self%up_twin)) self%up_twin => self
   if (Jnu_to_file) then
     Jnu_label = merge('Jnu_out', 'Jnu    ', self%out_ray)
@@ -714,7 +702,7 @@ END SUBROUTINE
 
 !===============================================================================
 SUBROUTINE generate_opacity_table (self, nu, include_absmet, include_llist)
-  class(nlte_patch_t), target :: self
+  class(rt_patch_t), target :: self
   class(composition_type), pointer :: comp
   real(8), dimension(:), pointer, intent(in) :: nu
   real(4), dimension(:,:,:,:), pointer :: view, all_eta
@@ -723,7 +711,7 @@ SUBROUTINE generate_opacity_table (self, nu, include_absmet, include_llist)
   integer :: i,j,k, ntemp, nne, nnu
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin('nlte_patch%generate_opacity_table', itimer=itimer)
+  call trace%begin('rt_patch%generate_opacity_table', itimer=itimer)
   comp => self%m3d_parent%tab_comp
   nnu = size(nu)
   ntemp = size(comp%temp,1)
@@ -750,7 +738,7 @@ END SUBROUTINE generate_opacity_table
 
 !===============================================================================
 SUBROUTINE save_opac_table (self)
-  class(nlte_patch_t), target :: self
+  class(rt_patch_t), target :: self
   class(composition_type), pointer :: comp
   real(4), dimension(:,:,:), allocatable :: eos
   real(4), dimension(:,:,:,:), pointer :: view
@@ -759,7 +747,7 @@ SUBROUTINE save_opac_table (self)
   integer :: i,j,k, ntemp, nrho, nnu
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin('nlte_patch%save_opac_table', itimer=itimer)
+  call trace%begin('rt_patch%save_opac_table', itimer=itimer)
   comp => self%m3d_parent%tab_comp
   nu => self%opac_table_nu
   ntemp = size(self%opac_table, 2)
@@ -792,7 +780,7 @@ END SUBROUTINE save_opac_table
 
 !===============================================================================
 SUBROUTINE interpolate_opacity_table (self, temp, ne, chi500)
-  class(nlte_patch_t), target :: self
+  class(rt_patch_t), target :: self
   class(composition_type), pointer :: comp
   real(8), dimension(:,:,:), intent(in) :: temp, ne
   real(4), dimension(:,:,:), intent(in) :: chi500
@@ -804,7 +792,7 @@ SUBROUTINE interpolate_opacity_table (self, temp, ne, chi500)
   integer :: f, i, j, k
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin('nlte_patch%interpolate_opacity_table', itimer=itimer)
+  call trace%begin('rt_patch%interpolate_opacity_table', itimer=itimer)
   comp => self%m3d_parent%tab_comp
   dx = 1. / (comp%temp(2,1,1) - comp%temp(1,1,1))
   dy = 1. / (log(comp%ne(1,2,1) / comp%ne(1,1,1)))
@@ -850,7 +838,7 @@ END SUBROUTINE interpolate_opacity_table
 
 !===============================================================================
 SUBROUTINE add_bound_free_opacities (self, atom, trans, adata)
-  class(nlte_patch_t), target :: self
+  class(rt_patch_t), target :: self
   class(atom_type) :: atom
   class(atom_trans_t) :: trans
   class(atom_data_t), target :: adata
@@ -862,7 +850,7 @@ SUBROUTINE add_bound_free_opacities (self, atom, trans, adata)
   integer :: i, icont, fsmin, femax
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin('nlte_patch%add_bound_free_opacities', itimer=itimer)
+  call trace%begin('rt_patch%add_bound_free_opacities', itimer=itimer)
   ! Summing contributions from all bound-free transitions
   do i=1, size(work,5)
   do z=lbound(work, 4), ubound(work,4)
@@ -924,7 +912,7 @@ END SUBROUTINE add_bound_free_opacities
 
 !===============================================================================
 SUBROUTINE bound_bound_damping (self, comp, atom, trans, adata)
-  class(nlte_patch_t), target :: self
+  class(rt_patch_t), target :: self
   class(composition_type) :: comp
   class(atom_type) :: atom
   class(atom_trans_t) :: trans
@@ -962,7 +950,7 @@ END SUBROUTINE bound_bound_damping
 
 !===============================================================================
 SUBROUTINE add_bound_bound_opacities (self, comp, atom, trans, adata, wmu, vproj, LTE)
-  class(nlte_patch_t), target :: self
+  class(rt_patch_t), target :: self
   class(composition_type) :: comp
   class(atom_type) :: atom
   class(atom_trans_t) :: trans
@@ -975,7 +963,7 @@ SUBROUTINE add_bound_bound_opacities (self, comp, atom, trans, adata, wmu, vproj
   real(4), dimension(:), allocatable :: vphi
   real(4) :: wmu, idf, vpr, a, idf_4pi, ni, nj, Bji_nj, Bij_ni, widf, chi_fac, wp, amin, amax
   real(8) :: q
-  real(4) :: lower_off, upper_off, ekt
+  real(4) :: lower_off, upper_off, ekt, wj
   integer :: i, ih
   logical :: LTE, get_wphi
   integer, save :: itimer=0, itimer1=0
@@ -1015,6 +1003,12 @@ SUBROUTINE add_bound_bound_opacities (self, comp, atom, trans, adata, wmu, vproj
     do y=1, ny
     do x=1, nx
       idf = adata%inv_df(x,y,z)
+      ekt = comp%e_kT(x,y,z)
+      ni = n(x,y,z,line%i)
+      nj = n(x,y,z,line%j)
+
+      if (lower_off /= 0) ni = ni * exp(-lower_off*ekt)
+      if (upper_off /= 0) nj = nj * exp(-upper_off*ekt)
 
       associate(phi => vphi(fs:fe))
         if (line%hydrogen) then
@@ -1023,6 +1017,11 @@ SUBROUTINE add_bound_bound_opacities (self, comp, atom, trans, adata, wmu, vproj
             vphi(f) = hprofl(line, q, temp(x,y,z), ne(x,y,z), fo(x,y,z), &
                              vbarh(x,y,z), tothi(x,y,z), t3nhe(x,y,z), idf)
           end do
+          if (H_occupation_probability) then
+            wj = comp%elements(1)%ions(1)%levels(line%j)%w(x,y,z)
+            ni = ni * wj
+            nj = nj * wj
+          endif
         elseif (line%io > 1) then
           phi = 0
           do ih=1, line%io
@@ -1036,11 +1035,6 @@ SUBROUTINE add_bound_bound_opacities (self, comp, atom, trans, adata, wmu, vproj
           phi = voigt_profile(a, line%q(fs:fe), vpr, idf)
         endif
 
-        ekt = comp%e_kT(x,y,z)
-        ni = n(x,y,z,line%i)
-        nj = n(x,y,z,line%j)
-        if (lower_off /= 0) ni = ni * exp(-lower_off*ekt)
-        if (upper_off /= 0) nj = nj * exp(-upper_off*ekt)
         Bji_nj = line%Bji * nj
         Bij_ni = line%Bij * ni
         chi_fac = Bij_ni - Bji_nj
@@ -1071,7 +1065,7 @@ END SUBROUTINE add_bound_bound_opacities
 
 !===============================================================================
 SUBROUTINE bound_bound_rates (self, comp, atom, trans, adata, wmu, vproj)
-  class(nlte_patch_t), target :: self
+  class(rt_patch_t), target :: self
   class(composition_type) :: comp
   class(atom_type) :: atom
   class(atom_trans_t) :: trans
@@ -1181,7 +1175,7 @@ END SUBROUTINE bound_bound_rates
 
 !===============================================================================
 SUBROUTINE bound_free_rates (self, atom, trans, adata)
-  class(nlte_patch_t), target :: self
+  class(rt_patch_t), target :: self
   class(atom_type) :: atom
   class(atom_trans_t) :: trans
   class(atom_data_t), target :: adata
@@ -1241,12 +1235,12 @@ END SUBROUTINE bound_free_rates
 
 !===============================================================================
 SUBROUTINE set_upstream_boundary (self, i_mu, i_set, ng)
-  class(nlte_patch_t) :: self
+  class(rt_patch_t) :: self
   integer :: i_mu, i_set, ng, i
   real(4) :: xxold(3), xxnew(ng)
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin('nlte_patch%set_upstream_boundary', itimer=itimer)
+  call trace%begin('rt_patch%set_upstream_boundary', itimer=itimer)
   z = merge(lbound(work,4), ubound(work,4), self%dir > 0)
   nx = self%patch%n(1)
   ny = self%patch%n(2)
@@ -1291,13 +1285,13 @@ END SUBROUTINE set_upstream_boundary
 
 !===============================================================================
 SUBROUTINE integrate_intensity (self, wmu, i_set, save_PsiJ)
-  class(nlte_patch_t) :: self
+  class(rt_patch_t) :: self
   real(4) :: wmu, wmu2
   logical :: save_PsiJ
   integer :: i_set, x, y, z, f
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin('nlte_patch%integrate_intensity', itimer=itimer)
+  call trace%begin('rt_patch%integrate_intensity', itimer=itimer)
   wmu2 = 2*wmu
   do z=1, self%patch%n(3)
   do y=1, self%patch%n(2)
@@ -1324,14 +1318,14 @@ END SUBROUTINE integrate_intensity
 
 !===============================================================================
 SUBROUTINE integrate_rates (self, atom, trans, adata)
-  class(nlte_patch_t) :: self
+  class(rt_patch_t) :: self
   class(atom_type) :: atom
   class(atom_trans_t) :: trans
   class(atom_data_t) :: adata
   integer :: m(4), i, j, k
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin('nlte_patch_t%integrate_rates', itimer=itimer)
+  call trace%begin('rt_patch_t%integrate_rates', itimer=itimer)
   call lock_mem(self%m3d_parent, 'integrate_rates')
   if (.not. allocated(adata%gamma_ij)) then
     m = [self%patch%n, atom%nrad]
@@ -1355,11 +1349,11 @@ END SUBROUTINE integrate_rates
 
 !===============================================================================
 SUBROUTINE work_to_mem (self, i_mu, i_set)
-  class(nlte_patch_t) :: self
+  class(rt_patch_t) :: self
   integer :: f, i_mu, i_set, z
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin('nlte_patch%work_to_mem', itimer=itimer)
+  call trace%begin('rt_patch%work_to_mem', itimer=itimer)
 
   if (.not. associated(self%mem)) then
     call self%allocate_mem()
@@ -1376,10 +1370,10 @@ END SUBROUTINE work_to_mem
 
 !===============================================================================
 SUBROUTINE back_to_work (self)
-  class(nlte_patch_t) :: self
+  class(rt_patch_t) :: self
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin('nlte_patch%back_to_work', itimer=itimer)
+  call trace%begin('rt_patch%back_to_work', itimer=itimer)
   ! copy back opacities into angle dependent opacities
   do z=1, nz
   do y=1, ny
@@ -1398,10 +1392,10 @@ END SUBROUTINE back_to_work
 
 !===============================================================================
 SUBROUTINE eta_to_Snu (self)
-  class(nlte_patch_t) :: self
+  class(rt_patch_t) :: self
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin('nlte_patch%eta_to_Snu', itimer=itimer)
+  call trace%begin('rt_patch%eta_to_Snu', itimer=itimer)
   ! Converting eta into source function Snu=eta/chi
   do z=1, nz
   do y=1, ny
@@ -1417,10 +1411,10 @@ END SUBROUTINE eta_to_Snu
 
 !===============================================================================
 SUBROUTINE Snu_to_eta (self)
-  class(nlte_patch_t) :: self
+  class(rt_patch_t) :: self
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin('nlte_patch%Snu_to_eta', itimer=itimer)
+  call trace%begin('rt_patch%Snu_to_eta', itimer=itimer)
   do z=1, nz
   do y=1, ny
   do x=1, nx
@@ -1435,7 +1429,7 @@ END SUBROUTINE Snu_to_eta
 
 !===============================================================================
 SUBROUTINE rotate_array (self, vec, array)
-  class(nlte_patch_t) :: self
+  class(rt_patch_t) :: self
   real(8), intent(in) :: vec(3)
   real(4), intent(inout), dimension(:,:,:,:,:) :: array
   real(4), dimension(2) :: delta, deltak
@@ -1491,13 +1485,13 @@ END SUBROUTINE rotate_array
 
 !===============================================================================
 SUBROUTINE set_fixed_Jnu (self, adata)
-  class(nlte_patch_t) :: self
+  class(rt_patch_t) :: self
   class(atom_data_t) :: adata
   real(4) :: Bnu
   integer :: nl, i
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin('nlte_patch%set_fixed_Jnu', itimer=itimer)
+  call trace%begin('rt_patch%set_fixed_Jnu', itimer=itimer)
   nl = size(adata%wphi, 4)
   if (.not. allocated(adata%wphi)) nl = 0
   do z=1, nz
@@ -1520,7 +1514,7 @@ END SUBROUTINE set_fixed_Jnu
 
 !===============================================================================
 SUBROUTINE short_char (self, vec)
-  class(nlte_patch_t) :: self
+  class(rt_patch_t) :: self
   type(ray_type) :: ray, amr_ray
   real(8) :: vec(3), ds(3)
   real(4) :: Inuup, xxup, ssup, xxmin, ssmin, Inumin
@@ -1533,7 +1527,7 @@ SUBROUTINE short_char (self, vec)
   logical :: inner, amr_boundary
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin('nlte_patch%short_char', itimer=itimer)
+  call trace%begin('rt_patch%short_char', itimer=itimer)
   allocate(work_up(self%fs:self%fe,3))
   allocate(work_min(self%fs:self%fe,3))
 
@@ -1630,8 +1624,95 @@ SUBROUTINE short_char (self, vec)
 END SUBROUTINE short_char
 
 !===============================================================================
+SUBROUTINE long_char_linear_spherical (self, vec)
+  class(rt_patch_t) :: self
+  real(8) :: vec(3)
+  real(4) :: ds, Inuup, xxup, ssup, dsup05, dsup1, dsup2, xx, ss, Inu, u0, Psi
+  real(8) :: dt, ex ! important
+  real(4) :: mu, p, lower, ds1, ds2, r1, r2, s1, s2
+  integer :: nx, ny, nz, dx, dy, x, y, z, f, zs, ze, zup
+  logical :: amr_boundary
+  integer, save :: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin('rt_patch%long_char_linear_spherical', itimer=itimer)
+  nx = self%patch%n(1)
+  ny = self%patch%n(2)
+  nz = self%patch%n(3)
+
+  p = rstar * sqrt(1.d0 - vec(3)**2) ! impact parameter
+  lower = (self%position(3) - 0.5*self%size(3))*scaling%l + rorigin
+  ds1 = self%ds(3) * scaling%l
+
+  amr_boundary = amr .and. self%dir < 0 .and. associated(self%upstream)
+  if (amr_boundary) then
+    ds2 = self%upstream%ds(3) * scaling%l
+  endif
+
+  zs = merge(1, nz, self%dir > 0)
+  ze = merge(nz, 1, self%dir > 0)
+
+  do z=zs, ze, self%dir
+    zup = z - self%dir
+    r2 = lower + z*ds1
+
+    if (amr_boundary) then
+      r1 = r2 - self%dir*ds2
+      amr_boundary = .false.
+    else
+      r1 = r2 - self%dir*ds1
+    endif
+
+    if (r2 < p .or. r1 < p) then
+      work(:,:,:,z,3) = 0
+      cycle
+    endif
+
+    s1 = sqrt(r1**2 - p**2)
+    s2 = sqrt(r2**2 - p**2)
+    dsup05 = 0.5d0 * abs(s2-s1)
+
+    do y=1, ny
+    do x=1, nx
+      do f=self%fs, self%fe
+        xxup = work(f,x,y,zup,1)
+        ssup = work(f,x,y,zup,2)
+        xx = work(f,x,y,z,1)
+        ss = work(f,x,y,z,2)
+        dt = dsup05 * ( xxup + xx ) ! upwind optical pathlength
+        dt = max(dt, 0.d0)
+        if (dt < 80) then
+          Inuup = work(f,x,y,zup,3)
+          ex = exp(-dt)
+          if ( dt > 1d-3 ) then
+            u0 = 1 - ex
+            Psi = 1 - u0 / dt
+          else
+            Psi = dt * (0.5 - 0.16666667*dt)
+            u0 = dt * (1 - Psi)
+          endif
+
+          Inu = Inuup*ex + (u0 - Psi)*ssup + Psi*ss
+        else
+          !ex = 0
+          u0 = 1 / dt
+          Psi = 1 - u0
+          Inu = u0*ssup + Psi*ss
+        endif
+
+        work(f,x,y,z,3) = Inu
+        if (any(self%get_rates)) then
+          self%Psi(f,x,y,z) = Psi / xx
+        endif
+      end do ! f-loop
+    end do
+    end do
+  end do ! z-loop
+  call trace%end(itimer)
+END SUBROUTINE long_char_linear_spherical
+
+!===============================================================================
 SUBROUTINE long_char_linear (self, vec)
-  class(nlte_patch_t) :: self
+  class(rt_patch_t) :: self
   real(8) :: vec(3)
   real(4) :: ds, Inuup, xxup, ssup, dsup05, dsup1, dsup2, xx, ss, Inu, u0, Psi
   real(8) :: dt, ex ! important
@@ -1639,7 +1720,7 @@ SUBROUTINE long_char_linear (self, vec)
   logical :: amr_boundary
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin('nlte_patch%long_char_linear', itimer=itimer)
+  call trace%begin('rt_patch%long_char_linear', itimer=itimer)
   nx = self%patch%n(1)
   ny = self%patch%n(2)
   nz = self%patch%n(3)
@@ -1708,7 +1789,7 @@ END SUBROUTINE long_char_linear
 
 !===============================================================================
 SUBROUTINE long_char_quadratic (self, vec)
-  class(nlte_patch_t) :: self
+  class(rt_patch_t) :: self
   real(8) :: vec(3)
   real(4) :: ds, dsup, rdsup, dsup1, dsup2
   real(4) :: xx, ss, Inu, Psi
@@ -1720,7 +1801,7 @@ SUBROUTINE long_char_quadratic (self, vec)
   logical :: edge
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin('nlte_patch%long_char_quadratic', itimer=itimer)
+  call trace%begin('rt_patch%long_char_quadratic', itimer=itimer)
   nx = self%patch%n(1)
   ny = self%patch%n(2)
   nz = self%patch%n(3)
@@ -1808,7 +1889,7 @@ END SUBROUTINE long_char_quadratic
 
 !===============================================================================
 SUBROUTINE long_char_quadratic2 (self, vec)
-  class(nlte_patch_t) :: self
+  class(rt_patch_t) :: self
   real(8) :: vec(3)
   real(4) :: ds, dsup, rdsup, dsup1, dsup2
   real(4) :: xx, ss, Inu, Psi
@@ -1820,7 +1901,7 @@ SUBROUTINE long_char_quadratic2 (self, vec)
   logical :: edge
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin('nlte_patch%long_char_quadratic2', itimer=itimer)
+  call trace%begin('rt_patch%long_char_quadratic2', itimer=itimer)
   nx = self%patch%n(1)
   ny = self%patch%n(2)
   nz = self%patch%n(3)
@@ -1912,7 +1993,7 @@ END SUBROUTINE long_char_quadratic2
 
 !===============================================================================
 SUBROUTINE long_char_quadratic3 (self, comp, vec)
-  class(nlte_patch_t) :: self
+  class(rt_patch_t) :: self
   class(composition_type) :: comp
   real(8), dimension(:,:,:), allocatable :: chi500, dchi500, Bnu500, dBnu500
   real(8), dimension(:) :: xxold(3), xxnew(2)
@@ -1931,7 +2012,7 @@ SUBROUTINE long_char_quadratic3 (self, comp, vec)
   logical :: edge
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin('nlte_patch%long_char_quadratic3', itimer=itimer)
+  call trace%begin('rt_patch%long_char_quadratic3', itimer=itimer)
   nx = self%patch%n(1)
   ny = self%patch%n(2)
   nz = self%patch%n(3)
@@ -2095,7 +2176,7 @@ END SUBROUTINE long_char_quadratic3
 
 !===============================================================================
 SUBROUTINE get_vproj (self, vproj, vec, rotate, i_mu)
-  class(nlte_patch_t) :: self
+  class(rt_patch_t) :: self
   real(4), dimension(:,:,:) :: vproj
   real(8), dimension(:) :: vec
   real(4), dimension(:,:,:), pointer :: vx, vy, vz
@@ -2104,7 +2185,7 @@ SUBROUTINE get_vproj (self, vproj, vec, rotate, i_mu)
   logical :: rotate
   integer, save :: itimer
   !-----------------------------------------------------------------------------
-  call trace%begin('nlte_patch_t%get_vproj', itimer=itimer)
+  call trace%begin('rt_patch_t%get_vproj', itimer=itimer)
   if (rotate) then
     mem => self%m3d_parent%mem(:,:,:,:,self%it,1+i_mu)
   else
@@ -2124,71 +2205,48 @@ SUBROUTINE get_vproj (self, vproj, vec, rotate, i_mu)
 END SUBROUTINE get_vproj
 
 !===============================================================================
-!SUBROUTINE save_contribution_function (self, i_set, i_mu)
-!  class(nlte_patch_t) :: self
-!  integer :: i, j, i_set, i_mu, ff, im
-!  real(4) :: net_chi, net_src, lin_chi, lin_eta
-!  real(4) :: cnt_inu, cnt_chi, cnt_eta
-!  real(4), dimension(:,:,:,:,:), allocatable, target :: rotated_back
-!  real(4), dimension(:,:,:,:,:), pointer :: back_ptr
-!  character(32) :: name
-!  logical :: skip
-!  integer, save :: itimer=0
-!  !-----------------------------------------------------------------------------
-!  call trace%begin('nlte_patch_t%save_contribution_function', itimer=itimer)
-!  do i=1, n_cntrbf
-!    j = cntrbf_lines(i)
-!    associate(line=>self%atom%line(j))
-!      if (.not. line%active) cycle
-!      call line%check_range(self%fs, self%fe, fs, fe, skip)
-!      if (skip) cycle
-!      do z=1,nz
-!      do y=1,ny
-!      do x=1,nx
-!        do f=fs,fe
-!          associate(cf => cntrbf(i)%tmp(f,x,y,z,:), cf_out => cntrbf(i)%data(f,x,y,z,:,i_mu))
-!            if (i_set /= 2) then
-!              net_chi = work(f,x,y,z,1)
-!              net_src = work(f,x,y,z,2)
-!              if (i_set == 1) then
-!                cf(1) = net_chi
-!                cf(2) = net_src*net_chi
-!              elseif (i_set == 2) then
-!                cf(3) = net_chi
-!                cf(4) = net_src*net_chi
-!              endif
-!            else
-!              cnt_chi = work(f,x,y,z,1)
-!              cnt_eta = work(f,x,y,z,2)*cnt_chi
-!              cnt_inu = work(f,x,y,z,3)
-!              
-!              lin_chi = cf(1) - cnt_chi
-!              lin_eta = cf(2) - cnt_eta
-!              cf_out(1) = cnt_inu*lin_chi - lin_eta
-!              cf_out(2) = cf(1)
-!              
-!              lin_chi = cf(3) - cnt_chi
-!              lin_eta = cf(4) - cnt_eta
-!              cf_out(3) = cnt_inu*lin_chi - lin_eta
-!              cf_out(4) = cf(3)
-!            endif
-!          end associate
-!        end do
-!      end do
-!      end do
-!      end do
-!    end associate
-!    if (i_set==2 .and. i_mu==self%mue) then
-!      write(name, '(A,I6.6)') 'cntrbf_', j
-!      call self%save6(cntrbf(i)%data, trim(name))
-!    endif
-!  end do
-!  call trace%end(itimer)
-!END SUBROUTINE save_contribution_function
+SUBROUTINE save_contribution_function (self, i_set, i_mu)
+  class(rt_patch_t) :: self
+  integer :: i, j, i_set, i_mu, ff, im
+  real(4) :: net_chi, net_src, lin_chi, lin_eta
+  real(4) :: cnt_inu, cnt_chi, cnt_eta
+  integer, save :: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin('rt_patch_t%save_contribution_function', itimer=itimer)
+  do z=1,nz
+  do y=1,ny
+  do x=1,nx
+    do f=self%fs,self%fe
+      associate(cf => cntrbf_tmp(f,x,y,z,:), cf_out => cntrbf_data(f,x,y,z,:,i_mu))
+        if (i_set == 1) then ! NLTE set
+          net_chi = work(f,x,y,z,1)
+          net_src = work(f,x,y,z,2)
+          cf(1) = net_chi
+          cf(2) = net_src*net_chi
+        elseif (i_set == 2) then ! continuum set
+          cnt_chi = work(f,x,y,z,1)
+          cnt_eta = work(f,x,y,z,2)*cnt_chi
+          cnt_inu = work(f,x,y,z,3)
+          
+          lin_chi = cf(1) - cnt_chi
+          lin_eta = cf(2) - cnt_eta
+          cf_out(1) = cnt_inu*lin_chi - lin_eta
+          cf_out(2) = cf(1)
+        endif
+      end associate
+    end do
+  end do
+  end do
+  end do
+  if (i_set==2 .and. i_mu==self%mue) then
+    call self%save6(cntrbf_data, 'cntrbf')
+  endif
+  call trace%end(itimer)
+END SUBROUTINE save_contribution_function
 
   !===============================================================================
 SUBROUTINE print_post_update_info (self)
-  class(nlte_patch_t) :: self
+  class(rt_patch_t) :: self
   !-----------------------------------------------------------------------------
   if (self%verbose > 1) then
     call self%print_to_stdout(arr=memcheck(1:3))
@@ -2196,20 +2254,20 @@ SUBROUTINE print_post_update_info (self)
 END SUBROUTINE print_post_update_info
 
 !===============================================================================
-SUBROUTINE nlte_patch_nbor_relations(self, another, needed, needs_me, download)
-  class(nlte_patch_t) :: self
+SUBROUTINE rt_patch_nbor_relations(self, another, needed, needs_me, download)
+  class(rt_patch_t) :: self
   class(task_t), pointer :: another        ! another task in the list
   logical :: needed, needs_me, download    ! Is the other task: needed, 
                                            ! does it need me, should I download?
   class(task_t), pointer :: other
   logical :: default
   ! ----------------------------------------------------------------------------
-  call trace%begin ('nlte_patch_t%nbor_relations')
+  call trace%begin ('rt_patch_t%nbor_relations')
   call self%ray_patch_t%nbor_relations(another, needed, needs_me, download)
 
   if (needed .or. needs_me) then
     select type(another)
-    class is (nlte_patch_t)
+    class is (rt_patch_t)
       ! do nothing
       if (self%ipos(3) /= another%ipos(3)) then
         if (needed) then
@@ -2237,7 +2295,7 @@ SUBROUTINE nlte_patch_nbor_relations(self, another, needed, needs_me, download)
         needs_me = .false.
       else
         select case(another%kind)
-        case ('atom_patch')
+        case ('nlte_patch')
           needs_me = .true.; needed = .true.
         end select
       endif
@@ -2247,13 +2305,13 @@ SUBROUTINE nlte_patch_nbor_relations(self, another, needed, needs_me, download)
   endif
 
   call trace%end()
-END SUBROUTINE nlte_patch_nbor_relations
+END SUBROUTINE rt_patch_nbor_relations
 
 !===============================================================================
 !> Fast method to generate nbor lists in cases with very long task lists
 !===============================================================================
 SUBROUTINE init_nbors_hash (self, nbors)
-  class(nlte_patch_t):: self
+  class(rt_patch_t):: self
   class(nbor_t), pointer:: nbors
   !.............................................................................
   class(task_t), pointer:: task
@@ -2261,7 +2319,7 @@ SUBROUTINE init_nbors_hash (self, nbors)
   integer, save:: itimer=0
   integer :: key(4)
   !-----------------------------------------------------------------------------
-  call trace%begin('nlte_patch_t%init_nbors_hash', itimer=itimer)
+  call trace%begin('rt_patch_t%init_nbors_hash', itimer=itimer)
   call self%ray_patch_t%init_nbors_hash(nbors)
 
   key = self%key
@@ -2285,7 +2343,7 @@ SUBROUTINE init_nbors_hash (self, nbors)
 
   key(2) = 0
   key(3) = 0
-  key(4) = hash_string('atom_patch')
+  key(4) = hash_string('nlte_patch')
   call self%check_nbor(key, nbors)
 
   key(4) = hash_string('composition')
@@ -2295,7 +2353,7 @@ END SUBROUTINE init_nbors_hash
 
 !===============================================================================
 SUBROUTINE finish(self)
-  class(nlte_patch_t) :: self
+  class(rt_patch_t) :: self
   character(8) :: Jnu_label
   ! ----------------------------------------------------------------------------
   call self%m3d_patch_t%finish()
@@ -2324,7 +2382,7 @@ END SUBROUTINE finish
 
 !===============================================================================
 SUBROUTINE allocate_mem(self, m_in)
-  class(nlte_patch_t) :: self
+  class(rt_patch_t) :: self
   class(line_type), pointer :: line
   real(4), dimension(:,:,:,:,:,:), pointer, contiguous :: tmp
   integer, intent(in), optional :: m_in(6)
@@ -2346,11 +2404,11 @@ END SUBROUTINE allocate_mem
 
 !===============================================================================
 SUBROUTINE save_intensity (self)
-  class(nlte_patch_t) :: self
+  class(rt_patch_t) :: self
   real(4), dimension(:,:,:,:,:), allocatable :: ie, i3
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin('nlte_patch_t%save_intensity', itimer=itimer)
+  call trace%begin('rt_patch_t%save_intensity', itimer=itimer)
   fs = self%fs
   fe = self%fe
   allocate(i3(fs:fe,nx,ny, self%mus:self%mue, self%n_set), source=0.)
@@ -2377,7 +2435,7 @@ END SUBROUTINE save_intensity
 
 !===============================================================================
 SUBROUTINE copy_to (self, tgt)
-  class(nlte_patch_t):: self
+  class(rt_patch_t):: self
   class(patch_t):: tgt
   integer :: i, i_set, i_mu
   !-----------------------------------------------------------------------------
@@ -2421,4 +2479,4 @@ SUBROUTINE mem_unregister(arr, label)
   call os%mem_register(storage_size(arr), -product(shape(arr)), label)
 END SUBROUTINE mem_unregister
 
-END MODULE nlte_patch_mod
+END MODULE rt_patch_mod

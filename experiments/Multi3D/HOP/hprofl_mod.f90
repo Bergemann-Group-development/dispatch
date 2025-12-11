@@ -138,32 +138,31 @@ MODULE hprofl_mod
 contains
 
   !====================================================================================
-  SUBROUTINE add_lte_h_opacities(self, ired, iblue, nu, vproj, inv_df, temp, ni, nj, &
-    ne, tothi, vbarh, fo, t3nhe, chi, cont)
+  SUBROUTINE add_h_opacities(self, f0, nu, vproj, inv_df, temp, ni, nj, &
+    ne, tothi, vbarh, fo, t3nhe, bi, bj, chi, eta, cont, do_nlte)
     class(bbtrans_type), intent(in) :: self
-    integer, intent(in) :: ired, iblue
+    integer, intent(in) :: f0
     real(8), dimension(:), intent(in), contiguous :: nu
     real(4), dimension(:,:,:), intent(in), contiguous :: vproj, inv_df, ni, nj
+    real(4), dimension(:,:,:), intent(in), pointer :: bi, bj
     real(4), dimension(:,:,:), intent(in), contiguous :: temp, ne, tothi, vbarh, fo, t3nhe
-    real(4), dimension(:,:,:,:), intent(inout) :: chi
+    real(4), dimension(:,:,:,:), intent(inout) :: chi, eta
     real(4), dimension(:,:,:,:), intent(in) :: cont
+    logical, intent(in) :: do_nlte
     real(8), allocatable :: qq(:)
     real(4), allocatable :: phis(:)
-    real(4) :: lchi, phi, idf, cf, v, ref, nh1, strength
-    real(4) :: resont, vdw, hwstk, hwlor, hfwid, t, e
+    real(4) :: lchi, leta, phi, idf, cchi, ceta, v, ref, nh1, strength, nup, nlo
+    real(4) :: resont, vdw, hwstk, hwlor, hfwid, t, e, inv_nu0
     real(8) :: q
     real(4), parameter :: tol=1e-7
-    integer :: i,j,k,f, f0, m(3), itimer=0
+    integer :: i,j,k,f, nf, m(3), itimer=0
     logical lymanalf, used
     !----------------------------------------------------------------------------------
     ! Lyman alpha wings require special treatment
     lymanalf = (self%i == 1) .and. (self%j == 2)
     m = shape(vproj)
-
-    allocate(qq(ired:iblue))
-    allocate(phis(ired:iblue))
-    qq(ired:iblue) = nu(ired:iblue) / self%nu0 - 1
-    f0 = minloc(abs(qq),1) + ired - 1
+    nf = size(nu)
+    inv_nu0 = 1.0 / self%nu0
     used = .false.
     strength = 0.0
 
@@ -172,60 +171,71 @@ contains
     do i=1, m(1)
       ! fetch variables
       idf = inv_df(i,j,k)
-      v   = vproj(i,j,k)
+      v   = (vproj(i,j,k) + 1)*self%nu0
       t   = temp(i,j,k)
       e   = ne(i,j,k)
       nh1 = tothi(i,j,k)
+      nlo = ni(i,j,k)
+      nup = nj(i,j,k)
 
-      cf = self%Bij*ni(i,j,k) - self%Bji*nj(i,j,k)
+      ceta = self%Bij*nlo - self%Bji*nup ! this chi_lte / phi / idf
 
-      if (.not. lymanalf .and. stark_convolution) then
-        call convolve_h_profiles(self, qq-v, t, e, idf, nh1, vbarh(i,j,k), fo(i,j,k), t3nhe(i,j,k), phis)
-        do f=ired, iblue
-          lchi = phis(f) * cf
-          chi(f,i,j,k) = chi(f,i,j,k) + lchi
-        end do
+      if (do_nlte) then
+        nlo = nlo * bi(i,j,k)
+        nup = nup * bj(i,j,k)
+        cchi = self%Bij*nlo - self%Bji*nup
+        ceta = ceta * bj(i,j,k)
       else
-        resont = nh1 * self%gw1
-        if (self%gw2 /= 0) then
-          resont = resont * vbarh(i,j,k)**self%gw2
-        endif
-
-        hwstk = self%gq * fo(i,j,k)
-        vdw = self%gw3 * t3nhe(i,j,k)
-        hwlor = self%ga + resont + vdw
-
-        hfwid = max(1/idf, hwlor, hwstk) ! defines where we switch from Voigt to adding
-
-        ref = tol * cont(f0,i,j,k)
-        do f=f0, iblue
-          q = qq(f) - v
-          if (lymanalf) then
-            call lyman_voigt(self, q, hwlor, resont, t, e, nh1, hfwid, hwstk, idf, phi)
-          else
-            call hvoigt(self, q, hwlor, t, e, hfwid, hwstk, idf, phi)
-          endif
-          lchi = phi * cf
-          chi(f,i,j,k) = chi(f,i,j,k) + lchi
-          if (lchi < ref) exit
-          if (f==f0) then
-            used = .true.
-            strength = max(strength, lchi / cont(f0,i,j,k))
-          endif
-        end do
-        
-        do f=f0-1, ired, -1
-          q = qq(f) - v
-          if (lymanalf) then
-            call lyman_voigt(self, q, hwlor, resont, t, e, nh1, hfwid, hwstk, idf, phi)
-          else
-            call hvoigt(self, q, hwlor, t, e, hfwid, hwstk, idf, phi)
-          endif
-          lchi = phi * cf
-          chi(f,i,j,k) = chi(f,i,j,k) + lchi
-          if (lchi < ref) exit
-        end do
+        cchi = ceta
       endif
+
+      resont = nh1 * self%gw1
+      if (self%gw2 /= 0) then
+        resont = resont * vbarh(i,j,k)**self%gw2
+      endif
+
+      hwstk = self%gq * fo(i,j,k)
+      vdw = self%gw3 * t3nhe(i,j,k)
+      hwlor = self%ga + resont + vdw
+
+      hfwid = max(1/idf, hwlor, hwstk) ! defines where we switch from Voigt to adding
+      ref = tol * cont(f0,i,j,k)
+      
+      f = f0
+      lchi = ref
+      do while (lchi >= ref .and. f <= nf) ! if line opacity below tolerance exit
+        q = (nu(f) - v) * inv_nu0
+        if (lymanalf) then
+          call lyman_voigt(self, q, hwlor, resont, t, e, nh1, hfwid, hwstk, idf, phi)
+        else
+          call hvoigt(self, q, hwlor, t, e, hfwid, hwstk, idf, phi)
+        endif
+        lchi = phi * cchi
+        leta = phi * ceta
+        chi(f,i,j,k) = chi(f,i,j,k) + lchi
+        eta(f,i,j,k) = eta(f,i,j,k) + leta
+        if (f==f0) then
+          used = .true.
+          strength = max(strength, lchi / cont(f0,i,j,k))
+        endif
+        f = f + 1
+      end do
+      
+      f = f0-1
+      lchi = ref
+      do while (lchi >= ref .and. f >= 1) ! if line opacity below tolerance exit
+        q = (nu(f) - v) * inv_nu0
+        if (lymanalf) then
+          call lyman_voigt(self, q, hwlor, resont, t, e, nh1, hfwid, hwstk, idf, phi)
+        else
+          call hvoigt(self, q, hwlor, t, e, hfwid, hwstk, idf, phi)
+        endif
+        lchi = phi * cchi
+        leta = phi * ceta
+        chi(f,i,j,k) = chi(f,i,j,k) + lchi
+        eta(f,i,j,k) = eta(f,i,j,k) + leta
+        f = f - 1
+      end do
     end do
     end do
     end do
@@ -233,7 +243,7 @@ contains
       self%used = used
       self%strength = max(self%strength, strength)
     endif
-  END SUBROUTINE add_lte_h_opacities
+  END SUBROUTINE add_h_opacities
 
   !====================================================================================
   SUBROUTINE convolve_h_profiles (self, q, temp, ne, idf, nh1, vbarh, fo, t3nhe, phis)

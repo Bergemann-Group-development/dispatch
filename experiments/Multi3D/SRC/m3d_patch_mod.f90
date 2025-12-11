@@ -34,9 +34,8 @@ MODULE m3d_patch_mod
     USE bbtrans_mod, only: bbtrans_type
     USE bftrans_mod, only: h_occupation_probability
     USE element_mod, only: element_type
-    USE ion_mod, only: ion_type
+    USE ion_mod, only: ion_type, particle_type
     USE molecule_mod, only: molec_type
-    USE hprofl_mod, only: hydrogen_BPO, stark_convolution
     USE, intrinsic :: ieee_arithmetic
     implicit none
     private
@@ -55,9 +54,9 @@ MODULE m3d_patch_mod
       type(composition_type), pointer :: tab_comp => null()
       type(composition_type), pointer :: rotated_composition(:) => null()
       class(atomic_spectrum_type), pointer :: sp => null()
-      type(atom_type), dimension(:), pointer :: atom => null()
+      type(atom_type), dimension(:), pointer :: atoms => null()
       class(key_link_t), pointer :: key_list => null()
-      type(departure_pointer_t), dimension(:,:), allocatable :: departures
+      type(departure_pointer_t), dimension(:,:), pointer :: departures
       real(4), dimension(:,:,:,:,:,:), pointer :: authority_mem => null()
       logical :: in_task_list = .false.
       logical :: initialized  = .false.
@@ -133,8 +132,7 @@ MODULE m3d_patch_mod
     logical, public, save :: converged=.false., use_vel(3)=.true., premature_finish=.true.
     logical, public, save :: preconditioning=.true., binned_opac=.false.
     logical, public, save :: save_resolved=.false.
-    logical, public, save :: decouple_continuum=.true., sample_back_opac=.false.
-    logical, public, save :: sample_back_opac_in_output=.false.
+    logical, public, save :: decouple_continuum=.true.
     logical, public, save :: comoving_frame=.false., linelist_in_output=.true.
     logical, public, save :: use_rho=.true., use_ne=.true.
     logical, public, save :: overlapping_bb=.true., overlapping_bf=.true.
@@ -145,6 +143,7 @@ MODULE m3d_patch_mod
     logical, public, save :: rotate_atmos=.false.
     logical, public, save :: make_eos=.false.
     logical, public, save :: overrelax=.false.
+    logical, public, save :: save_cntrbf=.false.
     logical, public, save :: save_Inu=.false., save_chi=.false.
     logical, public, save :: save_Snu=.false., save_Jnu=.false.
     real(8), public, save :: dlam=100.
@@ -155,7 +154,6 @@ MODULE m3d_patch_mod
     character(len=32), public, save :: short_scheme='radau'
     character(len=32), public, save :: long_scheme='lobatto'
     real(4), public :: fixed_Jnu=-1.0
-    real(4), public :: vmic=-1, opac_table_vmic=-1
     real(8), public :: ray_offset(2)=[0.,0.], pivot_z=-1
     integer, save :: long_ntheta=4, long_nphi=4, short_ntheta=2, short_nphi=4
     character(len=128), public :: atmos_format='Marcs'
@@ -170,12 +168,12 @@ MODULE m3d_patch_mod
     check_NaN, custom_mu, lse_no_pivot, save_patch_kind, cswitch, &
     print_finished, print_start, print_send, ray_offset, print_download, &
     lse_solver, decouple_continuum, m1d_legacy_mode, nu_tolerance, &
-    pivot_z, save_resolved, overrelax, &
+    pivot_z, save_resolved, overrelax, save_cntrbf, &
     absmet_in_output, print_lock, make_eos, ng_step, ng_start, scattering_absorption, &
     column_by_column, rotate_atmos, Jnu_to_file, preconditioning, &
     save_inu, save_chi, save_Snu, save_Jnu, &
     long_scheme, long_ntheta, long_nphi, short_scheme, short_ntheta, short_nphi, &
-    long_solver, fixed_Jnu, hydrogen_BPO, stark_convolution
+    long_solver, fixed_Jnu
 
   contains
   
@@ -301,7 +299,7 @@ MODULE m3d_patch_mod
     self%ze = self%zs + self%n(3)
 
     select case (self%kind)
-    case ('atom_patch')
+    case ('nlte_patch')
       self%save_output = .true.
     case default
       self%save_output = string_in_text(save_patch_kind, self%kind)
@@ -373,17 +371,17 @@ MODULE m3d_patch_mod
   END SUBROUTINE post_pre_init
 
   !===============================================================================
-  recursive SUBROUTINE pre_init_and_link (self, m3d_parent, i_mu, i_nu, sp, atom)
+  recursive SUBROUTINE pre_init_and_link (self, m3d_parent, i_mu, i_nu, sp, atoms)
     class(m3d_patch_t), target :: self, m3d_parent
     class(atomic_spectrum_type), pointer, optional :: sp
-    type(atom_type), pointer, optional :: atom(:)
+    type(atom_type), pointer, optional :: atoms(:)
     integer, optional :: i_mu, i_nu
     !-----------------------------------------------------------------------------
     if (present(i_mu)) self%i_mu = i_mu
     if (present(i_nu)) self%i_nu = i_nu
     if (present(sp)) self%sp => sp
-    if (present(atom)) self%atom => atom
-    self%has_atom = associated(self%atom)
+    if (present(atoms)) self%atoms => atoms
+    self%has_atom = associated(self%atoms)
     self%patch => m3d_parent%patch
     self%m3d_parent => m3d_parent
     self%zs = m3d_parent%zs
@@ -468,7 +466,7 @@ MODULE m3d_patch_mod
     self%iit(self%nt) = self%new   ! slot for new values
     self%time = self%t(self%it)    ! initial time
 
-    !if (self%kind=='atom_patch') then
+    !if (self%kind=='nlte_patch') then
     !  ! this is set back to 1 in update
     !  self%dtime = self%dtime + self%dtime*ilambd
     !endif
@@ -486,9 +484,9 @@ MODULE m3d_patch_mod
     select case (self%kind)
     case ('composition')
       self%maxiter = 1
-    case ('atom_patch')
-      self%maxiter = maxiter
     case ('nlte_patch')
+      self%maxiter = maxiter
+    case ('rt_patch')
       self%maxiter = maxiter - 1
       !self%iter = ilambd
     end select
@@ -576,7 +574,7 @@ MODULE m3d_patch_mod
     integer, save :: itimer=0
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%post_update', itimer=itimer)
-    if (self%kind == 'atom_patch' .and. converged) then
+    if (self%kind == 'nlte_patch' .and. converged) then
       call print_execution_history(self, 'CON')
     else
       call print_execution_history(self, 'END')
@@ -939,43 +937,48 @@ MODULE m3d_patch_mod
     class(molec_type), pointer :: mol
     class(ion_type), pointer :: ion
     class(bbtrans_type), pointer :: line
-    integer :: lunit, i, j, l
+    integer :: lunit, i, j
     character(len=256) :: linelist_out_file
     ! ----------------------------------------------------------------------------
     linelist_out_file = trim(io%run_dir) // 'linelist_out.txt'
     open(newunit=lunit, file=linelist_out_file, form='formatted')
-    write(lunit, "(A8, A4, A12, 3(A8), 2(A11), 2(A6), 1(A11))") &
+    write(lunit, "(A8, A6, A12, 2(A8), A10, 2(A11), 2(A6), 1(A11))") &
     'ion', 'iso', 'lam_air', 'loggf', 'evi', 'gv', 'ga', 'gq', 'i', 'j', 'strength'
   
     do i=1, comp%nel
       element => comp%elements(i)
       if (.not. any(element%ions%in_linelist)) cycle
-  
       do j=lbound(element%ions,1), ubound(element%ions,1)
         ion => element%ions(j)
-        if (ion%nline == 0) cycle
-  
-        do l=1, ion%nline
-          line => ion%line(l)
-          if (.not. line%active .or. .not. line%used) cycle
-  
-          write(lunit, "(A1, A6, A1, I4, F12.4, 3(F8.3), 2(ES11.3), 2(I6), 1(ES11.3))") "'", ion%id, "'", &
-          line%iso_idx, line%lam_air, line%loggf, line%lower_ev, line%gv_in, line%ga_in, line%gq_in, line%i, line%j, line%strength
-        end do
+        call print_line_entry(ion)
       end do
     end do
     do i=1, comp%nmolec
       mol => comp%molecules(i)
-      if (mol%nline == 0) cycle
-      do l=1, mol%nline
-        line => mol%line(l)
-        if (.not. line%active .or. .not. line%used) cycle
-
-        write(lunit, "(A1, A6, A1, I4, F12.4, 3(F8.3), 2(ES11.3), 2(I6), 1(ES11.3))") "'", mol%id, "'", &
-        line%iso_idx, line%lam_air, line%loggf, line%lower_ev, line%gv_in, line%ga_in, line%gq_in, line%i, line%j, line%strength
-      end do
+      call print_line_entry(mol)
     end do
     close(lunit)
+  contains
+    !-----------------------------------------------------------------------------
+    subroutine print_line_entry (ptc)
+      class(particle_type), target :: ptc
+      class(bbtrans_type), pointer :: line
+      integer :: l, iso
+      !---------------------------------------------------------------------------
+      if (ptc%nline == 0) return
+      do l=1, ptc%nline
+        line => ptc%line(l)
+        if (.not. line%active .or. .not. line%used) cycle
+        if (line%iso_idx > 0) then
+          iso = ptc%isotope(line%iso_idx)%iso
+        else
+          iso = 0
+        endif
+
+        write(lunit, "(A8, I6, F12.4, 2(F8.3), F10.3, 2(ES11.3), 2(I6), 1(ES11.3))") "'"//ptc%id//"'", &
+        iso, line%lam_air, line%loggf, line%lower_ev, line%gv_in, line%ga_in, line%gq_in, line%i, line%j, line%strength
+      end do
+    end subroutine print_line_entry
   END SUBROUTINE print_linelist
 
   !===============================================================================

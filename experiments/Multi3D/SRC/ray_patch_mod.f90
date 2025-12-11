@@ -82,16 +82,6 @@ SUBROUTINE set_freq_indices (self)
     write(stdout,'(I4, I10,A3,I8)') self%i_nu, fs, ' - ', fe
     counter = self%i_nu
   endif
-  !if (self%has_atom .and. self%in_ray) then
-  !  if (associated(self%atom%line) .and. .not. associated(self%atom%cont)) then
-  !    nv = size(self%atom%line)
-  !    call unequal_intervals(nv, self%i_nu, self%n_nu, fs, fe)
-  !    allocate(order(nv))
-  !    call argsort(self%atom%line%nu0, order)
-  !    fs = self%atom%line(order(fs))%ired
-  !    fe = self%atom%line(order(fe))%iblue
-  !  endif
-  !endif
 END SUBROUTINE set_freq_indices
 
 !===============================================================================
@@ -157,7 +147,7 @@ SUBROUTINE ray_nbor_relations(self, another, needed, needs_me, download)
         needed = .false.; needs_me = .false.; download = .false.
         if (associated(another%m3d_parent)) then
           if (another%m3d_parent%id == self%m3d_parent%id) then
-            ! could be an atom_patch needed by net_opac
+            ! could be a nlte_patch needed by net_opac
             needed = .true.
           endif
         endif

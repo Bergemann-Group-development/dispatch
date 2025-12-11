@@ -30,9 +30,11 @@ fort.*
 *.err
 *.log
 *.slurm
-experiments/Multi3D/TABGEN
-experiments/Multi3D/data*
-experiments/Multi3D/input_multi3d/*
+experiments/Multi3D/*
+!experiments/Multi3D/tumult
+!experiments/Multi3D/HOP
+!experiments/Multi3D/SRC
+!experiments/Multi3D/TumultStudio
 *.ipynb
 *.lock
 *.eps
@@ -44,3 +46,4 @@ vtune*
 *.txt
 *__genmod.f90
 dispatch.x.*
+*temp_directory*

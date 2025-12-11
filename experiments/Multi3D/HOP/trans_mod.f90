@@ -65,7 +65,6 @@ MODULE trans_mod
     real(8), dimension(:), allocatable :: gwterm
     real(8), dimension(:), allocatable :: gqterm
     integer :: iso=0
-    logical :: get_cntrbf=.false.
 
   contains
       procedure :: get_nu

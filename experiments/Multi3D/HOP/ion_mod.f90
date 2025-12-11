@@ -13,8 +13,8 @@ MODULE ion_mod
     end type
 
     type, extends(massive_type) :: isotope_type
-        integer  :: iso
-        real(dp) :: frac
+        integer  :: iso=0
+        real(dp) :: frac=1.0
     end type isotope_type
 
     type, extends(isotope_type) :: particle_type
@@ -23,7 +23,7 @@ MODULE ion_mod
         integer :: m(3)=[0,0,0], nk, nline=0
         character(len=6) :: id
         integer :: niso=1
-        class(isotope_type), dimension(:), pointer :: isotope=>null()
+        class(isotope_type), dimension(:), pointer :: isotope => null()
         type(level_type), allocatable :: levels(:)
         type(level_type), allocatable :: nlte_levels(:)
         type(bbtrans_type), dimension(:), allocatable :: line
@@ -36,11 +36,11 @@ MODULE ion_mod
     end type
 
     type particle_pointer_t
-        class(particle_type), pointer :: p
+        class(particle_type), pointer :: p => null()
     end type
 
     type ion_pointer_t
-        type(ion_type), pointer :: p
+        type(ion_type), pointer :: p => null()
     end type ion_pointer_t
     
     type, extends(particle_type) :: ion_type
@@ -50,7 +50,7 @@ MODULE ion_mod
         class(particle_pointer_t), allocatable :: molecules(:)
         integer :: active, dxi_fac
         real(dp) :: parco
-        real(dp), pointer :: abund
+        real(dp), pointer :: abund => null()
         real(dp) :: acolc, tcolc, aradc, xradc, adic, bdic, t0c, t1c
         real(dp), dimension(:,:,:), allocatable :: saha
         real(dp), dimension(:,:,:), allocatable :: pk, fil
@@ -92,14 +92,14 @@ END SUBROUTINE saha_ratio
 !===============================================================================
 FUNCTION f_of_own_molecules(self) result(fsum)
     class(ion_type) :: self
-    type(particle_type), pointer :: molecule
+    type(particle_type), pointer :: mol
     integer :: i
     real(dp), dimension(self%m(1), self%m(2), self%m(3)) :: fsum
     !---------------------------------------------------------------------------
     fsum = 0
     do i=1, self%nmolec
-        molecule => self%molecules(i)%p
-        fsum = fsum + molecule%f
+        mol => self%molecules(i)%p
+        fsum = fsum + mol%f
     end do
 END FUNCTION
 
@@ -107,7 +107,7 @@ END FUNCTION
 FUNCTION f_of_molecules_with(self, other, count_double) result(fsum)
     class(ion_type) :: self
     type(ion_type) :: other
-    type(particle_type), pointer :: molecule
+    type(particle_type), pointer :: mol
     type(particle_pointer_t), allocatable :: mol_list(:)
     integer :: i
     real(dp), dimension(:,:,:), allocatable :: fsum
@@ -117,8 +117,8 @@ FUNCTION f_of_molecules_with(self, other, count_double) result(fsum)
 
     allocate(fsum(self%m(1),self%m(2),self%m(3)), source=0.d0)
     do i=1, size(mol_list)
-        molecule => mol_list(i)%p
-        fsum = fsum + molecule%f
+        mol => mol_list(i)%p
+        fsum = fsum + mol%f
     end do
 END FUNCTION
 
@@ -128,7 +128,7 @@ SUBROUTINE molecules_with (self, other, mol_list, count_double)
     type(ion_type), intent(in) :: other
     logical, intent(in), optional :: count_double
     type(particle_pointer_t), intent(out), allocatable :: mol_list(:)
-    class(particle_type), pointer :: molecule
+    class(particle_type), pointer :: mol
     logical :: cd
     integer :: mi, mj, count
     !---------------------------------------------------------------------------
@@ -141,14 +141,14 @@ SUBROUTINE molecules_with (self, other, mol_list, count_double)
     count = 0
 
     do mi=1, self%nmolec
-        molecule => self%molecules(mi)%p
+        mol => self%molecules(mi)%p
 
         if (mi>1 .and. .not. cd) then
-            if(molecule%id == self%molecules(mi-1)%p%id) cycle
+            if(mol%id == self%molecules(mi-1)%p%id) cycle
         endif
 
         do mj=1, other%nmolec
-            if (molecule%id == other%molecules(mj)%p%id) count = count + 1
+            if (mol%id == other%molecules(mj)%p%id) count = count + 1
         end do
     end do
 
@@ -156,16 +156,16 @@ SUBROUTINE molecules_with (self, other, mol_list, count_double)
 
     count = 0
     do mi=1, self%nmolec
-        molecule => self%molecules(mi)%p
+        mol => self%molecules(mi)%p
 
         if (mi>1 .and. .not. cd) then
-            if(molecule%id == self%molecules(mi-1)%p%id) cycle
+            if(mol%id == self%molecules(mi-1)%p%id) cycle
         endif
 
         do mj=1, other%nmolec
-            if (molecule%id == other%molecules(mj)%p%id) then
+            if (mol%id == other%molecules(mj)%p%id) then
                 count = count + 1
-                mol_list(count)%p => molecule
+                mol_list(count)%p => mol
             endif
         end do
     end do

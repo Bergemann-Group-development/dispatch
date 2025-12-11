@@ -13,6 +13,7 @@ MODULE molecule_mod
         real(dp), dimension(:), allocatable :: de ! dissociation_energies
         real(dp), dimension(:,:,:), allocatable :: dis
     contains
+        procedure :: read_molec_data
         procedure :: get_dis
         procedure :: get_dis2
         procedure :: calc_f
@@ -23,6 +24,32 @@ MODULE molecule_mod
     end type
     
 contains
+
+!===============================================================================
+SUBROUTINE read_molec_data(self, lunit, iostat)
+    class(molec_type), intent(inout) :: self
+    integer, intent(in) :: lunit
+    integer, intent(out) :: iostat
+    integer :: defix, n_irwin, n_de
+    character(64) :: text
+    !---------------------------------------------------------------------------
+    read(lunit, *, iostat=iostat) text
+    if (iostat < 0) return
+    do while (text(1:1) == '!')
+        read(lunit, *, iostat=iostat) text
+    end do
+    backspace lunit
+    if (allocated(self%de)) deallocate(self%de)
+    if (allocated(self%irwin)) deallocate(self%irwin)
+    read(lunit, *, iostat=iostat) self%id, defix, n_irwin
+    n_de = merge(5, 1, defix==0)
+    allocate(self%de(n_de))
+    allocate(self%irwin(n_irwin))
+    read(lunit, *) self%de
+    read(lunit, *) self%dc ! always 5 numbers
+    read(lunit, *) self%irwin
+    self%irwin(:) = self%irwin(n_irwin:1:-1)
+END SUBROUTINE read_molec_data
 
 !===============================================================================
 ! Computes dissociation constants P(AB) / (P(A)*P(B)) for molecules
@@ -161,23 +188,27 @@ SUBROUTINE generate_isotopic_combinations(self)
     class(ion_type), pointer :: ion
     class(isotope_type), pointer :: iso, iso2
     integer :: i, j, k
-    integer, allocatable :: indices(:), order(:)
+    integer, allocatable :: current_iso(:), order(:)
     real(8) :: total_mass, total_frac
     character(16) :: mass_id
     logical :: done
     !---------------------------------------------------------------------------
     ! Estimate number of isotopic combinations (upper bound)
     self%niso = 1
-    do i = 1, self%nions
-        self%niso = self%niso * self%ions(i)%p%niso
+    do i=1, self%nions
+        ion => self%ions(i)%p
+        if (associated(ion%isotope)) then
+            self%niso = self%niso * (ion%niso+1)
+        endif
     end do
 
     allocate(self%isotope(self%niso))
 
     ! Initialize index tracking for each ion
-    allocate(indices(self%nions))
+    allocate(current_iso(self%nions))
     allocate(order(self%nions))
-    indices = 1
+    call argsort_int([(nint(self%ions(i)%p%awgt), i=1, self%nions)], order)
+    current_iso = [(merge(0,1,associated(self%ions(order(i))%p%isotope)), i=1, self%nions)]
     k = 1
     done = .false.
 
@@ -187,35 +218,46 @@ SUBROUTINE generate_isotopic_combinations(self)
         total_mass = 0.0d0
         total_frac = 1.0d0
         mass_id = ''
-        call argsort_int([(nint(self%ions(i)%p%awgt), i=1, self%nions)], order)
+
         do i=1, self%nions
             ion => self%ions(order(i))%p
-            if (associated(ion%isotope)) then
-                iso => ion%isotope(indices(i))
-                total_mass = total_mass + iso%awgt
-                total_frac = total_frac * iso%frac
-                write(mass_id, '(A, I0)') trim(mass_id), nint(iso%awgt)
-            else
+            if (.not. associated(ion%isotope)) then
                 total_mass = total_mass + ion%awgt
                 write(mass_id, '(A, I0)') trim(mass_id), nint(ion%awgt)
+            else
+                if (current_iso(i)==0) then
+                    total_mass = total_mass + ion%awgt
+                    write(mass_id, '(A, I0)') trim(mass_id), 0
+                else
+                    iso => ion%isotope(current_iso(i))
+                    total_mass = total_mass + iso%awgt
+                    total_frac = total_frac * iso%frac
+                    write(mass_id, '(A, I0)') trim(mass_id), nint(iso%awgt)
+                endif
             endif
         end do
 
         ! Store computed isotope in molecule
-        self%isotope(k)%awgt = total_mass
-        self%isotope(k)%frac = total_frac
-        read(mass_id, *) self%isotope(k)%iso
+        iso => self%isotope(k)
+        iso%awgt = total_mass
+        iso%frac = total_frac
+        read(mass_id, *) iso%iso
         k = k + 1
 
         ! Generate next combination
         do i=self%nions, 1, -1
             ion => self%ions(order(i))%p
-            indices(i) = indices(i) + 1
-            if (indices(i) <= ion%niso) exit
-            indices(i) = 1
+            current_iso(i) = current_iso(i) + 1
+            if (current_iso(i) <= ion%niso) exit
+            current_iso(i) = merge(0,1,associated(ion%isotope))
             if (i == 1) done = .true.
         end do
     end do
+    ! sum up duplicates
+    ! this isn't quite perfect yet as it generates extra isotopes
+    ! for H2, C2, etc. with frac > 1, as e.g. (0)12 and 120 are summed.
+    ! It's fine as long as we don't use them though.
+    ! Also haven't tested this for triatomic molecules yet which do not contain H. 
     do i=1, self%niso
         iso => self%isotope(i)
         do k=i+1, self%niso
@@ -226,7 +268,7 @@ SUBROUTINE generate_isotopic_combinations(self)
             endif
         end do
     end do
-    deallocate(indices)
+    deallocate(current_iso)
 END SUBROUTINE generate_isotopic_combinations
 
 END MODULE molecule_mod

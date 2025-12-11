@@ -13,18 +13,19 @@ MODULE composition_patch_mod
   USE element_mod, only: element_type
   USE m3d_patch_mod,   only: m3d_patch_t, composition, comoving_frame, ilambd, dlam, &
   use_rho, use_ne, overlapping_bb, overlapping_bf, binned_opac, &
-  maxiter, rotate_atmos, long_vec, sample_back_opac, decouple_continuum, &
-  linelist_in_output, sample_back_opac_in_output, make_eos, overlapping_bb_in_output, &
-  opac_table_vmic, atmos_format, atmos_file, n_nu, use_vel
+  maxiter, rotate_atmos, long_vec, decouple_continuum, n_nu, use_vel, &
+  linelist_in_output, make_eos, overlapping_bb_in_output, atmos_format, atmos_file
   USE m3d_debug_mod
   USE composition_mod, only: composition_type, exclude_elements, only_elements, switch, &
   irwin_dis, ref_lam, debug_opac, abundances, relative_abundances, mhd_eos, helium_scattering, &
-  departure_pointer_t, read_departures, departure_indices
+  departure_pointer_t, read_departures, departure_indices, sample_back_opac, &
+  sample_back_opac_in_output, sample_linelist, opac_table_vmic
   USE atom_mod, only: m1d_legacy_mode, use_classic_col, level_partf
-  USE atom_patch_mod,  only: atom_patch_t
-  USE nlte_patch_mod, only:nlte_patch_t
+  USE nlte_patch_mod,  only: nlte_patch_t
+  USE rt_patch_mod, only:rt_patch_t
   USE bftrans_mod, only: H_occupation_probability
-  USE bbtrans_mod, only: tolerance, bbtrans_type, disable_ga, disable_stark, disable_vdw
+  USE bbtrans_mod, only: tolerance, bbtrans_type, disable_ga, disable_stark, disable_vdw, ga_fallback
+  USE hprofl_mod, only: hydrogen_BPO, stark_convolution
   USE trace_mod
   USE scaling_mod
   USE units_mod
@@ -39,7 +40,7 @@ MODULE composition_patch_mod
   !-----------------------------------------------------------------------------
   type, public, extends(m3d_patch_t) :: composition_patch_t
     class(gpatch_t), pointer :: mhd ! pointer to MHD patch
-    class(atom_patch_t), pointer :: atom_patch
+    class(nlte_patch_t), pointer :: nlte_patch
   contains
     procedure :: pre_init => composition_pre_init
     procedure :: execute
@@ -50,7 +51,6 @@ MODULE composition_patch_mod
     procedure :: init_eos_comp
     procedure :: save_eos_variables
     procedure :: save_number_densities
-    procedure :: load_departures
     procedure :: nbor_relations => composition_patch_nbor_relations
   end type
   
@@ -62,10 +62,10 @@ MODULE composition_patch_mod
   character(len=256), save :: absdat_file='./input_multi3d/TS_absdat.dat'
   character(len=256), save :: abund_file='./input_multi3d/abund/abund_magg'
   character(len=256), save :: isotope_file='./input_multi3d/isotopes'
-  character(len=256), save :: molec_file='./input_multi3d/molec_data.txt'
+  character(len=256), save :: molec_file='./input_multi3d/molec_data_BC.txt'
   character(len=256), save :: opac_table=''
   character(len=256), save :: absmet_file=''
-  character(len=512), save :: linelist_file=''
+  character(len=512), save :: linelist_folder=''
   character(len=256), save, dimension(:), allocatable :: line_lists
   
   public :: read_composition_params
@@ -82,8 +82,9 @@ SUBROUTINE read_composition_params ()
   sample_back_opac, sample_back_opac_in_output, switch, mhd_eos, debye_shield, &
   dtemp, ldne, ldrho, ldtemp, tmolim, irwin_dis, opac_table_vmic, save_species, &
   ref_lam, debug_opac, abundances, relative_abundances, alpha_enhancement, r_process_enhancement, &
-  disable_ga, disable_stark, disable_vdw, helium_scattering
-  namelist /linelist_params/ dlam, exclude_elements, line_lists, &
+  disable_ga, disable_stark, disable_vdw, helium_scattering, sample_linelist, hydrogen_BPO, &
+  stark_convolution, ga_fallback
+  namelist /linelist_params/ dlam, exclude_elements, line_lists, linelist_folder, &
   linelist_in_output, tolerance, only_elements
   ! ----------------------------------------------------------------------------
   call trace%begin('composition%init', itimer=itimer)
@@ -124,7 +125,14 @@ SUBROUTINE read_composition_params ()
     read (io%input, linelist_params)
   end if
   call io%namelist_warning ('linelist_params', iostat)
-  call truncate_array(line_lists, count(line_lists/=''))
+
+  if (linelist_folder /= '') then
+    deallocate(line_lists)
+    call os%get_filenames(linelist_folder, line_lists)
+    line_lists = [(trim(linelist_folder)//'/'//trim(line_lists(i)), i=1, size(line_lists))]
+  else
+    call truncate_array(line_lists, count(line_lists/=''))
+  endif
   write (io%namelist, linelist_params)
 
   if (verbose > 0) write (*,*) ' - Initializing the NEW opacity package'
@@ -144,7 +152,7 @@ END SUBROUTINE read_composition_params
 !===============================================================================
 SUBROUTINE composition_pre_init (self)
   class(composition_patch_t), target:: self
-  class(atom_patch_t), pointer :: atom_patch
+  class(nlte_patch_t), pointer :: nlte_patch
   class(atomic_spectrum_type), save, pointer :: output_sp
   integer :: i, mu, nw, n_mu
   integer, save:: itimer=0
@@ -175,61 +183,55 @@ SUBROUTINE composition_pre_init (self)
     endif
   endif
 
-  allocate(atom_patch)
-  call atom_patch%pre_init_atom()
-  call atom_patch%pre_init_spectrum(output_sp)
+  allocate(nlte_patch)
+  call nlte_patch%pre_init_atom()
+  call nlte_patch%pre_init_spectrum(output_sp)
+
+  if (associated(nlte_patch%atoms) .or. read_departures) then
+    call nlte_patch%pre_init_and_link(self)
+    self%nlte_patch => nlte_patch
+  endif
 
   if (first_time) then
     first_time = .false.
     do i=1, size(line_lists)
       call composition%init_linelist(line_lists(i), dlam, output_sp%nu)
     end do
-    read_departures = read_departures .and. departure_indices
   endif
 
   ! make sure there are no more f-domain splits than threads
   if (output_sp%nnu > 0) n_nu = min(n_nu, output_sp%nnu)
   if (decouple_continuum) then
-    if (atom_patch%bb_sp%nnu > 0) n_nu = min(n_nu,  atom_patch%bb_sp%nnu)
-    if (atom_patch%bf_sp%nnu > 0) n_nu = min(n_nu,  atom_patch%bf_sp%nnu)
+    if (nlte_patch%bb_sp%nnu > 0) n_nu = min(n_nu,  nlte_patch%bb_sp%nnu)
+    if (nlte_patch%bf_sp%nnu > 0) n_nu = min(n_nu,  nlte_patch%bf_sp%nnu)
   else
-    if (atom_patch%sp%nnu > 0) n_nu = min(n_nu,  atom_patch%sp%nnu)
+    if (nlte_patch%sp%nnu > 0) n_nu = min(n_nu,  nlte_patch%sp%nnu)
   endif
 
   self%n_nu = n_nu
   n_mu = size(long_vec,2)
-  if (associated(atom_patch%atom)) then
-    call atom_patch%pre_init_and_link(self)
-    self%atom_patch => atom_patch
-
+  if (associated(nlte_patch%atoms)) then
     if (maxiter > 0) then
       if (decouple_continuum) then
-        call self%create_sub_patches([1, n_nu],      [1,2], atom_patch%bb_sp, atom_patch%bb_atom)
-        call self%create_sub_patches([1, n_nu]+n_nu, [1,2], atom_patch%bf_sp, atom_patch%bf_atom)
+        call self%create_sub_patches([1, n_nu],      [1,2], nlte_patch%bb_sp, nlte_patch%bb_atoms)
+        call self%create_sub_patches([1, n_nu]+n_nu, [1,2], nlte_patch%bf_sp, nlte_patch%bf_atoms)
       else
-        call self%create_sub_patches([1, n_nu], [1,2], atom_patch%sp, atom_patch%atom)
+        call self%create_sub_patches([1, n_nu], [1,2], nlte_patch%sp, nlte_patch%atoms)
       endif
     endif
-    
-    if (n_mu>0) then
+  endif
+
+  if (output_sp%nnu > 0) then
+    if (n_mu > 0 .or. (make_eos .and. self%key(1)==1)) then
       if (ilambd > 0) then
-        call self%create_sub_patches([-n_nu, -1], [1,2], output_sp, atom_patch%output_atom)
+        call self%create_sub_patches([-n_nu, -1], [1,2], output_sp, nlte_patch%output_atoms)
       endif
-      call self%create_sub_patches([-n_nu, -1], [-1,-1], output_sp, atom_patch%output_atom)
+      call self%create_sub_patches([-n_nu, -1], [-1,-1], output_sp, nlte_patch%output_atoms)
     endif
-  else
-    deallocate(atom_patch)
-    if (external_sp) then
-      if (n_mu > 0) then
-        if (ilambd > 0) then
-          call self%create_sub_patches([-n_nu, -1], [1,2], output_sp)
-        endif
-        call self%create_sub_patches([-n_nu, -1], [-1,-1], output_sp)
-        !stop 'No atom nor output spectrum specified! Stopping...'
-      elseif (make_eos .and. self%key(1)==1) then
-        call self%create_sub_patches([-n_nu, -1], [-1,-1], output_sp)
-      endif
-    endif
+  endif
+
+  if (.not. associated(self%nlte_patch)) then
+    deallocate(nlte_patch)
   endif
 
   if (save_species /= '') then
@@ -242,12 +244,12 @@ SUBROUTINE composition_pre_init (self)
 END SUBROUTINE composition_pre_init
 
 !===============================================================================
-SUBROUTINE create_sub_patches (self, nu, mu, sp, atom)
+SUBROUTINE create_sub_patches (self, nu, mu, sp, atoms)
   class(composition_patch_t) :: self
   integer, intent(in) :: nu(2), mu(2)
   class(atomic_spectrum_type), intent(in), pointer :: sp
-  type(atom_type), intent(in), pointer, optional :: atom(:)
-  class(nlte_patch_t), pointer :: nlte_patch
+  type(atom_type), intent(in), pointer, optional :: atoms(:)
+  class(rt_patch_t), pointer :: rt_patch
   integer :: n, m
   logical :: new_nlte
   !-----------------------------------------------------------------------------
@@ -255,8 +257,8 @@ SUBROUTINE create_sub_patches (self, nu, mu, sp, atom)
   if (sp%nnu == 0) return
   do m=mu(1), mu(2)
     do n=nu(1), nu(2)
-      allocate(nlte_patch)
-      call nlte_patch%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp, atom=atom)
+      allocate(rt_patch)
+      call rt_patch%pre_init_and_link(self, i_mu=m, i_nu=n, sp=sp, atoms=atoms)
     end do
   end do
 END SUBROUTINE create_sub_patches
@@ -290,9 +292,6 @@ SUBROUTINE execute (self)
 
     if (atmos_format == 'save') then
       call self%load5('atmos', run_dir=atmos_file, mem=self%mem(:,:,:,:,self%it,:))
-      if (read_departures) then
-        call self%load_departures(run_dir=atmos_file)
-      endif
     else
       do i=1, self%nw
         authority => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),:,self%it,i)
@@ -371,7 +370,7 @@ SUBROUTINE execute (self)
       call self%save_number_densities(self%composition, pre_init=.false.)
     endif
 
-    if (sample_back_opac) then
+    if (sample_back_opac .or. sample_back_opac_in_output) then
       call self%init_tabulated_comp(self%mem(:,:,:,self%i_temp,self%it,:), &
                                     self%mem(:,:,:,self%i_ne,  self%it,:), &
                                     dtemp=dtemp, ldne=ldne)
@@ -570,43 +569,6 @@ SUBROUTINE save_number_densities (self, comp, pre_init)
 END SUBROUTINE save_number_densities
 
 !===============================================================================
-SUBROUTINE load_departures(self, run_dir)
-  class(composition_patch_t), target :: self
-  character(len=*), intent(in) :: run_dir
-  class(departure_pointer_t), pointer :: dep
-  character(len=256) :: save_folder, atom_file
-  character(len=256), allocatable :: atom_files(:)
-  character(len=6) :: key
-  real(4), dimension(:,:,:,:,:,:), allocatable, target :: mem
-  integer :: i, j, i1, i2, natoms
-  integer :: itimer=0
-  !-----------------------------------------------------------------------------
-  call trace%begin('composition_patch_t%load_departures', itimer=itimer)
-  save_folder = trim(run_dir)//'/save/'
-  if (os%exists_dir(save_folder)) then
-    call os%get_filenames(save_folder, atom_files, pattern='pop_*_meta.txt')
-    natoms = size(atom_files)
-    allocate(self%departures(natoms, self%nw))
-    do i=1, natoms
-      atom_file = atom_files(i)
-      i1 = index(atom_file, 'pop_') + 4
-      i2 = index(atom_file, '_meta.txt') - 1
-      key = trim(atom_file(i1:i2))
-      call self%load6('pop_'//trim(key), run_dir=run_dir, alloc=mem)
-      do j=1, self%nw
-        dep => self%departures(i,j)
-        dep%key = key
-        allocate(dep%mem, source=mem(:,:,:,:,2,j))
-        call os%mem_register(storage_size(dep%mem), size(dep%mem), label='departures')
-      end do
-    end do
-  else
-    print *, ' - No folder found ', save_folder
-  endif
-  call trace%end(itimer)
-END SUBROUTINE load_departures
-
-!===============================================================================
 SUBROUTINE composition_patch_nbor_relations(self, another, needed, needs_me, download)
   class(composition_patch_t) :: self
   class(task_t), pointer :: another         ! another task in the list
@@ -620,9 +582,9 @@ SUBROUTINE composition_patch_nbor_relations(self, another, needed, needs_me, dow
   if (needed .or. needs_me) then
     if (another%id /= self%patch%id) then
       select case (another%kind)
-      case ('atom_patch')
-        ! is needed after convergence and needs me
       case ('nlte_patch')
+        ! is needed after convergence and needs me
+      case ('rt_patch')
         needed = .false.
       case default
         needed = .false.; needs_me = .false.

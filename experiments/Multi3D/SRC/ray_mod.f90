@@ -74,6 +74,7 @@ MODULE ray_mod
   end type ray_type
   
   logical, public :: one_dimensional=.false.
+  real(4), save :: rstar=0, rorigin=0
   
 contains
 

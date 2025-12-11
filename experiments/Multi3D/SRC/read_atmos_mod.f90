@@ -7,13 +7,13 @@ MODULE read_atmos_mod
   USE const_mod
   USE op_math_mod, only: linspace, linterpolate_3d, pchip_mono4, interp1d_sorted
   USE m3d_patch_mod, only: pivot_z, ray_offset, amr, composition, use_ne, use_rho, make_eos
-  USE ray_mod, only: one_dimensional
+  USE ray_mod, only: one_dimensional, rstar, rorigin
   USE composition_mod, only: composition_type
   implicit none
   private
 
   type, public :: input_atmos_t
-    character(64), allocatable :: kind
+    character(64) :: kind
     integer :: n(3), nx, ny, nz
     integer :: gz=0 ! ghost zones
     logical :: is_3d=.false.
@@ -354,7 +354,7 @@ SUBROUTINE read_marcs (file, FeH, vmic, abund)
   real(4), intent(inout), dimension(:), allocatable :: abund
   integer :: lunit, nz, kk, k
   real(8) :: FeH_marcs
-  real(4) :: teff, flux, vmic_Marcs, g, rmass, alpha, radius, rluminosity
+  real(4) :: teff, flux, vmic_Marcs, g, rmass, alpha, rluminosity
   real(4) :: xx, yy, zz, palfa, pny, py, pbeta
   real(4) :: lgTauR, lgTau5, pg, prad, pturb, xkapr, emu, vconv, fconv, rhox
   real(4), dimension(:), allocatable :: temp, pe, rho
@@ -370,7 +370,7 @@ SUBROUTINE read_marcs (file, FeH, vmic, abund)
   read(lunit,*) vmic_Marcs            ! Microturbulence parameter [km/s]
   read(lunit,*) rmass                 ! No mass for plane-parallel models
   read(lunit,*) FeH_marcs, alpha      ! Metallicity [Fe/H] and [alpha/Fe]
-  read(lunit,*) radius                ! 1 cm radius for plane-parallel models
+  read(lunit,*) rstar                 ! radius [cm] (for plane-parallel models r=1)
   read(lunit,*) rluminosity           ! Luminosity [Lsun] FOR A RADIUS OF 1 cm!
   read(lunit,*) palfa, pny, py, pbeta ! Convection parameters: alpha, nu, y and beta
   read(lunit,*) xx, yy, zz            ! X, Y and Z, 12C/13C=89 (=solar)
@@ -758,6 +758,12 @@ SUBROUTINE thick2thin(self)
     self%zz = -self%zz
   endif
 
+  if (rstar > 2) then
+    ! for spherical geometries
+    rorigin = self%zz(self%gz+1) + rstar
+    rstar = rstar + self%zz(nz)
+  endif
+
   self%xx = self%xx - self%xx(1)         ! let the origin be zero
   self%yy = self%yy - self%yy(1)         ! let the origin be zero
   self%zz = self%zz - self%zz(self%gz+1) ! let the origin be the layer above ghost zone
@@ -858,10 +864,17 @@ SUBROUTINE interpolate_atmos(n, sub, pos, rho, px, py, pz, temp, pe, vmic, vec, 
     py = 0
     pz = 0
   elseif (one_dimensional) then
-    call pchip_mono4(ia%zz, ia%ltemp(1,1,:), real(newz), temp(1,1,:), sorted=.true.)
-    if (use_rho) call pchip_mono4(ia%zz, ia%lrho (1,1,:), real(newz), rho (1,1,:), sorted=.true.)
-    if (use_ne)  call pchip_mono4(ia%zz, ia%lpe  (1,1,:), real(newz), pe  (1,1,:), sorted=.true.)
-    call pchip_mono4(ia%zz, ia%vmic (1,1,:), real(newz), vmic(1,1,:), sorted=.true.)
+    if (.false.) then ! set to true for debugging original atmosphere points
+      temp(1,1,:) = ia%ltemp(1,1,1:nz)
+      if (use_rho) rho(1,1,:) = ia%lrho (1,1,1:nz)
+      if (use_ne ) pe (1,1,:) = ia%lpe  (1,1,1:nz)
+      vmic(1,1,:) = ia%vmic (1,1,1:nz)
+    else
+      call pchip_mono4(ia%zz, ia%ltemp(1,1,:), real(newz), temp(1,1,:), sorted=.true.)
+      if (use_rho) call pchip_mono4(ia%zz, ia%lrho (1,1,:), real(newz), rho (1,1,:), sorted=.true.)
+      if (use_ne)  call pchip_mono4(ia%zz, ia%lpe  (1,1,:), real(newz), pe  (1,1,:), sorted=.true.)
+      call pchip_mono4(ia%zz, ia%vmic (1,1,:), real(newz), vmic(1,1,:), sorted=.true.)
+    endif
     px = 0
     py = 0
     pz = 0

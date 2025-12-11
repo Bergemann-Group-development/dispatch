@@ -86,6 +86,8 @@ MODULE atom_mod
       integer :: nlevel ! number of levels
       integer :: nprd=0 ! number of PRD transitions
       integer :: verbose=0
+      integer :: idep=0 ! index of atom in departure coefficients array
+      logical :: precomputed = .false. ! whether departure coeffs are precomputed
       
       character(len=128) :: name
       character(len=3)   :: id    ! atom id string 
@@ -154,7 +156,7 @@ MODULE atom_mod
     (/'OHMEGA  ','CI      ','CH      ','CE      ', &
       'OHM     ','CH0     ','CHI     '/)
 
-    real(8), public :: cbbesc=1., cbfesc=1., cbbhsc=1., cbfhsc=1.
+    real(8), public :: cbbesc=1., cbfesc=1., cbbhsc=1., cbfhsc=1., colscale=1.
     logical, public :: use_classic_col = .False., m1d_legacy_mode=.False.
     logical, public :: lse_no_pivot = .True., kramer_bf=.False.
     logical, public :: disable_bf=.False., disable_bb=.False.
@@ -1552,25 +1554,26 @@ MODULE atom_mod
     class(ion_type), pointer :: ions(:)
     class(isotope_type), pointer :: isotopes(:)
     class(line_type), pointer :: line
-    logical :: is_element
+    logical :: is_molecule
     integer :: i, j, ic, iso, tri
     real(8) :: vbar2e4, cnt_ev, gij
     !---------------------------------------------------------------------
+    nullify(ions)
     select type(species)
     class is (element_type)
-      is_element = .true.
       ions => species%ions
       isotopes => species%isotope
-    class default
-      is_element = .false.
+    class is (molec_type)
+      isotopes => species%isotope
     end select
+    is_molecule = .not. associated(ions)
 
     do i=1, self%nline
       line => self%trans%line(i)
       if (.not. line%active) cycle
       j = self%ion(line%j)
 
-      if (is_element .and. line%iso > 0) then
+      if (line%iso > 0) then
         iso = findloc(isotopes%iso, line%iso, 1)
         if (iso > 0) then
           line%f = line%f * isotopes(iso)%frac
@@ -1591,10 +1594,10 @@ MODULE atom_mod
         call line%prepare_Radiative(line%ga_in)
         vbar2e4 = self%compute_vbar2(10000.)
         if (associated(species)) then
-          if (is_element) then
+          if (.not. is_molecule) then
             cnt_ev = ions(j)%xion
           else
-            cnt_ev = species%xion
+            cnt_ev = species%xion ! will not be used
           endif
         else
           ! find continuum level
@@ -1602,7 +1605,7 @@ MODULE atom_mod
           cnt_ev = merge(self%ev(ic), 999.99d0, ic > 0)
         endif
         call line%prepare_Stark(line%gq_in, self%ion(line%i), cnt_ev)
-        call line%prepare_VanderWaals(line%gv_in, self%ion(line%i), cnt_ev, vbar2e4)
+        call line%prepare_VanderWaals(line%gv_in, self%ion(line%i), cnt_ev, vbar2e4, is_mol=is_molecule)
       endif
     end do
   END SUBROUTINE prepare_damping
@@ -1703,6 +1706,7 @@ MODULE atom_mod
               cup = cup * cbbesc
             endif
             if (cup /= 0) then
+              cup = cup * colscale
               cdn = cup * nij
               self%data%c(j,i) = self%data%c(j,i) + cup ! upward rate
               self%data%c(i,j) = self%data%c(i,j) + cdn ! downward rate
@@ -1724,6 +1728,7 @@ MODULE atom_mod
               cup = cup * cbbhsc
             endif
             if (cup /= 0) then
+              cup = cup * colscale
               cdn = cup * nij
               self%data%c(j,i) = self%data%c(j,i) + cup ! upward rate
               self%data%c(i,j) = self%data%c(i,j) + cdn ! downward rate
@@ -2204,6 +2209,9 @@ MODULE atom_mod
 
         !********************************************************************
 
+        cup = cup * colscale
+        cdn = cdn * colscale
+        
         self%data%c(ul,ll) = self%data%c(ul,ll) + cup ! upward rate Cll->ul 
         self%data%c(ll,ul) = self%data%c(ll,ul) + cdn ! downward rate Cul->ll
       end associate

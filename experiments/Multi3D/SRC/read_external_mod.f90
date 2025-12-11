@@ -21,13 +21,13 @@ MODULE read_external_mod
   USE shared_mod
   USE task_list_mod
   USE experiment_mod, only: experiment_t
-  USE composition_mod
+  USE composition_mod, only: opac_table_vmic, read_departures
   USE composition_patch_mod, only: FeH, save_atmos, save_eos, external_abund, read_composition_params
   USE patch_mod
   USE const_mod, only:cc
   USE m3d_patch_mod, only: maxiter, ilambd, m3d_patch_t, atom_update_counter, &
-  global_maxerr, global_pos, nz_total, use_rho, use_ne, atmos_format, amr, vmic, &
-  opac_table_vmic, atmos_file, use_vel
+  global_maxerr, global_pos, nz_total, use_rho, use_ne, atmos_format, amr, &
+  atmos_file, use_vel
   USE m3d_halo_mod, only: m3d_halo_t
   USE read_atmos_mod, only: ia, read_stagger, read_co5bold, read_stagger2, &
   legacy_stagger_interp, read_marcs, read_multi_snapshot, read_text_1d, read_multi_1d, &
@@ -53,6 +53,7 @@ MODULE read_external_mod
   type(read_external_t), public:: read_external
   type(rank_t) :: rank
   real(4) :: origin(3) = [0., 0., 0.]
+  real(4), public :: vmic=-1
 
 contains
 
@@ -69,7 +70,7 @@ SUBROUTINE init(self, task_list, name)
   integer :: patches_per_mpi=1
   integer :: dims=1, nx=-1, ny=-1, nz=128, snap=0
   integer :: verbose=0
-  logical :: use_abnd=.false.
+  logical :: use_abnd=.false., read_departures_local=.false.
   character(len=512) :: command
   character(len=512) :: save_file
   namelist /atmos_params/ atmos_file, dims, verbose, patches_per_mpi, FeH, &
@@ -133,19 +134,22 @@ SUBROUTINE init(self, task_list, name)
   call io%lock%unset
   
   atmos_format = lowercase(atmos_format)
-  ia%kind = atmos_format
+  ia%kind = trim(atmos_format)
 
   if (vmic > 0) opac_table_vmic = vmic
 
   if (atmos_format == 'save') then
     save_file = atmos_file
+    read_departures_local = read_departures
     open(file=trim(save_file)//'/params.nml', newunit=lunit, form='FORMATTED')
     read (lunit, nml=atmos_params, iostat=iostat)
     close(lunit)
+    read_departures = read_departures_local
     atmos_file = save_file
     atmos_format = 'save'
     call self%read_saved_snapshot(atmos_file, dims)
   else
+    read_departures = .false.
     select case (atmos_format)
     case('stagger')
       call read_stagger(atmos_file, snap, use_ne)
