@@ -24,7 +24,7 @@ def broadcast_arguments(obj='self', numeric=True, **explicit_dims):
             info = {}
             for name, val in arguments.items():
                 arr = np.asarray(val)
-                defdim = explicit_dims.get(name, 0)
+                defdim = explicit_dims.get(name, 0) if name in sig.parameters else np.ndim(arr)
                 extradim = max(arr.ndim - defdim, 0)
                 tail  = arr.shape[extradim:]          # dims preserved for func
 

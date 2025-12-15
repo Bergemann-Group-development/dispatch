@@ -12,6 +12,7 @@ import tempfile
 from contextlib import ExitStack
 from functools import partial
 from io import StringIO
+import pickle
 
 TS_PATH = '/mnt/beegfs/gemini/groups/bergemann/users/hoppe/TSFitPy/turbospectrum/'
 
@@ -191,6 +192,18 @@ class turbospectrum(object):
     atmos.ltau = np.log10(atmos.tau)
     atmos.ne = atmos.pe / (BK*atmos.temp)
     return atmos
+  
+  #=================================================================
+  def save(self, filename):
+    with open(filename, 'wb') as f:
+      pickle.dump(self, f)
+
+  @classmethod
+  #=================================================================
+  def load(cls, filename):
+    with open(filename, 'rb') as f:
+      self = pickle.load(f)
+    return self
 
 
 

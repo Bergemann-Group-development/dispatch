@@ -99,7 +99,7 @@ class SpectrumGrid(object):
     return spec
     
   #=================================================================
-  def fit(self, oxx, oyy, bounds=None, p0=None, **kwargs):
+  def fit(self, spec, bounds=None, p0=None, **kwargs):
     #-----------------------------------------------------------------
     bounds = bounds or {}
     p0 = p0 or {}
@@ -113,7 +113,7 @@ class SpectrumGrid(object):
 
     p.update(p0)
     b.update(bounds)
-    return SpectrumClass.fit(self, oxx, oyy, bounds=b, p0=p, **kwargs)
+    return SpectrumClass.fit(self, spec, bounds=b, p0=p, **kwargs)
   
   #=====================================================================
   def plot_nodes(self, fig=None, size=5, color='black', cmap='Viridis', opacity=0.8, **kwargs):

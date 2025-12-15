@@ -288,14 +288,9 @@ class SpectrumClass(object):
       return get_bisector(xx, yy, x0=x0, **kwargs)
     
     #=================================================================
-    def fit(self, oxx, oyy, fit=None, bounds=None, p0=None, sigma=None,
-                     syst=None, method='L-BFGS-B', tol=None, res='auto', **kwargs):
+    def fit(self, spec, fit=None, bounds=None, p0=None, sigma=None,
+                     syst=None, method='L-BFGS-B', tol=None, res=None, **kwargs):
         #-----------------------------------------------------------------
-        if len(oxx) == 0:
-            raise ValueError('empty oxx array in fit!')
-        if len(oxx) != len(oyy):
-            raise ValueError('oxx and oyy must have the same length!')
-
         fit = fit or []
         bounds = bounds or {}
         p0 = p0 or {}
@@ -313,39 +308,38 @@ class SpectrumClass(object):
         bounds = ([lbounds[f] for f in fit], [ubounds[f] for f in fit])
         bounds = np.vstack(bounds).T
 
-        if res == 'auto':
-            res = np.mean(oxx) / np.mean(np.diff(oxx))
-
         def evaluate(newx, *args):
             ka = {f:args[i] for i, f in enumerate(fit)}
-            newy = self.crop(newx=newx, **ka, res=res, **kwargs).ydata
-            if len(newy) == 0:
+            news = self.crop(newx=newx, **ka, res=res, **kwargs)
+            if news.xdata.size == 0:
                 raise ValueError('Observations outside of model wavelength range!')
-            return newy
+            return news
         
-        def fit_params(x, y):
-            def residuals(params, newx):
-                r = y - evaluate(newx, *params)
+        def fit_params(s):
+            def residuals(params):
+                r = s.ydata - evaluate(s.xdata, *params).ydata
                 if sigma is not None: r = r/sigma
                 return np.sum(r**2)
             
-            pfit = optimize.minimize(residuals, p0, args=(x), bounds=bounds, method=method, tol=tol).x
+            pfit = optimize.minimize(residuals, p0, bounds=bounds, method=method, tol=tol).x
             return pfit
 
-        pfit = fit_params(oxx, oyy)
-        fitted = evaluate(oxx, *pfit)
+        pfit = fit_params(spec)
+        fitted = evaluate(spec.xdata, *pfit)
         best = {f:pfit[i] for i, f in enumerate(fit)}
 
-        if syst is None:
-            return best, fitted
-        else:
-            pfits = np.zeros((len(pfit), 3))
-            pfits[:, 0] = fit_params(oxx, oyy*(1-syst))
-            pfits[:, 1] = pfit
-            pfits[:, 2] = fit_params(oxx, oyy*(1+syst))
-            perr = [pchip_sigma([-syst, 0, syst], p, 0, syst) for p in pfits]
-            perr = {f:perr[i] for i, f in enumerate(fit)}
-            return best, fitted, perr
+        return best, fitted
+
+        # if syst is None:
+        #     return best, fitted
+        # else:
+        #     pfits = np.zeros((len(pfit), 3))
+        #     pfits[:, 0] = fit_params(spec*(1-syst)).ydata
+        #     pfits[:, 1] = pfit.ydata
+        #     pfits[:, 2] = fit_params(spec*(1+syst)).ydata
+        #     perr = [pchip_sigma([-syst, 0, syst], p, 0, syst) for p in pfits]
+        #     perr = {f:perr[i] for i, f in enumerate(fit)}
+        #     return best, fitted, perr
         
 
     @property

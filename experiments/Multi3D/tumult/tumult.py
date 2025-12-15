@@ -812,7 +812,7 @@ class tumult(object):
         
         #nf, nx, ny, nz, nset, nang = cntrbf.shape
         ltau = self.atmos.ltau
-        get_mean = gmean and self.dim == '3D'
+        get_mean = gmean and self.atmos.dim == '3D'
 
         if get_mean:
             new_ltau = np.mean(ltau, axis=(0,1))[::-1]
@@ -830,25 +830,25 @@ class tumult(object):
         wts = self.wts[angs]
         wts = wts / np.sum(wts)
             
-        conversion = np.log(10) * self.tau / self.chi
+        conversion = np.log(10) * self.atmos.tau / self.atmos.chi
 
         first_time = True
         for ang, w in zip(angs, wts):
             cang = np.array(cntrbf[..., ang])
             cf, net_chi = np.moveaxis(cang, -1, 0)
             vec = self.vec[ang]
-            zz = self.zz / vec[-1] * 1e8
+            zz = self.atmos.zz / vec[-1] * 1e8
             tau = compute_tau_scale(net_chi, zz, axis=-1)
             cf = conversion * cf * np.exp(-tau)
-            if self.dim == '3D':
+            if self.atmos.dim == '3D':
                 vec = vec * np.array([-1, -1, 1])
-                cf = rotate_array(self.xx, self.yy, self.zz, cf, vec)
+                cf = rotate_array(self.atmos.xx, self.atmos.yy, self.atmos.zz, cf, vec)
 
             if get_mean:
                 yy = np.array(cf[...,::-1]).copy()
                 xx = ltau[...,::-1].copy()
                 newcf = interp_tau(new_ltau, xx, yy)
-                cf = np.mean(newcf, axis=(1,2))
+                cf = np.mean(newcf, axis=(-3,-2))
 
             if first_time:
                 cfunc = np.zeros_like(cf)
@@ -857,7 +857,8 @@ class tumult(object):
             cfunc = cfunc + w*cf
 
         if get_mean: ltau = new_ltau
-        if cfunc.shape[0]>1 and fmean: cfunc = np.trapz(cfunc, x=lam, axis=0)
+        cfunc = cfunc.squeeze()
+        if cfunc.ndim>1 and fmean: cfunc = np.trapz(cfunc, x=lam, axis=0)
         if norm:
             normalisation = abs(np.trapz(cfunc, x=ltau))
             cfunc = cfunc / normalisation
