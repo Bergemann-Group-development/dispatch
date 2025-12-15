@@ -21,7 +21,7 @@ MODULE rt_patch_mod
   USE m3d_patch_mod, only: all_vec=>vec, all_wmu=>wmu, use_vel, m3d_patch_t, &
   absmet_in_output, long_wmu, long_vec, ray_offset, pivot_z, dlam, &
   premature_finish, m3d_patch_pre_update=>pre_update, save_resolved, &
-  column_by_column, rotate_atmos, rank_lvlerr, save_cntrbf, &
+  column_by_column, rotate_atmos, rank_lvlerr, save_cntrbf, depression_cntrbf, &
   decouple_continuum, linelist_in_output, ilambd, &
   Jnu_to_file, preconditioning, make_eos, amr, save_Inu, save_chi, save_Snu, &
   long_solver, fixed_Jnu, n_nu, save_Jnu, maxiter
@@ -2222,7 +2222,7 @@ SUBROUTINE save_contribution_function (self, i_set, i_mu)
           net_chi = work(f,x,y,z,1)
           net_src = work(f,x,y,z,2)
           cf(1) = net_chi
-          cf(2) = net_src*net_chi
+          cf(2) = merge(net_src*net_chi, net_src, depression_cntrbf)
         elseif (i_set == 2) then ! continuum set
           cnt_chi = work(f,x,y,z,1)
           cnt_eta = work(f,x,y,z,2)*cnt_chi
@@ -2230,7 +2230,9 @@ SUBROUTINE save_contribution_function (self, i_set, i_mu)
           
           lin_chi = cf(1) - cnt_chi
           lin_eta = cf(2) - cnt_eta
-          cf_out(1) = cnt_inu*lin_chi - lin_eta
+
+          cf_out(1) = merge(cnt_inu*lin_chi - lin_eta, cf(1)*cf(2), depression_cntrbf)
+          cf_out(1) = cf_out(1) * self%twohnu3_c2(f)
           cf_out(2) = cf(1)
         endif
       end associate
