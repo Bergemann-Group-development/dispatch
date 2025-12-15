@@ -1988,8 +1988,8 @@ contains
         end do
 
         where (tmolim)
-            OI%fil = 1 + OI%saha + OI%f_of_molecules_with(HI) / OI%f
-            CI%fil = 1 + CI%saha + CI%f_of_molecules_with(HI) / CI%f
+            OI%fil = 1 + OI%saha + OI%f_of_molecules_with(HI)
+            CI%fil = 1 + CI%saha + CI%f_of_molecules_with(HI)
 
             b = CO%dis * pefe
             p = (CI%abund-OI%abund)/OI%fil + CI%fil/b
@@ -1999,7 +1999,7 @@ contains
 
             CN%f = CN%calc_f(pefe) ! has to be recalculated since CI%f changed
             
-            NI%fil = 1 + NI%saha + (NI%f_of_molecules_with(HI) + NI%f_of_molecules_with(CI)) / Ni%f
+            NI%fil = 1 + NI%saha + NI%f_of_molecules_with(HI) + NI%f_of_molecules_with(CI)
             b = 2*N2%dis * pefe
             q = -NI%abund/b
             p = NI%fil/b
@@ -2040,7 +2040,7 @@ contains
 
                 do j=1, nions
                     ionj => ions(j)%p
-                    where (tmolim) Amat(i,j,:,:,:) = Amat(i,j,:,:,:) + ionj%f_of_molecules_with(ioni, count_double=.true.) / ionj%f
+                    where (tmolim) Amat(i,j,:,:,:) = Amat(i,j,:,:,:) + ionj%f_of_molecules_with(ioni, count_double=.true.)
                 end do
             end do
 
@@ -2058,7 +2058,7 @@ contains
                 Fold(1:nions) = [(ions(i)%p%f(x,y,z), i=1, nions)]
                 Fold(np1) = fe(x,y,z)
 
-                call lineq_no_pivot(Amat(:,:,x,y,z), Fvec(:,x,y,z), np1)
+                call lineq(Amat(:,:,x,y,z), Fvec(:,x,y,z), np1)
                 Fnew = Fold - Fvec(:,x,y,z)
 
                 if (any(Fnew == 0)) then

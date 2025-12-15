@@ -110,16 +110,21 @@ FUNCTION f_of_molecules_with(self, other, count_double) result(fsum)
     type(particle_type), pointer :: mol
     type(particle_pointer_t), allocatable :: mol_list(:)
     integer :: i
-    real(dp), dimension(:,:,:), allocatable :: fsum
+    real(dp), dimension(:,:,:), allocatable :: fsum, scale
     logical, optional :: count_double
     !---------------------------------------------------------------------------
     call self%molecules_with(other, mol_list, count_double)
 
     allocate(fsum(self%m(1),self%m(2),self%m(3)), source=0.d0)
+    if (size(mol_list) == 0) return
+    
+    allocate(scale(self%m(1),self%m(2),self%m(3)))
     do i=1, size(mol_list)
         mol => mol_list(i)%p
         fsum = fsum + mol%f
     end do
+    scale = 1 / max(abs(self%f), abs(fsum))
+    fsum = (fsum*scale) / (self%f*scale)
 END FUNCTION
 
 !===============================================================================
