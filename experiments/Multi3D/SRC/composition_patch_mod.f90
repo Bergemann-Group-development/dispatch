@@ -34,6 +34,7 @@ MODULE composition_patch_mod
   USE link_mod, only: nbor_t
   USE bits_mod
   USE atom_mod, only: atom_type, atomic_spectrum_type
+  use, intrinsic :: ieee_arithmetic
   implicit none
   private
   
@@ -434,7 +435,7 @@ SUBROUTINE init_eos_comp (self, temp, rho, ldtemp, ldrho)
   real(8) :: minTemp, maxTemp, minRho, maxRho
   integer :: i, j, ntemp, nrho, nnu
   real(8), dimension(:,:,:), allocatable :: tab_temp, tab_ne, tab_rho
-  real(4), dimension(:,:,:), allocatable :: eos
+  real(4), dimension(:,:,:), allocatable :: eos, tab_vmic
   real(8) :: minLnRho, maxLnRho, minLnT, maxLnT
   !---------------------------------------------------------------------------
   allocate(self%tab_comp)
@@ -457,6 +458,7 @@ SUBROUTINE init_eos_comp (self, temp, rho, ldtemp, ldrho)
   allocate(tab_temp(ntemp, nrho, 1))
   allocate(tab_rho (ntemp, nrho, 1))
   allocate(tab_ne  (ntemp, nrho, 1))
+  allocate(tab_vmic (ntemp, nrho, 1))
 
   do j=1, nrho
   do i=1, ntemp
@@ -467,17 +469,24 @@ SUBROUTINE init_eos_comp (self, temp, rho, ldtemp, ldrho)
 
   tab_rho = exp(tab_rho)
   tab_temp = exp(tab_temp)
-
-  call self%tab_comp%load_state_variables(tab_temp, tab_ne, tab_rho, use_rho=.true., use_ne=.false.)
+  tab_vmic = opac_table_vmic
+  call self%tab_comp%load_state_variables(tab_temp, tab_ne, tab_rho, use_rho=.true., use_ne=.false., vmic=tab_vmic)
 
   allocate(eos(6, ntemp, nrho))
-  eos(1, :, :) = real(self%tab_comp%temp(:, :, 1), kind=4)
-  eos(2, :, :) = real(self%tab_comp%rho(:, :, 1), kind=4)
-  eos(3, :, :) = real(self%tab_comp%ne(:, :, 1), kind=4)
-  eos(4, :, :) = real(self%tab_comp%pg(:, :, 1), kind=4)
-  eos(5, :, :) = real(self%tab_comp%E(:, :, 1), kind=4)
-  eos(6, :, :) = real(self%tab_comp%chi500(:, :, 1), kind=4)
+  eos(1, :, :) = safe_to_real4(self%tab_comp%temp(:, :, 1))
+  eos(2, :, :) = safe_to_real4(self%tab_comp%rho(:, :, 1))
+  eos(3, :, :) = safe_to_real4(self%tab_comp%ne(:, :, 1))
+  eos(4, :, :) = safe_to_real4(self%tab_comp%pg(:, :, 1))
+  eos(5, :, :) = safe_to_real4(self%tab_comp%E(:, :, 1))
+  eos(6, :, :) = self%tab_comp%chi500(:, :, 1)
   call self%save3(eos, 'eos')
+
+contains
+  elemental function safe_to_real4(d_val) result(s_val)
+    real(8), intent(in) :: d_val
+    real(4) :: s_val
+    s_val = real(max(min(d_val, dble(huge(1.0_4))), -dble(huge(1.0_4))), 4)
+  end function safe_to_real4
 END SUBROUTINE init_eos_comp
 
 !===============================================================================

@@ -32,8 +32,6 @@ MODULE bbtrans_mod
     procedure :: init_einstein_coefficients
     procedure :: damping => line_damping
     procedure :: dampingH => line_dampingH
-    procedure :: add_opacities
-    procedure :: add_opacities2
     procedure :: LinearStarkH
     procedure :: IonicH
     procedure :: prepare_Radiative
@@ -72,7 +70,7 @@ contains
   !====================================================================================
   SUBROUTINE add_opacities(self, f0, nu, vproj, inv_df, e_kT, dxij, inv_part, &
     ne, tothi, vbar2, stark_pe, unsold, bi, bj, chi, eta, cont, do_nlte)
-    class(bbtrans_type), intent(inout) :: self
+    type(bbtrans_type), intent(inout) :: self
     integer, intent(in) :: f0
     real(8), dimension(:), intent(in), contiguous :: nu
     real(4), dimension(:,:,:), intent(in), contiguous :: vproj, inv_df, inv_part

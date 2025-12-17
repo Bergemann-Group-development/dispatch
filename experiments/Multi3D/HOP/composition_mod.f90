@@ -7,7 +7,7 @@ MODULE composition_mod
     USE element_mod
     USE ion_mod, only: ion_type, debye_shield
     USE level_mod, only: level_type, wcalc
-    USE bbtrans_mod, only:bbtrans_type
+    USE bbtrans_mod, only:bbtrans_type, add_opacities, add_opacities2
     USE bftrans_mod, only:bftrans_type, H_occupation_probability
     USE molecule_mod, only:molec_type
     USE hprofl_mod, only:prepare_hydrogen_damping, add_h_opacities
@@ -1121,7 +1121,7 @@ contains
                 endif
                 prev_iso = line%iso_idx
 
-                call line%add_opacities(f0, nu, vpr, idopf, e_kT, dxij, &
+                call add_opacities(line, f0, nu, vpr, idopf, e_kT, dxij, &
                 inv_part, ne, tothi, vb2, stark_pe, unsold, bi, bj, chi_l, eta_l, all_chi, do_nlte)
             end do
         end subroutine particle_add_opacities
@@ -1496,7 +1496,7 @@ contains
         logical, dimension(:,:,:), allocatable :: ne_converged
         real(dp), dimension(:,:,:), allocatable :: a, b, c, x, xold, fx, fa, fb, ro, pg
         real(dp), dimension(:,:,:), allocatable :: lrho
-        integer :: i, nconverged, arr_size, m(3)
+        integer :: i, nconverged, arr_size, m(3), ix, iy, iz
         integer, parameter :: nmax = 20 ! max number of iteration
         !---------------------------------------------------------------------------
         m = shape(temp)
@@ -1518,16 +1518,21 @@ contains
         lrho = log(rho)
 
         call self%thermal_equilibrium(temp, ne, ro)
-        fa = log(ro) - lrho
-        ne_converged = abs(fa) < tol
 
-        a = log(ne)
-        b = a - 0.69*fa
-        ne = exp(b)
+        where (ro==ro) ! we skip NaN values
+            fa = log(ro) - lrho
+            ne_converged = abs(fa) < tol
+            a = log(ne)
+            b = a - 0.69*fa
+            ne = exp(b)
+        end where
 
         call self%thermal_equilibrium(temp, ne, ro)
-        fb = log(ro) - lrho
-        ne_converged = abs(fb) < tol
+
+        where(ro==ro) ! we skip NaN values
+            fb = log(ro) - lrho
+            ne_converged = abs(fb) < tol
+        end where
 
         nconverged = count(ne_converged)
 
@@ -1537,7 +1542,7 @@ contains
 
         do while (nconverged < arr_size .and. i <= nmax)
             xold = x
-            where (.not. ne_converged)
+            where (.not. ne_converged .and. ro==ro)
                 c = fb-fa ! log(ro2) - log(ro1)
                 c = (b-a)/c
                 x = a - c*fa
@@ -1549,18 +1554,20 @@ contains
             nconverged = count(ne_converged)
             if (arr_size == nconverged) exit ! all good !
 
-            where (.not. ne_converged)
+            where (.not. ne_converged .and. ro==ro)
                 ne = exp(x)
             endwhere
 
             call self%thermal_equilibrium(temp, ne, ro)
-            fx = log(ro) - lrho
-            where (abs(a-x) < abs(b-x)) 
-                b = x 
-                fb = fx
-            else where 
-                a = x 
-                fa = fx 
+            where (ro==ro) ! we skip NaN values
+                fx = log(ro) - lrho
+                where (abs(a-x) < abs(b-x)) 
+                    b = x 
+                    fb = fx
+                else where 
+                    a = x 
+                    fa = fx 
+                end where
             end where
             i = i+1
         end do
