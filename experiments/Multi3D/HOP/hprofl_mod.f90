@@ -133,19 +133,19 @@ MODULE hprofl_mod
   integer, dimension(4), parameter :: lnghal = [2, 7, 11, 14]
   integer, dimension(4), parameter :: lncomp = [1, 3,  4,  5]
 
-  logical, public :: hydrogen_BPO=.true., stark_convolution=.false.
+  logical, public :: hydrogen_BPO=.true.
 
 contains
 
   !====================================================================================
   SUBROUTINE add_h_opacities(self, f0, nu, vproj, inv_df, temp, ni, nj, &
-    ne, tothi, vbarh, fo, t3nhe, bi, bj, chi, eta, cont, do_nlte)
+    ne, tothi, vbar2h, fo, t3nhe, bi, bj, chi, eta, cont, do_nlte)
     class(bbtrans_type), intent(in) :: self
     integer, intent(in) :: f0
     real(8), dimension(:), intent(in), contiguous :: nu
     real(4), dimension(:,:,:), intent(in), contiguous :: vproj, inv_df, ni, nj
     real(4), dimension(:,:,:), intent(in), pointer :: bi, bj
-    real(4), dimension(:,:,:), intent(in), contiguous :: temp, ne, tothi, vbarh, fo, t3nhe
+    real(4), dimension(:,:,:), intent(in), contiguous :: temp, ne, tothi, vbar2h, fo, t3nhe
     real(4), dimension(:,:,:,:), intent(inout) :: chi, eta
     real(4), dimension(:,:,:,:), intent(in) :: cont
     logical, intent(in) :: do_nlte
@@ -165,6 +165,8 @@ contains
     inv_nu0 = 1.0 / self%nu0
     used = .false.
     strength = 0.0
+
+    !phi = debug_hprofl(3,4,18751.05d0,18756.05D0,4e3,1e13,1e17,1e16,1e-7)
 
     do k=1, m(3)
     do j=1, m(2)
@@ -191,7 +193,7 @@ contains
 
       resont = nh1 * self%gw1
       if (self%gw2 /= 0) then
-        resont = resont * vbarh(i,j,k)**self%gw2
+        resont = resont * vbar2h(i,j,k)**self%gw2
       endif
 
       hwstk = self%gq * fo(i,j,k)
@@ -208,7 +210,7 @@ contains
         if (lymanalf) then
           call lyman_voigt(self, q, hwlor, resont, t, e, nh1, hfwid, hwstk, idf, phi)
         else
-          call hvoigt(self, q, hwlor, t, e, hfwid, hwstk, idf, phi)
+          phi = hvoigt(self, q, hwlor, t, e, hfwid, hwstk, idf)
         endif
         lchi = phi * cchi
         leta = phi * ceta
@@ -228,7 +230,7 @@ contains
         if (lymanalf) then
           call lyman_voigt(self, q, hwlor, resont, t, e, nh1, hfwid, hwstk, idf, phi)
         else
-          call hvoigt(self, q, hwlor, t, e, hfwid, hwstk, idf, phi)
+          phi = hvoigt(self, q, hwlor, t, e, hfwid, hwstk, idf)
         endif
         lchi = phi * cchi
         leta = phi * ceta
@@ -246,75 +248,11 @@ contains
   END SUBROUTINE add_h_opacities
 
   !====================================================================================
-  SUBROUTINE convolve_h_profiles (self, q, temp, ne, idf, nh1, vbarh, fo, t3nhe, phis)
-    class(bbtrans_type), intent(in)  :: self
-    real(8), intent(in) :: q(:)
-    real(4), intent(in) :: temp, ne, idf, nh1, vbarh, fo, t3nhe
-    !integer, parameter :: n=256, nh=16
-    integer, parameter :: n=512, nh=8
-    real(4) :: qgrid(n)
-    real(4) :: vgt(n), stk(n), con(n), c
-    real(4), intent(inout) :: phis(:)
-    real(4) :: a, d, xv, resont, hwstk, vdw, hwlor, hfwid
-    real(4) :: qstep
-    integer :: i, j, k
-    !----------------------------------------------------------------------------------
-    resont = nh1 * self%gw1
-    if (self%gw2 /= 0) then
-      resont = resont * vbarh**self%gw2
-    endif
-
-    hwstk = self%gq * fo
-    vdw = self%gw3 * t3nhe
-    hwlor = self%ga + resont + vdw
-
-    hfwid = max(1/idf, hwlor, hwstk) ! defines where we switch from Voigt to adding
-
-    qstep = 2*nh/real(n)*hfwid
-    do i=1, n
-      qgrid(i) = -nh*hfwid + i*qstep
-    end do
-
-    do i=1, n
-      stk(i) = stark1(self%i,self%j,dble(qgrid(i)),self%nu0,temp,ne,hwstk)
-    end do
-
-    a = hwlor * idf * over_4pi
-
-    !  Including fine structure
-    vgt = 0.0
-    do j=1, self%io
-      do i=1, n
-        d = (qgrid(i) - self%dq(j)) * idf
-        xv = voigt_function2(a,d) * idf
-        vgt(i) = vgt(i) + self%wt(j)*xv
-      end do
-    end do
-
-    ! Compute convolution of Voigt and Stark profiles
-    do i = 1, n
-      c = 0.0
-      do j = 1, n
-        k = i - j + n/2
-        
-        if (k >= 1 .and. k <= n) then
-          c = c + vgt(j) * stk(k)
-        end if
-      end do
-      con(i) = c * qstep
-    end do
-
-    !print *, sum(vgt)*qstep, sum(stk)*qstep, sum(con)*qstep
-    call interp1d_sorted(qgrid, con, q, phis, fill=0.)
-  END SUBROUTINE convolve_h_profiles
-
-  !====================================================================================
-  SUBROUTINE hvoigt (self, q, hwlor, temp, ne, hfwid, hwstk, idf, phi)
+  FUNCTION hvoigt (self, q, hwlor, temp, ne, hfwid, hwstk, idf) result(phi)
     class(bbtrans_type), intent(in)  :: self
     real(8), intent(in) :: q
     real(4), intent(in) :: hwlor, temp, ne, hfwid, hwstk, idf
-    real(4), intent(out) :: phi
-    real(4) :: a, d, xv
+    real(4) :: a, d, xv, phi
     integer :: i
     !----------------------------------------------------------------------------------
     if (abs(q) > hfwid) then
@@ -326,7 +264,7 @@ contains
       a = hwlor + hwstk
     endif
 
-    a = a * idf * over_4pi
+    a = a * idf
 
     !  Including fine structure
     do i=1, self%io
@@ -334,7 +272,7 @@ contains
       xv = voigt_function2(a,d) * idf
       phi = phi + self%wt(i)*xv
     end do
-  END SUBROUTINE
+  END FUNCTION
 
   !====================================================================================
   SUBROUTINE lyman_voigt (self, q, hwlor, resont, temp, ne, tothi, hfwid, hwstk, idf, phi)
@@ -453,7 +391,7 @@ contains
   SUBROUTINE prepare_hydrogen_damping (self)
     class(bbtrans_type), intent(inout)  :: self
     integer :: n, m, mmn, n2, m2, ipos, i, k, ifins
-    real(4) :: mn2, gnm
+    real(4) :: mn2, ignm
     real(4) :: xknm, radamp, resont, vdw
     real(8), save, dimension(14) :: finest, finswt
     !----------------------------------------------------------------------------------
@@ -463,12 +401,12 @@ contains
     n2 = n*n
     m2 = m*m
     mn2 = m2*n2
-    gnm = mn2/real(m2-n2)
+    ignm = mn2/real(m2-n2)
 
     if ((mmn <= 3) .and. (n <= 4)) then
       xknm = xknmtb(n,mmn)
     else
-      xknm = 5.5E-5*gnm * mn2/(1. + .13/real(mmn))
+      xknm = 5.5E-5*ignm * mn2/(1. + .13/real(mmn))
     end if
     self%gq = 5.*xknm*self%nu0/(cc*1e8)
 
@@ -492,18 +430,23 @@ contains
     else
       resont = hfnm(1,m)/(1. - 1./m2)
     end if
-    self%gw1 = resont * 2.07E-24*gnm
+    self%gw1 = resont * 2.07E-24*ignm
     self%gw2 = 0
 
     if (hydrogen_BPO .and. (n == 2) .and. (m <= 5)) then
       !  For low Balmer lines use Barklem, Piskunov & O'Mara (2000, A&A 363, 1091)
       !  instead of Ali & Griem for self-broadening. 
-      resont = balfac(mmn)*sigma(mmn)
-      self%gw2 = 0.5*(1. - alf(mmn))
-      self%gw1 = 2 * resont * 10**(-12*self%gw2) * over_4pi / self%nu0
+      resont = balfac(mmn)*sigma(mmn) ! already contains factors 1e4 and 1e6
+      self%gw2 = 0.5*(1. - alf(mmn)) ! 0.5 is needed because we will be using VBARH squared
+
+      ! The factor 1e-12 reconciles two differences from the original hbop.f:
+      ! 1. The velocity constant here is 10,000x larger (4.2e8 vs 42008).
+      ! 2. The original code normalized velocity by 1e4 (1e8 when squared).
+      ! To compensate, we need (1/1e4) * (1/1e8) = 1e-12.
+      self%gw1 = resont * 1e-12**self%gw2 / (self%nu0 * 2*PI)
     endif
 
-    self%gw3 = 4.45E-26*gnm*(m2*(7.*m2 + 5.))**0.4
+    self%gw3 = 4.45E-26*ignm*(m2*(7.*m2 + 5.))**0.4
 
     !  Approximately include fine structure.  Exact pattern for alpha lines,
     !  M infinite pattern used for others.
@@ -549,17 +492,17 @@ contains
   !===============================================================================
   !  Based on code by Deane Peterson and Bob Kurucz
   !===============================================================================
-  FUNCTION hprofl(self, q, temp, ne, fo, vbarh, tothi, t3nhe, idf)
+  FUNCTION hprofile(self, q, temp, ne, fo, vbar2h, tothi, t3nhe, idf)
     class(bbtrans_type), intent(inout)  :: self
     real(8), intent(in) :: q
     real(4), intent(in) :: temp
     real(4), intent(in) :: ne
     real(4), intent(in) :: fo
-    real(4), intent(in) :: vbarh
+    real(4), intent(in) :: vbar2h
     real(4), intent(in) :: tothi
     real(4), intent(in) :: t3nhe
     real(4), intent(in) :: idf
-    real(8) :: hprofl
+    real(8) :: hprofile
     real(4) :: vdw, resont, hwstk, hfwid, hwlor, phi
     !---------------------------------------------------------------------------
     hwstk = self%gq * fo
@@ -567,7 +510,7 @@ contains
     if (self%gw2 == 0) then
       resont = self%gw1 * tothi
     else
-      resont = self%gw1 * vbarh**self%gw2 * tothi
+      resont = self%gw1 * vbar2h**self%gw2 * tothi
     endif
 
     !  Assume for core stark is approx lorentzian
@@ -577,14 +520,14 @@ contains
     hwlor = self%ga + resont + vdw
 
     hfwid = max(1/idf, hwlor, hwstk) ! defines where we switch from Voigt to adding
-    call hvoigt(self, q, hwlor, temp, ne, hfwid, hwstk, idf, phi)
-    hprofl = phi
-  END FUNCTION hprofl
+    phi = hvoigt(self, q, hwlor, temp, ne, hfwid, hwstk, idf)
+    hprofile = phi
+  END FUNCTION hprofile
   
   !===============================================================================
   !  Based on code by Deane Peterson and Bob Kurucz
   !===============================================================================
-  FUNCTION LymanA_profile(self, q, temp, ne, h1frc, he1frc, inv_df) result(hprofl)
+  FUNCTION LymanA_profile(self, q, temp, ne, h1frc, he1frc, inv_df) result(hprofile)
     class(bbtrans_type), intent(inout)  :: self
     real(8), intent(in) :: q
     real(4), intent(in) :: temp
@@ -592,13 +535,13 @@ contains
     real(4), intent(in) :: h1frc
     real(4), intent(in) :: he1frc
     real(4), intent(in) :: inv_df
-    real(8) :: hprofl
+    real(8) :: hprofile
     integer :: n, m, i, mmn, ipos, k, icut
     real(8), save, dimension(14) :: finest, finswt
     integer, save :: n1=0, m1=0, ifins
     logical, save :: lymanalf
-    real(4), save :: vdw, resont, radamp, stark, xknm
-    real(4) :: hwstk, vbarh, hwlor, t3nhe, hfwid, xfac, xlymanh2, a, d
+    real(4), save :: vdw, resont, radamp, stark
+    real(4) :: hwstk, vbar2h, hwlor, t3nhe, hfwid, xfac, xlymanh2, a, d
     real(8) :: nu, q4000, fo, htotal, xv, xstark, xholt4000, sat4000
 
     !  Most model atmosphere codes include Rayleigh scattering by H atoms
@@ -620,8 +563,8 @@ contains
     if (self%gw2 == 0) then
       resont = self%gw1 * h1frc
     else
-      vbarh = 42008.e-8*temp * 1e12
-      resont = self%gw1 * vbarh**self%gw2 * h1frc
+      vbar2h = 4.2008e8 * temp
+      resont = self%gw1 * vbar2h**self%gw2 * h1frc
     endif
 
     t3nhe = (temp/10000.)**0.3 * he1frc
@@ -732,7 +675,7 @@ contains
       !  End Stark section
     end if
 
-    hprofl = htotal
+    hprofile = htotal
   END FUNCTION LymanA_profile
 
   !===============================================================================
@@ -804,107 +747,111 @@ contains
     real(4), intent(in) :: ne
     real(4), intent(in) :: hwstk
     real(8)             :: stark1
-    real(8) :: f,p1,t4,he1frc,xne16,pp,y1b,y1s,gcon1,gcon2,xn2,xm2,xmn2,q1
-    real(8) :: xm2mn2,wty1,y1scal,c1,c2,c21,g1,beta,y2,gam,prqs,dbeta,fns,y1
-    real(8) :: cne, hw5
-    real(8), save :: gnm, y1num, y1wht
-    !integer, save :: xn=0, xm=0
+    real(8) :: f, p1, t4, xne16, pp, y1b, y1s, gcon1, gcon2, gcon, q1
+    real(8) :: wty1, y1scal, c1, c1coef, g1, beta, y2, gam, prqs, dbeta, fns, y1
+    real(8) :: cne, hw5, ex, xm2mn2
+    real(8), save :: y1num, y1wht
+    integer, save :: xn=0, xm=0
     integer :: mmn
-    real(4), parameter :: HH_RYDE = HH/Eryd
     real(4), dimension(2,2), parameter :: y1wtm = reshape([1.e18, 1.e17, 1.e16, 1.e14], [2,2])
     !---------------------------------------------------------------------------
-    if (hwstk==0) then
+    if (hwstk == 0) then
       stark1 = 0
       return
     endif
 
-    !  Variables dependent on line - compute first time only
-    !if((n /= xn).or.(m /= xm)) then
-      !xn = n
-      !xm = m
-      !xn2 = xn*xn
-      !xm2 = xm*xm
-      !gnm = (xm2-xn2)/(xm*xn)
-    !end if
-    !  Some weighting factors which relate to y1, which is the velocity at
-    !  which the minimum impact parameter (where second order perturbation
-    !  theory breaks down) and the Lewis cutoff (the limit of validity of
-    !  the impact approximation) are the same.
-    mmn = m-n
-    if(m == 2) then
-      y1num = 550.
-    else if (m == 3) then
-      y1num = 380.
-    else
-      y1num = 320.
-    end if
-    if (mmn <= 2 .and. n <= 2) then
-      y1wht = y1wtm(n,mmn)
-    else if (mmn <= 3) then
-      y1wht = 1.e14
-    else
-      y1wht = 1.e13
-    end if
+    ! hw5 = xknm * nu0 * fo / c (fundamental Stark shift scale)
+    hw5 = hwstk * 0.2d0
 
-    !  Variables depending on conditions
-    t4 = temp/10000.
-    xne16 = ne**0.1666667
-    pp = xne16*0.08989/sqrt(temp) ! the shielding parameter
-    y1b = 2. / (1. + 0.012/temp*sqrt(ne/temp))
-    y1s = t4**0.3/xne16
-    gcon1 = 0.2 + 0.09*sqrt(t4) / (1. + ne/1.e13)
-    gcon2 = 0.2 / (1. + ne/1.e15)
+    ! Normalized temperature and density
+    t4 = temp * 1.d-4
+    xne16 = ne ** 0.1666667d0
 
-    !  Compute line profile
-    !  First compute the width of the impact electron profile roughly Griem
-    !  (1967, ApJ 147, 1092) eqn for w.
+    ! Plasma parameters
+    pp = xne16 * 0.08989d0 / sqrt(dble(temp))  ! shielding parameter
+    cne = sqrt(5.96d-23 * ne)  ! characteristic electron detuning scale
 
+    ! Y1 scaling factors
+    y1b = 2.d0 / (1.d0 + 0.012d0 / temp * sqrt(ne / temp))
+    y1s = t4 ** 0.3d0 / xne16
+
+    ! Gamma correction factors
+    gcon1 = 0.2d0 + 0.09d0 * sqrt(t4) / (1.d0 + ne * 1.d-13)
+    gcon2 = 0.2d0 / (1.d0 + ne * 1.d-15)
+    gcon = 1.d0 - gcon1 - gcon2
+
+    ! Absolute relative detuning
     q1 = abs(q)
-    gnm = nu0*HH_RYDE*n*m
-    hw5 = hwstk*0.2
-    wty1 = 1./(1. + ne/y1wht)
-    y1scal = y1num*y1s*wty1 + y1b*(1. - wty1)
-    c1 = 78940./temp*y1scal*gnm*gnm
-    g1 = 6.77*sqrt(hw5*c1)
+
+    ! Line-dependent variables
+    mmn = m - n
+    xm2mn2 = dble(m * m - n * n)
+
+    ! Y1 weighting factors
+    if (m == 2) then
+      y1num = 550.d0
+    else if (m == 3) then
+      y1num = 380.d0
+    else
+      y1num = 320.d0
+    end if
+
+    if (mmn <= 2 .and. n <= 2) then
+      y1wht = y1wtm(n, mmn)
+    else if (mmn <= 3) then
+      y1wht = 1.d14
+    else
+      y1wht = 1.d13
+    end if
+
+    ! Y1 scale factor
+    wty1 = 1.d0 / (1.d0 + ne / y1wht)
+    y1scal = y1num * y1s * wty1 + y1b * (1.d0 - wty1)
+
+    ex = h_k * nu0 / temp
+    c1coef = 0.5d0 * y1scal * ex * xm2mn2
+
+    y1 = c1coef * q1
+    y2 = (q1 / cne) ** 2
+
+    ! c1 and g1 (depend on hw5)
+    c1 = hw5 * c1coef
+    g1 = 6.77d0 * sqrt(c1)
+
+    ! Reduced detuning
     beta = q1 / hw5
-    y1 = q1*c1
-    cne = sqrt(5.96E-23*ne)
-    y2 = (q1/cne)**2
 
-    if ((y2 <= 1.e-4).and.(y1 <= 1.e-5)) then
-       gam = g1 * max(0., 0.2114 - log(c1*cne)) * (1. - gcon1 - gcon2)
+    ! Compute gamma (electron impact width)
+    if ((y2 <= 1.d-4) .and. (y1 <= 1.d-5)) then
+      gam = g1 * max(0.d0, 0.2114d0 - log(c1 * cne)) * gcon
     else
-       gam = g1 * (0.5*exp(-min(80.,y1)) + vcse1f(y1) - 0.5*vcse1f(y2)) &
-           * (1. - gcon1/(1. + (90.*y1)**3) - gcon2/(1. + 2000.*y1))
+      gam = g1 * (0.5d0 * exp(-min(80.d0, y1)) + vcse1f(y1) - 0.5d0 * vcse1f(y2)) &
+          * (1.d0 - gcon1 / (1.d0 + (90.d0 * y1) ** 3) - gcon2 / (1.d0 + 2000.d0 * y1))
+      if (gam <= 1.d-20) gam = 0.d0
     end if
 
-    !  Compute individual quasistatic and impact profiles.
-    if (gam > 1.e-20) then
-       f = gam/pi/(gam*gam + beta*beta)
+    ! Quasistatic ion profile
+    prqs = holtsmark(beta, pp, n, m)
+
+    ! Impact (Lorentzian) electron profile
+    if (gam > 0.d0) then
+      f = gam / pi / (gam * gam + beta * beta)
     else
-       f = 0.d0
+      f = 0.d0
     end if
 
-    !  Fraction of electrons which count as quasistatic. A fit to eqn 8
-    !  (2nd term) of Griem (1967, ApJ 147, 1092).
-    p1 = (0.9*y1)**2
-    fns = (p1 + 0.03*sqrt(y1)) / (p1 + 1.)
+    ! Quasistatic electron fraction
+    p1 = (0.9d0 * y1) ** 2
+    fns = (p1 + 0.03d0 * sqrt(y1)) / (p1 + 1.d0)
 
-    prqs = holtsmark(beta,pp,n,m)
-    !  DBETA (=dBeta/dfreq) changes the area normalisation.
-    !  DSQRT(WAVE/WAVEH) corrects the long range part to dfreq**-5/2
-    !  asymptote, (see Stehle and Hutcheon 1999, A&AS 140, 93).
-    dbeta = (q1+1.d0)**(-2.5d0) / hw5 ! factor 1/nu0 is included later
-    stark1 = (prqs*(1.+fns) + f) * dbeta
-    
-    !  PRQS is the quasistatic ion contribution
-    !  FNS  is the quasistatic electron contribution rel to PRQS
-    !  F    is the impact electron contribution
+    ! Jacobian: dβ/dν = 1 / (nu0 * hw5)
+    dbeta = 1.d0 / (nu0 * hw5)
 
-    !  The red wing is multiplied by the Boltzmann factor to roughly account
-    !  for quantum effects (Stehle 1994, A&AS 104, 509 eqn 7). Assume
-    !  absorption case.  If emission do for DEL.GT.0.
-    if (q < 0) stark1 = stark1 * exp(h_k*q*nu0/temp)
+    ! Combined profile
+    stark1 = (prqs * (1.d0 + fns) + f) * dbeta * nu0
+
+    ! Boltzmann factor for red wing (q < 0 means lower frequency)
+    if (q < 0.d0) stark1 = stark1 * exp(ex * q)
   END FUNCTION stark1
 
 
@@ -1109,5 +1056,43 @@ contains
        vcse1f = (x*(x+2.334733)+0.25062)/(x*(x+3.330657)+ 1.681534)/x*exp(-x)
     end if
   END FUNCTION vcse1f
+
+  !====================================================================================
+  FUNCTION debug_hprofl(n,m,wave,waveh,t,xne,h1frc,he1frc,dopph) result(phi)
+    integer, intent(in) :: n, m
+    real(8), intent(in) :: wave, waveh
+    real(4), intent(in) :: t, xne, h1frc, he1frc, dopph
+    real(4) :: phi
+    real(4) :: hwlor, hwstk, hfwid, idf
+    real(4) :: resont, vdw, vbar2h, t43, t3nhe, fo
+    real(8) :: nu, q
+    type(bbtrans_type) :: line
+    !----------------------------------------------------------------------------------
+    line%i = n
+    line%j = m
+    line%nu0 = cc * 1.0e8 / waveh
+    call prepare_hydrogen_damping(line)
+
+    nu = cc * 1.0e8 / wave
+    q = (nu - line%nu0) / line%nu0
+
+    idf = 1/dopph
+    t43 = (t/10000.)**0.3
+    t3nhe = t43*he1frc
+    fo = 1.25e-9*xne**0.66667 ! holtsmark normal field strength
+    vbar2h = 4.2008e8 * t
+
+    resont = h1frc * line%gw1
+    if (line%gw2 /= 0) then
+      resont = resont * vbar2h**line%gw2
+    endif
+
+    hwstk = line%gq * fo
+    vdw = line%gw3 * t3nhe
+    hwlor = line%ga + resont + vdw
+
+    hfwid = max(1/idf, hwlor, hwstk) ! defines where we switch from Voigt to adding
+    phi = hvoigt(line, q, hwlor, t, xne, hfwid, hwstk, idf)
+  END FUNCTION debug_hprofl
 
 END MODULE
