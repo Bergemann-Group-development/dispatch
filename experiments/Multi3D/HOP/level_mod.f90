@@ -36,17 +36,6 @@ contains
         endif 
 
         boltzmann = exp(dum)
-        !if (dum < -100.d0) then
-        !    boltzmann = 0
-        !else
-        !    if (.not. present(natural_log)) then
-        !        boltzmann = exp(dum * prec_err) ! keep error for consistency here
-        !    elseif(natural_log) then
-        !        boltzmann = exp(dum)
-        !    else
-        !        boltzmann = exp(dum * prec_err)
-        !    endif
-        !endif
     end FUNCTION boltzmann
 
     !===============================================================================
@@ -59,7 +48,7 @@ contains
         !---------------------------------------------------------------------------
         bk_err = BK / uop_BK ! keep around for consistency
 
-        a = 31.321*ion**2 * log10e * e_kT * prec_err
+        a = 31.321*ion**2 * log10e * e_kT
         p = ion * 4.2E3 / (ne*bk_err)**0.166666667
     
         if (p <= self%xl) then
@@ -132,11 +121,7 @@ contains
         do i=1, m(1)
           ! neutral perturbers
           neutr = pi43 * (nh(i,j,k)*x1 + nhe(i,j,k)*x2)
-          if (neutr > 1e-5) then
-            res = exp(-neutr)
-          else
-            res = 1.0
-          endif
+          res = exp(-neutr)
           
           ! charged perturbers
           x = shield(i,j,k)
@@ -169,6 +154,7 @@ contains
       allocate(x1, x2, kk, lfac, cutfac, mold=lam)
       kk = 0.
 
+      ! wavelength of alpha line
       redcut = hc_e / ((self%i**(-2.d0) - (self%i+1)**(-2.d0))*RYD) * 1d8
 
       do f=1, nf
@@ -202,11 +188,7 @@ contains
             if(kk(f) /= 0.d0) then
               ! neutral perturbers
               neutr = nh43*x1(f) + nhe43*x2(f)
-              if (neutr > 1e-5) then
-                wstar = exp(-neutr)
-              else
-                wstar = 1.0
-              endif
+              wstar = exp(-neutr)
               
               ! charged perturbers
               k1 = kk(f)

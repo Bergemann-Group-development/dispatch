@@ -100,16 +100,17 @@ contains
           end do
         endif
 
-        quadratic = self%kvadl .and. .not. (j<1 .or. j >= (self%nnu - 1))
-        if (quadratic) quadratic = .not. self%ldisk(j)
-
-        if (quadratic) then
-          k = 2
-        else
-          k = 1
+        quadratic = self%kvadl
+        if (self%key /= 'H BF') then ! H BF is quadratically extrapolated
+          if (j<1 .or. j >= (self%nnu - 1)) then
+            quadratic = .false.
+          else
+            quadratic = quadratic .and. .not. self%ldisk(j)
+          endif
         endif
 
         ! if there are not enough points, step back
+        k = merge(2, 1, quadratic)
         j = min(j, self%nnu-k)
         j = max(j, 1)
         if (self%loglam) then

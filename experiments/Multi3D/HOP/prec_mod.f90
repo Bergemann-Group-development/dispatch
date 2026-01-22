@@ -14,7 +14,6 @@ MODULE prec_mod
     real(dp), parameter :: op_saha_const = 1.202e9/BK/2/5040**2.5
     !real(dp), parameter :: temp_to_theta = log10e*EK
     real(dp), parameter :: temp_to_theta = 5040
-    real(dp), parameter :: prec_err = temp_to_theta / (log10e*EK)
     real(dp), parameter :: uop_BK = 1.38053e-16
     real(8),  parameter :: inf8 = huge(1.d0) 
     real(4),  parameter :: inf4 = huge(1.e0) 

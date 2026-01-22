@@ -31,13 +31,9 @@ MODULE bbtrans_mod
   contains
     procedure :: init_einstein_coefficients
     procedure :: damping => line_damping
-    procedure :: dampingH => line_dampingH
-    procedure :: LinearStarkH
-    procedure :: IonicH
     procedure :: prepare_Radiative
     procedure :: prepare_Stark
     procedure :: prepare_VanderWaals
-    procedure :: estimate_qmax
     procedure :: get_range
     procedure :: get_center
     procedure :: deactivate
@@ -79,8 +75,8 @@ contains
     real(4), dimension(:,:,:,:), intent(inout) :: chi, eta
     real(4), dimension(:,:,:,:), intent(in) :: cont
     logical, intent(in) :: do_nlte
-    real(4) :: ex, ni, nj, nij, upper_ev, nu0_ev, vs, phi, lchi, leta, rc, re, ceta, cchi
-    real(4) :: a, idf, cf, v, ref, ekt, Bji, inv_nu0, strength, blz, rchi
+    real(4) :: ex, ni, nu0_ev, vs, phi, lchi, leta, ceta, cchi, Rij
+    real(4) :: a, idf, idf_nu, v, ref, ekt, nuBij, inv_nu0, strength
     integer :: i,j,k,f, nf, m(3), itimer=0
     logical :: used
     !----------------------------------------------------------------------------------
@@ -89,8 +85,7 @@ contains
     nf = size(nu)
     inv_nu0 = 1.0 / self%nu0
     nu0_ev = H_E * self%nu0
-    upper_ev = self%lower_ev + nu0_ev
-    Bji = self%Bji * self%nu0
+    nuBij = self%Bij * self%nu0
     used = .false.
     strength = 0.0
     
@@ -113,35 +108,31 @@ contains
       end if
 
       ! fetch variables
-      idf = inv_df(i,j,k) * inv_nu0
+      idf = inv_df(i,j,k)
+      idf_nu = idf * inv_nu0
       v   = (vproj(i,j,k) + 1)*self%nu0
       ekt = e_kT(i,j,k)
-      ex  = (upper_ev - dxij(i,j,k)) * ekt
+      ex  = (self%lower_ev - dxij(i,j,k)) * ekt
 
       if (ex < 85.) then
-        ! compute level populations
-        a = a * over_4pi * idf
-        blz = exp(-ex)
-        nij = exp(nu0_ev * ekt)          ! this is ni/nj gj/gi
-        nj = inv_part(i,j,k) * blz       ! this is nj/gj
-        cf = nj * Bji * (nij - 1.)       ! this is (ni*Bij - nj*Bji)*h/4pi
-        cf = cf * idf                    ! this chi_lte / phi
+        a = a * idf
+        ni = inv_part(i,j,k) * exp(-ex)
+        ! ni is really ni/gi, the factor gi is contained in Bij
+        ! since we have used loggf to compute Aij and hence Bij
 
+        Rij = ni * self%Bij * idf
         if (do_nlte) then
-          associate(bi=>bi(i,j,k), bj=>bj(i,j,k))
-            rchi = (bi - bj*blz) / (1 - blz) ! this is chi / chi_lte
-            cchi = cf * rchi                 ! this is chi / phi
-            ceta = cf * bj                   ! this is chi_lte * bj / phi
-          end associate
+          ceta = Rij * bj(i,j,k)
+          cchi = Rij * bi(i,j,k)
         else
-          cchi = cf
-          ceta = cf
+          ceta = Rij
+          cchi = Rij
         endif
 
         ! check if line peak is larger than continuum tolerance
         ref = tolerance * cont(f0,i,j,k)
         
-        vs = (nu(f0) - v) * idf
+        vs = (nu(f0) - v) * idf_nu
         phi = voigt_function2(a, vs)
         lchi = phi * cchi 
         leta = phi * ceta
@@ -154,7 +145,7 @@ contains
 
           f = f0+1
           do while (lchi >= ref .and. f <= nf) ! if line opacity below tolerance exit
-            vs = (nu(f) - v) * idf
+            vs = (nu(f) - v) * idf_nu
             phi = voigt_function2(a, vs)
             lchi = phi * cchi
             leta = phi * ceta
@@ -166,7 +157,7 @@ contains
           f = f0-1
           lchi = ref
           do while (lchi >= ref .and. f >= 1) ! if line opacity below tolerance exit
-            vs = (nu(f) - v) * idf
+            vs = (nu(f) - v) * idf_nu
             phi = voigt_function2(a, vs)
             lchi = phi * cchi
             leta = phi * ceta
@@ -188,145 +179,10 @@ contains
   !------------------------------------------------------------------------------------
 
   !====================================================================================
-  SUBROUTINE add_opacities2(self, f0, nu, vproj, inv_df, e_kT, dxij, inv_part, &
-    ne, tothi, vbar2, stark_pe, unsold, bi, bj, chi, eta, cont, do_nlte)
-    class(bbtrans_type), intent(inout) :: self
-    integer, intent(in) :: f0
-    real(8), dimension(:), intent(in), contiguous :: nu
-    real(4), dimension(:,:,:), intent(in), contiguous :: vproj, inv_df, inv_part
-    real(4), dimension(:,:,:), intent(in), pointer :: bi, bj
-    real(4), dimension(:,:,:), intent(in), contiguous :: e_kT, dxij, ne, tothi, vbar2, stark_pe, unsold
-    real(4), dimension(:,:,:,:), intent(inout) :: chi, eta
-    real(4), dimension(:,:,:,:), intent(in) :: cont
-    real(4) :: ex, ni, nj, nij, upper_ev, nu0_ev, vs, phi, lchi, leta, rc, re, ceta, cchi
-    real(4) :: a, idf, cf, v, ref, ekt, Bji, inv_nu0, strength, blz, rchi
-    integer :: i,j,k,f, nf, m(3), itimer=0
-    logical :: used, do_nlte
-    real(4), parameter, dimension(5) :: p_r = [-8.93752476e-02,  6.96418351e-03, -7.65337535e-02,  3.26641827e-01, 8.32302991e-01]
-    real(4), parameter, dimension(5) :: p_peak = [ 0.15888826, -0.2693657 ,  0.06420922, -0.17305457,  0.21932279]
-    real(4), parameter, dimension(5) :: p_eta1 = [ 2.23590202e-01, -1.71625643e-01,  2.36095687e-01,  1.52685456e-01, 5.59254298e-01]
-    real(4), parameter, dimension(5) :: p_eta2 = [ 1.06500517, -3.80670939,  4.47438274, -3.83215328,  2.09947476]
-    real(4), parameter :: sl2=sqrt(log(2.0)), log2e=1.4426950408889634
-    real(4) :: rho, r, peak, invh, eta0, eta1, eta2, L, G, x, x2, rough_peak, isqpa
-    !----------------------------------------------------------------------------------
-    !call trace%begin('add_lte_opacities_1', itimer=itimer)
-    m = shape(vproj)
-    nf = size(nu)
-    inv_nu0 = 1.0 / self%nu0
-    nu0_ev = H_E * self%nu0
-    upper_ev = self%lower_ev + nu0_ev
-    Bji = self%Bji * self%nu0
-    used = .false.
-    strength = 0.0
-    
-    do k=1, m(3)
-    do j=1, m(2)
-    do i=1, m(1)
-      ! Fixed Broadening
-      a = self%ga
-      ! Van der Waals Broadening
-      if (self%unsold) then
-        a = a + self%gw1 * unsold(i,j,k)
-      else
-        a = a + self%gw1 * vbar2(i,j,k)**self%gw2 * tothi(i,j,k)
-      endif
-      ! Stark Broadening
-      if (self%gq >= 0.0) then
-        a = a + self%gq * ne(i,j,k)
-      else! if line%gq < 0
-        a = a - self%gq * stark_pe(i,j,k)
-      end if
-
-      ! fetch variables
-      idf = inv_df(i,j,k) * inv_nu0
-      v   = (vproj(i,j,k) + 1)*self%nu0
-      ekt = e_kT(i,j,k)
-      ex  = (upper_ev - dxij(i,j,k)) * ekt
-
-      if (ex < 85.) then
-        ! compute level populations
-        a = a * over_4pi * idf
-        blz = exp(-ex)
-        nij = exp(nu0_ev * ekt)          ! this is ni/nj gj/gi
-        nj = inv_part(i,j,k) * blz       ! this is nj/gj
-        cf = nj * Bji * (nij - 1.)       ! this is (ni*Bij - nj*Bji)*h/4pi
-        cf = cf * idf                    ! this chi_lte / phi
-
-        if (do_nlte) then
-          associate(bi=>bi(i,j,k), bj=>bj(i,j,k))
-            rchi = (bi - bj*blz) / (1 - blz) ! this is chi / chi_lte
-            cchi = cf * rchi                 ! this is chi / phi
-            ceta = cf * bj                   ! this is chi_lte * bj / phi
-          end associate
-        else
-          cchi = cf
-          ceta = cf
-        endif
-
-        ! check if line peak is larger than continuum tolerance
-        ref = tolerance * cont(f0,i,j,k)
-
-        isqpa = 1 / (isqp + a)
-        rough_peak = ipi * isqpa
-
-        if (rough_peak > ref) then
-          used = .true.
-          strength = max(strength, peak / cont(f0,i,j,k))
-
-          rho = a / (sl2 + a)
-          peak = r*(p_peak(5) + r*(p_peak(4) + r*(p_peak(3) + r*(p_peak(2) + r*p_peak(1)))))
-          peak = (ipi + peak) * isqpa
-
-          r = rho*(p_r(5) + rho*(p_r(4) + rho*(p_r(3) + rho*(p_r(2) + rho*p_r(1)))))
-
-          eta1 = r*(p_eta1(5) + r*(p_eta1(4) + r*(p_eta1(3) + r*(p_eta1(2) + r*p_eta1(1)))))
-          eta2 = r*(p_eta2(5) + r*(p_eta2(4) + r*(p_eta2(3) + r*(p_eta2(2) + r*p_eta2(1)))))
-          eta0 = 1 - eta1 - eta2
-
-          invh = merge(1.0, r/a, a == 0.0)
-          idf = idf * invh
-
-          f = f0
-          lchi = ref
-          do while (lchi >= ref .and. f <= nf)
-            x = (nu(f) - v) * idf
-            phi = pseudo_voigt(x, peak, eta0, eta1, eta2)
-            lchi = phi * cchi
-            leta = phi * ceta
-            chi(f,i,j,k) = chi(f,i,j,k) + lchi
-            eta(f,i,j,k) = eta(f,i,j,k) + leta
-            f = f + 1
-          end do
-          
-          f = f0-1
-          lchi = ref
-          do while (lchi >= ref .and. f >= 1)
-            x = (nu(f) - v) * idf
-            phi = pseudo_voigt(x, peak, eta0, eta1, eta2)
-            lchi = phi * cchi
-            leta = phi * ceta
-            chi(f,i,j,k) = chi(f,i,j,k) + lchi
-            eta(f,i,j,k) = eta(f,i,j,k) + leta
-            f = f - 1
-          end do
-        endif
-      endif
-    end do
-    end do
-    end do
-    if (used) then
-      self%used = used
-      self%strength = max(self%strength, strength)
-    endif
-    !call trace%end(itimer)
-  END SUBROUTINE add_opacities2
-  !------------------------------------------------------------------------------------
-
-  !====================================================================================
   !DIR$ ATTRIBUTES FORCEINLINE :: voigt_function2
   ELEMENTAL FUNCTION voigt_function2(as,vs) result(h)
     !---------------------------------------------------------------------
-    !  computes a voigt function  h = h(a,v)
+    !  computes a voigt function  h = h(a,v) / sqrt(pi)
     !  a=gamma/(4*pi*dnud)   and  v=(nu-nu0)/dnud.  this  is  done after
     !  traving (landolt-b\rnstein, p. 449).
     !  coded by: kjell eriksson  (apr-1974). revised: (july-1975).
@@ -335,7 +191,7 @@ contains
     real(4) :: h, a
     real(4) :: v,u,v2,v4,ex
     real(4) :: a2,u2
-    complex(8) :: tav,uav,w4,u4 
+    complex(8) :: tav,uav,w4,num,den
     !----------------------------------------------------------------------------------
     v = abs(vs)
     a = as
@@ -353,19 +209,21 @@ contains
       else
         tav = cmplx(a,-v)
         if (a >= 0.195e0*v - 0.176e0) then
-          w4 = (16.4955e0 + tav*(20.20933e0 + tav*(11.96482e0      &
-            +  tav*(3.778987e0 + tav*0.5642236e0)))) / (16.4955e0  &
-            +  tav*(38.82363e0 + tav*(39.27121e0 + tav*(21.69274e0 &
-            +  tav*(6.699398e0 + tav)))))
+          num = 16.4955e0 + tav*(20.20933e0 + tav*(11.96482e0      &
+                          + tav*(3.778987e0 + tav*0.5642236e0)))
+          den = 16.4955e0 + tav*(38.82363e0 + tav*(39.27121e0 &
+                          + tav*(21.69274e0 + tav*(6.699398e0 + tav))))
+          w4 = num/den
         else
           uav = tav*tav 
-          w4 = tav*(36183.31e0 - uav*(3321.9905e0 - uav*(1540.787e0 &
+          num = tav*(36183.31e0 - uav*(3321.9905e0 - uav*(1540.787e0 &
              - uav*(219.0313e0 - uav*( 35.76683e0 - uav*(1.320522e0 &
              - uav*0.56419e0))))))
-          u4 = (32066.6e0 - uav*(24322.84e0 - uav*(9022.228e0       &
+          den = (32066.6e0 - uav*(24322.84e0 - uav*(9022.228e0       &
              - uav*(2186.181e0 - uav*(364.2191e0                    &
              - uav*(61.57037e0 - uav*(1.841439e0 - uav)))))))
-          w4 = exp(uav) - w4/u4
+          w4 = num/den
+          w4 = exp(uav) - w4
         endif
         h = real(w4) * isqp
       endif
@@ -384,25 +242,24 @@ contains
       endif
 
       ! a le 0.2  and v lt 5.
-      h = (h*a + exp(-v2)*(1. + a*a*(1. - 2.*v2))) * isqp
+      ex = exp(-v2)
+      h = (h*a + ex*(1. + a*a*(1. - 2.*v2))) * isqp
     endif
   END FUNCTION voigt_function2
   !------------------------------------------------------------------------------------
 
   !====================================================================================
-  !DIR$ ATTRIBUTES FORCEINLINE :: voigt_function2
+  !DIR$ ATTRIBUTES FORCEINLINE :: voigt_profile
   ELEMENTAL FUNCTION voigt_profile(a,q,vpr,idf) result(h)
     !---------------------------------------------------------------------
-    !  computes a voigt function  h = h(a,v)
-    !  a=gamma/(4*pi*dnud)   and  v=(nu-nu0)/dnud.  this  is  done after
-    !  traving (landolt-b\rnstein, p. 449).
-    !  coded by: kjell eriksson  (apr-1974). revised: (july-1975).
+    !  computes a normalised voigt profile  h = h(a,v) / sqrt(pi) * nu/dnud
+    !  a=gamma/(4*pi*dnud)   and  q=(nu-nu0)/nu0.  this  is  done after
     !---------------------------------------------------------------------
     real(4), intent(in) :: a,q,vpr,idf
     real(4) :: h
     real(4) :: v,u,v2,v4,ex
     real(4) :: a2,u2
-    complex(8) :: tav,uav,w4,u4,num,den
+    complex(8) :: tav,uav,w4,num,den
     !----------------------------------------------------------------------------------
     v = abs(q - vpr) * idf
     u = a + v
@@ -784,42 +641,6 @@ contains
     
     adamp = adamp + self%ga
   END SUBROUTINE line_damping
-  !------------------------------------------------------------------------------------ 
-  
-  !====================================================================================
-  PURE SUBROUTINE line_dampingH (self, adamp, temp, ne, nh6)
-    class(bbtrans_type), intent(in)  :: self
-    real(4), intent(in), dimension(:,:,:)  :: temp, ne, nh6
-    real(4), intent(inout), dimension(:,:,:) :: adamp
-    integer :: i, j
-    !----------------------------------------------------------------------------------
-    j = nint(sqrt(self%upper_g / 2))
-    i = nint(sqrt(1 / (1./j**2 + self%nu0 * H_E / RYD)))
-  
-    if (.not. disable_stark) call self%LinearStarkH(adamp,ne,i,j)
-    if (.not. disable_vdw) call self%IonicH(adamp,temp,nh6,ne,i,j)
-  END SUBROUTINE line_dampingH
-  !------------------------------------------------------------------------------------
-
-  !====================================================================================
-  ! Linear Stark broadening for hydrogen, see
-  ! Sutton K. (1978), JQSRT, 20, 333
-  !====================================================================================
-  PURE ELEMENTAL SUBROUTINE LinearStarkH(self, gamma, ne, i, j)
-    class(bbtrans_type), intent(in)  :: self
-    real(4), intent(inout) :: gamma
-    real(4), intent(in)    :: ne
-    integer, intent(in) :: i, j
-    real(4) :: a1
-    !----------------------------------------------------------------------------------
-    if (j-i == 1) then
-      a1=0.642
-    else
-      a1=1.000
-    endif
-
-    gamma = gamma + a1 * 0.6 * (j**2-i**2) * ne**two_third
-  END SUBROUTINE LinearStarkH
   !------------------------------------------------------------------------------------
 
   !====================================================================================
@@ -853,68 +674,9 @@ contains
     else
       self%gq = gq
     endif
+    self%gq = self%gq * over_4pi / self%nu0
     if (disable_stark) self%gq = 0
   END SUBROUTINE prepare_Stark
-  !------------------------------------------------------------------------------------
-
-  !====================================================================================
-  PURE ELEMENTAL SUBROUTINE IonicH (self, gamma, temp, nh, ne, i, j) 
-    class(bbtrans_type), intent(in)  :: self
-    real(4),intent(in)         :: temp,nh,ne
-    real(4),intent(inout)      :: gamma
-    integer, intent(in) :: i, j
-    real(8) :: fn,fn1,rd,rmax,rmin,dohm,gprot,xmr,xmp,xm,rratio,xn
-    real(8) :: gion, lam0
-    !----------------------------------------------------------------------------------
-    lam0 = CC / self%nu0 * 1e8
-
-    ! ionic broadening
-    if( (j-i >= 1) .and. (j-i <= 3) .and. (i >= 4) .and. (i <= 20) ) then
-
-      fn1 = 2.25 * i**2 * ( 1.5 + 0.271*log(2.0/3.0*i)+  1.92/i**0.422 )
-      if(j-i.eq.1) then
-        fn=fn1
-      else if(j-i.eq.2) then
-        fn=fn1*(9.1333/i+5.57333)
-      else if(j-i.eq.3) then
-        fn=fn1*(38.6667/i+12.9667)
-      endif
-
-      ! xm is reduced mass of radiator and perturber
-      xmr=1.0
-      xmp=1.0
-      xm=xmp*xmr/(xmp+xmr)
-
-      rd=6.90*sqrt( temp/nh )
-      rmax=min( rd , lam0 / 2. / pi )
-
-      rmin = sqrt(2./3.) * sqrt(fn) / 2.0/pi/em*hh*sqrt(2.0*xm*uu/pi/bk/temp)
-      rratio=max(rmax/rmin,one)
-      dohm=2.7e8*sqrt(uu*2*xm/temp)*nh*fn*(0.5+log(rratio))
-      !  dohm is half-width in angular frequency units. convert to
-      !  gamma (hwhm(ohmega)=gamma/2, hwhm(nu)=gamma/4pi)
-      gprot=dohm
-
-      !  ion broadening from other ions than protons. assume an atomi! 
-      !  weight of 25 and calculate n from ne-np (assuming all electrons come
-      !  from singly ionized atoms
-      xn=max(ne-nh,zero)
-      xmp=25.0
-      xm=xmp*xmr/(xmp+xmr)
-      if(xn.gt.0.0) then
-        rd=6.90*sqrt(temp/xn)
-        rmax=min(rd,lam0/2./pi)
-        rmin=sqrt(2./3.)*sqrt(fn)/2./pi/em*hh*sqrt(2*xm*uu/pi/bk/temp) 
-        rratio=max(rmax/rmin,one)
-        dohm=2.7e8*sqrt(uu*2*xm/temp)*xn*fn*(0.5+log(rratio))
-        gion=dohm
-      else
-        gion=0.0
-      endif
-
-      gamma = gamma + gprot + gion
-    endif
-  END SUBROUTINE IonicH
   !------------------------------------------------------------------------------------
   
   !====================================================================================
@@ -932,6 +694,7 @@ contains
     else
       self%ga = ga
     endif
+    self%ga = self%ga * over_4pi / self%nu0
     if (disable_ga) self%ga = 0
   END SUBROUTINE prepare_Radiative
   !------------------------------------------------------------------------------------
@@ -985,28 +748,12 @@ contains
         endif
       endif
     endif
+    self%gw1 = self%gw1 * over_4pi / self%nu0
     if (disable_vdw) then
       self%unsold = .true.
       self%gw1 = 0
     endif
   END SUBROUTINE prepare_VanderWaals
-  !------------------------------------------------------------------------------------
-
-  !====================================================================================
-  FUNCTION estimate_qmax(self, teff) result(qmax)
-    class(bbtrans_type), intent(in)  :: self
-    real(8), intent(in) :: teff
-    real(8) :: blz, fac, qmax
-    real(8), parameter :: a=3.0, b=2.8
-    !----------------------------------------------------------------------------------
-    blz = self%lower_ev * EK / teff
-    fac = log(self%Aji) - blz
-    !qmax = 0.625 + fac*( 0.73 + fac*(-0.24 + fac*0.03))
-    qmax = exp(fac/b)/a + (1 - 1/a)
-    if (qmax < 1) then
-      qmax = 1
-    endif
-  END FUNCTION estimate_qmax
   !------------------------------------------------------------------------------------
 
   !====================================================================================

@@ -189,13 +189,16 @@ MODULE nlte_patch_mod
 
           call composition%element_by_id(atom%id(1:3), element, verbose=.false.)
           if (associated(element)) then
-            species => element
+            atom%species => element
             element%ions%in_opac = .true.
             atom%id = element%id
+            if (trim(element%id) == 'H') then
+              element%ions(1)%nk = max(element%ions(1)%nk, atom%nlevel)
+            endif
           else
             call composition%molecule_by_id(atom%id(1:3), molecule, verbose=.false.)
             if (associated(molecule)) then
-              species => molecule
+              atom%species => molecule
               molecule%in_opac = .true.
               atom%id = molecule%id
               do j=1, molecule%nions
@@ -205,11 +208,11 @@ MODULE nlte_patch_mod
             endif
           endif
       
-          call atom%prepare_damping(species)
+          call atom%prepare_damping(atom%species)
 
           if (abundance(i) > -99) atom%abnd = abundance(i)
           if (use_atom_abnd .or. abundance(i) > -99) then
-            call composition%overwrite_abundance(species, atom%abnd, atom%awgt, relative_abundance)
+            call composition%overwrite_abundance(atom%species, atom%abnd, atom%awgt, relative_abundance)
           else
             atom%abnd = atom%abnd + composition%FeH
           endif
@@ -217,7 +220,6 @@ MODULE nlte_patch_mod
           if (exclude_trace_cont) then
             call self%exclude_double_continua(atom)
           endif
-          call self%exclude_double_lines(atom, species)
 
           ! here we create copies of the line and cont arrays,
           ! which will have altered ired and iblue for example
@@ -892,50 +894,53 @@ MODULE nlte_patch_mod
   END SUBROUTINE exclude_double_continua
 
   !===============================================================================
-  SUBROUTINE exclude_double_lines (self, atom, species)
+  SUBROUTINE exclude_double_lines (self)
     class(nlte_patch_t), target :: self
-    type(atom_type) :: atom
     class(massive_type), pointer :: species
     class(element_type), pointer :: element
     class(molec_type), pointer :: molec
     class(ion_type), pointer :: ion
     class(bbtrans_type), pointer :: ll_line, line
-    integer :: i, j, l
+    integer :: i, j, l, ia
     logical, save :: first_time=.true.
     !-----------------------------------------------------------------------------
-    select type (species)
-    class is (element_type)
-      element => species
-      if (all(element%ions%nline == 0)) return
-      if (exclude_from_line_list) then
-        element%ions%in_linelist = .false.
-      else
-        do j=lbound(element%ions,1), ubound(element%ions,1) - 1
-          ion => element%ions(j)
-          if (ion%nline == 0) cycle
-  
-          do l=1, ion%nline
-            ll_line => ion%line(l)
-            
-            do i=1, atom%nline
-              line => atom%trans%line(i)
-              if (abs(line%nu0 / ll_line%nu0 -1) < 1e-6 &
-                  .and. abs(line%Aji / ll_line%Aji - 1) < 1e-4) then
-                call ll_line%deactivate()
-                print '(A, F10.2)', 'excluding linelist line at ', CC / ll_line%nu0 *1e8
-              endif
+    do ia=1, self%natom
+      associate(atom => self%atoms(ia))
+        select type (species => atom%species)
+        class is (element_type)
+          element => species
+          if (all(element%ions%nline == 0)) return
+          if (exclude_from_line_list) then
+            element%ions%in_linelist = .false.
+          else
+            do j=lbound(element%ions,1), ubound(element%ions,1) - 1
+              ion => element%ions(j)
+              if (ion%nline == 0) cycle
+      
+              do l=1, ion%nline
+                ll_line => ion%line(l)
+                
+                do i=1, atom%nline
+                  line => atom%trans%line(i)
+                  if (abs(line%nu0 / ll_line%nu0 -1) < 1e-6 &
+                      .and. abs(line%Aji / ll_line%Aji - 1) < 1e-4) then
+                    call ll_line%deactivate()
+                    print '(A, F10.2)', 'excluding linelist line at ', CC / ll_line%nu0 *1e8
+                  endif
+                end do
+              end do
             end do
-          end do
-        end do
-      endif
-    class is (molec_type)
-      molec => species
-      if (molec%nline == 0) return
-      if (exclude_from_line_list) molec%in_linelist = .false.
-    end select
-    if (exclude_from_line_list) then
-        print *, 'excluding all ', trim(atom%id), ' lines from line list'
-    endif
+          endif
+        class is (molec_type)
+          molec => species
+          if (molec%nline == 0) return
+          if (exclude_from_line_list) molec%in_linelist = .false.
+        end select
+        if (exclude_from_line_list) then
+            print *, 'excluding all ', trim(atom%id), ' lines from line list'
+        endif
+      end associate
+    end do
   END SUBROUTINE exclude_double_lines
   
   !===============================================================================

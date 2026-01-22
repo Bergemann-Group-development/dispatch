@@ -108,6 +108,7 @@ MODULE atom_mod
       type(atom_data_t), pointer :: data => null()
       type(atom_data_t), dimension(:), pointer :: rotated_data => null()
       type(coll_type), dimension(:), pointer, contiguous :: coll => null()
+      class(massive_type), pointer :: species => null()
 
       real(8), dimension(:,:), pointer, contiguous :: tgrid => null()
       real(8), dimension(:,:), pointer, contiguous :: cgrid => null()

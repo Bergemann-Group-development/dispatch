@@ -152,7 +152,7 @@ contains
     real(8), allocatable :: qq(:)
     real(4), allocatable :: phis(:)
     real(4) :: lchi, leta, phi, idf, cchi, ceta, v, ref, nh1, strength, nup, nlo
-    real(4) :: resont, vdw, hwstk, hwlor, hfwid, t, e, inv_nu0
+    real(4) :: resont, vdw, hwstk, hwlor, hfwid, t, e, inv_nu0, Rij, blz0
     real(8) :: q
     real(4), parameter :: tol=1e-7
     integer :: i,j,k,f, nf, m(3), itimer=0
@@ -180,15 +180,15 @@ contains
       nlo = ni(i,j,k)
       nup = nj(i,j,k)
 
-      ceta = self%Bij*nlo - self%Bji*nup ! this chi_lte / phi / idf
-
+      ! we include the idf normalisation factor along with voigt_function2
+      ! as stark1 is normalised differently, therefore we do not multiply by idf here
+      Rij = nlo * self%Bij
       if (do_nlte) then
-        nlo = nlo * bi(i,j,k)
-        nup = nup * bj(i,j,k)
-        cchi = self%Bij*nlo - self%Bji*nup
-        ceta = ceta * bj(i,j,k)
+        ceta = Rij * bj(i,j,k)
+        cchi = Rij * bi(i,j,k)
       else
-        cchi = ceta
+        ceta = Rij
+        cchi = Rij
       endif
 
       resont = nh1 * self%gw1
@@ -208,12 +208,13 @@ contains
       do while (lchi >= ref .and. f <= nf) ! if line opacity below tolerance exit
         q = (nu(f) - v) * inv_nu0
         if (lymanalf) then
-          call lyman_voigt(self, q, hwlor, resont, t, e, nh1, hfwid, hwstk, idf, phi)
+          call lyman_voigt(self, q, hwlor, resont, t, e, nh1, hfwid, hwstk, vdw, idf, phi)
         else
           phi = hvoigt(self, q, hwlor, t, e, hfwid, hwstk, idf)
         endif
         lchi = phi * cchi
         leta = phi * ceta
+        !if (lymanalf .and. k==m(3)) print *, f, phi, cchi, ceta/(exp(HH*nu(f)/(BK*temp(i,j,k)))-1.0)
         chi(f,i,j,k) = chi(f,i,j,k) + lchi
         eta(f,i,j,k) = eta(f,i,j,k) + leta
         if (f==f0) then
@@ -228,16 +229,18 @@ contains
       do while (lchi >= ref .and. f >= 1) ! if line opacity below tolerance exit
         q = (nu(f) - v) * inv_nu0
         if (lymanalf) then
-          call lyman_voigt(self, q, hwlor, resont, t, e, nh1, hfwid, hwstk, idf, phi)
+          call lyman_voigt(self, q, hwlor, resont, t, e, nh1, hfwid, hwstk, vdw, idf, phi)
         else
           phi = hvoigt(self, q, hwlor, t, e, hfwid, hwstk, idf)
         endif
         lchi = phi * cchi
         leta = phi * ceta
+        !if (lymanalf .and. k==m(3)) print *, f, phi, cchi, ceta/(exp(HH*nu(f)/(BK*temp(i,j,k)))-1.0)
         chi(f,i,j,k) = chi(f,i,j,k) + lchi
         eta(f,i,j,k) = eta(f,i,j,k) + leta
         f = f - 1
       end do
+      !if (lymanalf .and. k==m(3)) stop
     end do
     end do
     end do
@@ -247,12 +250,50 @@ contains
     endif
   END SUBROUTINE add_h_opacities
 
+  !===============================================================================
+  !  Based on code by Deane Peterson and Bob Kurucz
+  !===============================================================================
+  FUNCTION hprofile(self, q, temp, ne, fo, vbar2h, tothi, t3nhe, idf)
+    class(bbtrans_type), intent(inout)  :: self
+    real(8), intent(in) :: q
+    real(4), intent(in) :: temp
+    real(4), intent(in) :: ne
+    real(4), intent(in) :: fo
+    real(4), intent(in) :: vbar2h
+    real(4), intent(in) :: tothi
+    real(4), intent(in) :: t3nhe
+    real(4), intent(in) :: idf
+    real(8) :: hprofile
+    real(4) :: vdw, resont, hwstk, hfwid, hwlor, phi
+    logical :: lymanalf
+    !---------------------------------------------------------------------------
+    lymanalf = (self%i == 1) .and. (self%j == 2)
+    hwstk = self%gq * fo
+
+    if (self%gw2 == 0) then
+      resont = self%gw1 * tothi
+    else
+      resont = self%gw1 * vbar2h**self%gw2 * tothi
+    endif
+
+    vdw = self%gw3 * t3nhe
+    hwlor = self%ga + resont + vdw
+
+    hfwid = max(1/idf, hwlor, hwstk) ! defines where we switch from Voigt to adding
+    if (lymanalf) then
+      call lyman_voigt(self, q, hwlor, resont, temp, ne, tothi, hfwid, hwstk, vdw, idf, phi)
+    else
+      phi = hvoigt(self, q, hwlor, temp, ne, hfwid, hwstk, idf)
+    endif
+    hprofile = phi
+  END FUNCTION hprofile
+
   !====================================================================================
   FUNCTION hvoigt (self, q, hwlor, temp, ne, hfwid, hwstk, idf) result(phi)
     class(bbtrans_type), intent(in)  :: self
     real(8), intent(in) :: q
     real(4), intent(in) :: hwlor, temp, ne, hfwid, hwstk, idf
-    real(4) :: a, d, xv, phi
+    real(4) :: a, vs, xv, phi
     integer :: i
     !----------------------------------------------------------------------------------
     if (abs(q) > hfwid) then
@@ -268,34 +309,35 @@ contains
 
     !  Including fine structure
     do i=1, self%io
-      d = (q - self%dq(i)) * idf
-      xv = voigt_function2(a,d) * idf
+      vs = (q - self%dq(i)) * idf
+      xv = voigt_function2(a,vs) * idf
       phi = phi + self%wt(i)*xv
     end do
   END FUNCTION
 
   !====================================================================================
-  SUBROUTINE lyman_voigt (self, q, hwlor, resont, temp, ne, tothi, hfwid, hwstk, idf, phi)
+  SUBROUTINE lyman_voigt (self, q, hwlor, resont, temp, ne, tothi, hfwid, hwstk, vdw, idf, phi)
     class(bbtrans_type), intent(in)  :: self
     real(8), intent(in) :: q
-    real(4), intent(in) :: hwlor, resont, temp, ne, tothi, hfwid, hwstk, idf
+    real(4), intent(in) :: hwlor, resont, temp, ne, tothi, hfwid, hwstk, vdw, idf
     real(4), intent(out) :: phi
-    real(4) :: a, d, xv
+    real(4) :: a, vs, xv
     real(4) :: xfac, xlymanh2
-    real(8) :: q4000, htotal, xstark, xholt4000, sat4000
+    real(8) :: htotal, xstark, xholt4000, sat4000
     integer :: i
     real(8), parameter :: LyA0 = 82259.105 ! wavenumber
-    real(8), parameter :: rayqcut = (1e8/1240.d0 - LyA0)/LyA0
+    real(8), parameter :: rayqcut = (1e8/1400.d0 - LyA0)/LyA0 !Changed from 1240 to 1400 by BPz 04/10-2007
     real(8), parameter :: redthresh = 20000./LyA0 - 1d0
+    real(8), parameter :: q4000 = -4000./LyA0
     !----------------------------------------------------------------------------------
-    q4000 = -4000./LyA0
-
     if (abs(q) > hfwid) then
       a = 0
       !  Lyman alpha:
       if (q > rayqcut) then
         !  Natural broadening
-        !  This is cut at some specified detuning in the red.
+        !  This is cut at 1400 AA in the red.
+        !  Note that this is Rayleigh scattering and therefore the rayleigh scattering
+        !  in composition_mod has to be cut below 1400 AA to avoid double counting.
         a = self%ga*(q+1d0)**2
       endif
       if (q > q4000) then
@@ -309,21 +351,21 @@ contains
         !  (below) at -4000 cm^-1 (62 A) detuning. A linear transition is used.
         xfac = 1.0
         if (q < 0) xfac = xfac + 0.13*q/q4000
-        a = a + xfac*resont
+        a = a + xfac*resont + vdw
       endif
-      a = a * idf
     else
       a = hwlor + hwstk
     endif
 
     phi = 0.d0
+    a = a * idf
 
     !  Doppler core including fine structure
     do i=1, self%io
-      d = (q - self%dq(i)) * idf
+      vs = (q - self%dq(i)) * idf
       !  if INSIDE HFWID WE USE VOIGT FUNCTION WITH DOP, STARK AND LOR
       !  if OUTSIDE JUST ADD THE DOPPLER PART - REST IS ADDED LATER IN DETAIL
-      xv = voigt_function2(a,d) * idf
+      xv = voigt_function2(a,vs) * idf
       phi = phi + self%wt(i)*xv
     end do
 
@@ -488,195 +530,6 @@ contains
       self%gw3 = 0
     endif
   END SUBROUTINE prepare_hydrogen_damping
-
-  !===============================================================================
-  !  Based on code by Deane Peterson and Bob Kurucz
-  !===============================================================================
-  FUNCTION hprofile(self, q, temp, ne, fo, vbar2h, tothi, t3nhe, idf)
-    class(bbtrans_type), intent(inout)  :: self
-    real(8), intent(in) :: q
-    real(4), intent(in) :: temp
-    real(4), intent(in) :: ne
-    real(4), intent(in) :: fo
-    real(4), intent(in) :: vbar2h
-    real(4), intent(in) :: tothi
-    real(4), intent(in) :: t3nhe
-    real(4), intent(in) :: idf
-    real(8) :: hprofile
-    real(4) :: vdw, resont, hwstk, hfwid, hwlor, phi
-    !---------------------------------------------------------------------------
-    hwstk = self%gq * fo
-
-    if (self%gw2 == 0) then
-      resont = self%gw1 * tothi
-    else
-      resont = self%gw1 * vbar2h**self%gw2 * tothi
-    endif
-
-    !  Assume for core stark is approx lorentzian
-    !  and use voigt function
-
-    vdw = self%gw3 * t3nhe
-    hwlor = self%ga + resont + vdw
-
-    hfwid = max(1/idf, hwlor, hwstk) ! defines where we switch from Voigt to adding
-    phi = hvoigt(self, q, hwlor, temp, ne, hfwid, hwstk, idf)
-    hprofile = phi
-  END FUNCTION hprofile
-  
-  !===============================================================================
-  !  Based on code by Deane Peterson and Bob Kurucz
-  !===============================================================================
-  FUNCTION LymanA_profile(self, q, temp, ne, h1frc, he1frc, inv_df) result(hprofile)
-    class(bbtrans_type), intent(inout)  :: self
-    real(8), intent(in) :: q
-    real(4), intent(in) :: temp
-    real(4), intent(in) :: ne
-    real(4), intent(in) :: h1frc
-    real(4), intent(in) :: he1frc
-    real(4), intent(in) :: inv_df
-    real(8) :: hprofile
-    integer :: n, m, i, mmn, ipos, k, icut
-    real(8), save, dimension(14) :: finest, finswt
-    integer, save :: n1=0, m1=0, ifins
-    logical, save :: lymanalf
-    real(4), save :: vdw, resont, radamp, stark
-    real(4) :: hwstk, vbar2h, hwlor, t3nhe, hfwid, xfac, xlymanh2, a, d
-    real(8) :: nu, q4000, fo, htotal, xv, xstark, xholt4000, sat4000
-
-    !  Most model atmosphere codes include Rayleigh scattering by H atoms
-    !  elsewhere, eg. quantum mechanical calculations. This parameter cuts
-    !  the Lyman alpha natural absorption at this chosen point.
-    real(8), parameter :: LyA0 = 82259.105 ! wavenumber
-    real(8), parameter :: rayqcut = (1e8/1240.d0 - LyA0)/LyA0
-    real(8), parameter :: redthresh = 20000./LyA0 - 1d0
-    !---------------------------------------------------------------------------
-    !  Variables dependent on line - compute first time only
-    n = self%i
-    m = self%j
-
-    !  Now compute the profile for the given physical conditions.
-    !  Firstly half-widths: DOP, HWSTK, HWLOR, are dnu/nu.
-    fo = 2.6031*ec*ne**two_third ! Holtsmark normal field strength
-    hwstk = self%gq * fo
-
-    if (self%gw2 == 0) then
-      resont = self%gw1 * h1frc
-    else
-      vbar2h = 4.2008e8 * temp
-      resont = self%gw1 * vbar2h**self%gw2 * h1frc
-    endif
-
-    t3nhe = (temp/10000.)**0.3 * he1frc
-    vdw = self%gw3 * t3nhe
-    radamp = self%ga
-    hwlor = resont + radamp + vdw
-
-    !  Assume for core stark is approx lorentzian
-    !  and use voigt function
-    
-    hfwid = max(1/inv_df, hwlor, hwstk) ! defines where we switch from Voigt TO adding
-    q4000 = -4000./LyA0
-
-    a = 0
-    if (abs(q) > hfwid) then
-      !  Lyman alpha:
-      if (q > rayqcut) then
-        !  Natural broadening
-        !  This is cut at some specified detuning in the red.
-        a = radamp*(q+1d0)**2
-      endif
-      if (q > q4000) then
-        !  Self broadening of Lyman alpha:
-        !  Red wing of Lyman Alpha before the satellite region and blue wing
-        !  (ie. redward of ~1190 A).
-        !  The impact approximation breaks down quickly here validity is ~ 1 A
-        !  at temp~5000 K (Lortet & Roueff 1969, A&A 3, 462) but we use Ali & Griem
-        !  anyway (~ Barklem et al for 2p).
-        !  A factor 1.13 is needed to match this region to the far red wing
-        !  (below) at -4000 cm^-1 (62 A) detuning. A linear transition is used.
-        xfac = 1.0
-        if (q < 0) xfac = xfac + 0.13*q/q4000
-        a = a + xfac*resont
-      endif
-    else
-      a = hwlor + hwstk            ! VOIGT "a"
-    endif
-    a = a * inv_df
-
-    !  HTOTAL is the profile.
-    htotal=0.d0
-
-    !  Doppler core including fine structure
-    do i=1, self%io
-      d = (q - self%dq(i)) * inv_df
-      !  if INSIDE HFWID WE USE VOIGT FUNCTION WITH DOP, STARK AND LOR
-      !  if OUTSIDE JUST ADD THE DOPPLER PART - REST IS ADDED LATER IN DETAIL
-      xv = voigt_function2(a,d) * inv_df
-      htotal = htotal + self%wt(i)*xv
-    end do
-
-    if (abs(q) > hfwid) then
-      if (q > redthresh) then
-        !  Far red wing of Lyman Alpha in satellite region:
-        !  Self-broadening following Kurucz's implementation of Allard et al
-        !  (A&A 335, 1124, 1998), see Castelli & Kurucz (A&A 372, 260 2001) for
-        !  more details.
-        !  Tables LYMANH2() are on a delta wavenumber grid spacing of 200
-        !  waves/cm -22000, -21800, ...., -4000 waves/cm (91 points). The
-        !  profiles store log10(I(d omega)) for N(H) = 1e14 cm^-3. Assumed
-        !  insensitive to temp, and linear scaling with N(H).  Note I(d nu) =
-        !  I(d omega)/c
-        if (q <= q4000) then
-          !  If redward of last point (1660 -> 5000 Angstrom) extrapolate,
-          !  otherwise (1278 -> 1660 Angstrom) linear (in log10 profiles)
-          !  interpolation
-          xlymanh2 = lyman_interp(lymanh2, 200., -22000., q*LyA0)
-          htotal = htotal + LyA0 * h1frc * 10.**xlymanh2
-
-        !  Stark section
-
-          !  Stark wings due to protons in the satellite region:
-          !  Following Kurucz's implementation of Allard et al (A&A 335, 1124,
-          !  1998), see Castelli & Kurucz (A&A 372, 260 2001) for more details.
-          !  Tables LYMANH2PLUS() are on a delta wavenumber grid spacing of 100
-          !  waves/cm -15000, -14900, ...., -4000 waves/cm (111 points).
-          !  The profiles store log10(I(d omega)) for N(H+) = 1e14 cm^-3. Assumed
-          !  insensitive to temp, and linear scaling with N(H+). Note I(d nu) =
-          !  I(d omega)/c and we assume N(H+) = N(e-).
-
-          !  If redward of last point (1487 -> 5000 Angstroem) extrapolate,
-          !  otherwise (1278 -> 1487 Angstroem) interpolation.
-          xlymanh2 = lyman_interp(lymanh2plus, 100., -15000., q*LyA0)
-          htotal = htotal + LyA0 * ne * 10.**xlymanh2
-
-          !  There may be a contribution due to electrons also at long range.
-          !  The static Holtsmark profile (1/2 the total STARK1) is used noting
-          !  that the correction for quantum effects suggested by Stehle (1994,
-          !  A&AS 104, 509 eqn 7) has been applied already.
-          htotal = htotal + 0.5*stark1(n,m,q,self%nu0,temp,ne,hwstk)
-
-        else
-          !  Stark wings due to ions and electrons.  If Lyman alpha this is for
-          !  before (blueward of) the satellite region.
-          xstark = 0.5*stark1(n,m,q,self%nu0,temp,ne,hwstk)
-
-          !  If Lyman alpha we match the static ion part to the Allard et al
-          !  value at -4000 cm^-1 detuning on red wing.
-          if (q < 0) then
-            xholt4000 = 0.5*stark1(n,m,q4000,self%nu0,temp,ne,hwstk)
-            sat4000 = LyA0 * ne * 10.**lymanh2plus(111)
-            xfac = 1. + (sat4000/xholt4000 - 1.)*q/q4000
-            xstark = xstark * (1. + xfac)
-          end if
-          htotal = htotal + xstark
-        end if
-      endif
-      !  End Stark section
-    end if
-
-    hprofile = htotal
-  END FUNCTION LymanA_profile
 
   !===============================================================================
   FUNCTION lyman_interp(arr, dx, x0, newx) result(out)
@@ -844,11 +697,8 @@ contains
     p1 = (0.9d0 * y1) ** 2
     fns = (p1 + 0.03d0 * sqrt(y1)) / (p1 + 1.d0)
 
-    ! Jacobian: dβ/dν = 1 / (nu0 * hw5)
-    dbeta = 1.d0 / (nu0 * hw5)
-
     ! Combined profile
-    stark1 = (prqs * (1.d0 + fns) + f) * dbeta * nu0
+    stark1 = (prqs * (1.d0 + fns) + f) / hw5
 
     ! Boltzmann factor for red wing (q < 0 means lower frequency)
     if (q < 0.d0) stark1 = stark1 * exp(ex * q)

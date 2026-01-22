@@ -29,7 +29,7 @@ MODULE rt_patch_mod
   USE trans_mod, only: line_type, cont_type
   USE bbtrans_mod, only: voigt_function2, voigt_profile
   USE bftrans_mod, only: H_occupation_probability
-  USE hprofl_mod, only: hprofl
+  USE hprofl_mod, only: hprofile
   USE m3d_debug_mod
   USE shared_mod
   USE composition_mod, only: composition_type, scattering_absorption, ref_lam, &
@@ -371,9 +371,8 @@ SUBROUTINE execute (self)
               departures => null()
             endif
             associate(chi=>work(:,:,:,1:nz,1), &
-                      eta=>work(:,:,:,1:nz,2), &
-                      blz=>back(:,:,:,1:nz,3))
-              call comp%add_linelist_opacities(self%nu, chi, dlam, vproj, eta, blz, departures=departures)
+                      eta=>work(:,:,:,1:nz,2))
+              call comp%add_linelist_opacities(self%nu, chi, eta, dlam, vproj, departures=departures)
             end associate
           endif
         endif
@@ -643,8 +642,9 @@ SUBROUTINE lte_background_opacities (self, comp, include_absmet, do_sample_opac,
   do x=1, nx
     do f=self%fs, self%fe
       associate(chi=>back(f,x,y,z,1), eta=>back(f,x,y,z,2), blz=>back(f,x,y,z,3))
-        bnu = blz / (1 - blz)
-        eta = chi * bnu
+        ! absorption simply returns chi. We need to convert to our work units.
+        eta = chi / (1 - blz)
+        chi = chi + eta*blz
       end associate
     end do
   end do
@@ -685,8 +685,8 @@ SUBROUTINE add_scattering (self, comp)
     associate(Jnu=>self%Jnu(f,x,y,z,s), blz=>back(f,x,y,z,3))
       Jnu = 0.5*(Jup(f,x,y,z,s) + Jdn(f,x,y,z,s))
       if (scattering_absorption) then
-        Bnu = blz / (1 - blz)
-        Jnu = Jnu - Bnu ! because we already included scattered opacities in chi
+        Bnu = 1 / (1 - blz) ! we multiply eta by blz later on again
+        Jnu = Jnu/blz - Bnu ! because we already included scattered opacities in chi
       endif
     end associate
   end do
@@ -705,7 +705,8 @@ SUBROUTINE generate_opacity_table (self, nu, include_absmet, include_llist)
   class(rt_patch_t), target :: self
   class(composition_type), pointer :: comp
   real(8), dimension(:), pointer, intent(in) :: nu
-  real(4), dimension(:,:,:,:), pointer :: view, all_eta
+  real(4), dimension(:,:,:,:), pointer :: all_chi
+  real(4), dimension(:,:,:,:), allocatable :: all_eta, all_blz
   logical, intent(in) :: include_absmet, include_llist
   real(4) :: over_chi500
   integer :: i,j,k, ntemp, nne, nnu
@@ -720,11 +721,31 @@ SUBROUTINE generate_opacity_table (self, nu, include_absmet, include_llist)
   allocate(self%opac_table_nu, source=nu)
   call mem_register(self%opac_table, label='opac_table')
 
-  view(1:nnu, 1:ntemp, 1:nne, 1:1) => self%opac_table
-  call comp%absorption(nu, view, include_absmet=include_absmet, sorted=self%sp%sorted)
+  all_chi(1:nnu, 1:ntemp, 1:nne, 1:1) => self%opac_table
+  call comp%absorption(nu, all_chi, include_absmet=include_absmet, sorted=self%sp%sorted)
 
   if (include_llist) then
-    call comp%add_linelist_opacities(nu, view, dlam)
+    ! absorption returns the actual chi, while add_linelist_opacities
+    ! adds the working versions of chi and eta
+    allocate(all_eta, all_blz, mold=all_chi)
+    do k=1, nne
+    do j=1, ntemp
+      associate(chi=>all_chi(:,j,k,1), eta=>all_eta(:,j,k,1), blz=>all_blz(:,j,k,1))
+        blz = exp(-h_k*nu / comp%temp(j,k,1))
+        eta = chi / (1 - blz)
+        chi = chi + eta*blz
+      end associate
+    end do
+    end do
+    call comp%add_linelist_opacities(nu, all_chi, all_eta, dlam)
+    do k=1, nne
+    do j=1, ntemp
+      associate(chi=>all_chi(:,j,k,1), eta=>all_eta(:,j,k,1), blz=>all_blz(:,j,k,1))
+        eta = eta * blz
+        chi = chi - eta
+      end associate
+    end do
+    end do
   endif
 
   do k=1, nne
@@ -893,12 +914,6 @@ SUBROUTINE add_bound_free_opacities (self, atom, trans, adata)
   do z=1, nz
   do y=1, ny
   do x=1, nx
-    do f=fsmin, femax
-      associate(chi=>work(f,x,y,z,1), eta=>work(f,x,y,z,2), blz=>back(f,x,y,z,3))
-        eta = eta * blz
-        chi = chi - eta
-      end associate
-    end do
     do f=self%fs, self%fe
       ! adding background (LTE) and bound-free to give continuum opacities
       back(f,x,y,z,1) = back(f,x,y,z,1) + work(f,x,y,z,1)
@@ -920,7 +935,6 @@ SUBROUTINE bound_bound_damping (self, comp, atom, trans, adata)
   class(line_type), pointer :: line
   real(4), dimension(:,:,:), allocatable :: tothi, vbar2, ne, temp, nh6
   real(4), dimension(:,:,:), allocatable :: stark_pe, unsold, vproj
-  real(8) :: scalar
   integer :: i
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
@@ -938,12 +952,11 @@ SUBROUTINE bound_bound_damping (self, comp, atom, trans, adata)
   do i=1, size(trans%line)
     line => trans%line(i)
     if (.not. line%active) cycle
-    scalar = over_4pi / line%nu0
-    if (line%hydrogen) then
-      call line%dampingH(trans%adamp(:,:,:,i), temp, ne, nh6)
+    if (.not. line%hydrogen) then
+      ! damping for hydrogen lines is computed in hprofl_mod
+      call line%damping(trans%adamp(:,:,:,i), ne, tothi, vbar2, stark_pe, unsold)
+      trans%adamp(:,:,:,i) = trans%adamp(:,:,:,i) * adata%inv_df
     endif
-    call line%damping(trans%adamp(:,:,:,i), ne, tothi, vbar2, stark_pe, unsold)
-    trans%adamp(:,:,:,i) = scalar * trans%adamp(:,:,:,i) * adata%inv_df
   end do
   call trace%end(itimer)
 END SUBROUTINE bound_bound_damping
@@ -959,11 +972,11 @@ SUBROUTINE add_bound_bound_opacities (self, comp, atom, trans, adata, wmu, vproj
   real(4), contiguous, dimension(:,:,:) :: vproj
   real(8), contiguous, dimension(:,:,:,:), pointer :: n
   real(8), dimension(:,:,:,:), allocatable, target :: nrot
-  real(4), dimension(:,:,:), allocatable :: wphi, temp, ne, fo, vbarh, tothi, t3nhe
+  real(4), dimension(:,:,:), allocatable :: wphi, temp, ne, fo, vbar2h, tothi, t3nhe
   real(4), dimension(:), allocatable :: vphi
-  real(4) :: wmu, idf, vpr, a, idf_4pi, ni, nj, Bji_nj, Bij_ni, widf, chi_fac, wp, amin, amax
+  real(4) :: wmu, idf, vpr, a, idf_4pi, ni, nj, Bji_nj, Bij_ni, widf, wp, amin, amax
   real(8) :: q
-  real(4) :: lower_off, upper_off, ekt, wj
+  real(4) :: lower_off, upper_off, ekt, wj, chi_fac, eta_fac, bi, bj, Rij
   integer :: i, ih
   logical :: LTE, get_wphi
   integer, save :: itimer=0, itimer1=0
@@ -981,11 +994,11 @@ SUBROUTINE add_bound_bound_opacities (self, comp, atom, trans, adata, wmu, vproj
   get_wphi = self%iter == 0 .and. .not. self%out_ray
 
   if (any(trans%line%hydrogen)) then
-    allocate(temp, ne, fo, vbarh, tothi, t3nhe, mold=adata%inv_df)
+    allocate(temp, ne, fo, vbar2h, tothi, t3nhe, mold=adata%inv_df)
     temp = comp%temp
     ne = comp%ne
     fo = comp%fo
-    vbarh = comp%vbarh
+    vbar2h = comp%vbar2h
     tothi = comp%tothi
     t3nhe = comp%t3nhe
   endif
@@ -1004,23 +1017,25 @@ SUBROUTINE add_bound_bound_opacities (self, comp, atom, trans, adata, wmu, vproj
     do x=1, nx
       idf = adata%inv_df(x,y,z)
       ekt = comp%e_kT(x,y,z)
-      ni = n(x,y,z,line%i)
-      nj = n(x,y,z,line%j)
+      ni = adata%nstar(x,y,z,line%i) ! these are LTE populations
+      nj = adata%nstar(x,y,z,line%j) ! these are LTE populations
+      bi = n(x,y,z,line%i) / ni
+      bj = n(x,y,z,line%j) / nj
 
-      if (lower_off /= 0) ni = ni * exp(-lower_off*ekt)
-      if (upper_off /= 0) nj = nj * exp(-upper_off*ekt)
+      if (lower_off /= 0) bi = bi * exp(-lower_off*ekt)
+      if (upper_off /= 0) bj = bj * exp(-upper_off*ekt)
 
       associate(phi => vphi(fs:fe))
         if (line%hydrogen) then
           do f=fs, fe
             q = line%q(f) - vproj(x,y,z)
-            vphi(f) = hprofl(line, q, temp(x,y,z), ne(x,y,z), fo(x,y,z), &
-                             vbarh(x,y,z), tothi(x,y,z), t3nhe(x,y,z), idf)
+            vphi(f) = hprofile(line, q, temp(x,y,z), ne(x,y,z), fo(x,y,z), &
+                             vbar2h(x,y,z), tothi(x,y,z), t3nhe(x,y,z), idf)
           end do
           if (H_occupation_probability) then
             wj = comp%elements(1)%ions(1)%levels(line%j)%w(x,y,z)
-            ni = ni * wj
-            nj = nj * wj
+            bi = bi * wj
+            bj = bj * wj
           endif
         elseif (line%io > 1) then
           phi = 0
@@ -1035,13 +1050,13 @@ SUBROUTINE add_bound_bound_opacities (self, comp, atom, trans, adata, wmu, vproj
           phi = voigt_profile(a, line%q(fs:fe), vpr, idf)
         endif
 
-        Bji_nj = line%Bji * nj
-        Bij_ni = line%Bij * ni
-        chi_fac = Bij_ni - Bji_nj
+        Rij = ni * line%Bij
+        eta_fac = Rij * bj
+        chi_fac = Rij * bi
 
         associate(chi=>work(fs:fe,x,y,z,1), eta=>work(fs:fe,x,y,z,2))
           chi = chi + phi * chi_fac
-          eta = eta + phi * Bji_nj
+          eta = eta + phi * eta_fac
         end associate
 
         if (get_wphi) then
@@ -1072,7 +1087,7 @@ SUBROUTINE bound_bound_rates (self, comp, atom, trans, adata, wmu, vproj)
   class(atom_data_t), target :: adata
   class(line_type), pointer :: line
   real(4), contiguous, dimension(:,:,:) :: vproj
-  real(4), dimension(:,:,:), allocatable :: temp, ne, fo, vbarh, tothi, t3nhe
+  real(4), dimension(:,:,:), allocatable :: temp, ne, fo, vbar2h, tothi, t3nhe
   real(4), dimension(:), allocatable :: wmunu
   real(4) :: wmu, idf, vpr, a, idf_4pi, ni, nj, chi_fac, phi, vel, vgt
   real(4) :: Bij_ni, Bji_nj, vvv, ufac, a2, tmp, tmp2, tmp3, tmp4
@@ -1086,11 +1101,11 @@ SUBROUTINE bound_bound_rates (self, comp, atom, trans, adata, wmu, vproj)
   ! Computing bound-bound radiative rates
 
   if (any(trans%line%hydrogen)) then
-    allocate(temp, ne, fo, vbarh, tothi, t3nhe, mold=adata%inv_df)
+    allocate(temp, ne, fo, vbar2h, tothi, t3nhe, mold=adata%inv_df)
     temp = comp%temp
     ne = comp%ne
     fo = comp%fo
-    vbarh = comp%vbarh
+    vbar2h = comp%vbar2h
     tothi = comp%tothi
     t3nhe = comp%t3nhe
   endif
@@ -1129,8 +1144,8 @@ SUBROUTINE bound_bound_rates (self, comp, atom, trans, adata, wmu, vproj)
         do f=fs, fe
           associate(Inu=>work(f,x,y,z,3), Psi=>self%Psi(f,x,y,z))
             q = line%q(f) - vpr
-            phi = hprofl(line, dble(q), temp(x,y,z), ne(x,y,z), fo(x,y,z), &
-                         vbarh(x,y,z), tothi(x,y,z), t3nhe(x,y,z), idf)
+            phi = hprofile(line, dble(q), temp(x,y,z), ne(x,y,z), fo(x,y,z), &
+                         vbar2h(x,y,z), tothi(x,y,z), t3nhe(x,y,z), idf)
             vvv = phi * wmunu(f)
             phi = phi * Psi
             g_ji = g_ji + vvv*(Inu - phi*Bij_ni + 1.)
@@ -1145,7 +1160,7 @@ SUBROUTINE bound_bound_rates (self, comp, atom, trans, adata, wmu, vproj)
               q = line%q(f) - line%dq(ih)
               a2 = a + idf*line%da(ih)
               vgt = voigt_profile(a2, q, vpr, idf)
-              phi = phi + vgt * line%wt(ih)
+              phi = phi + vgt*line%wt(ih)
             end do
             vvv = phi * wmunu(f)
             phi = phi * Psi
@@ -1401,7 +1416,11 @@ SUBROUTINE eta_to_Snu (self)
   do y=1, ny
   do x=1, nx
     do f=self%fs, self%fe
-      work(f,x,y,z,2) = work(f,x,y,z,2) / work(f,x,y,z,1)
+      associate(chi=>work(f,x,y,z,1), eta=>work(f,x,y,z,2), blz=>back(f,x,y,z,3))
+        eta = eta * blz
+        chi = chi - eta
+        work(f,x,y,z,2) = eta / chi
+      end associate
     end do
   end do
   end do
@@ -1419,7 +1438,11 @@ SUBROUTINE Snu_to_eta (self)
   do y=1, ny
   do x=1, nx
     do f=self%fs, self%fe
-      work(f,x,y,z,2) = work(f,x,y,z,2) * work(f,x,y,z,1)
+      associate(chi=>work(f,x,y,z,1), eta=>work(f,x,y,z,2), blz=>back(f,x,y,z,3))
+        eta = work(f,x,y,z,2) * chi
+        eta = eta / blz
+        chi = chi + eta
+      end associate
     end do
   end do
   end do

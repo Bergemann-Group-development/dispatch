@@ -428,21 +428,21 @@ H- BF   McLaughlin et al. 2017, JPhys B, 50, 114001         ( 1) [ 1]
  1.519E-19 8.004E-20 4.300E-20 2.167E-20 1.143E-20 3.655E-21
  4.334E-22
 H BF G1 KARZ. LA                                            ( 2) [ 2]
-   ILOGL=0   KVADL=0   MINEX=0   MAXEX=0  NLATB=12           to Vacuum 98-05 /BE
+   ILOGL=1   KVADL=1   MINEX=0   MAXEX=0  NLATB=12           to Vacuum 98-05 /BE
     182.00    241.00    300.00    356.00    408.00    456.00
     538.00    631.00    729.00    821.00    877.00    912.00
    ILOGT=0   KVADT=0   MINET=0   MAXET=0  NTETB= 1   ITETA=0   ISCAL=0   ISTIM=0   
      .9939     .9948     .9856     .9721     .9571     .9423
      .9157     .8850     .8531     .8246     .8076     .7973
 H BF G2 KARZ. LA                                            ( 3) [ 2]
-   ILOGL=0   KVADL=0   MINEX=0   MAXEX=0  NLATB=12           to Vacuum 98-05 /BE
+   ILOGL=1   KVADL=1   MINEX=0   MAXEX=0  NLATB=12           to Vacuum 98-05 /BE
     215.00    301.00    398.00    503.00    614.00    729.00
     965.00   1313.00   1824.00   2525.76   3144.91   3648.04
    ILOGT=0   KVADT=0   MINET=0   MAXET=0  NTETB= 1   ITETA=0   ISCAL=0   ISTIM=0   
      1.043     1.058     1.063     1.061     1.056     1.049
      1.033     1.009     .9755     .9342     .9011     .8761
 H BF G3 KARZ. LA                                            ( 4) [ 2]
-   ILOGL=0   KVADL=0   MINEX=0   MAXEX=0  NLATB=14           to Vacuum 98-05 /BE
+   ILOGL=1   KVADL=1   MINEX=0   MAXEX=0  NLATB=14           to Vacuum 98-05 /BE
     222.00    316.00    424.00    545.00    677.00    821.00
    1132.00   1641.00   2525.76   4104.16   6035.67   6934.91
    7531.07   8209.26
@@ -451,7 +451,7 @@ H BF G3 KARZ. LA                                            ( 4) [ 2]
      1.068     1.051     1.024     .9854     .9458     .9293
      .9189     .9075                                        
 H BF G4 KARZ. LA                                            ( 5) [ 2]
-   ILOGL=0   KVADL=0   MINEX=0   MAXEX=0  NLATB=14           to Vacuum 98-05 /BE
+   ILOGL=1   KVADL=1   MINEX=0   MAXEX=0  NLATB=14           to Vacuum 98-05 /BE
     224.00    321.00    434.00    561.00    703.00    859.00
    1205.00   1799.00   2918.85   5253.46   8897.44  11001.01
   12579.44  14591.99
@@ -460,7 +460,7 @@ H BF G4 KARZ. LA                                            ( 5) [ 2]
      1.082     1.069     1.047     1.014     .9736     .9542
      .9408     .9247                                        
 H BF G5 KARZ. LA                                            ( 6) [ 2]
-   ILOGL=0   KVADL=0   MINEX=0   MAXEX=0  NLATB=14           to Vacuum 98-05 /BE
+   ILOGL=1   KVADL=1   MINEX=0   MAXEX=0  NLATB=14           to Vacuum 98-05 /BE
     226.00    324.00    438.00    569.00    715.00    877.00
    1241.00   1882.00   3144.91   6035.67  11400.12  15099.12
   18239.98  22800.22
@@ -469,7 +469,7 @@ H BF G5 KARZ. LA                                            ( 6) [ 2]
      1.089     1.078     1.060     1.030     .9925     .9719
      .9563     .9358                                        
 H BF G6 KARZ. LA                                            ( 7) [ 2]
-   ILOGL=0   KVADL=0   MINEX=0   MAXEX=0  NLATB=14           to Vacuum 98-05 /BE
+   ILOGL=1   KVADL=1   MINEX=0   MAXEX=0  NLATB=14           to Vacuum 98-05 /BE
     226.00    325.00    441.00    573.00    722.00    887.00
    1262.00   1931.00   3282.95   6565.81  13451.68  18921.16
   24126.58  32923.98
@@ -478,7 +478,7 @@ H BF G6 KARZ. LA                                            ( 7) [ 2]
      1.092     1.083     1.067     1.041     1.006     .9851
      .9682     .9436                                        
 H BF G7 KARZ. LA                                            ( 8) [ 2]
-   ILOGL=0   KVADL=0   MINEX=0   MAXEX=0  NLATB=15           to Vacuum 98-05 /BE
+   ILOGL=1   KVADL=1   MINEX=0   MAXEX=0  NLATB=15           to Vacuum 98-05 /BE
     227.00    326.00    442.00    576.00    726.00    894.00
    1275.00   1961.00   3372.97   6934.91  15099.12  22353.10
   30000.18  36625.98  44706.19
@@ -487,7 +487,7 @@ H BF G7 KARZ. LA                                            ( 8) [ 2]
      1.095     1.086     1.071     1.047     1.015     .9952
      .9776     .9641     .9494                              
 H BF G8 KARZ. LA                                            ( 9) [ 2]
-   ILOGL=0   KVADL=0   MINEX=0   MAXEX=0  NLATB=15           to Vacuum 98-05 /BE
+   ILOGL=1   KVADL=1   MINEX=0   MAXEX=0  NLATB=15           to Vacuum 98-05 /BE
     227.00    326.00    443.00    578.00    729.00    897.00
    1284.00   1982.00   3433.98   7197.98  16402.48  25332.91
   35624.71  45373.37  58461.94
@@ -496,12 +496,12 @@ H BF G8 KARZ. LA                                            ( 9) [ 2]
      1.096     1.088     1.074     1.052     1.022     1.003
      .9853     .9708     .9540                              
 H BF G9 KARZ. LA                                            (10) [ 2]
-   ILOGL=0   KVADL=0   MINEX=0   MAXEX=0  NLATB= 6           to Vacuum 98-05 /BE
+   ILOGL=1   KVADL=1   MINEX=0   MAXEX=0  NLATB= 6           to Vacuum 98-05 /BE
     227.00    901.00   7385.03  40714.10  67555.41  74146.21
    ILOGT=0   KVADT=0   MINET=0   MAXET=0  NTETB= 1   ITETA=0   ISCAL=0   ISTIM=0   
      1.060     1.101     1.056     .9917     .9632     .9576
 H BF G10KARZ. LA                                            (11) [ 2]
-   ILOGL=0   KVADL=0   MINEX=0   MAXEX=0  NLATB=16           to Vacuum 98-05 /BE
+   ILOGL=1   KVADL=1   MINEX=0   MAXEX=0  NLATB=16           to Vacuum 98-05 /BE
     227.00    327.00    445.00    580.00    732.00    903.00
    1294.00   2006.65   3508.00   7531.07  18239.98  30000.18
   45600.43  63333.26  72959.88  91199.86
@@ -510,27 +510,27 @@ H BF G10KARZ. LA                                            (11) [ 2]
      1.098     1.091     1.078     1.058     1.032     1.014
      .9970     .9814     .9737     .9606                    
 H BF G11KARZ. LA                                            (12) [ 2]
-   ILOGL=0   KVADL=0   MINEX=0   MAXEX=0  NLATB= 6           to Vacuum 98-05 /BE
+   ILOGL=1   KVADL=1   MINEX=0   MAXEX=0  NLATB= 6           to Vacuum 98-05 /BE
      82.00    905.00   7638.10  49835.59  97021.45 111219.31
    ILOGT=0   KVADT=0   MINET=0   MAXET=0  NTETB= 1   ITETA=0   ISCAL=0   ISTIM=0   
      .9379     1.102     1.060     1.002     .9703     .9632
 H BF G12KARZ. LA                                            (13) [ 2]
-   ILOGL=0   KVADL=0   MINEX=0   MAXEX=0  NLATB= 6           to Vacuum 98-05 /BE
+   ILOGL=1   KVADL=1   MINEX=0   MAXEX=0  NLATB= 6           to Vacuum 98-05 /BE
      82.00    905.00   7722.12  53964.71 112592.69 132174.03
    ILOGT=0   KVADT=0   MINET=0   MAXET=0  NTETB= 1   ITETA=0   ISCAL=0   ISTIM=0   
      .9379     1.102     1.062     1.005     .9732     .9653
 H BF G13KARZ. LA                                            (14) [ 2]
-   ILOGL=0   KVADL=0   MINEX=0   MAXEX=0  NLATB= 6           to Vacuum 98-05 /BE
+   ILOGL=1   KVADL=1   MINEX=0   MAXEX=0  NLATB= 6           to Vacuum 98-05 /BE
      82.00    906.00   7795.14  57358.64 130285.51 154576.12
    ILOGT=0   KVADT=0   MINET=0   MAXET=0  NTETB= 1   ITETA=0   ISCAL=0   ISTIM=0   
      .9380     1.102     1.063     1.008     .9758     .9672
 H BF G14KARZ. LA                                            (15) [ 2]
-   ILOGL=0   KVADL=0   MINEX=0   MAXEX=0  NLATB= 6           to Vacuum 98-05 /BE
+   ILOGL=1   KVADL=1   MINEX=0   MAXEX=0  NLATB= 6           to Vacuum 98-05 /BE
      82.00    907.00   7848.16  60397.46 147096.09 178823.73
    ILOGT=0   KVADT=0   MINET=0   MAXET=0  NTETB= 1   ITETA=0   ISCAL=0   ISTIM=0   
      .9380     1.103     1.064     1.011     .9780     .9689
 H BF G15KARZ. LA                                            (16) [ 2]
-   ILOGL=0   KVADL=0   MINEX=0   MAXEX=0  NLATB= 6           to Vacuum 98-05 /BE
+   ILOGL=1   KVADL=1   MINEX=0   MAXEX=0  NLATB= 6           to Vacuum 98-05 /BE
      82.00    908.00   7889.17  63333.26 162857.39 207272.48
    ILOGT=0   KVADT=0   MINET=0   MAXET=0  NTETB= 1   ITETA=0   ISCAL=0   ISTIM=0   
      .9380     1.103     1.064     1.014     .9803     .9703

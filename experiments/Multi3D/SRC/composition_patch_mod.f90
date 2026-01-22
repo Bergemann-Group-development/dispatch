@@ -25,7 +25,7 @@ MODULE composition_patch_mod
   USE rt_patch_mod, only:rt_patch_t
   USE bftrans_mod, only: H_occupation_probability
   USE bbtrans_mod, only: tolerance, bbtrans_type, disable_ga, disable_stark, disable_vdw, ga_fallback
-  USE hprofl_mod, only: hydrogen_BPO, stark_convolution
+  USE hprofl_mod, only: hydrogen_BPO
   USE trace_mod
   USE scaling_mod
   USE units_mod
@@ -84,7 +84,7 @@ SUBROUTINE read_composition_params ()
   dtemp, ldne, ldrho, ldtemp, tmolim, irwin_dis, opac_table_vmic, save_species, &
   ref_lam, debug_opac, abundances, relative_abundances, alpha_enhancement, r_process_enhancement, &
   disable_ga, disable_stark, disable_vdw, helium_scattering, sample_linelist, hydrogen_BPO, &
-  stark_convolution, ga_fallback
+  ga_fallback
   namelist /linelist_params/ dlam, exclude_elements, line_lists, linelist_folder, &
   linelist_in_output, tolerance, only_elements
   ! ----------------------------------------------------------------------------
@@ -198,6 +198,7 @@ SUBROUTINE composition_pre_init (self)
     do i=1, size(line_lists)
       call composition%init_linelist(line_lists(i), dlam, output_sp%nu)
     end do
+    call nlte_patch%exclude_double_lines()
   endif
 
   ! make sure there are no more f-domain splits than threads

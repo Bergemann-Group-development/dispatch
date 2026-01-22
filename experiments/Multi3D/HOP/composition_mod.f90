@@ -7,7 +7,7 @@ MODULE composition_mod
     USE element_mod
     USE ion_mod, only: ion_type, debye_shield
     USE level_mod, only: level_type, wcalc
-    USE bbtrans_mod, only:bbtrans_type, add_opacities, add_opacities2
+    USE bbtrans_mod, only:bbtrans_type, add_opacities
     USE bftrans_mod, only:bftrans_type, H_occupation_probability
     USE molecule_mod, only:molec_type
     USE hprofl_mod, only:prepare_hydrogen_damping, add_h_opacities
@@ -31,7 +31,7 @@ MODULE composition_mod
         real(dp), dimension(:,:,:), allocatable :: temp, ne, rho, zero
         real(dp), dimension(:,:,:), allocatable :: e_kT, pe, dxi, toth, tothi
         real(dp), dimension(:,:,:), allocatable :: saha, lsaha, stark_pe
-        real(dp), dimension(:,:,:), allocatable :: teta, pg, E, p6, shield, fo, vbarh, t3nhe, eh
+        real(dp), dimension(:,:,:), allocatable :: teta, pg, E, p6, shield, fo, vbar2h, t3nhe, eh
         real(4), dimension(:,:,:), allocatable :: chi500, vmic
     contains
         procedure :: init => injon
@@ -535,7 +535,7 @@ contains
 
             if (trans%key == 'H BF') then
                 trans%maxex  = H_occupation_probability
-                trans%loglam = H_occupation_probability
+                !trans%loglam = H_occupation_probability
             endif
 
             allocate(trans%lam(nnu))
@@ -910,7 +910,7 @@ contains
     END SUBROUTINE mask_linelist
 
     !===============================================================================
-    SUBROUTINE add_linelist_opacities(self, nu, all_chi, dlam, vproj, all_eta, all_blz, departures)
+    SUBROUTINE add_linelist_opacities(self, nu, all_chi, all_eta, dlam, vproj, departures)
         class(composition_type), target :: self
         class(element_type), pointer :: element
         class(ion_type), pointer :: ion, HeI
@@ -922,17 +922,15 @@ contains
         real(4), intent(inout), dimension(:,:,:,:) :: all_chi
         real(8), intent(in) :: dlam
         real(4), intent(in), dimension(:,:,:), contiguous, target, optional :: vproj
-        real(4), intent(inout), dimension(:,:,:,:), optional :: all_eta
-        real(4), intent(in), dimension(:,:,:,:), target, optional :: all_blz
+        real(4), intent(inout), dimension(:,:,:,:) :: all_eta
         real(4), dimension(:,:,:), allocatable :: tothi, adamp, stark_pe, ne, temp, e_kT, dxij, chi_fac, unsold
         real(4), dimension(:,:,:), allocatable, target :: inv_part, vbar2, inv_df, iso_vbar2, iso_inv_df
         real(4), dimension(:,:,:), pointer, contiguous :: ipart, vpr, fo, t3nhe, ni, nj
-        real(4), dimension(:,:,:,:), pointer, contiguous :: eta, chi
         real(4), dimension(:,:,:,:), allocatable, target :: chi_l, eta_l
         real(4), dimension(:,:,:), pointer :: bi, bj
         integer :: i, j, k, l, f, f0, nactive, m(3), nf
         real(8) :: cnt_ev, gf, awgt, iso_awgt, dl, dnu
-        real(4) :: scalar, blz, bnu, h_kT, hv_kT
+        real(4) :: scalar, blz, bnu, h_kT, hv_kT, eta, chi
         logical :: nlte_correction, do_nlte
         integer, save:: itimer=0
         !---------------------------------------------------------------------------
@@ -980,9 +978,9 @@ contains
 
         element => self%elements(1)
         ion => element%ions(1)
-        if (ion%nline > 0) then
+        if (ion%in_linelist .and. ion%nline > 0) then
             fo = self%fo
-            vbar2 = self%vbarh
+            vbar2 = self%vbar2h
             t3nhe = self%t3nhe
             inv_df = element%inverse_doppler_factor(temp, self%vmic)
             call get_departure_coefficients(ion, dep)
@@ -993,8 +991,13 @@ contains
                 call line%get_center(nu, dnu, f0)
                 if (f0 == 0) cycle
 
-                ni = ion%levels(line%i)%n * ion%levels(line%j)%w
-                nj = ion%levels(line%j)%n * ion%levels(line%j)%w
+                ni = ion%levels(line%i)%n
+                nj = ion%levels(line%j)%n
+
+                if (H_occupation_probability) then
+                    ni = ni * ion%levels(line%j)%w
+                    nj = nj * ion%levels(line%j)%w
+                endif
 
                 do_nlte = associated(dep) .and. line%i>0 .and. line%j>0
                 
@@ -1030,25 +1033,12 @@ contains
         do j=1, m(2)
         do i=1, m(1)
             do f=1, nf
+                all_eta(f,i,j,k) = all_eta(f,i,j,k) + eta_l(f,i,j,k)
                 all_chi(f,i,j,k) = all_chi(f,i,j,k) + chi_l(f,i,j,k)
             end do
         end do
         end do
         end do
-
-        if (present(all_eta)) then
-            do k=1, m(3)
-            do j=1, m(2)
-            do i=1, m(1)
-                do f=1, nf
-                    blz = all_blz(f,i,j,k)
-                    bnu = blz / (1.0 - blz)
-                    all_eta(f,i,j,k) = all_eta(f,i,j,k) + eta_l(f,i,j,k) * bnu
-                end do
-            end do
-            end do
-            end do
-        endif
         if (.not. present(vproj)) deallocate(vpr)
         call trace%end(itimer)
 
@@ -1121,8 +1111,8 @@ contains
                 endif
                 prev_iso = line%iso_idx
 
-                call add_opacities(line, f0, nu, vpr, idopf, e_kT, dxij, &
-                inv_part, ne, tothi, vb2, stark_pe, unsold, bi, bj, chi_l, eta_l, all_chi, do_nlte)
+                call add_opacities(line, f0, nu, vpr, idopf, e_kT, dxij, inv_part, ne, tothi, &
+                vb2, stark_pe, unsold, bi, bj, chi_l, eta_l, all_chi, do_nlte)
             end do
         end subroutine particle_add_opacities
     END SUBROUTINE add_linelist_opacities
@@ -1462,8 +1452,10 @@ contains
     !=========================================================================
     SUBROUTINE set_aux_data(self, temp, ne)
         class(composition_type), target :: self
-        real(dp), intent(in),  dimension(:,:,:) :: temp, Ne
+        real(dp), intent(in),  dimension(:,:,:) :: temp, ne
         integer :: i, j
+        real(dp), parameter :: fo_const = 2*PI*(4./15.)**two_third*EC ! 1.25e-9
+        real(dp), parameter :: dxi_const = (EC**3 * sqrt(8*PI)) / (temp_to_theta*BK*EE) ! 4.98e-4
         !---------------------------------------------------------------------------
         self%ne = ne
         self%temp = temp
@@ -1472,10 +1464,10 @@ contains
         self%pe = temp * BK * ne
         self%saha = 2 * op_saha_const * temp*sqrt(temp) / ne
         self%lsaha = log(self%saha)
-        self%fo = 2.6031*EC * ne**two_third ! Holtsmark normal field strength
+        self%fo = fo_const * ne**two_third ! Holtsmark normal field strength
         
         if (debye_shield) then
-          self%dxi = 4.98e-4*self%teta*sqrt(self%pe)
+          self%dxi = dxi_const * self%teta*sqrt(self%pe)
           ! --- this only shows up in the Oslo legacy code ---!
           !self%dxi=min(self%dxi,0.747*0.5)
           ! --------------------------------------------------!
@@ -1707,7 +1699,7 @@ contains
         call self%ion_by_id('H I', HI)
         call self%ion_by_id('HE I', HeI)
 
-        self%vbarh = HI%compute_vbar2(real(self%temp))
+        self%vbar2h = HI%compute_vbar2(real(self%temp))
         self%t3nhe = (self%temp/10000.)**0.3 * HeI%n
         self%stark_pe = self%ne * self%temp**one_sixth
         self%tothi = HI%n ! total neutral hydrogen density
@@ -2451,7 +2443,8 @@ contains
         do_H2 = associated(H2)
         
         xray2 = 0.
-        where (lam > 911.27) xray2 = 1 / max(1026., lam)**2
+        !where (lam > 911.27) xray2 = 1 / max(1026., lam)**2
+        where (lam > 1400) xray2 = 1 / max(1026., lam)**2
 
         if (helium_scattering) then
         ! Scattering by HeI in cm**2/atom, from Bues & Wehrse, 1976, A&A 51, 461
@@ -2796,7 +2789,7 @@ contains
         open(newunit=lunit, file=trim(io%run_dir)//'opacity_contributions.txt', access='append')
         if (first_time) then
             first_time = .false.
-            write(lunit, '(5A11, 300(A7))') 'Temp', 'Pe', 'Pg', 'ABS/Rho', 'SCAT/Rho', &
+            write(lunit, '(6A11, 300(A7))') 'Temp', 'Pe', 'Pg', 'NH1', 'ABS/Rho', 'SCAT/Rho', &
             'Escat', 'Rscat', (trim(key(i)), i=1, nb)
         endif
 
@@ -2806,16 +2799,17 @@ contains
                       rho=>self%rho(1,1,z), &
                       t=>self%temp(1,1,z), &
                       pe=>self%pe(1,1,z), &
+                      nh=>self%tothi(1,1,z), &
                       pg=>self%pg(1,1,z))
 
                 absk_tot = sum(absk)
                 scat_tot = sum(scat)
-                write(text, '(5ES11.3, 300(F7.2))') t, pe, pg, &
+                write(text, '(6ES11.3, 300(F7.2))') t, pe, pg, nh, &
                 absk_tot/rho, scat_tot/rho, (scat(i)/scat_tot*100, i=1, 2), (absk(i)/absk_tot*100, i=1, nb)
             end associate
             call replace_substring(text, '-0.00', '     ')
             call replace_substring(text, ' 0.00', '     ')
-            write(lunit, '(A)') text(1:18+7*nb)
+            write(lunit, '(A)') trim(text)
         end do
         close(lunit)
         call io%lock%unset('opacity_contributions')
