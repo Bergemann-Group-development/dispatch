@@ -864,9 +864,6 @@ SUBROUTINE add_bound_free_opacities (self, atom, trans, adata)
   class(atom_trans_t) :: trans
   class(atom_data_t), target :: adata
   class(cont_type), pointer :: cont
-  real(4), contiguous, dimension(:,:,:), pointer :: nibj
-  real(8), dimension(:,:,:,:), allocatable, target :: nrot
-  real(4), dimension(:,:,:), allocatable, target :: nibj_rot
   real(4) :: ni, nj, tmp, alpha
   integer :: i, icont, fsmin, femax
   integer, save :: itimer=0
@@ -893,21 +890,36 @@ SUBROUTINE add_bound_free_opacities (self, atom, trans, adata)
     fsmin = min(fsmin, fs)
     femax = max(femax, fe)
     icont = cont%ntrans-atom%nline
-    nibj => adata%nibj(:,:,:,icont)
 
-    do z=1, nz
-    do y=1, ny
-    do x=1, nx
-      ni  = adata%n(x,y,z,cont%i)
-      tmp = nibj(x,y,z)
-      do f=fs, fe
-        alpha = cont%alpha(f)
-        work(f,x,y,z,1) = work(f,x,y,z,1) + alpha * ni   ! chi
-        work(f,x,y,z,2) = work(f,x,y,z,2) + alpha * tmp  ! eta
+    if (allocated(adata%b)) then
+      do z=1, nz
+      do y=1, ny
+      do x=1, nx
+        ni  = adata%nstar(x,y,z,cont%i) * adata%b(x,y,z,cont%i)
+        tmp = adata%nstar(x,y,z,cont%i) * adata%b(x,y,z,cont%j)
+        do f=fs, fe
+          alpha = cont%alpha(f)
+          work(f,x,y,z,1) = work(f,x,y,z,1) + alpha * ni  ! chi
+          work(f,x,y,z,2) = work(f,x,y,z,2) + alpha * tmp ! eta
+        end do
       end do
-    end do
-    end do
-    end do
+      end do
+      end do
+    else ! b = 1
+      do z=1, nz
+      do y=1, ny
+      do x=1, nx
+        ni  = adata%nstar(x,y,z,cont%i)
+        tmp = adata%nstar(x,y,z,cont%i)
+        do f=fs, fe
+          alpha = cont%alpha(f)
+          work(f,x,y,z,1) = work(f,x,y,z,1) + alpha * ni  ! chi
+          work(f,x,y,z,2) = work(f,x,y,z,2) + alpha * tmp ! eta
+        end do
+      end do
+      end do
+      end do
+    endif
   end do
 
   ! Converting the bf-contributions to chi and eta
@@ -970,28 +982,22 @@ SUBROUTINE add_bound_bound_opacities (self, comp, atom, trans, adata, wmu, vproj
   class(atom_data_t), target :: adata
   class(line_type), pointer :: line
   real(4), contiguous, dimension(:,:,:) :: vproj
-  real(8), contiguous, dimension(:,:,:,:), pointer :: n
-  real(8), dimension(:,:,:,:), allocatable, target :: nrot
   real(4), dimension(:,:,:), allocatable :: wphi, temp, ne, fo, vbar2h, tothi, t3nhe
   real(4), dimension(:), allocatable :: vphi
   real(4) :: wmu, idf, vpr, a, idf_4pi, ni, nj, Bji_nj, Bij_ni, widf, wp, amin, amax
   real(8) :: q
   real(4) :: lower_off, upper_off, ekt, wj, chi_fac, eta_fac, bi, bj, Rij
   integer :: i, ih
-  logical :: LTE, get_wphi
+  logical :: LTE, do_LTE, get_wphi
   integer, save :: itimer=0, itimer1=0
   !-----------------------------------------------------------------------------
   call trace%begin (trim(self%kind)//'%add_bound_bound_opacities', itimer=itimer)
   ! Copying continuum opacities to angle dependent opacities
-  if (LTE) then
-    n => adata%nstar
-  else
-    n => adata%n
-  endif
 
   allocate(vphi(self%fs:self%fe))
   allocate(wphi, mold=vproj)
   get_wphi = self%iter == 0 .and. .not. self%out_ray
+  do_LTE = LTE .or. .not. allocated(adata%b)
 
   if (any(trans%line%hydrogen)) then
     allocate(temp, ne, fo, vbar2h, tothi, t3nhe, mold=adata%inv_df)
@@ -1019,8 +1025,14 @@ SUBROUTINE add_bound_bound_opacities (self, comp, atom, trans, adata, wmu, vproj
       ekt = comp%e_kT(x,y,z)
       ni = adata%nstar(x,y,z,line%i) ! these are LTE populations
       nj = adata%nstar(x,y,z,line%j) ! these are LTE populations
-      bi = n(x,y,z,line%i) / ni
-      bj = n(x,y,z,line%j) / nj
+
+      if (do_LTE) then
+        bi = 1.0
+        bj = 1.0
+      else
+        bi = adata%b(x,y,z,line%i)
+        bj = adata%b(x,y,z,line%j)
+      endif
 
       if (lower_off /= 0) bi = bi * exp(-lower_off*ekt)
       if (upper_off /= 0) bj = bj * exp(-upper_off*ekt)
@@ -1121,8 +1133,8 @@ SUBROUTINE bound_bound_rates (self, comp, atom, trans, adata, wmu, vproj)
     do z=1,nz
     do y=1,ny
     do x=1,nx
-      ni = adata%n(x,y,z,line%i)
-      nj = adata%n(x,y,z,line%j)
+      ni = adata%b(x,y,z,line%i) * adata%nstar(x,y,z,line%i)
+      nj = adata%b(x,y,z,line%j) * adata%nstar(x,y,z,line%j)
       idf = adata%inv_df(x,y,z)
       vpr = vproj(x,y,z)
       a = trans%adamp(x,y,z,i)
@@ -1195,8 +1207,6 @@ SUBROUTINE bound_free_rates (self, atom, trans, adata)
   class(atom_trans_t) :: trans
   class(atom_data_t), target :: adata
   class(cont_type), pointer :: cont
-  real(8), contiguous, dimension(:,:,:,:), pointer :: n
-  real(4), contiguous, dimension(:,:,:), pointer :: nibj
   real(4), dimension(:), allocatable :: w_alpha, wmunu
   real(4) :: ni, nj, tmp, eta_fac, q, phi
   real(4) :: g_ij, g_ji, vij, vji, ufac
@@ -1214,7 +1224,6 @@ SUBROUTINE bound_free_rates (self, atom, trans, adata)
     fs = cont%ired
     fe = cont%iblue
     icont = cont%ntrans-atom%nline
-    nibj => adata%nibj(:,:,:,icont)
     wmunu(fs:fe) = 0.5 * cont%wnu(fs:fe)
     w_alpha(fs:fe) = self%twohnu3_c2(fs:fe) * cont%alpha(fs:fe) * wmunu(fs:fe)
     
@@ -1222,8 +1231,8 @@ SUBROUTINE bound_free_rates (self, atom, trans, adata)
     do y=1,ny
     do x=1,nx
       if (preconditioning) then
-        tmp = nibj(x,y,z)   
-        ni = adata%n(x,y,z,cont%i)
+        ni  = adata%nstar(x,y,z,cont%i) * adata%b(x,y,z,cont%i)
+        tmp = adata%nstar(x,y,z,cont%i) * adata%b(x,y,z,cont%j)
       else
         tmp = 0.
         ni = 0.

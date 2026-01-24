@@ -458,9 +458,6 @@ MODULE nlte_patch_mod
           call atom%ng_acceleration()
         endif
       endif
-      if (.not. (maxiter==0 .or. long_scheme=='none')) then
-        call atom%compute_cont_factors(atom%data)
-      endif
       locally_converged = locally_converged .and. adata%converged
     end do
 
@@ -498,13 +495,15 @@ MODULE nlte_patch_mod
       p = self%pcheck
       l = self%linecheck
       adata => self%atoms(atomcheck)%data
-      memcheck(1) = adata%n(p(1),p(2),p(3),lvlcheck)
+      if (allocated(adata%b)) then
+        memcheck(1) = adata%b(p(1),p(2),p(3),lvlcheck)
+      else
+        memcheck(1) = 1
+      endif
       if (allocated(adata%gamma_ij)) then
         if (self%linecheck<=atom%nrad) then
           memcheck(2) = adata%gamma_ij(p(1),p(2),p(3),l)
           memcheck(3) = adata%gamma_ji(p(1),p(2),p(3),l)
-          !memcheck(2) = memcheck(3) / memcheck(2)
-          !memcheck(3) = adata%n(p(1),p(2),p(3),atom%line(l)%i) / adata%n(p(1),p(2),p(3),atom%line(l)%j)
           if (l<=atom%nline) then
             memcheck(4) = adata%wphi(p(1),p(2),p(3),l)
           endif
@@ -620,14 +619,14 @@ MODULE nlte_patch_mod
       dep => self%departures(atom%idep, 1)
       n = shape(adata%nstar)
       if (atom%precomputed) then
-        if (associated(adata%n, adata%nstar)) then
-          call os%allocate(adata%n, shape(adata%nstar), label='n')
+        if (.not. allocated(adata%b)) then
+          call os%allocate(adata%b, shape(adata%nstar), label='b')
         endif
         do l=1, n(4)
         do z=1, n(3)
         do y=1, n(2)
         do x=1, n(1)
-          adata%n(x,y,z,l) = adata%nstar(x,y,z,l) * dep%mem(x,y,z,l)
+          adata%b(x,y,z,l) = dep%mem(x,y,z,l)
         end do
         end do
         end do
@@ -663,11 +662,14 @@ MODULE nlte_patch_mod
     do z=1, n(3)
     do y=1, n(2)
     do x=1, n(1)
-      tmp = adata%nstar(x,y,z,l)
-      tmp = merge(ieee_value(tmp, ieee_quiet_nan), tmp, tmp==0)
-      dep%mem(x,y,z,l) = adata%n(x,y,z,l) / tmp
       out_mem(x,y,z,l,1,1) = real(adata%nstar(x,y,z,l))
-      out_mem(x,y,z,l,2,1) = real(dep%mem(x,y,z,l))
+      if (allocated(adata%b)) then
+        out_mem(x,y,z,l,2,1) = real(adata%b(x,y,z,l))
+        dep%mem(x,y,z,l) = adata%b(x,y,z,l)
+      else
+        out_mem(x,y,z,l,2,1) = 1.0
+        dep%mem(x,y,z,l) = 1.0
+      endif
     end do
     end do
     end do
@@ -713,7 +715,7 @@ MODULE nlte_patch_mod
     do i=1, size(self%atoms)
       atom => self%atoms(i)
       adata => atom%data
-      iterated = .not. associated(adata%n, adata%nstar)
+      iterated = allocated(adata%b)
 
       do imu=1, nmu
         vec = long_vec(:,imu)
@@ -724,14 +726,14 @@ MODULE nlte_patch_mod
 
         if (iterated) then
           totn = 0
-          call os%allocate(adata%n, shape(adata%nstar), label='n')
+          call os%allocate(adata%b, shape(adata%nstar), label='b')
 
           do l=1, atom%nlevel
             do z=1, n(3)
             do y=1, n(2)
             do x=1, n(1)
-              adata%n(x,y,z,l) = dep%mem(x,y,z,l) * adata%nstar(x,y,z,l)
-              totn(x,y,z) = totn(x,y,z) + adata%n(x,y,z,l)
+              adata%b(x,y,z,l) = dep%mem(x,y,z,l)
+              totn(x,y,z) = totn(x,y,z) + adata%b(x,y,z,l) * adata%nstar(x,y,z,l)
             end do
             end do
             end do
@@ -749,14 +751,12 @@ MODULE nlte_patch_mod
             do z=1, n(3)
             do y=1, n(2)
             do x=1, n(1)
-              tmp = adata%n(x,y,z,l) * norm(x,y,z)
-              adata%n(x,y,z,l) = merge(tmp, 0.d0, tmp==tmp)
+              tmp = adata%b(x,y,z,l) * norm(x,y,z)
+              adata%b(x,y,z,l) = merge(tmp, 0.d0, tmp==tmp) ! set to zero if NaN
             end do
             end do
             end do
           end do
-
-          call atom%compute_cont_factors(adata)
         endif
       end do
     end do
@@ -1030,72 +1030,6 @@ MODULE nlte_patch_mod
   END SUBROUTINE deallocate_mem
 
   !===============================================================================
-  !SUBROUTINE load_mem (self, folder, label)
-  !  class(nlte_patch_t), intent(inout) :: self
-  !  character(len=256), intent(in) :: folder
-  !  character(len=*), intent(in) :: label
-  !  character(len=256) :: filename, sfolder, metafile, file
-  !  real(4), dimension(:,:,:,:,:), allocatable :: mem
-  !  integer :: lunit, file_size, mem_size, iostat, prec, oldm(5), newm(5), iv, iw, k, i
-  !  logical, save :: first_time=.true.
-  !  ! ----------------------------------------------------------------------------
-  !  write(sfolder, '(A, A)') trim(folder), '/save/'
-  !  write(filename, '(A, A, 2(I3.3), A)') trim(label), '_', self%key(1:2), '.bin'
-  !  write(metafile, '(A, A)') trim(label), '_meta.txt'
-  !  call os%check_file(trim(sfolder)//filename)
-  !  call os%check_file(trim(sfolder)//metafile)
-  !  open(newunit=lunit, file=trim(sfolder)//metafile, form='formatted', iostat=iostat)
-  !  read(lunit,*) ! skip header
-  !  do while (iostat==0)
-  !    read(lunit, *, iostat=iostat) file, prec, oldm
-  !    if (file == filename) exit
-  !  end do
-  !  close(lunit)
-  !  if (iostat /= 0) then
-  !    print *, 'file not found in metafile! Stopping...'
-  !    stop
-  !  endif
-  !  newm = [self%n, self%atom%nlevel, 2]
-  !  open(newunit=lunit, file=trim(sfolder)//filename, access='stream')
-  !  if (all(oldm == newm)) then
-  !    allocate(mem(oldm(1), oldm(2), oldm(3), oldm(4), oldm(5)))
-  !    read(lunit) mem
-  !    do i=1, self%atom%nlevel
-  !      self%atom%data%n(:,:,:,i) = dble(mem(:,:,:,i,2)) * self%atom%data%nstar(:,:,:,i)
-  !      where(self%atom%data%n(:,:,:,i) /= self%atom%data%n(:,:,:,i)) self%atom%data%n(:,:,:,i) = 0
-  !    end do
-  !  !elseif (all(oldm(3:5) == newm(3:5))) then
-  !  !  if (first_time) then
-  !  !    first_time = .false.
-  !  !    write(stdout, '(A, 2(I6,"x",I4))') 'Interpolating patch memory when loading', oldm(1:2), newm(1:2)
-  !  !  endif
-  !  !  call os%allocate(mem2, oldm)
-  !  !  read(lunit) mem2
-  !  !
-  !  !  !mem2(:,:,:,:,2) = mem2(:,:,:,:,2) / mem2(:,:,:,:,1)
-  !  !
-  !  !  do iw=1, newm(5)
-  !  !  do iv=1, newm(4)
-  !  !  do  k=1, newm(3)
-  !  !    call interp2d_periodic(mem2(:,:,k,iv,iw), mem(:,:,k,iv,iw))
-  !  !  end do
-  !  !  end do
-  !  !  end do
-  !  !
-  !  !  mem(:,:,:,:,2) = mem(:,:,:,:,2) * mem(:,:,:,:,1)
-  !  !
-  !  !  call os%deallocate(mem2)
-  !  else
-  !    write(stdout, *) 'Cannot load patch save ', trim(sfolder)//trim(filename), &
-  !    'Memory sizes do not match!'
-  !    print *, oldm
-  !    print *, newm
-  !    stop
-  !  endif
-  !  close(lunit)
-  !END SUBROUTINE load_mem
-
-  !===============================================================================
   SUBROUTINE check_mem_NaN (self)
     class(nlte_patch_t):: self
     integer :: i,j,k,v,t,w
@@ -1103,8 +1037,8 @@ MODULE nlte_patch_mod
     !-----------------------------------------------------------------------------
     call trace%begin ('nlte_patch_t%check_mem_NaN', itimer=itimer)
     do w=1, self%natom
-      associate(n=>self%atoms(w)%data%n)
-        if (associated(self%atoms(w)%data%n)) then
+      associate(n=>self%atoms(w)%data%b)
+        if (allocated(self%atoms(w)%data%b)) then
           do v=lbound(n, 4), ubound(n, 4)
           do k=lbound(n, 3), ubound(n, 3)
           do j=lbound(n, 2), ubound(n, 2)

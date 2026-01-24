@@ -46,8 +46,8 @@ MODULE atom_mod
       ! LTE, NLTE and total population of active atom
       real(8), dimension(:,:,:),   allocatable :: totn
       real(8), dimension(:,:,:,:), allocatable :: nstar
-      real(8), dimension(:,:,:,:), pointer, contiguous :: n => null()
-      real(8), dimension(:,:,:,:,:), allocatable :: oldn
+      real(8), dimension(:,:,:,:), allocatable :: b
+      real(8), dimension(:,:,:,:,:), allocatable :: oldb
       real(8), dimension(:,:,:,:), allocatable :: gamma_ij
       real(8), dimension(:,:,:,:), allocatable :: gamma_ji
       real(4), dimension(:,:,:,:), allocatable :: nibj
@@ -126,7 +126,6 @@ MODULE atom_mod
       procedure :: check_ionisation_thresholds
       procedure :: lte_pop
       procedure :: compute_lte_populations
-      procedure :: compute_cont_factors
       procedure :: normalize_profiles
       procedure :: update_populations
       procedure :: setup_transition_matrix
@@ -241,16 +240,13 @@ MODULE atom_mod
       call os%allocate(adata%e, nl)
       call os%allocate(adata%lvlerr, nl)
       call os%allocate(adata%wphi, [m(1:3), self%nline], label='wphi', zero=.true.)
-      call os%allocate(adata%n, m, label='n')
+      call os%allocate(adata%b, m, label='b')
       do i=1, self%nlevel
-        adata%n(:,:,:,i) = adata%nstar(:,:,:,i) 
+        adata%b(:,:,:,i) = 1.d0
       end do
-      call self%compute_cont_factors(adata)
       if (ng_step > 0) then
-        call os%allocate(adata%oldn, [m, 3], label='oldn')
+        call os%allocate(adata%oldb, [m, 3], label='oldb')
       endif
-    else
-      adata%n => adata%nstar
     endif
     call trace%end(itimer)
   END SUBROUTINE init_atom_data
@@ -295,11 +291,11 @@ MODULE atom_mod
       gamma_ji(:,:,:,i) = gamma_ji(:,:,:,i) * nstar(:,:,:,cont%i) / nstar(:,:,:,cont%j)
     end do
 
-    if (allocated(adata%oldn)) then
+    if (allocated(adata%oldb)) then
       do i=1, self%nlevel
-        adata%oldn(:,:,:,i,1) = adata%oldn(:,:,:,i,2)
-        adata%oldn(:,:,:,i,2) = adata%oldn(:,:,:,i,3)
-        adata%oldn(:,:,:,i,3) = adata%n(:,:,:,i)
+        adata%oldb(:,:,:,i,1) = adata%oldb(:,:,:,i,2)
+        adata%oldb(:,:,:,i,2) = adata%oldb(:,:,:,i,3)
+        adata%oldb(:,:,:,i,3) = adata%b(:,:,:,i)
       end do
     endif
   END SUBROUTINE normalize_profiles
@@ -332,12 +328,12 @@ MODULE atom_mod
             call self%setup_transition_matrix(comp, x,y,z, check_NaN)
 
             ! e contains the correction n/n_old 
-            associate(e=>adata%e(:), n=>adata%n(x,y,z,:), &
+            associate(e=>adata%e(:), b=>adata%b(x,y,z,:), nstar=>adata%nstar(x,y,z,:), &
                       maxerr=>adata%maxerr, lvlerr=>adata%lvlerr)
 
               if (self%check .and. save_rate_matrix) then
                 if (all([x, y, z] == pcheck)) then
-                  forall(i=1:nk) w(i,:) = adata%w(i,:) / n
+                  forall(i=1:nk) w(i,:) = adata%w(i,:) / (b*nstar)
                   c = adata%c
                 end if
               endif
@@ -365,7 +361,7 @@ MODULE atom_mod
               e = max(e, 0.001d0)
 
               ! update the populations
-              n = n * e
+              b = b * e
   
               ! set e to the relative change in the populations 
               e = e - 1.0d0
@@ -404,7 +400,7 @@ MODULE atom_mod
     class(composition_type) :: comp
     class(transition_type), pointer :: trans
     logical, intent(in) :: check_NaN
-    real(8), dimension(:), pointer :: n, rij, rji
+    real(8), dimension(:), pointer :: b, nstar, rij, rji
     real(8) :: totn
     integer :: kr, pos, i, j, x,y,z
     integer, save :: itimer=0, itimer2=0
@@ -412,7 +408,8 @@ MODULE atom_mod
     logical, save :: first_time=.true.
     !------------------------------------------------------------------------------------
     totn = self%data%totn(x,y,z)
-    n => self%data%n(x,y,z,:)
+    b => self%data%b(x,y,z,:)
+    nstar => self%data%nstar(x,y,z,:)
     rij => self%data%gamma_ij(x,y,z,:)
     rji => self%data%gamma_ji(x,y,z,:)
 
@@ -458,14 +455,14 @@ MODULE atom_mod
     end do
 
     ! replace row with largest population with particle conservation equation.
-    pos = maxloc(n, dim=1)
+    pos = maxloc(b * nstar, dim=1)
     self%data%e(pos) = totn
 
     ! go from rate coefficients to actual rates   
     do i=1,self%nlevel
-      self%data%w(i,:) = self%data%w(i,:) * n
+      self%data%w(i,:) = self%data%w(i,:) * b * nstar
     enddo
-    self%data%w(pos,:) = n
+    self%data%w(pos,:) = b * nstar
 
     if (check_NaN .or. first_time) then
       first_time = .false.
@@ -633,35 +630,6 @@ MODULE atom_mod
 
     nstar = exp(tns)
   end function lte_pop
-  !------------------------------------------------------------------------------------
-   
-  !====================================================================================
-  SUBROUTINE compute_cont_factors(self, adata)
-    class(atom_type) :: self
-    class(atom_data_t) :: adata
-    real(4) :: bj
-    integer :: i, j, k, kr, n(4), x, y, z
-    class(cont_type), pointer :: cont
-    !---------------------------------------------------------------------------------
-    n = [shape(adata%totn), self%ncont]
-
-    do kr=1, self%ncont
-      cont => self%trans%cont(kr)
-      if (.not. cont%active) cycle
-      i = cont%i
-      j = cont%j
-      do z=1, n(3)
-      do y=1, n(2)
-      do x=1, n(1)
-        if (adata%nstar(x,y,z,i) /= 0) then
-          bj = adata%n(x,y,z,j) / adata%nstar(x,y,z,j)
-          adata%nibj(x,y,z,kr) = bj * adata%nstar(x,y,z,i)
-        endif
-      end do
-      end do
-      end do
-    enddo
-  END SUBROUTINE compute_cont_factors
   !------------------------------------------------------------------------------------
 
   !====================================================================================
@@ -1923,40 +1891,6 @@ MODULE atom_mod
       end do
     endif
 
-    ! sp%maxac = maxval(sp%nac)
-    ! sp%maxal = maxval(sp%nal)
-    ! sp%nmax  = maxval(sp%nac+sp%nal)
-
-    ! call os%allocate(sp%ac, [sp%maxac, sp%nnu], zero=.true., label='sp%ac')
-    ! call os%allocate(sp%al, [sp%maxal, sp%nnu], zero=.true., label='sp%al')
-    ! sp%nac = 0
-    ! sp%nal = 0
-
-    ! if (option(bf)) then    
-    !   do i=1, size(self%cont)
-    !     cnt => self%cont(i)
-    !     if (.not. cnt%active) cycle
-    !     ! add to number of active continua
-    !     do j=cnt%ired,cnt%iblue
-    !       sp%nac(j) = sp%nac(j) + 1 ! number of active continua at frequency index j
-    !       sp%ac( sp%nac(j), j ) = i ! the index of this active continuum
-    !     end do
-    !   end do
-    ! endif
-
-    ! if (option(bb)) then
-    !   do i=1, size(self%line)
-    !     lin => self%line(i)
-    !     if (.not. lin%active) cycle
-    !     ! find minimum and maximum index of this continuum in the sp%nu grid
-    !     call sp%get_interval(lin, ired, iblue)
-    !     ! add to number of active lines
-    !     do j=lin%ired,lin%iblue
-    !       sp%nal(j) = sp%nal(j) + 1
-    !       sp%al( sp%nal(j), j ) = i
-    !     end do
-    !   end do
-    ! endif
     call trace%end(itimer)
   END SUBROUTINE set_active_transitions
 
@@ -2278,10 +2212,11 @@ MODULE atom_mod
   ELEMENTAL FUNCTION Kramer (nu, dev) result(hyd)
     real(8), intent(in) :: nu, dev
     real(8) :: nl, hyd
+    real(8), parameter :: kramer_const = 64*PI**4 * EC**10 * EM / (3*sqrt(3.d0) * CC * HH**6) ! 2.815e29
     !---------------------------------------------------------------------
     if (dev > 0) then
       nl = sqrt(RydV/dev)
-      hyd = 2.815e29 * gaunt(nu,ceiling(nl)) / (nl**5 * nu**3)
+      hyd = kramer_const * gaunt(nu,ceiling(nl)) / (nl**5 * nu**3)
     else
       hyd = 0.
     endif
@@ -2334,12 +2269,11 @@ MODULE atom_mod
         ! the weight can be chose freely, but 1/n is the
         ! "best" choice according to Olson+1986
         !w(i) = 1.d0
-        !w(i) =  abs(self%data%n(x,y,z,k) / self%data%oldn(x,y,z,k,3) - 1.d0)
-        w(i) = 1.d0 / self%data%n(x,y,z,k)
-        n1(i) = self%data%oldn(x,y,z,k,1) * w(i)
-        n2(i) = self%data%oldn(x,y,z,k,2) * w(i)
-        n3(i) = self%data%oldn(x,y,z,k,3) * w(i)
-        n4(i) = self%data%n(x,y,z,k) * w(i)
+        w(i) = 1.d0 / self%data%b(x,y,z,k)
+        n1(i) = self%data%oldb(x,y,z,k,1) * w(i)
+        n2(i) = self%data%oldb(x,y,z,k,2) * w(i)
+        n3(i) = self%data%oldb(x,y,z,k,3) * w(i)
+        n4(i) = self%data%b(x,y,z,k) * w(i)
       end do
       end do
       end do
@@ -2374,7 +2308,7 @@ MODULE atom_mod
       do x=1, m(1)
       do k=1,self%nlevel
         i = i+1
-        self%data%n(x,y,z,k) = e(i)/w(i)
+        self%data%b(x,y,z,k) = e(i)/w(i)
         enew = e(i)/n4(i)  - 1.d0
 
         if (abs(enew) > abs(emax)) then
