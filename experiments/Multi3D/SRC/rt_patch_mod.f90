@@ -1102,7 +1102,7 @@ SUBROUTINE bound_bound_rates (self, comp, atom, trans, adata, wmu, vproj)
   real(4), dimension(:,:,:), allocatable :: temp, ne, fo, vbar2h, tothi, t3nhe
   real(4), dimension(:), allocatable :: wmunu
   real(4) :: wmu, idf, vpr, a, idf_4pi, ni, nj, chi_fac, phi, vel, vgt
-  real(4) :: Bij_ni, Bji_nj, vvv, ufac, a2, tmp, tmp2, tmp3, tmp4
+  real(4) :: vvv, a2, sum_I, sum_P, sum_A
   real(4) :: g_ij, g_ji, q
   real(4) :: lower_off, upper_off, ekt
   integer :: i, l, ih
@@ -1142,16 +1142,9 @@ SUBROUTINE bound_bound_rates (self, comp, atom, trans, adata, wmu, vproj)
       if (lower_off /= 0) ni = ni * exp(-lower_off*ekt)
       if (upper_off /= 0) nj = nj * exp(-upper_off*ekt)
 
-      if (preconditioning) then
-        Bji_nj = line%Bji * nj
-        Bij_ni = line%Bij * ni
-      else
-        Bji_nj = 0
-        Bij_ni = 0
-      endif
-
-      g_ij = 0
-      g_ji = 0
+      sum_A = 0.0
+      sum_I = 0.0
+      sum_P = 0.0
       if (line%hydrogen) then
         do f=fs, fe
           associate(Inu=>work(f,x,y,z,3), Psi=>self%Psi(f,x,y,z))
@@ -1159,9 +1152,9 @@ SUBROUTINE bound_bound_rates (self, comp, atom, trans, adata, wmu, vproj)
             phi = hprofile(line, dble(q), temp(x,y,z), ne(x,y,z), fo(x,y,z), &
                          vbar2h(x,y,z), tothi(x,y,z), t3nhe(x,y,z), idf)
             vvv = phi * wmunu(f)
-            phi = phi * Psi
-            g_ji = g_ji + vvv*(Inu - phi*Bij_ni + 1.)
-            g_ij = g_ij + vvv*(Inu - phi*Bji_nj)
+            sum_A = sum_A + vvv
+            sum_I = sum_I + vvv * Inu
+            sum_P = sum_P + vvv * phi * Psi
           end associate
         end do
       elseif (line%io > 1) then
@@ -1175,9 +1168,9 @@ SUBROUTINE bound_bound_rates (self, comp, atom, trans, adata, wmu, vproj)
               phi = phi + vgt*line%wt(ih)
             end do
             vvv = phi * wmunu(f)
-            phi = phi * Psi
-            g_ji = g_ji + vvv*(Inu - phi*Bij_ni + 1.)
-            g_ij = g_ij + vvv*(Inu - phi*Bji_nj)
+            sum_A = sum_A + vvv
+            sum_I = sum_I + vvv * Inu
+            sum_P = sum_P + vvv * phi * Psi
           end associate
         end do
       else
@@ -1185,14 +1178,23 @@ SUBROUTINE bound_bound_rates (self, comp, atom, trans, adata, wmu, vproj)
           associate(Inu=>work(f,x,y,z,3), Psi=>self%Psi(f,x,y,z))
             phi = voigt_profile(a, line%q(f), vpr, idf)
             vvv = phi * wmunu(f)
-            phi = phi * Psi
-            g_ji = g_ji + vvv*(Inu - phi*Bij_ni + 1.)
-            g_ij = g_ij + vvv*(Inu - phi*Bji_nj)
+            sum_A = sum_A + vvv
+            sum_I = sum_I + vvv * Inu
+            sum_P = sum_P + vvv * phi * Psi
           end associate
         end do
       endif
-      trans%gamma_ji(x,y,z,i) = trans%gamma_ji(x,y,z,i) + g_ji
+
+      g_ij = sum_I
+      g_ji = sum_I + sum_A
+
+      if (preconditioning) then
+        g_ij = g_ij - sum_P * line%Bji * nj
+        g_ji = g_ji - sum_P * line%Bij * ni
+      endif
+
       trans%gamma_ij(x,y,z,i) = trans%gamma_ij(x,y,z,i) + g_ij
+      trans%gamma_ji(x,y,z,i) = trans%gamma_ji(x,y,z,i) + g_ji
     end do
     end do
     end do
@@ -1209,7 +1211,7 @@ SUBROUTINE bound_free_rates (self, atom, trans, adata)
   class(cont_type), pointer :: cont
   real(4), dimension(:), allocatable :: w_alpha, wmunu
   real(4) :: ni, nj, tmp, eta_fac, q, phi
-  real(4) :: g_ij, g_ji, vij, vji, ufac
+  real(4) :: g_ij, g_ji, vij, vji, sum_abs, sum_ems, sum_pre
   integer :: i, j, icont
   integer, save :: itimer=0
   !-----------------------------------------------------------------------------
@@ -1230,26 +1232,31 @@ SUBROUTINE bound_free_rates (self, atom, trans, adata)
     do z=1,nz
     do y=1,ny
     do x=1,nx
-      if (preconditioning) then
-        ni  = adata%nstar(x,y,z,cont%i) * adata%b(x,y,z,cont%i)
-        tmp = adata%nstar(x,y,z,cont%i) * adata%b(x,y,z,cont%j)
-      else
-        tmp = 0.
-        ni = 0.
-      endif
-      g_ij = 0
-      g_ji = 0
+      sum_abs = 0.0
+      sum_ems = 0.0
+      sum_pre = 0.0
+
       do f=fs, fe
         associate(Jnu=>self%Jnu(f,x,y,z,1), blz=>back(f,x,y,z,3), Psi=>self%PsiJ(f,x,y,z))
           vij = w_alpha(f)
           vji = vij * blz
           phi = Psi * cont%alpha(f)
-          g_ji = g_ji + vji*(Jnu - phi*ni + 1.)
-          g_ij = g_ij + vij*(Jnu - phi*blz*tmp)
+          sum_abs = sum_abs + vij * Jnu
+          sum_ems = sum_ems + vji * (Jnu + 1.0)
+          sum_pre = sum_pre + vji * phi
         end associate
       end do
-      trans%gamma_ji(x,y,z,i) = trans%gamma_ji(x,y,z,i) + g_ji
+
+      g_ij = sum_abs
+      g_ji = sum_ems
+
+      if (preconditioning) then
+        g_ij = g_ij - sum_pre * adata%nstar(x,y,z,cont%i) * adata%b(x,y,z,cont%j)
+        g_ji = g_ji - sum_pre * adata%nstar(x,y,z,cont%i) * adata%b(x,y,z,cont%i)
+      endif
+
       trans%gamma_ij(x,y,z,i) = trans%gamma_ij(x,y,z,i) + g_ij
+      trans%gamma_ji(x,y,z,i) = trans%gamma_ji(x,y,z,i) + g_ji
     end do
     end do
     end do

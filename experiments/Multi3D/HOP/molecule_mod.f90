@@ -52,7 +52,7 @@ SUBROUTINE read_molec_data(self, lunit, iostat)
 END SUBROUTINE read_molec_data
 
 !===============================================================================
-! Computes dissociation constants P(AB) / (P(A)*P(B)) for molecules
+! Computes the inverse dissociation constant P(AB) / (P(A)*P(B)) for molecules
 !===============================================================================
 elemental real(dp) FUNCTION get_dis(self, teta)
     class(molec_type), intent(in) :: self
@@ -62,7 +62,7 @@ elemental real(dp) FUNCTION get_dis(self, teta)
 END FUNCTION
 
 !===============================================================================
-! Computes dissociation constants P(AB) / (P(A)*P(B)) for molecules
+! Computes the inverse dissociation constant P(AB) / (P(A)*P(B)) for molecules
 !===============================================================================
 SUBROUTINE get_dis2(self, temp, dis)
     class(molec_type), intent(in) :: self

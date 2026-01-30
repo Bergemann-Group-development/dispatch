@@ -25,7 +25,7 @@ MODULE m3d_patch_mod
     USE patch_mod, only: patch_t, patch_t_init
     USE m3d_halo_mod, only: m3d_halo_t, print_finished, print_download, lock_mem, unlock_mem, print_lock
     USE spectrum_mod, only: nu_tolerance
-    USE atom_mod, only: atom_type, atomic_spectrum_type, lse_no_pivot, lse_solver, m1d_legacy_mode, &
+    USE atom_mod, only: atom_type, atomic_spectrum_type, lse_no_pivot, lse_solver, &
                         nq_fac, cswitch, ng_step, ng_start
     USE composition_mod, only: composition_type, scattering_absorption, irwin_dis, helium_scattering, departure_pointer_t
     USE ray_mod, only: one_dimensional, set_carlson_quadratures, set_radau_quadratures, set_lobatto_quadratures, &
@@ -167,7 +167,7 @@ MODULE m3d_patch_mod
     n_nu, maxiter, ilambd, lvlcheck, comoving_frame, save_id, &
     check_NaN, custom_mu, lse_no_pivot, save_patch_kind, cswitch, &
     print_finished, print_start, print_send, ray_offset, print_download, &
-    lse_solver, decouple_continuum, m1d_legacy_mode, nu_tolerance, &
+    lse_solver, decouple_continuum, nu_tolerance, &
     pivot_z, save_resolved, overrelax, save_cntrbf, depression_cntrbf, &
     absmet_in_output, print_lock, make_eos, ng_step, ng_start, scattering_absorption, &
     column_by_column, rotate_atmos, Jnu_to_file, preconditioning, &

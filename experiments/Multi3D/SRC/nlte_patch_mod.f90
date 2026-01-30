@@ -87,13 +87,15 @@ MODULE nlte_patch_mod
     call trace%begin('nlte_patch_t%nlte_patch_pre_init', itimer=itimer)
     self%kind = 'nlte_patch'
     call self%m3d_patch_t%pre_init()
-    if (.not. self%atom_allocated) then
+
+    if (self%atom_allocated) then
+      call self%set_nv_and_nw(sum(self%atoms%nlevel), 2)
+      self%static_mem=.true.
+    elseif (.not. read_departures) then
       self%maxiter = -1 ! prevents addition to task list
       call trace%end(itimer)
       return
     endif
-    call self%set_nv_and_nw(sum(self%atoms%nlevel), 2)
-    self%static_mem=.true.
 
     call self%post_pre_init()
     call trace%end(itimer)
@@ -491,7 +493,7 @@ MODULE nlte_patch_mod
       endif
     endif
 
-    if (self%print_update_info) then
+    if (self%print_update_info .and. associated(self%atoms)) then
       p = self%pcheck
       l = self%linecheck
       adata => self%atoms(atomcheck)%data
@@ -565,7 +567,7 @@ MODULE nlte_patch_mod
     character(len=256), allocatable :: atom_files(:)
     character(len=6), allocatable :: keys(:)
     real(4), dimension(:,:,:,:,:,:), allocatable, target :: mem
-    integer :: i, j, i1, i2, nprecomp, nmu, n(4), x, y, z, l
+    integer :: i, j, i1, i2, nprecomp, nmu, n(4), x, y, z, l, lunit
     integer :: itimer=0
     !-----------------------------------------------------------------------------
     call trace%begin('composition_patch_t%init_departures', itimer=itimer)
@@ -611,6 +613,12 @@ MODULE nlte_patch_mod
       dep => self%departures(i,1)
       allocate(dep%mem, source=mem(:,:,:,:,2,j))
       call os%mem_register(storage_size(dep%mem), size(dep%mem), label='departures')
+      dep%nlevel = size(mem,4)
+      allocate(dep%ev(dep%nlevel))
+      open(newunit=lunit, file=trim(save_folder)//'pop_'//trim(keys(i))//'_ev.txt', form='formatted')
+      read(lunit, '(A)') ! skip header
+      read(lunit, *) dep%ev
+      close(lunit)
     end do
 
     do i=1, size(self%atoms)
@@ -618,6 +626,8 @@ MODULE nlte_patch_mod
       adata => atom%data
       dep => self%departures(atom%idep, 1)
       n = shape(adata%nstar)
+      dep%nlevel = atom%nlevel
+      allocate(dep%ev, source=atom%ev)
       if (atom%precomputed) then
         if (.not. allocated(adata%b)) then
           call os%allocate(adata%b, shape(adata%nstar), label='b')
@@ -646,8 +656,8 @@ MODULE nlte_patch_mod
     class(atom_data_t), pointer :: adata
     class(departure_pointer_t), pointer :: dep
     real(4), dimension(:,:,:,:,:,:), allocatable :: out_mem
-    integer :: x, y, z, l, n(3), i, j, k
-    real(8) :: tmp
+    integer :: x, y, z, l, n(3), i, j, k, lunit
+    real(8) :: tmp, ground_ev
     !---------------------------------------------------------------------------------
     call trace%begin('nlte_patch_t%write_populations')
     adata => atom%data
@@ -677,6 +687,21 @@ MODULE nlte_patch_mod
 
     if (save_populations) then
       call self%save6(out_mem, label='pop_'//trim(atom%id))
+      !$omp critical (write_atom_ev)
+      if (.not. os%exists(trim(io%run_dir)//'save/pop_'//trim(atom%id)//'_ev.txt')) then
+        open(newunit=lunit, file=trim(io%run_dir)//'save/pop_'//trim(atom%id)//'_ev.txt', form='formatted')
+        write(lunit, '(A)') '# Level Energies (eV) + 100*Ionization Stage'
+        ground_ev = atom%ev(1)
+        do l=1, atom%nlevel
+          if (l > 1) then
+            ground_ev = merge(atom%ev(l), ground_ev, atom%ion(l) > atom%ion(l-1))
+          endif
+          tmp = 100*atom%ion(l) + atom%ev(l) - ground_ev
+          write(lunit, '(F16.6)') tmp
+        end do
+        close(lunit)
+      endif
+      !$omp end critical (write_atom_ev)
     endif
 
     deallocate(out_mem)
@@ -807,18 +832,20 @@ MODULE nlte_patch_mod
     else
       call self%print_to_stdout()
     endif
-    global = global_maxerr%update(0.d0)
-    ipos = global_pos%update(+0)
-    write(stdout,'(A, ES12.4, A10, ES12.4, A, I4, A, "[", 3I4, "] ", A)') &
-      '  local =', self%local,  ', global =', global, &
-      ', lvl =',elvl, ', pos=', epos, self%atoms(eatom)%id
-    if (self%overrelax) then
-      write(stdout,'(A, 3(ES12.4))') '  omega =', self%sor_w, self%prev_prev_global, self%prev_global
-    endif
+    if (associated(self%atoms)) then
+      global = global_maxerr%update(0.d0)
+      ipos = global_pos%update(+0)
+      write(stdout,'(A, ES12.4, A10, ES12.4, A, I4, A, "[", 3I4, "] ", A)') &
+        '  local =', self%local,  ', global =', global, &
+        ', lvl =',elvl, ', pos=', epos, self%atoms(eatom)%id
+      if (self%overrelax) then
+        write(stdout,'(A, 3(ES12.4))') '  omega =', self%sor_w, self%prev_prev_global, self%prev_global
+      endif
 
-    if (self%verbose > 1) then
-      write(stdout,'(1X, A80)') &
-      '................................................................................'
+      if (self%verbose > 1) then
+        write(stdout,'(1X, A80)') &
+        '................................................................................'
+      endif
     endif
   END SUBROUTINE print_post_update_info
 
@@ -976,7 +1003,9 @@ MODULE nlte_patch_mod
     logical :: cib
     !-----------------------------------------------------------------------------
     cib = self%m3d_patch_t%check_in_bounds()
-    cib = cib .and. lvlcheck > 0 .and. lvlcheck <= self%atoms(atomcheck)%nlevel
+    if (associated(self%atoms)) then
+      cib = cib .and. lvlcheck > 0 .and. lvlcheck <= self%atoms(atomcheck)%nlevel
+    endif
   END FUNCTION check_in_bounds
 
   !===============================================================================

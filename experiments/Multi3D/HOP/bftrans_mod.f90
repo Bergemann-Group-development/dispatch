@@ -101,13 +101,13 @@ contains
         endif
 
         quadratic = self%kvadl
-        if (self%key /= 'H BF') then ! H BF is quadratically extrapolated
-          if (j<1 .or. j >= (self%nnu - 1)) then
-            quadratic = .false.
-          else
-            quadratic = quadratic .and. .not. self%ldisk(j)
-          endif
+        !if (trim(self%key) /= 'H BF') then ! H BF is quadratically extrapolated
+        if (j<1 .or. j >= (self%nnu - 1)) then
+          quadratic = .false.
+        else
+          quadratic = quadratic .and. .not. self%ldisk(j)
         endif
+        !endif
 
         ! if there are not enough points, step back
         k = merge(2, 1, quadratic)
@@ -342,7 +342,7 @@ contains
         ab(fs:fe) = ab(fs:fe) * lam3(fs:fe)
       endif
 
-      if (H_occupation_probability .and. self%key == 'H BF') then
+      if (H_occupation_probability .and. trim(self%key) == 'H BF') then
         lvl => self%ion%levels(self%k)
         lvl%i = self%k
         call trace%begin('wcalc2', itimer=itimer3)

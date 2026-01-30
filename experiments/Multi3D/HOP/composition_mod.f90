@@ -72,6 +72,8 @@ MODULE composition_mod
     type, public :: departure_pointer_t
       character(len=6) :: key=''
       real(4), pointer :: mem(:,:,:,:) => null()
+      real(8), allocatable :: ev(:)
+      integer :: nlevel=0
     end type departure_pointer_t
 
     character(128), public, save :: exclude_elements='', only_elements=''
@@ -931,7 +933,7 @@ contains
         integer :: i, j, k, l, f, f0, nactive, m(3), nf
         real(8) :: cnt_ev, gf, awgt, iso_awgt, dl, dnu
         real(4) :: scalar, blz, bnu, h_kT, hv_kT, eta, chi
-        logical :: nlte_correction, do_nlte
+        logical :: departures_present, do_nlte
         integer, save:: itimer=0
         !---------------------------------------------------------------------------
         call trace%begin ('composition_type%add_linelist_opacities', itimer=itimer)
@@ -960,7 +962,7 @@ contains
         chi_l = 0.
         eta_l = 0.
         
-        nlte_correction = present(departures)
+        departures_present = present(departures)
 
         if (present(vproj)) then
             vpr => vproj
@@ -990,6 +992,12 @@ contains
                 if (.not. line%active) cycle
                 call line%get_center(nu, dnu, f0)
                 if (f0 == 0) cycle
+
+                if (associated(dep) .and. .true.) then
+                    line%i = find_closest(dep%ev, 100*ion%j + line%lower_ev)
+                    line%j = find_closest(dep%ev, 100*ion%j + line%lower_ev + H_E*line%nu0)
+                    print *, 'attached line to levels ', line%lower_ev, dep%ev(line%i), line%lower_ev + H_E*line%nu0, dep%ev(line%j)
+                endif
 
                 ni = ion%levels(line%i)%n
                 nj = ion%levels(line%j)%n
@@ -1050,7 +1058,7 @@ contains
             integer :: di
             !---------------------------------------------------------------------------
             dep => null()
-            if (.not. nlte_correction) return
+            if (.not. departures_present) return
 
             di = findloc([(index(ptc%id, trim(departures(i)%key))>0, i=1, size(departures))], .true., 1)
             if (di > 0) then
@@ -1091,6 +1099,12 @@ contains
                 if (.not. line%active) cycle
                 call line%get_center(nu, dnu, f0)
                 if (f0 == 0) cycle
+
+                if (associated(dep) .and. .true.) then
+                    line%i = find_closest(dep%ev, line%lower_ev)
+                    line%j = find_closest(dep%ev, line%lower_ev + H_E*line%nu0)
+                    print *, 'attached line to levels ', line%lower_ev, dep%ev(line%i), line%lower_ev + H_E*line%nu0, dep%ev(line%j)
+                endif
 
                 do_nlte = associated(dep) .and. line%i>0 .and. line%j>0
                 
@@ -1377,7 +1391,7 @@ contains
         real(dp), intent(in),  dimension(:,:,:) :: temp, ne
         real(dp), intent(out), dimension(:,:,:) :: rho
         real(dp), dimension(:,:,:), allocatable :: fe, xnen, xnecno, toth, dxi, hpart
-        integer :: i, j, itimer=0, itimer2=0, itimer3=0
+        integer :: i, j, itimer=0, itimer2=0, itimer3=0, x, y, z
         !---------------------------------------------------------------------------
         call trace%begin ('composition_type%thermal_equilibrium', itimer=itimer)
         allocate(fe, xnen, xnecno, toth, mold=temp)
@@ -1437,15 +1451,23 @@ contains
 
         if (self%nmolec > 0) then
             call self%molecular_equilibrium(self%temp, self%teta, self%pe, xnecno, fe)
-            where (fe < 0)
-                fe = ieee_value(fe, ieee_quiet_nan)
-            endwhere
         endif
 
         ! total hydrogen number density, computed from scratch
         toth = ne / fe
         ! mass density computed from scratch
         rho = toth * self%grph
+
+        do z=1, size(rho,3)
+        do y=1, size(rho,2)
+        do x=1, size(rho,1)
+            if (rho(x,y,z) /= rho(x,y,z)) then
+                print *, 'NaN in thermal_equilibrium at (', x, ',', y, ',', z, ')'
+            endif
+        end do
+        end do
+        end do
+
         call trace%end(itimer)
     END SUBROUTINE thermal_equilibrium
 
@@ -1891,7 +1913,7 @@ contains
         class(ion_type), pointer :: HI, CI, NI, OI, Hm, TiI
         class(ion_type), pointer :: ion, ioni, ionj
         integer :: i, j, nx, ny, nz, x,y,z, np1, iter, nions
-        real(dp) :: new_diff
+        real(dp) :: max_step, scale_factor
         real(dp), dimension(:,:,:), allocatable :: diff
         real(dp), dimension(:,:,:,:)  , allocatable, target :: Fvec
         real(dp), dimension(:,:,:,:,:), allocatable, target :: Amat
@@ -1987,8 +2009,8 @@ contains
         end do
 
         where (tmolim)
-            OI%fil = 1 + OI%saha + OI%f_of_molecules_with(HI)
-            CI%fil = 1 + CI%saha + CI%f_of_molecules_with(HI)
+            OI%fil = 1 + OI%saha + OI%f_of_molecules_with(HI)/OI%f
+            CI%fil = 1 + CI%saha + CI%f_of_molecules_with(HI)/CI%f
 
             b = CO%dis * pefe
             p = (CI%abund-OI%abund)/OI%fil + CI%fil/b
@@ -1998,7 +2020,7 @@ contains
 
             CN%f = CN%calc_f(pefe) ! has to be recalculated since CI%f changed
             
-            NI%fil = 1 + NI%saha + NI%f_of_molecules_with(HI) + NI%f_of_molecules_with(CI)
+            NI%fil = 1 + NI%saha + (NI%f_of_molecules_with(HI) + NI%f_of_molecules_with(CI))/NI%f
             b = 2*N2%dis * pefe
             q = -NI%abund/b
             p = NI%fil/b
@@ -2017,25 +2039,25 @@ contains
                 ioni => ions(i)%p
 
                 where (tmolim) 
-                    Fvec(i,:,:,:) = ioni%f_of_own_molecules()
-                    Amat(i, np1,:,:,:) = - Fvec(i,:,:,:) / fe
+                    Fvec(i,:,:,:) = ioni%f_of_own_molecules() ! number conservation
                 end where
 
                 if (i==1) then
                     where (tmolim) 
-                        Amat(i,  i,:,:,:) = 1 + HI%saha + Hm%pk
-                        Amat(np1,i,:,:,:) = HI%saha + 2*H2p%f /(HI%f * pefe) - Hm%pk
-                        Fvec(np1,:,:,:) = HI%f * (HI%saha + H2p%f - Hm%pk) - fe + xnecno
+                        Amat(i,  i,:,:,:) = HI%f * (1 + HI%saha + Hm%pk)
+                        Amat(i, np1,:,:,:) = - 2*H2p%f / fe
+                        Amat(np1,i,:,:,:) = HI%f * (HI%saha - Hm%pk) + 2*H2p%f
+                        Fvec(np1,:,:,:) = xnecno - fe + HI%f * (HI%saha - Hm%pk) + H2p%f ! charge conservation
                     end where
                 else
                     where (tmolim) 
-                        Amat(i,  i,:,:,:) = 1 + ioni%saha
-                        Amat(np1,i,:,:,:) = ioni%saha
-                        Fvec(np1,:,:,:) = Fvec(np1,:,:,:) + ioni%saha * ioni%f
+                        Amat(i,  i,:,:,:) = ioni%f * (1 + ioni%saha)
+                        Amat(np1,i,:,:,:) = ioni%f * ioni%saha
+                        Fvec(np1,:,:,:) = Fvec(np1,:,:,:) + ioni%f * ioni%saha
                     end where
                 endif
 
-                where (tmolim) Fvec(i,:,:,:) = Fvec(i,:,:,:) + Amat(i,i,:,:,:)*ioni%f - ioni%abund
+                where (tmolim) Fvec(i,:,:,:) = Fvec(i,:,:,:) + Amat(i,i,:,:,:) - ioni%abund
 
                 do j=1, nions
                     ionj => ions(j)%p
@@ -2043,7 +2065,7 @@ contains
                 end do
             end do
 
-            where (tmolim) Amat(np1, np1,:,:,:) = - H2p%f/pe - 1
+            where (tmolim) Amat(np1, np1,:,:,:) = - H2p%f - fe
 
             do z=1, nz
             do y=1, ny
@@ -2054,17 +2076,20 @@ contains
                     cycle
                 endif
 
-                Fold(1:nions) = [(ions(i)%p%f(x,y,z), i=1, nions)]
-                Fold(np1) = fe(x,y,z)
+                Fold = [(ions(i)%p%f(x,y,z), i=1, nions), fe(x,y,z)]
 
                 call lineq(Amat(:,:,x,y,z), Fvec(:,x,y,z), np1)
-                Fnew = Fold - Fvec(:,x,y,z)
-
-                if (any(Fnew == 0)) then
-                    diff(x,y,z) = huge(1.0)
-                else
-                    diff(x,y,z) = maxval(abs(1-Fold/Fnew))
-                endif
+                
+                ! Find the maximum step requested by any variable
+                max_step = maxval(abs(Fvec(1:np1, x,y,z)))
+                
+                ! Calculate a global scaling factor
+                ! If max_step > 3.0, we scale everything down so the max is 3.0
+                scale_factor = min(1.0, 3.0 / max_step)
+                
+                ! Apply the same scale to all components
+                Fnew = Fold * exp(-Fvec(:,x,y,z) * scale_factor)
+                diff(x,y,z) = maxval(abs(1-Fold/Fnew))
 
                 do i=1, nions
                     ions(i)%p%f(x,y,z) = Fnew(i)

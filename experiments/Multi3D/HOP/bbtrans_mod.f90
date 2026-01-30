@@ -46,7 +46,7 @@ MODULE bbtrans_mod
   real(4), parameter :: pqs  = 1.128379167  ! 2./pi**0.5
   real(4), parameter :: isqp = 0.5641895835 ! 1/pi**0.5
   real(4), parameter :: ipi  = 0.3183098862 ! 1/pi
-  real(8), parameter :: f_to_Aji = 8.0d0 * pi**2 * ec**2 / em / cc**3
+  real(8), parameter :: f_conv = 8.0d0 * pi**2 * ec**2 / em / cc**3
     
 contains
 
@@ -56,7 +56,7 @@ contains
     real(8), intent(in) :: f, gij
     !----------------------------------------------------------------------------------
     ! Einstein coefficients include an additional factor of h_4pi for convenience
-    self%Aij = f_to_Aji * f * self%nu0**2
+    self%Aij = f_conv * f * self%nu0**2
     self%Aij = self%Aij * h_4pi
     self%Bij = c2_2h / self%nu0**3 * self%Aij
     self%Aji = self%Aij * gij
@@ -75,8 +75,8 @@ contains
     real(4), dimension(:,:,:,:), intent(inout) :: chi, eta
     real(4), dimension(:,:,:,:), intent(in) :: cont
     logical, intent(in) :: do_nlte
-    real(4) :: ex, ni, nu0_ev, vs, phi, lchi, leta, ceta, cchi, Rij
-    real(4) :: a, idf, idf_nu, v, ref, ekt, nuBij, inv_nu0, strength
+    real(4) :: ex, ni, vs, phi, lchi, leta, ceta, cchi, Rij
+    real(4) :: a, idf, idf_nu, v, ref, ekt, inv_nu0, strength
     integer :: i,j,k,f, nf, m(3), itimer=0
     logical :: used
     !----------------------------------------------------------------------------------
@@ -84,8 +84,6 @@ contains
     m = shape(vproj)
     nf = size(nu)
     inv_nu0 = 1.0 / self%nu0
-    nu0_ev = H_E * self%nu0
-    nuBij = self%Bij * self%nu0
     used = .false.
     strength = 0.0
     
@@ -688,7 +686,7 @@ contains
       ! Here we assume Aji for the radiative broadening, Turbospectrum devides this by 
       ! the upper statistical weight, but KORG does not. MOOg assumes GF/GU=3 instead.
       ! We cannot reuse Aji at this point, because it may contain isotope fractions.
-      self%ga = f_to_Aji * 10**self%loggf * self%nu0**2
+      self%ga = f_conv * 10**self%loggf * self%nu0**2
     elseif (ga < 100) then
       self%ga = ga*1e8
     else

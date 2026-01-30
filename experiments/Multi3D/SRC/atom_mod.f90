@@ -585,7 +585,7 @@ MODULE atom_mod
     
     do i=1, self%nlevel
       where(totn == 0) nstar(:,:,:,i) = 0 !ieee_value(nstar(:,:,:,i), ieee_quiet_nan)
-      ijk = findloc(nstar(:,:,:,i), tiny(1.d0), mask=totn>0)
+      ijk = findloc(nstar(:,:,:,i), 0.0, mask=totn>0)
       if (any(ijk > 0)) then
         print '(A, I5, A, 3(I4))', ' WARNING: ltepop: level ',i,' has zero lte population at', ijk
         !stop
@@ -974,7 +974,6 @@ MODULE atom_mod
     ! Declaration of the local variables
     integer :: i, j, ios, latom, strl, kr, itemp, iterm, nterm, ic, nc, pos
     integer :: ncoll, max_n_temp, doubles, ngrids, ii, jj, tri, ntemp, l, u
-    character(len = 80) :: text, mulfmt
     character(len = 16) :: key
     character(len = 9), parameter :: rname='read_atom'
     character(len = :), allocatable :: myfmt ! temporary format string
@@ -988,6 +987,7 @@ MODULE atom_mod
     integer :: ncont, nnu
     character(len=20) :: txt
     character(len=26),parameter :: upcase_alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    character(512) :: text
     logical :: abort
     integer, save :: itimer=0
     !---------------------------------------------------------------------
@@ -1130,7 +1130,8 @@ MODULE atom_mod
         !allocate(lin%adterm, xs, xe, ys, ye, zs1, ze1, 1, nterm, rname)
 
         do iterm = 1, nterm
-          read(latom, *, iostat=ios) lin%dq(iterm), lin%wt(iterm),  lin%fterm(iterm), &
+          read(latom, '(A)') text
+          read(text, *, iostat=ios) lin%dq(iterm), lin%wt(iterm),  lin%fterm(iterm), &
                         lin%da(iterm), lin%gwterm(iterm), lin%gqterm(iterm)
           call print_failed_line(latom, ios)
         end do
@@ -2107,7 +2108,7 @@ MODULE atom_mod
 
         case('CHI')
           ! b-f collisions with neutral hydrogen
-          ! these are upwards rates (cup); cdn are upward rates
+          ! these are upwards rates (cup); cdn are downward rates
           cup = ct * nh1
           cup = cup * cbfhsc
           cdn = cup / nji
