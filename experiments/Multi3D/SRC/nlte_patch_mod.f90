@@ -1,84 +1,85 @@
 MODULE nlte_patch_mod
-    USE os_mod
-    USE gpatch_mod
-    USE io_mod
-    USE scaling_mod
-    USE trace_mod
-    USE bits_mod
-    USE task_mod, only: task_t
-    USE link_mod, only: nbor_t
-    USE handyfuncs_mod
-    USE atom_mod, only: atom_type, atomic_spectrum_type, use_classic_col, kramer_bf, &
-                        red_cut, blue_cut, logf_cut, atom_data_t, atom_trans_t, &
-                        nq_fac, nq_min, nq_max, disable_bf, disable_bb, level_partf, &
-                        fmin, cbbesc, cbfesc, cbbhsc, cbfhsc, colscale, &
-                        ng_step, ng_start, save_rate_matrix
-    USE trans_mod, only: line_type, cont_type, transition_type
-    USE const_mod, only: CC
-    USE ion_mod, only: ion_type, particle_type, debye_shield, massive_type
-    USE element_mod, only: element_type
-    USE molecule_mod, only: molec_type
-    USE bbtrans_mod, only: bbtrans_type
-    USE composition_mod, only: composition_type, departure_pointer_t, read_departures
-    USE m3d_patch_mod, only: m3d_patch_t, composition, maxiter, key_link_t, &
+  USE os_mod
+  USE gpatch_mod
+  USE io_mod
+  USE scaling_mod
+  USE trace_mod
+  USE bits_mod
+  USE task_mod, only: task_t
+  USE link_mod, only: nbor_t
+  USE handyfuncs_mod
+  USE atom_mod, only: atom_type, atomic_spectrum_type, use_classic_col, kramer_bf, &
+    red_cut, blue_cut, logf_cut, atom_data_t, atom_trans_t, &
+    nq_fac, nq_min, nq_max, disable_bf, disable_bb, level_partf, &
+    fmin, cbbesc, cbfesc, cbbhsc, cbfhsc, colscale, &
+    ng_step, ng_start, ng_global, save_rate_matrix
+  USE trans_mod, only: line_type, cont_type, transition_type
+  USE const_mod, only: CC
+  USE ion_mod, only: ion_type, particle_type, debye_shield, massive_type
+  USE element_mod, only: element_type
+  USE molecule_mod, only: molec_type
+  USE bbtrans_mod, only: bbtrans_type
+  USE composition_mod, only: composition_type, departure_pointer_t, read_departures
+  USE m3d_patch_mod, only: m3d_patch_t, composition, maxiter, key_link_t, &
     global_maxerr, convlim, convmax, atom_update_counter, comoving_frame, global_pos, &
     decouple_continuum, overlapping_bb, overlapping_bf, converged, premature_finish, overrelax, &
     rotate_atmos, long_vec, rank_lvlerr, overlapping_bb_in_output, long_scheme, n_nu, detailed_absmet, &
     atmos_file
-    USE bftrans_mod, only: bftrans_type
-    USE osmet_mod, only: osmet_type, osmet
-    USE rt_patch_mod, only: rt_patch_t
-    USE m3d_debug_mod
-    USE shared_mod
-    USE, intrinsic :: ieee_arithmetic
-    implicit none
-  
-    !-----------------------------------------------------------------------------
-  
-    type, public, extends(m3d_patch_t) :: nlte_patch_t
-      type(atom_type), dimension(:), pointer :: output_atoms, bb_atoms, bf_atoms
-      class(atomic_spectrum_type), pointer :: output_sp=>null()
-      class(atomic_spectrum_type), pointer :: bf_sp=>null()
-      class(atomic_spectrum_type), pointer :: bb_sp=>null()
-      real(8) :: maxerr=huge(1.0), prev_global=huge(1.d0), prev_prev_global=huge(1.d0)
-      real(8), dimension(:), allocatable :: lvlerr
-      real(8) :: local, sor_w
-      integer :: natom=0
-      logical :: update_skipped=.false., atom_allocated=.false., molec
-      logical :: overrelax=.false.
-    contains
-      procedure :: pre_init => nlte_patch_pre_init
-      procedure :: execute
-      procedure :: finish
-      procedure :: project_populations
-      procedure :: nbor_relations => nlte_patch_nbor_relations
-      procedure :: pre_init_atom
-      procedure :: pre_init_spectrum
-      procedure :: init_departures
-      procedure :: write_populations
-      procedure :: get_osmet_nu
-      procedure :: exclude_double_continua
-      procedure :: exclude_double_lines
-      procedure :: print_post_update_info
-      procedure :: check_in_bounds
-      procedure :: init_nbors_hash
-      procedure :: save_abundance_to_file
-      procedure :: save_convergence_report
-      !procedure :: load_mem
-      procedure :: allocate_mem
-      procedure :: deallocate_mem
-      procedure :: check_mem_NaN
-    end type nlte_patch_t
+  USE bftrans_mod, only: bftrans_type
+  USE osmet_mod, only: osmet_type, osmet
+  USE rt_patch_mod, only: rt_patch_t
+  USE m3d_debug_mod
+  USE shared_mod
+  USE, intrinsic :: ieee_arithmetic
+  implicit none
 
-    integer, save :: epos(3), elvl, eatom=1
-    logical, save :: exclude_from_line_list=.true.
-    logical, save :: save_populations=.true.
-    integer, save :: save_rates=0
-    logical, public, save :: external_sp=.false.
-    !-----------------------------------------------------------------------------
-  
+  !-----------------------------------------------------------------------------
+
+  type, public, extends(m3d_patch_t) :: nlte_patch_t
+    type(atom_type), dimension(:), pointer :: output_atoms, bb_atoms, bf_atoms
+    class(atomic_spectrum_type), pointer :: output_sp=>null()
+    class(atomic_spectrum_type), pointer :: bf_sp=>null()
+    class(atomic_spectrum_type), pointer :: bb_sp=>null()
+    real(8) :: maxerr=huge(1.0), prev_global=huge(1.d0), prev_prev_global=huge(1.d0)
+    real(8), dimension(:), allocatable :: lvlerr
+    real(8) :: local, sor_w
+    integer :: natom=0
+    logical :: update_skipped=.false., atom_allocated=.false., molec
+    logical :: overrelax=.false.
   contains
-    
+    procedure :: pre_init => nlte_patch_pre_init
+    procedure :: execute
+    procedure :: finish
+    procedure :: project_populations
+    procedure :: nbor_relations => nlte_patch_nbor_relations
+    procedure :: pre_init_atom
+    procedure :: pre_init_spectrum
+    procedure :: init_departures
+    procedure :: write_populations
+    procedure :: get_osmet_nu
+    procedure :: exclude_double_continua
+    procedure :: exclude_double_lines
+    procedure :: print_post_update_info
+    procedure :: check_in_bounds
+    procedure :: init_nbors_hash
+    procedure :: save_abundance_to_file
+    procedure :: save_convergence_report
+    !procedure :: load_mem
+    procedure :: allocate_mem
+    procedure :: deallocate_mem
+    procedure :: check_mem_NaN
+  end type nlte_patch_t
+
+  integer, save :: epos(3), elvl, eatom=1
+  logical, save :: exclude_from_line_list=.true.
+  logical, save :: save_populations=.true.
+  logical, save :: bound_free_in_output=.false.
+  integer, save :: save_rates=0
+  logical, public, save :: external_sp=.false.
+  !-----------------------------------------------------------------------------
+
+contains
+
   !===============================================================================
   SUBROUTINE nlte_patch_pre_init (self)
     class(nlte_patch_t), target:: self
@@ -115,16 +116,16 @@ MODULE nlte_patch_mod
     real(8), save :: qnorm=10.0
     integer, save :: itimer=0, natom=0, n_in_lines=0
     integer, save, allocatable :: in_lines(:)
-    logical, save :: first_time=.true., exclude_trace_cont=.true., use_atom_abnd=.true.
+    logical, save :: first_time=.true., exclude_trace_cont=.true., use_atom_abnd=.false.
     logical, save :: relative_abundance = .false.
     logical :: pandas_format
     integer :: i, j, iostat
     namelist /atom_params/ atom_file, qnorm, convlim, exclude_trace_cont, level_partf, &
-    use_atom_abnd, logf_cut, red_cut, blue_cut, n_in_lines, abundance, relative_abundance, &
-    exclude_from_line_list, use_classic_col, kramer_bf, overlapping_bf, &
-    overlapping_bb, detailed_absmet, convmax, premature_finish, &
-    save_populations, nq_fac, nq_min, nq_max, cbbesc, cbfesc, cbbhsc, cbfhsc, colscale, &
-    disable_bf, disable_bb, overlapping_bb_in_output, save_rates, save_rate_matrix, fmin
+      use_atom_abnd, logf_cut, red_cut, blue_cut, n_in_lines, abundance, relative_abundance, &
+      exclude_from_line_list, use_classic_col, kramer_bf, overlapping_bf, &
+      overlapping_bb, detailed_absmet, convmax, premature_finish, bound_free_in_output, &
+      save_populations, nq_fac, nq_min, nq_max, cbbesc, cbfesc, cbbhsc, cbfhsc, colscale, &
+      disable_bf, disable_bb, overlapping_bb_in_output, save_rates, save_rate_matrix, fmin
     namelist /line_mask/ in_lines
     !-----------------------------------------------------------------------------
     call trace%begin('nlte_patch_t%pre_init_atom', itimer=itimer)
@@ -148,7 +149,7 @@ MODULE nlte_patch_mod
         call trace%end(itimer)
         return
       else
-         ! this is the atom to be read
+        ! this is the atom to be read
         allocate(atoms(natom))
 
         allocate(out_trans(natom))
@@ -178,7 +179,7 @@ MODULE nlte_patch_mod
         associate(atom_file=>atom_file(i), atom=>atoms(i))
           j = rindex(atom_file, '/')+1
           pandas_format = .not. startswith(atom_file(j:len_trim(atom_file)), 'atom.')
-          write (*,*) ' - Reading atom ', trim(atom_file), pandas_format
+          write (*,*) ' - Reading atom ', trim(atom_file)
           if (pandas_format) then
             level_partf = .false.
             call atom%read_pandas(atom_file, qnorm, in_lines=in_lines)
@@ -209,7 +210,7 @@ MODULE nlte_patch_mod
               end do
             endif
           endif
-      
+
           call atom%prepare_damping(atom%species)
 
           if (abundance(i) > -99) atom%abnd = abundance(i)
@@ -218,7 +219,7 @@ MODULE nlte_patch_mod
           else
             atom%abnd = atom%abnd + composition%FeH
           endif
-          
+
           if (exclude_trace_cont) then
             call self%exclude_double_continua(atom)
           endif
@@ -226,7 +227,7 @@ MODULE nlte_patch_mod
           ! here we create copies of the line and cont arrays,
           ! which will have altered ired and iblue for example
           ! they will be pointed at later
-          call out_trans(i)%allocate(bb=atom%trans%line)
+          call out_trans(i)%allocate(bb=atom%trans%line, bf=atom%trans%cont)
           if (decouple_continuum) then
             call dc_trans(i)%allocate(bb=atom%trans%line, bf=atom%trans%cont)
           endif
@@ -235,6 +236,15 @@ MODULE nlte_patch_mod
             call os%copy_file(trim(atom_file), trim(io%run_dir)//'atoms/'//trim(atom%id)//'.txt')
           else
             call os%copy_file(trim(atom_file), trim(io%run_dir)//'atoms/'//'atom.'//trim(atom%id))
+          endif
+
+          if (ng_global) then
+            ! Here we allocate the global ng_coefficient pointers
+            ! on copying of this atom, the pointers wil still point to the same arrays,
+            ! so they will be shared among all atoms of the same species.
+            allocate(atom%ng_a)
+            allocate(atom%ng_b)
+            allocate(atom%ng_d(0:2,1:2), source=0.d0)
           endif
         end associate
       end do
@@ -281,7 +291,7 @@ MODULE nlte_patch_mod
       if (decouple_continuum) then
         self%bb_atoms(i) = self%atoms(i)
         self%bf_atoms(i) = self%atoms(i)
-        allocate(self%bb_atoms(i)%trans) ! this will detach the original pointer and 
+        allocate(self%bb_atoms(i)%trans) ! this will detach the original pointer and
         allocate(self%bf_atoms(i)%trans) ! create a new one, to be pointed elsewhere
         self%bb_atoms(i)%trans%line => dc_trans(i)%line
         self%bf_atoms(i)%trans%cont => dc_trans(i)%cont
@@ -308,24 +318,24 @@ MODULE nlte_patch_mod
     if (first_time) then
       first_time = .false.
       saved_already = .false.
-      external_sp = output_sp%nnu > 0 
+      external_sp = output_sp%nnu > 0
       save_sp = external_sp .or. (associated(self%atoms) .and. size(long_vec,2)>0)
       if (associated(self%atoms)) then
         if (decouple_continuum) then
           if (detailed_absmet .and. overlapping_bf) call self%get_osmet_nu(bf_sp)
-          call setup_spectrum(bf_sp, 'bf', self%bf_atoms, bf=.true., bb=.false., sort=overlapping_bf, set_active=.true.)
-          call setup_spectrum(bb_sp, 'bb', self%bb_atoms, bf=.false., bb=.true., sort=overlapping_bb, set_active=.true.)
+          call setup_spectrum(bf_sp, 'bf', self%bf_atoms, bb=.false., bf=.true.,  sort=overlapping_bf, set_active=.true.)
+          call setup_spectrum(bb_sp, 'bb', self%bb_atoms, bb=.true.,  bf=.false., sort=overlapping_bb, set_active=.true.)
         else
           if (detailed_absmet) call self%get_osmet_nu(sp)
           call setup_spectrum(sp, 'all', self%atoms, bb=.true., bf=.true., sort=.true., set_active=.true.)
         endif
 
         if (.not. external_sp) then
-          call setup_spectrum(output_sp, 'out', self%output_atoms, bb=.true., bf=.false., sort=overlapping_bb_in_output, set_active=.false.)
+          call setup_spectrum(output_sp, 'out', self%output_atoms, bb=.true., bf=bound_free_in_output, sort=overlapping_bb_in_output, set_active=.false.)
           saved_already = .true.
         else
           do i=1, size(self%output_atoms)
-            call self%output_atoms(i)%trans%set_ired_iblue(output_sp, bf=.false., bb=.true., set_active=.false.)
+            call self%output_atoms(i)%trans%set_ired_iblue(output_sp, bb=.true., bf=.false., set_active=.false.)
           end do
         endif
       endif
@@ -357,7 +367,7 @@ MODULE nlte_patch_mod
       sp%name = name
       ! allocate list of active continua and lines
       do i=1, size(atoms)
-        call atoms(i)%trans%append_transitions(sp, bf=bf, bb=bb)
+        call atoms(i)%trans%append_transitions(sp, bb=bb, bf=bf)
       end do
       if (sort) call sp%sort()
       call os%allocate(nac, [sp%nnu, size(atoms)], zero=.true.)
@@ -366,7 +376,7 @@ MODULE nlte_patch_mod
       do i=1, size(atoms)
         sp%nac => nac(:,i)
         sp%nal => nal(:,i)
-        call atoms(i)%trans%set_ired_iblue(sp, bf=bf, bb=bb, set_active=set_active)
+        call atoms(i)%trans%set_ired_iblue(sp, bb=bb, bf=bf, set_active=set_active)
       end do
       sp%na = sum(min(nal+nac, 1), dim=2)
       if (save_sp) then
@@ -393,18 +403,21 @@ MODULE nlte_patch_mod
     class(molec_type), pointer :: molec
     real(4), dimension(:,:,:), allocatable :: cij, cji
     real(8), dimension(:,:), allocatable :: w, c
-    integer :: i, j, k, l, p(3), m(3), ipos
+    integer :: i, j, k, l, p(3), m(3), ipos, ng_iter, ng_epos(4)
     integer, save:: count=0
-    real(8) :: global
+    real(8) :: global, ng_emax
     logical :: do_ng, locally_converged, found
     integer, save :: itimer=0
     !-----------------------------------------------------------------------------
     call trace%begin (trim(self%kind)//'%update', itimer=itimer)
-    do_ng = ng_step > 0 .and. self%iter >= ng_start .and. mod(self%iter-ng_start, ng_step) == 0
     comp => self%m3d_parent%composition
     self%maxerr = 0
     locally_converged = premature_finish
     m = self%n
+    do_ng = ng_step > 0
+    if (do_ng) then
+      ng_iter = mod(self%iter-ng_start, ng_step)
+    endif
 
     if (save_rates>0) then
       allocate(cij(m(1),m(2),m(3)), source=0.0)
@@ -440,7 +453,7 @@ MODULE nlte_patch_mod
             call self%save2(real(c), label=trim(atom%id)//'_c')
           endif
         endif
-        
+
         call os%deallocate(adata%gamma_ij, label='atom%gamma_ij')
         call os%deallocate(adata%gamma_ji, label='atom%gamma_ji')
 
@@ -457,7 +470,11 @@ MODULE nlte_patch_mod
         endif
 
         if (do_ng .and. .not. adata%converged) then
-          call atom%ng_acceleration()
+          call atom%ng_acceleration(ng_iter, ng_emax, ng_epos)
+          if (ng_emax /= 0) then
+            ng_epos = ng_epos + [0,0,0,self%zs-1]
+            print '(A, ES14.7, 4(I6))', 'NG acceleration ', ng_emax, ng_epos
+          endif
         endif
       endif
       locally_converged = locally_converged .and. adata%converged
@@ -480,7 +497,7 @@ MODULE nlte_patch_mod
       call global_maxerr%reset(self%maxerr)
     endif
     !$omp end critical (maxerr_reset)
-    
+
     if (self%iter > 0) then
       count = atom_update_counter%update(+1)
     endif
@@ -633,13 +650,13 @@ MODULE nlte_patch_mod
           call os%allocate(adata%b, shape(adata%nstar), label='b')
         endif
         do l=1, n(4)
-        do z=1, n(3)
-        do y=1, n(2)
-        do x=1, n(1)
-          adata%b(x,y,z,l) = dep%mem(x,y,z,l)
-        end do
-        end do
-        end do
+          do z=1, n(3)
+            do y=1, n(2)
+              do x=1, n(1)
+                adata%b(x,y,z,l) = dep%mem(x,y,z,l)
+              end do
+            end do
+          end do
         end do
       else
         allocate(dep%mem(n(1), n(2), n(3), n(4)))
@@ -669,20 +686,20 @@ MODULE nlte_patch_mod
     ! but we also store the departure coefficients in the dep object
 
     do l=1, atom%nlevel
-    do z=1, n(3)
-    do y=1, n(2)
-    do x=1, n(1)
-      out_mem(x,y,z,l,1,1) = real(adata%nstar(x,y,z,l))
-      if (allocated(adata%b)) then
-        out_mem(x,y,z,l,2,1) = real(adata%b(x,y,z,l))
-        dep%mem(x,y,z,l) = adata%b(x,y,z,l)
-      else
-        out_mem(x,y,z,l,2,1) = 1.0
-        dep%mem(x,y,z,l) = 1.0
-      endif
-    end do
-    end do
-    end do
+      do z=1, n(3)
+        do y=1, n(2)
+          do x=1, n(1)
+            out_mem(x,y,z,l,1,1) = real(adata%nstar(x,y,z,l))
+            if (allocated(adata%b)) then
+              out_mem(x,y,z,l,2,1) = real(adata%b(x,y,z,l))
+              dep%mem(x,y,z,l) = adata%b(x,y,z,l)
+            else
+              out_mem(x,y,z,l,2,1) = 1.0
+              dep%mem(x,y,z,l) = 1.0
+            endif
+          end do
+        end do
+      end do
     end do
 
     if (save_populations) then
@@ -755,31 +772,31 @@ MODULE nlte_patch_mod
 
           do l=1, atom%nlevel
             do z=1, n(3)
-            do y=1, n(2)
-            do x=1, n(1)
-              adata%b(x,y,z,l) = dep%mem(x,y,z,l)
-              totn(x,y,z) = totn(x,y,z) + adata%b(x,y,z,l) * adata%nstar(x,y,z,l)
-            end do
-            end do
+              do y=1, n(2)
+                do x=1, n(1)
+                  adata%b(x,y,z,l) = dep%mem(x,y,z,l)
+                  totn(x,y,z) = totn(x,y,z) + adata%b(x,y,z,l) * adata%nstar(x,y,z,l)
+                end do
+              end do
             end do
           end do
 
           do z=1, n(3)
-          do y=1, n(2)
-          do x=1, n(1)
-            norm(x,y,z) = adata%totn(x,y,z) / totn(x,y,z)
-          end do
-          end do
+            do y=1, n(2)
+              do x=1, n(1)
+                norm(x,y,z) = adata%totn(x,y,z) / totn(x,y,z)
+              end do
+            end do
           end do
 
           do l=1, atom%nlevel
             do z=1, n(3)
-            do y=1, n(2)
-            do x=1, n(1)
-              tmp = adata%b(x,y,z,l) * norm(x,y,z)
-              adata%b(x,y,z,l) = merge(tmp, 0.d0, tmp==tmp) ! set to zero if NaN
-            end do
-            end do
+              do y=1, n(2)
+                do x=1, n(1)
+                  tmp = adata%b(x,y,z,l) * norm(x,y,z)
+                  adata%b(x,y,z,l) = merge(tmp, 0.d0, tmp==tmp) ! set to zero if NaN
+                end do
+              end do
             end do
           end do
         endif
@@ -844,7 +861,7 @@ MODULE nlte_patch_mod
 
       if (self%verbose > 1) then
         write(stdout,'(1X, A80)') &
-        '................................................................................'
+          '................................................................................'
       endif
     endif
   END SUBROUTINE print_post_update_info
@@ -885,9 +902,9 @@ MODULE nlte_patch_mod
       trans => composition%trans(i)
       if (.not. trans%active) cycle
       select case(trans%label)
-      case ('(H+H)', 'H2+', 'H- FF', 'H FF', 'H2-', 'H- BF')
+       case ('(H+H)', 'H2+', 'H- FF', 'H FF', 'H2-', 'H- BF')
         ! do not exclude
-      case default
+       case default
         ok = .false.
         if (trans%level%g > 0) then
           if (uppercase(trans%ion%id(1:2)) == atom%id) then
@@ -934,7 +951,7 @@ MODULE nlte_patch_mod
     do ia=1, self%natom
       associate(atom => self%atoms(ia))
         select type (species => atom%species)
-        class is (element_type)
+         class is (element_type)
           element => species
           if (all(element%ions%nline == 0)) return
           if (exclude_from_line_list) then
@@ -943,14 +960,14 @@ MODULE nlte_patch_mod
             do j=lbound(element%ions,1), ubound(element%ions,1) - 1
               ion => element%ions(j)
               if (ion%nline == 0) cycle
-      
+
               do l=1, ion%nline
                 ll_line => ion%line(l)
-                
+
                 do i=1, atom%nline
                   line => atom%trans%line(i)
                   if (abs(line%nu0 / ll_line%nu0 -1) < 1e-6 &
-                      .and. abs(line%Aji / ll_line%Aji - 1) < 1e-4) then
+                    .and. abs(line%Aji / ll_line%Aji - 1) < 1e-4) then
                     call ll_line%deactivate()
                     print '(A, F10.2)', 'excluding linelist line at ', CC / ll_line%nu0 *1e8
                   endif
@@ -958,33 +975,33 @@ MODULE nlte_patch_mod
               end do
             end do
           endif
-        class is (molec_type)
+         class is (molec_type)
           molec => species
           if (molec%nline == 0) return
           if (exclude_from_line_list) molec%in_linelist = .false.
         end select
         if (exclude_from_line_list) then
-            print *, 'excluding all ', trim(atom%id), ' lines from line list'
+          print *, 'excluding all ', trim(atom%id), ' lines from line list'
         endif
       end associate
     end do
   END SUBROUTINE exclude_double_lines
-  
+
   !===============================================================================
   SUBROUTINE nlte_patch_nbor_relations(self, another, needed, needs_me, download)
     class(nlte_patch_t) :: self
     class(task_t), pointer :: another         ! another task in the list
-    logical :: needed, needs_me, download    ! Is the other task: needed, 
-                                             !    does it need me, should I download?
+    logical :: needed, needs_me, download    ! Is the other task: needed,
+    !    does it need me, should I download?
     ! ----------------------------------------------------------------------------
     call trace%begin ('nlte_patch_t%nbor_relations')
     call self%m3d_patch_t%nbor_relations(another, needed, needs_me, download)
-  
+
     if (needed .or. needs_me) then
       select type (another)
-      class is (rt_patch_t)
+       class is (rt_patch_t)
         ! is needed and needs_me
-      class default
+       class default
         if (another%id == self%m3d_parent%id) then
           ! the composition patch needs this to be able to
           ! update again before final spectrum is printed
@@ -993,7 +1010,7 @@ MODULE nlte_patch_mod
         endif
       end select
     endif
-  
+
     call trace%end()
   END SUBROUTINE nlte_patch_nbor_relations
 
@@ -1069,19 +1086,19 @@ MODULE nlte_patch_mod
       associate(n=>self%atoms(w)%data%b)
         if (allocated(self%atoms(w)%data%b)) then
           do v=lbound(n, 4), ubound(n, 4)
-          do k=lbound(n, 3), ubound(n, 3)
-          do j=lbound(n, 2), ubound(n, 2)
-          do i=lbound(n, 1), ubound(n, 1)
-            if (n(i,j,k,v) /= n(i,j,k,v)) then
-              write(stdout, '(A,A,3(I4),I5,I3,I3)') self%m3d_patch_info(), '  NaN', i,j,k,v
-              stop
-            elseif (n(i,j,k,v) > inf4) then
-              write(stdout, '(A,A,3(I4),I5,I3,I3)') self%m3d_patch_info(), '  Infinity', i,j,k,v
-              stop
-            endif
-          end do
-          end do
-          end do
+            do k=lbound(n, 3), ubound(n, 3)
+              do j=lbound(n, 2), ubound(n, 2)
+                do i=lbound(n, 1), ubound(n, 1)
+                  if (n(i,j,k,v) /= n(i,j,k,v)) then
+                    write(stdout, '(A,A,3(I4),I5,I3,I3)') self%m3d_patch_info(), '  NaN', i,j,k,v
+                    stop
+                  elseif (n(i,j,k,v) > inf4) then
+                    write(stdout, '(A,A,3(I4),I5,I3,I3)') self%m3d_patch_info(), '  Infinity', i,j,k,v
+                    stop
+                  endif
+                end do
+              end do
+            end do
           end do
         endif
       end associate
@@ -1089,4 +1106,4 @@ MODULE nlte_patch_mod
     call trace%end(itimer)
   END SUBROUTINE check_mem_NaN
 
-  END MODULE
+END MODULE

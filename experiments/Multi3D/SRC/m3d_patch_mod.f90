@@ -26,7 +26,7 @@ MODULE m3d_patch_mod
     USE m3d_halo_mod, only: m3d_halo_t, print_finished, print_download, lock_mem, unlock_mem, print_lock
     USE spectrum_mod, only: nu_tolerance
     USE atom_mod, only: atom_type, atomic_spectrum_type, lse_no_pivot, lse_solver, &
-                        nq_fac, cswitch, ng_step, ng_start
+                        nq_fac, cswitch, ng_step, ng_start, ng_global
     USE composition_mod, only: composition_type, scattering_absorption, irwin_dis, helium_scattering, departure_pointer_t
     USE ray_mod, only: one_dimensional, set_carlson_quadratures, set_radau_quadratures, set_lobatto_quadratures, &
                        set_gauss_quadratures, set_custom_quadratures, set_grid_quadratures
@@ -169,9 +169,9 @@ MODULE m3d_patch_mod
     print_finished, print_start, print_send, ray_offset, print_download, &
     lse_solver, decouple_continuum, nu_tolerance, &
     pivot_z, save_resolved, overrelax, save_cntrbf, depression_cntrbf, &
-    absmet_in_output, print_lock, make_eos, ng_step, ng_start, scattering_absorption, &
+    absmet_in_output, print_lock, make_eos, ng_step, ng_start, ng_global, &
     column_by_column, rotate_atmos, Jnu_to_file, preconditioning, &
-    save_inu, save_chi, save_Snu, save_Jnu, &
+    save_inu, save_chi, save_Snu, save_Jnu, scattering_absorption, &
     long_scheme, long_ntheta, long_nphi, short_scheme, short_ntheta, short_nphi, &
     long_solver, fixed_Jnu
 
@@ -208,13 +208,13 @@ MODULE m3d_patch_mod
       !-------------------------------------------------------------------------
       select case (short_scheme)
       case ('disk_center', 'set_a2', 'set_a4', 'set_a6', 'set_a8', 'set_b4', 'set_b6', 'set_b8')
-        call set_carlson_quadratures (short_scheme, vec, wmu, up_and_down=.true.)
+        call set_carlson_quadratures (short_scheme, vec, wmu, Jnu_weights=.true.)
       case ('radau')
-        call set_radau_quadratures (short_ntheta, short_nphi, vec, wmu, up_and_down=.true.)
+        call set_radau_quadratures (short_ntheta, short_nphi, vec, wmu, Jnu_weights=.true.)
       case ('lobatto')
-        call set_lobatto_quadratures (short_ntheta, short_nphi, vec, wmu, up_and_down=.true.)
+        call set_lobatto_quadratures (short_ntheta, short_nphi, vec, wmu, Jnu_weights=.true.)
       case ('gauss')
-        call set_gauss_quadratures (short_ntheta, short_nphi, vec, wmu, up_and_down=.true.)
+        call set_gauss_quadratures (short_ntheta, short_nphi, vec, wmu, Jnu_weights=.true.)
       case default
         print *, 'Quadrature keyword "'// trim(short_scheme) // '" not recognized for SC solver. Stopping...'
         stop
@@ -222,13 +222,13 @@ MODULE m3d_patch_mod
 
       select case (long_scheme)
       case ('radau')
-        call set_radau_quadratures (long_ntheta, long_nphi, long_vec, long_wmu, up_and_down=.false.)
+        call set_radau_quadratures (long_ntheta, long_nphi, long_vec, long_wmu, Jnu_weights=.false.)
       case ('lobatto')
-        call set_lobatto_quadratures (long_ntheta, long_nphi, long_vec, long_wmu, up_and_down=.false.)
+        call set_lobatto_quadratures (long_ntheta, long_nphi, long_vec, long_wmu, Jnu_weights=.false.)
       case ('gauss')
-        call set_gauss_quadratures (long_ntheta, long_nphi, long_vec, long_wmu, up_and_down=.false.)
+        call set_gauss_quadratures (long_ntheta, long_nphi, long_vec, long_wmu, Jnu_weights=.false.)
       case ('disk_center', 'set_a2', 'set_a4', 'set_a6', 'set_a8', 'set_b4', 'set_b6', 'set_b8')
-        call set_carlson_quadratures (long_scheme, long_vec, long_wmu, up_and_down=.false.)
+        call set_carlson_quadratures (long_scheme, long_vec, long_wmu, Jnu_weights=.false.)
       case ('custom')
         call count_words(custom_mu, long_ntheta)
         allocate(cust_mu(long_ntheta))

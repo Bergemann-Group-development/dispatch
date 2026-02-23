@@ -17,8 +17,10 @@ formatters = {'ga':'{:.3e}'.format,
 def read(text, dtype):
   return np.array(next(text).strip().split()).astype(dtype)
 
-def read_table(file, **kwargs):
-  return pd.read_csv(file, sep=r'\s+', comment='*', quotechar="'", **kwargs)
+def read_table(file, names=None, **kwargs):
+  usecols = range(len(names)) if names else None
+  df = pd.read_csv(file, sep=r'\s+', comment='*', quotechar="'", names=names, usecols=usecols, **kwargs)
+  return df
 
 class FastAtom(object):
   def __init__(self, atom_file):
@@ -34,8 +36,12 @@ class FastAtom(object):
       self.nk, self.nline, self.ncont, self.nrfix = read(text, int)
       self.nrad = self.nline + self.ncont
       
-    levels = read_table(atom_file, header=2, nrows=self.nk, names=['ecm', 'g', 'label', 'ion'])
-    bb     = read_table(atom_file, header=2+self.nk, nrows=self.nline, names=['j', 'i', 'f', 'nq', 'qmax', 'q0', 'iw', 'ga', 'gv', 'gq', 'profile'])
+    names = ['ecm', 'g', 'label', 'ion']
+    levels = read_table(atom_file, header=2, nrows=self.nk, names=names)
+    names = ['j', 'i', 'f', 'nq', 'qmax', 'q0', 'iw', 'ga', 'gv', 'gq', 'profile']
+    dtype = [int, int, float, int, float, float, int, float, float, float, str]
+    dtype = {k:v for k, v in zip(names, dtype)}
+    bb     = read_table(atom_file, header=2+self.nk, nrows=self.nline, names=names, dtype=dtype)
     levels['ev'] = levels.ecm * CC*HH/EE
     bb.i = bb.i-1
     bb.j = bb.j-1
@@ -132,10 +138,11 @@ class PandasAtom(object):
     bf = pd.DataFrame()
     cont = atom.trans[atom.nline:]
     if len(cont) > 0:
-      bf['i'] = np.concatenate([[c.i for i in range(c.lam.size)] for c in cont])
-      bf['lam_air'] = np.concatenate([c.lam for c in cont])
-      bf['alpha'] = np.concatenate([c.alfac for c in cont])
-      self.bft = bf
+      if hasattr(cont[0], 'lam'):
+        bf['i'] = np.concatenate([[c.i for i in range(c.nq)] for c in cont])
+        bf['lam_air'] = np.concatenate([c.lam for c in cont])
+        bf['alpha'] = np.concatenate([c.alfac for c in cont])
+        self.bft = bf
 
     if len(atom.colls) > 0:
       ctemp = atom.colls[0].coltemp

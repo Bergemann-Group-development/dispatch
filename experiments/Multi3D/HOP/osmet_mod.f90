@@ -1,9 +1,11 @@
 MODULE osmet_mod
     USE os_mod
     USE prec_mod
+    USE const_mod
     USE op_math_mod
     implicit none
 
+    real(dp) :: eosmet=0.5
     real(dp), parameter :: ln10 = log(10.0)
     integer :: mnu=154000, mtem=17, mp6=18
 
@@ -14,10 +16,10 @@ MODULE osmet_mod
         logical, dimension(:), pointer, contiguous :: active
         integer :: lunit, np6, ntemp, nnu, maxrec
         logical :: initialised=.false.
-        real(dp) :: eosmet=0.5
     contains
         procedure :: init
         procedure :: add_line_opacities
+        procedure :: compute_epsilon
     end type
 
     type(osmet_type), public :: osmet
@@ -161,35 +163,108 @@ contains
     END SUBROUTINE add_line_opacities
 
     !===============================================================================
+    SUBROUTINE compute_epsilon(self, nu, temp, ne, epsln)
+      class(osmet_type), intent(inout) :: self
+      real(8), dimension(:), intent(in) :: nu
+      real(8), dimension(:,:,:), intent(in) :: temp, ne
+      real(4), dimension(:,:,:,:), intent(inout) :: epsln
+      real(8), dimension(:,:,:,:), allocatable, target :: beta, ecnst
+      real(8), dimension(:), pointer :: vbeta, vecnst
+      real(8), dimension(:), allocatable :: psemi1, psemi2, wnum3
+      real(8) :: hkt, eosmet_m1, ecnst1
+      integer :: i, j, k, f, nx, ny, nz, nf, n
+      !---------------------------------------------------------------------------
+      nf = size(epsln,1)
+      nx = size(epsln,2)
+      ny = size(epsln,3)
+      nz = size(epsln,4)
+
+      allocate(wnum3, source=(nu/CC)**3 / 20.6D0)
+      allocate(beta(nf, nx, ny, nz))
+      allocate(ecnst(nf, nx, ny, nz))
+      do k=1, nz
+      do j=1, ny
+      do i=1, nx
+        hkt = h_k / temp(i,j,k)
+        beta(:,i,j,k) = hkt * nu
+      end do
+      end do
+      end do
+      n = nf*nx*ny*nz
+      vbeta(1:n) => beta 
+      vecnst(1:n) => ecnst
+      allocate(psemi1, mold=vbeta)
+      allocate(psemi2, mold=vbeta)
+      call psemi(1, vbeta, psemi1)
+      call psemi(2, vbeta, psemi2)
+      eosmet_m1 = 1.0D0 - eosmet
+      do i=1, n
+        vecnst(i) = eosmet/psemi2(i) + eosmet_m1/psemi1(i)
+      end do
+
+      do k=1, nz
+      do j=1, ny
+      do i=1, nx
+        ecnst1 = sqrt(temp(i,j,k)) / ne(i,j,k)
+        do f=1, nf
+          epsln(f,i,j,k) = 1 / (ecnst1*ecnst(f,i,j,k)*wnum3(f) + 1)
+        end do
+      end do
+      end do
+      end do
+    END SUBROUTINE compute_epsilon
+
+    !===============================================================================
     !  thermal p-FUNCTION for semic empirical collision rates
     !  reference: sobel'man - 'atomic physics ii.  '
     !===============================================================================
-    real(8) FUNCTION psemi(z,b)
+    SUBROUTINE psemi(z,b,out)
         integer, intent(in) :: z
-        real(8), intent(in) :: b
+        real(8), intent(in), dimension(:) :: b
+        real(8), intent(out), dimension(:) :: out
         real(8), dimension(10), parameter :: betref = [-2.0,-1.699,-1.398,-1.0,-0.699,-0.398,0.0,0.301,0.602,1.0]
         real(8), dimension(10), parameter :: pnref  = [1.160,0.956,0.758,0.493,0.331,0.209,0.100,0.063,0.040,0.023]
         real(8), dimension(10), parameter :: pcref  = [1.160,0.977,0.788,0.554,0.403,0.290,0.214,0.201,0.200,0.200]
-        real(8) :: bb
-        integer :: i
+        real(8), allocatable :: b_packed(:), out_packed(:)
+        logical, allocatable :: mask(:)
         !---------------------------------------------------------------------------
-        if (b .lt. 0.01) then
-            !  limit of high temperature: kt >> e
-            psemi = 0.27566 * (0.577 + log(b))
-        elseif(b .gt. 0.01 .and. b .lt. 10.0)then
-            !  intermediate temps (most important for eqm plasmas)
-            !  spline interpolation onto logb grid:
-            bb=log10(b)
-            !if (z .eq. 1) psemi = splin(bb,betref,pnref,10,10)
-            !if (z .gt. 1) psemi = splin(bb,betref,pcref,10,10)
-            i = searchsorted(betref, bb)
-            if (z .eq. 1) psemi = interp1d_quadratic(i,betref,pnref,bb)
-            if (z .gt. 1) psemi = interp1d_quadratic(i,betref,pcref,bb)
-        elseif(b .gt. 10.0)then
-            !  limit of low temperature: kt << e
-            if(z .eq. 1) psemi = 0.066 / sqrt(b)
-            if(z .gt. 1) psemi = 0.200
+        if (z <= 0) then
+          out = 0.0
+          return
         endif
-        return
-      end FUNCTION psemi
+
+        allocate(mask, source=(b >= 0.01 .and. b <= 10.0))
+        allocate(b_packed, source=pack(b, mask))
+        allocate(out_packed, mold=b_packed)
+
+        where (b < 0.01) out = 0.27566 * (0.577 + log(b))
+
+        if (z == 1) then
+          where (b > 10) out = 0.066 / sqrt(b)
+          if (count(mask) > 0) then
+            call pchip_mono(betref, pnref, log10(b_packed), out_packed)
+          end if
+        else
+          where (b > 10) out = 0.200
+          if (count(mask) > 0) then
+            call pchip_mono(betref, pcref, log10(b_packed), out_packed)
+          end if
+        endif
+        out = unpack(out_packed, mask, out)
+
+        ! if (b .lt. 0.01) then
+        !     !  limit of high temperature: kt >> e
+        !     psemi = 0.27566 * (0.577 + log(b))
+        ! elseif(b .gt. 0.01 .and. b .lt. 10.0)then
+        !     !  intermediate temps (most important for eqm plasmas)
+        !     !  spline interpolation onto logb grid:
+        !     bb=log10(b)
+        !     if (z .eq. 1) call pchip_mono(betref,pnref,bb,psemi)
+        !     if (z .gt. 1) call pchip_mono(betref,pcref,bb,psemi)
+        ! elseif(b .gt. 10.0)then
+        !     !  limit of low temperature: kt << e
+        !     if(z .eq. 1) psemi = 0.066 / sqrt(b)
+        !     if(z .gt. 1) psemi = 0.200
+        ! endif
+      end SUBROUTINE psemi
 END MODULE osmet_mod

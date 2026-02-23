@@ -1,305 +1,488 @@
-from .auxfuncs import *
+import numpy as np
 import pandas as pd
-from .convolutions import convolve_crop
-from .plotting_scripts import adjust_max_xticks
-from .decorators import broadcast_arguments, auto_ops
 import astropy.units as u
-import warnings
-warnings.simplefilter(action='ignore', category=pd.errors.PerformanceWarning)
+import astropy.constants as const
+import matplotlib.pyplot as plt
+from scipy import optimize
+from .convolutions import convolve, kernel_width
+from .utils import ensure_unit, calc_teff, get_bisector, fit_line_profile, get_weq
+from .plotting_scripts import adjust_max_xticks
 
-code_wave_unit = u.angstrom
-code_flux_unit = u.erg / (u.s * u.cm**2 * u.angstrom)
-code_ints_unit = code_flux_unit / u.sr
-dimension_less = u.dimensionless_unscaled
 
-@auto_ops(attr='data')
-class SpectrumClass(object):
+def get_wavelength_shift(vshift):
+    """Get wavelength shift factor from velocity shift."""
+    if vshift is None:
+        return 1.0
+    beta = ensure_unit(vshift, u.km / u.s) / const.c
+    return 1 + beta
+
+
+class Spectrum:
     """
-    A spectrum class based on pandas DataFrame.
-    Contains wavelength in angstroms and flux/intensity columns,
-    and methods for spectrum manipulation.
+    A class to represent a spectrum with x and y data, handling units and arithmetic operations.
     """
+
+    def __init__(self, xdata, ydata, xunit=None, yunit=None, xref=None):
+        """
+        Initialize the Spectrum class.
+
+        Parameters:
+        -----------
+        xdata : array-like or astropy.units.Quantity
+            The x-axis data (wavelength, frequency, etc.).
+        ydata : array-like or astropy.units.Quantity
+            The y-axis data (flux, intensity, etc.).
+        xunit : astropy.units.Unit, optional
+            Unit for xdata if xdata is not already a Quantity. Default is u.angstrom.
+        yunit : astropy.units.Unit, optional
+            Unit for ydata if ydata is not already a Quantity. Default is u.erg / (u.s * u.cm**2 * u.angstrom).
+        xref : float or astropy.units.Quantity, optional
+            Reference x value. If provided, xdata is relative to this value.
+        """
+
+        if len(xdata) != len(ydata):
+            raise ValueError("xdata and ydata must have the same length.")
+
+        default_xunit = u.angstrom
+        default_yunit = u.erg / (u.s * u.cm**2 * u.angstrom)
+        xunit = xunit or default_xunit
+        yunit = yunit or default_yunit
+
+        if isinstance(xdata, u.Quantity):
+            self.xdata = xdata
+        else:
+            self.xdata = np.array(xdata) * xunit
+
+        if isinstance(ydata, u.Quantity):
+            self.ydata = ydata
+        else:
+            self.ydata = np.array(ydata) * yunit
+
+        if xref is None:
+            xref = 0
+        if isinstance(xref, u.Quantity):
+            self.xref = xref.to(self.xunit, equivalencies=u.spectral())
+        else:
+            self.xref = xref * self.xunit
+
+    @property
+    def xunit(self):
+        """Get the unit of xdata."""
+        return self.xdata.unit
+
+    @xunit.setter
+    def xunit(self, unit):
+        """Set the unit of xdata, converting the data."""
+        self.convert_units(xunit=unit, inplace=True)
+
+    @property
+    def yunit(self):
+        """Get the unit of ydata."""
+        return self.ydata.unit
+
+    @yunit.setter
+    def yunit(self, unit):
+        """Set the unit of ydata, converting the data."""
+        self.convert_units(yunit=unit, inplace=True)
+
+    @property
+    def data(self):
+        """Get the xdata and ydata as a numpy array."""
+        return np.array([self.xdata, self.ydata])
     
     @property
-    def xdata(self):
-      return self.wave.values.T
-    
-    @property
-    def ydata(self):
-      return self.data.values.T
-    
-    @property
-    def column_names(self):
-      names =[]
-      for col in self.data.columns:
-        if isinstance(col, tuple):
-          names.append(' '.join([str(c) for c in col]))
+    def df(self):
+        """
+        Get the spectrum data as a pandas DataFrame.
+
+        Returns:
+        --------
+        pandas.DataFrame
+            A DataFrame with columns for xdata and ydata, including units in the column names.
+        """
+        x_col_name = f"{self.xdata.unit:unicode}"
+        y_col_name = f"{self.ydata.unit:unicode}"
+        return pd.DataFrame({x_col_name: self.xdata.value, y_col_name: self.ydata.value})
+
+    def _get_spectral_category(self, unit):
+        """
+        Determine the spectral category of the unit.
+
+        Parameters:
+        -----------
+        unit : astropy.units.Unit
+            The unit to check.
+
+        Returns:
+        --------
+        str
+            'wavelength', 'frequency', 'energy', 'wavenumber', 'doppler velocity', or 'unknown'.
+        """
+        if unit.is_equivalent(u.m):
+            return "wavelength"
+        elif unit.is_equivalent(u.Hz):
+            return "frequency"
+        elif unit.is_equivalent(u.J):
+            return "energy"
+        elif unit.is_equivalent(u.m**-1):
+            return "wavenumber"
+        elif unit.is_equivalent(u.m / u.s):
+            return "doppler velocity"
         else:
-          names.append(col)
-      return names
-    
-    #=====================================================================
-    def __init__(self, data=None, base=None):
-        #-----------------------------------------------------------------
-        # the base argument is needed for the auto_ops decorator to work
-        if data is not None:
-          self.data = pd.DataFrame(data)
-        if isinstance(base, SpectrumClass):
-          for attr in base.__dict__.keys():
-              if not hasattr(self, attr):
-                  setattr(self, attr, getattr(base, attr))
-    
-    #=====================================================================
-    @classmethod
-    def from_data(cls, wave, data):
-        #-----------------------------------------------------------------
-        self = cls(data=data)
-        self.wave = pd.DataFrame(wave)
-        return self
+            return "unknown"
 
-    #=====================================================================
-    @classmethod
-    def from_arrays(cls, wave, norm=None, flux=None, ints=None,
-                  wave_unit=None, flux_unit=None, in_air=True):
-        #-----------------------------------------------------------------
-        self = cls()
-        self.wave = pd.DataFrame(wave)
+    def _repr_html_(self):
+        """
+        HTML representation of the Spectrum class using a pandas DataFrame.
+        """
+        return self.df._repr_html_()
 
-        flux = pd.DataFrame(flux)
-        ints = pd.DataFrame(ints)
-        norm = pd.DataFrame(norm)
+    def convert_units(self, xunit=None, yunit=None, inplace=False):
+        """
+        Convert units of xdata and ydata.
 
-        if wave_unit and wave_unit != code_wave_unit:
-          self.wave *= wave_unit.to(code_wave_unit, equivalencies=u.spectral())
+        Parameters:
+        -----------
+        xunit : astropy.units.Unit, optional
+            Target unit for xdata.
+        yunit : astropy.units.Unit, optional
+            Target unit for ydata.
+        inplace : bool, optional
+            If True, modifies the current instance. If False, returns a new instance.
 
-        if not in_air:
-          # this expects lam in angstrom
-          self.wave.iloc[:] = vac2air(self.wave.iloc[:])
+        Returns:
+        --------
+        Spectrum or None
+        """
+        new_xdata = self.xdata
+        new_ydata = self.ydata
 
-        if flux_unit and flux_unit != code_flux_unit:
-          flux *= flux_unit.to(code_flux_unit, equivalencies=u.spectral_density(self.wave.values*code_wave_unit))
-          ints *= flux_unit.to(code_flux_unit, equivalencies=u.spectral_density(self.wave.values*code_wave_unit))
+        if xunit is not None:
+            new_xdata = self.xdata.to(xunit, equivalencies=u.spectral())
 
-        append_level(flux, code_flux_unit.to_string('unicode'))
-        append_level(ints, code_ints_unit.to_string('unicode'))
-        append_level(norm, dimension_less)
+        if yunit is not None:
+            new_ydata = self.ydata.to(
+                yunit, equivalencies=u.spectral_density(new_xdata)
+            )
 
-        data = [norm, flux, ints]
-        data = [d for d in data if d.size>0]
-        if len(data) > 0:
-          self.data = pd.concat(data, axis=1)
-        return self
-    
-    #=====================================================================
-    @classmethod
-    def combine(cls, spectra, weights):
-      self = cls()
-      self.wave = spectra[0].wave
-      self.data = weights[0]*spectra[0].data
-      for s,w in zip(spectra[1:], weights[1:]):
-        self.data += w*s.data
-      return self
-
-    #=====================================================================
-    @broadcast_arguments(convolve=1, newx=1, numeric=False)
-    def crop(self, slc=None, lam0=None, dlam=None, xmin=None, xmax=None, vdop=None,
-              vrot=None, vshift=None, convolve=None, zeta_rt=None, relative=True, res=None,
-              renorm=None, continuum=None, tilt=None, doppler_ref=None, newx=None,
-              wave_unit=None):
-        #-----------------------------------------------------------------
-        lam = self.xdata
-        val = self.ydata
-
-        if slc:
-            xmin = lam[..., slc.start] if slc.start else xmin
-            xmax = lam[..., slc.stop-1] if slc.stop else xmax
-
-        if newx is not None:
-            xmin = np.min(newx, axis=-1)
-            xmax = np.max(newx, axis=-1)
-        
-        if lam0 and dlam:
-            if not isinstance(dlam, (bool)):
-                if hasattr(dlam, '__iter__'):
-                    xmin = lam0 - dlam[0]
-                    xmax = lam0 + dlam[1]
-                else:
-                    xmin = lam0 - dlam
-                    xmax = lam0 + dlam
+        if inplace:
+            self.xdata = new_xdata
+            self.ydata = new_ydata
+            return None
         else:
-            dlam = None
-            lam0 = None
+            return Spectrum(new_xdata, new_ydata)
 
-        # this expects lam in angstrom
-        xx, yy = convolve_crop(lam, val, xmin=xmin, xmax=xmax, res=res, vshift=vshift,
-                                vdop=vdop, vrot=vrot, zeta_rt=zeta_rt, custom=convolve)
-        
-        if renorm:
-          if renorm == 'max':
-            yy = yy / np.max(yy, axis=-1)
-          elif renorm == 'edge':
-            yy = yy / linear_edge_normalisation(xx, yy)
-          elif renorm > 0:
-            rmin = xmin - renorm if xmin else None
-            rmax = xmax + renorm if xmax else None
-            rx, ry = self.crop(xmin=rmin, xmax=rmax, vshift=vshift, res=res,
-                                vdop=vdop, vrot=vrot, zeta_rt=zeta_rt, convolve=convolve)
-            yy = yy / np.max(ry, axis=-1)
+    def plot(self, ax=None, set_labels=True, label=None, xlabel=None, ylabel=None, **kwargs):
+        """
+        Plot the spectrum.
 
-        if continuum:
-          yy = yy * continuum
-        
-        if tilt:
-          yy = yy * (1 + tilt*(xx - (xx[...,0]+xx[...,-1])/2))
+        Parameters:
+        -----------
+        ax : matplotlib.axes.Axes, optional
+            Axes object to plot on. If None, uses plt.gca().
+        **kwargs : dict
+            Keyword arguments passed to plot function.
+        """
+        if ax is None:
+            ax = plt.gca()
 
-        xx = xx[0]
+        if label is not None:
+            if '{weq' in label:
+                weq = self.get_weq(profile='trapz', auto_crop=False)
+                label = label.format(weq=weq.value)
 
-        if doppler_ref is not None:
-          xx = CC_KMS * (xx / doppler_ref - 1)
-          xkey = 'vdop'
-        elif lam0 and relative:
-          xx = xx - lam0
-          xkey = 'dlam'
-        else:
-          xkey = 'lam'
-
-        columns = self.data.columns
-        if renorm:
-           columns = [(c[1:], dimension_less) for c in columns]
-        
-        wave_unit = u.Unit(wave_unit or code_wave_unit)
-        if wave_unit != code_wave_unit:
-          xx = xx * code_wave_unit.to(wave_unit, equivalencies=u.spectral())
-        xkey = (xkey, wave_unit.to_string('unicode'))
-
-        data = {}
-        for col, y in zip(columns, yy):
-          data[col] = y if newx is None else np.interp(newx, xx, y)
-
-        xx = newx if newx is not None else xx
-        spec = SpectrumClass.from_data(wave={xkey:xx}, data=data)
-        return spec
-    
-    #=====================================================================
-    def plot(self, set_labels=True, label=None, bisector=False, **kwargs):
-        #-----------------------------------------------------------------
-        xx = self.xdata.T
-        yy = self.ydata.T
-
-        self.set_xaxis(xx, set_labels)
-        self.set_yaxis()
-
-        if type(label) is str:
-          if '{WEQ}' in label:
-            if yy.ndim == 1:
-              weq = np.trapz(1-yy, x=xx)*1e3
-              label = label.replace('{WEQ}', '{:.2f}'.format(weq))
-
-        elif label is None:
-          label = self.column_names
-          if len(label) == 1:
-            label = label[0]
-
-        p = plt.plot(xx, yy, label=label, **kwargs)
-
-        if bisector:
-          bx, by = self.get_bisector()
-          kwargs['color'] = p[0].get_color()
-          plt.plot(bx, by, **kwargs)
-
-        return p
-
-    #=====================================================================
-    def calc_weq(self, method='trapz', return_err=False, plot=False,
-                get_func=False, lam0=None, dlam=None, **kwargs):
-      #-----------------------------------------------------------------
-      if dlam == 'auto':
-        dl = 3
-      else:
-        dl = dlam
-
-      spec = self.crop(lam0=lam0, relative=False, dlam=dl, **kwargs)
-      return get_weq([spec.xdata], spec.ydata, lam0=lam0, dlam=dlam, method=method,
-                      get_func=get_func, return_err=return_err, plot=plot)
-
-    #=====================================================================
-    def set_xaxis(self, xx, set_labels=True):
-        #-----------------------------------------------------------------
-        xmin = np.min(xx)
-        xmax = np.max(xx)
-
-        if self.wave.columns[0] == 'dlam':
-          xlabel = r'∆λ '
-        #elif self.doppler_ref is not None: 
-        #  xlabel = r'$v_{\rm dop}$ [km/s]'
-        else:
-          xlabel = 'Wavelength'
-
-        unit = u.Unit(self.wave.columns.get_level_values(-1)[0])
-        if unit != dimension_less:
-          xlabel += f' [{unit.to_string("unicode")}]'
+        xdata = self.xdata.value
+        ydata = self.ydata.value
+        ax.plot(xdata, ydata, label=label, **kwargs)
 
         if set_labels:
-          ax = plt.gca()
-          sub = ax.get_subplotspec()
-          grid = sub.get_gridspec()
-          if sub.rowspan.stop == grid._nrows:
-            plt.xlabel(xlabel)
+            xlabel = xlabel or ''
+            ylabel = ylabel or ''
+            
+            category = self._get_spectral_category(self.xunit)
+            if category != "unknown":
+                x_label = f"{xlabel or category.title()} [{self.xunit:unicode}]"
+            else:
+                x_label = f"{xlabel} [{self.xunit:unicode}]"
 
-        plt.xlim(xmin, xmax)
+            if self.yunit.is_equivalent(u.dimensionless_unscaled):
+                y_label = f"Normalized {ylabel}"
+            else:
+                y_label = f"{ylabel} [{self.yunit:unicode}]"
+
+            sub = ax.get_subplotspec()
+            if sub is not None:
+              grid = sub.get_gridspec()
+
+              if sub.rowspan.stop == grid._nrows:
+                  ax.set_xlabel(x_label)
+              if sub.colspan.start == 0:
+                  ax.set_ylabel(y_label)
+
+        ax.set_xlim(xdata.min(), xdata.max())
         plt.ticklabel_format(useOffset=False)
         adjust_max_xticks()
+        return ax
 
-    #=====================================================================
-    def set_yaxis(self, set_labels=True):
-      #-----------------------------------------------------------------
-      unique = self.data.columns.get_level_values(-1).unique()
-      is_unique = unique.size==1
+    # Arithmetic operations (acting on ydata)
 
-      if is_unique:
-        unit = u.Unit(unique[0])
-        if unit == dimension_less:
-          ylabel = 'Normalised'
-        elif u.sr in unit.bases:
-          ylabel = f'Intensity [{unit.to_string('unicode')}]'
+    def _prepare_operand(self, other):
+        """Helper to extract ydata from another Spectrum or return raw operand."""
+        if isinstance(other, Spectrum):
+            # Check if xdata is compatible (could be stricter, but for now just check length/units approx?)
+            # Ideally one should interpolate, but for simple arithmetic we assume same grid or just broadcast
+            # Checking if units match is good practice but maybe not strictly required for operation if user knows what they are doing
+            # But physically, adding Flux to Flux makes sense.
+            if len(self.xdata) != len(other.xdata):
+                raise ValueError(
+                    "Cannot perform operation on Spectra with different lengths."
+                )
+            # For now, simplistic approach: just operate on comparable ydata
+            # We assume the user is adding aligned spectra
+            return other.ydata
+        return other
+
+    def __add__(self, other):
+        other_val = self._prepare_operand(other)
+        return Spectrum(self.xdata, self.ydata + other_val)
+
+    def __radd__(self, other):
+        return self.__add__(other)
+
+    def __sub__(self, other):
+        other_val = self._prepare_operand(other)
+        return Spectrum(self.xdata, self.ydata - other_val)
+
+    def __rsub__(self, other):
+        other_val = self._prepare_operand(other)
+        return Spectrum(self.xdata, other_val - self.ydata)
+
+    def __mul__(self, other):
+        other_val = self._prepare_operand(other)
+        return Spectrum(self.xdata, self.ydata * other_val)
+
+    def __rmul__(self, other):
+        return self.__mul__(other)
+
+    def __truediv__(self, other):
+        other_val = self._prepare_operand(other)
+        return Spectrum(self.xdata, self.ydata / other_val)
+
+    def __rtruediv__(self, other):
+        other_val = self._prepare_operand(other)
+        return Spectrum(self.xdata, other_val / self.ydata)
+
+    def __iter__(self):
+        yield self.xdata
+        yield self.ydata
+
+    def _crop(self, xmin, xmax):
+        """Internal crop method using searchsorted. Always returns subset preserving order."""
+        is_ascending = self.xdata[-1] > self.xdata[0]
+        # Work with ascending view for search
+        xsearch = self.xdata if is_ascending else self.xdata[::-1]
+        ysearch = self.ydata if is_ascending else self.ydata[::-1]
+
+        # Search range (xmin to xmax)
+        i_start = np.searchsorted(xsearch, xmin, side="left")
+        i_end = np.searchsorted(xsearch, xmax, side="right")
+
+        # Extract from sorted
+        new_xdata = xsearch[i_start:i_end]
+        new_ydata = ysearch[i_start:i_end]
+
+        return Spectrum(new_xdata, new_ydata, self.xunit, self.yunit, xref=self.xref)
+
+    def crop(
+        self,
+        x0=None,
+        dx=None,
+        xmin=None,
+        xmax=None,
+        slc=None,
+        relative=False,
+        vshift=None,
+        newx=None,
+        **kwargs,
+    ):
+        """
+        Crop the spectrum to a specified range.
+
+        Can provide either (x0, dx) or (xmin, xmax) or newx.
+
+        Parameters:
+        -----------
+        x0 : float or astropy.units.Quantity, optional
+            Central position of the crop window.
+        dx : float or astropy.units.Quantity, optional
+            Width of the crop window (range [x0-dx, x0+dx]).
+        xmin, xmax : float or astropy.units.Quantity, optional
+            Minimum/Maximum x value.
+        relative : bool, optional
+            If True, shifts x-axis relative to center/x0.
+        vshift : float or astropy.units.Quantity, optional
+             Doppler shift in km/s (or velocity unit).
+        newx : array-like or astropy.units.Quantity, optional
+             New x-grid to interpolate onto.
+             If provided, xmin/xmax are inferred from this grid if not given.
+        kwargs : dict
+            Convolution parameters (res, vrot, vdop, zeta_rt, custom).
+            If provided, performs crop -> convolve -> final crop.
+            Units for convolution parameters assume km/s if not specified.
+
+        Returns:
+        --------
+        Spectrum
+        """
+        # Parse crop arguments
+        # Use ensure_unit to handle unit conversions and defaults
+        if newx is not None:
+            newx = ensure_unit(newx, self.xunit)
+            # Infer bounds if not given
+            if xmin is None:
+                xmin = newx.min()
+            if xmax is not None:
+                xmax = newx.max()
+
+        if x0 is not None and dx is not None:
+            x0 = ensure_unit(x0, self.xunit)
+            dx = ensure_unit(dx, self.xunit)
+            xmin, xmax = x0 - dx, x0 + dx
+        elif xmin is not None and xmax is not None:
+            xmin = ensure_unit(xmin, self.xunit)
+            xmax = ensure_unit(xmax, self.xunit)
+        elif slc is not None:
+            xmin = self.xdata[slc.start] if slc.start else xmin
+            xmax = self.xdata[slc.stop] if slc.stop else xmax
         else:
-          ylabel = f'Flux [{unit.to_string('unicode')}]'
-      else:
-        ylabel = 'Non-uniform units'
+            xmin = self.xdata[0]
+            xmax = self.xdata[-1]
 
-      if set_labels:
-        ax = plt.gca()
-        sub = ax.get_subplotspec()
-        if sub.colspan.start == 0:
-          plt.ylabel(ylabel)
+        # Ensure units match xdata specific unit
+        # (ensure_unit might leave it as compatible but different unit)
+        xmin = xmin.to(self.xunit, equivalencies=u.spectral())
+        xmax = xmax.to(self.xunit, equivalencies=u.spectral())
+        center = (xmin + xmax) / 2
 
-    #=====================================================================
-    def calc_teff(self, **kwargs):
-      xx = self.xdata
-      yy = self.ydata
-      return calc_teff(xx, yy, **kwargs)
+        # Standard crop
+        s = self._crop(xmin, xmax)
 
-    #=====================================================================
-    def get_bisector(self, **kwargs):
-      #-----------------------------------------------------------------
-      xx = self.xdata
-      yy = self.ydata[0]
-      x0 = 0 if self.x0 is not None else np.median(xx)
-      return get_bisector(xx, yy, x0=x0, **kwargs)
-    
-    #=================================================================
-    def fit(self, spec, fit=None, bounds=None, p0=None, sigma=None,
-                     syst=None, method='L-BFGS-B', tol=None, res=None, **kwargs):
-        #-----------------------------------------------------------------
+        if kwargs or vshift is not None:
+            # 1. Padding and Shift Logic
+
+            # vshift handled by get_wavelength_shift
+            lshift = get_wavelength_shift(vshift)
+
+            # Calculate Kernel Width for padding
+            width_frac = kernel_width(**kwargs)
+            pad = 1 + width_frac
+
+            # Padded bounds (shifted to rest frame)
+            # xmin/xmax are in "observed" frame (target frame) and are Quantities.
+            # We want to extract the "rest" frame chunk that will become this observed chunk.
+            xmin_eff = (xmin / lshift) / pad
+            xmax_eff = (xmax / lshift) * pad
+
+            # Crop 1: Extract padded chunk
+            sub_spec = self._crop(xmin_eff, xmax_eff)
+
+            if len(sub_spec.xdata) == 0:
+                print("Warning: Convolution crop resulted in empty spectrum.")
+                return sub_spec
+
+            cx, cy = convolve(*sub_spec, **kwargs)
+
+            # Shift back to observed frame
+            cx = cx * lshift
+
+            # Interpolate to target grid
+            newx = newx or s.xdata
+            newy = np.interp(newx, cx, cy)
+            return Spectrum(newx, newy, xref=sub_spec.xref, yunit=self.yunit)
+
+        else:
+            if newx is not None:
+                newy = np.interp(newx, *s)
+                return Spectrum(newx, newy, xref=s.xref)
+
+            # Apply relative shift if requested (and no newx override)
+            if relative:
+                return Spectrum(s.xdata - center, s.ydata, xref=s.xref + center)
+            else:
+                return s
+
+    def fit(
+        self,
+        spec,
+        fit=None,
+        bounds=None,
+        p0=None,
+        sigma=None,
+        method="L-BFGS-B",
+        tol=None,
+        res=None,
+        **kwargs,
+    ):
+        """
+        Fit a model spectrum to the observed spectrum.
+
+        Parameters:
+        -----------
+        spec : Spectrum
+            The observed spectrum to fit.
+        fit : list, optional
+            List of parameters to fit. Default is [].
+        bounds : dict, optional
+            Dictionary of parameter bounds. Default is {}.
+        p0 : dict, optional
+            Dictionary of initial parameter guesses. Default is {}.
+        sigma : float, optional
+            Standard deviation of the noise. Default is None.
+        method : str, optional
+            Optimization method. Default is 'L-BFGS-B'.
+        tol : float, optional
+            Tolerance for optimization. Default is None.
+        **kwargs :
+            Additional keyword arguments to pass to the crop method.
+
+        Returns:
+        --------
+        best : dict
+            Dictionary of best-fit parameters.
+        fitted : Spectrum
+            Fitted spectrum.
+        """
         fit = fit or []
         bounds = bounds or {}
         p0 = p0 or {}
-        
-        if len(fit)==0: return {}, None
-        lbounds = {'vshift':-3, 'vdop':1e-3, 'vrot':1e-3, 'zeta_rt':1e-3, 'continuum':0.5, 'tilt':-0.2}
-        ubounds = {'vshift':+3, 'vdop':1e1,  'vrot':1e1,  'zeta_rt':1e1,  'continuum':2.0, 'tilt':+0.2}
-        p0s     = {'vshift':0,  'vdop':1,    'vrot':1,    'zeta_rt':1,    'continuum':1.0, 'tilt':0.0}
-        
+
+        if len(fit) == 0:
+            return {}, None
+        lbounds = {
+            "vshift": -3,
+            "vdop": 1e-3,
+            "vrot": 1e-3,
+            "zeta_rt": 1e-3,
+            "continuum": 0.5,
+            "tilt": -0.2,
+        }
+        ubounds = {
+            "vshift": +3,
+            "vdop": 1e1,
+            "vrot": 1e1,
+            "zeta_rt": 1e1,
+            "continuum": 2.0,
+            "tilt": +0.2,
+        }
+        p0s = {
+            "vshift": 0,
+            "vdop": 1,
+            "vrot": 1,
+            "zeta_rt": 1,
+            "continuum": 1.0,
+            "tilt": 0.0,
+        }
+
         p0s.update(p0)
         for key in bounds.keys():
             lbounds[key], ubounds[key] = bounds[key]
@@ -309,120 +492,157 @@ class SpectrumClass(object):
         bounds = np.vstack(bounds).T
 
         def evaluate(newx, *args):
-            ka = {f:args[i] for i, f in enumerate(fit)}
-            news = self.crop(newx=newx, **ka, res=res, **kwargs)
+            ka = {f: args[i] for i, f in enumerate(fit)}
+            news = self.crop(newx=newx, **ka, **kwargs)
             if news.xdata.size == 0:
-                raise ValueError('Observations outside of model wavelength range!')
+                raise ValueError("Observations outside of model wavelength range!")
             return news
-        
+
         def fit_params(s):
             def residuals(params):
                 r = s.ydata - evaluate(s.xdata, *params).ydata
-                if sigma is not None: r = r/sigma
+                if sigma is not None:
+                    r = r / sigma
                 return np.sum(r**2)
-            
-            pfit = optimize.minimize(residuals, p0, bounds=bounds, method=method, tol=tol).x
+
+            pfit = optimize.minimize(
+                residuals, p0, bounds=bounds, method=method, tol=tol
+            ).x
             return pfit
 
         pfit = fit_params(spec)
         fitted = evaluate(spec.xdata, *pfit)
-        best = {f:pfit[i] for i, f in enumerate(fit)}
+        best = {f: pfit[i] for i, f in enumerate(fit)}
 
         return best, fitted
 
-        # if syst is None:
-        #     return best, fitted
-        # else:
-        #     pfits = np.zeros((len(pfit), 3))
-        #     pfits[:, 0] = fit_params(spec*(1-syst)).ydata
-        #     pfits[:, 1] = pfit.ydata
-        #     pfits[:, 2] = fit_params(spec*(1+syst)).ydata
-        #     perr = [pchip_sigma([-syst, 0, syst], p, 0, syst) for p in pfits]
-        #     perr = {f:perr[i] for i, f in enumerate(fit)}
-        #     return best, fitted, perr
-        
+    def to_velocity(self, rest_value=None, type="optical", unit=u.km / u.s):
+        """
+        Convert the x-axis to Doppler velocity.
 
-    @property
-    def df(self):
-      df = self.data.copy()
-      df.insert(0, code_wave_unit.to_string('unicode'), self.wave)
-      df = drop_unused_levels(df)
-      return df
+        Parameters:
+        -----------
+        rest_value : astropy.units.Quantity, optional
+            The rest wavelength or frequency. If None, uses self.xref.
+        type : str, optional
+            The Doppler convention: 'optical' (default), 'radio', or 'relativistic'.
+        unit : astropy.units.Unit, optional
+            The target velocity unit. Default is km/s.
 
-    def __repr__(self):
-      return repr(self.df)
+        Returns:
+        --------
+        Spectrum
+            A new Spectrum instance with velocity x-axis.
+        """
+        if rest_value is None:
+            # Check if self.xref is non-zero/valid
+            if self.xref is None or self.xref.value == 0:
+                raise ValueError("rest_value not provided and self.xref is 0 or None.")
+            rest_value = self.xref
 
-    def _repr_html_(self):
-      return self.df._repr_html_()
+        # Ensure rest_value has units compatible with xdata
+        if not rest_value.unit.is_equivalent(
+            self.xdata.unit, equivalencies=u.spectral()
+        ):
+            raise ValueError("rest_value unit is not compatible with xdata unit.")
+
+        if type == "optical":
+            equivalency = u.doppler_optical(rest_value)
+        elif type == "radio":
+            equivalency = u.doppler_radio(rest_value)
+        elif type == "relativistic":
+            equivalency = u.doppler_relativistic(rest_value)
+        else:
+            raise ValueError(
+                "Invalid Doppler type. Choose 'optical', 'radio', or 'relativistic'."
+            )
+
+        # Convert absolute x values (xdata + xref) to velocity
+        absolute_x = self.xdata + self.xref
+        new_xdata = absolute_x.to(unit, equivalencies=equivalency)
+
+        # After conversion, xdata is velocity relative to rest_value.
+        # So the "reference" in the new frame is effectively 0 velocity.
+        return Spectrum(new_xdata, self.ydata, xref=0 * unit)
+
+    def fit_line_profile(self, **kwargs):
+        """
+        Fit a line profile to the spectrum.
+
+        Parameters:
+        -----------
+        **kwargs : dict
+            Keyword arguments to pass to fit_line_profile.
+
+        Returns:
+        --------
+        Spectrum
+            A new Spectrum instance with the fitted line profile.
+        """
+        popt, fitted, weq, eweq = fit_line_profile(*self, **kwargs)
+        return Spectrum(self.xdata, fitted, xref=self.xref)
+
+    def get_weq(self, **kwargs):
+        """
+        Calculate the equivalent width of the spectrum.
+
+        Parameters:
+        -----------
+        **kwargs : dict
+            Keyword arguments to pass to fit_line_profile.
+
+        Returns:
+        --------
+        float
+            The equivalent width of the spectrum.
+        """
+        return get_weq(*self, **kwargs)
     
+    def calc_teff(self, **kwargs):
+        """
+        Calculate the effective temperature from the spectrum.
+
+        Parameters:
+        -----------
+        **kwargs : dict
+            Keyword arguments to pass to calc_teff.
+
+        Returns:
+        --------
+        astropy.units.Quantity
+            The effective temperature of the spectrum.
+        """
+        return calc_teff(*self, **kwargs)
+
     def __getitem__(self, key):
-      return SpectrumClass.from_data(self.wave, self.data[key])
-    
-    #def __getattr__(self, name):
-    #  # Called ONLY when regular attribute lookup fails.
-    #  if hasattr(self.df, name):
-    #      return getattr(self.df, name)
-    #  raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+        """
+        Support slicing of the spectrum.
 
+        Parameters:
+        -----------
+        key : slice
+            The slice object.
 
-#=====================================================================
-def get_bisector(xx, yy, x0=None, n=100, frac=0.99):
-  #-----------------------------------------------------------------
-  x0 = x0 or np.median(xx)
-  ex = argrelextrema(yy, np.less_equal)[0]
-  i0 = ex[np.argmin(np.abs(xx[ex] - x0))]
-  ex = argrelextrema(yy, np.greater_equal)[0]
-  i = np.searchsorted(ex, i0)
-  ib = ex[i-1]
-  ir = ex[i]
-  ymin = np.max(yy[i0-1:i0+2])
-  ymax = np.min([yy[ib], yy[ir]])
-  ymax = ymin + (ymax - ymin)*frac
-  newy = np.linspace(ymax, ymin, n)
-  lwing = np.interp(newy, yy[i0:ib:-1], xx[i0:ib:-1])
-  rwing = np.interp(newy, yy[i0:ir], xx[i0:ir])
-  newx = 0.5*(lwing + rwing)
-  return newx, newy
+        Returns:
+        --------
+        Spectrum
+            A new Spectrum instance sliced as requested.
+        """
+        if isinstance(key, slice):
+            return Spectrum(self.xdata[key], self.ydata[key])
+        else:
+            raise TypeError("Only slicing is supported.")
 
-#=====================================================================
-@broadcast_arguments(xx=1, yy=1)
-def calc_teff(xx, yy, planck_thresh=None):
-  mnan = np.isfinite(yy)
+    @classmethod
+    def combine(cls, spectra, weights=None):
+        weights = weights or np.ones(len(spectra)) / len(spectra)
+        s = spectra[0] * weights[0]
+        for spec, weight in zip(spectra[1:], weights[1:]):
+            s += spec * weight
+        return s
 
-  if planck_thresh is not None:
-    def opt_func(x, Teff):
-      y = np.pi*planck(x, Teff)
-      return y
-    
-    mask = (xx > planck_thresh) & mnan
-    mx = xx[mask]
-    my = yy[mask]
-
-    popt, _ = curve_fit(opt_func, mx, my, bounds=([2000],[10000]))
-
-    trailx = np.geomspace(xx[-1], 1e6)[1:]
-    traily = opt_func(trailx, *popt)
-
-    newx = np.concatenate((xx[mnan], trailx))
-    newy = np.concatenate((yy[mnan], traily))
-  else:
-    newx = xx[mnan]
-    newy = yy[mnan]
-
-  bol = np.trapz(newy , x=newx)
-  teff = (bol / SBOL)**0.25
-  return teff
-
-def drop_unused_levels(df):
-  if not hasattr(df.columns, 'levels'): return df
-  mask = [any(l) for l in df.columns.levels]
-  for i, m in zip(range(len(mask)-1, -1, -1), reversed(mask)):
-    if not m:
-      df.columns = df.columns.droplevel(i)
-  return df
-
-def append_level(df, level):
-  if df.size == 0:
-    return df
-   
-  df.columns = pd.MultiIndex.from_tuples([((c,) if not isinstance(c, tuple) else c) + (level,) for c in df.columns])
+    @classmethod
+    def concat(cls, spectra):
+        xdata = np.concatenate([s.xdata for s in spectra])
+        ydata = np.concatenate([s.ydata for s in spectra])
+        return cls(xdata, ydata)

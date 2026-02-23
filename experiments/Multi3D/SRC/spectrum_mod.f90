@@ -130,7 +130,7 @@ MODULE spectrum_mod
   
       weight(1) = 0.5 * ( nu(2) - nu(1) )
       do j=2,n-1
-          weight(j) = 0.5* ( nu(j+1) - nu(j-1) )
+          weight(j) = 0.5 * ( nu(j+1) - nu(j-1) )
       end do
       weight(n) = 0.5 * ( nu(n) - nu(n-1) )
     END SUBROUTINE set_weights

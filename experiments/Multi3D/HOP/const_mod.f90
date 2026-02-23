@@ -24,12 +24,12 @@ MODULE const_mod
   real(8), parameter :: one_24th =1.0d0/2.4d1
   real(8), parameter :: ln2 = 0.69314718056d0
   real(8), parameter :: iln2 = 1.44269504089d0 ! 1/ln(2)
-  
+
   ! physics
   real(8), parameter :: ee = 1.602189d-12  ! electron volt [erg]
   real(8), parameter :: hh = 6.626176d-27  ! Planck's constant [erg s]
   real(8), parameter :: cc = 2.99792458d10 ! Speed of light [cm/s]
-  real(8), parameter :: em = 9.109534d-28  ! Electron mass [g] 
+  real(8), parameter :: em = 9.109534d-28  ! Electron mass [g]
   real(8), parameter :: uu = 1.6605655d-24 ! Atomic mass unit [g]
   real(8), parameter :: bk = 1.380662d-16  ! Boltzman's cst. [erg/K]
   real(8), parameter :: ec = 4.80325d-10   ! electron charge [statcoulomb]
@@ -45,9 +45,9 @@ MODULE const_mod
   real(8), parameter :: CM_TO_KM =1d-5
   real(8), parameter :: AA_TO_CM =1d-8
   real(8), parameter :: CM_TO_AA =1d8
-  
+
   ! convenient compound constants
-  
+
   real(8), parameter :: hc      = hh * cc
   real(8), parameter :: hc2     = hh * cc**2
   real(8), parameter :: h_e     = hh / ee
@@ -55,7 +55,7 @@ MODULE const_mod
   real(8), parameter :: twoh_c2 = 2.0d0 * hh / cc**2
   real(8), parameter :: c2_2h   = cc**2 / 2.0d0 / hh
   real(8), parameter :: twohc   = 2.0d0 * hh * cc
-  real(8), parameter :: hc_k    = hh * cc / bk 
+  real(8), parameter :: hc_k    = hh * cc / bk
   real(8), parameter :: e_k     = ee/bk
   real(8), parameter :: h_k     = hh / bk
   real(8), parameter :: over_4pi= 1.0 / pi4
@@ -72,18 +72,18 @@ contains
   !  calculates planck FUNCTION bnu at frequency nu, temp t
   !===============================================================================
   real(8) elemental FUNCTION planck(nu,t) result(bnu)
-      real(8), intent(in)  :: nu
-      real(8), intent(in)  :: t
-      real(8) :: x, c1
-      !---------------------------------------------------------------------
-      c1 = twoh_c2 * nu**3
-      x = h_k*nu/t
+    real(8), intent(in)  :: nu
+    real(8), intent(in)  :: t
+    real(8) :: x, c1
+    !---------------------------------------------------------------------
+    c1 = twoh_c2 * nu**3
+    x = h_k*nu/t
 
-      if(x.lt.80.) then
-          bnu = c1 / (exp(x) - 1.d0)
-      else
-          bnu = c1 * exp(-x)
-      endif
+    if(x.lt.80.) then
+      bnu = c1 / (exp(x) - 1.d0)
+    else
+      bnu = c1 * exp(-x)
+    endif
   end FUNCTION planck
 END MODULE const_mod
 

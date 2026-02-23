@@ -1,6 +1,6 @@
 import os
 import copy
-import subprocess as subproc
+import subprocess
 from .auxfuncs import check_file, update_dict
 from .tumult import tumult
 import re
@@ -8,87 +8,91 @@ import numpy as np
 import pathlib
 from tumult.NameList import NameList
 
-def launch(input_name, nml_settings=None, default=None, overwrite=False, threads=None,
-           log_file=None, slurm_script=None, verbose=2, dry=False, subprocess=False, runner=None):
+def prepare_input(nml_settings, default):
+    """Handles logic for creating the NameList configuration."""
+    input_data = NameList()
     
-    input_name = pathlib.Path(input_name)
-    input_name.parent.mkdir(parents=True, exist_ok=True)
-
-    cwd = os.getcwd()
-    check_file(cwd + '/dispatch.x')
-    input = NameList()
-
+    # Handle default settings
     if default is not None:
-        if not isinstance(default, NameList) and isinstance(default, (str, pathlib.Path)):
-            default = pathlib.Path(default)
-            params_nml = default / 'params.nml' if default.is_dir() else default
-            default = NameList.from_file(params_nml)
-            
-        update_dict(input, default)
+        if not isinstance(default, NameList):
+            default_path = pathlib.Path(default)
+            params = default_path / 'params.nml' if default_path.is_dir() else default_path
+            default = NameList.from_file(params)
+        update_dict(input_data, default)
     
+    # Apply specific overrides
     if nml_settings is not None:
-        update_dict(input, nml_settings)
+        update_dict(input_data, nml_settings)
+        
+    return input_data
 
-    datadir = input.get('io_params', {'datadir':'data'}).get('datadir', 'data').strip()
-    output_folder = datadir / input_name
+def launch(input_name, nml_settings=None, default=None, overwrite=False, threads=None, cwd=None,
+           log_file=None, slurm_script=None, verbose=2, dry=False, run_async=False, runner=None):
+    
+    # Path setup
+    input_path = pathlib.Path(input_name)
+    input_path.parent.mkdir(parents=True, exist_ok=True)
+    cwd = pathlib.Path(cwd or os.getcwd())
+    executable = cwd / 'dispatch.x'
 
-    if log_file is None and verbose < 2:
-        log_file = '/dev/null 2>&1'
+    # Build configuration and determine output folder
+    nml = prepare_input(nml_settings, default)
+    datadir = nml.get('io_params', {}).get('datadir', 'data').strip()
+    output_folder = pathlib.Path(datadir) / input_path
 
-    ok = overwrite
-    if not ok:
-        try:
-            run = tumult.read(output_folder, read_atmos=False, read_atom=False)
-            existed = True
-        except:
-            ok = True
-
-    if ok:
-        input_file = input_name.with_suffix('.nml')
-        input.to_file(input_file)
-
-        if not dry:
-            if slurm_script is None:
-                if log_file is None:
-                    command = f'./dispatch.x {input_file}'
-                else:
-                    command = f'./dispatch.x {input_file} > {log_file}'
-            else:
-                command = f'sbatch {slurm_script} {input_file}'
-
-            if verbose == 1:
-                print(input_file, ' launched')
-
-            os.environ['OMP_NUM_THREADS'] = str(threads) if threads else ''
-            os.environ['OMP_STACKSIZE'] = '256M'
-            env = os.environ.copy()
-
-            if runner:
-                process = runner.run_command(command, shell=True, env=env, text=True)
-                return output_folder, process
-
-            elif subprocess:
-                process = subproc.Popen(command, shell=True, env=env)
-                return output_folder, process
-
-            else:
-                iostat = os.system(command)
-
-            if iostat!=0 and log_file is not None: 
-                with open(log_file) as f:
-                    for line in f:
-                        pass
-                    last_line = line
-                    print(last_line)
-
-        elif verbose > 0:
-            print(input_file, ' written')
-            
-    else:
+    # Check for existing data
+    if output_folder.exists() and not overwrite:
         if verbose > 0:
-            print(output_folder, ' already exists')
+            print(f"{output_folder} already exists")
+        return output_folder, False
 
-    return output_folder, ok or existed
+    # Write the NML file
+    input_file = input_path.with_suffix('.nml')
+    nml.to_file(input_file)
+    
+    if dry:
+        if verbose > 0: print(f"{input_file} written (dry run)")
+        return output_folder, True
+
+    # Prepare execution environment
+    env = {**os.environ, 'OMP_STACKSIZE': '256M'}
+    if threads:
+        env['OMP_NUM_THREADS'] = str(threads)
+
+    # Determine command and output handling
+    if slurm_script:
+        cmd = ['sbatch', slurm_script, str(input_file)]
+        out_dest = None # sbatch handles its own logging
+    else:
+        cmd = [str(executable), str(input_file)]
+        # This replaces the /dev/null 2>&1 logic
+        out_dest = subprocess.DEVNULL if verbose < 2 and not log_file else None
+
+    # Open log file if requested
+    log_handle = open(log_file, 'w') if log_file else out_dest
+
+    if verbose == 1:
+        print(f"{input_file} launching")
+
+    # Execution logic
+    try:
+        if runner:
+            return output_folder, runner.run_command(cmd, env=env)
+
+        if run_async:
+            return output_folder, subprocess.Popen(cmd, env=env, stdout=log_handle, stderr=log_handle)
+
+        # Standard blocking execution
+        result = subprocess.run(cmd, env=env, stdout=log_handle, stderr=log_handle)
+        
+        if result.returncode != 0 and log_file:
+            print(f"Error: Command failed. Check {log_file} for details.")
+            
+    finally:
+        if log_file:
+            log_handle.close()
+
+    return output_folder, True
 
 
 def monitor(folder, log_file=None):

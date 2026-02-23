@@ -14,8 +14,8 @@ MODULE bbtrans_mod
     real(dp) :: ga_in=0, gq_in=0, gv_in=0 ! input values for line broadening
     real(dp) :: lower_ev, upper_g=1, loggf
     real(dp) :: Aji, Aij, Bji, Bij ! Einstein coefficients, Bij is the
-                              ! transition from the lower to the upper
-                              ! level
+    ! transition from the lower to the upper
+    ! level
     logical :: active=.true., unsold
     logical, pointer :: used => null()
     real(dp), pointer :: strength => null()
@@ -24,10 +24,10 @@ MODULE bbtrans_mod
     ! IO > 1 leads to the following being read from the atom file
     integer :: io ! number of components in term (lifted from Multi 2.3)
     real(8), dimension(:), allocatable :: dq
-    real(8), dimension(:), allocatable :: wt 
+    real(8), dimension(:), allocatable :: wt
     real(8), dimension(:), allocatable :: da
     integer :: i=0 ! lower level
-    integer :: j=0 ! upper level  
+    integer :: j=0 ! upper level
   contains
     procedure :: init_einstein_coefficients
     procedure :: damping => line_damping
@@ -47,7 +47,7 @@ MODULE bbtrans_mod
   real(4), parameter :: isqp = 0.5641895835 ! 1/pi**0.5
   real(4), parameter :: ipi  = 0.3183098862 ! 1/pi
   real(8), parameter :: f_conv = 8.0d0 * pi**2 * ec**2 / em / cc**3
-    
+
 contains
 
   !====================================================================================
@@ -86,87 +86,87 @@ contains
     inv_nu0 = 1.0 / self%nu0
     used = .false.
     strength = 0.0
-    
+
     do k=1, m(3)
-    do j=1, m(2)
-    do i=1, m(1)
-      ! Fixed Broadening
-      a = self%ga
-      ! Van der Waals Broadening
-      if (self%unsold) then
-        a = a + self%gw1 * unsold(i,j,k)
-      else
-        a = a + self%gw1 * vbar2(i,j,k)**self%gw2 * tothi(i,j,k)
-      endif
-      ! Stark Broadening
-      if (self%gq >= 0.0) then
-        a = a + self%gq * ne(i,j,k)
-      else! if line%gq < 0
-        a = a - self%gq * stark_pe(i,j,k)
-      end if
+      do j=1, m(2)
+        do i=1, m(1)
+          ! Fixed Broadening
+          a = self%ga
+          ! Van der Waals Broadening
+          if (self%unsold) then
+            a = a + self%gw1 * unsold(i,j,k)
+          else
+            a = a + self%gw1 * vbar2(i,j,k)**self%gw2 * tothi(i,j,k)
+          endif
+          ! Stark Broadening
+          if (self%gq >= 0.0) then
+            a = a + self%gq * ne(i,j,k)
+          else! if line%gq < 0
+            a = a - self%gq * stark_pe(i,j,k)
+          end if
 
-      ! fetch variables
-      idf = inv_df(i,j,k)
-      idf_nu = idf * inv_nu0
-      v   = (vproj(i,j,k) + 1)*self%nu0
-      ekt = e_kT(i,j,k)
-      ex  = (self%lower_ev - dxij(i,j,k)) * ekt
+          ! fetch variables
+          idf = inv_df(i,j,k)
+          idf_nu = idf * inv_nu0
+          v   = (vproj(i,j,k) + 1)*self%nu0
+          ekt = e_kT(i,j,k)
+          ex  = (self%lower_ev - dxij(i,j,k)) * ekt
 
-      if (ex < 85.) then
-        a = a * idf
-        ni = inv_part(i,j,k) * exp(-ex)
-        ! ni is really ni/gi, the factor gi is contained in Bij
-        ! since we have used loggf to compute Aij and hence Bij
+          if (ex < 85.) then
+            a = a * idf
+            ni = inv_part(i,j,k) * exp(-ex)
+            ! ni is really ni/gi, the factor gi is contained in Bij
+            ! since we have used loggf to compute Aij and hence Bij
 
-        Rij = ni * self%Bij * idf
-        if (do_nlte) then
-          ceta = Rij * bj(i,j,k)
-          cchi = Rij * bi(i,j,k)
-        else
-          ceta = Rij
-          cchi = Rij
-        endif
+            Rij = ni * self%Bij * idf
+            if (do_nlte) then
+              ceta = Rij * bj(i,j,k)
+              cchi = Rij * bi(i,j,k)
+            else
+              ceta = Rij
+              cchi = Rij
+            endif
 
-        ! check if line peak is larger than continuum tolerance
-        ref = tolerance * cont(f0,i,j,k)
-        
-        vs = (nu(f0) - v) * idf_nu
-        phi = voigt_function2(a, vs)
-        lchi = phi * cchi 
-        leta = phi * ceta
-        if (lchi > ref) then
-          used = .true.
-          strength = max(strength, lchi / cont(f0,i,j,k))
+            ! check if line peak is larger than continuum tolerance
+            ref = tolerance * cont(f0,i,j,k)
 
-          chi(f0,i,j,k) = chi(f0,i,j,k) + lchi
-          eta(f0,i,j,k) = eta(f0,i,j,k) + leta
-
-          f = f0+1
-          do while (lchi >= ref .and. f <= nf) ! if line opacity below tolerance exit
-            vs = (nu(f) - v) * idf_nu
+            vs = (nu(f0) - v) * idf_nu
             phi = voigt_function2(a, vs)
             lchi = phi * cchi
             leta = phi * ceta
-            chi(f,i,j,k) = chi(f,i,j,k) + lchi
-            eta(f,i,j,k) = eta(f,i,j,k) + leta
-            f = f + 1
-          end do
+            if (lchi > ref) then
+              used = .true.
+              strength = max(strength, lchi / cont(f0,i,j,k))
 
-          f = f0-1
-          lchi = ref
-          do while (lchi >= ref .and. f >= 1) ! if line opacity below tolerance exit
-            vs = (nu(f) - v) * idf_nu
-            phi = voigt_function2(a, vs)
-            lchi = phi * cchi
-            leta = phi * ceta
-            chi(f,i,j,k) = chi(f,i,j,k) + lchi
-            eta(f,i,j,k) = eta(f,i,j,k) + leta
-            f = f - 1
-          end do
-        endif
-      endif
-    end do
-    end do
+              chi(f0,i,j,k) = chi(f0,i,j,k) + lchi
+              eta(f0,i,j,k) = eta(f0,i,j,k) + leta
+
+              f = f0+1
+              do while (lchi >= ref .and. f <= nf) ! if line opacity below tolerance exit
+                vs = (nu(f) - v) * idf_nu
+                phi = voigt_function2(a, vs)
+                lchi = phi * cchi
+                leta = phi * ceta
+                chi(f,i,j,k) = chi(f,i,j,k) + lchi
+                eta(f,i,j,k) = eta(f,i,j,k) + leta
+                f = f + 1
+              end do
+
+              f = f0-1
+              lchi = ref
+              do while (lchi >= ref .and. f >= 1) ! if line opacity below tolerance exit
+                vs = (nu(f) - v) * idf_nu
+                phi = voigt_function2(a, vs)
+                lchi = phi * cchi
+                leta = phi * ceta
+                chi(f,i,j,k) = chi(f,i,j,k) + lchi
+                eta(f,i,j,k) = eta(f,i,j,k) + leta
+                f = f - 1
+              end do
+            endif
+          endif
+        end do
+      end do
     end do
     if (used) then
       self%used = used
@@ -208,18 +208,18 @@ contains
         tav = cmplx(a,-v)
         if (a >= 0.195e0*v - 0.176e0) then
           num = 16.4955e0 + tav*(20.20933e0 + tav*(11.96482e0      &
-                          + tav*(3.778987e0 + tav*0.5642236e0)))
+            + tav*(3.778987e0 + tav*0.5642236e0)))
           den = 16.4955e0 + tav*(38.82363e0 + tav*(39.27121e0 &
-                          + tav*(21.69274e0 + tav*(6.699398e0 + tav))))
+            + tav*(21.69274e0 + tav*(6.699398e0 + tav))))
           w4 = num/den
         else
-          uav = tav*tav 
+          uav = tav*tav
           num = tav*(36183.31e0 - uav*(3321.9905e0 - uav*(1540.787e0 &
-             - uav*(219.0313e0 - uav*( 35.76683e0 - uav*(1.320522e0 &
-             - uav*0.56419e0))))))
+            - uav*(219.0313e0 - uav*( 35.76683e0 - uav*(1.320522e0 &
+            - uav*0.56419e0))))))
           den = (32066.6e0 - uav*(24322.84e0 - uav*(9022.228e0       &
-             - uav*(2186.181e0 - uav*(364.2191e0                    &
-             - uav*(61.57037e0 - uav*(1.841439e0 - uav)))))))
+            - uav*(2186.181e0 - uav*(364.2191e0                    &
+            - uav*(61.57037e0 - uav*(1.841439e0 - uav)))))))
           w4 = num/den
           w4 = exp(uav) - w4
         endif
@@ -275,18 +275,18 @@ contains
         tav = cmplx(a,-v)
         if (a >= 0.195e0*v - 0.176e0) then
           num = 16.4955e0 + tav*(20.20933e0 + tav*(11.96482e0      &
-                          + tav*(3.778987e0 + tav*0.5642236e0)))
+            + tav*(3.778987e0 + tav*0.5642236e0)))
           den = 16.4955e0 + tav*(38.82363e0 + tav*(39.27121e0 &
-                          + tav*(21.69274e0 + tav*(6.699398e0 + tav))))
+            + tav*(21.69274e0 + tav*(6.699398e0 + tav))))
           w4 = num/den
         else
-          uav = tav*tav 
+          uav = tav*tav
           num = tav*(36183.31e0 - uav*(3321.9905e0 - uav*(1540.787e0 &
-             - uav*(219.0313e0 - uav*( 35.76683e0 - uav*(1.320522e0 &
-             - uav*0.56419e0))))))
+            - uav*(219.0313e0 - uav*( 35.76683e0 - uav*(1.320522e0 &
+            - uav*0.56419e0))))))
           den = (32066.6e0 - uav*(24322.84e0 - uav*(9022.228e0       &
-             - uav*(2186.181e0 - uav*(364.2191e0                    &
-             - uav*(61.57037e0 - uav*(1.841439e0 - uav)))))))
+            - uav*(2186.181e0 - uav*(364.2191e0                    &
+            - uav*(61.57037e0 - uav*(1.841439e0 - uav)))))))
           w4 = num/den
           w4 = exp(uav) - w4
         endif
@@ -325,7 +325,7 @@ contains
     real(4), intent(in) :: a,vs
     real(4) :: h
     integer :: k,m,i
-    real(8),dimension(5) :: a1 
+    real(8),dimension(5) :: a1
     real(8) :: v,u,v2,ex,quo,h1,pqs,h1p,h2p,h3p,h4p,psi
     real(8) :: a2,u2
 
@@ -356,10 +356,10 @@ contains
         u2 = 1./(u*u)
         ! a gt 1.4  or  a + v gt 3.2
         h = sq2/sqp*a/u*(1. + u2*(3.*v2 - a2) + &
-              u2*u2*(15.*v2*v2 - 30.*v2*a2 + 3.*a2*a2))
+          u2*u2*(15.*v2*v2 - 30.*v2*a2 + 3.*a2*a2))
         return
       else
-          k = 2
+        k = 2
       endif
     elseif (v >= 5.0) then
       h = a*(15. + 6.*v2 + 4.*v2*v2)/(4.*v2*v2*v2*sqp)
@@ -390,7 +390,7 @@ contains
       h = h1*a + ex*(1. + a*a*(1. - 2.*v2))
       return
     endif
-    
+
     pqs = 2./sqp
     h1p = h1 + pqs*ex
     h2p = pqs*h1p - 2.*v2*ex
@@ -406,18 +406,18 @@ contains
   !====================================================================================
   ELEMENTAL FUNCTION new_voigt(a,v) result(h)
     ! Champion Voigt routine in speed and accuracy test by BE+NP 97-11-18
-    !  VOIGT FUNCTION CALCULATION: HUMLICEK'S APPROXIMATION 
+    !  VOIGT FUNCTION CALCULATION: HUMLICEK'S APPROXIMATION
     ! The results are normalized to an area of 1/sqrt(pi).
     real(4), intent(in) :: a, v
-    complex(8) :: tav,uav,w4,v4 
+    complex(8) :: tav,uav,w4,v4
     real(4)    :: sav,aa,vv,h
     integer :: i,j,k
     !----------------------------------------------------------------------------------
     aa = 0.01! a
     vv = abs(v)
-    tav = cmplx(aa,-vv) 
-    sav = vv + aa 
-    uav = tav*tav 
+    tav = cmplx(aa,-vv)
+    sav = vv + aa
+    uav = tav*tav
     if (sav >= 15.e0) then
       w4 = tav*0.5641896e0 / (0.5e0 + uav)
     elseif (sav >= 5.5e0) then
@@ -464,11 +464,11 @@ contains
     !----------------------------------------------------------------------------------
     z = x * x
     if (z <= 3.0) then
-        h = exp(-z) * (1.0 - a * (A0 + A1 / (z - A2 + A3 / (z - A4 + A5 / (z - A6)))))
+      h = exp(-z) * (1.0 - a * (A0 + A1 / (z - A2 + A3 / (z - A4 + A5 / (z - A6)))))
     else if (z < 25.0) then
-        h = exp(-z) + a * (B0 + B1 / (z - B2 + B3 / (z + B4 + B5 / (z - B6 + B7 / (z - B8)))))
+      h = exp(-z) + a * (B0 + B1 / (z - B2 + B3 / (z + B4 + B5 / (z - B6 + B7 / (z - B8)))))
     else
-        h = 0.5 * sqrt(2.0 / pi) * a / (z - 1.5 - 1.5 / (z - 3.5 - 5.0 / (z - 5.5)))
+      h = 0.5 * sqrt(2.0 / pi) * a / (z - 1.5 - 1.5 / (z - 3.5 - 5.0 / (z - 5.5)))
     end if
     h = h * isqp
   END FUNCTION dirty_voigt
@@ -491,7 +491,7 @@ contains
     ! small but finite a case.
 
     ! coded by: a. nordlund/16-dec-82.
-    
+
     ! WH: reprogrammed the algorithm:
     ! - expanding the complex expression allows the loop to vectorize
     ! - interleaving the evaluation of real and imaginary parts, as well
@@ -636,7 +636,7 @@ contains
     else! if line%gq < 0
       adamp = adamp - self%gq * stark_pe
     end if
-    
+
     adamp = adamp + self%ga
   END SUBROUTINE line_damping
   !------------------------------------------------------------------------------------
@@ -676,14 +676,14 @@ contains
     if (disable_stark) self%gq = 0
   END SUBROUTINE prepare_Stark
   !------------------------------------------------------------------------------------
-  
+
   !====================================================================================
   PURE ELEMENTAL SUBROUTINE prepare_Radiative(self, ga)
     class(bbtrans_type), intent(inout)  :: self
     real(dp), intent(in) :: ga
     !----------------------------------------------------------------------------------
     if (ga == 0) then
-      ! Here we assume Aji for the radiative broadening, Turbospectrum devides this by 
+      ! Here we assume Aji for the radiative broadening, Turbospectrum devides this by
       ! the upper statistical weight, but KORG does not. MOOg assumes GF/GU=3 instead.
       ! We cannot reuse Aji at this point, because it may contain isotope fractions.
       self%ga = f_conv * 10**self%loggf * self%nu0**2
@@ -731,8 +731,8 @@ contains
       elseif (gv.ne.0.0) then
         upper_ev = self%lower_ev + H_E * self%nu0
         ! Unsold approximation
-        ! Jul  5 2010 jorritl: I'm sceptical about the numerical 
-        ! constant  1.283984e-12. According to Gray it should be 
+        ! Jul  5 2010 jorritl: I'm sceptical about the numerical
+        ! constant  1.283984e-12. According to Gray it should be
         ! 0.3d-30^0.4 = 6.1780059e-13 and  8.411 should be 17
         ! I haven't found the original reference to Unsold 1955 yet...
         if (self%lower_ev < cnt_ev) then
@@ -771,12 +771,12 @@ contains
       lam_blue = lam0 - dlam
       nu_red  = CC / lam_red  * 1e8
       nu_blue = CC / lam_blue * 1e8
-  
+
       ired  = searchsorted(nu, nu_red,  outbounds_ok=.true.)
       iblue = searchsorted(nu, nu_blue, outbounds_ok=.true.)
       if (iblue==ired) then
-       ired  = 0
-       iblue = 0
+        ired  = 0
+        iblue = 0
       elseif (ired == 0) then
         ired = 1
       endif
@@ -807,13 +807,13 @@ contains
     !----------------------------------------------------------------------------------
     self%active = .false.
   END SUBROUTINE deactivate
-                             
+
   !====================================================================================                                                                                     !!
   SUBROUTINE hum1zpf16  (nx, x,y, w)
-    !  complex probability function for complex argument Z=X+iY                               
-    !  real part = voigt function K(x,y)                                                      
-    !                                                                                         
-    !  large x+y     J  Humlicek, JQSRT 27, 437, 1982       asymptotic region I approximation 
+    !  complex probability function for complex argument Z=X+iY
+    !  real part = voigt function K(x,y)
+    !
+    !  large x+y     J  Humlicek, JQSRT 27, 437, 1982       asymptotic region I approximation
     !  small x+y:    J  Humlicek, JQSRT 21, 309-313, 1979   16-term rational approximation Eq. (6)
     !====================================================================================
     real(4), parameter ::  sqrtpi    = 1.7724538509055159d0 ! sqrt(pi)
@@ -827,16 +827,16 @@ contains
     ! humlicek zpf16 constants
     complex(8), parameter ::  a(16) = &
       [(41445.0374210222, 0.0),   (0.0, -136631.072925829),  &
-        (-191726.143960199, 0.0),  (0.0, 268628.568621291),   &
-        (173247.907201704,  0.0),  (0.0, -179862.56759178),   &
-        (-63310.0020563537, 0.0),  (0.0, 56893.7798630723),   &
-        (11256.4939105413,  0.0),  (0.0, -9362.62673144278),  &
-        (-1018.67334277366, 0.0),  (0.0, 810.629101627698),   &
-        (44.5707404545965, 0.0),   (0.0, -34.5401929182016),  &
-        (-0.740120821385939, 0.0), (0.0, 0.564189583547714)]
+      (-191726.143960199, 0.0),  (0.0, 268628.568621291),   &
+      (173247.907201704,  0.0),  (0.0, -179862.56759178),   &
+      (-63310.0020563537, 0.0),  (0.0, 56893.7798630723),   &
+      (11256.4939105413,  0.0),  (0.0, -9362.62673144278),  &
+      (-1018.67334277366, 0.0),  (0.0, 810.629101627698),   &
+      (44.5707404545965, 0.0),   (0.0, -34.5401929182016),  &
+      (-0.740120821385939, 0.0), (0.0, 0.564189583547714)]
     real(4), parameter ::  b(8) =  &
-        [ 7918.06640624997, -126689.0625, 295607.8125, &
-          -236486.25, 84459.375, -15015.0, 1365.0, -60.0]
+      [ 7918.06640624997, -126689.0625, 295607.8125, &
+      -236486.25, 84459.375, -15015.0, 1365.0, -60.0]
     integer :: i
     complex(8) :: t, z,zz, numer, denom
     !----------------------------------------------------------------------------------
@@ -845,8 +845,8 @@ contains
     if (y>s15 .or. x(1)>x21 .or. x(nx)<x12) then
       ! all points are in humlicek's region i
       do i=1,nx
-          t    = cmplx(y,-x(i))
-          w(i) = (recsqrtpi*t) / (half + t*t)
+        t    = cmplx(y,-x(i))
+        w(i) = (recsqrtpi*t) / (half + t*t)
       end do
     else
       do i=1,nx
@@ -857,7 +857,7 @@ contains
           z     = cmplx(x(i), y+1.31183)
           zz    = z*z
           numer = ((((((a(16)*z+a(15))*z+a(14))*z+a(13))*z+a(12))*z+a(11))*z+a(10))*z+a(9)
-          numer = ((((((((numer*z+a(8))*z+a(7))*z+a(6))*z+a(5))*z+a(4))*z+a(3))*z+a(2))*z+a(1)) 
+          numer = ((((((((numer*z+a(8))*z+a(7))*z+a(6))*z+a(5))*z+a(4))*z+a(3))*z+a(2))*z+a(1))
           denom = b(1)+(b(2)+(b(3)+(b(4)+(b(5)+(b(6)+(b(7)+b(8)*zz)*zz)*zz)*zz)*zz)*zz)*zz
           w(i)  = numer/denom
         end if
@@ -881,7 +881,7 @@ contains
     ! Reinterpret the bits of ref as integer
     ix = transfer(psd, ix)
     ! Shift right to get exponent bits and subtract bias (127)
-    ! and subtract extra 10 to check if k is larger than e*2^-10 
+    ! and subtract extra 10 to check if k is larger than e*2^-10
     e = 137 - ishft(ix, -23)
 
     if (x2*iln2 < e) then

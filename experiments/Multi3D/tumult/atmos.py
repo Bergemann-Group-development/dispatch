@@ -162,7 +162,7 @@ class AtmosClass(object):
     return pmsh
 
   #=====================================================================
-  def interp_ltau_surf(self, var, newx=None, log=False, zaxis=-1):
+  def interp_ltau_surf(self, var, newx=None, log=False, power=None, zaxis=-1):
     #-----------------------------------------------------------------
     var = self.get_variable(var)
     if zaxis != -1: var = np.moveaxis(var, zaxis, -1)
@@ -171,10 +171,12 @@ class AtmosClass(object):
     xx = ltau[...,::step].copy()
     yy = var[...,::step].copy()
     if log: yy = np.log(yy)
+    if power: yy = yy**power
     if newx is None:
         axis = tuple(i for i in range(xx.ndim-1))
         newx = np.mean(xx, axis=axis)
     newy = interp_tau(newx, xx, yy)
+    if power: newy = newy**(1/power)
     if log: newy = np.exp(newy)
     if zaxis != -1: newy = np.moveaxis(newy, -1, zaxis)
     return newx, newy
@@ -217,15 +219,13 @@ class AtmosClass(object):
                         rasterized=rasterized, **kwargs)
 
   #=====================================================================
-  def get_ltau_mean(self, var, log=False, newx=None, **kwargs):
+  def get_ltau_mean(self, var, log=False, newx=None, power=None, **kwargs):
     #-----------------------------------------------------------------
     var = self.get_variable(var)
     if self.dim == '3D':
-        newx, yy3d = self.interp_ltau_surf(var, log=log, newx=newx, **kwargs)
-        if log: yy3d = np.log(yy3d)
+        newx, yy3d = self.interp_ltau_surf(var, newx=newx, log=log, power=power, **kwargs)
         axis = tuple(i for i in range(yy3d.ndim-1))
-        yy1d = np.mean(yy3d, axis=axis)
-        if log: yy1d = np.exp(yy1d)
+        yy1d = advanced_mean(yy3d, axis=axis, log=log, power=power)
     else:
         if newx is None: newx = self.ltau[::-1]
         step = -1 if self.ltau[0] > self.ltau[-1] else 1
@@ -235,17 +235,18 @@ class AtmosClass(object):
   
   #=====================================================================
   def plot_ltau_mean(self, var, log=False, newx=None, xmin=None, xmax=None,
-                      ymin=None, ymax=None, **kwargs):
+                      ymin=None, ymax=None, power=None, **kwargs):
     #-----------------------------------------------------------------
-    xx, yy = self.get_ltau_mean(var, log=log, newx=newx)
+    xx, yy = self.get_ltau_mean(var, log=log, newx=newx, power=power)
     xx, yy = crop_inputs(xx, yy, xmin, xmax, ymin, ymax)
     return plt.plot(xx, yy, **kwargs)
   
   #=====================================================================
-  def get_geo_mean(self, var, newx=None, log=False):
+  def get_geo_mean(self, var, newx=None, log=False, power=None):
     if hasattr(self, 'runs'):
         xx = np.mean([run.height for run in self.runs], axis=0)
-        yy = np.mean([run.get_geo_mean(var, newx=xx) for run in self.runs], axis=0)
+        yy = [run.get_geo_mean(var, newx=xx, log=log, power=power) for run in self.runs]
+        yy = advanced_mean(yy, axis=0, log=log, power=power)
         return xx, yy
     else:
       yy = self.get_variable(var)
@@ -253,9 +254,7 @@ class AtmosClass(object):
     xx = newx if newx else self.height
 
     if self.dim == '3D':
-        if log: yy = np.log(yy)
-        yy = np.mean(yy, axis=(0,1))
-        if log: yy = np.exp(yy)
+        yy = advanced_mean(yy, axis=(0,1), log=log, power=power)
         
     if xx is not self.height:
         yy = np.interp(xx, self.height, yy)
@@ -289,19 +288,75 @@ class AtmosClass(object):
     return yy
 
   #=================================================================
-  def plot_ltau_hist(self, ltau, var, log=False, zaxis=-1, show_mean=False, color=None, **kwargs):
+  def plot_ltau_hist(self, ltau, var, log=False, power=None, zaxis=-1, show_mean=False, color=None, **kwargs):
     #-----------------------------------------------------------------
     yy = self.get_ltau_surface(ltau, var, log=log, zaxis=zaxis)
 
     if show_mean:
-        if log:
-            mean = 10**np.mean(np.log10(yy))
-        else:
-            mean = np.mean(yy)
-            
+        mean = advanced_mean(yy, log=log, power=power)
         plt.axvline(mean, ls='--', color=color)
 
     return plt.hist(yy.ravel(), color=color, **kwargs)
+
+  #=================================================================
+  def to_dispatch1d_atmos(self, file, vmic=1.0, FeH=''):
+    ltau, temp = self.get_ltau_mean('temp', power=4)
+    _, ne      = self.get_ltau_mean('ne',   log=True)
+    _, rho     = self.get_ltau_mean('rho',  log=True)
+
+    df = pd.DataFrame()
+    df['lTau'] = ltau
+    df['Temp'] = temp
+    df['Pe'] = ne*temp*BK
+    df['Rho'] = rho
+    df['Vturb'] = vmic
+
+    file = pathlib.Path(file)
+    file.parent.mkdir(parents=True, exist_ok=True)
+    f = open(file, 'w+')
+    f.write(f'{file.with_suffix("").name:}\n')
+    f.write(f'{len(df):} {FeH}\n')
+    text = df[::-1].to_string(index=False, float_format='%.4e')
+    text = '*' + text[1:]
+    f.write(text)
+    f.close()
+
+  #=================================================================
+  def to_multi1d_atmos(self, folder, name, logg, abund=None, FeH=0, vz=0.0):
+    df = pd.DataFrame()
+    df['ltau'] = self.ltau
+    df['Temp'] = self.temp
+    df['Ne'] = self.ne
+    df['vz'] = vz
+    df['vturb'] = self.vmic
+    df = df[::-1].reset_index(drop=True)
+    folder = pathlib.Path(folder)
+    folder.mkdir(parents=True, exist_ok=True)
+    file = folder / f'atmos.{name}'
+    f = open(file, 'w+')
+    f.write(f'{name}\n')
+    f.write('TAU\n')
+    f.write('* LG G\n')
+    f.write(f' {logg:.2f}\n')
+    f.write('* NDEP\n')
+    f.write(f' {len(self.ltau):d}\n')
+    text = df.to_string(index=False, float_format='%.4e')
+    text = '*' + text[1:]
+    f.write(text)
+    f.close()
+    file = folder / f'dscale.{name}'
+    f = open(file, 'w+')
+    f.write(f'{name}\n')
+    f.write('TAU\n')
+    f.write(f' {len(df.ltau):d} {df.ltau[0]:.4e}\n')
+    f.write(df.to_string(index=False, columns=['ltau'], float_format='%.4e', header=None))
+    f.close()
+    if abund is not None:
+      file = folder / f'abund.{name}'
+      f = open(file, 'w+')
+      for eid, abnd in abund.items():
+        f.write(f'{eid.upper():2} {abnd+FeH:8.4f}\n')
+      f.close()
   
   #=================================================================
   @classmethod
@@ -338,3 +393,11 @@ class AtmosClass(object):
         self.ltau = np.array([a.ltau for a in atmos_list])
 
     return self
+  
+def advanced_mean(values, log=False, power=None, **kwargs):
+   if log: values = np.log(values)
+   if power: values = values**power
+   mean_values = np.mean(values, **kwargs)
+   if power: mean_values = mean_values**(1/power)
+   if log: mean_values = np.exp(mean_values)
+   return mean_values

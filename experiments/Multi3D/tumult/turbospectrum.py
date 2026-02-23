@@ -1,4 +1,4 @@
-from .spectrum import SpectrumClass
+from .spectrum import Spectrum
 from .auxfuncs import atomic_weights, near_equal_split, tmp_txtfile, BK
 from .atmos import AtmosClass
 from astropy import units as u
@@ -52,8 +52,7 @@ class turbospectrum(object):
     ints.update({('LTE',  mu): ie[i] for i, mu in enumerate(mus)})
     ints.update({('Cont', mu): ie_cnt[i] for i, mu in enumerate(mus)})
 
-    self.spectrum = SpectrumClass.from_arrays(wave=wave, flux=flux, ints=ints,
-                                  wave_unit=u.AA, flux_unit=u.erg/(u.s*u.cm**2*u.AA))
+    self.spectrum = Spectrum(wave, flux, xunit=u.AA, yunit=u.erg/(u.s*u.cm**2*u.AA))
     return self
   
   @classmethod
@@ -92,7 +91,7 @@ class turbospectrum(object):
     spectra = [run.spectrum for run in runs]
     wave = pd.concat([spec.wave for spec in spectra], axis=0)
     data = pd.concat([spec.data for spec in spectra], axis=0)
-    self.spectrum = SpectrumClass.from_data(wave=wave, data=data)
+    self.spectrum = SpectrumClass(wave=wave, data=data, has_units=True)
     return self
   
   @classmethod

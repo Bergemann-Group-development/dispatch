@@ -186,7 +186,6 @@ class trans_class(object):
             self.ir = find_close(self.run.lam, self.lr, side='right')
 
         slc = slice(self.ib, self.ir)
-        self.spectrum = self.run.spectrum.crop(slc=slc)
 
         if hasattr(self.run, 'lvlerr') and hasattr(self, 'i'):
             self.ilvlerr = self.run.lvlerr[self.i]

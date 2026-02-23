@@ -16,7 +16,6 @@ from astropy.io import fits
 from io import StringIO
 from scipy.cluster.hierarchy import fcluster, linkage
 import collections.abc
-from .convolutions import convolve_crop
 from .decorators import broadcast_arguments
 import tempfile
 
@@ -1205,67 +1204,3 @@ def get_bisector(xx, yy, x0, n=100, frac=0.99):
     rwing = np.interp(newy, yy[i0:ir], xx[i0:ir])
     newx = 0.5*(lwing + rwing)
     return newx, newy
-
-#=====================================================================
-@broadcast_arguments(lam=1, val=1, convolve=1)
-def crop_spectrum(lam, val, slc=None, lam0=None, dlam=None, xmin=None, xmax=None, vdop=None,
-             vrot=None, vshift=None, convolve=None, zeta_rt=None, relative=True, res=None,
-             per_aa=False, renorm=None, continuum=None, tilt=None, velocity_units=False):
-    #-----------------------------------------------------------------
-    if hasattr(lam, 'values'): lam = lam.values
-    if hasattr(val, 'values'): val = val.values
-
-    if slc:
-        xmin = lam[slc.start] if slc.start else xmin
-        xmax = lam[slc.stop-1] if slc.stop else xmax
-    
-    if lam0 and dlam:
-        if not isinstance(dlam, (bool)):
-            if hasattr(dlam, '__iter__'):
-                xmin = lam0 - dlam[0]
-                xmax = lam0 + dlam[1]
-            else:
-                xmin = lam0 - dlam
-                xmax = lam0 + dlam
-
-    else:
-        dlam = None
-        lam0 = None
-
-    xx, yy = convolve_crop(lam, val, xmin=xmin, xmax=xmax, res=res, vshift=vshift,
-                            vdop=vdop, vrot=vrot, zeta_rt=zeta_rt, custom=convolve)
-    
-    if renorm:
-        if renorm == 'max':
-            yy = yy / np.max(yy)
-        elif renorm == 'edge':
-            yy = yy / linear_edge_normalisation(xx, yy)
-        elif renorm > 0:
-            rmin = xmin - renorm if xmin else None
-            rmax = xmax + renorm if xmax else None
-            rx, ry = crop_spectrum(lam, val, xmin=rmin, xmax=rmax, vshift=vshift, res=res,
-                                   vdop=vdop, vrot=vrot, zeta_rt=zeta_rt, convolve=convolve)
-            yy = yy / np.max(ry)
-
-    if per_aa:
-        yy = yy * CC / (xx**2) * 1e8
-
-    if continuum:
-        yy = yy * continuum
-    
-    if tilt:
-        yy = yy * (1 + tilt*(xx - (xx[0]+xx[-1])/2))
-
-    if lam0:
-        if velocity_units:
-            xx = xx / lam0
-            if relative: xx = xx - 1
-            xx *= CC_KMS
-            
-        elif relative and dlam:
-            xx = xx - lam0
-
-    return xx, yy
-
-
-        

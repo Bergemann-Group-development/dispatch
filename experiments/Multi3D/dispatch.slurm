@@ -13,7 +13,7 @@
 #SBATCH --cpus-per-task=32         # Number of cores per MPI task 
 #SBATCH --ntasks-per-core=1
 #SBATCH --exclusive
-#SBATCH --mem=100G
+#SBATCH --mem=120G
 #SBATCH --profile task
 # --- User notifications ---
 ##SBATCH --time 24:00:00

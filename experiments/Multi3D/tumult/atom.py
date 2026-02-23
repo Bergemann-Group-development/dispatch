@@ -80,8 +80,8 @@ class AtomClass(object):
         if abnd is None: abnd = self.abnd
         return 'A({}) = {:.2f}'.format(self.id.strip(), abnd)
 
-    def get_non_overlapping_indices(self, lines, nnu, nq_fac):
-        nq = np.array([line.nq for line in lines])
+    def get_non_overlapping_indices(self, trans, nnu, nq_fac):
+        nq = np.array([t.nq for t in trans])
         nq = nq + (1-nq%2)
         nq = nq_fac * (nq-1) + 1
         ir = np.ones_like(nq)*nnu

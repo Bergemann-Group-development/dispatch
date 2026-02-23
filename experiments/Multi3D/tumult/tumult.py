@@ -5,7 +5,7 @@ from .plotting_scripts import *
 from .fast_atom import FastAtom, PandasAtom
 from .linelist import LineList
 from .NameList import NameList
-from .spectrum import SpectrumClass
+from .spectrum import Spectrum
 from .spectrum_grid import SpectrumGrid
 from .memmap_list import MemmapList
 from .atmos import AtmosClass
@@ -38,7 +38,7 @@ def read_list(folders):
 #=====================================================================
 class grid(SpectrumGrid):
   def __init__(self, runs, *args, **kwargs):
-    if type(runs[0]) == str:
+    if isinstance(runs[0], (str, pathlib.Path)):
       runs = read_list(runs)
     
     return super().__init__(runs, *args, **kwargs)
@@ -46,18 +46,38 @@ class grid(SpectrumGrid):
 #=====================================================================
 class tumult(object):
     @property
-    def flux(self):
-        return self.spectrum[[('lam', '', ''), ('NLTE', 'Flux', '')]]
-
-    @property
     def atmos(self):
         if not hasattr(self, '_atmos'):
             self._atmos = AtmosClass.from_run(self)
         return self._atmos
     
+    @atmos.setter
+    def atmos(self, value):
+        self._atmos = value
+
+    @property
+    def llist(self):
+        if not hasattr(self, '_llist'):
+            self._llist = LineList.from_dispatch_format(self.folder / 'linelist_out.txt')
+        return self._llist
+    
+    @llist.setter
+    def llist(self, value):
+        self._llist = value
+
+    @property
+    def atoms(self):
+        if not hasattr(self, '_atoms'):
+            self._atoms = self.read_atom()
+        return self._atoms
+    
+    @atoms.setter
+    def atoms(self, value):
+        self._atoms = value
+    
     @classmethod
     #=================================================================
-    def read(cls, folder, verbose=0, read_atom=True, fast_read=False, read_llist=False, **kwargs):
+    def read(cls, folder, verbose=0, **kwargs):
         self = cls() # create a new instance of the class
         folder = pathlib.Path(folder)
         sfolder = folder / 'save'
@@ -83,7 +103,6 @@ class tumult(object):
         if self.has_spectrum:
             self.has_spectrum = self.nml['m3d_params']['long_scheme'].strip() != 'none'
 
-        self.read_atom(read_atom, fast_read, verbose, **kwargs)
 
         file = folder / 'angle_quadrature.txt'
         if file.exists():
@@ -116,11 +135,11 @@ class tumult(object):
                 if self.legacy:
                     self.ie     = ie[:,0,0,:,0]
                     self.ie_lte = ie[:,0,0,:,1]
-                    self.cnt    = ie[:,0,0,:,2]
+                    self.ie_cnt = ie[:,0,0,:,2]
                     self.mode = 'LTE' if np.all(self.ie_lte == self.ie) else 'NLTE'
                 else:
                     self.ie     = ie[:,0,0,:,0]
-                    self.cnt    = ie[:,0,0,:,1]
+                    self.ie_cnt = ie[:,0,0,:,1]
                     if saved_LTE:
                         self.ie_lte = ie[:,0,0,:,2]
                     else:
@@ -128,21 +147,10 @@ class tumult(object):
 
                     self.mode = 'NLTE' if saved_LTE else 'LTE'
 
-                mus = [f'µ={mu:.2f}' for mu in self.vec[:,-1]]
 
-                flux = {}
-                flux[('NLTE','Flux', '')] = np.sum(self.wts * self.ie    , axis=-1)
-                flux[('LTE' ,'Flux', '')] = np.sum(self.wts * self.ie_lte, axis=-1)
-                flux[('Cont','Flux', '')] = np.sum(self.wts * self.cnt   , axis=-1)
-                ints = {}
-                ints.update({('NLTE', mu, ang): self.ie[:,ang] for ang, mu in enumerate(mus)})
-                ints.update({('LTE' , mu, ang): self.ie_lte[:,ang] for ang, mu in enumerate(mus)})
-                ints.update({('Cont', mu, ang): self.cnt[:,ang] for ang, mu in enumerate(mus)})
-
-                #columns = pd.MultiIndex.from_tuples(data.keys())
-                self.spectrum = SpectrumClass.from_arrays(wave=self.lam, flux=flux, ints=ints,
-                                                   wave_unit=u.angstrom, flux_unit=u.erg/(u.s*u.cm**2*u.Hz))
-                #self.spectrum = self.spectrum.sort_index(axis=1, ascending=[False, False, True])
+                self.flux     = np.sum(self.wts * self.ie    , axis=-1)
+                self.flux_lte = np.sum(self.wts * self.ie_lte, axis=-1)
+                self.flux_cnt = np.sum(self.wts * self.ie_cnt, axis=-1)
 
                 if self.nml['m3d_params']['save_resolved']:
                     i3 = self.read_patch_save('i3')[0]
@@ -150,15 +158,12 @@ class tumult(object):
                     self.c3     = i3[...,1]
                     if saved_LTE:
                         self.i3_lte = i3[...,2]
-
-            if os.path.isfile(folder / 'linelist_out.txt') and read_llist:
-                self.read_llist()
                 
         return self
 
     #=====================================================================
     def read_atom(self, read_atom=True, fast_read=True, verbose=True, **kwargs):
-        self.atoms = []
+        atoms = []
         atom_files = list(self.folder.glob('atoms/*'))
         atom_files += list(self.folder.glob('atom.txt'))
         moldict = {'CH':'C', 'OH':'O', 'NH':'N', 'CN':'N', 'CO':'C',
@@ -167,7 +172,7 @@ class tumult(object):
         if 'atom_params' in self.nml:
             self.qnorm = self.nml['atom_params']['qnorm']
             nq_fac = self.nml['atom_params']['nq_fac']
-            if self.nml['m3d_params']['m1d_legacy_mode']: nq_fac *= 2
+            if self.nml['composition_params']['m1d_legacy_mode']: nq_fac *= 2
             in_abnd = self.nml['atom_params']['abundance']
             in_abnd = [in_abnd] if not hasattr(in_abnd, '__iter__') else in_abnd
             #loggf_cut  = self.nml['atom_params']['logf_cut']
@@ -215,11 +220,11 @@ class tumult(object):
                                 atom.load_sp(self.lam, qnorm=self.qnorm)
                             else:
                                 nnu = self.lam.size
-                                ib, ir = atom.get_non_overlapping_indices(atom.line, nnu, nq_fac)
+                                ib, ir = atom.get_non_overlapping_indices(atom.trans, nnu, nq_fac)
                                 atom.bbt['ir'] = 0
                                 atom.bbt['ib'] = 0
-                                atom.bbt.loc[atom.in_lines, 'ir'] = ir
-                                atom.bbt.loc[atom.in_lines, 'ib'] = ib
+                                atom.bbt.loc[atom.in_lines, 'ir'] = ir[:atom.nline][atom.in_lines]
+                                atom.bbt.loc[atom.in_lines, 'ib'] = ib[:atom.nline][atom.in_lines]
 
                             #mask = bbt.loggf > loggf_cut
                             #mask = mask & (bbt.lam_vac_red > blue_cut) 
@@ -242,9 +247,9 @@ class tumult(object):
                         if self.has_spectrum:
                             if not option(self.nml['atom_params'], 'overlapping_bb_in_output'):
                                 nnu = self.lam.size
-                                ib, ir = self.atom.get_non_overlapping_indices(atom.line, nnu, nq_fac)
-                                atom.ib = ib.astype(int)
-                                atom.ir = ir.astype(int)
+                                ib, ir = atom.get_non_overlapping_indices(atom.trans, nnu, nq_fac)
+                                atom.ib = ir.astype(int)
+                                atom.ir = ib.astype(int)
 
                 if atom.id in self.abundances:
                     atom.abnd = float(self.abundances[atom.id])
@@ -253,20 +258,16 @@ class tumult(object):
                 elif in_abnd and in_abnd[i] > -99:
                     atom.abnd = in_abnd[i]
 
-                self.atoms.append(atom)
+                atoms.append(atom)
 
-        self.atoms = np.array(self.atoms)[np.argsort([atom.id for atom in self.atoms])]
+        atoms = np.array(atoms)[np.argsort([atom.id for atom in atoms])]
         reports = self.folder.glob('convergence_report_*.txt')
         self.conv_report = []
         for report in reports:
             df = pd.read_csv(report, sep=r'\s+')
             self.conv_report.append(df)
 
-        self.has_atom = read_atom and len(self.atoms) > 0
-
-    #=====================================================================
-    def read_llist(self):
-        self.llist = LineList.from_dispatch_format(self.folder / 'linelist_out.txt')
+        return atoms
 
     #=====================================================================
     def get_line(self, lam0, tol=0.05):
@@ -282,15 +283,24 @@ class tumult(object):
         return line
     
     #=====================================================================
-    @broadcast_arguments(numeric=False)
-    def crop(self, slc=None, lam0=None, ang=None, imu=None, norm=True, 
-             cont=False, LTE=False, line=None, resolved=False, **kwargs):
-        #-----------------------------------------------------------------
-        if line is not None:
-            line.prepare()
-            slc = slice(line.ib, line.ir)
-            lam0 = line.lam0
+    def get_spectrum(self, ang=None, imu=None, LTE=False, cont=False, resolved=False):
+        """
+        Returns a Spectrum object for the given angle (ang) or mu-index (imu).
+        If ang and imu are both None, returns the flux spectrum.
 
+        Parameters:
+        -----------
+        ang: int or None
+            Index of the angle in the angle quadrature. Default is None.
+        imu: int or None
+            Index of the mu value in the angle quadrature. Default is None.
+        LTE: bool
+            If True, returns the LTE spectrum. If False, returns the NLTE spectrum. Default is False.
+        cont: bool
+            If True, returns the continuum spectrum. Default is False.
+        resolved: bool
+            If True, returns the resolved spectrum. Default is False.
+        """
         if not LTE and self.mode=='LTE':
             print('Cannot get NLTE spectrum, because run was in LTE!')
             LTE = True
@@ -303,59 +313,73 @@ class tumult(object):
 
         if self.n_ang == 1: ang=0
 
-        if cont: key = ('Cont',)
-        elif LTE: key = ('LTE',)
-        else: key = ('NLTE',)
+        flux = ang is None and imu is None
+        yunit = u.erg/(u.s*u.cm**2*u.Hz)
+        if not flux: yunit = yunit / u.sr
 
-        if ang is None and imu is None:
-            key += ('Flux', '')
-            cnt = self.spectrum[('Cont', 'Flux', '')]
-            yy = self.spectrum[key]
+        #if resolved:
+        #    if cont:
+        #        yy = self.c3
+        #    elif LTE:
+        #        yy = self.i3_lte
+        #    else:
+        #        yy = self.i3
 
-        else:
-            #if resolved:
-            #    if cont:
-            #        yy = self.c3
-            #    elif LTE:
-            #        yy = self.i3_lte
-            #    else:
-            #        yy = self.i3
-
-            #    if ang is None:
-            #        raise ValueError('ang is required for resolved spectrum')
-            #    else:
-            #        cnt = np.array(cnt[..., ang]).T
-            #        yy = np.array(yy[..., ang]).T
-
-            if ang is not None:
-                mu = f'µ={self.vec[ang,-1]:.2f}'
-                key += (mu, ang)
-                yy = self.spectrum[key]
-                cnt = self.spectrum[('Cont', mu, ang)]
+        #    if ang is None:
+        #        raise ValueError('ang is required for resolved spectrum')
+        #    else:
+        #        cnt = np.array(cnt[..., ang]).T
+        #        yy = np.array(yy[..., ang]).T
+        if cont:
+            if flux:
+                yy = self.flux_cnt
+            elif ang is not None:
+                yy = self.ie_cnt[:, ang]
             elif imu is not None:
-                mu = f'µ={self.mus[imu]:.2f}'
-                cnt = self.get_imu_mean(('Cont', mu))
-                yy = self.get_imu_mean(key + (mu,))
-                key += (mu, '')
-            else:
-                cnt = self.spectrum[('Cont', 'Flux', '')]
-                
-        if norm:
-            yy = yy / cnt
-            yy.data.columns = [u.dimensionless_unscaled]
-
-        spec = yy.crop(slc=slc, lam0=lam0, **kwargs)
-        return spec
+                imu_mask = self.imus == imu
+                yy = np.mean(self.ie_cnt[:, imu_mask], axis=1)
+        elif LTE:
+            if flux:
+                yy = self.flux_lte
+            elif ang is not None:
+                yy = self.ie_lte[:, ang]
+            elif imu is not None:
+                imu_mask = self.imus == imu
+                yy = np.mean(self.ie_lte[:, imu_mask], axis=1)
+        else:
+            if flux:
+                yy = self.flux
+            elif ang is not None:
+                yy = self.ie[:, ang]
+            elif imu is not None:
+                imu_mask = self.imus == imu
+                yy = np.mean(self.ie[:, imu_mask], axis=1)
+            
+        return Spectrum(self.lam, yy, xunit=u.angstrom, yunit=yunit)
     
     #=====================================================================
-    #@functools.cache
-    def get_imu_mean(self, key):
+    @broadcast_arguments(numeric=False)
+    def crop(self, slc=None, x0=None, ang=None, imu=None, norm=True, 
+             cont=False, LTE=False, line=None, **kwargs):
         #-----------------------------------------------------------------
-        spec = self.spectrum[key]
-        columns = spec.data.columns
-        unit = columns[0][-1]
-        spec.data = pd.DataFrame({unit:spec.data.mean(axis=1)})
+        if line is not None:
+            line.prepare()
+            slc = slice(line.ib, line.ir)
+            x0 = line.lam0
+
+        spec = self.get_spectrum(ang=ang, imu=imu, LTE=LTE, cont=cont)
+        spec = spec.crop(slc=slc, x0=x0, **kwargs)
+
+        if norm:
+          cntm = self.get_spectrum(ang=ang, imu=imu, LTE=LTE, cont=True)
+          cntm = cntm.crop(slc=slc, x0=x0, **kwargs)
+          spec = spec / cntm
+
         return spec
+
+    #=================================================================
+    def fit(self, **kwargs):
+        return Spectrum.fit(self, **kwargs)
 
     #=====================================================================
     def plot_resolved(self, ang=0, f=0, LTE=False, cont=False, **kwargs):
@@ -480,9 +504,9 @@ class tumult(object):
         if ilvl is not None:
             dep = dep[...,ilvl]
 
-        dep = np.array(dep)
+        dep = np.array(dep).squeeze()
 
-        if self.dim=='3D' and mean:
+        if mean:
             ltau, dep = self.atmos.get_ltau_mean(dep, zaxis=2)
         else:
             ltau = self.atmos.ltau[...,::-1].squeeze()
@@ -563,8 +587,6 @@ class tumult(object):
                     dct[key] = np.memmap(resolved_folder + file, dtype=dtype, mode='r', shape=dims, order='F')
 
         except FileNotFoundError:
-            if (not kind in self.nml['m3d_params']['save_patch_kind'].split()):
-                print('The patch was not saved. Check the save_patch_kind parameter in the m3d_params namelist.')
             raise FileNotFoundError(f'{meta_file} not found!')
 
         if concat:
@@ -660,30 +682,32 @@ class tumult(object):
             max_strength = 0.1
             llist = pd.DataFrame()
 
-        if self.has_atom and show_atom:
-            bbt = self.atom.bbt[['lam0', 'loggf', 'ga']].copy().reset_index(drop=True)
-            mask = (bbt.lam0 > xmin) & (bbt.lam0 < xmax)
-            bbt = bbt[mask]
-            bbt['ion'] = self.atom.id
-            bbt['strength'] = max_strength
-            if len(bbt) == 1:
-                llist = pd.concat([llist, bbt])
-            elif len(bbt) > 1 and tol is not None:
-                groups = assign_group_indices(bbt['lam0'].values, tol) - 1
-                for i in range(groups.max()+1):
-                    group = bbt[groups == i]
-                    if len(group) == 1:
-                        llist = pd.concat([llist, group])
-                    else:
-                        strength = group.strength.sum()
-                        wts = group.strength / strength
-                        lam0 = np.sum(group.lam0 * wts)
-                        loggf = np.log10(np.sum(10**group.loggf))
-                        new_row = pd.DataFrame({'ion': [self.atom.id], 'lam0': [lam0], 'strength': [strength], 'loggf': [loggf]})
-                        llist = pd.concat([llist, new_row])
+        if show_atom:
+            for atom in self.atoms:
+                bbt = atom.bbt[['lam0', 'loggf', 'ga']].copy().reset_index(drop=True)
+                mask = (bbt.lam0 > xmin) & (bbt.lam0 < xmax)
+                bbt = bbt[mask]
+                bbt['ion'] = atom.id
+                bbt['strength'] = max_strength
+                if len(bbt) == 1:
+                    llist = pd.concat([llist, bbt])
+                elif len(bbt) > 1 and tol is not None:
+                    groups = assign_group_indices(bbt['lam0'].values, tol) - 1
+                    for i in range(groups.max()+1):
+                        group = bbt[groups == i]
+                        if len(group) == 1:
+                            llist = pd.concat([llist, group])
+                        else:
+                            strength = group.strength.sum()
+                            wts = group.strength / strength
+                            lam0 = np.sum(group.lam0 * wts)
+                            loggf = np.log10(np.sum(10**group.loggf))
+                            new_row = pd.DataFrame({'ion': [atom.id], 'lam0': [lam0], 'strength': [strength], 'loggf': [loggf]})
+                            llist = pd.concat([llist, new_row])
 
         if len(llist) > 0:    
             llist = llist.sort_values(by='lam0').reset_index(drop=True)
+            llist['ion'] = llist['ion'].str.strip()
             if offset is not None: llist['lam0'] = llist['lam0'] + offset
             if not dry:
                 plot_line_annotations(llist.lam0.values, llist.ion.values, llist.strength.values, **kwargs)
@@ -710,66 +734,6 @@ class tumult(object):
         yy = yy / np.max(yy)
         yy = bottom + yy * scale
         plt.plot([xx, xx], [bottom*np.ones_like(xx), yy], **kwargs)
-    
-    #=================================================================
-    def fit_observed(self, oxx, oyy, fit=None, bounds=None, p0=None, sigma=None,
-                     syst=None, method='L-BFGS-B', tol=None, res='auto', **kwargs):
-        #-----------------------------------------------------------------
-        if len(oxx) == 0:
-            raise ValueError('empty oxx array in fit_observed!')
-        if len(oxx) != len(oyy):
-            raise ValueError('oxx and oyy must have the same length!')
-
-        fit = fit or []
-        bounds = bounds or {}
-        p0 = p0 or {}
-        
-        if len(fit)==0: return {}, None
-        lbounds = {'vshift':-3, 'vdop':1e-3, 'vrot':1e-3, 'zeta_rt':1e-3, 'continuum':0.5, 'tilt':-0.2}
-        ubounds = {'vshift':+3, 'vdop':1e1,  'vrot':1e1,  'zeta_rt':1e1,  'continuum':2.0, 'tilt':+0.2}
-        p0s     = {'vshift':0,  'vdop':1,    'vrot':1,    'zeta_rt':1,    'continuum':1.0, 'tilt':0.0}
-        
-        p0s.update(p0)
-        for key in bounds.keys():
-            lbounds[key], ubounds[key] = bounds[key]
-
-        p0 = [p0s[f] for f in fit]
-        bounds = ([lbounds[f] for f in fit], [ubounds[f] for f in fit])
-        bounds = np.vstack(bounds).T
-
-        if res == 'auto':
-            res = np.mean(oxx) / np.mean(np.diff(oxx))
-
-        def evaluate(newx, *args):
-            ka = {f:args[i] for i, f in enumerate(fit)}
-            newy = self.crop(newx=newx, **ka, res=res, **kwargs).ydata
-            if len(newy) == 0:
-                raise ValueError('Observations outside of model wavelength range!')
-            return newy
-        
-        def fit_params(x, y):
-            def residuals(params, newx):
-                r = y - evaluate(newx, *params)
-                if sigma is not None: r = r/sigma
-                return np.sum(r**2)
-            
-            pfit = optimize.minimize(residuals, p0, args=(x), bounds=bounds, method=method, tol=tol).x
-            return pfit
-
-        pfit = fit_params(oxx, oyy)
-        fitted = evaluate(oxx, *pfit)
-        best = {f:pfit[i] for i, f in enumerate(fit)}
-
-        if syst is None:
-            return best, fitted
-        else:
-            pfits = np.zeros((len(pfit), 3))
-            pfits[:, 0] = fit_params(oxx, oyy*(1-syst))
-            pfits[:, 1] = pfit
-            pfits[:, 2] = fit_params(oxx, oyy*(1+syst))
-            perr = [pchip_sigma([-syst, 0, syst], p, 0, syst) for p in pfits]
-            perr = {f:perr[i] for i, f in enumerate(fit)}
-            return best, fitted, perr
         
     #=====================================================================
     def get_slice(self, line=None, dlam=None, lam0=None, xmin=None, xmax=None):
@@ -946,29 +910,6 @@ class tumult(object):
         text = df.Height[::-1].to_string(index=False, float_format='%.4e')
         f.write(text)
         f.close()
-
-    #=================================================================
-    def to_dispatch1d_atmos(self, file, vmic=1.0, FeH=''):
-        ltau, temp = self.get_ltau_mean('temp', log=True)
-        _, ne      = self.get_ltau_mean('ne',   log=True)
-        _, rho     = self.get_ltau_mean('rho',  log=True)
-
-        df = pd.DataFrame()
-        df['lTau'] = ltau
-        df['Temp'] = temp
-        df['Pe'] = ne*temp*BK
-        df['Rho'] = rho
-        df['Vturb'] = vmic
-
-        file = pathlib.Path(file)
-        file.parent.mkdir(parents=True, exist_ok=True)
-        f = open(file, 'w+')
-        f.write(f'{file.with_suffix("").name:}\n')
-        f.write(f'{len(df):} {FeH}\n')
-        text = df[::-1].to_string(index=False, float_format='%.4e')
-        text = '*' + text[1:]
-        f.write(text)
-        f.close()
     
     #=================================================================
     def get_duration(self, string=True):
@@ -1031,7 +972,17 @@ class tumult(object):
         weights = weights or np.ones(len(runs))/len(runs)
 
         if self.run0.has_spectrum:
-            self.spectrum = SpectrumClass.combine([run.spectrum for run in runs], weights=weights)
+            def weight_runs(attr):
+                wsum = np.sum([getattr(r, attr) * w for r, w in zip(runs, weights)], axis=0)
+                setattr(self, attr, wsum)
+            
+            weight_runs('ie')
+            weight_runs('ie_lte')
+            weight_runs('ie_cnt')
+            weight_runs('flux')
+            weight_runs('flux_lte')
+            weight_runs('flux_cnt')
+            self.lam = self.run0.lam
 
         return self
 

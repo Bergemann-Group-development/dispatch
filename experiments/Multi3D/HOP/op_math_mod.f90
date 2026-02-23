@@ -1037,7 +1037,7 @@ contains
     
     i = 1
     do j=1, n_interp
-      if (sorted) then
+      if (is_sorted) then
         ! Find the interval containing newx(j)
         do i=i, n - 1
           if (newx(j) <= xx(i + 1)) then

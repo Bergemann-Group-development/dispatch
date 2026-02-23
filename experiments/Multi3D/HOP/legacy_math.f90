@@ -24,17 +24,17 @@ CONTAINS
     !
     if (b .lt. 0.01) then
       psemi = 0.27566 * (0.577 + log(b))
-    !
-    !  intermediate temps (most important for eqm plasmas)
-    !  spline interpolation onto logb grid:
-    !
+      !
+      !  intermediate temps (most important for eqm plasmas)
+      !  spline interpolation onto logb grid:
+      !
     else if(b .gt. 0.01 .and. b .lt. 10.0)then
       bb=log10(b)
       if (z .eq. 1) psemi = splin(bb,betref,pnref,n1,n1)
       if (z .gt. 1) psemi = splin(bb,betref,pcref,n1,n1)
-    !
-    !  limit of low temperature: kt << e
-    !
+      !
+      !  limit of low temperature: kt << e
+      !
     else  if(b .gt. 10.0)then
       if(z .eq. 1) psemi = 0.066 / sqrt(b)
       if(z .gt. 1) psemi = 0.200
@@ -97,145 +97,145 @@ CONTAINS
     !                       (used to be if nnn omitted )
     ! output:        splin interpolated value at t
     !
-      implicit real(8) (A-H,O-Z)
-        dimension x(n), y(n), s2(100), s3(100), dely(100), h(100), &
-          h2(100), delsqy(100), c(100), b(100), xx(100), yy(100)
-        logical search, found, skip
-        character*4 init
-        data init/'noto'/
-        save
-      !  nn = number of points of the spline interval
-        nn = min(7,n)
-        if (nnn .ne. 0) then
-          ! pgj        if (%loc(nnn).eq.0) go to 10
-          nn = nnn
-          nn = min(n,nnn,100)
-        endif
-        !  if t in [x(k)-error,x(k)+error] t = x(k)
-        error = 1.0e-12
-        if (t.ne.0) error = abs(1.0e-12*t)
-        found = search(x,t,1,n,k,error)
+    implicit real(8) (A-H,O-Z)
+    dimension x(n), y(n), s2(100), s3(100), dely(100), h(100), &
+      h2(100), delsqy(100), c(100), b(100), xx(100), yy(100)
+    logical search, found, skip
+    character*4 init
+    data init/'noto'/
+    save
+    !  nn = number of points of the spline interval
+    nn = min(7,n)
+    if (nnn .ne. 0) then
+      ! pgj        if (%loc(nnn).eq.0) go to 10
+      nn = nnn
+      nn = min(n,nnn,100)
+    endif
+    !  if t in [x(k)-error,x(k)+error] t = x(k)
+    error = 1.0e-12
+    if (t.ne.0) error = abs(1.0e-12*t)
+    found = search(x,t,1,n,k,error)
 
-        if (found) then
-          splin = y(k)
-          return
-        endif
+    if (found) then
+      splin = y(k)
+      return
+    endif
 
-        if (n.eq.2.or.nn.eq.2) then
-          ! if n=2 or nnn=2 linear interpolation is adopted
-          splin = (y(k+1)-y(k))*(t-x(k))/(x(k+1)-x(k)) + y(k)
-          return
-        endif
-        if (n.eq.1) then
-          splin = y(1)
-          return
-        endif
-        !       interval of the spline is computed
-        iover = log10(float(nn))*3
-        int = (k-iover)/(nn-2*iover) + 1
-        i1 = (int-1)*(nn-2*iover)
-        i2 = i1 + nn -1
-        if (i1.lt.1) then
-          i2 = nn
-          i1 = 1
-        endif
-        if (i2.gt.n) then
-          i2 = n
-          i1 = n - nn + 1
-        endif
-        ishift = i1 - 1
-        n1 = nn - 1
-        ! initialization check
-        if (init.eq.'okay') then
-          ! interval check
-          skip = .true.
-          do i=1,nn
-            if (xx(i).ne.x(i+ishift)) skip = .false.
-            if (yy(i).ne.y(i+ishift)) skip = .false.
-          end do
-        else
-          init = 'okay'
-          skip = .false.
-        endif
+    if (n.eq.2.or.nn.eq.2) then
+      ! if n=2 or nnn=2 linear interpolation is adopted
+      splin = (y(k+1)-y(k))*(t-x(k))/(x(k+1)-x(k)) + y(k)
+      return
+    endif
+    if (n.eq.1) then
+      splin = y(1)
+      return
+    endif
+    !       interval of the spline is computed
+    iover = log10(float(nn))*3
+    int = (k-iover)/(nn-2*iover) + 1
+    i1 = (int-1)*(nn-2*iover)
+    i2 = i1 + nn -1
+    if (i1.lt.1) then
+      i2 = nn
+      i1 = 1
+    endif
+    if (i2.gt.n) then
+      i2 = n
+      i1 = n - nn + 1
+    endif
+    ishift = i1 - 1
+    n1 = nn - 1
+    ! initialization check
+    if (init.eq.'okay') then
+      ! interval check
+      skip = .true.
+      do i=1,nn
+        if (xx(i).ne.x(i+ishift)) skip = .false.
+        if (yy(i).ne.y(i+ishift)) skip = .false.
+      end do
+    else
+      init = 'okay'
+      skip = .false.
+    endif
 
-        if (.not. skip) then
-          ! start of the computation of spline coefficients
-          rmin = 1.0e37
-          rmax = -1.0e37
-          do i=1,nn
-            if (y(i+ishift).lt.rmin)  rmin = y(i+ishift)
-            if (y(i+ishift).gt.rmax)  rmax = y(i+ishift)
-          end do
-          ! computation of the norm factors xnorm and ynorm
-          xnorm = 1/(x(nn+ishift)-x(1+ishift))
-          ynorm = rmax - rmin
-          if (ynorm.eq.0) ynorm = rmax
-          if (ynorm.eq.0) ynorm = 1
-          ynorm = 1 / ynorm
-          do i=1,n1
-            h(i) = (x(i+1+ishift)-x(i+ishift))*xnorm
-            dely(i) = ((y(i+1+ishift)-y(i+ishift))/h(i))*ynorm
-          end do
-          do i=2,n1
-            h2(i) = h(i-1) + h(i)
-            b(i) = 0.5*h(i-1)/h2(i)
-            delsqy(i) = (dely(i)-dely(i-1))/h2(i)
-            s2(i) = 2.*delsqy(i)
-            c(i) = 3.*delsqy(i)
-          end do
-          s2(1) = 0
-          s2(n1+1) = 0
-          ! solution of the linear system of the spline coefficients
-          ! by successive overrelaxation.
-          ! constants: eps = error criterion in the iterative solution.
-          !            omega = relaxation coefficient.
-          epsln = 1.0e-8
-          omega = 1.0717968
-          eta = epsln
-          do while (eta-epsln >= 0)
-            eta = 0.
-            do i=2,n1
-              w = (c(i)-b(i)*s2(i-1)-(0.5-b(i))*s2(i+1)-s2(i))*omega
-              if (abs(w)-eta > 0) then
-                eta = abs(w)
-              endif
-              s2(i) = s2(i) + w
-            end do
-          end do
-          do i=1,n1
-            s3(i) = (s2(i+1)-s2(i))/h(i)
-          end do
-          ! x and y stored in xx and yy for interval check
-          do i=1,nn
-            xx(i) = x(i+ishift)
-            yy(i) = y(i+ishift)
-          end do
-        endif
-        i = k - i1 + 1
-        ht1 = (t-x(i+ishift))*xnorm
-        ht2 = (t-x(i+ishift+1) )*xnorm
-        if ((t-x(1))*xnorm.le.0) then
-          ! extrapolation t < x(1)
-          splin = y(1)
-          return
-        endif
-        if ((t-x(n))*xnorm.le.0) then
-          ! interpolation by means of the spline coefficients
-          ss2 = s2(i) + ht1*s3(i)
-          prod = ht1*ht2
-          delsqs = (s2(i)+s2(i+1)+ss2)/6.
-          splin = y(i+ishift) + (ht1*dely(i)+prod*delsqs)/ynorm
-          return
-        endif
-        ! extrapolation t > x(n)
-        splin =  y(n)
-        return
-        end
+    if (.not. skip) then
+      ! start of the computation of spline coefficients
+      rmin = 1.0e37
+      rmax = -1.0e37
+      do i=1,nn
+        if (y(i+ishift).lt.rmin)  rmin = y(i+ishift)
+        if (y(i+ishift).gt.rmax)  rmax = y(i+ishift)
+      end do
+      ! computation of the norm factors xnorm and ynorm
+      xnorm = 1/(x(nn+ishift)-x(1+ishift))
+      ynorm = rmax - rmin
+      if (ynorm.eq.0) ynorm = rmax
+      if (ynorm.eq.0) ynorm = 1
+      ynorm = 1 / ynorm
+      do i=1,n1
+        h(i) = (x(i+1+ishift)-x(i+ishift))*xnorm
+        dely(i) = ((y(i+1+ishift)-y(i+ishift))/h(i))*ynorm
+      end do
+      do i=2,n1
+        h2(i) = h(i-1) + h(i)
+        b(i) = 0.5*h(i-1)/h2(i)
+        delsqy(i) = (dely(i)-dely(i-1))/h2(i)
+        s2(i) = 2.*delsqy(i)
+        c(i) = 3.*delsqy(i)
+      end do
+      s2(1) = 0
+      s2(n1+1) = 0
+      ! solution of the linear system of the spline coefficients
+      ! by successive overrelaxation.
+      ! constants: eps = error criterion in the iterative solution.
+      !            omega = relaxation coefficient.
+      epsln = 1.0e-8
+      omega = 1.0717968
+      eta = epsln
+      do while (eta-epsln >= 0)
+        eta = 0.
+        do i=2,n1
+          w = (c(i)-b(i)*s2(i-1)-(0.5-b(i))*s2(i+1)-s2(i))*omega
+          if (abs(w)-eta > 0) then
+            eta = abs(w)
+          endif
+          s2(i) = s2(i) + w
+        end do
+      end do
+      do i=1,n1
+        s3(i) = (s2(i+1)-s2(i))/h(i)
+      end do
+      ! x and y stored in xx and yy for interval check
+      do i=1,nn
+        xx(i) = x(i+ishift)
+        yy(i) = y(i+ishift)
+      end do
+    endif
+    i = k - i1 + 1
+    ht1 = (t-x(i+ishift))*xnorm
+    ht2 = (t-x(i+ishift+1) )*xnorm
+    if ((t-x(1))*xnorm.le.0) then
+      ! extrapolation t < x(1)
+      splin = y(1)
+      return
+    endif
+    if ((t-x(n))*xnorm.le.0) then
+      ! interpolation by means of the spline coefficients
+      ss2 = s2(i) + ht1*s3(i)
+      prod = ht1*ht2
+      delsqs = (s2(i)+s2(i+1)+ss2)/6.
+      splin = y(i+ishift) + (ht1*dely(i)+prod*delsqs)/ynorm
+      return
+    endif
+    ! extrapolation t > x(n)
+    splin =  y(n)
+    return
+  end
 
 !
 ! **********************************************************************
 !
-       logical FUNCTION search(arr,x,ia,ib,k,err)
+  logical FUNCTION search(arr,x,ia,ib,k,err)
 !
 ! * searches the point x within an error bound -err- in array arr      *
 ! * if that point is not found, it gives the                           *
@@ -269,69 +269,69 @@ CONTAINS
 ! *                                                                    *
 ! * send in by e.v.d.zalm, utrecht, sterrewacht, march 24th 1981       *
 ! **********************************************************************
-      implicit real(8) (A-H,O-Z)
-      dimension arr(ib)
+    implicit real(8) (A-H,O-Z)
+    dimension arr(ib)
 !
-      one=1.0
-      search = .true.
-      if (arr(ib)-arr(ia).lt.0.0) goto 100
-5     if (x.lt.arr(ia).or.x.gt.arr(ib)) goto 25
-      if (k.lt.ia.or.k.gt.ib-1) goto 25
-      l = k
-      ip = sign(one,x-arr(k))
-      if (ip.lt.0.) goto 20
-10    l = min(k+ip,ib)
-      if (arr(l).ge.x) goto 30
-      ip = ip * 2
-      k = l
-      goto 10
-20    k = max(l+ip,ia)
-      if (arr(k).le.x) goto 30
-      ip = ip * 2
-      l = k
-      goto 20
-25    k = ia
-      l = ib
-30    if ((l-k).le.1) goto 50
-      i = int((k+l)/2.)
-      if (arr(i).ge.x) goto 40
-      k = i
-      goto 30
-40    l = i
-      goto 30
-100   if (x.lt.arr(ib).or.x.gt.arr(ia)) goto 250
-      if (k.lt.ia.or.k.gt.ib-1) goto 250
-      l = k
-      ip = sign(one,arr(k)-x)
-      if (ip.lt.0.) goto 200
-110   l = min(k+ip,ib)
-      if (arr(l).le.x) goto 300
-      ip = ip * 2
-      k = l
-      goto 110
-200   k = max(l+ip,ia)
-      if (arr(k).ge.x) goto 300
-      ip = ip * 2
-      l = k
-      goto 200
-250   k = ia
-      l = ib
-300   if ((l-k).le.1) goto 50
-      i = int((k+l)/2.)
-      if (arr(i).le.x) goto 400
-      k = i
-      goto 300
-400   l = i
-      goto 300
-50    if (abs(x-arr(k)).le.err) return
-      if (abs(x-arr(l)).gt.err) goto 60
-      k = l
-      return
-60    search = .false.
-      return
-      end
+    one=1.0
+    search = .true.
+    if (arr(ib)-arr(ia).lt.0.0) goto 100
+5   if (x.lt.arr(ia).or.x.gt.arr(ib)) goto 25
+    if (k.lt.ia.or.k.gt.ib-1) goto 25
+    l = k
+    ip = sign(one,x-arr(k))
+    if (ip.lt.0.) goto 20
+10  l = min(k+ip,ib)
+    if (arr(l).ge.x) goto 30
+    ip = ip * 2
+    k = l
+    goto 10
+20  k = max(l+ip,ia)
+    if (arr(k).le.x) goto 30
+    ip = ip * 2
+    l = k
+    goto 20
+25  k = ia
+    l = ib
+30  if ((l-k).le.1) goto 50
+    i = int((k+l)/2.)
+    if (arr(i).ge.x) goto 40
+    k = i
+    goto 30
+40  l = i
+    goto 30
+100 if (x.lt.arr(ib).or.x.gt.arr(ia)) goto 250
+    if (k.lt.ia.or.k.gt.ib-1) goto 250
+    l = k
+    ip = sign(one,arr(k)-x)
+    if (ip.lt.0.) goto 200
+110 l = min(k+ip,ib)
+    if (arr(l).le.x) goto 300
+    ip = ip * 2
+    k = l
+    goto 110
+200 k = max(l+ip,ia)
+    if (arr(k).ge.x) goto 300
+    ip = ip * 2
+    l = k
+    goto 200
+250 k = ia
+    l = ib
+300 if ((l-k).le.1) goto 50
+    i = int((k+l)/2.)
+    if (arr(i).le.x) goto 400
+    k = i
+    goto 300
+400 l = i
+    goto 300
+50  if (abs(x-arr(k)).le.err) return
+    if (abs(x-arr(l)).gt.err) goto 60
+    k = l
+    return
+60  search = .false.
+    return
+  end
 !
 ! **********************************************************************
 !
 
-      END MODULE
+END MODULE

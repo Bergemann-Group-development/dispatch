@@ -7,7 +7,7 @@ MODULE composition_patch_mod
   USE gpatch_mod
   USE handyfuncs_mod
   USE optab_mod, only: optab
-  USE osmet_mod, only: osmet
+  USE osmet_mod, only: osmet, eosmet
   USE ion_mod, only: particle_type, ion_type, debye_shield
   USE molecule_mod, only: molec_type
   USE element_mod, only: element_type
@@ -84,7 +84,7 @@ SUBROUTINE read_composition_params ()
   dtemp, ldne, ldrho, ldtemp, tmolim, irwin_dis, opac_table_vmic, save_species, &
   ref_lam, debug_opac, abundances, relative_abundances, alpha_enhancement, r_process_enhancement, &
   disable_ga, disable_stark, disable_vdw, helium_scattering, sample_linelist, hydrogen_BPO, &
-  ga_fallback
+  ga_fallback, eosmet
   namelist /linelist_params/ dlam, exclude_elements, line_lists, linelist_folder, &
   linelist_in_output, tolerance, only_elements
   ! ----------------------------------------------------------------------------

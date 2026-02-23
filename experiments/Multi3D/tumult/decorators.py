@@ -102,7 +102,7 @@ def auto_ops(attr):
                 def method(self, other):
                     a = getattr(self, attr)
                     b = getattr(other, attr) if isinstance(other, cls) else other
-                    return cls(op(a, b), base=self)
+                    return cls.auto_ops(op(a, b), base=self)
                 return method
             setattr(cls, name, make_method(op))
         return cls

@@ -50,7 +50,6 @@ MODULE atom_mod
       real(8), dimension(:,:,:,:,:), allocatable :: oldb
       real(8), dimension(:,:,:,:), allocatable :: gamma_ij
       real(8), dimension(:,:,:,:), allocatable :: gamma_ji
-      real(4), dimension(:,:,:,:), allocatable :: nibj
       real(4), dimension(:,:,:,:), allocatable :: wphi
       real(4), dimension(:,:,:),   allocatable :: inv_df
       real(8), dimension(:),   allocatable  :: e
@@ -120,6 +119,10 @@ MODULE atom_mod
       real(8) :: qnorm
       real(8) :: drawin, mu_e
       logical :: check=.false.
+
+      real(8), pointer :: ng_a => null()
+      real(8), pointer :: ng_b => null()
+      real(8), dimension(:,:), pointer, contiguous :: ng_d => null()
         
     contains
       procedure :: init_atom_data
@@ -137,6 +140,9 @@ MODULE atom_mod
       procedure :: gencol
       procedure :: set_colliders
       procedure :: ng_acceleration
+      procedure :: ng_acceleration_accumulate
+      procedure :: ng_acceleration_coeff
+      procedure :: apply_ng_acceleration
     end type atom_type
     !---------------------------------------------------------------------
 
@@ -174,6 +180,7 @@ MODULE atom_mod
     real(4), public :: nq_fac=1.0
     integer, public :: cswitch=1
     integer, public :: ng_step=-1, ng_start=8
+    logical, public :: ng_global=.true.
     logical, public :: save_rate_matrix=.false.
 
     public :: unique_int
@@ -224,7 +231,6 @@ MODULE atom_mod
     call os%allocate(adata%nstar, m, label='nstar')
     call os%allocate(adata%totn, m(1:3), label='totn')
     call os%allocate(adata%inv_df, m(1:3), label='inv_df')
-    call os%allocate(adata%nibj, [m(1:3), self%ncont], label='data%nibj')
     
     call comp%get_totn(self%id, self%abnd, adata%totn, element, molec)
     if (present(found)) found = associated(element) .or. associated(molec)
@@ -954,7 +960,7 @@ MODULE atom_mod
       end do
     endif
     close(latom)
-    if (abort) stop
+    if (abort) stop 'abort in atom_mod%read_pandas'
     call trace%end(itimer)
   END SUBROUTINE read_pandas
 
@@ -1513,7 +1519,7 @@ MODULE atom_mod
       end if
     end do
     close(latom)
-    if (abort) stop
+    if (abort) stop 'abort in atom_mod%read'
     call trace%end(itimer)
   END SUBROUTINE read
 
@@ -2248,69 +2254,130 @@ MODULE atom_mod
   END FUNCTION gaunt
 
   !===============================================================================
-  SUBROUTINE ng_acceleration (self)
+  SUBROUTINE ng_acceleration (self, ng_iter, emax, epos)
     class(atom_type):: self
-    integer :: i, x, y, z, k, epos(4), nvec, m(3)
-    real(8), dimension(:), allocatable :: n1, n2, n3, n4, n5, d0, d1, d2, e, w
-    real(8) :: d01, d02, d11, d12, d21, d22, a, b, den, emax, enew
+    integer, intent(in) :: ng_iter
+    real(8), intent(out) :: emax
+    integer, intent(out) :: epos(4)
+    integer :: i, x, y, z, k, nvec, m(3)
+    real(8), dimension(:), allocatable :: n1, n2, n3, n4, d0, d1, d2, e, w
+    real(8) :: d01, d02, d11, d12, d21, d22, a, b, den, enew
     integer, save :: itimer=0
     ! ----------------------------------------------------------------------------
     call trace%begin ('atom_type%ng_acceleration', itimer=itimer)
-    m = shape(self%data%totn)
-    nvec = self%nlevel * product(m(1:2))
-    allocate(e(nvec))
-    allocate(n1, n2, n3, n4, n5, d0, d1, d2, w, mold=e)
     emax = 0
+    if (ng_global) then
+      if (ng_iter==0) then
+        call self%ng_acceleration_accumulate()
+      elseif (ng_iter==1) then
+        ! the first one to get here will convert d into a and b
+        ! and will reset d to zero; the others will reuse a and b
+        !$omp critical (ng_global)
+        call self%ng_acceleration_coeff()
+        !$omp end critical (ng_global)
+        call self%apply_ng_acceleration(emax, epos)
+      endif
+    elseif (ng_iter == 0) then
+      allocate(self%ng_d(0:2,1:2), source=0.d0)
+      allocate(self%ng_a, self%ng_b)
+      call self%ng_acceleration_accumulate()
+      call self%ng_acceleration_coeff()
+      call self%apply_ng_acceleration(emax, epos)
+      deallocate(self%ng_d)
+      deallocate(self%ng_a, self%ng_b)
+    endif
+    call trace%end(itimer)
+  END SUBROUTINE ng_acceleration
+
+  !===============================================================================
+  SUBROUTINE ng_acceleration_accumulate (self)
+    class(atom_type):: self
+    integer :: i, x, y, z, k, nvec, m(3)
+    real(8), dimension(:), allocatable :: n1, n2, n3, n4, d0, d1, d2, e
+    real(8) :: w
+    ! ----------------------------------------------------------------------------
+    m = shape(self%data%totn)
+    nvec = self%nlevel * product(m(1:3))
+    allocate(e(nvec))
+    allocate(n1, n2, n3, n4, d0, d1, d2, mold=e)
+    i = 0
     do z=1, m(3)
-      i = 0
+    do y=1, m(2)
+    do x=1, m(1)
+    do k=1, self%nlevel
+      i = i+1
+      ! the weight can be chosen freely, but 1/n is the
+      ! "best" choice according to Olson+1986
+      w = 1.d0 / self%data%b(x,y,z,k)
+      n1(i) = self%data%oldb(x,y,z,k,1) * w
+      n2(i) = self%data%oldb(x,y,z,k,2) * w
+      n3(i) = self%data%oldb(x,y,z,k,3) * w
+      n4(i) = self%data%b(x,y,z,k) * w
+    end do
+    end do
+    end do
+    end do
+
+    d0 = n4 - n3
+    d1 = n3 - n2
+    d2 = n2 - n1
+
+    d1 = d0 - d1
+    d2 = d0 - d2
+
+    associate(d => self%ng_d)
+      d(0,1) = d(0,1) + dot_product(d0, d1)
+      d(0,2) = d(0,2) + dot_product(d0, d2)
+      d(1,1) = d(1,1) + dot_product(d1, d1)
+      d(1,2) = d(1,2) + dot_product(d1, d2)
+      d(2,1) = d(2,1) + dot_product(d2, d1)
+      d(2,2) = d(2,2) + dot_product(d2, d2)
+    end associate
+  END SUBROUTINE ng_acceleration_accumulate
+
+  !===============================================================================
+  SUBROUTINE ng_acceleration_coeff (self)
+    class(atom_type):: self
+    real(8) :: den
+    ! ----------------------------------------------------------------------------
+    associate(d => self%ng_d)
+      if (any(d /= 0.d0)) then
+        den = d(1,1)*d(2,2) - d(1,2)*d(2,1)
+        if (abs(den) > 0) then
+          self%ng_a = (d(0,1)*d(2,2) - d(0,2)*d(2,1)) / den
+          self%ng_b = (d(0,2)*d(1,1) - d(0,1)*d(1,2)) / den
+        else
+          self%ng_a = 0
+          self%ng_b = 0
+        endif
+        d = 0 ! reset for next ng update
+      endif
+    end associate
+  END SUBROUTINE ng_acceleration_coeff
+
+  !===============================================================================
+  SUBROUTINE apply_ng_acceleration (self, emax, epos)
+    class(atom_type):: self
+    integer :: i, x, y, z, k, epos(4), m(3)
+    real(8) :: n1, n2, n3, n4, e
+    real(8) :: emax, enew
+    ! ----------------------------------------------------------------------------
+    m = shape(self%data%totn)
+    i = 0
+    associate(a => self%ng_a, b => self%ng_b)
+      do z=1, m(3)
       do y=1, m(2)
       do x=1, m(1)
       do k=1, self%nlevel
         i = i+1
-        ! the weight can be chose freely, but 1/n is the
-        ! "best" choice according to Olson+1986
-        !w(i) = 1.d0
-        w(i) = 1.d0 / self%data%b(x,y,z,k)
-        n1(i) = self%data%oldb(x,y,z,k,1) * w(i)
-        n2(i) = self%data%oldb(x,y,z,k,2) * w(i)
-        n3(i) = self%data%oldb(x,y,z,k,3) * w(i)
-        n4(i) = self%data%b(x,y,z,k) * w(i)
-      end do
-      end do
-      end do
-
-      d0 = n4 - n3
-      d1 = n3 - n2
-      d2 = n2 - n1
-
-      d1 = d0 - d1
-      d2 = d0 - d2
-
-      d01 = dot_product(d0, d1)
-      d02 = dot_product(d0, d2)
-      d11 = dot_product(d1, d1)
-      d22 = dot_product(d2, d2)
-      d12 = dot_product(d1, d2)
-      d21 = d12
-
-      den = d11*d22 - d12*d21
-
-      if (abs(den) > 0) then
-        a = (d01*d22 - d02*d21) / den
-        b = (d02*d11 - d01*d21) / den
-
+        n1 = self%data%oldb(x,y,z,k,1)
+        n2 = self%data%oldb(x,y,z,k,2)
+        n3 = self%data%oldb(x,y,z,k,3)
+        n4 = self%data%b(x,y,z,k)
         e = (1.d0 - a - b)*n4 + a*n3 + b*n2
-      else
-        e = n4
-      endif
-
-      i = 0
-      do y=1, m(2)
-      do x=1, m(1)
-      do k=1,self%nlevel
-        i = i+1
-        self%data%b(x,y,z,k) = e(i)/w(i)
-        enew = e(i)/n4(i)  - 1.d0
+        e = max(n4*1d-3, min(e, n4*1d3))
+        self%data%b(x,y,z,k) = e
+        enew = e/n4 - 1.d0
 
         if (abs(enew) > abs(emax)) then
           emax = enew
@@ -2319,10 +2386,9 @@ MODULE atom_mod
       end do
       end do
       end do
-    end do
-    print '(A, ES14.7, 4(I6))', 'NG acceleration ', emax, epos
-    call trace%end(itimer)
-  END SUBROUTINE ng_acceleration
+      end do
+    end associate
+  END SUBROUTINE apply_ng_acceleration
 
 END MODULE atom_mod
   

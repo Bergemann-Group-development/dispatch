@@ -1,40 +1,40 @@
 MODULE m3d_halo_mod
-    USE os_mod
-    USE list_mod
-    USE halo_mod
-    USE link_mod
-    USE task_mod
-    USE patch_mod, only:patch_t
-    USE gpatch_mod, only:gpatch_t
-    USE mesh_mod, only:mesh_t
-    ! USE interp_mod
-    USE io_mod
-    USE timer_mod
-    USE trace_mod
-    USE mpi_mod
-    USE shared_mod
-    USE omp_mod
-    USE omp_lock_mod
-    USE omp_timer_mod
-    USE bits_mod
-    USE handyfuncs_mod, only:option
-    implicit none
-    private
-  
-    type, public, extends(halo_t):: m3d_halo_t
-    contains
-      procedure:: info
-      procedure:: append_to
-      procedure:: reset_status
-      procedure:: update
-      procedure:: download
-      procedure:: check_status
-    end type
+  USE os_mod
+  USE list_mod
+  USE halo_mod
+  USE link_mod
+  USE task_mod
+  USE patch_mod, only:patch_t
+  USE gpatch_mod, only:gpatch_t
+  USE mesh_mod, only:mesh_t
+  ! USE interp_mod
+  USE io_mod
+  USE timer_mod
+  USE trace_mod
+  USE mpi_mod
+  USE shared_mod
+  USE omp_mod
+  USE omp_lock_mod
+  USE omp_timer_mod
+  USE bits_mod
+  USE handyfuncs_mod, only:option
+  implicit none
+  private
 
-    logical, public, save :: print_finished=.false., print_download=.false.
-    logical, public, save :: print_lock=.false.
+  type, public, extends(halo_t):: m3d_halo_t
+  contains
+    procedure:: info
+    procedure:: append_to
+    procedure:: reset_status
+    procedure:: update
+    procedure:: download
+    procedure:: check_status
+  end type
 
-    public :: lock_mem, unlock_mem
+  logical, public, save :: print_finished=.false., print_download=.false.
+  logical, public, save :: print_lock=.false.
+
+  public :: lock_mem, unlock_mem
 
 CONTAINS
 
@@ -162,9 +162,9 @@ CONTAINS
             flush (unit)
           end if
           select type (target)
-          class is (patch_t)
+           class is (patch_t)
             select type (source)
-            class is (patch_t)
+             class is (patch_t)
               call lock_mem(source, 'download', read=.true.)
               !call lock_mem(target, 'download')
               !target%mem = source%mem
@@ -228,7 +228,7 @@ CONTAINS
     if (print_finished .and. self%task%finished) then
       task => self%task
       select type (task)
-      class is (gpatch_t)
+       class is (gpatch_t)
         if (task%verbose>1) then
           write(stdout,*) task%id, ' has finished!', task%task_list%nfinished, '/', task%task_list%na, timer%done
         endif
@@ -269,7 +269,7 @@ CONTAINS
     do while (associated(nb))
       if (self%verbose > 1) then
         write (stdlog,'(a,2(i7,i5,2x))') &
-        'reset_status: nbid,rank=', task%id, task%rank, nb%task%id, nb%task%rank
+          'reset_status: nbid,rank=', task%id, task%rank, nb%task%id, nb%task%rank
       end if
       if (nb%needs_me .and. nb%task%is_clear(bits%no_download)) then
         if (task%rank == mpi%rank) then
@@ -296,7 +296,7 @@ CONTAINS
     end if
     !-----------------------------------------------------------------------------
     !if (shared%option(check)) then
-    !  call self%check_nbor_relations 
+    !  call self%check_nbor_relations
     !end if
     !.............................................................................
     if (self%verbose > 0) then
