@@ -104,6 +104,10 @@ MODULE composition_mod
     'Pb','Bi','Po','At','Rn','Fr','Ra','Ac','Th', &
     'Pa','U ']
 
+  character(len=5), parameter :: roman(0:10) = [ &
+    ' -   ', ' I   ', ' II  ', ' III ', ' IV  ', ' V   ', &
+    ' VI  ', ' VII ', ' VIII', ' IX  ', ' X   ' ]
+
 contains
 
   !===============================================================================
@@ -123,6 +127,7 @@ contains
     character(len=3) :: id
     character(len=6) :: key
     character(len=65) :: text
+    character(len=128) :: text_line
     character(len=10) :: s10
     integer :: g0, nqfix, nqtemp, ifish, ncor
     real(dp) :: acolc, tcolc, aradc, xradc, adic, bdic, t0c, t1c, scale
@@ -305,6 +310,7 @@ contains
     do i=1, self%nel
       element => elements(i)
       read(absdat, *) element%active, (element%ions(j)%active, j=1, element%nion)
+      element%ions%active = element%active .and. element%ions%active
     end do
 
     read(absdat, *) nqfix ! number of ions with constant partition FUNCTION
@@ -372,15 +378,11 @@ contains
       do j=lbound(element%ions, 1), ubound(element%ions, 1)
         ion => element%ions(j)
 
-        if (j == 0) then
-          ion%id = trim(element%id(:3)) // ' -'
-        elseif (j < 4) then
-          ion%id = trim(element%id(:3)) // ' ' // repeat('I', j)
-        elseif (j == 4) then
-          ion%id = trim(element%id(:3)) // ' IV'
-        elseif (j == 5) then
-          ion%id = trim(element%id(:3)) // ' V'
-        endif
+        if (j >= 0 .and. j <= 10) then
+          ion%id = trim(element%id(:3)) // trim(roman(j))
+        else
+          stop 'Ion id construction needs to be updated for j > 10'
+        end if
 
         if(j < ubound(element%ions, 1)) ion%above => element%ions(j+1)
         if(j > 1) ion%below => element%ions(j-1)
@@ -417,14 +419,13 @@ contains
     !105 FORMAT(F6.3,F4.0,F5.1,I5)
 
     !read(absdat,101) nkomp,nextl,nutzl,nextt,nutzt,null
-
-    call read_fixed(absdat, '(A10)', nkomp)
-    call read_fixed(absdat, '(A10)', nextl)
-    call read_fixed(absdat, '(A10)', nutzl)
-    call read_fixed(absdat, '(A10)', nextt)
-    call read_fixed(absdat, '(A10)', nutzt)
-    call read_fixed(absdat, '(A10)', null)
-    read(absdat, *) ! advance
+    read(absdat, '(A)') text_line
+    call march_line(text_line, 10, nkomp)
+    call march_line(text_line, 10, nextl)
+    call march_line(text_line, 10, nutzl)
+    call march_line(text_line, 10, nextt)
+    call march_line(text_line, 10, nutzt)
+    call march_line(text_line, 10, null)
 
     allocate(self%trans(nkomp))
     self%trans%verbose = self%verbose
@@ -455,17 +456,32 @@ contains
        case('H FF')
         trans%ion => HI
         trans%lam3 = .true.
-       case('H- FF', '(H+H)', 'H2+')
+       case('H- FF')
         trans%ion => HI
+       case('H2+')
+        trans%ion => HI
+        trans%ion2 => HI%above
+       case('H+H')
+        trans%ion => HI
+        trans%ion2 => HI
+       case('H+HE')
+        trans%ion => HI
+        call self%particle_by_id('He I', trans%ion2)
+       case('H2+H')
+        trans%ion => HI
+        call self%particle_by_id('H2', trans%ion2)
+       case('H2+H2')
+        call self%particle_by_id('H2', trans%ion)
+        call self%particle_by_id('H2', trans%ion2)
+       case('H2+HE')
+        call self%particle_by_id('H2', trans%ion)
+        call self%particle_by_id('He I', trans%ion2)
        case('H2-')
-        call self%molecule_by_id('H2', molecule)
-        trans%ion => molecule
+        call self%particle_by_id('H2', trans%ion)
        case('HE-')
-        call self%element_by_id('He', element)
-        trans%ion => element%ions(1)
+        call self%particle_by_id('He I', trans%ion)
        case ('H2O-')
-        call self%molecule_by_id('H2O', molecule)
-        trans%ion => molecule
+        call self%particle_by_id('H2O', trans%ion)
         trans%molecular = .true.
        case ('MEIFF')
         trans%ion => self%peachmet
@@ -515,19 +531,20 @@ contains
       end select
 
       if (.not. associated(trans%ion)) then
-        trans%active = .false.
+        call trans%deactivate()
         print *, trans%key,  ' deactivated!'
       else
         trans%ion%in_opac = .true.
       endif
+      if (associated(trans%ion2)) trans%ion2%in_opac = .true.
 
       !read(absdat,999) ilogl,kvadl,minex,maxex,nnu
-      call read_fixed(absdat, '(A10)', ilogl)
-      call read_fixed(absdat, '(A10)', kvadl)
-      call read_fixed(absdat, '(A10)', minex)
-      call read_fixed(absdat, '(A10)', maxex)
-      call read_fixed(absdat, '(A10)', nnu)
-      read(absdat, *) ! advance
+      read(absdat, '(A)') text_line
+      call march_line(text_line, 10, ilogl)
+      call march_line(text_line, 10, kvadl)
+      call march_line(text_line, 10, minex)
+      call march_line(text_line, 10, maxex)
+      call march_line(text_line, 12, nnu)
 
       trans%nnu = nnu
       trans%ilogl = ilogl > 0
@@ -545,7 +562,12 @@ contains
 
       trans%ldisk = .false.
 
-      read(absdat, *) trans%lam
+      read(absdat, *, iostat=iostat) trans%lam
+
+      if (iostat /= 0) then
+        print *, iostat, ' Error reading wavelength values for transition: ', trans%key
+        stop
+      endif
 
       if (trans%loglam) then
         allocate(trans%lnlam, source=log(trans%lam))
@@ -570,15 +592,15 @@ contains
       !endif
 
       !read(absdat,999) ilogt,kvadt,minet,maxet,ntt,iteta
-      call read_fixed(absdat, '(A10)', ilogt)
-      call read_fixed(absdat, '(A10)', kvadt)
-      call read_fixed(absdat, '(A10)', minet)
-      call read_fixed(absdat, '(A10)', maxet)
-      call read_fixed(absdat, '(A10)', ntt)
-      call read_fixed(absdat, '(A10)', iteta)
-      call read_fixed(absdat, '(A10)', iscal)
-      call read_fixed(absdat, '(A10)', istim)
-      read(absdat, *) ! advance
+      read(absdat, '(A)') text_line
+      call march_line(text_line, 10, ilogt)
+      call march_line(text_line, 10, kvadt)
+      call march_line(text_line, 10, minet)
+      call march_line(text_line, 10, maxet)
+      call march_line(text_line, 10, ntt)
+      call march_line(text_line, 10, iteta)
+      call march_line(text_line, 10, iscal)
+      call march_line(text_line, 10, istim)
 
       if (iscal>0) read(absdat, *) scale
 
@@ -594,7 +616,12 @@ contains
       if (ntt > 1) then
         allocate(trans%temp(ntt))
         allocate(trans%tt  (ntt))
-        read(absdat, *) trans%temp
+        read(absdat, *, iostat=iostat) trans%temp
+
+        if (iostat /= 0) then
+          print *, iostat, ' Error reading temperature values for transition: ', trans%key
+          stop
+        endif
 
         if (iteta > 0) then
           allocate(trans%teta(ntt))
@@ -671,16 +698,21 @@ contains
     call trace%end ()
 
   contains
+
     !===========================================
-    subroutine read_fixed(unit, fmt, val)
-      integer :: i, unit, val
-      character(len=*) :: fmt
-      character(len=32) :: text
+    subroutine march_line(line, n, val)
+      character(len=*) :: line
+      integer :: i, n, val
       !---------------------------------------
-      read(unit, fmt, advance='no') text
-      i = scan(text, '0123456789')
-      read(text(i:len(text)), *) val
-    end subroutine read_fixed
+      i = scan(line(1:n), '0123456789')
+      read(line(i:n), *, iostat=iostat) val
+      if (iostat /= 0) then
+        print *, iostat, ' Error reading fixed format line: ', trans%key, line
+        stop
+      endif
+      line = line(n+1:)
+    end subroutine march_line
+
   END SUBROUTINE injon
 
   !===============================================================================
@@ -1180,16 +1212,10 @@ contains
         if (trans%ion%id(1:2) == 'Me') then
           trans%ion => self%peachmet
         else
-          select type(ptr => trans%ion)
-           class is (ion_type)
-            ion => ptr
-            call self%ion_by_id(ptr%id, ion)
-            trans%ion => ion
-           class is (molec_type)
-            molecule => ptr
-            call self%molecule_by_id(ptr%id, molecule)
-            trans%ion => molecule
-          end select
+          call self%particle_by_id(trans%ion%id, trans%ion)
+          if (associated(trans%ion2)) then
+            call self%particle_by_id(trans%ion2%id, trans%ion2)
+          endif
         endif
       endif
     end do
@@ -1948,7 +1974,7 @@ contains
       mol => self%molecules(i)
       call mol%allocate(shape(temp))
       mol%part = 1.0 / mol%irwin_partf(self%temp)
-      if (irwin_dis .and. size(mol%de)==1 .and. mol%nions==2) then
+      if (irwin_dis .and. all(mol%dc == 0)) then
         call mol%get_dis2(self%temp, mol%dis)
       else
         mol%dis = mol%get_dis(self%teta)
@@ -2510,8 +2536,8 @@ contains
           do f=1, size(lam)
             xr = xray2(f)
             if (xr > 0.) then
-              rayh  = (5.799e-13 + xr*(1.422e-6 + xr*2.784)) * nHI
-              rayh2 = ( 8.14e-13 + xr*( 1.28e-6 + xr*1.61 )) * nH2
+              rayh  = (5.799e-13 + xr*(1.422e-6 + xr*2.784)) * nHI ! Dalgarno, quoted by Gingerich (1964)
+              rayh2 = ( 8.14e-13 + xr*( 1.28e-6 + xr*1.61 )) * nH2 ! Dalgarno & Williams (1962)
 
               ! add sumsca to sumsca from lines
               chi(f,x,y,z) = chi(f,x,y,z) + (rayh + rayh2)*xr*xr
@@ -2679,11 +2705,16 @@ contains
 
         ! look up the ion
         call self%ion_by_id(trim(elem)//' I', ion)
-        do j=1, count
-          nions = nions + 1
-          mol%ions(nions)%p => ion
-          mol%awgt = mol%awgt + ion%awgt
-        end do
+        if (associated(ion)) then
+          do j=1, count
+            nions = nions + 1
+            mol%ions(nions)%p => ion
+            mol%awgt = mol%awgt + ion%awgt
+          end do
+        else
+          print *, 'Error: element ' // trim(elem) // ' not found for molecule ' // trim(mol%id)
+          stop
+        endif
       elseif (c == '+') then
         mol%ions(nions)%p => ion%above
       elseif (c == '-') then

@@ -716,7 +716,7 @@ MODULE atom_mod
             lin%ga_in, lin%gv_in, lin%gq_in, lin%nnu, lin%qmax, lin%q0, lin%profile_type, lin%iso
 
       if (iostat > 0) then
-        write(stdout,*) 'Error reading following line '
+        write(stdout,*) iostat, ' Error reading following line '
         write(stdout,*) text
         abort = .true.
       endif

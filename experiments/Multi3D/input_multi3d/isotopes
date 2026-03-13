@@ -1,7 +1,10 @@
+!-------------------------------
 ! ELEMENT ID, n_isotopes
 !   isotope_id, mass, fraction
 !   isotope_id, mass, fraction
 !   ...
+! J. S. Coursey, D. J. Schwab, J. J. Tsai, and R. A. Dragoset
+! http://www.nist.gov/pml/data/comp.cfm
 !-------------------------------
 Li    2
   6   6.01512289    0.07590000

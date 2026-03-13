@@ -571,7 +571,7 @@ class tumult(object):
         #-----------------------------------------------------------------
         folder = pathlib.Path(folder) if folder else self.sfolder
         resolved_folder = str(folder.resolve()) + os.sep
-        meta_file = resolved_folder + f'{kind.replace(' ', '_')}_meta.txt'
+        meta_file = resolved_folder + f'{kind.replace(" ", "_")}_meta.txt'
         dct = {}
 
         try:

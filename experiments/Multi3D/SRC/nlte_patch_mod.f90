@@ -902,7 +902,7 @@ contains
       trans => composition%trans(i)
       if (.not. trans%active) cycle
       select case(trans%label)
-       case ('(H+H)', 'H2+', 'H- FF', 'H FF', 'H2-', 'H- BF')
+       case ('H+H', 'H2+', 'H- FF', 'H FF', 'H2-', 'H- BF')
         ! do not exclude
        case default
         ok = .false.

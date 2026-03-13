@@ -801,6 +801,7 @@ contains
     endif
   END SUBROUTINE get_center
   !------------------------------------------------------------------------------------
+  
   !====================================================================================
   PURE SUBROUTINE deactivate(self)
     class(bbtrans_type), intent(inout) :: self

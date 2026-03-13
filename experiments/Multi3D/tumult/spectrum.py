@@ -137,7 +137,7 @@ class Spectrum:
         """
         return self.df._repr_html_()
 
-    def convert_units(self, xunit=None, yunit=None, inplace=False):
+    def convert_units(self, other=None, xunit=None, yunit=None, inplace=False):
         """
         Convert units of xdata and ydata.
 
@@ -156,6 +156,10 @@ class Spectrum:
         """
         new_xdata = self.xdata
         new_ydata = self.ydata
+
+        if other is not None:
+            xunit = xunit or other.xunit
+            yunit = yunit or other.yunit
 
         if xunit is not None:
             new_xdata = self.xdata.to(xunit, equivalencies=u.spectral())
@@ -221,7 +225,7 @@ class Spectrum:
 
         ax.set_xlim(xdata.min(), xdata.max())
         plt.ticklabel_format(useOffset=False)
-        adjust_max_xticks()
+        adjust_max_xticks(ax)
         return ax
 
     # Arithmetic operations (acting on ydata)

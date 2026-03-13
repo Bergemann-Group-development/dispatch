@@ -42,7 +42,7 @@ contains
     if (allocated(self%de)) deallocate(self%de)
     if (allocated(self%irwin)) deallocate(self%irwin)
     read(lunit, *, iostat=iostat) self%id, defix, n_irwin
-    n_de = merge(5, 1, defix==0)
+    n_de = merge(6, 1, defix==0)
     allocate(self%de(n_de))
     allocate(self%irwin(n_irwin))
     read(lunit, *) self%de
@@ -69,21 +69,23 @@ contains
     real(dp), intent(in), dimension(:,:,:) :: temp
     real(dp), intent(out), dimension(:,:,:) :: dis
     type(ion_type), pointer :: ion
-    real(dp) :: awgt15, scalar
-    real(dp), parameter :: const=(2*PI*BK*UU/HH**2)**(-1.5)
+    real(dp) :: awgt15, scalar, N_tot, const_term
+    real(dp), parameter :: const_base = (2*PI*UU/HH**2)**(-1.5) * BK**(-2.5)
     integer :: j
     !---------------------------------------------------------------------------
-    if (size(self%de) > 1) return
+    const_term = const_base**(self%nions - 1.0)
+
     dis = 1.d0
     do j=1, self%nions
       ion => self%ions(j)%p
       awgt15 = ion%awgt**(-1.5)
       dis = dis * awgt15 * ion%part
     end do
-    scalar = const * self%awgt**(1.5) / BK
+
+    scalar = const_term * self%awgt**(1.5)
     dis = dis * scalar
     dis = dis * exp(self%de(1)*EK/temp)
-    dis = dis / (self%part * temp**2.5)
+    dis = dis / (self%part * temp**(2.5 * (self%nions - 1.0)))
   END SUBROUTINE get_dis2
 
   !===============================================================================
@@ -114,10 +116,8 @@ contains
     allocate(de, e, mold=self%n)
 
     if (size(self%de) > 1) then
-      if (trim(self%id) == 'H2' ) de = 4.476
-      if (trim(self%id) == 'H2+') de = 2.648
       ! rotational and vibrational energy has to be subtracted
-      de = de - poly1d(teta, self%de(1), self%de(2), self%de(3), self%de(4), self%de(5))*temp/EK
+      de = self%de(1) - poly1d(teta, self%de(2), self%de(3), self%de(4), self%de(5), self%de(6))*temp/EK
     else
       de = self%de(1)
     endif

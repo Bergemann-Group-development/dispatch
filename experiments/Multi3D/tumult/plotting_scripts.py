@@ -49,8 +49,8 @@ def subplot_labels(ax=None, xlabel=None, ylabel=None, title=None):
 
 
 #=====================================================================
-def adjust_max_xticks():
-    ax = plt.gca()
+def adjust_max_xticks(ax=None):
+    ax = ax or plt.gca()
     transform = ax.transData.inverted()
     xticklabels = ax.get_xticklabels()
     widths = [label.get_window_extent().transformed(transform).width for label in xticklabels]

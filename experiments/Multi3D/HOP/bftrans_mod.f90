@@ -15,6 +15,7 @@ MODULE bftrans_mod
     integer :: k, ntt, nnu, verbose
     type(level_type) :: level
     class(particle_type), pointer :: ion => null()
+    class(particle_type), pointer :: ion2 => null()
     real(dp) :: mint, maxt, minl, maxl
     logical :: ilogl, kvadl, minex, maxex, loglam=.false.
     logical :: ilogt, kvadt, minet, maxet, iteta, pedep, istim
@@ -33,6 +34,7 @@ MODULE bftrans_mod
     procedure :: absorption_factor
     procedure :: add_absorption
     procedure :: load_lam_interp_weights
+    procedure :: deactivate
   end type
 
   integer :: fs, fe
@@ -44,6 +46,13 @@ MODULE bftrans_mod
   !$omp threadprivate(fs, fe, iw, quad, lagrange, pvt_xkap)
 
 contains
+  
+  !====================================================================================
+  PURE SUBROUTINE deactivate(self)
+    class(bftrans_type), intent(inout) :: self
+    !----------------------------------------------------------------------------------
+    self%active = .false.
+  END SUBROUTINE deactivate
 
   !===============================================================================
   SUBROUTINE load_lam_interp_weights(self, lam, active)
@@ -376,10 +385,6 @@ contains
     !---------------------------------------------------------------------------
     call trace%begin('absorption_factor', itimer=itimer)
     ion => self%ion
-    !if (self%key /= 'H- BF') then
-    !  fakt = 0
-    !  return
-    !endif
     select case(trim(self%key))
      case('H- BF')
       fakt = ion%n
@@ -394,14 +399,10 @@ contains
       !fakt = 2.0898E-26 / 2 * ion%part * ion%n * exp(-31.30364*teta + 2.3026*dxi*teta) / (31.30364*teta)
       fakt = ion%boltzmann(e_kT, dxi, natural_log=.true.)
       fakt = 2.0898E-26 / (2*RYD*e_kT) * fakt * ion%part * ion%n
-     case('(H+H)')
-      ! see Doyle 1968 "The astrophysical significance of the continuous spectrum of the hydrogen quasi-molecule"
-      fakt = (1d-25 * ion%n)**2
+     case('H+H', 'H+HE', 'H2+H', 'H2+H2', 'H2+HE')
+      fakt = ion%n * self%ion2%n
      case('H2+')
-      select type(ion)
-       class is (ion_type)
-        fakt = 1d-40 * ion%n * ion%above%n
-      end select
+      fakt = 1d-40 * ion%n * self%ion2%n
      case default
       if (self%pedep) then
         fakt = pe * ion%n

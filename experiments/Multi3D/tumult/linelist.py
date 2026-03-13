@@ -18,7 +18,7 @@ element_ids = [
         'Pb','Bi','Po','At','Rn','Fr','Ra','Ac','Th',
         'Pa','U' ]
 
-ion_dict = {0:'', 1:'I', 2:'II', 3:'III', 4:'IV', 5:'V', 6:'VI'}
+ion_dict = {0:'', 1:'I', 2:'II', 3:'III', 4:'IV', 5:'V', 6:'VI', 7:'VII', 8:'VIII', 9:'IX', 10:'X'}
 ion_inv = {v: k for k, v in ion_dict.items()}
 
 mol_dict = {101:'H2', 106:'CH', 107:'NH', 108:'OH',
@@ -141,8 +141,8 @@ class LineList(pd.DataFrame):
     return cls(llist)
   
   @classmethod
-  def from_linemake(cls, file):
-    llist = pd.read_fwf(file, widths=[10,10,10,10,20,20], sep=r'\s+', header=None, dtype={1:str})
+  def from_linemake(cls, filename):
+    llist = pd.read_fwf(filename, widths=[10,10,10,10,20,20], sep=r'\s+', header=None, dtype={1:str})
     llist.rename(columns={0: 'lam0', 1: 'id', 2: 'evi', 3: 'loggf', llist.shape[1]-1: 'label'}, inplace=True)
     llist = llist[['lam0', 'id', 'evi', 'loggf', 'label']]
     llist[['np', 'suf']] = llist.id.str.split('.', expand=True)
@@ -163,6 +163,33 @@ class LineList(pd.DataFrame):
     mask = mols | atom
     llist = llist[mask]
     return cls(llist)
+  
+  @classmethod
+  def from_moog_format(cls, filename):
+    names = ['lam0', 'ion', 'evi', 'loggf', 'label']
+    df = pd.read_csv(filename, sep=r'\s+', header=None, names=names, dtype={'ion':str})
+    mask = df.lam0 > 0
+    df = df[mask]
+    df['iso'] = 0
+    for species in np.unique(df.ion):
+      mask = df.ion == species
+      p, suf = species.split('.')
+      ion = int(suf[0])+1
+      iso = int(suf[1:])
+      atom = element_ids[int(p)-1]
+      df.loc[mask, 'ion'] = atom + ' ' + ion_dict[ion]
+      df.loc[mask, 'iso'] = iso
+
+    return cls(df)
+  
+  @classmethod
+  def from_vald_format(cls, filename):
+    names = ['ion', 'lam0', 'evi', 'loggf', 'ga', 'gq', 'gv', 'lande', 'label']
+    df = pd.read_csv(filename, skiprows=2, header=None, names=names, quotechar="'")
+    eid, j = df.ion.str.split(expand=True).values.T
+    df['ion'] = [f'{e} {ion_dict[int(i)]}' for e, i in zip(eid, j)]
+    df['iso'] = 0
+    return cls(df)
   
   def write_to_tumult_format(self, filename, label=None):
     # work with a copy so slice/view issues don't matter

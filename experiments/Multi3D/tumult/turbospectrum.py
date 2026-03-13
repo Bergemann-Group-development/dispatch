@@ -34,25 +34,9 @@ class turbospectrum(object):
       line = f.readline()
       self.mus = [float(s) for s in line.strip('# mu-points').split()]
       df = pd.read_csv(f, sep=r'\s+', header=None)
-      df = df.apply(pd.to_numeric, errors='coerce')
+      self.df = df.apply(pd.to_numeric, errors='coerce')
+      self.lam = self.df.iloc[:,0].values
 
-    wave = df.iloc[:,0].values
-    nflux = df.iloc[:,1].values
-    uflux = df.iloc[:,2].values
-    ie = df.iloc[:,3::2].values.T
-    nie = df.iloc[:,4::2].values.T
-    flux_cnt = uflux / nflux
-    ie_cnt = ie / nie
-    mus = [f'µ={mu:.2f}' for mu in self.mus]
-
-    flux = {}
-    flux[('LTE',  'Flux')] = uflux
-    flux[('Cont', 'Flux')] = flux_cnt
-    ints = {}
-    ints.update({('LTE',  mu): ie[i] for i, mu in enumerate(mus)})
-    ints.update({('Cont', mu): ie_cnt[i] for i, mu in enumerate(mus)})
-
-    self.spectrum = Spectrum(wave, flux, xunit=u.AA, yunit=u.erg/(u.s*u.cm**2*u.AA))
     return self
   
   @classmethod
@@ -88,10 +72,8 @@ class turbospectrum(object):
   def concatenate(cls, runs):
     self = cls()
     self.runs = runs
-    spectra = [run.spectrum for run in runs]
-    wave = pd.concat([spec.wave for spec in spectra], axis=0)
-    data = pd.concat([spec.data for spec in spectra], axis=0)
-    self.spectrum = SpectrumClass(wave=wave, data=data, has_units=True)
+    self.df = pd.concat([run.df for run in runs], axis=0)
+    self.lam = self.df.iloc[:,0].values
     return self
   
   @classmethod
@@ -135,7 +117,10 @@ class turbospectrum(object):
 
     if nthreads == 0:
       ts = launch(input, llist)
-      ts.spectrum = ts.spectrum.crop(xmin=lmin, xmax=lmax)
+      lam = ts.df.iloc[:,0].values
+      mask = (lam >= lmin) & (lam <= lmax)
+      ts.df = ts.df[mask].reset_index(drop=True)
+      ts.lam = ts.df.iloc[:,0].values
       return ts
     
     else:
@@ -157,23 +142,37 @@ class turbospectrum(object):
           results = pool.starmap(launch, [(arg, llist) for arg in args])
 
       for result in results:
-          lmin = result.spectrum.wave.values[0] + lpad
-          lmax = result.spectrum.wave.values[-1] - lpad
-          result.spectrum = result.spectrum.crop(xmin=lmin, xmax=lmax)
+          lmin = result.lam[0] + lpad
+          lmax = result.lam[-1] - lpad
+          lam = result.df.iloc[:,0].values
+          mask = (lam >= lmin) & (lam <= lmax)
+          result.df = result.df[mask].reset_index(drop=True)
+          result.lam = result.df.iloc[:,0].values
 
       return cls.concatenate(results)
     
+  def get_spectrum(self, imu=None, ang=None, norm=True):
+    imu = imu or ang
+    idx = 1 if norm else 2
+    if imu is not None:
+      idx = idx + 2*(imu+1)
+
+    xx = self.df.iloc[:,0].values
+    yy = self.df.iloc[:,idx].values
+    yunit = u.dimensionless_unscaled if norm else u.erg/(u.s*u.cm**2*u.AA)
+    return Spectrum(xx, yy, xunit=u.AA, yunit=yunit)
+    
   #=================================================================
   def crop(self, imu=None, ang=None, cont=False, norm=True, **kwargs):
-    imu = imu or ang
-    key = ('Cont',) if cont else ('LTE',)
-    key += ('Flux',) if imu is None else (f'µ={self.mus[imu]:.2f}',)
-    yy = self.spectrum[key]
-    cnt = self.spectrum[('Cont',) + key[1:]]
-    if norm:
-      yy = yy / cnt
-      yy.data.columns = [u.dimensionless_unscaled]
-    return yy.crop(**kwargs)
+    if cont:
+      nspec = self.get_spectrum(imu=imu, ang=ang, norm=True)
+      uspec = self.get_spectrum(imu=imu, ang=ang, norm=False)
+      cspec = uspec / nspec
+      spec = cspec / cspec if norm else cspec
+    else:
+      spec = self.get_spectrum(imu=imu, ang=ang, norm=norm)
+
+    return spec.crop(**kwargs)
   
   #=================================================================
   def read_atmos(self):

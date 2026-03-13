@@ -6,7 +6,7 @@ module m3d_debug_mod
   integer, public :: fcheck=1, linecheck=1, lvlcheck=1, atomcheck=1
   logical, public :: pdebug=.false., check_NaN=.false.
   !$omp threadprivate(memcheck, pdebug)
-  
+
 contains
-  
+
 end module m3d_debug_mod
