@@ -42,7 +42,7 @@ MODULE bbtrans_mod
   integer, save :: count1, count2, count3, count4, count5, count6
   logical, public :: disable_stark=.false., disable_vdw=.false., disable_ga=.false.
   logical, public :: ga_fallback=.false.
-  real(4), public, save :: tolerance=1e-5
+  real(4), public, save :: tolerance=1e-4
   real(4), parameter :: pqs  = 1.128379167  ! 2./pi**0.5
   real(4), parameter :: isqp = 0.5641895835 ! 1/pi**0.5
   real(4), parameter :: ipi  = 0.3183098862 ! 1/pi

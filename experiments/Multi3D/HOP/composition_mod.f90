@@ -310,7 +310,6 @@ contains
     do i=1, self%nel
       element => elements(i)
       read(absdat, *) element%active, (element%ions(j)%active, j=1, element%nion)
-      element%ions%active = element%active .and. element%ions%active
     end do
 
     read(absdat, *) nqfix ! number of ions with constant partition FUNCTION
