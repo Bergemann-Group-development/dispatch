@@ -359,7 +359,7 @@ MODULE atom_mod
               
               i = findloc(e/=e, .true., dim=1)
               if (check_NaN .and. i > 0) then
-                  print *, 'NaN in error vector at i = ', i
+                  print *, 'ERROR: NaN in error vector at i = ', i
                   stop
               endif
 
@@ -475,21 +475,20 @@ MODULE atom_mod
       abort = .false.
       do i=1,self%nlevel
         if (self%data%w(i,i) == 0.d0) then
-          print *, 'zero in rate diagonal at i = ', i
+          print '(A, I4)', 'ERROR: zero in rate diagonal at i = ', i
           abort = .true.
         endif
         do j=1,self%nlevel
           if (self%data%w(i,j) /= self%data%w(i,j)) then
-            print *, 'NaN in rate Matrix at i,j = ', i, j
+            print '(A, I4, I4)', 'ERROR: NaN in rate Matrix at i,j = ', i, j
             abort = .true.
           elseif (self%data%w(i,j) > inf8) then
-            print *, 'Infinity in rate Matrix at i,j = ', i, j
+            print '(A, I4, I4)', 'ERROR: Infinity in rate Matrix at i,j = ', i, j
             abort = .true.
           endif
         end do
       end do
       if (abort) then
-        print *, 'Totn  = ', totn
         stop
       endif
     endif
@@ -565,17 +564,13 @@ MODULE atom_mod
         ev_off = 0
         do j=1, element%nion
           ion => element%ions(j)
-          ex = float(j-1)*lsaha - ev_off*e_kT
-          where (ex < -80.)
-            ex = 0
-          elsewhere
-            ex = exp(ex)
-          endwhere
-          partition = partition + ex / ion%part
+          ex = float(j-1)*lsaha - ev_off*e_kT + ion%part
+          ex = exp(ex)
+          partition = partition + ex
           ev_off = ev_off + ion%xion - j*dxi
         end do
       elseif (molec) then
-        partition = 1 / mol%part
+        partition = exp(-mol%part)
       endif
     elseif (self%id == 'CH') then
       partition = qjorg(temp)
@@ -603,9 +598,10 @@ MODULE atom_mod
       ! for carbon this happens to be 1, but for other molecules it may not be
       associate(ndis => nstar(:,:,:,idis))
         ndis = huge(1.e0)
+        partition = exp(-mol%part)
         do j=1, mol%nions
           ion => mol%ions(j)%p
-          ndis = min(ndis, ion%n*ion%part)
+          ndis = min(ndis, ion%n * partition)
         end do
       end associate
     endif
@@ -910,8 +906,8 @@ MODULE atom_mod
         endif
         
         if (l==u) then
-          write(stdout, *) "ll==ul for process ", key, l, u
-          abort = .true.
+          write(stdout, '(A, A, I4, I4, A)') "ll==ul for process ", trim(key), l, u, ". Ignoring this one."
+          cycle
         endif
 
         ! within level range
@@ -947,12 +943,12 @@ MODULE atom_mod
           select case(trim(key))
           case ('CE', 'CI')
             if (self%ecol(tri)) then
-              print '(A, I4, I4, A4)', 'Collisional rate already set for transition ', col%ll, col%ul, trim(key)
+              print '(A, I4, I4, A4)', 'WARNING: Collisional rate already set for transition ', col%ll, col%ul, trim(key)
             endif
             self%ecol(tri) = .true.
           case ('CH', 'CHI')
             if (self%hcol(tri)) then
-              print '(A, I4, I4, A4)', 'Collisional rate already set for transition ', col%ll, col%ul, trim(key)
+              print '(A, I4, I4, A4)', 'WARNING: Collisional rate already set for transition ', col%ll, col%ul, trim(key)
             endif
             self%hcol(tri) = .true.
           end select
@@ -1044,7 +1040,7 @@ MODULE atom_mod
 
     ncont = count(self%ion < maxval(self%ion))
     if (ncont < self%ncont) then
-        print *, 'Unrealisticly many bound-free transitions. Something is wrong!'
+        print *, 'WARNING: Unrealisticly many bound-free transitions. Something is wrong!'
     endif
 
     allocate(ij_check(self%nlevel, self%nlevel), source=.false.)
@@ -1069,13 +1065,13 @@ MODULE atom_mod
       lin%qmax = lin%qmax
 
       if (ij_check(lin%i, lin%j)) then
-        print *, 'Transition assigned twice!', lin%i, lin%j
+        print '(A, I4, I4)', 'WARNING: Transition assigned twice!', lin%i, lin%j
       else
         ij_check(lin%i, lin%j) = .true.
       endif
 
       if (lin%j > self%nlevel) then
-        print *, 'Transition to non-existing level!', i, lin%i, lin%j
+        print '(A, I8, I4, I4)', 'ERROR: Transition to non-existing level!', i, lin%i, lin%j
         abort = .true.
       endif
 
@@ -1217,7 +1213,7 @@ MODULE atom_mod
       call print_failed_line(latom, ios)
 
       if (self%ion(ii) == self%ion(jj)) then
-        print *, 'Bound-free transition', i, ' is between two levels of the same ion', ii, jj
+        print '(A, I4, A, I4, I4)', 'ERROR: Bound-free transition', i, ' is between two levels of the same ion', ii, jj
         abort = .true.
       endif
 
@@ -1227,11 +1223,15 @@ MODULE atom_mod
       cnt => self%trans%cont(ii)
 
       if (cnt%bf_type /= 'Kramer') then
-        print *, 'Multiple bound-free transitions from lower state', ii, 'Not implemented!'
-        abort = .true.
+        print '(A, I4, A)', 'WARNING: Multiple bound-free transitions from lower state', ii, '. Ignoring the latter!'
+        do j=1, nnu
+          call nextentry(latom) 
+          read(latom, '(A)') ! skipping
+        end do
+        cycle
       endif
       if (j /= cnt%j) then
-        print *, 'Bound-free transition', i, ' has exited state as upper level. Worth checking!'
+        print '(A, I4, A)', 'WARNING: Bound-free transition', i, ' has exited state as upper level. Worth checking!'
         cnt%j = j
       endif
 
@@ -1466,8 +1466,8 @@ MODULE atom_mod
         call print_failed_line(latom, ios)
         
         if (l==u) then
-          write(stdout, *) "ll==ul for process ", key, l, u
-          abort = .true.
+          write(stdout, '(A, A, I4, I4, A)') "ll==ul for process ", trim(key), l, u, ". Ignoring this one."
+          cycle
         endif
 
         if (any(self%cgrid(1:nc,i) <= 0)) then
@@ -1497,12 +1497,12 @@ MODULE atom_mod
         select case(trim(key))
         case ('CE', 'CI')
           if (self%ecol(tri)) then
-            print '(A, I4, I4, A4)', 'Collisional rate already set for transition ', col%ll, col%ul, trim(key)
+            print '(A, I4, I4, A4)', 'WARNING: Collisional rate already set for transition ', col%ll, col%ul, trim(key)
           endif
           self%ecol(tri) = .true.
         case ('CH', 'CHI')
           if (self%hcol(tri)) then
-            print '(A, I4, I4, A4)', 'Collisional rate already set for transition ', col%ll, col%ul, trim(key)
+            print '(A, I4, I4, A4)', 'WARNING: Collisional rate already set for transition ', col%ll, col%ul, trim(key)
           endif
           self%hcol(tri) = .true.
         end select
@@ -1558,7 +1558,7 @@ MODULE atom_mod
           tri = (line%j-1)*(line%j-2)/2 + line%i
           self%cdata(tri) = self%cdata(tri) + line%f
         else
-          print *, 'isotope', line%iso, ' not found. Deactivating line ', i
+          print *, 'WARNING: isotope', line%iso, ' not found. Deactivating line ', i
           call line%deactivate()
           cycle
         endif
@@ -1796,7 +1796,7 @@ MODULE atom_mod
         if (iblue == 0 .or. ired >= sp%nnu) then
           call cnt%deactivate()
         elseif (iblue==ired) then
-          print *, 'WARNING, single frequency for cont', i
+          print '(A, I6)', 'WARNING: single frequency for cont', i
           call cnt%deactivate()
         else
           ! total number of frequencies where this continuum is active
@@ -1838,7 +1838,7 @@ MODULE atom_mod
         if (iblue == 0 .or. ired == sp%nnu) then
           call lin%deactivate()
         else
-          if (iblue==ired) print *, 'WARNING, single frequency for line', i
+          if (iblue==ired) print '(A, I8)', 'WARNING: single frequency for line', i
           ! total number of frequencies where this line is active
           nnu=iblue-ired+1
           lin%nnu = nnu

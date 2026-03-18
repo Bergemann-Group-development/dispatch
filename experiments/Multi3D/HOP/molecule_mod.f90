@@ -52,56 +52,59 @@ contains
   END SUBROUTINE read_molec_data
 
   !===============================================================================
-  ! Computes the inverse dissociation constant P(AB) / (P(A)*P(B)) for molecules
+  ! Computes the dissociation constant(P(A)*P(B)) / P(AB) for molecules
   !===============================================================================
-  elemental real(dp) FUNCTION get_dis(self, teta)
+  SUBROUTINE get_dis(self, teta, dis)
     class(molec_type), intent(in) :: self
-    real(dp), intent(in) :: teta
-    !---------------------------------------------------------------------------
-    get_dis = 10**(-poly1d(teta, self%dc(1), self%dc(2), self%dc(3), self%dc(4), self%dc(5)))
-  END FUNCTION
-
-  !===============================================================================
-  ! Computes the inverse dissociation constant P(AB) / (P(A)*P(B)) for molecules
-  !===============================================================================
-  SUBROUTINE get_dis2(self, temp, dis)
-    class(molec_type), intent(in) :: self
-    real(dp), intent(in), dimension(:,:,:) :: temp
+    real(dp), intent(in), dimension(:,:,:) :: teta
     real(dp), intent(out), dimension(:,:,:) :: dis
-    type(ion_type), pointer :: ion
-    real(dp) :: awgt15, scalar, N_tot, const_term
-    real(dp), parameter :: const_base = (2*PI*UU/HH**2)**(-1.5) * BK**(-2.5)
-    integer :: j
     !---------------------------------------------------------------------------
-    const_term = const_base**(self%nions - 1.0)
+    dis = 10**(poly1d(teta, self%dc(1), self%dc(2), self%dc(3), self%dc(4), self%dc(5)))
+  END SUBROUTINE get_dis
 
-    dis = 1.d0
+  !===============================================================================
+  ! Computes the dissociation constant (P(A)*P(B)) / P(AB) for molecules
+  !===============================================================================
+  SUBROUTINE get_dis2(self, temp, e_kT, dis)
+    class(molec_type), intent(in) :: self
+    real(dp), intent(in), dimension(:,:,:) :: temp, e_kT
+    real(dp), intent(out), dimension(:,:,:) :: dis
+    real(dp) :: awgt15, scalar, N_tot, const_term
+    real(dp), parameter :: const_base = log((2*PI*UU/HH**2)**(-1.5) * BK**(-2.5))
+    integer :: j, nm1
+    !---------------------------------------------------------------------------
+    nm1 = self%nions - 1
+    const_term = const_base*nm1
+
+    dis = 0
     do j=1, self%nions
-      ion => self%ions(j)%p
-      awgt15 = ion%awgt**(-1.5)
-      dis = dis * awgt15 * ion%part
+      associate(ion => self%ions(j)%p)
+        awgt15 = -1.5*log(ion%awgt)
+        dis = dis + awgt15 - ion%part
+      end associate
     end do
 
-    scalar = const_term * self%awgt**(1.5)
-    dis = dis * scalar
-    dis = dis * exp(self%de(1)*EK/temp)
-    dis = dis / (self%part * temp**(2.5 * (self%nions - 1.0)))
+    scalar = const_term + 1.5*log(self%awgt)
+    dis = dis + scalar
+    dis = self%part + self%de(1)*e_kT + dis
+    dis = temp**(2.5*nm1) * exp(-dis)
   END SUBROUTINE get_dis2
 
   !===============================================================================
-  FUNCTION calc_f(self, pefe) result(f)
+  FUNCTION calc_f(self, fepe) result(f)
     class(molec_type), intent(in) :: self
-    real(dp), dimension(:,:,:) :: pefe
+    real(dp), dimension(:,:,:) :: fepe
     real(dp), dimension(:,:,:), allocatable :: f
     type(ion_type), pointer :: ion
-    integer :: j
+    integer :: j, x, y, z
     !---------------------------------------------------------------------------
-    allocate(f, source=self%dis)
+    allocate(f, mold=fepe)
+    f = 1.d0 / self%dis
     do j=1, self%nions
       ion => self%ions(j)%p
       f = f * ion%f
-      ! pefe needed to convert from pressure to f, first pefe cancels out
-      if (j > 1) f = f * pefe
+      ! fepe needed to convert from pressure to f, first fepe cancels out
+      if (j > 1) f = f / fepe
     end do
   END FUNCTION calc_f
 

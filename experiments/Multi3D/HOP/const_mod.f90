@@ -23,6 +23,7 @@ MODULE const_mod
   real(8), parameter :: one_eigth=1.0d0/8.0d0
   real(8), parameter :: one_24th =1.0d0/2.4d1
   real(8), parameter :: ln2 = 0.69314718056d0
+  real(8), parameter :: ln10 = log(10.d0)
   real(8), parameter :: iln2 = 1.44269504089d0 ! 1/ln(2)
 
   ! physics

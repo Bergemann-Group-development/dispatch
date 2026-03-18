@@ -397,8 +397,8 @@ contains
       endif
      case('H FF')
       !fakt = 2.0898E-26 / 2 * ion%part * ion%n * exp(-31.30364*teta + 2.3026*dxi*teta) / (31.30364*teta)
-      fakt = ion%boltzmann(e_kT, dxi, natural_log=.true.)
-      fakt = 2.0898E-26 / (2*RYD*e_kT) * fakt * ion%part * ion%n
+      fakt = exp(-e_kT*(ion%xion - dxi) - ion%part)
+      fakt = 2.0898E-26 / (2*RYD*e_kT) * fakt * ion%n
      case('H+H', 'H+HE', 'H2+H', 'H2+H2', 'H2+HE')
       fakt = ion%n * self%ion2%n
      case('H2+')
@@ -412,8 +412,8 @@ contains
       elseif (self%molecular) then
         fakt = ion%n * ion%awgt / 6.023d23
       elseif (self%regular) then
-        fakt = self%level%g * self%level%boltzmann(e_kT, natural_log=.true.)
-        fakt = fakt * ion%part * ion%n
+        fakt = self%level%g * exp(-e_kT*self%level%xion - ion%part)
+        fakt = fakt * ion%n
       endif
     end select
     call trace%end(itimer)

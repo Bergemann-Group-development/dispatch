@@ -6,7 +6,6 @@ MODULE osmet_mod
     implicit none
 
     real(dp) :: eosmet=0.5
-    real(dp), parameter :: ln10 = log(10.0)
     integer :: mnu=154000, mtem=17, mp6=18
 
     type :: osmet_type

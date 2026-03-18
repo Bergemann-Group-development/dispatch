@@ -38,56 +38,52 @@ contains
       call ion%allocate(shape(ne))
 
       if (ion%fixed_part) then
-        ion%part = ion%parco
+        ion%part = log(ion%parco)
       elseif (allocated(ion%irwin)) then ! IRWIN FORMAT
         ion%part = ion%irwin_partf(temp)
       else
         ion%part = 0
         do i=1, ubound(ion%levels, 1)
           lvl => ion%levels(i)
-          blz = lvl%g * lvl%boltzmann(e_kT)
+          blz = lvl%g * exp(-e_kT*lvl%xion)
           if (lvl%xl > 0) then
             blz = blz * lvl%fischel_sparks(ion%j, e_kT, ne)
           endif
           ion%part = ion%part + blz
         end do
+        ion%part = log(ion%part)
       endif
-
-      ion%part = 1 / ion%part
     end do
     deallocate(blz)
   END SUBROUTINE compute_partition_functions
 
   !===============================================================================
-  SUBROUTINE compute_ion_equilibrium(self, e_kT, saha, dxi)
+  SUBROUTINE compute_ion_equilibrium(self, e_kT, lsaha, dxi)
     class(element_type), target :: self
-    type(ion_type), pointer :: ions(:), ion
-    real(dp), dimension(:,:,:), intent(in) :: e_kT, dxi, saha
+    real(dp), dimension(:,:,:), intent(in) :: e_kT, dxi, lsaha
     real(dp), dimension(:,:,:), allocatable :: fil, partition_ratio, partp
     integer :: j, l, u, x, y, z
     !---------------------------------------------------------------------------
     allocate(fil, partition_ratio, partp, mold=dxi)
-    ions => self%ions
-    l = lbound(ions,1)
-    u = ubound(ions,1)
+    l = lbound(self%ions,1)
+    u = ubound(self%ions,1)
 
     fil = 1
     do j=u-1, l, -1
-      ion => ions(j)
-      !partp = ions(j+1)%part
-      !! --- this only shows up in the Oslo legacy code ---!
-      !!partp = max(1d-3, partp)
-      !! --------------------------------------------------!
-      !partition_ratio = ions(j)%part / partp
-      !ions(j)%saha = ions(j)%saha_eq(e_kT, saha, dxi, partition_ratio)
-      call ion%saha_ratio(e_kT, saha, dxi, ion%saha)
-      fil = 1 + fil * ion%saha
+      associate(ion => self%ions(j))
+        !partp = ions(j+1)%part
+        !! --- this only shows up in the Oslo legacy code ---!
+        !!partp = max(1d-3, partp)
+        !! --------------------------------------------------!
+        ion%saha = exp(ion%above%part - ion%part + lsaha - e_kT*(ion%xion - dxi*ion%dxi_fac))
+        fil = 1 + fil * ion%saha
+      end associate
     end do
 
-    ions(l)%f = self%abund / fil
+    self%ions(l)%f = self%abund / fil 
 
     do j=l+1, u
-      ions(j)%f = ions(j-1)%f * ions(j-1)%saha
+      self%ions(j)%f = self%ions(j-1)%f * self%ions(j-1)%saha
     end do
     deallocate(fil, partition_ratio, partp)
   END SUBROUTINE compute_ion_equilibrium

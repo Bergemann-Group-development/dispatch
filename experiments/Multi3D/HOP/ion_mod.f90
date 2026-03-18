@@ -56,8 +56,6 @@ MODULE ion_mod
     real(dp), dimension(:,:,:), allocatable :: pk, fil
     logical :: fixed_part = .false.
   contains
-    procedure :: saha_eq
-    procedure :: saha_ratio
     procedure :: molecules_with
     procedure :: f_of_own_molecules
     procedure :: f_of_molecules_with
@@ -68,26 +66,6 @@ MODULE ion_mod
   logical, public :: debye_shield=.True.
 
 contains
-
-  !===============================================================================
-  elemental real(dp) FUNCTION saha_eq(self, e_kT, saha, dxi, partition_ratio)
-    class(ion_type), intent(in) :: self
-    real(dp), intent(in) :: e_kT, saha, dxi
-    real(dp), intent(in), optional :: partition_ratio
-    real(dp) :: dxi_j
-    !---------------------------------------------------------------------------
-    dxi_j = dxi*self%dxi_fac
-    saha_eq = saha * self%boltzmann(e_kT, dxi=dxi_j) * partition_ratio
-  END FUNCTION saha_eq
-
-  !===============================================================================
-  SUBROUTINE saha_ratio(self, e_kT, saha, dxi, ratio)
-    class(ion_type), intent(in) :: self
-    real(dp), intent(in), dimension(:,:,:) :: e_kT, saha, dxi
-    real(dp), intent(out), dimension(:,:,:) :: ratio
-    !---------------------------------------------------------------------------
-    ratio = self%part / self%above%part * saha * self%boltzmann(e_kT, dxi=dxi*self%dxi_fac)
-  END SUBROUTINE saha_ratio
 
   !===============================================================================
   FUNCTION f_of_own_molecules(self) result(fsum)
@@ -222,10 +200,10 @@ contains
   END SUBROUTINE deallocate_particle
 
   !===============================================================================
-  elemental FUNCTION irwin_partf (self, temp) result(u)
+  elemental FUNCTION irwin_partf (self, temp) result(ulog)
     class(particle_type), intent(in) :: self
     real(dp), intent(in) :: temp
-    real(dp) :: u, t, ulog1, ulog2, ulog, tt1, tt2
+    real(dp) :: ulog1, ulog2, ulog, tt1, tt2
     !---------------------------------------------------------------------------
     if (temp < 1000.) then
       tt1=1000; tt2=1500
@@ -240,7 +218,6 @@ contains
       ulog2 = self%irwin_poly(log(tt2))
       ulog = (ulog2 - ulog1) * (temp-tt2)/(tt2-tt1) + ulog2
     endif
-    u = exp(ulog)
   END FUNCTION irwin_partf
 
   !===============================================================================

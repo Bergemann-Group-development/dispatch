@@ -1120,8 +1120,8 @@ contains
       prev_iso = 0
       do_nlte = .true.
 
-      ! ptc%part is actually the inverse partition
-      inv_part = ptc%n * ptc%part
+      ! ptc%part is actually the log partition
+      inv_part = ptc%n * exp(-ptc%part)
       dxij = real(self%dxi) * (ptc%j-1)
       call get_departure_coefficients(ion, dep)
 
@@ -1434,7 +1434,7 @@ contains
       call trace%end(itimer2)
 
       call trace%begin ('composition_type%ion_equilibrium', itimer=itimer3)
-      call element%compute_ion_equilibrium(self%e_kT, self%saha, self%dxi)
+      call element%compute_ion_equilibrium(self%e_kT, self%lsaha, self%dxi)
       call trace%end(itimer3)
 
       do j=lbound(element%ions, 1), ubound(element%ions, 1)
@@ -1442,14 +1442,7 @@ contains
 
         ! number of electrons from ion
         xnen = ion%f * (j-1)
-        !if (element%id /= 'H') fe = fe + xnen
-
-        select case (element%id)
-         case ('H','He')
-          ! do not add
-         case default
-          fe = fe + xnen
-        end select
+        fe = fe + xnen
 
         if (all(element%ions%nmolec == 0)) then
           ! number of electrons from elements without molecules
@@ -1458,21 +1451,19 @@ contains
       end do
     end do
 
-    if (mhd_eos) then
-      allocate(dxi, hpart, mold=self%temp)
-      do i=1, 5
-        toth = ne / (fe + HI%above%f + HeI%above%f + 2*HeI%above%above%f)
-        HI%n = HI%f * toth
-        HeI%n = HeI%f * toth
-        call self%Hoccupation_partition(HI%n, HeI%n, hpart)
-        hpart = max(1e-40, hpart)
-        dxi = - log(hpart*HI%part) / self%e_kT
-        call self%elements(1)%compute_ion_equilibrium(self%e_kT, self%saha, dxi=dxi)
-        call self%elements(2)%compute_ion_equilibrium(self%e_kT, self%saha, dxi=dxi)
-      end do
-    endif
-
-    fe = fe + HI%above%f + HeI%above%f + 2*HeI%above%above%f
+    ! if (mhd_eos) then
+    !   allocate(dxi, hpart, mold=self%temp)
+    !   do i=1, 5
+    !     toth = ne / (fe + HI%above%f + HeI%above%f + 2*HeI%above%above%f)
+    !     HI%n = HI%f * toth
+    !     HeI%n = HeI%f * toth
+    !     call self%Hoccupation_partition(HI%n, HeI%n, hpart)
+    !     hpart = max(1e-40, hpart)
+    !     dxi = - log(hpart*HI%part) / self%e_kT
+    !     call self%elements(1)%compute_ion_equilibrium(self%e_kT, self%saha, dxi=dxi)
+    !     call self%elements(2)%compute_ion_equilibrium(self%e_kT, self%saha, dxi=dxi)
+    !   end do
+    ! endif
 
     if (self%nmolec > 0) then
       call self%molecular_equilibrium(self%temp, self%teta, self%pe, xnecno, fe)
@@ -1652,7 +1643,7 @@ contains
         lvl%i = i
         lvl%xion = RYD * (1. - 1./i**2)
         lvl%g = 2 * i**2
-        lvl%f = lvl%g * lvl%boltzmann(self%e_kT, natural_log=.true.)
+        lvl%f = lvl%g * exp(-self%e_kT*lvl%xion)
       endif
       if (.not. allocated(lvl%w)) then
         allocate(lvl%w, mold=self%temp)
@@ -1696,10 +1687,10 @@ contains
       lvl%i = i
       lvl%xion = RYD * (1. - 1./i**2)
       lvl%g = 2 * i**2
-      lvl%n = lvl%g * lvl%boltzmann(self%e_kT, natural_log=.true.)
+      lvl%n = lvl%g * exp(-self%e_kT*lvl%xion)
     end do
 
-    part = HI%part
+    part = exp(-HI%part)
     if (H_occupation_probability) then
       part = 0.
       do i=1, HI%nk
@@ -1948,7 +1939,7 @@ contains
     class(composition_type), target :: self
     real(dp), dimension(:,:,:), intent(in) :: temp, pe, teta, xnecno
     real(dp), dimension(:,:,:), intent(inout) :: fe
-    real(dp), dimension(:,:,:), allocatable :: r, s, b, pefe, p, q
+    real(dp), dimension(:,:,:), allocatable :: r, s, b, fepe, p, q
     class(molec_type), pointer :: molecules(:), mol
     class(molec_type), pointer :: H2, CN, H2p, CO, N2, H2O, OH
     type(ion_pointer_t), dimension(:), allocatable :: ions
@@ -1972,11 +1963,11 @@ contains
     do i=1, self%nmolec
       mol => self%molecules(i)
       call mol%allocate(shape(temp))
-      mol%part = 1.0 / mol%irwin_partf(self%temp)
+      mol%part = mol%irwin_partf(self%temp)
       if (irwin_dis .and. all(mol%dc == 0)) then
-        call mol%get_dis2(self%temp, mol%dis)
-      else
-        mol%dis = mol%get_dis(self%teta)
+        call mol%get_dis2(self%temp, self%e_kT, mol%dis)
+        else
+        call mol%get_dis(self%teta, mol%dis)
       endif
     end do
 
@@ -2003,7 +1994,7 @@ contains
 
     np1 = nions + 1
     allocate(ions(nions))
-    allocate(r, s, diff, q, p, b, pefe, mold=temp)
+    allocate(r, s, diff, q, p, b, fepe, mold=temp)
     allocate(Fvec(np1, nx, ny, nz))
     allocate(Amat(np1, np1, nx, ny, nz))
     allocate(Fold(np1), Fnew(np1))
@@ -2023,49 +2014,51 @@ contains
       endif
     end do
 
+    ! xnecno is number of electrons from elements without molecules
+    fepe = xnecno / pe
+
     where (tmolim)
-      fe = xnecno ! xnecno is number of electrons from elements without molecules
       HI%fil = 1 + HI%saha + Hm%pk
-      b = H2%dis * pe/fe * 2
-      q = - HI%abund/b
-      p = HI%fil/b
+      b = 0.5 * H2%dis * fepe
+      q = - HI%abund * b
+      p = HI%fil * b
       HI%f = solve_quadratic(p, q)
 
       fe = HI%f * (HI%saha - Hm%pk) + xnecno
 
       where (fe <= 0)
-        r = Hm%saha * pe * H2%dis
+        r = Hm%saha * pe / H2%dis
         s = HI%fil - r
         p = (HI%fil*xnecno - Hm%pk - 2*xnecno*r) / s
-        q = r*xnecno*xnecno/s
+        q = xnecno*xnecno*r/s
         fe = solve_quadratic(p, q)
         HI%f = (xnecno - fe)*Hm%saha
       end where
     end where
 
-    pefe = pe/fe
+    fepe = fe / pe
 
     do i=1, self%nmolec
       !partial pressures due to each molecule
-      where (tmolim) molecules(i)%f = molecules(i)%calc_f(pefe)
+      where (tmolim) molecules(i)%f = molecules(i)%calc_f(fepe)
     end do
 
     where (tmolim)
       OI%fil = 1 + OI%saha + OI%f_of_molecules_with(HI)/OI%f
       CI%fil = 1 + CI%saha + CI%f_of_molecules_with(HI)/CI%f
 
-      b = CO%dis * pefe
-      p = (CI%abund-OI%abund)/OI%fil + CI%fil/b
-      q = - OI%abund/OI%fil * CI%fil/b
+      b = CO%dis * fepe
+      p = (CI%abund-OI%abund)/OI%fil + CI%fil*b
+      q = - OI%abund/OI%fil * CI%fil*b
       OI%f = solve_quadratic(p, q)
-      CI%f = CI%abund / (CI%fil + b*OI%f)
+      CI%f = CI%abund*b / (CI%fil*b + OI%f)
 
-      CN%f = CN%calc_f(pefe) ! has to be recalculated since CI%f changed
+      CN%f = CN%calc_f(fepe) ! has to be recalculated since CI%f changed
 
       NI%fil = 1 + NI%saha + (NI%f_of_molecules_with(HI) + NI%f_of_molecules_with(CI))/NI%f
-      b = 2*N2%dis * pefe
-      q = -NI%abund/b
-      p = NI%fil/b
+      b = 0.5 * N2%dis * fepe
+      q = -NI%abund * b
+      p = NI%fil * b
       NI%f = solve_quadratic(p, q)
       where (NI%f < 0) NI%f = 0
     end where
@@ -2074,7 +2067,7 @@ contains
     do iter=1, 100
       Amat = 0
       do i=1, self%nmolec
-        where (tmolim) molecules(i)%f = molecules(i)%calc_f(pefe)
+        where (tmolim) molecules(i)%f = molecules(i)%calc_f(fepe)
       end do
 
       do i=1, nions
@@ -2138,7 +2131,7 @@ contains
             end do
 
             fe(x,y,z) = Fnew(np1)
-            pefe(x,y,z) = pe(x,y,z) / fe(x,y,z)
+            fepe(x,y,z) = fe(x,y,z) / pe(x,y,z)
           end do
         end do
       end do
@@ -2157,7 +2150,7 @@ contains
     end do
     do i=1, self%nmolec
       where (tmolim)
-        molecules(i)%f = molecules(i)%calc_f(pefe)
+        molecules(i)%f = molecules(i)%calc_f(fepe)
       end where
     end do
 
@@ -2453,8 +2446,8 @@ contains
         do x=1, size(self%temp,1)
           e_kT = self%e_kT(x,y,z)
           dxi = self%dxi(x,y,z)
-          fakt = HI%boltzmann(e_kT, dxi, natural_log=.true.)
-          fakt = 2.0898E-26 / (2*RYD*e_kT) * fakt * HI%part(x,y,z) * HI%n(x,y,z)
+          fakt = exp(-e_kT*(HI%xion - dxi) - HI%part(x,y,z))
+          fakt = 2.0898E-26 / (2*RYD*e_kT) * fakt * HI%n(x,y,z)
           if (RYD >= nniv2 * dxi) then
             !NNIV=15
             !XNIV=15.

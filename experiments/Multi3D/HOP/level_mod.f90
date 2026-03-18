@@ -5,8 +5,6 @@ MODULE level_mod
   type :: state_type
     real(dp) :: xion=999.99
     real(dp), dimension(:,:,:), allocatable :: n, f
-  contains
-    procedure :: boltzmann
   end type
 
   type, extends(state_type) :: level_type
@@ -20,23 +18,6 @@ MODULE level_mod
   public :: wcalc
 
 contains
-
-  !===============================================================================
-  elemental real(dp) FUNCTION boltzmann(self, e_kT, dxi, natural_log)
-    class(state_type), intent(in) :: self
-    real(dp), intent(in) :: e_kT
-    real(dp), intent(in), optional :: dxi
-    logical, intent(in), optional :: natural_log
-    real(dp) :: dum
-    !---------------------------------------------------------------------------
-    if (present(dxi)) then
-      dum = -e_kT*(self%xion - dxi)
-    else
-      dum = -e_kT*self%xion
-    endif
-
-    boltzmann = exp(dum)
-  end FUNCTION boltzmann
 
   !===============================================================================
   elemental real(dp) FUNCTION fischel_sparks(self, ion, e_kT, ne)
