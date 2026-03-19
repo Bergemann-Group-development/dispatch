@@ -9,7 +9,7 @@ MODULE composition_mod
   USE level_mod, only: level_type, wcalc
   USE bbtrans_mod, only:bbtrans_type, add_opacities
   USE bftrans_mod, only:bftrans_type, H_occupation_probability
-  USE molecule_mod, only:molec_type
+  USE molecule_mod, only:molec_type, irwin_dis
   USE hprofl_mod, only:prepare_hydrogen_damping, add_h_opacities
   USE osmet_mod, only:osmet
   USE omp_lib
@@ -78,7 +78,7 @@ MODULE composition_mod
 
   character(128), public, save :: exclude_elements='', only_elements=''
   logical, public :: scattering_absorption=.true., mhd_eos=.false.
-  logical, public :: irwin_dis=.true., helium_scattering=.true.
+  logical, public :: helium_scattering=.true.
   real(dp), public :: debug_opac=0
   integer, public :: switch=1
   real(dp), public :: ref_lam=5000.d0
@@ -1500,7 +1500,7 @@ contains
     self%teta = temp_to_theta / temp
     self%e_kT = EK / temp
     self%pe = temp * BK * ne
-    self%lsaha = log(2 * op_saha_const * temp*sqrt(temp) / ne)
+    self%lsaha = log(2 * op_saha_const * temp*sqrt(temp)) - log(ne)
     self%fo = fo_const * ne**two_third ! Holtsmark normal field strength
 
     if (debye_shield) then
@@ -1534,14 +1534,10 @@ contains
     allocate(ne_converged(m(1),m(2),m(3)), source=.false.) ! cant use mold= on different kinds
     allocate(x, xold, a, b, c, fx, fa, fb, ro, pg, lrho, mold=temp)
 
-    if (ne(1,1,1) == 0) then
-      ! set initial value for electron density
-      where (temp > 2.0d4) ! fully ionized gas
-        ! threshold used to be 1d4, but led to convergence issues in some cases
-        ne = rho / self%grph * 1e-1
-      elsewhere ! neutrals only
-        ne = rho / self%grph * 1e-4
-      end where
+    if (ne(1,1,1) == 0.0d0) then
+      ! Saha approximation for pure atomic hydrogen
+      ne = 6.35d-5 * (rho**(-0.5d0)) * (temp**0.75d0) * exp(-7.89d4 / temp)
+      ne = (rho / self%grph) * min(1.0d-1, max(tiny(1.d0), ne))
     endif
 
     lrho = log(rho)
@@ -1963,11 +1959,7 @@ contains
       mol => self%molecules(i)
       call mol%allocate(shape(temp))
       mol%part = mol%irwin_partf(self%temp)
-      if (irwin_dis .and. all(mol%dc == 0)) then
-        call mol%get_dis2(self%temp, self%e_kT, mol%dis)
-        else
-        call mol%get_dis(self%teta, mol%dis)
-      endif
+      call mol%get_dis(self%temp, self%teta, self%e_kT, mol%dis)
     end do
 
     call self%ion_by_id('H I', HI)
@@ -2020,51 +2012,51 @@ contains
     end do
 
     ! xnecno is number of electrons from elements without molecules
-    fepe = xnecno / pe
+    fe = xnecno
+    fepe = log(fe) - log(pe)
 
-    where (tmolim)
-      b = 0.5 * H2%dis * fepe
-      q = - HI%abund * b
-      p = HI%fil * b
-      HI%f = solve_quadratic(p, q)
+    ! where (tmolim)
+    !   b = 0.5 * H2%dis * fepe
+    !   q = - HI%abund * b
+    !   p = HI%fil * b
+    !   HI%f = solve_quadratic(p, q)
 
-      fe = HI%f*HI%ne + xnecno
+    !   fe = HI%f*HI%ne + xnecno
 
-      where (fe <= 0)
-        r = Hm%saha * pe / H2%dis
-        s = 1 / (HI%fil - r)
-        p = (xnecno*(1 - r*s) - s/Hm%saha)
-        q = xnecno*xnecno*r*s
-        fe = solve_quadratic(p, q)
-        HI%f = (xnecno - fe)*Hm%saha
-      end where
-    end where
+    !   where (fe <= 0)
+    !     r = Hm%saha * pe / H2%dis
+    !     s = 1 / (HI%fil - r)
+    !     p = (xnecno*(1 - r*s) - s/Hm%saha)
+    !     q = xnecno*xnecno*r*s
+    !     fe = solve_quadratic(p, q)
+    !     HI%f = (xnecno - fe)*Hm%saha
+    !   end where
+    ! end where
 
-    fepe = fe / pe
+    ! fepe = fe / pe
 
     do i=1, self%nmolec
-      !partial pressures due to each molecule
       where (tmolim) molecules(i)%f = molecules(i)%calc_f(fepe)
     end do
 
-    where (tmolim)
-      b = CO%dis * fepe
-      s = OI%f / (OI%abund + OI%f_of_molecules_with(HI))
-      r = b * (CI%abund + CI%f_of_molecules_with(HI)) / CI%f
+    ! where (tmolim)
+    !   b = CO%dis * fepe
+    !   s = OI%f / (OI%abund + OI%f_of_molecules_with(HI))
+    !   r = b * (CI%abund + CI%f_of_molecules_with(HI)) / CI%f
 
-      p = (CI%abund-OI%abund)*s + r
-      q = - OI%abund * s * r
-      OI%f = solve_quadratic(p, q)
-      CI%f = CI%abund*b / (r + OI%f)
+    !   p = (CI%abund-OI%abund)*s + r
+    !   q = - OI%abund * s * r
+    !   OI%f = solve_quadratic(p, q)
+    !   CI%f = CI%abund*b / (r + OI%f)
 
-      CN%f = CN%calc_f(fepe) ! has to be recalculated since CI%f changed
+    !   CN%f = CN%calc_f(fepe) ! has to be recalculated since CI%f changed
 
-      b = 0.5 * N2%dis * fepe
-      p = b * (NI%abund + NI%f_of_molecules_with(HI) + NI%f_of_molecules_with(CI)) / NI%f
-      q = - NI%abund * b
-      NI%f = solve_quadratic(p, q)
-      where (NI%f < 0) NI%f = 0
-    end where
+    !   b = 0.5 * N2%dis * fepe
+    !   p = b * (NI%abund + NI%f_of_molecules_with(HI) + NI%f_of_molecules_with(CI)) / NI%f
+    !   q = - NI%abund * b
+    !   NI%f = solve_quadratic(p, q)
+    !   where (NI%f < 0) NI%f = 0
+    ! end where
 
     diff = 0
     do iter=1, 100
@@ -2135,7 +2127,7 @@ contains
             end do
 
             fe(x,y,z) = Fnew(np1)
-            fepe(x,y,z) = fe(x,y,z) / pe(x,y,z)
+            fepe(x,y,z) = log(fe(x,y,z)) - log(pe(x,y,z))
           end do
         end do
       end do

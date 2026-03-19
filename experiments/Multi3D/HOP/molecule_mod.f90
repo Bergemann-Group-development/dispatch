@@ -15,13 +15,14 @@ MODULE molecule_mod
   contains
     procedure :: read_molec_data
     procedure :: get_dis
-    procedure :: get_dis2
     procedure :: calc_f
     procedure :: calc_e
     procedure :: allocate => allocate_molec
     procedure :: deallocate => deallocate_molec
     procedure :: generate_isotopic_combinations
   end type
+
+  logical, public :: irwin_dis=.true.
 
 contains
 
@@ -52,43 +53,36 @@ contains
   END SUBROUTINE read_molec_data
 
   !===============================================================================
-  ! Computes the dissociation constant(P(A)*P(B)) / P(AB) for molecules
+  ! Computes the equilibrium constant log(P(AB)/(P(A)*P(B))) for molecules
   !===============================================================================
-  SUBROUTINE get_dis(self, teta, dis)
+  SUBROUTINE get_dis(self, temp, teta, e_kT, dis)
     class(molec_type), intent(in) :: self
-    real(dp), intent(in), dimension(:,:,:) :: teta
-    real(dp), intent(out), dimension(:,:,:) :: dis
-    !---------------------------------------------------------------------------
-    dis = 10**(poly1d(teta, self%dc(1), self%dc(2), self%dc(3), self%dc(4), self%dc(5)))
-  END SUBROUTINE get_dis
-
-  !===============================================================================
-  ! Computes the dissociation constant (P(A)*P(B)) / P(AB) for molecules
-  !===============================================================================
-  SUBROUTINE get_dis2(self, temp, e_kT, dis)
-    class(molec_type), intent(in) :: self
-    real(dp), intent(in), dimension(:,:,:) :: temp, e_kT
+    real(dp), intent(in), dimension(:,:,:) :: temp, teta, e_kT
     real(dp), intent(out), dimension(:,:,:) :: dis
     real(dp) :: awgt15, scalar, N_tot, const_term
     real(dp), parameter :: const_base = log((2*PI*UU/HH**2)**(-1.5) * BK**(-2.5))
     integer :: j, nm1
     !---------------------------------------------------------------------------
-    nm1 = self%nions - 1
-    const_term = const_base*nm1
+    if (irwin_dis .or. all(self%dc == 0)) then
+      nm1 = self%nions - 1
+      const_term = const_base*nm1
 
-    dis = 0
-    do j=1, self%nions
-      associate(ion => self%ions(j)%p)
-        awgt15 = -1.5*log(ion%awgt)
-        dis = dis + awgt15 - ion%part
-      end associate
-    end do
+      dis = 0
+      do j=1, self%nions
+        associate(ion => self%ions(j)%p)
+          awgt15 = -1.5*log(ion%awgt)
+          dis = dis + awgt15 - ion%part
+        end associate
+      end do
 
-    scalar = const_term + 1.5*log(self%awgt)
-    dis = dis + scalar
-    dis = self%part + self%de(1)*e_kT + dis
-    dis = temp**(2.5*nm1) * exp(-dis)
-  END SUBROUTINE get_dis2
+      scalar = const_term + 1.5*log(self%awgt)
+      dis = dis + scalar
+      dis = dis + self%part + self%de(1)*e_kT - (2.5*nm1)*log(temp)
+    else
+      call poly3d(teta, self%dc, dis)
+      dis = -ln10*dis
+    endif
+  END SUBROUTINE get_dis
 
   !===============================================================================
   FUNCTION calc_f(self, fepe) result(f)
@@ -98,14 +92,19 @@ contains
     type(ion_type), pointer :: ion
     integer :: j, x, y, z
     !---------------------------------------------------------------------------
-    allocate(f, mold=fepe)
-    f = 1.d0 / self%dis
+    allocate(f, source=self%dis)
     do j=1, self%nions
       ion => self%ions(j)%p
-      f = f * ion%f
+      where (ion%f > 0)
+        f = f + log(ion%f)
+      elsewhere
+        f = - huge(1.d0)
+      endwhere
       ! fepe needed to convert from pressure to f, first fepe cancels out
-      if (j > 1) f = f / fepe
+      if (j > 1) f = f - fepe
     end do
+    f = min(f, 0.d0)
+    f = exp(f)
   END FUNCTION calc_f
 
   !===============================================================================
@@ -120,7 +119,8 @@ contains
 
     if (size(self%de) > 1) then
       ! rotational and vibrational energy has to be subtracted
-      de = self%de(1) - poly1d(teta, self%de(2), self%de(3), self%de(4), self%de(5), self%de(6))*temp/EK
+      call poly3d(teta, self%de(2:6), de)
+      de = self%de(1) - de*temp/EK
     else
       de = self%de(1)
     endif

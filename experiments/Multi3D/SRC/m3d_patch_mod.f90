@@ -27,7 +27,7 @@ MODULE m3d_patch_mod
     USE spectrum_mod, only: nu_tolerance
     USE atom_mod, only: atom_type, atomic_spectrum_type, lse_no_pivot, lse_solver, &
                         nq_fac, cswitch, ng_step, ng_start, ng_global
-    USE composition_mod, only: composition_type, scattering_absorption, irwin_dis, helium_scattering, departure_pointer_t
+    USE composition_mod, only: composition_type, scattering_absorption, helium_scattering, departure_pointer_t
     USE ray_mod, only: one_dimensional, set_carlson_quadratures, set_radau_quadratures, set_lobatto_quadratures, &
                        set_gauss_quadratures, set_custom_quadratures, set_grid_quadratures
     USE m3d_debug_mod

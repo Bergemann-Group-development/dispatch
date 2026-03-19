@@ -555,6 +555,18 @@ contains
     poly = x*poly5(x, a, b, c, d, e) + f
   end FUNCTION poly6
 
+  !====================================================================================
+  SUBROUTINE poly3d(x, p, res)
+    real(dp), intent(in), dimension(:,:,:) :: x
+    real(dp), intent(in), dimension(:) :: p
+    real(dp), intent(out), dimension(:,:,:) :: res
+    integer :: i
+    !----------------------------------------------------------------------------
+    res = p(1)
+    do i = 2, size(p)
+      res = res * x + p(i)
+    end do
+  END SUBROUTINE poly3d
 
   !===============================================================================
   elemental real(dp) FUNCTION solve_quadratic(p, q) result(x)

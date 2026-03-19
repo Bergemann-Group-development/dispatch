@@ -9,7 +9,7 @@ MODULE composition_patch_mod
   USE optab_mod, only: optab
   USE osmet_mod, only: osmet, eosmet
   USE ion_mod, only: particle_type, ion_type, debye_shield
-  USE molecule_mod, only: molec_type
+  USE molecule_mod, only: molec_type, irwin_dis
   USE element_mod, only: element_type
   USE m3d_patch_mod,   only: m3d_patch_t, composition, comoving_frame, ilambd, dlam, &
   use_rho, use_ne, overlapping_bb, overlapping_bf, binned_opac, &
@@ -17,7 +17,7 @@ MODULE composition_patch_mod
   linelist_in_output, make_eos, overlapping_bb_in_output, atmos_format, atmos_file
   USE m3d_debug_mod
   USE composition_mod, only: composition_type, exclude_elements, only_elements, switch, &
-  irwin_dis, ref_lam, debug_opac, abundances, relative_abundances, mhd_eos, helium_scattering, &
+  ref_lam, debug_opac, abundances, relative_abundances, mhd_eos, helium_scattering, &
   departure_pointer_t, read_departures, departure_indices, sample_back_opac, &
   sample_back_opac_in_output, sample_linelist, opac_table_vmic
   USE atom_mod, only: m1d_legacy_mode, use_classic_col, level_partf

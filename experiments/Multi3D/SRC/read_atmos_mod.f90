@@ -740,7 +740,7 @@ contains
       allocate(tau(nz))
       temp8 = exp(dble(self%ltemp))
       if (use_rho) rho8  = exp(dble(self%lrho))
-      ne8   = exp(dble(self%lpe)) / (BK * temp8)
+      if (use_ne)  ne8   = exp(dble(self%lpe)) / (BK * temp8)
       comp = composition
       call comp%reassign_pointer()
       call comp%load_state_variables(temp8, ne8, rho8, use_rho=use_rho, use_ne=use_ne)
