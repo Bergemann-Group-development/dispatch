@@ -316,7 +316,7 @@ MODULE atom_mod
     real(4), intent(out), optional, dimension(:,:,:) :: cij, cji
     real(8), intent(out), optional, dimension(:,:) :: w, c
     integer :: i, m(3), x, y, z, nk
-    real(8) :: global
+    real(8) :: norm
     logical :: relax
     integer, save :: itimer=0, itimer2=0
     ! ----------------------------------------------------------------------------
@@ -331,7 +331,7 @@ MODULE atom_mod
       do y=1, m(2)
         do x=1, m(1)
           if (adata%totn(x,y,z) > 0 .and. comp%temp(x,y,z) < tmax_update) then
-            call self%setup_transition_matrix(comp, x,y,z, check_NaN)
+            call self%setup_transition_matrix(comp, x,y,z)
 
             ! e contains the correction n/n_old 
             associate(e=>adata%e(:), b=>adata%b(x,y,z,:), nstar=>adata%nstar(x,y,z,:), &
@@ -362,15 +362,21 @@ MODULE atom_mod
                   print *, 'ERROR: NaN in error vector at i = ', i
                   stop
               endif
+              
+              ! compute the exponential update factor
+              e = exp(e - 1.0d0)
 
-              ! set limits on corrections
-              e = max(e, 0.001d0)
-
-              ! update the populations
+              ! apply the exponential update
               b = b * e
-  
-              ! set e to the relative change in the populations 
-              e = e - 1.0d0
+
+              ! compute the normalisation scalar
+              norm = adata%totn(x,y,z) / sum(b * nstar)
+
+              ! enforce strict macroscopic particle conservation
+              b = b * norm
+
+              ! compute the true relative change in the populations
+              e = (e * norm) - 1.0d0
 
               ! keep track of maximum population change
               lvlerr = merge(e, lvlerr, abs(e) > abs(lvlerr))
@@ -401,11 +407,10 @@ MODULE atom_mod
   END SUBROUTINE update_populations
   
   !====================================================================================
-  SUBROUTINE setup_transition_matrix (self, comp, x,y,z, check_NaN)
+  SUBROUTINE setup_transition_matrix (self, comp, x,y,z)
     class(atom_type), target :: self
     class(composition_type) :: comp
     class(transition_type), pointer :: trans
-    logical, intent(in) :: check_NaN
     real(8), dimension(:), pointer :: b, nstar, rij, rji
     real(8) :: totn
     integer :: kr, pos, i, j, x,y,z
@@ -465,7 +470,7 @@ MODULE atom_mod
     self%data%e(pos) = totn
 
     ! go from rate coefficients to actual rates   
-    do i=1,self%nlevel
+    do i=1, self%nlevel
       self%data%w(i,:) = self%data%w(i,:) * b * nstar
     enddo
     self%data%w(pos,:) = b * nstar
@@ -2306,13 +2311,11 @@ MODULE atom_mod
     do x=1, m(1)
     do k=1, self%nlevel
       i = i+1
-      ! the weight can be chosen freely, but 1/n is the
-      ! "best" choice according to Olson+1986
-      w = 1.d0 / self%data%b(x,y,z,k)
-      n1(i) = self%data%oldb(x,y,z,k,1) * w
-      n2(i) = self%data%oldb(x,y,z,k,2) * w
-      n3(i) = self%data%oldb(x,y,z,k,3) * w
-      n4(i) = self%data%b(x,y,z,k) * w
+      ! Extract natural logarithms; explicit weighting is no longer required
+      n1(i) = log(self%data%oldb(x,y,z,k,1))
+      n2(i) = log(self%data%oldb(x,y,z,k,2))
+      n3(i) = log(self%data%oldb(x,y,z,k,3))
+      n4(i) = log(self%data%b(x,y,z,k))
     end do
     end do
     end do
@@ -2368,22 +2371,30 @@ MODULE atom_mod
       do z=1, m(3)
       do y=1, m(2)
       do x=1, m(1)
-      do k=1, self%nlevel
-        i = i+1
-        n1 = self%data%oldb(x,y,z,k,1)
-        n2 = self%data%oldb(x,y,z,k,2)
-        n3 = self%data%oldb(x,y,z,k,3)
-        n4 = self%data%b(x,y,z,k)
-        e = (1.d0 - a - b)*n4 + a*n3 + b*n2
-        e = max(n4*1d-3, min(e, n4*1d3))
-        self%data%b(x,y,z,k) = e
-        enew = e/n4 - 1.d0
+        do k=1, self%nlevel
+          i = i+1
+          n1 = log(self%data%oldb(x,y,z,k,1))
+          n2 = log(self%data%oldb(x,y,z,k,2))
+          n3 = log(self%data%oldb(x,y,z,k,3))
+          n4 = log(self%data%b(x,y,z,k))
+          
+          ! Extrapolate in logarithmic space
+          e = (1.d0 - a - b)*n4 + a*n3 + b*n2
+          
+          ! Exponentiate to recover strictly positive departure coefficients
+          self%data%b(x,y,z,k) = exp(e)
+          
+          ! Track relative error
+          enew = exp(e - n4) - 1.d0
 
-        if (abs(enew) > abs(emax)) then
-          emax = enew
-          epos = [k, x, y, z]
-        endif
-      end do
+          if (abs(enew) > abs(emax)) then
+            emax = enew
+            epos = [k, x, y, z]
+          endif
+        end do
+        ! Enforce strict macroscopic particle conservation after exponentiation
+        self%data%b(x,y,z,:) = self%data%b(x,y,z,:) * &
+            (self%data%totn(x,y,z) / sum(self%data%b(x,y,z,:) * self%data%nstar(x,y,z,:)))
       end do
       end do
       end do

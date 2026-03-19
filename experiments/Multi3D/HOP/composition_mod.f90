@@ -1335,13 +1335,13 @@ contains
     if (self%loaded) then
       deallocate(self%temp)
       deallocate(self%ne, self%rho, self%pe, self%pg, self%E, self%eh)
-      deallocate(self%toth, self%saha, self%teta, self%dxi, self%lsaha)
+      deallocate(self%toth, self%teta, self%dxi, self%lsaha)
       deallocate(self%e_kT, self%p6, self%stark_pe, self%tothi, self%zero)
       if (allocated(self%vmic)) deallocate(self%vmic)
     endif
 
     allocate(self%temp, self%ne, self%rho, self%pe, self%pg, self%E, self%eh, mold=temp)
-    allocate(self%toth, self%saha, self%teta, self%dxi, self%lsaha, mold=temp)
+    allocate(self%toth, self%teta, self%dxi, self%lsaha, mold=temp)
     allocate(self%e_kT, self%p6, ro, self%stark_pe, self%tothi, self%zero, mold=temp)
     if (present(vmic)) allocate(self%vmic, source=vmic)
 
@@ -1454,14 +1454,14 @@ contains
     ! if (mhd_eos) then
     !   allocate(dxi, hpart, mold=self%temp)
     !   do i=1, 5
-    !     toth = ne / (fe + HI%above%f + HeI%above%f + 2*HeI%above%above%f)
+    !     toth = ne / fe
     !     HI%n = HI%f * toth
     !     HeI%n = HeI%f * toth
     !     call self%Hoccupation_partition(HI%n, HeI%n, hpart)
     !     hpart = max(1e-40, hpart)
     !     dxi = - log(hpart*HI%part) / self%e_kT
-    !     call self%elements(1)%compute_ion_equilibrium(self%e_kT, self%saha, dxi=dxi)
-    !     call self%elements(2)%compute_ion_equilibrium(self%e_kT, self%saha, dxi=dxi)
+    !     call self%elements(1)%compute_ion_equilibrium(self%e_kT, self%lsaha, dxi=dxi)
+    !     call self%elements(2)%compute_ion_equilibrium(self%e_kT, self%lsaha, dxi=dxi)
     !   end do
     ! endif
 
@@ -1500,8 +1500,7 @@ contains
     self%teta = temp_to_theta / temp
     self%e_kT = EK / temp
     self%pe = temp * BK * ne
-    self%saha = 2 * op_saha_const * temp*sqrt(temp) / ne
-    self%lsaha = log(self%saha)
+    self%lsaha = log(2 * op_saha_const * temp*sqrt(temp) / ne)
     self%fo = fo_const * ne**two_third ! Holtsmark normal field strength
 
     if (debye_shield) then
@@ -2001,36 +2000,41 @@ contains
     allocate(tmolim(nx,ny,nz))
 
     tmolim = temp < self%tmolim
-    Hm%pk = 1/Hm%saha
 
     nions = 0
     do i=1, self%nel
-      ion => self%elements(i)%ions(1) ! only consider neutral atoms
-      if (ion%nmolec > 0) then
-        nions = nions + 1
-        ions(nions)%p => ion
-        if (allocated(ion%fil)) deallocate(ion%fil)
-        allocate(ion%fil, mold=temp)
-      endif
+      associate(elm => self%elements(i), ion => self%elements(i)%ions(1))
+        if (ion%nmolec > 0) then
+          nions = nions + 1
+          ions(nions)%p => ion
+          allocate(ion%fil, ion%ne, source=self%zero)
+          do j=lbound(elm%ions,1), ubound(elm%ions,1)
+            ion%ne = ion%ne + (j-1)*elm%ions(j)%f
+          end do
+          ! ion%fil is the neutral fraction of the element if there are no molecules
+          ion%fil = ion%abund / ion%f
+          ! ion%ne is the number of electrons per neutral atom from the element if there are no molecules
+          ion%ne = ion%ne / ion%f
+        endif
+      end associate
     end do
 
     ! xnecno is number of electrons from elements without molecules
     fepe = xnecno / pe
 
     where (tmolim)
-      HI%fil = 1 + HI%saha + Hm%pk
       b = 0.5 * H2%dis * fepe
       q = - HI%abund * b
       p = HI%fil * b
       HI%f = solve_quadratic(p, q)
 
-      fe = HI%f * (HI%saha - Hm%pk) + xnecno
+      fe = HI%f*HI%ne + xnecno
 
       where (fe <= 0)
         r = Hm%saha * pe / H2%dis
-        s = HI%fil - r
-        p = (HI%fil*xnecno - Hm%pk - 2*xnecno*r) / s
-        q = xnecno*xnecno*r/s
+        s = 1 / (HI%fil - r)
+        p = (xnecno*(1 - r*s) - s/Hm%saha)
+        q = xnecno*xnecno*r*s
         fe = solve_quadratic(p, q)
         HI%f = (xnecno - fe)*Hm%saha
       end where
@@ -2044,21 +2048,20 @@ contains
     end do
 
     where (tmolim)
-      OI%fil = 1 + OI%saha + OI%f_of_molecules_with(HI)/OI%f
-      CI%fil = 1 + CI%saha + CI%f_of_molecules_with(HI)/CI%f
-
       b = CO%dis * fepe
-      p = (CI%abund-OI%abund)/OI%fil + CI%fil*b
-      q = - OI%abund/OI%fil * CI%fil*b
+      s = OI%f / (OI%abund + OI%f_of_molecules_with(HI))
+      r = b * (CI%abund + CI%f_of_molecules_with(HI)) / CI%f
+
+      p = (CI%abund-OI%abund)*s + r
+      q = - OI%abund * s * r
       OI%f = solve_quadratic(p, q)
-      CI%f = CI%abund*b / (CI%fil*b + OI%f)
+      CI%f = CI%abund*b / (r + OI%f)
 
       CN%f = CN%calc_f(fepe) ! has to be recalculated since CI%f changed
 
-      NI%fil = 1 + NI%saha + (NI%f_of_molecules_with(HI) + NI%f_of_molecules_with(CI))/NI%f
       b = 0.5 * N2%dis * fepe
-      q = -NI%abund * b
-      p = NI%fil * b
+      p = b * (NI%abund + NI%f_of_molecules_with(HI) + NI%f_of_molecules_with(CI)) / NI%f
+      q = - NI%abund * b
       NI%f = solve_quadratic(p, q)
       where (NI%f < 0) NI%f = 0
     end where
@@ -2066,6 +2069,9 @@ contains
     diff = 0
     do iter=1, 100
       Amat = 0
+      Amat(np1, np1,:,:,:) = - fe
+      Fvec(np1,:,:,:) = xnecno - fe
+
       do i=1, self%nmolec
         where (tmolim) molecules(i)%f = molecules(i)%calc_f(fepe)
       end do
@@ -2074,23 +2080,23 @@ contains
         ioni => ions(i)%p
 
         where (tmolim)
-          Fvec(i,:,:,:) = ioni%f_of_own_molecules() ! number conservation
+          Amat(i,  i,:,:,:) = ioni%f * ioni%fil
+          Amat(np1,i,:,:,:) = ioni%f * ioni%ne
+          ! number conservation
+          Fvec(i,:,:,:) = ioni%f_of_molecules_with() + ioni%f*ioni%fil - ioni%abund
+          ! charge conservation
+          Fvec(np1,:,:,:) = Fvec(np1,:,:,:) + ioni%f*ioni%ne
         end where
 
         if (i==1) then
           where (tmolim)
-            Amat(i,  i,:,:,:) = HI%f * (1 + HI%saha + Hm%pk) + 4*H2p%f
-            Amat(i, np1,:,:,:) = - 2*H2p%f
-            Amat(np1,i,:,:,:) = HI%f * (HI%saha - Hm%pk) + 2*H2p%f
-            Fvec(i,:,:,:) = Fvec(i,:,:,:) + HI%f * (1 + HI%saha + Hm%pk) + 2*H2p%f - HI%abund
-            Fvec(np1,:,:,:) = xnecno - fe + HI%f * (HI%saha - Hm%pk) + H2p%f ! charge conservation
-          end where
-        else
-          where (tmolim)
-            Amat(i,  i,:,:,:) = ioni%f * (1 + ioni%saha)
-            Amat(np1,i,:,:,:) = ioni%f * ioni%saha
-            Fvec(i,:,:,:) = Fvec(i,:,:,:) + ioni%f * (1 + ioni%saha) - ioni%abund
-            Fvec(np1,:,:,:) = Fvec(np1,:,:,:) + ioni%f * ioni%saha
+            ! handle charged molecules explicitly (only H2+ in our case)
+            Amat(i,  i,:,:,:) = Amat(i,  i,:,:,:) + 4*H2p%f
+            Amat(np1,i,:,:,:) = Amat(np1,i,:,:,:) + 2*H2p%f
+            Amat(i, np1,:,:,:) = Amat(i, np1,:,:,:) - 2*H2p%f
+            Amat(np1, np1,:,:,:) = Amat(np1, np1,:,:,:) - H2p%f
+            Fvec(i,:,:,:) = Fvec(i,:,:,:) + 2*H2p%f
+            Fvec(np1,:,:,:) = Fvec(np1,:,:,:) + H2p%f
           end where
         endif
 
@@ -2099,8 +2105,6 @@ contains
           where (tmolim) Amat(i,j,:,:,:) = Amat(i,j,:,:,:) + ionj%f_of_molecules_with(ioni, count_double=.true.)
         end do
       end do
-
-      where (tmolim) Amat(np1, np1,:,:,:) = - H2p%f - fe
 
       do z=1, nz
         do y=1, ny
@@ -2139,14 +2143,14 @@ contains
       if (iter > 2 .and. all(diff < 0.001)) exit
     end do
 
-    Hm%f = HI%f * Hm%pk
+    Hm%f = HI%f / Hm%saha
     do i=1, nions
       ion => ions(i)%p
+      deallocate(ion%fil, ion%ne)
       do while (associated(ion%above))
         ion%above%f = ion%f * ion%saha
         ion => ion%above
       end do
-      if (allocated(ion%fil)) deallocate(ion%fil)
     end do
     do i=1, self%nmolec
       where (tmolim)

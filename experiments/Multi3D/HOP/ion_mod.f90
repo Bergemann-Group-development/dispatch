@@ -53,11 +53,10 @@ MODULE ion_mod
     real(dp), pointer :: abund => null()
     real(dp) :: acolc, tcolc, aradc, xradc, adic, bdic, t0c, t1c
     real(dp), dimension(:,:,:), allocatable :: saha
-    real(dp), dimension(:,:,:), allocatable :: pk, fil
+    real(dp), dimension(:,:,:), allocatable :: fil, ne
     logical :: fixed_part = .false.
   contains
     procedure :: molecules_with
-    procedure :: f_of_own_molecules
     procedure :: f_of_molecules_with
     procedure :: allocate => allocate_particle
     procedure :: deallocate => deallocate_particle
@@ -68,38 +67,28 @@ MODULE ion_mod
 contains
 
   !===============================================================================
-  FUNCTION f_of_own_molecules(self) result(fsum)
-    class(ion_type) :: self
-    type(particle_type), pointer :: mol
-    integer :: i
-    real(dp), dimension(self%m(1), self%m(2), self%m(3)) :: fsum
-    !---------------------------------------------------------------------------
-    fsum = 0
-    do i=1, self%nmolec
-      mol => self%molecules(i)%p
-      fsum = fsum + mol%f
-    end do
-  END FUNCTION
-
-  !===============================================================================
   FUNCTION f_of_molecules_with(self, other, count_double) result(fsum)
     class(ion_type) :: self
-    type(ion_type) :: other
+    type(ion_type), optional :: other
     type(particle_type), pointer :: mol
     type(particle_pointer_t), allocatable :: mol_list(:)
-    integer :: i
     real(dp), dimension(:,:,:), allocatable :: fsum
     logical, optional :: count_double
+    integer :: i
     !---------------------------------------------------------------------------
-    call self%molecules_with(other, mol_list, count_double)
-
     allocate(fsum(self%m(1),self%m(2),self%m(3)), source=0.d0)
-    if (size(mol_list) == 0) return
+
+    if (present(other)) then
+      call self%molecules_with(other, mol_list, count_double)
+    else
+      allocate(mol_list, source=self%molecules)
+    end if
 
     do i=1, size(mol_list)
       mol => mol_list(i)%p
       fsum = fsum + mol%f
     end do
+    deallocate(mol_list)
   END FUNCTION
 
   !===============================================================================
