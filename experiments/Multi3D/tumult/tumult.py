@@ -68,7 +68,12 @@ class tumult(object):
     @property
     def atoms(self):
         if not hasattr(self, '_atoms'):
-            self._atoms = self.read_atom()
+            try:
+              self._atoms = self.read_atom(fast_read=True)
+            except Exception as e:
+              print(f'Error reading atoms: {e}\nTrying again with fast_read=False...')
+              self._atoms = self.read_atom(fast_read=False)
+              
         return self._atoms
     
     @atoms.setter
@@ -358,7 +363,6 @@ class tumult(object):
         return Spectrum(self.lam, yy, xunit=u.angstrom, yunit=yunit)
     
     #=====================================================================
-    @broadcast_arguments(numeric=False)
     def crop(self, slc=None, x0=None, ang=None, imu=None, norm=True, 
              cont=False, LTE=False, line=None, **kwargs):
         #-----------------------------------------------------------------

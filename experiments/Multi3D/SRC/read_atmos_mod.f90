@@ -894,6 +894,7 @@ contains
         call linterpolate_3d_rotated(ia%vx,    px,   dx, dy, ia%zz, newx, newy, newz, vec, bot2pivot, ray_offset)
         call linterpolate_3d_rotated(ia%vy,    py,   dx, dy, ia%zz, newx, newy, newz, vec, bot2pivot, ray_offset)
         call linterpolate_3d_rotated(ia%vz,    pz,   dx, dy, ia%zz, newx, newy, newz, vec, bot2pivot, ray_offset)
+        call linterpolate_3d_rotated(ia%vmic,  vmic, dx, dy, ia%zz, newx, newy, newz, vec, bot2pivot, ray_offset)
       else
         call linterpolate_3d(ia%ltemp, temp, dx, dy, ia%zz, newx, newy, newz)
         if (use_rho) call linterpolate_3d(ia%lrho,  rho,  dx, dy, ia%zz, newx, newy, newz)
@@ -901,6 +902,7 @@ contains
         call linterpolate_3d(ia%vx,    px,   dx, dy, ia%zz, newx, newy, newz)
         call linterpolate_3d(ia%vy,    py,   dx, dy, ia%zz, newx, newy, newz)
         call linterpolate_3d(ia%vz,    pz,   dx, dy, ia%zz, newx, newy, newz)
+        call linterpolate_3d(ia%vmic,  vmic, dx, dy, ia%zz, newx, newy, newz)
       endif
     endif
 

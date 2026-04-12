@@ -37,7 +37,7 @@ contains
         real(8) :: wnum
         integer :: nnu
         !---------------------------------------------------------------------------
-        print *, 'Reading absmet file: ' // trim(absmet_file)
+        print '(A, A)', 'Reading absmet file: ', trim(absmet_file)
 
         call os%check_file(absmet_file)
         open(file=absmet_file, newunit=lunit, form='unformatted')

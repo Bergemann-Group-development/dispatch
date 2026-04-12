@@ -586,9 +586,7 @@ MODULE m3d_patch_mod
         call self%print_to_stdout()
       endif
     endif
-    if (check_NaN) then
-      call self%check_mem_NaN()
-    endif
+    call self%check_mem_NaN()
     call trace%end(itimer)
   END SUBROUTINE post_update
 
@@ -987,6 +985,7 @@ MODULE m3d_patch_mod
     integer :: i,j,k,v,t,w
     integer, save :: itimer
     !-----------------------------------------------------------------------------
+    if (.not. check_NaN) return
     call trace%begin ('m3d_patch_t%check_mem_NaN', itimer=itimer)
     if (associated(self%mem)) then
       do w=lbound(self%mem, 6), ubound(self%mem, 6)

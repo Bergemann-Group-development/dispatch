@@ -317,7 +317,7 @@ contains
     ! Initialize mpi counters
     !-----------------------------------------------------------------------------
     call atom_update_counter%init(0)
-    call global_maxerr%init(0)
+    call global_maxerr%init(0.d0) ! very important that this is a double
     call global_pos%init(-1)
 
     !-----------------------------------------------------------------------------

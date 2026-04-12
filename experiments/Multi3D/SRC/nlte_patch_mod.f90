@@ -40,7 +40,7 @@ MODULE nlte_patch_mod
     class(atomic_spectrum_type), pointer :: output_sp=>null()
     class(atomic_spectrum_type), pointer :: bf_sp=>null()
     class(atomic_spectrum_type), pointer :: bb_sp=>null()
-    real(8) :: maxerr=huge(1.0), prev_global=huge(1.d0), prev_prev_global=huge(1.d0)
+    real(8) :: maxerr=0, global=0, prev_global=0, prev_prev_global=0
     real(8), dimension(:), allocatable :: lvlerr
     real(8) :: local, sor_w
     integer :: natom=0
@@ -90,7 +90,9 @@ contains
     call self%m3d_patch_t%pre_init()
 
     if (self%atom_allocated) then
-      call self%set_nv_and_nw(sum(self%atoms%nlevel), 2)
+      ! we do not need a memory array for this patch,
+      ! as the atom data is allocated separately for each atom
+      call self%set_nv_and_nw(0, 0)
       self%static_mem=.true.
     elseif (.not. read_departures) then
       self%maxiter = -1 ! prevents addition to task list
@@ -179,7 +181,7 @@ contains
         associate(atom_file=>atom_file(i), atom=>atoms(i))
           j = rindex(atom_file, '/')+1
           pandas_format = .not. startswith(atom_file(j:len_trim(atom_file)), 'atom.')
-          write (*,*) ' - Reading atom ', trim(atom_file)
+          print '(A, A)', 'Reading atom file: ', trim(atom_file)
           if (pandas_format) then
             level_partf = .false.
             call atom%read_pandas(atom_file, qnorm, in_lines=in_lines)
@@ -480,33 +482,32 @@ contains
       locally_converged = locally_converged .and. adata%converged
     end do
 
-    if (self%iter == 0) then
-      call self%init_departures()
-    endif
-
     if (locally_converged) then
       call self%finish()
     endif
 
-    !$omp critical (maxerr_reset)
-    self%prev_prev_global = self%prev_global
-    self%prev_global = global_maxerr%update(0.d0)
-    ipos = global_pos%update(+0)
-    if (ipos == self%ipos(3) .or. abs(self%maxerr) > abs(self%prev_global)) then
-      if (ipos /= self%ipos(3)) call global_pos%reset(self%ipos(3))
-      call global_maxerr%reset(self%maxerr)
-    endif
-    !$omp end critical (maxerr_reset)
-
-    if (self%iter > 0) then
+    if (self%iter == 0) then
+      call self%init_departures()
+    else
+      !$omp critical (maxerr_reset)
+      self%prev_prev_global = self%prev_global
+      self%prev_global = self%global
+      self%global = global_maxerr%update(0.d0)
+      ipos = global_pos%update(+0)
       count = atom_update_counter%update(+1)
-    endif
-    if (count >= self%task_list%dims(3)) then
-      global = global_maxerr%update(0.d0)
-      if ((abs(global) > 0) .and. abs(global) < convlim .and. abs(self%maxerr) < convlim) then
-        !write(stdout, *) self%ipos(3)+1, 'Converged!', global
-        if (self%iter < self%maxiter) converged = .true.
-        call self%finish()
+      !print '(A, I3, I3, ES14.7, I3, ES14.7)', 'DEBUG:', count, self%ipos(3), self%maxerr, ipos, self%global
+      if (ipos == self%ipos(3) .or. abs(self%maxerr) > abs(self%global)) then
+        call global_pos%reset(self%ipos(3))
+        call global_maxerr%reset(self%maxerr)
+        self%global = self%maxerr
+      endif
+      !$omp end critical (maxerr_reset)
+      if (count >= self%task_list%dims(3)) then
+        if ((abs(self%global) > 0) .and. abs(self%global) < convlim .and. abs(self%maxerr) < convlim) then
+          if (self%iter < self%maxiter) converged = .true.
+          !print '(A, I3, I3, ES14.7, I3, ES14.7)', 'DEBUG:', count, self%ipos(3), self%maxerr, ipos, self%global
+          call self%finish()
+        endif
       endif
     endif
 
@@ -831,7 +832,7 @@ contains
     class(nlte_patch_t):: self
     class(atom_data_t), pointer :: adata
     character(len=64) :: text
-    integer :: i, ipos
+    integer :: i
     real(8) :: global
     !-----------------------------------------------------------------------------
     if (self%iter == 0) then
@@ -850,10 +851,8 @@ contains
       call self%print_to_stdout()
     endif
     if (associated(self%atoms)) then
-      global = global_maxerr%update(0.d0)
-      ipos = global_pos%update(+0)
       write(stdout,'(A, ES12.4, A10, ES12.4, A, I4, A, "[", 3I4, "] ", A)') &
-        '  local =', self%local,  ', global =', global, &
+        '  local =', self%local,  ', global =', self%global, &
         ', lvl =',elvl, ', pos=', epos, self%atoms(eatom)%id
       if (self%overrelax) then
         write(stdout,'(A, 3(ES12.4))') '  omega =', self%sor_w, self%prev_prev_global, self%prev_global
@@ -1081,25 +1080,12 @@ contains
     integer :: i,j,k,v,t,w
     integer, save :: itimer
     !-----------------------------------------------------------------------------
+    if (.not. check_NaN) return
     call trace%begin ('nlte_patch_t%check_mem_NaN', itimer=itimer)
     do w=1, self%natom
-      associate(n=>self%atoms(w)%data%b)
-        if (allocated(self%atoms(w)%data%b)) then
-          do v=lbound(n, 4), ubound(n, 4)
-            do k=lbound(n, 3), ubound(n, 3)
-              do j=lbound(n, 2), ubound(n, 2)
-                do i=lbound(n, 1), ubound(n, 1)
-                  if (n(i,j,k,v) /= n(i,j,k,v)) then
-                    write(stdout, '(A,A,3(I4),I5,I3,I3)') self%m3d_patch_info(), '  NaN', i,j,k,v
-                    stop
-                  elseif (n(i,j,k,v) > inf4) then
-                    write(stdout, '(A,A,3(I4),I5,I3,I3)') self%m3d_patch_info(), '  Infinity', i,j,k,v
-                    stop
-                  endif
-                end do
-              end do
-            end do
-          end do
+      associate(atom=>self%atoms(w))
+        if (allocated(atom%data%b)) then
+          call check_array(atom%data%b, trim(atom%id)//' departure coefficients', check_zero=.false., abort=.true.)
         endif
       end associate
     end do

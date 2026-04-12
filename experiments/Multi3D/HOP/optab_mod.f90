@@ -29,7 +29,7 @@ contains
     character(len=*), intent(in) :: opac_table
     integer :: i, lunit, iostat
     !---------------------------------------------------------------------------
-    print *, 'Reading opacity table: ' // trim(opac_table)
+    print '(A,A)', 'Reading opacity table: ', trim(opac_table)
 
     call os%check_file(trim(opac_table)//'.txt')
     open(file=trim(opac_table)//'.txt', newunit=lunit, form='formatted')

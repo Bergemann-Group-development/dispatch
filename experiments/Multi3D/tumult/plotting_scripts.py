@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap, ListedColormap, BoundaryNorm
 from inspect import signature
 import numpy as np
+import pandas as pd
 from scipy.ndimage import convolve
 import os
 
@@ -213,7 +214,7 @@ def plot_arrow(start, end, color=None, linewidth=None, markersize=None):
 #=====================================================================
 def plot_line_annotations(xx, labels, weights=None, ha='center', va='bottom',
                       rotation=90, fontfamily='serif', color='k', xmin=None, xmax=None,
-                      ymin=None, ymax=None, linewidth=0.8, ntop=-1, **kwargs):
+                      ymin=None, ymax=None, linewidth=0.8, ntop=-1, focus='strongest', **kwargs):
     #-----------------------------------------------------------------
     ax = plt.gca()
     xmn, xmx = ax.get_xlim()
@@ -244,8 +245,21 @@ def plot_line_annotations(xx, labels, weights=None, ha='center', va='bottom',
 
     if ntop == -1: ntop = newn
     if ntop is not None and weights is not None:
-        mask = np.argsort(weights)[::-1][:ntop]
-        mask = np.isin(np.arange(xx.size), mask)
+        
+        if focus == 'strongest':
+            mask = np.argsort(weights)[::-1][:ntop]
+            mask = np.isin(np.arange(xx.size), mask)
+        elif focus == 'bins':
+            # 1. Define bin edges and assign indices
+            edges = np.histogram_bin_edges(xx, bins=ntop)
+            indices = np.digitize(xx, edges)
+            indices[indices == ntop + 1] = ntop  # Include the rightmost edge in the final bin
+
+            # 2. Find the maximum weights value within each bin
+            max_vals = np.full(ntop + 2, -np.inf)
+            np.maximum.at(max_vals, indices, weights)
+            mask = weights == max_vals[indices]
+
         labels = labels[mask]
         xx = xx[mask]
 

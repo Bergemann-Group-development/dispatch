@@ -19,6 +19,11 @@ MODULE handyfuncs_mod
     end function generic_func
   end interface
 
+  interface check_array
+    module procedure check_1d_array_dp, check_2d_array_dp, check_3d_array_dp, check_4d_array_dp
+    module procedure check_1d_array_sp, check_2d_array_sp, check_3d_array_sp, check_4d_array_sp
+  end interface check_array
+
 contains
 
   !====================================================================================
@@ -666,5 +671,162 @@ contains
     deallocate(array)
     call move_alloc(tmp, array)
   END SUBROUTINE truncate_bool_array
+
+  ! ==============================================================================
+  SUBROUTINE check_array_core_dp(arr, arr_shape, label, check_zero, abort, ok)
+    real(8), intent(in), dimension(:) :: arr
+    integer, intent(in), dimension(:) :: arr_shape
+    character(len=*), intent(in) :: label
+    logical, intent(in) :: check_zero, abort
+    logical, optional, intent(out) :: ok
+    
+    logical :: has_issue
+    integer :: i, d, remainder
+    integer, dimension(size(arr_shape)) :: idx
+    ! ----------------------------------------------------------------------
+    has_issue = .false.
+    do i = 1, size(arr)
+      if (arr(i) /= arr(i) .or. arr(i) > inf8 .or. (check_zero .and. arr(i) == 0.d0)) then
+        has_issue = .true.
+        remainder = i - 1
+        do d = 1, size(arr_shape)
+          idx(d) = mod(remainder, arr_shape(d)) + 1
+          remainder = remainder / arr_shape(d)
+        end do
+
+        if (arr(i) /= arr(i)) then
+          print *, 'ERROR: NaN in ', label, ' at position ', idx
+        elseif (arr(i) > inf8) then
+          print *, 'ERROR: Infinity in ', label, ' at position ', idx
+        elseif (check_zero .and. arr(i) == 0.d0) then
+          print *, 'ERROR: Zero in ', label, ' at position ', idx
+        endif
+      end if
+    end do
+
+    if (present(ok)) ok = .not. has_issue
+    if (has_issue .and. abort) then
+      print *, 'Aborting due to invalid values in ', label
+      stop
+    end if
+  END SUBROUTINE check_array_core_dp
+
+  SUBROUTINE check_array_core_sp(arr, arr_shape, label, check_zero, abort, ok)
+    real(4), intent(in), dimension(:) :: arr
+    integer, intent(in), dimension(:) :: arr_shape
+    character(len=*), intent(in) :: label
+    logical, intent(in) :: check_zero, abort
+    logical, optional, intent(out) :: ok
+    
+    logical :: has_issue
+    integer :: i, d, remainder
+    integer, dimension(size(arr_shape)) :: idx
+    ! ----------------------------------------------------------------------
+    has_issue = .false.
+    do i = 1, size(arr)
+      if (arr(i) /= arr(i) .or. arr(i) > inf4 .or. (check_zero .and. arr(i) == 0.0)) then
+        has_issue = .true.
+        remainder = i - 1
+        do d = 1, size(arr_shape)
+          idx(d) = mod(remainder, arr_shape(d)) + 1
+          remainder = remainder / arr_shape(d)
+        end do
+
+        if (arr(i) /= arr(i)) then
+          print *, 'ERROR: NaN in ', label, ' at position ', idx
+        elseif (arr(i) > inf4) then
+          print *, 'ERROR: Infinity in ', label, ' at position ', idx
+        elseif (check_zero .and. arr(i) == 0.0) then
+          print *, 'ERROR: Zero in ', label, ' at position ', idx
+        endif
+      end if
+    end do
+
+    if (present(ok)) ok = .not. has_issue
+    if (has_issue .and. abort) then
+      print *, 'Aborting due to invalid values in ', label
+      stop
+    end if
+  END SUBROUTINE check_array_core_sp
+
+  ! ==============================================================================
+  SUBROUTINE check_1d_array_dp(arr, label, check_zero, abort, ok)
+    real(8), intent(in), dimension(:) :: arr
+    character(len=*), intent(in) :: label
+    logical, intent(in) :: check_zero, abort
+    logical, optional, intent(out) :: ok
+    ! ----------------------------------------------------------------------
+    call check_array_core_dp(arr, shape(arr), label, check_zero, abort, ok)
+  END SUBROUTINE check_1d_array_dp
+
+  ! ==============================================================================
+  SUBROUTINE check_2d_array_dp(arr, label, check_zero, abort, ok)
+    real(8), intent(in), dimension(:,:) :: arr
+    character(len=*), intent(in) :: label
+    logical, intent(in) :: check_zero, abort
+    logical, optional, intent(out) :: ok
+    ! ----------------------------------------------------------------------
+    call check_array_core_dp(reshape(arr, [size(arr)]), shape(arr), label, check_zero, abort, ok)
+  END SUBROUTINE check_2d_array_dp
+
+  ! ==============================================================================
+  SUBROUTINE check_3d_array_dp(arr, label, check_zero, abort, ok)
+    real(8), intent(in), dimension(:,:,:) :: arr
+    character(len=*), intent(in) :: label
+    logical, intent(in) :: check_zero, abort
+    logical, optional, intent(out) :: ok
+    ! ----------------------------------------------------------------------
+    call check_array_core_dp(reshape(arr, [size(arr)]), shape(arr), label, check_zero, abort, ok)
+  END SUBROUTINE check_3d_array_dp
+
+  ! ==============================================================================
+  SUBROUTINE check_4d_array_dp(arr, label, check_zero, abort, ok)
+    real(8), intent(in), dimension(:,:,:,:) :: arr
+    character(len=*), intent(in) :: label
+    logical, intent(in) :: check_zero, abort
+    logical, optional, intent(out) :: ok
+    ! ----------------------------------------------------------------------
+    call check_array_core_dp(reshape(arr, [size(arr)]), shape(arr), label, check_zero, abort, ok)
+  END SUBROUTINE check_4d_array_dp
+
+  ! ==============================================================================
+  SUBROUTINE check_1d_array_sp(arr, label, check_zero, abort, ok)
+    real(4), intent(in), dimension(:) :: arr
+    character(len=*), intent(in) :: label
+    logical, intent(in) :: check_zero, abort
+    logical, optional, intent(out) :: ok
+    ! ----------------------------------------------------------------------
+    call check_array_core_sp(arr, shape(arr), label, check_zero, abort, ok)
+  END SUBROUTINE check_1d_array_sp
+
+  ! ==============================================================================
+  SUBROUTINE check_2d_array_sp(arr, label, check_zero, abort, ok)
+    real(4), intent(in), dimension(:,:) :: arr
+    character(len=*), intent(in) :: label
+    logical, intent(in) :: check_zero, abort
+    logical, optional, intent(out) :: ok
+    ! ----------------------------------------------------------------------
+    call check_array_core_sp(reshape(arr, [size(arr)]), shape(arr), label, check_zero, abort, ok)
+  END SUBROUTINE check_2d_array_sp
+
+  ! ==============================================================================
+  SUBROUTINE check_3d_array_sp(arr, label, check_zero, abort, ok)
+    real(4), intent(in), dimension(:,:,:) :: arr
+    character(len=*), intent(in) :: label
+    logical, intent(in) :: check_zero, abort
+    logical, optional, intent(out) :: ok
+    ! ----------------------------------------------------------------------
+    call check_array_core_sp(reshape(arr, [size(arr)]), shape(arr), label, check_zero, abort, ok)
+  END SUBROUTINE check_3d_array_sp
+
+  ! ==============================================================================
+  SUBROUTINE check_4d_array_sp(arr, label, check_zero, abort, ok)
+    real(4), intent(in), dimension(:,:,:,:) :: arr
+    character(len=*), intent(in) :: label
+    logical, intent(in) :: check_zero, abort
+    logical, optional, intent(out) :: ok
+    ! ----------------------------------------------------------------------
+    call check_array_core_sp(reshape(arr, [size(arr)]), shape(arr), label, check_zero, abort, ok)
+  END SUBROUTINE check_4d_array_sp
 
 END MODULE handyfuncs_mod

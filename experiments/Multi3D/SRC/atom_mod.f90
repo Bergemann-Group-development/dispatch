@@ -317,7 +317,8 @@ MODULE atom_mod
     real(8), intent(out), optional, dimension(:,:) :: w, c
     integer :: i, m(3), x, y, z, nk
     real(8) :: norm
-    logical :: relax
+    real(8), parameter :: edamp = 1e-3
+    logical :: relax, ok
     integer, save :: itimer=0, itimer2=0
     ! ----------------------------------------------------------------------------
     call trace%begin('atom_type%update_populations', itimer=itimer)
@@ -357,16 +358,20 @@ MODULE atom_mod
               end select
               call trace%end(itimer2)
               
-              i = findloc(e/=e, .true., dim=1)
-              if (check_NaN .and. i > 0) then
-                  print *, 'ERROR: NaN in error vector at i = ', i
+              if (check_NaN) then
+                call check_array(e, 'lineq solution', check_zero=.false., abort=.false., ok=ok)
+                if (.not.ok) then
+                  print *, 'ERROR: in lineq solution at x,y,z = ', x, y, z
                   stop
+                endif
               endif
               
               ! compute the exponential update factor
-              e = exp(e - 1.0d0)
+              where (e < edamp)
+                e = exp(e/edamp - 1d0 + log(edamp))
+              endwhere
 
-              ! apply the exponential update
+              ! apply the update
               b = b * e
 
               ! compute the normalisation scalar
@@ -377,6 +382,22 @@ MODULE atom_mod
 
               ! compute the true relative change in the populations
               e = (e * norm) - 1.0d0
+              
+              if (check_NaN) then
+                call check_array(e, 'population correction', check_zero=.false., abort=.false., ok=ok)
+                if (.not.ok) then
+                  print *, 'ERROR: in population correction vector at x,y,z = ', x, y, z
+                  stop
+                endif
+              endif
+
+              if (check_NaN) then
+                call check_array(b, 'departure coefficients', check_zero=.false., abort=.false., ok=ok)
+                if (.not.ok) then
+                  print *, 'ERROR: in departure coefficients at x,y,z = ', x, y, z
+                  stop
+                endif
+              endif
 
               ! keep track of maximum population change
               lvlerr = merge(e, lvlerr, abs(e) > abs(lvlerr))
@@ -415,7 +436,7 @@ MODULE atom_mod
     real(8) :: totn
     integer :: kr, pos, i, j, x,y,z
     integer, save :: itimer=0, itimer2=0
-    logical :: abort
+    logical :: abort, ok
     logical, save :: first_time=.true.
     !------------------------------------------------------------------------------------
     totn = self%data%totn(x,y,z)
@@ -477,23 +498,10 @@ MODULE atom_mod
 
     if (check_NaN .or. first_time) then
       first_time = .false.
-      abort = .false.
-      do i=1,self%nlevel
-        if (self%data%w(i,i) == 0.d0) then
-          print '(A, I4)', 'ERROR: zero in rate diagonal at i = ', i
-          abort = .true.
-        endif
-        do j=1,self%nlevel
-          if (self%data%w(i,j) /= self%data%w(i,j)) then
-            print '(A, I4, I4)', 'ERROR: NaN in rate Matrix at i,j = ', i, j
-            abort = .true.
-          elseif (self%data%w(i,j) > inf8) then
-            print '(A, I4, I4)', 'ERROR: Infinity in rate Matrix at i,j = ', i, j
-            abort = .true.
-          endif
-        end do
-      end do
-      if (abort) then
+      call check_array([(self%data%w(i,i), i=1, self%nlevel)], 'rate diagonal', check_zero=.true., abort=.false., ok=ok)
+      call check_array(self%data%w, 'rate matrix', check_zero=.false., abort=.false., ok=ok)
+      if (.not. ok) then
+        print *, 'ERROR: in rate matrix at x,y,z = ', x, y, z
         stop
       endif
     endif
@@ -588,15 +596,7 @@ MODULE atom_mod
     do i=1, self%nlevel
       nstar(:,:,:,i) = norm * nstar(:,:,:,i)
     end do
-    
-    do i=1, self%nlevel
-      where(totn == 0) nstar(:,:,:,i) = 0 !ieee_value(nstar(:,:,:,i), ieee_quiet_nan)
-      ijk = findloc(nstar(:,:,:,i), 0.0, mask=totn>0)
-      if (any(ijk > 0)) then
-        print '(A, I5, A, 3(I4))', ' WARNING: ltepop: level ',i,' has zero lte population at', ijk
-        !stop
-      end if
-    end do
+
     if (molec) then
       ! replace dissociated state with the ground state population of rarest component
       ! a factor of g0 is missing, which is the statistical weight of the ground state
@@ -610,6 +610,13 @@ MODULE atom_mod
         end do
       end associate
     endif
+    
+    do i=1, self%nlevel
+      where(totn == 0) nstar(:,:,:,i) = 0 !ieee_value(nstar(:,:,:,i), ieee_quiet_nan)
+      if (check_NaN) then
+        call check_array(nstar(:,:,:,i), 'LTE populations', check_zero=.true., abort=.true.)
+      endif
+    end do
   
     ! this is important for number conservation in the SE solver
     totn = sum(nstar, dim=4)

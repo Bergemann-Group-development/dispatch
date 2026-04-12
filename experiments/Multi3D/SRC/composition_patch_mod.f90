@@ -331,7 +331,7 @@ SUBROUTINE execute (self)
       temp => authority(:,:,:,self%i_temp)
       chi  => authority(:,:,:,7)
       vmic => authority(:,:,:,8)
-      
+
       temp8 = dble(temp)
       rho8  = dble(rho)
       ne8   = dble(ne)
@@ -357,6 +357,12 @@ SUBROUTINE execute (self)
       if (.not. use_rho) rho = real(comp%rho)
       if (save_atmos) then
         chi = comp%chi500
+      endif
+
+      if (check_NaN) then
+        call check_array(temp, 'temperature', check_zero=.true., abort=.true.)
+        call check_array(rho, 'density', check_zero=.true., abort=.true.)
+        call check_array(ne, 'electron density', check_zero=.true., abort=.true.)
       endif
     end do
     
