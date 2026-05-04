@@ -51,7 +51,7 @@ MODULE rt_patch_mod
     real(8), dimension(:), allocatable :: opac_table_nu
     real(4), dimension(:), allocatable :: twohnu3_c2
     real(8), dimension(:), pointer :: nu
-    integer :: nline=0, ncont=0, mus, mue, n_set, n_mu, natom
+    integer :: mus, mue, n_set, n_mu, natom
     logical :: bound_bound, bound_free
     logical, dimension(:), allocatable :: get_rates
   contains
@@ -340,7 +340,7 @@ contains
 
       do i_set=1, self%n_set
         if (.not. self%out_mu .and. fixed_Jnu > 0) then
-          call self%set_fixed_Jnu(adata)
+          call self%set_fixed_Jnu()
         else
           call self%back_to_work()
 
@@ -432,7 +432,7 @@ contains
 
         call self%work_to_mem(i_mu, i_set)
 
-        if ((any(self%get_rates) .and. self%bound_free) .or. (self%iter < ilambd)) then
+        if ((any(self%get_rates) .and. self%bound_free) .or. (ilambd>0)) then
           call self%integrate_intensity(wmu, i_set, save_PsiJ=(any(self%get_rates) .and. self%bound_free))
         endif
 
@@ -869,7 +869,7 @@ contains
     class(atom_data_t), target :: adata
     class(cont_type), pointer :: cont
     real(4) :: ni, nj, tmp, alpha
-    integer :: i, icont, fsmin, femax
+    integer :: i, fsmin, femax
     integer, save :: itimer=0
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch%add_bound_free_opacities', itimer=itimer)
@@ -893,7 +893,6 @@ contains
       fe = cont%iblue
       fsmin = min(fsmin, fs)
       femax = max(femax, fe)
-      icont = cont%ntrans-atom%nline
 
       if (allocated(adata%b)) then
         do z=1, nz
@@ -1216,7 +1215,7 @@ contains
     real(4), dimension(:), allocatable :: w_alpha, wmunu
     real(4) :: ni, nj, tmp, eta_fac, q, phi
     real(4) :: g_ij, g_ji, vij, vji, sum_abs, sum_ems, sum_pre
-    integer :: i, j, icont
+    integer :: i, j
     integer, save :: itimer=0
     !-----------------------------------------------------------------------------
     call trace%begin (trim(self%kind)//'%bound_free_rates', itimer=itimer)
@@ -1226,10 +1225,9 @@ contains
     do j=1, size(trans%cont)
       cont => trans%cont(j)
       if (.not. cont%active) cycle
-      i = j + self%nline
+      i = j + size(trans%line)
       fs = cont%ired
       fe = cont%iblue
-      icont = cont%ntrans-atom%nline
       wmunu(fs:fe) = 0.5 * cont%wnu(fs:fe)
       w_alpha(fs:fe) = self%twohnu3_c2(fs:fe) * cont%alpha(fs:fe) * wmunu(fs:fe)
 
@@ -1373,7 +1371,7 @@ contains
       adata%gamma_ji(:,:,:,k) = adata%gamma_ji(:,:,:,k) + trans%gamma_ji(:,:,:,i)
     end do
     do i=1, size(trans%cont)
-      j = i + self%nline
+      j = i + size(trans%line)
       k = trans%cont(i)%ntrans
       adata%gamma_ij(:,:,:,k) = adata%gamma_ij(:,:,:,k) + trans%gamma_ij(:,:,:,j)
       adata%gamma_ji(:,:,:,k) = adata%gamma_ji(:,:,:,k) + trans%gamma_ji(:,:,:,j)
@@ -1527,16 +1525,13 @@ contains
   END SUBROUTINE rotate_array
 
   !===============================================================================
-  SUBROUTINE set_fixed_Jnu (self, adata)
+  SUBROUTINE set_fixed_Jnu (self)
     class(rt_patch_t) :: self
-    class(atom_data_t) :: adata
     real(4) :: Bnu
-    integer :: nl, i
+    integer :: nl, i, j
     integer, save :: itimer=0
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch%set_fixed_Jnu', itimer=itimer)
-    nl = size(adata%wphi, 4)
-    if (.not. allocated(adata%wphi)) nl = 0
     do z=1, nz
       do y=1, ny
         do x=1, nx
@@ -1546,11 +1541,23 @@ contains
               Inu = fixed_Jnu * Bnu
             end associate
           end do
-          do i=1, nl
-            adata%wphi(x,y,z,i) = 1
-          end do
         end do
       end do
+    end do
+    do i=1, size(self%atoms, 1)
+      associate(adata => self%atoms(1)%data)
+        nl = size(adata%wphi, 4)
+        if (.not. allocated(adata%wphi)) nl = 0
+        do j=1, nl
+          do z=1, nz
+            do y=1, ny
+              do x=1, nx
+                adata%wphi(x,y,z,j) = 1
+              end do
+            end do
+          end do
+        end do
+      end associate
     end do
     call trace%end(itimer)
   END SUBROUTINE set_fixed_Jnu
@@ -2243,7 +2250,7 @@ contains
     if (.not. use_vel(2)) vy = 0
     if (.not. use_vel(3)) vz = 0
 
-    vproj = -vec(1)*vx - vec(2)*vy + vec(3)*vz
+    vproj = vec(1)*vx + vec(2)*vy + vec(3)*vz
     call trace%end(itimer)
   END SUBROUTINE get_vproj
 

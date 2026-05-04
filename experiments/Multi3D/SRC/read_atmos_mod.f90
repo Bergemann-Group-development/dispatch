@@ -247,9 +247,9 @@ contains
         do i=1, nx
           over_rho = uuv / rho(i,j,k)
           ia%lrho (i,j,k) = log(rho(i,j,k)) + luur
-          ia%vx   (i,j,k) =   ia%vx(i,j,k) * over_rho
-          ia%vy   (i,j,k) =   ia%vy(i,j,k) * over_rho
-          ia%vz   (i,j,k) =   ia%vz(i,j,k) * over_rho
+          ia%vx   (i,j,k) = ia%vx(i,j,k) * over_rho
+          ia%vy   (i,j,k) = ia%vy(i,j,k) * over_rho
+          ia%vz   (i,j,k) = ia%vz(i,j,k) * over_rho
           if (use_ne) then
             ia%lpe(i,j,k) = lne(i,j,k) + const + ia%ltemp(i,j,k)
           endif
