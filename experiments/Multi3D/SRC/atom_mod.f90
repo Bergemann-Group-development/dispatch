@@ -1581,17 +1581,20 @@ MODULE atom_mod
       else
         call line%prepare_Radiative(line%ga_in)
         vbar2e4 = self%compute_vbar2(10000.)
-        if (associated(species)) then
-          if (.not. is_molecule) then
-            cnt_ev = ions(j)%xion
-          else
-            cnt_ev = species%xion ! will not be used
-          endif
-        else
-          ! find continuum level
-          ic = findloc(self%ion, j+1, 1)
-          cnt_ev = merge(self%ev(ic), 999.99d0, ic > 0)
-        endif
+        ! the following commented section is generally more correct, but not backwards compatible.
+        ! mul23 uses the ionisation threshold from the atom, not from the EOS.
+        ! I don't know why many of our atoms, e.g. Mn, have wrong ionisation thresholds...
+        !if (associated(species)) then
+        !  if (.not. is_molecule) then
+        !    cnt_ev = ions(j)%xion
+        !  else
+        !    cnt_ev = species%xion ! will not be used
+        !  endif
+        !else
+        ! find continuum level
+        ic = findloc(self%ion, j+1, 1)
+        cnt_ev = merge(self%ev(ic), 999.99d0, ic > 0)
+        !endif
         call line%prepare_Stark(line%gq_in, self%ion(line%i), cnt_ev)
         call line%prepare_VanderWaals(line%gv_in, self%ion(line%i), cnt_ev, vbar2e4, is_mol=is_molecule)
       endif
