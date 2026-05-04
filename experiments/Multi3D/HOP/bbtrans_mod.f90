@@ -623,6 +623,7 @@ contains
     real(4), intent(in)  :: ne, tothi, vbar2, stark_pe, unsold
     real(4), intent(inout) :: adamp
     !----------------------------------------------------------------------------------
+    adamp = 0
     ! Van der Waals Broadening
     if (self%unsold) then
       adamp = adamp + self%gw1 * unsold
