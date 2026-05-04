@@ -63,7 +63,7 @@ MODULE m3d_patch_mod
       real(8) :: t_offset=0
       integer :: iter=0, maxiter, master_maxiter, dir=0
       integer :: n_nu, n_omega, n_out, zs, ze
-      integer :: fcheck, pcheck(3), linecheck, lvlcheck
+      integer :: fcheck, pcheck(3)
       logical :: out_ray=.false., in_ray=.false., out_mu=.false.
       logical :: compressed=.false., save_output=.false., saved=.false.
       logical :: print_update_info, checked_bounds=.false.

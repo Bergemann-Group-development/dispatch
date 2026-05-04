@@ -405,7 +405,7 @@ contains
     class(molec_type), pointer :: molec
     real(4), dimension(:,:,:), allocatable :: cij, cji
     real(8), dimension(:,:), allocatable :: w, c
-    integer :: i, j, k, l, p(3), m(3), ipos, ng_iter, ng_epos(4)
+    integer :: i, j, k, p(3), m(3), ipos, ng_iter, ng_epos(4)
     integer, save:: count=0
     real(8) :: global, ng_emax
     logical :: do_ng, locally_converged, found
@@ -456,9 +456,6 @@ contains
           endif
         endif
 
-        call os%deallocate(adata%gamma_ij, label='atom%gamma_ij')
-        call os%deallocate(adata%gamma_ji, label='atom%gamma_ji')
-
         if (adata%maxerr /= adata%maxerr) then
           call shared%abort('NaN in convergence error')
         endif
@@ -479,7 +476,32 @@ contains
           endif
         endif
       endif
+      
       locally_converged = locally_converged .and. adata%converged
+
+      if (self%print_update_info .and. k==atomcheck) then
+        p = self%pcheck
+        if (allocated(adata%b)) then
+          memcheck(1) = adata%b(p(1),p(2),p(3),lvlcheck)
+        else
+          memcheck(1) = 1
+        endif
+        if (allocated(adata%gamma_ij)) then
+          if (linecheck<=atom%nrad) then
+            memcheck(2) = adata%gamma_ij(p(1),p(2),p(3),linecheck)
+            memcheck(3) = adata%gamma_ji(p(1),p(2),p(3),linecheck)
+            if (linecheck<=atom%nline) then
+              memcheck(4) = adata%wphi(p(1),p(2),p(3),linecheck)
+            endif
+          endif
+        else
+          memcheck(2) = 10.0**(atom%abnd-12.0)
+          memcheck(3) = comp%toth(p(1),p(2),p(3))
+        endif
+      endif
+
+      call os%deallocate(adata%gamma_ij, label='atom%gamma_ij')
+      call os%deallocate(adata%gamma_ji, label='atom%gamma_ji')
     end do
 
     if (locally_converged) then
@@ -508,29 +530,6 @@ contains
           !print '(A, I3, I3, ES14.7, I3, ES14.7)', 'DEBUG:', count, self%ipos(3), self%maxerr, ipos, self%global
           call self%finish()
         endif
-      endif
-    endif
-
-    if (self%print_update_info .and. associated(self%atoms)) then
-      p = self%pcheck
-      l = self%linecheck
-      adata => self%atoms(atomcheck)%data
-      if (allocated(adata%b)) then
-        memcheck(1) = adata%b(p(1),p(2),p(3),lvlcheck)
-      else
-        memcheck(1) = 1
-      endif
-      if (allocated(adata%gamma_ij)) then
-        if (self%linecheck<=atom%nrad) then
-          memcheck(2) = adata%gamma_ij(p(1),p(2),p(3),l)
-          memcheck(3) = adata%gamma_ji(p(1),p(2),p(3),l)
-          if (l<=atom%nline) then
-            memcheck(4) = adata%wphi(p(1),p(2),p(3),l)
-          endif
-        endif
-      else
-        memcheck(2) = 10.0**(atom%abnd-12.0)
-        memcheck(3) = comp%toth(p(1),p(2),p(3))
       endif
     endif
 
