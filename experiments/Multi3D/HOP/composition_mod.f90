@@ -1332,6 +1332,11 @@ contains
       stop
     endif
 
+    if (.not. (option(use_rho, .true.) .or. option(use_ne, .true.))) then
+      print *, 'ERROR: At least one of rho or ne must be provided to load_state_variables'
+      stop
+    endif
+
     if (self%loaded) then
       deallocate(self%temp)
       deallocate(self%ne, self%rho, self%pe, self%pg, self%E, self%eh)
@@ -2012,8 +2017,20 @@ contains
     end do
 
     ! xnecno is number of electrons from elements without molecules
-    fe = xnecno
+    where (tmolim) fe = xnecno
     fepe = log(fe) - log(pe)
+
+    where (tmolim)
+      ! K = f_H2 / f_H^2  in f-units
+      b = exp(H2%dis - fepe)
+      ! discriminant of  2K f_H^2 + fil_H f_H - abund_H = 0
+      s = sqrt(HI%fil**2 + 8.0*b*HI%abund)
+      ! stable root (avoids cancellation when K is small)
+      HI%f = 2.0*HI%abund / (HI%fil + s)
+      H2%f = 0.5*(HI%abund - HI%fil*HI%f)
+      fe = xnecno + HI%f * HI%ne
+      fepe = fe / pe
+    end where
 
     ! where (tmolim)
     !   b = 0.5 * H2%dis * fepe
@@ -2032,8 +2049,6 @@ contains
     !     HI%f = (xnecno - fe)*Hm%saha
     !   end where
     ! end where
-
-    ! fepe = fe / pe
 
     do i=1, self%nmolec
       where (tmolim) molecules(i)%f = molecules(i)%calc_f(fepe)
@@ -2147,6 +2162,8 @@ contains
     do i=1, self%nmolec
       where (tmolim)
         molecules(i)%f = molecules(i)%calc_f(fepe)
+      elsewhere
+        molecules(i)%f = 0
       end where
     end do
 

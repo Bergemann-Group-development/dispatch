@@ -388,7 +388,7 @@ contains
     select case(trim(self%key))
      case('H- BF')
       fakt = ion%n
-     case('H- FF')
+     case('H- FF', 'H2-', 'HE-')
       fakt = ion%n * pe
      case('H BF')
       if (.not. H_occupation_probability) then

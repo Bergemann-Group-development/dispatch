@@ -100,12 +100,6 @@ class MemmapList:
         slc[self.shape==1] = 0
         slc[self.caxis] = slice(None)
         return self[tuple(slc)]
-    
-    def flatten(self):
-        return np.array(self).flatten()
-    
-    def ravel(self):
-        return self.flatten()
 
     def __add__(self, other):
         return np.array(self) + other
@@ -119,5 +113,7 @@ class MemmapList:
     def __truediv__(self, other):
         return np.array(self) / other
     
-    def __transpose__(self):
-        return np.array(self).transpose()
+    def __getattr__(self, name):
+        if name.startswith('__'):
+            raise AttributeError(name)
+        return getattr(np.array(self), name)

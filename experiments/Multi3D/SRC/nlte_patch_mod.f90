@@ -628,7 +628,7 @@ contains
       call self%load6('pop_'//trim(keys(i)), run_dir=run_dir, alloc=mem)
       self%departures(i,:)%key = keys(i)
       dep => self%departures(i,1)
-      allocate(dep%mem, source=mem(:,:,:,:,2,j))
+      allocate(dep%mem, source=mem(:,:,:,:,2,1))
       call os%mem_register(storage_size(dep%mem), size(dep%mem), label='departures')
       dep%nlevel = size(mem,4)
       allocate(dep%ev(dep%nlevel))
@@ -644,7 +644,6 @@ contains
       dep => self%departures(atom%idep, 1)
       n = shape(adata%nstar)
       dep%nlevel = atom%nlevel
-      allocate(dep%ev, source=atom%ev)
       if (atom%precomputed) then
         if (.not. allocated(adata%b)) then
           call os%allocate(adata%b, shape(adata%nstar), label='b')
@@ -659,6 +658,7 @@ contains
           end do
         end do
       else
+        allocate(dep%ev, source=atom%ev)
         allocate(dep%mem(n(1), n(2), n(3), n(4)))
         call os%mem_register(storage_size(dep%mem), size(dep%mem), label='departures')
       endif

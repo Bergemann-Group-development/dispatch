@@ -9,7 +9,7 @@ MODULE op_math_mod
   interface find_closest
     module procedure find_closest4, find_closest8
   end interface find_closest
-    
+
   interface searchsorted
     module procedure searchsorted4, searchsorted8
   end interface searchsorted
@@ -251,7 +251,7 @@ contains
 
       endif
     else
-        idx = l
+      idx = l
     endif
   end FUNCTION BinarySearch4
 
@@ -273,7 +273,7 @@ contains
 
       endif
     else
-        idx = l
+      idx = l
     endif
   end FUNCTION BinarySearch8
 
@@ -311,7 +311,7 @@ contains
     !-----------------------------------------------------------------------------
     nnew = size(newx, 1)
     nold = size(xx, 1)
-    
+
     if (present(fill)) then
       left = fill
       right = fill
@@ -319,7 +319,7 @@ contains
       left = yy(1)
       right = yy(nold)
     endif
-  
+
     i = 1
     do ii=1, nnew
       do while (xx(i+1) < newx(ii))
@@ -329,7 +329,7 @@ contains
           exit
         endif
       end do
-  
+
       if (i == nold) then
         newy(ii:nnew) = right
         exit
@@ -354,7 +354,7 @@ contains
     nnew = size(newx, 1)
     nold = size(yy, 1)
     over_dx = 1 / dx
-  
+
     do i=1, nnew
       ratio = newx(i) * over_dx
       i1 = floor(ratio)
@@ -366,92 +366,109 @@ contains
   END SUBROUTINE interp1d_reg_period
 
   !===============================================================================
-  SUBROUTINE linterpolate_3d(f, fout, dx, dy, oldz, newx, newy, newz)
+  SUBROUTINE linterpolate_3d(f, fout, dx, dy, oldz, newx, newy, newz, pchip)
     real(4), intent(in),  dimension(:,:,:) :: f
     real(4), intent(out), dimension(:,:,:) :: fout
     real(8), intent(in) :: dx, dy
     real(4), dimension(:), intent(in) :: oldz
     real(8), dimension(:), intent(in) :: newx, newy, newz
-    real(4), dimension(:,:), allocatable :: fy
-    real(4), dimension(:,:,:), allocatable :: fz
+    logical, optional, intent(in) :: pchip
+    real(4), dimension(:,:,:), allocatable :: fx
+    real(4), dimension(:,:,:), allocatable :: fxy
     integer :: i,j,k, nx, ny, nz, ox,oy,oz
+    logical :: do_pchip
     !-----------------------------------------------------------------------------
     ox = size(f,1); nx = size(newx,1)
     oy = size(f,2); ny = size(newy,1)
     oz = size(f,3); nz = size(newz,1)
-    
-    allocate(fz(ox,oy,nz))
-    allocate(fy(ox,ny))
-
-    ! z-dimension linear interpolation
-    do j = 1, oy
-      do i = 1, ox
-        !call interp1d_sorted(oldz, f(i,j,:), newz, fz(i,j,:))
-        call pchip_mono4(oldz, f(i,j,:), real(newz), fz(i,j,:), sorted=.true.)
+    do_pchip = option(pchip, .true.)
+    allocate(fx(nx,oy,oz))
+    allocate(fxy(nx,ny,oz))
+    ! x-dimension interpolation
+    do k = 1, oz
+      do j = 1, oy
+        if (do_pchip) then
+          call pchip_mono4_reg_period(dx, f(:,j,k), newx, fx(:,j,k))
+        else
+          call interp1d_reg_period(dx, f(:,j,k), newx, fx(:,j,k))
+        endif
       end do
     end do
-
-    do k = 1, nz
-      ! y-dimension linear interpolation
-      do i = 1, ox
-        call interp1d_reg_period(dy, fz(i,:,k), newy, fy(i,:))
+    ! y-dimension interpolation
+    do k = 1, oz
+      do i = 1, nx
+        if (do_pchip) then
+          call pchip_mono4_reg_period(dy, fx(i,:,k), newy, fxy(i,:,k))
+        else
+          call interp1d_reg_period(dy, fx(i,:,k), newy, fxy(i,:,k))
+        endif
       end do
-      ! x-dimension linear interpolation
-      do j = 1, ny
-        call interp1d_reg_period(dx, fy(:,j), newx, fout(:,j,k))
+    end do
+    ! z-dimension interpolation
+    do j = 1, ny
+      do i = 1, nx
+        if (do_pchip) then
+          call pchip_mono4(oldz, fxy(i,j,:), real(newz), fout(i,j,:), sorted=.true.)
+        else
+          call interp1d_sorted(oldz, fxy(i,j,:), newz, fout(i,j,:))
+        endif
       end do
     end do
   END SUBROUTINE linterpolate_3d
-  
+
   !===============================================================================
-  SUBROUTINE linterpolate_3d_rotated(f, fout, dx, dy, oldz, newx, newy, newz, vec, bot2pivot, ray_offset)
+  SUBROUTINE linterpolate_3d_rotated(f, fout, dx, dy, oldz, newx, newy, newz, vec, bot2pivot, ray_offset, pchip)
     real(4), intent(in),  dimension(:,:,:) :: f
     real(4), intent(out), dimension(:,:,:) :: fout
     real(4), dimension(:), intent(in) :: oldz
     real(8), dimension(:), intent(in) :: newx, newy, newz
-    real(4), dimension(:,:), allocatable :: fy
-    real(4), dimension(:,:,:), allocatable :: fz
+    real(4), dimension(:,:,:), allocatable :: fx
+    real(4), dimension(:,:,:), allocatable :: fxy
     real(8), intent(in) :: dx, dy, ray_offset(2)
     real(8), intent(in) :: vec(3), bot2pivot
-    real(8) :: dz, height, delta(2), deltak(2), offset(2)
-    integer :: i,j,k, nx, ny, nz, ox,oy,oz
+    logical, optional, intent(in) :: pchip
+    real(8) :: dz, delta(2), deltam(2), offset(2)
+    integer :: i,j,m, nx, ny, nz, ox,oy,oz
+    logical :: do_pchip
     !-----------------------------------------------------------------------------
     ox = size(f,1); nx = size(newx,1)
     oy = size(f,2); ny = size(newy,1)
     oz = size(f,3); nz = size(newz,1)
-
+    do_pchip = option(pchip, .true.)
     dz = newz(2) - newz(1)
-
-    allocate(fz(ox,oy,nz))
-    allocate(fy(ox,ny))
-
-    ! z-dimension linear interpolation
-    do j = 1, oy
-      do i = 1, ox
-        !call interp1d_sorted(oldz, f(i,j,:), newz, fz(i,j,:))
-        call pchip_mono4(oldz, f(i,j,:), real(newz), fz(i,j,:), sorted=.true.)
-      end do
-    end do
-
+    allocate(fx(nx,oy,oz))
+    allocate(fxy(nx,ny,oz))
     delta = vec(1:2) / vec(3)
     offset = ray_offset
     if (size(newx)>1) offset(1) = offset(1) * newx(2)
     if (size(newy)>1) offset(2) = offset(2) * newy(2)
-
-    do k = 1, nz
-      height = k*dz ! height of plane as measured from bottom
-      deltak = (bot2pivot - height)*delta + offset
-
-      ! y-dimension linear interpolation
-      do i = 1, ox
-        !call interp1d_reg_period(dy, fz(i,:,k), newy + deltak(2), fy(i,:))
-        call pchip_mono4_reg_period(real(dy), fz(i,:,k), real(newy + deltak(2)), fy(i,:))
+    do m = 1, oz
+      deltam = (bot2pivot - oldz(m))*delta + offset
+      ! x-dimension linear interpolation
+      do j = 1, oy
+        if (do_pchip) then
+          call pchip_mono4_reg_period(dx, f(:,j,m), newx + deltam(1), fx(:,j,m))
+        else
+          call interp1d_reg_period(dx, f(:,j,m), newx + deltam(1), fx(:,j,m))
+        endif
       end do
-
-    ! x-dimension linear interpolation
-      do j = 1, ny
-        !call interp1d_reg_period(dx, fy(:,j), newx + deltak(1), fout(:,j,k))
-        call pchip_mono4_reg_period(real(dx), fy(:,j), real(newx + deltak(1)), fout(:,j,k))
+      ! y-dimension linear interpolation
+      do i = 1, nx
+        if (do_pchip) then
+          call pchip_mono4_reg_period(dy, fx(i,:,m), newy + deltam(2), fxy(i,:,m))
+        else
+          call interp1d_reg_period(dy, fx(i,:,m), newy + deltam(2), fxy(i,:,m))
+        endif
+      end do
+    end do
+    ! z-dimension interpolation
+    do j = 1, ny
+      do i = 1, nx
+        if (do_pchip) then
+          call pchip_mono4(oldz, fxy(i,j,:), real(newz), fout(i,j,:), sorted=.true.)
+        else
+          call interp1d_sorted(oldz, fxy(i,j,:), newz, fout(i,j,:))
+        endif
       end do
     end do
   END SUBROUTINE linterpolate_3d_rotated
@@ -465,9 +482,9 @@ contains
     !-----------------------------------------------------------------------------
     nold = size(old)
     nnew = size(new)
-  
+
     delta = nold / real(nnew)
-    
+
     do i = 1, nnew
       interp_index = (i - 1) * delta + 1.0
       j = modulo(floor(interp_index) - 1, nold) + 1
@@ -487,7 +504,7 @@ contains
     nnew = shape(new)
 
     allocate(tmp(nold(1), nnew(2)))
-  
+
     ! y-dimension periodic interpolation
     do i = 1, nold(1)
       call interp1d_periodic(old(i,:), tmp(i,:))
@@ -582,7 +599,7 @@ contains
       x = cam + root
     endif
   end FUNCTION solve_quadratic
-    
+
   !===============================================================================
   !  finds solution of system of linear equations
   !  with gaussian elimination with pivoting
@@ -673,11 +690,11 @@ contains
     ! reorder coefficients
 
     do i = 1,n
-        c(icol(i))=b(i)
+      c(icol(i))=b(i)
     end do
 
     do i = 1,n
-        b(i) = c(i)
+      b(i) = c(i)
     end do
 
   end SUBROUTINE lineq
@@ -895,14 +912,14 @@ contains
   ! Monotonic piecewise cubic hermite interpolation
   ! Coded by Richard Hoppe, July 2023
   !===============================================================================
-  PURE SUBROUTINE pchip_mono4(xx, yy, newx, newy, sorted)
+  SUBROUTINE pchip_mono4(xx, yy, newx, newy, sorted)
     real(4), intent(in) :: xx(:)            ! X values of the data points
     real(4), intent(in) :: yy(:)            ! Y values of the data points
     real(4), intent(in) :: newx(:)          ! X values to interpolate at
     real(4), intent(out) :: newy(:)         ! Interpolated Y values
-    real(4), allocatable :: dydx(:)         ! derivative
-    real(4), allocatable :: dx(:)
-    real(4), allocatable :: dy(:)
+    real(4), save, allocatable :: dydx(:)   ! derivative
+    real(4), save, allocatable :: dx(:)
+    real(4), save, allocatable :: dy(:)
     logical, intent(in), optional :: sorted
     logical :: is_sorted
     integer :: n                 ! Number of data points
@@ -912,15 +929,28 @@ contains
     integer :: imin, imax
     real(4) :: alpha, t1, t2, t3, p, a
     real(8) :: dydx8, d1, d2
+    !$omp threadprivate(dydx, dx, dy)
     !-----------------------------------------------------------------------------
     n = size(xx)
     n_interp = size(newx)
     is_sorted = option(sorted, .false.)
-    
-    allocate(dydx(n), source=0.)
-    allocate(dx(n-1))
-    allocate(dy(n-1))
-    
+
+    if (allocated(dydx)) then
+      if (size(dydx) /= n) then
+        deallocate(dydx)
+        deallocate(dx)
+        deallocate(dy)
+        allocate(dydx(n))
+        allocate(dx(n-1))
+        allocate(dy(n-1))
+      endif
+    else
+      allocate(dydx(n))
+      allocate(dx(n-1))
+      allocate(dy(n-1))
+    endif
+
+    dydx = 0.
     dx = xx(2:n) - xx(1:n-1)
     dy = yy(2:n) - yy(1:n-1)
 
@@ -933,30 +963,30 @@ contains
       dydx(1) = dy(1)/dx(1)
       dydx(2) = dydx(1)
     endif
-    
+
     do i=max(imin, 2), min(imax, n-1)
       if (dy(i-1) == 0 .or. dy(i) == 0) cycle
 
       d1 = dy(i-1)/dx(i-1)
       d2 = dy(i)/dx(i)
-      
+
       if (sign(1.d0, d1) == sign(1.d0, d2)) then
-          ! harmonic mean derivative
-          alpha = (1. + dx(i-1)/(dx(i) + dx(i-1))) / 3.0
-          dydx8 = d1*d2 / ((1. - alpha)*d1 + alpha*d2)
-          dydx(i) = real(dydx8)
+        ! harmonic mean derivative
+        alpha = (1. + dx(i-1)/(dx(i) + dx(i-1))) / 3.0
+        dydx8 = d1*d2 / ((1. - alpha)*d1 + alpha*d2)
+        dydx(i) = real(dydx8)
       endif
     end do
-    
+
     ! boundary slopes from quadratic polynomial using 2 points and 1 dydx
     if (imin == 1) then
       dydx(1) = 2.*dy(1)/dx(1) - dydx(2)
     endif
-    
+
     if (imax == n) then
       dydx(n) = 2.*dy(n-1)/dx(n-1) - dydx(n-1)
     endif
-    
+
     i = 1
     do j=1, n_interp
       if (is_sorted) then
@@ -970,31 +1000,30 @@ contains
       else
         i = searchsorted(xx, newx(j), outbounds_ok=.true.)
       endif
-      
+
       ! Calculate the interpolation parameter
       t1 = (newx(j) - xx(i)) / dx(i)
 
       t2 = t1*t1
       t3 = t2*t1
       p = 3.0*t2 - 2.0*t3
-  
-      newy(j) = (1.0 - p)*yy(i) + p*yy(i+1) + dx(i)*((t3 - 2.0*t2 + t1)*dydx(i) + (t3-t2)*dydx(i+1)) 
+
+      newy(j) = (1.0 - p)*yy(i) + p*yy(i+1) + dx(i)*((t3 - 2.0*t2 + t1)*dydx(i) + (t3-t2)*dydx(i+1))
     end do
-    deallocate(dydx, dx, dy)
   END SUBROUTINE pchip_mono4
 
   !===============================================================================
   ! Monotonic piecewise cubic hermite interpolation
   ! Coded by Richard Hoppe, July 2023
   !===============================================================================
-  PURE SUBROUTINE pchip_mono8(xx, yy, newx, newy, sorted)
+  SUBROUTINE pchip_mono8(xx, yy, newx, newy, sorted)
     real(8), intent(in) :: xx(:)            ! X values of the data points
     real(8), intent(in) :: yy(:)            ! Y values of the data points
     real(8), intent(in) :: newx(:)          ! X values to interpolate at
     real(8), intent(out) :: newy(:)         ! Interpolated Y values
-    real(8), allocatable :: dydx(:)         ! derivative
-    real(8), allocatable :: dx(:)
-    real(8), allocatable :: dy(:)
+    real(8), save, allocatable :: dydx(:)   ! derivative
+    real(8), save, allocatable :: dx(:)
+    real(8), save, allocatable :: dy(:)
     logical, intent(in), optional :: sorted
     logical :: is_sorted
     integer :: n                 ! Number of data points
@@ -1003,15 +1032,27 @@ contains
     integer :: i                 ! Loop index for data points
     integer :: imin, imax
     real(8) :: d1, d2, alpha, t1, t2, t3, p, a
+    !$omp threadprivate(dydx, dx, dy)
     !-----------------------------------------------------------------------------
     n = size(xx)
     n_interp = size(newx)
     is_sorted = option(sorted, .false.)
-    
-    allocate(dydx(n), source=0.d0)
-    allocate(dx(n-1))
-    allocate(dy(n-1))
-    
+
+    if (allocated(dydx)) then
+      if (size(dydx) /= n) then
+        deallocate(dydx)
+        deallocate(dx)
+        deallocate(dy)
+        allocate(dydx(n))
+        allocate(dx(n-1))
+        allocate(dy(n-1))
+      endif
+    else
+      allocate(dydx(n))
+      allocate(dx(n-1))
+      allocate(dy(n-1))
+    endif
+
     dx = xx(2:n) - xx(1:n-1)
     dy = yy(2:n) - yy(1:n-1)
 
@@ -1024,29 +1065,29 @@ contains
       dydx(1) = dy(1)/dx(1)
       dydx(2) = dydx(1)
     endif
-    
+
     do i=max(imin, 2), min(imax, n-1)
       if (dy(i-1) == 0 .or. dy(i) == 0) cycle
-      
+
       d1 = dy(i-1)/dx(i-1)
       d2 = dy(i)/dx(i)
-      
+
       if (sign(1.d0, d1) == sign(1.d0, d2)) then
-          ! harmonic mean derivative
-          alpha = (1. + dx(i-1)/(dx(i) + dx(i-1))) / 3.0
-          dydx(i) = 1. / ((1. - alpha)/d2 + alpha/d1)
+        ! harmonic mean derivative
+        alpha = (1. + dx(i-1)/(dx(i) + dx(i-1))) / 3.0
+        dydx(i) = 1. / ((1. - alpha)/d1 + alpha/d2)
       endif
     end do
-    
+
     ! boundary slopes from quadratic polynomial using 2 points and 1 dydx
     if (imin == 1) then
       dydx(1) = 2.*dy(1)/dx(1) - dydx(2)
     endif
-    
+
     if (imax == n) then
       dydx(n) = 2.*dy(n-1)/dx(n-1) - dydx(n-1)
     endif
-    
+
     i = 1
     do j=1, n_interp
       if (is_sorted) then
@@ -1060,62 +1101,85 @@ contains
       else
         i = searchsorted(xx, newx(j), outbounds_ok=.true.)
       endif
-      
+
       ! Calculate the interpolation parameter
       t1 = (newx(j) - xx(i)) / dx(i)
 
       t2 = t1*t1
       t3 = t2*t1
       p = 3.0*t2 - 2.0*t3
-  
-      newy(j) = (1.0 - p)*yy(i) + p*yy(i+1) + dx(i)*((t3 - 2.0*t2 + t1)*dydx(i) + (t3-t2)*dydx(i+1)) 
+
+      newy(j) = (1.0 - p)*yy(i) + p*yy(i+1) + dx(i)*((t3 - 2.0*t2 + t1)*dydx(i) + (t3-t2)*dydx(i+1))
     end do
-    deallocate(dydx, dx, dy)
   END SUBROUTINE pchip_mono8
 
   !===============================================================================
   ! Monotonic piecewise cubic hermite interpolation
   ! Coded by Richard Hoppe, July 2023
   !===============================================================================
-  PURE SUBROUTINE pchip_mono4_reg_period(dx, yy, newx, newy)
-    real(4), intent(in) :: dx               ! X spacing of the data points
+  SUBROUTINE pchip_mono4_reg_period(dx, yy, newx, newy)
+    real(8), intent(in) :: dx               ! X spacing of the data points
     real(4), intent(in) :: yy(:)            ! Y values of the data points
-    real(4), intent(in) :: newx(:)          ! X values to interpolate at
+    real(8), intent(in) :: newx(:)          ! X values to interpolate at
     real(4), intent(out) :: newy(:)         ! Interpolated Y values
-    real(4), allocatable :: dydx(:)         ! derivative
-    real(4), allocatable :: dy(:)
+    real(4), save, allocatable :: dydx(:)   ! derivative
+    real(4), save, allocatable :: dy(:)
     integer :: n                 ! Number of data points
     integer :: n_interp          ! Number of interpolation points
     integer :: j                 ! Loop index for interpolation points
     integer :: i, i1, i2         ! Loop index for data points
-    real(4) :: t1, t2, t3, p, over_dx, ratio
-    real(8) :: dydx8, d1, d2
+    real(4) :: t1, t2, t3, p, ratio, newdx
+    real(8) :: dydx8, d1, d2, over_dx
+    !$omp threadprivate(dydx, dy)
     !-----------------------------------------------------------------------------
     n = size(yy)
     n_interp = size(newx)
-    
-    allocate(dydx(n), source=0.)
-    allocate(dy(n))
-    
     over_dx = 1/dx
+
+    if (newx(1) == 0) then
+      newdx = newx(n_interp) / (n_interp - 1)
+      ratio = newdx * over_dx
+      if (abs(ratio - nint(ratio)) < 2.0 * epsilon(ratio)) then
+        ! newx is on the same grid as xx, just copy the values
+        do j=1, n_interp
+          i = modulo(nint(newx(j) * over_dx), n) + 1
+          newy(j) = yy(i)
+        end do
+        return
+      endif
+    endif
+
+    if (allocated(dydx)) then
+      if (size(dydx) /= n) then
+        deallocate(dydx)
+        deallocate(dy)
+        allocate(dydx(n))
+        allocate(dy(n))
+      end if
+    else
+      allocate(dydx(n))
+      allocate(dy(n))
+    end if
+
+    dydx = 0.
     dy(1:n-1) = yy(2:n) - yy(1:n-1)
     dy(n) = yy(1) - yy(n)
-    
+
     do i=1, n
-      i1 = modulo(i-1, n) + 1
-      i2 = modulo(i,   n) + 1
+      i1 = modulo(i-2, n) + 1
+      i2 = modulo(i-1, n) + 1
       if (dy(i1) == 0 .or. dy(i2) == 0) cycle
 
       d1 = dy(i1) * over_dx
       d2 = dy(i2) * over_dx
-      
+
       if (sign(1.d0, d1) == sign(1.d0, d2)) then
-          ! harmonic mean derivative
-          dydx8 = 2*d1*d2 / (d1 + d2)
-          dydx(i) = real(dydx8)
+        ! harmonic mean derivative
+        dydx8 = 2*d1*d2 / (d1 + d2)
+        dydx(i) = real(dydx8)
       endif
     end do
-    
+
     do j=1, n_interp
       ratio = newx(j) * over_dx
       i = floor(ratio)
@@ -1128,9 +1192,8 @@ contains
       t2 = t1*t1
       t3 = t2*t1
       p = 3.0*t2 - 2.0*t3
-  
-      newy(j) = (1.0 - p)*yy(i1) + p*yy(i2) + dx*((t3 - 2.0*t2 + t1)*dydx(i1) + (t3-t2)*dydx(i2)) 
+
+      newy(j) = (1.0 - p)*yy(i1) + p*yy(i2) + dx*((t3 - 2.0*t2 + t1)*dydx(i1) + (t3-t2)*dydx(i2))
     end do
-    deallocate(dydx, dy)
   END SUBROUTINE pchip_mono4_reg_period
 END MODULE op_math_mod

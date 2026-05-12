@@ -356,8 +356,8 @@ class Spectrum:
             xmin = ensure_unit(xmin, self.xunit)
             xmax = ensure_unit(xmax, self.xunit)
         elif slc is not None:
-            xmin = self.xdata[slc.start] if slc.start else xmin
-            xmax = self.xdata[slc.stop] if slc.stop else xmax
+            xmin = self.xdata[slc.start] if slc.start else self.xdata[0]
+            xmax = self.xdata[slc.stop-1] if slc.stop else self.xdata[-1]
         else:
             xmin = self.xdata[0]
             xmax = self.xdata[-1]
@@ -402,6 +402,7 @@ class Spectrum:
             # Interpolate to target grid
             newx = newx or s.xdata
             newy = np.interp(newx, cx, cy)
+            if relative: newx = newx - center
             return Spectrum(newx, newy, xref=sub_spec.xref, yunit=self.yunit)
 
         else:

@@ -689,9 +689,9 @@ contains
               Jnu = 0.5*(Jup(f,x,y,z,s) + Jdn(f,x,y,z,s))
               if (scattering_absorption) then
                 Bnu = blz / (1 - blz)
-                Jnu = (Jnu - Bnu)/blz ! because we already included scattering opacities in chi
-                ! we multiply eta by blz later on again
+                Jnu = Jnu - Bnu ! because we already included scattering opacities in chi
               endif
+              Jnu = Jnu / blz ! we multiply eta by blz later on again
             end associate
           end do
         end do
@@ -1588,7 +1588,7 @@ contains
     kernel1 = real(ray%upkern)
     dsup1 = 0.5*real(ray%dsup)
 
-    amr_boundary = amr .and. self%dir < 0
+    amr_boundary = amr/='' .and. self%dir < 0
     if (amr_boundary) then
       ds = self%ds
       if (associated(self%upstream)) ds = self%upstream%ds
@@ -1693,7 +1693,7 @@ contains
     lower = (self%position(3) - 0.5*self%size(3))*scaling%l + rorigin
     ds1 = self%ds(3) * scaling%l
 
-    amr_boundary = amr .and. self%dir < 0 .and. associated(self%upstream)
+    amr_boundary = amr/='' .and. self%dir < 0 .and. associated(self%upstream)
     if (amr_boundary) then
       ds2 = self%upstream%ds(3) * scaling%l
     endif
@@ -1778,7 +1778,7 @@ contains
     ds = self%ds(3) * scaling%l
     dsup1 = 0.5*ds/abs(vec(3))
 
-    amr_boundary = amr .and. self%dir < 0
+    amr_boundary = amr/='' .and. self%dir < 0
     if (amr_boundary) then
       if (associated(self%upstream)) ds = self%upstream%ds(3) * scaling%l
       dsup2 = 0.5*ds/abs(vec(3))

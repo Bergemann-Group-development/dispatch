@@ -2079,8 +2079,7 @@ H2+                 MIHALAS
 H2-                 JOHN
    ILOGL=0   KVADL=1   MINEX=0   MAXEX=0  NLATB= 5
       5000     20000    100000    316000   1000000
-   ILOGT=1   KVADT=1   MINET=0   MAXET=0  NTETB= 5   ITETA=0   ISCAL=1   ISTIM=0   
-   1e0
+   ILOGT=1   KVADT=1   MINET=0   MAXET=0  NTETB= 5   ITETA=0   ISCAL=0   ISTIM=0   
       500.     1000.     1500.     5750.    10000.
   2.16E-27  3.46E-26  8.66E-25  8.66E-24  8.66E-23
   1.76E-27  2.81E-26  7.03E-25  7.03E-24  7.03E-23
@@ -2095,8 +2094,7 @@ HE-                 SOMERVILLE
       8284      9113     10125     11391     13018     15188
      18225     22782     26036     30376     36451     45564
      60751     91127    113909    151878
-   ILOGT=1   KVADT=1   MINET=0   MAXET=0  NTETB=09   ITETA=1   ISCAL=1   ISTIM=0   
-  1e0
+   ILOGT=1   KVADT=1   MINET=0   MAXET=0  NTETB=09   ITETA=1   ISCAL=0   ISTIM=0   
        0.2       0.4       0.6       0.8       1.0       1.2
        2.0       2.8       3.6
   8.89E-30  1.21E-29  1.74E-29  2.73E-29  4.88E-29  5.62E-29

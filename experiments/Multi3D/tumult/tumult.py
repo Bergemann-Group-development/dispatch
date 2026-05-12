@@ -396,69 +396,7 @@ class tumult(object):
             i3 = self.i3
 
         Z = i3[f, :, :, ang].T
-        self.plot_cube_slice(Z, ang=ang, **kwargs)
-
-    #=====================================================================
-    def plot_cube_slice(self, cube, ix=None, iy=None, iz=None,
-                        ang=None, rasterized=True, shading='nearest', 
-                        show_labels=True, cmap='hot', rot90=0, **kwargs):
-        #-----------------------------------------------------------------
-        if iz is not None:
-            xx = self.xx + self.dx/2
-            yy = self.yy + self.dy/2
-            Z = cube[:,:,iz].T
-            xlabel = 'X [Mm]'
-            ylabel = 'Y [Mm]'
-        elif iy is not None:
-            xx = self.xx + self.dx/2
-            yy = self.zz - self.z0
-            Z = cube[:,iy,:].T
-            xlabel = 'X [Mm]'
-            ylabel = 'Z [Mm]'
-        elif ix is not None:
-            xx = self.yy + self.dy/2
-            yy = self.zz - self.z0
-            Z = cube[ix,:,:].T
-            xlabel = 'Y [Mm]'
-            ylabel = 'Z [Mm]'
-        elif cube.ndim == 2:
-            xx = self.xx + self.dx/2
-            yy = self.yy + self.dy/2
-            Z = cube.T
-            xlabel = 'X [Mm]'
-            ylabel = 'Y [Mm]'
-
-        if ang is None:
-            mux, muy, muz = (0.0, 0.0, 1.0)
-        else:
-            mux, muy, muz = self.vec[ang]
-
-        for i in range(rot90):
-            tmp = -xx
-            xx = yy
-            yy = tmp
-
-            tmp = -mux
-            mux = muy
-            muy = tmp
-            Z = np.rot90(Z, k=1)
-
-        X, Y = np.meshgrid(xx, yy)
-        plt.pcolormesh(X, Y, Z, shading=shading, rasterized=rasterized, cmap=cmap, **kwargs)
-        ax = plt.gca()
-
-        xfac = np.sqrt( (1 - mux**2)**2 + (mux*muy)**2 + (mux*muz)**2 )
-        yfac = np.sqrt( (1 - muy**2)**2 + (mux*muy)**2 + (muy*muz)**2 )
-        ax.set_aspect(yfac/xfac)
-
-        if show_labels:
-            plt.xlabel(xlabel)
-            plt.ylabel(ylabel)
-            if ang is not None:
-                plt.title(f'({mux:.2f},{muy:.2f},{muz:.2f})')
-        else:
-            plt.xticks([])
-            plt.yticks([])
+        self.atmos.plot_cube_slice(Z, ang=ang, **kwargs)
 
     #=====================================================================
     def get_pop(self, atom=0, ilvl=None):
@@ -508,13 +446,11 @@ class tumult(object):
         if ilvl is not None:
             dep = dep[...,ilvl]
 
-        dep = np.array(dep).squeeze()
-
-        if mean:
-            ltau, dep = self.atmos.get_ltau_mean(dep, zaxis=2)
+        if mean and self.atmos.dim == '3D':
+            ltau, dep = self.atmos.get_surf_mean('ltau', dep, axis=2)
         else:
-            ltau = self.atmos.ltau[...,::-1].squeeze()
-            dep = dep[:,:,::-1].squeeze()
+            ltau = self.atmos.ltau.squeeze()
+            dep = dep.squeeze()
 
         return ltau, dep
     
@@ -887,33 +823,6 @@ class tumult(object):
         else:
             label = ', '.join([label,] + [f'{k}={v:.2f}' for k, v in p.items()])
         return plt.plot(oxx, fitted, label=label, **plot_kwargs)
-    
-    #=================================================================
-    def to_multi1d_atmos(self, dir, name, vz=0.0, vmic=1.0):
-        df = pd.DataFrame()
-        df['Height'] = self.zz*1e3
-        df['Temp'] = self.temp
-        df['Ne'] = self.ne
-        df['V'] = vz
-        df['Vturb'] = vmic
-
-        f = open(dir + f'atmos.{name:}', 'w+')
-        f.write(f'{name:}\n')
-        f.write('HEIGHT\n')
-        f.write('4.4\n')
-        f.write(f'{len(df):}\n')
-        text = df[::-1].to_string(index=False, float_format='%.4e')
-        text = '*' + text[1:]
-        f.write(text)
-        f.close()
-
-        f = open(dir + f'dscale.{name:}', 'w+')
-        f.write(f'{name:}\n')
-        f.write('HEIGHT\n')
-        f.write(f'{len(df):} -1.0000e+01\n')
-        text = df.Height[::-1].to_string(index=False, float_format='%.4e')
-        f.write(text)
-        f.close()
     
     #=================================================================
     def get_duration(self, string=True):

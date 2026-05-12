@@ -19,7 +19,7 @@ MODULE composition_patch_mod
   USE composition_mod, only: composition_type, exclude_elements, only_elements, switch, &
   ref_lam, debug_opac, abundances, relative_abundances, mhd_eos, helium_scattering, &
   departure_pointer_t, read_departures, departure_indices, sample_back_opac, &
-  sample_back_opac_in_output, sample_linelist, opac_table_vmic
+  sample_back_opac_in_output, sample_linelist, opac_table_vmic, scattering_absorption
   USE atom_mod, only: m1d_legacy_mode, use_classic_col, level_partf
   USE nlte_patch_mod,  only: nlte_patch_t
   USE rt_patch_mod, only:rt_patch_t
@@ -84,7 +84,7 @@ SUBROUTINE read_composition_params ()
   dtemp, ldne, ldrho, ldtemp, tmolim, irwin_dis, opac_table_vmic, save_species, &
   ref_lam, debug_opac, abundances, relative_abundances, alpha_enhancement, r_process_enhancement, &
   disable_ga, disable_stark, disable_vdw, helium_scattering, sample_linelist, hydrogen_BPO, &
-  ga_fallback, eosmet
+  ga_fallback, eosmet, scattering_absorption
   namelist /linelist_params/ dlam, exclude_elements, line_lists, linelist_folder, &
   linelist_in_output, tolerance, only_elements
   ! ----------------------------------------------------------------------------

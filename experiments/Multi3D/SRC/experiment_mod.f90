@@ -74,14 +74,14 @@ CONTAINS
     self%ds(1:2) = self%size(1:2) / self%n(1:2)
     self%position(1:2) = 0.5d0*self%size(1:2)
 
-    if (amr) then
-      self%size(3)     = ia%sub_size(self%ipos(3)+1)
-      self%position(3) = ia%sub_pos (self%ipos(3)+1)
-      self%ds(3)       = self%size(3) / self%n(3)
-    else
+    if (amr=='') then
       self%ds(3)       = self%box(3) / self%nbox(3)
       self%size(3)     = self%ds(3) * self%n(3)
       self%position(3) = 0.5*self%size(3) + (self%zs - 1)*self%ds(3)
+    else
+      self%size(3)     = ia%sub_size(self%ipos(3)+1)
+      self%position(3) = ia%sub_pos (self%ipos(3)+1)
+      self%ds(3)       = self%size(3) / self%n(3)
     endif
 
     !-----------------------------------------------------------------------------

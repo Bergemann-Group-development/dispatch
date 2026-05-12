@@ -19,6 +19,8 @@ HC2 = 2.*HH*CC *1e24
 HCK = HH*CC/BK*1e8
 EK  = EE/BK
 
+hfs_names = ['de', 'w', 'f', 'ga', 'gv', 'gq']
+usecols = lambda col: col is None or col < len(hfs_names)
 
 class trans_class(object):
     def __init__(self, atom, kr, read_bf=True):
@@ -93,7 +95,8 @@ class trans_class(object):
             if self.iw > 0:
                 pos = self.atom.f.tell()
                 self.hyperfine = pd.read_csv(self.atom.f, nrows=self.iw, sep=r'\s+',
-                                             names=['de', 'w', 'f', 'ga', 'gv', 'gq'])
+                                            header=None, usecols=usecols, comment='*')
+                self.hyperfine.columns = hfs_names[:self.hyperfine.shape[1]]
                 self.atom.f.seek(pos)
                 for i in range(self.iw): self.atom.f.readline() # skip lines
             

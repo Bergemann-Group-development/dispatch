@@ -102,7 +102,7 @@ def kernel_width(res=None, vrot=None, vdop=None, zeta_rt=None, custom=None):
         custom = (xcust, ycust)
 
     vdop = convert_res_to_vdop(res, vdop)
-    half_widths = 0
+    half_widths = 0 * u.km / u.s
     if vrot is not None:
         half_widths += vrot
     if vdop is not None:

@@ -29,8 +29,8 @@ MODULE read_external_mod
     global_maxerr, global_pos, nz_total, use_rho, use_ne, atmos_format, amr, &
     atmos_file, use_vel
   USE m3d_halo_mod, only: m3d_halo_t
-  USE read_atmos_mod, only: ia, read_stagger, read_co5bold, read_stagger2, &
-    legacy_stagger_interp, read_marcs, read_multi_snapshot, read_text_1d, read_multi_1d, &
+  USE read_atmos_mod, only: ia, read_stagger, read_co5bold, read_stagger2, pchip_interpolation, &
+    log_interpolation, read_marcs, read_multi_snapshot, read_text_1d, read_multi_1d, &
     read_siu_bin, timestamp
   USE handyfuncs_mod
   USE ray_mod, only: one_dimensional
@@ -74,8 +74,8 @@ contains
     character(len=512) :: command
     character(len=512) :: save_file
     namelist /atmos_params/ atmos_file, dims, verbose, patches_per_mpi, FeH, &
-      save_atmos, atmos_format, vmic, use_rho, use_ne, nx, ny, nz, snap, &
-      legacy_stagger_interp, save_eos, amr, use_abnd, timestamp, use_vel, read_departures
+      save_atmos, atmos_format, vmic, use_rho, use_ne, nx, ny, nz, snap, pchip_interpolation, &
+      log_interpolation, save_eos, amr, use_abnd, timestamp, use_vel, read_departures
     !-----------------------------------------------------------------------------
     if (associated(task_list)) return
     call trace%begin('read_external_t%init')
@@ -94,7 +94,7 @@ contains
     end if
     call io%namelist_warning ('atmos_params', iostat)
 
-    if (amr) then
+    if (amr/='') then
       ! making sure that dims is not 1, otherwise amr has no effect
       dims = max(dims, 8)
     endif
@@ -192,9 +192,7 @@ contains
       endif
       self%n = [nx, ny, nz]
 
-      if (amr) then
-        call ia%setup_amr_mesh(dims, use_ne)
-      else
+      if (amr=='') then
         self%ds = self%size / self%n
         if (save_atmos) then
           open(file=trim(io%run_dir)//'atmos_mesh.txt', newunit=lunit, form='FORMATTED')
@@ -202,6 +200,8 @@ contains
           write(lunit, *) self%ds
           close(lunit)
         endif
+      else
+        call ia%setup_amr_mesh(amr, dims, use_ne)
       endif
     endif
 
@@ -259,7 +259,7 @@ contains
       if (all(self%dims==1)) call patch%task_t%set(bits%root_grid)
       call self%setup_patch(patch)
 
-      if (amr .and. save_atmos) then
+      if (amr/='' .and. save_atmos) then
         open(file=trim(io%run_dir)//'atmos_mesh.txt', newunit=lunit, form='FORMATTED', access='append')
         write(lunit, *) patch%n
         write(lunit, *) patch%ds

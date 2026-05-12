@@ -162,19 +162,19 @@ class AtmosClass(object):
     return pmsh
 
   #=====================================================================
-  def interp_ltau_surf(self, var, newx=None, log=False, power=None, zaxis=-1):
+  def interp_surf(self, xvar, yvar, newx=None, log=False, power=None, zaxis=-1):
     #-----------------------------------------------------------------
-    var = self.get_variable(var)
-    if zaxis != -1: var = np.moveaxis(var, zaxis, -1)
-    ltau = self.ltau
-    step = -1 if ltau[...,0].ravel()[0] > ltau[...,-1].ravel()[0] else 1
-    xx = ltau[...,::step].copy()
-    yy = var[...,::step].copy()
+    xvar = self.get_variable(xvar)
+    yvar = self.get_variable(yvar)
+    if zaxis != -1: yvar = np.moveaxis(yvar, zaxis, -1)
+    step = -1 if xvar[...,0].ravel()[0] > xvar[...,-1].ravel()[0] else 1
+    xx = xvar[...,::step].copy()
+    yy = yvar[...,::step].copy()
     if log: yy = np.log(yy)
     if power: yy = yy**power
     if newx is None:
         axis = tuple(i for i in range(xx.ndim-1))
-        newx = np.mean(xx, axis=axis)
+        newx = np.mean(xvar, axis=axis)
     newy = interp_tau(newx, xx, yy)
     if power: newy = newy**(1/power)
     if log: newy = np.exp(newy)
@@ -217,27 +217,29 @@ class AtmosClass(object):
     else:
         return plt.plot(xx, yy, marker=marker, linestyle=linestyle,
                         rasterized=rasterized, **kwargs)
-
+  
   #=====================================================================
-  def get_ltau_mean(self, var, log=False, newx=None, power=None, **kwargs):
+  def get_surf_mean(self, xvar, yvar, newx=None, log=False, power=None, axis=-1, **kwargs):
     #-----------------------------------------------------------------
-    var = self.get_variable(var)
-    if self.dim == '3D':
-        newx, yy3d = self.interp_ltau_surf(var, newx=newx, log=log, power=power, **kwargs)
-        axis = tuple(i for i in range(yy3d.ndim-1))
-        yy1d = advanced_mean(yy3d, axis=axis, log=log, power=power)
-    else:
-        if newx is None: newx = self.ltau[::-1]
-        step = -1 if self.ltau[0] > self.ltau[-1] else 1
-        yy1d = np.interp(newx, self.ltau[::step], var[::step])
+    xvar = self.get_variable(xvar)
+    yvar = self.get_variable(yvar)
 
-    return newx, yy1d
+    if self.dim == '3D':
+        newx, yy3d = self.interp_surf(xvar, yvar, newx=newx, log=log, power=power, zaxis=axis, **kwargs)
+        axis = tuple(np.delete(np.arange(yy3d.ndim), axis))
+        newy = advanced_mean(yy3d, axis=axis, log=log, power=power)
+    else:
+        newx = newx or xvar
+        step = -1 if xvar[0] > xvar[-1] else 1
+        newy = np.interp(newx, xvar[::step], yvar[::step])
+
+    return newx, newy
   
   #=====================================================================
   def plot_ltau_mean(self, var, log=False, newx=None, xmin=None, xmax=None,
                       ymin=None, ymax=None, power=None, **kwargs):
     #-----------------------------------------------------------------
-    xx, yy = self.get_ltau_mean(var, log=log, newx=newx, power=power)
+    xx, yy = self.get_surf_mean('ltau', var, log=log, newx=newx, power=power)
     xx, yy = crop_inputs(xx, yy, xmin, xmax, ymin, ymax)
     return plt.plot(xx, yy, **kwargs)
   
@@ -279,7 +281,7 @@ class AtmosClass(object):
 
         if self.dim == '3D':
             newx = np.array([ltau])
-            _, yy = self.interp_ltau_surf(var, newx=newx, log=log, zaxis=zaxis)
+            _, yy = self.interp_surf(self.ltau, var, newx=newx, log=log, zaxis=zaxis)
         else:
             ltau1d = self.ltau
             step = -1 if ltau1d[0] > ltau1d[-1] else 1
@@ -297,12 +299,83 @@ class AtmosClass(object):
         plt.axvline(mean, ls='--', color=color)
 
     return plt.hist(yy.ravel(), color=color, **kwargs)
+  
+  #=====================================================================
+  def plot_cube_slice(self, cube, ix=None, iy=None, iz=None,
+                      ang=None, rasterized=True, shading='nearest', 
+                      show_labels=True, cmap='hot', rot90=0, **kwargs):
+      #-----------------------------------------------------------------
+      if iz is not None:
+          xx = self.xx + self.dx/2
+          yy = self.yy + self.dy/2
+          Z = cube[:,:,iz].T
+          xlabel = 'X [Mm]'
+          ylabel = 'Y [Mm]'
+      elif iy is not None:
+          xx = self.xx + self.dx/2
+          yy = self.zz - self.z0
+          Z = cube[:,iy,:].T
+          xlabel = 'X [Mm]'
+          ylabel = 'Z [Mm]'
+      elif ix is not None:
+          xx = self.yy + self.dy/2
+          yy = self.zz - self.z0
+          Z = cube[ix,:,:].T
+          xlabel = 'Y [Mm]'
+          ylabel = 'Z [Mm]'
+      elif cube.ndim == 2:
+          xx = self.xx + self.dx/2
+          yy = self.yy + self.dy/2
+          Z = cube.T
+          xlabel = 'X [Mm]'
+          ylabel = 'Y [Mm]'
+
+      if ang is None:
+          mux, muy, muz = (0.0, 0.0, 1.0)
+      else:
+          mux, muy, muz = self.run.vec[ang]
+
+      for i in range(rot90):
+          tmp = -xx
+          xx = yy
+          yy = tmp
+
+          tmp = -mux
+          mux = muy
+          muy = tmp
+          Z = np.rot90(Z, k=1)
+
+      X, Y = np.meshgrid(xx, yy)
+      plt.pcolormesh(X, Y, Z, shading=shading, rasterized=rasterized, cmap=cmap, **kwargs)
+      ax = plt.gca()
+
+      xfac = np.sqrt( (1 - mux**2)**2 + (mux*muy)**2 + (mux*muz)**2 )
+      yfac = np.sqrt( (1 - muy**2)**2 + (mux*muy)**2 + (muy*muz)**2 )
+      ax.set_aspect(yfac/xfac)
+
+      if show_labels:
+          plt.xlabel(xlabel)
+          plt.ylabel(ylabel)
+          if ang is not None:
+              plt.title(f'({mux:.2f},{muy:.2f},{muz:.2f})')
+      else:
+          plt.xticks([])
+          plt.yticks([])
 
   #=================================================================
-  def to_dispatch1d_atmos(self, file, vmic=1.0, FeH=''):
-    ltau, temp = self.get_ltau_mean('temp', power=4)
-    _, ne      = self.get_ltau_mean('ne',   log=True)
-    _, rho     = self.get_ltau_mean('rho',  log=True)
+  def to_dispatch1d_atmos(self, file, vmic=None, FeH=''):
+    ltau, temp = self.get_surf_mean('ltau', 'temp', log=True)
+    _, ne      = self.get_surf_mean('ltau', 'ne',   log=True)
+    _, rho     = self.get_surf_mean('ltau', 'rho',  log=True)
+
+    if vmic is None:
+      vx = self.get_surf_mean('ltau', 'vx')[1]**2
+      vy = self.get_surf_mean('ltau', 'vy')[1]**2
+      vz = self.get_surf_mean('ltau', 'vz')[1]**2
+      vx2 = self.get_surf_mean('ltau', 'vx', power=2)[1]**2
+      vy2 = self.get_surf_mean('ltau', 'vy', power=2)[1]**2
+      vz2 = self.get_surf_mean('ltau', 'vz', power=2)[1]**2
+      vmic = 1e-5 * np.sqrt(((vx2 - vx) + (vy2 - vy) + (vz2 - vz)) / 3)
 
     df = pd.DataFrame()
     df['lTau'] = ltau

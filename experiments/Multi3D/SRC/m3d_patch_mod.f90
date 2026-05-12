@@ -27,7 +27,7 @@ MODULE m3d_patch_mod
     USE spectrum_mod, only: nu_tolerance
     USE atom_mod, only: atom_type, atomic_spectrum_type, lse_no_pivot, lse_solver, &
                         nq_fac, cswitch, ng_step, ng_start, ng_global
-    USE composition_mod, only: composition_type, scattering_absorption, helium_scattering, departure_pointer_t
+    USE composition_mod, only: composition_type, departure_pointer_t
     USE ray_mod, only: one_dimensional, set_carlson_quadratures, set_radau_quadratures, set_lobatto_quadratures, &
                        set_gauss_quadratures, set_custom_quadratures, set_grid_quadratures
     USE m3d_debug_mod
@@ -139,7 +139,8 @@ MODULE m3d_patch_mod
     logical, public, save :: overlapping_bb_in_output=.true., detailed_absmet=.false.
     logical, public, save :: absmet_in_output=.false., column_by_column=.false.
     logical, public, save :: print_start=.false., print_send=.false.
-    logical, public, save :: Jnu_to_file=.true., amr=.true.
+    logical, public, save :: Jnu_to_file=.true.
+    character, public, save :: amr='P'
     logical, public, save :: rotate_atmos=.false.
     logical, public, save :: make_eos=.false.
     logical, public, save :: overrelax=.false.
@@ -171,7 +172,7 @@ MODULE m3d_patch_mod
     pivot_z, save_resolved, overrelax, save_cntrbf, depression_cntrbf, &
     absmet_in_output, print_lock, make_eos, ng_step, ng_start, ng_global, &
     column_by_column, rotate_atmos, Jnu_to_file, preconditioning, &
-    save_inu, save_chi, save_Snu, save_Jnu, scattering_absorption, &
+    save_inu, save_chi, save_Snu, save_Jnu, &
     long_scheme, long_ntheta, long_nphi, short_scheme, short_ntheta, short_nphi, &
     long_solver, fixed_Jnu
 
