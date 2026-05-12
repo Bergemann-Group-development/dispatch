@@ -2029,7 +2029,7 @@ contains
       HI%f = 2.0*HI%abund / (HI%fil + s)
       H2%f = 0.5*(HI%abund - HI%fil*HI%f)
       fe = xnecno + HI%f * HI%ne
-      fepe = fe / pe
+      fepe = log(fe) - log(pe)
     end where
 
     ! where (tmolim)
