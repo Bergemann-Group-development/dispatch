@@ -2587,7 +2587,8 @@ CO-     John, MNRAS 172, 305 (1975)                         (37) [21]
 H2O-    John, MNRAS 172, 305 (1975) added by BPz 30/09-1996 (38) [22]
    ILOGL=1   KVADL=1   MINEX=0   MAXEX=0  NLATB=06           to Vacuum 98-05 /BE
   10002.74  15004.10  25006.82  50013.63 100027.27 2100572.5
-   ILOGT=1   KVADT=1   MINET=0   MAXET=0  NTETB=03   ITETA=0   ISCAL=0   ISTIM=0    should be no extrapolation 
+   ILOGT=1   KVADT=1   MINET=0   MAXET=0  NTETB=03   ITETA=0   ISCAL=1   ISTIM=1    should be no extrapolation 
+   1e-26
      1000.     2500.     5000.                              
       29.2      55.2      126.      394.     1247.   549930.
        4.5       8.4      18.5       53.      163.    71880.
