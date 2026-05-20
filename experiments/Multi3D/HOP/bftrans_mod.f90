@@ -242,8 +242,9 @@ contains
             t = temp(x,y,z)
             in_bounds = .true.
             quadratic = .false.
-            if (.not. self%minet) in_bounds = t > self%mint
-            if (.not. self%maxet) in_bounds = t < self%maxt
+
+            if (.not. self%minet) in_bounds = in_bounds .and. (t > self%mint)
+            if (.not. self%maxet) in_bounds = in_bounds .and. (t < self%maxt)
 
             if (in_bounds) then
               t = newt(x,y,z)
