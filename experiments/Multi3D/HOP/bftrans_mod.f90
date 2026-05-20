@@ -249,7 +249,7 @@ contains
               t = newt(x,y,z)
               if (t < self%tt(1)) then
                 it = 1
-              elseif (t > self%tt(self%ntt)) then
+              elseif (t >= self%tt(self%ntt)) then
                 it = self%ntt - 1
               else
                 do it=1, self%ntt-1
@@ -300,11 +300,7 @@ contains
                     i = iw(f)
                     y1 = yy(i)
                     y2 = yy(i+1)
-                    if (quad(f)) then
-                      y3 = yy(i+2)
-                    else
-                      y3 = 0
-                    endif
+                    y3 = yy(min(i+2, self%nnu))
                   endif
                   if (i /= 0) then
                     ab(f) = sum([y1, y2, y3]*lagrange(:,f))
