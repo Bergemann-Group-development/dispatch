@@ -84,18 +84,15 @@ contains
 
   !====================================================================================
   SUBROUTINE unequal_intervals(n, i, ni, start, end)
-    integer, intent(in) :: n, i, ni
+    integer, intent(in)  :: n, i, ni
     integer, intent(out) :: start, end
     integer :: nv, md, j
-    !-----------------------------------------------------------------------------
-    nv = n / ni
-    md = mod(n, ni)
-    j = mod(abs(i)-1, ni)+1
-    start = (j-1)*nv + 1 + min(md, j-1)
-    if (j <= md) then
-      nv = nv + 1
-    endif
-    end = start + nv - 1
+    !---------------------------------------------------------------------------
+    nv    = n / ni
+    md    = mod(n, ni)
+    j     = mod(abs(i)-1, ni) + 1
+    start = (j-1)*nv + min(md, j-1) + 1
+    end   =  j   *nv + min(md, j)
   END SUBROUTINE unequal_intervals
 
   !===============================================================================
@@ -673,20 +670,28 @@ contains
   END SUBROUTINE truncate_bool_array
 
   ! ==============================================================================
-  SUBROUTINE check_array_core_dp(arr, arr_shape, label, check_zero, abort, ok)
+  SUBROUTINE check_array_core_dp(arr, arr_shape, label, abort, check_zero, check_negative, ok)
     real(8), intent(in), dimension(:) :: arr
     integer, intent(in), dimension(:) :: arr_shape
     character(len=*), intent(in) :: label
-    logical, intent(in) :: check_zero, abort
+    logical, intent(in) :: abort
+    logical, intent(in), optional :: check_zero, check_negative
     logical, optional, intent(out) :: ok
     
-    logical :: has_issue
+    logical :: has_issue, do_check_zero, do_check_negative
     integer :: i, d, remainder
     integer, dimension(size(arr_shape)) :: idx
     ! ----------------------------------------------------------------------
     has_issue = .false.
+    do_check_zero = .false.
+    do_check_negative = .false.
+    if (present(check_zero)) do_check_zero = check_zero
+    if (present(check_negative)) do_check_negative = check_negative
     do i = 1, size(arr)
-      if (arr(i) /= arr(i) .or. arr(i) > inf8 .or. (check_zero .and. arr(i) == 0.d0)) then
+      if (arr(i) /= arr(i) .or. arr(i) > inf8 &
+      .or. (do_check_zero .and. arr(i) == 0.d0) &
+      .or. (do_check_negative .and. arr(i) < 0.d0)) &
+      then
         has_issue = .true.
         remainder = i - 1
         do d = 1, size(arr_shape)
@@ -698,8 +703,10 @@ contains
           print *, 'ERROR: NaN in ', label, ' at position ', idx
         elseif (arr(i) > inf8) then
           print *, 'ERROR: Infinity in ', label, ' at position ', idx
-        elseif (check_zero .and. arr(i) == 0.d0) then
+        elseif (do_check_zero .and. arr(i) == 0.d0) then
           print *, 'ERROR: Zero in ', label, ' at position ', idx
+        elseif (do_check_negative .and. arr(i) < 0.d0) then
+          print *, 'ERROR: Negative value in ', label, ' at position ', idx
         endif
       end if
     end do
@@ -711,20 +718,27 @@ contains
     end if
   END SUBROUTINE check_array_core_dp
 
-  SUBROUTINE check_array_core_sp(arr, arr_shape, label, check_zero, abort, ok)
+  SUBROUTINE check_array_core_sp(arr, arr_shape, label, abort, check_zero, check_negative, ok)
     real(4), intent(in), dimension(:) :: arr
     integer, intent(in), dimension(:) :: arr_shape
     character(len=*), intent(in) :: label
-    logical, intent(in) :: check_zero, abort
+    logical, intent(in) :: abort
+    logical, intent(in), optional :: check_zero, check_negative
     logical, optional, intent(out) :: ok
     
-    logical :: has_issue
+    logical :: has_issue, do_check_zero, do_check_negative
     integer :: i, d, remainder
     integer, dimension(size(arr_shape)) :: idx
     ! ----------------------------------------------------------------------
     has_issue = .false.
+    do_check_zero = .false.
+    do_check_negative = .false.
+    if (present(check_zero)) do_check_zero = check_zero
+    if (present(check_negative)) do_check_negative = check_negative
     do i = 1, size(arr)
-      if (arr(i) /= arr(i) .or. arr(i) > inf4 .or. (check_zero .and. arr(i) == 0.0)) then
+      if (arr(i) /= arr(i) .or. arr(i) > inf4 &
+        .or. (do_check_zero .and. arr(i) == 0.0) &
+        .or. (do_check_negative .and. arr(i) < 0.0)) then
         has_issue = .true.
         remainder = i - 1
         do d = 1, size(arr_shape)
@@ -736,8 +750,10 @@ contains
           print *, 'ERROR: NaN in ', label, ' at position ', idx
         elseif (arr(i) > inf4) then
           print *, 'ERROR: Infinity in ', label, ' at position ', idx
-        elseif (check_zero .and. arr(i) == 0.0) then
+        elseif (do_check_zero .and. arr(i) == 0.0) then
           print *, 'ERROR: Zero in ', label, ' at position ', idx
+        elseif (do_check_negative .and. arr(i) < 0.0) then
+          print *, 'ERROR: Negative value in ', label, ' at position ', idx
         endif
       end if
     end do
@@ -750,83 +766,159 @@ contains
   END SUBROUTINE check_array_core_sp
 
   ! ==============================================================================
-  SUBROUTINE check_1d_array_dp(arr, label, check_zero, abort, ok)
+  SUBROUTINE check_1d_array_dp(arr, label, abort, check_zero, check_negative, ok)
     real(8), intent(in), dimension(:) :: arr
     character(len=*), intent(in) :: label
-    logical, intent(in) :: check_zero, abort
+    logical, intent(in) :: abort
+    logical, intent(in), optional :: check_zero, check_negative
     logical, optional, intent(out) :: ok
     ! ----------------------------------------------------------------------
-    call check_array_core_dp(arr, shape(arr), label, check_zero, abort, ok)
+    call check_array_core_dp(arr, shape(arr), label, abort, check_zero, check_negative, ok)
   END SUBROUTINE check_1d_array_dp
 
   ! ==============================================================================
-  SUBROUTINE check_2d_array_dp(arr, label, check_zero, abort, ok)
+  SUBROUTINE check_2d_array_dp(arr, label, abort, check_zero, check_negative, ok)
     real(8), intent(in), dimension(:,:) :: arr
     character(len=*), intent(in) :: label
-    logical, intent(in) :: check_zero, abort
+    logical, intent(in) :: abort
+    logical, intent(in), optional :: check_zero, check_negative
     logical, optional, intent(out) :: ok
     ! ----------------------------------------------------------------------
-    call check_array_core_dp(reshape(arr, [size(arr)]), shape(arr), label, check_zero, abort, ok)
+    call check_array_core_dp(reshape(arr, [size(arr)]), shape(arr), label, abort, check_zero, check_negative, ok)
   END SUBROUTINE check_2d_array_dp
 
   ! ==============================================================================
-  SUBROUTINE check_3d_array_dp(arr, label, check_zero, abort, ok)
+  SUBROUTINE check_3d_array_dp(arr, label, abort, check_zero, check_negative, ok)
     real(8), intent(in), dimension(:,:,:) :: arr
     character(len=*), intent(in) :: label
-    logical, intent(in) :: check_zero, abort
+    logical, intent(in) :: abort
+    logical, intent(in), optional :: check_zero, check_negative
     logical, optional, intent(out) :: ok
     ! ----------------------------------------------------------------------
-    call check_array_core_dp(reshape(arr, [size(arr)]), shape(arr), label, check_zero, abort, ok)
+    call check_array_core_dp(reshape(arr, [size(arr)]), shape(arr), label, abort, check_zero, check_negative, ok)
   END SUBROUTINE check_3d_array_dp
 
   ! ==============================================================================
-  SUBROUTINE check_4d_array_dp(arr, label, check_zero, abort, ok)
+  SUBROUTINE check_4d_array_dp(arr, label, abort, check_zero, check_negative, ok)
     real(8), intent(in), dimension(:,:,:,:) :: arr
     character(len=*), intent(in) :: label
-    logical, intent(in) :: check_zero, abort
+    logical, intent(in) :: abort
+    logical, intent(in), optional :: check_zero, check_negative
     logical, optional, intent(out) :: ok
     ! ----------------------------------------------------------------------
-    call check_array_core_dp(reshape(arr, [size(arr)]), shape(arr), label, check_zero, abort, ok)
+    call check_array_core_dp(reshape(arr, [size(arr)]), shape(arr), label, abort, check_zero, check_negative, ok)
   END SUBROUTINE check_4d_array_dp
 
   ! ==============================================================================
-  SUBROUTINE check_1d_array_sp(arr, label, check_zero, abort, ok)
+  SUBROUTINE check_1d_array_sp(arr, label, abort, check_zero, check_negative, ok)
     real(4), intent(in), dimension(:) :: arr
     character(len=*), intent(in) :: label
-    logical, intent(in) :: check_zero, abort
+    logical, intent(in) :: abort
+    logical, intent(in), optional :: check_zero, check_negative
     logical, optional, intent(out) :: ok
     ! ----------------------------------------------------------------------
-    call check_array_core_sp(arr, shape(arr), label, check_zero, abort, ok)
+    call check_array_core_sp(arr, shape(arr), label, abort, check_zero, check_negative, ok)
   END SUBROUTINE check_1d_array_sp
 
   ! ==============================================================================
-  SUBROUTINE check_2d_array_sp(arr, label, check_zero, abort, ok)
+  SUBROUTINE check_2d_array_sp(arr, label, abort, check_zero, check_negative, ok)
     real(4), intent(in), dimension(:,:) :: arr
     character(len=*), intent(in) :: label
-    logical, intent(in) :: check_zero, abort
+    logical, intent(in) :: abort
+    logical, intent(in), optional :: check_zero, check_negative
     logical, optional, intent(out) :: ok
     ! ----------------------------------------------------------------------
-    call check_array_core_sp(reshape(arr, [size(arr)]), shape(arr), label, check_zero, abort, ok)
+    call check_array_core_sp(reshape(arr, [size(arr)]), shape(arr), label, abort, check_zero, check_negative, ok)
   END SUBROUTINE check_2d_array_sp
 
   ! ==============================================================================
-  SUBROUTINE check_3d_array_sp(arr, label, check_zero, abort, ok)
+  SUBROUTINE check_3d_array_sp(arr, label, abort, check_zero, check_negative, ok)
     real(4), intent(in), dimension(:,:,:) :: arr
     character(len=*), intent(in) :: label
-    logical, intent(in) :: check_zero, abort
+    logical, intent(in) :: abort
+    logical, intent(in), optional :: check_zero, check_negative
     logical, optional, intent(out) :: ok
     ! ----------------------------------------------------------------------
-    call check_array_core_sp(reshape(arr, [size(arr)]), shape(arr), label, check_zero, abort, ok)
+    call check_array_core_sp(reshape(arr, [size(arr)]), shape(arr), label, abort, check_zero, check_negative, ok)
   END SUBROUTINE check_3d_array_sp
 
   ! ==============================================================================
-  SUBROUTINE check_4d_array_sp(arr, label, check_zero, abort, ok)
+  SUBROUTINE check_4d_array_sp(arr, label, abort, check_zero, check_negative, ok)
     real(4), intent(in), dimension(:,:,:,:) :: arr
     character(len=*), intent(in) :: label
-    logical, intent(in) :: check_zero, abort
+    logical, intent(in) :: abort
+    logical, intent(in), optional :: check_zero, check_negative
     logical, optional, intent(out) :: ok
     ! ----------------------------------------------------------------------
-    call check_array_core_sp(reshape(arr, [size(arr)]), shape(arr), label, check_zero, abort, ok)
+    call check_array_core_sp(reshape(arr, [size(arr)]), shape(arr), label, abort, check_zero, check_negative, ok)
   END SUBROUTINE check_4d_array_sp
+
+
+  ! ==============================================================================
+  PURE SUBROUTINE symmetric_log_grid(q0, qmax, q)
+    ! Build a symmetric log-spaced grid with preferred-number mantissas
+    ! (1, 1.5, 2, 3, 4, 6, 8) per decade, mirrored about zero.
+    ! The endpoints are snapped to the nearest preferred mantissa.
+    ! Output q has the shape  [-q_n, ..., -q_1, 0, q_1, ..., q_n].
+    ! ----------------------------------------------------------------------
+    real(8),              intent(in)  :: q0, qmax
+    real(8), allocatable, intent(out) :: q(:)
+
+    real(8), parameter :: mantissas(*) = &
+        [1.0_8, 1.5_8, 2.0_8, 3.0_8, 4.0_8, 6.0_8, 8.0_8]
+    integer,  parameter :: nref = size(mantissas)
+
+    real(8) :: ref(nref)
+    real(8) :: lq0, lqm, r0, rm, d0, dm
+    integer  :: istart, iend, d, n_pos, n_total, k
+    real(8), allocatable :: pos(:)
+
+    ! Reference mantissas in log space
+    ref = log10(mantissas)
+
+    ! Decade / remainder split.
+    lq0 = log10(q0)
+    d0  = floor(lq0)
+    r0  = lq0 - d0
+
+    lqm = log10(qmax)
+    dm  = floor(lqm)
+    rm  = lqm - dm
+
+    ! Closest mantissa indices.
+    istart = minloc(abs(ref - r0), dim=1)
+    iend   = minloc(abs(ref - rm), dim=1)
+
+    ! Build the positive side.
+    if (nint(d0) == nint(dm)) then
+        n_pos = iend - istart + 1
+        allocate(pos(n_pos))
+        pos = 10.0_8**(d0 + ref(istart:iend))
+    else
+        n_pos = (nref - istart + 1) &
+              + (nint(dm) - nint(d0) - 1)*nref &
+              + iend
+        allocate(pos(n_pos))
+
+        k = 0
+        ! Tail of the first decade.
+        pos(k+1 : k+nref-istart+1) = 10.0_8**(d0 + ref(istart:nref))
+        k = k + nref - istart + 1
+
+        ! Full intermediate decades.
+        do d = nint(d0) + 1, nint(dm) - 1
+            pos(k+1 : k+nref) = 10.0_8**(real(d, 8) + ref)
+            k = k + nref
+        end do
+
+        ! Head of the last decade.
+        pos(k+1 : k+iend) = 10.0_8**(dm + ref(1:iend))
+    end if
+
+    ! Mirror about zero.
+    n_total = 2*n_pos + 1
+    allocate(q(n_total))
+    q = [ -pos(n_pos:1:-1), 0.0_8, pos ]
+  END SUBROUTINE symmetric_log_grid
 
 END MODULE handyfuncs_mod

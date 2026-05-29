@@ -3,6 +3,7 @@ MODULE trans_mod
   USE bbtrans_mod
   USE op_math_mod, only: searchsorted
   USE mmath_mod, only: hermite_interpolation, hermite_derivative
+  USE handyfuncs_mod, only: symmetric_log_grid
   ! *******************************************************************
   !
   !     Contains variables connected to the atom(s)
@@ -136,11 +137,11 @@ contains
 
   !====================================================================================
   SUBROUTINE get_nu(self, qnorm, nu, legacy)
-    class(line_type), intent(in)  :: self
+    class(line_type), intent(inout)  :: self
     real(8), intent(in) :: qnorm
-    real(8), intent(out), dimension(:) :: nu
-    logical, intent(in) :: legacy
+    real(8), intent(inout), dimension(:), pointer, contiguous :: nu
     real(8), dimension(:), allocatable :: q
+    logical, intent(in) :: legacy
     real(8) :: dq, a, qmax, q0
     integer :: i, nnu
     logical :: linear
@@ -148,30 +149,39 @@ contains
     q0   = self%q0
     qmax = self%qmax
     nnu  = self%nnu
-    linear = qmax.le.q0
+    if (nnu < 0) then
+      call symmetric_log_grid(q0, qmax, q)
+      self%nnu = size(q)
+      ! convert to [Hz]
+      allocate(nu(self%nnu))
+      q = (CC / self%nu0 * CM_TO_AA) - q
+      nu = CC / (q * AA_TO_CM)
+    else
+      linear = qmax.le.q0
 
-    if(.not. linear) then
-      a = 10.**(q0+.5)
-      qmax = log10(a*max(0.5,qmax-q0-0.5))
-      a = 1/a
-    endif
-
-    allocate(q(nnu))
-    dq = 2.*qmax / (nnu-1)
-    q = [(i*dq - qmax, i=0, nnu-1)]
-
-    if(.not. linear) then
-      if (legacy) then
-        q = q + a*sign(1.d0, q)*(10.**abs(q) - 1)
-      else
-        q = q + a*(10.**q - 10.**(-q))
+      if(.not. linear) then
+        a = 10.**(q0+.5)
+        qmax = log10(a*max(0.5,qmax-q0-0.5))
+        a = 1/a
       endif
-    endif
 
-    ! convert to [Hz]
-    q = q * qnorm * KM_TO_CM/cc
-    nu = self%nu0*(1.0 + q)
-    deallocate(q)
+      allocate(q(nnu))
+      dq = 2.*qmax / (nnu-1)
+      q = [(i*dq - qmax, i=0, nnu-1)]
+
+      if(.not. linear) then
+        if (legacy) then
+          q = q + a*sign(1.d0, q)*(10.**abs(q) - 1)
+        else
+          q = q + a*(10.**q - 10.**(-q))
+        endif
+      endif
+
+      ! convert to [Hz]
+      allocate(nu(nnu))
+      q = q * qnorm * KM_TO_CM/cc
+      nu = self%nu0*(1.0 + q)
+    endif
   END SUBROUTINE
 
   !====================================================================================
