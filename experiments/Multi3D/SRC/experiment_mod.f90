@@ -170,9 +170,7 @@ CONTAINS
           tt => authority(:,:,:,self%idx%e)
           pe => authority(:,:,:,6)
           vmic => authority(:,:,:,7)
-          bottom = self%position(3) - 0.5*self%size(3)
-          bot2pivot = pivot_z - bottom
-          call interpolate_atmos(n, sub, pos, d, px, py, pz, tt, pe, vmic, vec=long_vec(:,i), bot2pivot=bot2pivot)
+          call interpolate_atmos(n, sub, pos, d, px, py, pz, tt, pe, vmic, vec=long_vec(:,i), bot2pivot=pivot_z)
         end do
       endif
 
