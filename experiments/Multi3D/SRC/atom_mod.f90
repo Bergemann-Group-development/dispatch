@@ -359,7 +359,7 @@ MODULE atom_mod
               call trace%end(itimer2)
               
               if (check_NaN) then
-                call check_array(e, 'lineq solution', check_zero=.false., abort=.false., ok=ok)
+                call check_array(e, 'lineq solution', check_zero=.true., check_negative=.true., abort=.false., ok=ok)
                 if (.not.ok) then
                   print *, 'ERROR: in lineq solution at x,y,z = ', x, y, z
                   stop
@@ -368,7 +368,7 @@ MODULE atom_mod
               
               ! compute the exponential update factor
               where (e < edamp)
-                e = exp(e/edamp - 1d0 + log(edamp))
+                e = exp(max(e, 0.0d0)/edamp - 1d0 + log(edamp))
               endwhere
 
               ! apply the update
@@ -379,12 +379,9 @@ MODULE atom_mod
 
               ! enforce strict macroscopic particle conservation
               b = b * norm
-
-              ! compute the true relative change in the populations
-              e = (e * norm) - 1.0d0
               
               if (check_NaN) then
-                call check_array(e, 'population correction', check_zero=.false., abort=.false., ok=ok)
+                call check_array(e, 'population correction', check_zero=.true., abort=.false., ok=ok)
                 if (.not.ok) then
                   print *, 'ERROR: in population correction vector at x,y,z = ', x, y, z
                   stop
@@ -392,12 +389,15 @@ MODULE atom_mod
               endif
 
               if (check_NaN) then
-                call check_array(b, 'departure coefficients', check_zero=.false., abort=.false., ok=ok)
+                call check_array(b, 'departure coefficients', check_zero=.true., abort=.false., ok=ok)
                 if (.not.ok) then
                   print *, 'ERROR: in departure coefficients at x,y,z = ', x, y, z
                   stop
                 endif
               endif
+
+              ! compute the true relative change in the populations
+              e = (e * norm) - 1.0d0
 
               ! keep track of maximum population change
               lvlerr = merge(e, lvlerr, abs(e) > abs(lvlerr))
@@ -753,7 +753,7 @@ MODULE atom_mod
       if (nq_min < 0) then
         lin%nnu = max(lin%nnu, int(abs(nq_min) + 10*(loggf+5)))
         if (mod(lin%nnu,2) == 0) lin%nnu=lin%nnu+1
-      else
+      elseif (lin%nnu > 0) then
         lin%nnu = max(lin%nnu, nq_min)
       endif
       lin%nnu = min(lin%nnu, nq_max)
@@ -771,8 +771,8 @@ MODULE atom_mod
         endif
       endif
 
-      call os%allocate(lin%nu_input, lin%nnu, 'line%nu_input')
       call lin%get_nu(qnorm, lin%nu_input, legacy=m1d_legacy_mode)
+      call os%mem_register(storage_size(lin%nu_input), lin%nnu, 'line%nu_input')
       lin%nu_min = lin%nu_input(1)
       lin%nu_max = lin%nu_input(lin%nnu)
 
@@ -823,9 +823,6 @@ MODULE atom_mod
         icont(i) = icont(i)+1
       end do
 
-      ! and convert to frequency [Hz]
-      bf_nu = cc / ( bf_nu * AA_TO_CM )
-
       !  bound-free transitions in detail
       do i=1, ncont
         cnt => self%trans%cont(i)
@@ -837,10 +834,26 @@ MODULE atom_mod
           cnt%nu_input => bf_nu(ii:jj)
           cnt%alpha_input => bf_alpha(ii:jj)
           cnt%alpha0 = cnt%alpha_input(1)
+
+          do j=2,cnt%nnu
+            if ( cnt%nu_input(j) > cnt%nu_input(j-1) ) then
+              write(stdout,*) 'read_atom: continuum transition nr', i, &
+                            ' wavelengths not decreasing!'
+              abort = .true.
+            elseif ( cnt%nu_input(j) == cnt%nu_input(j-1) ) then
+              write(stdout,*) 'read_atom: continuum transition nr', i, &
+                            ' wavelengths are not unique!'
+              cnt%nu_input(j:cnt%nnu) = cnt%nu_input(j:cnt%nnu) - 1.0d-6
+            endif
+          end do
+          
           ! cross sections given in detail
           cnt%bf_type='detail'
         endif
       end do
+
+      ! and convert to frequency [Hz]
+      bf_nu = cc / ( bf_nu * AA_TO_CM )
     endif
 
     self%ncont = ncont
@@ -1099,7 +1112,7 @@ MODULE atom_mod
         loggf = log10(lin%f*self%g(lin%i))
         lin%nnu = max(lin%nnu, int(abs(nq_min) + 10*(loggf+5)))
         if (mod(lin%nnu,2) == 0) lin%nnu=lin%nnu+1
-      else
+      elseif (lin%nnu > 0) then
         lin%nnu = max(lin%nnu, nq_min)
       endif
       lin%nnu = min(lin%nnu, nq_max)
@@ -1170,8 +1183,8 @@ MODULE atom_mod
         endif
       endif
 
-      call os%allocate(lin%nu_input, lin%nnu, 'line%nu_input')
       call lin%get_nu(qnorm, lin%nu_input, legacy=nterm<=1 .and. m1d_legacy_mode)
+      call os%mem_register(storage_size(lin%nu_input), lin%nnu, 'line%nu_input')
       lin%nu_min = lin%nu_input(1)
       lin%nu_max = lin%nu_input(lin%nnu)
 

@@ -70,7 +70,7 @@ contains
     self%pre_pad_fe = fe
     self%nf = self%fe - self%fs + 1
 
-    if (self%out_ray) then
+    if (self%do_out_sp) then
       counter => counter2
       label = 'output'
     else
@@ -193,13 +193,13 @@ contains
     ! Packing meta-data is a task-owner read operation, and does not need locking
     !-----------------------------------------------------------------------------
     call self%patch_to_header (header)
-    if (converged .and. self%in_ray) then
+    if (converged .and. self%do_full_sp) then
       header%level = 0
     endif
     ibuf = 1
     call anonymous_copy (n_header, header, mesg%buffer(ibuf))
     ibuf = ibuf + n_header
-    if (.not. converged .or. self%out_ray) then
+    if (.not. converged .or. self%do_out_sp) then
       !call self%check_mem()
       !-----------------------------------------------------------------------------
       ! Copy the variables to the output buffer.
@@ -262,7 +262,7 @@ contains
       write(stdout, '(A, I3, A, I3)'), 'Converged message has been passed by MPI from rank', header%rank, ' to', mpi%rank
     endif
     ibuf = ibuf + n_header
-    if (.not. converged .or. self%out_ray) then
+    if (.not. converged .or. self%do_out_sp) then
       !call self%check_mem()
       !-----------------------------------------------------------------------------
       ! Copy array data from the buffer to the time slot, under time slot lock

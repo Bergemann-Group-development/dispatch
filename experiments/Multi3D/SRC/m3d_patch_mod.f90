@@ -64,7 +64,7 @@ MODULE m3d_patch_mod
       integer :: iter=0, maxiter, master_maxiter, dir=0
       integer :: n_nu, n_omega, n_out, zs, ze
       integer :: fcheck, pcheck(3)
-      logical :: out_ray=.false., in_ray=.false., out_mu=.false.
+      logical :: do_out_sp=.false., do_full_sp=.false., do_final=.false.
       logical :: compressed=.false., save_output=.false., saved=.false.
       logical :: print_update_info, checked_bounds=.false.
       logical :: free_self=.false.
@@ -116,14 +116,13 @@ MODULE m3d_patch_mod
       procedure :: set_place
       procedure :: queue_before
       procedure :: sort_nbors
-      procedure :: rotate_cube8
       procedure :: rotate_cube4
       procedure :: print_linelist
     end type m3d_patch_t
   
     !-----------------------------------------------------------------------------
     integer, save, public:: verbose=2
-    integer, public :: maxiter=0, ilambd, nz_total
+    integer, public :: maxiter=0, ilambd=0, nz_total
     integer, public, save :: save_id=-1
     integer, public, save :: n_nu=-1
     real(8), public, save, dimension(:), allocatable:: wmu, long_wmu
@@ -141,6 +140,7 @@ MODULE m3d_patch_mod
     logical, public, save :: print_start=.false., print_send=.false.
     logical, public, save :: Jnu_to_file=.true.
     character, public, save :: amr='P'
+    character(len=6), public, save :: initial_Jnu='Planck'
     logical, public, save :: rotate_atmos=.false.
     logical, public, save :: make_eos=.false.
     logical, public, save :: overrelax=.false.
@@ -174,7 +174,7 @@ MODULE m3d_patch_mod
     column_by_column, rotate_atmos, Jnu_to_file, preconditioning, &
     save_inu, save_chi, save_Snu, save_Jnu, &
     long_scheme, long_ntheta, long_nphi, short_scheme, short_ntheta, short_nphi, &
-    long_solver, fixed_Jnu
+    long_solver, fixed_Jnu, initial_Jnu
 
   contains
   
@@ -252,7 +252,7 @@ MODULE m3d_patch_mod
         pivot_z = self%patch%box(3)
       endif
 
-      Jnu_to_file = (ilambd > 0) .and. (Jnu_to_file .or. save_Jnu)
+      Jnu_to_file = (Jnu_to_file .and. .not. one_dimensional) .or. save_Jnu
 
       if (ng_step > 0) then
         if (ng_step < 3) then
@@ -265,9 +265,9 @@ MODULE m3d_patch_mod
     self%verbose = verbose
 
     self%n_out = size(long_vec, 2)
-    self%out_mu = self%i_mu < 0
-    self%out_ray = self%i_nu < 0 .or. self%i_mu < 0
-    self%in_ray = .not. self%out_ray
+    self%do_final = self%i_mu < 0 ! this is the ray working on the final output spectrum after scattering
+    self%do_out_sp = self%i_nu < 0 .or. self%i_mu < 0 ! this is any ray working on the output spectrum
+    self%do_full_sp = .not. self%do_out_sp ! this is any ray working on the internal spectrum for the iteration
   
     if (self%pre_initialized) print *, 'pre_init issued somewhere'
     call io%lock%unset ('m3d_patch_t%pre_init')
@@ -444,8 +444,8 @@ MODULE m3d_patch_mod
     integer :: thread
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%set_initial_time')
-    if (self%out_ray) then
-      if (self%out_mu) then
+    if (self%do_out_sp) then
+      if (self%do_final) then
         self%time = self%time + maxiter + ilambd
       else
         self%time = self%time + maxiter
@@ -489,11 +489,10 @@ MODULE m3d_patch_mod
       self%maxiter = maxiter
     case ('rt_patch')
       self%maxiter = maxiter - 1
-      !self%iter = ilambd
     end select
 
-    if (self%out_ray) then
-      if (self%out_mu) then
+    if (self%do_out_sp) then
+      if (self%do_final) then
         self%maxiter = 0
       else
         self%maxiter = ilambd - 1
@@ -512,7 +511,7 @@ MODULE m3d_patch_mod
       allocate (self%boundaries)
       call self%boundaries%pre_init (self)
     endif
-    if (self%out_mu .and. maxiter==0) then
+    if (self%do_final .and. maxiter==0) then
       call self%boundaries%clear(bits%zu)
     endif
   END SUBROUTINE init_bdries
@@ -527,7 +526,7 @@ MODULE m3d_patch_mod
       write(stdout, *) 'Update on', self%id, 'has begun', self%finished, self%time
     endif
     if (.not. self%is_finished()) then
-      if (converged .and. self%in_ray) then
+      if (converged .and. self%do_full_sp) then
         call self%finish()
         self%print_update_info = .false.
         call print_execution_history(self, 'SKP')
@@ -1185,73 +1184,6 @@ MODULE m3d_patch_mod
   END SUBROUTINE check_nbor
 
   !===============================================================================
-  SUBROUTINE rotate_cube8 (self, vec, cube, do_log)
-    class(m3d_patch_t) :: self
-    real(8), intent(in) :: vec(3)
-    real(8), intent(inout), dimension(:,:,:) :: cube
-    logical, intent(in), optional :: do_log
-    real(8), dimension(:,:), allocatable :: shifted
-    real(4), dimension(2) :: delta, deltak
-    real(4) :: bottom, bot2pivot, height, f1, f2, a, b, c, d
-    integer :: x, y, z, up1, up2, x1, x2, y1, y2, i, nx, ny, nz
-    integer, save :: itimer=0
-    ! ----------------------------------------------------------------------------
-    call trace%begin('m3d_patch_t%rotate_cube8', itimer=itimer)
-    delta = vec(:2) / (vec(3) * self%ds(:2)) ! shift in units of grid cells
-  
-    ! bot2pivot is the distance between the bottom of the patch and the pivot plane
-    bottom = self%position(3) - 0.5*self%size(3)
-    bot2pivot = pivot_z - bottom
-  
-    allocate(shifted, mold=cube(:,:,1))
-    nx = size(cube, 1)
-    ny = size(cube, 2)
-    nz = size(cube, 3)
-
-    if (option(do_log)) then
-      cube = log(cube)
-    endif
-  
-    do z=1, nz
-      height = z*self%ds(3) ! height of plane as measured from bottom
-      deltak = (bot2pivot - height)*delta + ray_offset
-      up1 = floor(deltak(1)) !integer part of shift
-      up2 = floor(deltak(2)) !integer part of shift
-      f1 = deltak(1) - up1 !fractional part
-      f2 = deltak(2) - up2 !fractional part
-  
-      ! bilinear interpolation to avoid overshooting
-      a = (1.0-f1)*(1.0-f2)
-      b =      f1 *(1.0-f2)
-      c = (1.0-f1)*     f2 
-      d =      f1 *     f2
-  
-      do y=1, ny
-        y1 = modulo(y+up2-1, ny)+1
-        y2 = modulo(y+up2,   ny)+1
-    
-        do x=1, nx
-          x1 = modulo(x+up1-1, nx)+1
-          x2 = modulo(x+up1,   nx)+1
-  
-          associate(plane=>cube(:,:,z))
-            shifted(x,y) = a*plane(x1,y1)
-            shifted(x,y) = b*plane(x2,y1) + shifted(x,y)
-            shifted(x,y) = c*plane(x1,y2) + shifted(x,y)
-            shifted(x,y) = d*plane(x2,y2) + shifted(x,y)
-          end associate
-        end do
-      end do
-      cube(:,:,z) = shifted
-    end do
-    deallocate(shifted)
-    if (option(do_log)) then
-      cube = exp(cube)
-    endif
-    call trace%end(itimer)
-  END SUBROUTINE rotate_cube8
-
-  !===============================================================================
   SUBROUTINE rotate_cube4 (self, vec, cube, do_log)
     class(m3d_patch_t) :: self
     real(8), intent(in) :: vec(3)
@@ -1280,36 +1212,35 @@ MODULE m3d_patch_mod
     endif
   
     do z=1, nz
-      height = z*self%ds(3) ! height of plane as measured from bottom
-      deltak = (bot2pivot - height)*delta + ray_offset
-      up1 = floor(deltak(1)) !integer part of shift
-      up2 = floor(deltak(2)) !integer part of shift
-      f1 = deltak(1) - up1 !fractional part
-      f2 = deltak(2) - up2 !fractional part
-  
-      ! bilinear interpolation to avoid overshooting
-      a = (1.0-f1)*(1.0-f2)
-      b =      f1 *(1.0-f2)
-      c = (1.0-f1)*     f2 
-      d =      f1 *     f2
-  
-      do y=1, ny
-        y1 = modulo(y+up2-1, ny)+1
-        y2 = modulo(y+up2,   ny)+1
+      associate(plane => cube(:,:,z))
+        height = z*self%ds(3) ! height of plane as measured from bottom
+        deltak = (bot2pivot - height)*delta + ray_offset
+        up1 = floor(deltak(1)) !integer part of shift
+        up2 = floor(deltak(2)) !integer part of shift
+        f1 = deltak(1) - up1 !fractional part
+        f2 = deltak(2) - up2 !fractional part
     
-        do x=1, nx
-          x1 = modulo(x+up1-1, nx)+1
-          x2 = modulo(x+up1,   nx)+1
-  
-          associate(plane=>cube(:,:,z))
+        ! bilinear interpolation to avoid overshooting
+        a = (1.0-f1)*(1.0-f2)
+        b =      f1 *(1.0-f2)
+        c = (1.0-f1)*     f2 
+        d =      f1 *     f2
+        do y=1, ny
+          y1 = modulo(y+up2-1, ny)+1
+          y2 = modulo(y+up2,   ny)+1
+      
+          do x=1, nx
+            x1 = modulo(x+up1-1, nx)+1
+            x2 = modulo(x+up1,   nx)+1
+    
             shifted(x,y) = a*plane(x1,y1)
             shifted(x,y) = b*plane(x2,y1) + shifted(x,y)
             shifted(x,y) = c*plane(x1,y2) + shifted(x,y)
             shifted(x,y) = d*plane(x2,y2) + shifted(x,y)
-          end associate
+          end do
         end do
-      end do
-      cube(:,:,z) = shifted
+        plane = shifted
+      end associate
     end do
     deallocate(shifted)
     if (option(do_log)) then

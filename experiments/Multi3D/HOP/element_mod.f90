@@ -25,13 +25,13 @@ contains
     type(ion_type), pointer :: ion
     type(level_type), pointer :: lvl
     real(dp), dimension(:,:,:), intent(in) :: temp, e_kT, ne
-    real(dp), dimension(:,:,:), allocatable :: blz
+    real(dp), dimension(:,:,:), allocatable :: beta
     integer :: i, j, l, u, x, y, z
     !---------------------------------------------------------------------------
     l = lbound(self%ions,1)
     u = ubound(self%ions,1)
 
-    allocate(blz, mold=temp)
+    allocate(beta, mold=temp)
 
     do j=l, u
       ion => self%ions(j)
@@ -45,16 +45,16 @@ contains
         ion%part = 0
         do i=1, ubound(ion%levels, 1)
           lvl => ion%levels(i)
-          blz = lvl%g * exp(-e_kT*lvl%xion)
+          beta = lvl%g * exp(-e_kT*lvl%xion)
           if (lvl%xl > 0) then
-            blz = blz * lvl%fischel_sparks(ion%j, e_kT, ne)
+            beta = beta * lvl%fischel_sparks(ion%j, e_kT, ne)
           endif
-          ion%part = ion%part + blz
+          ion%part = ion%part + beta
         end do
         ion%part = log(ion%part)
       endif
     end do
-    deallocate(blz)
+    deallocate(beta)
   END SUBROUTINE compute_partition_functions
 
   !===============================================================================

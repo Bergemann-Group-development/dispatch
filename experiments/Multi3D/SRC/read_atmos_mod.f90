@@ -47,7 +47,7 @@ MODULE read_atmos_mod
   real(4), public :: timestamp=-1.0
   logical, public, save :: log_interpolation=.true.
   logical, public, save :: pchip_interpolation=.true.
-  type(input_atmos_t), public, save :: ia
+  type(input_atmos_t), public, save, target :: ia
 
   public :: read_stagger
   public :: read_stagger2
@@ -777,23 +777,25 @@ contains
     integer, intent(in) :: nsub
     logical, intent(in) :: use_ne
     integer :: i, j, k, nx, ny, nz
-    real(8), dimension(nsub+1) :: var_edge
-    real(4), dimension(nsub+1) :: sub_edge
+    real(4), dimension(nsub+1) :: sub_edge, var_edge
     real(4), dimension(:), allocatable :: amr_ref, tmp
     real(4), dimension(:), pointer, contiguous :: zz
     real(4), dimension(:,:,:), pointer, contiguous :: lpe
     real(4) :: vmin, vmax
+    integer :: zs, ze
     !-----------------------------------------------------------------------------
     nx = self%nx
     ny = self%ny
     nz = self%nz - 2*self%gz
     allocate(self%sub_pos(nsub), self%sub_size(nsub))
 
-    zz => self%zz(1+self%gz:nz+self%gz)
-
     if (uppercase(amr) == 'Z') then
-      var_edge = linspace(real(1), real(nz), nsub+1)
-      call interp1d_sorted([(real(i), i=1, nz)], zz, var_edge, sub_edge)
+      var_edge(1) = 0
+      do i=1, nsub
+        call unequal_intervals(nz, i, nsub, zs, ze)
+        var_edge(i+1) = ze
+      end do
+      call interp1d_sorted([(real(i-self%gz), i=1, self%nz)], self%zz, var_edge, sub_edge)
       self%sub_size = sub_edge(2:nsub+1) - sub_edge(1:nsub)
       self%sub_pos  = sub_edge(1:nsub) + 0.5*self%sub_size
       return
@@ -801,6 +803,7 @@ contains
 
     allocate(amr_ref(nz), source=0.0)
     allocate(tmp(nz), source=0.0)
+    zz => self%zz(1+self%gz:nz+self%gz)
 
     select case (uppercase(amr))
     case ('P')
@@ -848,17 +851,31 @@ contains
     integer, intent(in) :: n(3)
     real(8), intent(in) :: sub(3), pos(3)
     real(4), intent(out), dimension(:,:,:) :: rho, px, py, pz, temp, pe, vmic
+    real(4), dimension(:,:,:), pointer, contiguous :: rho_in, pe_in, temp_in
     real(8), intent(in), optional :: vec(3), bot2pivot
-    real(8), dimension(:), allocatable :: newx, newy, newz
+    real(4), dimension(:), allocatable :: newz
     real(8) :: lower(3), ds(3)
     real(8) :: dx, dy, dz
-    integer :: i, nx, ny, nz, itimer=0
+    integer :: i, ijk(3), nx, ny, nz, itimer=0
+    logical :: do_pchip
     !-----------------------------------------------------------------------------
     call trace%begin('interpolate_atmos', itimer=itimer)
     nx = n(1); ny = n(2); nz = n(3)
 
-    lower = pos - 0.5d0*sub
     ds = sub / n
+    lower = pos - 0.5d0*sub
+    lower(1:2) = lower(1:2) + ray_offset*ds(1:2)
+    do_pchip = pchip_interpolation
+
+    if (log_interpolation) then
+      temp_in => ia%ltemp
+      if (use_rho) rho_in => ia%lrho
+      if (use_ne)  pe_in => ia%lpe
+    else
+      allocate(temp_in, source=exp(ia%ltemp))
+      if (use_rho) allocate(rho_in, source=exp(ia%lrho))
+      if (use_ne)  allocate(pe_in, source=exp(ia%lpe))
+    endif
 
     allocate(newz(nz))
     newz = [ (ds(3)*i + lower(3), i=1, nz) ]
@@ -873,62 +890,39 @@ contains
       pz = 0
     elseif (one_dimensional) then
       if (.false.) then ! set to true for debugging original atmosphere points
-        temp(1,1,:) = ia%ltemp(1,1,1:nz)
-        if (use_rho) rho(1,1,:) = ia%lrho (1,1,1:nz)
-        if (use_ne ) pe (1,1,:) = ia%lpe  (1,1,1:nz)
-        vmic(1,1,:) = ia%vmic (1,1,1:nz)
+        temp(1,1,:) = temp_in(1,1,1:nz)
+        if (use_rho) rho(1,1,:) = rho_in(1,1,1:nz)
+        if (use_ne ) pe (1,1,:) = pe_in (1,1,1:nz)
+        vmic(1,1,:) = ia%vmic(1,1,1:nz)
       else
-        if (log_interpolation) then
-          call pchip_mono4(ia%zz, ia%ltemp(1,1,:), real(newz), temp(1,1,:), sorted=.true.)
-          if (use_rho) call pchip_mono4(ia%zz, ia%lrho (1,1,:), real(newz), rho (1,1,:), sorted=.true.)
-          if (use_ne)  call pchip_mono4(ia%zz, ia%lpe  (1,1,:), real(newz), pe  (1,1,:), sorted=.true.)
-        else
-          call pchip_mono4(ia%zz, exp(ia%ltemp(1,1,:)), real(newz), temp(1,1,:), sorted=.true.)
-          if (use_rho) call pchip_mono4(ia%zz, exp(ia%lrho (1,1,:)), real(newz), rho (1,1,:), sorted=.true.)
-          if (use_ne)  call pchip_mono4(ia%zz, exp(ia%lpe  (1,1,:)), real(newz), pe  (1,1,:), sorted=.true.)
-        endif
-        call pchip_mono4(ia%zz, ia%vmic (1,1,:), real(newz), vmic(1,1,:), sorted=.true.)
+        if (use_rho) call pchip_mono4(ia%zz, rho_in(1,1,:), newz, rho (1,1,:), sorted=.true.)
+        if (use_ne)  call pchip_mono4(ia%zz, pe_in (1,1,:), newz, pe  (1,1,:), sorted=.true.)
+        call pchip_mono4(ia%zz, temp_in(1,1,:), newz, temp(1,1,:), sorted=.true.)
+        call pchip_mono4(ia%zz, ia%vmic(1,1,:), newz, vmic(1,1,:), sorted=.true.)
       endif
       px = 0
       py = 0
       pz = 0
     else
-      allocate(newx(nx))
-      allocate(newy(ny))
-      newx = [ (ds(1)*i + lower(1), i=0, nx-1) ]
-      newy = [ (ds(2)*i + lower(2), i=0, ny-1) ]
-
       dx = ia%xx(2)
       dy = ia%yy(2)
 
       if (present(vec)) then
-        if (log_interpolation) then
-          call linterpolate_3d_rotated(ia%ltemp, temp, dx, dy, ia%zz, newx, newy, newz, vec, bot2pivot, ray_offset, pchip=pchip_interpolation)
-          if (use_rho) call linterpolate_3d_rotated(ia%lrho,  rho,  dx, dy, ia%zz, newx, newy, newz, vec, bot2pivot, ray_offset, pchip=pchip_interpolation)
-          if (use_ne ) call linterpolate_3d_rotated(ia%lpe,   pe,   dx, dy, ia%zz, newx, newy, newz, vec, bot2pivot, ray_offset, pchip=pchip_interpolation)
-        else
-          call linterpolate_3d_rotated(exp(ia%ltemp), temp, dx, dy, ia%zz, newx, newy, newz, vec, bot2pivot, ray_offset, pchip=pchip_interpolation)
-          if (use_rho) call linterpolate_3d_rotated(exp(ia%lrho),  rho,  dx, dy, ia%zz, newx, newy, newz, vec, bot2pivot, ray_offset, pchip=pchip_interpolation)
-          if (use_ne ) call linterpolate_3d_rotated(exp(ia%lpe),   pe,   dx, dy, ia%zz, newx, newy, newz, vec, bot2pivot, ray_offset, pchip=pchip_interpolation)
-        endif
-        call linterpolate_3d_rotated(ia%vx,    px,   dx, dy, ia%zz, newx, newy, newz, vec, bot2pivot, ray_offset, pchip=pchip_interpolation)
-        call linterpolate_3d_rotated(ia%vy,    py,   dx, dy, ia%zz, newx, newy, newz, vec, bot2pivot, ray_offset, pchip=pchip_interpolation)
-        call linterpolate_3d_rotated(ia%vz,    pz,   dx, dy, ia%zz, newx, newy, newz, vec, bot2pivot, ray_offset, pchip=pchip_interpolation)
-        call linterpolate_3d_rotated(ia%vmic,  vmic, dx, dy, ia%zz, newx, newy, newz, vec, bot2pivot, ray_offset, pchip=pchip_interpolation)
+        if (use_rho) call linterpolate_3d_rotated(rho_in,  rho,  dx, dy, ia%zz, lower(1:2), ds(1:2), newz, vec, bot2pivot, pchip=do_pchip)
+        if (use_ne ) call linterpolate_3d_rotated(pe_in,   pe,   dx, dy, ia%zz, lower(1:2), ds(1:2), newz, vec, bot2pivot, pchip=do_pchip)
+        call linterpolate_3d_rotated(temp_in, temp, dx, dy, ia%zz, lower(1:2), ds(1:2), newz, vec, bot2pivot, pchip=do_pchip)
+        call linterpolate_3d_rotated(ia%vx,   px,   dx, dy, ia%zz, lower(1:2), ds(1:2), newz, vec, bot2pivot, pchip=do_pchip)
+        call linterpolate_3d_rotated(ia%vy,   py,   dx, dy, ia%zz, lower(1:2), ds(1:2), newz, vec, bot2pivot, pchip=do_pchip)
+        call linterpolate_3d_rotated(ia%vz,   pz,   dx, dy, ia%zz, lower(1:2), ds(1:2), newz, vec, bot2pivot, pchip=do_pchip)
+        call linterpolate_3d_rotated(ia%vmic, vmic, dx, dy, ia%zz, lower(1:2), ds(1:2), newz, vec, bot2pivot, pchip=do_pchip)
       else
-        if (log_interpolation) then
-          call linterpolate_3d(ia%ltemp, temp, dx, dy, ia%zz, newx, newy, newz, pchip=pchip_interpolation)
-          if (use_rho) call linterpolate_3d(ia%lrho,  rho,  dx, dy, ia%zz, newx, newy, newz, pchip=pchip_interpolation)
-          if (use_ne ) call linterpolate_3d(ia%lpe,   pe,   dx, dy, ia%zz, newx, newy, newz, pchip=pchip_interpolation)
-        else
-          call linterpolate_3d(exp(ia%ltemp), temp, dx, dy, ia%zz, newx, newy, newz, pchip=pchip_interpolation)
-          if (use_rho) call linterpolate_3d(exp(ia%lrho),  rho,  dx, dy, ia%zz, newx, newy, newz, pchip=pchip_interpolation)
-          if (use_ne ) call linterpolate_3d(exp(ia%lpe),   pe,   dx, dy, ia%zz, newx, newy, newz, pchip=pchip_interpolation)
-        endif
-        call linterpolate_3d(ia%vx,    px,   dx, dy, ia%zz, newx, newy, newz, pchip=pchip_interpolation)
-        call linterpolate_3d(ia%vy,    py,   dx, dy, ia%zz, newx, newy, newz, pchip=pchip_interpolation)
-        call linterpolate_3d(ia%vz,    pz,   dx, dy, ia%zz, newx, newy, newz, pchip=pchip_interpolation)
-        call linterpolate_3d(ia%vmic,  vmic, dx, dy, ia%zz, newx, newy, newz, pchip=pchip_interpolation)
+        if (use_rho) call linterpolate_3d(rho_in,  rho,  dx, dy, ia%zz, lower(1:2), ds(1:2), newz, pchip=do_pchip)
+        if (use_ne ) call linterpolate_3d(pe_in,   pe,   dx, dy, ia%zz, lower(1:2), ds(1:2), newz, pchip=do_pchip)
+        call linterpolate_3d(temp_in, temp, dx, dy, ia%zz, lower(1:2), ds(1:2), newz, pchip=do_pchip)
+        call linterpolate_3d(ia%vx,   px,   dx, dy, ia%zz, lower(1:2), ds(1:2), newz, pchip=do_pchip)
+        call linterpolate_3d(ia%vy,   py,   dx, dy, ia%zz, lower(1:2), ds(1:2), newz, pchip=do_pchip)
+        call linterpolate_3d(ia%vz,   pz,   dx, dy, ia%zz, lower(1:2), ds(1:2), newz, pchip=do_pchip)
+        call linterpolate_3d(ia%vmic, vmic, dx, dy, ia%zz, lower(1:2), ds(1:2), newz, pchip=do_pchip)
       endif
     endif
 
@@ -936,6 +930,10 @@ contains
       temp = exp(temp)
       if (use_rho) rho = exp(rho)
       if (use_ne ) pe  = exp(pe)
+    else
+      deallocate(temp_in)
+      if (use_rho) deallocate(rho_in)
+      if (use_ne)  deallocate(pe_in)
     endif
 
     call trace%end(itimer)

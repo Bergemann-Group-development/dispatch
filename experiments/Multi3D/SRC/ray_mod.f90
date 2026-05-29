@@ -1,6 +1,7 @@
 MODULE ray_mod
   USE const_mod
   USE radau_mod
+  USE mmath_mod,only:cc_kernel
   implicit none
 
   ! *******************************************************************
@@ -33,7 +34,8 @@ MODULE ray_mod
     ! interpolation weights for the cubic convolution in the XY plane
     ! for the upwind point upwind and the first intersection for the
     ! downwind point
-    real(8),dimension(4,4) :: upkern,dnkern
+    real(8), dimension(4,4) :: upkern,dnkern
+    real(8), dimension(4) :: xkern, ykern
     ! offset of the point closest to the origin of the 16 points
     ! surrounding the first plane intersection, relative to the middle
     ! point of the short characteristic
@@ -572,7 +574,9 @@ contains
     h2 = merge(wt2, wt2+1, wt2>0)
     ray%upo1 = merge(-1, -2, wt1>0)
     ray%upo2 = merge(-1, -2, wt2>0)
-    call SetCcKern(ray%upkern,h1,h2)
+    call cc_kernel(h1,ray%xkern)
+    call cc_kernel(h2,ray%ykern)
+    !call SetCcKern(ray%upkern,h1,h2)
   END SUBROUTINE set_stencil
 !---------------------------------------------------------------------
 
@@ -813,7 +817,6 @@ contains
 
 !---------------------------------------------------------------------
   SUBROUTINE SetCcKern(kern,h1,h2)
-    USE mmath_mod,only:cc_kernel
     !---------------------------------------------------------------------
     !
     ! set a 2D cubic convulution kernel as the multiplication

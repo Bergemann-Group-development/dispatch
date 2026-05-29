@@ -4460,8 +4460,10 @@ SUBROUTINE remove (self, label, key)
   write(filename, '(A, A, 3(I3.3))') trim(label), '_', abs(k)
   write(filename, '(A, A)') trim(filename), '.bin'
   call self%save_lock%set_read('remove')
-  open(newunit=lunit, file=trim(folder)//filename, status='old')
-  close(lunit, status='delete')
+  if (os%exists(trim(folder)//filename)) then
+    open(newunit=lunit, file=trim(folder)//filename, status='old')
+    close(lunit, status='delete')
+  endif
   call self%save_lock%unset_read('remove')
   call trace%end(itimer)
 END SUBROUTINE remove

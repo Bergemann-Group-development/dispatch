@@ -12,7 +12,7 @@ MODULE composition_patch_mod
   USE molecule_mod, only: molec_type, irwin_dis
   USE element_mod, only: element_type
   USE m3d_patch_mod,   only: m3d_patch_t, composition, comoving_frame, ilambd, dlam, &
-  use_rho, use_ne, overlapping_bb, overlapping_bf, binned_opac, &
+  use_rho, use_ne, overlapping_bb, overlapping_bf, binned_opac, initial_Jnu, &
   maxiter, rotate_atmos, long_vec, decouple_continuum, n_nu, use_vel, &
   linelist_in_output, make_eos, overlapping_bb_in_output, atmos_format, atmos_file
   USE m3d_debug_mod
@@ -113,6 +113,7 @@ SUBROUTINE read_composition_params ()
     irwin_dis = .false.
     level_partf = .true.
     helium_scattering = .false.
+    initial_Jnu = 'zero'
     !comoving_frame = .true.
     !preconditioning = .false.
   endif
@@ -387,7 +388,7 @@ SUBROUTINE execute (self)
     endif
 
     self%dtime = max(self%dtime, io%end_time - self%dtime)
-    self%out_ray = .true. ! so that it is still executed after convergence
+    self%do_out_sp = .true. ! so that it is still executed after convergence
   else
     self%dtime = self%patch%dtime
     !print *, self%m3d_patch_info()

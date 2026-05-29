@@ -552,11 +552,17 @@ contains
     integer, save :: count=0
     !-----------------------------------------------------------------------------
     if (self%is_finished()) return
+
+    ! First we move departures from the atom data to the departures structure
     l = 1
     do i=1, self%natom
       atom => self%atoms(i)
       adata => atom%data
-      call self%write_populations(atom)
+      if (allocated(adata%b)) then
+        self%departures(atom%idep, 1)%mem = adata%b
+      else
+        self%departures(atom%idep, 1)%mem = 1.0
+      endif
       if (allocated(adata%lvlerr)) then
         do j=1, atom%nlevel
           rank_lvlerr(l) = merge(rank_lvlerr(l), adata%lvlerr(j), abs(rank_lvlerr(l)) > abs(adata%lvlerr(j)))
@@ -564,9 +570,17 @@ contains
         end do
       endif
     end do
+
+    ! Then we fill the project the departures onto the ray aligned grid
     if (rotate_atmos) then
       call self%project_populations()
     endif
+
+    ! finally we write the departures to file
+    if (save_populations) then
+      call self%write_populations()
+    endif
+
     call self%m3d_patch_t%finish()
     count = count + 1
     if (count == self%task_list%dims(3)) then
@@ -667,42 +681,38 @@ contains
   END SUBROUTINE init_departures
 
   !===============================================================================
-  SUBROUTINE write_populations (self, atom)
+  SUBROUTINE write_populations (self)
     class(nlte_patch_t), intent(inout), target :: self
-    class(atom_type), intent(in) :: atom
+    class(atom_type), pointer :: atom
     class(atom_data_t), pointer :: adata
     class(departure_pointer_t), pointer :: dep
     real(4), dimension(:,:,:,:,:,:), allocatable :: out_mem
-    integer :: x, y, z, l, n(3), i, j, k, lunit
+    integer :: x, y, z, l, m, n(4), i, j, k, lunit, nmu
     real(8) :: tmp, ground_ev
     !---------------------------------------------------------------------------------
     call trace%begin('nlte_patch_t%write_populations')
-    adata => atom%data
-    n = shape(adata%totn)
-    dep => self%departures(atom%idep, 1)
-    allocate(out_mem(n(1), n(2), n(3), atom%nlevel, 2, 1))
-
-    ! here we do not only write the populations to the disk,
-    ! but we also store the departure coefficients in the dep object
-
-    do l=1, atom%nlevel
-      do z=1, n(3)
-        do y=1, n(2)
-          do x=1, n(1)
-            out_mem(x,y,z,l,1,1) = real(adata%nstar(x,y,z,l))
-            if (allocated(adata%b)) then
-              out_mem(x,y,z,l,2,1) = real(adata%b(x,y,z,l))
-              dep%mem(x,y,z,l) = adata%b(x,y,z,l)
-            else
-              out_mem(x,y,z,l,2,1) = 1.0
-              dep%mem(x,y,z,l) = 1.0
-            endif
+    do i=1, self%natom
+      atom => self%atoms(i)
+      adata => atom%data
+      n = shape(adata%nstar)
+      nmu = size(self%departures, 2)
+      allocate(out_mem(n(1), n(2), n(3), n(4), 2, nmu), source=1.0)
+      do m=1, nmu
+        if (m>1) adata => atom%rotated_data(m-1)
+        do l=1, n(4)
+          do z=1, n(3)
+            do y=1, n(2)
+              do x=1, n(1)
+                out_mem(x,y,z,l,1,m) = real(adata%nstar(x,y,z,l))
+                if (allocated(adata%b)) then
+                  out_mem(x,y,z,l,2,m) = real(adata%b(x,y,z,l))
+                end if
+              end do
+            end do
           end do
         end do
       end do
-    end do
 
-    if (save_populations) then
       call self%save6(out_mem, label='pop_'//trim(atom%id))
       !$omp critical (write_atom_ev)
       if (.not. os%exists(trim(io%run_dir)//'save/pop_'//trim(atom%id)//'_ev.txt')) then
@@ -719,9 +729,8 @@ contains
         close(lunit)
       endif
       !$omp end critical (write_atom_ev)
-    endif
-
-    deallocate(out_mem)
+      deallocate(out_mem)
+    end do
     call trace%end()
   END SUBROUTINE write_populations
 

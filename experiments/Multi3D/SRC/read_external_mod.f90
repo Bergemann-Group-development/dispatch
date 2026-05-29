@@ -136,8 +136,6 @@ contains
     atmos_format = lowercase(atmos_format)
     ia%kind = trim(atmos_format)
 
-    if (vmic > 0) opac_table_vmic = vmic
-
     if (atmos_format == 'save') then
       save_file = atmos_file
       read_departures_local = read_departures
@@ -175,6 +173,8 @@ contains
         stop
       end select
     endif
+
+    if (any(ia%vmic > 0)) opac_table_vmic = sum(ia%vmic) / size(ia%vmic)
 
     one_dimensional = .not. ia%is_3d
 

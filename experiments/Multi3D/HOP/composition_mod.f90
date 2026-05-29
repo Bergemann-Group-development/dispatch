@@ -963,7 +963,7 @@ contains
     real(4), dimension(:,:,:), pointer :: bi, bj
     integer :: i, j, k, l, f, f0, nactive, m(3), nf
     real(8) :: cnt_ev, gf, awgt, iso_awgt, dl, dnu
-    real(4) :: scalar, blz, bnu, h_kT, hv_kT, eta, chi
+    real(4) :: scalar, beta, bnu, h_kT, hv_kT, eta, chi
     logical :: departures_present, do_nlte
     integer, save:: itimer=0
     !---------------------------------------------------------------------------
@@ -1103,7 +1103,7 @@ contains
       class(particle_type), target :: ptc
       class(bbtrans_type), pointer :: line
       class(isotope_type), pointer :: iso
-      real(4), dimension(:,:,:), pointer :: blz0
+      real(4), dimension(:,:,:), pointer :: beta0
       real(4), dimension(:,:,:), pointer, contiguous :: vb2, idopf
       real(4), dimension(:,:,:), contiguous :: inv_part, unsold
       real(4), dimension(:,:,:), contiguous, target :: vbar2, inv_df
@@ -1765,14 +1765,14 @@ contains
   END SUBROUTINE compute_damping_aux
 
   !===============================================================================
-  SUBROUTINE absorption(self, nu, chi, blz, include_absmet, sorted)
+  SUBROUTINE absorption(self, nu, chi, beta, include_absmet, sorted)
     !use phys_mod, only:planck
     class(composition_type), target :: self
     class(bftrans_type), pointer :: trans
     class(ion_type), pointer :: HeI
     real(dp), dimension(:), intent(in) :: nu
     real(4), dimension(:,:,:,:), contiguous, intent(inout) :: chi
-    real(4), dimension(:,:,:,:), contiguous, intent(in), optional :: blz
+    real(4), dimension(:,:,:,:), contiguous, intent(in), optional :: beta
     real(dp), dimension(:), allocatable :: lam, hnu_e
     logical, optional :: include_absmet, sorted
     real(dp) :: xray2, epsln, stim
@@ -1802,7 +1802,7 @@ contains
       endif
     end do
 
-    if (present(blz)) then
+    if (present(beta)) then
       do z=1, nz
         do y=1, ny
           do x=1, nx
@@ -1810,7 +1810,7 @@ contains
               ! all continua above are multiplied by stim
               !--------------------------------------------------------------------------------
               !stim = 1. - exp(-28556.*self%teta/lam(f))
-              stim = 1. - blz(f,x,y,z)
+              stim = 1. - beta(f,x,y,z)
               chi(f,x,y,z) = chi(f,x,y,z) * stim
             end do
           end do
