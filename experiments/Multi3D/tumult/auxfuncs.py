@@ -676,6 +676,14 @@ def marcs_name_to_params(marcs_name):
   teff, logg, mass, vmic, feh, alpha, c, n, o, r, s = data
   return teff, logg, feh, vmic
 
+#=====================================================================
+def mafags_name_to_params(mafags_name):
+  teff = float(mafags_name[1:4])*10
+  logg = float(mafags_name[4:7])/100
+  sign = 1 if mafags_name[7] in ['+', 'p'] else -1
+  feh = sign * float(mafags_name[8:11])/100
+  return teff, logg, feh
+
 @jit
 def rotate_array(xx, yy, zz, array, vec, pivot_z=None, ray_offset=None):
   if pivot_z is None: pivot_z = zz[-1]

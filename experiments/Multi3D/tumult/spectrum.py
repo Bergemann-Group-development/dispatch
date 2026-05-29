@@ -197,7 +197,7 @@ class Spectrum:
 
         xdata = self.xdata.value
         ydata = self.ydata.value
-        ax.plot(xdata, ydata, label=label, **kwargs)
+        handle = ax.plot(xdata, ydata, label=label, **kwargs)
 
         if set_labels:
             xlabel = xlabel or ''
@@ -226,7 +226,7 @@ class Spectrum:
         ax.set_xlim(xdata.min(), xdata.max())
         plt.ticklabel_format(useOffset=False)
         adjust_max_xticks(ax)
-        return ax
+        return handle
 
     # Arithmetic operations (acting on ydata)
 
@@ -307,6 +307,7 @@ class Spectrum:
         relative=False,
         vshift=None,
         newx=None,
+        renorm=False,
         **kwargs,
     ):
         """
@@ -403,18 +404,23 @@ class Spectrum:
             newx = newx or s.xdata
             newy = np.interp(newx, cx, cy)
             if relative: newx = newx - center
-            return Spectrum(newx, newy, xref=sub_spec.xref, yunit=self.yunit)
+            s = Spectrum(newx, newy, xref=sub_spec.xref, yunit=self.yunit)
 
         else:
             if newx is not None:
                 newy = np.interp(newx, *s)
-                return Spectrum(newx, newy, xref=s.xref)
+                s = Spectrum(newx, newy, xref=s.xref)
 
             # Apply relative shift if requested (and no newx override)
             if relative:
-                return Spectrum(s.xdata - center, s.ydata, xref=s.xref + center)
-            else:
-                return s
+                s = Spectrum(s.xdata - center, s.ydata, xref=s.xref + center)
+            
+        if renorm:
+            cntm = np.linspace(s.ydata[0], s.ydata[-1], len(s.ydata))
+            s = s / cntm
+        
+        return s
+            
 
     def fit(
         self,
@@ -423,9 +429,9 @@ class Spectrum:
         bounds=None,
         p0=None,
         sigma=None,
-        method="L-BFGS-B",
+        method="Nelder-Mead",
         tol=None,
-        res=None,
+        integrate=False,
         **kwargs,
     ):
         """
@@ -505,7 +511,11 @@ class Spectrum:
 
         def fit_params(s):
             def residuals(params):
-                r = s.ydata - evaluate(s.xdata, *params).ydata
+                if integrate:
+                    r = s.get_weq(profile='trapz', auto_crop=False) - evaluate(s.xdata, *params).get_weq(profile='trapz', auto_crop=False)
+                else:
+                    r = s.ydata - evaluate(s.xdata, *params).ydata
+
                 if sigma is not None:
                     r = r / sigma
                 return np.sum(r**2)

@@ -103,9 +103,13 @@ class trans_class(object):
             self.cont = False
             
             if self.qmax >= 0 and self.q0 >=0:
-                qmax = get_qmax(self.qmax, self.q0) * atom.qnorm
-                self.lam_red  = self.alamb / (1 - qmax)
-                self.lam_blue = self.alamb / (1 + qmax)
+                if self.nq > 0:
+                  qmax = get_qmax(self.qmax, self.q0) * atom.qnorm
+                  self.lam_red  = self.alamb / (1 - qmax)
+                  self.lam_blue = self.alamb / (1 + qmax)
+                else:
+                  self.lam_red  = self.alamb + self.qmax
+                  self.lam_blue = self.alamb - self.qmax
             
             #if (atom.level[-1].ion > atom.level[0].ion):
             #    self.prepare_VanderWaals(self.gv)

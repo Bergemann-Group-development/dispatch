@@ -179,7 +179,7 @@ class SpectrumGrid(object):
         b = {}
         for i, name in enumerate(self.param_names):
             vals = self.params[:,i] if self.ndim > 1 else self.params
-            p[name] = np.mean(vals)
+            p[name] = np.median(vals)
             b[name] = (np.min(vals), np.max(vals))
 
         p.update(p0)

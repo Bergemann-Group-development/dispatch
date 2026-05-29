@@ -363,18 +363,19 @@ class AtmosClass(object):
           plt.yticks([])
 
   #=================================================================
-  def to_dispatch1d_atmos(self, file, vmic=None, FeH=''):
-    ltau, temp = self.get_surf_mean('ltau', 'temp', log=True)
-    _, ne      = self.get_surf_mean('ltau', 'ne',   log=True)
-    _, rho     = self.get_surf_mean('ltau', 'rho',  log=True)
+  def to_dispatch1d_atmos(self, file, xvar='ltau', vmic=None, FeH=''):
+    _, ltau = self.get_surf_mean(xvar, 'ltau', log=False)
+    _, temp = self.get_surf_mean(xvar, 'temp', log=True)
+    _, ne   = self.get_surf_mean(xvar, 'ne',   log=True)
+    _, rho  = self.get_surf_mean(xvar, 'rho',  log=True)
 
     if vmic is None:
-      vx = self.get_surf_mean('ltau', 'vx')[1]**2
-      vy = self.get_surf_mean('ltau', 'vy')[1]**2
-      vz = self.get_surf_mean('ltau', 'vz')[1]**2
-      vx2 = self.get_surf_mean('ltau', 'vx', power=2)[1]**2
-      vy2 = self.get_surf_mean('ltau', 'vy', power=2)[1]**2
-      vz2 = self.get_surf_mean('ltau', 'vz', power=2)[1]**2
+      vx = self.get_surf_mean(xvar, 'vx')[1]**2
+      vy = self.get_surf_mean(xvar, 'vy')[1]**2
+      vz = self.get_surf_mean(xvar, 'vz')[1]**2
+      vx2 = self.get_surf_mean(xvar, 'vx', power=2)[1]**2
+      vy2 = self.get_surf_mean(xvar, 'vy', power=2)[1]**2
+      vz2 = self.get_surf_mean(xvar, 'vz', power=2)[1]**2
       vmic = 1e-5 * np.sqrt(((vx2 - vx) + (vy2 - vy) + (vz2 - vz)) / 3)
 
     df = pd.DataFrame()

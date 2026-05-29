@@ -6,7 +6,7 @@ from .synth import *
 import ipyformkit as ifk
 import numpy as np
 import pandas as pd
-from tumult.grid import keep_k_closest, compute_nn_weights
+from scipy.spatial import Delaunay, ConvexHull, Voronoi
 
 class StudioGrid(object):
     icon = 'border-all'
@@ -180,3 +180,57 @@ class StudioGrid(object):
                 run.nbors_wts = self.wts
                 new_atmos = StudioAtmos.from_run(run)
                 return new_atmos
+            
+
+def keep_k_closest(points, query, k=100):
+    """Keep only the k closest points to query_point"""
+    # Calculate distances
+    distances = np.linalg.norm(points - query, axis=1)
+    
+    # Get indices of k smallest distances (O(n) operation)
+    k_closest_indices = np.argpartition(distances, k)[:k]
+    
+    return points[k_closest_indices], k_closest_indices
+
+
+#=====================================================================
+def compute_nn_weights(points, query, draw=False):
+    idx = is_point_in_array(query, points)
+    if idx >= 0:
+        return np.array([1]), np.array([idx])
+    
+    hull = ConvexHull(points)
+    if not point_in_convex_hull(query, hull):
+        return np.array([0]), np.array([-1])
+    
+    vor1 = Voronoi(points)
+    vor2 = Voronoi(np.vstack([points, query]))
+    query_region = vor2.regions[vor2.point_region[-1]]
+    query_hull = ConvexHull(vor2.vertices[query_region])
+    nbors, ridge_verts = get_nbors(vor2, -1)
+    areas = np.zeros(len(nbors))
+
+    if draw:
+        colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+
+    for n, nbor in enumerate(nbors):
+        region = vor1.regions[vor1.point_region[nbor]]
+        vertices = vor2.vertices[ridge_verts[n]]
+        removed_vertices = []
+        for i in region:
+            if i >= 0:
+                point = vor1.vertices[i]
+                if point_in_convex_hull(point, query_hull):
+                    removed_vertices.append(point)
+
+        
+        vertices = np.vstack([vertices, removed_vertices])
+        areas[n] = compute_enclosed_measure(vertices)
+        if draw:
+            hull = ConvexHull(vertices)
+            vertices = vertices[hull.vertices]
+            plt.gca().add_patch(Polygon(vertices, color=colors[n], alpha=0.5))
+
+    weights = areas / np.sum(areas)
+    return weights, nbors
+

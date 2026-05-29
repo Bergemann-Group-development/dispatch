@@ -4,6 +4,7 @@ from tumult.auxfuncs import *
 import numpy as np
 import pandas as pd
 import textwrap
+from astropy import units as u
 
 element_ids = [
         'H' ,'He','Li','Be','B' ,'C' ,'N' ,'O' ,'F ',
@@ -188,6 +189,34 @@ class LineList(pd.DataFrame):
     df = pd.read_csv(filename, skiprows=2, header=None, names=names, quotechar="'")
     eid, j = df.ion.str.split(expand=True).values.T
     df['ion'] = [f'{e} {ion_dict[int(i)]}' for e, i in zip(eid, j)]
+    df['iso'] = 0
+    return cls(df)
+  
+  @classmethod
+  def from_abslin_format(cls, filename):
+    df = pd.DataFrame(columns=['ion', 'lam0', 'evi', 'loggf', 'ga', 'gw', 'gq'])
+
+    with open(filename) as f:
+      lines = f.readlines()
+      lines = [l.strip() for l in lines if len(l.strip()) > 0]
+      nlines = int(lines.pop(0))
+      while len(lines) > 0:
+        # lower level
+        idi = lines.pop(0)
+        ji, ecmi, gi = [float(x) for x in lines.pop(0).split()]
+        # upper level
+        idj = lines.pop(0)
+        jj, ecmj, gj = [float(x) for x in lines.pop(0).split()]
+        # line data
+        lam0, lams, lame = [float(x) for x in lines.pop(0).split()]
+        fosc, ga, gw, gq = [float(x) for x in lines.pop(0).split()]
+        
+        evi = (ecmi * u.cm**-1).to(u.eV, equivalencies=u.spectral())
+        loggf = np.log10(gi * fosc)
+
+        df.loc[len(df)] = [idi, lam0, evi.value, loggf, ga, gj, gq]
+
+    df.ion = df.ion.str.split().apply(lambda x: x[0].lower().capitalize() + ' ' + x[1])
     df['iso'] = 0
     return cls(df)
   

@@ -48,7 +48,10 @@ class tumult(object):
     @property
     def atmos(self):
         if not hasattr(self, '_atmos'):
-            self._atmos = AtmosClass.from_run(self)
+            if hasattr(self, 'runs'):
+                self._atmos = AtmosClass.combine([run.atmos for run in self.runs], weights=self.weights)
+            else:
+                self._atmos = AtmosClass.from_run(self)
         return self._atmos
     
     @atmos.setter
@@ -878,9 +881,6 @@ class tumult(object):
         check_and_combine('nline')
         check_and_combine('dim')
         check_and_combine('abundances')
-
-        if hasattr(runs[0], 'atmos'):
-            self.atmos = AtmosClass.combine([run.atmos for run in runs], weights=weights)
 
         weights = weights or np.ones(len(runs))/len(runs)
 

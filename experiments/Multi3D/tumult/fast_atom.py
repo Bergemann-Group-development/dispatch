@@ -53,15 +53,18 @@ class FastAtom(object):
     bb['lam0'] = vac2air(bb.lam_vac)
     bb['loggf'] = np.log10(bb.f*levels.iloc[bb.i].g.values)
 
-    self.level = levels
+    self.lvl = levels
     self.bbt = bb
     self.trans = TransFactory(self)
 
   def load_sp(self, lam, qnorm):
     self.qnorm = qnorm * 1e5 / CC
-    qmax = get_qmax(self.bbt.qmax, self.bbt.q0) * self.qnorm
-    self.bbt['lb'] = self.bbt.lam0 / (1 + qmax)
-    self.bbt['lr'] = self.bbt.lam0 / (1 - qmax)
+    mask = self.bbt.nq > 0
+    qmax = get_qmax(self.bbt.qmax[mask], self.bbt.q0[mask]) * self.qnorm
+    self.bbt.loc[mask, 'lb'] = self.bbt.loc[mask, 'lam0'] / (1 + qmax)
+    self.bbt.loc[mask, 'lr'] = self.bbt.loc[mask, 'lam0'] / (1 - qmax)
+    self.bbt.loc[~mask, 'lb'] = self.bbt.loc[~mask, 'lam0'] - self.bbt.loc[~mask, 'qmax']
+    self.bbt.loc[~mask, 'lr'] = self.bbt.loc[~mask, 'lam0'] + self.bbt.loc[~mask, 'qmax']
     self.bbt['i0'] = np.searchsorted(lam, self.bbt.lam0)
     self.bbt['ib'] = np.searchsorted(lam, self.bbt.lb)
     self.bbt['ir'] = np.searchsorted(lam, self.bbt.lr)
@@ -69,10 +72,16 @@ class FastAtom(object):
   def get_title(self, abnd=None):
       if abnd is None: abnd = self.abnd
       return 'A({}) = {:.2f}'.format(self.id.strip(), abnd)
+  
+  def plot_grotrian(self, **kwargs):
+    plot_grotrian(self.lvl, self.bbt, **kwargs)
 
 class PandasAtom(object):
   def __init__(self):
     pass
+
+  def plot_grotrian(self, **kwargs):
+    plot_grotrian(self.lvl, self.bbt, **kwargs)
 
   def post_init(self):
     self.molec = self.id in ['H2', 'C2', 'N2', 'O2', 'CH', 'OH', 'NH', 'CN', 'CO', 'NO', 'H2O']
@@ -123,7 +132,7 @@ class PandasAtom(object):
     self.ai = atom.ai
     self.nk = atom.nk
     self.nline = atom.nline
-    self.lvl = fast.level[['ev', 'g', 'ion', 'label']]
+    self.lvl = fast.lvl[['ev', 'g', 'ion', 'label']]
 
     bb = fast.bbt.copy()
     if use_comment_lam0:
@@ -223,9 +232,12 @@ class PandasAtom(object):
 
   def load_sp(self, lam, qnorm):
     self.qnorm = qnorm * 1e5 / CC
-    qmax = get_qmax(self.bbt.qmax, self.bbt.q0) * self.qnorm
-    self.bbt['lb'] = self.bbt.lam0 / (1 + qmax)
-    self.bbt['lr'] = self.bbt.lam0 / (1 - qmax)
+    mask = self.bbt.nq > 0
+    qmax = get_qmax(self.bbt.qmax[mask], self.bbt.q0[mask]) * self.qnorm
+    self.bbt.loc[mask, 'lb'] = self.bbt.loc[mask, 'lam0'] / (1 + qmax)
+    self.bbt.loc[mask, 'lr'] = self.bbt.loc[mask, 'lam0'] / (1 - qmax)
+    self.bbt.loc[~mask, 'lb'] = self.bbt.loc[~mask, 'lam0'] - self.bbt.loc[~mask, 'qmax']
+    self.bbt.loc[~mask, 'lr'] = self.bbt.loc[~mask, 'lam0'] + self.bbt.loc[~mask, 'qmax']
     self.bbt['i0'] = np.searchsorted(lam, self.bbt.lam0)
     self.bbt['ib'] = np.searchsorted(lam, self.bbt.lb)
     self.bbt['ir'] = np.searchsorted(lam, self.bbt.lr)
@@ -279,3 +291,120 @@ class PandasAtom(object):
       ir[1:] = nnu - np.cumsum(nq[:-1])
       ib = ir - nq
       return ib, ir
+  
+def convert_label_to_x_axis(label: str):
+    # ok, this is a bit tricky
+    # the label is in the form "x4D1*"
+    # zyx or abc -> parity. zyx is odd, abc is even
+    # 4 is the s-value
+    # D is the L-value
+    # 1 is the J-value
+    # * is the parity odd/even. with * it is odd, without it is even
+
+    label_og = label
+
+    # sometimes however, the label is something like "l4D" or just "l4D*"
+    # so we need to handle that. we dont care about J-value actually.
+    # we need to return s-value, L-value and * if it is there
+    # if length < 3, return None
+    if len(label) < 3:
+        print(f"Label {label_og} is too short")
+        return None
+
+    # first lets cut down to last 4 characters
+    label = label[-4:]
+    # now lets see the last character
+    if label[-1] == "*":
+        parity_even = False
+        # pop last character
+        label = label[:-1]
+    else:
+        parity_even = True
+    # now lets see the last character. if a number, pop it
+    if label[-1].isnumeric():
+        J_value = int(label[-1])
+        label = label[:-1]
+    # ok now the last 2 values should hopefully be s-value and L-value
+    L_value = label[-1]
+    s_value = label[-2]
+
+    # if s_value is not a number, then return None
+    if not s_value.isnumeric():
+        print(f"Label {label_og} has non-numeric s-value")
+        return None
+    s_value = int(s_value)
+
+    # if L_value is not a letter, then return None
+    if not L_value.isalpha():
+        print(f"Label {label_og} has non-letter L-value")
+        return None
+
+    # now return the values
+    value_to_return = f"{s_value}{L_value}"
+    if not parity_even:
+        value_to_return += "*"
+    return value_to_return
+
+def plot_grotrian(lvl, bbt, ion=None, lw=0.8, level_color='k', level_lw=1, color='lightgrey', noff=2, **kwargs):
+    icont = np.where(np.diff(lvl.ion, prepend=-1)>0)[0]
+
+    if ion is not None:
+        lvl = lvl.iloc[:icont[ion]+1]
+
+    ev = lvl.ev.values
+    olabels = lvl.label.str.split(expand=True).iloc[:, -1].values
+    labels = [convert_label_to_x_axis(label) for label in olabels]
+    mask = np.array([label is None for label in labels])
+    labels = np.array([label.replace('*', r'$^o$') if label is not None else None for label in labels])
+
+    num_labels = [l
+            .replace('S', '1')
+            .replace('P', '2')
+            .replace('D', '3')
+            .replace('F', '4')
+            if l is not None else '0'
+            for l in labels]
+    
+    labels[mask] = olabels[mask]
+    ulabels, idx, xlabel = np.unique(num_labels, return_index=True, return_inverse=True)
+
+    lower = bbt.i
+    upper = bbt.j
+    lvlmin = lvl.index[0]
+    lvlmax = lvl.index[-1]
+    mask = (lower >= lvlmin) & (upper <= lvlmax)
+    lower = lower[mask] - lvlmin
+    upper = upper[mask] - lvlmin
+
+    x = [xlabel[lower], xlabel[upper]]
+    y = [ev[lower], ev[upper]]
+
+    xlvl = [xlabel-0.2, xlabel+0.2]
+    ylvl = [ev, ev]
+
+    ax = plt.gca()
+    ax.plot(x, y, color=color, lw=lw, **kwargs)
+    ax.plot(xlvl, ylvl, color=level_color, lw=level_lw)
+
+    if ion is not None:
+        iconts = icont[ion:ion+1]
+    else:
+        iconts = icont
+        
+    for i in iconts:
+        ax.axhline(lvl.ev[i], color='lightgrey', lw=1, ls='--', zorder=-10)
+
+    ax.set_xticks(np.arange(len(ulabels)))
+    ax.set_xticklabels(labels[idx])
+    ax.tick_params(axis='x', which='minor', length=0)
+    ax.invert_xaxis()
+    ax.set_ylabel('Level energy [eV]')
+    #title = 'Grotrian Diagram of {:} '.format(self.id)
+    #if ion is not None: title = title + 'I'*ion
+    #ax.set_title(title)
+
+    plabels = ax.get_xticklabels()
+    # Loop over the labels and adjust the y position for every second label
+    for i, label in enumerate(plabels):
+        off = -0.05*(i%noff)
+        label.set_y(off)  # adjust the position
