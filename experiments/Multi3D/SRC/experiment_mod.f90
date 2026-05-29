@@ -19,7 +19,7 @@ MODULE experiment_mod
   USE handyfuncs_mod
   USE m3d_halo_mod, only: m3d_halo_t
   USE m3d_patch_mod, only: verbose, print_execution_history, use_rho, use_ne, &
-    long_vec, pivot_z, rotate_atmos, atmos_format, amr, atmos_format
+    long_vec, pivot_z, rotate_atmos, atmos_format, amr
   USE composition_patch_mod, only: composition_patch_t
   USE composition_mod, only: composition_type
   USE read_atmos_mod, only: ia, interpolate_atmos

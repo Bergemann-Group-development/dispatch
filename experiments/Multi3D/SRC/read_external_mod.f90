@@ -134,6 +134,27 @@ contains
     call io%lock%unset
 
     atmos_format = lowercase(atmos_format)
+    atmos_file = lowercase(atmos_file)
+
+    if (trim(atmos_format)=='unknown') then
+      if (index(atmos_file, '.mod') > 0) then
+        atmos_format = 'marcs'
+      elseif (index(atmos_file, '.dat') > 0) then
+        atmos_format = 'siu_bin'
+      elseif (index(atmos_file, '.txt') > 0) then
+        atmos_format = 'text'
+      elseif (index(atmos_file, 'stagger_grid2') > 0) then
+        atmos_format = 'stagger2'
+      elseif (index(atmos_file, 'stagger') > 0) then
+        atmos_format = 'stagger'
+      elseif (index(atmos_file, 'data/') > 0) then
+        atmos_format = 'save'
+      else
+        write(stdout, *) 'Could not determine atmos_format from atmos_file. Please specify atmos_format in the input file. Stopping...'
+        stop
+      endif
+    endif
+
     ia%kind = trim(atmos_format)
 
     if (atmos_format == 'save') then
