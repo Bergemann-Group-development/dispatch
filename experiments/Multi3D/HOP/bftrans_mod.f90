@@ -279,11 +279,27 @@ contains
               else
                 ! linear interpolation
                 dt = (t - self%tt(it)) * dtdt1(it)
-                do f=1, self%nnu
-                  a = pvt_xkap(f,it)
-                  b = pvt_xkap(f,it+1)
-                  yy(f) = (b - a)*dt + a
-                end do
+                if (t < self%tt(1)) then
+                  do f=1, self%nnu
+                    a = pvt_xkap(f,1)
+                    b = pvt_xkap(f,2)
+                    yy(f) = (b - a)*dt + a
+                    yy(f) = min(yy(f), pvt_xkap(f,1))
+                  end do
+                elseif (t >= self%tt(self%ntt)) then
+                  do f=1, self%nnu
+                    a = pvt_xkap(f,self%ntt-1)
+                    b = pvt_xkap(f,self%ntt)
+                    yy(f) = (b - a)*dt + a
+                    yy(f) = min(yy(f), pvt_xkap(f,self%ntt))
+                  end do
+                else
+                  do f=1, self%nnu
+                    a = pvt_xkap(f,it)
+                    b = pvt_xkap(f,it+1)
+                    yy(f) = (b - a)*dt + a
+                  end do
+                endif
               endif
 
               if (do_exp) then
