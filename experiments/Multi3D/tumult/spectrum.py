@@ -5,7 +5,7 @@ import astropy.constants as const
 import matplotlib.pyplot as plt
 from scipy import optimize
 from .convolutions import convolve, kernel_width
-from .utils import ensure_unit, calc_teff, get_bisector, fit_line_profile, get_weq
+from .utils import ensure_unit, calc_teff, get_bisector, fit_line_profile, get_weq, kpno_spectral_filter
 from .plotting_scripts import adjust_max_xticks
 
 
@@ -47,6 +47,16 @@ class Spectrum:
         default_yunit = u.erg / (u.s * u.cm**2 * u.angstrom)
         xunit = xunit or default_xunit
         yunit = yunit or default_yunit
+
+        if xdata.dtype.byteorder == '>':
+            xdata = xdata.byteswap().view(xdata.dtype.newbyteorder('<'))
+        if ydata.dtype.byteorder == '>':
+            ydata = ydata.byteswap().view(ydata.dtype.newbyteorder('<'))
+
+        if isinstance(xunit, str):
+            xunit = u.Unit(xunit)
+        if isinstance(yunit, str):
+            yunit = u.Unit(yunit)
 
         if isinstance(xdata, u.Quantity):
             self.xdata = xdata
@@ -353,7 +363,7 @@ class Spectrum:
             x0 = ensure_unit(x0, self.xunit)
             dx = ensure_unit(dx, self.xunit)
             xmin, xmax = x0 - dx, x0 + dx
-        elif xmin is not None and xmax is not None:
+        elif xmin is not None or xmax is not None:
             xmin = ensure_unit(xmin, self.xunit)
             xmax = ensure_unit(xmax, self.xunit)
         elif slc is not None:
@@ -373,34 +383,34 @@ class Spectrum:
         s = self._crop(xmin, xmax)
 
         if kwargs or vshift is not None:
-            # 1. Padding and Shift Logic
-
-            # vshift handled by get_wavelength_shift
             lshift = get_wavelength_shift(vshift)
 
-            # Calculate Kernel Width for padding
-            width_frac = kernel_width(**kwargs)
-            pad = 1 + width_frac
+            if kwargs:
+                # Pad the extraction window to accommodate the convolution kernel
+                width_frac = kernel_width(**kwargs)
+                pad = 1 + width_frac
+                xmin_eff = (xmin / lshift) / pad
+                xmax_eff = (xmax / lshift) * pad
+                sub_spec = self._crop(xmin_eff, xmax_eff)
 
-            # Padded bounds (shifted to rest frame)
-            # xmin/xmax are in "observed" frame (target frame) and are Quantities.
-            # We want to extract the "rest" frame chunk that will become this observed chunk.
-            xmin_eff = (xmin / lshift) / pad
-            xmax_eff = (xmax / lshift) * pad
+                if len(sub_spec.xdata) == 0:
+                    print("Warning: Convolution crop resulted in empty spectrum.")
+                    return sub_spec
 
-            # Crop 1: Extract padded chunk
-            sub_spec = self._crop(xmin_eff, xmax_eff)
+                cx, cy = convolve(*sub_spec, **kwargs)
+            else:
+                # vshift only — no convolution, no padding needed
+                sub_spec = self._crop(xmin / lshift, xmax / lshift)
 
-            if len(sub_spec.xdata) == 0:
-                print("Warning: Convolution crop resulted in empty spectrum.")
-                return sub_spec
+                if len(sub_spec.xdata) == 0:
+                    print("Warning: vshift crop resulted in empty spectrum.")
+                    return sub_spec
 
-            cx, cy = convolve(*sub_spec, **kwargs)
+                cx, cy = sub_spec.xdata, sub_spec.ydata
 
-            # Shift back to observed frame
+            # Shift back to observed frame and interpolate onto target grid
             cx = cx * lshift
 
-            # Interpolate to target grid
             newx = newx or s.xdata
             newy = np.interp(newx, cx, cy)
             if relative: newx = newx - center
@@ -628,6 +638,24 @@ class Spectrum:
             The effective temperature of the spectrum.
         """
         return calc_teff(*self, **kwargs)
+    
+    
+    def kpno_filter(self, **kwargs):
+        """
+        Apply a KPNO filter to the spectrum.
+
+        Parameters:
+        -----------
+        **kwargs : dict
+            Keyword arguments to pass to kpno_filter.
+
+        Returns:
+        --------
+        Spectrum
+            A new Spectrum instance with the KPNO filter applied.
+        """
+        new_ydata = kpno_spectral_filter(*self, **kwargs)
+        return Spectrum(self.xdata, new_ydata, xref=self.xref, yunit=self.yunit)
 
     def __getitem__(self, key):
         """
@@ -661,3 +689,14 @@ class Spectrum:
         xdata = np.concatenate([s.xdata for s in spectra])
         ydata = np.concatenate([s.ydata for s in spectra])
         return cls(xdata, ydata)
+
+
+def adjust_max_xticks(ax=None):
+    ax = ax or plt.gca()
+    transform = ax.transData.inverted()
+    xticklabels = ax.get_xticklabels()
+    widths = [label.get_window_extent().transformed(transform).width for label in xticklabels]
+    axwidth = ax.get_window_extent().transformed(transform).width
+    if np.sum(widths) > axwidth:
+        n = np.floor(axwidth / np.mean(widths))
+        ax.xaxis.set_major_locator(plt.MaxNLocator(n))

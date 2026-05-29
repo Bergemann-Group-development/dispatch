@@ -1,9 +1,5 @@
-import asyncio.proactor_events
-import asyncio.proactor_events
-import asyncio.proactor_events
-import asyncio.proactor_events
 import astropy.units as u
-from scipy.optimize import curve_fit as scipy_curve_fit
+from scipy.optimize import curve_fit
 import numpy as np
 from scipy.special import voigt_profile as scipy_voigt_profile
 from scipy.signal import argrelextrema
@@ -11,6 +7,24 @@ import matplotlib.pyplot as plt
 from scipy.interpolate import CubicHermiteSpline
 from astropy.modeling.models import BlackBody
 import astropy.constants as const
+
+
+def has_units(value):
+    """
+    Check if value has units.
+    """
+    if not isinstance(value, u.Quantity):
+        return False
+    return not value.unit.is_equivalent(u.dimensionless_unscaled)
+
+
+def match_units(val, ref):
+    if has_units(ref):
+        if has_units(val):
+            val = val.to(ref.unit)
+        else:
+            val = val * ref.unit
+    return val
 
 
 def ensure_unit(value, unit=None, target_unit=None):
@@ -80,7 +94,7 @@ def pchip_mono(xx, yy, axis=0, **kwargs):
     return CubicHermiteSpline(xx, yy, dydx, axis=axis, **kwargs)
 
 
-def parabolic_min(xx, yy):
+def parabolic_min(xx_in, yy_in):
     """
     Find the minimum of a parabolic fit to the minimum value and its neighbors.
 
@@ -91,8 +105,8 @@ def parabolic_min(xx, yy):
     yy : array-like
         The y-values.
     """
-    xx = np.array(xx)
-    yy = np.array(yy)
+    xx = np.array(xx_in)
+    yy = np.array(yy_in)
     imin = np.argmin(yy)
     imin = np.clip(imin, 1, len(yy) - 2)
 
@@ -109,6 +123,10 @@ def parabolic_min(xx, yy):
     poly_root = np.roots(pdiff)
     xmin = poly_root[0]
     ymin = np.polyval(p, xmin)
+
+    xmin = match_units(xmin, xx_in)
+    ymin = match_units(ymin, yy_in)
+
     return xmin, ymin
 
 
@@ -209,18 +227,26 @@ def get_weq(
         def func(x):
             return np.interp(x, xx, yy, **kwargs)
 
-    elif profile == "pchip":
+    if profile == "pchip":
         func = pchip_mono(xx, yy, **kwargs)
         xxx = np.linspace(xx[0], xx[-1], xx.size * 10)
         weq = np.trapz(1 - func(xxx), x=xxx)
 
-    elif profile in ["gauss", "voigt", "asym_gauss"]:
-        popt, pcov, func = fit_line_profile(
+    if profile in ["gauss", "voigt", "asym_gauss"]:
+        pout, pcov, func = fit_line_profile(
             xx, yy, x0=x0, sigma=sigma, profile=profile, **kwargs
         )
-        weq = line_weq(*popt[1:], profile=profile)
-        partials = np.concatenate([[0], line_weq_partials(*popt[1:], profile=profile)])
-        eweq = np.sqrt(np.dot(partials, np.dot(pcov, partials)))
+        weq = line_weq(*pout, profile=profile)
+
+        partials = []
+        for i, arg in enumerate(pout):
+            arg_plus = list(pout)
+            step = arg * 1e-4
+            arg_plus[i] = arg + step
+            partial = (line_weq(*arg_plus, profile=profile) - weq) / step
+            partials.append(partial.value)
+
+        eweq = np.sqrt(np.dot(partials, np.dot(pcov, partials))) * weq.unit
 
     if syst is not None:
         step = syst * 0.1
@@ -229,8 +255,6 @@ def get_weq(
         esys = syst * gradient
         eweq = np.sqrt(eweq**2 + esys**2)
 
-    weq = ensure_unit(weq, unit=xunit)
-    eweq = ensure_unit(eweq, unit=xunit)
     if target_unit is not None:
         weq = weq.to(target_unit)
         eweq = eweq.to(target_unit)
@@ -314,7 +338,7 @@ def voigt_function(a, v):
     return scipy_voigt_profile(v * s2, 1, a * s2) * s2
 
 
-def voigt_profile(xx, x0, amp, sigma, a):
+def voigt_profile(xx, x0, amp, sigma, rho):
     """
     Calculate a Voigt profile.
 
@@ -324,15 +348,18 @@ def voigt_profile(xx, x0, amp, sigma, a):
         The x-coordinates.
     x0 : float
         The center of the profile.
-    a : float
-        Lorentzian width parameter.
+    rho : float
+        Ratio of FWHM_lorentz / (FWHM_lorentz + FWHM_gauss). Takes values in [0, 1).
     sigma : float
         Gaussian width parameter.
     amp : float
         The amplitude.
     """
-    vv = (xx - x0) / sigma
-    return 1 - amp * voigt_function(a, vv)
+    a = (rho / (1.0 - rho)) * np.sqrt(np.log(2))
+    v_peak = voigt_function(a, 0.0)
+    vv = np.array((xx - x0) / (sigma * np.sqrt(2)))
+    v_norm = voigt_function(a, vv)
+    return 1 - amp * v_norm / v_peak
 
 
 def line_profile_func(*args, profile="gauss"):
@@ -386,87 +413,23 @@ def line_weq(*args, profile="gauss"):
     profile : str, optional
         Profile type: "gauss", "asym_gauss", "voigt" (default is "gauss").
     """
-    s2p = np.sqrt(2 * np.pi)
     if profile == "gauss":
-        # args: amp, sig
-        weq = args[0] * s2p * args[1]
+        # args: x0, amp, sig
+        weq = args[1] * np.sqrt(2 * np.pi) * args[2]
     elif profile == "asym_gauss":
-        # args: amp, sig_left, sig_right
-        weq = args[0] * s2p * (args[1] + args[2]) * 0.5
+        # args: x0, amp, sig_left, sig_right
+        weq = args[1] * np.sqrt(2 * np.pi) * (args[2] + args[3]) * 0.5
     elif profile == "voigt":
-        # args: amp, sigma, a
-        weq = args[0] * args[1]
+        # args: x0, amp, sigma, rho
+        a = (args[3] / (1.0 - args[3])) * np.sqrt(np.log(2))
+        v_peak = voigt_function(a, 0) / (args[2] * np.sqrt(2))
+        weq = args[1] / v_peak
     else:
         raise ValueError(f"Unknown profile {profile}")
 
     return weq
 
-
-def line_weq_partials(*args, da=1e-10, profile="gauss"):
-    """
-    Calculate partial derivatives of equivalent width with respect to profile parameters.
-
-    Parameters:
-    -----------
-    *args :
-        Parameters of the profile.
-    profile : str, optional
-        Profile type: "gauss", "asym_gauss", "voigt" (default is "gauss").
-    """
-    partials = []
-    for i, arg in enumerate(args):
-        arg_plus = list(args)
-        arg_plus[i] += da
-        partials.append(
-            (line_weq(*arg_plus, profile=profile) - line_weq(*args, profile=profile))
-            / da
-        )
-
-    return partials
-
-
-def lowpass(xx, yy, thresh=15, force_period=False):
-    """
-    Apply a low-pass filter using FFT.
-
-    Parameters:
-    -----------
-    xx : array-like
-        The x-coordinates.
-    yy : array-like
-        The y-values.
-    thresh : float, optional
-        Frequency threshold for filtering (default is 15).
-    force_period : bool, optional
-        Whether to enforce periodicity (default is False).
-    """
-    newx = np.linspace(xx.min(), xx.max(), len(xx) * 3)
-    dx = newx[1] - newx[0]
-    yy = np.interp(newx, xx, yy)
-
-    if force_period:
-        cnt = linear_edge_normalisation(newx, yy)
-        yy = yy / cnt
-
-    # Perform Fourier Transform
-    signal_fft = np.fft.fft(yy)
-    frequencies = np.fft.fftfreq(len(yy), dx)  # Get frequency components
-
-    # Apply the low-pass filter (set high-frequency components to zero)
-    filtered_fft = signal_fft.copy()
-    filtered_fft[np.abs(frequencies) > thresh] = 0
-
-    # Perform inverse Fourier Transform to get the filtered signal
-    filtered_signal = np.fft.ifft(filtered_fft).real
-
-    if force_period:
-        filtered_signal = filtered_signal * cnt
-
-    newy = np.interp(xx, newx, filtered_signal)
-    return newy
-
-
-def auto_crop_core(xx, yy, x0, thresh=15, exclude_wing=False, plot=False):
+def auto_crop_core(xx_in, yy_in, x0, exclude_wing=False, plot=False):
     """
     Automatically crop the signal around the core absorption feature.
 
@@ -478,15 +441,13 @@ def auto_crop_core(xx, yy, x0, thresh=15, exclude_wing=False, plot=False):
         The y-values.
     x0 : float
         Central wavelength/velocity to crop around.
-    thresh : float, optional
-        Threshold for lowpass filtering (default is 15).
     exclude_wing : bool, optional
         Whether to exclude wings (default is False).
     """
-    xx = np.array(xx)
-    yy = np.array(yy)
+    xx = np.array(xx_in)
+    yy = np.array(yy_in)
     # remove high frequency noise to get smooth signal
-    ss = lowpass(xx, yy, thresh=thresh)
+    ss = kpno_spectral_filter(xx, yy)
     ex = argrelextrema(ss, np.greater_equal)[0]
     i0 = np.searchsorted(xx[ex], x0)
     lex = ex[i0 - 1]
@@ -524,6 +485,9 @@ def auto_crop_core(xx, yy, x0, thresh=15, exclude_wing=False, plot=False):
     if plot:
         plt.axvline(x[0], color="k", linestyle=":", lw=0.5)
         plt.axvline(x[-1], color="k", linestyle=":", lw=0.5)
+
+    x = match_units(x, xx_in)
+    y = match_units(y, yy_in)
 
     return x, y
 
@@ -586,11 +550,6 @@ def fit_line_profile(
     **kwargs : dict, optional
         Additional arguments to pass to curve_fit.
     """
-    xx = ensure_unit(xx, unit=u.AA, target_unit=u.AA).value
-    yy = ensure_unit(yy, target_unit=u.dimensionless_unscaled).value
-    if x0 is not None:
-        x0 = ensure_unit(x0, unit=u.AA, target_unit=u.AA).value
-
     x, y, x0 = _prepare_profile_data(xx, yy, x0, dlam, auto_crop, plot=plot)
     absolute = sigma is not None
 
@@ -603,34 +562,42 @@ def fit_line_profile(
     amp = 1 - ymin
     s2p = np.sqrt(2 * np.pi)
     sig = np.trapz(1 - y, x) / (s2p * amp)
-    dx = x0 * 1e-2
+
+    xlo = 0.99 * x0
+    xhi = 1.01 * x0
+    slo = 1e-8 * x0
+    shi = 1000 * x0
 
     if profile == "gauss":
         # x0, amp, sig
         p = [xmin, amp, sig]
-        b = [[x0 - dx, 0, 1e-4], [x0 + dx, 1, 1]]
+        b = [[xlo, 0, slo], [xhi, 1, shi]]
     elif profile == "asym_gauss":
         # x0, amp, sig_left, sig_right
         p = [xmin, amp, sig, sig]
-        b = [[x0 - dx, 0, 1e-4, 1e-4], [x0 + dx, 1, 1, 1]]
+        b = [[xlo, 0, slo, slo], [xhi, 1, shi, shi]]
     elif profile == "voigt":
-        # x0, amp, sigma, a
-        p = [xmin, amp, sig, 0]
-        b = [[x0 - dx, 0, 1e-8, 0], [x0 + dx, 1e3, 1e3, 1e3]]
+        # x0, amp, sigma, rho
+        p = [xmin, amp, sig, 0.0]
+        b = [[xlo, 0, slo, 0], [xhi, 1, shi, 1]]
     else:
         raise ValueError(f"Unknown profile {profile}")
 
     p0 = p if p0 is None else p0
     bounds = b if bounds is None else bounds
-    p0 = np.clip(p0, bounds[0], bounds[1])
+    p0 = [p / x0 if has_units(p) else p for p in p0]
+    lb = [b / x0 if has_units(b) else b for b in bounds[0]]
+    ub = [b / x0 if has_units(b) else b for b in bounds[1]]
+    bounds = (lb, ub)
+    p0 = np.clip(p0, *bounds)
 
     def opt_func(x, *args):
         return line_profile(x, *args, profile=profile)
 
     try:
-        popt, pcov = scipy_curve_fit(
+        popt, pcov = curve_fit(
             opt_func,
-            x,
+            x / x0,
             y,
             p0=p0,
             bounds=bounds,
@@ -643,12 +610,14 @@ def fit_line_profile(
         return None, None, None
 
     def func(x):
-        return opt_func(x, *popt)
+        return opt_func(x / x0, *popt)
+
+    pout = [popt[i] * x0 if has_units(p[i]) else popt[i] for i in range(len(p))]
 
     if plot:
         plt.plot(xx, func(xx), ls="--", zorder=10)
 
-    return popt, pcov, func
+    return pout, pcov, func
 
 
 def get_bisector(xx, yy, x0=None, n=100, frac=0.99):
@@ -696,11 +665,11 @@ def calc_teff(xx, yy, planck_thresh=None):
     yy : array-like
         The y-values.
     planck_thresh : float, optional
-        Threshold for lowpass filtering (default is 15).
     """
     mnan = np.isfinite(yy)
 
     if planck_thresh is not None:
+
         def opt_func(x, Teff):
             bb = BlackBody(Teff)
             y = np.pi * bb(x)
@@ -710,7 +679,7 @@ def calc_teff(xx, yy, planck_thresh=None):
         mx = xx[mask]
         my = yy[mask]
 
-        popt, _ = curve_fit(opt_func, mx, my, bounds=([2000, 10000]))
+        popt, _ = curve_fit(opt_func, mx, my, bounds=([2000], [10000]))
 
         trailx = np.geomspace(xx[-1], 1e6)[1:]
         traily = opt_func(trailx, *popt)
@@ -723,81 +692,83 @@ def calc_teff(xx, yy, planck_thresh=None):
 
     bol = np.trapz(newy, x=newx)
     teff = (bol / const.sigma_sb) ** 0.25
-    return teff.decompose()
+    return teff
 
 
-def minimize(objective_function, p0, bounds, **kwargs):
-    """
-    Wraps scipy.optimize.minimize to support astropy units and normalize bounds.
+def brault_filter(x, alpha, k, p0, p1, *pbase):
+  vgt1 = p0 * np.exp(-2*np.sqrt(2)*alpha*k*x - (k*x)**2)
+  vgt2 = p1 * np.exp(-2*np.sqrt(2)*alpha*k/2*x - (k/2*x)**2)
+  res = vgt1 + vgt2 + np.exp(np.polyval(pbase, x))
+  return res
+
+
+def apply_brault_filter(signal, sample_spacing, p0=None, base_deg=2):
+    N = len(signal)
+    freqs = np.fft.fftfreq(N, d=abs(sample_spacing))
+    freqs = freqs / np.max(freqs)  # Normalize frequencies
+    full_s = np.abs(freqs)
+    s = full_s[:N//2]  # Only use positive frequencies for modeling
+
+    F_signal = np.fft.fft(signal)
+    power_spectrum = np.abs(F_signal[:N//2])**2
+    # Normalize power spectrum for fitting
+    norm_power = power_spectrum / np.max(power_spectrum[1:])
+
+    slc = slice(None, None) # slice(0, N//8)
+    xfit = s[slc]
+    yfit = np.log(norm_power[slc])
+    N2 = len(xfit)
+
+    p2 = np.polyfit(xfit[N2//2:], yfit[N2//2:], deg=base_deg)
     
-    p0: list of astropy Quantities
-    bounds: list of tuples containing (lower_bound, upper_bound) as Quantities
-    """
-    p0_norm = []
-    lower_list = []
-    range_list = []
+    # Fit Voigt model to power spectrum
+    bounds = ([0,]*4 + [-np.inf]*len(p2), [np.inf,]*(4+len(p2)))
+    if p0 is None:
+      p0 = np.array([1e-8, 0.1, 0.1, 0.1, *p2])
+
+    def opt_func(x, *args):
+        return np.log(brault_filter(x, *args))
+
+    popt, _ = curve_fit(opt_func, xfit, yfit, p0=p0, maxfev=10000, bounds=bounds)
     
-    # 1. Process units and normalize p0
-    for x, (lower, upper) in zip(p0, bounds):
-        # Ensure bounds match the unit of the initial guess
-        lower = ensure_unit(lower, unit=p0.unit, target_unit=p0.unit)
-        upper = ensure_unit(upper, unit=p0.unit, target_unit=p0.unit)
-        
-        param_range = upper - lower
-        normalized_x = ((x - lower) / param_range).value
-        
-        p0_norm.append(normalized_x)
-        lower_list.append(lower)
-        range_list.append(param_range)
-        
-    p0_norm = np.array(p0_norm)
-    normalized_bounds = [(0.0, 1.0),] * len(p0)
+    # Construct filter
+    model = brault_filter(s, *popt)
+    P_signal_model = brault_filter(full_s, *popt)
+    noise = brault_filter(full_s, 0, 0, 0, 0, *popt[4:])
+    H_opt = (P_signal_model - noise) / P_signal_model
 
-    # 2. Define the wrapped objective function for scipy
-    def wrapped_objective(x_norm_array):
-        # Denormalize back to physical quantities
-        x_denorm = [
-            l + xn * r for l, xn, r in zip(lower_list, x_norm_array, range_list)
-        ]
-        
-        # Evaluate user function. (Assumes the function returns a unitless float)
-        result = objective_function(x_denorm)
-        return getattr(result, 'value', result) 
+    # plt.plot(s, norm_power);
+    # plt.plot(s, exp(np.polyval(p2, s)));
+    # plt.plot(full_s, P_signal_model);
+    # plt.plot(full_s, noise);
+    # plt.yscale('log'); plt.xlim(0); plt.show();
 
-    result = minimize(
-        wrapped_objective, 
-        p0_norm, 
-        bounds=normalized_bounds, 
-        **kwargs
-    )
-    
-    # 4. Denormalize the final optimized parameters back to Quantities
-    result.x = [
-        l + xn * r for l, xn, r in zip(lower_list, result.x, range_list)
-    ]
-
-    # Extract the normalized covariance matrix
-    cov_norm = result.hess_inv.todense() if hasattr(result.hess_inv, 'todense') else result.hess_inv
-
-    # Scale back to physical space
-    ranges = np.array(range_list)
-    result.pcov = cov_norm * np.outer(ranges, ranges)
-    
-    return result
+    # Apply filter in frequency domain
+    F_filtered = F_signal * H_opt
+    signal_filtered = np.fft.ifft(F_filtered).real
+    return signal_filtered, s, norm_power, model, popt, H_opt
 
 
-def curve_fit(objective_function, xdata, ydata, p0, bounds, **kwargs):
-    """
-    Determines an optimal chi-square fit of a function to data, supporting astropy units and normalized bounds.
-    p0: list of astropy Quantities
-    bounds: list of tuples containing (lower_bound, upper_bound) as Quantities
-    """
+def apply_cos_window(x, y, f=0.1):
+    if f == 0: return y
+    x = x - np.min(x)
+    L = np.max(x)
+    m1 = x < f*L
+    m2 = x > (1-f)*L
 
-    def chi_square(params):
-        model = objective_function(xdata, *params)
-        return np.sum((ydata - model)**2)
-    
-    result = minimize(chi_square, p0, bounds, **kwargs)
-    return result.x, result.pcov
+    w = np.ones(len(x))
+    w[m1] = 0.5*(1 - np.cos(np.pi*np.array(x[m1]/(f*L))))
+    w[m2] = 0.5*(1 - np.cos(np.pi*np.array((L-x[m2])/(f*L))))
+    return y * w
 
 
+def kpno_spectral_filter(xx, yy, f=0.1, **kwargs):
+    xmin = np.min(xx)
+    x = np.array(np.log(xx / xmin))
+    L = np.max(x)
+    d = np.mean(np.diff(x))
+    y = yy - 1
+    y = apply_cos_window(x, y, f=f)
+    y, _, _, _, _, _ = apply_brault_filter(y, d, **kwargs)
+    y = y + 1
+    return y
