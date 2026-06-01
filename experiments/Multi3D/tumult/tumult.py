@@ -278,14 +278,15 @@ class tumult(object):
         return atoms
 
     #=====================================================================
-    def get_line(self, lam0, tol=0.05):
+    @functools.cache
+    def get_line(self, lam0, tol=0.05, verbose=True):
         #-----------------------------------------------------------------
         if not hasattr(self.atoms[0], 'line'): self.read_atom()
         all_lines = np.concatenate([[line for line in atom.line] for atom in self.atoms])
         all_lam0 = np.array([line.lam0 for line in all_lines])
         i = np.argmin(abs(all_lam0-lam0))
         line = all_lines[i]
-        if abs(line.lam0 - lam0) > tol:
+        if verbose and abs(line.lam0 - lam0) > tol:
             print(f'WARNING: Line not found! Closest line to {lam0:.2f}Å found at {line.lam0:.2f}Å')
 
         return line

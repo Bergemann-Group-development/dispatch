@@ -141,7 +141,7 @@ SUBROUTINE read_composition_params ()
   composition%verbose = verbose
 
   if (absmet_file /= '') then
-      call osmet%init(absmet_file)
+    call osmet%init(absmet_file)
   endif
 
   call composition%init(absdat_file, abund_file, FeH, &

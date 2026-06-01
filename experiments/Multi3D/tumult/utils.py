@@ -246,7 +246,9 @@ def get_weq(
             partial = (line_weq(*arg_plus, profile=profile) - weq) / step
             partials.append(partial.value)
 
-        eweq = np.sqrt(np.dot(partials, np.dot(pcov, partials))) * weq.unit
+        eweq = np.sqrt(np.dot(partials, np.dot(pcov, partials)))
+
+    eweq = eweq * weq.unit
 
     if syst is not None:
         step = syst * 0.1

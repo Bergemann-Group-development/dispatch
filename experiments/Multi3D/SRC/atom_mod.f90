@@ -2164,6 +2164,7 @@ MODULE atom_mod
           ! are derived from the detailed balance
           ! N_kj(T,E_k) = N_jk(t,E_k) * exp(-E_jk/ (k_B * T))
           cup = ct * nh1
+          cup = cup * cbfhsc
           cdn = cup / nji
 
         case default

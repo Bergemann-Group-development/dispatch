@@ -142,8 +142,9 @@ contains
     class(isotope_type),    pointer :: iso
     class(level_type),      pointer :: lvl
     class(bftrans_type), pointer :: trans
+    integer, save :: itimer=0
     !---------------------------------------------------------------------------
-    call trace%begin ('composition_type%init')
+    call trace%begin ('composition_type%init', itimer=itimer)
 
 106 FORMAT(4(F10.3,F10.4))
     call os%check_file(absdat_file)
@@ -694,8 +695,7 @@ contains
     endif
 
     self%initialised = .true.
-    call trace%end ()
-
+    call trace%end(itimer)
   contains
 
     !===========================================
@@ -2227,7 +2227,6 @@ contains
     integer :: idx
     logical, optional :: verbose
     !---------------------------------------------------------------------------
-    call trace%begin ('composition_type%init')
     idx = findloc(self%molecules%id, id, 1)
     if (idx == 0) then
       molecule => null()
@@ -2237,7 +2236,6 @@ contains
     else
       molecule => self%molecules(idx)
     endif
-    call trace%end ()
   END SUBROUTINE molecule_by_id
 
   !===============================================================================
@@ -2248,7 +2246,6 @@ contains
     integer :: idx
     logical, optional :: verbose
     !---------------------------------------------------------------------------
-    call trace%begin ('composition_type%init')
     idx = findloc(self%elements%id, capitalize(id), 1)
 
     element => null()
@@ -2259,7 +2256,6 @@ contains
     else
       element => self%elements(idx)
     endif
-    call trace%end ()
   END SUBROUTINE element_by_id
 
   !===============================================================================
@@ -2274,7 +2270,6 @@ contains
     character(6) :: trim_id
     integer :: idx, iostat
     !---------------------------------------------------------------------------
-    call trace%begin ('composition_type%init')
     read(id, *, iostat=iostat) eid, iid
     eid = capitalize(eid)
     iid = uppercase(iid)
@@ -2302,7 +2297,6 @@ contains
         element_out => element
       endif
     endif
-    call trace%end ()
   END SUBROUTINE ion_by_id
 
   !===============================================================================
@@ -2319,7 +2313,6 @@ contains
     character(6) :: trim_id
     integer :: idx, iostat, imol, iele
     !---------------------------------------------------------------------------
-    call trace%begin ('composition_type%init')
     element => null()
     particle => null()
     read(id, *) id1
@@ -2360,7 +2353,6 @@ contains
     if (option(verbose) .and. .not. associated(particle)) then
       print *, 'Particle id = ', id, ' is not recognised by opacity package.'
     endif
-    call trace%end ()
   END SUBROUTINE particle_by_id
 
   !===============================================================================
@@ -2370,7 +2362,6 @@ contains
     class(bftrans_type), pointer, intent(out) :: trans
     integer :: i, idx
     !---------------------------------------------------------------------------
-    call trace%begin ('composition_type%init')
     trans => null()
     do i=1, size(self%trans)
       if (trim(self%trans(i)%key) == id) then

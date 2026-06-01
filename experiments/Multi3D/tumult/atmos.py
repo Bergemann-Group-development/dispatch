@@ -19,6 +19,16 @@ class AtmosClass(object):
 
   #=====================================================================
   @classmethod
+  def from_df(cls, df):
+    self = cls()
+    for key in ['zz', 'pe', 'ne', 'rho', 'temp', 'vx', 'vy', 'vz', 'chi', 'vmic', 'tau', 'ltau']:
+      if key in df.columns:
+          setattr(self, key, np.array(df[key]))
+
+    return self
+
+  #=====================================================================
+  @classmethod
   def from_run(cls, run):
     self = cls()
     self.run = run
