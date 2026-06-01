@@ -30,11 +30,11 @@ fort.*
 *.err
 *.log
 *.slurm
-experiments/Multi3D/*
-!experiments/Multi3D/tumult
-!experiments/Multi3D/HOP
-!experiments/Multi3D/SRC
-!experiments/Multi3D/TumultStudio
+experiments/OpenMULTI3D/*
+!experiments/OpenMULTI3D/tumult
+!experiments/OpenMULTI3D/HOP
+!experiments/OpenMULTI3D/SRC
+!experiments/OpenMULTI3D/TumultStudio
 *.ipynb
 *.lock
 *.eps

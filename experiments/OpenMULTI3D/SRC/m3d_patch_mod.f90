@@ -158,7 +158,7 @@ MODULE m3d_patch_mod
     real(8), public :: ray_offset(2)=[0.,0.], pivot_z=-1
     integer, save :: long_ntheta=4, long_nphi=4, short_ntheta=2, short_nphi=4
     character(len=128), public :: atmos_format='unknown'
-    character(len=512), public :: atmos_file='./input_multi3d/atmos/p5777_g+4.4_m0.0_t01_st_z+0.00_a+0.00_c+0.00_n+0.00_o+0.00_r+0.00_s+0.00.mod'
+    character(len=512), public :: atmos_file='./input/atmos/p5777_g+4.4_m0.0_t01_st_z+0.00_a+0.00_c+0.00_n+0.00_o+0.00_r+0.00_s+0.00.mod'
     type(mpi_counter_t), public :: atom_update_counter, global_maxerr, global_pos
     type(composition_type), public, save, target :: composition
       

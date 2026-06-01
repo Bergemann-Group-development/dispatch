@@ -13,7 +13,7 @@ import pathlib
 import parse
 
 fields = {'atmosphere format':('Marcs', 'Text', 'Multi1D', 'Siu_bin'),
-            'grid folder': './input_multi3d/atmos/',
+            'grid folder': './input/atmos/',
             'pattern preset': (
                 '{Teff:d}_g{logg:+.1f}_m{:3}_t{vmic:02d}_st_z{FeH:+.2f}',
                 'custom'

@@ -12,7 +12,7 @@ checks = {}
 
 params['atmos_params'] = {
     ('atmos_format', 'atmos_file'): (('Marcs', 'Stagger', 'Stagger2', 'Co5bold', 'Text'),
-                                    'input_multi3d/atmos/p5777_g+4.4_m0.0_t01_st_z+0.00_a+0.00_c+0.00_n+0.00_o+0.00_r+0.00_s+0.00.mod'),
+                                    'input/atmos/p5777_g+4.4_m0.0_t01_st_z+0.00_a+0.00_c+0.00_n+0.00_o+0.00_r+0.00_s+0.00.mod'),
     ('vmic', 'FeH'): (-1.0, 0.0),
     ('nx', 'ny', 'nz'): (1, 1, 128),
     'advanced':{
@@ -31,7 +31,7 @@ checks['atmos_params'] = {
 }
 
 params['atom_params'] = {
-    'atom_file': './input_multi3d/atoms/atom.ba06',
+    'atom_file': './input/atoms/atom.ba06',
     ('abundance', 'relative_abundance'): (2.11, False),
     'advanced': {
       ('convlim', 'convmax'): (1e-2, 1e-3),
@@ -60,9 +60,9 @@ hides['m3d_params'] = {
 
 params['composition_params'] = {
     'abundance':'C=8.52, O=8.75, Ni=6.22',
-    'absmet_file': './input_multi3d/absmet',
+    'absmet_file': './input/absmet',
     'advanced': {
-      'abund_file': './input_multi3d/abund/abund_magg',
+      'abund_file': './input/abund/abund_magg',
     }
 }
 

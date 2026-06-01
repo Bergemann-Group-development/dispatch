@@ -60,10 +60,10 @@ MODULE composition_patch_mod
   real(4), public, dimension(:), allocatable :: external_abund
   real(4), public :: alpha_enhancement=0.0, r_process_enhancement=0.0
   character(len=256), save :: save_species=''
-  character(len=256), save :: absdat_file='./input_multi3d/TS_absdat.dat'
-  character(len=256), save :: abund_file='./input_multi3d/abund/abund_magg'
-  character(len=256), save :: isotope_file='./input_multi3d/isotopes'
-  character(len=256), save :: molec_file='./input_multi3d/molec_data_BC.txt'
+  character(len=256), save :: absdat_file='./input/TS_absdat.dat'
+  character(len=256), save :: abund_file='./input/abund/abund_magg'
+  character(len=256), save :: isotope_file='./input/isotopes'
+  character(len=256), save :: molec_file='./input/molec_data_BC.txt'
   character(len=256), save :: opac_table=''
   character(len=256), save :: absmet_file=''
   character(len=512), save :: linelist_folder=''

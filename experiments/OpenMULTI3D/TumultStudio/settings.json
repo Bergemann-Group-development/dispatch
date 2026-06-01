@@ -1,10 +1,10 @@
 {
     "synthesis folder": "TumultStudio/tmp/",
-    "atmospheres folder": "input_multi3d/atmos/",
+    "atmospheres folder": "input/atmos/",
     "atmosphere grid folder": "/mnt/beegfs/gemini/groups/bergemann/users/storm/data/MARCS/",
-    "atom folder": "input_multi3d/atoms/",
-    "linelist folder": "input_multi3d/linelists/",
-    "master linelist": "input_multi3d/linelists/master_line.txt",
-    "abundance file": "input_multi3d/abund/abund_magg",
+    "atom folder": "input/atoms/",
+    "linelist folder": "input/linelists/",
+    "master linelist": "input/linelists/master_line.txt",
+    "abundance file": "input/abund/abund_magg",
     "bokeh palette": "Light"
 }
