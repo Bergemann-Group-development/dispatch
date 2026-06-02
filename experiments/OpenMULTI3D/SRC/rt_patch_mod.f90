@@ -824,7 +824,9 @@ contains
         do j=1, ntemp
           associate(chi=>all_chi(:,j,k,1), eta=>all_eta(:,j,k,1), beta=>all_beta(:,j,k,1), &
                     xhat=>all_chi(:,j,k,1), ehat=>all_eta(:,j,k,1))
-            eta = ehat * beta
+            if (eta > 0) then
+              ehat = eta / beta
+            endif
             chi = xhat - eta
           end associate
         end do
@@ -1507,7 +1509,9 @@ contains
             associate(chi=>back(f,x,y,z,0), eta=>back(f,x,y,z,2), beta=>back(f,x,y,z,3), &
                       xhat=>back(f,x,y,z,1), ehat=>back(f,x,y,z,2))
               xhat = chi + eta
-              ehat = eta / beta
+              if (eta > 0) then
+                ehat = eta / beta
+              endif
             end associate
           end do
         end do
