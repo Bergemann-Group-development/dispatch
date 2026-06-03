@@ -37,17 +37,8 @@ class SpectrumGrid(object):
         self.param_names = self.params.columns.tolist()
 
         if self.normalize:
-            # Pandas peak-to-peak equivalent
-            p_min = self.params.min()
-            p_ptp = self.params.max() - p_min
-            p_ptp = p_ptp.replace(0, 1.0) # Avoid division by zero
-            
-            self._p_min, self._p_ptp = p_min, p_ptp
-            # Normalize for triangulation
-            self.points = ((self.params - self._p_min) / self._p_ptp).values
-            
-            # Helper for crop method
-            self.normalize_params = lambda p_arr: (p_arr - self._p_min.values) / self._p_ptp.values
+            self.points, self._p_min, self._p_ptp = normalize_points(self.params.values)
+            self.normalize_params = lambda p_arr: (p_arr - self._p_min) / self._p_ptp
         else:
             self.points = self.params.values
 
@@ -149,25 +140,11 @@ class SpectrumGrid(object):
 
     #=====================================================================
     def get_weights(self, query_point, verbose=True):
-        # Find the simplex containing the query point
-        simplex = self.delaunay.find_simplex(query_point)
-
-        if simplex == -1:
+        weights, indices = get_delaunay_weights(self.points, query_point, self.delaunay)
+        if indices is None:
             if verbose: print("Query point is outside the convex hull.")
             return None, None
-
-        # Get the vertices of the simplex
-        vertices = self.delaunay.simplices[simplex]
-
-        # Compute barycentric coordinates
-        simplex_points = self.points[vertices]  # Coordinates of the simplex vertices
-        A = np.hstack((simplex_points, np.ones((len(simplex_points), 1))))  # Add 1 for affine coordinates
-        b = np.append(query_point, 1)  # Query point in affine coordinates
-        weights = np.linalg.solve(A.T, b)  # Solve for barycentric coordinates
-        mask = weights > 1e-10  # Mask for vertices with non-zero weight
-        weights = weights[mask]
-        spectra = [self.spectra[i] for i in vertices[mask]]
-        return weights, spectra
+        return weights, [self.spectra[i] for i in indices]
     
     #=================================================================
     def fit(self, spec, bounds=None, p0=None, **kwargs):
@@ -242,6 +219,30 @@ class SpectrumGrid(object):
 
         return fig
 
+
+#=====================================================================
+def normalize_points(points):
+    """Normalize rows to [0,1] per column. Returns (points_norm, p_min, p_ptp)."""
+    points = np.asarray(points)
+    p_min = points.min(axis=0)
+    p_ptp = points.max(axis=0) - p_min
+    p_ptp[p_ptp == 0] = 1.0
+    return (points - p_min) / p_ptp, p_min, p_ptp
+
+#=====================================================================
+def get_delaunay_weights(points, query_point, delaunay=None):
+    """Returns (weights, indices) for the enclosing simplex, or (None, None)."""
+    if delaunay is None:
+        delaunay = Delaunay(points)
+    simplex = delaunay.find_simplex(query_point)
+    if simplex == -1:
+        return None, None
+    vertices = delaunay.simplices[simplex]
+    A = np.hstack((points[vertices], np.ones((len(vertices), 1))))
+    b = np.append(query_point, 1)
+    weights = np.linalg.solve(A.T, b)
+    mask = weights > 1e-10
+    return weights[mask], vertices[mask]
 
 #=====================================================================
 def is_point_in_array(point, points, tol=1e-9):

@@ -11,7 +11,7 @@ MODULE nlte_patch_mod
   USE atom_mod, only: atom_type, atomic_spectrum_type, use_classic_col, kramer_bf, &
     red_cut, blue_cut, logf_cut, atom_data_t, atom_trans_t, &
     nq_fac, nq_min, nq_max, disable_bf, disable_bb, level_partf, &
-    fmin, cbbesc, cbfesc, cbbhsc, cbfhsc, colscale, &
+    fmin, cbbesc, cbfesc, cbbhsc, cbfhsc, colscale, ch0_hmip, &
     ng_step, ng_start, ng_global, save_rate_matrix
   USE trans_mod, only: line_type, cont_type, transition_type
   USE const_mod, only: CC
@@ -127,7 +127,8 @@ contains
       exclude_from_line_list, use_classic_col, kramer_bf, overlapping_bf, &
       overlapping_bb, detailed_absmet, convmax, premature_finish, bound_free_in_output, &
       save_populations, nq_fac, nq_min, nq_max, cbbesc, cbfesc, cbbhsc, cbfhsc, colscale, &
-      disable_bf, disable_bb, overlapping_bb_in_output, save_rates, save_rate_matrix, fmin
+      disable_bf, disable_bb, overlapping_bb_in_output, save_rates, save_rate_matrix, fmin, &
+      ch0_hmip
     namelist /line_mask/ in_lines
     !-----------------------------------------------------------------------------
     call trace%begin('nlte_patch_t%pre_init_atom', itimer=itimer)

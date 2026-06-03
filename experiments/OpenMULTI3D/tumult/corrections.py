@@ -1,5 +1,6 @@
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, as_completed
+import copy
 import os
 import numpy as np
 import pandas as pd
@@ -8,42 +9,157 @@ from tumult.auxfuncs import update_dict
 import tumult as tm
 
 
-def _run_single(nml, da, name, ref, top, launch_kwargs):
-    """Top-level function so it's picklable for ProcessPoolExecutor."""
-    nml = update_dict(nml, {'atom_params': {'abundance': da}})
-    if ref == 'NLTE' and da != 0.0: 
-      nml = update_dict(nml, {'m3d_params': {'maxiter': 0}})
-    nml_name = Path(top) / f'{name}_{da*100:+04.0f}'
+def _run_single(key, nml_name, nml, launch_kwargs):
+    """Picklable worker: launch one job and return (key, run_or_None)."""
     out, ok = tm.launch(nml_name, nml, **launch_kwargs)
     if not ok:
+        if out.exists():
+            return key, tm.read(out)  # run already completed, just read it
         print(f'Run {nml_name} failed!')
-        return da, None
-    return da, tm.read(out)
+        return key, None
+    return key, tm.read(out)
 
 
-def _run_batch(da_values, nml, name, ref, top, launch_kwargs, max_threads):
-    """Run multiple da values in parallel, splitting threads across workers."""
-    n_runs = len(da_values)
+def _make_da_jobs(da_values, nml, name, ref, top):
+    """Build a jobs list for _run_batch from abundance offsets."""
+    jobs = []
+    for da in da_values:
+        nml_i = update_dict(copy.deepcopy(nml), {'atom_params': {'abundance': da}})
+        if ref == 'NLTE' and da != 0.0:
+            nml_i = update_dict(nml_i, {'m3d_params': {'maxiter': 0}})
+        nml_name = Path(top) / f'{name}_{da*100:+04.0f}'
+        jobs.append((da, nml_name, nml_i))
+    return jobs
+
+
+def _run_batch(jobs, launch_kwargs, max_threads):
+    """Run jobs in parallel, splitting threads across workers.
+
+    jobs: list of (key, nml_name, nml) triples.
+    Returns {key: run_or_None}.
+    """
+    n_runs = len(jobs)
     if n_runs == 0:
         return {}
 
-    # Each worker gets a fair share; at least 1 thread each
     threads_per_run = max(1, max_threads // n_runs)
-    n_workers = min(n_runs, max_threads)  # no more workers than threads
+    n_workers = min(n_runs, max_threads)
 
     worker_kwargs = dict(launch_kwargs, threads=threads_per_run)
 
     results = {}
     with ProcessPoolExecutor(max_workers=n_workers) as executor:
         futures = {
-            executor.submit(_run_single, nml, da, name, ref, top, worker_kwargs): da
-            for da in da_values
+            executor.submit(_run_single, key, nml_name, nml, worker_kwargs): key
+            for key, nml_name, nml in jobs
         }
         for future in as_completed(futures):
-            da, result = future.result()
-            results[da] = result
+            key, result = future.result()
+            results[key] = result
 
     return results
+
+
+def build_stellar_grid(top, star, atmos_files,
+                       settings=None, absmet_files=None,
+                       method='Delaunay', max_threads=None, launch_kwargs=None):
+    """
+    Build a tm.grid for the target stellar point by finding the enclosing
+    model atmospheres, launching MULTI3D runs for them in parallel, and
+    loading the results into a SpectrumGrid indexed by stellar parameters.
+
+    Parameters
+    ----------
+    top : str or Path
+        Output directory for the runs.
+    star : tuple
+        Target stellar parameters as (teff, logg, feh) or (teff, logg, feh, vmic).
+    atmos_files : dict
+        {(teff, logg, feh) or (teff, logg, feh, vmic): path} mapping.
+    settings : dict, optional
+        NameList settings (atom_params, m3d_params, …) merged into each
+        per-atmosphere nml. atmos_params and composition_params are filled
+        automatically per atmosphere.
+    absmet_files : dict, optional
+        {feh: path} mapping for absmet files.
+    method : {'Delaunay', 'NaturalNeighbor'}
+        How to select the enclosing atmosphere nodes.
+    max_threads, launch_kwargs : optional
+        Forwarded to _run_batch / tm.launch.
+
+    Returns
+    -------
+    tm.grid with a .target attribute {'teff', 'logg', 'feh', 'vmic'}.
+    """
+    from tumult.spectrum_grid import normalize_points, get_delaunay_weights, compute_nn_weights
+
+    teff, logg, feh = star[:3]
+    vmic = star[3] if len(star) == 4 else 0.0
+
+    launch_kwargs = {k: v for k, v in (launch_kwargs or {}).items() if k != 'threads'}
+    if max_threads is None:
+        max_threads = os.cpu_count() or 1
+
+    stars = list(atmos_files.keys())
+    vmic_varies = len(stars[0]) == 4
+
+    points = np.array(stars, dtype=float)
+    if not vmic_varies:
+        points = points[:, :3]
+    query = np.array([teff, logg, feh, vmic] if vmic_varies else [teff, logg, feh])
+
+    points_norm, p_min, p_ptp = normalize_points(points)
+    query_norm = (query - p_min) / p_ptp
+
+    if method == 'Delaunay':
+        _, indices = get_delaunay_weights(points_norm, query_norm)
+        if indices is None:
+            raise ValueError(f"Target {query} is outside the convex hull of available atmospheres.")
+    elif method == 'NaturalNeighbor':
+        _, indices = compute_nn_weights(points_norm, query_norm)
+        if indices[0] < 0:
+            raise ValueError(f"Target {query} is outside the convex hull of available atmospheres.")
+    else:
+        raise ValueError(f"Unknown method: {method!r}. Use 'Delaunay' or 'NaturalNeighbor'.")
+
+    relevant_stars = [stars[i] for i in indices]
+
+    jobs = []
+    for star in relevant_stars:
+        teff_i, logg_i, feh_i = star[:3]
+        vmic_i = float(star[3]) if vmic_varies else vmic
+        absmet_file = absmet_files.get(feh_i, '') if absmet_files else ''
+
+        nml_i = update_dict(copy.deepcopy(settings or {}), {
+            'atmos_params': {'atmos_file': atmos_files[star], 'feh': feh_i, 'vmic': vmic_i},
+            'composition_params': {'absmet_file': absmet_file},
+        })
+
+        run_name = f't{teff_i/100:.0f}g{logg_i*10:02.0f}m{feh_i*10:+03.0f}'
+        if vmic_i > 0:
+            run_name += f'v{vmic_i:.0f}'
+
+        jobs.append((star, Path(top) / run_name, nml_i))
+
+    runs = _run_batch(jobs, launch_kwargs, max_threads)
+
+    failed = [s for s in relevant_stars if runs.get(s) is None]
+    if failed:
+        raise RuntimeError(f"Runs failed for atmospheres: {failed}")
+
+    param_dict = {
+        'teff': [s[0] for s in relevant_stars],
+        'logg': [s[1] for s in relevant_stars],
+        'feh':  [s[2] for s in relevant_stars],
+    }
+    if vmic_varies:
+        param_dict['vmic'] = [s[3] for s in relevant_stars]
+
+    g = tm.grid([runs[s] for s in relevant_stars], **param_dict)
+    g.target = {'teff': teff, 'logg': logg, 'feh': feh}
+    if vmic_varies:
+        g.target['vmic'] = vmic
+    return g
 
 
 def get_NLTE_corrections(top, stars, atom_file, lines, atmos_files, absmet_files=None, settings=None,
@@ -65,6 +181,9 @@ def get_NLTE_corrections(top, stars, atom_file, lines, atmos_files, absmet_files
     sign = 1 if ref == 'LTE' else -1
     max_iter = 10
 
+    if not atom_file.exists():
+      raise FileNotFoundError(f"Atom file {atom_file} not found!")
+
     for i, star in enumerate(stars):
         teff, logg, feh = star[:3]
         vmic = star[3] if len(star) == 4 else 0.0
@@ -81,7 +200,7 @@ def get_NLTE_corrections(top, stars, atom_file, lines, atmos_files, absmet_files
             print(f'No atmosphere file for star {star}!')
             continue
 
-        if feh in absmet_files:
+        if absmet_files is not None and feh in absmet_files:
             absmet_file = absmet_files[feh]
         else:
             print(f'No absmet file for [Fe/H]={feh}!')
@@ -124,7 +243,7 @@ def get_NLTE_corrections(top, stars, atom_file, lines, atmos_files, absmet_files
 
         # Step 1: Build initial coarse grid — all 3 runs in parallel
         da_grid = sorted([-limit, 0.0, limit])
-        runs = _run_batch(da_grid, nml, name, ref, top, launch_kwargs, max_threads)
+        runs = _run_batch(_make_da_jobs(da_grid, nml, name, ref, top), launch_kwargs, max_threads)
         grid, das = build_grid()
 
         refs = {}
@@ -167,7 +286,7 @@ def get_NLTE_corrections(top, stars, atom_file, lines, atmos_files, absmet_files
                 break
 
             # Run all new points in parallel
-            new_runs = _run_batch(new_points, nml, name, ref, top, launch_kwargs, max_threads)
+            new_runs = _run_batch(_make_da_jobs(new_points, nml, name, ref, top), launch_kwargs, max_threads)
             runs.update(new_runs)
 
             grid, das = build_grid()

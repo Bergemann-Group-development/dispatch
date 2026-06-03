@@ -99,6 +99,13 @@ class Spectrum:
     def data(self):
         """Get the xdata and ydata as a numpy array."""
         return np.array([self.xdata, self.ydata])
+
+    @property
+    def values(self):
+        """Return (xdata, ydata) as plain numpy arrays, stripping astropy units."""
+        x = self.xdata.value if isinstance(self.xdata, u.Quantity) else np.asarray(self.xdata)
+        y = self.ydata.value if isinstance(self.ydata, u.Quantity) else np.asarray(self.ydata)
+        return x, y
     
     @property
     def df(self):
@@ -356,7 +363,7 @@ class Spectrum:
             # Infer bounds if not given
             if xmin is None:
                 xmin = newx.min()
-            if xmax is not None:
+            if xmax is None:
                 xmax = newx.max()
 
         if x0 is not None and dx is not None:
@@ -523,12 +530,14 @@ class Spectrum:
             def residuals(params):
                 if integrate:
                     r = s.get_weq(profile='trapz', auto_crop=False) - evaluate(s.xdata, *params).get_weq(profile='trapz', auto_crop=False)
+                    r = r.value
                 else:
                     r = s.ydata - evaluate(s.xdata, *params).ydata
 
                 if sigma is not None:
                     r = r / sigma
-                return np.sum(r**2)
+                    
+                return float(np.sum(r**2))
 
             pfit = optimize.minimize(
                 residuals, p0, bounds=bounds, method=method, tol=tol

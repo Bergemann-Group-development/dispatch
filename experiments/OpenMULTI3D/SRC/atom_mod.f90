@@ -167,6 +167,7 @@ MODULE atom_mod
     logical, public :: lse_no_pivot = .True., kramer_bf=.False.
     logical, public :: disable_bf=.False., disable_bb=.False.
     logical, public :: level_partf=.false.
+    logical, public :: ch0_hmip=.false.
     real(8), public :: red_thresh_aa  = 20000
     real(8), public :: blue_thresh_aa = 500
     real(8), public :: cont_step_aa = 50
@@ -2164,6 +2165,9 @@ MODULE atom_mod
           ! are derived from the detailed balance
           ! N_kj(T,E_k) = N_jk(t,E_k) * exp(-E_jk/ (k_B * T))
           cup = ct * nh1
+          if (ch0_hmip) then
+            cup = cup * exp(-0.754 * e_kT)
+          endif
           cup = cup * cbfhsc
           cdn = cup / nji
 
