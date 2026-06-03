@@ -91,7 +91,7 @@ def build_stellar_grid(top, star, atmos_files,
     -------
     tm.grid with a .target attribute {'teff', 'logg', 'feh', 'vmic'}.
     """
-    from tumult.spectrum_grid import normalize_points, get_delaunay_weights, compute_nn_weights
+    from tumult.spectrum_grid import normalize_points, get_delaunay_weights, get_nn_weights
 
     teff, logg, feh = star[:3]
     vmic = star[3] if len(star) == 4 else 0.0
@@ -116,7 +116,7 @@ def build_stellar_grid(top, star, atmos_files,
         if indices is None:
             raise ValueError(f"Target {query} is outside the convex hull of available atmospheres.")
     elif method == 'NaturalNeighbor':
-        _, indices = compute_nn_weights(points_norm, query_norm)
+        _, indices = get_nn_weights(points_norm, query_norm)
         if indices[0] < 0:
             raise ValueError(f"Target {query} is outside the convex hull of available atmospheres.")
     else:
@@ -156,159 +156,180 @@ def build_stellar_grid(top, star, atmos_files,
         param_dict['vmic'] = [s[3] for s in relevant_stars]
 
     g = tm.grid([runs[s] for s in relevant_stars], **param_dict)
-    g.target = {'teff': teff, 'logg': logg, 'feh': feh}
+    g.p0 = {'teff': teff, 'logg': logg, 'feh': feh}
     if vmic_varies:
-        g.target['vmic'] = vmic
+        g.p0['vmic'] = vmic
     return g
 
 
-def get_NLTE_corrections(top, stars, atom_file, lines, atmos_files, absmet_files=None, settings=None,
-                         tol=0.01, limit=1.0, ref='LTE', integrate=True, verbose=False,
-                         max_threads=None, launch_kwargs=None, crop_kwargs=None):
+def get_NLTE_correction(top, star, atom_file, atmos_file, lines, absmet_files=None, settings=None,
+                        tol=0.01, limit=1.0, ref='LTE', integrate=True, verbose=False,
+                        max_threads=None, launch_kwargs=None, crop_kwargs=None):
+    """
+    Compute NLTE corrections for a single star.
 
-    launch_kwargs = launch_kwargs if launch_kwargs is not None else {}
-    crop_kwargs = crop_kwargs if crop_kwargs is not None else {}
+    Returns
+    -------
+    guesses : dict  {line_center: correction}
+    runs    : dict  {da: Run}
+    """
+    launch_kwargs = {k: v for k, v in (launch_kwargs or {}).items() if k != 'threads'}
+    crop_kwargs = crop_kwargs or {}
 
     if max_threads is None:
         max_threads = os.cpu_count() or 1
 
-    # Remove 'threads' from launch_kwargs — _run_batch manages it
-    launch_kwargs = {k: v for k, v in launch_kwargs.items() if k != 'threads'}
-
-    df = pd.DataFrame()
-    all_runs = {}
     atom_file = Path(atom_file)
+    if not atom_file.exists():
+        raise FileNotFoundError(f"Atom file {atom_file} not found!")
+
     sign = 1 if ref == 'LTE' else -1
     max_iter = 10
 
-    if not atom_file.exists():
-      raise FileNotFoundError(f"Atom file {atom_file} not found!")
+    teff, logg, feh = star[:3]
+    vmic = star[3] if len(star) == 4 else 0.0
 
-    for i, star in enumerate(stars):
-        teff, logg, feh = star[:3]
-        vmic = star[3] if len(star) == 4 else 0.0
-        df.loc[i, ['Teff', 'logg', '[Fe/H]', 'vmic'][:len(star)]] = star
+    name = atom_file.stem if atom_file.stem != 'atom' else atom_file.suffix[1:]
+    name += f'_t{teff/100:.0f}g{logg*10:02.0f}m{feh*10:+03.0f}'
+    if vmic > 0:
+        name += f'v{vmic:.0f}'
 
-        name = atom_file.stem if atom_file.stem != 'atom' else atom_file.suffix[1:]
-        name += f'_t{teff/100:.0f}g{logg*10:02.0f}m{feh*10:+03.0f}'
-        if vmic > 0:
-            name += f'v{vmic:.0f}'
+    if absmet_files is not None and feh in absmet_files:
+        absmet_file = absmet_files[feh]
+    else:
+        print(f'No absmet file for [Fe/H]={feh}!')
+        absmet_file = ''
 
-        if star in atmos_files:
-            atmos_file = atmos_files[star]
-        else:
-            print(f'No atmosphere file for star {star}!')
-            continue
+    nml = {
+        'timer_params': {'sec_per_report': 1e8, 'verbose': 2},
+        'atmos_params': {'atmos_file': atmos_file, 'feh': feh, 'vmic': vmic},
+        'atom_params': {
+            'atom_file': atom_file,
+            'relative_abundance': True,
+            'use_atom_abnd': False,
+            'convlim': 0.01,
+            'convmax': 0.001,
+        },
+        'm3d_params': {'maxiter': 99, 'ilambd': 3},
+        'composition_params': {'absmet_file': absmet_file},
+    }
+    if settings is not None:
+        nml = update_dict(nml, settings)
 
-        if absmet_files is not None and feh in absmet_files:
-            absmet_file = absmet_files[feh]
-        else:
-            print(f'No absmet file for [Fe/H]={feh}!')
-            absmet_file = ''
+    def build_grid():
+        if any(runs[d] is None for d in runs):
+            raise RuntimeError("Some runs failed, cannot build grid.")
+        das = sorted(runs.keys())
+        return tm.grid([runs[d] for d in das], da=das), das
 
-        nml = {
-            'timer_params': {'sec_per_report': 1e8, 'verbose': 2},
-            'atmos_params': {'atmos_file': atmos_file, 'feh': feh, 'vmic': vmic},
-            'atom_params': {
-                'atom_file': atom_file,
-                'relative_abundance': True,
-                'use_atom_abnd': False,
-                'convlim': 0.01,
-                'convmax': 0.001,
-            },
-            'm3d_params': {'maxiter': 99, 'ilambd': 3},
-            'composition_params': {'absmet_file': absmet_file},
-        }
-        if settings is not None:
-            nml = update_dict(nml, settings)
-
-        def build_grid():
-            if any(runs[d] is None for d in runs):
-                raise RuntimeError("Some runs failed, cannot build grid.")
-            das = sorted(runs.keys())
-            return tm.grid([runs[d] for d in das], da=das), das
-
-        def fit_all_lines(grid):
-            guesses = {}
-            for l0 in lines:
-                line = grid.spectra[0].get_line(l0, verbose=False)
-                kw = dict(crop_kwargs, xmin=line.lb, xmax=line.lr)
-                pfit, _ = grid.fit(refs[l0], fit=['da'], LTE=(ref != 'LTE'), integrate=integrate, **kw)
-                guesses[l0] = np.clip(sign * pfit['da'], -limit, limit)
-            return guesses
-
-        def find_interval(da_val, knots):
-            idx = np.searchsorted(knots, da_val, side='right') - 1
-            return max(0, min(idx, len(knots) - 2))
-
-        # Step 1: Build initial coarse grid — all 3 runs in parallel
-        da_grid = sorted([-limit, 0.0, limit])
-        runs = _run_batch(_make_da_jobs(da_grid, nml, name, ref, top), launch_kwargs, max_threads)
-        grid, das = build_grid()
-
-        refs = {}
+    def fit_all_lines(grid):
+        guesses = {}
         for l0 in lines:
-          line = grid.spectra[0].get_line(l0, verbose=i==0)
-          kw = dict(crop_kwargs, xmin=line.lb, xmax=line.lr)
-          refs[l0] = grid.crop(da=0.0, LTE=(ref == 'LTE'), **kw)
-        
+            line = grid.spectra[0].get_line(l0, verbose=False)
+            kw = dict(crop_kwargs, xmin=line.lb, xmax=line.lr)
+            pfit, _ = grid.fit(refs[l0], fit=['da'], LTE=(ref != 'LTE'), integrate=integrate, **kw)
+            guesses[l0] = np.clip(sign * pfit['da'], -limit, limit)
+        return guesses
+
+    def find_interval(da_val, knots):
+        idx = np.searchsorted(knots, da_val, side='right') - 1
+        return max(0, min(idx, len(knots) - 2))
+
+    # Step 1: Build initial coarse grid — all 3 runs in parallel
+    da_grid = sorted([-limit, 0.0, limit])
+    runs = _run_batch(_make_da_jobs(da_grid, nml, name, ref, top), launch_kwargs, max_threads)
+    grid, _ = build_grid()
+
+    refs = {}
+    for l0 in lines:
+        line = grid.spectra[0].get_line(l0, verbose=verbose)
+        kw = dict(crop_kwargs, xmin=line.lb, xmax=line.lr)
+        refs[l0] = grid.crop(da=0.0, LTE=(ref == 'LTE'), **kw)
+
+    guesses = fit_all_lines(grid)
+
+    for iteration in range(max_iter):
+        prev_guesses = dict(guesses)
+        knots = np.array(sorted(runs.keys()))
+
+        intervals = defaultdict(list)
+        for l0, g in guesses.items():
+            ii = find_interval(g, knots)
+            intervals[(ii, knots[ii], knots[ii + 1])].append((l0, g))
+
+        new_points = []
+        for (ii, lo, hi), line_guesses in intervals.items():
+            if hi - lo < tol:
+                continue
+            guess_values = [g for _, g in line_guesses]
+            split_at = np.median(guess_values)
+
+            # Snap to nearest multiple of tol
+            split_at = round(split_at / tol) * tol
+
+            if (split_at - lo) < tol or (hi - split_at) < tol:
+                split_at = (lo + hi) / 2.0
+            if (split_at - lo) < tol or (hi - split_at) < tol:
+                continue
+
+            # Avoid exact duplicates of existing grid points
+            if split_at not in runs:
+                new_points.append(split_at)
+
+        if not new_points:
+            break
+
+        # Run all new points in parallel
+        new_runs = _run_batch(_make_da_jobs(new_points, nml, name, ref, top), launch_kwargs, max_threads)
+        runs.update(new_runs)
+
+        grid, _ = build_grid()
         guesses = fit_all_lines(grid)
 
-        for iteration in range(max_iter):
-            prev_guesses = dict(guesses)
-            knots = np.array(sorted(runs.keys()))
+        max_shift = max(abs(guesses[l0] - prev_guesses[l0]) for l0 in lines)
 
-            intervals = defaultdict(list)
-            for l0, g in guesses.items():
-                ii = find_interval(g, knots)
-                intervals[(ii, knots[ii], knots[ii + 1])].append((l0, g))
+        if verbose:
+            print(f"Iter {iteration}: added {len(new_points)} points, "
+                  f"grid size={len(runs)}, max shift={max_shift:.2e}")
 
-            new_points = []
-            for (ii, lo, hi), line_guesses in intervals.items():
-                if hi - lo < tol:
-                    continue
-                guess_values = [g for _, g in line_guesses]
-                split_at = np.median(guess_values)
+        if max_shift < tol:
+            break
 
-                # Snap to nearest multiple of tol
-                split_at = round(split_at / tol) * tol
-            
-                if (split_at - lo) < tol or (hi - split_at) < tol:
-                    split_at = (lo + hi) / 2.0
-                if (split_at - lo) < tol or (hi - split_at) < tol:
-                    continue
+    return guesses, runs
 
-                # Avoid exact duplicates of existing grid points
-                if split_at not in runs:
-                    new_points.append(split_at)
 
-            if not new_points:
-                break
+def get_NLTE_corrections(top, stars, atom_file, atmos_files, lines, **kwargs):
+    """ Compute NLTE corrections for multiple stars and return a DataFrame.
 
-            # Run all new points in parallel
-            new_runs = _run_batch(_make_da_jobs(new_points, nml, name, ref, top), launch_kwargs, max_threads)
-            runs.update(new_runs)
+    Returns
+    -------
+    df : DataFrame with columns ['Teff', 'logg', '[Fe/H]', 'vmic', line1, line2, ...]
+    runs : dict {star: {da: Run}} with the runs for each star.
+    """
+    atom_file = Path(atom_file)
+    if not atom_file.exists():
+        raise FileNotFoundError(f"Atom file {atom_file} not found!")
 
-            grid, das = build_grid()
-            guesses = fit_all_lines(grid)
+    df = pd.DataFrame()
+    runs = {}
 
-            max_shift = max(abs(guesses[l0] - prev_guesses[l0]) for l0 in lines)
-            
-            if verbose:
-              print(f"Iter {iteration}: added {len(new_points)} points, "
-                    f"grid size={len(runs)}, max shift={max_shift:.2e}")
+    for i, star in enumerate(stars):
+        df.loc[i, ['Teff', 'logg', '[Fe/H]', 'vmic'][:len(star)]] = star
 
-            if max_shift < tol:
-                break
+        if star not in atmos_files:
+            print(f'No atmosphere file for star {star}!')
+            continue
+        else:
+            atmos_file = atmos_files[star]
+
+        corr, runs[star] = get_NLTE_correction(top, star, atom_file, atmos_file, lines, **kwargs)
 
         for l0 in lines:
-            df.loc[i, l0] = guesses[l0]
+            df.loc[i, l0] = corr[l0]
 
-        all_runs[star] = runs
-
-        if i==0:
-          print(df.to_string(float_format="{:.2f}".format))
+        if i == 0:
+            print(df.to_string(float_format="{:.2f}".format))
         else:
-          print('\n'.join(df.loc[i:i+1].to_string(float_format="{:.2f}".format).split('\n')[1:]))
+            print('\n'.join(df.loc[i:i+1].to_string(float_format="{:.2f}".format).split('\n')[1:]))
 
-    return df, all_runs
+    return df, runs

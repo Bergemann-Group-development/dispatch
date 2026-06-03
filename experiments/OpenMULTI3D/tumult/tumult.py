@@ -367,7 +367,7 @@ class tumult(object):
         return Spectrum(self.lam, yy, xunit=u.angstrom, yunit=yunit)
     
     #=====================================================================
-    def crop(self, slc=None, x0=None, ang=None, imu=None, norm=True, 
+    def crop(self, slc=None, x0=None, ang=None, imu=None, norm=True,
              cont=False, LTE=False, line=None, **kwargs):
         #-----------------------------------------------------------------
         if line is not None:
@@ -386,8 +386,8 @@ class tumult(object):
         return spec
 
     #=================================================================
-    def fit(self, **kwargs):
-        return Spectrum.fit(self, **kwargs)
+    def fit(self, spec,  **kwargs):
+        return Spectrum.fit(self, spec, **kwargs)
 
     #=====================================================================
     def plot_resolved(self, ang=0, f=0, LTE=False, cont=False, **kwargs):
@@ -424,15 +424,12 @@ class tumult(object):
         return lte, nlte
 
     #=====================================================================
-    def get_depart(self, atom=0, ilvl=None, mean=False):
+    def get_depart(self, ilvl=None, iatom=0, mean=False):
         #-----------------------------------------------------------------
-        if type(atom) is int:
-            atomid = self.atoms[atom].id
-        else:
-            atomid = atom
+        atomid = self.atoms[iatom].id if type(iatom) is int else iatom
 
         if hasattr(self, 'runs'):
-            xy = np.array([run.get_depart(ilvl, mean=mean) for run in self.runs])
+            xy = np.array([run.get_depart(ilvl, atomid, mean=mean) for run in self.runs])
 
             if mean:
                 ltau = np.mean(xy[:,0], axis=0)
@@ -459,14 +456,10 @@ class tumult(object):
         return ltau, dep
     
     #=====================================================================
-    def plot_depart(self, atom=0, ilvl=0, mean=True, **kwargs):
+    def plot_depart(self, ilvl=0, iatom=0, mean=True, **kwargs):
         #-----------------------------------------------------------------
-        if type(atom) is int:
-            atomid = self.atoms[atom].id
-        else:
-            atomid = atom
-
-        xx, yy = self.get_depart(atomid, ilvl, mean=mean)
+        atomid = self.atoms[iatom].id if type(iatom) is int else iatom
+        xx, yy = self.get_depart(ilvl, atomid, mean=mean)
         plt.title(f'Departure coefficient of {atomid:} level {ilvl:}')
         plt.ylabel(r'$\rm n\,/\,n_{\rm LTE}$')
         plt.xlabel(r'log$\tau_{500}$')

@@ -18,6 +18,7 @@ class SpectrumGrid(object):
         self.normalize = normalize
         processed_kwargs = {k: ensure_list(v) for k, v in kwargs.items()}
         self.params = pd.DataFrame(processed_kwargs)
+        self.p0 = {}
         self._build_grid()
 
     def _build_grid(self):
@@ -33,14 +34,20 @@ class SpectrumGrid(object):
                 self.reference = self.spectra[0]
             return
 
-        self.ndim = self.params.shape[1]
         self.param_names = self.params.columns.tolist()
 
         if self.normalize:
-            self.points, self._p_min, self._p_ptp = normalize_points(self.params.values)
-            self.normalize_params = lambda p_arr: (p_arr - self._p_min) / self._p_ptp
+            points_full, self._p_min, self._p_ptp = normalize_points(self.params.values)
         else:
-            self.points = self.params.values
+            points_full = self.params.values
+            self._p_min = np.zeros(self.params.shape[1])
+            self._p_ptp = np.ones(self.params.shape[1])
+
+        # Drop uniform columns — they collapse the point cloud and break Delaunay
+        varying = np.ptp(points_full, axis=0) > 0
+        self.points = points_full[:, varying]
+        self.normalize_params = lambda p_arr: ((p_arr - self._p_min) / self._p_ptp)[varying]
+        self.ndim = self.points.shape[1]
 
         if self.ndim > 1:
             try:
@@ -113,7 +120,7 @@ class SpectrumGrid(object):
         if self.params.empty:
             return self.spectra[0].crop(*args, **kwargs)
 
-        p = args or [kwargs.pop(name) for name in self.param_names]
+        p = args or [kwargs.pop(name, self.p0[name]) for name in self.param_names]
         p = np.array(p)
 
         if hasattr(self, 'normalize_params'):
@@ -121,12 +128,13 @@ class SpectrumGrid(object):
 
         if self.delaunay is not None:
             if method=='Delaunay':
-                weights, spectra = self.get_weights(p)
+                weights, indices = get_delaunay_weights(self.points, p, self.delaunay)
             elif method=='NaturalNeighbor':
-                weights, spectra = compute_nn_weights(self.points, p)
+                weights, indices = get_nn_weights(self.points, p)
             else:
                 raise ValueError(f"Unknown interpolation method: {method}")
 
+            spectra = [self.spectra[i] for i in indices]
             spec = Spectrum.combine([s.crop(**kwargs) for s in spectra], weights=weights)
         else:
             i = np.searchsorted(self.points, p)[0]
@@ -137,14 +145,6 @@ class SpectrumGrid(object):
             spec = Spectrum(spectra[0].xdata, yy, xunit=spectra[0].xunit, yunit=spectra[0].yunit)
 
         return spec
-
-    #=====================================================================
-    def get_weights(self, query_point, verbose=True):
-        weights, indices = get_delaunay_weights(self.points, query_point, self.delaunay)
-        if indices is None:
-            if verbose: print("Query point is outside the convex hull.")
-            return None, None
-        return weights, [self.spectra[i] for i in indices]
     
     #=================================================================
     def fit(self, spec, bounds=None, p0=None, **kwargs):
@@ -230,7 +230,7 @@ def normalize_points(points):
     return (points - p_min) / p_ptp, p_min, p_ptp
 
 #=====================================================================
-def get_delaunay_weights(points, query_point, delaunay=None):
+def get_delaunay_weights(points, query_point, delaunay=None, verbose=True):
     """Returns (weights, indices) for the enclosing simplex, or (None, None)."""
     if delaunay is None:
         delaunay = Delaunay(points)
@@ -242,7 +242,13 @@ def get_delaunay_weights(points, query_point, delaunay=None):
     b = np.append(query_point, 1)
     weights = np.linalg.solve(A.T, b)
     mask = weights > 1e-10
-    return weights[mask], vertices[mask]
+    weights = weights[mask]
+    vertices = vertices[mask]
+    if vertices is None:
+        if verbose: print("Query point is outside the convex hull.")
+        return None, None
+    else:
+        return weights, vertices
 
 #=====================================================================
 def is_point_in_array(point, points, tol=1e-9):
@@ -287,7 +293,7 @@ def compute_enclosed_measure(points):
         raise ValueError("Invalid input: The input points must have at least 1 dimension.")
 
 #=====================================================================
-def compute_nn_weights(points, query, draw=False):
+def get_nn_weights(points, query, draw=False):
     idx = is_point_in_array(query, points)
     if idx >= 0:
         return np.array([1]), np.array([idx])
