@@ -131,7 +131,9 @@ SUBROUTINE read_composition_params ()
   if (linelist_folder /= '') then
     deallocate(line_lists)
     call os%get_filenames(linelist_folder, line_lists)
-    line_lists = [(trim(linelist_folder)//'/'//trim(line_lists(i)), i=1, size(line_lists))]
+    do i=1, size(line_lists)
+      line_lists(i) = trim(linelist_folder)//'/'//trim(line_lists(i))
+    end do
   else
     call truncate_array(line_lists, count(line_lists/=''))
   endif

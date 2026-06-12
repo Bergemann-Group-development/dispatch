@@ -36,7 +36,7 @@ MODULE nlte_patch_mod
   !-----------------------------------------------------------------------------
 
   type, public, extends(m3d_patch_t) :: nlte_patch_t
-    type(atom_type), dimension(:), pointer :: output_atoms, bb_atoms, bf_atoms
+    type(atom_type), dimension(:), pointer :: output_atoms=>null(), bb_atoms=>null(), bf_atoms=>null()
     class(atomic_spectrum_type), pointer :: output_sp=>null()
     class(atomic_spectrum_type), pointer :: bf_sp=>null()
     class(atomic_spectrum_type), pointer :: bb_sp=>null()
