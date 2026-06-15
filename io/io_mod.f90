@@ -477,7 +477,7 @@ SUBROUTINE check_flags (self)
   real(8), save     :: last_checked=0d0
   real(8)           :: flag_time
   logical           :: exists
-  character(len=80) :: file
+  character(len=256) :: file
   integer, save     :: itimer=0
   !.............................................................................
   !$omp master
