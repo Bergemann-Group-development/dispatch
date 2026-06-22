@@ -121,7 +121,7 @@ contains
     logical, save :: first_time=.true., exclude_trace_cont=.true., use_atom_abnd=.false.
     logical, save :: relative_abundance = .false.
     logical :: pandas_format
-    integer :: i, j, iostat
+    integer :: i, j, iostat, nlvl
     namelist /atom_params/ atom_file, qnorm, convlim, exclude_trace_cont, level_partf, &
       use_atom_abnd, logf_cut, red_cut, blue_cut, n_in_lines, abundance, relative_abundance, &
       exclude_from_line_list, use_classic_col, kramer_bf, overlapping_bf, &
@@ -251,7 +251,10 @@ contains
           endif
         end associate
       end do
-      allocate(rank_lvlerr(sum(atoms%nlevel, 1)), source=0.d0)
+      if (natom > 0) then
+        nlvl = sum(atoms%nlevel, 1)
+        allocate(rank_lvlerr(nlvl), source=0.d0)
+      endif
       write (io%namelist, atom_params)
     endif
 
@@ -616,7 +619,7 @@ contains
       endif
     endif
 
-    allocate(keys(nprecomp+size(self%atoms)))
+    allocate(keys(nprecomp+self%natom))
     do i=1, nprecomp
       atom_file = atom_files(i)
       i1 = index(atom_file, 'pop_') + 4
@@ -624,7 +627,7 @@ contains
       keys(i) = trim(atom_file(i1:i2))
     end do
     j = nprecomp
-    do i=1, size(self%atoms)
+    do i=1, self%natom
       atom => self%atoms(i)
       atom%idep = findloc(keys, trim(atom%id), 1)
       atom%precomputed = atom%idep /= 0
@@ -653,7 +656,7 @@ contains
       close(lunit)
     end do
 
-    do i=1, size(self%atoms)
+    do i=1, self%natom
       atom => self%atoms(i)
       adata => atom%data
       dep => self%departures(atom%idep, 1)
@@ -764,7 +767,7 @@ contains
       end do
     end do
 
-    do i=1, size(self%atoms)
+    do i=1, self%natom
       atom => self%atoms(i)
       adata => atom%data
       iterated = allocated(adata%b)
@@ -822,7 +825,7 @@ contains
     integer, save :: itimer=0
     logical, save :: first_time = .true.
     !-----------------------------------------------------------------------------
-    if (first_time) then
+    if (first_time .and. allocated(rank_lvlerr)) then
       first_time = .false.
       call trace%begin('nlte_patch_t%save_convergence_report', itimer=itimer)
       write(conv_file, '(A,A,I3.3,A)') trim(io%run_dir), 'convergence_report_', self%rank,'.txt'

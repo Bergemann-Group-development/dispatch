@@ -21,7 +21,7 @@ MODULE rt_patch_mod
   USE m3d_patch_mod, only: short_vec=>vec, short_wmu=>wmu, use_vel, m3d_patch_t, &
     absmet_in_output, long_wmu, long_vec, ray_offset, pivot_z, dlam, &
     premature_finish, m3d_patch_pre_update=>pre_update, save_resolved, &
-    column_by_column, rotate_atmos, rank_lvlerr, save_cntrbf, depression_cntrbf, &
+    column_by_column, rotate_atmos, save_cntrbf, depression_cntrbf, &
     decouple_continuum, linelist_in_output, ilambd, initial_Jnu,  &
     Jnu_to_file, preconditioning, make_eos, amr, save_Inu, save_chi, save_Snu, &
     long_solver, fixed_Jnu, n_nu, save_Jnu, maxiter

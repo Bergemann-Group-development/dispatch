@@ -194,9 +194,8 @@ contains
         &'Marcs', 'SIU-bin', 'Multi1D' and 'Text'."
         stop
       end select
+      if (any(ia%vmic > 0)) opac_table_vmic = sum(ia%vmic) / size(ia%vmic)
     endif
-
-    if (any(ia%vmic > 0)) opac_table_vmic = sum(ia%vmic) / size(ia%vmic)
 
     one_dimensional = .not. ia%is_3d
 
