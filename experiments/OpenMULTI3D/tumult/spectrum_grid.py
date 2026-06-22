@@ -48,6 +48,7 @@ class SpectrumGrid(object):
         self.points = points_full[:, varying]
         self.normalize_params = lambda p_arr: ((p_arr - self._p_min) / self._p_ptp)[varying]
         self.ndim = self.points.shape[1]
+        self.p0 = {name: self.params[name].median() for name in self.param_names}
 
         if self.ndim > 1:
             try:
