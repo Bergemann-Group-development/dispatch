@@ -62,14 +62,14 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
     # Determine command and output handling
     if slurm_script:
         cmd = ['sbatch', slurm_script, str(input_file)]
-        out_dest = None # sbatch handles its own logging
     else:
         cmd = [str(executable), str(input_file)]
-        # This replaces the /dev/null 2>&1 logic
-        out_dest = subprocess.DEVNULL if verbose < 2 and not log_file else None
 
     # Open log file if requested
-    log_handle = open(log_file, 'w') if log_file else out_dest
+    if verbose < 2 and log_file is None:
+      log_file = output_folder.with_suffix('.log')
+
+    log_handle = open(log_file, 'w') if log_file else None
 
     if verbose == 1:
         print(f"{input_file} launching")
@@ -89,7 +89,7 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
             print(f"Error: Command failed. Check {log_file} for details.")
             
     finally:
-        if log_file:
+        if log_file is not None:
             log_handle.close()
 
     return output_folder, True
