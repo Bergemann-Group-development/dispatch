@@ -69,6 +69,12 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
     if verbose < 2 and log_file is None:
       log_file = output_folder.with_suffix('.log')
 
+    if log_file is not None:
+        # dispatch.x creates output_folder itself only once it runs (after this point),
+        # so the log file's parent directory may not exist yet — create it first.
+        log_file = pathlib.Path(log_file)
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+
     log_handle = open(log_file, 'w') if log_file else None
 
     if verbose == 1:

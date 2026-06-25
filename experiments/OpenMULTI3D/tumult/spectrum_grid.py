@@ -2,7 +2,8 @@ from .auxfuncs import pchip_mono
 from .spectrum import Spectrum
 import numpy as np
 import pandas as pd
-from scipy.spatial import Delaunay, ConvexHull, Voronoi
+from scipy.spatial import Delaunay, ConvexHull, Voronoi, HalfspaceIntersection, cKDTree
+from scipy.optimize import linprog
 from matplotlib.patches import Polygon
 import matplotlib.pyplot as plt
 
@@ -128,12 +129,9 @@ class SpectrumGrid(object):
             p = self.normalize_params(p)
 
         if self.delaunay is not None:
-            if method=='Delaunay':
-                weights, indices = get_delaunay_weights(self.points, p, self.delaunay)
-            elif method=='NaturalNeighbor':
-                weights, indices = get_nn_weights(self.points, p)
-            else:
-                raise ValueError(f"Unknown interpolation method: {method}")
+            # shared node selection: drops on-grid axes, exact NN / barycentric weights,
+            # fast local stencil + tail truncation for NaturalNeighbor
+            weights, indices = get_interp_weights(self.points, p, method)
 
             spectra = [self.spectra[i] for i in indices]
             spec = Spectrum.combine([s.crop(**kwargs) for s in spectra], weights=weights)
@@ -155,8 +153,8 @@ class SpectrumGrid(object):
 
         p = {}
         b = {}
-        for i, name in enumerate(self.param_names):
-            vals = self.params[:,i] if self.ndim > 1 else self.params
+        for name in getattr(self, "param_names", []):   # empty for a single-node grid
+            vals = self.params[name]
             p[name] = np.median(vals)
             b[name] = (np.min(vals), np.max(vals))
 
@@ -294,42 +292,271 @@ def compute_enclosed_measure(points):
         raise ValueError("Invalid input: The input points must have at least 1 dimension.")
 
 #=====================================================================
-def get_nn_weights(points, query, draw=False):
+def _nn_halfspaces(site, others):
+    """Bisector half-spaces {x: ||x-site|| <= ||x-o||} for each ``o`` in ``others``.
+
+    Returned as rows ``[a_0..a_{d-1}, b]`` with the convention ``a·x + b <= 0`` (the
+    half-space of points at least as close to ``site`` as to ``o``).
+    """
+    others = np.atleast_2d(np.asarray(others, dtype=float))
+    site = np.asarray(site, dtype=float)
+    a = others - site                                       # normal points toward ``o``
+    b = -0.5 * (np.einsum("ij,ij->i", others, others) - site @ site)
+    return np.column_stack([a, b])
+
+
+def _chebyshev_center(halfspaces):
+    """Interior point and inscribed-ball radius of ``{x: A x + b <= 0}``.
+
+    Radius ``<= 0`` (or a ``None`` point) means the region is empty or lower-dimensional,
+    i.e. the candidate neighbour steals no volume.
+    """
+    A, b = halfspaces[:, :-1], halfspaces[:, -1]
+    d = A.shape[1]
+    norms = np.linalg.norm(A, axis=1)
+    c = np.zeros(d + 1); c[-1] = -1.0                       # maximise the radius r
+    res = linprog(c, A_ub=np.column_stack([A, norms]), b_ub=-b,
+                  bounds=[(None, None)] * d + [(0, None)], method="highs")
+    if not res.success:
+        return None, 0.0
+    return res.x[:d], float(res.x[-1])
+
+
+def _polytope_volume(halfspaces, interior):
+    """``d``-volume and vertices of the convex polytope ``{A x + b <= 0}``."""
+    try:
+        verts = HalfspaceIntersection(halfspaces, np.asarray(interior, float)).intersections
+        return float(ConvexHull(verts).volume), verts
+    except Exception:
+        return 0.0, None
+
+
+def get_nn_weights(points, query, draw=False, hull=None, vor1=None):
+    """Sibson natural-neighbour weights/indices for ``query`` within ``points``.
+
+    Computed exactly from the Sibson definition: the weight of neighbour ``n`` is the
+    fraction of the query's *inserted* Voronoi cell ``V_new(q)`` stolen from ``n``'s old
+    cell, ``vol(V_new(q) ∩ V_old(n)) / vol(V_new(q))``. Within ``V_new(q)`` the only
+    competitors are ``q``'s own Voronoi neighbours, so both regions are convex polytopes
+    of bisector half-spaces among ``q`` and those candidates, and each stolen volume is a
+    half-space intersection. This is robust on degenerate (regular/cocircular) grids,
+    where the previous area-stealing heuristic over-counted next-ring nodes and lost
+    linear precision; here ``sum(w_i * p_i) == q`` to machine precision.
+
+    ``hull`` (ConvexHull of ``points``) is reused across queries when supplied. ``vor1``
+    is accepted for backward compatibility and no longer used.
+    """
+    points = np.asarray(points, dtype=float)
+    query = np.asarray(query, dtype=float)
+
     idx = is_point_in_array(query, points)
     if idx >= 0:
-        return np.array([1]), np.array([idx])
-    
-    hull = ConvexHull(points)
+        return np.array([1.0]), np.array([idx])
+
+    if hull is None:
+        hull = ConvexHull(points)
     if not point_in_convex_hull(query, hull):
-        return np.array([0]), np.array([-1])
-    
-    vor1 = Voronoi(points)
+        return np.array([0.0]), np.array([-1])
+
+    # candidate natural neighbours: the Voronoi neighbours of the inserted query point
     vor2 = Voronoi(np.vstack([points, query]))
-    query_region = vor2.regions[vor2.point_region[-1]]
-    query_hull = ConvexHull(vor2.vertices[query_region])
-    nbors, ridge_verts = get_nbors(vor2, -1)
-    areas = np.zeros(len(nbors))
+    nbors = np.unique(get_nbors(vor2, -1)[0])
+    cand = points[nbors]
+    scale = float(np.linalg.norm(np.ptp(points, axis=0))) or 1.0
+    tol = 1e-9 * scale
 
-    if draw:
+    hq = _nn_halfspaces(query, cand)                        # V_new(q): q beats every candidate
+    weights, keep, polys = [], [], []
+    for k, n in enumerate(nbors):
+        others = np.delete(cand, k, axis=0)                 # n is the nearest *old* site
+        hs = np.vstack([hq, _nn_halfspaces(points[n], others)]) if len(others) else hq
+        interior, radius = _chebyshev_center(hs)
+        if interior is None or radius < tol:
+            continue
+        vol, verts = _polytope_volume(hs, interior)
+        if vol > 0:
+            weights.append(vol); keep.append(int(n)); polys.append(verts)
+
+    weights = np.asarray(weights, dtype=float)
+    if weights.sum() <= 0:
+        return np.array([0.0]), np.array([-1])
+    weights /= weights.sum()
+
+    if draw and points.shape[1] == 2:
         colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+        for i, verts in enumerate(polys):
+            v = verts[ConvexHull(verts).vertices]
+            plt.gca().add_patch(Polygon(v, color=colors[i % len(colors)], alpha=0.5))
 
-    for n, nbor in enumerate(nbors):
-        region = vor1.regions[vor1.point_region[nbor]]
-        vertices = vor2.vertices[ridge_verts[n]]
-        removed_vertices = []
-        for i in region:
-            if i >= 0:
-                point = vor1.vertices[i]
-                if point_in_convex_hull(point, query_hull):
-                    removed_vertices.append(point)
+    return weights, np.asarray(keep)
 
-        
-        vertices = np.vstack([vertices, removed_vertices])
-        areas[n] = compute_enclosed_measure(vertices)
-        if draw:
-            hull = ConvexHull(vertices)
-            vertices = vertices[hull.vertices]
-            plt.gca().add_patch(Polygon(vertices, color=colors[n], alpha=0.5))
 
-    weights = areas / np.sum(areas)
-    return weights, nbors
+#=====================================================================
+# Node selection: pick the interpolation stencil (weights + indices) for a query.
+#=====================================================================
+
+# natural-neighbour weights have a long tail of negligible nodes; keep only the highest-
+# weight ones up to this cumulative fraction (the rest barely affect the result but each
+# costs a full synthesis). Delaunay weights (a single simplex) are never truncated.
+_NN_WEIGHT_KEEP = 0.995
+
+# a query coordinate within this fraction of an axis' span of a grid value is treated as
+# lying exactly on the grid (so that dimension is dropped from the interpolation).
+_ON_GRID_TOL = 1e-4
+
+# cache of per-subgrid structures, keyed by the subgrid's normalised-point bytes. The
+# subgrid (and hence its triangulation) repeats across queries that pin the same axes to
+# the same grid values, e.g. scanning Teff/logg at a fixed [Fe/H] and vmic.
+_SUBGRID_CACHE = {}
+
+
+def _subgrid(points):
+    """Cached normalisation + lazily-built Delaunay / NN structures for a node set.
+
+    ``points`` is a raw (n, d) array; returns a dict with ``pn`` (normalised), ``pmin``,
+    ``pptp`` and slots ``delaunay`` / ``nn`` filled on first use by the method that needs them.
+    """
+    key = (points.shape, points.tobytes())
+    cached = _SUBGRID_CACHE.get(key)
+    if cached is None:
+        pn, pmin, pptp = normalize_points(points)
+        if len(_SUBGRID_CACHE) >= 8:
+            _SUBGRID_CACHE.clear()
+        cached = _SUBGRID_CACHE[key] = {'pn': pn, 'pmin': pmin, 'pptp': pptp,
+                                        'delaunay': None, 'nn': None}
+    return cached
+
+
+def _nn_select(points_norm, query_norm, grid_nn, max_nb=100, max_sub=2000, max_ring=4):
+    """Natural-neighbour node indices for the query — fast local path, or None to defer.
+
+    The query's natural neighbours are determined entirely by its local Voronoi cell, so:
+    take the nearest grid node, grow its Voronoi-adjacency neighbourhood ring by ring, and
+    build a small local Voronoi from it. Once the query's natural neighbours are all
+    *interior* to that neighbourhood (none on its convex hull), enlarging it can't change
+    them — the result is exact. Returns ``None`` (caller does the full grid computation)
+    for a degenerate, out-of-local-hull, or huge-stencil (sparse-region) query.
+    """
+    vor1, kdtree, _ = grid_nn
+    rp = vor1.ridge_points
+    host = int(kdtree.query(query_norm)[1])
+    nodes, frontier = {host}, {host}
+    for r in range(1, max_ring + 1):
+        nxt = set()
+        for n in frontier:
+            m = np.any(rp == n, axis=1)
+            nxt.update(int(x) for x in (rp[m].sum(1) - n))
+        nxt -= nodes
+        nodes |= nxt
+        frontier = nxt
+        if r < 2:
+            continue
+        if len(nodes) > max_sub:
+            return None
+        loc = np.fromiter(sorted(nodes), dtype=int)
+        try:
+            w, li = get_nn_weights(points_norm[loc], query_norm)
+        except Exception:
+            continue   # degenerate local subset — grow another ring
+        if li[0] < 0 or len(li) > max_nb:
+            return None
+        hull_v = {int(v) for v in ConvexHull(points_norm[loc]).vertices}
+        if not any(int(i) in hull_v for i in li):
+            return w, loc[li]   # (weights, indices); all natural neighbours interior -> exact
+    return None
+
+
+def _truncate_weights(weights, indices, keep):
+    """Keep the highest-weight nodes whose cumulative weight reaches ``keep``, renormalised.
+
+    Returns ``(weights, indices)`` for the kept nodes (at least one). Dropping the
+    negligible tail removes syntheses that barely change the interpolated spectrum.
+    """
+    weights = np.asarray(weights, dtype=float)
+    indices = np.asarray(indices)
+    order = np.argsort(weights)[::-1]                      # high -> low
+    csum = np.cumsum(weights[order])
+    n = min(max(int(np.searchsorted(csum, keep * csum[-1])) + 1, 1), len(order))
+    sel = order[:n]
+    w = weights[sel]
+    return w / w.sum(), indices[sel]
+
+
+def get_interp_weights(points, query, method='Delaunay', keep=_NN_WEIGHT_KEEP):
+    """(weights, indices) of the interpolation nodes for ``query`` in raw grid ``points``.
+
+    The fundamental node-selection entry point: it pins on-grid axes (dimension reduction),
+    dispatches to Delaunay or natural-neighbour weights, uses the fast local stencil for
+    NN, and truncates the negligible NN tail.
+
+    On a regular grid, a query coordinate that lands exactly on a grid value makes that a
+    redundant dimension — interpolating in it wastes nodes (averaging values that cancel)
+    and makes local triangulations degenerate. So pin such axes to their grid value,
+    restrict to the matching nodes, and interpolate only in the remaining (active) dimensions.
+
+    ``method`` is ``'Delaunay'`` or ``'NaturalNeighbor'``; ``keep`` is the cumulative-weight
+    fraction retained for NN (ignored by Delaunay). Indices index into ``points``.
+    """
+    points = np.asarray(points, dtype=float)
+    n, ndim = points.shape
+    query = np.asarray(query, dtype=float)
+
+    active, pinned = [], []
+    for d in range(ndim):
+        vals = np.unique(points[:, d])
+        nearest = vals[int(np.argmin(np.abs(vals - query[d])))]
+        span = float(np.ptp(vals)) or 1.0
+        if abs(nearest - query[d]) <= _ON_GRID_TOL * span:
+            pinned.append((d, nearest))
+        else:
+            active.append(d)
+
+    mask = np.ones(n, dtype=bool)
+    for d, v in pinned:
+        mask &= np.isclose(points[:, d], v)
+    sub = np.flatnonzero(mask)
+
+    if not active:                       # query coincides with a grid node
+        return np.array([1.0]), sub[:1]
+
+    outside = "Target is outside the convex hull of available atmospheres."
+    P = points[np.ix_(sub, active)]
+
+    if len(active) == 1:                 # single off-grid axis -> 1-D linear interp
+        xs = P[:, 0]                     # (Delaunay/Voronoi need >=2-D, so handle 1-D here)
+        order = np.argsort(xs)
+        xs_s = xs[order]
+        qx = float(query[active][0])
+        j = max(1, min(int(np.searchsorted(xs_s, qx)), len(xs_s) - 1))
+        x0v, x1v = xs_s[j - 1], xs_s[j]
+        if np.isclose(x1v, x0v):
+            return np.array([1.0]), sub[order[[j - 1]]]
+        t = float(np.clip((qx - x0v) / (x1v - x0v), 0.0, 1.0))
+        return np.array([1.0 - t, t]), sub[order[[j - 1, j]]]
+
+    c = _subgrid(P)
+    pn, qn = c['pn'], (query[active] - c['pmin']) / c['pptp']
+
+    if method == 'Delaunay':
+        if c['delaunay'] is None:
+            c['delaunay'] = Delaunay(pn)
+        w, li = get_delaunay_weights(pn, qn, c['delaunay'])
+        if li is None:
+            raise ValueError(outside)
+        return w, sub[li]
+
+    if method == 'NaturalNeighbor':
+        if c['nn'] is None:
+            c['nn'] = (Voronoi(pn), cKDTree(pn), ConvexHull(pn))
+        sel = _nn_select(pn, qn, c['nn'])
+        if sel is None:                  # local shortcut declined -> full subgrid
+            vor1, _kd, hull = c['nn']
+            w, li = get_nn_weights(pn, qn, hull=hull, vor1=vor1)
+        else:
+            w, li = sel
+        if len(li) == 0 or li[0] < 0:
+            raise ValueError(outside)
+        w, li = _truncate_weights(w, li, keep)
+        return w, sub[li]
+
+    raise ValueError(f"Unknown method: {method!r}. Use 'Delaunay' or 'NaturalNeighbor'.")

@@ -5,7 +5,8 @@ import astropy.constants as const
 import matplotlib.pyplot as plt
 from scipy import optimize
 from .convolutions import convolve, kernel_width
-from .utils import ensure_unit, calc_teff, get_bisector, fit_line_profile, get_weq, kpno_spectral_filter
+from .utils import ensure_unit, calc_teff, get_bisector, fit_line_profile, \
+                   get_weq, kpno_spectral_filter, pchip_mono, lowpass
 from .plotting_scripts import adjust_max_xticks
 
 
@@ -15,6 +16,14 @@ def get_wavelength_shift(vshift):
         return 1.0
     beta = ensure_unit(vshift, u.km / u.s) / const.c
     return 1 + beta
+
+
+def _round_to(value, step):
+    """Round ``value`` to the decimal place implied by ``step`` (0.1 -> 1 dp, 0.01 -> 2 dp)."""
+    if step is None or step <= 0:
+        return float(value)
+    ndigits = max(0, int(np.ceil(-np.log10(step))))
+    return round(float(value), ndigits)
 
 
 class Spectrum:
@@ -297,6 +306,9 @@ class Spectrum:
         yield self.xdata
         yield self.ydata
 
+    def __len__(self):
+        return int(self.xdata.size)
+
     def _crop(self, xmin, xmax):
         """Internal crop method using searchsorted. Always returns subset preserving order."""
         is_ascending = self.xdata[-1] > self.xdata[0]
@@ -374,8 +386,8 @@ class Spectrum:
             xmin = ensure_unit(xmin, self.xunit)
             xmax = ensure_unit(xmax, self.xunit)
         elif slc is not None:
-            xmin = self.xdata[slc.start] if slc.start else self.xdata[0]
-            xmax = self.xdata[slc.stop-1] if slc.stop else self.xdata[-1]
+            xmin = self.xdata[slc.start] if slc.start is not None else self.xdata[0]
+            xmax = self.xdata[slc.stop-1] if slc.stop is not None else self.xdata[-1]
         else:
             xmin = self.xdata[0]
             xmax = self.xdata[-1]
@@ -418,7 +430,7 @@ class Spectrum:
             # Shift back to observed frame and interpolate onto target grid
             cx = cx * lshift
 
-            newx = newx or s.xdata
+            newx = newx if newx is not None else s.xdata
             newy = np.interp(newx, cx, cy)
             if relative: newx = newx - center
             s = Spectrum(newx, newy, xref=sub_spec.xref, yunit=self.yunit)
@@ -448,6 +460,7 @@ class Spectrum:
         sigma=None,
         method="Nelder-Mead",
         tol=None,
+        xtol=None,
         integrate=False,
         **kwargs,
     ):
@@ -469,7 +482,12 @@ class Spectrum:
         method : str, optional
             Optimization method. Default is 'L-BFGS-B'.
         tol : float, optional
-            Tolerance for optimization. Default is None.
+            Default absolute fit tolerance for any parameter not listed in ``xtol``.
+            Default is None (-> 0.01).
+        xtol : dict, optional
+            Per-parameter absolute fit tolerance, e.g. ``{"Mg": 0.01, "vshift": 0.1}``. This
+            is also the precision the best-fit value is rounded to for display. Velocities
+            (vshift/vrot/zeta_rt/vdop) default to 0.1; everything else to ``tol`` or 0.01.
         **kwargs :
             Additional keyword arguments to pass to the crop method.
 
@@ -491,33 +509,35 @@ class Spectrum:
             "vdop": 1e-3,
             "vrot": 1e-3,
             "zeta_rt": 1e-3,
-            "continuum": 0.5,
-            "tilt": -0.2,
         }
         ubounds = {
             "vshift": +3,
             "vdop": 1e1,
             "vrot": 1e1,
             "zeta_rt": 1e1,
-            "continuum": 2.0,
-            "tilt": +0.2,
         }
         p0s = {
             "vshift": 0,
             "vdop": 1,
             "vrot": 1,
             "zeta_rt": 1,
-            "continuum": 1.0,
-            "tilt": 0.0,
         }
 
         p0s.update(p0)
         for key in bounds.keys():
             lbounds[key], ubounds[key] = bounds[key]
 
-        p0 = [p0s[f] for f in fit]
-        bounds = ([lbounds[f] for f in fit], [ubounds[f] for f in fit])
-        bounds = np.vstack(bounds).T
+        # Absolute fit tolerance per parameter (also the displayed precision). Nelder-Mead only
+        # offers a scalar `xatol`, so each parameter is rescaled by its tolerance and the fit
+        # converges once the simplex shrinks below one tolerance unit in every dimension.
+        default_other = float(tol) if tol is not None else 1e-2
+        xtols = {"vshift": 0.1, "vrot": 0.1, "zeta_rt": 0.1, "vdop": 0.1}
+        xtols.update(xtol or {})
+        scale = np.array([xtols.get(f, default_other) for f in fit], dtype=float)
+
+        lo = np.array([lbounds[f] for f in fit], dtype=float)
+        hi = np.array([ubounds[f] for f in fit], dtype=float)
+        p0 = np.clip(np.array([p0s[f] for f in fit], dtype=float), lo, hi)  # avoid OOB-guess warning
 
         def evaluate(newx, *args):
             ka = {f: args[i] for i, f in enumerate(fit)}
@@ -527,7 +547,8 @@ class Spectrum:
             return news
 
         def fit_params(s):
-            def residuals(params):
+            def residuals(u):
+                params = u * scale  # tolerance units -> physical units
                 if integrate:
                     r = s.get_weq(profile='trapz', auto_crop=False) - evaluate(s.xdata, *params).get_weq(profile='trapz', auto_crop=False)
                     r = r.value
@@ -536,17 +557,32 @@ class Spectrum:
 
                 if sigma is not None:
                     r = r / sigma
-                    
+
                 return float(np.sum(r**2))
 
-            pfit = optimize.minimize(
-                residuals, p0, bounds=bounds, method=method, tol=tol
-            ).x
-            return pfit
+            # Optimise in tolerance units (u = p / scale): xatol=1 then means "converged to one
+            # tolerance in every parameter"; fatol disabled so xatol alone drives stopping.
+            u0 = p0 / scale
+            ulo, uhi = lo / scale, hi / scale
+            if method == "Nelder-Mead":
+                n = len(u0)
+                simplex = np.repeat(u0[None, :], n + 1, axis=0)
+                for i in range(n):                       # non-degenerate simplex, flipped inward at a bound
+                    step = -8.0 if u0[i] + 8.0 > uhi[i] else 8.0
+                    simplex[i + 1, i] = np.clip(u0[i] + step, ulo[i], uhi[i])
+                res = optimize.minimize(
+                    residuals, u0, bounds=np.vstack([ulo, uhi]).T, method=method,
+                    options={"xatol": 1.0, "fatol": np.inf, "initial_simplex": simplex},
+                )
+            else:
+                res = optimize.minimize(
+                    residuals, u0, bounds=np.vstack([ulo, uhi]).T, method=method, tol=tol)
+            return res.x * scale
 
         pfit = fit_params(spec)
         fitted = evaluate(spec.xdata, *pfit)
-        best = {f: pfit[i] for i, f in enumerate(fit)}
+        # round each result to its tolerance for display (e.g. 0.01 dex, 0.1 km/s)
+        best = {f: _round_to(pfit[i], scale[i]) for i, f in enumerate(fit)}
 
         return best, fitted
 
@@ -666,6 +702,46 @@ class Spectrum:
         new_ydata = kpno_spectral_filter(*self, **kwargs)
         return Spectrum(self.xdata, new_ydata, xref=self.xref, yunit=self.yunit)
 
+    def lowpass(self, resolution, inplace=False):
+        """
+        Low-pass filter the flux, removing features sharper than a spectral
+        resolution ``R = λ/Δλ`` (see ``utils.lowpass``).
+
+        Parameters
+        ----------
+        resolution : float
+            Cutoff resolution R; ``<= 0`` leaves the spectrum unchanged.
+        inplace : bool, optional
+            Modify this spectrum instead of returning a new one.
+
+        Returns
+        -------
+        Spectrum
+            The filtered spectrum.
+        """
+        new_ydata = lowpass(self.xdata.value, self.ydata.value, resolution)
+        if inplace:
+            self.ydata = new_ydata * self.yunit
+            return self
+        return Spectrum(self.xdata, new_ydata, xunit=self.xunit,
+                        yunit=self.yunit, xref=self.xref)
+
+    def pchip_mono(self):
+        """
+        Return a monotonic PCHIP interpolator for the spectrum.
+
+        Returns:
+        --------
+        scipy.interpolate.PchipInterpolator
+            A PCHIP interpolator for the spectrum.
+        """
+        def pchip_mono_wrapper(newx):
+            step = -1 if self.xdata[-1] < self.xdata[0] else 1
+            newy = pchip_mono(*self[::step])(newx)
+            return Spectrum(newx, newy, xunit=self.xunit, yunit=self.yunit, xref=self.xref)
+
+        return pchip_mono_wrapper
+
     def __getitem__(self, key):
         """
         Support slicing of the spectrum.
@@ -685,9 +761,17 @@ class Spectrum:
         else:
             raise TypeError("Only slicing is supported.")
 
+    def decimate(self, n):
+        """Return the spectrum strided down to at most ~`n` evenly spaced points."""
+        step = max(1, len(self) // n)
+        return self[::step]
+
     @classmethod
     def combine(cls, spectra, weights=None):
-        weights = weights or np.ones(len(spectra)) / len(spectra)
+        # `weights is None` (not truthiness): a numpy array of weights is ambiguous in a
+        # boolean context (raises "truth value of an array ... is ambiguous").
+        if weights is None:
+            weights = np.ones(len(spectra)) / len(spectra)
         s = spectra[0] * weights[0]
         for spec, weight in zip(spectra[1:], weights[1:]):
             s += spec * weight

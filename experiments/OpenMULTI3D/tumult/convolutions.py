@@ -21,7 +21,13 @@ def convert_res_to_vdop(res=None, vdop=None):
     if new_res <= 0:
         new_res = np.inf
 
-    vres = np.sqrt(1 / new_res**2 - 1 / old_res**2) * const.c
+    # R = lambda/FWHM, so the instrumental FWHM velocity is c/R. gauss_kernel uses
+    # the 1/e half-width (Doppler b-width) convention, so convert FWHM -> 1/e width
+    # by dividing by 2*sqrt(ln2). This also makes vres consistent with vdop (both
+    # 1/e widths), so their quadrature sum below is correct for convolution.
+    vres = (
+        np.sqrt(1 / new_res**2 - 1 / old_res**2) * const.c / (2 * np.sqrt(np.log(2)))
+    )
 
     if vdop is not None:
         vdop = np.sqrt(vres**2 + vdop**2)

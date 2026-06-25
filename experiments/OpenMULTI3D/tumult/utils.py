@@ -94,6 +94,55 @@ def pchip_mono(xx, yy, axis=0, **kwargs):
     return CubicHermiteSpline(xx, yy, dydx, axis=axis, **kwargs)
 
 
+def lowpass(xx, yy, resolution):
+    """Low-pass filter a spectrum, suppressing features sharper than a spectral
+    resolution ``R = λ/Δλ``.
+
+    The filter is applied in ``ln(λ)`` space, where the Fourier frequency (cycles per
+    unit ``ln λ``) equals the spectral resolution, so ``resolution`` sets the scale of
+    the cut (smaller values give a smoother result). A **Gaussian roll-off** is used
+    rather than a brick-wall cut: its transfer function is strictly positive, so it has
+    no negative side-lobes and therefore introduces no Gibbs ringing in smooth parts of
+    the spectrum. The half-power point sits near ``R``; power is down ~7x by ``2R`` and
+    ~100x by ``3R``. A linear endpoint baseline is removed before the FFT and restored
+    afterwards to suppress wrap-around effects at the spectrum edges.
+
+    Parameters
+    ----------
+    xx, yy : array-like
+        Wavelengths (strictly positive, any order) and flux.
+    resolution : float
+        Roll-off resolution R. ``<= 0`` returns the input unchanged.
+
+    Returns
+    -------
+    numpy.ndarray
+        The filtered flux, on the original ``xx`` grid and order.
+    """
+    xx = np.asarray(xx, dtype=float)
+    yy = np.asarray(yy, dtype=float)
+    n = yy.size
+    if resolution is None or resolution <= 0 or n < 4:
+        return yy.copy()
+
+    lx = np.log(xx)
+    ascending = lx[0] < lx[-1]
+    if not ascending:               # work low-to-high, restore the order at the end
+        lx, ys = lx[::-1], yy[::-1]
+    else:
+        ys = yy
+    # resample onto a uniform ln(λ) grid so the FFT frequencies are well defined
+    grid = np.linspace(lx[0], lx[-1], n)
+    yu = np.interp(grid, lx, ys)
+    base = np.linspace(yu[0], yu[-1], n)        # endpoint line, removed to limit ringing
+    fft = np.fft.rfft(yu - base)
+    freqs = np.fft.rfftfreq(n, grid[1] - grid[0])  # cycles / ln λ == spectral resolution
+    fft *= np.exp(-0.5 * (freqs / resolution) ** 2)  # Gaussian roll-off (no ringing)
+    smooth = np.fft.irfft(fft, n) + base
+    out = np.interp(lx, grid, smooth)           # back onto the original (sorted) grid
+    return out[::-1] if not ascending else out
+
+
 def parabolic_min(xx_in, yy_in):
     """
     Find the minimum of a parabolic fit to the minimum value and its neighbors.
@@ -214,6 +263,9 @@ def get_weq(
     xunit = xx.unit if isinstance(xx, u.Quantity) else u.AA
     target_unit = target_unit or u.mAA
 
+    if x0 is not None and isinstance(xx, u.Quantity) != isinstance(x0, u.Quantity):
+        raise ValueError("xx and x0 must both carry units or both be unitless.")
+
     xplot = xx.copy()
     xx, yy, x0 = _prepare_profile_data(
         xx, yy, x0=x0, dlam=dlam, auto_crop=auto_crop, plot=plot
@@ -244,15 +296,20 @@ def get_weq(
             step = arg * 1e-4
             arg_plus[i] = arg + step
             partial = (line_weq(*arg_plus, profile=profile) - weq) / step
-            partials.append(partial.value)
+            partials.append(partial.value if isinstance(partial, u.Quantity) else partial)
 
         eweq = np.sqrt(np.dot(partials, np.dot(pcov, partials)))
 
+    # When called without units, the computation stays unitless; reattach the
+    # wavelength unit (xunit, defaulting to AA) so the result is a Quantity.
+    if not isinstance(weq, u.Quantity):
+        weq = weq * xunit
     eweq = eweq * weq.unit
 
     if syst is not None:
         step = syst * 0.1
-        weq2 = get_weq(xx, yy / (1 + step), x0=0, profile=profile, auto_crop=False)
+        x0_zero = 0 * xunit if isinstance(xx, u.Quantity) else 0
+        weq2 = get_weq(xx, yy / (1 + step), x0=x0_zero, profile=profile, auto_crop=False)
         gradient = (weq2 - weq) / step
         esys = syst * gradient
         eweq = np.sqrt(eweq**2 + esys**2)
@@ -498,6 +555,9 @@ def _prepare_profile_data(xx, yy, x0, dlam, auto_crop, plot=False):
     if x0 is None:
         x0 = 0 if xx[0] < 0 else xx[xx.size // 2]
 
+    if x0 == 0:
+        raise ValueError("x0 must be non-zero; it normalises the wavelength axis.")
+
     if dlam is not None:
         mask = np.abs(xx - x0) < dlam
         x = xx[mask]
@@ -570,26 +630,33 @@ def fit_line_profile(
     slo = 1e-8 * x0
     shi = 1000 * x0
 
+    # `scale` holds the x0 factor of each parameter: the wavelength-scaled ones
+    # (centre, width) are normalised by x0 for a well-conditioned fit (and
+    # rescaled back afterwards), while amp and the voigt rho are dimensionless
+    # and carry a factor of 1. x0 is guaranteed non-zero by _prepare_profile_data.
     if profile == "gauss":
-        # x0, amp, sig
+        # center, amp, sig
         p = [xmin, amp, sig]
         b = [[xlo, 0, slo], [xhi, 1, shi]]
+        scale = [x0, 1, x0]
     elif profile == "asym_gauss":
-        # x0, amp, sig_left, sig_right
+        # center, amp, sig_left, sig_right
         p = [xmin, amp, sig, sig]
         b = [[xlo, 0, slo, slo], [xhi, 1, shi, shi]]
+        scale = [x0, 1, x0, x0]
     elif profile == "voigt":
-        # x0, amp, sigma, rho
+        # center, amp, sigma, rho
         p = [xmin, amp, sig, 0.0]
         b = [[xlo, 0, slo, 0], [xhi, 1, shi, 1]]
+        scale = [x0, 1, x0, 1]
     else:
         raise ValueError(f"Unknown profile {profile}")
 
     p0 = p if p0 is None else p0
     bounds = b if bounds is None else bounds
-    p0 = [p / x0 if has_units(p) else p for p in p0]
-    lb = [b / x0 if has_units(b) else b for b in bounds[0]]
-    ub = [b / x0 if has_units(b) else b for b in bounds[1]]
+    p0 = [v / s for v, s in zip(p0, scale)]
+    lb = [v / s for v, s in zip(bounds[0], scale)]
+    ub = [v / s for v, s in zip(bounds[1], scale)]
     bounds = (lb, ub)
     p0 = np.clip(p0, *bounds)
 
@@ -614,7 +681,7 @@ def fit_line_profile(
     def func(x):
         return opt_func(x / x0, *popt)
 
-    pout = [popt[i] * x0 if has_units(p[i]) else popt[i] for i in range(len(p))]
+    pout = [v * s for v, s in zip(popt, scale)]
 
     if plot:
         plt.plot(xx, func(xx), ls="--", zorder=10)
@@ -700,59 +767,113 @@ def calc_teff(xx, yy, planck_thresh=None):
 def brault_filter(x, alpha, k, p0, p1, *pbase):
   vgt1 = p0 * np.exp(-2*np.sqrt(2)*alpha*k*x - (k*x)**2)
   vgt2 = p1 * np.exp(-2*np.sqrt(2)*alpha*k/2*x - (k/2*x)**2)
-  res = vgt1 + vgt2 + np.exp(np.polyval(pbase, x))
+  res = vgt1 + vgt2
+  if len(pbase) > 0:
+    res += np.exp(np.clip(np.polyval(pbase, x), -700.0, 700.0))  # guard fit excursions
   return res
 
 
-def apply_brault_filter(signal, sample_spacing, p0=None, base_deg=2):
+def _phys_freqs(N, sample_spacing):
+    """Positive physical frequency axis (cycles per unit of the sample axis) for a
+    length-N FFT. This is sampling-independent, so a filter fitted on one spectrum maps
+    to the same physical frequencies on a differently-sampled one (only the Nyquist
+    cutoff differs)."""
+    return np.abs(np.fft.fftfreq(N, d=abs(sample_spacing)))
+
+
+def brault_power_spectrum(signal, sample_spacing):
+    """Return (s, norm_power): the positive (physical) frequency power spectrum,
+    normalized to its max (ignoring the s=0 DC bin)."""
     N = len(signal)
-    freqs = np.fft.fftfreq(N, d=abs(sample_spacing))
-    freqs = freqs / np.max(freqs)  # Normalize frequencies
-    full_s = np.abs(freqs)
-    s = full_s[:N//2]  # Only use positive frequencies for modeling
+    s = _phys_freqs(N, sample_spacing)[:N // 2]
+    power = np.abs(np.fft.fft(signal)[:N // 2]) ** 2
+    return s, power / np.max(power[1:])
 
+
+def brault_filter_H(full_s, popt):
+    """Optimal (Wiener-style) transfer function H = (signal - noise)/signal over the
+    given frequency axis, from a fitted brault_filter parameter vector. Clipped to [0,1]."""
+    P_signal = brault_filter(full_s, *popt)
+    noise = brault_filter(full_s, 0, 0, 0, 0, *popt[4:])
+    return np.clip((P_signal - noise) / P_signal, 0.0, 1.0)
+
+
+def apply_brault_popt(signal, sample_spacing, popt):
+    """Apply an already-fitted brault filter (popt, in physical frequency) to a signal,
+    using the signal's own sampling — so the same physical filter applies to spectra of
+    any sampling, no refit."""
+    full_s = _phys_freqs(len(signal), sample_spacing)
+    H = brault_filter_H(full_s, popt)
+    return np.fft.ifft(np.fft.fft(signal) * H).real
+
+
+def apply_brault_filter(signal, sample_spacing, fmax=None, noise_floor=None,
+                        p0=None, bounds=None, base_deg=2, max_fit=5000):
+    """Fit the brault_filter model to a signal's power spectrum and apply the
+    resulting optimal filter.
+
+    fmax: only frequencies s < fmax are used for the fit (None -> all).
+    noise_floor: if given, the noise floor is a fixed 0th-degree polynomial pinned
+        to this value (in log-power) via the fit bounds; otherwise it is fitted
+        (base_deg) from the high-frequency tail.
+
+    Returns (signal_filtered, s, norm_power, model, popt, H_opt) where s/norm_power
+    are the full positive-frequency power spectrum (for display).
+    """
+    N = len(signal)
+    full_s = _phys_freqs(N, sample_spacing)
+    half = N // 2
+    s = full_s[:half]
     F_signal = np.fft.fft(signal)
-    power_spectrum = np.abs(F_signal[:N//2])**2
-    # Normalize power spectrum for fitting
-    norm_power = power_spectrum / np.max(power_spectrum[1:])
+    norm_power = np.abs(F_signal[:half]) ** 2
+    norm_power = norm_power / np.max(norm_power[1:])
+    logp = np.log(np.clip(norm_power, 1e-300, None))  # guard exact-zero bins (oversampled)
 
-    slc = slice(None, None) # slice(0, N//8)
-    xfit = s[slc]
-    yfit = np.log(norm_power[slc])
-    N2 = len(xfit)
+    # frequencies used for the fit (below fmax), subsampled if very many
+    nyquist = s.max()
+    fcut = nyquist if fmax is None else float(fmax)
+    nfit = max(int(np.searchsorted(s, fcut)), base_deg + 5)
+    step = max(1, nfit // max_fit)
+    xfit, yfit = s[:nfit:step], logp[:nfit:step]
 
-    p2 = np.polyfit(xfit[N2//2:], yfit[N2//2:], deg=base_deg)
-    
-    # Fit Voigt model to power spectrum
-    bounds = ([0,]*4 + [-np.inf]*len(p2), [np.inf,]*(4+len(p2)))
+    if noise_floor is not None:
+        base_deg = 0
+        p2 = np.array([float(noise_floor)])
+    else:
+        # fit the baseline in a normalized variable (well-conditioned at large physical
+        # frequencies), then convert the coefficients back to physical-x units
+        X = max(float(s[-1]), 1e-300)
+        q = np.polyfit(s[half // 2:] / X, logp[half // 2:], deg=base_deg)
+        p2 = np.array([q[i] / X ** (base_deg - i) for i in range(base_deg + 1)])
+
     if p0 is None:
-      p0 = np.array([1e-8, 0.1, 0.1, 0.1, *p2])
+        # signal rolloff scale ~ fcut, so k ~ a few / fcut keeps the fit conditioned
+        # whatever the absolute magnitude of the physical frequencies
+        p0 = np.array([0.1, 3.0 / fcut, 1.0, 0.5, *p2])
+    if bounds is None:
+        lo = [0.0] * 4 + [-np.inf] * len(p2)
+        hi = [np.inf] * (4 + len(p2))
+        if noise_floor is not None:           # pin the constant noise floor
+            lo[4], hi[4] = float(noise_floor) - 1e-9, float(noise_floor) + 1e-9
+        bounds = (lo, hi)
 
     def opt_func(x, *args):
         return np.log(brault_filter(x, *args))
 
-    popt, _ = curve_fit(opt_func, xfit, yfit, p0=p0, maxfev=10000, bounds=bounds)
-    
-    # Construct filter
+    popt, _ = curve_fit(opt_func, xfit, yfit, p0=p0, maxfev=20000,
+                        bounds=bounds, x_scale="jac")
+
+    H_opt = brault_filter_H(full_s, popt)
+    signal_filtered = np.fft.ifft(F_signal * H_opt).real
     model = brault_filter(s, *popt)
-    P_signal_model = brault_filter(full_s, *popt)
-    noise = brault_filter(full_s, 0, 0, 0, 0, *popt[4:])
-    H_opt = (P_signal_model - noise) / P_signal_model
-
-    # plt.plot(s, norm_power);
-    # plt.plot(s, exp(np.polyval(p2, s)));
-    # plt.plot(full_s, P_signal_model);
-    # plt.plot(full_s, noise);
-    # plt.yscale('log'); plt.xlim(0); plt.show();
-
-    # Apply filter in frequency domain
-    F_filtered = F_signal * H_opt
-    signal_filtered = np.fft.ifft(F_filtered).real
     return signal_filtered, s, norm_power, model, popt, H_opt
 
 
-def apply_cos_window(x, y, f=0.1):
-    if f == 0: return y
+def cos_window(x, f=0.05):
+    """Raised-cosine taper weights: 1 in the interior, smoothly down to 0 at each end
+    over the outer fraction f."""
+    if f == 0:
+        return np.ones(len(x))
     x = x - np.min(x)
     L = np.max(x)
     m1 = x < f*L
@@ -761,16 +882,23 @@ def apply_cos_window(x, y, f=0.1):
     w = np.ones(len(x))
     w[m1] = 0.5*(1 - np.cos(np.pi*np.array(x[m1]/(f*L))))
     w[m2] = 0.5*(1 - np.cos(np.pi*np.array((L-x[m2])/(f*L))))
-    return y * w
+    return w
 
 
-def kpno_spectral_filter(xx, yy, f=0.1, **kwargs):
+def apply_cos_window(x, y, f=0.05):
+    return y * cos_window(x, f=f)
+
+
+def kpno_spectral_filter(xx, yy, f=0.05, **kwargs):
     xmin = np.min(xx)
     x = np.array(np.log(xx / xmin))
-    L = np.max(x)
     d = np.mean(np.diff(x))
-    y = yy - 1
-    y = apply_cos_window(x, y, f=f)
-    y, _, _, _, _, _ = apply_brault_filter(y, d, **kwargs)
-    y = y + 1
-    return y
+    y0 = yy - 1
+    w = cos_window(x, f=f)                       # edge taper (suppresses FFT ringing)
+    y_smooth, *_ = apply_brault_filter(y0 * w, d, **kwargs)
+    # reverse the taper: y0*w - y_smooth is the noise the filter removed, itself tapered
+    # to ~0 at the edges. Subtracting it from the original keeps the filter in the
+    # interior and the untouched original at the edges. (y_smooth already carries the w
+    # factor, so it must NOT be multiplied by w again.)
+    y = y_smooth + (1 - w) * y0
+    return y + 1

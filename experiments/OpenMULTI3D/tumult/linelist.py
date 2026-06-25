@@ -108,7 +108,7 @@ class LineList(pd.DataFrame):
         usecols = lambda col: col is None or col < len(names)
 
         while len(lines) > 0:
-            species = lines.pop(0).strip().strip("'")
+            species = lines.pop(0).split()[0].strip().strip("'")
             line = lines.pop(0).strip()
             iso_id, nlines = split_words(line)
             iso = int(iso_id.strip("'").split('.')[-1])
