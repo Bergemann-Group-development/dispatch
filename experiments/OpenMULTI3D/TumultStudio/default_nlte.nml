@@ -1,6 +1,0 @@
-! -- Parameters defining the run -----------------------------------------------
-&io_params          datadir='data' gb_step=6.0 do_trace=F /
-&timer_params       sec_per_report=1e8 verbose=2 /
-&atmos_params       atmos_format='save' atmos_file='' /
-&atom_params        atom_file='' convlim=1d-2 convmax=1d-3 /
-&m3d_params         verbose=1 maxiter=99 rotate_atmos=T ng_step=20 long_scheme='none' /

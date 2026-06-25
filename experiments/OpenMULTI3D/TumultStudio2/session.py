@@ -1,0 +1,77 @@
+"""Typed schema for a saved workspace (a session "save slot").
+
+``main.snapshot()`` builds a :class:`Workspace` from the live canvas and stores its
+``to_dict()`` in the config file (see ``store.save_session``); ``main.restore_workspace()``
+reads it back with :meth:`Workspace.from_dict`. Centralising the shape here — instead of
+hand-building and re-reading nested dicts with scattered ``.get()`` defaults — documents
+the format in one place and makes a malformed/partial slot degrade to sane defaults rather
+than raising. The on-disk representation stays plain JSON (nested dicts/lists).
+"""
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass, field, fields
+from typing import Optional
+
+
+def _kept(cls, d):
+    """The items of mapping ``d`` whose keys are declared fields of dataclass ``cls``
+    (unknown keys are dropped; missing ones fall back to the field defaults)."""
+    names = {f.name for f in fields(cls)}
+    return {k: v for k, v in (d or {}).items() if k in names}
+
+
+@dataclass
+class ObjectSnap:
+    """One restorable spectrum: where it was loaded from plus its display state."""
+    kind: str = ""            # "file" | "run" (synth runs aren't restorable, so aren't saved)
+    path: str = ""
+    name: str = ""
+    color: Optional[str] = None
+    dash: Optional[str] = None
+    width: Optional[float] = None
+    alpha: Optional[float] = None
+    visible: bool = True
+    conv: dict = field(default_factory=dict)         # convolution params (vshift/vdop/…)
+    norm_knots: Optional[dict] = None                # {"x": [...], "y": [...]} or None
+    already_normalised: bool = False
+
+    @classmethod
+    def from_dict(cls, d):
+        return cls(**_kept(cls, d))
+
+
+@dataclass
+class FilterSnap:
+    """The filter state (which method, its parameters, and whether it is shown)."""
+    active: bool = True
+    method: str = "brault"
+    res: Optional[float] = None      # low-pass cutoff resolution
+    fmax: Optional[float] = None     # Brault max frequency
+    floor: Optional[float] = None    # Brault noise floor (log power)
+
+    @classmethod
+    def from_dict(cls, d):
+        return cls(**_kept(cls, d))
+
+
+@dataclass
+class Workspace:
+    objects: list = field(default_factory=list)   # list[ObjectSnap]
+    units: dict = field(default_factory=dict)     # {"x": label, "y": label}
+    view: dict = field(default_factory=dict)      # {"main": [lo, hi] | None, "nav": ...}
+    selected: int = 0
+    filter: FilterSnap = field(default_factory=FilterSnap)
+
+    @classmethod
+    def from_dict(cls, d):
+        d = d or {}
+        return cls(
+            objects=[ObjectSnap.from_dict(o) for o in (d.get("objects") or [])],
+            units=dict(d.get("units") or {}),
+            view=dict(d.get("view") or {}),
+            selected=int(d.get("selected") or 0),
+            filter=FilterSnap.from_dict(d.get("filter") or {}),
+        )
+
+    def to_dict(self):
+        return asdict(self)

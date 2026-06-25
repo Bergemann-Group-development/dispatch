@@ -1,7 +1,0 @@
-! -- Parameters defining the run -----------------------------------------------
-&io_params          datadir='data' gb_step=6.0 do_trace=F /
-&timer_params       sec_per_report=1e8 verbose=2 /
-&atmos_params       atmos_format='save' atmos_file='' read_departures=T /
-&m3d_params         verbose=1 maxiter=0 rotate_atmos=T long_scheme='radau' /
-&composition_params sample_back_opac=T sample_back_opac_in_output=T / 
-&linelist_params    line_lists='./input_multi3d/linelists/master_line.txt' dlam=10 tolerance=1e-3 /

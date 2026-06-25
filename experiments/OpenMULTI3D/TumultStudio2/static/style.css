@@ -1,0 +1,580 @@
+/* TumultStudio2 shell — derived from STYLE_REFERENCE.md
+   Dark, compact "pro-tool" aesthetic; one blue accent. */
+
+:root {
+  --sidebar-w: 220px;
+  --footer-h: 32px;
+  --toolbar-h: 40px;
+  --panel-h: 100px;   /* height of the nav overview panel above the main figure */
+
+  --bg:         #1e1e1e;
+  --surface:    #2a2a2a;
+  --border:     #3a3a3a;
+  --accent:     #4a90e2;
+  --text:       #e0e0e0;
+  --text-muted: #888;
+  --canvas-bg:  #1a1a1a;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  font: 13px/1.4 system-ui, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+}
+
+/* ---- shell ---------------------------------------------------------------- */
+#app { display: flex; flex-direction: column; height: 100vh; }
+
+#header {
+  height: var(--toolbar-h); flex-shrink: 0;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; padding: 0 12px;
+}
+.app-title { font-size: 15px; font-weight: 600; letter-spacing: 0.02em; }
+
+/* session save/load button, pinned to the right of the app header */
+.header-sessions { margin-left: auto; }
+.session-hint { font-size: 11px; color: var(--text-muted); }
+
+/* game-style save slots in the Sessions modal */
+.session-list { display: flex; flex-direction: column; gap: 4px; padding: 4px; }
+.session-item {
+  display: flex; align-items: center; gap: 9px; padding: 7px 9px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
+  cursor: pointer;
+}
+.session-item:hover { background: rgba(74,144,226,0.12); border-color: var(--accent); }
+.session-item > i { color: var(--text-muted); flex-shrink: 0; }
+.session-item:hover > i { color: var(--accent); }
+.session-meta { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.session-name { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.session-sub { font-size: 10px; color: var(--text-muted); }
+.session-del {
+  flex-shrink: 0; height: 22px; width: 22px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
+  color: var(--text-muted); cursor: pointer;
+}
+.session-del:hover { border-color: #e05c5c; color: #e05c5c; }
+.session-newrow { gap: 8px; }
+.session-newrow .field-input { flex: 1; min-width: 0; }
+
+/* toolbar inside the work surface, above the figures; tools are grouped by kind
+   (view | load/save | adjustment | temporary), separated by a thin divider */
+#canvas-toolbar {
+  flex-shrink: 0; display: flex; align-items: center; gap: 8px;
+}
+.toolbar-group { display: flex; align-items: center; gap: 6px; }
+.toolbar-group:not(:first-child)::before {
+  content: ""; align-self: stretch; width: 1px;
+  background: var(--border); margin: 4px 0;
+}
+.toolbar-settings { margin-left: auto; }
+.settings-wrap { display: flex; align-items: center; gap: 6px; }
+#settings-warning { display: none; color: #e05c5c; font-size: 16px; cursor: default; }
+#settings-warning.show { display: inline-flex; align-items: center; }
+/* brighter buttons so they stand out on the dark work surface */
+#canvas-toolbar .icon-btn,
+#canvas-toolbar .text-btn {
+  background: var(--border); border-color: #555; color: var(--text);
+}
+#canvas-toolbar .icon-btn:hover,
+#canvas-toolbar .text-btn:hover {
+  background: #4a4a4a; border-color: var(--accent); color: var(--accent);
+}
+
+#workspace { flex: 1; display: flex; overflow: hidden; min-height: 0; }
+
+aside {
+  width: var(--sidebar-w);
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 8px;
+  overflow-y: auto; padding: 10px; flex-shrink: 0;
+}
+.sidebar-right { border-right: none; border-left: 1px solid var(--border); padding: 0; gap: 0; }
+
+/* inspector tabs (STYLE_REFERENCE.md §6.5 underline tabs) */
+.tab-bar { display: flex; flex-shrink: 0; border-bottom: 1px solid var(--border); }
+.tab {
+  flex: 1; padding: 7px 8px; cursor: pointer;
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text-muted); background: none;
+  border: none; border-bottom: 2px solid transparent;
+}
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--text); border-bottom-color: var(--accent); }
+.tab-content { flex: 1; min-height: 0; overflow-y: auto; }
+.tab-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; }
+.tab-panel.active { display: flex; }
+
+#main {
+  flex: 1; min-width: 0; min-height: 0;
+  display: flex; flex-direction: column;
+  background: var(--canvas-bg);
+  padding: 8px; gap: 6px;
+}
+#canvas-wrap { flex: 1; min-width: 0; min-height: 0; display: flex; }
+
+/* empty state: no spectra loaded -> hide the (blank) toolbar + figures and show an
+   inline copy of the Sessions loader, centred in the canvas area */
+#canvas-empty { display: none; }
+#main.empty #canvas-toolbar,
+#main.empty #top-panel,
+#main.empty #canvas-wrap { display: none; }
+#main.empty #canvas-empty { display: flex; flex: 1; min-height: 0; align-items: center; justify-content: center; }
+.empty-card {
+  width: min(420px, 100%); max-height: 100%; display: flex; flex-direction: column; gap: 10px;
+  padding: 18px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+.empty-card-head { display: flex; align-items: center; gap: 8px; }
+.empty-card-head i { color: var(--text-muted); }
+.empty-session-results { margin-top: 0; max-height: 320px; }
+.empty-actions { display: flex; gap: 8px; }
+.empty-actions .text-btn { flex: 1; display: inline-flex; align-items: center; justify-content: center; }
+
+/* filter mode swaps the spectrum figure (and top panel) for the feautrier view */
+#feautrier-wrap { display: none; flex: 1; min-height: 0; flex-direction: column; gap: 6px; }
+#main.filter-mode #top-panel,
+#main.filter-mode #canvas-wrap { display: none; }
+#main.filter-mode #feautrier-wrap { display: flex; }
+#filter-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+#ew-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.feautrier-head { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; }
+
+/* "Filtered" toggle switch (STYLE_REFERENCE.md §6.3) — shown once a filter exists */
+.filter-switch-wrap { display: none; align-items: center; gap: 6px; }
+#main.has-filter .filter-switch-wrap { display: inline-flex; }
+.filter-switch-label { font-size: 11px; color: var(--text-muted); }
+.switch { position: relative; display: inline-block; width: 32px; height: 18px; cursor: pointer; }
+.switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+.switch-track { position: absolute; inset: 0; background: var(--border);
+                border-radius: 9px; transition: background 0.15s ease; }
+.switch-track::before {
+  content: ""; position: absolute; width: 14px; height: 14px; left: 2px; top: 2px;
+  background: #fff; border-radius: 50%; transition: transform 0.15s ease;
+}
+.switch input:checked + .switch-track          { background: var(--accent); }
+.switch input:checked + .switch-track::before   { transform: translateX(14px); }
+#feautrier-fig { flex: 1; min-height: 0; display: flex; }
+#feautrier-fig > * { flex: 1; min-width: 0; min-height: 0; }
+
+/* the nav overview sits above the main figure (fixed height); the line table is
+   hidden until lines-mode */
+#top-panel { flex-shrink: 0; display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+#nav-slot { height: var(--panel-h); display: flex; }
+#linelist { display: none; flex-direction: row; gap: 6px; min-height: 0; }
+/* line navigation: keep the nav overview, but take over the big main figure's space
+   with the line table (the table is otherwise too short to navigate) */
+#main.lines-mode #top-panel { flex: 1; }
+#main.lines-mode #canvas-wrap { display: none; }
+#main.lines-mode #linelist { display: flex; flex: 1; }
+
+/* species selector: a single-column table mirroring the linelist table, beside it */
+#linenav-fields {
+  flex-shrink: 0; width: 150px; min-height: 0; overflow: auto;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
+}
+.species-table { width: 100%; }
+.species-table th, .species-table td { text-align: left; }
+.species-item { cursor: pointer; }
+.species-item:hover td { background: rgba(74,144,226,0.12); color: var(--accent); }
+.species-item.active td { background: rgba(74,144,226,0.18); color: var(--accent); font-weight: 600; }
+
+/* segmented Nav / Lines toggle; active state mirrors #main.lines-mode (no JS) */
+.seg-toggle { display: flex; border: 1px solid #555; border-radius: 3px; overflow: hidden; }
+.view-btn {
+  height: 24px; padding: 0 10px; cursor: pointer; border: none;
+  font-size: 11px; font-weight: 600;
+  background: var(--border); color: var(--text-muted);
+}
+.view-btn:hover { color: var(--text); }
+.view-btn + .view-btn { border-left: 1px solid #555; }
+#main:not(.lines-mode) .view-btn[data-view="nav"],
+#main.lines-mode .view-btn[data-view="lines"] { background: var(--accent); color: #fff; }
+
+/* line list table */
+#linelist-table {
+  flex: 1; min-height: 0; overflow: auto;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
+}
+.linelist-table {
+  width: 100%; border-collapse: collapse;
+  font-size: 11px; font-variant-numeric: tabular-nums;
+}
+.linelist-table thead th {
+  position: sticky; top: 0; z-index: 1; background: var(--surface);
+  text-align: right; padding: 4px 8px; font-weight: 600;
+  color: var(--text-muted); border-bottom: 1px solid var(--border);
+}
+.linelist-table th.line-sort { cursor: pointer; user-select: none; white-space: nowrap; }
+.linelist-table th.line-sort:hover { color: var(--text); }
+.linelist-table th.line-sort.active { color: var(--accent); }
+.linelist-table tbody td { text-align: right; padding: 3px 8px; border-bottom: 1px solid #2c2c2c; }
+.line-row { cursor: pointer; }
+.line-row:hover td { background: rgba(74,144,226,0.12); color: var(--accent); }
+.linelist-empty, .linelist-more { padding: 8px; font-size: 11px; color: var(--text-muted); }
+
+/* EW mode swaps the inspector tabs for the EW panel */
+.text-btn {
+  height: 24px; padding: 0 8px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
+  color: var(--text-muted); font-size: 11px; font-weight: 600; cursor: pointer;
+}
+.text-btn:hover { border-color: var(--accent); color: var(--accent); }
+.ew-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; }
+.sidebar-right.ew-active .tab-bar,
+.sidebar-right.ew-active .tab-content { display: none; }
+.sidebar-right.ew-active .ew-panel { display: flex; }
+.ew-panel-head { display: flex; align-items: center; justify-content: space-between; }
+.ew-value { font-size: 13px; font-variant-numeric: tabular-nums; }
+.hint { font-size: 10px; color: var(--text-muted); margin-top: 4px; }
+/* synthesis run panel — same swap behaviour as the EW panel */
+.synth-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; overflow-y: auto; }
+/* hide only the inspector's own (direct-child) tabs; the synth panel has its own nested tabs */
+.sidebar-right.synth-active > .tab-bar,
+.sidebar-right.synth-active > .tab-content { display: none; }
+.sidebar-right.synth-active .synth-panel { display: flex; }
+.synth-panel-head { display: flex; align-items: center; justify-content: space-between; }
+/* synth panel's own tabs: no border (the panel head already separates), flush layout */
+.synth-panel .tab-bar { margin-bottom: 4px; }
+.synth-panel .tab-content { overflow: visible; }
+.synth-panel .tab-panel { padding: 0; }
+/* a fit row: label, number input, and an inline "fit" switch */
+.field-group.fit-row { flex-direction: row; align-items: center; gap: 6px; }
+.fit-row label:not(.switch) { flex: 1; min-width: 0; }
+.fit-row .field-input[type="number"] { width: 88px; flex: 0 0 auto; }
+.fit-row .fit-switch { flex: 0 0 auto; }
+.fit-abund-del {
+  flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
+  height: 18px; width: 18px; padding: 0; border: none; border-radius: 50%;
+  background: transparent; color: var(--text-muted); cursor: pointer;
+}
+.fit-abund-del:hover { color: #e05c5c; }
+/* .field-group.field-inline: keep the higher specificity so the later .field-group
+   rule (flex-direction: column) doesn't push an inline switch below its label */
+.field-group.field-inline { flex-direction: row; align-items: center; justify-content: space-between; }
+/* inline number/text/select controls: keep the label flexible and pin the
+   control to a fixed width on the right (the .switch control sizes itself) */
+.field-group.field-inline > label:not(.switch) { flex: 1; min-width: 0; }
+.field-group.field-inline > .field-input { flex: 0 0 auto; width: 96px; }
+/* continuum-normalisation panel — same swap behaviour as the EW panel */
+.norm-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; overflow-y: auto; }
+.sidebar-right.norm-active .tab-bar,
+.sidebar-right.norm-active .tab-content { display: none; }
+.sidebar-right.norm-active .norm-panel { display: flex; }
+.norm-panel-head { display: flex; align-items: center; justify-content: space-between; }
+/* consistent spacing between the panel's fields, buttons and hint */
+#norm-panel-content > * + * { margin-top: 12px; }
+/* full-width stacked buttons so Initialise / Clear are clearly separated */
+#norm-panel-content .primary-btn, #norm-panel-content .text-btn { display: block; width: 100%; }
+
+/* Filter inspector panel (method selector + low-pass cutoff) — same pattern as Normalise */
+.filter-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; overflow-y: auto; }
+.sidebar-right.filter-active .tab-bar,
+.sidebar-right.filter-active .tab-content { display: none; }
+.sidebar-right.filter-active .filter-panel { display: flex; }
+.filter-panel-head { display: flex; align-items: center; justify-content: space-between; }
+#filter-panel-content > * + * { margin-top: 12px; }
+
+/* line-navigation panel — the Lines view's own inspector (jump-distance setting) */
+.lines-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; }
+.sidebar-right.lines-active .tab-bar,
+.sidebar-right.lines-active .tab-content { display: none; }
+.sidebar-right.lines-active .lines-panel { display: flex; }
+/* an active tool panel (EW/Normalise/Filter/Synth) takes precedence over it */
+.sidebar-right.ew-active .lines-panel,
+.sidebar-right.norm-active .lines-panel,
+.sidebar-right.filter-active .lines-panel,
+.sidebar-right.synth-active .lines-panel { display: none; }
+.lines-panel-head { display: flex; align-items: center; justify-content: space-between; }
+#filter-panel-content .text-btn { display: block; width: 100%; }
+/* greyed-out look for controls disabled while 'Already normalised' is on */
+.field-input:disabled, .primary-btn:disabled, .text-btn:disabled {
+  opacity: 0.45; cursor: not-allowed;
+}
+/* two controls side by side (the running-mean window + percentile) */
+.field-row { display: flex; gap: 8px; align-items: stretch; }
+/* bottom-align each group's content so the inputs line up even when one label wraps */
+.field-row .field-group { flex: 1; min-width: 0; justify-content: flex-end; }
+.field-row .field-group:not(:first-child) { margin-top: 0; }
+#normalise-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+#synth-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.primary-btn {
+  height: 28px; padding: 0 12px; margin-top: 6px;
+  background: var(--accent); border: 1px solid var(--accent); border-radius: 3px;
+  color: #fff; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.primary-btn:hover { filter: brightness(1.08); }
+/* let the embedded Bokeh figures fill their slots */
+#canvas-wrap > * { flex: 1; min-width: 0; min-height: 0; }
+#nav-slot > * { flex: 1; min-width: 0; }
+
+#footer {
+  height: var(--footer-h);
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 10px; flex-shrink: 0;
+  font-size: 12px; color: var(--text-muted);
+}
+.footer-spacer { margin-left: auto; }
+
+/* transient footer status message — a semantic pill that pops + glows each time it
+   appears, so it can't be overlooked. Follows the tint-bg + matching-border + brighter
+   text status recipe; the halo borrows the pill's own text colour via currentColor. */
+.status-msg {
+  display: inline-block;
+  padding: 1px 8px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  font-weight: 600;
+  white-space: nowrap;
+  animation: status-pop 0.45s ease-out, status-glow 0.9s ease-out;
+}
+.status-warn    { background: rgba(255,160,0,0.12);  border-color: #e8a020; color: #f0a030; }
+.status-danger  { background: rgba(220,60,60,0.12);  border-color: #e05c5c; color: #f06060; }
+.status-success { background: rgba(80,200,120,0.12); border-color: #50c878; color: #50c878; }
+.status-info    { background: #1e2e3a;               border-color: #2e5070; color: #80c8f0; }
+
+@keyframes status-pop {
+  0%   { opacity: 0; transform: scale(0.94); }
+  55%  { opacity: 1; transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+@keyframes status-glow {
+  0%   { box-shadow: 0 0 0 0 currentColor; }
+  30%  { box-shadow: 0 0 7px 1px currentColor; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+/* indeterminate progress bar, shown while background loads are in flight */
+#footer-progress { display: none; width: 120px; height: 4px; overflow: hidden;
+  background: var(--border); border-radius: 2px; }
+#footer.loading #footer-progress { display: block; }
+#footer-progress .bar { width: 40%; height: 100%; background: var(--accent);
+  border-radius: 2px; animation: indeterminate 1.1s ease-in-out infinite; }
+@keyframes indeterminate { 0% { margin-left: -40%; } 100% { margin-left: 100%; } }
+
+/* per-object loading spinner (Objects sidebar placeholder) */
+.object-item.pending { opacity: 0.7; cursor: default; }
+.object-item.pending:hover { border-color: transparent; }
+.spinner { flex-shrink: 0; width: 12px; height: 12px; border-radius: 50%;
+  border: 2px solid var(--border); border-top-color: var(--accent);
+  animation: spin 0.7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---- components ----------------------------------------------------------- */
+.section-header {
+  font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.section-header:not(:first-child) { margin-top: 16px; }
+/* a section title with a right-aligned action button (e.g. Objects + open) */
+.section-head-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.section-head-row .icon-btn { flex-shrink: 0; }
+
+.object-item {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 6px; border-radius: 3px;
+  border: 1px solid transparent; cursor: pointer;
+  font-size: 12px;
+}
+.object-item:hover { border-color: #555; }
+.object-item.selected { border-color: var(--accent); background: rgba(74,144,226,0.1); }
+.object-item.hidden-object { opacity: 0.45; }
+.object-item i { color: var(--text-muted); }
+.object-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* empty Objects panel: how to add the first spectrum */
+.object-empty { padding: 8px 6px; font-size: 11px; line-height: 1.55; color: var(--text-muted); }
+.object-empty .ti { font-size: 13px; vertical-align: -2px; color: var(--text); }
+/* line-style indicator mirroring each object's dash */
+.dash-swatch {
+  flex-shrink: 0; width: 20px; height: 0;
+  border-top: 2px solid var(--text);
+}
+/* compact hide / remove buttons, ghost-hover to accent */
+.object-btn {
+  flex-shrink: 0; width: 20px; height: 20px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: none; border: 1px solid transparent; border-radius: 3px;
+  color: var(--text-muted); cursor: pointer; font-size: 12px;
+}
+.object-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* line-colour palette swatches */
+.swatch-row { display: flex; flex-wrap: wrap; gap: 5px; }
+.color-swatch {
+  width: 22px; height: 22px; padding: 0;
+  border-radius: 3px; border: 2px solid transparent; cursor: pointer;
+}
+.color-swatch:hover { border-color: #888; }
+.color-swatch.active { border-color: var(--accent); }
+
+.field-group { display: flex; flex-direction: column; gap: 2px; }
+/* space every field-group after the first, even when buttons/other blocks sit between */
+.field-group:not(:first-child) { margin-top: 12px; }
+.field-group label { font-size: 10px; color: var(--text-muted); }
+.field-static {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
+  padding: 3px 5px; font-size: 12px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* shared style for every controls.Form input/select (and the EW dropdown) */
+.field-input {
+  width: 100%; background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 3px;
+  padding: 3px 5px; font-size: 12px;
+}
+.field-input:focus { outline: none; border-color: var(--accent); }
+
+.icon-btn {
+  height: 24px; width: 24px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
+  color: var(--text-muted); cursor: pointer;
+}
+.icon-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.pill {
+  font-size: 11px; padding: 1px 8px; border-radius: 10px;
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--text-muted); white-space: nowrap;
+}
+
+/* ---- settings modal (STYLE_REFERENCE.md §7.1) ----------------------------- */
+.modal {
+  position: fixed; top: 50%; left: 50%; translate: -50% -50%;
+  width: min(360px, 92vw);
+  max-height: min(560px, 88vh);
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+  padding: 0;
+}
+.modal-lg { width: min(560px, 92vw); }
+#settings-modal { width: min(640px, 92vw); height: min(520px, 88vh); }
+
+/* settings modal: left nav rail + content pane (docs-nav style) */
+.settings-layout { flex: 1; display: flex; min-height: 0; overflow: hidden; }
+.settings-nav {
+  width: 150px; flex-shrink: 0;
+  background: var(--bg); border-right: 1px solid var(--border);
+  overflow-y: auto; padding: 8px 0; display: flex; flex-direction: column;
+}
+.settings-nav-item {
+  display: block; width: 100%; text-align: left;
+  padding: 8px 14px; background: none; border: none; border-radius: 0;
+  color: var(--text-muted); font-size: 12px; cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+.settings-nav-item:hover  { background: var(--border); color: var(--text); }
+.settings-nav-item.active { color: var(--accent); background: rgba(74,144,226,0.1); }
+.settings-pages { flex: 1; overflow-y: auto; padding: 14px 16px; }
+.settings-page { display: none; flex-direction: column; gap: 10px; }
+.settings-page.active { display: flex; }
+
+/* missing-file warning on a path field */
+.field-warn .field-input { border-color: #c0392b; }
+.field-warn-hint { font-size: 10px; color: #e05c5c; }
+
+/* run-cache page */
+.cache-head { display: flex; align-items: center; justify-content: space-between; }
+.cache-summary { font-size: 10px; color: var(--text-muted); }
+.cache-list { display: flex; flex-direction: column; gap: 4px; }
+.cache-item {
+  display: flex; align-items: center; gap: 8px; padding: 5px 8px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
+}
+.cache-meta { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.cache-star { font-size: 12px; }
+/* run-kind badge: SPEC (spectrum) vs DEP (departure coefficients) */
+.cache-tag {
+  display: inline-block; margin-right: 6px; padding: 0 4px; border-radius: 3px;
+  font-size: 9px; font-weight: 600; letter-spacing: 0.04em; vertical-align: middle;
+  background: var(--border); color: var(--text-muted);
+}
+.cache-tag-dep { background: rgba(74,144,226,0.18); color: var(--accent); }
+.cache-sub { font-size: 10px; color: var(--text-muted); }
+.cache-del {
+  flex-shrink: 0; height: 22px; width: 22px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
+  color: var(--text-muted); cursor: pointer;
+}
+.cache-del:hover { border-color: #e05c5c; color: #e05c5c; }
+/* only lay the dialog out when actually open; otherwise the UA's
+   dialog:not([open]){display:none} must win so it stays hidden and closeable */
+.modal[open] { display: flex; flex-direction: column; }
+.modal::backdrop { background: rgba(0,0,0,0.5); }
+
+/* path display + browse button, and an inline (non-nested) file picker in a modal */
+.path-row { display: flex; align-items: center; gap: 6px; }
+.path-row .field-static, .path-row .field-input { flex: 1; min-width: 0; }
+
+.inline-picker { display: none; flex-direction: column; gap: 8px; margin-top: 8px; }
+.inline-picker.open { display: flex; }
+.inline-picker .file-results { max-height: 200px; margin-top: 0; }
+
+/* shared RT-mode + atoms area, between the synth tab-bar and the tab content */
+.synth-rt { display: flex; flex-direction: column; gap: 8px; }
+
+/* NLTE model-atom selector: a chip list shown only when RT mode is NLTE */
+.synth-atoms { display: none; flex-direction: column; gap: 6px; }
+.synth-atoms.on { display: flex; }
+.atom-tags { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; min-width: 0; }
+.atom-tag {
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 8px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 12px;
+  font-size: 11px;
+}
+.atom-del {
+  display: flex; align-items: center; justify-content: center;
+  height: 16px; width: 16px; padding: 0; border: none; border-radius: 50%;
+  background: transparent; color: var(--text-muted); cursor: pointer;
+}
+.atom-del:hover { color: #e05c5c; }
+
+/* ---- file picker (cmd+P) -------------------------------------------------- */
+.file-results {
+  margin-top: 8px; max-height: 320px; overflow-y: auto;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
+}
+.file-list { list-style: none; }
+.file-item {
+  display: flex; align-items: center; gap: 7px;
+  padding: 4px 8px; font-size: 12px; cursor: pointer;
+  border: 1px solid transparent;
+}
+.file-item:hover { background: rgba(74,144,226,0.12); border-color: var(--accent); color: var(--accent); }
+.file-item i { color: var(--text-muted); }
+.file-item:hover i { color: var(--accent); }
+.file-item span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.file-empty { padding: 10px; font-size: 12px; color: var(--text-muted); }
+.modal-header {
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px 10px; border-bottom: 1px solid var(--border);
+}
+.modal-title { font-size: 14px; font-weight: 600; }
+.modal-body {
+  flex: 1; min-height: 0; overflow-y: auto;
+  padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;
+}
+.modal-footer {
+  flex-shrink: 0; display: flex; justify-content: flex-end;
+  padding: 10px 16px 14px; border-top: 1px solid var(--border);
+}
+/* contextual: only shown when the picker sits inside a tumult run folder */
+#load-run { display: none; }
+#load-run.ready {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: var(--accent); border-color: var(--accent); color: #fff;
+}
+#load-run.ready:hover { filter: brightness(1.1); }

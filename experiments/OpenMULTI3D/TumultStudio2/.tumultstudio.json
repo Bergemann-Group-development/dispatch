@@ -1,0 +1,26 @@
+{
+  "preferences": {
+    "synth_fit": {
+      "teff": 5723.0,
+      "logg": 4.4,
+      "feh": 0.0,
+      "vmic": 1.0,
+      "abundances": "",
+      "relative": false,
+      "vshift": 1.7,
+      "vmac": 3.2,
+      "vrot": 0.0,
+      "fit_teff": true,
+      "fit_logg": false,
+      "fit_feh": false,
+      "fit_vmic": false,
+      "fit_vshift": true,
+      "fit_vmac": true,
+      "fit_vrot": false,
+      "abund_rows": {},
+      "target": "0"
+    }
+  },
+  "recent_files": [],
+  "sessions": []
+}

@@ -1,0 +1,529 @@
+{% extends base %}
+
+{% block title %}TUMULT Studio{% endblock %}
+
+{% block preamble %}
+  <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
+  <style>{{ css|safe }}</style>
+{% endblock %}
+
+{% block contents %}
+<div id="app">
+
+  <div id="header">
+    <span class="app-title">TUMULT&nbsp;Studio</span>
+    <button id="open-session" class="icon-btn header-sessions" title="Save / load a session"><i class="ti ti-bookmark"></i></button>
+  </div>
+
+  <div id="workspace">
+
+    <aside class="sidebar-left">
+      <div class="section-head-row">
+        <div class="section-header">Objects</div>
+        <button id="open-file" class="icon-btn" title="Open spectrum"><i class="ti ti-folder-open"></i></button>
+      </div>
+      <div id="objects">{{ objects_html|safe }}</div>
+    </aside>
+
+    <div id="main" class="{{ 'empty' if main_empty else '' }}">
+      <div id="canvas-toolbar">
+        <!-- view / panel toggles (nav overview, line list, future canvas modes) -->
+        <div class="toolbar-group">
+          <div class="seg-toggle" title="Overview / line list">
+            <button class="view-btn" data-view="nav">Nav</button>
+            <button class="view-btn" data-view="lines">Lines</button>
+          </div>
+        </div>
+        <!-- adjustment tools that change the spectra (filter, future normalisation, ...) -->
+        <div class="toolbar-group">
+          <button id="filter-btn" class="text-btn" title="Noise filter (feautrier space)">Filter</button>
+          <span class="filter-switch-wrap" title="Show filtered spectra in the canvas">
+            <span class="filter-switch-label">Filtered</span>
+            <label class="switch"><input type="checkbox" id="filter-switch-input"><span class="switch-track"></span></label>
+          </span>
+          <button id="normalise-btn" class="text-btn" title="Continuum normalise (spline)">Normalise</button>
+        </div>
+        <!-- temporary / selection tools that act on a transient selection (EW, ...) -->
+        <div class="toolbar-group">
+          <button id="ew-btn" class="text-btn" title="Equivalent width (select an x-range first)">EW</button>
+        </div>
+        <!-- synthesis: compute a spectrum at given stellar parameters -->
+        <div class="toolbar-group">
+          <button id="synth-btn" class="text-btn" title="Synthesize a spectrum at given (Teff, logg, [Fe/H], vmic)">Synth</button>
+        </div>
+        <!-- settings: kept pinned to the right, with a missing-files warning sign -->
+        <span class="settings-wrap toolbar-settings">
+          <i id="settings-warning" class="ti ti-alert-triangle{{ ' show' if synth_warning else '' }}"
+             title="Some configured files in Preferences are missing"></i>
+          <button id="open-settings" class="icon-btn" title="Preferences"><i class="ti ti-settings"></i></button>
+        </span>
+      </div>
+      <div id="top-panel">
+        <div id="nav-slot">{{ embed(roots.nav_fig) }}</div>
+        <div id="linelist">
+          <div id="linenav-fields">{{ linenav_html|safe }}</div>
+          <div id="linelist-table"></div>
+        </div>
+      </div>
+      <div id="canvas-wrap">{{ embed(roots.main_fig) }}</div>
+      <!-- shown in place of the (empty) canvas when nothing is loaded: an inline
+           version of the Sessions modal, plus quick ways to get a first spectrum -->
+      <div id="canvas-empty">
+        <div class="empty-card">
+          <div class="empty-card-head">
+            <i class="ti ti-bookmark"></i>
+            <span class="modal-title">Load a session</span>
+          </div>
+          <div class="empty-session-results file-results js-session-results">{{ sessions_html|safe }}</div>
+          <div class="session-hint">Click a save to load it — or start fresh:</div>
+          <div class="empty-actions">
+            <button id="empty-open" class="text-btn"><i class="ti ti-folder-open"></i>&nbsp;Open spectrum</button>
+            <button id="empty-synth" class="text-btn">Synthesize new</button>
+          </div>
+        </div>
+      </div>
+      <div id="feautrier-wrap">
+        <div class="feautrier-head">
+          <span class="section-header">Filter — feautrier space (drag the crosshair: x = max resolution, y = noise floor)</span>
+          <button id="filter-clear" class="text-btn">Clear filter</button>
+        </div>
+        <div id="feautrier-fig">{{ embed(roots.feautrier_fig) }}</div>
+      </div>
+    </div>
+
+    <aside class="sidebar-right">
+      <div class="tab-bar">
+        <button class="tab active" data-panel="edit">Edit</button>
+        <button class="tab" data-panel="style">Style</button>
+        <button class="tab" data-panel="info">Info</button>
+      </div>
+      <div class="tab-content">
+        <div class="tab-panel active" data-panel="edit">
+          <div id="edit-fields">{{ edit_html|safe }}</div>
+        </div>
+        <div class="tab-panel" data-panel="style">
+          <div class="field-group">
+            <label>Line color</label>
+            <div id="style-swatches" class="swatch-row">{{ swatches_html|safe }}</div>
+          </div>
+          <div id="style-fields">{{ style_html|safe }}</div>
+        </div>
+        <div class="tab-panel" data-panel="info"><div id="inspector">{{ inspector_html|safe }}</div></div>
+      </div>
+      <div class="ew-panel">
+        <div class="ew-panel-head">
+          <span class="section-header">Equivalent width</span>
+          <button id="ew-close" class="icon-btn" title="Cancel (Esc)"><i class="ti ti-x"></i></button>
+        </div>
+        <div id="ew-panel-content"></div>
+        <div class="hint">Esc to cancel the selection</div>
+      </div>
+      <div class="norm-panel">
+        <div class="norm-panel-head">
+          <span class="section-header">Normalise — continuum spline</span>
+          <button class="icon-btn norm-close" title="Done"><i class="ti ti-x"></i></button>
+        </div>
+        <div id="norm-panel-content"></div>
+      </div>
+      <div class="filter-panel">
+        <div class="filter-panel-head">
+          <span class="section-header">Filter — smooth the spectra</span>
+          <button class="icon-btn filter-close" title="Done"><i class="ti ti-x"></i></button>
+        </div>
+        <div id="filter-panel-content"></div>
+      </div>
+      <div class="lines-panel">
+        <div class="lines-panel-head">
+          <span class="section-header">Line navigation</span>
+        </div>
+        <div id="linesettings-fields">{{ linesettings_html|safe }}</div>
+        <div class="hint">Click a line in the list to centre the view on it. The distance
+          sets how far either side of the line is shown.</div>
+      </div>
+      <div class="synth-panel">
+        <div class="synth-panel-head">
+          <span class="section-header">Synthesize spectrum</span>
+          <button id="synth-close" class="icon-btn" title="Close"><i class="ti ti-x"></i></button>
+        </div>
+        <div class="tab-bar">
+          <button class="tab active" data-panel="synthesize">Synthesize</button>
+          <button class="tab" data-panel="fit">Fit</button>
+        </div>
+        <!-- RT mode + NLTE atoms: shared by both tabs (one source of truth) -->
+        <div class="synth-rt">
+          <div id="synthmode-fields">{{ synth_mode_html|safe }}</div>
+          <div id="synth-atoms" class="synth-atoms{{ ' on' if synth_is_nlte }}">
+            <div class="section-header">Model atoms (NLTE)</div>
+            <div class="path-row">
+              <div id="synth-atoms-list" class="atom-tags">{{ synth_atoms_html|safe }}</div>
+              <button id="browse-atom" class="icon-btn" title="Add a model atom"><i class="ti ti-plus"></i></button>
+            </div>
+            <div id="atom-picker" class="inline-picker">
+              {{ embed(roots.atom_picker) }}
+              <div id="atom-results" class="file-results"></div>
+            </div>
+          </div>
+        </div>
+        <div class="tab-content">
+          <div class="tab-panel active" data-panel="synthesize">
+            <div id="synth-fields">{{ synth_run_html|safe }}</div>
+            <button id="synth-run" class="primary-btn">Synthesize</button>
+            <div class="hint">Drag an x-range on the plot to set the synthesis window
+              (defaults to the current view). Configure paths in Preferences.</div>
+          </div>
+          <div class="tab-panel" data-panel="fit">
+            <div id="fit-fields">{{ fit_fields_html|safe }}</div>
+            <button id="fit-run" class="primary-btn">Fit</button>
+            <div class="hint">Iterative grid fit of the target spectrum. Drag an x-range
+              to set the fit window.</div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+  </div>
+
+  <div id="footer">
+    <span id="footer-status" class="status">Ready</span>
+    <div id="footer-progress"><div class="bar"></div></div>
+    <span class="footer-spacer"></span>
+    <span id="footer-info">{{ footer_html|safe }}</span>
+  </div>
+
+</div>
+
+<dialog id="settings-modal" class="modal">
+  <div class="modal-header">
+    <span class="modal-title">Preferences</span>
+    <button id="close-settings" class="icon-btn" title="Close"><i class="ti ti-x"></i></button>
+  </div>
+  <div class="settings-layout">
+    <nav class="settings-nav">
+      <button class="settings-nav-item active" data-page="general">General</button>
+      <button class="settings-nav-item" data-page="synthesis">Synthesis</button>
+      <button class="settings-nav-item" data-page="engine">Engine</button>
+      <button class="settings-nav-item" data-page="cache">Run cache</button>
+    </nav>
+    <div class="settings-pages">
+      <div class="settings-page active" data-page="general">
+        <div class="section-header">Axis units</div>
+        <div id="settings-fields">{{ settings_html|safe }}</div>
+
+        <div class="section-header">Line navigator</div>
+        <div class="field-group">
+          <label>Master line list</label>
+          <div class="path-row">
+            <div id="linelist-path" class="field-static">{{ linelist_path }}</div>
+            <button id="browse-linelist" class="icon-btn" title="Choose a line list"><i class="ti ti-folder-open"></i></button>
+          </div>
+        </div>
+        <div id="linelist-picker" class="inline-picker">
+          {{ embed(roots.linelist_picker) }}
+          <div id="linelist-results" class="file-results"></div>
+        </div>
+      </div>
+
+      <div class="settings-page" data-page="synthesis">
+        <div class="section-header">Atmosphere &amp; lines</div>
+        <div id="synthprefs-fields">{{ synth_prefs_html|safe }}</div>
+      </div>
+
+      <div class="settings-page" data-page="engine">
+        <div class="section-header">Paths &amp; runtime</div>
+        <div id="synthengine-fields">{{ synth_engine_html|safe }}</div>
+      </div>
+
+      <div class="settings-page" data-page="cache">
+        <div class="cache-head">
+          <span class="section-header">Cached synthesis runs</span>
+          <button id="cache-clear" class="text-btn">Clear all</button>
+        </div>
+        <div id="synth-cache" class="cache-list">{{ synth_cache_html|safe }}</div>
+      </div>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="file-modal" class="modal modal-lg">
+  <div class="modal-header">
+    <span class="modal-title">Open spectrum</span>
+    <button id="close-file" class="icon-btn" title="Close"><i class="ti ti-x"></i></button>
+  </div>
+  <div class="modal-body">
+    {{ embed(roots.file_picker) }}
+    <div id="file-results" class="file-results"></div>
+  </div>
+  <div class="modal-footer">
+    <button id="load-run" class="text-btn" title="Load this folder as a tumult run">Load run <span id="run-name"></span></button>
+  </div>
+</dialog>
+
+<dialog id="session-modal" class="modal modal-lg">
+  <div class="modal-header">
+    <span class="modal-title">Sessions</span>
+    <button id="close-session" class="icon-btn" title="Close"><i class="ti ti-x"></i></button>
+  </div>
+  <div class="modal-body">
+    <div id="session-results" class="file-results js-session-results">{{ sessions_html|safe }}</div>
+    <div class="session-hint">Click a save to load it — loading replaces your current workspace.</div>
+  </div>
+  <div class="modal-footer session-newrow">
+    <input id="session-name" class="field-input" type="text" placeholder="Name this save…"
+           maxlength="60">
+    <button id="session-save" class="text-btn">Add save</button>
+  </div>
+</dialog>
+
+<div style="display:none">{{ embed(roots.bridges) }}</div>
+
+<script>
+(function () {
+  function wireModal(openId, closeId, modalId, onOpen) {
+    var m = document.getElementById(modalId);
+    document.getElementById(openId).addEventListener('click', function () {
+      m.showModal();
+      if (onOpen) onOpen();
+    });
+    var c = document.getElementById(closeId);
+    if (c) c.addEventListener('click', function () { m.close(); });
+    m.addEventListener('click', function (e) { if (e.target === m) m.close(); });
+  }
+
+  wireModal('open-settings', 'close-settings', 'settings-modal');
+
+  // cache page actions go through the dedicated "cache-actions" channel
+  function cacheAction(kind, arg) {
+    var m = Bokeh.documents[0].get_model_by_name('cache-actions');
+    if (m) m.setv({ value: kind + ' ' + (arg || '') + ' ' + Date.now() });
+  }
+
+  // settings modal: switch between category pages via the left nav rail
+  document.querySelectorAll('#settings-modal .settings-nav-item').forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      var page = tab.dataset.page;
+      document.querySelectorAll('#settings-modal .settings-nav-item').forEach(function (t) {
+        t.classList.toggle('active', t === tab);
+      });
+      document.querySelectorAll('#settings-modal .settings-page').forEach(function (p) {
+        p.classList.toggle('active', p.dataset.page === page);
+      });
+      if (page === 'cache') cacheAction('refresh');  // re-scan disk when opened
+    });
+  });
+
+  // clear-all + per-row delete (rows are rendered dynamically into #synth-cache)
+  document.getElementById('cache-clear').addEventListener('click', function () {
+    if (confirm('Delete all cached synthesis runs?')) cacheAction('clear');
+  });
+  document.addEventListener('click', function (ev) {
+    var del = ev.target.closest('.cache-del');
+    if (del) cacheAction('del', del.dataset.path);
+  });
+
+  // model-atom selector (NLTE): reveal the inline picker, and delete chips
+  document.getElementById('browse-atom').addEventListener('click', function () {
+    var panel = document.getElementById('atom-picker');
+    panel.classList.toggle('open');
+    if (panel.classList.contains('open')) {
+      var rb = Bokeh.documents[0].get_model_by_name('{{ atom_results_name }}');
+      var el = document.getElementById('atom-results');
+      if (rb && el) el.innerHTML = rb.value;  // js_on_change only fires on change
+    }
+  });
+  document.addEventListener('click', function (ev) {
+    var del = ev.target.closest('.atom-del');
+    if (!del) return;
+    var m = Bokeh.documents[0].get_model_by_name('atom-actions');
+    if (m) m.setv({ value: 'del ' + del.dataset.path + ' ' + Date.now() });
+  });
+
+  // Fit tab: run button + per-row abundance removal go through the "fit-actions" channel
+  function fitAction(kind, arg) {
+    var m = Bokeh.documents[0].get_model_by_name('fit-actions');
+    if (m) m.setv({ value: kind + ' ' + (arg || '') + ' ' + Date.now() });
+  }
+  document.getElementById('fit-run').addEventListener('click', function () { fitAction('run'); });
+  document.addEventListener('click', function (ev) {
+    var del = ev.target.closest('.fit-abund-del');
+    if (del) fitAction('del', del.dataset.el);
+  });
+
+  // reveal the file picker inline inside the settings modal (no nested modal)
+  document.getElementById('browse-linelist').addEventListener('click', function () {
+    var panel = document.getElementById('linelist-picker');
+    panel.classList.toggle('open');
+    if (panel.classList.contains('open')) {
+      var rb = Bokeh.documents[0].get_model_by_name('{{ linelist_results_name }}');
+      var el = document.getElementById('linelist-results');
+      if (rb && el) el.innerHTML = rb.value;  // js_on_change only fires on change
+    }
+  });
+
+  wireModal('open-file', 'close-file', 'file-modal', function () {
+    // render the current results immediately (js_on_change only fires on change)
+    var rb = Bokeh.documents[0].get_model_by_name('{{ results_name }}');
+    var el = document.getElementById('file-results');
+    if (rb && el) el.innerHTML = rb.value;
+  });
+  // session actions (save/load/delete/refresh) go through the "session-actions"
+  // channel: space-delimited so a save name may contain spaces or colons
+  function sessionAction(kind, arg) {
+    var m = Bokeh.documents[0].get_model_by_name('session-actions');
+    if (m) m.setv({ value: kind + ' ' + (arg || '') + ' ' + Date.now() });
+  }
+
+  wireModal('open-session', 'close-session', 'session-modal', function () {
+    sessionAction('refresh');  // re-read saves (another tab may have added some)
+  });
+
+  // load the currently-open directory as a tumult run
+  document.getElementById('load-run').addEventListener('click', function () {
+    var m = Bokeh.documents[0].get_model_by_name('object-actions');
+    if (m) m.setv({ value: 'loadrun::' + Date.now() });
+  });
+
+  // add a new named save of the current workspace
+  function addSave() {
+    var inp = document.getElementById('session-name');
+    sessionAction('save', (inp.value || '').trim());
+    inp.value = '';
+  }
+  document.getElementById('session-save').addEventListener('click', addSave);
+  document.getElementById('session-name').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); addSave(); }
+  });
+
+  // load / delete an existing save slot — delegated so it works in both the Sessions
+  // modal and the inline empty-state loader shown over the canvas
+  document.addEventListener('click', function (ev) {
+    var del = ev.target.closest('.session-del');
+    if (del) { ev.stopPropagation(); sessionAction('delete', del.dataset.sid); return; }
+    var item = ev.target.closest('.session-item');
+    if (item) {
+      sessionAction('load', item.dataset.sid);
+      var modal = document.getElementById('session-modal');
+      if (modal.open) modal.close();
+    }
+  });
+
+  // empty-state quick actions: reuse the existing Open spectrum modal / Synth toggle
+  document.getElementById('empty-open').addEventListener('click', function () {
+    document.getElementById('open-file').click();
+  });
+  document.getElementById('empty-synth').addEventListener('click', function () { ewAction('synth-toggle'); });
+
+  // delegated click for any file-picker result row (reusable across pickers)
+  document.addEventListener('click', function (ev) {
+    var li = ev.target.closest('.file-item');
+    if (!li) return;
+    var m = Bokeh.documents[0].get_model_by_name(li.dataset.picker);
+    if (m) m.setv({ value: li.dataset.path + '\u0000' + Date.now() });
+  });
+
+  // delegated clicks on the object list: buttons hide/remove, the row selects
+  document.addEventListener('click', function (ev) {
+    var m = Bokeh.documents[0].get_model_by_name('object-actions');
+    if (!m) return;
+    var vbtn = ev.target.closest('.view-btn');
+    if (vbtn) {
+      m.setv({ value: 'view:' + vbtn.dataset.view + ':' + Date.now() });
+      return;
+    }
+    var spitem = ev.target.closest('.species-item');
+    if (spitem) {
+      var tbl = spitem.closest('table');
+      if (tbl) tbl.querySelectorAll('.species-item.active').forEach(function (e) { e.classList.remove('active'); });
+      spitem.classList.add('active');
+      m.setv({ value: 'species:' + spitem.dataset.species + ':' + Date.now() });
+      return;
+    }
+    var sortth = ev.target.closest('.line-sort');
+    if (sortth) {
+      m.setv({ value: 'linesort:' + sortth.dataset.sortcol + ':' + Date.now() });
+      return;
+    }
+    var row = ev.target.closest('.line-row');
+    if (row) {
+      m.setv({ value: 'linejump:' + row.dataset.lam0 + ':' + Date.now() });
+      return;
+    }
+    var swatch = ev.target.closest('.color-swatch');
+    if (swatch) {
+      m.setv({ value: 'color:' + swatch.dataset.color + ':' + Date.now() });
+      return;
+    }
+    var btn = ev.target.closest('.object-btn');
+    if (btn) {
+      m.setv({ value: btn.dataset.action + ':' + btn.dataset.uid + ':' + Date.now() });
+      return;
+    }
+    var item = ev.target.closest('.object-item');
+    if (item && item.dataset.uid) {
+      m.setv({ value: 'select:' + item.dataset.uid + ':' + Date.now() });
+    }
+  });
+
+  // generic tab switching, scoped per group (a .tab-bar and its adjacent .tab-content) so
+  // the inspector (Edit/Style/Info) and the synth panel (Synthesize/Fit) don't cross-talk
+  document.querySelectorAll('.tab-bar').forEach(function (bar) {
+    // the matching content is the sibling .tab-content in the same parent (not necessarily
+    // adjacent — the synth panel has a shared RT-mode block between the bar and its content)
+    var content = bar.parentElement.querySelector(':scope > .tab-content');
+    bar.querySelectorAll('.tab').forEach(function (tab) {
+      tab.addEventListener('click', function () {
+        bar.querySelectorAll('.tab').forEach(function (t) { t.classList.toggle('active', t === tab); });
+        if (content) content.querySelectorAll('.tab-panel').forEach(function (p) {
+          p.classList.toggle('active', p.dataset.panel === tab.dataset.panel);
+        });
+      });
+    });
+  });
+
+  // equivalent-width: open from the toolbar, cancel via × or Esc
+  function ewAction(name) {
+    var m = Bokeh.documents[0].get_model_by_name('object-actions');
+    if (m) m.setv({ value: name + ':-:' + Date.now() });
+  }
+  document.getElementById('ew-btn').addEventListener('click', function () { ewAction('ew-toggle'); });
+  document.getElementById('ew-close').addEventListener('click', function () { ewAction('ew-cancel'); });
+
+  // synthesis: open the run panel from the toolbar, launch / close from the panel
+  document.getElementById('synth-btn').addEventListener('click', function () { ewAction('synth-toggle'); });
+  document.getElementById('synth-close').addEventListener('click', function () { ewAction('synth-cancel'); });
+  document.getElementById('synth-run').addEventListener('click', function () { ewAction('synthesize'); });
+
+  // noise filter: toggle the panel/feautrier view / clear the applied filter
+  document.getElementById('filter-btn').addEventListener('click', function () { ewAction('filter'); });
+  document.getElementById('filter-clear').addEventListener('click', function () { ewAction('filter-clear'); });
+  document.addEventListener('click', function (ev) {
+    if (ev.target.closest('.filter-clear-btn')) ewAction('filter-clear');
+    else if (ev.target.closest('.filter-close')) ewAction('filter');
+  });
+  document.getElementById('filter-switch-input').addEventListener('change', function (ev) {
+    var m = Bokeh.documents[0].get_model_by_name('object-actions');
+    if (m) m.setv({ value: 'filtertoggle:' + (ev.target.checked ? 'on' : 'off') + ':' + Date.now() });
+  });
+  document.addEventListener('change', function (ev) {
+    var sel = ev.target.closest('.ew-method-select');
+    if (!sel) return;
+    var m = Bokeh.documents[0].get_model_by_name('object-actions');
+    if (m) m.setv({ value: 'profile:' + sel.value + ':' + Date.now() });
+  });
+
+  // continuum normalisation: toggle from the toolbar; init/clear/close from the panel
+  document.getElementById('normalise-btn').addEventListener('click', function () { ewAction('normalise'); });
+  document.addEventListener('click', function (ev) {
+    if (ev.target.closest('.norm-init')) ewAction('norm-init');
+    else if (ev.target.closest('.norm-clear')) ewAction('norm-clear');
+    else if (ev.target.closest('.norm-close')) ewAction('normalise');
+  });
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape' && !document.querySelector('dialog[open]')) ewAction('ew-cancel');
+  });
+})();
+</script>
+
+<!-- one delegated listener drives every controls.Form on the page -->
+<script>{{ form_script|safe }}</script>
+{% endblock %}
