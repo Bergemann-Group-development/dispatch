@@ -24,7 +24,7 @@ MODULE m3d_patch_mod
     USE prec_mod, only: inf4
     USE patch_mod, only: patch_t, patch_t_init
     USE m3d_halo_mod, only: m3d_halo_t, print_finished, print_download, lock_mem, unlock_mem, print_lock
-    USE spectrum_mod, only: nu_tolerance
+    USE spectrum_mod, only: lam_tolerance
     USE atom_mod, only: atom_type, atomic_spectrum_type, lse_no_pivot, lse_solver, &
                         nq_fac, cswitch, ng_step, ng_start, ng_global
     USE composition_mod, only: composition_type, departure_pointer_t
@@ -168,7 +168,7 @@ MODULE m3d_patch_mod
     n_nu, maxiter, ilambd, lvlcheck, comoving_frame, save_id, &
     check_NaN, custom_mu, lse_no_pivot, save_patch_kind, cswitch, &
     print_finished, print_start, print_send, ray_offset, print_download, &
-    lse_solver, decouple_continuum, nu_tolerance, &
+    lse_solver, decouple_continuum, lam_tolerance, &
     pivot_z, save_resolved, overrelax, save_cntrbf, depression_cntrbf, &
     absmet_in_output, print_lock, make_eos, ng_step, ng_start, ng_global, &
     column_by_column, rotate_atmos, Jnu_to_file, preconditioning, &

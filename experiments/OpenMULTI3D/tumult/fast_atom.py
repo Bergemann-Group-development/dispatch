@@ -61,8 +61,8 @@ class FastAtom(object):
     self.qnorm = qnorm * 1e5 / CC
     mask = self.bbt.nq > 0
     qmax = get_qmax(self.bbt.qmax[mask], self.bbt.q0[mask]) * self.qnorm
-    self.bbt.loc[mask, 'lb'] = self.bbt.loc[mask, 'lam0'] / (1 + qmax)
-    self.bbt.loc[mask, 'lr'] = self.bbt.loc[mask, 'lam0'] / (1 - qmax)
+    self.bbt.loc[mask, 'lb'] = self.bbt.loc[mask, 'lam0'] * (1 - qmax)
+    self.bbt.loc[mask, 'lr'] = self.bbt.loc[mask, 'lam0'] * (1 + qmax)
     self.bbt.loc[~mask, 'lb'] = self.bbt.loc[~mask, 'lam0'] - self.bbt.loc[~mask, 'qmax']
     self.bbt.loc[~mask, 'lr'] = self.bbt.loc[~mask, 'lam0'] + self.bbt.loc[~mask, 'qmax']
     self.bbt['i0'] = np.searchsorted(lam, self.bbt.lam0)
@@ -234,8 +234,8 @@ class PandasAtom(object):
     self.qnorm = qnorm * 1e5 / CC
     mask = self.bbt.nq > 0
     qmax = get_qmax(self.bbt.qmax[mask], self.bbt.q0[mask]) * self.qnorm
-    self.bbt.loc[mask, 'lb'] = self.bbt.loc[mask, 'lam0'] / (1 + qmax)
-    self.bbt.loc[mask, 'lr'] = self.bbt.loc[mask, 'lam0'] / (1 - qmax)
+    self.bbt.loc[mask, 'lb'] = self.bbt.loc[mask, 'lam0'] * (1 - qmax)
+    self.bbt.loc[mask, 'lr'] = self.bbt.loc[mask, 'lam0'] * (1 + qmax)
     self.bbt.loc[~mask, 'lb'] = self.bbt.loc[~mask, 'lam0'] - self.bbt.loc[~mask, 'qmax']
     self.bbt.loc[~mask, 'lr'] = self.bbt.loc[~mask, 'lam0'] + self.bbt.loc[~mask, 'qmax']
     self.bbt['i0'] = np.searchsorted(lam, self.bbt.lam0)

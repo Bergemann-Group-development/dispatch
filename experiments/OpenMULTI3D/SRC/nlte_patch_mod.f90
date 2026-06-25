@@ -188,7 +188,7 @@ contains
             call atom%read_pandas(atom_file, qnorm, in_lines=in_lines)
             call atom%set_colliders(composition)
           else
-            call atom%read(atom_file, qnorm, in_lines=in_lines, read_coll=.true.)
+            call atom%read_classic(atom_file, qnorm, in_lines=in_lines, read_coll=.true.)
           endif
           atom%name = 'input'
           atom%verbose = self%verbose
@@ -598,12 +598,12 @@ contains
     class(departure_pointer_t), pointer :: dep
     class(atom_type), pointer :: atom
     class(atom_data_t), pointer :: adata
-    character(len=256) :: run_dir, save_folder, atom_file
-    character(len=256), allocatable :: atom_files(:)
+    character(len=256) :: run_dir, save_folder
     character(len=6), allocatable :: keys(:)
     real(4), dimension(:,:,:,:,:,:), allocatable, target :: mem
-    integer :: i, j, i1, i2, nprecomp, nmu, n(4), x, y, z, l, lunit
+    integer :: i, j, nprecomp, nmu, n(4), x, y, z, l, lunit
     integer :: itimer=0
+    logical :: found
     !-----------------------------------------------------------------------------
     call trace%begin('composition_patch_t%init_departures', itimer=itimer)
 
@@ -611,26 +611,33 @@ contains
     if (read_departures) then
       run_dir = atmos_file
       save_folder = trim(run_dir)//'/save/'
-      if (os%exists_dir(save_folder)) then
-        call os%get_filenames(save_folder, atom_files, pattern='pop_*_meta.txt')
-        nprecomp = size(atom_files)
-      else
+      if (.not. os%exists_dir(save_folder)) then
         print *, ' - No folder found ', save_folder
       endif
     endif
 
-    allocate(keys(nprecomp+self%natom))
-    do i=1, nprecomp
-      atom_file = atom_files(i)
-      i1 = index(atom_file, 'pop_') + 4
-      i2 = index(atom_file, '_meta.txt') - 1
-      keys(i) = trim(atom_file(i1:i2))
+    ! Discover which of the requested atoms have precomputed departures by probing each
+    ! one's saved metadata file directly. This replaces os%get_filenames, whose shared
+    ! shell temp file ('.temp_files<thread>') races across the concurrent dispatch.x
+    ! processes the synthesis driver launches — they share a working directory and clobber
+    ! each other's temp file. inquire is pure Fortran: no shell, no temp file, no race.
+    allocate(keys(self%natom))
+    do i=1, self%natom
+      atom => self%atoms(i)
+      found = .false.
+      if (read_departures) then
+        inquire(file=trim(save_folder)//'pop_'//trim(atom%id)//'_meta.txt', exist=found)
+      endif
+      atom%precomputed = found
+      if (found) then
+        nprecomp = nprecomp + 1
+        keys(nprecomp) = atom%id
+        atom%idep = nprecomp
+      endif
     end do
     j = nprecomp
     do i=1, self%natom
       atom => self%atoms(i)
-      atom%idep = findloc(keys, trim(atom%id), 1)
-      atom%precomputed = atom%idep /= 0
       if (.not. atom%precomputed) then
         j = j + 1
         keys(j) = atom%id
@@ -889,15 +896,13 @@ contains
       atom => self%atoms(j)
       do i=1, atom%ncont
         associate(cont => atom%trans%cont(i))
-          fs = searchsorted(osmet%nu, cont%nu_min, outbounds_ok=.true.)+1
-          fe = searchsorted(osmet%nu, cont%nu_max, outbounds_ok=.true.)
+          fs = searchsorted(osmet%lam, cont%lam_min, outbounds_ok=.true.)+1
+          fe = searchsorted(osmet%lam, cont%lam_max, outbounds_ok=.true.)
           osmet%active(fs:fe) = .true.
         end associate
       end do
     end do
-    sp%nnu = count(osmet%active)
-    allocate(sp%nu(sp%nnu))
-    sp%nu = pack(osmet%nu, osmet%active)
+    call sp%reset(lam=pack(osmet%lam, osmet%active))
   END SUBROUTINE get_osmet_nu
 
   !===============================================================================

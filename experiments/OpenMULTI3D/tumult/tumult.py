@@ -99,7 +99,7 @@ class tumult(object):
 
         def read_wavelength_file(file):
             if (self.sfolder / file).exists():
-                return vac2air(np.fromfile(sfolder / file, dtype=np.float64))[::-1]
+                return vac2air(np.fromfile(sfolder / file, dtype=np.float64))
         
         self.lam = read_wavelength_file('out_lam.bin')
         self.bb_lam = read_wavelength_file('bb_lam.bin')
@@ -323,7 +323,7 @@ class tumult(object):
         if self.n_ang == 1: ang=0
 
         flux = ang is None and imu is None
-        yunit = u.erg/(u.s*u.cm**2*u.Hz)
+        yunit = u.erg/(u.s*u.cm**2*u.angstrom)
         if not flux: yunit = yunit / u.sr
 
         #if resolved:
@@ -528,12 +528,12 @@ class tumult(object):
 
         if concat:
             zdim = zdim or len(dims)-1
-            return self.concat_patches(dct, kind, fdim, zdim, lazy=lazy)
+            return self.concat_patches(dct, fdim, zdim, lazy=lazy)
         else:
             return dct
 
     #=====================================================================
-    def concat_patches(self, dct, kind, fdim, zdim, lazy):
+    def concat_patches(self, dct, fdim, zdim, lazy):
         #-----------------------------------------------------------------
         all_iz  = np.unique([key[0] for key in dct.keys()])
         all_inu = np.unique([key[1] for key in dct.keys()])
@@ -548,9 +548,13 @@ class tumult(object):
                 parts = [dct[(iz, inu)] for inu in inus if (iz, inu) in dct]
                 if not parts: continue
                 mem = parts[0] if len(parts) == 1 else concat(parts, axis=fdim)
-                if not f_indep: mem = np.flip(mem, axis=fdim)
                 merged.append(mem)
-            return merged[0] if len(merged) == 1 else concat(merged, axis=zdim)
+            if len(merged) == 0:
+              return None
+            elif len(merged) == 1:
+              return merged[0]
+            else:
+              return concat(merged, axis=zdim)
 
         if f_indep:
             return merge_set(all_inu)

@@ -132,7 +132,7 @@ MODULE atom_mod
       procedure :: normalize_profiles
       procedure :: update_populations
       procedure :: setup_transition_matrix
-      procedure :: read
+      procedure :: read_classic
       procedure :: read_pandas
       procedure :: prepare_damping
       procedure :: prepare_Drawin
@@ -656,12 +656,12 @@ MODULE atom_mod
     character(len=*), intent(in) :: atom_file
     real(8), intent(in) :: qnorm
     integer, intent(in), optional, allocatable :: in_lines(:)
-    real(8), pointer, contiguous, dimension(:) :: bf_nu, bf_alpha
+    real(8), pointer, contiguous, dimension(:) :: bf_lam, bf_alpha
     integer, pointer, contiguous, dimension(:) :: icont
     integer :: i, j, ic, tri, idx, latom, nnu_bf, ncol, ntri, ii, jj
     integer :: iostat, nnu, ncont, ntemp, l, u
-    real(8) :: scr, gv, cnt_ev, nu_max, alpha0, thresh_aa, dnu
-    real(8) :: gij, red_fcut, blu_fcut, vbar2e4, loggf
+    real(8) :: scr, gv, cnt_ev, nu_max, alpha0, thresh_aa, dlam
+    real(8) :: gij, vbar2e4, loggf
     character(512) :: dummy_string, text
     character(8) :: key, str1, str2, str3
     logical :: abort
@@ -735,8 +735,8 @@ MODULE atom_mod
       lin%i = lin%i + 1
       lin%j = lin%j + 1
 
-      lin%lam0 = air2vac(lin%lam_air) * AA_TO_CM ! [cm]
-      lin%nu0  = CC / lin%lam0               ! [Hz]
+      lin%lam0 = air2vac(lin%lam_air) ! [AA]
+      lin%nu0  = HZ_TO_AA / lin%lam0  ! [Hz]
       lin%upper_ev = lin%lower_ev + H_E*lin%nu0
       lin%hydrogen = uppercase(trim(self%id)) == 'H'
 
@@ -772,15 +772,13 @@ MODULE atom_mod
         endif
       endif
 
-      call lin%get_nu(qnorm, lin%nu_input, legacy=m1d_legacy_mode)
-      call os%mem_register(storage_size(lin%nu_input), lin%nnu, 'line%nu_input')
-      lin%nu_min = lin%nu_input(1)
-      lin%nu_max = lin%nu_input(lin%nnu)
+      call lin%get_lam(qnorm, lin%lam_input, legacy=m1d_legacy_mode)
+      call os%mem_register(storage_size(lin%lam_input), lin%nnu, 'line%lam_input')
+      lin%lam_min = lin%lam_input(1)
+      lin%lam_max = lin%lam_input(lin%nnu)
 
       if (red_cut < huge(1.0) .or. blue_cut > tiny(1.0)) then
-        red_fcut = cc*1e8 / red_cut
-        blu_fcut = cc*1e8 / blue_cut
-        if (lin%nu_max < red_fcut .or. lin%nu_min > blu_fcut) then
+        if (lin%lam_max < blue_cut .or. lin%lam_min > red_cut) then
           call lin%deactivate()
           cycle
         endif
@@ -811,7 +809,7 @@ MODULE atom_mod
     end do
 
     call os%allocate(icont, nnu_bf)
-    call os%allocate(bf_nu, nnu_bf)
+    call os%allocate(bf_lam, nnu_bf)
     call os%allocate(bf_alpha, nnu_bf)
 
     if (nnu_bf > 0) then
@@ -820,7 +818,7 @@ MODULE atom_mod
 
       do i=1, nnu_bf
         call nextentry(latom) 
-        read(latom,*) icont(i), bf_nu(i), bf_alpha(i)
+        read(latom,*) icont(i), bf_lam(i), bf_alpha(i)
         icont(i) = icont(i)+1
       end do
 
@@ -832,29 +830,27 @@ MODULE atom_mod
 
         if (jj-ii > 0) then
           cnt%nnu = jj-ii+1
-          cnt%nu_input => bf_nu(ii:jj)
-          cnt%alpha_input => bf_alpha(ii:jj)
-          cnt%alpha0 = cnt%alpha_input(1)
+          ! file wavelengths are threshold-decreasing; reverse to increasing
+          cnt%lam_input => bf_lam(jj:ii:-1)
+          cnt%alpha_input => bf_alpha(jj:ii:-1)
+          cnt%alpha0 = cnt%alpha_input(cnt%nnu)
 
           do j=2,cnt%nnu
-            if ( cnt%nu_input(j) > cnt%nu_input(j-1) ) then
+            if ( cnt%lam_input(j) < cnt%lam_input(j-1) ) then
               write(stdout,*) 'read_atom: continuum transition nr', i, &
-                            ' wavelengths not decreasing!'
+                            ' wavelengths not increasing!'
               abort = .true.
-            elseif ( cnt%nu_input(j) == cnt%nu_input(j-1) ) then
+            elseif ( cnt%lam_input(j) == cnt%lam_input(j-1) ) then
               write(stdout,*) 'read_atom: continuum transition nr', i, &
                             ' wavelengths are not unique!'
-              cnt%nu_input(j:cnt%nnu) = cnt%nu_input(j:cnt%nnu) - 1.0d-6
+              cnt%lam_input(j:cnt%nnu) = cnt%lam_input(j:cnt%nnu) + 1.0d-6
             endif
           end do
-          
+
           ! cross sections given in detail
           cnt%bf_type='detail'
         endif
       end do
-
-      ! and convert to frequency [Hz]
-      bf_nu = cc / ( bf_nu * AA_TO_CM )
     endif
 
     self%ncont = ncont
@@ -871,17 +867,16 @@ MODULE atom_mod
 
       if (cnt%bf_type == 'Kramer') then
         if (kramer_bf) then
-          thresh_aa = cc / ( cnt%nu0 * AA_TO_CM )
+          thresh_aa = HZ_TO_AA / cnt%nu0
           thresh_aa = min(thresh_aa, red_thresh_aa)
           nnu = ceiling((thresh_aa - blue_thresh_aa) / cont_step_aa) + 1
           cnt%nnu = nnu
-          call os%allocate(cnt%nu_input, cnt%nnu, 'cont%nu_input')
+          call os%allocate(cnt%lam_input, cnt%nnu, 'cont%lam_input')
           call os%allocate(cnt%alpha_input, cnt%nnu, 'cont%alpha_input')
-          cnt%nu_input(nnu:2:-1) = (/ (blue_thresh_aa + j*cont_step_aa, j=0, nnu-2) /)
-          cnt%nu_input(1) = thresh_aa
-          cnt%nu_input = cc / ( cnt%nu_input * AA_TO_CM )
-          cnt%alpha_input = Kramer(cnt%nu_input, self%ev(cnt%j) - self%ev(cnt%i))
-          cnt%alpha0 = cnt%alpha_input(1)
+          cnt%lam_input(1:nnu-1) = (/ (blue_thresh_aa + j*cont_step_aa, j=0, nnu-2) /)
+          cnt%lam_input(nnu) = thresh_aa
+          cnt%alpha_input = Kramer(cnt%lam_input, self%ev(cnt%j) - self%ev(cnt%i))
+          cnt%alpha0 = cnt%alpha_input(nnu)
           j = j+1
         else
           call cnt%deactivate()
@@ -892,8 +887,8 @@ MODULE atom_mod
       tri = (cnt%j-1)*(cnt%j-2)/2 + cnt%i
       self%cdata(tri) = self%cdata(tri) + cnt%alpha0
 
-      cnt%nu_min = cnt%nu_input(1)
-      cnt%nu_max = cnt%nu_input(cnt%nnu)
+      cnt%lam_min = cnt%lam_input(1)
+      cnt%lam_max = cnt%lam_input(cnt%nnu)
     end do
 
     if (j>0) then
@@ -987,7 +982,7 @@ MODULE atom_mod
   END SUBROUTINE read_pandas
 
   !====================================================================================
-  SUBROUTINE read (self, atom_file, qnorm, in_lines, read_coll)
+  SUBROUTINE read_classic (self, atom_file, qnorm, in_lines, read_coll)
     !---------------------------------------------------------------------
     !
     !  reads an atomic model.
@@ -1010,7 +1005,7 @@ MODULE atom_mod
     type(coll_type), pointer :: col => null()
     logical, dimension(:,:), allocatable :: ij_check
     real(8), allocatable, dimension(:) :: nu, alpha, tgrid
-    real(8) :: scr, gv, cnt_ev, nu_max, alpha0, thresh_aa, dnu
+    real(8) :: scr, gv, cnt_ev, lam_min, alpha0, thresh_aa, dlam
     real(8) :: gij, red_fcut, blu_fcut, vbar2e4, loggf
     integer :: ncont, nnu
     character(len=20) :: txt
@@ -1019,7 +1014,7 @@ MODULE atom_mod
     logical :: abort
     integer, save :: itimer=0
     !---------------------------------------------------------------------
-    call trace%begin('atom_mod%read', itimer=itimer)
+    call trace%begin('atom_mod%read_classic', itimer=itimer)
     call os%check_file(atom_file)
     open(newunit=latom, file=atom_file, form='formatted')
     abort = .false.
@@ -1126,8 +1121,8 @@ MODULE atom_mod
       lin%upper_ev = self%ev(lin%j)
       lin%hydrogen = uppercase(trim(self%id)) == 'H'
 
-      lin%lam0 = hc_e / ( lin%upper_ev - lin%lower_ev ) ! [cm]
-      lin%nu0 = cc / lin%lam0    ! [Hz]
+      lin%nu0 = ( lin%upper_ev - lin%lower_ev ) / h_e ! [Hz]
+      lin%lam0 = HZ_TO_AA / lin%nu0 ! [AA]
 
       ! io is now modified so that multicomponent lines can be read
       ! io = 0: Normal line
@@ -1164,7 +1159,7 @@ MODULE atom_mod
           call print_failed_line(latom, ios)
         end do
 
-        lin%dq = cc/lin%nu0 * lin%dq
+        lin%dq = lin%lam0 * AA_TO_CM * lin%dq
         lin%da = (lin%da - lin%ga_in) * over_4pi / lin%nu0
       end if
 
@@ -1184,18 +1179,16 @@ MODULE atom_mod
         endif
       endif
 
-      call lin%get_nu(qnorm, lin%nu_input, legacy=nterm<=1 .and. m1d_legacy_mode)
-      call os%mem_register(storage_size(lin%nu_input), lin%nnu, 'line%nu_input')
-      lin%nu_min = lin%nu_input(1)
-      lin%nu_max = lin%nu_input(lin%nnu)
+      call lin%get_lam(qnorm, lin%lam_input, legacy=nterm<=1 .and. m1d_legacy_mode)
+      call os%mem_register(storage_size(lin%lam_input), lin%nnu, 'line%lam_input')
+      lin%lam_min = lin%lam_input(1)
+      lin%lam_max = lin%lam_input(lin%nnu)
 
       gij = self%g(lin%i) / self%g(lin%j)
       call lin%init_einstein_coefficients(lin%f, gij)
 
       if (red_cut < huge(1.0) .or. blue_cut > tiny(1.0)) then
-        red_fcut = cc*1e8 / red_cut
-        blu_fcut = cc*1e8 / blue_cut
-        if (lin%nu_max < red_fcut .or. lin%nu_min > blu_fcut) then
+        if (lin%lam_max < blue_cut .or. lin%lam_min > red_cut) then
           call lin%deactivate()
           cycle
         endif
@@ -1231,11 +1224,11 @@ MODULE atom_mod
     end do
 
     !  bound-free transitions in detail
-    !  if nu_max.lt.0.0 frequency points in angstrom (starting with
+    !  if lam_min .lt.0.0 frequency points in angstrom (starting with
     !  threshold and decreasing) and crossections in cm2 are read.
     do i=1,self%ncont
       call nextentry(latom) 
-      read(latom,*,iostat=ios) jj, ii, alpha0, nnu, nu_max
+      read(latom,*,iostat=ios) jj, ii, alpha0, nnu, lam_min
       call print_failed_line(latom, ios)
 
       if (self%ion(ii) == self%ion(jj)) then
@@ -1264,37 +1257,34 @@ MODULE atom_mod
       cnt%alpha0 = alpha0
       cnt%nnu    = nnu
 
-      if ( nu_max .lt. 0.0 ) then
+      if ( lam_min .lt. 0.0 ) then
         ! cross sections given in detail
         cnt%bf_type='detail'
 
-        call os%allocate(cnt%nu_input, cnt%nnu, 'cont%nu_input')
+        call os%allocate(cnt%lam_input, cnt%nnu, 'cont%lam_input')
         call os%allocate(cnt%alpha_input, cnt%nnu, 'cont%alpha_input')
 
-        do j=1,cnt%nnu
+        do j=cnt%nnu,1,-1
           call nextentry(latom) 
-          read(latom,*,iostat=ios)  cnt%nu_input(j), cnt%alpha_input(j)
+          read(latom,*,iostat=ios)  cnt%lam_input(j), cnt%alpha_input(j)
           call print_failed_line(latom, ios)
         end do
         
         do j=2,cnt%nnu
-          if ( cnt%nu_input(j) > cnt%nu_input(j-1) ) then
+          if ( cnt%lam_input(j) < cnt%lam_input(j-1) ) then
             write(stdout,*) 'read_atom: continuum transition nr', i, &
                           ' wavelengths not decreasing!'
             abort = .true.
-          elseif ( cnt%nu_input(j) == cnt%nu_input(j-1) ) then
+          elseif ( cnt%lam_input(j) == cnt%lam_input(j-1) ) then
             write(stdout,*) 'read_atom: continuum transition nr', i, &
                           ' wavelengths are not unique!'
-            cnt%nu_input(j:nnu) = cnt%nu_input(j:nnu) - 1.0d-6
+            cnt%lam_input(j:nnu) = cnt%lam_input(j:nnu) + 1.0d-6
           endif
         end do
-
-        ! and convert to frequency [Hz]
-        cnt%nu_input = cc / ( cnt%nu_input * AA_TO_CM )
       else
         ! hydrogenic transitions
         cnt%bf_type='hydrogenic'
-        cnt%nu_max = cc / ( nu_max * AA_TO_CM )
+        cnt%lam_min = lam_min
       endif
     end do
 
@@ -1311,27 +1301,26 @@ MODULE atom_mod
       cnt%lower_ev = self%ev(cnt%i)
       cnt%upper_ev = self%ev(cnt%j)
       cnt%nu0 = ( cnt%upper_ev - cnt%lower_ev ) / h_e ! [Hz]
+      cnt%lam0 = HZ_TO_AA / cnt%nu0 ! [AA]
 
       if (cnt%bf_type == 'hydrogenic') then
-        call os%allocate(cnt%nu_input, cnt%nnu, 'cont%nu_input')
+        call os%allocate(cnt%lam_input, cnt%nnu, 'cont%lam_input')
         call os%allocate(cnt%alpha_input, cnt%nnu, 'cont%alpha_input')
-        dnu = (cnt%nu_max - cnt%nu0) / (cnt%nnu-1)
-        cnt%nu_input = [(cnt%nu0 + i*dnu, i=0, cnt%nnu-1)]
-        cnt%alpha_input = (cnt%nu0 / cnt%nu_input)**3.d0 * cnt%alpha0
+        dlam = (cnt%lam0 - cnt%lam_min) / (cnt%nnu-1)
+        cnt%lam_input = [(cnt%lam0 - i*dlam, i=cnt%nnu-1, 0, -1)]
+        cnt%alpha_input = (cnt%lam_input / cnt%lam0)**3.d0 * cnt%alpha0
 
       elseif (cnt%bf_type == 'Kramer') then
         if (kramer_bf) then
-          thresh_aa = cc / ( cnt%nu0 * AA_TO_CM )
-          thresh_aa = min(thresh_aa, red_thresh_aa)
+          thresh_aa = min(cnt%lam0, red_thresh_aa)
           nnu = ceiling((thresh_aa - blue_thresh_aa) / cont_step_aa) + 1
           cnt%nnu = nnu
-          call os%allocate(cnt%nu_input, cnt%nnu, 'cont%nu_input')
+          call os%allocate(cnt%lam_input, cnt%nnu, 'cont%lam_input')
           call os%allocate(cnt%alpha_input, cnt%nnu, 'cont%alpha_input')
-          cnt%nu_input(nnu:2:-1) = (/ (blue_thresh_aa + j*cont_step_aa, j=0, nnu-2) /)
-          cnt%nu_input(1) = thresh_aa
-          cnt%nu_input = cc / ( cnt%nu_input * AA_TO_CM )
-          cnt%alpha_input = Kramer(cnt%nu_input, self%ev(cnt%j) - self%ev(cnt%i))
-          cnt%alpha0 = cnt%alpha_input(1)
+          cnt%lam_input(2:nnu) = (/ (blue_thresh_aa + j*cont_step_aa, j=0, nnu-2) /)
+          cnt%lam_input(1) = thresh_aa
+          cnt%alpha_input = Kramer(cnt%lam_input, self%ev(cnt%j) - self%ev(cnt%i))
+          cnt%alpha0 = cnt%alpha_input(nnu)
           j = j+1
         else
           call cnt%deactivate()
@@ -1342,8 +1331,8 @@ MODULE atom_mod
       tri = (cnt%j-1)*(cnt%j-2)/2 + cnt%i
       self%cdata(tri) = cnt%alpha0
 
-      cnt%nu_min = cnt%nu_input(1)
-      cnt%nu_max = cnt%nu_input(cnt%nnu)
+      cnt%lam_min = cnt%lam_input(1)
+      cnt%lam_max = cnt%lam_input(cnt%nnu)
     end do
 
     if (j>0) then
@@ -1547,7 +1536,7 @@ MODULE atom_mod
     close(latom)
     if (abort) stop 'abort in atom_mod%read'
     call trace%end(itimer)
-  END SUBROUTINE read
+  END SUBROUTINE read_classic
 
   !====================================================================================
   SUBROUTINE prepare_damping(self, species)
@@ -1760,7 +1749,7 @@ MODULE atom_mod
     type(line_type), pointer :: lin
     type(cont_type), pointer :: cnt
     integer :: i,nnu,js,je
-    real(8), dimension(:), allocatable :: nu
+    real(8), dimension(:), allocatable :: lam
     integer, save:: itimer=0
     !-----------------------------------------------------------------------------
     call trace%begin('atom_trans_t%append_transitions', itimer=itimer)
@@ -1770,8 +1759,8 @@ MODULE atom_mod
     if (option(bf)) nnu = nnu + sum(self%cont%nnu, self%cont%active)
 
     ! save all frequencies
-    allocate(nu(nnu))
-    if (allocated(sp%nu)) nu(1:sp%nnu) = sp%nu
+    allocate(lam(nnu))
+    if (allocated(sp%lam)) lam(1:sp%nnu) = sp%lam
 
     je=sp%nnu
     if (option(bb)) then
@@ -1780,9 +1769,9 @@ MODULE atom_mod
         if (.not. lin%active) cycle
         js=je+1
         je=js+lin%nnu-1
-        nu(js:je)=lin%nu_input
-        lin%ired = js
-        lin%iblue = je
+        lam(js:je)=lin%lam_input
+        lin%iblue = js
+        lin%ired = je
       end do
     endif
     if (option(bf)) then
@@ -1791,17 +1780,14 @@ MODULE atom_mod
         if (.not. cnt%active) cycle
         js=je+1
         je=js+cnt%nnu-1
-        nu(js:je)=cnt%nu_input
-        cnt%ired = js
-        cnt%iblue = je
+        lam(js:je)=cnt%lam_input
+        cnt%iblue = js
+        cnt%ired = je
       end do
     endif
 
-    ! now set overall frequency grid
-    if (allocated(sp%nu)) deallocate(sp%nu)
-    allocate(sp%nu, source=nu)
-    sp%nnu = size(nu)
-
+    ! now set overall wavelength grid
+    call sp%reset(lam=lam)
     call trace%end(itimer)
   END SUBROUTINE append_transitions
 
@@ -1822,35 +1808,36 @@ MODULE atom_mod
         if (.not. cnt%active) cycle
         ! find minimum and maximum index of this continuum in the sp%nu grid
         call sp%get_interval(cnt, ired, iblue)
-        if (iblue == 0 .or. ired >= sp%nnu) then
+        if (ired == 0 .or. iblue >= sp%nnu) then
           call cnt%deactivate()
-        elseif (iblue==ired) then
+        elseif (iblue == ired) then
           print '(A, I6)', 'WARNING: single frequency for cont', i
           call cnt%deactivate()
         else
           ! total number of frequencies where this continuum is active
-          nnu=iblue-ired+1
+          nnu = ired - iblue + 1
           cnt%nnu = nnu
           ! min and max frequency where this continuum is active
           cnt%ired  = ired
           cnt%iblue = iblue
 
           ! set new frequency grid
-          allocate(cnt%alpha(ired:iblue))
+          allocate(cnt%alpha(iblue:ired))
           call os%mem_register(storage_size(cnt%alpha), cnt%nnu)
-          cnt%nu => sp%nu(ired:iblue)
+          cnt%lam => sp%lam(iblue:ired)
+          cnt%nu => sp%nu(iblue:ired)
           
           ! recompute the bf cross sections
           select case(cnt%bf_type)
           case('hydrogenic', 'Kramer')
             ! use nu**-3 dependency
-            cnt%alpha = (cnt%nu0 / cnt%nu)**3.d0 * cnt%alpha0
+            cnt%alpha = (cnt%lam / cnt%lam0)**3.d0 * cnt%alpha0
           case('detail')
-            ! fill new cross sections 
+            ! fill new cross sections (interpolated in frequency, see hermite_interp)
             call cnt%hermite_interp(cnt%alpha, cnt%nu)
           end select
 
-          allocate(cnt%wnu(ired:iblue))
+          allocate(cnt%wnu(iblue:ired))
           call os%mem_register(storage_size(cnt%wnu), cnt%nnu, 'cont%wnu')
           call set_weights(cnt%wnu, cnt%nu)
           cnt%wnu = cnt%wnu / (h_4pi*cnt%nu)
@@ -1864,29 +1851,33 @@ MODULE atom_mod
         if (.not. lin%active) cycle
         ! find minimum and maximum index of this continuum in the sp%nu grid
         call sp%get_interval(lin, ired, iblue)
-        if (iblue == 0 .or. ired == sp%nnu) then
+        if (ired == 0 .or. iblue == sp%nnu) then
           call lin%deactivate()
         else
-          if (iblue==ired) print '(A, I8)', 'WARNING: single frequency for line', i
+          if (iblue == ired) then
+            print '(A, I8)', 'WARNING: single frequency for line', i
+          endif
           ! total number of frequencies where this line is active
-          nnu=iblue-ired+1
+          nnu = ired - iblue + 1
           lin%nnu = nnu
           ! min and max frequency where this line is active
           lin%ired  = ired
           lin%iblue = iblue
 
-          lin%nu => sp%nu(ired:iblue)
-          allocate(lin%q(ired:iblue))
+          lin%lam => sp%lam(iblue:ired)
+          lin%nu => sp%nu(iblue:ired)
+          allocate(lin%q(iblue:ired))
           call os%mem_register(storage_size(lin%q), nnu)
-          lin%q(ired:iblue) = lin%nu/lin%nu0 - 1.0d0
+          ! frequency-oriented offset (~ +dnu/nu0) so the Doppler sign matches nu space
+          lin%q(iblue:ired) = 1.0d0 - lin%lam/lin%lam0
 
           ! fill frequency integration weights for the line
-          allocate(lin%wnu(ired:iblue))
+          allocate(lin%wnu(iblue:ired))
           call os%mem_register(storage_size(lin%wnu), lin%nnu, 'line%wnu')
           call set_weights(lin%wnu, lin%nu)
           lin%wnu = lin%wnu / (h_4pi*lin%nu)
 
-          allocate(lin%wq(ired:iblue))
+          allocate(lin%wq(iblue:ired))
           call os%mem_register(storage_size(lin%wq), nnu)
           call set_weights(lin%wq, dble(lin%q))
         endif
@@ -1915,7 +1906,7 @@ MODULE atom_mod
       do i=1, size(self%cont)
         cnt => self%cont(i)
         if (.not. cnt%active) cycle
-        sp%nac(cnt%ired:cnt%iblue) = sp%nac(cnt%ired:cnt%iblue) + 1 ! number of active continua at frequency index j
+        sp%nac(cnt%iblue:cnt%ired) = sp%nac(cnt%iblue:cnt%ired) + 1 ! number of active continua at frequency index j
       end do
     endif
 
@@ -1923,7 +1914,7 @@ MODULE atom_mod
       do i=1, size(self%line)
         lin => self%line(i)
         if (.not. lin%active) cycle
-        sp%nal(lin%ired:lin%iblue) = sp%nal(lin%ired:lin%iblue) + 1
+        sp%nal(lin%iblue:lin%ired) = sp%nal(lin%iblue:lin%ired) + 1
       end do
     endif
 
@@ -2249,24 +2240,25 @@ MODULE atom_mod
   END FUNCTION expin
 
   !====================================================================================
-  ELEMENTAL FUNCTION Kramer (nu, dev) result(hyd)
-    real(8), intent(in) :: nu, dev
-    real(8) :: nl, hyd
+  ELEMENTAL FUNCTION Kramer (lam, dev) result(hyd)
+    real(8), intent(in) :: lam, dev
+    real(8) :: nu, nl, hyd
     real(8), parameter :: kramer_const = 64*PI**4 * EC**10 * EM / (3*sqrt(3.d0) * CC * HH**6) ! 2.815e29
     !---------------------------------------------------------------------
+    nu = HZ_TO_AA / lam
     if (dev > 0) then
       nl = sqrt(RydV/dev)
-      hyd = kramer_const * gaunt(nu,ceiling(nl)) / (nl**5 * nu**3)
+      hyd = kramer_const * gaunt(lam, ceiling(nl)) / (nl**5 * nu**3)
     else
       hyd = 0.
     endif
   END FUNCTION Kramer
 
   !====================================================================================
-  ELEMENTAL FUNCTION gaunt (nu, n)
-    real(8), intent(in) :: nu
+  ELEMENTAL FUNCTION gaunt (lam, n)
+    real(8), intent(in) :: lam
     integer, intent(in) :: n
-    real(8) :: gaunt
+    real(8) :: inv_nu, gaunt
     real(8), parameter, dimension(6) :: &
     a1 = [ 1.078e00, 1.0926e0, 1.0983e0, 1.0954e0, 1.0912e0, 1.0925e0], &
     b1 = [-8.754e14,-2.019e14,-9.45e13, -5.188e13,-3.2e13,  -2.331e13], &
@@ -2275,13 +2267,14 @@ MODULE atom_mod
     b2 = [ 5.358e15, 6.242e15, 5.48e15,  4.094e15, 6.633e15, 5.808e15], &
     c2 = [-3.484e31,-3.208e31,-2.318e31,-1.43e31, -3.32e31, -2.844e31]
     !---------------------------------------------------------------------
+    inv_nu = lam * AA_TO_HZ
     if (n > 6) then
       gaunt = 1
     else
-      if (nu <= 1e16) then
-          gaunt = a1(n) + (b1(n) + c1(n)/nu) / nu
+      if (inv_nu >= 1e-16) then
+          gaunt = a1(n) + (b1(n) + c1(n) * inv_nu) * inv_nu
       else
-          gaunt = a2(n) + (b2(n) + c2(n)/nu) / nu
+          gaunt = a2(n) + (b2(n) + c2(n) * inv_nu) * inv_nu
       endif
     endif
   END FUNCTION gaunt

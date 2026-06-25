@@ -13,14 +13,14 @@ MODULE spectrum_mod
 
     !-------------------------------------------------------------------------------
     type :: spectrum_type
-        ! total number of frequencies
+        ! total number of wavelengths
         integer :: nnu=0
-        ! frequency [Hz]
-        real(8), dimension(:), allocatable :: nu, wnu
+        real(8), dimension(:), allocatable :: nu, wnu, lam, llam
         logical :: sorted=.false.
         character(len=32) :: name=''
     contains
       procedure :: init
+      procedure :: reset
       procedure :: get_interval
       procedure :: sort
       procedure :: save
@@ -28,7 +28,7 @@ MODULE spectrum_mod
     !---------------------------------------------------------------------
 
     public :: set_weights
-    real(8), public :: nu_tolerance = 1d6
+    real(8), public :: lam_tolerance = 0.001
     logical :: give_lam=.false., in_air=.true.
     logical :: in_log=.false.
     real(8) :: daa=0, aa_red=0, aa_blue=0, R=0
@@ -100,16 +100,38 @@ MODULE spectrum_mod
       else
         stop 'Give either wavelength set or aa_red and aa_blue in spectrum_params'
       endif
-      allocate(self%nu, source=lam(nnu:1:-1))
-      if (in_log) self%nu = exp(self%nu)
-      if (in_air) self%nu = air2vac(self%nu)
-      self%nu = CC / self%nu * 1e8
-      self%nnu = nnu
+      if (in_log) lam = exp(lam)
+      if (in_air) lam = air2vac(lam)
+      call self%reset(lam=lam)
       allocate(self%wnu(nnu))
       call set_weights(self%wnu, self%nu)
       self%sorted=.true.
       deallocate(lam)
     END SUBROUTINE init
+
+    !===============================================================================
+    SUBROUTINE reset(self, lam, nu)
+      class(spectrum_type) :: self
+      real(8), intent(in), dimension(:), optional :: lam, nu
+      real(8), allocatable, dimension(:) :: tmp_lam, tmp_nu
+      !-----------------------------------------------------------------------------
+      ! 1. Capture inputs into local temporaries immediately
+      if (present(lam)) allocate(tmp_lam, source=lam)
+      if (present(nu)) allocate(tmp_nu, source=nu)
+
+      if (allocated(self%lam)) deallocate(self%lam)
+      if (allocated(self%nu)) deallocate(self%nu)
+      
+      if (present(lam)) then
+        allocate(self%lam, source=tmp_lam)
+        allocate(self%nu, source=HZ_TO_AA / self%lam)
+      endif
+      if (present(nu)) then
+        allocate(self%nu, source=tmp_nu)
+        allocate(self%lam, source=HZ_TO_AA / self%nu)
+      endif
+      self%nnu = size(self%nu)
+    END SUBROUTINE reset
 
     !===============================================================================
     SUBROUTINE set_weights (weight, nu)
@@ -133,6 +155,7 @@ MODULE spectrum_mod
           weight(j) = 0.5 * ( nu(j+1) - nu(j-1) )
       end do
       weight(n) = 0.5 * ( nu(n) - nu(n-1) )
+      weight = abs(weight)
     END SUBROUTINE set_weights
 
     !===============================================================================
@@ -142,15 +165,15 @@ MODULE spectrum_mod
       integer, intent(out) :: ired, iblue
       !-----------------------------------------------------------------------------
       if (self%sorted) then
-        call get_ivl(self%nu, trans%nu_min, trans%nu_max, ired, iblue, limit=.false.)
-        if (ired > 1) then
-          if((trans%nu_min - self%nu(ired-1)) < nu_tolerance) then
-            ired = ired - 1
+        call get_ivl(self%lam, trans%lam_min, trans%lam_max, iblue, ired, limit=.false.)
+        if (iblue > 1) then
+          if((trans%lam_min - self%lam(iblue-1)) < lam_tolerance) then
+            iblue = iblue - 1
           endif
         endif
-        if (iblue < self%nnu) then
-          if((self%nu(iblue+1) - trans%nu_max) < nu_tolerance) then
-            iblue = iblue + 1
+        if (ired < self%nnu) then
+          if((self%lam(ired+1) - trans%lam_max) < lam_tolerance) then
+            ired = ired + 1
           endif
         endif
       else
@@ -164,11 +187,10 @@ MODULE spectrum_mod
       class(spectrum_type), intent(inout):: self
       !-----------------------------------------------------------------------------
       self%sorted = .true.
-      call refsor(self%nu)
-
+      call refsor(self%lam)
       ! discard duplicates, nnu contains number of unique elements on exit
-      call remove_close_entries(self%nu, nu_tolerance)
-      self%nnu = size(self%nu)
+      call remove_close_entries(self%lam, lam_tolerance)
+      call self%reset(lam=self%lam)
     END SUBROUTINE
 
     !===============================================================================
@@ -183,7 +205,7 @@ MODULE spectrum_mod
       inquire(file=filename, exist=exists)
       if (.not. exists) then
         open(newunit=lunit, file=filename, access='stream')
-        write(lunit) 1d8 * dble(cc) / self%nu
+        write(lunit) self%lam
         close(lunit)
       endif
     END SUBROUTINE save

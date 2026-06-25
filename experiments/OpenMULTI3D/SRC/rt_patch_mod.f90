@@ -34,7 +34,8 @@ MODULE rt_patch_mod
   USE shared_mod
   USE composition_mod, only: composition_type, scattering_absorption, ref_lam, &
     departure_pointer_t, read_departures, sample_back_opac, &
-    sample_linelist, sample_back_opac_in_output
+    sample_linelist, sample_back_opac_in_output, use_new_linelist
+  USE spectrum_mod, only: spectrum_type
   implicit none
   private
 
@@ -45,10 +46,11 @@ MODULE rt_patch_mod
     class(rt_patch_t), pointer :: up_twin=>null()
     class(rt_patch_t), pointer :: dn_twin=>null()
     class(atom_trans_t), dimension(:), pointer :: trans=>null()
+    type(spectrum_type) :: sub_sp
     real(4), dimension(:,:,:,:,:), allocatable :: Jnu
     real(4), dimension(:,:,:,:), allocatable :: Psi, PsiJ
     real(4), dimension(:,:,:), allocatable :: opac_table
-    real(8), dimension(:), allocatable :: opac_table_nu
+    real(8), dimension(:), allocatable :: opac_table_lam
     real(4), dimension(:), allocatable :: twohnu3_c2
     real(8), dimension(:), pointer :: nu
     integer :: mus, mue, n_set, n_mu, natom
@@ -204,8 +206,8 @@ contains
             call line%check_range(self%fs, self%fe, fs, fe, skip)
             if (skip) cycle
             trans%line(j) = line
-            trans%line(j)%ired = fs
-            trans%line(j)%iblue = fe
+            trans%line(j)%iblue = fs
+            trans%line(j)%ired = fe
             j = j + 1
           end do
         endif
@@ -217,8 +219,8 @@ contains
             call cont%check_range(self%fs, self%fe, fs, fe, skip)
             if (skip) cycle
             trans%cont(j) = cont
-            trans%cont(j)%ired = fs
-            trans%cont(j)%iblue = fe
+            trans%cont(j)%iblue = fs
+            trans%cont(j)%ired = fe
             j = j + 1
           end do
         endif
@@ -266,6 +268,7 @@ contains
     ze = nz + ng
 
     self%nu(fs:fe) => self%sp%nu(fs:fe)
+    call self%sub_sp%reset(nu=self%nu(fs:fe))
     do_rotate_atmos = rotate_atmos .and. self%do_final
     get_cntrbf = self%do_final .and. save_cntrbf
     self%get_rates = self%get_rates .and. [(.not. self%atoms(i)%data%converged, i=1, self%natom)]
@@ -517,7 +520,11 @@ contains
         departures => self%m3d_parent%departures(:,i)
       endif
       associate(xhat=>work(:,:,:,1:nz,1), ehat=>work(:,:,:,1:nz,2))
-        call comp%add_linelist_opacities(self%nu, xhat, ehat, dlam, vproj, departures=departures)
+        if (use_new_linelist) then
+          call comp%add_linelist_opacities2(self%sub_sp, xhat, ehat, dlam, vproj, departures=departures)
+        else
+          call comp%add_linelist_opacities(self%sub_sp, xhat, ehat, dlam, vproj, departures=departures)
+        endif
       end associate
     endif
   END SUBROUTINE foreground
@@ -647,7 +654,7 @@ contains
     class(rt_patch_t) :: self
     class(composition_type) :: comp
     real(4) :: h_kT, hv_kT, bnu
-    real(8), dimension(:), allocatable, target :: tab_nu
+    type(spectrum_type) :: tab_sp
     logical :: include_absmet, do_sample_opac, do_make_eos
     integer :: fs, fe
     integer, save :: itimer=0
@@ -671,14 +678,14 @@ contains
 
     if (.not. allocated(self%opac_table)) then
       if (do_make_eos) then
-        call self%generate_opacity_table(self%nu(fs:fe), include_absmet, comp%ll_initialised)
+        call self%generate_opacity_table(self%sub_sp, include_absmet, comp%ll_initialised)
       elseif (do_sample_opac) then
         if (include_absmet .or. sample_linelist) then
-          tab_nu = self%nu(fs:fe)
+          tab_sp = self%sub_sp
         else
-          call comp%get_table_frequencies(self%nu(fs:fe), tab_nu)
+          call comp%get_table_sp(self%sub_sp, tab_sp)
         endif
-        call self%generate_opacity_table(tab_nu, include_absmet, include_llist=sample_linelist)
+        call self%generate_opacity_table(tab_sp, include_absmet, include_llist=sample_linelist)
       endif
     endif
 
@@ -688,7 +695,7 @@ contains
     elseif (do_sample_opac) then
       call self%interpolate_opacity_table(comp%temp, comp%ne, comp%chi500)
     else
-      call comp%absorption(self%nu, back(:,:,:,:,0), &
+      call comp%absorption(self%sub_sp, back(:,:,:,:,0), &
         beta=back(:,:,:,:,3), include_absmet=include_absmet, sorted=self%sp%sorted)
     endif
     call trace%end(itimer)
@@ -777,15 +784,15 @@ contains
       end do
     end do
 
-    call comp%scattering(self%nu, back(:,:,:,:,2), self%Jnu(:,:,:,:,i_set), include_absmet=include_absmet)
+    call comp%scattering(self%sub_sp, back(:,:,:,:,2), self%Jnu(:,:,:,:,i_set), include_absmet=include_absmet)
     call trace%end(itimer)
   END SUBROUTINE
 
   !===============================================================================
-  SUBROUTINE generate_opacity_table (self, nu, include_absmet, include_llist)
+  SUBROUTINE generate_opacity_table (self, sp, include_absmet, include_llist)
     class(rt_patch_t), target :: self
     class(composition_type), pointer :: comp
-    real(8), dimension(:), pointer, intent(in) :: nu
+    type(spectrum_type) :: sp
     real(4), dimension(:,:,:,:), pointer :: all_chi
     real(4), dimension(:,:,:,:), allocatable :: all_eta, all_beta
     logical, intent(in) :: include_absmet, include_llist
@@ -795,15 +802,15 @@ contains
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch%generate_opacity_table', itimer=itimer)
     comp => self%m3d_parent%tab_comp
-    nnu = size(nu)
+    nnu = sp%nnu
     ntemp = size(comp%temp,1)
     nne   = size(comp%temp,2)
     allocate(self%opac_table(nnu, ntemp, nne), source=0.)
-    allocate(self%opac_table_nu, source=nu)
+    allocate(self%opac_table_lam, source=sp%lam)
     call mem_register(self%opac_table, label='opac_table')
 
     all_chi(1:nnu, 1:ntemp, 1:nne, 1:1) => self%opac_table
-    call comp%absorption(nu, all_chi, include_absmet=include_absmet, sorted=self%sp%sorted)
+    call comp%absorption(sp, all_chi, include_absmet=include_absmet, sorted=self%sp%sorted)
 
     if (include_llist) then
       ! absorption returns the actual chi, while add_linelist_opacities
@@ -813,13 +820,17 @@ contains
         do j=1, ntemp
           associate(chi=>all_chi(:,j,k,1), eta=>all_eta(:,j,k,1), beta=>all_beta(:,j,k,1), &
                     xhat=>all_chi(:,j,k,1), ehat=>all_eta(:,j,k,1))
-            beta = exp(-h_k*nu / comp%temp(j,k,1))
+            beta = exp(-h_k * sp%nu / comp%temp(j,k,1))
             ehat = chi / (1 - beta)
             xhat = chi + ehat*beta
           end associate
         end do
       end do
-      call comp%add_linelist_opacities(nu, all_chi, all_eta, dlam)
+      if (use_new_linelist) then
+        call comp%add_linelist_opacities2(sp, all_chi, all_eta, dlam)
+      else
+        call comp%add_linelist_opacities(sp, all_chi, all_eta, dlam)
+      endif
       do k=1, nne
         do j=1, ntemp
           associate(chi=>all_chi(:,j,k,1), eta=>all_eta(:,j,k,1), beta=>all_beta(:,j,k,1), &
@@ -846,17 +857,15 @@ contains
     class(composition_type), pointer :: comp
     real(4), dimension(:,:,:), allocatable :: eos
     real(4), dimension(:,:,:,:), pointer :: view
-    real(8), dimension(:), pointer :: nu
     real(4) :: over_rho
     integer :: i,j,k, ntemp, nrho, nnu
     integer, save :: itimer=0
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch%save_opac_table', itimer=itimer)
     comp => self%m3d_parent%tab_comp
-    nu => self%opac_table_nu
     ntemp = size(self%opac_table, 2)
     nrho = size(self%opac_table, 3)
-    nnu = size(nu)
+    nnu = size(self%opac_table_lam)
 
     ! save absorption part first (which has been normalised by chi500)
     do k=1, nrho
@@ -871,7 +880,7 @@ contains
     self%opac_table = 0.0
     view(1:nnu, 1:ntemp, 1:nrho, 1:1) => self%opac_table
     call comp%electron_scattering(view)
-    call comp%rayleigh_scattering(cc / nu * 1e8, view)
+    call comp%rayleigh_scattering(self%opac_table_lam, view)
     do k=1, nrho
       do j=1, ntemp
         over_rho = 1 / comp%rho(j,k,1)
@@ -890,7 +899,7 @@ contains
     real(4), dimension(:,:,:), intent(in) :: chi500
     integer, dimension(:), allocatable :: inu
     real(4), dimension(:), allocatable :: wnu
-    real(8), dimension(:), pointer :: tab_nu
+    real(8), dimension(:), pointer :: tab_lam
     real(8) :: w1, w2, e, t, mint, mine, kappa
     real(8) :: dx, dy, a, b, c, d, fi1, fi2, fj1, fj2, ab, cd
     integer :: fs, fe, i, j, k
@@ -902,14 +911,14 @@ contains
     dy = 1. / (log(comp%ne(1,2,1) / comp%ne(1,1,1)))
     mint = comp%temp(1,1,1)
     mine = log(comp%ne(1,1,1))
-    tab_nu => self%opac_table_nu
+    tab_lam => self%opac_table_lam
 
     fs = self%fs
     fe = self%fe
 
     allocate(inu(fs:fe), wnu(fs:fe))
-    inu(fs:fe) = [(searchsorted(tab_nu, self%sp%nu(f)), f=fs, fe)]
-    wnu(fs:fe) = [((self%sp%nu(f) - tab_nu(inu(f))) / (tab_nu(inu(f)+1) - tab_nu(inu(f))), f=fs, fe)]
+    inu(fs:fe) = [(searchsorted(tab_lam, self%sp%lam(f)), f=fs, fe)]
+    wnu(fs:fe) = [((self%sp%lam(f) - tab_lam(inu(f))) / (tab_lam(inu(f)+1) - tab_lam(inu(f))), f=fs, fe)]
 
     do z=1, nz
       do y=1, ny
@@ -977,8 +986,8 @@ contains
     do i=1, size(trans%cont)
       cont => trans%cont(i)
       if (.not. cont%active) cycle
-      fs = cont%ired
-      fe = cont%iblue
+      fs = cont%iblue
+      fe = cont%ired
 
       if (allocated(adata%b)) then
         do z=1, nz
@@ -1087,8 +1096,8 @@ contains
 
     do i=1, size(trans%line)
       line => trans%line(i)
-      fs = line%ired
-      fe = line%iblue
+      fs = line%iblue
+      fe = line%ired
 
       lower_off = line%lower_ev - atom%ev(line%i)
       upper_off = line%upper_ev - atom%ev(line%j)
@@ -1200,8 +1209,8 @@ contains
 
     do i=1, size(trans%line)
       line => trans%line(i)
-      fs = line%ired
-      fe = line%iblue
+      fs = line%iblue
+      fe = line%ired
       wmunu(fs:fe) = wmu * line%wnu(fs:fe) * line%Aij
       lower_off = line%lower_ev - atom%ev(line%i)
       upper_off = line%upper_ev - atom%ev(line%j)
@@ -1299,8 +1308,8 @@ contains
       cont => trans%cont(j)
       if (.not. cont%active) cycle
       i = j + size(trans%line)
-      fs = cont%ired
-      fe = cont%iblue
+      fs = cont%iblue
+      fe = cont%ired
       wmunu(fs:fe) = 0.5 * cont%wnu(fs:fe)
       w_alpha(fs:fe) = self%twohnu3_c2(fs:fe) * cont%alpha(fs:fe) * wmunu(fs:fe)
 
@@ -2606,6 +2615,7 @@ contains
   SUBROUTINE save_intensity (self)
     class(rt_patch_t) :: self
     real(4), dimension(:,:,:,:,:), allocatable :: ie, i3
+    real(8), parameter :: conversion = 2 * HH / (CC**3 * CM_TO_AA)
     integer :: fs, fe
     integer, save :: itimer=0
     !-----------------------------------------------------------------------------
@@ -2616,7 +2626,8 @@ contains
     allocate(ie(fs:fe, 1, 1, self%mus:self%mue, self%n_set), source=0.)
 
     do f=fs, fe
-      i3(f,:,:,:,:) = self%twohnu3_c2(f) * self%mem(f,:,:,:,:,3)
+      ! this yields erg/s/cm^2/AA/sr
+      i3(f,:,:,:,:) = conversion * self%nu(f)**5 * self%mem(f,:,:,:,:,3)
     end do
 
     do y=1, ny

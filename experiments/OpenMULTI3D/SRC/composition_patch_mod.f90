@@ -19,7 +19,8 @@ MODULE composition_patch_mod
   USE composition_mod, only: composition_type, exclude_elements, only_elements, switch, &
   ref_lam, debug_opac, abundances, relative_abundances, mhd_eos, helium_scattering, &
   departure_pointer_t, read_departures, departure_indices, sample_back_opac, &
-  sample_back_opac_in_output, sample_linelist, opac_table_vmic, scattering_absorption
+  sample_back_opac_in_output, sample_linelist, opac_table_vmic, scattering_absorption, &
+  use_new_linelist
   USE atom_mod, only: m1d_legacy_mode, use_classic_col, level_partf
   USE nlte_patch_mod,  only: nlte_patch_t
   USE rt_patch_mod, only:rt_patch_t
@@ -86,7 +87,7 @@ SUBROUTINE read_composition_params ()
   disable_ga, disable_stark, disable_vdw, helium_scattering, sample_linelist, hydrogen_BPO, &
   ga_fallback, eosmet, scattering_absorption
   namelist /linelist_params/ dlam, exclude_elements, line_lists, linelist_folder, &
-  linelist_in_output, tolerance, only_elements
+  linelist_in_output, tolerance, only_elements, use_new_linelist
   ! ----------------------------------------------------------------------------
   call trace%begin('composition%init', itimer=itimer)
 
@@ -199,7 +200,11 @@ SUBROUTINE composition_pre_init (self)
   if (first_time) then
     first_time = .false.
     do i=1, size(line_lists)
-      call composition%init_linelist(line_lists(i), dlam, output_sp%nu)
+      if (use_new_linelist) then
+        call composition%init_linelist2(line_lists(i), dlam, output_sp%lam)
+      else
+        call composition%init_linelist(line_lists(i), dlam, output_sp%lam)
+      endif
     end do
     call nlte_patch%exclude_double_lines()
   endif
