@@ -1,3 +1,6 @@
+import json
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import astropy.units as u
@@ -782,6 +785,43 @@ class Spectrum:
         xdata = np.concatenate([s.xdata for s in spectra])
         ydata = np.concatenate([s.ydata for s in spectra])
         return cls(xdata, ydata)
+
+    # --- (de)serialisation ------------------------------------------------
+    def to_dict(self):
+        """A plain, JSON-serialisable view: x/y as lists plus unit strings.
+
+        Round-trips through :meth:`from_dict`. Lets a spectrum with no backing
+        file (e.g. an interpolated synthesis result) be embedded directly in a
+        saved session.
+        """
+        x, y = self.values
+        return {
+            "x": x.tolist(),
+            "y": y.tolist(),
+            "xunit": str(self.xunit),
+            "yunit": str(self.yunit),
+            "xref": float(self.xref.value),
+        }
+
+    @classmethod
+    def from_dict(cls, d):
+        """Rebuild a Spectrum from a mapping produced by :meth:`to_dict`."""
+        return cls(
+            np.asarray(d["x"], dtype=float),
+            np.asarray(d["y"], dtype=float),
+            xunit=d.get("xunit"),
+            yunit=d.get("yunit"),
+            xref=d.get("xref") or 0,
+        )
+
+    def save(self, path):
+        """Write the spectrum to ``path`` as JSON (see :meth:`to_dict`)."""
+        Path(path).write_text(json.dumps(self.to_dict()))
+
+    @classmethod
+    def load(cls, path):
+        """Read a spectrum written by :meth:`save`."""
+        return cls.from_dict(json.loads(Path(path).read_text()))
 
 
 def adjust_max_xticks(ax=None):
