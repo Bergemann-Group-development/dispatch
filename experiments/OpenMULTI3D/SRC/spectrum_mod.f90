@@ -82,7 +82,7 @@ MODULE spectrum_mod
       elseif (aa_red /= 0 .and. aa_blue /= 0) then
         if (R /= 0) then
           fac = 1d0 + 1d0/R
-          nnu = ceiling(log(aa_red/aa_blue) / log(fac))
+          nnu = ceiling(log(aa_red/aa_blue) / log(fac)) + 1
           allocate(lam(nnu))
           lam(1) = aa_blue
           do i=2, nnu
