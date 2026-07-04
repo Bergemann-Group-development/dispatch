@@ -1,23 +1,11 @@
 import numpy as np
 import pandas as pd
 from .auxfuncs import *
-from .auxfuncs import vac2air
+from .const import CC, HC2, PI
+from .physics import vac2air
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 from scipy.signal import argrelextrema
-
-EE = 1.602189E-12
-HH = 6.626176E-27
-CC = 2.99792458E10
-EM = 9.109534E-28
-UU = 1.6605655E-24
-BK = 1.380662E-16
-PI = 3.14159265359
-
-HCE = HH*CC/EE*1e8
-HC2 = 2.*HH*CC *1e24
-HCK = HH*CC/BK*1e8
-EK  = EE/BK
 
 hfs_names = ['de', 'w', 'f', 'ga', 'gv', 'gq']
 usecols = lambda col: col is None or col < len(hfs_names)
@@ -87,8 +75,6 @@ class trans_class(object):
             self.iwide = self.iw > 0
             
             self.a   = self.fosc * 6.671e15 * self.lower.g / self.upper.g / self.alamb**2
-            #self.BJI = self.alamb**3 / HC2 * self.A
-            #self.BIJ = self.upper.g / self.lower.g * self.BJI
             self.bij = self.fosc * 6.671e15 * self.alamb / HC2
             self.bji = self.bij * self.lower.g / self.upper.g
             
@@ -111,14 +97,6 @@ class trans_class(object):
                   self.lam_red  = self.alamb + self.qmax
                   self.lam_blue = self.alamb - self.qmax
             
-            #if (atom.level[-1].ion > atom.level[0].ion):
-            #    self.prepare_VanderWaals(self.gv)
-            #cont = np.searchsorted(atom.ground_states, self.upper.i)
-            #if len(atom.ground_states)>1:
-            #    cont = atom.level[cont]
-            #    self.iee = cont.ev-self.lower.ev
-            #    self.jee = cont.ev-self.upper.ev
-        
         elif read_bf:
             if self.qmax < 0:
                 self.lam, self.alfac = np.loadtxt(atom.f, dtype=float, max_rows=self.nq).T
@@ -152,27 +130,6 @@ class trans_class(object):
         return line.split()
             
             
-    def prepare_VanderWaals(self, gv):
-        if gv >= 20.0:
-            self.unsold = False
-            sigma=int(gv)*2.80028e-21
-            alpha=gv-int(gv)
-            gx=2.0-alpha*0.5
-            gx=gx-1.0
-            gammaf=1+(-.5748646+(.9512363+(-.6998588+(.4245549-.1010678*gx)*gx)*gx)*gx)*gx
-    
-            self.gw2 = 0.5*(1 - alpha)
-            self.gw1 = (4.0/PI)**(alpha*0.5) * gammaf * 2e10 * sigma * 10**(-12*self.gw2)
-    
-        elif gv != 0.0:
-            self.unsold = True
-            ion = np.array([level.ion for level in self.atom.level])
-            cnt_level = np.where(ion > self.lower.ion)[0][0]
-            cnt_ev = self.atom.level[cnt_level].ev
-            c1 = (1./(cnt_ev - self.upper.ev)**2 - 1./(cnt_ev - self.lower.ev)**2)**.4
-            self.gw1 = gv * 8.411 * 1.283984e-12 * self.lower.ion**0.8 * c1
-
-
     #=====================================================================
     def prepare(self):
         #-----------------------------------------------------------------

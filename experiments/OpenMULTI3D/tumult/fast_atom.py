@@ -408,3 +408,16 @@ def plot_grotrian(lvl, bbt, ion=None, lw=0.8, level_color='k', level_lw=1, color
     for i, label in enumerate(plabels):
         off = -0.05*(i%noff)
         label.set_y(off)  # adjust the position
+
+#=====================================================================
+def read_atom(atom_file, *, fast=True, **kwargs):
+    """Read a model atom file - the single entry point over the three readers.
+
+    fast=True (default) returns a FastAtom (pandas-backed, lazy line properties;
+    10-20x faster). fast=False returns the full AtomClass (partition functions,
+    collisions, hyperfine - the physics-complete but slow reader). Pickled pandas
+    atoms load via PandasAtom.read() directly (format-specific, not dispatched here).
+    """
+    if fast:
+        return FastAtom(atom_file, **kwargs)
+    return AtomClass(atom_file, **kwargs)

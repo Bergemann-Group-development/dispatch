@@ -93,6 +93,10 @@ def custom_kernel(custom, px):
     xcust = custom[0] / const.c
     ycust = custom[1] / np.trapz(custom[1], x=xcust)
     py = np.interp(px, xcust, ycust, left=0.0, right=0.0)
+    # renormalise on the actual convolution grid, like every other kernel: this also
+    # cancels the composite velocity/c unit that np.interp leaves on py (without it the
+    # kernel came out ~1000x off when x was given in km/s).
+    py /= np.trapz(py, x=px)
     return py
 
 
@@ -153,7 +157,7 @@ def combined_kernel(rd=None, res=None, vrot=None, vdop=None, zeta_rt=None, custo
     if zeta_rt is not None:
         kernels.append(macro_kernel(zeta_rt, px))
     if custom is not None:
-        kernels.append(custom_kernel(custom, rd, px))
+        kernels.append(custom_kernel(custom, px))
 
     py = kernels[0]
     for k in kernels[1:]:

@@ -19,26 +19,19 @@ import collections.abc
 from .decorators import broadcast_arguments
 import tempfile
 
+from .const import (  # noqa: F401 - single constants source; re-exported for back-compat
+    BK, CC, CC_KMS, EC, EE, EK, EM, HC2, HCE, HCK, HH, MH, PI, RYDV, SBOL, UU, XMH,
+)
+from .physics import _air2vac, air2vac, planck, vac2air, voigt_function  # noqa: F401
+from .utils import (  # noqa: F401 - canonical implementations live in tumult.utils
+    LinArrayInterp,
+    get_bisector,
+    linear_edge_normalisation,
+    parabolic_min,
+    pchip_mono,
+)
+
 CB_colors = ['#377eb8', '#ff7f00', '#4daf4a', '#f781bf', '#a65628', '#984ea3', '#999999', '#e41a1c', '#dede00']
-
-EE = 1.602189E-12
-HH = 6.626176E-27
-CC = 2.99792458E10
-EM = 9.109534E-28
-EC = 4.80325E-10
-UU = 1.6605655E-24
-BK = 1.380662E-16
-MH = 1.6726e-24
-PI = 3.14159265359
-SBOL = 5.6704e-5
-XMH = 1.67339e-24
-CC_KMS  = 299792.458 # VELOCITY OF LIGHT (KM/S)
-RYDV = 13.605
-
-HCE = HH*CC/EE*1e8
-HC2 = 2.*HH*CC*1e24
-HCK = HH*CC/BK*1e8
-EK  = EE/BK
 
 atomic_weights = {'H':  1.008, 'He': 4.003, 'Li': 6.94,  'Be': 9.01,  'B':  10.81, 
                   'C':  12.01, 'N':  14.01, 'O':  16.0,  'F':  19.0,  'Ne': 20.18, 
@@ -126,38 +119,8 @@ def tmp_txtfile(stack):
     return stack.enter_context(tempfile.NamedTemporaryFile(mode='w+', suffix='.txt')).name
 
 #=====================================================================
-def planck(lam, temp):
-    temp = np.array(temp)
-    Bnu =  1e8*CC*HC2/lam/(np.exp(HCK/(lam*temp[...,None])) - 1)
-    Bnu = np.moveaxis(Bnu, -1, 0)
-    return Bnu
-
-#=====================================================================
-def vac2air(vac):
-    """
-    Converts vacuum wavelength to observed wavelengths
-    """
-    if type(vac) != np.ndarray:
-        vac = np.array(vac)
-    vac = vac.astype(np.float64)
-    return vac/_air2vac(vac)
-
-#=====================================================================
-def air2vac(air):
-    if type(air) != np.ndarray:
-        air = np.array(air)
-    air = air.astype(np.float64)
-    w = air*_air2vac(air)
-    w = air*_air2vac(w)
-    return air*_air2vac(w)
-
-#=====================================================================
-def _air2vac(air):
-    s = 1e4 / air
-    s2 = s**2
-    n = 1.00008336624212083 + 0.02408926869968 / (130.1065924522 - s2) \
-          + 0.0001599740894897 / (38.92568793293 - s2)
-    return n
+# air/vacuum conversion + Planck moved to tumult.physics (re-exported above for
+# back-compat with the `from .auxfuncs import *` consumers).
 
 @njit
 #=====================================================================
@@ -195,37 +158,7 @@ def get_qmax(qmax, q0):
     return q
 
 #=====================================================================
-def LinArrayInterp(x, y, newx):
-    if type(y) == list:
-        y = np.array(y)
-        
-    if type(x) == list:
-        x = np.array(x)
-        
-    if type(newx) == list:
-        newx = np.array(newx)
-    
-    if np.max(newx) > np.max(x):
-        raise ValueError("Value above interpolation range")
-    if np.min(newx) < np.min(x):
-        raise ValueError("Value below interpolation range")
-    
-    dimnew = len(newx.shape)
-    shape = x.shape[:-dimnew] + newx.shape
-    
-    dig = np.searchsorted(newx, x, side='right')
-    diff = np.diff(dig, prepend=0).ravel()
-    idx = np.repeat(np.arange(diff.size), diff).reshape(shape)
-    
-    _x = x.ravel()
-    _y = y.reshape(y.shape[:-x.ndim] + (-1,))
-    
-    x1 = _x[idx-1]
-    x2 = _x[idx]
-    y1 = _y[..., idx-1]
-    y2 = _y[..., idx]
-        
-    return (y2-y1)/(x2-x1) * (newx - x1) + y1
+# LinArrayInterp moved to tumult.utils (single implementation; re-exported above).
 
 #=====================================================================
 def idl_tabulate(x, f, p=5):
@@ -241,15 +174,7 @@ def idl_tabulate(x, f, p=5):
     return ret
 
 #=====================================================================
-def linear_edge_normalisation(xx, yy, axis=-1):
-    yspace = yy.take([0, -1], axis)
-    xspace = xx.take([0, -1], axis)
-
-    yspace = np.moveaxis(yspace, axis, -1)
-    
-    output = LinArrayInterp(xspace, yspace, xx)
-    
-    return np.moveaxis(output, -1, axis)
+# linear_edge_normalisation moved to tumult.utils (re-exported above).
 
 #=====================================================================
 def between_ext(arr, pos, criterion=np.greater_equal):
@@ -440,12 +365,13 @@ def is_number(s):
         return False
 
 #=====================================================================
-def voigt_function(a, v):
-  s2 = np.sqrt(2)
-  return scipy_voigt_profile(v*s2, 1, a*s2) * s2
+# voigt_function moved to tumult.profile (single home; re-exported above).
 
 #=====================================================================
 def voigt_profile(xx, x0, a, sigma, amp):
+    # LEGACY parameterisation (un-normalised peak, different argument order); the modern
+    # model is tumult.profile.VoigtProfile / tumult.utils.voigt_profile. Kept because the
+    # two are NOT numerically equivalent (see tests/test_dupes.py).
   s2 = np.sqrt(2)
   vv = (xx-x0) / sigma
   return 1 - amp*voigt_function(a, vv)
@@ -711,7 +637,11 @@ def angular_distance(ra1, dec1, ra2, dec2):
     return np.sqrt((np.cos(dec2) * (ra2 - ra1))**2 + (dec2 - dec1)**2)
 
 #=====================================================================
-def lowpass(xx, yy, thresh=15, force_period=False):
+def lowpass_fft_thresh(xx, yy, thresh=15, force_period=False):
+  # NOT the same filter as tumult.utils.lowpass (Gaussian roll-off in ln-lambda at a
+  # spectral resolution R): this is a brick-wall FFT cut at `thresh` cycles per x-unit
+  # on a linear grid. Renamed from `lowpass` in the Phase 1 consolidation; no callers
+  # existed at that point.
   newx = np.linspace(xx.min(), xx.max(), len(xx)*3)
   dx = newx[1] - newx[0]
   yy = np.interp(newx, xx, yy)
@@ -736,6 +666,18 @@ def lowpass(xx, yy, thresh=15, force_period=False):
 
   newy = np.interp(xx, newx, filtered_signal)
   return newy
+
+
+def lowpass(xx, yy, thresh=15, force_period=False):
+  # deprecated alias for lowpass_fft_thresh. NOTE: shadowed at package level by
+  # tumult.utils.lowpass (a different filter with a `resolution` argument), which is
+  # what `tumult.lowpass` has always resolved to - only direct `auxfuncs.lowpass`
+  # imports land here, and none exist in the codebase.
+  import warnings
+  warnings.warn("auxfuncs.lowpass is deprecated; use lowpass_fft_thresh (brick-wall "
+                "FFT cut) or tumult.utils.lowpass (Gaussian roll-off at resolution R).",
+                DeprecationWarning, stacklevel=2)
+  return lowpass_fft_thresh(xx, yy, thresh=thresh, force_period=force_period)
 
 #=====================================================================
 def split_words(text):
@@ -785,58 +727,7 @@ def sort_cntm(yy):
   return norm
 
 #=====================================================================
-def parabolic_min(xx, yy):
-  imin = np.argmin(yy)
-  if imin == 0:
-    imin = 1
-  elif imin == len(yy)-1:
-    imin = max(0, len(yy)-2)
-
-  slc = slice(imin-1, imin+2)
-  x = xx[slc]
-  y = yy[slc]
-  
-  if len(x) < 3:
-    print('parabolic_min: Failed to find a minimum')
-    return None, None
-  
-  p = np.polyfit(x, y, 2)
-  pdiff = np.polyder(p)
-  poly_root = np.roots(pdiff)
-  xmin = poly_root[0]
-  ymin = np.polyval(p, xmin)
-  return xmin, ymin
-
-#=====================================================================
-def pchip_mono(xx, yy, axis=0, **kwargs):
-  xx = np.moveaxis(xx, axis, -1)
-  yy = np.moveaxis(yy, axis, -1)
-  
-  dx = np.diff(xx)
-  dy = np.diff(yy)
-  dlin = dy / dx
-  if dlin.shape[-1] > 1:
-    dyup = dlin[..., :-1]
-    dydn = dlin[..., 1:]
-    dxup = dx[..., :-1]
-    dxdn = dx[..., 1:]
-    dydx = (dydn*dxup + dyup*dxdn) / (dxup + dxdn)
-    lim1 = 2*dlin[..., :1]
-    limn = 2*dlin[..., -1:]
-    d1 = lim1 - dydx[..., :1]
-    dn = limn - dydx[..., -1:]
-    d1 = np.sign(d1) * np.min([abs(d1), abs(lim1)], axis=0)
-    dn = np.sign(dn) * np.min([abs(dn), abs(limn)], axis=0)
-    dydx = (np.sign(dyup) + np.sign(dydn)) * np.min([abs(dyup), abs(dydn), abs(0.5*dydx)], axis=0)
-    dydx = np.concatenate([d1, dydx, dn], axis=-1)
-  else:
-    dydx = np.concatenate([dlin, dlin], axis=-1)
-
-  dydx = np.moveaxis(dydx, -1, axis)
-  xx = np.moveaxis(xx, -1, axis)
-  yy = np.moveaxis(yy, -1, axis)
-
-  return CubicHermiteSpline(xx, yy, dydx, axis=axis, **kwargs)
+# parabolic_min and pchip_mono moved to tumult.utils (re-exported above).
 
 #=====================================================================
 def pchip_sigma(xx, yy, x, dx):
@@ -845,59 +736,8 @@ def pchip_sigma(xx, yy, x, dx):
   return np.abs(dy)
 
 #=====================================================================
-def pad_boolean(arr, pad=1):
-  # Convert Boolean to integers (True -> 1, False -> 0)
-  int_arr = arr.astype(int)
-  # Create a kernel of size 2N + 1 for the rolling product
-  kernel = np.ones(2 * pad + 1, dtype=int)
-  # Perform convolution (mode='same' ensures output size matches input size)
-  convolved = np.convolve(int_arr, kernel, mode='same')
-  # Convert back to Boolean: Any value less than the kernel size indicates a 0 was in the window
-  result = convolved == (2 * pad + 1)
-  return result
-
-#=====================================================================
-def calc_teff(xx, yy, planck_thresh=None):
-    mnan = np.isfinite(yy)
-
-    if planck_thresh is not None:
-        def opt_func(x, Teff):
-            y = crop_spectrum(x, np.pi*planck(x, Teff), per_aa=True)[1]
-            return y
-        
-        mask = (xx > planck_thresh) & mnan
-        mx = xx[mask]
-        my = yy[mask]
-
-        popt, _ = curve_fit(opt_func, mx, my, bounds=([2000],[10000]))
-
-        trailx = np.geomspace(xx[-1], 1e6)[1:]
-        traily = opt_func(trailx, *popt)
-
-        newx = np.concatenate((xx[mnan], trailx))
-        newy = np.concatenate((yy[mnan], traily))
-    else:
-        newx = xx[mnan]
-        newy = yy[mnan]
-
-    bol = np.trapz(newy , x=newx)
-    teff = (bol / SBOL)**0.25
-    return teff
-
-#=====================================================================
-def get_bisector(xx, yy, x0, n=100, frac=0.99):
-    #-----------------------------------------------------------------
-    ex = argrelextrema(yy, np.less_equal)[0]
-    i0 = ex[np.argmin(np.abs(xx[ex] - x0))]
-    ex = argrelextrema(yy, np.greater_equal)[0]
-    i = np.searchsorted(ex, i0)
-    ib = ex[i-1]
-    ir = ex[i]
-    ymin = np.max(yy[i0-1:i0+2])
-    ymax = np.min([yy[ib], yy[ir]])
-    ymax = ymin + (ymax - ymin)*frac
-    newy = np.linspace(ymax, ymin, n)
-    lwing = np.interp(newy, yy[i0:ib:-1], xx[i0:ib:-1])
-    rwing = np.interp(newy, yy[i0:ir], xx[i0:ir])
-    newx = 0.5*(lwing + rwing)
-    return newx, newy
+# The second (identical) pad_boolean definition that used to live here was deleted in
+# the Phase 1 consolidation - the first definition above is the one that survives.
+# calc_teff was deleted too: unit-aware version lives in tumult.utils (this one worked
+# in raw CGS and its planck_thresh branch called an undefined `crop_spectrum`).
+# get_bisector moved to tumult.utils (re-exported above).

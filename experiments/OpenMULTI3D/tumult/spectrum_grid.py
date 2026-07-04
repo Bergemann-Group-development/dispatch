@@ -1,4 +1,4 @@
-from .auxfuncs import pchip_mono
+from .utils import pchip_mono
 from .spectrum import Spectrum
 import numpy as np
 import pandas as pd

@@ -50,14 +50,22 @@ def test_vshift_is_a_pure_doppler_shift():
     )
 
 
-def test_custom_kernel_call_is_broken():
-    """DOCUMENTS A LIVE BUG (found in review, to fix in Phase 1): combined_kernel calls
-    custom_kernel(custom, rd, px) but the function signature is custom_kernel(custom, px).
-    Any custom-kernel convolution currently raises TypeError. When Phase 1 fixes it,
-    replace this test with a golden for the fixed behaviour."""
+def test_custom_kernel_fixed_and_normalised():
+    """Phase 1 fixed two custom-kernel bugs: combined_kernel passed 3 args to the
+    2-arg custom_kernel (TypeError), and the kernel was never renormalised on the
+    convolution grid (leaving a ~1000x composite-unit scale error). The feature was
+    unusable before, so there is no golden to preserve - pin the corrected physics:
+    a normalised kernel whose width matches the requested velocity profile."""
     from tumult.convolutions import combined_kernel
 
-    xc = np.linspace(-5, 5, 11) * kms
-    yc = np.exp(-0.5 * (np.linspace(-5, 5, 11) / 2.0) ** 2)
-    with pytest.raises(TypeError):
-        combined_kernel(rd=2e-6, custom=(xc, yc))
+    vgrid = np.linspace(-10, 10, 201)        # +-5 sigma: truncation bias < 2e-5
+    xc = vgrid * kms
+    yc = np.exp(-0.5 * (vgrid / 2.0) ** 2)   # sigma = 2 km/s in velocity space
+    px, py = combined_kernel(rd=2e-7, custom=(xc, yc))
+    px = np.asarray(px, float)
+    py = np.asarray(py, float)
+    assert np.trapz(py, x=px) == pytest.approx(1.0, rel=1e-6)
+    # second moment of the kernel = (sigma/c)^2 for the Gaussian input
+    var = np.trapz(py * px**2, x=px)
+    sigma_over_c = 2.0 / 299792.458
+    assert np.sqrt(var) == pytest.approx(sigma_over_c, rel=1e-2)

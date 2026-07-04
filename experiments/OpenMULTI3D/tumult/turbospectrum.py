@@ -1,5 +1,6 @@
 from .spectrum import Spectrum
-from .auxfuncs import atomic_weights, near_equal_split, tmp_txtfile, BK
+from .auxfuncs import atomic_weights, near_equal_split, tmp_txtfile
+from .const import BK
 from .atmos import AtmosClass
 from astropy import units as u
 import numpy as np

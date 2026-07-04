@@ -3,24 +3,8 @@ from .trans import trans_class
 from .level import level_class
 from .collisions import collision_class
 from .auxfuncs import _read
+from .const import BK, CC, EK, UU, saha_const
 import matplotlib.pyplot as plt
-#from multi_py.collisions import read_collisions
-
-EE = 1.602189E-12
-HH = 6.626176E-27
-CC = 2.99792458E10
-EM = 9.109534E-28
-UU = 1.6605655E-24
-BK = 1.380662E-16
-PI = 3.14159265359
-
-XMH=1.67339E-24 # XMH=THE MASS OF THE HYDROGEN ATOM (EXPRESSED IN GRAMS)
-
-HCE = HH*CC/EE*1e8
-HC2 = 2.*HH*CC *1e24
-HCK = HH*CC/BK*1e8
-EK  = EE/BK
-saha_const=0.5*(HH/np.sqrt(2.*PI*EM)/np.sqrt(BK))**3
         
 class AtomClass(object):
     def _read(self, **kwargs):
