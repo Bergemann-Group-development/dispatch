@@ -103,3 +103,13 @@ def pulse(bridge, state):
 def toggle(bridge, on):
     """Pulse a boolean class/check bridge ``"on"`` or ``"off"``."""
     pulse(bridge, "on" if on else "off")
+
+
+def parse_action(value):
+    """Split an action-channel value ``"<kind> <arg> <nonce>"`` into ``(kind, arg)``.
+
+    The inverse of the page-side ``setv({value: kind + ' ' + arg + ' ' + Date.now()})``
+    convention; the trailing nonce (which only forces a change event) is dropped.
+    """
+    kind, _, rest = value.partition(" ")
+    return kind, rest.rsplit(" ", 1)[0]

@@ -38,6 +38,8 @@ html, body {
 
 /* session save/load button, pinned to the right of the app header */
 .header-sessions { margin-left: auto; }
+/* preferences (cog + missing-files warning), sitting next to save/load in the header */
+.header-settings { margin-left: 8px; }
 .session-hint { font-size: 11px; color: var(--text-muted); }
 
 /* game-style save slots in the Sessions modal */
@@ -112,6 +114,18 @@ aside {
 .tab-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; }
 .tab-panel.active { display: flex; }
 
+/* wizard step switcher: an underline-tab row shared by the Abundance + Correction tools'
+   centre views (see #abund-steps / #corr-steps). The active step is driven entirely by the
+   {abund,corr}-step-N class on #main — no JS — so only the base look lives here. */
+.step-tabs { display: flex; border-bottom: 1px solid var(--border); }
+.step-tab {
+  flex: 1; padding: 7px 8px; cursor: pointer;
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text-muted); background: none;
+  border: none; border-bottom: 2px solid transparent;
+}
+.step-tab:hover { color: var(--text); }
+
 #main {
   flex: 1; min-width: 0; min-height: 0;
   display: flex; flex-direction: column;
@@ -127,6 +141,16 @@ aside {
 #main.empty #top-panel,
 #main.empty #canvas-wrap { display: none; }
 #main.empty #canvas-empty { display: flex; flex: 1; min-height: 0; align-items: center; justify-content: center; }
+/* nothing loaded -> the inspector has nothing to act on, so hide the right sidebar and let
+   the empty-state card take the full width. Keep it visible when a tool panel that works
+   without objects is open (e.g. Synth, reached via the empty card's "Synthesize new"). */
+#main.empty ~ .sidebar-right { display: none; }
+#main.empty ~ .sidebar-right.ew-active,
+#main.empty ~ .sidebar-right.synth-active,
+#main.empty ~ .sidebar-right.norm-active,
+#main.empty ~ .sidebar-right.filter-active,
+#main.empty ~ .sidebar-right.lines-active,
+#main.empty ~ .sidebar-right.corr-active { display: flex; }
 .empty-card {
   width: min(420px, 100%); max-height: 100%; display: flex; flex-direction: column; gap: 10px;
   padding: 18px; background: var(--surface);
@@ -243,7 +267,9 @@ aside {
 .synth-panel-head { display: flex; align-items: center; justify-content: space-between; }
 /* synth panel's own tabs: no border (the panel head already separates), flush layout */
 .synth-panel .tab-bar { margin-bottom: 4px; }
-.synth-panel .tab-content { overflow: visible; }
+/* the synth panel has two tab-content sections (fields / action button) around the shared
+   RT-mode block; size each to its content so they stack instead of splitting flex space */
+.synth-panel .tab-content { overflow: visible; flex: 0 0 auto; }
 .synth-panel .tab-panel { padding: 0; }
 /* a fit row: label, number input, and an inline "fit" switch */
 .field-group.fit-row { flex-direction: row; align-items: center; gap: 6px; }
@@ -407,6 +433,9 @@ aside {
   color: var(--text-muted); cursor: pointer; font-size: 12px;
 }
 .object-btn:hover { border-color: var(--accent); color: var(--accent); }
+.object-btn.danger:hover { border-color: #e05c5c; color: #e05c5c; }
+/* the cancel button stays clickable even though the pending row itself is not */
+.object-item.pending .object-btn { cursor: pointer; }
 
 /* line-colour palette swatches */
 .swatch-row { display: flex; flex-wrap: wrap; gap: 5px; }
@@ -426,6 +455,17 @@ aside {
   padding: 3px 5px; font-size: 12px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+/* Info-tab FITS header: a scrollable two-column card table */
+.meta-table-wrap {
+  max-height: 280px; overflow-y: auto;
+  border: 1px solid var(--border); border-radius: 3px; background: var(--bg);
+}
+.meta-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.meta-table td { padding: 2px 5px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.meta-table tr:last-child td { border-bottom: none; }
+.meta-key { color: var(--text-muted); white-space: nowrap; font-family: monospace; }
+.meta-val { word-break: break-word; }
+
 /* shared style for every controls.Form input/select (and the EW dropdown) */
 .field-input {
   width: 100%; background: var(--bg); color: var(--text);
@@ -433,6 +473,8 @@ aside {
   padding: 3px 5px; font-size: 12px;
 }
 .field-input:focus { outline: none; border-color: var(--accent); }
+/* mandatory inputs left empty (or otherwise invalid): flag with a red outline until filled */
+.field-input:required:invalid { border-color: #c0392b; }
 
 .icon-btn {
   height: 24px; width: 24px; padding: 0;
@@ -522,24 +564,51 @@ aside {
 .inline-picker.open { display: flex; }
 .inline-picker .file-results { max-height: 200px; margin-top: 0; }
 
+/* auto file picker (atmosphere): the query field is always shown while a concrete file is in
+   play (`open`); the result list only drops down while the field is focused (`results-open`). */
+.inline-picker-auto { display: none; flex-direction: column; gap: 8px; margin-top: 8px; }
+.inline-picker-auto.open { display: flex; }
+.inline-picker-auto .file-results { display: none; max-height: 200px; margin-top: 0; }
+.inline-picker-auto.open.results-open .file-results { display: block; }
+
 /* shared RT-mode + atoms area, between the synth tab-bar and the tab content */
 .synth-rt { display: flex; flex-direction: column; gap: 8px; }
 
 /* NLTE model-atom selector: a chip list shown only when RT mode is NLTE */
 .synth-atoms { display: none; flex-direction: column; gap: 6px; }
 .synth-atoms.on { display: flex; }
-.atom-tags { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; min-width: 0; }
-.atom-tag {
+/* generic removable tag/chip: selected model atoms, atmosphere files, … */
+.chips { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; min-width: 0; }
+.chip {
   display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 8px;
+  max-width: 100%;
   background: var(--bg); border: 1px solid var(--border); border-radius: 12px;
   font-size: 11px;
 }
-.atom-del {
+.chip-label { min-width: 0; overflow-wrap: anywhere; }  /* wrap long unbroken filenames */
+.chip-del {
+  flex: none;
   display: flex; align-items: center; justify-content: center;
   height: 16px; width: 16px; padding: 0; border: none; border-radius: 50%;
   background: transparent; color: var(--text-muted); cursor: pointer;
 }
-.atom-del:hover { color: #e05c5c; }
+.chip-del:hover { color: #e05c5c; }
+
+/* ---- registered atmosphere grids (settings) ------------------------------ */
+.grid-list { display: flex; flex-direction: column; gap: 10px; }
+.grid-card {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 8px; background: var(--bg);
+  border: 1px solid var(--border); border-radius: 4px;
+}
+.grid-card-head { display: flex; align-items: center; gap: 6px; }
+.grid-card-head .grid-name { flex: 1; min-width: 0; font-weight: 600; }
+.grid-card .field-warn-input { border-color: #c0392b; }
+.grid-add { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; }
+#grid-select-folder { align-self: flex-start; }
+
+/* ---- synth panel: grid selector + source mode ---------------------------- */
+.synth-grid { display: flex; flex-direction: column; gap: 6px; }
 
 /* ---- file picker (cmd+P) -------------------------------------------------- */
 .file-results {
@@ -578,3 +647,140 @@ aside {
   background: var(--accent); border-color: var(--accent); color: #fff;
 }
 #load-run.ready:hover { filter: brightness(1.1); }
+
+/* ---------------------------------------------------------------------------
+   Abundance tool: toolbar button, right-sidebar control panel, left-sidebar
+   result objects, and the centre abundance view (scatter + per-line table).
+   --------------------------------------------------------------------------- */
+#abundance-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+/* right-sidebar control panel (mirrors .ew-panel / .synth-panel) */
+.abund-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; overflow-y: auto; }
+.sidebar-right.abund-active > .tab-bar,
+.sidebar-right.abund-active > .tab-content { display: none; }
+.sidebar-right.abund-active .abund-panel { display: flex; }
+.sidebar-right.abund-active .lines-panel { display: none; }
+.abund-panel-head { display: flex; align-items: center; justify-content: space-between; }
+/* the right-sidebar step section follows the active step class on #main (no JS) */
+.abund-step-panel { display: none; flex-direction: column; gap: 8px; }
+#main.abund-step-1 ~ .sidebar-right .abund-step-1-panel,
+#main.abund-step-2 ~ .sidebar-right .abund-step-2-panel,
+#main.abund-step-3 ~ .sidebar-right .abund-step-3-panel { display: flex; }
+.abund-run-lines, .abund-run-synth, .abund-run-uncert { display: block; width: 100%; margin-top: 4px; }
+/* sub-tabs (Lines | Setup): the whole panel scrolls, so the tab-content is non-flexing
+   (mirrors the synth panel) and the generic .tab JS drives .active. */
+.abund-panel .tab-bar { margin-bottom: 4px; }
+.abund-panel .tab-content { overflow: visible; flex: 0 0 auto; }
+.abund-panel .tab-panel { padding: 0; }
+.abund-copy-setup { display: block; width: 100%; margin-top: 10px; }
+
+/* left-sidebar result objects (non-spectral; reuse .object-item layout) */
+.result-section-head { margin-top: 12px; }
+.result-item .result-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 3px; flex: 0 0 auto;
+  background: var(--accent); color: #fff; font-size: 10px; font-weight: 700;
+}
+.result-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border: 1px solid transparent; border-radius: 4px;
+  background: none; color: var(--text-muted); cursor: pointer;
+}
+.result-btn:hover { border-color: #e05c5c; color: #e05c5c; }
+
+/* centre abundance view: spectrum (steps 1-2) or scatter (step 3) on top, per-line table
+   below, and a step-switcher footer. The spectrum reuses #canvas-wrap. */
+#abund-scatter, #abund-bottom, #abund-steps { display: none; }
+#main.abund-mode #top-panel { display: none; }
+#main.abund-mode #canvas-wrap { display: flex; }
+#main.abund-mode #abund-bottom { display: flex; flex: 0 0 42%; min-height: 0; flex-direction: column; }
+#main.abund-mode #abund-steps { display: flex; flex: 0 0 auto; padding: 6px 0 0; }
+/* step 3 swaps the spectrum for the A(X) scatter */
+#main.abund-mode.abund-step-3 #canvas-wrap { display: none; }
+#main.abund-mode.abund-step-3 #abund-scatter { display: flex; flex: 1; min-height: 0; }
+#abund-table { flex: 1; min-height: 0; overflow: auto; }
+/* the active step mirrors the abund-step-N class on #main (no JS); see .step-tabs below */
+#main.abund-step-1 .abund-step-btn[data-step="1"],
+#main.abund-step-2 .abund-step-btn[data-step="2"],
+#main.abund-step-3 .abund-step-btn[data-step="3"] { color: var(--text); border-bottom-color: var(--accent); }
+.abund-row { cursor: pointer; }
+.abund-row:hover td { background: rgba(74, 144, 226, 0.14); }
+.abund-row.line-excluded { opacity: 0.4; }
+.abund-mask-chk { cursor: pointer; vertical-align: middle; }
+.abund-flags { color: #e0a05c; }
+.abund-summary { padding: 8px 4px 2px; font-weight: 600; }
+.abund-budget { font-weight: 400; color: var(--text-muted); }
+
+/* ---------------------------------------------------------------------------
+   Abundance-correction tool: mirrors the abundance tool (toolbar button, right
+   panel, left-sidebar result objects, centre ΔA scatter + per-line table).
+   --------------------------------------------------------------------------- */
+#abundcorr-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+/* right-sidebar control panel */
+.abundcorr-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; overflow-y: auto; }
+.sidebar-right.corr-active > .tab-bar,
+.sidebar-right.corr-active > .tab-content { display: none; }
+.sidebar-right.corr-active .abundcorr-panel { display: flex; }
+.sidebar-right.corr-active .lines-panel { display: none; }
+.corr-step-panel { display: none; flex-direction: column; gap: 8px; }
+#main.corr-step-1 ~ .sidebar-right .corr-step-1-panel,
+#main.corr-step-2 ~ .sidebar-right .corr-step-2-panel,
+#main.corr-step-3 ~ .sidebar-right .corr-step-3-panel { display: flex; }
+.corr-run-ref, .corr-run-corr { display: block; width: 100%; margin-top: 4px; }
+
+/* centre correction view: reference spectrum (steps 1-2) or ΔA scatter (step 3) on top,
+   per-line table below, and a step-switcher footer. Reuses #canvas-wrap for the spectrum. */
+#corr-scatter, #corr-bottom, #corr-steps { display: none; }
+#main.corr-mode #top-panel { display: none; }
+#main.corr-mode #canvas-wrap { display: flex; }
+#main.corr-mode #corr-bottom { display: flex; flex: 0 0 42%; min-height: 0; flex-direction: column; }
+#main.corr-mode #corr-steps { display: flex; flex: 0 0 auto; padding: 6px 0 0; }
+#main.corr-mode.corr-step-3 #canvas-wrap { display: none; }
+#main.corr-mode.corr-step-3 #corr-scatter { display: flex; flex: 1; min-height: 0; }
+#corr-table { flex: 1; min-height: 0; overflow: auto; }
+#main.corr-step-1 .corr-step-btn[data-step="1"],
+#main.corr-step-2 .corr-step-btn[data-step="2"],
+#main.corr-step-3 .corr-step-btn[data-step="3"] { color: var(--text); border-bottom-color: var(--accent); }
+.corr-row { cursor: pointer; }
+.corr-row:hover td { background: rgba(74, 144, 226, 0.14); }
+.corr-row.line-excluded { opacity: 0.4; }
+.corr-mask-chk { cursor: pointer; vertical-align: middle; }
+
+/* ---------------------------------------------------------------------------
+   Stellar-parameter tool: mirrors the abundance tool (toolbar button, right
+   panel, left-sidebar result objects, centre A(Fe) scatter + per-line table).
+   --------------------------------------------------------------------------- */
+#sparams-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+/* right-sidebar control panel */
+.sparam-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; overflow-y: auto; }
+.sidebar-right.sparam-active > .tab-bar,
+.sidebar-right.sparam-active > .tab-content { display: none; }
+.sidebar-right.sparam-active .sparam-panel { display: flex; }
+.sidebar-right.sparam-active .lines-panel { display: none; }
+.sparam-step-panel { display: none; flex-direction: column; gap: 8px; }
+#main.sparam-step-1 ~ .sidebar-right .sparam-step-1-panel,
+#main.sparam-step-2 ~ .sidebar-right .sparam-step-2-panel,
+#main.sparam-step-3 ~ .sidebar-right .sparam-step-3-panel { display: flex; }
+.sparam-run-lines, .sparam-run-solve { display: block; width: 100%; margin-top: 4px; }
+
+/* centre parameter view: target spectrum (steps 1-2) or A(Fe) scatter (step 3) on top,
+   per-line table + iteration status below, and a step-switcher footer. */
+#sparam-scatter, #sparam-bottom, #sparam-steps { display: none; }
+#main.sparam-mode #top-panel { display: none; }
+#main.sparam-mode #canvas-wrap { display: flex; }
+#main.sparam-mode #sparam-bottom { display: flex; flex: 0 0 42%; min-height: 0; flex-direction: column; }
+#main.sparam-mode #sparam-steps { display: flex; flex: 0 0 auto; padding: 6px 0 0; }
+#main.sparam-mode.sparam-step-3 #canvas-wrap { display: none; }
+#main.sparam-mode.sparam-step-3 #sparam-scatter { display: flex; flex: 1; min-height: 0; }
+#sparam-table { flex: 1; min-height: 0; overflow: auto; }
+#main.sparam-step-1 .sparam-step-btn[data-step="1"],
+#main.sparam-step-2 .sparam-step-btn[data-step="2"],
+#main.sparam-step-3 .sparam-step-btn[data-step="3"] { color: var(--text); border-bottom-color: var(--accent); }
+.sparam-row { cursor: pointer; }
+.sparam-row:hover td { background: rgba(74, 144, 226, 0.14); }
+.sparam-row.line-excluded { opacity: 0.4; }
+.sparam-mask-chk { cursor: pointer; vertical-align: middle; }
+/* the streaming iteration/convergence line under the table */
+.sparam-status { border-top: 1px solid var(--border); margin-top: 4px; }

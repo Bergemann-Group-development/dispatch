@@ -47,7 +47,8 @@ class Spectrum:
         xunit : astropy.units.Unit, optional
             Unit for xdata if xdata is not already a Quantity. Default is u.angstrom.
         yunit : astropy.units.Unit, optional
-            Unit for ydata if ydata is not already a Quantity. Default is u.erg / (u.s * u.cm**2 * u.angstrom).
+            Unit for ydata if ydata is not already a Quantity. Default is
+            dimensionless (i.e. a normalized spectrum).
         xref : float or astropy.units.Quantity, optional
             Reference x value. If provided, xdata is relative to this value.
         """
@@ -56,7 +57,7 @@ class Spectrum:
             raise ValueError("xdata and ydata must have the same length.")
 
         default_xunit = u.angstrom
-        default_yunit = u.erg / (u.s * u.cm**2 * u.angstrom)
+        default_yunit = u.dimensionless_unscaled
         xunit = xunit or default_xunit
         yunit = yunit or default_yunit
 
@@ -221,7 +222,7 @@ class Spectrum:
 
         if label is not None:
             if '{weq' in label:
-                weq = self.get_weq(profile='trapz', auto_crop=False)
+                weq = self.get_weq(profile='trapz', auto_crop=False, target_unit=u.mAA)
                 label = label.format(weq=weq.value)
 
         xdata = self.xdata.value
@@ -340,15 +341,20 @@ class Spectrum:
         vshift=None,
         newx=None,
         renorm=False,
+        window=None,
         **kwargs,
     ):
         """
         Crop the spectrum to a specified range.
 
-        Can provide either (x0, dx) or (xmin, xmax) or newx.
+        The preferred way to give the range is ``window=(xmin, xmax)``; the older
+        (x0, dx) / (xmin, xmax) / slc / newx spellings remain supported.
 
         Parameters:
         -----------
+        window : tuple of two floats/Quantities, optional
+            The crop range as one ``(xmin, xmax)`` pair (canonical form; mutually
+            exclusive with x0/dx, xmin/xmax and slc).
         x0 : float or astropy.units.Quantity, optional
             Central position of the crop window.
         dx : float or astropy.units.Quantity, optional
@@ -363,9 +369,9 @@ class Spectrum:
              New x-grid to interpolate onto.
              If provided, xmin/xmax are inferred from this grid if not given.
         kwargs : dict
-            Convolution parameters (res, vrot, vdop, zeta_rt, custom).
-            If provided, performs crop -> convolve -> final crop.
-            Units for convolution parameters assume km/s if not specified.
+            Convolution parameters (res, vrot, vdop, zeta_rt, custom); see also the
+            explicit :meth:`convolve`. If provided, performs crop -> convolve -> final
+            crop. Units for convolution parameters assume km/s if not specified.
 
         Returns:
         --------
@@ -373,6 +379,12 @@ class Spectrum:
         """
         # Parse crop arguments
         # Use ensure_unit to handle unit conversions and defaults
+        if window is not None:
+            if any(v is not None for v in (x0, dx, xmin, xmax, slc)):
+                raise ValueError(
+                    "window=(xmin, xmax) is mutually exclusive with x0/dx, xmin/xmax and slc.")
+            xmin, xmax = window
+
         if newx is not None:
             newx = ensure_unit(newx, self.xunit)
             # Infer bounds if not given
@@ -550,10 +562,12 @@ class Spectrum:
             return news
 
         def fit_params(s):
-            def residuals(u):
-                params = u * scale  # tolerance units -> physical units
+            def residuals(uvec):
+                params = uvec * scale  # tolerance units -> physical units
                 if integrate:
-                    r = s.get_weq(profile='trapz', auto_crop=False) - evaluate(s.xdata, *params).get_weq(profile='trapz', auto_crop=False)
+                    r = (s.get_weq(profile='trapz', auto_crop=False, target_unit=u.mAA)
+                         - evaluate(s.xdata, *params).get_weq(profile='trapz', auto_crop=False,
+                                                              target_unit=u.mAA))
                     r = r.value
                 else:
                     r = s.ydata - evaluate(s.xdata, *params).ydata
@@ -640,34 +654,87 @@ class Spectrum:
 
     def fit_line_profile(self, **kwargs):
         """
-        Fit a line profile to the spectrum.
+        Fit a line profile to the spectrum and return the fitted model on this grid.
 
         Parameters:
         -----------
         **kwargs : dict
-            Keyword arguments to pass to fit_line_profile.
+            Keyword arguments to pass to :func:`tumult.utils.fit_line_profile`
+            (``profile=``, ``x0=``, ``dlam=``, ...).
 
         Returns:
         --------
         Spectrum
-            A new Spectrum instance with the fitted line profile.
+            A new Spectrum instance carrying the fitted line profile.
         """
-        popt, fitted, weq, eweq = fit_line_profile(*self, **kwargs)
-        return Spectrum(self.xdata, fitted, xref=self.xref)
+        # (pre-consolidation this unpacked 4 values from the 3-value fit_line_profile
+        # and could never have run; fixed to evaluate the fitted model on the grid)
+        x, y = self.values
+        pout, pcov, func = fit_line_profile(x, y, **kwargs)
+        if pout is None:
+            raise ValueError("Line profile fit failed over the given data.")
+        return Spectrum(self.xdata, func(x), yunit=self.yunit, xref=self.xref)
+
+    def measure(self, window=None, *, profile="gauss", x0=None, **kwargs):
+        """Measure a line over ``window`` and return the bound :class:`tumult.profile.Profile`.
+
+        The single rich entry point for equivalent widths: the returned Profile carries
+        the width (``.mAA``/``.weq``), the reduced EW (``.rew``), the FWHM, the fitted
+        model ``.func`` and the photon / continuum error split - everything the flag
+        combinations of :meth:`get_weq` used to select between.
+
+        Parameters
+        ----------
+        window : tuple, optional
+            ``(xmin, xmax)`` crop range; None measures over the full spectrum.
+        profile : str
+            Registered profile name (``gauss``, ``voigt``, ``asym_gauss``, ``trapz``,
+            ``pchip``).
+        x0 : float or Quantity, optional
+            Line centre; a plain number is interpreted in this spectrum's x-unit.
+        **kwargs
+            Forwarded to :func:`tumult.utils.get_weq` (``sigma=`` per-pixel noise,
+            ``syst=`` fractional continuum offset, ...).
+        """
+        sub = self.crop(window=window) if window is not None else self
+        if x0 is not None and not isinstance(x0, u.Quantity):
+            x0 = x0 * sub.xunit
+        return get_weq(*sub, profile=profile, x0=x0, return_profile=True, **kwargs)
+
+    def convolve(self, *, res=None, vrot=None, vdop=None, zeta_rt=None, custom=None,
+                 vshift=None):
+        """Return a broadened (and optionally Doppler-shifted) copy of the spectrum.
+
+        Explicit entry point over the broadening kernels in :mod:`tumult.convolutions`:
+        ``res`` instrumental resolution R (or ``(old, new)``), ``vrot`` rotational,
+        ``vdop`` Gaussian, ``zeta_rt`` radial-tangential macroturbulence [km/s],
+        ``custom`` a ``(velocity, weight)`` kernel. Equivalent to passing the same
+        keywords to :meth:`crop`, which remains supported.
+        """
+        conv = {k: v for k, v in dict(res=res, vrot=vrot, vdop=vdop, zeta_rt=zeta_rt,
+                                      custom=custom).items() if v is not None}
+        if not conv and vshift is None:
+            return self
+        return self.crop(vshift=vshift, **conv)
 
     def get_weq(self, **kwargs):
         """
-        Calculate the equivalent width of the spectrum.
+        Calculate the equivalent width of the spectrum (compatibility wrapper).
+
+        Prefer :meth:`measure`, which returns the rich Profile object. By default this
+        returns the *reduced* equivalent width ``log10(W/λ)`` (dimensionless), which
+        needs a reference wavelength ``x0=``. Pass a width ``target_unit`` (e.g. ``u.mAA``) to get
+        the width itself as a Quantity instead. See :func:`tumult.utils.get_weq`.
 
         Parameters:
         -----------
         **kwargs : dict
-            Keyword arguments to pass to fit_line_profile.
+            Keyword arguments forwarded to :func:`tumult.utils.get_weq`.
 
         Returns:
         --------
-        float
-            The equivalent width of the spectrum.
+        float or astropy.units.Quantity
+            The reduced EW (default) or the width when ``target_unit`` is given.
         """
         return get_weq(*self, **kwargs)
     

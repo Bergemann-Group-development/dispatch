@@ -17,18 +17,20 @@ from bokeh.models import TextInput
 
 import store
 import synth
-from htmlbridge import html_bridge
+from htmlbridge import html_bridge, parse_action
 
-# stellar axes (label, step) and the post-processing params (label, step); 'vmac' is the UI
-# name for the macroturbulence param the engine calls 'zeta_rt'.
-_STELLAR = [("teff", "Teff [K]", 1), ("logg", "log g", 0.01),
-            ("feh", "[Fe/H]", 0.01), ("vmic", "vmic [km/s]", 0.1)]
+# stellar axes (label, step), shared with the Synthesize tab; the post-processing params
+# (label, step); 'vmac' is the UI name for the macroturbulence param the engine calls
+# 'zeta_rt'.
+_STELLAR = [(k, lab, step) for k, lab, step, _ in synth.STELLAR_PARAMS]
 _POST = [("vshift", "vshift [km/s]", 0.1), ("vmac", "vmac ζ [km/s]", 0.1),
          ("vrot", "vrot [km/s]", 0.1)]
 POST_ENGINE = {"vshift": "vshift", "vmac": "zeta_rt", "vrot": "vrot"}
 
-FIT_DEFAULTS = {"teff": 5777, "logg": 4.4, "feh": 0.0, "vmic": 1.0,
-                "abundances": "", "relative": True,
+# the free-text Abundances override + the relative-abundances flag are NOT here: they live
+# on the shared abundance form owned by SynthPanel (one source of truth across both tabs).
+# This tab keeps only the per-element fit rows, displayed against that shared ``relative``.
+FIT_DEFAULTS = {**{k: d for k, _, _, d in synth.STELLAR_PARAMS},
                 "vshift": 0.0, "vmac": 0.0, "vrot": 0.0}
 
 
@@ -58,6 +60,7 @@ class FitTab:
         self.vals.update({k: saved[k] for k in FIT_DEFAULTS if k in saved})
         self.flags = {k: bool(saved.get(f"fit_{k}", False))
                       for k, *_ in _STELLAR + _POST}
+        self.relative = True       # shared relative-abundances flag, synced by SynthPanel
         self.abund_rows = dict(saved.get("abund_rows", {}))   # {element: guess}
         self.target = saved.get("target", "")     # selected target uid
         self.targets = []                          # [(uid, name)] from the canvas
@@ -78,7 +81,15 @@ class FitTab:
     def set_catalog(self, prefs):
         """Load the abundance element list + solar values from preferences."""
         self.solar = synth.abund_table(prefs)
-        self.elements = [el for el in self.solar if el not in ("H", "Fe")]
+        self.elements = synth.abund_elements(prefs)
+
+    def set_relative(self, rel):
+        """Sync the shared relative-abundances flag (owned by SynthPanel); re-render the fit
+        rows if it changed (they are stored as [X/Fe] but displayed as A(X) when off)."""
+        rel = bool(rel)
+        if rel != self.relative:
+            self.relative = rel
+            self.render()
 
     def set_targets(self, targets):
         """``targets`` = [(uid, name)] of current canvas objects; keep the selection valid.
@@ -109,9 +120,9 @@ class FitTab:
                 f'{opts}</select></div>')
 
     def _abund_rows_html(self):
-        # rows are stored canonically as [X/Fe] (the fit grid is always [X/Fe]); the switch
-        # only changes how they are displayed/entered (absolute A(X) when off).
-        rel = self.vals["relative"]
+        # rows are stored canonically as [X/Fe] (the fit grid is always [X/Fe]); the shared
+        # relative switch only changes how they are displayed/entered (absolute A(X) when off).
+        rel = self.relative
         feh = float(self.vals.get("feh") or 0.0)
         rows = []
         for el, xfe in self.abund_rows.items():
@@ -132,8 +143,6 @@ class FitTab:
 
     def html(self):
         v = self.vals
-        rel = ' checked' if v["relative"] else ''
-        ab_ph = "fixed [X/Fe], e.g. Ba=0.3" if v["relative"] else "fixed A(X), e.g. Ba=2.5"
         return (
             self._target_select()
             + '<div class="section-header">Stellar parameters</div>'
@@ -142,14 +151,6 @@ class FitTab:
             + '<div class="section-header">RV &amp; broadening</div>'
             + "".join(_fit_row(k, lab, float(v[k]), self.flags[k], step)
                       for k, lab, step in _POST)
-            + '<div class="field-group"><label>Abundances</label>'
-              '<input type="text" class="field-input" data-form="synthfit" '
-              f'data-field="abundances" value="{html.escape(str(v["abundances"]))}" '
-              f'placeholder="{ab_ph}"></div>'
-            + '<div class="field-group field-inline"><label>Relative abundances</label>'
-              '<label class="switch"><input type="checkbox" class="field-input" '
-              f'data-form="synthfit" data-field="relative" data-checkbox="1"{rel}>'
-              '<span class="switch-track"></span></label></div>'
             + '<div class="section-header">Fit abundances</div>'
             + self._abund_rows_html()
         )
@@ -178,17 +179,6 @@ class FitTab:
             if raw and raw not in self.abund_rows:
                 self.abund_rows[raw] = 0.0     # fit rows are always [X/Fe]; 0 = solar-scaled
                 rerender = True
-        elif key == "relative":
-            new_rel = raw.lower() in ("1", "true", "on", "yes")
-            # convert the fixed free-text overrides so the physical abundance is preserved
-            if new_rel != self.vals["relative"] and str(self.vals["abundances"]).strip():
-                feh = float(self.vals.get("feh") or 0.0)
-                self.vals["abundances"] = synth.convert_abundances(
-                    self.vals["abundances"], to_relative=new_rel, feh=feh, solar=self.solar)
-            self.vals["relative"] = new_rel
-            rerender = True
-        elif key == "abundances":
-            self.vals["abundances"] = raw
         elif key.startswith("fit_"):
             self.flags[key[4:]] = raw.lower() in ("1", "true", "on", "yes")
         elif key.startswith("abund_"):
@@ -198,7 +188,7 @@ class FitTab:
             except ValueError:
                 pass
             else:                              # the input is in the displayed unit -> store [X/Fe]
-                if self.vals["relative"]:
+                if self.relative:
                     self.abund_rows[el] = disp
                 else:
                     feh = float(self.vals.get("feh") or 0.0)
@@ -209,7 +199,7 @@ class FitTab:
             except ValueError:
                 self.vals[key] = raw
             # in absolute mode the displayed A(X) of each row depends on [Fe/H]
-            if key == "feh" and not self.vals["relative"] and self.abund_rows:
+            if key == "feh" and not self.relative and self.abund_rows:
                 rerender = True
         self._persist()
         if rerender:
@@ -218,8 +208,7 @@ class FitTab:
     def _on_action(self, attr, old, new):
         if not new:
             return
-        kind, _, rest = new.partition(" ")
-        arg = rest.rsplit(" ", 1)[0]
+        kind, arg = parse_action(new)
         if kind == "del" and arg in self.abund_rows:
             del self.abund_rows[arg]
             self._persist()
@@ -229,7 +218,10 @@ class FitTab:
 
     # --- fit I/O ----------------------------------------------------------
     def collect(self):
-        """Inputs for ``synth.fit`` (post param names already mapped to the engine names)."""
+        """Inputs for ``synth.fit`` (post param names already mapped to the engine names).
+
+        The free-text ``abundances`` override and the ``relative`` flag come from the shared
+        abundance form (SynthPanel supplies them), not from here."""
         return {
             "target": self.target,
             "guesses": {k: float(self.vals[k]) for k, *_ in _STELLAR},
@@ -237,8 +229,6 @@ class FitTab:
             "abund_fits": {el: float(v) for el, v in self.abund_rows.items()},
             "fit_post": {POST_ENGINE[k]: float(self.vals[k]) for k, *_ in _POST
                          if self.flags[k]},
-            "abundances": self.vals["abundances"],
-            "relative": bool(self.vals["relative"]),
         }
 
     def populate(self, best):

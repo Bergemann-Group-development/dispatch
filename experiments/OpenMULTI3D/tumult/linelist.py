@@ -103,12 +103,16 @@ class LineList(pd.DataFrame):
     llist = pd.DataFrame()
     with open(filename) as f:
         lines = f.readlines()
-        names = ['lam0', 'evi', 'loggf', 'gv', 'ga', 'gq', 'i', 'j']
+        # strength is a trailing diagnostic column written by linelist_out.txt
+        names = ['lam0', 'evi', 'loggf', 'gv', 'ga', 'gq', 'i', 'j', 'strength']
         df_dict = {}
         usecols = lambda col: col is None or col < len(names)
 
         while len(lines) > 0:
-            species = lines.pop(0).split()[0].strip().strip("'")
+            header = lines.pop(0).strip()
+            # species is the first single-quoted field ("'Fe I'"), optionally followed by
+            # a label; split on the quote so the ion stage that .split()[0] dropped is kept
+            species = header.split("'")[1].strip() if "'" in header else header.split()[0].strip()
             line = lines.pop(0).strip()
             iso_id, nlines = split_words(line)
             iso = int(iso_id.strip("'").split('.')[-1])
@@ -130,13 +134,6 @@ class LineList(pd.DataFrame):
         llist = pd.concat(df_dict, names=['ion', 'iso', None])
         llist = llist.sort_index()
 
-    return cls(llist)
-  
-  @classmethod
-  def from_dispatch_format(cls, filename):
-    llist = pd.read_csv(filename, sep=r'\s+', quotechar="'")
-    llist = llist.rename(columns={'lam_air':'lam0'})
-    llist = llist.sort_values(by='lam0')
     return cls(llist)
   
   @classmethod

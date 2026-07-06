@@ -23,9 +23,14 @@ def _kept(cls, d):
 @dataclass
 class ObjectSnap:
     """One restorable spectrum: where it was loaded from plus its display state."""
-    kind: str = ""            # "file" | "run" (synth runs aren't restorable, so aren't saved)
+    kind: str = ""            # "file" | "run" (path-backed) | "synth" (data embedded below)
     path: str = ""
     name: str = ""
+    # synth runs are interpolated, with no backing file/folder, so their x/y are
+    # embedded here (a Spectrum.to_dict()); file/run objects leave this None and reload by path.
+    data: Optional[dict] = None
+    # Info-tab provenance (synth params); FITS metadata is re-read from the file, not stored.
+    meta: Optional[dict] = None
     color: Optional[str] = None
     dash: Optional[str] = None
     width: Optional[float] = None
@@ -61,6 +66,11 @@ class Workspace:
     view: dict = field(default_factory=dict)      # {"main": [lo, hi] | None, "nav": ...}
     selected: int = 0
     filter: FilterSnap = field(default_factory=FilterSnap)
+    # tool results, each an opaque {"results": [...], "selected": uid} built by the tool itself
+    # (see the snapshot() of AbundanceTool / AbundCorrTool / SParamTool)
+    abundance: dict = field(default_factory=dict)
+    abundcorr: dict = field(default_factory=dict)
+    sparams: dict = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, d):
@@ -71,6 +81,9 @@ class Workspace:
             view=dict(d.get("view") or {}),
             selected=int(d.get("selected") or 0),
             filter=FilterSnap.from_dict(d.get("filter") or {}),
+            abundance=dict(d.get("abundance") or {}),
+            abundcorr=dict(d.get("abundcorr") or {}),
+            sparams=dict(d.get("sparams") or {}),
         )
 
     def to_dict(self):

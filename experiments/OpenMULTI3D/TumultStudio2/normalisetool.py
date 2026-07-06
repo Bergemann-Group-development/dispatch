@@ -24,20 +24,21 @@ from tumult.utils import pchip_mono
 from canvas import ACCENT
 from controls import Field, Form
 from debounce import Debouncer
+from tool import Tool
 from units import to_value
 
 RED = "#e05c5c"
 N_SPLINE = 400   # samples of the drawn continuum curve
 
 
-class NormaliseTool:
-    def __init__(self, canvas, on_panel=None, on_mode=None, notify=None, debounce_ms=200):
-        self.canvas = canvas
-        self.main = canvas.main
-        self.on_panel = on_panel    # push the Normalise panel HTML
-        self.on_mode = on_mode      # push "on"/"off" to show/hide the panel + button state
-        self.notify = notify or (lambda *a, **k: None)
-        self.active = False
+class NormaliseTool(Tool):
+    name = "normalise"
+
+    def __init__(self, ctx, debounce_ms=200):
+        Tool.__init__(self, ctx)
+        self.main = self.canvas.main
+        self.own_panel("norm-panel-content")
+        self.own_mode_bridges((".sidebar-right", "norm-active"), ("#normalise-btn", "active"))
         self._uid = None            # the object being edited
         self._suppress = False      # guard programmatic knot writes against the refit
         self._saved_range = None    # main x-range to restore when the tool closes
@@ -86,10 +87,8 @@ class NormaliseTool:
         self.canvas.set_norm_edit(obj.uid)   # show this spectrum raw, hide the others
         self._zoom_full()                    # fit the whole spectrum for continuum work
         self._sync_prenorm(obj)              # render + show/hide the spline per prenorm
-        if self.on_panel:
-            self.on_panel(self)
-        if self.on_mode:
-            self.on_mode("on")
+        self.push_panel()
+        self.push_mode("on")
 
     def deactivate(self):
         if not self.active:
@@ -102,8 +101,7 @@ class NormaliseTool:
             self.main.toolbar.active_drag = "auto"
         self.canvas.set_norm_edit(None)      # back to the normalised view
         self._restore_range()
-        if self.on_mode:
-            self.on_mode("off")
+        self.push_mode("off")
 
     def _zoom_full(self):
         r = self.main.x_range
@@ -128,8 +126,7 @@ class NormaliseTool:
         self.canvas.normalise_object(obj)   # back to the flat percentile continuum
         self._render_selection()
         self._redraw_spline(obj)                 # show the flat initial-continuum guide
-        if self.on_panel:
-            self.on_panel(self)
+        self.push_panel()
 
     def _sync_prenorm(self, obj):
         """Render the view and show/hide the spline affordances for obj.already_normalised."""
@@ -155,8 +152,7 @@ class NormaliseTool:
             self._set_knots([], [])
         self.canvas.normalise_object(obj)
         self._sync_prenorm(obj)
-        if self.on_panel:
-            self.on_panel(self)
+        self.push_panel()
 
     def _build_fit_spectrum(self, obj):
         """The spectrum the spline is fit to and rendered: the raw spectrum low-pass
@@ -278,8 +274,7 @@ class NormaliseTool:
         obj = self._obs()
         if obj is not None:
             self._recompute(obj)
-            if self.on_panel:
-                self.on_panel(self)
+            self.push_panel()
 
     def _recompute(self, obj):
         """Rebuild obj.norm_knots (native) from the on-canvas knots and renormalise."""

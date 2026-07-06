@@ -10,7 +10,7 @@ MODULE rt_patch_mod
   USE trace_mod
   USE bits_mod
   USE os_mod
-  USE const_mod, only: CC, h_k, twoh_c2, half, one_third, one_sixth
+  USE const_mod, only: CC, h_k, twoh_c2, half, one_third, one_sixth, HZ_TO_AA
   USE patch_mod, only: patch_t
   USE mmath_mod, only: cc_kernel
   USE op_math_mod, only: pchip_mono
@@ -27,7 +27,12 @@ MODULE rt_patch_mod
     long_solver, fixed_Jnu, n_nu, save_Jnu, maxiter
   USE ray_mod, only: one_dimensional, ray_type, rstar, rorigin
   USE trans_mod, only: line_type, cont_type
-  USE bbtrans_mod, only: voigt_function2, voigt_profile
+  USE bbtrans_mod, only: voigt_function2, voigt_profile, tolerance
+  USE linelist_mod, only: ll_add_opacity => add_opacity, ll_add_rates => add_rates, &
+    ll_add_opacity_equi => add_opacity_equi, voigt_peak
+  USE element_mod, only: element_type
+  USE molecule_mod, only: molec_type
+  USE ion_mod, only: particle_type
   USE bftrans_mod, only: H_occupation_probability
   USE hprofl_mod, only: hprofile
   USE m3d_debug_mod
@@ -56,6 +61,16 @@ MODULE rt_patch_mod
     integer :: mus, mue, n_set, n_mu, natom
     logical :: bound_bound, bound_free
     logical, dimension(:), allocatable :: get_rates
+    integer :: nx, ny, nz
+    real(4), dimension(:,:,:,:,:), allocatable :: work, back
+    real(4), dimension(:,:,:,:,:,:), allocatable :: cntrbf_data
+    real(4), dimension(:,:,:,:,:), allocatable :: cntrbf_tmp
+    ! use_new_linelist path for model-atom bb transitions (see linelist_mod)
+    logical, dimension(:), allocatable :: use_ll        ! per atom: SoA kernel path active
+    real(4), dimension(:,:,:,:), allocatable :: logref  ! log(tol*cont/voigt_peak) per set
+    real(4), dimension(:,:,:,:), allocatable :: b4      ! real(4) copy of adata%b
+    class(atom_data_t), pointer :: b4_ptr => null()     ! adata the b4 copy belongs to
+    real(8), dimension(:), allocatable :: llam          ! log(lambda[AA]) of the patch grid
   contains
     procedure :: pre_init => rt_patch_pre_init
     procedure :: init_patch_trans
@@ -77,6 +92,8 @@ MODULE rt_patch_mod
     procedure :: add_bound_bound_opacities
     procedure :: bound_bound_rates
     procedure :: bound_free_rates
+    procedure :: fill_b4
+    procedure :: reduce_ll_diag
     procedure :: convert_to_work_units
     procedure :: reset_array
     procedure :: back_to_work
@@ -109,12 +126,12 @@ MODULE rt_patch_mod
   integer, save:: verbose=0                           ! verbosity
   integer, public :: n_cntrbf=0
   integer, public, dimension(:), allocatable :: cntrbf_lines
-  integer :: f, x, y, z, nx, ny, nz, nf
-  real(4), dimension(:,:,:,:,:), allocatable, target :: work, back
-  real(4), dimension(:,:,:,:,:,:), allocatable :: cntrbf_data
-  real(4), dimension(:,:,:,:,:), allocatable :: cntrbf_tmp
-  !$omp threadprivate(work, back, x, y, z, nx, ny, nz, f, nf)
-  !$omp threadprivate(cntrbf_data, cntrbf_tmp)
+  ! NB: work, back, cntrbf_data, cntrbf_tmp and the patch dimensions nx,ny,nz are
+  ! now components of rt_patch_t (owned per patch); the loop indices x,y,z,f are
+  ! plain locals in each routine. They used to live here as module threadprivate
+  ! variables, which on macOS/GCC routed every access through emulated TLS
+  ! (pthread_getspecific). One thread per patch makes instance/local data both
+  ! race-free and TLS-free.
 
 contains
 
@@ -174,6 +191,12 @@ contains
     self%bound_bound = any([(associated(self%atoms(i)%trans%line), i=1, self%natom)])
     self%bound_free = any([(associated(self%atoms(i)%trans%cont), i=1, self%natom)])
     allocate(self%trans(self%natom))
+    allocate(self%use_ll(self%natom))
+    ! SoA kernel path for atom lines: disabled for now (no speed gain over the old
+    ! formalism for dense model atoms); atom%build_ll still runs globally so the
+    ! transitions are exported in linelist_out.txt. Re-enable by restoring
+    !   use_new_linelist .and. associated(self%atoms(i)%species)
+    self%use_ll = .false.
 
     do k=1, self%natom
       associate(atom=>self%atoms(k), trans=>self%trans(k))
@@ -224,6 +247,11 @@ contains
             j = j + 1
           end do
         endif
+        ! windowed SoA copy of the (non-hydrogen) patch line subset for the
+        ! use_new_linelist opacity/rate kernels
+        if (self%use_ll(k) .and. self%bound_bound) then
+          call atom%build_ll(trans, self%fs)
+        endif
       end associate
     end do
   END SUBROUTINE init_patch_trans
@@ -260,12 +288,12 @@ contains
     call trace%begin('rt_patch%execute', itimer=itimer)
     fs = self%fs
     fe = self%fe
-    nx = self%patch%n(1)
-    ny = self%patch%n(2)
-    nz = self%patch%n(3)
+    self%nx = self%patch%n(1)
+    self%ny = self%patch%n(2)
+    self%nz = self%patch%n(3)
     ng = self%ng(3)
     zs = 1 - ng
-    ze = nz + ng
+    ze = self%nz + ng
 
     self%nu(fs:fe) => self%sp%nu(fs:fe)
     call self%sub_sp%reset(nu=self%nu(fs:fe))
@@ -341,6 +369,10 @@ contains
       end do
     endif
 
+    if (allocated(self%use_ll) .and. self%do_final) then
+      if (any(self%use_ll)) call self%reduce_ll_diag()
+    endif
+
     if (end_boundary) then
       if (self%do_final .and. self%n_mu>0) then
         call self%save_intensity()
@@ -365,53 +397,66 @@ contains
 
     !-----------------------------------------------------------------------------
     subroutine allocate_arrays()
-      allocate(back(fs:fe,nx,ny,nz,0:3), source=0.)
-      allocate(work(fs:fe,nx,ny,zs:ze,3), source=0.)
+      allocate(self%back(fs:fe,self%nx,self%ny,self%nz,0:3), source=0.)
+      allocate(self%work(fs:fe,self%nx,self%ny,zs:ze,3), source=0.)
       allocate(self%twohnu3_c2(fs:fe))
-      allocate(vproj(nx,ny,nz))
+      allocate(vproj(self%nx,self%ny,self%nz))
+      self%b4_ptr => null()  ! departure coefficients may have changed since last execute
       self%twohnu3_c2 = twoh_c2 * self%nu**3
-      call mem_register(back,      label='back')
-      call mem_register(work,      label='work')
+      call mem_register(self%back,      label='self%back')
+      call mem_register(self%work,      label='self%work')
       if (.not. allocated(self%Jnu)) then
-        allocate(self%Jnu(fs:fe,nx,ny,nz,self%n_set), source=0.)
+        allocate(self%Jnu(fs:fe,self%nx,self%ny,self%nz,self%n_set), source=0.)
         call mem_register(self%Jnu, label='Jnu')
       endif
       do i=1, self%natom
         trans => self%trans(i)
         if (self%bound_bound) then
-          call os%allocate(trans%adamp, [nx,ny,nz,size(trans%line)], label='adamp', zero=.true.)
+          ! with the SoA kernel path, adamp is only read by the old-formalism loops,
+          ! which then handle just the hydrogen lines
+          if (.not. self%use_ll(i) .or. any(trans%line%hydrogen)) then
+            call os%allocate(trans%adamp, [self%nx,self%ny,self%nz,size(trans%line)], label='adamp', zero=.true.)
+          endif
         endif
         if (self%get_rates(i)) then
           nrad = size(trans%line) + size(trans%cont)
-          call os%allocate(trans%gamma_ij, [nx,ny,nz,nrad], label='gamma_ij', zero=.true.)
-          call os%allocate(trans%gamma_ji, [nx,ny,nz,nrad], label='gamma_ji', zero=.true.)
+          call os%allocate(trans%gamma_ij, [self%nx,self%ny,self%nz,nrad], label='gamma_ij', zero=.true.)
+          call os%allocate(trans%gamma_ji, [self%nx,self%ny,self%nz,nrad], label='gamma_ji', zero=.true.)
         endif
       end do
+      if (allocated(self%use_ll)) then
+        if (self%bound_bound .and. any(self%use_ll)) then
+          allocate(self%logref(fs:fe,self%nx,self%ny,self%nz))
+          call mem_register(self%logref, label='self%logref')
+          allocate(self%llam(fs:fe))
+          self%llam = log(HZ_TO_AA / self%nu(fs:fe))
+        endif
+      endif
       if (any(self%get_rates)) then
-        allocate(self%Psi(fs:fe,nx,ny,nz), source=0.)
+        allocate(self%Psi(fs:fe,self%nx,self%ny,self%nz), source=0.)
         call mem_register(self%Psi, label='Psi')
         if (self%bound_free) then
-          allocate(self%PsiJ(fs:fe,nx,ny,nz), source=0.)
+          allocate(self%PsiJ(fs:fe,self%nx,self%ny,self%nz), source=0.)
           call mem_register(self%PsiJ, label='PsiJ')
         endif
       endif
       if (get_cntrbf) then
-        allocate(cntrbf_data(fs:fe,nx,ny,nz,2,self%mus:self%mue))
-        call mem_register(cntrbf_data, 'cntrbf_data')
-        allocate(cntrbf_tmp(fs:fe,nx,ny,nz,2))
-        call mem_register(cntrbf_tmp, 'cntrbf_tmp')
+        allocate(self%cntrbf_data(fs:fe,self%nx,self%ny,self%nz,2,self%mus:self%mue))
+        call mem_register(self%cntrbf_data, 'self%cntrbf_data')
+        allocate(self%cntrbf_tmp(fs:fe,self%nx,self%ny,self%nz,2))
+        call mem_register(self%cntrbf_tmp, 'self%cntrbf_tmp')
       endif
     end subroutine allocate_arrays
 
     !-----------------------------------------------------------------------------
     subroutine deallocate_arrays()
-      call mem_unregister(work     , label='work')
-      call mem_unregister(back     , label='back')
-      deallocate(work, back)
+      call mem_unregister(self%work     , label='self%work')
+      call mem_unregister(self%back     , label='self%back')
+      deallocate(self%work, self%back)
       deallocate(self%twohnu3_c2)
       do i=1, self%natom
         trans => self%trans(i)
-        if (self%bound_bound) then
+        if (self%bound_bound .and. allocated(trans%adamp)) then
           call os%deallocate(trans%adamp, label='adamp')
         endif
         if (self%get_rates(i)) then
@@ -419,6 +464,12 @@ contains
           call os%deallocate(trans%gamma_ji, label='gamma_ji')
         endif
       end do
+      if (allocated(self%logref)) then
+        call mem_unregister(self%logref, label='self%logref')
+        deallocate(self%logref)
+        deallocate(self%llam)
+      endif
+      if (allocated(self%b4)) deallocate(self%b4)
       if (allocated(self%Jnu) .and. Jnu_to_file) then
         call mem_unregister(self%Jnu, label='Jnu')
         deallocate(self%Jnu)
@@ -432,10 +483,10 @@ contains
         endif
       endif
       if (get_cntrbf) then
-        call mem_unregister(cntrbf_data, label='cntrbf_data')
-        deallocate(cntrbf_data)
-        call mem_unregister(cntrbf_tmp, label='cntrbf_tmp')
-        deallocate(cntrbf_tmp)
+        call mem_unregister(self%cntrbf_data, label='self%cntrbf_data')
+        deallocate(self%cntrbf_data)
+        call mem_unregister(self%cntrbf_tmp, label='self%cntrbf_tmp')
+        deallocate(self%cntrbf_tmp)
       endif
     end subroutine deallocate_arrays
   END SUBROUTINE execute
@@ -467,7 +518,7 @@ contains
     call self%lte_background_emission(comp, i_set, vec, include_absmet, do_rotate_atmos)
     call self%convert_to_work_units()
     call self%reset_array(self%Jnu(:,:,:,:,i_set:i_set))
-    call self%reset_array(work)
+    call self%reset_array(self%work)
     
     do i=1, self%natom
       associate(atom=>self%atoms(i), trans=>self%trans(i))
@@ -479,11 +530,44 @@ contains
         if (self%bound_free) then
           call self%add_bound_free_opacities(atom, trans, adata)
         endif
-        if (self%bound_bound .and. i_set==1) then
+        ! adamp is only allocated where the old-formalism loops still need it
+        ! (use_new_linelist off, or atoms with hydrogen lines)
+        if (self%bound_bound .and. i_set==1 .and. allocated(trans%adamp)) then
           call self%bound_bound_damping(comp, atom, trans, adata)
         endif
       end associate
     end do
+
+    ! log-space tolerance reference for the SoA line kernels; the continuum (back
+    ! work units, incl. bound-free) is fixed per i_set, so compute it once here and
+    ! reuse it for all mu directions
+    if (allocated(self%logref) .and. i_set /= 2) then
+      call fill_logref()
+    endif
+
+  contains
+    subroutine fill_logref()
+      real(4) :: log_tol, b
+      integer :: x, y, z, f
+      integer, save :: itimer=0
+      call trace%begin('rt_patch%fill_logref', itimer=itimer)
+      log_tol = log(tolerance / voigt_peak)
+      do z=1, self%nz
+        do y=1, self%ny
+          do x=1, self%nx
+            do f=self%fs, self%fe
+              b = self%back(f,x,y,z,1)
+              if (b > 0.) then
+                self%logref(f,x,y,z) = log_tol + log(b)
+              else
+                self%logref(f,x,y,z) = -huge(1.)
+              endif
+            end do
+          end do
+        end do
+      end do
+      call trace%end(itimer)
+    end subroutine fill_logref
   END SUBROUTINE background
 
   !===============================================================================
@@ -508,7 +592,8 @@ contains
           adata => atom%rotated_data(i_mu)
         endif
         if (self%bound_bound) then
-          call self%add_bound_bound_opacities(comp, atom, trans, adata, wmu, vproj, LTE=i_set==3)
+          call self%add_bound_bound_opacities(comp, atom, trans, adata, wmu, vproj, &
+                                              LTE=i_set==3, use_ll=self%use_ll(i))
         endif
       end associate
     end do
@@ -519,7 +604,7 @@ contains
         i = merge(i_mu+1, 1, do_rotate_atmos)
         departures => self%m3d_parent%departures(:,i)
       endif
-      associate(xhat=>work(:,:,:,1:nz,1), ehat=>work(:,:,:,1:nz,2))
+      associate(xhat=>self%work(:,:,:,1:self%nz,1), ehat=>self%work(:,:,:,1:self%nz,2))
         if (use_new_linelist) then
           call comp%add_linelist_opacities2(self%sub_sp, xhat, ehat, dlam, vproj, departures=departures)
         else
@@ -538,7 +623,7 @@ contains
     !-----------------------------------------------------------------------------
     if (self%do_final) then
       if (.not. (one_dimensional .or. column_by_column .or. do_rotate_atmos)) then
-        call self%rotate_array(vec, work(:,:,:,1:nz,1:2))
+        call self%rotate_array(vec, self%work(:,:,:,1:self%nz,1:2))
       endif
 
       select case(long_solver)
@@ -592,7 +677,7 @@ contains
           adata => atom%rotated_data(i_mu)
         endif
         if (self%get_rates(i) .and. self%bound_bound) then
-          call self%bound_bound_rates(comp, atom, trans, adata, wmu, vproj)
+          call self%bound_bound_rates(comp, atom, trans, adata, wmu, vproj, self%use_ll(i))
         endif
       end associate
     end do
@@ -628,22 +713,22 @@ contains
     if (save_chi) then
       if (i_set==1) then
         write(sav_label, '(A, I2.2)') 'chi_', i_mu
-        call self%save4(work(:,:,:,1:nz,1), sav_label, key=self%key(1:3))
+        call self%save4(self%work(:,:,:,1:self%nz,1), sav_label, key=self%key(1:3))
       endif
     endif
     if (save_Snu) then
       if (i_set==1) then
         write(sav_label, '(A, I2.2)') 'Snu_', i_mu
-        call self%save4(work(:,:,:,1:nz,2), sav_label, key=self%key(1:3))
+        call self%save4(self%work(:,:,:,1:self%nz,2), sav_label, key=self%key(1:3))
       endif
     endif
     if (save_Inu) then
       if (i_set==1) then
         write(sav_label, '(A, I2.2)') 'Inu_', i_mu
-        call self%save4(work(:,:,:,1:nz,3), sav_label, key=self%key(1:3))
+        call self%save4(self%work(:,:,:,1:self%nz,3), sav_label, key=self%key(1:3))
       elseif (i_set==2) then
         write(sav_label, '(A, I2.2)') 'Cnt_', i_mu
-        call self%save4(work(:,:,:,1:nz,3), sav_label, key=self%key(1:3))
+        call self%save4(self%work(:,:,:,1:self%nz,3), sav_label, key=self%key(1:3))
       endif
     endif
   END SUBROUTINE save_debug_arrays
@@ -658,19 +743,20 @@ contains
     logical :: include_absmet, do_sample_opac, do_make_eos
     integer :: fs, fe
     integer, save :: itimer=0
+    integer :: x, y, z, f
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch%lte_background_opacities', itimer=itimer)
     fs = self%fs
     fe = self%fe
 
-    do z=1, nz
-      do y=1, ny
-        do x=1, nx
+    do z=1, self%nz
+      do y=1, self%ny
+        do x=1, self%nx
           ! computing boltzmann factor
           h_kT = h_k / real(comp%temp(x,y,z))
           do f=fs, fe
             hv_kT = self%nu(f) * h_kT
-            back(f,x,y,z,3) = exp(-hv_kT)
+            self%back(f,x,y,z,3) = exp(-hv_kT)
           end do
         end do
       end do
@@ -695,8 +781,8 @@ contains
     elseif (do_sample_opac) then
       call self%interpolate_opacity_table(comp%temp, comp%ne, comp%chi500)
     else
-      call comp%absorption(self%sub_sp, back(:,:,:,:,0), &
-        beta=back(:,:,:,:,3), include_absmet=include_absmet, sorted=self%sp%sorted)
+      call comp%absorption(self%sub_sp, self%back(:,:,:,:,0), &
+        beta=self%back(:,:,:,:,3), include_absmet=include_absmet, sorted=self%sp%sorted)
     endif
     call trace%end(itimer)
   END SUBROUTINE lte_background_opacities
@@ -715,6 +801,7 @@ contains
     logical :: Jnu_to_Bnu
     integer :: s, fs, fe
     integer, save :: itimer
+    integer :: x, y, z, f
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch%lte_background_emission', itimer=itimer)
     if (.not. associated(self%up_twin)) self%up_twin => self
@@ -736,8 +823,8 @@ contains
       Jnu_to_Bnu = .false.
       if (Jnu_to_file) then
         Jnu_label = merge('Jnu_out', 'Jnu    ', self%do_out_sp)
-        allocate(Jup_mem(fs:fe,nx,ny,nz,self%up_twin%n_set))
-        allocate(Jdn_mem(fs:fe,nx,ny,nz,self%dn_twin%n_set))
+        allocate(Jup_mem(fs:fe,self%nx,self%ny,self%nz,self%up_twin%n_set))
+        allocate(Jdn_mem(fs:fe,self%nx,self%ny,self%nz,self%dn_twin%n_set))
         call self%up_twin%load5(Jnu_label, key=self%up_twin%key(1:3), mem=Jup_mem)
         call self%dn_twin%load5(Jnu_label, key=self%dn_twin%key(1:3), mem=Jdn_mem)
         Jup => Jup_mem
@@ -746,9 +833,9 @@ contains
         Jup => self%up_twin%Jnu
         Jdn => self%dn_twin%Jnu
       endif
-      do z=1, nz
-        do y=1, ny
-          do x=1, nx
+      do z=1, self%nz
+        do y=1, self%ny
+          do x=1, self%nx
             do f=fs, fe
               self%Jnu(f,x,y,z,i_set) = 0.5*(Jup(f,x,y,z,i_set) + Jdn(f,x,y,z,i_set))
             end do
@@ -762,11 +849,11 @@ contains
       call self%reset_array(self%Jnu(:,:,:,:,i_set:i_set))
     endif
 
-    do z=1, nz
-      do y=1, ny
-        do x=1, nx
+    do z=1, self%nz
+      do y=1, self%ny
+        do x=1, self%nx
           do f=fs, fe
-            associate(Jnu=>self%Jnu(f,x,y,z,i_set), chi=>back(f,x,y,z,0), eta=>back(f,x,y,z,2), beta=>back(f,x,y,z,3))
+            associate(Jnu=>self%Jnu(f,x,y,z,i_set), chi=>self%back(f,x,y,z,0), eta=>self%back(f,x,y,z,2), beta=>self%back(f,x,y,z,3))
               Bnu = beta / (1 - beta)
               if (Jnu_to_Bnu) then
                 Jnu = Bnu
@@ -784,7 +871,7 @@ contains
       end do
     end do
 
-    call comp%scattering(self%sub_sp, back(:,:,:,:,2), self%Jnu(:,:,:,:,i_set), include_absmet=include_absmet)
+    call comp%scattering(self%sub_sp, self%back(:,:,:,:,2), self%Jnu(:,:,:,:,i_set), include_absmet=include_absmet)
     call trace%end(itimer)
   END SUBROUTINE
 
@@ -904,6 +991,7 @@ contains
     real(8) :: dx, dy, a, b, c, d, fi1, fi2, fj1, fj2, ab, cd
     integer :: fs, fe, i, j, k
     integer, save :: itimer=0
+    integer :: x, y, z, f
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch%interpolate_opacity_table', itimer=itimer)
     comp => self%m3d_parent%tab_comp
@@ -920,9 +1008,9 @@ contains
     inu(fs:fe) = [(searchsorted(tab_lam, self%sp%lam(f)), f=fs, fe)]
     wnu(fs:fe) = [((self%sp%lam(f) - tab_lam(inu(f))) / (tab_lam(inu(f)+1) - tab_lam(inu(f))), f=fs, fe)]
 
-    do z=1, nz
-      do y=1, ny
-        do x=1, nx
+    do z=1, self%nz
+      do y=1, self%ny
+        do x=1, self%nx
           t = temp(x,y,z)
           e = log(ne(x,y,z))
           fi1 = (t - mint) * dx + 1
@@ -944,7 +1032,7 @@ contains
             ab    = fi2*a  + fi1*b
             cd    = fi2*c  + fi1*d
             kappa = fj2*ab + fj1*cd
-            back(f,x,y,z,0) = kappa*chi500(x,y,z)
+            self%back(f,x,y,z,0) = kappa*chi500(x,y,z)
           end do
         end do
       end do
@@ -957,11 +1045,12 @@ contains
     class(rt_patch_t), target :: self
     real(4), dimension(:,:,:,:,:), intent(inout) :: array
     integer :: i
+    integer :: x, y, z
     !-----------------------------------------------------------------------------
     do i=lbound(array, 5), ubound(array,5)
       do z=lbound(array, 4), ubound(array,4)
-        do y=1, ny
-          do x=1, nx
+        do y=1, self%ny
+          do x=1, self%nx
             array(:,x,y,z,i) = 0.
           end do
         end do
@@ -979,6 +1068,7 @@ contains
     real(4) :: ni, nj, tmp, alpha
     integer :: i, fs, fe
     integer, save :: itimer=0
+    integer :: x, y, z, f
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch%add_bound_free_opacities', itimer=itimer)
     
@@ -990,29 +1080,29 @@ contains
       fe = cont%ired
 
       if (allocated(adata%b)) then
-        do z=1, nz
-          do y=1, ny
-            do x=1, nx
+        do z=1, self%nz
+          do y=1, self%ny
+            do x=1, self%nx
               ni  = adata%nstar(x,y,z,cont%i) * adata%b(x,y,z,cont%i)
               tmp = adata%nstar(x,y,z,cont%i) * adata%b(x,y,z,cont%j)
               do f=fs, fe
                 alpha = cont%alpha(f)
-                back(f,x,y,z,1) = back(f,x,y,z,1) + alpha * ni  ! chi
-                back(f,x,y,z,2) = back(f,x,y,z,2) + alpha * tmp ! eta
+                self%back(f,x,y,z,1) = self%back(f,x,y,z,1) + alpha * ni  ! chi
+                self%back(f,x,y,z,2) = self%back(f,x,y,z,2) + alpha * tmp ! eta
               end do
             end do
           end do
         end do
       else ! b = 1
-        do z=1, nz
-          do y=1, ny
-            do x=1, nx
+        do z=1, self%nz
+          do y=1, self%ny
+            do x=1, self%nx
               ni  = adata%nstar(x,y,z,cont%i)
               tmp = adata%nstar(x,y,z,cont%i)
               do f=fs, fe
                 alpha = cont%alpha(f)
-                back(f,x,y,z,1) = back(f,x,y,z,1) + alpha * ni  ! chi
-                back(f,x,y,z,2) = back(f,x,y,z,2) + alpha * tmp ! eta
+                self%back(f,x,y,z,1) = self%back(f,x,y,z,1) + alpha * ni  ! chi
+                self%back(f,x,y,z,2) = self%back(f,x,y,z,2) + alpha * tmp ! eta
               end do
             end do
           end do
@@ -1059,7 +1149,7 @@ contains
   END SUBROUTINE bound_bound_damping
 
   !===============================================================================
-  SUBROUTINE add_bound_bound_opacities (self, comp, atom, trans, adata, wmu, vproj, LTE)
+  SUBROUTINE add_bound_bound_opacities (self, comp, atom, trans, adata, wmu, vproj, LTE, use_ll)
     class(rt_patch_t), target :: self
     class(composition_type) :: comp
     class(atom_type) :: atom
@@ -1068,13 +1158,16 @@ contains
     class(line_type), pointer :: line
     real(4), contiguous, dimension(:,:,:) :: vproj
     real(4), dimension(:,:,:), allocatable :: wphi, temp, ne, fo, vbar2h, tothi, t3nhe
+    real(4), dimension(:,:,:), allocatable :: e_kT4, ne4, tothi4, sp4, idf3, vb3
+    real(4), dimension(:,:,:,:), allocatable :: lnbase, dummy_dep
     real(4), dimension(:), allocatable :: vphi
     real(4) :: wmu, idf, vpr, a, idf_4pi, ni, nj, Bji_nj, Bij_ni, widf, wp, amin, amax
     real(8) :: q
     real(4) :: lower_off, upper_off, ekt, wj, chi_fac, eta_fac, bi, bj, Rij
     integer :: i, ih, fs, fe
-    logical :: LTE, do_LTE, get_wphi
+    logical :: LTE, do_LTE, get_wphi, use_ll
     integer, save :: itimer=0, itimer1=0
+    integer :: x, y, z, f
     !-----------------------------------------------------------------------------
     call trace%begin (trim(self%kind)//'%add_bound_bound_opacities', itimer=itimer)
     ! Copying continuum opacities to angle dependent opacities
@@ -1096,6 +1189,8 @@ contains
 
     do i=1, size(trans%line)
       line => trans%line(i)
+      ! non-hydrogen lines are handled by the SoA kernel below when use_ll
+      if (use_ll .and. .not. line%hydrogen) cycle
       fs = line%iblue
       fe = line%ired
 
@@ -1103,9 +1198,9 @@ contains
       upper_off = line%upper_ev - atom%ev(line%j)
 
       ! Adding bound-bound opacities
-      do z=1, nz
-        do y=1, ny
-          do x=1, nx
+      do z=1, self%nz
+        do y=1, self%ny
+          do x=1, self%nx
             idf = adata%inv_df(x,y,z)
             ekt = comp%e_kT(x,y,z)
             ni = adata%nstar(x,y,z,line%i) ! these are LTE populations
@@ -1151,7 +1246,7 @@ contains
               eta_fac = Rij * bj
               chi_fac = Rij * bi
 
-              associate(xhat=>work(fs:fe,x,y,z,1), ehat=>work(fs:fe,x,y,z,2))
+              associate(xhat=>self%work(fs:fe,x,y,z,1), ehat=>self%work(fs:fe,x,y,z,2))
                 xhat = xhat + phi * chi_fac
                 ehat = ehat + phi * eta_fac
               end associate
@@ -1172,11 +1267,166 @@ contains
         call unlock_mem(self%m3d_parent, 'wphi')
       endif
     end do
+
+    ! SoA kernel for the non-hydrogen lines: exp(arg) populations from the
+    ! composition ion densities, damping recomputed per cell, LTE wing cutoff
+    if (use_ll .and. trans%ll%nline > 0) then
+      call get_ll_env(comp, atom, trans, adata, e_kT4, ne4, tothi4, sp4, idf3, vb3, lnbase)
+      associate(xhat=>self%work(:,:,:,1:self%nz,1), ehat=>self%work(:,:,:,1:self%nz,2), &
+                cont=>self%back(:,:,:,:,1))
+        if (do_LTE) then
+          allocate(dummy_dep(1,1,1,1), source=0.)
+          if (self%sub_sp%equidistant) then
+            call ll_add_opacity_equi(trans%ll, self%llam, xhat, ehat, cont, self%logref, &
+              vproj, idf3, vb3, e_kT4, lnbase, ne4, tothi4, sp4, dummy_dep, .false.)
+          else
+            call ll_add_opacity(trans%ll, self%llam, xhat, ehat, cont, self%logref, &
+              vproj, idf3, vb3, e_kT4, lnbase, ne4, tothi4, sp4, dummy_dep, .false.)
+          endif
+        else
+          call self%fill_b4(adata, atom%nlevel)
+          if (self%sub_sp%equidistant) then
+            call ll_add_opacity_equi(trans%ll, self%llam, xhat, ehat, cont, self%logref, &
+              vproj, idf3, vb3, e_kT4, lnbase, ne4, tothi4, sp4, &
+              self%b4(:,:,:,1:atom%nlevel), .true.)
+          else
+            call ll_add_opacity(trans%ll, self%llam, xhat, ehat, cont, self%logref, &
+              vproj, idf3, vb3, e_kT4, lnbase, ne4, tothi4, sp4, &
+              self%b4(:,:,:,1:atom%nlevel), .true.)
+          endif
+        endif
+      end associate
+    endif
     call trace%end(itimer)
   END SUBROUTINE add_bound_bound_opacities
 
   !===============================================================================
-  SUBROUTINE bound_bound_rates (self, comp, atom, trans, adata, wmu, vproj)
+  ! Gather the per-cell inputs of the SoA line kernels (linelist_mod) for one atom:
+  ! thermodynamic fields, Doppler arrays (single isotope, index 0) and the per-ion-
+  ! stage population base
+  !   lnbase(:,:,:,s) = log(n_s) - log_part_s + dxi*(s-1)*e_kT + log(inv_df)
+  ! from the composition particle (element ion stage s, or the molecule itself) --
+  ! the same formalism as the bulk linelist path in add_linelist_opacities2.
+  !-------------------------------------------------------------------------------
+  SUBROUTINE get_ll_env (comp, atom, trans, adata, e_kT, ne, tothi, stark_pe, &
+                         idf3, vb3, lnbase)
+    class(composition_type), target :: comp
+    class(atom_type) :: atom
+    class(atom_trans_t) :: trans
+    class(atom_data_t) :: adata
+    real(4), dimension(:,:,:),   allocatable, intent(out) :: e_kT, ne, tothi, stark_pe
+    real(4), dimension(:,:,:),   allocatable, intent(out) :: idf3, vb3
+    real(4), dimension(:,:,:,:), allocatable, intent(out) :: lnbase
+    class(element_type), pointer :: element
+    class(molec_type), pointer :: mol
+    integer :: m(3), np, s
+    integer, save :: itimer=0
+    !-----------------------------------------------------------------------------
+    call trace%begin('rt_patch%get_ll_env', itimer=itimer)
+    m = shape(adata%inv_df)
+    allocate(e_kT(m(1),m(2),m(3)))
+    allocate(ne, tothi, stark_pe, mold=e_kT)
+    e_kT     = comp%e_kT
+    ne       = real(comp%ne)
+    tothi    = real(comp%tothi)
+    stark_pe = real(comp%stark_pe)
+
+    allocate(idf3(m(1),m(2),m(3)), vb3(m(1),m(2),m(3)))
+    idf3 = adata%inv_df
+    vb3  = atom%compute_vbar2(real(comp%temp, 4))
+
+    np = maxval(trans%ll%ipart(1:trans%ll%nline))
+    allocate(lnbase(m(1),m(2),m(3),np))
+    lnbase = -huge(1.)   ! stages without an EOS particle contribute no opacity
+
+    call comp%element_by_id(atom%id, element, verbose=.false.)
+    if (associated(element)) then
+      do s=1, np
+        if (s < lbound(element%ions,1) .or. s > ubound(element%ions,1)) cycle
+        associate(ion => element%ions(s))
+          if (.not. allocated(ion%n)) cycle
+          lnbase(:,:,:,s) = log(ion%n) - ion%part &
+                          + real(comp%dxi) * (s-1) * e_kT + log(idf3)
+        end associate
+      end do
+    else
+      call comp%molecule_by_id(atom%id, mol, verbose=.false.)
+      if (associated(mol)) then
+        if (allocated(mol%n)) then
+          lnbase(:,:,:,1) = log(mol%n) - mol%part + log(idf3)
+        endif
+      endif
+    endif
+    call trace%end(itimer)
+  END SUBROUTINE get_ll_env
+
+  !===============================================================================
+  ! real(4) copy of the departure coefficients for the SoA kernels; cached per
+  ! adata within one execute (b is constant during an execute)
+  !-------------------------------------------------------------------------------
+  SUBROUTINE fill_b4 (self, adata, nlevel)
+    class(rt_patch_t) :: self
+    class(atom_data_t), target :: adata
+    integer, intent(in) :: nlevel
+    integer :: l
+    !-----------------------------------------------------------------------------
+    if (associated(self%b4_ptr, adata)) then
+      if (size(self%b4,4) >= nlevel) return
+    endif
+    if (allocated(self%b4)) then
+      if (size(self%b4,4) < nlevel) deallocate(self%b4)
+    endif
+    if (.not. allocated(self%b4)) then
+      allocate(self%b4(self%nx,self%ny,self%nz,nlevel))
+    endif
+    do l=1, nlevel
+      self%b4(:,:,:,l) = adata%b(:,:,:,l)
+    end do
+    self%b4_ptr => adata
+  END SUBROUTINE fill_b4
+
+  !===============================================================================
+  ! Push the used/strength diagnostics of the per-patch SoA lists back to the
+  ! shared source lists (self%atoms(k)%trans%ll), which print_linelist exports.
+  !-------------------------------------------------------------------------------
+  SUBROUTINE reduce_ll_diag (self)
+    class(rt_patch_t) :: self
+    logical, allocatable :: gused(:)
+    real(4), allocatable :: gstr(:)
+    integer :: k, l, gl
+    !-----------------------------------------------------------------------------
+    do k=1, self%natom
+      if (.not. self%use_ll(k)) cycle
+      associate(pll => self%trans(k)%ll, sll => self%atoms(k)%trans%ll, &
+                lines => self%trans(k)%line)
+        if (pll%nline == 0) cycle
+        if (.not. any(pll%used(1:pll%nline))) cycle
+        ! collect per (global) transition, then mark all its source entries
+        ! (multi-component entries share the same transition index)
+        allocate(gused(size(self%atoms(k)%trans%line)), source=.false.)
+        allocate(gstr (size(self%atoms(k)%trans%line)), source=0.)
+        do l=1, pll%nline
+          if (.not. pll%used(l)) cycle
+          gl = lines(pll%itrans(l))%ntrans
+          gused(gl) = .true.
+          gstr(gl)  = max(gstr(gl), pll%strength(l))
+        end do
+        call lock_mem(self%m3d_parent, 'll_used')
+        do l=1, sll%nline
+          gl = sll%itrans(l)
+          if (gused(gl)) then
+            sll%used(l)     = .true.
+            sll%strength(l) = max(sll%strength(l), gstr(gl))
+          endif
+        end do
+        call unlock_mem(self%m3d_parent, 'll_used')
+        deallocate(gused, gstr)
+      end associate
+    end do
+  END SUBROUTINE reduce_ll_diag
+
+  !===============================================================================
+  SUBROUTINE bound_bound_rates (self, comp, atom, trans, adata, wmu, vproj, use_ll)
     class(rt_patch_t), target :: self
     class(composition_type) :: comp
     class(atom_type) :: atom
@@ -1185,13 +1435,17 @@ contains
     class(line_type), pointer :: line
     real(4), contiguous, dimension(:,:,:) :: vproj
     real(4), dimension(:,:,:), allocatable :: temp, ne, fo, vbar2h, tothi, t3nhe
+    real(4), dimension(:,:,:), allocatable :: e_kT4, ne4, tothi4, sp4, idf3, vb3
+    real(4), dimension(:,:,:,:), allocatable :: lnbase, wphi_buf
     real(4), dimension(:), allocatable :: wmunu
     real(4) :: wmu, idf, vpr, a, idf_4pi, ni, nj, chi_fac, phi, vel, vgt
     real(4) :: vvv, a2, sum_I, sum_P, sum_A
     real(4) :: g_ij, g_ji, q
     real(4) :: lower_off, upper_off, ekt
     integer :: i, l, ih, fs, fe
+    logical :: use_ll, get_wphi
     integer, save :: itimer=0
+    integer :: x, y, z, f
     !-----------------------------------------------------------------------------
     call trace%begin (trim(self%kind)//'%bound_bound_rates', itimer=itimer)
     allocate(wmunu(self%fs:self%fe))
@@ -1209,15 +1463,17 @@ contains
 
     do i=1, size(trans%line)
       line => trans%line(i)
+      ! non-hydrogen lines are handled by the SoA rate kernel below when use_ll
+      if (use_ll .and. .not. line%hydrogen) cycle
       fs = line%iblue
       fe = line%ired
       wmunu(fs:fe) = wmu * line%wnu(fs:fe) * line%Aij
       lower_off = line%lower_ev - atom%ev(line%i)
       upper_off = line%upper_ev - atom%ev(line%j)
 
-      do z=1,nz
-        do y=1,ny
-          do x=1,nx
+      do z=1,self%nz
+        do y=1,self%ny
+          do x=1,self%nx
             ni = adata%b(x,y,z,line%i) * adata%nstar(x,y,z,line%i)
             nj = adata%b(x,y,z,line%j) * adata%nstar(x,y,z,line%j)
             idf = adata%inv_df(x,y,z)
@@ -1232,7 +1488,7 @@ contains
             sum_P = 0.0
             if (line%hydrogen) then
               do f=fs, fe
-                associate(Inu=>work(f,x,y,z,3), Psi=>self%Psi(f,x,y,z))
+                associate(Inu=>self%work(f,x,y,z,3), Psi=>self%Psi(f,x,y,z))
                   q = line%q(f) - vpr
                   phi = hprofile(line, dble(q), temp(x,y,z), ne(x,y,z), fo(x,y,z), &
                     vbar2h(x,y,z), tothi(x,y,z), t3nhe(x,y,z), idf)
@@ -1244,7 +1500,7 @@ contains
               end do
             elseif (line%io > 1) then
               do f=fs, fe
-                associate(Inu=>work(f,x,y,z,3), Psi=>self%Psi(f,x,y,z))
+                associate(Inu=>self%work(f,x,y,z,3), Psi=>self%Psi(f,x,y,z))
                   phi = 0
                   do ih=1, line%io
                     q = line%q(f) - line%dq(ih)
@@ -1260,7 +1516,7 @@ contains
               end do
             else
               do f=fs, fe
-                associate(Inu=>work(f,x,y,z,3), Psi=>self%Psi(f,x,y,z))
+                associate(Inu=>self%work(f,x,y,z,3), Psi=>self%Psi(f,x,y,z))
                   phi = voigt_profile(a, line%q(f), vpr, idf)
                   vvv = phi * wmunu(f)
                   sum_A = sum_A + vvv
@@ -1284,6 +1540,36 @@ contains
         end do
       end do
     end do
+
+    ! SoA rate kernel for the non-hydrogen lines; also accumulates the profile
+    ! normalization wphi (moved here from the opacity routine) on the first iteration
+    if (use_ll .and. trans%ll%nline > 0) then
+      call get_ll_env(comp, atom, trans, adata, e_kT4, ne4, tothi4, sp4, idf3, vb3, lnbase)
+      call self%fill_b4(adata, atom%nlevel)
+      get_wphi = self%iter == 0 .and. .not. self%do_out_sp .and. fixed_Jnu <= 0
+      associate(Inu=>self%work(:,:,:,1:self%nz,3), cont=>self%back(:,:,:,:,1))
+        if (get_wphi) then
+          allocate(wphi_buf(self%nx,self%ny,self%nz,size(trans%line)), source=0.)
+          call ll_add_rates(trans%ll, self%llam, Inu, self%Psi, cont, self%logref, &
+            vproj, idf3, vb3, e_kT4, lnbase, ne4, tothi4, sp4, &
+            self%b4(:,:,:,1:atom%nlevel), allocated(adata%b), wmu, preconditioning, &
+            trans%gamma_ij, trans%gamma_ji, wphi_buf, .true.)
+          call lock_mem(self%m3d_parent, 'wphi')
+          do i=1, size(trans%line)
+            if (trans%line(i)%hydrogen) cycle
+            associate(sum_wphi => adata%wphi(:,:,:,trans%line(i)%ntrans))
+              sum_wphi = sum_wphi + wphi_buf(:,:,:,i)
+            end associate
+          end do
+          call unlock_mem(self%m3d_parent, 'wphi')
+        else
+          call ll_add_rates(trans%ll, self%llam, Inu, self%Psi, cont, self%logref, &
+            vproj, idf3, vb3, e_kT4, lnbase, ne4, tothi4, sp4, &
+            self%b4(:,:,:,1:atom%nlevel), allocated(adata%b), wmu, preconditioning, &
+            trans%gamma_ij, trans%gamma_ji, get_wphi=.false.)
+        endif
+      end associate
+    endif
     call trace%end(itimer)
   END SUBROUTINE bound_bound_rates
 
@@ -1299,6 +1585,7 @@ contains
     real(4) :: g_ij, g_ji, vij, vji, sum_abs, sum_ems, sum_pre
     integer :: i, j, fs, fe
     integer, save :: itimer=0
+    integer :: x, y, z, f
     !-----------------------------------------------------------------------------
     call trace%begin (trim(self%kind)//'%bound_free_rates', itimer=itimer)
     allocate(wmunu(self%fs:self%fe))
@@ -1313,15 +1600,15 @@ contains
       wmunu(fs:fe) = 0.5 * cont%wnu(fs:fe)
       w_alpha(fs:fe) = self%twohnu3_c2(fs:fe) * cont%alpha(fs:fe) * wmunu(fs:fe)
 
-      do z=1,nz
-        do y=1,ny
-          do x=1,nx
+      do z=1,self%nz
+        do y=1,self%ny
+          do x=1,self%nx
             sum_abs = 0.0
             sum_ems = 0.0
             sum_pre = 0.0
 
             do f=fs, fe
-              associate(Jnu=>self%Jnu(f,x,y,z,1), beta=>back(f,x,y,z,3), Psi=>self%PsiJ(f,x,y,z))
+              associate(Jnu=>self%Jnu(f,x,y,z,1), beta=>self%back(f,x,y,z,3), Psi=>self%PsiJ(f,x,y,z))
                 vij = w_alpha(f)
                 vji = vij * beta
                 phi = Psi * cont%alpha(f)
@@ -1354,40 +1641,41 @@ contains
     integer :: i_mu, i_set, ng, i
     real(4) :: xxold(3), xxnew(ng)
     integer, save :: itimer=0
+    integer :: x, y, z, f
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch%set_upstream_boundary', itimer=itimer)
-    z = merge(lbound(work,4), ubound(work,4), self%dir > 0)
+    z = merge(lbound(self%work,4), ubound(self%work,4), self%dir > 0)
 
     if (self%boundaries%is_set(bits%zu)) then
-      work(:,:,:,z,:) = 0.
+      self%work(:,:,:,z,:) = 0.
     elseif (self%boundaries%is_set(bits%zl)) then
       xxold = [(i*self%ds(3), i=1, 3)]
       xxnew = [(i*self%ds(3), i=1-ng, 0)]
       do i=1, 2
-        do y=1,  ny
-          do x=1,  nx
+        do y=1,  self%ny
+          do x=1,  self%nx
             do f=self%fs, self%fe
-              call pchip_mono(xxold, work(f,x,y,z+1:z+3,i), &
-                xxnew, work(f,x,y,z:z,i), sorted=.true.)
-              work(f,x,y,z,i) = max(work(f,x,y,z,i), 0.)
+              call pchip_mono(xxold, self%work(f,x,y,z+1:z+3,i), &
+                xxnew, self%work(f,x,y,z:z,i), sorted=.true.)
+              self%work(f,x,y,z,i) = max(self%work(f,x,y,z,i), 0.)
             end do
           end do
         end do
       end do
-      do y=1,  ny
-        do x=1,  nx
+      do y=1,  self%ny
+        do x=1,  self%nx
           do f=self%fs, self%fe
-            work(f,x,y,z,3) = work(f,x,y,z,2)
+            self%work(f,x,y,z,3) = self%work(f,x,y,z,2)
           end do
         end do
       end do
     else
-      do y=1,  ny
-        do x=1,  nx
+      do y=1,  self%ny
+        do x=1,  self%nx
           do f=self%fs, self%fe
-            work(f,x,y,z,1) = self%mem(f,x,y,i_mu,i_set,1)
-            work(f,x,y,z,2) = self%mem(f,x,y,i_mu,i_set,2)
-            work(f,x,y,z,3) = self%mem(f,x,y,i_mu,i_set,3)
+            self%work(f,x,y,z,1) = self%mem(f,x,y,i_mu,i_set,1)
+            self%work(f,x,y,z,2) = self%mem(f,x,y,i_mu,i_set,2)
+            self%work(f,x,y,z,3) = self%mem(f,x,y,i_mu,i_set,3)
           end do
         end do
       end do
@@ -1402,22 +1690,23 @@ contains
     logical :: save_PsiJ
     integer :: i_set
     integer, save :: itimer=0
+    integer :: x, y, z, f
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch%integrate_intensity', itimer=itimer)
     wmu2 = 2*wmu
-    do z=1, nz
-      do y=1, ny
-        do x=1, nx
+    do z=1, self%nz
+      do y=1, self%ny
+        do x=1, self%nx
           do f=self%fs, self%fe
-            self%Jnu(f,x,y,z,i_set) = self%Jnu(f,x,y,z,i_set) + wmu2 * work(f,x,y,z,3)
+            self%Jnu(f,x,y,z,i_set) = self%Jnu(f,x,y,z,i_set) + wmu2 * self%work(f,x,y,z,3)
           end do
         end do
       end do
     end do
     if (save_PsiJ) then
-      do z=1, nz
-        do y=1, ny
-          do x=1, nx
+      do z=1, self%nz
+        do y=1, self%ny
+          do x=1, self%nx
             do f=self%fs, self%fe
               self%PsiJ(f,x,y,z) = self%PsiJ(f,x,y,z) + wmu2 * self%Psi(f,x,y,z)
             end do
@@ -1466,21 +1755,22 @@ contains
     real(4) :: nan_check(3)
     integer :: p(3)
     integer, save :: itimer=0
+    integer :: x, y, z
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch%set_downstream_boundary', itimer=itimer)
 
     if (self%print_update_info) then
       p = self%pcheck
       if (check_NaN) then
-        nan_check = work(self%fcheck, p(1), p(2), p(3),1:3)
+        nan_check = self%work(self%fcheck, p(1), p(2), p(3),1:3)
         if (any(nan_check/=nan_check)) then
           print *, 'NaN in rt_patch', nan_check
         endif
       endif
       if (i_mu==self%mus .and. i_set==1) then
-        memcheck(1:3) = work(self%fcheck, p(1), p(2), p(3),:)
+        memcheck(1:3) = self%work(self%fcheck, p(1), p(2), p(3),:)
         !memcheck(2:3) = memcheck(2:3) * self%twohnu3_c2(self%fcheck)
-        associate(beta=>back(self%fcheck, p(1), p(2), p(3), 3))
+        associate(beta=>self%back(self%fcheck, p(1), p(2), p(3), 3))
           memcheck(2:3) = memcheck(2:3) * (1 - beta) / beta
         end associate
       endif
@@ -1491,11 +1781,11 @@ contains
     endif
 
     z = merge(self%patch%n(3), 1, self%dir > 0)
-    do y=1, ny
-      do x=1, nx
-        self%mem(:,x,y,i_mu,i_set,1) = work(:,x,y,z,1)
-        self%mem(:,x,y,i_mu,i_set,2) = work(:,x,y,z,2)
-        self%mem(:,x,y,i_mu,i_set,3) = work(:,x,y,z,3)
+    do y=1, self%ny
+      do x=1, self%nx
+        self%mem(:,x,y,i_mu,i_set,1) = self%work(:,x,y,z,1)
+        self%mem(:,x,y,i_mu,i_set,2) = self%work(:,x,y,z,2)
+        self%mem(:,x,y,i_mu,i_set,3) = self%work(:,x,y,z,3)
       end do
     end do
     call trace%end(itimer)
@@ -1506,15 +1796,16 @@ contains
     class(rt_patch_t) :: self
     real(4), dimension(:,:,:,:), pointer :: chi, eta, beta
     integer :: fs, fe
+    integer :: x, y, z, f
     !-----------------------------------------------------------------------------
     fs = self%fs
     fe = self%fe
-    do z=1, nz
-      do y=1, ny
-        do x=1, nx
+    do z=1, self%nz
+      do y=1, self%ny
+        do x=1, self%nx
           do f=fs, fe
-            associate(chi=>back(f,x,y,z,0), eta=>back(f,x,y,z,2), beta=>back(f,x,y,z,3), &
-                      xhat=>back(f,x,y,z,1), ehat=>back(f,x,y,z,2))
+            associate(chi=>self%back(f,x,y,z,0), eta=>self%back(f,x,y,z,2), beta=>self%back(f,x,y,z,3), &
+                      xhat=>self%back(f,x,y,z,1), ehat=>self%back(f,x,y,z,2))
               xhat = chi + eta
               if (eta > 0) then
                 ehat = eta / beta
@@ -1530,16 +1821,17 @@ contains
   SUBROUTINE back_to_work (self)
     class(rt_patch_t) :: self
     integer, save :: itimer=0
+    integer :: x, y, z, f
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch%back_to_work', itimer=itimer)
-    ! copy back opacities into angle dependent opacities
-    do z=1, nz
-      do y=1, ny
-        do x=1, nx
+    ! copy self%back opacities into angle dependent opacities
+    do z=1, self%nz
+      do y=1, self%ny
+        do x=1, self%nx
           do f=self%fs, self%fe
-            associate(xhat=>work(f,x,y,z,1), ehat=>work(f,x,y,z,2))
-              xhat = back(f,x,y,z,1)
-              ehat = back(f,x,y,z,2)
+            associate(xhat=>self%work(f,x,y,z,1), ehat=>self%work(f,x,y,z,2))
+              xhat = self%back(f,x,y,z,1)
+              ehat = self%back(f,x,y,z,2)
             end associate
           end do
         end do
@@ -1552,18 +1844,19 @@ contains
   SUBROUTINE eta_to_Snu (self)
     class(rt_patch_t) :: self
     integer, save :: itimer=0
+    integer :: x, y, z, f
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch%eta_to_Snu', itimer=itimer)
     ! Converting eta into source function Snu=eta/chi
-    do z=1, nz
-      do y=1, ny
-        do x=1, nx
+    do z=1, self%nz
+      do y=1, self%ny
+        do x=1, self%nx
           do f=self%fs, self%fe
-            associate(chi=>work(f,x,y,z,1), eta=>work(f,x,y,z,2), beta=>back(f,x,y,z,3), &
-                      xhat=>work(f,x,y,z,1), ehat=>work(f,x,y,z,2))
+            associate(chi=>self%work(f,x,y,z,1), eta=>self%work(f,x,y,z,2), beta=>self%back(f,x,y,z,3), &
+                      xhat=>self%work(f,x,y,z,1), ehat=>self%work(f,x,y,z,2))
               eta = ehat * beta
               chi = xhat - eta
-              work(f,x,y,z,2) = eta / chi
+              self%work(f,x,y,z,2) = eta / chi
             end associate
           end do
         end do
@@ -1576,15 +1869,16 @@ contains
   SUBROUTINE Snu_to_eta (self)
     class(rt_patch_t) :: self
     integer, save :: itimer=0
+    integer :: x, y, z, f
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch%Snu_to_eta', itimer=itimer)
-    do z=1, nz
-      do y=1, ny
-        do x=1, nx
+    do z=1, self%nz
+      do y=1, self%ny
+        do x=1, self%nx
           do f=self%fs, self%fe
-            associate(chi=>work(f,x,y,z,1), eta=>work(f,x,y,z,2), beta=>back(f,x,y,z,3), &
-                      xhat=>work(f,x,y,z,1), ehat=>work(f,x,y,z,2))
-              eta = work(f,x,y,z,2) * chi
+            associate(chi=>self%work(f,x,y,z,1), eta=>self%work(f,x,y,z,2), beta=>self%back(f,x,y,z,3), &
+                      xhat=>self%work(f,x,y,z,1), ehat=>self%work(f,x,y,z,2))
+              eta = self%work(f,x,y,z,2) * chi
               if (eta > 0) then
                 ehat = eta / beta
               endif
@@ -1606,6 +1900,7 @@ contains
     real(4), dimension(:,:,:), allocatable :: shifted
     real(4) :: bottom, bot2pivot, height, f1, f2, a, b, c, d
     integer :: up1, up2, x1, x2, y1, y2, i
+    integer :: x, y, z
     integer, save :: itimer=0
     ! ----------------------------------------------------------------------------
     call trace%begin('net_opac_t%rotate_array', itimer=itimer)
@@ -1616,7 +1911,7 @@ contains
     bottom = self%position(3) - 0.5*self%size(3)
     bot2pivot = pivot_z - bottom
 
-    do z=1, nz
+    do z=1, self%nz
       height = z*self%ds(3) ! height of plane as measured from bottom
       deltak = (bot2pivot - height)*delta + ray_offset
       up1 = floor(deltak(1)) !integer part of shift
@@ -1632,13 +1927,13 @@ contains
 
       do i=1, size(array, 5)
         associate(plane => array(:,:,:,z,i))
-          do y=1, ny
-            y1 = modulo(y+up2-1, ny)+1
-            y2 = modulo(y+up2,   ny)+1
+          do y=1, self%ny
+            y1 = modulo(y+up2-1, self%ny)+1
+            y2 = modulo(y+up2,   self%ny)+1
 
-            do x=1, nx
-              x1 = modulo(x+up1-1, nx)+1
-              x2 = modulo(x+up1,   nx)+1
+            do x=1, self%nx
+              x1 = modulo(x+up1-1, self%nx)+1
+              x2 = modulo(x+up1,   self%nx)+1
 
               shifted(:,x,y) = a*plane(:,x1,y1)
               shifted(:,x,y) = b*plane(:,x2,y1) + shifted(:,x,y)
@@ -1659,13 +1954,14 @@ contains
     real(4) :: Bnu
     integer :: nl, i, j
     integer, save :: itimer=0
+    integer :: x, y, z, f
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch%set_fixed_Jnu', itimer=itimer)
-    do z=1, nz
-      do y=1, ny
-        do x=1, nx
+    do z=1, self%nz
+      do y=1, self%ny
+        do x=1, self%nx
           do f=self%fs, self%fe
-            associate(beta=>back(f,x,y,z,3), Inu=>work(f,x,y,z,3))
+            associate(beta=>self%back(f,x,y,z,3), Inu=>self%work(f,x,y,z,3))
               Bnu = beta / (1 - beta)
               Inu = fixed_Jnu * Bnu
             end associate
@@ -1678,9 +1974,9 @@ contains
         nl = size(adata%wphi, 4)
         if (.not. allocated(adata%wphi)) nl = 0
         do j=1, nl
-          do z=1, nz
-            do y=1, ny
-              do x=1, nx
+          do z=1, self%nz
+            do y=1, self%ny
+              do x=1, self%nx
                 adata%wphi(x,y,z,j) = 1
               end do
             end do
@@ -1703,19 +1999,20 @@ contains
     real(4), dimension(:), pointer, contiguous :: xkern, ykern
     real(4), dimension(:,:), allocatable :: work_up, work_min
     real(4), dimension(:,:,:,:), allocatable :: row_red
-    integer :: xup_t(4,nx), yup_t(4,ny)
+    integer :: xup_t(4,self%nx), yup_t(4,self%ny)
     integer :: zs, ze, xup, yup, zup, x1, y1, i, ii, jj, upo1, upo2
     logical :: inner, amr_boundary, rebuild_tables, get_rates
     integer, save :: itimer=0
+    integer :: x, y, z, f
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch%short_char', itimer=itimer)
     allocate(work_up(self%fs:self%fe,3))
     allocate(work_min(self%fs:self%fe,3))
-    allocate(row_red(self%fs:self%fe, 3, nx, ny))
+    allocate(row_red(self%fs:self%fe, 3, self%nx, self%ny))
     get_rates = any(self%get_rates)
 
-    zs = merge(1, nz, self%dir > 0)
-    ze = merge(nz, 1, self%dir > 0)
+    zs = merge(1, self%nz, self%dir > 0)
+    ze = merge(self%nz, 1, self%dir > 0)
 
     call ray%set_stencil(self%ds * scaling%l, vec)
     xkernel1 = real(ray%xkern)
@@ -1751,33 +2048,33 @@ contains
       endif
 
       if (rebuild_tables) then
-        do x=1,nx; do ii=1,4
-          xup_t(ii,x) = modulo(ii + x + upo1, nx) + 1
+        do x=1,self%nx; do ii=1,4
+          xup_t(ii,x) = modulo(ii + x + upo1, self%nx) + 1
         end do; end do
-        do y=1,ny; do jj=1,4
-          yup_t(jj,y) = modulo(jj + y + upo2, ny) + 1
+        do y=1,self%ny; do jj=1,4
+          yup_t(jj,y) = modulo(jj + y + upo2, self%ny) + 1
         end do; end do
         rebuild_tables = amr_boundary .and. z==zs
       endif
 
       !--- ROW PASS: x-reduce the whole upstream plane ----------------------------
       row_red = 0.0
-      do yup = 1, ny
-        do x = 1, nx
+      do yup = 1, self%ny
+        do x = 1, self%nx
           do ii = 1, 4
             xup = xup_t(ii,x)
             kx = xkern(ii)
             do i=1, 3
               do f = self%fs, self%fe
-                row_red(f,i,x,yup) = row_red(f,i,x,yup) + kx*work(f,xup,yup,zup,i)
+                row_red(f,i,x,yup) = row_red(f,i,x,yup) + kx*self%work(f,xup,yup,zup,i)
               end do
             end do
           end do
         end do
       end do
 
-      do y=1, ny
-        do x=1, nx
+      do y=1, self%ny
+        do x=1, self%nx
           work_up = 0.0
           work_min = huge(1.0)
 
@@ -1799,7 +2096,7 @@ contains
               yup = yup_t(jj,y)
               do i=1, 3
                 do f=self%fs,self%fe
-                  work_min(f,i) = min(work_min(f,i), work(f,xup,yup,zup,i))
+                  work_min(f,i) = min(work_min(f,i), self%work(f,xup,yup,zup,i))
                 end do
               end do
             end do
@@ -1808,8 +2105,8 @@ contains
           work_up = max(work_up, work_min)
 
           do f=self%fs, self%fe
-            xx = work(f,x,y,z,1)
-            ss = work(f,x,y,z,2)
+            xx = self%work(f,x,y,z,1)
+            ss = self%work(f,x,y,z,2)
             xxup  = work_up(f,1)
             ssup  = work_up(f,2)
             Inuup = work_up(f,3)
@@ -1833,8 +2130,8 @@ contains
               Inu = u0*ssup + Psi*ss
             endif
 
-            work(f,x,y,z,3) = Inu
-            if (get_rates) self%Psi(f,x,y,z) = Psi / work(f,x,y,z,1)
+            self%work(f,x,y,z,3) = Inu
+            if (get_rates) self%Psi(f,x,y,z) = Psi / self%work(f,x,y,z,1)
           end do ! f-loop
         end do
       end do
@@ -1852,6 +2149,7 @@ contains
     integer :: dx, dy, zs, ze, zup
     logical :: amr_boundary
     integer, save :: itimer=0
+    integer :: x, y, z, f
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch%long_char_linear_spherical', itimer=itimer)
 
@@ -1864,8 +2162,8 @@ contains
       ds2 = self%upstream%ds(3) * scaling%l
     endif
 
-    zs = merge(1, nz, self%dir > 0)
-    ze = merge(nz, 1, self%dir > 0)
+    zs = merge(1, self%nz, self%dir > 0)
+    ze = merge(self%nz, 1, self%dir > 0)
 
     do z=zs, ze, self%dir
       zup = z - self%dir
@@ -1879,7 +2177,7 @@ contains
       endif
 
       if (r2 < p .or. r1 < p) then
-        work(:,:,:,z,3) = 0
+        self%work(:,:,:,z,3) = 0
         cycle
       endif
 
@@ -1887,17 +2185,17 @@ contains
       s2 = sqrt(r2**2 - p**2)
       dsup05 = 0.5d0 * abs(s2-s1)
 
-      do y=1, ny
-        do x=1, nx
+      do y=1, self%ny
+        do x=1, self%nx
           do f=self%fs, self%fe
-            xxup = work(f,x,y,zup,1)
-            ssup = work(f,x,y,zup,2)
-            xx = work(f,x,y,z,1)
-            ss = work(f,x,y,z,2)
+            xxup = self%work(f,x,y,zup,1)
+            ssup = self%work(f,x,y,zup,2)
+            xx = self%work(f,x,y,z,1)
+            ss = self%work(f,x,y,z,2)
             dt = dsup05 * ( xxup + xx ) ! upwind optical pathlength
             dt = max(dt, 0.d0)
             if (dt < 80) then
-              Inuup = work(f,x,y,zup,3)
+              Inuup = self%work(f,x,y,zup,3)
               ex = exp(-dt)
               if ( dt > 1d-3 ) then
                 u0 = 1 - ex
@@ -1915,7 +2213,7 @@ contains
               Inu = u0*ssup + Psi*ss
             endif
 
-            work(f,x,y,z,3) = Inu
+            self%work(f,x,y,z,3) = Inu
             if (any(self%get_rates)) then
               self%Psi(f,x,y,z) = Psi / xx
             endif
@@ -1935,6 +2233,7 @@ contains
     integer :: dx, dy, zs, ze, zup
     logical :: amr_boundary
     integer, save :: itimer=0
+    integer :: x, y, z, f
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch%long_char_linear', itimer=itimer)
 
@@ -1947,8 +2246,8 @@ contains
       dsup2 = 0.5*ds/abs(vec(3))
     endif
 
-    zs = merge(1, nz, self%dir > 0)
-    ze = merge(nz, 1, self%dir > 0)
+    zs = merge(1, self%nz, self%dir > 0)
+    ze = merge(self%nz, 1, self%dir > 0)
 
     do z=zs, ze, self%dir
       zup = z - self%dir
@@ -1960,17 +2259,17 @@ contains
         dsup05 = dsup1
       endif
 
-      do y=1, ny
-        do x=1, nx
+      do y=1, self%ny
+        do x=1, self%nx
           do f=self%fs, self%fe
-            xxup = work(f,x,y,zup,1)
-            ssup = work(f,x,y,zup,2)
-            xx = work(f,x,y,z,1)
-            ss = work(f,x,y,z,2)
+            xxup = self%work(f,x,y,zup,1)
+            ssup = self%work(f,x,y,zup,2)
+            xx = self%work(f,x,y,z,1)
+            ss = self%work(f,x,y,z,2)
             dt = dsup05 * ( xxup + xx ) ! upwind optical pathlength
             dt = max(dt, 0.d0)
             if (dt < 80) then
-              Inuup = work(f,x,y,zup,3)
+              Inuup = self%work(f,x,y,zup,3)
               ex = exp(-dt)
               if ( dt > 1d-3 ) then
                 u0 = 1 - ex
@@ -1988,7 +2287,7 @@ contains
               Inu = u0*ssup + Psi*ss
             endif
 
-            work(f,x,y,z,3) = Inu
+            self%work(f,x,y,z,3) = Inu
             if (any(self%get_rates)) then
               !Psi = Psi + Inuup*ex*exp(-dsup05*xx*ss)*dsup05*xx
               self%Psi(f,x,y,z) = Psi / xx
@@ -2013,6 +2312,7 @@ contains
     integer :: dx, dy, zs, ze, z0, zup, zdn
     logical :: edge
     integer, save :: itimer=0
+    integer :: x, y, z, f
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch%long_char_quadratic', itimer=itimer)
 
@@ -2022,21 +2322,21 @@ contains
     dsup1 = 0.5*dsup
     dsup2 = 1./6.*dsup*dsup
 
-    zs = merge(1, nz, self%dir > 0)
-    ze = merge(nz, 1, self%dir > 0)
+    zs = merge(1, self%nz, self%dir > 0)
+    ze = merge(self%nz, 1, self%dir > 0)
 
     do z=zs, ze, self%dir
       edge = z==ze
       z0 = merge(z-1, z, edge)
       zup = z0 - self%dir
       zdn = z0 + self%dir
-      do y=1, ny
-        do x=1, nx
+      do y=1, self%ny
+        do x=1, self%nx
           do f=self%fs, self%fe
-            xx = work(f,x,y,z0,1)
-            xxup = work(f,x,y,zup,1)
-            xxdn = work(f,x,y,zdn,1)
-            Inuup = work(f,x,y,z-self%dir,3)
+            xx = self%work(f,x,y,z0,1)
+            xxup = self%work(f,x,y,zup,1)
+            xxdn = self%work(f,x,y,zdn,1)
+            Inuup = self%work(f,x,y,z-self%dir,3)
 
             ! one sided dchi/ds at upwind point
             t1 = (xx - xxup) * rdsup
@@ -2066,9 +2366,9 @@ contains
               U2 = one_third * dt3
             end if
 
-            ss = work(f,x,y,z0,2)
-            ssdn = work(f,x,y,zdn,2)
-            ssup = work(f,x,y,zup,2)
+            ss = self%work(f,x,y,z0,2)
+            ssdn = self%work(f,x,y,zdn,2)
+            ssup = self%work(f,x,y,zup,2)
 
             ! one sided dS/dt at upwind point
             t1 = (ss - ssup) / dtup
@@ -2089,7 +2389,7 @@ contains
 
             ! intensity at center point
             Inu = Inuup*ex + a*U2 + b*U1 + c*U0
-            work(f,x,y,z,3) = Inu
+            self%work(f,x,y,z,3) = Inu
           end do ! f-loop
         end do
       end do
@@ -2110,6 +2410,7 @@ contains
     integer :: dx, dy, zs, ze, z0, zup, zdn
     logical :: edge
     integer, save :: itimer=0
+    integer :: x, y, z, f
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch%long_char_quadratic2', itimer=itimer)
 
@@ -2119,21 +2420,21 @@ contains
     dsup1 = 0.5*dsup
     dsup2 = 1./6.*dsup*dsup
 
-    zs = merge(1, nz, self%dir > 0)
-    ze = merge(nz, 1, self%dir > 0)
+    zs = merge(1, self%nz, self%dir > 0)
+    ze = merge(self%nz, 1, self%dir > 0)
 
     do z=zs, ze, self%dir
       edge = z==ze
       z0 = merge(z-1, z, edge)
       zup = z0 - self%dir
       zdn = z0 + self%dir
-      do y=1, ny
-        do x=1, nx
+      do y=1, self%ny
+        do x=1, self%nx
           do f=self%fs, self%fe
-            xx = work(f,x,y,z0,1)
-            xxup = work(f,x,y,zup,1)
-            xxdn = work(f,x,y,zdn,1)
-            Inuup = work(f,x,y,z-self%dir,3)
+            xx = self%work(f,x,y,z0,1)
+            xxup = self%work(f,x,y,zup,1)
+            xxdn = self%work(f,x,y,zdn,1)
+            Inuup = self%work(f,x,y,z-self%dir,3)
 
             ! one sided dchi/ds at upwind point
             t1 = (xx - xxup) * rdsup
@@ -2163,9 +2464,9 @@ contains
               U2 = one_third * dt3
             end if
 
-            ss = work(f,x,y,z0,2)
-            ssdn = work(f,x,y,zdn,2)
-            ssup = work(f,x,y,zup,2)
+            ss = self%work(f,x,y,z0,2)
+            ssdn = self%work(f,x,y,zdn,2)
+            ssup = self%work(f,x,y,zup,2)
 
             ! one sided dS/dt at upwind point
             t1 = ss - ssup
@@ -2190,7 +2491,7 @@ contains
 
             ! intensity at center point
             Inu = Inuup*ex + a*U2 + b*U1 + c*U0
-            work(f,x,y,z,3) = Inu
+            self%work(f,x,y,z,3) = Inu
           end do ! f-loop
         end do
       end do
@@ -2218,6 +2519,7 @@ contains
     integer :: i, nz_up
     logical :: edge
     integer, save :: itimer=0
+    integer :: x, y, z, f
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch%long_char_quadratic3', itimer=itimer)
 
@@ -2226,18 +2528,18 @@ contains
     dsup1 = 0.5*dsup
     dsup2 = 1./12.*dsup*dsup
 
-    zs = merge(1, nz, self%dir > 0)
-    ze = merge(nz, 1, self%dir > 0)
+    zs = merge(1, self%nz, self%dir > 0)
+    ze = merge(self%nz, 1, self%dir > 0)
 
-    allocate(ds3(0:nz+1))
-    allocate(chi500(nx,ny,-1:nz+1), dchi500(nx,ny,0:nz))
-    allocate(Bnu500(nx,ny,-1:nz+1), dBnu500(nx,ny,0:nz))
-    ds3(1:nz) = self%ds(3)
-    chi500(:,:,1:nz) = comp%chi500
+    allocate(ds3(0:self%nz+1))
+    allocate(chi500(self%nx,self%ny,-1:self%nz+1), dchi500(self%nx,self%ny,0:self%nz))
+    allocate(Bnu500(self%nx,self%ny,-1:self%nz+1), dBnu500(self%nx,self%ny,0:self%nz))
+    ds3(1:self%nz) = self%ds(3)
+    chi500(:,:,1:self%nz) = comp%chi500
 
     hnu = h_k * CC / air2vac(ref_lam) * 1e8
-    Bnu500(:,:,1:nz) = exp(-hnu / comp%temp)
-    Bnu500(:,:,1:nz) = Bnu500(:,:,1:nz) / (1 - Bnu500(:,:,1:nz))
+    Bnu500(:,:,1:self%nz) = exp(-hnu / comp%temp)
+    Bnu500(:,:,1:self%nz) = Bnu500(:,:,1:self%nz) / (1 - Bnu500(:,:,1:self%nz))
 
     if (associated(self%upstream)) then
       nz_up = size(self%upstream%composition%chi500, 3)
@@ -2249,35 +2551,35 @@ contains
       ds3(0) = self%ds(3)
       xxold = [(i*self%ds(3), i= 1, 3)]
       xxnew = [(i*self%ds(3), i=-1, 0)]
-      do y=1, ny
-        do x=1, nx
+      do y=1, self%ny
+        do x=1, self%nx
           call pchip_mono(xxold, chi500(x,y,1:3), xxnew, chi500(x,y,-1:0), sorted=.true.)
           call pchip_mono(xxold, Bnu500(x,y,1:3), xxnew, Bnu500(x,y,-1:0), sorted=.true.)
         end do
       end do
     endif
     if (associated(self%dnstream)) then
-      ds3(nz+1) = self%dnstream%ds(3)
-      chi500(:,:,nz+1) = self%dnstream%m3d_parent%composition%chi500(:,:,1)
-      Bnu500(:,:,nz+1) = exp(-hnu / self%dnstream%m3d_parent%composition%temp(:,:,1))
-      Bnu500(:,:,nz+1) = Bnu500(:,:,nz+1) / (1 - Bnu500(:,:,nz+1))
+      ds3(self%nz+1) = self%dnstream%ds(3)
+      chi500(:,:,self%nz+1) = self%dnstream%m3d_parent%composition%chi500(:,:,1)
+      Bnu500(:,:,self%nz+1) = exp(-hnu / self%dnstream%m3d_parent%composition%temp(:,:,1))
+      Bnu500(:,:,self%nz+1) = Bnu500(:,:,self%nz+1) / (1 - Bnu500(:,:,self%nz+1))
     else
-      ds3(nz+1) = self%ds(3)
+      ds3(self%nz+1) = self%ds(3)
       xxold = [(i*self%ds(3), i=1, 3)]
       xxnew(1:1) = [(i*self%ds(3), i=4, 4)]
-      do y=1, ny
-        do x=1, nx
-          call pchip_mono(xxold, chi500(x,y,nz-2:nz), xxnew(1:1), chi500(x,y,nz+1:nz+1), sorted=.true.)
-          call pchip_mono(xxold, Bnu500(x,y,nz-2:nz), xxnew(1:1), Bnu500(x,y,nz+1:nz+1), sorted=.true.)
+      do y=1, self%ny
+        do x=1, self%nx
+          call pchip_mono(xxold, chi500(x,y,self%nz-2:self%nz), xxnew(1:1), chi500(x,y,self%nz+1:self%nz+1), sorted=.true.)
+          call pchip_mono(xxold, Bnu500(x,y,self%nz-2:self%nz), xxnew(1:1), Bnu500(x,y,self%nz+1:self%nz+1), sorted=.true.)
         end do
       end do
     endif
 
     ds3 = ds3 * (scaling%l / abs(vec(3)))
 
-    do z=0, nz
-      do y=1, ny
-        do x=1, nx
+    do z=0, self%nz
+      do y=1, self%ny
+        do x=1, self%nx
           xx = chi500(x,y,z)
           xxup = chi500(x,y,z-1)
           xxdn = chi500(x,y,z+1)
@@ -2302,8 +2604,8 @@ contains
     do z=zs, ze, self%dir
       zup = z - self%dir
       zdn = z + self%dir
-      do y=1, ny
-        do x=1, nx
+      do y=1, self%ny
+        do x=1, self%nx
           xx500   = chi500(x,y,z)
           xxup500 = chi500(x,y,zup)
           ss500   = Bnu500(x,y,z)
@@ -2321,11 +2623,11 @@ contains
           dSup500 = (ss500 - ssup500) / dSup500
 
           do f=self%fs, self%fe
-            xx   = work(f,x,y,z,1)
-            xxup = work(f,x,y,zup,1)
-            ss   = work(f,x,y,z,2)
-            ssup = work(f,x,y,zup,2)
-            Inuup = work(f,x,y,z-self%dir,3)
+            xx   = self%work(f,x,y,z,1)
+            xxup = self%work(f,x,y,zup,1)
+            ss   = self%work(f,x,y,z,2)
+            ssup = self%work(f,x,y,zup,2)
+            Inuup = self%work(f,x,y,z-self%dir,3)
 
             dt = xxup*xxup500 + xx*xx500
             ex=exp(-dt)
@@ -2353,7 +2655,7 @@ contains
             !
             !! intensity at center point
             !Inu = Inuup*ex + a*U2 + b*U1 + c*U0
-            !work(f,x,y,z,3) = Inu
+            !self%work(f,x,y,z,3) = Inu
 
             if (dt > 1e-3) then
               U0 = 1. - ex
@@ -2370,7 +2672,7 @@ contains
 
             ! intensity at center point
             Inu = (Inuup - ssup)*ex - U0*t2 + U1*tt2 + ss
-            work(f,x,y,z,3) = Inu
+            self%work(f,x,y,z,3) = Inu
           end do ! f-loop
         end do
       end do
@@ -2415,22 +2717,23 @@ contains
     real(4) :: net_chi, net_src, lin_chi, lin_eta
     real(4) :: cnt_inu, cnt_chi, cnt_eta
     integer, save :: itimer=0
+    integer :: x, y, z, f
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch_t%save_contribution_function', itimer=itimer)
-    do z=1,nz
-      do y=1,ny
-        do x=1,nx
+    do z=1,self%nz
+      do y=1,self%ny
+        do x=1,self%nx
           do f=self%fs,self%fe
-            associate(cf => cntrbf_tmp(f,x,y,z,:), cf_out => cntrbf_data(f,x,y,z,:,i_mu))
+            associate(cf => self%cntrbf_tmp(f,x,y,z,:), cf_out => self%cntrbf_data(f,x,y,z,:,i_mu))
               if (i_set == 1) then ! NLTE set
-                net_chi = work(f,x,y,z,1)
-                net_src = work(f,x,y,z,2)
+                net_chi = self%work(f,x,y,z,1)
+                net_src = self%work(f,x,y,z,2)
                 cf(1) = net_chi
                 cf(2) = merge(net_src*net_chi, net_src, depression_cntrbf)
               elseif (i_set == 2) then ! continuum set
-                cnt_chi = work(f,x,y,z,1)
-                cnt_eta = work(f,x,y,z,2)*cnt_chi
-                cnt_inu = work(f,x,y,z,3)
+                cnt_chi = self%work(f,x,y,z,1)
+                cnt_eta = self%work(f,x,y,z,2)*cnt_chi
+                cnt_inu = self%work(f,x,y,z,3)
 
                 lin_chi = cf(1) - cnt_chi
                 lin_eta = cf(2) - cnt_eta
@@ -2445,7 +2748,7 @@ contains
       end do
     end do
     if (i_set==2 .and. i_mu==self%mue) then
-      call self%save6(cntrbf_data, 'cntrbf')
+      call self%save6(self%cntrbf_data, 'cntrbf')
     endif
     call trace%end(itimer)
   END SUBROUTINE save_contribution_function
@@ -2604,10 +2907,10 @@ contains
       call self%patch_t%allocate_mem(m)
       fs = self%fs
       fe = self%fe
-      nx = self%n(1)
-      ny = self%n(2)
+      self%nx = self%n(1)
+      self%ny = self%n(2)
       tmp => self%mem
-      self%mem(fs:fe,1:nx,1:ny,self%mus:self%mue,1:self%n_set,1:3) => tmp
+      self%mem(fs:fe,1:self%nx,1:self%ny,self%mus:self%mue,1:self%n_set,1:3) => tmp
     endif
   END SUBROUTINE allocate_mem
 
@@ -2618,11 +2921,12 @@ contains
     real(8), parameter :: conversion = 2 * HH / (CC**3 * CM_TO_AA)
     integer :: fs, fe
     integer, save :: itimer=0
+    integer :: x, y, f
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch_t%save_intensity', itimer=itimer)
     fs = self%fs
     fe = self%fe
-    allocate(i3(fs:fe,nx,ny, self%mus:self%mue, self%n_set), source=0.)
+    allocate(i3(fs:fe,self%nx,self%ny, self%mus:self%mue, self%n_set), source=0.)
     allocate(ie(fs:fe, 1, 1, self%mus:self%mue, self%n_set), source=0.)
 
     do f=fs, fe
@@ -2630,12 +2934,12 @@ contains
       i3(f,:,:,:,:) = conversion * self%nu(f)**5 * self%mem(f,:,:,:,:,3)
     end do
 
-    do y=1, ny
-      do x=1, nx
+    do y=1, self%ny
+      do x=1, self%nx
         ie(:,1,1,:,:) = ie(:,1,1,:,:) + i3(:,x,y,:,:)
       end do
     end do
-    ie = ie / real(nx*ny)
+    ie = ie / real(self%nx*self%ny)
 
     call self%save5(ie, 'ie')
 
@@ -2650,6 +2954,7 @@ contains
     class(rt_patch_t):: self
     class(patch_t):: tgt
     integer :: i, i_set, i_mu
+    integer :: x, y
     !-----------------------------------------------------------------------------
     if (.not. self%static_mem) then
       tgt%mem => self%mem

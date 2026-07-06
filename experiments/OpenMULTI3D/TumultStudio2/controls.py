@@ -37,7 +37,7 @@ class Field:
 
     def __init__(self, key, label, kind="number", value=None, options=None,
                  min=None, max=None, step=None, size=None, placeholder=None,
-                 inline=False):
+                 inline=False, required=False):
         self.key = key
         self.label = label
         self.kind = kind
@@ -49,6 +49,7 @@ class Field:
         self.step = step
         self.size = size   # select only: >1 renders a (vertical) listbox
         self.placeholder = placeholder  # text only
+        self.required = required  # mandatory: empty (:invalid) inputs get a red outline in CSS
         self.warn = False  # set true to flag the field (e.g. a path that doesn't exist)
         self.disabled = False  # set true to render the control greyed-out / non-editable
 
@@ -80,7 +81,8 @@ class Field:
     def render(self, form):
         lab = html.escape(self.label)
         dis = " disabled" if self.disabled else ""
-        attrs = f'class="field-input" data-form="{form}" data-field="{self.key}"{dis}'
+        req = " required" if self.required else ""
+        attrs = f'class="field-input" data-form="{form}" data-field="{self.key}"{dis}{req}'
         if self.kind == "select":
             cur = str(self.value)
             opts = "".join(

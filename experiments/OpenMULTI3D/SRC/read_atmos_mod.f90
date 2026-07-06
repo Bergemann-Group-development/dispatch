@@ -269,6 +269,11 @@ contains
     !-----------------------------------------------------------------------------
     ! Open atmosphere file and read MHD variables
     !-----------------------------------------------------------------------------
+    if (endswith(trim(atmos_file), '.atmos')) then
+      atmos_file = atmos_file(1:len_trim(atmos_file)-6)
+    elseif (endswith(trim(atmos_file), '.mesh')) then
+      atmos_file = atmos_file(1:len_trim(atmos_file)-5)
+    endif
     call os%check_file(trim(atmos_file) // '.mesh')
     open(file=trim(atmos_file) // '.mesh', newunit=lunit, form='FORMATTED')
     read(lunit, *) nx, ny, nz

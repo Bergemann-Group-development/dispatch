@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import astropy.units as u
 import numpy as np
-from bokeh.models import ColumnDataSource, DataRange1d, Range1d, RangeTool, WheelZoomTool
+from bokeh.models import ColumnDataSource, DataRange1d, Range1d, RangeTool, Span, WheelZoomTool
 from bokeh.plotting import figure
 
 from tumult import Spectrum
@@ -34,11 +34,15 @@ BORDER = "#3a3a3a"
 GRID = "#2c2c2c"
 MUTED = "#888888"
 ACCENT = "#4a90e2"
+# distinct from ACCENT so the abundance best-fit synthetic reads clearly against the (ACCENT)
+# EW hatch it is drawn over
+SYNTH_FIT = "#3ec46d"
 LINE = "#cfd2d6"
 
 # fixed line-colour palette; PALETTE[0] == LINE is the default (gray) object colour,
-# PALETTE[1:] are the non-gray colours assigned to tumult runs
-PALETTE = ["#cfd2d6", "#4a90e2", "#50c878", "#e0a030", "#e05c5c", "#b084e8", "#34c9a0"]
+# PALETTE[1:] are the non-gray colours assigned to tumult runs. The first run colour is a
+# cornflower blue kept distinct from ACCENT (#4a90e2) so a run never matches the UI accent.
+PALETTE = ["#cfd2d6", "#7b8cde", "#50c878", "#e0a030", "#e05c5c", "#b084e8", "#34c9a0"]
 RUN_COLORS = PALETTE[1:]
 
 # objects are distinguished by dash; runs by colour (then dash once colours run out)
@@ -60,6 +64,10 @@ def _style(p):
     p.toolbar.logo = None
 
 
+# public alias so other panels (e.g. the abundance scatter) get the same dark theme
+style_dark = _style
+
+
 class SpectrumObject:
     """One loaded spectrum and its renderers on the two plots."""
 
@@ -74,6 +82,7 @@ class SpectrumObject:
         self.uid = uid
         self.visible = True
         self.source = None  # (kind, path) where it was loaded from, for session save/restore
+        self.meta = None  # provenance for the Info tab: FITS header cards or synth params
         self.filtered = None  # filtered Spectrum (reversible); used when canvas.show_filtered
         self.conv = {}  # convolution params applied to the main view (vshift/vdop/…)
         self.main_source = ColumnDataSource(dict(x=[], y=[]))
@@ -149,6 +158,38 @@ class SpectrumCanvas:
                                        color=LINE, line_width=1, line_alpha=0.25,
                                        level="underlay", visible=False)
 
+        # a synthetic line drawn over the observation while the abundance tool jumps to a
+        # diagnostic line, so the fit quality is visible during manual line curation
+        self.abund_overlay_source = ColumnDataSource(dict(x=[], y=[]))
+        self.abund_overlay_line = main.line("x", "y", source=self.abund_overlay_source,
+                                            color=SYNTH_FIT, line_width=1.5, line_dash="dashed",
+                                            level="overlay", visible=False)
+
+        # the fitted-profile integrated area for the jumped line, hatched exactly like the EW
+        # tool so the EW measurement reviewed in step 1 reads the same on both surfaces
+        self.abund_area_source = ColumnDataSource(dict(x=[], y1=[], y2=[]))
+        self.main.varea(x="x", y1="y1", y2="y2", source=self.abund_area_source,
+                        fill_color=ACCENT, fill_alpha=0.10,
+                        hatch_pattern="/", hatch_color=ACCENT, hatch_alpha=0.5,
+                        level="underlay")
+        self.abund_area_line = self.main.line("x", "y1", source=self.abund_area_source,
+                                              color=ACCENT, line_width=1.2, level="underlay",
+                                              visible=False)
+
+        # vertical bounds for the jumped line: the auto-crop fit window (amber) and the wider
+        # synthesis window (red). Drawn between the discrete spectrum points so it is clear
+        # which points fall in each window during line curation.
+        self.abund_fit_spans = [
+            Span(location=0, dimension="height", line_color="#e0a030", line_width=1.5,
+                 line_dash="dashed", line_alpha=0.9, level="underlay", visible=False)
+            for _ in range(2)]
+        self.abund_synth_spans = [
+            Span(location=0, dimension="height", line_color="#e05c5c", line_width=1.5,
+                 line_dash="dashed", line_alpha=0.9, level="underlay", visible=False)
+            for _ in range(2)]
+        for _sp in (*self.abund_fit_spans, *self.abund_synth_spans):
+            main.add_layout(_sp)
+
         main.x_range.on_change("start", self._on_main_range)
         main.x_range.on_change("end", self._on_main_range)
         nav.x_range.on_change("start", self._on_nav_range)
@@ -178,7 +219,7 @@ class SpectrumCanvas:
         n = len(self.objects)
         return RUN_COLORS[n % len(RUN_COLORS)], DASHES[n % len(DASHES)]
 
-    def add_object(self, spectrum, name=None, color=None, dash=None, source=None):
+    def add_object(self, spectrum, name=None, color=None, dash=None, source=None, meta=None):
         first = not self.objects
         name = name or f"Object {len(self.objects) + 1}"
         color = color or LINE
@@ -196,6 +237,7 @@ class SpectrumCanvas:
         self._next_uid += 1
         obj = SpectrumObject(spectrum, name, dash, uid)
         obj.source = source
+        obj.meta = meta
         self.normalise_object(obj)  # raw -> ~0–1; flat continuum until a spline is set
         obj.line = self.main.line("x", "y", source=obj.main_source,
                                   color=color, line_width=1, line_dash=dash)
@@ -429,6 +471,99 @@ class SpectrumCanvas:
             self.main.yaxis.axis_label = self._y_axis_label()
         self._refresh_main()
         self._refresh_nav()
+
+    # --- abundance line overlay (synthetic best-fit drawn on the observation) ----
+    def set_abund_overlay(self, spectrum, window):
+        """Draw ``spectrum`` (a synthetic line) over ``window`` (Å) on the main figure.
+
+        ``spectrum`` None or a non-finite window clears the overlay. The synthetic is cropped
+        to the window and converted to the display units, so it lines up with the observation.
+        """
+        if spectrum is None or window is None or not np.isfinite(window[0]):
+            return self.clear_abund_overlay()
+        try:
+            sub = spectrum.crop(xmin=window[0], xmax=window[1]).decimate(self.n_main)
+            sub = sub.convert_units(xunit=self.xunit, yunit=self.yunit)
+            x, y = sub.values
+        except Exception:
+            return self.clear_abund_overlay()
+        self.abund_overlay_source.data = dict(x=np.asarray(x), y=np.asarray(y))
+        self.abund_overlay_line.visible = True
+
+    def clear_abund_overlay(self):
+        self.abund_overlay_source.data = dict(x=[], y=[])
+        self.abund_overlay_line.visible = False
+
+    def set_abund_hatch(self, func, window):
+        """Hatch the fitted-profile integrated area for the jumped diagnostic line.
+
+        ``func`` is the fitted profile ``f(λ_Å) -> normalised flux`` (from ``measure_line``);
+        the area between it and the continuum (=1) over ``window`` (Å) is filled and hatched
+        with the same ``/`` pattern the EW tool uses. ``func`` None / bad window clears it.
+        """
+        if func is None or window is None or not np.isfinite(window[0]):
+            return self.clear_abund_hatch()
+        try:
+            xg = np.linspace(float(window[0]), float(window[1]), 512)
+            y1 = np.asarray(func(xg), dtype=float)
+            xd = to_value(xg, u.AA, self.xunit)
+        except Exception:
+            return self.clear_abund_hatch()
+        self.abund_area_source.data = dict(x=np.asarray(xd), y1=y1, y2=np.ones_like(xg))
+        self.abund_area_line.visible = True
+
+    def clear_abund_hatch(self):
+        self.abund_area_source.data = dict(x=[], y1=[], y2=[])
+        self.abund_area_line.visible = False
+
+    @staticmethod
+    def _snap_edge(xpts, value, upper):
+        """Nudge a window edge into the gap between its last included and first excluded point.
+
+        ``xpts`` are the sorted reference wavelengths (Å); ``value`` is the edge (Å). For a
+        lower edge (``upper=False``) the line lands halfway between the point just below and
+        the point just at/above; for an upper edge, between the point just at/below and just
+        above. Falls back to ``value`` when there is no point on one side.
+        """
+        if xpts is None or len(xpts) == 0:
+            return value
+        if upper:
+            inside, outside = xpts[xpts <= value], xpts[xpts > value]
+        else:
+            inside, outside = xpts[xpts >= value], xpts[xpts < value]
+        if len(inside) == 0 or len(outside) == 0:
+            return value
+        near_in = inside[-1] if upper else inside[0]
+        near_out = outside[0] if upper else outside[-1]
+        return 0.5 * (float(near_in) + float(near_out))
+
+    def set_abund_windows(self, fit_window, synth_window, xpts=None):
+        """Draw the fit-window (amber) and synth-window (red) bounds for the jumped line.
+
+        Each edge is snapped into the gap between the last included and first excluded
+        reference point (``xpts``, Å) so the membership of each spectrum point is unambiguous,
+        then converted to the display wavelength unit. A None / non-finite window hides its
+        pair of lines.
+        """
+        xp = None
+        if xpts is not None and len(xpts):
+            xp = np.sort(np.asarray(xpts, dtype=float))
+        for spans, win in ((self.abund_fit_spans, fit_window),
+                           (self.abund_synth_spans, synth_window)):
+            if win is None or not (np.isfinite(win[0]) and np.isfinite(win[1])):
+                for sp in spans:
+                    sp.visible = False
+                continue
+            lo = self._snap_edge(xp, float(win[0]), upper=False)
+            hi = self._snap_edge(xp, float(win[1]), upper=True)
+            a, b = to_range(lo, hi, u.AA, self.xunit)
+            for sp, loc in zip(spans, (a, b)):
+                sp.location = float(loc)
+                sp.visible = True
+
+    def clear_abund_window(self):
+        for sp in (*self.abund_fit_spans, *self.abund_synth_spans):
+            sp.visible = False
 
     # --- reversible filtering ---------------------------------------------
     def effective(self, obj):

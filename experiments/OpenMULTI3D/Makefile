@@ -2,9 +2,9 @@
 #OPTS = full_debug
 #OPTS = vscode
 #OPTS = debug
-OPTS =
+#OPTS =
 #OPTS = hoppe
-#OPTS = optimized
+OPTS = optimized
 
 # Default target and paths
 EXEC            = dispatch.x
@@ -41,9 +41,9 @@ endif
 
 CLEANDIRS = {./SRC,./HOP,$(BUILD)}
 
-#OPT += -fprofile-arcs -ftest-coverage
-#OPT += -fsanitize=address -fsanitize=undefined 
-#OPT = -O0 -fimplicit-none  -Wall  -Wline-truncation  -Wcharacter-truncation  -Wsurprising  -Waliasing  -Wimplicit-interface  -Wunused-parameter  -fwhole-file  -fcheck=all  -fbacktrace
+# Symbolication for sampling profilers (sample/dtrace/Instruments). -g adds DWARF
+# only and does NOT change -Ofast codegen; frame pointers help stack unwinding.
+# OPT += -g -fno-omit-frame-pointer
 
 # List the .o files the main program depends on after the colon:
 $(EXEC): read_external_mod.o mpi_debug_mod.o setup_mod.o

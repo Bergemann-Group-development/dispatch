@@ -12,11 +12,25 @@ ensure_list = lambda x: x if isinstance(x, (list, np.ndarray, pd.Series)) else [
 class SpectrumGrid(object):
     """
     A class to hold a grid of spectra.
+
+    ``separable`` names parameter axes that form a full tensor-product lattice with the
+    remaining ("scatter") axes — every scatter node must carry a spectrum at every
+    combination of the separable axes' values (validated at build time, loud ValueError
+    otherwise). Separable axes are interpolated per-pixel with monotone-cubic
+    ``pchip_mono`` (shape-preserving, no overshoot — the right tool for smooth monotone
+    responses like flux vs. abundance or microturbulence), while the scatter axes keep
+    the linear Delaunay / natural-neighbour weights. The names are whatever the caller
+    used as grid kwargs; nothing here attaches meaning to specific axis names.
+
+    ``separable=None`` (default) auto-flags the axis of a single-axis grid, preserving
+    the historical behaviour where 1-D grids interpolate with pchip; pass
+    ``separable=[]`` to force linear interpolation there too.
     """
     #=====================================================================
-    def __init__(self, spectra, normalize=True, **kwargs):
+    def __init__(self, spectra, normalize=True, separable=None, **kwargs):
         self.spectra = ensure_list(spectra)
         self.normalize = normalize
+        self.separable = list(separable) if separable is not None else None
         processed_kwargs = {k: ensure_list(v) for k, v in kwargs.items()}
         self.params = pd.DataFrame(processed_kwargs)
         self.p0 = {}
@@ -25,7 +39,9 @@ class SpectrumGrid(object):
     def _build_grid(self):
         """Builds the interpolation structure based on current dimensionality."""
         self.npoints = len(self.spectra)
-        
+        self._sep_names, self._sep_axes = [], {}
+        self._sep_lattice, self._scatter_names, self._scatter_points = None, [], None
+
         # If no params or only one point, we can't build a grid
         if self.params.empty or self.npoints <= 1:
             self.ndim = 0
@@ -51,7 +67,10 @@ class SpectrumGrid(object):
         self.ndim = self.points.shape[1]
         self.p0 = {name: self.params[name].median() for name in self.param_names}
 
-        if self.ndim > 1:
+        varying_names = [n for n, v in zip(self.param_names, varying) if v]
+        sep_names = self._resolve_separable(varying_names)
+
+        if self.ndim > 1 and not sep_names:
             try:
                 self.delaunay = Delaunay(self.points)
             except Exception as e:
@@ -59,12 +78,70 @@ class SpectrumGrid(object):
                 self.delaunay = None
         else:
             self.delaunay = None
-            # 1D logic: Ensure sorted order for interpolation
-            self.points = self.points.ravel()
-            order = np.argsort(self.points)
-            self.points = self.points[order]
-            self.params = self.params.iloc[order].reset_index(drop=True)
-            self.spectra = [self.spectra[i] for i in order]
+            if self.ndim == 1:
+                # 1D logic: Ensure sorted order for interpolation
+                self.points = self.points.ravel()
+                order = np.argsort(self.points)
+                self.points = self.points[order]
+                self.params = self.params.iloc[order].reset_index(drop=True)
+                self.spectra = [self.spectra[i] for i in order]
+
+        if sep_names:
+            self._build_separable(sep_names, varying_names)
+
+    #=====================================================================
+    def _resolve_separable(self, varying_names):
+        """The separable axes actually in play: the declared names restricted to the
+        varying columns (uniform axes are pinned constants anyway), or — with no
+        declaration — the single axis of a 1-D grid (the historical pchip behaviour)."""
+        if self.separable is None:
+            return list(varying_names) if len(varying_names) == 1 else []
+        unknown = [n for n in self.separable if n not in self.param_names]
+        if unknown:
+            raise ValueError(
+                f"separable axes {unknown} are not grid parameters {self.param_names}")
+        return [n for n in self.separable if n in varying_names]
+
+    #=====================================================================
+    def _build_separable(self, sep_names, varying_names):
+        """Index the spectra as a tensor product: scatter node x separable lattice.
+
+        Fails loudly when the points do not form a complete lattice (every scatter node
+        must carry every combination of the separable axes' values, exactly once)."""
+        scatter_names = [n for n in varying_names if n not in sep_names]
+        axes = {n: np.unique(self.params[n].to_numpy(dtype=float)) for n in sep_names}
+        shape = tuple(axes[n].size for n in sep_names)
+
+        if scatter_names:
+            scat = self.params[scatter_names].to_numpy(dtype=float)
+            scatter_points, inverse = np.unique(scat, axis=0, return_inverse=True)
+            inverse = np.asarray(inverse).ravel()
+        else:
+            scatter_points = np.zeros((1, 0))
+            inverse = np.zeros(self.npoints, dtype=int)
+
+        n_lattice = int(np.prod(shape))
+        if len(scatter_points) * n_lattice != self.npoints:
+            raise ValueError(
+                f"separable axes {sep_names} do not form a tensor product: "
+                f"{len(scatter_points)} scatter nodes x {n_lattice} lattice points "
+                f"!= {self.npoints} spectra")
+
+        lattice = np.full((len(scatter_points),) + shape, -1, dtype=int)
+        for i in range(self.npoints):
+            idx = tuple(int(np.searchsorted(axes[n], float(self.params[n].iloc[i])))
+                        for n in sep_names)
+            if lattice[(inverse[i],) + idx] >= 0:
+                raise ValueError(
+                    f"duplicate grid point: scatter node {scatter_points[inverse[i]]} "
+                    f"already has a spectrum at {dict(zip(sep_names, idx))}")
+            lattice[(inverse[i],) + idx] = i
+
+        self._sep_names = sep_names
+        self._sep_axes = axes
+        self._sep_lattice = lattice
+        self._scatter_names = scatter_names
+        self._scatter_points = scatter_points
 
     def add_data(self, new_spectra, tol=1e-8, **kwargs):
         """
@@ -123,27 +200,61 @@ class SpectrumGrid(object):
             return self.spectra[0].crop(*args, **kwargs)
 
         p = args or [kwargs.pop(name, self.p0[name]) for name in self.param_names]
-        p = np.array(p)
+        query = {name: float(v) for name, v in zip(self.param_names, p)}
 
+        if self._sep_names:
+            return self._crop_separable(query, method, kwargs)
+
+        p = np.array([query[name] for name in self.param_names])
         if hasattr(self, 'normalize_params'):
             p = self.normalize_params(p)
 
-        if self.delaunay is not None:
-            # shared node selection: drops on-grid axes, exact NN / barycentric weights,
-            # fast local stencil + tail truncation for NaturalNeighbor
-            weights, indices = get_interp_weights(self.points, p, method)
+        # shared node selection: drops on-grid axes, exact NN / barycentric weights,
+        # fast local stencil + tail truncation for NaturalNeighbor; handles 1-D linearly
+        points = self.points if self.points.ndim == 2 else self.points[:, None]
+        weights, indices = get_interp_weights(points, p, method)
 
-            spectra = [self.spectra[i] for i in indices]
-            spec = Spectrum.combine([s.crop(**kwargs) for s in spectra], weights=weights)
+        spectra = [self.spectra[i] for i in indices]
+        return Spectrum.combine([s.crop(**kwargs) for s in spectra], weights=weights)
+
+    #=====================================================================
+    def _crop_separable(self, query, method, kwargs):
+        """Tensor-product interpolation: linear weights across the scatter nodes,
+        per-pixel monotone-cubic (pchip) collapse along the separable axes."""
+        if self._scatter_names:
+            q = np.array([query[n] for n in self._scatter_names], dtype=float)
+            weights, sel = get_interp_weights(self._scatter_points, q, method)
         else:
-            i = np.searchsorted(self.points, p)[0]
-            slc = slice(max(i-2,0), min(i+2,self.npoints))
-            spectra = [s.crop(**kwargs) for s in self.spectra[slc]]
-            yy = np.array([spec.ydata for spec in spectra])
-            yy = pchip_mono(self.points[slc], yy, axis=0)(p)[0]
-            spec = Spectrum(spectra[0].xdata, yy, xunit=spectra[0].xunit, yunit=spectra[0].yunit)
+            weights, sel = np.array([1.0]), np.array([0])
 
-        return spec
+        collapsed = [self._collapse_node(int(si), query, kwargs) for si in sel]
+        if not self._scatter_names:
+            return collapsed[0]
+        return Spectrum.combine(collapsed, weights=weights)
+
+    #=====================================================================
+    def _collapse_node(self, node, query, kwargs):
+        """Collapse one scatter node's separable lattice to a single spectrum, one axis
+        at a time, each through the same local 4-point pchip stencil the 1-D grid always
+        used (pchip is node-local, so the window equals the full-axis interpolant within
+        the bracketing interval; beyond the axis ends it degrades to the 2-point line)."""
+        sub = self._sep_lattice[node]
+        windows = []
+        for n in self._sep_names:
+            vals = self._sep_axes[n]
+            i = int(np.searchsorted(vals, query[n]))
+            windows.append(slice(max(i - 2, 0), min(i + 2, vals.size)))
+        sub = sub[tuple(windows)]
+
+        flat = sub.ravel()
+        specs = [self.spectra[j].crop(**kwargs) for j in flat]
+        yy = np.array([s.ydata for s in specs])
+        yy = yy.reshape(sub.shape + yy.shape[1:])
+        for w, n in zip(windows, self._sep_names):
+            yy = pchip_mono(self._sep_axes[n][w], yy, axis=0)([query[n]])[0]
+
+        ref = specs[0]
+        return Spectrum(ref.xdata, yy, xunit=ref.xunit, yunit=ref.yunit)
     
     #=================================================================
     def fit(self, spec, bounds=None, p0=None, **kwargs):

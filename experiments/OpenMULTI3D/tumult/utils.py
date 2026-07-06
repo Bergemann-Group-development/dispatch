@@ -1,12 +1,21 @@
 import astropy.units as u
 from scipy.optimize import curve_fit
 import numpy as np
-from scipy.special import voigt_profile as scipy_voigt_profile
 from scipy.signal import argrelextrema
 import matplotlib.pyplot as plt
 from scipy.interpolate import CubicHermiteSpline
 from astropy.modeling.models import BlackBody
 import astropy.constants as const
+
+from .profile import (  # noqa: F401 (voigt_function re-exported for back-compat)
+    AsymGaussProfile,
+    GaussProfile,
+    Profile,
+    VoigtProfile,
+    get_profile_class,
+    profile_names,
+    voigt_function,
+)
 
 
 def has_units(value):
@@ -255,13 +264,27 @@ def get_weq(
     sigma=None,
     syst=None,
     target_unit=None,
+    return_profile=False,
     **kwargs,
 ):
-    if profile not in ["trapz", "pchip", "gauss", "voigt", "asym_gauss"]:
-        raise ValueError(f"Unknown profile {profile} for equivalent width calculation!")
+    """Measure an equivalent width over ``(xx, yy)`` (a continuum-normalised line).
+
+    By default the result is the **reduced EW** ``log10(W/λ)`` — dimensionless and
+    unit-independent — computed from the width ``W`` and the reference wavelength ``x0`` (which is
+    therefore required in the default mode). Pass a width ``target_unit`` (e.g. ``u.mAA``) to get
+    the width ``W`` itself as a Quantity, the historical behaviour. With ``return_err=True`` the
+    error follows the same convention: the reduced-EW error ``σ_REW = σ_W/(W ln10)`` by default,
+    or the width error in ``target_unit`` otherwise. ``sigma`` adds a per-pixel photon term and
+    ``syst`` a fractional continuum-offset term to that error.
+
+    Pass ``return_profile=True`` to get the bound :class:`tumult.profile.Profile` instead — it
+    carries the width, the reduced EW and the photon / continuum error split off one interface
+    (``.mAA``, ``.rew``, ``.rew_err``, ``.err_phot_mAA``/``.err_cont_mAA``), so a caller needs
+    neither a second call nor a manual REW / unit conversion.
+    """
+    cls = get_profile_class(profile)
 
     xunit = xx.unit if isinstance(xx, u.Quantity) else u.AA
-    target_unit = target_unit or u.mAA
 
     if x0 is not None and isinstance(xx, u.Quantity) != isinstance(x0, u.Quantity):
         raise ValueError("xx and x0 must both carry units or both be unitless.")
@@ -271,224 +294,85 @@ def get_weq(
         xx, yy, x0=x0, dlam=dlam, auto_crop=auto_crop, plot=plot
     )
 
-    eweq = 0
-
-    if profile == "trapz":
-        weq = np.trapz(1 - yy, x=xx)
-
-        def func(x):
-            return np.interp(x, xx, yy, **kwargs)
-
-    if profile == "pchip":
-        func = pchip_mono(xx, yy, **kwargs)
-        xxx = np.linspace(xx[0], xx[-1], xx.size * 10)
-        weq = np.trapz(1 - func(xxx), x=xxx)
-
-    if profile in ["gauss", "voigt", "asym_gauss"]:
-        pout, pcov, func = fit_line_profile(
-            xx, yy, x0=x0, sigma=sigma, profile=profile, **kwargs
-        )
-        weq = line_weq(*pout, profile=profile)
-
-        partials = []
-        for i, arg in enumerate(pout):
-            arg_plus = list(pout)
-            step = arg * 1e-4
-            arg_plus[i] = arg + step
-            partial = (line_weq(*arg_plus, profile=profile) - weq) / step
-            partials.append(partial.value if isinstance(partial, u.Quantity) else partial)
-
-        eweq = np.sqrt(np.dot(partials, np.dot(pcov, partials)))
-
-    # When called without units, the computation stays unitless; reattach the
-    # wavelength unit (xunit, defaulting to AA) so the result is a Quantity.
-    if not isinstance(weq, u.Quantity):
-        weq = weq * xunit
-    eweq = eweq * weq.unit
+    prof = cls.measure(xx, yy, x0=x0, sigma=sigma, xunit=xunit, **kwargs)
 
     if syst is not None:
+        # Continuum-offset systematic: perturb the continuum by a fraction `syst`, re-measure
+        # over the same (already cropped) window and line centre, and take the EW gradient.
         step = syst * 0.1
-        x0_zero = 0 * xunit if isinstance(xx, u.Quantity) else 0
-        weq2 = get_weq(xx, yy / (1 + step), x0=x0_zero, profile=profile, auto_crop=False)
-        gradient = (weq2 - weq) / step
-        esys = syst * gradient
-        eweq = np.sqrt(eweq**2 + esys**2)
-
-    if target_unit is not None:
-        weq = weq.to(target_unit)
-        eweq = eweq.to(target_unit)
+        prof2 = cls.measure(xx, yy / (1 + step), x0=x0, sigma=None, xunit=xunit)
+        gradient = (prof2.weq - prof.weq) / step
+        prof._err_cont = np.abs(syst * gradient)
 
     if plot:
-        label = rf"{weq.value:.2f}"
-        label += rf" $\pm$ {eweq.value:.2f}" if eweq is not None else ""
-        label += f" {weq.unit:unicode}"
-        plt.plot(
-            xplot,
-            func(xplot),
-            ls="--",
-            zorder=10,
-            label=label,
-        )
+        if target_unit is not None:
+            w = prof.weq.to(target_unit)
+            label = (rf"{w.value:.2f} $\pm$ {prof.weq_err.to(target_unit).value:.2f} "
+                     f"{w.unit:unicode}")
+        else:
+            label = rf"REW {prof.rew:.3f} $\pm$ {prof.rew_err:.3f}"
+        plt.plot(xplot, prof.func(xplot), ls="--", zorder=10, label=label)
+
+    if return_profile:
+        return prof
+
+    # Default output is the reduced EW (dimensionless, unit-independent); a width ``target_unit``
+    # restores the historical Quantity return. Both are derived from the same Profile instance.
+    if target_unit is None:
+        weq, eweq = prof.rew, prof.rew_err
+    else:
+        weq, eweq = prof.weq.to(target_unit), prof.weq_err.to(target_unit)
 
     res = (weq,)
     if return_err:
         res = (*res, eweq)
     if get_func:
-        res = (*res, func)
+        res = (*res, prof.func)
     if len(res) == 1:
         res = res[0]
     return res
 
 
-def gaussian_profile(x, x0, amp, sig):
-    """
-    Calculate a Gaussian profile (1 - Gaussian).
+# The line-shape math and the analytic equivalent width now live on the Profile classes in
+# :mod:`tumult.profile` (one home per profile). The module-level names below are thin shims
+# kept for back-compat and for internal use by ``fit_line_profile`` / ``get_weq``.
 
-    Parameters:
-    -----------
-    x : array-like
-        The x-coordinates.
-    x0 : float
-        The center of the profile.
-    sig : float
-        The standard deviation (width).
-    amp : float
-        The amplitude (depth).
-    """
-    return 1 - amp * np.exp(-0.5 * ((x - x0) / sig) ** 2)
+
+def gaussian_profile(x, x0, amp, sig):
+    """Gaussian absorption profile ``1 - Gaussian`` (see :class:`tumult.profile.GaussProfile`)."""
+    return GaussProfile.model(x, x0, amp, sig)
 
 
 def asym_gaussian_profile(x, x0, amp, sig_left, sig_right):
-    """
-    Calculate an asymmetric Gaussian profile.
-
-    Parameters:
-    -----------
-    x : array-like
-        The x-coordinates.
-    x0 : float
-        The center of the profile.
-    sig_left : float
-        Width on the left side.
-    sig_right : float
-        Width on the right side.
-    amp : float
-        The amplitude.
-    """
-    y = np.zeros_like(x)
-    mask = x < x0
-    y[mask] = (x[mask] - x0) / sig_left
-    y[~mask] = (x[~mask] - x0) / sig_right
-    return 1 - amp * np.exp(-0.5 * y**2)
-
-
-def voigt_function(a, v):
-    """
-    Wrapper for scipy's voigt_profile.
-
-    Parameters:
-    -----------
-    a : float
-        Lorentzian width parameter.
-    v : array-like
-        Frequency/wavelength detuning.
-    """
-    s2 = np.sqrt(2)
-    return scipy_voigt_profile(v * s2, 1, a * s2) * s2
+    """Asymmetric Gaussian profile (see :class:`tumult.profile.AsymGaussProfile`)."""
+    return AsymGaussProfile.model(x, x0, amp, sig_left, sig_right)
 
 
 def voigt_profile(xx, x0, amp, sigma, rho):
-    """
-    Calculate a Voigt profile.
-
-    Parameters:
-    -----------
-    xx : array-like
-        The x-coordinates.
-    x0 : float
-        The center of the profile.
-    rho : float
-        Ratio of FWHM_lorentz / (FWHM_lorentz + FWHM_gauss). Takes values in [0, 1).
-    sigma : float
-        Gaussian width parameter.
-    amp : float
-        The amplitude.
-    """
-    a = (rho / (1.0 - rho)) * np.sqrt(np.log(2))
-    v_peak = voigt_function(a, 0.0)
-    vv = np.array((xx - x0) / (sigma * np.sqrt(2)))
-    v_norm = voigt_function(a, vv)
-    return 1 - amp * v_norm / v_peak
+    """Voigt absorption profile (see :class:`tumult.profile.VoigtProfile`)."""
+    return VoigtProfile.model(xx, x0, amp, sigma, rho)
 
 
 def line_profile_func(*args, profile="gauss"):
-    """
-    Return the line profile function for the specified profile.
-
-    Parameters:
-    -----------
-    profile : str
-        profile to use: "gauss", "asym_gauss", "voigt"
-    """
-    if profile == "gauss":
-        func = gaussian_profile
-    elif profile == "asym_gauss":
-        func = asym_gaussian_profile
-    elif profile == "voigt":
-        func = voigt_profile
-    else:
-        raise ValueError(f"Unknown profile {profile} for line profile calculation!")
-
-    def wrapper(xx):
-        return func(xx, *args)
-
-    return wrapper
+    """Return the line-shape function ``f(x)`` for ``profile`` bound to ``*args``."""
+    cls = get_profile_class(profile)
+    return lambda xx: cls.model(xx, *args)
 
 
 def line_profile(xx, *args, profile="gauss"):
-    """
-    Calculate a line profile using the specified profile.
-
-    Parameters:
-    -----------
-    xx : array-like
-        The x-coordinates.
-    *args :
-        Parameters for the profile (depends on method).
-    profile : str, optional
-        Profile type: "gauss", "asym_gauss", "voigt" (default is "gauss").
-    """
+    """Evaluate the ``profile`` line shape at ``xx`` for parameters ``*args``."""
     return line_profile_func(*args, profile=profile)(xx)
 
 
 def line_weq(*args, profile="gauss"):
+    """Analytic equivalent width from fitted profile parameters.
+
+    Thin shim over :meth:`tumult.profile.Profile.weq_from_params`; ``*args`` are the profile
+    parameters in the fitter's order (e.g. ``x0, amp, sig`` for a Gaussian).
     """
-    Calculate equivalent width from profile parameters.
+    return get_profile_class(profile).weq_from_params(*args)
 
-    Parameters:
-    -----------
-    *args :
-        Parameters of the profile.
-    profile : str, optional
-        Profile type: "gauss", "asym_gauss", "voigt" (default is "gauss").
-    """
-    if profile == "gauss":
-        # args: x0, amp, sig
-        weq = args[1] * np.sqrt(2 * np.pi) * args[2]
-    elif profile == "asym_gauss":
-        # args: x0, amp, sig_left, sig_right
-        weq = args[1] * np.sqrt(2 * np.pi) * (args[2] + args[3]) * 0.5
-    elif profile == "voigt":
-        # args: x0, amp, sigma, rho
-        a = (args[3] / (1.0 - args[3])) * np.sqrt(np.log(2))
-        v_peak = voigt_function(a, 0) / (args[2] * np.sqrt(2))
-        weq = args[1] / v_peak
-    else:
-        raise ValueError(f"Unknown profile {profile}")
-
-    return weq
-
-def auto_crop_core(xx_in, yy_in, x0, exclude_wing=False, plot=False):
+def auto_crop_core(xx_in, yy_in, x0, exclude_wing=False, plot=False, resolution=None):
     """
     Automatically crop the signal around the core absorption feature.
 
@@ -506,7 +390,7 @@ def auto_crop_core(xx_in, yy_in, x0, exclude_wing=False, plot=False):
     xx = np.array(xx_in)
     yy = np.array(yy_in)
     # remove high frequency noise to get smooth signal
-    ss = kpno_spectral_filter(xx, yy)
+    ss = lowpass(xx, yy, resolution=resolution)
     ex = argrelextrema(ss, np.greater_equal)[0]
     i0 = np.searchsorted(xx[ex], x0)
     lex = ex[i0 - 1]
@@ -612,6 +496,7 @@ def fit_line_profile(
     **kwargs : dict, optional
         Additional arguments to pass to curve_fit.
     """
+    cls = get_profile_class(profile)
     x, y, x0 = _prepare_profile_data(xx, yy, x0, dlam, auto_crop, plot=plot)
     absolute = sigma is not None
 
@@ -625,32 +510,10 @@ def fit_line_profile(
     s2p = np.sqrt(2 * np.pi)
     sig = np.trapz(1 - y, x) / (s2p * amp)
 
-    xlo = 0.99 * x0
-    xhi = 1.01 * x0
-    slo = 1e-8 * x0
-    shi = 1000 * x0
-
-    # `scale` holds the x0 factor of each parameter: the wavelength-scaled ones
-    # (centre, width) are normalised by x0 for a well-conditioned fit (and
-    # rescaled back afterwards), while amp and the voigt rho are dimensionless
-    # and carry a factor of 1. x0 is guaranteed non-zero by _prepare_profile_data.
-    if profile == "gauss":
-        # center, amp, sig
-        p = [xmin, amp, sig]
-        b = [[xlo, 0, slo], [xhi, 1, shi]]
-        scale = [x0, 1, x0]
-    elif profile == "asym_gauss":
-        # center, amp, sig_left, sig_right
-        p = [xmin, amp, sig, sig]
-        b = [[xlo, 0, slo, slo], [xhi, 1, shi, shi]]
-        scale = [x0, 1, x0, x0]
-    elif profile == "voigt":
-        # center, amp, sigma, rho
-        p = [xmin, amp, sig, 0.0]
-        b = [[xlo, 0, slo, 0], [xhi, 1, shi, 1]]
-        scale = [x0, 1, x0, 1]
-    else:
-        raise ValueError(f"Unknown profile {profile}")
+    # per-profile initial guess, bounds and x0-scaling now live on the Profile class; ``scale``
+    # normalises the wavelength-like parameters by x0 for a well-conditioned fit (rescaled back
+    # afterwards). x0 is guaranteed non-zero by _prepare_profile_data.
+    p, b, scale = cls.initial_params(x0, xmin, amp, sig)
 
     p0 = p if p0 is None else p0
     bounds = b if bounds is None else bounds
@@ -661,7 +524,7 @@ def fit_line_profile(
     p0 = np.clip(p0, *bounds)
 
     def opt_func(x, *args):
-        return line_profile(x, *args, profile=profile)
+        return cls.model(x, *args)
 
     try:
         popt, pcov = curve_fit(

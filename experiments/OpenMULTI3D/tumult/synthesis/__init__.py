@@ -1,0 +1,21 @@
+"""Synthesis orchestration: run MULTI3D over stellar/abundance grids and interpolate.
+
+Phase 6 decomposition of the former ``tumult/synthesis.py`` monolith — the public
+entry points (unchanged signatures) live in :mod:`.api`; supporting machinery in
+:mod:`.cancel` (cooperative cancellation + process-group kill), :mod:`.executor`
+(parallel job batches), and :mod:`.atmos_select` (atmosphere/vmic node selection).
+Importing from ``tumult.synthesis`` keeps working exactly as before.
+"""
+from .api import (PRESETS_DIR, adaptive_fit, build_stellar_grid, compute_spectrum,
+                  compute_spectra, get_NLTE_correction, get_NLTE_corrections, preset)
+from .atmos_select import select_nodes
+from .cancel import CancelledError, CancelToken
+from .executor import _make_da_jobs, _run_batch, _run_single  # noqa: F401 (legacy importers)
+
+__all__ = [
+    "PRESETS_DIR", "preset",
+    "build_stellar_grid", "compute_spectrum", "compute_spectra", "adaptive_fit",
+    "get_NLTE_correction", "get_NLTE_corrections",
+    "CancelToken", "CancelledError",
+    "select_nodes",
+]

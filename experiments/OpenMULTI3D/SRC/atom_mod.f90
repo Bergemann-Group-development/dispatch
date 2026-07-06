@@ -12,6 +12,8 @@ MODULE atom_mod
     USE element_mod, only: element_type, isotope_type
     USE molecule_mod, only: molec_type
     USE composition_mod, only: composition_type
+    USE linelist_mod, only: linelist_type, append_line, finalize_linelist, &
+                            reserve_linelist, ll_bij_const => bij_const
     USE os_mod
     USE trace_mod
     USE spectrum_mod, only: spectrum_type, set_weights
@@ -65,6 +67,10 @@ MODULE atom_mod
     type, public :: atom_trans_t
       type(line_type), dimension(:), pointer, contiguous :: line => null()
       type(cont_type), dimension(:), pointer, contiguous :: cont => null()
+      ! SoA copy of the (non-hydrogen) bound-bound transitions for the use_new_linelist
+      ! path; built by atom_type%build_ll (globally for the linelist_out.txt export,
+      ! per rt-patch for the opacity/rate kernels)
+      type(linelist_type) :: ll
       real(4), dimension(:,:,:,:), allocatable :: adamp
       real(4), dimension(:,:,:,:), allocatable :: gamma_ij
       real(4), dimension(:,:,:,:), allocatable :: gamma_ji
@@ -135,6 +141,7 @@ MODULE atom_mod
       procedure :: read_classic
       procedure :: read_pandas
       procedure :: prepare_damping
+      procedure :: build_ll
       procedure :: prepare_Drawin
       procedure :: classic_col
       procedure :: gencol
@@ -276,10 +283,16 @@ MODULE atom_mod
     gamma_ji => adata%gamma_ji
 
     if (iter == 1) then
-      ! Normalize wphi
+      ! Normalize wphi; with the new-linelist rate kernel, lines below the LTE
+      ! strength cutoff accumulate no wphi (and no gamma) -- leave those at 1 so
+      ! the zero radiative rates pass through instead of producing 0*Inf
       do i=1, self%nline
         if (.not. self%trans%line(i)%active) cycle
-        wphi(:,:,:,i) = 1 / wphi(:,:,:,i)
+        where (wphi(:,:,:,i) > 0.)
+          wphi(:,:,:,i) = 1 / wphi(:,:,:,i)
+        elsewhere
+          wphi(:,:,:,i) = 1.
+        end where
       end do
     endif
 
@@ -712,7 +725,7 @@ MODULE atom_mod
     do i=1, self%nline
       lin => self%trans%line(i)
       call nextentry(latom)
-      if (size(in_lines) > 0) then
+      if (allocated(in_lines)) then
         if (findloc(in_lines, i, 1) <= 0) then
           call lin%deactivate()
           read(latom,*) ! skip line
@@ -830,20 +843,23 @@ MODULE atom_mod
 
         if (jj-ii > 0) then
           cnt%nnu = jj-ii+1
+          call os%allocate(cnt%lam_input, cnt%nnu, 'cont%lam_input')
+          call os%allocate(cnt%alpha_input, cnt%nnu, 'cont%alpha_input')
+          
           ! file wavelengths are threshold-decreasing; reverse to increasing
-          cnt%lam_input => bf_lam(jj:ii:-1)
-          cnt%alpha_input => bf_alpha(jj:ii:-1)
+          cnt%lam_input = bf_lam(jj:ii:-1)
+          cnt%alpha_input = bf_alpha(jj:ii:-1)
           cnt%alpha0 = cnt%alpha_input(cnt%nnu)
 
           do j=2,cnt%nnu
             if ( cnt%lam_input(j) < cnt%lam_input(j-1) ) then
               write(stdout,*) 'read_atom: continuum transition nr', i, &
-                            ' wavelengths not increasing!'
+                            ' wavelengths not decreasing!'
               abort = .true.
             elseif ( cnt%lam_input(j) == cnt%lam_input(j-1) ) then
               write(stdout,*) 'read_atom: continuum transition nr', i, &
                             ' wavelengths are not unique!'
-              cnt%lam_input(j:cnt%nnu) = cnt%lam_input(j:cnt%nnu) + 1.0d-6
+              cnt%lam_input(j:nnu) = cnt%lam_input(j:nnu) + 1.0d-6
             endif
           end do
 
@@ -1603,6 +1619,110 @@ MODULE atom_mod
       endif
     end do
   END SUBROUTINE prepare_damping
+
+  !====================================================================================
+  ! Convert the (non-hydrogen) bound-bound transitions of trans%line(:) into the SoA
+  ! linelist trans%ll for the use_new_linelist kernels (linelist_mod).  Broadening is
+  ! copied as prepared by prepare_damping (same over_4pi/nu0 scaling), populations use
+  ! the composition ion densities via lnbase/ipart (= ion stage; lower_ev re-referenced
+  ! to the stage ground level), and multi-component lines (io>1) are expanded into one
+  ! entry per component sharing the same lower/upper levels and transition column.
+  !
+  ! f_offset present -> per-rt-patch build: the per-line frequency windows
+  ! [iblue,ired] (already clamped to the patch range) are stored 1-based relative to
+  ! f_offset, and itrans is the subset column (index in trans%line, matching
+  ! trans%gamma_ij).  Absent -> global build for the linelist_out.txt export, sorted
+  ! by wavelength.
+  !------------------------------------------------------------------------------------
+  SUBROUTINE build_ll (self, trans, f_offset)
+    class(atom_type), intent(in) :: self
+    class(atom_trans_t), target :: trans
+    integer, intent(in), optional :: f_offset
+    class(line_type), pointer :: line
+    class(isotope_type), pointer :: isotopes(:)
+    real(8) :: gf, gpref0, llam0, lower_ev, dej, frac, loggf, wt
+    integer :: i, ih, s, ig, iso, off, k0, n
+    !----------------------------------------------------------------------------------
+    nullify(isotopes)
+    if (associated(self%species)) then
+      select type(species => self%species)
+      class is (element_type)
+        isotopes => species%isotope
+      class is (molec_type)
+        isotopes => species%isotope
+      end select
+    endif
+
+    off = 0
+    if (present(f_offset)) off = f_offset - 1
+
+    ! pre-size the arrays so the per-line appends do not reallocate
+    n = 0
+    do i=1, size(trans%line)
+      line => trans%line(i)
+      if (.not. line%active .or. line%hydrogen) cycle
+      n = n + max(1, line%io)
+    end do
+    if (n == 0) return
+    call reserve_linelist(trans%ll, n)
+
+    do i=1, size(trans%line)
+      line => trans%line(i)
+      if (.not. line%active) cycle
+      if (line%hydrogen) cycle     ! hydrogen keeps the old (Stark-profile) formalism
+
+      s  = self%ion(line%i)
+      ig = findloc(self%ion, s, 1) ! stage ground level: energy reference matching ion%n
+      lower_ev = line%lower_ev - self%ev(ig)
+
+      ! line%f already contains the isotope fraction (prepare_damping); take it back
+      ! out of the exported loggf so the record matches a plain input linelist
+      frac = 1
+      if (line%iso > 0 .and. associated(isotopes)) then
+        iso = findloc(isotopes%iso, line%iso, 1)
+        if (iso > 0) frac = isotopes(iso)%frac
+      endif
+
+      gf     = self%g(line%i) * line%f
+      gpref0 = log(gf * ll_bij_const / line%nu0)
+      loggf  = log10(gf / frac)
+      llam0  = log(line%lam0)
+      dej    = H_E * line%nu0
+      k0     = trans%ll%nline
+
+      if (line%io > 1) then
+        do ih=1, line%io
+          wt = line%wt(ih)
+          if (wt <= 0) cycle
+          call append_line(trans%ll, llam0 - line%dq(ih), line%nu0, lower_ev, &
+            gpref0 + log(wt), line%ga + line%da(ih), line%gw1, line%gw2, line%gq, &
+            line%unsold, line%i, line%j, i, s, line%Aij*wt, wt, dej, line%iso, &
+            loggf + log10(wt), line%gv_in, line%ga_in, line%gq_in)
+        end do
+      else
+        call append_line(trans%ll, llam0, line%nu0, lower_ev, gpref0, &
+          dble(line%ga), dble(line%gw1), dble(line%gw2), dble(line%gq), line%unsold, &
+          line%i, line%j, i, s, line%Aij, 1.d0, dej, line%iso, &
+          loggf, line%gv_in, line%ga_in, line%gq_in)
+      endif
+
+      if (present(f_offset)) then
+        ! all entries just appended (components) share the line's frequency window;
+        ! the window grid is symmetric about the line centre, so its midpoint seeds f0
+        trans%ll%iws(k0+1:trans%ll%nline)  = line%iblue - off
+        trans%ll%iwe(k0+1:trans%ll%nline)  = line%ired - off
+        trans%ll%icen(k0+1:trans%ll%nline) = (line%iblue + line%ired) / 2 - off
+      endif
+    end do
+
+    if (.not. present(f_offset)) then
+      call finalize_linelist(trans%ll)
+      ! the old bb formalism evaluates every active line, so flag them all as used
+      ! for the linelist_out.txt export (the SoA kernels, which would set the flag
+      ! per line, are currently disabled in rt_patch_mod)
+      trans%ll%used(1:trans%ll%nline) = .true.
+    endif
+  END SUBROUTINE build_ll
 
   !====================================================================================
   SUBROUTINE prepare_Drawin(self)

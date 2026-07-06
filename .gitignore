@@ -35,7 +35,6 @@ experiments/OpenMULTI3D/*
 !experiments/OpenMULTI3D/HOP
 !experiments/OpenMULTI3D/SRC
 !experiments/OpenMULTI3D/TumultStudio2
-!experiments/OpenMULTI3D/tests
 *.ipynb
 *.lock
 *.eps

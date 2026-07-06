@@ -19,6 +19,18 @@
       "fit_vrot": false,
       "abund_rows": {},
       "target": "0"
+    },
+    "synthesis": {
+      "atmos_grid_id": "__individual__"
+    },
+    "abund_run": {
+      "atmos_grid_id": "__individual__"
+    },
+    "abundcorr_run": {
+      "atmos_grid_id": "__individual__"
+    },
+    "sparam_run": {
+      "atmos_grid_id": "__individual__"
     }
   },
   "recent_files": [],

@@ -28,7 +28,9 @@ from tumult.utils import (apply_brault_filter, apply_brault_popt, cos_window,
 from canvas import ACCENT, LINE, MUTED, _style
 from controls import Field, Form
 from debounce import Debouncer
+from htmlbridge import pulse, toggle
 from spectrum import Spectrum
+from tool import Tool
 
 N_DISPLAY = 4000   # decimate power spectra for plotting
 R_MIN = 1e3        # lower limit of the resolution axis
@@ -66,16 +68,16 @@ class Method(StrEnum):
         return next((m for m in cls if m.label == label), cls.BRAULT)
 
 
-class FilterTool:
-    def __init__(self, canvas, on_mode=None, on_view=None, on_state=None,
-                 on_panel=None, notify=None, debounce_ms=200):
-        self.canvas = canvas
-        self.on_mode = on_mode          # push "on"/"off" to show/hide the panel + button state
-        self.on_view = on_view          # push "on"/"off" to show/hide the feautrier view (Brault)
-        self.on_state = on_state        # push (filter_exists, filter_visible) for the switch
-        self.on_panel = on_panel        # push the Filter inspector panel HTML
-        self.notify = notify or (lambda *a, **k: None)  # footer info message
-        self.active = False
+class FilterTool(Tool):
+    name = "filter"
+
+    def __init__(self, ctx, debounce_ms=200):
+        Tool.__init__(self, ctx)
+        self.own_panel("filter-panel-content")
+        self.own_mode_bridges((".sidebar-right", "filter-active"), ("#filter-btn", "active"))
+        self._view_bridge = ctx.bridges.cls("#main", "filter-mode")   # feautrier view swap
+        self._has_bridge = ctx.bridges.cls("#main", "has-filter")     # reveal the switch
+        self._check_bridge = ctx.bridges.check("filter-switch-input")  # switch on/off state
         self.method = Method.LOWPASS    # resolution cut (LOWPASS) or feautrier fit (BRAULT)
         self.fmax = 1.0                 # physical frequency (cycles / unit ln λ); set on activate
         self.floor = -20.0              # log-power
@@ -146,17 +148,14 @@ class FilterTool:
             self.notify("Load and select a spectrum before using the filter.")
             return
         self.active = True
-        if self.on_panel:
-            self.on_panel(self)
-        if self.on_mode:
-            self.on_mode("on")
+        self.push_panel()
+        self.push_mode("on")
         self._enter_method()
 
     def _enter_method(self):
         """Set up the view + apply the current method (called on activate / switch)."""
         if self.method == Method.LOWPASS:
-            if self.on_view:
-                self.on_view("off")     # low-pass uses the normal canvas, not feautrier
+            pulse(self._view_bridge, "off")  # low-pass uses the normal canvas, not feautrier
             self._apply_lowpass()
         else:
             self._enter_brault()
@@ -170,8 +169,7 @@ class FilterTool:
         if method == Method.BRAULT:
             self._configured = False     # re-pick the crosshair for the fresh fit
         self._enter_method()
-        if self.on_panel:
-            self.on_panel(self)
+        self.push_panel()
 
     def _enter_brault(self):
         sel = self.canvas.selected()
@@ -207,16 +205,13 @@ class FilterTool:
         self.fig.y_range.start, self.fig.y_range.end = ymin, ymax
         self._set_cross(self.fmax, float(np.exp(self.floor)))
         self._refit_apply()
-        if self.on_view:
-            self.on_view("on")
+        pulse(self._view_bridge, "on")
 
     def deactivate(self):
         """Leave the filter mode; the filter stays applied (clear() removes it)."""
         self.active = False
-        if self.on_view:
-            self.on_view("off")
-        if self.on_mode:
-            self.on_mode("off")
+        pulse(self._view_bridge, "off")
+        self.push_mode("off")
 
     def clear(self):
         self.canvas.clear_filter()
@@ -230,9 +225,13 @@ class FilterTool:
         self._emit_state()
 
     def _emit_state(self):
-        if self.on_state:
-            exists = any(o.filtered is not None for o in self.canvas.objects)
-            self.on_state(exists, self.canvas.show_filtered)
+        """Reflect filter existence/visibility in the header switch, and tell the other
+        tools (EW, abundance wizard) that the effective spectra changed."""
+        exists = any(o.filtered is not None for o in self.canvas.objects)
+        visible = self.canvas.show_filtered
+        toggle(self._has_bridge, exists)
+        toggle(self._check_bridge, visible)
+        self.ctx.emit("filter-state", exists=exists, visible=visible)
 
     def update(self):
         """From main.update_all: keep the view in sync when the workspace changes."""

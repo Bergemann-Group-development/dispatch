@@ -1,10 +1,16 @@
+"""Public synthesis entry points (signatures unchanged from the pre-split monolith):
+``build_stellar_grid``, ``compute_spectrum``, ``adaptive_fit``,
+``get_NLTE_correction(s)``, and the bundled namelist ``preset`` lookup.
+
+Orchestration only — atmosphere/vmic node selection lives in
+:mod:`tumult.synthesis.atmos_select`, parallel job execution in
+:mod:`tumult.synthesis.executor`, cancellation in :mod:`tumult.synthesis.cancel`.
+"""
 from collections import defaultdict
-from concurrent.futures import ProcessPoolExecutor, as_completed
 import copy
 import hashlib
 import itertools
 import json
-import math
 import os
 import numpy as np
 import pandas as pd
@@ -12,88 +18,17 @@ from pathlib import Path
 from tumult.auxfuncs import update_dict
 import tumult as tm
 
+from .atmos_select import select_nodes
+from .executor import _make_da_jobs, _run_batch
 
-def _run_single(key, nml_name, nml, launch_kwargs):
-    """Picklable worker: launch one job and return (key, run_or_None)."""
-    out, ok = tm.launch(nml_name, nml, **launch_kwargs)
-    if not ok:
-        if out.exists():
-            return key, tm.read(out)  # run already completed, just read it
-        print(f'Run {nml_name} failed!')
-        return key, None
-    return key, tm.read(out)
+# Bundled namelist presets (base / nlte / departures / corr_ref), co-located with the core so
+# both the library and any front-end (e.g. TumultStudio) reference one canonical location.
+PRESETS_DIR = Path(__file__).resolve().parents[1] / "presets"
 
 
-def _make_da_jobs(da_values, nml, name, ref, top):
-    """Build a jobs list for _run_batch from abundance offsets."""
-    jobs = []
-    for da in da_values:
-        nml_i = update_dict(copy.deepcopy(nml), {'atom_params': {'abundance': da}})
-        if ref == 'NLTE' and da != 0.0:
-            nml_i = update_dict(nml_i, {'m3d_params': {'maxiter': 0}})
-        nml_name = Path(top) / f'{name}_{da*100:+04.0f}'
-        jobs.append((da, nml_name, nml_i))
-    return jobs
-
-
-def _output_folder(nml_name, nml):
-    """Where launch() will write this job's run (mirrors launch.py's path logic)."""
-    datadir = nml.get('io_params', {}).get('datadir', 'data')
-    if isinstance(datadir, str):
-        datadir = datadir.strip()
-    return Path(datadir) / nml_name
-
-
-def _run_batch(jobs, launch_kwargs, max_threads):
-    """Run jobs, returning {key: run_or_None}.
-
-    Cache hits (output already on disk) are just file reads, so do them inline; only jobs
-    that must actually run dispatch.x go to the process pool — spawning workers (each
-    re-imports the scientific stack) costs seconds and is pure waste for cache reads.
-    """
-    if not jobs:
-        return {}
-
-    results = {}
-    todo = []
-    for key, nml_name, nml in jobs:
-        if _output_folder(nml_name, nml).exists() and not launch_kwargs.get('overwrite', False):
-            results[key] = _run_single(key, nml_name, nml,
-                                       dict(launch_kwargs, threads=1))[1]
-        else:
-            todo.append((key, nml_name, nml))
-
-    if todo:
-        threads_per_run = max(1, max_threads // len(todo))
-        n_workers = min(len(todo), max_threads)
-        worker_kwargs = dict(launch_kwargs, threads=threads_per_run)
-        with ProcessPoolExecutor(max_workers=n_workers) as executor:
-            futures = {
-                executor.submit(_run_single, key, nml_name, nml, worker_kwargs): key
-                for key, nml_name, nml in todo
-            }
-            for future in as_completed(futures):
-                key, result = future.result()
-                results[key] = result
-
-    return results
-
-
-def _vmic_levels(vmic, step):
-    """Lattice points bracketing ``vmic`` on a ``step``-spaced grid, with weights.
-
-    Returns ``[(v, w), ...]`` summing to 1. ``vmic`` is synthesised by overriding the
-    atmosphere's microturbulence (a uniform Doppler term, cheap to vary on a fixed
-    atmosphere), so we snap to a regular lattice — reused across nearby queries via the
-    run cache — and interpolate linearly between the two enclosing lattice points.
-    """
-    vmic = max(0.0, float(vmic))
-    lo = math.floor(vmic / step) * step
-    hi = math.ceil(vmic / step) * step
-    if math.isclose(lo, hi):
-        return [(lo, 1.0)]
-    alpha = (hi - vmic) / (hi - lo)
-    return [(lo, alpha), (hi, 1.0 - alpha)]
+def preset(name):
+    """Absolute path to a bundled namelist preset, e.g. ``preset("base.nml")``."""
+    return PRESETS_DIR / name
 
 
 def _is_nlte(settings):
@@ -102,10 +37,140 @@ def _is_nlte(settings):
             and (settings.get('m3d_params', {}) or {}).get('maxiter', 0) > 0)
 
 
+# --- shared building blocks (used by both build_stellar_grid and compute_spectra) --------
+# These are faithful extractions of the inline logic they replace; the serial path stays
+# bit-identical (guarded by the golden tests), and the batch path reuses them so a batched
+# variant issues exactly the runs its serial compute_spectrum counterpart would.
+
+def _run_name(teff_i, logg_i, feh_i, v):
+    return f't{teff_i:04.0f}g{logg_i*10:02.0f}m{feh_i*10:+03.0f}v{round(v*10):02.0f}'
+
+
+def _dep_jobs(base, nodes, departures_top):
+    """Departure-coefficient jobs (one per atmosphere node) for the NLTE two-step path: no
+    line list, no output spectrum (``long_scheme='none'``), saved via the 'save' format."""
+    jobs = []
+    for jkey, teff_i, logg_i, feh_i, v, _w, atmos_path, absmet_file in nodes:
+        dep_nml = copy.deepcopy(base)
+        dep_nml.pop('linelist_params', None)
+        dep_nml.pop('spectrum_params', None)
+        dep_nml = update_dict(dep_nml, {
+            'atmos_params': {'atmos_file': atmos_path, 'feh': feh_i, 'vmic': v},
+            'composition_params': {'absmet_file': absmet_file},
+            'm3d_params': {'maxiter': 99, 'ilambd': 3, 'long_scheme': 'none'},
+        })
+        jobs.append((jkey, Path(departures_top) / _run_name(teff_i, logg_i, feh_i, v), dep_nml))
+    return jobs
+
+
+def _spec_jobs(base, nodes, top, nlte, dep_dirs):
+    """Spectrum jobs (one per node): LTE reads the marcs atmosphere directly; NLTE reads the
+    saved atmosphere + precomputed departures ('save' format, maxiter=0). Returns
+    ``(jobs, job_keys, job_weights, job_params)``."""
+    jobs, job_keys, job_weights, job_params = [], [], [], []
+    for jkey, teff_i, logg_i, feh_i, v, weight, atmos_path, absmet_file in nodes:
+        if nlte:
+            atmos_override = {'atmos_format': 'save', 'atmos_file': dep_dirs[jkey],
+                              'read_departures': True, 'feh': feh_i, 'vmic': v}
+            extra = {'m3d_params': {'maxiter': 0}}
+        else:
+            atmos_override = {'atmos_file': atmos_path, 'feh': feh_i, 'vmic': v}
+            extra = {}
+        nml_i = update_dict(copy.deepcopy(base), {
+            'atmos_params': atmos_override,
+            'composition_params': {'absmet_file': absmet_file},
+            **extra,
+        })
+        jobs.append((jkey, Path(top) / _run_name(teff_i, logg_i, feh_i, v), nml_i))
+        job_keys.append(jkey)
+        job_weights.append(weight)
+        job_params.append((teff_i, logg_i, feh_i, v))
+    return jobs, job_keys, job_weights, job_params
+
+
+def _assemble_grid(runs, star, vmic, job_keys, job_weights, job_params, vmic_points):
+    """Load the finished node runs into a tm.grid at ``star`` (separable vmic axis when
+    ``vmic_points > 2``, else linear bracket with stored interpolation weights)."""
+    teff, logg, feh = star[:3]
+    param_dict = {
+        'teff': [p[0] for p in job_params],
+        'logg': [p[1] for p in job_params],
+        'feh':  [p[2] for p in job_params],
+        'vmic': [p[3] for p in job_params],
+    }
+    sep_vmic = vmic_points > 2
+    g = tm.grid([runs[k] for k in job_keys],
+                separable=(['vmic'] if sep_vmic else None), **param_dict)
+    g.p0 = {'teff': teff, 'logg': logg, 'feh': feh, 'vmic': vmic}
+    if not sep_vmic:
+        g.interp_weights = np.asarray(job_weights, dtype=float)
+    return g
+
+
+def _apply_window(settings, xmin, xmax, pad):
+    """Fill ``spectrum_params.aa_blue/aa_red`` from a wavelength window (unless a ``lam_file``
+    is configured) and return the cache-path label. Mutates ``settings`` in place."""
+    label = 'full'
+    if xmin is not None and xmax is not None:
+        lo, hi = (xmin, xmax) if xmin <= xmax else (xmax, xmin)
+        sp = settings.setdefault('spectrum_params', {})
+        if not sp.get('lam_file'):
+            lo_i, hi_i = int(np.floor(lo)), int(np.ceil(hi))
+            if pad is None:
+                pad = min(max(0.5, 0.05 * (hi_i - lo_i)), 100)
+            sp.setdefault('aa_blue', float(lo_i - pad))
+            sp.setdefault('aa_red', float(hi_i + pad))
+            label = f'w{lo_i}_{hi_i}'
+    return label
+
+
+def _dep_bucket(top, settings):
+    """The ``dep_<hash>`` cache dir for an NLTE solve, keyed only on the departure-relevant
+    settings so departures are reused across windows/line lists. ``None`` for LTE settings
+    without the relevant sections."""
+    dep_subset = {k: settings[k] for k in
+                  ('atom_params', 'composition_params', 'atmos_params', 'm3d_params')
+                  if k in settings}
+    dep_digest = hashlib.sha1(
+        json.dumps(dep_subset, sort_keys=True, default=str).encode()).hexdigest()[:8]
+    return Path(top) / f'dep_{dep_digest}'
+
+
+def _interp_crop(grid, xmin, xmax, method):
+    """Interpolate a node grid at its target point and crop to the window — the shared tail
+    of ``compute_spectrum``/``compute_spectra``."""
+    # a run can finish yet emit no spectrum (e.g. no R/daa/nnu/lam_file set, or
+    # long_scheme='none'); flag it clearly instead of failing later on a missing attribute.
+    no_spec = [s for s in grid.spectra if not getattr(s, 'has_spectrum', False)]
+    if no_spec:
+        folders = ', '.join(str(getattr(s, 'folder', '?')) for s in no_spec)
+        raise RuntimeError(
+            f"Synthesis produced no spectrum for: {folders}. Check the spectrum "
+            f"settings (R / wavelength range) and the synthesis line list.")
+    # combine the selected nodes using the (truncated) selection weights — the same weighted
+    # average grid.crop would do, but reusing the full-grid weights directly. Pass LTE
+    # explicitly per run so an LTE run yields its (only) LTE spectrum without the "Cannot get
+    # NLTE spectrum" warning Run.get_spectrum prints on the NLTE default.
+    weights = getattr(grid, 'interp_weights', None)
+    if weights is not None:
+        spec = tm.Spectrum.combine(
+            [s.crop(xmin=xmin, xmax=xmax, LTE=(getattr(s, 'mode', 'LTE') == 'LTE'))
+             for s in grid.spectra], weights=weights)
+    else:
+        lte = all(getattr(s, 'mode', 'LTE') == 'LTE' for s in grid.spectra)
+        spec = grid.crop(xmin=xmin, xmax=xmax, method=method, LTE=lte)
+    if len(spec) == 0:
+        raise RuntimeError(
+            f"Interpolated spectrum is empty over [{xmin}, {xmax}] Å — the synthesis "
+            f"did not cover the requested window.")
+    return spec
+
+
 def build_stellar_grid(top, star, atmos_files,
                        settings=None, absmet_files=None,
                        method='Delaunay', max_threads=None, launch_kwargs=None,
-                       vmic_step=0.5, departures_top=None):
+                       vmic_step=0.5, vmic_points=2, departures_top=None, nlte=None,
+                       cancel_token=None):
     """
     Build a tm.grid for the target stellar point by finding the enclosing
     model atmospheres, launching MULTI3D runs for them in parallel, and
@@ -117,7 +182,8 @@ def build_stellar_grid(top, star, atmos_files,
     selected node we take the single atmosphere nearest the query vmic and synthesise it
     at the two ``vmic_step``-spaced lattice points bracketing the query, then interpolate
     the spectra in vmic. This gives fine vmic sampling from a coarse atmosphere grid and
-    lets vmic exceed the grid's range.
+    lets vmic exceed the grid's range. (The selection itself lives in
+    :func:`tumult.synthesis.atmos_select.select_nodes`.)
 
     Parameters
     ----------
@@ -140,6 +206,13 @@ def build_stellar_grid(top, star, atmos_files,
         Forwarded to _run_batch / tm.launch.
     vmic_step : float
         Microturbulence lattice spacing in km/s (default 0.5).
+    vmic_points : int
+        Number of vmic lattice points to synthesise per spatial node (default 2 = the
+        linear bracket, historical behaviour). More points (3-4) cost proportionally
+        more syntheses but let the returned grid interpolate vmic with monotone-cubic
+        pchip instead of linearly: the vmic axis is flagged separable on the grid and
+        ``interp_weights`` is not set (pchip weights depend on the data) — interpolate
+        via ``grid.crop``, which ``compute_spectrum`` does automatically.
     departures_top : str or Path, optional
         When given *and* ``settings`` describe an NLTE solve, run NLTE in two steps: first
         solve departure coefficients (no line list, no output spectrum) for each atmosphere
@@ -147,136 +220,64 @@ def build_stellar_grid(top, star, atmos_files,
         them back in the line-synthesis step. ``departures_top`` is kept independent of the
         window/line list by the caller so departures are reused across them. When omitted,
         NLTE runs as a single combined solve+synthesis (legacy behaviour).
+    nlte : bool, optional
+        Whether this is an NLTE solve. Front-ends that carry the LTE/NLTE choice out of band
+        (e.g. in namelist presets rather than ``settings``) must pass it explicitly, since it
+        can't be recovered from ``settings`` alone. When ``None`` it is inferred from
+        ``settings`` via :func:`_is_nlte` (works only when ``settings`` carries m3d_params).
 
     Returns
     -------
     tm.grid with a .target attribute {'teff', 'logg', 'feh', 'vmic'}.
     """
-    teff, logg, feh = star[:3]
-    vmic = star[3] if len(star) == 4 else 0.0
-
     launch_kwargs = {k: v for k, v in (launch_kwargs or {}).items() if k != 'threads'}
     if max_threads is None:
         max_threads = os.cpu_count() or 1
 
-    # Collapse the atmosphere grid to unique (teff, logg, feh): vmic is no longer an
-    # interpolation axis, so for each spatial node we keep one representative atmosphere —
-    # the one whose grid vmic is closest to the query (its structure best matches; vmic is
-    # overridden anyway). atmos keys may be 3- or 4-tuples.
-    rep = {}  # (teff, logg, feh) -> (grid_vmic, path)
-    for key, path in atmos_files.items():
-        spatial = tuple(float(x) for x in key[:3])
-        kvmic = float(key[3]) if len(key) == 4 else 0.0
-        cur = rep.get(spatial)
-        if cur is None or abs(kvmic - vmic) < abs(cur[0] - vmic):
-            rep[spatial] = (kvmic, path)
+    nodes, vmic = select_nodes(star, atmos_files, method=method, vmic_step=vmic_step,
+                               absmet_files=absmet_files, vmic_points=vmic_points)
 
-    spatial_keys = list(rep.keys())
-    points = np.array(spatial_keys, dtype=float)
-    query = np.array([teff, logg, feh])
-
-    # select interpolation nodes (only in the dimensions where the query is off-grid)
-    from tumult.spectrum_grid import get_interp_weights
-    weights, indices = get_interp_weights(points, query, method)
-
-    levels = _vmic_levels(vmic, vmic_step)
     base = copy.deepcopy(settings or {})
-    nlte = departures_top is not None and _is_nlte(base)
-
-    def run_name(teff_i, logg_i, feh_i, v):
-        return f't{teff_i:04.0f}g{logg_i*10:02.0f}m{feh_i*10:+03.0f}v{round(v*10):02.0f}'
-
-    # Cartesian product of selected spatial nodes x vmic lattice points. A node's combined
-    # weight is the spatial node weight times the vmic interpolation weight; the same
-    # atmosphere may run at two vmic levels (distinct keys).
-    nodes = []  # (jkey, teff_i, logg_i, feh_i, v, weight, atmos_path, absmet_file)
-    for w_spatial, idx in zip(weights, indices):
-        spatial = spatial_keys[idx]
-        teff_i, logg_i, feh_i = spatial
-        atmos_path = rep[spatial][1]
-        absmet_file = absmet_files.get(feh_i, '') if absmet_files else ''
-        for v, w_vmic in levels:
-            nodes.append(((spatial, v), teff_i, logg_i, feh_i, v,
-                          float(w_spatial) * float(w_vmic), atmos_path, absmet_file))
+    # explicit `nlte` wins (front-ends signal NLTE via presets, invisible to _is_nlte);
+    # fall back to sniffing `settings` for direct library callers. Departures need a cache dir.
+    if nlte is None:
+        nlte = _is_nlte(base)
+    nlte = departures_top is not None and bool(nlte)
 
     # NLTE step 1: solve departure coefficients per atmosphere (no line list, no output
-    # spectrum), saving the atmosphere + departures via the 'save' format. These runs live
-    # under `departures_top` (keyed independently of window/line list), so they are reused
-    # across windows and line lists. The synthesis step below reads them back.
+    # spectrum), saved under `departures_top` (keyed independently of window/line list, so
+    # reused across them). The synthesis step below reads them back.
     dep_dirs = {}
     if nlte:
-        dep_jobs = []
-        for jkey, teff_i, logg_i, feh_i, v, _w, atmos_path, absmet_file in nodes:
-            dep_nml = copy.deepcopy(base)
-            dep_nml.pop('linelist_params', None)
-            dep_nml.pop('spectrum_params', None)
-            dep_nml = update_dict(dep_nml, {
-                'atmos_params': {'atmos_file': atmos_path, 'feh': feh_i, 'vmic': v},
-                'composition_params': {'absmet_file': absmet_file},
-                # only the departures are wanted here; skip the (expensive) formal solution
-                # for an output spectrum (long_scheme='none' => Spectrum.has_spectrum False).
-                'm3d_params': {'maxiter': 99, 'ilambd': 3, 'long_scheme': 'none'},
-            })
-            dep_jobs.append((jkey, Path(departures_top) / run_name(teff_i, logg_i, feh_i, v),
-                             dep_nml))
-        dep_runs = _run_batch(dep_jobs, launch_kwargs, max_threads)
+        dep_runs = _run_batch(_dep_jobs(base, nodes, departures_top),
+                              launch_kwargs, max_threads, cancel_token=cancel_token)
         dep_failed = [n[0] for n in nodes if dep_runs.get(n[0]) is None]
         if dep_failed:
             raise RuntimeError(f"Departure runs failed for atmospheres: {dep_failed}")
         dep_dirs = {n[0]: str(dep_runs[n[0]].folder) for n in nodes}
 
-    # Synthesis: LTE reads the marcs atmosphere directly; NLTE reads the saved atmosphere +
-    # precomputed departures ('save' format, maxiter=0 so no re-solve).
-    jobs = []
-    job_keys, job_weights, job_params = [], [], []
-    for jkey, teff_i, logg_i, feh_i, v, weight, atmos_path, absmet_file in nodes:
-        if nlte:
-            atmos_override = {'atmos_format': 'save', 'atmos_file': dep_dirs[jkey],
-                              'read_departures': True, 'feh': feh_i, 'vmic': v}
-            extra = {'m3d_params': {'maxiter': 0}}
-        else:
-            atmos_override = {'atmos_file': atmos_path, 'feh': feh_i, 'vmic': v}
-            extra = {}
-        nml_i = update_dict(copy.deepcopy(base), {
-            'atmos_params': atmos_override,
-            'composition_params': {'absmet_file': absmet_file},
-            **extra,
-        })
-        jobs.append((jkey, Path(top) / run_name(teff_i, logg_i, feh_i, v), nml_i))
-        job_keys.append(jkey)
-        job_weights.append(weight)
-        job_params.append((teff_i, logg_i, feh_i, v))
-
-    runs = _run_batch(jobs, launch_kwargs, max_threads)
+    jobs, job_keys, job_weights, job_params = _spec_jobs(base, nodes, top, nlte, dep_dirs)
+    runs = _run_batch(jobs, launch_kwargs, max_threads, cancel_token=cancel_token)
 
     failed = [k for k in job_keys if runs.get(k) is None]
     if failed:
         raise RuntimeError(f"Runs failed for atmospheres: {failed}")
 
-    param_dict = {
-        'teff': [p[0] for p in job_params],
-        'logg': [p[1] for p in job_params],
-        'feh':  [p[2] for p in job_params],
-        'vmic': [p[3] for p in job_params],
-    }
-
-    g = tm.grid([runs[k] for k in job_keys], **param_dict)
-    g.p0 = {'teff': teff, 'logg': logg, 'feh': feh, 'vmic': vmic}
-    # the interpolation weights for the selected nodes (aligned with g.spectra); the
-    # caller can combine directly with these instead of re-deriving them on the subset.
-    g.interp_weights = np.asarray(job_weights, dtype=float)
-    return g
+    return _assemble_grid(runs, star, vmic, job_keys, job_weights, job_params, vmic_points)
 
 
 def compute_spectrum(top, star, atmos_files, *, settings=None, absmet_files=None,
                      method='Delaunay', max_threads=None, launch_kwargs=None,
-                     xmin=None, xmax=None, pad=None, vmic_step=0.5):
+                     xmin=None, xmax=None, pad=None, vmic_step=0.5, vmic_points=2,
+                     nlte=None, cancel_token=None):
     """Compute a single spectrum at an arbitrary stellar point (Teff, logg, FeH, vmic).
 
     Thin wrapper over :func:`build_stellar_grid`: it synthesises the enclosing model
-    atmospheres in parallel and interpolates the result at ``star``. LTE vs NLTE is
-    encoded entirely in ``settings`` (presence of ``atom_params`` / ``m3d_params.maxiter``);
-    this helper only fills in the synthesis wavelength window from ``xmin``/``xmax`` so the
+    atmospheres in parallel and interpolates the result at ``star``. Whether the run is NLTE
+    is taken from the explicit ``nlte`` flag when given (front-ends that carry LTE/NLTE in
+    namelist presets must pass it — it can't be recovered from ``settings``), else inferred
+    from ``settings`` via :func:`_is_nlte`. NLTE runs use the two-step departures path.
+    This helper also fills in the synthesis wavelength window from ``xmin``/``xmax`` so the
     Fortran code computes just the visible range.
 
     Parameters
@@ -290,6 +291,14 @@ def compute_spectrum(top, star, atmos_files, *, settings=None, absmet_files=None
     pad : float, optional
         Extra Angstrom synthesised on each side of [xmin, xmax] so the cropped window has
         clean edges for convolution. Defaults to ``max(0.5, 0.05 * (xmax - xmin))``.
+    vmic_points : int, optional
+        vmic lattice points per spatial node (default 2 = linear bracket). With 3-4 the
+        vmic axis is interpolated by monotone-cubic pchip via the grid's separable-axis
+        machinery — more accurate for saturated lines, at the cost of proportionally
+        more syntheses (mitigated by the run cache: lattice levels are shared across
+        queries). In that mode the spatial weights are re-derived on the node stencil
+        by ``grid.crop`` (identical for Delaunay; NaturalNeighbor weights are then
+        computed on the stencil instead of the full atmosphere grid).
 
     Returns
     -------
@@ -298,18 +307,8 @@ def compute_spectrum(top, star, atmos_files, *, settings=None, absmet_files=None
     """
     settings = copy.deepcopy(settings or {})
     top = Path(top)
-    label = 'full'
 
-    if xmin is not None and xmax is not None:
-        lo, hi = (xmin, xmax) if xmin <= xmax else (xmax, xmin)
-        sp = settings.setdefault('spectrum_params', {})
-        if not sp.get('lam_file'):
-            lo_i, hi_i = int(np.floor(lo)), int(np.ceil(hi))
-            if pad is None:
-                pad = min(max(0.5, 0.05 * (hi_i - lo_i)), 100)
-            sp.setdefault('aa_blue', float(lo_i - pad))
-            sp.setdefault('aa_red', float(hi_i + pad))
-            label = f'w{lo_i}_{hi_i}'
+    label = _apply_window(settings, xmin, xmax, pad)
 
     # build_stellar_grid names cached runs by stellar params only, so a run computed with
     # different settings (window, R, abundances, mode, line list, ...) would be silently
@@ -319,55 +318,111 @@ def compute_spectrum(top, star, atmos_files, *, settings=None, absmet_files=None
         json.dumps(settings, sort_keys=True, default=str).encode()).hexdigest()[:8]
     syn_top = top / f'{label}_{digest}'
 
+    # explicit `nlte` wins (front-ends signal NLTE via presets, invisible to _is_nlte);
+    # fall back to sniffing `settings` for direct library callers.
+    if nlte is None:
+        nlte = _is_nlte(settings)
+
     # NLTE departure runs are independent of the window and line list, so key their cache on
     # only the departure-relevant settings and place them in a sibling `dep_<hash>` bucket —
     # reused across windows/line lists (see build_stellar_grid's two-step path).
-    departures_top = None
-    if _is_nlte(settings):
-        dep_subset = {k: settings[k] for k in
-                      ('atom_params', 'composition_params', 'atmos_params', 'm3d_params')
-                      if k in settings}
-        dep_digest = hashlib.sha1(
-            json.dumps(dep_subset, sort_keys=True, default=str).encode()).hexdigest()[:8]
-        departures_top = top / f'dep_{dep_digest}'
+    departures_top = _dep_bucket(top, settings) if nlte else None
 
     grid = build_stellar_grid(str(syn_top), star, atmos_files, settings=settings,
                               absmet_files=absmet_files, method=method,
                               max_threads=max_threads, launch_kwargs=launch_kwargs,
-                              vmic_step=vmic_step,
-                              departures_top=str(departures_top) if departures_top else None)
+                              vmic_step=vmic_step, vmic_points=vmic_points,
+                              departures_top=str(departures_top) if departures_top else None,
+                              nlte=nlte, cancel_token=cancel_token)
 
-    # a run can finish yet emit no spectrum (e.g. no R/daa/nnu/lam_file set, or
-    # long_scheme='none'); flag it clearly instead of failing later on a missing attribute.
-    no_spec = [s for s in grid.spectra if not getattr(s, 'has_spectrum', False)]
-    if no_spec:
-        folders = ', '.join(str(getattr(s, 'folder', '?')) for s in no_spec)
-        raise RuntimeError(
-            f"Synthesis produced no spectrum for: {folders}. Check the spectrum "
-            f"settings (R / wavelength range) and the synthesis line list.")
+    return _interp_crop(grid, xmin, xmax, method)
 
-    # combine the selected nodes using the (truncated) selection weights — the same
-    # weighted average grid.crop would do, but reusing the full-grid weights directly.
-    # Pass LTE explicitly per run so an LTE run yields its (only) LTE spectrum without the
-    # "Cannot get NLTE spectrum" warning Run.get_spectrum prints on the NLTE default.
-    weights = getattr(grid, 'interp_weights', None)
-    if weights is not None:
-        spec = tm.Spectrum.combine(
-            [s.crop(xmin=xmin, xmax=xmax, LTE=(getattr(s, 'mode', 'LTE') == 'LTE'))
-             for s in grid.spectra], weights=weights)
-    else:
-        lte = all(getattr(s, 'mode', 'LTE') == 'LTE' for s in grid.spectra)
-        spec = grid.crop(xmin=xmin, xmax=xmax, method=method, LTE=lte)
-    if len(spec) == 0:
-        raise RuntimeError(
-            f"Interpolated spectrum is empty over [{xmin}, {xmax}] Å — the synthesis "
-            f"did not cover the requested window.")
-    return spec
+
+def compute_spectra(top, star, atmos_files, *, settings_list, absmet_files=None,
+                    method='Delaunay', max_threads=None, launch_kwargs=None,
+                    xmin=None, xmax=None, pad=None, vmic_step=0.5, vmic_points=2,
+                    nlte=None, cancel_token=None):
+    """Batched :func:`compute_spectrum` for a list of settings variants that share the same
+    star/atmospheres (e.g. a curve-of-growth's abundance ladder).
+
+    Every ``(atmosphere-node × variant)`` dispatch run is fanned through a *single* shared
+    process pool: one :func:`_run_batch` for the NLTE departure solves and one for the
+    spectrum solves (just one for LTE). Atmosphere/vmic node selection is done once and shared
+    across variants. Returns ``[Spectrum]`` aligned with ``settings_list``.
+
+    Each variant's runs are byte-identical to the ones :func:`compute_spectrum` would issue
+    for that settings dict — same window, same hash-keyed cache folders, same namelists — so
+    the batch is a pure scheduling change: results match the per-variant serial calls exactly
+    and the disk cache is shared with them. Departures are solved per variant (the dep cache
+    key includes ``composition_params``), so an abundance ladder gets a full NLTE solve at
+    every point, only run concurrently instead of one after another.
+    """
+    if not settings_list:
+        return []
+    top = Path(top)
+    launch_kwargs = {k: v for k, v in (launch_kwargs or {}).items() if k != 'threads'}
+    if max_threads is None:
+        max_threads = os.cpu_count() or 1
+
+    # atmosphere/vmic nodes depend only on the star + grid, not the per-variant settings —
+    # select once and share across variants.
+    nodes, vmic = select_nodes(star, atmos_files, method=method, vmic_step=vmic_step,
+                               absmet_files=absmet_files, vmic_points=vmic_points)
+
+    # Per variant: assemble window/hash-keyed tops exactly as compute_spectrum does.
+    prepared = []   # (settings, syn_top, departures_top, nlte_v)
+    for settings in settings_list:
+        s = copy.deepcopy(settings or {})
+        label = _apply_window(s, xmin, xmax, pad)
+        digest = hashlib.sha1(
+            json.dumps(s, sort_keys=True, default=str).encode()).hexdigest()[:8]
+        syn_top = top / f'{label}_{digest}'
+        nlte_v = _is_nlte(s) if nlte is None else nlte
+        dep_top = _dep_bucket(top, s) if nlte_v else None
+        prepared.append((s, syn_top, dep_top, bool(nlte_v)))
+
+    # Phase 1: all NLTE departure solves (node × variant) in one shared pool. Keys are
+    # namespaced by variant index; each variant's runs live under its own hash-keyed dir.
+    dep_dirs = {}   # (vi, jkey) -> folder
+    dep_jobs = []
+    for vi, (s, _syn, dep_top, nlte_v) in enumerate(prepared):
+        if nlte_v:
+            dep_jobs += [((vi, jkey), path, nml)
+                         for jkey, path, nml in _dep_jobs(s, nodes, dep_top)]
+    if dep_jobs:
+        dep_runs = _run_batch(dep_jobs, launch_kwargs, max_threads, cancel_token=cancel_token)
+        failed = [k for k, _p, _n in dep_jobs if dep_runs.get(k) is None]
+        if failed:
+            raise RuntimeError(f"Departure runs failed: {failed}")
+        dep_dirs = {k: str(dep_runs[k].folder) for k, _p, _n in dep_jobs}
+
+    # Phase 2: all spectrum solves (node × variant) in one shared pool.
+    spec_jobs = []
+    variant_specs = []   # per variant: (job_keys, job_weights, job_params)
+    for vi, (s, syn_top, _dep, nlte_v) in enumerate(prepared):
+        dep_dirs_v = {n[0]: dep_dirs[(vi, n[0])] for n in nodes} if nlte_v else {}
+        jobs, job_keys, job_weights, job_params = _spec_jobs(s, nodes, syn_top, nlte_v,
+                                                             dep_dirs_v)
+        spec_jobs += [((vi, jkey), path, nml) for jkey, path, nml in jobs]
+        variant_specs.append((job_keys, job_weights, job_params))
+    spec_runs = _run_batch(spec_jobs, launch_kwargs, max_threads, cancel_token=cancel_token)
+    failed = [k for k, _p, _n in spec_jobs if spec_runs.get(k) is None]
+    if failed:
+        raise RuntimeError(f"Runs failed: {failed}")
+
+    # Interpolate + crop each variant's node grid, exactly as compute_spectrum's tail.
+    results = []
+    for vi, (job_keys, job_weights, job_params) in enumerate(variant_specs):
+        runs_v = {jkey: spec_runs[(vi, jkey)] for jkey in job_keys}
+        grid = _assemble_grid(runs_v, star, vmic, job_keys, job_weights, job_params,
+                              vmic_points)
+        results.append(_interp_crop(grid, xmin, xmax, method))
+    return results
 
 
 def adaptive_fit(target, synth_point_fn, axes, guesses, *, post_fit=(), spacings=None,
                  axis_nodes=None, atmos_bounds=None, max_rounds=6, tol=None, xtol=None,
-                 fit_kwargs=None):
+                 fit_kwargs=None, separable=None, cancel_token=None):
     """Fit ``target`` by adaptive grid synthesis.
 
     Builds a minimal grid (2 points per fitted axis, bracketing the guess), synthesises each
@@ -413,6 +468,13 @@ def adaptive_fit(target, synth_point_fn, axes, guesses, *, post_fit=(), spacings
         rounded to. Velocities default to 0.1; everything else to 0.01.
     fit_kwargs : dict, optional
         Extra kwargs forwarded to ``grid.fit`` (e.g. ``method``, ``integrate``, ``sigma``).
+    separable : sequence of str, optional
+        Axis names to interpolate with monotone-cubic pchip instead of linearly (the
+        grid's separable-axis machinery; names are whatever you called the axes).
+        Physically right for abundance-like axes, where the flux responds monotonically
+        and the curve of growth is strongly curved. Requires every sampled grid point
+        to synthesise; if one fails (``synth_point_fn`` returned ``None``) the round
+        falls back to linear interpolation with a printed note.
 
     Returns
     -------
@@ -468,6 +530,8 @@ def adaptive_fit(target, synth_point_fn, axes, guesses, *, post_fit=(), spacings
 
     best = fitted = grid = None
     for _round in range(max_rounds):
+        if cancel_token is not None:
+            cancel_token.check()   # abort promptly between refinement rounds
         # synthesise the Cartesian product of the current samples
         spectra, params = [], {a: [] for a in axes}
         for combo in itertools.product(*(samples[a] for a in axes)):
@@ -483,7 +547,15 @@ def adaptive_fit(target, synth_point_fn, axes, guesses, *, post_fit=(), spacings
         if len(spectra) < (2 if axes else 1):
             raise RuntimeError("adaptive_fit: too few synthesised grid points to fit.")
 
-        grid = tm.grid(spectra, **params)
+        if separable is not None:
+            try:
+                grid = tm.grid(spectra, separable=list(separable), **params)
+            except ValueError as err:
+                print(f"adaptive_fit: separable interpolation unavailable this round "
+                      f"({err}); falling back to linear.")
+                grid = tm.grid(spectra, **params)
+        else:
+            grid = tm.grid(spectra, **params)
         p0 = {k: float(guesses[k]) for k in axes + post_fit if k in guesses}
         best, fitted = grid.fit(target, fit=axes + post_fit, p0=p0, **fit_kwargs)
 

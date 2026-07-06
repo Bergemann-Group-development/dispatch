@@ -13,7 +13,13 @@
 
   <div id="header">
     <span class="app-title">TUMULT&nbsp;Studio</span>
-    <button id="open-session" class="icon-btn header-sessions" title="Save / load a session"><i class="ti ti-bookmark"></i></button>
+    <button id="open-session" class="icon-btn header-sessions" title="Save / load a session"><i class="ti ti-device-floppy"></i></button>
+    <!-- preferences: pinned to the header (with a missing-files warning sign) -->
+    <span class="settings-wrap header-settings">
+      <i id="settings-warning" class="ti ti-alert-triangle{{ ' show' if synth_warning else '' }}"
+         title="Some configured files in Preferences are missing"></i>
+      <button id="open-settings" class="icon-btn" title="Preferences"><i class="ti ti-settings"></i></button>
+    </span>
   </div>
 
   <div id="workspace">
@@ -24,6 +30,12 @@
         <button id="open-file" class="icon-btn" title="Open spectrum"><i class="ti ti-folder-open"></i></button>
       </div>
       <div id="objects">{{ objects_html|safe }}</div>
+      <!-- non-spectral abundance result objects (see abundancetool.AbundanceTool) -->
+      <div id="abund-results">{{ abund_results_html|safe }}</div>
+      <!-- abundance-correction objects (see abundcorrtool.AbundCorrTool) -->
+      <div id="corr-results">{{ corr_results_html|safe }}</div>
+      <!-- stellar-parameter objects (see sparamtool.SParamTool) -->
+      <div id="sparam-results">{{ sparam_results_html|safe }}</div>
     </aside>
 
     <div id="main" class="{{ 'empty' if main_empty else '' }}">
@@ -51,13 +63,10 @@
         <!-- synthesis: compute a spectrum at given stellar parameters -->
         <div class="toolbar-group">
           <button id="synth-btn" class="text-btn" title="Synthesize a spectrum at given (Teff, logg, [Fe/H], vmic)">Synth</button>
+          <button id="abundance-btn" class="text-btn" title="Mask-free element abundances with rigorous uncertainties">Abund</button>
+          <button id="abundcorr-btn" class="text-btn" title="NLTE abundance corrections vs 1D LTE (line by line)">Corr</button>
+          <button id="sparams-btn" class="text-btn" title="Stellar parameters from Fe excitation / ionization balance">Params</button>
         </div>
-        <!-- settings: kept pinned to the right, with a missing-files warning sign -->
-        <span class="settings-wrap toolbar-settings">
-          <i id="settings-warning" class="ti ti-alert-triangle{{ ' show' if synth_warning else '' }}"
-             title="Some configured files in Preferences are missing"></i>
-          <button id="open-settings" class="icon-btn" title="Preferences"><i class="ti ti-settings"></i></button>
-        </span>
       </div>
       <div id="top-panel">
         <div id="nav-slot">{{ embed(roots.nav_fig) }}</div>
@@ -72,7 +81,7 @@
       <div id="canvas-empty">
         <div class="empty-card">
           <div class="empty-card-head">
-            <i class="ti ti-bookmark"></i>
+            <i class="ti ti-device-floppy"></i>
             <span class="modal-title">Load a session</span>
           </div>
           <div class="empty-session-results file-results js-session-results">{{ sessions_html|safe }}</div>
@@ -80,6 +89,7 @@
           <div class="empty-actions">
             <button id="empty-open" class="text-btn"><i class="ti ti-folder-open"></i>&nbsp;Open spectrum</button>
             <button id="empty-synth" class="text-btn">Synthesize new</button>
+            <button id="empty-corr" class="text-btn" title="NLTE abundance corrections vs 1D LTE (line by line)">NLTE corrections</button>
           </div>
         </div>
       </div>
@@ -89,6 +99,39 @@
           <button id="filter-clear" class="text-btn">Clear filter</button>
         </div>
         <div id="feautrier-fig">{{ embed(roots.feautrier_fig) }}</div>
+      </div>
+      <!-- abundance result view: spectrum (top, steps 1-2) or A(X) scatter (step 3), with the
+           per-line table below and a step switcher footer -->
+      <div id="abund-scatter">{{ embed(roots.abund_fig) }}</div>
+      <div id="abund-bottom"><div id="abund-table">{{ abund_table_html|safe }}</div></div>
+      <div id="abund-steps">
+        <div class="step-tabs" title="Abundance workflow steps">
+          <button class="step-tab abund-step-btn" data-step="1">1 · Line selection</button>
+          <button class="step-tab abund-step-btn" data-step="2">2 · Synthesis</button>
+          <button class="step-tab abund-step-btn" data-step="3">3 · Uncertainties</button>
+        </div>
+      </div>
+      <!-- abundance-correction view: reference spectrum (steps 1-2) or ΔA scatter (step 3),
+           the per-line table below, and a step switcher footer -->
+      <div id="corr-scatter">{{ embed(roots.corr_fig) }}</div>
+      <div id="corr-bottom"><div id="corr-table">{{ corr_table_html|safe }}</div></div>
+      <div id="corr-steps">
+        <div class="step-tabs" title="Abundance-correction workflow steps">
+          <button class="step-tab corr-step-btn" data-step="1">1 · Reference &amp; lines</button>
+          <button class="step-tab corr-step-btn" data-step="2">2 · NLTE corrections</button>
+          <button class="step-tab corr-step-btn" data-step="3">3 · Scatter</button>
+        </div>
+      </div>
+      <!-- stellar-parameter view: spectrum (steps 1-2) or A(Fe) scatter (step 3), the
+           per-line table + iteration status below, and a step switcher footer -->
+      <div id="sparam-scatter">{{ embed(roots.sparam_fig) }}</div>
+      <div id="sparam-bottom"><div id="sparam-table">{{ sparam_table_html|safe }}</div></div>
+      <div id="sparam-steps">
+        <div class="step-tabs" title="Stellar-parameter workflow steps">
+          <button class="step-tab sparam-step-btn" data-step="1">1 · Fe lines</button>
+          <button class="step-tab sparam-step-btn" data-step="2">2 · Solve</button>
+          <button class="step-tab sparam-step-btn" data-step="3">3 · Diagnostics</button>
+        </div>
       </div>
     </div>
 
@@ -141,6 +184,141 @@
         <div class="hint">Click a line in the list to centre the view on it. The distance
           sets how far either side of the line is shown.</div>
       </div>
+      <div class="abund-panel">
+        <div class="abund-panel-head">
+          <span class="section-header">Abundances</span>
+          <button class="icon-btn abund-close" title="Close"><i class="ti ti-x"></i></button>
+        </div>
+        <!-- step 1 · line selection (independent of stellar parameters) -->
+        <div class="abund-step-panel abund-step-1-panel">
+          <div id="abund-ref">{{ abund_ref_html|safe }}</div>
+          <div id="abund1-fields">{{ abund1_html|safe }}</div>
+          <button class="text-btn abund-run-lines">Run diagnostic selection</button>
+          <div class="hint">Measures every candidate line's EW + FWHM (and its EW uncertainty
+            from the SNR + continuum-%) on the reference; the result appears in the left sidebar.
+            Lines whose photon EW error exceeds their EW are flagged and excluded. Click a row to
+            jump and curate.</div>
+        </div>
+        <!-- step 2 · synthesis setup (the tool's own atmosphere + params + mode) -->
+        <div class="abund-step-panel abund-step-2-panel">
+          <div class="section-header">Atmosphere</div>
+          <div id="abund-grid" class="synth-grid">{{ abund_grid_html|safe }}</div>
+          <div id="abund-file-picker" class="inline-picker-auto{{ ' open' if abund_show_file }}"
+               data-results="{{ abund_file_results_name }}">
+            {{ embed(roots.abund_file_picker) }}
+            <div id="abund-file-results" class="file-results"></div>
+          </div>
+          <div class="section-header">Stellar parameters</div>
+          <div id="abundparams-fields">{{ abund_params_html|safe }}</div>
+          <div class="section-header">Abundances</div>
+          <div id="abundbase-fields">{{ abund_base_html|safe }}</div>
+          <div class="section-header">Radiative transfer</div>
+          <div id="abundmode-fields">{{ abund_mode_html|safe }}</div>
+          <div id="abund-atoms-ro">{{ abund_atoms_ro_html|safe }}</div>
+          <button class="text-btn abund-run-synth">Run synthesis</button>
+          <div class="hint">Synthesises the curve of growth for each line; the table fills in
+            row by row as results land.</div>
+        </div>
+        <!-- step 3 · uncertainties -->
+        <div class="abund-step-panel abund-step-3-panel">
+          <div id="abund3-fields">{{ abund3_html|safe }}</div>
+          <button class="text-btn abund-run-uncert">Run uncertainties</button>
+          <div class="hint">Propagates each line's EW uncertainty (from the SNR + continuum-% set
+            in step 1) to its abundance through the REW gradient, and draws the A(X) scatter.</div>
+        </div>
+      </div>
+      <div class="abundcorr-panel">
+        <div class="abund-panel-head">
+          <span class="section-header">Abundance corrections</span>
+          <button class="icon-btn abundcorr-close" title="Close"><i class="ti ti-x"></i></button>
+        </div>
+        <!-- step 1 · target atmosphere + model atom, then compute the 1D LTE reference -->
+        <div class="corr-step-panel corr-step-1-panel">
+          <div class="section-header">Target atmosphere (NLTE)</div>
+          <div id="corr-grid" class="synth-grid">{{ corr_grid_html|safe }}</div>
+          <div id="corr-file-picker" class="inline-picker-auto{{ ' open' if corr_show_file }}"
+               data-results="{{ corr_file_results_name }}">
+            {{ embed(roots.corr_file_picker) }}
+            <div id="corr-file-results" class="file-results"></div>
+          </div>
+          <div class="section-header">Stellar parameters</div>
+          <div id="corrparams-fields">{{ corr_params_html|safe }}</div>
+          <div class="section-header">Model atom</div>
+          <div class="path-row">
+            <div id="corr-atoms-list" class="chips">{{ corr_atoms_html|safe }}</div>
+            <button id="corr-browse-atom" class="icon-btn" title="Choose a model atom"><i class="ti ti-folder-open"></i></button>
+          </div>
+          <div id="corr-atom-picker" class="inline-picker">
+            {{ embed(roots.corr_atom_picker) }}
+            <div id="corr-atom-results" class="file-results"></div>
+          </div>
+          <div class="section-header">Measurement</div>
+          <div id="corr1-fields">{{ corr1_html|safe }}</div>
+          <button class="text-btn corr-run-ref">Compute reference &amp; lines</button>
+          <div class="hint">Synthesises the 1D LTE reference from the model atom above (the 1D LTE
+            grid is set in Preferences → Synthesis) — the atom defines the spectrum and its
+            wavelength range — then measures every atom line's EW on it.</div>
+        </div>
+        <!-- step 2 · NLTE corrections (EW match, line by line) -->
+        <div class="corr-step-panel corr-step-2-panel">
+          <button class="text-btn corr-run-corr">Run corrections</button>
+          <div class="hint">For each line, builds an NLTE curve of growth on the target atmosphere
+            and inverts it to the abundance reproducing the reference EW — that shift is ΔA. The
+            table fills in row by row as results land.</div>
+        </div>
+        <!-- step 3 · line-to-line scatter -->
+        <div class="corr-step-panel corr-step-3-panel">
+          <div id="corr3-fields">{{ corr3_html|safe }}</div>
+          <div class="hint">Line-to-line scatter of the corrections, with the mean ΔA and its
+            population σ.</div>
+        </div>
+      </div>
+      <div class="sparam-panel">
+        <div class="abund-panel-head">
+          <span class="section-header">Stellar parameters</span>
+          <button class="icon-btn sparam-close" title="Close"><i class="ti ti-x"></i></button>
+        </div>
+        <!-- step 1 · Fe I + Fe II line selection (independent of stellar parameters) -->
+        <div class="sparam-step-panel sparam-step-1-panel">
+          <div id="sparam-ref">{{ sparam_ref_html|safe }}</div>
+          <div id="sparam1-fields">{{ sparam1_html|safe }}</div>
+          <button class="text-btn sparam-run-lines">Measure Fe lines</button>
+          <div class="hint">Measures every Fe I and Fe II candidate line's EW + FWHM (and its
+            EW uncertainty from the SNR + continuum-%) on the target. Click a row to jump and
+            curate — the ionization balance needs Fe II lines, so keep the good ones.</div>
+        </div>
+        <!-- step 2 · synthesis setup (initial guess) + solver -->
+        <div class="sparam-step-panel sparam-step-2-panel">
+          <div class="section-header">Atmosphere</div>
+          <div id="sparam-grid" class="synth-grid">{{ sparam_grid_html|safe }}</div>
+          <div id="sparam-file-picker" class="inline-picker-auto{{ ' open' if sparam_show_file }}"
+               data-results="{{ sparam_file_results_name }}">
+            {{ embed(roots.sparam_file_picker) }}
+            <div id="sparam-file-results" class="file-results"></div>
+          </div>
+          <div class="section-header">Initial guess</div>
+          <div id="sparamparams-fields">{{ sparam_params_html|safe }}</div>
+          <div class="section-header">Abundances</div>
+          <div id="sparambase-fields">{{ sparam_base_html|safe }}</div>
+          <div class="section-header">Radiative transfer</div>
+          <div id="sparammode-fields">{{ sparam_mode_html|safe }}</div>
+          <div id="sparam-atoms-ro">{{ sparam_atoms_ro_html|safe }}</div>
+          <div class="section-header">Solver</div>
+          <div id="sparam2-fields">{{ sparam2_html|safe }}</div>
+          <button class="text-btn sparam-run-solve">Solve parameters</button>
+          <div class="hint">Iterates from the initial guess: each round inverts every line's EW
+            to A(Fe) through a curve of growth at the trial parameters, then nulls the
+            excitation slope (Teff), REW slope (vmic), Fe II−Fe I offset (logg) and the
+            [Fe/H] consistency. Rows and the iteration status stream into the table.</div>
+        </div>
+        <!-- step 3 · diagnostics scatter -->
+        <div class="sparam-step-panel sparam-step-3-panel">
+          <div id="sparam3-fields">{{ sparam3_html|safe }}</div>
+          <div class="hint">Per-line A(Fe) — Fe I in blue, Fe II in red — with the weighted
+            Fe I regression line on the chosen axis and the converged parameters ± σ under
+            the table. Toggling lines re-computes the diagnostics without re-synthesis.</div>
+        </div>
+      </div>
       <div class="synth-panel">
         <div class="synth-panel-head">
           <span class="section-header">Synthesize spectrum</span>
@@ -150,13 +328,37 @@
           <button class="tab active" data-panel="synthesize">Synthesize</button>
           <button class="tab" data-panel="fit">Fit</button>
         </div>
-        <!-- RT mode + NLTE atoms: shared by both tabs (one source of truth) -->
+        <!-- atmosphere grid: which grid + interpolate vs pick a specific file (shared) -->
         <div class="synth-rt">
+          <div class="section-header">Atmosphere</div>
+          <div id="synth-grid" class="synth-grid">{{ synth_grid_html|safe }}</div>
+          <div id="synth-file-picker" class="inline-picker-auto{{ ' open' if synth_show_file }}"
+               data-results="{{ synth_file_results_name }}">
+            {{ embed(roots.synth_file_picker) }}
+            <div id="synth-file-results" class="file-results"></div>
+          </div>
+        </div>
+        <div class="tab-content">
+          <div class="tab-panel active" data-panel="synthesize">
+            <div class="section-header">Stellar parameters</div>
+            <div id="synth-fields">{{ synth_run_html|safe }}</div>
+            <div class="section-header">Wavelength window</div>
+            <div id="synthwindow-fields">{{ synth_window_html|safe }}</div>
+          </div>
+          <div class="tab-panel" data-panel="fit">
+            <div id="fit-fields">{{ fit_fields_html|safe }}</div>
+          </div>
+        </div>
+        <!-- Abundances + RT mode + NLTE atoms: below the per-tab parameters, shared by both tabs -->
+        <div class="synth-rt">
+          <div class="section-header">Abundances</div>
+          <div id="synthabund-fields">{{ synth_abund_html|safe }}</div>
+          <div class="section-header">Radiative transfer</div>
           <div id="synthmode-fields">{{ synth_mode_html|safe }}</div>
           <div id="synth-atoms" class="synth-atoms{{ ' on' if synth_is_nlte }}">
             <div class="section-header">Model atoms (NLTE)</div>
             <div class="path-row">
-              <div id="synth-atoms-list" class="atom-tags">{{ synth_atoms_html|safe }}</div>
+              <div id="synth-atoms-list" class="chips">{{ synth_atoms_html|safe }}</div>
               <button id="browse-atom" class="icon-btn" title="Add a model atom"><i class="ti ti-plus"></i></button>
             </div>
             <div id="atom-picker" class="inline-picker">
@@ -167,13 +369,12 @@
         </div>
         <div class="tab-content">
           <div class="tab-panel active" data-panel="synthesize">
-            <div id="synth-fields">{{ synth_run_html|safe }}</div>
             <button id="synth-run" class="primary-btn">Synthesize</button>
-            <div class="hint">Drag an x-range on the plot to set the synthesis window
-              (defaults to the current view). Configure paths in Preferences.</div>
+            <div class="hint">Set the wavelength window above — it is seeded from the current
+              view (or a range you drag on the plot) and is required. Configure paths in
+              Preferences.</div>
           </div>
           <div class="tab-panel" data-panel="fit">
-            <div id="fit-fields">{{ fit_fields_html|safe }}</div>
             <button id="fit-run" class="primary-btn">Fit</button>
             <div class="hint">Iterative grid fit of the target spectrum. Drag an x-range
               to set the fit window.</div>
@@ -225,7 +426,14 @@
       </div>
 
       <div class="settings-page" data-page="synthesis">
-        <div class="section-header">Atmosphere &amp; lines</div>
+        <div class="section-header">Atmosphere grids</div>
+        <div id="grid-list" class="grid-list">{{ grid_list_html|safe }}</div>
+        <div id="grid-picker" class="inline-picker">
+          {{ embed(roots.grid_picker) }}
+          <div id="grid-results" class="file-results"></div>
+          <button id="grid-select-folder" class="text-btn">Use this folder</button>
+        </div>
+        <div class="section-header">Lines &amp; interpolation</div>
         <div id="synthprefs-fields">{{ synth_prefs_html|safe }}</div>
       </div>
 
@@ -321,6 +529,73 @@
     if (del) cacheAction('del', del.dataset.path);
   });
 
+  // registered atmosphere grids (Preferences → Synthesis)
+  function gridAction(kind, arg) {
+    var m = Bokeh.documents[0].get_model_by_name('grid-actions');
+    if (m) m.setv({ value: kind + ' ' + (arg || '') + ' ' + Date.now() });
+  }
+  // edit a grid card field (name/folder/pattern/format) -> "grid-fields-input"
+  document.addEventListener('change', function (ev) {
+    var el = ev.target.closest('[data-grid-key]');
+    if (!el) return;
+    var m = Bokeh.documents[0].get_model_by_name('grid-fields-input');
+    if (m) m.setv({ value: el.dataset.gridId + '|' + el.dataset.gridKey + '=' + el.value + ' ' + Date.now() });
+  });
+  // pick the 1D LTE reference grid (for the abundance-correction tool) -> "grid-actions"
+  document.addEventListener('change', function (ev) {
+    if (ev.target.closest('.grid-ref-select')) gridAction('setref', ev.target.value);
+  });
+  // add / remove / browse-folder buttons (rendered dynamically into #grid-list)
+  document.addEventListener('click', function (ev) {
+    if (ev.target.closest('.grid-add')) { gridAction('add'); return; }
+    var del = ev.target.closest('.grid-del');
+    if (del) { gridAction('del', del.dataset.gridId); return; }
+    var br = ev.target.closest('.grid-browse');
+    if (br) {
+      gridAction('browse', br.dataset.gridId);
+      var rb = Bokeh.documents[0].get_model_by_name('{{ grid_results_name }}');
+      var rl = document.getElementById('grid-results');
+      if (rb && rl) rl.innerHTML = rb.value;  // js_on_change only fires on change
+    }
+  });
+  // "Use this folder" adopts the picker's current directory for the grid being edited
+  document.getElementById('grid-select-folder').addEventListener('click', function () {
+    gridAction('folder');
+  });
+
+  // synth panel: grid select / source mode / clear-file go through "synth-grid-actions"
+  function synthGridAction(kind, arg) {
+    var m = Bokeh.documents[0].get_model_by_name('synth-grid-actions');
+    if (m) m.setv({ value: kind + ' ' + (arg || '') + ' ' + Date.now() });
+  }
+  document.addEventListener('change', function (ev) {
+    if (ev.target.closest('.synth-grid-select')) { synthGridAction('grid', ev.target.value); }
+    else if (ev.target.closest('.synth-mode-select')) { synthGridAction('mode', ev.target.value); }
+    else if (ev.target.closest('.synth-format-select')) { synthGridAction('format', ev.target.value); }
+  });
+  // inline atmosphere file pickers (synth / abund / corr): the "Type a path…" field is
+  // always shown while a concrete file is in play; its result list drops down while the
+  // field is focused and — crucially — stays open while folders in the list are clicked
+  // (mousedown inside the list is prevented, so the field keeps focus and navigates in
+  // place). Clicking away closes it; picking a file collapses it from the server.
+  document.addEventListener('focusin', function (ev) {
+    var pick = ev.target.closest('.inline-picker-auto');
+    if (!pick) return;
+    pick.classList.add('results-open');
+    var el = pick.querySelector('.file-results'), nm = pick.dataset.results;
+    if (el && nm) { var rb = Bokeh.documents[0].get_model_by_name(nm); if (rb) el.innerHTML = rb.value; }
+  });
+  document.addEventListener('focusout', function (ev) {
+    var pick = ev.target.closest('.inline-picker-auto');
+    if (pick) pick.classList.remove('results-open');
+  });
+  document.addEventListener('mousedown', function (ev) {
+    var pick = ev.target.closest('.inline-picker-auto');
+    if (!pick) return;
+    if (ev.target.closest('.file-results')) ev.preventDefault();  // keep focus → list stays open
+    else pick.classList.add('results-open');                      // clicking the field (re)opens
+  });
+
   // model-atom selector (NLTE): reveal the inline picker, and delete chips
   document.getElementById('browse-atom').addEventListener('click', function () {
     var panel = document.getElementById('atom-picker');
@@ -347,6 +622,14 @@
   document.addEventListener('click', function (ev) {
     var del = ev.target.closest('.fit-abund-del');
     if (del) fitAction('del', del.dataset.el);
+  });
+
+  // Edit tab: "Fit to target" button (rendered dynamically) -> "edit-actions" channel
+  document.addEventListener('click', function (ev) {
+    if (ev.target.closest('.edit-fit-btn')) {
+      var m = Bokeh.documents[0].get_model_by_name('edit-actions');
+      if (m) m.setv({ value: 'fit ' + Date.now() });
+    }
   });
 
   // reveal the file picker inline inside the settings modal (no nested modal)
@@ -412,6 +695,7 @@
     document.getElementById('open-file').click();
   });
   document.getElementById('empty-synth').addEventListener('click', function () { ewAction('synth-toggle'); });
+  document.getElementById('empty-corr').addEventListener('click', function () { ewAction('abundcorr'); });
 
   // delegated click for any file-picker result row (reusable across pickers)
   document.addEventListener('click', function (ev) {
@@ -455,6 +739,9 @@
     }
     var btn = ev.target.closest('.object-btn');
     if (btn) {
+      // cancelling a running synthesis is destructive (loses the in-flight run) — confirm
+      if (btn.dataset.action === 'cancel-pending' &&
+          !confirm('Cancel this synthesis run?')) return;
       m.setv({ value: btn.dataset.action + ':' + btn.dataset.uid + ':' + Date.now() });
       return;
     }
@@ -467,14 +754,17 @@
   // generic tab switching, scoped per group (a .tab-bar and its adjacent .tab-content) so
   // the inspector (Edit/Style/Info) and the synth panel (Synthesize/Fit) don't cross-talk
   document.querySelectorAll('.tab-bar').forEach(function (bar) {
-    // the matching content is the sibling .tab-content in the same parent (not necessarily
-    // adjacent — the synth panel has a shared RT-mode block between the bar and its content)
-    var content = bar.parentElement.querySelector(':scope > .tab-content');
+    // a panel may have more than one .tab-content sibling (the synth panel splits its
+    // per-tab fields and the action button around the shared RT-mode block) — switch the
+    // active panel in every one of them together
+    var contents = bar.parentElement.querySelectorAll(':scope > .tab-content');
     bar.querySelectorAll('.tab').forEach(function (tab) {
       tab.addEventListener('click', function () {
         bar.querySelectorAll('.tab').forEach(function (t) { t.classList.toggle('active', t === tab); });
-        if (content) content.querySelectorAll('.tab-panel').forEach(function (p) {
-          p.classList.toggle('active', p.dataset.panel === tab.dataset.panel);
+        contents.forEach(function (content) {
+          content.querySelectorAll('.tab-panel').forEach(function (p) {
+            p.classList.toggle('active', p.dataset.panel === tab.dataset.panel);
+          });
         });
       });
     });
@@ -505,10 +795,14 @@
     if (m) m.setv({ value: 'filtertoggle:' + (ev.target.checked ? 'on' : 'off') + ':' + Date.now() });
   });
   document.addEventListener('change', function (ev) {
-    var sel = ev.target.closest('.ew-method-select');
-    if (!sel) return;
     var m = Bokeh.documents[0].get_model_by_name('object-actions');
-    if (m) m.setv({ value: 'profile:' + sel.value + ':' + Date.now() });
+    if (!m) return;
+    var sel = ev.target.closest('.ew-method-select');
+    if (sel) { m.setv({ value: 'profile:' + sel.value + ':' + Date.now() }); return; }
+    var snr = ev.target.closest('.ew-snr-input');
+    if (snr) { m.setv({ value: 'ew-snr:' + snr.value + ':' + Date.now() }); return; }
+    var cont = ev.target.closest('.ew-cont-input');
+    if (cont) { m.setv({ value: 'ew-cont:' + cont.value + ':' + Date.now() }); }
   });
 
   // continuum normalisation: toggle from the toolbar; init/clear/close from the panel
@@ -518,6 +812,149 @@
     else if (ev.target.closest('.norm-clear')) ewAction('norm-clear');
     else if (ev.target.closest('.norm-close')) ewAction('normalise');
   });
+  // abundance tool: own client->server channel for run / reference / result clicks / line toggles
+  function abundAction(kind, arg) {
+    var m = Bokeh.documents[0].get_model_by_name('abund-actions');
+    if (m) m.setv({ value: kind + ':' + (arg || '') + ':' + Date.now() });
+  }
+  document.getElementById('abundance-btn').addEventListener('click', function () { ewAction('abundance'); });
+  document.addEventListener('click', function (ev) {
+    if (ev.target.closest('.abund-close')) { ewAction('abundance'); return; }
+    if (ev.target.closest('.abund-run-lines')) { abundAction('run-lines'); return; }
+    if (ev.target.closest('.abund-run-synth')) { abundAction('run-synth'); return; }
+    if (ev.target.closest('.abund-run-uncert')) { abundAction('run-uncert'); return; }
+    var step = ev.target.closest('.abund-step-btn');
+    if (step) { abundAction('step', step.dataset.step); return; }
+    var rem = ev.target.closest('[data-result-remove]');
+    if (rem) { abundAction('remove', rem.dataset.resultRemove); return; }
+    var ritem = ev.target.closest('.result-item');
+    if (ritem && ritem.dataset.result) { abundAction('select', ritem.dataset.result); return; }
+    // a table row-click (but not the include checkbox) jumps the figure to that line
+    var lrow = ev.target.closest('.abund-row');
+    if (lrow && !ev.target.closest('.abund-line-chk')) {
+      abundAction('jump-line', lrow.dataset.line);
+    }
+  });
+  document.addEventListener('change', function (ev) {
+    var ref = ev.target.closest('.abund-ref-select');
+    if (ref) { abundAction('ref', ref.value); return; }
+    var mask = ev.target.closest('.abund-mask-chk');
+    if (mask) { abundAction('mask-toggle'); return; }
+    var chk = ev.target.closest('.abund-line-chk');
+    if (chk) { abundAction('toggle-line', chk.dataset.line); }
+  });
+
+  // Abund Setup tab: atmosphere grid select / source / format / file (mirrors the synth panel)
+  function abundGridAction(kind, arg) {
+    var m = Bokeh.documents[0].get_model_by_name('abund-grid-actions');
+    if (m) m.setv({ value: kind + ' ' + (arg || '') + ' ' + Date.now() });
+  }
+  document.addEventListener('change', function (ev) {
+    if (ev.target.closest('.abund-grid-select')) { abundGridAction('grid', ev.target.value); }
+    else if (ev.target.closest('.abund-mode-select')) { abundGridAction('mode', ev.target.value); }
+    else if (ev.target.closest('.abund-format-select')) { abundGridAction('format', ev.target.value); }
+  });
+  // (the inline path field's show/hide is handled by the shared .inline-picker-auto logic above)
+
+  // abundance-correction tool: own client->server channel (run / step / select / line clicks)
+  function corrAction(kind, arg) {
+    var m = Bokeh.documents[0].get_model_by_name('corr-actions');
+    if (m) m.setv({ value: kind + ':' + (arg || '') + ':' + Date.now() });
+  }
+  document.getElementById('abundcorr-btn').addEventListener('click', function () { ewAction('abundcorr'); });
+  document.addEventListener('click', function (ev) {
+    if (ev.target.closest('.abundcorr-close')) { ewAction('abundcorr'); return; }
+    if (ev.target.closest('.corr-run-ref')) { corrAction('run-ref'); return; }
+    if (ev.target.closest('.corr-run-corr')) { corrAction('run-corr'); return; }
+    var step = ev.target.closest('.corr-step-btn');
+    if (step) { corrAction('step', step.dataset.step); return; }
+    var rem = ev.target.closest('[data-corr-remove]');
+    if (rem) { corrAction('remove', rem.dataset.corrRemove); return; }
+    var ritem = ev.target.closest('.corr-result-item');
+    if (ritem && ritem.dataset.corrResult) { corrAction('select', ritem.dataset.corrResult); return; }
+    var lrow = ev.target.closest('.corr-row');
+    if (lrow && !ev.target.closest('.corr-line-chk')) {
+      corrAction('jump-line', lrow.dataset.line);
+    }
+  });
+  document.addEventListener('change', function (ev) {
+    var mask = ev.target.closest('.corr-mask-chk');
+    if (mask) { corrAction('mask-toggle'); return; }
+    var chk = ev.target.closest('.corr-line-chk');
+    if (chk) { corrAction('toggle-line', chk.dataset.line); }
+  });
+
+  // Corr model-atom selector: reveal the inline picker, and delete chips
+  document.getElementById('corr-browse-atom').addEventListener('click', function () {
+    var panel = document.getElementById('corr-atom-picker');
+    panel.classList.toggle('open');
+    if (panel.classList.contains('open')) {
+      var rb = Bokeh.documents[0].get_model_by_name('{{ corr_atom_results_name }}');
+      var el = document.getElementById('corr-atom-results');
+      if (rb && el) el.innerHTML = rb.value;  // js_on_change only fires on change
+    }
+  });
+  document.addEventListener('click', function (ev) {
+    var del = ev.target.closest('.corr-atom-del');
+    if (!del) return;
+    var m = Bokeh.documents[0].get_model_by_name('corr-atom-actions');
+    if (m) m.setv({ value: 'del ' + del.dataset.path + ' ' + Date.now() });
+  });
+
+  // Corr Setup: atmosphere grid select / source / format / file (mirrors the synth panel)
+  function corrGridAction(kind, arg) {
+    var m = Bokeh.documents[0].get_model_by_name('corr-grid-actions');
+    if (m) m.setv({ value: kind + ' ' + (arg || '') + ' ' + Date.now() });
+  }
+  document.addEventListener('change', function (ev) {
+    if (ev.target.closest('.corr-grid-select')) { corrGridAction('grid', ev.target.value); }
+    else if (ev.target.closest('.corr-mode-select')) { corrGridAction('mode', ev.target.value); }
+    else if (ev.target.closest('.corr-format-select')) { corrGridAction('format', ev.target.value); }
+  });
+  // (the inline path field's show/hide is handled by the shared .inline-picker-auto logic above)
+
+  // stellar-parameter tool: own client->server channel (run / step / select / line clicks)
+  function sparamAction(kind, arg) {
+    var m = Bokeh.documents[0].get_model_by_name('sparam-actions');
+    if (m) m.setv({ value: kind + ':' + (arg || '') + ':' + Date.now() });
+  }
+  document.getElementById('sparams-btn').addEventListener('click', function () { ewAction('sparams'); });
+  document.addEventListener('click', function (ev) {
+    if (ev.target.closest('.sparam-close')) { ewAction('sparams'); return; }
+    if (ev.target.closest('.sparam-run-lines')) { sparamAction('run-lines'); return; }
+    if (ev.target.closest('.sparam-run-solve')) { sparamAction('run-solve'); return; }
+    var step = ev.target.closest('.sparam-step-btn');
+    if (step) { sparamAction('step', step.dataset.step); return; }
+    var rem = ev.target.closest('[data-sparam-remove]');
+    if (rem) { sparamAction('remove', rem.dataset.sparamRemove); return; }
+    var ritem = ev.target.closest('.sparam-result-item');
+    if (ritem && ritem.dataset.sparamResult) { sparamAction('select', ritem.dataset.sparamResult); return; }
+    var lrow = ev.target.closest('.sparam-row');
+    if (lrow && !ev.target.closest('.sparam-line-chk')) {
+      sparamAction('jump-line', lrow.dataset.line);
+    }
+  });
+  document.addEventListener('change', function (ev) {
+    var ref = ev.target.closest('.sparam-ref-select');
+    if (ref) { sparamAction('ref', ref.value); return; }
+    var mask = ev.target.closest('.sparam-mask-chk');
+    if (mask) { sparamAction('mask-toggle'); return; }
+    var chk = ev.target.closest('.sparam-line-chk');
+    if (chk) { sparamAction('toggle-line', chk.dataset.line); }
+  });
+
+  // Params Setup: atmosphere grid select / source / format / file (mirrors the synth panel)
+  function sparamGridAction(kind, arg) {
+    var m = Bokeh.documents[0].get_model_by_name('sparam-grid-actions');
+    if (m) m.setv({ value: kind + ' ' + (arg || '') + ' ' + Date.now() });
+  }
+  document.addEventListener('change', function (ev) {
+    if (ev.target.closest('.sparam-grid-select')) { sparamGridAction('grid', ev.target.value); }
+    else if (ev.target.closest('.sparam-mode-select')) { sparamGridAction('mode', ev.target.value); }
+    else if (ev.target.closest('.sparam-format-select')) { sparamGridAction('format', ev.target.value); }
+  });
+  // (the inline path field's show/hide is handled by the shared .inline-picker-auto logic above)
+
   document.addEventListener('keydown', function (ev) {
     if (ev.key === 'Escape' && !document.querySelector('dialog[open]')) ewAction('ew-cancel');
   });

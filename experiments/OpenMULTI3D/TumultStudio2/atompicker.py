@@ -26,21 +26,33 @@ class AtomPicker:
 
     ``start_dir`` is where the embedded picker opens (``<dispatch_cwd>/input/atoms``).
     ``on_change`` (optional) is called with the new list after every change.
+
+    The DOM ids / store location default to the Synthesize tab's, but are parameterised
+    (``ns`` prefix, ``section``/``key``) so a second, independent picker can be embedded
+    elsewhere — e.g. the abundance-correction tool. ``single`` keeps only the most recent
+    pick (a one-atom selector); ``del_class`` is the chip delete button's CSS class.
     """
 
-    def __init__(self, start_dir, on_change=None):
+    def __init__(self, start_dir, on_change=None, *, ns="synth-atoms", section="synth_run",
+                 key="atoms", picker_sel="#atom-picker", section_sel="#synth-atoms",
+                 actions_name="atom-actions", results_id="atom-results",
+                 layout_name="atom_picker", del_class="atom-del", single=False):
         self.on_change = on_change
-        self.selected = [str(a) for a in store.get_section("synth_run").get("atoms", [])]
+        self.section = section
+        self.key = key
+        self.del_class = del_class
+        self.single = single
+        self.selected = [str(a) for a in store.get_section(section).get(key, [])]
 
-        self.list_bridge = html_bridge("synth-atoms-list", name="synth-atoms-render")
-        self.open_bridge = class_bridge("#atom-picker", "open")     # inline picker reveal
-        self.section_bridge = class_bridge("#synth-atoms", "on")    # whole section (NLTE only)
-        self.actions = TextInput(value="", visible=False, name="atom-actions")
+        self.list_bridge = html_bridge(f"{ns}-list", name=f"{ns}-render")
+        self.open_bridge = class_bridge(picker_sel, "open")     # inline picker reveal
+        self.section_bridge = class_bridge(section_sel, "on")   # whole section (NLTE only)
+        self.actions = TextInput(value="", visible=False, name=actions_name)
         self.actions.on_change("value", self._on_action)
 
-        self.picker = FilePicker(self._on_select, container_id="atom-results",
+        self.picker = FilePicker(self._on_select, container_id=results_id,
                                  start_dir=start_dir)
-        self.picker.layout.name = "atom_picker"
+        self.picker.layout.name = layout_name
 
     # --- doc wiring -------------------------------------------------------
     @property
@@ -56,8 +68,8 @@ class AtomPicker:
         if not self.selected:
             return '<div class="field-static">No model atoms selected.</div>'
         return "".join(
-            f'<span class="atom-tag">{html.escape(Path(p).name)}'
-            f'<button class="atom-del" data-path="{html.escape(p)}" '
+            f'<span class="chip"><span class="chip-label">{html.escape(Path(p).name)}</span>'
+            f'<button class="chip-del {self.del_class}" data-path="{html.escape(p)}" '
             f'title="Remove model atom"><i class="ti ti-x"></i></button></span>'
             for p in self.selected)
 
@@ -70,13 +82,17 @@ class AtomPicker:
 
     # --- state ------------------------------------------------------------
     def _persist(self):
-        store.update_pref("synth_run", "atoms", list(self.selected))
+        store.update_pref(self.section, self.key, list(self.selected))
         if self.on_change:
             self.on_change(list(self.selected))
 
     def _on_select(self, filepath):
         p = str(filepath)
-        if p not in self.selected:
+        if self.single:
+            self.selected = [p]           # one-atom selector: replace the selection
+            self._persist()
+            self.render()
+        elif p not in self.selected:
             self.selected.append(p)
             self._persist()
             self.render()

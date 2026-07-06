@@ -8,22 +8,36 @@ import numpy as np
 import pathlib
 from tumult.NameList import NameList
 
+def _load_default(item):
+    """Load one default into a NameList-compatible mapping.
+
+    ``item`` may be a NameList, a path to a .nml file, or a directory containing
+    ``params.nml``.
+    """
+    if isinstance(item, NameList):
+        return item
+    p = pathlib.Path(item)
+    params = p / 'params.nml' if p.is_dir() else p
+    return NameList.from_file(params)
+
 def prepare_input(nml_settings, default):
-    """Handles logic for creating the NameList configuration."""
+    """Handles logic for creating the NameList configuration.
+
+    ``default`` may be a single default (NameList, .nml path, or directory) or a
+    list/tuple of them, applied in order so each later entry overrides earlier ones.
+    """
     input_data = NameList()
-    
+
     # Handle default settings
     if default is not None:
-        if not isinstance(default, NameList):
-            default_path = pathlib.Path(default)
-            params = default_path / 'params.nml' if default_path.is_dir() else default_path
-            default = NameList.from_file(params)
-        update_dict(input_data, default)
-    
+        items = default if isinstance(default, (list, tuple)) else [default]
+        for item in items:
+            update_dict(input_data, _load_default(item))
+
     # Apply specific overrides
     if nml_settings is not None:
         update_dict(input_data, nml_settings)
-        
+
     return input_data
 
 def launch(input_name, nml_settings=None, default=None, overwrite=False, threads=None, cwd=None,

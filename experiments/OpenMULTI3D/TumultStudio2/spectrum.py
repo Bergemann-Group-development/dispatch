@@ -59,8 +59,20 @@ def load_spectrum(path, **read_kwargs) -> Spectrum:
     return Spectrum(x, y, yunit=u.dimensionless_unscaled)
 
 
+def _fits_meta(df):
+    """A JSON-serialisable Info-tab payload from a FITS header-card DataFrame."""
+    cards = [[str(k), str(v), str(c)]
+             for k, v, c in df[["key", "value", "comment"]].itertuples(index=False)
+             if str(k).strip()]
+    return {"type": "fits", "cards": cards}
+
+
 def load_file(path) -> Spectrum:
-    """Load a spectrum from a text or FITS file (FITS via the survey readers)."""
+    """Load a spectrum from a text or FITS file (FITS via the survey readers).
+
+    For FITS, the header cards are attached to the returned spectrum as ``.meta`` (a
+    structured dict the Info tab renders); text files carry no metadata.
+    """
     path = Path(path)
     if path.suffix.lower() in (".fits", ".fit"):
         # Bokeh restores sys.path after app startup, dropping this app directory,
@@ -71,9 +83,10 @@ def load_file(path) -> Spectrum:
             sys.path.insert(0, here)
         import surveys
         try:
-            spec, _ = surveys.read_4most_fits(str(path))
+            spec, meta = surveys.read_4most_fits(str(path))
         except Exception:
-            spec, _ = surveys.tbdfits(str(path))
+            spec, meta = surveys.tbdfits(str(path))
+        spec.meta = _fits_meta(meta)
         return spec
     return load_spectrum(path)
 

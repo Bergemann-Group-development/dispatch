@@ -35,6 +35,7 @@ MODULE m3d_patch_mod
     USE bftrans_mod, only: h_occupation_probability
     USE element_mod, only: element_type
     USE ion_mod, only: ion_type, particle_type
+    USE linelist_mod, only: linelist_type, print_ll_particle, print_ll_atom
     USE molecule_mod, only: molec_type
     USE, intrinsic :: ieee_arithmetic
     implicit none
@@ -928,55 +929,89 @@ MODULE m3d_patch_mod
   END SUBROUTINE allocate_mem
 
   !===============================================================================
+  ! Write linelist_out.txt in the same block format as the input linelists, via the
+  ! writers in linelist_mod (print_ll_particle / print_ll_atom). This driver only
+  ! walks the composition and the model atoms -- it stays here because linelist_mod
+  ! sits below composition_mod/atom_mod in the module hierarchy and cannot see
+  ! their types.
+  !-------------------------------------------------------------------------------
   SUBROUTINE print_linelist (self, comp)
     class(m3d_patch_t), target :: self
     class(composition_type), target :: comp
     class(element_type), pointer :: element
-    class(molec_type), pointer :: mol
-    class(ion_type), pointer :: ion
-    class(bbtrans_type), pointer :: line
     integer :: lunit, i, j
     character(len=256) :: linelist_out_file
     ! ----------------------------------------------------------------------------
     linelist_out_file = trim(io%run_dir) // 'linelist_out.txt'
     open(newunit=lunit, file=linelist_out_file, form='formatted')
-    write(lunit, "(A8, A6, A12, 2(A8), A10, 2(A11), 2(A6), 1(A11))") &
-    'ion', 'iso', 'lam_air', 'loggf', 'evi', 'gv', 'ga', 'gq', 'i', 'j', 'strength'
-  
+
     do i=1, comp%nel
       element => comp%elements(i)
       if (.not. any(element%ions%in_linelist)) cycle
       do j=lbound(element%ions,1), ubound(element%ions,1)
-        ion => element%ions(j)
-        call print_line_entry(ion)
+        call print_particle(element%ions(j))
       end do
     end do
     do i=1, comp%nmolec
-      mol => comp%molecules(i)
-      call print_line_entry(mol)
+      call print_particle(comp%molecules(i))
     end do
+    call print_atoms()
     close(lunit)
+
   contains
     !-----------------------------------------------------------------------------
-    subroutine print_line_entry (ptc)
+    subroutine print_particle (ptc)
       class(particle_type), target :: ptc
-      class(bbtrans_type), pointer :: line
-      integer :: l, iso
+      integer, allocatable :: iso_values(:)
+      integer :: k, niso
       !---------------------------------------------------------------------------
-      if (ptc%nline == 0) return
-      do l=1, ptc%nline
-        line => ptc%line(l)
-        if (.not. line%active .or. .not. line%used) cycle
-        if (line%iso_idx > 0) then
-          iso = ptc%isotope(line%iso_idx)%iso
-        else
-          iso = 0
-        endif
+      if (.not. allocated(ptc%ll)) return   ! no SoA linelists were built
+      niso = 0
+      if (associated(ptc%isotope)) niso = size(ptc%isotope)
+      iso_values = [(ptc%isotope(k)%iso, k=1, niso)]
+      if (allocated(ptc%line)) then
+        call print_ll_particle(lunit, ptc%id, iso_values, ptc%ll, ptc%line(1:ptc%nline))
+      else
+        call print_ll_particle(lunit, ptc%id, iso_values, ptc%ll)
+      endif
+    end subroutine print_particle
 
-        write(lunit, "(A8, I6, F12.4, 2(F8.3), F10.3, 2(ES11.3), 2(I6), 1(ES11.3))") "'"//ptc%id//"'", &
-        iso, line%lam_air, line%loggf, line%lower_ev, line%gv_in, line%ga_in, line%gq_in, line%i, line%j, line%strength
+    !-----------------------------------------------------------------------------
+    ! model-atom SoA linelists; gather the per-stage species ids from the
+    ! composition, then let linelist_mod write the (stage, isotope) blocks
+    subroutine print_atoms ()
+      class(atom_type), pointer :: atom
+      class(element_type), pointer :: el
+      class(molec_type), pointer :: ml
+      character(len=20), allocatable :: ids(:)
+      integer :: ia, s, s0, s1
+      !---------------------------------------------------------------------------
+      if (.not. associated(self%atoms)) return
+      do ia=1, size(self%atoms)
+        atom => self%atoms(ia)
+        if (.not. associated(atom%trans)) cycle
+        associate(sll => atom%trans%ll)
+          if (sll%nline == 0) cycle
+          nullify(el, ml)
+          call comp%element_by_id(atom%id, el, verbose=.false.)
+          if (.not. associated(el)) call comp%molecule_by_id(atom%id, ml, verbose=.false.)
+
+          s0 = minval(sll%ipart(1:sll%nline))
+          s1 = maxval(sll%ipart(1:sll%nline))
+          if (allocated(ids)) deallocate(ids)
+          allocate(ids(s0:s1))
+          do s=s0, s1
+            ids(s) = atom%id
+            if (associated(el)) then
+              if (s >= lbound(el%ions,1) .and. s <= ubound(el%ions,1)) ids(s) = el%ions(s)%id
+            elseif (associated(ml)) then
+              ids(s) = ml%id
+            endif
+          end do
+          call print_ll_atom(lunit, sll, ids, s0)
+        end associate
       end do
-    end subroutine print_line_entry
+    end subroutine print_atoms
   END SUBROUTINE print_linelist
 
   !===============================================================================

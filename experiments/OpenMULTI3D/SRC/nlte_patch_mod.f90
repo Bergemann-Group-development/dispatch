@@ -19,7 +19,8 @@ MODULE nlte_patch_mod
   USE element_mod, only: element_type
   USE molecule_mod, only: molec_type
   USE bbtrans_mod, only: bbtrans_type
-  USE composition_mod, only: composition_type, departure_pointer_t, read_departures
+  USE composition_mod, only: composition_type, departure_pointer_t, read_departures, &
+    use_new_linelist
   USE m3d_patch_mod, only: m3d_patch_t, composition, maxiter, key_link_t, &
     global_maxerr, convlim, convmax, atom_update_counter, comoving_frame, global_pos, &
     decouple_continuum, overlapping_bb, overlapping_bf, converged, premature_finish, overrelax, &
@@ -235,6 +236,11 @@ contains
             call dc_trans(i)%allocate(bb=atom%trans%line, bf=atom%trans%cont)
           endif
 
+          ! global SoA copy of the bb transitions, exported in linelist_out.txt;
+          ! build on the output transitions (out_trans), since those are what the
+          ! output patch's output_atoms point at and what print_linelist walks
+          call atom%build_ll(out_trans(i))
+
           if (pandas_format) then
             call os%copy_file(trim(atom_file), trim(io%run_dir)//'atoms/'//trim(atom%id)//'.txt')
           else
@@ -337,7 +343,7 @@ contains
         endif
 
         if (.not. external_sp) then
-          call setup_spectrum(output_sp, 'out', self%output_atoms, bb=.true., bf=bound_free_in_output, sort=overlapping_bb_in_output, set_active=.false.)
+          call setup_spectrum(output_sp, 'out', self%output_atoms, bb=.true., bf=bound_free_in_output, sort=overlapping_bb_in_output, set_active=.false., crop=.true.)
           saved_already = .true.
         else
           do i=1, size(self%output_atoms)
@@ -362,12 +368,13 @@ contains
     call trace%end(itimer)
   contains
     !===============================================================================
-    subroutine setup_spectrum(sp, name, atoms, bb, bf, sort, set_active)
+    subroutine setup_spectrum(sp, name, atoms, bb, bf, sort, set_active, crop)
       class(atomic_spectrum_type), target :: sp
       character(len=*), intent(in) :: name
       class(atom_type), intent(in), dimension(:) :: atoms
       integer, dimension(:,:), pointer, contiguous :: nac, nal
       logical, intent(in) :: bb, bf, sort, set_active
+      logical, intent(in), optional :: crop
       integer :: i
       !-----------------------------------------------------------------------------
       sp%name = name
@@ -376,6 +383,9 @@ contains
         call atoms(i)%trans%append_transitions(sp, bb=bb, bf=bf)
       end do
       if (sort) call sp%sort()
+      ! restrict the output grid to a bare aa_red/aa_blue window (crop_output); a no-op
+      ! otherwise. Must precede set_ired_iblue, which is recomputed against this grid.
+      if (option(crop)) call sp%crop()
       call os%allocate(nac, [sp%nnu, size(atoms)], zero=.true.)
       call os%allocate(nal, [sp%nnu, size(atoms)], zero=.true.)
       call os%allocate(sp%na, sp%nnu, zero=.true.)

@@ -148,6 +148,8 @@ contains
         atmos_format = 'stagger2'
       elseif (index(lowercase(atmos_file), 'stagger') > 0) then
         atmos_format = 'stagger'
+      elseif (index(atmos_file, '.atmos') > 0) then
+        atmos_format = 'multi'
       elseif (index(atmos_file, 'data/') > 0) then
         atmos_format = 'save'
       else
@@ -180,7 +182,7 @@ contains
        case ('marcs')
         call read_marcs(atmos_file, FeH, vmic, external_abund)
         if (.not. use_abnd) deallocate(external_abund)
-       case ('multi', 'must')
+       case ('multi', 'must', 'm3dis')
         call read_multi_snapshot(atmos_file)
        case ('text')
         call read_text_1d(atmos_file, vmic, FeH)

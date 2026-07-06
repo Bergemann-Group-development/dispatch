@@ -18,7 +18,7 @@ import numpy as np
 from bokeh.io import curdoc
 from bokeh.models import Span
 
-from tumult.auxfuncs import EK
+from tumult.const import EK
 from tumult.linelist import LineList
 
 from htmlbridge import html_bridge

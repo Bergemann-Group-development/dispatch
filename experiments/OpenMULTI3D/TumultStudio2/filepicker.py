@@ -5,6 +5,11 @@ click. Built to be embedded in a modal and reused anywhere:
 construct with an `on_select(path)` callback and the id of a light-DOM container
 to render results into.
 
+Pass `root` to anchor the picker at a directory: an empty query lists the root and a
+relative fragment (e.g. `p2500`) is matched *inside* the root rather than the process
+cwd. Absolute paths (and `..`) still navigate anywhere, so files outside the root remain
+reachable. Use `set_root` to re-anchor later (e.g. when a selected grid changes).
+
 Wiring:
   * the query box is a Bokeh TextInput (its `value_input` drives a server-side
     directory scan),
@@ -42,7 +47,7 @@ _counter = 0
 
 class FilePicker:
     def __init__(self, on_select, container_id, start_dir="~", max_items=300,
-                 on_dir=None, recent_provider=None):
+                 on_dir=None, recent_provider=None, root=None):
         global _counter
         _counter += 1
         self.name = f"filepicker_{_counter}"          # data-picker / pick model name
@@ -50,6 +55,7 @@ class FilePicker:
         self.on_select = on_select
         self.on_dir = on_dir          # called with each newly-listed directory (Path)
         self.recent_provider = recent_provider  # () -> [paths]; shown when query is empty
+        self.root = Path(root).expanduser() if root else None  # anchor for relative queries
         self.current_dir = None       # the directory currently being listed
         self.max_items = max_items
 
@@ -66,8 +72,27 @@ class FilePicker:
         self.layout = column(self.query, self.results, self.pick,
                              sizing_mode="stretch_width")
 
-        # with a recents provider, start empty (showing recents); otherwise list start_dir
-        self._scan("" if recent_provider else f"{Path(start_dir).expanduser()}/")
+        # recents start empty; a root lists the root; otherwise list start_dir
+        if recent_provider or self.root:
+            self._scan("")
+        else:
+            self._scan(f"{Path(start_dir).expanduser()}/")
+
+    def preset(self, text):
+        """Show ``text`` in the query box and list its directory, without selecting anything.
+
+        Used to seed the box with the currently-chosen path so a single always-visible field
+        doubles as both the search box and the current-selection display."""
+        text = str(text or "")
+        self.query.value = text
+        self._scan(text)
+
+    # --- anchoring --------------------------------------------------------
+    def set_root(self, root):
+        """Re-anchor the picker at ``root`` (or clear it with ``None``) and re-list it."""
+        self.root = Path(root).expanduser() if root else None
+        self.query.value = ""
+        self._scan("")
 
     # --- directory scan / render ------------------------------------------
     def _scan(self, text):
@@ -75,13 +100,21 @@ class FilePicker:
         if not raw and self.recent_provider:
             self._render_recents()
             return
-        target = Path(raw).expanduser() if raw else Path.cwd()
-        # an existing dir (or a trailing separator) lists its contents; otherwise the
-        # last component is a fragment to match against the parent directory
-        if raw.endswith(("/", "\\")) or target.is_dir():
-            base, partial = target, ""
+        if not raw:
+            # empty query: list the anchored root, else the process cwd
+            base, partial = (self.root or Path.cwd()), ""
         else:
-            base, partial = target.parent, target.name
+            target = Path(raw).expanduser()
+            # a relative fragment matches inside the root (not the cwd); absolute paths and
+            # "../" still navigate anywhere, keeping files outside the root reachable
+            if not target.is_absolute() and self.root is not None:
+                target = self.root / raw
+            # an existing dir (or a trailing separator) lists its contents; otherwise the
+            # last component is a fragment to match against the parent directory
+            if raw.endswith(("/", "\\")) or target.is_dir():
+                base, partial = target, ""
+            else:
+                base, partial = target.parent, target.name
 
         self.current_dir = base
         if self.on_dir:
@@ -130,7 +163,8 @@ class FilePicker:
     def _row(self, label, path, is_dir, icon):
         return (f'<li class="file-item" data-picker="{self.name}" '
                 f'data-path="{html.escape(str(path), quote=True)}" '
-                f'data-dir="{1 if is_dir else 0}">'
+                f'data-dir="{1 if is_dir else 0}" '
+                f'title="{html.escape(label, quote=True)}">'
                 f'<i class="ti ti-{icon}"></i><span>{html.escape(label)}</span></li>')
 
     # --- a pick arrived from the client ----------------------------------

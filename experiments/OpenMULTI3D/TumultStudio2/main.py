@@ -29,8 +29,9 @@ import numpy as np  # noqa: E402
 from bokeh.io import curdoc  # noqa: E402
 from bokeh.layouts import column  # noqa: E402
 
-from spectrum import load_spectrum, load_file, is_run, load_run  # noqa: E402
+from spectrum import Spectrum, load_spectrum, load_file, is_run, load_run  # noqa: E402
 from canvas import SpectrumCanvas, DASH_CSS, LINE  # noqa: E402
+from context import AppContext  # noqa: E402
 from controls import Field, Form, FORM_SCRIPT  # noqa: E402
 from inspector import Inspector, swatch_html  # noqa: E402
 from ew import EquivalentWidth  # noqa: E402
@@ -38,11 +39,16 @@ from filtertool import FilterTool  # noqa: E402
 from normalisetool import NormaliseTool  # noqa: E402
 from linenav import LineNavigator  # noqa: E402
 from synthpanel import SynthPanel  # noqa: E402
+from synthsetup import SynthSetup  # noqa: E402
+from abundancetool import AbundanceTool  # noqa: E402
+from abundcorrtool import AbundCorrTool  # noqa: E402
+from sparamtool import SParamTool  # noqa: E402
+import synth  # noqa: E402  (CancelToken/CancelledError for cancellable loads)
 from filepicker import FilePicker  # noqa: E402
 from toolmanager import ToolManager  # noqa: E402
 from session import Workspace, ObjectSnap, FilterSnap  # noqa: E402
 from htmlbridge import BridgeSet, pulse, toggle  # noqa: E402
-from units import X_UNITS, Y_UNITS  # noqa: E402
+from units import X_UNITS, Y_UNITS, to_range  # noqa: E402
 from profiling import profiled  # noqa: E402
 import store  # noqa: E402
 
@@ -88,7 +94,9 @@ def picker_start_dir():
 
 
 def _load_obj(obj):
-    """Load a session object reference -> Spectrum (file or tumult run)."""
+    """Load a session object reference -> Spectrum (embedded synth data, file, or tumult run)."""
+    if obj.kind == "synth":
+        return Spectrum.from_dict(obj.data)
     return load_run(obj.path) if obj.kind == "run" else load_file(obj.path)
 
 
@@ -130,7 +138,7 @@ def build_settings(canvas, on_units=None):
     ], on_change=on_change)
 
 
-def objects_html(canvas):
+def objects_html(canvas, active_kind="spectrum"):
     rows = []
     for obj in canvas.objects:
         style = DASH_CSS.get(obj.dash, "dashed")
@@ -138,7 +146,9 @@ def objects_html(canvas):
         name = html.escape(obj.name)
         eye = "eye" if obj.visible else "eye-off"
         dim = " hidden-object" if not obj.visible else ""
-        sel = " selected" if obj.uid == canvas.selected_uid else ""
+        # only one item across the Objects + Abundances lists is highlighted at a time
+        sel = " selected" if (obj.uid == canvas.selected_uid
+                              and active_kind == "spectrum") else ""
         rows.append(
             f'<div class="object-item{dim}{sel}" data-uid="{obj.uid}">'
             f'<span class="dash-swatch" style="border-top-style:{style};border-top-color:{color}"></span>'
@@ -161,10 +171,10 @@ OBJECTS_EMPTY_HINT = (
 )
 
 
-def objects_panel_html(canvas, pending):
+def objects_panel_html(canvas, pending, active_kind="spectrum"):
     """The Objects panel body: the loaded objects + any loading placeholders, or the
     empty-state hint when there is nothing to show."""
-    rows = objects_html(canvas) + pending_html(pending)
+    rows = objects_html(canvas, active_kind) + pending_html(pending)
     return rows or OBJECTS_EMPTY_HINT
 
 
@@ -172,6 +182,27 @@ def _field(label, value):
     v = html.escape(str(value))
     return (f'<div class="field-group"><label>{label}</label>'
             f'<div class="field-static" title="{v}">{v}</div></div>')
+
+
+def _meta_html(meta):
+    """Render an object's Info-tab provenance: a synth-parameter list or a scrollable
+    table of FITS header cards (or nothing when there's no metadata)."""
+    if not meta:
+        return ""
+    if meta.get("type") == "synth":
+        rows = "".join(_field(label, value) for label, value in meta.get("params", []))
+        return '<div class="section-header">Synthesis</div>' + rows
+    if meta.get("type") == "fits":
+        cards = meta.get("cards") or []
+        if not cards:
+            return ""
+        body = "".join(
+            f'<tr><td class="meta-key">{html.escape(k)}</td>'
+            f'<td class="meta-val" title="{html.escape(v)}">{html.escape(v)}</td></tr>'
+            for k, v, _c in cards)
+        return ('<div class="section-header">FITS header</div>'
+                f'<div class="meta-table-wrap"><table class="meta-table">{body}</table></div>')
+    return ""
 
 
 def inspector_html(canvas):
@@ -185,6 +216,7 @@ def inspector_html(canvas):
         + _field("Range", f"{lo:.1f} – {hi:.1f} {canvas.xlabel}")
         + _field("Points", f"{len(obj.spectrum):,}")
         + _field("Native units", f"{obj.raw.xunit} / {obj.raw.yunit}")
+        + _meta_html(obj.meta)
     )
 
 
@@ -199,11 +231,16 @@ def footer_html(canvas):
 
 
 def pending_html(pending):
-    """Spinner placeholders for objects still loading in the background."""
+    """Spinner placeholders for objects still loading in the background, each with a
+    cancel button (data-pid) that drops the run and discards its result."""
     return "".join(
-        '<div class="object-item pending"><span class="spinner"></span>'
-        f'<span class="object-name" title="{html.escape(name)}">{html.escape(name)}</span></div>'
-        for name in pending.values()
+        f'<div class="object-item pending" data-pid="{pid}">'
+        '<span class="spinner"></span>'
+        f'<span class="object-name" title="{html.escape(name)}">{html.escape(name)}</span>'
+        f'<button class="object-btn danger" data-action="cancel-pending" data-uid="{pid}" '
+        f'title="Cancel"><i class="ti ti-x"></i></button>'
+        f'</div>'
+        for pid, name in pending.items()
     )
 
 
@@ -214,8 +251,12 @@ def build():
     start_dir = picker_start_dir()
 
     # every hidden bridge / action channel made below is collected here, so the document
-    # root column at the end is just `*B.models` instead of a hand-listed enumeration
+    # root column at the end is just `*B.models` instead of a hand-listed enumeration.
+    # The context carries it (plus the ToolManager and, later, canvas/notify/run_busy)
+    # into the tools, which create and own their bridges themselves.
     B = BridgeSet()
+    tools = ToolManager()
+    ctx = AppContext(curdoc(), B, tools)
 
     objects_bridge = B.html("objects")
     inspector_bridge = B.html("inspector")
@@ -257,32 +298,26 @@ def build():
     _root_logger.addHandler(_err_handler)
     curdoc().on_session_destroyed(lambda ctx: _root_logger.removeHandler(_err_handler))
 
-    ew_panel_bridge = B.html("ew-panel-content")
-    ew_mode_bridge = B.cls(".sidebar-right", "ew-active")
-    ew_btn_bridge = B.cls("#ew-btn", "active")  # EW button active state
-
-    def ew_on_mode(state):
-        pulse(ew_mode_bridge, state)
-        pulse(ew_btn_bridge, state)
+    # (the EW / Filter / Normalise tools create and own their bridges via the context)
     linelist_bridge = B.html("linelist-table")
     view_bridge = B.cls("#main", "lines-mode")  # swap nav overview / line table
     run_name_bridge = B.html("run-name")          # name shown on the "Load run" button
     run_ready_bridge = B.cls("#load-run", "ready")  # reveal it inside a run folder
-    filter_mode_bridge = B.cls("#main", "filter-mode")  # swap main fig / feautrier view
-    filter_has_bridge = B.cls("#main", "has-filter")    # reveal the Filtered switch
-    filter_check_bridge = B.check("filter-switch-input")  # switch on/off state
-    filter_panel_bridge = B.html("filter-panel-content")  # the Filter inspector panel
-    filter_active_bridge = B.cls(".sidebar-right", "filter-active")  # show/hide it
-    filter_btn_bridge = B.cls("#filter-btn", "active")  # toolbar button state
     loading_bridge = B.cls("#footer", "loading")       # footer progress bar while loading
     empty_bridge = B.cls("#main", "empty")  # swap the empty canvas for the inline session loader
-    norm_panel_bridge = B.html("norm-panel-content")     # the Normalise inspector panel
-    norm_mode_bridge = B.cls(".sidebar-right", "norm-active")  # show/hide that panel
-    norm_btn_bridge = B.cls("#normalise-btn", "active")        # toolbar button state
     synth_mode_bridge = B.cls(".sidebar-right", "synth-active")  # swap to the synth panel
     synth_btn_bridge = B.cls("#synth-btn", "active")             # toolbar button state
     synth_warn_bridge = B.cls("#settings-warning", "show")       # missing-files sign on the cog
     lines_panel_bridge = B.cls(".sidebar-right", "lines-active")  # line-nav inspector panel
+    # (the abundance / correction wizards create and own their bridges via the context)
+
+    # which left-sidebar list owns the single selection ("spectrum" | "result" | "corr");
+    # the wizards drive it through ctx.focus_kind + the "focus-changed" event, and the
+    # Objects list repaints to follow the highlight.
+    ctx.focus_kind = "spectrum"
+    ctx.subscribe("focus-changed",
+                  lambda kind, **_: setattr(objects_bridge, "value",
+                                            objects_panel_html(canvas, pending, kind)))
 
     def synth_on_mode(state):
         pulse(synth_mode_bridge, state)
@@ -291,22 +326,10 @@ def build():
     def synth_on_warn(has_warning):
         toggle(synth_warn_bridge, has_warning)
 
-    def on_filter_state(exists, visible):
-        toggle(filter_has_bridge, exists)
-        toggle(filter_check_bridge, visible)
-        if ew is not None:
-            ew.update()  # EW follows whichever spectrum (filtered/unfiltered) is shown
-
-    def filter_on_mode(state):
-        pulse(filter_active_bridge, state)
-        pulse(filter_btn_bridge, state)
-
-    inspector = ew = filtertool = normtool = linenav = None  # assigned after the canvas; updated on change
-    pending = {}          # id -> name of objects still loading in the background
-
-    def norm_on_mode(state):
-        pulse(norm_mode_bridge, state)
-        pulse(norm_btn_bridge, state)
+    inspector = linenav = abundancetool = abundcorrtool = sparamtool = None  # assigned after the canvas
+    pending = ctx.pending  # id -> name of objects still loading in the background
+    pending_futures = {}  # id -> Future, so a still-queued run can be cancelled before it starts
+    pending_tokens = {}   # id -> synth.CancelToken, to hard-kill a running synthesis
 
     def run_busy(fn):
         """Run blocking work off the click callback so the footer progress bar paints
@@ -326,14 +349,26 @@ def build():
     def snapshot():
         objs = []
         for o in canvas.objects:
-            if not o.source or not o.source[1]:
-                continue  # only objects with a known source can be restored
+            if not o.source:
+                continue
+            kind = o.source[0]
+            # synth runs are interpolated (no backing file), so embed their data;
+            # file/run objects need a path to reload from. Anything else can't be restored.
+            if kind == "synth":
+                data = o.raw.to_dict()
+            elif o.source[1]:
+                data = None
+            else:
+                continue
             g = o.line.glyph
             knots = ({"x": list(map(float, o.norm_knots[0])),
                       "y": list(map(float, o.norm_knots[1]))}
                      if o.norm_knots is not None else None)
+            # synth params are tiny and have no source file, so persist them; FITS metadata
+            # is large and re-read from disk on restore, so isn't stored.
+            meta = o.meta if kind == "synth" else None
             objs.append(ObjectSnap(
-                kind=o.source[0], path=o.source[1], name=o.name,
+                kind=kind, path=o.source[1] or "", name=o.name, data=data, meta=meta,
                 color=g.line_color, dash=o.dash, width=g.line_width, alpha=g.line_alpha,
                 visible=o.visible, conv=o.conv, norm_knots=knots,
                 already_normalised=o.already_normalised))
@@ -354,10 +389,13 @@ def build():
                 res=filtertool.form.value("res") if has_lowpass else None,
                 fmax=filtertool.fmax if configured else None,
                 floor=filtertool.floor if configured else None),
+            abundance=abundancetool.snapshot() if abundancetool is not None else {},
+            abundcorr=abundcorrtool.snapshot() if abundcorrtool is not None else {},
+            sparams=sparamtool.snapshot() if sparamtool is not None else {},
         ).to_dict()
 
     def update_all(canvas):
-        objects_bridge.value = objects_panel_html(canvas, pending)
+        objects_bridge.value = objects_panel_html(canvas, pending, ctx.focus_kind)
         inspector_bridge.value = inspector_html(canvas)
         footer_bridge.value = footer_html(canvas)
         synth_panel.refresh_targets()  # keep the Fit-tab target dropdown in sync
@@ -367,24 +405,59 @@ def build():
         toggle(empty_bridge, not canvas.objects and not pending)
         if inspector is not None:
             inspector.bind(canvas.selected())
-        if ew is not None:
-            ew.update()
-        if filtertool is not None:
-            filtertool.update()
-        if normtool is not None:
-            normtool.update()
+        ctx.emit("changed")  # EW / Filter / Normalise (and future tools) resync themselves
         if linenav is not None and linenav.active:
             linenav.render()  # keep the line list scoped to the active object's range
             # (only while the Lines view is open; it is rebuilt on re-entry otherwise)
+        if abundancetool is not None:
+            abundancetool.refresh()  # keep the step-1 reference selector in sync
+        if sparamtool is not None:
+            sparamtool.refresh()     # ditto for the Params wizard's target selector
 
     canvas = SpectrumCanvas(on_change=update_all)  # empty until a spectrum is opened
-    inspector = Inspector(canvas)
-    ew = EquivalentWidth(
-        canvas,
-        on_panel=lambda e: setattr(ew_panel_bridge, "value", e.panel_html()),
-        on_mode=ew_on_mode,
-        notify=notify,
-    )
+    ctx.canvas = canvas
+    ctx.notify = notify
+    ctx.run_busy = run_busy
+
+    def edit_fit():
+        """Edit-tab "Fit to target": broaden the selected (model) spectrum to best match
+        another object over the current view — pure post-processing, no re-synthesis."""
+        obj = canvas.selected()
+        if obj is None:
+            return
+        target = canvas._find(inspector.target)
+        if target is None or target is obj:
+            notify("Pick another spectrum as the fit target.")
+            return
+        params = inspector.armed()
+        if not params:
+            notify("Switch on at least one parameter to fit.")
+            return
+        r = canvas.main.x_range
+        if r.start is None or r.end is None:
+            notify("Set a view range to fit over.")
+            return
+        lo, hi = to_range(r.start, r.end, canvas.xunit, target.spectrum.xunit)
+
+        def run():
+            try:
+                tgt = target.spectrum.crop(xmin=lo, xmax=hi)
+                best, _ = obj.spectrum.fit(tgt, fit=params, p0=dict(obj.conv))
+            except Exception as exc:
+                logging.exception("Edit-tab broadening fit failed")
+                notify(f"Fit failed: {exc}")
+                return
+            obj.conv = {k: v for k, v in {**obj.conv, **best}.items() if v}
+            canvas._refresh_object(obj)
+            inspector.bind(obj)  # show the fitted values in the number fields
+            update_all(canvas)
+            notify("Broadening fit · "
+                   + ", ".join(f"{k}={v:g}" for k, v in best.items()), level="success")
+
+        run_busy(run)
+
+    inspector = Inspector(canvas, on_fit=edit_fit, notify=notify)
+    ew = EquivalentWidth(ctx)
 
     master = store.get_pref("master_linelist")
     if not master or not Path(master).is_file():
@@ -396,21 +469,19 @@ def build():
         Field("dist", "Distance from center [Å]", kind="number",
               value=linenav.jump_distance, min=0.01),
     ], on_change=lambda key, value: linenav.set_jump_distance(value))
-    filtertool = FilterTool(
-        canvas, on_mode=filter_on_mode,
-        on_view=lambda s: pulse(filter_mode_bridge, s),
-        on_panel=lambda t: setattr(filter_panel_bridge, "value", t.panel_html()),
-        on_state=on_filter_state, notify=notify)
-    normtool = NormaliseTool(
-        canvas,
-        on_panel=lambda t: setattr(norm_panel_bridge, "value", t.panel_html()),
-        on_mode=norm_on_mode, notify=notify)
+    filtertool = FilterTool(ctx)
+    normtool = NormaliseTool(ctx)
     settings = build_settings(canvas)
 
-    def add_synth(spec, name):
+    def add_synth(spec, name, meta=None, conv=None):
         color, dash = canvas.next_run_style()  # distinct colour, picked at add time
-        canvas.add_object(spec, name=name, color=color, dash=dash,
-                               source=("synth", None))  # not session-restorable (recompute skipped)
+        # data embedded on save (source path None); a fit also passes its fitted broadening
+        # as `conv`, applied live so the Edit tab shows it and the stored spectrum stays raw.
+        o = canvas.add_object(spec, name=name, color=color, dash=dash,
+                              source=("synth", None), meta=meta)
+        if conv:
+            o.conv = dict(conv)
+            canvas._refresh_object(o)  # update_all (in _settle) then rebinds the Edit tab
         synth_panel.refresh_cache()  # the new run is now in the cache listing
 
     synth_panel = SynthPanel(
@@ -422,13 +493,83 @@ def build():
         on_warn=synth_on_warn,
         notify=notify)
 
+    # the Abundance tool owns its synthesis setup (its own Setup sub-tab), sharing only the
+    # app-global grid registry and the Synthesize tab's NLTE model-atom selection; it inherits
+    # the Synthesize-tab configuration on first open and is independent thereafter.
+    abund_setup = SynthSetup(
+        "abund", "abund_run", synth_panel.grids,
+        atoms_provider=lambda: list(synth_panel.atoms.selected), notify=notify)
+    abundancetool = AbundanceTool(
+        ctx,
+        setup=abund_setup,
+        list_observations=lambda: [(o.uid, o.name) for o in canvas.objects],
+        # follow the canvas's Filtered switch: when filtering is on, measure/fit the filtered
+        # spectrum (so EW hatches + line fits match what is shown), else the raw observation
+        get_observation=lambda uid: (canvas.effective(canvas._find(uid)) if canvas._find(uid)
+                                     else None),
+        master_path=master)
+
+    # the abundance-correction tool: its own synthesis setup (target/NLTE atmosphere) and its
+    # own single model-atom selector, sharing only the app-global grid registry (one grid
+    # flagged as the 1D LTE reference).
+    from atompicker import AtomPicker  # noqa: E402  (second, namespaced instance)
+    _corr_atoms_dir = Path(str(store.get_pref("dispatch_cwd") or ".")).expanduser() / "input" / "atoms"
+    corr_atoms = AtomPicker(
+        start_dir=_corr_atoms_dir if _corr_atoms_dir.is_dir() else Path.home(),
+        ns="corr-atoms", section="abundcorr_run", key="atoms",
+        picker_sel="#corr-atom-picker", section_sel="#corr-atoms",
+        actions_name="corr-atom-actions", results_id="corr-atom-results",
+        layout_name="corr_atom_picker", del_class="corr-atom-del", single=True)
+    corr_setup = SynthSetup(
+        "corr", "abundcorr_run", synth_panel.grids,
+        atoms_provider=lambda: list(corr_atoms.selected), notify=notify)
+
+    def add_corr_spectrum(spec, name):
+        color, dash = canvas.next_run_style()
+        canvas.add_object(spec, name=name, color=color, dash=dash, source=("synth", None))
+
+    abundcorrtool = AbundCorrTool(
+        ctx,
+        setup=corr_setup,
+        grids=synth_panel.grids,
+        atom_provider=lambda: list(corr_atoms.selected),
+        add_spectrum=add_corr_spectrum)
+
+    # the stellar-parameter wizard: its own synthesis setup (whose run form is the solver's
+    # initial guess), sharing the grid registry and the Synthesize tab's NLTE atoms.
+    sparam_setup = SynthSetup(
+        "sparam", "sparam_run", synth_panel.grids,
+        atoms_provider=lambda: list(synth_panel.atoms.selected), notify=notify)
+    sparamtool = SParamTool(
+        ctx,
+        setup=sparam_setup,
+        list_observations=lambda: [(o.uid, o.name) for o in canvas.objects],
+        get_observation=lambda uid: (canvas.effective(canvas._find(uid)) if canvas._find(uid)
+                                     else None),
+        master_path=master)
+
+    # single-selection coordination between the Objects and the wizards' result lists
+    def focus_spectrum(uid):
+        if tools.active_name() in ("abundance", "abundcorr", "sparams"):
+            tools.deactivate_active()  # selecting a spectrum leaves the wizard
+        abundancetool.blur()          # leave the centre abund view, drop the result highlight
+        abundcorrtool.blur()          # ditto for the correction view
+        sparamtool.blur()             # ditto for the parameter view
+        canvas.select_object(uid)     # -> on_change -> update_all repaints with spectrum focus
+
+    # the abundance / parameter wizards' step-1 EWs track the reference's filter state
+    ctx.subscribe("filter-state", lambda **_: abundancetool.on_filter_changed())
+    ctx.subscribe("filter-state", lambda **_: sparamtool.on_filter_changed())
+
     # the mutually-exclusive sidebar tools: at most one owns the right panel at a time.
     # filter's enter is wrapped in run_busy so the progress bar paints during the FFT/fit.
-    tools = ToolManager()
     tools.register("ew", ew)
     tools.register("synth", synth_panel)
     tools.register("normalise", normtool)
     tools.register("filter", filtertool, runner=run_busy)
+    tools.register("abundance", abundancetool)
+    tools.register("abundcorr", abundcorrtool)
+    tools.register("sparams", sparamtool)
 
     # --- session save / restore -------------------------------------------
     def _restore_range(rng, vals):
@@ -453,8 +594,10 @@ def build():
             except Exception:
                 logging.exception("Could not restore %s", obj.path)
                 continue
+            # synth meta is restored from the slot; FITS meta rides along on the reloaded spec
+            meta = obj.meta if obj.kind == "synth" else getattr(spec, "meta", None)
             o = canvas.add_object(spec, name=obj.name, color=obj.color, dash=obj.dash,
-                                       source=(obj.kind, obj.path))
+                                       source=(obj.kind, obj.path or None), meta=meta)
             if obj.width is not None or obj.alpha is not None:
                 canvas.set_style(o, width=obj.width, alpha=obj.alpha)
             knots = obj.norm_knots
@@ -491,28 +634,55 @@ def build():
             if not f.active:
                 filtertool.set_visible(False)
         settings.set_values(xunit=canvas.xlabel, yunit=canvas.ylabel)  # sync the prefs form
+        # restore the wizard results last: the abund/params tools re-link each result's
+        # reference to the just-restored observations (by name), so objects must exist first.
+        if abundancetool is not None:
+            abundancetool.restore(ws.abundance)
+        if abundcorrtool is not None:
+            abundcorrtool.restore(ws.abundcorr)
+        if sparamtool is not None:
+            sparamtool.restore(ws.sparams)
         update_all(canvas)
 
     # --- background loading: placeholder + spinner now, real object when ready ----
     def load_async(name, loader, on_done, executor=_EXEC):
         pid = _nonce()
         pending[pid] = name
+        token = synth.CancelToken()      # cancel handle: the loader threads it into synth.*
+        pending_tokens[pid] = token
         update_all(canvas)               # show the spinner placeholder immediately
         doc = curdoc()
 
         def work():                      # runs in a worker thread
+            if token.cancelled:          # cancelled before the worker even started
+                _settle(doc, pid, name, None, None, None)
+                return
             try:
-                result = profiled(name, loader)  # dumps an HTML profile to a temp file
+                # loaders take the token so synthesis can be hard-cancelled; non-synth
+                # loaders accept it and ignore it.
+                result = profiled(name, lambda: loader(token))
+            except synth.CancelledError:
+                _settle(doc, pid, name, None, None, None)  # token.cancelled -> dropped
             except Exception as exc:
                 _settle(doc, pid, name, None, None, exc)
             else:
                 _settle(doc, pid, name, result, on_done, None)
 
-        executor.submit(work)
+        pending_futures[pid] = executor.submit(work)
+
+    # the wizards submit their synthesis work through the context (serialised on the
+    # one-slot synth executor so concurrent grids don't oversubscribe the machine)
+    ctx.submit = lambda name, loader, on_done: load_async(name, loader, on_done,
+                                                          executor=_SYNTH_EXEC)
 
     def _settle(doc, pid, name, result, on_done, exc):
         def apply():
             pending.pop(pid, None)
+            pending_futures.pop(pid, None)
+            token = pending_tokens.pop(pid, None)
+            if token is not None and token.cancelled:
+                update_all(canvas)       # user cancelled: drop whatever the run returned
+                return
             if exc is not None:
                 logging.error("Failed to load %s: %s", name, exc)
             elif on_done is not None:
@@ -526,12 +696,36 @@ def build():
         except Exception:
             pass  # session/document already gone
 
+    def cancel_pending(pid):
+        """Cancel a still-loading run from its sidebar spinner. Drops the spinner now and
+        hard-kills the synthesis: the token tears down the dispatch process pool and its
+        dispatch.x children; a run still queued behind another is cancelled before it starts.
+        Either way the result (if any still arrives) is discarded in _settle."""
+        try:
+            pid = int(pid)
+        except (TypeError, ValueError):
+            return
+        name = pending.pop(pid, None)
+        if name is None:
+            return
+        token = pending_tokens.get(pid)
+        if token is not None:
+            token.cancel()               # kill the dispatch process tree if it is running
+        fut = pending_futures.get(pid)
+        if fut is not None and fut.cancel():
+            # still queued (never started): work()/_settle won't run, so clean up here
+            pending_futures.pop(pid, None)
+            pending_tokens.pop(pid, None)
+        update_all(canvas)               # remove the spinner immediately
+        notify(f"Cancelled {name}", level="info")
+
     def on_select(filepath):
         store.add_recent(filepath)
         name = Path(filepath).name
-        load_async(name, lambda: load_file(filepath),
+        load_async(name, lambda token=None: load_file(filepath),
                    lambda spec: canvas.add_object(spec, name=name,
-                                                       source=("file", str(filepath))))
+                                                       source=("file", str(filepath)),
+                                                       meta=getattr(spec, "meta", None)))
 
     # client -> server channel for the sidebar hide/remove buttons ("action:uid:nonce")
     actions = B.action("object-actions")
@@ -560,9 +754,12 @@ def build():
     ACTIONS = {
         "toggle":       canvas.toggle_object,
         "remove":       canvas.remove_object,
-        "select":       canvas.select_object,
+        "cancel-pending": cancel_pending,
+        "select":       focus_spectrum,
         "color":        set_color,
         "profile":      ew.set_profile,
+        "ew-snr":       ew.set_snr,
+        "ew-cont":      ew.set_cont,
         "ew-toggle":    lambda v: tools.toggle("ew"),
         "ew-cancel":    lambda v: ew.deactivate(),
         "synth-toggle": lambda v: tools.toggle("synth"),
@@ -579,6 +776,9 @@ def build():
         "normalise":    lambda v: tools.toggle("normalise"),
         "norm-init":    lambda v: run_busy(normtool.initialise),
         "norm-clear":   lambda v: normtool.clear(),
+        "abundance":    lambda v: tools.toggle("abundance"),
+        "abundcorr":    lambda v: tools.toggle("abundcorr"),
+        "sparams":      lambda v: tools.toggle("sparams"),
     }
 
     def on_action(attr, old, new):
@@ -664,7 +864,7 @@ def build():
             canvas.add_object(spec, name=name, color=color, dash=dash,
                                    source=("run", str(folder)))
 
-        load_async(name, lambda: load_run(folder), add)
+        load_async(name, lambda token=None: load_run(folder), add)
 
     picker = FilePicker(on_select, container_id="file-results", start_dir=start_dir,
                         on_dir=on_picker_dir, recent_provider=store.recent_files)
@@ -690,13 +890,20 @@ def build():
     bridges = column(*B.models,
                      *settings.models, *inspector.models, *linenav.models,
                      *linejump_form.models,
-                     *synth_panel.models, *normtool.models, *filtertool.models)
+                     *synth_panel.models, *normtool.models, *filtertool.models,
+                     *abundancetool.models, *abundcorrtool.models, *corr_atoms.models,
+                     *sparamtool.models)
     bridges.name = "bridges"
 
     doc = curdoc()
     doc.title = "TUMULT Studio"
-    for root in (canvas.nav, canvas.main, filtertool.fig, picker.layout,
-                 linelist_picker.layout, synth_panel.atoms.picker.layout, bridges):
+    for root in (canvas.nav, canvas.main, filtertool.fig, abundancetool.fig,
+                 abundcorrtool.fig, sparamtool.fig, picker.layout,
+                 linelist_picker.layout, synth_panel.atoms.picker.layout,
+                 synth_panel.grids.picker.layout, synth_panel.atmos_picker.layout,
+                 abundancetool.setup.atmos_picker.layout,
+                 abundcorrtool.setup.atmos_picker.layout,
+                 corr_atoms.picker.layout, sparamtool.setup.atmos_picker.layout, bridges):
         doc.add_root(root)
 
     inspector.bind(canvas.selected())
@@ -709,13 +916,20 @@ def build():
         inspector_html=inspector_html(canvas),
         footer_html=footer_html(canvas),
         swatches_html=swatch_html(active_color),
-        edit_html=inspector.edit_form.html(),
+        edit_html=inspector.edit_html(),
         style_html=inspector.style_form.html(),
         settings_html=settings.html(),
         synth_run_html=synth_panel.run_form.html(),
+        synth_window_html=synth_panel.window_form.html(),
+        synth_abund_html=synth_panel.abund_form.html(),
         synth_mode_html=synth_panel.mode_form.html(),
         synth_prefs_html=synth_panel.pref_forms["synthprefs"].html(),
         synth_engine_html=synth_panel.pref_forms["synthengine"].html(),
+        grid_list_html=synth_panel.grids.list_html(),
+        grid_results_name=synth_panel.grids.results_name,
+        synth_grid_html=synth_panel.grid_ui_html(),
+        synth_show_file=synth_panel.setup.show_file(),
+        synth_file_results_name=synth_panel.atmos_picker.results_name,
         synth_cache_html=synth_panel.cache_html(),
         synth_warning=synth_panel.has_warning,
         synth_atoms_html=synth_panel.atoms.chips_html(),
@@ -727,6 +941,41 @@ def build():
         linelist_path=html.escape(Path(linenav.master_path).name),
         linelist_results_name=linelist_picker.results_name,
         sessions_html=sessions_html(store.list_sessions()),
+        abund_results_html=abundancetool.results_html(),
+        abund_table_html="",
+        abund_ref_html=abundancetool.ref_html(),
+        abund1_html=abundancetool.form1.html(),
+        abund3_html=abundancetool.form3.html(),
+        abund_params_html=abund_setup.run_form.html(),
+        abund_base_html=abund_setup.base_form.html(),
+        abund_mode_html=abund_setup.mode_form.html(),
+        abund_grid_html=abund_setup.grid_ui_html(),
+        abund_show_file=abund_setup.show_file(),
+        abund_atoms_ro_html=abund_setup.atoms_ro_html(),
+        abund_file_results_name=abund_setup.atmos_picker.results_name,
+        corr_results_html=abundcorrtool.results_html(),
+        corr_table_html="",
+        corr1_html=abundcorrtool.form1.html(),
+        corr3_html=abundcorrtool.form3.html(),
+        corr_params_html=corr_setup.run_form.html(),
+        corr_grid_html=corr_setup.grid_ui_html(),
+        corr_show_file=corr_setup.show_file(),
+        corr_file_results_name=corr_setup.atmos_picker.results_name,
+        corr_atoms_html=corr_atoms.chips_html(),
+        corr_atom_results_name=corr_atoms.results_name,
+        sparam_results_html=sparamtool.results_html(),
+        sparam_table_html="",
+        sparam_ref_html=sparamtool.ref_html(),
+        sparam1_html=sparamtool.form1.html(),
+        sparam2_html=sparamtool.form2.html(),
+        sparam3_html=sparamtool.form3.html(),
+        sparam_params_html=sparam_setup.run_form.html(),
+        sparam_base_html=sparam_setup.base_form.html(),
+        sparam_mode_html=sparam_setup.mode_form.html(),
+        sparam_grid_html=sparam_setup.grid_ui_html(),
+        sparam_show_file=sparam_setup.show_file(),
+        sparam_atoms_ro_html=sparam_setup.atoms_ro_html(),
+        sparam_file_results_name=sparam_setup.atmos_picker.results_name,
         form_script=FORM_SCRIPT,
         results_name=picker.results_name,
     )
