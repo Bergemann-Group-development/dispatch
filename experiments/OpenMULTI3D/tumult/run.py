@@ -491,11 +491,11 @@ class tumult(object):
 
         if hasattr(self, 'llist') and show_llist:
             if tol is None:
-                llist = self.llist
+                llist = self.llist.reset_index()
                 mask = (llist.lam0 > xmin) & (llist.lam0 < xmax)
                 llist = llist[mask]
             else:
-                df = self.llist[['ion', 'lam0', 'strength', 'loggf', 'ga']]
+                df = self.llist.reset_index()[['ion', 'lam0', 'strength', 'loggf', 'ga']]
                 mask = (df.lam0 > xmin) & (df.lam0 < xmax)
                 df = df[mask]
                 df = df.sort_values(by=['ion', 'lam0']).reset_index(drop=True)
