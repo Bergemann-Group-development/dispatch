@@ -1,7 +1,7 @@
 # Default for gfortran
 OPT = -O1
 HW =
-W = -Wline-truncation -Wno-surprising -w -fno-range-check
+W = -Wline-truncation -Wno-surprising -w -fno-range-check -fallow-argument-mismatch
 DEBUG = -g -fbacktrace 
 
 # Magic strings for dependencies
@@ -14,7 +14,9 @@ ifeq ($(strip $(MPI)),mpi)
 else
   FC  = gfortran -I${BUILD} -J${BUILD}
 endif
-F90 = $(FC) -x f95-cpp-input -ffree-line-length-0 $(W)
+#STD = -std=f2008ts
+STD =
+F90 = $(FC) -x f95-cpp-input -ffree-line-length-0 $(STD) $(W)
 LD  = $(FC)
 
 # Set openmp compiler flags if needed
