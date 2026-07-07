@@ -52,6 +52,13 @@ class AbundanceTool(AbundanceWizard):
     empty_table_msg = "No abundance result selected"
     y_axis_label = "A(X)"
     final_stage = "uncert"
+    # columns beyond the shared line attributes (see AbundanceWizard.BASE_SORT_KEYS)
+    extra_sort_keys = {
+        "blend": lambda ln: ln.blend_frac,
+        "vshift": lambda ln: ln.vshift,
+        "vdop": lambda ln: ln.vdop,
+    }
+    extra_sort_asc = {"blend": True, "vshift": True, "vdop": True}
 
     def __init__(self, ctx, *, setup, list_observations, get_observation, master_path):
         self.list_observations = list_observations  # () -> [(uid, name)]
@@ -463,14 +470,13 @@ class AbundanceTool(AbundanceWizard):
                 + "".join(rows))
 
     def table_html(self, res):
-        mask = " checked" if self.show_toggled_only else ""
-        head = ('<tr><th><input type="checkbox" class="abund-mask-chk"'
-                f'{mask} title="Show only included lines"></th>'
-                "<th>λ₀ [Å]</th><th>ion</th><th>E<sub>low</sub></th><th>log gf</th>"
-                "<th>EW [mÅ]</th><th>blend</th><th>A(X)</th><th>vshift</th><th>vdop</th>"
-                "<th>flags</th></tr>")
+        head = self._table_head("abund-mask-chk", (
+            ("λ₀ [Å]", "lam0"), ("ion", "ion"), ("E<sub>low</sub>", "e_low"),
+            ("log gf", "loggf"), ("EW [mÅ]", "ew"), ("blend", "blend"),
+            ("A(X)", "a"), ("vshift", "vshift"), ("vdop", "vdop"), ("flags", None)))
         body = []
-        for i, ln in enumerate(res.lines):
+        for i in self._line_order(res):
+            ln = res.lines[i]
             if self.show_toggled_only and not ln.include:
                 continue          # header mask: keep only toggled-in lines (index i unchanged)
             chk = " checked" if ln.include else ""
@@ -496,5 +502,6 @@ class AbundanceTool(AbundanceWizard):
                     f'<span class="abund-budget"> (photon {s["sigma_phot"]:.3f} · '
                     f'continuum {s["sigma_cont"]:.3f} · scatter {s["sigma_scatter"]:.3f} · '
                     f'n={s["n"]})</span></div>')
-        return (f'<table class="linelist-table abund-table"><thead>{head}</thead>'
+        return (f'<table class="linelist-table abund-table abund-lines">'
+                f'<thead>{head}</thead>'
                 f'<tbody>{"".join(body)}</tbody></table>{foot}')

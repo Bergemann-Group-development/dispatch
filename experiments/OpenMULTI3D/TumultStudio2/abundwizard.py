@@ -23,6 +23,7 @@ from bokeh.plotting import figure
 import abundance as ab
 import store
 from canvas import ACCENT, style_dark
+from tableui import SortState, sort_headers
 from tool import Tool
 from units import to_range
 
@@ -104,8 +105,29 @@ class AbundanceWizard(Tool):
     empty_table_msg = "No result selected"
     y_axis_label = "A(X)"
 
+    # sortable per-line columns shared by both wizards: {col: sort-value(ln)}. The header
+    # markup lives in each subclass's table_html; here we own the state + the row order so
+    # both tables sort identically (and stay in step with the Line Navigator). Wavelength /
+    # excitation read low→high, EW and abundance magnitude are most useful largest-first.
+    BASE_SORT_KEYS = {
+        "lam0": lambda ln: ln.lam0,
+        "ion": lambda ln: ln.ion,
+        "e_low": lambda ln: ln.e_low,
+        "loggf": lambda ln: ln.loggf,
+        "ew": lambda ln: ln.ew,
+        "a": lambda ln: ln.a,
+    }
+    BASE_SORT_ASC = {
+        "lam0": True, "ion": True, "e_low": True, "loggf": False, "ew": False, "a": True,
+    }
+    # subclasses extend these for columns unique to their table (e.g. blend / vshift / vdop)
+    extra_sort_keys = {}
+    extra_sort_asc = {}
+
     def __init__(self, ctx, *, setup):
         Tool.__init__(self, ctx)
+        self.sort_keys = {**self.BASE_SORT_KEYS, **self.extra_sort_keys}
+        self.sort = SortState({**self.BASE_SORT_ASC, **self.extra_sort_asc}, "lam0")
         self.setup = setup                # SynthSetup: the wizard's own synthesis config
         self.own_mode_bridges((".sidebar-right", f"{self.prefix}-active"),
                               (self.btn_selector, "active"))
@@ -221,6 +243,11 @@ class AbundanceWizard(Tool):
             self._render_selected()
         elif kind == "jump-line":
             self._jump_line(arg)
+        elif kind == "sort":
+            if self.sort.toggle(arg):
+                res = self.selected()
+                if res is not None:
+                    self.push_table(self.table_html(res))
         else:
             self._extra_action(kind, arg)
 
@@ -301,6 +328,26 @@ class AbundanceWizard(Tool):
 
     def push_table(self, html_text):
         self._table_bridge.value = html_text
+
+    # --- shared sortable-table scaffolding ------------------------------------------------
+    def _line_order(self, res):
+        """Indices into ``res.lines`` in the active sort order (NaN/None keys sort last).
+
+        Rows carry their *original* index as ``data-line`` so the client's toggle/jump
+        actions keep addressing ``res.lines[i]`` no matter how the display is sorted.
+        """
+        return self.sort.order(res.lines, self.sort_keys[self.sort.col])
+
+    def _table_head(self, mask_class, columns):
+        """The clickable ``<thead>`` row: a leading mask checkbox, then ``columns``.
+
+        ``columns`` is a sequence of ``(label, sort-col | None)`` pairs; a ``None`` column
+        (e.g. the flags column) renders as a plain, non-sortable header.
+        """
+        checked = " checked" if self.show_toggled_only else ""
+        chk = (f'<input type="checkbox" class="{mask_class}"{checked} '
+               'title="Show only included lines">')
+        return "<tr>" + sort_headers(self.sort, [(chk, None), *columns]) + "</tr>"
 
     def _render_selected(self):
         res = self.selected()

@@ -255,8 +255,10 @@ class SpectrumCanvas:
         self.main.x_range.bounds = (lo, hi)
         self.nav.x_range.bounds = (lo, hi)
         self.nav.x_range.start, self.nav.x_range.end = lo, hi  # overview shows everything
-        if source and source[0] == "file":
-            # a newly loaded object: focus the detail view on its wavelength range
+        if first or (source and source[0] == "file"):
+            # a newly loaded object, or the first object on a previously empty canvas:
+            # focus the detail view on its wavelength range (the placeholder range that
+            # an empty canvas carries has nothing worth preserving)
             self.main.x_range.start, self.main.x_range.end = self._display_range(spectrum)
         else:
             self.main.x_range.start = max(lo, self.main.x_range.start)

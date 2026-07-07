@@ -22,6 +22,7 @@ from tumult.const import EK
 from tumult.linelist import LineList
 
 from htmlbridge import html_bridge
+from tableui import SortState, sort_headers
 from units import to_value, to_range
 
 LAM0_UNIT = u.AA              # native unit of the master line list's lam0
@@ -63,8 +64,7 @@ class LineNavigator:
         self.on_table = on_table   # callable(html) -> push the table into its slot
         self.master_path = str(master_path)
         self.species = None
-        self.sort_col = "strength"
-        self.sort_asc = False
+        self.sort = SortState(SORT_DEFAULT_ASC, "strength")
         self.loaded = False
         self.active = False        # True only while the Lines view owns the centre panel
         self._timeout = None
@@ -147,14 +147,8 @@ class LineNavigator:
 
     def set_sort(self, col):
         """Clicking a column header sorts by it; clicking the active column flips order."""
-        if col not in SORT_DEFAULT_ASC:
-            return
-        if col == self.sort_col:
-            self.sort_asc = not self.sort_asc
-        else:
-            self.sort_col = col
-            self.sort_asc = SORT_DEFAULT_ASC[col]
-        self.render()
+        if self.sort.toggle(col):
+            self.render()
 
     def render(self):
         if not self.loaded or self.species is None:
@@ -168,7 +162,7 @@ class LineNavigator:
             lo, hi = self._range_aa()
             df = master[(master.ion == self.species)
                         & (master.lam0 >= lo) & (master.lam0 <= hi)]
-            df = df.sort_values(self.sort_col, ascending=self.sort_asc)
+            df = df.sort_values(self.sort.col, ascending=self.sort.asc)
             self.on_table(self._table_html(df))
         except Exception:
             logging.exception("Line Navigator render failed")
@@ -192,7 +186,7 @@ class LineNavigator:
             )
         more = (f'<div class="linelist-more">showing top {_MAX_ROWS} of {n:,}</div>'
                 if n > _MAX_ROWS else "")
-        header = "".join(self._th(label, col) for label, col in (
+        header = sort_headers(self.sort, (
             (f"λ₀ [{html.escape(self.canvas.xlabel)}]", "lam0"),
             ("E<sub>low</sub> [eV]", "evi"),
             ("log gf", "loggf"),
@@ -202,12 +196,6 @@ class LineNavigator:
             f'<table class="linelist-table"><thead><tr>{header}</tr></thead>'
             f'<tbody>{"".join(body)}</tbody></table>{more}'
         )
-
-    def _th(self, label, col):
-        if col == self.sort_col:
-            return (f'<th class="line-sort active" data-sortcol="{col}">'
-                    f'{label} {"▲" if self.sort_asc else "▼"}</th>')
-        return f'<th class="line-sort" data-sortcol="{col}">{label}</th>'
 
     # --- jumping ----------------------------------------------------------
     def set_jump_distance(self, distance):

@@ -722,8 +722,10 @@
       m.setv({ value: 'species:' + spitem.dataset.species + ':' + Date.now() });
       return;
     }
+    // the abundance tables share the .line-sort header class but report through their own
+    // channels (below), so ignore their headers here
     var sortth = ev.target.closest('.line-sort');
-    if (sortth) {
+    if (sortth && !sortth.closest('.abund-table')) {
       m.setv({ value: 'linesort:' + sortth.dataset.sortcol + ':' + Date.now() });
       return;
     }
@@ -829,6 +831,8 @@
     if (rem) { abundAction('remove', rem.dataset.resultRemove); return; }
     var ritem = ev.target.closest('.result-item');
     if (ritem && ritem.dataset.result) { abundAction('select', ritem.dataset.result); return; }
+    var asort = ev.target.closest('.abund-lines .line-sort');
+    if (asort) { abundAction('sort', asort.dataset.sortcol); return; }
     // a table row-click (but not the include checkbox) jumps the figure to that line
     var lrow = ev.target.closest('.abund-row');
     if (lrow && !ev.target.closest('.abund-line-chk')) {
@@ -872,6 +876,8 @@
     if (rem) { corrAction('remove', rem.dataset.corrRemove); return; }
     var ritem = ev.target.closest('.corr-result-item');
     if (ritem && ritem.dataset.corrResult) { corrAction('select', ritem.dataset.corrResult); return; }
+    var csort = ev.target.closest('.corr-lines .line-sort');
+    if (csort) { corrAction('sort', csort.dataset.sortcol); return; }
     var lrow = ev.target.closest('.corr-row');
     if (lrow && !ev.target.closest('.corr-line-chk')) {
       corrAction('jump-line', lrow.dataset.line);
@@ -929,6 +935,8 @@
     if (rem) { sparamAction('remove', rem.dataset.sparamRemove); return; }
     var ritem = ev.target.closest('.sparam-result-item');
     if (ritem && ritem.dataset.sparamResult) { sparamAction('select', ritem.dataset.sparamResult); return; }
+    var ssort = ev.target.closest('.sparam-lines .line-sort');
+    if (ssort) { sparamAction('sort', ssort.dataset.sortcol); return; }
     var lrow = ev.target.closest('.sparam-row');
     if (lrow && !ev.target.closest('.sparam-line-chk')) {
       sparamAction('jump-line', lrow.dataset.line);

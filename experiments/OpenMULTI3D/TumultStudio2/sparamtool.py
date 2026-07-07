@@ -70,6 +70,8 @@ class SParamTool(AbundanceWizard):
     empty_table_msg = "No parameter result selected"
     y_axis_label = "A(Fe)"
     final_stage = "solved"
+    extra_sort_keys = {"blend": lambda ln: ln.blend_frac}
+    extra_sort_asc = {"blend": True}
 
     def __init__(self, ctx, *, setup, list_observations, get_observation, master_path):
         self.list_observations = list_observations  # () -> [(uid, name)]
@@ -646,13 +648,13 @@ class SParamTool(AbundanceWizard):
                 f'<span class="abund-budget"> — {cells}</span></div>')
 
     def table_html(self, res):
-        mask = " checked" if self.show_toggled_only else ""
-        head = ('<tr><th><input type="checkbox" class="sparam-mask-chk"'
-                f'{mask} title="Show only included lines"></th>'
-                "<th>λ₀ [Å]</th><th>ion</th><th>E<sub>low</sub></th><th>log gf</th>"
-                "<th>EW [mÅ]</th><th>blend</th><th>A(Fe)</th><th>flags</th></tr>")
+        head = self._table_head("sparam-mask-chk", (
+            ("λ₀ [Å]", "lam0"), ("ion", "ion"), ("E<sub>low</sub>", "e_low"),
+            ("log gf", "loggf"), ("EW [mÅ]", "ew"), ("blend", "blend"),
+            ("A(Fe)", "a"), ("flags", None)))
         body = []
-        for i, ln in enumerate(res.lines):
+        for i in self._line_order(res):
+            ln = res.lines[i]
             if self.show_toggled_only and not ln.include:
                 continue
             chk = " checked" if ln.include else ""
@@ -668,5 +670,6 @@ class SParamTool(AbundanceWizard):
                 f'<td>{ln.e_low:.2f}</td><td>{ln.loggf:.2f}</td><td>{ew}</td>'
                 f'<td>{blend}</td><td>{a}</td>'
                 f'<td class="abund-flags">{html.escape(fl)}</td></tr>')
-        return (f'<table class="linelist-table abund-table"><thead>{head}</thead>'
+        return (f'<table class="linelist-table abund-table sparam-lines">'
+                f'<thead>{head}</thead>'
                 f'<tbody>{"".join(body)}</tbody></table>{self._status_html(res)}')

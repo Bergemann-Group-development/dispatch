@@ -417,13 +417,12 @@ class AbundCorrTool(AbundanceWizard):
                 + "".join(rows))
 
     def table_html(self, res):
-        mask = " checked" if self.show_toggled_only else ""
-        head = ('<tr><th><input type="checkbox" class="corr-mask-chk"'
-                f'{mask} title="Show only included lines"></th>'
-                "<th>λ₀ [Å]</th><th>ion</th><th>E<sub>low</sub></th><th>log gf</th>"
-                "<th>EW [mÅ]</th><th>ΔA</th><th>flags</th></tr>")
+        head = self._table_head("corr-mask-chk", (
+            ("λ₀ [Å]", "lam0"), ("ion", "ion"), ("E<sub>low</sub>", "e_low"),
+            ("log gf", "loggf"), ("EW [mÅ]", "ew"), ("ΔA", "a"), ("flags", None)))
         body = []
-        for i, ln in enumerate(res.lines):
+        for i in self._line_order(res):
+            ln = res.lines[i]
             if self.show_toggled_only and not ln.include:
                 continue
             chk = " checked" if ln.include else ""
@@ -449,5 +448,6 @@ class AbundCorrTool(AbundanceWizard):
             foot = (f'<div class="abund-summary">⟨ΔA({html.escape(res.symbol)})⟩ = '
                     f'{s["a_mean"]:+.3f} ± {self._summary_sigma(s):.3f}'
                     f'<span class="abund-budget"> ({budget})</span></div>')
-        return (f'<table class="linelist-table abund-table"><thead>{head}</thead>'
+        return (f'<table class="linelist-table abund-table corr-lines">'
+                f'<thead>{head}</thead>'
                 f'<tbody>{"".join(body)}</tbody></table>{foot}')
