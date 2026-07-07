@@ -15,16 +15,14 @@ ifndef mpiifort
   MPI=
 endif
 
-OS := $(shell uname -s)
-
-ifeq ($(OS),Darwin)
-    COMPILER = gfort10
+ifdef ifort
+	COMPILER = ifort
+else ifdef gfortran
+	COMPILER = gfortran
 else
-    COMPILER = ifort
+	$(error "No Fortran compiler found. Please set the environment variable 'gfortran' or 'ifort'.")
 endif
 
-#COMPILER        = gfort10
-#COMPILER        = ifort
 SOLVER          = None
 EOS             = microphysics/None
 STAGGER         = 
