@@ -27,6 +27,7 @@ MODULE composition_patch_mod
   USE bftrans_mod, only: H_occupation_probability
   USE bbtrans_mod, only: tolerance, bbtrans_type, disable_ga, disable_stark, disable_vdw, ga_fallback
   USE hprofl_mod, only: hydrogen_BPO
+  USE hvcs_mod, only: hydrogen_vcs_table, vcs_data_dir
   USE trace_mod
   USE scaling_mod
   USE units_mod
@@ -85,6 +86,7 @@ SUBROUTINE read_composition_params ()
   dtemp, ldne, ldrho, ldtemp, tmolim, irwin_dis, opac_table_vmic, save_species, &
   ref_lam, debug_opac, abundances, relative_abundances, alpha_enhancement, r_process_enhancement, &
   disable_ga, disable_stark, disable_vdw, helium_scattering, sample_linelist, hydrogen_BPO, &
+  hydrogen_vcs_table, vcs_data_dir, &
   ga_fallback, eosmet, scattering_absorption
   namelist /linelist_params/ dlam, exclude_elements, line_lists, linelist_folder, &
   linelist_in_output, tolerance, only_elements, use_new_linelist
