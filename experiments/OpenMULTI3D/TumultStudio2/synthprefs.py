@@ -32,7 +32,7 @@ SELECT_OPTIONS = {"interp_method": INTERP_METHODS}
 PREF_PAGES = {
     "synthprefs": [   # "Synthesis" page — the science inputs
         ("interp_method", "Interpolation", "select", "NaturalNeighbor"),
-        ("linelist", "Synthesis line list (file or folder)", "text", ""),
+        ("linelist", "Synthesis line list (file or folder)", "text", "./input/abund/linelists/master_linelists/"),
         ("abund_file", "Solar abundance file", "text", "./input/abund/abund_magg22"),
         ("absmet", "Absmet file or folder", "text", ""),
     ],

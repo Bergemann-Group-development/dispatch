@@ -43,10 +43,11 @@ class GridManager:
     dropdown / file-existence warnings. ``start_dir`` is where the folder picker first opens.
     """
 
-    def __init__(self, default_pattern, on_change=None, start_dir="~"):
+    def __init__(self, default_pattern, on_change=None, start_dir="~", builtin_dir=None):
         self.default_pattern = default_pattern
         self.on_change = on_change
         self.grids = [dict(g) for g in store.get_section("synthesis").get("atmos_grids", [])]
+        self._register_builtin_marcs(builtin_dir)
         self._editing = None  # id of the grid whose folder the picker is choosing
 
         self.list_bridge = html_bridge("grid-list", name="grid-list-render")
@@ -68,6 +69,42 @@ class GridManager:
     @property
     def results_name(self):
         return self.picker.results_name
+
+    # --- built-in grids ---------------------------------------------------
+    def _register_builtin_marcs(self, builtin_dir):
+        """Auto-register the bundled MARCS grid the first time it appears on disk.
+
+        Once the input data is fetched, ``input/atmos/MARCS`` holds the standard MARCS
+        model-atmosphere grid. Rather than make every user hand-configure it in the Synthesis
+        preferences, seed a ready-to-use grid entry pointing at that folder (using the MARCS
+        filename ``default_pattern`` and ``Marcs`` format). Since it becomes the first
+        registered grid, :meth:`synthsetup.SynthSetup.selected_grid_id` self-heals to select
+        it, so synthesis works out of the box.
+
+        Runs during construction, so it must NOT call ``on_change`` (the owning panel isn't
+        built yet) — it writes the grid list to the store directly. A one-shot
+        ``marcs_autoregistered`` flag records that we've seeded it, so a user who later deletes
+        the grid does not get it silently re-created. The flag is only set once the folder
+        actually exists, so fetching the data after first launch still triggers registration.
+        """
+        if not builtin_dir:
+            return
+        if store.get_section("synthesis").get("marcs_autoregistered"):
+            return
+        folder = (Path(builtin_dir).expanduser() / "MARCS")
+        if not folder.is_dir():
+            return  # input data not fetched yet; retry on a later launch
+        store.update_pref("synthesis", "marcs_autoregistered", True)
+        resolved = folder.resolve()
+        already = any(g.get("id") == "marcs" for g in self.grids) or any(
+            (g.get("folder") or "").strip()
+            and Path(g["folder"]).expanduser().resolve() == resolved
+            for g in self.grids)
+        if already:
+            return
+        self.grids.append({"id": "marcs", "name": "MARCS", "folder": str(folder),
+                           "pattern": self.default_pattern, "format": ATMOS_FORMATS[0]})
+        store.update_pref("synthesis", "atmos_grids", [dict(g) for g in self.grids])
 
     # --- lookups ----------------------------------------------------------
     def _find(self, gid):

@@ -88,13 +88,16 @@ class SynthPanel(RangeSelect):
         }
 
         # registered atmosphere grids (Preferences → Synthesis); the setup's grid selector,
-        # source-mode toggle and direct-file picker read the current selection from it.
+        # source-mode toggle and direct-file picker read the current selection from it. The
+        # bundled MARCS grid under <dispatch_cwd>/input/atmos/MARCS is auto-registered on
+        # first launch when present, so a fresh checkout works after fetching the input data.
+        cwd = Path(str(prefs.get("dispatch_cwd") or REPO_DIR)).expanduser()
         self.grids = GridManager(default_pattern=synth.DEFAULT_PATTERN,
                                  on_change=self._on_grids_changed,
-                                 start_dir=self._grid_start_dir())
+                                 start_dir=self._grid_start_dir(),
+                                 builtin_dir=cwd / "input" / "atmos")
 
         # NLTE model-atom selector: opens in <dispatch_cwd>/input/atoms, shown only in NLTE.
-        cwd = Path(str(prefs.get("dispatch_cwd") or REPO_DIR)).expanduser()
         atoms_dir = cwd / "input" / "atoms"
         self.atoms = AtomPicker(start_dir=atoms_dir if atoms_dir.is_dir() else cwd)
 
