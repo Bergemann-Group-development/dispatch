@@ -55,6 +55,13 @@ The script is re-runnable: files already present with the right size are
 skipped, and archives are only unpacked once. The downloaded data stays
 git-ignored, so it will not bloat the repository.
 
+> **macOS TLS error** (`CERTIFICATE_VERIFY_FAILED: unable to get local issuer
+> certificate`): the python.org framework Python ships without a CA trust store.
+> Fix it once by running the installer's cert step, e.g.
+> `/Applications/Python\ 3.12/Install\ Certificates.command`. The script also
+> uses the `certifi` bundle automatically when it is installed, and offers a
+> `--insecure` last resort that skips certificate verification.
+
 ---
 
 ## 3. Compiling the Fortran code

@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import ssl
 import sys
 import time
 import urllib.error
@@ -44,6 +45,30 @@ CHUNK = 1 << 20  # 1 MiB
 RETRIES = 3
 
 
+def make_ssl_context(insecure: bool = False) -> ssl.SSLContext:
+    """Build the TLS context used for all requests.
+
+    The python.org macOS framework builds ship an OpenSSL with no trust store
+    configured (unless you run "Install Certificates.command"), which yields
+    ``CERTIFICATE_VERIFY_FAILED``. If the `certifi` CA bundle is importable we
+    use it, which sidesteps that problem without any manual setup.
+    """
+    if insecure:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        return ctx
+    try:
+        import certifi  # usually pulled in transitively by numpy/matplotlib/etc.
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return ssl.create_default_context()
+
+
+# Rebuilt in main() once flags are parsed; the default keeps helpers importable.
+_SSL_CTX = make_ssl_context()
+
+
 def human(nbytes: float) -> str:
     for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
         if nbytes < 1024 or unit == "TiB":
@@ -58,7 +83,7 @@ def _get(url: str, params: dict) -> bytes:
     last_err: Exception | None = None
     for attempt in range(1, RETRIES + 1):
         try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
+            with urllib.request.urlopen(req, timeout=60, context=_SSL_CTX) as resp:
                 return resp.read()
         except (urllib.error.URLError, TimeoutError) as exc:  # pragma: no cover
             last_err = exc
@@ -88,7 +113,7 @@ def download(remote_path: str, dest: Path) -> None:
     last_err: Exception | None = None
     for attempt in range(1, RETRIES + 1):
         try:
-            with urllib.request.urlopen(url, timeout=120) as resp, part.open("wb") as fh:
+            with urllib.request.urlopen(url, timeout=120, context=_SSL_CTX) as resp, part.open("wb") as fh:
                 total = int(resp.headers.get("Content-Length", 0))
                 got = 0
                 t0 = time.time()
@@ -143,7 +168,16 @@ def main() -> int:
                     help="directory to merge the data into (default: ./input)")
     ap.add_argument("--dry-run", action="store_true", help="only list what would be downloaded")
     ap.add_argument("--clean-zips", action="store_true", help="delete each zip after unpacking")
+    ap.add_argument("--insecure", action="store_true",
+                    help="skip TLS certificate verification (last resort if the CA "
+                         "bundle cannot be fixed; on macOS prefer running "
+                         "'Install Certificates.command' for your Python instead)")
     args = ap.parse_args()
+
+    global _SSL_CTX
+    _SSL_CTX = make_ssl_context(insecure=args.insecure)
+    if args.insecure:
+        print("WARNING: TLS certificate verification disabled (--insecure).")
 
     dest: Path = args.dest
     print(f"Listing remote share {BASE_URL}/d/{SHARE_TOKEN}/ ...")
