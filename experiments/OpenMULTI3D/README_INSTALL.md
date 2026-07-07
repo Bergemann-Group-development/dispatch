@@ -35,7 +35,29 @@ Bokeh from here rather than from inside `TumultStudio2/`.
 
 ---
 
-## 2. Compiling the Fortran code
+## 2. Input data
+
+Some input data (model atoms, line lists, MARCS atmospheres, opacity/`absmet`
+files — about 1.9 GB) is too large for git and is hosted on MPCDF Keeper:
+
+<https://keeper.mpdl.mpg.de/d/3191475aebe340638422/>
+
+The share mirrors the layout of [`input/`](input/). Download it, unpack the
+nested zips, and merge it with the files already in `input/` using the provided
+script (stdlib only, no extra packages needed):
+
+```bash
+python fetch_input_data.py            # download + unpack + merge into ./input
+python fetch_input_data.py --dry-run  # preview what would be downloaded
+```
+
+The script is re-runnable: files already present with the right size are
+skipped, and archives are only unpacked once. The downloaded data stays
+git-ignored, so it will not bloat the repository.
+
+---
+
+## 3. Compiling the Fortran code
 
 The build uses the top-level DISPATCH `config/Makefile` (two levels up) together
 with the local [`Makefile`](Makefile). The compiler is selected automatically:

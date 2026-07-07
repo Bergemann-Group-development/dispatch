@@ -48,6 +48,7 @@ vtune*
 dispatch.x.*
 *temp_directory*
 
-# OpenMULTI3D install docs (override the broad experiments/* and *.txt rules above)
+# OpenMULTI3D install docs + data-fetch script (override the broad experiments/* and *.txt rules above)
 !experiments/OpenMULTI3D/README_INSTALL.md
 !experiments/OpenMULTI3D/requirements.txt
+!experiments/OpenMULTI3D/fetch_input_data.py
