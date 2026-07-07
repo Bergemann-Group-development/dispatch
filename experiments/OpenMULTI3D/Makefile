@@ -16,10 +16,10 @@ ifndef mpiifort
 endif
 
 ifeq ($(origin COMPILER), undefined)
-  ifneq ($(shell command -v ifort 2>/dev/null),)
+  ifneq ($(shell command -v gfortran 2>/dev/null),)
+    COMPILER = gfortran
+  else ifneq ($(shell command -v ifort 2>/dev/null),)
     COMPILER = ifort
-  else ifneq ($(shell command -v gfortran 2>/dev/null),)
-    COMPILER = gfort10
   else
     $(error "No Fortran compiler found. Install gfortran or ifort, or set COMPILER explicitly.")
   endif
