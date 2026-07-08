@@ -756,7 +756,11 @@ contains
           h_kT = h_k / real(comp%temp(x,y,z))
           do f=fs, fe
             hv_kT = self%nu(f) * h_kT
-            self%back(f,x,y,z,3) = exp(-hv_kT)
+            ! Clamp the LTE Boltzmann factor to the smallest positive real(4)
+            ! so it never underflows to exactly 0. NLTE emissivity (eta) can
+            ! stay finite where beta would underflow, and downstream code forms
+            ! eta/beta; a hard zero here produces Inf/NaN (see convert_to_work_units).
+            self%back(f,x,y,z,3) = max(exp(-hv_kT), tiny(1.0))
           end do
         end do
       end do
@@ -1807,9 +1811,7 @@ contains
             associate(chi=>self%back(f,x,y,z,0), eta=>self%back(f,x,y,z,2), beta=>self%back(f,x,y,z,3), &
                       xhat=>self%back(f,x,y,z,1), ehat=>self%back(f,x,y,z,2))
               xhat = chi + eta
-              if (eta > 0) then
-                ehat = eta / beta
-              endif
+              ehat = eta / beta            ! beta is clamped nonzero (see lte_background_opacities)
             end associate
           end do
         end do
@@ -1879,9 +1881,7 @@ contains
             associate(chi=>self%work(f,x,y,z,1), eta=>self%work(f,x,y,z,2), beta=>self%back(f,x,y,z,3), &
                       xhat=>self%work(f,x,y,z,1), ehat=>self%work(f,x,y,z,2))
               eta = self%work(f,x,y,z,2) * chi
-              if (eta > 0) then
-                ehat = eta / beta
-              endif
+              ehat = eta / beta            ! beta is clamped nonzero (see lte_background_opacities)
               xhat = chi + ehat
             end associate
           end do
