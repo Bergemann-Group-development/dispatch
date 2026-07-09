@@ -1,50 +1,89 @@
-# OpenMULTI3D — Installation & Build
+# OpenMULTI3D — Getting Started
 
-This experiment has two parts:
+You've just cloned the repo. This experiment has two parts, both needed for a
+full setup:
 
-1. **Fortran radiative-transfer code** (`SRC/`, `HOP/`) that builds into `dispatch.x`.
+1. **Fortran radiative-transfer code** (`SRC/`, `HOP/`) — compiles into the
+   `dispatch.x` executable that runs the synthesis.
 2. **Python stack** — the `tumult/` synthesis library and the `TumultStudio2/`
    Bokeh GUI built on top of it.
 
+Follow the steps below in order.
+
 ---
 
-## 1. Python modules
+## 0. Prerequisites
 
-**Recommended Python version: 3.11** (the reference `tumult_studio` environment
-runs 3.11.13). Newer versions (3.12) also work.
+- **Python 3.11+** (3.11 is the reference version; 3.12+ also works)
+- **A Fortran compiler**: `gfortran` (recommended) or Intel `ifort`
+- **git** (to have gotten this far) and **make**
 
-All Python dependencies for `tumult/` and `TumultStudio2/` are listed in
-[`requirements.txt`](requirements.txt) and installed with pip:
+Install a Fortran compiler if you don't have one:
 
 ```bash
-python3.11 -m venv .venv
+# macOS (Homebrew)
+brew install gcc          # provides gfortran
+
+# Linux (Debian/Ubuntu)
+sudo apt install gfortran
+```
+
+Check it's on your `PATH`:
+
+```bash
+gfortran --version
+```
+
+---
+
+## 1. Set up the Python environment
+
+```bash
+python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### Launching TumultStudio2
-
-From the repository root (the directory containing this file):
-
-```bash
-bokeh serve --show TumultStudio2
-```
-
-The `tumult/` package is imported by adding the repo root to `sys.path`, so run
-Bokeh from here rather than from inside `TumultStudio2/`.
+This installs everything `tumult/` and `TumultStudio2/` need (numpy, scipy,
+numba, astropy, bokeh, etc. — see [`requirements.txt`](requirements.txt)).
 
 ---
 
-## 2. Input data
+## 2. Compile the Fortran code
 
-Some input data (model atoms, line lists, MARCS atmospheres, opacity/`absmet`
-files — about 1.9 GB) is too large for git and is hosted on MPCDF Keeper:
+The build uses the top-level DISPATCH `config/Makefile` (two levels up)
+together with the local [`Makefile`](Makefile). The compiler is auto-detected
+(`gfortran` if present, otherwise `ifort`) — no manual configuration needed
+on a standard macOS or Linux machine:
+
+```bash
+make -j
+```
+
+This produces the executable `dispatch.x` in this directory. To clean and
+rebuild from scratch:
+
+```bash
+make clean
+make -j
+```
+
+> If you have multiple Fortran compilers installed and want to force a
+> specific one, pass it explicitly, e.g. `make -j COMPILER=ifort`. Compiler
+> profiles live under `../../config/compiler/<name>/`.
+
+---
+
+## 3. Get the input data
+
+Model atoms, line lists, MARCS atmospheres, and opacity/`absmet` files
+(about 1.9 GB) are too large for git and are hosted on MPCDF Keeper:
 
 <https://keeper.mpdl.mpg.de/d/3191475aebe340638422/>
 
-The share mirrors the layout of [`input/`](input/). Download it, unpack the
-nested zips, and merge it with the files already in `input/` using the provided
-script (stdlib only, no extra packages needed):
+The share mirrors the layout of [`input/`](input/). Download and merge it
+into `input/` with the provided script (stdlib only, no extra packages
+needed — works even before you set up the venv):
 
 ```bash
 python fetch_input_data.py            # download + unpack + merge into ./input
@@ -64,33 +103,55 @@ git-ignored, so it will not bloat the repository.
 
 ---
 
-## 3. Compiling the Fortran code
+## 4. Run a test synthesis
 
-The build uses the top-level DISPATCH `config/Makefile` (two levels up) together
-with the local [`Makefile`](Makefile). The compiler is selected automatically:
-
-- **macOS (Darwin):** `gfort10` (a GCC 10 gfortran; **not** the default `gfortran`)
-- **Linux:** `ifort`
-
-Build with:
+From this directory, with the input data in place:
 
 ```bash
-make -j
+OMP_STACKSIZE=256M ./dispatch.x demo.nml
 ```
 
-This produces the executable `dispatch.x` in this directory. To clean:
+`demo.nml` (or any of the other `*.nml` namelist files here) configures the
+run. Output is written to `data/<input-path-without-suffix>/`; spectra land
+under `save/` as `out_lam.bin` (the wavelength grid) plus `ie_0NNNNN.bin`
+chunks.
 
-```bash
-make clean
+See `demo.ipynb` for an example that runs `dispatch.x` and then loads and
+plots the resulting spectrum with `tumult.read(...)`.
+
+### Launching a run from Python
+
+Instead of calling `dispatch.x` directly, `tumult.launch` can build a namelist
+from a default `.nml` file plus overrides, run `dispatch.x` for you, and skips
+the run entirely if a completed output already exists at that path:
+
+```python
+import tumult
+
+output_folder, ran = tumult.launch(
+    'demo_run',                                  # run name -> data/demo_run/, ./demo_run.nml
+    default='demo.nml',                           # base namelist to start from
+    nml_settings={'atom_params': {'convlim': 1e-3}},  # overrides on top of the default
+)
+
+run = tumult.read(output_folder)
+run.get_spectrum(imu=0, LTE=True).plot()
 ```
 
-### Running
-
-```bash
-./dispatch.x demo.nml
-```
-
-where `demo.nml` (or any of the `*.nml` namelist files here) configures the run.
-Output spectra are written to the paths given in the namelist.
+`launch()` returns `(output_folder, ran)`, where `ran` is `False` if it served
+a cached completed run instead of re-running `dispatch.x`. See
+`tumult/launch.py` for the full set of options (`threads`, `run_async`,
+`slurm_script`, etc.).
 
 ---
+
+## 5. Launch TumultStudio2 (optional GUI)
+
+From the repository root (the directory containing this file):
+
+```bash
+bokeh serve --show TumultStudio2
+```
+
+The `tumult/` package is imported by adding the repo root to `sys.path`, so
+run Bokeh from here rather than from inside `TumultStudio2/`.

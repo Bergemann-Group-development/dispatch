@@ -272,62 +272,6 @@ class SpectrumGrid(object):
         p.update(p0)
         b.update(bounds)
         return Spectrum.fit(self, spec, bounds=b, p0=p, **kwargs)
-  
-    #=====================================================================
-    def plot_nodes(self, fig=None, size=5, color='black', cmap='Viridis', opacity=0.8, **kwargs):
-        import plotly.graph_objs as go
-        teff = self.points[:,0]
-        logg = self.points[:,1]
-        feh = self.points[:,2]
-
-        if fig is None:
-            fig = go.Figure()
-
-        # Create a 3D scatter plot
-        fig.add_trace(go.Scatter3d(
-            x=teff,
-            y=feh,
-            z=logg,
-            mode='markers',
-            marker=dict(
-                size=size,
-                color=color,  # Set color to the 'feh' values
-                colorscale=cmap,  # Choose a colorscale
-                opacity=opacity,
-                **kwargs
-            )),
-        )
-
-        # Set labels
-        fig.update_layout(
-            scene=dict(
-                xaxis_title='Teff',
-                yaxis_title='Fe/H',
-                zaxis=dict(
-                    title='Logg',
-                    autorange='reversed'  # Invert the z-axis
-                )
-            ),
-            margin=dict(l=0, r=0, b=0, t=0)  # Reduce padding around the plot
-        )
-
-        return fig
-  
-    #=====================================================================
-    def plot_point(self, teff, logg, feh, fig=None, **kwargs):
-        import plotly.graph_objs as go
-        if fig is None:
-            fig = go.Figure()
-
-        fig.add_trace(go.Scatter3d(
-        x=[teff],
-        y=[feh],
-        z=[logg],
-        **kwargs,
-        ),
-        )
-
-        return fig
 
 
 #=====================================================================

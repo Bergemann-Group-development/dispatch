@@ -18,7 +18,6 @@ astropy>=6.0         # units, constants, FITS I/O
 # --- Plotting ---
 matplotlib>=3.8
 bokeh>=3.4           # TumultStudio2 server application
-plotly>=5.0          # optional interactive grid plots (tumult/spectrum_grid.py)
 
 # --- Utilities ---
 tqdm>=4.66           # progress bars
