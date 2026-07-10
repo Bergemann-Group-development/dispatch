@@ -69,7 +69,7 @@ MODULE composition_patch_mod
   character(len=256), save :: opac_table=''
   character(len=256), save :: absmet_file=''
   character(len=512), save :: linelist_folder=''
-  character(len=256), save, dimension(:), allocatable :: line_lists
+  character(len=256), save, dimension(:), allocatable :: linelist_file
   
   public :: read_composition_params
 
@@ -88,13 +88,13 @@ SUBROUTINE read_composition_params ()
   disable_ga, disable_stark, disable_vdw, helium_scattering, sample_linelist, hydrogen_BPO, &
   hydrogen_vcs_table, vcs_data_dir, &
   ga_fallback, eosmet, scattering_absorption
-  namelist /linelist_params/ dlam, exclude_elements, line_lists, linelist_folder, &
+  namelist /linelist_params/ dlam, exclude_elements, linelist_file, linelist_folder, &
   linelist_in_output, tolerance, only_elements, use_new_linelist
   ! ----------------------------------------------------------------------------
   call trace%begin('composition%init', itimer=itimer)
 
-  allocate(line_lists(128))
-  line_lists = ''
+  allocate(linelist_file(128))
+  linelist_file = ''
 
   rewind (io%input)
   read (io%input, composition_params, iostat=iostat)
@@ -132,13 +132,13 @@ SUBROUTINE read_composition_params ()
   call io%namelist_warning ('linelist_params', iostat)
 
   if (linelist_folder /= '') then
-    deallocate(line_lists)
-    call os%get_filenames(linelist_folder, line_lists)
-    do i=1, size(line_lists)
-      line_lists(i) = trim(linelist_folder)//'/'//trim(line_lists(i))
+    deallocate(linelist_file)
+    call os%get_filenames(linelist_folder, linelist_file)
+    do i=1, size(linelist_file)
+      linelist_file(i) = trim(linelist_folder)//'/'//trim(linelist_file(i))
     end do
   else
-    call truncate_array(line_lists, count(line_lists/=''))
+    call truncate_array(linelist_file, count(linelist_file/=''))
   endif
   write (io%namelist, linelist_params)
 
@@ -201,11 +201,11 @@ SUBROUTINE composition_pre_init (self)
 
   if (first_time) then
     first_time = .false.
-    do i=1, size(line_lists)
+    do i=1, size(linelist_file)
       if (use_new_linelist) then
-        call composition%init_linelist2(line_lists(i), dlam, output_sp%lam)
+        call composition%init_linelist2(linelist_file(i), dlam, output_sp%lam)
       else
-        call composition%init_linelist(line_lists(i), dlam, output_sp%lam)
+        call composition%init_linelist(linelist_file(i), dlam, output_sp%lam)
       endif
     end do
     call nlte_patch%exclude_double_lines()

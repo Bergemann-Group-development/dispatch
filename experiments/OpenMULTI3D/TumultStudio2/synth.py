@@ -259,7 +259,7 @@ def _linelist_settings(path):
     p = Path(path).expanduser()
     if p.is_dir():
         return {"linelist_folder": str(p)}
-    return {"line_lists": [str(p)]}
+    return {"linelist_file": [str(p)]}
 
 
 def build_settings(prefs, run_vals, atmos_format=None):
