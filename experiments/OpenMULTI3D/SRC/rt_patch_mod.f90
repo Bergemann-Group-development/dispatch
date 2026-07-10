@@ -10,7 +10,7 @@ MODULE rt_patch_mod
   USE trace_mod
   USE bits_mod
   USE os_mod
-  USE const_mod, only: CC, h_k, twoh_c2, half, one_third, one_sixth, HZ_TO_AA
+  USE const_mod, only: CC, h_k, twoh_c2, half, one_third, one_sixth, HZ_TO_AA, pi
   USE patch_mod, only: patch_t
   USE mmath_mod, only: cc_kernel
   USE op_math_mod, only: pchip_mono
@@ -24,7 +24,9 @@ MODULE rt_patch_mod
     column_by_column, rotate_atmos, save_cntrbf, depression_cntrbf, &
     decouple_continuum, linelist_in_output, ilambd, initial_Jnu,  &
     Jnu_to_file, preconditioning, make_eos, amr, save_Inu, save_chi, save_Snu, &
-    long_solver, fixed_Jnu, n_nu, save_Jnu, maxiter
+    long_solver, fixed_Jnu, n_nu, save_Jnu, maxiter, &
+    convlim, converged, flux_convergence, flux_conv_signal, &
+    global_flux_err, global_flux_pos, global_flux_lambda, flux_update_counter
   USE ray_mod, only: one_dimensional, ray_type, rstar, rorigin
   USE trans_mod, only: line_type, cont_type
   USE bbtrans_mod, only: voigt_function2, voigt_profile, tolerance
@@ -71,11 +73,14 @@ MODULE rt_patch_mod
     real(4), dimension(:,:,:,:), allocatable :: b4      ! real(4) copy of adata%b
     class(atom_data_t), pointer :: b4_ptr => null()     ! adata the b4 copy belongs to
     real(8), dimension(:), allocatable :: llam          ! log(lambda[AA]) of the patch grid
+    real(8), dimension(:), allocatable :: flux_prev       ! previous-iteration top emergent flux, per frequency (fs:fe)
+    real(8) :: flux_global=0.d0, flux_maxerr=0.d0          ! globally-agreed / local worst relative flux change this iteration
   contains
     procedure :: pre_init => rt_patch_pre_init
     procedure :: init_patch_trans
     procedure :: pre_update => rt_patch_pre_update
     procedure :: execute
+    procedure :: check_flux_convergence
     procedure :: background
     procedure :: foreground
     procedure :: aniso_integrations
@@ -281,7 +286,7 @@ contains
     real(4), dimension(:,:,:), allocatable :: vproj
     real(4) :: wmu
     real(8) :: vec(3)
-    logical :: skip, get_cntrbf, end_boundary, do_rotate_atmos
+    logical :: skip, get_cntrbf, end_boundary, do_rotate_atmos, top_of_domain
     integer :: i, j, i_mu, zs, ze, fs, fe, ng, i_set, nrad
     integer, save :: itimer=0
     !-----------------------------------------------------------------------------
@@ -305,6 +310,7 @@ contains
     if (.not. end_boundary .and. associated(self%dnstream)) then
       end_boundary = self%dnstream%is_finished()
     endif
+    top_of_domain = self%patch%boundaries%is_set(bits%zu) .and. (self%dir > 0)
 
     call allocate_arrays()
 
@@ -379,6 +385,8 @@ contains
         if (self%i_nu == -1) then
           call self%print_linelist(comp)
         endif
+      elseif (self%do_full_sp .and. top_of_domain) then
+        call self%check_flux_convergence()
       endif
       call self%deallocate_mem()
     endif
@@ -386,7 +394,14 @@ contains
     call deallocate_arrays()
 
     if (self%has_atom .and. self%iter > ilambd-1) then
-      if (all([(self%atoms(i)%data%converged, i=1, self%natom)]) .and. premature_finish) then
+      ! per-atom population convergence (convmax) is an early-exit shortcut for
+      ! the population-governed case only -- it must not terminate the task
+      ! ahead of the flux metric when flux_convergence is what's authoritative,
+      ! or a run can wind down (reach do_final) with flux nowhere near convlim
+      ! and no "Converged!" ever printed, simply because a single NG-accelerated
+      ! level snapped its local population error below the (very tight) convmax.
+      if (all([(self%atoms(i)%data%converged, i=1, self%natom)]) .and. premature_finish &
+        .and. .not. flux_convergence) then
         call self%finish()
       endif
     endif
@@ -698,7 +713,11 @@ contains
       end associate
     end do
 
-    if (Jnu_to_file) then
+    ! twin sub-patches only exist for do_full_sp when maxiter>0, and for
+    ! do_final when ilambd>0 (see composition_patch_mod.f90 create_sub_patches
+    ! calls) -- saving Jnu outside those conditions leaves it with no reader.
+    if (Jnu_to_file .and. ((self%do_full_sp .and. maxiter > 0) .or. &
+                           (self%do_final .and. ilambd > 0))) then
       Jnu_label = merge('Jnu_out', 'Jnu    ', self%do_out_sp)
       call self%save5(self%Jnu, trim(Jnu_label), key=self%key(1:3), add2meta=save_Jnu)
     endif
@@ -2874,7 +2893,7 @@ contains
         call self%upstream%deallocate_mem()
       endif
     endif
-    if (ilambd > 0 .and. (self%do_full_sp .or. self%do_final)) then
+    if ((self%do_full_sp .and. maxiter > 0) .or. (self%do_final .and. ilambd > 0)) then
       if (self%up_twin%is_finished() .and. self%dn_twin%is_finished()) then
         if (Jnu_to_file) then
           if (.not. save_Jnu) then
@@ -2917,11 +2936,11 @@ contains
   !===============================================================================
   SUBROUTINE save_intensity (self)
     class(rt_patch_t) :: self
-    real(4), dimension(:,:,:,:,:), allocatable :: ie, i3
+    real(4), dimension(:,:,:,:,:), allocatable :: ie, i3, flux
     real(8), parameter :: conversion = 2 * HH / (CC**3 * CM_TO_AA)
     integer :: fs, fe
     integer, save :: itimer=0
-    integer :: x, y, f
+    integer :: x, y, f, mu, i_set
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch_t%save_intensity', itimer=itimer)
     fs = self%fs
@@ -2946,8 +2965,132 @@ contains
     if (save_resolved) then
       call self%save5(i3, 'i3')
     endif
+
+    ! disk-integrated flux: F(lam) = 2*pi * sum_mu long_wmu(mu) * ie(lam,mu)
+    ! (long_wmu already carries the cosine/mu factor, see ray_mod.f90's
+    ! nphi_copies), matching tumult/flux.py's integrate_flux exactly so the
+    ! Python post-processing step is no longer needed for this quantity.
+    allocate(flux(fs:fe, 1, 1, 1, self%n_set), source=0.)
+    do i_set=1, self%n_set
+      do mu=self%mus, self%mue
+        flux(:,1,1,1,i_set) = flux(:,1,1,1,i_set) + real(2*pi*long_wmu(mu), 4) * ie(:,1,1,mu,i_set)
+      end do
+    end do
+    call self%save5(flux, 'flux')
+
     call trace%end(itimer)
   END SUBROUTINE save_intensity
+
+  !===============================================================================
+  !> Track the relative change of the top-of-domain emergent FLUX (mu-integrated,
+  !> using the same weighting convention as the astrophysical flux, see
+  !> integrate_intensity/save_intensity) between iterations for this wavelength
+  !> chunk, and fold it into a global (all-chunk) worst-case value via the same
+  !> RMA counter idiom used for the population-based convergence check in
+  !> nlte_patch_t%execute. Runs every ALI iteration (not just the final pass) so
+  !> both convergence metrics stay observable regardless of which one
+  !> (flux_convergence) actually governs the stop decision. The convergence
+  !> report itself (worst error, wavelength, i_nu) is printed by nlte_patch_t, by
+  !> reading the shared RMA counters set here.
+  !>
+  !> short_wmu carries no cosine (mu) weighting -- it is the isotropic weight used
+  !> for the mean-intensity (Jnu) angle sum, normalized so that
+  !> sum(short_wmu(1:size)) = 1 over the full sphere (see integrate_intensity,
+  !> which undoes the top/bottom-hemisphere-mirror halving via wmu2=2*wmu). Flux
+  !> requires the additional mu = short_vec(3,i) factor, giving:
+  !>   F(lam) = 2*pi * sum_i [2*short_wmu(i)] * short_vec(3,i) * I(lam,i)
+  !>          = 4*pi * sum_i short_wmu(i) * short_vec(3,i) * I(lam,i)
+  !> summed over the top-hemisphere ray range self%mus:self%mue. This mirrors the
+  !> long_wmu flux weights used by save_intensity's do_final pass (long_wmu already
+  !> bakes the mu factor in, see ray_mod.f90's nphi_copies), but is only inferred
+  !> by analogy for the (coarser) short/ALI quadrature -- there is no other code
+  !> path in the repo computing flux from short_wmu to check it against.
+  !===============================================================================
+  SUBROUTINE check_flux_convergence (self)
+    class(rt_patch_t) :: self
+    real(8), dimension(:), allocatable :: flux_now, e
+    real(8) :: local_err, floor, lambda_max
+    integer :: fs, fe, count, expected, round_pos, i, imax
+    integer, save :: itimer=0
+    !-----------------------------------------------------------------------------
+    call trace%begin('rt_patch_t%check_flux_convergence', itimer=itimer)
+    fs = self%fs
+    fe = self%fe
+
+    allocate(flux_now(fs:fe), source=0.d0)
+    do i=self%mus, self%mue
+      flux_now = flux_now + (4*pi) * short_wmu(i) * short_vec(3,i) * &
+        sum(sum(dble(self%mem(fs:fe,:,:,i,1,3)), dim=3), dim=2) / dble(self%nx * self%ny)
+    end do
+
+    if (.not. allocated(self%flux_prev)) then
+      allocate(self%flux_prev(fs:fe), source=flux_now)
+    else
+      allocate(e(fs:fe))
+      floor = 1d-10 * maxval(abs(flux_now))
+      where (abs(self%flux_prev) > floor)
+        e = flux_now / self%flux_prev - 1.d0
+      elsewhere
+        e = 0.d0
+      endwhere
+      imax = fs - 1 + maxloc(abs(e), dim=1)
+      local_err = abs(e(imax))
+      lambda_max = HZ_TO_AA / self%nu(imax)
+      self%flux_prev = flux_now
+      self%flux_maxerr = local_err
+
+      ! expected = number of top-of-domain wavelength-chunk reporters per round
+      ! (bb + bf chunks when decouple_continuum). round_pos is this report's
+      ! 1-based position within its round, from the monotonic report counter:
+      ! round_pos==1 starts a fresh round (reset the running max to just this
+      ! report), and the decision is only ever evaluated at round_pos==expected,
+      ! i.e. once EVERY reporter has folded its value into the round's running
+      ! max. This replaces an earlier "same reporter seen again" reset idiom
+      ! that could fire (and evaluate convergence) after only one of several
+      ! reporters had contributed to the current round -- harmless with many
+      ! reporters (the population check uses this same idiom, keyed by
+      ! z-column, where it is very unlikely to misfire) but a near-certain
+      ! false convergence with as few as 2 reporters (e.g. n_nu=1 with
+      ! decouple_continuum=T).
+      expected = merge(2*n_nu, n_nu, decouple_continuum)
+
+      !$omp critical (flux_maxerr_reset)
+      count = flux_update_counter%update(+1)
+      round_pos = mod(count-1, expected) + 1
+      if (round_pos == 1) then
+        call global_flux_pos%reset(self%i_nu)
+        call global_flux_err%reset(local_err)
+        call global_flux_lambda%reset(lambda_max)
+        self%flux_global = local_err
+      else
+        self%flux_global = global_flux_err%update(0.d0)
+        if (abs(local_err) > abs(self%flux_global)) then
+          call global_flux_pos%reset(self%i_nu)
+          call global_flux_err%reset(local_err)
+          call global_flux_lambda%reset(lambda_max)
+          self%flux_global = local_err
+        endif
+      endif
+      !$omp end critical (flux_maxerr_reset)
+
+      if (round_pos == expected) then
+        if ((abs(self%flux_global) > 0) .and. abs(self%flux_global) < convlim &
+          .and. abs(local_err) < convlim) then
+          if (flux_convergence) then
+            ! Do NOT stop here: the flux was computed from populations that
+            ! nlte_patch solved against the PREVIOUS radiation field earlier this
+            ! iteration. Raise the cross-rank signal so nlte_patch performs one
+            ! more population solve (against the now-converged field) before the
+            ! run winds down. Guarded so it is raised at most once.
+            if (self%iter < self%maxiter .and. flux_conv_signal%update(+0) == 0) then
+              i = flux_conv_signal%update(+1)
+            endif
+          endif
+        endif
+      endif
+    endif
+    call trace%end(itimer)
+  END SUBROUTINE check_flux_convergence
 
   !===============================================================================
   SUBROUTINE copy_to (self, tgt)

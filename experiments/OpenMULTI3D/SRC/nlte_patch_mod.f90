@@ -25,7 +25,8 @@ MODULE nlte_patch_mod
     global_maxerr, convlim, convmax, atom_update_counter, comoving_frame, global_pos, &
     decouple_continuum, overlapping_bb, overlapping_bf, converged, premature_finish, overrelax, &
     rotate_atmos, long_vec, rank_lvlerr, overlapping_bb_in_output, long_scheme, n_nu, detailed_absmet, &
-    atmos_file
+    atmos_file, flux_convergence, flux_conv_signal, global_flux_err, global_flux_pos, global_flux_lambda, &
+    flux_final_counter
   USE bftrans_mod, only: bftrans_type
   USE osmet_mod, only: osmet_type, osmet
   USE rt_patch_mod, only: rt_patch_t
@@ -518,7 +519,11 @@ contains
       call os%deallocate(adata%gamma_ji, label='atom%gamma_ji')
     end do
 
-    if (locally_converged) then
+    ! locally_converged is population/convmax-based (premature_finish shortcut);
+    ! it must not terminate the task ahead of the flux metric when
+    ! flux_convergence is the authoritative one (see the matching guard in
+    ! rt_patch_t%execute's premature_finish check)
+    if (locally_converged .and. .not. flux_convergence) then
       call self%finish()
     endif
 
@@ -540,10 +545,36 @@ contains
       !$omp end critical (maxerr_reset)
       if (count >= self%task_list%dims(3)) then
         if ((abs(self%global) > 0) .and. abs(self%global) < convlim .and. abs(self%maxerr) < convlim) then
-          if (self%iter < self%maxiter) converged = .true.
-          !print '(A, I3, I3, ES14.7, I3, ES14.7)', 'DEBUG:', count, self%ipos(3), self%maxerr, ipos, self%global
-          call self%finish()
+          if (.not. flux_convergence) then
+            if (self%iter < self%maxiter) converged = .true.
+            !print '(A, I3, I3, ES14.7, I3, ES14.7)', 'DEBUG:', count, self%ipos(3), self%maxerr, ipos, self%global
+            call self%finish()
+          endif
         endif
+      endif
+    endif
+
+    ! Flux-convergence wind-down (one more population solve):
+    ! rt_patch raised flux_conv_signal in the PREVIOUS iteration, after nlte_patch
+    ! had already solved these populations against the old radiation field. This
+    ! execute() has now re-solved them against the converged field, so it is the
+    ! final solve for this z-patch -- finish it. `converged` (which freezes the
+    ! remaining rt tasks) is only set once EVERY z-patch has performed this final
+    ! solve (count == dims(3)); setting it earlier would let the first patch's
+    ! solve make the others skip theirs via pre_update.
+    if (flux_convergence) then
+      !$omp critical (flux_final)
+      if (flux_conv_signal%update(+0) > 0) then
+        count = flux_final_counter%update(+1)
+      else
+        count = 0
+      endif
+      !$omp end critical (flux_final)
+      if (count > 0) then
+        if (count >= self%task_list%dims(3) .and. self%iter < self%maxiter) then
+          converged = .true.
+        endif
+        call self%finish()
       endif
     endif
 
@@ -861,7 +892,7 @@ contains
     class(nlte_patch_t):: self
     class(atom_data_t), pointer :: adata
     character(len=64) :: text
-    integer :: i
+    integer :: i, flux_pos
     real(8) :: global
     !-----------------------------------------------------------------------------
     if (self%iter == 0) then
@@ -885,6 +916,12 @@ contains
         ', lvl =',elvl, ', pos=', epos, self%atoms(eatom)%id
       if (self%overrelax) then
         write(stdout,'(A, 3(ES12.4))') '  omega =', self%sor_w, self%prev_prev_global, self%prev_global
+      endif
+      flux_pos = global_flux_pos%update(+0)
+      if (flux_pos >= 0) then
+        write(stdout,'(A, ES12.4, A, I4, A, F10.2, A)') &
+          '  flux global =', global_flux_err%update(0.d0), ', i_nu =', flux_pos, &
+          ', lambda =', global_flux_lambda%update(0.d0), ' AA'
       endif
 
       if (self%verbose > 1) then

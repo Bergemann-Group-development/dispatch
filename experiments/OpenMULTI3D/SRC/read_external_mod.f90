@@ -27,7 +27,8 @@ MODULE read_external_mod
   USE const_mod, only:cc
   USE m3d_patch_mod, only: maxiter, ilambd, m3d_patch_t, atom_update_counter, &
     global_maxerr, global_pos, nz_total, use_rho, use_ne, atmos_format, amr, &
-    atmos_file, use_vel
+    atmos_file, use_vel, flux_update_counter, global_flux_err, global_flux_pos, global_flux_lambda, &
+    flux_conv_signal, flux_final_counter
   USE m3d_halo_mod, only: m3d_halo_t
   USE read_atmos_mod, only: ia, read_stagger, read_co5bold, read_stagger2, pchip_interpolation, &
     log_interpolation, read_marcs, read_multi_snapshot, read_text_1d, read_multi_1d, &
@@ -342,6 +343,12 @@ contains
     call atom_update_counter%init(0)
     call global_maxerr%init(0.d0) ! very important that this is a double
     call global_pos%init(-1)
+    call flux_update_counter%init(0)
+    call global_flux_err%init(0.d0) ! very important that this is a double
+    call global_flux_pos%init(-1)
+    call global_flux_lambda%init(0.d0) ! very important that this is a double
+    call flux_conv_signal%init(0)
+    call flux_final_counter%init(0)
 
     !-----------------------------------------------------------------------------
     ! Initialize tasks

@@ -130,6 +130,7 @@ MODULE m3d_patch_mod
     real(8), public, save, dimension(:,:), allocatable:: vec, long_vec
     real(8), public:: convlim=1d-3, convmax=tiny(1.0)
     logical, public, save :: converged=.false., use_vel(3)=.true., premature_finish=.true.
+    logical, public, save :: flux_convergence=.false.
     logical, public, save :: preconditioning=.true., binned_opac=.false.
     logical, public, save :: save_resolved=.false.
     logical, public, save :: decouple_continuum=.true.
@@ -161,6 +162,15 @@ MODULE m3d_patch_mod
     character(len=128), public :: atmos_format='unknown'
     character(len=512), public :: atmos_file='./input/atmos/p5777_g+4.4_m0.0_t01_st_z+0.00_a+0.00_c+0.00_n+0.00_o+0.00_r+0.00_s+0.00.mod'
     type(mpi_counter_t), public :: atom_update_counter, global_maxerr, global_pos
+    type(mpi_counter_t), public :: flux_update_counter, global_flux_err, global_flux_pos, global_flux_lambda
+    ! flux_conv_signal: raised (>0) by rt_patch, cross-rank, once the emergent
+    ! flux has converged. rt_patch computes the flux AFTER nlte_patch has already
+    ! solved the populations against the previous radiation field, so rather than
+    ! stopping immediately we signal nlte_patch to perform one final population
+    ! solve against the converged field. flux_final_counter counts the nlte
+    ! patches that have done that final solve; the last one (== dims(3)) sets
+    ! the global `converged` flag, which then winds the run down as usual.
+    type(mpi_counter_t), public :: flux_conv_signal, flux_final_counter
     type(composition_type), public, save, target :: composition
       
     public :: hash_string, pre_update, update, print_execution_history
@@ -169,7 +179,7 @@ MODULE m3d_patch_mod
     n_nu, maxiter, ilambd, lvlcheck, comoving_frame, save_id, &
     check_NaN, custom_mu, lse_no_pivot, save_patch_kind, cswitch, &
     print_finished, print_start, print_send, ray_offset, print_download, &
-    lse_solver, decouple_continuum, lam_tolerance, &
+    lse_solver, decouple_continuum, lam_tolerance, flux_convergence, &
     pivot_z, save_resolved, overrelax, save_cntrbf, depression_cntrbf, &
     absmet_in_output, print_lock, make_eos, ng_step, ng_start, ng_global, &
     column_by_column, rotate_atmos, Jnu_to_file, preconditioning, &

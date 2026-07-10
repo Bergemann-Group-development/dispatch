@@ -149,9 +149,21 @@ class tumult(object):
                 # [ie, cnt(, lte)]); fails loudly on an unrecognised component count
                 self.ie, self.ie_lte, self.ie_cnt, self.mode = split_ie(ie, self.legacy)
 
-                self.flux     = integrate_flux(self.ie,     self.wts)
-                self.flux_lte = integrate_flux(self.ie_lte, self.wts)
-                self.flux_cnt = integrate_flux(self.ie_cnt, self.wts)
+                try:
+                    # the Fortran side now integrates the mu-quadrature itself and
+                    # saves the result directly (same [ie, lte, cnt] component
+                    # layout as 'ie', just with the ray axis already collapsed)
+                    flux = self.read_patch_save('flux', lazy=False)[0]
+                    flux_i, flux_lte, flux_cnt, _ = split_ie(flux, self.legacy)
+                    self.flux     = flux_i[:, 0]
+                    self.flux_lte = flux_lte[:, 0]
+                    self.flux_cnt = flux_cnt[:, 0]
+                except FileNotFoundError:
+                    # older runs, from before the Fortran side saved 'flux'
+                    # directly: fall back to integrating 'ie' here
+                    self.flux     = integrate_flux(self.ie,     self.wts)
+                    self.flux_lte = integrate_flux(self.ie_lte, self.wts)
+                    self.flux_cnt = integrate_flux(self.ie_cnt, self.wts)
 
                 if self.nml['m3d_params']['save_resolved']:
                     i3 = self.read_patch_save('i3')[0]
