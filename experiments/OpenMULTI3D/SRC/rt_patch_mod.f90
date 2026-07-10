@@ -43,6 +43,7 @@ MODULE rt_patch_mod
     departure_pointer_t, read_departures, sample_back_opac, &
     sample_linelist, sample_back_opac_in_output, use_new_linelist
   USE spectrum_mod, only: spectrum_type
+  USE optab_mod, only: sample_optab_type
   implicit none
   private
 
@@ -56,8 +57,7 @@ MODULE rt_patch_mod
     type(spectrum_type) :: sub_sp
     real(4), dimension(:,:,:,:,:), allocatable :: Jnu
     real(4), dimension(:,:,:,:), allocatable :: Psi, PsiJ
-    real(4), dimension(:,:,:), allocatable :: opac_table
-    real(8), dimension(:), allocatable :: opac_table_lam
+    type(sample_optab_type) :: opac
     real(4), dimension(:), allocatable :: twohnu3_c2
     real(8), dimension(:), pointer :: nu
     integer :: mus, mue, n_set, n_mu, natom
@@ -91,7 +91,6 @@ MODULE rt_patch_mod
     procedure :: lte_background_emission
     procedure :: generate_opacity_table
     procedure :: save_opac_table
-    procedure :: interpolate_opacity_table
     procedure :: add_bound_free_opacities
     procedure :: bound_bound_damping
     procedure :: add_bound_bound_opacities
@@ -785,16 +784,18 @@ contains
       end do
     end do
 
-    if (.not. allocated(self%opac_table)) then
+    if (.not. self%opac%initialised) then
       if (do_make_eos) then
-        call self%generate_opacity_table(self%sub_sp, include_absmet, comp%ll_initialised)
+        call self%generate_opacity_table(self%sub_sp, include_absmet, comp%ll_initialised, &
+          build_deriv=.false.)
       elseif (do_sample_opac) then
         if (include_absmet .or. sample_linelist) then
           tab_sp = self%sub_sp
         else
           call comp%get_table_sp(self%sub_sp, tab_sp)
         endif
-        call self%generate_opacity_table(tab_sp, include_absmet, include_llist=sample_linelist)
+        call self%generate_opacity_table(tab_sp, include_absmet, include_llist=sample_linelist, &
+          build_deriv=.true.)
       endif
     endif
 
@@ -802,7 +803,8 @@ contains
     if (do_make_eos .and. self%iter==0) then
       call self%save_opac_table()
     elseif (do_sample_opac) then
-      call self%interpolate_opacity_table(comp%temp, comp%ne, comp%chi500)
+      call self%opac%interpolate(comp%temp, comp%ne, comp%chi500, &
+        self%back(:,:,:,:,0), self%sp%lam, self%fs, self%fe)
     else
       call comp%absorption(self%sub_sp, self%back(:,:,:,:,0), &
         beta=self%back(:,:,:,:,3), include_absmet=include_absmet, sorted=self%sp%sorted)
@@ -899,13 +901,13 @@ contains
   END SUBROUTINE
 
   !===============================================================================
-  SUBROUTINE generate_opacity_table (self, sp, include_absmet, include_llist)
+  SUBROUTINE generate_opacity_table (self, sp, include_absmet, include_llist, build_deriv)
     class(rt_patch_t), target :: self
     class(composition_type), pointer :: comp
     type(spectrum_type) :: sp
     real(4), dimension(:,:,:,:), pointer :: all_chi
     real(4), dimension(:,:,:,:), allocatable :: all_eta, all_beta
-    logical, intent(in) :: include_absmet, include_llist
+    logical, intent(in) :: include_absmet, include_llist, build_deriv
     real(4) :: over_chi500
     integer :: i,j,k, ntemp, nne, nnu
     integer, save :: itimer=0
@@ -915,11 +917,14 @@ contains
     nnu = sp%nnu
     ntemp = size(comp%temp,1)
     nne   = size(comp%temp,2)
-    allocate(self%opac_table(nnu, ntemp, nne), source=0.)
-    allocate(self%opac_table_lam, source=sp%lam)
-    call mem_register(self%opac_table, label='opac_table')
+    allocate(self%opac%val(nnu, ntemp, nne), source=0.)
+    allocate(self%opac%lam, source=sp%lam)
+    self%opac%nnu = nnu
+    self%opac%ntemp = ntemp
+    self%opac%nne = nne
+    call mem_register(self%opac%val, label='opac_table')
 
-    all_chi(1:nnu, 1:ntemp, 1:nne, 1:1) => self%opac_table
+    all_chi(1:nnu, 1:ntemp, 1:nne, 1:1) => self%opac%val
     call comp%absorption(sp, all_chi, include_absmet=include_absmet, sorted=self%sp%sorted)
 
     if (include_llist) then
@@ -955,9 +960,22 @@ contains
     do k=1, nne
       do j=1, ntemp
         over_chi500 = 1 / comp%chi500(j,k,1)
-        self%opac_table(:,j,k) = self%opac_table(:,j,k) * over_chi500
+        self%opac%val(:,j,k) = self%opac%val(:,j,k) * over_chi500
       end do
     end do
+
+    ! On the sampling path, capture the PCA (lnT, lnNe) axis transform built in
+    ! init_tabulated_comp and precompute the monotone node derivatives along every
+    ! dimension. The EOS path (build_deriv=.false.) uses a temp-rho grid and only
+    ! needs val/lam.
+    if (build_deriv) then
+      self%opac%mu  = comp%pca_mu
+      self%opac%rot = comp%pca_rot
+      self%opac%c0  = comp%pca_c0
+      self%opac%dc  = comp%pca_dc
+      call self%opac%build_derivatives()
+    endif
+    self%opac%initialised = .true.
     call trace%end(itimer)
   END SUBROUTINE generate_opacity_table
 
@@ -973,95 +991,33 @@ contains
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch%save_opac_table', itimer=itimer)
     comp => self%m3d_parent%tab_comp
-    ntemp = size(self%opac_table, 2)
-    nrho = size(self%opac_table, 3)
-    nnu = size(self%opac_table_lam)
+    ntemp = size(self%opac%val, 2)
+    nrho = size(self%opac%val, 3)
+    nnu = size(self%opac%lam)
 
     ! save absorption part first (which has been normalised by chi500)
     do k=1, nrho
       do j=1, ntemp
         over_rho = comp%chi500(j,k,1) / comp%rho(j,k,1)
-        self%opac_table(:,j,k) = self%opac_table(:,j,k) * over_rho
+        self%opac%val(:,j,k) = self%opac%val(:,j,k) * over_rho
       end do
     end do
-    call self%save3(self%opac_table, 'opa')
+    call self%save3(self%opac%val, 'opa')
 
     ! then save scattering part
-    self%opac_table = 0.0
-    view(1:nnu, 1:ntemp, 1:nrho, 1:1) => self%opac_table
+    self%opac%val = 0.0
+    view(1:nnu, 1:ntemp, 1:nrho, 1:1) => self%opac%val
     call comp%electron_scattering(view)
-    call comp%rayleigh_scattering(self%opac_table_lam, view)
+    call comp%rayleigh_scattering(self%opac%lam, view)
     do k=1, nrho
       do j=1, ntemp
         over_rho = 1 / comp%rho(j,k,1)
-        self%opac_table(:,j,k) = self%opac_table(:,j,k) * over_rho
+        self%opac%val(:,j,k) = self%opac%val(:,j,k) * over_rho
       end do
     end do
-    call self%save3(self%opac_table, 'scat')
+    call self%save3(self%opac%val, 'scat')
     call trace%end(itimer)
   END SUBROUTINE save_opac_table
-
-  !===============================================================================
-  SUBROUTINE interpolate_opacity_table (self, temp, ne, chi500)
-    class(rt_patch_t), target :: self
-    class(composition_type), pointer :: comp
-    real(8), dimension(:,:,:), intent(in) :: temp, ne
-    real(4), dimension(:,:,:), intent(in) :: chi500
-    integer, dimension(:), allocatable :: inu
-    real(4), dimension(:), allocatable :: wnu
-    real(8), dimension(:), pointer :: tab_lam
-    real(8) :: w1, w2, e, t, mint, mine, kappa
-    real(8) :: dx, dy, a, b, c, d, fi1, fi2, fj1, fj2, ab, cd
-    integer :: fs, fe, i, j, k
-    integer, save :: itimer=0
-    integer :: x, y, z, f
-    !-----------------------------------------------------------------------------
-    call trace%begin('rt_patch%interpolate_opacity_table', itimer=itimer)
-    comp => self%m3d_parent%tab_comp
-    dx = 1. / (comp%temp(2,1,1) - comp%temp(1,1,1))
-    dy = 1. / (log(comp%ne(1,2,1) / comp%ne(1,1,1)))
-    mint = comp%temp(1,1,1)
-    mine = log(comp%ne(1,1,1))
-    tab_lam => self%opac_table_lam
-
-    fs = self%fs
-    fe = self%fe
-
-    allocate(inu(fs:fe), wnu(fs:fe))
-    inu(fs:fe) = [(searchsorted(tab_lam, self%sp%lam(f)), f=fs, fe)]
-    wnu(fs:fe) = [((self%sp%lam(f) - tab_lam(inu(f))) / (tab_lam(inu(f)+1) - tab_lam(inu(f))), f=fs, fe)]
-
-    do z=1, self%nz
-      do y=1, self%ny
-        do x=1, self%nx
-          t = temp(x,y,z)
-          e = log(ne(x,y,z))
-          fi1 = (t - mint) * dx + 1
-          fj1 = (e - mine) * dy + 1
-          i = floor(fi1)
-          j = floor(fj1)
-          fi1 = fi1 - i
-          fj1 = fj1 - j
-          fi2 = 1 - fi1
-          fj2 = 1 - fj1
-          do f=fs, fe
-            w2 = wnu(f)
-            w1 = 1 - w2
-            k = inu(f)
-            a = w1*self%opac_table(k, i,   j)   + w2*self%opac_table(k+1, i,   j)
-            b = w1*self%opac_table(k, i+1, j)   + w2*self%opac_table(k+1, i+1, j)
-            c = w1*self%opac_table(k, i,   j+1) + w2*self%opac_table(k+1, i,   j+1)
-            d = w1*self%opac_table(k, i+1, j+1) + w2*self%opac_table(k+1, i+1, j+1)
-            ab    = fi2*a  + fi1*b
-            cd    = fi2*c  + fi1*d
-            kappa = fj2*ab + fj1*cd
-            self%back(f,x,y,z,0) = kappa*chi500(x,y,z)
-          end do
-        end do
-      end do
-    end do
-    call trace%end(itimer)
-  END SUBROUTINE interpolate_opacity_table
 
   !===============================================================================
   SUBROUTINE reset_array (self, array)
@@ -2902,10 +2858,14 @@ contains
             call self%dn_twin%remove(Jnu_label, key=self%dn_twin%key(1:3))
           endif
         else
-          call mem_unregister(self%up_twin%Jnu, label='Jnu')
-          call mem_unregister(self%dn_twin%Jnu, label='Jnu')
-          deallocate(self%up_twin%Jnu)
-          deallocate(self%dn_twin%Jnu)
+          if (allocated(self%up_twin%Jnu)) then
+            call mem_unregister(self%up_twin%Jnu, label='Jnu')
+            deallocate(self%up_twin%Jnu)
+          endif
+          if (allocated(self%dn_twin%Jnu)) then
+            call mem_unregister(self%dn_twin%Jnu, label='Jnu')
+            deallocate(self%dn_twin%Jnu)
+          endif
         endif
       endif
     endif

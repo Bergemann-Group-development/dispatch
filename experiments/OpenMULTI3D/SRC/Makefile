@@ -11,7 +11,7 @@ spectrum_mod.o              : io_mod.o timer_mod.o trace_mod.o const_mod.o trans
 m3d_halo_mod.o              : halo_mod.o gpatch_mod.o handyfuncs_mod.o
 m3d_patch_mod.o             : gpatch_mod.o atom_mod.o ray_mod.o m3d_halo_mod.o handyfuncs_mod.o m3d_debug_mod.o composition_mod.o
 ray_patch_mod.o             : m3d_patch_mod.o
-rt_patch_mod.o              : composition_mod.o ray_patch_mod.o
+rt_patch_mod.o              : composition_mod.o ray_patch_mod.o optab_mod.o
 nlte_patch_mod.o            : rt_patch_mod.o
 composition_patch_mod.o     : nlte_patch_mod.o rt_patch_mod.o hvcs_mod.o
 bftrans_mod.o               : os_mod.o

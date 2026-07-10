@@ -391,7 +391,7 @@ SUBROUTINE execute (self)
     if (sample_back_opac .or. sample_back_opac_in_output) then
       call self%init_tabulated_comp(self%mem(:,:,:,self%i_temp,self%it,:), &
                                     self%mem(:,:,:,self%i_ne,  self%it,:), &
-                                    dtemp=dtemp, ldne=ldne)
+                                    ldtemp=ldtemp, ldne=ldne)
     elseif (make_eos) then
       call self%init_eos_comp(self%composition%temp, self%composition%rho, ldtemp=ldtemp, ldrho=ldrho)
     endif
@@ -408,38 +408,91 @@ SUBROUTINE execute (self)
 END SUBROUTINE execute
 
 !===============================================================================
-SUBROUTINE init_tabulated_comp (self, temp, ne, dtemp, ldne)
+SUBROUTINE init_tabulated_comp (self, temp, ne, ldtemp, ldne)
+    ! Sample the background opacity on a grid built in the orthogonal PCA basis of
+    ! (lnT, lnNe) over all atmosphere cells, rather than the axis-aligned box in
+    ! (T, lnNe). Since T and Ne are strongly correlated the atmosphere hugs a thin
+    ! locus; a PC-rotated grid tracks it, dropping the unphysical off-diagonal
+    ! corners that crash the EOS and cutting the node count. ldtemp/ldne are the
+    ! requested lnT/lnNe resolutions, projected onto the PC axes for spacing.
     class(composition_patch_t), target :: self
     real(4), dimension(:,:,:,:), intent(in) :: temp, ne
-    real(8), intent(in) :: dtemp, ldne
-    integer :: i, j, ntemp, nne, nnu
+    real(8), intent(in) :: ldtemp, ldne
+    integer :: i, j, n1, n2, ncell, npad
     real(8), dimension(:,:,:), allocatable :: tab_temp, tab_ne, tab_rho
     real(4), dimension(:,:,:), allocatable :: tab_vmic
-    real(8) :: mint, maxt, mine, maxe
+    real(8) :: mu(2), rot(2,2), c0(2), dc(2)
+    real(8) :: a, b, d, tr, disc, l1, l2, tiny_b, vn
+    real(8) :: p1, p2, pmin1, pmax1, pmin2, pmax2
     !---------------------------------------------------------------------------
     allocate(self%tab_comp)
     self%tab_comp = composition
     call self%tab_comp%reassign_pointer()
-    mint = minval(temp)
-    maxt = maxval(temp)
-    mine = log(minval(ne))
-    maxe = log(maxval(ne))
-    ntemp = ceiling(maxt/dtemp) - floor(mint/dtemp) + 1
-    nne   = ceiling(maxe/ldne)  - floor(mine/ldne)  + 1
-    mint = floor(mint/dtemp)*dtemp
-    mine = floor(mine/ldne)*ldne
-    allocate(tab_temp(ntemp, nne, 1))
-    allocate(tab_rho (ntemp, nne, 1))
-    allocate(tab_ne  (ntemp, nne, 1))
-    allocate(tab_vmic(ntemp, nne, 1))
-    do j=1, nne
-    do i=1, ntemp
-      tab_temp(i,j,1) = mint + (i-1)*dtemp
-      tab_ne  (i,j,1) = mine + (j-1)*ldne
+
+    ! ---- mean and 2x2 covariance of (lnT, lnNe) over all cells ----------------
+    ncell = size(temp)
+    mu(1) = sum(log(dble(temp))) / ncell
+    mu(2) = sum(log(dble(ne)))   / ncell
+    a = sum((log(dble(temp)) - mu(1))**2) / ncell                    ! var(lnT)
+    d = sum((log(dble(ne))   - mu(2))**2) / ncell                    ! var(lnNe)
+    b = sum((log(dble(temp)) - mu(1)) * (log(dble(ne)) - mu(2))) / ncell  ! cov
+
+    ! ---- closed-form symmetric 2x2 eigendecomposition -------------------------
+    tr   = a + d
+    disc = sqrt(max(((a - d)*0.5d0)**2 + b*b, 0.d0))
+    l1   = tr*0.5d0 + disc                         ! larger eigenvalue -> PC1
+    l2   = tr*0.5d0 - disc
+    tiny_b = 1.d-30 * (abs(a) + abs(d) + 1.d-300)
+    if (abs(b) > tiny_b) then
+      rot(:,1) = [b, l1 - a];  vn = sqrt(sum(rot(:,1)**2));  rot(:,1) = rot(:,1)/vn
+      rot(:,2) = [b, l2 - a];  vn = sqrt(sum(rot(:,2)**2));  rot(:,2) = rot(:,2)/vn
+    else                                           ! already diagonal: axis-aligned
+      if (a >= d) then
+        rot(:,1) = [1.d0, 0.d0];  rot(:,2) = [0.d0, 1.d0]
+      else
+        rot(:,1) = [0.d0, 1.d0];  rot(:,2) = [1.d0, 0.d0]
+      endif
+    endif
+
+    ! ---- spacing (projected ln-resolution) and extent along each PC axis ------
+    dc(1) = sqrt((rot(1,1)*ldtemp)**2 + (rot(2,1)*ldne)**2)
+    dc(2) = sqrt((rot(1,2)*ldtemp)**2 + (rot(2,2)*ldne)**2)
+    pmin1 = minval(rot(1,1)*(log(dble(temp)) - mu(1)) + rot(2,1)*(log(dble(ne)) - mu(2)))
+    pmax1 = maxval(rot(1,1)*(log(dble(temp)) - mu(1)) + rot(2,1)*(log(dble(ne)) - mu(2)))
+    pmin2 = minval(rot(1,2)*(log(dble(temp)) - mu(1)) + rot(2,2)*(log(dble(ne)) - mu(2)))
+    pmax2 = maxval(rot(1,2)*(log(dble(temp)) - mu(1)) + rot(2,2)*(log(dble(ne)) - mu(2)))
+    npad  = 1                                      ! one node past the data hull each end
+    c0(1) = pmin1 - npad*dc(1)
+    c0(2) = pmin2 - npad*dc(2)
+    n1    = ceiling((pmax1 - pmin1)/dc(1)) + 1 + 2*npad
+    n2    = ceiling((pmax2 - pmin2)/dc(2)) + 1 + 2*npad
+
+    ! ---- build the node grid in PC space, map back to (T, ne) -----------------
+    allocate(tab_temp(n1, n2, 1))
+    allocate(tab_rho (n1, n2, 1))
+    allocate(tab_ne  (n1, n2, 1))
+    allocate(tab_vmic(n1, n2, 1))
+    do j=1, n2
+    do i=1, n1
+      p1 = c0(1) + (i-1)*dc(1)
+      p2 = c0(2) + (j-1)*dc(2)
+      tab_temp(i,j,1) = exp(mu(1) + rot(1,1)*p1 + rot(1,2)*p2)   ! exp(lnT)
+      tab_ne  (i,j,1) = exp(mu(2) + rot(2,1)*p1 + rot(2,2)*p2)   ! exp(lnNe)
     end do
     end do
-    tab_ne = exp(tab_ne)
     tab_vmic = opac_table_vmic
+
+    print '(a,i0,a,i0,a,i0,a,i0,a,i0)', 'PCA opac grid: n1=', n1, ' n2=', n2, &
+      ' -> nodes=', n1*n2, '   [rectangular equiv=', &
+      (ceiling(maxval(log(dble(temp)))/ldtemp)-floor(minval(log(dble(temp)))/ldtemp)+1) * &
+      (ceiling(maxval(log(dble(ne)))/ldne)-floor(minval(log(dble(ne)))/ldne)+1), ']'
+
+    ! ---- stash the transform so the table fill can capture the axis metadata --
+    self%tab_comp%pca_mu  = mu
+    self%tab_comp%pca_rot = rot
+    self%tab_comp%pca_c0  = c0
+    self%tab_comp%pca_dc  = dc
+
     call self%tab_comp%load_state_variables(tab_temp, tab_ne, tab_rho, vmic=tab_vmic, &
                                             use_ne=.true., use_rho=.false.)
 END SUBROUTINE init_tabulated_comp

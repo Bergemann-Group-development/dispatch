@@ -978,6 +978,7 @@ MODULE m3d_patch_mod
       if (.not. allocated(ptc%ll)) return   ! no SoA linelists were built
       niso = 0
       if (associated(ptc%isotope)) niso = size(ptc%isotope)
+      allocate(iso_values(niso))
       iso_values = [(ptc%isotope(k)%iso, k=1, niso)]
       if (allocated(ptc%line)) then
         call print_ll_particle(lunit, ptc%id, iso_values, ptc%ll, ptc%line(1:ptc%nline))
