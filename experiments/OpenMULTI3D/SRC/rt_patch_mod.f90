@@ -969,10 +969,7 @@ contains
     ! dimension. The EOS path (build_deriv=.false.) uses a temp-rho grid and only
     ! needs val/lam.
     if (build_deriv) then
-      self%opac%mu  = comp%pca_mu
-      self%opac%rot = comp%pca_rot
-      self%opac%c0  = comp%pca_c0
-      self%opac%dc  = comp%pca_dc
+      self%opac%pca = comp%pca
       call self%opac%build_derivatives()
     endif
     self%opac%initialised = .true.
