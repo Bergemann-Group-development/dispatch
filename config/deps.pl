@@ -71,13 +71,8 @@ foreach $f (sort(keys %uses)) {                       # $f is the object file we
                 }
         }
         $string = "";
-        foreach $d (keys %list) {
+        foreach $d (sort(keys %list)) {
                 $string = "$string $d";
         }
-        write if $string ne "";
+        printf "%-28s:%s\n", $f, $string if $string ne "";
 }
-
-format STDOUT =
-@<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<:@<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-$f                , $string
-.
