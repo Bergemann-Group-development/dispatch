@@ -482,10 +482,10 @@ SUBROUTINE init_tabulated_comp (self, temp, ne, ldtemp, ldne)
     end do
     tab_vmic = opac_table_vmic
 
-    print '(a,i0,a,i0,a,i0,a,i0,a,i0)', 'PCA opac grid: n1=', n1, ' n2=', n2, &
-      ' -> nodes=', n1*n2, '   [rectangular equiv=', &
-      (ceiling(maxval(log(dble(temp)))/ldtemp)-floor(minval(log(dble(temp)))/ldtemp)+1) * &
-      (ceiling(maxval(log(dble(ne)))/ldne)-floor(minval(log(dble(ne)))/ldne)+1), ']'
+    !print '(a,i0,a,i0,a,i0,a,i0,a,i0)', 'PCA opac grid: n1=', n1, ' n2=', n2, &
+    !  ' -> nodes=', n1*n2, '   [rectangular equiv=', &
+    !  (ceiling(maxval(log(dble(temp)))/ldtemp)-floor(minval(log(dble(temp)))/ldtemp)+1) * &
+    !  (ceiling(maxval(log(dble(ne)))/ldne)-floor(minval(log(dble(ne)))/ldne)+1), ']'
 
     ! ---- stash the transform so the table fill can capture the axis metadata --
     self%tab_comp%pca_mu  = mu
