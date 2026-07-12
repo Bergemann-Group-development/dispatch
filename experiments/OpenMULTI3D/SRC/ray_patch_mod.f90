@@ -20,6 +20,7 @@ MODULE ray_patch_mod
   USE handyfuncs_mod
   USE patch_mod, only: patch_t
   USE op_math_mod, only: searchsorted
+  USE interpol_mod, only: pchip_mono
   USE ray_mod, only: ray_type, one_dimensional
   USE m3d_patch_mod, only: m3d_patch_t, vec, wmu, long_vec, long_wmu, &
     converged, print_send, atom_update_counter, comoving_frame

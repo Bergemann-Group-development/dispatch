@@ -7,6 +7,7 @@ MODULE atom_mod
     USE const_mod
     USE trans_mod
     USE op_math_mod, only: lineq, get_interval, eqsyst, lineq_no_pivot
+    USE interpol_mod, only: hermite_interpolation, hermite_derivative
     USE level_mod, only: state_type
     USE ion_mod, only: ion_type, massive_type, debye_shield, massive_type, particle_type
     USE element_mod, only: element_type, isotope_type

@@ -5,7 +5,8 @@ MODULE read_atmos_mod
   USE trace_mod
   USE handyfuncs_mod
   USE const_mod
-  USE op_math_mod, only: linspace, linterpolate_3d, pchip_mono4, interp1d_sorted
+  USE op_math_mod, only: linspace
+  USE interpol_mod, only: linterpolate_3d, linterpolate_3d_rotated, pchip_mono4, interp1d_sorted
   USE m3d_patch_mod, only: pivot_z, ray_offset, composition, use_ne, use_rho, make_eos
   USE ray_mod, only: one_dimensional, rstar, rorigin
   USE composition_mod, only: composition_type
