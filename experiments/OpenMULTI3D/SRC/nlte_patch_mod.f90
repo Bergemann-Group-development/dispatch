@@ -642,7 +642,7 @@ contains
     character(len=256) :: run_dir, save_folder
     character(len=6), allocatable :: keys(:)
     real(4), dimension(:,:,:,:,:,:), allocatable, target :: mem
-    integer :: i, j, nprecomp, nmu, n(4), x, y, z, l, lunit
+    integer :: i, j, k, nprecomp, nmu, n(4), x, y, z, l, lunit
     integer :: itimer=0
     logical :: found
     !-----------------------------------------------------------------------------
@@ -692,7 +692,6 @@ contains
 
     do i=1, nprecomp
       call self%load6('pop_'//trim(keys(i)), run_dir=run_dir, alloc=mem)
-      self%departures(i,:)%key = keys(i)
       dep => self%departures(i,1)
       allocate(dep%mem, source=mem(:,:,:,:,2,1))
       call os%mem_register(storage_size(dep%mem), size(dep%mem), label='departures')
@@ -707,6 +706,11 @@ contains
     do i=1, self%natom
       atom => self%atoms(i)
       adata => atom%data
+      ! every departure set carries the species key of its atom -- precomputed or not,
+      ! and on every rotated copy; an unkeyed set would match no particle at all
+      do k=1, 1+nmu
+        call self%departures(atom%idep, k)%set_key(atom%id)
+      end do
       dep => self%departures(atom%idep, 1)
       n = shape(adata%nstar)
       dep%nlevel = atom%nlevel
@@ -724,7 +728,7 @@ contains
           end do
         end do
       else
-        allocate(dep%ev, source=atom%ev)
+        allocate(dep%ev, source=atom%ev_keys())
         allocate(dep%mem(n(1), n(2), n(3), n(4)))
         call os%mem_register(storage_size(dep%mem), size(dep%mem), label='departures')
       endif
@@ -740,7 +744,7 @@ contains
     class(departure_pointer_t), pointer :: dep
     real(4), dimension(:,:,:,:,:,:), allocatable :: out_mem
     integer :: x, y, z, l, m, n(4), i, j, k, lunit, nmu
-    real(8) :: tmp, ground_ev
+    real(8), allocatable :: ev_key(:)
     !---------------------------------------------------------------------------------
     call trace%begin('nlte_patch_t%write_populations')
     do i=1, self%natom
@@ -770,14 +774,11 @@ contains
       if (.not. os%exists(trim(io%run_dir)//'save/pop_'//trim(atom%id)//'_ev.txt')) then
         open(newunit=lunit, file=trim(io%run_dir)//'save/pop_'//trim(atom%id)//'_ev.txt', form='formatted')
         write(lunit, '(A)') '# Level Energies (eV) + 100*Ionization Stage'
-        ground_ev = atom%ev(1)
+        allocate(ev_key, source=atom%ev_keys())   ! explicit: the build assumes norealloc_lhs
         do l=1, atom%nlevel
-          if (l > 1) then
-            ground_ev = merge(atom%ev(l), ground_ev, atom%ion(l) > atom%ion(l-1))
-          endif
-          tmp = 100*atom%ion(l) + atom%ev(l) - ground_ev
-          write(lunit, '(F16.6)') tmp
+          write(lunit, '(F16.6)') ev_key(l)
         end do
+        deallocate(ev_key)
         close(lunit)
       endif
       !$omp end critical (write_atom_ev)
