@@ -154,6 +154,7 @@ MODULE m3d_patch_mod
     character(len=128), save :: save_patch_kind=''
     character(len=512), public, save:: custom_mu=''
     character(len=128), public, save :: long_solver='linear'
+    character(len=128), public, save :: short_solver='linear'
     character(len=32), public, save :: short_scheme='radau'
     character(len=32), public, save :: long_scheme='lobatto'
     real(4), public :: fixed_Jnu=-1.0
@@ -185,7 +186,7 @@ MODULE m3d_patch_mod
     column_by_column, rotate_atmos, Jnu_to_file, preconditioning, &
     save_inu, save_chi, save_Snu, save_Jnu, &
     long_scheme, long_ntheta, long_nphi, short_scheme, short_ntheta, short_nphi, &
-    long_solver, fixed_Jnu, initial_Jnu
+    long_solver, short_solver, fixed_Jnu, initial_Jnu
 
   contains
   

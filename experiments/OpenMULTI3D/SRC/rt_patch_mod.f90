@@ -24,7 +24,7 @@ MODULE rt_patch_mod
     column_by_column, rotate_atmos, save_cntrbf, depression_cntrbf, &
     decouple_continuum, linelist_in_output, ilambd, initial_Jnu,  &
     Jnu_to_file, preconditioning, make_eos, amr, save_Inu, save_chi, save_Snu, &
-    long_solver, fixed_Jnu, n_nu, save_Jnu, maxiter, &
+    long_solver, short_solver, fixed_Jnu, n_nu, save_Jnu, maxiter, &
     convlim, converged, flux_convergence, flux_conv_signal, &
     global_flux_err, global_flux_pos, global_flux_lambda, flux_update_counter
   USE ray_mod, only: one_dimensional, ray_type, rstar, rorigin
@@ -658,7 +658,14 @@ contains
       end select
     else
       if (one_dimensional .or. column_by_column) then
-        call self%long_char_linear(vec)
+        select case(short_solver)
+          case('linear')
+            call self%long_char_linear(vec)
+          case('quadratic')
+            call self%long_char_quadratic(vec)
+          case default
+            stop 'Unknown short_solver, use "linear" or "quadratic"'
+        end select
       else
         call self%short_char(vec)
       endif
@@ -2299,7 +2306,7 @@ contains
 
     do z=zs, ze, self%dir
       edge = z==ze
-      z0 = merge(z-1, z, edge)
+      z0 = merge(z - self%dir, z, edge)
       zup = z0 - self%dir
       zdn = z0 + self%dir
       do y=1, self%ny
@@ -2362,6 +2369,13 @@ contains
             ! intensity at center point
             Inu = Inuup*ex + a*U2 + b*U1 + c*U0
             self%work(f,x,y,z,3) = Inu
+            if (any(self%get_rates)) then
+              if (edge) then
+                self%Psi(f,x,y,z) = (U0 + U1/dtdn - U2/(dtdn*dt)) / xx
+              else
+                self%Psi(f,x,y,z) = (2.0*U1 - U2/dt) / (dtup * xx)
+              end if
+            endif
           end do ! f-loop
         end do
       end do
