@@ -73,8 +73,8 @@ class SynthSetup:
     """
 
     def __init__(self, prefix, section, grids, *, atoms_provider=None, notify=None,
-                 on_mode_change=None, on_base_change=None, grid_section=None,
-                 form_names=None):
+                 on_mode_change=None, on_base_change=None, on_atmos_change=None,
+                 grid_section=None, form_names=None):
         self.prefix = prefix
         self.section = section
         self.grid_section = grid_section or section
@@ -83,6 +83,7 @@ class SynthSetup:
         self.notify = notify or (lambda *a, **k: None)
         self.on_mode_change = on_mode_change
         self.on_base_change = on_base_change
+        self.on_atmos_change = on_atmos_change    # fired when the atmosphere source changes
         self.reason = None                 # why the last context() returned None
 
         names = {"run": f"{prefix}params", "base": f"{prefix}base",
@@ -143,6 +144,10 @@ class SynthSetup:
         self.grid_bridge.value = self.grid_ui_html()
         # reveal the always-on path field exactly when a concrete file is in play
         pulse(self.file_open_bridge, "on" if self.show_file() else "off")
+        # every atmosphere-source change (grid/mode/file) routes through here; let listeners
+        # (e.g. the Fit tab) react to the new source.
+        if self.on_atmos_change:
+            self.on_atmos_change()
 
     def show_file(self):
         """True when a concrete atmosphere *file* is in play — Individual, or a registered
@@ -189,6 +194,13 @@ class SynthSetup:
             fmt = store.get_section(self.section).get("atmos_individual_format") or ATMOS_FORMATS[0]
             return {"name": "Individual", "folder": "", "pattern": "", "format": fmt}
         return self.grids._find(self.selected_grid_id())
+
+    def atmos_file(self):
+        """The concrete atmosphere file path when one is in play (Individual or a picked grid
+        member), else ``None`` — the caller then interpolates the grid."""
+        if not self.show_file():
+            return None
+        return (store.get_section(self.section).get("atmos_file") or "").strip() or None
 
     def _individual_dir(self):
         cwd = Path(str(load_prefs().get("dispatch_cwd") or REPO_DIR)).expanduser()

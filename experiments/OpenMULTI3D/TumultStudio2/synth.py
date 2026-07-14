@@ -528,23 +528,31 @@ def abund_elements(prefs):
 
 
 def fit(target, prefs, run_vals, fit_stellar, abund_fits, fit_post, xmin=None, xmax=None,
-        *, grid, cancel_token=None):
+        *, grid, atmos_file=None, cancel_token=None):
     """Fit ``target`` (a tumult Spectrum) by adaptive grid synthesis.
 
     ``run_vals`` holds the initial guesses / fixed config (teff/logg/feh/vmic, free-text
     ``abundances``, ``relative_abundances``, ``mode``, ``atoms``). ``fit_stellar`` is the set
     of switched stellar axes; ``abund_fits`` is ``{element: guess}`` (each always fitted);
-    ``fit_post`` is ``{post_name: guess}`` for switched vshift/vrot/zeta_rt. Returns
-    ``(best: dict, raw: Spectrum, post: dict)`` where ``raw`` is the best-fit spectrum
-    *without* post-processing and ``post`` is ``{vshift/vrot/zeta_rt: value}`` for the
+    ``fit_post`` is ``{post_name: guess}`` for switched vshift/vrot/zeta_rt. With ``atmos_file``
+    given the atmosphere is that single file (Individual, or a picked grid member): the stellar
+    params are fixed by the file, so ``fit_stellar`` must be empty and only abundances/broadening
+    are fit. Returns ``(best: dict, raw: Spectrum, post: dict)`` where ``raw`` is the best-fit
+    spectrum *without* post-processing and ``post`` is ``{vshift/vrot/zeta_rt: value}`` for the
     caller to apply as a live convolution (so the canvas stores a clean spectrum and the
     Edit tab reflects the fitted broadening). Blocking — call from a worker thread.
     """
     _ensure_path()
-    folder = grid.get("folder")
-    if not folder:
-        raise ValueError("No atmosphere grid folder configured (Preferences → Synthesis).")
-    atmos = discover_atmos_grid(folder, grid.get("pattern") or DEFAULT_PATTERN)
+    if atmos_file:
+        # single-file synthesis: no grid to interpolate, so the stellar axes have no nodes.
+        if fit_stellar:
+            raise ValueError("Stellar parameters can't be fit from a single atmosphere file.")
+        atmos = {}
+    else:
+        folder = grid.get("folder")
+        if not folder:
+            raise ValueError("No atmosphere grid folder configured (Preferences → Synthesis).")
+        atmos = discover_atmos_grid(folder, grid.get("pattern") or DEFAULT_PATTERN)
 
     axes = list(fit_stellar) + list(abund_fits)
     if not axes and not fit_post:
@@ -588,7 +596,8 @@ def fit(target, prefs, run_vals, fit_stellar, abund_fits, fit_post, xmin=None, x
         rv["abundances"] = " ".join(terms)
         tgt = (float(teff), float(logg), feh, float(vmic))
         try:
-            return compute(tgt, prefs, rv, xmin, xmax, grid=grid, cancel_token=cancel_token)
+            return compute(tgt, prefs, rv, xmin, xmax, grid=grid, atmos_file=atmos_file,
+                           cancel_token=cancel_token)
         except (ValueError, RuntimeError):
             return None  # outside the atmosphere hull etc. -> drop this grid point
 
