@@ -69,7 +69,8 @@ class tumult(object):
     @property
     def llist(self):
         if not hasattr(self, '_llist'):
-            self._llist = LineList.from_tumult_format(self.folder / 'linelist_out.txt')
+            run = self.runs[0] if hasattr(self, 'runs') else self
+            self._llist = LineList.from_tumult_format(run.folder / 'linelist_out.txt')
         return self._llist
 
     @llist.setter
@@ -80,7 +81,8 @@ class tumult(object):
     def atoms(self):
         if not hasattr(self, '_atoms'):
             try:
-              self._atoms = self.read_atom(fast_read=True)
+              run = self.runs[0] if hasattr(self, 'runs') else self
+              self._atoms = run.read_atom(fast_read=True)
             except Exception as e:
               print(f'Error reading atoms: {e}\nTrying again with fast_read=False...')
               self._atoms = self.read_atom(fast_read=False)
@@ -766,7 +768,7 @@ class tumult(object):
         #-------------------------------------------------------------
         self = cls() # create a new instance of the class
         self.run0 = runs[0]
-        self.folder = '\n'.join([str(run.folder) for run in runs])
+        self.folder = [run.folder for run in runs]
 
         def check_and_combine(key):
             if hasattr(self.run0, key):

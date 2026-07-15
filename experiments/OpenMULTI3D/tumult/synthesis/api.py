@@ -230,7 +230,7 @@ def build_stellar_grid(top, star, atmos_files,
     -------
     tm.grid with a .target attribute {'teff', 'logg', 'feh', 'vmic'}.
     """
-    launch_kwargs = {k: v for k, v in (launch_kwargs or {}).items() if k != 'threads'}
+    launch_kwargs = launch_kwargs or {}
     if max_threads is None:
         max_threads = os.cpu_count() or 1
 
@@ -360,7 +360,7 @@ def compute_spectra(top, star, atmos_files, *, settings_list, absmet_files=None,
     if not settings_list:
         return []
     top = Path(top)
-    launch_kwargs = {k: v for k, v in (launch_kwargs or {}).items() if k != 'threads'}
+    launch_kwargs = launch_kwargs or {}
     if max_threads is None:
         max_threads = os.cpu_count() or 1
 
@@ -606,6 +606,22 @@ def adaptive_fit(target, synth_point_fn, axes, guesses, *, post_fit=(), spacings
     return best, fitted, grid
 
 
+def fit_all_lines(grid, lines, ref_grid=None, ref='LTE', integrate=True, limit=1.0, crop_kwargs=None):
+    """Fit all lines in a grid and return the guesses."""
+    crop_kwargs = crop_kwargs or {}
+    ref_grid = ref_grid or grid
+    sign = 1 if ref == 'LTE' else -1
+    guesses = {}
+    refs = {}
+    for l0 in lines:
+        line = grid.spectra[0].get_line(l0, verbose=False)
+        kw = dict(crop_kwargs, xmin=line.lb, xmax=line.lr)
+        refs[l0] = ref_grid.crop(da=0.0, LTE=(ref == 'LTE'), **kw)
+        pfit, _ = grid.fit(refs[l0], fit=['da'], LTE=(ref != 'LTE'), integrate=integrate, **kw)
+        guesses[l0] = np.clip(sign * pfit['da'], -limit, limit)
+    return guesses, refs
+
+
 def get_NLTE_correction(top, star, atom_file, atmos_file, lines, absmet_files=None, settings=None,
                         tol=0.01, limit=1.0, ref='LTE', integrate=True, verbose=False,
                         max_threads=None, launch_kwargs=None, crop_kwargs=None):
@@ -617,7 +633,7 @@ def get_NLTE_correction(top, star, atom_file, atmos_file, lines, absmet_files=No
     guesses : dict  {line_center: correction}
     runs    : dict  {da: Run}
     """
-    launch_kwargs = {k: v for k, v in (launch_kwargs or {}).items() if k != 'threads'}
+    launch_kwargs = launch_kwargs or {}
     crop_kwargs = crop_kwargs or {}
 
     if max_threads is None:
@@ -666,15 +682,6 @@ def get_NLTE_correction(top, star, atom_file, atmos_file, lines, absmet_files=No
         das = sorted(runs.keys())
         return tm.grid([runs[d] for d in das], da=das), das
 
-    def fit_all_lines(grid):
-        guesses = {}
-        for l0 in lines:
-            line = grid.spectra[0].get_line(l0, verbose=False)
-            kw = dict(crop_kwargs, xmin=line.lb, xmax=line.lr)
-            pfit, _ = grid.fit(refs[l0], fit=['da'], LTE=(ref != 'LTE'), integrate=integrate, **kw)
-            guesses[l0] = np.clip(sign * pfit['da'], -limit, limit)
-        return guesses
-
     def find_interval(da_val, knots):
         idx = np.searchsorted(knots, da_val, side='right') - 1
         return max(0, min(idx, len(knots) - 2))
@@ -690,7 +697,7 @@ def get_NLTE_correction(top, star, atom_file, atmos_file, lines, absmet_files=No
         kw = dict(crop_kwargs, xmin=line.lb, xmax=line.lr)
         refs[l0] = grid.crop(da=0.0, LTE=(ref == 'LTE'), **kw)
 
-    guesses = fit_all_lines(grid)
+    guesses, _ = fit_all_lines(grid, lines, ref=ref, crop_kwargs=crop_kwargs, integrate=integrate, limit=limit)
 
     for iteration in range(max_iter):
         prev_guesses = dict(guesses)
@@ -728,7 +735,7 @@ def get_NLTE_correction(top, star, atom_file, atmos_file, lines, absmet_files=No
         runs.update(new_runs)
 
         grid, _ = build_grid()
-        guesses = fit_all_lines(grid)
+        guesses, _ = fit_all_lines(grid, lines, ref=ref, crop_kwargs=crop_kwargs, integrate=integrate, limit=limit)
 
         max_shift = max(abs(guesses[l0] - prev_guesses[l0]) for l0 in lines)
 

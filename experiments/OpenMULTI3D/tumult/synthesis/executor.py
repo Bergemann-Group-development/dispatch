@@ -75,7 +75,7 @@ def _run_batch(jobs, launch_kwargs, max_threads, cancel_token=None):
             todo.append((key, nml_name, nml))
 
     if todo:
-        threads_per_run = max(1, max_threads // len(todo))
+        threads_per_run = launch_kwargs.get('threads', max(1, max_threads // len(todo)))
         n_workers = min(len(todo), max_threads)
         worker_kwargs = dict(launch_kwargs, threads=threads_per_run)
         with ProcessPoolExecutor(max_workers=n_workers,
