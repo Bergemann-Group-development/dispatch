@@ -599,7 +599,8 @@ SUBROUTINE update (self, head, test)
   !.............................................................................
   select type (task)
   class is (experiment_t)
-  call validate%check (head, task%mem(:,:,:,task%idx%d,task%it,1), ' after update')
+  if (task%is_clear(bits%no_density)) &
+    call validate%check (head, task%mem(:,:,:,task%idx%d,task%it,1), ' after update')
   call task%info (self%nq, self%na)                   ! print info on stdout
   end select
   !-----------------------------------------------------------------------------
