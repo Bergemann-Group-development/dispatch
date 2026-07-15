@@ -3,8 +3,8 @@
 #OPTS = vscode
 #OPTS = debug
 #OPTS =
-#OPTS = hoppe
-OPTS = optimized
+#OPTS = optimized
+OPTS = hoppe# use this when compiling for different hosts at once.
 
 # Default target and paths
 EXEC            = dispatch.x
