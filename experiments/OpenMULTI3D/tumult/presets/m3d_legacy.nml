@@ -1,0 +1,33 @@
+&atmos_params
+  use_ne = .true.
+  use_rho = .true.
+  amr = 'Z'
+  nz = 230
+  dims = 32
+/
+&m3d_params
+  decouple_continuum = .false.
+  initial_Jnu = 'zero'
+  long_scheme = 'lobatto'
+  short_scheme = 'set_a4'
+  rotate_atmos = .false.
+/
+&atom_params
+  overlapping_bb = .true.
+  overlapping_bf = .true.
+  legacy_freql = .false.
+  use_classic_col = .false.
+  level_partf = .true.
+  use_atom_abnd = .false.
+  premature_finish = .false.
+/
+&composition_params
+  sample_back_opac = .false.
+  sample_back_opac_in_output = .false.
+  h_occupation_probability = .false.
+  helium_scattering = .false.
+  irwin_dis = .false.
+  absdat_file = 'input_multi3d/absdat'
+  abund_file = 'input_multi3d/abund/legacy_abund'
+  molec_file = 'input_multi3d/molec_data.txt'
+/

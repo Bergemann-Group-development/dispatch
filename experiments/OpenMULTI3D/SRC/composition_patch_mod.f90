@@ -24,7 +24,7 @@ MODULE composition_patch_mod
   departure_pointer_t, read_departures, departure_indices, sample_back_opac, &
   sample_back_opac_in_output, sample_linelist, opac_table_vmic, scattering_absorption, &
   use_new_linelist
-  USE atom_mod, only: m1d_legacy_mode, use_classic_col, level_partf
+  USE atom_mod, only: use_classic_col, level_partf
   USE nlte_patch_mod,  only: nlte_patch_t
   USE rt_patch_mod, only:rt_patch_t
   USE bftrans_mod, only: H_occupation_probability
@@ -85,7 +85,7 @@ SUBROUTINE read_composition_params ()
   real(4) :: tmolim=-99
   integer, save:: itimer=0, verbose=0
   namelist /composition_params/ verbose, absdat_file, abund_file, absmet_file, &
-  isotope_file, molec_file, H_occupation_probability, opac_table, m1d_legacy_mode, &
+  isotope_file, molec_file, H_occupation_probability, opac_table, &
   sample_back_opac, sample_back_opac_in_output, switch, mhd_eos, debye_shield, &
   dtemp, ldne, ldrho, ldtemp, tmolim, irwin_dis, opac_table_vmic, save_species, &
   ref_lam, debug_opac, abundances, relative_abundances, alpha_enhancement, r_process_enhancement, &
@@ -107,23 +107,6 @@ SUBROUTINE read_composition_params ()
     read (io%input, composition_params)
   end if
   call io%namelist_warning ('composition_params', iostat)
-
-  if (m1d_legacy_mode) then
-    decouple_continuum = .true.
-    overlapping_bb = .false.
-    overlapping_bf = .false.
-    use_rho = .false.
-    use_vel(1:3) = .false.
-    sample_back_opac = .false.
-    h_occupation_probability = .false.
-    use_classic_col = .false.
-    irwin_dis = .false.
-    level_partf = .true.
-    helium_scattering = .false.
-    initial_Jnu = 'zero'
-    !comoving_frame = .true.
-    !preconditioning = .false.
-  endif
 
   write (io%namelist, composition_params)
 

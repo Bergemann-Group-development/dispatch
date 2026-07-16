@@ -172,7 +172,7 @@ MODULE atom_mod
       'OHM     ','CH0     ','CHI     '/)
 
     real(8), public :: cbbesc=1., cbfesc=1., cbbhsc=1., cbfhsc=1., colscale=1.
-    logical, public :: use_classic_col = .False., m1d_legacy_mode=.False.
+    logical, public :: use_classic_col = .False., legacy_freql=.False.
     logical, public :: lse_no_pivot = .True., kramer_bf=.False.
     logical, public :: disable_bf=.False., disable_bb=.False.
     logical, public :: level_partf=.false.
@@ -785,7 +785,7 @@ MODULE atom_mod
       ! make sure we always have an odd number of frequency points for a line
       if (mod(lin%nnu,2) == 0) lin%nnu=lin%nnu+1
       lin%nnu = nq_fac * (lin%nnu-1) + 1
-      if (lin%io <= 1 .and. m1d_legacy_mode) then
+      if (lin%io <= 1 .and. legacy_freql) then
         lin%nnu = 2 * (lin%nnu-1) + 1
       endif
 
@@ -810,7 +810,7 @@ MODULE atom_mod
         endif
       endif
 
-      call lin%get_lam(qnorm, lin%lam_input, legacy=m1d_legacy_mode)
+      call lin%get_lam(qnorm, lin%lam_input, legacy=legacy_freql)
       call os%mem_register(storage_size(lin%lam_input), lin%nnu, 'line%lam_input')
       lin%lam_min = lin%lam_input(1)
       lin%lam_max = lin%lam_input(lin%nnu)
@@ -1141,7 +1141,7 @@ MODULE atom_mod
       if (mod(lin%nnu,2) == 0) lin%nnu=lin%nnu+1
 
       lin%nnu = nq_fac * (lin%nnu-1) + 1
-      if (lin%io <= 1 .and. m1d_legacy_mode) then
+      if (lin%io <= 1 .and. legacy_freql) then
         lin%nnu = 2 * (lin%nnu-1) + 1
       endif
 
@@ -1220,7 +1220,7 @@ MODULE atom_mod
         endif
       endif
 
-      call lin%get_lam(qnorm, lin%lam_input, legacy=nterm<=1 .and. m1d_legacy_mode)
+      call lin%get_lam(qnorm, lin%lam_input, legacy=nterm<=1 .and. legacy_freql)
       call os%mem_register(storage_size(lin%lam_input), lin%nnu, 'line%lam_input')
       lin%lam_min = lin%lam_input(1)
       lin%lam_max = lin%lam_input(lin%nnu)

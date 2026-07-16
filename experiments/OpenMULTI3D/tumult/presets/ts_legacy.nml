@@ -1,0 +1,17 @@
+&atmos_params
+  atmos_format = 'Marcs'
+  use_rho = .true.
+  use_abnd = .true.
+/
+&m3d_params
+  long_scheme = 'custom'
+  custom_mu = '1.0, 0.974726, 0.916958, 0.830825, 0.722203, 0.598497, 0.468138, 0.340008, 0.222841, 0.124619, 0.052035, 0.010018'
+/
+&composition_params
+  molec_file = 'input/molec_data_MARCS.txt'
+  absdat_file = 'input/TS_absdat.dat'
+/
+&linelist_params
+  dlam = 100
+  tolerance = 0.001
+/
