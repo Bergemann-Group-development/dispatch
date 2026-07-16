@@ -492,9 +492,9 @@ aside {
 
 /* ---- settings modal (STYLE_REFERENCE.md §7.1) ----------------------------- */
 .modal {
-  position: fixed; top: 50%; left: 50%; translate: -50% -50%;
+  position: fixed; inset: 0; margin: auto;
   width: min(360px, 92vw);
-  max-height: min(560px, 88vh);
+  height: min(560px, 88vh);
   background: var(--surface); color: var(--text);
   border: 1px solid var(--border); border-radius: 8px;
   box-shadow: 0 8px 32px rgba(0,0,0,0.6);

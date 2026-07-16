@@ -4135,6 +4135,11 @@ SUBROUTINE allocate_mem (self, m_in)
       call shared%abort('patch_t%allocate_mem: Negative allocation size! Some dimension is negative!')
     endif
   endif
+  !-----------------------------------------------------------------------------
+  ! A memory-less patch (nv=0) keeps mem null, rather than a zero-sized array; it
+  ! holds its state elsewhere, and self%mem is the flag that says so
+  !-----------------------------------------------------------------------------
+  if (product(m) == 0) return
   !print *, self%key, 'allocated'
   call os%allocate(self%mem, m, label=trim(self%kind)//'%mem')
 END SUBROUTINE allocate_mem

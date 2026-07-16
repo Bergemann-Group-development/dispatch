@@ -13,10 +13,12 @@ MODULE composition_patch_mod
   USE element_mod, only: element_type
   USE m3d_patch_mod,   only: m3d_patch_t, composition, comoving_frame, ilambd, dlam, &
   use_rho, use_ne, overlapping_bb, overlapping_bf, binned_opac, initial_Jnu, &
-  maxiter, rotate_atmos, long_vec, decouple_continuum, n_nu, use_vel, &
+  maxiter, rotate_atmos, long_vec, decouple_continuum, n_nu, use_vel, pivot_z, &
   linelist_in_output, make_eos, overlapping_bb_in_output, atmos_format, atmos_file, &
-  n_nlte_patches, nlte_finished
+  long_solver, short_solver, n_nlte_patches, nlte_finished
   USE m3d_debug_mod
+  USE read_atmos_mod, only: ia, interpolate_atmos, pchip_interpolation
+  USE interpol_mod, only: pchip_slopes
   USE composition_mod, only: composition_type, exclude_elements, only_elements, switch, &
   ref_lam, debug_opac, abundances, relative_abundances, mhd_eos, helium_scattering, &
   departure_pointer_t, read_departures, departure_indices, sample_back_opac, &
@@ -72,7 +74,7 @@ MODULE composition_patch_mod
   character(len=256), save :: absmet_file=''
   character(len=512), save :: linelist_folder=''
   character(len=256), save, dimension(:), allocatable :: linelist_file
-  
+
   public :: read_composition_params
 
 contains
@@ -171,8 +173,11 @@ SUBROUTINE composition_pre_init (self)
   self%kind = 'composition'
   call self%m3d_patch_t%pre_init()
   nw = merge(1+size(long_vec,2), 1, rotate_atmos)
-  call self%set_nv_and_nw(8,nw)
-  self%static_mem=.true.
+  ! no mem: the atmosphere lives in the composition objects, the radiation in the
+  ! rt patches, and the populations in atom%data
+  call self%set_nv_and_nw(0,nw)
+  ! this patch will interpolate from the input snapshot; execute releases it again
+  call ia%acquire()
 
   if (first_time) then
     allocate(output_sp)
@@ -227,6 +232,20 @@ SUBROUTINE composition_pre_init (self)
 
   self%n_nu = n_nu
   n_mu = size(long_vec,2)
+
+  ! One sampled opacity table per i_nu, shared by the rt_patches created below,
+  ! which differ only in i_mu and would otherwise build identical copies.  The
+  ! internal spectrum uses i_nu in [1, n_nu], the bound-free half of a decoupled
+  ! continuum [n_nu+1, 2*n_nu], and the output spectrum [-n_nu, -1]; slot 0 is
+  ! never used.  make_eos is excluded: save_opac_table overwrites the table in
+  ! place, so those rt_patches keep a private one.
+  if ((sample_back_opac .or. sample_back_opac_in_output) .and. .not. make_eos) then
+    allocate(self%opac_tables(-n_nu:2*n_nu))
+    allocate(self%opac_locks (-n_nu:2*n_nu))
+    do i=-n_nu, 2*n_nu
+      call self%opac_locks(i)%init('opac', i)
+    end do
+  endif
   if (associated(nlte_patch%atoms)) then
     if (maxiter > 0) then
       if (decouple_continuum) then
@@ -284,68 +303,93 @@ END SUBROUTINE create_sub_patches
 SUBROUTINE execute (self)
   class(composition_patch_t) :: self
   class(composition_type), pointer :: comp
-  real(4), dimension(:,:,:), pointer :: d, e, pe, chi
-  real(4), dimension(:,:,:,:), pointer, contiguous :: authority
-  real(4), dimension(:,:,:), pointer, contiguous :: ne, rho, temp, vx, vy, vz
-  real(4), dimension(:,:,:), pointer, contiguous :: ux, uy, uz, vmic
+  real(4), dimension(:,:,:), allocatable :: ne, rho, temp, vx, vy, vz, vmic
+  real(4), dimension(:,:,:), allocatable :: gtx, gty, gtz, gpx, gpy, gpz
+  real(4), dimension(:,:,:,:,:), allocatable :: atmos
   real(8), dimension(:,:,:), allocatable :: ne8, rho8, temp8
-  real(8) :: vec(3)
-  integer :: i, n(3), li(3), ui(3)
+  integer :: i, n(3)
+  logical :: need_gradients, compute_gradients
   integer, save:: itimer=0
   ! ----------------------------------------------------------------------------
   call trace%begin('composition_patch_t%execute', itimer=itimer)
   n = self%n
 
-  if (self%iter == 0) then
-    li = self%li
-    ui = self%ui
+  ! the chain-rule 'hermite' RT solvers need the ln(T)/ln(Pe) gradients of the
+  ! snapshot interpolant; they are computed whenever they can be (so saved
+  ! atmospheres always carry them), and stored on the compositions only when a
+  ! hermite solver is actually selected
+  need_gradients = (long_solver == 'hermite' .or. short_solver == 'hermite')
+  compute_gradients = (need_gradients .or. save_atmos) &
+                      .and. pchip_interpolation .and. .not. make_eos
+  if (need_gradients .and. .not. pchip_interpolation) &
+    stop "the 'hermite' solver requires pchip_interpolation=.true."
 
+  if (self%iter == 0) then
     allocate(self%composition)
     if (rotate_atmos) allocate(self%rotated_composition(self%n_out))
 
     allocate(temp8(n(1),n(2),n(3)))
     allocate(rho8 (n(1),n(2),n(3)))
     allocate(ne8  (n(1),n(2),n(3)))
+    allocate(temp(n(1),n(2),n(3)), ne(n(1),n(2),n(3)), rho(n(1),n(2),n(3)))
+    allocate(vx  (n(1),n(2),n(3)), vy(n(1),n(2),n(3)), vz (n(1),n(2),n(3)))
+    allocate(vmic(n(1),n(2),n(3)))
+    allocate(gtx (n(1),n(2),n(3)), gty(n(1),n(2),n(3)), gtz(n(1),n(2),n(3)))
+    allocate(gpx (n(1),n(2),n(3)), gpy(n(1),n(2),n(3)), gpz(n(1),n(2),n(3)))
+    gtx = 0.; gty = 0.; gtz = 0.
+    gpx = 0.; gpy = 0.; gpz = 0.
 
+    ! a previously computed atmosphere is read back in the same 14-slot layout
+    ! it was written in (files from before the gradient slots were added must be
+    ! regenerated)
     if (atmos_format == 'save') then
-      call self%load5('atmos', run_dir=atmos_file, mem=self%mem(:,:,:,:,self%it,:))
-    else
-      do i=1, self%nw
-        authority => self%patch%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),:,self%it,i)
-        e  => authority(:,:,:,self%patch%idx%e)
-        d  => authority(:,:,:,self%patch%idx%d)
-        ux => authority(:,:,:,self%patch%idx%px)
-        uy => authority(:,:,:,self%patch%idx%py)
-        uz => authority(:,:,:,self%patch%idx%pz)
-        pe => authority(:,:,:,6)
-        vmic => authority(:,:,:,7)
-      
-        authority => self%mem(:,:,:,:,self%it,i)
-        ne   => authority(:,:,:,self%i_ne)
-        rho  => authority(:,:,:,self%i_rho)
-        temp => authority(:,:,:,self%i_temp)
-        vx   => authority(:,:,:,self%i_vx)
-        vy   => authority(:,:,:,self%i_vy)
-        vz   => authority(:,:,:,self%i_vz)
-        chi  => authority(:,:,:,7)
-        authority(:,:,:,8) = vmic
-    
-        temp = e
-        rho  = d
-        ne   = pe / (cgs%k_b * temp)
-        vx   = ux / cgs%c
-        vy   = uy / cgs%c
-        vz   = uz / cgs%c
-      end do
+      call self%load5('atmos', run_dir=atmos_file, alloc=atmos)
+      if (size(atmos,4) < self%i_dlnpe_z) &
+        stop 'saved atmosphere predates the gradient slots -- regenerate it'
+    elseif (save_atmos) then
+      allocate(atmos(n(1),n(2),n(3),self%i_dlnpe_z,self%nw))
     endif
 
     do i=1, self%nw
-      authority => self%mem(:,:,:,:,self%it,i)
-      ne   => authority(:,:,:,self%i_ne)
-      rho  => authority(:,:,:,self%i_rho)
-      temp => authority(:,:,:,self%i_temp)
-      chi  => authority(:,:,:,7)
-      vmic => authority(:,:,:,8)
+      if (atmos_format == 'save') then
+        ne   = atmos(:,:,:,self%i_ne,   i)
+        rho  = atmos(:,:,:,self%i_rho,  i)
+        temp = atmos(:,:,:,self%i_temp, i)
+        vx   = atmos(:,:,:,self%i_vx,   i)
+        vy   = atmos(:,:,:,self%i_vy,   i)
+        vz   = atmos(:,:,:,self%i_vz,   i)
+        vmic = atmos(:,:,:,self%i_vmic, i)
+        gtx  = atmos(:,:,:,self%i_dlnt_x,  i)
+        gty  = atmos(:,:,:,self%i_dlnt_y,  i)
+        gtz  = atmos(:,:,:,self%i_dlnt_z,  i)
+        gpx  = atmos(:,:,:,self%i_dlnpe_x, i)
+        gpy  = atmos(:,:,:,self%i_dlnpe_y, i)
+        gpz  = atmos(:,:,:,self%i_dlnpe_z, i)
+      elseif (i == 1) then
+        if (compute_gradients) then
+          call interpolate_atmos(n, self%size, self%position, temp, ne, rho, vx, vy, vz, vmic, &
+                                 dlnt_dx=gtx, dlnt_dy=gty, dlnt_dz=gtz, &
+                                 dlnpe_dx=gpx, dlnpe_dy=gpy, dlnpe_dz=gpz)
+        else
+          call interpolate_atmos(n, self%size, self%position, temp, ne, rho, vx, vy, vz, vmic)
+        endif
+      else
+        if (compute_gradients) then
+          ! rotated columns run along the ray; only the z pair exists
+          gtx = 0.; gty = 0.; gpx = 0.; gpy = 0.
+          call interpolate_atmos(n, self%size, self%position, temp, ne, rho, vx, vy, vz, vmic, &
+                                 vec=long_vec(:,i-1), bot2pivot=pivot_z, &
+                                 dlnt_dz=gtz, dlnpe_dz=gpz)
+        else
+          call interpolate_atmos(n, self%size, self%position, temp, ne, rho, vx, vy, vz, vmic, &
+                                 vec=long_vec(:,i-1), bot2pivot=pivot_z)
+        endif
+      endif
+
+      ! masked once here, rather than on every ray direction and iteration
+      if (.not. use_vel(1)) vx = 0
+      if (.not. use_vel(2)) vy = 0
+      if (.not. use_vel(3)) vz = 0
 
       temp8 = dble(temp)
       rho8  = dble(rho)
@@ -355,23 +399,51 @@ SUBROUTINE execute (self)
       ! and absdat file to make it threadprivate
       if (i==1) then
         self%composition = composition
-        comp => self%composition
       else
         self%rotated_composition(i-1) = composition
-        comp => self%rotated_composition(i-1)
       endif
+      comp => self%comp_ptr(i)
 
       ! this is needed, otherwise all pointers will still point
       ! to ions and molecules in original composition
       call comp%reassign_pointer()
       ! loading temp, ne and rho in to composition objekt
       ! ion and molecule equilibrium are solved immediately
-      call comp%load_state_variables(temp8, ne8, rho8, use_rho=use_rho, use_ne=use_ne, vmic=vmic)
+      call comp%load_state_variables(temp8, ne8, rho8, use_rho=use_rho, use_ne=use_ne, &
+                                     vmic=vmic, vx=vx, vy=vy, vz=vz)
 
       if (.not. use_ne) ne = real(comp%ne)
       if (.not. use_rho) rho = real(comp%rho)
+
+      ! with use_ne=.false. there was no Pe field to interpolate: rebuild the
+      ! ln(Pe) gradients from Pe = ne*kB*T on the patch grid instead
+      if (compute_gradients .and. .not. use_ne .and. atmos_format /= 'save') &
+        call pe_gradients_from_grid(comp, self%ds, gpx, gpy, gpz, horizontal=(i==1))
+
+      if (need_gradients) then
+        if (i == 1) then
+          call comp%set_gradients(gtz, gpz, dlnt_dx=gtx, dlnt_dy=gty, &
+                                  dlnpe_dx=gpx, dlnpe_dy=gpy)
+        else
+          call comp%set_gradients(gtz, gpz)
+        endif
+      endif
+
       if (save_atmos) then
-        chi = comp%chi500
+        atmos(:,:,:,self%i_ne,   i) = ne
+        atmos(:,:,:,self%i_rho,  i) = rho
+        atmos(:,:,:,self%i_temp, i) = temp
+        atmos(:,:,:,self%i_vx,   i) = vx
+        atmos(:,:,:,self%i_vy,   i) = vy
+        atmos(:,:,:,self%i_vz,   i) = vz
+        atmos(:,:,:,self%i_chi500, i) = comp%chi500
+        atmos(:,:,:,self%i_vmic,   i) = vmic
+        atmos(:,:,:,self%i_dlnt_x,  i) = gtx
+        atmos(:,:,:,self%i_dlnt_y,  i) = gty
+        atmos(:,:,:,self%i_dlnt_z,  i) = gtz
+        atmos(:,:,:,self%i_dlnpe_x, i) = gpx
+        atmos(:,:,:,self%i_dlnpe_y, i) = gpy
+        atmos(:,:,:,self%i_dlnpe_z, i) = gpz
       endif
 
       if (check_NaN) then
@@ -380,9 +452,11 @@ SUBROUTINE execute (self)
         call check_array(ne, 'electron density', check_zero=.true., abort=.true.)
       endif
     end do
-    
+
+    call ia%release()
+
     if (save_atmos) then
-      call self%save5(self%mem(:,:,:,:,self%it,:), 'atmos')
+      call self%save5(atmos, 'atmos')
     endif
 
     if (save_eos) then
@@ -394,9 +468,7 @@ SUBROUTINE execute (self)
     endif
 
     if (sample_back_opac .or. sample_back_opac_in_output) then
-      call self%init_tabulated_comp(self%mem(:,:,:,self%i_temp,self%it,:), &
-                                    self%mem(:,:,:,self%i_ne,  self%it,:), &
-                                    ldtemp=ldtemp, ldne=ldne)
+      call self%init_tabulated_comp(ldtemp=ldtemp, ldne=ldne)
     elseif (make_eos) then
       call self%init_eos_comp(self%composition%temp, self%composition%rho, ldtemp=ldtemp, ldrho=ldrho)
     endif
@@ -413,7 +485,50 @@ SUBROUTINE execute (self)
 END SUBROUTINE execute
 
 !===============================================================================
-SUBROUTINE init_tabulated_comp (self, temp, ne, ldtemp, ldne)
+!> Rebuild the ln(Pe) gradients from the composition's own Pe = ne*kB*T on the
+!> patch grid, for paths where no interpolation-time gradients exist
+!> (use_ne=.false.).  Vertical slopes use the canonical monotone pchip node
+!> slopes; horizontal partials (unrotated composition only) use centered FDs
+!> with one-sided edges.  Grid-node slopes lose the sub-grid structure of the
+!> snapshot interpolant, but keep the hermite solver working identically.
+!===============================================================================
+SUBROUTINE pe_gradients_from_grid (comp, ds, gpx, gpy, gpz, horizontal)
+  class(composition_type) :: comp
+  real(8), intent(in) :: ds(3)
+  real(4), dimension(:,:,:), intent(out) :: gpx, gpy, gpz
+  logical, intent(in) :: horizontal
+  real(4), dimension(:,:,:), allocatable :: lnpe
+  real(4), dimension(:), allocatable :: zz, dxw, dyw
+  integer :: i, x, y, nx, ny, nz
+  integer, save :: itimer=0
+  ! ----------------------------------------------------------------------------
+  call trace%begin('pe_gradients_from_grid', itimer=itimer)
+  nx = size(gpz,1); ny = size(gpz,2); nz = size(gpz,3)
+  allocate(lnpe(nx,ny,nz), zz(nz), dxw(nz-1), dyw(nz-1))
+  lnpe = real(log(comp%pe), 4)
+  zz = [ (real(i*ds(3),4), i=1, nz) ]
+  do y=1, ny
+    do x=1, nx
+      call pchip_slopes(zz, lnpe(x,y,:), 1, nz, dxw, dyw, gpz(x,y,:))
+    end do
+  end do
+  gpx = 0.
+  gpy = 0.
+  if (horizontal .and. nx > 2) then
+    gpx(2:nx-1,:,:) = (lnpe(3:nx,:,:) - lnpe(1:nx-2,:,:)) / real(2.*ds(1), 4)
+    gpx(1,   :,:)   = (lnpe(2, :,:)   - lnpe(1,     :,:)) / real(ds(1), 4)
+    gpx(nx,  :,:)   = (lnpe(nx,:,:)   - lnpe(nx-1,  :,:)) / real(ds(1), 4)
+  endif
+  if (horizontal .and. ny > 2) then
+    gpy(:,2:ny-1,:) = (lnpe(:,3:ny,:) - lnpe(:,1:ny-2,:)) / real(2.*ds(2), 4)
+    gpy(:,1,   :)   = (lnpe(:,2, :)   - lnpe(:,1,     :)) / real(ds(2), 4)
+    gpy(:,ny,  :)   = (lnpe(:,ny,:)   - lnpe(:,ny-1,  :)) / real(ds(2), 4)
+  endif
+  call trace%end(itimer)
+END SUBROUTINE pe_gradients_from_grid
+
+!===============================================================================
+SUBROUTINE init_tabulated_comp (self, ldtemp, ldne)
     ! Sample the background opacity on a grid built in the orthogonal PCA basis of
     ! (lnT, lnNe) over all atmosphere cells, rather than the axis-aligned box in
     ! (T, lnNe). Since T and Ne are strongly correlated the atmosphere hugs a thin
@@ -421,12 +536,23 @@ SUBROUTINE init_tabulated_comp (self, temp, ne, ldtemp, ldne)
     ! corners that crash the EOS and cutting the node count. ldtemp/ldne are the
     ! requested lnT/lnNe resolutions, projected onto the PC axes for spacing.
     class(composition_patch_t), target :: self
-    real(4), dimension(:,:,:,:), intent(in) :: temp, ne
+    class(composition_type), pointer :: comp
     real(8), intent(in) :: ldtemp, ldne
-    integer :: n1, n2
+    integer :: i, n(3), n1, n2
     real(8), dimension(:,:,:), allocatable :: tab_temp, tab_ne, tab_rho
     real(4), dimension(:,:,:), allocatable :: tab_vmic
+    real(4), dimension(:,:,:,:), allocatable :: temp, ne
     !---------------------------------------------------------------------------
+    ! the PCA is taken over every cell of every rotated copy, so gather them; each
+    ! copy resamples the cube along its own direction and has its own (T, ne)
+    n = self%n
+    allocate(temp(n(1),n(2),n(3),self%nw), ne(n(1),n(2),n(3),self%nw))
+    do i=1, self%nw
+      comp => self%comp_ptr(i)
+      temp(:,:,:,i) = real(comp%temp)
+      ne  (:,:,:,i) = real(comp%ne)
+    end do
+
     allocate(self%tab_comp)
     self%tab_comp = composition
     call self%tab_comp%reassign_pointer()
@@ -530,13 +656,17 @@ END SUBROUTINE save_eos_variables
 !===============================================================================
 SUBROUTINE print_post_update_info (self)
   class(composition_patch_t):: self
+  class(composition_type), pointer :: comp
   integer :: p(3)
   !-----------------------------------------------------------------------------
+  ! post_update also runs before the first execute, where there is nothing yet
+  if (.not. associated(self%composition)) return
   if (self%verbose > 1) then
     p = self%pcheck
-    memcheck(1) = self%mem(p(1),p(2),p(3),self%i_temp,1,1)
-    memcheck(2) = self%mem(p(1),p(2),p(3),self%i_rho,1,1)
-    memcheck(3) = self%mem(p(1),p(2),p(3),self%i_ne,1,1)
+    comp => self%composition
+    memcheck(1) = real(comp%temp(p(1),p(2),p(3)))
+    memcheck(2) = real(comp%rho (p(1),p(2),p(3)))
+    memcheck(3) = real(comp%ne  (p(1),p(2),p(3)))
     call self%print_to_stdout(arr=memcheck(1:3))
   endif
 END SUBROUTINE print_post_update_info

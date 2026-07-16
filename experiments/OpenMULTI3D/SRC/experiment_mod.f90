@@ -14,20 +14,15 @@ MODULE experiment_mod
   USE list_mod, only: list_t
   USE halo_mod, only: halo_t
   USE gpatch_mod, only: gpatch_t
-  USE units_mod, only: cgs
-  USE scaling_mod, only: scaling
   USE handyfuncs_mod
   USE m3d_halo_mod, only: m3d_halo_t
-  USE m3d_patch_mod, only: verbose, print_execution_history, use_rho, use_ne, &
-    long_vec, pivot_z, rotate_atmos, atmos_format, amr
+  USE m3d_patch_mod, only: verbose, print_execution_history, long_vec, amr
   USE composition_patch_mod, only: composition_patch_t
-  USE composition_mod, only: composition_type
-  USE read_atmos_mod, only: ia, interpolate_atmos
+  USE read_atmos_mod, only: ia
   implicit none
   private
   type, public, extends(gpatch_t):: experiment_t
     class(composition_patch_t), pointer :: composition => null()
-    real(4), dimension(:,:,:,:,:,:), pointer :: authority_mem => null()
     integer :: iter=0, maxiter, zs, ze
     integer :: dims(3), nbox(3)
     character(len=2) :: v5
@@ -102,9 +97,6 @@ CONTAINS
     self%dtime    = timestep
     self%out_next = huge(1.0)
 
-    !self%mhd = .false.
-    call self%idx%init (energy=5, mhd=.false.)
-
     call self%append_to(self%task_list)
 
     allocate(self%composition)
@@ -113,72 +105,30 @@ CONTAINS
     self%composition%zs = self%zs
     call self%composition%pre_init()
 
-    self%nv = 7
+    ! no mem: this patch carries only geometry and the task-list lifecycle; the
+    ! atmosphere is interpolated straight into its composition patch
+    self%nv = 0
     self%nt = 4 ! Download returns wrong stuff if nt <= 2
     self%nw = 1 + size(long_vec, 2)
 
+    ! being memory-less (nv=0), this patch has no density slot: mark it so the
+    ! task list's pre-update validate%check does not index a null/absent mem
+    call self%set (bits%no_density)
+    call self%set (bits%no_filled)
+
     call trace%end (itimer=itimer)
   END SUBROUTINE pre_init
+
 
 !===============================================================================
 !> Setup a uniform initial state, with density=d0 and B=B0
 !===============================================================================
   SUBROUTINE init (self)
     class(experiment_t):: self
-    class(composition_type), pointer:: composition
-    real(4), dimension(:,:,:,:), pointer, contiguous :: authority
-    real(4), dimension(:,:,:), pointer, contiguous :: d, px, py, pz, tt, pe, vmic
-    real(4), dimension(:,:,:), allocatable :: ne, vel
-    real(8), dimension(:,:,:), allocatable :: ne8, rho8, temp8
-    real(4), dimension(:,:,:,:), pointer, contiguous :: chi
-    real(8) :: nu(1), sub(3), pos(3), bottom, bot2pivot
-    integer :: i, n(3), li(3), ui(3), thread, loaded=0
-    character(512) :: patch_file
     integer, save:: itimer=0
     !----------------------------------------------------------------------------
     call trace%begin('experiment_t%init', itimer=itimer)
     call self%patch_t%init()
-
-    li = self%li
-    ui = self%ui
-
-    self%authority_mem => self%mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),:,:,:)
-
-    if (atmos_format /= 'save') then
-      n = self%n
-      sub = self%size
-      pos = self%position
-
-      authority => self%authority_mem(:,:,:,:,self%it,1)
-      d  => authority(:,:,:,self%idx%d)
-      px => authority(:,:,:,self%idx%px)
-      py => authority(:,:,:,self%idx%py)
-      pz => authority(:,:,:,self%idx%pz)
-      tt => authority(:,:,:,self%idx%e)
-      pe => authority(:,:,:,6)
-      vmic => authority(:,:,:,7)
-
-      call interpolate_atmos(n, sub, pos, d, px, py, pz, tt, pe, vmic)
-
-      if (rotate_atmos) then
-        do i=1, self%nw-1
-          authority => self%authority_mem(:,:,:,:,self%it,1+i)
-          d  => authority(:,:,:,self%idx%d)
-          px => authority(:,:,:,self%idx%px)
-          py => authority(:,:,:,self%idx%py)
-          pz => authority(:,:,:,self%idx%pz)
-          tt => authority(:,:,:,self%idx%e)
-          pe => authority(:,:,:,6)
-          vmic => authority(:,:,:,7)
-          call interpolate_atmos(n, sub, pos, d, px, py, pz, tt, pe, vmic, vec=long_vec(:,i), bot2pivot=pivot_z)
-        end do
-      endif
-
-      loaded = loaded + 1
-      if (loaded == self%dims(3)) then
-        call ia%deallocate()
-      endif
-    endif
 
     call os%allocate(self%filled, self%gn)
     self%filled = -1

@@ -47,9 +47,12 @@ def _switch(key, on, title="Fit this parameter"):
             f'<span class="switch-track"></span></label>')
 
 
-def _fit_row(key, label, value, fit_on, step):
+def _fit_row(key, label, value, fit_on, step, show_switch=True):
+    # stellar rows drop the switch entirely when the atmosphere is a concrete file (Individual
+    # or a picked grid member): there is nothing to interpolate over, so those params can't be fit.
+    switch = _switch("fit_" + key, fit_on) if show_switch else ""
     return (f'<div class="field-group fit-row"><label>{html.escape(label)}</label>'
-            f'{_num(key, value, step)}{_switch("fit_" + key, fit_on)}</div>')
+            f'{_num(key, value, step)}{switch}</div>')
 
 
 class FitTab:
@@ -61,6 +64,7 @@ class FitTab:
         self.flags = {k: bool(saved.get(f"fit_{k}", False))
                       for k, *_ in _STELLAR + _POST}
         self.relative = True       # shared relative-abundances flag, synced by SynthPanel
+        self.can_fit_stellar = True    # False when a concrete atmosphere file is selected
         self.abund_rows = dict(saved.get("abund_rows", {}))   # {element: guess}
         self.target = saved.get("target", "")     # selected target uid
         self.targets = []                          # [(uid, name)] from the canvas
@@ -82,6 +86,15 @@ class FitTab:
         """Load the abundance element list + solar values from preferences."""
         self.solar = synth.abund_table(prefs)
         self.elements = synth.abund_elements(prefs)
+
+    def set_can_fit_stellar(self, ok):
+        """Enable/disable fitting the stellar params. Off for an Individual atmosphere or a
+        picked grid file, where the params are fixed by the file (no grid to interpolate); the
+        stellar switches are then hidden and their flags ignored by ``collect``."""
+        ok = bool(ok)
+        if ok != self.can_fit_stellar:
+            self.can_fit_stellar = ok
+            self.render()
 
     def set_relative(self, rel):
         """Sync the shared relative-abundances flag (owned by SynthPanel); re-render the fit
@@ -143,10 +156,15 @@ class FitTab:
 
     def html(self):
         v = self.vals
+        stellar_note = ("" if self.can_fit_stellar else
+                        '<div class="hint">Fixed by the selected atmosphere &mdash; switch to '
+                        'an interpolated grid to fit these.</div>')
         return (
             self._target_select()
             + '<div class="section-header">Stellar parameters</div>'
-            + "".join(_fit_row(k, lab, float(v[k]), self.flags[k], step)
+            + stellar_note
+            + "".join(_fit_row(k, lab, float(v[k]), self.flags[k], step,
+                               show_switch=self.can_fit_stellar)
                       for k, lab, step in _STELLAR)
             + '<div class="section-header">RV &amp; broadening</div>'
             + "".join(_fit_row(k, lab, float(v[k]), self.flags[k], step)
@@ -225,7 +243,8 @@ class FitTab:
         return {
             "target": self.target,
             "guesses": {k: float(self.vals[k]) for k, *_ in _STELLAR},
-            "fit_stellar": [k for k, *_ in _STELLAR if self.flags[k]],
+            "fit_stellar": ([k for k, *_ in _STELLAR if self.flags[k]]
+                            if self.can_fit_stellar else []),
             "abund_fits": {el: float(v) for el, v in self.abund_rows.items()},
             "fit_post": {POST_ENGINE[k]: float(self.vals[k]) for k, *_ in _POST
                          if self.flags[k]},

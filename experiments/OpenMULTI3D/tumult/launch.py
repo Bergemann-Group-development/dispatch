@@ -40,6 +40,19 @@ def prepare_input(nml_settings, default):
 
     return input_data
 
+def run_complete(folder):
+    """Whether ``folder`` holds a finished, reusable dispatch run.
+
+    dispatch.x creates its run directory (and the ``.log`` / ``rank_*`` files) up front and
+    only writes ``abund.txt`` once composition setup has succeeded, so a folder that exists
+    but lacks ``abund.txt`` is a crashed or half-written run. Treating such a folder as a cache
+    hit both crashes the reader (``tumult.read`` needs ``abund.txt``) and poisons the cache —
+    every later synthesis that selects that node reuses the broken folder until the cache is
+    cleared. So the cache must key on this predicate, not on directory existence alone.
+    """
+    return (pathlib.Path(folder) / 'abund.txt').exists()
+
+
 def launch(input_name, nml_settings=None, default=None, overwrite=False, threads=None, cwd=None,
            log_file=None, slurm_script=None, verbose=2, dry=False, run_async=False, runner=None):
     
@@ -54,8 +67,9 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
     datadir = nml.get('io_params', {}).get('datadir', 'data').strip()
     output_folder = pathlib.Path(datadir) / input_path
 
-    # Check for existing data
-    if output_folder.exists() and not overwrite:
+    # Check for existing data. Only a complete run counts as a cache hit; a partial folder
+    # from a crashed run is re-run (dispatch overwrites its outputs) rather than served back.
+    if output_folder.exists() and run_complete(output_folder) and not overwrite:
         if verbose > 0:
             print(f"{output_folder} already exists")
         return output_folder, False

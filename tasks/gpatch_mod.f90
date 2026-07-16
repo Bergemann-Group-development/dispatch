@@ -476,7 +476,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   !-----------------------------------------------------------------------------
   ! Low noise case for log-file based validation
   !-----------------------------------------------------------------------------
-  if (io_unit%do_validate) then
+  if (io_unit%do_validate .and. associated(self%mem)) then
     it0 = max(self%nt-2, 1)
     it1 = max(self%nt-1, 1)
     it0 = self%iit(it0)

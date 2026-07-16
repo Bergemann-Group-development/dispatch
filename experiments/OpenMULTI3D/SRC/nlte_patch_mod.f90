@@ -67,8 +67,6 @@ MODULE nlte_patch_mod
     procedure :: save_abundance_to_file
     procedure :: save_convergence_report
     !procedure :: load_mem
-    procedure :: allocate_mem
-    procedure :: deallocate_mem
     procedure :: check_mem_NaN
   end type nlte_patch_t
 
@@ -1135,24 +1133,6 @@ contains
       close(lunit)
     endif
   END SUBROUTINE save_abundance_to_file
-
-  !===============================================================================
-  SUBROUTINE allocate_mem(self, m_in)
-    class(nlte_patch_t) :: self
-    integer, intent(in), optional :: m_in(6)
-    integer :: i, m(4), nl
-    ! ----------------------------------------------------------------------------
-    ! This patch has no memory data to be allocated. Everything is in atom%data.
-    return
-  END SUBROUTINE allocate_mem
-
-  !===============================================================================
-  SUBROUTINE deallocate_mem(self)
-    class(nlte_patch_t) :: self
-    integer :: i
-    ! ----------------------------------------------------------------------------
-    return
-  END SUBROUTINE deallocate_mem
 
   !===============================================================================
   SUBROUTINE check_mem_NaN (self)

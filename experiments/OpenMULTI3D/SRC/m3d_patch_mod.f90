@@ -37,6 +37,7 @@ MODULE m3d_patch_mod
     USE ion_mod, only: ion_type, particle_type
     USE linelist_mod, only: linelist_type, print_ll_particle, print_ll_atom
     USE molecule_mod, only: molec_type
+    USE optab_mod, only: sample_optab_type
     USE, intrinsic :: ieee_arithmetic
     implicit none
     private
@@ -54,6 +55,14 @@ MODULE m3d_patch_mod
       type(composition_type), pointer :: composition => null()
       type(composition_type), pointer :: tab_comp => null()
       type(composition_type), pointer :: rotated_composition(:) => null()
+      ! Sampled background-opacity tables, owned by the composition patch and
+      ! shared by all its rt_patches.  Everything a table's content depends on is
+      ! a function of i_nu alone (the spectrum, the fs:fe slice, include_absmet),
+      ! so i_nu is the key; the rt_patches that differ only in i_mu would
+      ! otherwise each fill a byte-identical copy.  One lock per table lets
+      ! different i_nu build concurrently while twins wait for the first builder.
+      type(sample_optab_type), pointer :: opac_tables(:) => null()   ! indexed by i_nu
+      type(lock_t),            pointer :: opac_locks(:)  => null()   ! same bounds
       class(atomic_spectrum_type), pointer :: sp => null()
       type(atom_type), dimension(:), pointer :: atoms => null()
       class(key_link_t), pointer :: key_list => null()
@@ -73,6 +82,10 @@ MODULE m3d_patch_mod
       logical :: has_atom=.false.
       integer :: i_nu=0, i_mu=0
       integer :: i_ne=1, i_rho=2, i_temp=3, i_vx=4, i_vy=5, i_vz=6
+      ! remaining atmos-save slots: chi500, vmic, then the ln(T)/ln(Pe) gradients
+      integer :: i_chi500=7, i_vmic=8
+      integer :: i_dlnt_x=9, i_dlnt_y=10, i_dlnt_z=11
+      integer :: i_dlnpe_x=12, i_dlnpe_y=13, i_dlnpe_z=14
       integer :: i_chi=1, i_eta=2, i_snu=2
       integer :: i_Gij=1, i_Gji=2
       integer :: i_Inu=1
@@ -104,6 +117,7 @@ MODULE m3d_patch_mod
       procedure :: distance_to
       procedure :: nbors_finished
       procedure :: skip_iterations
+      procedure :: comp_ptr
       procedure :: allocate_mem
       procedure :: check_mem_NaN
       procedure :: check_access
@@ -980,12 +994,32 @@ MODULE m3d_patch_mod
   END FUNCTION distance_to
 
   !===============================================================================
+  !> The composition of the i-th rotated copy of the atmosphere.  i=1 is the
+  !> unrotated one, held in self%composition; the rest resample the cube along
+  !> their own ray direction and live in self%rotated_composition.
+  !===============================================================================
+  FUNCTION comp_ptr (self, i) RESULT (comp)
+    class(m3d_patch_t), target :: self
+    integer, intent(in) :: i
+    class(composition_type), pointer :: comp
+    !-----------------------------------------------------------------------------
+    if (i == 1) then
+      comp => self%composition
+    else
+      comp => self%rotated_composition(i-1)
+    endif
+  END FUNCTION comp_ptr
+
+  !===============================================================================
   SUBROUTINE allocate_mem (self, m_in)
     class(m3d_patch_t):: self
     integer, intent(in), optional :: m_in(6)
     integer :: m(6), li(3), ui(3)
     integer, save :: itimer=0
     !-----------------------------------------------------------------------------
+    ! nv=0 marks a memory-less patch (composition, nlte): its state lives in the
+    ! composition objects and in atom%data, and mem stays null
+    if (self%nv == 0) return
     if (.not. associated(self%mem)) then
       call trace%begin ('m3d_patch_t%allocate_mem', itimer=itimer)
       if (present(m_in)) then

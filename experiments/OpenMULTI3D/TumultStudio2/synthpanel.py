@@ -109,6 +109,7 @@ class SynthPanel(RangeSelect):
             notify=self.notify,
             on_mode_change=self.atoms.show,          # reveal the atom selector only for NLTE
             on_base_change=self._on_base_change,     # keep the Fit tab's rows in sync
+            on_atmos_change=self._sync_fit_stellar,  # hide stellar switches for a fixed atmosphere
             grid_section="synthesis",
             form_names={"run": "synth", "base": "synthabund", "mode": "synthmode"})
 
@@ -120,6 +121,7 @@ class SynthPanel(RangeSelect):
         self.fit.set_catalog(prefs)
         self.fit.set_relative(bool(self.setup.base_form.value("relative_abundances")))
         self.fit.targets = [(o.uid, o.name) for o in self.canvas.objects]
+        self._sync_fit_stellar()   # seed the stellar-fit switches for the current atmosphere
 
     # --- the composed setup, exposed under the panel's historical API -------------------
     @property
@@ -204,10 +206,17 @@ class SynthPanel(RangeSelect):
         if self.missing:
             self.notify(f"Cannot fit — missing files: {', '.join(self.missing)}. Check Preferences.")
             return
-        grid = self.selected_grid()
+        # A registered grid (interpolated) or a single fixed atmosphere file (Individual /
+        # picked grid member). The fixed-file case fits abundances + broadening only — the Fit
+        # tab already hides the stellar switches, so ``fit_stellar`` comes back empty.
+        grid = self.setup.active_grid()
         if grid is None:
-            self.notify("Fitting needs a registered atmosphere grid — select one "
-                        "(Individual atmosphere can't be fit).")
+            self.notify("No atmosphere grid — register one in Preferences → Synthesis, or "
+                        "choose 'Individual atmosphere' in the Setup tab.")
+            return
+        atmos_file = self.setup.atmos_file()
+        if self.setup.show_file() and not atmos_file:
+            self.notify("Pick an atmosphere file in the Setup tab to fit against it.")
             return
         c = fittab.collect()
         obj = self.canvas._find(c["target"]) if c["target"] else None
@@ -254,7 +263,7 @@ class SynthPanel(RangeSelect):
             name,
             lambda token=None: synth.fit(target, prefs, run_vals, c["fit_stellar"],
                                          c["abund_fits"], c["fit_post"], xmin, xmax,
-                                         grid=grid, cancel_token=token),
+                                         grid=grid, atmos_file=atmos_file, cancel_token=token),
             on_done)
 
     # --- run cache --------------------------------------------------------
@@ -328,6 +337,12 @@ class SynthPanel(RangeSelect):
         Fit tab's per-element row display in the same convention."""
         if key == "relative_abundances":
             self.fit.set_relative(bool(value))
+
+    def _sync_fit_stellar(self):
+        """Stellar params can only be fit by interpolating a grid; when the atmosphere is a
+        concrete file (Individual, or a picked grid member) the Fit tab hides those switches."""
+        if hasattr(self, "fit"):
+            self.fit.set_can_fit_stellar(not self.setup.show_file())
 
     def _save_pref(self, key, value):
         store.update_pref("synthesis", key, value)

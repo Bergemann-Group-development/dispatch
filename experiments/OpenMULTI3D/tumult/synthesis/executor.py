@@ -14,6 +14,7 @@ from pathlib import Path
 
 import tumult as tm
 from tumult.auxfuncs import update_dict
+from tumult.launch import run_complete
 
 from .cancel import CancelledError, _init_pool_worker
 
@@ -21,9 +22,10 @@ from .cancel import CancelledError, _init_pool_worker
 def _run_single(key, nml_name, nml, launch_kwargs):
     """Picklable worker: launch one job and return (key, run_or_None)."""
     out, ok = tm.launch(nml_name, nml, **launch_kwargs)
-    if not ok:
-        if out.exists():
-            return key, tm.read(out)  # run already completed, just read it
+    # launch returns ok=False when it served an existing cache hit; either way the run is only
+    # usable if it actually finished (wrote abund.txt). A crashed run leaves a partial folder —
+    # report it as failed (-> a clear "Runs failed" error) instead of crashing the reader.
+    if not run_complete(out):
         print(f'Run {nml_name} failed!')
         return key, None
     return key, tm.read(out)
@@ -68,7 +70,8 @@ def _run_batch(jobs, launch_kwargs, max_threads, cancel_token=None):
     results = {}
     todo = []
     for key, nml_name, nml in jobs:
-        if _output_folder(nml_name, nml).exists() and not launch_kwargs.get('overwrite', False):
+        if (run_complete(_output_folder(nml_name, nml))
+                and not launch_kwargs.get('overwrite', False)):
             results[key] = _run_single(key, nml_name, nml,
                                        dict(launch_kwargs, threads=1))[1]
         else:
