@@ -110,14 +110,19 @@ class LineList(pd.DataFrame):
 
         while len(lines) > 0:
             header = lines.pop(0).strip()
-            # species is the first single-quoted field ("'Fe I'"), optionally followed by
-            # a label; split on the quote so the ion stage that .split()[0] dropped is kept
-            species = header.split("'")[1].strip() if "'" in header else header.split()[0].strip()
-            line = lines.pop(0).strip()
-            iso_id, nlines = split_words(line)
-            iso = int(iso_id.strip("'").split('.')[-1])
-            nlines = int(nlines)
-            table = ''.join(lines[:nlines])
+            
+            try:
+              # species is the first single-quoted field ("'Fe I'"), optionally followed by
+              # a label; split on the quote so the ion stage that .split()[0] dropped is kept
+              species = header.split("'")[1].strip() if "'" in header else header.split()[0].strip()
+              line = lines.pop(0).strip()
+              iso_id, nlines = split_words(line)
+              iso = int(iso_id.strip("'").split('.')[-1])
+              nlines = int(nlines)
+              table = ''.join(lines[:nlines])
+            except Exception as e:
+              print(f"Error parsing line list header in {filename}: {header}")
+              raise e
 
             try:
               df = pd.read_csv(StringIO(table), header=None, sep=r'\s+', quotechar="'", usecols=usecols)
