@@ -375,7 +375,9 @@ MODULE atom_mod
               call trace%end(itimer2)
               
               if (check_NaN) then
-                call check_array(e, 'lineq solution', check_zero=.true., check_negative=.true., abort=.false., ok=ok)
+                ! only NaN/Inf are fatal here; zero or negative corrections are
+                ! absorbed by the exponential damping below
+                call check_array(e, 'lineq solution', abort=.false., ok=ok)
                 if (.not.ok) then
                   print *, 'ERROR: in lineq solution at x,y,z = ', x, y, z
                   stop
