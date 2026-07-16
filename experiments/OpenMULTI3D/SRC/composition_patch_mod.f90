@@ -59,6 +59,7 @@ MODULE composition_patch_mod
   
   real(8), public :: FeH=-99.9, dtemp=250., ldne=0.25, ldrho=0.25, ldtemp=0.1
   logical, public :: save_atmos=.true., save_eos=.false.
+  logical, public :: pca_opac=.true.       ! .false. -> axis-aligned (lnT,lnNe) sampling grid
   real(4), public, dimension(:), allocatable :: external_abund
   real(4), public :: alpha_enhancement=0.0, r_process_enhancement=0.0
   character(len=256), save :: save_species=''
@@ -87,7 +88,7 @@ SUBROUTINE read_composition_params ()
   ref_lam, debug_opac, abundances, relative_abundances, alpha_enhancement, r_process_enhancement, &
   disable_ga, disable_stark, disable_vdw, helium_scattering, sample_linelist, hydrogen_BPO, &
   hydrogen_vcs_table, vcs_data_dir, &
-  ga_fallback, eosmet, scattering_absorption
+  ga_fallback, eosmet, scattering_absorption, pca_opac
   namelist /linelist_params/ dlam, exclude_elements, linelist_file, linelist_folder, &
   linelist_in_output, tolerance, only_elements, use_new_linelist
   ! ----------------------------------------------------------------------------
@@ -429,7 +430,8 @@ SUBROUTINE init_tabulated_comp (self, temp, ne, ldtemp, ldne)
     ! ---- PCA-rotated (T, ne) node grid, one node past the data hull; the
     ! transform is written straight into tab_comp%pca so the table fill can
     ! capture the axis metadata -------------------------------------------------
-    call pca_opac_grid(temp, ne, ldtemp, ldne, 1, tab_temp, tab_ne, self%tab_comp%pca, n1, n2)
+    call pca_opac_grid(temp, ne, ldtemp, ldne, 1, tab_temp, tab_ne, self%tab_comp%pca, n1, n2, &
+                       use_pca=pca_opac)
 
     allocate(tab_rho (n1, n2, 1))
     allocate(tab_vmic(n1, n2, 1))
