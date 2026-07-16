@@ -10,6 +10,7 @@ MODULE read_atmos_mod
   USE m3d_patch_mod, only: pivot_z, ray_offset, composition, use_ne, use_rho, make_eos
   USE ray_mod, only: one_dimensional, rstar, rorigin
   USE composition_mod, only: composition_type
+  USE units_mod, only: cgs
   implicit none
   private
 
@@ -22,9 +23,15 @@ MODULE read_atmos_mod
     real(4), dimension(:,:,:), allocatable :: vx, vy, vz, vmic
     real(4), dimension(:),     allocatable :: xx, yy, zz
     real(8), dimension(:),     allocatable :: sub_pos, sub_size
+    ! The snapshot is shared by every patch on this rank, and each interpolates
+    ! from it exactly once.  Patches announce themselves with acquire(), and the
+    ! last one to release() frees it.
+    integer :: n_users=0
   contains
     procedure :: allocate   => allocate_input_atmos
     procedure :: deallocate => deallocate_input_atmos
+    procedure :: acquire    => acquire_input_atmos
+    procedure :: release    => release_input_atmos
     procedure :: scale_box
     procedure :: thick2thin
     procedure :: setup_amr_mesh
@@ -682,6 +689,31 @@ contains
   END SUBROUTINE deallocate_input_atmos
 
   !===============================================================================
+  !> Announce one more patch that will interpolate from the snapshot.
+  !===============================================================================
+  SUBROUTINE acquire_input_atmos(self)
+    class(input_atmos_t), intent(inout) :: self
+    !-----------------------------------------------------------------------------
+    !$omp atomic
+    self%n_users = self%n_users + 1
+  END SUBROUTINE acquire_input_atmos
+
+  !===============================================================================
+  !> Give up this patch's claim on the snapshot; the last one out frees it.  When
+  !> no snapshot was read at all (atmos_format=='save'), deallocate is a no-op.
+  !===============================================================================
+  SUBROUTINE release_input_atmos(self)
+    class(input_atmos_t), intent(inout) :: self
+    logical :: last
+    !-----------------------------------------------------------------------------
+    !$omp critical (input_atmos_cr)
+    self%n_users = self%n_users - 1
+    last = self%n_users == 0
+    if (last) call self%deallocate()
+    !$omp end critical (input_atmos_cr)
+  END SUBROUTINE release_input_atmos
+
+  !===============================================================================
   SUBROUTINE scale_box(self, box, scale)
     class(input_atmos_t), intent(inout) :: self
     real(8), intent(out) :: box(3)
@@ -853,20 +885,52 @@ contains
   END SUBROUTINE setup_amr_mesh
 
   !===============================================================================
-  SUBROUTINE interpolate_atmos(n, sub, pos, rho, px, py, pz, temp, pe, vmic, vec, bot2pivot)
+  !=============================================================================
+  !> Interpolate the input snapshot onto a patch mesh, in the units and variables
+  !> the composition expects: temperature, electron density, mass density, the
+  !> three velocity components in units of c, and the microturbulence.  The
+  !> electron pressure that the readers store in ia%lpe is a scratch quantity
+  !> here -- it is interpolated, then inverted to n_e and dropped.
+  !>
+  !> The optional dln*_d* arguments return the partial derivatives of ln(T) and
+  !> ln(Pe) evaluated on the PCHIP interpolant of the snapshot, per code length
+  !> unit; for a rotated call (vec present) the z-derivative is the along-ray
+  !> derivative parameterized by z, and the horizontal partials are unavailable.
+  !> With use_ne=.false. there is no Pe field, and the lnPe outputs are zeroed --
+  !> the caller is expected to rebuild them from n_e*k_B*T after the thermal
+  !> equilibrium is solved.
+  !=============================================================================
+  SUBROUTINE interpolate_atmos(n, sub, pos, temp, ne, rho, vx, vy, vz, vmic, vec, bot2pivot, &
+                               dlnt_dx, dlnt_dy, dlnt_dz, dlnpe_dx, dlnpe_dy, dlnpe_dz)
     integer, intent(in) :: n(3)
     real(8), intent(in) :: sub(3), pos(3)
-    real(4), intent(out), dimension(:,:,:) :: rho, px, py, pz, temp, pe, vmic
+    real(4), intent(out), dimension(:,:,:) :: temp, ne, rho, vx, vy, vz, vmic
+    real(4), intent(out), dimension(:,:,:), optional :: dlnt_dx, dlnt_dy, dlnt_dz
+    real(4), intent(out), dimension(:,:,:), optional :: dlnpe_dx, dlnpe_dy, dlnpe_dz
     real(4), dimension(:,:,:), pointer, contiguous :: rho_in, pe_in, temp_in
+    real(4), dimension(:,:,:), allocatable :: pe
     real(8), intent(in), optional :: vec(3), bot2pivot
     real(4), dimension(:), allocatable :: newz
     real(8) :: lower(3), ds(3)
     real(8) :: dx, dy, dz
     integer :: i, ijk(3), nx, ny, nz, itimer=0
-    logical :: do_pchip
+    logical :: do_pchip, get_grad_t, get_grad_pe
     !-----------------------------------------------------------------------------
     call trace%begin('interpolate_atmos', itimer=itimer)
     nx = n(1); ny = n(2); nz = n(3)
+    allocate(pe(nx,ny,nz))
+    get_grad_t  = present(dlnt_dz)
+    get_grad_pe = present(dlnpe_dz) .and. use_ne
+    if (present(dlnt_dx))  dlnt_dx  = 0.
+    if (present(dlnt_dy))  dlnt_dy  = 0.
+    if (present(dlnt_dz))  dlnt_dz  = 0.
+    if (present(dlnpe_dx)) dlnpe_dx = 0.
+    if (present(dlnpe_dy)) dlnpe_dy = 0.
+    if (present(dlnpe_dz)) dlnpe_dz = 0.
+    ! with use_ne=.false. pe is never interpolated, and we hand composition ne=0,
+    ! which is its signal to build a charge-neutrality initial guess for
+    ! iterate_thermal_eq rather than trusting the value
+    if (.not. use_ne) pe = 0
 
     ds = sub / n
     lower = pos - 0.5d0*sub
@@ -891,9 +955,9 @@ contains
       rho  = ia%lrho
       pe   = ia%lpe
       vmic = ia%vmic
-      px = 0
-      py = 0
-      pz = 0
+      vx = 0
+      vy = 0
+      vz = 0
     elseif (one_dimensional) then
       if (.false.) then ! set to true for debugging original atmosphere points
         temp(1,1,:) = temp_in(1,1,1:nz)
@@ -902,32 +966,42 @@ contains
         vmic(1,1,:) = ia%vmic(1,1,1:nz)
       else
         if (use_rho) call pchip_mono4(ia%zz, rho_in(1,1,:), newz, rho (1,1,:), sorted=.true.)
-        if (use_ne)  call pchip_mono4(ia%zz, pe_in (1,1,:), newz, pe  (1,1,:), sorted=.true.)
-        call pchip_mono4(ia%zz, temp_in(1,1,:), newz, temp(1,1,:), sorted=.true.)
+        if (get_grad_pe) then
+          call pchip_mono4(ia%zz, pe_in (1,1,:), newz, pe  (1,1,:), sorted=.true., newdydx=dlnpe_dz(1,1,:))
+        elseif (use_ne) then
+          call pchip_mono4(ia%zz, pe_in (1,1,:), newz, pe  (1,1,:), sorted=.true.)
+        endif
+        if (get_grad_t) then
+          call pchip_mono4(ia%zz, temp_in(1,1,:), newz, temp(1,1,:), sorted=.true., newdydx=dlnt_dz(1,1,:))
+        else
+          call pchip_mono4(ia%zz, temp_in(1,1,:), newz, temp(1,1,:), sorted=.true.)
+        endif
         call pchip_mono4(ia%zz, ia%vmic(1,1,:), newz, vmic(1,1,:), sorted=.true.)
       endif
-      px = 0
-      py = 0
-      pz = 0
+      vx = 0
+      vy = 0
+      vz = 0
     else
       dx = ia%xx(2)
       dy = ia%yy(2)
 
       if (present(vec)) then
         if (use_rho) call linterpolate_3d_rotated(rho_in,  rho,  dx, dy, ia%zz, lower(1:2), ds(1:2), newz, vec, bot2pivot, pchip=do_pchip)
-        if (use_ne ) call linterpolate_3d_rotated(pe_in,   pe,   dx, dy, ia%zz, lower(1:2), ds(1:2), newz, vec, bot2pivot, pchip=do_pchip)
-        call linterpolate_3d_rotated(temp_in, temp, dx, dy, ia%zz, lower(1:2), ds(1:2), newz, vec, bot2pivot, pchip=do_pchip)
-        call linterpolate_3d_rotated(ia%vx,   px,   dx, dy, ia%zz, lower(1:2), ds(1:2), newz, vec, bot2pivot, pchip=do_pchip)
-        call linterpolate_3d_rotated(ia%vy,   py,   dx, dy, ia%zz, lower(1:2), ds(1:2), newz, vec, bot2pivot, pchip=do_pchip)
-        call linterpolate_3d_rotated(ia%vz,   pz,   dx, dy, ia%zz, lower(1:2), ds(1:2), newz, vec, bot2pivot, pchip=do_pchip)
+        if (use_ne ) call linterpolate_3d_rotated(pe_in,   pe,   dx, dy, ia%zz, lower(1:2), ds(1:2), newz, vec, bot2pivot, pchip=do_pchip, dfdz=dlnpe_dz)
+        call linterpolate_3d_rotated(temp_in, temp, dx, dy, ia%zz, lower(1:2), ds(1:2), newz, vec, bot2pivot, pchip=do_pchip, dfdz=dlnt_dz)
+        call linterpolate_3d_rotated(ia%vx,   vx,   dx, dy, ia%zz, lower(1:2), ds(1:2), newz, vec, bot2pivot, pchip=do_pchip)
+        call linterpolate_3d_rotated(ia%vy,   vy,   dx, dy, ia%zz, lower(1:2), ds(1:2), newz, vec, bot2pivot, pchip=do_pchip)
+        call linterpolate_3d_rotated(ia%vz,   vz,   dx, dy, ia%zz, lower(1:2), ds(1:2), newz, vec, bot2pivot, pchip=do_pchip)
         call linterpolate_3d_rotated(ia%vmic, vmic, dx, dy, ia%zz, lower(1:2), ds(1:2), newz, vec, bot2pivot, pchip=do_pchip)
       else
         if (use_rho) call linterpolate_3d(rho_in,  rho,  dx, dy, ia%zz, lower(1:2), ds(1:2), newz, pchip=do_pchip)
-        if (use_ne ) call linterpolate_3d(pe_in,   pe,   dx, dy, ia%zz, lower(1:2), ds(1:2), newz, pchip=do_pchip)
-        call linterpolate_3d(temp_in, temp, dx, dy, ia%zz, lower(1:2), ds(1:2), newz, pchip=do_pchip)
-        call linterpolate_3d(ia%vx,   px,   dx, dy, ia%zz, lower(1:2), ds(1:2), newz, pchip=do_pchip)
-        call linterpolate_3d(ia%vy,   py,   dx, dy, ia%zz, lower(1:2), ds(1:2), newz, pchip=do_pchip)
-        call linterpolate_3d(ia%vz,   pz,   dx, dy, ia%zz, lower(1:2), ds(1:2), newz, pchip=do_pchip)
+        if (use_ne ) call linterpolate_3d(pe_in,   pe,   dx, dy, ia%zz, lower(1:2), ds(1:2), newz, pchip=do_pchip, &
+                                          dfdx=dlnpe_dx, dfdy=dlnpe_dy, dfdz=dlnpe_dz)
+        call linterpolate_3d(temp_in, temp, dx, dy, ia%zz, lower(1:2), ds(1:2), newz, pchip=do_pchip, &
+                             dfdx=dlnt_dx, dfdy=dlnt_dy, dfdz=dlnt_dz)
+        call linterpolate_3d(ia%vx,   vx,   dx, dy, ia%zz, lower(1:2), ds(1:2), newz, pchip=do_pchip)
+        call linterpolate_3d(ia%vy,   vy,   dx, dy, ia%zz, lower(1:2), ds(1:2), newz, pchip=do_pchip)
+        call linterpolate_3d(ia%vz,   vz,   dx, dy, ia%zz, lower(1:2), ds(1:2), newz, pchip=do_pchip)
         call linterpolate_3d(ia%vmic, vmic, dx, dy, ia%zz, lower(1:2), ds(1:2), newz, pchip=do_pchip)
       endif
     endif
@@ -937,10 +1011,28 @@ contains
       if (use_rho) rho = exp(rho)
       if (use_ne ) pe  = exp(pe)
     else
+      ! the interpolant ran on the linear fields, so its derivatives are dT/d and
+      ! dPe/d -- convert to the logarithmic derivatives the callers expect
+      if (get_grad_t) then
+        if (present(dlnt_dx)) dlnt_dx = dlnt_dx / temp
+        if (present(dlnt_dy)) dlnt_dy = dlnt_dy / temp
+        dlnt_dz = dlnt_dz / temp
+      endif
+      if (get_grad_pe) then
+        if (present(dlnpe_dx)) dlnpe_dx = dlnpe_dx / pe
+        if (present(dlnpe_dy)) dlnpe_dy = dlnpe_dy / pe
+        dlnpe_dz = dlnpe_dz / pe
+      endif
       deallocate(temp_in)
       if (use_rho) deallocate(rho_in)
       if (use_ne)  deallocate(pe_in)
     endif
+
+    ! ---- hand over in the composition's own variables and units ---------------
+    ne = pe / (cgs%k_b * temp)
+    vx = vx / cgs%c
+    vy = vy / cgs%c
+    vz = vz / cgs%c
 
     call trace%end(itimer)
   END SUBROUTINE interpolate_atmos

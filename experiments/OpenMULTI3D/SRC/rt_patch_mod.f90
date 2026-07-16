@@ -10,7 +10,7 @@ MODULE rt_patch_mod
   USE trace_mod
   USE bits_mod
   USE os_mod
-  USE const_mod, only: CC, h_k, twoh_c2, half, one_third, one_sixth, HZ_TO_AA, pi
+  USE const_mod, only: CC, h_k, twoh_c2, half, one_third, one_sixth, one_twelfth, HZ_TO_AA, pi
   USE patch_mod, only: patch_t
   USE mmath_mod, only: cc_kernel
   USE interpol_mod, only: pchip_mono
@@ -44,6 +44,7 @@ MODULE rt_patch_mod
     sample_linelist, sample_back_opac_in_output, use_new_linelist
   USE spectrum_mod, only: spectrum_type
   USE optab_mod, only: sample_optab_type
+  USE omp_lock_mod, only: lock_t
   implicit none
   private
 
@@ -57,7 +58,10 @@ MODULE rt_patch_mod
     type(spectrum_type) :: sub_sp
     real(4), dimension(:,:,:,:,:), allocatable :: Jnu
     real(4), dimension(:,:,:,:), allocatable :: Psi, PsiJ
-    type(sample_optab_type) :: opac
+    ! points into the composition patch's shared table for this i_nu, or, on the
+    ! make_eos path, at a private table (save_opac_table overwrites it in place)
+    type(sample_optab_type), pointer :: opac => null()
+    type(lock_t), pointer :: opac_lock => null()
     real(4), dimension(:), allocatable :: twohnu3_c2
     real(8), dimension(:), pointer :: nu
     integer :: mus, mue, n_set, n_mu, natom
@@ -115,8 +119,8 @@ MODULE rt_patch_mod
     procedure :: long_char_linear
     procedure :: long_char_linear_spherical
     procedure :: long_char_quadratic
-    procedure :: long_char_quadratic2
-    procedure :: long_char_quadratic3
+    procedure :: long_char_hermite
+    procedure :: short_char_hermite
     procedure :: get_vproj
     procedure :: print_post_update_info
     procedure :: nbor_relations => rt_patch_nbor_relations
@@ -136,6 +140,48 @@ MODULE rt_patch_mod
   ! variables, which on macOS/GCC routed every access through emulated TLS
   ! (pthread_getspecific). One thread per patch makes instance/local data both
   ! race-free and TLS-free.
+
+  !-----------------------------------------------------------------------------
+  !> Formal solvers, implemented in the rt_solvers_mod submodule (rt_solvers_mod.f90)
+  interface
+    module subroutine short_char (self, vec)
+      class(rt_patch_t) :: self
+      real(8), intent(in) :: vec(3)
+    end subroutine short_char
+
+    module subroutine long_char_linear_spherical (self, vec)
+      class(rt_patch_t) :: self
+      real(8) :: vec(3)
+    end subroutine long_char_linear_spherical
+
+    module subroutine long_char_linear (self, vec)
+      class(rt_patch_t) :: self
+      real(8) :: vec(3)
+    end subroutine long_char_linear
+
+    pure module subroutine parab_moments (dt, ex, rdt, U0, U1, q)
+      real(8), intent(in)  :: dt, ex, rdt
+      real(8), intent(out) :: U0, U1, q
+    end subroutine parab_moments
+
+    module subroutine long_char_quadratic (self, vec)
+      class(rt_patch_t), target :: self
+      real(8) :: vec(3)
+    end subroutine long_char_quadratic
+
+    module subroutine long_char_hermite (self, comp, vec, comp_up)
+      class(rt_patch_t), target :: self
+      class(composition_type) :: comp
+      class(composition_type), pointer :: comp_up
+      real(8), intent(in) :: vec(3)
+    end subroutine long_char_hermite
+
+    module subroutine short_char_hermite (self, comp, vec)
+      class(rt_patch_t) :: self
+      class(composition_type) :: comp
+      real(8), intent(in) :: vec(3)
+    end subroutine short_char_hermite
+  end interface
 
 contains
 
@@ -325,7 +371,7 @@ contains
           if (i_set /= 2) call self%foreground(comp, i_mu, i_set, do_rotate_atmos, wmu, vproj)
           call self%eta_to_Snu()
           call self%set_upstream_boundary(i_mu, i_set, ng)
-          call self%radiative_transfer(comp, vec, do_rotate_atmos)
+          call self%radiative_transfer(comp, vec, do_rotate_atmos, i_mu)
           call self%set_downstream_boundary(i_mu, i_set)
           if (get_cntrbf) call self%save_contribution_function(i_set, i_mu)
           call self%save_debug_arrays(i_set, i_mu)
@@ -343,7 +389,7 @@ contains
           if (i_set /= 2) call self%foreground(comp, i_mu, i_set, do_rotate_atmos, wmu, vproj)
           call self%eta_to_Snu()
           call self%set_upstream_boundary(i_mu, i_set, ng)
-          call self%radiative_transfer(comp, vec, do_rotate_atmos)
+          call self%radiative_transfer(comp, vec, do_rotate_atmos, i_mu)
           call self%set_downstream_boundary(i_mu, i_set)
           call self%aniso_integrations(comp, i_mu, i_set, do_rotate_atmos, wmu, vproj)
           if (get_cntrbf) call self%save_contribution_function(i_set, i_mu)
@@ -365,7 +411,7 @@ contains
             call self%foreground(comp, i_mu, i_set, do_rotate_atmos, wmu, vproj)
             call self%eta_to_Snu()
             call self%set_upstream_boundary(i_mu, i_set, ng)
-            call self%radiative_transfer(comp, vec, do_rotate_atmos)
+            call self%radiative_transfer(comp, vec, do_rotate_atmos, i_mu)
           endif
           call self%set_downstream_boundary(i_mu, i_set)
           call self%aniso_integrations(comp, i_mu, i_set, do_rotate_atmos, wmu, vproj)
@@ -629,12 +675,26 @@ contains
   END SUBROUTINE foreground
 
   !===============================================================================
-  SUBROUTINE radiative_transfer(self, comp, vec, do_rotate_atmos)
+  SUBROUTINE radiative_transfer(self, comp, vec, do_rotate_atmos, i_mu)
     class(rt_patch_t) :: self
     class(composition_type) :: comp
     real(8), intent(in) :: vec(3)
     logical, intent(in) :: do_rotate_atmos
+    integer, intent(in) :: i_mu
+    class(composition_type), pointer :: comp_up
     !-----------------------------------------------------------------------------
+    ! composition of the real upstream neighbour patch, one plane before self's
+    ! ghost boundary -- used by long_char_hermite in place of a same-patch proxy
+    ! when a genuine neighbour is available (null at a physical domain boundary)
+    comp_up => null()
+    if (associated(self%upstream)) then
+      if (do_rotate_atmos) then
+        comp_up => self%upstream%m3d_parent%rotated_composition(i_mu)
+      else
+        comp_up => self%upstream%m3d_parent%composition
+      endif
+    endif
+
     if (self%do_final) then
       if (.not. (one_dimensional .or. column_by_column .or. do_rotate_atmos)) then
         call self%rotate_array(vec, self%work(:,:,:,1:self%nz,1:2))
@@ -649,12 +709,15 @@ contains
         !endif
         case('quadratic')
         call self%long_char_quadratic(vec)
-        case('quadratic2')
-        call self%long_char_quadratic2(vec)
-        case('quadratic3')
-        call self%long_char_quadratic3(comp, vec)
+        case('hermite')
+        ! the chain rule needs the composition gradients along the ray; in 3D
+        ! that means ray-aligned (rotated) compositions -- the rotate_array
+        ! shortcut above rotates only chi/Snu, not the thermodynamic state
+        if (.not. (one_dimensional .or. column_by_column .or. do_rotate_atmos)) &
+          stop "long_solver='hermite' in 3D requires rotate_atmos=.true."
+        call self%long_char_hermite(comp, vec, comp_up)
         case default
-        stop 'Unknown long_solver, use "linear" or "quadratic"'
+        stop 'Unknown long_solver, use "linear", "quadratic" or "hermite"'
       end select
     else
       if (one_dimensional .or. column_by_column) then
@@ -663,11 +726,20 @@ contains
             call self%long_char_linear(vec)
           case('quadratic')
             call self%long_char_quadratic(vec)
+          case('hermite')
+            call self%long_char_hermite(comp, vec, comp_up)
           case default
-            stop 'Unknown short_solver, use "linear" or "quadratic"'
+            stop 'Unknown short_solver, use "linear", "quadratic" or "hermite"'
         end select
       else
-        call self%short_char(vec)
+        select case(short_solver)
+          case('linear', 'quadratic')
+            call self%short_char(vec)
+          case('hermite')
+            call self%short_char_hermite(comp, vec)
+          case default
+            stop 'Unknown short_solver, use "linear", "quadratic" or "hermite"'
+        end select
       endif
     endif
   END SUBROUTINE radiative_transfer
@@ -791,18 +863,37 @@ contains
       end do
     end do
 
-    if (.not. self%opac%initialised) then
-      if (do_make_eos) then
-        call self%generate_opacity_table(self%sub_sp, include_absmet, comp%ll_initialised, &
-          build_deriv=.false.)
-      elseif (do_sample_opac) then
-        if (include_absmet .or. sample_linelist) then
-          tab_sp = self%sub_sp
+    ! A table's content depends on i_nu alone, so the rt_patches that differ only
+    ! in i_mu share the one the composition patch holds for this i_nu: the first
+    ! of them to get here fills it while the others wait on its lock.  The
+    ! make_eos path keeps a private table, since save_opac_table overwrites it.
+    if (do_make_eos .or. do_sample_opac) then
+      if (.not. associated(self%opac)) then
+        if (do_make_eos .or. .not. associated(self%m3d_parent%opac_tables)) then
+          allocate(self%opac)
         else
-          call comp%get_table_sp(self%sub_sp, tab_sp)
+          self%opac      => self%m3d_parent%opac_tables(self%i_nu)
+          self%opac_lock => self%m3d_parent%opac_locks (self%i_nu)
         endif
-        call self%generate_opacity_table(tab_sp, include_absmet, include_llist=sample_linelist, &
-          build_deriv=.true.)
+      endif
+
+      if (.not. self%opac%initialised) then
+        if (associated(self%opac_lock)) call self%opac_lock%set('opac_table')
+        if (.not. self%opac%initialised) then     ! a twin may have filled it meanwhile
+          if (do_make_eos) then
+            call self%generate_opacity_table(self%sub_sp, include_absmet, comp%ll_initialised, &
+              build_deriv=.false.)
+          else
+            if (include_absmet .or. sample_linelist) then
+              tab_sp = self%sub_sp
+            else
+              call comp%get_table_sp(self%sub_sp, tab_sp)
+            endif
+            call self%generate_opacity_table(tab_sp, include_absmet, include_llist=sample_linelist, &
+              build_deriv=.true.)
+          endif
+        endif
+        if (associated(self%opac_lock)) call self%opac_lock%unset('opac_table')
       endif
     endif
 
@@ -1967,732 +2058,25 @@ contains
   END SUBROUTINE set_fixed_Jnu
 
   !===============================================================================
-  SUBROUTINE short_char (self, vec)
-    class(rt_patch_t) :: self
-    type(ray_type) :: ray, amr_ray
-    real(8), intent(in) :: vec(3)
-    real(4) :: Inuup, xxup, ssup, xxmin, ssmin, Inumin
-    real(4) :: dsup1, dsup2, dsup05, xx, ss, Inu, u0, Psi, kx, ky
-    real(8) :: ds(3), dt, ex ! important
-    real(4), dimension(4), target :: xkernel1, ykernel1, xkernel2, ykernel2
-    real(4), dimension(:), pointer, contiguous :: xkern, ykern
-    real(4), dimension(:,:), allocatable :: work_up, work_min
-    real(4), dimension(:,:,:,:), allocatable :: row_red
-    integer :: xup_t(4,self%nx), yup_t(4,self%ny)
-    integer :: zs, ze, xup, yup, zup, x1, y1, i, ii, jj, upo1, upo2
-    logical :: inner, amr_boundary, rebuild_tables, get_rates
-    integer, save :: itimer=0
-    integer :: x, y, z, f
-    !-----------------------------------------------------------------------------
-    call trace%begin('rt_patch%short_char', itimer=itimer)
-    allocate(work_up(self%fs:self%fe,3))
-    allocate(work_min(self%fs:self%fe,3))
-    allocate(row_red(self%fs:self%fe, 3, self%nx, self%ny))
-    get_rates = any(self%get_rates)
-
-    zs = merge(1, self%nz, self%dir > 0)
-    ze = merge(self%nz, 1, self%dir > 0)
-
-    call ray%set_stencil(self%ds * scaling%l, vec)
-    xkernel1 = real(ray%xkern)
-    ykernel1 = real(ray%ykern)
-    dsup1 = 0.5*real(ray%dsup)
-
-    amr_boundary = amr/='' .and. self%dir < 0
-    if (amr_boundary) then
-      ds = self%ds
-      if (associated(self%upstream)) ds = self%upstream%ds
-      call amr_ray%set_stencil(ds * scaling%l, vec)
-      xkernel2 = real(amr_ray%xkern)
-      ykernel2 = real(amr_ray%ykern)
-      dsup2 = 0.5*real(amr_ray%dsup)
-    endif
-
-    rebuild_tables = .true.
-    do z=zs, ze, self%dir
-      zup = z - self%dir
-
-      if (amr_boundary .and. z==zs) then
-        xkern => xkernel2
-        ykern => ykernel2
-        dsup05 = dsup2
-        upo1 = amr_ray%upo1 - 2
-        upo2 = amr_ray%upo2 - 2
-      else
-        xkern => xkernel1
-        ykern => ykernel1
-        dsup05 = dsup1
-        upo1 = ray%upo1 - 2
-        upo2 = ray%upo2 - 2
-      endif
-
-      if (rebuild_tables) then
-        do x=1,self%nx; do ii=1,4
-          xup_t(ii,x) = modulo(ii + x + upo1, self%nx) + 1
-        end do; end do
-        do y=1,self%ny; do jj=1,4
-          yup_t(jj,y) = modulo(jj + y + upo2, self%ny) + 1
-        end do; end do
-        rebuild_tables = amr_boundary .and. z==zs
-      endif
-
-      !--- ROW PASS: x-reduce the whole upstream plane ----------------------------
-      row_red = 0.0
-      do yup = 1, self%ny
-        do x = 1, self%nx
-          do ii = 1, 4
-            xup = xup_t(ii,x)
-            kx = xkern(ii)
-            do i=1, 3
-              do f = self%fs, self%fe
-                row_red(f,i,x,yup) = row_red(f,i,x,yup) + kx*self%work(f,xup,yup,zup,i)
-              end do
-            end do
-          end do
-        end do
-      end do
-
-      do y=1, self%ny
-        do x=1, self%nx
-          work_up = 0.0
-          work_min = huge(1.0)
-
-          ! 4x4 kernel sum
-          do jj=1,4
-            yup = yup_t(jj,y)
-            ky = ykern(jj)
-            do i=1, 3
-              do f=self%fs,self%fe
-                work_up(f,i) = work_up(f,i) + ky*row_red(f,i,x,yup)
-              end do
-            end do
-          end do
-
-          ! 2x2 min over the inner cells
-          do jj=2,3
-            do ii=2,3
-              xup = xup_t(ii,x)
-              yup = yup_t(jj,y)
-              do i=1, 3
-                do f=self%fs,self%fe
-                  work_min(f,i) = min(work_min(f,i), self%work(f,xup,yup,zup,i))
-                end do
-              end do
-            end do
-          end do
-
-          work_up = max(work_up, work_min)
-
-          do f=self%fs, self%fe
-            xx = self%work(f,x,y,z,1)
-            ss = self%work(f,x,y,z,2)
-            xxup  = work_up(f,1)
-            ssup  = work_up(f,2)
-            Inuup = work_up(f,3)
-
-            dt = dsup05 * ( xxup + xx ) ! upwind optical pathlength
-            if (dt < 80) then
-              ex = exp(-dt)
-              if ( dt > 1d-3 ) then
-                u0 = 1 - ex
-                Psi = 1 - u0 / dt
-              else
-                Psi = dt * (0.5 - 0.16666667*dt)
-                u0 = dt * (1 - Psi)
-              endif
-
-              Inu = Inuup*ex + (u0 - Psi)*ssup + Psi*ss
-            else
-              !ex = 0
-              u0 = 1 / dt
-              Psi = 1 - u0
-              Inu = u0*ssup + Psi*ss
-            endif
-
-            self%work(f,x,y,z,3) = Inu
-            if (get_rates) self%Psi(f,x,y,z) = Psi / self%work(f,x,y,z,1)
-          end do ! f-loop
-        end do
-      end do
-    end do ! z-loop
-    call trace%end(itimer)
-  END SUBROUTINE short_char
-
-  !===============================================================================
-  SUBROUTINE long_char_linear_spherical (self, vec)
-    class(rt_patch_t) :: self
-    real(8) :: vec(3)
-    real(4) :: ds, Inuup, xxup, ssup, dsup05, dsup1, dsup2, xx, ss, Inu, u0, Psi
-    real(8) :: dt, ex ! important
-    real(4) :: mu, p, lower, ds1, ds2, r1, r2, s1, s2
-    integer :: dx, dy, zs, ze, zup
-    logical :: amr_boundary
-    integer, save :: itimer=0
-    integer :: x, y, z, f
-    !-----------------------------------------------------------------------------
-    call trace%begin('rt_patch%long_char_linear_spherical', itimer=itimer)
-
-    p = rstar * sqrt(1.d0 - vec(3)**2) ! impact parameter
-    lower = (self%position(3) - 0.5*self%size(3))*scaling%l + rorigin
-    ds1 = self%ds(3) * scaling%l
-
-    amr_boundary = amr/='' .and. self%dir < 0 .and. associated(self%upstream)
-    if (amr_boundary) then
-      ds2 = self%upstream%ds(3) * scaling%l
-    endif
-
-    zs = merge(1, self%nz, self%dir > 0)
-    ze = merge(self%nz, 1, self%dir > 0)
-
-    do z=zs, ze, self%dir
-      zup = z - self%dir
-      r2 = lower + z*ds1
-
-      if (amr_boundary) then
-        r1 = r2 - self%dir*ds2
-        amr_boundary = .false.
-      else
-        r1 = r2 - self%dir*ds1
-      endif
-
-      if (r2 < p .or. r1 < p) then
-        self%work(:,:,:,z,3) = 0
-        cycle
-      endif
-
-      s1 = sqrt(r1**2 - p**2)
-      s2 = sqrt(r2**2 - p**2)
-      dsup05 = 0.5d0 * abs(s2-s1)
-
-      do y=1, self%ny
-        do x=1, self%nx
-          do f=self%fs, self%fe
-            xxup = self%work(f,x,y,zup,1)
-            ssup = self%work(f,x,y,zup,2)
-            xx = self%work(f,x,y,z,1)
-            ss = self%work(f,x,y,z,2)
-            dt = dsup05 * ( xxup + xx ) ! upwind optical pathlength
-            dt = max(dt, 0.d0)
-            if (dt < 80) then
-              Inuup = self%work(f,x,y,zup,3)
-              ex = exp(-dt)
-              if ( dt > 1d-3 ) then
-                u0 = 1 - ex
-                Psi = 1 - u0 / dt
-              else
-                Psi = dt * (0.5 - 0.16666667*dt)
-                u0 = dt * (1 - Psi)
-              endif
-
-              Inu = Inuup*ex + (u0 - Psi)*ssup + Psi*ss
-            else
-              !ex = 0
-              u0 = 1 / dt
-              Psi = 1 - u0
-              Inu = u0*ssup + Psi*ss
-            endif
-
-            self%work(f,x,y,z,3) = Inu
-            if (any(self%get_rates)) then
-              self%Psi(f,x,y,z) = Psi / xx
-            endif
-          end do ! f-loop
-        end do
-      end do
-    end do ! z-loop
-    call trace%end(itimer)
-  END SUBROUTINE long_char_linear_spherical
-
-  !===============================================================================
-  SUBROUTINE long_char_linear (self, vec)
-    class(rt_patch_t) :: self
-    real(8) :: vec(3)
-    real(4) :: ds, Inuup, xxup, ssup, dsup05, dsup1, dsup2, xx, ss, Inu, u0, Psi
-    real(8) :: dt, ex ! important
-    integer :: dx, dy, zs, ze, zup
-    logical :: amr_boundary
-    integer, save :: itimer=0
-    integer :: x, y, z, f
-    !-----------------------------------------------------------------------------
-    call trace%begin('rt_patch%long_char_linear', itimer=itimer)
-
-    ds = self%ds(3) * scaling%l
-    dsup1 = 0.5*ds/abs(vec(3))
-
-    amr_boundary = amr/='' .and. self%dir < 0
-    if (amr_boundary) then
-      if (associated(self%upstream)) ds = self%upstream%ds(3) * scaling%l
-      dsup2 = 0.5*ds/abs(vec(3))
-    endif
-
-    zs = merge(1, self%nz, self%dir > 0)
-    ze = merge(self%nz, 1, self%dir > 0)
-
-    do z=zs, ze, self%dir
-      zup = z - self%dir
-
-      if (amr_boundary) then
-        dsup05 = dsup2
-        amr_boundary = .false.
-      else
-        dsup05 = dsup1
-      endif
-
-      do y=1, self%ny
-        do x=1, self%nx
-          do f=self%fs, self%fe
-            xxup = self%work(f,x,y,zup,1)
-            ssup = self%work(f,x,y,zup,2)
-            xx = self%work(f,x,y,z,1)
-            ss = self%work(f,x,y,z,2)
-            dt = dsup05 * ( xxup + xx ) ! upwind optical pathlength
-            dt = max(dt, 0.d0)
-            if (dt < 80) then
-              Inuup = self%work(f,x,y,zup,3)
-              ex = exp(-dt)
-              if ( dt > 1d-3 ) then
-                u0 = 1 - ex
-                Psi = 1 - u0 / dt
-              else
-                Psi = dt * (0.5 - 0.16666667*dt)
-                u0 = dt * (1 - Psi)
-              endif
-
-              Inu = Inuup*ex + (u0 - Psi)*ssup + Psi*ss
-            else
-              !ex = 0
-              u0 = 1 / dt
-              Psi = 1 - u0
-              Inu = u0*ssup + Psi*ss
-            endif
-
-            self%work(f,x,y,z,3) = Inu
-            if (any(self%get_rates)) then
-              !Psi = Psi + Inuup*ex*exp(-dsup05*xx*ss)*dsup05*xx
-              self%Psi(f,x,y,z) = Psi / xx
-            endif
-          end do ! f-loop
-        end do
-      end do
-    end do ! z-loop
-    call trace%end(itimer)
-  END SUBROUTINE long_char_linear
-
-  !===============================================================================
-  SUBROUTINE long_char_quadratic (self, vec)
-    class(rt_patch_t) :: self
-    real(8) :: vec(3)
-    real(4) :: ds, dsup, rdsup, dsup1, dsup2
-    real(4) :: xx, ss, Inu, Psi
-    real(4) :: Inuup, xxup, ssup
-    real(4) :: xxdn, ssdn
-    real(4) :: t1, t2, t3, dtup, dtdn, dt2, dt3, U0, U1, U2, a, b, c
-    real(8) :: dt, ex ! important
-    integer :: dx, dy, zs, ze, z0, zup, zdn
-    logical :: edge
-    integer, save :: itimer=0
-    integer :: x, y, z, f
-    !-----------------------------------------------------------------------------
-    call trace%begin('rt_patch%long_char_quadratic', itimer=itimer)
-
-    ds = self%ds(3) * scaling%l
-    dsup = ds / abs(vec(3))
-    rdsup = 1./ dsup
-    dsup1 = 0.5*dsup
-    dsup2 = 1./6.*dsup*dsup
-
-    zs = merge(1, self%nz, self%dir > 0)
-    ze = merge(self%nz, 1, self%dir > 0)
-
-    do z=zs, ze, self%dir
-      edge = z==ze
-      z0 = merge(z - self%dir, z, edge)
-      zup = z0 - self%dir
-      zdn = z0 + self%dir
-      do y=1, self%ny
-        do x=1, self%nx
-          do f=self%fs, self%fe
-            xx = self%work(f,x,y,z0,1)
-            xxup = self%work(f,x,y,zup,1)
-            xxdn = self%work(f,x,y,zdn,1)
-            Inuup = self%work(f,x,y,z-self%dir,3)
-
-            ! one sided dchi/ds at upwind point
-            t1 = (xx - xxup) * rdsup
-            ! one sided dchi/ds at dnwind point
-            t3 = (xxdn - xx) * rdsup
-
-            t2 = 0.5*(t1 + t3)
-            t2 = (sign(1.0, t1) + sign(1.0, t3)) * min(abs(t1), abs(t3), abs(0.5*t2))
-
-            dtup = dsup1*(xxup + xx) + dsup2*(t1-t2)
-            dtdn = dsup1*(xxdn + xx) + dsup2*(t2-t3)
-
-            dt = merge(dtdn, dtup, edge)
-            dt2 = dt*dt
-            ex=exp(-dt)
-
-            ! Compute the U functions, use Taylor expansion for small dt
-            ! to avoid accuracy issues with 1-(number slightly smaller than one)
-            if ( dt > 1e-3 ) then
-              U0 = 1.0d0 - ex
-              U1 = dt - U0
-              U2 = dt2 - 2.0d0 * U1
-            else
-              dt3 = dt2*dt
-              U1 = half * dt2 - one_sixth * dt3
-              U0 = dt - U1
-              U2 = one_third * dt3
-            end if
-
-            ss = self%work(f,x,y,z0,2)
-            ssdn = self%work(f,x,y,zdn,2)
-            ssup = self%work(f,x,y,zup,2)
-
-            ! one sided dS/dt at upwind point
-            t1 = (ss - ssup) / dtup
-            t3 = (ssdn - ss) / dtdn
-
-            t2 = 0.5*(t1 + t3)
-            t2 = (sign(1.0, t1) + sign(1.0, t3)) * min(abs(t1), abs(t3), abs(0.5*t2))
-
-            if (edge) then
-              a = (t3-t2) / dt
-              b = 2*t2 - t3
-              c = ss
-            else
-              a = (t2-t1) / dt
-              b = 2*t1 - t2
-              c = ssup
-            endif
-
-            ! intensity at center point
-            Inu = Inuup*ex + a*U2 + b*U1 + c*U0
-            self%work(f,x,y,z,3) = Inu
-            if (any(self%get_rates)) then
-              if (edge) then
-                self%Psi(f,x,y,z) = (U0 + U1/dtdn - U2/(dtdn*dt)) / xx
-              else
-                self%Psi(f,x,y,z) = (2.0*U1 - U2/dt) / (dtup * xx)
-              end if
-            endif
-          end do ! f-loop
-        end do
-      end do
-    end do ! z-loop
-    call trace%end(itimer)
-  END SUBROUTINE long_char_quadratic
-
-  !===============================================================================
-  SUBROUTINE long_char_quadratic2 (self, vec)
-    class(rt_patch_t) :: self
-    real(8) :: vec(3)
-    real(4) :: ds, dsup, rdsup, dsup1, dsup2
-    real(4) :: xx, ss, Inu, Psi
-    real(4) :: Inuup, xxup, ssup
-    real(4) :: xxdn, ssdn
-    real(4) :: t1, t2, t3, dtup, dtdn, dt2, dt3, U0, U1, U2, a, b, c
-    real(8) :: dt, ex ! important
-    integer :: dx, dy, zs, ze, z0, zup, zdn
-    logical :: edge
-    integer, save :: itimer=0
-    integer :: x, y, z, f
-    !-----------------------------------------------------------------------------
-    call trace%begin('rt_patch%long_char_quadratic2', itimer=itimer)
-
-    ds = self%ds(3) * scaling%l
-    dsup = ds / abs(vec(3))
-    rdsup = 1./ dsup
-    dsup1 = 0.5*dsup
-    dsup2 = 1./6.*dsup*dsup
-
-    zs = merge(1, self%nz, self%dir > 0)
-    ze = merge(self%nz, 1, self%dir > 0)
-
-    do z=zs, ze, self%dir
-      edge = z==ze
-      z0 = merge(z-1, z, edge)
-      zup = z0 - self%dir
-      zdn = z0 + self%dir
-      do y=1, self%ny
-        do x=1, self%nx
-          do f=self%fs, self%fe
-            xx = self%work(f,x,y,z0,1)
-            xxup = self%work(f,x,y,zup,1)
-            xxdn = self%work(f,x,y,zdn,1)
-            Inuup = self%work(f,x,y,z-self%dir,3)
-
-            ! one sided dchi/ds at upwind point
-            t1 = (xx - xxup) * rdsup
-            ! one sided dchi/ds at dnwind point
-            t3 = (xxdn - xx) * rdsup
-
-            t2 = 0.5*(t1 + t3)
-            t2 = (sign(1.0, t1) + sign(1.0, t3)) * min(abs(t1), abs(t3), abs(0.5*t2))
-
-            dtup = dsup1*(xxup + xx) + dsup2*(t1-t2)
-            dtdn = dsup1*(xxdn + xx) + dsup2*(t2-t3)
-
-            dt = merge(dtdn, dtup, edge)
-            dt2 = dt*dt
-            ex=exp(-dt)
-
-            ! Compute the U functions, use Taylor expansion for small dt
-            ! to avoid accuracy issues with 1-(number slightly smaller than one)
-            if ( dt > 1e-3 ) then
-              U0 = 1.0d0 - ex
-              U1 = dt - U0
-              U2 = dt2 - 2.0d0 * U1
-            else
-              dt3 = dt2*dt
-              U1 = half * dt2 - one_sixth * dt3
-              U0 = dt - U1
-              U2 = one_third * dt3
-            end if
-
-            ss = self%work(f,x,y,z0,2)
-            ssdn = self%work(f,x,y,zdn,2)
-            ssup = self%work(f,x,y,zup,2)
-
-            ! one sided dS/dt at upwind point
-            t1 = ss - ssup
-            t3 = ssdn - ss
-
-            t2 = 0.5*(t1 + t3)
-            t2 = (sign(1.0, t1) + sign(1.0, t3)) * min(abs(t1), abs(t3), abs(0.5*t2))
-
-            if (edge) then
-              t3 = t3 / dtdn
-              t2 = t2 * rdsup / xx
-              a = (t3-t2) / dtdn
-              b = 2*t2 - t3
-              c = ss
-            else
-              t1 = t1 / dtup
-              t2 = t2 * rdsup / xx
-              a = (t2-t1) / dtup
-              b = 2*t1 - t2
-              c = ssup
-            endif
-
-            ! intensity at center point
-            Inu = Inuup*ex + a*U2 + b*U1 + c*U0
-            self%work(f,x,y,z,3) = Inu
-          end do ! f-loop
-        end do
-      end do
-    end do ! z-loop
-    call trace%end(itimer)
-  END SUBROUTINE long_char_quadratic2
-
-  !===============================================================================
-  SUBROUTINE long_char_quadratic3 (self, comp, vec)
-    class(rt_patch_t) :: self
-    class(composition_type) :: comp
-    real(8), dimension(:,:,:), allocatable :: chi500, dchi500, Bnu500, dBnu500
-    real(8), dimension(:) :: xxold(3), xxnew(2)
-    real(8), dimension(:), allocatable :: ds3
-    real(8) :: vec(3), hnu
-    real(4) :: ds, dsup, rdsup, dsup1, dsup2
-    real(4) :: xx, ss, Inu, Psi, beta
-    real(4) :: Inuup, xxup, ssup
-    real(4) :: xxdn, ssdn
-    real(4) :: xx500, xxup500, dt500
-    real(4) :: ss500, ssup500, dS500, dSup500
-    real(4) :: t1, t2, t3, dtup, dtdn, U0, U1, U2, a, b, c, dt2, dt3, tt2
-    real(8) :: dt, ex ! important
-    integer :: dx, dy, zs, ze, z0, zup, zdn
-    integer :: i, nz_up
-    logical :: edge
-    integer, save :: itimer=0
-    integer :: x, y, z, f
-    !-----------------------------------------------------------------------------
-    call trace%begin('rt_patch%long_char_quadratic3', itimer=itimer)
-
-    ds = self%ds(3) * scaling%l
-    dsup = ds / abs(vec(3))
-    dsup1 = 0.5*dsup
-    dsup2 = 1./12.*dsup*dsup
-
-    zs = merge(1, self%nz, self%dir > 0)
-    ze = merge(self%nz, 1, self%dir > 0)
-
-    allocate(ds3(0:self%nz+1))
-    allocate(chi500(self%nx,self%ny,-1:self%nz+1), dchi500(self%nx,self%ny,0:self%nz))
-    allocate(Bnu500(self%nx,self%ny,-1:self%nz+1), dBnu500(self%nx,self%ny,0:self%nz))
-    ds3(1:self%nz) = self%ds(3)
-    chi500(:,:,1:self%nz) = comp%chi500
-
-    hnu = h_k * CC / air2vac(ref_lam) * 1e8
-    Bnu500(:,:,1:self%nz) = exp(-hnu / comp%temp)
-    Bnu500(:,:,1:self%nz) = Bnu500(:,:,1:self%nz) / (1 - Bnu500(:,:,1:self%nz))
-
-    if (associated(self%upstream)) then
-      nz_up = size(self%upstream%composition%chi500, 3)
-      ds3(0) = self%upstream%ds(3)
-      chi500(:,:,-1:0) = self%upstream%composition%chi500(:,:,nz_up-1:nz_up)
-      Bnu500(:,:,-1:0) = exp(-hnu / self%upstream%composition%temp(:,:,nz_up-1:nz_up))
-      Bnu500(:,:,-1:0) = Bnu500(:,:,-1:0) / (1 - Bnu500(:,:,-1:0))
-    else
-      ds3(0) = self%ds(3)
-      xxold = [(i*self%ds(3), i= 1, 3)]
-      xxnew = [(i*self%ds(3), i=-1, 0)]
-      do y=1, self%ny
-        do x=1, self%nx
-          call pchip_mono(xxold, chi500(x,y,1:3), xxnew, chi500(x,y,-1:0), sorted=.true.)
-          call pchip_mono(xxold, Bnu500(x,y,1:3), xxnew, Bnu500(x,y,-1:0), sorted=.true.)
-        end do
-      end do
-    endif
-    if (associated(self%dnstream)) then
-      ds3(self%nz+1) = self%dnstream%ds(3)
-      chi500(:,:,self%nz+1) = self%dnstream%m3d_parent%composition%chi500(:,:,1)
-      Bnu500(:,:,self%nz+1) = exp(-hnu / self%dnstream%m3d_parent%composition%temp(:,:,1))
-      Bnu500(:,:,self%nz+1) = Bnu500(:,:,self%nz+1) / (1 - Bnu500(:,:,self%nz+1))
-    else
-      ds3(self%nz+1) = self%ds(3)
-      xxold = [(i*self%ds(3), i=1, 3)]
-      xxnew(1:1) = [(i*self%ds(3), i=4, 4)]
-      do y=1, self%ny
-        do x=1, self%nx
-          call pchip_mono(xxold, chi500(x,y,self%nz-2:self%nz), xxnew(1:1), chi500(x,y,self%nz+1:self%nz+1), sorted=.true.)
-          call pchip_mono(xxold, Bnu500(x,y,self%nz-2:self%nz), xxnew(1:1), Bnu500(x,y,self%nz+1:self%nz+1), sorted=.true.)
-        end do
-      end do
-    endif
-
-    ds3 = ds3 * (scaling%l / abs(vec(3)))
-
-    do z=0, self%nz
-      do y=1, self%ny
-        do x=1, self%nx
-          xx = chi500(x,y,z)
-          xxup = chi500(x,y,z-1)
-          xxdn = chi500(x,y,z+1)
-          t1 = (xx - xxup) / ds3(z)
-          t3 = (xxdn - xx) / ds3(z+1)
-          t2 = 0.5*(t1 + t3)
-          t2 = (sign(1.0, t1) + sign(1.0, t3)) * min(abs(t1), abs(t3), abs(0.5*t2))
-          dchi500(x,y,z) = t2
-
-          ss = Bnu500(x,y,z)
-          ssup = Bnu500(x,y,z-1)
-          ssdn = Bnu500(x,y,z+1)
-          t1 = (ss - ssup) / ds3(z)
-          t3 = (ssdn - ss) / ds3(z+1)
-          t2 = 0.5*(t1 + t3)
-          t2 = (sign(1.0, t1) + sign(1.0, t3)) * min(abs(t1), abs(t3), abs(0.5*t2))
-          dBnu500(x,y,z) = t2
-        end do
-      end do
-    end do
-
-    do z=zs, ze, self%dir
-      zup = z - self%dir
-      zdn = z + self%dir
-      do y=1, self%ny
-        do x=1, self%nx
-          xx500   = chi500(x,y,z)
-          xxup500 = chi500(x,y,zup)
-          ss500   = Bnu500(x,y,z)
-          ssup500 = Bnu500(x,y,zup)
-          dS500   = dBnu500(x,y,z)
-          dSup500 = dBnu500(x,y,zup)
-          t1      = dchi500(x,y,zup)
-          t2      = dchi500(x,y,z)
-
-          dt500 = dsup1*(xxup500 + xx500) + dsup2*(t1-t2)
-          dt500 = 0.5*dt500
-          xxup500 = dt500 / xxup500
-          xx500   = dt500 / xx500
-          dS500   = (ss500 - ssup500) / dS500
-          dSup500 = (ss500 - ssup500) / dSup500
-
-          do f=self%fs, self%fe
-            xx   = self%work(f,x,y,z,1)
-            xxup = self%work(f,x,y,zup,1)
-            ss   = self%work(f,x,y,z,2)
-            ssup = self%work(f,x,y,zup,2)
-            Inuup = self%work(f,x,y,z-self%dir,3)
-
-            dt = xxup*xxup500 + xx*xx500
-            ex=exp(-dt)
-            ! Compute the U functions, use Taylor expansion for small dt
-            ! to avoid accuracy issues with 1-(number slightly smaller than one)
-            !dt2 = dt*dt
-            !if ( dt > 1e-3 ) then
-            !  U0 = 1.0d0 - ex
-            !  U1 = dt - U0
-            !  U2 = dt2 - 2.0d0 * U1
-            !else
-            !  dt3 = dt2*dt
-            !  U1 = half * dt2 - one_sixth * dt3
-            !  U0 = dt - U1
-            !  U2 = one_third * dt3
-            !end if
-            !
-            !t1 = ss - ssup
-            !t2 = t1 / (xx*dS500)
-            !t1 = t1 / dt
-            !
-            !a = (t2-t1) / dt
-            !b = 2*t1 - t2
-            !c = ssup
-            !
-            !! intensity at center point
-            !Inu = Inuup*ex + a*U2 + b*U1 + c*U0
-            !self%work(f,x,y,z,3) = Inu
-
-            if (dt > 1e-3) then
-              U0 = 1. - ex
-              U1 = U0 - dt*ex
-            else
-              dt2 = 0.5*dt*dt
-              U1 = dt2 * (1. - one_sixth*dt)
-              U0 = dt - U1 + dt2*dt
-            endif
-
-            t1 = (ss - ssup) / dt
-            t2 = (ss - ssup) / (xx*dS500)
-            tt2 = 2*(t2 - t1) / dt
-
-            ! intensity at center point
-            Inu = (Inuup - ssup)*ex - U0*t2 + U1*tt2 + ss
-            self%work(f,x,y,z,3) = Inu
-          end do ! f-loop
-        end do
-      end do
-    end do ! z-loop
-    call trace%end(itimer)
-  END SUBROUTINE long_char_quadratic3
-
-  !===============================================================================
   SUBROUTINE get_vproj (self, vproj, vec, rotate, i_mu)
     class(rt_patch_t) :: self
     real(4), dimension(:,:,:) :: vproj
     real(8), dimension(:) :: vec
-    real(4), dimension(:,:,:), pointer :: vx, vy, vz
-    real(4), dimension(:,:,:,:), contiguous, pointer :: mem
+    class(composition_type), pointer :: comp
     integer :: i_mu
     logical :: rotate
     integer, save :: itimer
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch_t%get_vproj', itimer=itimer)
+    ! the velocities are already in units of c and already masked by use_vel, done
+    ! once when the composition was loaded
     if (rotate) then
-      mem => self%m3d_parent%mem(:,:,:,:,self%it,1+i_mu)
+      comp => self%m3d_parent%rotated_composition(i_mu)
     else
-      mem => self%m3d_parent%mem(:,:,:,:,self%it,1)
+      comp => self%m3d_parent%composition
     endif
 
-    vx => mem(:,:,:,self%i_vx)
-    vy => mem(:,:,:,self%i_vy)
-    vz => mem(:,:,:,self%i_vz)
-
-    if (.not. use_vel(1)) vx = 0
-    if (.not. use_vel(2)) vy = 0
-    if (.not. use_vel(3)) vz = 0
-
-    vproj = vec(1)*vx + vec(2)*vy + vec(3)*vz
+    vproj = vec(1)*comp%vx + vec(2)*comp%vy + vec(3)*comp%vz
     call trace%end(itimer)
   END SUBROUTINE get_vproj
 

@@ -62,4 +62,10 @@ CLEANDIRS = {./SRC,./HOP,$(BUILD)}
 # OPT += -g -fno-omit-frame-pointer
 
 # List the .o files the main program depends on after the colon:
-$(EXEC): read_external_mod.o mpi_debug_mod.o setup_mod.o
+$(EXEC): read_external_mod.o mpi_debug_mod.o setup_mod.o rt_solvers_mod.o
+
+# rt_solvers_mod.f90 is a Fortran submodule of rt_patch_mod (SUBMODULE (rt_patch_mod)
+# rt_solvers_smod): it has no "use" statement for deps.pl to see, so nothing pulls its
+# object into the link automatically (hence the explicit prerequisite above), and its
+# compile order relative to its ancestor needs stating explicitly too.
+rt_solvers_mod.o: rt_patch_mod.o
