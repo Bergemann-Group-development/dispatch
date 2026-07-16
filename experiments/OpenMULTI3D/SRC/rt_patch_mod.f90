@@ -26,7 +26,8 @@ MODULE rt_patch_mod
     Jnu_to_file, preconditioning, make_eos, amr, save_Inu, save_chi, save_Snu, &
     long_solver, short_solver, fixed_Jnu, n_nu, save_Jnu, maxiter, &
     convlim, converged, flux_convergence, flux_conv_signal, &
-    global_flux_err, global_flux_pos, global_flux_lambda, flux_update_counter
+    global_flux_err, global_flux_pos, global_flux_lambda, flux_update_counter, &
+    maser_chi_floor, maser_dtau_max, maser_Inu_max, suppress_masers
   USE ray_mod, only: one_dimensional, ray_type, rstar, rorigin
   USE trans_mod, only: line_type, cont_type
   USE bbtrans_mod, only: voigt_function2, voigt_profile, tolerance
@@ -44,8 +45,10 @@ MODULE rt_patch_mod
     sample_linelist, sample_back_opac_in_output, use_new_linelist
   USE spectrum_mod, only: spectrum_type
   USE optab_mod, only: sample_optab_type
+  use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
   implicit none
   private
+  integer :: n_negative_chi = 0                 ! diagnostic: cells with chi<=0 in eta_to_Snu
 
   !-----------------------------------------------------------------------------
   type, public, extends(ray_patch_t) :: rt_patch_t
@@ -53,6 +56,7 @@ MODULE rt_patch_mod
     class(rt_patch_t), pointer :: dnstream=>null()
     class(rt_patch_t), pointer :: up_twin=>null()
     class(rt_patch_t), pointer :: dn_twin=>null()
+    logical :: Jnu_freed=.false.
     class(atom_trans_t), dimension(:), pointer :: trans=>null()
     type(spectrum_type) :: sub_sp
     real(4), dimension(:,:,:,:,:), allocatable :: Jnu
@@ -874,6 +878,29 @@ contains
           end do
         end do
       end do
+      !-------------------------------------------------------------------------
+      ! Jnu enters eta via comp%scattering, so a corrupt Jnu -- from the twins'
+      ! save/load, whichever way it is passed -- shows up as an infinite source
+      ! function.  Separate that from a corrupt boundary (see
+      ! set_upstream_boundary) and from a corrupt opacity.
+      !-------------------------------------------------------------------------
+      if (check_NaN) then
+        do z=1, self%nz
+          do y=1, self%ny
+            do x=1, self%nx
+              do f=fs, fe
+                if (.not. ieee_is_finite(self%Jnu(f,x,y,z,i_set))) then
+                  write(stdout,'(A,I8,A,2(I8),A,4(I4),A,2(ES12.4))') &
+                    'RACE: bad Jnu in', self%id, ' twins', self%up_twin%id, self%dn_twin%id, &
+                    ' at f,x,y,z=', f, x, y, z, ' Jup,Jdn=', Jup(f,x,y,z,i_set), Jdn(f,x,y,z,i_set)
+                  flush(stdout)
+                  call shared%abort ('rt_patch_t%lte_background_emission: non-finite Jnu')
+                endif
+              end do
+            end do
+          end do
+        end do
+      endif
       if (do_rotate_atmos .and. .not. (one_dimensional .or. column_by_column)) then
         call self%rotate_array(vec, self%Jnu(:,:,:,:,i_set:i_set))
       endif
@@ -1662,6 +1689,31 @@ contains
           end do
         end do
       end do
+      !-------------------------------------------------------------------------
+      ! The incoming boundary comes straight from the upstream patch, via the
+      ! buffer handed over in copy_to().  If it is already non-finite here, the
+      ! corruption did not happen in this patch, and the upstream id says where
+      ! to look next.  If it is clean, but mem is non-finite in post_update, the
+      ! garbage was produced locally (opacities, Jnu, or the transfer solve).
+      !-------------------------------------------------------------------------
+      if (check_NaN) then
+        do y=1,  self%ny
+          do x=1,  self%nx
+            do f=self%fs, self%fe
+              do i=1, 3
+                if (.not. ieee_is_finite(self%work(f,x,y,z,i))) then
+                  write(stdout,'(A,I8,A,I8,A,3(I4),A,I3,A,2(I4),A,ES12.4)') &
+                    'RACE: bad upstream boundary in', self%id, ' from', self%upstream%id, &
+                    ' at f,x,y=', f, x, y, ' w=', i, ' i_mu,i_set=', i_mu, i_set, &
+                    ' value=', self%work(f,x,y,z,i)
+                  flush(stdout)
+                  call shared%abort ('rt_patch_t%set_upstream_boundary: non-finite boundary')
+                endif
+              end do
+            end do
+          end do
+        end do
+      endif
     endif
     call trace%end(itimer)
   END SUBROUTINE set_upstream_boundary
@@ -1825,7 +1877,8 @@ contains
   SUBROUTINE eta_to_Snu (self)
     class(rt_patch_t) :: self
     integer, save :: itimer=0
-    integer :: x, y, z, f
+    integer :: x, y, z, f, i
+    real(4) :: xhat, ehat, eta, chi, floor
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch%eta_to_Snu', itimer=itimer)
     ! Converting eta into source function Snu=eta/chi
@@ -1833,12 +1886,34 @@ contains
       do y=1, self%ny
         do x=1, self%nx
           do f=self%fs, self%fe
-            associate(chi=>self%work(f,x,y,z,1), eta=>self%work(f,x,y,z,2), beta=>self%back(f,x,y,z,3), &
-                      xhat=>self%work(f,x,y,z,1), ehat=>self%work(f,x,y,z,2))
-              eta = ehat * beta
-              chi = xhat - eta
-              self%work(f,x,y,z,2) = eta / chi
-            end associate
+            xhat = self%work(f,x,y,z,1)
+            ehat = self%work(f,x,y,z,2)
+            eta  = ehat * self%back(f,x,y,z,3)          ! ehat * beta
+            chi  = xhat - eta
+            ! Each line adds phi*Rij*(bi - bj*beta) to chi, which goes negative for
+            ! an inverted population.  chi may then pass through zero, and eta/chi
+            ! diverges.  Keep the sign (the inversion is real) but hold |chi| away
+            ! from zero, so that Snu stays bounded by 1/maser_chi_floor.
+            floor = max(real(maser_chi_floor) * abs(xhat), tiny(1.0))
+            if (suppress_masers) then
+              chi = max(chi, floor)
+            elseif (abs(chi) < floor) then
+              chi = sign(floor, chi)
+              if (check_NaN) then
+                !$omp atomic capture
+                n_negative_chi = n_negative_chi + 1
+                i = n_negative_chi
+                !$omp end atomic
+                if (i <= 20) then
+                  write(stdout,'(A,A,4(I5),4(1x,ES13.5))') self%m3d_patch_info(), &
+                    '  CHI floored f,x,y,z=', f, x, y, z, chi, xhat, eta, &
+                    self%back(f,x,y,z,3)
+                  flush(stdout)
+                endif
+              endif
+            endif
+            self%work(f,x,y,z,1) = chi
+            self%work(f,x,y,z,2) = eta / chi
           end do
         end do
       end do
@@ -2091,9 +2166,16 @@ contains
             Inuup = work_up(f,3)
 
             dt = dsup05 * ( xxup + xx ) ! upwind optical pathlength
+            ! An inverted population gives chi<0, hence dt<0 and exp(+|dt|)
+            ! amplification.  Cap it, so that a maser cannot overflow inside a
+            ! single formal solution; the population feedback then gets a chance
+            ! to quench the inversion between iterations.
+            dt = max(dt, -maser_dtau_max)
             if (dt < 80) then
               ex = exp(-dt)
-              if ( dt > 1d-3 ) then
+              ! the series expansion is only valid for |dt| << 1, and dt<0 must not
+              ! fall into it
+              if ( abs(dt) > 1d-3 ) then
                 u0 = 1 - ex
                 Psi = 1 - u0 / dt
               else
@@ -2108,9 +2190,20 @@ contains
               Psi = 1 - u0
               Inu = u0*ssup + Psi*ss
             endif
+            Inu = max(-real(maser_Inu_max), min(real(maser_Inu_max), Inu))
 
             self%work(f,x,y,z,3) = Inu
-            if (get_rates) self%Psi(f,x,y,z) = Psi / self%work(f,x,y,z,1)
+            if (get_rates) then
+              if (dt > 0) then
+                self%Psi(f,x,y,z) = Psi / self%work(f,x,y,z,1)
+              else
+                ! Rybicki & Hummer operator splitting assumes 0 <= Psi <= 1, which
+                ! is what makes the preconditioned rate matrix well behaved.  For
+                ! dt<0, Psi is negative and exponentially large, and the correction
+                ! would change sign; leave the rates unpreconditioned here.
+                self%Psi(f,x,y,z) = 0
+              endif
+            endif
           end do ! f-loop
         end do
       end do
@@ -2853,15 +2946,43 @@ contains
   SUBROUTINE finish(self)
     class(rt_patch_t) :: self
     character(8) :: Jnu_label
+    logical :: cleanup
     ! ----------------------------------------------------------------------------
     call self%m3d_patch_t%finish()
+    !-----------------------------------------------------------------------------
+    ! Free the upstream boundary memory, but only if the upstream task will not
+    ! run again.  For i_mu=2 the upstream is the patch above, which converges
+    ! later than this one and is then still iterating -- taking its mem away
+    ! races with the set_downstream_boundary() writing it.  Such an upstream
+    ! frees its own mem on its next execute anyway, where end_boundary has now
+    ! become true, because this task, its dnstream, has finished.
+    !-----------------------------------------------------------------------------
     if (associated(self%upstream)) then
-      if (associated(self%upstream%mem)) then
-        call self%upstream%deallocate_mem()
+      if (self%upstream%is_finished()) then
+        call lock_mem (self%upstream, 'finish')
+        if (associated(self%upstream%mem)) then
+          call self%upstream%deallocate_mem()
+        endif
+        call unlock_mem (self%upstream, 'finish')
       endif
     endif
+    !-----------------------------------------------------------------------------
+    ! Both twins hold a Jnu, and both are freed here, by whichever of the two
+    ! finishes last.  They can reach this point at the same time, though, so the
+    ! ownership has to be settled between them before either one frees anything.
+    !-----------------------------------------------------------------------------
     if ((self%do_full_sp .and. maxiter > 0) .or. (self%do_final .and. ilambd > 0)) then
+      cleanup = .false.
+      !$omp critical (twin_Jnu_cleanup)
       if (self%up_twin%is_finished() .and. self%dn_twin%is_finished()) then
+        cleanup = .not. self%up_twin%Jnu_freed .and. .not. self%dn_twin%Jnu_freed
+        if (cleanup) then
+          self%up_twin%Jnu_freed = .true.
+          self%dn_twin%Jnu_freed = .true.
+        endif
+      endif
+      !$omp end critical (twin_Jnu_cleanup)
+      if (cleanup) then
         if (Jnu_to_file) then
           if (.not. save_Jnu) then
             Jnu_label = merge('Jnu_out', 'Jnu    ', self%do_out_sp)
@@ -3070,6 +3191,21 @@ contains
     integer :: i, i_set, i_mu
     integer :: x, y
     !-----------------------------------------------------------------------------
+    ! Invariant: the source of a download always holds a boundary buffer.  It is
+    ! handed over (not copied) below, and the source re-creates one in
+    ! set_downstream_boundary().  A source without mem here means someone else
+    ! took it -- the download only holds a *read* lock on the source, while
+    ! copy_to modifies it, so a concurrent download by the source's own dnstream,
+    ! or by the source itself, can steal the buffer.  Report loudly rather than
+    ! hand out a null pointer, which set_upstream_boundary() would then read.
+    !-----------------------------------------------------------------------------
+    if (.not. associated(self%mem)) then
+      write(stdout,'(A,2(A,I8),2(A,L2))') 'RACE: copy_to with unassociated source mem', &
+        ' src=', self%id, ' tgt=', tgt%id, ' src_static=', self%static_mem, &
+        ' tgt_static=', tgt%static_mem
+      flush(stdout)
+      call shared%abort ('rt_patch_t%copy_to: source mem gone')
+    endif
     if (.not. self%static_mem) then
       tgt%mem => self%mem
       nullify(self%mem)

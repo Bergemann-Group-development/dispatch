@@ -26,7 +26,7 @@ MODULE nlte_patch_mod
     decouple_continuum, overlapping_bb, overlapping_bf, converged, premature_finish, overrelax, &
     rotate_atmos, long_vec, rank_lvlerr, overlapping_bb_in_output, long_scheme, n_nu, detailed_absmet, &
     atmos_file, flux_convergence, flux_conv_signal, global_flux_err, global_flux_pos, global_flux_lambda, &
-    flux_final_counter
+    flux_final_counter, nlte_finished, n_nlte_patches, release_output_tasks
   USE bftrans_mod, only: bftrans_type
   USE osmet_mod, only: osmet_type, osmet
   USE rt_patch_mod, only: rt_patch_t
@@ -593,7 +593,7 @@ contains
     class(atom_data_t), pointer :: adata
     class(composition_type), pointer :: comp
     real(4), dimension(:,:,:,:,:,:), allocatable :: out_mem
-    integer :: i, j, l
+    integer :: i, j, l, n
     integer, save :: count=0
     !-----------------------------------------------------------------------------
     if (self%is_finished()) return
@@ -627,9 +627,24 @@ contains
     endif
 
     call self%m3d_patch_t%finish()
+    !$omp atomic capture
     count = count + 1
-    if (count == self%task_list%dims(3)) then
+    n = count
+    !$omp end atomic
+    if (n == self%task_list%dims(3)) then
       call self%save_convergence_report()
+    endif
+    !---------------------------------------------------------------------------
+    ! Once the last nlte_patch of this rank has converged, the populations there
+    ! are final, and the output-spectrum tasks that have been held back all along
+    ! (see m3d_patch_t%is_ahead_of) can go ahead.  Ranks are released one by one,
+    ! which is safe: the long-characteristics sweep of a rank still waits for the
+    ! rank below it through its upstream nbor, as it always does.
+    !---------------------------------------------------------------------------
+    if (n == n_nlte_patches) then
+      !$omp atomic write
+      nlte_finished = .true.
+      call release_output_tasks (self%task_list)
     endif
   END SUBROUTINE finish
 

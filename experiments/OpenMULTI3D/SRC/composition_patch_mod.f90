@@ -14,7 +14,8 @@ MODULE composition_patch_mod
   USE m3d_patch_mod,   only: m3d_patch_t, composition, comoving_frame, ilambd, dlam, &
   use_rho, use_ne, overlapping_bb, overlapping_bf, binned_opac, initial_Jnu, &
   maxiter, rotate_atmos, long_vec, decouple_continuum, n_nu, use_vel, &
-  linelist_in_output, make_eos, overlapping_bb_in_output, atmos_format, atmos_file
+  linelist_in_output, make_eos, overlapping_bb_in_output, atmos_format, atmos_file, &
+  n_nlte_patches, nlte_finished
   USE m3d_debug_mod
   USE composition_mod, only: composition_type, exclude_elements, only_elements, switch, &
   ref_lam, debug_opac, abundances, relative_abundances, mhd_eos, helium_scattering, &
@@ -198,6 +199,9 @@ SUBROUTINE composition_pre_init (self)
   if (associated(nlte_patch%atoms) .or. read_departures) then
     call nlte_patch%pre_init_and_link(self)
     self%nlte_patch => nlte_patch
+    !$omp atomic update
+    n_nlte_patches = n_nlte_patches + 1
+    nlte_finished = .false. ! the output tasks now have something to wait for
   endif
 
   if (first_time) then

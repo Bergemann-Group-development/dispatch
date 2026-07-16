@@ -66,6 +66,7 @@ MODULE m3d_patch_mod
       integer :: n_nu, n_omega, n_out, zs, ze
       integer :: fcheck, pcheck(3)
       logical :: do_out_sp=.false., do_full_sp=.false., do_final=.false.
+      logical :: wait_for_nlte=.false.
       logical :: compressed=.false., save_output=.false., saved=.false.
       logical :: print_update_info, checked_bounds=.false.
       logical :: free_self=.false.
@@ -130,8 +131,24 @@ MODULE m3d_patch_mod
     real(8), public, save, dimension(:,:), allocatable:: vec, long_vec
     real(8), public:: convlim=1d-3, convmax=tiny(1.0)
     logical, public, save :: converged=.false., use_vel(3)=.true., premature_finish=.true.
+    ! Number of nlte_patches created on this rank, and whether all of them have
+    ! converged.  Defaults to "nothing to wait for", so that a run without atoms,
+    ! which creates no nlte_patch at all, is not held up (see is_ahead_of).
+    integer, public, save :: n_nlte_patches=0
+    logical, public, save :: nlte_finished=.true.
     logical, public, save :: flux_convergence=.false.
     logical, public, save :: preconditioning=.true., binned_opac=.false.
+    ! Handling of population inversions (negative line opacity).  In NLTE a line
+    ! contributes phi*Rij*(bi - bj*beta) to chi, which is negative for an inverted
+    ! population.  chi can then pass through zero (Snu=eta/chi diverges) and dtau
+    ! turns negative (exp(+|dtau|) amplification).  Both are physical -- Mg I does
+    ! invert its Rydberg levels -- but unbounded in real(4).  These parameters keep
+    ! the maser but bound it, so that the population feedback can quench it between
+    ! iterations instead of the arithmetic overflowing first.
+    real(8), public, save :: maser_chi_floor=1d-4  ! |chi| floor, as a fraction of xhat
+    real(8), public, save :: maser_dtau_max=2d0    ! cap on the per-cell amplification
+    real(8), public, save :: maser_Inu_max=1d30    ! absolute cap on |Inu|
+    logical, public, save :: suppress_masers=.false. ! instead force chi>0 (kills the maser)
     logical, public, save :: save_resolved=.false.
     logical, public, save :: decouple_continuum=.true.
     logical, public, save :: comoving_frame=.false., linelist_in_output=.true.
@@ -175,6 +192,7 @@ MODULE m3d_patch_mod
     type(composition_type), public, save, target :: composition
       
     public :: hash_string, pre_update, update, print_execution_history
+    public :: release_output_tasks
 
     namelist /m3d_params/ verbose, fcheck, linecheck, pcheck, &
     n_nu, maxiter, ilambd, lvlcheck, comoving_frame, save_id, &
@@ -186,7 +204,8 @@ MODULE m3d_patch_mod
     column_by_column, rotate_atmos, Jnu_to_file, preconditioning, &
     save_inu, save_chi, save_Snu, save_Jnu, &
     long_scheme, long_ntheta, long_nphi, short_scheme, short_ntheta, short_nphi, &
-    long_solver, short_solver, fixed_Jnu, initial_Jnu
+    long_solver, short_solver, fixed_Jnu, initial_Jnu, &
+    maser_chi_floor, maser_dtau_max, maser_Inu_max, suppress_masers
 
   contains
   
@@ -280,6 +299,11 @@ MODULE m3d_patch_mod
     self%do_final = self%i_mu < 0 ! this is the ray working on the final output spectrum after scattering
     self%do_out_sp = self%i_nu < 0 .or. self%i_mu < 0 ! this is any ray working on the output spectrum
     self%do_full_sp = .not. self%do_out_sp ! this is any ray working on the internal spectrum for the iteration
+    ! The output-spectrum rays must not start when their own column converges, but
+    ! only once every nlte_patch has; see is_ahead_of().  Taken here, rather than
+    ! from do_out_sp directly, because composition_patch sets do_out_sp after its
+    ! first execute, and those tasks are not to be held back.
+    self%wait_for_nlte = self%do_out_sp
   
     if (self%pre_initialized) print *, 'pre_init issued somewhere'
     call io%lock%unset ('m3d_patch_t%pre_init')
@@ -852,6 +876,25 @@ MODULE m3d_patch_mod
     logical:: needed, needs_me, download
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%is_ahead_of')
+    !---------------------------------------------------------------------------
+    ! An nlte_patch that converges finishes, and thereby jumps to io%end_time,
+    ! which would make it -- and every other task in its column -- ahead of the
+    ! output-spectrum tasks there.  Those must not start on that account: the
+    ! long characteristics would then run, and allocate their frequency-resolved
+    ! arrays, while the rest of the domain is still iterating.  Withhold them
+    ! until every nlte_patch has converged; release_output_tasks() then puts them
+    ! back in play, since by that time no nbor of theirs updates any more.
+    !---------------------------------------------------------------------------
+    if (.not. nlte_finished) then
+      select type (target)
+      class is (m3d_patch_t)
+        if (target%wait_for_nlte) then
+          is_ahead_of = .false.
+          call trace%end()
+          return
+        endif
+      end select
+    endif
     grace = self%grace + shared%extra_grace
                                             call self%lock%set ('is_ahead_of')
     !---------------------------------------------------------------------------
@@ -881,6 +924,33 @@ MODULE m3d_patch_mod
                                             call self%lock%unset ('is_ahead_of')
     call trace%end()
   END FUNCTION is_ahead_of
+
+  !===============================================================================
+  !> Put the output-spectrum tasks back in play, once the last nlte_patch has
+  !> converged.  This has to be done explicitly: check_ready() is normally called
+  !> on a task by its nbors, as they update, but the nbors of these tasks -- the
+  !> nlte_patch, the composition and the iterative rt_patches of their column --
+  !> have all finished by now, so no update that would check them is left.  The
+  !> task at the bottom of the domain is the one that matters; the ones above it
+  !> are picked up as the long-characteristics sweep works its way up.
+  !===============================================================================
+  SUBROUTINE release_output_tasks (task_list)
+    class(list_t), pointer :: task_list
+    class(link_t), pointer :: link
+    !-----------------------------------------------------------------------------
+    call trace%begin ('m3d_patch_t%release_output_tasks')
+    link => task_list%head
+    do while (associated(link))
+      select type (task => link%task)
+      class is (m3d_patch_t)
+        if (task%wait_for_nlte) then
+          call task_list%check_ready (link, lock=.true.)
+        endif
+      end select
+      link => link%next
+    end do
+    call trace%end()
+  END SUBROUTINE release_output_tasks
 
   !===============================================================================
   !> Disambiguation: distance from self to task -- applies (only) to Cartesian
