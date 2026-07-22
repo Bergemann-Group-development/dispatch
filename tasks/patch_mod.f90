@@ -4121,25 +4121,33 @@ SUBROUTINE allocate_mem (self, m_in)
   class(patch_t):: self
   integer, intent(in), optional :: m_in(6)
   integer :: m(6)
+  integer(8) :: nelem
   !-----------------------------------------------------------------------------
   if (present(m_in)) then
     m = m_in
   else
     m = [self%gn, self%mv, self%nt, self%nw]
   endif
-  if (product(m) < 0) then
+  !-----------------------------------------------------------------------------
+  ! Validate the element count in 64-bit. The default-integer product overflows
+  ! for large arrays; under -ftrapv (full_debug) that overflow traps *inside*
+  ! this guard, and without it the result silently wraps -- either way the check
+  ! cannot do its job in int4. Compute in int8, and reject a size that would not
+  ! survive the default-integer array descriptor / shape arithmetic downstream.
+  !-----------------------------------------------------------------------------
+  nelem = product(int(m, kind=8))
+  if (any(m < 0)) then
     print *, ' m = ', m
-    if (all(m > 0)) then
-      call shared%abort('patch_t%allocate_mem: Negative allocation size! Array possibly too large')
-    else
-      call shared%abort('patch_t%allocate_mem: Negative allocation size! Some dimension is negative!')
-    endif
+    call shared%abort('patch_t%allocate_mem: Negative allocation size! Some dimension is negative!')
+  else if (nelem > int(huge(0), kind=8)) then
+    print *, ' m = ', m, ' nelem = ', nelem
+    call shared%abort('patch_t%allocate_mem: allocation exceeds 2^31 elements -- array too large')
   endif
   !-----------------------------------------------------------------------------
   ! A memory-less patch (nv=0) keeps mem null, rather than a zero-sized array; it
   ! holds its state elsewhere, and self%mem is the flag that says so
   !-----------------------------------------------------------------------------
-  if (product(m) == 0) return
+  if (nelem == 0) return
   !print *, self%key, 'allocated'
   call os%allocate(self%mem, m, label=trim(self%kind)//'%mem')
 END SUBROUTINE allocate_mem
