@@ -18,16 +18,17 @@ MODULE rt_patch_mod
   USE atom_mod, only: atom_type, atom_data_t, atom_trans_t
   USE ray_patch_mod, only: ray_patch_t
   USE m3d_halo_mod, only: lock_mem, unlock_mem
-  USE m3d_patch_mod, only: short_vec=>vec, short_wmu=>wmu, use_vel, m3d_patch_t, &
-    absmet_in_output, long_wmu, long_vec, ray_offset, pivot_z, dlam, &
+  USE m3d_patch_mod, only: use_vel, m3d_patch_t, &
+    dlam, &
     premature_finish, m3d_patch_pre_update=>pre_update, save_resolved, &
     column_by_column, rotate_atmos, save_cntrbf, depression_cntrbf, &
-    decouple_continuum, linelist_in_output, ilambd, initial_Jnu,  &
+    decouple_continuum, initial_Jnu,  &
     Jnu_to_file, preconditioning, make_eos, amr, save_Inu, save_chi, save_Snu, &
-    long_solver, short_solver, fixed_Jnu, n_nu, save_Jnu, maxiter, &
+    fixed_Jnu, n_nu, save_Jnu, &
     convlim, converged, flux_convergence, flux_conv_signal, &
     global_flux_err, global_flux_pos, global_flux_lambda, flux_update_counter, &
     maser_chi_floor, maser_dtau_max, maser_Inu_max, suppress_masers
+  USE rt_params_mod, only: rt_params_t, rt_iter, rt_out, ray_offset, pivot_z
   USE ray_mod, only: one_dimensional, ray_type, rstar, rorigin
   USE trans_mod, only: line_type, cont_type
   USE bbtrans_mod, only: voigt_function2, voigt_profile, tolerance
@@ -41,8 +42,9 @@ MODULE rt_patch_mod
   USE m3d_debug_mod
   USE shared_mod
   USE composition_mod, only: composition_type, scattering_absorption, ref_lam, &
-    departure_pointer_t, read_departures, sample_back_opac, &
-    sample_linelist, sample_back_opac_in_output, use_new_linelist
+    departure_pointer_t, read_departures, &
+    line_scattering
+  USE osmet_mod, only: compute_epsilon_stage
   USE spectrum_mod, only: spectrum_type
   USE optab_mod, only: sample_optab_type
   USE omp_lock_mod, only: lock_t
@@ -66,6 +68,11 @@ MODULE rt_patch_mod
     ! make_eos path, at a private table (save_opac_table overwrites it in place)
     type(sample_optab_type), pointer :: opac => null()
     type(lock_t), pointer :: opac_lock => null()
+    ! Separate sampled LTE line-list table (sample_linelist): non-departure
+    ! species only, interpolated into the foreground work arrays with a per-cell
+    ! Doppler shift; shares one instance per i_nu across i_mu twins, like opac.
+    type(sample_optab_type), pointer :: ll_opac => null()
+    type(lock_t), pointer :: ll_opac_lock => null()
     real(4), dimension(:), allocatable :: twohnu3_c2
     real(8), dimension(:), pointer :: nu
     integer :: mus, mue, n_set, n_mu, natom
@@ -73,9 +80,15 @@ MODULE rt_patch_mod
     logical, dimension(:), allocatable :: get_rates
     integer :: nx, ny, nz
     real(4), dimension(:,:,:,:,:), allocatable :: work, back
+    ! line_scattering: per-(f,x,y,z) accumulator of the (1-eps)-weighted LTE
+    ! line opacity built during foreground, and (direct path only) the per-stage
+    ! scattering fraction 1-eps on the patch frequency grid (index 1=neutral,
+    ! 2=ionized), refreshed per nu-chunk
+    real(4), dimension(:,:,:,:),   allocatable :: chi_scat
+    real(4), dimension(:,:,:,:,:), allocatable :: one_m_eps
     real(4), dimension(:,:,:,:,:,:), allocatable :: cntrbf_data
     real(4), dimension(:,:,:,:,:), allocatable :: cntrbf_tmp
-    ! use_new_linelist path for model-atom bb transitions (see linelist_mod)
+    ! SoA line kernel path for model-atom bb transitions (see linelist_mod)
     logical, dimension(:), allocatable :: use_ll        ! per atom: SoA kernel path active
     real(4), dimension(:,:,:,:), allocatable :: logref  ! log(tol*cont/voigt_peak) per set
     real(4), dimension(:,:,:,:), allocatable :: b4      ! real(4) copy of adata%b
@@ -98,6 +111,7 @@ MODULE rt_patch_mod
     procedure :: lte_background_opacities
     procedure :: lte_background_emission
     procedure :: generate_opacity_table
+    procedure :: generate_ll_opacity_table
     procedure :: save_opac_table
     procedure :: add_bound_free_opacities
     procedure :: bound_bound_damping
@@ -124,6 +138,7 @@ MODULE rt_patch_mod
     procedure :: long_char_linear_spherical
     procedure :: long_char_quadratic
     procedure :: long_char_hermite
+    procedure :: long_char_hermite2
     procedure :: short_char_hermite
     procedure :: get_vproj
     procedure :: print_post_update_info
@@ -180,6 +195,13 @@ MODULE rt_patch_mod
       real(8), intent(in) :: vec(3)
     end subroutine long_char_hermite
 
+    module subroutine long_char_hermite2 (self, comp, vec, comp_up)
+      class(rt_patch_t), target :: self
+      class(composition_type) :: comp
+      class(composition_type), pointer :: comp_up
+      real(8), intent(in) :: vec(3)
+    end subroutine long_char_hermite2
+
     module subroutine short_char_hermite (self, comp, vec)
       class(rt_patch_t) :: self
       class(composition_type) :: comp
@@ -201,11 +223,11 @@ contains
 
     self%dir = merge(1, -1, abs(self%i_mu)==1)
     self%n_nu = n_nu
-    self%n_mu = merge(size(long_wmu), size(short_wmu)/2, self%do_final)
+    self%n_mu = merge(size(rt_out%wmu), size(rt_iter%wmu)/2, self%do_final)
     self%mus = merge(1, self%n_mu+1, self%dir>0)
-    self%mue = merge(self%n_mu, size(short_wmu), self%dir>0)
+    self%mue = merge(self%n_mu, size(rt_iter%wmu), self%dir>0)
     self%natom = merge(size(self%atoms), 0, associated(self%atoms))
-    is_nlte = maxiter > 0 .or. ilambd > 0 .or. read_departures
+    is_nlte = rt_iter%maxiter > 0 .or. rt_out%maxiter > 0 .or. read_departures
 
     if (self%do_out_sp) then
       ! Set 1 is NLTE (or LTE)
@@ -249,7 +271,7 @@ contains
     ! SoA kernel path for atom lines: disabled for now (no speed gain over the old
     ! formalism for dense model atoms); atom%build_ll still runs globally so the
     ! transitions are exported in linelist_out.txt. Re-enable by restoring
-    !   use_new_linelist .and. associated(self%atoms(i)%species)
+    !   associated(self%atoms(i)%species)
     self%use_ll = .false.
 
     do k=1, self%natom
@@ -302,7 +324,7 @@ contains
           end do
         endif
         ! windowed SoA copy of the (non-hydrogen) patch line subset for the
-        ! use_new_linelist opacity/rate kernels
+        ! SoA opacity/rate kernels
         if (self%use_ll(k) .and. self%bound_bound) then
           call atom%build_ll(trans, self%fs)
         endif
@@ -365,8 +387,8 @@ contains
 
     if (do_rotate_atmos) then ! Final output spectrum from ray-aligned atmosphere
       do i_mu=self%mus, self%mue
-        wmu = long_wmu(i_mu)
-        vec = long_vec(:,i_mu)
+        wmu = rt_out%wmu(i_mu)
+        vec = rt_out%vec(:,i_mu)
         comp => self%m3d_parent%rotated_composition(i_mu)
         call self%get_vproj(vproj, vec, do_rotate_atmos, i_mu)
         do i_set=1, self%n_set
@@ -386,8 +408,8 @@ contains
         comp => self%m3d_parent%composition
         call self%background(comp, 0, i_set, do_rotate_atmos)
         do i_mu=self%mus, self%mue
-          wmu = long_wmu(i_mu)
-          vec = long_vec(:,i_mu)
+          wmu = rt_out%wmu(i_mu)
+          vec = rt_out%vec(:,i_mu)
           call self%get_vproj(vproj, vec, do_rotate_atmos, i_mu)
           call self%back_to_work()
           if (i_set /= 2) call self%foreground(comp, i_mu, i_set, do_rotate_atmos, wmu, vproj)
@@ -405,8 +427,8 @@ contains
         comp => self%m3d_parent%composition
         call self%background(comp, 0, i_set, do_rotate_atmos)
         do i_mu=self%mus, self%mue
-          wmu = short_wmu(i_mu)
-          vec = short_vec(:,i_mu)
+          wmu = rt_iter%wmu(i_mu)
+          vec = rt_iter%vec(:,i_mu)
           call self%get_vproj(vproj, vec, do_rotate_atmos, i_mu)
           if (self%do_full_sp .and. fixed_Jnu > 0) then
             call self%set_fixed_Jnu()
@@ -431,9 +453,7 @@ contains
     if (end_boundary) then
       if (self%do_final .and. self%n_mu>0) then
         call self%save_intensity()
-        if (self%i_nu == -1) then
-          call self%print_linelist(comp)
-        endif
+        call self%print_linelist(comp, self%n_nu)
       elseif (self%do_full_sp .and. top_of_domain) then
         call self%check_flux_convergence()
       endif
@@ -442,7 +462,7 @@ contains
 
     call deallocate_arrays()
 
-    if (self%has_atom .and. self%iter > ilambd-1) then
+    if (self%has_atom .and. self%iter > rt_out%maxiter-1) then
       ! per-atom population convergence (convmax) is an early-exit shortcut for
       ! the population-governed case only -- it must not terminate the task
       ! ahead of the flux metric when flux_convergence is what's authoritative,
@@ -496,6 +516,14 @@ contains
           self%llam = log(HZ_TO_AA / self%nu(fs:fe))
         endif
       endif
+      if (line_scattering) then
+        allocate(self%chi_scat(fs:fe,self%nx,self%ny,self%nz), source=0.)
+        call mem_register(self%chi_scat, label='self%chi_scat')
+        ! one_m_eps is filled per foreground for the detailed line path; the
+        ! sampled path bakes epsilon into the table instead
+        allocate(self%one_m_eps(fs:fe,self%nx,self%ny,self%nz,2), source=0.)
+        call mem_register(self%one_m_eps, label='self%one_m_eps')
+      endif
       if (any(self%get_rates)) then
         allocate(self%Psi(fs:fe,self%nx,self%ny,self%nz), source=0.)
         call mem_register(self%Psi, label='Psi')
@@ -533,6 +561,11 @@ contains
         deallocate(self%logref)
         deallocate(self%llam)
       endif
+      if (allocated(self%chi_scat)) then
+        call mem_unregister(self%chi_scat, label='self%chi_scat')
+        call mem_unregister(self%one_m_eps, label='self%one_m_eps')
+        deallocate(self%chi_scat, self%one_m_eps)
+      endif
       if (allocated(self%b4)) deallocate(self%b4)
       if (allocated(self%Jnu) .and. Jnu_to_file) then
         call mem_unregister(self%Jnu, label='Jnu')
@@ -556,24 +589,42 @@ contains
   END SUBROUTINE execute
 
   !===============================================================================
+  !> The rt_params instance governing this patch: rt_out for any ray working on
+  !> the output spectrum, rt_iter for the internal (iteration) spectrum.
+  !===============================================================================
+  FUNCTION pass_params (self) RESULT (rtp)
+    class(rt_patch_t), intent(in) :: self
+    type(rt_params_t), pointer :: rtp
+    !-----------------------------------------------------------------------------
+    if (self%do_out_sp) then
+      rtp => rt_out
+    else
+      rtp => rt_iter
+    endif
+  END FUNCTION pass_params
+
+  !===============================================================================
   SUBROUTINE background(self, comp, i_mu, i_set, do_rotate_atmos)
     class(rt_patch_t) :: self
     class(composition_type), pointer :: comp
     class(atom_data_t), pointer :: adata
     integer, intent(in) :: i_mu, i_set
     logical, intent(in) :: do_rotate_atmos
+    type(rt_params_t), pointer :: rtp
     real(8) :: vec(3)
     logical :: include_absmet, do_sample_opac, do_make_eos
     integer :: i
     !-----------------------------------------------------------------------------
-    include_absmet = (self%do_full_sp .and. (self%i_nu > self%n_nu .or. .not. decouple_continuum)) &
-                   .or. (self%do_out_sp .and. absmet_in_output)
-    do_sample_opac = (self%do_full_sp .and. sample_back_opac) &
-                   .or. (self%do_out_sp .and. sample_back_opac_in_output)
+    rtp => pass_params(self)
+    ! with a decoupled continuum, only the bound-free half of the internal
+    ! spectrum (i_nu > n_nu) can carry the absmet background
+    include_absmet = rtp%include_absmet .and. (self%do_out_sp .or. &
+                     self%i_nu > self%n_nu .or. .not. decouple_continuum)
+    do_sample_opac = rtp%sample_back_opac
     do_make_eos = make_eos .and. self%do_out_sp
 
     if (do_rotate_atmos .and. i_mu /= 0) then
-      vec = long_vec(:,i_mu)
+      vec = rt_out%vec(:,i_mu)
     endif
 
     if (i_set==1) then
@@ -595,7 +646,7 @@ contains
           call self%add_bound_free_opacities(atom, trans, adata)
         endif
         ! adamp is only allocated where the old-formalism loops still need it
-        ! (use_new_linelist off, or atoms with hydrogen lines)
+        ! (atoms with hydrogen lines)
         if (self%bound_bound .and. i_set==1 .and. allocated(trans%adamp)) then
           call self%bound_bound_damping(comp, atom, trans, adata)
         endif
@@ -644,11 +695,31 @@ contains
     logical, intent(in) :: do_rotate_atmos
     real(4), intent(in) :: wmu
     real(4), intent(in), dimension(:,:,:) :: vproj
-    logical :: use_linelist
-    integer :: i
+    type(rt_params_t), pointer :: rtp
+    logical :: use_linelist, sample_ll, do_scat
+    integer :: i, x, y, z, f
+    real(4) :: beta, dJ, dEta
     !-----------------------------------------------------------------------------
-    use_linelist = self%do_final .and. comp%ll_initialised .and. linelist_in_output .and. .not. sample_linelist
-    
+    ! detailed line list vs sampled LTE line table, per pass (rt_iter or rt_out)
+    rtp => pass_params(self)
+    use_linelist = comp%ll_initialised .and. rtp%include_linelist .and. .not. rtp%sample_linelist
+    sample_ll = rtp%sample_linelist .and. associated(self%ll_opac)
+    if (sample_ll) sample_ll = self%ll_opac%initialised
+
+    ! line_scattering: accumulate the (1-eps)-weighted LTE line opacity, then
+    ! redirect that fraction of the line source from Bnu to Jnu (see below)
+    do_scat = line_scattering .and. (use_linelist .or. sample_ll)
+    if (do_scat) then
+      self%chi_scat = 0.
+      if (use_linelist) then
+        ! per-stage scattering fraction on the detailed-path frequency grid
+        call compute_epsilon_stage(1, self%sub_sp%nu, comp%temp, comp%ne, &
+          self%one_m_eps(:,:,:,:,1))
+        call compute_epsilon_stage(2, self%sub_sp%nu, comp%temp, comp%ne, &
+          self%one_m_eps(:,:,:,:,2))
+      endif
+    endif
+
     do i=1, self%natom
       associate(atom=>self%atoms(i), trans=>self%trans(i))
         adata => atom%data
@@ -662,19 +733,69 @@ contains
       end associate
     end do
 
+    ! NLTE departure coefficients for this (i_set, i_mu), shared by both the full
+    ! detailed line list and the sampled-mode detailed departure-species pass
+    departures => null()
+    if (associated(self%m3d_parent%departures) .and. i_set==1) then
+      i = merge(i_mu+1, 1, do_rotate_atmos)
+      departures => self%m3d_parent%departures(:,i)
+    endif
+
     if (use_linelist) then
-      departures => null()
-      if (associated(self%m3d_parent%departures) .and. i_set==1) then
-        i = merge(i_mu+1, 1, do_rotate_atmos)
-        departures => self%m3d_parent%departures(:,i)
-      endif
+      ! full detailed line list (non-sampled mode): every species, with departures
       associate(xhat=>self%work(:,:,:,1:self%nz,1), ehat=>self%work(:,:,:,1:self%nz,2))
-        if (use_new_linelist) then
-          call comp%add_linelist_opacities2(self%sub_sp, xhat, ehat, dlam, vproj, departures=departures)
+        if (do_scat) then
+          call comp%add_linelist_opacities2(self%sub_sp, xhat, ehat, dlam, vproj, &
+            departures=departures, one_m_eps=self%one_m_eps, chi_scat=self%chi_scat)
         else
-          call comp%add_linelist_opacities(self%sub_sp, xhat, ehat, dlam, vproj, departures=departures)
+          call comp%add_linelist_opacities2(self%sub_sp, xhat, ehat, dlam, vproj, departures=departures)
         endif
       end associate
+    elseif (sample_ll) then
+      ! (a) non-departure (LTE) species from the sampled table, Doppler-shifted per
+      ! cell, added to both work slots (xhat == ehat in LTE); the table also
+      ! carries the (1-eps)-weighted scattering component when line_scattering
+      if (do_scat) then
+        call self%ll_opac%interpolate_ll(comp%temp, comp%ne, comp%chi500, &
+          self%work(:,:,:,1:self%nz,1:2), self%sp%lam, vproj, self%fs, self%fe, &
+          chi_scat=self%chi_scat)
+      else
+        call self%ll_opac%interpolate_ll(comp%temp, comp%ne, comp%chi500, &
+          self%work(:,:,:,1:self%nz,1:2), self%sp%lam, vproj, self%fs, self%fe)
+      endif
+      ! (b) departure-carrying species in detail, with departures + velocity
+      if (associated(departures)) then
+        associate(xhat=>self%work(:,:,:,1:self%nz,1), ehat=>self%work(:,:,:,1:self%nz,2))
+          call comp%add_linelist_opacities2(self%sub_sp, xhat, ehat, dlam, vproj, &
+            departures=departures, only_departures=.true.)
+        end associate
+      endif
+    endif
+
+    ! line_scattering: the LTE lines were added as pure thermal absorbers (source
+    ! Bnu).  Redirect the scattering fraction (1-eps) of their opacity from Bnu
+    ! to the mean intensity: Snu_line = eps*Bnu + (1-eps)*Jnu.  With chi_scat the
+    ! (1-eps)-weighted raw line opacity, the emission correction Delta_eta =
+    ! chi_scat*(1-beta)*(Jnu-Bnu) is added to eta without altering chi, which in
+    ! working units means adding Delta_eta to xhat and Delta_eta/beta to ehat
+    ! (eta_to_Snu reconstructs eta=ehat*beta, chi=xhat-eta).  Jnu already holds
+    ! Jnu-Bnu here when scattering_absorption; this is a Lambda-iteration term
+    ! (no effect at maxiter=0 / Planck Jnu), exactly like continuum scattering.
+    if (do_scat) then
+      do z=1, self%nz
+        do y=1, self%ny
+          do x=1, self%nx
+            do f=self%fs, self%fe
+              beta = self%back(f,x,y,z,3)
+              dJ   = self%Jnu(f,x,y,z,i_set)
+              if (.not. scattering_absorption) dJ = dJ - beta/(1 - beta)
+              dEta = self%chi_scat(f,x,y,z) * (1 - beta) * dJ
+              self%work(f,x,y,z,1) = self%work(f,x,y,z,1) + dEta
+              self%work(f,x,y,z,2) = self%work(f,x,y,z,2) + dEta/beta
+            end do
+          end do
+        end do
+      end do
     endif
   END SUBROUTINE foreground
 
@@ -704,7 +825,7 @@ contains
         call self%rotate_array(vec, self%work(:,:,:,1:self%nz,1:2))
       endif
 
-      select case(long_solver)
+      select case(rt_out%solver)
         case('linear')
         !if (one_dimensional .and. rstar > 2) then
         !  call self%long_char_linear_spherical(vec)
@@ -718,31 +839,37 @@ contains
         ! that means ray-aligned (rotated) compositions -- the rotate_array
         ! shortcut above rotates only chi/Snu, not the thermodynamic state
         if (.not. (one_dimensional .or. column_by_column .or. do_rotate_atmos)) &
-          stop "long_solver='hermite' in 3D requires rotate_atmos=.true."
+          stop "rt_output_params solver='hermite' in 3D requires rotate_atmos=.true."
         call self%long_char_hermite(comp, vec, comp_up)
+        case('hermite2')
+        if (.not. (one_dimensional .or. column_by_column .or. do_rotate_atmos)) &
+          stop "rt_output_params solver='hermite2' in 3D requires rotate_atmos=.true."
+        call self%long_char_hermite2(comp, vec, comp_up)
         case default
-        stop 'Unknown long_solver, use "linear", "quadratic" or "hermite"'
+        stop 'Unknown rt_output_params solver, use "linear", "quadratic", "hermite" or "hermite2"'
       end select
     else
       if (one_dimensional .or. column_by_column) then
-        select case(short_solver)
+        select case(rt_iter%solver)
           case('linear')
             call self%long_char_linear(vec)
           case('quadratic')
             call self%long_char_quadratic(vec)
           case('hermite')
             call self%long_char_hermite(comp, vec, comp_up)
+          case('hermite2')
+            call self%long_char_hermite2(comp, vec, comp_up)
           case default
-            stop 'Unknown short_solver, use "linear", "quadratic" or "hermite"'
+            stop 'Unknown rt_iteration_params solver, use "linear", "quadratic", "hermite" or "hermite2"'
         end select
       else
-        select case(short_solver)
+        select case(rt_iter%solver)
           case('linear', 'quadratic')
             call self%short_char(vec)
           case('hermite')
             call self%short_char_hermite(comp, vec)
           case default
-            stop 'Unknown short_solver, use "linear", "quadratic" or "hermite"'
+            stop 'Unknown rt_iteration_params solver, use "linear", "quadratic" or "hermite"'
         end select
       endif
     endif
@@ -760,7 +887,7 @@ contains
     logical :: get_Jnu, get_PsiJ
     integer :: i
     !-----------------------------------------------------------------------------
-    get_Jnu = ((maxiter > 0) .or. (ilambd > 0)) .and. .not. self%do_final
+    get_Jnu = ((rt_iter%maxiter > 0) .or. (rt_out%maxiter > 0)) .and. .not. self%do_final
     get_PsiJ = any(self%get_rates) .and. self%bound_free
 
     if (get_Jnu) then
@@ -795,11 +922,11 @@ contains
       end associate
     end do
 
-    ! twin sub-patches only exist for do_full_sp when maxiter>0, and for
-    ! do_final when ilambd>0 (see composition_patch_mod.f90 create_sub_patches
+    ! twin sub-patches only exist for do_full_sp when rt_iter%maxiter>0, and for
+    ! do_final when rt_out%maxiter>0 (see composition_patch_mod.f90 create_sub_patches
     ! calls) -- saving Jnu outside those conditions leaves it with no reader.
-    if (Jnu_to_file .and. ((self%do_full_sp .and. maxiter > 0) .or. &
-                           (self%do_final .and. ilambd > 0))) then
+    if (Jnu_to_file .and. ((self%do_full_sp .and. rt_iter%maxiter > 0) .or. &
+                           (self%do_final .and. rt_out%maxiter > 0))) then
       Jnu_label = merge('Jnu_out', 'Jnu    ', self%do_out_sp)
       call self%save5(self%Jnu, trim(Jnu_label), key=self%key(1:3), add2meta=save_Jnu)
     endif
@@ -841,12 +968,14 @@ contains
     class(composition_type) :: comp
     real(4) :: h_kT, hv_kT, bnu
     type(spectrum_type) :: tab_sp
+    type(rt_params_t), pointer :: rtp
     logical :: include_absmet, do_sample_opac, do_make_eos
     integer :: fs, fe
     integer, save :: itimer=0
     integer :: x, y, z, f
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch%lte_background_opacities', itimer=itimer)
+    rtp => pass_params(self)
     fs = self%fs
     fe = self%fe
 
@@ -888,16 +1017,38 @@ contains
             call self%generate_opacity_table(self%sub_sp, include_absmet, comp%ll_initialised, &
               build_deriv=.false.)
           else
-            if (include_absmet .or. sample_linelist) then
+            if (include_absmet) then
               tab_sp = self%sub_sp
             else
               call comp%get_table_sp(self%sub_sp, tab_sp)
             endif
-            call self%generate_opacity_table(tab_sp, include_absmet, include_llist=sample_linelist, &
+            ! The background table is continuum-only. With sample_linelist the line
+            ! opacity lives in the separate ll_opac table (built below), not baked
+            ! into the background, so it can be interpolated with a per-cell Doppler
+            ! shift into the foreground rather than the velocity-blind self%back.
+            call self%generate_opacity_table(tab_sp, include_absmet, include_llist=.false., &
               build_deriv=.true.)
           endif
         endif
         if (associated(self%opac_lock)) call self%opac_lock%unset('opac_table')
+      endif
+    endif
+
+    ! Separate LTE line-list opacity table (non-departure species only), keyed by
+    ! i_nu like opac and shared across i_mu twins. Built velocity-free here; the
+    ! Doppler shift is applied when it is interpolated into the foreground.
+    if (do_sample_opac .and. rtp%sample_linelist .and. &
+        associated(self%m3d_parent%ll_opac_tables)) then
+      if (.not. associated(self%ll_opac)) then
+        self%ll_opac      => self%m3d_parent%ll_opac_tables(self%i_nu)
+        self%ll_opac_lock => self%m3d_parent%ll_opac_locks (self%i_nu)
+      endif
+      if (.not. self%ll_opac%initialised) then
+        if (associated(self%ll_opac_lock)) call self%ll_opac_lock%set('ll_opac_table')
+        if (.not. self%ll_opac%initialised) then   ! a twin may have filled it meanwhile
+          call self%generate_ll_opacity_table(self%sub_sp, include_absmet)
+        endif
+        if (associated(self%ll_opac_lock)) call self%ll_opac_lock%unset('ll_opac_table')
       endif
     endif
 
@@ -946,7 +1097,7 @@ contains
       Jnu_to_Bnu = .true.
     end select
 
-    if (self%iter > 0 .or. (self%do_final .and. ilambd > 0)) then
+    if (self%iter > 0 .or. (self%do_final .and. rt_out%maxiter > 0)) then
       Jnu_to_Bnu = .false.
       if (Jnu_to_file) then
         Jnu_label = merge('Jnu_out', 'Jnu    ', self%do_out_sp)
@@ -1053,7 +1204,7 @@ contains
     call comp%absorption(sp, all_chi, include_absmet=include_absmet, sorted=self%sp%sorted)
 
     if (include_llist) then
-      ! absorption returns the actual chi, while add_linelist_opacities
+      ! absorption returns the actual chi, while add_linelist_opacities2
       ! adds the working versions of chi and eta
       allocate(all_eta, all_beta, mold=all_chi)
       do k=1, nne
@@ -1066,11 +1217,7 @@ contains
           end associate
         end do
       end do
-      if (use_new_linelist) then
-        call comp%add_linelist_opacities2(sp, all_chi, all_eta, dlam)
-      else
-        call comp%add_linelist_opacities(sp, all_chi, all_eta, dlam)
-      endif
+      call comp%add_linelist_opacities2(sp, all_chi, all_eta, dlam)
       do k=1, nne
         do j=1, ntemp
           associate(chi=>all_chi(:,j,k,1), eta=>all_eta(:,j,k,1), beta=>all_beta(:,j,k,1), &
@@ -1100,6 +1247,132 @@ contains
     self%opac%initialised = .true.
     call trace%end(itimer)
   END SUBROUTINE generate_opacity_table
+
+  !===============================================================================
+  ! Build the separate sampled LTE line-list table (sample_linelist). tab_comp is
+  ! masked to the non-departure species (see mask_departure_species), so the line
+  ! opacity added here is pure LTE. In LTE the two working forms coincide
+  ! (xhat_line = ehat_line = chi_line/(1-beta)); we store that single quantity,
+  ! normalised by chi500, and at interpolation time add it to both work slots.
+  ! The pure line delta is isolated by subtracting the continuum working xhat that
+  ! add_linelist needs in place for its opacity-threshold reference.
+  !===============================================================================
+  SUBROUTINE generate_ll_opacity_table (self, sp, include_absmet)
+    class(rt_patch_t), target :: self
+    class(composition_type), pointer :: comp
+    type(spectrum_type) :: sp, psp
+    logical, intent(in) :: include_absmet
+    real(4), dimension(:,:,:,:), pointer :: all_chi
+    real(4), dimension(:,:,:,:), allocatable :: all_eta, all_beta, xhat_cont
+    real(4), dimension(:,:,:,:), allocatable :: chi_scat
+    real(4), dimension(:,:,:,:,:), allocatable :: one_m_eps
+    real(8), dimension(:), allocatable :: plam
+    real(8) :: vmax, dblue, dred
+    real(4) :: over_chi500
+    integer :: i, j, k, ntemp, nne, nnu, nnu0, npb, npr
+    integer, parameter :: pad_guard = 2
+    integer, save :: itimer=0
+    !-----------------------------------------------------------------------------
+    call trace%begin('rt_patch%generate_ll_opacity_table', itimer=itimer)
+    comp => self%m3d_parent%tab_comp
+    ntemp = size(comp%temp,1)
+    nne   = size(comp%temp,2)
+
+    ! ---- Doppler padding of the table wavelength grid ------------------------
+    ! At interpolation each cell queries lam*(1+vproj), vproj = vec.v (|vec|=1) in
+    ! units of c, so |vproj| <= vmax = max cell speed / c. The chunk output grid
+    ! spans [lam(fs), lam(fe)]; without padding a shifted query at the chunk edge
+    ! falls off the table (searchsorted clamps) and any line that Doppler-shifts
+    ! into the window there is missed. Extend the grid geometrically at its edge
+    ! log-spacing by enough nodes to cover +/-vmax (plus a guard for line wings),
+    ! then build the table on the padded grid. vmax comes from the un-rotated
+    ! composition; rotation preserves the speed, so it bounds every direction.
+    vmax = 0
+    if (associated(self%m3d_parent%composition)) then
+      associate(bc => self%m3d_parent%composition)
+        if (allocated(bc%vx)) vmax = sqrt(real(maxval(bc%vx**2 + bc%vy**2 + bc%vz**2), 8))
+      end associate
+    endif
+    nnu0 = sp%nnu
+    if (vmax > 0 .and. nnu0 >= 2) then
+      dblue = log(sp%lam(2))    - log(sp%lam(1))
+      dred  = log(sp%lam(nnu0)) - log(sp%lam(nnu0-1))
+      npb = ceiling(vmax/abs(dblue)) + pad_guard
+      npr = ceiling(vmax/abs(dred))  + pad_guard
+      allocate(plam(nnu0 + npb + npr))
+      do i=1, npb
+        plam(i) = sp%lam(1) * exp(-(npb-i+1)*dblue)     ! blue extension (ascending lam)
+      end do
+      plam(npb+1:npb+nnu0) = sp%lam
+      do i=1, npr
+        plam(npb+nnu0+i) = sp%lam(nnu0) * exp(i*dred)    ! red extension
+      end do
+      call psp%reset(lam=plam)
+    else
+      call psp%reset(lam=sp%lam)
+    endif
+    psp%sorted = sp%sorted
+    nnu = psp%nnu
+
+    allocate(self%ll_opac%val(nnu, ntemp, nne), source=0.)
+    allocate(self%ll_opac%lam, source=psp%lam)
+    self%ll_opac%nnu = nnu
+    self%ll_opac%ntemp = ntemp
+    self%ll_opac%nne = nne
+    call mem_register(self%ll_opac%val, label='ll_opac_table')
+
+    ! continuum reference (needed for add_linelist's opacity threshold), converted
+    ! into the working xhat/ehat units the line routines accumulate onto
+    all_chi(1:nnu, 1:ntemp, 1:nne, 1:1) => self%ll_opac%val
+    call comp%absorption(psp, all_chi, include_absmet=include_absmet, sorted=self%sp%sorted)
+    allocate(all_eta, all_beta, xhat_cont, mold=all_chi)
+    do k=1, nne
+      do j=1, ntemp
+        associate(chi=>all_chi(:,j,k,1), eta=>all_eta(:,j,k,1), beta=>all_beta(:,j,k,1), &
+                  xhat=>all_chi(:,j,k,1), ehat=>all_eta(:,j,k,1))
+          beta = exp(-h_k * psp%nu / comp%temp(j,k,1))
+          ehat = chi / (1 - beta)
+          xhat = chi + ehat*beta
+        end associate
+      end do
+    end do
+    xhat_cont = all_chi     ! snapshot of the continuum working xhat
+
+    ! LTE line list (no departures/vproj); tab_comp is masked to non-departure
+    ! species, so only LTE species contribute here
+    if (line_scattering) then
+      ! scattering split: precompute the per-stage scattering fraction 1-eps at
+      ! the node (T,ne) on the (padded) table grid, accumulate the
+      ! (1-eps)-weighted line opacity into chi_scat, and store it as the table's
+      ! second component (normalised the same way as the total)
+      allocate(one_m_eps(nnu, ntemp, nne, 1, 2))
+      allocate(chi_scat(nnu, ntemp, nne, 1), source=0.)
+      call compute_epsilon_stage(1, psp%nu, comp%temp, comp%ne, one_m_eps(:,:,:,:,1))
+      call compute_epsilon_stage(2, psp%nu, comp%temp, comp%ne, one_m_eps(:,:,:,:,2))
+      call comp%add_linelist_opacities2(psp, all_chi, all_eta, dlam, &
+        one_m_eps=one_m_eps, chi_scat=chi_scat)
+      allocate(self%ll_opac%scat(nnu, ntemp, nne), source=0.)
+      call mem_register(self%ll_opac%scat, label='ll_opac_table')
+    else
+      call comp%add_linelist_opacities2(psp, all_chi, all_eta, dlam)
+    endif
+
+    ! isolate the pure line xhat delta and normalise by chi500 (undone per cell in
+    ! sample_interpolate_ll). In LTE the ehat delta equals the xhat delta.
+    do k=1, nne
+      do j=1, ntemp
+        over_chi500 = 1 / comp%chi500(j,k,1)
+        self%ll_opac%val(:,j,k) = (all_chi(:,j,k,1) - xhat_cont(:,j,k,1)) * over_chi500
+        if (allocated(chi_scat)) &
+          self%ll_opac%scat(:,j,k) = chi_scat(:,j,k,1) * over_chi500
+      end do
+    end do
+
+    self%ll_opac%pca = comp%pca
+    call self%ll_opac%build_derivatives()
+    self%ll_opac%initialised = .true.
+    call trace%end(itimer)
+  END SUBROUTINE generate_ll_opacity_table
 
   !===============================================================================
   SUBROUTINE save_opac_table (self)
@@ -1261,6 +1534,7 @@ contains
     real(4), dimension(:,:,:), allocatable :: wphi, temp, ne, fo, vbar2h, tothi, t3nhe
     real(4), dimension(:,:,:), allocatable :: e_kT4, ne4, tothi4, sp4, idf3, vb3
     real(4), dimension(:,:,:,:), allocatable :: lnbase, dummy_dep
+    real(4) :: eps_dummy(0,0,0,0), scat_dummy(0,0,0,0)
     real(4), dimension(:), allocatable :: vphi
     real(4) :: wmu, idf, vpr, a, idf_4pi, ni, nj, Bji_nj, Bij_ni, widf, wp, amin, amax
     real(8) :: q
@@ -1379,21 +1653,23 @@ contains
           allocate(dummy_dep(1,1,1,1), source=0.)
           if (self%sub_sp%equidistant) then
             call ll_add_opacity_equi(trans%ll, self%llam, xhat, ehat, cont, self%logref, &
-              vproj, idf3, vb3, e_kT4, lnbase, ne4, tothi4, sp4, dummy_dep, .false.)
+              vproj, idf3, vb3, e_kT4, lnbase, ne4, tothi4, sp4, dummy_dep, .false., &
+              eps_dummy, scat_dummy, .false.)
           else
             call ll_add_opacity(trans%ll, self%llam, xhat, ehat, cont, self%logref, &
-              vproj, idf3, vb3, e_kT4, lnbase, ne4, tothi4, sp4, dummy_dep, .false.)
+              vproj, idf3, vb3, e_kT4, lnbase, ne4, tothi4, sp4, dummy_dep, .false., &
+              eps_dummy, scat_dummy, .false.)
           endif
         else
           call self%fill_b4(adata, atom%nlevel)
           if (self%sub_sp%equidistant) then
             call ll_add_opacity_equi(trans%ll, self%llam, xhat, ehat, cont, self%logref, &
               vproj, idf3, vb3, e_kT4, lnbase, ne4, tothi4, sp4, &
-              self%b4(:,:,:,1:atom%nlevel), .true.)
+              self%b4(:,:,:,1:atom%nlevel), .true., eps_dummy, scat_dummy, .false.)
           else
             call ll_add_opacity(trans%ll, self%llam, xhat, ehat, cont, self%logref, &
               vproj, idf3, vb3, e_kT4, lnbase, ne4, tothi4, sp4, &
-              self%b4(:,:,:,1:atom%nlevel), .true.)
+              self%b4(:,:,:,1:atom%nlevel), .true., eps_dummy, scat_dummy, .false.)
           endif
         endif
       end associate
@@ -2280,7 +2556,7 @@ contains
     call self%ray_patch_t%init_nbors_hash(nbors)
 
     key = self%key
-    if (ilambd > 0) then
+    if (rt_out%maxiter > 0) then
       if (self%do_out_sp) then
         if (self%do_final) then
           key(3) = 1
@@ -2337,7 +2613,7 @@ contains
     ! finishes last.  They can reach this point at the same time, though, so the
     ! ownership has to be settled between them before either one frees anything.
     !-----------------------------------------------------------------------------
-    if ((self%do_full_sp .and. maxiter > 0) .or. (self%do_final .and. ilambd > 0)) then
+    if ((self%do_full_sp .and. rt_iter%maxiter > 0) .or. (self%do_final .and. rt_out%maxiter > 0)) then
       cleanup = .false.
       !$omp critical (twin_Jnu_cleanup)
       if (self%up_twin%is_finished() .and. self%dn_twin%is_finished()) then
@@ -2424,14 +2700,14 @@ contains
       call self%save5(i3, 'i3')
     endif
 
-    ! disk-integrated flux: F(lam) = 2*pi * sum_mu long_wmu(mu) * ie(lam,mu)
-    ! (long_wmu already carries the cosine/mu factor, see ray_mod.f90's
+    ! disk-integrated flux: F(lam) = 2*pi * sum_mu rt_out%wmu(mu) * ie(lam,mu)
+    ! (rt_out%wmu already carries the cosine/mu factor, see ray_mod.f90's
     ! nphi_copies), matching tumult/flux.py's integrate_flux exactly so the
     ! Python post-processing step is no longer needed for this quantity.
     allocate(flux(fs:fe, 1, 1, 1, self%n_set), source=0.)
     do i_set=1, self%n_set
       do mu=self%mus, self%mue
-        flux(:,1,1,1,i_set) = flux(:,1,1,1,i_set) + real(2*pi*long_wmu(mu), 4) * ie(:,1,1,mu,i_set)
+        flux(:,1,1,1,i_set) = flux(:,1,1,1,i_set) + real(2*pi*rt_out%wmu(mu), 4) * ie(:,1,1,mu,i_set)
       end do
     end do
     call self%save5(flux, 'flux')
@@ -2451,18 +2727,18 @@ contains
   !> report itself (worst error, wavelength, i_nu) is printed by nlte_patch_t, by
   !> reading the shared RMA counters set here.
   !>
-  !> short_wmu carries no cosine (mu) weighting -- it is the isotropic weight used
+  !> rt_iter%wmu carries no cosine (mu) weighting -- it is the isotropic weight used
   !> for the mean-intensity (Jnu) angle sum, normalized so that
-  !> sum(short_wmu(1:size)) = 1 over the full sphere (see integrate_intensity,
+  !> sum(rt_iter%wmu(1:size)) = 1 over the full sphere (see integrate_intensity,
   !> which undoes the top/bottom-hemisphere-mirror halving via wmu2=2*wmu). Flux
-  !> requires the additional mu = short_vec(3,i) factor, giving:
-  !>   F(lam) = 2*pi * sum_i [2*short_wmu(i)] * short_vec(3,i) * I(lam,i)
-  !>          = 4*pi * sum_i short_wmu(i) * short_vec(3,i) * I(lam,i)
+  !> requires the additional mu = rt_iter%vec(3,i) factor, giving:
+  !>   F(lam) = 2*pi * sum_i [2*rt_iter%wmu(i)] * rt_iter%vec(3,i) * I(lam,i)
+  !>          = 4*pi * sum_i rt_iter%wmu(i) * rt_iter%vec(3,i) * I(lam,i)
   !> summed over the top-hemisphere ray range self%mus:self%mue. This mirrors the
-  !> long_wmu flux weights used by save_intensity's do_final pass (long_wmu already
+  !> rt_out%wmu flux weights used by save_intensity's do_final pass (rt_out%wmu already
   !> bakes the mu factor in, see ray_mod.f90's nphi_copies), but is only inferred
   !> by analogy for the (coarser) short/ALI quadrature -- there is no other code
-  !> path in the repo computing flux from short_wmu to check it against.
+  !> path in the repo computing flux from rt_iter%wmu to check it against.
   !===============================================================================
   SUBROUTINE check_flux_convergence (self)
     class(rt_patch_t) :: self
@@ -2477,7 +2753,7 @@ contains
 
     allocate(flux_now(fs:fe), source=0.d0)
     do i=self%mus, self%mue
-      flux_now = flux_now + (4*pi) * short_wmu(i) * short_vec(3,i) * &
+      flux_now = flux_now + (4*pi) * rt_iter%wmu(i) * rt_iter%vec(3,i) * &
         sum(sum(dble(self%mem(fs:fe,:,:,i,1,3)), dim=3), dim=2) / dble(self%nx * self%ny)
     end do
 
