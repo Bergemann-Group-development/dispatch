@@ -1,0 +1,31 @@
+# Production, multi-host build -- the gfortran counterpart to ifort/hoppe.mkf.
+#
+# The ifort version uses "-xAVX -axCORE-AVX512": a single fat binary carrying an
+# AVX baseline plus an auto-dispatched AVX-512 code path, so one build runs
+# (and runs fast) across a range of Intel hosts. GCC/gfortran has NO flag-level
+# equivalent of Intel's -ax whole-program CPU dispatch (function multi-versioning
+# would require per-routine source annotations), so instead of a fat binary we
+# compile against a portable *baseline* microarchitecture for the build host's
+# ISA -- broad enough to run across a range of hosts, still vectorized.
+#
+#   x86-64          -> -march=sandybridge : AVX baseline (Sandy Bridge and newer),
+#                                           matching ifort's -xAVX baseline.
+#   arm64 (Apple)   -> -mcpu=apple-m1     : runs across all Apple silicon (M1+).
+#   aarch64 (Linux) -> -mcpu=generic      : portable across ARM servers.
+#
+# For a single known node, override on the make command line: HW=-march=native.
+# -O3 (not -Ofast) is deliberate: -ffast-math would perturb the golden tests.
+
+OPT   = -O3
+DEBUG = -fbacktrace
+
+ARCH := $(shell uname -m)
+ifeq ($(ARCH),x86_64)
+  HW = -march=sandybridge -mtune=generic
+else ifeq ($(ARCH),arm64)
+  HW = -mcpu=apple-m1
+else ifeq ($(ARCH),aarch64)
+  HW = -mcpu=generic -mtune=generic
+else
+  HW = -mtune=generic
+endif
