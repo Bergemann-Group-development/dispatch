@@ -560,21 +560,48 @@ def crop_inputs(xx, yy, xmin=None, xmax=None, ymin=None, ymax=None):
 #=====================================================================
 def marcs_to_pandas(file):
     with open(file) as f:
-        lines = f.readlines()
+      lines = f.readlines()
 
-    nrows = int(lines[22].split()[0])
-    h1 = 24
-    h2 = h1 + nrows + 1
-    # Create StringIO objects for the two sections
-    section1 = StringIO('\n'.join(lines[h1:h1+nrows+1]))
-    section2 = StringIO('\n'.join(lines[h2:h2+nrows+1]))
+    meta = {}
+    meta['name'] = lines.pop(0).strip()
+    info = lines.pop(0).strip()
+    meta['teff'] = float(info.split()[0])
+    meta['date'] = info.split()[-1]
+    meta['flux'] = float(lines.pop(0).split()[0])
+    meta['logg'] = float(lines.pop(0).split()[0])
+    meta['vmic'] = float(lines.pop(0).split()[0])
+    meta['mass'] = float(lines.pop(0).split()[0])
+    meta['feh'], meta['alpha_enhancement'] = [float(x) for x in lines.pop(0).split()[:2]]
+    meta['radius'] = float(lines.pop(0).split()[0])
+    meta['lsun'] = float(lines.pop(0).split()[0])
+    meta['alpha'], meta['nu'], meta['y'], meta['beta'] = [float(x) for x in lines.pop(0).split()[:4]]
+    meta['X'], meta['Y'], meta['Z'] = [float(x) for x in lines.pop(0).split()[:3]]
+    lines.pop(0)
+    abnd = list(map(float, ' '.join([l.strip() for l in lines[:10]]).split()))
+    meta['abundances'] = dict(zip(atomic_weights.keys(), abnd))
+    lines = lines[10:]
+    nrows = int(lines.pop(0).split()[0]) + 1
+    lines.pop(0)
 
-    # Read the sections into DataFrames
-    df1 = pd.read_csv(section1, sep=r'\s+')
-    df2 = pd.read_csv(section2, sep=r'\s+')
+    df = pd.DataFrame()
+    for t in range(2):
+      data = lines[:nrows]
+      lines = lines[nrows:]
+      sub = pd.read_csv(StringIO('\n'.join(data)), sep=r'\s+')
+      sub = sub.loc[:, ~sub.columns.isin(df.columns)]
+      df = pd.concat([df, sub], axis=1)
 
-    df2 = df2.loc[:, ~df2.columns.isin(df1.columns)]
-    df = pd.concat([df1, df2], axis=1)
+    lines = lines[1:] # skip the first line of the second section
+    widths = [3,] + [7,] * 11
+
+    for t in range(3):
+      data = lines[:nrows]
+      lines = lines[nrows:]
+      sub = pd.read_fwf(StringIO('\n'.join(data)), widths=widths, sep=r'\s+')
+      sub = sub.loc[:, ~sub.columns.isin(df.columns)]
+      df = pd.concat([df, sub], axis=1)
+
+    df.attrs = meta
     return df
 
 #=====================================================================
