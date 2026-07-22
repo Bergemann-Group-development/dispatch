@@ -1,11 +1,12 @@
 from tumult.auxfuncs import *
+from tumult.isotopes import parse_ts, format_molec, molec_to_ts, species_elements, element_z
 import numpy as np
 import pandas as pd
-import textwrap
 from astropy import units as u
+from pathlib import Path
 
 element_ids = [
-        'H' ,'He','Li','Be','B' ,'C' ,'N' ,'O' ,'F ',
+        'H' ,'He','Li','Be','B' ,'C' ,'N' ,'O' ,'F' ,
         'Ne','Na','Mg','Al','Si','P' ,'S' ,'Cl','Ar',
         'K' ,'Ca','Sc','Ti','V' ,'Cr','Mn','Fe','Co',
         'Ni','Cu','Zn','Ga','Ge','As','Se','Br','Kr',
@@ -40,6 +41,34 @@ class LineList(pd.DataFrame):
   @property
   def _constructor(self):
       return LineList
+  
+  @classmethod
+  def from_file(cls, filename, fmt=None):
+    if fmt == 'ts':
+      return cls.from_ts_format(filename)
+    elif fmt == 'tumult':
+      return cls.from_tumult_format(filename)
+    elif fmt == 'linemake':
+      return cls.from_linemake_format(filename)
+    elif fmt == 'moog':
+      return cls.from_moog_format(filename)
+    elif fmt == 'vald':
+      return cls.from_vald_format(filename)
+    elif fmt == 'abslin':
+      return cls.from_abslin_format(filename)
+    else:
+      raise ValueError(f"Unknown line list format: {fmt}")
+    
+  @classmethod
+  def from_folder(cls, folder, fmt=None, pattern='*'):
+    llist = pd.DataFrame()
+    for filename in Path(folder).glob(pattern):
+      if filename.is_file():
+        try:
+          llist = pd.concat([llist, cls.from_file(filename, fmt=fmt)])
+        except Exception as e:
+          print(f"Error reading line list {filename}: {e}")
+    return cls(llist)
 
   @classmethod
   def from_ts_format(cls, filename):
@@ -47,8 +76,8 @@ class LineList(pd.DataFrame):
     with open(filename) as f:
       lines = f.readlines()
       names = ['lam0', 'evi', 'loggf', 'gv', 'upper_g', 'ga', 'gq']
+      levels = ['levlo', 'levup']
       df_dict = {}
-      usecols = lambda col: col is None or col < len(names)
 
       while len(lines) > 0:
         try:
@@ -65,27 +94,47 @@ class LineList(pd.DataFrame):
         table = ''.join(lines[:nlines])
 
         try:
-          try:
-            df = pd.read_csv(StringIO(table), header=None, sep=r'\s+', quotechar="'", usecols=usecols)
-          except Exception as e:
-            print(f"Retrying with fixed-width format for {label} due to error: {e}")
-            df = pd.read_fwf(StringIO(table), header=None, infer_nrows=nlines).iloc[:, :len(names)]
-          
-          df.columns = names[:df.shape[1]]
+          # Tokenise directly rather than going through the CSV reader: trailing
+          # labels may carry an unbalanced apostrophe from term notation such as
+          # "p4f'[5]", which breaks quotechar parsing and silently drops blocks.
+          rows = [r.split() for r in lines[:nlines] if r.strip()]
 
-          if 'gq' in df.columns:
-            if df.gq.dtype != float:
-              df.drop(columns='gq', inplace=True)
+          def isnum(tok):
+            try:
+              float(tok)
+              return True
+            except ValueError:
+              return False
 
-          npro = mass_id.strip("'").split('.')[0]
-          iso = mass_id.strip("'").split('.')[-1]
-          
-          if int(npro) > 100:
-            iso = textwrap.wrap(iso, 3)
-            iso = sorted([max(1, int(i)) for i in iso])
-            iso = ''.join([str(i) for i in iso])
+          # gq (gamst) is optional, so the designations sit in column 6 or 7
+          ncore = 0
+          for tok in rows[0][:len(names)]:
+            if not isnum(tok):
+              break
+            ncore += 1
+
+          cols = names[:ncore]
+          has_lev = len(rows[0]) >= ncore + 2 and all(
+              len(rows[0][ncore + k].strip("'")) == 1 for k in (0, 1))
+          if has_lev:
+            cols = cols + levels
+
+          data = [r[:len(cols)] for r in rows]
+          df = pd.DataFrame(data, columns=cols)
+          df[cols[:ncore]] = df[cols[:ncore]].astype(float)
+          for lev in levels:
+            if lev in df.columns:
+              df[lev] = df[lev].str.strip("'").str.strip()
+
+          # decode the Turbospectrum species token into a molecule_mod label:
+          # a molecule keeps the sorted, glued mass numbers (each floored to 1
+          # so a natural '000' constituent stays present); an atom keeps its
+          # bare mass number as an int, as the rest of the code expects
+          cons = parse_ts(mass_id)
+          if len(cons) > 1:
+            iso = format_molec([(z, max(1, a)) for z, a in cons])
           else:
-            iso = int(iso)
+            iso = cons[0][1]
 
           df_dict[(label, iso)] = df
         except Exception as e:
@@ -142,7 +191,7 @@ class LineList(pd.DataFrame):
     return cls(llist)
   
   @classmethod
-  def from_linemake(cls, filename):
+  def from_linemake_format(cls, filename):
     llist = pd.read_fwf(filename, widths=[10,10,10,10,20,20], sep=r'\s+', header=None, dtype={1:str})
     llist.rename(columns={0: 'lam0', 1: 'id', 2: 'evi', 3: 'loggf', llist.shape[1]-1: 'label'}, inplace=True)
     llist = llist[['lam0', 'id', 'evi', 'loggf', 'label']]
@@ -264,9 +313,18 @@ class LineList(pd.DataFrame):
         else:
           el_id, ion = s, 1
 
-        # map element id to integer code
-        p = element_ids.index(el_id) + 1 if el_id in element_ids else 0
+        # build the Turbospectrum species token. Atom vs molecule is decided by
+        # parsing the species formula against the element table (species_elements
+        # falls back to a general chemical-formula parser), so no hardcoded list
+        # of molecules is needed -- CaH, SiS, VO, ZrO, ... all resolve on their
+        # own. Atoms keep the bare '<Z>.<iso>' form; molecules get the full
+        # atomic-number/mass-number encoding.
+        elements = species_elements(el_id)
+        if len(elements) == 1:
+          token = f"{element_z(elements[0])}.{iso}"
+        else:
+          token = molec_to_ts(el_id, iso)
 
-        f.write(f"'{p}.{iso}' {ion} {nlines}\n")
+        f.write(f"'{token}' {ion} {nlines}\n")
         f.write(f"'{s}'\n")
         f.write(sub[head].to_string(index=False, header=False, na_rep='', formatters=formatters) + '\n')
