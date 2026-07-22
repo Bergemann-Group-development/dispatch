@@ -12,21 +12,22 @@ MODULE nlte_patch_mod
     red_cut, blue_cut, logf_cut, atom_data_t, atom_trans_t, &
     nq_fac, nq_min, nq_max, disable_bf, disable_bb, level_partf, &
     fmin, cbbesc, cbfesc, cbbhsc, cbfhsc, colscale, ch0_hmip, &
-    ng_step, ng_start, ng_global, save_rate_matrix
+    ng_step, ng_start, ng_global, save_rate_matrix, legacy_freql
   USE trans_mod, only: line_type, cont_type, transition_type
   USE const_mod, only: CC
   USE ion_mod, only: ion_type, particle_type, debye_shield, massive_type
   USE element_mod, only: element_type
   USE molecule_mod, only: molec_type
   USE bbtrans_mod, only: bbtrans_type
-  USE composition_mod, only: composition_type, departure_pointer_t, read_departures, &
-    use_new_linelist
-  USE m3d_patch_mod, only: m3d_patch_t, composition, maxiter, key_link_t, &
+  USE composition_mod, only: composition_type, departure_pointer_t, read_departures
+  USE m3d_patch_mod, only: m3d_patch_t, composition, key_link_t, &
     global_maxerr, convlim, convmax, atom_update_counter, comoving_frame, global_pos, &
     decouple_continuum, overlapping_bb, overlapping_bf, converged, premature_finish, overrelax, &
-    rotate_atmos, long_vec, rank_lvlerr, overlapping_bb_in_output, long_scheme, n_nu, detailed_absmet, &
+    rotate_atmos, rank_lvlerr, overlapping_bb_in_output, n_nu, detailed_absmet, &
     atmos_file, flux_convergence, flux_conv_signal, global_flux_err, global_flux_pos, global_flux_lambda, &
-    flux_final_counter, nlte_finished, n_nlte_patches, release_output_tasks
+    flux_final_counter, nlte_finished, n_nlte_patches, release_output_tasks, &
+    save_populations, bound_free_in_output, save_rates
+  USE rt_params_mod, only: rt_out
   USE bftrans_mod, only: bftrans_type
   USE osmet_mod, only: osmet_type, osmet
   USE rt_patch_mod, only: rt_patch_t
@@ -72,9 +73,6 @@ MODULE nlte_patch_mod
 
   integer, save :: epos(3), elvl, eatom=1
   logical, save :: exclude_from_line_list=.true.
-  logical, save :: save_populations=.true.
-  logical, save :: bound_free_in_output=.false.
-  integer, save :: save_rates=0
   logical, public, save :: external_sp=.false.
   !-----------------------------------------------------------------------------
 
@@ -122,13 +120,13 @@ contains
     logical, save :: relative_abundance = .false.
     logical :: pandas_format
     integer :: i, j, iostat, nlvl
-    namelist /atom_params/ atom_file, qnorm, convlim, exclude_trace_cont, level_partf, &
+    namelist /atom_params/ atom_file, qnorm, exclude_trace_cont, level_partf, &
       use_atom_abnd, logf_cut, red_cut, blue_cut, n_in_lines, abundance, relative_abundance, &
       exclude_from_line_list, use_classic_col, kramer_bf, overlapping_bf, &
-      overlapping_bb, detailed_absmet, convmax, premature_finish, bound_free_in_output, &
-      save_populations, nq_fac, nq_min, nq_max, cbbesc, cbfesc, cbbhsc, cbfhsc, colscale, &
-      disable_bf, disable_bb, overlapping_bb_in_output, save_rates, save_rate_matrix, fmin, &
-      ch0_hmip
+      overlapping_bb, detailed_absmet, &
+      nq_fac, nq_min, nq_max, cbbesc, cbfesc, cbbhsc, cbfhsc, colscale, &
+      disable_bf, disable_bb, fmin, &
+      ch0_hmip, legacy_freql
     namelist /line_mask/ in_lines
     !-----------------------------------------------------------------------------
     call trace%begin('nlte_patch_t%pre_init_atom', itimer=itimer)
@@ -290,7 +288,7 @@ contains
       ! this pointer will be referenced by other atoms with same local data
       allocate(self%atoms(i)%data)
       if (rotate_atmos) then
-        allocate(self%atoms(i)%rotated_data(size(long_vec, 2)))
+        allocate(self%atoms(i)%rotated_data(size(rt_out%vec, 2)))
       endif
 
       ! here we create a copy of the patch atom, which will share the same
@@ -330,7 +328,7 @@ contains
       first_time = .false.
       saved_already = .false.
       external_sp = output_sp%nnu > 0
-      save_sp = external_sp .or. (associated(self%atoms) .and. size(long_vec,2)>0)
+      save_sp = external_sp .or. (associated(self%atoms) .and. size(rt_out%vec,2)>0)
       if (associated(self%atoms)) then
         if (decouple_continuum) then
           if (detailed_absmet .and. overlapping_bf) call self%get_osmet_nu(bf_sp)
@@ -699,7 +697,7 @@ contains
       endif
     end do
 
-    nmu = merge(size(long_vec, 2), 0, rotate_atmos)
+    nmu = merge(size(rt_out%vec, 2), 0, rotate_atmos)
     allocate(self%departures(j, 1+nmu))
     self%m3d_parent%departures => self%departures
 
@@ -812,14 +810,14 @@ contains
     integer :: i,j,k,l, n(3), imu, nmu, x, y, z
     logical :: iterated, has_departures
     !---------------------------------------------------------------------------------
-    nmu = size(long_vec, 2)
+    nmu = size(rt_out%vec, 2)
     n = self%n
     allocate(norm(n(1),n(2),n(3)))
     allocate(totn(n(1),n(2),n(3)))
 
     do i=1, size(self%departures, 1)
       do imu=1, nmu
-        vec = long_vec(:,imu)
+        vec = rt_out%vec(:,imu)
         dep => self%departures(i,1+imu)
         allocate(dep%mem, source=self%departures(i,1)%mem)
         call os%mem_register(storage_size(dep%mem), size(dep%mem), label='departures')
@@ -835,7 +833,7 @@ contains
       iterated = allocated(adata%b)
 
       do imu=1, nmu
-        vec = long_vec(:,imu)
+        vec = rt_out%vec(:,imu)
         adata => atom%rotated_data(imu)
         comp => self%m3d_parent%rotated_composition(imu)
         dep => self%departures(atom%idep, 1+imu)

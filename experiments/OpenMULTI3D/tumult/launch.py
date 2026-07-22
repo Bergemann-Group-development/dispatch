@@ -140,9 +140,10 @@ def monitor(folder, log_file=None):
     if os.path.isfile(nml_file):
         f = open(log_file, mode='r')
         nml = NameList.from_file(nml_file)
-        if 'atom_params' in nml and 'm3d_params' in nml:
-            maxiter = nml['m3d_params']['maxiter']
-            convlim = np.log10(nml['atom_params']['convlim'])
+        maxiter = nml['rt_iteration_params'].get('maxiter', 0)
+        convlim = nml['nlte_params'].get('convlim', None)
+        if convlim is not None:
+            convlim = np.log10(convlim)
             if maxiter > 0:
                 if os.path.isfile(log_file):
                     content = f.read()

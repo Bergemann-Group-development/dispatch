@@ -16,7 +16,8 @@ MODULE experiment_mod
   USE gpatch_mod, only: gpatch_t
   USE handyfuncs_mod
   USE m3d_halo_mod, only: m3d_halo_t
-  USE m3d_patch_mod, only: verbose, print_execution_history, long_vec, amr
+  USE m3d_patch_mod, only: verbose, print_execution_history, amr
+  USE rt_params_mod, only: rt_out
   USE composition_patch_mod, only: composition_patch_t
   USE read_atmos_mod, only: ia
   implicit none
@@ -109,7 +110,7 @@ CONTAINS
     ! atmosphere is interpolated straight into its composition patch
     self%nv = 0
     self%nt = 4 ! Download returns wrong stuff if nt <= 2
-    self%nw = 1 + size(long_vec, 2)
+    self%nw = 1 + size(rt_out%vec, 2)
 
     ! being memory-less (nv=0), this patch has no density slot: mark it so the
     ! task list's pre-update validate%check does not index a null/absent mem

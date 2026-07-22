@@ -31,7 +31,7 @@ MODULE m3d_halo_mod
     procedure:: check_status
   end type
 
-  logical, public, save :: print_finished=.false., print_download=.false.
+  logical, public, save :: print_finished=.false.
   logical, public, save :: print_lock=.false.
 
   public :: lock_mem, unlock_mem

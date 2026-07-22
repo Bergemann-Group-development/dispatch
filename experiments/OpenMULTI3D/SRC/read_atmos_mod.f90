@@ -7,7 +7,8 @@ MODULE read_atmos_mod
   USE const_mod
   USE op_math_mod, only: linspace
   USE interpol_mod, only: linterpolate_3d, linterpolate_3d_rotated, pchip_mono4, interp1d_sorted
-  USE m3d_patch_mod, only: pivot_z, ray_offset, composition, use_ne, use_rho, make_eos
+  USE m3d_patch_mod, only: composition, use_ne, use_rho, make_eos
+  USE rt_params_mod, only: pivot_z, ray_offset
   USE ray_mod, only: one_dimensional, rstar, rorigin
   USE composition_mod, only: composition_type
   USE units_mod, only: cgs
@@ -892,21 +893,22 @@ contains
   !> electron pressure that the readers store in ia%lpe is a scratch quantity
   !> here -- it is interpolated, then inverted to n_e and dropped.
   !>
-  !> The optional dln*_d* arguments return the partial derivatives of ln(T) and
-  !> ln(Pe) evaluated on the PCHIP interpolant of the snapshot, per code length
-  !> unit; for a rotated call (vec present) the z-derivative is the along-ray
-  !> derivative parameterized by z, and the horizontal partials are unavailable.
-  !> With use_ne=.false. there is no Pe field, and the lnPe outputs are zeroed --
-  !> the caller is expected to rebuild them from n_e*k_B*T after the thermal
-  !> equilibrium is solved.
+  !> The optional gradient arguments return the partial derivatives of ln(T)
+  !> and of Pe (linear, not log -- the hermite solvers assume chi/Pe linear
+  !> along the ray) evaluated on the PCHIP interpolant of the snapshot, per
+  !> code length unit; for a rotated call (vec present) the z-derivative is the
+  !> along-ray derivative parameterized by z, and the horizontal partials are
+  !> unavailable.  With use_ne=.false. there is no Pe field, and the Pe
+  !> gradient outputs are zeroed -- the caller is expected to rebuild them from
+  !> Pe = n_e*k_B*T after the thermal equilibrium is solved.
   !=============================================================================
   SUBROUTINE interpolate_atmos(n, sub, pos, temp, ne, rho, vx, vy, vz, vmic, vec, bot2pivot, &
-                               dlnt_dx, dlnt_dy, dlnt_dz, dlnpe_dx, dlnpe_dy, dlnpe_dz)
+                               dlnt_dx, dlnt_dy, dlnt_dz, dpe_dx, dpe_dy, dpe_dz)
     integer, intent(in) :: n(3)
     real(8), intent(in) :: sub(3), pos(3)
     real(4), intent(out), dimension(:,:,:) :: temp, ne, rho, vx, vy, vz, vmic
     real(4), intent(out), dimension(:,:,:), optional :: dlnt_dx, dlnt_dy, dlnt_dz
-    real(4), intent(out), dimension(:,:,:), optional :: dlnpe_dx, dlnpe_dy, dlnpe_dz
+    real(4), intent(out), dimension(:,:,:), optional :: dpe_dx, dpe_dy, dpe_dz
     real(4), dimension(:,:,:), pointer, contiguous :: rho_in, pe_in, temp_in
     real(4), dimension(:,:,:), allocatable :: pe
     real(8), intent(in), optional :: vec(3), bot2pivot
@@ -920,13 +922,13 @@ contains
     nx = n(1); ny = n(2); nz = n(3)
     allocate(pe(nx,ny,nz))
     get_grad_t  = present(dlnt_dz)
-    get_grad_pe = present(dlnpe_dz) .and. use_ne
-    if (present(dlnt_dx))  dlnt_dx  = 0.
-    if (present(dlnt_dy))  dlnt_dy  = 0.
-    if (present(dlnt_dz))  dlnt_dz  = 0.
-    if (present(dlnpe_dx)) dlnpe_dx = 0.
-    if (present(dlnpe_dy)) dlnpe_dy = 0.
-    if (present(dlnpe_dz)) dlnpe_dz = 0.
+    get_grad_pe = present(dpe_dz) .and. use_ne
+    if (present(dlnt_dx)) dlnt_dx = 0.
+    if (present(dlnt_dy)) dlnt_dy = 0.
+    if (present(dlnt_dz)) dlnt_dz = 0.
+    if (present(dpe_dx))  dpe_dx  = 0.
+    if (present(dpe_dy))  dpe_dy  = 0.
+    if (present(dpe_dz))  dpe_dz  = 0.
     ! with use_ne=.false. pe is never interpolated, and we hand composition ne=0,
     ! which is its signal to build a charge-neutrality initial guess for
     ! iterate_thermal_eq rather than trusting the value
@@ -967,7 +969,7 @@ contains
       else
         if (use_rho) call pchip_mono4(ia%zz, rho_in(1,1,:), newz, rho (1,1,:), sorted=.true.)
         if (get_grad_pe) then
-          call pchip_mono4(ia%zz, pe_in (1,1,:), newz, pe  (1,1,:), sorted=.true., newdydx=dlnpe_dz(1,1,:))
+          call pchip_mono4(ia%zz, pe_in (1,1,:), newz, pe  (1,1,:), sorted=.true., newdydx=dpe_dz(1,1,:))
         elseif (use_ne) then
           call pchip_mono4(ia%zz, pe_in (1,1,:), newz, pe  (1,1,:), sorted=.true.)
         endif
@@ -987,7 +989,7 @@ contains
 
       if (present(vec)) then
         if (use_rho) call linterpolate_3d_rotated(rho_in,  rho,  dx, dy, ia%zz, lower(1:2), ds(1:2), newz, vec, bot2pivot, pchip=do_pchip)
-        if (use_ne ) call linterpolate_3d_rotated(pe_in,   pe,   dx, dy, ia%zz, lower(1:2), ds(1:2), newz, vec, bot2pivot, pchip=do_pchip, dfdz=dlnpe_dz)
+        if (use_ne ) call linterpolate_3d_rotated(pe_in,   pe,   dx, dy, ia%zz, lower(1:2), ds(1:2), newz, vec, bot2pivot, pchip=do_pchip, dfdz=dpe_dz)
         call linterpolate_3d_rotated(temp_in, temp, dx, dy, ia%zz, lower(1:2), ds(1:2), newz, vec, bot2pivot, pchip=do_pchip, dfdz=dlnt_dz)
         call linterpolate_3d_rotated(ia%vx,   vx,   dx, dy, ia%zz, lower(1:2), ds(1:2), newz, vec, bot2pivot, pchip=do_pchip)
         call linterpolate_3d_rotated(ia%vy,   vy,   dx, dy, ia%zz, lower(1:2), ds(1:2), newz, vec, bot2pivot, pchip=do_pchip)
@@ -996,7 +998,7 @@ contains
       else
         if (use_rho) call linterpolate_3d(rho_in,  rho,  dx, dy, ia%zz, lower(1:2), ds(1:2), newz, pchip=do_pchip)
         if (use_ne ) call linterpolate_3d(pe_in,   pe,   dx, dy, ia%zz, lower(1:2), ds(1:2), newz, pchip=do_pchip, &
-                                          dfdx=dlnpe_dx, dfdy=dlnpe_dy, dfdz=dlnpe_dz)
+                                          dfdx=dpe_dx, dfdy=dpe_dy, dfdz=dpe_dz)
         call linterpolate_3d(temp_in, temp, dx, dy, ia%zz, lower(1:2), ds(1:2), newz, pchip=do_pchip, &
                              dfdx=dlnt_dx, dfdy=dlnt_dy, dfdz=dlnt_dz)
         call linterpolate_3d(ia%vx,   vx,   dx, dy, ia%zz, lower(1:2), ds(1:2), newz, pchip=do_pchip)
@@ -1010,18 +1012,20 @@ contains
       temp = exp(temp)
       if (use_rho) rho = exp(rho)
       if (use_ne ) pe  = exp(pe)
+      ! the interpolant ran on the log fields: dlnT is already what the callers
+      ! expect, but the Pe convention is linear -- convert dlnPe -> dPe
+      if (get_grad_pe) then
+        if (present(dpe_dx)) dpe_dx = dpe_dx * pe
+        if (present(dpe_dy)) dpe_dy = dpe_dy * pe
+        dpe_dz = dpe_dz * pe
+      endif
     else
-      ! the interpolant ran on the linear fields, so its derivatives are dT/d and
-      ! dPe/d -- convert to the logarithmic derivatives the callers expect
+      ! the interpolant ran on the linear fields, so its Pe derivatives are
+      ! already dPe/d; only the T derivatives need the log conversion
       if (get_grad_t) then
         if (present(dlnt_dx)) dlnt_dx = dlnt_dx / temp
         if (present(dlnt_dy)) dlnt_dy = dlnt_dy / temp
         dlnt_dz = dlnt_dz / temp
-      endif
-      if (get_grad_pe) then
-        if (present(dlnpe_dx)) dlnpe_dx = dlnpe_dx / pe
-        if (present(dlnpe_dy)) dlnpe_dy = dlnpe_dy / pe
-        dlnpe_dz = dlnpe_dz / pe
       endif
       deallocate(temp_in)
       if (use_rho) deallocate(rho_in)

@@ -1,4 +1,5 @@
 ! TumultStudio preset for the 1D LTE reference when computing abundance corrections
-&m3d_params      maxiter=0 ilambd=3 /
+&rt_iteration_params maxiter=0 /
+&rt_output_params    maxiter=3 /
 &atom_params     relative_abundance=.true. /
 &linelist_params linelist_file='' linelist_folder='' /

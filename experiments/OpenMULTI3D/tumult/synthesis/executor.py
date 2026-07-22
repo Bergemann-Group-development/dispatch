@@ -37,7 +37,7 @@ def _make_da_jobs(da_values, nml, name, ref, top):
     for da in da_values:
         nml_i = update_dict(copy.deepcopy(nml), {'atom_params': {'abundance': da}})
         if ref == 'NLTE' and da != 0.0:
-            nml_i = update_dict(nml_i, {'m3d_params': {'maxiter': 0}})
+            nml_i = update_dict(nml_i, {'rt_iteration_params': {'maxiter': 0}})
         nml_name = Path(top) / f'{name}_{da*100:+04.0f}'
         jobs.append((da, nml_name, nml_i))
     return jobs

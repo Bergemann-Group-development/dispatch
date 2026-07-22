@@ -4,8 +4,8 @@ module m3d_debug_mod
   real(8), public, dimension(6) :: memcheck
   integer, public :: pcheck(3)=[1,1,-1]
   integer, public :: fcheck=1, linecheck=1, lvlcheck=1, atomcheck=1
-  logical, public :: pdebug=.false., check_NaN=.false.
-  !$omp threadprivate(memcheck, pdebug)
+  logical, public :: check_NaN=.false.
+  !$omp threadprivate(memcheck)
 
 contains
 

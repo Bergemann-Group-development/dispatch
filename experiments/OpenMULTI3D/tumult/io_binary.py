@@ -47,7 +47,7 @@ def load_patch_files(folder, kind):
 def concat_patches(dct, n_nu, fdim, zdim, lazy):
     """Stitch the ``(iz, inu)``-keyed patches into full arrays.
 
-    ``n_nu`` is the run's frequency-block size (``m3d_params/n_nu``): when patches are
+    ``n_nu`` is the run's frequency-block size (``run_params/n_nu``): when patches are
     frequency-split, the positive ``inu`` ids up to ``n_nu``, above ``n_nu``, and the
     negative ids form separate sets (returned as a list, in that order). ``lazy``
     stitches with :class:`MemmapList` (no copy) instead of ``np.concatenate``.

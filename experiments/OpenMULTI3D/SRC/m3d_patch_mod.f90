@@ -23,19 +23,21 @@ MODULE m3d_patch_mod
     USE handyfuncs_mod
     USE prec_mod, only: inf4
     USE patch_mod, only: patch_t, patch_t_init
-    USE m3d_halo_mod, only: m3d_halo_t, print_finished, print_download, lock_mem, unlock_mem, print_lock
+    USE m3d_halo_mod, only: m3d_halo_t, print_finished, lock_mem, unlock_mem, print_lock
     USE spectrum_mod, only: lam_tolerance
     USE atom_mod, only: atom_type, atomic_spectrum_type, lse_no_pivot, lse_solver, &
-                        nq_fac, cswitch, ng_step, ng_start, ng_global
+                        nq_fac, cswitch, ng_step, ng_start, ng_global, save_rate_matrix
     USE composition_mod, only: composition_type, departure_pointer_t
-    USE ray_mod, only: one_dimensional, set_carlson_quadratures, set_radau_quadratures, set_lobatto_quadratures, &
-                       set_gauss_quadratures, set_custom_quadratures, set_grid_quadratures
+    USE ray_mod, only: one_dimensional
+    USE rt_params_mod, only: rt_iter, rt_out, read_rt_params, echo_rt_params, &
+                             setup_quadrature, ray_offset, pivot_z
     USE m3d_debug_mod
     USE bbtrans_mod, only: bbtrans_type
     USE bftrans_mod, only: h_occupation_probability
     USE element_mod, only: element_type
     USE ion_mod, only: ion_type, particle_type
-    USE linelist_mod, only: linelist_type, print_ll_particle, print_ll_atom
+    USE line_types_mod, only: linelist_type
+    USE linelist_mod, only: print_ll_particle, print_ll_atom
     USE molecule_mod, only: molec_type
     USE optab_mod, only: sample_optab_type
     USE, intrinsic :: ieee_arithmetic
@@ -63,6 +65,10 @@ MODULE m3d_patch_mod
       ! different i_nu build concurrently while twins wait for the first builder.
       type(sample_optab_type), pointer :: opac_tables(:) => null()   ! indexed by i_nu
       type(lock_t),            pointer :: opac_locks(:)  => null()   ! same bounds
+      ! Separate sampled LTE line-list opacity table (sample_linelist), holding
+      ! only non-departure species; same i_nu keying and lock pattern as opac.
+      type(sample_optab_type), pointer :: ll_opac_tables(:) => null()   ! indexed by i_nu
+      type(lock_t),            pointer :: ll_opac_locks(:)  => null()   ! same bounds
       class(atomic_spectrum_type), pointer :: sp => null()
       type(atom_type), dimension(:), pointer :: atoms => null()
       class(key_link_t), pointer :: key_list => null()
@@ -82,10 +88,11 @@ MODULE m3d_patch_mod
       logical :: has_atom=.false.
       integer :: i_nu=0, i_mu=0
       integer :: i_ne=1, i_rho=2, i_temp=3, i_vx=4, i_vy=5, i_vz=6
-      ! remaining atmos-save slots: chi500, vmic, then the ln(T)/ln(Pe) gradients
+      ! remaining atmos-save slots: chi500, vmic, then the ln(T) and Pe
+      ! gradients (the Pe slots hold dPe/d, not dlnPe/d)
       integer :: i_chi500=7, i_vmic=8
       integer :: i_dlnt_x=9, i_dlnt_y=10, i_dlnt_z=11
-      integer :: i_dlnpe_x=12, i_dlnpe_y=13, i_dlnpe_z=14
+      integer :: i_dpe_x=12, i_dpe_y=13, i_dpe_z=14
       integer :: i_chi=1, i_eta=2, i_snu=2
       integer :: i_Gij=1, i_Gji=2
       integer :: i_Inu=1
@@ -138,11 +145,9 @@ MODULE m3d_patch_mod
   
     !-----------------------------------------------------------------------------
     integer, save, public:: verbose=2
-    integer, public :: maxiter=0, ilambd=0, nz_total
+    integer, public :: nz_total
     integer, public, save :: save_id=-1
     integer, public, save :: n_nu=-1
-    real(8), public, save, dimension(:), allocatable:: wmu, long_wmu
-    real(8), public, save, dimension(:,:), allocatable:: vec, long_vec
     real(8), public:: convlim=1d-3, convmax=tiny(1.0)
     logical, public, save :: converged=.false., use_vel(3)=.true., premature_finish=.true.
     ! Number of nlte_patches created on this rank, and whether all of them have
@@ -165,11 +170,11 @@ MODULE m3d_patch_mod
     logical, public, save :: suppress_masers=.false. ! instead force chi>0 (kills the maser)
     logical, public, save :: save_resolved=.false.
     logical, public, save :: decouple_continuum=.true.
-    logical, public, save :: comoving_frame=.false., linelist_in_output=.true.
+    logical, public, save :: comoving_frame=.false.
     logical, public, save :: use_rho=.true., use_ne=.true.
     logical, public, save :: overlapping_bb=.true., overlapping_bf=.true.
     logical, public, save :: overlapping_bb_in_output=.true., detailed_absmet=.false.
-    logical, public, save :: absmet_in_output=.false., column_by_column=.false.
+    logical, public, save :: column_by_column=.false.
     logical, public, save :: print_start=.false., print_send=.false.
     logical, public, save :: Jnu_to_file=.true.
     character, public, save :: amr='P'
@@ -183,14 +188,11 @@ MODULE m3d_patch_mod
     real(8), public, save :: dlam=100.
     real(8), public, dimension(:), allocatable :: rank_lvlerr
     character(len=128), save :: save_patch_kind=''
-    character(len=512), public, save:: custom_mu=''
-    character(len=128), public, save :: long_solver='linear'
-    character(len=128), public, save :: short_solver='linear'
-    character(len=32), public, save :: short_scheme='radau'
-    character(len=32), public, save :: long_scheme='lobatto'
     real(4), public :: fixed_Jnu=-1.0
-    real(8), public :: ray_offset(2)=[0.,0.], pivot_z=-1
-    integer, save :: long_ntheta=4, long_nphi=4, short_ntheta=2, short_nphi=4
+    ! Output-content selection formerly read via &atom_params
+    logical, public, save :: save_populations=.true.
+    logical, public, save :: bound_free_in_output=.false.
+    integer, public, save :: save_rates=0
     character(len=128), public :: atmos_format='unknown'
     character(len=512), public :: atmos_file='./input/atmos/p5777_g+4.4_m0.0_t01_st_z+0.00_a+0.00_c+0.00_n+0.00_o+0.00_r+0.00_s+0.00.mod'
     type(mpi_counter_t), public :: atom_update_counter, global_maxerr, global_pos
@@ -208,18 +210,22 @@ MODULE m3d_patch_mod
     public :: hash_string, pre_update, update, print_execution_history
     public :: release_output_tasks
 
-    namelist /m3d_params/ verbose, fcheck, linecheck, pcheck, &
-    n_nu, maxiter, ilambd, lvlcheck, comoving_frame, save_id, &
-    check_NaN, custom_mu, lse_no_pivot, save_patch_kind, cswitch, &
-    print_finished, print_start, print_send, ray_offset, print_download, &
-    lse_solver, decouple_continuum, lam_tolerance, flux_convergence, &
-    pivot_z, save_resolved, overrelax, save_cntrbf, depression_cntrbf, &
-    absmet_in_output, print_lock, make_eos, ng_step, ng_start, ng_global, &
-    column_by_column, rotate_atmos, Jnu_to_file, preconditioning, &
-    save_inu, save_chi, save_Snu, save_Jnu, &
-    long_scheme, long_ntheta, long_nphi, short_scheme, short_ntheta, short_nphi, &
-    long_solver, short_solver, fixed_Jnu, initial_Jnu, &
+    namelist /nlte_params/ preconditioning, decouple_continuum, overrelax, &
+    flux_convergence, initial_Jnu, fixed_Jnu, &
+    ng_step, ng_start, ng_global, cswitch, lse_solver, lse_no_pivot, &
+    convlim, convmax, premature_finish, &
     maser_chi_floor, maser_dtau_max, maser_Inu_max, suppress_masers
+
+    namelist /output_params/ save_id, save_patch_kind, save_resolved, &
+    save_cntrbf, depression_cntrbf, save_Inu, save_chi, save_Snu, save_Jnu, &
+    Jnu_to_file, overlapping_bb_in_output, &
+    save_populations, save_rates, save_rate_matrix, bound_free_in_output
+
+    namelist /m3d_debug_params/ verbose, fcheck, linecheck, lvlcheck, pcheck, &
+    atomcheck, check_NaN, print_finished, print_lock, print_start, print_send
+
+    namelist /run_params/ n_nu, comoving_frame, make_eos, rotate_atmos, &
+    column_by_column, lam_tolerance
 
   contains
   
@@ -227,7 +233,6 @@ MODULE m3d_patch_mod
   SUBROUTINE pre_init (self)
     class(m3d_patch_t), target:: self
     integer :: iostat, m(6), i
-    real(8), dimension(:), allocatable:: cust_mu
     logical, save :: first_time=.true.
     integer, save :: itimer=0
     !-----------------------------------------------------------------------------
@@ -240,55 +245,40 @@ MODULE m3d_patch_mod
     if (first_time) then
       first_time = .false.
       rewind (io%input)
-      read (io%input, m3d_params, iostat=iostat)
+      read (io%input, nlte_params, iostat=iostat)
       if (iostat > 0) then
         rewind (io%input)
-        read (io%input, m3d_params)
+        read (io%input, nlte_params)
       end if
-      call io%namelist_warning ('m3d_params', iostat)
+      call io%namelist_warning ('nlte_params', iostat)
+      rewind (io%input)
+      read (io%input, output_params, iostat=iostat)
+      if (iostat > 0) then
+        rewind (io%input)
+        read (io%input, output_params)
+      end if
+      call io%namelist_warning ('output_params', iostat)
+      rewind (io%input)
+      read (io%input, m3d_debug_params, iostat=iostat)
+      if (iostat > 0) then
+        rewind (io%input)
+        read (io%input, m3d_debug_params)
+      end if
+      call io%namelist_warning ('m3d_debug_params', iostat)
+      rewind (io%input)
+      read (io%input, run_params, iostat=iostat)
+      if (iostat > 0) then
+        rewind (io%input)
+        read (io%input, run_params)
+      end if
+      call io%namelist_warning ('run_params', iostat)
+      call read_rt_params ()
       rotate_atmos = rotate_atmos .and. .not. (one_dimensional .or. column_by_column)
-      short_scheme = lowercase(short_scheme)
-      long_scheme = lowercase(long_scheme)
       !-------------------------------------------------------------------------
       ! Assign angles and integration weights
       !-------------------------------------------------------------------------
-      select case (short_scheme)
-      case ('disk_center', 'set_a2', 'set_a4', 'set_a6', 'set_a8', 'set_b4', 'set_b6', 'set_b8')
-        call set_carlson_quadratures (short_scheme, vec, wmu, Jnu_weights=.true.)
-      case ('radau')
-        call set_radau_quadratures (short_ntheta, short_nphi, vec, wmu, Jnu_weights=.true.)
-      case ('lobatto')
-        call set_lobatto_quadratures (short_ntheta, short_nphi, vec, wmu, Jnu_weights=.true.)
-      case ('gauss')
-        call set_gauss_quadratures (short_ntheta, short_nphi, vec, wmu, Jnu_weights=.true.)
-      case default
-        print *, 'Quadrature keyword "'// trim(short_scheme) // '" not recognized for SC solver. Stopping...'
-        stop
-      end select
-
-      select case (long_scheme)
-      case ('radau')
-        call set_radau_quadratures (long_ntheta, long_nphi, long_vec, long_wmu, Jnu_weights=.false.)
-      case ('lobatto')
-        call set_lobatto_quadratures (long_ntheta, long_nphi, long_vec, long_wmu, Jnu_weights=.false.)
-      case ('gauss')
-        call set_gauss_quadratures (long_ntheta, long_nphi, long_vec, long_wmu, Jnu_weights=.false.)
-      case ('disk_center', 'set_a2', 'set_a4', 'set_a6', 'set_a8', 'set_b4', 'set_b6', 'set_b8')
-        call set_carlson_quadratures (long_scheme, long_vec, long_wmu, Jnu_weights=.false.)
-      case ('custom')
-        call count_words(custom_mu, long_ntheta)
-        allocate(cust_mu(long_ntheta))
-        read(custom_mu, *) cust_mu 
-        call set_custom_quadratures (cust_mu, long_nphi, long_vec, long_wmu)
-      case ('grid+', 'gridx', 'grid*')
-        call set_grid_quadratures(long_scheme, self%patch%ds, long_vec, long_wmu)
-      case ('none')
-        allocate(long_vec(3,0))
-        allocate(long_wmu(0))
-      case default
-        print *, 'Quadrature keyword "'// trim(long_scheme) // '" not recognized for LC solver. Stopping...'
-        stop
-      end select
+      call setup_quadrature (rt_iter, is_output=.false., ds=self%patch%ds)
+      call setup_quadrature (rt_out,  is_output=.true.,  ds=self%patch%ds)
 
       call save_angle_quadrature()
 
@@ -309,7 +299,7 @@ MODULE m3d_patch_mod
   
     self%verbose = verbose
 
-    self%n_out = size(long_vec, 2)
+    self%n_out = size(rt_out%vec, 2)
     self%do_final = self%i_mu < 0 ! this is the ray working on the final output spectrum after scattering
     self%do_out_sp = self%i_nu < 0 .or. self%i_mu < 0 ! this is any ray working on the output spectrum
     self%do_full_sp = .not. self%do_out_sp ! this is any ray working on the internal spectrum for the iteration
@@ -398,7 +388,11 @@ MODULE m3d_patch_mod
     call trace%begin('m3d_patch_t%post_pre_init', itimer=itimer)
     if (first_time) then
       ! this is done here, so that overwritten parameters are saved accordingly
-      write (io%namelist, m3d_params)
+      write (io%namelist, nlte_params)
+      write (io%namelist, output_params)
+      write (io%namelist, m3d_debug_params)
+      write (io%namelist, run_params)
+      call echo_rt_params ()
       first_time = .false.
     endif
     !-----------------------------------------------------------------------------
@@ -496,9 +490,9 @@ MODULE m3d_patch_mod
     call trace%begin ('m3d_patch_t%set_initial_time')
     if (self%do_out_sp) then
       if (self%do_final) then
-        self%time = self%time + maxiter + ilambd
+        self%time = self%time + rt_iter%maxiter + rt_out%maxiter
       else
-        self%time = self%time + maxiter
+        self%time = self%time + rt_iter%maxiter
       endif
     endif
 
@@ -519,7 +513,7 @@ MODULE m3d_patch_mod
 
     !if (self%kind=='nlte_patch') then
     !  ! this is set back to 1 in update
-    !  self%dtime = self%dtime + self%dtime*ilambd
+    !  self%dtime = self%dtime + self%dtime*rt_out%maxiter
     !endif
 
     call trace%end()
@@ -530,22 +524,22 @@ MODULE m3d_patch_mod
     class (m3d_patch_t) :: self
     !-----------------------------------------------------------------------------
     call trace%begin ('m3d_patch_t%set_maxiter')
-    self%master_maxiter = maxiter + ilambd
+    self%master_maxiter = rt_iter%maxiter + rt_out%maxiter
 
     select case (self%kind)
     case ('composition')
       self%maxiter = 1
     case ('nlte_patch')
-      self%maxiter = maxiter
+      self%maxiter = rt_iter%maxiter
     case ('rt_patch')
-      self%maxiter = maxiter - 1
+      self%maxiter = rt_iter%maxiter - 1
     end select
 
     if (self%do_out_sp) then
       if (self%do_final) then
         self%maxiter = 0
       else
-        self%maxiter = ilambd - 1
+        self%maxiter = rt_out%maxiter - 1
       endif
     endif
     call trace%end()
@@ -561,7 +555,7 @@ MODULE m3d_patch_mod
       allocate (self%boundaries)
       call self%boundaries%pre_init (self)
     endif
-    if (self%do_final .and. maxiter==0) then
+    if (self%do_final .and. rt_iter%maxiter==0) then
       call self%boundaries%clear(bits%zu)
     endif
   END SUBROUTINE init_bdries
@@ -652,10 +646,10 @@ MODULE m3d_patch_mod
       call trace%begin('m3d_patch_t%save_angle_quadrature', itimer=itimer)
       meta_file = trim(io%run_dir) // 'angle_quadrature.txt'
       open(newunit=lunit, file=meta_file, form='formatted')
-      nmu = size(long_wmu)
+      nmu = size(rt_out%wmu)
       write(lunit, '(A3, 4(A12))') '#', 'weight', 'mux', 'muy', 'muz'
       do i=1, nmu
-        write(lunit, '(I3, F12.8, SP, 3(F12.8))') i, long_wmu(i), long_vec(:,i)
+        write(lunit, '(I3, F12.8, SP, 3(F12.8))') i, rt_out%wmu(i), rt_out%vec(:,i)
       end do
       close(lunit)
       call trace%end(itimer)
@@ -1050,13 +1044,17 @@ MODULE m3d_patch_mod
   ! sits below composition_mod/atom_mod in the module hierarchy and cannot see
   ! their types.
   !-------------------------------------------------------------------------------
-  SUBROUTINE print_linelist (self, comp)
+  SUBROUTINE print_linelist (self, comp, n_nu)
     class(m3d_patch_t), target :: self
     class(composition_type), target :: comp
+    integer, intent(in) :: n_nu
     class(element_type), pointer :: element
-    integer :: lunit, i, j
+    integer :: lunit, i, j, called=0
     character(len=256) :: linelist_out_file
     ! ----------------------------------------------------------------------------
+    called = called + 1
+    if (called < n_nu) return ! only print once per patch by the last task to update
+
     linelist_out_file = trim(io%run_dir) // 'linelist_out.txt'
     open(newunit=lunit, file=linelist_out_file, form='formatted')
 

@@ -1,4 +1,4 @@
 ! TumultStudio base preset -- app-level constants applied to every synthesis run.
-&m3d_params      maxiter=0 /
+&rt_iteration_params maxiter=0 /
 &atmos_params    save_atmos=.false. /
 &timer_params    sec_per_report=1e8 verbose=2 /

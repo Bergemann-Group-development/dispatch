@@ -25,10 +25,11 @@ MODULE read_external_mod
   USE composition_patch_mod, only: FeH, save_atmos, save_eos, external_abund, read_composition_params
   USE patch_mod
   USE const_mod, only:cc
-  USE m3d_patch_mod, only: maxiter, ilambd, m3d_patch_t, atom_update_counter, &
+  USE m3d_patch_mod, only: m3d_patch_t, atom_update_counter, &
     global_maxerr, global_pos, nz_total, use_rho, use_ne, atmos_format, amr, &
     atmos_file, use_vel, flux_update_counter, global_flux_err, global_flux_pos, global_flux_lambda, &
     flux_conv_signal, flux_final_counter
+  USE rt_params_mod, only: rt_iter, rt_out
   USE m3d_halo_mod, only: m3d_halo_t
   USE read_atmos_mod, only: ia, read_stagger, read_co5bold, read_stagger2, pchip_interpolation, &
     log_interpolation, read_marcs, read_multi_snapshot, read_text_1d, read_multi_1d, &
@@ -69,7 +70,7 @@ contains
     class(link_t), pointer:: link, next
     integer :: lunit, iostat, k, ip
     integer :: patches_per_mpi=1
-    integer :: dims=1, nx=-1, ny=-1, nz=128, snap=0
+    integer :: dims=1, nx=-1, ny=-1, nz=96, snap=0
     integer :: verbose=0
     logical :: use_abnd=.false., read_departures_local=.false.
     character(len=512) :: command
@@ -304,7 +305,7 @@ contains
       write (stdout,*) ip, 'tasks generated'
     endif
 
-    io%end_time = (maxiter + ilambd + 1) * patch%dtime
+    io%end_time = (rt_iter%maxiter + rt_out%maxiter + 1) * patch%dtime
     io%print_every = huge(1)
     timer%dead_mans_hand = huge(1.0)
 

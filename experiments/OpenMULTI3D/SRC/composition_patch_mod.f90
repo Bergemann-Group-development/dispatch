@@ -11,19 +11,20 @@ MODULE composition_patch_mod
   USE ion_mod, only: particle_type, ion_type, debye_shield
   USE molecule_mod, only: molec_type, irwin_dis
   USE element_mod, only: element_type
-  USE m3d_patch_mod,   only: m3d_patch_t, composition, comoving_frame, ilambd, dlam, &
+  USE m3d_patch_mod,   only: m3d_patch_t, composition, comoving_frame, dlam, &
   use_rho, use_ne, overlapping_bb, overlapping_bf, binned_opac, initial_Jnu, &
-  maxiter, rotate_atmos, long_vec, decouple_continuum, n_nu, use_vel, pivot_z, &
-  linelist_in_output, make_eos, overlapping_bb_in_output, atmos_format, atmos_file, &
-  long_solver, short_solver, n_nlte_patches, nlte_finished
+  rotate_atmos, decouple_continuum, n_nu, use_vel, &
+  make_eos, overlapping_bb_in_output, atmos_format, atmos_file, &
+  n_nlte_patches, nlte_finished
+  USE rt_params_mod, only: rt_iter, rt_out, pivot_z
   USE m3d_debug_mod
   USE read_atmos_mod, only: ia, interpolate_atmos, pchip_interpolation
   USE interpol_mod, only: pchip_slopes
   USE composition_mod, only: composition_type, exclude_elements, only_elements, switch, &
   ref_lam, debug_opac, abundances, relative_abundances, mhd_eos, helium_scattering, &
-  departure_pointer_t, read_departures, departure_indices, sample_back_opac, &
-  sample_back_opac_in_output, sample_linelist, opac_table_vmic, scattering_absorption, &
-  use_new_linelist
+  departure_pointer_t, read_departures, departure_indices, &
+  sample_linelist, opac_table_vmic, scattering_absorption, &
+  line_scattering
   USE atom_mod, only: use_classic_col, level_partf
   USE nlte_patch_mod,  only: nlte_patch_t
   USE rt_patch_mod, only:rt_patch_t
@@ -60,7 +61,7 @@ MODULE composition_patch_mod
     procedure :: nbor_relations => composition_patch_nbor_relations
   end type
   
-  real(8), public :: FeH=-99.9, dtemp=250., ldne=0.25, ldrho=0.25, ldtemp=0.1
+  real(8), public :: FeH=-99.9, dtemp=250., ldne=0.25, ldrho=0.25, ldtemp=0.05
   logical, public :: save_atmos=.true., save_eos=.false.
   logical, public :: pca_opac=.true.       ! .false. -> axis-aligned (lnT,lnNe) sampling grid
   real(4), public, dimension(:), allocatable :: external_abund
@@ -84,16 +85,18 @@ SUBROUTINE read_composition_params ()
   integer :: i, iostat
   real(4) :: tmolim=-99
   integer, save:: itimer=0, verbose=0
-  namelist /composition_params/ verbose, absdat_file, abund_file, absmet_file, &
-  isotope_file, molec_file, H_occupation_probability, opac_table, &
-  sample_back_opac, sample_back_opac_in_output, switch, mhd_eos, debye_shield, &
-  dtemp, ldne, ldrho, ldtemp, tmolim, irwin_dis, opac_table_vmic, save_species, &
+  namelist /composition_params/ verbose, absdat_file, abund_file, &
+  isotope_file, molec_file, H_occupation_probability, &
+  switch, mhd_eos, debye_shield, &
+  tmolim, irwin_dis, save_species, &
   ref_lam, debug_opac, abundances, relative_abundances, alpha_enhancement, r_process_enhancement, &
-  disable_ga, disable_stark, disable_vdw, helium_scattering, sample_linelist, hydrogen_BPO, &
+  disable_ga, disable_stark, disable_vdw, helium_scattering, hydrogen_BPO, &
   hydrogen_vcs_table, vcs_data_dir, &
-  ga_fallback, eosmet, scattering_absorption, pca_opac
+  ga_fallback, eosmet, scattering_absorption
+  namelist /opac_table_params/ opac_table, opac_table_vmic, pca_opac, &
+  dtemp, ldne, ldrho, ldtemp, absmet_file
   namelist /linelist_params/ dlam, exclude_elements, linelist_file, linelist_folder, &
-  linelist_in_output, tolerance, only_elements, use_new_linelist
+  tolerance, only_elements, line_scattering
   ! ----------------------------------------------------------------------------
   call trace%begin('composition%init', itimer=itimer)
 
@@ -109,6 +112,16 @@ SUBROUTINE read_composition_params ()
   call io%namelist_warning ('composition_params', iostat)
 
   write (io%namelist, composition_params)
+
+  rewind (io%input)
+  read (io%input, opac_table_params, iostat=iostat)
+  if (iostat > 0) then
+    rewind (io%input)
+    read (io%input, opac_table_params)
+  end if
+  call io%namelist_warning ('opac_table_params', iostat)
+
+  write (io%namelist, opac_table_params)
 
   rewind (io%input)
   read (io%input, linelist_params, iostat=iostat)
@@ -148,6 +161,7 @@ SUBROUTINE composition_pre_init (self)
   class(composition_patch_t), target:: self
   class(nlte_patch_t), pointer :: nlte_patch
   class(atomic_spectrum_type), save, pointer :: output_sp
+  real(8) :: ll_lam(2)
   integer :: i, mu, nw, n_mu
   integer, save:: itimer=0
   logical, save :: first_time=.true., external_sp
@@ -155,7 +169,7 @@ SUBROUTINE composition_pre_init (self)
   call trace%begin('composition_patch_t%composition_pre_init', itimer=itimer)
   self%kind = 'composition'
   call self%m3d_patch_t%pre_init()
-  nw = merge(1+size(long_vec,2), 1, rotate_atmos)
+  nw = merge(1+size(rt_out%vec,2), 1, rotate_atmos)
   ! no mem: the atmosphere lives in the composition objects, the radiation in the
   ! rt patches, and the populations in atom%data
   call self%set_nv_and_nw(0,nw)
@@ -194,13 +208,31 @@ SUBROUTINE composition_pre_init (self)
 
   if (first_time) then
     first_time = .false.
-    do i=1, size(linelist_file)
-      if (use_new_linelist) then
-        call composition%init_linelist2(linelist_file(i), dlam, output_sp%lam)
+    ! The line-list readers keep lines inside [lam(1)-dlam, lam(end)+dlam], so
+    ! collect the combined wavelength range of every spectrum whose pass draws on
+    ! the line list: the output spectrum when the output pass includes (or samples)
+    ! it, or when make_eos bakes it into the tables; the internal iteration
+    ! spectra when the iteration pass does.
+    ll_lam = [huge(1d0), -huge(1d0)]
+    if ((rt_out%include_linelist .or. rt_out%sample_linelist) .and. size(rt_out%vec,2) > 0 &
+        .or. make_eos) then
+      call expand_ll_range(output_sp)
+    endif
+    if ((rt_iter%include_linelist .or. rt_iter%sample_linelist) .and. rt_iter%maxiter > 0) then
+      if (decouple_continuum) then
+        call expand_ll_range(nlte_patch%bb_sp)
+        call expand_ll_range(nlte_patch%bf_sp)
       else
-        call composition%init_linelist(linelist_file(i), dlam, output_sp%lam)
+        call expand_ll_range(nlte_patch%sp)
       endif
-    end do
+    endif
+    if (ll_lam(1) <= ll_lam(2)) then
+      do i=1, size(linelist_file)
+        call composition%init_linelist2(linelist_file(i), dlam, ll_lam)
+      end do
+    elseif (any(linelist_file /= '')) then
+      print *, 'linelist_params: no pass includes or samples the line list -- skipping line-list read'
+    endif
     call nlte_patch%exclude_double_lines()
   endif
 
@@ -214,7 +246,7 @@ SUBROUTINE composition_pre_init (self)
   endif
 
   self%n_nu = n_nu
-  n_mu = size(long_vec,2)
+  n_mu = size(rt_out%vec,2)
 
   ! One sampled opacity table per i_nu, shared by the rt_patches created below,
   ! which differ only in i_mu and would otherwise build identical copies.  The
@@ -222,15 +254,23 @@ SUBROUTINE composition_pre_init (self)
   ! continuum [n_nu+1, 2*n_nu], and the output spectrum [-n_nu, -1]; slot 0 is
   ! never used.  make_eos is excluded: save_opac_table overwrites the table in
   ! place, so those rt_patches keep a private one.
-  if ((sample_back_opac .or. sample_back_opac_in_output) .and. .not. make_eos) then
+  if ((rt_iter%sample_back_opac .or. rt_out%sample_back_opac) .and. .not. make_eos) then
     allocate(self%opac_tables(-n_nu:2*n_nu))
     allocate(self%opac_locks (-n_nu:2*n_nu))
     do i=-n_nu, 2*n_nu
       call self%opac_locks(i)%init('opac', i)
     end do
+    ! Separate LTE line-list opacity table (sample_linelist): same i_nu keying.
+    if (sample_linelist) then
+      allocate(self%ll_opac_tables(-n_nu:2*n_nu))
+      allocate(self%ll_opac_locks (-n_nu:2*n_nu))
+      do i=-n_nu, 2*n_nu
+        call self%ll_opac_locks(i)%init('ll_opac', i)
+      end do
+    endif
   endif
   if (associated(nlte_patch%atoms)) then
-    if (maxiter > 0) then
+    if (rt_iter%maxiter > 0) then
       if (decouple_continuum) then
         call self%create_sub_patches([1, n_nu],      [1,2], nlte_patch%bb_sp, nlte_patch%bb_atoms)
         call self%create_sub_patches([1, n_nu]+n_nu, [1,2], nlte_patch%bf_sp, nlte_patch%bf_atoms)
@@ -240,9 +280,11 @@ SUBROUTINE composition_pre_init (self)
     endif
   endif
 
-  if (output_sp%nnu > 0) then
+  ! rt_out%solver='none' disables the output pass entirely -- create no output
+  ! RT patches (the final i_mu=-1 ray or the Lambda-iteration i_mu=[1,2] ones).
+  if (output_sp%nnu > 0 .and. rt_out%solver /= 'none') then
     if (n_mu > 0 .or. (make_eos .and. self%key(1)==1)) then
-      if (ilambd > 0) then
+      if (rt_out%maxiter > 0) then
         call self%create_sub_patches([-n_nu, -1], [1,2], output_sp, nlte_patch%output_atoms)
       endif
       call self%create_sub_patches([-n_nu, -1], [-1,-1], output_sp, nlte_patch%output_atoms)
@@ -260,6 +302,16 @@ SUBROUTINE composition_pre_init (self)
   call self%save_abundances_to_file()
   call self%post_pre_init()
   call trace%end(itimer)
+contains
+  ! widen ll_lam to cover sp's wavelengths; the internal spectra are not
+  ! necessarily sorted, so use minval/maxval rather than the end points
+  subroutine expand_ll_range (sp)
+    class(atomic_spectrum_type), pointer :: sp
+    if (.not. associated(sp)) return
+    if (sp%nnu <= 0) return
+    ll_lam(1) = min(ll_lam(1), minval(sp%lam))
+    ll_lam(2) = max(ll_lam(2), maxval(sp%lam))
+  end subroutine expand_ll_range
 END SUBROUTINE composition_pre_init
 
 !===============================================================================
@@ -297,15 +349,17 @@ SUBROUTINE execute (self)
   call trace%begin('composition_patch_t%execute', itimer=itimer)
   n = self%n
 
-  ! the chain-rule 'hermite' RT solvers need the ln(T)/ln(Pe) gradients of the
-  ! snapshot interpolant; they are computed whenever they can be (so saved
-  ! atmospheres always carry them), and stored on the compositions only when a
-  ! hermite solver is actually selected
-  need_gradients = (long_solver == 'hermite' .or. short_solver == 'hermite')
+  ! the chain-rule 'hermite' RT solvers need the ln(T) and Pe gradients of the
+  ! snapshot interpolant (the Pe gradients are of Pe itself, not its log); they
+  ! are computed whenever they can be (so saved atmospheres always carry them),
+  ! and stored on the compositions only when a hermite solver is actually
+  ! selected
+  need_gradients = (rt_out%solver == 'hermite' .or. rt_iter%solver == 'hermite' .or. &
+                     rt_out%solver == 'hermite2' .or. rt_iter%solver == 'hermite2')
   compute_gradients = (need_gradients .or. save_atmos) &
                       .and. pchip_interpolation .and. .not. make_eos
   if (need_gradients .and. .not. pchip_interpolation) &
-    stop "the 'hermite' solver requires pchip_interpolation=.true."
+    stop "the 'hermite'/'hermite2' solvers require pchip_interpolation=.true."
 
   if (self%iter == 0) then
     allocate(self%composition)
@@ -323,14 +377,15 @@ SUBROUTINE execute (self)
     gpx = 0.; gpy = 0.; gpz = 0.
 
     ! a previously computed atmosphere is read back in the same 14-slot layout
-    ! it was written in (files from before the gradient slots were added must be
-    ! regenerated)
+    ! it was written in.  NOTE: the Pe-gradient slots now hold dPe/d (linear),
+    ! not dlnPe/d -- files written before that convention change load without
+    ! error but carry wrong gradients, so they must be regenerated too.
     if (atmos_format == 'save') then
       call self%load5('atmos', run_dir=atmos_file, alloc=atmos)
-      if (size(atmos,4) < self%i_dlnpe_z) &
+      if (size(atmos,4) < self%i_dpe_z) &
         stop 'saved atmosphere predates the gradient slots -- regenerate it'
     elseif (save_atmos) then
-      allocate(atmos(n(1),n(2),n(3),self%i_dlnpe_z,self%nw))
+      allocate(atmos(n(1),n(2),n(3),self%i_dpe_z,self%nw))
     endif
 
     do i=1, self%nw
@@ -345,14 +400,14 @@ SUBROUTINE execute (self)
         gtx  = atmos(:,:,:,self%i_dlnt_x,  i)
         gty  = atmos(:,:,:,self%i_dlnt_y,  i)
         gtz  = atmos(:,:,:,self%i_dlnt_z,  i)
-        gpx  = atmos(:,:,:,self%i_dlnpe_x, i)
-        gpy  = atmos(:,:,:,self%i_dlnpe_y, i)
-        gpz  = atmos(:,:,:,self%i_dlnpe_z, i)
+        gpx  = atmos(:,:,:,self%i_dpe_x, i)
+        gpy  = atmos(:,:,:,self%i_dpe_y, i)
+        gpz  = atmos(:,:,:,self%i_dpe_z, i)
       elseif (i == 1) then
         if (compute_gradients) then
           call interpolate_atmos(n, self%size, self%position, temp, ne, rho, vx, vy, vz, vmic, &
                                  dlnt_dx=gtx, dlnt_dy=gty, dlnt_dz=gtz, &
-                                 dlnpe_dx=gpx, dlnpe_dy=gpy, dlnpe_dz=gpz)
+                                 dpe_dx=gpx, dpe_dy=gpy, dpe_dz=gpz)
         else
           call interpolate_atmos(n, self%size, self%position, temp, ne, rho, vx, vy, vz, vmic)
         endif
@@ -361,11 +416,11 @@ SUBROUTINE execute (self)
           ! rotated columns run along the ray; only the z pair exists
           gtx = 0.; gty = 0.; gpx = 0.; gpy = 0.
           call interpolate_atmos(n, self%size, self%position, temp, ne, rho, vx, vy, vz, vmic, &
-                                 vec=long_vec(:,i-1), bot2pivot=pivot_z, &
-                                 dlnt_dz=gtz, dlnpe_dz=gpz)
+                                 vec=rt_out%vec(:,i-1), bot2pivot=pivot_z, &
+                                 dlnt_dz=gtz, dpe_dz=gpz)
         else
           call interpolate_atmos(n, self%size, self%position, temp, ne, rho, vx, vy, vz, vmic, &
-                                 vec=long_vec(:,i-1), bot2pivot=pivot_z)
+                                 vec=rt_out%vec(:,i-1), bot2pivot=pivot_z)
         endif
       endif
 
@@ -399,14 +454,14 @@ SUBROUTINE execute (self)
       if (.not. use_rho) rho = real(comp%rho)
 
       ! with use_ne=.false. there was no Pe field to interpolate: rebuild the
-      ! ln(Pe) gradients from Pe = ne*kB*T on the patch grid instead
+      ! Pe gradients from Pe = ne*kB*T on the patch grid instead
       if (compute_gradients .and. .not. use_ne .and. atmos_format /= 'save') &
         call pe_gradients_from_grid(comp, self%ds, gpx, gpy, gpz, horizontal=(i==1))
 
       if (need_gradients) then
         if (i == 1) then
           call comp%set_gradients(gtz, gpz, dlnt_dx=gtx, dlnt_dy=gty, &
-                                  dlnpe_dx=gpx, dlnpe_dy=gpy)
+                                  dpe_dx=gpx, dpe_dy=gpy)
         else
           call comp%set_gradients(gtz, gpz)
         endif
@@ -424,9 +479,9 @@ SUBROUTINE execute (self)
         atmos(:,:,:,self%i_dlnt_x,  i) = gtx
         atmos(:,:,:,self%i_dlnt_y,  i) = gty
         atmos(:,:,:,self%i_dlnt_z,  i) = gtz
-        atmos(:,:,:,self%i_dlnpe_x, i) = gpx
-        atmos(:,:,:,self%i_dlnpe_y, i) = gpy
-        atmos(:,:,:,self%i_dlnpe_z, i) = gpz
+        atmos(:,:,:,self%i_dpe_x, i) = gpx
+        atmos(:,:,:,self%i_dpe_y, i) = gpy
+        atmos(:,:,:,self%i_dpe_z, i) = gpz
       endif
 
       if (check_NaN) then
@@ -450,7 +505,7 @@ SUBROUTINE execute (self)
       call self%save_number_densities(self%composition, pre_init=.false.)
     endif
 
-    if (sample_back_opac .or. sample_back_opac_in_output) then
+    if (rt_iter%sample_back_opac .or. rt_out%sample_back_opac) then
       call self%init_tabulated_comp(ldtemp=ldtemp, ldne=ldne)
     elseif (make_eos) then
       call self%init_eos_comp(self%composition%temp, self%composition%rho, ldtemp=ldtemp, ldrho=ldrho)
@@ -480,32 +535,32 @@ SUBROUTINE pe_gradients_from_grid (comp, ds, gpx, gpy, gpz, horizontal)
   real(8), intent(in) :: ds(3)
   real(4), dimension(:,:,:), intent(out) :: gpx, gpy, gpz
   logical, intent(in) :: horizontal
-  real(4), dimension(:,:,:), allocatable :: lnpe
+  real(4), dimension(:,:,:), allocatable :: pe
   real(4), dimension(:), allocatable :: zz, dxw, dyw
   integer :: i, x, y, nx, ny, nz
   integer, save :: itimer=0
   ! ----------------------------------------------------------------------------
   call trace%begin('pe_gradients_from_grid', itimer=itimer)
   nx = size(gpz,1); ny = size(gpz,2); nz = size(gpz,3)
-  allocate(lnpe(nx,ny,nz), zz(nz), dxw(nz-1), dyw(nz-1))
-  lnpe = real(log(comp%pe), 4)
+  allocate(pe(nx,ny,nz), zz(nz), dxw(nz-1), dyw(nz-1))
+  pe = real(comp%pe, 4)
   zz = [ (real(i*ds(3),4), i=1, nz) ]
   do y=1, ny
     do x=1, nx
-      call pchip_slopes(zz, lnpe(x,y,:), 1, nz, dxw, dyw, gpz(x,y,:))
+      call pchip_slopes(zz, pe(x,y,:), 1, nz, dxw, dyw, gpz(x,y,:))
     end do
   end do
   gpx = 0.
   gpy = 0.
   if (horizontal .and. nx > 2) then
-    gpx(2:nx-1,:,:) = (lnpe(3:nx,:,:) - lnpe(1:nx-2,:,:)) / real(2.*ds(1), 4)
-    gpx(1,   :,:)   = (lnpe(2, :,:)   - lnpe(1,     :,:)) / real(ds(1), 4)
-    gpx(nx,  :,:)   = (lnpe(nx,:,:)   - lnpe(nx-1,  :,:)) / real(ds(1), 4)
+    gpx(2:nx-1,:,:) = (pe(3:nx,:,:) - pe(1:nx-2,:,:)) / real(2.*ds(1), 4)
+    gpx(1,   :,:)   = (pe(2, :,:)   - pe(1,     :,:)) / real(ds(1), 4)
+    gpx(nx,  :,:)   = (pe(nx,:,:)   - pe(nx-1,  :,:)) / real(ds(1), 4)
   endif
   if (horizontal .and. ny > 2) then
-    gpy(:,2:ny-1,:) = (lnpe(:,3:ny,:) - lnpe(:,1:ny-2,:)) / real(2.*ds(2), 4)
-    gpy(:,1,   :)   = (lnpe(:,2, :)   - lnpe(:,1,     :)) / real(ds(2), 4)
-    gpy(:,ny,  :)   = (lnpe(:,ny,:)   - lnpe(:,ny-1,  :)) / real(ds(2), 4)
+    gpy(:,2:ny-1,:) = (pe(:,3:ny,:) - pe(:,1:ny-2,:)) / real(2.*ds(2), 4)
+    gpy(:,1,   :)   = (pe(:,2, :)   - pe(:,1,     :)) / real(ds(2), 4)
+    gpy(:,ny,  :)   = (pe(:,ny,:)   - pe(:,ny-1,  :)) / real(ds(2), 4)
   endif
   call trace%end(itimer)
 END SUBROUTINE pe_gradients_from_grid
@@ -539,6 +594,15 @@ SUBROUTINE init_tabulated_comp (self, ldtemp, ldne)
     allocate(self%tab_comp)
     self%tab_comp = composition
     call self%tab_comp%reassign_pointer()
+
+    ! With sample_linelist, the sampled table must hold only the LTE (non-departure)
+    ! species; strip the active NLTE atoms' species out of tab_comp's line list so
+    ! their lines are instead computed in detail per cell (with departures). Done
+    ! here, single-threaded at setup, before any concurrent table build reads it.
+    if (sample_linelist .and. associated(self%nlte_patch)) then
+      if (associated(self%nlte_patch%atoms)) &
+        call self%tab_comp%mask_departure_species(self%nlte_patch%atoms%id)
+    endif
 
     ! ---- PCA-rotated (T, ne) node grid, one node past the data hull; the
     ! transform is written straight into tab_comp%pca so the table fill can

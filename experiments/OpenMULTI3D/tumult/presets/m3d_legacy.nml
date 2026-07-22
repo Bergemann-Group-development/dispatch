@@ -5,11 +5,20 @@
   nz = 230
   dims = 32
 /
-&m3d_params
+&nlte_params
   decouple_continuum = .false.
   initial_Jnu = 'zero'
-  long_scheme = 'lobatto'
-  short_scheme = 'set_a4'
+  premature_finish = .false.
+/
+&rt_iteration_params
+  angle_quad = 'set_a4'
+  sample_back_opac = .false.
+/
+&rt_output_params
+  angle_quad = 'lobatto'
+  sample_back_opac = .false.
+/
+&run_params
   rotate_atmos = .false.
 /
 &atom_params
@@ -19,12 +28,10 @@
   use_classic_col = .false.
   level_partf = .true.
   use_atom_abnd = .false.
-  premature_finish = .false.
 /
 &composition_params
-  sample_back_opac = .false.
-  sample_back_opac_in_output = .false.
   h_occupation_probability = .false.
+  mhd_eos = .false.
   helium_scattering = .false.
   irwin_dis = .false.
   absdat_file = 'input_multi3d/absdat'

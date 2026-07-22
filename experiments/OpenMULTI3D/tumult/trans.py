@@ -240,7 +240,7 @@ class trans_class(object):
                 vdop=None, vshift=None, LTE=False, title=None,
                 color='k', linewidth=1, alpha=0.2, step=1, **kwargs):
         #-----------------------------------------------------------------
-        if not self.run.nml['m3d_params']['save_resolved']:
+        if not self.run.nml['output_params']['save_resolved']:
             print('Resolved profiles were not saved!')
             return None
 

@@ -119,7 +119,7 @@ class tumult(object):
         self.legacy = not 'read_departures' in self.nml['atmos_params']
 
         if self.has_spectrum:
-            self.has_spectrum = self.nml['m3d_params']['long_scheme'].strip() != 'none'
+            self.has_spectrum = self.nml['rt_output_params']['angle_quad'].strip() != 'none'
 
         quad = read_angle_quadrature(folder / 'angle_quadrature.txt')
         if quad is not None:
@@ -130,7 +130,7 @@ class tumult(object):
             self.imus = quad["imus"]
             self.nmu = quad["nmu"]
 
-        if self.nml.get_item('m3d_params', 'make_eos', False):
+        if self.nml['run_params'].get('make_eos', False):
             mem = self.read_patch_save('eos', fdim=None, lazy=False)
             self.temp = mem[0]
             self.rho = mem[1]
@@ -167,7 +167,7 @@ class tumult(object):
                     self.flux_lte = integrate_flux(self.ie_lte, self.wts)
                     self.flux_cnt = integrate_flux(self.ie_cnt, self.wts)
 
-                if self.nml['m3d_params']['save_resolved']:
+                if self.nml['output_params']['save_resolved']:
                     i3 = self.read_patch_save('i3')[0]
                     self.i3     = i3[...,0]
                     self.c3     = i3[...,1]
@@ -187,7 +187,7 @@ class tumult(object):
         if 'atom_params' in self.nml:
             self.qnorm = self.nml['atom_params']['qnorm']
             nq_fac = self.nml['atom_params']['nq_fac']
-            if self.nml['composition_params']['m1d_legacy_mode']: nq_fac *= 2
+            if self.nml['atom_params']['legacy_freql']: nq_fac *= 2
             in_abnd = self.nml['atom_params']['abundance']
             in_abnd = [in_abnd] if not hasattr(in_abnd, '__iter__') else in_abnd
         else:
@@ -482,7 +482,7 @@ class tumult(object):
     def read_patch_save(self, kind, folder=None, concat=True, fdim=0, zdim=None, lazy=True):
         """Load ``kind`` from this run's save folder (see :mod:`tumult.io_binary`)."""
         folder = pathlib.Path(folder) if folder else self.sfolder
-        return _read_patch_save(folder, kind, n_nu=self.nml['m3d_params']['n_nu'],
+        return _read_patch_save(folder, kind, n_nu=self.nml['run_params']['n_nu'],
                                 concat=concat, fdim=fdim, zdim=zdim, lazy=lazy)
 
     #=================================================================

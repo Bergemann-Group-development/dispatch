@@ -1,7 +1,9 @@
 ! TumultStudio NLTE preset -- layered on top of base.nml for NLTE runs that produce a
-! spectrum. Same NLTE iteration as departures.nml but WITHOUT long_scheme='none', so the
+! spectrum. Same NLTE iteration as departures.nml but WITHOUT angle_quad='none', so the
 ! formal solution runs and a spectrum is written. (The library's two-step NLTE path forces
-! long_scheme='none' on the departure runs itself; see tumult/synthesis.py.)
-&m3d_params      maxiter=99 ilambd=3 /
+! rt_output_params angle_quad='none' on the departure runs itself; see tumult/synthesis.py.)
+&rt_iteration_params maxiter=99 /
+&rt_output_params    maxiter=3 /
+&nlte_params     convlim=1e-2 /
 &atmos_params    save_atmos=.true. /
-&atom_params     relative_abundance=.true. convlim=1e-2 /
+&atom_params     relative_abundance=.true. /

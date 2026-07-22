@@ -33,8 +33,11 @@ def preset(name):
 
 def _is_nlte(settings):
     """True when ``settings`` describe an NLTE solve (an atom plus iterations)."""
-    return ('atom_params' in (settings or {})
-            and (settings.get('m3d_params', {}) or {}).get('maxiter', 0) > 0)
+    if 'atom_params' not in (settings or {}):
+        return False
+    maxiter = (settings.get('rt_iteration_params', {}) or {}).get(
+        'maxiter', (settings.get('m3d_params', {}) or {}).get('maxiter', 0))
+    return maxiter > 0
 
 
 # --- shared building blocks (used by both build_stellar_grid and compute_spectra) --------
@@ -48,7 +51,8 @@ def _run_name(teff_i, logg_i, feh_i, v):
 
 def _dep_jobs(base, nodes, departures_top):
     """Departure-coefficient jobs (one per atmosphere node) for the NLTE two-step path: no
-    line list, no output spectrum (``long_scheme='none'``), saved via the 'save' format."""
+    line list, no output spectrum (``rt_output_params angle_quad='none'``), saved via the
+    'save' format."""
     jobs = []
     for jkey, teff_i, logg_i, feh_i, v, _w, atmos_path, absmet_file in nodes:
         dep_nml = copy.deepcopy(base)
@@ -56,8 +60,9 @@ def _dep_jobs(base, nodes, departures_top):
         dep_nml.pop('spectrum_params', None)
         dep_nml = update_dict(dep_nml, {
             'atmos_params': {'atmos_file': atmos_path, 'feh': feh_i, 'vmic': v},
-            'composition_params': {'absmet_file': absmet_file},
-            'm3d_params': {'maxiter': 99, 'ilambd': 3, 'long_scheme': 'none'},
+            'opac_table_params': {'absmet_file': absmet_file},
+            'rt_iteration_params': {'maxiter': 99},
+            'rt_output_params': {'maxiter': 3, 'angle_quad': 'none'},
         })
         jobs.append((jkey, Path(departures_top) / _run_name(teff_i, logg_i, feh_i, v), dep_nml))
     return jobs
@@ -72,13 +77,13 @@ def _spec_jobs(base, nodes, top, nlte, dep_dirs):
         if nlte:
             atmos_override = {'atmos_format': 'save', 'atmos_file': dep_dirs[jkey],
                               'read_departures': True, 'feh': feh_i, 'vmic': v}
-            extra = {'m3d_params': {'maxiter': 0}}
+            extra = {'rt_iteration_params': {'maxiter': 0}}
         else:
             atmos_override = {'atmos_file': atmos_path, 'feh': feh_i, 'vmic': v}
             extra = {}
         nml_i = update_dict(copy.deepcopy(base), {
             'atmos_params': atmos_override,
-            'composition_params': {'absmet_file': absmet_file},
+            'opac_table_params': {'absmet_file': absmet_file},
             **extra,
         })
         jobs.append((jkey, Path(top) / _run_name(teff_i, logg_i, feh_i, v), nml_i))
@@ -129,7 +134,9 @@ def _dep_bucket(top, settings):
     settings so departures are reused across windows/line lists. ``None`` for LTE settings
     without the relevant sections."""
     dep_subset = {k: settings[k] for k in
-                  ('atom_params', 'composition_params', 'atmos_params', 'm3d_params')
+                  ('atom_params', 'composition_params', 'opac_table_params', 'atmos_params',
+                   'm3d_params', 'nlte_params', 'rt_iteration_params', 'rt_output_params',
+                   'run_params')
                   if k in settings}
     dep_digest = hashlib.sha1(
         json.dumps(dep_subset, sort_keys=True, default=str).encode()).hexdigest()[:8]
@@ -140,7 +147,7 @@ def _interp_crop(grid, xmin, xmax, method):
     """Interpolate a node grid at its target point and crop to the window — the shared tail
     of ``compute_spectrum``/``compute_spectra``."""
     # a run can finish yet emit no spectrum (e.g. no R/daa/nnu/lam_file set, or
-    # long_scheme='none'); flag it clearly instead of failing later on a missing attribute.
+    # angle_quad='none'); flag it clearly instead of failing later on a missing attribute.
     no_spec = [s for s in grid.spectra if not getattr(s, 'has_spectrum', False)]
     if no_spec:
         folders = ', '.join(str(getattr(s, 'folder', '?')) for s in no_spec)
@@ -195,7 +202,7 @@ def build_stellar_grid(top, star, atmos_files,
         {(teff, logg, feh) or (teff, logg, feh, vmic): path} mapping. When keys carry a
         vmic, it is used only to pick the representative atmosphere per (teff, logg, feh).
     settings : dict, optional
-        NameList settings (atom_params, m3d_params, …) merged into each
+        NameList settings (atom_params, nlte_params, …) merged into each
         per-atmosphere nml. atmos_params and composition_params are filled
         automatically per atmosphere.
     absmet_files : dict, optional
@@ -224,7 +231,8 @@ def build_stellar_grid(top, star, atmos_files,
         Whether this is an NLTE solve. Front-ends that carry the LTE/NLTE choice out of band
         (e.g. in namelist presets rather than ``settings``) must pass it explicitly, since it
         can't be recovered from ``settings`` alone. When ``None`` it is inferred from
-        ``settings`` via :func:`_is_nlte` (works only when ``settings`` carries m3d_params).
+        ``settings`` via :func:`_is_nlte` (works only when ``settings`` carries the
+        iteration count, i.e. rt_iteration_params or legacy m3d_params).
 
     Returns
     -------
@@ -667,11 +675,11 @@ def get_NLTE_correction(top, star, atom_file, atmos_file, lines, absmet_files=No
             'atom_file': atom_file,
             'relative_abundance': True,
             'use_atom_abnd': False,
-            'convlim': 0.01,
-            'convmax': 0.001,
         },
-        'm3d_params': {'maxiter': 99, 'ilambd': 3},
-        'composition_params': {'absmet_file': absmet_file},
+        'rt_iteration_params': {'maxiter': 99},
+        'rt_output_params': {'maxiter': 3},
+        'nlte_params': {'convlim': 0.01, 'convmax': 0.001},
+        'opac_table_params': {'absmet_file': absmet_file},
     }
     if settings is not None:
         nml = update_dict(nml, settings)
