@@ -46,8 +46,8 @@ MODULE composition_patch_mod
   
   !-----------------------------------------------------------------------------
   type, public, extends(m3d_patch_t) :: composition_patch_t
-    class(gpatch_t), pointer :: mhd ! pointer to MHD patch
-    class(nlte_patch_t), pointer :: nlte_patch
+    class(gpatch_t), pointer :: mhd => null() ! pointer to MHD patch
+    class(nlte_patch_t), pointer :: nlte_patch => null()
   contains
     procedure :: pre_init => composition_pre_init
     procedure :: execute
