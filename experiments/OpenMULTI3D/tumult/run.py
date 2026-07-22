@@ -222,7 +222,7 @@ class tumult(object):
                         if self.has_spectrum:
                             atom.line = atom.trans.get_lines(atom.in_lines)
 
-                            if option(self.nml['atom_params'], 'overlapping_bb_in_output'):
+                            if option(self.nml['output_params'], 'overlapping_bb_in_output'):
                                 atom.load_sp(self.lam, qnorm=self.qnorm)
                             else:
                                 nnu = self.lam.size
@@ -241,7 +241,7 @@ class tumult(object):
                         atom.nline = len(atom.line)
 
                         if self.has_spectrum:
-                            if not option(self.nml['atom_params'], 'overlapping_bb_in_output'):
+                            if not option(self.nml['output_params'], 'overlapping_bb_in_output'):
                                 nnu = self.lam.size
                                 ib, ir = atom.get_non_overlapping_indices(atom.trans, nnu, nq_fac)
                                 atom.ib = ir.astype(int)
