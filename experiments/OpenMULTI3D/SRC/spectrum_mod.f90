@@ -1,9 +1,6 @@
 !---------------------------------------------------------------------
 MODULE spectrum_mod 
-    USE io_mod
-    USE os_mod
-    USE timer_mod
-    USE trace_mod
+    USE hop_env_mod, only: io, os
     USE const_mod
     USE handyfuncs_mod, only: air2vac, remove_close_entries
     USE op_math_mod, only: get_ivl=>get_interval

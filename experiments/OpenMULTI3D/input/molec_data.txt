@@ -1,7 +1,14 @@
-! MOLECULE ID,  constant dissociation energy, number of terms in partition function 
+! MOLECULE ID,  constant dissociation energy, number of terms in partition function,
+!               optional total nuclear spin weight of the partition function (default 1)
 ! Dissociation energy, optional polynomial for vib-rot energies
 ! Dissociation constants, always 5 numbers
 ! Irwin partition function
+!
+! The 4th header field is prod (2I+1) over the constituent nuclei, and marks the
+! partition function below as counting nuclear spin states. Set it only when the
+! tabulated Q actually carries that factor, as the BT2/Barber H2O Q does (4 = 2*2*1
+! for H,H,O-16) to match the 3:1 ortho/para weights in its line list g column.
+! get_dis divides it back out; the line-opacity path uses Q as tabulated.
 !-----------------------------------------------------
 H2    0   8
 4.476        0.00975     -0.12427      0.60602     -1.4772     2.6757
@@ -11,7 +18,7 @@ H2+   0   5
 2.648        0.15253     -0.82685      1.7231      -2.0036     2.9216
 0.0000e+00   0.024790    -7.9197E-02  -2.7943E0   11.207E0
 -2.89144623D+02  1.42465822D+02 -2.59860025D+01  2.08659519D+00 -6.12955123D-02
-H2O   1   6
+H2O   1   6   4
 9.512
 8.1730E-04  -1.8368E-02   1.6939E-01  -10.522E0   25.420E0
 -2.613011e+03 1.540337e+03 -3.592844e+02 4.144443e+01 -2.357878e+00 5.287149e-02

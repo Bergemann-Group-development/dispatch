@@ -47,6 +47,7 @@ vtune*
 *__genmod.f90
 dispatch.x.*
 *temp_directory*
+*.so
 
 # OpenMULTI3D install docs + data-fetch script (override the broad experiments/* and *.txt rules above)
 !experiments/OpenMULTI3D/README_INSTALL.md

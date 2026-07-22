@@ -15,6 +15,7 @@ below, with a DeprecationWarning):
 - broadening:        convolve, combined_kernel, rot_kernel, gauss_kernel, macro_kernel,
                      convert_res_to_vdop
 - physics helpers:   vac2air, air2vac, planck, voigt_function
+- in-process EOS:    HopEOS, make_eos_table (ctypes interface to libhop.so)
 - constants:         the `const` submodule (frozen CGS; see its docstring)
 """
 from . import const
@@ -32,6 +33,7 @@ from .profile import Profile, profile_names, get_profile_class
 from .convolutions import (convolve, combined_kernel, rot_kernel, gauss_kernel,
                            macro_kernel, convert_res_to_vdop)
 from .physics import vac2air, air2vac, planck, voigt_function
+from .hop import HopEOS, HopError, make_eos_table
 from .fast_atom import read_atom
 from .utils import (get_weq, fit_line_profile, ensure_unit, pchip_mono, lowpass,
                     linear_edge_normalisation, auto_crop_core, get_bisector, calc_teff,

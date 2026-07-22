@@ -13,7 +13,8 @@ MODULE atom_mod
     USE element_mod, only: element_type, isotope_type
     USE molecule_mod, only: molec_type
     USE composition_mod, only: composition_type
-    USE linelist_mod, only: linelist_type, append_line, finalize_linelist, &
+    USE line_types_mod, only: linelist_type
+    USE linelist_mod, only: append_line, finalize_linelist, &
                             reserve_linelist, ll_bij_const => bij_const
     USE os_mod
     USE trace_mod
@@ -68,7 +69,7 @@ MODULE atom_mod
     type, public :: atom_trans_t
       type(line_type), dimension(:), pointer, contiguous :: line => null()
       type(cont_type), dimension(:), pointer, contiguous :: cont => null()
-      ! SoA copy of the (non-hydrogen) bound-bound transitions for the use_new_linelist
+      ! SoA copy of the (non-hydrogen) bound-bound transitions for the SoA line kernel
       ! path; built by atom_type%build_ll (globally for the linelist_out.txt export,
       ! per rt-patch for the opacity/rate kernels)
       type(linelist_type) :: ll
@@ -1647,7 +1648,7 @@ MODULE atom_mod
 
   !====================================================================================
   ! Convert the (non-hydrogen) bound-bound transitions of trans%line(:) into the SoA
-  ! linelist trans%ll for the use_new_linelist kernels (linelist_mod).  Broadening is
+  ! linelist trans%ll for the SoA line kernels (linelist_mod).  Broadening is
   ! copied as prepared by prepare_damping (same over_4pi/nu0 scaling), populations use
   ! the composition ion densities via lnbase/ipart (= ion stage; lower_ev re-referenced
   ! to the stage ground level), and multi-component lines (io>1) are expanded into one
