@@ -864,9 +864,9 @@ contains
         end select
       else
         select case(rt_iter%solver)
-          case('linear', 'quadratic')
+          case('linear')
             call self%short_char(vec)
-          case('hermite')
+          case('hermite', 'quadratic')
             call self%short_char_hermite(comp, vec)
           case default
             stop 'Unknown rt_iteration_params solver, use "linear", "quadratic" or "hermite"'
