@@ -1,5 +1,6 @@
 import re
 from pathlib import Path
+from numbers import Integral, Real
 
 # --- regexes ---
 _QUOTE_RE = re.compile(r"'(?:[^']|'')*'|\"(?:[^\"]|\"\")*\"")
@@ -35,7 +36,7 @@ def _format_value(val):
     """Format Python value back to Fortran namelist syntax."""
     if isinstance(val, bool):
         return ".true." if val else ".false."
-    elif isinstance(val, (int, float)):
+    elif isinstance(val, (Integral, Real)):
         return str(val)
     elif isinstance(val, str):
         # Always single-quote strings; escape by doubling
