@@ -1768,7 +1768,7 @@ MODULE atom_mod
     class(composition_type) :: comp
     real(8) :: temp, ne, nh1
     real(8) :: ni, nj, nij, cup, cdn, e_kT, divu
-    real(8) :: dxi, dev, ex, u0, f, tmp, sqt, fac, nu0
+    real(8) :: dxi, dev, ex, u0, f, tmp, sqt, fac, lam0
     real(8) :: seaton, allen, regemorter
     integer :: x, y, z, i, j, ii, jj, tri, n
     logical :: cont
@@ -1826,8 +1826,8 @@ MODULE atom_mod
             if (cont) then
               ! ionization by electron collisions
               if (fac == 0) then
-                nu0 = dev * EE/HH
-                fac = Kramer(nu0, dev)
+                lam0 = HZ_TO_AA*h_e / dev
+                fac = Kramer(lam0, dev)
               endif
               tmp = min(0.1*self%ion(i), 0.3)
               cup = seaton * fac * tmp / u0 * ex
