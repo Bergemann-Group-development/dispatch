@@ -83,6 +83,54 @@ def concat_patches(dct, n_nu, fdim, zdim, lazy):
         return [merge_set(s) for s in sets]
 
 
+def patch_save_name(kind, key):
+    """The ``<kind>_<key...>.bin`` file name patch_t%get_meta_name builds (3(I3.3)
+    on abs(key), so a negative i_nu lands in the same file as its positive twin)."""
+    return kind.replace(' ', '_') + '_' + ''.join(f'{abs(k):03d}' for k in key) + '.bin'
+
+
+def write_patch_bin(folder, kind, key, mem):
+    """Stream one patch array out as patch_t%save3 does; returns (name, shape).
+
+    The file holds the raw Fortran-ordered float32 buffer, nothing else. The
+    caller is responsible for the matching ``<kind>_meta.txt`` line, which is
+    what :func:`write_patch_meta` takes the returned pairs for -- splitting the
+    two lets several processes write bins concurrently while one process writes
+    the meta file.
+    """
+    folder = pathlib.Path(folder)
+    folder.mkdir(parents=True, exist_ok=True)
+    mem = np.ascontiguousarray(mem, np.float32)
+    name = patch_save_name(kind, key)
+    mem.T.tofile(folder / name)  # the transposed view traverses in Fortran order
+    return name, mem.shape
+
+
+def write_patch_meta(folder, kind, entries):
+    """Write ``<kind>_meta.txt`` from (name, shape) pairs, in the given order.
+
+    Repeats patch_t%save_meta's ``(A32, I4, n(I10))`` columns -- filename,
+    storage_size in bits, shape. Any existing file is replaced, so one call must
+    cover every patch of that kind.
+    """
+    lines = ['*' + ' filename' + ' ' * 21 + 'bytes']
+    for name, shape in entries:
+        lines.append(f'{name:>32}{32:4d}' + ''.join(f'{d:10d}' for d in shape))
+    meta = pathlib.Path(folder) / f'{kind.replace(" ", "_")}_meta.txt'
+    meta.write_text('\n'.join(lines) + '\n')
+    return meta
+
+
+def write_patch_save(folder, kind, arrays):
+    """Write patch arrays in the layout :func:`load_patch_files` reads.
+
+    ``arrays`` maps a key tuple (as in the file name: ``(iz, inu)``) to a float32
+    array; each becomes one ``.bin`` plus one meta line, in the given order.
+    """
+    entries = [write_patch_bin(folder, kind, key, mem) for key, mem in arrays.items()]
+    return write_patch_meta(folder, kind, entries)
+
+
 def read_patch_save(folder, kind, n_nu, concat=True, fdim=0, zdim=None, lazy=True):
     """Load ``kind`` from a run's save folder: memmap the patches and (by default)
     stitch them together (``zdim`` defaults to the patches' last axis)."""
