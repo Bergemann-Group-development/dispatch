@@ -30,6 +30,7 @@ MODULE composition_patch_mod
   USE rt_patch_mod, only:rt_patch_t
   USE bftrans_mod, only: H_occupation_probability
   USE bbtrans_mod, only: tolerance, bbtrans_type, disable_ga, disable_stark, disable_vdw, ga_fallback
+  USE linelist_mod, only: ll_profile, voigt_kernel
   USE hprofl_mod, only: hydrogen_BPO
   USE hvcs_mod, only: hydrogen_vcs_table, vcs_data_dir
   USE trace_mod
@@ -96,7 +97,7 @@ SUBROUTINE read_composition_params ()
   namelist /opac_table_params/ opac_table, opac_table_vmic, pca_opac, &
   dtemp, ldne, ldrho, ldtemp, absmet_file
   namelist /linelist_params/ dlam, exclude_elements, linelist_file, linelist_folder, &
-  tolerance, only_elements, line_scattering
+  tolerance, only_elements, line_scattering, ll_profile, voigt_kernel
   ! ----------------------------------------------------------------------------
   call trace%begin('composition%init', itimer=itimer)
 
