@@ -1,5 +1,4 @@
 MODULE mmath_mod
-  USE refsor_mod
 
   implicit none
 

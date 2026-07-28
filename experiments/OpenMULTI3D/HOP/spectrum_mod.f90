@@ -2,10 +2,9 @@
 MODULE spectrum_mod 
     USE hop_env_mod, only: io, os
     USE const_mod
-    USE handyfuncs_mod, only: air2vac, remove_close_entries
+    USE handyfuncs_mod, only: air2vac, remove_close_entries, sort_asc
     USE op_math_mod, only: get_ivl=>get_interval
     USE trans_mod, only: transition_type
-    USE mmath_mod, only: refsor
     implicit none
 
     !-------------------------------------------------------------------------------
@@ -249,7 +248,7 @@ MODULE spectrum_mod
       class(spectrum_type), intent(inout):: self
       !-----------------------------------------------------------------------------
       self%sorted = .true.
-      call refsor(self%lam)
+      call sort_asc(self%lam)
       ! discard duplicates, nnu contains number of unique elements on exit
       call remove_close_entries(self%lam, lam_tolerance)
       call self%reset(lam=self%lam)
