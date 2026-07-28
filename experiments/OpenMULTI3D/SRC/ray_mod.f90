@@ -1,7 +1,6 @@
 MODULE ray_mod
   USE const_mod
   USE radau_mod
-  USE mmath_mod,only:cc_kernel
   implicit none
 
   ! *******************************************************************
@@ -935,5 +934,33 @@ contains
     ! Return the sorted array and permutation order
     sorted_array = temp_array
   END SUBROUTINE sort_array
+
+  !---------------------------------------------------------------------
+  SUBROUTINE cc_kernel(s,k)
+    !---------------------------------------------------------------------
+    !
+    !  Computes the 1D cubic convolution kernel. For an equidistant
+    !  grid x_i (i={1,2,3,4}) with spacing h, a coordinate x_2<x<x_3
+    !  where the function value is desired, and s= (x-x_2)/h, the
+    !  kernel k is computed, so that y(x) approx sigma_1^4 k[i]*y_i
+    !  for tabulated values y_i at position x_i
+    !
+    !---------------------------------------------------------------------
+    implicit none
+
+    real(8),intent(in)               :: s
+    real(8),intent(out),dimension(4) :: k
+    real(8)                          :: s2,s3
+
+    s2=s*s
+    s3=s2*s
+
+    k(1) = 0.5*(-s3+2*s2-s)
+    k(2) = 0.5*( 3*s3-5*s2+2)
+    k(3) = 0.5*(-3*s3+4*s2+s)
+    k(4) = 0.5*(s3-s2)
+
+  END SUBROUTINE cc_kernel
+  !---------------------------------------------------------------------
 
 END MODULE ray_mod

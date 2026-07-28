@@ -12,7 +12,6 @@ MODULE rt_patch_mod
   USE os_mod
   USE const_mod, only: CC, h_k, twoh_c2, half, one_third, one_sixth, one_twelfth, HZ_TO_AA, pi
   USE patch_mod, only: patch_t
-  USE mmath_mod, only: cc_kernel
   USE interpol_mod, only: pchip_mono
   USE handyfuncs_mod
   USE atom_mod, only: atom_type, atom_data_t, atom_trans_t
