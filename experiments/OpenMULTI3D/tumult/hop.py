@@ -3,17 +3,14 @@
 Wraps the standalone HOP library (built with ``make -C HOP/standalone``) via
 ctypes, exposing the same composition_type solves that dispatch.x uses:
 
-- :class:`HopEOS` -- allocate/initialize a composition instance, solve the EOS
-  on arbitrary (T, rho) or (T, ne) points, compute continuum absorption and
-  scattering opacities on a wavelength grid.
-- :func:`make_eos_table` -- replicate the Fortran ``make_eos`` table
-  (``init_eos_comp``): the 6 planes (temp, rho, ne, pg, E, chi500) on a given
-  set of (T, rho) points, so EOS tables can be produced without a dispatch.x
-  run.  :func:`logstep` builds the ln(T) x ln(rho) node grid dispatch uses.
-- :func:`make_opac_table` -- the other half of ``make_eos``: the 'opa' and
-  'scat' tables of ``save_opac_table``, on the same points, optionally with LTE
-  line-list opacity, split over the wavelength axis and computed in a pool of
-  worker processes.
+- :class:`HopEOS` -- allocate/initialize a composition instance, solve the EOS on
+  arbitrary (T, rho) or (T, ne) points (``load_state``, after which the state is
+  readable as the array properties temp/rho/ne/pe/pg/energy/chi500), and compute
+  opacities on a wavelength grid (``opacity``, the one entry point for continuum,
+  sampled metal-line and line-list opacity).
+- :func:`logstep` / :func:`wavelength_grid` build the ln(T) x ln(rho) node grid
+  and the &spectrum_params wavelength grid a dispatch run would tabulate on, so a
+  dispatch EOS/opacity table can be reproduced without running dispatch.x.
 
 Limitations: one instance per process (HOP keeps configuration in module-level
 globals); hard failures inside the Fortran (missing data files, solver
@@ -29,15 +26,11 @@ from pathlib import Path
 
 import numpy as np
 
-from .io_binary import write_patch_bin, write_patch_meta, write_patch_save
-
-__all__ = ['HopEOS', 'HopError', 'make_eos_table', 'make_opac_table',
-           'logstep', 'wavelength_grid', 'freq_split', 'find_library']
+__all__ = ['HopEOS', 'HopError', 'logstep', 'wavelength_grid', 'freq_split',
+           'find_library']
 
 _EXP_DIR = Path(__file__).resolve().parents[1]
 _DEFAULT_LIB = _EXP_DIR / 'HOP' / 'standalone' / 'build' / 'libhop.so'
-
-_F32_HUGE = np.float32(np.finfo(np.float32).max)
 
 
 class HopError(RuntimeError):
@@ -78,8 +71,7 @@ _r4 = ctypes.c_float
 _r8 = ctypes.c_double
 
 #: The libhop entry points, mirroring the BIND(c, name=...) declarations in
-#: HOP/standalone/hop_c_api.f90 -- name: (restype, argtypes).  tests/test_hop.py
-#: checks this against the Fortran source, so keep it in sync when the API grows.
+#: HOP/standalone/hop_c_api.f90 -- name: (restype, argtypes).
 _SIGNATURES = {
     'hop_init':             (_i, [_c, _c, _c, _c, _r8, _r4, _r4, _r4]),
     'hop_free':             (_i, []),
@@ -92,10 +84,9 @@ _SIGNATURES = {
     'hop_get_grph':         (_r8, []),
     'hop_keep_species':     (_i, [_c]),
     'hop_get_species':      (_i, [_c, _i, _f64]),
-    'hop_absorption':       (_i, [_i, _f64, _f32, _i]),
-    'hop_line_absorption':  (_i, [_i, _f64, _f32, _r8, _i]),
+    'hop_set_vmic':         (_i, [_i, _r4]),
     'hop_init_linelist':    (_i, [_c, _r8, _i, _f64]),
-    'hop_scattering':       (_i, [_i, _f64, _f32]),
+    'hop_opacity':          (_i, [_i, _f64, _f32, _f32, _i, _i, _r8, _i]),
 }
 
 
@@ -139,25 +130,28 @@ class HopEOS:
             if not p.is_file():
                 raise HopError(f'data file not found: {p}')
 
-        self._lib = self._load_library()
-
         options = dict(options or {})
-        options['verbose'] = _verbosity(verbose)
         # the VCS hydrogen-profile tables sit next to the other input data, but
         # HOP's default path is cwd-relative -- make it absolute unless overridden
         options.setdefault('vcs_data_dir', str(_EXP_DIR / 'input' / 'vcs'))
-        for name, value in options.items():
-            self.set_option(name, value)
 
-        status = self._lib.hop_init(
-            _c_str(absdat_file), _c_str(abund_file),
-            _c_str(isotope_file), _c_str(molec_file),
-            float(feh), float(tmolim),
-            float(alpha_enhancement), float(r_process_enhancement))
-        if status != 0:
-            raise HopError(f'hop_init failed with status {status}')
-        HopEOS._open = True
-        self._owns = True
+        # everything needed to build an identical instance elsewhere: opacity()
+        # hands this to its spawned workers, and uses it to rebuild this instance
+        # when a line list has to be replaced (see _load_linelist)
+        self._recipe = dict(options,
+                            absdat_file=str(absdat_file), abund_file=str(abund_file),
+                            isotope_file=str(isotope_file), molec_file=str(molec_file),
+                            feh=float(feh), tmolim=float(tmolim),
+                            alpha_enhancement=float(alpha_enhancement),
+                            r_process_enhancement=float(r_process_enhancement),
+                            verbose=_verbosity(verbose))
+        self._linelist = None   # (files, dlam, lam_min, lam_max) read into the instance
+        self._state = None      # the load_state arguments, replayed after a rebuild
+        self._shape = ()        # shape of the state, given to the field properties
+        self._species = []      # keep_species ids, replayed after a rebuild
+
+        self._lib = self._load_library()
+        self._init_fortran()
 
     @staticmethod
     def _load_library():
@@ -167,6 +161,48 @@ class HopEOS:
             func.restype = restype
             func.argtypes = argtypes
         return lib
+
+    def _init_fortran(self):
+        """Apply the recipe's options and run hop_init.  The Fortran side must be
+        free (fresh instance, or right after hop_free in _rebuild)."""
+        recipe = dict(self._recipe)
+        files = {k: recipe.pop(k) for k in ('absdat_file', 'abund_file',
+                                            'isotope_file', 'molec_file')}
+        scalars = {k: recipe.pop(k) for k in ('feh', 'tmolim', 'alpha_enhancement',
+                                              'r_process_enhancement')}
+        for name, value in recipe.items():   # verbose included, before hop_init
+            self.set_option(name, value)
+
+        status = self._lib.hop_init(
+            _c_str(files['absdat_file']), _c_str(files['abund_file']),
+            _c_str(files['isotope_file']), _c_str(files['molec_file']),
+            scalars['feh'], scalars['tmolim'],
+            scalars['alpha_enhancement'], scalars['r_process_enhancement'])
+        if status != 0:
+            raise HopError(f'hop_init failed with status {status}')
+        HopEOS._open = True
+        self._owns = True
+
+    def _rebuild(self):
+        """Start the Fortran side over from the recipe, then replay the line list,
+        the kept species and the loaded state.
+
+        Line lists accumulate onto the never-solved master instance and cannot be
+        removed, so replacing one means rebuilding -- see _load_linelist.
+        """
+        linelist, state, species = self._linelist, self._state, list(self._species)
+        self._lib.hop_free()
+        HopEOS._open = False
+        self._owns = False
+        self._linelist, self._state, self._species = None, None, []
+        self._init_fortran()
+        if linelist is not None:
+            files, dlam, lam_min, lam_max = linelist
+            self._load_linelist(files, dlam, np.array([lam_min, lam_max]))
+        if species:
+            self.keep_species(species)
+        if state is not None:
+            self.load_state(**state)
 
     # -- configuration ------------------------------------------------------
 
@@ -200,37 +236,50 @@ class HopEOS:
         raise HopError(f'option {name} rejected by libhop '
                        f'(unknown name or wrong type bucket, status {status})')
 
-    def init_linelist(self, files, dlam=100.0, lam=None):
-        """Read line-list file(s) into this instance (the &linelist_params path).
-
-        files: a file, a list of files, or a directory (read in sorted order --
-        dispatch reads linelist_folder in the order os%get_filenames returns, so
-        ties between identical lines may end up ordered differently).  lam, when
-        given, restricts the lines kept to [lam[0]-dlam, lam[-1]+dlam], exactly as
-        composition_pre_init does with the output spectrum's range -- pass the
-        wavelengths you are going to compute opacities on.
-
-        Must be called before load_state: each solve works on a copy of the
-        configured instance, so lines read afterwards would not be seen.
-        """
+    @staticmethod
+    def _linelist_files(files):
+        """The line-list argument as a tuple of file paths: a file, a list of
+        files, or a directory (read in sorted order -- dispatch reads
+        linelist_folder in the order os%get_filenames returns, so ties between
+        identical lines may end up ordered differently)."""
         if isinstance(files, (str, Path)):
             p = Path(files)
             files = sorted(f for f in p.iterdir() if f.is_file()) if p.is_dir() else [p]
-        if lam is None:
-            lam_arr, nlam = np.zeros(1), 0
-        else:
-            lam_arr = np.ascontiguousarray(np.atleast_1d(lam), np.float64)
-            nlam = lam_arr.size
+        out = []
         for f in files:
             f = Path(f)
             if not f.is_file():
                 raise HopError(f'line-list file not found: {f}')
-            status = self._lib.hop_init_linelist(_c_str(f), float(dlam), nlam, lam_arr)
+            out.append(str(f))
+        return tuple(out)
+
+    def _load_linelist(self, files, dlam, lam):
+        """Make sure the line list (files, dlam) covering lam is the one read in.
+
+        Only lines inside [lam[0]-dlam, lam[-1]+dlam] are kept, exactly as
+        composition_pre_init does with the output spectrum's range.  A line list
+        can only be *added* to the never-solved master instance -- and the solve
+        works on a copy of it -- so a different list, or one read over too narrow
+        a window, means rebuilding the instance and re-solving the state.
+        """
+        files = self._linelist_files(files)
+        lam_min, lam_max = float(np.min(lam)), float(np.max(lam))
+        if self._linelist is not None:
+            have_files, have_dlam, have_min, have_max = self._linelist
+            if (files, dlam) == (have_files, have_dlam) and \
+                    have_min <= lam_min and lam_max <= have_max:
+                return                       # already covered
+            self._rebuild()                  # lines cannot be unread
+        lam_arr = np.ascontiguousarray([lam_min, lam_max], np.float64)
+        for f in files:
+            status = self._lib.hop_init_linelist(_c_str(f), float(dlam), 2, lam_arr)
             if status == 2:
                 raise HopError('hop_init_linelist needs an initialized instance')
             if status != 0:
                 raise HopError(f'hop_init_linelist({f}) failed with status {status}')
-        return self
+        self._linelist = (files, dlam, lam_min, lam_max)
+        if self._state is not None:
+            self.load_state(**self._state)   # the solve must see the new lines
 
     # -- EOS ----------------------------------------------------------------
 
@@ -247,6 +296,8 @@ class HopEOS:
                 raise HopError(f'unknown species id {sid!r} (use e.g. "Fe I" '
                                f'for ions -- a bare element id is not a species '
                                f'-- or a molecule formula like "CH")')
+            if sid not in self._species:
+                self._species.append(sid)
 
     def species_density(self, species_id):
         """Number density [1/cm3] of one species ('Fe I', 'CH', ...) in the
@@ -265,37 +316,50 @@ class HopEOS:
         if status != 0:
             raise HopError(f'unknown species id {species_id!r} (use e.g. "Fe I" '
                            f'or a molecule formula like "CH")')
-        return out
+        return out.reshape(self._shape)
 
     def load_state(self, temp, rho=None, ne=None, vmic=-1.0, species=None):
         """Solve the EOS on a set of cells.
 
         temp [K] plus either rho [g/cm3] (electron density solved by Newton
         iteration; pass ne as well to provide a starting guess) or ne [1/cm3]
-        (rho follows from particle conservation).  vmic [km/s] only matters for
-        later line-opacity calls; < 0 means unset (the make_eos default).
-        species: id(s) to keep for species_density() ('Fe I', 'CH', ...).
-        Returns self; results are exposed as the array properties temp, ne,
-        rho, pe, pg, E, eh, chi500.
+        (rho follows from particle conservation).  The arrays may have any shape,
+        as long as they share it -- the cells are solved independently, and the
+        result properties come back in that same shape.  vmic [km/s] only matters
+        for later line-opacity calls; < 0 means unset (thermal broadening only),
+        and opacity(vmic=...) overrides it without re-solving.  species: id(s) to
+        keep for species_density() ('Fe I', 'CH', ...).
+
+        Returns self; results are exposed as the array properties temp, ne, rho,
+        pe, pg, energy, eh, chi500.
         """
         if species is not None:
             self.keep_species(species)
-        temp = np.ascontiguousarray(np.atleast_1d(temp), np.float64)
-        n = temp.size
+        temp_a = np.ascontiguousarray(np.atleast_1d(temp), np.float64)
+        shape = temp_a.shape
+        n = temp_a.size
         use_rho, use_ne = rho is not None, ne is not None
         if not (use_rho or use_ne):
             raise HopError('load_state needs rho and/or ne')
-        rho_in = np.ascontiguousarray(np.atleast_1d(rho if use_rho else np.zeros(n)), np.float64)
-        ne_io = np.ascontiguousarray(np.atleast_1d(ne if use_ne else np.zeros(n)), np.float64)
-        if rho_in.size != n or ne_io.size != n:
-            raise HopError('temp, rho, ne must have equal size')
-        if not np.all(np.isfinite(temp)) or np.any(temp <= 0):
+        rho_in = np.ascontiguousarray(np.atleast_1d(rho if use_rho else np.zeros(shape)),
+                                      np.float64)
+        ne_io = np.ascontiguousarray(np.atleast_1d(ne if use_ne else np.zeros(shape)),
+                                     np.float64)
+        if rho_in.shape != shape or ne_io.shape != shape:
+            raise HopError('temp, rho, ne must have the same shape')
+        if not np.all(np.isfinite(temp_a)) or np.any(temp_a <= 0):
             raise HopError('temp must be finite and positive')
 
-        status = self._lib.hop_load_state(n, temp, ne_io, rho_in,
-                                          float(vmic), int(use_rho), int(use_ne))
+        # the Fortran side takes a flat cell list; C order throughout, so the
+        # unflattening in _get_field is its exact inverse
+        status = self._lib.hop_load_state(n, temp_a.reshape(n), ne_io.reshape(n),
+                                          rho_in.reshape(n), float(vmic),
+                                          int(use_rho), int(use_ne))
         if status != 0:
             raise HopError(f'hop_load_state failed with status {status}')
+        self._shape = shape
+        self._state = dict(temp=temp_a, rho=rho_in if use_rho else None,
+                           ne=ne_io if use_ne else None, vmic=vmic)
         return self
 
     @property
@@ -311,24 +375,126 @@ class HopEOS:
         status = self._lib.hop_get_field(_c_str(name), n, out)
         if status != 0:
             raise HopError(f'hop_get_field({name}) failed with status {status}')
-        return out
+        return out.reshape(self._shape)
 
     temp = property(lambda self: self._get_field('temp'), doc='temperature [K]')
     ne = property(lambda self: self._get_field('ne'), doc='electron density [1/cm3]')
     rho = property(lambda self: self._get_field('rho'), doc='mass density [g/cm3]')
     pe = property(lambda self: self._get_field('pe'), doc='electron pressure [dyn/cm2]')
     pg = property(lambda self: self._get_field('pg'), doc='gas pressure [dyn/cm2]')
-    E = property(lambda self: self._get_field('e'), doc='internal energy [erg/g]')
-    eh = property(lambda self: self._get_field('eh'), doc='hydrogen ionization/dissociation energy term')
+    energy = property(lambda self: self._get_field('e'), doc='internal energy [erg/g]')
+    eh = property(lambda self: self._get_field('eh'),
+                  doc='hydrogen ionization/dissociation energy term')
     chi500 = property(lambda self: self._get_field('chi500'),
                       doc='extinction at the reference wavelength (air 5000 A) [1/cm]')
+    E = energy   # legacy name
 
     @property
     def grph(self):
         """Grams of matter per hydrogen nucleus."""
         return self._lib.hop_get_grph()
 
-    # -- opacities ----------------------------------------------------------
+    # -- opacity ------------------------------------------------------------
+
+    def _set_vmic(self, vmic):
+        status = self._lib.hop_set_vmic(self.n, float(vmic))
+        if status != 0:
+            raise HopError(f'hop_set_vmic failed with status {status}')
+        if self._state is not None:
+            self._state['vmic'] = float(vmic)
+
+    def _opacity_call(self, lam, include_absmet, include_linelist, dlam,
+                      line_scattering):
+        """One hop_opacity call over the whole of lam, as flat (ncell, nlam)."""
+        n = self.n
+        chi = np.zeros((n, lam.size), np.float32)   # C order == Fortran (nlam, n)
+        scat = np.zeros_like(chi)
+        status = self._lib.hop_opacity(lam.size, lam, chi, scat,
+                                       int(bool(include_absmet)),
+                                       int(bool(include_linelist)), float(dlam),
+                                       int(bool(line_scattering)))
+        if status != 0:
+            raise HopError(f'hop_opacity failed with status {status}')
+        return chi, scat
+
+    def opacity(self, lam, linelist=None, dlam=100.0, include_absmet=False,
+                line_scattering=False, vmic=None, nchunks=None, nprocs=1):
+        """Extinction chi and its scattering part [1/cm] on vacuum wavelengths.
+
+        Both come back float32 with shape ``<state shape> + (nlam,)``, i.e. per
+        volume -- divide by ``hop.rho[..., None]`` for the per-gram opacity a
+        dispatch 'opa'/'scat' table holds.
+
+        chi is the total: continuum (with Thomson + Rayleigh scattering folded in,
+        as HOP's scattering_absorption does), the sampled metal-line background
+        with ``include_absmet``, and the LTE line list with ``linelist``.  scat is
+        the scattering part of it: Thomson + Rayleigh, plus -- with
+        ``line_scattering`` -- the (1-eps)-weighted absmet and line-list opacity,
+        the van Regemorter split composition_type%opacity applies.
+
+        linelist: a file, a list of files or a folder (the &linelist_params
+        linelist_file / linelist_folder), with ``dlam`` [AA] the line-wing search
+        radius; only lines within dlam of the requested wavelengths are read.
+        Switching to a different list rebuilds the instance and re-solves the
+        state, since HOP can only ever add lines.
+
+        vmic [km/s] broadens the lines and must match what dispatch would use, or
+        the line opacity comes out wrong (an order of magnitude in the cool, dense
+        corner): the &opac_table_params default is -1 (thermal only), but
+        read_external_mod overrides it with the mean of the atmosphere's own vmic
+        whenever any of that is positive -- so pass that mean here for an
+        atmosphere that carries microturbulence.  It affects neither the EOS nor
+        the continuum, and is applied without re-solving the state.
+
+        The wavelength axis is split into ``nchunks`` pieces (default: ``nprocs``)
+        the same way dispatch splits it over its n_nu rt_patches, and the pieces
+        run in ``nprocs`` processes -- HOP keeps process-wide global state, so each
+        worker holds its own instance and reads only the lines its chunk needs.
+        With ``nprocs=1`` the chunks are computed here, in one instance holding the
+        whole line list.  Because the workers are spawned, a script calling this
+        with nprocs > 1 must guard its top level with ``if __name__ ==
+        '__main__':`` -- without it each worker re-runs the script on import and
+        the pool spawns forever (notebooks and pytest are unaffected).
+        """
+        lam = self._check_lam(lam)
+        if self._state is None:
+            raise HopError('no state loaded; call load_state first')
+        if linelist is not None:
+            linelist = self._linelist_files(linelist)
+        nchunks = max(1, min(nchunks or nprocs, lam.size))
+        nprocs = max(1, min(nprocs, nchunks))
+
+        jobs = []
+        for i in range(1, nchunks + 1):
+            fs, fe = freq_split(lam.size, i, nchunks)
+            jobs.append(dict(lam=lam[fs:fe], recipe=self._recipe, state=self._state,
+                             species=list(self._species), linelist=linelist, dlam=dlam,
+                             vmic=vmic, include_absmet=include_absmet,
+                             line_scattering=line_scattering))
+
+        if nprocs > 1:
+            # spawn, not fork: a forked child would inherit the parent's Fortran
+            # globals (and its live instance, which HopEOS allows only one of)
+            ctx = multiprocessing.get_context('spawn')
+            pool = ctx.Pool(nprocs)
+            try:
+                results = pool.map(_opacity_chunk, jobs, chunksize=1)
+                # close/join, not the with-block's terminate(): the workers have
+                # to exit normally for the Fortran side to flush what it wrote
+                pool.close()
+                pool.join()
+            finally:
+                pool.terminate()
+        else:
+            if linelist is not None:
+                self._load_linelist(linelist, dlam, lam)
+            if vmic is not None:
+                self._set_vmic(vmic)
+            results = [_opacity_chunk(job, self) for job in jobs]
+
+        shape = self._shape + (lam.size,)
+        return tuple(np.concatenate([r[k] for r in results], axis=1).reshape(shape)
+                     for k in (0, 1))
 
     def _check_lam(self, lam_vac):
         lam = np.ascontiguousarray(np.atleast_1d(lam_vac), np.float64)
@@ -336,38 +502,7 @@ class HopEOS:
             raise HopError('lam_vac must be a 1D array')
         if lam.size > 1 and not np.all(np.diff(lam) > 0):
             raise HopError('lam_vac must be strictly ascending (vacuum Angstrom)')
-        n = self.n
-        if n == 0:
-            raise HopError('no state loaded; call load_state first')
-        return lam, n
-
-    def _opacity(self, cfunc, lam_vac, *extra):
-        lam, n = self._check_lam(lam_vac)
-        out = np.zeros((n, lam.size), np.float32)  # C order == Fortran (nlam, n)
-        status = cfunc(lam.size, lam, out, *extra)
-        if status != 0:
-            raise HopError(f'{cfunc.__name__} failed with status {status}')
-        return out
-
-    def absorption(self, lam_vac, include_absmet=False, include_linelist=False,
-                   dlam=100.0):
-        """Absorption extinction chi [1/cm] on vacuum wavelengths.
-
-        Returns float32 (n_cells, n_lam).  include_absmet adds the sampled
-        metal-line background (osmet) contribution.  include_linelist adds the
-        LTE line-list opacity (init_linelist must have been called), reproducing
-        what rt_patch_mod%generate_opacity_table bakes into the make_eos table;
-        dlam [AA] is the &linelist_params line-wing search radius.
-        """
-        if include_linelist:
-            return self._opacity(self._lib.hop_line_absorption, lam_vac,
-                                 float(dlam), int(bool(include_absmet)))
-        return self._opacity(self._lib.hop_absorption, lam_vac,
-                             int(bool(include_absmet)))
-
-    def scattering(self, lam_vac):
-        """Electron (Thomson) + Rayleigh scattering extinction [1/cm], float32 (n_cells, n_lam)."""
-        return self._opacity(self._lib.hop_scattering, lam_vac)
+        return lam
 
     # -- lifetime -----------------------------------------------------------
 
@@ -378,6 +513,7 @@ class HopEOS:
         if self._owns:
             self._owns = False
             HopEOS._open = False
+            self._linelist, self._state, self._shape = None, None, ()
             self._lib.hop_free()
 
     def __enter__(self):
@@ -392,36 +528,42 @@ class HopEOS:
         except Exception:
             pass
 
+
+def _opacity_chunk(job, hop=None):
+    """One wavelength chunk of HopEOS.opacity.
+
+    Module level and argument-only so it survives pickling to a spawned worker,
+    which calls it with hop=None and so opens (and closes) its own instance, built
+    from the parent's recipe and given the parent's state.  In the sequential path
+    the caller passes its own instance -- including its line list, read once over
+    the full wavelength range rather than per chunk.
+    """
+    os.environ.setdefault('OMP_NUM_THREADS', '1')  # before the library is loaded
+    own = hop is None
+    hop = HopEOS(**job['recipe']) if own else hop
+    try:
+        if own:
+            if job['linelist'] is not None:
+                hop._load_linelist(job['linelist'], job['dlam'], job['lam'])
+            if job['species']:
+                hop.keep_species(job['species'])
+            hop.load_state(**job['state'])
+            if job['vmic'] is not None:
+                hop._set_vmic(job['vmic'])
+        return hop._opacity_call(job['lam'], job['include_absmet'],
+                                 job['linelist'] is not None, job['dlam'],
+                                 job['line_scattering'])
+    finally:
+        if own:
+            hop.close()
+
+
 def logstep(start, stop, step):
     """Like np.logspace but with a ln-space step size rather than a count."""
     lmin = np.log(start)
     lmax = np.log(stop)
     n = int(np.ceil((lmax - lmin) / step))
     return np.exp(lmin + step * np.arange(n))
-
-
-def _points(temp, rho):
-    """The (T, rho) table points as float64 arrays, which must share their shape."""
-    temp, rho = np.asarray(temp, np.float64), np.asarray(rho, np.float64)
-    if temp.shape != rho.shape:
-        raise HopError(f'temp and rho must have the same shape, got '
-                       f'{temp.shape} and {rho.shape}')
-    return temp, rho
-
-
-def _flat_cells(temp, rho):
-    """The (temp, rho) points as flat cell lists, in Fortran order -- so on the
-    usual meshgrid(tab_temp, tab_rho, indexing='ij') grid the temperature index
-    runs fastest, as it does in the cells of a dispatch make_eos run."""
-    temp, rho = _points(temp, rho)
-    return temp.ravel(order='F'), rho.ravel(order='F')
-
-
-def _unflatten(arr, shape):
-    """Fold a (nlam, ncell) array back onto (nlam,) + shape, cells in Fortran order."""
-    nd = len(shape)
-    arr = arr.reshape((arr.shape[0],) + tuple(shape[::-1]))
-    return np.ascontiguousarray(arr.transpose((0,) + tuple(range(nd, 0, -1))))
 
 
 def freq_split(nnu, i, n_nu):
@@ -461,185 +603,3 @@ def wavelength_grid(aa_blue, aa_red, R=0, daa=0, nnu=0, in_air=True):
         raise HopError('give R, daa or nnu together with aa_blue/aa_red')
     lam = aa_blue + daa * np.arange(nnu)
     return air2vac(lam) if in_air else lam
-
-
-def make_eos_table(hop, temp, rho, vmic=None):
-    """Replicate the Fortran make_eos table (init_eos_comp) in Python.
-
-    temp/rho: the temperature [K] and density [g/cm^3] of the table points, two
-    arrays of the same shape -- normally the 2D (ntemp, nrho) node grid of
-    ``np.meshgrid(logstep(...), logstep(...), indexing='ij')``, which is the grid dispatch
-    itself tabulates on.  vmic defaults to the Fortran opac_table_vmic default
-    (-1 = unset); note that a dispatch run does not necessarily use that value
-    -- read_external overwrites opac_table_vmic with the mean of the
-    atmosphere's own vmic whenever any of it is positive.  It does not enter the
-    EOS, but it does broaden the lines of an opacity table, so see
-    make_opac_table.
-
-    Returns the float32 (6,) + temp.shape table with the planes
-    (temp, rho, ne, pg, E, chi500) exactly as dispatch.x writes them.
-    """
-    tt, rr = _flat_cells(temp, rho)
-    hop.load_state(tt, rho=rr, vmic=-1.0 if vmic is None else vmic)
-
-    shape = np.shape(temp)
-    eos = np.empty((6,) + shape, np.float32)
-    for k, field in enumerate(('temp', 'rho', 'ne', 'pg', 'e', 'chi500')):
-        vals = hop._get_field(field)
-        if field != 'chi500':  # chi500 is float32 on the Fortran side already
-            vals = np.clip(vals, -_F32_HUGE, _F32_HUGE)
-        eos[k] = vals.reshape(shape, order='F').astype(np.float32)
-    return eos
-
-
-def _opac_chunk(job, hop=None):
-    """One wavelength chunk of make_opac_table.
-
-    Module level and argument-only so it survives pickling to a spawned worker,
-    which calls it with hop=None and so opens (and closes) its own instance.  In
-    the sequential path the caller passes an already configured instance --
-    including its line list, read once over the full range rather than per chunk.
-    """
-    os.environ.setdefault('OMP_NUM_THREADS', '1')  # before the library is loaded
-    lam = job['lam']
-    shape = job['temp'].shape
-    tt, rr = _flat_cells(job['temp'], job['rho'])
-
-    own = hop is None
-    hop = HopEOS(**job['hop_kwargs']) if own else hop
-    try:
-        if own and job['linelist'] is not None:
-            hop.init_linelist(job['linelist'], dlam=job['dlam'], lam=lam)
-        hop.load_state(tt, rho=rr, vmic=job['vmic'])
-        chi = hop.absorption(lam, include_absmet=job['include_absmet'],
-                             include_linelist=job['linelist'] is not None,
-                             dlam=job['dlam'])
-        sig = hop.scattering(lam)
-    finally:
-        if own:
-            hop.close()
-
-    # (ncell, nlam) [1/cm] -> (nlam, ntemp, nrho) [cm2/g], as save_opac_table
-    # writes it: cells run temperature-fastest, hence the Fortran-order unfold
-    over_rho = (1.0 / rr).astype(np.float32)
-    out = [_unflatten((arr * over_rho[:, None]).T, shape) for arr in (chi, sig)]
-    if job['folder'] is None:
-        return tuple(out)
-    return tuple(write_patch_bin(job['folder'], kind, job['key'], arr)
-                 for kind, arr in zip(('opa', 'scat'), out))
-
-
-def make_opac_table(temp, rho, lam, linelist=None, dlam=100.0,
-                    include_absmet=False, vmic=None, nchunks=None, nprocs=1,
-                    folder=None, iz=1, hop=None, write_eos=True, verbose=False,
-                    **hop_kwargs):
-    """Build the make_eos opacity tables ('opa', 'scat') without running dispatch.x.
-
-    Reproduces rt_patch_mod%generate_opacity_table + save_opac_table: 'opa' is
-    the total absorption chi/rho [cm2/g] (continuum, plus the LTE line list when
-    one is given), 'scat' is (electron + Rayleigh scattering)/rho, both float32
-    (nlam,) + temp.shape.
-
-    temp/rho: the table points, two arrays of the same shape -- normally the 2D
-    (ntemp, nrho) node grid of ``np.meshgrid(logstep(...), logstep(...), indexing='ij')``,
-    which is what dispatch tabulates on and what the save layout below expects.
-    lam: vacuum wavelengths, e.g. from :func:`wavelength_grid`.  linelist: file,
-    list of files or folder for the line-list opacity (None = continuum only).
-    hop_kwargs go to HopEOS (feh, abund_file, module options, ...) and are used
-    for the workers as well.
-
-    verbose: the HOP verbosity of the instances made here, so False (the
-    default) keeps the Fortran side quiet -- with a line list that is one 'N of
-    M lines read from linelist' line per chunk -- and True (or an int, see
-    :class:`HopEOS`) lets it print.  An instance passed as ``hop`` keeps the
-    verbosity it was constructed with.
-
-    vmic [km/s] broadens the lines and must match what dispatch would use, or
-    the line opacity comes out wrong (an order of magnitude in the cool, dense
-    corner): the &opac_table_params default is -1 (thermal only), but
-    read_external_mod overrides it with the mean of the atmosphere's own vmic
-    whenever any of that is positive -- so pass that mean here for an
-    atmosphere that carries microturbulence.
-
-    The wavelength axis is split into ``nchunks`` pieces (default: ``nprocs``)
-    the same way dispatch splits it over its n_nu rt_patches, and the pieces run
-    in ``nprocs`` processes -- HOP keeps process-wide global state, so each
-    worker holds its own instance and reads only the lines its chunk needs.
-    With ``nprocs=1`` everything runs in this process, on ``hop`` if you pass an
-    open instance (which is then the one the line list is read into) and on a
-    temporary one otherwise.  Because the workers are spawned, a script calling
-    this with nprocs > 1 must guard its top level with ``if __name__ ==
-    '__main__':`` -- without it each worker re-runs the script on import and the
-    pool spawns forever (notebooks and pytest are unaffected).
-
-    With ``folder``, each chunk is written straight to disk in the dispatch save
-    layout (``opa_<iz><chunk>.bin`` + ``opa_meta.txt``, likewise 'scat', plus the
-    'eos' table when ``write_eos``), so ``tumult.run``'s read_patch_save reads
-    the result unchanged and the parent never holds the whole table.
-
-    Returns a dict with lam/temp/rho, eos (unless write_eos is False), folder,
-    and opa/scat -- the stitched arrays when writing to memory, None when they
-    went to ``folder``.
-    """
-    temp, rho = _points(temp, rho)  # checked here, before anything is computed
-    hop_kwargs = dict(hop_kwargs, verbose=verbose)
-    lam = np.ascontiguousarray(np.atleast_1d(lam), np.float64)
-    nchunks = min(nchunks or nprocs, lam.size)
-    if linelist is not None and not isinstance(linelist, (str, Path)):
-        linelist = [str(f) for f in linelist]
-    elif linelist is not None:
-        linelist = str(linelist)
-
-    jobs = []
-    for i in range(1, nchunks + 1):
-        fs, fe = freq_split(lam.size, i, nchunks)
-        jobs.append(dict(lam=lam[fs:fe], temp=temp, rho=rho,
-                         linelist=linelist, dlam=dlam,
-                         vmic=-1.0 if vmic is None else vmic,
-                         include_absmet=include_absmet, folder=folder,
-                         key=(iz, i), hop_kwargs=hop_kwargs))
-
-    own_hop = False
-    try:
-        if nprocs > 1:
-            # spawn, not fork: a forked child would inherit the parent's Fortran
-            # globals (and its live instance, which HopEOS allows only one of)
-            ctx = multiprocessing.get_context('spawn')
-            pool = ctx.Pool(min(nprocs, nchunks))
-            try:
-                results = pool.map(_opac_chunk, jobs, chunksize=1)
-                # close/join, not the with-block's terminate(): the workers have
-                # to exit normally for the Fortran side to flush what it wrote
-                pool.close()
-                pool.join()
-            finally:
-                pool.terminate()
-        else:
-            own_hop = hop is None
-            if own_hop:
-                hop = HopEOS(**hop_kwargs)
-            if linelist is not None:
-                hop.init_linelist(linelist, dlam=dlam, lam=lam)
-            results = [_opac_chunk(job, hop) for job in jobs]
-
-        out = dict(lam=lam, temp=temp, rho=rho, folder=folder,
-                   opa=None, scat=None)
-        if folder is None:
-            out['opa'] = np.concatenate([r[0] for r in results], axis=0)
-            out['scat'] = np.concatenate([r[1] for r in results], axis=0)
-        else:
-            for k, kind in enumerate(('opa', 'scat')):
-                write_patch_meta(folder, kind, [r[k] for r in results])
-
-        if write_eos:
-            # after the pool, so no worker can inherit the parent's own instance
-            own_hop = own_hop or hop is None
-            if hop is None:
-                hop = HopEOS(**hop_kwargs)
-            out['eos'] = make_eos_table(hop, temp, rho, vmic=vmic)
-            if folder is not None:
-                write_patch_save(folder, 'eos', {(iz, 0): out['eos']})
-    finally:
-        if own_hop and hop is not None:
-            hop.close()
-    return out

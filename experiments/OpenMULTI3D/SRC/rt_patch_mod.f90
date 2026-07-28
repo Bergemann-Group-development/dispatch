@@ -1015,7 +1015,7 @@ contains
         if (.not. self%opac%initialised) then     ! a twin may have filled it meanwhile
           if (do_make_eos) then
             call self%generate_opacity_table(self%sub_sp, include_absmet, comp%ll_initialised, &
-              build_deriv=.false.)
+              build_deriv=.false., with_scat=.true.)
           else
             if (include_absmet) then
               tab_sp = self%sub_sp
@@ -1177,13 +1177,17 @@ contains
   END SUBROUTINE
 
   !===============================================================================
-  SUBROUTINE generate_opacity_table (self, sp, include_absmet, include_llist, build_deriv)
+  SUBROUTINE generate_opacity_table (self, sp, include_absmet, include_llist, build_deriv, &
+                                     with_scat)
     class(rt_patch_t), target :: self
     class(composition_type), pointer :: comp
     type(spectrum_type) :: sp
-    real(4), dimension(:,:,:,:), pointer :: all_chi
-    real(4), dimension(:,:,:,:), allocatable :: all_eta, all_beta
+    real(4), dimension(:,:,:,:), pointer :: all_chi, all_scat
     logical, intent(in) :: include_absmet, include_llist, build_deriv
+    ! with_scat: also fill opac%scat with the scattering part of the table (the
+    ! make_eos path, where save_opac_table writes it out as the 'scat' table)
+    logical, intent(in), optional :: with_scat
+    logical :: do_scat
     real(4) :: over_chi500
     integer :: i,j,k, ntemp, nne, nnu
     integer, save :: itimer=0
@@ -1201,32 +1205,18 @@ contains
     call mem_register(self%opac%val, label='opac_table')
 
     all_chi(1:nnu, 1:ntemp, 1:nne, 1:1) => self%opac%val
-    call comp%absorption(sp, all_chi, include_absmet=include_absmet, sorted=self%sp%sorted)
-
-    if (include_llist) then
-      ! absorption returns the actual chi, while add_linelist_opacities2
-      ! adds the working versions of chi and eta
-      allocate(all_eta, all_beta, mold=all_chi)
-      do k=1, nne
-        do j=1, ntemp
-          associate(chi=>all_chi(:,j,k,1), eta=>all_eta(:,j,k,1), beta=>all_beta(:,j,k,1), &
-                    xhat=>all_chi(:,j,k,1), ehat=>all_eta(:,j,k,1))
-            beta = exp(-h_k * sp%nu / comp%temp(j,k,1))
-            ehat = chi / (1 - beta)
-            xhat = chi + ehat*beta
-          end associate
-        end do
-      end do
-      call comp%add_linelist_opacities2(sp, all_chi, all_eta, dlam)
-      do k=1, nne
-        do j=1, ntemp
-          associate(chi=>all_chi(:,j,k,1), eta=>all_eta(:,j,k,1), beta=>all_beta(:,j,k,1), &
-                    xhat=>all_chi(:,j,k,1), ehat=>all_eta(:,j,k,1))
-            eta = ehat * beta
-            chi = xhat - eta
-          end associate
-        end do
-      end do
+    do_scat = .false.
+    if (present(with_scat)) do_scat = with_scat
+    if (do_scat) then
+      allocate(self%opac%scat(nnu, ntemp, nne), source=0.)
+      call mem_register(self%opac%scat, label='opac_table')
+      all_scat(1:nnu, 1:ntemp, 1:nne, 1:1) => self%opac%scat
+      ! scat stays in 1/cm; save_opac_table divides it by rho alone
+      call comp%opacity(sp, all_chi, all_scat, include_absmet=include_absmet, &
+        include_llist=include_llist, dlam=dlam, sorted=self%sp%sorted)
+    else
+      call comp%opacity(sp, all_chi, include_absmet=include_absmet, &
+        include_llist=include_llist, dlam=dlam, sorted=self%sp%sorted)
     endif
 
     do k=1, nne
@@ -1379,16 +1369,14 @@ contains
     class(rt_patch_t), target :: self
     class(composition_type), pointer :: comp
     real(4), dimension(:,:,:), allocatable :: eos
-    real(4), dimension(:,:,:,:), pointer :: view
     real(4) :: over_rho
-    integer :: i,j,k, ntemp, nrho, nnu
+    integer :: i,j,k, ntemp, nrho
     integer, save :: itimer=0
     !-----------------------------------------------------------------------------
     call trace%begin('rt_patch%save_opac_table', itimer=itimer)
     comp => self%m3d_parent%tab_comp
     ntemp = size(self%opac%val, 2)
     nrho = size(self%opac%val, 3)
-    nnu = size(self%opac%lam)
 
     ! save absorption part first (which has been normalised by chi500)
     do k=1, nrho
@@ -1399,18 +1387,14 @@ contains
     end do
     call self%save3(self%opac%val, 'opa')
 
-    ! then save scattering part
-    self%opac%val = 0.0
-    view(1:nnu, 1:ntemp, 1:nrho, 1:1) => self%opac%val
-    call comp%electron_scattering(view)
-    call comp%rayleigh_scattering(self%opac%lam, view)
+    ! then save the scattering part, which generate_opacity_table left in 1/cm
     do k=1, nrho
       do j=1, ntemp
         over_rho = 1 / comp%rho(j,k,1)
-        self%opac%val(:,j,k) = self%opac%val(:,j,k) * over_rho
+        self%opac%scat(:,j,k) = self%opac%scat(:,j,k) * over_rho
       end do
     end do
-    call self%save3(self%opac%val, 'scat')
+    call self%save3(self%opac%scat, 'scat')
     call trace%end(itimer)
   END SUBROUTINE save_opac_table
 
