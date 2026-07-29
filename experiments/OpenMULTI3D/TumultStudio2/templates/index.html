@@ -55,6 +55,7 @@
             <label class="switch"><input type="checkbox" id="filter-switch-input"><span class="switch-track"></span></label>
           </span>
           <button id="normalise-btn" class="text-btn" title="Continuum normalise (spline)">Normalise</button>
+          <button id="linemask-btn" class="text-btn" title="Line masks — fit windows for fitting &amp; local renormalisation">Masks</button>
         </div>
         <!-- temporary / selection tools that act on a transient selection (EW, ...) -->
         <div class="toolbar-group">
@@ -100,10 +101,17 @@
         </div>
         <div id="feautrier-fig">{{ embed(roots.feautrier_fig) }}</div>
       </div>
+      <!-- LineMasks view: the mask table below the spectrum (reuses #canvas-wrap on top),
+           shown while the LineMasks tool owns the sidebar (#main.linemask-mode) -->
+      <div id="linemask-bottom">
+        <div class="splitter splitter-row" data-resize="bottom" title="Drag to resize"></div>
+        <div id="linemask-table"></div></div>
       <!-- abundance result view: spectrum (top, steps 1-2) or A(X) scatter (step 3), with the
            per-line table below and a step switcher footer -->
       <div id="abund-scatter">{{ embed(roots.abund_fig) }}</div>
-      <div id="abund-bottom"><div id="abund-table">{{ abund_table_html|safe }}</div></div>
+      <div id="abund-bottom">
+        <div class="splitter splitter-row" data-resize="bottom" title="Drag to resize"></div>
+        <div id="abund-table">{{ abund_table_html|safe }}</div></div>
       <div id="abund-steps">
         <div class="step-tabs" title="Abundance workflow steps">
           <button class="step-tab abund-step-btn" data-step="1">1 · Line selection</button>
@@ -114,7 +122,9 @@
       <!-- abundance-correction view: reference spectrum (steps 1-2) or ΔA scatter (step 3),
            the per-line table below, and a step switcher footer -->
       <div id="corr-scatter">{{ embed(roots.corr_fig) }}</div>
-      <div id="corr-bottom"><div id="corr-table">{{ corr_table_html|safe }}</div></div>
+      <div id="corr-bottom">
+        <div class="splitter splitter-row" data-resize="bottom" title="Drag to resize"></div>
+        <div id="corr-table">{{ corr_table_html|safe }}</div></div>
       <div id="corr-steps">
         <div class="step-tabs" title="Abundance-correction workflow steps">
           <button class="step-tab corr-step-btn" data-step="1">1 · Reference &amp; lines</button>
@@ -125,7 +135,9 @@
       <!-- stellar-parameter view: spectrum (steps 1-2) or A(Fe) scatter (step 3), the
            per-line table + iteration status below, and a step switcher footer -->
       <div id="sparam-scatter">{{ embed(roots.sparam_fig) }}</div>
-      <div id="sparam-bottom"><div id="sparam-table">{{ sparam_table_html|safe }}</div></div>
+      <div id="sparam-bottom">
+        <div class="splitter splitter-row" data-resize="bottom" title="Drag to resize"></div>
+        <div id="sparam-table">{{ sparam_table_html|safe }}</div></div>
       <div id="sparam-steps">
         <div class="step-tabs" title="Stellar-parameter workflow steps">
           <button class="step-tab sparam-step-btn" data-step="1">1 · Fe lines</button>
@@ -175,6 +187,22 @@
           <button class="icon-btn filter-close" title="Done"><i class="ti ti-x"></i></button>
         </div>
         <div id="filter-panel-content"></div>
+      </div>
+      <div class="linemask-panel">
+        <div class="linemask-panel-head">
+          <span class="section-header">Line masks</span>
+          <button class="icon-btn linemask-close" title="Done"><i class="ti ti-x"></i></button>
+        </div>
+        <div class="path-row">
+          <button id="linemask-import" class="text-btn"><i class="ti ti-folder-open"></i>&nbsp;Import masks…</button>
+        </div>
+        <div id="linemask-picker" class="inline-picker">
+          {{ embed(roots.linemask_picker) }}
+          <div id="linemask-results" class="file-results"></div>
+        </div>
+        <div id="linemask-panel-content"></div>
+        <div class="hint">Import a linemask table (input/linemasks) to load fit windows. Click a
+          row to make it active on the plot; toggle <b>rn</b> for local renormalisation.</div>
       </div>
       <div class="lines-panel">
         <div class="lines-panel-head">
@@ -814,6 +842,37 @@
     else if (ev.target.closest('.norm-clear')) ewAction('norm-clear');
     else if (ev.target.closest('.norm-close')) ewAction('normalise');
   });
+
+  // line masks: toggle the panel from the toolbar; reveal the import picker; per-row actions
+  // (select / renorm / delete) + save / clear go through the dedicated "linemask-actions" channel
+  function linemaskAction(kind, arg) {
+    var m = Bokeh.documents[0].get_model_by_name('linemask-actions');
+    if (m) m.setv({ value: kind + ' ' + (arg || '') + ' ' + Date.now() });
+  }
+  document.getElementById('linemask-btn').addEventListener('click', function () { ewAction('linemask'); });
+  document.getElementById('linemask-import').addEventListener('click', function () {
+    var panel = document.getElementById('linemask-picker');
+    panel.classList.toggle('open');
+    if (panel.classList.contains('open')) {
+      var rb = Bokeh.documents[0].get_model_by_name('{{ linemask_results_name }}');
+      var el = document.getElementById('linemask-results');
+      if (rb && el) el.innerHTML = rb.value;  // js_on_change only fires on change
+    }
+  });
+  document.addEventListener('click', function (ev) {
+    if (ev.target.closest('.linemask-close')) { ewAction('linemask'); return; }
+    if (ev.target.closest('.lm-new')) { linemaskAction('new'); return; }
+    if (ev.target.closest('.lm-save')) { linemaskAction('save'); return; }
+    if (ev.target.closest('.lm-clear')) { linemaskAction('clear'); return; }
+    var del = ev.target.closest('.lm-del');
+    if (del) { ev.stopPropagation(); linemaskAction('del', del.dataset.idx); return; }
+    var row = ev.target.closest('.lm-row');
+    if (row && !ev.target.closest('.lm-renorm')) { linemaskAction('select', row.dataset.idx); }
+  });
+  document.addEventListener('change', function (ev) {
+    var rn = ev.target.closest('.lm-renorm');
+    if (rn) linemaskAction('renorm', rn.dataset.idx);
+  });
   // abundance tool: own client->server channel for run / reference / result clicks / line toggles
   function abundAction(kind, arg) {
     var m = Bokeh.documents[0].get_model_by_name('abund-actions');
@@ -966,6 +1025,47 @@
   document.addEventListener('keydown', function (ev) {
     if (ev.key === 'Escape' && !document.querySelector('dialog[open]')) ewAction('ew-cancel');
   });
+
+  // ---- draggable splitter for the centre bottom panel (the sidebars are fixed-width) ----
+  // Layout sizes are pure client-side UI state, kept in localStorage (no server round-trips
+  // per mousemove). During a drag, body.resizing sets pointer-events:none on everything so the
+  // Bokeh canvas can't swallow the mousemove — the document-level handlers below own it.
+  (function () {
+    var LS = 'tumult.layout';
+    var VARS = { 'bottom': '--bottom-h' };
+    var saved = {};
+    try { saved = JSON.parse(localStorage.getItem(LS) || '{}'); } catch (e) {}
+    Object.keys(saved).forEach(function (k) {
+      if (VARS[k]) document.documentElement.style.setProperty(VARS[k], saved[k]);
+    });
+    function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+    function set(kind, value) {
+      document.documentElement.style.setProperty(VARS[kind], value);
+      saved[kind] = value;
+    }
+    var drag = null;
+    document.addEventListener('mousedown', function (e) {
+      var sp = e.target.closest('.splitter');
+      if (!sp) return;
+      e.preventDefault();
+      drag = sp.dataset.resize;
+      document.body.classList.add('resizing');
+    });
+    document.addEventListener('mousemove', function (e) {
+      if (!drag) return;
+      if (drag === 'bottom') {
+        var m = document.getElementById('main').getBoundingClientRect();
+        set('bottom', clamp((m.bottom - e.clientY) / m.height * 100, 15, 85) + '%');
+      }
+    });
+    document.addEventListener('mouseup', function () {
+      if (!drag) return;
+      drag = null;
+      document.body.classList.remove('resizing');
+      try { localStorage.setItem(LS, JSON.stringify(saved)); } catch (e) {}
+      window.dispatchEvent(new Event('resize'));  // nudge Bokeh figures to reflow to the new size
+    });
+  })();
 })();
 </script>
 

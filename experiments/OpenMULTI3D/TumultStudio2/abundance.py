@@ -19,11 +19,12 @@ independent): ``σ_REW = σ_W/(W ln10)`` and ``σ_A = σ_REW / |dREW/dA|``.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field, fields
 
 import astropy.units as u
 import numpy as np
 
+from linemask import LineMask
 from tumult import Spectrum
 from tumult.abundance import (  # noqa: F401 (re-exports; numerics live in the library)
     aggregate,
@@ -68,8 +69,7 @@ class LineResult:
     ew_err: float = float("nan")  # combined 1σ EW error [mAA]
     ew_species: float = float("nan")  # query-species-only EW in the fit window [mAA] (weak screen)
     fwhm: float = float("nan")  # fitted profile FWHM [AA]
-    window: tuple = (float("nan"), float("nan"))  # (xmin, xmax) [AA] — jump & synth range
-    fit_window: tuple = (float("nan"), float("nan"))  # (xmin, xmax) [AA] — auto-crop fit window
+    mask: LineMask = field(default_factory=LineMask)  # fit [lmin,lmax] + synth [smin,smax] windows
     a: float = float("nan")     # abundance (A(X) or [X/Fe], caller's convention)
     vshift: float = float("nan")  # best-fit radial-velocity shift [km/s]
     vdop: float = float("nan")    # best-fit Gaussian (Doppler) broadening [km/s]
@@ -86,8 +86,19 @@ class LineResult:
     flags: tuple = ()
     include: bool = True        # user toggle: count this line in the element mean
 
+    # --- window views: the fit/synth windows now live on the embedded LineMask, but the
+    # pipeline (synth.fit_line, measure_ew, canvas.set_abund_windows, sparam/corr tools) still
+    # reads them as ``ln.fit_window`` / ``ln.window`` tuples, so expose them read-only here.
+    @property
+    def fit_window(self) -> tuple:
+        return self.mask.fit_window
+
+    @property
+    def window(self) -> tuple:
+        return self.mask.synth_window
+
     # --- session persistence (see AbundanceResult / the session snapshot) -------------
-    _TUPLE_FIELDS = ("window", "fit_window", "a_grid", "ew_grid", "flags")
+    _TUPLE_FIELDS = ("a_grid", "ew_grid", "flags")
 
     def to_dict(self):
         """A JSON-safe view. ``fit_spec`` is embedded as a Spectrum dict; ``fit_func`` (a live
@@ -99,6 +110,8 @@ class LineResult:
             v = getattr(self, f.name)
             if f.name == "fit_spec":
                 v = v.to_dict() if v is not None else None
+            elif f.name == "mask":
+                v = v.to_dict()
             elif f.name in self._TUPLE_FIELDS:
                 v = list(v)
             d[f.name] = v
@@ -113,6 +126,8 @@ class LineResult:
                 d[k] = tuple(d[k])
         if d.get("fit_spec") is not None:
             d["fit_spec"] = Spectrum.from_dict(d["fit_spec"])
+        if d.get("mask") is not None:
+            d["mask"] = LineMask.from_dict(d["mask"])
         return cls(**d)
 
 

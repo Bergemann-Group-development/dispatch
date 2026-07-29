@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import astropy.units as u
 import numpy as np
-from bokeh.models import ColumnDataSource, DataRange1d, Range1d, RangeTool, Span, WheelZoomTool
+from bokeh.models import (BoxAnnotation, ColumnDataSource, DataRange1d, Range1d, RangeTool,
+                          Span, WheelZoomTool)
 from bokeh.plotting import figure
 
 from tumult import Spectrum
@@ -75,6 +76,7 @@ class SpectrumObject:
         self.spectrum = spectrum   # the displayed, continuum-normalised spectrum (~0–1)
         self.raw = spectrum        # the originally loaded spectrum, in its native units
         self.norm_knots = None     # (kx, ky) continuum-spline knots in native units, or None
+        self.renorm_windows = []   # local-renorm masks: [(smin, smax, [(x,y)×4]) …] merged in
         self.continuum = None      # last continuum evaluated over raw.xdata (for the overlay)
         self.already_normalised = False  # treat the spectrum as pre-normalised (continuum ≡ 1)
         self.name = name
@@ -189,6 +191,19 @@ class SpectrumCanvas:
             for _ in range(2)]
         for _sp in (*self.abund_fit_spans, *self.abund_synth_spans):
             main.add_layout(_sp)
+
+        # the shared LineMask set (maskstore) drawn while the LineMasks tool is active: every
+        # mask's synth/visual window as a faint red band, its fit window amber, the active mask
+        # accented. These are BoxAnnotations (not quads): annotations never participate in the
+        # main DataRange1d autoscale, so the bands span the full plot height (top/bottom left
+        # unset) WITHOUT perturbing the y-axis — the spectrum keeps the exact same y-fit as in
+        # the regular view. A pool of boxes per category is grown on demand and hidden when idle.
+        self._mask_style = {
+            "syn": dict(fill_color="#e05c5c", fill_alpha=0.06, line_color="#e05c5c", line_alpha=0.25),
+            "fit": dict(fill_color="#e0a030", fill_alpha=0.10, line_color="#e0a030", line_alpha=0.35),
+            "act": dict(fill_color=ACCENT, fill_alpha=0.14, line_color=ACCENT, line_alpha=0.6),
+        }
+        self._mask_boxes = {"syn": [], "fit": [], "act": []}
 
         main.x_range.on_change("start", self._on_main_range)
         main.x_range.on_change("end", self._on_main_range)
@@ -334,6 +349,25 @@ class SpectrumCanvas:
             return self.display_bounds()
         return self._display_range(obj.spectrum)
 
+    def focus_range(self, lo_aa, hi_aa, margin=0.5):
+        """Zoom the main figure (and the nav overview) to the Å window ``[lo_aa, hi_aa]``,
+        padded by ``margin`` × its width on each side, clamped to the data bounds. Endpoints are
+        converted to the display unit so the view stays correct under a non-linear axis (eV)."""
+        if not (np.isfinite(lo_aa) and np.isfinite(hi_aa)) or hi_aa <= lo_aa:
+            return
+        pad = margin * (hi_aa - lo_aa)
+        lo, hi = to_range(lo_aa - pad, hi_aa + pad, u.AA, self.xunit)
+        lo, hi = min(lo, hi), max(lo, hi)
+        for rng in (self.main.x_range, self.nav.x_range):
+            a, b = lo, hi
+            if rng.bounds:
+                blo, bhi = min(rng.bounds), max(rng.bounds)
+                a, b = max(a, blo), min(b, bhi)
+            if a < b:
+                rng.start, rng.end = a, b
+        self._refresh_main()
+        self._refresh_nav()
+
     def _display_range(self, spectrum):
         x, _ = spectrum.values
         return to_range(float(x.min()), float(x.max()), spectrum.xunit, self.xunit)
@@ -418,8 +452,8 @@ class SpectrumCanvas:
         x, y = raw.values
         if obj.already_normalised:
             cont = np.ones_like(y)   # assume the spectrum is already normalised (continuum ≡ 1)
-        elif obj.norm_knots is not None:
-            kx, ky = np.asarray(obj.norm_knots[0], float), np.asarray(obj.norm_knots[1], float)
+        elif obj.norm_knots is not None or getattr(obj, "renorm_windows", None):
+            kx, ky = self._continuum_knots(obj, np.asarray(x, float), np.asarray(y, float))
             # clamp to the knot span so the spline holds flat past the ends rather than
             # diverging on the cubic extrapolation
             cont = pchip_mono(kx, ky)(np.clip(x, kx.min(), kx.max()))
@@ -431,6 +465,31 @@ class SpectrumCanvas:
         obj.continuum = cont
         obj.spectrum = Spectrum(raw.xdata, y / cont, yunit=u.dimensionless_unscaled,
                                 xref=raw.xref)
+
+    def _continuum_knots(self, obj, x, y):
+        """The spline knots for obj's continuum: its base knots (the user's global spline, or a
+        flat percentile level when none) merged with each local-renorm window's four colinear
+        knots. Base knots strictly inside a renorm window are dropped so the local *linear*
+        continuum governs there, while the padding beyond blends into the rest of the spline."""
+        if obj.norm_knots is not None:
+            pts = list(zip((float(v) for v in obj.norm_knots[0]),
+                           (float(v) for v in obj.norm_knots[1])))
+        else:
+            lvl = float(np.nanpercentile(y, NORM_PERCENTILE))
+            pts = [(float(np.min(x)), lvl), (float(np.max(x)), lvl)]
+        for smin, smax, knots in (getattr(obj, "renorm_windows", None) or []):
+            if not knots:
+                continue
+            pts = [(px, py) for px, py in pts if not (smin < px < smax)]
+            pts += [(float(a), float(b)) for a, b in knots]
+        pts.sort(key=lambda p: p[0])
+        kx, ky = [], []
+        for px, py in pts:
+            if kx and px <= kx[-1]:
+                px = kx[-1] + 1e-6      # pchip_mono needs strictly-increasing x
+            kx.append(px)
+            ky.append(py)
+        return np.asarray(kx), np.asarray(ky)
 
     def renormalise(self, obj):
         """Recompute one obj's normalisation and redraw it (after its knots change)."""
@@ -566,6 +625,43 @@ class SpectrumCanvas:
     def clear_abund_window(self):
         for sp in (*self.abund_fit_spans, *self.abund_synth_spans):
             sp.visible = False
+
+    # --- shared LineMask bands (maskstore) --------------------------------
+    def render_masks(self, masks, active=None):
+        """Draw every mask's synth (red) + fit (amber) window as full-height bands, in the
+        display unit; the ``active`` mask's fit window is drawn accented instead of amber.
+
+        Bands are BoxAnnotations (top/bottom unset ⇒ span the whole plot height) so they never
+        touch the main y-axis autoscale — the spectrum keeps the identical y-fit it has in the
+        regular view."""
+        syn, fit, act = [], [], []
+        for i, m in enumerate(masks):
+            if np.isfinite(m.smin) and np.isfinite(m.smax):
+                syn.append(to_range(m.smin, m.smax, u.AA, self.xunit))
+            if np.isfinite(m.lmin) and np.isfinite(m.lmax):
+                (act if i == active else fit).append(to_range(m.lmin, m.lmax, u.AA, self.xunit))
+        self._paint_boxes("syn", syn)
+        self._paint_boxes("fit", fit)
+        self._paint_boxes("act", act)
+
+    def _paint_boxes(self, key, spans):
+        """Show one full-height BoxAnnotation per (left,right) span, growing the pool as needed
+        and hiding any surplus boxes from a previous, larger render."""
+        pool = self._mask_boxes[key]
+        while len(pool) < len(spans):
+            box = BoxAnnotation(visible=False, level="underlay", **self._mask_style[key])
+            self.main.add_layout(box)
+            pool.append(box)
+        for box, (a, b) in zip(pool, spans):
+            box.left, box.right = min(a, b), max(a, b)
+            box.visible = True
+        for box in pool[len(spans):]:
+            box.visible = False
+
+    def clear_masks(self):
+        for pool in self._mask_boxes.values():
+            for box in pool:
+                box.visible = False
 
     # --- reversible filtering ---------------------------------------------
     def effective(self, obj):

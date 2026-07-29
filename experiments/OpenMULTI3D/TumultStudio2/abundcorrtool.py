@@ -230,9 +230,10 @@ class AbundCorrTool(AbundanceWizard):
                 lines.append(ab.LineResult(
                     lam0=float(row.lam0), ion=species, e_low=float(getattr(row, "evi", np.nan)),
                     loggf=float(getattr(row, "loggf", np.nan)), ew=ew,
-                    ew_err=ew_err, fwhm=fwhm, window=win,
-                    fit_window=fit_window, fit_func=func, flags=tuple(flags),
-                    include=not flags))
+                    ew_err=ew_err, fwhm=fwhm,
+                    mask=ab.LineMask(lam0=float(row.lam0), lmin=fit_window[0], lmax=fit_window[1],
+                                     smin=win[0], smax=win[1], note=species),
+                    fit_func=func, flags=tuple(flags), include=not flags))
             if not lines:
                 self._error = f"No atom lines above {ew_min:.0f} mÅ in the reference."
                 return None

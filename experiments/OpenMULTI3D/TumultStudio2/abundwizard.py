@@ -65,8 +65,10 @@ def measure_candidate_lines(ref_spec, cand, *, profile, ew_min, snr, cont_pct):
             # just jumps to the line, keeping the previous view span (see _jump_line).
             lines.append(ab.LineResult(
                 lam0=float(row.lam0), ion=str(row.ion), e_low=float(row.evi),
-                loggf=float(row.loggf), window=window,
-                fit_window=fit_window, flags=tuple(flags), include=False))
+                loggf=float(row.loggf),
+                mask=ab.LineMask(lam0=float(row.lam0), lmin=fit_window[0], lmax=fit_window[1],
+                                 smin=window[0], smax=window[1], note=str(row.ion)),
+                flags=tuple(flags), include=False))
             continue
         ew, fwhm, func = lprof.mAA, float(lprof.fwhm), lprof.func
         if not np.isfinite(ew):
@@ -91,8 +93,10 @@ def measure_candidate_lines(ref_spec, cand, *, profile, ew_min, snr, cont_pct):
         # excluded, so the user sees the flag and can override it in the table.
         lines.append(ab.LineResult(
             lam0=float(row.lam0), ion=str(row.ion), e_low=float(row.evi),
-            loggf=float(row.loggf), ew=ew, ew_err=ew_err, fwhm=fwhm, window=window,
-            fit_window=fit_window, fit_func=func, flags=flags, include=not flags))
+            loggf=float(row.loggf), ew=ew, ew_err=ew_err, fwhm=fwhm,
+            mask=ab.LineMask(lam0=float(row.lam0), lmin=fit_window[0], lmax=fit_window[1],
+                             smin=window[0], smax=window[1], note=str(row.ion)),
+            fit_func=func, flags=flags, include=not flags))
     return lines
 
 

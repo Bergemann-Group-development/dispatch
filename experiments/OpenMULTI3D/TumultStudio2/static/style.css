@@ -2,7 +2,10 @@
    Dark, compact "pro-tool" aesthetic; one blue accent. */
 
 :root {
-  --sidebar-w: 220px;
+  --sidebar-w: 220px;             /* legacy default; per-side vars below are the live ones */
+  --sidebar-left-w: 220px;        /* fixed width */
+  --sidebar-right-w: 240px;       /* fixed width */
+  --bottom-h: 42%;                /* draggable — height of the centre bottom table panel */
   --footer-h: 32px;
   --toolbar-h: 40px;
   --panel-h: 100px;   /* height of the nav overview panel above the main figure */
@@ -98,7 +101,19 @@ aside {
   display: flex; flex-direction: column; gap: 8px;
   overflow-y: auto; padding: 10px; flex-shrink: 0;
 }
-.sidebar-right { border-right: none; border-left: 1px solid var(--border); padding: 0; gap: 0; }
+.sidebar-left  { width: var(--sidebar-left-w); }
+.sidebar-right { width: var(--sidebar-right-w);
+  border-right: none; border-left: 1px solid var(--border); padding: 0; gap: 0; }
+
+/* draggable splitter — thin bar that resizes the centre bottom panel (see index.html JS).
+   The sidebars are fixed-width; only the horizontal bottom-panel splitter remains. */
+.splitter { flex-shrink: 0; background: transparent; z-index: 6; transition: background 0.1s; }
+.splitter:hover, body.resizing .splitter { background: var(--accent); }
+.splitter-row { height: 5px; margin: -3px 0; cursor: row-resize; align-self: stretch; }
+/* while dragging, freeze selection and let the document-level handler own every pointer event
+   (so the Bokeh canvas / iframes don't swallow the mousemove) */
+body.resizing { user-select: none; }
+body.resizing * { pointer-events: none !important; }
 
 /* inspector tabs (STYLE_REFERENCE.md §6.5 underline tabs) */
 .tab-bar { display: flex; flex-shrink: 0; border-bottom: 1px solid var(--border); }
@@ -150,6 +165,7 @@ aside {
 #main.empty ~ .sidebar-right.norm-active,
 #main.empty ~ .sidebar-right.filter-active,
 #main.empty ~ .sidebar-right.lines-active,
+#main.empty ~ .sidebar-right.linemask-active,
 #main.empty ~ .sidebar-right.corr-active { display: flex; }
 .empty-card {
   width: min(420px, 100%); max-height: 100%; display: flex; flex-direction: column; gap: 10px;
@@ -308,15 +324,51 @@ aside {
 .filter-panel-head { display: flex; align-items: center; justify-content: space-between; }
 #filter-panel-content > * + * { margin-top: 12px; }
 
+/* LineMasks panel (import + list + padding + renorm) — same pattern as Normalise/Filter */
+.linemask-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; overflow-y: auto; }
+.sidebar-right.linemask-active .tab-bar,
+.sidebar-right.linemask-active .tab-content { display: none; }
+.sidebar-right.linemask-active .linemask-panel { display: flex; }
+.sidebar-right.linemask-active .lines-panel { display: none; }
+.linemask-panel-head { display: flex; align-items: center; justify-content: space-between; }
+.linemask-panel .lm-table { width: 100%; font-size: 11px; }
+.linemask-panel .lm-table td, .linemask-panel .lm-table th { padding: 2px 4px; white-space: nowrap; }
+.linemask-panel .lm-note { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; max-width: 60px; }
+.linemask-panel .lm-row { cursor: pointer; }
+.linemask-panel .lm-row:hover { background: #333; }
+.linemask-panel .lm-row.lm-active { background: rgba(74,144,226,0.15); }
+.linemask-panel .lm-actions { display: flex; gap: 6px; margin-top: 8px; }
+.linemask-panel .lm-actions .text-btn { flex: 1; }
+
+/* LineMasks centre view: the mask table below the spectrum (mirrors #abund-bottom) */
+#linemask-bottom { display: none; }
+#main.linemask-mode #top-panel { display: none; }
+#main.linemask-mode #canvas-wrap { display: flex; }
+#main.linemask-mode #linemask-bottom {
+  display: flex; flex: 0 0 var(--bottom-h); min-height: 0; flex-direction: column; overflow: auto;
+  border-top: 1px solid var(--border); padding-top: 6px;
+}
+#linemask-table { overflow: auto; min-height: 0; }
+.lm-table { width: 100%; font-size: 12px; border-collapse: collapse; }
+.lm-table th { position: sticky; top: 0; background: var(--bg); text-align: left;
+  padding: 4px 8px; color: var(--text-muted); font-weight: 600; }
+.lm-table td { padding: 3px 8px; white-space: nowrap; border-bottom: 1px solid var(--border); }
+.lm-table .lm-note { color: var(--text-muted); }
+.lm-table .lm-row { cursor: pointer; }
+.lm-table .lm-row:hover { background: #333; }
+.lm-table .lm-row.lm-active { background: rgba(74,144,226,0.15); }
+.lm-empty { padding: 16px; color: var(--text-muted); font-size: 12px; }
+
 /* line-navigation panel — the Lines view's own inspector (jump-distance setting) */
 .lines-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; }
 .sidebar-right.lines-active .tab-bar,
 .sidebar-right.lines-active .tab-content { display: none; }
 .sidebar-right.lines-active .lines-panel { display: flex; }
-/* an active tool panel (EW/Normalise/Filter/Synth) takes precedence over it */
+/* an active tool panel (EW/Normalise/Filter/Synth/Masks) takes precedence over it */
 .sidebar-right.ew-active .lines-panel,
 .sidebar-right.norm-active .lines-panel,
 .sidebar-right.filter-active .lines-panel,
+.sidebar-right.linemask-active .lines-panel,
 .sidebar-right.synth-active .lines-panel { display: none; }
 .lines-panel-head { display: flex; align-items: center; justify-content: space-between; }
 #filter-panel-content .text-btn { display: block; width: 100%; }
@@ -693,7 +745,7 @@ aside {
 #abund-scatter, #abund-bottom, #abund-steps { display: none; }
 #main.abund-mode #top-panel { display: none; }
 #main.abund-mode #canvas-wrap { display: flex; }
-#main.abund-mode #abund-bottom { display: flex; flex: 0 0 42%; min-height: 0; flex-direction: column; }
+#main.abund-mode #abund-bottom { display: flex; flex: 0 0 var(--bottom-h); min-height: 0; flex-direction: column; }
 #main.abund-mode #abund-steps { display: flex; flex: 0 0 auto; padding: 6px 0 0; }
 /* step 3 swaps the spectrum for the A(X) scatter */
 #main.abund-mode.abund-step-3 #canvas-wrap { display: none; }
@@ -734,7 +786,7 @@ aside {
 #corr-scatter, #corr-bottom, #corr-steps { display: none; }
 #main.corr-mode #top-panel { display: none; }
 #main.corr-mode #canvas-wrap { display: flex; }
-#main.corr-mode #corr-bottom { display: flex; flex: 0 0 42%; min-height: 0; flex-direction: column; }
+#main.corr-mode #corr-bottom { display: flex; flex: 0 0 var(--bottom-h); min-height: 0; flex-direction: column; }
 #main.corr-mode #corr-steps { display: flex; flex: 0 0 auto; padding: 6px 0 0; }
 #main.corr-mode.corr-step-3 #canvas-wrap { display: none; }
 #main.corr-mode.corr-step-3 #corr-scatter { display: flex; flex: 1; min-height: 0; }
@@ -770,7 +822,7 @@ aside {
 #sparam-scatter, #sparam-bottom, #sparam-steps { display: none; }
 #main.sparam-mode #top-panel { display: none; }
 #main.sparam-mode #canvas-wrap { display: flex; }
-#main.sparam-mode #sparam-bottom { display: flex; flex: 0 0 42%; min-height: 0; flex-direction: column; }
+#main.sparam-mode #sparam-bottom { display: flex; flex: 0 0 var(--bottom-h); min-height: 0; flex-direction: column; }
 #main.sparam-mode #sparam-steps { display: flex; flex: 0 0 auto; padding: 6px 0 0; }
 #main.sparam-mode.sparam-step-3 #canvas-wrap { display: none; }
 #main.sparam-mode.sparam-step-3 #sparam-scatter { display: flex; flex: 1; min-height: 0; }

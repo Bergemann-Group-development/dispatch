@@ -21,7 +21,18 @@
       "target": "0"
     },
     "synthesis": {
-      "atmos_grid_id": "__individual__"
+      "atmos_grid_id": "__individual__",
+      "marcs_autoregistered": true,
+      "atmos_grids": [
+        {
+          "id": "marcs",
+          "name": "MARCS",
+          "folder": "/Users/hoppe/Documents/dispatch/experiments/OpenMULTI3D/input/atmos/MARCS",
+          "pattern": "{Teff:d}_g{logg:+.1f}_m{:3}_t{vmic:02d}_st_z{FeH:+.2f}",
+          "format": "Marcs"
+        }
+      ],
+      "ref_grid_id": "marcs"
     },
     "abund_run": {
       "atmos_grid_id": "__individual__"

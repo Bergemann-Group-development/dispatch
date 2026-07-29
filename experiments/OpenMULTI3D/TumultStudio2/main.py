@@ -37,6 +37,8 @@ from inspector import Inspector, swatch_html  # noqa: E402
 from ew import EquivalentWidth  # noqa: E402
 from filtertool import FilterTool  # noqa: E402
 from normalisetool import NormaliseTool  # noqa: E402
+from maskstore import MaskStore  # noqa: E402
+from masktool import MaskTool  # noqa: E402
 from linenav import LineNavigator  # noqa: E402
 from synthpanel import SynthPanel  # noqa: E402
 from synthsetup import SynthSetup  # noqa: E402
@@ -471,6 +473,14 @@ def build():
     ], on_change=lambda key, value: linenav.set_jump_distance(value))
     filtertool = FilterTool(ctx)
     normtool = NormaliseTool(ctx)
+    # the shared LineMask set (imported windows for fitting / local renorm), owned centrally so
+    # the canvas and — later — the abundance / synth-fit workflows all read one source of truth.
+    _linemask_dir = (Path(str(store.get_pref("dispatch_cwd") or HERE.parent)).expanduser()
+                     / "input" / "linemasks").resolve()
+    mask_store = MaskStore(ctx)
+    ctx.masks = mask_store
+    masktool = MaskTool(ctx, mask_store,
+                        input_dir=_linemask_dir if _linemask_dir.is_dir() else Path.home())
     settings = build_settings(canvas)
 
     def add_synth(spec, name, meta=None, conv=None):
@@ -566,6 +576,7 @@ def build():
     tools.register("ew", ew)
     tools.register("synth", synth_panel)
     tools.register("normalise", normtool)
+    tools.register("linemask", masktool)
     tools.register("filter", filtertool, runner=run_busy)
     tools.register("abundance", abundancetool)
     tools.register("abundcorr", abundcorrtool)
@@ -776,6 +787,7 @@ def build():
         "normalise":    lambda v: tools.toggle("normalise"),
         "norm-init":    lambda v: run_busy(normtool.initialise),
         "norm-clear":   lambda v: normtool.clear(),
+        "linemask":     lambda v: tools.toggle("linemask"),
         "abundance":    lambda v: tools.toggle("abundance"),
         "abundcorr":    lambda v: tools.toggle("abundcorr"),
         "sparams":      lambda v: tools.toggle("sparams"),
@@ -891,6 +903,7 @@ def build():
                      *settings.models, *inspector.models, *linenav.models,
                      *linejump_form.models,
                      *synth_panel.models, *normtool.models, *filtertool.models,
+                     *masktool.models,
                      *abundancetool.models, *abundcorrtool.models, *corr_atoms.models,
                      *sparamtool.models)
     bridges.name = "bridges"
@@ -899,6 +912,7 @@ def build():
     doc.title = "TUMULT Studio"
     for root in (canvas.nav, canvas.main, filtertool.fig, abundancetool.fig,
                  abundcorrtool.fig, sparamtool.fig, picker.layout,
+                 masktool.picker.layout,
                  linelist_picker.layout, synth_panel.atoms.picker.layout,
                  synth_panel.grids.picker.layout, synth_panel.atmos_picker.layout,
                  abundancetool.setup.atmos_picker.layout,
@@ -940,6 +954,7 @@ def build():
         linesettings_html=linejump_form.html(),
         linelist_path=html.escape(Path(linenav.master_path).name),
         linelist_results_name=linelist_picker.results_name,
+        linemask_results_name=masktool.picker.results_name,
         sessions_html=sessions_html(store.list_sessions()),
         abund_results_html=abundancetool.results_html(),
         abund_table_html="",

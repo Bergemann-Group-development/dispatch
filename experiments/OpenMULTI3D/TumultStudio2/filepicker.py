@@ -55,7 +55,9 @@ class FilePicker:
         self.on_select = on_select
         self.on_dir = on_dir          # called with each newly-listed directory (Path)
         self.recent_provider = recent_provider  # () -> [paths]; shown when query is empty
-        self.root = Path(root).expanduser() if root else None  # anchor for relative queries
+        # anchor for relative queries — resolved to an absolute path so that clicked entry
+        # paths (rendered as the full path of each listing) are never re-joined onto the root
+        self.root = Path(root).expanduser().resolve() if root else None
         self.current_dir = None       # the directory currently being listed
         self.max_items = max_items
 
@@ -90,7 +92,7 @@ class FilePicker:
     # --- anchoring --------------------------------------------------------
     def set_root(self, root):
         """Re-anchor the picker at ``root`` (or clear it with ``None``) and re-list it."""
-        self.root = Path(root).expanduser() if root else None
+        self.root = Path(root).expanduser().resolve() if root else None
         self.query.value = ""
         self._scan("")
 
