@@ -19,6 +19,9 @@ astropy>=6.0         # units, constants, FITS I/O
 matplotlib>=3.8
 bokeh>=3.4           # TumultStudio2 server application
 
+# --- Foreign function interface ---
+cffi>=1.16           # tumult/hop.py binds libhop.so against the generated HOP/standalone/libhop.h
+
 # --- Utilities ---
 tqdm>=4.66           # progress bars
 

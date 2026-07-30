@@ -18,7 +18,7 @@ import pytest
 
 from conftest import ROOT
 
-NOTEBOOKS = [ROOT / "demo.ipynb", ROOT / "demo_corrections.ipynb"]
+NOTEBOOKS = [ROOT / "demo.ipynb", ROOT / "demo_corrections.ipynb", ROOT / "hop.ipynb"]
 
 
 def _code_cells(path):

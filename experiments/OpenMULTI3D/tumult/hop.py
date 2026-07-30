@@ -1,7 +1,7 @@
 """In-process interface to the HOP EOS/opacity engine (libhop.so).
 
 Wraps the standalone HOP library (built with ``make -C HOP/standalone``) via
-ctypes, exposing the same composition_type solves that dispatch.x uses:
+cffi in ABI mode, exposing the same composition_type solves that dispatch.x uses:
 
 - :class:`HopEOS` -- allocate/initialize a composition instance, solve the EOS on
   arbitrary (T, rho) or (T, ne) points (``load_state``, after which the state is
@@ -19,18 +19,20 @@ count is controlled with OMP_NUM_THREADS (latched at the first parallel region).
 If numpy links a different OpenMP runtime (MKL/iomp), import this module before
 heavy numpy use or set MKL_THREADING_LAYER=GNU in case of runtime clashes.
 """
-import ctypes
 import multiprocessing
 import os
 from pathlib import Path
 
+import cffi
 import numpy as np
 
 __all__ = ['HopEOS', 'HopError', 'logstep', 'wavelength_grid', 'freq_split',
-           'find_library']
+           'find_library', 'find_header', 'open_library']
 
 _EXP_DIR = Path(__file__).resolve().parents[1]
-_DEFAULT_LIB = _EXP_DIR / 'HOP' / 'standalone' / 'build' / 'libhop.so'
+_STANDALONE = _EXP_DIR / 'HOP' / 'standalone'
+_DEFAULT_LIB = _STANDALONE / 'build' / 'libhop.so'
+_DEFAULT_HEADER = _STANDALONE / 'libhop.h'
 
 
 class HopError(RuntimeError):
@@ -43,13 +45,56 @@ def find_library():
     path = Path(lib) if lib else _DEFAULT_LIB
     if not path.is_file():
         raise HopError(f"libhop.so not found at {path}; build it with "
-                       f"'make -C {_EXP_DIR / 'HOP' / 'standalone'}' "
-                       f"or point $HOP_LIB at it")
+                       f"'make -C {_STANDALONE}' or point $HOP_LIB at it")
+    return path
+
+
+def find_header():
+    """Locate libhop.h: $HOP_HEADER if set, else HOP/standalone/libhop.h.
+
+    The header is generated from the BIND(C) declarations by the Makefile's ``$(HDR)``
+    rule and committed, so it is the single source of truth for the ABI -- nothing here
+    hand-writes a signature.
+    """
+    hdr = os.environ.get('HOP_HEADER', '')
+    path = Path(hdr) if hdr else _DEFAULT_HEADER
+    if not path.is_file():
+        raise HopError(f"libhop.h not found at {path}; generate it with "
+                       f"'make -C {_STANDALONE} bindings'")
     return path
 
 
 def _c_str(s):
-    return str(s).encode() + b'\0'
+    """A NUL-terminated C string; cffi passes bytes straight through to ``char *``."""
+    return str(s).encode()
+
+
+def _opt_value(value):
+    """Format an option value for hop_set_option, which takes everything as a string.
+
+    Formatted so the Fortran ``read`` on the other side round-trips: ``repr`` for floats
+    (shortest round-trippable form) and the lowercase words the Fortran accepts for bools.
+    """
+    if isinstance(value, (bool, np.bool_)):
+        return 'true' if value else 'false'
+    if isinstance(value, (int, np.integer)):
+        return str(int(value))
+    if isinstance(value, str):
+        return value
+    return repr(float(value))
+
+
+def _last_error(lib):
+    """The library's message for the most recent nonzero status ('' if none)."""
+    buf = _ffi.new('char[1024]')
+    lib.hop_last_error(buf, 1024)
+    return _ffi.string(buf).decode()
+
+
+def _check(lib, status, what):
+    """Raise with the library's own message, falling back to the bare status."""
+    if status != 0:
+        raise HopError(_last_error(lib) or f'{what} failed with status {status}')
 
 
 def _verbosity(verbose):
@@ -62,32 +107,38 @@ def _verbosity(verbose):
     return (1 if verbose else -1) if isinstance(verbose, bool) else int(verbose)
 
 
-_f64 = np.ctypeslib.ndpointer(np.float64, flags='C_CONTIGUOUS')
-_f32 = np.ctypeslib.ndpointer(np.float32, flags='C_CONTIGUOUS')
+#: cffi's FFI, built once per process by open_library() from the generated header.
+_ffi = None
 
-_c = ctypes.c_char_p
-_i = ctypes.c_int
-_r4 = ctypes.c_float
-_r8 = ctypes.c_double
 
-#: The libhop entry points, mirroring the BIND(c, name=...) declarations in
-#: HOP/standalone/hop_c_api.f90 -- name: (restype, argtypes).
-_SIGNATURES = {
-    'hop_init':             (_i, [_c, _c, _c, _c, _r8, _r4, _r4, _r4]),
-    'hop_free':             (_i, []),
-    'hop_set_option_str':   (_i, [_c, _c]),
-    'hop_set_option_real':  (_i, [_c, _r8]),
-    'hop_set_option_int':   (_i, [_c, _i]),
-    'hop_load_state':       (_i, [_i, _f64, _f64, _f64, _r4, _i, _i]),
-    'hop_get_n':            (_i, []),
-    'hop_get_field':        (_i, [_c, _i, _f64]),
-    'hop_get_grph':         (_r8, []),
-    'hop_keep_species':     (_i, [_c]),
-    'hop_get_species':      (_i, [_c, _i, _f64]),
-    'hop_set_vmic':         (_i, [_i, _r4]),
-    'hop_init_linelist':    (_i, [_c, _r8, _i, _f64]),
-    'hop_opacity':          (_i, [_i, _f64, _f32, _f32, _i, _i, _r8, _i]),
-}
+def open_library():
+    """Open libhop.so against the generated header; returns ``(ffi, lib)``.
+
+    The one place that knows how to load the library, so anything reaching into libhop
+    directly (the hydrogen-Stark study scripts, say) binds against the same generated
+    header as HopEOS rather than hand-writing a second set of signatures.
+
+    RTLD_GLOBAL so the OpenMP runtime the library pulls in stays visible to it.
+    """
+    global _ffi
+    if _ffi is None:
+        ffi = cffi.FFI()
+        ffi.cdef(find_header().read_text())
+        _ffi = ffi
+    return _ffi, _ffi.dlopen(str(find_library()), _ffi.RTLD_GLOBAL)
+
+
+def _buf(arr, dtype, ctype):
+    """A C pointer to a numpy array's data, dtype-checked.
+
+    ``ffi.from_buffer`` reinterprets raw bytes and checks neither the dtype nor the
+    layout, so the check lives here: every caller goes through ``np.ascontiguousarray``
+    first, and this is what keeps a wrong-width array from being reinterpreted silently.
+    """
+    if arr.dtype != dtype or not arr.flags['C_CONTIGUOUS']:
+        raise HopError(f'internal: expected a C-contiguous {np.dtype(dtype)} array, '
+                       f'got {arr.dtype} (contiguous={arr.flags["C_CONTIGUOUS"]})')
+    return _ffi.from_buffer(ctype, arr)
 
 
 class HopEOS:
@@ -97,8 +148,8 @@ class HopEOS:
     to the standard files under <experiment>/input/.  ``options`` is a dict of
     HOP module-level settings applied *before* the Fortran init (required for
     init-time options such as ``abundances`` or ``exclude_elements``); the
-    recognized names are the ``case`` labels of ``hop_set_option_str/real/int``
-    in ``HOP/standalone/hop_c_api.f90``.
+    recognized names are exactly what ``option_names()`` reports; the value is
+    parsed by libhop against the option's own type.
 
     The library is silent by default (``verbose=False``, i.e. HOP verbosity -1);
     ``verbose=0`` restores what a dispatch run prints at its own default -- the
@@ -155,12 +206,7 @@ class HopEOS:
 
     @staticmethod
     def _load_library():
-        lib = ctypes.CDLL(str(find_library()), mode=ctypes.RTLD_GLOBAL)
-        for name, (restype, argtypes) in _SIGNATURES.items():
-            func = getattr(lib, name)
-            func.restype = restype
-            func.argtypes = argtypes
-        return lib
+        return open_library()[1]
 
     def _init_fortran(self):
         """Apply the recipe's options and run hop_init.  The Fortran side must be
@@ -178,63 +224,50 @@ class HopEOS:
             _c_str(files['isotope_file']), _c_str(files['molec_file']),
             scalars['feh'], scalars['tmolim'],
             scalars['alpha_enhancement'], scalars['r_process_enhancement'])
-        if status != 0:
-            raise HopError(f'hop_init failed with status {status}')
+        _check(self._lib, status, 'hop_init')
         HopEOS._open = True
         self._owns = True
 
     def _rebuild(self):
-        """Start the Fortran side over from the recipe, then replay the line list,
-        the kept species and the loaded state.
+        """Start the Fortran side over from the recipe, keeping the kept-species marks.
 
         Line lists accumulate onto the never-solved master instance and cannot be
         removed, so replacing one means rebuilding -- see _load_linelist.
+
+        The old line list is deliberately *not* replayed: _load_linelist is the only
+        caller, and it reads the replacement (and re-solves the state) itself right
+        after.  Replaying here would put the old list underneath the replacement and
+        double-count every line the two windows share.  _state is left in place so
+        _load_linelist can re-solve it once, after the new lines are in.
         """
-        linelist, state, species = self._linelist, self._state, list(self._species)
+        species = list(self._species)
         self._lib.hop_free()
         HopEOS._open = False
         self._owns = False
-        self._linelist, self._state, self._species = None, None, []
+        self._linelist, self._species = None, []
         self._init_fortran()
-        if linelist is not None:
-            files, dlam, lam_min, lam_max = linelist
-            self._load_linelist(files, dlam, np.array([lam_min, lam_max]))
         if species:
             self.keep_species(species)
-        if state is not None:
-            self.load_state(**state)
 
     # -- configuration ------------------------------------------------------
 
     def set_option(self, name, value):
         """Set a HOP module-level option (namelist-style global).
 
-        Which of the three libhop setters is used follows the Python type of
-        `value`: str -> hop_set_option_str, bool/int -> ..._int (retried as
-        ..._real, so an integer-valued `ref_lam=5000` works), everything else
-        -> ..._real.  libhop itself is the authority on option names; an
-        unrecognized one comes back as status 1 and is raised here.
+        The value crosses as a string and libhop parses it against the option's own
+        type, so there is nothing to guess here -- an unknown name and a value of the
+        wrong type come back distinguishable, each with a message.  ``option_names()``
+        lists what libhop accepts.
         """
-        key = _c_str(name.lower())
-        if isinstance(value, str):
-            attempts = [('hop_set_option_str', _c_str)]
-        elif isinstance(value, (bool, int, np.integer)):
-            # ints are valid input for a real-valued option too (ref_lam=5000)
-            attempts = [('hop_set_option_int', int), ('hop_set_option_real', float)]
-        else:
-            attempts = [('hop_set_option_real', float)]
+        _check(self._lib,
+               self._lib.hop_set_option(_c_str(name.lower()), _c_str(_opt_value(value))),
+               f'set_option({name!r})')
 
-        for setter, cast in attempts:
-            status = getattr(self._lib, setter)(key, cast(value))
-            if status == 0:
-                return
-            if status != 1:
-                break  # name was recognized; retrying the other bucket would mask why
-        if status == 2:
-            raise HopError(f'option {name} needs an initialized HOP instance '
-                           f'(set it after hop_init, not before)')
-        raise HopError(f'option {name} rejected by libhop '
-                       f'(unknown name or wrong type bucket, status {status})')
+    def option_names(self):
+        """The option names libhop accepts, straight from the library."""
+        buf = _ffi.new('char[4096]')
+        self._lib.hop_option_names(buf, 4096)
+        return _ffi.string(buf).decode().split()
 
     @staticmethod
     def _linelist_files(files):
@@ -272,11 +305,9 @@ class HopEOS:
             self._rebuild()                  # lines cannot be unread
         lam_arr = np.ascontiguousarray([lam_min, lam_max], np.float64)
         for f in files:
-            status = self._lib.hop_init_linelist(_c_str(f), float(dlam), 2, lam_arr)
-            if status == 2:
-                raise HopError('hop_init_linelist needs an initialized instance')
-            if status != 0:
-                raise HopError(f'hop_init_linelist({f}) failed with status {status}')
+            status = self._lib.hop_init_linelist(
+                _c_str(f), float(dlam), 2, _buf(lam_arr, np.float64, 'double *'))
+            _check(self._lib, status, f'hop_init_linelist({f})')
         self._linelist = (files, dlam, lam_min, lam_max)
         if self._state is not None:
             self.load_state(**self._state)   # the solve must see the new lines
@@ -292,10 +323,7 @@ class HopEOS:
             ids = [ids]
         for sid in ids:
             status = self._lib.hop_keep_species(_c_str(sid))
-            if status != 0:
-                raise HopError(f'unknown species id {sid!r} (use e.g. "Fe I" '
-                               f'for ions -- a bare element id is not a species '
-                               f'-- or a molecule formula like "CH")')
+            _check(self._lib, status, f'keep_species({sid!r})')
             if sid not in self._species:
                 self._species.append(sid)
 
@@ -308,14 +336,9 @@ class HopEOS:
         if n == 0:
             raise HopError('no state loaded; call load_state first')
         out = np.empty(n, np.float64)
-        status = self._lib.hop_get_species(_c_str(species_id), n, out)
-        if status == 4:
-            raise HopError(f'density of {species_id!r} was not retained; pass '
-                           f'species=[...] to load_state (or call keep_species) '
-                           f'before solving')
-        if status != 0:
-            raise HopError(f'unknown species id {species_id!r} (use e.g. "Fe I" '
-                           f'or a molecule formula like "CH")')
+        status = self._lib.hop_get_species(_c_str(species_id), n,
+                                           _buf(out, np.float64, 'double *'))
+        _check(self._lib, status, f'species_density({species_id!r})')
         return out.reshape(self._shape)
 
     def load_state(self, temp, rho=None, ne=None, vmic=-1.0, species=None):
@@ -352,11 +375,11 @@ class HopEOS:
 
         # the Fortran side takes a flat cell list; C order throughout, so the
         # unflattening in _get_field is its exact inverse
-        status = self._lib.hop_load_state(n, temp_a.reshape(n), ne_io.reshape(n),
-                                          rho_in.reshape(n), float(vmic),
-                                          int(use_rho), int(use_ne))
-        if status != 0:
-            raise HopError(f'hop_load_state failed with status {status}')
+        status = self._lib.hop_load_state(
+            n, _buf(temp_a, np.float64, 'double *'), _buf(ne_io, np.float64, 'double *'),
+            _buf(rho_in, np.float64, 'double *'), float(vmic),
+            int(use_rho), int(use_ne))
+        _check(self._lib, status, 'load_state')
         self._shape = shape
         self._state = dict(temp=temp_a, rho=rho_in if use_rho else None,
                            ne=ne_io if use_ne else None, vmic=vmic)
@@ -372,9 +395,9 @@ class HopEOS:
         if n == 0:
             raise HopError('no state loaded; call load_state first')
         out = np.empty(n, np.float64)
-        status = self._lib.hop_get_field(_c_str(name), n, out)
-        if status != 0:
-            raise HopError(f'hop_get_field({name}) failed with status {status}')
+        status = self._lib.hop_get_field(_c_str(name), n,
+                                         _buf(out, np.float64, 'double *'))
+        _check(self._lib, status, f'hop_get_field({name})')
         return out.reshape(self._shape)
 
     temp = property(lambda self: self._get_field('temp'), doc='temperature [K]')
@@ -387,7 +410,6 @@ class HopEOS:
                   doc='hydrogen ionization/dissociation energy term')
     chi500 = property(lambda self: self._get_field('chi500'),
                       doc='extinction at the reference wavelength (air 5000 A) [1/cm]')
-    E = energy   # legacy name
 
     @property
     def grph(self):
@@ -398,8 +420,7 @@ class HopEOS:
 
     def _set_vmic(self, vmic):
         status = self._lib.hop_set_vmic(self.n, float(vmic))
-        if status != 0:
-            raise HopError(f'hop_set_vmic failed with status {status}')
+        _check(self._lib, status, 'hop_set_vmic')
         if self._state is not None:
             self._state['vmic'] = float(vmic)
 
@@ -409,13 +430,31 @@ class HopEOS:
         n = self.n
         chi = np.zeros((n, lam.size), np.float32)   # C order == Fortran (nlam, n)
         scat = np.zeros_like(chi)
-        status = self._lib.hop_opacity(lam.size, lam, chi, scat,
+        status = self._lib.hop_opacity(lam.size, _buf(lam, np.float64, 'double *'),
+                                       _buf(chi, np.float32, 'float *'),
+                                       _buf(scat, np.float32, 'float *'),
                                        int(bool(include_absmet)),
                                        int(bool(include_linelist)), float(dlam),
                                        int(bool(line_scattering)))
-        if status != 0:
-            raise HopError(f'hop_opacity failed with status {status}')
+        _check(self._lib, status, 'hop_opacity')
         return chi, scat
+
+    def scattering(self, lam):
+        """Continuum scattering coefficient [1/cm]: Thomson + Rayleigh only.
+
+        Shape ``<state shape> + (nlam,)``, float32, on vacuum wavelengths.  This is the
+        scattering part of the continuum on its own -- ``opacity()``'s ``scat`` return
+        adds the (1-eps)-weighted line terms on top when ``line_scattering`` is set.
+        """
+        lam = self._check_lam(lam)
+        n = self.n
+        if n == 0:
+            raise HopError('no state loaded; call load_state first')
+        sig = np.zeros((n, lam.size), np.float32)   # C order == Fortran (nlam, n)
+        status = self._lib.hop_scattering(lam.size, _buf(lam, np.float64, 'double *'),
+                                          _buf(sig, np.float32, 'float *'))
+        _check(self._lib, status, 'hop_scattering')
+        return sig.reshape(self._shape + (lam.size,))
 
     def opacity(self, lam, linelist=None, dlam=100.0, include_absmet=False,
                 line_scattering=False, vmic=None, nchunks=None, nprocs=1):

@@ -230,6 +230,69 @@ def atom_cases():
     return out
 
 
+# --- standalone HOP library (EOS + opacity through libhop.so) --------------------------------
+
+HOP_LIB = ROOT / "HOP" / "standalone" / "build" / "libhop.so"
+HOP_LINELIST = ROOT / "input" / "linelists" / "master_line.txt"
+
+# a coarse T x rho node grid (4 x 6 = 24 cells) and a narrow 10 AA window: small enough to
+# solve in seconds, wide enough to cross the Mg b lines and a good deal of Fe I
+HOP_DLAM = 10.0        # line-wing search radius [AA]
+HOP_VMIC = 1.0         # [km/s]; must be pinned, it moves the line opacity a lot
+
+
+def hop_grid():
+    """The (temp, rho) node grid the HOP cases solve on, both (ntemp, nrho)."""
+    from tumult.hop import logstep
+
+    tab_temp = logstep(3500.0, 12000.0, 0.35)
+    tab_rho = logstep(1e-10, 1e-7, 1.2)
+    return np.meshgrid(tab_temp, tab_rho, indexing="ij")
+
+
+def hop_wavelengths():
+    """The vacuum wavelength grid the opacity cases use."""
+    from tumult.hop import wavelength_grid
+
+    return wavelength_grid(5160.0, 5170.0, R=20000)
+
+
+def hop_eos_cases():
+    from tumult.hop import HopEOS
+
+    temp, rho = hop_grid()
+    with HopEOS(feh=0.0) as hop:
+        hop.load_state(temp, rho=rho, species=["Fe I", "CH"])
+        out = {
+            "temp": hop.temp, "rho": hop.rho, "ne": hop.ne, "pe": hop.pe, "pg": hop.pg,
+            "energy": hop.energy, "eh": hop.eh, "chi500": hop.chi500,
+            "grph": np.array(hop.grph),
+            "n_FeI": hop.species_density("Fe I"),
+            "n_CH": hop.species_density("CH"),
+        }
+        # the (T, ne) branch of load_state must invert the (T, rho) branch
+        hop.load_state(temp, ne=out["ne"])
+        out["rho_from_ne"] = hop.rho
+    return out
+
+
+def hop_opacity_cases():
+    from tumult.hop import HopEOS
+
+    temp, rho = hop_grid()
+    lam = hop_wavelengths()
+    with HopEOS(feh=0.0) as hop:
+        hop.load_state(temp, rho=rho)
+        chi_c, scat_c = hop.opacity(lam)
+        chi_l, scat_l = hop.opacity(lam, linelist=str(HOP_LINELIST), dlam=HOP_DLAM,
+                                    vmic=HOP_VMIC, line_scattering=True)
+        return {
+            "lam": lam,
+            "chi_continuum": chi_c, "scat_continuum": scat_c,
+            "chi_linelist": chi_l, "scat_linelist": scat_l,
+        }
+
+
 ALL_CASES = {
     "ew_profiles": ew_profile_cases,
     "convolutions": convolution_cases,
@@ -237,4 +300,6 @@ ALL_CASES = {
     "abundance": abundance_cases,
     "run_reading": run_reading_cases,
     "atom": atom_cases,
+    "hop_eos": hop_eos_cases,
+    "hop_opacity": hop_opacity_cases,
 }
