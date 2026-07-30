@@ -23,6 +23,18 @@ import multiprocessing
 import os
 from pathlib import Path
 
+# Set before libhop.so (built -fopenmp) is dlopen'd, so it has to sit at import
+# time rather than inside a worker.  A cluster environment that exports
+# OMP_PLACES without OMP_PROC_BIND leaves the binding policy implementation-
+# defined, and libgomp resolves that as "bind": with OMP_PLACES=threads a place
+# is one logical CPU, so the initial thread is pinned to it and the process is
+# left with a one-CPU affinity mask.  That mask is inherited across fork/exec,
+# so every spawned opacity worker -- and each one's numpy import -- would land
+# on the same core.  Un-pinning is not possible from the child: OMP_PROC_BIND
+# stops libgomp from binding, it does not widen a mask that was inherited
+# already narrowed.
+os.environ.setdefault('OMP_PROC_BIND', 'false')
+
 import cffi
 import numpy as np
 
