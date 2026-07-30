@@ -23,13 +23,14 @@ MODULE composition_patch_mod
   USE composition_mod, only: composition_type, exclude_elements, only_elements, switch, &
   ref_lam, debug_opac, abundances, relative_abundances, mhd_eos, helium_scattering, &
   departure_pointer_t, read_departures, departure_indices, &
-  sample_linelist, opac_table_vmic, scattering_absorption, &
+  sample_linelist, opac_table_vmic, &
   line_scattering
   USE atom_mod, only: use_classic_col, level_partf
   USE nlte_patch_mod,  only: nlte_patch_t
   USE rt_patch_mod, only:rt_patch_t
   USE bftrans_mod, only: H_occupation_probability
-  USE bbtrans_mod, only: tolerance, bbtrans_type, disable_ga, disable_stark, disable_vdw, ga_fallback
+  USE bbtrans_mod, only: tolerance, bbtrans_type, disable_ga, disable_stark, disable_vdw, ga_fallback, &
+                         vdw_shift
   USE linelist_mod, only: ll_profile, voigt_kernel
   USE hprofl_mod, only: hydrogen_BPO
   USE hvcs_mod, only: hydrogen_vcs_table, vcs_data_dir
@@ -91,9 +92,9 @@ SUBROUTINE read_composition_params ()
   switch, mhd_eos, debye_shield, &
   tmolim, irwin_dis, save_species, &
   ref_lam, debug_opac, abundances, relative_abundances, alpha_enhancement, r_process_enhancement, &
-  disable_ga, disable_stark, disable_vdw, helium_scattering, hydrogen_BPO, &
+  disable_ga, disable_stark, disable_vdw, vdw_shift, helium_scattering, hydrogen_BPO, &
   hydrogen_vcs_table, vcs_data_dir, &
-  ga_fallback, eosmet, scattering_absorption
+  ga_fallback, eosmet
   namelist /opac_table_params/ opac_table, opac_table_vmic, pca_opac, &
   dtemp, ldne, ldrho, ldtemp, absmet_file
   namelist /linelist_params/ dlam, exclude_elements, linelist_file, linelist_folder, &

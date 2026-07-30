@@ -24,7 +24,7 @@ MODULE rt_params_mod
   ! for rt_iter/rt_out (see rt_params_nml).
   !-----------------------------------------------------------------------------
   type, public :: rt_params_t
-    character(len=128) :: solver = 'quadratic'
+    character(len=128) :: solver = 'linear'
     character(len=32)  :: angle_quad = ''
     integer :: ntheta=0, nphi=0
     integer :: maxiter=0
@@ -82,7 +82,7 @@ CONTAINS
     else
       ! iteration-pass defaults
       call to_locals (rt_params_t(angle_quad='radau', ntheta=2, nphi=4, &
-        include_linelist=.false., include_absmet=.true.))
+        solver='linear', include_linelist=.false., include_absmet=.true.))
       rewind (io%input)
       read (io%input, rt_iteration_params, iostat=iostat)
       if (iostat > 0) then
@@ -93,7 +93,7 @@ CONTAINS
       call from_locals (rt_iter)
       ! output-pass defaults
       call to_locals (rt_params_t(angle_quad='lobatto', ntheta=4, nphi=4, &
-        include_linelist=.true., include_absmet=.false.))
+        solver='quadratic', include_linelist=.true., include_absmet=.false.))
       rewind (io%input)
       read (io%input, rt_output_params, iostat=iostat)
       if (iostat > 0) then

@@ -187,6 +187,26 @@ MODULE atom_mod
     real(8), public :: fmin=1e-6
     real(8) :: tmax_update=1.0d7
     character(len=32), public :: lse_solver='lineq_no_pivot'
+    !---------------------------------------------------------------------------
+    ! Guard rails on the statistical-equilibrium update (see update_populations).
+    ! max_update is the largest factor by which a level population may change in
+    ! one iteration, in either direction; min_pop_frac keeps a level's population
+    ! from ratcheting down into a range where its column of the rate matrix is
+    ! numerically empty; conv_pop_floor is the population fraction above which a
+    ! level carries full weight in the convergence decision, so that convlim and
+    ! convmax are not held hostage by levels with no effect on any opacity.
+    !---------------------------------------------------------------------------
+    real(8), public :: max_update=1d2, min_pop_frac=1d-30, conv_pop_floor=1d-8
+    !---------------------------------------------------------------------------
+    ! Under-relaxation of the SE update.  The update is multiplicative (b = b*e),
+    ! so the natural damping is geometric: e -> e**sor_w, which is exactly
+    ! ln b -> ln b + sor_w*correction and keeps b positive for any sor_w > 0.
+    ! If the undamped error map has eigenvalue lambda, the damped one has
+    ! mu = 1 + sor_w*(lambda - 1), so a mode that alternates sign and grows at
+    ! |lambda| = 1.85 (see fe607_convergence.md) needs sor_w < 2/2.85 = 0.70.
+    ! sor_w = 1 is the undamped scheme, i.e. bit-identical to before.
+    !---------------------------------------------------------------------------
+    real(8), public :: sor_w=1d0
     integer, public :: nq_min=0, nq_max=huge(1)
     real(4), public :: nq_fac=1.0
     integer, public :: cswitch=1
@@ -333,10 +353,21 @@ MODULE atom_mod
     real(4), intent(out), optional, dimension(:,:,:) :: cij, cji
     real(8), intent(out), optional, dimension(:,:) :: w, c
     integer :: i, m(3), x, y, z, nk
-    real(8) :: norm
-    real(8), parameter :: edamp = 1e-3
+    real(8) :: norm, elo, eup
+    real(8), dimension(:), allocatable :: bold, ework
     logical :: relax, ok
     integer, save :: itimer=0, itimer2=0
+    ! -- diag_pops bookkeeping ---------------------------------------------------
+    real(8), dimension(:,:), allocatable :: w_save
+    real(8), dimension(:), allocatable :: e_save, x_sol
+    integer :: d_nfloor, d_ncell, d_nfcell, d_wpos(3), d_wlvl, d_nneg, d_ipos, j
+    integer :: d_npos(3), d_nlvl
+    real(8) :: d_resid, d_wresid, d_emax, d_range, d_wrange, d_bmin, d_wb, d_wfrac
+    real(8) :: d_nmin, d_nfrac
+    ! worst (most negative) off-diagonal: value, its level pair, and where it sits,
+    ! so a persistent M-matrix violation can be tied to a region of the atmosphere
+    integer :: d_gpos(3), d_glvl(2)
+    real(8) :: d_gneg, d_gr
     ! ----------------------------------------------------------------------------
     call trace%begin('atom_type%update_populations', itimer=itimer)
     adata => self%data
@@ -344,7 +375,18 @@ MODULE atom_mod
     adata%maxerr = 0
     adata%lvlerr = 0
     nk = self%nlevel
-    
+    eup = max(max_update, 1.0d0)
+    elo = 1d0/eup
+    allocate (bold(nk), ework(nk))
+    if (diag_pops) then
+      allocate (w_save(nk,nk), e_save(nk), x_sol(nk))
+      d_nfloor = 0; d_ncell = 0; d_nfcell = 0; d_nneg = 0
+      d_wresid = 0; d_emax = 0; d_wrange = 0; d_bmin = huge(1d0)
+      d_wpos = 0; d_wlvl = 0; d_wb = 0; d_wfrac = 0
+      d_nmin = huge(1d0); d_npos = 0; d_nlvl = 0; d_nfrac = 0
+      d_gneg = 0; d_gpos = 0; d_glvl = 0
+    endif
+
     do z=1, m(3)
       do y=1, m(2)
         do x=1, m(1)
@@ -362,6 +404,11 @@ MODULE atom_mod
                 end if
               endif
 
+              if (diag_pops) then
+                w_save = adata%w
+                e_save = e
+              endif
+
               call trace%begin('lse_solver', itimer=itimer2)
               ! solve w n . x = e
               ! e contains the solution vector x on exit
@@ -374,7 +421,55 @@ MODULE atom_mod
                 call lineq(adata%w, e, nk)
               end select
               call trace%end(itimer2)
-              
+
+              if (diag_pops) then
+                x_sol = e
+                ! backward error of the LU solve, scaled the usual way:
+                ! |W x - rhs|_inf / (|W|_inf |x|_inf)
+                d_resid = maxval(abs(matmul(w_save, x_sol) - e_save))
+                d_range = maxval(abs(w_save)) * maxval(abs(x_sol))
+                if (d_range > 0) d_resid = d_resid / d_range
+                ! dynamic range of the column scaling n_j that the no-pivot LU sees
+                d_range = maxval(b*nstar) / max(minval(b*nstar), tiny(1d0))
+                d_ncell = d_ncell + 1
+                i = count(x_sol < elo .or. x_sol > eup)
+                d_nfloor = d_nfloor + i
+                if (i > 0) d_nfcell = d_nfcell + 1
+                d_bmin = min(d_bmin, minval(b))
+                d_wresid = max(d_wresid, d_resid)
+                ! an M-matrix has no negative off-diagonal entries; negative
+                ! (preconditioned) rates break the positivity of the solution
+                d_ipos = maxloc(b*nstar, dim=1)
+                do j=1, nk
+                  do i=1, nk
+                    if (i /= j .and. i /= d_ipos) then
+                      if (w_save(i,j) < 0) then
+                        d_nneg = d_nneg + 1
+                        ! rank by the entry relative to its own column diagonal,
+                        ! so the worst violation is the one that actually matters
+                        ! for the solve, not merely the largest raw number
+                        d_gr = w_save(i,j) / max(abs(w_save(j,j)), 1d-99)
+                        if (d_gr < d_gneg) then
+                          d_gneg = d_gr
+                          d_gpos = [x, y, z]
+                          d_glvl = [i, j]
+                        endif
+                      endif
+                    endif
+                  end do
+                end do
+                ! track the cell with the largest upward correction
+                i = maxloc(x_sol, dim=1)
+                if (x_sol(i) > d_emax) then
+                  d_emax = x_sol(i)
+                  d_wrange = d_range
+                  d_wpos = [x, y, z]
+                  d_wlvl = i
+                  d_wb = b(i)
+                  d_wfrac = b(i)*nstar(i) / adata%totn(x,y,z)
+                endif
+              endif
+
               if (check_NaN) then
                 ! only NaN/Inf are fatal here; zero or negative corrections are
                 ! absorbed by the exponential damping below
@@ -385,20 +480,56 @@ MODULE atom_mod
                 endif
               endif
               
-              ! compute the exponential update factor
-              where (e < edamp)
-                e = exp(max(e, 0.0d0)/edamp - 1d0 + log(edamp))
+              ! Limit how far one iteration may move a population.  Corrections in
+              ! [elo, eup] pass through untouched; outside that range both branches
+              ! join on smoothly (value and slope), and saturate at 0.37*elo below and
+              ! 2*eup above.  The lower branch is also what maps a non-positive
+              ! solution onto a small positive factor, i.e. what keeps populations
+              ! positive.  Without the upper branch a single cell can multiply a level
+              ! by 1e9 in one iteration, and the next formal solution sees that opacity.
+              where (e < elo)
+                e = elo * exp(max(e, 0.0d0)/elo - 1d0)
+              elsewhere (e > eup)
+                e = eup * (2d0 - eup/e)
               endwhere
 
+              ! Under-relaxation, applied after the limiter so it acts on a
+              ! strictly positive factor.  e**sor_w scales the correction in
+              ! log-population space; the conservation renormalisation below then
+              ! restores the particle budget that the damped step no longer
+              ! satisfies exactly.  sor_w = 1 leaves e untouched.
+              if (sor_w /= 1d0) then
+                e = e**sor_w
+              endif
+
               ! apply the update
+              bold = b
               b = b * e
 
               ! compute the normalisation scalar
               norm = adata%totn(x,y,z) / sum(b * nstar)
 
+              if (diag_pops) then
+                ! how much of the particle budget the update handed to a single
+                ! level, and by how much conservation then rescales every level
+                if (norm < d_nmin) then
+                  d_nmin = norm
+                  d_npos = [x, y, z]
+                  d_nlvl = maxloc(b*nstar, dim=1)
+                  d_nfrac = maxval(b*nstar) / adata%totn(x,y,z)
+                endif
+              endif
+
               ! enforce strict macroscopic particle conservation
               b = b * norm
-              
+
+              ! Keep every level numerically alive.  A population that ratchets down
+              ! iteration after iteration empties its column of the rate matrix, and
+              ! can never come back, since the update is multiplicative (b = b*e).
+              ! min_pop_frac of the atoms in the cell is far below anything that
+              ! contributes to an opacity or a rate.
+              where (nstar > 0) b = max(b, min_pop_frac*adata%totn(x,y,z)/nstar)
+
               if (check_NaN) then
                 call check_array(e, 'population correction', check_zero=.true., abort=.false., ok=ok)
                 if (.not.ok) then
@@ -415,15 +546,28 @@ MODULE atom_mod
                 endif
               endif
 
-              ! compute the true relative change in the populations
-              e = (e * norm) - 1.0d0
+              ! the true relative change, taken from the populations that were
+              ! actually stored, so that the limiter and the floor above are included
+              where (bold > 0)
+                e = b/bold - 1.0d0
+              elsewhere
+                e = 0.0d0
+              endwhere
 
-              ! keep track of maximum population change
+              ! keep the full per-level record for the convergence report
               lvlerr = merge(e, lvlerr, abs(e) > abs(lvlerr))
-              i = maxloc(abs(lvlerr), dim=1)
 
-              if (abs(lvlerr(i)) > abs(maxerr)) then
-                maxerr = lvlerr(i)
+              ! The convergence decision, on the other hand, weights each level by the
+              ! share of the atoms it actually holds.  The top levels of the last ion
+              ! are radiatively controlled by a near-zero radiation field, so they swing
+              ! by orders of magnitude while holding 1e-10 of the iron or less; on an
+              ! unweighted maximum they own convlim and convmax outright and the run
+              ! never terminates.  Levels above conv_pop_floor keep their full weight,
+              ! so this cannot mask a level that contributes to an opacity or a rate.
+              ework = abs(e) * min(1.0d0, b*nstar/(conv_pop_floor*adata%totn(x,y,z)))
+              i = maxloc(ework, dim=1)
+              if (ework(i) > abs(maxerr)) then
+                maxerr = sign(ework(i), e(i))
                 adata%epos = [x, y, z]
                 adata%elvl = i
               endif
@@ -443,6 +587,29 @@ MODULE atom_mod
       end do
     end do
 
+    if (diag_pops) then
+      if (d_ncell > 0) then
+        !$omp critical (diag_pops_print)
+        print '(A,A3,A,I6,A,I7,A,I4,A,I9,A,ES9.2,A,ES9.2,A,ES9.2,A,ES9.2,A,ES9.2,A,3I4,A,I4)', &
+          'DIAG ', self%id, ' clamp=', d_nfloor, '/', d_ncell*nk, ' cells=', d_nfcell, &
+          ' negoff=', d_nneg, ' bmin=', d_bmin, ' resid=', d_wresid, &
+          ' | emax=', d_emax, ' b=', d_wb, ' n/ntot=', d_wfrac, ' at', d_wpos, ' lvl=', d_wlvl
+        print '(A,A3,A,ES9.2,A,ES9.2,A,3I4,A,I4)', &
+          'DIAGN ', self%id, ' norm_min=', d_nmin, ' top_frac=', d_nfrac, &
+          ' at', d_npos, ' lvl=', d_nlvl
+        ! the worst M-matrix violation and where it lives, in global z
+        if (d_nneg > 0) then
+          print '(A,A3,A,ES9.2,A,I4,A,I4,A,3I4)', &
+            'DIAGG ', self%id, ' worst_negoff/diag=', d_gneg, &
+            ' i=', d_glvl(1), ' j=', d_glvl(2), ' at', &
+            d_gpos + [0, 0, diag_zs-1]
+        endif
+        !$omp end critical (diag_pops_print)
+      endif
+      deallocate (w_save, e_save, x_sol)
+    endif
+    deallocate (bold, ework)
+
     call trace%end(itimer)
   END SUBROUTINE update_populations
   
@@ -455,9 +622,13 @@ MODULE atom_mod
     real(8) :: totn
     integer :: kr, pos, i, j, x,y,z
     integer, save :: itimer=0, itimer2=0
-    logical :: abort, ok
+    logical :: abort, ok, db_here
     logical, save :: first_time=.true.
     !------------------------------------------------------------------------------------
+    ! resolved once per cell: the transition loop below is the hottest in the
+    ! solver and must not carry an array comparison per transition
+    db_here = diag_db
+    if (db_here) db_here = all([x,y,z] == pcheck)
     totn = self%data%totn(x,y,z)
     b => self%data%b(x,y,z,:)
     nstar => self%data%nstar(x,y,z,:)
@@ -479,6 +650,19 @@ MODULE atom_mod
       j = trans%j
       self%data%w(j,i) = self%data%w(j,i) + rij(kr)
       self%data%w(i,j) = self%data%w(i,j) + rji(kr)
+      ! Detailed balance check: deep down the radiation field is Planckian, so the
+      ! radiative rates alone have to satisfy n_i* R_ij = n_j* R_ji for every
+      ! transition.  Any transition that fails this is out of LTE for a numerical
+      ! reason, not a physical one.
+      if (db_here) then
+        if (rji(kr) /= 0) then
+          print '(A,F8.1,A,I6,A,L2,A,I4,A,I4,A,ES11.4,A,ES11.4,A,ES11.4)', &
+            'DIAGDB T=', comp%temp(x,y,z), ' kr=', kr, ' cont=', kr>self%nline, &
+            ' i=', i, ' j=', j, &
+            ' Rij=', rij(kr), ' Rji=', rji(kr), &
+            ' ratio=', nstar(i)*rij(kr)/(nstar(j)*rji(kr))
+        endif
+      endif
     enddo
 
     ! one can switch off the collisional rates by setting cswitch to 0
@@ -1722,13 +1906,13 @@ MODULE atom_mod
           if (wt <= 0) cycle
           call append_line(trans%ll, llam0 - line%dq(ih), line%nu0, lower_ev, &
             gpref0 + log(wt), line%ga + line%da(ih), line%gw1, line%gw2, line%gq, &
-            line%unsold, line%i, line%j, i, s, line%Aij*wt, wt, dej, line%iso, &
-            loggf + log10(wt), line%gv_in, line%ga_in, line%gq_in)
+            line%unsold, line%vdw_ratio, line%i, line%j, i, s, line%Aij*wt, wt, dej, &
+            line%iso, loggf + log10(wt), line%gv_in, line%ga_in, line%gq_in)
         end do
       else
         call append_line(trans%ll, llam0, line%nu0, lower_ev, gpref0, &
           dble(line%ga), dble(line%gw1), dble(line%gw2), dble(line%gq), line%unsold, &
-          line%i, line%j, i, s, line%Aij, 1.d0, dej, line%iso, &
+          line%vdw_ratio, line%i, line%j, i, s, line%Aij, 1.d0, dej, line%iso, &
           loggf, line%gv_in, line%ga_in, line%gq_in)
       endif
 

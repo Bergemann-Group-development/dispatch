@@ -26,7 +26,8 @@ MODULE m3d_patch_mod
     USE m3d_halo_mod, only: m3d_halo_t, print_finished, lock_mem, unlock_mem, print_lock
     USE spectrum_mod, only: lam_tolerance
     USE atom_mod, only: atom_type, atomic_spectrum_type, lse_no_pivot, lse_solver, &
-                        nq_fac, cswitch, ng_step, ng_start, ng_global, save_rate_matrix
+                        nq_fac, cswitch, ng_step, ng_start, ng_global, save_rate_matrix, &
+                        max_update, min_pop_frac, conv_pop_floor, sor_w
     USE composition_mod, only: composition_type, departure_pointer_t
     USE ray_mod, only: one_dimensional
     USE rt_params_mod, only: rt_iter, rt_out, read_rt_params, echo_rt_params, &
@@ -157,6 +158,26 @@ MODULE m3d_patch_mod
     logical, public, save :: nlte_finished=.true.
     logical, public, save :: flux_convergence=.false.
     logical, public, save :: preconditioning=.true., binned_opac=.false.
+    ! Olson-Auer-Buchler local ALI on the continuum-scattering source term.
+    ! Without it, eta = chi_tot*Bnu + sigma_scat*(J_old - Bnu) is a plain,
+    ! unaccelerated Lambda-iteration that converges at the scattering albedo per
+    ! iteration -- i.e. barely at all where the albedo approaches 1.  Off by
+    ! default so existing runs are bit-identical; see fe607_convergence.md.
+    logical, public, save :: scattering_preconditioning=.false.
+    ! Cap on the dimensionless self-coupling op = sigma_scat*PsiJ, which sets the
+    ! amplification 1/(1-op) the OAB update applies.  op <= 1 holds by
+    ! construction now that sigma is carried as the scattering *part of*
+    ! chi_cont on both the exact and the sampled path (see composition_mod
+    ! opacity/disjoint and optab_mod sample_interpolate), and Lambda_diag <= 1.
+    ! op does legitimately approach 1 in the bound-free half of the internal
+    ! spectrum, where continuum scattering is nearly the whole opacity and
+    ! Psi_diag -> 1, so the local operator is genuinely near-singular there and
+    ! the cap bounds the amplification; it is not a roundoff guard.
+    ! 0.5 caps the amplification at 2.  It is an empirical setting from a 1x1
+    ! column sweep (converges at 0.2/0.5/0.7, diverges at 0.8/0.9), not a bound
+    ! derived from the scheme, and it has not been re-measured in 3D.
+    ! Irrelevant unless scattering_preconditioning=T.
+    real(8), public, save :: scat_op_max=0.5d0
     ! Handling of population inversions (negative line opacity).  In NLTE a line
     ! contributes phi*Rij*(bi - bj*beta) to chi, which is negative for an inverted
     ! population.  chi can then pass through zero (Snu=eta/chi diverges) and dtau
@@ -178,6 +199,21 @@ MODULE m3d_patch_mod
     logical, public, save :: print_start=.false., print_send=.false.
     logical, public, save :: Jnu_to_file=.true.
     character, public, save :: amr='P'
+    !---------------------------------------------------------------------------
+    ! Optionally drop the outermost planes of a 3D snapshot before the AMR mesh
+    ! is laid out.  The horizontal spread of the electron pressure grows very
+    ! fast with height, and in the topmost planes a sizeable fraction of the
+    ! columns falls far below the plane's own mean -- those cells reach electron
+    ! densities two orders of magnitude below anything a 1D model contains, and
+    ! the statistical equilibrium there is radiatively controlled with almost no
+    ! collisional damping.  prune_top removes every plane above the highest one
+    ! whose cells ALL exceed min_k <ln Pe>(k), i.e. the topmost plane's mean;
+    ! prune_tol is the fraction of cells per plane that may fall below it (0 =
+    ! strict).  The mesh keeps its full patch count, so the only cost is a
+    ! shorter -- and correspondingly slightly better resolved -- z range.
+    !---------------------------------------------------------------------------
+    logical, public, save :: prune_top=.false.
+    real, public, save :: prune_tol=0.0
     character(len=6), public, save :: initial_Jnu='Planck'
     logical, public, save :: rotate_atmos=.false.
     logical, public, save :: make_eos=.false.
@@ -210,10 +246,12 @@ MODULE m3d_patch_mod
     public :: hash_string, pre_update, update, print_execution_history
     public :: release_output_tasks
 
-    namelist /nlte_params/ preconditioning, decouple_continuum, overrelax, &
+    namelist /nlte_params/ preconditioning, scattering_preconditioning, &
+    scat_op_max, decouple_continuum, overrelax, &
     flux_convergence, initial_Jnu, fixed_Jnu, &
     ng_step, ng_start, ng_global, cswitch, lse_solver, lse_no_pivot, &
     convlim, convmax, premature_finish, &
+    max_update, min_pop_frac, conv_pop_floor, sor_w, &
     maser_chi_floor, maser_dtau_max, maser_Inu_max, suppress_masers
 
     namelist /output_params/ save_id, save_patch_kind, save_resolved, &
@@ -222,7 +260,8 @@ MODULE m3d_patch_mod
     save_populations, save_rates, save_rate_matrix, bound_free_in_output
 
     namelist /m3d_debug_params/ verbose, fcheck, linecheck, lvlcheck, pcheck, &
-    atomcheck, check_NaN, print_finished, print_lock, print_start, print_send
+    atomcheck, check_NaN, print_finished, print_lock, print_start, print_send, &
+    diag_pops, diag_db, diag_no_scat_loop
 
     namelist /run_params/ n_nu, comoving_frame, make_eos, rotate_atmos, &
     column_by_column, lam_tolerance

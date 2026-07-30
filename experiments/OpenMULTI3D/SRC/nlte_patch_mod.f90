@@ -12,7 +12,7 @@ MODULE nlte_patch_mod
     red_cut, blue_cut, logf_cut, atom_data_t, atom_trans_t, &
     nq_fac, nq_min, nq_max, disable_bf, disable_bb, level_partf, &
     fmin, cbbesc, cbfesc, cbbhsc, cbfhsc, colscale, ch0_hmip, &
-    ng_step, ng_start, ng_global, save_rate_matrix, legacy_freql
+    ng_step, ng_start, ng_global, save_rate_matrix, legacy_freql, sor_w
   USE trans_mod, only: line_type, cont_type, transition_type
   USE const_mod, only: CC
   USE ion_mod, only: ion_type, particle_type, debye_shield, massive_type
@@ -45,10 +45,9 @@ MODULE nlte_patch_mod
     class(atomic_spectrum_type), pointer :: bb_sp=>null()
     real(8) :: maxerr=0, global=0, prev_global=0, prev_prev_global=0
     real(8), dimension(:), allocatable :: lvlerr
-    real(8) :: local, sor_w
+    real(8) :: local
     integer :: natom=0
     logical :: update_skipped=.false., atom_allocated=.false., molec
-    logical :: overrelax=.false.
   contains
     procedure :: pre_init => nlte_patch_pre_init
     procedure :: execute
@@ -451,6 +450,7 @@ contains
         endif
 
         call atom%normalize_profiles(self%iter)
+        diag_zs = self%zs
         call atom%update_populations(comp, self%local, self%pcheck, cij, cji, w, c)
 
         if (save_rates==k) then
@@ -653,7 +653,7 @@ contains
     character(len=256) :: run_dir, save_folder
     character(len=6), allocatable :: keys(:)
     real(4), dimension(:,:,:,:,:,:), allocatable, target :: mem
-    integer :: i, j, k, nprecomp, nmu, n(4), x, y, z, l, lunit
+    integer :: i, j, k, nprecomp, nmu, n(4), x, y, z, l, lunit, nzero
     integer :: itimer=0
     logical :: found
     !-----------------------------------------------------------------------------
@@ -729,15 +729,34 @@ contains
         if (.not. allocated(adata%b)) then
           call os%allocate(adata%b, shape(adata%nstar), label='b')
         endif
+        !-----------------------------------------------------------------------
+        ! The departures were written as real(4), so any level that sat below
+        ! tiny(1.0) came back as an exact zero.  Zero is a trap here: the update
+        ! is multiplicative (b = b*e), so such a level can never be repopulated,
+        ! and its column of the rate matrix is identically zero.  Restore it to
+        ! the smallest value the file could have represented; the population
+        ! floor in update_populations then lifts it to something sensible.
+        !-----------------------------------------------------------------------
+        nzero = 0
         do l=1, n(4)
           do z=1, n(3)
             do y=1, n(2)
               do x=1, n(1)
-                adata%b(x,y,z,l) = dep%mem(x,y,z,l)
+                if (dep%mem(x,y,z,l) > 0.0) then
+                  adata%b(x,y,z,l) = dep%mem(x,y,z,l)
+                else
+                  adata%b(x,y,z,l) = tiny(1.0)
+                  nzero = nzero + 1
+                endif
               end do
             end do
           end do
         end do
+        if (nzero > 0) then
+          write(stdout,'(A,I0,A,A,A)') ' WARNING: ', nzero, &
+            ' underflowed departure coefficients read for ', trim(atom%id), &
+            ' -- the run they came from had not converged'
+        endif
       else
         allocate(dep%ev, source=atom%ev_keys())
         allocate(dep%mem(n(1), n(2), n(3), n(4)))
@@ -926,8 +945,15 @@ contains
       write(stdout,'(A, ES12.4, A10, ES12.4, A, I4, A, "[", 3I4, "] ", A)') &
         '  local =', self%local,  ', global =', self%global, &
         ', lvl =',elvl, ', pos=', epos, self%atoms(eatom)%id
-      if (self%overrelax) then
-        write(stdout,'(A, 3(ES12.4))') '  omega =', self%sor_w, self%prev_prev_global, self%prev_global
+      ! The damping weight in force, next to the two error ratios it has to
+      ! control: r1 = global/prev_global is this step's amplification, r2 the
+      ! previous one.  A mode that alternates sign shows up as r1 < 0.
+      if (overrelax) then
+        write(stdout,'(A, F8.4, A, ES12.4, A, ES12.4)') &
+          '  omega =', sor_w, ', ratio =', &
+          self%global / merge(self%prev_global, 1d0, self%prev_global /= 0d0), &
+          ', prev ratio =', &
+          self%prev_global / merge(self%prev_prev_global, 1d0, self%prev_prev_global /= 0d0)
       endif
       flux_pos = global_flux_pos%update(+0)
       if (flux_pos >= 0) then

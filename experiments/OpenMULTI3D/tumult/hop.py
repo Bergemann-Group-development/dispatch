@@ -476,12 +476,13 @@ class HopEOS:
         volume -- divide by ``hop.rho[..., None]`` for the per-gram opacity a
         dispatch 'opa'/'scat' table holds.
 
-        chi is the total: continuum (with Thomson + Rayleigh scattering folded in,
-        as HOP's scattering_absorption does), the sampled metal-line background
-        with ``include_absmet``, and the LTE line list with ``linelist``.  scat is
-        the scattering part of it: Thomson + Rayleigh, plus -- with
-        ``line_scattering`` -- the (1-eps)-weighted absmet and line-list opacity,
-        the van Regemorter split composition_type%opacity applies.
+        chi is the total: continuum (Thomson + Rayleigh folded in), the sampled
+        metal-line background with ``include_absmet``, and the LTE line list with
+        ``linelist``.  scat is the scattering part *of* it: Thomson + Rayleigh,
+        plus -- with ``line_scattering`` -- the (1-eps)-weighted absmet and
+        line-list opacity, the van Regemorter split composition_type%opacity
+        applies.  scat <= chi always holds; the two are accumulated separately
+        inside HOP and only summed at the end.
 
         linelist: a file, a list of files or a folder (the &linelist_params
         linelist_file / linelist_folder), with ``dlam`` [AA] the line-wing search
