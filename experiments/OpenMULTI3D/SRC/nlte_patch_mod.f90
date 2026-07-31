@@ -243,13 +243,11 @@ contains
             call os%copy_file(trim(atom_file), trim(io%run_dir)//'atoms/'//'atom.'//trim(atom%id))
           endif
 
-          if (ng_global) then
-            ! Here we allocate the global ng_coefficient pointers
-            ! on copying of this atom, the pointers wil still point to the same arrays,
-            ! so they will be shared among all atoms of the same species.
-            allocate(atom%ng_a)
-            allocate(atom%ng_b)
-            allocate(atom%ng_d(0:2,1:2), source=0.d0)
+          if (ng_global .and. ng_step >= 0) then
+            ! One shared Ng state per species: copying the atom copies the
+            ! pointer, not the target, so every patch accumulates into this one
+            ! object and they all extrapolate with the same coefficients.
+            allocate(atom%ng)
           endif
         end associate
       end do
@@ -415,7 +413,7 @@ contains
     class(molec_type), pointer :: molec
     real(4), dimension(:,:,:), allocatable :: cij, cji
     real(8), dimension(:,:), allocatable :: w, c
-    integer :: i, j, k, p(3), m(3), ipos, ng_iter, ng_epos(4)
+    integer :: i, j, k, p(3), m(3), ipos, ng_epos(4)
     integer, save:: count=0
     real(8) :: global, ng_emax
     logical :: do_ng, locally_converged, found
@@ -426,10 +424,10 @@ contains
     self%maxerr = 0
     locally_converged = premature_finish
     m = self%n
-    do_ng = ng_step > 0
-    if (do_ng) then
-      ng_iter = mod(self%iter-ng_start, ng_step)
-    endif
+    ! ng_step < 0 disables Ng; 0 selects the automatic trigger; > 0 keeps the
+    ! fixed ng_start/ng_step schedule.  The scheduling arithmetic now lives in
+    ! ng_acceleration, which needs the raw iteration number either way.
+    do_ng = ng_step >= 0
 
     if (save_rates>0) then
       allocate(cij(m(1),m(2),m(3)), source=0.0)
@@ -480,7 +478,12 @@ contains
         endif
 
         if (do_ng .and. .not. adata%converged) then
-          call atom%ng_acceleration(ng_iter, ng_emax, ng_epos)
+          ! self%global, not the patch's own maxerr: the extrapolation is one
+          ! global step, so the headroom test that gates it has to see the run's
+          ! convergence measure rather than whichever patch happened to decide.
+          ! It lags by an iteration, which is immaterial for a coarse "is there
+          ! anything left to gain" test.
+          call atom%ng_acceleration(self%iter, self%global, convlim, ng_emax, ng_epos)
           if (ng_emax /= 0) then
             ng_epos = ng_epos + [0,0,0,self%zs-1]
             print '(A, ES14.7, 4(I6))', 'NG acceleration ', ng_emax, ng_epos

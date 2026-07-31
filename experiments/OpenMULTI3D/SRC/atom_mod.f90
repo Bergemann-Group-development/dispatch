@@ -20,6 +20,8 @@ MODULE atom_mod
     USE trace_mod
     USE spectrum_mod, only: spectrum_type, set_weights
     USE hprofl_mod, only:prepare_hydrogen_damping
+    USE ng_mod, only: ng_state_t, ng_promote, ng_should_fire, ng_coefficients, &
+                      ng_accumulate, ng_extrapolate, ng_count_clamped, ng_condition
     USE, intrinsic :: ieee_arithmetic
     ! *******************************************************************
     !
@@ -128,10 +130,12 @@ MODULE atom_mod
       real(8) :: drawin, mu_e
       logical :: check=.false.
 
-      real(8), pointer :: ng_a => null()
-      real(8), pointer :: ng_b => null()
-      real(8), dimension(:,:), pointer, contiguous :: ng_d => null()
-        
+      ! Ng acceleration state, shared by every patch copy of this atom: the
+      ! target is allocated once on the master atom and the pointer survives the
+      ! copy, so all patches accumulate into one object.
+      type(ng_state_t), pointer :: ng => null()
+
+
     contains
       procedure :: init_atom_data
       procedure :: check_ionisation_thresholds
@@ -150,9 +154,6 @@ MODULE atom_mod
       procedure :: gencol
       procedure :: set_colliders
       procedure :: ng_acceleration
-      procedure :: ng_acceleration_accumulate
-      procedure :: ng_acceleration_coeff
-      procedure :: apply_ng_acceleration
     end type atom_type
     !---------------------------------------------------------------------
 
@@ -210,6 +211,14 @@ MODULE atom_mod
     integer, public :: nq_min=0, nq_max=huge(1)
     real(4), public :: nq_fac=1.0
     integer, public :: cswitch=1
+    ! Ng acceleration schedule:
+    !   < 0  off (default)
+    !   = 0  automatic -- accumulate every iteration and let the gate in ng_mod
+    !        decide, using the contraction rate, its stationarity, the fraction
+    !        of corrections at the update limiter, and the conditioning of the
+    !        least-squares fit.  ng_start is then unused.
+    !   > 0  fixed schedule, applying on the iteration after each
+    !        mod(iter-ng_start, ng_step)==0.
     integer, public :: ng_step=-1, ng_start=8
     logical, public :: ng_global=.true.
     logical, public :: save_rate_matrix=.false.
@@ -281,7 +290,9 @@ MODULE atom_mod
       do i=1, self%nlevel
         adata%b(:,:,:,i) = 1.d0
       end do
-      if (ng_step > 0) then
+      ! iterate history for Ng, needed by the automatic trigger (ng_step==0) as
+      ! much as by the fixed schedule
+      if (ng_step >= 0) then
         call os%allocate(adata%oldb, [m, 3], label='oldb')
       endif
     endif
@@ -355,6 +366,7 @@ MODULE atom_mod
     integer :: i, m(3), x, y, z, nk
     real(8) :: norm, elo, eup
     real(8), dimension(:), allocatable :: bold, ework
+    integer(8) :: ng_nclamp, ng_ntot
     logical :: relax, ok
     integer, save :: itimer=0, itimer2=0
     ! -- diag_pops bookkeeping ---------------------------------------------------
@@ -378,6 +390,11 @@ MODULE atom_mod
     eup = max(max_update, 1.0d0)
     elo = 1d0/eup
     allocate (bold(nk), ework(nk))
+    ! Corrections cut by the limiter, counted unconditionally: the Ng gate needs
+    ! it to tell an asymptotic iteration from a clamped one, and it is a count()
+    ! over a vector already in cache.
+    ng_nclamp = 0
+    ng_ntot = 0
     if (diag_pops) then
       allocate (w_save(nk,nk), e_save(nk), x_sol(nk))
       d_nfloor = 0; d_ncell = 0; d_nfcell = 0; d_nneg = 0
@@ -487,6 +504,8 @@ MODULE atom_mod
               ! solution onto a small positive factor, i.e. what keeps populations
               ! positive.  Without the upper branch a single cell can multiply a level
               ! by 1e9 in one iteration, and the next formal solution sees that opacity.
+              ng_nclamp = ng_nclamp + count(e < elo .or. e > eup)
+              ng_ntot   = ng_ntot + nk
               where (e < elo)
                 e = elo * exp(max(e, 0.0d0)/elo - 1d0)
               elsewhere (e > eup)
@@ -609,6 +628,8 @@ MODULE atom_mod
       deallocate (w_save, e_save, x_sol)
     endif
     deallocate (bold, ework)
+
+    if (associated(self%ng)) call ng_count_clamped(self%ng, ng_nclamp, ng_ntot)
 
     call trace%end(itimer)
   END SUBROUTINE update_populations
@@ -2610,147 +2631,90 @@ MODULE atom_mod
   END FUNCTION gaunt
 
   !===============================================================================
-  SUBROUTINE ng_acceleration (self, ng_iter, emax, epos)
+  ! Ng acceleration driver.  Accumulation is unconditional and cheap (a handful
+  ! of inner products against an LU solve per cell), so the schedule is not what
+  ! decides whether to accelerate -- ng_should_fire is, from the quantities the
+  ! accumulation already produces.
+  !
+  ! ng_step > 0 keeps the fixed schedule: accumulate when mod(iter-ng_start,
+  ! ng_step)==0, apply on the iteration after.  ng_step == 0 selects automatic
+  ! mode, where every iteration accumulates and the gate decides.  ng_step < 0
+  ! disables Ng entirely and this is never reached.
+  !
+  ! In both modes application trails accumulation by one iteration, because a
+  ! patch cannot know when the other patches have finished contributing to the
+  ! Gram matrix.
+  !===============================================================================
+  SUBROUTINE ng_acceleration (self, iter, err, convlim, emax, epos)
     class(atom_type):: self
-    integer, intent(in) :: ng_iter
+    integer, intent(in) :: iter
+    real(8), intent(in) :: err                ! current convergence measure
+    real(8), intent(in) :: convlim            ! its target, for the headroom test
     real(8), intent(out) :: emax
     integer, intent(out) :: epos(4)
-    integer :: i, x, y, z, k, nvec, m(3)
-    real(8), dimension(:), allocatable :: n1, n2, n3, n4, d0, d1, d2, e, w
-    real(8) :: d01, d02, d11, d12, d21, d22, a, b, den, enew
+    logical :: fire, applied, apply_here
+    character(len=15) :: ng_reason
     integer, save :: itimer=0
     ! ----------------------------------------------------------------------------
     call trace%begin ('atom_type%ng_acceleration', itimer=itimer)
     emax = 0
-    if (ng_global) then
-      if (ng_iter==0) then
-        call self%ng_acceleration_accumulate()
-      elseif (ng_iter==1) then
-        ! the first one to get here will convert d into a and b
-        ! and will reset d to zero; the others will reuse a and b
-        !$omp critical (ng_global)
-        call self%ng_acceleration_coeff()
-        !$omp end critical (ng_global)
-        call self%apply_ng_acceleration(emax, epos)
-      endif
-    elseif (ng_iter == 0) then
-      allocate(self%ng_d(0:2,1:2), source=0.d0)
-      allocate(self%ng_a, self%ng_b)
-      call self%ng_acceleration_accumulate()
-      call self%ng_acceleration_coeff()
-      call self%apply_ng_acceleration(emax, epos)
-      deallocate(self%ng_d)
-      deallocate(self%ng_a, self%ng_b)
+    epos = 0
+    if (.not. associated(self%ng)) then
+      call trace%end(itimer)
+      return
     endif
+
+    associate (ng => self%ng, adata => self%data)
+      ! Promote last iteration's partial sums, decide, and read the decision back
+      ! -- all under one lock, so a patch cannot act on a half-updated state.
+      ! Patches advance their own iteration counters, so both the roll and the
+      ! decision are monotone in iter: a straggler still on an earlier iteration
+      ! neither redoes them nor undoes them, and simply does not accelerate.
+      apply_here = .false.
+      !$omp critical (ng_shared)
+      call ng_promote(ng, iter)
+      if (iter > ng%iter_decided) then
+        ng%iter_decided = iter
+        if (ng_step > 0) then
+          fire = mod(iter - ng_start, ng_step) == 1
+          if (fire) fire = ng%s_done > 0d0
+          ng_reason = merge('FIRE     ', 'off-cycle', fire)
+        else
+          fire = ng_should_fire(ng, iter, err, convlim, ng_reason)
+        endif
+        if (fire) then
+          call ng_coefficients(ng)
+          ng%iter_fired = iter
+        endif
+        if (diag_pops) then
+          ! why the gate did what it did: the contraction rate and its
+          ! predecessor (stationarity), the limiter fraction (linearity), and the
+          ! scaled Gram determinant (conditioning)
+          write(stdout,'(A,I4,A,A15,A,F8.4,A,F8.4,A,ES10.3,A,ES10.3,A,ES10.3)') &
+            'DIAGNG iter=', iter, ' verdict=', ng_reason, ' r=', ng%r, &
+            ' r_prev=', ng%r_prev, ' clamp=', &
+            real(ng%nclamp_done,8)/max(real(ng%ntot_done,8), 1d0), &
+            ' cond=', ng_condition(ng), ' err=', err
+          flush(stdout)
+        endif
+      endif
+      apply_here = ng%coeff_valid .and. ng%iter_fired == iter
+      !$omp end critical (ng_shared)
+
+      if (apply_here) then
+        call ng_extrapolate(ng, adata%b, adata%oldb, adata%nstar, adata%totn, &
+                            self%nlevel, emax, epos, applied)
+      endif
+
+      ! Feed this iteration's differences in for the next decision.  Skipped on
+      ! an iteration that extrapolated: b no longer belongs to the same
+      ! geometric sequence as oldb, so the differences would be meaningless.
+      if (ng%iter_fired /= iter .and. allocated(adata%oldb)) then
+        call ng_accumulate(ng, adata%b, adata%oldb, self%nlevel)
+      endif
+    end associate
     call trace%end(itimer)
   END SUBROUTINE ng_acceleration
-
-  !===============================================================================
-  SUBROUTINE ng_acceleration_accumulate (self)
-    class(atom_type):: self
-    integer :: i, x, y, z, k, nvec, m(3)
-    real(8), dimension(:), allocatable :: n1, n2, n3, n4, d0, d1, d2, e
-    real(8) :: w
-    ! ----------------------------------------------------------------------------
-    m = shape(self%data%totn)
-    nvec = self%nlevel * product(m(1:3))
-    allocate(e(nvec))
-    allocate(n1, n2, n3, n4, d0, d1, d2, mold=e)
-    i = 0
-    do z=1, m(3)
-    do y=1, m(2)
-    do x=1, m(1)
-    do k=1, self%nlevel
-      i = i+1
-      ! Extract natural logarithms; explicit weighting is no longer required
-      n1(i) = log(self%data%oldb(x,y,z,k,1))
-      n2(i) = log(self%data%oldb(x,y,z,k,2))
-      n3(i) = log(self%data%oldb(x,y,z,k,3))
-      n4(i) = log(self%data%b(x,y,z,k))
-    end do
-    end do
-    end do
-    end do
-
-    d0 = n4 - n3
-    d1 = n3 - n2
-    d2 = n2 - n1
-
-    d1 = d0 - d1
-    d2 = d0 - d2
-
-    associate(d => self%ng_d)
-      d(0,1) = d(0,1) + dot_product(d0, d1)
-      d(0,2) = d(0,2) + dot_product(d0, d2)
-      d(1,1) = d(1,1) + dot_product(d1, d1)
-      d(1,2) = d(1,2) + dot_product(d1, d2)
-      d(2,1) = d(2,1) + dot_product(d2, d1)
-      d(2,2) = d(2,2) + dot_product(d2, d2)
-    end associate
-  END SUBROUTINE ng_acceleration_accumulate
-
-  !===============================================================================
-  SUBROUTINE ng_acceleration_coeff (self)
-    class(atom_type):: self
-    real(8) :: den
-    ! ----------------------------------------------------------------------------
-    associate(d => self%ng_d)
-      if (any(d /= 0.d0)) then
-        den = d(1,1)*d(2,2) - d(1,2)*d(2,1)
-        if (abs(den) > 0) then
-          self%ng_a = (d(0,1)*d(2,2) - d(0,2)*d(2,1)) / den
-          self%ng_b = (d(0,2)*d(1,1) - d(0,1)*d(1,2)) / den
-        else
-          self%ng_a = 0
-          self%ng_b = 0
-        endif
-        d = 0 ! reset for next ng update
-      endif
-    end associate
-  END SUBROUTINE ng_acceleration_coeff
-
-  !===============================================================================
-  SUBROUTINE apply_ng_acceleration (self, emax, epos)
-    class(atom_type):: self
-    integer :: i, x, y, z, k, epos(4), m(3)
-    real(8) :: n1, n2, n3, n4, e
-    real(8) :: emax, enew
-    ! ----------------------------------------------------------------------------
-    m = shape(self%data%totn)
-    i = 0
-    associate(a => self%ng_a, b => self%ng_b)
-      do z=1, m(3)
-      do y=1, m(2)
-      do x=1, m(1)
-        do k=1, self%nlevel
-          i = i+1
-          n1 = log(self%data%oldb(x,y,z,k,1))
-          n2 = log(self%data%oldb(x,y,z,k,2))
-          n3 = log(self%data%oldb(x,y,z,k,3))
-          n4 = log(self%data%b(x,y,z,k))
-          
-          ! Extrapolate in logarithmic space
-          e = (1.d0 - a - b)*n4 + a*n3 + b*n2
-          
-          ! Exponentiate to recover strictly positive departure coefficients
-          self%data%b(x,y,z,k) = exp(e)
-          
-          ! Track relative error
-          enew = exp(e - n4) - 1.d0
-
-          if (abs(enew) > abs(emax)) then
-            emax = enew
-            epos = [k, x, y, z]
-          endif
-        end do
-        ! Enforce strict macroscopic particle conservation after exponentiation
-        self%data%b(x,y,z,:) = self%data%b(x,y,z,:) * &
-            (self%data%totn(x,y,z) / sum(self%data%b(x,y,z,:) * self%data%nstar(x,y,z,:)))
-      end do
-      end do
-      end do
-    end associate
-  END SUBROUTINE apply_ng_acceleration
 
 END MODULE atom_mod
   

@@ -28,6 +28,8 @@ MODULE m3d_patch_mod
     USE atom_mod, only: atom_type, atomic_spectrum_type, lse_no_pivot, lse_solver, &
                         nq_fac, cswitch, ng_step, ng_start, ng_global, save_rate_matrix, &
                         max_update, min_pop_frac, conv_pop_floor, sor_w
+    USE ng_mod, only: ng_rate_min, ng_rate_tol, ng_clamp_max, ng_min_iters_left, &
+                      ng_cond_min, ng_max_change, ng_min_gap
     USE composition_mod, only: composition_type, departure_pointer_t
     USE ray_mod, only: one_dimensional
     USE rt_params_mod, only: rt_iter, rt_out, read_rt_params, echo_rt_params, &
@@ -250,6 +252,8 @@ MODULE m3d_patch_mod
     scat_op_max, decouple_continuum, overrelax, &
     flux_convergence, initial_Jnu, fixed_Jnu, &
     ng_step, ng_start, ng_global, cswitch, lse_solver, lse_no_pivot, &
+    ng_rate_min, ng_rate_tol, ng_clamp_max, ng_min_iters_left, ng_cond_min, &
+    ng_max_change, ng_min_gap, &
     convlim, convmax, premature_finish, &
     max_update, min_pop_frac, conv_pop_floor, sor_w, &
     maser_chi_floor, maser_dtau_max, maser_Inu_max, suppress_masers
