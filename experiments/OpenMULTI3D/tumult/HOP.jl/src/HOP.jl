@@ -669,7 +669,7 @@ function _compute_grid_tiled(
     t_block=length(T), rho_block=length(rho),
     energy_offset=ENERGY_OFFSET,
     Teltype=Float32,
-    verbose=true,
+    verbose=false,
 )
     opacity_kwargs = (; 
         linelist=linelist, dlam=dlam, include_absmet=include_absmet,line_scattering=line_scattering, vmic=vmic, nthreads=nthreads
