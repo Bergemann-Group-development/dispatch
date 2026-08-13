@@ -3,6 +3,7 @@ module HOP
 using Libdl
 using Distributed
 using Mmap
+using FileWatching.Pidfile: mkpidlock
 
 export HopEOS, load_state!, load_linelist!, opacity, opacity_threaded, opacity_threaded!, wavelength_grid, logstep, freq_split, close!, meshgrid, compute_grid
 
@@ -92,11 +93,28 @@ end
 # Library handle
 # ============================================================================
 
+standalone_dir() = joinpath(_EXP_DIR, "HOP", "standalone")
+
+# Own build dir, so the Makefile's -O1 default (what other users get) and these
+# flags never share objects.
+const BUILD_DIR = "build-opt"
+const BUILD_OPT = "-O3 -march=native -mprefer-vector-width=256"
+
+function __init__()
+    dir = standalone_dir()
+    isdir(dir) || return nothing
+    mkpidlock(joinpath(dir, "build.lock"); stale_age=600) do
+        run(`make -s -C $dir -j$(min(Sys.CPU_THREADS, 8)) BUILD=$BUILD_DIR OPT=$BUILD_OPT`)
+    end
+    nothing
+end
+
 function find_library()
     lib = get(ENV, "HOP_LIB", "")
-    path = isempty(lib) ? joinpath(_EXP_DIR, "HOP", "standalone", "build", "libhop.so") : lib
+    path = isempty(lib) ? joinpath(standalone_dir(), BUILD_DIR, "libhop.so") : lib
     isfile(path) || error("libhop.so not found at $path; build it with " *
-                          "`make -C $(joinpath(_EXP_DIR, "HOP", "standalone"))` or set \$HOP_LIB")
+                          "`make -C $(standalone_dir()) BUILD=$BUILD_DIR OPT=\"$BUILD_OPT\"` " *
+                          "or set \$HOP_LIB")
     path
 end
 

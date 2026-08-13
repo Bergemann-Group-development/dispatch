@@ -2,15 +2,19 @@
 
 julia_version = "1.12.6"
 manifest_format = "2.0"
-project_hash = "49240aad2cbb97b72040c6dd58410abd61d4b654"
+project_hash = "6ca94749ec88a6ccf274ce3bad9c9f148b906168"
 
 [[deps.Distributed]]
 deps = ["Random", "Serialization", "Sockets"]
 uuid = "8ba89e20-285c-5b6f-9357-94700520ee1b"
 version = "1.11.0"
 
+[[deps.FileWatching]]
+uuid = "7b1f6079-737a-58dc-b8bc-7a2ca5c1b5ee"
+version = "1.11.0"
+
 [[deps.HOP]]
-deps = ["Libdl"]
+deps = ["Distributed", "FileWatching", "Libdl", "Mmap"]
 path = "."
 uuid = "850cc89c-680e-4b76-9699-c4c70d269ddc"
 version = "0.1.0"
