@@ -17,6 +17,8 @@ from .profile import (  # noqa: F401 (voigt_function re-exported for back-compat
     voigt_function,
 )
 
+trapz = getattr(np, 'trapz', np.trapezoid)
+
 
 def has_units(value):
     """
@@ -508,7 +510,7 @@ def fit_line_profile(
 
     amp = 1 - ymin
     s2p = np.sqrt(2 * np.pi)
-    sig = np.trapz(1 - y, x) / (s2p * amp)
+    sig = trapz(1 - y, x) / (s2p * amp)
 
     # per-profile initial guess, bounds and x0-scaling now live on the Profile class; ``scale``
     # normalises the wavelength-like parameters by x0 for a well-conditioned fit (rescaled back
@@ -622,7 +624,7 @@ def calc_teff(xx, yy, planck_thresh=None):
         newx = xx[mnan]
         newy = yy[mnan]
 
-    bol = np.trapz(newy, x=newx)
+    bol = trapz(newy, x=newx)
     teff = (bol / const.sigma_sb) ** 0.25
     return teff
 

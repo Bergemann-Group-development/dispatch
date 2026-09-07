@@ -30,7 +30,8 @@ MODULE rt_patch_mod
   USE rt_params_mod, only: rt_params_t, rt_iter, rt_out, ray_offset, pivot_z
   USE ray_mod, only: one_dimensional, ray_type, rstar, rorigin
   USE trans_mod, only: line_type, cont_type
-  USE bbtrans_mod, only: voigt_function2, voigt_profile, tolerance
+  USE bbtrans_mod, only: tolerance
+  USE qlg, only: qlg_bot_profile      ! the one Voigt kernel; see linelist_mod's kernel note
   USE linelist_mod, only: ll_add_opacity => add_opacity, ll_add_rates => add_rates, &
     ll_add_opacity_equi => add_opacity_equi, voigt_peak
   USE element_mod, only: element_type
@@ -1592,12 +1593,12 @@ contains
                 do ih=1, line%io
                   a = trans%adamp(x,y,z,i) + idf*line%da(ih)
                   vpr = vproj(x,y,z) + line%dq(ih)
-                  phi = phi + voigt_profile(a, line%q(fs:fe), vpr, idf) * line%wt(ih)
+                  phi = phi + qlg_bot_profile(a, line%q(fs:fe), vpr, idf) * line%wt(ih)
                 end do
               else
                 vpr = vproj(x,y,z)
                 a = trans%adamp(x,y,z,i)
-                phi = voigt_profile(a, line%q(fs:fe), vpr, idf)
+                phi = qlg_bot_profile(a, line%q(fs:fe), vpr, idf)
               endif
 
               Rij = ni * line%Bij
@@ -1865,7 +1866,7 @@ contains
                   do ih=1, line%io
                     q = line%q(f) - line%dq(ih)
                     a2 = a + idf*line%da(ih)
-                    vgt = voigt_profile(a2, q, vpr, idf)
+                    vgt = qlg_bot_profile(a2, q, vpr, idf)
                     phi = phi + vgt*line%wt(ih)
                   end do
                   vvv = phi * wmunu(f)
@@ -1877,7 +1878,7 @@ contains
             else
               do f=fs, fe
                 associate(Inu=>self%work(f,x,y,z,3), Psi=>self%Psi(f,x,y,z))
-                  phi = voigt_profile(a, line%q(f), vpr, idf)
+                  phi = qlg_bot_profile(a, line%q(f), vpr, idf)
                   vvv = phi * wmunu(f)
                   sum_A = sum_A + vvv
                   sum_I = sum_I + vvv * Inu

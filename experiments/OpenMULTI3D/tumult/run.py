@@ -27,6 +27,8 @@ import functools
 from tqdm import tqdm
 import multiprocessing as mp
 
+trapz = getattr(np, 'trapz', np.trapezoid)
+
 def option(nml, key):
     if key in nml.keys():
         return nml[key]
@@ -676,9 +678,9 @@ class tumult(object):
 
         if get_mean: ltau = new_ltau
         cfunc = cfunc.squeeze()
-        if cfunc.ndim>1 and fmean: cfunc = np.trapz(cfunc, x=lam, axis=0)
+        if cfunc.ndim>1 and fmean: cfunc = trapz(cfunc, x=lam, axis=0)
         if norm:
-            normalisation = abs(np.trapz(cfunc, x=ltau))
+            normalisation = abs(trapz(cfunc, x=ltau))
             cfunc = cfunc / normalisation
         return ltau, cfunc.squeeze()
 

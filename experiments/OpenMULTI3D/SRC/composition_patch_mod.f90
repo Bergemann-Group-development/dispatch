@@ -30,7 +30,7 @@ MODULE composition_patch_mod
   USE rt_patch_mod, only:rt_patch_t
   USE bftrans_mod, only: H_occupation_probability
   USE bbtrans_mod, only: tolerance, bbtrans_type, disable_ga, disable_stark, disable_vdw, ga_fallback
-  USE linelist_mod, only: ll_profile, voigt_kernel
+  USE linelist_mod, only: ll_profile, voigt_kernel, voigt_kernel_init
   USE hprofl_mod, only: hydrogen_BPO
   USE hvcs_mod, only: hydrogen_vcs_table, vcs_data_dir
   USE trace_mod
@@ -131,6 +131,10 @@ SUBROUTINE read_composition_params ()
     read (io%input, linelist_params)
   end if
   call io%namelist_warning ('linelist_params', iostat)
+
+  ! Build QLG-bot's lookup tables. Must precede any opacity accumulation -- see the
+  ! kernel note in HOP/linelist_mod.f90.
+  call voigt_kernel_init
 
   if (linelist_folder /= '') then
     deallocate(linelist_file)

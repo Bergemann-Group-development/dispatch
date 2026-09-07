@@ -9,6 +9,9 @@ from conftest import assert_matches_golden, load_golden
 
 kms = u.km / u.s
 
+# np.trapz was removed in NumPy 2.0; tumult carries the same shim (tumult/convolutions.py).
+trapz = getattr(np, "trapz", None) or np.trapezoid
+
 
 def test_matches_golden():
     assert_matches_golden(convolution_cases(), load_golden("convolutions"))
@@ -18,7 +21,7 @@ def test_kernels_are_normalised():
     from tumult.convolutions import combined_kernel
 
     px, py = combined_kernel(rd=2e-6, vdop=3.0 * kms, vrot=2.0 * kms, zeta_rt=1.5 * kms)
-    area = np.trapz(np.asarray(py, float), x=np.asarray(px, float))
+    area = trapz(np.asarray(py, float), x=np.asarray(px, float))
     assert area == pytest.approx(1.0, rel=1e-6)
 
 
@@ -64,8 +67,8 @@ def test_custom_kernel_fixed_and_normalised():
     px, py = combined_kernel(rd=2e-7, custom=(xc, yc))
     px = np.asarray(px, float)
     py = np.asarray(py, float)
-    assert np.trapz(py, x=px) == pytest.approx(1.0, rel=1e-6)
+    assert trapz(py, x=px) == pytest.approx(1.0, rel=1e-6)
     # second moment of the kernel = (sigma/c)^2 for the Gaussian input
-    var = np.trapz(py * px**2, x=px)
+    var = trapz(py * px**2, x=px)
     sigma_over_c = 2.0 / 299792.458
     assert np.sqrt(var) == pytest.approx(sigma_over_c, rel=1e-2)

@@ -6,6 +6,7 @@ from .utils import ensure_unit
 
 # --- default for rd ---
 min_rd = (0.1 * u.km / u.s) / const.c
+trapz = getattr(np, 'trapz', np.trapezoid)
 
 
 def convert_res_to_vdop(res=None, vdop=None):
@@ -43,14 +44,14 @@ def rot_kernel(vrot, px):
     xi2 = 1 - xi**2
     beta = 1.5
     py = ((2 * np.sqrt(xi2)) / np.pi + beta * xi2 / 2) / half_width / (1 + 6 / 9 * beta)
-    py /= np.trapz(py, x=px)
+    py /= trapz(py, x=px)
     return py
 
 
 def gauss_kernel(vdop, px):
     width = vdop / const.c
     py = np.exp(-((px / width) ** 2)) / (np.sqrt(np.pi) * width)
-    py /= np.trapz(py, x=px)
+    py /= trapz(py, x=px)
     return py
 
 
@@ -85,18 +86,18 @@ def macro_kernel(zeta_rt, px):
     flux_rt = np.concatenate([flux_rt[:0:-1], flux_rt]) / half_width
 
     py = np.interp(px, wave_rt, flux_rt, left=0.0, right=0.0)
-    py /= np.trapz(py, x=px)
+    py /= trapz(py, x=px)
     return py
 
 
 def custom_kernel(custom, px):
     xcust = custom[0] / const.c
-    ycust = custom[1] / np.trapz(custom[1], x=xcust)
+    ycust = custom[1] / trapz(custom[1], x=xcust)
     py = np.interp(px, xcust, ycust, left=0.0, right=0.0)
     # renormalise on the actual convolution grid, like every other kernel: this also
     # cancels the composite velocity/c unit that np.interp leaves on py (without it the
     # kernel came out ~1000x off when x was given in km/s).
-    py /= np.trapz(py, x=px)
+    py /= trapz(py, x=px)
     return py
 
 

@@ -12,8 +12,16 @@ from cases import LINE_AMP, LINE_SIG, LINE_X0, ew_profile_cases, gauss_line
 from conftest import assert_matches_golden, load_golden
 
 
+# The continuum-placement error columns of the two FITTED profiles come out of the
+# least-squares covariance, whose last digits track the SciPy/BLAS build rather than
+# anything here: they drift ~1e-9 across environments while the widths themselves stay
+# exact. The EWs, the fit parameters and every integrated profile keep the 1e-12 default.
+_FIT_COV_RTOL = {"*_err_cont_mAA": 1e-8, "*_rew_err": 1e-8}
+
+
 def test_matches_golden():
-    assert_matches_golden(ew_profile_cases(), load_golden("ew_profiles"))
+    assert_matches_golden(ew_profile_cases(), load_golden("ew_profiles"),
+                          rtol_overrides=_FIT_COV_RTOL)
 
 
 def test_registry_is_complete():

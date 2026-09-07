@@ -32,6 +32,7 @@ _R2L2 = np.sqrt(2.0 * np.log(2.0))  # FWHM = 2·_R2L2·σ for a Gaussian
 
 # name -> Profile subclass; the one place the valid-profile set lives.
 _REGISTRY: dict[str, type["Profile"]] = {}
+trapz = getattr(np, 'trapz', np.trapezoid)
 
 
 def register(cls):
@@ -389,7 +390,7 @@ class TrapzProfile(Profile):
 
     @classmethod
     def measure(cls, xx, yy, *, x0, sigma=None, xunit=u.AA, **kwargs):
-        weq = np.trapz(1 - yy, x=xx)
+        weq = trapz(1 - yy, x=xx)
 
         def func(x):
             return np.interp(x, xx, yy, **kwargs)
@@ -410,5 +411,5 @@ class PchipProfile(Profile):
 
         func = pchip_mono(xx, yy, **kwargs)
         xxx = np.linspace(xx[0], xx[-1], xx.size * 10)
-        weq = np.trapz(1 - func(xxx), x=xxx)
+        weq = trapz(1 - func(xxx), x=xxx)
         return cls(_lam0_quantity(x0, xunit), func=func, weq=weq, xunit=xunit)

@@ -7,6 +7,7 @@ code by ``python tests/gen_goldens.py`` and committed; every consolidation phase
 leave them bit-identical (or regenerate them with a recorded reason).
 """
 import sys
+from fnmatch import fnmatch
 from pathlib import Path
 
 import numpy as np
@@ -32,8 +33,16 @@ def load_golden(name: str) -> dict:
         return {k: data[k] for k in data.files}
 
 
-def assert_matches_golden(actual: dict, golden: dict, rtol=1e-12, atol=0.0):
-    """Compare a computed case dict against its golden counterpart, key by key."""
+def assert_matches_golden(actual: dict, golden: dict, rtol=1e-12, atol=0.0,
+                          rtol_overrides=None):
+    """Compare a computed case dict against its golden counterpart, key by key.
+
+    ``rtol_overrides`` maps an fnmatch pattern to a looser rtol for the keys it matches.
+    Use it ONLY for quantities that are not reproducible to the 1e-12 default for reasons
+    outside this codebase - a nonlinear-fit covariance, say, whose last digits move with
+    the SciPy/BLAS build. Anything that moves because *our* numerics moved is a golden to
+    regenerate deliberately, not a tolerance to widen.
+    """
     missing = set(golden) - set(actual)
     extra = set(actual) - set(golden)
     assert not missing and not extra, f"golden keys drifted: missing={missing} extra={extra}"
@@ -42,6 +51,11 @@ def assert_matches_golden(actual: dict, golden: dict, rtol=1e-12, atol=0.0):
         if want.dtype.kind in "US":  # strings (e.g. run mode flags)
             assert got.astype(str) == want.astype(str), f"{key}: {got!r} != {want!r}"
         else:
+            tol = rtol
+            for pattern, override in (rtol_overrides or {}).items():
+                if fnmatch(key, pattern):
+                    tol = override
+                    break
             np.testing.assert_allclose(
-                got, want, rtol=rtol, atol=atol, err_msg=f"golden mismatch for {key!r}"
+                got, want, rtol=tol, atol=atol, err_msg=f"golden mismatch for {key!r}"
             )
