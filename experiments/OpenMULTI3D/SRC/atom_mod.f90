@@ -1927,13 +1927,13 @@ MODULE atom_mod
           if (wt <= 0) cycle
           call append_line(trans%ll, llam0 - line%dq(ih), line%nu0, lower_ev, &
             gpref0 + log(wt), line%ga + line%da(ih), line%gw1, line%gw2, line%gq, &
-            line%unsold, line%vdw_ratio, line%i, line%j, i, s, line%Aij*wt, wt, dej, &
+            line%unsold, line%i, line%j, i, s, line%Aij*wt, wt, dej, &
             line%iso, loggf + log10(wt), line%gv_in, line%ga_in, line%gq_in)
         end do
       else
         call append_line(trans%ll, llam0, line%nu0, lower_ev, gpref0, &
           dble(line%ga), dble(line%gw1), dble(line%gw2), dble(line%gq), line%unsold, &
-          line%vdw_ratio, line%i, line%j, i, s, line%Aij, 1.d0, dej, line%iso, &
+          line%i, line%j, i, s, line%Aij, 1.d0, dej, line%iso, &
           loggf, line%gv_in, line%ga_in, line%gq_in)
       endif
 

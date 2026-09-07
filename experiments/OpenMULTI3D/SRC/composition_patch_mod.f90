@@ -29,8 +29,7 @@ MODULE composition_patch_mod
   USE nlte_patch_mod,  only: nlte_patch_t
   USE rt_patch_mod, only:rt_patch_t
   USE bftrans_mod, only: H_occupation_probability
-  USE bbtrans_mod, only: tolerance, bbtrans_type, disable_ga, disable_stark, disable_vdw, ga_fallback, &
-                         vdw_shift
+  USE bbtrans_mod, only: tolerance, bbtrans_type, disable_ga, disable_stark, disable_vdw, ga_fallback
   USE linelist_mod, only: ll_profile, voigt_kernel, voigt_kernel_init
   USE hprofl_mod, only: hydrogen_BPO
   USE hvcs_mod, only: hydrogen_vcs_table, vcs_data_dir
@@ -92,7 +91,7 @@ SUBROUTINE read_composition_params ()
   switch, mhd_eos, debye_shield, &
   tmolim, irwin_dis, save_species, &
   ref_lam, debug_opac, abundances, relative_abundances, alpha_enhancement, r_process_enhancement, &
-  disable_ga, disable_stark, disable_vdw, vdw_shift, helium_scattering, hydrogen_BPO, &
+  disable_ga, disable_stark, disable_vdw, helium_scattering, hydrogen_BPO, &
   hydrogen_vcs_table, vcs_data_dir, &
   ga_fallback, eosmet
   namelist /opac_table_params/ opac_table, opac_table_vmic, pca_opac, &
