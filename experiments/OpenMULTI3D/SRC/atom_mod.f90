@@ -20,6 +20,8 @@ MODULE atom_mod
     USE trace_mod
     USE spectrum_mod, only: spectrum_type, set_weights
     USE hprofl_mod, only:prepare_hydrogen_damping
+    USE ng_mod, only: ng_state_t, ng_promote, ng_should_fire, ng_coefficients, &
+                      ng_accumulate, ng_extrapolate, ng_count_clamped, ng_condition
     USE, intrinsic :: ieee_arithmetic
     ! *******************************************************************
     !
@@ -128,10 +130,12 @@ MODULE atom_mod
       real(8) :: drawin, mu_e
       logical :: check=.false.
 
-      real(8), pointer :: ng_a => null()
-      real(8), pointer :: ng_b => null()
-      real(8), dimension(:,:), pointer, contiguous :: ng_d => null()
-        
+      ! Ng acceleration state, shared by every patch copy of this atom: the
+      ! target is allocated once on the master atom and the pointer survives the
+      ! copy, so all patches accumulate into one object.
+      type(ng_state_t), pointer :: ng => null()
+
+
     contains
       procedure :: init_atom_data
       procedure :: check_ionisation_thresholds
@@ -150,9 +154,6 @@ MODULE atom_mod
       procedure :: gencol
       procedure :: set_colliders
       procedure :: ng_acceleration
-      procedure :: ng_acceleration_accumulate
-      procedure :: ng_acceleration_coeff
-      procedure :: apply_ng_acceleration
     end type atom_type
     !---------------------------------------------------------------------
 
@@ -187,9 +188,37 @@ MODULE atom_mod
     real(8), public :: fmin=1e-6
     real(8) :: tmax_update=1.0d7
     character(len=32), public :: lse_solver='lineq_no_pivot'
+    !---------------------------------------------------------------------------
+    ! Guard rails on the statistical-equilibrium update (see update_populations).
+    ! max_update is the largest factor by which a level population may change in
+    ! one iteration, in either direction; min_pop_frac keeps a level's population
+    ! from ratcheting down into a range where its column of the rate matrix is
+    ! numerically empty; conv_pop_floor is the population fraction above which a
+    ! level carries full weight in the convergence decision, so that convlim and
+    ! convmax are not held hostage by levels with no effect on any opacity.
+    !---------------------------------------------------------------------------
+    real(8), public :: max_update=1d2, min_pop_frac=1d-30, conv_pop_floor=1d-8
+    !---------------------------------------------------------------------------
+    ! Under-relaxation of the SE update.  The update is multiplicative (b = b*e),
+    ! so the natural damping is geometric: e -> e**sor_w, which is exactly
+    ! ln b -> ln b + sor_w*correction and keeps b positive for any sor_w > 0.
+    ! If the undamped error map has eigenvalue lambda, the damped one has
+    ! mu = 1 + sor_w*(lambda - 1), so a mode that alternates sign and grows at
+    ! |lambda| = 1.85 (see fe607_convergence.md) needs sor_w < 2/2.85 = 0.70.
+    ! sor_w = 1 is the undamped scheme, i.e. bit-identical to before.
+    !---------------------------------------------------------------------------
+    real(8), public :: sor_w=1d0
     integer, public :: nq_min=0, nq_max=huge(1)
     real(4), public :: nq_fac=1.0
     integer, public :: cswitch=1
+    ! Ng acceleration schedule:
+    !   < 0  off (default)
+    !   = 0  automatic -- accumulate every iteration and let the gate in ng_mod
+    !        decide, using the contraction rate, its stationarity, the fraction
+    !        of corrections at the update limiter, and the conditioning of the
+    !        least-squares fit.  ng_start is then unused.
+    !   > 0  fixed schedule, applying on the iteration after each
+    !        mod(iter-ng_start, ng_step)==0.
     integer, public :: ng_step=-1, ng_start=8
     logical, public :: ng_global=.true.
     logical, public :: save_rate_matrix=.false.
@@ -261,7 +290,9 @@ MODULE atom_mod
       do i=1, self%nlevel
         adata%b(:,:,:,i) = 1.d0
       end do
-      if (ng_step > 0) then
+      ! iterate history for Ng, needed by the automatic trigger (ng_step==0) as
+      ! much as by the fixed schedule
+      if (ng_step >= 0) then
         call os%allocate(adata%oldb, [m, 3], label='oldb')
       endif
     endif
@@ -333,10 +364,22 @@ MODULE atom_mod
     real(4), intent(out), optional, dimension(:,:,:) :: cij, cji
     real(8), intent(out), optional, dimension(:,:) :: w, c
     integer :: i, m(3), x, y, z, nk
-    real(8) :: norm
-    real(8), parameter :: edamp = 1e-3
+    real(8) :: norm, elo, eup
+    real(8), dimension(:), allocatable :: bold, ework
+    integer(8) :: ng_nclamp, ng_ntot
     logical :: relax, ok
     integer, save :: itimer=0, itimer2=0
+    ! -- diag_pops bookkeeping ---------------------------------------------------
+    real(8), dimension(:,:), allocatable :: w_save
+    real(8), dimension(:), allocatable :: e_save, x_sol
+    integer :: d_nfloor, d_ncell, d_nfcell, d_wpos(3), d_wlvl, d_nneg, d_ipos, j
+    integer :: d_npos(3), d_nlvl
+    real(8) :: d_resid, d_wresid, d_emax, d_range, d_wrange, d_bmin, d_wb, d_wfrac
+    real(8) :: d_nmin, d_nfrac
+    ! worst (most negative) off-diagonal: value, its level pair, and where it sits,
+    ! so a persistent M-matrix violation can be tied to a region of the atmosphere
+    integer :: d_gpos(3), d_glvl(2)
+    real(8) :: d_gneg, d_gr
     ! ----------------------------------------------------------------------------
     call trace%begin('atom_type%update_populations', itimer=itimer)
     adata => self%data
@@ -344,7 +387,23 @@ MODULE atom_mod
     adata%maxerr = 0
     adata%lvlerr = 0
     nk = self%nlevel
-    
+    eup = max(max_update, 1.0d0)
+    elo = 1d0/eup
+    allocate (bold(nk), ework(nk))
+    ! Corrections cut by the limiter, counted unconditionally: the Ng gate needs
+    ! it to tell an asymptotic iteration from a clamped one, and it is a count()
+    ! over a vector already in cache.
+    ng_nclamp = 0
+    ng_ntot = 0
+    if (diag_pops) then
+      allocate (w_save(nk,nk), e_save(nk), x_sol(nk))
+      d_nfloor = 0; d_ncell = 0; d_nfcell = 0; d_nneg = 0
+      d_wresid = 0; d_emax = 0; d_wrange = 0; d_bmin = huge(1d0)
+      d_wpos = 0; d_wlvl = 0; d_wb = 0; d_wfrac = 0
+      d_nmin = huge(1d0); d_npos = 0; d_nlvl = 0; d_nfrac = 0
+      d_gneg = 0; d_gpos = 0; d_glvl = 0
+    endif
+
     do z=1, m(3)
       do y=1, m(2)
         do x=1, m(1)
@@ -362,6 +421,11 @@ MODULE atom_mod
                 end if
               endif
 
+              if (diag_pops) then
+                w_save = adata%w
+                e_save = e
+              endif
+
               call trace%begin('lse_solver', itimer=itimer2)
               ! solve w n . x = e
               ! e contains the solution vector x on exit
@@ -374,7 +438,55 @@ MODULE atom_mod
                 call lineq(adata%w, e, nk)
               end select
               call trace%end(itimer2)
-              
+
+              if (diag_pops) then
+                x_sol = e
+                ! backward error of the LU solve, scaled the usual way:
+                ! |W x - rhs|_inf / (|W|_inf |x|_inf)
+                d_resid = maxval(abs(matmul(w_save, x_sol) - e_save))
+                d_range = maxval(abs(w_save)) * maxval(abs(x_sol))
+                if (d_range > 0) d_resid = d_resid / d_range
+                ! dynamic range of the column scaling n_j that the no-pivot LU sees
+                d_range = maxval(b*nstar) / max(minval(b*nstar), tiny(1d0))
+                d_ncell = d_ncell + 1
+                i = count(x_sol < elo .or. x_sol > eup)
+                d_nfloor = d_nfloor + i
+                if (i > 0) d_nfcell = d_nfcell + 1
+                d_bmin = min(d_bmin, minval(b))
+                d_wresid = max(d_wresid, d_resid)
+                ! an M-matrix has no negative off-diagonal entries; negative
+                ! (preconditioned) rates break the positivity of the solution
+                d_ipos = maxloc(b*nstar, dim=1)
+                do j=1, nk
+                  do i=1, nk
+                    if (i /= j .and. i /= d_ipos) then
+                      if (w_save(i,j) < 0) then
+                        d_nneg = d_nneg + 1
+                        ! rank by the entry relative to its own column diagonal,
+                        ! so the worst violation is the one that actually matters
+                        ! for the solve, not merely the largest raw number
+                        d_gr = w_save(i,j) / max(abs(w_save(j,j)), 1d-99)
+                        if (d_gr < d_gneg) then
+                          d_gneg = d_gr
+                          d_gpos = [x, y, z]
+                          d_glvl = [i, j]
+                        endif
+                      endif
+                    endif
+                  end do
+                end do
+                ! track the cell with the largest upward correction
+                i = maxloc(x_sol, dim=1)
+                if (x_sol(i) > d_emax) then
+                  d_emax = x_sol(i)
+                  d_wrange = d_range
+                  d_wpos = [x, y, z]
+                  d_wlvl = i
+                  d_wb = b(i)
+                  d_wfrac = b(i)*nstar(i) / adata%totn(x,y,z)
+                endif
+              endif
+
               if (check_NaN) then
                 ! only NaN/Inf are fatal here; zero or negative corrections are
                 ! absorbed by the exponential damping below
@@ -385,20 +497,58 @@ MODULE atom_mod
                 endif
               endif
               
-              ! compute the exponential update factor
-              where (e < edamp)
-                e = exp(max(e, 0.0d0)/edamp - 1d0 + log(edamp))
+              ! Limit how far one iteration may move a population.  Corrections in
+              ! [elo, eup] pass through untouched; outside that range both branches
+              ! join on smoothly (value and slope), and saturate at 0.37*elo below and
+              ! 2*eup above.  The lower branch is also what maps a non-positive
+              ! solution onto a small positive factor, i.e. what keeps populations
+              ! positive.  Without the upper branch a single cell can multiply a level
+              ! by 1e9 in one iteration, and the next formal solution sees that opacity.
+              ng_nclamp = ng_nclamp + count(e < elo .or. e > eup)
+              ng_ntot   = ng_ntot + nk
+              where (e < elo)
+                e = elo * exp(max(e, 0.0d0)/elo - 1d0)
+              elsewhere (e > eup)
+                e = eup * (2d0 - eup/e)
               endwhere
 
+              ! Under-relaxation, applied after the limiter so it acts on a
+              ! strictly positive factor.  e**sor_w scales the correction in
+              ! log-population space; the conservation renormalisation below then
+              ! restores the particle budget that the damped step no longer
+              ! satisfies exactly.  sor_w = 1 leaves e untouched.
+              if (sor_w /= 1d0) then
+                e = e**sor_w
+              endif
+
               ! apply the update
+              bold = b
               b = b * e
 
               ! compute the normalisation scalar
               norm = adata%totn(x,y,z) / sum(b * nstar)
 
+              if (diag_pops) then
+                ! how much of the particle budget the update handed to a single
+                ! level, and by how much conservation then rescales every level
+                if (norm < d_nmin) then
+                  d_nmin = norm
+                  d_npos = [x, y, z]
+                  d_nlvl = maxloc(b*nstar, dim=1)
+                  d_nfrac = maxval(b*nstar) / adata%totn(x,y,z)
+                endif
+              endif
+
               ! enforce strict macroscopic particle conservation
               b = b * norm
-              
+
+              ! Keep every level numerically alive.  A population that ratchets down
+              ! iteration after iteration empties its column of the rate matrix, and
+              ! can never come back, since the update is multiplicative (b = b*e).
+              ! min_pop_frac of the atoms in the cell is far below anything that
+              ! contributes to an opacity or a rate.
+              where (nstar > 0) b = max(b, min_pop_frac*adata%totn(x,y,z)/nstar)
+
               if (check_NaN) then
                 call check_array(e, 'population correction', check_zero=.true., abort=.false., ok=ok)
                 if (.not.ok) then
@@ -415,15 +565,28 @@ MODULE atom_mod
                 endif
               endif
 
-              ! compute the true relative change in the populations
-              e = (e * norm) - 1.0d0
+              ! the true relative change, taken from the populations that were
+              ! actually stored, so that the limiter and the floor above are included
+              where (bold > 0)
+                e = b/bold - 1.0d0
+              elsewhere
+                e = 0.0d0
+              endwhere
 
-              ! keep track of maximum population change
+              ! keep the full per-level record for the convergence report
               lvlerr = merge(e, lvlerr, abs(e) > abs(lvlerr))
-              i = maxloc(abs(lvlerr), dim=1)
 
-              if (abs(lvlerr(i)) > abs(maxerr)) then
-                maxerr = lvlerr(i)
+              ! The convergence decision, on the other hand, weights each level by the
+              ! share of the atoms it actually holds.  The top levels of the last ion
+              ! are radiatively controlled by a near-zero radiation field, so they swing
+              ! by orders of magnitude while holding 1e-10 of the iron or less; on an
+              ! unweighted maximum they own convlim and convmax outright and the run
+              ! never terminates.  Levels above conv_pop_floor keep their full weight,
+              ! so this cannot mask a level that contributes to an opacity or a rate.
+              ework = abs(e) * min(1.0d0, b*nstar/(conv_pop_floor*adata%totn(x,y,z)))
+              i = maxloc(ework, dim=1)
+              if (ework(i) > abs(maxerr)) then
+                maxerr = sign(ework(i), e(i))
                 adata%epos = [x, y, z]
                 adata%elvl = i
               endif
@@ -443,6 +606,31 @@ MODULE atom_mod
       end do
     end do
 
+    if (diag_pops) then
+      if (d_ncell > 0) then
+        !$omp critical (diag_pops_print)
+        print '(A,A3,A,I6,A,I7,A,I4,A,I9,A,ES9.2,A,ES9.2,A,ES9.2,A,ES9.2,A,ES9.2,A,3I4,A,I4)', &
+          'DIAG ', self%id, ' clamp=', d_nfloor, '/', d_ncell*nk, ' cells=', d_nfcell, &
+          ' negoff=', d_nneg, ' bmin=', d_bmin, ' resid=', d_wresid, &
+          ' | emax=', d_emax, ' b=', d_wb, ' n/ntot=', d_wfrac, ' at', d_wpos, ' lvl=', d_wlvl
+        print '(A,A3,A,ES9.2,A,ES9.2,A,3I4,A,I4)', &
+          'DIAGN ', self%id, ' norm_min=', d_nmin, ' top_frac=', d_nfrac, &
+          ' at', d_npos, ' lvl=', d_nlvl
+        ! the worst M-matrix violation and where it lives, in global z
+        if (d_nneg > 0) then
+          print '(A,A3,A,ES9.2,A,I4,A,I4,A,3I4)', &
+            'DIAGG ', self%id, ' worst_negoff/diag=', d_gneg, &
+            ' i=', d_glvl(1), ' j=', d_glvl(2), ' at', &
+            d_gpos + [0, 0, diag_zs-1]
+        endif
+        !$omp end critical (diag_pops_print)
+      endif
+      deallocate (w_save, e_save, x_sol)
+    endif
+    deallocate (bold, ework)
+
+    if (associated(self%ng)) call ng_count_clamped(self%ng, ng_nclamp, ng_ntot)
+
     call trace%end(itimer)
   END SUBROUTINE update_populations
   
@@ -455,9 +643,13 @@ MODULE atom_mod
     real(8) :: totn
     integer :: kr, pos, i, j, x,y,z
     integer, save :: itimer=0, itimer2=0
-    logical :: abort, ok
+    logical :: abort, ok, db_here
     logical, save :: first_time=.true.
     !------------------------------------------------------------------------------------
+    ! resolved once per cell: the transition loop below is the hottest in the
+    ! solver and must not carry an array comparison per transition
+    db_here = diag_db
+    if (db_here) db_here = all([x,y,z] == pcheck)
     totn = self%data%totn(x,y,z)
     b => self%data%b(x,y,z,:)
     nstar => self%data%nstar(x,y,z,:)
@@ -479,6 +671,19 @@ MODULE atom_mod
       j = trans%j
       self%data%w(j,i) = self%data%w(j,i) + rij(kr)
       self%data%w(i,j) = self%data%w(i,j) + rji(kr)
+      ! Detailed balance check: deep down the radiation field is Planckian, so the
+      ! radiative rates alone have to satisfy n_i* R_ij = n_j* R_ji for every
+      ! transition.  Any transition that fails this is out of LTE for a numerical
+      ! reason, not a physical one.
+      if (db_here) then
+        if (rji(kr) /= 0) then
+          print '(A,F8.1,A,I6,A,L2,A,I4,A,I4,A,ES11.4,A,ES11.4,A,ES11.4)', &
+            'DIAGDB T=', comp%temp(x,y,z), ' kr=', kr, ' cont=', kr>self%nline, &
+            ' i=', i, ' j=', j, &
+            ' Rij=', rij(kr), ' Rji=', rji(kr), &
+            ' ratio=', nstar(i)*rij(kr)/(nstar(j)*rji(kr))
+        endif
+      endif
     enddo
 
     ! one can switch off the collisional rates by setting cswitch to 0
@@ -1722,13 +1927,13 @@ MODULE atom_mod
           if (wt <= 0) cycle
           call append_line(trans%ll, llam0 - line%dq(ih), line%nu0, lower_ev, &
             gpref0 + log(wt), line%ga + line%da(ih), line%gw1, line%gw2, line%gq, &
-            line%unsold, line%i, line%j, i, s, line%Aij*wt, wt, dej, line%iso, &
-            loggf + log10(wt), line%gv_in, line%ga_in, line%gq_in)
+            line%unsold, line%vdw_ratio, line%i, line%j, i, s, line%Aij*wt, wt, dej, &
+            line%iso, loggf + log10(wt), line%gv_in, line%ga_in, line%gq_in)
         end do
       else
         call append_line(trans%ll, llam0, line%nu0, lower_ev, gpref0, &
           dble(line%ga), dble(line%gw1), dble(line%gw2), dble(line%gq), line%unsold, &
-          line%i, line%j, i, s, line%Aij, 1.d0, dej, line%iso, &
+          line%vdw_ratio, line%i, line%j, i, s, line%Aij, 1.d0, dej, line%iso, &
           loggf, line%gv_in, line%ga_in, line%gq_in)
       endif
 
@@ -2426,147 +2631,90 @@ MODULE atom_mod
   END FUNCTION gaunt
 
   !===============================================================================
-  SUBROUTINE ng_acceleration (self, ng_iter, emax, epos)
+  ! Ng acceleration driver.  Accumulation is unconditional and cheap (a handful
+  ! of inner products against an LU solve per cell), so the schedule is not what
+  ! decides whether to accelerate -- ng_should_fire is, from the quantities the
+  ! accumulation already produces.
+  !
+  ! ng_step > 0 keeps the fixed schedule: accumulate when mod(iter-ng_start,
+  ! ng_step)==0, apply on the iteration after.  ng_step == 0 selects automatic
+  ! mode, where every iteration accumulates and the gate decides.  ng_step < 0
+  ! disables Ng entirely and this is never reached.
+  !
+  ! In both modes application trails accumulation by one iteration, because a
+  ! patch cannot know when the other patches have finished contributing to the
+  ! Gram matrix.
+  !===============================================================================
+  SUBROUTINE ng_acceleration (self, iter, err, convlim, emax, epos)
     class(atom_type):: self
-    integer, intent(in) :: ng_iter
+    integer, intent(in) :: iter
+    real(8), intent(in) :: err                ! current convergence measure
+    real(8), intent(in) :: convlim            ! its target, for the headroom test
     real(8), intent(out) :: emax
     integer, intent(out) :: epos(4)
-    integer :: i, x, y, z, k, nvec, m(3)
-    real(8), dimension(:), allocatable :: n1, n2, n3, n4, d0, d1, d2, e, w
-    real(8) :: d01, d02, d11, d12, d21, d22, a, b, den, enew
+    logical :: fire, applied, apply_here
+    character(len=15) :: ng_reason
     integer, save :: itimer=0
     ! ----------------------------------------------------------------------------
     call trace%begin ('atom_type%ng_acceleration', itimer=itimer)
     emax = 0
-    if (ng_global) then
-      if (ng_iter==0) then
-        call self%ng_acceleration_accumulate()
-      elseif (ng_iter==1) then
-        ! the first one to get here will convert d into a and b
-        ! and will reset d to zero; the others will reuse a and b
-        !$omp critical (ng_global)
-        call self%ng_acceleration_coeff()
-        !$omp end critical (ng_global)
-        call self%apply_ng_acceleration(emax, epos)
-      endif
-    elseif (ng_iter == 0) then
-      allocate(self%ng_d(0:2,1:2), source=0.d0)
-      allocate(self%ng_a, self%ng_b)
-      call self%ng_acceleration_accumulate()
-      call self%ng_acceleration_coeff()
-      call self%apply_ng_acceleration(emax, epos)
-      deallocate(self%ng_d)
-      deallocate(self%ng_a, self%ng_b)
+    epos = 0
+    if (.not. associated(self%ng)) then
+      call trace%end(itimer)
+      return
     endif
+
+    associate (ng => self%ng, adata => self%data)
+      ! Promote last iteration's partial sums, decide, and read the decision back
+      ! -- all under one lock, so a patch cannot act on a half-updated state.
+      ! Patches advance their own iteration counters, so both the roll and the
+      ! decision are monotone in iter: a straggler still on an earlier iteration
+      ! neither redoes them nor undoes them, and simply does not accelerate.
+      apply_here = .false.
+      !$omp critical (ng_shared)
+      call ng_promote(ng, iter)
+      if (iter > ng%iter_decided) then
+        ng%iter_decided = iter
+        if (ng_step > 0) then
+          fire = mod(iter - ng_start, ng_step) == 1
+          if (fire) fire = ng%s_done > 0d0
+          ng_reason = merge('FIRE     ', 'off-cycle', fire)
+        else
+          fire = ng_should_fire(ng, iter, err, convlim, ng_reason)
+        endif
+        if (fire) then
+          call ng_coefficients(ng)
+          ng%iter_fired = iter
+        endif
+        if (diag_pops) then
+          ! why the gate did what it did: the contraction rate and its
+          ! predecessor (stationarity), the limiter fraction (linearity), and the
+          ! scaled Gram determinant (conditioning)
+          write(stdout,'(A,I4,A,A15,A,F8.4,A,F8.4,A,ES10.3,A,ES10.3,A,ES10.3)') &
+            'DIAGNG iter=', iter, ' verdict=', ng_reason, ' r=', ng%r, &
+            ' r_prev=', ng%r_prev, ' clamp=', &
+            real(ng%nclamp_done,8)/max(real(ng%ntot_done,8), 1d0), &
+            ' cond=', ng_condition(ng), ' err=', err
+          flush(stdout)
+        endif
+      endif
+      apply_here = ng%coeff_valid .and. ng%iter_fired == iter
+      !$omp end critical (ng_shared)
+
+      if (apply_here) then
+        call ng_extrapolate(ng, adata%b, adata%oldb, adata%nstar, adata%totn, &
+                            self%nlevel, emax, epos, applied)
+      endif
+
+      ! Feed this iteration's differences in for the next decision.  Skipped on
+      ! an iteration that extrapolated: b no longer belongs to the same
+      ! geometric sequence as oldb, so the differences would be meaningless.
+      if (ng%iter_fired /= iter .and. allocated(adata%oldb)) then
+        call ng_accumulate(ng, adata%b, adata%oldb, self%nlevel)
+      endif
+    end associate
     call trace%end(itimer)
   END SUBROUTINE ng_acceleration
-
-  !===============================================================================
-  SUBROUTINE ng_acceleration_accumulate (self)
-    class(atom_type):: self
-    integer :: i, x, y, z, k, nvec, m(3)
-    real(8), dimension(:), allocatable :: n1, n2, n3, n4, d0, d1, d2, e
-    real(8) :: w
-    ! ----------------------------------------------------------------------------
-    m = shape(self%data%totn)
-    nvec = self%nlevel * product(m(1:3))
-    allocate(e(nvec))
-    allocate(n1, n2, n3, n4, d0, d1, d2, mold=e)
-    i = 0
-    do z=1, m(3)
-    do y=1, m(2)
-    do x=1, m(1)
-    do k=1, self%nlevel
-      i = i+1
-      ! Extract natural logarithms; explicit weighting is no longer required
-      n1(i) = log(self%data%oldb(x,y,z,k,1))
-      n2(i) = log(self%data%oldb(x,y,z,k,2))
-      n3(i) = log(self%data%oldb(x,y,z,k,3))
-      n4(i) = log(self%data%b(x,y,z,k))
-    end do
-    end do
-    end do
-    end do
-
-    d0 = n4 - n3
-    d1 = n3 - n2
-    d2 = n2 - n1
-
-    d1 = d0 - d1
-    d2 = d0 - d2
-
-    associate(d => self%ng_d)
-      d(0,1) = d(0,1) + dot_product(d0, d1)
-      d(0,2) = d(0,2) + dot_product(d0, d2)
-      d(1,1) = d(1,1) + dot_product(d1, d1)
-      d(1,2) = d(1,2) + dot_product(d1, d2)
-      d(2,1) = d(2,1) + dot_product(d2, d1)
-      d(2,2) = d(2,2) + dot_product(d2, d2)
-    end associate
-  END SUBROUTINE ng_acceleration_accumulate
-
-  !===============================================================================
-  SUBROUTINE ng_acceleration_coeff (self)
-    class(atom_type):: self
-    real(8) :: den
-    ! ----------------------------------------------------------------------------
-    associate(d => self%ng_d)
-      if (any(d /= 0.d0)) then
-        den = d(1,1)*d(2,2) - d(1,2)*d(2,1)
-        if (abs(den) > 0) then
-          self%ng_a = (d(0,1)*d(2,2) - d(0,2)*d(2,1)) / den
-          self%ng_b = (d(0,2)*d(1,1) - d(0,1)*d(1,2)) / den
-        else
-          self%ng_a = 0
-          self%ng_b = 0
-        endif
-        d = 0 ! reset for next ng update
-      endif
-    end associate
-  END SUBROUTINE ng_acceleration_coeff
-
-  !===============================================================================
-  SUBROUTINE apply_ng_acceleration (self, emax, epos)
-    class(atom_type):: self
-    integer :: i, x, y, z, k, epos(4), m(3)
-    real(8) :: n1, n2, n3, n4, e
-    real(8) :: emax, enew
-    ! ----------------------------------------------------------------------------
-    m = shape(self%data%totn)
-    i = 0
-    associate(a => self%ng_a, b => self%ng_b)
-      do z=1, m(3)
-      do y=1, m(2)
-      do x=1, m(1)
-        do k=1, self%nlevel
-          i = i+1
-          n1 = log(self%data%oldb(x,y,z,k,1))
-          n2 = log(self%data%oldb(x,y,z,k,2))
-          n3 = log(self%data%oldb(x,y,z,k,3))
-          n4 = log(self%data%b(x,y,z,k))
-          
-          ! Extrapolate in logarithmic space
-          e = (1.d0 - a - b)*n4 + a*n3 + b*n2
-          
-          ! Exponentiate to recover strictly positive departure coefficients
-          self%data%b(x,y,z,k) = exp(e)
-          
-          ! Track relative error
-          enew = exp(e - n4) - 1.d0
-
-          if (abs(enew) > abs(emax)) then
-            emax = enew
-            epos = [k, x, y, z]
-          endif
-        end do
-        ! Enforce strict macroscopic particle conservation after exponentiation
-        self%data%b(x,y,z,:) = self%data%b(x,y,z,:) * &
-            (self%data%totn(x,y,z) / sum(self%data%b(x,y,z,:) * self%data%nstar(x,y,z,:)))
-      end do
-      end do
-      end do
-    end associate
-  END SUBROUTINE apply_ng_acceleration
 
 END MODULE atom_mod
   

@@ -12,7 +12,7 @@ MODULE nlte_patch_mod
     red_cut, blue_cut, logf_cut, atom_data_t, atom_trans_t, &
     nq_fac, nq_min, nq_max, disable_bf, disable_bb, level_partf, &
     fmin, cbbesc, cbfesc, cbbhsc, cbfhsc, colscale, ch0_hmip, &
-    ng_step, ng_start, ng_global, save_rate_matrix, legacy_freql
+    ng_step, ng_start, ng_global, save_rate_matrix, legacy_freql, sor_w
   USE trans_mod, only: line_type, cont_type, transition_type
   USE const_mod, only: CC
   USE ion_mod, only: ion_type, particle_type, debye_shield, massive_type
@@ -45,10 +45,9 @@ MODULE nlte_patch_mod
     class(atomic_spectrum_type), pointer :: bb_sp=>null()
     real(8) :: maxerr=0, global=0, prev_global=0, prev_prev_global=0
     real(8), dimension(:), allocatable :: lvlerr
-    real(8) :: local, sor_w
+    real(8) :: local
     integer :: natom=0
     logical :: update_skipped=.false., atom_allocated=.false., molec
-    logical :: overrelax=.false.
   contains
     procedure :: pre_init => nlte_patch_pre_init
     procedure :: execute
@@ -244,13 +243,11 @@ contains
             call os%copy_file(trim(atom_file), trim(io%run_dir)//'atoms/'//'atom.'//trim(atom%id))
           endif
 
-          if (ng_global) then
-            ! Here we allocate the global ng_coefficient pointers
-            ! on copying of this atom, the pointers wil still point to the same arrays,
-            ! so they will be shared among all atoms of the same species.
-            allocate(atom%ng_a)
-            allocate(atom%ng_b)
-            allocate(atom%ng_d(0:2,1:2), source=0.d0)
+          if (ng_global .and. ng_step >= 0) then
+            ! One shared Ng state per species: copying the atom copies the
+            ! pointer, not the target, so every patch accumulates into this one
+            ! object and they all extrapolate with the same coefficients.
+            allocate(atom%ng)
           endif
         end associate
       end do
@@ -416,7 +413,7 @@ contains
     class(molec_type), pointer :: molec
     real(4), dimension(:,:,:), allocatable :: cij, cji
     real(8), dimension(:,:), allocatable :: w, c
-    integer :: i, j, k, p(3), m(3), ipos, ng_iter, ng_epos(4)
+    integer :: i, j, k, p(3), m(3), ipos, ng_epos(4)
     integer, save:: count=0
     real(8) :: global, ng_emax
     logical :: do_ng, locally_converged, found
@@ -427,10 +424,10 @@ contains
     self%maxerr = 0
     locally_converged = premature_finish
     m = self%n
-    do_ng = ng_step > 0
-    if (do_ng) then
-      ng_iter = mod(self%iter-ng_start, ng_step)
-    endif
+    ! ng_step < 0 disables Ng; 0 selects the automatic trigger; > 0 keeps the
+    ! fixed ng_start/ng_step schedule.  The scheduling arithmetic now lives in
+    ! ng_acceleration, which needs the raw iteration number either way.
+    do_ng = ng_step >= 0
 
     if (save_rates>0) then
       allocate(cij(m(1),m(2),m(3)), source=0.0)
@@ -451,6 +448,7 @@ contains
         endif
 
         call atom%normalize_profiles(self%iter)
+        diag_zs = self%zs
         call atom%update_populations(comp, self%local, self%pcheck, cij, cji, w, c)
 
         if (save_rates==k) then
@@ -480,7 +478,12 @@ contains
         endif
 
         if (do_ng .and. .not. adata%converged) then
-          call atom%ng_acceleration(ng_iter, ng_emax, ng_epos)
+          ! self%global, not the patch's own maxerr: the extrapolation is one
+          ! global step, so the headroom test that gates it has to see the run's
+          ! convergence measure rather than whichever patch happened to decide.
+          ! It lags by an iteration, which is immaterial for a coarse "is there
+          ! anything left to gain" test.
+          call atom%ng_acceleration(self%iter, self%global, convlim, ng_emax, ng_epos)
           if (ng_emax /= 0) then
             ng_epos = ng_epos + [0,0,0,self%zs-1]
             print '(A, ES14.7, 4(I6))', 'NG acceleration ', ng_emax, ng_epos
@@ -653,7 +656,7 @@ contains
     character(len=256) :: run_dir, save_folder
     character(len=6), allocatable :: keys(:)
     real(4), dimension(:,:,:,:,:,:), allocatable, target :: mem
-    integer :: i, j, k, nprecomp, nmu, n(4), x, y, z, l, lunit
+    integer :: i, j, k, nprecomp, nmu, n(4), x, y, z, l, lunit, nzero
     integer :: itimer=0
     logical :: found
     !-----------------------------------------------------------------------------
@@ -729,15 +732,34 @@ contains
         if (.not. allocated(adata%b)) then
           call os%allocate(adata%b, shape(adata%nstar), label='b')
         endif
+        !-----------------------------------------------------------------------
+        ! The departures were written as real(4), so any level that sat below
+        ! tiny(1.0) came back as an exact zero.  Zero is a trap here: the update
+        ! is multiplicative (b = b*e), so such a level can never be repopulated,
+        ! and its column of the rate matrix is identically zero.  Restore it to
+        ! the smallest value the file could have represented; the population
+        ! floor in update_populations then lifts it to something sensible.
+        !-----------------------------------------------------------------------
+        nzero = 0
         do l=1, n(4)
           do z=1, n(3)
             do y=1, n(2)
               do x=1, n(1)
-                adata%b(x,y,z,l) = dep%mem(x,y,z,l)
+                if (dep%mem(x,y,z,l) > 0.0) then
+                  adata%b(x,y,z,l) = dep%mem(x,y,z,l)
+                else
+                  adata%b(x,y,z,l) = tiny(1.0)
+                  nzero = nzero + 1
+                endif
               end do
             end do
           end do
         end do
+        if (nzero > 0) then
+          write(stdout,'(A,I0,A,A,A)') ' WARNING: ', nzero, &
+            ' underflowed departure coefficients read for ', trim(atom%id), &
+            ' -- the run they came from had not converged'
+        endif
       else
         allocate(dep%ev, source=atom%ev_keys())
         allocate(dep%mem(n(1), n(2), n(3), n(4)))
@@ -926,8 +948,15 @@ contains
       write(stdout,'(A, ES12.4, A10, ES12.4, A, I4, A, "[", 3I4, "] ", A)') &
         '  local =', self%local,  ', global =', self%global, &
         ', lvl =',elvl, ', pos=', epos, self%atoms(eatom)%id
-      if (self%overrelax) then
-        write(stdout,'(A, 3(ES12.4))') '  omega =', self%sor_w, self%prev_prev_global, self%prev_global
+      ! The damping weight in force, next to the two error ratios it has to
+      ! control: r1 = global/prev_global is this step's amplification, r2 the
+      ! previous one.  A mode that alternates sign shows up as r1 < 0.
+      if (overrelax) then
+        write(stdout,'(A, F8.4, A, ES12.4, A, ES12.4)') &
+          '  omega =', sor_w, ', ratio =', &
+          self%global / merge(self%prev_global, 1d0, self%prev_global /= 0d0), &
+          ', prev ratio =', &
+          self%prev_global / merge(self%prev_prev_global, 1d0, self%prev_prev_global /= 0d0)
       endif
       flux_pos = global_flux_pos%update(+0)
       if (flux_pos >= 0) then

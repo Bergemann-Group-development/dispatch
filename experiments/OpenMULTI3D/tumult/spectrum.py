@@ -167,7 +167,7 @@ class Spectrum:
         """
         return self.df._repr_html_()
 
-    def convert_units(self, other=None, xunit=None, yunit=None, inplace=False):
+    def convert_units(self, other=None, xunit=None, yunit=None, inplace=False, equivalencies=None):
         """
         Convert units of xdata and ydata.
 
@@ -192,11 +192,11 @@ class Spectrum:
             yunit = yunit or other.yunit
 
         if xunit is not None:
-            new_xdata = self.xdata.to(xunit, equivalencies=u.spectral())
+            new_xdata = self.xdata.to(xunit, equivalencies=equivalencies or u.spectral())
 
         if yunit is not None:
             new_ydata = self.ydata.to(
-                yunit, equivalencies=u.spectral_density(new_xdata)
+                yunit, equivalencies=equivalencies or u.spectral_density(new_xdata)
             )
 
         if inplace:
@@ -651,6 +651,23 @@ class Spectrum:
         # After conversion, xdata is velocity relative to rest_value.
         # So the "reference" in the new frame is effectively 0 velocity.
         return Spectrum(new_xdata, self.ydata, xref=0 * unit)
+
+    def to_bisector(self, **kwargs):
+        """
+        Calculate the bisector of the spectrum.
+
+        Parameters:
+        -----------
+        **kwargs : dict
+            Keyword arguments to pass to :func:`tumult.utils.get_bisector`.
+
+        Returns:
+        --------
+        Spectrum
+            A new Spectrum instance representing the bisector.
+        """
+        x_bis, y_bis = get_bisector(*self, **kwargs)
+        return Spectrum(x_bis, y_bis, xref=self.xref, yunit=self.yunit)
 
     def fit_line_profile(self, **kwargs):
         """

@@ -23,6 +23,18 @@ import multiprocessing
 import os
 from pathlib import Path
 
+# Set before libhop.so (built -fopenmp) is dlopen'd, so it has to sit at import
+# time rather than inside a worker.  A cluster environment that exports
+# OMP_PLACES without OMP_PROC_BIND leaves the binding policy implementation-
+# defined, and libgomp resolves that as "bind": with OMP_PLACES=threads a place
+# is one logical CPU, so the initial thread is pinned to it and the process is
+# left with a one-CPU affinity mask.  That mask is inherited across fork/exec,
+# so every spawned opacity worker -- and each one's numpy import -- would land
+# on the same core.  Un-pinning is not possible from the child: OMP_PROC_BIND
+# stops libgomp from binding, it does not widen a mask that was inherited
+# already narrowed.
+os.environ.setdefault('OMP_PROC_BIND', 'false')
+
 import cffi
 import numpy as np
 
@@ -464,12 +476,13 @@ class HopEOS:
         volume -- divide by ``hop.rho[..., None]`` for the per-gram opacity a
         dispatch 'opa'/'scat' table holds.
 
-        chi is the total: continuum (with Thomson + Rayleigh scattering folded in,
-        as HOP's scattering_absorption does), the sampled metal-line background
-        with ``include_absmet``, and the LTE line list with ``linelist``.  scat is
-        the scattering part of it: Thomson + Rayleigh, plus -- with
-        ``line_scattering`` -- the (1-eps)-weighted absmet and line-list opacity,
-        the van Regemorter split composition_type%opacity applies.
+        chi is the total: continuum (Thomson + Rayleigh folded in), the sampled
+        metal-line background with ``include_absmet``, and the LTE line list with
+        ``linelist``.  scat is the scattering part *of* it: Thomson + Rayleigh,
+        plus -- with ``line_scattering`` -- the (1-eps)-weighted absmet and
+        line-list opacity, the van Regemorter split composition_type%opacity
+        applies.  scat <= chi always holds; the two are accumulated separately
+        inside HOP and only summed at the end.
 
         linelist: a file, a list of files or a folder (the &linelist_params
         linelist_file / linelist_folder), with ``dlam`` [AA] the line-wing search

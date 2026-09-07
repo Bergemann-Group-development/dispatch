@@ -29,7 +29,7 @@ contains
     allocate(work_up(self%fs:self%fe,3))
     allocate(work_min(self%fs:self%fe,3))
     allocate(row_red(self%fs:self%fe, 3, self%nx, self%ny))
-    get_rates = any(self%get_rates)
+    get_rates = self%compute_psi
 
     zs = merge(1, self%nz, self%dir > 0)
     ze = merge(self%nz, 1, self%dir > 0)
@@ -242,7 +242,7 @@ contains
             Inu = max(-real(maser_Inu_max), min(real(maser_Inu_max), Inu))
 
             self%work(f,x,y,z,3) = Inu
-            if (any(self%get_rates)) then
+            if (self%compute_psi) then
               if (dt > 0 .and. xx > 0) then
                 self%Psi(f,x,y,z) = Psi / xx
               else
@@ -320,7 +320,7 @@ contains
             Inu = max(-real(maser_Inu_max), min(real(maser_Inu_max), Inu))
 
             self%work(f,x,y,z,3) = Inu
-            if (any(self%get_rates)) then
+            if (self%compute_psi) then
               if (dt > 0 .and. xx > 0) then
                 self%Psi(f,x,y,z) = Psi / xx
               else
@@ -389,7 +389,7 @@ contains
     rdsup = 1./ dsup
     dsup1 = 0.5*dsup
     dsup2 = 1./12.*dsup*dsup     ! Euler-Maclaurin correction to the trapezoid
-    get_rates = any(self%get_rates)
+    get_rates = self%compute_psi
     dir = self%dir
     nx = self%nx
     ny = self%ny
@@ -538,8 +538,8 @@ contains
     real(4) :: Inu, ppsi, aTu, aTc, rTup, betup
     real(4) :: peu, pec, pedn, rpeu, rpec, rpedn, gpu, gpc
     real(4), parameter :: dtmin=1e-20
-    real(4), dimension(:,:,:,:,:), contiguous, pointer :: w, bk
-    real(4), dimension(:,:,:,:), contiguous, pointer :: psi
+    real(4), dimension(:,:,:,:,:), contiguous, pointer :: w
+    real(4), dimension(:,:,:,:), contiguous, pointer :: psi, bk
     real(4), dimension(:), allocatable :: hknu
     integer :: zs, ze, zup, zdn, zff, zu, z1, z2, z3, dir, nx, ny, fs, fe
     logical :: get_rates, use_upstream, extrap_bottom
@@ -559,7 +559,7 @@ contains
     dsup2 = 1./12.*dsup*dsup     ! Euler-Maclaurin correction to the trapezoid
     ! converts the stored d/dz (per code length unit) to d/ds along propagation
     gfac = real(self%dir * abs(vec(3)) / scaling%l, 4)
-    get_rates = any(self%get_rates)
+    get_rates = self%compute_psi
     dir = self%dir
     nx = self%nx
     ny = self%ny
@@ -568,7 +568,7 @@ contains
     zs = merge(1, self%nz, dir > 0)
     ze = merge(self%nz, 1, dir > 0)
     w => self%work
-    bk => self%back
+    bk => self%beta
     psi => null()
     if (get_rates) psi => self%Psi
     allocate(hknu(fs:fe))
@@ -621,7 +621,7 @@ contains
             betup = max(exp(-hknu(f)*rTup), tiny(1.0))
             call herm_step (w(f,x,y,zup,1), w(f,x,y,z,1), w(f,x,y,zdn,1), &
                             w(f,x,y,zup,2), w(f,x,y,z,2), w(f,x,y,zdn,2), &
-                            betup, bk(f,x,y,z,3), bk(f,x,y,zdn,3), hknu(f), &
+                            betup, bk(f,x,y,z), bk(f,x,y,zdn), hknu(f), &
                             w(f,x,y,zup,3), peu, rpeu, gpu, pec, rpec, gpc, rpedn, &
                             aTu, aTc, .true., Inu, ppsi)
             w(f,x,y,z,3) = Inu
@@ -638,7 +638,7 @@ contains
           do f=fs, fe
             call herm_first (w(f,x,y,zup,1), w(f,x,y,z,1), w(f,x,y,zdn,1), &
                              w(f,x,y,zup,2), w(f,x,y,z,2), w(f,x,y,zdn,2), &
-                             bk(f,x,y,z,3), bk(f,x,y,zdn,3), hknu(f), &
+                             bk(f,x,y,z), bk(f,x,y,zdn), hknu(f), &
                              w(f,x,y,zup,3), pec, rpec, pedn, rpedn, gpc, &
                              aTc, Inu, ppsi)
             w(f,x,y,z,3) = Inu
@@ -668,7 +668,7 @@ contains
           do f=fs, fe
             call herm_step (w(f,x,y,zup,1), w(f,x,y,z,1), w(f,x,y,zdn,1), &
                             w(f,x,y,zup,2), w(f,x,y,z,2), w(f,x,y,zdn,2), &
-                            bk(f,x,y,zup,3), bk(f,x,y,z,3), bk(f,x,y,zdn,3), hknu(f), &
+                            bk(f,x,y,zup), bk(f,x,y,z), bk(f,x,y,zdn), hknu(f), &
                             w(f,x,y,zup,3), peu, rpeu, gpu, pec, rpec, gpc, rpedn, &
                             aTu, aTc, .true., Inu, ppsi)
             w(f,x,y,z,3) = Inu
@@ -701,7 +701,7 @@ contains
           do f=fs, fe
             call herm_step (w(f,x,y,zup,1), w(f,x,y,z,1), w(f,x,y,zff,1), &
                             w(f,x,y,zup,2), w(f,x,y,z,2), w(f,x,y,zff,2), &
-                            bk(f,x,y,zup,3), bk(f,x,y,z,3), bk(f,x,y,zff,3), hknu(f), &
+                            bk(f,x,y,zup), bk(f,x,y,z), bk(f,x,y,zff), hknu(f), &
                             w(f,x,y,zup,3), peu, rpeu, gpu, pec, rpec, gpc, rpedn, &
                             aTu, aTc, .false., Inu, ppsi)
             w(f,x,y,z,3) = Inu
@@ -730,7 +730,7 @@ contains
               betup = max(exp(-hknu(f)*rTup), tiny(1.0))
               call herm_step (w(f,x,y,zup,1), w(f,x,y,z,1), w(f,x,y,zff,1), &
                               w(f,x,y,zup,2), w(f,x,y,z,2), w(f,x,y,zff,2), &
-                              bk(f,x,y,zup,3), bk(f,x,y,z,3), betup, hknu(f), &
+                              bk(f,x,y,zup), bk(f,x,y,z), betup, hknu(f), &
                               w(f,x,y,zup,3), peu, rpeu, gpu, pec, rpec, gpc, rpedn, &
                               aTu, aTc, .false., Inu, ppsi)
               w(f,x,y,z,3) = Inu
@@ -740,7 +740,7 @@ contains
             do f=fs, fe    ! zeroed top ghost: beta/Pe from the target plane (finite)
               call herm_step (w(f,x,y,zup,1), w(f,x,y,z,1), w(f,x,y,zff,1), &
                               w(f,x,y,zup,2), w(f,x,y,z,2), w(f,x,y,zff,2), &
-                              bk(f,x,y,zup,3), bk(f,x,y,z,3), bk(f,x,y,z,3), hknu(f), &
+                              bk(f,x,y,zup), bk(f,x,y,z), bk(f,x,y,z), hknu(f), &
                               w(f,x,y,zup,3), peu, rpeu, gpu, pec, rpec, gpc, rpec, &
                               aTu, aTc, .false., Inu, ppsi)
               w(f,x,y,z,3) = Inu
@@ -1040,7 +1040,7 @@ contains
     dsup2 = 1./12.*dsup*dsup     ! Euler-Maclaurin correction to the trapezoid
     ! converts the stored d/dz (per code length unit) to d/ds along propagation
     gfac = real(self%dir * abs(vec(3)) / scaling%l, 4)
-    get_rates = any(self%get_rates)
+    get_rates = self%compute_psi
     dir = self%dir
     nx = self%nx
     ny = self%ny
@@ -1436,7 +1436,7 @@ contains
     allocate(plane_r(self%fs:self%fe, self%nx, self%ny, 4:5))
     allocate(hknu(self%fs:self%fe))
     hknu = real(h_k * self%nu(self%fs:self%fe), 4)
-    get_rates = any(self%get_rates)
+    get_rates = self%compute_psi
 
     zs = merge(1, self%nz, self%dir > 0)
     ze = merge(self%nz, 1, self%dir > 0)
@@ -1503,7 +1503,7 @@ contains
           do xup = 1, self%nx
             rpe = 1.0 / comp%pe4(xup,yup,zup)
             do f = self%fs, self%fe
-              bet = self%back(f,xup,yup,zup,3)
+              bet = self%beta(f,xup,yup,zup)
               plane_r(f,xup,yup,4) = self%work(f,xup,yup,zup,1) * rpe               ! chi/Pe
               plane_r(f,xup,yup,5) = self%work(f,xup,yup,zup,2) * (1.0 - bet)/bet   ! Snu/Bnu
             end do
@@ -1587,7 +1587,7 @@ contains
               Inuup = work_up(f,3)
               rxpup = work_up(f,4)      ! kernel-interpolated upwind chi/Pe
               rhou  = work_up(f,5)      ! kernel-interpolated upwind Snu/Bnu
-              betc  = self%back(f,x,y,z,3)
+              betc  = self%beta(f,x,y,z)
 
               ! target-end dchi/ds by the product rule chi = (chi/Pe)*Pe with
               ! chi/Pe linear along the ray (one-sided ratio difference), then
