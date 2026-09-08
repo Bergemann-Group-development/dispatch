@@ -16,7 +16,7 @@ import html
 from bokeh.models import TextInput
 
 from canvas import DASHES, PALETTE
-from controls import Field, Form
+from controls import Field, Form, num_input
 from htmlbridge import html_bridge
 
 # convolution inputs (km/s) passed straight to Spectrum.crop; vshift may be < 0.
@@ -44,8 +44,8 @@ def swatch_html(active=None):
 
 
 def _num(key, value, step=0.1):
-    return (f'<input type="number" class="field-input" data-form="edit" '
-            f'data-field="{key}" value="{value:g}" step="{step}">')
+    return num_input(f'class="field-input" data-form="edit" data-field="{key}"',
+                     f"{value:g}", step=step)
 
 
 def _switch(key, on):

@@ -17,6 +17,7 @@ from bokeh.models import TextInput
 
 import store
 import synth
+from controls import num_input
 from htmlbridge import html_bridge, parse_action
 
 # stellar axes (label, step), shared with the Synthesize tab; the post-processing params
@@ -35,8 +36,8 @@ FIT_DEFAULTS = {**{k: d for k, _, _, d in synth.STELLAR_PARAMS},
 
 
 def _num(key, value, step):
-    return (f'<input type="number" class="field-input" data-form="synthfit" '
-            f'data-field="{key}" value="{value:g}" step="{step}">')
+    return num_input(f'class="field-input" data-form="synthfit" data-field="{key}"',
+                     f"{value:g}", step=step)
 
 
 def _switch(key, on, title="Fit this parameter"):

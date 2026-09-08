@@ -18,6 +18,7 @@ from tumult.profile import profile_names
 from tumult.utils import fit_line_profile
 
 import abundance as ab
+from controls import num_input
 from rangeselect import RangeSelect
 from tool import Tool
 from units import to_range
@@ -160,11 +161,11 @@ class EquivalentWidth(Tool, RangeSelect):
             f'<div class="field-group"><label>Method</label>'
             f'<select class="field-input ew-method-select">{opts}</select></div>'
             f'<div class="field-group"><label>SNR</label>'
-            f'<input type="number" class="field-input ew-snr-input" min="0" '
-            f'placeholder="—" value="{snr}"></div>'
+            + num_input('class="field-input ew-snr-input"', snr, min=0, placeholder="—")
+            + '</div>'
             f'<div class="field-group"><label>Continuum uncertainty [%]</label>'
-            f'<input type="number" class="field-input ew-cont-input" min="0" step="0.1" '
-            f'value="{cont}"></div>'
+            + num_input('class="field-input ew-cont-input"', cont, min=0, step=0.1)
+            + '</div>'
             f'<div class="field-group"><label>Equivalent width</label>'
             f'<div class="field-static ew-value">{ew}</div></div>'
             f'<div class="field-group"><label>Reduced EW (log W/λ)</label>'

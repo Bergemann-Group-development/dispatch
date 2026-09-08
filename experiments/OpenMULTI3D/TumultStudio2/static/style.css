@@ -296,7 +296,7 @@ body.resizing * { pointer-events: none !important; }
 /* a fit row: label, number input, and an inline "fit" switch */
 .field-group.fit-row { flex-direction: row; align-items: center; gap: 6px; }
 .fit-row label:not(.switch) { flex: 1; min-width: 0; }
-.fit-row .field-input[type="number"] { width: 88px; flex: 0 0 auto; }
+.fit-row num-input.field-input { width: 88px; flex: 0 0 auto; }
 .fit-row .fit-switch { flex: 0 0 auto; }
 .fit-abund-del {
   flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
@@ -612,6 +612,46 @@ body.resizing * { pointer-events: none !important; }
 /* only lay the dialog out when actually open; otherwise the UA's
    dialog:not([open]){display:none} must win so it stays hidden and closeable */
 .modal[open] { display: flex; flex-direction: column; }
+/* <num-input> (controls.num_input): the host is the bordered box and keeps every
+   .field-input layout rule; the real <input> sits inside it, borderless, with the
+   native spin buttons suppressed and our own stacked pair pinned to the right edge
+   (so the field's width is unchanged and every browser renders the same control). */
+num-input.field-input {
+  display: inline-flex; align-items: stretch; padding: 0 0 0 5px; overflow: hidden;
+}
+num-input > input {
+  flex: 1; min-width: 0; padding: 3px 0;
+  background: transparent; border: none; outline: none;
+  color: inherit; font: inherit;
+  -moz-appearance: textfield;  /* Firefox: no native spinner */
+}
+num-input > input::-webkit-outer-spin-button,
+num-input > input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+num-input.field-input:focus-within { border-color: var(--accent); }
+num-input.field-input:has(> input:required:invalid) { border-color: #c0392b; }
+num-input[disabled] { opacity: 0.45; cursor: not-allowed; }
+.num-spin {
+  flex: 0 0 auto; display: flex; flex-direction: column;
+  width: 14px; border-left: 1px solid var(--border);
+}
+.num-spin button {
+  flex: 1 1 0; min-height: 0; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface); border: none; color: var(--text-muted);
+  cursor: pointer;
+}
+/* arrows drawn with borders rather than ▴/▾ glyphs, which fall back to different
+   font faces (and so different sizes) from machine to machine */
+.num-spin button::before {
+  content: ""; width: 0; height: 0;
+  border-left: 3px solid transparent; border-right: 3px solid transparent;
+}
+.num-spin button[data-step="1"]::before { border-bottom: 4px solid currentColor; }
+.num-spin button[data-step="-1"]::before { border-top: 4px solid currentColor; }
+.num-spin button + button { border-top: 1px solid var(--border); }
+.num-spin button:hover { background: var(--border); color: var(--accent); }
+num-input[disabled] .num-spin button { cursor: not-allowed; }
+
 .modal::backdrop { background: rgba(0,0,0,0.5); }
 
 /* path display + browse button, and an inline (non-nested) file picker in a modal */

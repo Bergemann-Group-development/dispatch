@@ -32,7 +32,7 @@ from bokeh.layouts import column  # noqa: E402
 from spectrum import Spectrum, load_spectrum, load_file, is_run, load_run  # noqa: E402
 from canvas import SpectrumCanvas, DASH_CSS, LINE  # noqa: E402
 from context import AppContext  # noqa: E402
-from controls import Field, Form, FORM_SCRIPT  # noqa: E402
+from controls import Field, Form, FORM_SCRIPT, NUM_INPUT_SCRIPT  # noqa: E402
 from inspector import Inspector, swatch_html  # noqa: E402
 from ew import EquivalentWidth  # noqa: E402
 from filtertool import FilterTool  # noqa: E402
@@ -991,7 +991,7 @@ def build():
         sparam_show_file=sparam_setup.show_file(),
         sparam_atoms_ro_html=sparam_setup.atoms_ro_html(),
         sparam_file_results_name=sparam_setup.atmos_picker.results_name,
-        form_script=FORM_SCRIPT,
+        form_script=FORM_SCRIPT + NUM_INPUT_SCRIPT,
         results_name=picker.results_name,
     )
 

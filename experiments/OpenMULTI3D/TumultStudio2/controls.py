@@ -31,6 +31,33 @@ from bokeh.models import TextInput
 from htmlbridge import html_bridge
 
 
+def num_input(attrs, value="", min=None, max=None, step=None, placeholder=None):
+    """Render a numeric control as the ``<num-input>`` custom element.
+
+    Browsers style the native ``type="number"`` spin buttons differently (and Firefox
+    hides them until hover), so every numeric field on the page goes through this
+    element instead: it keeps a real ``<input type="number">`` in the light DOM (so
+    ``.field-input`` CSS and event delegation work unchanged) but suppresses the
+    native spinner and renders its own stacked +/- buttons inside the right edge.
+
+    ``attrs`` is a raw attribute string (class, data-form/data-field, disabled, …);
+    the element copies value/min/max/step/placeholder/required/disabled onto the inner
+    input and proxies ``.value``, so callers read it exactly like a plain input.
+    Omit ``step`` to keep the browser default of 1; pass ``"any"`` for free floats.
+    """
+    extra = ""
+    if min is not None:
+        extra += f' min="{min}"'
+    if max is not None:
+        extra += f' max="{max}"'
+    if step is not None:
+        extra += f' step="{step}"'
+    if placeholder is not None:
+        extra += f' placeholder="{html.escape(str(placeholder))}"'
+    return (f'<num-input {attrs} value="{html.escape(str(value))}"{extra}>'
+            f'</num-input>')
+
+
 class Field:
     """One labeled control. ``kind`` is ``"number"``, ``"select"``, ``"text"`` or
     ``"checkbox"``."""
@@ -104,15 +131,9 @@ class Field:
             control = (f'<input type="text" {attrs} '
                        f'value="{html.escape(self._display())}"{ph}>')
         else:  # number
-            extra = ""
-            if self.min is not None:
-                extra += f' min="{self.min}"'
-            if self.max is not None:
-                extra += f' max="{self.max}"'
             # step="any" keeps free-form floats (the default step=1 would reject them)
-            extra += f' step="{self.step if self.step is not None else "any"}"'
-            control = (f'<input type="number" {attrs} '
-                       f'value="{html.escape(self._display())}"{extra}>')
+            control = num_input(attrs, self._display(), min=self.min, max=self.max,
+                                step=self.step if self.step is not None else "any")
         group_cls = ("field-group" + (" field-inline" if self.inline else "")
                      + (" field-warn" if self.warn else ""))
         hint = '<div class="field-warn-hint">File not found</div>' if self.warn else ""
@@ -183,4 +204,62 @@ document.addEventListener('change', function (ev) {
   var val = el.dataset.checkbox ? (el.checked ? 'true' : 'false') : el.value;
   if (m) m.setv({ value: el.dataset.field + '=' + val + ' ' + Date.now() });
 });
+"""
+
+
+# The <num-input> custom element (see `num_input`). Emitted once per page next to
+# FORM_SCRIPT; re-rendered html_bridge markup upgrades itself, so no observer.
+NUM_INPUT_SCRIPT = r"""
+class NumInput extends HTMLElement {
+  connectedCallback() {
+    if (this._input) return;                      // already upgraded
+    const inp = document.createElement('input');
+    inp.type = 'number';
+    ['value', 'min', 'max', 'step', 'placeholder'].forEach(a => {
+      if (this.hasAttribute(a)) inp.setAttribute(a, this.getAttribute(a));
+    });
+    inp.required = this.hasAttribute('required');
+    inp.disabled = this.hasAttribute('disabled');
+    this._input = inp;
+    this.appendChild(inp);
+
+    const spin = document.createElement('span');
+    spin.className = 'num-spin';
+    // the arrows are CSS-drawn triangles, not glyphs: ▴/▾ fall back to different
+    // faces (and so different optical sizes) depending on the installed fonts
+    spin.innerHTML =
+        '<button type="button" tabindex="-1" data-step="1" aria-label="Increase"></button>'
+      + '<button type="button" tabindex="-1" data-step="-1" aria-label="Decrease"></button>';
+    this.appendChild(spin);
+    spin.addEventListener('click', ev => {
+      const b = ev.target.closest('button');
+      if (b) this.step(Number(b.dataset.step));
+    });
+  }
+
+  // Stepped by hand rather than via input.stepUp(): that throws on step="any",
+  // which is the default for every free-float field.
+  step(dir) {
+    const inp = this._input;
+    if (!inp || inp.disabled) return;
+    const raw = inp.getAttribute('step');
+    const s = (!raw || raw === 'any') ? 1 : (parseFloat(raw) || 1);
+    let v = parseFloat(inp.value);
+    if (!isFinite(v)) v = 0;
+    v = parseFloat((v + dir * s).toPrecision(12));   // drop binary-float noise
+    const mn = parseFloat(inp.getAttribute('min'));
+    const mx = parseFloat(inp.getAttribute('max'));
+    if (isFinite(mn)) v = Math.max(v, mn);
+    if (isFinite(mx)) v = Math.min(v, mx);
+    inp.value = v;
+    inp.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  // proxy the bits callers touch, so `el.value` works as on a plain input
+  get value() { return this._input ? this._input.value : (this.getAttribute('value') || ''); }
+  set value(v) { this.setAttribute('value', v); if (this._input) this._input.value = v; }
+  get valueAsNumber() { return this._input ? this._input.valueAsNumber : NaN; }
+  focus(opts) { if (this._input) this._input.focus(opts); }
+}
+customElements.define('num-input', NumInput);
 """
