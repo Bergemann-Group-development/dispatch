@@ -309,13 +309,19 @@ input:focus, select:focus, textarea:focus {
 ```css
 .switch { position: relative; display: inline-block; width: 32px; height: 18px; cursor: pointer; }
 .switch input { position: absolute; opacity: 0; width: 0; height: 0; }
-.switch-track { position: absolute; inset: 0; background: var(--border);
+/* the off track is a .field-input: same background and border, so a switch reads as
+   part of the same control family; the border also keeps it visible on --bg */
+.switch-track { position: absolute; inset: 0; background: var(--bg);
+                border: 1px solid var(--border);
                 border-radius: 9px; transition: background 0.15s ease; }
 .switch-track::before {
-  content: ""; position: absolute; width: 14px; height: 14px; left: 2px; top: 2px;
-  background: #fff; border-radius: 50%; transition: transform 0.15s ease;
+  content: ""; position: absolute; width: 14px; height: 14px; left: 1px; top: 1px;
+  /* the knob is the input text colour, not #fff, which was the brightest thing on the page */
+  background: var(--text); border-radius: 50%; transition: transform 0.15s ease;
 }
-.switch input:checked + .switch-track          { background: var(--accent); }
+/* "on" is a plain brighter grey rather than the accent, which read as a highlight
+   competing with the actual accented controls */
+.switch input:checked + .switch-track { background: var(--text-muted); }
 .switch input:checked + .switch-track::before   { transform: translateX(14px); }
 ```
 
