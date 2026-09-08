@@ -451,6 +451,51 @@ class HopEOS:
         _check(self._lib, status, 'hop_opacity')
         return chi, scat
 
+    def line_strengths(self, lam, linelist, dlam=100.0, vmic=None):
+        """Per-line strengths over ``lam``: a DataFrame of ion / lam0 / evi / loggf / strength.
+
+        ``strength`` is HOP's own diagnostic — the line's centre extinction over the
+        continuum extinction, maximised over the cells of the loaded state. Unlike a
+        gf-and-Boltzmann estimate it carries the abundance, the ionization fraction, the
+        dissociation equilibrium and the partition function, so it is comparable *between*
+        species: it is what decides whether a Fe I line or a TiO band head is the thing worth
+        naming at some wavelength. It is the same quantity a full run writes as the trailing
+        column of ``linelist_out.txt``.
+
+        The strengths are a by-product of computing opacity, so this runs one
+        :meth:`opacity` call over ``lam`` and then reads them back. Cost is that call: a few
+        tens of milliseconds for a window of a few Angstrom on a state of a handful of cells,
+        and roughly linear in the cell count above that — a 56-layer atmosphere is some 4x a
+        depth-thinned 8-layer one over the same window. A floor of ~0.03 s is reading the
+        line list, and does not shrink with either.
+        ``lam`` therefore has to sample the line cores — a grid coarser than a Doppler width
+        will under-read the peaks. Only lines HOP actually used are returned, which is the
+        set within ``dlam`` of ``lam``.
+        """
+        import pandas as pd
+        if self._state is None:
+            raise HopError('no state loaded; call load_state first')
+        self.opacity(lam, linelist=linelist, dlam=dlam, vmic=vmic)
+        n = self._lib.hop_linelist_count()
+        if n < 1:
+            return pd.DataFrame(columns=['ion', 'lam0', 'evi', 'loggf', 'strength'])
+        lam0 = np.empty(n, np.float64)
+        evi = np.empty(n, np.float64)
+        loggf = np.empty(n, np.float64)
+        strength = np.empty(n, np.float64)
+        ispec = np.empty(n, np.int32)
+        status = self._lib.hop_get_linelist(
+            n, _buf(lam0, np.float64, 'double *'), _buf(evi, np.float64, 'double *'),
+            _buf(loggf, np.float64, 'double *'), _buf(strength, np.float64, 'double *'),
+            _buf(ispec, np.int32, 'int *'))
+        _check(self._lib, status, 'hop_get_linelist')
+        buf = _ffi.new('char[]', 65536)
+        _check(self._lib, self._lib.hop_linelist_species(buf, 65536),
+               'hop_linelist_species')
+        names = _ffi.string(buf).decode().split('\n')
+        return pd.DataFrame({'ion': [names[i] for i in ispec], 'lam0': lam0,
+                             'evi': evi, 'loggf': loggf, 'strength': strength})
+
     def scattering(self, lam):
         """Continuum scattering coefficient [1/cm]: Thomson + Rayleigh only.
 
