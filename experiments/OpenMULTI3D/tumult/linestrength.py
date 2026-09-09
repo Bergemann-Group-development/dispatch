@@ -204,6 +204,16 @@ def band_ready(star, linelist, lo, hi):
         return (star.key, str(linelist), lo, hi) in _bands
 
 
+def cached_band(star, linelist, lo, hi):
+    """The computed band if the cache holds it, else None, never computing.
+
+    What a repaint needs: readiness and the frame in one step, since between a
+    :func:`band_ready` check and a separate read another thread can evict the band.
+    """
+    with _bands_lock:
+        return _bands.get((star.key, str(linelist), lo, hi))
+
+
 def run_params(folder):
     """``(teff, logg, feh)`` of a run folder, for picking the reference atmosphere.
 

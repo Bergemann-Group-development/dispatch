@@ -24,7 +24,10 @@ from pathlib import Path
 from tumult import refstars
 from tumult.linelist import MASTER_PATH, load_master
 from tumult.linestrength import (DEFAULT_FEH, DEFAULT_LOGG, band_bounds, band_ready,
-                                 compute_band, run_params)
+                                 cached_band, compute_band, run_params)
+# the shared "columns every rung returns" normalisation: the proxy rung has to hand back
+# the same frame shape as a computed band, so both go through the one implementation
+from tumult.linestrength import _sorted_frame
 
 class Source:
     """One rung's answer: the lines, what to call it, and whether it can be trusted to rank.
@@ -135,8 +138,7 @@ class LineStrengths:
         else:
             # Never enter compute_band from a repaint, even if another thread
             # evicts a previously ready band between the readiness check and read.
-            with _bands_lock:
-                frame = _bands.get((star.key, str(self.linelist), *band))
+            frame = cached_band(star, self.linelist, *band)
         if frame is not None and len(frame):
             return Source(frame, f"HOP · {star.label} ({star.summary})",
                           "computed", (star.teff, star.logg, star.feh),

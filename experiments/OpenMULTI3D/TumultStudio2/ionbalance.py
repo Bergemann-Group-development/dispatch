@@ -52,6 +52,7 @@ from canvas import ACCENT
 from controls import Field, Form
 from htmlbridge import pulse
 from synthprefs import RUN_DEFAULTS, load_prefs, missing_prefs
+from tumult.synthesis import SynthRequest
 
 ION2_COLOR = "#e05c5c"     # singly-ionised points (the neutral stage uses the shared accent)
 # entry-point choice that is not a reference-star class
@@ -153,8 +154,11 @@ class BalanceSynthesis:
         run_vals = {**RUN_DEFAULTS, "mode": "LTE", "atoms": [], "abundances": "",
                     "relative_abundances": True, "atmos_mode": "interp",
                     "atmos_file": ""}
-        return {"prefs": prefs, "grid": grid, "run_vals": run_vals,
-                "target": None, "atmos_file": None}
+        # The solver reads prefs/grid/run_vals/atmos_file; the point it synthesises at comes
+        # from the fitted parameters each iteration, not from the request, so target is left
+        # unset here.
+        return SynthRequest(prefs=prefs, grid=grid, run_vals=run_vals,
+                            target=None, atmos_file=None)
 
 
 class IonBalanceTool(AbundanceWizard):

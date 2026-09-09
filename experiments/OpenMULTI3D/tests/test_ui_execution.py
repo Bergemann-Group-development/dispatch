@@ -75,8 +75,10 @@ def test_ion_balance_setup_is_private_and_interpolation_only(monkeypatch):
     assert setup.form.value("atmos_grid_id") == "stagger"
     assert [value for value, _ in setup.form.fields["atmos_grid_id"].options] == [
         "marcs", "stagger"]
-    assert context["grid"]["id"] == "stagger"
-    assert context["atmos_file"] is None
-    assert context["run_vals"]["atmos_mode"] == "interp"
-    assert context["run_vals"]["mode"] == "LTE"
-    assert context["run_vals"]["abundances"] == ""
+    # a SynthRequest, like synthsetup.context(): solve_ionisation_balance reads attributes,
+    # and the dict this used to return made the solve fail on request.prefs
+    assert context.grid["id"] == "stagger"
+    assert context.atmos_file is None
+    assert context.run_vals["atmos_mode"] == "interp"
+    assert context.run_vals["mode"] == "LTE"
+    assert context.run_vals["abundances"] == ""

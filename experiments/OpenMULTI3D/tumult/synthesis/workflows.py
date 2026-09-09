@@ -39,7 +39,8 @@ from .runtime import get_runtime
 _PRESETS = PRESETS_DIR
 
 __all__ = ["discover_atmos_grid", "compile_pattern", "recover_params",
-           "build_settings", "compute", "compute_batch", "compute_reference",
+           "build_settings", "compute", "compute_batch", "compute_window_batch",
+           "compute_reference",
            "read_reference_linelist",
            "fit", "fit_line",
            "abund_elements", "abund_table", "DEFAULT_PATTERN",
