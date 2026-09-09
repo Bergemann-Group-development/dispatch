@@ -117,14 +117,28 @@ class Spectrum:
                          xref=self.xref)
                 for seg in self.segments]
 
-    def _require_contiguous(self, what):
+    def _spans_a_gap(self, xmin=None, xmax=None):
+        """Whether [xmin, xmax] (default: everything) reaches across a window boundary.
+
+        A range lying inside one window is contiguous even though the parent spectrum is
+        not, which is what makes cropping a multi-window result to a single mask legal.
+        """
+        if not self.segments or len(self.segments) <= 1:
+            return False
+        lo = -np.inf if xmin is None else float(getattr(xmin, 'value', xmin))
+        hi = np.inf if xmax is None else float(getattr(xmax, 'value', xmax))
+        touched = [seg for seg in self.segments if seg['red'] >= lo and seg['blue'] <= hi]
+        return len(touched) > 1
+
+    def _require_contiguous(self, what, xmin=None, xmax=None):
         """Refuse an operation that would run a neighbourhood across a window gap.
 
         The concatenated grid jumps at each boundary, so a kernel, an interpolation or a
-        quadrature spanning one mixes wavelengths that are not neighbours. Crop to a
-        window or use :meth:`split_segments` first.
+        quadrature spanning one mixes wavelengths that are not neighbours. An operation
+        confined to a single window is fine. Crop to a window or use
+        :meth:`split_segments` first.
         """
-        if self.segments and len(self.segments) > 1:
+        if self._spans_a_gap(xmin, xmax):
             windows = ", ".join("{:.1f}-{:.1f}".format(seg["blue"], seg["red"])
                                 for seg in self.segments)
             raise ValueError(
@@ -463,8 +477,9 @@ class Spectrum:
         s = self._crop(xmin, xmax)
 
         if kwargs or vshift is not None:
-            # convolution and the shift-and-resample below both use neighbourhoods
-            self._require_contiguous("convolution or velocity shift")
+            # convolution and the shift-and-resample below both use neighbourhoods, but
+            # only over the range being extracted
+            self._require_contiguous("convolution or velocity shift", xmin, xmax)
             lshift = get_wavelength_shift(vshift)
 
             if kwargs:

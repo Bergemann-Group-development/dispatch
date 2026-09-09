@@ -559,6 +559,106 @@ def compute_windows(top, star, atmos_files, *, windows, R, settings=None, absmet
     return [_interp_crop(grid, float(min(w)), float(max(w)), method) for w in windows]
 
 
+def compute_window_batch(top, star, atmos_files, *, settings_list, windows, R,
+                         absmet_files=None, method='Delaunay', max_threads=None,
+                         launch_kwargs=None, pad=None, vmic_step=0.5, vmic_points=2,
+                         nlte=None, cancel_token=None):
+    """Both axes in one run: an abundance ladder across several wavelength windows.
+
+    ``settings_list`` is a ladder in the sense of :func:`compute_spectra` — variants
+    differing only in one element's abundance — and ``windows`` a sequence of
+    ``(blue, red)`` bounds. The ladder folds onto the run's set axis and the windows onto
+    its output patches, which are orthogonal, so a single synthesis covers every
+    (variant, window) pair: the atmosphere, the equation of state, the background and, in
+    NLTE, the statistical-equilibrium solve are each paid once instead of once per pair.
+
+    Returns ``results[variant][window]``, each an ordinary contiguous spectrum matching
+    the requested window order.
+
+    Falls back to :func:`compute_spectra` per window when the variants are not a foldable
+    ladder (different line lists, elements switched on and off, ``sample_linelist``), so a
+    caller does not have to know which of its requests can fold.
+    """
+    if R is None or R <= 0:
+        raise ValueError("compute_window_batch needs a positive R")
+    if not settings_list:
+        return []
+    top = Path(top)
+    launch_kwargs = launch_kwargs or {}
+    if max_threads is None:
+        max_threads = os.cpu_count() or 1
+    merged = normalise_windows(windows, pad)
+
+    nodes, vmic = select_nodes(star, atmos_files, method=method, vmic_step=vmic_step,
+                               absmet_files=absmet_files, vmic_points=vmic_points)
+
+    text = window_file_text(merged)
+    prepared = []
+    for settings in settings_list:
+        item = copy.deepcopy(settings or {})
+        sp = item.setdefault('spectrum_params', {})
+        sp['R'] = float(R)
+        prepared.append(item)
+    nlte_values = [bool(_is_nlte(s) if nlte is None else nlte) for s in prepared]
+
+    fold = None
+    if len(set(nlte_values)) == 1:
+        fold = _foldable_ladder(prepared, launch_kwargs, nlte_values[0])
+    if fold is None:
+        # not a ladder: nothing to fold onto the set axis, so fall back to the existing
+        # per-window batching rather than pretending this is one run
+        return [[spec for spec in specs] for specs in zip(*[
+            compute_spectra(top, star, atmos_files, settings_list=settings_list,
+                            absmet_files=absmet_files, method=method,
+                            max_threads=max_threads, launch_kwargs=launch_kwargs,
+                            xmin=float(min(w)), xmax=float(max(w)), pad=pad,
+                            vmic_step=vmic_step, vmic_points=vmic_points, nlte=nlte,
+                            cancel_token=cancel_token)
+            for w in windows])]
+
+    base, manifest = fold
+    manifest_text = json.dumps(manifest, sort_keys=True, separators=(',', ':'))
+    digest = hashlib.sha1(json.dumps(
+        [base, manifest_text, text], sort_keys=True, default=str).encode()).hexdigest()[:8]
+    manifest_path = (top / '_set_manifests' / f'{digest}.txt').resolve()
+    write_set_manifest(manifest_path, manifest)
+    window_path = (top / '_windows' / f'{digest}.txt').resolve()
+    window_path.parent.mkdir(parents=True, exist_ok=True)
+    window_path.write_text(text)
+    base.setdefault('output_params', {})['set_file'] = str(manifest_path)
+    base.setdefault('spectrum_params', {})['window_file'] = str(window_path)
+    syn_top = top / f'win{len(merged)}_{digest}'
+    nlte_v = nlte_values[0]
+    dep_top = _dep_bucket(top, base) if nlte_v else None
+
+    dep_dirs = {}
+    if nlte_v:
+        dep_jobs = _dep_jobs(base, nodes, dep_top)
+        dep_runs = _run_batch(dep_jobs, launch_kwargs, max_threads,
+                              cancel_token=cancel_token)
+        failed = [key for key, _path, _nml in dep_jobs if dep_runs.get(key) is None]
+        if failed:
+            raise RuntimeError(f"Departure runs failed: {failed}")
+        dep_dirs = {key: str(dep_runs[key].folder) for key, _path, _nml in dep_jobs}
+
+    jobs, job_keys, job_weights, job_params = _spec_jobs(
+        base, nodes, syn_top, nlte_v, dep_dirs)
+    runs = _run_batch(jobs, launch_kwargs, max_threads, cancel_token=cancel_token)
+    failed = [key for key in job_keys if runs.get(key) is None]
+    if failed:
+        raise RuntimeError(f"Runs failed: {failed}")
+
+    first_ladder = 3 if nlte_v else 2
+    results = []
+    for vi in range(len(settings_list)):
+        views = {key: _LadderRunView(runs[key], first_ladder + vi) for key in job_keys}
+        grid = _assemble_grid(views, star, vmic, job_keys, job_weights,
+                              job_params, vmic_points)
+        results.append([_interp_crop(grid, float(min(w)), float(max(w)), method)
+                        for w in windows])
+    return results
+
+
 def compute_spectra(top, star, atmos_files, *, settings_list, absmet_files=None,
                     method='Delaunay', max_threads=None, launch_kwargs=None,
                     xmin=None, xmax=None, pad=None, vmic_step=0.5, vmic_points=2,

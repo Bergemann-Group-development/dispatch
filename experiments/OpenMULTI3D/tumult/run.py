@@ -402,8 +402,14 @@ class tumult(object):
                         segments=self.segments)
 
     def crop_set(self, index, slc=None, x0=None, ang=None, imu=None, norm=True,
-                 **kwargs):
-        """Crop and optionally continuum-normalise one ladder set."""
+                 LTE=False, **kwargs):
+        """Crop and optionally continuum-normalise one ladder set.
+
+        ``LTE`` is accepted for signature parity with :meth:`crop` and ignored: a set is
+        already a specific component of the set axis, so there is no LTE/NLTE choice left
+        to make. Without it the flag would fall through to ``Spectrum.crop``, which reads
+        leftover keywords as convolution parameters.
+        """
         spec = self.get_set_spectrum(index, ang=ang, imu=imu)
         spec = spec.crop(slc=slc, x0=x0, **kwargs)
         if norm:
