@@ -1,4 +1,6 @@
 from tumult.auxfuncs import *
+from tumult.const import EK
+import os
 from tumult.isotopes import parse_ts, format_molec, molec_to_ts, species_elements, element_z
 import numpy as np
 import pandas as pd
@@ -328,3 +330,34 @@ class LineList(pd.DataFrame):
         f.write(f"'{token}' {ion} {nlines}\n")
         f.write(f"'{s}'\n")
         f.write(sub[head].to_string(index=False, header=False, na_rep='', formatters=formatters) + '\n')
+
+
+# --- the master line list -------------------------------------------------------
+MASTER_PATH = os.environ.get(
+    "TUMULT_MASTER_LINELIST",
+    str(Path(__file__).resolve().parent.parent / "input" / "linelists" / "master_line.txt"),
+)
+
+_DUMMY_T = 5000.0   # excitation temperature of the strength proxy below
+_cache = {}  # path -> parsed DataFrame (process-wide, read-only, shared across sessions)
+
+
+def load_master(path=MASTER_PATH):
+    """Parse a line list once per path, ensuring it carries a ``strength`` column.
+
+    A ``linelist_out.txt`` written by a run already has one — HOP's line-centre over
+    continuum extinction, which compares across species — and it is kept as it is. Only a
+    plain list without that column gets the Boltzmann proxy below, which is an ordering of
+    last resort: it has no abundance, no ionization fraction and no partition function in
+    it, so it is meaningful within one ion and misleading between two. ``attrs`` records
+    which of the two happened, and :mod:`linestrength` labels the table accordingly.
+    """
+    path = str(path)
+    if path not in _cache:
+        m = LineList.from_tumult_format(path).reset_index()
+        proxy = "strength" not in m.columns or not m.strength.notna().any()
+        if proxy:
+            m["strength"] = m.lam0 * np.exp(-m.evi * EK / _DUMMY_T) * 10 ** m.loggf
+        m.attrs["strength_is_proxy"] = proxy
+        _cache[path] = m
+    return _cache[path]

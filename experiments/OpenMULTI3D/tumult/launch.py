@@ -54,7 +54,13 @@ def run_complete(folder):
 
 
 def launch(input_name, nml_settings=None, default=None, overwrite=False, threads=None, cwd=None,
-           log_file=None, slurm_script=None, verbose=2, dry=False, run_async=False, runner=None):
+           log_file=None, slurm_script=None, verbose=2, dry=False, run_async=False, runner=None,
+           cancel_token=None):
+
+    if cancel_token is not None:
+        cancel_token.check()
+        if runner or run_async or slurm_script:
+            raise ValueError("Managed cancellation requires a synchronous local dispatch run")
     
     # Path setup
     input_path = pathlib.Path(input_name)
@@ -116,8 +122,28 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
         if run_async:
             return output_folder, subprocess.Popen(cmd, env=env, stdout=log_handle, stderr=log_handle)
 
-        # Standard blocking execution
-        result = subprocess.run(cmd, env=env, stdout=log_handle, stderr=log_handle)
+        if cancel_token is None:
+            result = subprocess.run(cmd, env=env, stdout=log_handle, stderr=log_handle)
+        else:
+            cancel_token.check()
+            process = subprocess.Popen(cmd, env=env, stdout=log_handle, stderr=log_handle,
+                                       start_new_session=(os.name == 'posix'))
+            detach = cancel_token.watch_process(process)
+            try:
+                process.wait()
+                cancel_token.check()
+                if process.returncode:
+                    raise RuntimeError(f"dispatch exited with status {process.returncode}: {log_file}")
+            except BaseException:
+                cancel_token.cancel()
+                process.wait()  # reap the child before releasing its CPU allocation
+                # abund.txt is written during initialisation, before completion.
+                # Failed/cancelled jobs must not become cache hits on the next run.
+                (output_folder / 'abund.txt').unlink(missing_ok=True)
+                raise
+            finally:
+                detach()
+            result = process
         
         if result.returncode != 0 and log_file:
             print(f"Error: Command failed. Check {log_file} for details.")

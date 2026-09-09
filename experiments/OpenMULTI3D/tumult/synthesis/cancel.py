@@ -1,9 +1,4 @@
-"""Cooperative cancellation for in-flight syntheses, with hard process-group kill.
-
-Extracted from the synthesis monolith in the Phase 6 decomposition: everything about
-stopping a run lives here — the token the GUI holds, the exception it raises, and the
-process-group plumbing that lets a cancel kill ``dispatch.x`` children too.
-"""
+"""Cancellation of one workflow or dispatch job, without killing shared workers."""
 from __future__ import annotations
 
 import os
@@ -12,93 +7,62 @@ import threading
 
 
 class CancelledError(Exception):
-    """Raised inside a synthesis when its :class:`CancelToken` has been cancelled.
-
-    Deliberately *not* a subclass of ``ValueError``/``RuntimeError`` so the fit's
-    per-point ``except (ValueError, RuntimeError)`` guard does not swallow it — a cancel
-    must abort the whole run, not just drop one grid point.
-    """
-
-
-def _init_pool_worker():
-    """ProcessPoolExecutor initializer: put each worker (and the ``dispatch.x`` child it
-    later launches via ``subprocess.run``) into its own process group, so cancelling a run
-    can hard-kill the whole subtree with one ``killpg`` — killing only the worker would
-    orphan a still-running ``dispatch.x`` (reparented to init), which is what we must avoid.
-    """
-    if hasattr(os, "setsid"):
-        try:
-            os.setsid()
-        except OSError:
-            pass
-
-
-def _kill_process_group(pid):
-    """SIGKILL the process group led by ``pid`` (worker + its ``dispatch.x`` child).
-
-    Guards against the brief window after a worker spawns but before its initializer has
-    run ``setsid``: while its pgid still equals *our* group we kill only the bare pid, so a
-    cancel can never signal the main application's process group.
-    """
-    if pid is None or not hasattr(os, "killpg"):
-        return
-    try:
-        pgid = os.getpgid(pid)
-    except (ProcessLookupError, PermissionError):
-        return
-    try:
-        if pgid != os.getpgid(0):       # worker established its own group: kill the tree
-            os.killpg(pgid, signal.SIGKILL)
-        else:                            # pre-setsid race: no descendants yet, kill the pid
-            os.kill(pid, signal.SIGKILL)
-    except (ProcessLookupError, PermissionError):
-        pass
+    """An explicit cancellation, distinct from a failed numerical trial."""
 
 
 class CancelToken:
-    """Cooperative cancellation for one in-flight synthesis, with hard process kill.
-
-    The GUI holds one token per running synthesis. :meth:`cancel` flips a flag (checked at
-    safe points via :meth:`check`) and, if a ``dispatch`` process pool is live, kills every
-    worker process group — the workers and their ``dispatch.x`` children. The synthesis runs
-    in a worker *thread* of the same process, so the pool object (and its worker PIDs) are
-    reachable here; ``cancel`` is called from the Bokeh document thread, hence the lock.
-    """
-
     def __init__(self):
         self._cancelled = False
-        self._pool = None
+        self._callbacks = set()
         self._lock = threading.Lock()
 
     @property
     def cancelled(self):
-        return self._cancelled
+        with self._lock:
+            return self._cancelled
 
     def check(self):
-        if self._cancelled:
+        if self.cancelled:
             raise CancelledError()
 
-    def set_pool(self, executor):
-        """Register the live dispatch pool so a cancel can kill its workers."""
-        with self._lock:
-            self._pool = executor
-            if self._cancelled:
-                self._kill_pool_locked()   # cancelled during pool setup — kill at once
+    def add_callback(self, callback):
+        """Register a cancellation callback; return an idempotent unsubscriber.
 
-    def clear_pool(self):
+        Callbacks run outside the token lock, including registration after cancel.
+        This handles cancellation racing with queue submission or process launch.
+        """
         with self._lock:
-            self._pool = None
+            cancelled = self._cancelled
+            if not cancelled:
+                self._callbacks.add(callback)
+        if cancelled:
+            callback()
+
+        def detach():
+            with self._lock:
+                self._callbacks.discard(callback)
+        return detach
+
+    def watch_process(self, process):
+        """Watch a Popen child launched with start_new_session=True on POSIX."""
+        def kill():
+            if process.poll() is not None:
+                return
+            try:
+                if os.name == "posix":
+                    os.killpg(process.pid, signal.SIGKILL)
+                else:
+                    process.kill()
+            except ProcessLookupError:
+                pass
+        return self.add_callback(kill)
 
     def cancel(self):
         with self._lock:
+            if self._cancelled:
+                return
             self._cancelled = True
-            self._kill_pool_locked()
-
-    def _kill_pool_locked(self):
-        pool = self._pool
-        if pool is None:
-            return
-        # ProcessPoolExecutor keeps its live workers in ``_processes`` {pid: Process};
-        # it lives in this (main) process, so the PIDs are ours to signal.
-        for proc in list(getattr(pool, "_processes", {}).values()):
-            _kill_process_group(proc.pid)
+            callbacks = tuple(self._callbacks)
+            self._callbacks.clear()
+        for callback in callbacks:
+            callback()

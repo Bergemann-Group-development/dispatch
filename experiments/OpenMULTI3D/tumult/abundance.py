@@ -1,229 +1,642 @@
-"""Synthesis-agnostic abundance numerics (pure, unit-testable).
+"""Headless, uncertainty-aware abundance and curve-of-growth workflows.
 
-The clearly-general pieces of the abundance pipeline live here so they can be reused outside the
-TumultStudio2 GUI: curve-of-growth inversion, the inverse-variance element mean, the
-fitted-profile FWHM, abundance-scale conversions (A(X) <-> [X/Fe]), the solar reference table
-reader, and the EW-error -> abundance-error propagation. The numerics here are numpy-only — no
-synthesis engine or GUI dependencies. The reduced equivalent width now lives on
-:mod:`tumult.profile` (alongside :attr:`Profile.rew`) and is re-exported here for back-compat.
-The synthesis-driven orchestration (screening, per-line fits, gradients) stays in the
-application layer, which re-exports these for back-compat.
+The synthesis-agnostic numerics (``cog_invert``, ``aggregate``, ``reduced_ew``, ``profile_fwhm``)
+now live in :mod:`tumult.abundance` and are re-exported here for back-compat. This module keeps the
+synthesis-driven, application-facing pieces:
+
+* :func:`measure_line` — stage 1: fit a line on the reference to get its EW, FWHM and windows.
+* :func:`fit_line` — stage 2: screen a line (weak / blended), then determine its abundance by
+  **directly fitting** the synthetic to the observation (abundance + vshift + vdop) and measure the
+  numerical ``dREW/dA`` gradient. Synthesis is injected as callables so this stays engine-agnostic.
+* :func:`finalize_line` / :func:`aggregate` — stage 3: fold SNR + continuum-% errors into each
+  line's EW, convert to an abundance error through the REW gradient, and combine into an
+  inverse-variance element mean.
+
+Error model: SNR noise is independent per pixel and the continuum offset is independent per line, so
+both fold into each line's EW error inside ``tumult.utils.get_weq`` (``sigma`` → photon term,
+``syst`` → continuum term). The abundance error works in *reduced* EW (``log10 W/λ``, unit
+independent): ``σ_REW = σ_W/(W ln10)`` and ``σ_A = σ_REW / |dREW/dA|``.
 """
 from __future__ import annotations
 
-import re
+import logging
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 
+import astropy.units as u
 import numpy as np
 
-from .const import CC_KMS
-from .profile import get_profile_class, reduced_ew  # noqa: F401 (reduced_ew re-export)
-from .utils import pchip_mono
+from .linemask import LineMask
+from .spectrum import Spectrum
+from ._abundance_numerics import (  # noqa: F401 (public re-exports)
+    aggregate,
+    aggregate_unweighted,
+    abund_to_xfe,
+    cog_invert,
+    convert_abundances,
+    profile_fwhm,
+    reduced_ew,
+    sigma_a_from_rew,
+    velocity_hwhm,
+    read_solar_abundances,
+    xfe_to_abund,
+)
+from .profile import get_profile_class
+from .utils import auto_crop_core
+
+# the per-line synthesis / jump window spans SYNTH_HWHM_MULT half-widths (HWHM) either side
+# of the *fitted* line centre, but is always widened to reach at least FIT_MARGIN_HWHM HWHM
+# beyond the auto-crop fit window, so the fit region stays fully enclosed. This window sets
+# both the jump view range and what gets synthesised, so the preview matches the synthesis.
+SYNTH_HWHM_MULT = 3.0
+FIT_MARGIN_HWHM = 1.0
+
+# extra Angstrom synthesised each side of a line's window, so its wings are computed
+# rather than extrapolated from the window edge.
+SYNTH_PAD_AA = 0.5
 
 
-def cog_invert(a_grid, ew_grid, ew_meas, ew_err=0.0):
-    """Interpolate an abundance from a measured EW on a curve of growth.
+# --- per-line record + element aggregation -----------------------------------------------
 
-    Parameters
-    ----------
-    a_grid, ew_grid : array_like
-        The curve of growth: abundances and the synthetic EW each produces (same units
-        for ``ew_grid`` and ``ew_meas``). Need not be sorted; monotonic EW(A) assumed.
-    ew_meas : float
-        The measured equivalent width.
-    ew_err : float, optional
-        1σ uncertainty on ``ew_meas``. Propagated to ``sigma_a`` via the local slope.
+@dataclass
+class LineResult:
+    """One diagnostic line's measurement + derived abundance, filled progressively.
 
-    Returns
-    -------
-    dict with keys
-        ``a`` : interpolated abundance at ``ew_meas``.
-        ``sigma_a`` : ``ew_err * |dA/dEW|`` at the measured point (∞-prone on saturation).
-        ``dadew`` : the local ``dA/dEW`` slope (1/EW-unit).
-        ``out_of_range`` : True if ``ew_meas`` falls outside the synthesised CoG span.
+    A line advances through the wizard's stages, so most fields start unset (``NaN``) and are
+    populated as each stage runs: ``ew``/``fwhm``/``window`` at line-selection; ``blend_frac``,
+    ``a``, ``vshift``/``vdop``, ``drewda`` and ``fit_spec`` at synthesis; ``ew_err``/``sigma_a``
+    and its photon/continuum split at uncertainties.
+
+    ``sigma_a_phot`` / ``sigma_a_cont`` are the photon (SNR) and continuum-offset shares of
+    ``sigma_a`` (``sigma_a**2 = sigma_a_phot**2 + sigma_a_cont**2``); keeping them lets
+    :func:`aggregate` report what dominates the element error budget. ``fit_spec`` is the best-fit
+    synthetic line, overlaid on the observation when the row is jumped to.
     """
-    a = np.asarray(a_grid, dtype=float)
-    w = np.asarray(ew_grid, dtype=float)
-    if a.size < 2 or a.size != w.size:
-        raise ValueError("cog_invert needs matching a_grid/ew_grid of length >= 2.")
-    order = np.argsort(w)
-    w, a = w[order], a[order]
+    lam0: float                 # central wavelength [AA]
+    ion: str                    # species label, e.g. "Fe I"
+    e_low: float                # lower-level excitation energy [eV]
+    loggf: float
+    ew: float = float("nan")    # measured equivalent width [mAA]
+    ew_err: float = float("nan")  # combined 1σ EW error [mAA]
+    ew_species: float = float("nan")  # query-species-only EW in the fit window [mAA] (weak screen)
+    fwhm: float = float("nan")  # fitted profile FWHM [AA]
+    mask: LineMask = field(default_factory=LineMask)  # fit [lmin,lmax] + synth [smin,smax] windows
+    a: float = float("nan")     # abundance (A(X) or [X/Fe], caller's convention)
+    vshift: float = float("nan")  # best-fit radial-velocity shift [km/s]
+    vdop: float = float("nan")    # best-fit Gaussian (Doppler) broadening [km/s]
+    drewda: float = float("nan")  # numerical dREW/dA gradient at the best fit (per dex)
+    sigma_a: float = float("nan")
+    sigma_a_phot: float = 0.0
+    sigma_a_cont: float = 0.0
+    blend_frac: float = float("nan")  # contaminant EW fraction in the window (0 = clean)
+    a_grid: tuple = ()          # (optional) curve of growth: abundances …
+    ew_grid: tuple = ()         # … and the EW each produced (mÅ)
+    fit_spec: object = None     # best-fit synthetic Spectrum, for the jump overlay
+    fit_func: object = None     # fitted profile f(λ_Å)->flux, for the EW-area hatch on jump
+    method: str = "fit"         # "fit" (direct) or "cog"
+    flags: tuple = ()
+    include: bool = True        # user toggle: count this line in the element mean
 
-    # monotone piecewise-cubic (PCHIP) interpolant A(EW): shape-preserving so it neither
-    # overshoots nor introduces spurious extrema on a monotonic CoG, and its analytic
-    # derivative gives a smooth local dA/dEW slope for the error propagation.
-    spline = pchip_mono(w, a)
-    a_val = float(spline(ew_meas))
-    dadew = float(spline.derivative()(ew_meas))
-    sigma_a = float(abs(ew_err * dadew)) if np.isfinite(dadew) else np.inf
-    return {
-        "a": a_val,
-        "sigma_a": sigma_a,
-        "dadew": float(dadew),
-        "out_of_range": bool(ew_meas < w[0] or ew_meas > w[-1]),
-    }
+    # --- window views: the fit/synth windows now live on the embedded LineMask, but the
+    # pipeline (synth.fit_line, measure_ew, canvas.set_abund_windows, balance/corr tools) still
+    # reads them as ``ln.fit_window`` / ``ln.window`` tuples, so expose them read-only here.
+    @property
+    def fit_window(self) -> tuple:
+        return self.mask.fit_window
 
+    @property
+    def window(self) -> tuple:
+        return self.mask.synth_window
 
-def aggregate(lines):
-    """Inverse-variance weighted element mean over the included lines, with a budget split.
+    # --- session persistence (see AbundanceResult / the session snapshot) -------------
+    _TUPLE_FIELDS = ("a_grid", "ew_grid", "flags")
 
-    ``lines`` is any iterable of objects exposing ``include`` (bool), ``a``, ``sigma_a``,
-    ``sigma_a_phot`` and ``sigma_a_cont``. Returns a dict: ``a_mean``, ``sigma_mean`` (formal
-    inverse-variance error), ``sigma_scatter`` (weighted line-to-line scatter, a robustness
-    cross-check), ``sigma_phot`` / ``sigma_cont`` (photon vs continuum shares, summing in
-    quadrature to ``sigma_mean``), and ``n`` (lines used). Empty/zero-weight input → NaNs, ``n=0``.
-    """
-    inc = [ln for ln in lines if ln.include and np.isfinite(ln.sigma_a) and ln.sigma_a > 0]
-    if not inc:
-        nan = float("nan")
-        return {"a_mean": nan, "sigma_mean": nan, "sigma_scatter": nan,
-                "sigma_phot": nan, "sigma_cont": nan, "n": 0}
-    a = np.array([ln.a for ln in inc], dtype=float)
-    s = np.array([ln.sigma_a for ln in inc], dtype=float)
-    w = 1.0 / s**2
-    wsum = w.sum()
-    a_mean = float((w * a).sum() / wsum)
-    sigma_mean = float(np.sqrt(1.0 / wsum))
-    # weighted line-to-line scatter (population, not corrected — a conservative cross-check)
-    sigma_scatter = float(np.sqrt((w * (a - a_mean) ** 2).sum() / wsum))
-
-    # decompose: with weights w_i = 1/σ_i², the mean's variance from a component k is
-    # Σ w_i² σ_{k,i}² / (Σ w_i)². Photon and continuum shares add to sigma_mean² exactly
-    # when σ_i² = σ_phot,i² + σ_cont,i².
-    sphot = np.array([ln.sigma_a_phot for ln in inc], dtype=float)
-    scont = np.array([ln.sigma_a_cont for ln in inc], dtype=float)
-    denom = wsum**2
-    sigma_phot = float(np.sqrt((w**2 * sphot**2).sum() / denom))
-    sigma_cont = float(np.sqrt((w**2 * scont**2).sum() / denom))
-    return {"a_mean": a_mean, "sigma_mean": sigma_mean, "sigma_scatter": sigma_scatter,
-            "sigma_phot": sigma_phot, "sigma_cont": sigma_cont, "n": len(inc)}
-
-
-def aggregate_unweighted(lines):
-    """Unweighted mean + population line-to-line scatter of the included values.
-
-    The companion to :func:`aggregate` for measurements that carry **no usable per-line
-    formal error**, where inverse-variance weighting is undefined and the line-to-line
-    dispersion is the only uncertainty estimate. Note that *fitted* profiles always
-    carry a covariance-derived EW error (residual-scaled, i.e. model mismatch — nonzero
-    even on noiseless synthetic spectra), so results measured through them can and
-    should use the weighted :func:`aggregate`; this fallback remains for trapezoidal /
-    pchip integrations without a noise model and for results restored from sessions
-    predating the error propagation. ``lines`` expose ``include`` and ``a``.
-    Returns ``{a_mean, sigma_scatter, n}`` (NaNs / ``n=0`` when nothing is included).
-    """
-    a = np.array([ln.a for ln in lines
-                  if ln.include and np.isfinite(ln.a)], dtype=float)
-    if a.size == 0:
-        return {"a_mean": float("nan"), "sigma_scatter": float("nan"), "n": 0}
-    return {"a_mean": float(a.mean()),
-            "sigma_scatter": float(a.std(ddof=1)) if a.size > 1 else 0.0,
-            "n": int(a.size)}
-
-
-# --- abundance scales (A(X) <-> [X/Fe]) and the solar reference table --------------------
-
-
-def xfe_to_abund(xfe, el, feh, solar):
-    """Convert ``[X/Fe]`` to an absolute ``A(X)``: ``A(X) = A_solar(X) + [Fe/H] + [X/Fe]``.
-
-    Exact for metals with no alpha/r-process enhancement (the configuration used here):
-    MULTI3D scales every element except H/He/Li by [Fe/H], so a relative override equals
-    [X/Fe]. Returns ``xfe`` unchanged if the element is missing from ``solar``.
-    """
-    a0 = solar.get(el)
-    return xfe if a0 is None else xfe + a0 + feh
-
-
-def abund_to_xfe(a, el, feh, solar):
-    """Inverse of :func:`xfe_to_abund`: ``[X/Fe] = A(X) - A_solar(X) - [Fe/H]``."""
-    a0 = solar.get(el)
-    return a if a0 is None else a - a0 - feh
-
-
-def convert_abundances(text, to_relative, feh, solar):
-    """Convert an ``El=val ...`` override string between absolute A(X) and [X/Fe].
-
-    ``to_relative=True``: the values are currently absolute A(X); emit ``[X/Fe] =
-    A(X) - A_solar(X) - [Fe/H]``. ``to_relative=False``: invert. Whitespace- or
-    comma-separated; terms whose element is unknown (or unparsable) pass through unchanged.
-    """
-    out = []
-    for term in re.split(r"[\s,]+", str(text).strip()):
-        if not term:
-            continue
-        el, sep, val = term.partition("=")
-        a0 = solar.get(el)
-        if not sep or a0 is None:
-            out.append(term)
-            continue
-        try:
-            x = float(val)
-        except ValueError:
-            out.append(term)
-            continue
-        x = x - a0 - feh if to_relative else x + a0 + feh
-        out.append(f"{el}={x:g}")
-    return " ".join(out)
-
-
-def read_solar_abundances(path):
-    """``{element: A(X)}`` parsed from a solar-reference abundance file.
-
-    The format is the dispatch ``abund.txt`` convention: one ``SYMBOL VALUE`` pair per
-    line (extra columns ignored, unparsable lines skipped, symbols capitalised).
-    Returns ``{}`` if the file is unreadable.
-    """
-    table = {}
-    try:
-        lines = Path(path).expanduser().read_text().splitlines()
-    except OSError:
-        return {}
-    for line in lines:
-        parts = line.split()
-        if len(parts) >= 2 and parts[0].isalpha():
-            try:
-                table[parts[0].capitalize()] = float(parts[1])
-            except ValueError:
+    def to_dict(self):
+        """A JSON-safe view. ``fit_spec`` is embedded as a Spectrum dict; ``fit_func`` (a live
+        callable) is dropped — it only feeds the jump-overlay hatch and is not restored."""
+        d = {}
+        for f in fields(self):
+            if f.name == "fit_func":
                 continue
-    return table
+            v = getattr(self, f.name)
+            if f.name == "fit_spec":
+                v = v.to_dict() if v is not None else None
+            elif f.name == "mask":
+                v = v.to_dict()
+            elif f.name in self._TUPLE_FIELDS:
+                v = list(v)
+            d[f.name] = v
+        return d
+
+    @classmethod
+    def from_dict(cls, d):
+        names = {f.name for f in fields(cls)}
+        d = {k: v for k, v in (d or {}).items() if k in names}
+        for k in cls._TUPLE_FIELDS:
+            if d.get(k) is not None:
+                d[k] = tuple(d[k])
+        if d.get("fit_spec") is not None:
+            d["fit_spec"] = Spectrum.from_dict(d["fit_spec"])
+        if d.get("mask") is not None:
+            d["mask"] = LineMask.from_dict(d["mask"])
+        return cls(**d)
 
 
-# --- EW-error -> abundance-error propagation ----------------------------------------------
+# --- EW measurement + synthesis-driven helpers (inject synth callables to stay decoupled) ----
+
+def _crop(spec, window):
+    return spec.crop(xmin=window[0], xmax=window[1]) if window else spec
 
 
-def velocity_hwhm(fwhm_aa, lam0_aa):
-    """Half width at half maximum expressed as a velocity [km/s] (``HWHM_λ / λ0 · c``).
+def measure_profile(spec, window=None, *, profile, x0=None, **kw):
+    """Measure a bound :class:`~tumult.profile.Profile` over ``window`` (``auto_crop`` off).
 
-    Lets a vshift screen compare a fitted radial-velocity shift (km/s) against the line's
-    own width. Non-finite / non-positive inputs give ``NaN`` so the screen is skipped.
+    Thin wrapper over :meth:`tumult.Spectrum.measure`, which owns the window crop and the
+    plain-``x0`` unit coercion. ``sigma`` / ``syst`` (kwargs) fold in the photon / continuum
+    error terms. The returned Profile exposes the width (``.mAA``), the reduced EW (``.rew``)
+    and the error split off one interface.
     """
-    if not (np.isfinite(fwhm_aa) and np.isfinite(lam0_aa)) or lam0_aa <= 0:
+    return spec.measure(window or None, profile=profile, x0=x0, auto_crop=False, **kw)
+
+
+def _ew(spec, window=None, profile="trapz", x0=None):
+    """Noiseless *width* EW of a (synthetic) spectrum over ``window``, in mÅ."""
+    return measure_profile(spec, window, profile=profile, x0=x0).mAA
+
+
+def _rew(spec, window=None, profile="trapz", x0=None):
+    """Noiseless reduced EW ``log10(W/λ)`` of a (synthetic) spectrum over ``window`` (dimensionless)."""
+    return measure_profile(spec, window, profile=profile, x0=x0).rew
+
+
+def measure_ew(spec, window=None, snr=None, cont_pct=0.0, profile="trapz", x0=None):
+    """Measure a line's EW as a :class:`~tumult.profile.Profile` with a photon / continuum error split.
+
+    ``snr`` None (a synthetic reference) drops the photon term; ``cont_pct`` 0 drops the continuum
+    term. A single measurement carries both shares — ``.err_phot_mAA`` (SNR) and ``.err_cont_mAA``
+    (continuum offset), combining in quadrature to ``.width_err_mAA`` — so no second pass is needed.
+    (The REW conversion for the abundance error happens in :func:`sigma_a_from_rew`.)
+    """
+    sub = _crop(spec, window)
+    n = len(sub)
+    sigma = np.full(n, 1.0 / float(snr)) if snr else None
+    syst = (float(cont_pct) / 100.0) or None
+    try:
+        return measure_profile(sub, profile=profile, x0=x0, sigma=sigma, syst=syst)
+    except ValueError:
+        # the fitted profile can fail on a narrow / noisy window; a trapz width is robust
+        return measure_profile(sub, profile="trapz", x0=x0, sigma=sigma, syst=syst)
+
+
+def build_cog(synth_line_fn, a_ladder, window=None, profile="trapz", x0=None,
+              batch_synth_fn=None):
+    """Synthesise the line at each abundance in ``a_ladder`` and measure its *width* EW.
+
+    ``synth_line_fn(a) -> Spectrum`` returns the continuum-normalised synthetic line at
+    abundance ``a`` (caller's convention — [X/Fe] or A(X)). Returns ``(a_grid, ew_grid)`` (mÅ).
+
+    ``batch_synth_fn(a_list) -> [Spectrum]`` (optional): when given, the whole ladder is
+    synthesised in one call so the front-end can fan every point's run across a single process
+    pool; the returned spectra must align with ``a_list``. Equivalent to the serial
+    ``synth_line_fn`` loop (same per-point spectra), just scheduled concurrently — used when
+    omitted.
+    """
+    a = np.asarray(a_ladder, dtype=float)
+    if batch_synth_fn is not None:
+        specs = batch_synth_fn(list(a))
+        ews = np.array([_ew(s, window, profile, x0) for s in specs])
+    else:
+        ews = np.array([_ew(synth_line_fn(av), window, profile, x0) for av in a])
+    return a, ews
+
+
+def blend_fraction(spec_all, spec_excl, window=None, profile="trapz", x0=None):
+    """Contaminant EW fraction in the window: ``EW(element excluded) / EW(all lines)``.
+
+    ``spec_all`` is the normal synthesis; ``spec_excl`` is the same window synthesised with
+    the target element removed (``exclude_elements``). 0 ⇒ clean line, →1 ⇒ fully blended.
+    Returns ``(blend_frac, ew_all, ew_excl)`` (widths in mÅ).
+
+    Both arms are **integrated**, whatever ``profile`` the caller measures its lines with
+    (the argument is kept so callers can pass their profile through without special-casing).
+    A fitted profile is the wrong estimator here: the excluded arm of a clean line is a flat
+    window, where a Gaussian fit is unconstrained — it does not fail, it returns an absurdly
+    broad, shallow line and an EW of thousands of mÅ, which reads back as a fully blended
+    line and silently throws a good one away. Integration is well defined for both a deep
+    line and an empty window, and using the same estimator on both arms is what makes the
+    ratio mean anything.
+    """
+    ew_all = _ew(spec_all, window, "trapz", x0)
+    ew_excl = _ew(spec_excl, window, "trapz", x0)
+    frac = float(ew_excl / ew_all) if ew_all > 0 else float("inf")
+    return frac, ew_all, ew_excl
+
+
+# --- mask-free window + diagnostic screen ------------------------------------------------
+
+def auto_window(spec, lam0, exclude_wing=False, fallback=0.4, resolution=None):
+    """Inflection-based fittable window around ``lam0`` (mask replacement).
+
+    Wraps :func:`tumult.utils.auto_crop_core` on the reference spectrum and returns
+    ``((xmin, xmax), found)`` — the bounds in the spectrum's wavelength unit, and whether a
+    real core was resolved. When the detector cannot resolve a core (e.g. too few/flat
+    points) the bounds fall back to ``lam0 ± fallback`` Å and ``found`` is ``False`` so the
+    caller can reject the line rather than trust the fallback window.
+    """
+    x, y = spec.values
+    try:
+        xc, _ = auto_crop_core(x, y, lam0, exclude_wing=exclude_wing, resolution=resolution)
+        if len(xc) >= 3:
+            return (float(np.min(xc)), float(np.max(xc))), True
+    except Exception:
+        pass
+    return (float(lam0 - fallback), float(lam0 + fallback)), False
+
+
+def screen(ew_maa, blend_frac, lam0_aa, *, ew_min=5.0, logrw_max=-4.8, blend_max=0.30):
+    """Flag a candidate line as too weak / saturated / blended; return ``(flags, ok)``.
+
+    ``ok`` is True only when no flag fires — i.e. a clean, unsaturated, sufficiently strong
+    diagnostic. Thresholds are exposed so the tool can let the user tune them.
+    """
+    flags = []
+    if ew_maa < ew_min:
+        flags.append("weak")
+    if reduced_ew(ew_maa, lam0_aa) > logrw_max:
+        flags.append("strong")
+    if blend_frac > blend_max:
+        flags.append("blended")
+    return tuple(flags), not flags
+
+
+# --- per-line + per-element orchestration ------------------------------------------------
+
+@dataclass
+class AbundanceResult:
+    """One completed element run: the per-line measurements plus the aggregated mean.
+
+    A plain data container (no GUI deps) so it can be serialised into a session snapshot and
+    re-consumed by a later Fe-balance / stellar-parameter solver. ``feh``/``relative`` record
+    the abundance convention so ``a`` values are interpretable.
+    """
+    element: str                       # species, e.g. "Fe I"
+    symbol: str                        # bare element symbol, e.g. "Fe"
+    lines: list                        # list[LineResult]
+    summary: dict                      # aggregate(...) output
+    stage: str = "lines"               # "lines" → "synth" → "uncert" (how far it has run)
+    profile: str = "gauss"             # EW/FWHM profile chosen at line-selection
+    teff: float = float("nan")
+    logg: float = float("nan")
+    feh: float = float("nan")
+    vmic: float = float("nan")
+    snr: float | None = None
+    cont_pct: float = float("nan")
+    relative: bool = True              # True → ``a`` is [X/Fe]; False → A(X)
+    uid: str = ""
+    name: str = ""
+
+    # --- session persistence ------------------------------------------------------------
+    def to_dict(self):
+        """A JSON-safe view for the session snapshot. Captures the per-line records plus the
+        reference the tools attach dynamically: ``ref_uid`` (AbundTool → a canvas observation)
+        and ``ref_spec`` (CorrTool → the synthetic 1D LTE reference, embedded)."""
+        d = {}
+        for f in fields(self):
+            d[f.name] = [ln.to_dict() for ln in self.lines] if f.name == "lines" \
+                else getattr(self, f.name)
+        if hasattr(self, "ref_uid"):
+            d["ref_uid"] = self.ref_uid
+        ref_spec = getattr(self, "ref_spec", None)
+        if ref_spec is not None:
+            d["ref_spec"] = ref_spec.to_dict()
+        return d
+
+    @classmethod
+    def from_dict(cls, d):
+        d = dict(d or {})
+        names = {f.name for f in fields(cls)}
+        lines = [LineResult.from_dict(x) for x in (d.get("lines") or [])]
+        kw = {k: v for k, v in d.items() if k in names and k != "lines"}
+        res = cls(lines=lines, **kw)
+        if "ref_uid" in d:
+            res.ref_uid = d["ref_uid"]
+        if d.get("ref_spec") is not None:
+            res.ref_spec = Spectrum.from_dict(d["ref_spec"])
+        return res
+
+
+@dataclass
+class Thresholds:
+    ew_min: float = 5.0         # mÅ — below this a line is too weak to trust
+    logrw_max: float = -4.8     # reduced-EW ceiling — above this the line is saturating
+    blend_max: float = 0.30     # contaminant EW fraction ceiling
+    weak_frac: float = 0.10     # species-only EW must be ≥ this fraction of the measured EW
+
+
+# --- staged pipeline (the 3-step wizard drives these one stage at a time) -----------------
+
+def measure_line(ref_spec, line, profile="gauss", fallback=0.4, resolution=None):
+    """Stage 1: fit a line on the reference and return the bound Profile plus its windows.
+
+    Independent of any stellar parameters. Returns ``(prof, window, fit_window, flags)``:
+    ``prof`` is the fitted :class:`tumult.profile.Profile` — it carries the EW (``.mAA``),
+    the FWHM, the model ``.func`` (for hatching the integrated area on jump) **and the
+    fit-covariance EW error** (``.width_err_mAA``; with no per-pixel noise given, the
+    covariance is residual-scaled, so this error measures the profile/model mismatch —
+    nonzero even on a noiseless synthetic spectrum). ``fit_window`` is the auto-crop
+    window the profile was actually fitted over, and ``window`` the wider synthesis /
+    jump window: ``SYNTH_HWHM_MULT`` HWHM either side of the *fitted* centre, widened as
+    needed to reach ``FIT_MARGIN_HWHM`` HWHM beyond ``fit_window`` on each side.
+
+    ``flags`` carries any sanity-check rejection reasons: ``"no_window"`` when
+    :func:`auto_window` could not resolve a core — in that case no EW is measured at all
+    and ``(None, (NaN, NaN), (NaN, NaN), ("no_window",))`` is returned — and
+    ``"off_center"`` when the fitted line centre falls outside the window. A non-empty
+    ``flags`` means the caller should keep the line but mark it rejected. Raises only on
+    a hard fit failure (too few points), so the caller can drop the line entirely.
+    """
+    lam0 = float(line["lam0"])
+    fit_window, found = auto_window(ref_spec, lam0, fallback=fallback, resolution=resolution)
+    if not found:
+        # no fittable core resolved: there is no trustworthy window, so don't measure an EW
+        # at all — return it flagged (no Profile / NaN windows), to keep but exclude.
+        nan = float("nan")
+        return None, (nan, nan), (nan, nan), ("no_window",)
+    sub = _crop(ref_spec, fit_window)
+    x, y = sub.values
+    try:
+        prof = get_profile_class(profile).measure(
+            np.asarray(x, float), np.asarray(y, float), x0=lam0, xunit=sub.xunit)
+    except ValueError as exc:
+        raise RuntimeError(f"profile fit failed at {lam0:.3f}") from exc
+    center = float(prof.params[0])
+    hwhm = 0.5 * float(prof.fwhm)
+    # synth window: SYNTH_HWHM_MULT HWHM about the fitted centre, but at least FIT_MARGIN_HWHM
+    # HWHM beyond the fit window on each side so the fit region is always enclosed.
+    synth_lo = min(center - SYNTH_HWHM_MULT * hwhm, fit_window[0] - FIT_MARGIN_HWHM * hwhm)
+    synth_hi = max(center + SYNTH_HWHM_MULT * hwhm, fit_window[1] + FIT_MARGIN_HWHM * hwhm)
+    flags = []
+    if not (fit_window[0] <= center <= fit_window[1]):
+        flags.append("off_center")
+    return prof, (synth_lo, synth_hi), fit_window, tuple(flags)
+
+
+def rew_gradient(synth_fn, a0, step, window=None, profile="gauss", x0=None,
+                 batch_synth_fn=None):
+    """Numerical ``dREW/dA`` at ``a0`` by central difference of the reduced EW over ±``step``.
+
+    ``synth_fn(a) -> Spectrum`` is the full synthesis at abundance ``a`` (caller's convention).
+    The reduced EW is measured over ``window`` (the fit window) with ``profile`` and reference
+    ``x0`` using ``get_weq``'s default REW return — no manual log conversion. Returns the gradient
+    per dex (``NaN`` if either flank cannot be measured).
+
+    ``batch_synth_fn([a_hi, a_lo]) -> [Spectrum, Spectrum]`` (optional): synthesise both flanks
+    in one call so they can be fanned across a single process pool; identical result to the two
+    serial ``synth_fn`` calls, just scheduled together.
+    """
+    step = abs(float(step)) or 0.05
+    try:
+        if batch_synth_fn is not None:
+            hi, lo = batch_synth_fn([a0 + step, a0 - step])
+        else:
+            hi, lo = synth_fn(a0 + step), synth_fn(a0 - step)
+        rew_hi = _rew(hi, window, profile, x0)
+        rew_lo = _rew(lo, window, profile, x0)
+    except Exception:
         return float("nan")
-    return 0.5 * abs(fwhm_aa) / lam0_aa * CC_KMS
+    if not (np.isfinite(rew_hi) and np.isfinite(rew_lo)):
+        return float("nan")
+    return float((rew_hi - rew_lo) / (2.0 * step))
 
 
-def sigma_a_from_rew(prof, drewda):
-    """Convert a measured line's EW errors to an abundance error through the gradient ``dREW/dA``.
+# sigma_a_from_rew moved to tumult.abundance (re-exported above).
 
-    Works in reduced-EW space (unit independent): the :class:`tumult.profile.Profile` already
-    carries ``σ_REW = σ_W / (W ln10)`` per component (``rew_err_phot`` / ``rew_err_cont``), and
-    ``σ_A = σ_REW / |dREW/dA|``. Returns ``(sigma_a, sigma_a_phot, sigma_a_cont)``; a non-finite or
-    zero gradient / EW blows the error up to ``inf`` (as a saturated or vanished line should).
+
+def fit_line(line, *, synth_only_fn, synth_all_fn, synth_excl_fn, abund_fit_fn,
+             ew_meas, a_guess=0.0, profile="gauss", weak_frac=0.10, blend_max=0.30,
+             grad_step=0.125, grad_batch_fn=None):
+    """Stage 2 (direct fit): screen the line, fit its abundance + vshift/vdop, and get ``dREW/dA``.
+
+    Injected callables (synthesis-agnostic so this stays engine-independent and testable):
+
+    * ``synth_only_fn(a) -> Spectrum`` — the line at abundance ``a`` with *only* the target
+      species (``only_elements``); its fit-window width EW is the weak-line screen.
+    * ``synth_all_fn(a) -> Spectrum`` — the *full* synthesis at abundance ``a`` (all species), used
+      for the blend metric and the ``dREW/dA`` gradient.
+    * ``synth_excl_fn() -> Spectrum`` — the window with the target species removed
+      (``exclude_elements``); with ``synth_all_fn(a_guess)`` gives the blend fraction.
+    * ``abund_fit_fn(guess) -> (best: dict, fitted: Spectrum)`` — the adaptive fit of the abundance
+      axis plus vshift/vdop against the observation over the fit window. ``best`` must expose the
+      abundance under key ``"a"`` (plus ``"vshift"``/``"vdop"`` when fitted).
+
+    ``ew_meas`` is the measured width EW (mÅ) from stage 1; ``line.fit_window`` bounds every
+    screen/gradient EW. Mutates ``line`` in place and returns it. A screen rejection sets a flag,
+    ``include=False`` and returns early (no fit).
     """
-    g = abs(float(drewda))
-    if not np.isfinite(prof.mAA) or prof.mAA <= 0 or not np.isfinite(g) or g == 0:
-        return np.inf, np.inf, np.inf
-    s_phot = prof.rew_err_phot / g
-    s_cont = prof.rew_err_cont / g
-    return float(np.hypot(s_phot, s_cont)), float(s_phot), float(s_cont)
+    fw, x0 = line.fit_window, line.lam0
+
+    # 1) weak-line screen: species-only width EW in the fit window vs the measured EW (a ratio).
+    ew_species = _ew(synth_only_fn(a_guess), fw, profile, x0)
+    line.ew_species = float(ew_species)
+    if not np.isfinite(ew_species) or ew_species < weak_frac * ew_meas:
+        line.flags = ("weak_line",)
+        line.include = False
+        return line
+
+    # 2) blend screen: contaminant width fraction in the fit window.
+    blend, _, _ = blend_fraction(synth_all_fn(a_guess), synth_excl_fn(), window=fw,
+                                 profile=profile, x0=x0)
+    line.blend_frac = float(blend)
+    if np.isfinite(blend) and blend > blend_max:
+        line.flags = ("blended",)
+        line.include = False
+        return line
+
+    # 3) direct fit of abundance + vshift + vdop against the observation over the fit window.
+    best, fitted = abund_fit_fn(a_guess)
+    line.a = float(best["a"])
+    line.vshift = float(best.get("vshift", np.nan))
+    line.vdop = float(best.get("vdop", np.nan))
+    line.fit_spec = fitted
+    line.method = "fit"
+
+    # 4) numerical dREW/dA around the best-fit abundance (full synthesis, fit window). Both
+    # flanks are independent, so they go through the batch path (one shared pool) when given.
+    line.drewda = rew_gradient(synth_all_fn, line.a, grad_step, window=fw, profile=profile,
+                               x0=x0, batch_synth_fn=grad_batch_fn)
+
+    # 5) flag an implausibly large velocity shift: compare |vshift| against the line's HWHM,
+    # converted to a velocity (HWHM_λ / λ0 · c). A best fit that had to slide the synthetic by
+    # more than half a line width is suspect, so mark it and exclude it by default.
+    line.flags = ()
+    hwhm_kms = velocity_hwhm(line.fwhm, line.lam0)
+    if np.isfinite(line.vshift) and np.isfinite(hwhm_kms) and abs(line.vshift) > hwhm_kms:
+        line.flags = ("vshift",)
+        line.include = False
+    return line
 
 
-def profile_fwhm(pout, func, profile):
-    """Full width at half depth of a fitted line profile, in the fit's wavelength unit.
+def finalize_line(line, ref_spec, snr, cont_pct, profile="gauss"):
+    """Stage 3: re-measure the EW with SNR/continuum errors and propagate to ``sigma_a``.
 
-    Thin shim over :attr:`tumult.profile.FittedProfile.fwhm` (Gaussian widths analytic, the
-    Voigt measured numerically off the fitted ``func``). ``pout`` are the fit parameters and
-    ``func`` the fitted ``f(λ)``.
+    Keeps ``line.a`` from the direct fit and converts the EW error to an abundance error through
+    the stored REW gradient ``line.drewda`` (dREW/dA). No synthesis — fast to rerun whenever the
+    SNR / continuum-% inputs change. Mutates ``line`` in place.
     """
-    return get_profile_class(profile)(None, params=pout, func=func).fwhm
+    prof = measure_ew(
+        ref_spec, window=line.fit_window, snr=snr, cont_pct=cont_pct, profile=profile, x0=line.lam0)
+    line.ew, line.ew_err = prof.mAA, prof.width_err_mAA
+    if not np.isfinite(getattr(line, "drewda", float("nan"))):
+        return line
+    sa, sap, sac = sigma_a_from_rew(prof, line.drewda)
+    line.sigma_a = float(sa)
+    line.sigma_a_phot = float(sap)
+    line.sigma_a_cont = float(sac)
+    return line
+
+
+# --- the three-stage element workflow ------------------------------------------------------
+# Line selection, the per-line synthesis, and the error budget, as three calls. They are the
+# same three the GUI's abundance wizard makes, with the rendering left to the caller: what
+# comes back is the :class:`AbundanceResult`, and ``progress`` is how a caller watches it
+# fill in line by line during the long middle stage.
+
+def measure_lines(mset, ref_spec, *, reference_name, linelist, profile, snr, cont_pct):
+    """Stage 1: measure a mask set's switched-on windows on the reference observation.
+
+    The windows are taken exactly as curated — nothing is re-derived, added or dropped. A set
+    whose diagnostics already came from *this* reference is reused as it stands; otherwise
+    the windows are re-measured here (and the set's diagnostics table follows), with the
+    atomic identity of each window's dominant transition attached from the line list.
+
+    Returns ``(result, remeasured)``; ``remeasured`` says whether ``mset`` was written to, so
+    a caller with a view of the mask set knows to repaint it. Raises :class:`ValueError` when
+    the set holds nothing measurable.
+    """
+    import uuid
+
+    from . import linediag
+    from .linelist import load_master
+
+    stale = (mset.diag_meta or {}).get("reference") != reference_name
+    remeasured = bool(stale or not mset.has_diag)
+    if remeasured:
+        try:
+            master = load_master(linelist)
+            symbol = master.ion.astype(str).str.split().str[0]
+            catalog = master[symbol == mset.element]
+        except Exception:
+            # the catalog only names the dominant transition of each window in the
+            # diagnostics artifact; it never touches the mask or the measurement
+            logging.exception("Could not read the line list for %s", mset.element)
+            catalog = None
+        linediag.measure_masks(ref_spec, [m for m in mset.masks if m.include],
+                               profile=profile, snr=snr, cont_pct=cont_pct, catalog=catalog)
+        mset.diag_meta = {"reference": reference_name, "element": mset.element,
+                          "linelist": Path(linelist).name, "profile": profile,
+                          "snr": snr, "cont_pct": cont_pct}
+    lines = linediag.line_results(mset)
+    if not lines:
+        raise ValueError(f"No measurable windows in “{mset.name}”.")
+    result = AbundanceResult(element=mset.element, symbol=mset.element, lines=lines,
+                             summary=aggregate([]), stage="lines", profile=profile,
+                             uid=uuid.uuid4().hex[:8])
+    result.name = f"{mset.element} · {len(lines)} lines"
+    return result, remeasured
+
+
+def run_abundance(request, result, observation, *, progress=None, cancel_token=None):
+    """Stage 2: screen and fit every included line of ``result``, in place.
+
+    ``request`` is a :class:`~tumult.synthesis.SynthRequest`; ``observation`` the spectrum the
+    lines were measured on. Each line gets the four syntheses :func:`fit_line` needs — the
+    species in isolation, the full window, the window with the element removed, and the
+    adaptive abundance fit — plus the dREW/dA flanks, which go in as one batch so they fold
+    onto a single run's abundance-set axis. ``progress(result)`` is called as each line
+    lands, so a caller can stream partial results; it must not raise.
+    """
+    from .synthesis import workflows as synth
+    from .synthesis.cancel import CancelledError
+
+    report = progress or (lambda _result: None)
+    prefs, grid = request.prefs, request.grid
+    target, atmos_file = request.target, request.atmos_file
+    base_rv = dict(request.run_vals)
+    feh = request.feh
+    relative = bool(base_rv.get("relative_abundances", False))
+    solar = synth.abund_table(prefs)
+    base_abund = str(base_rv.get("abundances", "")).strip()
+    symbol = result.symbol
+
+    def synth_window(rv_over, window):
+        rv = dict(base_rv)
+        rv.update(rv_over)
+        return synth.compute(target, prefs, rv, window[0] - SYNTH_PAD_AA,
+                             window[1] + SYNTH_PAD_AA, grid=grid, atmos_file=atmos_file,
+                             cancel_token=cancel_token)
+
+    def abund_terms(a):
+        val = a if relative else xfe_to_abund(a, symbol, feh, solar)
+        return " ".join(t for t in (base_abund, f"{symbol}={val:.4f}") if t)
+
+    for ln in result.lines:
+        if cancel_token is not None and cancel_token.cancelled:
+            raise CancelledError()
+        if not ln.include:
+            continue          # skip step-1-rejected / user-excluded lines (keeps flags)
+
+        def synth_only_fn(a, _w=ln.window):
+            return synth_window({"abundances": abund_terms(a),
+                                 "relative_abundances": relative,
+                                 "only_elements": symbol}, _w)
+
+        def synth_all_fn(a, _w=ln.window):
+            return synth_window({"abundances": abund_terms(a),
+                                 "relative_abundances": relative}, _w)
+
+        def synth_all_batch(a_list, _w=ln.window):
+            rvs = [{**base_rv, "abundances": abund_terms(a),
+                    "relative_abundances": relative} for a in a_list]
+            return synth.compute_batch(target, prefs, rvs, _w[0] - SYNTH_PAD_AA,
+                                       _w[1] + SYNTH_PAD_AA, grid=grid,
+                                       atmos_file=atmos_file, cancel_token=cancel_token)
+
+        def synth_excl_fn(_w=ln.window):
+            return synth_window({"exclude_elements": symbol}, _w)
+
+        def abund_fit_fn(guess, _w=ln.window, _fw=ln.fit_window):
+            return synth.fit_line(observation, target, prefs, base_rv, symbol, guess,
+                                  _w[0] - SYNTH_PAD_AA, _w[1] + SYNTH_PAD_AA, _fw,
+                                  grid=grid, atmos_file=atmos_file,
+                                  cancel_token=cancel_token)
+
+        try:
+            fit_line(ln, synth_only_fn=synth_only_fn, synth_all_fn=synth_all_fn,
+                     synth_excl_fn=synth_excl_fn, abund_fit_fn=abund_fit_fn,
+                     ew_meas=ln.ew, a_guess=0.0, profile=result.profile,
+                     grad_batch_fn=synth_all_batch)
+        except CancelledError:
+            raise
+        except Exception:
+            logging.exception("Abundance: fit for line %.3f failed", ln.lam0)
+            ln.flags = ("synth_failed",)
+        result.relative = relative
+        result.teff, result.logg, result.feh, result.vmic = target[0], target[1], feh, target[3]
+        report(result)
+    return result
+
+
+def finalize_result(result, ref_spec, snr, cont_pct):
+    """Stage 3: fold the SNR and continuum errors into every fitted line, then aggregate.
+
+    Only lines that were screened and fitted in stage 2 carry a REW gradient, and only those
+    can have an abundance error; the rest keep what they have. No synthesis, so this is cheap
+    to rerun whenever the SNR or continuum-% inputs change.
+    """
+    for ln in result.lines:
+        if np.isfinite(ln.drewda):
+            finalize_line(ln, ref_spec, snr, cont_pct, profile=result.profile)
+    result.snr, result.cont_pct = snr, cont_pct
+    result.summary = aggregate(result.lines)
+    result.stage = "uncert"
+    return result

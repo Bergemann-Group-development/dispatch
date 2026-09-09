@@ -10,6 +10,7 @@ from collections import defaultdict
 import copy
 import hashlib
 import itertools
+import logging
 import json
 import os
 import numpy as np
@@ -17,6 +18,8 @@ import pandas as pd
 from pathlib import Path
 from tumult.auxfuncs import update_dict
 import tumult as tm
+from tumult.flux import write_set_manifest
+from tumult.launch import prepare_input
 
 from .atmos_select import select_nodes
 from .executor import _make_da_jobs, _run_batch
@@ -173,6 +176,113 @@ def _interp_crop(grid, xmin, xmax, method):
     return spec
 
 
+def _parse_abundances(value):
+    """Parse the dispatch ``El=value`` abundance override into a stable mapping."""
+    out = {}
+    for term in str(value or '').replace(',', ' ').split():
+        element, sep, raw = term.partition('=')
+        if not sep or not element:
+            raise ValueError(f"invalid abundance override {term!r}")
+        key = element.lower().capitalize()
+        if key in out:
+            raise ValueError(f"duplicate abundance override for {key}")
+        out[key] = float(raw)
+    return out
+
+
+def _format_abundances(values):
+    return ' '.join(f'{element}={value:.12g}' for element, value in values.items())
+
+
+PROVENANCE_NAME = 'provenance.json'
+
+
+def _save_provenance(runs, nodes, settings):
+    """Write what each finished run was asked for, beside its output.
+
+    A run folder's name is rounded (Teff 5750 -> 't58'), so it cannot be read back as the
+    point that was synthesised. The launcher holds the real values here -- they are what
+    built the namelist -- so it writes them out rather than leaving the cache listing to
+    recover them from formatted Fortran. Written for cache hits too, which back-fills a run
+    that predates this file.
+    """
+    comp = (settings or {}).get('composition_params', {}) or {}
+    try:
+        items = list(_parse_abundances(comp.get('abundances', '')).items())
+    except (TypeError, ValueError):
+        items = []
+    abund = {'items': items, 'relative': bool(comp.get('relative_abundances', False))}
+    for jkey, teff_i, logg_i, feh_i, v, *_ in nodes:
+        run = runs.get(jkey)
+        if run is None:
+            continue
+        record = {'star': {'teff': float(teff_i), 'logg': float(logg_i),
+                           'feh': float(feh_i), 'vmic': float(v)},
+                  'abund': abund}
+        try:
+            (Path(run.folder) / PROVENANCE_NAME).write_text(json.dumps(record, indent=1))
+        except OSError:
+            # provenance is a convenience for the cache listing; a read-only or
+            # vanished run directory must not fail the synthesis that produced it
+            logging.exception('could not write %s for %s', PROVENANCE_NAME, run.folder)
+
+
+def _foldable_ladder(settings_list, launch_kwargs, nlte):
+    """Return ``(base_settings, manifest)`` when variants differ only in abundances."""
+    variants = [copy.deepcopy(s or {}) for s in settings_list]
+    abundance_maps = []
+    comparable = []
+    for settings in variants:
+        comp = settings.setdefault('composition_params', {})
+        try:
+            abundance_maps.append(_parse_abundances(comp.pop('abundances', '')))
+        except (TypeError, ValueError):
+            return None
+        comparable.append(settings)
+    if any(item != comparable[0] for item in comparable[1:]):
+        return None
+    keys = set(abundance_maps[0])
+    if not keys or any(set(values) != keys for values in abundance_maps[1:]):
+        return None
+
+    # The sampled table combines species and cannot apply an element-specific scale.
+    effective = prepare_input(settings_list[0], launch_kwargs.get('default'))
+    if any(bool((effective.get(section, {}) or {}).get('sample_linelist', False))
+           for section in ('rt_iteration_params', 'rt_output_params')):
+        return None
+
+    base = copy.deepcopy(settings_list[0] or {})
+    base_comp = base.setdefault('composition_params', {})
+    base_comp['abundances'] = _format_abundances(abundance_maps[0])
+    kind = 'nlte' if nlte else 'lte'
+    manifest = [
+        {'kind': 'continuum', 'offsets': {}},
+        {'kind': kind, 'offsets': {}},
+    ]
+    if nlte:
+        manifest.append({'kind': 'lte', 'offsets': {}})
+    for values in abundance_maps:
+        manifest.append({
+            'kind': kind,
+            'offsets': {element: values[element] - abundance_maps[0][element]
+                        for element in abundance_maps[0]},
+        })
+    return base, manifest
+
+
+class _LadderRunView:
+    """The one set of a folded run expected by :class:`SpectrumGrid`."""
+    def __init__(self, run, index):
+        self.run = run
+        self.index = index
+        self.has_spectrum = run.has_spectrum
+        self.mode = run.mode
+        self.folder = run.folder
+
+    def crop(self, *args, **kwargs):
+        return self.run.crop_set(self.index, *args, **kwargs)
+
+
 def build_stellar_grid(top, star, atmos_files,
                        settings=None, absmet_files=None,
                        method='Delaunay', max_threads=None, launch_kwargs=None,
@@ -263,6 +373,7 @@ def build_stellar_grid(top, star, atmos_files,
         if dep_failed:
             raise RuntimeError(f"Departure runs failed for atmospheres: {dep_failed}")
         dep_dirs = {n[0]: str(dep_runs[n[0]].folder) for n in nodes}
+        _save_provenance(dep_runs, nodes, base)
 
     jobs, job_keys, job_weights, job_params = _spec_jobs(base, nodes, top, nlte, dep_dirs)
     runs = _run_batch(jobs, launch_kwargs, max_threads, cancel_token=cancel_token)
@@ -270,6 +381,7 @@ def build_stellar_grid(top, star, atmos_files,
     failed = [k for k in job_keys if runs.get(k) is None]
     if failed:
         raise RuntimeError(f"Runs failed for atmospheres: {failed}")
+    _save_provenance(runs, nodes, base)
 
     return _assemble_grid(runs, star, vmic, job_keys, job_weights, job_params, vmic_points)
 
@@ -353,8 +465,8 @@ def compute_spectra(top, star, atmos_files, *, settings_list, absmet_files=None,
     """Batched :func:`compute_spectrum` for a list of settings variants that share the same
     star/atmospheres (e.g. a curve-of-growth's abundance ladder).
 
-    Every ``(atmosphere-node × variant)`` dispatch run is fanned through a *single* shared
-    process pool: one :func:`_run_batch` for the NLTE departure solves and one for the
+    Every ``(atmosphere-node × variant)`` dispatch run uses the shared execution
+    service: one :func:`_run_batch` for the NLTE departure solves and one for the
     spectrum solves (just one for LTE). Atmosphere/vmic node selection is done once and shared
     across variants. Returns ``[Spectrum]`` aligned with ``settings_list``.
 
@@ -377,19 +489,68 @@ def compute_spectra(top, star, atmos_files, *, settings_list, absmet_files=None,
     nodes, vmic = select_nodes(star, atmos_files, method=method, vmic_step=vmic_step,
                                absmet_files=absmet_files, vmic_points=vmic_points)
 
+    # Apply the window before comparing variants: it is part of both the fold condition
+    # and cache identity.
+    windowed = []
+    labels = []
+    for settings in settings_list:
+        item = copy.deepcopy(settings or {})
+        labels.append(_apply_window(item, xmin, xmax, pad))
+        windowed.append(item)
+    nlte_values = [bool(_is_nlte(s) if nlte is None else nlte) for s in windowed]
+
+    fold = None
+    if len(set(nlte_values)) == 1 and len(set(labels)) == 1:
+        fold = _foldable_ladder(windowed, launch_kwargs, nlte_values[0])
+    if fold is not None:
+        base, manifest = fold
+        manifest_text = json.dumps(manifest, sort_keys=True, separators=(',', ':'))
+        digest = hashlib.sha1(json.dumps(
+            [base, manifest_text], sort_keys=True, default=str).encode()).hexdigest()[:8]
+        manifest_path = (top / '_set_manifests' / f'{digest}.txt').resolve()
+        write_set_manifest(manifest_path, manifest)
+        base.setdefault('output_params', {})['set_file'] = str(manifest_path)
+        syn_top = top / f'{labels[0]}_{digest}'
+        nlte_v = nlte_values[0]
+        dep_top = _dep_bucket(top, base) if nlte_v else None
+
+        dep_dirs = {}
+        if nlte_v:
+            dep_jobs = _dep_jobs(base, nodes, dep_top)
+            dep_runs = _run_batch(dep_jobs, launch_kwargs, max_threads,
+                                  cancel_token=cancel_token)
+            failed = [key for key, _path, _nml in dep_jobs if dep_runs.get(key) is None]
+            if failed:
+                raise RuntimeError(f"Departure runs failed: {failed}")
+            dep_dirs = {key: str(dep_runs[key].folder) for key, _path, _nml in dep_jobs}
+
+        jobs, job_keys, job_weights, job_params = _spec_jobs(
+            base, nodes, syn_top, nlte_v, dep_dirs)
+        runs = _run_batch(jobs, launch_kwargs, max_threads, cancel_token=cancel_token)
+        failed = [key for key in job_keys if runs.get(key) is None]
+        if failed:
+            raise RuntimeError(f"Runs failed: {failed}")
+
+        first_ladder = 3 if nlte_v else 2
+        results = []
+        for vi in range(len(settings_list)):
+            views = {key: _LadderRunView(runs[key], first_ladder + vi)
+                     for key in job_keys}
+            grid = _assemble_grid(views, star, vmic, job_keys, job_weights,
+                                  job_params, vmic_points)
+            results.append(_interp_crop(grid, xmin, xmax, method))
+        return results
+
     # Per variant: assemble window/hash-keyed tops exactly as compute_spectrum does.
     prepared = []   # (settings, syn_top, departures_top, nlte_v)
-    for settings in settings_list:
-        s = copy.deepcopy(settings or {})
-        label = _apply_window(s, xmin, xmax, pad)
+    for s, label, nlte_v in zip(windowed, labels, nlte_values):
         digest = hashlib.sha1(
             json.dumps(s, sort_keys=True, default=str).encode()).hexdigest()[:8]
         syn_top = top / f'{label}_{digest}'
-        nlte_v = _is_nlte(s) if nlte is None else nlte
         dep_top = _dep_bucket(top, s) if nlte_v else None
         prepared.append((s, syn_top, dep_top, bool(nlte_v)))
 
-    # Phase 1: all NLTE departure solves (node × variant) in one shared pool. Keys are
+    # Phase 1: all NLTE departure solves (node × variant) through the shared scheduler. Keys are
     # namespaced by variant index; each variant's runs live under its own hash-keyed dir.
     dep_dirs = {}   # (vi, jkey) -> folder
     dep_jobs = []
@@ -404,7 +565,7 @@ def compute_spectra(top, star, atmos_files, *, settings_list, absmet_files=None,
             raise RuntimeError(f"Departure runs failed: {failed}")
         dep_dirs = {k: str(dep_runs[k].folder) for k, _p, _n in dep_jobs}
 
-    # Phase 2: all spectrum solves (node × variant) in one shared pool.
+    # Phase 2: all spectrum solves (node × variant) through the shared scheduler.
     spec_jobs = []
     variant_specs = []   # per variant: (job_keys, job_weights, job_params)
     for vi, (s, syn_top, _dep, nlte_v) in enumerate(prepared):

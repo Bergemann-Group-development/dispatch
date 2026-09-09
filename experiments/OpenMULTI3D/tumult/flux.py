@@ -4,8 +4,13 @@ mu-integration to flux.
 Extracted from the run class in the Phase 6 decomposition so the physics-critical
 pieces are named, documented and unit-tested instead of living inline:
 
+* :func:`read_set_manifest` parses ``sets.txt``, the run's own description of what
+  each slot on the saved set axis holds;
+* :func:`base_set_indices` locates the three physics components in a manifest,
+  for callers that split arrays other than ``ie``/``flux`` (``i3``, say);
 * :func:`split_ie` replaces the historical bare ``ie.shape[-1] == 3`` check with an
-  explicit layout dispatch that fails loudly on an unrecognised shape; it also splits
+  explicit layout dispatch -- a manifest lookup where the run wrote one, and the
+  historical count-based guess as the fallback for runs that did not; it also splits
   the ``flux`` patch save (same component layout, ray axis already collapsed to 1);
 * :func:`integrate_flux` is the disk-integration contract ``F = sum(w_mu * I_mu)``,
   used as a fallback in :meth:`tumult.run.tumult.read` for runs saved before the
@@ -16,27 +21,159 @@ pieces are named, documented and unit-tested instead of living inline:
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 
 
-def split_ie(ie, legacy):
+def read_set_manifest(folder):
+    """Parse ``sets.txt``: what each slot on the saved set axis actually contains.
+
+    The file is a long table, one row per (set, element), written by
+    ``rt_patch_t%save_set_manifest``::
+
+        # set  kind       element   da
+            1  continuum  -         -
+            2  nlte       -         -
+            3  lte        -         -
+
+    A set with no abundance offsets is a single row with ``-`` in both the element
+    and ``da`` columns; a set perturbing several elements gets one row per element,
+    all sharing the same set number. Returns a list ordered by set index, each entry
+    ``{'kind': str, 'offsets': {element: da}}``, or ``None`` if the run predates the
+    manifest (in which case the caller falls back to the count-based layout guess).
+    """
+    path = Path(folder) / 'sets.txt'
+    if not path.is_file():
+        return None
+    df = pd.read_csv(path, sep=r'\s+', comment='#', header=None,
+                     names=['set', 'kind', 'element', 'da'], na_filter=False)
+    if df.empty:
+        raise ValueError(f"empty set manifest: {path}")
+    sets = {}
+    for row in df.itertuples(index=False):
+        number = int(row.set)
+        kind = str(row.kind).strip().lower()
+        if number < 1:
+            raise ValueError(f"set numbers must start at 1 in {path}")
+        if kind not in {'continuum', 'nlte', 'lte'}:
+            raise ValueError(f"unknown set kind {kind!r} in {path}")
+        rec = sets.setdefault(number, {'kind': kind, 'offsets': {}})
+        if rec['kind'] != kind:
+            raise ValueError(f"set {number} has conflicting kinds in {path}")
+        element = str(row.element).strip()
+        if element and element != '-':
+            if element in rec['offsets']:
+                raise ValueError(f"set {number} repeats element {element!r} in {path}")
+            try:
+                rec['offsets'][element] = float(row.da)
+            except ValueError as exc:
+                raise ValueError(
+                    f"set {number}, element {element!r} has invalid da={row.da!r}"
+                ) from exc
+        elif str(row.da).strip() != '-':
+            raise ValueError(f"set {number} has da without an element in {path}")
+    expected = list(range(1, max(sets) + 1))
+    if sorted(sets) != expected:
+        raise ValueError(f"set numbers must be contiguous from 1 in {path}")
+    return [sets[key] for key in sorted(sets)]
+
+
+def write_set_manifest(path, sets):
+    """Write *sets* in the canonical long-table ``sets.txt`` format.
+
+    ``sets`` has the structure returned by :func:`read_set_manifest`. A set with
+    several abundance offsets is represented by several rows with the same number.
+    The parent directory is created for synthesis cache manifests.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = ["# set  kind       element  da\n"]
+    for number, item in enumerate(sets, 1):
+        kind = str(item['kind']).strip().lower()
+        if kind not in {'continuum', 'nlte', 'lte'}:
+            raise ValueError(f"unknown set kind {kind!r}")
+        offsets = dict(item.get('offsets') or {})
+        if not offsets:
+            lines.append(f"{number:5d}  {kind:<9s}  {'-':<7s}  -\n")
+            continue
+        for element, da in offsets.items():
+            element = str(element).strip()
+            if not element or any(c.isspace() for c in element):
+                raise ValueError(f"invalid element name {element!r}")
+            lines.append(f"{number:5d}  {kind:<9s}  {element:<7s}  {float(da):+.12g}\n")
+    path.write_text(''.join(lines))
+
+
+def ladder_sets(sets):
+    """Return ``(index, element, da)`` rows for the abundance-offset sets.
+
+    ``index`` is the zero-based array index used by Python readers. Multi-element
+    sets therefore produce several tuples sharing an index.
+    """
+    if not sets:
+        return []
+    return [(index, element, da)
+            for index, item in enumerate(sets)
+            for element, da in item.get('offsets', {}).items()]
+
+
+def base_set_indices(sets, ncomp):
+    """Locate the unperturbed physics sets in a manifest: ``(main, lte, cnt, mode)``.
+
+    The three historical components are the sets carrying no abundance offset; ladder
+    sets, when they exist, are everything else and are unpacked separately. An LTE run
+    has no ``nlte`` set and its ``lte`` set *is* the intensity, which is what the
+    ``mode == 'LTE'`` contract has always meant.
+    """
+    if len(sets) != ncomp:
+        raise ValueError(
+            f"set manifest lists {len(sets)} sets but the saved array has {ncomp} "
+            f"components; the manifest and the run output disagree")
+
+    def find(kind):
+        for i, s in enumerate(sets):
+            if s['kind'] == kind and not s['offsets']:
+                return i
+        return None
+
+    i_cnt = find('continuum')
+    if i_cnt is None:
+        raise ValueError("set manifest has no unperturbed 'continuum' set")
+    i_nlte = find('nlte')
+    i_lte = find('lte')
+    if i_nlte is not None:
+        return i_nlte, i_lte if i_lte is not None else i_nlte, i_cnt, 'NLTE'
+    if i_lte is not None:
+        return i_lte, i_lte, i_cnt, 'LTE'
+    raise ValueError("set manifest has no unperturbed 'nlte' or 'lte' set")
+
+
+def split_ie(ie, legacy, sets=None):
     """Split a saved intensity array into ``(ie, ie_lte, ie_cnt, mode)``.
 
     The dispatch output stacks components on the last axis of the patch array
-    ``ie[nlam, 1, 1, nang, ncomp]``; which component is which depends on the output
-    generation (detected upstream from the namelist: ``legacy`` = no
-    ``read_departures`` key):
+    ``ie[nlam, 1, 1, nang, ncomp]``. Where the run wrote a set manifest, ``sets``
+    (from :func:`read_set_manifest`) says which component is which and the layout is
+    a lookup. Without one the component count is all there is to go on, and which
+    component is which depends on the output generation (detected upstream from the
+    namelist: ``legacy`` = no ``read_departures`` key):
 
     * legacy (always 3 components): ``[intensity, lte, continuum]``; the run's RT mode
       is inferred by comparing the intensity to its LTE component.
     * modern: ``[intensity, continuum]`` for an LTE run (the LTE view *is* the
       intensity), ``[intensity, continuum, lte]`` for an NLTE run.
 
-    Raises ``ValueError`` on any other component count — previously an unrecognised
-    shape was silently misclassified (or crashed later with an opaque IndexError).
+    Raises ``ValueError`` on any other component count, and on a manifest that
+    disagrees with the saved array — previously an unrecognised shape was silently
+    misclassified (or crashed later with an opaque IndexError).
     """
     ncomp = ie.shape[-1]
+    if sets:
+        i_main, i_lte, i_cnt, mode = base_set_indices(sets, ncomp)
+        return (ie[:, 0, 0, :, i_main], ie[:, 0, 0, :, i_lte],
+                ie[:, 0, 0, :, i_cnt], mode)
     if legacy:
         if ncomp != 3:
             raise ValueError(

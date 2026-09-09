@@ -1,3 +1,4 @@
+import threading
 from .utils import pchip_mono
 from .spectrum import Spectrum
 import numpy as np
@@ -537,7 +538,16 @@ def _truncate_weights(weights, indices, keep):
     return w / w.sum(), indices[sel]
 
 
+_INTERP_LOCK = threading.RLock()
+
+
 def get_interp_weights(points, query, method='Delaunay', keep=_NN_WEIGHT_KEEP):
+    """Thread-safe access to cached interpolation geometry."""
+    with _INTERP_LOCK:
+        return _get_interp_weights(points, query, method, keep)
+
+
+def _get_interp_weights(points, query, method='Delaunay', keep=_NN_WEIGHT_KEEP):
     """(weights, indices) of the interpolation nodes for ``query`` in raw grid ``points``.
 
     The fundamental node-selection entry point: it pins on-grid axes (dimension reduction),

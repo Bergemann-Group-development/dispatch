@@ -250,6 +250,11 @@ class Profile:
         return self._rew_err(self.err_cont)
 
 
+def _plain(value, xunit):
+    """``value`` as bare numbers in ``xunit`` (Quantities converted, plain values kept)."""
+    return value.to_value(xunit) if isinstance(value, u.Quantity) else value
+
+
 class FittedProfile(Profile):
     """A profile determined by fitting a shape to the data (gauss / voigt / asym_gauss).
 
@@ -274,6 +279,13 @@ class FittedProfile(Profile):
     def measure(cls, xx, yy, *, x0, sigma=None, xunit=u.AA, **kwargs):
         from .utils import fit_line_profile  # lazy: utils imports this module
 
+        # Fit in bare numbers of ``xunit``. The fit normalises x by x0 and rescales the
+        # parameters back by it, so a Quantity x makes every wavelength-like parameter — and
+        # the bound ``func``, which divides its argument by that same x0 — carry a unit. That
+        # breaks each ``fwhm`` (``float()`` of a non-dimensionless Quantity) and every plain
+        # array handed to ``func``. The unit belongs to the Profile, which already carries it.
+        xx = _plain(xx, xunit)
+        x0 = _plain(x0, xunit)
         pout, pcov, func = fit_line_profile(xx, yy, x0=x0, sigma=sigma, profile=cls.name, **kwargs)
         if pout is None:
             raise ValueError(

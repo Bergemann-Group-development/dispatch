@@ -11,7 +11,8 @@ from .auxfuncs import *
 from .decorators import broadcast_arguments
 from .plotting_scripts import *
 from .fast_atom import FastAtom, PandasAtom
-from .flux import integrate_flux, read_angle_quadrature, split_ie
+from .flux import (base_set_indices, integrate_flux, ladder_sets,
+                   read_angle_quadrature, read_set_manifest, split_ie)
 from .io_binary import read_patch_save as _read_patch_save
 from .linelist import LineList
 from .NameList import NameList
@@ -119,6 +120,10 @@ class tumult(object):
         self.all_lam = read_wavelength_file('all_lam.bin')
         self.has_spectrum = self.lam is not None and self.lam.size > 0
         self.legacy = not 'read_departures' in self.nml['atmos_params']
+        # the run's own description of its set axis, where it wrote one; None
+        # falls split_ie back on the historical count-based layout guess
+        self.sets = read_set_manifest(folder)
+        self.ladder = ladder_sets(self.sets)
 
         if self.has_spectrum:
             self.has_spectrum = self.nml['rt_output_params']['angle_quad'].strip() != 'none'
@@ -145,20 +150,23 @@ class tumult(object):
             if self.has_spectrum:
                 if (verbose > 0): print('Reading Intensities')
                 ie = self.read_patch_save('ie', lazy=False)[0]
+                self._ie_sets = ie[:, 0, 0, :, :]
 
                 if self.lam.shape[0] != ie.shape[0]:
                     print(f'Wavelength and Intensity dimensions do not match!\nRun {folder} might have never completed!')
 
                 # explicit layout dispatch (legacy [ie, lte, cnt] vs modern
                 # [ie, cnt(, lte)]); fails loudly on an unrecognised component count
-                self.ie, self.ie_lte, self.ie_cnt, self.mode = split_ie(ie, self.legacy)
+                self.ie, self.ie_lte, self.ie_cnt, self.mode = split_ie(
+                    ie, self.legacy, self.sets)
 
                 try:
                     # the Fortran side now integrates the mu-quadrature itself and
                     # saves the result directly (same [ie, lte, cnt] component
                     # layout as 'ie', just with the ray axis already collapsed)
                     flux = self.read_patch_save('flux', lazy=False)[0]
-                    flux_i, flux_lte, flux_cnt, _ = split_ie(flux, self.legacy)
+                    self._flux_sets = flux[:, 0, 0, 0, :]
+                    flux_i, flux_lte, flux_cnt, _ = split_ie(flux, self.legacy, self.sets)
                     self.flux     = flux_i[:, 0]
                     self.flux_lte = flux_lte[:, 0]
                     self.flux_cnt = flux_cnt[:, 0]
@@ -168,13 +176,23 @@ class tumult(object):
                     self.flux     = integrate_flux(self.ie,     self.wts)
                     self.flux_lte = integrate_flux(self.ie_lte, self.wts)
                     self.flux_cnt = integrate_flux(self.ie_cnt, self.wts)
+                    self._flux_sets = np.stack(
+                        [integrate_flux(self._ie_sets[..., i], self.wts)
+                         for i in range(self._ie_sets.shape[-1])], axis=-1)
 
                 if self.nml['output_params']['save_resolved']:
                     i3 = self.read_patch_save('i3')[0]
-                    self.i3     = i3[...,0]
-                    self.c3     = i3[...,1]
+                    # 'i3' carries the same set axis as 'ie', so it takes the same
+                    # layout: a manifest lookup where the run wrote one, and the
+                    # historical [intensity, continuum, lte] order otherwise
+                    if self.sets:
+                        j, j_lte, j_cnt, _ = base_set_indices(self.sets, i3.shape[-1])
+                    else:
+                        j, j_cnt, j_lte = 0, 1, 2
+                    self.i3     = i3[...,j]
+                    self.c3     = i3[...,j_cnt]
                     if self.mode == 'NLTE' and i3.shape[-1] > 2:
-                        self.i3_lte = i3[...,2]
+                        self.i3_lte = i3[...,j_lte]
 
         return self
 
@@ -342,6 +360,46 @@ class tumult(object):
                 yy = np.mean(self.ie[:, imu_mask], axis=1)
 
         return Spectrum(self.lam, yy, xunit=u.angstrom, yunit=yunit)
+
+    def get_set_spectrum(self, index, ang=None, imu=None):
+        """Return one explicit set-axis component as a :class:`Spectrum`.
+
+        This is the ladder counterpart of :meth:`get_spectrum`; ``index`` is the
+        zero-based index reported by :attr:`ladder`.
+        """
+        if not hasattr(self, '_ie_sets'):
+            raise RuntimeError('run has no saved spectrum sets')
+        index = int(index)
+        if index < 0 or index >= self._ie_sets.shape[-1]:
+            raise IndexError(f'set index {index} is out of range')
+        if imu is not None:
+            if imu >= self.nmu:
+                raise ValueError(f'imu is out of range. Nmu = {self.nmu}')
+            if imu < 0:
+                imu = self.imus.max() + imu + 1
+        if self.n_ang == 1:
+            ang = 0
+        flux = ang is None and imu is None
+        if flux:
+            yy = self._flux_sets[:, index]
+        elif ang is not None:
+            yy = self._ie_sets[:, ang, index]
+        else:
+            yy = np.mean(self._ie_sets[:, self.imus == imu, index], axis=1)
+        yunit = u.erg/(u.s*u.cm**2*u.angstrom)
+        if not flux:
+            yunit = yunit / u.sr
+        return Spectrum(self.lam, yy, xunit=u.angstrom, yunit=yunit)
+
+    def crop_set(self, index, slc=None, x0=None, ang=None, imu=None, norm=True,
+                 **kwargs):
+        """Crop and optionally continuum-normalise one ladder set."""
+        spec = self.get_set_spectrum(index, ang=ang, imu=imu)
+        spec = spec.crop(slc=slc, x0=x0, **kwargs)
+        if norm:
+            cnt = self.get_spectrum(ang=ang, imu=imu, cont=True)
+            spec = spec / cnt.crop(slc=slc, x0=x0, **kwargs)
+        return spec
 
     #=====================================================================
     def crop(self, slc=None, x0=None, ang=None, imu=None, norm=True,
