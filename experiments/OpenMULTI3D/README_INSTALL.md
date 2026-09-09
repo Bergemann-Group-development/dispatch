@@ -44,8 +44,12 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-This installs everything `tumult/` and `TumultStudio2/` need (numpy, scipy,
-numba, astropy, bokeh, etc. — see [`requirements.txt`](requirements.txt)).
+This installs the headless `tumult/` stack. For TumultStudio2 and notebook
+support, install the GUI extras instead:
+
+```bash
+pip install -r requirements-gui.txt
+```
 
 ---
 
@@ -153,5 +157,4 @@ From the repository root (the directory containing this file):
 bokeh serve --show TumultStudio2
 ```
 
-The `tumult/` package is imported by adding the repo root to `sys.path`, so
-run Bokeh from here rather than from inside `TumultStudio2/`.
+Run Bokeh from here so the repository package is importable.

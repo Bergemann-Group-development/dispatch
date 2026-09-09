@@ -1,0 +1,25 @@
+# The parent repository ignores new experiment files by default. Keep the
+# execution regression tests reviewable without exposing generated artifacts.
+!.gitignore
+!AGENTS.md
+!CLAUDE.md
+!SUBAGENTS.md
+!tests/
+tests/*
+!tests/test_execution.py
+!tests/test_ui_execution.py
+!tests/test_flux_sets.py
+!tests/test_linemask.py
+!tests/test_linediag.py
+!tests/test_sparams.py
+!tests/test_ladder_workflows.py
+
+# Keep development plans visible under the parent experiment ignore rule.
+!plan/
+!plan/*.md
+
+# Nothing is needed here for tumult/, HOP/, SRC/ or TumultStudio2/: the parent
+# repository negates those directories wholesale, so new files in them are visible.
+
+# The parent repository ignores *.txt as data; the GUI extras file is source.
+!requirements-gui.txt

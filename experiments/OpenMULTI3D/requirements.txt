@@ -1,6 +1,6 @@
 # Python dependencies for the OpenMULTI3D Python stack:
 #   - tumult/          (spectrum synthesis / analysis library)
-#   - TumultStudio2/   (Bokeh server GUI built on top of tumult)
+# Install ``requirements-gui.txt`` as well for TumultStudio2.
 #
 # Recommended: Python 3.11 (reference tumult_studio env runs 3.11.13); 3.12 also works.
 # Install into a virtualenv with:
@@ -17,13 +17,9 @@ astropy>=6.0         # units, constants, FITS I/O
 
 # --- Plotting ---
 matplotlib>=3.8
-bokeh>=3.4           # TumultStudio2 server application
 
 # --- Foreign function interface ---
 cffi>=1.16           # tumult/hop.py binds libhop.so against the generated HOP/standalone/libhop.h
 
 # --- Utilities ---
 tqdm>=4.66           # progress bars
-
-# --- Notebook / interactive use (demo.ipynb, linelist.ipynb, ...) ---
-ipykernel>=6.29
