@@ -30,7 +30,7 @@ MODULE composition_patch_mod
   USE rt_patch_mod, only: rt_patch_t, output_set_da, output_set_element, verify_output_patch_coverage
   USE bftrans_mod, only: H_occupation_probability
   USE bbtrans_mod, only: tolerance, bbtrans_type, disable_ga, disable_stark, disable_vdw, ga_fallback
-  USE linelist_mod, only: ll_profile, voigt_kernel, voigt_kernel_init
+  USE linelist_mod, only: ll_profile, voigt_kernel, voigt_kernel_init, interval_t, merge_intervals
   USE hprofl_mod, only: hydrogen_BPO
   USE hvcs_mod, only: hydrogen_vcs_table, vcs_data_dir
   USE trace_mod
@@ -218,26 +218,33 @@ SUBROUTINE composition_pre_init (self)
     ! the line list: the output spectrum when the output pass includes (or samples)
     ! it, or when make_eos bakes it into the tables; the internal iteration
     ! spectra when the iteration pass does.
-    ll_lam = [huge(1d0), -huge(1d0)]
-    if ((rt_out%include_linelist .or. rt_out%sample_linelist) .and. size(rt_out%vec,2) > 0 &
-        .or. make_eos) then
-      call expand_ll_range(output_sp)
-    endif
-    if ((rt_iter%include_linelist .or. rt_iter%sample_linelist) .and. rt_iter%maxiter > 0) then
-      if (decouple_continuum) then
-        call expand_ll_range(nlte_patch%bb_sp)
-        call expand_ll_range(nlte_patch%bf_sp)
-      else
-        call expand_ll_range(nlte_patch%sp)
+    !
+    ! Phase B: build intervals from spectrum segments instead of min/max range.
+    ! For output spectrum with multiple segments, use those segment bounds.
+    ! For non-segmented internal spectra, use full range as single interval.
+    block
+      type(interval_t), allocatable :: ll_intervals(:)
+      integer :: n_intervals
+
+      ll_lam = [huge(1d0), -huge(1d0)]
+      call build_linelist_intervals(composition, output_sp, nlte_patch, ll_lam, dlam, &
+                                    ll_intervals, n_intervals)
+
+      if (ll_lam(1) <= ll_lam(2)) then
+        do i=1, size(linelist_file)
+          ! Pass the intervals to init_linelist2 so build_linelist selects on the
+          ! union of windows, not a single min/max span.
+          if (allocated(ll_intervals) .and. n_intervals > 0) then
+            call composition%init_linelist2(linelist_file(i), dlam, ll_lam, ll_intervals)
+          else
+            call composition%init_linelist2(linelist_file(i), dlam, ll_lam)
+          end if
+        end do
+      elseif (any(linelist_file /= '')) then
+        print *, 'linelist_params: no pass includes or samples the line list -- skipping line-list read'
       endif
-    endif
-    if (ll_lam(1) <= ll_lam(2)) then
-      do i=1, size(linelist_file)
-        call composition%init_linelist2(linelist_file(i), dlam, ll_lam)
-      end do
-    elseif (any(linelist_file /= '')) then
-      print *, 'linelist_params: no pass includes or samples the line list -- skipping line-list read'
-    endif
+      if (allocated(ll_intervals)) deallocate(ll_intervals)
+    end block
     call nlte_patch%exclude_double_lines()
   endif
 
@@ -339,6 +346,128 @@ contains
     ll_lam(2) = max(ll_lam(2), maxval(sp%lam))
   end subroutine expand_ll_range
 END SUBROUTINE composition_pre_init
+
+!===============================================================================
+! Phase B: Build line-list intervals from output and internal spectra.
+! When the output spectrum has multiple segments (multi-window), use those
+! segment bounds as intervals. For non-segmented internal spectra, use the
+! full range as a single interval. Expand each interval by dlam.
+!===============================================================================
+SUBROUTINE build_linelist_intervals(composition, output_sp, nlte_patch, ll_lam, dlam, &
+                                    intervals_out, n_intervals_out)
+  class(composition_type), intent(in) :: composition
+  class(atomic_spectrum_type), intent(in), pointer :: output_sp
+  type(nlte_patch_t), intent(in) :: nlte_patch
+  real(dp), intent(out) :: ll_lam(2)
+  real(dp), intent(in) :: dlam
+  type(interval_t), intent(out), allocatable :: intervals_out(:)
+  integer, intent(out) :: n_intervals_out
+  real(dp), allocatable :: windows(:,:)
+  type(interval_t), allocatable :: temp_intervals(:)
+  real(dp) :: sp_min, sp_max
+  integer :: i, n_windows, nout
+  logical :: output_uses_ll, internal_uses_ll
+  !-----------------------------------------------------------------------------
+
+  ! Determine which spectra use the line list
+  output_uses_ll = (rt_out%include_linelist .or. rt_out%sample_linelist) .and. &
+                   (size(rt_out%vec,2) > 0 .or. make_eos)
+  internal_uses_ll = (rt_iter%include_linelist .or. rt_iter%sample_linelist) .and. &
+                     (rt_iter%maxiter > 0)
+
+  ! Initialize: will be updated to encompass all used spectra
+  ll_lam = [huge(1d0), -huge(1d0)]
+  n_intervals_out = 0
+
+  ! Build window array from contributing spectra
+  n_windows = 0
+  if (output_uses_ll .and. associated(output_sp)) then
+    if (output_sp%nnu > 0) then
+      if (output_sp%n_segments > 0) then
+        ! Multi-segment output: use segment bounds as windows
+        n_windows = output_sp%n_segments
+        allocate(windows(n_windows, 2))
+        do i = 1, n_windows
+          windows(i, 1) = output_sp%segment_blue_vac(i)
+          windows(i, 2) = output_sp%segment_red_vac(i)
+        end do
+      else
+        ! Single-segment or legacy output: use full range
+        if (allocated(windows)) deallocate(windows)
+        allocate(windows(1, 2))
+        windows(1, 1) = minval(output_sp%lam)
+        windows(1, 2) = maxval(output_sp%lam)
+        n_windows = 1
+      end if
+    end if
+  end if
+
+  ! Add internal spectrum ranges
+  if (internal_uses_ll) then
+    if (decouple_continuum) then
+      if (associated(nlte_patch%bb_sp) .and. nlte_patch%bb_sp%nnu > 0) then
+        if (.not. allocated(windows)) allocate(windows(1, 2))
+        sp_min = minval(nlte_patch%bb_sp%lam)
+        sp_max = maxval(nlte_patch%bb_sp%lam)
+        n_windows = n_windows + 1
+        if (size(windows, 1) < n_windows) then
+          call expand_window_array(windows, n_windows)
+        end if
+        windows(n_windows, 1) = sp_min
+        windows(n_windows, 2) = sp_max
+      end if
+      if (associated(nlte_patch%bf_sp) .and. nlte_patch%bf_sp%nnu > 0) then
+        if (.not. allocated(windows)) allocate(windows(1, 2))
+        sp_min = minval(nlte_patch%bf_sp%lam)
+        sp_max = maxval(nlte_patch%bf_sp%lam)
+        n_windows = n_windows + 1
+        if (size(windows, 1) < n_windows) then
+          call expand_window_array(windows, n_windows)
+        end if
+        windows(n_windows, 1) = sp_min
+        windows(n_windows, 2) = sp_max
+      end if
+    else
+      if (associated(nlte_patch%sp) .and. nlte_patch%sp%nnu > 0) then
+        if (.not. allocated(windows)) allocate(windows(1, 2))
+        sp_min = minval(nlte_patch%sp%lam)
+        sp_max = maxval(nlte_patch%sp%lam)
+        n_windows = n_windows + 1
+        if (size(windows, 1) < n_windows) then
+          call expand_window_array(windows, n_windows)
+        end if
+        windows(n_windows, 1) = sp_min
+        windows(n_windows, 2) = sp_max
+      end if
+    end if
+  end if
+
+  ! Merge intervals and return them
+  if (n_windows > 0 .and. allocated(windows)) then
+    ! Call merge_intervals to build the union of windows with dlam expansion
+    call merge_intervals(windows, n_windows, dlam, intervals_out, n_intervals_out)
+
+    ! Also compute min/max for backward compatibility (passed as ll_lam)
+    ll_lam(1) = minval(windows(:, 1))
+    ll_lam(2) = maxval(windows(:, 2))
+  end if
+
+  if (allocated(windows)) deallocate(windows)
+
+contains
+
+  subroutine expand_window_array(arr, new_size)
+    real(dp), allocatable, intent(inout) :: arr(:,:)
+    integer, intent(in) :: new_size
+    real(dp), allocatable :: tmp(:,:)
+    integer :: old_size
+    old_size = size(arr, 1)
+    allocate(tmp(new_size, 2))
+    tmp(1:old_size, :) = arr
+    call move_alloc(tmp, arr)
+  end subroutine expand_window_array
+
+END SUBROUTINE build_linelist_intervals
 
 !===============================================================================
 SUBROUTINE create_sub_patches (self, nu, mu, sp, atoms)
