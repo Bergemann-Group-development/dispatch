@@ -15,6 +15,7 @@ from .request import SynthRequest
 from .runtime import ExecutionService, HOP, IO, WORKFLOWS, execution_scope
 from .executor import _make_da_jobs, _run_batch, _run_single  # noqa: F401 (legacy importers)
 from .workflows import (build_settings, compile_pattern, compute, compute_batch,
+                        compute_window_batch,
                         compute_reference, discover_atmos_grid, fit, fit_line,
                         recover_params)
 

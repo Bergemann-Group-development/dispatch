@@ -9,6 +9,7 @@ every element, and one Ti case to pin that nothing is keyed to the symbol.
 import numpy as np
 import pytest
 
+import tumult.abundance as ab
 from tumult import measurement as ms
 from tumult import sparams as sp
 from tumult.abundance import LineResult
@@ -300,3 +301,47 @@ def test_is_ion_stage():
     assert not sp.is_ion_stage("Fe II", 1)
     assert not sp.is_ion_stage("Fe", 1)
     assert not sp.is_ion_stage("Fe III", 2)
+
+
+# --- the shared ladder ---------------------------------------------------------------
+
+def _shared_ladder(centres, span=0.4, npts=3):
+    """The rule solve_ionisation_balance uses to build one ladder for every line."""
+    mean = float(np.mean(centres))
+    half = span + max(abs(c - mean) for c in centres)
+    n = max(npts, int(np.ceil(half / span * (npts - 1))) + 1)
+    return np.linspace(mean - half, mean + half, n)
+
+
+def test_shared_ladder_spans_every_line():
+    """It has to reach the outliers, since all lines invert against the same rungs."""
+    centres = [-0.25, -0.05, 0.10, 0.30]
+    lad = _shared_ladder(centres)
+    assert lad[0] <= min(centres) - 0.4 + 1e-9
+    assert lad[-1] >= max(centres) + 0.4 - 1e-9
+
+
+def test_shared_ladder_is_not_coarser_than_the_per_line_one():
+    """Widening the span must not cost curve-of-growth resolution."""
+    lad = _shared_ladder([-0.25, -0.05, 0.10, 0.30])
+    assert np.diff(lad).max() <= 2 * 0.4 / (3 - 1) + 1e-9
+
+
+def test_shared_ladder_inverts_like_a_per_line_ladder():
+    """The behavioural price of folding the iteration into one run.
+
+    A saturated curve of growth is where ladder spacing matters most: dEW/dA is small, so
+    an interpolation error converts into a large abundance error. The shared ladder must
+    still land within the 0.01 dex the solver's tolerances assume.
+    """
+    def ew_of(a):
+        return 40.0 * np.log1p(np.exp((a + 0.3) * 2.2))
+
+    centres = [-0.25, -0.05, 0.10, 0.30]
+    shared = _shared_ladder(centres)
+    for c in centres:
+        per_line = np.linspace(c - 0.4, c + 0.4, 3)
+        target = ew_of(c + 0.07)
+        a_per = ab.cog_invert(per_line, ew_of(per_line), target, ew_err=0.0)["a"]
+        a_shared = ab.cog_invert(shared, ew_of(shared), target, ew_err=0.0)["a"]
+        assert abs(a_per - a_shared) < 0.01

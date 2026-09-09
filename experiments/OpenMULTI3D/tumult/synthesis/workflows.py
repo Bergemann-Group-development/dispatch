@@ -24,7 +24,9 @@ def _ensure_path():
     """Compatibility no-op retained for callers of the former GUI module."""
 
 
-from .api import compute_spectrum, compute_spectra, PRESETS_DIR, preset, PROVENANCE_NAME
+from .api import (compute_spectrum, compute_spectra,
+                  compute_window_batch as _compute_window_batch,
+                  PRESETS_DIR, preset, PROVENANCE_NAME)
 from ..abundance import (
     abund_to_xfe, convert_abundances, read_solar_abundances, xfe_to_abund,
 )
@@ -467,6 +469,68 @@ def compute_batch(target, prefs, run_vals_list, xmin=None, xmax=None, *, grid,
         max_threads=max_threads,
         launch_kwargs=launch_kwargs,
         xmin=xmin, xmax=xmax,
+        vmic_step=float(prefs.get("vmic_step") or 0.5),
+        nlte=nlte,
+        cancel_token=cancel_token,
+    )
+
+
+def compute_window_batch(target, prefs, run_vals_list, windows, *, grid,
+                         atmos_file=None, extra_presets=None, cancel_token=None):
+    """Batched :func:`compute` over an abundance ladder *and* several windows at once.
+
+    Same contract as :func:`compute_batch` for the ladder axis, with ``windows`` a
+    sequence of ``(xmin, xmax)`` bounds instead of one window. The ladder folds onto the
+    run's set axis and the windows onto its output patches, so a single synthesis covers
+    every pair. Returns ``results[variant][window]``.
+
+    Falls back to one synthesis per window when the variants cannot fold, so callers can
+    use this wherever they would otherwise loop :func:`compute_batch` over windows.
+    """
+    if not run_vals_list or not windows:
+        return []
+    _ensure_path()
+    folder = grid.get("folder")
+    if atmos_file:
+        star = tuple(float(x) for x in target)
+        atmos_files = {(star[0], star[1], star[2]): Path(atmos_file).expanduser()}
+    else:
+        if not folder:
+            raise ValueError("No atmosphere grid folder configured (Preferences → Synthesis).")
+        atmos_files = discover_atmos_grid(folder, grid.get("pattern") or DEFAULT_PATTERN)
+        star = tuple(target)
+
+    R = float(prefs.get("R") or 0) or _DEFAULT_R
+    settings_list = []
+    for run_vals in run_vals_list:
+        settings = build_settings(prefs, run_vals, atmos_format=grid.get("format"))
+        settings.setdefault("spectrum_params", {})["R"] = R
+        settings_list.append(settings)
+
+    nlte = str(run_vals_list[0].get("mode", "LTE")).upper() == "NLTE"
+    defaults = [str(_PRESETS / "base.nml")]
+    if nlte:
+        defaults.append(str(_PRESETS / "nlte.nml"))
+    for preset in (extra_presets or []):
+        defaults.append(str(preset))
+
+    launch_kwargs = {"overwrite": False, "verbose": 0, "default": defaults}
+    if prefs.get("dispatch_cwd"):
+        launch_kwargs["cwd"] = prefs["dispatch_cwd"]
+
+    max_threads = int(prefs.get("max_threads") or 0) or (os.cpu_count() or 1)
+    get_runtime().configure(max_threads)
+    top = prefs.get("synth_output_dir") or "synth"
+
+    return _compute_window_batch(
+        top, star, atmos_files,
+        settings_list=settings_list,
+        windows=windows,
+        R=R,
+        absmet_files=_absmet_files(prefs, atmos_files),
+        method=prefs.get("interp_method", "NaturalNeighbor"),
+        max_threads=max_threads,
+        launch_kwargs=launch_kwargs,
         vmic_step=float(prefs.get("vmic_step") or 0.5),
         nlte=nlte,
         cancel_token=cancel_token,

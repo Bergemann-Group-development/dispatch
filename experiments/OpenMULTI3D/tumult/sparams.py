@@ -448,6 +448,30 @@ def solve_ionisation_balance(request, result, opts=None, *, progress=None, cance
             line.window[1] + SYNTH_PAD_AA, grid=grid, atmos_file=atmos_file,
             cancel_token=cancel_token)
 
+    def window_batch(rv_list, lines, target):
+        """One synthesis for the whole iteration: every rung in every line's window."""
+        windows = [(ln.window[0] - SYNTH_PAD_AA, ln.window[1] + SYNTH_PAD_AA)
+                   for ln in lines]
+        return synth.compute_window_batch(
+            target, prefs, rv_list, windows, grid=grid, atmos_file=atmos_file,
+            cancel_token=cancel_token)
+
+    def shared_ladder(active, centres_now):
+        """One ladder per iteration, wide enough for every line still being fitted.
+
+        Folding the iteration into a single run means all lines share the abundance
+        points, so the ladder has to span the line-to-line scatter as well as each line's
+        own +/-span. That scatter is the balance signal, so the half-span grows with it
+        and the point count grows to match, keeping the curve-of-growth spacing no coarser
+        than the per-line ladder it replaces.
+        """
+        cs = [centres_now.get(i, 0.0) for i, _ln in active]
+        centre = float(np.mean(cs)) if cs else 0.0
+        reach = max((abs(c - centre) for c in cs), default=0.0)
+        half = span + reach
+        n = max(npts, int(np.ceil(half / span * (npts - 1))) + 1)
+        return centre, np.linspace(centre - half, centre + half, n)
+
     # each line's ladder centre carries over between iterations ([Fe/H]-relative)
     centres = {}
     diags = {}
@@ -460,20 +484,38 @@ def solve_ionisation_balance(request, result, opts=None, *, progress=None, cance
             raise CancelledError()
         target = tuple(params[k] for k in PARAM_KEYS)
         feh = params["feh"]
-        for i, ln in enumerate(result.lines):
+        active = [(i, ln) for i, ln in enumerate(result.lines)
+                  if ln.include and np.isfinite(ln.ew) and ln.ew > 0]
+        if not active:
+            break
+        # One synthesis for the whole iteration: the rungs ride the run's set axis and the
+        # lines its output patches. The ladder is shared, so it is centred on the lines'
+        # mean and widened to reach the outliers (see shared_ladder).
+        c, ladder = shared_ladder(active, centres)
+        iter_specs = None
+        try:
+            iter_specs = window_batch([rv_point(a, feh) for a in ladder],
+                                      [ln for _i, ln in active], target)
+        except CancelledError:
+            raise
+        except Exception as exc:
+            if (cancel_token is not None and cancel_token.cancelled) or _is_shutdown(exc):
+                raise
+            # fall back to the per-line path rather than losing the iteration
+            logging.exception("shared-ladder synthesis failed; falling back per line")
+        for wi, (i, ln) in enumerate(active):
             if cancel_token is not None and cancel_token.cancelled:
                 raise CancelledError()
-            if not ln.include or not np.isfinite(ln.ew) or ln.ew <= 0:
-                continue
-            c = centres.get(i, 0.0)
-            ladder = np.linspace(c - span, c + span, npts)
             screen = it == 1        # blend screen rides along on iteration 1
             try:
-                # the ladder goes in on its own: its points differ in nothing but the
-                # element's abundance, which is what lets compute_spectra fold them into a
-                # single run's set axis. The blend screen's two syntheses switch elements on
-                # and off, so mixing them into this batch would unfold the ladder.
-                specs = batch([rv_point(a, feh) for a in ladder], ln, target)
+                if iter_specs is not None:
+                    specs = [iter_specs[vi][wi] for vi in range(len(ladder))]
+                else:
+                    # the ladder goes in on its own: its points differ in nothing but the
+                    # element's abundance, which is what lets compute_spectra fold them
+                    # into a single run's set axis. The blend screen's two syntheses switch
+                    # elements on and off, so mixing them in would unfold the ladder.
+                    specs = batch([rv_point(a, feh) for a in ladder], ln, target)
                 if screen:
                     full, excl = batch([rv_point(c, feh, only=False),
                                         rv_point(c, feh, exclude=True)], ln, target)
