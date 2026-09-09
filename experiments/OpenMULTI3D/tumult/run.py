@@ -12,7 +12,8 @@ from .decorators import broadcast_arguments
 from .plotting_scripts import *
 from .fast_atom import FastAtom, PandasAtom
 from .flux import (base_set_indices, integrate_flux, ladder_sets,
-                   read_angle_quadrature, read_set_manifest, split_ie)
+                   read_angle_quadrature, read_segments, read_set_manifest,
+                   split_ie)
 from .io_binary import read_patch_save as _read_patch_save
 from .linelist import LineList
 from .NameList import NameList
@@ -29,6 +30,10 @@ from tqdm import tqdm
 import multiprocessing as mp
 
 trapz = getattr(np, 'trapz', np.trapezoid)
+
+# kinds written by the output RT patches, whose i_nu axis is the output split rather
+# than the internal n_nu
+OUTPUT_PATCH_KINDS = ('flux', 'ie')
 
 def option(nml, key):
     if key in nml.keys():
@@ -123,6 +128,9 @@ class tumult(object):
         # the run's own description of its set axis, where it wrote one; None
         # falls split_ie back on the historical count-based layout guess
         self.sets = read_set_manifest(folder)
+        # the windows a multi-window run synthesised; None for an ordinary single
+        # window, whose grid has no gaps to respect
+        self.segments = read_segments(folder)
         self.ladder = ladder_sets(self.sets)
 
         if self.has_spectrum:
@@ -359,7 +367,8 @@ class tumult(object):
                 imu_mask = self.imus == imu
                 yy = np.mean(self.ie[:, imu_mask], axis=1)
 
-        return Spectrum(self.lam, yy, xunit=u.angstrom, yunit=yunit)
+        return Spectrum(self.lam, yy, xunit=u.angstrom, yunit=yunit,
+                        segments=self.segments)
 
     def get_set_spectrum(self, index, ang=None, imu=None):
         """Return one explicit set-axis component as a :class:`Spectrum`.
@@ -389,7 +398,8 @@ class tumult(object):
         yunit = u.erg/(u.s*u.cm**2*u.angstrom)
         if not flux:
             yunit = yunit / u.sr
-        return Spectrum(self.lam, yy, xunit=u.angstrom, yunit=yunit)
+        return Spectrum(self.lam, yy, xunit=u.angstrom, yunit=yunit,
+                        segments=self.segments)
 
     def crop_set(self, index, slc=None, x0=None, ang=None, imu=None, norm=True,
                  **kwargs):
@@ -542,7 +552,14 @@ class tumult(object):
     def read_patch_save(self, kind, folder=None, concat=True, fdim=0, zdim=None, lazy=True):
         """Load ``kind`` from this run's save folder (see :mod:`tumult.io_binary`)."""
         folder = pathlib.Path(folder) if folder else self.sfolder
-        return _read_patch_save(folder, kind, n_nu=self.nml['run_params']['n_nu'],
+        n_nu = self.nml['run_params']['n_nu']
+        if self.segments and kind in OUTPUT_PATCH_KINDS:
+            # A multi-window run splits its output spectrum by window rather than by the
+            # internal n_nu, and saves each patch under abs(i_nu), so the ids run 1..
+            # n_segments. Splitting those at the internal n_nu would hand back one array
+            # per window instead of the whole spectrum. The internal kinds keep n_nu.
+            n_nu = len(self.segments)
+        return _read_patch_save(folder, kind, n_nu=n_nu,
                                 concat=concat, fdim=fdim, zdim=zdim, lazy=lazy)
 
     #=================================================================

@@ -13,6 +13,7 @@ tests/*
 !tests/test_linediag.py
 !tests/test_sparams.py
 !tests/test_ladder_workflows.py
+!tests/test_segments.py
 
 # Keep development plans visible under the parent experiment ignore rule.
 !plan/

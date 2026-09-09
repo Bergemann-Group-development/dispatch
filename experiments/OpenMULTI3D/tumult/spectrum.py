@@ -34,7 +34,7 @@ class Spectrum:
     A class to represent a spectrum with x and y data, handling units and arithmetic operations.
     """
 
-    def __init__(self, xdata, ydata, xunit=None, yunit=None, xref=None):
+    def __init__(self, xdata, ydata, xunit=None, yunit=None, xref=None, segments=None):
         """
         Initialize the Spectrum class.
 
@@ -51,6 +51,12 @@ class Spectrum:
             dimensionless (i.e. a normalized spectrum).
         xref : float or astropy.units.Quantity, optional
             Reference x value. If provided, xdata is relative to this value.
+        segments : list of dict, optional
+            The disjoint windows a multi-window synthesis produced, as returned by
+            :func:`tumult.flux.read_segments`. The x array is their concatenation, so it
+            jumps at every boundary and any operation over a neighbourhood (convolution,
+            interpolation, integration) is only meaningful within one segment. Leave it
+            None for an ordinary contiguous spectrum.
         """
 
         if len(xdata) != len(ydata):
@@ -87,6 +93,44 @@ class Spectrum:
             self.xref = xref.to(self.xunit, equivalencies=u.spectral())
         else:
             self.xref = xref * self.xunit
+
+        self.segments = segments
+
+    @property
+    def n_segments(self):
+        """Number of disjoint windows this spectrum concatenates (1 when contiguous)."""
+        return 1 if not self.segments else len(self.segments)
+
+    def split_segments(self):
+        """Split a multi-window spectrum into one ordinary Spectrum per window.
+
+        Each part is contiguous and carries no segment metadata, so the whole Spectrum
+        API applies to it. A contiguous spectrum returns itself in a one-element list,
+        which lets a caller loop without special-casing.
+        """
+        if not self.segments:
+            return [self]
+        # slice by the recorded indices rather than the wavelength bounds: an endpoint
+        # sits exactly on its bound, where a float comparison would drop it
+        return [Spectrum(self.xdata[seg['first'] - 1:seg['last']],
+                         self.ydata[seg['first'] - 1:seg['last']],
+                         xref=self.xref)
+                for seg in self.segments]
+
+    def _require_contiguous(self, what):
+        """Refuse an operation that would run a neighbourhood across a window gap.
+
+        The concatenated grid jumps at each boundary, so a kernel, an interpolation or a
+        quadrature spanning one mixes wavelengths that are not neighbours. Crop to a
+        window or use :meth:`split_segments` first.
+        """
+        if self.segments and len(self.segments) > 1:
+            windows = ", ".join("{:.1f}-{:.1f}".format(seg["blue"], seg["red"])
+                                for seg in self.segments)
+            raise ValueError(
+                f"{what} needs a contiguous spectrum, but this one concatenates "
+                f"{len(self.segments)} disjoint windows ({windows}). "
+                "Crop to one window or call split_segments() first.")
 
     @property
     def xunit(self):
@@ -413,10 +457,14 @@ class Spectrum:
         xmax = xmax.to(self.xunit, equivalencies=u.spectral())
         center = (xmin + xmax) / 2
 
-        # Standard crop
+        # Standard crop. A crop that lands inside one window is an ordinary contiguous
+        # spectrum, which is how a caller gets from a multi-window run to something the
+        # rest of the API accepts; _crop carries no segment metadata forward.
         s = self._crop(xmin, xmax)
 
         if kwargs or vshift is not None:
+            # convolution and the shift-and-resample below both use neighbourhoods
+            self._require_contiguous("convolution or velocity shift")
             lshift = get_wavelength_shift(vshift)
 
             if kwargs:
@@ -714,6 +762,7 @@ class Spectrum:
             ``syst=`` fractional continuum offset, ...).
         """
         sub = self.crop(window=window) if window is not None else self
+        sub._require_contiguous("line measurement")
         if x0 is not None and not isinstance(x0, u.Quantity):
             x0 = x0 * sub.xunit
         return get_weq(*sub, profile=profile, x0=x0, return_profile=True, **kwargs)
@@ -753,6 +802,7 @@ class Spectrum:
         float or astropy.units.Quantity
             The reduced EW (default) or the width when ``target_unit`` is given.
         """
+        self._require_contiguous("equivalent-width integration")
         return get_weq(*self, **kwargs)
     
     def calc_teff(self, **kwargs):

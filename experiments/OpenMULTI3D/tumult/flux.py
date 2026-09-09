@@ -26,6 +26,40 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from .physics import vac2air
+
+
+def read_segments(folder):
+    """Parse ``save/out_segments.txt``: the windows a multi-window run synthesised.
+
+    Written by ``spectrum_type%save`` when the output grid is segmented, one row per
+    window::
+
+        # segment  first  last  blue_vac_AA  red_vac_AA
+                1      1    195    5151.43473    5171.44006
+                2    196    389    5181.44272    5201.44805
+
+    ``first``/``last`` are inclusive 1-based indices into the concatenated ``out_lam``
+    grid. The concatenation has a gap at every segment boundary, so a reader cannot
+    recover the windows from the wavelengths alone. Returns a list ordered by segment,
+    each entry ``{'first': int, 'last': int, 'blue': float, 'red': float}`` with the
+    bounds converted to air to match ``Run.lam``, or ``None`` for a single-window run,
+    which has no such file and needs none.
+    """
+    path = Path(folder) / 'save' / 'out_segments.txt'
+    if not path.exists():
+        return None
+    out = []
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        cols = line.split()
+        out.append({'first': int(cols[1]), 'last': int(cols[2]),
+                    'blue': float(vac2air(np.array([float(cols[3])]))[0]),
+                    'red': float(vac2air(np.array([float(cols[4])]))[0])})
+    return out or None
+
 
 def read_set_manifest(folder):
     """Parse ``sets.txt``: what each slot on the saved set axis actually contains.
