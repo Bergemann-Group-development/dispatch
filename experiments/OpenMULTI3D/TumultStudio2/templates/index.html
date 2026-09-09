@@ -27,25 +27,37 @@
     <aside class="sidebar-left">
       <div class="section-head-row">
         <div class="section-header">Objects</div>
-        <button id="open-file" class="icon-btn" title="Open spectrum"><i class="ti ti-folder-open"></i></button>
+        <!-- one entry point for every import; the menu picks which modal opens -->
+        <div class="menu-wrap">
+          <button id="open-file" class="text-btn menu-btn" title="Import a spectrum or a line mask"
+                  aria-haspopup="true" aria-expanded="false">Open File&nbsp;<i class="ti ti-folder-open"></i></button>
+          <div id="open-file-menu" class="menu">
+            <button class="menu-item" data-import="spectrum"><i class="ti ti-chart-line"></i>Import Spectrum</button>
+            <button class="menu-item" data-import="linemask"><i class="ti ti-columns"></i>New Line Mask</button>
+          </div>
+        </div>
       </div>
       <div id="objects">{{ objects_html|safe }}</div>
+      <!-- imported line-mask sets (see masktool.MaskTool.objects_html) -->
+      <div id="linemask-objects">{{ linemask_objects_html|safe }}</div>
       <!-- non-spectral abundance result objects (see abundancetool.AbundanceTool) -->
       <div id="abund-results">{{ abund_results_html|safe }}</div>
       <!-- abundance-correction objects (see abundcorrtool.AbundCorrTool) -->
       <div id="corr-results">{{ corr_results_html|safe }}</div>
-      <!-- stellar-parameter objects (see sparamtool.SParamTool) -->
-      <div id="sparam-results">{{ sparam_results_html|safe }}</div>
+      <!-- measurement objects: a line-mask set measured on one spectrum, plus the
+           ionisation-balance fit standing on it (see ionbalance.IonBalanceTool) -->
+      <div id="ionbal-results">{{ ionbal_results_html|safe }}</div>
     </aside>
 
     <div id="main" class="{{ 'empty' if main_empty else '' }}">
       <div id="canvas-toolbar">
-        <!-- view / panel toggles (nav overview, line list, future canvas modes) -->
+        <!-- line-position indicators over the spectrum (see lineannot.LineAnnotations);
+             clicking one opens the line list in #linelist-bottom -->
         <div class="toolbar-group">
-          <div class="seg-toggle" title="Overview / line list">
-            <button class="view-btn" data-view="nav">Nav</button>
-            <button class="view-btn" data-view="lines">Lines</button>
-          </div>
+          <button id="annot-btn" class="text-btn"
+                  title="Mark the line list's transitions on the spectrum">
+            <span id="annot-btn-label">{{ annot_label|safe }}</span>
+          </button>
         </div>
         <!-- adjustment tools that change the spectra (filter, future normalisation, ...) -->
         <div class="toolbar-group">
@@ -55,7 +67,6 @@
             <label class="switch"><input type="checkbox" id="filter-switch-input"><span class="switch-track"></span></label>
           </span>
           <button id="normalise-btn" class="text-btn" title="Continuum normalise (spline)">Normalise</button>
-          <button id="linemask-btn" class="text-btn" title="Line masks — fit windows for fitting &amp; local renormalisation">Masks</button>
         </div>
         <!-- temporary / selection tools that act on a transient selection (EW, ...) -->
         <div class="toolbar-group">
@@ -66,15 +77,10 @@
           <button id="synth-btn" class="text-btn" title="Synthesize a spectrum at given (Teff, logg, [Fe/H], vmic)">Synth</button>
           <button id="abundance-btn" class="text-btn" title="Mask-free element abundances with rigorous uncertainties">Abund</button>
           <button id="abundcorr-btn" class="text-btn" title="NLTE abundance corrections vs 1D LTE (line by line)">Corr</button>
-          <button id="sparams-btn" class="text-btn" title="Stellar parameters from Fe excitation / ionization balance">Params</button>
         </div>
       </div>
       <div id="top-panel">
         <div id="nav-slot">{{ embed(roots.nav_fig) }}</div>
-        <div id="linelist">
-          <div id="linenav-fields">{{ linenav_html|safe }}</div>
-          <div id="linelist-table"></div>
-        </div>
       </div>
       <div id="canvas-wrap">{{ embed(roots.main_fig) }}</div>
       <!-- shown in place of the (empty) canvas when nothing is loaded: an inline
@@ -103,9 +109,14 @@
       </div>
       <!-- LineMasks view: the mask table below the spectrum (reuses #canvas-wrap on top),
            shown while the LineMasks tool owns the sidebar (#main.linemask-mode) -->
+      <!-- LineMasks view: the windows table (the durable artifact, what a save writes) and,
+           for a generated set, the diagnostics table beside it (what one spectrum measured) -->
       <div id="linemask-bottom">
         <div class="splitter splitter-row" data-resize="bottom" title="Drag to resize"></div>
-        <div id="linemask-table"></div></div>
+        <div id="linemask-tables">
+          <div id="linemask-table"></div>
+          <div id="linemask-diag-table"></div>
+        </div></div>
       <!-- abundance result view: spectrum (top, steps 1-2) or A(X) scatter (step 3), with the
            per-line table below and a step switcher footer -->
       <div id="abund-scatter">{{ embed(roots.abund_fig) }}</div>
@@ -132,18 +143,28 @@
           <button class="step-tab corr-step-btn" data-step="3">3 · Scatter</button>
         </div>
       </div>
-      <!-- stellar-parameter view: spectrum (steps 1-2) or A(Fe) scatter (step 3), the
-           per-line table + iteration status below, and a step switcher footer -->
-      <div id="sparam-scatter">{{ embed(roots.sparam_fig) }}</div>
-      <div id="sparam-bottom">
+      <!-- measurement view: the spectrum (Lines) or the A(X) balance scatter, with the
+           per-line table + iteration status below and a two-way view switcher -->
+      <div id="ionbal-scatter">{{ embed(roots.ionbal_fig) }}</div>
+      <div id="ionbal-bottom">
         <div class="splitter splitter-row" data-resize="bottom" title="Drag to resize"></div>
-        <div id="sparam-table">{{ sparam_table_html|safe }}</div></div>
-      <div id="sparam-steps">
-        <div class="step-tabs" title="Stellar-parameter workflow steps">
-          <button class="step-tab sparam-step-btn" data-step="1">1 · Fe lines</button>
-          <button class="step-tab sparam-step-btn" data-step="2">2 · Solve</button>
-          <button class="step-tab sparam-step-btn" data-step="3">3 · Diagnostics</button>
+        <div id="ionbal-table">{{ ionbal_table_html|safe }}</div></div>
+      <div id="ionbal-steps">
+        <div class="step-tabs" title="What the top pane shows">
+          <button class="step-tab ionbal-step-btn" data-step="1">Lines</button>
+          <button class="step-tab ionbal-step-btn" data-step="2">Balance</button>
         </div>
+      </div>
+      <!-- the line list (linenav.LineNavigator): opened by clicking a line-position
+           indicator on the spectrum, scrolled to that line's row, closed from the × -->
+      <div id="linelist-bottom">
+        <div class="splitter splitter-row" data-resize="linelist" title="Drag to resize"></div>
+        <div class="linelist-head">
+          <span class="section-header">Line list</span>
+          <div id="linesettings-fields" class="linelist-settings">{{ linesettings_html|safe }}</div>
+          <button id="linelist-close" class="icon-btn" title="Close the line list"><i class="ti ti-x"></i></button>
+        </div>
+        <div id="linelist-table"></div>
       </div>
     </div>
 
@@ -193,24 +214,10 @@
           <span class="section-header">Line masks</span>
           <button class="icon-btn linemask-close" title="Done"><i class="ti ti-x"></i></button>
         </div>
-        <div class="path-row">
-          <button id="linemask-import" class="text-btn"><i class="ti ti-folder-open"></i>&nbsp;Import masks…</button>
-        </div>
-        <div id="linemask-picker" class="inline-picker">
-          {{ embed(roots.linemask_picker) }}
-          <div id="linemask-results" class="file-results"></div>
-        </div>
         <div id="linemask-panel-content"></div>
-        <div class="hint">Import a linemask table (input/linemasks) to load fit windows. Click a
-          row to make it active on the plot; toggle <b>rn</b> for local renormalisation.</div>
-      </div>
-      <div class="lines-panel">
-        <div class="lines-panel-head">
-          <span class="section-header">Line navigation</span>
-        </div>
-        <div id="linesettings-fields">{{ linesettings_html|safe }}</div>
-        <div class="hint">Click a line in the list to centre the view on it. The distance
-          sets how far either side of the line is shown.</div>
+        <div class="hint">Import more sets with <b>Open File → Import Line Mask</b>. Click a
+          row to snap the view to its synth window; toggle <b>rn</b> for local
+          renormalisation.</div>
       </div>
       <div class="abund-panel">
         <div class="abund-panel-head">
@@ -301,51 +308,14 @@
             population σ.</div>
         </div>
       </div>
-      <div class="sparam-panel">
+      <!-- the measurement object's panel: what it is, the fit standing on it, and the
+           refit action (the fit's settings all live in the modal) -->
+      <div class="ionbal-panel">
         <div class="abund-panel-head">
-          <span class="section-header">Stellar parameters</span>
-          <button class="icon-btn sparam-close" title="Close"><i class="ti ti-x"></i></button>
+          <span class="section-header">Measurement</span>
+          <button class="icon-btn ionbal-close" title="Close"><i class="ti ti-x"></i></button>
         </div>
-        <!-- step 1 · Fe I + Fe II line selection (independent of stellar parameters) -->
-        <div class="sparam-step-panel sparam-step-1-panel">
-          <div id="sparam-ref">{{ sparam_ref_html|safe }}</div>
-          <div id="sparam1-fields">{{ sparam1_html|safe }}</div>
-          <button class="text-btn sparam-run-lines">Measure Fe lines</button>
-          <div class="hint">Measures every Fe I and Fe II candidate line's EW + FWHM (and its
-            EW uncertainty from the SNR + continuum-%) on the target. Click a row to jump and
-            curate — the ionization balance needs Fe II lines, so keep the good ones.</div>
-        </div>
-        <!-- step 2 · synthesis setup (initial guess) + solver -->
-        <div class="sparam-step-panel sparam-step-2-panel">
-          <div class="section-header">Atmosphere</div>
-          <div id="sparam-grid" class="synth-grid">{{ sparam_grid_html|safe }}</div>
-          <div id="sparam-file-picker" class="inline-picker-auto{{ ' open' if sparam_show_file }}"
-               data-results="{{ sparam_file_results_name }}">
-            {{ embed(roots.sparam_file_picker) }}
-            <div id="sparam-file-results" class="file-results"></div>
-          </div>
-          <div class="section-header">Initial guess</div>
-          <div id="sparamparams-fields">{{ sparam_params_html|safe }}</div>
-          <div class="section-header">Abundances</div>
-          <div id="sparambase-fields">{{ sparam_base_html|safe }}</div>
-          <div class="section-header">Radiative transfer</div>
-          <div id="sparammode-fields">{{ sparam_mode_html|safe }}</div>
-          <div id="sparam-atoms-ro">{{ sparam_atoms_ro_html|safe }}</div>
-          <div class="section-header">Solver</div>
-          <div id="sparam2-fields">{{ sparam2_html|safe }}</div>
-          <button class="text-btn sparam-run-solve">Solve parameters</button>
-          <div class="hint">Iterates from the initial guess: each round inverts every line's EW
-            to A(Fe) through a curve of growth at the trial parameters, then nulls the
-            excitation slope (Teff), REW slope (vmic), Fe II−Fe I offset (logg) and the
-            [Fe/H] consistency. Rows and the iteration status stream into the table.</div>
-        </div>
-        <!-- step 3 · diagnostics scatter -->
-        <div class="sparam-step-panel sparam-step-3-panel">
-          <div id="sparam3-fields">{{ sparam3_html|safe }}</div>
-          <div class="hint">Per-line A(Fe) — Fe I in blue, Fe II in red — with the weighted
-            Fe I regression line on the chosen axis and the converged parameters ± σ under
-            the table. Toggling lines re-computes the diagnostics without re-synthesis.</div>
-        </div>
+        <div id="ionbal-panel-content"></div>
       </div>
       <div class="synth-panel">
         <div class="synth-panel-head">
@@ -451,6 +421,15 @@
           {{ embed(roots.linelist_picker) }}
           <div id="linelist-results" class="file-results"></div>
         </div>
+
+        <!-- the master list names its own lines over the spectrum once it is zoomed in
+             far enough, ranked by strength (lineannot / linestrength) -->
+        <div class="section-header">Line annotations</div>
+        <div class="hint">Line strengths are computed with HOP on a reference atmosphere, so
+          they compare correctly across atoms and molecules. Which star that is — a G dwarf,
+          a red giant, a supergiant — is the <b>Reference star</b> dropdown in the line list
+          header; on <i>Auto</i> it follows the spectrum's own parameters where it states
+          any, and is solar where it does not.</div>
       </div>
 
       <div class="settings-page" data-page="synthesis">
@@ -495,6 +474,118 @@
   </div>
 </dialog>
 
+<dialog id="linemask-modal" class="modal modal-lg">
+  <div class="modal-header">
+    <span class="modal-title">New line mask</span>
+    <button id="close-linemask" class="icon-btn" title="Close"><i class="ti ti-x"></i></button>
+  </div>
+  <!-- one pane per masksources.MaskSource; the rail switches between them (same markup as
+       the Preferences modal's category rail, wired by the shared wireNav helper below) -->
+  <div class="settings-layout">
+    <nav class="settings-nav">
+      <button class="settings-nav-item active" data-page="file">
+        <i class="ti ti-file-import"></i>&nbsp;From file</button>
+      <button class="settings-nav-item" data-page="blank">
+        <i class="ti ti-square-plus"></i>&nbsp;Empty set</button>
+{% if linemask_auto %}      <button class="settings-nav-item" data-page="auto">
+        <i class="ti ti-wand"></i>&nbsp;Auto-generate</button>
+{% endif %}    </nav>
+    <div class="settings-pages">
+      <div class="settings-page active" data-page="file">
+        <div class="section-header">Import from a line-mask table</div>
+        {{ embed(roots.linemask_picker) }}
+        <div id="linemask-results" class="file-results"></div>
+        <div class="hint">Reads fit windows from a linemask file (<code>input/linemasks</code>).
+          The element is taken from the file where it says so, else guessed from its name.</div>
+      </div>
+      <div class="settings-page" data-page="blank">
+        <div class="section-header">Start from nothing</div>
+        <div class="field-group">
+          <label>Name</label>
+          <input id="linemask-new-name" class="field-input" type="text"
+                 placeholder="New line mask" maxlength="60">
+        </div>
+        <button id="linemask-new-set" class="text-btn">Create empty set</button>
+        <div class="hint">Opens an empty set and arms the box gesture, so you can draw the
+          first window straight onto the spectrum.</div>
+      </div>
+      <!-- run the wizards' diagnostic line selection and keep its windows as a set.
+           Switched off for now (masktool.AUTO_MASKS): the set it makes — one window per
+           candidate line, with a diagnostics table of its own — still has to be reconciled
+           with the imported/hand-drawn view. -->
+{% if linemask_auto %}      <div class="settings-page" data-page="auto">
+        <div class="section-header">Diagnostic line selection</div>
+        <div class="field-group">
+          <label>Observed spectrum</label>
+          <div id="linemask-auto-ref">{{ linemask_auto_ref_html|safe }}</div>
+        </div>
+        <div class="field-group">
+          <label>Line list</label>
+          <div class="path-row">
+            <div id="linemask-auto-path" class="field-static">{{ linemask_auto_path }}</div>
+            <button id="linemask-auto-browse" class="icon-btn" title="Choose a line list">
+              <i class="ti ti-folder-open"></i></button>
+          </div>
+        </div>
+        <div id="linemask-auto-picker" class="inline-picker">
+          {{ embed(roots.linemask_auto_picker) }}
+          <div id="linemask-auto-results" class="file-results"></div>
+        </div>
+        <div id="linemaskauto-fields">{{ linemask_auto_html|safe }}</div>
+        <button id="linemask-auto-run" class="text-btn">Run diagnostic selection</button>
+        <div class="hint">Measures every line of the element on the chosen spectrum and keeps
+          each fitted window as a mask — no synthesis needed. Screened candidates are kept
+          switched off with their flag, so you can see and override the rejection.</div>
+      </div>
+{% endif %}    </div>
+  </div>
+</dialog>
+
+<!-- Fit ionisation balance: opened from the LineMasks sidebar (a new measurement) or
+     from a measurement object's panel (a refit of the one it already holds). The fit owns
+     its synthesis context; registered grids and physical input paths come from Preferences. -->
+<dialog id="ionbal-modal" class="modal modal-lg">
+  <div class="modal-header">
+    <span class="modal-title">Fit ionisation balance</span>
+    <button id="close-ionbal" class="icon-btn" title="Close"><i class="ti ti-x"></i></button>
+  </div>
+  <div class="modal-body ionbal-modal-body">
+    <div class="ionbal-context">{{ ionbal_context_html|safe }}</div>
+    <div class="ionbal-modal-cols">
+      <div class="ionbal-modal-col">
+        <div class="section-header">Measurement</div>
+        <div id="ionbal1-fields">{{ ionbal1_html|safe }}</div>
+        <div class="hint">The windows are measured once, on this spectrum, into a
+          measurement object of their own. A refit reuses them.</div>
+      </div>
+      <div class="ionbal-modal-col">
+        <div class="section-header">Entry point</div>
+        <div id="ionbal2-fields">{{ ionbal2_html|safe }}</div>
+        <div class="hint">Choosing a class fills in its parameters (ξ from an approximate
+          Teff/log g relation); typing over them switches to your own numbers. A parameter
+          that is not fitted is held there — its diagnostic is still measured and reported as
+          the residual it is, and holding all four turns the run into a single diagnostic
+          evaluation.</div>
+      </div>
+      <div class="ionbal-modal-col">
+        <div class="section-header">Atmosphere</div>
+        <div id="ionbalsetup-fields">{{ ionbalsetup_html|safe }}</div>
+        <div class="hint">The selected registered grid is always interpolated at every trial
+          point. Individual atmospheres and picked grid files cannot determine atmospheric
+          parameters and are intentionally unavailable here.</div>
+        <div class="section-header">Solver</div>
+        <div id="ionbaladv-fields">{{ ionbaladv_html|safe }}</div>
+        <div class="hint">Each iteration inverts every line's EW to A(X) through a curve of
+          growth at the trial parameters, then steps the free parameters along their own
+          diagnostic. Iteration 1 also blend-screens the lines.</div>
+      </div>
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button id="ionbal-run" class="text-btn">Measure &amp; fit</button>
+  </div>
+</dialog>
+
 <dialog id="session-modal" class="modal modal-lg">
   <div class="modal-header">
     <span class="modal-title">Sessions</span>
@@ -515,15 +606,25 @@
 
 <script>
 (function () {
+  // wire a <dialog>: `openId` may be null for a modal opened from a menu instead of a
+  // dedicated button — the returned function opens it either way.
   function wireModal(openId, closeId, modalId, onOpen) {
     var m = document.getElementById(modalId);
-    document.getElementById(openId).addEventListener('click', function () {
-      m.showModal();
-      if (onOpen) onOpen();
-    });
+    function open() { m.showModal(); if (onOpen) onOpen(); }
+    var o = openId && document.getElementById(openId);
+    if (o) o.addEventListener('click', open);
     var c = document.getElementById(closeId);
     if (c) c.addEventListener('click', function () { m.close(); });
     m.addEventListener('click', function (e) { if (e.target === m) m.close(); });
+    return open;
+  }
+
+  // pre-render a picker's current results into its container: the html bridge's
+  // js_on_change only fires on change, so a freshly-opened modal would start empty
+  function seedResults(bridgeName, containerId) {
+    var rb = Bokeh.documents[0].get_model_by_name(bridgeName);
+    var el = document.getElementById(containerId);
+    if (rb && el) el.innerHTML = rb.value;
   }
 
   wireModal('open-settings', 'close-settings', 'settings-modal');
@@ -534,18 +635,26 @@
     if (m) m.setv({ value: kind + ' ' + (arg || '') + ' ' + Date.now() });
   }
 
-  // settings modal: switch between category pages via the left nav rail
-  document.querySelectorAll('#settings-modal .settings-nav-item').forEach(function (tab) {
-    tab.addEventListener('click', function () {
-      var page = tab.dataset.page;
-      document.querySelectorAll('#settings-modal .settings-nav-item').forEach(function (t) {
-        t.classList.toggle('active', t === tab);
+  // a left nav rail switching .settings-page panes inside one container (the Preferences
+  // categories and the New line mask sources both use it)
+  function wireNav(rootSel, onSwitch) {
+    var root = document.querySelector(rootSel);
+    if (!root) return;
+    root.querySelectorAll('.settings-nav-item').forEach(function (tab) {
+      tab.addEventListener('click', function () {
+        var page = tab.dataset.page;
+        root.querySelectorAll('.settings-nav-item').forEach(function (t) {
+          t.classList.toggle('active', t === tab);
+        });
+        root.querySelectorAll('.settings-page').forEach(function (p) {
+          p.classList.toggle('active', p.dataset.page === page);
+        });
+        if (onSwitch) onSwitch(page);
       });
-      document.querySelectorAll('#settings-modal .settings-page').forEach(function (p) {
-        p.classList.toggle('active', p.dataset.page === page);
-      });
-      if (page === 'cache') cacheAction('refresh');  // re-scan disk when opened
     });
+  }
+  wireNav('#settings-modal', function (page) {
+    if (page === 'cache') cacheAction('refresh');  // re-scan disk when opened
   });
 
   // clear-all + per-row delete (rows are rendered dynamically into #synth-cache)
@@ -671,12 +780,36 @@
     }
   });
 
-  wireModal('open-file', 'close-file', 'file-modal', function () {
-    // render the current results immediately (js_on_change only fires on change)
-    var rb = Bokeh.documents[0].get_model_by_name('{{ results_name }}');
-    var el = document.getElementById('file-results');
-    if (rb && el) el.innerHTML = rb.value;
+  // the two import modals; both are opened from the Objects "Open File" menu
+  var openSpectrumModal = wireModal(null, 'close-file', 'file-modal', function () {
+    seedResults('{{ results_name }}', 'file-results');
   });
+  var openLinemaskModal = wireModal(null, 'close-linemask', 'linemask-modal', function () {
+    seedResults('{{ linemask_results_name }}', 'linemask-results');
+  });
+  wireNav('#linemask-modal');
+
+  // "Open File ▾": a small dropdown choosing which of the two is imported
+  var openFileBtn = document.getElementById('open-file');
+  var openFileMenu = document.getElementById('open-file-menu');
+  function setMenu(open) {
+    openFileMenu.classList.toggle('open', open);
+    openFileBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+  openFileBtn.addEventListener('click', function (ev) {
+    ev.stopPropagation();
+    setMenu(!openFileMenu.classList.contains('open'));
+  });
+  openFileMenu.addEventListener('click', function (ev) {
+    var item = ev.target.closest('.menu-item');
+    if (!item) return;
+    setMenu(false);
+    if (item.dataset.import === 'linemask') openLinemaskModal();
+    else openSpectrumModal();
+  });
+  // any click elsewhere (or Esc) dismisses the menu
+  document.addEventListener('click', function () { setMenu(false); });
+  document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') setMenu(false); });
   // session actions (save/load/delete/refresh) go through the "session-actions"
   // channel: space-delimited so a save name may contain spaces or colons
   function sessionAction(kind, arg) {
@@ -719,9 +852,7 @@
   });
 
   // empty-state quick actions: reuse the existing Open spectrum modal / Synth toggle
-  document.getElementById('empty-open').addEventListener('click', function () {
-    document.getElementById('open-file').click();
-  });
+  document.getElementById('empty-open').addEventListener('click', openSpectrumModal);
   document.getElementById('empty-synth').addEventListener('click', function () { ewAction('synth-toggle'); });
   document.getElementById('empty-corr').addEventListener('click', function () { ewAction('abundcorr'); });
 
@@ -737,19 +868,6 @@
   document.addEventListener('click', function (ev) {
     var m = Bokeh.documents[0].get_model_by_name('object-actions');
     if (!m) return;
-    var vbtn = ev.target.closest('.view-btn');
-    if (vbtn) {
-      m.setv({ value: 'view:' + vbtn.dataset.view + ':' + Date.now() });
-      return;
-    }
-    var spitem = ev.target.closest('.species-item');
-    if (spitem) {
-      var tbl = spitem.closest('table');
-      if (tbl) tbl.querySelectorAll('.species-item.active').forEach(function (e) { e.classList.remove('active'); });
-      spitem.classList.add('active');
-      m.setv({ value: 'species:' + spitem.dataset.species + ':' + Date.now() });
-      return;
-    }
     // the abundance tables share the .line-sort header class but report through their own
     // channels (below), so ignore their headers here
     var sortth = ev.target.closest('.line-sort');
@@ -814,6 +932,32 @@
   document.getElementById('synth-run').addEventListener('click', function () { ewAction('synthesize'); });
 
   // noise filter: toggle the panel/feautrier view / clear the applied filter
+  // line-position indicators: show/hide whatever the open view attached
+  document.getElementById('annot-btn').addEventListener('click', function () { ewAction('annot-toggle'); });
+  document.getElementById('linelist-close').addEventListener('click', function () { ewAction('lineclose'); });
+
+  // the line list is re-rendered wholesale into its slot, so the row to jump to can only be
+  // scrolled to once it is in the DOM: the server marks it .jump-target and this brings it in.
+  // Whether to scroll at all is the server's call, carried on the row as data-scroll — a row
+  // the user clicked in this very table must not move under them, so only a pick made out on
+  // the spectrum ("ifneeded") scrolls, and then only when the row is actually out of view.
+  // scrollTop is set directly rather than via scrollIntoView, which would also scroll every
+  // ancestor and shift the whole workspace.
+  (function () {
+    var slot = document.getElementById('linelist-table');
+    if (!slot) return;
+    new MutationObserver(function () {
+      var row = slot.querySelector('.line-row.jump-target');
+      if (!row || row.dataset.scroll !== 'ifneeded') return;
+      var box = slot.getBoundingClientRect(), r = row.getBoundingClientRect();
+      var head = slot.querySelector('.linelist-table thead');
+      // the header is sticky, so a row under it is covered, not visible
+      var top = box.top + (head ? head.getBoundingClientRect().height : 0);
+      if (r.top >= top && r.bottom <= box.bottom) return;
+      slot.scrollTop += (r.top + r.height / 2) - (top + box.bottom) / 2;
+    }).observe(slot, { childList: true, subtree: true });
+  })();
+
   document.getElementById('filter-btn').addEventListener('click', function () { ewAction('filter'); });
   document.getElementById('filter-clear').addEventListener('click', function () { ewAction('filter-clear'); });
   document.addEventListener('click', function (ev) {
@@ -849,29 +993,66 @@
     var m = Bokeh.documents[0].get_model_by_name('linemask-actions');
     if (m) m.setv({ value: kind + ' ' + (arg || '') + ' ' + Date.now() });
   }
-  document.getElementById('linemask-btn').addEventListener('click', function () { ewAction('linemask'); });
-  document.getElementById('linemask-import').addEventListener('click', function () {
-    var panel = document.getElementById('linemask-picker');
-    panel.classList.toggle('open');
-    if (panel.classList.contains('open')) {
-      var rb = Bokeh.documents[0].get_model_by_name('{{ linemask_results_name }}');
-      var el = document.getElementById('linemask-results');
-      if (rb && el) el.innerHTML = rb.value;  // js_on_change only fires on change
-    }
-  });
   document.addEventListener('click', function (ev) {
     if (ev.target.closest('.linemask-close')) { ewAction('linemask'); return; }
+    // a line-mask object in the left sidebar: open its view, or drop the whole set
+    var msdel = ev.target.closest('[data-maskset-remove]');
+    if (msdel) { ev.stopPropagation(); linemaskAction('set-remove', msdel.dataset.masksetRemove); return; }
+    var msitem = ev.target.closest('.maskset-item');
+    if (msitem) { linemaskAction('set-select', msitem.dataset.maskset); return; }
     if (ev.target.closest('.lm-new')) { linemaskAction('new'); return; }
-    if (ev.target.closest('.lm-save')) { linemaskAction('save'); return; }
-    if (ev.target.closest('.lm-clear')) { linemaskAction('clear'); return; }
+    if (ev.target.closest('.lm-fit-balance')) { linemaskAction('fit-balance'); return; }
+    if (ev.target.closest('.lm-revert')) {
+      if (confirm('Discard every edit and reload this set from its file?')) linemaskAction('revert');
+      return;
+    }
+    if (ev.target.closest('.lm-saveas')) {
+      // the file name rides along as the action arg (space-delimited channel, so a name
+      // with spaces survives — only the trailing nonce is stripped server-side)
+      var nameEl = document.querySelector('.lm-name');
+      linemaskAction('save-as', nameEl ? nameEl.value.trim() : '');
+      return;
+    }
+
     var del = ev.target.closest('.lm-del');
     if (del) { ev.stopPropagation(); linemaskAction('del', del.dataset.idx); return; }
+    // both tables' rows carry the same data-idx, so either selects the mask
     var row = ev.target.closest('.lm-row');
-    if (row && !ev.target.closest('.lm-renorm')) { linemaskAction('select', row.dataset.idx); }
+    if (row && !ev.target.closest('.lm-renorm') && !ev.target.closest('.lm-incl')) {
+      linemaskAction('select', row.dataset.idx);
+    }
   });
+  // the Empty-set pane: create a blank set instead of importing a file
+  function newMaskSet() {
+    var inp = document.getElementById('linemask-new-name');
+    linemaskAction('new-set', (inp.value || '').trim());
+    inp.value = '';
+  }
+  document.getElementById('linemask-new-set').addEventListener('click', newMaskSet);
+  document.getElementById('linemask-new-name').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); newMaskSet(); }
+  });
+
+  // the Auto-generate pane: line-list picker, spectrum choice, and the run button
+{% if linemask_auto %}  document.getElementById('linemask-auto-browse').addEventListener('click', function () {
+    var panel = document.getElementById('linemask-auto-picker');
+    panel.classList.toggle('open');
+    if (panel.classList.contains('open')) {
+      seedResults('{{ linemask_auto_results_name }}', 'linemask-auto-results');
+    }
+  });
+  document.getElementById('linemask-auto-run').addEventListener('click', function () {
+    linemaskAction('auto-run');
+  });
+{% endif %}
+
   document.addEventListener('change', function (ev) {
     var rn = ev.target.closest('.lm-renorm');
-    if (rn) linemaskAction('renorm', rn.dataset.idx);
+    if (rn) { linemaskAction('renorm', rn.dataset.idx); return; }
+    var inc = ev.target.closest('.lm-incl');
+    if (inc) { linemaskAction('incl', inc.dataset.idx); return; }
+    var ref = ev.target.closest('.lm-auto-ref');
+    if (ref) { linemaskAction('auto-ref', ref.value); }
   });
   // abundance tool: own client->server channel for run / reference / result clicks / line toggles
   function abundAction(kind, arg) {
@@ -978,49 +1159,39 @@
   });
   // (the inline path field's show/hide is handled by the shared .inline-picker-auto logic above)
 
-  // stellar-parameter tool: own client->server channel (run / step / select / line clicks)
-  function sparamAction(kind, arg) {
-    var m = Bokeh.documents[0].get_model_by_name('sparam-actions');
+  // ionisation balance: own client->server channel (view switch / select / line clicks /
+  // the modal's run button). The tool has no toolbar button — a measurement object in the
+  // left sidebar is what opens it.
+  function ionbalAction(kind, arg) {
+    var m = Bokeh.documents[0].get_model_by_name('ionbal-actions');
     if (m) m.setv({ value: kind + ':' + (arg || '') + ':' + Date.now() });
   }
-  document.getElementById('sparams-btn').addEventListener('click', function () { ewAction('sparams'); });
+  wireModal(null, 'close-ionbal', 'ionbal-modal');
+  document.getElementById('ionbal-run').addEventListener('click', function () {
+    ionbalAction('run');
+  });
   document.addEventListener('click', function (ev) {
-    if (ev.target.closest('.sparam-close')) { ewAction('sparams'); return; }
-    if (ev.target.closest('.sparam-run-lines')) { sparamAction('run-lines'); return; }
-    if (ev.target.closest('.sparam-run-solve')) { sparamAction('run-solve'); return; }
-    var step = ev.target.closest('.sparam-step-btn');
-    if (step) { sparamAction('step', step.dataset.step); return; }
-    var rem = ev.target.closest('[data-sparam-remove]');
-    if (rem) { sparamAction('remove', rem.dataset.sparamRemove); return; }
-    var ritem = ev.target.closest('.sparam-result-item');
-    if (ritem && ritem.dataset.sparamResult) { sparamAction('select', ritem.dataset.sparamResult); return; }
-    var ssort = ev.target.closest('.sparam-lines .line-sort');
-    if (ssort) { sparamAction('sort', ssort.dataset.sortcol); return; }
-    var lrow = ev.target.closest('.sparam-row');
-    if (lrow && !ev.target.closest('.sparam-line-chk')) {
-      sparamAction('jump-line', lrow.dataset.line);
+    if (ev.target.closest('.ionbal-close')) { ewAction('ionbal'); return; }
+    if (ev.target.closest('.ionbal-refit')) { ionbalAction('refit'); return; }
+    var step = ev.target.closest('.ionbal-step-btn');
+    if (step) { ionbalAction('step', step.dataset.step); return; }
+    var rem = ev.target.closest('[data-ionbal-remove]');
+    if (rem) { ev.stopPropagation(); ionbalAction('remove', rem.dataset.ionbalRemove); return; }
+    var ritem = ev.target.closest('.ionbal-result-item');
+    if (ritem && ritem.dataset.ionbalResult) { ionbalAction('select', ritem.dataset.ionbalResult); return; }
+    var ssort = ev.target.closest('.ionbal-lines .line-sort');
+    if (ssort) { ionbalAction('sort', ssort.dataset.sortcol); return; }
+    var lrow = ev.target.closest('.ionbal-row');
+    if (lrow && !ev.target.closest('.ionbal-line-chk')) {
+      ionbalAction('jump-line', lrow.dataset.line);
     }
   });
   document.addEventListener('change', function (ev) {
-    var ref = ev.target.closest('.sparam-ref-select');
-    if (ref) { sparamAction('ref', ref.value); return; }
-    var mask = ev.target.closest('.sparam-mask-chk');
-    if (mask) { sparamAction('mask-toggle'); return; }
-    var chk = ev.target.closest('.sparam-line-chk');
-    if (chk) { sparamAction('toggle-line', chk.dataset.line); }
+    var mask = ev.target.closest('.ionbal-mask-chk');
+    if (mask) { ionbalAction('mask-toggle'); return; }
+    var chk = ev.target.closest('.ionbal-line-chk');
+    if (chk) { ionbalAction('toggle-line', chk.dataset.line); }
   });
-
-  // Params Setup: atmosphere grid select / source / format / file (mirrors the synth panel)
-  function sparamGridAction(kind, arg) {
-    var m = Bokeh.documents[0].get_model_by_name('sparam-grid-actions');
-    if (m) m.setv({ value: kind + ' ' + (arg || '') + ' ' + Date.now() });
-  }
-  document.addEventListener('change', function (ev) {
-    if (ev.target.closest('.sparam-grid-select')) { sparamGridAction('grid', ev.target.value); }
-    else if (ev.target.closest('.sparam-mode-select')) { sparamGridAction('mode', ev.target.value); }
-    else if (ev.target.closest('.sparam-format-select')) { sparamGridAction('format', ev.target.value); }
-  });
-  // (the inline path field's show/hide is handled by the shared .inline-picker-auto logic above)
 
   document.addEventListener('keydown', function (ev) {
     if (ev.key === 'Escape' && !document.querySelector('dialog[open]')) ewAction('ew-cancel');
@@ -1032,7 +1203,7 @@
   // Bokeh canvas can't swallow the mousemove — the document-level handlers below own it.
   (function () {
     var LS = 'tumult.layout';
-    var VARS = { 'bottom': '--bottom-h' };
+    var VARS = { 'bottom': '--bottom-h', 'linelist': '--linelist-h' };
     var saved = {};
     try { saved = JSON.parse(localStorage.getItem(LS) || '{}'); } catch (e) {}
     Object.keys(saved).forEach(function (k) {
@@ -1053,9 +1224,11 @@
     });
     document.addEventListener('mousemove', function (e) {
       if (!drag) return;
-      if (drag === 'bottom') {
-        var m = document.getElementById('main').getBoundingClientRect();
-        set('bottom', clamp((m.bottom - e.clientY) / m.height * 100, 15, 85) + '%');
+      var m = document.getElementById('main').getBoundingClientRect();
+      // both bottom panels are measured from the bottom of the centre column; the line list
+      // is the last child, so it is the one the raw distance describes when both are open
+      if (drag === 'bottom' || drag === 'linelist') {
+        set(drag, clamp((m.bottom - e.clientY) / m.height * 100, 15, 85) + '%');
       }
     });
     document.addEventListener('mouseup', function () {

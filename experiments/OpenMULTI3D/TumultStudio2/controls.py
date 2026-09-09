@@ -112,10 +112,13 @@ class Field:
         attrs = f'class="field-input" data-form="{form}" data-field="{self.key}"{dis}{req}'
         if self.kind == "select":
             cur = str(self.value)
+            # an option is either a plain value (shown as itself) or a (value, label) pair,
+            # for selectors whose value is an id rather than the text the user reads
+            pairs = [o if isinstance(o, (tuple, list)) else (o, o) for o in self.options]
             opts = "".join(
-                f'<option value="{html.escape(str(o))}"'
-                f'{" selected" if str(o) == cur else ""}>{html.escape(str(o))}</option>'
-                for o in self.options
+                f'<option value="{html.escape(str(val))}"'
+                f'{" selected" if str(val) == cur else ""}>{html.escape(str(lab))}</option>'
+                for val, lab in pairs
             )
             size = f' size="{self.size}"' if self.size else ""
             control = f"<select {attrs}{size}>{opts}</select>"

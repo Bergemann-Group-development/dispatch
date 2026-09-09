@@ -47,6 +47,23 @@ def check_bridge(input_id):
     return bridge
 
 
+def dialog_bridge(dialog_id, name=None):
+    """Return a hidden TextInput; setting `.value` to "open…"/"close…" shows or closes the
+    ``<dialog>`` with id `dialog_id` — so the server can dismiss a modal once the work it
+    was opened for (e.g. importing the picked file) has actually succeeded."""
+    bridge = TextInput(value="", visible=False)
+    if name:
+        bridge.name = name
+    bridge.js_on_change("value", CustomJS(args=dict(did=dialog_id), code="""
+        const el = document.getElementById(did);
+        if (!el) return;
+        const want = cb_obj.value.split(':')[0];
+        if (want === 'open' && !el.open) el.showModal();
+        else if (want === 'close' && el.open) el.close();
+    """))
+    return bridge
+
+
 def class_bridge(selector, klass):
     """Return a hidden TextInput; setting `.value` to "on…"/"off…" toggles `klass`
     on the element matched by `selector`."""
@@ -82,6 +99,9 @@ class BridgeSet:
 
     def cls(self, selector, klass):
         return self._keep(class_bridge(selector, klass))
+
+    def dialog(self, dialog_id, name=None):
+        return self._keep(dialog_bridge(dialog_id, name=name))
 
     def check(self, input_id):
         return self._keep(check_bridge(input_id))

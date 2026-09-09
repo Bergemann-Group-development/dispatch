@@ -8,15 +8,10 @@ import logging
 import os
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
 _nonce_counter = itertools.count()
-_EXEC = ThreadPoolExecutor(max_workers=4)  # background loading (shared across sessions)
-# synthesis runs one at a time: each build_stellar_grid spawns its own process pool
-# sized to all cores, so concurrent jobs would oversubscribe the machine.
-_SYNTH_EXEC = ThreadPoolExecutor(max_workers=1)
 
 
 def _nonce():
@@ -40,17 +35,23 @@ from normalisetool import NormaliseTool  # noqa: E402
 from maskstore import MaskStore  # noqa: E402
 from masktool import MaskTool  # noqa: E402
 from linenav import LineNavigator  # noqa: E402
+from lineannot import LineAnnotations  # noqa: E402
+import refstars  # noqa: E402
+from linestrength import LineStrengths  # noqa: E402
 from synthpanel import SynthPanel  # noqa: E402
 from synthsetup import SynthSetup  # noqa: E402
 from abundancetool import AbundanceTool  # noqa: E402
+from abundwizard import PROFILES  # noqa: E402  (shared EW-profile choices)
 from abundcorrtool import AbundCorrTool  # noqa: E402
-from sparamtool import SParamTool  # noqa: E402
+from ionbalance import IonBalanceTool  # noqa: E402
 import synth  # noqa: E402  (CancelToken/CancelledError for cancellable loads)
 from filepicker import FilePicker  # noqa: E402
 from toolmanager import ToolManager  # noqa: E402
 from session import Workspace, ObjectSnap, FilterSnap  # noqa: E402
 from htmlbridge import BridgeSet, pulse, toggle  # noqa: E402
 from units import X_UNITS, Y_UNITS, to_range  # noqa: E402
+import linestrength
+from execution import IO as _EXEC, WORKFLOWS as _SYNTH_EXEC, HOP as _HOP_EXEC
 from profiling import profiled  # noqa: E402
 import store  # noqa: E402
 
@@ -167,8 +168,8 @@ def objects_html(canvas, active_kind="spectrum"):
 # shown in the Objects panel while it holds nothing (and nothing is loading): how to
 # get a first spectrum onto the canvas
 OBJECTS_EMPTY_HINT = (
-    '<div class="object-empty">No spectra yet. Open one with the '
-    '<i class="ti ti-folder-open"></i> button above, or click '
+    '<div class="object-empty">No spectra yet. Open one with '
+    '<b>Open File</b> <i class="ti ti-folder-open"></i> above, or click '
     '<b>Synth</b> to compute a new spectrum.</div>'
 )
 
@@ -302,7 +303,7 @@ def build():
 
     # (the EW / Filter / Normalise tools create and own their bridges via the context)
     linelist_bridge = B.html("linelist-table")
-    view_bridge = B.cls("#main", "lines-mode")  # swap nav overview / line table
+    linelist_mode_bridge = B.cls("#main", "linelist-mode")  # the line-list bottom panel
     run_name_bridge = B.html("run-name")          # name shown on the "Load run" button
     run_ready_bridge = B.cls("#load-run", "ready")  # reveal it inside a run folder
     loading_bridge = B.cls("#footer", "loading")       # footer progress bar while loading
@@ -310,7 +311,6 @@ def build():
     synth_mode_bridge = B.cls(".sidebar-right", "synth-active")  # swap to the synth panel
     synth_btn_bridge = B.cls("#synth-btn", "active")             # toolbar button state
     synth_warn_bridge = B.cls("#settings-warning", "show")       # missing-files sign on the cog
-    lines_panel_bridge = B.cls(".sidebar-right", "lines-active")  # line-nav inspector panel
     # (the abundance / correction wizards create and own their bridges via the context)
 
     # which left-sidebar list owns the single selection ("spectrum" | "result" | "corr");
@@ -328,15 +328,18 @@ def build():
     def synth_on_warn(has_warning):
         toggle(synth_warn_bridge, has_warning)
 
-    inspector = linenav = abundancetool = abundcorrtool = sparamtool = None  # assigned after the canvas
+    inspector = linenav = abundancetool = abundcorrtool = ionbaltool = None  # assigned after the canvas
+    warm_strengths = None   # ditto: update_all may run before it is defined
+    picker = None           # ditto: the spectrum file picker, whose rows spin while loading
     pending = ctx.pending  # id -> name of objects still loading in the background
     pending_futures = {}  # id -> Future, so a still-queued run can be cancelled before it starts
     pending_tokens = {}   # id -> synth.CancelToken, to hard-kill a running synthesis
+    # id -> the file a pending load came from, for the picker's per-row spinners. Separate
+    # from `pending` because that one is a display name and a synthesis has no file at all.
+    pending_paths = {}
 
     def run_busy(fn):
-        """Run blocking work off the click callback so the footer progress bar paints
-        first (the compute hogs the document thread, so a same-callback toggle never
-        shows)."""
+        """Defer a UI-only callback. Computational work must use ctx.submit."""
         toggle(loading_bridge, True)
         def work():
             try:
@@ -393,7 +396,7 @@ def build():
                 floor=filtertool.floor if configured else None),
             abundance=abundancetool.snapshot() if abundancetool is not None else {},
             abundcorr=abundcorrtool.snapshot() if abundcorrtool is not None else {},
-            sparams=sparamtool.snapshot() if sparamtool is not None else {},
+            ionbal=ionbaltool.snapshot() if ionbaltool is not None else {},
         ).to_dict()
 
     def update_all(canvas):
@@ -407,19 +410,26 @@ def build():
         toggle(empty_bridge, not canvas.objects and not pending)
         if inspector is not None:
             inspector.bind(canvas.selected())
+        if picker is not None:
+            picker.refresh_busy()  # a load settled or was cancelled: stop its row spinning
         ctx.emit("changed")  # EW / Filter / Normalise (and future tools) resync themselves
+        if ctx.annot is not None:
+            ctx.annot.resync()   # a different object may be a different star (linestrength)
+        if warm_strengths is not None:
+            warm_strengths()     # ... whose reference list may still need reading
         if linenav is not None and linenav.active:
             linenav.render()  # keep the line list scoped to the active object's range
-            # (only while the Lines view is open; it is rebuilt on re-entry otherwise)
+            # (only while the panel is open; it is rebuilt on the next open otherwise)
         if abundancetool is not None:
             abundancetool.refresh()  # keep the step-1 reference selector in sync
-        if sparamtool is not None:
-            sparamtool.refresh()     # ditto for the Params wizard's target selector
+        if ionbaltool is not None:
+            ionbaltool.refresh()     # ditto for the balance modal's target selector
 
     canvas = SpectrumCanvas(on_change=update_all)  # empty until a spectrum is opened
     ctx.canvas = canvas
     ctx.notify = notify
     ctx.run_busy = run_busy
+    ctx.busy = lambda on: toggle(loading_bridge, bool(on))
 
     def edit_fit():
         """Edit-tab "Fit to target": broaden the selected (model) spectrum to best match
@@ -441,22 +451,27 @@ def build():
             return
         lo, hi = to_range(r.start, r.end, canvas.xunit, target.spectrum.xunit)
 
-        def run():
-            try:
-                tgt = target.spectrum.crop(xmin=lo, xmax=hi)
-                best, _ = obj.spectrum.fit(tgt, fit=params, p0=dict(obj.conv))
-            except Exception as exc:
-                logging.exception("Edit-tab broadening fit failed")
-                notify(f"Fit failed: {exc}")
-                return
-            obj.conv = {k: v for k, v in {**obj.conv, **best}.items() if v}
+        source, observed, initial = obj.spectrum, target.spectrum, dict(obj.conv)
+
+        def run(token):
+            token.check()
+            tgt = observed.crop(xmin=lo, xmax=hi)
+            best, _ = source.fit(tgt, fit=params, p0=initial)
+            token.check()
+            return best
+
+        def done(best):
+            if canvas._find(obj.uid) is not obj or obj.conv != initial:
+                return  # removed or edited while the fit was running
+            obj.conv = {k: v for k, v in {**initial, **best}.items() if v}
             canvas._refresh_object(obj)
-            inspector.bind(obj)  # show the fitted values in the number fields
+            if canvas.selected() is obj:
+                inspector.bind(obj)
             update_all(canvas)
             notify("Broadening fit · "
                    + ", ".join(f"{k}={v:g}" for k, v in best.items()), level="success")
 
-        run_busy(run)
+        load_async("broadening-fit", run, done, executor=_SYNTH_EXEC)
 
     inspector = Inspector(canvas, on_fit=edit_fit, notify=notify)
     ew = EquivalentWidth(ctx)
@@ -464,13 +479,98 @@ def build():
     master = store.get_pref("master_linelist")
     if not master or not Path(master).is_file():
         master = MASTER_PATH
+    # where every strength comes from: HOP, on the MARCS model nearest the object's star,
+    # computed per band of spectrum on demand (see linestrength for why it matters)
+    strengths = LineStrengths(
+        master_path=master,
+        refstar=store.get_pref("strength_refstar", refstars.AUTO_KEY))
+    ctx.strengths = strengths
+
     linenav = LineNavigator(
-        canvas, on_table=lambda h: setattr(linelist_bridge, "value", h), master_path=master)
-    # the Lines view's own inspector panel: how far either side of a line to show on jump
+        canvas, strengths, on_table=lambda h: setattr(linelist_bridge, "value", h),
+        on_open=lambda on: toggle(linelist_mode_bridge, on))
+
+    def on_line_setting(key, value):
+        if key == "refstar":
+            # a different star is a different ranking, so the overlay and the table both have
+            # to be redrawn from it. Repainting *now* would only show the proxy — the new
+            # band is not computed yet — so when there is something to compute, leave the
+            # previous star's names up and let warm_strengths repaint once the real ranking
+            # is there. Flashing the proxy's TiO and C2 in between is worse than a short wait.
+            store.set_pref("strength_refstar", strengths.set_refstar(value))
+            if not warm_strengths():
+                ctx.annot.resync()
+                linenav.render()
+        else:
+            linenav.set_jump_distance(value)
+
+    # the line-list panel's own controls, rendered inline in its header
     linejump_form = Form("linesettings", [
+        # which atmosphere the strengths — and so the ranking, and the order of this table —
+        # are computed on. Named classes rather than a Teff: it is what a user of an
+        # unlabelled observation actually knows about their star (see refstars)
+        Field("refstar", "Reference star", kind="select", value=strengths.refstar,
+              options=refstars.options(), inline=True),
         Field("dist", "Distance from center [Å]", kind="number",
-              value=linenav.jump_distance, min=0.01),
-    ], on_change=lambda key, value: linenav.set_jump_distance(value))
+              value=linenav.jump_distance, min=0.01, inline=True),
+    ], on_change=on_line_setting)
+    # line-position indicators over the spectrum, shared by whichever view wants them (the
+    # LineMasks view shows its set's element; other tools attach the same way). Unowned, it
+    # draws the strongest lines of the window — as many as the frame is wide enough to name.
+    ctx.annot = LineAnnotations(ctx, strengths)
+    # a pan or zoom can leave the computed band; ask for the new one (a no-op when it is
+    # already cached, so this is free on the overwhelming majority of frames)
+    canvas.add_view_listener(lambda: warm_strengths())
+
+    strength_pending = set()
+
+    def warm_strengths():
+        """Compute the strengths for the visible band, off the document thread.
+
+        A band is an EOS solve plus an opacity pass — a fraction of a second for the usual
+        master list, seconds for a wide view or a folder of per-species lists — so it must
+        not run on a repaint. Until it lands the overlay keeps whatever it last drew, and
+        this repaints once the real thing is there.
+
+        Returns whether it scheduled anything, so a caller that changed the ranking can
+        repaint immediately when the band was already cached and there is nothing to wait for.
+        """
+        if not canvas.objects:
+            return False
+        obj = canvas.selected()
+        lo, hi = ctx.annot._window_aa()
+        if not strengths.pending(obj, lo, hi):
+            return False
+
+        # Snapshot the reference and band on the document thread. Do not read
+        # canvas objects or form values from the HOP worker.
+        star = strengths.star_for(obj)
+        linelist = strengths.linelist
+        band = linestrength.band_bounds(lo, hi)
+        request = (star.key, linelist, band)
+        if request in strength_pending:
+            return False
+        strength_pending.add(request)
+
+        def run(token):
+            token.check()
+            return linestrength.compute_band(star, linelist, *band)
+
+        def done(frame):
+            ctx.annot.resync()
+            if linenav.active:
+                linenav.render()
+            if frame is None:
+                notify("Line strengths unavailable — ranking is approximate", level="warn")
+
+        # Schedule after this callback, avoiding recursive update_all during submit.
+        def submit_warm():
+            future = load_async("line-strengths", run, done, executor=_HOP_EXEC)
+            future.add_done_callback(
+                lambda _: ctx.schedule(lambda: strength_pending.discard(request)))
+        ctx.schedule(submit_warm)
+        return True
+
     filtertool = FilterTool(ctx)
     normtool = NormaliseTool(ctx)
     # the shared LineMask set (imported windows for fitting / local renorm), owned centrally so
@@ -479,8 +579,18 @@ def build():
                      / "input" / "linemasks").resolve()
     mask_store = MaskStore(ctx)
     ctx.masks = mask_store
-    masktool = MaskTool(ctx, mask_store,
-                        input_dir=_linemask_dir if _linemask_dir.is_dir() else Path.home())
+    masktool = MaskTool(
+        ctx, mask_store,
+        input_dir=_linemask_dir if _linemask_dir.is_dir() else Path.home(),
+        # the Auto-generate source runs the wizards' diagnostic line selection over a loaded
+        # spectrum (no synthesis), so it needs the canvas objects and a line list
+        list_observations=lambda: [(o.uid, o.name) for o in canvas.objects],
+        get_observation=lambda uid: (canvas.effective(canvas._find(uid)) if canvas._find(uid)
+                                     else None),
+        master_path=master, profiles=PROFILES,
+        # the mask view's analysis action: hand the open set to the balance tool, which is
+        # built further down (the lambda resolves it at click time, not now)
+        on_fit_balance=lambda mset: ionbaltool.open_for(mset))
     settings = build_settings(canvas)
 
     def add_synth(spec, name, meta=None, conv=None):
@@ -545,14 +655,11 @@ def build():
         atom_provider=lambda: list(corr_atoms.selected),
         add_spectrum=add_corr_spectrum)
 
-    # the stellar-parameter wizard: its own synthesis setup (whose run form is the solver's
-    # initial guess), sharing the grid registry and the Synthesize tab's NLTE atoms.
-    sparam_setup = SynthSetup(
-        "sparam", "sparam_run", synth_panel.grids,
-        atoms_provider=lambda: list(synth_panel.atoms.selected), notify=notify)
-    sparamtool = SParamTool(
+    # The ionisation-balance modal owns its grid selection and always interpolates it.  Only
+    # the app-global registered-grid list and synthesis preferences are shared.
+    ionbaltool = IonBalanceTool(
         ctx,
-        setup=sparam_setup,
+        grids=synth_panel.grids,
         list_observations=lambda: [(o.uid, o.name) for o in canvas.objects],
         get_observation=lambda uid: (canvas.effective(canvas._find(uid)) if canvas._find(uid)
                                      else None),
@@ -560,16 +667,22 @@ def build():
 
     # single-selection coordination between the Objects and the wizards' result lists
     def focus_spectrum(uid):
-        if tools.active_name() in ("abundance", "abundcorr", "sparams"):
-            tools.deactivate_active()  # selecting a spectrum leaves the wizard
+        if tools.active_name() in ("abundance", "abundcorr", "ionbal", "linemask"):
+            tools.deactivate_active()  # selecting a spectrum leaves the wizard / mask view
         abundancetool.blur()          # leave the centre abund view, drop the result highlight
         abundcorrtool.blur()          # ditto for the correction view
-        sparamtool.blur()             # ditto for the parameter view
+        ionbaltool.blur()             # ditto for the measurement view
         canvas.select_object(uid)     # -> on_change -> update_all repaints with spectrum focus
+
+    # the wizards' step-1 line source is a mask set, so their dropdowns follow the store
+    ctx.subscribe("masks-changed", lambda **_: abundancetool.refresh())
+    # a measurement's panel names the set it came from (and flags it once that set is edited)
+    ctx.subscribe("masks-changed",
+                  lambda **_: ionbaltool.active and ionbaltool.push_panel())
 
     # the abundance / parameter wizards' step-1 EWs track the reference's filter state
     ctx.subscribe("filter-state", lambda **_: abundancetool.on_filter_changed())
-    ctx.subscribe("filter-state", lambda **_: sparamtool.on_filter_changed())
+    ctx.subscribe("filter-state", lambda **_: ionbaltool.on_filter_changed())
 
     # the mutually-exclusive sidebar tools: at most one owns the right panel at a time.
     # filter's enter is wrapped in run_busy so the progress bar paints during the FFT/fit.
@@ -580,7 +693,7 @@ def build():
     tools.register("filter", filtertool, runner=run_busy)
     tools.register("abundance", abundancetool)
     tools.register("abundcorr", abundcorrtool)
-    tools.register("sparams", sparamtool)
+    tools.register("ionbal", ionbaltool)
 
     # --- session save / restore -------------------------------------------
     def _restore_range(rng, vals):
@@ -651,14 +764,16 @@ def build():
             abundancetool.restore(ws.abundance)
         if abundcorrtool is not None:
             abundcorrtool.restore(ws.abundcorr)
-        if sparamtool is not None:
-            sparamtool.restore(ws.sparams)
+        if ionbaltool is not None:
+            ionbaltool.restore(ws.ionbal)
         update_all(canvas)
 
     # --- background loading: placeholder + spinner now, real object when ready ----
-    def load_async(name, loader, on_done, executor=_EXEC):
+    def load_async(name, loader, on_done, executor=_EXEC, path=None):
         pid = _nonce()
         pending[pid] = name
+        if path is not None:
+            pending_paths[pid] = str(path)   # a picker row spins for as long as this stands
         token = synth.CancelToken()      # cancel handle: the loader threads it into synth.*
         pending_tokens[pid] = token
         update_all(canvas)               # show the spinner placeholder immediately
@@ -680,15 +795,25 @@ def build():
                 _settle(doc, pid, name, result, on_done, None)
 
         pending_futures[pid] = executor.submit(work)
+        return pending_futures[pid]
 
-    # the wizards submit their synthesis work through the context (serialised on the
-    # one-slot synth executor so concurrent grids don't oversubscribe the machine)
+    # Coordinators can overlap; the shared dispatch service enforces the CPU budget.
     ctx.submit = lambda name, loader, on_done: load_async(name, loader, on_done,
                                                           executor=_SYNTH_EXEC)
+    ctx.execution = synth.get_runtime()
+
+    def session_closed(session_context):
+        for token in list(pending_tokens.values()):
+            token.cancel()
+        for future in list(pending_futures.values()):
+            future.cancel()
+
+    curdoc().on_session_destroyed(session_closed)
 
     def _settle(doc, pid, name, result, on_done, exc):
         def apply():
             pending.pop(pid, None)
+            pending_paths.pop(pid, None)
             pending_futures.pop(pid, None)
             token = pending_tokens.pop(pid, None)
             if token is not None and token.cancelled:
@@ -709,14 +834,15 @@ def build():
 
     def cancel_pending(pid):
         """Cancel a still-loading run from its sidebar spinner. Drops the spinner now and
-        hard-kills the synthesis: the token tears down the dispatch process pool and its
-        dispatch.x children; a run still queued behind another is cancelled before it starts.
+        cancels this workflow's dispatch subscriptions. Unshared subprocesses are killed;
+        shared jobs continue for their other subscribers. Queued work is cancelled too.
         Either way the result (if any still arrives) is discarded in _settle."""
         try:
             pid = int(pid)
         except (TypeError, ValueError):
             return
         name = pending.pop(pid, None)
+        pending_paths.pop(pid, None)
         if name is None:
             return
         token = pending_tokens.get(pid)
@@ -736,7 +862,8 @@ def build():
         load_async(name, lambda token=None: load_file(filepath),
                    lambda spec: canvas.add_object(spec, name=name,
                                                        source=("file", str(filepath)),
-                                                       meta=getattr(spec, "meta", None)))
+                                                       meta=getattr(spec, "meta", None)),
+                   path=filepath)
 
     # client -> server channel for the sidebar hide/remove buttons ("action:uid:nonce")
     actions = B.action("object-actions")
@@ -746,19 +873,10 @@ def build():
         if obj is not None:
             canvas.set_style(obj, color=value)
 
-    def set_view(value):
-        if value == "lines":
-            # entering the Lines view: hand the right sidebar to the line-nav panel,
-            # standing down whichever tool was occupying it
-            tools.deactivate_active()
-            pulse(view_bridge, "on")
-            toggle(lines_panel_bridge, True)
-            linenav.activate()
-        else:
-            linenav.deactivate()  # stop refreshing the hidden line table
-            pulse(view_bridge, "off")
-            toggle(lines_panel_bridge, False)
-            canvas.reset_nav_view()  # the line nav zoomed it; restore the overview
+    # clicking a line-position indicator opens the line list in the bottom half of the
+    # workspace, scrolled to that transition's row (lineannot -> "line-picked" -> linenav)
+    ctx.subscribe("line-picked",
+                  lambda lam0_aa, ion=None, **_: linenav.open_at(lam0_aa, ion))
 
     # action name -> handler(value). The mutually-exclusive sidebar tools go through the
     # ToolManager, which owns "activate one, stand down the rest" (see toolmanager.py).
@@ -776,21 +894,21 @@ def build():
         "synth-toggle": lambda v: tools.toggle("synth"),
         "synth-cancel": lambda v: synth_panel.deactivate(),
         "synthesize":   lambda v: synth_panel.synthesize(),
-        "view":         set_view,
+        "annot-toggle": lambda v: ctx.annot.toggle_visible(),
         "linejump":     linenav.jump,
         "linesort":     linenav.set_sort,
-        "species":      linenav.set_species,
+        "lineclose":    lambda v: linenav.close(),
         "loadrun":      lambda v: load_current_run(),
         "filter":       lambda v: tools.toggle("filter"),
         "filter-clear": lambda v: filtertool.clear(),
         "filtertoggle": lambda v: filtertool.set_visible(v == "on"),
         "normalise":    lambda v: tools.toggle("normalise"),
-        "norm-init":    lambda v: run_busy(normtool.initialise),
+        "norm-init":    lambda v: normtool.initialise(),
         "norm-clear":   lambda v: normtool.clear(),
         "linemask":     lambda v: tools.toggle("linemask"),
         "abundance":    lambda v: tools.toggle("abundance"),
         "abundcorr":    lambda v: tools.toggle("abundcorr"),
-        "sparams":      lambda v: tools.toggle("sparams"),
+        "ionbal":       lambda v: tools.toggle("ionbal"),
     }
 
     def on_action(attr, old, new):
@@ -878,8 +996,11 @@ def build():
 
         load_async(name, lambda token=None: load_run(folder), add)
 
+    # `busy_provider`: on_select hands the read to a worker thread and returns at once, so
+    # the row's spinner is carried by the pending registry until the object lands
     picker = FilePicker(on_select, container_id="file-results", start_dir=start_dir,
-                        on_dir=on_picker_dir, recent_provider=store.recent_files)
+                        on_dir=on_picker_dir, recent_provider=store.recent_files,
+                        busy_provider=pending_paths.values)
     picker.layout.name = "file_picker"
 
     # a second FilePicker instance, embedded inline in the settings modal (no nested
@@ -888,13 +1009,15 @@ def build():
     linelist_open_bridge = B.cls("#linelist-picker", "open")
 
     def on_linelist_select(filepath):
+        strengths.set_master_path(filepath)
         if linenav.set_master_path(filepath):
             store.set_pref("master_linelist", str(filepath))
+            ctx.annot.resync()
             linelist_path_bridge.value = html.escape(Path(filepath).name)
             pulse(linelist_open_bridge, "off")  # collapse the inline picker
 
     linelist_picker = FilePicker(on_linelist_select, container_id="linelist-results",
-                                 start_dir=Path(linenav.master_path).parent)
+                                 start_dir=Path(strengths.master_path).parent)
     linelist_picker.layout.name = "linelist_picker"
 
     # every html control is a hidden model collected under one root: the bridges/actions
@@ -905,24 +1028,30 @@ def build():
                      *synth_panel.models, *normtool.models, *filtertool.models,
                      *masktool.models,
                      *abundancetool.models, *abundcorrtool.models, *corr_atoms.models,
-                     *sparamtool.models)
+                     *ionbaltool.models)
     bridges.name = "bridges"
 
     doc = curdoc()
     doc.title = "TUMULT Studio"
     for root in (canvas.nav, canvas.main, filtertool.fig, abundancetool.fig,
-                 abundcorrtool.fig, sparamtool.fig, picker.layout,
-                 masktool.picker.layout,
+                 abundcorrtool.fig, ionbaltool.fig, picker.layout,
+                 *masktool.roots,
                  linelist_picker.layout, synth_panel.atoms.picker.layout,
                  synth_panel.grids.picker.layout, synth_panel.atmos_picker.layout,
                  abundancetool.setup.atmos_picker.layout,
                  abundcorrtool.setup.atmos_picker.layout,
-                 corr_atoms.picker.layout, sparamtool.setup.atmos_picker.layout, bridges):
+                 corr_atoms.picker.layout, bridges):
         doc.add_root(root)
+
+    # seed the wizards' step-1 line-mask dropdowns before the first paint (they are kept in
+    # sync afterwards by the "masks-changed" subscription above)
+    abundancetool._sync_masksets()
+    ionbaltool.refresh()      # the balance modal's target selector
 
     inspector.bind(canvas.selected())
     sel = canvas.selected()
     active_color = sel.line.glyph.line_color if sel else None
+    _auto = masktool.source("auto")     # None while masktool.AUTO_MASKS is off
     doc.template_variables.update(
         css=(HERE / "static" / "style.css").read_text(),
         main_empty=not canvas.objects,  # bake the empty-state class into the first paint
@@ -950,11 +1079,19 @@ def build():
         synth_is_nlte=synth_panel.is_nlte,
         atom_results_name=synth_panel.atoms.results_name,
         fit_fields_html=synth_panel.fit.html(),
-        linenav_html=linenav.species_html(),
+        annot_label=ctx.annot.button_html(),
         linesettings_html=linejump_form.html(),
-        linelist_path=html.escape(Path(linenav.master_path).name),
+        linelist_path=html.escape(Path(strengths.master_path).name),
         linelist_results_name=linelist_picker.results_name,
-        linemask_results_name=masktool.picker.results_name,
+        linemask_results_name=masktool.source("file").results_name,
+        # the Auto-generate pane is only rendered while that source exists
+        # (masktool.AUTO_MASKS); its fields are undefined otherwise
+        linemask_auto=_auto is not None,
+        linemask_auto_results_name=_auto.results_name if _auto else "",
+        linemask_auto_ref_html=_auto.ref_html() if _auto else "",
+        linemask_auto_path=html.escape(Path(_auto.linelist_path).name) if _auto else "",
+        linemask_auto_html=_auto.form.html() if _auto else "",
+        linemask_objects_html=masktool.objects_html(),
         sessions_html=sessions_html(store.list_sessions()),
         abund_results_html=abundancetool.results_html(),
         abund_table_html="",
@@ -978,19 +1115,13 @@ def build():
         corr_file_results_name=corr_setup.atmos_picker.results_name,
         corr_atoms_html=corr_atoms.chips_html(),
         corr_atom_results_name=corr_atoms.results_name,
-        sparam_results_html=sparamtool.results_html(),
-        sparam_table_html="",
-        sparam_ref_html=sparamtool.ref_html(),
-        sparam1_html=sparamtool.form1.html(),
-        sparam2_html=sparamtool.form2.html(),
-        sparam3_html=sparamtool.form3.html(),
-        sparam_params_html=sparam_setup.run_form.html(),
-        sparam_base_html=sparam_setup.base_form.html(),
-        sparam_mode_html=sparam_setup.mode_form.html(),
-        sparam_grid_html=sparam_setup.grid_ui_html(),
-        sparam_show_file=sparam_setup.show_file(),
-        sparam_atoms_ro_html=sparam_setup.atoms_ro_html(),
-        sparam_file_results_name=sparam_setup.atmos_picker.results_name,
+        ionbal_results_html=ionbaltool.results_html(),
+        ionbal_table_html="",
+        ionbal_context_html="",
+        ionbal1_html=ionbaltool.form1.html(),
+        ionbal2_html=ionbaltool.form2.html(),
+        ionbalsetup_html=ionbaltool.setup.form.html(),
+        ionbaladv_html=ionbaltool.formadv.html(),
         form_script=FORM_SCRIPT + NUM_INPUT_SCRIPT,
         results_name=picker.results_name,
     )

@@ -67,10 +67,10 @@ class Workspace:
     selected: int = 0
     filter: FilterSnap = field(default_factory=FilterSnap)
     # tool results, each an opaque {"results": [...], "selected": uid} built by the tool itself
-    # (see the snapshot() of AbundanceTool / AbundCorrTool / SParamTool)
+    # (see the snapshot() of AbundanceTool / AbundCorrTool / IonBalanceTool)
     abundance: dict = field(default_factory=dict)
     abundcorr: dict = field(default_factory=dict)
-    sparams: dict = field(default_factory=dict)
+    ionbal: dict = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, d):
@@ -83,7 +83,7 @@ class Workspace:
             filter=FilterSnap.from_dict(d.get("filter") or {}),
             abundance=dict(d.get("abundance") or {}),
             abundcorr=dict(d.get("abundcorr") or {}),
-            sparams=dict(d.get("sparams") or {}),
+            ionbal=dict(d.get("ionbal") or {}),
         )
 
     def to_dict(self):

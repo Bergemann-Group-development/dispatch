@@ -184,7 +184,7 @@ class AbundCorrTool(AbundanceWizard):
 
     def _compute_reference(self, ctx, ref_grid, atom, profile, ew_min, token):
         try:
-            prefs, target = ctx["prefs"], ctx["target"]
+            prefs, target = ctx.prefs, ctx.target
             # the model atom alone defines the spectrum and its wavelength coverage, so no
             # window is imposed — the reference spans the atom's full synthesised range.
             ref_spec = synth.compute_reference(target, prefs, atom, ref_grid,
@@ -290,8 +290,8 @@ class AbundCorrTool(AbundanceWizard):
 
     def _corr_lines(self, res, ctx, atom, token):
         try:
-            prefs, grid = ctx["prefs"], ctx["grid"]
-            target, atmos_file = ctx["target"], ctx["atmos_file"]
+            prefs, grid = ctx.prefs, ctx.grid
+            target, atmos_file = ctx.target, ctx.atmos_file
             symbol = res.symbol
             ladder = np.linspace(-CORR_SPAN, CORR_SPAN, CORR_N)
 

@@ -194,7 +194,10 @@ class SynthPanel(RangeSelect):
         if str(mode).upper() == "NLTE" and atoms:
             rows.append(["Model atoms", ", ".join(Path(a).name for a in atoms)])
         rows.append(["Window", f"{xmin:.2f}–{xmax:.2f} Å" if xmin and xmax else "full range"])
-        return {"type": "synth", "params": rows}
+        # `stellar` is the same values as numbers rather than display strings: linestrength
+        # asks an object which star it is, to pick the reference run its strengths come from
+        return {"type": "synth", "params": rows,
+                "stellar": {k: float(stellar[k]) for k in ("teff", "logg", "feh", "vmic")}}
 
     # --- fit tab ----------------------------------------------------------
     def refresh_targets(self):
@@ -439,8 +442,8 @@ class SynthPanel(RangeSelect):
         if xmin is None:
             self.notify("Set the synthesis wavelength window (λ min/max) first.")
             return
-        rv, grid, target = ctx["run_vals"], ctx["grid"], ctx["target"]
-        atmos_file, prefs = ctx["atmos_file"], ctx["prefs"]
+        rv, grid, target = ctx.run_vals, ctx.grid, ctx.target
+        atmos_file, prefs = ctx.atmos_file, ctx.prefs
         name = (f"t{target[0]:.0f}g{target[1]:.1f}m{target[2]:+.1f}v{target[3]:.1f}"
                 + ("·NLTE" if str(rv.get("mode")).upper() == "NLTE" else ""))
         meta = self._synth_meta(

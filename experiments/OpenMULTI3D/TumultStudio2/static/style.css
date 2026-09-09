@@ -6,6 +6,7 @@
   --sidebar-left-w: 220px;        /* fixed width */
   --sidebar-right-w: 240px;       /* fixed width */
   --bottom-h: 42%;                /* draggable — height of the centre bottom table panel */
+  --linelist-h: 32%;              /* draggable — height of the line-list panel below it */
   --footer-h: 32px;
   --toolbar-h: 40px;
   --panel-h: 100px;   /* height of the nav overview panel above the main figure */
@@ -164,7 +165,6 @@ body.resizing * { pointer-events: none !important; }
 #main.empty ~ .sidebar-right.synth-active,
 #main.empty ~ .sidebar-right.norm-active,
 #main.empty ~ .sidebar-right.filter-active,
-#main.empty ~ .sidebar-right.lines-active,
 #main.empty ~ .sidebar-right.linemask-active,
 #main.empty ~ .sidebar-right.corr-active { display: flex; }
 .empty-card {
@@ -210,44 +210,51 @@ body.resizing * { pointer-events: none !important; }
 #feautrier-fig { flex: 1; min-height: 0; display: flex; }
 #feautrier-fig > * { flex: 1; min-width: 0; min-height: 0; }
 
-/* the nav overview sits above the main figure (fixed height); the line table is
-   hidden until lines-mode */
+/* the nav overview sits above the main figure (fixed height) */
 #top-panel { flex-shrink: 0; display: flex; flex-direction: column; gap: 6px; min-height: 0; }
 #nav-slot { height: var(--panel-h); display: flex; }
-#linelist { display: none; flex-direction: row; gap: 6px; min-height: 0; }
-/* line navigation: keep the nav overview, but take over the big main figure's space
-   with the line table (the table is otherwise too short to navigate) */
-#main.lines-mode #top-panel { flex: 1; }
-#main.lines-mode #canvas-wrap { display: none; }
-#main.lines-mode #linelist { display: flex; flex: 1; }
 
-/* species selector: a single-column table mirroring the linelist table, beside it */
-#linenav-fields {
-  flex-shrink: 0; width: 150px; min-height: 0; overflow: auto;
-  background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
-}
-.species-table { width: 100%; }
-.species-table th, .species-table td { text-align: left; }
-.species-item { cursor: pointer; }
-.species-item:hover td { background: rgba(74,144,226,0.12); color: var(--accent); }
-.species-item.active td { background: rgba(74,144,226,0.18); color: var(--accent); font-weight: 600; }
+/* line-position indicators (lineannot.py): the Show/Hide button exists only while there are
+   lines to draw — for a view that attached its own selection, or on a deep enough zoom. */
+#annot-btn { display: none; }
+#main.annot-mode #annot-btn { display: inline-flex; align-items: center; }
+#annot-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+#canvas-toolbar #annot-btn.active:hover { background: #5a9fe8; border-color: var(--accent); color: #fff; }
 
-/* segmented Nav / Lines toggle; active state mirrors #main.lines-mode (no JS) */
-.seg-toggle { display: flex; border: 1px solid #555; border-radius: 3px; overflow: hidden; }
-.view-btn {
-  height: 24px; padding: 0 10px; cursor: pointer; border: none;
-  font-size: 11px; font-weight: 600;
-  background: var(--border); color: var(--text-muted);
+/* the line list, in the bottom half of the workspace: opened by picking one of those
+   indicators, so it stacks under whichever tool table is already down there rather than
+   fighting it for the same slot (its own --linelist-h, its own splitter) */
+#linelist-bottom { display: none; }
+#main.linelist-mode #linelist-bottom {
+  display: flex; flex: 0 0 var(--linelist-h); min-height: 0; flex-direction: column;
+  border-top: 1px solid var(--border); padding-top: 6px;
 }
-.view-btn:hover { color: var(--text); }
-.view-btn + .view-btn { border-left: 1px solid #555; }
-#main:not(.lines-mode) .view-btn[data-view="nav"],
-#main.lines-mode .view-btn[data-view="lines"] { background: var(--accent); color: #fff; }
+.linelist-head { display: flex; align-items: center; gap: 12px; padding: 0 2px 6px; }
+.linelist-head .section-header { margin-top: 0; flex-shrink: 0; }
+.linelist-head .icon-btn { margin-left: auto; flex-shrink: 0; }
+/* the panel's settings (reference star, the jump distance) sit inline in
+   its header */
+.linelist-settings { display: flex; align-items: center; gap: 16px; }
+.linelist-settings .field-group { gap: 6px; }
+.linelist-settings .field-group.field-inline > .field-input { width: 72px; }
+/* the star names are words, not a 72px number: let the select size to its longest option */
+.linelist-settings .field-group.field-inline > select.field-input { width: auto; }
+/* each setting hugs its own control instead of spreading across the header */
+.linelist-settings .field-group.field-inline > label:not(.switch) { flex: 0 0 auto; }
+.linelist-settings label { white-space: nowrap; }
 
 /* line list table */
 #linelist-table {
   flex: 1; min-height: 0; overflow: auto;
   background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
+}
+/* the leading ion column reads as a name, not a number (Species is the table's one
+   non-sortable header, so it identifies that column on its own) */
+.linelist-table thead th:not(.line-sort),
+.linelist-table tbody td.line-ion { text-align: left; }
+/* the row the panel was opened at (or last jumped to) */
+.linelist-table .line-row.jump-target td {
+  background: rgba(74,144,226,0.18); color: var(--accent);
 }
 .linelist-table {
   width: 100%; border-collapse: collapse;
@@ -265,6 +272,14 @@ body.resizing * { pointer-events: none !important; }
 .line-row { cursor: pointer; }
 .line-row:hover td { background: rgba(74,144,226,0.12); color: var(--accent); }
 .linelist-empty, .linelist-more { padding: 8px; font-size: 11px; color: var(--text-muted); }
+/* which star the strengths are for — the table means something different per star, and the
+   one non-physical source (the proxy) has to look different rather than blend in */
+.linelist-source {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 8px; font-size: 10px; color: var(--text-muted);
+  border-top: 1px solid var(--border);
+}
+.linelist-source.warn { color: #e0a030; }
 
 /* EW mode swaps the inspector tabs for the EW panel */
 .text-btn {
@@ -354,29 +369,68 @@ body.resizing * { pointer-events: none !important; }
   display: flex; flex: 0 0 var(--bottom-h); min-height: 0; flex-direction: column; overflow: auto;
   border-top: 1px solid var(--border); padding-top: 6px;
 }
-#linemask-table { overflow: auto; min-height: 0; }
+/* the centre panel holds the windows table and, for a generated set, the diagnostics table
+   beside it (#main.linemask-diag). ONE scroller wraps both, so the halves of a row stay
+   together: they are separate tables, and only a shared scroll keeps them in step. Row
+   heights are pinned for the same reason — a wrapping cell on one side would shear the
+   two apart. */
+#linemask-tables { flex: 1; min-height: 0; overflow: auto; display: flex; gap: 10px;
+  align-items: flex-start; }
+#linemask-table { flex: 1; min-width: 0; }
+#linemask-diag-table { display: none; }
+#main.linemask-diag #linemask-diag-table {
+  display: block; flex: 0 1 46%; min-width: 0;
+  border-left: 1px solid var(--border); padding-left: 10px;
+}
+.lm-table tbody td { height: 22px; box-sizing: border-box; }
+.lm-table th { height: 24px; box-sizing: border-box; }
+/* a switched-off mask: still listed with its flag, but plainly not in play */
+.lm-table .lm-row.lm-off td { opacity: 0.4; }
+/* flags must not wrap: a taller row here would break the two tables' alignment */
+.lm-flags { max-width: 130px; overflow: hidden; text-overflow: ellipsis; }
+.lm-flag { display: inline-block; margin: 0 3px 1px 0; padding: 0 4px; border-radius: 3px;
+  background: rgba(224,160,48,0.15); border: 1px solid #e0a030; color: #e0a030;
+  font-size: 9px; }
 .lm-table { width: 100%; font-size: 12px; border-collapse: collapse; }
-.lm-table th { position: sticky; top: 0; background: var(--bg); text-align: left;
-  padding: 4px 8px; color: var(--text-muted); font-weight: 600; }
+/* the headings sit over their values, so they align with them: the shared .linelist-table
+   rule left-aligns every header that is not a sort button, which is all of these */
+.linelist-table.lm-table thead th { position: sticky; top: 0; background: var(--bg);
+  text-align: right; padding: 4px 8px; color: var(--text-muted); font-weight: 600; }
 .lm-table td { padding: 3px 8px; white-space: nowrap; border-bottom: 1px solid var(--border); }
 .lm-table .lm-note { color: var(--text-muted); }
 .lm-table .lm-row { cursor: pointer; }
 .lm-table .lm-row:hover { background: #333; }
 .lm-table .lm-row.lm-active { background: rgba(74,144,226,0.15); }
 .lm-empty { padding: 16px; color: var(--text-muted); font-size: 12px; }
+/* sticky "+ New mask" footer row — the table's own append-a-row affordance */
+.lm-table tfoot td { position: sticky; bottom: 0; z-index: 2; padding: 6px 8px;
+  background: var(--bg); border-top: 1px solid var(--border); }
+.lm-add-row .text-btn { width: 100%; height: 26px; }
+/* while waiting for the box gesture the row reads as armed, not as a button to press */
+.lm-add-row.lm-placing .text-btn {
+  border-color: var(--accent); color: var(--accent);
+  background: rgba(74,144,226,0.12);
+}
+.lm-table-empty { width: 100%; }
 
-/* line-navigation panel — the Lines view's own inspector (jump-distance setting) */
-.lines-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; }
-.sidebar-right.lines-active .tab-bar,
-.sidebar-right.lines-active .tab-content { display: none; }
-.sidebar-right.lines-active .lines-panel { display: flex; }
-/* an active tool panel (EW/Normalise/Filter/Synth/Masks) takes precedence over it */
-.sidebar-right.ew-active .lines-panel,
-.sidebar-right.norm-active .lines-panel,
-.sidebar-right.filter-active .lines-panel,
-.sidebar-right.linemask-active .lines-panel,
-.sidebar-right.synth-active .lines-panel { display: none; }
-.lines-panel-head { display: flex; align-items: center; justify-content: space-between; }
+/* the open set's name + its edited-since-import flag (right sidebar) */
+.lm-title { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.lm-title .section-header { margin-top: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; }
+.lm-dirty { flex: 0 0 auto; font-size: 10px; font-weight: 700; padding: 1px 6px;
+  border-radius: 8px; color: #e0a030; border: 1px solid #e0a030;
+  background: rgba(224,160,48,0.12); }
+.lm-name { width: 100%; }
+/* a hint that flags something the user still has to supply */
+.hint-warn { color: #e0a030; }
+/* the New line mask modal reuses the Preferences rail; give it room for the picker */
+#linemask-modal { width: min(600px, 92vw); height: min(520px, 88vh); }
+#linemask-modal .settings-nav { flex: 0 0 150px; }
+#linemask-modal .settings-nav-item { display: flex; align-items: center; }
+#linemask-modal .file-results { max-height: 260px; }
+/* the same flag on the left-sidebar object row, compressed to a dot */
+.lm-dot { flex: 0 0 auto; font-size: 9px; color: #e0a030; }
+
 #filter-panel-content .text-btn { display: block; width: 100%; }
 /* greyed-out look for controls disabled while 'Already normalised' is on */
 .field-input:disabled, .primary-btn:disabled, .text-btn:disabled {
@@ -386,7 +440,6 @@ body.resizing * { pointer-events: none !important; }
 .field-row { display: flex; gap: 8px; align-items: stretch; }
 /* bottom-align each group's content so the inputs line up even when one label wraps */
 .field-row .field-group { flex: 1; min-width: 0; justify-content: flex-end; }
-.field-row .field-group:not(:first-child) { margin-top: 0; }
 #normalise-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 #synth-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 .primary-btn {
@@ -463,6 +516,26 @@ body.resizing * { pointer-events: none !important; }
 /* a section title with a right-aligned action button (e.g. Objects + open) */
 .section-head-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 .section-head-row .icon-btn { flex-shrink: 0; }
+.section-head-row .text-btn { flex-shrink: 0; display: inline-flex; align-items: center; }
+
+/* ---- dropdown menu (Objects "Open File": pick which importer opens) -------- */
+.menu-wrap { position: relative; }
+.menu-btn .ti { font-size: 13px; }
+.menu {
+  display: none; position: absolute; right: 0; top: calc(100% + 4px); z-index: 30;
+  min-width: 168px; padding: 4px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.55);
+}
+.menu.open { display: block; }
+.menu-item {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 6px 8px; border: 0; border-radius: 3px;
+  background: none; color: var(--text); font-size: 12px; text-align: left; cursor: pointer;
+}
+.menu-item:hover { background: rgba(74,144,226,0.16); color: var(--accent); }
+.menu-item .ti { color: var(--text-muted); font-size: 14px; }
+.menu-item:hover .ti { color: var(--accent); }
 
 .object-item {
   display: flex; align-items: center; gap: 6px;
@@ -505,8 +578,13 @@ body.resizing * { pointer-events: none !important; }
 .color-swatch.active { border-color: var(--accent); }
 
 .field-group { display: flex; flex-direction: column; gap: 2px; }
-/* space every field-group after the first, even when buttons/other blocks sit between */
+/* space every field-group after the first, even when buttons/other blocks sit between.
+   Only stacked groups: in a horizontal container the neighbour sits beside, not above, so
+   the margin would just push it off the row's baseline. Those containers are listed below —
+   the extra descendant makes them win the cascade wherever this rule is repeated. */
 .field-group:not(:first-child) { margin-top: 12px; }
+.field-row > .field-group,
+.linelist-settings > .field-group { margin-top: 0; }
 .field-group label { font-size: 10px; color: var(--text-muted); }
 .field-static {
   background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
@@ -533,6 +611,46 @@ body.resizing * { pointer-events: none !important; }
 .field-input:focus { outline: none; border-color: var(--accent); }
 /* mandatory inputs left empty (or otherwise invalid): flag with a red outline until filled */
 .field-input:required:invalid { border-color: #c0392b; }
+
+/* <num-input> (controls.num_input): the host is the bordered box and keeps every
+   .field-input layout rule; the real <input> sits inside it, borderless, with the
+   native spin buttons suppressed and our own stacked pair pinned to the right edge
+   (so the field's width is unchanged and every browser renders the same control). */
+num-input.field-input {
+  display: inline-flex; align-items: stretch; padding: 0 0 0 5px; overflow: hidden;
+}
+num-input > input {
+  flex: 1; min-width: 0; padding: 3px 0;
+  background: transparent; border: none; outline: none;
+  color: inherit; font: inherit;
+  -moz-appearance: textfield;  /* Firefox: no native spinner */
+}
+num-input > input::-webkit-outer-spin-button,
+num-input > input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+num-input.field-input:focus-within { border-color: var(--accent); }
+num-input.field-input:has(> input:required:invalid) { border-color: #c0392b; }
+num-input[disabled] { opacity: 0.45; cursor: not-allowed; }
+.num-spin {
+  flex: 0 0 auto; display: flex; flex-direction: column;
+  width: 14px; border-left: 1px solid var(--border);
+}
+.num-spin button {
+  flex: 1 1 0; min-height: 0; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface); border: none; color: var(--text-muted);
+  cursor: pointer;
+}
+/* arrows drawn with borders rather than ▴/▾ glyphs, which fall back to different
+   font faces (and so different sizes) from machine to machine */
+.num-spin button::before {
+  content: ""; width: 0; height: 0;
+  border-left: 3px solid transparent; border-right: 3px solid transparent;
+}
+.num-spin button[data-step="1"]::before { border-bottom: 4px solid currentColor; }
+.num-spin button[data-step="-1"]::before { border-top: 4px solid currentColor; }
+.num-spin button + button { border-top: 1px solid var(--border); }
+.num-spin button:hover { background: var(--border); color: var(--accent); }
+num-input[disabled] .num-spin button { cursor: not-allowed; }
 
 .icon-btn {
   height: 24px; width: 24px; padding: 0;
@@ -612,46 +730,6 @@ body.resizing * { pointer-events: none !important; }
 /* only lay the dialog out when actually open; otherwise the UA's
    dialog:not([open]){display:none} must win so it stays hidden and closeable */
 .modal[open] { display: flex; flex-direction: column; }
-/* <num-input> (controls.num_input): the host is the bordered box and keeps every
-   .field-input layout rule; the real <input> sits inside it, borderless, with the
-   native spin buttons suppressed and our own stacked pair pinned to the right edge
-   (so the field's width is unchanged and every browser renders the same control). */
-num-input.field-input {
-  display: inline-flex; align-items: stretch; padding: 0 0 0 5px; overflow: hidden;
-}
-num-input > input {
-  flex: 1; min-width: 0; padding: 3px 0;
-  background: transparent; border: none; outline: none;
-  color: inherit; font: inherit;
-  -moz-appearance: textfield;  /* Firefox: no native spinner */
-}
-num-input > input::-webkit-outer-spin-button,
-num-input > input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-num-input.field-input:focus-within { border-color: var(--accent); }
-num-input.field-input:has(> input:required:invalid) { border-color: #c0392b; }
-num-input[disabled] { opacity: 0.45; cursor: not-allowed; }
-.num-spin {
-  flex: 0 0 auto; display: flex; flex-direction: column;
-  width: 14px; border-left: 1px solid var(--border);
-}
-.num-spin button {
-  flex: 1 1 0; min-height: 0; padding: 0;
-  display: flex; align-items: center; justify-content: center;
-  background: var(--surface); border: none; color: var(--text-muted);
-  cursor: pointer;
-}
-/* arrows drawn with borders rather than ▴/▾ glyphs, which fall back to different
-   font faces (and so different sizes) from machine to machine */
-.num-spin button::before {
-  content: ""; width: 0; height: 0;
-  border-left: 3px solid transparent; border-right: 3px solid transparent;
-}
-.num-spin button[data-step="1"]::before { border-bottom: 4px solid currentColor; }
-.num-spin button[data-step="-1"]::before { border-top: 4px solid currentColor; }
-.num-spin button + button { border-top: 1px solid var(--border); }
-.num-spin button:hover { background: var(--border); color: var(--accent); }
-num-input[disabled] .num-spin button { cursor: not-allowed; }
-
 .modal::backdrop { background: rgba(0,0,0,0.5); }
 
 /* path display + browse button, and an inline (non-nested) file picker in a modal */
@@ -723,6 +801,10 @@ num-input[disabled] .num-spin button { cursor: not-allowed; }
 .file-item i { color: var(--text-muted); }
 .file-item:hover i { color: var(--accent); }
 .file-item span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* a picked file spins in place of its icon until its load has landed, so picking several
+   in a row shows which are still coming (the footer bar only says that something is) */
+.file-item.is-busy { color: var(--accent); cursor: progress; }
+.file-item .spinner { width: 11px; height: 11px; overflow: visible; }
 .file-empty { padding: 10px; font-size: 12px; color: var(--text-muted); }
 .modal-header {
   flex-shrink: 0;
@@ -786,6 +868,19 @@ num-input[disabled] .num-spin button { cursor: not-allowed; }
 }
 .result-btn:hover { border-color: #e05c5c; color: #e05c5c; }
 
+/* left-sidebar line-mask objects: one row per set (see masktool.objects_html). The badge
+   carries the element the set diagnoses, so a sidebar of sets reads at a glance. */
+.maskset-item .maskset-badge {
+  background: #b8860b; width: auto; min-width: 16px; padding: 0 3px;
+  font-size: 9px; letter-spacing: 0.02em;
+}
+.maskset-item .maskset-badge-none { background: var(--border); }
+.maskset-item .maskset-badge .ti { font-size: 11px; color: #fff; }
+.maskset-count {
+  flex: 0 0 auto; font-size: 10px; color: var(--text-muted);
+  padding: 0 5px; border-radius: 8px; background: var(--bg); border: 1px solid var(--border);
+}
+
 /* centre abundance view: spectrum (steps 1-2) or scatter (step 3) on top, per-line table
    below, and a step-switcher footer. The spectrum reuses #canvas-wrap. */
 #abund-scatter, #abund-bottom, #abund-steps { display: none; }
@@ -846,39 +941,41 @@ num-input[disabled] .num-spin button { cursor: not-allowed; }
 .corr-mask-chk { cursor: pointer; vertical-align: middle; }
 
 /* ---------------------------------------------------------------------------
-   Stellar-parameter tool: mirrors the abundance tool (toolbar button, right
-   panel, left-sidebar result objects, centre A(Fe) scatter + per-line table).
+   Ionisation balance: the measurement objects (left sidebar), their centre view
+   (spectrum or A(X) balance scatter over the per-line table) and the fit modal.
+   The tool has no toolbar button — an object is what opens it.
    --------------------------------------------------------------------------- */
-#sparams-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
-/* right-sidebar control panel */
-.sparam-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; overflow-y: auto; }
-.sidebar-right.sparam-active > .tab-bar,
-.sidebar-right.sparam-active > .tab-content { display: none; }
-.sidebar-right.sparam-active .sparam-panel { display: flex; }
-.sidebar-right.sparam-active .lines-panel { display: none; }
-.sparam-step-panel { display: none; flex-direction: column; gap: 8px; }
-#main.sparam-step-1 ~ .sidebar-right .sparam-step-1-panel,
-#main.sparam-step-2 ~ .sidebar-right .sparam-step-2-panel,
-#main.sparam-step-3 ~ .sidebar-right .sparam-step-3-panel { display: flex; }
-.sparam-run-lines, .sparam-run-solve { display: block; width: 100%; margin-top: 4px; }
+/* right-sidebar panel of the selected measurement */
+.ionbal-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; overflow-y: auto; }
+.sidebar-right.ionbal-active > .tab-bar,
+.sidebar-right.ionbal-active > .tab-content { display: none; }
+.sidebar-right.ionbal-active .ionbal-panel { display: flex; }
+.sidebar-right.ionbal-active .lines-panel { display: none; }
+.ionbal-refit { display: block; width: 100%; margin-top: 4px; }
 
-/* centre parameter view: target spectrum (steps 1-2) or A(Fe) scatter (step 3) on top,
-   per-line table + iteration status below, and a step-switcher footer. */
-#sparam-scatter, #sparam-bottom, #sparam-steps { display: none; }
-#main.sparam-mode #top-panel { display: none; }
-#main.sparam-mode #canvas-wrap { display: flex; }
-#main.sparam-mode #sparam-bottom { display: flex; flex: 0 0 var(--bottom-h); min-height: 0; flex-direction: column; }
-#main.sparam-mode #sparam-steps { display: flex; flex: 0 0 auto; padding: 6px 0 0; }
-#main.sparam-mode.sparam-step-3 #canvas-wrap { display: none; }
-#main.sparam-mode.sparam-step-3 #sparam-scatter { display: flex; flex: 1; min-height: 0; }
-#sparam-table { flex: 1; min-height: 0; overflow: auto; }
-#main.sparam-step-1 .sparam-step-btn[data-step="1"],
-#main.sparam-step-2 .sparam-step-btn[data-step="2"],
-#main.sparam-step-3 .sparam-step-btn[data-step="3"] { color: var(--text); border-bottom-color: var(--accent); }
-.sparam-row { cursor: pointer; }
-.sparam-row:hover td { background: rgba(74, 144, 226, 0.14); }
-.sparam-row.line-excluded { opacity: 0.4; }
-.sparam-mask-chk { cursor: pointer; vertical-align: middle; }
+/* centre view: the target spectrum (Lines) or the balance scatter, per-line table
+   + iteration status below, and the two-way view switcher as a footer. */
+#ionbal-scatter, #ionbal-bottom, #ionbal-steps { display: none; }
+#main.ionbal-mode #top-panel { display: none; }
+#main.ionbal-mode #canvas-wrap { display: flex; }
+#main.ionbal-mode #ionbal-bottom { display: flex; flex: 0 0 var(--bottom-h); min-height: 0; flex-direction: column; }
+#main.ionbal-mode #ionbal-steps { display: flex; flex: 0 0 auto; padding: 6px 0 0; }
+#main.ionbal-mode.ionbal-step-2 #canvas-wrap { display: none; }
+#main.ionbal-mode.ionbal-step-2 #ionbal-scatter { display: flex; flex: 1; min-height: 0; }
+#ionbal-table { flex: 1; min-height: 0; overflow: auto; }
+#main.ionbal-step-1 .ionbal-step-btn[data-step="1"],
+#main.ionbal-step-2 .ionbal-step-btn[data-step="2"] { color: var(--text); border-bottom-color: var(--accent); }
+.ionbal-row { cursor: pointer; }
+.ionbal-row:hover td { background: rgba(74, 144, 226, 0.14); }
+.ionbal-row.line-excluded { opacity: 0.4; }
+.ionbal-mask-chk { cursor: pointer; vertical-align: middle; }
 /* the streaming iteration/convergence line under the table */
-.sparam-status { border-top: 1px solid var(--border); margin-top: 4px; }
+.ionbal-status { border-top: 1px solid var(--border); margin-top: 4px; }
+
+/* the fit modal: three columns (what is measured / where it starts / how it runs) */
+#ionbal-modal { width: min(880px, 94vw); }
+.ionbal-modal-cols { display: flex; gap: 16px; align-items: flex-start; }
+.ionbal-modal-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.ionbal-context { display: flex; flex-direction: column; gap: 4px; }
+@media (max-width: 720px) { .ionbal-modal-cols { flex-direction: column; } }

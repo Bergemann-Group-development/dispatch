@@ -4,6 +4,12 @@ Shared by the EW and Synthesis tools. Each instance owns its own ``BoxSelectTool
 ``BoxAnnotation``; ``_on_geometry`` only reacts when *its* tool is the active drag, so
 several range-select tools can coexist on one figure without cross-talk. Subclasses
 override ``on_select(x0, x1)`` (the band is shown for them by default).
+
+The tool selects nothing: ``renderers=[]``. All these tools want is the geometry of the
+drag, which ``SelectionGeometry`` carries whether or not anything was selected, and a
+box-select left on "auto" claims *every* data renderer on the figure — including the
+line-position indicators, whose taps would then be indistinguishable from a stray drag
+across them (see :mod:`lineannot`).
 """
 from __future__ import annotations
 
@@ -20,7 +26,7 @@ class RangeSelect:
                                      line_color=color, line_alpha=0.4, visible=False)
         self.main.add_layout(self.sel_box)
         self.tool = BoxSelectTool(dimensions="width", description=description,
-                                  continuous=False)
+                                  continuous=False, renderers=[])
         self.main.add_tools(self.tool)
         self.main.on_event(SelectionGeometry, self._on_geometry)
 
@@ -35,12 +41,10 @@ class RangeSelect:
             self.main.toolbar.active_drag = "auto"
 
     def show_band(self, x0, x1):
-        """Record the drawn range and shade it; drop any stale point selection."""
+        """Record the drawn range and shade it."""
         self.selection = (min(x0, x1), max(x0, x1))
         self.sel_box.left, self.sel_box.right = self.selection
         self.sel_box.visible = True
-        for o in self.canvas.objects:
-            o.main_source.selected.indices = []
 
     def clear_selection(self):
         self.selection = None

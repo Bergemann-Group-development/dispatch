@@ -25,6 +25,8 @@ from pathlib import Path
 
 from bokeh.models import TextInput
 
+from tumult.synthesis import SynthRequest
+
 import store
 import synth
 from controls import Field, Form
@@ -369,7 +371,7 @@ class SynthSetup:
 
     # --- the payload ------------------------------------------------------------------
     def context(self):
-        """``{prefs, grid, run_vals, target, atmos_file}`` for ``synth.compute``, or ``None``
+        """A :class:`~tumult.synthesis.SynthRequest` for the headless workflows, or ``None``
         (with :attr:`reason` set) when synthesis is not yet runnable."""
         prefs = load_prefs()
         if missing_prefs(prefs):
@@ -397,5 +399,5 @@ class SynthSetup:
                 return None
         target = (float(rv["teff"]), float(rv["logg"]), float(rv["feh"]), float(rv["vmic"]))
         self.reason = None
-        return {"prefs": prefs, "grid": grid, "run_vals": rv,
-                "target": target, "atmos_file": atmos_file}
+        return SynthRequest(prefs=prefs, grid=grid, run_vals=rv,
+                            target=target, atmos_file=atmos_file)

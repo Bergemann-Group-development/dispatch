@@ -1,3 +1,4 @@
+"""Legacy Bokeh plotting helpers, kept on the GUI side of the package boundary."""
 from bokeh.io import curdoc
 from bokeh.themes import Theme
 from bokeh.plotting import figure, show

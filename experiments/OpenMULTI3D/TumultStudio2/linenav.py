@@ -1,16 +1,38 @@
-"""Line Navigator: browse the master line list — filtered by species and sorted
-by central wavelength (lam0) or an approximate strength — and jump the main canvas
-to a chosen line, briefly flashing a vertical indicator.
+"""Line list panel: the lines in the visible window, shown in the bottom half of the
+workspace and jumped to a row at a time.
 
-lam0 is stored in Angstrom (the usual unit); values are converted to the canvas
-display unit for filtering, display and jumping. The master list is parsed once
-per process (a read-only DataFrame, safe to share across sessions).
+Which lines, and with what strengths, is :mod:`linestrength`'s answer, not this module's —
+the run that made the spectrum, the nearest reference run by Teff, or the master list and an
+approximate proxy. The table names its source in a footer, because the same window ranks
+very differently for a solar-type star than for an M dwarf, and the proxy rung cannot rank
+across species at all.
+
+The panel is opened by picking one of the line-position indicators drawn over the spectrum
+(:mod:`lineannot`) — that pick names a transition, the table opens at its row — and closed
+again from its own × button. Clicking any row jumps the main canvas to that line, briefly
+flashing a vertical indicator. The rows are one flat table, each naming its own species: the
+list follows the visible window, so a grouping by ion cut it into runs that re-formed on
+every pan, and it fought the column sort — the heading order was itself decided by whichever
+ion happened to sort first.
+
+The table lists the lines in the *visible* window, and follows it: it is the written-out
+form of the indicators drawn over the spectrum, so panning or zooming re-cuts it exactly as
+it re-draws them. It re-renders on the canvas's own debounced view callback rather than on
+the raw range change, so a drag costs a table per redraw and not one per mouse move.
+
+The default order is by wavelength — the one order that means the same thing whatever the
+strengths came from, and the right default when the source may be the proxy. Sorting by
+strength is a click on the header away, and is exactly what one wants once the footer says
+the numbers are a run's own.
+
+lam0 is stored in Angstrom (the usual unit); values are converted to the canvas display unit
+for filtering, display and jumping. The master list is parsed once per process (a read-only
+DataFrame, safe to share across sessions).
 """
 from __future__ import annotations
 
 import html
 import logging
-import os
 from pathlib import Path
 
 import astropy.units as u
@@ -18,61 +40,46 @@ import numpy as np
 from bokeh.io import curdoc
 from bokeh.models import Span
 
-from tumult.const import EK
-from tumult.linelist import LineList
+# MASTER_PATH/load_master are re-exported: this panel is where the app reaches the
+# master list, and its importers ask this module for it.
+from tumult.linelist import MASTER_PATH, load_master  # noqa: F401
 
-from htmlbridge import html_bridge
 from tableui import SortState, sort_headers
 from units import to_value, to_range
 
 LAM0_UNIT = u.AA              # native unit of the master line list's lam0
-_DUMMY_T = 5000.0             # excitation temperature for the strength proxy
 _MAX_ROWS = 500              # cap rendered rows (sorted, so "top N")
 _FLASH_MS = 1200
+_MATCH_AA = 1e-3             # how close a picked lam0 has to be to call it the same line
 JUMP_DISTANCE_AA = 10.0      # default ± window (Å) shown either side of a jumped-to line
-
-MASTER_PATH = os.environ.get(
-    "TUMULT_MASTER_LINELIST",
-    str(Path(__file__).resolve().parent.parent / "input" / "linelists" / "master_line.txt"),
-)
-
-_cache = {}  # path -> parsed DataFrame (process-wide, read-only, shared across sessions)
-
-
-def load_master(path=MASTER_PATH):
-    """Parse a master line list once per path; add an approximate Boltzmann strength."""
-    path = str(path)
-    if path not in _cache:
-        m = LineList.from_tumult_format(path).reset_index()
-        m["strength"] = m.lam0 * np.exp(-m.evi * EK / _DUMMY_T) * 10 ** m.loggf
-        _cache[path] = m
-    return _cache[path]
-
-
-def _species_sorted(master):
-    return sorted(master["ion"].unique())
-
 
 # sortable columns: (df column, default ascending?) — wavelength/excitation read low→high,
 # strength/oscillator-strength most useful strong→weak
 SORT_DEFAULT_ASC = {"lam0": True, "evi": True, "loggf": False, "strength": False}
+SORT_DEFAULT = "lam0"   # wavelength: the one order that means the same thing across ions
 
 
 class LineNavigator:
-    def __init__(self, canvas, on_table, master_path=MASTER_PATH):
+    def __init__(self, canvas, strengths, on_table, on_open=None):
         self.canvas = canvas
+        self.strengths = strengths  # linestrength.LineStrengths: the list and its strengths
         self.on_table = on_table   # callable(html) -> push the table into its slot
-        self.master_path = str(master_path)
-        self.species = None
-        self.sort = SortState(SORT_DEFAULT_ASC, "strength")
-        self.loaded = False
-        self.active = False        # True only while the Lines view owns the centre panel
+        self.on_open = on_open or (lambda on: None)  # show/hide the bottom panel
+        self.sort = SortState(SORT_DEFAULT_ASC, SORT_DEFAULT)
+        self.active = False        # True only while the line-list panel is open
+        self.focus_lam0 = None     # Å of the picked line: the row the table highlights
+        # how the *next* render's focused row asks the browser to scroll to it (see the
+        # MutationObserver in index.html). "none" for every ordinary render — a pan, a sort,
+        # a jump the user made from inside the table — because the reader's eye is already
+        # on the row they clicked and moving it under them is disorienting. Only a pick that
+        # comes from outside the table (a line label on the spectrum) asks to scroll, and
+        # then only far enough to bring the row into view if it is not already there.
+        self._scroll = "none"
         self._timeout = None
         self.jump_distance = JUMP_DISTANCE_AA  # ± window (Å) applied when jumping to a line
 
-        # red vertical indicator flashed on jump (spans the full frame height). One on
-        # the main figure and one mirrored on the nav overview — in lines-mode the main
-        # figure is hidden, so the nav is the only visible spectrum and gets the jump too
+        # red vertical indicator flashed on jump (spans the full frame height), on the main
+        # figure and mirrored on the nav overview so the jump reads on both
         self.indicator = Span(location=0, dimension="height", line_color="#e05c5c",
                               line_width=1, line_alpha=0.9, visible=False)
         canvas.main.add_layout(self.indicator)
@@ -80,122 +87,165 @@ class LineNavigator:
                                   line_width=1, line_alpha=0.9, visible=False)
         canvas.nav.add_layout(self.nav_indicator)
 
-        # species filter: a single-column table to the left, styled like the linelist
-        # table (sorting is via the clickable column headers on the linelist table)
-        self.species_bridge = html_bridge("linenav-fields")
-        self._species = []
+        # the table is the visible window written out, so it follows every pan, zoom and unit
+        # flip — on the canvas's debounced redraw callback, the same one the indicators use
+        canvas.add_view_listener(self.render)
 
     @property
     def models(self):
-        return [self.species_bridge]
+        return []
 
-    # --- activation / rendering -------------------------------------------
-    def activate(self):
-        """Lazy-load the master list on first switch to the line view, then render."""
-        if not self.loaded:
-            master = load_master(self.master_path)
-            self._species = _species_sorted(master)
-            self.species = self._default_species(master, self._species)
-            self.loaded = True
-        self.active = True
-        self.species_bridge.value = self.species_html()
+    # --- opening / closing ------------------------------------------------
+    def open_at(self, lam0_aa=None, ion=None):
+        """Open the panel (lazy-loading the master list) with ``lam0_aa`` as the focused row.
+
+        This is what a pick on a line-position indicator lands on: the table appears in the
+        bottom half and scrolls to the transition that was clicked, which is flashed on the
+        canvas so it is clear which of a blend's stubs was hit."""
+        try:
+            self.focus_lam0 = None if lam0_aa is None else float(lam0_aa)
+        except (TypeError, ValueError):
+            self.focus_lam0 = None
+        was_open, self.active = self.active, True
+        if not was_open:
+            self.on_open(True)
+        # the pick came from the spectrum, not from this table: the reader has no idea where
+        # the row is, so bring it into view — but leave the scroll alone if it already is
+        self._scroll = "ifneeded"
         self.render()
+        if self.focus_lam0 is not None:
+            self._flash(to_value(self.focus_lam0, LAM0_UNIT, self.canvas.xunit))
 
-    def deactivate(self):
-        """Leaving the Lines view: stop re-rendering the (now hidden) line table on every
-        canvas change. It is rebuilt fresh on the next :meth:`activate`."""
+    def close(self):
+        """Close the panel; it stops re-rendering and is rebuilt on the next open."""
+        if not self.active:
+            return
         self.active = False
+        self.focus_lam0 = None
+        self.on_open(False)
 
     def set_master_path(self, path):
-        """Switch the master line list (from settings). Returns True on success."""
-        path = str(path)
+        """Validate a newly chosen master line list (from settings). Returns True on success.
+
+        The provider owns which list is actually used; this only checks that the file parses
+        before the setting is committed, and repaints."""
         try:
-            load_master(path)  # validate / warm the cache before committing
+            load_master(str(path))
         except Exception:
             logging.exception("Failed to load line list %s", path)
             return False
-        self.master_path = path
-        if self.loaded:               # already populated -> reload species + table now
-            self.loaded = False
-            self.activate()
-        return True
-
-    def _default_species(self, master, ions):
-        """Pick the species with the most lines in range, else the first."""
-        lo, hi = self._range_aa()
-        in_range = master[(master.lam0 >= lo) & (master.lam0 <= hi)]
-        if len(in_range):
-            counts = in_range["ion"].value_counts()
-            return counts.index[0]
-        return ions[0] if ions else None
-
-    def set_species(self, name):
-        self.species = name
         self.render()
-
-    def species_html(self):
-        if not self.loaded:
-            return ""
-        rows = "".join(
-            f'<tr class="species-item{" active" if sp == self.species else ""}" '
-            f'data-species="{html.escape(sp, quote=True)}"><td>{html.escape(sp)}</td></tr>'
-            for sp in self._species
-        )
-        return ('<table class="linelist-table species-table">'
-                '<thead><tr><th>Species</th></tr></thead>'
-                f'<tbody>{rows}</tbody></table>')
+        return True
 
     def set_sort(self, col):
         """Clicking a column header sorts by it; clicking the active column flips order."""
         if self.sort.toggle(col):
             self.render()
 
+    # --- rendering --------------------------------------------------------
     def render(self):
-        if not self.loaded or self.species is None:
+        if not self.active:
             return
         if not self.canvas.objects:
-            # nothing loaded -> no spectral range to scope the line list to
+            # nothing loaded -> no spectral window to scope the line list to
             self.on_table('<div class="linelist-empty">No spectrum loaded</div>')
             return
         try:
-            master = load_master(self.master_path)
             lo, hi = self._range_aa()
-            df = master[(master.ion == self.species)
-                        & (master.lam0 >= lo) & (master.lam0 <= hi)]
+            # allow_compute off: a repaint runs on the document thread, and a band that is
+            # not computed yet is being worked on in the background (main.warm_strengths)
+            src = self.strengths.lines_for(self.canvas.selected(), lo, hi,
+                                           allow_compute=False)
+            if src.lines is None:
+                self.on_table('<div class="linelist-empty">No line list available</div>')
+                return
+            df = src.lines[(src.lines.lam0 >= lo) & (src.lines.lam0 <= hi)]
             df = df.sort_values(self.sort.col, ascending=self.sort.asc)
-            self.on_table(self._table_html(df))
+            self.on_table(self._table_html(df, src))
         except Exception:
-            logging.exception("Line Navigator render failed")
+            logging.exception("Line list render failed")
+        finally:
+            # consumed by the render it was set for; every later one scrolls nothing
+            self._scroll = "none"
+
+    def _shown(self, df):
+        """A run of at most :data:`_MAX_ROWS` rows out of the sorted frame, centred on the
+        focused line.
+
+        The window the table is cut to rarely holds this many, but a zoomed-out view of a
+        crowded spectrum does. The default order is by wavelength, so a plain head would then
+        show the blue end of the window and nothing else — and the line the panel was opened
+        at, which has to have a row to jump to, would be marooned at the bottom of it.
+        Centring the cut on that line puts its own blend and its neighbours around it, which
+        is what a pick is asking to see. With nothing focused the cut is the head.
+        """
+        if len(df) <= _MAX_ROWS:
+            return df
+        start = 0
+        if self.focus_lam0 is not None:
+            hit = np.flatnonzero(np.abs(df.lam0.values - self.focus_lam0) <= _MATCH_AA)
+            if len(hit):
+                start = int(np.clip(hit[0] - _MAX_ROWS // 2, 0, len(df) - _MAX_ROWS))
+        return df.iloc[start:start + _MAX_ROWS]
 
     # --- the table --------------------------------------------------------
-    def _table_html(self, df):
+    def _table_html(self, df, src):
         n = len(df)
         if n == 0:
-            return ('<div class="linelist-empty">No '
-                    f'{html.escape(str(self.species))} lines in range</div>')
-        rows = df.head(_MAX_ROWS)
-        lam_disp = to_value(rows.lam0.values, LAM0_UNIT, self.canvas.xunit)
-        body = []
-        for lam0_aa, lam, evi, loggf, strength in zip(
-                rows.lam0.values, lam_disp, rows.evi.values,
-                rows.loggf.values, rows.strength.values):
-            body.append(
-                f'<tr class="line-row" data-lam0="{lam0_aa:.4f}">'
-                f'<td>{lam:.3f}</td><td>{evi:.3f}</td>'
-                f'<td>{loggf:.3f}</td><td>{strength:.3g}</td></tr>'
-            )
-        more = (f'<div class="linelist-more">showing top {_MAX_ROWS} of {n:,}</div>'
-                if n > _MAX_ROWS else "")
+            return ('<div class="linelist-empty">No lines in view</div>'
+                    + self._source_html(src))
+        rows = self._shown(df)
         header = sort_headers(self.sort, (
+            ("Species", None),
             (f"λ₀ [{html.escape(self.canvas.xlabel)}]", "lam0"),
             ("E<sub>low</sub> [eV]", "evi"),
             ("log gf", "loggf"),
-            ("strength", "strength"),
+            ('<span title="Boltzmann strength proxy: comparable between lines of the same '
+             'ion only">strength</span>', "strength"),
         ))
+        body = self._body_html(rows)
+        more = (f'<div class="linelist-more">showing {len(rows):,} of {n:,} lines in view'
+                f'{" around the selected one" if self.focus_lam0 is not None else ""}</div>'
+                if n > len(rows) else "")
         return (
             f'<table class="linelist-table"><thead><tr>{header}</tr></thead>'
-            f'<tbody>{"".join(body)}</tbody></table>{more}'
+            f'<tbody>{body}</tbody></table>{more}{self._source_html(src)}'
         )
+
+    @staticmethod
+    def _source_html(src):
+        """A footer naming where the strengths came from.
+
+        Worth the line of chrome: the same table reads very differently depending on which
+        star its ranking is for, and the one source whose ordering is not physical — the
+        Boltzmann proxy, used when no reference run can be found — has to say so rather than
+        look like the others (see :mod:`linestrength`).
+        """
+        cls = "linelist-source" + (" warn" if src.approximate else "")
+        icon = "alert-triangle" if src.approximate else "flask"
+        return (f'<div class="{cls}"><i class="ti ti-{icon}"></i>'
+                f'{html.escape(src.label)}'
+                + (" — ordering is not comparable between species" if src.approximate else "")
+                + "</div>")
+
+    def _body_html(self, rows):
+        """The ``<tr>`` rows themselves, each led by the ion it belongs to."""
+        lam_disp = to_value(rows.lam0.values, LAM0_UNIT, self.canvas.xunit)
+        out = []
+        for lam0_aa, lam, ion, evi, loggf, strength in zip(
+                rows.lam0.values, lam_disp, rows.ion.astype(str).values, rows.evi.values,
+                rows.loggf.values, rows.strength.values):
+            focused = (self.focus_lam0 is not None
+                       and abs(float(lam0_aa) - self.focus_lam0) <= _MATCH_AA)
+            scroll = f' data-scroll="{self._scroll}"' if focused else ""
+            out.append(
+                f'<tr class="line-row{" jump-target" if focused else ""}"{scroll} '
+                f'data-lam0="{lam0_aa:.4f}">'
+                f'<td class="line-ion">{html.escape(ion)}</td>'
+                f'<td>{lam:.3f}</td><td>{evi:.3f}</td>'
+                f'<td>{loggf:.3f}</td><td>{strength:.3g}</td></tr>'
+            )
+        return "".join(out)
 
     # --- jumping ----------------------------------------------------------
     def set_jump_distance(self, distance):
@@ -215,14 +265,14 @@ class LineNavigator:
         # endpoints to the display unit so it stays correct under a non-linear axis (eV)
         win = to_range(lam0_aa - self.jump_distance, lam0_aa + self.jump_distance,
                        LAM0_UNIT, self.canvas.xunit)
-        # zoom both the main figure and the nav overview to that window. In lines-mode the
-        # main figure is hidden, so the nav is what the user actually sees jump.
         for rng in (self.canvas.main.x_range, self.canvas.nav.x_range):
             lo, hi = win
             if rng.bounds:
                 blo, bhi = min(rng.bounds), max(rng.bounds)
                 lo, hi = max(lo, blo), min(hi, bhi)
             rng.start, rng.end = min(lo, hi), max(lo, hi)
+        self.focus_lam0 = lam0_aa   # the jumped-to row stays the highlighted one
+        self.render()
         self._flash(center)
 
     def _flash(self, x):
@@ -244,6 +294,11 @@ class LineNavigator:
 
     # --- helpers ----------------------------------------------------------
     def _range_aa(self):
-        """Spectral extent of the active object, in Angstrom (lam0's unit)."""
-        lo, hi = self.canvas.selected_display_range()
-        return to_range(lo, hi, self.canvas.xunit, LAM0_UNIT)
+        """The visible window in Angstrom (lam0's unit), falling back to the active object's
+        full extent before the range has been laid out."""
+        rng = self.canvas.main.x_range
+        if rng.start is None or rng.end is None:
+            lo, hi = self.canvas.selected_display_range()
+        else:
+            lo, hi = float(rng.start), float(rng.end)
+        return sorted(to_range(lo, hi, self.canvas.xunit, LAM0_UNIT))

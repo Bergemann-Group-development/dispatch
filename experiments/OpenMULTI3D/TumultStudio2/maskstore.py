@@ -1,26 +1,68 @@
-"""The shared LineMask set for TumultStudio2.
+"""The LineMask sets for TumultStudio2.
 
-One :class:`MaskStore` holds the app's current :class:`linemask.LineMaskSet` — the single
-source of truth every consumer reads: the canvas draws it, the LineMasks tool edits it, and
-(later) the abundance / synthesize-fit workflows adopt it. Mutations broadcast the context's
-``"masks-changed"`` event so every subscriber re-syncs, exactly like the existing
-``"changed"`` / ``"filter-state"`` events.
+One :class:`MaskStore` holds every imported :class:`linemask.LineMaskSet` — the app's
+line-mask *objects*, listed in the left sidebar next to the spectra — plus which one is
+*current*. The current set is the single source of truth every consumer reads: the canvas
+draws it, the LineMasks view edits it, and (later) the abundance / synthesize-fit workflows
+adopt it. Mutations broadcast the context's ``"masks-changed"`` event so every subscriber
+re-syncs, exactly like the existing ``"changed"`` / ``"filter-state"`` events.
+
+The whole single-set API (``masks`` / ``pad`` / ``add`` / ``set_fit`` / …) delegates to the
+current set, so callers that only ever cared about "the masks" are unaffected by the
+multi-set layering.
 
 The store is deliberately GUI-free (it only touches the context's event bus) so it can be
 unit-tested and serialised into a session snapshot on its own.
 """
 from __future__ import annotations
 
-from linemask import DEFAULT_PAD, LineMask, LineMaskSet, parse_linemask_file
+import itertools
+from pathlib import Path
+
+from linemask import (LineMask, LineMaskSet, parse_linemask_file,
+                      write_linemask_file)
 
 
 class MaskStore:
     def __init__(self, ctx):
         self.ctx = ctx
-        self.mset = LineMaskSet()
+        # every imported / drawn set, in import order. The store always keeps at least one
+        # (a scratch set that box-select can drop a mask into before anything is imported);
+        # `is_listed` decides which of them earn a sidebar row.
+        self._uids = itertools.count(1)
+        self.sets = [self._new_set()]
+        self.current_uid = self.sets[0].uid
         self.active = None      # index of the mask being edited on the canvas, or None
 
-    # --- queries ------------------------------------------------------------------------
+    def _new_set(self, mset=None) -> LineMaskSet:
+        mset = mset if mset is not None else LineMaskSet()
+        mset.uid = next(self._uids)
+        return mset
+
+    # --- set-level queries --------------------------------------------------------------
+    @property
+    def mset(self) -> LineMaskSet:
+        """The set currently being viewed / edited (never ``None``)."""
+        # `is None`, not a truth test: LineMaskSet defines __len__, so an *empty* set — which
+        # is exactly what "Empty line mask" creates — is falsy and would fall through here.
+        found = self.find(self.current_uid)
+        return self.sets[0] if found is None else found
+
+    def find(self, uid) -> LineMaskSet | None:
+        return next((s for s in self.sets if s.uid == uid), None)
+
+    @staticmethod
+    def is_listed(mset) -> bool:
+        """Does this set deserve a sidebar row? Imported sets always do; the scratch set
+        only once something has been drawn into it."""
+        return bool(mset.label or mset.masks)
+
+    @property
+    def listed(self) -> list:
+        """The sets shown as sidebar objects, in import order."""
+        return [s for s in self.sets if self.is_listed(s)]
+
+    # --- mask-level queries (delegate to the current set) --------------------------------
     @property
     def masks(self) -> list:
         return self.mset.masks
@@ -39,23 +81,101 @@ class MaskStore:
         self.ctx.emit("masks-changed")
 
     def load_file(self, path):
-        """Replace the set with the masks parsed from ``path`` (windows only, no measuring)."""
-        self.mset = parse_linemask_file(path, pad=self.mset.pad)
-        self.active = 0 if self.masks else None
+        """Import ``path`` as a new set, make it current, and return it."""
+        mset = self._new_set(parse_linemask_file(path, pad=self.mset.pad))
+        mset.mark_clean()       # the file on disk is this set's pristine state
+        self.sets.append(mset)
+        self.current_uid = mset.uid
+        self.active = 0 if mset.masks else None
         self._changed()
-        return self.mset
+        return mset
 
-    def clear(self):
-        self.mset = LineMaskSet(pad=self.mset.pad)
+    def add_set(self, label="", element=""):
+        """Start a new, empty set under ``label`` and make it current — the "blank sheet"
+        counterpart to :meth:`load_file`, for masks drawn from scratch. It has no baseline,
+        so it reads as unsaved rather than modified until it is written out."""
+        mset = self._new_set(LineMaskSet(pad=self.mset.pad, label=str(label).strip(),
+                                         element=str(element).strip()))
+        self.sets.append(mset)
+        self.current_uid = mset.uid
         self.active = None
         self._changed()
+        return mset
+
+    def adopt(self, mset):
+        """Take a set built elsewhere (a generator running off the document thread), give it
+        an identity and make it current."""
+        self.sets.append(self._new_set(mset))
+        self.current_uid = mset.uid
+        self.active = 0 if mset.masks else None
+        self._changed()
+        return mset
+
+    def set_include(self, index, on):
+        """Switch one mask on/off. The toggle curates what a save writes out and what the
+        wizards measure — a flagged candidate stays visible but is left out."""
+        if 0 <= index < len(self.masks):
+            self.masks[index].include = bool(on)
+            self._changed()
+
+    def set_current(self, uid):
+        """Switch which set is viewed / edited (no-op for an unknown uid)."""
+        mset = self.find(uid)
+        if mset is None:
+            return False
+        self.current_uid = uid
+        self.active = 0 if mset.masks else None
+        self._changed()
+        return True
+
+    def remove_set(self, uid):
+        """Drop a whole set. The store keeps at least one (a fresh scratch set)."""
+        mset = self.find(uid)
+        if mset is None:
+            return
+        self.sets.remove(mset)
+        if not self.sets:
+            self.sets.append(self._new_set())
+        if self.current_uid == uid:
+            self.current_uid = self.sets[-1].uid
+            self.active = None
+        self._changed()
+
+    def revert(self):
+        """Restore the current set to the file it was imported from / last saved to."""
+        if not self.mset.revert():
+            return False
+        self.active = 0 if self.masks else None
+        self._changed()
+        return True
+
+    def save_as(self, path):
+        """Write the current set to ``path`` and adopt it as the set's new pristine origin
+        (so the edited copy stops reading as modified, and reverts go back to it)."""
+        mset = self.mset
+        path = Path(path)
+        write_linemask_file(path, mset)
+        mset.source_path = str(path)
+        mset.label = path.stem
+        mset.mark_clean()
+        self._changed()
+        return path
+
+    def default_save_path(self):
+        """Where "Save as…" starts: the source file's ``<stem>_edited.txt`` sibling, or an
+        export in the working directory for a set drawn from scratch."""
+        src = self.mset.source_path
+        if src:
+            return Path(src).with_name(Path(src).stem + "_edited.txt")
+        return Path.cwd() / f"{self.mset.name.replace(' ', '_')}.txt"
 
     def add(self, lmin, lmax, *, lam0=float("nan"), note="") -> int:
         """Append a new mask over ``[lmin, lmax]`` (synth window derived from ``pad``); select it."""
+        mset = self.mset
         m = LineMask(lam0=lam0, note=note)
-        m.set_fit(lmin, lmax, self.mset.pad)
-        self.masks.append(m)
-        self.active = len(self.masks) - 1
+        m.set_fit(lmin, lmax, mset.pad)
+        mset.masks.append(m)
+        self.active = len(mset.masks) - 1
         self._changed()
         return self.active
 
@@ -78,6 +198,12 @@ class MaskStore:
             self.masks[index].set_fit(lmin, lmax, self.mset.pad)
             self._changed()
 
+    def set_element(self, element):
+        """Set which element the current set's windows diagnose (persisted to its file)."""
+        value = str(element or "").strip()
+        self.mset.element = value.capitalize() if value else ""
+        self._changed()
+
     def set_pad(self, pad):
         """Re-derive every mask's synth/visual window from a new padding (Å)."""
         self.mset.repad(pad)
@@ -95,11 +221,20 @@ class MaskStore:
 
     # --- session persistence ------------------------------------------------------------
     def snapshot(self) -> dict:
-        return {"mset": self.mset.to_dict(), "active": self.active}
+        return {"sets": [s.to_dict() for s in self.sets],
+                "current": self.current_uid, "active": self.active}
 
     def restore(self, data):
         data = data or {}
-        self.mset = LineMaskSet.from_dict(data.get("mset")) if data.get("mset") else LineMaskSet()
+        # accept the old single-set snapshot ({"mset": …}) as well as the multi-set one
+        raw = data.get("sets") or ([data["mset"]] if data.get("mset") else [])
+        self.sets = [LineMaskSet.from_dict(d) for d in raw] or [LineMaskSet()]
+        for s in self.sets:
+            if not s.uid:
+                s.uid = next(self._uids)
+        self._uids = itertools.count(max(s.uid for s in self.sets) + 1)
+        cur = data.get("current")
+        self.current_uid = cur if self.find(cur) else self.sets[-1].uid
         act = data.get("active")
         self.active = act if (act is not None and 0 <= act < len(self.masks)) else None
         self._changed()

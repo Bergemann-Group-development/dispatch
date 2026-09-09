@@ -42,6 +42,7 @@ class NormaliseTool(Tool):
         self._uid = None            # the object being edited
         self._suppress = False      # guard programmatic knot writes against the refit
         self._saved_range = None    # main x-range to restore when the tool closes
+        self._selection_request = 0
         self._fit_spectrum = None   # rendered spectrum the spline is fit to (smoothed+selected)
         self._debounce = Debouncer(debounce_ms)
 
@@ -154,15 +155,16 @@ class NormaliseTool(Tool):
         self._sync_prenorm(obj)
         self.push_panel()
 
-    def _build_fit_spectrum(self, obj):
+    @staticmethod
+    def _build_fit_spectrum(raw, settings):
         """The spectrum the spline is fit to and rendered: the raw spectrum low-pass
         smoothed by the resolution cut, then with outliers dropped — points whose
         excess over a running mean (taken over the `win` Å window) is above the
         `pct`-th percentile of those excesses are removed."""
-        res = self.form.value("res")
-        base = obj.raw.lowpass(res) if res and res > 0 else obj.raw
-        win = self.form.value("win")
-        pct = self.form.value("pct")
+        res = settings["res"]
+        base = raw.lowpass(res) if res and res > 0 else raw
+        win = settings["win"]
+        pct = settings["pct"]
         if win and win > 0 and pct and 0 < pct < 100:
             x, y = base.values
             dx = abs(float(np.mean(np.diff(x)))) if len(x) > 1 else 0.0
@@ -175,13 +177,54 @@ class NormaliseTool(Tool):
         return base
 
     def _render_selection(self):
-        """Update the rendered spectrum (resolution cut + percentile selection) only —
-        the spline knots are left untouched."""
+        self._prepare_selection(place_knots=False)
+
+    def _prepare_selection(self, place_knots):
+        """Compute from snapshots; only the latest request may update the canvas."""
         obj = self._obs()
-        if obj is None:
+        if obj is None or obj.already_normalised:
             return
-        self._fit_spectrum = self._build_fit_spectrum(obj)
-        self.canvas.set_norm_view(self._fit_spectrum)
+        raw = obj.raw
+        settings = {k: self.form.value(k) for k in ("res", "win", "pct", "peak")}
+        self._selection_request += 1
+        request = self._selection_request
+        # Knot edits during a background fit take precedence over its result.
+        knots = {k: list(v) for k, v in self.knots.data.items()}
+
+        def compute(token):
+            token.check()
+            spec = self._build_fit_spectrum(raw, settings)
+            ex = None
+            if place_knots:
+                x, y = spec.values
+                if len(x) < 2:
+                    raise ValueError("Not enough points to place continuum knots")
+                dx = float(np.mean(np.diff(x)))
+                nstep = max(1, int(abs(settings["peak"]) / abs(dx))) if dx else 1
+                ex = argrelextrema(y, np.greater_equal, order=nstep)[0]
+                ex = np.unique(np.concatenate(([0], ex, [len(x) - 1])))
+            token.check()
+            return spec, ex
+
+        def apply(result):
+            if (request != self._selection_request or not self.active
+                    or self._obs() is not obj or obj.already_normalised
+                    or any(self.form.value(k) != v for k, v in settings.items())):
+                return
+            spec, ex = result
+            self._fit_spectrum = spec
+            self.canvas.set_norm_view(spec)
+            if ex is not None and knots == {k: list(v) for k, v in self.knots.data.items()}:
+                x, y = spec.values
+                kx = to_value(x[ex], spec.xunit, self.canvas.xunit)
+                self._set_knots(kx, y[ex])
+                self._recompute(obj)
+                self._force_repaint()
+                if ex.size <= 2:
+                    self.notify("Few continuum peaks found — widen the peak spacing or lower the "
+                                "resolution cut.", level="info")
+
+        self.ctx.submit("normalise-peaks" if place_knots else "normalise-selection", compute, apply)
 
     def _on_field(self, key, value):
         """`prenorm` toggles the constant normalisation; `peak` re-runs the spline fit;
@@ -196,25 +239,8 @@ class NormaliseTool(Tool):
             self._debounce("render", self._render_selection)
 
     def initialise(self):
-        """Place continuum knots at the flux peaks (spaced ≥ `peak` apart) of the
-        current rendered selection — i.e. the resolution-cut, percentile-selected
-        spectrum."""
-        obj = self._obs()
-        if obj is None:
-            return
-        self._render_selection()              # ensure the fit spectrum is current
-        x, y = self._fit_spectrum.values
-        dx = float(np.mean(np.diff(x))) if len(x) > 1 else 1.0
-        nstep = max(1, int(abs(self.form.value("peak")) / abs(dx))) if dx else 1
-        ex = argrelextrema(y, np.greater_equal, order=nstep)[0]
-        ex = np.unique(np.concatenate(([0], ex, [len(x) - 1])))  # always anchor the endpoints
-        kx = to_value(x[ex], self._fit_spectrum.xunit, self.canvas.xunit)  # native -> display
-        self._set_knots(kx, y[ex])
-        self._recompute(obj)
-        self._force_repaint()
-        if ex.size <= 2:  # only the endpoints survived (e.g. a strong resolution cut)
-            self.notify("Few continuum peaks found — widen the peak spacing or lower the "
-                        "resolution cut.", level="info")
+        """Place continuum knots without blocking the document callback."""
+        self._prepare_selection(place_knots=True)
 
     def _force_repaint(self):
         """Nudge the x-range a sub-pixel amount (then restore it) on the next tick. The

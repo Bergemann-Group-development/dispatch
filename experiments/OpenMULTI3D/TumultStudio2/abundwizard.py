@@ -21,6 +21,7 @@ from bokeh.models import BoxAnnotation, ColumnDataSource, Span, TextInput
 from bokeh.plotting import figure
 
 import abundance as ab
+from tumult.abundance import SYNTH_PAD_AA  # noqa: F401 (the tools import it from here)
 import store
 from canvas import ACCENT, style_dark
 from tableui import SortState, sort_headers
@@ -38,66 +39,7 @@ X_AXES = {
 
 # a fitted profile (not trapz) is required - the FWHM window comes from it (see abundance.py)
 PROFILES = ["gauss", "voigt", "asym_gauss"]
-SYNTH_PAD_AA = 0.5           # extra Å each side of the auto window so the wings are synthesised
 DEFAULT_JUMP_SPAN_AA = 1.0   # jump span for a no-window line when no line has been shown yet
-
-
-def measure_candidate_lines(ref_spec, cand, *, profile, ew_min, snr, cont_pct):
-    """Measure every candidate row of a master-linelist frame on the reference observation.
-
-    The step-1 measuring loop shared by the abundance and stellar-parameter wizards:
-    fit each line (:func:`abundance.measure_line`), keep no-core lines flagged but
-    unmeasured, drop hard fit failures and clean lines below ``ew_min``, and measure the
-    EW error (SNR + continuum-%) at selection — a line whose photon EW error exceeds its
-    EW is flagged ``"ew_unc"`` and excluded. ``cand`` needs ``lam0``/``ion``/``evi``/
-    ``loggf`` columns. Returns ``list[abundance.LineResult]``.
-    """
-    lines = []
-    for row in cand.itertuples():
-        line = {"lam0": float(row.lam0)}
-        try:
-            lprof, window, fit_window, flags = ab.measure_line(
-                ref_spec, line, profile=profile)
-        except Exception:
-            continue          # hard fit failure (too few points) — drop it
-        if "no_window" in flags or lprof is None:
-            # no fittable core: list the line flagged, but measure no EW. Clicking it
-            # just jumps to the line, keeping the previous view span (see _jump_line).
-            lines.append(ab.LineResult(
-                lam0=float(row.lam0), ion=str(row.ion), e_low=float(row.evi),
-                loggf=float(row.loggf),
-                mask=ab.LineMask(lam0=float(row.lam0), lmin=fit_window[0], lmax=fit_window[1],
-                                 smin=window[0], smax=window[1], note=str(row.ion)),
-                flags=tuple(flags), include=False))
-            continue
-        ew, fwhm, func = lprof.mAA, float(lprof.fwhm), lprof.func
-        if not np.isfinite(ew):
-            continue
-        if not flags and ew < ew_min:
-            continue          # an accepted line below the EW floor — drop as before
-        # measure the EW error already at selection (SNR + continuum-%). A line whose
-        # photon (SNR) EW error exceeds its own EW — fractional photon uncertainty > 1 —
-        # is flagged and excluded (kept visible, like the other sanity rejections).
-        # Keep the screened ``ew`` from measure_line; take only the errors here.
-        ew_err = ew_err_phot = float("nan")
-        try:
-            prof = ab.measure_ew(ref_spec, window=fit_window, snr=snr,
-                                 cont_pct=cont_pct, profile=profile, x0=float(row.lam0))
-            ew_err, ew_err_phot = prof.width_err_mAA, prof.err_phot_mAA
-        except Exception:
-            pass
-        flags = tuple(flags)
-        if np.isfinite(ew_err_phot) and ew > 0 and ew_err_phot / ew > 1.0:
-            flags = flags + ("ew_unc",)
-        # sanity-check rejections (no fit window / off-centre fit / noisy) are kept but
-        # excluded, so the user sees the flag and can override it in the table.
-        lines.append(ab.LineResult(
-            lam0=float(row.lam0), ion=str(row.ion), e_low=float(row.evi),
-            loggf=float(row.loggf), ew=ew, ew_err=ew_err, fwhm=fwhm,
-            mask=ab.LineMask(lam0=float(row.lam0), lmin=fit_window[0], lmax=fit_window[1],
-                             smin=window[0], smax=window[1], note=str(row.ion)),
-            fit_func=func, flags=flags, include=not flags))
-    return lines
 
 
 class AbundanceWizard(Tool):
@@ -130,6 +72,7 @@ class AbundanceWizard(Tool):
 
     def __init__(self, ctx, *, setup):
         Tool.__init__(self, ctx)
+        self.maskset_uid = getattr(self, "maskset_uid", None)
         self.sort_keys = {**self.BASE_SORT_KEYS, **self.extra_sort_keys}
         self.sort = SortState({**self.BASE_SORT_ASC, **self.extra_sort_asc}, "lam0")
         self.setup = setup                # SynthSetup: the wizard's own synthesis config
@@ -152,6 +95,42 @@ class AbundanceWizard(Tool):
         # client->server channel, written as ``"<kind>:<arg>:<nonce>"``.
         self.actions = TextInput(value="", visible=False, name=f"{self.prefix}-actions")
         self.actions.on_change("value", self._on_action)
+
+    # --- step-1 line source: a line-mask set from the shared store ----------------------
+    # Both wizards measure *given* windows now; the windows themselves are made (imported,
+    # drawn or auto-generated) in the LineMasks view, so step 1 only has to choose a set.
+    maskset_element = ""     # subclass filter: only offer sets of this element ("" = any)
+
+    def _masksets(self):
+        masks = getattr(self.ctx, "masks", None)
+        if masks is None:
+            return []
+        return [m for m in masks.listed
+                if m.masks and (not self.maskset_element
+                                or m.element == self.maskset_element)]
+
+    @staticmethod
+    def _maskset_label(mset):
+        n = sum(1 for m in mset.masks if m.include)
+        el = f"{mset.element} · " if mset.element else ""
+        return f"{el}{mset.name} ({n})"
+
+    def _sync_masksets(self):
+        """Repaint the line-mask dropdown from the shared store — sets are added and removed
+        from the Objects sidebar while this panel is open."""
+        sets = self._masksets()
+        options = [(str(m.uid), self._maskset_label(m)) for m in sets]
+        current = str(self.maskset_uid or "")
+        if not any(uid == current for uid, _ in options):
+            current = options[0][0] if options else ""
+            self.maskset_uid = current or None
+        field = self.form1.fields["maskset"]
+        field.options = options or [("", "— no line mask yet —")]
+        field.value = current
+        self.form1.render()
+
+    def selected_maskset(self):
+        return next((m for m in self._masksets() if str(m.uid) == str(self.maskset_uid)), None)
 
     # --- focus-kind coordination (which left-sidebar list owns the selection) -----------
     def is_focused(self):

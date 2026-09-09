@@ -8,6 +8,9 @@ converted to the chosen display units.
 """
 from __future__ import annotations
 
+import logging
+from contextlib import nullcontext
+
 import astropy.units as u
 import numpy as np
 from bokeh.models import (BoxAnnotation, ColumnDataSource, DataRange1d, Range1d, RangeTool,
@@ -107,6 +110,7 @@ class SpectrumCanvas:
         self.marker_threshold = marker_threshold
         self._debounce = Debouncer(debounce_ms)  # coalesce range-driven redraws
         self.on_change = on_change  # called with the object list whenever it changes
+        self._view_listeners = []   # called after every main-view redraw (see add_view_listener)
 
         # x display unit starts at the first spectrum's native unit (Å when the canvas
         # is empty, until the first object is added); y is always the normalised
@@ -201,9 +205,25 @@ class SpectrumCanvas:
         self._mask_style = {
             "syn": dict(fill_color="#e05c5c", fill_alpha=0.06, line_color="#e05c5c", line_alpha=0.25),
             "fit": dict(fill_color="#e0a030", fill_alpha=0.10, line_color="#e0a030", line_alpha=0.35),
-            "act": dict(fill_color=ACCENT, fill_alpha=0.14, line_color=ACCENT, line_alpha=0.6),
         }
-        self._mask_boxes = {"syn": [], "fit": [], "act": []}
+        self._mask_boxes = {"syn": [], "fit": []}
+
+        # the *active* mask's fit window is its own box rather than one of the pooled bands:
+        # it is the one the user edits, and it does so by dragging its left/right edge handles
+        # (`resizable="x"`, `movable="none"` — the window may be widened or narrowed, never
+        # slid wholesale, and no other mask can be changed by accident). Bokeh writes the
+        # dragged `left`/`right` straight back to the model, which `on_mask_resize` picks up.
+        self.mask_edit_box = BoxAnnotation(
+            # seeded with floats, not Bokeh's default Node coordinates: see _paint_boxes
+            left=0.0, right=0.0,
+            visible=False, level="underlay", editable=False,
+            movable="none", resizable="x", use_handles=True,
+            fill_color=ACCENT, fill_alpha=0.14, line_color=ACCENT, line_alpha=0.6)
+        main.add_layout(self.mask_edit_box)
+        self.on_mask_resize = None     # callback(lo, hi) in display units, set by MaskTool
+        self._mask_sync = False        # True while *we* are writing left/right (not the user)
+        self.mask_edit_box.on_change("left", self._on_mask_edit)
+        self.mask_edit_box.on_change("right", self._on_mask_edit)
 
         main.x_range.on_change("start", self._on_main_range)
         main.x_range.on_change("end", self._on_main_range)
@@ -627,41 +647,119 @@ class SpectrumCanvas:
             sp.visible = False
 
     # --- shared LineMask bands (maskstore) --------------------------------
-    def render_masks(self, masks, active=None):
+    def render_masks(self, masks, active=None, editable=False):
         """Draw every mask's synth (red) + fit (amber) window as full-height bands, in the
-        display unit; the ``active`` mask's fit window is drawn accented instead of amber.
+        display unit; the ``active`` mask's fit window is drawn accented in the separate
+        :attr:`mask_edit_box`, whose edges are draggable when ``editable``.
 
         Bands are BoxAnnotations (top/bottom unset ⇒ span the whole plot height) so they never
         touch the main y-axis autoscale — the spectrum keeps the identical y-fit it has in the
         regular view."""
-        syn, fit, act = [], [], []
+        syn, fit, act = [], [], None
         for i, m in enumerate(masks):
             if np.isfinite(m.smin) and np.isfinite(m.smax):
                 syn.append(to_range(m.smin, m.smax, u.AA, self.xunit))
             if np.isfinite(m.lmin) and np.isfinite(m.lmax):
-                (act if i == active else fit).append(to_range(m.lmin, m.lmax, u.AA, self.xunit))
+                span = to_range(m.lmin, m.lmax, u.AA, self.xunit)
+                if i == active:
+                    act = span
+                else:
+                    fit.append(span)
         self._paint_boxes("syn", syn)
         self._paint_boxes("fit", fit)
-        self._paint_boxes("act", act)
+        self._paint_edit_box(act, editable)
+
+    def _paint_edit_box(self, span, editable):
+        """Place (or hide) the draggable active-mask box without letting our own write look
+        like a user drag."""
+        box = self.mask_edit_box
+        self._mask_sync = True
+        try:
+            if span is None:
+                box.visible = False
+                box.editable = False
+            else:
+                a, b = span
+                box.left, box.right = min(a, b), max(a, b)
+                box.visible = True
+                box.editable = bool(editable)
+        finally:
+            self._mask_sync = False
+
+    def _on_mask_edit(self, attr, old, new):
+        """An edge handle was dragged: report the new window in display units."""
+        if self._mask_sync or not self.mask_edit_box.editable:
+            return
+        lo, hi = self.mask_edit_box.left, self.mask_edit_box.right
+        if lo is None or hi is None or self.on_mask_resize is None:
+            return
+        self.on_mask_resize(float(min(lo, hi)), float(max(lo, hi)))
 
     def _paint_boxes(self, key, spans):
         """Show one full-height BoxAnnotation per (left,right) span, growing the pool as needed
-        and hiding any surplus boxes from a previous, larger render."""
+        and hiding any surplus boxes from a previous, larger render.
+
+        Two things here are about cost, not appearance, and both bite only when a *large* set
+        arrives (an 82-window line mask is 163 boxes) — together they cost ~15 s:
+
+        ``left``/``right`` are seeded with floats at construction because Bokeh defaults them
+        to ``Node`` *models*. Writing a number over that default is a structural change to the
+        model graph, so ``Model.trigger`` invalidates the whole document and recomputes every
+        root's references — once per box, on the document thread. Boxes born holding numbers
+        never take that path: their later writes are ordinary property changes.
+
+        Growing the pool is one assignment to ``main.center`` rather than N ``add_layout``
+        calls, for the same reason (each call is its own graph recompute), inside
+        ``models.freeze()`` so the batch costs a single recompute.
+
+        The freeze is scoped to the growth alone, not to the whole pass: leaving it always
+        recomputes once, which is a bargain against N of them but pure loss on the far more
+        common repaint that grows nothing (an edge drag, a jump, a set switch). With the
+        boxes seeded, that path writes only floats and booleans and needs no freeze at all.
+        """
         pool = self._mask_boxes[key]
-        while len(pool) < len(spans):
-            box = BoxAnnotation(visible=False, level="underlay", **self._mask_style[key])
-            self.main.add_layout(box)
-            pool.append(box)
+        if len(pool) < len(spans):
+            with self._frozen_models():
+                grown = [BoxAnnotation(left=0.0, right=0.0, visible=False, level="underlay",
+                                       **self._mask_style[key])
+                         for _ in range(len(spans) - len(pool))]
+                self.main.center = [*self.main.center, *grown]
+                pool.extend(grown)
         for box, (a, b) in zip(pool, spans):
             box.left, box.right = min(a, b), max(a, b)
             box.visible = True
         for box in pool[len(spans):]:
             box.visible = False
 
+    def _frozen_models(self):
+        """Defer the document's model-graph recomputation across a batch of structural edits.
+
+        A no-op before the figure is attached to a document (tests, and construction time),
+        which is exactly when there is nothing to recompute anyway.
+        """
+        doc = self.main.document
+        return doc.models.freeze() if doc is not None else nullcontext()
+
     def clear_masks(self):
         for pool in self._mask_boxes.values():
             for box in pool:
                 box.visible = False
+        self._paint_edit_box(None, False)
+
+    # --- overlays computed for the visible window --------------------------
+    def add_view_listener(self, fn):
+        """Register ``fn()`` to run after every main-view redraw — a pan, a zoom, a jump or
+        a unit flip. Overlays that are re-derived from the visible window (the line-position
+        indicators, see ``lineannot``) keep themselves in step through this instead of each
+        one hooking the x-range and re-inventing the debounce."""
+        self._view_listeners.append(fn)
+
+    def _notify_view(self):
+        for fn in self._view_listeners:
+            try:
+                fn()
+            except Exception:
+                logging.exception("canvas view listener failed")
 
     # --- reversible filtering ---------------------------------------------
     def effective(self, obj):
@@ -731,12 +829,34 @@ class SpectrumCanvas:
         self._fit_nav_y()
 
     def _refresh_main(self):
-        for obj in self.objects:
-            if obj.uid != self.norm_edit_uid and not obj.visible:
-                continue
-            if self.norm_edit_uid is not None and obj.uid != self.norm_edit_uid:
-                continue  # only the edited spectrum is drawn while editing its continuum
+        for obj in self._main_drawn():
             self.refresh_object(obj)
+        self._notify_view()
+
+    def _main_drawn(self):
+        """Objects currently drawn on the main figure (visible, or the lone edited one)."""
+        for obj in self.objects:
+            if self.norm_edit_uid is not None:
+                if obj.uid == self.norm_edit_uid:
+                    yield obj      # only the edited spectrum, while its continuum is set
+            elif obj.visible:
+                yield obj
+
+    def main_y_extent(self):
+        """``(lo, hi)`` of the flux actually drawn in the main figure's window, or ``None``
+        when nothing is. Read from the decimated sources, so it is what the plot shows.
+
+        Overlays that hang above the spectrum (the line annotations) place themselves against
+        this rather than against ``y_range.start/end``: the range already includes whatever
+        they drew last time, so measuring against it would walk them upwards on every repaint.
+        The data does not move, so this does not either."""
+        ys = [obj.main_source.data["y"] for obj in self._main_drawn()]
+        ys = [y for y in ys if len(y)]
+        if not ys:
+            return None
+        lo = min(float(np.nanmin(y)) for y in ys)
+        hi = max(float(np.nanmax(y)) for y in ys)
+        return (lo, hi) if np.isfinite(lo) and np.isfinite(hi) else None
 
     def _refresh_nav(self):
         for obj in self.objects:

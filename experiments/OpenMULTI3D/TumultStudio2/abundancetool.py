@@ -15,16 +15,16 @@ footer inside the centre panel:
 3. **Uncertainties**: set SNR / continuum % / scatter x-axis and compute each line's EW and
    abundance error budget plus the dark-themed A(X) scatter (which replaces the spectrum pane).
 
-The numerical engine lives in :mod:`abundance` (pure, unit-tested) and the machinery shared
-with the corrections wizard in :mod:`abundwizard`; this module is the abundance-specific
-orchestration that drives ``synth.compute`` on the setup's atmosphere.
+All three steps are :mod:`tumult.abundance` calls — :func:`~tumult.abundance.measure_lines`,
+:func:`~tumult.abundance.run_abundance`, :func:`~tumult.abundance.finalize_result` — driven
+here on the setup's atmosphere, with a ``progress`` callback streaming each line into the
+table as it lands. What is left in this module is the wizard's own machinery, shared with the
+corrections tool through :mod:`abundwizard`, and the rendering.
 """
 from __future__ import annotations
 
 import html
 import logging
-import uuid
-
 import astropy.units as u
 import numpy as np
 from bokeh.models import ColumnDataSource, Whisker
@@ -32,15 +32,12 @@ from bokeh.models import ColumnDataSource, Whisker
 import abundance as ab
 import store
 import synth
-from abundwizard import (PROFILES, SYNTH_PAD_AA, X_AXES, AbundanceWizard,
-                         measure_candidate_lines)
+from abundwizard import PROFILES, X_AXES, AbundanceWizard
 from canvas import ACCENT
 from controls import Field, Form
-from linenav import load_master
 
 DEFAULTS = {
-    "element": "Fe", "profile": "gauss", "ew_min": 5.0,
-    "snr": 100.0, "cont_pct": 0.5, "xaxis": "evi",
+    "profile": "gauss", "snr": 100.0, "cont_pct": 0.5, "xaxis": "evi",
 }
 
 
@@ -70,15 +67,18 @@ class AbundanceTool(AbundanceWizard):
         # step 1: what to measure (independent of stellar parameters). The EW error inputs
         # (SNR / continuum-%) live here too, so each line's EW uncertainty is known at
         # selection; a line whose photon EW error exceeds its EW is flagged automatically.
+        # The lines to measure come from a line-mask set (Objects → Open File → New Line
+        # Mask), so the element and the candidate search live with the generator that made
+        # it; step 1 only measures the windows it is given, on the chosen reference.
         self.form1 = Form("abund1", [
-            Field("element", "Element (species)", kind="text", value=vals["element"]),
+            Field("maskset", "Line mask", kind="select", value="", options=[]),
             Field("profile", "EW profile", kind="select", value=vals["profile"],
                   options=PROFILES),
-            Field("ew_min", "Min EW [mÅ]", kind="number", value=vals["ew_min"], min=0),
             Field("snr", "SNR (observation)", kind="number", value=vals["snr"], min=0),
             Field("cont_pct", "Continuum uncertainty [%]", kind="number",
                   value=vals["cont_pct"], min=0, step=0.1),
         ], on_change=self._on_field)
+        self.maskset_uid = saved.get("maskset_uid")
         # step 3: the scatter axis (SNR / continuum-% now live in step 1)
         self.form3 = Form("abund3", [
             Field("xaxis", "Scatter x-axis", kind="select", value=vals["xaxis"],
@@ -98,11 +98,13 @@ class AbundanceTool(AbundanceWizard):
     # --- Tool protocol -----------------------------------------------------------------
     def _on_activate_extra(self):
         self._ref_bridge.value = self.ref_html()    # step-1 reference selector
+        self._sync_masksets()                       # step-1 line-mask selector
 
     def refresh(self):
-        """Keep the step-1 reference selector in sync as observations load/unload."""
+        """Keep the step-1 reference + line-mask selectors in sync as objects come and go."""
         if self.active:
             self._ref_bridge.value = self.ref_html()
+            self._sync_masksets()
 
     def on_filter_changed(self):
         """Re-measure the selected result's step-1 EWs when the canvas Filtered switch toggles.
@@ -172,6 +174,9 @@ class AbundanceTool(AbundanceWizard):
     # --- state persistence -------------------------------------------------------------
     def _on_field(self, key, value):
         store.update_pref("abundance", key, value)
+        if key == "maskset":
+            self.maskset_uid = value or None
+            store.update_pref("abundance", "maskset_uid", self.maskset_uid or "")
         if key == "xaxis":
             self.fig.xaxis.axis_label = X_AXES[str(value)][0]
             self._render_scatter()  # re-place points on the new axis
@@ -217,56 +222,40 @@ class AbundanceTool(AbundanceWizard):
                                 "continuum-normalised flux.")
         return ref_uid, spec, None
 
-    @staticmethod
-    def _species(raw):
-        """Parse an element field: ("Fe II", "Fe", stage_named) — collapse inner whitespace."""
-        element = " ".join(str(raw).split())
-        symbol = element.split()[0] if element else ""
-        return element, symbol, len(element.split()) > 1
-
     # --- step 1: diagnostic-line selection ---------------------------------------------
     def run_lines(self):
         ref_uid, ref_spec, err = self._ref()
         if err:
             self.notify(err)
             return
-        v = self.form1.values()
-        element, symbol, stage_named = self._species(v["element"])
-        if not symbol:
-            self.notify("Enter an element, e.g. 'Fe I'.")
+        mset = self.selected_maskset()
+        if mset is None:
+            self.notify("Make a line mask first — Objects → Open File → New Line Mask.")
             return
-        profile = str(v["profile"])
-        ew_min = float(v["ew_min"])
-        snr = float(v["snr"]) or None
-        cont_pct = float(v["cont_pct"])
+        if not mset.element:
+            self.notify(f"Set the element of “{mset.name}” before measuring it.")
+            return
+        if not any(m.include for m in mset.masks):
+            self.notify(f"Every window in “{mset.name}” is switched off.")
+            return
+        v = self.form1.values()
         self._error = None
-        self.notify(f"Measuring {element} lines on the reference…")
+        self.notify(f"Measuring {mset.element} windows on the reference…")
         loader = lambda token=None: self._measure_lines(
-            ref_uid, ref_spec, element, symbol, stage_named, profile, ew_min, snr, cont_pct)
-        self.ctx.submit(f"abund-lines:{element}", loader, self._on_lines_done)
+            ref_uid, ref_spec, mset, str(v["profile"]), float(v["snr"]) or None,
+            float(v["cont_pct"]))
+        self.ctx.submit(f"abund-lines:{mset.element}", loader, self._on_lines_done)
 
-    def _measure_lines(self, ref_uid, ref_spec, element, symbol, stage_named, profile, ew_min,
-                       snr, cont_pct):
+    def _measure_lines(self, ref_uid, ref_spec, mset, profile, snr, cont_pct):
+        """Measure the set's switched-on windows (:func:`tumult.abundance.measure_lines`)."""
         try:
-            lo, hi = self._ref_range(ref_spec)
-            master = load_master(self.master_path)
-            ion = master.ion.astype(str)
-            match = (ion == element) if stage_named else (ion.str.split().str[0] == symbol)
-            cand = master[match & (master.lam0 >= lo) & (master.lam0 <= hi)]
-            cand = cand.sort_values("lam0")
-            if cand.empty:
-                self._error = f"No {element} lines in the reference range {lo:.1f}–{hi:.1f} Å."
-                return None
-            lines = measure_candidate_lines(ref_spec, cand, profile=profile, ew_min=ew_min,
-                                            snr=snr, cont_pct=cont_pct)
-            if not lines:
-                self._error = f"No {element} lines above {ew_min:.0f} mÅ in the reference."
-                return None
-            res = ab.AbundanceResult(
-                element=element, symbol=symbol, lines=lines, summary=ab.aggregate([]),
-                stage="lines", profile=profile, uid=uuid.uuid4().hex[:8])
+            ref_name = dict(self.list_observations()).get(ref_uid, "")
+            res, remeasured = ab.measure_lines(
+                mset, ref_spec, reference_name=ref_name, linelist=self.master_path,
+                profile=profile, snr=snr, cont_pct=cont_pct)
+            if remeasured:
+                self.ctx.emit("masks-changed")   # repaint the diagnostics table
             res.ref_uid = ref_uid
-            res.name = f"{element} · {len(lines)} lines"
             return res
         except Exception as exc:
             logging.exception("Abundance line selection failed")
@@ -300,77 +289,15 @@ class AbundanceTool(AbundanceWizard):
         self.ctx.submit(f"abund-synth:{res.element}", loader, self._on_synth_done)
 
     def _synth_lines(self, res, ctx, token):
+        """Fit every included line (:func:`tumult.abundance.run_abundance`), streaming rows."""
+        obs = self.get_observation(getattr(res, "ref_uid", None))
+        if obs is None:
+            self._error = "The reference observation for this result is no longer loaded."
+            return None
         try:
-            prefs, grid, base_rv = ctx["prefs"], ctx["grid"], dict(ctx["run_vals"])
-            target, atmos_file = ctx["target"], ctx["atmos_file"]
-            feh = target[2]
-            relative = bool(base_rv.get("relative_abundances", False))
-            solar = synth.abund_table(prefs)
-            base_abund = str(base_rv.get("abundances", "")).strip()
-            symbol = res.symbol
-            obs = self.get_observation(getattr(res, "ref_uid", None))
-            if obs is None:
-                self._error = "The reference observation for this result is no longer loaded."
-                return None
-
-            def synth_window(rv_over, window):
-                rv = dict(base_rv)
-                rv.update(rv_over)
-                return synth.compute(target, prefs, rv, window[0] - SYNTH_PAD_AA,
-                                     window[1] + SYNTH_PAD_AA, grid=grid, atmos_file=atmos_file,
-                                     cancel_token=token)
-
-            def abund_terms(a):
-                val = a if relative else synth.xfe_to_abund(a, symbol, feh, solar)
-                return " ".join(t for t in (base_abund, f"{symbol}={val:.4f}") if t)
-
-            for idx, ln in enumerate(res.lines):
-                if token is not None and token.cancelled:
-                    raise synth.CancelledError()
-                if not ln.include:
-                    continue          # skip step-1-rejected / user-excluded lines (keeps flags)
-
-                # the query species in isolation (weak-line screen), the full synthesis (blend +
-                # gradient), the element-removed window (blend), and the adaptive abundance fit.
-                def synth_only_fn(a, _w=ln.window):
-                    return synth_window({"abundances": abund_terms(a),
-                                         "relative_abundances": relative,
-                                         "only_elements": symbol}, _w)
-
-                def synth_all_fn(a, _w=ln.window):
-                    return synth_window({"abundances": abund_terms(a),
-                                         "relative_abundances": relative}, _w)
-
-                # the dREW/dA flanks (a±grad_step full syntheses) fanned across one pool
-                def synth_all_batch(a_list, _w=ln.window):
-                    rvs = [{**base_rv, "abundances": abund_terms(a),
-                            "relative_abundances": relative} for a in a_list]
-                    return synth.compute_batch(target, prefs, rvs, _w[0] - SYNTH_PAD_AA,
-                                               _w[1] + SYNTH_PAD_AA, grid=grid,
-                                               atmos_file=atmos_file, cancel_token=token)
-
-                def synth_excl_fn(_w=ln.window):
-                    return synth_window({"exclude_elements": symbol}, _w)
-
-                def abund_fit_fn(guess, _w=ln.window, _fw=ln.fit_window):
-                    return synth.fit_line(obs, target, prefs, base_rv, symbol, guess,
-                                          _w[0] - SYNTH_PAD_AA, _w[1] + SYNTH_PAD_AA, _fw,
-                                          grid=grid, atmos_file=atmos_file, cancel_token=token)
-
-                try:
-                    ab.fit_line(ln, synth_only_fn=synth_only_fn, synth_all_fn=synth_all_fn,
-                                synth_excl_fn=synth_excl_fn, abund_fit_fn=abund_fit_fn,
-                                ew_meas=ln.ew, a_guess=0.0, profile=res.profile,
-                                grad_batch_fn=synth_all_batch)
-                except synth.CancelledError:
-                    raise
-                except Exception:
-                    logging.exception("Abundance: fit for line %.3f failed", ln.lam0)
-                    ln.flags = ("synth_failed",)
-                res.relative = relative
-                res.teff, res.logg, res.feh, res.vmic = target[0], target[1], feh, target[3]
-                self.ctx.schedule(lambda r=res: self._stream_row(r))  # refresh the table live
-            return res
+            return ab.run_abundance(
+                ctx, res, obs, cancel_token=token,
+                progress=lambda r: self.ctx.schedule(lambda r=r: self._stream_row(r)))
         except synth.CancelledError:
             raise
         except Exception as exc:
@@ -404,14 +331,7 @@ class AbundanceTool(AbundanceWizard):
             self.notify("The reference observation for this result is no longer loaded.")
             return
         v = self.form1.values()          # SNR / continuum-% are set in step 1
-        snr = float(v["snr"]) or None
-        cont_pct = float(v["cont_pct"])
-        for ln in res.lines:
-            if np.isfinite(ln.drewda):   # only lines that passed screening + were fit in step 2
-                ab.finalize_line(ln, spec, snr, cont_pct, profile=res.profile)
-        res.snr, res.cont_pct = snr, cont_pct
-        res.summary = ab.aggregate(res.lines)
-        res.stage = "uncert"
+        ab.finalize_result(res, spec, float(v["snr"]) or None, float(v["cont_pct"]))
         s = res.summary
         res.name = self._result_label(res)
         self.push_results()
