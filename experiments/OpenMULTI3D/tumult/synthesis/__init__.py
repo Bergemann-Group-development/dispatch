@@ -7,7 +7,8 @@ entry points (unchanged signatures) live in :mod:`.api`; supporting machinery in
 Importing from ``tumult.synthesis`` keeps working exactly as before.
 """
 from .api import (PRESETS_DIR, adaptive_fit, build_stellar_grid, compute_spectrum,
-                  compute_spectra, get_NLTE_correction, get_NLTE_corrections, preset)
+                  compute_spectra, compute_windows, get_NLTE_correction,
+                  get_NLTE_corrections, normalise_windows, preset)
 from .atmos_select import select_nodes
 from .cancel import CancelledError, CancelToken
 from .request import SynthRequest
@@ -19,7 +20,8 @@ from .workflows import (build_settings, compile_pattern, compute, compute_batch,
 
 __all__ = [
     "PRESETS_DIR", "preset",
-    "build_stellar_grid", "compute_spectrum", "compute_spectra", "adaptive_fit",
+    "build_stellar_grid", "compute_spectrum", "compute_spectra", "compute_windows",
+    "normalise_windows", "adaptive_fit",
     "get_NLTE_correction", "get_NLTE_corrections",
     "CancelToken", "CancelledError", "SynthRequest",
     "ExecutionService", "execution_scope",

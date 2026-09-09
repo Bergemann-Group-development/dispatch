@@ -458,6 +458,107 @@ def compute_spectrum(top, star, atmos_files, *, settings=None, absmet_files=None
     return _interp_crop(grid, xmin, xmax, method)
 
 
+def normalise_windows(windows, pad=None):
+    """Validate, pad, sort and merge synthesis windows.
+
+    ``windows`` is a sequence of ``(blue, red)`` bounds in Angstrom. Each is padded so a
+    cropped window has clean edges for convolution, then overlapping or touching windows
+    are merged: they would otherwise produce segments that share grid points, and the
+    Fortran side merges them anyway. Returns the merged ``[(blue, red), ...]`` sorted by
+    blue edge.
+
+    The padding rule matches the single-window path (:func:`_apply_window`), so one window
+    through here and the same window through ``compute_spectrum`` cover the same range.
+    """
+    if not windows:
+        raise ValueError("compute_windows needs at least one (blue, red) window")
+    padded = []
+    for w in windows:
+        blue, red = (float(w[0]), float(w[1]))
+        if not (np.isfinite(blue) and np.isfinite(red)):
+            raise ValueError(f"window {w} has a non-finite bound")
+        if blue > red:
+            blue, red = red, blue
+        if blue <= 0:
+            raise ValueError(f"window {w} has a non-positive wavelength")
+        lo_i, hi_i = int(np.floor(blue)), int(np.ceil(red))
+        p = pad
+        if p is None:
+            p = min(max(0.5, 0.05 * (hi_i - lo_i)), 100)
+        padded.append((float(lo_i - p), float(hi_i + p)))
+    padded.sort()
+    merged = [padded[0]]
+    for blue, red in padded[1:]:
+        if blue <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], red))
+        else:
+            merged.append((blue, red))
+    return merged
+
+
+def window_file_text(windows):
+    """The ``window_file`` body for ``windows``, as ``spectrum_params`` reads it.
+
+    Deterministic, so its content can key the run cache: two requests for the same
+    windows must reuse the same synthesis, and a changed window must not.
+    """
+    lines = ["# blue_AA  red_AA"]
+    lines += [f"{blue:.4f}  {red:.4f}" for blue, red in windows]
+    return "\n".join(lines) + "\n"
+
+
+def compute_windows(top, star, atmos_files, *, windows, R, settings=None, absmet_files=None,
+                    method='Delaunay', max_threads=None, launch_kwargs=None, pad=None,
+                    vmic_step=0.5, vmic_points=2, nlte=None, cancel_token=None):
+    """Synthesise several disjoint wavelength windows in one run, one spectrum each.
+
+    The windows are normalised (:func:`normalise_windows`) and written to a window file
+    the run reads, so the Fortran side builds one constant-``R`` segment per window and
+    gives each its own output patch. Overlapping requests merge into one segment; the
+    result is still cropped back to every window that was asked for, so the caller gets a
+    list aligned with ``windows`` whether or not any merging happened.
+
+    Returns ordinary contiguous spectra, one per requested window, in the order given.
+    Each is what synthesising that window on its own would have produced.
+
+    ``R`` is required: a window file fixes the sampling per window, and mixing that with
+    ``daa``/``nnu`` would leave the grid ambiguous.
+    """
+    if R is None or R <= 0:
+        raise ValueError("compute_windows needs a positive R (constant-resolution grid)")
+    top = Path(top)
+    settings = copy.deepcopy(settings or {})
+    merged = normalise_windows(windows, pad)
+
+    # The window file is a generated input, so the cache must key on its CONTENT: a path
+    # alone would let two different window sets share a digest.
+    text = window_file_text(merged)
+    sp = settings.setdefault('spectrum_params', {})
+    sp['R'] = float(R)
+    digest = hashlib.sha1(json.dumps(
+        [settings, text], sort_keys=True, default=str).encode()).hexdigest()[:8]
+    window_path = (top / '_windows' / f'{digest}.txt').resolve()
+    window_path.parent.mkdir(parents=True, exist_ok=True)
+    window_path.write_text(text)
+    sp['window_file'] = str(window_path)
+
+    if nlte is None:
+        nlte = _is_nlte(settings)
+    syn_top = top / f'win{len(merged)}_{digest}'
+    departures_top = _dep_bucket(top, settings) if nlte else None
+
+    grid = build_stellar_grid(str(syn_top), star, atmos_files, settings=settings,
+                              absmet_files=absmet_files, method=method,
+                              max_threads=max_threads, launch_kwargs=launch_kwargs,
+                              vmic_step=vmic_step, vmic_points=vmic_points,
+                              departures_top=str(departures_top) if departures_top else None,
+                              nlte=nlte, cancel_token=cancel_token)
+
+    # One spectrum per REQUESTED window, cropped out of the segment covering it. Cropping
+    # inside a segment never crosses a gap, so these are ordinary contiguous spectra.
+    return [_interp_crop(grid, float(min(w)), float(max(w)), method) for w in windows]
+
+
 def compute_spectra(top, star, atmos_files, *, settings_list, absmet_files=None,
                     method='Delaunay', max_threads=None, launch_kwargs=None,
                     xmin=None, xmax=None, pad=None, vmic_step=0.5, vmic_points=2,

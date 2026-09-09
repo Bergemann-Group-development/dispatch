@@ -11,6 +11,8 @@ import pytest
 
 from tumult.flux import read_segments
 from tumult.spectrum import Spectrum
+from tumult.synthesis import compute_windows, normalise_windows
+from tumult.synthesis.api import window_file_text
 
 HEADER = "# segment  first  last  blue_vac_AA  red_vac_AA\n"
 
@@ -85,3 +87,47 @@ def test_crop_into_one_window_is_an_ordinary_spectrum():
     sub = two_window_spectrum().crop(window=(5152, 5168))
     assert sub.n_segments == 1
     assert sub.convolve(res=50000) is not None
+
+
+# --- the multi-window synthesis API -------------------------------------------------
+
+
+def test_windows_are_sorted_and_padded():
+    """Order of request must not matter, and each window gets convolution margin."""
+    assert normalise_windows([(5180, 5200), (5150, 5170)], pad=1.0) == [
+        (5149.0, 5171.0), (5179.0, 5201.0)]
+
+
+def test_touching_windows_merge():
+    """Overlapping requests would otherwise make segments sharing grid points."""
+    assert normalise_windows([(5150, 5170), (5169, 5185)], pad=1.0) == [(5149.0, 5186.0)]
+
+
+def test_reversed_bounds_are_accepted():
+    assert normalise_windows([(5170, 5150)], pad=1.0) == [(5149.0, 5171.0)]
+
+
+def test_default_padding_scales_with_width():
+    """Matches _apply_window's rule, so one window here covers what compute_spectrum does."""
+    (blue, red), = normalise_windows([(5000, 5100)])
+    assert (blue, red) == (4995.0, 5105.0)
+
+
+@pytest.mark.parametrize("bad", [[], [(0.0, 10.0)], [(np.nan, 5000.0)]])
+def test_invalid_windows_are_rejected(bad):
+    with pytest.raises(ValueError):
+        normalise_windows(bad)
+
+
+def test_window_file_text_is_deterministic():
+    """The cache keys on this text, so equal requests must produce equal bytes."""
+    a = window_file_text(normalise_windows([(5150, 5170), (5180, 5200)], pad=1.0))
+    b = window_file_text(normalise_windows([(5180, 5200), (5150, 5170)], pad=1.0))
+    assert a == b
+    assert a.splitlines()[1:] == ["5149.0000  5171.0000", "5179.0000  5201.0000"]
+
+
+def test_compute_windows_requires_R():
+    """A window file fixes per-window sampling; daa/nnu would leave the grid ambiguous."""
+    with pytest.raises(ValueError, match="positive R"):
+        compute_windows('unused', (5777, 4.4, 0.0), {}, windows=[(5150, 5170)], R=None)
