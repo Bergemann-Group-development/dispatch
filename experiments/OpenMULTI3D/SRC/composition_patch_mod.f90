@@ -335,16 +335,6 @@ SUBROUTINE composition_pre_init (self)
   call self%save_abundances_to_file()
   call self%post_pre_init()
   call trace%end(itimer)
-contains
-  ! widen ll_lam to cover sp's wavelengths; the internal spectra are not
-  ! necessarily sorted, so use minval/maxval rather than the end points
-  subroutine expand_ll_range (sp)
-    class(atomic_spectrum_type), pointer :: sp
-    if (.not. associated(sp)) return
-    if (sp%nnu <= 0) return
-    ll_lam(1) = min(ll_lam(1), minval(sp%lam))
-    ll_lam(2) = max(ll_lam(2), maxval(sp%lam))
-  end subroutine expand_ll_range
 END SUBROUTINE composition_pre_init
 
 !===============================================================================
