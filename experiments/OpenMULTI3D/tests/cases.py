@@ -13,9 +13,8 @@ import astropy.units as u
 import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
-for _p in (ROOT, ROOT / "TumultStudio2"):
-    if str(_p) not in sys.path:
-        sys.path.insert(0, str(_p))
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 
 # --- shared synthetic line -----------------------------------------------------------------
@@ -132,7 +131,9 @@ AGG_LINES = [
 
 
 def abundance_cases():
-    import abundance as gui_ab  # TumultStudio2/abundance.py
+    # the GUI's `abundance` is a re-export of this module; the goldens pin the one
+    # implementation both sides call.
+    from tumult import abundance as gui_ab
     from tumult.abundance import aggregate, cog_invert, reduced_ew
     from tumult.spectrum import Spectrum
 

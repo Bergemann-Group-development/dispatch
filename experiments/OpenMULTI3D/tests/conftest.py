@@ -16,6 +16,8 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 GOLDEN = Path(__file__).resolve().parent / "golden"
 
+# TumultStudio2 is on the path for test_ui_execution alone, which pins UI invariants and
+# imports the Bokeh tools by the bare names a Bokeh directory app gives them.
 for _p in (ROOT, ROOT / "TumultStudio2"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
