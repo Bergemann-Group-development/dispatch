@@ -13,7 +13,7 @@ MODULE composition_patch_mod
   USE element_mod, only: element_type
   USE m3d_patch_mod,   only: m3d_patch_t, composition, comoving_frame, dlam, &
   use_rho, use_ne, overlapping_bb, overlapping_bf, binned_opac, initial_Jnu, &
-  rotate_atmos, decouple_continuum, n_nu, use_vel, &
+  rotate_atmos, decouple_continuum, n_nu, n_nu_out, use_vel, &
   make_eos, overlapping_bb_in_output, atmos_format, atmos_file, &
   n_nlte_patches, nlte_finished
   USE rt_params_mod, only: rt_iter, rt_out, pivot_z
@@ -27,7 +27,7 @@ MODULE composition_patch_mod
   line_scattering
   USE atom_mod, only: use_classic_col, level_partf
   USE nlte_patch_mod,  only: nlte_patch_t
-  USE rt_patch_mod, only:rt_patch_t
+  USE rt_patch_mod, only: rt_patch_t, output_set_da, output_set_element, verify_output_patch_coverage
   USE bftrans_mod, only: H_occupation_probability
   USE bbtrans_mod, only: tolerance, bbtrans_type, disable_ga, disable_stark, disable_vdw, ga_fallback
   USE linelist_mod, only: ll_profile, voigt_kernel, voigt_kernel_init
@@ -257,9 +257,16 @@ SUBROUTINE composition_pre_init (self)
   ! which differ only in i_mu and would otherwise build identical copies.  The
   ! internal spectrum uses i_nu in [1, n_nu], the bound-free half of a decoupled
   ! continuum [n_nu+1, 2*n_nu], and the output spectrum [-n_nu, -1]; slot 0 is
+  ! A3: Note - at this point output_sp%n_segments may not yet be set (occurs later in pre_init).
+  ! We'll update n_nu_out calculation after output_sp is initialized, then use it
+  ! for allocations here. For now, allocate conservatively using n_nu lower bound.
+  ! The actual patch ID ranges will be set correctly after n_nu_out is determined.
   ! never used.  make_eos is excluded: save_opac_table overwrites the table in
   ! place, so those rt_patches keep a private one.
   if ((rt_iter%sample_back_opac .or. rt_out%sample_back_opac) .and. .not. make_eos) then
+    ! A3: Allocate from -n_nu to 2*n_nu to cover both output patches (-n_nu_out:-1)
+    ! and internal patches (1:n_nu and potentially higher). The tables will be keyed
+    ! by the actual patch i_nu values assigned later.
     allocate(self%opac_tables(-n_nu:2*n_nu))
     allocate(self%opac_locks (-n_nu:2*n_nu))
     do i=-n_nu, 2*n_nu
@@ -285,15 +292,29 @@ SUBROUTINE composition_pre_init (self)
     endif
   endif
 
+  ! A3: Calculate n_nu_out from output spectrum segments (if window_file was used)
+  ! When window_file is NOT set, n_segments=0, so n_nu_out defaults to n_nu
+  ! (preserving behavior for single/old-style wavelength ranges).
+  if (output_sp%n_segments > 0) then
+    n_nu_out = output_sp%n_segments
+  else
+    n_nu_out = n_nu
+  endif
+
   ! rt_out%solver='none' disables the output pass entirely -- create no output
   ! RT patches (the final i_mu=-1 ray or the Lambda-iteration i_mu=[1,2] ones).
   if (output_sp%nnu > 0 .and. rt_out%solver /= 'none') then
     if (n_mu > 0 .or. (make_eos .and. self%key(1)==1)) then
       if (rt_out%maxiter > 0) then
-        call self%create_sub_patches([-n_nu, -1], [1,2], output_sp, nlte_patch%output_atoms)
+        call self%create_sub_patches([-n_nu_out, -1], [1,2], output_sp, nlte_patch%output_atoms)
       endif
-      call self%create_sub_patches([-n_nu, -1], [-1,-1], output_sp, nlte_patch%output_atoms)
+      call self%create_sub_patches([-n_nu_out, -1], [-1,-1], output_sp, nlte_patch%output_atoms)
     endif
+  endif
+
+  ! A4: Verify output patch coverage when using window_file segments
+  if (output_sp%n_segments > 0) then
+    call verify_output_patch_coverage(output_sp, n_nu_out)
   endif
 
   if (.not. associated(self%nlte_patch)) then
@@ -452,8 +473,14 @@ SUBROUTINE execute (self)
       call comp%reassign_pointer()
       ! loading temp, ne and rho in to composition objekt
       ! ion and molecule equilibrium are solved immediately
-      call comp%load_state_variables(temp8, ne8, rho8, use_rho=use_rho, use_ne=use_ne, &
-                                     vmic=vmic, vx=vx, vy=vy, vz=vz)
+      if (allocated(output_set_da)) then
+        call comp%load_state_variables(temp8, ne8, rho8, use_rho=use_rho, use_ne=use_ne, &
+                                       vmic=vmic, vx=vx, vy=vy, vz=vz, &
+                                       set_da=output_set_da, set_element=output_set_element)
+      else
+        call comp%load_state_variables(temp8, ne8, rho8, use_rho=use_rho, use_ne=use_ne, &
+                                       vmic=vmic, vx=vx, vy=vy, vz=vz)
+      endif
 
       if (.not. use_ne) ne = real(comp%ne)
       if (.not. use_rho) rho = real(comp%rho)

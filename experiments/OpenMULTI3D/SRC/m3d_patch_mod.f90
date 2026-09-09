@@ -151,6 +151,7 @@ MODULE m3d_patch_mod
     integer, public :: nz_total
     integer, public, save :: save_id=-1
     integer, public, save :: n_nu=-1
+    integer, public, save :: n_nu_out=0   ! A3: explicit output frequency split count; 0 means not yet set
     real(8), public:: convlim=1d-3, convmax=tiny(1.0)
     logical, public, save :: converged=.false., use_vel(3)=.true., premature_finish=.true.
     ! Number of nlte_patches created on this rank, and whether all of them have
@@ -226,6 +227,9 @@ MODULE m3d_patch_mod
     real(8), public, save :: dlam=100.
     real(8), public, dimension(:), allocatable :: rank_lvlerr
     character(len=128), save :: save_patch_kind=''
+    ! Optional input manifest for an extended output set axis (abundance ladder).
+    ! It must live outside run_dir, whose text outputs are cleared at startup.
+    character(len=512), public, save :: set_file=''
     real(4), public :: fixed_Jnu=-1.0
     ! Output-content selection formerly read via &atom_params
     logical, public, save :: save_populations=.true.
@@ -261,12 +265,14 @@ MODULE m3d_patch_mod
     namelist /output_params/ save_id, save_patch_kind, save_resolved, &
     save_cntrbf, depression_cntrbf, save_Inu, save_chi, save_Snu, save_Jnu, &
     Jnu_to_file, overlapping_bb_in_output, &
-    save_populations, save_rates, save_rate_matrix, bound_free_in_output
+    save_populations, save_rates, save_rate_matrix, bound_free_in_output, set_file
 
     namelist /m3d_debug_params/ verbose, fcheck, linecheck, lvlcheck, pcheck, &
     atomcheck, check_NaN, print_finished, print_lock, print_start, print_send, &
     diag_pops, diag_db, diag_no_scat_loop
 
+    ! Note: n_nu_out is not included in the namelist to maintain backward compatibility
+    ! with existing input files. It will be written separately to the output.
     namelist /run_params/ n_nu, comoving_frame, make_eos, rotate_atmos, &
     column_by_column, lam_tolerance
 
@@ -435,6 +441,7 @@ MODULE m3d_patch_mod
       write (io%namelist, output_params)
       write (io%namelist, m3d_debug_params)
       write (io%namelist, run_params)
+      ! A3: n_nu_out is saved via HDF5/structured output, not in the old namelist
       call echo_rt_params ()
       first_time = .false.
     endif

@@ -58,13 +58,43 @@ contains
   !===============================================================================
   SUBROUTINE set_freq_indices (self)
     class(ray_patch_t) :: self
-    integer :: fs, fe, i, nv
+    integer :: fs, fe, i, nv, i_seg, n_out
     integer, pointer :: counter
     character(len=16) :: label
     integer, dimension(:), allocatable :: order
     integer, save, target :: counter1=-999, counter2=-999
     !-----------------------------------------------------------------------------
-    call unequal_intervals(self%sp%nnu, self%i_nu, self%n_nu, fs, fe)
+    ! A3/A4: Check if this is an output patch with segment metadata.
+    ! Output patches with window_file use negative i_nu and segment boundaries.
+    if (self%do_out_sp .and. self%i_nu < 0 .and. self%sp%n_segments > 0) then
+      ! This is an output patch with segmented grid (A4 patch boundary selection)
+      ! Map negative i_nu to segment index: i_nu=-1 -> segment 1, i_nu=-2 -> segment 2, etc.
+      n_out = self%sp%n_segments
+      i_seg = -self%i_nu
+
+      if (i_seg < 1 .or. i_seg > n_out) then
+        write(stderr, '(A,I0,A,I0,A,I0)') &
+          'ERROR: output patch i_nu=', self%i_nu, ' maps to segment ', i_seg, &
+          ' but n_segments=', n_out
+        error stop 'output patch index out of segment range'
+      endif
+
+      ! Use explicit segment boundaries instead of unequal_intervals
+      fs = self%sp%segment_first(i_seg)
+      fe = self%sp%segment_last(i_seg)
+
+      ! Verify segment coverage (A4 assertion)
+      if (fs < 1 .or. fe < fs .or. fe > self%sp%nnu) then
+        write(stderr, '(A,I0,A,I0,A,I0,A,I0,A,I0)') &
+          'ERROR: segment ', i_seg, ' has invalid range [', fs, ',', fe, &
+          '] with nnu=', self%sp%nnu
+        error stop 'invalid segment boundaries'
+      endif
+    else
+      ! Internal patch or output patch without segment metadata: use unequal_intervals
+      call unequal_intervals(self%sp%nnu, self%i_nu, self%n_nu, fs, fe)
+    endif
+
     self%fs = fs
     self%fe = fe
     self%pre_pad_fs = fs
