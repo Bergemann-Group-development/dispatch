@@ -21,6 +21,8 @@ Read the reports in this order:
 4. [Implementation order and verification](roadmap.md): bounded changes and acceptance criteria.
 5. [Baseline: what the current ionisation-balance solver costs](baseline-ionisation-balance.md):
    the step-5 measurement, taken after steps 1-4 and 6 were implemented.
+6. [Cropping the line list per atmosphere node](node-linelist-crop.md): what the crop and the
+   local continuum cost and change, measured against that baseline.
 
 ## Highest-value conclusions
 
