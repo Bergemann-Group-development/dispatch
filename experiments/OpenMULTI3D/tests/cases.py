@@ -19,7 +19,7 @@ if str(ROOT) not in sys.path:
 
 # --- shared synthetic line -----------------------------------------------------------------
 # Gaussian absorption line: amp=0.42, sig=0.11 AA at 5000.05 AA on a +-2 AA window.
-# Analytic EW = amp*sqrt(2*pi)*sig = 0.11576... AA = 115.76 mAA (window truncation negligible).
+# Analytic EW = amp*sqrt(2*pi)*sig = 0.11576... AA = 115.76 maa (window truncation negligible).
 LINE_X0 = 5000.0
 LINE_CENTER = 5000.05
 LINE_AMP = 0.42
@@ -44,9 +44,12 @@ def ew_profile_cases():
     for name in sorted(profile_names()):
         prof = get_weq(x, y, x0=LINE_X0, profile=name, return_profile=True,
                        sigma=sigma, syst=0.02)
-        out[f"{name}_mAA"] = prof.mAA
-        out[f"{name}_err_phot_mAA"] = prof.err_phot_mAA
-        out[f"{name}_err_cont_mAA"] = prof.err_cont_mAA
+        # These dict keys are the stored golden keys and keep their original
+        # spelling: renaming one silently misses its array in the .npz. The
+        # attributes they read follow the lowercase unit-suffix convention.
+        out[f"{name}_mAA"] = prof.maa
+        out[f"{name}_err_phot_mAA"] = prof.err_phot_maa
+        out[f"{name}_err_cont_mAA"] = prof.err_cont_maa
         out[f"{name}_rew"] = prof.rew
         out[f"{name}_rew_err"] = prof.rew_err
         if prof.fitted:
@@ -140,7 +143,7 @@ def abundance_cases():
     out = {}
     # curve-of-growth inversion on a mildly nonlinear monotone CoG
     a_grid = np.linspace(-0.6, 0.6, 7)
-    ew_grid = 55.0 * 10 ** (0.62 * a_grid)  # mAA
+    ew_grid = 55.0 * 10 ** (0.62 * a_grid)  # maa
     inv = cog_invert(a_grid, ew_grid, ew_meas=50.0, ew_err=2.5)
     out["cog_a"] = inv["a"]
     out["cog_sigma_a"] = inv["sigma_a"]
@@ -161,9 +164,9 @@ def abundance_cases():
     x, y = gauss_line()
     prof = gui_ab.measure_ew(Spectrum(x, y), window=(4999.0, 5001.0), snr=80,
                              cont_pct=2.0, profile="gauss", x0=LINE_X0)
-    out["measure_ew_mAA"] = prof.mAA
-    out["measure_ew_err_phot_mAA"] = prof.err_phot_mAA
-    out["measure_ew_err_cont_mAA"] = prof.err_cont_mAA
+    out["measure_ew_mAA"] = prof.maa
+    out["measure_ew_err_phot_mAA"] = prof.err_phot_maa
+    out["measure_ew_err_cont_mAA"] = prof.err_cont_maa
     sa, sap, sac = gui_ab.sigma_a_from_rew(prof, drewda=0.4)
     out["sigma_a"] = sa
     out["sigma_a_phot"] = sap

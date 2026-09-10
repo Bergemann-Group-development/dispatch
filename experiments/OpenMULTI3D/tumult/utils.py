@@ -281,7 +281,7 @@ def get_weq(
 
     Pass ``return_profile=True`` to get the bound :class:`tumult.profile.Profile` instead — it
     carries the width, the reduced EW and the photon / continuum error split off one interface
-    (``.mAA``, ``.rew``, ``.rew_err``, ``.err_phot_mAA``/``.err_cont_mAA``), so a caller needs
+    (``.maa``, ``.rew``, ``.rew_err``, ``.err_phot_maa``/``.err_cont_maa``), so a caller needs
     neither a second call nor a manual REW / unit conversion.
     """
     cls = get_profile_class(profile)

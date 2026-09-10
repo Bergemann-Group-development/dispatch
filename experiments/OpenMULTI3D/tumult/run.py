@@ -16,7 +16,7 @@ from .flux import (base_set_indices, integrate_flux, ladder_sets,
                    split_ie)
 from .io_binary import read_patch_save as _read_patch_save
 from .linelist import LineList
-from .NameList import NameList
+from .namelist import NameList
 from .spectrum import Spectrum
 from .spectrum_grid import SpectrumGrid
 from .atmos import AtmosClass

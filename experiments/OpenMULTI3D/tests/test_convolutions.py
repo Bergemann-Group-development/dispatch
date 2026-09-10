@@ -31,9 +31,9 @@ def test_convolution_conserves_equivalent_width():
 
     x, y = gauss_line(n=4001, span=4.0)
     sp = Spectrum(x, y)
-    before = sp.get_weq(x0=5000.0 * u.AA, profile="trapz", return_profile=True).mAA
+    before = sp.get_weq(x0=5000.0 * u.AA, profile="trapz", return_profile=True).maa
     conv = sp.crop(vdop=2.0, vrot=1.5, zeta_rt=1.0)
-    after = conv.get_weq(x0=5000.0 * u.AA, profile="trapz", return_profile=True).mAA
+    after = conv.get_weq(x0=5000.0 * u.AA, profile="trapz", return_profile=True).maa
     assert after == pytest.approx(before, rel=1e-3)
 
 

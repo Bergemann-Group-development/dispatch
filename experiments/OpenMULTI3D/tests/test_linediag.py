@@ -68,7 +68,7 @@ def test_measure_masks_fills_each_window():
     linediag.measure_masks(_spectrum(), masks, profile="gauss", snr=200.0, cont_pct=0.5,
                            catalog=cat, element="Fe")
     ews = [m.diag["ew"] for m in masks]
-    # 0.45 * sqrt(2 pi) * 0.08 AA = 90.2 mAA, and 60.2 mAA for the shallower line
+    # 0.45 * sqrt(2 pi) * 0.08 AA = 90.2 maa, and 60.2 maa for the shallower line
     assert ews[0] == pytest.approx(90.2, abs=0.5)
     assert ews[1] == pytest.approx(60.2, abs=0.5)
     assert [m.diag["ion"] for m in masks] == ["Fe I", "Fe II"]

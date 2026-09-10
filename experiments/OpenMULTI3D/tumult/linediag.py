@@ -51,7 +51,7 @@ def _measure(ref_spec, lam0, fit_window, *, profile, snr, cont_pct):
     try:
         prof = ab.measure_ew(ref_spec, window=fit_window, snr=snr, cont_pct=cont_pct,
                              profile=profile, x0=lam0)
-        return prof.width_err_mAA, prof.err_phot_mAA
+        return prof.width_err_maa, prof.err_phot_maa
     except Exception:
         return float("nan"), float("nan")
 
@@ -91,7 +91,7 @@ def generate_masks(ref_spec, cand, *, profile, ew_min, snr, cont_pct, pad=DEFAUL
             masks.append(LineMask(**common, include=False, diag=_diag(
                 ion=ion, e_low=float(row.evi), loggf=float(row.loggf), flags=flags)))
             continue
-        ew, fwhm = lprof.mAA, float(lprof.fwhm)
+        ew, fwhm = lprof.maa, float(lprof.fwhm)
         if not np.isfinite(ew):
             continue
         if not flags and ew < ew_min:
@@ -126,8 +126,8 @@ def measure_masks(ref_spec, masks, *, profile, snr, cont_pct, catalog=None, elem
         try:
             prof = ab.measure_ew(ref_spec, window=fit_window, snr=snr, cont_pct=cont_pct,
                                  profile=profile, x0=lam0)
-            ew, fwhm = prof.mAA, float(prof.fwhm)
-            ew_err, ew_err_phot = prof.width_err_mAA, prof.err_phot_mAA
+            ew, fwhm = prof.maa, float(prof.fwhm)
+            ew_err, ew_err_phot = prof.width_err_maa, prof.err_phot_maa
         except Exception:
             ew_err = ew_err_phot = float("nan")
             flags = flags + ("no_window",)

@@ -62,8 +62,8 @@ def _stage1(profile="gauss"):
     ref = _line_spec(0.0, (LAM0 - 1.0, LAM0 + 1.0))
     prof, win, fitw, _flags = ab.measure_line(ref, {"lam0": LAM0}, profile=profile)
     line = ab.LineResult(
-        lam0=LAM0, ion="O I", e_low=0.0, loggf=0.0, ew=prof.mAA,
-        ew_err=float(prof.width_err_mAA), fwhm=float(prof.fwhm),
+        lam0=LAM0, ion="O I", e_low=0.0, loggf=0.0, ew=prof.maa,
+        ew_err=float(prof.width_err_maa), fwhm=float(prof.fwhm),
         mask=ab.LineMask(lam0=LAM0, lmin=fitw[0], lmax=fitw[1],
                          smin=win[0], smax=win[1], note="O I"))
     res = ab.AbundanceResult(element="O", symbol="O", lines=[line],

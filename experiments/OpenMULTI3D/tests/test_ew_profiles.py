@@ -38,7 +38,7 @@ def test_gauss_ew_matches_analytic():
     analytic_maa = LINE_AMP * np.sqrt(2 * np.pi) * LINE_SIG * 1e3
     for profile in ("gauss", "trapz", "pchip", "voigt", "asym_gauss"):
         prof = get_weq(x, y, x0=LINE_X0, profile=profile, return_profile=True)
-        assert prof.mAA == pytest.approx(analytic_maa, rel=1e-3), profile
+        assert prof.maa == pytest.approx(analytic_maa, rel=1e-3), profile
 
 
 def test_spectrum_get_weq_equals_utils_get_weq():
@@ -51,7 +51,7 @@ def test_spectrum_get_weq_equals_utils_get_weq():
     for profile in ("gauss", "trapz"):
         direct = get_weq(x, y, x0=LINE_X0, profile=profile, return_profile=True)
         via_spec = sp.get_weq(x0=LINE_X0 * u.AA, profile=profile, return_profile=True)
-        assert via_spec.mAA == pytest.approx(direct.mAA, rel=1e-12), profile
+        assert via_spec.maa == pytest.approx(direct.maa, rel=1e-12), profile
         assert via_spec.rew == pytest.approx(direct.rew, rel=1e-12), profile
 
 
@@ -63,13 +63,13 @@ def test_error_budget_composition():
     sigma = np.full(x.size, 1.0 / 80.0)
     prof = get_weq(x, y, x0=LINE_X0, profile="trapz", return_profile=True,
                    sigma=sigma, syst=0.02)
-    assert prof.err_phot_mAA > 0
-    assert prof.err_cont_mAA > 0
-    assert prof.width_err_mAA == pytest.approx(
-        np.hypot(prof.err_phot_mAA, prof.err_cont_mAA), rel=1e-12)
+    assert prof.err_phot_maa > 0
+    assert prof.err_cont_maa > 0
+    assert prof.width_err_maa == pytest.approx(
+        np.hypot(prof.err_phot_maa, prof.err_cont_maa), rel=1e-12)
     # sigma_REW = sigma_W / (W ln10)
     assert prof.rew_err == pytest.approx(
-        prof.width_err_mAA / (prof.mAA * np.log(10)), rel=1e-12)
+        prof.width_err_maa / (prof.maa * np.log(10)), rel=1e-12)
 
 
 def test_reduced_ew_guards():

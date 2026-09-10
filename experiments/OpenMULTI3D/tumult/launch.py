@@ -5,7 +5,7 @@ from .auxfuncs import check_file, update_dict
 import re
 import numpy as np
 import pathlib
-from tumult.NameList import NameList
+from tumult.namelist import NameList
 
 def _load_default(item):
     """Load one default into a NameList-compatible mapping.

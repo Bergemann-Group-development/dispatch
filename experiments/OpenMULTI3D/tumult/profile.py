@@ -202,20 +202,20 @@ class Profile:
         return float(self.weq.to(unit).value)
 
     @property
-    def mAA(self) -> float:
+    def maa(self) -> float:
         """Equivalent width in mÅ."""
         return self.width(u.mAA)
 
     @property
-    def err_phot_mAA(self) -> float:
+    def err_phot_maa(self) -> float:
         return float(self.err_phot.to(u.mAA).value)
 
     @property
-    def err_cont_mAA(self) -> float:
+    def err_cont_maa(self) -> float:
         return float(self.err_cont.to(u.mAA).value)
 
     @property
-    def width_err_mAA(self) -> float:
+    def width_err_maa(self) -> float:
         return float(self.weq_err.to(u.mAA).value)
 
     # -- reduced EW (log10 W/λ, dimensionless & unit-independent) -----------------------

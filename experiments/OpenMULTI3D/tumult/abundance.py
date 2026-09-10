@@ -101,9 +101,9 @@ class LineResult:
     ion: str                    # species label, e.g. "Fe I"
     e_low: float                # lower-level excitation energy [eV]
     loggf: float
-    ew: float = float("nan")    # measured equivalent width [mAA]
-    ew_err: float = float("nan")  # combined 1σ EW error [mAA]
-    ew_species: float = float("nan")  # query-species-only EW in the fit window [mAA] (weak screen)
+    ew: float = float("nan")    # measured equivalent width [maa]
+    ew_err: float = float("nan")  # combined 1σ EW error [maa]
+    ew_species: float = float("nan")  # query-species-only EW in the fit window [maa] (weak screen)
     fwhm: float = float("nan")  # fitted profile FWHM [AA]
     mask: LineMask = field(default_factory=LineMask)  # fit [lmin,lmax] + synth [smin,smax] windows
     a: float = float("nan")     # abundance (A(X) or [X/Fe], caller's convention)
@@ -178,7 +178,7 @@ def measure_profile(spec, window=None, *, profile, x0=None, **kw):
 
     Thin wrapper over :meth:`tumult.Spectrum.measure`, which owns the window crop and the
     plain-``x0`` unit coercion. ``sigma`` / ``syst`` (kwargs) fold in the photon / continuum
-    error terms. The returned Profile exposes the width (``.mAA``), the reduced EW (``.rew``)
+    error terms. The returned Profile exposes the width (``.maa``), the reduced EW (``.rew``)
     and the error split off one interface.
     """
     return spec.measure(window or None, profile=profile, x0=x0, auto_crop=False, **kw)
@@ -186,7 +186,7 @@ def measure_profile(spec, window=None, *, profile, x0=None, **kw):
 
 def _ew(spec, window=None, profile="trapz", x0=None):
     """Noiseless *width* EW of a (synthetic) spectrum over ``window``, in mÅ."""
-    return measure_profile(spec, window, profile=profile, x0=x0).mAA
+    return measure_profile(spec, window, profile=profile, x0=x0).maa
 
 
 def _rew(spec, window=None, profile="trapz", x0=None):
@@ -198,8 +198,8 @@ def measure_ew(spec, window=None, snr=None, cont_pct=0.0, profile="trapz", x0=No
     """Measure a line's EW as a :class:`~tumult.profile.Profile` with a photon / continuum error split.
 
     ``snr`` None (a synthetic reference) drops the photon term; ``cont_pct`` 0 drops the continuum
-    term. A single measurement carries both shares — ``.err_phot_mAA`` (SNR) and ``.err_cont_mAA``
-    (continuum offset), combining in quadrature to ``.width_err_mAA`` — so no second pass is needed.
+    term. A single measurement carries both shares — ``.err_phot_maa`` (SNR) and ``.err_cont_maa``
+    (continuum offset), combining in quadrature to ``.width_err_maa`` — so no second pass is needed.
     (The REW conversion for the abundance error happens in :func:`sigma_a_from_rew`.)
     """
     sub = _crop(spec, window)
@@ -367,9 +367,9 @@ def measure_line(ref_spec, line, profile="gauss", fallback=0.4, resolution=None)
     """Stage 1: fit a line on the reference and return the bound Profile plus its windows.
 
     Independent of any stellar parameters. Returns ``(prof, window, fit_window, flags)``:
-    ``prof`` is the fitted :class:`tumult.profile.Profile` — it carries the EW (``.mAA``),
+    ``prof`` is the fitted :class:`tumult.profile.Profile` — it carries the EW (``.maa``),
     the FWHM, the model ``.func`` (for hatching the integrated area on jump) **and the
-    fit-covariance EW error** (``.width_err_mAA``; with no per-pixel noise given, the
+    fit-covariance EW error** (``.width_err_maa``; with no per-pixel noise given, the
     covariance is residual-scaled, so this error measures the profile/model mismatch —
     nonzero even on a noiseless synthetic spectrum). ``fit_window`` is the auto-crop
     window the profile was actually fitted over, and ``window`` the wider synthesis /
@@ -513,7 +513,7 @@ def finalize_line(line, ref_spec, snr, cont_pct, profile="gauss"):
     """
     prof = measure_ew(
         ref_spec, window=line.fit_window, snr=snr, cont_pct=cont_pct, profile=profile, x0=line.lam0)
-    line.ew, line.ew_err = prof.mAA, prof.width_err_mAA
+    line.ew, line.ew_err = prof.maa, prof.width_err_maa
     if not np.isfinite(getattr(line, "drewda", float("nan"))):
         return line
     sa, sap, sac = sigma_a_from_rew(prof, line.drewda)
@@ -684,7 +684,7 @@ MIN_FIT_POINTS = 7     # a fit region sampled by fewer reference points than thi
 class CorrectionOpts:
     """Thresholds and ladder shape for the NLTE-correction workflow."""
     profile: str = "gauss"
-    ew_min: float = 5.0                      # mAA - reference lines weaker than this are dropped
+    ew_min: float = 5.0                      # maa - reference lines weaker than this are dropped
     span: float = CORR_SPAN
     points: int = CORR_N
     min_fit_points: int = MIN_FIT_POINTS
@@ -755,9 +755,9 @@ def measure_reference_lines(request, atom, *, ref_grid, opts=None, cancel_token=
                 ref_spec, {"lam0": float(row.lam0)}, profile=profile)
         except Exception:
             continue
-        if "no_window" in flags or lprof is None or not np.isfinite(lprof.mAA):
+        if "no_window" in flags or lprof is None or not np.isfinite(lprof.maa):
             continue
-        ew, fwhm, func = lprof.mAA, float(lprof.fwhm), lprof.func
+        ew, fwhm, func = lprof.maa, float(lprof.fwhm), lprof.func
         # a fit region resolved from too few reference samples can't be fitted reliably;
         # flag it (and exclude it) so it doesn't skew the corrections.
         flags = list(flags)
@@ -768,7 +768,7 @@ def measure_reference_lines(request, atom, *, ref_grid, opts=None, cancel_token=
         # residual-scaled covariance measures the profile/model mismatch, and it propagates
         # to a per-line sigma(dA) through the CoG slope in stage 2 - the formal error the
         # weighted element mean uses.
-        ew_err = float(lprof.width_err_mAA)
+        ew_err = float(lprof.width_err_maa)
         # flag (and exclude) a line whose EW is more uncertain than the EW itself: the
         # fit-covariance error is the only EW uncertainty on the synthetic reference, so
         # ew_err > ew means the measurement is not trustworthy.

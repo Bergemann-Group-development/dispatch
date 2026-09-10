@@ -759,7 +759,7 @@ class Spectrum:
         """Measure a line over ``window`` and return the bound :class:`tumult.profile.Profile`.
 
         The single rich entry point for equivalent widths: the returned Profile carries
-        the width (``.mAA``/``.weq``), the reduced EW (``.rew``), the FWHM, the fitted
+        the width (``.maa``/``.weq``), the reduced EW (``.rew``), the FWHM, the fitted
         model ``.func`` and the photon / continuum error split - everything the flag
         combinations of :meth:`get_weq` used to select between.
 

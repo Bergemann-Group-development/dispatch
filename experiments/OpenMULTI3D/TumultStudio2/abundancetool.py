@@ -135,7 +135,7 @@ class AbundanceTool(AbundanceWizard):
                                      cont_pct=cont_pct, profile=res.profile, x0=ln.lam0)
             except Exception:
                 continue
-            ln.ew, ln.ew_err = prof.mAA, prof.width_err_mAA
+            ln.ew, ln.ew_err = prof.maa, prof.width_err_maa
             changed = True
         if changed:
             self._render_selected()

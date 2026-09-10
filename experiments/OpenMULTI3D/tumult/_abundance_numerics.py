@@ -212,7 +212,7 @@ def sigma_a_from_rew(prof, drewda):
     zero gradient / EW blows the error up to ``inf`` (as a saturated or vanished line should).
     """
     g = abs(float(drewda))
-    if not np.isfinite(prof.mAA) or prof.mAA <= 0 or not np.isfinite(g) or g == 0:
+    if not np.isfinite(prof.maa) or prof.maa <= 0 or not np.isfinite(g) or g == 0:
         return np.inf, np.inf, np.inf
     s_phot = prof.rew_err_phot / g
     s_cont = prof.rew_err_cont / g

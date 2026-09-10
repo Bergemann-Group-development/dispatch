@@ -196,8 +196,8 @@ class EquivalentWidth(Tool, RangeSelect):
             # through the same primitive the abundance wizards use, so the numbers agree exactly.
             prof = ab.measure_ew(sub, snr=self.snr, cont_pct=self.cont_pct,
                                  profile=self.profile, x0=0.5 * (b0 + b1))
-            self._weq = prof.mAA
-            self._weq_err = prof.width_err_mAA
+            self._weq = prof.maa
+            self._weq_err = prof.width_err_maa
             self._rew = prof.rew
 
             disp = sub.convert_units(xunit=self.canvas.xunit, yunit=self.canvas.yunit)
