@@ -749,11 +749,11 @@ class Spectrum:
         """
         # (pre-consolidation this unpacked 4 values from the 3-value fit_line_profile
         # and could never have run; fixed to evaluate the fitted model on the grid)
-        x, y = self.values
-        pout, pcov, func = fit_line_profile(x, y, **kwargs)
+        xx, yy = self.values
+        pout, pcov, func = fit_line_profile(xx, yy, **kwargs)
         if pout is None:
             raise ValueError("Line profile fit failed over the given data.")
-        return Spectrum(self.xdata, func(x), yunit=self.yunit, xref=self.xref)
+        return Spectrum(self.xdata, func(xx), yunit=self.yunit, xref=self.xref)
 
     def measure(self, window=None, *, profile="gauss", x0=None, **kwargs):
         """Measure a line over ``window`` and return the bound :class:`tumult.profile.Profile`.
@@ -943,10 +943,10 @@ class Spectrum:
         file (e.g. an interpolated synthesis result) be embedded directly in a
         saved session.
         """
-        x, y = self.values
+        xx, yy = self.values
         return {
-            "x": x.tolist(),
-            "y": y.tolist(),
+            "x": xx.tolist(),
+            "y": yy.tolist(),
             "xunit": str(self.xunit),
             "yunit": str(self.yunit),
             "xref": float(self.xref.value),

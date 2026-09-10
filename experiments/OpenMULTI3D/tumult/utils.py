@@ -446,15 +446,15 @@ def _prepare_profile_data(xx, yy, x0, dlam, auto_crop, plot=False):
 
     if dlam is not None:
         mask = np.abs(xx - x0) < dlam
-        x = xx[mask]
-        y = yy[mask]
+        xc = xx[mask]
+        yc = yy[mask]
     elif auto_crop:
-        x, y = auto_crop_core(xx, yy, x0, plot=plot)
+        xc, yc = auto_crop_core(xx, yy, x0, plot=plot)
     else:
-        x = xx
-        y = yy
+        xc = xx
+        yc = yy
 
-    return x, y, x0
+    return xc, yc, x0
 
 
 def fit_line_profile(

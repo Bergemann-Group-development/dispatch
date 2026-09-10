@@ -118,10 +118,10 @@ def scatter_density(xx, yy, radius=0, cmap='binary', vmin=0, vmax=None, aspect='
 
   if radius > 0:
     # Circle convolution kernel
-    x = np.arange(-radius, radius+1)
-    y = np.arange(-radius, radius+1)
-    x, y = np.meshgrid(x, y)
-    circle = np.sqrt(x**2 + y**2)
+    xx = np.arange(-radius, radius+1)
+    yy = np.arange(-radius, radius+1)
+    xx, yy = np.meshgrid(xx, yy)
+    circle = np.sqrt(xx**2 + yy**2)
     circle = np.interp(circle.ravel(), [radius, radius+1], [1, 0]).reshape(circle.shape)
     circle = circle / circle.sum()
     image = convolve(image, circle)

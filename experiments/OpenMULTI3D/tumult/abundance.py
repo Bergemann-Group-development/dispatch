@@ -268,9 +268,9 @@ def auto_window(spec, lam0, exclude_wing=False, fallback=0.4, resolution=None):
     points) the bounds fall back to ``lam0 ± fallback`` Å and ``found`` is ``False`` so the
     caller can reject the line rather than trust the fallback window.
     """
-    x, y = spec.values
+    xx, yy = spec.values
     try:
-        xc, _ = auto_crop_core(x, y, lam0, exclude_wing=exclude_wing, resolution=resolution)
+        xc, _ = auto_crop_core(xx, yy, lam0, exclude_wing=exclude_wing, resolution=resolution)
         if len(xc) >= 3:
             return (float(np.min(xc)), float(np.max(xc))), True
     except Exception:
@@ -391,10 +391,10 @@ def measure_line(ref_spec, line, profile="gauss", fallback=0.4, resolution=None)
         nan = float("nan")
         return None, (nan, nan), (nan, nan), ("no_window",)
     sub = _crop(ref_spec, fit_window)
-    x, y = sub.values
+    xx, yy = sub.values
     try:
         prof = get_profile_class(profile).measure(
-            np.asarray(x, float), np.asarray(y, float), x0=lam0, xunit=sub.xunit)
+            np.asarray(xx, float), np.asarray(yy, float), x0=lam0, xunit=sub.xunit)
     except ValueError as exc:
         raise RuntimeError(f"profile fit failed at {lam0:.3f}") from exc
     center = float(prof.params[0])

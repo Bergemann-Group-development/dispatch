@@ -131,11 +131,11 @@ def reject_outliers(spec, *, resolution=None, window=None, percentile=None):
     base = spec.lowpass(resolution) if resolution and resolution > 0 else spec
     if not (window and window > 0 and percentile and 0 < percentile < 100):
         return base
-    x, y = base.values
-    dx = abs(float(np.mean(np.diff(x)))) if len(x) > 1 else 0.0
+    xx, yy = base.values
+    dx = abs(float(np.mean(np.diff(xx)))) if len(xx) > 1 else 0.0
     nstep = max(1, int(round(window / dx))) if dx else 1
-    excess = y - uniform_filter1d(y, nstep, mode="nearest")   # vs the local mean
-    mask = excess <= np.percentile(excess, percentile)        # keep points within it
+    excess = yy - uniform_filter1d(yy, nstep, mode="nearest")  # vs the local mean
+    mask = excess <= np.percentile(excess, percentile)         # keep points within it
     if mask.sum() < 2:
         return base
-    return Spectrum(base.xdata[mask], y[mask], yunit=base.yunit, xref=base.xref)
+    return Spectrum(base.xdata[mask], yy[mask], yunit=base.yunit, xref=base.xref)

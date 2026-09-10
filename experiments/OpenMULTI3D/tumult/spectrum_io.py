@@ -73,14 +73,14 @@ def load_spectrum(path, **read_kwargs) -> Spectrum:
     df = pd.read_csv(path, **kwargs)
     # coerce non-numeric junk (stray count lines, embedded NULs, ...) to NaN and
     # drop those rows rather than letting a single bad row abort the whole load
-    x = pd.to_numeric(df.iloc[:, 0], errors="coerce").to_numpy()
-    y = pd.to_numeric(df.iloc[:, 1], errors="coerce").to_numpy()
-    good = np.isfinite(x) & np.isfinite(y)
-    x, y = x[good], y[good]
-    if x.size and x[0] > x[-1]:  # keep ascending so crop's searchsorted is happy
-        x, y = x[::-1], y[::-1]
+    xx = pd.to_numeric(df.iloc[:, 0], errors="coerce").to_numpy()
+    yy = pd.to_numeric(df.iloc[:, 1], errors="coerce").to_numpy()
+    good = np.isfinite(xx) & np.isfinite(yy)
+    xx, yy = xx[good], yy[good]
+    if xx.size and xx[0] > xx[-1]:  # keep ascending so crop's searchsorted is happy
+        xx, yy = xx[::-1], yy[::-1]
     # no units in a plain text file -> wavelength assumed Å, flux assumed normalized
-    return Spectrum(x, y, yunit=u.dimensionless_unscaled)
+    return Spectrum(xx, yy, yunit=u.dimensionless_unscaled)
 
 
 def _cards_frame(header):

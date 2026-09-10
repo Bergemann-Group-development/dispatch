@@ -461,11 +461,11 @@ def seed_cont_markers(raw, mask: LineMask, pct: float = None) -> tuple:
     from .continuum import SEED_PERCENTILE, flat_level, upper_envelope_fit
 
     pct = SEED_PERCENTILE if pct is None else pct
-    x, y = raw.values
-    x = np.asarray(x, float)
-    y = np.asarray(y, float)
-    inwin = (x >= mask.smin) & (x <= mask.smax)
-    xi, yi = x[inwin], y[inwin]
+    xx, yy = raw.values
+    xx = np.asarray(xx, float)
+    yy = np.asarray(yy, float)
+    inwin = (xx >= mask.smin) & (xx <= mask.smax)
+    xi, yi = xx[inwin], yy[inwin]
     x1 = float(mask.lmin if np.isfinite(mask.lmin) else mask.smin)
     x2 = float(mask.lmax if np.isfinite(mask.lmax) else mask.smax)
     fit = upper_envelope_fit(xi, yi, pct)
