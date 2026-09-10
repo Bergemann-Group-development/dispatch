@@ -177,17 +177,22 @@ def free_diags(free=None):
 
 
 def converged(diags, tols=None, free=None):
-    """True when every finite gating diagnostic is inside its tolerance.
-
-    An all-NaN set is not converged (nothing was measured), and neither is a solve with no
-    free parameter — that is a diagnostic evaluation, and the caller labels it as one.
-    """
+    """True when every free diagnostic is finite and inside its tolerance."""
     tols = {**DEFAULT_TOLS, **(tols or {})}
     keys = free_diags(free)
-    finite = [k for k in keys if np.isfinite(diags.get(k, float("nan")))]
-    if not finite:
-        return False
-    return all(abs(diags[k]) <= tols[k] for k in finite)
+    return bool(keys) and all(
+        np.isfinite(diags.get(k, float("nan"))) and abs(diags[k]) <= tols[k]
+        for k in keys)
+
+
+def balance_status(diags, tols=None, free=None):
+    """Classify an evaluated balance independently of its iteration budget."""
+    keys = free_diags(free)
+    if not keys:
+        return "diagnostic"
+    if any(not np.isfinite(diags.get(k, float("nan"))) for k in keys):
+        return "undetermined"
+    return "converged" if converged(diags, tols, free) else "iteration_limit"
 
 
 @dataclass
@@ -381,12 +386,6 @@ def grid_bounds(grid, atmos_file=None):
     return bounds
 
 
-def _strip_element(text, element):
-    """Drop any user ``X=`` term from the base abundance overrides (the solver owns it)."""
-    pre = f"{str(element).lower()}="
-    return " ".join(t for t in str(text or "").split() if not t.lower().startswith(pre))
-
-
 def solve_ionisation_balance(request, result, opts=None, *, progress=None, cancel_token=None):
     """Iterate the excitation-ionization balance to convergence on ``result.lines``.
 
@@ -400,8 +399,22 @@ def solve_ionisation_balance(request, result, opts=None, *, progress=None, cance
     ``progress(result)`` is called as each line and each iteration lands, so a caller can
     stream partial results; it must not raise.
     """
+    from .synthesis.cancel import CancelledError
+    try:
+        solved = _solve_balance(request, result, opts, progress, cancel_token)
+    except CancelledError:
+        result.termination, result.converged = "cancelled", False
+        raise
+    except Exception:
+        result.termination, result.converged = "failed", False
+        raise
+    result.stage = "solved"
+    return solved
+
+
+def _solve_balance(request, result, opts, progress, cancel_token):
     from . import abundance as ab
-    from .abundance import abundance_override, padded_window, xfe_to_abund
+    from .abundance import abundance_override, padded_window, strip_abundance, xfe_to_abund
     from .synthesis import workflows as synth
     from .synthesis.cancel import CancelledError
 
@@ -411,7 +424,7 @@ def solve_ionisation_balance(request, result, opts=None, *, progress=None, cance
     element = result.element
     base_rv = dict(request.run_vals)
     relative = bool(base_rv.get("relative_abundances", False))
-    base_abund = _strip_element(base_rv.get("abundances", ""), element)
+    base_abund = strip_abundance(base_rv.get("abundances", ""), element)
     solar = synth.abund_table(prefs)
     solar_x = solar.get(element)
     if solar_x is None:
@@ -421,7 +434,17 @@ def solve_ionisation_balance(request, result, opts=None, *, progress=None, cance
     any_free = any(free.values())
     params = dict(result.params0)
     state = SolverState(params=dict(params), bounds=grid_bounds(grid, atmos_file))
+    from dataclasses import asdict
+    result.synthesis = asdict(request)
+    result.synthesis["target"] = tuple(params[k] for k in PARAM_KEYS)
     result.solar_x = float(solar_x)
+    result.converged = False
+    result.termination = "running"
+    result.history = []
+    result.params = dict(params)
+    result.diags = {}
+    if int(opts["max_iter"]) < 1 or float(opts["span"]) <= 0 or int(opts["points"]) < 2:
+        raise ValueError("Balance needs max_iter >= 1, span > 0 and points >= 2.")
 
     def rv_point(a_rel, feh, only=True, exclude=False):
         rv = dict(base_rv)
@@ -478,6 +501,9 @@ def solve_ionisation_balance(request, result, opts=None, *, progress=None, cance
             raise CancelledError()
         target = tuple(params[k] for k in PARAM_KEYS)
         feh = params["feh"]
+        for ln in result.lines:
+            if ln.include:
+                ln.a = float("nan")
         active = [(i, ln) for i, ln in enumerate(result.lines)
                   if ln.include and np.isfinite(ln.ew) and ln.ew > 0]
         if not active:
@@ -580,18 +606,22 @@ def solve_ionisation_balance(request, result, opts=None, *, progress=None, cance
         result.params = dict(params)
         result.diags = dict(diags)
         report(result)
-        if not any(np.isfinite(diags.get(k, float("nan"))) for k in DIAG_KEYS):
-            # not one line could be inverted, so every diagnostic is NaN and every parameter
-            # holds — iterating again would synthesise the same thing and learn the same
-            # nothing. Usually an entry point too far from the star for the curve-of-growth
-            # ladder to reach the measured EWs.
+        result.termination = balance_status(diags, result.tols, free)
+        result.converged = result.termination == "converged"
+        if result.termination != "iteration_limit":
             break
-        if any_free and converged(diags, result.tols, free):
-            result.converged = True
-            break
-        if not any_free:
-            break
-        params = step(state, diags, free=free)
+        if it < max_iter:
+            previous = params
+            params = step(state, diags, free=free)
+            if params == previous:
+                result.termination = "boundary"
+                break
+
+    if not result.history:
+        result.termination = "undetermined"
+    if result.termination == "undetermined" and any(
+            ln.include and "synth_failed" in ln.flags for ln in result.lines):
+        result.termination = "failed"
 
     result.jac = dict(state.jac)
     result.sigmas = uncertainties(diags, state.jac, free)

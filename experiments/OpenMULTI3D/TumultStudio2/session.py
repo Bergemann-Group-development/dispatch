@@ -23,6 +23,7 @@ def _kept(cls, d):
 @dataclass
 class ObjectSnap:
     """One restorable spectrum: where it was loaded from plus its display state."""
+    uid: str | None = None
     kind: str = ""            # "file" | "run" (path-backed) | "synth" (data embedded below)
     path: str = ""
     name: str = ""
@@ -61,6 +62,7 @@ class FilterSnap:
 
 @dataclass
 class Workspace:
+    schema_version: int = 1
     objects: list = field(default_factory=list)   # list[ObjectSnap]
     units: dict = field(default_factory=dict)     # {"x": label, "y": label}
     view: dict = field(default_factory=dict)      # {"main": [lo, hi] | None, "nav": ...}

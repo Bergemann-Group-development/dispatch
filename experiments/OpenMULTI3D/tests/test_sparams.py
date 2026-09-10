@@ -111,8 +111,9 @@ def test_converged():
     good = {"s_exc": 0.001, "s_rew": 0.005, "d_ion": 0.005, "d_feh": -0.005}
     assert sp.converged(good)
     assert not sp.converged({**good, "d_ion": 0.05})
-    # a NaN diagnostic doesn't block convergence of the others…
-    assert sp.converged({**good, "d_ion": float("nan")})
+    # A free parameter without a diagnostic is undetermined.
+    assert not sp.converged({**good, "d_ion": float("nan")})
+    assert sp.converged({**good, "d_ion": float("nan")}, free={"logg": False})
     # …but an all-NaN set is not converged
     assert not sp.converged({k: float("nan") for k in sp.DIAG_KEYS})
 
@@ -275,6 +276,8 @@ def test_measurement_reaggregates_without_synthesis():
     res.reaggregate()
     assert res.diags["n_2"] == 0 and np.isnan(res.diags["d_ion"])
     assert res.diags["a_1"] == pytest.approx(7.4)
+    assert not res.converged
+    assert res.termination == "stale"
 
 
 def test_measurement_staleness_follows_the_windows():
@@ -377,3 +380,43 @@ def test_abundance_override_distinguishes_close_values():
     a = ab.abundance_override("Fe", 0.2500, relative=True, feh=0.0, solar={})
     b = ab.abundance_override("Fe", 0.2501, relative=True, feh=0.0, solar={})
     assert a != b
+
+
+def test_balance_requires_excitation_and_rew_coverage():
+    lines = [_line(5000., "Fe I", 2., 50., 7.5) for _ in range(4)]
+    lines.append(_line(5100., "Fe II", 3., 40., 7.5))
+    diags = sp.diagnostics(lines, 0., SOLAR_FE)
+    assert sp.balance_status(diags) == "undetermined"
+    assert sp.balance_status(diags, free={"teff": False, "vmic": False}) == "converged"
+    assert sp.balance_status(diags, free=dict.fromkeys(sp.PARAM_KEYS, False)) == "diagnostic"
+
+
+def test_measurement_can_seed_independent_abundance_and_balance_fits():
+    from tumult.measured import MeasuredLines
+    measurement = _measurement().measurement()
+    assert type(measurement) is MeasuredLines
+    assert np.isnan(measurement.lines[0].a)
+    abundance = ab.AbundanceResult.from_measurement(measurement, symbol='Fe', summary={})
+    balance = ms.BalanceResult.from_measurement(measurement, params0=dict(TRUTH))
+    abundance.lines[0].a = 7.9
+    abundance.lines[0].mask.lmin = 4900.
+    assert np.isnan(balance.lines[0].a)
+    assert balance.lines[0].mask.lmin != 4900.
+    restored = MeasuredLines.from_dict(measurement.to_dict())
+    assert restored.element == measurement.element
+    assert restored.lines[0].ew == measurement.lines[0].ew
+
+
+def test_legacy_balance_does_not_restore_unconstrained_success():
+    data = _measurement().to_dict()
+    data.pop('schema_version')
+    data.pop('termination')
+    restored = ms.BalanceResult.from_dict(data)
+    assert not restored.converged
+    assert restored.termination == 'undetermined'
+
+
+def test_abundance_override_replaces_existing_element():
+    value = ab.abundance_override('Fe', .2, base='Ca=0.3000, fe=-0.1',
+                                  relative=True, feh=0., solar={})
+    assert value == 'Ca=0.3000 Fe=0.2000'

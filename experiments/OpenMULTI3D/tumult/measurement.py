@@ -1,28 +1,11 @@
-"""The measurement object: what one spectrum says about one line-mask set.
-
-A :class:`linemask.LineMaskSet` is durable and star-independent — the windows, and nothing
-else. Everything a *particular* observation says about those windows (each window's EW, the
-species that dominates it, whether it survived curation) is spectrum-dependent, so it lives
-here instead, in an object of its own listed beside the spectra and the mask sets.
-
-One measurement is born per launch from the LineMasks view and never re-measures: it copies
-the windows it was given (the source set stays free to be edited afterwards — see
-:meth:`Measurement.stale_against`), measures them once, and from then on owns its own
-curation. The *fit* on top of it is replaceable: refitting from inside the object overwrites
-``params``/``history``/``diags``/``sigmas`` in place, which is why the entry point that
-produced the standing fit is kept in ``params0`` — it is the pre-fill for the next one.
-
-The fit record here is the ionization-balance one (:mod:`sparams`, driven by
-:mod:`ionbalance`). The measurement half — lines, provenance, curation — is deliberately
-free of it, so the abundance workflow can adopt the same object.
-"""
+"""Balance results built on reusable measured features."""
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass, field
 
 from . import sparams as sp
-from .abundance import LineResult
+from .measured import MeasuredLines
 
 # stages: measured (EWs + identification done) → solved (a fit stands on it)
 STAGE_MEASURED = "measured"
@@ -42,23 +25,11 @@ def mask_key(mset) -> str:
 
 
 @dataclass
-class Measurement:
-    """One line-mask set measured on one spectrum, plus the fit standing on it."""
-
-    # --- the measurement (never overwritten once made) ---------------------------------
-    lines: list = field(default_factory=list)        # list[abundance.LineResult]
-    element: str = ""                                 # the species the windows diagnose
-    maskset_uid: str = ""                             # provenance: which set, under what name
-    maskset_name: str = ""
-    maskset_key: str = ""                             # see mask_key()
-    ref_name: str = ""                                # the target observation's name
-    profile: str = "gauss"
-    snr: float | None = None
-    cont_pct: float = float("nan")
-    ident_star: str = ""                              # refstar the identification ranked on
-    ident_note: str = ""                              # how identities were assigned
+class BalanceResult(MeasuredLines):
+    """A stellar-parameter fit and its independently owned measured features."""
 
     # --- the fit (overwritten by each refit) --------------------------------------------
+    synthesis: dict = field(default_factory=dict)
     stage: str = STAGE_MEASURED
     params: dict = field(default_factory=dict)        # solved (teff, logg, feh, vmic)
     params0: dict = field(default_factory=dict)       # the entry point that produced them
@@ -69,6 +40,7 @@ class Measurement:
     sigmas: dict = field(default_factory=dict)
     jac: dict = field(default_factory=dict)           # final diagonal, for re-aggregation
     tols: dict = field(default_factory=dict)
+    termination: str = "measured"
     converged: bool = False
     solar_x: float = float("nan")                     # A_solar(element) the fit used
 
@@ -90,6 +62,16 @@ class Measurement:
     def diagnose_only(self):
         """True when the standing fit held every parameter: diagnostics, not a solution."""
         return bool(self.free) and not any(self.free.values())
+
+    @property
+    def status_label(self):
+        return {"diagnostic": "diagnostics at the given parameters",
+                "iteration_limit": "max iterations reached",
+                "undetermined": "undetermined: insufficient diagnostics",
+                "boundary": "stopped at parameter bounds",
+                "failed": "synthesis failed", "cancelled": "cancelled",
+                "stale": "curation changed: refit required"}.get(
+                    self.termination, self.termination)
 
     def stale_against(self, mset):
         """True when the source set's windows have moved since this was measured."""
@@ -122,19 +104,19 @@ class Measurement:
         self.diags = sp.diagnostics(self.lines, feh, self.solar_x)
         self.sigmas = sp.uncertainties(self.diags, self.jac or dict(sp.DEFAULT_JAC),
                                        self.free or None)
-
-    # --- session persistence --------------------------------------------------------------
-    def to_dict(self):
-        d = {}
-        for f in fields(self):
-            v = getattr(self, f.name)
-            d[f.name] = [ln.to_dict() for ln in self.lines] if f.name == "lines" else v
-        return d
+        self.converged = False
+        self.termination = ("diagnostic" if self.diagnose_only else "stale")
 
     @classmethod
-    def from_dict(cls, d):
-        d = dict(d or {})
-        names = {f.name for f in fields(cls)}
-        lines = [LineResult.from_dict(x) for x in (d.get("lines") or [])]
-        return cls(lines=lines,
-                   **{k: v for k, v in d.items() if k in names and k != "lines"})
+    def from_dict(cls, data):
+        result = super().from_dict(data)
+        if "termination" not in data:
+            result.termination = (sp.balance_status(result.diags, result.tols,
+                                                    result.free or None)
+                                  if result.stage == STAGE_SOLVED else "measured")
+            result.converged = result.termination == "converged"
+        return result
+
+
+# Public compatibility name for existing notebooks and saved-workflow callers.
+Measurement = BalanceResult

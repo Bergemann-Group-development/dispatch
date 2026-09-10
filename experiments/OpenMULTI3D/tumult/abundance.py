@@ -41,6 +41,7 @@ from ._abundance_numerics import (  # noqa: F401 (public re-exports)
     read_solar_abundances,
     xfe_to_abund,
 )
+from .measured import MeasuredLines
 from .profile import get_profile_class
 from .utils import auto_crop_core
 
@@ -68,7 +69,15 @@ def abundance_override(element, value, *, base="", relative, feh, solar):
     on one cached run. Display formatting belongs elsewhere.
     """
     val = value if relative else xfe_to_abund(value, element, feh, solar)
-    return " ".join(t for t in (str(base).strip(), f"{element}={val:.4f}") if t)
+    base = strip_abundance(base, element)
+    return " ".join(t for t in (base, f"{element}={val:.4f}") if t)
+
+
+def strip_abundance(text, element):
+    """Remove an element override while preserving all other terms and their precision."""
+    prefix = f"{element}=".lower()
+    return " ".join(term for term in str(text or "").replace(",", " ").split()
+                    if not term.lower().startswith(prefix))
 
 
 def padded_window(window, pad=SYNTH_PAD_AA):
@@ -326,60 +335,26 @@ def screen(ew_maa, blend_frac, lam0_aa, *, ew_min=5.0, logrw_max=-4.8, blend_max
 # --- per-line + per-element orchestration ------------------------------------------------
 
 @dataclass
-class AbundanceResult:
+class AbundanceResult(MeasuredLines):
     """One completed element run: the per-line measurements plus the aggregated mean.
 
     A plain data container (no GUI deps) so it can be serialised into a session snapshot and
     re-consumed by a later Fe-balance / stellar-parameter solver. ``feh``/``relative`` record
     the abundance convention so ``a`` values are interpretable.
     """
-    # Both hold the element, e.g. "Fe" — never a species like "Fe I": the abundance is per
-    # element (MULTI3D scales by element, and the balance appends the stage itself). They are
-    # set alike at every construction site; ``symbol`` is kept because saved sessions carry it.
-    element: str
     symbol: str
-    lines: list                        # list[LineResult]
-    summary: dict                      # aggregate(...) output
-    stage: str = "lines"               # "lines" → "synth" → "uncert" (how far it has run)
-    profile: str = "gauss"             # EW/FWHM profile chosen at line-selection
+    summary: dict
+    synthesis: dict = field(default_factory=dict)
+    termination: str = "measured"
+    stage: str = "lines"
     teff: float = float("nan")
     logg: float = float("nan")
     feh: float = float("nan")
     vmic: float = float("nan")
-    snr: float | None = None
-    cont_pct: float = float("nan")
     relative: bool = True              # True → ``a`` is [X/Fe]; False → A(X)
     uid: str = ""
     name: str = ""
 
-    # --- session persistence ------------------------------------------------------------
-    def to_dict(self):
-        """A JSON-safe view for the session snapshot. Captures the per-line records plus the
-        reference the tools attach dynamically: ``ref_uid`` (AbundTool → a canvas observation)
-        and ``ref_spec`` (CorrTool → the synthetic 1D LTE reference, embedded)."""
-        d = {}
-        for f in fields(self):
-            d[f.name] = [ln.to_dict() for ln in self.lines] if f.name == "lines" \
-                else getattr(self, f.name)
-        if hasattr(self, "ref_uid"):
-            d["ref_uid"] = self.ref_uid
-        ref_spec = getattr(self, "ref_spec", None)
-        if ref_spec is not None:
-            d["ref_spec"] = ref_spec.to_dict()
-        return d
-
-    @classmethod
-    def from_dict(cls, d):
-        d = dict(d or {})
-        names = {f.name for f in fields(cls)}
-        lines = [LineResult.from_dict(x) for x in (d.get("lines") or [])]
-        kw = {k: v for k, v in d.items() if k in names and k != "lines"}
-        res = cls(lines=lines, **kw)
-        if "ref_uid" in d:
-            res.ref_uid = d["ref_uid"]
-        if d.get("ref_spec") is not None:
-            res.ref_spec = Spectrum.from_dict(d["ref_spec"])
-        return res
 
 
 @dataclass
@@ -590,7 +565,10 @@ def measure_lines(mset, ref_spec, *, linelist, profile, snr, cont_pct):
         raise ValueError(f"No measurable windows in “{mset.name}”.")
     result = AbundanceResult(element=mset.element, symbol=mset.element, lines=lines,
                              summary=aggregate([]), stage="lines", profile=profile,
-                             uid=uuid.uuid4().hex[:8])
+                             uid=uuid.uuid4().hex[:8], snr=snr, cont_pct=cont_pct,
+                             maskset_uid=str(mset.uid), maskset_name=mset.name)
+    from .measurement import mask_key
+    result.maskset_key = mask_key(mset)
     result.name = f"{mset.element} · {len(lines)} lines"
     return result
 
@@ -605,6 +583,8 @@ def run_abundance(request, result, observation, *, progress=None, cancel_token=N
     onto a single run's abundance-set axis. ``progress(result)`` is called as each line
     lands, so a caller can stream partial results; it must not raise.
     """
+    from dataclasses import asdict
+    result.synthesis = asdict(request)
     from .synthesis import workflows as synth
     from .synthesis.cancel import CancelledError
 
@@ -687,6 +667,7 @@ def finalize_result(result, ref_spec, snr, cont_pct):
     result.snr, result.cont_pct = snr, cont_pct
     result.summary = aggregate(result.lines)
     result.stage = "uncert"
+    result.termination = "completed"
     return result
 
 
@@ -832,6 +813,8 @@ def run_nlte_corrections(request, result, atom, *, opts=None, progress=None,
     ``progress(result)`` is called as each line lands, so a caller can stream partial results;
     it must not raise. Returns ``result`` at stage ``"corr"`` with its summary aggregated.
     """
+    from dataclasses import asdict
+    result.synthesis = asdict(request)
     from .synthesis import workflows as synth
     from .synthesis.cancel import CancelledError
 

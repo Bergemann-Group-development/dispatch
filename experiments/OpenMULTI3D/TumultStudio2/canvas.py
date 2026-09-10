@@ -99,7 +99,6 @@ class SpectrumCanvas:
                  n_main=5000, n_nav=2500, marker_threshold=300, debounce_ms=50,
                  on_change=None):
         self.objects: list[SpectrumObject] = []
-        self._next_uid = 0
         self.selected_uid = None
         self.show_filtered = False  # when True, plot each obj's filtered spectrum
         self.norm_edit_uid = None   # uid being continuum-edited (shown raw, others hidden)
@@ -253,7 +252,8 @@ class SpectrumCanvas:
         n = len(self.objects)
         return RUN_COLORS[n % len(RUN_COLORS)], DASHES[n % len(DASHES)]
 
-    def add_object(self, spectrum, name=None, color=None, dash=None, source=None, meta=None):
+    def add_object(self, spectrum, name=None, color=None, dash=None, source=None, meta=None,
+                   uid=None):
         first = not self.objects
         name = name or f"Object {len(self.objects) + 1}"
         color = color or LINE
@@ -267,8 +267,11 @@ class SpectrumCanvas:
             used = {o.dash for o in self.objects}
             dash = next((d for d in DASHES if d not in used),
                         DASHES[len(self.objects) % len(DASHES)])
-        uid = str(self._next_uid)
-        self._next_uid += 1
+        if uid is None:
+            import uuid
+            uid = uuid.uuid4().hex
+        if self._find(uid) is not None:
+            raise ValueError(f"Duplicate observation identity: {uid}")
         obj = SpectrumObject(spectrum, name, dash, uid)
         obj.source = source
         obj.meta = meta
