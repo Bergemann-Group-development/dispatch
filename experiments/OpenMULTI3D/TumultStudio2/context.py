@@ -39,6 +39,7 @@ import logging
 class AppContext:
     def __init__(self, doc, bridges, tools):
         self.doc = doc
+        self.closed = False
         self.bridges = bridges
         self.tools = tools
         self.canvas = None
@@ -54,7 +55,8 @@ class AppContext:
 
     def schedule(self, fn):
         """Marshal ``fn`` onto the document thread (next tick)."""
-        self.doc.add_next_tick_callback(fn)
+        if not self.closed:
+            self.doc.add_next_tick_callback(fn)
 
     # --- event bus ----------------------------------------------------------
     def subscribe(self, event, fn):

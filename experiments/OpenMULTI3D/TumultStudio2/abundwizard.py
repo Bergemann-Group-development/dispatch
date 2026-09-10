@@ -22,7 +22,7 @@ from bokeh.models import (BoxAnnotation, ColumnDataSource, CustomJS, HoverTool, 
                           Span, TextInput, Whisker)
 from bokeh.plotting import figure
 
-import abundance as ab
+from tumult import abundance as ab
 from tumult.abundance import SYNTH_PAD_AA  # noqa: F401 (the tools import it from here)
 import store
 from canvas import ACCENT, style_dark
@@ -91,6 +91,9 @@ if (rect.top < top || rect.bottom > box.bottom) {
 """
 
 
+from jobs import ResultJobs
+
+
 class AbundanceWizard(Tool):
     # --- subclass configuration --------------------------------------------------------
     prefix = ""            # DOM/bridge namespace: "abund" | "corr"
@@ -137,8 +140,8 @@ class AbundanceWizard(Tool):
 
         self.step = 1
         self.show_toggled_only = False     # table header switch: hide excluded lines
-        self._error = None                 # last worker error, surfaced on the doc thread
         self.results = []                  # list[ab.AbundanceResult]
+        self.jobs = ResultJobs(ctx, self._find, self._job_progress)
         self.selected_uid = None
         self._last_span_aa = None          # span (Å) of the last shown line, for no-window jumps
         self._jumped = None                # index of the line whose window is accented
@@ -438,6 +441,7 @@ class AbundanceWizard(Tool):
         self.push_results()                  # drop the result highlight
 
     def remove_result(self, uid):
+        self.jobs.invalidate(uid)
         was_selected = self.selected_uid == uid
         self.results = [r for r in self.results if r.uid != uid]
         if was_selected:
@@ -458,6 +462,7 @@ class AbundanceWizard(Tool):
         except ValueError:
             return
         if 0 <= idx < len(res.lines):
+            self.jobs.invalidate(res.uid)
             res.lines[idx].include = not res.lines[idx].include
             if res.stage == self.final_stage:
                 res.summary = self._summarise(res.lines)
@@ -475,6 +480,10 @@ class AbundanceWizard(Tool):
         raise NotImplementedError
 
     # --- streaming + rendering -------------------------------------------------------------
+    def _job_progress(self, res):
+        self.push_results()
+        self._stream_row(res)
+
     def _stream_row(self, res):
         """Doc-thread callback: repaint everything an incoming line changed — the table, the
         diagnostic panels and the synthetic overlays — so a fit is watched as it runs."""

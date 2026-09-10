@@ -21,15 +21,17 @@ Both stages are headless: what is left here is the form handling, submission and
 """
 from __future__ import annotations
 
+from copy import deepcopy
+
 import html
 import logging
 
 import numpy as np
 from bokeh.models import ColumnDataSource
 
-import abundance as ab
+from tumult import abundance as ab
 import store
-import synth
+from tumult.synthesis import workflows as synth
 from abundwizard import PROFILES, X_AXES, AbundanceWizard
 from controls import Field, Form
 # The workflow itself is headless (:mod:`tumult.abundance`); what is left here is the
@@ -153,31 +155,15 @@ class AbundCorrTool(AbundanceWizard):
             return
         v = self.form1.values()
         profile, ew_min = str(v["profile"]), float(v["ew_min"])
-        self._error = None
         self.notify("Computing the 1D LTE reference from the model atom…")
-        loader = lambda token=None: self._compute_reference(
-            ctx, ref_grid, atoms[0], profile, ew_min, token)
-        self.ctx.submit("corr-reference", loader, self._on_reference_done)
-
-    def _compute_reference(self, ctx, ref_grid, atom, profile, ew_min, token):
-        """Stage 1, on a worker thread: the headless call plus this tool's error reporting."""
-        try:
-            return measure_reference_lines(
-                ctx, atom, ref_grid=ref_grid,
-                opts=CorrectionOpts(profile=profile, ew_min=ew_min),
-                cancel_token=token)
-        except synth.CancelledError:
-            raise
-        except Exception as exc:
-            logging.exception("Correction reference synthesis failed")
-            self._error = str(exc)
-            return None
+        ref_grid = deepcopy(ref_grid)
+        atom = atoms[0]
+        loader = lambda _res, token, progress: measure_reference_lines(
+            ctx, atom, ref_grid=ref_grid,
+            opts=CorrectionOpts(profile=profile, ew_min=ew_min), cancel_token=token)
+        self.jobs.submit("corr-reference", loader, self._on_reference_done)
 
     def _on_reference_done(self, result):
-        if result is None:
-            if self._error:
-                self.notify(f"Reference failed: {self._error}")
-            return
         self.results.append(result)
         self.selected_uid = result.uid
         # show the reference spectrum on the canvas so lines can be inspected/jumped to
@@ -203,30 +189,14 @@ class AbundCorrTool(AbundanceWizard):
         if not atoms:
             self.notify("Choose a model atom in the Corr panel (step 1).")
             return
-        self._error = None
         self.notify(f"Computing NLTE corrections for {res.symbol}…")
-        loader = lambda token=None: self._corr_lines(res, ctx, atoms[0], token)
-        self.ctx.submit(f"corr-synth:{res.symbol}", loader, self._on_corr_done)
-
-    def _corr_lines(self, res, ctx, atom, token):
-        """Stage 2, on a worker thread: rows stream into the table as each line lands."""
-        try:
-            return run_nlte_corrections(
-                ctx, res, atom, opts=CorrectionOpts(profile=res.profile),
-                progress=lambda r: self.ctx.schedule(lambda _r=r: self._stream_row(_r)),
-                cancel_token=token)
-        except synth.CancelledError:
-            raise
-        except Exception as exc:
-            logging.exception("Correction synthesis failed")
-            self._error = str(exc)
-            return None
+        atom = atoms[0]
+        loader = lambda working, token, progress: run_nlte_corrections(
+            ctx, working, atom, opts=CorrectionOpts(profile=working.profile),
+            progress=progress, cancel_token=token)
+        self.jobs.submit(f"corr-synth:{res.symbol}", loader, self._on_corr_done, result=res)
 
     def _on_corr_done(self, result):
-        if result is None:
-            if self._error:
-                self.notify(f"Corrections failed: {self._error}")
-            return
         s = result.summary
         result.name = self._result_label(result)
         self.push_results()

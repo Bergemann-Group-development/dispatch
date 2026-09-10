@@ -157,3 +157,94 @@ def test_ion_balance_setup_is_private_and_interpolation_only(monkeypatch):
     assert context.run_vals["atmos_mode"] == "interp"
     assert context.run_vals["mode"] == "LTE"
     assert context.run_vals["abundances"] == ""
+
+
+def test_result_jobs_snapshot_progress_and_reject_stale_completion():
+    from jobs import ResultJobs
+    queued, callbacks, rendered, completed = [], [], [], []
+    result = SimpleNamespace(uid='fit', lines=[SimpleNamespace(a=0.)], termination='measured')
+    results = {'fit': result}
+    ctx = SimpleNamespace(submit=lambda name, run, done: queued.append((run, done)),
+                          schedule=callbacks.append, notify=lambda *a: None, closed=False)
+    jobs = ResultJobs(ctx, results.get, lambda r: rendered.append(r.lines[0].a))
+
+    def work(working, token, progress):
+        working.lines[0].a = 1.
+        progress(working)
+        working.lines[0].a = 2.
+        progress(working)
+        return working
+
+    jobs.submit('fit', work, completed.append, result=result)
+    run, done = queued.pop()
+    outcome = run(CancelToken())
+    assert result.lines[0].a == 0.
+    assert len(callbacks) == 1  # one pending paint, independent of worker updates
+    callbacks.pop()()
+    assert result.lines[0].a == 1.
+    done(outcome)
+    assert result.lines[0].a == 2. and completed == [result]
+
+    jobs.submit('fit', work, completed.append, result=result)
+    run, done = queued.pop()
+    outcome = run(CancelToken())
+    results.pop('fit')  # removal while running cannot resurrect the object
+    done(outcome)
+    for callback in callbacks:
+        callback()
+    assert completed == [result]
+
+
+def test_result_jobs_isolate_errors_cancel_and_closed_documents():
+    from jobs import ResultJobs
+    queued, callbacks, notes, completed = [], [], [], []
+    result = SimpleNamespace(uid='fit', termination='measured', converged=True)
+    ctx = SimpleNamespace(submit=lambda name, run, done: queued.append((run, done)),
+                          schedule=callbacks.append, notify=notes.append, closed=False)
+    jobs = ResultJobs(ctx, lambda uid: result, lambda r: None)
+
+    def fail(working, token, progress):
+        raise ValueError('this job failed')
+
+    jobs.submit('first', fail, completed.append, result=result)
+    run, done = queued.pop()
+    done(run(CancelToken()))
+    assert notes == ['first failed: this job failed']
+    assert result.termination == 'failed' and not result.converged
+
+    def cancel(working, token, progress):
+        token.cancel()
+        token.check()
+
+    jobs.submit('second', cancel, completed.append, result=result)
+    run, done = queued.pop()
+    from tumult.synthesis.cancel import CancelledError
+    with pytest.raises(CancelledError):
+        run(CancelToken())
+    callbacks.pop()()
+    assert result.termination == 'cancelled' and not completed
+
+    jobs.submit('third', lambda working, token, progress: working, completed.append,
+                result=result)
+    run, done = queued.pop()
+    outcome = run(CancelToken())
+    ctx.closed = True
+    done(outcome)
+    assert not completed
+
+
+def test_restored_abundance_uses_identity_with_duplicate_names():
+    from abundancetool import AbundanceTool
+    from tumult.abundance import AbundanceResult
+    tool = AbundanceTool.__new__(AbundanceTool)
+    tool.list_observations = lambda: [('one', 'same'), ('two', 'same')]
+    tool.push_results = lambda: None
+    result = AbundanceResult(element='Fe', symbol='Fe', summary={}, ref_uid='two',
+                             ref_name='same', uid='result')
+    tool.restore({'results': [result.to_dict()]})
+    assert tool.results[0].ref_uid == 'two'
+    legacy = result.to_dict()
+    legacy.pop('schema_version')
+    legacy['ref_uid'] = 'old'
+    tool.restore({'results': [legacy]})
+    assert tool.results[0].ref_uid is None  # ambiguous names do not invent an association

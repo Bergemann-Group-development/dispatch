@@ -35,6 +35,8 @@ corrections tool through :mod:`abundwizard`, and the rendering.
 """
 from __future__ import annotations
 
+from copy import deepcopy
+
 import html
 import logging
 from pathlib import Path
@@ -43,9 +45,9 @@ import astropy.units as u
 import numpy as np
 from bokeh.models import ColumnDataSource
 
-import abundance as ab
+from tumult import abundance as ab
 import store
-import synth
+from tumult.synthesis import workflows as synth
 from abundwizard import PROFILES, AbundanceWizard
 from canvas import ACCENT
 from controls import Field, Form
@@ -257,16 +259,14 @@ class AbundanceTool(AbundanceWizard):
     def restore(self, data):
         """Rebuild the results (and left-sidebar list) from a saved snapshot."""
         data = data or {}
-        by_name = {}
-        for uid, name in self.list_observations():
-            by_name.setdefault(name, uid)   # first match wins on duplicate names
+        observations = dict(self.list_observations())
         results = []
         for d in (data.get("results") or []):
             res = ab.AbundanceResult.from_dict(d)
-            # observation uids are re-minted on restore, so re-link by the saved reference name
-            new_uid = by_name.get(d.get("ref_name"))
-            if new_uid is not None:
-                res.ref_uid = new_uid
+            if res.ref_uid not in observations:
+                # Legacy snapshots lacked stable identities. Only an unambiguous name links.
+                matches = [uid for uid, name in observations.items() if name == res.ref_name]
+                res.ref_uid = matches[0] if len(matches) == 1 else None
             results.append(res)
         self.results = results
         uids = {r.uid for r in results}
@@ -358,90 +358,73 @@ class AbundanceTool(AbundanceWizard):
             return
         # the synthesis runs straight after the measurement, so its setup is checked here —
         # measuring first and failing afterwards would leave a half-run object behind
-        if self.setup.context() is None:
+        request = self.setup.context()
+        if request is None:
             self.notify(self.setup.reason or "Configure the synthesis setup first.")
             return
         v = self.form1.values()
-        self._error = None
         self.notify(f"Measuring {mset.element} windows on the reference…")
-        loader = lambda token=None: self._measure_lines(
+        mset, ref_spec = deepcopy(mset), deepcopy(ref_spec)
+        loader = lambda _res, token, progress: self._measure_lines(
             ref_uid, ref_spec, mset, str(v["profile"]), float(v["snr"]) or None,
             float(v["cont_pct"]))
-        self.ctx.submit(f"abund-lines:{mset.element}", loader, self._on_lines_done)
+        done = lambda res: self._on_lines_done(res, request, ref_spec)
+        self.jobs.submit(f"abund-lines:{mset.element}", loader, done)
 
     def _measure_lines(self, ref_uid, ref_spec, mset, profile, snr, cont_pct):
         """Measure the set's switched-on windows (:func:`tumult.abundance.measure_lines`)."""
-        try:
-            res = ab.measure_lines(mset, ref_spec, linelist=self.master_path,
-                                   profile=profile, snr=snr, cont_pct=cont_pct)
-            res.ref_uid = ref_uid
-            return res
-        except Exception as exc:
-            logging.exception("Abundance line selection failed")
-            self._error = str(exc)
-            return None
+        res = ab.measure_lines(mset, ref_spec, linelist=self.master_path,
+                               profile=profile, snr=snr, cont_pct=cont_pct)
+        res.ref_uid = ref_uid
+        res.snr, res.cont_pct = snr, cont_pct
+        return res
 
-    def _on_lines_done(self, result):
-        if result is None:
-            if self._error:
-                self.notify(f"Line selection failed: {self._error}")
-            return
+    def _on_lines_done(self, result, request, observation):
         pulse(self._modal, "close")
         self.results.append(result)
         self.selected_uid = result.uid
         self.set_step(1)                 # the synthesis is what stands on the measurement now
         self.select_result(result.uid)   # focus it: enters abund-mode, renders the split view
         self.notify(f"{result.element}: {len(result.lines)} lines measured — synthesising…")
-        self.run_synth()                 # the modal configured both halves of the run
+        self.run_synth(request, observation, (result.snr, result.cont_pct))
 
     # --- step 1: per-line synthesis (streamed) -----------------------------------------
-    def run_synth(self):
+    def run_synth(self, request=None, observation=None, uncertainty=None):
         res = self.selected()
         if res is None:
             self.notify("Select an abundance object first.")
             return
-        ctx = self.setup.context()
+        ctx = request if request is not None else self.setup.context()
         if ctx is None:
             self.notify(self.setup.reason or "Configure the synthesis setup first.")
             return
         pulse(self._modal, "close")      # a no-op unless this is the modal's own submit
         self._settings_uid = None
         self.push_setup_note()
-        self._error = None
         self.notify(f"Synthesising {res.element} lines…")
-        loader = lambda token=None: self._synth_lines(res, ctx, token)
-        self.ctx.submit(f"abund-synth:{res.element}", loader, self._on_synth_done)
-
-    def _synth_lines(self, res, ctx, token):
-        """Fit every included line (:func:`tumult.abundance.run_abundance`), streaming rows."""
-        obs = self.get_observation(getattr(res, "ref_uid", None))
+        obs = observation if observation is not None else self.get_observation(res.ref_uid)
         if obs is None:
-            self._error = "The reference observation for this result is no longer loaded."
-            return None
-        try:
-            return ab.run_abundance(
-                ctx, res, obs, cancel_token=token,
-                progress=lambda r: self.ctx.schedule(lambda r=r: self._stream_row(r)))
-        except synth.CancelledError:
-            raise
-        except Exception as exc:
-            logging.exception("Abundance synthesis failed")
-            self._error = str(exc)
-            return None
+            self.notify("The reference observation is no longer loaded.")
+            return
+        obs = deepcopy(obs)
+        if uncertainty is None:
+            v = self.form1.values()
+            uncertainty = (float(v["snr"]) or None, float(v["cont_pct"]))
+        snr, cont_pct = uncertainty
+
+        def work(working, token, progress):
+            ab.run_abundance(ctx, working, obs, cancel_token=token, progress=progress)
+            ab.finalize_result(working, obs, snr, cont_pct)
+            return working
+
+        self.jobs.submit(f"abund-synth:{res.element}", work, self._on_synth_done, result=res)
 
     def _on_synth_done(self, result):
-        if result is None:
-            if self._error:
-                self.notify(f"Synthesis failed: {self._error}")
-            return
-        result.stage = "synth"
-        result.name = f"{result.element} · {len(result.lines)} lines · synth"
+        result.name = self._result_label(result)
         self.push_results()
         if self.selected() is result:
-            self.push_table(self.table_html(result))
-        # the error budget needs no synthesis of its own — it propagates the EW errors already
-        # measured through each line's REW gradient — so a fitted result always carries one
-        self.run_uncert(result)
+            self._render_selected()
+        self.notify(f"{result.element}: abundance and uncertainties computed.")
 
     # --- step 2: uncertainties ---------------------------------------------------------
     def run_uncert(self, res=None):

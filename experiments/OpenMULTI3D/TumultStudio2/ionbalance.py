@@ -36,6 +36,8 @@ the object owns the measurement, the fit is replaceable.
 """
 from __future__ import annotations
 
+from copy import deepcopy
+
 import html
 import logging
 
@@ -43,12 +45,12 @@ import astropy.units as u
 import numpy as np
 from bokeh.models import ColumnDataSource, Label, Slope
 
-import abundance as ab
-import measurement as ms
-import refstars
-import sparams as sp
+from tumult import abundance as ab
+from tumult import measurement as ms
+from tumult import refstars
+from tumult import sparams as sp
 import store
-import synth
+from tumult.synthesis import workflows as synth
 from abundwizard import PANEL_AXES, PROFILES, AbundanceWizard
 from canvas import ACCENT, MUTED
 from controls import Field, Form
@@ -240,7 +242,6 @@ class IonBalanceTool(AbundanceWizard):
         self._context_bridge = ctx.bridges.html_all(".ionbal-context")
         self._pending_set = None     # the mask set the open modal will measure (None = refit)
         self._refit_uid = None       # the measurement the open modal will refit
-        self._error = None
 
         # The solve reads four diagnostics off the same lines at once, so the Balance view
         # shows the two slopes as panels — A(X) against excitation energy and against reduced
@@ -441,7 +442,7 @@ class IonBalanceTool(AbundanceWizard):
 
     def restore(self, data):
         data = data or {}
-        self.results = [ms.Measurement.from_dict(d) for d in (data.get("results") or [])]
+        self.results = [ms.BalanceResult.from_dict(d) for d in (data.get("results") or [])]
         uids = {r.uid for r in self.results}
         self.selected_uid = data.get("selected") if data.get("selected") in uids else None
         self.push_results()
@@ -459,6 +460,7 @@ class IonBalanceTool(AbundanceWizard):
             return
         if not (0 <= idx < len(res.lines)):
             return
+        self.jobs.invalidate(res.uid)
         res.lines[idx].include = not res.lines[idx].include
         res.reaggregate()
         res.name = res.label()
@@ -511,9 +513,14 @@ class IonBalanceTool(AbundanceWizard):
         self._render_decor()
 
     def _spec_of(self, res):
-        """The measurement's target observation, looked up by name (uids die with a session)."""
-        uid = next((u_ for u_, n in self.list_observations() if n == res.ref_name), None)
-        return self.get_observation(uid) if uid is not None else None
+        """Resolve stable identity; migrate only unambiguous legacy name references."""
+        if res.ref_uid is not None:
+            return self.get_observation(res.ref_uid)
+        matches = [uid for uid, name in self.list_observations() if name == res.ref_name]
+        if len(matches) == 1:
+            res.ref_uid = matches[0]
+            return self.get_observation(res.ref_uid)
+        return None
 
     def _source_set(self, res):
         """The live mask set this measurement came from, or None once it is gone.
@@ -582,8 +589,8 @@ class IonBalanceTool(AbundanceWizard):
 
         if refit is None:
             v1 = self.form1.values()
-            res = ms.Measurement(
-                element=mset.element, maskset_uid=str(mset.uid), maskset_name=mset.name,
+            res = ms.BalanceResult(
+                element=mset.element, ref_uid=ref_uid, maskset_uid=str(mset.uid), maskset_name=mset.name,
                 maskset_key=ms.mask_key(mset), ref_name=dict(self.list_observations())
                 .get(ref_uid, str(ref_uid)),
                 profile=str(v1["profile"]), snr=float(v1["snr"]) or None,
@@ -604,60 +611,20 @@ class IonBalanceTool(AbundanceWizard):
         self.select_result(res.uid)
         self.notify(f"{res.element} balance: "
                     + ("solving…" if refit is not None else "measuring the windows…"))
-        self._error = None
-        self.ctx.submit(f"ionbal:{res.element}",
-                        lambda token=None: self._job(res, masks, spec, ctx, opts, token),
-                        self._on_done)
-
-    def _job(self, res, masks, spec, ctx, opts, token):
-        """Worker thread: measure (when the windows are new) and then solve."""
-        try:
-            if masks is not None and not self._measure(res, masks, spec, ctx):
-                return None
-            self.ctx.schedule(lambda r=res: self._stream_row(r))
-            return self._solve(res, ctx, opts, token)
-        except synth.CancelledError:
-            raise
-        except Exception as exc:
-            logging.exception("Ionisation balance failed")
-            self._error = str(exc)
-            return None
-
-    # --- phase 1: measure + identify -------------------------------------------------------
-    def _measure(self, res, masks, spec, ctx):
-        """Measure and identify the windows (:func:`sparams.measure_balance_lines`)."""
+        masks, spec = deepcopy(masks), deepcopy(spec)
         linelist = getattr(self.ctx.strengths, "linelist", None) or str(self.master_path)
-        try:
-            sp.measure_balance_lines(res, masks, spec, linelist)
-        except ValueError as exc:
-            self._error = str(exc)
-            return False
-        # the mask view shows the latest run's diagnostics beside its windows; the canvas
-        # swaps the source set's highlights for the windows actually measured
-        self.ctx.schedule(lambda: (self.ctx.emit("masks-changed"),
-                                   self._render_decor(self._jumped)))
-        return True
 
-    # --- phase 2: the solve ------------------------------------------------------------------
-    def _solve(self, res, ctx, opts, token):
-        """Run the balance (:func:`sparams.solve_ionisation_balance`), streaming rows."""
-        return sp.solve_ionisation_balance(
-            ctx, res, opts, cancel_token=token,
-            progress=lambda r: self.ctx.schedule(lambda r=r: self._stream_row(r)))
+        def work(working, token, progress):
+            if masks is not None:
+                sp.measure_balance_lines(working, masks, spec, linelist)
+                progress(working)
+            return sp.solve_ionisation_balance(
+                ctx, working, opts, cancel_token=token, progress=progress)
+
+        self.jobs.submit(f"ionbal:{res.element}", work, self._on_done, result=res)
 
     def _on_done(self, result):
-        if result is None:
-            if self._error:
-                self.notify(f"Ionisation balance failed: {self._error}")
-            # a measurement that never got its lines is not an object anyone can act on —
-            # drop it rather than leaving "measuring…" in the sidebar forever. A *refit*
-            # that failed keeps its object: the lines in it are still good.
-            dead = [r for r in self.results if not r.lines]
-            for r in dead:
-                self.remove_result(r.uid)
-            self.push_results()
-            self._render_selected()
-            return
+        self.ctx.emit("masks-changed")
         result.stage = ms.STAGE_SOLVED
         result.name = result.label()
         self.push_results()
@@ -675,7 +642,7 @@ class IonBalanceTool(AbundanceWizard):
                         f"the flags say why (out_of_range means the entry point is too far "
                         f"from the star for the curve of growth to reach the measured EWs).")
             return
-        state = "converged" if result.converged else "hit max iterations"
+        state = result.status_label
         parts = " ".join(
             f"{PARAM_LABELS[k]}={p[k]:.2f}" if k != "teff" else f"Teff={p[k]:.0f}"
             for k in sp.PARAM_KEYS)
@@ -811,8 +778,7 @@ class IonBalanceTool(AbundanceWizard):
             held = "" if res.free.get(k, True) else ' <span class="lm-flag">held</span>'
             cells.append(f'<div class="field-group field-inline"><label>{PARAM_LABELS[k]}'
                          f'</label><span class="field-static">{val}{held}</span></div>')
-        state = ("diagnostics only" if res.diagnose_only else
-                 "converged" if res.converged else "max iterations reached")
+        state = res.status_label
         return (f'<div class="section-header">Parameters</div>{"".join(cells)}'
                 f'<div class="hint">{state} after {len(res.history)} iteration'
                 f'{"" if len(res.history) == 1 else "s"}.</div>')
@@ -834,7 +800,7 @@ class IonBalanceTool(AbundanceWizard):
         if not res.history:
             return ""
         last = res.history[-1]
-        p, d = last["params"], last["diags"]
+        p, d = res.params or last["params"], res.diags or last["diags"]
         el = html.escape(res.element or "X")
         head = (f'iter {len(res.history)} · Teff {p["teff"]:.0f} · logg {p["logg"]:.2f} · '
                 f'[Fe/H] {p["feh"]:+.2f} · ξ {p["vmic"]:.2f}')
@@ -844,8 +810,7 @@ class IonBalanceTool(AbundanceWizard):
         if res.stage == ms.STAGE_SOLVED:
             s = res.sigmas or {}
             fmt = self._fmt
-            state = ("diagnostics at the given parameters" if res.diagnose_only else
-                     "converged" if res.converged else "max iterations reached")
+            state = res.status_label
             head = (f'<b>{state}</b> after {len(res.history)} it · '
                     f'Teff {fmt(res.params.get("teff"), s.get("teff"), digits=0)} K · '
                     f'logg {fmt(res.params.get("logg"), s.get("logg"), digits=2)} · '
