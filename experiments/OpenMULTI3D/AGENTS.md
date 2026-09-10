@@ -57,9 +57,10 @@ Responsibilities across its three components are still evolving:
 - `TumultStudio2/` provides interactive spectroscopic analysis through Bokeh.
   Some scientific workflows currently live here. `TumultStudio_old/` is legacy.
 
-`GLOSSARY.md` defines the terms these components share, including the ones that mean
+`docs/GLOSSARY.md` defines the terms these components share, including the ones that mean
 different things in each. Read it before naming anything, and add to it when a name turns
-out to be ambiguous.
+out to be ambiguous. `docs/PythonNamingConventions.md` covers how Python names are spelled;
+`docs/F90CodeConventions.tex` is DISPATCH's own, and governs `SRC/` and `HOP/`.
 
 Inspect the relevant code to establish current interfaces. The intended
 architecture shares a headless workflow layer between Python callers, the GUI

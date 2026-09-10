@@ -4,7 +4,10 @@
 !AGENTS.md
 !CLAUDE.md
 !SUBAGENTS.md
-!GLOSSARY.md
+!docs/
+docs/*
+!docs/GLOSSARY.md
+!docs/PythonNamingConventions.md
 !tests/
 tests/*
 !tests/test_execution.py
