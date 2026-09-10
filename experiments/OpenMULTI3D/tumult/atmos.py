@@ -1,6 +1,9 @@
 import numpy as np
-from .auxfuncs import *
-from .plotting_scripts import *
+from .const import BK, CC, UU
+from .auxfuncs import (atomic_weights, compute_tau_scale, crop_inputs, interp_tau,
+                       near_equal_split)
+import pandas as pd
+from .plotting_scripts import scatter_density
 import pathlib
 from matplotlib.colors import LogNorm
 import matplotlib.pyplot as plt

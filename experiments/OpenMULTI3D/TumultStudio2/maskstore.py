@@ -19,7 +19,7 @@ from __future__ import annotations
 import itertools
 from pathlib import Path
 
-from linemask import (LineMask, LineMaskSet, parse_linemask_file,
+from tumult.linemask import (LineMask, LineMaskSet, parse_linemask_file,
                       write_linemask_file)
 
 

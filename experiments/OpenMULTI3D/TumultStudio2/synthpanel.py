@@ -18,7 +18,7 @@ from pathlib import Path
 import astropy.units as u
 
 import store
-import synth
+from tumult.synthesis import workflows as synth
 from atompicker import AtomPicker
 from controls import Field, Form
 from fittab import FitTab

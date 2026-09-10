@@ -1,8 +1,9 @@
 import numpy as np
 import pandas as pd
-from .auxfuncs import *
+from .auxfuncs import find_close, get_qmax, is_number
 from .const import CC, HC2, PI
 from .physics import vac2air
+from .plotting_scripts import set_legend, set_title
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 from scipy.signal import argrelextrema

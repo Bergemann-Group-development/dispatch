@@ -31,7 +31,7 @@ from canvas import ACCENT, LINE, MUTED, _style
 from controls import Field, Form
 from debounce import Debouncer
 from htmlbridge import pulse, toggle
-from spectrum import Spectrum
+from tumult.spectrum_io import Spectrum
 from tool import Tool
 
 N_DISPLAY = 4000   # decimate power spectra for plotting

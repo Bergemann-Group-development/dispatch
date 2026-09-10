@@ -21,10 +21,11 @@ import html
 import logging
 from pathlib import Path
 
-import linediag
+from tumult import linediag
 from controls import Field, Form
+from jobs import ResultJobs
 from filepicker import FilePicker
-from linemask import is_element
+from tumult.linemask import is_element
 
 
 class MaskSource:
@@ -139,7 +140,7 @@ class AutoSource(MaskSource):
         self.get_observation = get_observation       # uid -> Spectrum | None
         self.linelist_path = str(master_path)        # defaults to the master line list pref
         self.ref_uid = None
-        self._error = None
+        self.jobs = ResultJobs(ctx)                  # settles this run's own outcome
 
         self.form = Form("linemaskauto", [
             Field("element", "Element", kind="text", value=self.DEFAULTS["element"],
@@ -215,25 +216,24 @@ class AutoSource(MaskSource):
         name = dict(obs).get(ref_uid, "spectrum")
         settings = dict(profile=str(v["profile"]), ew_min=float(v["ew_min"]),
                         snr=float(v["snr"]) or None, cont_pct=float(v["cont_pct"]))
-        self._error = None
-        self.ctx.submit(f"linemask-auto:{element}",
-                        lambda token=None: self._run(ref, element, name, settings),
-                        self._done)
+        self.jobs.submit(f"linemask-auto:{element}",
+                         lambda _working, _token, _progress: self._run(
+                             ref, element, name, settings),
+                         self._done, on_error=self._failed)
 
     def _run(self, ref, element, ref_name, settings):
         """Worker thread: candidates of ``element`` in the reference's range, measured."""
-        try:
-            return linediag.generate_mask_set(
-                ref, element, linelist=self.linelist_path, reference_name=ref_name,
-                pad=self.store.pad, **settings)
-        except Exception as exc:
-            logging.exception("Diagnostic line selection failed")
-            self._error = str(exc)
-            return None
+        return linediag.generate_mask_set(
+            ref, element, linelist=self.linelist_path, reference_name=ref_name,
+            pad=self.store.pad, **settings)
+
+    def _failed(self, exc):
+        logging.exception("Diagnostic line selection failed", exc_info=exc)
+        self._on_created(self, None, str(exc))
 
     def _done(self, mset):
         if mset is None:
-            self._on_created(self, None, self._error or "Diagnostic selection found nothing.")
+            self._on_created(self, None, "Diagnostic selection found nothing.")
             return
         kept = sum(1 for m in mset.masks if m.include)
         self.store.adopt(mset)

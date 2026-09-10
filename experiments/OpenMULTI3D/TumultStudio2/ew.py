@@ -17,7 +17,7 @@ from bokeh.models import ColumnDataSource
 from tumult.profile import profile_names
 from tumult.utils import fit_line_profile
 
-import abundance as ab
+from tumult import abundance as ab
 from controls import num_input
 from rangeselect import RangeSelect
 from tool import Tool

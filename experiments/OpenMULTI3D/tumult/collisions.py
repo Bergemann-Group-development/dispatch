@@ -1,5 +1,4 @@
 import numpy as np
-from .auxfuncs import *  # noqa: F401,F403 - constants come from tumult.const via auxfuncs
 from scipy.interpolate import interp1d
 
 def read_collisions(atom):

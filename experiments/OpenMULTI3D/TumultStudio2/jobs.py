@@ -15,14 +15,16 @@ class _Outcome:
 class ResultJobs:
     """One current submission per result; workers never mutate the displayed object."""
 
-    def __init__(self, ctx, find, render):
+    def __init__(self, ctx, find=None, render=None):
+        # ``find``/``render`` are only consulted for result-bound jobs; a job that
+        # produces a new object (``result=None``) needs neither.
         self.ctx, self.find, self.render = ctx, find, render
         self.current = {}
 
     def invalidate(self, uid):
         self.current.pop(uid, None)
 
-    def submit(self, name, work, done, *, result=None):
+    def submit(self, name, work, done, *, result=None, on_error=None):
         key = result.uid if result is not None else name
         generation = object()
         self.current[key] = generation
@@ -85,7 +87,10 @@ class ResultJobs:
                 return
             if outcome.error is not None:
                 stopped("failed")
-                self.ctx.notify(f"{name} failed: {outcome.error}")
+                if on_error is not None:
+                    on_error(outcome.error)      # the submitter has its own error surface
+                else:
+                    self.ctx.notify(f"{name} failed: {outcome.error}")
                 return
             finished = True
             self.current.pop(key, None)

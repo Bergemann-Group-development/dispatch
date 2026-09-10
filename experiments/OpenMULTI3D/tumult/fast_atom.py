@@ -1,7 +1,11 @@
 import io, types
 import pandas as pd
 from .fast_trans import TransFactory
-from .auxfuncs import *
+import numpy as np
+import matplotlib.pyplot as plt
+from .const import CC, EE, HH, UU
+from .physics import vac2air
+from .auxfuncs import get_qmax
 from .atom import AtomClass
 
 formatters = {'ga':'{:.3e}'.format,

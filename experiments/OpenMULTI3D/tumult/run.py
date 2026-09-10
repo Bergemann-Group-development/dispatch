@@ -7,9 +7,11 @@ orchestration and analysis facade over them (lazy atmos/linelist/atom properties
 spectra, departures, contribution functions, plotting).
 """
 from .atom import AtomClass
-from .auxfuncs import *
+from .auxfuncs import (assign_group_indices, compute_tau_scale, empty, interp_tau,
+                       rotate_array)
+from .physics import vac2air
 from .decorators import broadcast_arguments
-from .plotting_scripts import *
+from .plotting_scripts import plot_line_annotations, plt_kwargs, set_title
 from .fast_atom import FastAtom, PandasAtom
 from .flux import (base_set_indices, integrate_flux, ladder_sets,
                    read_angle_quadrature, read_segments, read_set_manifest,

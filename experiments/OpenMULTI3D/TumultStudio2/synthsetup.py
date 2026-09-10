@@ -28,7 +28,7 @@ from bokeh.models import TextInput
 from tumult.synthesis import SynthRequest
 
 import store
-import synth
+from tumult.synthesis import workflows as synth
 from controls import Field, Form
 from filepicker import FilePicker
 from gridmanager import ATMOS_FORMATS

@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import store
-import synth
+from tumult.synthesis import workflows as synth
 from gridmanager import ATMOS_FORMATS
 
 # pseudo-grid selected in a Grid dropdown: synthesise a single, hand-picked atmosphere
@@ -19,7 +19,7 @@ INDIVIDUAL_GRID = "__individual__"
 
 # the dispatch experiment directory (holds dispatch.x and input/); relative file
 # prefs (the Fortran defaults below) are resolved against it for existence checks.
-REPO_DIR = str(Path(synth.__file__).resolve().parent.parent)
+REPO_DIR = str(Path(__file__).resolve().parent.parent)
 
 # --- preferences: the reusable namelist setup, grouped into modal pages -----------------
 # each page is one controls.Form; (key, label, kind, default) per field. The atmosphere

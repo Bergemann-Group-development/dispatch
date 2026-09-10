@@ -36,7 +36,7 @@ from bokeh.models import TextInput
 from canvas import ACCENT
 from controls import Field, Form
 from htmlbridge import parse_action, pulse
-from linemask import is_element, seed_cont_markers
+from tumult.linemask import is_element, seed_cont_markers
 from masksources import AutoSource, BlankSource, FileSource
 from rangeselect import RangeSelect
 from tool import Tool

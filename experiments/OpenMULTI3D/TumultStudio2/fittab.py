@@ -16,7 +16,7 @@ import html
 from bokeh.models import TextInput
 
 import store
-import synth
+from tumult.synthesis import workflows as synth
 from controls import num_input
 from htmlbridge import html_bridge, parse_action
 

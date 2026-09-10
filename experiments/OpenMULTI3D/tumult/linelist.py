@@ -1,4 +1,5 @@
-from tumult.auxfuncs import *
+from io import StringIO
+from .auxfuncs import split_words
 from tumult.const import EK
 import os
 from tumult.isotopes import parse_ts, format_molec, molec_to_ts, species_elements, element_z
