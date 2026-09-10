@@ -4,7 +4,7 @@ workspace and jumped to a row at a time.
 Which lines, and with what strengths, is :mod:`linestrength`'s answer, not this module's —
 the run that made the spectrum, the nearest reference run by Teff, or the master list and an
 approximate proxy. The table names its source in a footer, because the same window ranks
-very differently for a solar-type star than for an M dwarf, and the proxy rung cannot rank
+very differently for a solar-type star than for an M dwarf, and the proxy source cannot rank
 across species at all.
 
 The panel is opened by picking one of the line-position indicators drawn over the spectrum

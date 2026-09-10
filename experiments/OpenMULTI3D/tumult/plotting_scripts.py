@@ -247,8 +247,8 @@ def plot_line_annotations(xx, labels, weights=None, ha='center', va='bottom',
     if ntop is not None and weights is not None:
         
         if focus == 'strongest':
-            mask = np.argsort(weights)[::-1][:ntop]
-            mask = np.isin(np.arange(xx.size), mask)
+            order = np.argsort(weights)[::-1][:ntop]
+            mask = np.isin(np.arange(xx.size), order)
         elif focus == 'bins':
             # 1. Define bin edges and assign indices
             edges = np.histogram_bin_edges(xx, bins=ntop)

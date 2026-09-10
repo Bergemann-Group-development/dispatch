@@ -95,7 +95,7 @@ _bands = {}      # (star, linelist, lo, hi) -> frame, most recent last
 
 
 def _sorted_frame(df):
-    """The columns every rung returns, ascending in lam0, with a usable index."""
+    """The columns every source returns, ascending in lam0, with a usable index."""
     cols = [c for c in ("ion", "lam0", "evi", "loggf", "strength") if c in df.columns]
     out = df[cols].copy()
     out["ion"] = out.ion.astype(str).str.strip()
@@ -245,8 +245,8 @@ def run_params(folder):
             float(feh.group(1)) if feh else DEFAULT_FEH)
 
 
-# --- the ladder: which source answers for an object and a window --------------------------
-# Two rungs, both handing back the same frame so callers never branch on which answered:
+# --- source precedence: which source answers for an object and a window -------------------
+# Two sources, both handing back the same frame so callers never branch on which answered:
 #
 # 1. **Computed** — HOP on a reference atmosphere, with the configured line list. Which
 #    atmosphere is the caller's choice: a named class, or ``auto``, which follows the
@@ -254,11 +254,11 @@ def run_params(folder):
 #    namelist — to the nearest class, and falls back to the solar one for a spectrum that
 #    says nothing.
 # 2. **The master line list and its proxy** — when HOP cannot be reached (no ``libhop``) or
-#    the band has not been computed yet. The only rung whose ordering is not physical, and
+#    the band has not been computed yet. The only source whose ordering is not physical, and
 #    it is labelled ``approximate`` wherever it is shown.
 
 class Source:
-    """One rung's answer: the lines, what to call it, and whether it can be trusted to rank.
+    """One source's answer: the lines, what to call it, and whether it can be trusted to rank.
 
     ``key`` is what the frame *is*, as opposed to ``label``, which is what a footer calls it.
     A consumer caching the frame has to key on this: the label names the star but not the
@@ -284,7 +284,8 @@ class Source:
 
 
 class LineStrengths:
-    """The strength ladder, shared by the annotations and the line-list panel."""
+    """The strength sources in precedence order, shared by the annotations and the
+    line-list panel."""
 
     def __init__(self, master_path=MASTER_PATH, linelist=None,
                  refstar=refstars.AUTO_KEY):
@@ -350,7 +351,7 @@ class LineStrengths:
         params = self.params_of(obj)
         return refstars.nearest(*params) if params else refstars.get(refstars.DEFAULT_KEY)
 
-    # --- the ladder ------------------------------------------------------------------
+    # --- source precedence -----------------------------------------------------------
     def lines_for(self, obj, lo, hi, allow_compute=False):
         """The best :class:`Source` for ``obj`` over ``[lo, hi]`` Å.
 
@@ -387,7 +388,7 @@ class LineStrengths:
         return ("strengths: approximate (computing…)" if src.approximate
                 else f"strengths: {src.label}")
 
-    # --- the proxy rung ------------------------------------------------------------------
+    # --- the proxy source ----------------------------------------------------------------
     def _proxy_source(self):
         """The configured master list, with whatever strength column it has.
 

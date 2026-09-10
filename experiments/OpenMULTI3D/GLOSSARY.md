@@ -12,42 +12,47 @@ Add a term when the same word means several things here, or when the repository'
 is not the one a reader would assume. A term that one docstring settles does not need an
 entry.
 
+One naming rule, since it recurs: a local variable holding a sort order is called `order`.
+Reserve `mask` for a boolean selector or a line mask, never for an index array.
+
 **Spectra and lines**
 
 - *species*: a particular ion of an element (`Fe I`, `Fe II`) or a molecule (`CH`, `CO`).
   A line list names species.
-- *element*: the chemical element (`Fe`). Abundances are set per element, since MULTI3D
+- *element*: the chemical element (`Fe`). Abundances are set per element, since OpenMULTI3D
   scales every element except H/He/Li by [Fe/H].
-- *stripping the ionisation stage* (`linelist.strip_ion_stage`): yields the element for an
-  atomic species, and leaves a molecule unchanged, since a molecule carries no stage. The
-  constituent elements of a molecule are a different question
-  (`isotopes.species_elements`: `CO` gives `C` and `O`).
-- *line*: one transition. In the analysis layer it usually travels as a `LineResult`
-  carrying that transition's measurement.
+- *line feature*: an observed spectral line as it stands in a spectrum, which may be a
+  blend of several transitions and may carry isotopic splits. A fit window, a line mask and
+  a measured equivalent width all describe a feature, not a single transition.
+- *transition*: one atomic or molecular transition, which is what a single line-list row
+  names. The components of a blend are transitions.
+- *line*: too vague to carry a definition, since it is used for both of the above. Say
+  which one is meant. Do not give "line" a specific meaning of its own; existing names
+  built on it (`LineResult`, `LineMask`, `linelist`) predate this distinction and are read
+  from context.
 - *strength*: HOP's line-centre extinction over continuum extinction, maximised over the
   atmosphere. It is dimensionless and comparable across species. The Boltzmann expression
-  standing in when HOP is unreachable is labelled a *proxy*; it orders lines within one ion
-  and misleads between two.
+  standing in when HOP is unreachable is labelled a *proxy*; it orders transitions within
+  one species and misleads between two.
 - *band*: a wavelength span, snapped to a grid, over which strengths are computed and
   cached in one HOP call.
 
 **Windows.** Several distinct spans are all called windows, so each has its own name.
 
-- *fit window*: the span a line profile is fitted over, derived from the spectrum itself.
-- *synth window*: the wider span a line is shown and synthesised over, being the fit window
-  widened by `linemask.DEFAULT_PAD`.
+- *fit window*: the span a line feature's profile is fitted over, derived from the
+  spectrum itself.
+- *synth window*: the wider span a line feature is shown and synthesised over, being the
+  fit window widened by `linemask.DEFAULT_PAD`.
 - *padded window*: the synth window widened again by `abundance.SYNTH_PAD_AA`, which is what
-  dispatch is asked to compute so a line's wings are calculated rather than extrapolated
+  dispatch is asked to compute so a feature's wings are calculated rather than extrapolated
   from the window edge. The two paddings are successive and calibrated apart.
-- *renorm window*: a stretch of an observation given its own local continuum, overriding the
-  global spline inside it.
 - *window file*: requested wavelength ranges handed to the Fortran, which builds one
   constant-resolution *segment* per window and gives each its own output patch.
 
-**Masks**
+**Line Masks**
 
-- *mask*: one line's curated fit and synth windows.
-- *mask set*: the masks for one element on one spectrum, together with the diagnostics that
+- *line mask*: one line feature's curated fit and synth windows.
+- *line mask set*: the masks for one element on one spectrum, together with the diagnostics that
   measured them. Unrelated to the run *set axis* below.
 
 **Runs**
@@ -59,18 +64,9 @@ entry.
   use it for Python-side work.
 - *patch*: a task's subdomain, spatial or in (frequency, angle). Output patches carry
   negative frequency indices.
-- *set axis*: the Fortran axis (`sets.txt`) letting one run carry several abundance
-  *variants*, each occupying one slot on that axis in the saved arrays.
-- *variant*: one point on that axis, being the same configuration at a different abundance.
-- *ladder*: a sequence of abundance offsets forming a curve of growth. `linestrength` uses
-  the same word for its hierarchy of strength sources, which is unrelated.
-- *node*: an atmosphere grid point, with its vmic lattice point, selected to bracket the
-  requested star.
-- *folding*: carrying several variants or windows on one run's axes rather than issuing a
-  run per combination. Not everything folds: a synthesis sampled on a model atom's own
-  frequency grid cannot ride a segmented window file, which fixes a constant resolution per
-  window.
+- *set axis*: the Fortran axis (`sets.txt`) letting one run carry several abundances,
+  each occupying one slot on that axis in the saved arrays.
+- *ladder*: a sequence of abundance offsets forming a curve of growth. This is the only
+  meaning; `linestrength` calls its strength sources a precedence, not a ladder.
 - *departures*: NLTE departure coefficients, solved in their own run and reused across
   windows and line lists.
-- *reference*: the synthetic 1D LTE spectrum a correction is measured against, synthesised
-  from the model atom alone.
