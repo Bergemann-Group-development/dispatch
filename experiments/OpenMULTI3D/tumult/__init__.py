@@ -7,6 +7,7 @@ below, with a DeprecationWarning):
 - reading runs:      read, read_list, combine, grid  (the run class itself: tumult)
 - running dispatch:  launch, monitor
 - data containers:   Spectrum, SpectrumGrid, LineList
+- reading spectra:   load_spectrum, load_file, is_run, load_run
 - synthesis:         compute_spectrum, build_stellar_grid, get_NLTE_correction(s),
                      preset, PRESETS_DIR, CancelToken, CancelledError
 - EW / profiles:     Profile, profile_names, get_profile_class, get_weq,
@@ -24,6 +25,7 @@ from .tumult import tumult, grid, read_list
 from .launch import launch, monitor
 from .linelist import LineList
 from .spectrum import Spectrum
+from .spectrum_io import load_spectrum, load_file, is_run, load_run
 from .spectrum_grid import SpectrumGrid
 from .synthesis import (get_NLTE_correction, get_NLTE_corrections, build_stellar_grid,
                         compute_spectrum, PRESETS_DIR, preset, CancelToken, CancelledError)
@@ -46,6 +48,7 @@ combine = tumult.combine
 __all__ = [
     "read", "read_list", "combine", "grid", "tumult", "launch", "monitor",
     "Spectrum", "SpectrumGrid", "LineList",
+    "load_spectrum", "load_file", "is_run", "load_run",
     "compute_spectrum", "build_stellar_grid", "get_NLTE_correction",
     "get_NLTE_corrections", "preset", "PRESETS_DIR", "CancelToken", "CancelledError",
     "Profile", "profile_names", "get_profile_class", "get_weq", "fit_line_profile",
