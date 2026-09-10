@@ -49,11 +49,15 @@ from filepicker import FilePicker  # noqa: E402
 from toolmanager import ToolManager  # noqa: E402
 from session import Workspace, ObjectSnap, FilterSnap  # noqa: E402
 from htmlbridge import BridgeSet, pulse, toggle  # noqa: E402
+from debounce import Trailing  # noqa: E402
 from units import X_UNITS, Y_UNITS, to_range  # noqa: E402
 import linestrength
 from execution import IO as _EXEC, WORKFLOWS as _SYNTH_EXEC, HOP as _HOP_EXEC
 from profiling import profiled  # noqa: E402
 import store  # noqa: E402
+
+# how long the view has to hold still before the visible band's line strengths are computed
+STRENGTH_DELAY_MS = 400
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)-7s %(name)s: %(message)s")
@@ -174,11 +178,11 @@ OBJECTS_EMPTY_HINT = (
 )
 
 
-def objects_panel_html(canvas, pending, active_kind="spectrum"):
-    """The Objects panel body: the loaded objects + any loading placeholders, or the
-    empty-state hint when there is nothing to show."""
-    rows = objects_html(canvas, active_kind) + pending_html(pending)
-    return rows or OBJECTS_EMPTY_HINT
+def objects_panel_html(canvas, active_kind="spectrum"):
+    """The Objects panel body: the loaded objects, or the empty-state hint when there is
+    nothing to show. Work still running lives in the Processes panel (see
+    :func:`processes_html`), so a burst of background tasks cannot bury the object list."""
+    return objects_html(canvas, active_kind) or OBJECTS_EMPTY_HINT
 
 
 def _field(label, value):
@@ -233,14 +237,19 @@ def footer_html(canvas):
     return f'<span class="pill">{len(objs)} {noun}</span><span class="pill">{rng}</span>'
 
 
-def pending_html(pending):
-    """Spinner placeholders for objects still loading in the background, each with a
-    cancel button (data-pid) that drops the run and discards its result."""
+def processes_html(pending, heavy=()):
+    """The Processes panel body: one row per background run, each with a cancel button
+    (data-uid = the pending id) that drops the run and discards its result.
+
+    A run in ``heavy`` is one whose loss actually costs something (a synthesis, a fit),
+    and its row asks for confirmation before cancelling; the cheap ones (a file load, a
+    line-strength band) cancel on the first click."""
     return "".join(
-        f'<div class="object-item pending" data-pid="{pid}">'
+        f'<div class="object-item process" data-pid="{pid}">'
         '<span class="spinner"></span>'
         f'<span class="object-name" title="{html.escape(name)}">{html.escape(name)}</span>'
         f'<button class="object-btn danger" data-action="cancel-pending" data-uid="{pid}" '
+        f'data-confirm="{1 if pid in heavy else 0}" '
         f'title="Cancel"><i class="ti ti-x"></i></button>'
         f'</div>'
         for pid, name in pending.items()
@@ -262,6 +271,8 @@ def build():
     ctx = AppContext(curdoc(), B, tools)
 
     objects_bridge = B.html("objects")
+    processes_bridge = B.html("processes")            # the running-work list, bottom left
+    processes_show_bridge = B.cls(".processes-panel", "show")  # hidden while nothing runs
     inspector_bridge = B.html("inspector")
     footer_bridge = B.html("footer-info")
     status_bridge = B.html("footer-status")  # transient info messages (left of footer)
@@ -319,7 +330,7 @@ def build():
     ctx.focus_kind = "spectrum"
     ctx.subscribe("focus-changed",
                   lambda kind, **_: setattr(objects_bridge, "value",
-                                            objects_panel_html(canvas, pending, kind)))
+                                            objects_panel_html(canvas, kind)))
 
     def synth_on_mode(state):
         pulse(synth_mode_bridge, state)
@@ -331,12 +342,13 @@ def build():
     inspector = linenav = abundancetool = abundcorrtool = ionbaltool = None  # assigned after the canvas
     warm_strengths = None   # ditto: update_all may run before it is defined
     picker = None           # ditto: the spectrum file picker, whose rows spin while loading
-    pending = ctx.pending  # id -> name of objects still loading in the background
+    pending = ctx.pending  # id -> name of each background run (the Processes panel)
     pending_futures = {}  # id -> Future, so a still-queued run can be cancelled before it starts
     pending_tokens = {}   # id -> synth.CancelToken, to hard-kill a running synthesis
     # id -> the file a pending load came from, for the picker's per-row spinners. Separate
     # from `pending` because that one is a display name and a synthesis has no file at all.
     pending_paths = {}
+    pending_heavy = set()  # ids whose cancel button confirms first (synthesis, fits)
 
     def run_busy(fn):
         """Defer a UI-only callback. Computational work must use ctx.submit."""
@@ -400,7 +412,9 @@ def build():
         ).to_dict()
 
     def update_all(canvas):
-        objects_bridge.value = objects_panel_html(canvas, pending, ctx.focus_kind)
+        objects_bridge.value = objects_panel_html(canvas, ctx.focus_kind)
+        processes_bridge.value = processes_html(pending, pending_heavy)
+        toggle(processes_show_bridge, bool(pending))
         inspector_bridge.value = inspector_html(canvas)
         footer_bridge.value = footer_html(canvas)
         synth_panel.refresh_targets()  # keep the Fit-tab target dropdown in sync
@@ -518,9 +532,13 @@ def build():
     # LineMasks view shows its set's element; other tools attach the same way). Unowned, it
     # draws the strongest lines of the window — as many as the frame is wide enough to name.
     ctx.annot = LineAnnotations(ctx, strengths)
-    # a pan or zoom can leave the computed band; ask for the new one (a no-op when it is
-    # already cached, so this is free on the overwhelming majority of frames)
-    canvas.add_view_listener(lambda: warm_strengths())
+    # A pan or zoom can leave the computed band; ask for the new one (a no-op when it is
+    # already cached, so this is free on the overwhelming majority of frames). Continuous
+    # scrolling crosses band after band, and each crossing would otherwise start a run that
+    # the next crossing makes irrelevant, so the request waits out the scroll: every frame
+    # replaces the pending one, and only the band the view comes to rest in is computed.
+    view_delay = Trailing(STRENGTH_DELAY_MS)
+    canvas.add_view_listener(lambda: view_delay("strengths", warm_strengths))
 
     strength_pending = set()
 
@@ -772,6 +790,8 @@ def build():
     def load_async(name, loader, on_done, executor=_EXEC, path=None):
         pid = _nonce()
         pending[pid] = name
+        if executor is _SYNTH_EXEC:
+            pending_heavy.add(pid)  # a synthesis or fit: confirm before throwing it away
         if path is not None:
             pending_paths[pid] = str(path)   # a picker row spins for as long as this stands
         token = synth.CancelToken()      # cancel handle: the loader threads it into synth.*
@@ -814,6 +834,7 @@ def build():
         def apply():
             pending.pop(pid, None)
             pending_paths.pop(pid, None)
+            pending_heavy.discard(pid)
             pending_futures.pop(pid, None)
             token = pending_tokens.pop(pid, None)
             if token is not None and token.cancelled:
@@ -833,8 +854,8 @@ def build():
             pass  # session/document already gone
 
     def cancel_pending(pid):
-        """Cancel a still-loading run from its sidebar spinner. Drops the spinner now and
-        cancels this workflow's dispatch subscriptions. Unshared subprocesses are killed;
+        """Cancel a running background job from its row in the Processes panel. Drops the
+        row now and cancels this workflow's dispatch subscriptions. Unshared subprocesses are killed;
         shared jobs continue for their other subscribers. Queued work is cancelled too.
         Either way the result (if any still arrives) is discarded in _settle."""
         try:
@@ -843,6 +864,7 @@ def build():
             return
         name = pending.pop(pid, None)
         pending_paths.pop(pid, None)
+        pending_heavy.discard(pid)
         if name is None:
             return
         token = pending_tokens.get(pid)
@@ -1055,7 +1077,8 @@ def build():
     doc.template_variables.update(
         css=(HERE / "static" / "style.css").read_text(),
         main_empty=not canvas.objects,  # bake the empty-state class into the first paint
-        objects_html=objects_panel_html(canvas, pending),
+        objects_html=objects_panel_html(canvas),
+        processes_html=processes_html(pending, pending_heavy),
         inspector_html=inspector_html(canvas),
         footer_html=footer_html(canvas),
         swatches_html=swatch_html(active_color),

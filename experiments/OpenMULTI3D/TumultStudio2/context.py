@@ -44,7 +44,7 @@ class AppContext:
         self.canvas = None
         self.annot = None      # LineAnnotations, installed by main once the canvas exists
         self.strengths = None  # LineStrengths, installed by main alongside it
-        self.pending = {}      # id -> name of objects still loading in the background
+        self.pending = {}      # id -> name of each background run (the Processes panel)
         self.notify = lambda *a, **k: None
         self.run_busy = lambda fn: fn()
         self.busy = lambda on: None
