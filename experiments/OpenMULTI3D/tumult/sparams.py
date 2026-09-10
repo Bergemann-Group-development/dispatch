@@ -446,8 +446,13 @@ def _solve_balance(request, result, opts, progress, cancel_token):
     if int(opts["max_iter"]) < 1 or float(opts["span"]) <= 0 or int(opts["points"]) < 2:
         raise ValueError("Balance needs max_iter >= 1, span > 0 and points >= 2.")
 
-    def rv_point(a_rel, feh, only=True, exclude=False):
+    def rv_point(a_rel, feh, only=True, exclude=False, save_linelist=True):
         rv = dict(base_rv)
+        # linelist_out.txt lists the transitions the run kept, with strengths at its own
+        # composition: a diagnostic, never an input. Membership is the same across a
+        # ladder for every line the balance uses, so one rung per node keeps it and the
+        # rest pass False rather than rewrite ~150 kB each. Everything else keeps it.
+        rv["save_linelist"] = bool(save_linelist)
         rv.pop("only_elements", None)
         rv.pop("exclude_elements", None)
         if exclude:
@@ -466,28 +471,42 @@ def _solve_balance(request, result, opts, progress, cancel_token):
             target, prefs, rv_list, *padded_window(line.window), grid=grid,
             atmos_file=atmos_file, cancel_token=cancel_token)
 
-    def window_batch(rv_list, lines, target):
-        """One synthesis for the whole iteration: every rung in every line's window."""
+    def rung_specs(a_rel, feh, lines, target, *, save_linelist=True, crop=None):
+        """One synthesis for one lattice rung, covering every line's window.
+
+        A rung is its own run so that its identity is (atmosphere node, abundance,
+        windows) and nothing else: the same rung recurs at the next iteration and is
+        read from the cache instead of resynthesised. Batching the whole ladder into
+        one run instead would amortise the continuum and LTE sets across the rungs,
+        but its cache key is the entire ladder, which no later iteration reproduces.
+
+        ``crop`` describes the ladder's strongest rung, so every rung on a node reads the
+        same cropped line list and no rung waits for another.
+        """
         windows = [padded_window(ln.window) for ln in lines]
         return synth.compute_window_batch(
-            target, prefs, rv_list, windows, grid=grid, atmos_file=atmos_file,
-            cancel_token=cancel_token)
+            target, prefs, [rv_point(a_rel, feh, save_linelist=save_linelist)],
+            windows, grid=grid, atmos_file=atmos_file, cancel_token=cancel_token,
+            crop=crop)[0]
 
     def shared_ladder(active, centres_now):
-        """One ladder per iteration, wide enough for every line still being fitted.
+        """The lattice rungs covering every active line's bracket.
 
-        Folding the iteration into a single run means all lines share the abundance
-        points, so the ladder has to span the line-to-line scatter as well as each line's
-        own +/-span. That scatter is the balance signal, so the half-span grows with it
-        and the point count grows to match, keeping the curve-of-growth spacing no coarser
-        than the per-line ladder it replaces.
+        Rungs sit on a global lattice of ``step`` dex, so a rung is the same run
+        whenever it is asked for again and the ladder need not repeat between
+        iterations for its points to be reused. The range spans the line-to-line
+        scatter plus each line's own +/-span, with both edges snapped outward; that
+        scatter is the balance signal, so it is coverage rather than waste. No
+        symmetry is imposed -- the lattice is absolute, not centred on the mean.
         """
         cs = [centres_now.get(i, 0.0) for i, _ln in active]
-        centre = float(np.mean(cs)) if cs else 0.0
-        reach = max((abs(c - centre) for c in cs), default=0.0)
-        half = span + reach
-        n = max(npts, int(np.ceil(half / span * (npts - 1))) + 1)
-        return centre, np.linspace(centre - half, centre + half, n)
+        lo = np.floor((min(cs, default=0.0) - span) / lattice) * lattice
+        hi = np.ceil((max(cs, default=0.0) + span) / lattice) * lattice
+        ladder = lo + lattice * np.arange(int(round((hi - lo) / lattice)) + 1)
+        # the blend screen rides on the rung nearest scaled-solar, which is also the
+        # one rung that writes the transition dump
+        centre = float(ladder[np.argmin(np.abs(ladder))])
+        return centre, ladder
 
     # each line's ladder centre carries over between iterations ([Fe/H]-relative)
     centres = {}
@@ -496,6 +515,10 @@ def _solve_balance(request, result, opts, progress, cancel_token):
     # at the given parameters, which is the point of holding them.
     max_iter = int(opts["max_iter"]) if any_free else 1
     span, npts = float(opts["span"]), int(opts["points"])
+    # not "step": that name belongs to the parameter-stepping function above
+    lattice = float(opts.get("abund_step") or prefs.get("abund_step") or 0.25)
+    if lattice <= 0:
+        raise ValueError("Balance needs a positive abundance lattice step.")
     for it in range(1, max_iter + 1):
         if cancel_token is not None and cancel_token.cancelled:
             raise CancelledError()
@@ -512,10 +535,17 @@ def _solve_balance(request, result, opts, progress, cancel_token):
         # lines its output patches. The ladder is shared, so it is centred on the lines'
         # mean and widened to reach the outliers (see shared_ladder).
         c, ladder = shared_ladder(active, centres)
+        # every rung on a node reads the same line list, cropped at the top rung: the
+        # selection covers the weaker rungs, so it is a property of the node
+        crop = {"abundances": abundance_override(element, float(ladder[-1]),
+                                                 base=base_abund, relative=relative,
+                                                 feh=feh, solar=solar),
+                "relative_abundances": relative}
         iter_specs = None
         try:
-            iter_specs = window_batch([rv_point(a, feh) for a in ladder],
-                                      [ln for _i, ln in active], target)
+            iter_specs = [rung_specs(a, feh, [ln for _i, ln in active], target,
+                                     save_linelist=(a == c), crop=crop)
+                          for a in ladder]
         except CancelledError:
             raise
         except Exception as exc:
@@ -554,9 +584,10 @@ def _solve_balance(request, result, opts, progress, cancel_token):
                         ln.include = False
                         report(result)
                         continue
+                renorm = bool(getattr(ln.mask, "renorm", False))
                 a_grid, ew_grid = ab.build_cog(
                     None, ladder, window=ln.fit_window, profile=result.profile,
-                    x0=ln.lam0, batch_synth_fn=lambda _a, _s=specs: _s)
+                    x0=ln.lam0, batch_synth_fn=lambda _a, _s=specs: _s, renorm=renorm)
                 ew_err = float(ln.ew_err) if np.isfinite(ln.ew_err) else 0.0
                 inv = ab.cog_invert(a_grid, ew_grid, ln.ew, ew_err=ew_err)
                 if inv["out_of_range"]:
@@ -569,7 +600,7 @@ def _solve_balance(request, result, opts, progress, cancel_token):
                     specs = batch([rv_point(a, feh) for a in ladder2], ln, target)
                     a_grid, ew_grid = ab.build_cog(
                         None, ladder2, window=ln.fit_window, profile=result.profile,
-                        x0=ln.lam0, batch_synth_fn=lambda _a, _s=specs: _s)
+                        x0=ln.lam0, batch_synth_fn=lambda _a, _s=specs: _s, renorm=renorm)
                     inv = ab.cog_invert(a_grid, ew_grid, ln.ew, ew_err=ew_err)
                 if inv["out_of_range"]:
                     ln.a = float("nan")

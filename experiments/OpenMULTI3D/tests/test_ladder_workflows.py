@@ -75,20 +75,58 @@ def _folds(run_vals_batch, request_):
 
 
 def test_balance_ladder_batches_are_foldable(monkeypatch, request_):
-    """Iteration 1's blend screen must not travel with the ladder, or nothing folds."""
+    """Iteration 1's blend screen must not travel with the ladder, or nothing folds.
+
+    The stub leaves ``compute_window_batch`` alone, which cannot run against this
+    fixture's empty grid, so what is exercised here is the per-line fallback: the
+    whole ladder in one ``compute_batch``, then the two-point screen.
+    """
     stub = _Synth()
     monkeypatch.setattr("tumult.synthesis.workflows.compute_batch", stub.compute_batch)
     monkeypatch.setattr("tumult.synthesis.workflows.abund_table", lambda prefs: {"Fe": SOLAR_FE})
 
     result = sp.solve_ionisation_balance(request_, _measurement(),
-                                         {"max_iter": 1, "span": 0.4, "points": 3})
+                                         {"max_iter": 1, "span": 0.4, "points": 3,
+                                          "abund_step": 0.25})
     assert np.isfinite(result.diags["d_ion"])
-    # one ladder batch and one screen batch per line, in that order
-    assert [len(b) for b in stub.batches] == [3, 2, 3, 2]
+    # One ladder batch and one screen batch per line, in that order. The ladder is the
+    # lattice covering +/-span, so its length follows abund_step (0.25 over [-0.5, +0.5]),
+    # not "points" -- which now only sizes the out-of-range retry.
+    assert [len(b) for b in stub.batches] == [5, 2, 5, 2]
     assert _folds(stub.batches[0], request_)
     assert _folds(stub.batches[2], request_)
     # the screen pair is deliberately unfoldable: it switches elements on and off
     assert not _folds(stub.batches[1], request_)
+
+
+def test_ladder_rungs_are_spaced_by_the_abundance_lattice(monkeypatch, request_):
+    """Rungs sit on the lattice, which is what lets a repeated rung be a cache hit.
+
+    Also the only solver test that takes more than one iteration: every other one holds
+    all four parameters, so ``max_iter`` collapses to 1 and the stepping call is never
+    reached.
+    """
+    stub = _Synth()
+    monkeypatch.setattr("tumult.synthesis.workflows.compute_batch", stub.compute_batch)
+    monkeypatch.setattr("tumult.synthesis.workflows.abund_table", lambda prefs: {"Fe": SOLAR_FE})
+    measurement = _measurement()
+    # [Fe/H] is the one parameter this two-line stub can actually constrain: its
+    # diagnostic is the mean abundance offset, needing neither an excitation spread
+    # nor a second line per stage.
+    measurement.free = {"teff": False, "logg": False, "feh": True, "vmic": False}
+
+    result = sp.solve_ionisation_balance(
+        request_, measurement,
+        {"max_iter": 2, "span": 0.4, "points": 3, "abund_step": 0.25})
+
+    assert len(result.history) == 2, "the second iteration has to be reached"
+    ladders = [b for b in stub.batches if len(b) > 2]
+    assert len(ladders) >= 2
+    for batch in ladders:
+        rungs = sorted(float(dict(t.split("=") for t in rv["abundances"].split())["Fe"])
+                       for rv in batch)
+        gaps = np.diff(rungs)
+        assert np.allclose(gaps, 0.25), f"rungs off the lattice: {rungs}"
 
 
 def test_abundance_gradient_batch_is_foldable(monkeypatch, request_):
