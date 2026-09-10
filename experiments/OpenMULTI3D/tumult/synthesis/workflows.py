@@ -284,6 +284,11 @@ def build_settings(prefs, run_vals, atmos_format=None):
     settings = {
         "linelist_params": linelist,
     }
+    # A curve-of-growth rung only repeats one atmosphere at another abundance; the
+    # transition dump is the same diagnostic every time, so a caller synthesising a
+    # ladder asks for it once. Absent means the Fortran default (write it).
+    if run_vals.get("save_linelist") is False:
+        settings["rt_output_params"] = {"save_linelist": False}
     if atmos:
         settings["atmos_params"] = atmos
     if composition:

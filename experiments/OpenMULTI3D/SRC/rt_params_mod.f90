@@ -17,7 +17,8 @@ MODULE rt_params_mod
   ! Both groups share the same member names (solver, angle_quad, ntheta, nphi,
   ! maxiter, sample_back_opac, sample_linelist, include_linelist, include_absmet);
   ! &rt_output_params additionally has custom_mu, ray_offset and pivot_z, which
-  ! only apply to the inclined output rays.
+  ! only apply to the inclined output rays, and save_linelist, which controls the
+  ! linelist_out.txt dump written at the end of the output pass.
   ! For the output pass, maxiter is the number of fixed-population ("Lambda")
   ! iterations appended after the rt_iter%maxiter NLTE iterations (was ilambd).
   ! Defaults differ per pass: include_linelist is F/T and include_absmet T/F
@@ -41,6 +42,11 @@ MODULE rt_params_mod
   ! Output-ray geometry (members of &rt_output_params only)
   character(len=512), public, save :: custom_mu=''
   real(8), public :: ray_offset(2)=[0.,0.], pivot_z=-1
+  ! linelist_out.txt lists every transition the run kept, with its strength at the
+  ! run's own composition -- a diagnostic, never an input. A curve of growth repeats
+  ! one atmosphere at many abundances and only needs the dump once, so it can be
+  ! switched off for the rungs that would otherwise rewrite it.
+  logical, public, save :: save_linelist=.true.
 
   public :: read_rt_params, echo_rt_params, setup_quadrature
 
@@ -72,7 +78,7 @@ CONTAINS
       sample_linelist, include_linelist, include_absmet
     namelist /rt_output_params/ solver, angle_quad, ntheta, nphi, maxiter, sample_back_opac, &
       sample_linelist, include_linelist, include_absmet, &
-      custom_mu, ray_offset, pivot_z
+      custom_mu, ray_offset, pivot_z, save_linelist
     !-----------------------------------------------------------------------------
     if (do_echo) then
       call to_locals (rt_iter)

@@ -29,7 +29,8 @@ MODULE rt_patch_mod
     global_flux_err, global_flux_pos, global_flux_lambda, flux_update_counter, &
     maser_chi_floor, maser_dtau_max, maser_Inu_max, suppress_masers, set_file
   USE mpi_mod, only: mpi
-  USE rt_params_mod, only: rt_params_t, rt_iter, rt_out, ray_offset, pivot_z
+  USE rt_params_mod, only: rt_params_t, rt_iter, rt_out, ray_offset, pivot_z, &
+                           save_linelist
   USE ray_mod, only: one_dimensional, ray_type, rstar, rorigin
   USE trans_mod, only: line_type, cont_type
   USE bbtrans_mod, only: tolerance
@@ -743,7 +744,7 @@ contains
     if (end_boundary) then
       if (self%do_final .and. self%n_mu>0) then
         call self%save_intensity()
-        call self%print_linelist(comp, self%n_nu)
+        if (save_linelist) call self%print_linelist(comp, self%n_nu)
       elseif (self%do_full_sp .and. top_of_domain) then
         call self%check_flux_convergence()
       endif
