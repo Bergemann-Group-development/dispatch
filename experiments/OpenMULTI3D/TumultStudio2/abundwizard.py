@@ -1,12 +1,12 @@
-"""The shared machinery of the two 3-step abundance wizards.
+"""The shared machinery of the stepped abundance wizards.
 
 :class:`abundancetool.AbundanceTool` (element abundances vs an observation) and
 :class:`abundcorrtool.AbundCorrTool` (NLTE-LTE corrections vs a synthetic 1D LTE
 reference) grew as siblings with near-verbatim copies of the step switcher, the
 results-list / selection management, the action-channel dispatch, the per-line table
 scaffolding, the dark scatter figure and the jump-to-line logic. That common machinery
-lives here; the subclasses keep what is genuinely different - their forms, their run
-stages (what gets synthesised and inverted) and their table columns.
+lives here; the subclasses keep what is genuinely different - their forms, how many steps
+they have, their run stages (what gets synthesised and inverted) and their table columns.
 
 Subclasses set the class attributes below (``prefix`` namespaces the DOM/bridge ids,
 ``kind`` is the left-sidebar focus kind coordinated through ``ctx.focus_kind``) and
@@ -15,9 +15,11 @@ implement the hooks marked "subclass".
 from __future__ import annotations
 
 import html
+from dataclasses import replace
 
 import numpy as np
-from bokeh.models import BoxAnnotation, ColumnDataSource, Span, TextInput
+from bokeh.models import (BoxAnnotation, ColumnDataSource, CustomJS, HoverTool, Range1d,
+                          Span, TextInput, Whisker)
 from bokeh.plotting import figure
 
 import abundance as ab
@@ -37,16 +39,64 @@ X_AXES = {
     "lam0": ("Wavelength λ₀ [Å]", lambda ln: ln.lam0),
 }
 
+# the two diagnostics every abundance fit is read against, shown as a pair of panels: the
+# abundance against excitation energy (a temperature diagnostic) and against reduced EW (a
+# microturbulence one). A tool that shows the pair has no x-axis selector.
+PANEL_AXES = ("evi", "rew")
+
 # a fitted profile (not trapz) is required - the FWHM window comes from it (see abundance.py)
 PROFILES = ["gauss", "voigt", "asym_gauss"]
 DEFAULT_JUMP_SPAN_AA = 1.0   # jump span for a no-window line when no line has been shown yet
+FIT_WINDOW_MARGIN = 0.05     # fraction of a fitted line window shown beyond either edge
+
+# what a hovered point says about itself
+POINT_TOOLTIPS = [("λ₀", "@lam{0.000} Å"), ("ion", "@ion"), ("value", "@a{0.000}")]
+
+# Hovering a point marks its table row: the point carries the index of the line it came from
+# (the ``idx`` column), which is the same index the row is addressed by, so the two views are
+# linked without a server round trip. The reverse direction (row → point) lives in the page
+# script, which writes the marker source this module publishes as ``<prefix>_hover``.
+HOVER_JS = """
+document.querySelectorAll('.' + prefix + '-row.row-hover')
+        .forEach((r) => r.classList.remove('row-hover'));
+const ix = cb_data.index.indices;
+const idx = source.data.idx;
+if (!ix.length || !idx) return;
+const row = document.querySelector(
+    '.' + prefix + '-row[data-line="' + idx[ix[0]] + '"]');
+if (row) row.classList.add('row-hover');
+"""
+
+# A scatter click selects through Bokeh's TapTool.  The source carries the original line
+# index, so the callback can mark and reveal the corresponding table row, then click it to
+# reuse the table's existing server-side jump action.
+SELECT_JS = """
+const selected = cb_obj.indices;
+if (!selected.length || !source.data.idx) return;
+const line = source.data.idx[selected[0]];
+const table = document.getElementById(prefix + '-table');
+if (!table) return;
+const row = table.querySelector('.' + prefix + '-row[data-line="' + line + '"]');
+if (!row) return;
+// Reuse the row's ordinary click path for both the persistent table selection and the
+// server-side line jump.
+row.click();
+const box = table.getBoundingClientRect();
+const rect = row.getBoundingClientRect();
+const head = table.querySelector('thead');
+const top = box.top + (head ? head.getBoundingClientRect().height : 0);
+if (rect.top < top || rect.bottom > box.bottom) {
+    table.scrollTop += (rect.top + rect.height / 2) - (top + box.bottom) / 2;
+}
+"""
 
 
 class AbundanceWizard(Tool):
     # --- subclass configuration --------------------------------------------------------
     prefix = ""            # DOM/bridge namespace: "abund" | "corr"
+    steps = 3              # how many step panels the wizard's switcher drives
     kind = ""              # ctx.focus_kind value while a result owns the centre view
-    btn_selector = ""      # toolbar button, e.g. "#abundance-btn"
+    btn_selector = ""      # toolbar button, e.g. "#abundcorr-btn" ("" = entered elsewhere)
     section = ""           # store section for the wizard's own form values
     empty_table_msg = "No result selected"
     y_axis_label = "A(X)"
@@ -72,15 +122,16 @@ class AbundanceWizard(Tool):
 
     def __init__(self, ctx, *, setup):
         Tool.__init__(self, ctx)
-        self.maskset_uid = getattr(self, "maskset_uid", None)
         self.sort_keys = {**self.BASE_SORT_KEYS, **self.extra_sort_keys}
         self.sort = SortState({**self.BASE_SORT_ASC, **self.extra_sort_asc}, "lam0")
         self.setup = setup                # SynthSetup: the wizard's own synthesis config
-        self.own_mode_bridges((".sidebar-right", f"{self.prefix}-active"),
-                              (self.btn_selector, "active"))
+        panels = [(".sidebar-right", f"{self.prefix}-active")]
+        if self.btn_selector:
+            panels.append((self.btn_selector, "active"))
+        self.own_mode_bridges(*panels)
         self._view_bridge = ctx.bridges.cls("#main", f"{self.prefix}-mode")
         self._step_bridges = [ctx.bridges.cls("#main", f"{self.prefix}-step-{i}")
-                              for i in (1, 2, 3)]
+                              for i in range(1, self.steps + 1)]
         self._results_bridge = ctx.bridges.html(f"{self.prefix}-results")
         self._table_bridge = ctx.bridges.html(f"{self.prefix}-table")
 
@@ -90,47 +141,57 @@ class AbundanceWizard(Tool):
         self.results = []                  # list[ab.AbundanceResult]
         self.selected_uid = None
         self._last_span_aa = None          # span (Å) of the last shown line, for no-window jumps
+        self._jumped = None                # index of the line whose window is accented
 
         # step switch / run buttons / result clicks / line toggles all report through one
         # client->server channel, written as ``"<kind>:<arg>:<nonce>"``.
         self.actions = TextInput(value="", visible=False, name=f"{self.prefix}-actions")
         self.actions.on_change("value", self._on_action)
 
-    # --- step-1 line source: a line-mask set from the shared store ----------------------
-    # Both wizards measure *given* windows now; the windows themselves are made (imported,
-    # drawn or auto-generated) in the LineMasks view, so step 1 only has to choose a set.
-    maskset_element = ""     # subclass filter: only offer sets of this element ("" = any)
+    # --- window highlights ---------------------------------------------------------------
+    # A result's windows belong to the result, not to a jump: a wizard that paints them shows
+    # them for as long as it owns the centre view, with the jumped-to line accented but never
+    # draggable (windows are edited in the LineMasks view). The call sites are the subclass's,
+    # so a wizard whose lines carry no user-drawn windows paints nothing.
+    def _result_masks(self, res):
+        """The masks to highlight for ``res``: its lines' windows, carrying the *line's*
+        include state, so a row switched off in the table is drawn switched off."""
+        return [replace(ln.mask, include=ln.include) for ln in res.lines]
 
-    def _masksets(self):
-        masks = getattr(self.ctx, "masks", None)
-        if masks is None:
-            return []
-        return [m for m in masks.listed
-                if m.masks and (not self.maskset_element
-                                or m.element == self.maskset_element)]
+    def _result_spec(self, res):
+        """Subclass hook: the spectrum ``res`` was measured on, whose points snap the window
+        bounds, or None when it is no longer loaded."""
+        return None
 
-    @staticmethod
-    def _maskset_label(mset):
-        n = sum(1 for m in mset.masks if m.include)
-        el = f"{mset.element} · " if mset.element else ""
-        return f"{el}{mset.name} ({n})"
+    def _render_windows(self, active=None):
+        res = self.selected()
+        if not (self.active and self.is_focused()) or res is None:
+            return self.canvas.clear_windows()
+        spec = self._result_spec(res)
+        xpts = np.asarray(spec.values[0], dtype=float) if spec is not None else None
+        self.canvas.highlight_windows(self._result_masks(res), active=active, xpts=xpts)
 
-    def _sync_masksets(self):
-        """Repaint the line-mask dropdown from the shared store — sets are added and removed
-        from the Objects sidebar while this panel is open."""
-        sets = self._masksets()
-        options = [(str(m.uid), self._maskset_label(m)) for m in sets]
-        current = str(self.maskset_uid or "")
-        if not any(uid == current for uid, _ in options):
-            current = options[0][0] if options else ""
-            self.maskset_uid = current or None
-        field = self.form1.fields["maskset"]
-        field.options = options or [("", "— no line mask yet —")]
-        field.value = current
-        self.form1.render()
+    # --- synthetic overlays ----------------------------------------------------------------
+    # Like the windows, the syntheses belong to the result: a wizard that keeps one per line
+    # draws them all for as long as it owns the centre view, so the spectrum pane shows what
+    # the fit is standing on and fills in as the run lands. Jumping a row then only moves the
+    # accent and the EW hatch, it does not decide what is drawn.
+    paint_overlays = False   # subclass: True where every line carries a synthesis worth drawing
 
-    def selected_maskset(self):
-        return next((m for m in self._masksets() if str(m.uid) == str(self.maskset_uid)), None)
+    def _render_decor(self, active=None):
+        """Everything the selected result puts on the spectrum: its windows (``active``
+        accented) and the syntheses standing on them."""
+        self._render_windows(active)
+        self._render_overlays()
+
+    def _render_overlays(self, res=None):
+        if not self.paint_overlays:
+            return
+        res = res if res is not None else self.selected()
+        if not (self.active and self.is_focused()) or res is None:
+            return self.canvas.clear_abund_overlay()
+        self.canvas.set_abund_overlays([(ln.fit_spec, ln.window) for ln in res.lines
+                                        if ln.include and ln.fit_spec is not None])
 
     # --- focus-kind coordination (which left-sidebar list owns the selection) -----------
     def is_focused(self):
@@ -145,34 +206,151 @@ class AbundanceWizard(Tool):
 
     def set_step(self, n):
         from htmlbridge import toggle
-        self.step = max(1, min(3, int(n)))
+        self.step = max(1, min(self.steps, int(n)))
         for i, bridge in enumerate(self._step_bridges, start=1):
             toggle(bridge, i == self.step)
 
-    # --- dark scatter figure (centre view, step 3) ---------------------------------------
-    def _build_fig(self, source):
-        self.src = source
+    # --- dark scatter figures (the centre view's diagnostic pane) ------------------------
+    # A fit reads its parameters off two diagnostics at once, so both are drawn: the tools
+    # that show a fit build the pair (:meth:`_build_figs`), the corrections wizard — whose
+    # scatter is a distribution, not a fit — keeps a single selectable axis
+    # (:meth:`_build_fig`). Both draw from one ColumnDataSource carrying an ``x_<axis>``
+    # column per panel, so a single data push repaints every panel.
+    def _new_fig(self, xkey):
         fig = figure(sizing_mode="stretch_both", output_backend="webgl",
-                     tools="pan,wheel_zoom,box_zoom,reset", active_scroll="wheel_zoom",
-                     min_border_left=62, min_border_bottom=42)
+                     tools="pan,wheel_zoom,box_zoom,tap,reset", active_scroll="wheel_zoom",
+                     min_border_left=62, min_border_bottom=42,
+                     x_range=Range1d(0.0, 1.0), y_range=Range1d(0.0, 1.0))
         style_dark(fig)   # match the other Bokeh panels' dark theme
-        fig.scatter("x", "a", source=self.src, size=8, fill_color=ACCENT,
-                    line_color="#fff", line_width=1)
-        self.mean_line = Span(location=0, dimension="width", line_color="#e05c5c",
-                              line_width=1.2, line_dash="dashed", visible=False)
-        self.mean_band = BoxAnnotation(fill_color="#e05c5c", fill_alpha=0.08, visible=False)
-        fig.add_layout(self.mean_line)
-        fig.add_layout(self.mean_band)
+        span = Span(location=0, dimension="width", line_color="#e05c5c",
+                    line_width=1.2, line_dash="dashed", visible=False)
+        band = BoxAnnotation(fill_color="#e05c5c", fill_alpha=0.08, visible=False)
+        fig.add_layout(span)
+        fig.add_layout(band)
         fig.yaxis.axis_label = self.y_axis_label
+        self.figs.append(fig)
+        self.mean_lines.append(span)
+        self.mean_bands.append(band)
+        return fig
+
+    def _build_fig(self, source):
+        """One panel, on the axis ``form3`` selects."""
+        self.src = source
+        self.figs, self.mean_lines, self.mean_bands = [], [], []
+        fig = self._new_fig("x")
+        self._add_series(source, ACCENT, xkeys=["x"])
         fig.xaxis.axis_label = X_AXES[str(self.form3.value("xaxis"))][0]
         fig.name = f"{self.prefix}_fig"
         self.fig = fig
+        self.mean_line, self.mean_band = self.mean_lines[0], self.mean_bands[0]
         return fig
 
+    def _build_figs(self, source):
+        """The two diagnostic panels (:data:`PANEL_AXES`), side by side."""
+        self.src = source
+        source.name = f"{self.prefix}_points"
+        self.figs, self.mean_lines, self.mean_bands = [], [], []
+        for i, key in enumerate(PANEL_AXES):
+            fig = self._new_fig(f"x_{key}")
+            fig.xaxis.axis_label = X_AXES[key][0]
+            fig.name = f"{self.prefix}_fig" + ("" if i == 0 else str(i + 1))
+        # the ring the page script moves onto the point of a hovered table row, on every
+        # panel at once (it carries both panels' x, like the points themselves)
+        self.hover_src = ColumnDataSource({f"x_{k}": [] for k in PANEL_AXES} | dict(a=[]))
+        self.hover_src.name = f"{self.prefix}_hover"
+        for key, fig in zip(PANEL_AXES, self.figs):
+            fig.scatter(f"x_{key}", "a", source=self.hover_src, size=16, fill_color=None,
+                        line_color="#fff", line_width=2)
+        self._add_series(source, ACCENT)
+        self.fig, self.fig2 = self.figs
+        return self.figs
+
+    def _add_series(self, source, color, xkeys=None):
+        """Draw ``source``'s points on every panel, each linked to the per-line table."""
+        source.selected.js_on_change(
+            "indices", CustomJS(args=dict(source=source, prefix=self.prefix), code=SELECT_JS))
+        for key, fig in zip(xkeys or [f"x_{k}" for k in PANEL_AXES], self.figs):
+            r = fig.scatter(key, "a", source=source, size=8, fill_color=color,
+                            line_color="#fff", line_width=1,
+                            nonselection_fill_color=color, nonselection_fill_alpha=1.0,
+                            nonselection_line_color="#fff", nonselection_line_alpha=1.0)
+            fig.add_tools(HoverTool(
+                renderers=[r], tooltips=POINT_TOOLTIPS,
+                callback=CustomJS(args=dict(source=source, prefix=self.prefix),
+                                  code=HOVER_JS)))
+
+    def _add_whiskers(self, source, color):
+        """Error bars on both panels, from ``source``'s ``lo``/``hi`` columns."""
+        for key, fig in zip(PANEL_AXES, self.figs):
+            fig.add_layout(Whisker(base=f"x_{key}", upper="hi", lower="lo", source=source,
+                                   line_color=color, line_width=1.2))
+
+    def _pack_points(self, indexed, value_of=lambda ln: ln.a, sigma_of=lambda ln: ln.sigma_a):
+        """The scatter columns for ``indexed`` — ``(index into res.lines, line)`` pairs.
+
+        The bars are part of the data, not decoration: they go into ``lo``/``hi`` so the
+        ranges are fitted to what is drawn, including a point whose bar reaches furthest.
+        The index rides along as ``idx``, which is what links a point to its table row.
+        """
+        lines = [ln for _i, ln in indexed]
+        sig = [s if np.isfinite(s) else 0.0 for s in (float(sigma_of(ln)) for ln in lines)]
+        vals = [float(value_of(ln)) for ln in lines]
+        data = {f"x_{k}": [X_AXES[k][1](ln) for ln in lines] for k in PANEL_AXES}
+        data.update(a=vals, lo=[v - s for v, s in zip(vals, sig)],
+                    hi=[v + s for v, s in zip(vals, sig)],
+                    lam=[ln.lam0 for ln in lines], ion=[ln.ion for ln in lines],
+                    idx=[i for i, _ln in indexed])
+        return data
+
+    @staticmethod
+    def empty_points():
+        return ({f"x_{k}": [] for k in PANEL_AXES}
+                | dict(a=[], lo=[], hi=[], lam=[], ion=[], idx=[]))
+
+    @staticmethod
+    def value_label(res):
+        """What a result's ``ln.a`` actually is, for the table header, the axis and the mean.
+
+        A run whose abundances were given relative to the model composition inverts each line
+        to [X/Fe] (``A(X) = A_solar(X) + [Fe/H] + [X/Fe]``), not to an absolute abundance;
+        for iron itself that value is the offset from the model's own [Fe/H], so it is named
+        Δ[Fe/H] rather than the meaningless [Fe/Fe]. An absolute run (the balance always,
+        which converts every inverted line back to A(X)) is labelled A(X).
+        """
+        el = getattr(res, "symbol", "") or getattr(res, "element", "") or "X"
+        if not getattr(res, "relative", False):
+            return f"A({el})"
+        return "Δ[Fe/H]" if el == "Fe" else f"[{el}/Fe]"
+
+    def _crop_panels(self, series):
+        """Fit every panel to its x data and the full vertical whisker span.
+
+        Bokeh's automatic ranges do not account for ``Whisker`` annotations.  Derive the
+        shared y extent here from the lower and upper error-bar columns so callers cannot
+        accidentally crop to the point centres and clip a bar.
+        """
+        ys = [y for data in series for column in ("lo", "hi") for y in data[column]]
+        for key, fig in zip(PANEL_AXES, self.figs):
+            xs = [x for d in series for x in d[f"x_{key}"]]
+            self._crop_scatter(xs, ys, fig)
+
+    def _set_mean(self, value, err=0.0):
+        """Show the mean (and its ± band) on every panel, or hide it when there is none."""
+        ok = value is not None and np.isfinite(value)
+        err = err if np.isfinite(err) else 0.0
+        for span, band in zip(self.mean_lines, self.mean_bands):
+            span.visible = band.visible = bool(ok)
+            if ok:
+                span.location = float(value)
+                band.top, band.bottom = float(value) + err, float(value) - err
+
     # --- Tool protocol -------------------------------------------------------------------
+    form3 = None            # subclass: the scatter-axis selector, where the axis is a choice
+
     @property
     def models(self):
-        return [*self.form1.models, *self.form3.models, self.actions, *self.setup.models]
+        return [*self.form1.models, *(self.form3.models if self.form3 else []),
+                self.actions, *self.setup.models]
 
     def activate(self):
         # first open: seed the wizard's own synthesis setup from the Synthesize tab, then
@@ -182,16 +360,12 @@ class AbundanceWizard(Tool):
             self.setup.inherit_from()
             store.update_pref(self.setup.section, "_seeded", True)
         self.active = True
-        self._on_activate_extra()
-        self.setup.render()               # step-2 forms + grid + atoms note
+        self.setup.render()               # the synthesis forms + grid + atoms note
         self.push_mode("on")
         self.set_step(self.step)
         # if a result is already selected, re-enter its centre view
         if self.selected() is not None and self.is_focused():
             self.push_view("on")
-
-    def _on_activate_extra(self):
-        """Subclass hook: extra surfaces to push on activate (e.g. the reference selector)."""
 
     def deactivate(self):
         was = self.active
@@ -302,9 +476,12 @@ class AbundanceWizard(Tool):
 
     # --- streaming + rendering -------------------------------------------------------------
     def _stream_row(self, res):
-        """Doc-thread callback: repaint the table as each line's synthesis lands."""
+        """Doc-thread callback: repaint everything an incoming line changed — the table, the
+        diagnostic panels and the synthetic overlays — so a fit is watched as it runs."""
         if self.selected() is res and self.is_focused():
             self.push_table(self.table_html(res))
+            self._render_scatter()
+            self._render_overlays(res)
 
     def push_results(self):
         self._results_bridge.value = self.results_html()
@@ -341,17 +518,23 @@ class AbundanceWizard(Tool):
         self._render_scatter()
         self.push_table(self.table_html(res))
 
-    def _crop_scatter(self, xs, ys):
-        """Fix the scatter ranges to the shown values with a 5% margin each side."""
+    def _crop_scatter(self, xs, ys, fig=None):
+        """Fix a panel's ranges to the shown values with a 5% margin each side."""
+        fig = fig if fig is not None else self.fig
         xs = np.asarray(xs, dtype=float)
         ys = np.asarray(ys, dtype=float)
         xs, ys = xs[np.isfinite(xs)], ys[np.isfinite(ys)]
         if xs.size == 0 or ys.size == 0:
             return
-        for rng, lo, hi in ((self.fig.x_range, xs.min(), xs.max()),
-                            (self.fig.y_range, ys.min(), ys.max())):
+        for rng, lo, hi in ((fig.x_range, xs.min(), xs.max()),
+                            (fig.y_range, ys.min(), ys.max())):
             pad = 0.05 * (hi - lo) or 0.05 * (abs(hi) or 1.0)
-            rng.start, rng.end = float(lo - pad), float(hi + pad)
+            start, end = float(lo - pad), float(hi + pad)
+            rng.start, rng.end = start, end
+            # Keep Reset useful after replacing Bokeh's auto-ranging DataRange1d with the
+            # fixed range required for Whisker extents.
+            if isinstance(rng, Range1d):
+                rng.reset_start, rng.reset_end = start, end
 
     # --- jump-to-line -----------------------------------------------------------------------
     def _jump_line(self, token):
@@ -370,8 +553,10 @@ class AbundanceWizard(Tool):
             self._set_range(ln.lam0 - 0.5 * span, ln.lam0 + 0.5 * span)
             self._clear_line_decor()
             return
-        self._last_span_aa = abs(hi - lo)
-        self._set_range(lo, hi)
+        lo, hi = min(lo, hi), max(lo, hi)
+        self._last_span_aa = hi - lo
+        pad = FIT_WINDOW_MARGIN * (hi - lo)
+        self._set_range(lo - pad, hi + pad)
         self._jump_decor(res, ln)
 
     def _jump_decor(self, res, ln):

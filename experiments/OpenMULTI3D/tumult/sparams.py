@@ -538,10 +538,12 @@ def solve_ionisation_balance(request, result, opts=None, *, progress=None, cance
                     # more — the guess may simply be far off at first
                     c2 = float(np.clip(inv["a"], c - 3 * span, c + 3 * span))
                     ladder2 = np.linspace(c2 - 2 * span, c2 + 2 * span, npts)
-                    specs2 = batch([rv_point(a, feh) for a in ladder2], ln, target)
+                    # the retry replaces the ladder, so its spectra replace the rungs the
+                    # solution spectrum is later read off
+                    specs = batch([rv_point(a, feh) for a in ladder2], ln, target)
                     a_grid, ew_grid = ab.build_cog(
                         None, ladder2, window=ln.fit_window, profile=result.profile,
-                        x0=ln.lam0, batch_synth_fn=lambda _a, _s=specs2: _s)
+                        x0=ln.lam0, batch_synth_fn=lambda _a, _s=specs: _s)
                     inv = ab.cog_invert(a_grid, ew_grid, ln.ew, ew_err=ew_err)
                 if inv["out_of_range"]:
                     ln.a = float("nan")
@@ -556,6 +558,9 @@ def solve_ionisation_balance(request, result, opts=None, *, progress=None, cance
                     ln.a_grid, ln.ew_grid = tuple(a_grid), tuple(ew_grid)
                     ln.method = "cog"
                     ln.flags = tuple(f for f in ln.flags if f != "out_of_range")
+                    # the line as this iteration's parameters and abundance leave it, read
+                    # off the ladder it was inverted through (element-only, like the ladder)
+                    ln.fit_spec = ab.cog_spectrum(a_grid, specs, a_rel)
             except CancelledError:
                 raise
             except Exception as exc:

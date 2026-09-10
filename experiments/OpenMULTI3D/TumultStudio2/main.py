@@ -435,7 +435,7 @@ def build():
             linenav.render()  # keep the line list scoped to the active object's range
             # (only while the panel is open; it is rebuilt on the next open otherwise)
         if abundancetool is not None:
-            abundancetool.refresh()  # keep the step-1 reference selector in sync
+            abundancetool.refresh()  # keep the abundance modal's reference selector in sync
         if ionbaltool is not None:
             ionbaltool.refresh()     # ditto for the balance modal's target selector
 
@@ -606,9 +606,10 @@ def build():
         get_observation=lambda uid: (canvas.effective(canvas._find(uid)) if canvas._find(uid)
                                      else None),
         master_path=master, profiles=PROFILES,
-        # the mask view's analysis action: hand the open set to the balance tool, which is
-        # built further down (the lambda resolves it at click time, not now)
-        on_fit_balance=lambda mset: ionbaltool.open_for(mset))
+        # the mask view's analysis actions: hand the open set to the abundance / balance
+        # tools, which are built further down (the lambdas resolve them at click time)
+        on_fit_balance=lambda mset: ionbaltool.open_for(mset),
+        on_measure_abund=lambda mset: abundancetool.open_for(mset))
     settings = build_settings(canvas)
 
     def add_synth(spec, name, meta=None, conv=None):
@@ -634,9 +635,14 @@ def build():
     # the Abundance tool owns its synthesis setup (its own Setup sub-tab), sharing only the
     # app-global grid registry and the Synthesize tab's NLTE model-atom selection; it inherits
     # the Synthesize-tab configuration on first open and is independent thereafter.
+    # its fields live in the abundance modal, so every edit restates the setup in the object
+    # panel, where the Run synthesis button stands
+    _abund_note = lambda *_: (abundancetool is not None and abundancetool.push_setup_note())
     abund_setup = SynthSetup(
         "abund", "abund_run", synth_panel.grids,
-        atoms_provider=lambda: list(synth_panel.atoms.selected), notify=notify)
+        atoms_provider=lambda: list(synth_panel.atoms.selected), notify=notify,
+        on_run_change=_abund_note, on_base_change=_abund_note,
+        on_mode_change=_abund_note, on_atmos_change=_abund_note)
     abundancetool = AbundanceTool(
         ctx,
         setup=abund_setup,
@@ -692,8 +698,6 @@ def build():
         ionbaltool.blur()             # ditto for the measurement view
         canvas.select_object(uid)     # -> on_change -> update_all repaints with spectrum focus
 
-    # the wizards' step-1 line source is a mask set, so their dropdowns follow the store
-    ctx.subscribe("masks-changed", lambda **_: abundancetool.refresh())
     # a measurement's panel names the set it came from (and flags it once that set is edited)
     ctx.subscribe("masks-changed",
                   lambda **_: ionbaltool.active and ionbaltool.push_panel())
@@ -1055,8 +1059,8 @@ def build():
 
     doc = curdoc()
     doc.title = "TUMULT Studio"
-    for root in (canvas.nav, canvas.main, filtertool.fig, abundancetool.fig,
-                 abundcorrtool.fig, ionbaltool.fig, picker.layout,
+    for root in (canvas.nav, canvas.main, filtertool.fig,
+                 *abundancetool.figs, abundcorrtool.fig, *ionbaltool.figs, picker.layout,
                  *masktool.roots,
                  linelist_picker.layout, synth_panel.atoms.picker.layout,
                  synth_panel.grids.picker.layout, synth_panel.atmos_picker.layout,
@@ -1065,9 +1069,6 @@ def build():
                  corr_atoms.picker.layout, bridges):
         doc.add_root(root)
 
-    # seed the wizards' step-1 line-mask dropdowns before the first paint (they are kept in
-    # sync afterwards by the "masks-changed" subscription above)
-    abundancetool._sync_masksets()
     ionbaltool.refresh()      # the balance modal's target selector
 
     inspector.bind(canvas.selected())
@@ -1120,7 +1121,9 @@ def build():
         abund_table_html="",
         abund_ref_html=abundancetool.ref_html(),
         abund1_html=abundancetool.form1.html(),
-        abund3_html=abundancetool.form3.html(),
+        abund_context_html="",
+        abund_actions_html=abundancetool.actions_html(),
+        abund_setup_note_html=abundancetool.setup_note_html(),
         abund_params_html=abund_setup.run_form.html(),
         abund_base_html=abund_setup.base_form.html(),
         abund_mode_html=abund_setup.mode_form.html(),

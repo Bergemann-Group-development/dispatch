@@ -23,9 +23,12 @@ Two phases, one background job:
    diagnostics and step the *free* parameters until they are all inside tolerance.
 
 Both phases are headless — this module supplies the modal, the streaming table and the
-diagnostic plot, and passes a ``progress`` callback so rows and the iteration status line
-land as they are computed. A held parameter's diagnostic is still computed and shown, as
-the residual it is.
+diagnostic panels, and passes a ``progress`` callback so rows, the panels and the iteration
+status line land as they are computed. The view opens on **Balance**, where the two slopes
+the solve fits are drawn side by side (A(X) against excitation energy and against reduced EW)
+with the two offsets stated as insets, so a fit is watched as it converges; **Lines** shows
+the target spectrum with every inverted line's synthetic drawn on it. A held parameter's
+diagnostic is still computed and shown, as the residual it is.
 
 Refitting from inside the object reuses its lines and overwrites the fit; launching again
 from the LineMasks view measures afresh into a new object. That is the whole identity rule:
@@ -35,11 +38,10 @@ from __future__ import annotations
 
 import html
 import logging
-from dataclasses import replace
 
 import astropy.units as u
 import numpy as np
-from bokeh.models import ColumnDataSource, Slope, Whisker
+from bokeh.models import ColumnDataSource, Label, Slope
 
 import abundance as ab
 import measurement as ms
@@ -47,8 +49,8 @@ import refstars
 import sparams as sp
 import store
 import synth
-from abundwizard import PROFILES, X_AXES, AbundanceWizard
-from canvas import ACCENT
+from abundwizard import PANEL_AXES, PROFILES, AbundanceWizard
+from canvas import ACCENT, MUTED
 from controls import Field, Form
 from htmlbridge import pulse
 from synthprefs import RUN_DEFAULTS, load_prefs, missing_prefs
@@ -59,7 +61,7 @@ ION2_COLOR = "#e05c5c"     # singly-ionised points (the neutral stage uses the s
 ENTRY_MANUAL = "manual"
 
 DEFAULTS = {
-    "profile": "gauss", "snr": 100.0, "cont_pct": 0.5, "xaxis": "evi",
+    "profile": "gauss", "snr": 100.0, "cont_pct": 0.5,
     "entry": refstars.AUTO_KEY,
     "teff": 5750.0, "logg": 4.5, "feh": 0.0, "vmic": 1.0,
     "fit_teff": True, "fit_logg": True, "fit_feh": True, "fit_vmic": True,
@@ -169,7 +171,9 @@ class IonBalanceTool(AbundanceWizard):
     kind = "ionbal"
     btn_selector = "#ionbal-btn"     # no toolbar button: the objects are the entry point
     section = "ionbal"
+    steps = 2                        # lines, balance
     empty_table_msg = "No measurement selected"
+    paint_overlays = True            # every inverted line is drawn on the target spectrum
     y_axis_label = "A(X)"
     final_stage = ms.STAGE_SOLVED
     extra_sort_keys = {"blend": lambda ln: ln.blend_frac}
@@ -229,12 +233,6 @@ class IonBalanceTool(AbundanceWizard):
             Field("tol_feh", "Tol: metallicity consistency [dex]", kind="number",
                   value=vals["tol_feh"], min=0, step=0.005),
         ], on_change=self._on_field)
-        # the only form outside the modal: the object panel's scatter axis
-        self.form3 = Form("ionbal3", [
-            Field("xaxis", "Scatter x-axis", kind="select", value=vals["xaxis"],
-                  options=list(X_AXES)),
-        ], on_change=self._on_field)
-
         setup = BalanceSynthesis(grids, on_change=self._push_modal_context)
         super().__init__(ctx, setup=setup)
         self.own_panel("ionbal-panel-content")
@@ -243,23 +241,32 @@ class IonBalanceTool(AbundanceWizard):
         self._pending_set = None     # the mask set the open modal will measure (None = refit)
         self._refit_uid = None       # the measurement the open modal will refit
         self._error = None
-        self._jumped = None          # index of the line whose window is accented
 
-        # neutral-stage points on the base figure's source; the ionised stage on a second
-        # source in red; whiskers on both; a fitted regression over the *neutral* points.
-        src = ColumnDataSource(dict(x=[], a=[], lo=[], hi=[], lam=[], ion=[]))
-        fig = self._build_fig(src)
-        fig.add_layout(Whisker(base="x", upper="hi", lower="lo", source=src,
-                               line_color=ACCENT, line_width=1.2))
-        self.src2 = ColumnDataSource(dict(x=[], a=[], lo=[], hi=[], lam=[], ion=[]))
-        fig.scatter("x", "a", source=self.src2, size=8, fill_color=ION2_COLOR,
-                    line_color="#fff", line_width=1)
-        fig.add_layout(Whisker(base="x", upper="hi", lower="lo", source=self.src2,
-                               line_color=ION2_COLOR, line_width=1.2))
-        self.trend = Slope(gradient=0, y_intercept=0, line_color=ACCENT,
-                           line_dash="dotted", line_width=1.4)
-        self.trend.visible = False
-        fig.add_layout(self.trend)
+        # The solve reads four diagnostics off the same lines at once, so the Balance view
+        # shows the two slopes as panels — A(X) against excitation energy and against reduced
+        # EW — and states the two offsets, which are levels rather than trends, as an inset on
+        # the panel whose parameter they belong with: the II−I offset (log g) beside the
+        # excitation slope, the metallicity offset beside the REW slope.
+        # Neutral-stage points ride the shared source, the ionised stage a second one in red;
+        # both panels get whiskers, and each carries the regression over its own *neutral*
+        # points.
+        self._build_figs(ColumnDataSource(self.empty_points()))
+        self._add_whiskers(self.src, ACCENT)
+        self.src2 = ColumnDataSource(self.empty_points())
+        self.src2.name = f"{self.prefix}_points2"
+        self._add_series(self.src2, ION2_COLOR)
+        self._add_whiskers(self.src2, ION2_COLOR)
+        self.trends, self.insets = [], []
+        for fig in self.figs:
+            trend = Slope(gradient=0, y_intercept=0, line_color=ACCENT,
+                          line_dash="dotted", line_width=1.4)
+            trend.visible = False
+            inset = Label(x=8, y=8, x_units="screen", y_units="screen", text="",
+                          text_color=MUTED, text_font_size="11px", background_fill_color=None)
+            fig.add_layout(trend)
+            fig.add_layout(inset)
+            self.trends.append(trend)
+            self.insets.append(inset)
 
     # --- Tool protocol --------------------------------------------------------------------
     @property
@@ -267,7 +274,7 @@ class IonBalanceTool(AbundanceWizard):
         # All modal controls are private to this tool; only the registered-grid data behind
         # the atmosphere selector comes from application preferences.
         return [*self.form1.models, *self.form2.models, *self.formadv.models,
-                *self.form3.models, *self.setup.models, self.actions]
+                *self.setup.models, self.actions]
 
     def activate(self):
         """Enter the result view; the fit dialog carries its own synthesis context."""
@@ -277,7 +284,7 @@ class IonBalanceTool(AbundanceWizard):
         self.set_step(self.step)
         if self.selected() is not None and self.is_focused():
             self.push_view("on")
-            self._render_windows(self._jumped)
+            self._render_decor(self._jumped)
 
     def refresh(self):
         """Keep the modal's target selector in step with the loaded observations."""
@@ -288,17 +295,13 @@ class IonBalanceTool(AbundanceWizard):
         self.refresh()
         if self.active:
             self.push_panel()
-            self._render_windows(self._jumped)   # the highlights follow a display-unit flip
+            self._render_decor(self._jumped)   # the highlights follow a display-unit flip
 
     # --- the modal ------------------------------------------------------------------------
     @staticmethod
     def _entry_options():
         return ([(ENTRY_MANUAL, "Type them in")]
                 + refstars.options("Auto (nearest class to the target)"))
-
-    def _sync_masksets(self):
-        """No-op: the wizards choose a set from a dropdown, this tool is *launched* with one
-        (and a measurement keeps the windows it was made from, not a live set)."""
 
     def _sync_targets(self):
         """Repaint the target dropdown from the canvas (observations come and go)."""
@@ -423,8 +426,6 @@ class IonBalanceTool(AbundanceWizard):
             # letting the next repaint silently put the class's values back
             self.form2.set_values(entry=ENTRY_MANUAL)
             store.update_pref(self.section, "entry", ENTRY_MANUAL)
-        elif key == "xaxis":
-            self.fig.xaxis.axis_label = X_AXES[str(value)][0]
             self._render_scatter()
 
     def _extra_action(self, kind, arg):
@@ -472,58 +473,42 @@ class IonBalanceTool(AbundanceWizard):
         # the highlights are painted after the base implementation, which hands the centre view
         # (and with it the sidebar focus) to this result only at the very end
         super().select_result(uid)
-        self._render_windows(self._jumped)
+        self._render_decor(self._jumped)
 
     def _render_selected(self):
         self.push_panel()
         super()._render_selected()
-        self._render_windows(self._jumped)
+        self._render_decor(self._jumped)
 
     def _jump_decor(self, res, ln):
-        # no per-line synthetic fit is kept during the solve, so decorate with the measured
-        # profile hatch (and the overlay only when one exists); the windows are already on
-        # the canvas — jumping only moves the accent onto this line.
-        if ln.fit_spec is not None:
-            self.canvas.set_abund_overlay(ln.fit_spec, ln.window)
+        # the windows and the inverted syntheses are already on the canvas — jumping hatches
+        # this line's measured profile and moves the accent onto it.
         if ln.fit_func is not None:
             self.canvas.set_abund_hatch(ln.fit_func, ln.window)
         self._jumped = next((i for i, l in enumerate(res.lines) if l is ln), None)
-        self._render_windows(self._jumped)
+        self._render_decor(self._jumped)
 
-    def _render_windows(self, active=None):
-        """Highlight the selected measurement's windows exactly as the LineMasks view
-        highlights the set they came from, with ``active`` (the jumped-to line) accented but
-        not draggable.
+    def _result_masks(self, res):
+        """The measurement's windows: each LineResult embeds the mask it was measured over,
+        so these *are* the windows the balance was solved on.
 
-        Each LineResult embeds the mask it was measured over, so these *are* the windows the
-        balance was solved on. They belong to the result, not to a jump, so they are painted
-        whenever this tool owns the centre view and dropped as soon as it does not.
-
-        A line switched off in the table is drawn switched off, which is why the masks are
-        copied with the *line's* include state: ``ln.mask.include`` is the source mask's, and
-        every measured line came from a switched-on one.
-
-        Until the measurement has its lines (the view opens the moment the fit is submitted,
-        and measuring runs on the worker) the windows are taken straight from the source mask
-        set, whose own switched-off masks are exactly the ones this run skipped."""
-        res = self.selected()
-        if not (self.active and self.is_focused()) or res is None:
-            return self.canvas.clear_windows()
+        Until it has its lines (the view opens the moment the fit is submitted, and measuring
+        runs on the worker) they are taken straight from the source mask set, whose own
+        switched-off masks are exactly the ones this run skipped."""
         if res.lines:
-            masks = [replace(l.mask, include=l.include) for l in res.lines]
-        else:
-            mset = self._source_set(res)
-            masks = list(mset.masks) if mset is not None else []
-        spec = self._spec_of(res)
-        xpts = np.asarray(spec.values[0], dtype=float) if spec is not None else None
-        self.canvas.highlight_windows(masks, active=active, xpts=xpts)
+            return super()._result_masks(res)
+        mset = self._source_set(res)
+        return list(mset.masks) if mset is not None else []
+
+    def _result_spec(self, res):
+        return self._spec_of(res)
 
     def _clear_line_decor(self):
         """Drop the per-line overlay/hatch and the accent; the highlights stay while a result
-        is in view (``_render_windows`` clears them once it is not)."""
+        is in view (``_render_decor`` clears them once it is not)."""
         self._jumped = None
         super()._clear_line_decor()
-        self._render_windows()
+        self._render_decor()
 
     def _spec_of(self, res):
         """The measurement's target observation, looked up by name (uids die with a session)."""
@@ -615,6 +600,7 @@ class IonBalanceTool(AbundanceWizard):
 
         pulse(self._modal, "close")
         self.push_results()
+        self.set_step(1)             # land on the balance panels: the fit is what to watch
         self.select_result(res.uid)
         self.notify(f"{res.element} balance: "
                     + ("solving…" if refit is not None else "measuring the windows…"))
@@ -649,7 +635,7 @@ class IonBalanceTool(AbundanceWizard):
         # the mask view shows the latest run's diagnostics beside its windows; the canvas
         # swaps the source set's highlights for the windows actually measured
         self.ctx.schedule(lambda: (self.ctx.emit("masks-changed"),
-                                   self._render_windows(self._jumped)))
+                                   self._render_decor(self._jumped)))
         return True
 
     # --- phase 2: the solve ------------------------------------------------------------------
@@ -697,55 +683,68 @@ class IonBalanceTool(AbundanceWizard):
                     level="success" if result.converged else "warn")
 
     # --- rendering --------------------------------------------------------------------------
+    # the offset each panel states as its inset, beside the slope it is fitted with
+    PANEL_INSETS = {"evi": "d_ion", "rew": "d_feh"}
+
     def _render_scatter(self):
+        """Repaint both diagnostic panels from the lines as they stand.
+
+        Called on every streamed row as well as at the end, so the panels are the live view
+        of the solve: the points move as each iteration re-inverts the EWs, the neutral-stage
+        regression follows them, and the insets restate the two offsets.
+        """
         res = self.selected()
-        inc = [ln for ln in res.lines if ln.include and np.isfinite(ln.a)] if res else []
-        empty = dict(x=[], a=[], lo=[], hi=[], lam=[], ion=[])
+        inc = [(i, ln) for i, ln in enumerate(res.lines)
+               if ln.include and np.isfinite(ln.a)] if res else []
         if not inc:
-            self.src.data = dict(empty)
-            self.src2.data = dict(empty)
-            self.mean_line.visible = self.mean_band.visible = False
-            self.trend.visible = False
+            self.src.data = self.empty_points()
+            self.src2.data = self.empty_points()
+            self._set_mean(None)
+            for trend, inset in zip(self.trends, self.insets):
+                trend.visible = False
+                inset.text = ""
             return
-        xf = X_AXES[str(self.form3.value("xaxis"))][1]
-        self.fig.yaxis.axis_label = f"A({res.element or 'X'})"
+        for fig in self.figs:
+            fig.yaxis.axis_label = self.value_label(res)
 
-        def pack(lns):
-            xs = [xf(ln) for ln in lns]
-            sig = [ln.sigma_a if np.isfinite(ln.sigma_a) else 0.0 for ln in lns]
-            return dict(x=xs, a=[ln.a for ln in lns],
-                        lo=[ln.a - s for ln, s in zip(lns, sig)],
-                        hi=[ln.a + s for ln, s in zip(lns, sig)],
-                        lam=[ln.lam0 for ln in lns], ion=[ln.ion for ln in lns])
-
-        st1 = [ln for ln in inc if sp.is_ion_stage(ln.ion, 1)]
-        st2 = [ln for ln in inc if sp.is_ion_stage(ln.ion, 2)]
-        d1, d2 = pack(st1), pack(st2)
+        st1 = [(i, ln) for i, ln in inc if sp.is_ion_stage(ln.ion, 1)]
+        st2 = [(i, ln) for i, ln in inc if sp.is_ion_stage(ln.ion, 2)]
+        d1, d2 = self._pack_points(st1), self._pack_points(st2)
         self.src.data = d1
         self.src2.data = d2
-        self._crop_scatter(d1["x"] + d2["x"], d1["lo"] + d1["hi"] + d2["lo"] + d2["hi"])
+        self._crop_panels((d1, d2))
 
-        # weighted regression over the neutral-stage points on the chosen axis
-        slope, _, intercept = sp.weighted_slope(d1["x"], d1["a"],
-                                                [ln.sigma_a for ln in st1])
-        if np.isfinite(slope):
-            self.trend.gradient, self.trend.y_intercept = slope, intercept
-            self.trend.visible = True
-        else:
-            self.trend.visible = False
+        # each panel's own weighted regression over the neutral-stage points — the slope the
+        # solver reads its temperature (E_low) and microturbulence (REW) from
+        sig1 = [ln.sigma_a for _i, ln in st1]
+        for key, trend in zip(PANEL_AXES, self.trends):
+            slope, _, intercept = sp.weighted_slope(d1[f"x_{key}"], d1["a"], sig1)
+            if np.isfinite(slope):
+                trend.gradient, trend.y_intercept = slope, intercept
+                trend.visible = True
+            else:
+                trend.visible = False
+        for key, inset in zip(PANEL_AXES, self.insets):
+            inset.text = self._inset_text(res, self.PANEL_INSETS[key])
 
         diags = res.diags or {}
-        a_mean = diags.get("a_mean", float("nan"))
-        if np.isfinite(a_mean):
-            err = diags.get("d_feh_err", float("nan"))
-            err = err if np.isfinite(err) else 0.0
-            self.mean_line.location = a_mean
-            self.mean_line.visible = True
-            self.mean_band.top = a_mean + err
-            self.mean_band.bottom = a_mean - err
-            self.mean_band.visible = True
-        else:
-            self.mean_line.visible = self.mean_band.visible = False
+        self._set_mean(diags.get("a_mean", float("nan")),
+                       diags.get("d_feh_err", float("nan")))
+
+    def _inset_text(self, res, key):
+        """A panel's inset: the offset diagnostic it states, with its error and pass mark."""
+        diags = res.diags or {}
+        v, err = diags.get(key, float("nan")), diags.get(f"{key}_err", float("nan"))
+        if not np.isfinite(v):
+            return ""
+        tol = (res.tols or sp.DEFAULT_TOLS).get(key, sp.DEFAULT_TOLS[key])
+        param = next(k for k, dk in sp.DIAG_FOR.items() if dk == key)
+        mark = "(held)" if not res.free.get(param, True) else \
+            ("\u2713" if abs(v) <= tol else "\u2717")
+        out = f"{DIAG_LABELS[key]} {v:+.3f}"
+        if np.isfinite(err):
+            out += f" \u00b1 {err:.3f}"
+        return f"{out} {mark}"
 
     def results_html(self):
         if not self.results:
@@ -784,8 +783,6 @@ class IonBalanceTool(AbundanceWizard):
                         + (f' · held {html.escape(", ".join(held))}' if held else "")
                         + '.</div>')
         rows.append(self._params_html(res))
-        rows.append('<div class="section-header">Scatter</div>'
-                    f'<div id="{self.form3.slot_id}">{self.form3.html()}</div>')
         rows.append('<button class="text-btn ionbal-refit">Refit…</button>'
                     '<div class="hint">Refitting keeps these measured lines and their '
                     'curation, and replaces the fit standing on them. To measure again — a '
@@ -869,7 +866,8 @@ class IonBalanceTool(AbundanceWizard):
             if self.show_toggled_only and not ln.include:
                 continue
             chk = " checked" if ln.include else ""
-            cls = "" if ln.include else " line-excluded"
+            cls = " row-selected" if self._jumped == i else ""
+            cls += "" if ln.include else " line-excluded"
             ew = self._fmt(ln.ew, ln.ew_err, digits=1)
             blend = self._fmt(ln.blend_frac, digits=2)
             a = self._fmt(ln.a, ln.sigma_a if res.stage == ms.STAGE_SOLVED else None,

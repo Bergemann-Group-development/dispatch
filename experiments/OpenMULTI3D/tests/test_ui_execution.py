@@ -3,9 +3,84 @@ from types import SimpleNamespace
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
+import pytest
+from bokeh.models import ColumnDataSource, Range1d, TapTool
 
 from tumult import Spectrum
 from tumult.synthesis.cancel import CancelToken
+
+
+def test_scatter_ranges_include_error_bars():
+    from abundwizard import AbundanceWizard, PANEL_AXES
+
+    wizard = AbundanceWizard.__new__(AbundanceWizard)
+    wizard.figs = []
+    wizard.mean_lines = []
+    wizard.mean_bands = []
+    for key in PANEL_AXES:
+        wizard._new_fig(key)
+    points = {
+        "x_evi": [1.0, 2.0],
+        "x_rew": [-5.5, -4.5],
+        "a": [0.0, 1.0],
+        "lo": [-3.0, 0.5],
+        "hi": [0.25, 4.0],
+    }
+
+    wizard._crop_panels((points,))
+
+    for panel in wizard.figs:
+        assert isinstance(panel.y_range, Range1d)
+        assert panel.y_range.start == pytest.approx(-3.35)
+        assert panel.y_range.end == pytest.approx(4.35)
+        assert panel.y_range.reset_start == pytest.approx(-3.35)
+        assert panel.y_range.reset_end == pytest.approx(4.35)
+
+
+def test_abundance_line_jump_pads_fit_window():
+    from abundwizard import AbundanceWizard
+
+    line = SimpleNamespace(window=(5000.0, 5002.0))
+    result = SimpleNamespace(lines=[line])
+    ranges = []
+    decorated = []
+    wizard = AbundanceWizard.__new__(AbundanceWizard)
+    wizard._last_span_aa = None
+    wizard.selected = lambda: result
+    wizard._set_range = lambda lo, hi: ranges.append((lo, hi))
+    wizard._jump_decor = lambda res, ln: decorated.append((res, ln))
+
+    wizard._jump_line("0")
+
+    assert ranges == [pytest.approx((4999.9, 5002.1))]
+    assert decorated == [(result, line)]
+
+
+def test_scatter_click_selects_and_reveals_table_row():
+    from abundwizard import AbundanceWizard, PANEL_AXES
+
+    wizard = AbundanceWizard.__new__(AbundanceWizard)
+    wizard.prefix = "abund"
+    wizard.figs = []
+    wizard.mean_lines = []
+    wizard.mean_bands = []
+    for key in PANEL_AXES:
+        wizard._new_fig(key)
+    source = ColumnDataSource({f"x_{key}": [] for key in PANEL_AXES} | {
+        "a": [], "idx": [],
+    })
+
+    wizard._add_series(source, "#ffffff")
+
+    callback = source.selected.js_property_callbacks["change:indices"][0]
+    assert "table.scrollTop" in callback.code
+    assert "row.click()" in callback.code
+    assert all(any(isinstance(tool, TapTool) for tool in panel.tools)
+               for panel in wizard.figs)
+    for panel in wizard.figs:
+        renderer = panel.renderers[-1]
+        assert renderer.nonselection_glyph.fill_alpha == 1.0
+        assert renderer.nonselection_glyph.line_alpha == 1.0
 
 
 def test_band_ready_does_not_wait_for_native_calculation():

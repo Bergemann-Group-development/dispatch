@@ -1,21 +1,33 @@
-"""The Abundance tool: a mask-free, uncertainty-aware **3-step wizard** for element abundances.
+"""The Abundance tool: an uncertainty-aware **2-step wizard** for element abundances.
 
-Toolbar **Abund** opens a right-sidebar panel whose controls follow a step switcher shown in a
-footer inside the centre panel:
+The workflow starts in the LineMasks view. A line-mask set carrying an element is the input,
+and its sidebar's **Measure abundances** action opens this tool's modal, which holds both
+halves of a run: what is measured (the reference observation, the EW profile, the SNR and
+continuum-% behind each EW error) and the synthesis it is measured against (the tool's own
+:class:`synthsetup.SynthSetup` — atmosphere, stellar parameters, abundances, RT mode). One
+submit therefore does both, as the balance modal does: every switched-on window is measured —
+EW, FWHM and EW error, with the dominant transition identified from the line list — and each
+line's curve of growth is then synthesised and inverted to the abundance reproducing its EW,
+**streaming into the table** as each lands.
 
-1. **Line selection** (stellar-parameter-free): pick a reference observation, an element and an
-   EW profile, and measure every candidate line's EW + FWHM. The result appears as an object in
-   the left sidebar and a split view (spectrum on top, per-line table below) in the centre. The
-   user curates the lines — clicking a row jumps the figure to that line over a window set by a
-   multiple of its fitted FWHM.
-2. **Synthesis**: using the tool's own synthesis setup (a :class:`synthsetup.SynthSetup`), build
-   a per-line curve of growth and invert each EW to an abundance — **line by line, streaming the
-   results into the table** as each lands. Jumping a row now also overlays the line's best-fit
-   synthetic on the observation.
-3. **Uncertainties**: set SNR / continuum % / scatter x-axis and compute each line's EW and
-   abundance error budget plus the dark-themed A(X) scatter (which replaces the spectrum pane).
+What comes back is an :class:`abundance.AbundanceResult` object in the left sidebar and a
+split view (spectrum on top, per-line table below) in the centre, with the set's windows drawn
+on the spectrum exactly as the LineMasks view draws them. The user curates the lines — clicking
+a row jumps the figure to that line, accents its window and overlays its best-fit synthetic.
 
-All three steps are :mod:`tumult.abundance` calls — :func:`~tumult.abundance.measure_lines`,
+The right-sidebar panel then carries the two steps that stand on that measurement:
+
+1. **Synthesis**: re-run the per-line synthesis over the curated lines, and reopen the modal
+   to change what it runs on. The measurement itself is never redone here: a different
+   reference or a different set of windows is a new run, started from the LineMasks view.
+   Every line's best-fit synthetic is drawn on the observation as it lands, so the run is
+   watched rather than waited on.
+2. **Uncertainties**: compute each line's EW and abundance error budget, drawn as error bars
+   on the two diagnostic panels that replace the spectrum pane — A(X) against excitation
+   energy and against reduced EW, the same pair an ionisation balance is read against, so a
+   temperature or microturbulence trend left in the abundances is visible here.
+
+All three stages are :mod:`tumult.abundance` calls — :func:`~tumult.abundance.measure_lines`,
 :func:`~tumult.abundance.run_abundance`, :func:`~tumult.abundance.finalize_result` — driven
 here on the setup's atmosphere, with a ``progress`` callback streaming each line into the
 table as it lands. What is left in this module is the wizard's own machinery, shared with the
@@ -25,19 +37,22 @@ from __future__ import annotations
 
 import html
 import logging
+from pathlib import Path
+
 import astropy.units as u
 import numpy as np
-from bokeh.models import ColumnDataSource, Whisker
+from bokeh.models import ColumnDataSource
 
 import abundance as ab
 import store
 import synth
-from abundwizard import PROFILES, X_AXES, AbundanceWizard
+from abundwizard import PROFILES, AbundanceWizard
 from canvas import ACCENT
 from controls import Field, Form
+from htmlbridge import pulse
 
 DEFAULTS = {
-    "profile": "gauss", "snr": 100.0, "cont_pct": 0.5, "xaxis": "evi",
+    "profile": "gauss", "snr": 100.0, "cont_pct": 0.5,
 }
 
 
@@ -45,8 +60,9 @@ class AbundanceTool(AbundanceWizard):
     name = "abundance"
     prefix = "abund"
     kind = "result"
-    btn_selector = "#abundance-btn"
     empty_table_msg = "No abundance result selected"
+    paint_overlays = True            # every synthesised line is drawn on the spectrum
+    steps = 2                        # synthesis, uncertainties (the lines come from the modal)
     y_axis_label = "A(X)"
     final_stage = "uncert"
     # columns beyond the shared line attributes (see AbundanceWizard.BASE_SORT_KEYS)
@@ -64,50 +80,136 @@ class AbundanceTool(AbundanceWizard):
 
         saved = dict(store.get_section("abundance"))
         vals = {**DEFAULTS, **{k: saved[k] for k in DEFAULTS if k in saved}}
-        # step 1: what to measure (independent of stellar parameters). The EW error inputs
-        # (SNR / continuum-%) live here too, so each line's EW uncertainty is known at
-        # selection; a line whose photon EW error exceeds its EW is flagged automatically.
-        # The lines to measure come from a line-mask set (Objects → Open File → New Line
-        # Mask), so the element and the candidate search live with the generator that made
-        # it; step 1 only measures the windows it is given, on the chosen reference.
+        # the modal: how the set handed over by the LineMasks view is measured (independent
+        # of stellar parameters). The EW error inputs (SNR / continuum-%) live here too, so
+        # each line's EW uncertainty is known as soon as it is measured; a line whose photon
+        # EW error exceeds its EW is flagged automatically. The windows themselves are taken
+        # exactly as curated — which element they diagnose is the set's business, not this
+        # tool's.
         self.form1 = Form("abund1", [
-            Field("maskset", "Line mask", kind="select", value="", options=[]),
             Field("profile", "EW profile", kind="select", value=vals["profile"],
                   options=PROFILES),
             Field("snr", "SNR (observation)", kind="number", value=vals["snr"], min=0),
             Field("cont_pct", "Continuum uncertainty [%]", kind="number",
                   value=vals["cont_pct"], min=0, step=0.1),
         ], on_change=self._on_field)
-        self.maskset_uid = saved.get("maskset_uid")
-        # step 3: the scatter axis (SNR / continuum-% now live in step 1)
-        self.form3 = Form("abund3", [
-            Field("xaxis", "Scatter x-axis", kind="select", value=vals["xaxis"],
-                  options=list(X_AXES)),
-        ], on_change=self._on_field)
-
         super().__init__(ctx, setup=setup)
-        self._ref_bridge = ctx.bridges.html("abund-ref")   # step-1 reference selector
+        self._ref_bridge = ctx.bridges.html("abund-ref")   # the modal's reference selector
+        self._modal = ctx.bridges.dialog("abund-modal", name="abund-modal-bridge")
+        self._context_bridge = ctx.bridges.html_all(".abund-context")
+        self._pending_set = None      # the mask set the open modal will measure and synthesise
+        self._settings_uid = None     # ... or the result whose synthesis it reconfigures
+        self._actions_bridge = ctx.bridges.html("abund-modal-actions")
+        self._note_bridge = ctx.bridges.html("abund-setup-note")   # panel: the run's context
         self.ref_uid = saved.get("ref_uid")
 
-        # scatter with per-line error bars (the corrections wizard has none)
-        src = ColumnDataSource(dict(x=[], a=[], lo=[], hi=[], lam=[], ion=[], inc=[]))
-        fig = self._build_fig(src)
-        fig.add_layout(Whisker(base="x", upper="hi", lower="lo", source=src,
-                               line_color=ACCENT, line_width=1.2))
+        # the pair of diagnostic panels (excitation and reduced EW), with the per-line
+        # abundance error as a bar on each — the same two the balance is read against, so a
+        # trend left in either is visible here too
+        self._build_figs(ColumnDataSource(self.empty_points()))
+        self._add_whiskers(self.src, ACCENT)
 
     # --- Tool protocol -----------------------------------------------------------------
-    def _on_activate_extra(self):
-        self._ref_bridge.value = self.ref_html()    # step-1 reference selector
-        self._sync_masksets()                       # step-1 line-mask selector
+    def activate(self):
+        # the highlights are painted after the base implementation, which hands the centre
+        # view (and with it the sidebar focus) to the selected result at the very end
+        super().activate()
+        self.push_setup_note()
+        self._render_decor(self._jumped)
 
     def refresh(self):
-        """Keep the step-1 reference + line-mask selectors in sync as objects come and go."""
+        """Keep the modal's reference selector in step with the loaded observations. Pushed
+        whether or not the panel is open: the modal is opened from the LineMasks view."""
+        self._ref_bridge.value = self.ref_html()
+
+    def update(self):
+        self.refresh()
         if self.active:
-            self._ref_bridge.value = self.ref_html()
-            self._sync_masksets()
+            self._render_decor(self._jumped)   # the highlights follow a display-unit flip
+
+    # --- the modal ----------------------------------------------------------------------
+    def open_for(self, mset):
+        """Open the modal to measure ``mset`` and synthesise it (the LineMasks action)."""
+        if mset is None or not any(m.include for m in mset.masks):
+            self.notify("This line mask has no switched-on windows.")
+            return
+        if not mset.element:
+            self.notify("Set the element these windows diagnose before measuring them.")
+            return
+        self._pending_set, self._settings_uid = mset, None
+        self._open_modal()
+
+    def open_settings(self):
+        """Open the modal on the selected result to change what its synthesis runs on.
+
+        The measurement half is left in place but does nothing here: those lines were measured
+        once, and re-measuring them under different settings would be a different run — which
+        is what starting again from the LineMasks view gives.
+        """
+        res = self.selected()
+        if res is None:
+            self.notify("Select an abundance object first.")
+            return
+        self._pending_set, self._settings_uid = None, res.uid
+        self._open_modal()
+
+    def _open_modal(self):
+        self.refresh()
+        self.setup.render()          # the synthesis half lives in the modal
+        self._push_modal_context()
+        pulse(self._modal, "open")
+
+    def _push_modal_context(self):
+        self._context_bridge.value = self.context_html()
+        self._actions_bridge.value = self.actions_html()
+
+    def context_html(self):
+        """The modal's header block: what is about to be measured, or reconfigured."""
+        res = self._find(self._settings_uid) if self._settings_uid else None
+        if res is not None:
+            return (f'<div class="hint">Settings for <b>{html.escape(res.name)}</b> — its '
+                    f'{len(res.lines)} measured lines are kept; synthesising again replaces '
+                    f'the abundances standing on them.</div>')
+        mset = self._pending_set
+        if mset is None:
+            return '<div class="hint">Nothing selected to measure.</div>'
+        n = sum(1 for m in mset.masks if m.include)
+        return (f'<div class="hint">Measuring <b>{html.escape(mset.name)}</b> — {n} '
+                f'switched-on window{"" if n == 1 else "s"} of '
+                f'<b>{html.escape(mset.element)}</b> on the reference below, then synthesising '
+                f'each line on the atmosphere beside it. The windows are taken as curated; the '
+                f'result is an abundance object of its own.</div>')
+
+    def actions_html(self):
+        """The modal's footer: one submit, doing what the modal was opened for."""
+        if self._settings_uid:
+            return ('<button class="text-btn abund-run-synth">Synthesise again</button>')
+        return '<button class="text-btn abund-run-lines">Measure &amp; synthesise</button>'
+
+    # --- the object panel's statement of what the synthesis runs on ---------------------
+    def push_setup_note(self):
+        self._note_bridge.value = self.setup_note_html()
+
+    def setup_note_html(self):
+        """Compact statement of the setup the modal owns, so the panel's Run synthesis says
+        what it would run on without carrying the fields."""
+        grid = self.setup.active_grid() or {}
+        name = grid.get("name") or "no atmosphere grid"
+        v = self.setup.run_form.values()
+        try:
+            params = (f"Teff {float(v['teff']):.0f} · log g {float(v['logg']):.2f} · "
+                      f"[Fe/H] {float(v['feh']):+.2f} · ξ {float(v['vmic']):.2f} km/s")
+        except (TypeError, ValueError):
+            params = "stellar parameters unset"
+        mode = "NLTE" if self.setup.is_nlte else "LTE"
+        file_note = ""
+        if self.setup.atmos_file():
+            file_note = f" · {html.escape(Path(self.setup.atmos_file()).name)}"
+        return (f'<div class="hint">Synthesis: {html.escape(name)}{file_note} · {params} · '
+                f'{mode}.</div>')
 
     def on_filter_changed(self):
-        """Re-measure the selected result's step-1 EWs when the canvas Filtered switch toggles.
+        """Re-measure the selected result's EWs when the canvas Filtered switch toggles.
 
         ``get_observation`` already returns the filter-effective reference, so this just re-runs
         the (cheap) EW measurement over each line's stored fit window and repaints the table — the
@@ -174,12 +276,6 @@ class AbundanceTool(AbundanceWizard):
     # --- state persistence -------------------------------------------------------------
     def _on_field(self, key, value):
         store.update_pref("abundance", key, value)
-        if key == "maskset":
-            self.maskset_uid = value or None
-            store.update_pref("abundance", "maskset_uid", self.maskset_uid or "")
-        if key == "xaxis":
-            self.fig.xaxis.axis_label = X_AXES[str(value)][0]
-            self._render_scatter()  # re-place points on the new axis
 
     def _extra_action(self, kind, arg):
         if kind == "ref":
@@ -187,6 +283,8 @@ class AbundanceTool(AbundanceWizard):
             store.update_pref("abundance", "ref_uid", self.ref_uid or "")
         elif kind == "run-lines":
             self.run_lines()
+        elif kind == "settings":
+            self.open_settings()
         elif kind == "run-synth":
             self.run_synth()
         elif kind == "run-uncert":
@@ -198,16 +296,39 @@ class AbundanceTool(AbundanceWizard):
 
     def _result_label(self, res):
         s = res.summary
-        return (f"{res.element}  ⟨A⟩={s['a_mean']:.2f}±{s['sigma_mean']:.2f}"
+        return (f"{res.element}  ⟨{self.value_label(res)}⟩="
+                f"{s['a_mean']:.2f}±{s['sigma_mean']:.2f}"
                 if np.isfinite(s["a_mean"]) else f"{res.element} · uncert")
 
+    # --- window highlights (the set's windows, as the LineMasks view draws them) --------
+    def select_result(self, uid):
+        # the highlights are painted after the base implementation, which hands the centre
+        # view (and with it the sidebar focus) to this result only at the very end
+        super().select_result(uid)
+        self._render_decor(self._jumped)
+
+    def _render_selected(self):
+        super()._render_selected()
+        self._render_decor(self._jumped)
+
+    def _result_spec(self, res):
+        """The reference the result's lines were measured on (its points snap the window
+        bounds, so window membership is unambiguous)."""
+        return self.get_observation(getattr(res, "ref_uid", None))
+
+    def _clear_line_decor(self):
+        """Drop the per-line overlay/hatch and the accent; the highlights stay while a result
+        is in view (``_render_decor`` clears them once it is not)."""
+        self._jumped = None
+        super()._clear_line_decor()
+        self._render_decor()
+
     def _jump_decor(self, res, ln):
-        self.canvas.set_abund_overlay(ln.fit_spec, ln.window)
+        # every line's synthetic is already on the canvas — jumping hatches this line's
+        # measured EW and moves the accent onto its window
         self.canvas.set_abund_hatch(ln.fit_func, ln.window)
-        # snap the window bounds between the reference's points so membership is unambiguous
-        spec = self.get_observation(getattr(res, "ref_uid", None))
-        xpts = np.asarray(spec.values[0], dtype=float) if spec is not None else None
-        self.canvas.highlight_windows([ln.mask], active=0, xpts=xpts)
+        self._jumped = next((i for i, l in enumerate(res.lines) if l is ln), None)
+        self._render_decor(self._jumped)
 
     # --- reference resolution ----------------------------------------------------------
     def _ref(self):
@@ -222,21 +343,23 @@ class AbundanceTool(AbundanceWizard):
                                 "continuum-normalised flux.")
         return ref_uid, spec, None
 
-    # --- step 1: diagnostic-line selection ---------------------------------------------
+    # --- the modal's run: measure the set's windows on the reference --------------------
     def run_lines(self):
         ref_uid, ref_spec, err = self._ref()
         if err:
             self.notify(err)
             return
-        mset = self.selected_maskset()
+        mset = self._pending_set
         if mset is None:
-            self.notify("Make a line mask first — Objects → Open File → New Line Mask.")
-            return
-        if not mset.element:
-            self.notify(f"Set the element of “{mset.name}” before measuring it.")
+            self.notify("Nothing to measure — start from a line mask.")
             return
         if not any(m.include for m in mset.masks):
             self.notify(f"Every window in “{mset.name}” is switched off.")
+            return
+        # the synthesis runs straight after the measurement, so its setup is checked here —
+        # measuring first and failing afterwards would leave a half-run object behind
+        if self.setup.context() is None:
+            self.notify(self.setup.reason or "Configure the synthesis setup first.")
             return
         v = self.form1.values()
         self._error = None
@@ -263,13 +386,15 @@ class AbundanceTool(AbundanceWizard):
             if self._error:
                 self.notify(f"Line selection failed: {self._error}")
             return
+        pulse(self._modal, "close")
         self.results.append(result)
         self.selected_uid = result.uid
-        self.set_step(1)
+        self.set_step(1)                 # the synthesis is what stands on the measurement now
         self.select_result(result.uid)   # focus it: enters abund-mode, renders the split view
-        self.notify(f"{result.element}: {len(result.lines)} candidate lines — review and curate.")
+        self.notify(f"{result.element}: {len(result.lines)} lines measured — synthesising…")
+        self.run_synth()                 # the modal configured both halves of the run
 
-    # --- step 2: per-line synthesis (streamed) -----------------------------------------
+    # --- step 1: per-line synthesis (streamed) -----------------------------------------
     def run_synth(self):
         res = self.selected()
         if res is None:
@@ -277,8 +402,11 @@ class AbundanceTool(AbundanceWizard):
             return
         ctx = self.setup.context()
         if ctx is None:
-            self.notify(self.setup.reason or "Configure the synthesis setup (step 2).")
+            self.notify(self.setup.reason or "Configure the synthesis setup first.")
             return
+        pulse(self._modal, "close")      # a no-op unless this is the modal's own submit
+        self._settings_uid = None
+        self.push_setup_note()
         self._error = None
         self.notify(f"Synthesising {res.element} lines…")
         loader = lambda token=None: self._synth_lines(res, ctx, token)
@@ -311,62 +439,62 @@ class AbundanceTool(AbundanceWizard):
         self.push_results()
         if self.selected() is result:
             self.push_table(self.table_html(result))
-        self.notify(f"{result.element}: synthesis done — set SNR/continuum in step 3.")
+        # the error budget needs no synthesis of its own — it propagates the EW errors already
+        # measured through each line's REW gradient — so a fitted result always carries one
+        self.run_uncert(result)
 
-    # --- step 3: uncertainties ---------------------------------------------------------
-    def run_uncert(self):
-        res = self.selected()
+    # --- step 2: uncertainties ---------------------------------------------------------
+    def run_uncert(self, res=None):
+        """The error budget for ``res`` (the selected result by default).
+
+        The synthesis names its own result when it chains into this, so a run that finishes
+        while another object is selected still gets its uncertainties.
+        """
+        res = res if res is not None else self.selected()
         if res is None:
             self.notify("Select an abundance object first.")
             return
         if res.stage == "lines":
-            self.notify("Run the synthesis (step 2) before computing uncertainties.")
+            self.notify("Synthesise the lines before computing uncertainties.")
             return
         spec = self.get_observation(getattr(res, "ref_uid", None))
         if spec is None:
             self.notify("The reference observation for this result is no longer loaded.")
             return
-        v = self.form1.values()          # SNR / continuum-% are set in step 1
+        v = self.form1.values()          # SNR / continuum-% are set in the modal
         ab.finalize_result(res, spec, float(v["snr"]) or None, float(v["cont_pct"]))
         s = res.summary
         res.name = self._result_label(res)
         self.push_results()
-        self._render_selected()
+        if self.selected() is res:
+            self._render_selected()
         if np.isfinite(s["a_mean"]):
-            self.notify(f"{res.element}: ⟨A⟩ = {s['a_mean']:.3f} ± {s['sigma_mean']:.3f} "
+            self.notify(f"{res.element}: ⟨{self.value_label(res)}⟩ = "
+                        f"{s['a_mean']:.3f} ± {s['sigma_mean']:.3f} "
                         f"(phot {s['sigma_phot']:.3f}, cont {s['sigma_cont']:.3f}, n={s['n']})")
-
-    @staticmethod
-    def _ref_range(ref_spec):
-        x, _ = ref_spec.values
-        return float(np.min(x)), float(np.max(x))
 
     # --- rendering ----------------------------------------------------------------------
     def _render_scatter(self):
+        """Repaint both diagnostic panels from the lines as they stand.
+
+        Called on every streamed row too, so the panels fill in during the synthesis: a line
+        enters as soon as it has an abundance, with a zero-length bar until the uncertainties
+        are computed and its σ(A) is known.
+        """
         res = self.selected()
-        inc = [ln for ln in res.lines if ln.include and np.isfinite(ln.sigma_a)] if res else []
+        inc = [(i, ln) for i, ln in enumerate(res.lines)
+               if ln.include and np.isfinite(ln.a)] if res else []
         if not inc:
-            self.src.data = dict(x=[], a=[], lo=[], hi=[], lam=[], ion=[], inc=[])
-            self.mean_line.visible = self.mean_band.visible = False
+            self.src.data = self.empty_points()
+            self._set_mean(None)
             return
-        xf = X_AXES[str(self.form3.value("xaxis"))][1]
-        xs = [xf(ln) for ln in inc]
-        los = [ln.a - ln.sigma_a for ln in inc]
-        his = [ln.a + ln.sigma_a for ln in inc]
-        self.src.data = dict(
-            x=xs, a=[ln.a for ln in inc], lo=los, hi=his,
-            lam=[ln.lam0 for ln in inc], ion=[ln.ion for ln in inc],
-            inc=[ln.include for ln in inc])
-        self._crop_scatter(xs, los + his)
+        for fig in self.figs:
+            fig.yaxis.axis_label = self.value_label(res)
+        data = self._pack_points(inc)
+        self.src.data = data
+        self._crop_panels((data,))
         s = res.summary
-        if np.isfinite(s.get("a_mean", np.nan)):
-            self.mean_line.location = s["a_mean"]
-            self.mean_line.visible = True
-            self.mean_band.top = s["a_mean"] + s["sigma_mean"]
-            self.mean_band.bottom = s["a_mean"] - s["sigma_mean"]
-            self.mean_band.visible = True
-        else:
-            self.mean_line.visible = self.mean_band.visible = False
+        self._set_mean(s.get("a_mean", np.nan), s.get("sigma_mean", 0.0))
 
     def ref_html(self):
         obs = self.list_observations()
@@ -389,14 +517,16 @@ class AbundanceTool(AbundanceWizard):
         head = self._table_head("abund-mask-chk", (
             ("λ₀ [Å]", "lam0"), ("ion", "ion"), ("E<sub>low</sub>", "e_low"),
             ("log gf", "loggf"), ("EW [mÅ]", "ew"), ("blend", "blend"),
-            ("A(X)", "a"), ("vshift", "vshift"), ("vdop", "vdop"), ("flags", None)))
+            (html.escape(self.value_label(res)), "a"),
+            ("vshift", "vshift"), ("vdop", "vdop"), ("flags", None)))
         body = []
         for i in self._line_order(res):
             ln = res.lines[i]
             if self.show_toggled_only and not ln.include:
                 continue          # header mask: keep only toggled-in lines (index i unchanged)
             chk = " checked" if ln.include else ""
-            cls = "" if ln.include else " line-excluded"
+            cls = " row-selected" if self._jumped == i else ""
+            cls += "" if ln.include else " line-excluded"
             ew = self._fmt(ln.ew, ln.ew_err, digits=1)   # EW error known from step 1
             blend = self._fmt(ln.blend_frac, digits=2)
             a = self._fmt(ln.a, ln.sigma_a if res.stage == "uncert" else None, plus=True)
@@ -413,7 +543,7 @@ class AbundanceTool(AbundanceWizard):
         foot = ""
         if res.stage == "uncert" and np.isfinite(res.summary.get("a_mean", np.nan)):
             s = res.summary
-            foot = (f'<div class="abund-summary">⟨A({html.escape(res.symbol)})⟩ = '
+            foot = (f'<div class="abund-summary">⟨{html.escape(self.value_label(res))}⟩ = '
                     f'{s["a_mean"]:+.3f} ± {s["sigma_mean"]:.3f}'
                     f'<span class="abund-budget"> (photon {s["sigma_phot"]:.3f} · '
                     f'continuum {s["sigma_cont"]:.3f} · scatter {s["sigma_scatter"]:.3f} · '

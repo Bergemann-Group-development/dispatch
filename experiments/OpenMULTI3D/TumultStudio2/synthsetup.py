@@ -66,6 +66,9 @@ class SynthSetup:
     on_base_change : callable | None
         ``(key, value) -> None`` fired after an abundances / relative-abundances edit is
         persisted (so a host can sync dependent displays, e.g. the Fit tab's rows).
+    on_run_change : callable | None
+        ``(key, value) -> None`` fired after a stellar-parameter edit is persisted (so a host
+        that states the setup elsewhere, e.g. the Abundance object panel, can restate it).
     grid_section : str | None
         Store section holding the grid *selection* (``atmos_grid_id``). Defaults to
         ``section``; the Synthesize tab historically keeps it under ``"synthesis"``.
@@ -76,7 +79,7 @@ class SynthSetup:
 
     def __init__(self, prefix, section, grids, *, atoms_provider=None, notify=None,
                  on_mode_change=None, on_base_change=None, on_atmos_change=None,
-                 grid_section=None, form_names=None):
+                 on_run_change=None, grid_section=None, form_names=None):
         self.prefix = prefix
         self.section = section
         self.grid_section = grid_section or section
@@ -86,6 +89,7 @@ class SynthSetup:
         self.on_mode_change = on_mode_change
         self.on_base_change = on_base_change
         self.on_atmos_change = on_atmos_change    # fired when the atmosphere source changes
+        self.on_run_change = on_run_change        # fired when a stellar parameter is edited
         self.reason = None                 # why the last context() returned None
 
         names = {"run": f"{prefix}params", "base": f"{prefix}base",
@@ -314,6 +318,8 @@ class SynthSetup:
     # --- persistence ------------------------------------------------------------------
     def _save_run(self, key, value):
         store.update_pref(self.section, key, value)
+        if self.on_run_change:
+            self.on_run_change(key, value)
 
     def _save_base(self, key, value):
         store.update_pref(self.section, key, value)

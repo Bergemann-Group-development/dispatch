@@ -235,6 +235,35 @@ def build_cog(synth_line_fn, a_ladder, window=None, profile="trapz", x0=None,
     return a, ews
 
 
+def cog_spectrum(a_ladder, specs, a):
+    """The ladder's synthetic line at abundance ``a``, interpolated between its rungs.
+
+    A curve-of-growth solve never synthesises the abundance it lands on — it inverts the
+    measured EW through the ladder — so the spectrum that goes with the solution has to be
+    read back off the rungs. The two bracketing rungs are combined linearly in flux at the
+    inverted abundance, which is what makes a review overlay possible without a synthesis per
+    line per iteration; a request outside the ladder returns its nearest rung.
+
+    Returns ``None`` when there is nothing to interpolate (no rungs, a non-finite ``a``, or
+    rungs that do not share a wavelength grid).
+    """
+    a_grid = np.asarray(a_ladder, dtype=float)
+    if a_grid.size == 0 or not specs or not np.isfinite(a):
+        return None
+    order = np.argsort(a_grid)
+    a_grid, specs = a_grid[order], [specs[i] for i in order]
+    j = int(np.clip(np.searchsorted(a_grid, float(a)), 1, len(a_grid) - 1))
+    lo, hi = specs[j - 1], specs[j]
+    x_lo, y_lo = lo.values
+    x_hi, y_hi = hi.values
+    if len(x_lo) != len(x_hi):
+        return lo if abs(a - a_grid[j - 1]) <= abs(a - a_grid[j]) else hi
+    span = a_grid[j] - a_grid[j - 1]
+    w = float(np.clip((float(a) - a_grid[j - 1]) / span, 0.0, 1.0)) if span else 0.0
+    y = np.asarray(y_lo, dtype=float) * (1.0 - w) + np.asarray(y_hi, dtype=float) * w
+    return Spectrum(np.asarray(x_lo, dtype=float), y, xunit=lo.xunit, yunit=lo.yunit)
+
+
 def blend_fraction(spec_all, spec_excl, window=None, profile="trapz", x0=None):
     """Contaminant EW fraction in the window: ``EW(element excluded) / EW(all lines)``.
 

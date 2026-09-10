@@ -167,8 +167,9 @@ class SpectrumCanvas:
                                        color=LINE, line_width=1, line_alpha=0.25,
                                        level="underlay", visible=False)
 
-        # a synthetic line drawn over the observation while the abundance tool jumps to a
-        # diagnostic line, so the fit quality is visible during manual line curation
+        # the synthetic lines of a fit, drawn over the observation while the abundance /
+        # balance views own the centre, so the fit quality is visible as it lands and during
+        # manual line curation. One glyph holds them all, the segments separated by NaN.
         self.abund_overlay_source = ColumnDataSource(dict(x=[], y=[]))
         self.abund_overlay_line = main.line("x", "y", source=self.abund_overlay_source,
                                             color=SYNTH_FIT, line_width=1.5, line_dash="dashed",
@@ -536,20 +537,36 @@ class SpectrumCanvas:
 
     # --- abundance line overlay (synthetic best-fit drawn on the observation) ----
     def set_abund_overlay(self, spectrum, window):
-        """Draw ``spectrum`` (a synthetic line) over ``window`` (Å) on the main figure.
+        """Draw ``spectrum`` (a synthetic line) over ``window`` (Å) on the main figure."""
+        self.set_abund_overlays([(spectrum, window)])
 
-        ``spectrum`` None or a non-finite window clears the overlay. The synthetic is cropped
-        to the window and converted to the display units, so it lines up with the observation.
+    def set_abund_overlays(self, pairs):
+        """Draw every ``(spectrum, window)`` synthetic in ``pairs`` as one overlay.
+
+        Each synthetic is cropped to its window (Å) and converted to the display units, so it
+        lines up with the observation; the segments go into a single glyph separated by NaN,
+        which is what lets a whole fit's lines be drawn without a glyph per line. A pair whose
+        spectrum is None, whose window is not finite, or that cannot be cropped contributes
+        nothing; an empty result clears the overlay.
         """
-        if spectrum is None or window is None or not np.isfinite(window[0]):
+        xs, ys = [], []
+        for spectrum, window in pairs:
+            if spectrum is None or window is None or not np.isfinite(window[0]):
+                continue
+            try:
+                sub = spectrum.crop(xmin=window[0], xmax=window[1]).decimate(self.n_main)
+                sub = sub.convert_units(xunit=self.xunit, yunit=self.yunit)
+                x, y = sub.values
+            except Exception:
+                continue
+            if xs:
+                xs.append(np.nan)      # break the line between windows
+                ys.append(np.nan)
+            xs.extend(np.asarray(x, dtype=float))
+            ys.extend(np.asarray(y, dtype=float))
+        if not xs:
             return self.clear_abund_overlay()
-        try:
-            sub = spectrum.crop(xmin=window[0], xmax=window[1]).decimate(self.n_main)
-            sub = sub.convert_units(xunit=self.xunit, yunit=self.yunit)
-            x, y = sub.values
-        except Exception:
-            return self.clear_abund_overlay()
-        self.abund_overlay_source.data = dict(x=np.asarray(x), y=np.asarray(y))
+        self.abund_overlay_source.data = dict(x=np.asarray(xs), y=np.asarray(ys))
         self.abund_overlay_line.visible = True
 
     def clear_abund_overlay(self):

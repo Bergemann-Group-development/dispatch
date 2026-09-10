@@ -9,7 +9,8 @@ the spectrum, with every window drawn on the canvas.
 
 The sets themselves live in the shared :class:`maskstore.MaskStore` (``ctx.masks``) so the
 canvas — and the analyses started from this view's sidebar, which measure a set on a spectrum
-into a :class:`measurement.Measurement` of its own — all read one source of truth;
+into an object of their own (an abundance result, a balance measurement) — all read one
+source of truth;
 every mutation broadcasts ``"masks-changed"`` and this tool repaints from it.
 
 The canvas draws the current set while the view is open: each mask's synth/visual window as a
@@ -57,12 +58,14 @@ class MaskTool(Tool):
 
     def __init__(self, ctx, store, input_dir, *, list_observations=None,
                  get_observation=None, master_path="", profiles=(),
-                 on_fit_balance=None):
+                 on_fit_balance=None, on_measure_abund=None):
         super().__init__(ctx)
         self.store = store                      # shared MaskStore (also ctx.masks)
-        # what the sidebar's analysis action hands the current set to (ionbalance.IonBalanceTool
-        # opens its modal on it). Injected, so the mask view stays unaware of the analyses.
+        # what the sidebar's analysis actions hand the current set to — each opens its own
+        # modal on it (ionbalance.IonBalanceTool, abundancetool.AbundanceTool). Injected, so
+        # the mask view stays unaware of the analyses.
         self.on_fit_balance = on_fit_balance
+        self.on_measure_abund = on_measure_abund
         self.input_dir = str(input_dir)
         self._renorm_uid = None                 # spectrum currently carrying the local renorm
         self.own_panel("linemask-panel-content")   # sidebar: pad / save controls
@@ -390,7 +393,9 @@ class MaskTool(Tool):
             if auto is not None:
                 auto.set_ref(arg)
         elif kind == "fit-balance":
-            self._fit_balance()
+            self._hand_over(self.on_fit_balance)
+        elif kind == "measure-abund":
+            self._hand_over(self.on_measure_abund)
         elif kind == "save-as":
             self._save_as(arg)
         elif kind == "revert":
@@ -406,11 +411,10 @@ class MaskTool(Tool):
         if source is not None:
             source.submit(arg)
 
-    def _fit_balance(self):
-        """Hand the current set to the ionisation-balance tool (which opens its modal)."""
-        if self.on_fit_balance is None:
-            return
-        self.on_fit_balance(self.store.mset)
+    def _hand_over(self, analysis):
+        """Hand the current set to an analysis (which opens its own modal on it)."""
+        if analysis is not None:
+            analysis(self.store.mset)
 
     def _save_as(self, name):
         """Write the current set to ``name`` (a bare file name lands next to the source file)
@@ -479,22 +483,36 @@ class MaskTool(Tool):
 
         A set is *the* input to the abundance workflows, so starting one belongs here rather
         than in a tool the user has to find first and then point back at this set. What comes
-        back is a measurement object of its own (see :mod:`measurement`), because everything
-        it holds depends on the spectrum it was measured on, not on these windows.
+        back is an object of its own (a measurement, see :mod:`measurement`, or an abundance
+        result), because everything it holds depends on the spectrum it was measured on, not
+        on these windows.
         """
-        if self.on_fit_balance is None:
+        actions = [(self.on_measure_abund, "lm-measure-abund", "Measure abundances",
+                    "Measure these windows on a reference and invert each EW to an abundance",
+                    '<div class="hint">Measures these windows on a reference observation, then '
+                    f'synthesises each line to invert its EW to A({html.escape(mset.element)}) '
+                    'with an error budget.</div>'),
+                   (self.on_fit_balance, "lm-fit-balance", "Fit ionisation balance",
+                    "Measure these windows on a spectrum and fit stellar parameters",
+                    '<div class="hint">Measures these windows on a target spectrum and fits '
+                    '(Teff, log g, [Fe/H], ξ) to the excitation and ionisation balance of '
+                    f'{html.escape(mset.element)}. Both stages have to be among the windows.'
+                    '</div>')]
+        actions = [a for a in actions if a[0] is not None]
+        if not actions:
             return ""
         n = sum(1 for m in mset.masks if m.include)
         why = ("Set the element these windows diagnose first." if not mset.element else
                "Switch on at least one window." if not n else "")
-        btn = (f'<button class="text-btn lm-fit-balance"{" disabled" if why else ""} '
-               f'title="{html.escape(why or "Measure these windows on a spectrum and fit stellar parameters")}">'
-               f'Fit ionisation balance</button>')
-        hint = ('<div class="hint">Measures these windows on a target spectrum and fits '
-                '(Teff, log g, [Fe/H], ξ) to the excitation and ionisation balance of '
-                f'{html.escape(mset.element)}. Both stages have to be among the windows.'
-                '</div>') if not why else f'<div class="hint">{html.escape(why)}</div>'
-        return f'<div class="section-header">Analysis</div>{btn}{hint}'
+        out = ['<div class="section-header">Analysis</div>']
+        for _, cls, label, title, hint in actions:
+            out.append(f'<button class="text-btn {cls}"{" disabled" if why else ""} '
+                       f'title="{html.escape(why or title)}">{label}</button>')
+            if not why:
+                out.append(hint)          # what this analysis does with the set
+        if why:
+            out.append(f'<div class="hint">{html.escape(why)}</div>')   # ... once, for both
+        return "".join(out)
 
     def table_html(self):
         """The mask-window table: one row per mask (click to make it the editable one), a

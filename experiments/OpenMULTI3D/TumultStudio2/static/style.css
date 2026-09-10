@@ -823,7 +823,6 @@ num-input[disabled] .num-spin button { cursor: not-allowed; }
    Abundance tool: toolbar button, right-sidebar control panel, left-sidebar
    result objects, and the centre abundance view (scatter + per-line table).
    --------------------------------------------------------------------------- */
-#abundance-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
 /* right-sidebar control panel (mirrors .ew-panel / .synth-panel) */
 .abund-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; overflow-y: auto; }
@@ -835,9 +834,10 @@ num-input[disabled] .num-spin button { cursor: not-allowed; }
 /* the right-sidebar step section follows the active step class on #main (no JS) */
 .abund-step-panel { display: none; flex-direction: column; gap: 8px; }
 #main.abund-step-1 ~ .sidebar-right .abund-step-1-panel,
-#main.abund-step-2 ~ .sidebar-right .abund-step-2-panel,
-#main.abund-step-3 ~ .sidebar-right .abund-step-3-panel { display: flex; }
-.abund-run-lines, .abund-run-synth, .abund-run-uncert { display: block; width: 100%; margin-top: 4px; }
+#main.abund-step-2 ~ .sidebar-right .abund-step-2-panel { display: flex; }
+/* the panel's run buttons fill it; the modal's submit sits in the footer at its own width */
+.abund-panel .abund-run-synth, .abund-panel .abund-run-uncert,
+.abund-panel .abund-settings { display: block; width: 100%; margin-top: 4px; }
 /* sub-tabs (Lines | Setup): the whole panel scrolls, so the tab-content is non-flexing
    (mirrors the synth panel) and the generic .tab JS drives .active. */
 .abund-panel .tab-bar { margin-bottom: 4px; }
@@ -872,23 +872,32 @@ num-input[disabled] .num-spin button { cursor: not-allowed; }
   padding: 0 5px; border-radius: 8px; background: var(--bg); border: 1px solid var(--border);
 }
 
-/* centre abundance view: spectrum (steps 1-2) or scatter (step 3) on top, per-line table
+/* centre abundance view: spectrum (step 1) or the diagnostic panels (step 2) on top, table
    below, and a step-switcher footer. The spectrum reuses #canvas-wrap. */
 #abund-scatter, #abund-bottom, #abund-steps { display: none; }
 #main.abund-mode #top-panel { display: none; }
 #main.abund-mode #canvas-wrap { display: flex; }
 #main.abund-mode #abund-bottom { display: flex; flex: 0 0 var(--bottom-h); min-height: 0; flex-direction: column; }
 #main.abund-mode #abund-steps { display: flex; flex: 0 0 auto; padding: 6px 0 0; }
-/* step 3 swaps the spectrum for the A(X) scatter */
-#main.abund-mode.abund-step-3 #canvas-wrap { display: none; }
-#main.abund-mode.abund-step-3 #abund-scatter { display: flex; flex: 1; min-height: 0; }
+/* step 2 swaps the spectrum for the A(X) scatter */
+#main.abund-mode.abund-step-2 #canvas-wrap { display: none; }
+#main.abund-mode.abund-step-2 #abund-scatter { display: flex; flex: 1; min-height: 0; }
+
+/* the two diagnostic panels a fit is read against, side by side (see abundwizard.PANEL_AXES) */
+.scatter-pane { flex: 1; min-width: 0; display: flex; }
 #abund-table { flex: 1; min-height: 0; overflow: auto; }
+/* The shared line-list rule left-aligns non-sortable headers. In analysis tables the
+   include checkbox and flags are right-aligned columns, so their headers follow suit. */
+.abund-table thead th:first-child,
+.abund-table thead th:last-child { text-align: right; }
 /* the active step mirrors the abund-step-N class on #main (no JS); see .step-tabs below */
 #main.abund-step-1 .abund-step-btn[data-step="1"],
-#main.abund-step-2 .abund-step-btn[data-step="2"],
-#main.abund-step-3 .abund-step-btn[data-step="3"] { color: var(--text); border-bottom-color: var(--accent); }
+#main.abund-step-2 .abund-step-btn[data-step="2"] { color: var(--text); border-bottom-color: var(--accent); }
 .abund-row { cursor: pointer; }
-.abund-row:hover td { background: rgba(74, 144, 226, 0.14); }
+/* a row is marked either by the pointer or by its point being hovered on a panel
+   (see the table<->scatter link in the page script) */
+.abund-row:hover td, .abund-row.row-hover td,
+.abund-row.row-selected td { background: rgba(74, 144, 226, 0.14); }
 .abund-row.line-excluded { opacity: 0.4; }
 .abund-mask-chk { cursor: pointer; vertical-align: middle; }
 .abund-flags { color: #e0a05c; }
@@ -945,28 +954,33 @@ num-input[disabled] .num-spin button { cursor: not-allowed; }
 .sidebar-right.ionbal-active .lines-panel { display: none; }
 .ionbal-refit { display: block; width: 100%; margin-top: 4px; }
 
-/* centre view: the target spectrum (Lines) or the balance scatter, per-line table
-   + iteration status below, and the two-way view switcher as a footer. */
+/* centre view: the balance panels (the primary tab, watched while the fit runs) or the
+   target spectrum (Lines), per-line table + iteration status below, and the two-way view
+   switcher as a footer. */
 #ionbal-scatter, #ionbal-bottom, #ionbal-steps { display: none; }
 #main.ionbal-mode #top-panel { display: none; }
-#main.ionbal-mode #canvas-wrap { display: flex; }
+#main.ionbal-mode #canvas-wrap { display: none; }
+#main.ionbal-mode #ionbal-scatter { display: flex; flex: 1; min-height: 0; }
 #main.ionbal-mode #ionbal-bottom { display: flex; flex: 0 0 var(--bottom-h); min-height: 0; flex-direction: column; }
 #main.ionbal-mode #ionbal-steps { display: flex; flex: 0 0 auto; padding: 6px 0 0; }
-#main.ionbal-mode.ionbal-step-2 #canvas-wrap { display: none; }
-#main.ionbal-mode.ionbal-step-2 #ionbal-scatter { display: flex; flex: 1; min-height: 0; }
+#main.ionbal-mode.ionbal-step-2 #ionbal-scatter { display: none; }
+#main.ionbal-mode.ionbal-step-2 #canvas-wrap { display: flex; }
 #ionbal-table { flex: 1; min-height: 0; overflow: auto; }
 #main.ionbal-step-1 .ionbal-step-btn[data-step="1"],
 #main.ionbal-step-2 .ionbal-step-btn[data-step="2"] { color: var(--text); border-bottom-color: var(--accent); }
 .ionbal-row { cursor: pointer; }
-.ionbal-row:hover td { background: rgba(74, 144, 226, 0.14); }
+.ionbal-row:hover td, .ionbal-row.row-hover td,
+.ionbal-row.row-selected td { background: rgba(74, 144, 226, 0.14); }
 .ionbal-row.line-excluded { opacity: 0.4; }
 .ionbal-mask-chk { cursor: pointer; vertical-align: middle; }
 /* the streaming iteration/convergence line under the table */
 .ionbal-status { border-top: 1px solid var(--border); margin-top: 4px; }
 
-/* the fit modal: three columns (what is measured / where it starts / how it runs) */
-#ionbal-modal { width: min(880px, 94vw); }
-.ionbal-modal-cols { display: flex; gap: 16px; align-items: flex-start; }
-.ionbal-modal-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-.ionbal-context { display: flex; flex-direction: column; gap: 4px; }
-@media (max-width: 720px) { .ionbal-modal-cols { flex-direction: column; } }
+/* the analysis modals launched from the LineMasks view — the balance fit (what is measured /
+   where it starts / how it runs) and the abundance measurement (what is measured / the
+   atmosphere and parameters it is synthesised on) — share one column layout. */
+#ionbal-modal, #abund-modal { width: min(880px, 94vw); }
+.modal-cols { display: flex; gap: 16px; align-items: flex-start; }
+.modal-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.ionbal-context, .abund-context { display: flex; flex-direction: column; gap: 4px; }
+@media (max-width: 720px) { .modal-cols { flex-direction: column; } }

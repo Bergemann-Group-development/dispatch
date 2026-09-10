@@ -81,7 +81,6 @@
         <!-- synthesis: compute a spectrum at given stellar parameters -->
         <div class="toolbar-group">
           <button id="synth-btn" class="text-btn" title="Synthesize a spectrum at given (Teff, logg, [Fe/H], vmic)">Synth</button>
-          <button id="abundance-btn" class="text-btn" title="Mask-free element abundances with rigorous uncertainties">Abund</button>
           <button id="abundcorr-btn" class="text-btn" title="NLTE abundance corrections vs 1D LTE (line by line)">Corr</button>
         </div>
       </div>
@@ -121,17 +120,20 @@
         <div id="linemask-tables">
           <div id="linemask-table"></div>
         </div></div>
-      <!-- abundance result view: spectrum (top, steps 1-2) or A(X) scatter (step 3), with the
-           per-line table below and a step switcher footer -->
-      <div id="abund-scatter">{{ embed(roots.abund_fig) }}</div>
+      <!-- abundance result view: the observation with every synthesised line drawn on it
+           (Synthesis) or the two A(X) diagnostic panels (Uncertainties), with the per-line
+           table below and a step switcher footer -->
+      <div id="abund-scatter">
+        <div class="scatter-pane">{{ embed(roots.abund_fig) }}</div>
+        <div class="scatter-pane">{{ embed(roots.abund_fig2) }}</div>
+      </div>
       <div id="abund-bottom">
         <div class="splitter splitter-row" data-resize="bottom" title="Drag to resize"></div>
         <div id="abund-table">{{ abund_table_html|safe }}</div></div>
       <div id="abund-steps">
         <div class="step-tabs" title="Abundance workflow steps">
-          <button class="step-tab abund-step-btn" data-step="1">1 · Line selection</button>
-          <button class="step-tab abund-step-btn" data-step="2">2 · Synthesis</button>
-          <button class="step-tab abund-step-btn" data-step="3">3 · Uncertainties</button>
+          <button class="step-tab abund-step-btn" data-step="1">Lines</button>
+          <button class="step-tab abund-step-btn" data-step="2">Uncertainties</button>
         </div>
       </div>
       <!-- abundance-correction view: reference spectrum (steps 1-2) or ΔA scatter (step 3),
@@ -147,16 +149,20 @@
           <button class="step-tab corr-step-btn" data-step="3">3 · Scatter</button>
         </div>
       </div>
-      <!-- measurement view: the spectrum (Lines) or the A(X) balance scatter, with the
-           per-line table + iteration status below and a two-way view switcher -->
-      <div id="ionbal-scatter">{{ embed(roots.ionbal_fig) }}</div>
+      <!-- measurement view: the two balance panels (the tab it opens on, so the fit is
+           watched as it runs) or the target spectrum with the synthesised lines drawn on it
+           (Lines), with the per-line table + iteration status below and a view switcher -->
+      <div id="ionbal-scatter">
+        <div class="scatter-pane">{{ embed(roots.ionbal_fig) }}</div>
+        <div class="scatter-pane">{{ embed(roots.ionbal_fig2) }}</div>
+      </div>
       <div id="ionbal-bottom">
         <div class="splitter splitter-row" data-resize="bottom" title="Drag to resize"></div>
         <div id="ionbal-table">{{ ionbal_table_html|safe }}</div></div>
       <div id="ionbal-steps">
         <div class="step-tabs" title="What the top pane shows">
-          <button class="step-tab ionbal-step-btn" data-step="1">Lines</button>
-          <button class="step-tab ionbal-step-btn" data-step="2">Balance</button>
+          <button class="step-tab ionbal-step-btn" data-step="1">Balance</button>
+          <button class="step-tab ionbal-step-btn" data-step="2">Lines</button>
         </div>
       </div>
       <!-- the line list (linenav.LineNavigator): opened by clicking a line-position
@@ -228,42 +234,26 @@
           <span class="section-header">Abundances</span>
           <button class="icon-btn abund-close" title="Close"><i class="ti ti-x"></i></button>
         </div>
-        <!-- step 1 · line selection (independent of stellar parameters) -->
+        <div class="hint">The lines come from a line mask — open one in the left sidebar and
+          use its <b>Measure abundances</b> action. These steps act on the abundance object
+          that measurement produced.</div>
+        <!-- step 1 · the lines: the spectrum, and the synthesis standing on them
+             (configured in the modal, re-runnable after curation) -->
         <div class="abund-step-panel abund-step-1-panel">
-          <div id="abund-ref">{{ abund_ref_html|safe }}</div>
-          <div id="abund1-fields">{{ abund1_html|safe }}</div>
-          <button class="text-btn abund-run-lines">Run diagnostic selection</button>
-          <div class="hint">Measures every candidate line's EW + FWHM (and its EW uncertainty
-            from the SNR + continuum-%) on the reference; the result appears in the left sidebar.
-            Lines whose photon EW error exceeds their EW are flagged and excluded. Click a row to
-            jump and curate.</div>
-        </div>
-        <!-- step 2 · synthesis setup (the tool's own atmosphere + params + mode) -->
-        <div class="abund-step-panel abund-step-2-panel">
-          <div class="section-header">Atmosphere</div>
-          <div id="abund-grid" class="synth-grid">{{ abund_grid_html|safe }}</div>
-          <div id="abund-file-picker" class="inline-picker-auto{{ ' open' if abund_show_file }}"
-               data-results="{{ abund_file_results_name }}">
-            {{ embed(roots.abund_file_picker) }}
-            <div id="abund-file-results" class="file-results"></div>
-          </div>
-          <div class="section-header">Stellar parameters</div>
-          <div id="abundparams-fields">{{ abund_params_html|safe }}</div>
-          <div class="section-header">Abundances</div>
-          <div id="abundbase-fields">{{ abund_base_html|safe }}</div>
-          <div class="section-header">Radiative transfer</div>
-          <div id="abundmode-fields">{{ abund_mode_html|safe }}</div>
-          <div id="abund-atoms-ro">{{ abund_atoms_ro_html|safe }}</div>
+          <div id="abund-setup-note">{{ abund_setup_note_html|safe }}</div>
+          <button class="text-btn abund-settings">Synthesis settings…</button>
           <button class="text-btn abund-run-synth">Run synthesis</button>
-          <div class="hint">Synthesises the curve of growth for each line; the table fills in
-            row by row as results land.</div>
+          <div class="hint">Synthesises the curve of growth for each included line; the table
+            fills in row by row as results land. It ran once when the windows were measured —
+            run it again after curating the lines or changing the settings.</div>
         </div>
-        <!-- step 3 · uncertainties -->
-        <div class="abund-step-panel abund-step-3-panel">
-          <div id="abund3-fields">{{ abund3_html|safe }}</div>
+        <!-- step 2 · uncertainties -->
+        <div class="abund-step-panel abund-step-2-panel">
           <button class="text-btn abund-run-uncert">Run uncertainties</button>
           <div class="hint">Propagates each line's EW uncertainty (from the SNR + continuum-% set
-            in step 1) to its abundance through the REW gradient, and draws the A(X) scatter.</div>
+            when the windows were measured) to its abundance through the REW gradient, and puts
+            the error bars on the two panels — A(X) against excitation energy and against
+            reduced EW, the same pair a balance is read against.</div>
         </div>
       </div>
       <div class="abundcorr-panel">
@@ -545,6 +535,51 @@
   </div>
 </dialog>
 
+<!-- Measure abundances: opened from the LineMasks sidebar with the set to measure. The
+     measurement is what the abundance object is made of; the synthesis that stands on it is
+     configured in the object's own panel. -->
+<dialog id="abund-modal" class="modal modal-lg">
+  <div class="modal-header">
+    <span class="modal-title">Measure abundances</span>
+    <button id="close-abund" class="icon-btn" title="Close"><i class="ti ti-x"></i></button>
+  </div>
+  <div class="modal-body">
+    <div class="abund-context">{{ abund_context_html|safe }}</div>
+    <div class="modal-cols">
+      <div class="modal-col">
+        <div class="section-header">Measurement</div>
+        <div id="abund-ref">{{ abund_ref_html|safe }}</div>
+        <div id="abund1-fields">{{ abund1_html|safe }}</div>
+        <div class="hint">Measures every switched-on window's EW + FWHM (and its EW uncertainty
+          from the SNR + continuum-%) on the reference; the result appears in the left sidebar.
+          Lines whose photon EW error exceeds their EW are flagged and excluded. Click a row to
+          jump and curate, then re-run the synthesis on what is left.</div>
+      </div>
+      <div class="modal-col">
+        <div class="section-header">Atmosphere</div>
+        <div id="abund-grid" class="synth-grid">{{ abund_grid_html|safe }}</div>
+        <div id="abund-file-picker" class="inline-picker-auto{{ ' open' if abund_show_file }}"
+             data-results="{{ abund_file_results_name }}">
+          {{ embed(roots.abund_file_picker) }}
+          <div id="abund-file-results" class="file-results"></div>
+        </div>
+        <div class="section-header">Stellar parameters</div>
+        <div id="abundparams-fields">{{ abund_params_html|safe }}</div>
+      </div>
+      <div class="modal-col">
+        <div class="section-header">Abundances</div>
+        <div id="abundbase-fields">{{ abund_base_html|safe }}</div>
+        <div class="section-header">Radiative transfer</div>
+        <div id="abundmode-fields">{{ abund_mode_html|safe }}</div>
+        <div id="abund-atoms-ro">{{ abund_atoms_ro_html|safe }}</div>
+        <div class="hint">Each line's curve of growth is synthesised on this atmosphere and
+          inverted to the abundance reproducing its measured EW.</div>
+      </div>
+    </div>
+  </div>
+  <div class="modal-footer" id="abund-modal-actions">{{ abund_actions_html|safe }}</div>
+</dialog>
+
 <!-- Fit ionisation balance: opened from the LineMasks sidebar (a new measurement) or
      from a measurement object's panel (a refit of the one it already holds). The fit owns
      its synthesis context; registered grids and physical input paths come from Preferences. -->
@@ -553,16 +588,16 @@
     <span class="modal-title">Fit ionisation balance</span>
     <button id="close-ionbal" class="icon-btn" title="Close"><i class="ti ti-x"></i></button>
   </div>
-  <div class="modal-body ionbal-modal-body">
+  <div class="modal-body">
     <div class="ionbal-context">{{ ionbal_context_html|safe }}</div>
-    <div class="ionbal-modal-cols">
-      <div class="ionbal-modal-col">
+    <div class="modal-cols">
+      <div class="modal-col">
         <div class="section-header">Measurement</div>
         <div id="ionbal1-fields">{{ ionbal1_html|safe }}</div>
         <div class="hint">The windows are measured once, on this spectrum, into a
           measurement object of their own. A refit reuses them.</div>
       </div>
-      <div class="ionbal-modal-col">
+      <div class="modal-col">
         <div class="section-header">Entry point</div>
         <div id="ionbal2-fields">{{ ionbal2_html|safe }}</div>
         <div class="hint">Choosing a class fills in its parameters (ξ from an approximate
@@ -571,7 +606,7 @@
           the residual it is, and holding all four turns the run into a single diagnostic
           evaluation.</div>
       </div>
-      <div class="ionbal-modal-col">
+      <div class="modal-col">
         <div class="section-header">Atmosphere</div>
         <div id="ionbalsetup-fields">{{ ionbalsetup_html|safe }}</div>
         <div class="hint">The selected registered grid is always interpolated at every trial
@@ -1006,6 +1041,7 @@
     var msitem = ev.target.closest('.maskset-item');
     if (msitem) { linemaskAction('set-select', msitem.dataset.maskset); return; }
     if (ev.target.closest('.lm-new')) { linemaskAction('new'); return; }
+    if (ev.target.closest('.lm-measure-abund')) { linemaskAction('measure-abund'); return; }
     if (ev.target.closest('.lm-fit-balance')) { linemaskAction('fit-balance'); return; }
     if (ev.target.closest('.lm-revert')) {
       if (confirm('Discard every edit and reload this set from its file?')) linemaskAction('revert');
@@ -1059,14 +1095,64 @@
     var ref = ev.target.closest('.lm-auto-ref');
     if (ref) { linemaskAction('auto-ref', ref.value); }
   });
+  // Table <-> scatter hover link. A row and a point carry the same line index (the row as
+  // data-line, the point as the source's `idx` column), so the marker source published as
+  // "<prefix>_hover" can be moved onto the hovered row's point without a server round trip.
+  // The other direction is the scatter's own HoverTool callback (see abundwizard.HOVER_JS).
+  function markPoint(prefix, line) {
+    var doc = Bokeh.documents[0];
+    var hov = doc.get_model_by_name(prefix + '_hover');
+    if (!hov) return;
+    var empty = { x_evi: [], x_rew: [], a: [] };
+    var names = [prefix + '_points', prefix + '_points2'];
+    for (var n = 0; n < names.length; n++) {
+      var src = doc.get_model_by_name(names[n]);
+      if (!src || !src.data.idx) continue;
+      var k = Array.prototype.indexOf.call(src.data.idx, line);
+      if (k >= 0) {
+        hov.data = { x_evi: [src.data.x_evi[k]], x_rew: [src.data.x_rew[k]],
+                     a: [src.data.a[k]] };
+        return;
+      }
+    }
+    hov.data = empty;
+  }
+  function clearMarks(prefix) {
+    markPoint(prefix, -1);
+    document.querySelectorAll('.' + prefix + '-row.row-hover')
+            .forEach(function (r) { r.classList.remove('row-hover'); });
+  }
+  function selectAnalysisRow(prefix, row) {
+    var table = document.getElementById(prefix + '-table');
+    if (!table || !row) return;
+    table.querySelectorAll('.' + prefix + '-row.row-selected')
+         .forEach(function (r) { r.classList.remove('row-selected'); });
+    row.classList.add('row-selected');
+  }
+  ['abund', 'ionbal'].forEach(function (prefix) {
+    var table = document.getElementById(prefix + '-table');
+    var pane = document.getElementById(prefix + '-scatter');
+    if (table) {
+      table.addEventListener('mouseover', function (ev) {
+        var row = ev.target.closest('.' + prefix + '-row');
+        if (row) markPoint(prefix, +row.dataset.line);
+      });
+      table.addEventListener('mouseleave', function () { markPoint(prefix, -1); });
+    }
+    // the hover callback fires while the cursor is over the plot; leaving it never reports
+    // an empty hit, so the row mark is dropped here
+    if (pane) pane.addEventListener('mouseleave', function () { clearMarks(prefix); });
+  });
+
   // abundance tool: own client->server channel for run / reference / result clicks / line toggles
   function abundAction(kind, arg) {
     var m = Bokeh.documents[0].get_model_by_name('abund-actions');
     if (m) m.setv({ value: kind + ':' + (arg || '') + ':' + Date.now() });
   }
-  document.getElementById('abundance-btn').addEventListener('click', function () { ewAction('abundance'); });
+  wireModal(null, 'close-abund', 'abund-modal');
   document.addEventListener('click', function (ev) {
     if (ev.target.closest('.abund-close')) { ewAction('abundance'); return; }
+    if (ev.target.closest('.abund-settings')) { abundAction('settings'); return; }
     if (ev.target.closest('.abund-run-lines')) { abundAction('run-lines'); return; }
     if (ev.target.closest('.abund-run-synth')) { abundAction('run-synth'); return; }
     if (ev.target.closest('.abund-run-uncert')) { abundAction('run-uncert'); return; }
@@ -1081,6 +1167,7 @@
     // a table row-click (but not the include checkbox) jumps the figure to that line
     var lrow = ev.target.closest('.abund-row');
     if (lrow && !ev.target.closest('.abund-line-chk')) {
+      selectAnalysisRow('abund', lrow);
       abundAction('jump-line', lrow.dataset.line);
     }
   });
@@ -1188,6 +1275,7 @@
     if (ssort) { ionbalAction('sort', ssort.dataset.sortcol); return; }
     var lrow = ev.target.closest('.ionbal-row');
     if (lrow && !ev.target.closest('.ionbal-line-chk')) {
+      selectAnalysisRow('ionbal', lrow);
       ionbalAction('jump-line', lrow.dataset.line);
     }
   });
