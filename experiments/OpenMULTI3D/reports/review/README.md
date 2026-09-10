@@ -19,6 +19,8 @@ Read the reports in this order:
 3. [Reference codes and scientific choices](reference-codes.md): what to adopt from Korg,
    SMHR, iSpec and BACCHUS, and corrections to the earlier review.
 4. [Implementation order and verification](roadmap.md): bounded changes and acceptance criteria.
+5. [Baseline: what the current ionisation-balance solver costs](baseline-ionisation-balance.md):
+   the step-5 measurement, taken after steps 1-4 and 6 were implemented.
 
 ## Highest-value conclusions
 

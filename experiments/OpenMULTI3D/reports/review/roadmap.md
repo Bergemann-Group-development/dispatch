@@ -59,6 +59,14 @@ abundances. Do not require a new database or broad reference dataset.
 
 ## 5. Evaluate solver efficiency on current execution
 
+The baseline is measured: see
+[baseline-ionisation-balance.md](baseline-ionisation-balance.md). Synthesis is 94% of a
+113 s cold solve and the solver's arithmetic 1.3%; iteration cost is set by atmosphere-node
+count, not by ladder rungs, so the ladder-grouping option below is not justified by the
+measurement. The solve spent five of eight iterations oscillating in the vmic /
+reduced-EW pair, which is what a coupled or damped step would have to improve. The
+comparison itself is still open.
+
 Measure the existing solver before comparing a finite-difference coupled method and a
 Jacobian-reuse strategy. Use a curated small set covering the supported scientific scope,
 with both ionisation stages and meaningful excitation/REW coverage. Synthetic recovery
@@ -77,9 +85,9 @@ also mean variant counts are no longer job counts. Benchmark the current code ra
 projecting its speed from the old pool-startup sample.
 
 Inspect `shared_ladder`: its span and point count grow with line-to-line abundance spread.
-If measurements show outliers driving excessive full-window work, group features by ladder
-coverage and retain explicit per-feature retries. That is a conditional optimisation,
-not a reason to add a general batching policy now.
+Measured: they do (3 rungs over 0.80 dex to 5 over 1.40 dex), but the rungs ride one run's
+abundance-set axis, so the growth costs nothing. Grouping features by ladder coverage is
+therefore not warranted. The condition this optimisation was offered against did not hold.
 
 ## 6. Finish low-risk cleanup
 
