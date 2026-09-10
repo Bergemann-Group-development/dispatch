@@ -646,6 +646,46 @@ def _phys_freqs(N, sample_spacing):
     return np.abs(np.fft.fftfreq(N, d=abs(sample_spacing)))
 
 
+# Bounds on a meaningful spectral resolution R = lambda/dlambda. Below R_MIN a "filter" is
+# removing the spectrum rather than its noise; above R_MAX there is nothing left but noise,
+# whatever the sampling claims.
+R_MIN = 1e3
+R_MAX = 1e6
+
+
+def brault_prep(spectrum):
+    """``(xx, y0, w, d)`` for the optimal-filter machinery.
+
+    The physical Fourier frequency (cycles per unit ``ln lambda``) *is* the spectral
+    resolution, so the transform is taken in ``ln lambda`` and its frequency axis needs no
+    conversion. Returns the wavelengths, the continuum-removed signal ``y0`` (the filter
+    models a signal about zero, not about one), the cosine taper ``w`` that keeps the
+    finite spectrum from ringing at its ends, and the ``ln lambda`` sample spacing ``d``.
+
+    The FFT uses the tapered signal ``y0 * w``; filtering blends the result back with the
+    original weighted by ``w``, so the untapered ends keep their own values.
+    """
+    xx, yy = spectrum.values
+    x = np.log(xx / xx.min())
+    d = float(np.mean(np.diff(x)))
+    return xx, yy - 1.0, cos_window(x), d
+
+
+def nyquist_resolution(sample_spacing):
+    """The highest resolution the sampling can carry: a feature needs two samples."""
+    return 0.5 / abs(float(sample_spacing))
+
+
+def clamp_resolution(value, sample_spacing, rmin=R_MIN, rmax=R_MAX):
+    """``value`` confined to what the sampling and the physics both allow.
+
+    Asking for a cut above the Nyquist resolution does not sharpen anything — there is no
+    information up there to keep — so the request is clamped rather than honoured.
+    """
+    return float(np.clip(value, rmin,
+                         min(nyquist_resolution(sample_spacing), rmax)))
+
+
 def brault_power_spectrum(signal, sample_spacing):
     """Return (s, norm_power): the positive (physical) frequency power spectrum,
     normalized to its max (ignoring the s=0 DC bin)."""

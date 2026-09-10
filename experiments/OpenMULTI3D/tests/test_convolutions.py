@@ -72,3 +72,38 @@ def test_custom_kernel_fixed_and_normalised():
     var = trapz(py * px**2, x=px)
     sigma_over_c = 2.0 / 299792.458
     assert np.sqrt(var) == pytest.approx(sigma_over_c, rel=1e-2)
+
+
+# --- optimal-filter preparation and resolution bounds (moved out of the filter tool) -------
+
+def test_brault_prep_removes_the_continuum_and_tapers():
+    """The filter models a signal about zero, and a finite spectrum must not ring at its ends."""
+    import numpy as np
+    from tumult import Spectrum
+    from tumult.utils import brault_prep
+
+    x = np.linspace(5000.0, 5010.0, 2001)
+    spec = Spectrum(x, 1.0 - 0.3 * np.exp(-0.5 * ((x - 5005.0) / 0.05) ** 2))
+    xx, y0, w, d = brault_prep(spec)
+    assert np.allclose(xx, x)
+    assert y0.max() <= 0.0 + 1e-12          # continuum at 1 removed -> absorption is negative
+    assert w[0] == 0.0 and w[-1] == 0.0     # tapered to zero at both ends
+    assert d > 0                            # ln-lambda spacing
+
+
+def test_resolution_is_clamped_to_nyquist_and_the_physical_bounds():
+    import numpy as np
+    from tumult.utils import R_MAX, R_MIN, clamp_resolution, nyquist_resolution
+
+    d = 1e-6
+    nyq = nyquist_resolution(d)
+    assert nyq == 0.5 / d
+    # a request above Nyquist cannot sharpen anything - there is no information up there
+    assert clamp_resolution(1e12, d) == pytest.approx(min(nyq, R_MAX))
+    assert clamp_resolution(1.0, d) == pytest.approx(R_MIN)
+    assert clamp_resolution(5e3, d) == pytest.approx(5e3)
+
+
+def test_nyquist_resolution_ignores_sign():
+    from tumult.utils import nyquist_resolution
+    assert nyquist_resolution(-1e-6) == nyquist_resolution(1e-6)

@@ -22,8 +22,9 @@ import numpy as np
 from bokeh.models import ColumnDataSource, CustomJS, PointDrawTool, Range1d, Span
 from bokeh.plotting import figure
 
-from tumult.utils import (apply_brault_filter, apply_brault_popt, cos_window,
-                          brault_filter_H, brault_power_spectrum)
+from tumult.utils import (R_MAX, R_MIN, apply_brault_filter, apply_brault_popt,
+                          brault_filter_H, brault_power_spectrum, brault_prep as _prep,
+                          clamp_resolution)
 
 from canvas import ACCENT, LINE, MUTED, _style
 from controls import Field, Form
@@ -33,24 +34,14 @@ from spectrum import Spectrum
 from tool import Tool
 
 N_DISPLAY = 4000   # decimate power spectra for plotting
-R_MIN = 1e3        # lower limit of the resolution axis
-R_MAX = 1e6        # cap the resolution axis (R = λ/Δλ); beyond this is just noise
 RED = "#e05c5c"
 GREEN = "#50c878"  # optimal filter H
 
 # The physical Fourier frequency (cycles per unit ln λ) IS the spectral resolution:
 # the Nyquist frequency 1/(2·Δlnλ) is the max R a 2-pixel feature can have. So the
-# axis value is R directly — no conversion, just a relabel capped at R_MAX.
-
-
-def _prep(spectrum):
-    """Return (xx, y0, w, d): wavelengths, the continuum-removed signal y0, the cosine
-    taper weights w, and the log-λ sample spacing d. The FFT uses the tapered signal
-    y0*w; filtering blends the result back with the original weighted by w."""
-    xx, yy = spectrum.values
-    x = np.log(xx / xx.min())
-    d = float(np.mean(np.diff(x)))
-    return xx, yy - 1.0, cos_window(x), d
+# axis value is R directly — no conversion, just a relabel capped at R_MAX. The signal
+# preparation and those bounds are :mod:`tumult.utils`' (``brault_prep``,
+# ``clamp_resolution``); the axis they label is this panel's.
 
 
 class Method(StrEnum):
@@ -327,8 +318,7 @@ class FilterTool(Tool):
         sel = self.canvas.selected()
         if not xs or not ys or sel is None:
             return
-        nyq = 0.5 / abs(_prep(sel.spectrum)[3])
-        fmax = float(np.clip(xs[0], R_MIN, min(nyq, R_MAX)))
+        fmax = clamp_resolution(xs[0], _prep(sel.spectrum)[3])
         floor = float(np.log(max(float(ys[0]), 1e-300)))
         self._apply(fmax, floor)
 
