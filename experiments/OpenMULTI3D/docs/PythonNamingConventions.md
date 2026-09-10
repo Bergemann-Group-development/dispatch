@@ -4,9 +4,9 @@ Fortran conventions are `F90CodeConventions.tex`, which comes from DISPATCH upst
 governs `SRC/` and `HOP/`. This file covers the Python in `tumult/` and `TumultStudio2/`.
 What the names *mean* is `GLOSSARY.md`; this is how they are spelled.
 
-The conventions below are the dominant practice in the tree, not an aspiration. Where the
-code disagrees with itself the majority form is given and the exceptions are named at the
-end, so a reader can tell a convention from an outlier without counting.
+The conventions below are the practice in the tree, not an aspiration. The outliers that
+prompted this file have since been fixed; what remains under "Known inconsistencies" is
+there because changing it would cost more than it is worth, and each entry says why.
 
 ## Files
 
@@ -54,12 +54,12 @@ Recurring local names, kept stable so a reader recognises them:
 
 ## Units in names
 
-A name carries its unit when the quantity has more than one plausible one, and the case
-follows the name:
+A name carries its unit when the quantity has more than one plausible one. The suffix
+follows the case of the name it is part of, so it is lowercase everywhere except in
+`UPPER_CASE` constants: `wavelength_aa`, `fwhm_aa`, `hwhm_kms`, `ew_maa`, `Profile.maa`,
+against `SYNTH_PAD_AA`, `BAND_AA`, `CC_KMS`.
 
-- `UPPER_CASE` constants take an uppercase suffix: `SYNTH_PAD_AA`, `BAND_AA`, `CC_KMS`.
-- lowercase names take a lowercase suffix: `wavelength_aa`, `fwhm_aa`, `hwhm_kms`,
-  `lam_min_aa`.
+`astropy.units.mAA` keeps its own spelling; it is astropy's name, not ours.
 
 Quantities that are always in one unit do not need the suffix; `lam0` is Angstrom
 throughout. Per the package preferences, prefer a dimensionless internal formulation and
@@ -74,19 +74,10 @@ several editor panes side by side.
 
 ## Known inconsistencies
 
-These are outliers rather than alternatives. Do not copy them; fixing one is welcome when
-the surrounding code is being changed anyway, and gratuitous renames are not.
-
-- Lowercase class names in older modules: `tumult` and `grid` (`run.py`), `turbospectrum`,
-  `fast_trans`, `trans_class`, `level_class`, `collision_class`, `empty`. The `tumult` run
-  class is the awkward one, since it shares its name with the package. A `_class` suffix
-  says only that a class is a class; the newer code drops it.
-- `NameList.py` is the one CamelCase file name.
-- Two-space indentation in `atmos.py`, `fast_atom.py`, `fast_trans.py`, `isotopes.py` and
-  `turbospectrum.py`.
-- `Profile.mAA` and its `err_phot_mAA` / `err_cont_mAA` / `width_err_mAA` companions keep
-  the milli-Angstrom symbol's capitals, matching `astropy.units.mAA` but breaking the
-  lowercase-suffix rule. Elsewhere the same quantity is `ew_maa`, which follows it. The two
-  disagree; `Profile` is public API and the more expensive of the pair to change.
 - `utils.py` and `auxfuncs.py` are grab bags, and `auxfuncs.py` exists mainly to keep old
-  wildcard imports resolving.
+  wildcard imports resolving. Neither is a pattern to extend.
+- The golden dict keys in `tests/cases.py` keep the pre-rename `_mAA` spelling, because
+  they name arrays already stored in the `.npz` files. Renaming a key would silently miss
+  its array rather than fail.
+- `tumult.tumult` and `tumult.grid` remain as aliases of `Run` and `RunGrid` for code
+  outside this repository.
