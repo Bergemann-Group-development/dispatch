@@ -130,11 +130,12 @@ class AbundCorrTool(AbundanceWizard):
         self.canvas.set_abund_overlay(ln.fit_spec, ln.window)
         if ln.fit_func is not None:
             self.canvas.set_abund_hatch(ln.fit_func, ln.window)
-        # draw the fit window (inner, from auto_crop_core) and synth window (outer, HWHM-based)
-        # bands at their true extents. Unlike AbundTool we do NOT snap the edges to the reference
-        # spectrum's samples: the synthetic reference can be coarsely sampled, and snapping to a
-        # coarse grid would misrepresent the auto_crop_core / HWHM extents the windows come from.
-        self.canvas.set_abund_windows(ln.fit_window, ln.window)
+        # highlight the fit window (inner, from auto_crop_core) and synth window (outer,
+        # HWHM-based) at their true extents. Unlike AbundTool we do NOT snap the edges to the
+        # reference spectrum's samples: the synthetic reference can be coarsely sampled, and
+        # snapping to a coarse grid would misrepresent the auto_crop_core / HWHM extents the
+        # windows come from.
+        self.canvas.highlight_windows([ln.mask], active=0)
 
     # --- step 1: reference + line selection --------------------------------------------
     def run_reference(self):

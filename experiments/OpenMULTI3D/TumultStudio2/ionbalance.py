@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import html
 import logging
+from dataclasses import replace
 
 import astropy.units as u
 import numpy as np
@@ -242,6 +243,7 @@ class IonBalanceTool(AbundanceWizard):
         self._pending_set = None     # the mask set the open modal will measure (None = refit)
         self._refit_uid = None       # the measurement the open modal will refit
         self._error = None
+        self._jumped = None          # index of the line whose window is accented
 
         # neutral-stage points on the base figure's source; the ionised stage on a second
         # source in red; whiskers on both; a fitted regression over the *neutral* points.
@@ -275,6 +277,7 @@ class IonBalanceTool(AbundanceWizard):
         self.set_step(self.step)
         if self.selected() is not None and self.is_focused():
             self.push_view("on")
+            self._render_windows(self._jumped)
 
     def refresh(self):
         """Keep the modal's target selector in step with the loaded observations."""
@@ -285,6 +288,7 @@ class IonBalanceTool(AbundanceWizard):
         self.refresh()
         if self.active:
             self.push_panel()
+            self._render_windows(self._jumped)   # the highlights follow a display-unit flip
 
     # --- the modal ------------------------------------------------------------------------
     @staticmethod
@@ -464,20 +468,62 @@ class IonBalanceTool(AbundanceWizard):
     def _result_label(self, res):
         return res.label()
 
+    def select_result(self, uid):
+        # the highlights are painted after the base implementation, which hands the centre view
+        # (and with it the sidebar focus) to this result only at the very end
+        super().select_result(uid)
+        self._render_windows(self._jumped)
+
     def _render_selected(self):
         self.push_panel()
         super()._render_selected()
+        self._render_windows(self._jumped)
 
     def _jump_decor(self, res, ln):
         # no per-line synthetic fit is kept during the solve, so decorate with the measured
-        # profile hatch + windows (and the overlay only when one exists)
+        # profile hatch (and the overlay only when one exists); the windows are already on
+        # the canvas — jumping only moves the accent onto this line.
         if ln.fit_spec is not None:
             self.canvas.set_abund_overlay(ln.fit_spec, ln.window)
         if ln.fit_func is not None:
             self.canvas.set_abund_hatch(ln.fit_func, ln.window)
+        self._jumped = next((i for i, l in enumerate(res.lines) if l is ln), None)
+        self._render_windows(self._jumped)
+
+    def _render_windows(self, active=None):
+        """Highlight the selected measurement's windows exactly as the LineMasks view
+        highlights the set they came from, with ``active`` (the jumped-to line) accented but
+        not draggable.
+
+        Each LineResult embeds the mask it was measured over, so these *are* the windows the
+        balance was solved on. They belong to the result, not to a jump, so they are painted
+        whenever this tool owns the centre view and dropped as soon as it does not.
+
+        A line switched off in the table is drawn switched off, which is why the masks are
+        copied with the *line's* include state: ``ln.mask.include`` is the source mask's, and
+        every measured line came from a switched-on one.
+
+        Until the measurement has its lines (the view opens the moment the fit is submitted,
+        and measuring runs on the worker) the windows are taken straight from the source mask
+        set, whose own switched-off masks are exactly the ones this run skipped."""
+        res = self.selected()
+        if not (self.active and self.is_focused()) or res is None:
+            return self.canvas.clear_windows()
+        if res.lines:
+            masks = [replace(l.mask, include=l.include) for l in res.lines]
+        else:
+            mset = self._source_set(res)
+            masks = list(mset.masks) if mset is not None else []
         spec = self._spec_of(res)
         xpts = np.asarray(spec.values[0], dtype=float) if spec is not None else None
-        self.canvas.set_abund_windows(ln.fit_window, ln.window, xpts)
+        self.canvas.highlight_windows(masks, active=active, xpts=xpts)
+
+    def _clear_line_decor(self):
+        """Drop the per-line overlay/hatch and the accent; the highlights stay while a result
+        is in view (``_render_windows`` clears them once it is not)."""
+        self._jumped = None
+        super()._clear_line_decor()
+        self._render_windows()
 
     def _spec_of(self, res):
         """The measurement's target observation, looked up by name (uids die with a session)."""
@@ -485,8 +531,14 @@ class IonBalanceTool(AbundanceWizard):
         return self.get_observation(uid) if uid is not None else None
 
     def _source_set(self, res):
+        """The live mask set this measurement came from, or None once it is gone.
+
+        ``maskset_uid`` is stored as a string (it survives a session snapshot as JSON) while
+        the store keys its sets by int, so the match is made on the string form."""
         masks = getattr(self.ctx, "masks", None)
-        return masks.find(res.maskset_uid) if masks is not None else None
+        if masks is None or not res.maskset_uid:
+            return None
+        return next((m for m in masks.sets if str(m.uid) == str(res.maskset_uid)), None)
 
     def on_filter_changed(self):
         """Re-measure the selected measurement's EWs when the canvas Filtered switch toggles —
@@ -594,8 +646,10 @@ class IonBalanceTool(AbundanceWizard):
         except ValueError as exc:
             self._error = str(exc)
             return False
-        # the mask view shows the latest run's diagnostics beside its windows
-        self.ctx.schedule(lambda: self.ctx.emit("masks-changed"))
+        # the mask view shows the latest run's diagnostics beside its windows; the canvas
+        # swaps the source set's highlights for the windows actually measured
+        self.ctx.schedule(lambda: (self.ctx.emit("masks-changed"),
+                                   self._render_windows(self._jumped)))
         return True
 
     # --- phase 2: the solve ------------------------------------------------------------------

@@ -14,7 +14,7 @@ from contextlib import nullcontext
 import astropy.units as u
 import numpy as np
 from bokeh.models import (BoxAnnotation, ColumnDataSource, DataRange1d, Range1d, RangeTool,
-                          Span, WheelZoomTool)
+                          WheelZoomTool)
 from bokeh.plotting import figure
 
 from tumult import Spectrum, continuum
@@ -185,48 +185,43 @@ class SpectrumCanvas:
                                               color=ACCENT, line_width=1.2, level="underlay",
                                               visible=False)
 
-        # vertical bounds for the jumped line: the auto-crop fit window (amber) and the wider
-        # synthesis window (red). Drawn between the discrete spectrum points so it is clear
-        # which points fall in each window during line curation.
-        self.abund_fit_spans = [
-            Span(location=0, dimension="height", line_color="#e0a030", line_width=1.5,
-                 line_dash="dashed", line_alpha=0.9, level="underlay", visible=False)
-            for _ in range(2)]
-        self.abund_synth_spans = [
-            Span(location=0, dimension="height", line_color="#e05c5c", line_width=1.5,
-                 line_dash="dashed", line_alpha=0.9, level="underlay", visible=False)
-            for _ in range(2)]
-        for _sp in (*self.abund_fit_spans, *self.abund_synth_spans):
-            main.add_layout(_sp)
-
-        # the shared LineMask set (maskstore) drawn while the LineMasks tool is active: every
-        # mask's synth/visual window as a faint red band, its fit window amber, the active mask
-        # accented. These are BoxAnnotations (not quads): annotations never participate in the
-        # main DataRange1d autoscale, so the bands span the full plot height (top/bottom left
-        # unset) WITHOUT perturbing the y-axis — the spectrum keeps the exact same y-fit as in
-        # the regular view. A pool of boxes per category is grown on demand and hidden when idle.
-        self._mask_style = {
+        # window highlights: every view that shows line masks (LineMasks, the abundance and
+        # correction wizards, the ionisation balance) draws them here, through
+        # :meth:`highlight_windows`. A mask's synth/visual window is a faint red highlight and
+        # its fit window amber; a switched-off mask keeps the hue but fades to a dashed outline,
+        # so the canvas says what the tables say. These are BoxAnnotations (not quads):
+        # annotations never participate in the main DataRange1d autoscale, so the highlights
+        # span the full plot height (top/bottom left unset) WITHOUT perturbing the y-axis — the
+        # spectrum keeps the exact same y-fit as in the regular view. A pool of boxes per
+        # category is grown on demand and hidden when idle.
+        self._hl_style = {
             "syn": dict(fill_color="#e05c5c", fill_alpha=0.06, line_color="#e05c5c", line_alpha=0.25),
             "fit": dict(fill_color="#e0a030", fill_alpha=0.10, line_color="#e0a030", line_alpha=0.35),
+            "syn_off": dict(fill_color="#e05c5c", fill_alpha=0.02, line_color="#e05c5c",
+                            line_alpha=0.15, line_dash="dashed"),
+            "fit_off": dict(fill_color="#e0a030", fill_alpha=0.03, line_color="#e0a030",
+                            line_alpha=0.20, line_dash="dashed"),
         }
-        self._mask_boxes = {"syn": [], "fit": []}
+        self._hl_boxes = {k: [] for k in self._hl_style}
 
-        # the *active* mask's fit window is its own box rather than one of the pooled bands:
-        # it is the one the user edits, and it does so by dragging its left/right edge handles
+        # the accented window's fit span is its own box rather than one of the pooled ones: it
+        # is the one the view is about (the mask being edited, the line jumped to), and in the
+        # LineMasks view it is also the one the user drags by its left/right edge handles
         # (`resizable="x"`, `movable="none"` — the window may be widened or narrowed, never
         # slid wholesale, and no other mask can be changed by accident). Bokeh writes the
-        # dragged `left`/`right` straight back to the model, which `on_mask_resize` picks up.
-        self.mask_edit_box = BoxAnnotation(
+        # dragged `left`/`right` straight back to the model, which `on_window_resize` picks up;
+        # views that only display windows leave `editable` False and never set the callback.
+        self.accent_box = BoxAnnotation(
             # seeded with floats, not Bokeh's default Node coordinates: see _paint_boxes
             left=0.0, right=0.0,
             visible=False, level="underlay", editable=False,
             movable="none", resizable="x", use_handles=True,
             fill_color=ACCENT, fill_alpha=0.14, line_color=ACCENT, line_alpha=0.6)
-        main.add_layout(self.mask_edit_box)
-        self.on_mask_resize = None     # callback(lo, hi) in display units, set by MaskTool
-        self._mask_sync = False        # True while *we* are writing left/right (not the user)
-        self.mask_edit_box.on_change("left", self._on_mask_edit)
-        self.mask_edit_box.on_change("right", self._on_mask_edit)
+        main.add_layout(self.accent_box)
+        self.on_window_resize = None   # callback(lo, hi) in display units, set by MaskTool
+        self._accent_sync = False      # True while *we* are writing left/right (not the user)
+        self.accent_box.on_change("left", self._on_accent_edit)
+        self.accent_box.on_change("right", self._on_accent_edit)
 
         main.x_range.on_change("start", self._on_main_range)
         main.x_range.on_change("end", self._on_main_range)
@@ -604,62 +599,59 @@ class SpectrumCanvas:
         near_out = outside[0] if upper else outside[-1]
         return 0.5 * (float(near_in) + float(near_out))
 
-    def set_abund_windows(self, fit_window, synth_window, xpts=None):
-        """Draw the fit-window (amber) and synth-window (red) bounds for the jumped line.
+    # --- window highlights (the shared line-mask drawing for every view) ----------------
+    def highlight_windows(self, windows, active=None, editable=False, xpts=None):
+        """Highlight ``windows`` — line masks, in Å — on the main figure, in the display unit.
 
-        Each edge is snapped into the gap between the last included and first excluded
-        reference point (``xpts``, Å) so the membership of each spectrum point is unambiguous,
-        then converted to the display wavelength unit. A None / non-finite window hides its
-        pair of lines.
-        """
+        Every view that shows line masks draws them here, so a window looks the same wherever
+        it is met: its synth/visual span a faint red full-height highlight, its fit span amber,
+        and both faded to a dashed outline when the mask is switched off (``include`` False).
+        The mask at index ``active`` is accented instead, in the separate :attr:`accent_box`,
+        whose edges are draggable when ``editable`` (only the LineMasks view sets that, along
+        with :attr:`on_window_resize`).
+
+        ``windows`` is any sequence of :class:`~tumult.linemask.LineMask`; a per-line result
+        carries the one it was measured over, so a view can pass its own masks or the set's.
+        A window with a non-finite bound simply contributes nothing.
+
+        ``xpts`` (reference wavelengths, Å) snaps each edge into the gap between the last
+        included and first excluded point, so which spectrum points a window holds is
+        unambiguous. Views pass the spectrum the windows are read against, and none where
+        that would misrepresent them: an editable mask must show the bounds it carries, and a
+        coarsely sampled synthetic reference would snap the extents out of shape.
+
+        Highlights are BoxAnnotations (top/bottom unset ⇒ span the whole plot height) so they
+        never touch the main y-axis autoscale — the spectrum keeps the identical y-fit it has
+        in the regular view."""
         xp = None
         if xpts is not None and len(xpts):
             xp = np.sort(np.asarray(xpts, dtype=float))
-        for spans, win in ((self.abund_fit_spans, fit_window),
-                           (self.abund_synth_spans, synth_window)):
-            if win is None or not (np.isfinite(win[0]) and np.isfinite(win[1])):
-                for sp in spans:
-                    sp.visible = False
-                continue
-            lo = self._snap_edge(xp, float(win[0]), upper=False)
-            hi = self._snap_edge(xp, float(win[1]), upper=True)
-            a, b = to_range(lo, hi, u.AA, self.xunit)
-            for sp, loc in zip(spans, (a, b)):
-                sp.location = float(loc)
-                sp.visible = True
-
-    def clear_abund_window(self):
-        for sp in (*self.abund_fit_spans, *self.abund_synth_spans):
-            sp.visible = False
-
-    # --- shared LineMask bands (maskstore) --------------------------------
-    def render_masks(self, masks, active=None, editable=False):
-        """Draw every mask's synth (red) + fit (amber) window as full-height bands, in the
-        display unit; the ``active`` mask's fit window is drawn accented in the separate
-        :attr:`mask_edit_box`, whose edges are draggable when ``editable``.
-
-        Bands are BoxAnnotations (top/bottom unset ⇒ span the whole plot height) so they never
-        touch the main y-axis autoscale — the spectrum keeps the identical y-fit it has in the
-        regular view."""
-        syn, fit, act = [], [], None
-        for i, m in enumerate(masks):
+        spans = {k: [] for k in self._hl_style}
+        act = None
+        for i, m in enumerate(windows):
+            off = "" if getattr(m, "include", True) else "_off"
             if np.isfinite(m.smin) and np.isfinite(m.smax):
-                syn.append(to_range(m.smin, m.smax, u.AA, self.xunit))
+                spans["syn" + off].append(self._span(m.smin, m.smax, xp))
             if np.isfinite(m.lmin) and np.isfinite(m.lmax):
-                span = to_range(m.lmin, m.lmax, u.AA, self.xunit)
+                span = self._span(m.lmin, m.lmax, xp)
                 if i == active:
                     act = span
                 else:
-                    fit.append(span)
-        self._paint_boxes("syn", syn)
-        self._paint_boxes("fit", fit)
-        self._paint_edit_box(act, editable)
+                    spans["fit" + off].append(span)
+        for key, boxes in spans.items():
+            self._paint_boxes(key, boxes)
+        self._paint_accent(act, editable)
 
-    def _paint_edit_box(self, span, editable):
-        """Place (or hide) the draggable active-mask box without letting our own write look
+    def _span(self, lo, hi, xpts):
+        """One highlight's ``(left, right)`` in display units, edges snapped when ``xpts``."""
+        return to_range(self._snap_edge(xpts, float(lo), upper=False),
+                        self._snap_edge(xpts, float(hi), upper=True), u.AA, self.xunit)
+
+    def _paint_accent(self, span, editable):
+        """Place (or hide) the accented window's box without letting our own write look
         like a user drag."""
-        box = self.mask_edit_box
-        self._mask_sync = True
+        box = self.accent_box
+        self._accent_sync = True
         try:
             if span is None:
                 box.visible = False
@@ -670,16 +662,16 @@ class SpectrumCanvas:
                 box.visible = True
                 box.editable = bool(editable)
         finally:
-            self._mask_sync = False
+            self._accent_sync = False
 
-    def _on_mask_edit(self, attr, old, new):
+    def _on_accent_edit(self, attr, old, new):
         """An edge handle was dragged: report the new window in display units."""
-        if self._mask_sync or not self.mask_edit_box.editable:
+        if self._accent_sync or not self.accent_box.editable:
             return
-        lo, hi = self.mask_edit_box.left, self.mask_edit_box.right
-        if lo is None or hi is None or self.on_mask_resize is None:
+        lo, hi = self.accent_box.left, self.accent_box.right
+        if lo is None or hi is None or self.on_window_resize is None:
             return
-        self.on_mask_resize(float(min(lo, hi)), float(max(lo, hi)))
+        self.on_window_resize(float(min(lo, hi)), float(max(lo, hi)))
 
     def _paint_boxes(self, key, spans):
         """Show one full-height BoxAnnotation per (left,right) span, growing the pool as needed
@@ -703,11 +695,11 @@ class SpectrumCanvas:
         common repaint that grows nothing (an edge drag, a jump, a set switch). With the
         boxes seeded, that path writes only floats and booleans and needs no freeze at all.
         """
-        pool = self._mask_boxes[key]
+        pool = self._hl_boxes[key]
         if len(pool) < len(spans):
             with self._frozen_models():
                 grown = [BoxAnnotation(left=0.0, right=0.0, visible=False, level="underlay",
-                                       **self._mask_style[key])
+                                       **self._hl_style[key])
                          for _ in range(len(spans) - len(pool))]
                 self.main.center = [*self.main.center, *grown]
                 pool.extend(grown)
@@ -726,11 +718,11 @@ class SpectrumCanvas:
         doc = self.main.document
         return doc.models.freeze() if doc is not None else nullcontext()
 
-    def clear_masks(self):
-        for pool in self._mask_boxes.values():
+    def clear_windows(self):
+        for pool in self._hl_boxes.values():
             for box in pool:
                 box.visible = False
-        self._paint_edit_box(None, False)
+        self._paint_accent(None, False)
 
     # --- overlays computed for the visible window --------------------------
     def add_view_listener(self, fn):

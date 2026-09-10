@@ -207,7 +207,7 @@ class AbundanceTool(AbundanceWizard):
         # snap the window bounds between the reference's points so membership is unambiguous
         spec = self.get_observation(getattr(res, "ref_uid", None))
         xpts = np.asarray(spec.values[0], dtype=float) if spec is not None else None
-        self.canvas.set_abund_windows(ln.fit_window, ln.window, xpts)
+        self.canvas.highlight_windows([ln.mask], active=0, xpts=xpts)
 
     # --- reference resolution ----------------------------------------------------------
     def _ref(self):

@@ -123,7 +123,7 @@ class LineResult:
     include: bool = True        # user toggle: count this line in the element mean
 
     # --- window views: the fit/synth windows now live on the embedded LineMask, but the
-    # pipeline (synth.fit_line, measure_ew, canvas.set_abund_windows, balance/corr tools) still
+    # pipeline (synth.fit_line, measure_ew, the balance / correction tools) still
     # reads them as ``ln.fit_window`` / ``ln.window`` tuples, so expose them read-only here.
     @property
     def fit_window(self) -> tuple:

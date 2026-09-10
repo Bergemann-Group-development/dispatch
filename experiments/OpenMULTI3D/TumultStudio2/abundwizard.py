@@ -204,7 +204,7 @@ class AbundanceWizard(Tool):
     def _clear_line_decor(self):
         self.canvas.clear_abund_overlay()
         self.canvas.clear_abund_hatch()
-        self.canvas.clear_abund_window()
+        self.canvas.clear_windows()
 
     # --- the shared slice of the action channel ------------------------------------------
     def _on_action(self, attr, old, new):
@@ -375,7 +375,7 @@ class AbundanceWizard(Tool):
         self._jump_decor(res, ln)
 
     def _jump_decor(self, res, ln):
-        """Subclass hook: the overlays/hatch/window bands drawn for a jumped-to line."""
+        """Subclass hook: the overlays/hatch/window highlights drawn for a jumped-to line."""
 
     def _set_range(self, lo_aa, hi_aa):
         """Set the main + nav x-range to the Å interval (display units, clamped to bounds)."""

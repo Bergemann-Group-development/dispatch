@@ -125,7 +125,7 @@ class MaskTool(Tool):
     def activate(self):
         self.active = True
         self._push_focus("linemask")   # before the render, so the sidebar row highlights
-        self.canvas.on_mask_resize = self._on_edge_drag
+        self.canvas.on_window_resize = self._on_edge_drag
         self._attach_annotations()
         self._render_canvas()
         self._apply_renorm()
@@ -139,9 +139,9 @@ class MaskTool(Tool):
         self._stop_placing()
         if self.ctx.annot is not None:
             self.ctx.annot.detach(self.name)
-        self.canvas.on_mask_resize = None
+        self.canvas.on_window_resize = None
         self.range.clear_selection()
-        self.canvas.clear_masks()
+        self.canvas.clear_windows()
         self.push_mode("off")
         self._push_focus("spectrum")
         self._render_objects()       # drop the sidebar highlight
@@ -248,8 +248,8 @@ class MaskTool(Tool):
         self.ctx.annot.attach(self.name, element=element, windows=windows)
 
     def _render_canvas(self):
-        self.canvas.render_masks(self.store.masks, self.store.active,
-                                 editable=self.active and not self._placing)
+        self.canvas.highlight_windows(self.store.masks, self.store.active,
+                                      editable=self.active and not self._placing)
 
     def _render_objects(self):
         self._objects_bridge.value = self.objects_html()
