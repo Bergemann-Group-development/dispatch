@@ -31,3 +31,10 @@ tests/*
 
 # The parent repository ignores *.txt as data; the GUI extras file is source.
 !requirements-gui.txt
+
+# Review documents are maintained source; benchmark outputs remain ignored.
+!reports/
+reports/*
+!reports/review/
+reports/review/*
+!reports/review/*.md
