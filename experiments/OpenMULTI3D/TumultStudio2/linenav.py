@@ -69,11 +69,13 @@ class LineNavigator:
         self.active = False        # True only while the line-list panel is open
         self.focus_lam0 = None     # Å of the picked line: the row the table highlights
         # how the *next* render's focused row asks the browser to scroll to it (see the
-        # MutationObserver in index.html). "none" for every ordinary render — a pan, a sort,
-        # a jump the user made from inside the table — because the reader's eye is already
-        # on the row they clicked and moving it under them is disorienting. Only a pick that
-        # comes from outside the table (a line label on the spectrum) asks to scroll, and
-        # then only far enough to bring the row into view if it is not already there.
+        # MutationObserver in index.html). "none" for every ordinary render — a pan, a sort —
+        # which leaves the browser's own scroll position alone. A pick that comes from
+        # outside the table (a line label on the spectrum) asks for "ifneeded": scroll only
+        # far enough to bring the row into view if it is not already there. A click on a row
+        # of this very table asks for "keep": a jump re-cuts the table to a much narrower
+        # window, so the clicked row would otherwise land at a different height and leave
+        # the pointer over some other line — "keep" puts it back where it was clicked.
         self._scroll = "none"
         self._timeout = None
         self.jump_distance = JUMP_DISTANCE_AA  # ± window (Å) applied when jumping to a line
@@ -265,14 +267,25 @@ class LineNavigator:
         # endpoints to the display unit so it stays correct under a non-linear axis (eV)
         win = to_range(lam0_aa - self.jump_distance, lam0_aa + self.jump_distance,
                        LAM0_UNIT, self.canvas.xunit)
+        moved = False
         for rng in (self.canvas.main.x_range, self.canvas.nav.x_range):
             lo, hi = win
             if rng.bounds:
                 blo, bhi = min(rng.bounds), max(rng.bounds)
                 lo, hi = max(lo, blo), min(hi, bhi)
-            rng.start, rng.end = min(lo, hi), max(lo, hi)
+            lo, hi = min(lo, hi), max(lo, hi)
+            moved = moved or (rng.start, rng.end) != (lo, hi)
+            rng.start, rng.end = lo, hi
         self.focus_lam0 = lam0_aa   # the jumped-to row stays the highlighted one
-        self.render()
+        # the click that got here was on a row of this table, so the row it names has to
+        # end up back under the pointer once the narrowed window has been written out
+        self._scroll = "keep"
+        # a moved range redraws the view, and the table re-renders on that callback: a
+        # second render here would only replace the same rows and lose the kept scroll
+        # position. Render directly when the range did not move (clamped to the same
+        # window as the line before it), since then there is no redraw to ride on.
+        if not moved:
+            self.render()
         self._flash(center)
 
     def _flash(self, x):

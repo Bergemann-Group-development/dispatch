@@ -903,6 +903,10 @@
     if (m) m.setv({ value: li.dataset.path + '\u0000' + Date.now() });
   });
 
+  // where a clicked line-list row sat when it was clicked ({lam0, off} in pixels from the
+  // top of the scroll box), set on the click and consumed by the render it provoked
+  var linelistAnchor = null;
+
   // delegated clicks on the object list: buttons hide/remove, the row selects
   document.addEventListener('click', function (ev) {
     var m = Bokeh.documents[0].get_model_by_name('object-actions');
@@ -916,6 +920,12 @@
     }
     var row = ev.target.closest('.line-row');
     if (row) {
+      // the jump re-cuts the table to a narrow window around this line, so remember where
+      // the row sits now: the re-render puts it back there (see linelistAnchor below)
+      var lslot = document.getElementById('linelist-table');
+      linelistAnchor = lslot ? { lam0: row.dataset.lam0,
+                                 off: row.getBoundingClientRect().top
+                                      - lslot.getBoundingClientRect().top } : null;
       m.setv({ value: 'linejump:' + row.dataset.lam0 + ':' + Date.now() });
       return;
     }
@@ -977,10 +987,12 @@
   document.getElementById('linelist-close').addEventListener('click', function () { ewAction('lineclose'); });
 
   // the line list is re-rendered wholesale into its slot, so the row to jump to can only be
-  // scrolled to once it is in the DOM: the server marks it .jump-target and this brings it in.
-  // Whether to scroll at all is the server's call, carried on the row as data-scroll — a row
-  // the user clicked in this very table must not move under them, so only a pick made out on
-  // the spectrum ("ifneeded") scrolls, and then only when the row is actually out of view.
+  // placed once it is in the DOM: the server marks it .jump-target and this positions it.
+  // What to do is the server's call, carried on the row as data-scroll. "ifneeded" is a pick
+  // made out on the spectrum: scroll only when the row is actually out of view. "keep" is a
+  // click on a row of this table, which narrows the window and so re-cuts the table under
+  // the pointer: put the row back at the height it was clicked at, so the pointer is still
+  // over the same line. Every other render ("none") leaves the scroll alone.
   // scrollTop is set directly rather than via scrollIntoView, which would also scroll every
   // ancestor and shift the whole workspace.
   (function () {
@@ -988,8 +1000,20 @@
     if (!slot) return;
     new MutationObserver(function () {
       var row = slot.querySelector('.line-row.jump-target');
-      if (!row || row.dataset.scroll !== 'ifneeded') return;
+      if (!row) return;
+      var mode = row.dataset.scroll;
       var box = slot.getBoundingClientRect(), r = row.getBoundingClientRect();
+      if (mode === 'keep') {
+        // only for the row this anchor was taken from: a jump can be clamped to a window
+        // that does not hold the clicked line at all
+        var anchor = linelistAnchor;
+        linelistAnchor = null;
+        if (!anchor || anchor.lam0 !== row.dataset.lam0) return;
+        // clamped by the scroll extent: a row near either end cannot always be put back
+        slot.scrollTop += (r.top - box.top) - anchor.off;
+        return;
+      }
+      if (mode !== 'ifneeded') return;
       var head = slot.querySelector('.linelist-table thead');
       // the header is sticky, so a row under it is covered, not visible
       var top = box.top + (head ? head.getBoundingClientRect().height : 0);
