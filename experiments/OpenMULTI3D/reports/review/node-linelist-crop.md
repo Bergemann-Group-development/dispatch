@@ -125,7 +125,7 @@ evaluation. What differs is how the first bound is chosen.
 
 | Code | Read bound | Evaluation bound |
 |---|---|---|
-| Korg | `line_buffer`, default 10 Å; **0 for its EW and fitting paths** | per line, analytic: where the Doppler core or Lorentz wing crosses `line_cutoff_threshold` (3e-4) times the continuum absorption, capped at 20 Å |
+| Korg | `line_buffer`, default 10 Å; **0 for its EW and fitting paths** | per line, analytic and unbounded: where the Doppler core or Lorentz wing crosses `line_cutoff_threshold` (3e-4) times the continuum absorption |
 | iSpec | `margin = 2 nm`, i.e. 20 Å, fixed, "or near-by deep lines might be omitted" | the synthesis backend's own |
 | TSFitPy | `segment_size`, default 5 Å (shipped config 4 Å), each line window padded and overlapping segments merged | Turbospectrum's own |
 | OpenMULTI3D | `linelist_crop_aa`, 5 Å, padded and merged the same way | HOP's per-point tolerance test, applied at the window points when the crop is made |
@@ -142,8 +142,10 @@ Two things worth taking:
 - **Korg's per-line window is analytic, not a constant.** It inverts the Gaussian and Lorentz
   profiles for the distance at which the line falls to a fixed fraction of the continuum, and
   takes the larger. A strong line gets a wide window and a weak one a narrow one, at the cost
-  of a closed-form evaluation per line. Our single skirt has to be wide enough for the worst
-  line in the set — the three Fe I lines that drove the earlier skirt measurements were strong
+  of a closed-form evaluation per line. (Its docstring advertises a `window_size=20.0*1e-8`
+  keyword, but no such argument exists on the function and the local variable of that name is
+  overwritten by the analytic value, so there is no cap.) Our single skirt has to be wide
+  enough for the worst line in the set — the three Fe I lines that drove the earlier skirt measurements were strong
   ones 22-46 Å outside their windows. Applying that test at *read* time would keep them
   without widening the skirt for everything else.
 - **Korg's `prune_linelist` ranks on line-centre-to-continuum absorption at the photosphere**,
@@ -185,6 +187,92 @@ Two details of theirs are better than what is implemented here:
 Neither is implemented here. They are the two changes to make if the local continuum is
 turned on by default.
 
+## A worked example on one window
+
+Everything above is a policy statement. This is what the policies do to one real window,
+`5955.942-5957.435` Å, on the `gdwarf` reference structure with ξ = 1.5 km/s.
+
+### Which omitted lines matter, and how far out they are
+
+HOP finds 3148 lines outside that window within 120 Å of it. The far Lorentz wing of a Voigt
+is `a / (√π v²)` of the line's peak, with `v = Δλ / σ_D` in Doppler units, so each line's
+contribution at the window and the distance at which it falls to a threshold `τ` are
+
+    wing = strength · a / (√π · (Δλ/σ_D)²)        radius = σ_D · √(strength · a / (√π · τ))
+
+`strength` is HOP's own line-centre-over-continuum ratio, the same quantity Korg's
+`prune_linelist` ranks on. At 5956 Å with T = 5750 K and ξ = 1.5, σ_D = 0.0395 Å; taking a
+representative damping `a` = 0.05 and Korg's `τ` = 3e-4:
+
+| strength | 1 | 10² | 10⁴ | 10⁶ |
+|---|---|---|---|---|
+| radius [Å] | 0.4 | 3.8 | 38 | 383 |
+
+The radius grows as √strength, which is the whole difficulty with a constant skirt: it has to
+be set for the strongest line in range. And the strongest lines in range of this window are
+not Fe at all:
+
+| Line | Distance | strength | wing at the window | Korg radius |
+|---|---|---|---|---|
+| Na I 5889.96 | 66.7 Å | 1.8e5 | 0.174% | 161 Å |
+| Na I 5895.93 | 60.8 Å | 8.8e4 | 0.105% | 114 Å |
+| Ti I 5953.16 | 3.5 Å | 51 | 0.018% | 2.7 Å |
+| Fe I 5952.75 | 3.9 Å | 61 | 0.017% | 3.0 Å |
+| Fe I 5975.35 | 18.7 Å | 353 | 0.004% | 7.2 Å |
+
+The two Na D lines are 61 and 67 Å away and contribute **73% of the 0.38% total** depression
+from all 3148 lines. No skirt anyone would choose reaches them; Korg's per-line rule does,
+because their radii are over 100 Å. Only 2 of the 3148 lines are individually above the 3e-4
+threshold, so this is not a case of many small contributions adding up — it is two lines, far
+away, that a wavelength box cannot capture and a per-line test can.
+
+### Why a straight line removes them anyway
+
+Across the 1.493 Å window the Na D wing runs 0.1777% → 0.1700%, and a straight line through it
+leaves a residual of 0.00003% of the continuum, **0.02% of its own depth**. A far wing is
+locally linear by construction, which is exactly what the local continuum is fitted to remove.
+
+That is why the two mechanisms are complementary rather than alternatives, and why widening
+the skirt from 5 Å to 20 Å bought nothing measurable earlier: the part of the omitted opacity
+that a skirt of any plausible width leaves behind is the part a straight line takes out.
+
+### What the four normalisation schemes then recover
+
+Same window, with the pseudo-continuum above as the omitted opacity, a Gaussian line whose
+depth follows a curve of growth, and a five-rung ladder at ±0.4 dex. The observation is the
+line times the pseudo-continuum; the rungs are cropped, so they carry none of it. The answer
+is a = 0 by construction.
+
+| Scheme | Weak line, clean shoulders | Strong line filling the window | Same, observation 1.15× broader |
+|---|---|---|---|
+| No renormalisation | **+0.0824** | +0.0056 | +0.0023 |
+| Per-side envelope (ours) | +0.0001 | -0.0000 | -0.0284 |
+| BACCHUS ratio fit | -0.0000 | -0.0000 (scaled, no slope) | -0.0253 |
+| Joint (a, c₀, c₁) fit | -0.0000 | -0.0000 | **-0.0976** |
+
+Errors in dex. Four things this settles:
+
+- **Renormalisation earns its keep on weak lines, not strong ones.** A 38 mÅ line in a window
+  depressed 0.29% gives up 0.082 dex if the depression is left in; the same depression is
+  0.006 dex on a 438 mÅ line. A balance line set is mostly the former.
+- **Our per-side envelope is biased in EW but not in abundance — while the shapes agree.**
+  On the strong line it fits a level of 0.9926 where the true continuum is 0.9971, because
+  there are no shoulders and the fit lands on line flux; the recovered EW is 430.6 mÅ against
+  a true 438.4. The bias is rung-dependent (0.9955 at a = -0.4 to 0.9877 at a = +0.4) and it
+  *cancels* in the curve-of-growth inversion, which is why the abundance is still right. This
+  is also where the -4.4 mÅ mean shift measured earlier comes from: it is largely this bias,
+  not a continuum correction.
+- **BACCHUS's advantage is the gate, not the ratio.** Given no continuum points on both sides
+  of the line it declines the slope outright and scales by the highest observed points against
+  the synthetic there, recovering 438.4 mÅ where our envelope reported 430.6. Our
+  `local_linear` has no such test and fits the slope regardless.
+- **The joint profile fit is the most exposed to a shape error.** Broaden the observation by
+  15% at fixed equivalent width and every equivalent-width scheme loses about 0.026 dex, while
+  fitting (abundance, continuum) against the profile loses 0.098 dex — the mismatch it cannot
+  represent goes into the abundance. That is an argument for keeping the curve-of-growth
+  inversion here rather than moving to SMHR-style joint fitting, notwithstanding that the
+  continuum treatment is worth borrowing.
+
 ## Reproducing
 
 ```sh
@@ -196,3 +284,8 @@ PYTHONPATH=. python reports/bench_ionbalance.py --output reports/bench/hold_c5_r
 
 `--hold` holds all four parameters, which is what makes two configurations comparable
 line by line; `--crop 0` switches the crop off.
+
+The worked example needs no dispatch run: the line strengths come from one
+`tumult.linestrength.compute_band` call over 5836-6077 Å on the `gdwarf` structure, and the
+rest is the two formulas above plus `tumult.continuum.divide_local` and
+`tumult.abundance.cog_invert` on analytic profiles.
