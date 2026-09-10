@@ -81,3 +81,56 @@ def test_pad_boolean_defined_once():
     tree = ast.parse(inspect.getsource(auxfuncs))
     defs = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "pad_boolean"]
     assert len(defs) == 1
+
+
+# --- the TumultStudio2 -> tumult extraction contract ---------------------------------------
+# Both the repo root and TumultStudio2/ are on sys.path (see conftest), so a GUI module named
+# like a tumult one shadows it for whichever is imported first. That is only safe while the
+# GUI module is a pure re-export: the moment one grows a local definition, two implementations
+# of the same name exist and which one a caller gets depends on import order.
+
+SHIMS = ("abundance", "linediag", "linemask", "linestrength", "measurement",
+         "refstars", "sparams", "spectrum")
+
+
+def _shim_path(name):
+    from pathlib import Path
+    return Path(__file__).resolve().parent.parent / "TumultStudio2" / f"{name}.py"
+
+
+@pytest.mark.parametrize("name", SHIMS)
+def test_gui_shim_defines_nothing_of_its_own(name):
+    """A shadowing GUI module must contain only a docstring and imports from tumult."""
+    import ast
+
+    path = _shim_path(name)
+    assert path.is_file(), f"{path} is missing"
+    tree = ast.parse(path.read_text())
+    for node in tree.body:
+        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant):
+            continue                                  # the module docstring
+        assert isinstance(node, ast.ImportFrom), (
+            f"TumultStudio2/{name}.py defines {type(node).__name__} of its own; it must stay "
+            f"a re-export of tumult.{name}")
+        assert node.module and node.module.startswith("tumult"), (
+            f"TumultStudio2/{name}.py imports from {node.module!r}, not from tumult")
+
+
+@pytest.mark.parametrize("name", SHIMS)
+def test_gui_shim_reexports_the_same_objects(name):
+    """Names common to both modules must be the *same objects*, not lookalikes."""
+    import importlib
+    import sys
+    from pathlib import Path
+
+    gui_dir = str(Path(__file__).resolve().parent.parent / "TumultStudio2")
+    if gui_dir not in sys.path:
+        sys.path.insert(0, gui_dir)
+    core = importlib.import_module(f"tumult.{name}")
+    shim = importlib.import_module(name)
+    shared = [n for n in dir(shim)
+              if not n.startswith("_") and hasattr(core, n)
+              and not isinstance(getattr(core, n), type(importlib))]
+    assert shared, f"TumultStudio2/{name}.py re-exports nothing from tumult.{name}"
+    for attr in shared:
+        assert getattr(shim, attr) is getattr(core, attr), f"{name}.{attr} is a copy"
