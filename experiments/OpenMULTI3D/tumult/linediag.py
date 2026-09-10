@@ -18,9 +18,12 @@ observation said about them. :func:`line_results` turns a measured set back into
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 
 from . import abundance as ab
+from .linelist import strip_ion_stages
 from .linemask import DEFAULT_PAD, LineMask
 
 # the reason a candidate was screened out; a flagged mask is created but switched off, so the
@@ -191,3 +194,66 @@ def line_results(mset, *, included_only=True):
     """
     return [line_from_mask(m, mset.element) for m in mset.masks
             if m.include or not included_only]
+
+
+def spectrum_range_aa(spec):
+    """The spectrum's wavelength span as ``(lo, hi)`` in Angstrom, ascending.
+
+    A unit flip (wavelength -> energy) reverses the order, so the result is sorted rather
+    than assumed: candidate selection bisects on it.
+    """
+    import astropy.units as u
+
+    x, _y = spec.values
+    lo = (float(x.min()) * spec.xunit).to_value(u.AA, equivalencies=u.spectral())
+    hi = (float(x.max()) * spec.xunit).to_value(u.AA, equivalencies=u.spectral())
+    return (lo, hi) if lo <= hi else (hi, lo)
+
+
+def select_candidates(master, element, lo, hi):
+    """Rows of ``master`` for ``element`` with ``lam0`` inside ``[lo, hi]``, sorted by lam0.
+
+    The line list names a *species* ("Fe I", "Fe II", "CH"); a diagnostic set is per element,
+    so the ionisation stage is dropped and every stage of the element is a candidate.
+    Molecular species never match an element symbol and so are excluded.
+    """
+    cand = master[(strip_ion_stages(master.ion) == element)
+                  & (master.lam0 >= lo) & (master.lam0 <= hi)]
+    return cand.sort_values("lam0")
+
+
+def generate_mask_set(ref_spec, element, *, linelist, reference_name="spectrum",
+                      profile="gauss", ew_min=5.0, snr=None, cont_pct=0.0,
+                      pad=DEFAULT_PAD):
+    """Generate a measured :class:`~tumult.linemask.LineMaskSet` for ``element``.
+
+    Pulls every transition of ``element`` from ``linelist`` that falls inside ``ref_spec``'s
+    range, derives and measures a window for each (:func:`generate_masks`), and records what
+    produced the set in ``diag_meta`` so a later consumer can tell whether the diagnostics
+    still describe the spectrum in front of it.
+
+    No synthesis and no atmosphere — this is the wizards' step 1, needing nothing but the
+    spectrum and the list. Raises :class:`ValueError` when the selection yields nothing.
+    """
+    from .linelist import load_master
+    from .linemask import LineMaskSet, is_element
+
+    element = str(element or "").strip().capitalize()
+    if not is_element(element):
+        raise ValueError(f"“{element}” is not an element symbol.")
+    lo, hi = spectrum_range_aa(ref_spec)
+    cand = select_candidates(load_master(linelist), element, lo, hi)
+    if cand.empty:
+        raise ValueError(f"No {element} lines in {lo:.1f}–{hi:.1f} Å of {reference_name}.")
+
+    settings = dict(profile=profile, ew_min=float(ew_min), snr=snr, cont_pct=cont_pct)
+    masks = generate_masks(ref_spec, cand, pad=pad, **settings)
+    if not masks:
+        raise ValueError(f"No {element} lines above {float(ew_min):.0f} mÅ in {reference_name}.")
+
+    mset = LineMaskSet(masks=masks, pad=pad, element=element,
+                       label=f"{element} · auto ({reference_name})")
+    mset.diag_meta = {"reference": reference_name, "element": element,
+                      "linelist": Path(linelist).name,
+                      **{k: v for k, v in settings.items() if v is not None}}
+    return mset

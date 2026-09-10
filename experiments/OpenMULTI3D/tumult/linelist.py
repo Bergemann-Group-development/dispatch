@@ -333,6 +333,26 @@ class LineList(pd.DataFrame):
 
 
 # --- the master line list -------------------------------------------------------
+def strip_ion_stage(species):
+    """A species label without its ionisation stage: ``"Fe I"`` -> ``"Fe"``.
+
+    A line list names a *species* — a particular ion of an element ("Fe I", "Fe II") or a
+    molecule ("CH", "CO"). Dropping the stage leaves the element for an atomic species and
+    the molecule unchanged for a molecular one, which carries no stage: ``"CH"`` -> ``"CH"``.
+    So the result is an element symbol only when the input was an atomic species; for the
+    constituent elements of a molecule see :func:`tumult.isotopes.species_elements`.
+
+    Whitespace is normalised first, so ``"Fe  II"`` and ``"Fe II"`` answer alike.
+    """
+    parts = str(species).split()
+    return parts[0] if parts else ""
+
+
+def strip_ion_stages(species):
+    """:func:`strip_ion_stage` over a line list's ``ion`` column, as a pandas Series."""
+    return species.astype(str).str.split().str[0]
+
+
 MASTER_PATH = os.environ.get(
     "TUMULT_MASTER_LINELIST",
     str(Path(__file__).resolve().parent.parent / "input" / "linelists" / "master_line.txt"),

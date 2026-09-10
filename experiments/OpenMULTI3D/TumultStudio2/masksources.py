@@ -24,7 +24,7 @@ from pathlib import Path
 import linediag
 from controls import Field, Form
 from filepicker import FilePicker
-from linemask import LineMaskSet, is_element
+from linemask import is_element
 
 
 class MaskSource:
@@ -223,38 +223,14 @@ class AutoSource(MaskSource):
 
     def _run(self, ref, element, ref_name, settings):
         """Worker thread: candidates of ``element`` in the reference's range, measured."""
-        from linenav import load_master
         try:
-            lo, hi = self._range(ref)
-            master = load_master(self.linelist_path)
-            sym = master.ion.astype(str).str.split().str[0]
-            cand = master[(sym == element) & (master.lam0 >= lo) & (master.lam0 <= hi)]
-            cand = cand.sort_values("lam0")
-            if cand.empty:
-                self._error = f"No {element} lines in {lo:.1f}–{hi:.1f} Å of {ref_name}."
-                return None
-            masks = linediag.generate_masks(ref, cand, pad=self.store.pad, **settings)
-            if not masks:
-                self._error = (f"No {element} lines above {settings['ew_min']:.0f} mÅ "
-                               f"in {ref_name}.")
-                return None
-            mset = LineMaskSet(masks=masks, pad=self.store.pad, element=element,
-                               label=f"{element} · auto ({ref_name})")
-            mset.diag_meta = {"reference": ref_name, "element": element,
-                              "linelist": Path(self.linelist_path).name, **{
-                                  k: v for k, v in settings.items() if v is not None}}
-            return mset
+            return linediag.generate_mask_set(
+                ref, element, linelist=self.linelist_path, reference_name=ref_name,
+                pad=self.store.pad, **settings)
         except Exception as exc:
             logging.exception("Diagnostic line selection failed")
             self._error = str(exc)
             return None
-
-    @staticmethod
-    def _range(spec):
-        import astropy.units as u
-        from units import to_range
-        x, _ = spec.values
-        return to_range(float(x.min()), float(x.max()), spec.xunit, u.AA)
 
     def _done(self, mset):
         if mset is None:
