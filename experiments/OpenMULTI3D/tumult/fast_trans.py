@@ -1,4 +1,4 @@
-from .trans import trans_class
+from .trans import Transition
 import numpy as np
 import pandas as pd
 import functools
@@ -12,13 +12,13 @@ class TransFactory(object):
   @functools.cache
   def __getitem__(self, key):
     kr = self.krs[key]
-    return fast_trans(kr, self.atom)
+    return FastTransition(kr, self.atom)
   
   def get_lines(self, in_lines):
     return TransFactory(self.atom, in_lines=in_lines)
 
 
-class fast_trans(trans_class):
+class FastTransition(Transition):
   #=====================================================================
   def __init__(self, kr, atom):
     #-----------------------------------------------------------------
@@ -32,7 +32,7 @@ class fast_trans(trans_class):
     if attr in self.bbt:
       return self.bbt.at[self.kr, attr]
     else:
-      raise AttributeError('fast_trans object does not have attribute ', attr)
+      raise AttributeError('FastTransition object does not have attribute ', attr)
     
   def __repr__(self):
     return self.bbt.loc[self.kr].__repr__()

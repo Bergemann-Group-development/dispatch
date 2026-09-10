@@ -10,7 +10,7 @@ from scipy.signal import argrelextrema
 hfs_names = ['de', 'w', 'f', 'ga', 'gv', 'gq']
 usecols = lambda col: col is None or col < len(hfs_names)
 
-class trans_class(object):
+class Transition(object):
     def __init__(self, atom, kr, read_bf=True):
         self.kr = kr
         self.atom  = atom

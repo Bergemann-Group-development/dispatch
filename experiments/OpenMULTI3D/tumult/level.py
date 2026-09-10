@@ -1,7 +1,7 @@
 from .const import CC, EE, HH
 
 
-class level_class(object):
+class Level(object):
     def __init__(self, atom, i):
         self.i = i
         ecm, g, label, ion = atom._read(quotes="'")[:4]

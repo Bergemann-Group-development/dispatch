@@ -12,12 +12,12 @@ def read_collisions(atom):
             if key == 'TEMP':
                 coltemp = np.array(atom._read(dtype=float)[1:])
             else:
-                collision_class(atom, key, coltemp)
+                Collision(atom, key, coltemp)
             
             key = atom._read()[0]
             
             
-class collision_class():
+class Collision():
     def __init__(self, atom, key, coltemp):
         data = np.array(atom._read())
         i, j = data[:2].astype(int)-1

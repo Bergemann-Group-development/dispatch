@@ -1,7 +1,7 @@
 import numpy as np
-from .trans import trans_class
-from .level import level_class
-from .collisions import collision_class
+from .trans import Transition
+from .level import Level
+from .collisions import Collision
 from .auxfuncs import _read
 from .const import BK, CC, EK, UU, saha_const
 import matplotlib.pyplot as plt
@@ -33,7 +33,7 @@ class AtomClass(object):
         
         # Reading energy levels
         if (verbose > 0): print('Reading energy levels')
-        self.level = [level_class(self, i) for i in range(self.nk)]
+        self.level = [Level(self, i) for i in range(self.nk)]
 
         self.ground_states = np.where(np.diff([level.ion for level in self.level], prepend=0) > 0)[0]
 
@@ -42,7 +42,7 @@ class AtomClass(object):
         
         # Reading transitions
         if (verbose > 0): print('Reading transitions')
-        self.trans = [trans_class(self, kr, read_bf=read_bf) for kr in range(self.nrad)]
+        self.trans = [Transition(self, kr, read_bf=read_bf) for kr in range(self.nrad)]
             
         if read_coll:
             colfunc = self._read()[0]
@@ -53,7 +53,7 @@ class AtomClass(object):
                     if key == 'TEMP':
                         coltemp = np.array(self._read(dtype=float)[1:])
                     else:
-                        self.colls.append(collision_class(self, key, coltemp))
+                        self.colls.append(Collision(self, key, coltemp))
                     
                     key = self._read()[0]
 

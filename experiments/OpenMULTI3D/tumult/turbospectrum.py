@@ -17,7 +17,7 @@ import pickle
 
 TS_PATH = '/mnt/beegfs/gemini/groups/bergemann/users/hoppe/TSFitPy/turbospectrum/'
 
-class turbospectrum(object):
+class Turbospectrum(object):
   @property
   #=================================================================
   def atmos(self):
