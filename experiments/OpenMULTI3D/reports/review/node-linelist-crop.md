@@ -46,6 +46,23 @@ magnitude below the 0.01 dex the solver's tolerances work at — for 17% less CP
 the free solve, where the trial points are off-node in all four axes and each carries 16-24
 nodes, it was 1.729 s → 1.177 s of native CPU per run, **32%**.
 
+### Wall time on the free solve
+
+The lattice ladder issued one window batch per rung, so each rung had the pool to itself and
+the next waited. `fold=False` now puts every (rung × node) run into one batch:
+
+| | Solve | Parallel efficiency on 7 threads |
+|---|---|---|
+| Per-rung batches, no crop | 141.0 s | 3.8x |
+| One batch per iteration, no crop | 121.3 s | 4.6x |
+| One batch per iteration, 5 Å crop | 103.7 s | 3.8x |
+| Warm cache | 10.8 s | — |
+
+Both changes are scheduling and selection only: the batched run reproduced the per-rung run's
+trajectory and final parameters to every digit, and a warm run replayed 866 of 866 runs from
+the cache the per-rung scheduling had written. The remaining gap is not large — the native
+work plus the cache reads put the floor near 76 s.
+
 ### It still perturbs the trajectory, because the solver amplifies
 
 The free solve with the crop tracks the uncropped one to within 0.4 K and 0.005 km/s for four
@@ -92,6 +109,81 @@ It is not a small change to the numbers: -4.4 mÅ on the mean measured width (10
 worst) and -0.087 dex on the mean abundance. So it is a scientific default, not a tuning
 knob, and it is left off until that decision is made. `renorm` is a per-mask flag today,
 whose dataclass default would silently change every stored mask set.
+
+## How other codes crop and normalise
+
+Read from the local copies under `~/Documents/Synthesis Codes/`; the
+[source manifest](sources.md) records which files and their hashes. These are the versions on
+this machine, not a claim about every release.
+
+### The crop is a two-stage problem everywhere
+
+Every code separates *which lines to read* from *which lines to evaluate*, and OpenMULTI3D
+already has both stages: `dlam` bounds the read, and HOP's per-point negligibility test
+(`tolerance` times the continuum, floored by the accumulated line opacity) decides the
+evaluation. What differs is how the first bound is chosen.
+
+| Code | Read bound | Evaluation bound |
+|---|---|---|
+| Korg | `line_buffer`, default 10 Å; **0 for its EW and fitting paths** | per line, analytic: where the Doppler core or Lorentz wing crosses `line_cutoff_threshold` (3e-4) times the continuum absorption, capped at 20 Å |
+| iSpec | `margin = 2 nm`, i.e. 20 Å, fixed, "or near-by deep lines might be omitted" | the synthesis backend's own |
+| TSFitPy | `segment_size`, default 5 Å (shipped config 4 Å), each line window padded and overlapping segments merged | Turbospectrum's own |
+| OpenMULTI3D | `linelist_crop_aa`, 5 Å, padded and merged the same way | HOP's per-point tolerance test, applied at the window points when the crop is made |
+
+So the 5 Å chosen here on measurement sits where TSFitPy's default already is, an order of
+magnitude tighter than iSpec, and looser than what Korg uses for exactly this job. Korg can
+afford `line_buffer=0` because it divides by a *computed* continuum from a continuum-only
+synthesis, so an omitted far wing costs a small absolute error rather than a sloping
+pseudo-continuum; it simply accepts that error, noting only that `ew_window_size` must be
+sufficient.
+
+Two things worth taking:
+
+- **Korg's per-line window is analytic, not a constant.** It inverts the Gaussian and Lorentz
+  profiles for the distance at which the line falls to a fixed fraction of the continuum, and
+  takes the larger. A strong line gets a wide window and a weak one a narrow one, at the cost
+  of a closed-form evaluation per line. Our single skirt has to be wide enough for the worst
+  line in the set — the three Fe I lines that drove the earlier skirt measurements were strong
+  ones 22-46 Å outside their windows. Applying that test at *read* time would keep them
+  without widening the skirt for everything else.
+- **Korg's `prune_linelist` ranks on line-centre-to-continuum absorption at the photosphere**,
+  the same quantity HOP maximises over depth for its `strength`. Its docstring is explicit
+  that a threshold suitable for *seeing what is measurable* (0.1) is far too aggressive for
+  building a synthesis list, and recommends 1e-4 there. Worth keeping in mind before any
+  strength threshold is raised for speed.
+
+TSFitPy's arrangement is otherwise the same as the one here: trim the master list to the
+merged segments once, as preprocessing, and let every later synthesis read the trimmed file.
+Its trim is by wavelength only, with no strength test and no dependence on the atmosphere, so
+it is reused across stars where ours is per node.
+
+### Fitting the continuum with the line is what everyone does
+
+On normalisation the four codes agree, and all of them fit the local continuum *jointly with
+the abundance* rather than before it:
+
+| Code | Local continuum | Order |
+|---|---|---|
+| SMHR | `c0..cO` are free parameters of both the profile and the synthesis model, fitted alongside `log_eps`, `vrad` and the smoothing kernel | `continuum_order = 1` |
+| TSFitPy | `fit_continuum` adds slope and intercept to the simplex, bounded to ±0.1 and 0.9-1.1 | linear |
+| BACCHUS | least squares on the **ratio** observation/synthetic against `λ - λ0`, over continuum points collected outward from the line on both sides | linear, with constant and synthetic-max fallbacks |
+| iSpec | `baseline_margin` frees the line fit's baseline within ±margin of the global continuum; separately, `fit_continuum(independent_regions=...)` fits each segment on its own with a median-then-max filter | constant per line; spline per segment |
+
+This is the same conclusion the local straight continuum here reaches, and the same order.
+Two details of theirs are better than what is implemented here:
+
+- **BACCHUS fits the ratio, not each side separately.** One straight line through
+  observation/synthetic absorbs whatever both sides disagree about, including a
+  pseudo-continuum the crop introduced on the synthetic side only. Our `divide_local` fits an
+  upper envelope to each side independently, which needs each side to have usable shoulders of
+  its own and cannot cancel a one-sided error by construction.
+- **BACCHUS gates the fit and falls back explicitly.** It requires a minimum number of
+  continuum points on *each* side of the line and rejects the linear fit unless its rms beats
+  the noise level, dropping to a constant, and then to a scaling of the synthetic maximum.
+  `local_linear` falls back to a flat level only when the fit fails outright.
+
+Neither is implemented here. They are the two changes to make if the local continuum is
+turned on by default.
 
 ## Reproducing
 
