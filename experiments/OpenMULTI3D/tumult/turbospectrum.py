@@ -200,7 +200,9 @@ class Turbospectrum(object):
                 return cls.concatenate(results)
     
     def get_spectrum(self, imu=None, ang=None, norm=True):
-        imu = imu or ang
+        # `imu or ang` would drop imu=0, the first mu point, and silently return the
+        # flux instead of the intensity there
+        imu = ang if imu is None else imu
         idx = 1 if norm else 2
         if imu is not None:
             idx = idx + 2*(imu+1)
