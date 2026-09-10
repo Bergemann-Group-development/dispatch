@@ -56,6 +56,31 @@ FIT_MARGIN_HWHM = 1.0
 SYNTH_PAD_AA = 0.5
 
 
+def abundance_override(element, value, *, base="", relative, feh, solar):
+    """The ``abundances`` namelist override setting ``element`` to ``value``.
+
+    ``value`` is in the caller's convention: [X/Fe] when ``relative``, else an absolute A(X),
+    which is what :func:`xfe_to_abund` converts to. ``base`` is any other override the caller
+    holds fixed and is kept ahead of the element's term.
+
+    Written to four decimals because this string is part of a run's namelist and therefore of
+    its cache identity: two abundances that differ below the printed precision would collide
+    on one cached run. Display formatting belongs elsewhere.
+    """
+    val = value if relative else xfe_to_abund(value, element, feh, solar)
+    return " ".join(t for t in (str(base).strip(), f"{element}={val:.4f}") if t)
+
+
+def padded_window(window, pad=SYNTH_PAD_AA):
+    """``window`` widened by ``pad`` Å on each side — what actually gets synthesised.
+
+    A line is measured over its window but must be *computed* over more than that, or its
+    wings are extrapolated from the window edge instead of calculated. Every synthesis-driven
+    per-line workflow pads the same way, so the padding is stated once here.
+    """
+    return (window[0] - pad, window[1] + pad)
+
+
 # --- per-line record + element aggregation -----------------------------------------------
 
 @dataclass
@@ -279,8 +304,11 @@ class AbundanceResult:
     re-consumed by a later Fe-balance / stellar-parameter solver. ``feh``/``relative`` record
     the abundance convention so ``a`` values are interpretable.
     """
-    element: str                       # species, e.g. "Fe I"
-    symbol: str                        # bare element symbol, e.g. "Fe"
+    # Both hold the element, e.g. "Fe" — never a species like "Fe I": the abundance is per
+    # element (MULTI3D scales by element, and the balance appends the stage itself). They are
+    # set alike at every construction site; ``symbol`` is kept because saved sessions carry it.
+    element: str
+    symbol: str
     lines: list                        # list[LineResult]
     summary: dict                      # aggregate(...) output
     stage: str = "lines"               # "lines" → "synth" → "uncert" (how far it has run)
@@ -516,15 +544,14 @@ def measure_lines(mset, ref_spec, *, reference_name, linelist, profile, snr, con
     import uuid
 
     from . import linediag
-    from .linelist import load_master
+    from .linelist import load_master, strip_ion_stages
 
     stale = (mset.diag_meta or {}).get("reference") != reference_name
     remeasured = bool(stale or not mset.has_diag)
     if remeasured:
         try:
             master = load_master(linelist)
-            symbol = master.ion.astype(str).str.split().str[0]
-            catalog = master[symbol == mset.element]
+            catalog = master[strip_ion_stages(master.ion) == mset.element]
         except Exception:
             # the catalog only names the dominant transition of each window in the
             # diagnostics artifact; it never touches the mask or the measurement
@@ -571,13 +598,12 @@ def run_abundance(request, result, observation, *, progress=None, cancel_token=N
     def synth_window(rv_over, window):
         rv = dict(base_rv)
         rv.update(rv_over)
-        return synth.compute(target, prefs, rv, window[0] - SYNTH_PAD_AA,
-                             window[1] + SYNTH_PAD_AA, grid=grid, atmos_file=atmos_file,
-                             cancel_token=cancel_token)
+        return synth.compute(target, prefs, rv, *padded_window(window), grid=grid,
+                             atmos_file=atmos_file, cancel_token=cancel_token)
 
     def abund_terms(a):
-        val = a if relative else xfe_to_abund(a, symbol, feh, solar)
-        return " ".join(t for t in (base_abund, f"{symbol}={val:.4f}") if t)
+        return abundance_override(symbol, a, base=base_abund, relative=relative,
+                                  feh=feh, solar=solar)
 
     for ln in result.lines:
         if cancel_token is not None and cancel_token.cancelled:
@@ -597,8 +623,7 @@ def run_abundance(request, result, observation, *, progress=None, cancel_token=N
         def synth_all_batch(a_list, _w=ln.window):
             rvs = [{**base_rv, "abundances": abund_terms(a),
                     "relative_abundances": relative} for a in a_list]
-            return synth.compute_batch(target, prefs, rvs, _w[0] - SYNTH_PAD_AA,
-                                       _w[1] + SYNTH_PAD_AA, grid=grid,
+            return synth.compute_batch(target, prefs, rvs, *padded_window(_w), grid=grid,
                                        atmos_file=atmos_file, cancel_token=cancel_token)
 
         def synth_excl_fn(_w=ln.window):
@@ -606,7 +631,7 @@ def run_abundance(request, result, observation, *, progress=None, cancel_token=N
 
         def abund_fit_fn(guess, _w=ln.window, _fw=ln.fit_window):
             return synth.fit_line(observation, target, prefs, base_rv, symbol, guess,
-                                  _w[0] - SYNTH_PAD_AA, _w[1] + SYNTH_PAD_AA, _fw,
+                                  *padded_window(_w), _fw,
                                   grid=grid, atmos_file=atmos_file,
                                   cancel_token=cancel_token)
 
@@ -639,4 +664,223 @@ def finalize_result(result, ref_spec, snr, cont_pct):
     result.snr, result.cont_pct = snr, cont_pct
     result.summary = aggregate(result.lines)
     result.stage = "uncert"
+    return result
+
+
+# --- NLTE abundance corrections against a 1D LTE reference ---------------------------------
+# The counterpart to measure_lines / run_abundance for the case where the "observation" is a
+# synthetic 1D LTE reference computed straight from a model atom. Stage 1 measures the atom's
+# own lines on that reference; stage 2 builds an NLTE curve of growth per line and inverts it
+# to the abundance reproducing the reference EW. The reference sits at [X/Fe]=0, so that
+# abundance *is* the correction dA = A(NLTE) - A(LTE).
+
+CORR_SPAN = 0.6        # curve-of-growth spans +/-CORR_SPAN dex in [X/Fe] about the reference
+CORR_N = 7             # number of ladder points (kept small - each is an NLTE solve)
+MIN_FIT_POINTS = 7     # a fit region sampled by fewer reference points than this is too sparse
+                       # to trust - flag "few_points" and exclude the line by default
+
+
+@dataclass
+class CorrectionOpts:
+    """Thresholds and ladder shape for the NLTE-correction workflow."""
+    profile: str = "gauss"
+    ew_min: float = 5.0                      # mAA - reference lines weaker than this are dropped
+    span: float = CORR_SPAN
+    points: int = CORR_N
+    min_fit_points: int = MIN_FIT_POINTS
+
+
+def correction_summary(lines):
+    """The element mean of a set of corrections.
+
+    Each correction carries a formal error after stage 2 - the reference EW's fit-covariance
+    error (model mismatch, nonzero even on a noiseless synthetic spectrum) propagated through
+    the CoG slope - so the inverse-variance weighted :func:`aggregate` is the right mean.
+    :func:`aggregate_unweighted` remains the fallback for results without per-line errors
+    (stage 1 only, or restored from a pre-error session).
+    """
+    weighted = aggregate(lines)
+    if weighted["n"] > 0:
+        return weighted
+    return aggregate_unweighted(lines)
+
+
+def species_symbol(ion):
+    """``(species, symbol)`` from a line-list ``ion`` label like ``"Fe I"``.
+
+    The species keeps its ionisation stage, with whitespace normalised; the symbol is that
+    species without the stage (:func:`tumult.linelist.strip_ion_stage`) — the element for an
+    atomic species, which is what the correction workflow's abundance overrides need.
+    """
+    from .linelist import strip_ion_stage
+
+    species = " ".join(str(ion).split())
+    return species, strip_ion_stage(species)
+
+
+def measure_reference_lines(request, atom, *, ref_grid, opts=None, cancel_token=None):
+    """Stage 1: synthesise the 1D LTE reference from ``atom`` and measure its lines.
+
+    ``request`` is a :class:`~tumult.synthesis.SynthRequest` naming the target parameters and
+    preferences; ``ref_grid`` the grid flagged as the 1D LTE reference, which is interpolated
+    at those parameters. The model atom alone defines the spectrum and its wavelength
+    coverage, so no window is imposed - the reference spans the atom's full synthesised range,
+    and that run's ``linelist_out.txt`` supplies the candidate lines.
+
+    Returns an :class:`AbundanceResult` at stage ``"lines"``, carrying the reference spectrum
+    as ``ref_spec``. Raises :class:`ValueError` when the reference yields nothing measurable.
+    """
+    import uuid
+
+    from .synthesis import workflows as synth
+
+    opts = opts or CorrectionOpts()
+    profile, ew_min = str(opts.profile), float(opts.ew_min)
+    prefs, target = request.prefs, request.target
+
+    ref_spec = synth.compute_reference(target, prefs, atom, ref_grid,
+                                       cancel_token=cancel_token)
+    llist = synth.read_reference_linelist(prefs)
+    if llist is None or len(llist) == 0:
+        raise ValueError("No linelist_out.txt was produced by the reference run.")
+    cand = llist.sort_values("lam0")
+    if cand.empty:
+        raise ValueError("The reference run produced no atom lines.")
+
+    lines = []
+    for row in cand.itertuples():
+        species, _symbol = species_symbol(getattr(row, "ion", ""))
+        try:
+            lprof, win, fit_window, flags = measure_line(
+                ref_spec, {"lam0": float(row.lam0)}, profile=profile)
+        except Exception:
+            continue
+        if "no_window" in flags or lprof is None or not np.isfinite(lprof.mAA):
+            continue
+        ew, fwhm, func = lprof.mAA, float(lprof.fwhm), lprof.func
+        # a fit region resolved from too few reference samples can't be fitted reliably;
+        # flag it (and exclude it) so it doesn't skew the corrections.
+        flags = list(flags)
+        n_pts = len(ref_spec.crop(xmin=fit_window[0], xmax=fit_window[1]).values[0])
+        if n_pts < int(opts.min_fit_points):
+            flags.append("few_points")
+        # keep the fit-covariance EW error: even on the noiseless synthetic reference the
+        # residual-scaled covariance measures the profile/model mismatch, and it propagates
+        # to a per-line sigma(dA) through the CoG slope in stage 2 - the formal error the
+        # weighted element mean uses.
+        ew_err = float(lprof.width_err_mAA)
+        # flag (and exclude) a line whose EW is more uncertain than the EW itself: the
+        # fit-covariance error is the only EW uncertainty on the synthetic reference, so
+        # ew_err > ew means the measurement is not trustworthy.
+        if np.isfinite(ew_err) and ew > 0 and ew_err > ew:
+            flags.append("ew_unc")
+        if not flags and ew < ew_min:
+            continue
+        lines.append(LineResult(
+            lam0=float(row.lam0), ion=species, e_low=float(getattr(row, "evi", np.nan)),
+            loggf=float(getattr(row, "loggf", np.nan)), ew=ew,
+            ew_err=ew_err, fwhm=fwhm,
+            mask=LineMask(lam0=float(row.lam0), lmin=fit_window[0], lmax=fit_window[1],
+                          smin=win[0], smax=win[1], note=species),
+            fit_func=func, flags=tuple(flags), include=not flags))
+    if not lines:
+        raise ValueError(f"No atom lines above {ew_min:.0f} mÅ in the reference.")
+
+    symbol = species_symbol(lines[0].ion)[1]
+    result = AbundanceResult(
+        element=symbol, symbol=symbol, lines=lines, summary=correction_summary([]),
+        stage="lines", profile=profile, uid=uuid.uuid4().hex[:8], relative=True)
+    result.teff, result.logg, result.feh, result.vmic = target
+    result.ref_spec = ref_spec
+    result.atom_name = Path(atom).name
+    result.name = result.atom_name
+    return result
+
+
+def run_nlte_corrections(request, result, atom, *, opts=None, progress=None,
+                         cancel_token=None):
+    """Stage 2: invert an NLTE curve of growth to each line's correction, in place.
+
+    ``request`` is a :class:`~tumult.synthesis.SynthRequest` naming the *NLTE target*
+    atmosphere; ``result`` the stage-1 :class:`AbundanceResult` whose lines carry the
+    reference EWs. Every included line gets an NLTE ladder on the picked atmosphere (model
+    atom only), which is inverted at the reference EW to give ``ln.a`` = dA.
+
+    ``progress(result)`` is called as each line lands, so a caller can stream partial results;
+    it must not raise. Returns ``result`` at stage ``"corr"`` with its summary aggregated.
+    """
+    from .synthesis import workflows as synth
+    from .synthesis.cancel import CancelledError
+
+    opts = opts or CorrectionOpts()
+    report = progress or (lambda _result: None)
+    prefs, grid = request.prefs, request.grid
+    target, atmos_file = request.target, request.atmos_file
+    symbol = result.symbol
+    span = float(opts.span)
+    ladder = np.linspace(-span, span, int(opts.points))
+
+    def _rv(a):
+        return {"mode": "NLTE", "only_atom": True, "atoms": [atom],
+                "abundances": f"{symbol}={a:.4f}", "relative_abundances": True}
+
+    # set_spectrum=False leaves spectrum_params without R/daa, so only the aa_blue/aa_red
+    # window is passed: the Fortran samples the line on the model atom's own frequency grid
+    # (matching the 1D LTE reference) and crops it to the synth window, rather than
+    # resampling onto a uniform R grid. This is also why the ladder cannot ride a segmented
+    # window_file run (compute_window_batch), which fixes a constant-R grid per window.
+    def nlte_synth(a, window):
+        return synth.compute(target, prefs, _rv(a), *padded_window(window), grid=grid,
+                             atmos_file=atmos_file, set_spectrum=False,
+                             cancel_token=cancel_token)
+
+    # the whole abundance ladder for one line synthesised in a single call, so every point's
+    # dispatch run is fanned across one shared process pool instead of being issued one after
+    # another (results are identical to the serial nlte_synth loop).
+    def batch_nlte_synth(a_list, window):
+        return synth.compute_batch(target, prefs, [_rv(a) for a in a_list],
+                                   *padded_window(window), grid=grid, atmos_file=atmos_file,
+                                   set_spectrum=False, cancel_token=cancel_token)
+
+    for ln in result.lines:
+        if cancel_token is not None and cancel_token.cancelled:
+            raise CancelledError()
+        if not ln.include:
+            continue
+        try:
+            a_grid, ew_grid = build_cog(
+                None, ladder, window=ln.fit_window, profile=result.profile, x0=ln.lam0,
+                batch_synth_fn=lambda a_list, _w=ln.window: batch_nlte_synth(a_list, _w))
+            # propagate the reference EW's fit-covariance error through the local CoG slope:
+            # sigma(dA) = sigma_EW * |dA/dEW|. All of it is fit/model error (no continuum
+            # term on a synthetic reference).
+            ew_err = float(ln.ew_err) if np.isfinite(ln.ew_err) else 0.0
+            inv = cog_invert(a_grid, ew_grid, ln.ew, ew_err=ew_err)
+            ln.a = float(inv["a"])
+            ln.sigma_a = float(inv["sigma_a"])
+            ln.sigma_a_phot, ln.sigma_a_cont = ln.sigma_a, 0.0
+            ln.a_grid, ln.ew_grid = tuple(a_grid), tuple(ew_grid)
+            if inv["out_of_range"]:
+                ln.flags = ("out_of_range",)
+                ln.include = False
+            else:
+                # overlay the best-fit NLTE line - synthesised at the inverted abundance - so
+                # jumping to a row shows its fit against the reference, mirroring the
+                # abundance tool. A failed overlay must not discard the (successful)
+                # correction, so guard it separately.
+                try:
+                    ln.fit_spec = nlte_synth(ln.a, ln.window)
+                except CancelledError:
+                    raise
+                except Exception:
+                    logging.exception("Correction: overlay synth failed %.3f", ln.lam0)
+        except CancelledError:
+            raise
+        except Exception:
+            logging.exception("Correction: line %.3f failed", ln.lam0)
+            ln.flags = ("synth_failed",)
+        report(result)
+
+    result.stage = "corr"
+    result.summary = correction_summary(result.lines)
     return result

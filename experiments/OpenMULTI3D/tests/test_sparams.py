@@ -345,3 +345,35 @@ def test_shared_ladder_inverts_like_a_per_line_ladder():
         a_per = ab.cog_invert(per_line, ew_of(per_line), target, ew_err=0.0)["a"]
         a_shared = ab.cog_invert(shared, ew_of(shared), target, ew_err=0.0)["a"]
         assert abs(a_per - a_shared) < 0.01
+
+
+# --- the shared abundance-override builder ------------------------------------------------
+# This string goes into a run's namelist, so it is part of that run's cache identity: a change
+# to its formatting silently invalidates every cached run, and a loss of precision makes two
+# distinct abundances collide on one. Pinned deliberately.
+
+def test_abundance_override_is_four_decimals():
+    from tumult.abundance import abundance_override
+
+    s = ab.abundance_override("Fe", 0.25, base="", relative=True, feh=0.0, solar={})
+    assert s == "Fe=0.2500"
+    assert abundance_override("Fe", 0.25, relative=True, feh=0.0, solar={}) == s
+
+
+def test_abundance_override_keeps_the_base_ahead():
+    s = ab.abundance_override("Fe", -0.1, base="Ca=0.3000", relative=True,
+                              feh=0.0, solar={})
+    assert s == "Ca=0.3000 Fe=-0.1000"
+
+
+def test_abundance_override_converts_when_absolute():
+    """relative=False means the caller states A(X), so [X/Fe] is converted on the way out."""
+    s = ab.abundance_override("Fe", 0.2, relative=False, feh=-1.0, solar={"Fe": SOLAR_FE})
+    assert s == f"Fe={SOLAR_FE - 1.0 + 0.2:.4f}"
+
+
+def test_abundance_override_distinguishes_close_values():
+    """Two abundances a milli-dex apart must not collide on one cached run."""
+    a = ab.abundance_override("Fe", 0.2500, relative=True, feh=0.0, solar={})
+    b = ab.abundance_override("Fe", 0.2501, relative=True, feh=0.0, solar={})
+    assert a != b

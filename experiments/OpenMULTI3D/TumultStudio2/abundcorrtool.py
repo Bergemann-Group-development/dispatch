@@ -7,24 +7,22 @@ the machinery shared with the abundance wizard (:mod:`abundwizard`), and the app
 registry — one grid of which is flagged as the **1D LTE reference**.
 
 1. **Reference & lines.** Pick stellar parameters (or a direct atmosphere file — the NLTE target)
-   and a single model atom. "Compute reference" interpolates the flagged 1D LTE grid at those
-   parameters and synthesises the reference spectrum **straight from the model atom** (no line
-   list, via ``synth.compute_reference``). That run's ``linelist_out.txt`` supplies the candidate
-   lines; each line's EW/FWHM/window is measured on the reference spectrum
-   (:func:`abundance.measure_line`).
-2. **NLTE corrections.** For every line, build an NLTE curve of growth on the *picked* atmosphere
-   (model atom only, departures + spectrum, ``synth.compute``) and invert it
-   (:func:`tumult.abundance.cog_invert`) to the abundance that reproduces the reference EW. The
-   reference sits at ``[X/Fe]=0``, so that abundance **is** the correction ΔA = A(NLTE) − A(LTE).
-   Rows stream into the table as each lands.
+   and a single model atom. "Compute reference" runs
+   :func:`tumult.abundance.measure_reference_lines`, which interpolates the flagged 1D LTE grid
+   at those parameters, synthesises the reference **straight from the model atom** (no line
+   list), and measures every candidate line from that run's ``linelist_out.txt``.
+2. **NLTE corrections.** :func:`tumult.abundance.run_nlte_corrections` builds an NLTE curve of
+   growth per line on the *picked* atmosphere (model atom only) and inverts it to the abundance
+   reproducing the reference EW. The reference sits at ``[X/Fe]=0``, so that abundance **is**
+   the correction ΔA = A(NLTE) − A(LTE). Rows stream into the table via the ``progress`` hook.
 3. **Scatter.** Plot the line-to-line scatter of the corrections (mean ± population σ).
+
+Both stages are headless: what is left here is the form handling, submission and rendering.
 """
 from __future__ import annotations
 
 import html
 import logging
-import uuid
-from pathlib import Path
 
 import numpy as np
 from bokeh.models import ColumnDataSource
@@ -32,29 +30,14 @@ from bokeh.models import ColumnDataSource
 import abundance as ab
 import store
 import synth
-from abundwizard import PROFILES, SYNTH_PAD_AA, X_AXES, AbundanceWizard
+from abundwizard import PROFILES, X_AXES, AbundanceWizard
 from controls import Field, Form
+# The workflow itself is headless (:mod:`tumult.abundance`); what is left here is the
+# wizard: collecting the form values, submitting the two stages, and rendering their results.
+from tumult.abundance import (CorrectionOpts, correction_summary,
+                              measure_reference_lines, run_nlte_corrections)
 
 DEFAULTS = {"profile": "gauss", "ew_min": 5.0, "xaxis": "evi"}
-
-CORR_SPAN = 0.6        # curve-of-growth spans ±CORR_SPAN dex in [X/Fe] about the reference
-CORR_N = 7             # number of ladder points (kept small — each is an NLTE solve)
-MIN_FIT_POINTS = 7     # a fit region sampled by fewer reference points than this is too sparse
-                       # to trust — flag "few_points" and exclude the line by default
-
-# Each correction carries a formal error after step 2 — the reference EW's
-# fit-covariance error (model mismatch, nonzero even on a noiseless synthetic spectrum)
-# propagated through the CoG slope — so the element mean is the inverse-variance
-# weighted `aggregate`. `aggregate_unweighted` remains the fallback for results without
-# per-line errors (step 1 only, or restored from a pre-error session).
-from tumult.abundance import aggregate, aggregate_unweighted  # noqa: E402
-
-
-def _summary(lines):
-    weighted = aggregate(lines)
-    if weighted["n"] > 0:
-        return weighted
-    return aggregate_unweighted(lines)
 
 
 class AbundCorrTool(AbundanceWizard):
@@ -126,7 +109,7 @@ class AbundCorrTool(AbundanceWizard):
 
     # --- shared-machinery hooks -----------------------------------------------------------
     def _summarise(self, lines):
-        return _summary(lines)
+        return correction_summary(lines)
 
     @staticmethod
     def _summary_sigma(s):
@@ -153,13 +136,6 @@ class AbundCorrTool(AbundanceWizard):
         # coarse grid would misrepresent the auto_crop_core / HWHM extents the windows come from.
         self.canvas.set_abund_windows(ln.fit_window, ln.window)
 
-    # --- helpers -----------------------------------------------------------------------
-    @staticmethod
-    def _species(ion):
-        """(species, symbol) from a linelist ``ion`` label like ``"Fe I"``."""
-        species = " ".join(str(ion).split())
-        return species, (species.split()[0] if species else "")
-
     # --- step 1: reference + line selection --------------------------------------------
     def run_reference(self):
         ctx = self.setup.context()
@@ -183,69 +159,12 @@ class AbundCorrTool(AbundanceWizard):
         self.ctx.submit("corr-reference", loader, self._on_reference_done)
 
     def _compute_reference(self, ctx, ref_grid, atom, profile, ew_min, token):
+        """Stage 1, on a worker thread: the headless call plus this tool's error reporting."""
         try:
-            prefs, target = ctx.prefs, ctx.target
-            # the model atom alone defines the spectrum and its wavelength coverage, so no
-            # window is imposed — the reference spans the atom's full synthesised range.
-            ref_spec = synth.compute_reference(target, prefs, atom, ref_grid,
-                                               cancel_token=token)
-            llist = synth.read_reference_linelist(prefs)
-            if llist is None or len(llist) == 0:
-                self._error = "No linelist_out.txt was produced by the reference run."
-                return None
-            cand = llist.sort_values("lam0")
-            if cand.empty:
-                self._error = "The reference run produced no atom lines."
-                return None
-            lines = []
-            for row in cand.itertuples():
-                species, symbol = self._species(getattr(row, "ion", ""))
-                line = {"lam0": float(row.lam0)}
-                try:
-                    lprof, win, fit_window, flags = ab.measure_line(
-                        ref_spec, line, profile=profile)
-                except Exception:
-                    continue
-                if "no_window" in flags or lprof is None or not np.isfinite(lprof.mAA):
-                    continue
-                ew, fwhm, func = lprof.mAA, float(lprof.fwhm), lprof.func
-                # a fit region resolved from too few reference samples can't be fitted
-                # reliably; flag it (and exclude it) so it doesn't skew the corrections.
-                flags = list(flags)
-                n_pts = len(ref_spec.crop(xmin=fit_window[0], xmax=fit_window[1]).values[0])
-                if n_pts < MIN_FIT_POINTS:
-                    flags.append("few_points")
-                # keep the fit-covariance EW error: even on the noiseless synthetic
-                # reference the residual-scaled covariance measures the profile/model
-                # mismatch, and it propagates to a per-line sigma(dA) through the CoG
-                # slope in step 2 — the formal error the weighted element mean uses.
-                ew_err = float(lprof.width_err_mAA)
-                # flag (and exclude) a line whose EW is more uncertain than the EW itself:
-                # the fit-covariance error is the only EW uncertainty on the synthetic
-                # reference, so ew_err > ew means the measurement is not trustworthy.
-                if np.isfinite(ew_err) and ew > 0 and ew_err > ew:
-                    flags.append("ew_unc")
-                if not flags and ew < ew_min:
-                    continue
-                lines.append(ab.LineResult(
-                    lam0=float(row.lam0), ion=species, e_low=float(getattr(row, "evi", np.nan)),
-                    loggf=float(getattr(row, "loggf", np.nan)), ew=ew,
-                    ew_err=ew_err, fwhm=fwhm,
-                    mask=ab.LineMask(lam0=float(row.lam0), lmin=fit_window[0], lmax=fit_window[1],
-                                     smin=win[0], smax=win[1], note=species),
-                    fit_func=func, flags=tuple(flags), include=not flags))
-            if not lines:
-                self._error = f"No atom lines above {ew_min:.0f} mÅ in the reference."
-                return None
-            symbol = self._species(lines[0].ion)[1]
-            res = ab.AbundanceResult(
-                element=symbol, symbol=symbol, lines=lines, summary=_summary([]),
-                stage="lines", profile=profile, uid=uuid.uuid4().hex[:8], relative=True)
-            res.teff, res.logg, res.feh, res.vmic = target
-            res.ref_spec = ref_spec
-            res.atom_name = Path(atom).name
-            res.name = res.atom_name
-            return res
+            return measure_reference_lines(
+                ctx, atom, ref_grid=ref_grid,
+                opts=CorrectionOpts(profile=profile, ew_min=ew_min),
+                cancel_token=token)
         except synth.CancelledError:
             raise
         except Exception as exc:
@@ -289,74 +208,12 @@ class AbundCorrTool(AbundanceWizard):
         self.ctx.submit(f"corr-synth:{res.symbol}", loader, self._on_corr_done)
 
     def _corr_lines(self, res, ctx, atom, token):
+        """Stage 2, on a worker thread: rows stream into the table as each line lands."""
         try:
-            prefs, grid = ctx.prefs, ctx.grid
-            target, atmos_file = ctx.target, ctx.atmos_file
-            symbol = res.symbol
-            ladder = np.linspace(-CORR_SPAN, CORR_SPAN, CORR_N)
-
-            def _rv(a):
-                return {"mode": "NLTE", "only_atom": True, "atoms": [atom],
-                        "abundances": f"{symbol}={a:.4f}", "relative_abundances": True}
-
-            # set_spectrum=False leaves spectrum_params without R/daa, so only the aa_blue/aa_red
-            # window is passed: the Fortran samples the line on the model atom's own frequency
-            # grid (matching the 1D LTE reference) and crops it to the synth window, rather than
-            # resampling onto a uniform R grid.
-            def nlte_synth(a, window):
-                return synth.compute(target, prefs, _rv(a), window[0] - SYNTH_PAD_AA,
-                                     window[1] + SYNTH_PAD_AA, grid=grid, atmos_file=atmos_file,
-                                     set_spectrum=False, cancel_token=token)
-
-            # the whole abundance ladder for one line synthesised in a single call, so every
-            # point's dispatch run is fanned across one shared process pool instead of being
-            # issued one after another (results are identical to the serial nlte_synth loop).
-            def batch_nlte_synth(a_list, window):
-                return synth.compute_batch(target, prefs, [_rv(a) for a in a_list],
-                                           window[0] - SYNTH_PAD_AA, window[1] + SYNTH_PAD_AA,
-                                           grid=grid, atmos_file=atmos_file,
-                                           set_spectrum=False, cancel_token=token)
-
-            for ln in res.lines:
-                if token is not None and token.cancelled:
-                    raise synth.CancelledError()
-                if not ln.include:
-                    continue
-                try:
-                    a_grid, ew_grid = ab.build_cog(
-                        None, ladder, window=ln.fit_window,
-                        profile=res.profile, x0=ln.lam0,
-                        batch_synth_fn=lambda a_list, _w=ln.window: batch_nlte_synth(a_list, _w))
-                    # propagate the reference EW's fit-covariance error through the local
-                    # CoG slope: sigma(dA) = sigma_EW * |dA/dEW|. All of it is fit/model
-                    # error (no continuum term on a synthetic reference).
-                    ew_err = float(ln.ew_err) if np.isfinite(ln.ew_err) else 0.0
-                    inv = ab.cog_invert(a_grid, ew_grid, ln.ew, ew_err=ew_err)
-                    ln.a = float(inv["a"])
-                    ln.sigma_a = float(inv["sigma_a"])
-                    ln.sigma_a_phot, ln.sigma_a_cont = ln.sigma_a, 0.0
-                    ln.a_grid, ln.ew_grid = tuple(a_grid), tuple(ew_grid)
-                    if inv["out_of_range"]:
-                        ln.flags = ("out_of_range",)
-                        ln.include = False
-                    else:
-                        # overlay the best-fit NLTE line — synthesised at the inverted
-                        # abundance — so jumping to a row shows its fit against the
-                        # reference, mirroring the abundance tool. A failed overlay must
-                        # not discard the (successful) correction, so guard it separately.
-                        try:
-                            ln.fit_spec = nlte_synth(ln.a, ln.window)
-                        except synth.CancelledError:
-                            raise
-                        except Exception:
-                            logging.exception("Correction: overlay synth failed %.3f", ln.lam0)
-                except synth.CancelledError:
-                    raise
-                except Exception:
-                    logging.exception("Correction: line %.3f failed", ln.lam0)
-                    ln.flags = ("synth_failed",)
-                self.ctx.schedule(lambda r=res: self._stream_row(r))
-            return res
+            return run_nlte_corrections(
+                ctx, res, atom, opts=CorrectionOpts(profile=res.profile),
+                progress=lambda r: self.ctx.schedule(lambda _r=r: self._stream_row(_r)),
+                cancel_token=token)
         except synth.CancelledError:
             raise
         except Exception as exc:
@@ -369,8 +226,6 @@ class AbundCorrTool(AbundanceWizard):
             if self._error:
                 self.notify(f"Corrections failed: {self._error}")
             return
-        result.stage = "corr"
-        result.summary = _summary(result.lines)
         s = result.summary
         result.name = self._result_label(result)
         self.push_results()

@@ -404,7 +404,7 @@ def solve_ionisation_balance(request, result, opts=None, *, progress=None, cance
     stream partial results; it must not raise.
     """
     from . import abundance as ab
-    from .abundance import SYNTH_PAD_AA, xfe_to_abund
+    from .abundance import abundance_override, padded_window, xfe_to_abund
     from .synthesis import workflows as synth
     from .synthesis.cancel import CancelledError
 
@@ -434,9 +434,8 @@ def solve_ionisation_balance(request, result, opts=None, *, progress=None, cance
             rv["abundances"] = base_abund
             rv["exclude_elements"] = element
         else:
-            val = a_rel if relative else xfe_to_abund(a_rel, element, feh, solar)
-            rv["abundances"] = " ".join(
-                t for t in (base_abund, f"{element}={val:.4f}") if t)
+            rv["abundances"] = abundance_override(
+                element, a_rel, base=base_abund, relative=relative, feh=feh, solar=solar)
             if only:
                 rv["only_elements"] = element
         rv["relative_abundances"] = relative
@@ -444,14 +443,12 @@ def solve_ionisation_balance(request, result, opts=None, *, progress=None, cance
 
     def batch(rv_list, line, target):
         return synth.compute_batch(
-            target, prefs, rv_list, line.window[0] - SYNTH_PAD_AA,
-            line.window[1] + SYNTH_PAD_AA, grid=grid, atmos_file=atmos_file,
-            cancel_token=cancel_token)
+            target, prefs, rv_list, *padded_window(line.window), grid=grid,
+            atmos_file=atmos_file, cancel_token=cancel_token)
 
     def window_batch(rv_list, lines, target):
         """One synthesis for the whole iteration: every rung in every line's window."""
-        windows = [(ln.window[0] - SYNTH_PAD_AA, ln.window[1] + SYNTH_PAD_AA)
-                   for ln in lines]
+        windows = [padded_window(ln.window) for ln in lines]
         return synth.compute_window_batch(
             target, prefs, rv_list, windows, grid=grid, atmos_file=atmos_file,
             cancel_token=cancel_token)
