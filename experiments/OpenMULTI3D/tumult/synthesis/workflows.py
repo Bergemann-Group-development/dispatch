@@ -549,6 +549,23 @@ _FIT_XTOL = {"teff": 1.0, "logg": 0.01, "feh": 0.01, "vmic": 0.05,
              "vshift": 0.1, "zeta_rt": 0.1, "vrot": 0.1}
 
 
+def fitted_abundance_terms(best, elements, *, base="", relative, feh, solar):
+    """The abundance override string describing a fit result, in the caller's convention.
+
+    ``best`` is the fit's parameter dict, whose abundance axes are always fitted as [X/Fe];
+    ``relative`` says which convention the caller states abundances in, so an absolute
+    caller gets A(X) back rather than the [X/Fe] the fit worked in. ``base`` is any
+    fixed override string the fit held constant, kept ahead of the fitted terms.
+    """
+    terms = [str(base).strip()] if str(base).strip() else []
+    for el in elements:
+        if el in best:
+            xfe = float(best[el])
+            val = xfe if relative else xfe_to_abund(xfe, el, feh, solar)
+            terms.append(f"{el}={val:+.2f}")
+    return " ".join(terms)
+
+
 def abund_table(prefs):
     """``{element: A(X)}`` from the configured abundance file (solar reference).
 
@@ -601,6 +618,10 @@ def fit(target, prefs, run_vals, fit_stellar, abund_fits, fit_post, xmin=None, x
     axes = list(fit_stellar) + list(abund_fits)
     if not axes and not fit_post:
         raise ValueError("Select at least one parameter to fit.")
+    # NLTE is solved from model atoms; without one there is nothing to depart from, and the
+    # run would silently come back LTE.
+    if str(run_vals.get("mode", "LTE")).upper() == "NLTE" and not run_vals.get("atoms"):
+        raise ValueError("An NLTE fit needs model atoms.")
 
     guesses = {p: float(run_vals[p]) for p in fit_stellar}
     guesses.update({el: float(v) for el, v in abund_fits.items()})

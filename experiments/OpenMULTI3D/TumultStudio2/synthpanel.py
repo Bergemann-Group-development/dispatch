@@ -249,15 +249,10 @@ class SynthPanel(RangeSelect):
             # Info-tab provenance: the best-fit stellar params + fitted abundances. The
             # broadening (post) is applied as a live convolution, shown in the Edit tab.
             stellar = {k: best.get(k, c["guesses"][k]) for k in ("teff", "logg", "feh", "vmic")}
-            solar = synth.abund_table(prefs)
-            feh = float(stellar["feh"])
-            terms = [abundances.strip()] if str(abundances).strip() else []
-            for el in c["abund_fits"]:
-                if el in best:
-                    xfe = float(best[el])
-                    val = xfe if relative else synth.xfe_to_abund(xfe, el, feh, solar)
-                    terms.append(f"{el}={val:+.2f}")
-            meta = self._synth_meta(stellar, mode=mode, abundances=" ".join(terms),
+            terms = synth.fitted_abundance_terms(
+                best, c["abund_fits"], base=abundances, relative=relative,
+                feh=float(stellar["feh"]), solar=synth.abund_table(prefs))
+            meta = self._synth_meta(stellar, mode=mode, abundances=terms,
                                     relative=relative, atoms=run_vals["atoms"],
                                     xmin=xmin, xmax=xmax)
             self._add(raw, name, meta=meta, conv=post)
@@ -282,11 +277,10 @@ class SynthPanel(RangeSelect):
         for el, val in items:
             if abund["relative"]:
                 xfe = val
+            elif el not in solar:
+                continue  # no solar reference -> can't express as [X/Fe]
             else:
-                a0 = solar.get(el)
-                if a0 is None:
-                    continue  # no solar reference -> can't express as [X/Fe]
-                xfe = val - a0 - (feh or 0.0)
+                xfe = synth.abund_to_xfe(val, el, feh or 0.0, solar)
             parts.append(f"[{el}/Fe] {xfe:+.2f}")
         return " · ".join(parts)
 
