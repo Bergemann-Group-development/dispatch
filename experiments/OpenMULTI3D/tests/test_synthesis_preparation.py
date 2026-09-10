@@ -97,3 +97,39 @@ def test_spectrum_table_preserves_first_intensity_and_units():
         assert result.get_spectrum(imu=0).values[1][0] == .8
         assert result.get_spectrum().values[1][0] == .9
         assert result.get_spectrum(norm=False).yunit == u.erg/(u.s*u.cm**2*u.AA)
+
+
+def test_uncropped_runs_keep_their_cache_identity(tmp_path, monkeypatch):
+    """A per-node line-list crop must not move the folders of runs that have none.
+
+    The digest only takes the crop into account when there is one, so what this pins is the
+    condition for that: every way of asking for no crop returns None, and once there is one,
+    its identity separates it from any other crop. Without the first, every cached run in
+    every existing output directory becomes unreachable; without the second, two runs on one
+    node with the same namelist and different line lists would share a folder.
+    """
+    from tumult.synthesis import api
+
+    base = {'linelist_params': {'linelist_file': ['master.txt']},
+            'spectrum_params': {'R': 300000.}}
+    windows = [(5000., 5002.)]
+    crop = {'skirt': 5.0, 'abundances': 'Fe=+0.40', 'relative_abundances': True}
+    nodes = [(('n', 0), 5750., 4.5, 0.0, 1.0, 1.0, tmp_path / 'a.mod', None)]
+
+    assert api._node_linelists('top', base, nodes, windows, None, {}) is None
+    assert api._node_linelists('top', base, nodes, windows, {'skirt': 0.0}, {}) is None
+    # a line-list folder cannot be cropped into one file
+    folder = {**base, 'linelist_params': {'linelist_folder': 'lists/'}}
+    assert api._node_linelists('top', folder, nodes, windows, crop, {}) is None
+
+    written = []
+    monkeypatch.setattr('tumult.linestrength.crop_linelist',
+                        lambda path, *a, **kw: written.append(Path(path)) or Path(path))
+    mapping = api._node_linelists(tmp_path, base, nodes, windows, crop, {})
+    assert list(mapping) == [('n', 0)]
+    assert written == [Path(mapping[('n', 0)])]
+    assert Path(mapping[('n', 0)]).name == 't5750g45m+00v10.txt'
+    # the skirt, the windows and the rung the crop was made at all key the crop
+    for changed in ({**crop, 'skirt': 2.0}, {**crop, 'abundances': 'Fe=+0.80'}):
+        assert api._crop_digest(base, windows, changed) != api._crop_digest(base, windows, crop)
+    assert api._crop_digest(base, [(5000., 5003.)], crop) != api._crop_digest(base, windows, crop)

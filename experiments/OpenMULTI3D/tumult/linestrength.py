@@ -59,6 +59,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import threading
 from pathlib import Path
@@ -214,6 +215,65 @@ def cached_band(star, linelist, lo, hi):
     """
     with _bands_lock:
         return _bands.get((star.key, str(linelist), lo, hi))
+
+
+# --- cropping a line list to an atmosphere ------------------------------------------------
+def crop_linelist(out_path, atmos_file, linelist, windows, *, R, dlam=DLAM_AA, vmic=1.0,
+                  feh=0.0, abundances="", relative_abundances=True):
+    """Write the lines a run on ``atmos_file`` would actually use, as an input line list.
+
+    The selection a run makes is a property of its atmosphere, its windows and the
+    abundances it synthesises at -- not of anything else in the namelist. So it can be made
+    once per atmosphere node and handed to every run on that node as its ``linelist_file``,
+    which is what this produces. The runs then read a few hundred lines instead of the whole
+    master list, and none of them depends on another's output.
+
+    Two crops are applied, both HOP's own. ``windows`` (air Angstrom, expanded by ``dlam``
+    and merged) bounds which lines are read at all; then the opacity call over the windows
+    at resolving power ``R`` marks the lines that clear HOP's negligibility test on this
+    structure, and only those are written. ``R`` and ``dlam`` therefore have to match what
+    the runs will use, or the crop drops contributors they would have had.
+
+    Crop at the *strongest* abundance a caller will synthesise (``abundances``, in the
+    ``Fe=+0.40`` form, with ``relative_abundances`` saying which convention): strength grows
+    with abundance, so the top rung's selection covers every weaker rung, while cropping at
+    a middle rung would drop lines the strong ones need.
+
+    Only :data:`NDEPTH` depths of the model are read (see :func:`read_marcs`), which is what
+    makes this cheap next to the runs it feeds -- the strength is a maximum over depth, so
+    what the sampling has to do is span the structure, not resolve it.
+    """
+    from .hop import HopEOS, wavelength_grid
+    from .physics import air2vac
+    import tumult as tm
+
+    bounds = [(float(min(w)), float(max(w))) for w in windows]
+    if not bounds:
+        raise ValueError("crop_linelist needs at least one window")
+    bounds.sort()
+    lam = np.concatenate([wavelength_grid(lo, hi, R=R) for lo, hi in bounds])
+    vac = [(float(air2vac(lo)), float(air2vac(hi))) for lo, hi in bounds]
+
+    T, rho = read_marcs(atmos_file)
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    options = {}
+    if abundances:
+        options = {"abundances": str(abundances),
+                   "relative_abundances": bool(relative_abundances)}
+    # written aside and renamed, so a cancelled or failed crop never leaves a truncated
+    # file behind for the next caller to mistake for a finished one
+    tmp = out_path.with_name(f"{out_path.name}.{os.getpid()}.partial")
+    with HOP_LOCK:
+        hop = tm.HopEOS(feh=float(feh), **options)
+        try:
+            hop.load_state(T, rho=rho, vmic=float(vmic))
+            hop.write_linelist(tmp, lam, str(linelist), dlam=float(dlam),
+                               vmic=float(vmic), windows=vac)
+        finally:
+            hop.close()
+    tmp.replace(out_path)
+    return out_path
 
 
 def run_params(folder):

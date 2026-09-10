@@ -333,6 +333,25 @@ def _absmet_files(prefs, atmos_files):
     return {k[2]: str(p) for k in atmos_files} if fehs else None
 
 
+def _crop_spec(prefs, crop):
+    """The per-node line-list crop descriptor for the API, or None for no crop.
+
+    Splits the decision in two: the skirt is a preference (``linelist_crop_aa``, 0 to switch
+    the crop off), because how far outside a window a line may still matter is a property of
+    the physics and not of any one caller; the abundances are the caller's, because only it
+    knows which rung of its ladder is the strongest (see
+    :func:`tumult.synthesis.api._node_linelists`). A caller passing ``crop=None`` gets no
+    crop whatever the preference says.
+    """
+    if crop is None:
+        return None
+    skirt = float(prefs.get("linelist_crop_aa") or 0.0)
+    if not skirt > 0:
+        return None
+    return {"skirt": skirt, "abundances": str(crop.get("abundances") or ""),
+            "relative_abundances": bool(crop.get("relative_abundances", True))}
+
+
 def _prepare(target, prefs, run_vals_list, grid, atmos_file, extra_presets,
              *, set_spectrum=True, window_batch=False):
     """Resolve common inputs once; each backend retains its own window assembly."""
@@ -431,7 +450,8 @@ def compute_batch(target, prefs, run_vals_list, xmin=None, xmax=None, *, grid,
 
 
 def compute_window_batch(target, prefs, run_vals_list, windows, *, grid,
-                         atmos_file=None, extra_presets=None, cancel_token=None):
+                         atmos_file=None, extra_presets=None, cancel_token=None,
+                         crop=None):
     """Batched :func:`compute` over an abundance ladder *and* several windows at once.
 
     Same contract as :func:`compute_batch` for the ladder axis, with ``windows`` a
@@ -441,13 +461,17 @@ def compute_window_batch(target, prefs, run_vals_list, windows, *, grid,
 
     Falls back to one synthesis per window when the variants cannot fold, so callers can
     use this wherever they would otherwise loop :func:`compute_batch` over windows.
+
+    ``crop`` asks for the per-node line-list crop: ``{"abundances", "relative_abundances"}``
+    of the strongest rung the caller will ask for on these nodes (see :func:`_crop_spec`).
     """
     if not run_vals_list or not windows:
         return []
     common, settings, R = _prepare(target, prefs, run_vals_list, grid, atmos_file,
                                     extra_presets, window_batch=True)
     return _compute_window_batch(**common, settings_list=settings, windows=windows,
-                                 R=R, cancel_token=cancel_token)
+                                 R=R, cancel_token=cancel_token,
+                                 crop=_crop_spec(prefs, crop))
 
 
 # --- fitting ---------------------------------------------------------------------------

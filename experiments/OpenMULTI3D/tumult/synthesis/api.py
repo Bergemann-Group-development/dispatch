@@ -71,10 +71,15 @@ def _dep_jobs(base, nodes, departures_top):
     return jobs
 
 
-def _spec_jobs(base, nodes, top, nlte, dep_dirs):
+def _spec_jobs(base, nodes, top, nlte, dep_dirs, node_linelists=None):
     """Spectrum jobs (one per node): LTE reads the marcs atmosphere directly; NLTE reads the
     saved atmosphere + precomputed departures ('save' format, maxiter=0). Returns
-    ``(jobs, job_keys, job_weights, job_params)``."""
+    ``(jobs, job_keys, job_weights, job_params)``.
+
+    ``node_linelists`` (optional) maps a node key to the line list that node's runs read
+    instead of the shared one -- the per-node crop from :func:`_node_linelists`. It replaces
+    ``linelist_params.linelist_file``, so whatever produced the mapping owns the cache
+    identity of these runs (see :func:`_crop_digest`)."""
     jobs, job_keys, job_weights, job_params = [], [], [], []
     for jkey, teff_i, logg_i, feh_i, v, weight, atmos_path, absmet_file in nodes:
         if nlte:
@@ -84,6 +89,9 @@ def _spec_jobs(base, nodes, top, nlte, dep_dirs):
         else:
             atmos_override = {'atmos_file': atmos_path, 'feh': feh_i, 'vmic': v}
             extra = {}
+        if node_linelists:
+            extra = dict(extra,
+                         linelist_params={'linelist_file': [node_linelists[jkey]]})
         nml_i = update_dict(copy.deepcopy(base), {
             'atmos_params': atmos_override,
             'opac_table_params': {'absmet_file': absmet_file},
@@ -94,6 +102,70 @@ def _spec_jobs(base, nodes, top, nlte, dep_dirs):
         job_weights.append(weight)
         job_params.append((teff_i, logg_i, feh_i, v))
     return jobs, job_keys, job_weights, job_params
+
+
+def _crop_digest(base, windows, crop):
+    """Cache identity of a per-node line-list crop.
+
+    Everything the crop depends on except the atmosphere node, which the file name carries:
+    the master list, the windows, the skirt, the sampling the selection was made at and the
+    abundances it was made for. This goes into the *runs'* digest as well as the crop
+    directory's, because two runs on the same node with the same namelist but different
+    crops are different runs -- without it the second would be served the first's cache.
+    """
+    files = (base.get('linelist_params') or {}).get('linelist_file') or []
+    return hashlib.sha1(json.dumps(
+        [[str(f) for f in files], [[float(min(w)), float(max(w))] for w in windows], crop,
+         (base.get('spectrum_params') or {}).get('R')],
+        sort_keys=True, default=str).encode()).hexdigest()[:8]
+
+
+def _node_linelists(top, base, nodes, windows, crop, launch_kwargs):
+    """Crop the line list once per atmosphere node, and map each node key to its own file.
+
+    A run's line selection depends on its atmosphere, its windows and its abundances, so a
+    ladder of abundance rungs on one node re-reads and re-selects the whole master list at
+    every rung. Cropping once per node -- at the ladder's strongest rung, which covers the
+    weaker ones -- makes the selection a property of the node instead
+    (:func:`tumult.linestrength.crop_linelist`), and leaves the runs independent of each
+    other: no run waits for another's ``linelist_out.txt``.
+
+    ``crop`` is the caller's descriptor: ``skirt`` in Angstrom (how far outside a window a
+    line may still contribute; 0 or absent disables cropping altogether) and the
+    ``abundances`` / ``relative_abundances`` of the strongest rung. Returns ``None`` when
+    cropping does not apply, which leaves every run on the shared list.
+
+    A crop costs about a tenth of a second against the several seconds of the runs it feeds,
+    and is cached on disk under the digest, so a node recurring in a later iteration or
+    session pays nothing.
+    """
+    if not crop or not float(crop.get('skirt') or 0.0) > 0.0:
+        return None
+    files = (base.get('linelist_params') or {}).get('linelist_file') or []
+    if len(files) != 1:
+        # a line-list folder, several files, or none: the crop writes one file, and merging
+        # a folder into it would change which duplicate of a line wins
+        return None
+    R = float((base.get('spectrum_params') or {}).get('R') or 0.0)
+    if R <= 0:
+        return None
+    from ..linestrength import crop_linelist
+
+    skirt = float(crop['skirt'])
+    padded = [(float(min(w)) - skirt, float(max(w)) + skirt) for w in windows]
+    cwd = Path((launch_kwargs or {}).get('cwd') or '.')
+    out_dir = (cwd / top / '_linelists' / _crop_digest(base, windows, crop)).resolve()
+    master = files[0] if Path(files[0]).is_absolute() else cwd / files[0]
+    mapping = {}
+    for jkey, teff_i, logg_i, feh_i, v, _w, atmos_path, _absmet in nodes:
+        path = out_dir / f'{_run_name(teff_i, logg_i, feh_i, v)}.txt'
+        if not path.is_file():
+            atmos = atmos_path if Path(atmos_path).is_absolute() else cwd / atmos_path
+            crop_linelist(path, atmos, master, padded, R=R, dlam=skirt, vmic=v, feh=feh_i,
+                          abundances=crop.get('abundances') or '',
+                          relative_abundances=bool(crop.get('relative_abundances', True)))
+        mapping[jkey] = str(path)
+    return mapping
 
 
 def _assemble_grid(runs, star, vmic, job_keys, job_weights, job_params, vmic_points):
@@ -569,7 +641,7 @@ def compute_windows(top, star, atmos_files, *, windows, R, settings=None, absmet
 def compute_window_batch(top, star, atmos_files, *, settings_list, windows, R,
                          absmet_files=None, method='Delaunay', max_threads=None,
                          launch_kwargs=None, pad=None, vmic_step=0.5, vmic_points=2,
-                         nlte=None, cancel_token=None):
+                         nlte=None, cancel_token=None, crop=None):
     """Both axes in one run: an abundance ladder across several wavelength windows.
 
     ``settings_list`` is a ladder in the sense of :func:`compute_spectra` — variants
@@ -585,6 +657,9 @@ def compute_window_batch(top, star, atmos_files, *, settings_list, windows, R,
     Falls back to :func:`compute_spectra` per window when the variants are not a foldable
     ladder (different line lists, elements switched on and off, ``sample_linelist``), so a
     caller does not have to know which of its requests can fold.
+
+    ``crop`` (optional) asks for the per-node line-list crop described in
+    :func:`_node_linelists`, and is part of these runs' cache identity.
     """
     if R is None or R <= 0:
         raise ValueError("compute_window_batch needs a positive R")
@@ -620,13 +695,19 @@ def compute_window_batch(top, star, atmos_files, *, settings_list, windows, R,
                             max_threads=max_threads, launch_kwargs=launch_kwargs,
                             xmin=float(min(w)), xmax=float(max(w)), pad=pad,
                             vmic_step=vmic_step, vmic_points=vmic_points, nlte=nlte,
-                            cancel_token=cancel_token)
+                            cancel_token=cancel_token, crop=crop)
             for w in windows])]
 
     base, manifest = fold
     manifest_text = json.dumps(manifest, sort_keys=True, separators=(',', ':'))
-    digest = hashlib.sha1(json.dumps(
-        [base, manifest_text, text], sort_keys=True, default=str).encode()).hexdigest()[:8]
+    node_lists = _node_linelists(top, base, nodes, merged, crop, launch_kwargs)
+    # the crop only enters the digest when there is one, so an uncropped batch keeps the
+    # cache identity (and the folders) it had before per-node crops existed
+    keys = [base, manifest_text, text]
+    if node_lists:
+        keys.append(_crop_digest(base, merged, crop))
+    digest = hashlib.sha1(
+        json.dumps(keys, sort_keys=True, default=str).encode()).hexdigest()[:8]
     manifest_path = (Path((launch_kwargs or {}).get('cwd') or '.') / top /
                      '_set_manifests' / f'{digest}.txt').resolve()
     write_set_manifest(manifest_path, manifest)
@@ -651,7 +732,7 @@ def compute_window_batch(top, star, atmos_files, *, settings_list, windows, R,
         dep_dirs = {key: str(dep_runs[key].folder) for key, _path, _nml in dep_jobs}
 
     jobs, job_keys, job_weights, job_params = _spec_jobs(
-        base, nodes, syn_top, nlte_v, dep_dirs)
+        base, nodes, syn_top, nlte_v, dep_dirs, node_lists)
     runs = _run_batch(jobs, launch_kwargs, max_threads, cancel_token=cancel_token)
     failed = [key for key in job_keys if runs.get(key) is None]
     if failed:
@@ -671,7 +752,7 @@ def compute_window_batch(top, star, atmos_files, *, settings_list, windows, R,
 def compute_spectra(top, star, atmos_files, *, settings_list, absmet_files=None,
                     method='Delaunay', max_threads=None, launch_kwargs=None,
                     xmin=None, xmax=None, pad=None, vmic_step=0.5, vmic_points=2,
-                    nlte=None, cancel_token=None):
+                    nlte=None, cancel_token=None, crop=None):
     """Batched :func:`compute_spectrum` for a list of settings variants that share the same
     star/atmospheres (e.g. a curve-of-growth's abundance ladder).
 
@@ -686,6 +767,9 @@ def compute_spectra(top, star, atmos_files, *, settings_list, absmet_files=None,
     and the disk cache is shared with them. Departures are solved per variant (the dep cache
     key includes ``composition_params``), so an abundance ladder gets a full NLTE solve at
     every point, only run concurrently instead of one after another.
+
+    ``crop`` (optional) asks for the per-node line-list crop described in
+    :func:`_node_linelists`, and is part of these runs' cache identity.
     """
     if not settings_list:
         return []
@@ -712,11 +796,18 @@ def compute_spectra(top, star, atmos_files, *, settings_list, absmet_files=None,
     fold = None
     if len(set(nlte_values)) == 1 and len(set(labels)) == 1:
         fold = _foldable_ladder(windowed, launch_kwargs, nlte_values[0])
+    crop_windows = ([(float(min(xmin, xmax)), float(max(xmin, xmax)))]
+                    if xmin is not None and xmax is not None else [])
     if fold is not None:
         base, manifest = fold
         manifest_text = json.dumps(manifest, sort_keys=True, separators=(',', ':'))
-        digest = hashlib.sha1(json.dumps(
-            [base, manifest_text], sort_keys=True, default=str).encode()).hexdigest()[:8]
+        node_lists = _node_linelists(top, base, nodes, crop_windows, crop, launch_kwargs) \
+            if crop_windows else None
+        keys = [base, manifest_text]
+        if node_lists:
+            keys.append(_crop_digest(base, crop_windows, crop))
+        digest = hashlib.sha1(
+            json.dumps(keys, sort_keys=True, default=str).encode()).hexdigest()[:8]
         manifest_path = (Path((launch_kwargs or {}).get('cwd') or '.') / top /
                      '_set_manifests' / f'{digest}.txt').resolve()
         write_set_manifest(manifest_path, manifest)
@@ -736,7 +827,7 @@ def compute_spectra(top, star, atmos_files, *, settings_list, absmet_files=None,
             dep_dirs = {key: str(dep_runs[key].folder) for key, _path, _nml in dep_jobs}
 
         jobs, job_keys, job_weights, job_params = _spec_jobs(
-            base, nodes, syn_top, nlte_v, dep_dirs)
+            base, nodes, syn_top, nlte_v, dep_dirs, node_lists)
         runs = _run_batch(jobs, launch_kwargs, max_threads, cancel_token=cancel_token)
         failed = [key for key in job_keys if runs.get(key) is None]
         if failed:
@@ -753,19 +844,22 @@ def compute_spectra(top, star, atmos_files, *, settings_list, absmet_files=None,
         return results
 
     # Per variant: assemble window/hash-keyed tops exactly as compute_spectrum does.
-    prepared = []   # (settings, syn_top, departures_top, nlte_v)
+    prepared = []   # (settings, syn_top, departures_top, nlte_v, node_linelists)
     for s, label, nlte_v in zip(windowed, labels, nlte_values):
+        node_lists = _node_linelists(top, s, nodes, crop_windows, crop, launch_kwargs) \
+            if crop_windows else None
+        keys = s if node_lists is None else [s, _crop_digest(s, crop_windows, crop)]
         digest = hashlib.sha1(
-            json.dumps(s, sort_keys=True, default=str).encode()).hexdigest()[:8]
+            json.dumps(keys, sort_keys=True, default=str).encode()).hexdigest()[:8]
         syn_top = top / f'{label}_{digest}'
         dep_top = _dep_bucket(top, s) if nlte_v else None
-        prepared.append((s, syn_top, dep_top, bool(nlte_v)))
+        prepared.append((s, syn_top, dep_top, bool(nlte_v), node_lists))
 
     # Phase 1: all NLTE departure solves (node × variant) through the shared scheduler. Keys are
     # namespaced by variant index; each variant's runs live under its own hash-keyed dir.
     dep_dirs = {}   # (vi, jkey) -> folder
     dep_jobs = []
-    for vi, (s, _syn, dep_top, nlte_v) in enumerate(prepared):
+    for vi, (s, _syn, dep_top, nlte_v, _lists) in enumerate(prepared):
         if nlte_v:
             dep_jobs += [((vi, jkey), path, nml)
                          for jkey, path, nml in _dep_jobs(s, nodes, dep_top)]
@@ -779,10 +873,10 @@ def compute_spectra(top, star, atmos_files, *, settings_list, absmet_files=None,
     # Phase 2: all spectrum solves (node × variant) through the shared scheduler.
     spec_jobs = []
     variant_specs = []   # per variant: (job_keys, job_weights, job_params)
-    for vi, (s, syn_top, _dep, nlte_v) in enumerate(prepared):
+    for vi, (s, syn_top, _dep, nlte_v, node_lists) in enumerate(prepared):
         dep_dirs_v = {n[0]: dep_dirs[(vi, n[0])] for n in nodes} if nlte_v else {}
         jobs, job_keys, job_weights, job_params = _spec_jobs(s, nodes, syn_top, nlte_v,
-                                                             dep_dirs_v)
+                                                             dep_dirs_v, node_lists)
         spec_jobs += [((vi, jkey), path, nml) for jkey, path, nml in jobs]
         variant_specs.append((job_keys, job_weights, job_params))
     spec_runs = _run_batch(spec_jobs, launch_kwargs, max_threads, cancel_token=cancel_token)
