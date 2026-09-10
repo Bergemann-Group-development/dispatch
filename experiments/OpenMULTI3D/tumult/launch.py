@@ -2,7 +2,6 @@ import os
 import copy
 import subprocess
 from .auxfuncs import check_file, update_dict
-from .tumult import tumult
 import re
 import numpy as np
 import pathlib

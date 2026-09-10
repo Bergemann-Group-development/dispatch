@@ -45,11 +45,12 @@ name reads as a different quantity.
 
 Recurring local names, kept stable so a reader recognises them:
 
-- `order`: a sort order (an index array). Reserve `mask` for a boolean selector or a line
-  mask, never for indices.
-- `spec` for a `Spectrum`, `ln` for a `LineResult`, `mset` for a `LineMaskSet`,
-  `res` for a result object, `ctx` for a request or context object.
-- `x`, `y` for the two columns of a spectrum; `xx`, `yy` in older code for the same thing.
+- `order`: a sort order (an index array).
+- `mask`: a boolean selector
+- `idx`: a list of indices.
+- `spec` for a `Spectrum`, `res` for a result object, `ctx` for a request or context object.
+- Arrays should typically have multi-character names, not single letters, i.e. `xx`, `yy`,
+  rather than `x`, `y`. A single letter is acceptable for a loop index, e.g. `for i in range(n)`.
 
 ## Units in names
 

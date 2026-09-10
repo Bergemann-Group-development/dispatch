@@ -4,7 +4,7 @@ Public entry points by domain (Phase 1 consolidation replaced the former wildcar
 imports with this explicit surface; legacy names still resolve through ``__getattr__``
 below, with a DeprecationWarning):
 
-- reading runs:      read, read_list, combine, grid  (the run class itself: tumult)
+- reading runs:      read, read_list, combine, RunGrid  (the run class itself: Run)
 - running dispatch:  launch, monitor
 - data containers:   Spectrum, SpectrumGrid, LineList
 - reading spectra:   load_spectrum, load_file, is_run, load_run
@@ -21,7 +21,8 @@ below, with a DeprecationWarning):
 - constants:         the `const` submodule (frozen CGS; see its docstring)
 """
 from . import const
-from .tumult import tumult, grid, read_list
+from .run import Run, RunGrid, read_list
+from .run import Run as tumult, RunGrid as grid  # pre-rename names
 from .launch import launch, monitor
 from .linelist import LineList
 from .spectrum import Spectrum
@@ -42,11 +43,12 @@ from .utils import (get_weq, fit_line_profile, ensure_unit, pchip_mono, lowpass,
                     linear_edge_normalisation, auto_crop_core, get_bisector, calc_teff,
                     apply_brault_filter, kpno_spectral_filter)
 
-read = tumult.read
-combine = tumult.combine
+read = Run.read
+combine = Run.combine
 
 __all__ = [
-    "read", "read_list", "combine", "grid", "tumult", "launch", "monitor",
+    "read", "read_list", "combine", "Run", "RunGrid", "grid", "tumult",
+    "launch", "monitor",
     "Spectrum", "SpectrumGrid", "LineList",
     "load_spectrum", "load_file", "is_run", "load_run",
     "compute_spectrum", "build_stellar_grid", "get_NLTE_correction",

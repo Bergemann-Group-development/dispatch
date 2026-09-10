@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 
 from .spectrum import Spectrum  # shared data model — re-exported, never reimplemented
-from .tumult import tumult as _Run  # run reader (tumult.read / get_spectrum)
+from .run import Run as _Run  # run reader (Run.read / get_spectrum)
 
 __all__ = ["Spectrum", "load_spectrum", "load_file", "is_run", "load_run"]
 

@@ -1,4 +1,4 @@
-"""The dispatch run class (`tumult`) and its helpers.
+"""The dispatch run class (`Run`) and its helpers.
 
 Moved from tumult/tumult.py in the Phase 6 decomposition (that module remains as the
 package's import shim). The raw patch-save reading lives in :mod:`tumult.io_binary`
@@ -43,7 +43,7 @@ def option(nml, key):
 
 #=====================================================================
 def read_run(folder):
-  return tumult.read(folder, read_atom=False)
+  return Run.read(folder, read_atom=False)
 
 #=====================================================================
 def read_list(folders):
@@ -52,7 +52,7 @@ def read_list(folders):
     return np.array(run_list)
 
 #=====================================================================
-class grid(SpectrumGrid):
+class RunGrid(SpectrumGrid):
   def __init__(self, runs, *args, **kwargs):
     if isinstance(runs[0], (str, pathlib.Path)):
       runs = read_list(runs)
@@ -60,7 +60,7 @@ class grid(SpectrumGrid):
     return super().__init__(runs, *args, **kwargs)
 
 #=====================================================================
-class tumult(object):
+class Run(object):
     @property
     def atmos(self):
         if not hasattr(self, '_atmos'):

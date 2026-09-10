@@ -13,7 +13,7 @@ pieces are named, documented and unit-tested instead of living inline:
   historical count-based guess as the fallback for runs that did not; it also splits
   the ``flux`` patch save (same component layout, ray axis already collapsed to 1);
 * :func:`integrate_flux` is the disk-integration contract ``F = sum(w_mu * I_mu)``,
-  used as a fallback in :meth:`tumult.run.tumult.read` for runs saved before the
+  used as a fallback in :meth:`tumult.run.Run.read` for runs saved before the
   Fortran side started integrating and saving ``flux`` directly;
 * :func:`read_angle_quadrature` parses ``angle_quadrature.txt`` (per-ray direction
   cosines and weights; the stored ``wmu`` are normalised over the unit sphere, so the
