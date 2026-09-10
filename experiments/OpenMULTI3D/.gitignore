@@ -4,6 +4,7 @@
 !AGENTS.md
 !CLAUDE.md
 !SUBAGENTS.md
+!GLOSSARY.md
 !tests/
 tests/*
 !tests/test_execution.py
