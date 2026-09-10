@@ -117,6 +117,43 @@ def sanitise(cont):
     return np.where(np.isfinite(cont) & (cont != 0.0), cont, np.nan)
 
 
+def local_linear(x, y, percentile=SEED_PERCENTILE):
+    """The straight local pseudo-continuum under a line window, evaluated on ``x``.
+
+    The same estimator :func:`tumult.linemask.seed_cont_markers` places an observation's
+    inner markers with — an upper-envelope line over the window — so an observed and a
+    synthetic spectrum can each be divided by their *own* local continuum and still be
+    measured against the same definition of one.
+
+    What it is for: the far wings of very strong lines tens of Angstrom outside a narrow
+    window depress it as a smooth pseudo-continuum rather than a feature. That depression
+    is what a locally renormalised equivalent width divides out, which is also what makes
+    a synthesis over a short line-list skirt usable: the lines it omits contribute almost
+    only the slope this removes.
+
+    Falls back to a flat :func:`flat_level` when a line cannot be fitted.
+    """
+    x = np.asarray(x, float)
+    fit = upper_envelope_fit(x, y, percentile)
+    if fit is None:
+        level = flat_level(y, percentile) if x.size else 1.0
+        return np.full(x.shape, level if np.isfinite(level) and level != 0 else 1.0)
+    slope, intercept = fit
+    return slope * x + intercept
+
+
+def divide_local(spec, percentile=SEED_PERCENTILE):
+    """``spec`` divided by its own local straight pseudo-continuum (see :func:`local_linear`).
+
+    The whole extent of ``spec`` is the fit region, so a caller crops to the window whose
+    continuum it wants before calling — for a line that is the synth/visual window, wider
+    than the one the width is integrated over, exactly as the markers are placed.
+    """
+    x, y = (np.asarray(v, float) for v in spec.values[:2])
+    cont = local_linear(x, y, percentile)
+    return Spectrum(x, y / np.where(cont == 0, 1.0, cont), yunit=spec.yunit)
+
+
 def reject_outliers(spec, *, resolution=None, window=None, percentile=None):
     """The spectrum a continuum spline should be fitted to.
 

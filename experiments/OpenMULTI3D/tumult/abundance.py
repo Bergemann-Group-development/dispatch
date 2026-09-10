@@ -193,14 +193,31 @@ def measure_profile(spec, window=None, *, profile, x0=None, **kw):
     return spec.measure(window or None, profile=profile, x0=x0, auto_crop=False, **kw)
 
 
-def _ew(spec, window=None, profile="trapz", x0=None):
+def _renormalised(spec, renorm):
+    """``spec`` divided by its own local straight continuum, when ``renorm`` asks for it.
+
+    The fit spans the whole spectrum handed in — for a line that is the synth window, wider
+    than the window the width is integrated over — so the shoulders outside the feature are
+    what sets the slope. The observation gets the same treatment from its mask's markers
+    (:meth:`tumult.linemask.LineMask.renorm_knots`), fitted on its own flux rather than
+    imported from here: the two sides share the definition of a local continuum, not a level.
+    """
+    if not renorm:
+        return spec
+    from .continuum import divide_local
+    return divide_local(spec)
+
+
+def _ew(spec, window=None, profile="trapz", x0=None, renorm=False):
     """Noiseless *width* EW of a (synthetic) spectrum over ``window``, in mÅ."""
-    return measure_profile(spec, window, profile=profile, x0=x0).maa
+    return measure_profile(_renormalised(spec, renorm), window,
+                           profile=profile, x0=x0).maa
 
 
-def _rew(spec, window=None, profile="trapz", x0=None):
+def _rew(spec, window=None, profile="trapz", x0=None, renorm=False):
     """Noiseless reduced EW ``log10(W/λ)`` of a (synthetic) spectrum over ``window`` (dimensionless)."""
-    return measure_profile(spec, window, profile=profile, x0=x0).rew
+    return measure_profile(_renormalised(spec, renorm), window,
+                           profile=profile, x0=x0).rew
 
 
 def measure_ew(spec, window=None, snr=None, cont_pct=0.0, profile="trapz", x0=None):
@@ -223,7 +240,7 @@ def measure_ew(spec, window=None, snr=None, cont_pct=0.0, profile="trapz", x0=No
 
 
 def build_cog(synth_line_fn, a_ladder, window=None, profile="trapz", x0=None,
-              batch_synth_fn=None):
+              batch_synth_fn=None, renorm=False):
     """Synthesise the line at each abundance in ``a_ladder`` and measure its *width* EW.
 
     ``synth_line_fn(a) -> Spectrum`` returns the continuum-normalised synthetic line at
@@ -234,13 +251,17 @@ def build_cog(synth_line_fn, a_ladder, window=None, profile="trapz", x0=None,
     pool; the returned spectra must align with ``a_list``. Equivalent to the serial
     ``synth_line_fn`` loop (same per-point spectra), just scheduled concurrently — used when
     omitted.
+
+    ``renorm`` divides each rung by its own local straight continuum before integrating, to
+    match an observation measured against its mask's local continuum. Set it from the mask,
+    so the ladder and the measurement it is inverted against agree.
     """
     a = np.asarray(a_ladder, dtype=float)
     if batch_synth_fn is not None:
         specs = batch_synth_fn(list(a))
-        ews = np.array([_ew(s, window, profile, x0) for s in specs])
+        ews = np.array([_ew(s, window, profile, x0, renorm) for s in specs])
     else:
-        ews = np.array([_ew(synth_line_fn(av), window, profile, x0) for av in a])
+        ews = np.array([_ew(synth_line_fn(av), window, profile, x0, renorm) for av in a])
     return a, ews
 
 
@@ -856,7 +877,8 @@ def run_nlte_corrections(request, result, atom, *, opts=None, progress=None,
         try:
             a_grid, ew_grid = build_cog(
                 None, ladder, window=ln.fit_window, profile=result.profile, x0=ln.lam0,
-                batch_synth_fn=lambda a_list, _w=ln.window: batch_nlte_synth(a_list, _w))
+                batch_synth_fn=lambda a_list, _w=ln.window: batch_nlte_synth(a_list, _w),
+                renorm=bool(getattr(ln.mask, "renorm", False)))
             # propagate the reference EW's fit-covariance error through the local CoG slope:
             # sigma(dA) = sigma_EW * |dA/dEW|. All of it is fit/model error (no continuum
             # term on a synthetic reference).
