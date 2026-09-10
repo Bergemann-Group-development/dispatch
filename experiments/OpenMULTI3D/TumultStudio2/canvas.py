@@ -137,10 +137,14 @@ class SpectrumCanvas:
             min_border_left=62, min_border_bottom=42,  # fixed frame insets (see .ew-controls)
         )
         _style(main)
+        # maintain_focus=True (Bokeh's default) anchors the zoom on the cursor, so once a
+        # range bound is reached on one side the wheel can no longer widen the view fully
+        for tool in main.select(WheelZoomTool):
+            tool.maintain_focus = False
         self.main = main
 
         # --- nav (overview) plot -------------------------------------------
-        nav_wheel = WheelZoomTool(dimensions="width")
+        nav_wheel = WheelZoomTool(dimensions="width", maintain_focus=False)
         nav = figure(height=96, sizing_mode="stretch_width", output_backend="webgl",
                      tools=[nav_wheel], active_scroll=nav_wheel, toolbar_location=None,
                      x_range=Range1d(wmin, wmax, bounds=(wmin, wmax)),

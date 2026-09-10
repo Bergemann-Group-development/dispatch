@@ -19,7 +19,8 @@ import logging
 from enum import StrEnum
 
 import numpy as np
-from bokeh.models import ColumnDataSource, CustomJS, PointDrawTool, Range1d, Span
+from bokeh.models import (ColumnDataSource, CustomJS, PointDrawTool, Range1d, Span,
+                          WheelZoomTool)
 from bokeh.plotting import figure
 
 from tumult.utils import (R_MAX, R_MIN, apply_brault_filter, apply_brault_popt,
@@ -92,6 +93,9 @@ class FilterTool(Tool):
                      tools="xpan,xwheel_zoom,reset", active_scroll="xwheel_zoom",
                      min_border_left=62, min_border_bottom=42)
         _style(fig)
+        # let the wheel widen the view past a range bound instead of sticking on the cursor
+        for tool in fig.select(WheelZoomTool):
+            tool.maintain_focus = False
         fig.name = "feautrier_fig"
         self.fig = fig
 
