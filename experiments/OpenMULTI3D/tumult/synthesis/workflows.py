@@ -20,15 +20,11 @@ import re
 import shutil
 from pathlib import Path
 
-def _ensure_path():
-    """Compatibility no-op retained for callers of the former GUI module."""
-
-
 from .api import (compute_spectrum, compute_spectra,
                   compute_window_batch as _compute_window_batch,
                   PRESETS_DIR, preset, PROVENANCE_NAME)
 from ..abundance import (
-    abund_to_xfe, convert_abundances, read_solar_abundances, xfe_to_abund,
+    abundance_override, abund_to_xfe, convert_abundances, read_solar_abundances, xfe_to_abund,
 )
 from .api import adaptive_fit
 from .cancel import CancelToken, CancelledError
@@ -332,8 +328,57 @@ def _absmet_files(prefs, atmos_files):
     return {k[2]: str(p) for k in atmos_files} if fehs else None
 
 
+def _prepare(target, prefs, run_vals_list, grid, atmos_file, extra_presets,
+             *, set_spectrum=True, window_batch=False):
+    """Resolve common inputs once; each backend retains its own window assembly."""
+    star = tuple(float(value) for value in target)
+    prefs = dict(prefs)
+    root = execution_root(prefs)
+    if root != Path.cwd():
+        for key in ("linelist", "absmet", "abund_file"):
+            if prefs.get(key):
+                prefs[key] = str(root / Path(prefs[key]).expanduser())
+    if atmos_file:
+        atmos_files = {star[:3]: root / Path(atmos_file).expanduser()}
+    else:
+        if not grid.get("folder"):
+            raise ValueError("No atmosphere grid folder configured.")
+        atmos_files = discover_atmos_grid(
+            root / Path(grid["folder"]).expanduser(), grid.get("pattern") or DEFAULT_PATTERN)
+    modes = {str(rv.get("mode", "LTE")).upper() for rv in run_vals_list}
+    if len(modes) != 1:
+        raise ValueError("A synthesis batch must share one LTE/NLTE mode.")
+    nlte = modes.pop() == "NLTE"
+    R = float(prefs.get("R") or _DEFAULT_R)
+    if not R > 0:
+        raise ValueError("Resolving power must be positive.")
+    settings_list = []
+    for rv in run_vals_list:
+        settings = build_settings(prefs, rv, atmos_format=grid.get("format"))
+        if set_spectrum:
+            sampling = settings.setdefault("spectrum_params", {})
+            if window_batch or not any(sampling.get(k) for k in ("daa", "nnu", "lam_file")):
+                sampling["R"] = R
+        settings_list.append(settings)
+    defaults = [str(_PRESETS / "base.nml")]
+    if nlte:
+        defaults.append(str(_PRESETS / "nlte.nml"))
+    defaults.extend(str(path) for path in (extra_presets or []))
+    launch_kwargs = {"overwrite": False, "verbose": 0, "default": defaults}
+    if prefs.get("dispatch_cwd"):
+        launch_kwargs["cwd"] = str(execution_root(prefs))
+    max_threads = int(prefs.get("max_threads") or 0) or (os.cpu_count() or 1)
+    get_runtime().configure(max_threads)
+    common = dict(top=prefs.get("synth_output_dir") or "synth", star=star,
+                  atmos_files=atmos_files, absmet_files=_absmet_files(prefs, atmos_files),
+                  method=prefs.get("interp_method", "NaturalNeighbor"),
+                  max_threads=max_threads, launch_kwargs=launch_kwargs,
+                  vmic_step=float(prefs.get("vmic_step") or 0.5), nlte=nlte)
+    return common, settings_list, R
+
+
 def compute(target, prefs, run_vals, xmin=None, xmax=None, *, grid, atmos_file=None,
-            extra_presets=None, set_spectrum=True, cancel_token=None):
+            extra_presets=None, set_spectrum=True, cancel_token=None, return_runs=False):
     """Compute the normalised spectrum at ``target`` (a 4-tuple) from ``grid``.
 
     ``grid`` is the selected grid dict (``name``/``folder``/``pattern``/``format``). With
@@ -353,61 +398,10 @@ def compute(target, prefs, run_vals, xmin=None, xmax=None, *, grid, atmos_file=N
     enclosing atmospheres out across processes internally. ``cancel_token`` (optional) lets
     a caller hard-kill the dispatch runs; a cancel raises ``CancelledError``.
     """
-    _ensure_path()
-    folder = grid.get("folder")
-    if atmos_file:
-        # direct single-file synthesis: a one-node grid at the target spatial coords so the
-        # interpolation collapses to that file (query == node => weight 1.0).
-        star = tuple(float(x) for x in target)
-        atmos_files = {(star[0], star[1], star[2]): Path(atmos_file).expanduser()}
-    else:
-        if not folder:
-            raise ValueError("No atmosphere grid folder configured (Preferences → Synthesis).")
-        atmos_files = discover_atmos_grid(folder, grid.get("pattern") or DEFAULT_PATTERN)
-        star = tuple(target)
-
-    settings = build_settings(prefs, run_vals, atmos_format=grid.get("format"))
-    # The Fortran emits NO spectrum unless one of R / daa / nnu / lam_file is set
-    # (spectrum_mod.f90). Guarantee a sampling trigger: use the configured R, falling
-    # back to a fine default when it's unset or non-positive. Skipped for the 1D LTE
-    # reference (set_spectrum=False), whose sampling comes from the corr_ref.nml preset.
-    if set_spectrum:
-        sp = settings.setdefault("spectrum_params", {})
-        if not any(sp.get(k) for k in ("daa", "nnu", "lam_file")):
-            R = float(prefs.get("R") or 0)
-            sp["R"] = R if R > 0 else _DEFAULT_R
-
-    # App-level namelist constants live in presets, applied base-first so the NLTE
-    # preset's overrides win (mode matches build_settings' LTE/NLTE test).
-    nlte = str(run_vals.get("mode", "LTE")).upper() == "NLTE"
-    defaults = [str(_PRESETS / "base.nml")]
-    if nlte:
-        defaults.append(str(_PRESETS / "nlte.nml"))
-    for preset in (extra_presets or []):
-        defaults.append(str(preset))
-
-    launch_kwargs = {"overwrite": False, "verbose": 0, "default": defaults}
-    if prefs.get("dispatch_cwd"):
-        launch_kwargs["cwd"] = prefs["dispatch_cwd"]
-
-    max_threads = int(prefs.get("max_threads") or 0) or (os.cpu_count() or 1)
-    get_runtime().configure(max_threads)
-    top = prefs.get("synth_output_dir") or "synth"
-
-    return compute_spectrum(
-        top, star, atmos_files,
-        settings=settings,
-        absmet_files=_absmet_files(prefs, atmos_files),
-        method=prefs.get("interp_method", "NaturalNeighbor"),
-        max_threads=max_threads,
-        launch_kwargs=launch_kwargs,
-        xmin=xmin, xmax=xmax,
-        vmic_step=float(prefs.get("vmic_step") or 0.5),
-        # NLTE is signalled via the nlte.nml preset (a launch default), which _is_nlte can't
-        # see in `settings` — pass the decision explicitly so the two-step departures path runs.
-        nlte=nlte,
-        cancel_token=cancel_token,
-    )
+    common, settings, _ = _prepare(target, prefs, [run_vals], grid, atmos_file,
+                                    extra_presets, set_spectrum=set_spectrum)
+    return compute_spectrum(**common, settings=settings[0], xmin=xmin, xmax=xmax,
+                            cancel_token=cancel_token, return_runs=return_runs)
 
 
 def compute_batch(target, prefs, run_vals_list, xmin=None, xmax=None, *, grid,
@@ -425,55 +419,10 @@ def compute_batch(target, prefs, run_vals_list, xmin=None, xmax=None, *, grid,
     """
     if not run_vals_list:
         return []
-    _ensure_path()
-    folder = grid.get("folder")
-    if atmos_file:
-        star = tuple(float(x) for x in target)
-        atmos_files = {(star[0], star[1], star[2]): Path(atmos_file).expanduser()}
-    else:
-        if not folder:
-            raise ValueError("No atmosphere grid folder configured (Preferences → Synthesis).")
-        atmos_files = discover_atmos_grid(folder, grid.get("pattern") or DEFAULT_PATTERN)
-        star = tuple(target)
-
-    settings_list = []
-    for run_vals in run_vals_list:
-        settings = build_settings(prefs, run_vals, atmos_format=grid.get("format"))
-        if set_spectrum:
-            sp = settings.setdefault("spectrum_params", {})
-            if not any(sp.get(k) for k in ("daa", "nnu", "lam_file")):
-                R = float(prefs.get("R") or 0)
-                sp["R"] = R if R > 0 else _DEFAULT_R
-        settings_list.append(settings)
-
-    # all variants share the mode/presets — take the mode from the first.
-    nlte = str(run_vals_list[0].get("mode", "LTE")).upper() == "NLTE"
-    defaults = [str(_PRESETS / "base.nml")]
-    if nlte:
-        defaults.append(str(_PRESETS / "nlte.nml"))
-    for preset in (extra_presets or []):
-        defaults.append(str(preset))
-
-    launch_kwargs = {"overwrite": False, "verbose": 0, "default": defaults}
-    if prefs.get("dispatch_cwd"):
-        launch_kwargs["cwd"] = prefs["dispatch_cwd"]
-
-    max_threads = int(prefs.get("max_threads") or 0) or (os.cpu_count() or 1)
-    get_runtime().configure(max_threads)
-    top = prefs.get("synth_output_dir") or "synth"
-
-    return compute_spectra(
-        top, star, atmos_files,
-        settings_list=settings_list,
-        absmet_files=_absmet_files(prefs, atmos_files),
-        method=prefs.get("interp_method", "NaturalNeighbor"),
-        max_threads=max_threads,
-        launch_kwargs=launch_kwargs,
-        xmin=xmin, xmax=xmax,
-        vmic_step=float(prefs.get("vmic_step") or 0.5),
-        nlte=nlte,
-        cancel_token=cancel_token,
-    )
+    common, settings, _ = _prepare(target, prefs, run_vals_list, grid, atmos_file,
+                                    extra_presets, set_spectrum=set_spectrum)
+    return compute_spectra(**common, settings_list=settings, xmin=xmin, xmax=xmax,
+                           cancel_token=cancel_token)
 
 
 def compute_window_batch(target, prefs, run_vals_list, windows, *, grid,
@@ -490,52 +439,10 @@ def compute_window_batch(target, prefs, run_vals_list, windows, *, grid,
     """
     if not run_vals_list or not windows:
         return []
-    _ensure_path()
-    folder = grid.get("folder")
-    if atmos_file:
-        star = tuple(float(x) for x in target)
-        atmos_files = {(star[0], star[1], star[2]): Path(atmos_file).expanduser()}
-    else:
-        if not folder:
-            raise ValueError("No atmosphere grid folder configured (Preferences → Synthesis).")
-        atmos_files = discover_atmos_grid(folder, grid.get("pattern") or DEFAULT_PATTERN)
-        star = tuple(target)
-
-    R = float(prefs.get("R") or 0) or _DEFAULT_R
-    settings_list = []
-    for run_vals in run_vals_list:
-        settings = build_settings(prefs, run_vals, atmos_format=grid.get("format"))
-        settings.setdefault("spectrum_params", {})["R"] = R
-        settings_list.append(settings)
-
-    nlte = str(run_vals_list[0].get("mode", "LTE")).upper() == "NLTE"
-    defaults = [str(_PRESETS / "base.nml")]
-    if nlte:
-        defaults.append(str(_PRESETS / "nlte.nml"))
-    for preset in (extra_presets or []):
-        defaults.append(str(preset))
-
-    launch_kwargs = {"overwrite": False, "verbose": 0, "default": defaults}
-    if prefs.get("dispatch_cwd"):
-        launch_kwargs["cwd"] = prefs["dispatch_cwd"]
-
-    max_threads = int(prefs.get("max_threads") or 0) or (os.cpu_count() or 1)
-    get_runtime().configure(max_threads)
-    top = prefs.get("synth_output_dir") or "synth"
-
-    return _compute_window_batch(
-        top, star, atmos_files,
-        settings_list=settings_list,
-        windows=windows,
-        R=R,
-        absmet_files=_absmet_files(prefs, atmos_files),
-        method=prefs.get("interp_method", "NaturalNeighbor"),
-        max_threads=max_threads,
-        launch_kwargs=launch_kwargs,
-        vmic_step=float(prefs.get("vmic_step") or 0.5),
-        nlte=nlte,
-        cancel_token=cancel_token,
-    )
+    common, settings, R = _prepare(target, prefs, run_vals_list, grid, atmos_file,
+                                    extra_presets, window_batch=True)
+    return _compute_window_batch(**common, settings_list=settings, windows=windows,
+                                 R=R, cancel_token=cancel_token)
 
 
 # --- fitting ---------------------------------------------------------------------------
@@ -603,7 +510,6 @@ def fit(target, prefs, run_vals, fit_stellar, abund_fits, fit_post, xmin=None, x
     caller to apply as a live convolution (so the canvas stores a clean spectrum and the
     Edit tab reflects the fitted broadening). Blocking — call from a worker thread.
     """
-    _ensure_path()
     if atmos_file:
         # single-file synthesis: no grid to interpolate, so the stellar axes have no nodes.
         if fit_stellar:
@@ -704,7 +610,6 @@ def fit_line(obs, target, prefs, run_vals, symbol, guess, xmin, xmax, fit_window
     applied, evaluated over the *whole* synth range ``[xmin, xmax]`` (not just the fit window) so
     it can be overlaid across the full synth window. Blocking — call from a worker thread.
     """
-    _ensure_path()
     relative = bool(run_vals.get("relative_abundances", False))
     solar = abund_table(prefs)
     feh = float(target[2])
@@ -713,9 +618,8 @@ def fit_line(obs, target, prefs, run_vals, symbol, guess, xmin, xmax, fit_window
     def synth_point_fn(point):
         rv = dict(run_vals)
         xfe = point[symbol]
-        val = xfe if relative else xfe_to_abund(xfe, symbol, feh, solar)
-        terms = [t for t in (base_abund, f"{symbol}={val:.4f}") if t]
-        rv["abundances"] = " ".join(terms)
+        rv["abundances"] = abundance_override(
+            symbol, xfe, base=base_abund, relative=relative, feh=feh, solar=solar)
         rv["relative_abundances"] = relative
         try:
             return compute(target, prefs, rv, xmin, xmax, grid=grid, atmos_file=atmos_file,
@@ -752,7 +656,8 @@ def fit_line(obs, target, prefs, run_vals, symbol, guess, xmin, xmax, fit_window
 
 # --- 1D LTE reference (abundance corrections) ------------------------------------------
 
-def compute_reference(target, prefs, atom, grid, xmin=None, xmax=None, *, cancel_token=None):
+def compute_reference(target, prefs, atom, grid, xmin=None, xmax=None, *,
+                      cancel_token=None, return_runs=False):
     """Synthesise the 1D LTE reference spectrum straight from a model ``atom`` (no line list).
 
     Interpolates ``grid`` (the flagged 1D LTE reference grid) at ``target`` and runs LTE +
@@ -769,33 +674,22 @@ def compute_reference(target, prefs, atom, grid, xmin=None, xmax=None, *, cancel
     }
     return compute(target, prefs, run_vals, xmin, xmax, grid=grid,
                    extra_presets=[_CORR_REF_PRESET], set_spectrum=False,
-                   cancel_token=cancel_token)
+                   cancel_token=cancel_token, return_runs=return_runs)
 
 
-def read_reference_linelist(prefs):
-    """Parse the most recent ``linelist_out.txt`` written under the run cache into a DataFrame.
+def read_reference_linelist(run_dirs):
+    """Read the atom transitions from the runs that produced a reference spectrum.
 
-    The reference run (see :func:`compute_reference`) dumps one ``linelist_out.txt`` per node;
-    they list the same transitions (same atom), so the newest is representative. Returns a
-    flat DataFrame with the columns the abundance pipeline needs — ``lam0``/``ion``/``evi``/
-    ``loggf`` — or ``None`` when no dump is found.
+    Each node synthesises the same atom transitions; the first producing node is
+    representative. Missing or malformed output is an error, never an unrelated cache hit.
     """
     from ..linelist import LineList
 
-    root = Path(prefs.get("dispatch_cwd") or ".").expanduser() / cache_root(prefs)
-    if not root.is_dir():
-        return None
-    dumps = sorted(root.rglob("linelist_out.txt"), key=lambda p: p.stat().st_mtime,
-                   reverse=True)
-    for dump in dumps:
-        try:
-            ll = LineList.from_tumult_format(str(dump)).reset_index()
-        except Exception:
-            continue
-        # ``ion`` is the block species label ("Fe I"); keep only the columns downstream needs.
-        cols = [c for c in ("ion", "lam0", "evi", "loggf") if c in ll.columns]
-        return ll[cols]
-    return None
+    if not run_dirs:
+        raise ValueError("The reference spectrum has no producing runs.")
+    dump = Path(run_dirs[0]) / "linelist_out.txt"
+    frame = LineList.from_tumult_format(str(dump)).reset_index()
+    return frame[[c for c in ("ion", "lam0", "evi", "loggf") if c in frame.columns]]
 
 
 # --- run cache management --------------------------------------------------------------
@@ -805,9 +699,14 @@ def read_reference_linelist(prefs):
 _RUN_RE = re.compile(r"^t(\d+)g(\d+)m([+-]\d+)(?:v(\d+))?$")
 
 
+def execution_root(prefs):
+    """Directory against which dispatch resolves its relative inputs and outputs."""
+    return Path(prefs.get("dispatch_cwd") or ".").expanduser().resolve()
+
+
 def cache_root(prefs):
     """Directory holding cached MULTI3D node runs."""
-    return Path("data") / (prefs.get("synth_output_dir") or "synth")
+    return execution_root(prefs) / "data" / (prefs.get("synth_output_dir") or "synth")
 
 
 def input_root(prefs):
@@ -817,7 +716,7 @@ def input_root(prefs):
     relative to the app cwd, while the run outputs land under ``data/<synth_output_dir>/``
     (see cache_root). Clearing the cache must remove both trees.
     """
-    return Path(prefs.get("synth_output_dir") or "synth")
+    return execution_root(prefs) / (prefs.get("synth_output_dir") or "synth")
 
 
 def _parse_run(name):

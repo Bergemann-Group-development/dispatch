@@ -357,3 +357,23 @@ def test_cache_listing_falls_back_to_the_folder_name(tmp_path, monkeypatch):
     entry, = workflows.list_cache({'synth_output_dir': 'synth'})
     assert entry['star'] == {'teff': 58, 'logg': 4.4, 'feh': 0.0, 'vmic': 1.0}
     assert entry['abund'] == {'items': [], 'relative': False}
+
+
+def test_launch_runs_relative_inputs_in_execution_directory(tmp_path, monkeypatch):
+    from tumult import launch
+    execution, client = tmp_path/'execution', tmp_path/'client'
+    execution.mkdir(); client.mkdir()
+    executable = execution/'dispatch.x'
+    executable.write_text(
+        f'#!{sys.executable}\n'
+        'import sys\nfrom pathlib import Path\n'
+        'assert Path(sys.argv[1]).is_file()\n'
+        'out=Path("data")/Path(sys.argv[1]).with_suffix("")\n'
+        'out.mkdir(parents=True)\n(out/"abund.txt").write_text("done")\n')
+    executable.chmod(0o755)
+    monkeypatch.chdir(client)
+    output, ran = launch('cache/job', cwd=execution, verbose=0)
+    assert ran and output == execution/'data/cache/job'
+    assert (execution/'cache/job.nml').exists()
+    assert not (client/'cache').exists()
+    assert launch('cache/job', cwd=execution, verbose=0) == (output, False)

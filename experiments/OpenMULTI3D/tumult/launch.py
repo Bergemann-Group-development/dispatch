@@ -63,14 +63,14 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
     
     # Path setup
     input_path = pathlib.Path(input_name)
-    input_path.parent.mkdir(parents=True, exist_ok=True)
-    cwd = pathlib.Path(cwd or os.getcwd())
+    cwd = pathlib.Path(cwd or pathlib.Path.cwd()).expanduser().resolve()
+    (cwd / input_path).parent.mkdir(parents=True, exist_ok=True)
     executable = cwd / 'dispatch.x'
 
     # Build configuration and determine output folder
     nml = prepare_input(nml_settings, default)
     datadir = nml.get('io_params', {}).get('datadir', 'data').strip()
-    output_folder = pathlib.Path(datadir) / input_path
+    output_folder = cwd / datadir / input_path
 
     # Check for existing data. Only a complete run counts as a cache hit; a partial folder
     # from a crashed run is re-run (dispatch overwrites its outputs) rather than served back.
@@ -81,7 +81,7 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
 
     # Write the NML file
     input_file = input_path.with_suffix('.nml')
-    nml.to_file(input_file)
+    nml.to_file(cwd / input_file)
     
     if dry:
         if verbose > 0: print(f"{input_file} written (dry run)")
@@ -119,13 +119,13 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
             return output_folder, runner.run_command(cmd, env=env)
 
         if run_async:
-            return output_folder, subprocess.Popen(cmd, env=env, stdout=log_handle, stderr=log_handle)
+            return output_folder, subprocess.Popen(cmd, cwd=cwd, env=env, stdout=log_handle, stderr=log_handle)
 
         if cancel_token is None:
-            result = subprocess.run(cmd, env=env, stdout=log_handle, stderr=log_handle)
+            result = subprocess.run(cmd, cwd=cwd, env=env, stdout=log_handle, stderr=log_handle)
         else:
             cancel_token.check()
-            process = subprocess.Popen(cmd, env=env, stdout=log_handle, stderr=log_handle,
+            process = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=log_handle, stderr=log_handle,
                                        start_new_session=(os.name == 'posix'))
             detach = cancel_token.watch_process(process)
             try:

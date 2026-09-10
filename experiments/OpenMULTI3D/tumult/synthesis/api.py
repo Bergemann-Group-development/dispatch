@@ -389,7 +389,7 @@ def build_stellar_grid(top, star, atmos_files,
 def compute_spectrum(top, star, atmos_files, *, settings=None, absmet_files=None,
                      method='Delaunay', max_threads=None, launch_kwargs=None,
                      xmin=None, xmax=None, pad=None, vmic_step=0.5, vmic_points=2,
-                     nlte=None, cancel_token=None):
+                     nlte=None, cancel_token=None, return_runs=False):
     """Compute a single spectrum at an arbitrary stellar point (Teff, logg, FeH, vmic).
 
     Thin wrapper over :func:`build_stellar_grid`: it synthesises the enclosing model
@@ -420,10 +420,13 @@ def compute_spectrum(top, star, atmos_files, *, settings=None, absmet_files=None
         by ``grid.crop`` (identical for Delaunay; NaturalNeighbor weights are then
         computed on the stencil instead of the full atmosphere grid).
 
+    return_runs : bool
+        Also return the producing run directories, for consuming run artifacts.
+
     Returns
     -------
-    Spectrum
-        The continuum-normalised, interpolated spectrum at ``star``.
+    Spectrum or (Spectrum, tuple[Path, ...])
+        The continuum-normalised spectrum, optionally with its producing runs.
     """
     settings = copy.deepcopy(settings or {})
     top = Path(top)
@@ -455,7 +458,10 @@ def compute_spectrum(top, star, atmos_files, *, settings=None, absmet_files=None
                               departures_top=str(departures_top) if departures_top else None,
                               nlte=nlte, cancel_token=cancel_token)
 
-    return _interp_crop(grid, xmin, xmax, method)
+    spec = _interp_crop(grid, xmin, xmax, method)
+    if return_runs:
+        return spec, tuple(Path(run.folder).resolve() for run in grid.spectra)
+    return spec
 
 
 def normalise_windows(windows, pad=None):
@@ -537,7 +543,8 @@ def compute_windows(top, star, atmos_files, *, windows, R, settings=None, absmet
     sp['R'] = float(R)
     digest = hashlib.sha1(json.dumps(
         [settings, text], sort_keys=True, default=str).encode()).hexdigest()[:8]
-    window_path = (top / '_windows' / f'{digest}.txt').resolve()
+    window_path = (Path((launch_kwargs or {}).get('cwd') or '.') / top /
+                   '_windows' / f'{digest}.txt').resolve()
     window_path.parent.mkdir(parents=True, exist_ok=True)
     window_path.write_text(text)
     sp['window_file'] = str(window_path)
@@ -620,9 +627,11 @@ def compute_window_batch(top, star, atmos_files, *, settings_list, windows, R,
     manifest_text = json.dumps(manifest, sort_keys=True, separators=(',', ':'))
     digest = hashlib.sha1(json.dumps(
         [base, manifest_text, text], sort_keys=True, default=str).encode()).hexdigest()[:8]
-    manifest_path = (top / '_set_manifests' / f'{digest}.txt').resolve()
+    manifest_path = (Path((launch_kwargs or {}).get('cwd') or '.') / top /
+                     '_set_manifests' / f'{digest}.txt').resolve()
     write_set_manifest(manifest_path, manifest)
-    window_path = (top / '_windows' / f'{digest}.txt').resolve()
+    window_path = (Path((launch_kwargs or {}).get('cwd') or '.') / top /
+                   '_windows' / f'{digest}.txt').resolve()
     window_path.parent.mkdir(parents=True, exist_ok=True)
     window_path.write_text(text)
     base.setdefault('output_params', {})['set_file'] = str(manifest_path)
@@ -708,7 +717,8 @@ def compute_spectra(top, star, atmos_files, *, settings_list, absmet_files=None,
         manifest_text = json.dumps(manifest, sort_keys=True, separators=(',', ':'))
         digest = hashlib.sha1(json.dumps(
             [base, manifest_text], sort_keys=True, default=str).encode()).hexdigest()[:8]
-        manifest_path = (top / '_set_manifests' / f'{digest}.txt').resolve()
+        manifest_path = (Path((launch_kwargs or {}).get('cwd') or '.') / top /
+                     '_set_manifests' / f'{digest}.txt').resolve()
         write_set_manifest(manifest_path, manifest)
         base.setdefault('output_params', {})['set_file'] = str(manifest_path)
         syn_top = top / f'{labels[0]}_{digest}'

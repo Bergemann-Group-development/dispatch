@@ -761,9 +761,9 @@ def measure_reference_lines(request, atom, *, ref_grid, opts=None, cancel_token=
     profile, ew_min = str(opts.profile), float(opts.ew_min)
     prefs, target = request.prefs, request.target
 
-    ref_spec = synth.compute_reference(target, prefs, atom, ref_grid,
-                                       cancel_token=cancel_token)
-    llist = synth.read_reference_linelist(prefs)
+    ref_spec, run_dirs = synth.compute_reference(target, prefs, atom, ref_grid,
+                                                 cancel_token=cancel_token, return_runs=True)
+    llist = synth.read_reference_linelist(run_dirs)
     if llist is None or len(llist) == 0:
         raise ValueError("No linelist_out.txt was produced by the reference run.")
     cand = llist.sort_values("lam0")
