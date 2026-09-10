@@ -17,8 +17,7 @@ from bokeh.models import (BoxAnnotation, ColumnDataSource, DataRange1d, Range1d,
                           Span, WheelZoomTool)
 from bokeh.plotting import figure
 
-from tumult import Spectrum
-from tumult.utils import pchip_mono
+from tumult import Spectrum, continuum
 
 from debounce import Debouncer
 from units import X_UNITS, Y_UNITS, label_for, to_value, to_range
@@ -455,12 +454,14 @@ class SpectrumCanvas:
         return sub.values
 
     # --- continuum normalisation ------------------------------------------
+    # The continuum numerics live in :mod:`tumult.continuum`; what is here is which of them
+    # applies to a given canvas object.
     def _flat_continuum(self, raw):
         """Identity for already-normalised runs, else a flat robust-percentile level."""
         if raw is None:
             return None
         _, y = raw.values
-        return np.full(y.shape, float(np.nanpercentile(y, NORM_PERCENTILE)))
+        return continuum.flat_continuum(y, NORM_PERCENTILE)
 
     def normalise_object(self, obj):
         """(Re)build obj.spectrum = raw / continuum as a dimensionless (~0–1) spectrum.
@@ -474,42 +475,23 @@ class SpectrumCanvas:
             cont = np.ones_like(y)   # assume the spectrum is already normalised (continuum ≡ 1)
         elif obj.norm_knots is not None or getattr(obj, "renorm_windows", None):
             kx, ky = self._continuum_knots(obj, np.asarray(x, float), np.asarray(y, float))
-            # clamp to the knot span so the spline holds flat past the ends rather than
-            # diverging on the cubic extrapolation
-            cont = pchip_mono(kx, ky)(np.clip(x, kx.min(), kx.max()))
+            cont = continuum.evaluate(kx, ky, x)
         elif obj.source and obj.source[0] in ("run", "synth"):
             cont = np.ones_like(y)
         else:
             cont = self._flat_continuum(raw)
-        cont = np.where(np.isfinite(cont) & (cont != 0.0), cont, np.nan)
-        obj.continuum = cont
+        obj.continuum = cont = continuum.sanitise(cont)
         obj.spectrum = Spectrum(raw.xdata, y / cont, yunit=u.dimensionless_unscaled,
                                 xref=raw.xref)
 
     def _continuum_knots(self, obj, x, y):
-        """The spline knots for obj's continuum: its base knots (the user's global spline, or a
-        flat percentile level when none) merged with each local-renorm window's four colinear
-        knots. Base knots strictly inside a renorm window are dropped so the local *linear*
-        continuum governs there, while the padding beyond blends into the rest of the spline."""
-        if obj.norm_knots is not None:
-            pts = list(zip((float(v) for v in obj.norm_knots[0]),
-                           (float(v) for v in obj.norm_knots[1])))
-        else:
-            lvl = float(np.nanpercentile(y, NORM_PERCENTILE))
-            pts = [(float(np.min(x)), lvl), (float(np.max(x)), lvl)]
-        for smin, smax, knots in (getattr(obj, "renorm_windows", None) or []):
-            if not knots:
-                continue
-            pts = [(px, py) for px, py in pts if not (smin < px < smax)]
-            pts += [(float(a), float(b)) for a, b in knots]
-        pts.sort(key=lambda p: p[0])
-        kx, ky = [], []
-        for px, py in pts:
-            if kx and px <= kx[-1]:
-                px = kx[-1] + 1e-6      # pchip_mono needs strictly-increasing x
-            kx.append(px)
-            ky.append(py)
-        return np.asarray(kx), np.asarray(ky)
+        """The spline knots for obj's continuum: its base knots (the user's global spline, or
+        a flat percentile level when none) merged with each local-renorm window's four
+        colinear knots — see :func:`tumult.continuum.merge_knots`."""
+        return continuum.merge_knots(
+            x, y, base_knots=obj.norm_knots,
+            renorm_windows=getattr(obj, "renorm_windows", None) or [],
+            percentile=NORM_PERCENTILE)
 
     def renormalise(self, obj):
         """Recompute one obj's normalisation and redraw it (after its knots change)."""

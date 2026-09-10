@@ -15,10 +15,9 @@ import logging
 import numpy as np
 from bokeh.io import curdoc
 from bokeh.models import ColumnDataSource, PointDrawTool
-from scipy.ndimage import uniform_filter1d
 from scipy.signal import argrelextrema
 
-from tumult import Spectrum
+from tumult import continuum
 from tumult.utils import pchip_mono
 
 from canvas import ACCENT
@@ -157,24 +156,11 @@ class NormaliseTool(Tool):
 
     @staticmethod
     def _build_fit_spectrum(raw, settings):
-        """The spectrum the spline is fit to and rendered: the raw spectrum low-pass
-        smoothed by the resolution cut, then with outliers dropped — points whose
-        excess over a running mean (taken over the `win` Å window) is above the
-        `pct`-th percentile of those excesses are removed."""
-        res = settings["res"]
-        base = raw.lowpass(res) if res and res > 0 else raw
-        win = settings["win"]
-        pct = settings["pct"]
-        if win and win > 0 and pct and 0 < pct < 100:
-            x, y = base.values
-            dx = abs(float(np.mean(np.diff(x)))) if len(x) > 1 else 0.0
-            nstep = max(1, int(round(win / dx))) if dx else 1
-            excess = y - uniform_filter1d(y, nstep, mode="nearest")  # vs the local mean
-            mask = excess <= np.percentile(excess, pct)  # keep points within the percentile
-            if mask.sum() >= 2:
-                base = Spectrum(base.xdata[mask], y[mask],
-                                yunit=base.yunit, xref=base.xref)
-        return base
+        """The spectrum the spline is fit to and rendered — see
+        :func:`tumult.continuum.reject_outliers`."""
+        return continuum.reject_outliers(raw, resolution=settings["res"],
+                                         window=settings["win"],
+                                         percentile=settings["pct"])
 
     def _render_selection(self):
         self._prepare_selection(place_knots=False)

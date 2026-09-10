@@ -31,8 +31,12 @@ import astropy.units as u
 import numpy as np
 
 
-# Å added each side of the fit window to form the synth/visual window on import or edit
-# (matches the abundance pipeline's SYNTH_PAD_AA); a LineMaskSet may override it.
+# Å added each side of the fit window to form the synth/visual window on import or edit;
+# a LineMaskSet may override it. Distinct from the abundance pipeline's SYNTH_PAD_AA, which
+# pads *this* window again before synthesis: a line is computed over
+# ``fit_window ± (DEFAULT_PAD + SYNTH_PAD_AA)``. The two currently share a value but answer
+# different questions — how much context a window shows, and how much extra the wings need —
+# so they are calibrated apart.
 DEFAULT_PAD = 0.5
 
 # below this wavelength (in the file's own units) an optical linemask must be in nm, not Å
@@ -446,7 +450,7 @@ def extrapolate_edge_knots(p1: tuple, p2: tuple, smin: float, smax: float) -> li
     return sorted(knots, key=lambda p: p[0])
 
 
-def seed_cont_markers(raw, mask: LineMask, pct: float = 90.0) -> tuple:
+def seed_cont_markers(raw, mask: LineMask, pct: float = None) -> tuple:
     """Initial ``((x1,y1),(x2,y2))`` inner markers for a mask's local continuum.
 
     A straight line is fit to the *upper*-``pct``-percentile raw-flux points inside the visual
@@ -454,6 +458,9 @@ def seed_cont_markers(raw, mask: LineMask, pct: float = 90.0) -> tuple:
     the fit-window edges — so the seeded continuum already follows a sloped continuum. Falls back
     to a flat percentile level when the window is too sparse.
     """
+    from .continuum import SEED_PERCENTILE, flat_level, upper_envelope_fit
+
+    pct = SEED_PERCENTILE if pct is None else pct
     x, y = raw.values
     x = np.asarray(x, float)
     y = np.asarray(y, float)
@@ -461,11 +468,9 @@ def seed_cont_markers(raw, mask: LineMask, pct: float = 90.0) -> tuple:
     xi, yi = x[inwin], y[inwin]
     x1 = float(mask.lmin if np.isfinite(mask.lmin) else mask.smin)
     x2 = float(mask.lmax if np.isfinite(mask.lmax) else mask.smax)
-    if xi.size >= 4:
-        thr = np.nanpercentile(yi, pct)
-        top = yi >= thr
-        if top.sum() >= 2 and np.ptp(xi[top]) > 0:
-            slope, intercept = np.polyfit(xi[top], yi[top], 1)
-            return ((x1, float(slope * x1 + intercept)), (x2, float(slope * x2 + intercept)))
-    level = float(np.nanpercentile(yi, pct)) if xi.size else 1.0
+    fit = upper_envelope_fit(xi, yi, pct)
+    if fit is not None:
+        slope, intercept = fit
+        return ((x1, slope * x1 + intercept), (x2, slope * x2 + intercept))
+    level = flat_level(yi, pct) if xi.size else 1.0
     return ((x1, level), (x2, level))
