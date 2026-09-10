@@ -276,14 +276,17 @@ Errors in dex. Four things this settles:
 ## Reproducing
 
 ```sh
-PYTHONPATH=. python reports/bench_ionbalance.py --output reports/bench/crop5 \
-    --threads 7 --crop 5
-PYTHONPATH=. python reports/bench_ionbalance.py --output reports/bench/hold_c5_renorm \
-    --threads 7 --hold --crop 5 --renorm
+bin/tpy reports/bench_ionbalance.py --output reports/bench/crop5 --threads 7 --crop 5
+bin/tpy reports/bench_ionbalance.py --output reports/bench/hold_c5 \
+    --threads 7 --hold --crop 5
+bin/tpy reports/bench_table.py --diff reports/bench/hold_c0 reports/bench/hold_c5
 ```
 
-`--hold` holds all four parameters, which is what makes two configurations comparable
-line by line; `--crop 0` switches the crop off.
+`--hold` holds all four parameters, which is what makes two configurations comparable line
+by line, and `--diff` is then the acceptance test: it reports the per-line abundance
+agreement the tables above quote. `--crop 0` switches the crop off, `--renorm` sets the
+local continuum on every mask. Between free solves `--diff` compares two trajectories
+rather than two measurements, and says so.
 
 The worked example needs no dispatch run: the line strengths come from one
 `tumult.linestrength.compute_band` call over 5836-6077 Å on the `gdwarf` structure, and the

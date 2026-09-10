@@ -157,14 +157,16 @@ Not settled, and not claimed:
 
 ## Reproducing
 
-`reports/bench_ionbalance.py` (untracked, alongside the earlier harnesses) writes
-`summary.json`, `launches.json` and `events.jsonl` per run.
+`reports/bench_ionbalance.py` writes `summary.json`, `launches.json` and `events.jsonl` per
+run, under an output directory that is ignored; `reports/bench_table.py` tabulates them.
 
 ```sh
-PYTHONPATH=. python reports/bench_ionbalance.py --output reports/bench/cold --threads 7
-PYTHONPATH=. python reports/bench_ionbalance.py --output reports/bench/warm \
+bin/tpy reports/bench_ionbalance.py --output reports/bench/cold --threads 7
+bin/tpy reports/bench_ionbalance.py --output reports/bench/warm \
     --cache reports/bench/cold --threads 7
+bin/tpy reports/bench_table.py reports/bench/cold reports/bench/warm
 ```
 
 It needs the configured MARCS grid, the master line list and a built `dispatch.x`; the atlas
-path and the entry point are constants at the top of the file.
+path and the entry point are constants at the top of the file, and the atlas is
+machine-local.

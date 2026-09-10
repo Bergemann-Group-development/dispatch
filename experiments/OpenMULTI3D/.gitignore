@@ -39,3 +39,20 @@ reports/*
 !reports/review/
 reports/review/*
 !reports/review/*.md
+
+# Helper scripts are source; everything else that lands in bin/ is not.
+!bin/
+bin/*
+!bin/tpy
+
+# The ionisation-balance harness and its comparison script are the reproduction path the
+# review reports promise. Their outputs under reports/bench/ stay ignored by reports/*.
+!reports/bench_ionbalance.py
+!reports/bench_table.py
+
+# The HOP library gate and the golden data it pins (the other goldens predate these rules
+# and are tracked already; this makes a new or regenerated one visible in git status).
+!tests/test_hop.py
+!tests/golden/
+tests/golden/*
+!tests/golden/*.npz
