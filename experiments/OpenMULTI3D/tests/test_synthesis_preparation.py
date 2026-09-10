@@ -133,3 +133,44 @@ def test_uncropped_runs_keep_their_cache_identity(tmp_path, monkeypatch):
     for changed in ({**crop, 'skirt': 2.0}, {**crop, 'abundances': 'Fe=+0.80'}):
         assert api._crop_digest(base, windows, changed) != api._crop_digest(base, windows, crop)
     assert api._crop_digest(base, [(5000., 5003.)], crop) != api._crop_digest(base, windows, crop)
+
+
+def test_unfolded_ladder_is_one_batch_of_per_variant_runs(tmp_path, monkeypatch):
+    """``fold=False`` must keep each variant's run identity and still schedule once.
+
+    The point of not folding is that a rung's cache key is one abundance rather than a whole
+    ladder, so a later solver iteration can reuse it; the point of batching is that the pool
+    sees every (rung × node) run at once instead of one rung's nodes at a time. Both have to
+    hold together, which is what this pins: distinct output folders per variant, one
+    ``_run_batch`` call, and the folded call still issuing a single run per node.
+    """
+    from tumult.synthesis import api
+
+    node = (('n', 0), 5750., 4.5, 0.0, 1.0, 1.0, str(tmp_path / 'a.mod'), None)
+    monkeypatch.setattr(api, 'select_nodes', lambda *a, **kw: ([node], 1.0))
+    monkeypatch.setattr(api, '_assemble_grid', lambda *a, **kw: object())
+    monkeypatch.setattr(api, '_interp_crop', lambda grid, lo, hi, method: (lo, hi))
+    batches = []
+
+    def fake_run_batch(jobs, *a, **kw):
+        batches.append([(key, str(path)) for key, path, _nml in jobs])
+        return {key: SimpleNamespace(has_spectrum=True, mode='LTE', folder=path)
+                for key, path, _nml in jobs}
+
+    monkeypatch.setattr(api, '_run_batch', fake_run_batch)
+    variants = [{'composition_params': {'abundances': f'Fe={off:+.2f}'},
+                 'linelist_params': {'linelist_file': ['master.txt']}}
+                for off in (-0.25, 0.0, 0.25)]
+    kwargs = dict(settings_list=variants, windows=[(5000., 5002.), (5100., 5102.)],
+                  R=300000., launch_kwargs={'cwd': str(tmp_path)}, max_threads=1)
+
+    api.compute_window_batch(tmp_path / 'synth', (5750., 4.5, 0., 1.), {}, fold=False,
+                             **kwargs)
+    assert len(batches) == 1, "the rungs must go out together, not one batch each"
+    folders = [path for _key, path in batches[0]]
+    assert len(folders) == len(variants) == len(set(folders))
+
+    batches.clear()
+    api.compute_window_batch(tmp_path / 'synth', (5750., 4.5, 0., 1.), {}, fold=True,
+                             **kwargs)
+    assert len(batches) == 1 and len(batches[0]) == 1, "a folded ladder is one run per node"

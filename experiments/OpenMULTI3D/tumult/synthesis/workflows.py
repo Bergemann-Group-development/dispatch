@@ -451,7 +451,7 @@ def compute_batch(target, prefs, run_vals_list, xmin=None, xmax=None, *, grid,
 
 def compute_window_batch(target, prefs, run_vals_list, windows, *, grid,
                          atmos_file=None, extra_presets=None, cancel_token=None,
-                         crop=None):
+                         crop=None, fold=True):
     """Batched :func:`compute` over an abundance ladder *and* several windows at once.
 
     Same contract as :func:`compute_batch` for the ladder axis, with ``windows`` a
@@ -464,6 +464,10 @@ def compute_window_batch(target, prefs, run_vals_list, windows, *, grid,
 
     ``crop`` asks for the per-node line-list crop: ``{"abundances", "relative_abundances"}``
     of the strongest rung the caller will ask for on these nodes (see :func:`_crop_spec`).
+
+    ``fold=False`` gives every variant its own run and still schedules them all together —
+    for a ladder whose rungs sit on a reusable lattice, where a run keyed on one abundance
+    is worth more than a run that pays for the atmosphere once.
     """
     if not run_vals_list or not windows:
         return []
@@ -471,7 +475,7 @@ def compute_window_batch(target, prefs, run_vals_list, windows, *, grid,
                                     extra_presets, window_batch=True)
     return _compute_window_batch(**common, settings_list=settings, windows=windows,
                                  R=R, cancel_token=cancel_token,
-                                 crop=_crop_spec(prefs, crop))
+                                 crop=_crop_spec(prefs, crop), fold=fold)
 
 
 # --- fitting ---------------------------------------------------------------------------

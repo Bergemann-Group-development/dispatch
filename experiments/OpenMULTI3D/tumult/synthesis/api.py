@@ -641,7 +641,7 @@ def compute_windows(top, star, atmos_files, *, windows, R, settings=None, absmet
 def compute_window_batch(top, star, atmos_files, *, settings_list, windows, R,
                          absmet_files=None, method='Delaunay', max_threads=None,
                          launch_kwargs=None, pad=None, vmic_step=0.5, vmic_points=2,
-                         nlte=None, cancel_token=None, crop=None):
+                         nlte=None, cancel_token=None, crop=None, fold=True):
     """Both axes in one run: an abundance ladder across several wavelength windows.
 
     ``settings_list`` is a ladder in the sense of :func:`compute_spectra` — variants
@@ -660,6 +660,15 @@ def compute_window_batch(top, star, atmos_files, *, settings_list, windows, R,
 
     ``crop`` (optional) asks for the per-node line-list crop described in
     :func:`_node_linelists`, and is part of these runs' cache identity.
+
+    ``fold=False`` keeps the windows on the patches but gives every variant its own run,
+    scheduled together with the others: one :func:`_run_batch` over every
+    ``(variant × node)`` pair instead of one per variant. That trades the folded run's
+    shared atmosphere and background for a cache key that is one abundance rather than a
+    whole ladder, which is what lets a rung on an abundance lattice be reused by a later
+    solver iteration that does not repeat the ladder around it. Each variant's runs are
+    byte-identical to the ones it would get from its own ``fold=True`` call with that one
+    variant, so the two schedulings share a cache.
     """
     if R is None or R <= 0:
         raise ValueError("compute_window_batch needs a positive R")
@@ -683,10 +692,16 @@ def compute_window_batch(top, star, atmos_files, *, settings_list, windows, R,
         prepared.append(item)
     nlte_values = [bool(_is_nlte(s) if nlte is None else nlte) for s in prepared]
 
-    fold = None
-    if len(set(nlte_values)) == 1:
-        fold = _foldable_ladder(prepared, launch_kwargs, nlte_values[0])
-    if fold is None:
+    # one group of every variant when folding, else one group per variant: the rest of the
+    # path is the same, and a group of one is exactly what a single-variant call produces
+    groups = [list(range(len(prepared)))] if fold else [[i] for i in range(len(prepared))]
+    folds = []
+    for members in groups:
+        nlte_group = {nlte_values[i] for i in members}
+        folds.append(_foldable_ladder([prepared[i] for i in members], launch_kwargs,
+                                      nlte_values[members[0]])
+                     if len(nlte_group) == 1 else None)
+    if any(item is None for item in folds):
         # not a ladder: nothing to fold onto the set axis, so fall back to the existing
         # per-window batching rather than pretending this is one run
         return [[spec for spec in specs] for specs in zip(*[
@@ -698,32 +713,36 @@ def compute_window_batch(top, star, atmos_files, *, settings_list, windows, R,
                             cancel_token=cancel_token, crop=crop)
             for w in windows])]
 
-    base, manifest = fold
-    manifest_text = json.dumps(manifest, sort_keys=True, separators=(',', ':'))
-    node_lists = _node_linelists(top, base, nodes, merged, crop, launch_kwargs)
-    # the crop only enters the digest when there is one, so an uncropped batch keeps the
-    # cache identity (and the folders) it had before per-node crops existed
-    keys = [base, manifest_text, text]
-    if node_lists:
-        keys.append(_crop_digest(base, merged, crop))
-    digest = hashlib.sha1(
-        json.dumps(keys, sort_keys=True, default=str).encode()).hexdigest()[:8]
-    manifest_path = (Path((launch_kwargs or {}).get('cwd') or '.') / top /
-                     '_set_manifests' / f'{digest}.txt').resolve()
-    write_set_manifest(manifest_path, manifest)
-    window_path = (Path((launch_kwargs or {}).get('cwd') or '.') / top /
-                   '_windows' / f'{digest}.txt').resolve()
-    window_path.parent.mkdir(parents=True, exist_ok=True)
-    window_path.write_text(text)
-    base.setdefault('output_params', {})['set_file'] = str(manifest_path)
-    base.setdefault('spectrum_params', {})['window_file'] = str(window_path)
-    syn_top = top / f'win{len(merged)}_{digest}'
-    nlte_v = nlte_values[0]
-    dep_top = _dep_bucket(top, base) if nlte_v else None
+    plans = []      # per group: (members, base, syn_top, nlte_v, node_lists)
+    for members, (base, manifest) in zip(groups, folds):
+        manifest_text = json.dumps(manifest, sort_keys=True, separators=(',', ':'))
+        node_lists = _node_linelists(top, base, nodes, merged, crop, launch_kwargs)
+        # the crop only enters the digest when there is one, so an uncropped batch keeps the
+        # cache identity (and the folders) it had before per-node crops existed
+        keys = [base, manifest_text, text]
+        if node_lists:
+            keys.append(_crop_digest(base, merged, crop))
+        digest = hashlib.sha1(
+            json.dumps(keys, sort_keys=True, default=str).encode()).hexdigest()[:8]
+        manifest_path = (Path((launch_kwargs or {}).get('cwd') or '.') / top /
+                         '_set_manifests' / f'{digest}.txt').resolve()
+        write_set_manifest(manifest_path, manifest)
+        window_path = (Path((launch_kwargs or {}).get('cwd') or '.') / top /
+                       '_windows' / f'{digest}.txt').resolve()
+        window_path.parent.mkdir(parents=True, exist_ok=True)
+        window_path.write_text(text)
+        base.setdefault('output_params', {})['set_file'] = str(manifest_path)
+        base.setdefault('spectrum_params', {})['window_file'] = str(window_path)
+        plans.append((members, base, top / f'win{len(merged)}_{digest}',
+                      nlte_values[members[0]], node_lists))
 
+    # every group's departures in one batch, then every group's spectra in one more, so an
+    # unfolded ladder fans (rung x node) across the pool instead of a rung at a time
     dep_dirs = {}
-    if nlte_v:
-        dep_jobs = _dep_jobs(base, nodes, dep_top)
+    dep_jobs = [((gi, jkey), path, nml)
+                for gi, (_m, base, _top, nlte_v, _lists) in enumerate(plans) if nlte_v
+                for jkey, path, nml in _dep_jobs(base, nodes, _dep_bucket(top, base))]
+    if dep_jobs:
         dep_runs = _run_batch(dep_jobs, launch_kwargs, max_threads,
                               cancel_token=cancel_token)
         failed = [key for key, _path, _nml in dep_jobs if dep_runs.get(key) is None]
@@ -731,21 +750,29 @@ def compute_window_batch(top, star, atmos_files, *, settings_list, windows, R,
             raise RuntimeError(f"Departure runs failed: {failed}")
         dep_dirs = {key: str(dep_runs[key].folder) for key, _path, _nml in dep_jobs}
 
-    jobs, job_keys, job_weights, job_params = _spec_jobs(
-        base, nodes, syn_top, nlte_v, dep_dirs, node_lists)
-    runs = _run_batch(jobs, launch_kwargs, max_threads, cancel_token=cancel_token)
-    failed = [key for key in job_keys if runs.get(key) is None]
+    spec_jobs, plan_specs = [], []
+    for gi, (_members, base, syn_top, nlte_v, node_lists) in enumerate(plans):
+        dep_v = {n[0]: dep_dirs[(gi, n[0])] for n in nodes} if nlte_v else {}
+        jobs, job_keys, job_weights, job_params = _spec_jobs(
+            base, nodes, syn_top, nlte_v, dep_v, node_lists)
+        spec_jobs += [((gi, jkey), path, nml) for jkey, path, nml in jobs]
+        plan_specs.append((job_keys, job_weights, job_params))
+    runs = _run_batch(spec_jobs, launch_kwargs, max_threads, cancel_token=cancel_token)
+    failed = [key for key, _path, _nml in spec_jobs if runs.get(key) is None]
     if failed:
         raise RuntimeError(f"Runs failed: {failed}")
 
-    first_ladder = 3 if nlte_v else 2
-    results = []
-    for vi in range(len(settings_list)):
-        views = {key: _LadderRunView(runs[key], first_ladder + vi) for key in job_keys}
-        grid = _assemble_grid(views, star, vmic, job_keys, job_weights,
-                              job_params, vmic_points)
-        results.append([_interp_crop(grid, float(min(w)), float(max(w)), method)
-                        for w in windows])
+    results = [None] * len(settings_list)
+    for gi, (members, _base, _top, nlte_v, _lists) in enumerate(plans):
+        job_keys, job_weights, job_params = plan_specs[gi]
+        first_ladder = 3 if nlte_v else 2
+        for slot, vi in enumerate(members):
+            views = {key: _LadderRunView(runs[(gi, key)], first_ladder + slot)
+                     for key in job_keys}
+            grid = _assemble_grid(views, star, vmic, job_keys, job_weights,
+                                  job_params, vmic_points)
+            results[vi] = [_interp_crop(grid, float(min(w)), float(max(w)), method)
+                           for w in windows]
     return results
 
 

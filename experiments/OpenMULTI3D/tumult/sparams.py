@@ -471,23 +471,28 @@ def _solve_balance(request, result, opts, progress, cancel_token):
             target, prefs, rv_list, *padded_window(line.window), grid=grid,
             atmos_file=atmos_file, cancel_token=cancel_token)
 
-    def rung_specs(a_rel, feh, lines, target, *, save_linelist=True, crop=None):
-        """One synthesis for one lattice rung, covering every line's window.
+    def ladder_specs(ladder, centre, feh, lines, target, *, crop=None):
+        """One synthesis per lattice rung, each covering every line's window.
 
         A rung is its own run so that its identity is (atmosphere node, abundance,
         windows) and nothing else: the same rung recurs at the next iteration and is
-        read from the cache instead of resynthesised. Batching the whole ladder into
-        one run instead would amortise the continuum and LTE sets across the rungs,
+        read from the cache instead of resynthesised. Folding the ladder onto one run's
+        set axis instead would amortise the continuum and LTE sets across the rungs,
         but its cache key is the entire ladder, which no later iteration reproduces.
 
+        The rungs still go out together (``fold=False``): every (rung x node) run is
+        issued in one batch, so the pool sees the whole iteration's work at once rather
+        than one rung's nodes at a time.
+
         ``crop`` describes the ladder's strongest rung, so every rung on a node reads the
-        same cropped line list and no rung waits for another.
+        same cropped line list and no rung waits for another. Only the rung nearest
+        scaled-solar keeps its transition dump, which is the same diagnostic on all of them.
         """
         windows = [padded_window(ln.window) for ln in lines]
+        rungs = [rv_point(a, feh, save_linelist=(a == centre)) for a in ladder]
         return synth.compute_window_batch(
-            target, prefs, [rv_point(a_rel, feh, save_linelist=save_linelist)],
-            windows, grid=grid, atmos_file=atmos_file, cancel_token=cancel_token,
-            crop=crop)[0]
+            target, prefs, rungs, windows, grid=grid, atmos_file=atmos_file,
+            cancel_token=cancel_token, crop=crop, fold=False)
 
     def shared_ladder(active, centres_now):
         """The lattice rungs covering every active line's bracket.
@@ -543,9 +548,8 @@ def _solve_balance(request, result, opts, progress, cancel_token):
                 "relative_abundances": relative}
         iter_specs = None
         try:
-            iter_specs = [rung_specs(a, feh, [ln for _i, ln in active], target,
-                                     save_linelist=(a == c), crop=crop)
-                          for a in ladder]
+            iter_specs = ladder_specs(ladder, c, feh, [ln for _i, ln in active], target,
+                                      crop=crop)
         except CancelledError:
             raise
         except Exception as exc:
