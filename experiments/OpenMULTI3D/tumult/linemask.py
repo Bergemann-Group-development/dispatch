@@ -69,12 +69,6 @@ class LineMask:
     include: bool = True        # count this mask when fitting / aggregating
     renorm: bool = False        # apply the local linear continuum (injected spline knots)
     cont_pts: tuple = ()        # ((x1,y1),(x2,y2)) inner markers in native (Å, raw flux)
-    # measurement artifact of an auto-generation / diagnostic run against one observation:
-    # ion / e_low / loggf / ew / ew_err / fwhm / flags. Never written to the line-mask file —
-    # the file is the human's windows, this is what a particular spectrum said about them —
-    # but carried in session saves and shown as the second (read-only) table. Riding on the
-    # mask rather than a parallel list keeps it aligned through deletes and reorders.
-    diag: dict = field(default_factory=dict)
 
     _TUPLE_FIELDS = ("cont_pts",)
 
@@ -152,9 +146,6 @@ class LineMaskSet:
     # not well defined here and are recovered downstream from a synthesis run's
     # ``linelist_out.txt`` (which weights each transition by its actual contribution).
     element: str = ""
-    # provenance of the diagnostic run behind the masks' `diag` rows: which observation,
-    # which line list, which settings. Session state only, never written to the file.
-    diag_meta: dict = field(default_factory=dict)
     # pristine copy of the imported (or last-saved) state, so the GUI can tell an edited set
     # from the file it came from and offer a revert. Empty for a set drawn from scratch.
     baseline: dict = field(default_factory=dict, repr=False)
@@ -168,11 +159,7 @@ class LineMaskSet:
     def _state(self) -> dict:
         """The comparable content of the set (its masks and padding); excludes identity
         and the baseline itself, so it can be diffed against :attr:`baseline`."""
-        # `diag` is excluded: re-measuring a set against another spectrum replaces the
-        # artifact but changes nothing about the windows the file holds, so it must not
-        # make the set read as edited.
-        return {"masks": [{k: v for k, v in m.to_dict().items() if k != "diag"}
-                          for m in self.masks],
+        return {"masks": [m.to_dict() for m in self.masks],
                 "pad": self.pad, "element": self.element}
 
     def mark_clean(self) -> None:
@@ -188,22 +175,10 @@ class LineMaskSet:
         """Restore the pristine state; False when there is nothing to revert to."""
         if not self.baseline:
             return False
-        # the baseline holds no `diag` (see _state); carry each surviving row across by λ₀ so
-        # reverting the windows does not silently discard the measurements behind them
-        keep = {m.lam0: m.diag for m in self.masks if m.diag}
         self.masks[:] = [LineMask.from_dict(d) for d in self.baseline["masks"]]
-        for m in self.masks:
-            row = keep.get(m.lam0)
-            if row:
-                m.diag = dict(row)
         self.pad = float(self.baseline["pad"])
         self.element = str(self.baseline.get("element") or "")
         return True
-
-    @property
-    def has_diag(self) -> bool:
-        """Did a diagnostic run measure these windows? (drives the second table)"""
-        return any(m.diag for m in self.masks)
 
     def __iter__(self):
         return iter(self.masks)
@@ -214,8 +189,7 @@ class LineMaskSet:
     def to_dict(self) -> dict:
         return {"masks": [m.to_dict() for m in self.masks], "pad": self.pad,
                 "source_path": self.source_path, "label": self.label, "uid": self.uid,
-                "element": self.element, "diag_meta": self.diag_meta,
-                "baseline": self.baseline}
+                "element": self.element, "baseline": self.baseline}
 
     @classmethod
     def from_dict(cls, d: dict) -> "LineMaskSet":
@@ -224,7 +198,6 @@ class LineMaskSet:
                    pad=float(d.get("pad", DEFAULT_PAD)),
                    source_path=d.get("source_path", ""), label=d.get("label", ""),
                    uid=int(d.get("uid", 0)), element=str(d.get("element") or ""),
-                   diag_meta=dict(d.get("diag_meta") or {}),
                    baseline=dict(d.get("baseline") or {}))
 
     def repad(self, pad: float) -> None:
@@ -425,8 +398,7 @@ def write_linemask_file(path, mset: LineMaskSet, included_only: bool = True) -> 
 
     Only the masks the user kept switched on are written (``included_only``): saving is how a
     generated candidate list becomes a clean, reusable mask file, so the per-mask toggle
-    curates the output. The measurement artifact (``LineMask.diag``) is never written — the
-    file holds the windows, not what one spectrum said about them.
+    curates the output.
     """
     path = Path(path)
     masks = [m for m in mset.masks if m.include] if included_only else list(mset.masks)

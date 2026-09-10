@@ -249,12 +249,8 @@ class AbundanceTool(AbundanceWizard):
     def _measure_lines(self, ref_uid, ref_spec, mset, profile, snr, cont_pct):
         """Measure the set's switched-on windows (:func:`tumult.abundance.measure_lines`)."""
         try:
-            ref_name = dict(self.list_observations()).get(ref_uid, "")
-            res, remeasured = ab.measure_lines(
-                mset, ref_spec, reference_name=ref_name, linelist=self.master_path,
-                profile=profile, snr=snr, cont_pct=cont_pct)
-            if remeasured:
-                self.ctx.emit("masks-changed")   # repaint the diagnostics table
+            res = ab.measure_lines(mset, ref_spec, linelist=self.master_path,
+                                   profile=profile, snr=snr, cont_pct=cont_pct)
             res.ref_uid = ref_uid
             return res
         except Exception as exc:

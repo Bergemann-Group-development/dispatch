@@ -339,20 +339,17 @@ def measure_balance_lines(result, masks, spec, linelist):
     lo = min(m.lmin for m in masks)
     hi = max(m.lmax for m in masks)
     catalog, note = identify_catalog(star, lo, hi, linelist)
-    linediag.measure_masks(spec, masks, profile=result.profile, snr=result.snr,
-                           cont_pct=result.cont_pct, catalog=catalog,
-                           element=result.element)
+    lines = linediag.measure_masks(spec, masks, profile=result.profile, snr=result.snr,
+                                   cont_pct=result.cont_pct, catalog=catalog,
+                                   element=result.element)
     result.ident_star, result.ident_note = star.label, note
 
-    lines = []
-    for m in masks:
-        ln = linediag.line_from_mask(m)
+    for ln in lines:
         stage = is_ion_stage(ln.ion, 1) or is_ion_stage(ln.ion, 2)
         if "off_element" in ln.flags or not stage:
             ln.include = False
             if not stage and "off_element" not in ln.flags:
                 ln.flags = ln.flags + ("no_stage",)
-        lines.append(ln)
     result.lines = lines
     n1, n2 = result.counts()
     if not n1 and not n2:

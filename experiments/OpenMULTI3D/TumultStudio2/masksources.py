@@ -113,14 +113,13 @@ class AutoSource(MaskSource):
 
     Currently unwired: :data:`masktool.AUTO_MASKS` is off, so this source is not registered
     and its pane is not rendered. The class is kept intact — nothing about it is wrong, it is
-    the *view* that has not been reconciled: a generated set carries a diagnostics table of
-    its own beside the windows, and its one-window-per-line output wants overlapping windows
-    merged before it reads like an imported set.
+    the *view* that has not been reconciled: its one-window-per-line output wants overlapping
+    windows merged before it reads like an imported set.
 
     Takes a loaded spectrum and a line list, pulls every transition of the chosen element
-    inside the spectrum's range, and derives + measures a window for each
-    (:func:`linediag.generate_masks`). The measuring is the wizards' step 1 — no synthesis,
-    no atmosphere — so it needs nothing but the spectrum and the list.
+    inside the spectrum's range, and derives a window for each
+    (:func:`linediag.generate_masks`), measuring only to decide which windows survive — no
+    synthesis and no atmosphere, so it needs nothing but the spectrum and the list.
 
     The run is slow enough to want a worker thread, so ``submit`` hands it to the context's
     background submitter and the set arrives through the same ``on_created`` landing as the

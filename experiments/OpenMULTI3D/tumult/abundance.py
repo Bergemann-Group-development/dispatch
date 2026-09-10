@@ -529,47 +529,41 @@ def finalize_line(line, ref_spec, snr, cont_pct, profile="gauss"):
 # comes back is the :class:`AbundanceResult`, and ``progress`` is how a caller watches it
 # fill in line by line during the long middle stage.
 
-def measure_lines(mset, ref_spec, *, reference_name, linelist, profile, snr, cont_pct):
+def measure_lines(mset, ref_spec, *, linelist, profile, snr, cont_pct):
     """Stage 1: measure a mask set's switched-on windows on the reference observation.
 
-    The windows are taken exactly as curated — nothing is re-derived, added or dropped. A set
-    whose diagnostics already came from *this* reference is reused as it stands; otherwise
-    the windows are re-measured here (and the set's diagnostics table follows), with the
-    atomic identity of each window's dominant transition attached from the line list.
+    The windows are taken exactly as curated — nothing is re-derived, added or dropped, and
+    the set itself is not written to. Each window's dominant transition is identified from
+    the line list, which is what supplies the atomic identity the later stages read.
 
-    Returns ``(result, remeasured)``; ``remeasured`` says whether ``mset`` was written to, so
-    a caller with a view of the mask set knows to repaint it. Raises :class:`ValueError` when
-    the set holds nothing measurable.
+    Raises :class:`ValueError` when the set holds nothing measurable.
     """
     import uuid
 
     from . import linediag
     from .linelist import load_master, strip_ion_stages
 
-    stale = (mset.diag_meta or {}).get("reference") != reference_name
-    remeasured = bool(stale or not mset.has_diag)
-    if remeasured:
-        try:
-            master = load_master(linelist)
-            catalog = master[strip_ion_stages(master.ion) == mset.element]
-        except Exception:
-            # the catalog only names the dominant transition of each window in the
-            # diagnostics artifact; it never touches the mask or the measurement
-            logging.exception("Could not read the line list for %s", mset.element)
-            catalog = None
-        linediag.measure_masks(ref_spec, [m for m in mset.masks if m.include],
-                               profile=profile, snr=snr, cont_pct=cont_pct, catalog=catalog)
-        mset.diag_meta = {"reference": reference_name, "element": mset.element,
-                          "linelist": Path(linelist).name, "profile": profile,
-                          "snr": snr, "cont_pct": cont_pct}
-    lines = linediag.line_results(mset)
+    try:
+        master = load_master(linelist)
+        catalog = master[strip_ion_stages(master.ion) == mset.element]
+    except Exception:
+        # the catalog only names the dominant transition of each window; it never touches
+        # the mask or the measurement
+        logging.exception("Could not read the line list for %s", mset.element)
+        catalog = None
+    lines = linediag.measure_masks(ref_spec, [m for m in mset.masks if m.include],
+                                   profile=profile, snr=snr, cont_pct=cont_pct,
+                                   catalog=catalog)
+    for ln in lines:
+        if not ln.ion:
+            ln.ion = mset.element
     if not lines:
         raise ValueError(f"No measurable windows in “{mset.name}”.")
     result = AbundanceResult(element=mset.element, symbol=mset.element, lines=lines,
                              summary=aggregate([]), stage="lines", profile=profile,
                              uid=uuid.uuid4().hex[:8])
     result.name = f"{mset.element} · {len(lines)} lines"
-    return result, remeasured
+    return result
 
 
 def run_abundance(request, result, observation, *, progress=None, cancel_token=None):

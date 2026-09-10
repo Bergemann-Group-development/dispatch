@@ -41,7 +41,6 @@ import numpy as np
 from bokeh.models import ColumnDataSource, Slope, Whisker
 
 import abundance as ab
-import linediag
 import measurement as ms
 import refstars
 import sparams as sp

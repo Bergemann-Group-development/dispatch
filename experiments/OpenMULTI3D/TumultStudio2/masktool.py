@@ -34,8 +34,7 @@ from bokeh.models import TextInput
 
 from canvas import ACCENT
 from controls import Field, Form
-from htmlbridge import parse_action, pulse, toggle
-from linediag import FLAG_LABELS
+from htmlbridge import parse_action, pulse
 from linemask import is_element, seed_cont_markers
 from masksources import AutoSource, BlankSource, FileSource
 from rangeselect import RangeSelect
@@ -46,11 +45,10 @@ from units import to_range
 JUMP_MARGIN = 0.05
 
 # The Auto-generate source (:class:`masksources.AutoSource`) is switched off for now: what it
-# produces — one window per candidate line, plus a second, read-only diagnostics table beside
-# the windows — has not been reconciled with the imported/hand-drawn view, which shows one
-# table and would want overlapping windows merged into one. Everything it needs is still
-# built and wired; flipping this back on restores the pane (and the template's, see the
-# `linemask_auto` flag it is passed to).
+# produces — one window per candidate line — has not been reconciled with the
+# imported/hand-drawn view, which would want overlapping windows merged into one. Everything
+# it needs is still built and wired; flipping this back on restores the pane (and the
+# template's, see the `linemask_auto` flag it is passed to).
 AUTO_MASKS = False
 
 
@@ -92,9 +90,6 @@ class MaskTool(Tool):
             self.sources.append(AutoSource(
                 store, self._on_source, ctx=ctx, list_observations=list_observations,
                 get_observation=get_observation, master_path=master_path, profiles=profiles))
-        # the second (read-only) diagnostics table, beside the mask windows
-        self._diag_bridge = ctx.bridges.html("linemask-diag-table")
-        self._split_bridge = ctx.bridges.cls("#main", "linemask-diag")
         self.modal = ctx.bridges.dialog("linemask-modal")   # closed once a set exists
 
         # per-row / save / revert actions come back on a dedicated space-delimited channel
@@ -264,9 +259,6 @@ class MaskTool(Tool):
         self.push_panel()
         self._render_objects()
         self._table_bridge.value = self.table_html()
-        has_diag = self.store.mset.has_diag
-        self._diag_bridge.value = self.diag_html() if has_diag else ""
-        toggle(self._split_bridge, has_diag)   # split the centre panel in two
 
     def _apply_renorm(self):
         """Fold every renorm-on mask's local linear continuum into the *selected* spectrum's
@@ -460,14 +452,6 @@ class MaskTool(Tool):
                    f'{html.escape(Path(src).name)}.</div>' if src and n else
                    f'<div class="hint">{n} mask{"" if n == 1 else "s"}, not saved to a file '
                    f'yet.</div>')
-        # where the second table's numbers came from — set-level metadata belongs here, and
-        # keeping it out of the centre lets both tables start on the same row and scroll as one
-        meta = mset.diag_meta or {}
-        if mset.has_diag and meta:
-            prov = " · ".join(str(meta[k]) for k in ("reference", "linelist", "profile")
-                              if meta.get(k))
-            srcline += (f'<div class="hint">Measured on {html.escape(prov)}.</div>'
-                        if prov else "")
         # the element is what makes a set usable downstream, so say when it is missing
         if not mset.element:
             srcline += ('<div class="hint hint-warn">Set the element these windows diagnose '
@@ -516,8 +500,8 @@ class MaskTool(Tool):
         """The mask-window table: one row per mask (click to make it the editable one), a
         per-mask on/off toggle, closed by a sticky footer row that starts a new mask.
 
-        This is the *durable* half of the centre panel — exactly what a save writes out.
-        Anything a diagnostic run measured lives in :meth:`diag_html` beside it.
+        This is exactly what a save writes out: the windows themselves. What a spectrum says
+        about them belongs to the analysis that measured it, not to this set.
         """
         masks = self.store.masks
         add_label = ("Draw the box on the spectrum…" if self._placing
@@ -556,53 +540,6 @@ class MaskTool(Tool):
             '<th>note</th><th title="Local renormalisation">rn</th><th></th></tr></thead>'
             f'<tbody>{"".join(rows)}</tbody>'
             f'<tfoot>{add_row}</tfoot></table>')
-
-    def diag_html(self):
-        """The diagnostics table: what one observation said about these windows.
-
-        Read-only and deliberately separate from the mask table — it is an artifact of a
-        single (spectrum, line list, settings) run, is never written to the line-mask file,
-        and goes stale the moment the windows are measured against a different star. The rows
-        line up one-for-one with the mask table and select the same mask.
-        """
-        masks = self.store.masks
-        rows = []
-        for i, m in enumerate(masks):
-            d = m.diag or {}
-            if not d:
-                rows.append(f'<tr class="lm-row lm-diag-row" data-idx="{i}">'
-                            f'<td colspan="6" class="lm-note">not measured</td></tr>')
-                continue
-            sel = " lm-active" if i == self.store.active else ""
-            off = "" if m.include else " lm-off"
-            flags = tuple(d.get("flags") or ())
-            chips = "".join(
-                f'<span class="lm-flag" title="{html.escape(FLAG_LABELS.get(f, f))}">'
-                f'{html.escape(f)}</span>' for f in flags)
-            rows.append(
-                f'<tr class="lm-row lm-diag-row{sel}{off}" data-idx="{i}">'
-                f'<td>{_fmt(d.get("ion"))}</td>'
-                f'<td>{_num(d.get("e_low"), 2)}</td>'
-                f'<td>{_num(d.get("loggf"), 2)}</td>'
-                f'<td>{_num(d.get("ew"), 1)}</td>'
-                f'<td>{_num(d.get("ew_err"), 1)}</td>'
-                f'<td class="lm-flags">{chips}</td></tr>')
-        return ('<table class="linelist-table lm-table lm-diag-table">'
-                '<thead><tr><th>ion</th><th>E<sub>low</sub></th><th>log gf</th>'
-                '<th>EW [mÅ]</th><th>± [mÅ]</th><th>flags</th></tr></thead>'
-                f'<tbody>{"".join(rows)}</tbody></table>')
-
-
-def _fmt(value):
-    return html.escape(str(value)) if value else "—"
-
-
-def _num(value, digits):
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return "—"
-    return f"{v:.{digits}f}" if np.isfinite(v) else "—"
 
 
 def _int(arg, default=-1):

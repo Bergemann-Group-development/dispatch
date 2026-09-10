@@ -1,13 +1,13 @@
 """Pin the window-measuring core shared by the abundance and ionisation-balance workflows:
-what a measured mask carries, how the dominant transition in a window is identified (and when
-that identification is refused), and the mask → LineResult copy the measurement objects keep.
+what a measured window yields, how the dominant transition in it is identified (and when that
+identification is refused), and that the masks themselves come back untouched.
 """
 import numpy as np
 import pandas as pd
 import pytest
 
 from tumult import linediag
-from tumult.linemask import LineMask, LineMaskSet
+from tumult.linemask import LineMask
 from tumult import Spectrum
 
 LAM1, LAM2 = 5000.0, 5010.0
@@ -62,59 +62,41 @@ def test_identify_reports_an_empty_window():
 
 # --- measurement ------------------------------------------------------------------------------
 
-def test_measure_masks_fills_each_window():
+def test_measure_masks_measures_each_window():
     masks = _masks()
     cat = _catalog([("Fe I", LAM1, 1.0, -1.0, 1.0), ("Fe II", LAM2, 3.0, -1.5, 1.0)])
-    linediag.measure_masks(_spectrum(), masks, profile="gauss", snr=200.0, cont_pct=0.5,
-                           catalog=cat, element="Fe")
-    ews = [m.diag["ew"] for m in masks]
+    lines = linediag.measure_masks(_spectrum(), masks, profile="gauss", snr=200.0,
+                                   cont_pct=0.5, catalog=cat, element="Fe")
     # 0.45 * sqrt(2 pi) * 0.08 AA = 90.2 maa, and 60.2 maa for the shallower line
-    assert ews[0] == pytest.approx(90.2, abs=0.5)
-    assert ews[1] == pytest.approx(60.2, abs=0.5)
-    assert [m.diag["ion"] for m in masks] == ["Fe I", "Fe II"]
-    for m in masks:
-        assert m.diag["fwhm"] == pytest.approx(2.3548 * 0.08, abs=1e-3)
-        assert 0 < m.diag["ew_err"] < m.diag["ew"]
-        assert list(m.diag["flags"]) == []   # stored JSON-friendly, as a list
+    assert lines[0].ew == pytest.approx(90.2, abs=0.5)
+    assert lines[1].ew == pytest.approx(60.2, abs=0.5)
+    assert [ln.ion for ln in lines] == ["Fe I", "Fe II"]
+    assert [ln.e_low for ln in lines] == [1.0, 3.0]
+    for ln in lines:
+        assert ln.fwhm == pytest.approx(2.3548 * 0.08, abs=1e-3)
+        assert 0 < ln.ew_err < ln.ew
+        assert ln.flags == ()
 
 
 def test_measure_masks_flags_an_unfittable_window():
     m = LineMask(lam0=float("nan"), lmin=float("nan"), lmax=float("nan"))
-    linediag.measure_masks(_spectrum(), [m], profile="gauss", snr=None, cont_pct=0.0)
-    assert list(m.diag["flags"]) == ["no_window"]
+    lines = linediag.measure_masks(_spectrum(), [m], profile="gauss", snr=None, cont_pct=0.0)
+    assert lines[0].flags == ("no_window",)
 
 
-# --- the mask → LineResult copy ----------------------------------------------------------------
-
-def test_line_from_mask_copies_the_window_and_the_measurement():
+def test_measure_masks_leaves_the_masks_alone():
+    """The set is the human's windows: a measurement copies them and writes nothing back."""
     masks = _masks()
-    cat = _catalog([("Fe I", LAM1, 1.0, -1.0, 1.0), ("Fe II", LAM2, 3.0, -1.5, 1.0)])
-    linediag.measure_masks(_spectrum(), masks, profile="gauss", snr=200.0, cont_pct=0.5,
-                           catalog=cat, element="Fe")
-    ln = linediag.line_from_mask(masks[0])
-    assert ln.ion == "Fe I" and ln.e_low == 1.0 and ln.loggf == -1.0
+    before = [m.to_dict() for m in masks]
+    lines = linediag.measure_masks(_spectrum(), masks, profile="gauss", snr=200.0,
+                                   cont_pct=0.5)
+    assert [m.to_dict() for m in masks] == before
+    # each line carries its own copy of the window, so editing the set leaves it alone
+    ln = lines[0]
     assert ln.fit_window == (masks[0].lmin, masks[0].lmax)
     assert ln.window == (masks[0].smin, masks[0].smax)
-    assert ln.ew == pytest.approx(masks[0].diag["ew"])
-    # the copy stops depending on the mask: editing the set afterwards leaves it alone
     masks[0].lmax = 5001.0
     assert ln.fit_window[1] == pytest.approx(5000.4)
-
-
-def test_line_from_mask_falls_back_to_the_named_species():
-    m = _masks()[0]
-    linediag.measure_masks(_spectrum(), [m], profile="gauss", snr=None, cont_pct=0.0)
-    assert linediag.line_from_mask(m).ion == ""          # nothing identified it
-    assert linediag.line_from_mask(m, "Fe").ion == "Fe"  # the set's element, when that will do
-
-
-def test_line_results_drops_switched_off_masks():
-    masks = _masks()
-    masks[1].include = False
-    mset = LineMaskSet(masks=masks, element="Fe")
-    linediag.measure_masks(_spectrum(), masks, profile="gauss", snr=None, cont_pct=0.0)
-    assert [ln.lam0 for ln in linediag.line_results(mset)] == [LAM1]
-    assert len(linediag.line_results(mset, included_only=False)) == 2
 
 
 # --- generate_mask_set: the headless "make me a diagnostic set for element X" call ---------
@@ -153,19 +135,7 @@ def test_generate_mask_set_selects_only_the_asked_element(tmp_path):
         reference_name="synthetic", profile="gauss", ew_min=1.0, snr=100.0, cont_pct=0.5)
     assert mset.element == "Fe"
     assert [pytest.approx(m.lam0, abs=1e-6) for m in mset.masks] == list(FE_LAMS)
-    assert mset.diag_meta["reference"] == "synthetic"
-    assert mset.diag_meta["element"] == "Fe"
-    assert mset.diag_meta["linelist"] == "mini_master.txt"
-
-
-def test_generate_mask_set_records_what_produced_it(tmp_path):
-    """diag_meta must carry the measurement settings, so staleness is detectable later."""
-    mset = linediag.generate_mask_set(
-        _blended_spectrum(), "Fe", linelist=_mini_master(tmp_path),
-        profile="gauss", ew_min=1.0, snr=50.0, cont_pct=0.25)
-    assert mset.diag_meta["profile"] == "gauss"
-    assert mset.diag_meta["snr"] == 50.0
-    assert mset.diag_meta["cont_pct"] == 0.25
+    assert mset.label.startswith("Fe · auto")
 
 
 def test_generate_mask_set_rejects_a_non_element(tmp_path):

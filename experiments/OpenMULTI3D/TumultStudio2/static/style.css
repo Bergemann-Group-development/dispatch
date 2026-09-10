@@ -369,25 +369,10 @@ body.resizing * { pointer-events: none !important; }
   display: flex; flex: 0 0 var(--bottom-h); min-height: 0; flex-direction: column; overflow: auto;
   border-top: 1px solid var(--border); padding-top: 6px;
 }
-/* the centre panel holds the windows table and, for a generated set, the diagnostics table
-   beside it (#main.linemask-diag). ONE scroller wraps both, so the halves of a row stay
-   together: they are separate tables, and only a shared scroll keeps them in step. Row
-   heights are pinned for the same reason — a wrapping cell on one side would shear the
-   two apart. */
-#linemask-tables { flex: 1; min-height: 0; overflow: auto; display: flex; gap: 10px;
-  align-items: flex-start; }
-#linemask-table { flex: 1; min-width: 0; }
-#linemask-diag-table { display: none; }
-#main.linemask-diag #linemask-diag-table {
-  display: block; flex: 0 1 46%; min-width: 0;
-  border-left: 1px solid var(--border); padding-left: 10px;
-}
-.lm-table tbody td { height: 22px; box-sizing: border-box; }
-.lm-table th { height: 24px; box-sizing: border-box; }
-/* a switched-off mask: still listed with its flag, but plainly not in play */
+#linemask-tables { flex: 1; min-height: 0; overflow: auto; }
+#linemask-table { min-width: 0; }
+/* a switched-off mask: still listed, but plainly not in play */
 .lm-table .lm-row.lm-off td { opacity: 0.4; }
-/* flags must not wrap: a taller row here would break the two tables' alignment */
-.lm-flags { max-width: 130px; overflow: hidden; text-overflow: ellipsis; }
 .lm-flag { display: inline-block; margin: 0 3px 1px 0; padding: 0 4px; border-radius: 3px;
   background: rgba(224,160,48,0.15); border: 1px solid #e0a030; color: #e0a030;
   font-size: 9px; }
