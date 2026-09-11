@@ -28,6 +28,14 @@ def test_eos_matches_golden():
 def test_opacity_matches_golden():
     """Continuum and line opacity, against the golden.
 
+    REGENERATED 2026-09-11 after the standalone build was aligned with Dispatch's
+    ``OPTS=hoppe`` profile (``-O3 -mcpu=apple-m1`` here) instead of its former ``-O1``.
+    Continuum opacity, continuum scattering and wavelengths remain bit-identical. The
+    compiler change moves 239 of 960 line-opacity cells and 376 line-scattering cells by
+    float32 roundoff: respectively 4.5e-13 / 4.8e-6 and 9.1e-13 / 5.0e-6 maximum
+    absolute / relative difference. This is a build-configuration change rather than a
+    change in the line physics.
+
     REGENERATED 2026-09-10, because the previous golden described a stale
     ``HOP/standalone/build/libhop.so`` rather than the committed source. The shipped
     library predated the window line-selection commits (``facc5eb2`` "Keep only the lines
@@ -264,3 +272,26 @@ def test_line_strengths_need_a_state():
     with HopEOS(feh=0.0) as hop:
         with pytest.raises(HopError):
             hop.line_strengths(lam, str(HOP_LINELIST))
+
+
+def test_linelist_numeric_reader_keeps_supported_and_fallback_syntax(tmp_path):
+    """The fast reader covers normal decimals/exponents and preserves list-I/O fallback."""
+    from tumult.hop import HopEOS
+    from tumult.physics import air2vac
+
+    lines_path = tmp_path / "numeric-forms.txt"
+    lines_path.write_text(
+        "'Fe I'\n"
+        "'0' 3\n"
+        "5000.000 0.0 2.0\n"
+        "5000.500\t0.0\t2.0D+00 0 1.0E+08 0 1 2\n"
+        "5001.000, 0.0, 2.0\n"
+    )
+    lam = air2vac(np.arange(4999.9, 5001.1, 0.005))
+    with HopEOS(feh=0.0) as hop:
+        hop.load_state([5876.0], rho=[2.609e-07])
+        lines = hop.line_strengths(lam, lines_path, dlam=0.2, vmic=HOP_VMIC)
+
+    inside = lines[(lines.lam0 >= 4999.9) & (lines.lam0 <= 5001.1)]
+    np.testing.assert_allclose(inside.lam0, [5000.0, 5000.5, 5001.0], atol=2e-8)
+    np.testing.assert_allclose(inside.loggf, 2.0)
