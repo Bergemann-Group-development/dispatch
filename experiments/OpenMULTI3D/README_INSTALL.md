@@ -176,7 +176,35 @@ result = open_workflow(job.folder).result()             # also works after recon
 result.spectrum.plot()
 ```
 
-For a 3D calculation use `Snapshot3D(path, stellar, resolution)`. Call
+A grid of 3D models registers like a MARCS grid and interpolates between its nodes the same
+way. Grid patterns match each file's path relative to the grid folder, listed recursively,
+so a directory-per-node layout binds its parameters from the directory name;
+`tumult.synthesis.STAGGER_PATTERN` covers the post-processed Stagger naming (`t50g47m00`,
+`t5777g44m30`, `_new` models, `atm3d.*` snapshots). A pattern reads like the Python format
+that wrote the name, `atm3d.t{Teff/100:02d}g{logg*10:02d}{FeH*10:+03d}{}_{snap:05d}`, with
+head and tail implicitly wild and `p`/`m` accepted as signs; `compile_pattern` documents
+the details (`|` alternatives, `{snap}`). A snapshot grid's record also
+names the snapshots representing each node and, optionally, the mesh the cubes are
+sampled onto:
+
+```python
+from tumult.synthesis import STAGGER_PATTERN
+
+stagger = {"folder": "~/Atmospheres/Stagger/dwarfs", "format": "Stagger2",
+           "pattern": STAGGER_PATTERN,
+           "snapshots": "3",             # first three per node; "all"; or numbers "8,31"
+           "resolution": [80, 80, 240]}  # blank: the nx/ny/nz preferences
+marcs = {"folder": "input/atmos/MARCS", "format": "Marcs"}
+selection = GridTarget(stagger, (5250, 4.5, 0.0, 1.0), preparation_grid=marcs)
+```
+
+Every selected snapshot becomes one 3D run; a node's spectrum is the mean over its snapshots
+and the nodes combine with the usual interpolation weights. When several subfolders map to
+one node, the lexically last wins (`t45g40m00_new` over `t45g40m00`). HOP line-list
+preparation still needs 1D structures, hence the MARCS `preparation_grid`. Snapshot nodes
+carry no vmic.
+
+For a single 3D calculation use `Snapshot3D(path, stellar, resolution)`. Call
 `tumult.synthesis.solve_departures(...)` without masks to create a `DepartureField`, save or
 load it with `DepartureField.save/load`, and pass it as `departure_field=` when constructing
 another request. The result records both the departure solve and formal-solution settings.

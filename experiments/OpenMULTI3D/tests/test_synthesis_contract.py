@@ -128,3 +128,54 @@ def test_durable_submission_reopens_saved_result(tmp_path, monkeypatch):
     assert reopened.status == 'finished'
     assert np.allclose(reopened.result().spectrum.values[1], result.spectrum.values[1])
     assert reopened.progress['phase'] == 'finished'
+
+
+def test_submission_records_scheduled_runs_before_completion(tmp_path, monkeypatch):
+    """The workflow record names its native runs as the executor schedules them."""
+    import threading
+    from tumult.synthesis import runtime, submission, workflows
+    request = _request(Atmosphere1D('one.mod', (5750, 4.5, 0, 1)), tmp_path)
+    scheduled = tmp_path / 'out' / 'run_a'
+    release = threading.Event()
+    seen = {}
+
+    def execute(resolved, cancel_token=None):
+        runtime.note_run(str(scheduled))            # what _run_batch does per job
+        seen['during'] = submission.open_workflow(handle.folder).runs
+        release.wait(5)
+        spec = Spectrum(np.array([5000., 5001.]), np.array([1., .9]))
+        return SynthesisResult((spec,), ({'window': None},), resolved.request,
+                               resolved.settings, runs=(str(scheduled),))
+
+    monkeypatch.setattr(workflows, 'execute_request', execute)
+    handle = submission.submit(request, root=tmp_path / 'jobs')
+    release.set()
+    handle.result(timeout=5)
+    assert seen['during'] == (str(scheduled),)
+    assert submission.open_workflow(handle.folder).runs == (str(scheduled),)
+
+
+def test_window_batch_reports_runs_without_a_ladder(tmp_path, monkeypatch):
+    """A single variant without abundance overrides is not folded, yet still names its runs."""
+    from tumult.synthesis import api
+
+    class Run:
+        def __init__(self, folder):
+            self.folder = folder
+
+    def fake_run_batch(jobs, *_args, **_kwargs):
+        return {key: Run(tmp_path / str(path)) for key, path, _nml in jobs}
+
+    monkeypatch.setattr(api, '_run_batch', fake_run_batch)
+    monkeypatch.setattr(api, '_assemble_grid', lambda *a, **k: 'grid')
+    monkeypatch.setattr(api, '_interp_crop', lambda grid, lo, hi, method: (lo, hi))
+    grid = tmp_path / 'grid'
+    grid.mkdir()
+    (grid / 'a.mod').write_text('')
+    settings = [{'linelist_params': {'linelist_file': ['master.txt']}}]
+    values, runs = api.compute_window_batch(
+        tmp_path / 'synth', (5750., 4.5, 0., 1.), {(5750., 4.5, 0.): grid / 'a.mod'},
+        settings_list=settings, windows=[(5000., 5002.), (5100., 5102.)], R=300000.,
+        launch_kwargs={'cwd': str(tmp_path)}, max_threads=1, return_runs=True)
+    assert values == [[(5000., 5002.), (5100., 5102.)]]
+    assert len(runs) == 2 and len(set(runs)) == 2

@@ -334,6 +334,16 @@ class SpectrumCanvas:
         if self.on_change:
             self.on_change(self)
 
+    def rename_object(self, uid, name):
+        """Give an object a new display name (the sidebar, Info tab and session use it)."""
+        obj = self._find(uid)
+        name = str(name).strip()
+        if obj is None or not name or name == obj.name:
+            return
+        obj.name = name
+        if self.on_change:
+            self.on_change(self)
+
     def remove_object(self, uid):
         obj = self._find(uid)
         if obj is None:

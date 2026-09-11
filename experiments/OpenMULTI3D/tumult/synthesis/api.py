@@ -12,6 +12,7 @@ import hashlib
 import itertools
 import logging
 import json
+import re
 import os
 import numpy as np
 import pandas as pd
@@ -52,6 +53,26 @@ def _run_name(teff_i, logg_i, feh_i, v):
     return f't{teff_i:04.0f}g{logg_i*10:02.0f}m{feh_i*10:+03.0f}v{round(v*10):02.0f}'
 
 
+def _node_name(jkey, teff_i, logg_i, feh_i, v):
+    """Run directory name of one node: the 1D name keeps its historical form (and cache
+    identity); a snapshot node (``v is None``) names its snapshot instead of a vmic level
+    and keeps two log g decimals, since 3D grids sit at quarter steps."""
+    if v is None:
+        # no dots: the launcher derives the log name and output folder by suffix
+        tag = re.sub(r'[^A-Za-z0-9_+-]', '_', str(jkey[1]))
+        return f't{teff_i:04.0f}g{logg_i*100:03.0f}m{feh_i*10:+03.0f}_{tag}'
+    return _run_name(teff_i, logg_i, feh_i, v)
+
+
+def _node_atmos(atmos_path, feh_i, v):
+    """The per-node ``atmos_params`` override. A snapshot's velocity field replaces
+    microturbulence, so no ``vmic`` is written for it."""
+    override = {'atmos_file': atmos_path, 'feh': feh_i}
+    if v is not None:
+        override['vmic'] = v
+    return override
+
+
 def _dep_jobs(base, nodes, departures_top):
     """Departure-coefficient jobs (one per atmosphere node) for the NLTE two-step path: no
     line list, no output spectrum (``rt_output_params angle_quad='none'``), saved via the
@@ -62,12 +83,13 @@ def _dep_jobs(base, nodes, departures_top):
         dep_nml.pop('linelist_params', None)
         dep_nml.pop('spectrum_params', None)
         dep_nml = update_dict(dep_nml, {
-            'atmos_params': {'atmos_file': atmos_path, 'feh': feh_i, 'vmic': v},
+            'atmos_params': _node_atmos(atmos_path, feh_i, v),
             'opac_table_params': {'absmet_file': absmet_file},
             'rt_iteration_params': {'maxiter': 99},
             'rt_output_params': {'maxiter': 3, 'angle_quad': 'none'},
         })
-        jobs.append((jkey, Path(departures_top) / _run_name(teff_i, logg_i, feh_i, v), dep_nml))
+        jobs.append((jkey, Path(departures_top) / _node_name(jkey, teff_i, logg_i, feh_i, v),
+                     dep_nml))
     return jobs
 
 
@@ -83,11 +105,11 @@ def _spec_jobs(base, nodes, top, nlte, dep_dirs, node_linelists=None):
     jobs, job_keys, job_weights, job_params = [], [], [], []
     for jkey, teff_i, logg_i, feh_i, v, weight, atmos_path, absmet_file in nodes:
         if nlte:
-            atmos_override = {'atmos_format': 'save', 'atmos_file': dep_dirs[jkey],
-                              'read_departures': True, 'feh': feh_i, 'vmic': v}
+            atmos_override = dict(_node_atmos(dep_dirs[jkey], feh_i, v),
+                                  atmos_format='save', read_departures=True)
             extra = {'rt_iteration_params': {'maxiter': 0}}
         else:
-            atmos_override = {'atmos_file': atmos_path, 'feh': feh_i, 'vmic': v}
+            atmos_override = _node_atmos(atmos_path, feh_i, v)
             extra = {}
         if node_linelists:
             extra = dict(extra,
@@ -97,10 +119,10 @@ def _spec_jobs(base, nodes, top, nlte, dep_dirs, node_linelists=None):
             'opac_table_params': {'absmet_file': absmet_file},
             **extra,
         })
-        jobs.append((jkey, Path(top) / _run_name(teff_i, logg_i, feh_i, v), nml_i))
+        jobs.append((jkey, Path(top) / _node_name(jkey, teff_i, logg_i, feh_i, v), nml_i))
         job_keys.append(jkey)
         job_weights.append(weight)
-        job_params.append((teff_i, logg_i, feh_i, v))
+        job_params.append((teff_i, logg_i, feh_i, 0.0 if v is None else v))
     return jobs, job_keys, job_weights, job_params
 
 
@@ -166,6 +188,11 @@ def _node_linelists(top, base, nodes, windows, crop, launch_kwargs, preparation=
     master = files[0] if Path(files[0]).is_absolute() else cwd / files[0]
     mapping = {}
     for jkey, teff_i, logg_i, feh_i, v, _w, atmos_path, _absmet in nodes:
+        if v is None:
+            # HOP crops on a 1D structure; a snapshot node needs the request path's MARCS
+            # preparation references (see workflows.resolve_request) rather than a guess.
+            raise ValueError('Line-list cropping on a 3D snapshot grid needs a MARCS '
+                             'preparation grid; pass a prepared line list or disable the crop.')
         path = out_dir / f'{_run_name(teff_i, logg_i, feh_i, v)}.txt'
         if not path.is_file():
             atmos = atmos_path if Path(atmos_path).is_absolute() else cwd / atmos_path
@@ -176,22 +203,66 @@ def _node_linelists(top, base, nodes, windows, crop, launch_kwargs, preparation=
     return mapping
 
 
+def _is_snapshot_key(key):
+    """Snapshot-grid nodes are keyed ``((teff, logg, feh), snapshot_tag)``; 1D nodes carry
+    the vmic level in that slot (see :func:`select_nodes`)."""
+    return isinstance(key, tuple) and len(key) == 2 and isinstance(key[1], str)
+
+
+class _SnapshotMeanView:
+    """One snapshot-grid node as :class:`SpectrumGrid` expects it: the equal-weight mean
+    over the node's snapshot runs, so the grid sees one spectrum per stellar point."""
+    def __init__(self, runs):
+        self.runs = list(runs)
+        self.has_spectrum = all(getattr(run, 'has_spectrum', False) for run in self.runs)
+        self.mode = getattr(self.runs[0], 'mode', 'LTE')
+        self.folder = self.runs[0].folder
+
+    def crop(self, *args, **kwargs):
+        return tm.Spectrum.combine([run.crop(*args, **kwargs) for run in self.runs])
+
+
+def _collapse_snapshots(runs, job_keys, job_weights, job_params):
+    """Merge the per-snapshot nodes of a snapshot grid onto their stellar point. Snapshot
+    node keys carry the snapshot tag as their second element; their weights (the spatial
+    weight shared equally in :func:`select_nodes`) add back up to the node's."""
+    spectra, weights, params = [], [], []
+    grouped = {}    # spatial key -> index into the lists
+    for key, weight, point in zip(job_keys, job_weights, job_params):
+        if not _is_snapshot_key(key):
+            spectra.append(runs[key])
+            weights.append(weight)
+            params.append(point)
+            continue
+        index = grouped.get(key[0])
+        if index is None:
+            grouped[key[0]] = len(spectra)
+            spectra.append(_SnapshotMeanView([runs[key]]))
+            weights.append(weight)
+            params.append(point)
+        else:
+            spectra[index].runs.append(runs[key])
+            weights[index] += weight
+    return spectra, weights, params
+
+
 def _assemble_grid(runs, star, vmic, job_keys, job_weights, job_params, vmic_points):
     """Load the finished node runs into a tm.grid at ``star`` (separable vmic axis when
     ``vmic_points > 2``, else linear bracket with stored interpolation weights)."""
     teff, logg, feh = star[:3]
+    # snapshot nodes (keyed by snapshot tag) have no vmic lattice to collapse
+    sep_vmic = vmic_points > 2 and not any(_is_snapshot_key(k) for k in job_keys)
+    spectra, weights, params = _collapse_snapshots(runs, job_keys, job_weights, job_params)
     param_dict = {
-        'teff': [p[0] for p in job_params],
-        'logg': [p[1] for p in job_params],
-        'feh':  [p[2] for p in job_params],
-        'vmic': [p[3] for p in job_params],
+        'teff': [p[0] for p in params],
+        'logg': [p[1] for p in params],
+        'feh':  [p[2] for p in params],
+        'vmic': [p[3] for p in params],
     }
-    sep_vmic = vmic_points > 2
-    g = tm.grid([runs[k] for k in job_keys],
-                separable=(['vmic'] if sep_vmic else None), **param_dict)
+    g = tm.grid(spectra, separable=(['vmic'] if sep_vmic else None), **param_dict)
     g.p0 = {'teff': teff, 'logg': logg, 'feh': feh, 'vmic': vmic}
     if not sep_vmic:
-        g.interp_weights = np.asarray(job_weights, dtype=float)
+        g.interp_weights = np.asarray(weights, dtype=float)
     return g
 
 
@@ -297,7 +368,7 @@ def _save_provenance(runs, nodes, settings):
         if run is None:
             continue
         record = {'star': {'teff': float(teff_i), 'logg': float(logg_i),
-                           'feh': float(feh_i), 'vmic': float(v)},
+                           'feh': float(feh_i), 'vmic': None if v is None else float(v)},
                   'abund': abund}
         try:
             (Path(run.folder) / PROVENANCE_NAME).write_text(json.dumps(record, indent=1))
@@ -322,8 +393,7 @@ def _foldable_ladder(settings_list, launch_kwargs, nlte):
     if any(item != comparable[0] for item in comparable[1:]):
         return None
     keys = set(abundance_maps[0])
-    if ((not keys and len(abundance_maps) > 1)
-            or any(set(values) != keys for values in abundance_maps[1:])):
+    if not keys or any(set(values) != keys for values in abundance_maps[1:]):
         return None
 
     # The sampled table combines species and cannot apply an element-specific scale.
@@ -714,16 +784,19 @@ def compute_window_batch(top, star, atmos_files, *, settings_list, windows, R,
     if any(item is None for item in folds):
         # not a ladder: nothing to fold onto the set axis, so fall back to the existing
         # per-window batching rather than pretending this is one run
-        values = [[spec for spec in specs] for specs in zip(*[
-            compute_spectra(top, star, atmos_files, settings_list=settings_list,
-                            absmet_files=absmet_files, method=method,
-                            max_threads=max_threads, launch_kwargs=launch_kwargs,
-                            xmin=float(min(w)), xmax=float(max(w)), pad=pad,
-                            vmic_step=vmic_step, vmic_points=vmic_points, nlte=nlte,
-                            cancel_token=cancel_token, crop=crop,
-                            preparation=preparation)
-            for w in windows])]
-        return (values, ()) if return_runs else values
+        per_window, folders = [], []
+        for w in windows:
+            specs, runs_w = compute_spectra(
+                top, star, atmos_files, settings_list=settings_list,
+                absmet_files=absmet_files, method=method, max_threads=max_threads,
+                launch_kwargs=launch_kwargs, xmin=float(min(w)), xmax=float(max(w)),
+                pad=pad, vmic_step=vmic_step, vmic_points=vmic_points, nlte=nlte,
+                cancel_token=cancel_token, crop=crop, preparation=preparation,
+                return_runs=True)
+            per_window.append(specs)
+            folders.extend(runs_w)
+        values = [list(specs) for specs in zip(*per_window)]
+        return (values, tuple(dict.fromkeys(folders))) if return_runs else values
 
     plans = []      # per group: (members, base, syn_top, nlte_v, node_lists)
     for members, (base, manifest) in zip(groups, folds):
@@ -797,7 +870,8 @@ def compute_window_batch(top, star, atmos_files, *, settings_list, windows, R,
 def compute_spectra(top, star, atmos_files, *, settings_list, absmet_files=None,
                     method='Delaunay', max_threads=None, launch_kwargs=None,
                     xmin=None, xmax=None, pad=None, vmic_step=0.5, vmic_points=2,
-                    nlte=None, cancel_token=None, crop=None, preparation=None):
+                    nlte=None, cancel_token=None, crop=None, preparation=None,
+                    return_runs=False):
     """Batched :func:`compute_spectrum` for a list of settings variants that share the same
     star/atmospheres (e.g. a curve-of-growth's abundance ladder).
 
@@ -908,6 +982,7 @@ def compute_spectra(top, star, atmos_files, *, settings_list, absmet_files=None,
     # Phase 1: all NLTE departure solves (node × variant) through the shared scheduler. Keys are
     # namespaced by variant index; each variant's runs live under its own hash-keyed dir.
     dep_dirs = {}   # (vi, jkey) -> folder
+    dep_runs = {}
     dep_jobs = []
     for vi, (s, _syn, dep_top, nlte_v, _lists) in enumerate(prepared):
         if nlte_v:
@@ -941,6 +1016,11 @@ def compute_spectra(top, star, atmos_files, *, settings_list, absmet_files=None,
         grid = _assemble_grid(runs_v, star, vmic, job_keys, job_weights, job_params,
                               vmic_points)
         results.append(_interp_crop(grid, xmin, xmax, method))
+    if return_runs:
+        folders = tuple(dict.fromkeys(
+            str(Path(run.folder).resolve())
+            for run in (*dep_runs.values(), *spec_runs.values())))
+        return results, folders
     return results
 
 

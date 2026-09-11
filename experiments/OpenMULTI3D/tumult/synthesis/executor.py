@@ -11,7 +11,7 @@ from tumult.auxfuncs import update_dict
 from tumult.launch import run_complete, prepare_input
 
 from .cancel import CancelToken
-from .runtime import get_runtime
+from .runtime import get_runtime, note_run
 
 
 def _run_single(key, nml_name, nml, launch_kwargs):
@@ -78,6 +78,7 @@ def _run_batch(jobs, launch_kwargs, max_threads, cancel_token=None, *, runtime=N
         prepared = prepare_input(nml, kwargs.get('default'))
         output = str((Path(kwargs.get('cwd') or '.') /
                       _output_folder(name, prepared)).resolve())
+        note_run(output)
         # CPU allocation is scheduling metadata, not part of a spectrum's identity.
         signature = json.dumps([prepared, {k: v for k, v in kwargs.items()
                                            if k not in ('threads', 'verbose', 'log_file')}],

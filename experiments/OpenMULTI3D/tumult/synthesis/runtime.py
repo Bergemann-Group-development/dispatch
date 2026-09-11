@@ -170,6 +170,7 @@ class ExecutionService:
 _default = None
 _default_lock = threading.Lock()
 _current = ContextVar("tumult_execution", default=None)
+_observer = ContextVar("tumult_run_observer", default=None)
 
 # Process-wide coordinator pools. They are outside ExecutionService because their
 # tasks may wait for leaf dispatch jobs; putting them on the leaf pool can deadlock.
@@ -203,6 +204,27 @@ def execution_scope(max_threads=None):
             yield runtime
         finally:
             _current.reset(reset)
+
+
+@contextmanager
+def observe_runs(callback):
+    """Report every native run folder scheduled inside this block to ``callback``.
+
+    Batches call it from the coordinator thread before submitting the run, cache hits
+    included, so a durable workflow record can name its runs while they are in flight
+    instead of guessing from timestamps.
+    """
+    reset = _observer.set(callback)
+    try:
+        yield
+    finally:
+        _observer.reset(reset)
+
+
+def note_run(output):
+    observer = _observer.get()
+    if observer is not None:
+        observer(output)
 
 
 def shutdown():

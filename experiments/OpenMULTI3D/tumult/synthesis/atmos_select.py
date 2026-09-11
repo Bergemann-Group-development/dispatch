@@ -7,10 +7,16 @@ the atmospheric structure but strongly affects line strengths, and MULTI3D appli
 a uniform namelist override — so atmospheres are bracketed only in (teff, logg, feh) and
 each selected node is synthesised at the ``vmic_step``-lattice points bracketing the
 query vmic.
+
+A 3D snapshot grid (see :mod:`tumult.synthesis.snapshot_grid`) maps each node to a
+sequence of snapshots. Its velocity field replaces microturbulence, so such nodes carry no
+vmic lattice; every selected snapshot becomes one node whose weight is the spatial weight
+shared equally over the node's snapshots, and the node spectrum is their mean.
 """
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 import numpy as np
 
@@ -78,7 +84,8 @@ def select_nodes(star, atmos_files, method='Delaunay', vmic_step=0.5, absmet_fil
     Returns
     -------
     nodes : list of (jkey, teff, logg, feh, vmic, weight, atmos_path, absmet_file)
-        with ``jkey = ((teff, logg, feh), vmic)`` the job key.
+        with ``jkey = ((teff, logg, feh), vmic)`` the job key. For a snapshot grid node
+        ``vmic`` is ``None`` and the key's second element is the snapshot tag.
     vmic : float
         The query vmic (0.0 when ``star`` has no fourth component).
     """
@@ -113,6 +120,13 @@ def select_nodes(star, atmos_files, method='Delaunay', vmic_step=0.5, absmet_fil
         teff_i, logg_i, feh_i = spatial
         atmos_path = rep[spatial][1]
         absmet_file = absmet_files.get(feh_i, '') if absmet_files else ''
+        if isinstance(atmos_path, (list, tuple)):
+            # one node per snapshot, tagged by its file name (unique within the node)
+            share = float(w_spatial) / len(atmos_path)
+            for snapshot in atmos_path:
+                nodes.append(((spatial, Path(snapshot).name), teff_i, logg_i, feh_i,
+                              None, share, snapshot, absmet_file))
+            continue
         for v, w_vmic in levels:
             weight = float(w_spatial) if w_vmic is None else float(w_spatial) * float(w_vmic)
             nodes.append(((spatial, v), teff_i, logg_i, feh_i, v,

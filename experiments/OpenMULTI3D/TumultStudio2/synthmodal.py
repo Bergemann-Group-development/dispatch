@@ -24,7 +24,7 @@ import html
 from pathlib import Path
 
 import store
-from tumult.synthesis import Snapshot3D, submit as submit_synthesis
+from tumult.synthesis import GridTarget, Snapshot3D, submit as submit_synthesis
 from tumult.synthesis import workflows as synth
 from atompicker import AtomPicker
 from controls import Field, Form
@@ -233,16 +233,45 @@ class SynthModal:
 
     # --- Info-tab provenance ----------------------------------------------
     @staticmethod
-    def _synth_meta(stellar, *, mode, abundances, relative, atoms, xmin, xmax):
+    def _atmosphere_rows(grid, atmos_file=None, resolution=None):
+        """Info-tab rows naming the model atmosphere a synthesis read: the format the
+        Fortran parsed it with, and either the interpolated grid or the one file."""
+        grid = grid or {}
+        rows = []
+        if atmos_file:
+            rows.append(["Atmosphere", Path(str(atmos_file)).name])
+            if grid.get("folder"):
+                rows.append(["Atmosphere grid", f"{grid.get('name') or grid.get('id')} (picked file)"])
+        elif grid:
+            rows.append(["Atmosphere", f"{grid.get('name') or grid.get('id')} grid, interpolated"])
+        rows.append(["Atmosphere format", str(grid.get("format") or "unknown")])
+        if resolution:
+            rows.append(["Mesh", "×".join(str(int(v)) for v in resolution)])
+        return rows
+
+    @classmethod
+    def _selection_rows(cls, selection, grid):
+        """:meth:`_atmosphere_rows` for a request's atmosphere selection; ``grid`` is the
+        setup's active grid record, which names the grid a picked file came from."""
+        if isinstance(selection, GridTarget):
+            return cls._atmosphere_rows(selection.grid)
+        return cls._atmosphere_rows({**(grid or {}), "format": selection.format},
+                                    selection.path, getattr(selection, "resolution", None))
+
+    @staticmethod
+    def _synth_meta(stellar, *, mode, abundances, relative, atoms, xmin, xmax,
+                    atmosphere=()):
         """A structured Info-tab payload describing the synthesis that produced a spectrum.
 
-        ``stellar`` is ``{teff, logg, feh, vmic}``; the post-processing (vshift/vmac/vrot)
-        is intentionally omitted here — it lives in the Edit tab as a live convolution.
+        ``stellar`` is ``{teff, logg, feh, vmic}``; ``atmosphere`` the rows from
+        :meth:`_atmosphere_rows`. The post-processing (vshift/vmac/vrot) is intentionally
+        omitted here — it lives in the Edit tab as a live convolution.
         """
         rows = [["Teff [K]", f"{float(stellar['teff']):.0f}"],
                 ["log g", f"{float(stellar['logg']):.2f}"],
                 ["[Fe/H]", f"{float(stellar['feh']):+.2f}"],
                 ["vmic [km/s]", f"{float(stellar['vmic']):.2f}"],
+                *atmosphere,
                 ["RT mode", str(mode).upper()]]
         if str(abundances).strip():
             unit = "[X/Fe]" if relative else "A(X)"
@@ -338,7 +367,8 @@ class SynthModal:
                 feh=float(stellar["feh"]), solar=synth.abund_table(prefs))
             meta = self._synth_meta(stellar, mode=mode, abundances=terms,
                                     relative=relative, atoms=run_vals["atoms"],
-                                    xmin=xmin, xmax=xmax)
+                                    xmin=xmin, xmax=xmax,
+                                    atmosphere=self._atmosphere_rows(grid, atmos_file))
             self._add(raw, name, meta=meta, conv=post)
 
         pulse(self.dialog, "close")
@@ -489,7 +519,8 @@ class SynthModal:
             {"teff": target[0], "logg": target[1], "feh": target[2], "vmic": target[3]},
             mode=rv["mode"], abundances=rv["abundances"],
             relative=rv["relative_abundances"], atoms=rv["atoms"],
-            xmin=shown_min, xmax=shown_max)
+            xmin=shown_min, xmax=shown_max,
+            atmosphere=self._selection_rows(request.selection, self.setup.active_grid()))
         if selected_masks:
             meta["params"].append(["Line mask", mset.name])
         pulse(self.dialog, "close")

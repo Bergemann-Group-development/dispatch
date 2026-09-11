@@ -35,6 +35,7 @@ tests/*
 !requirements-gui.txt
 !tests/test_synthesis_preparation.py
 !tests/test_synthesis_contract.py
+!tests/test_snapshot_grid.py
 
 # Review documents are maintained source; benchmark outputs remain ignored.
 !reports/

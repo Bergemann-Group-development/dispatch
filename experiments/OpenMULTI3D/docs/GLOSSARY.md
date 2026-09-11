@@ -78,5 +78,9 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
 - *snapshot*: one 3D hydrodynamic model atmosphere, as a cube. Distinct from an *atmosphere
   node*, which is one 1D model atmosphere at a point of the (teff, logg, feh, vmic) grid.
   The stellar-grid path solves departures per node; the snapshot path solves them per cube.
+- *snapshot grid*: a grid of 3D models whose nodes are time series of snapshots, found by
+  the same path pattern scan as a 1D grid (`tumult.synthesis.snapshot_grid`). Its nodes
+  interpolate like a 1D grid's, each node's spectrum being the mean over its selected
+  snapshots; there is no vmic lattice, since the velocity field replaces microturbulence.
 - *resolution*: the destination mesh `(nx, ny, nz)` a snapshot is sampled onto, which is
   independent of the cube's own. Not spectral resolving power, which is `R`.

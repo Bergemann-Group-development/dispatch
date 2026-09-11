@@ -12,7 +12,7 @@ import uuid
 
 from .cancel import CancelToken, CancelledError
 from .request import ResolvedSynthRequest, SynthesisResult, SynthRequest
-from .runtime import WORKFLOWS
+from .runtime import WORKFLOWS, observe_runs
 
 RECORD = 'workflow.json'
 _live = {}
@@ -57,6 +57,20 @@ class WorkflowHandle:
     def status(self):
         return self._record()['state']
 
+    def _native_runs(self, record):
+        """State and progress of each native run this workflow has scheduled so far."""
+        from . import jobrecord
+        from tumult.launch import monitor
+        items = []
+        for folder in record.get('runs') or ():
+            folder = Path(folder)
+            log = folder.with_suffix('.log')
+            native = jobrecord.read(folder)
+            items.append({'output': str(folder), 'log': str(log) if log.is_file() else None,
+                          'state': jobrecord.state_of(folder, native),
+                          'progress': monitor(folder, log if log.is_file() else None)})
+        return items
+
     @property
     def progress(self):
         record = self._record()
@@ -64,42 +78,28 @@ class WorkflowHandle:
         phase = record.get('phase')
         if record.get('state') == 'running':
             try:
-                from . import jobrecord
-                from tumult.launch import monitor
-                root = record['request']['output_root']
-                native = [item for item in jobrecord.scan(root)
-                          if item.get('started', 0) >= record['submitted'] - 1]
-                counts = []
-                for item in native:
-                    output = Path(item['output'])
-                    counts.append(monitor(output, output.with_suffix('.log')))
-                if counts:
-                    diagnostics.update(native_runs=len(native), completed=sum(
-                        item['resolved'] == 'finished' for item in native),
-                                       done=sum(item[0] for item in counts),
-                                       total=sum(item[1] for item in counts),
-                                       estimated=True)
-                    phase = ('departures' if any('dep_' in item['output'] for item in native)
-                             else 'synthesis')
+                native = self._native_runs(record)
             except (OSError, KeyError, ValueError):
-                pass
+                native = []
+            if native:
+                diagnostics.update(
+                    native_runs=len(native),
+                    completed=sum(item['state'] == 'finished' for item in native),
+                    done=sum(item['progress'][0] for item in native),
+                    total=sum(item['progress'][1] for item in native),
+                    estimated=True, runs=native)
         return {'phase': phase, 'elapsed': max(
             0.0, (record.get('ended') or time.time()) - record['submitted']),
                 'diagnostics': diagnostics}
 
     @property
+    def runs(self):
+        return tuple(self._record().get('runs') or ())
+
+    @property
     def logs(self):
-        record = self._record()
-        logs = list(record.get('logs') or ())
-        if record.get('state') == 'running':
-            try:
-                from . import jobrecord
-                logs.extend(str(Path(item['output']).with_suffix('.log'))
-                            for item in jobrecord.scan(record['request']['output_root'])
-                            if item.get('started', 0) >= record['submitted'] - 1
-                            and Path(item['output']).with_suffix('.log').is_file())
-            except (OSError, KeyError):
-                pass
+        logs = [str(Path(run).with_suffix('.log')) for run in self.runs
+                if Path(run).with_suffix('.log').is_file()]
         return tuple(dict.fromkeys(logs))
 
     def cancel(self):
@@ -133,28 +133,37 @@ def submit(request, *, root=None):
     folder = base / identity
     record = {'version': 1, 'id': identity, 'state': 'queued', 'phase': 'queued',
               'submitted': time.time(), 'request': resolved.to_dict(), 'runs': [],
-              'logs': [], 'result': None}
+              'result': None}
     _atomic(folder / RECORD, record)
     token = CancelToken()
     handle = WorkflowHandle(folder, token=token)
 
     def update(**values):
-        current = _read(folder) or record
-        current.update(values)
-        _atomic(folder / RECORD, current)
+        with _lock:
+            current = _read(folder) or record
+            current.update(values)
+            _atomic(folder / RECORD, current)
+
+    runs = []
+
+    def note(output):
+        # Called by the batch executor before each native run starts, cache hits included,
+        # so the record names its runs while they are in flight.
+        if output not in runs:
+            runs.append(output)
+            update(runs=list(runs))
 
     def work():
         update(state='running', phase='preparation', started=time.time())
         try:
             token.check()
             update(phase='synthesis')
-            result = execute_request(resolved, cancel_token=token)
+            with observe_runs(note):
+                result = execute_request(resolved, cancel_token=token)
             update(phase='saving')
             result_path = result.save(folder / 'result')
-            logs = [str(Path(run).with_suffix('.log')) for run in result.runs
-                    if Path(run).with_suffix('.log').is_file()]
             update(state='finished', phase='finished', ended=time.time(),
-                   result=str(result_path), runs=list(result.runs), logs=logs)
+                   result=str(result_path), runs=list(dict.fromkeys(runs + list(result.runs))))
             return str(result_path)
         except CancelledError:
             update(state='cancelled', phase='cancelled', ended=time.time())
@@ -167,10 +176,9 @@ def submit(request, *, root=None):
             with _lock:
                 _live.pop(identity, None)
 
-    future = WORKFLOWS.submit(work)
-    handle._future = future
     with _lock:
         _live[identity] = handle
+        handle._future = WORKFLOWS.submit(work)
     return handle
 
 

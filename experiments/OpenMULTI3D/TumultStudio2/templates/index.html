@@ -989,6 +989,35 @@
   document.getElementById('annot-btn').addEventListener('click', function () { ewAction('annot-toggle'); });
   document.getElementById('linelist-close').addEventListener('click', function () { ewAction('lineclose'); });
 
+  // rename the selected object from the Info tab (on Enter / blur) -> "object-rename"
+  document.addEventListener('change', function (ev) {
+    var box = ev.target.closest('#object-rename');
+    if (!box) return;
+    var m = Bokeh.documents[0].get_model_by_name('object-rename');
+    if (m) m.setv({ value: box.dataset.uid + '\u0000' + box.value + '\u0000' + Date.now() });
+  });
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter' && ev.target.closest('#object-rename')) ev.target.blur();
+  });
+  // the line-list search: every keystroke is a query (after a short pause, so a word typed
+  // at speed costs one search), Esc empties it and so returns the window's lines
+  (function () {
+    var box = document.getElementById('linelist-search'), timer = null;
+    function send() {
+      timer = null;
+      var m = Bokeh.documents[0].get_model_by_name('linelist-search');
+      if (m) m.setv({ value: box.value + '\u0000' + Date.now() });
+    }
+    box.addEventListener('input', function () {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(send, 150);
+    });
+    box.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Escape') { box.value = ''; send(); box.blur(); ev.stopPropagation(); }
+      else if (ev.key === 'Enter') { if (timer) clearTimeout(timer); send(); }
+    });
+  })();
+
   // the line list is re-rendered wholesale into its slot, so the row to jump to can only be
   // placed once it is in the DOM: the server marks it .jump-target and this positions it.
   // What to do is the server's call, carried on the row as data-scroll. "ifneeded" is a pick

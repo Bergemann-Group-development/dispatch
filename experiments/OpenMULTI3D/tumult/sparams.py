@@ -371,11 +371,11 @@ def grid_bounds(grid, atmos_file=None):
     The interpolation itself raises on a truly unreachable query, which the solve surfaces;
     these bounds only keep a step from walking off the grid in the first place.
     """
-    from .synthesis.workflows import DEFAULT_PATTERN, discover_atmos_grid
+    from .synthesis.snapshot_grid import discover_grid
     if atmos_file or not grid.get("folder"):
         return {"vmic": VMIC_BOUNDS}
     try:
-        files = discover_atmos_grid(grid["folder"], grid.get("pattern") or DEFAULT_PATTERN)
+        files = discover_grid(grid)
     except Exception:
         return {"vmic": VMIC_BOUNDS}
     keys = np.array([k[:3] for k in files], dtype=float)

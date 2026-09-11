@@ -36,6 +36,7 @@ from .cancel import CancelToken, CancelledError
 from .runtime import get_runtime
 from .request import (Atmosphere1D, GridTarget, ResolvedSynthRequest, Snapshot3D,
                       SynthesisResult, SynthRequest)
+from .snapshot_grid import discover_grid
 from ..auxfuncs import update_dict
 
 # namelist presets now live with the core (tumult/presets) so the library and this app
@@ -50,7 +51,8 @@ __all__ = ["discover_atmos_grid", "compile_pattern", "recover_params",
            "read_reference_linelist",
            "fit", "fit_line",
            "fit_request_line",
-           "abund_elements", "abund_table", "DEFAULT_PATTERN",
+           "abund_elements", "abund_table", "DEFAULT_PATTERN", "STAGGER_PATTERN",
+           "FORMAT_PATTERNS", "default_pattern",
            "CancelToken", "CancelledError"]
 
 # preset layered on top of base.nml for the 1D LTE reference: LTE (maxiter=0), atom-only
@@ -64,9 +66,23 @@ STELLAR_PARAMS = [("teff", "Teff [K]", 1, 5777), ("logg", "log g", 0.01, 4.4),
 
 # the Marcs naming convention used in the old TumultStudio atmosphere-grid importer
 DEFAULT_PATTERN = "{Teff:d}_g{logg:+.1f}_m{:3}_t{vmic:02d}_st_z{FeH:+.2f}"
+# the post-processed Stagger grid: atm3d.t50g45m0005_00008_80x80x240 is Teff=5000,
+# log g=4.5, [Fe/H]=0.0, model version 05, snapshot 8 (see the grid's INSTRUCTIONS.md).
+# Two-digit names truncate the quarter-step log g values (g47 reads as 4.7), and the solar
+# models write Teff out in full (t5777), which this two-digit token does not match.
+STAGGER_PATTERN = "atm3d.t{Teff/100:02d}g{logg*10:02d}{FeH*10:+03d}{}_{snap:05d}"
+
+# the pattern a registered grid starts from, by atmos_format (case-insensitive)
+FORMAT_PATTERNS = {"marcs": DEFAULT_PATTERN, "stagger2": STAGGER_PATTERN}
+
+
+def default_pattern(atmos_format):
+    """The stock path pattern for ``atmos_format``, or ``""`` when none is known."""
+    return FORMAT_PATTERNS.get(str(atmos_format or "").lower(), "")
 
 # the stellar fields a pattern may bind; Teff/logg/FeH are required, vmic optional
-_PATTERN_FIELDS = ("Teff", "logg", "FeH", "vmic")
+_PATTERN_FIELDS = ("Teff", "logg", "FeH", "vmic", "snap")
+_FIELD_NAMES = {name.lower(): name for name in _PATTERN_FIELDS}   # names are case-insensitive
 _REQUIRED_FIELDS = ("Teff", "logg", "FeH")
 # a signed integer/float/exponent token (what one stellar field captures in a filename)
 _NUM_RE = r"[+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?"
@@ -74,18 +90,21 @@ _NUM_RE = r"[+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?"
 # fallback resolving power when none is configured — high enough for line synthesis
 _DEFAULT_R = 300000.0
 
-# memoised grid scans: (folder, pattern) -> (folder_mtime, grid); the MARCS folder has
-# ~15k files, so re-globbing+parsing it on every synthesis is needless work.
+# memoised grid scans: (folder, pattern, snapshots) -> (tree_mtime, grid); the MARCS folder
+# has ~15k files, so re-globbing+parsing it on every synthesis is needless work.
 _GRID_MEMO = {}
 
 
 # one {...} token in a pattern: an optional field name, an optional linear op (* / + -)
-# with a number, and an optional :format spec (which we ignore for matching).
+# with a number, and an optional :spec (format specs are ignored for matching; see
+# compile_pattern for the matching keywords).
 _TOKEN_RE = re.compile(
     r"\{(?P<name>[A-Za-z_]\w*)?"
     r"(?:\s*(?P<op>[*/+-])\s*(?P<num>\d+(?:\.\d+)?))?"
-    r"(?::(?P<fmt>[^}]*))?\}"
+    r"(?::(?P<spec>[^}]*))?\}"
 )
+# top-level alternatives: a | outside any {...} token
+_ALTERNATIVE_RE = re.compile(r"\|(?![^{]*\})")
 
 
 def _transform(op, num):
@@ -109,86 +128,169 @@ def _transform(op, num):
     return (1.0, 0.0)
 
 
-class _Pattern:
-    """A compiled filename pattern: a regex with one named group per stellar field plus the
-    per-field ``(scale, offset)`` needed to recover physical values from matched tokens."""
+_FORMAT_RE = re.compile(
+    r"^(?P<sign>[+ -])?(?P<zero>0)?(?P<width>\d+)?(?:\.(?P<precision>\d+))?(?P<type>[dfeEgG])?$")
+_SIGN_RE = "[+\\-pPmM]"   # a sign as written (+/-) or as a name letter (p/m)
 
-    def __init__(self, regex, transforms, fields):
-        self.regex = regex
-        self.transforms = transforms  # {field: (scale, offset)}
-        self.fields = fields          # ordered tuple of bound field names
+
+def _parse_spec(spec):
+    """A token's ``:spec``, a Python format item, as its parsed parts (or ``None``)."""
+    spec = (spec or "").strip()
+    if not spec:
+        return None
+    fmt = _FORMAT_RE.match(spec)
+    if fmt is None:
+        raise ValueError(f"Unrecognised format item {spec!r} in pattern token")
+    return fmt.groupdict()
+
+
+class _Field:
+    """How one bound token turns its matched text into a physical value.
+
+    The format item is read as the one that *wrote* the token: a ``+`` flag makes the sign
+    mandatory, a width fixes the digit count (less the sign when mandatory, less the
+    decimals for ``f``), a precision fixes the decimals, ``d`` and ``.0f`` forbid them.
+    Without a type the token is any signed number. ``p``/``m`` are accepted as ``+``/``-``.
+    """
+
+    def __init__(self, op, num, fmt):
+        self.scale, self.offset = _transform(op, num)
+        fmt = fmt or {}
+        self.sign_required = fmt.get("sign") == "+"
+        self.digits = None
+        self.decimals = None
+        kind = fmt.get("type")
+        width = int(fmt["width"]) if fmt.get("width") else None
+        if kind == "d":
+            self.decimals = 0
+        elif kind == "f":
+            self.decimals = int(fmt["precision"]) if fmt.get("precision") is not None else None
+        if width and kind in ("d", "f"):
+            digits = width - (1 if self.sign_required else 0)
+            if self.decimals:
+                digits -= self.decimals + 1
+            self.digits = digits if digits > 0 else None
+
+    def regex(self, name):
+        sign = _SIGN_RE + ("" if self.sign_required else "?")
+        digits = rf"\d{{{self.digits}}}" if self.digits else r"\d+"
+        if self.decimals is None:
+            number = digits + r"(?:\.\d+)?(?:[eE][+-]?\d+)?"
+        elif self.decimals == 0:
+            number = digits
+        else:
+            number = digits + rf"\.\d{{{self.decimals}}}"
+        return f"(?P<{name}>{sign}{number})"
+
+    def value(self, raw):
+        sign = 1.0
+        if raw and raw[0] in "+-pPmM":
+            sign = -1.0 if raw[0] in "-mM" else 1.0
+            raw = raw[1:]
+        return sign * (float(raw) * self.scale + self.offset) + 0.0
+
+
+class _Pattern:
+    """A compiled filename pattern: one regex per alternative, each with a named group per
+    stellar field, plus the per-field rule recovering physical values from matched tokens."""
+
+    def __init__(self, alternatives, fields):
+        self.alternatives = alternatives  # [(regex, {field: _Field})]
+        self.fields = fields              # ordered tuple of bound field names
 
     @property
     def has_vmic(self):
         return "vmic" in self.fields
 
+    @property
+    def has_snap(self):
+        return "snap" in self.fields
+
     def search(self, name):
         """Recover ``{field: physical_value}`` from ``name``, or ``None`` if it doesn't match
         or a required field is missing/unparsable."""
-        m = self.regex.search(name)
-        if not m:
-            return None
-        out = {}
-        for field in self.fields:
-            raw = m.group(field)
-            if raw is None:
+        for regex, rules in self.alternatives:
+            m = regex.search(name)
+            if not m:
                 continue
-            try:
-                token = float(raw)
-            except ValueError:
+            out = {}
+            for field, rule in rules.items():
+                raw = m.group(field)
+                if raw is None:
+                    continue
+                try:
+                    out[field] = rule.value(raw)
+                except ValueError:
+                    return None
+            if any(f not in out for f in _REQUIRED_FIELDS):
                 return None
-            scale, offset = self.transforms[field]
-            out[field] = token * scale + offset
-        if any(f not in out for f in _REQUIRED_FIELDS):
-            return None
-        return out
+            return out
+        return None
 
 
 # compiled-pattern memo (patterns are tiny; this just avoids recompiling per file scan)
 _PATTERN_MEMO = {}
 
 
-def compile_pattern(pattern):
-    """Compile a filename ``pattern`` into a :class:`_Pattern`.
-
-    Tokens are ``{Name[op NUM][:fmt]}`` where ``Name`` is one of ``Teff``/``logg``/``FeH``/
-    ``vmic`` (Teff/logg/FeH required, vmic optional), ``op`` is one of ``* / + -`` applying a
-    linear transform, and ``:fmt`` is an ignored format spec. An unnamed token (``{}`` or
-    ``{:3}``) is a skip wildcard — a width ``:N`` consumes exactly ``N`` chars, else lazily.
-    Literal text between tokens is matched verbatim. So ``t{Teff/100:.0f}`` recovers Teff=5000
-    from a filename fragment ``t50``.
-    """
-    cached = _PATTERN_MEMO.get(pattern)
-    if cached is not None:
-        return cached
-
+def _compile_alternative(pattern):
     parts = []
-    transforms = {}
-    fields = []
+    rules = {}
     pos = 0
     for m in _TOKEN_RE.finditer(pattern):
         parts.append(re.escape(pattern[pos:m.start()]))
         pos = m.end()
-        name, op, num, fmt = m.group("name", "op", "num", "fmt")
+        name, op, num, spec = m.group("name", "op", "num", "spec")
+        spec = _parse_spec(spec)
+        name = _FIELD_NAMES.get((name or "").lower(), name)
         if name in _PATTERN_FIELDS:
-            if name in transforms:
+            if name in rules:
                 raise ValueError(f"Pattern binds {name!r} more than once: {pattern!r}")
-            transforms[name] = _transform(op, num)
-            fields.append(name)
-            parts.append(f"(?P<{name}>{_NUM_RE})")
+            rules[name] = _Field(op, num, spec)
+            parts.append(rules[name].regex(name))
         else:
-            # unnamed / unknown field => skip; honour a fixed width from the format spec
-            width = re.match(r"0?(\d+)", fmt or "")
-            parts.append(f".{{{width.group(1)}}}" if width else ".*?")
+            # unnamed / unknown field => skip; honour a fixed width from the spec
+            width = (spec or {}).get("width")
+            parts.append(f".{{{int(width)}}}" if width else ".*?")
     parts.append(re.escape(pattern[pos:]))
-
-    missing = [f for f in _REQUIRED_FIELDS if f not in transforms]
+    missing = [f for f in _REQUIRED_FIELDS if f not in rules]
     if missing:
         raise ValueError(
             f"Pattern {pattern!r} must bind {', '.join(_REQUIRED_FIELDS)} "
             f"(missing: {', '.join(missing)}).")
+    return re.compile("".join(parts)), rules
 
-    compiled = _Pattern(re.compile("".join(parts)), transforms, tuple(fields))
+
+def compile_pattern(pattern):
+    """Compile a filename ``pattern`` into a :class:`_Pattern`.
+
+    A pattern reads like the Python format that wrote the name. Tokens are
+    ``{Name[op NUM][:spec]}`` where ``Name`` is one of ``Teff``/``logg``/``FeH``/``vmic``/
+    ``snap`` (case-insensitive; Teff/logg/FeH required, vmic and the snapshot number
+    optional), ``op`` is one of ``* / + -`` applying a linear transform, and ``:spec`` is a
+    Python format item. The format item constrains the match (see :class:`_Field`):
+    ``{FeH*10:+03d}`` is a mandatory sign and two digits, ``{logg:+.1f}`` a sign and one
+    decimal, ``{Teff:d}`` any integer. Signs may
+    be written ``+``/``-`` or ``p``/``m``. An unnamed token (``{}`` or ``{:3}``) is a skip
+    wildcard — a width consumes exactly that many characters, else lazily. Literal text
+    is matched verbatim, anywhere in the file's path relative to the grid folder (head and
+    tail are implicitly wild). ``|`` separates alternatives tried in order; every
+    alternative must bind the same fields.
+
+    So ``t{Teff/100:d}`` recovers Teff=5000 from ``t50``, and ``g{logg*10:02d}{FeH*10:+03d}``
+    recovers (4.5, -3.0) from ``g45m30``. See :data:`STAGGER_PATTERN` for a complete example.
+    """
+    cached = _PATTERN_MEMO.get(pattern)
+    if cached is not None:
+        return cached
+    alternatives = [_compile_alternative(text)
+                    for text in _ALTERNATIVE_RE.split(pattern) if text.strip()]
+    if not alternatives:
+        raise ValueError("Empty pattern.")
+    fields = tuple(alternatives[0][1])
+    for _regex, rules in alternatives[1:]:
+        if set(rules) != set(fields):
+            raise ValueError(f"Pattern alternatives bind different fields: {pattern!r}")
+    compiled = _Pattern(alternatives, fields)
     _PATTERN_MEMO[pattern] = compiled
     return compiled
 
@@ -205,36 +307,85 @@ def recover_params(pattern, name):
     return (d["Teff"], d["logg"], d["FeH"], d.get("vmic"))
 
 
-def discover_atmos_grid(folder, pattern=DEFAULT_PATTERN):
-    """Scan ``folder`` for atmosphere files whose names match ``pattern``.
+def _tree_mtime(folder):
+    """The newest change of the folder or one of its immediate subfolders, which is what a
+    recursive scan of a directory-per-node grid depends on."""
+    stamps = [folder.stat().st_mtime]
+    stamps.extend(entry.stat().st_mtime for entry in folder.iterdir() if entry.is_dir())
+    return max(stamps)
+
+
+def _select_snapshots(items, policy, has_snap):
+    """The files representing one node of a snapshot grid.
+
+    ``items`` are ``(parent, snap, path)`` for every matching file of the node. When
+    several subfolders map to the same node (an updated model beside its predecessor),
+    the lexically last folder wins, as the last matching file wins for a 1D grid. Within
+    it, ``policy`` (see :func:`snapshot_grid.parse_snapshot_selection`) picks by the
+    bound snapshot number, or by name order when the pattern binds none.
+    """
+    from .snapshot_grid import parse_snapshot_selection
+    kind, arg = parse_snapshot_selection(policy)
+    parent = max(item[0] for item in items)
+    files = sorted(((snap, path) for folder, snap, path in items if folder == parent),
+                   key=lambda item: (item[0] if item[0] is not None else 0, item[1].name))
+    if kind == "all":
+        chosen = files
+    elif kind == "count":
+        chosen = files[:arg]
+    else:
+        if not has_snap:
+            raise ValueError("Selecting snapshots by number needs a pattern that binds "
+                             "{snap}.")
+        chosen = [item for item in files if int(item[0]) in arg]
+        missing = arg - {int(item[0]) for item in chosen}
+        if missing:
+            raise ValueError(f"{parent} has no snapshots {sorted(missing)}; available: "
+                             f"{[int(item[0]) for item in files]}")
+    return tuple(path for _snap, path in chosen)
+
+
+def discover_atmos_grid(folder, pattern=DEFAULT_PATTERN, snapshots=None):
+    """Scan ``folder`` for atmosphere files whose paths match ``pattern``.
+
+    Files are listed recursively and matched on their path relative to ``folder``, so a
+    flat MARCS folder matches on file names while a directory-per-node grid can bind its
+    parameters from the folder name and the snapshot number from the file name.
 
     Returns ``{(teff, logg, feh, vmic): Path}`` when the pattern binds ``vmic``, else
-    ``{(teff, logg, feh): Path}`` — vmic is optional (see :func:`compile_pattern`). Cached
-    per ``(folder, pattern)`` and re-scanned only when the folder's mtime changes.
+    ``{(teff, logg, feh): Path}``; the last matching file (in sorted path order) wins a
+    key. With ``snapshots`` (a selection policy, see :mod:`.snapshot_grid`) every key maps
+    instead to the tuple of snapshot files representing that node. Cached per
+    ``(folder, pattern, snapshots)`` and re-scanned when the folder tree's mtime changes.
     """
     folder = Path(folder).expanduser()
     if not folder.is_dir():
         raise FileNotFoundError(f"Atmosphere grid folder not found: {folder}")
 
-    key = (str(folder), pattern)
-    mtime = folder.stat().st_mtime
+    key = (str(folder), pattern, snapshots)
+    mtime = _tree_mtime(folder)
     hit = _GRID_MEMO.get(key)
     if hit and hit[0] == mtime:
         return hit[1]
 
     p = compile_pattern(pattern)
-    grid = {}
-    for f in sorted(folder.iterdir()):
+    matches = {}
+    for f in sorted(folder.rglob("*")):
         if not f.is_file():
             continue
-        d = p.search(f.name)
+        d = p.search(f.relative_to(folder).as_posix())
         if d is None:
             continue
         key2 = ((d["Teff"], d["logg"], d["FeH"], d["vmic"]) if p.has_vmic
                 else (d["Teff"], d["logg"], d["FeH"]))
-        grid[key2] = f
-    if not grid:
+        matches.setdefault(key2, []).append((f.parent, d.get("snap"), f))
+    if not matches:
         raise ValueError(f"No atmosphere files in {folder} matched pattern {pattern!r}")
+    if snapshots is None:
+        grid = {k: items[-1][2] for k, items in matches.items()}
+    else:
+        grid = {k: _select_snapshots(items, snapshots, p.has_snap)
+                for k, items in matches.items()}
     _GRID_MEMO[key] = (mtime, grid)
     return grid
 
@@ -378,8 +529,7 @@ def _prepare(target, prefs, run_vals_list, grid, atmos_file, extra_presets,
     else:
         if not grid.get("folder"):
             raise ValueError("No atmosphere grid folder configured.")
-        atmos_files = discover_atmos_grid(
-            root / Path(grid["folder"]).expanduser(), grid.get("pattern") or DEFAULT_PATTERN)
+        atmos_files = discover_grid(grid, root)
     modes = {str(rv.get("mode", "LTE")).upper() for rv in run_vals_list}
     if len(modes) != 1:
         raise ValueError("A synthesis batch must share one LTE/NLTE mode.")
@@ -390,6 +540,7 @@ def _prepare(target, prefs, run_vals_list, grid, atmos_file, extra_presets,
     settings_list = []
     for rv in run_vals_list:
         settings = build_settings(prefs, rv, atmos_format=grid.get("format"))
+        settings = update_dict(settings, {"atmos_params": _grid_mesh(grid)})
         if set_spectrum:
             sampling = settings.setdefault("spectrum_params", {})
             if window_batch or not any(sampling.get(k) for k in ("daa", "nnu", "lam_file")):
@@ -489,6 +640,18 @@ def compute_window_batch(target, prefs, run_vals_list, windows, *, grid,
                                  crop=_crop_spec(prefs, crop), fold=fold)
 
 
+def _grid_mesh(grid):
+    """The ``nx/ny/nz`` a registered snapshot grid asks its cubes to be sampled onto, when
+    it names one; otherwise the preferences' global mesh stands."""
+    resolution = (grid or {}).get("resolution")
+    if not resolution:
+        return {}
+    values = [int(v) for v in resolution]
+    if len(values) != 3 or any(v <= 0 for v in values):
+        raise ValueError("A grid resolution needs three positive integers (nx, ny, nz).")
+    return dict(zip(("nx", "ny", "nz"), values))
+
+
 # --- resolved public request -----------------------------------------------------------
 def _resolved_path(root, value):
     path = Path(value).expanduser()
@@ -516,7 +679,7 @@ def _nearest_grid_path(atmospheres, stellar, vmic=0.0):
                                     - float(vmic)), str(item[1])))[1]
 
 
-def _reference_atmospheres(selection, prefs, root):
+def _reference_atmospheres(selection, prefs, root, prefs_vmic=1.0):
     """Deterministically select the MARCS inputs used only for HOP preparation."""
     grid = _preparation_grid(selection)
     if not grid.get('folder'):
@@ -530,17 +693,17 @@ def _reference_atmospheres(selection, prefs, root):
         raise ValueError('Automatic MARCS preparation for a snapshot needs teff, logg and feh.')
     if isinstance(selection, GridTarget):
         from .atmos_select import select_nodes
-        synthesis_grid = discover_atmos_grid(
-            _resolved_path(root, selection.grid['folder']),
-            selection.grid.get('pattern') or DEFAULT_PATTERN)
+        synthesis_grid = discover_grid(selection.grid, root)
         nodes, _ = select_nodes(selection.stellar, synthesis_grid,
                                 method=prefs.get('interp_method', 'NaturalNeighbor'),
                                 vmic_step=float(prefs.get('vmic_step') or 0.5))
         aliases = {}
         for node in nodes:
             source = str(_resolved_path(root, node[6]))
+            # a snapshot node has no vmic; its MARCS reference takes the request's
+            vmic = node[4] if node[4] is not None else float(prefs_vmic)
             reference = str(_resolved_path(
-                root, _nearest_grid_path(references, node[1:4], node[4])))
+                root, _nearest_grid_path(references, node[1:4], vmic)))
             aliases[source] = reference
         return tuple(dict.fromkeys(aliases.values())), aliases
 
@@ -566,6 +729,8 @@ def resolve_request(request: SynthRequest) -> ResolvedSynthRequest:
     else:
         fmt = selection.format
     settings = build_settings(prefs, request.run_vals, atmos_format=fmt)
+    if isinstance(selection, GridTarget):
+        settings = update_dict(settings, {'atmos_params': _grid_mesh(selection.grid)})
     settings = update_dict(settings, deepcopy(request.expert_settings))
     settings.setdefault('spectrum_params', {}).setdefault('R',
                                                            float(prefs.get('R') or _DEFAULT_R))
@@ -574,7 +739,8 @@ def resolve_request(request: SynthRequest) -> ResolvedSynthRequest:
     windows = tuple(mask.synth for mask in request.masks if mask.include)
     padded = tuple((window[0] - SYNTH_PAD_AA, window[1] + SYNTH_PAD_AA)
                    for window in windows)
-    references, aliases = _reference_atmospheres(selection, prefs, root)
+    references, aliases = _reference_atmospheres(
+        selection, prefs, root, prefs_vmic=float(request.run_vals.get('vmic') or 1.0))
     if (float(prefs.get('linelist_crop_aa') or 0.0) > 0 and prefs.get('linelist')
             and not references):
         raise ValueError('Automatic line-list preparation has no MARCS reference grid. '
@@ -792,7 +958,7 @@ def fit(target, prefs, run_vals, fit_stellar, abund_fits, fit_post, xmin=None, x
         folder = grid.get("folder")
         if not folder:
             raise ValueError("No atmosphere grid folder configured (Preferences → Synthesis).")
-        atmos = discover_atmos_grid(folder, grid.get("pattern") or DEFAULT_PATTERN)
+        atmos = discover_grid(grid)
 
     axes = list(fit_stellar) + list(abund_fits)
     if not axes and not fit_post:

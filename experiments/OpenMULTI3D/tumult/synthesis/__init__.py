@@ -19,7 +19,7 @@ from .runtime import ExecutionService, HOP, IO, WORKFLOWS, execution_scope
 from .submission import (WorkflowHandle, discover_workflows, open_workflow, run,
                          submit)
 from .executor import _make_da_jobs, _run_batch, _run_single  # noqa: F401 (legacy importers)
-from .workflows import (build_settings, compile_pattern, compute, compute_batch,
+from .workflows import (STAGGER_PATTERN, FORMAT_PATTERNS, default_pattern, build_settings, compile_pattern, compute, compute_batch,
                         compute_window_batch, fitted_abundance_terms,
                         compute_reference, discover_atmos_grid, fit, fit_line,
                         fit_request_line, recover_params, resolve_request, execute_request,
@@ -44,5 +44,5 @@ __all__ = [
     "fitted_abundance_terms",
     "compute_reference", "discover_atmos_grid", "fit", "fit_line",
     "fit_request_line",
-    "recover_params",
+    "recover_params", "STAGGER_PATTERN", "FORMAT_PATTERNS", "default_pattern",
 ]

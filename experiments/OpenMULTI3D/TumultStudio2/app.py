@@ -219,8 +219,13 @@ def inspector_html(canvas):
     if obj is None:
         return '<div class="field-static">No selection</div>'
     lo, hi = canvas._display_range(obj.spectrum)
+    name = html.escape(obj.name)
     return (
-        _field("Name", obj.name)
+        # the name is editable in place: a change is sent on the "object-rename" channel
+        '<div class="field-group"><label>Name</label>'
+        f'<input type="text" class="field-input" id="object-rename" value="{name}" '
+        f'data-uid="{html.escape(obj.uid)}" spellcheck="false" title="Rename this object">'
+        '</div>'
         + _field("Range", f"{lo:.1f} – {hi:.1f} {canvas.xlabel}")
         + _field("Points", f"{len(obj.spectrum):,}")
         + _field("Native units", f"{obj.raw.xunit} / {obj.raw.yunit}")
@@ -516,7 +521,21 @@ def build():
 
     linenav = LineNavigator(
         canvas, strengths, on_table=lambda h: setattr(linelist_bridge, "value", h),
-        on_open=lambda on: toggle(linelist_mode_bridge, on))
+        on_open=lambda on: toggle(linelist_mode_bridge, on),
+        on_query_cleared=lambda: setattr(linesearch_bridge, "value", f"\0{time.time()}"))
+    linesearch_actions.on_change(
+        "value", lambda attr, old, new: linenav.set_query(new.split("\0")[0]))
+
+    # renaming from the Info tab: "<uid>\0<name>\0<nonce>" (names may hold spaces/colons)
+    rename_actions = B.action("object-rename")
+
+    def on_rename(attr, old, new):
+        if not new:
+            return
+        uid, name = new.split("\0")[:2]
+        canvas.rename_object(uid, name)
+
+    rename_actions.on_change("value", on_rename)
 
     def on_line_setting(key, value):
         if key == "refstar":

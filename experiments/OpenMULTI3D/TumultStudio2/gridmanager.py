@@ -1,10 +1,14 @@
 """Registered atmosphere grids, edited in the Synthesis preferences page.
 
-Each grid is ``{"id", "name", "folder", "pattern", "format"}``; the list lives under the
-``synthesis`` store section key ``atmos_grids`` (with ``atmos_grid_id`` naming the one
-selected in the Synth panel). This component renders an editable card per grid — name /
-folder (+ an embedded :class:`FilePicker` to browse to it) / pattern / format — plus an
-"add grid" button, and persists every edit.
+Each grid is ``{"id", "name", "folder", "pattern", "format"}``; a snapshot grid (a 3D
+format) also carries ``snapshots`` and an optional ``resolution``, see
+:mod:`tumult.synthesis.snapshot_grid`. The pattern is matched against each file's path
+within the folder tree; ``tumult.synthesis.FORMAT_PATTERNS`` holds the stock pattern each
+format starts from. The list
+lives under the ``synthesis`` store section key ``atmos_grids`` (with ``atmos_grid_id``
+naming the one selected in the Synth panel). This component renders an editable card per
+grid — name / folder (+ an embedded :class:`FilePicker` to browse to it) / format / the
+layout controls the format needs — plus an "add grid" button, and persists every edit.
 
 Mirrors :class:`atompicker.AtomPicker`: a server-rendered list pushed through an
 ``html_bridge``, a hidden ``TextInput`` action channel for delegated clicks, a
@@ -17,10 +21,13 @@ from __future__ import annotations
 import html
 import itertools
 from pathlib import Path
+import re
 
 from bokeh.models import TextInput
 
 import store
+from tumult.synthesis import workflows as synth
+from tumult.synthesis.snapshot_grid import DEFAULT_SNAPSHOTS, is_snapshot_grid
 from filepicker import FilePicker
 from htmlbridge import class_bridge, html_bridge, pulse
 
@@ -168,12 +175,35 @@ class GridManager:
             f'<button class="icon-btn grid-browse" data-grid-id="{gid}" '
             f'title="Browse for the grid folder"><i class="ti ti-folder-open"></i></button>'
             f'</div>'
-            f'<input type="text" class="field-input grid-pattern" data-grid-id="{gid}" '
-            f'data-grid-key="pattern" value="{html.escape(g.get("pattern") or "")}" '
-            f'placeholder="Filename pattern">'
             f'<select class="field-input grid-format" data-grid-id="{gid}" '
             f'data-grid-key="format">{opts}</select>'
+            f'{self._layout_html(g, gid)}'
             f'</div>')
+
+    @staticmethod
+    def _layout_html(g, gid):
+        """The controls below the format, which decide how the folder is read: the pattern
+        binding stellar parameters (and, for snapshot grids, the snapshot number) from each
+        file's path within the folder tree; for snapshot grids also which snapshots
+        represent a node and the mesh their cubes are sampled onto."""
+        out = [f'<input type="text" class="field-input grid-pattern" data-grid-id="{gid}" '
+               f'data-grid-key="pattern" value="{html.escape(g.get("pattern") or "")}" '
+               f'placeholder="Path pattern, e.g. {html.escape(synth.DEFAULT_PATTERN)}" '
+               f'title="Matched against each file path relative to the folder; see '
+               f'tumult.synthesis.compile_pattern for the token grammar">']
+        if is_snapshot_grid(g):
+            resolution = ",".join(str(v) for v in (g.get("resolution") or ()))
+            out.append(
+                f'<input type="text" class="field-input grid-snapshots" data-grid-id="{gid}" '
+                f'data-grid-key="snapshots" '
+                f'value="{html.escape(str(g.get("snapshots") or DEFAULT_SNAPSHOTS))}" '
+                f'placeholder="Snapshots per node: a count, all, or numbers 8,31" '
+                f'title="How many snapshots (in snapshot order), \'all\', or explicit '
+                f'snapshot numbers represent each node; node spectra are their mean">'
+                f'<input type="text" class="field-input grid-resolution" data-grid-id="{gid}" '
+                f'data-grid-key="resolution" value="{html.escape(resolution)}" '
+                f'placeholder="Mesh nx,ny,nz (blank: Engine preferences)">')
+        return "".join(out)
 
     def _ref_html(self):
         """The '1D LTE reference grid' selector, shown above the cards when grids exist.
@@ -212,12 +242,25 @@ class GridManager:
         ident, _, value = msg.partition("=")     # value may contain spaces / "{...}"
         gid, _, key = ident.partition("|")
         g = self._find(gid)
-        if g is None or key not in ("name", "folder", "pattern", "format"):
+        if g is None or key not in ("name", "folder", "pattern", "format", "snapshots",
+                                    "resolution"):
             return
-        g[key] = value
+        if key == "resolution":
+            parts = [p for p in re.split(r"[,\sx]+", value.strip()) if p]
+            if parts and not (len(parts) == 3 and all(p.isdigit() for p in parts)):
+                self.render()       # reject silently by restoring the stored value
+                return
+            g[key] = [int(p) for p in parts] if parts else None
+        else:
+            g[key] = value
+            if key == "format" and (g.get("pattern") or "") in ("", *synth.FORMAT_PATTERNS.values()):
+                # a format switch reseeds a pattern the user has not customised with the
+                # format's stock pattern (tumult.synthesis.FORMAT_PATTERNS)
+                g["pattern"] = synth.default_pattern(value)
         self._persist()
-        # name/folder edits change the dropdown label / warning state -> re-render the cards
-        if key in ("name", "folder"):
+        # name/folder edits change the dropdown label / warning state, and the format
+        # decides which layout controls a card shows -> re-render the cards
+        if key in ("name", "folder", "format"):
             self.render()
 
     def _on_action(self, attr, old, new):

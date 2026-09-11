@@ -27,6 +27,7 @@ from bokeh.models import TextInput
 
 from tumult.synthesis import (Atmosphere1D, DepartureField, GridTarget, Snapshot3D,
                               SynthRequest)
+from tumult.synthesis.snapshot_grid import is_snapshot_grid
 
 import store
 from tumult.synthesis import workflows as synth
@@ -215,12 +216,25 @@ class SynthSetup:
         return str(self.mode_form.value("mode")).upper() == "NLTE"
 
     @property
-    def is_snapshot(self):
-        """Whether the selected model format represents a 3D atmosphere."""
+    def is_3d_format(self):
+        """Whether the selected grid or individual format represents 3D atmospheres."""
         fmt = str((self.active_grid() or {}).get("format") or "").strip().lower()
         selected = (store.get_section(self.section).get("atmos_file") or "").strip()
         root = str(load_prefs().get("dispatch_cwd") or REPO_DIR)
         return model_is_3d(fmt, selected, root)
+
+    @property
+    def is_snapshot(self):
+        """Whether one 3D snapshot file is synthesised directly. A registered snapshot
+        grid (see :mod:`tumult.synthesis.snapshot_grid`) may instead interpolate between
+        its nodes like a 1D grid, so 'Interpolate' on such a grid is not a snapshot run."""
+        if not self.is_3d_format:
+            return False
+        if self.is_individual:
+            return True
+        grid = self.selected_grid() or {}
+        return (not is_snapshot_grid(grid)
+                or store.get_section(self.section).get("atmos_mode", "interp") == "pick")
 
     def selected_grid(self):
         """The selected *registered* grid dict, or ``None`` (no grids, or Individual)."""
@@ -284,7 +298,7 @@ class SynthSetup:
                        f'<select class="field-input {p}-format-select">{fmt_opts}</select></div>')
         else:
             selected = self.selected_grid() or {}
-            if model_is_3d(selected.get("format")):
+            if model_is_3d(selected.get("format")) and not is_snapshot_grid(selected):
                 out.append('<div class="field-group field-inline"><label>Source</label>'
                            '<div class="field-static">Snapshot file</div></div>')
             else:
@@ -341,7 +355,17 @@ class SynthSetup:
         self.atmos_picker.query.value = path   # the single field now shows the chosen file
         grid = self.selected_grid()
         if grid and grid.get("pattern"):
-            rec = synth.recover_params(grid["pattern"], Path(path).name)
+            # the pattern binds the path relative to the grid folder (a directory-per-node
+            # grid names its parameters in the folder), or the bare name outside it
+            name = Path(path).name
+            folder = (grid.get("folder") or "").strip()
+            if folder:
+                try:
+                    name = Path(path).expanduser().resolve().relative_to(
+                        Path(folder).expanduser().resolve()).as_posix()
+                except ValueError:
+                    pass
+            rec = synth.recover_params(grid["pattern"], name)
             if rec:
                 teff, logg, feh, vmic = rec
                 vals = {"teff": teff, "logg": logg, "feh": feh}
@@ -450,9 +474,12 @@ class SynthSetup:
             self.reason = f"Cannot open saved departures: {exc}"
             return None
         if self.is_snapshot:
-            resolution = tuple(int(prefs.get(key)) for key in ("nx", "ny", "nz"))
-            selection = Snapshot3D(atmos_file, target[:3], resolution,
-                                   sect.get("atmos_individual_format") or grid.get("format"),
+            resolution = tuple(int(v) for v in (grid.get("resolution") or
+                                                [prefs.get(k) for k in ("nx", "ny", "nz")]))
+            # active_grid() already carries the Individual selector's format or the
+            # registered grid's; a snapshot picked from a Stagger grid must not fall back
+            # to the Individual preference (which defaults to Marcs)
+            selection = Snapshot3D(atmos_file, target[:3], resolution, grid.get("format"),
                                    self.grids.reference_grid())
         elif atmos_file:
             selection = Atmosphere1D(atmos_file, target, grid.get("format"),
