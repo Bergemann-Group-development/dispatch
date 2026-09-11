@@ -618,10 +618,16 @@ def run_abundance(request, result, observation, *, progress=None, cancel_token=N
     solar = synth.abund_table(prefs)
     base_abund = str(base_rv.get("abundances", "")).strip()
     symbol = result.symbol
+    from .synthesis.request import Snapshot3D
+    common_result = isinstance(request.selection, Snapshot3D) or request.departure_field is not None
 
     def synth_window(rv_over, window):
         rv = dict(base_rv)
         rv.update(rv_over)
+        if common_result:
+            return request.with_run_vals(**rv).with_masks(
+                [{'fit': window, 'synth': window}]).execute(
+                    cancel_token=cancel_token).spectrum
         return synth.compute(target, prefs, rv, *padded_window(window), grid=grid,
                              atmos_file=atmos_file, cancel_token=cancel_token)
 
@@ -647,6 +653,10 @@ def run_abundance(request, result, observation, *, progress=None, cancel_token=N
         def synth_all_batch(a_list, _w=ln.window):
             rvs = [{**base_rv, "abundances": abund_terms(a),
                     "relative_abundances": relative} for a in a_list]
+            if common_result:
+                return [request.with_run_vals(**rv).with_masks(
+                    [{'fit': _w, 'synth': _w}]).execute(cancel_token=cancel_token).spectrum
+                        for rv in rvs]
             return synth.compute_batch(target, prefs, rvs, *padded_window(_w), grid=grid,
                                        atmos_file=atmos_file, cancel_token=cancel_token)
 
@@ -654,6 +664,9 @@ def run_abundance(request, result, observation, *, progress=None, cancel_token=N
             return synth_window({"exclude_elements": symbol}, _w)
 
         def abund_fit_fn(guess, _w=ln.window, _fw=ln.fit_window):
+            if common_result:
+                return synth.fit_request_line(observation, request, symbol, guess, _w, _fw,
+                                              cancel_token=cancel_token)
             return synth.fit_line(observation, target, prefs, base_rv, symbol, guess,
                                   *padded_window(_w), _fw,
                                   grid=grid, atmos_file=atmos_file,
@@ -846,6 +859,8 @@ def run_nlte_corrections(request, result, atom, *, opts=None, progress=None,
     symbol = result.symbol
     span = float(opts.span)
     ladder = np.linspace(-span, span, int(opts.points))
+    from .synthesis.request import Snapshot3D
+    common_result = isinstance(request.selection, Snapshot3D) or request.departure_field is not None
 
     def _rv(a):
         return {"mode": "NLTE", "only_atom": True, "atoms": [atom],
@@ -857,6 +872,10 @@ def run_nlte_corrections(request, result, atom, *, opts=None, progress=None,
     # resampling onto a uniform R grid. This is also why the ladder cannot ride a segmented
     # window_file run (compute_window_batch), which fixes a constant-R grid per window.
     def nlte_synth(a, window):
+        if common_result:
+            return request.with_run_vals(**_rv(a)).with_masks(
+                [{'fit': window, 'synth': window}]).execute(
+                    cancel_token=cancel_token).spectrum
         return synth.compute(target, prefs, _rv(a), *padded_window(window), grid=grid,
                              atmos_file=atmos_file, set_spectrum=False,
                              cancel_token=cancel_token)
@@ -865,6 +884,10 @@ def run_nlte_corrections(request, result, atom, *, opts=None, progress=None,
     # dispatch run is fanned across one shared process pool instead of being issued one after
     # another (results are identical to the serial nlte_synth loop).
     def batch_nlte_synth(a_list, window):
+        if common_result:
+            return [request.with_run_vals(**_rv(a)).with_masks(
+                [{'fit': window, 'synth': window}]).execute(cancel_token=cancel_token).spectrum
+                    for a in a_list]
         return synth.compute_batch(target, prefs, [_rv(a) for a in a_list],
                                    *padded_window(window), grid=grid, atmos_file=atmos_file,
                                    set_spectrum=False, cancel_token=cancel_token)

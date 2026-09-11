@@ -50,6 +50,7 @@ from .executor import _run_batch
 # line list or a wavelength window in its settings would both slow it down and split its
 # cache by something it does not depend on. This is the whole point of the two-phase split.
 SPECTRUM_ONLY = ('linelist_params', 'spectrum_params')
+FIELD_NAME = 'departure-field.json'
 
 
 @dataclass(frozen=True)
@@ -68,10 +69,65 @@ class DepartureField:
     resolution: tuple
     species: tuple = ()
     settings: dict = dataclass_field(default_factory=dict, repr=False)
+    composition: dict = dataclass_field(default_factory=dict)
+    convergence: dict = dataclass_field(default_factory=dict)
 
     @property
     def saved(self):
         return (self.folder / 'save').is_dir()
+
+    def to_dict(self):
+        return {'version': 1, 'folder': str(self.folder), 'name': str(self.name),
+                'snapshot': self.snapshot, 'resolution': list(self.resolution),
+                'species': list(self.species), 'settings': copy.deepcopy(self.settings),
+                'composition': copy.deepcopy(self.composition),
+                'convergence': copy.deepcopy(self.convergence)}
+
+    def save(self, path=None):
+        """Persist public metadata alongside the native saved field, atomically."""
+        path = Path(path) if path is not None else self.folder / FIELD_NAME
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f'{path.name}.partial')
+        tmp.write_text(json.dumps(self.to_dict(), indent=2, sort_keys=True, default=str) + '\n')
+        tmp.replace(path)
+        return path
+
+    @classmethod
+    def from_dict(cls, value):
+        value = dict(value)
+        value.pop('version', None)
+        value['folder'] = Path(value['folder']).expanduser().resolve()
+        value['name'] = Path(value.get('name') or value['folder'].name)
+        value['resolution'] = tuple(value.get('resolution') or ())
+        value['species'] = tuple(value.get('species') or ())
+        return cls(**value)
+
+    @classmethod
+    def load(cls, path):
+        """Open a saved field without reconstructing a private cache name.
+
+        New fields carry ``departure-field.json``. Existing run directories are also
+        inspectable from their resolved ``params.nml`` and native population files.
+        """
+        path = Path(path).expanduser().resolve()
+        manifest = path if path.is_file() else path / FIELD_NAME
+        if manifest.is_file():
+            return cls.from_dict(json.loads(manifest.read_text()))
+        folder = path.parent if path.is_file() else path
+        params = folder / 'params.nml'
+        if not params.is_file():
+            raise FileNotFoundError(f'No saved departure metadata or params.nml in {folder}')
+        from tumult.namelist import NameList
+        settings = dict(NameList.from_file(params))
+        atmos = settings.get('atmos_params', {}) or {}
+        resolution = tuple(int(atmos[k]) for k in ('nx', 'ny', 'nz') if atmos.get(k))
+        field = cls(folder=folder, name=Path(folder.name),
+                    snapshot=str(atmos.get('atmos_file') or ''), resolution=resolution,
+                    species=_atom_ids(folder), settings=settings,
+                    composition=copy.deepcopy(settings.get('composition_params', {}) or {}))
+        if not field.saved:
+            raise ValueError(f'{folder} contains no native saved departure field')
+        return field
 
 
 def _spectrum_name(nml):
@@ -101,11 +157,13 @@ def departure_settings(settings, snapshot, resolution=None, atmos_format=None):
         atmos['atmos_format'] = atmos_format
     if resolution is not None:
         atmos.update(zip(('nx', 'ny', 'nz'), (int(n) for n in resolution)))
-    return update_dict(nml, {
+    nml = update_dict(nml, {
         'atmos_params': atmos,
-        'rt_iteration_params': {'maxiter': 99},
         'rt_output_params': {'angle_quad': 'none'},
     })
+    # Preserve an expert's explicit solver limit. Ninety-nine is only the default.
+    nml.setdefault('rt_iteration_params', {}).setdefault('maxiter', 99)
+    return nml
 
 
 def spectrum_settings(field, settings=None, window=None):
@@ -160,9 +218,14 @@ def solve_departures(top, snapshot, settings=None, *, resolution=None, atmos_for
     if run is None:
         raise RuntimeError(f"departure solve failed for {snapshot}; see {name}")
     folder = Path(run.folder)
-    return DepartureField(folder=folder, name=Path(name), snapshot=str(snapshot),
-                          resolution=tuple(resolution) if resolution else (),
-                          species=_atom_ids(folder), settings=nml)
+    actual = tuple(int((nml.get('atmos_params') or {}).get(k))
+                   for k in ('nx', 'ny', 'nz')
+                   if (nml.get('atmos_params') or {}).get(k) is not None)
+    field = DepartureField(folder=folder, name=Path(name), snapshot=str(snapshot),
+                           resolution=actual, species=_atom_ids(folder), settings=nml,
+                           composition=copy.deepcopy(nml.get('composition_params', {}) or {}))
+    field.save()
+    return field
 
 
 def synthesise(field, *, settings=None, window=None, name=None, launch_kwargs=None,
@@ -188,4 +251,24 @@ def synthesise(field, *, settings=None, window=None, name=None, launch_kwargs=No
     run = runs.get('spectrum')
     if run is None:
         raise RuntimeError(f"spectrum run failed for {field.folder}; see {name}")
+    return run
+
+
+def synthesise_snapshot(top, snapshot, *, settings=None, resolution=None,
+                        atmos_format=None, name=None, launch_kwargs=None,
+                        max_threads=None, cancel_token=None):
+    """Run one snapshot directly, without stellar nodes or a vmic lattice."""
+    nml = copy.deepcopy(settings or {})
+    atmos = {'atmos_file': str(snapshot)}
+    if atmos_format:
+        atmos['atmos_format'] = atmos_format
+    if resolution is not None:
+        atmos.update(zip(('nx', 'ny', 'nz'), (int(v) for v in resolution)))
+    nml = update_dict(nml, {'atmos_params': atmos})
+    name = Path(top) / (name or _spectrum_name(nml))
+    runs = _run_batch([('spectrum', name, nml)], launch_kwargs or {},
+                      max_threads or 1, cancel_token=cancel_token)
+    run = runs.get('spectrum')
+    if run is None:
+        raise RuntimeError(f'snapshot synthesis failed for {snapshot}; see {name}')
     return run

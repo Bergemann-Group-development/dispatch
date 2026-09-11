@@ -18,6 +18,8 @@ from pathlib import Path
 import astropy.units as u
 
 import store
+from tumult.synthesis import (Snapshot3D, solve_request_departures,
+                              submit as submit_synthesis)
 from tumult.synthesis import workflows as synth
 from atompicker import AtomPicker
 from controls import Field, Form
@@ -53,13 +55,15 @@ def _human_size(n):
 
 
 class SynthPanel(RangeSelect):
-    def __init__(self, canvas, submit, add, on_mode=None, on_warn=None, notify=None):
+    def __init__(self, canvas, submit, add, on_mode=None, on_warn=None, notify=None,
+                 mask_store=None):
         super().__init__(canvas, color=SYNTH_BAND, description="Select synthesis x-range")
         self._submit = submit    # (name, loader, on_done) -> runs loader on the synth executor
         self._add = add          # (spec, name) -> add the result to the canvas
         self.on_mode = on_mode   # push "on"/"off" to show/hide the panel
         self.on_warn = on_warn   # push True/False when configured files go missing/found
         self.notify = notify or (lambda *a, **k: None)  # footer info message
+        self.mask_store = mask_store
         self.active = False
         self.missing = []        # path prefs currently pointing at non-existent files
 
@@ -432,23 +436,47 @@ class SynthPanel(RangeSelect):
             self.notify(self.setup.reason
                         or "Cannot synthesize — check Preferences → Synthesis.")
             return
+        masks = tuple(self.mask_store.masks) if self.mask_store is not None else ()
+        selected_masks = tuple(mask for mask in masks if mask.include)
         xmin, xmax = self._window_fields()
-        if xmin is None:
+        if not selected_masks and xmin is None:
             self.notify("Set the synthesis wavelength window (λ min/max) first.")
             return
         rv, grid, target = ctx.run_vals, ctx.grid, ctx.target
         atmos_file, prefs = ctx.atmos_file, ctx.prefs
         name = (f"t{target[0]:.0f}g{target[1]:.1f}m{target[2]:+.1f}v{target[3]:.1f}"
                 + ("·NLTE" if str(rv.get("mode")).upper() == "NLTE" else ""))
+        shown_min = min((m.smin for m in selected_masks), default=xmin)
+        shown_max = max((m.smax for m in selected_masks), default=xmax)
         meta = self._synth_meta(
             {"teff": target[0], "logg": target[1], "feh": target[2], "vmic": target[3]},
             mode=rv["mode"], abundances=rv["abundances"],
-            relative=rv["relative_abundances"], atoms=rv["atoms"], xmin=xmin, xmax=xmax)
-        self._submit(name,
-                     lambda token=None: synth.compute(target, prefs, rv, xmin, xmax,
-                                                       grid=grid, atmos_file=atmos_file,
-                                                       cancel_token=token),
-                     lambda spec: self._add(spec, name, meta=meta))
+            relative=rv["relative_abundances"], atoms=rv["atoms"],
+            xmin=shown_min, xmax=shown_max)
+        if selected_masks or isinstance(ctx.selection, Snapshot3D):
+            request_masks = selected_masks or ({"fit": (xmin, xmax), "synth": (xmin, xmax)},)
+            request = ctx.with_masks(request_masks)
+
+            def add_result(result):
+                for index, spec in enumerate(result.spectra, start=1):
+                    suffix = f"·{index}" if len(result.spectra) > 1 else ""
+                    self._add(spec, name + suffix, meta=meta)
+
+            def run_request(token=None):
+                handle = submit_synthesis(request)
+                detach = token.add_callback(handle.cancel) if token is not None else lambda: None
+                try:
+                    return handle.result()
+                finally:
+                    detach()
+
+            self._submit(name, run_request, add_result, detached=True)
+        else:
+            self._submit(name,
+                         lambda token=None: synth.compute(target, prefs, rv, xmin, xmax,
+                                                           grid=grid, atmos_file=atmos_file,
+                                                           cancel_token=token),
+                         lambda spec: self._add(spec, name, meta=meta))
 
     def synth_context(self):
         """Current synthesis configuration — delegated to the composed setup, which is the
@@ -459,3 +487,19 @@ class SynthPanel(RangeSelect):
         ``synth.compute``.
         """
         return self.setup.context()
+
+    def solve_departures(self):
+        """Launch a mask-independent departure field for the chosen atmosphere."""
+        request = self.synth_context()
+        if request is None:
+            self.notify(self.setup.reason or "Configure the synthesis setup first.")
+            return
+        if str(request.run_vals.get("mode", "LTE")).upper() != "NLTE":
+            self.notify("Switch RT mode to NLTE before solving departures.")
+            return
+
+        self._submit(
+            "solve departures",
+            lambda token=None: solve_request_departures(request, cancel_token=token),
+            lambda field: self.notify(f"Saved departures: {field.folder}", level="success"),
+            detached=True)

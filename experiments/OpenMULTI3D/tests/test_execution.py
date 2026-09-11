@@ -549,7 +549,8 @@ def test_snapshot_phases_split_the_settings():
     dep = snapshot.departure_settings(settings, '/snap', (30, 30, 128), 'MUST')
     assert 'linelist_params' not in dep and 'spectrum_params' not in dep
     assert dep['rt_output_params']['angle_quad'] == 'none'   # no formal solution
-    assert dep['rt_iteration_params']['maxiter'] == 99       # solve to convergence
+    # Explicit solver limits survive phase planning; 99 is only the default when absent.
+    assert dep['rt_iteration_params']['maxiter'] == 3
     assert dep['atmos_params'] == {'atmos_file': '/snap', 'save_atmos': True,
                                    'atmos_format': 'MUST', 'nx': 30, 'ny': 30, 'nz': 128}
     assert settings['rt_iteration_params']['maxiter'] == 3   # the caller's dict is untouched

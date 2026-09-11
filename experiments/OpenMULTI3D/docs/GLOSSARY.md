@@ -57,6 +57,8 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
 
 **Runs**
 
+- *workflow*: one resolved user calculation, which may prepare inputs and schedule several
+  native runs. A durable workflow handle belongs to this level; it is not a DISPATCH task.
 - *run*: one `dispatch.x` execution and the output directory it leaves. This is the unit the
   on-disk cache reuses.
 - *job*: one unit of work scheduled by `ExecutionService`, usually a run.

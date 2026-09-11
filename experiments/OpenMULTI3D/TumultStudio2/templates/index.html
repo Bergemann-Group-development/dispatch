@@ -362,6 +362,7 @@
         <div class="tab-content">
           <div class="tab-panel active" data-panel="synthesize">
             <button id="synth-run" class="primary-btn">Synthesize</button>
+            <button id="synth-departures" class="text-btn">Solve departures</button>
             <div class="hint">Set the wavelength window above — it is seeded from the current
               view (or a range you drag on the plot) and is required. Configure paths in
               Preferences.</div>
@@ -980,6 +981,7 @@
   document.getElementById('synth-btn').addEventListener('click', function () { ewAction('synth-toggle'); });
   document.getElementById('synth-close').addEventListener('click', function () { ewAction('synth-cancel'); });
   document.getElementById('synth-run').addEventListener('click', function () { ewAction('synthesize'); });
+  document.getElementById('synth-departures').addEventListener('click', function () { ewAction('solve-departures'); });
 
   // noise filter: toggle the panel/feautrier view / clear the applied filter
   // line-position indicators: show/hide whatever the open view attached
@@ -1065,6 +1067,7 @@
     var msitem = ev.target.closest('.maskset-item');
     if (msitem) { linemaskAction('set-select', msitem.dataset.maskset); return; }
     if (ev.target.closest('.lm-new')) { linemaskAction('new'); return; }
+    if (ev.target.closest('.lm-synthesize')) { linemaskAction('synthesize'); return; }
     if (ev.target.closest('.lm-measure-abund')) { linemaskAction('measure-abund'); return; }
     if (ev.target.closest('.lm-fit-balance')) { linemaskAction('fit-balance'); return; }
     if (ev.target.closest('.lm-revert')) {

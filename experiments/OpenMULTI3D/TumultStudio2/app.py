@@ -613,7 +613,8 @@ def build():
         # the mask view's analysis actions: hand the open set to the abundance / balance
         # tools, which are built further down (the lambdas resolve them at click time)
         on_fit_balance=lambda mset: ionbaltool.open_for(mset),
-        on_measure_abund=lambda mset: abundancetool.open_for(mset))
+        on_measure_abund=lambda mset: abundancetool.open_for(mset),
+        on_synth=lambda mset: tools.activate("synth"))
     settings = build_settings(canvas)
 
     def add_synth(spec, name, meta=None, conv=None):
@@ -629,12 +630,13 @@ def build():
 
     synth_panel = SynthPanel(
         canvas,
-        submit=lambda name, loader, on_done: load_async(name, loader, on_done,
-                                                        executor=_SYNTH_EXEC),
+        submit=lambda name, loader, on_done, detached=False: load_async(
+            name, loader, on_done, executor=_SYNTH_EXEC, detached=detached),
         add=add_synth,
         on_mode=synth_on_mode,
         on_warn=synth_on_warn,
-        notify=notify)
+        notify=notify,
+        mask_store=mask_store)
 
     # the Abundance tool owns its synthesis setup (its own Setup sub-tab), sharing only the
     # app-global grid registry and the Synthesize tab's NLTE model-atom selection; it inherits
@@ -935,6 +937,7 @@ def build():
         "synth-toggle": lambda v: tools.toggle("synth"),
         "synth-cancel": lambda v: synth_panel.deactivate(),
         "synthesize":   lambda v: synth_panel.synthesize(),
+        "solve-departures": lambda v: synth_panel.solve_departures(),
         "annot-toggle": lambda v: ctx.annot.toggle_visible(),
         "linejump":     linenav.jump,
         "linesort":     linenav.set_sort,
@@ -1167,5 +1170,3 @@ def build():
         results_name=picker.results_name,
     )
     return ctx        # local harnesses drive the document through its context
-
-

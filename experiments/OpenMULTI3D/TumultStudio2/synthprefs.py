@@ -69,6 +69,8 @@ PATH_PREFS = ["linelist", "abund_file", "absmet", "dispatch_cwd"]
 # --- run settings: only the per-target knobs ----------------------------------------
 # the four stellar axes come from the shared synth.STELLAR_PARAMS spec (see fittab too).
 RUN_DEFAULTS = {**{k: d for k, _, _, d in synth.STELLAR_PARAMS},
+                "geometry": "1D",
+                "departure_field": "",
                 "abundances": "", "relative_abundances": True, "mode": "LTE",
                 "atoms": [], "atmos_mode": "interp", "atmos_file": "",
                 "atmos_individual_format": ATMOS_FORMATS[0]}

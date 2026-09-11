@@ -58,7 +58,7 @@ class MaskTool(Tool):
 
     def __init__(self, ctx, store, input_dir, *, list_observations=None,
                  get_observation=None, master_path="", profiles=(),
-                 on_fit_balance=None, on_measure_abund=None):
+                 on_fit_balance=None, on_measure_abund=None, on_synth=None):
         super().__init__(ctx)
         self.store = store                      # shared MaskStore (also ctx.masks)
         # what the sidebar's analysis actions hand the current set to — each opens its own
@@ -66,6 +66,7 @@ class MaskTool(Tool):
         # the mask view stays unaware of the analyses.
         self.on_fit_balance = on_fit_balance
         self.on_measure_abund = on_measure_abund
+        self.on_synth = on_synth
         self.input_dir = str(input_dir)
         self._renorm_uid = None                 # spectrum currently carrying the local renorm
         self.own_panel("linemask-panel-content")   # sidebar: pad / save controls
@@ -396,6 +397,8 @@ class MaskTool(Tool):
             self._hand_over(self.on_fit_balance)
         elif kind == "measure-abund":
             self._hand_over(self.on_measure_abund)
+        elif kind == "synthesize":
+            self._hand_over(self.on_synth)
         elif kind == "save-as":
             self._save_as(arg)
         elif kind == "revert":
@@ -487,7 +490,11 @@ class MaskTool(Tool):
         result), because everything it holds depends on the spectrum it was measured on, not
         on these windows.
         """
-        actions = [(self.on_measure_abund, "lm-measure-abund", "Measure abundances",
+        actions = [(self.on_synth, "lm-synthesize", "Synthesise selected features",
+                    "Open synthesis with these curated windows",
+                    '<div class="hint">Uses the included synth windows and prepares their '
+                    'line list automatically.</div>'),
+                   (self.on_measure_abund, "lm-measure-abund", "Measure abundances",
                     "Measure these windows on a reference and invert each EW to an abundance",
                     '<div class="hint">Measures these windows on a reference observation, then '
                     f'synthesises each line to invert its EW to A({html.escape(mset.element)}) '

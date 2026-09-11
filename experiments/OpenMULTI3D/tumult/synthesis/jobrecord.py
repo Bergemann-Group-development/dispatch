@@ -34,6 +34,13 @@ from tumult.launch import run_complete
 JOB_NAME = "job.json"
 
 
+def _write_json(path, value):
+    path = Path(path)
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.partial")
+    tmp.write_text(json.dumps(value, indent=1, sort_keys=True) + "\n")
+    tmp.replace(path)
+
+
 def settings_hash(namelist):
     """A stable digest of the namelist a run was launched with."""
     return hashlib.sha256(
@@ -47,7 +54,7 @@ def write(folder, namelist, *, pid=None, slurm_id=None, state="running"):
               "output": str(folder), "settings": settings_hash(namelist)}
     try:
         folder.mkdir(parents=True, exist_ok=True)
-        (folder / JOB_NAME).write_text(json.dumps(record, indent=1))
+        _write_json(folder / JOB_NAME, record)
     except OSError:
         # The record is an observability convenience; a read-only or vanished output
         # directory must not fail the run it describes.
@@ -62,7 +69,7 @@ def finish(folder, state):
         record = json.loads(path.read_text())
         record["state"] = state
         record["ended"] = time.time()
-        path.write_text(json.dumps(record, indent=1))
+        _write_json(path, record)
     except (OSError, ValueError):
         logging.debug("no %s to finish in %s", JOB_NAME, folder)
 

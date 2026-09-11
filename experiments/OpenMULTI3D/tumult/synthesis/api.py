@@ -120,7 +120,7 @@ def _crop_digest(base, windows, crop):
         sort_keys=True, default=str).encode()).hexdigest()[:8]
 
 
-def _node_linelists(top, base, nodes, windows, crop, launch_kwargs):
+def _node_linelists(top, base, nodes, windows, crop, launch_kwargs, preparation=None):
     """Crop the line list once per atmosphere node, and map each node key to its own file.
 
     A run's line selection depends on its atmosphere, its windows and its abundances, so a
@@ -139,6 +139,14 @@ def _node_linelists(top, base, nodes, windows, crop, launch_kwargs):
     and is cached on disk under the digest, so a node recurring in a later iteration or
     session pays nothing.
     """
+    if preparation is not None:
+        mapping = {}
+        for jkey, _teff, _logg, _feh, _v, _weight, atmos_path, _absmet in nodes:
+            try:
+                mapping[jkey] = preparation.for_reference(atmos_path)
+            except ValueError as exc:
+                raise ValueError(f'Prepared line list has no entry for {atmos_path}') from exc
+        return mapping
     if not crop or not float(crop.get('skirt') or 0.0) > 0.0:
         return None
     files = (base.get('linelist_params') or {}).get('linelist_file') or []
@@ -314,7 +322,8 @@ def _foldable_ladder(settings_list, launch_kwargs, nlte):
     if any(item != comparable[0] for item in comparable[1:]):
         return None
     keys = set(abundance_maps[0])
-    if not keys or any(set(values) != keys for values in abundance_maps[1:]):
+    if ((not keys and len(abundance_maps) > 1)
+            or any(set(values) != keys for values in abundance_maps[1:])):
         return None
 
     # The sampled table combines species and cannot apply an element-specific scale.
@@ -641,7 +650,8 @@ def compute_windows(top, star, atmos_files, *, windows, R, settings=None, absmet
 def compute_window_batch(top, star, atmos_files, *, settings_list, windows, R,
                          absmet_files=None, method='Delaunay', max_threads=None,
                          launch_kwargs=None, pad=None, vmic_step=0.5, vmic_points=2,
-                         nlte=None, cancel_token=None, crop=None, fold=True):
+                         nlte=None, cancel_token=None, crop=None, fold=True,
+                         preparation=None, return_runs=False):
     """Both axes in one run: an abundance ladder across several wavelength windows.
 
     ``settings_list`` is a ladder in the sense of :func:`compute_spectra` — variants
@@ -704,24 +714,28 @@ def compute_window_batch(top, star, atmos_files, *, settings_list, windows, R,
     if any(item is None for item in folds):
         # not a ladder: nothing to fold onto the set axis, so fall back to the existing
         # per-window batching rather than pretending this is one run
-        return [[spec for spec in specs] for specs in zip(*[
+        values = [[spec for spec in specs] for specs in zip(*[
             compute_spectra(top, star, atmos_files, settings_list=settings_list,
                             absmet_files=absmet_files, method=method,
                             max_threads=max_threads, launch_kwargs=launch_kwargs,
                             xmin=float(min(w)), xmax=float(max(w)), pad=pad,
                             vmic_step=vmic_step, vmic_points=vmic_points, nlte=nlte,
-                            cancel_token=cancel_token, crop=crop)
+                            cancel_token=cancel_token, crop=crop,
+                            preparation=preparation)
             for w in windows])]
+        return (values, ()) if return_runs else values
 
     plans = []      # per group: (members, base, syn_top, nlte_v, node_lists)
     for members, (base, manifest) in zip(groups, folds):
         manifest_text = json.dumps(manifest, sort_keys=True, separators=(',', ':'))
-        node_lists = _node_linelists(top, base, nodes, merged, crop, launch_kwargs)
+        node_lists = _node_linelists(top, base, nodes, merged, crop, launch_kwargs,
+                                     preparation)
         # the crop only enters the digest when there is one, so an uncropped batch keeps the
         # cache identity (and the folders) it had before per-node crops existed
         keys = [base, manifest_text, text]
         if node_lists:
-            keys.append(_crop_digest(base, merged, crop))
+            keys.append(str(preparation.folder) if preparation is not None else
+                        _crop_digest(base, merged, crop))
         digest = hashlib.sha1(
             json.dumps(keys, sort_keys=True, default=str).encode()).hexdigest()[:8]
         manifest_path = (Path((launch_kwargs or {}).get('cwd') or '.') / top /
@@ -773,13 +787,17 @@ def compute_window_batch(top, star, atmos_files, *, settings_list, windows, R,
                                   job_params, vmic_points)
             results[vi] = [_interp_crop(grid, float(min(w)), float(max(w)), method)
                            for w in windows]
+    if return_runs:
+        folders = tuple(dict.fromkeys(str(Path(run.folder).resolve())
+                                      for run in runs.values()))
+        return results, folders
     return results
 
 
 def compute_spectra(top, star, atmos_files, *, settings_list, absmet_files=None,
                     method='Delaunay', max_threads=None, launch_kwargs=None,
                     xmin=None, xmax=None, pad=None, vmic_step=0.5, vmic_points=2,
-                    nlte=None, cancel_token=None, crop=None):
+                    nlte=None, cancel_token=None, crop=None, preparation=None):
     """Batched :func:`compute_spectrum` for a list of settings variants that share the same
     star/atmospheres (e.g. a curve-of-growth's abundance ladder).
 
@@ -828,11 +846,13 @@ def compute_spectra(top, star, atmos_files, *, settings_list, absmet_files=None,
     if fold is not None:
         base, manifest = fold
         manifest_text = json.dumps(manifest, sort_keys=True, separators=(',', ':'))
-        node_lists = _node_linelists(top, base, nodes, crop_windows, crop, launch_kwargs) \
+        node_lists = _node_linelists(top, base, nodes, crop_windows, crop, launch_kwargs,
+                                     preparation) \
             if crop_windows else None
         keys = [base, manifest_text]
         if node_lists:
-            keys.append(_crop_digest(base, crop_windows, crop))
+            keys.append(str(preparation.folder) if preparation is not None else
+                        _crop_digest(base, crop_windows, crop))
         digest = hashlib.sha1(
             json.dumps(keys, sort_keys=True, default=str).encode()).hexdigest()[:8]
         manifest_path = (Path((launch_kwargs or {}).get('cwd') or '.') / top /
@@ -873,9 +893,12 @@ def compute_spectra(top, star, atmos_files, *, settings_list, absmet_files=None,
     # Per variant: assemble window/hash-keyed tops exactly as compute_spectrum does.
     prepared = []   # (settings, syn_top, departures_top, nlte_v, node_linelists)
     for s, label, nlte_v in zip(windowed, labels, nlte_values):
-        node_lists = _node_linelists(top, s, nodes, crop_windows, crop, launch_kwargs) \
+        node_lists = _node_linelists(top, s, nodes, crop_windows, crop, launch_kwargs,
+                                     preparation) \
             if crop_windows else None
-        keys = s if node_lists is None else [s, _crop_digest(s, crop_windows, crop)]
+        prep_key = (str(preparation.folder) if preparation is not None else
+                    _crop_digest(s, crop_windows, crop))
+        keys = s if node_lists is None else [s, prep_key]
         digest = hashlib.sha1(
             json.dumps(keys, sort_keys=True, default=str).encode()).hexdigest()[:8]
         syn_top = top / f'{label}_{digest}'

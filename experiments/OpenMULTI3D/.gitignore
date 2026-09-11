@@ -32,6 +32,7 @@ tests/*
 # The parent repository ignores *.txt as data; the GUI extras file is source.
 !requirements-gui.txt
 !tests/test_synthesis_preparation.py
+!tests/test_synthesis_contract.py
 
 # Review documents are maintained source; benchmark outputs remain ignored.
 !reports/

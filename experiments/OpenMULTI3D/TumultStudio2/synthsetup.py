@@ -25,7 +25,8 @@ from pathlib import Path
 
 from bokeh.models import TextInput
 
-from tumult.synthesis import SynthRequest
+from tumult.synthesis import (Atmosphere1D, DepartureField, GridTarget, Snapshot3D,
+                              SynthRequest)
 
 import store
 from tumult.synthesis import workflows as synth
@@ -39,7 +40,8 @@ from synthprefs import INDIVIDUAL_GRID, REPO_DIR, RUN_DEFAULTS, load_prefs, miss
 # plus the abundance/mode/atmosphere selection); the grid id is handled separately because the
 # Synthesize tab stores it under "synthesis", not its run section.
 _INHERIT_KEYS = ("teff", "logg", "feh", "vmic", "abundances", "relative_abundances", "mode",
-                 "atmos_mode", "atmos_file", "atmos_individual_format")
+                 "geometry", "departure_field", "atmos_mode", "atmos_file",
+                 "atmos_individual_format")
 
 
 class SynthSetup:
@@ -109,6 +111,11 @@ class SynthSetup:
         self.mode_form = Form(names["mode"], [
             Field("mode", "RT mode", kind="select", value=vals["mode"],
                   options=["LTE", "NLTE"], inline=True),
+            Field("geometry", "Geometry", kind="select", value=vals.get("geometry", "1D"),
+                  options=["1D", "3D snapshot"], inline=True),
+            Field("departure_field", "Saved departures (optional)", kind="text",
+                  value=vals.get("departure_field", ""),
+                  placeholder="path to departure run"),
         ], on_change=self._save_mode)
 
         # atmosphere selection UI: a server-rendered block (grid select + source/format + file
@@ -158,7 +165,7 @@ class SynthSetup:
     def show_file(self):
         """True when a concrete atmosphere *file* is in play — Individual, or a registered
         grid in 'Pick file' mode — i.e. when the inline path field should be shown."""
-        if self.is_individual:
+        if self.is_snapshot or self.is_individual:
             return True
         return store.get_section(self.section).get("atmos_mode", "interp") == "pick"
 
@@ -188,6 +195,10 @@ class SynthSetup:
     @property
     def is_nlte(self):
         return str(self.mode_form.value("mode")).upper() == "NLTE"
+
+    @property
+    def is_snapshot(self):
+        return str(self.mode_form.value("geometry")).startswith("3D")
 
     def selected_grid(self):
         """The selected *registered* grid dict, or ``None`` (no grids, or Individual)."""
@@ -340,6 +351,9 @@ class SynthSetup:
     def _save_mode(self, key, value):
         store.update_pref(self.section, key, value)
         self.render_atoms_ro()
+        if key == "geometry":
+            self._reset_atmos_picker()
+            self.render_grid_ui()
         if self.on_mode_change:
             self.on_mode_change(self.is_nlte)
 
@@ -369,7 +383,8 @@ class SynthSetup:
         self.run_form.set_values(**{k: vals[k] for k, _, _, _ in synth.STELLAR_PARAMS})
         self.base_form.set_values(abundances=vals["abundances"],
                                   relative_abundances=vals["relative_abundances"])
-        self.mode_form.set_values(mode=vals["mode"])
+        self.mode_form.set_values(mode=vals["mode"], geometry=vals.get("geometry", "1D"),
+                                  departure_field=vals.get("departure_field", ""))
         self._reset_atmos_picker()
         self._seed_atmos_query()
         self.render_grid_ui()
@@ -391,13 +406,14 @@ class SynthSetup:
         rv = self.run_form.values()
         rv.update(self.base_form.values())
         rv["mode"] = self.mode_form.value("mode")
+        rv["geometry"] = self.mode_form.value("geometry")
         rv["atoms"] = list(self.atoms_provider())
         if self.is_nlte and not rv["atoms"]:
             self.reason = "NLTE needs model atoms — add them in the Synthesize tab."
             return None
         sect = store.get_section(self.section)
         atmos_file = None
-        if self.is_individual or sect.get("atmos_mode", "interp") == "pick":
+        if self.is_snapshot or self.is_individual or sect.get("atmos_mode", "interp") == "pick":
             atmos_file = (sect.get("atmos_file") or "").strip() or None
             if atmos_file is None:
                 self.reason = ("Choose a grid to interpolate, or pick an atmosphere file, "
@@ -405,5 +421,21 @@ class SynthSetup:
                 return None
         target = (float(rv["teff"]), float(rv["logg"]), float(rv["feh"]), float(rv["vmic"]))
         self.reason = None
-        return SynthRequest(prefs=prefs, grid=grid, run_vals=rv,
-                            target=target, atmos_file=atmos_file)
+        saved = str(self.mode_form.value("departure_field") or "").strip()
+        try:
+            departure_field = DepartureField.load(saved) if saved else None
+        except (OSError, ValueError) as exc:
+            self.reason = f"Cannot open saved departures: {exc}"
+            return None
+        if self.is_snapshot:
+            resolution = tuple(int(prefs.get(key)) for key in ("nx", "ny", "nz"))
+            selection = Snapshot3D(atmos_file, target[:3], resolution,
+                                   sect.get("atmos_individual_format") or grid.get("format"),
+                                   self.grids.reference_grid())
+        elif atmos_file:
+            selection = Atmosphere1D(atmos_file, target, grid.get("format"),
+                                     self.grids.reference_grid())
+        else:
+            selection = GridTarget(grid, target, self.grids.reference_grid())
+        return SynthRequest(prefs=prefs, run_vals=rv, selection=selection,
+                            departure_field=departure_field)

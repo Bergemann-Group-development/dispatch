@@ -62,6 +62,8 @@ import logging
 import os
 import re
 import threading
+import hashlib
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import numpy as np
@@ -93,6 +95,100 @@ _FEH_RE = re.compile(r"\bFEH=\s*([-+\d.Ee]+)")
 # caller check readiness while another thread is inside HOP.
 _bands_lock = threading.Lock()
 _bands = {}      # (star, linelist, lo, hi) -> frame, most recent last
+
+
+def _file_identity(path):
+    """A cheap cache identity that changes when a local preparation input changes."""
+    path = Path(path).expanduser().resolve()
+    if path.is_dir():
+        entries = []
+        for item in sorted(p for p in path.rglob('*') if p.is_file()):
+            stat = item.stat()
+            entries.append((str(item.relative_to(path)), stat.st_size, stat.st_mtime_ns))
+        return {'path': str(path), 'kind': 'directory', 'entries': entries}
+    stat = path.stat()
+    return {'path': str(path), 'kind': 'file', 'size': stat.st_size,
+            'mtime_ns': stat.st_mtime_ns}
+
+
+@dataclass(frozen=True)
+class PreparedLineList:
+    """Reusable HOP selection for one or more deterministic MARCS references."""
+    folder: Path
+    master: str
+    references: tuple[str, ...]
+    files: tuple[str, ...]
+    windows: tuple[tuple[float, float], ...]
+    settings: dict
+    identities: tuple[dict, ...]
+    aliases: dict
+
+    def for_reference(self, reference):
+        reference = str(Path(reference).expanduser().resolve())
+        reference = self.aliases.get(reference, reference)
+        return self.files[self.references.index(reference)]
+
+    def to_dict(self):
+        value = asdict(self)
+        value['folder'] = str(self.folder)
+        return value
+
+    @classmethod
+    def load(cls, path):
+        path = Path(path)
+        manifest = path if path.is_file() else path / 'preparation.json'
+        value = json.loads(manifest.read_text())
+        value['folder'] = Path(value['folder'])
+        value['references'] = tuple(value['references'])
+        value['files'] = tuple(value['files'])
+        value['windows'] = tuple(tuple(w) for w in value['windows'])
+        value['identities'] = tuple(value['identities'])
+        value['aliases'] = dict(value.get('aliases') or {})
+        return cls(**value)
+
+
+def prepare_linelist(output_root, references, linelist, windows, *, R,
+                     dlam=DLAM_AA, vmic=1.0, feh=0.0, abundances='',
+                     relative_abundances=True, aliases=None):
+    """Crop/thin once for all required MARCS references and return its artifact.
+
+    The digest includes identities of the master list and every atmosphere, so replacing
+    any input invalidates this cache without relying on a caller-selected name. HOP decides
+    the retained transitions over the complete requested windows, which keeps contributors
+    from other species (blends) in the same artifact.
+    """
+    master_id = _file_identity(linelist)
+    reference_ids = tuple(_file_identity(path) for path in references)
+    bounds = tuple((float(min(w)), float(max(w))) for w in windows)
+    if not bounds:
+        raise ValueError('Line-list preparation needs at least one window.')
+    settings = {'R': float(R), 'dlam': float(dlam), 'vmic': float(vmic),
+                'feh': float(feh), 'abundances': str(abundances),
+                'relative_abundances': bool(relative_abundances)}
+    aliases = {str(Path(key).expanduser().resolve()):
+               str(Path(value).expanduser().resolve())
+               for key, value in (aliases or {}).items()}
+    identity = {'master': master_id, 'references': reference_ids, 'aliases': aliases,
+                'windows': bounds, 'settings': settings}
+    digest = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()[:16]
+    folder = Path(output_root).expanduser().resolve() / digest
+    folder.mkdir(parents=True, exist_ok=True)
+    files = []
+    for index, reference in enumerate(reference_ids):
+        output = folder / f'reference-{index:03d}.txt'
+        if not output.is_file():
+            crop_linelist(output, reference['path'], master_id['path'], bounds, R=R,
+                          dlam=dlam, vmic=vmic, feh=feh, abundances=abundances,
+                          relative_abundances=relative_abundances)
+        files.append(str(output))
+    artifact = PreparedLineList(folder, master_id['path'],
+                                tuple(item['path'] for item in reference_ids), tuple(files),
+                                bounds, settings, (master_id, *reference_ids), aliases)
+    manifest = folder / 'preparation.json'
+    tmp = manifest.with_name(f'{manifest.name}.{os.getpid()}.partial')
+    tmp.write_text(json.dumps(artifact.to_dict(), indent=2, sort_keys=True, default=str) + '\n')
+    tmp.replace(manifest)
+    return artifact
 
 
 def _sorted_frame(df):

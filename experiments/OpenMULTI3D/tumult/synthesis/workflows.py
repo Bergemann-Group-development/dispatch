@@ -14,6 +14,7 @@ The split of inputs (see the plan):
 """
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 import os
 import re
@@ -24,11 +25,15 @@ from .api import (compute_spectrum, compute_spectra,
                   compute_window_batch as _compute_window_batch,
                   PRESETS_DIR, preset, PROVENANCE_NAME)
 from ..abundance import (
-    abundance_override, abund_to_xfe, convert_abundances, read_solar_abundances, xfe_to_abund,
+    SYNTH_PAD_AA, abundance_override, abund_to_xfe, convert_abundances,
+    read_solar_abundances, xfe_to_abund,
 )
 from .api import adaptive_fit
 from .cancel import CancelToken, CancelledError
 from .runtime import get_runtime
+from .request import (Atmosphere1D, GridTarget, ResolvedSynthRequest, Snapshot3D,
+                      SynthesisResult, SynthRequest)
+from ..auxfuncs import update_dict
 
 # namelist presets now live with the core (tumult/presets) so the library and this app
 # share one location; see tumult.synthesis.PRESETS_DIR.
@@ -36,9 +41,12 @@ _PRESETS = PRESETS_DIR
 
 __all__ = ["discover_atmos_grid", "compile_pattern", "recover_params",
            "build_settings", "compute", "compute_batch", "compute_window_batch",
+           "resolve_request", "execute_request",
+           "solve_request_departures",
            "compute_reference",
            "read_reference_linelist",
            "fit", "fit_line",
+           "fit_request_line",
            "abund_elements", "abund_table", "DEFAULT_PATTERN",
            "CancelToken", "CancelledError"]
 
@@ -478,6 +486,231 @@ def compute_window_batch(target, prefs, run_vals_list, windows, *, grid,
                                  crop=_crop_spec(prefs, crop), fold=fold)
 
 
+# --- resolved public request -----------------------------------------------------------
+def _resolved_path(root, value):
+    path = Path(value).expanduser()
+    return (path if path.is_absolute() else root / path).resolve()
+
+
+def _preparation_grid(selection):
+    if isinstance(selection, GridTarget):
+        if selection.preparation_grid:
+            return selection.preparation_grid
+        return selection.grid if str(selection.grid.get('format', '')).lower() == 'marcs' else {}
+    return selection.preparation_grid or {}
+
+
+def _nearest_grid_path(atmospheres, stellar, vmic=0.0):
+    keys = sorted({tuple(float(v) for v in key[:3]) for key in atmospheres})
+    spans = [max(values) - min(values) or 1.0 for values in zip(*keys)]
+    target = tuple(float(v) for v in stellar[:3])
+    nearest = min(keys, key=lambda key: (sum(((a - b) / span) ** 2
+                                             for a, b, span in zip(key, target, spans)), key))
+    candidates = [(key, path) for key, path in atmospheres.items()
+                  if tuple(float(v) for v in key[:3]) == nearest]
+    return min(candidates,
+               key=lambda item: (abs((float(item[0][3]) if len(item[0]) > 3 else 0.0)
+                                    - float(vmic)), str(item[1])))[1]
+
+
+def _reference_atmospheres(selection, prefs, root):
+    """Deterministically select the MARCS inputs used only for HOP preparation."""
+    grid = _preparation_grid(selection)
+    if not grid.get('folder'):
+        return (), {}
+    if str(grid.get('format', 'Marcs')).lower() != 'marcs':
+        raise ValueError('The automatic HOP preparation reference grid must use MARCS format.')
+    references = discover_atmos_grid(
+        _resolved_path(root, grid['folder']), grid.get('pattern') or DEFAULT_PATTERN)
+    stellar = selection.stellar
+    if stellar is None:
+        raise ValueError('Automatic MARCS preparation for a snapshot needs teff, logg and feh.')
+    if isinstance(selection, GridTarget):
+        from .atmos_select import select_nodes
+        synthesis_grid = discover_atmos_grid(
+            _resolved_path(root, selection.grid['folder']),
+            selection.grid.get('pattern') or DEFAULT_PATTERN)
+        nodes, _ = select_nodes(selection.stellar, synthesis_grid,
+                                method=prefs.get('interp_method', 'NaturalNeighbor'),
+                                vmic_step=float(prefs.get('vmic_step') or 0.5))
+        aliases = {}
+        for node in nodes:
+            source = str(_resolved_path(root, node[6]))
+            reference = str(_resolved_path(
+                root, _nearest_grid_path(references, node[1:4], node[4])))
+            aliases[source] = reference
+        return tuple(dict.fromkeys(aliases.values())), aliases
+
+    vmic = stellar[3] if len(stellar) == 4 else 0.0
+    reference = str(_resolved_path(root, _nearest_grid_path(references, stellar, vmic)))
+    source = str(_resolved_path(root, selection.path))
+    return (reference,), {source: reference}
+
+
+def resolve_request(request: SynthRequest) -> ResolvedSynthRequest:
+    """Resolve paths, boundary units, masks, settings and preparation references."""
+    if not isinstance(request, SynthRequest):
+        raise TypeError('resolve_request expects a SynthRequest')
+    request = SynthRequest.from_dict(request.to_dict())  # submission-time ownership
+    root = execution_root(request.prefs).resolve()
+    prefs = deepcopy(request.prefs)
+    for key in ('linelist', 'absmet', 'abund_file'):
+        if prefs.get(key):
+            prefs[key] = str(_resolved_path(root, prefs[key]))
+    selection = request.selection
+    if isinstance(selection, GridTarget):
+        fmt = selection.grid.get('format')
+    else:
+        fmt = selection.format
+    settings = build_settings(prefs, request.run_vals, atmos_format=fmt)
+    settings = update_dict(settings, deepcopy(request.expert_settings))
+    settings.setdefault('spectrum_params', {}).setdefault('R',
+                                                           float(prefs.get('R') or _DEFAULT_R))
+    if settings['spectrum_params']['R'] <= 0:
+        raise ValueError('Resolving power must be positive.')
+    windows = tuple(mask.synth for mask in request.masks if mask.include)
+    padded = tuple((window[0] - SYNTH_PAD_AA, window[1] + SYNTH_PAD_AA)
+                   for window in windows)
+    references, aliases = _reference_atmospheres(selection, prefs, root)
+    if (float(prefs.get('linelist_crop_aa') or 0.0) > 0 and prefs.get('linelist')
+            and not references):
+        raise ValueError('Automatic line-list preparation has no MARCS reference grid. '
+                         'Configure a reference grid or set linelist_crop_aa=0 to use the full list.')
+    resolved_request = SynthRequest(prefs, run_vals=request.run_vals, selection=selection,
+                                    masks=request.masks,
+                                    expert_settings=request.expert_settings,
+                                    departure_field=request.departure_field)
+    output = _resolved_path(root, prefs.get('synth_output_dir') or 'synth')
+    return ResolvedSynthRequest(resolved_request, settings, windows, padded, references,
+                                aliases,
+                                str(root), str(output))
+
+
+def _prepare_artifact(resolved):
+    prefs, windows = resolved.request.prefs, resolved.padded_windows
+    skirt = float(prefs.get('linelist_crop_aa') or 0.0)
+    if not (skirt > 0 and windows and resolved.preparation_references and prefs.get('linelist')):
+        return None
+    from ..linestrength import prepare_linelist
+    settings = resolved.settings.get('composition_params', {}) or {}
+    return prepare_linelist(Path(resolved.output_root) / '_preparation',
+                            resolved.preparation_references, prefs['linelist'], windows,
+                            R=float(resolved.settings['spectrum_params']['R']), dlam=skirt,
+                            vmic=float(resolved.request.run_vals.get('vmic', 1.0)),
+                            feh=float(resolved.request.run_vals.get('feh', 0.0)),
+                            abundances=settings.get('abundances', ''),
+                            relative_abundances=bool(settings.get('relative_abundances', True)),
+                            aliases=resolved.preparation_aliases)
+
+
+def execute_request(request, *, cancel_token=None):
+    """Execute all geometries through one result contract."""
+    resolved = request if isinstance(request, ResolvedSynthRequest) else resolve_request(request)
+    request, selection = resolved.request, resolved.request.selection
+    settings = deepcopy(resolved.settings)
+    artifact = _prepare_artifact(resolved)
+    if artifact is not None and not isinstance(selection, GridTarget):
+        settings.setdefault('linelist_params', {}).pop('linelist_folder', None)
+        settings['linelist_params']['linelist_file'] = [artifact.files[0]]
+    launch_kwargs = {'overwrite': False, 'verbose': 0,
+                     'default': [str(_PRESETS / 'base.nml')]}
+    nlte = str(request.run_vals.get('mode', 'LTE')).upper() == 'NLTE'
+    if nlte:
+        launch_kwargs['default'].append(str(_PRESETS / 'nlte.nml'))
+    if request.prefs.get('dispatch_cwd'):
+        launch_kwargs['cwd'] = resolved.execution_root
+    max_threads = int(request.prefs.get('max_threads') or 0) or (os.cpu_count() or 1)
+
+    spectra, runs, departures = [], [], request.departure_field
+    if departures is not None and not nlte:
+        raise ValueError('Saved departures can only be reused in NLTE mode.')
+    if isinstance(selection, Snapshot3D) or departures is not None:
+        from .snapshot import solve_departures, synthesise, synthesise_snapshot
+        if nlte and departures is None:
+            if not isinstance(selection, Snapshot3D):
+                raise ValueError('Automatic departure solving requires a snapshot selection.')
+            departures = solve_departures(request.prefs.get('synth_output_dir') or 'synth',
+                                          _resolved_path(Path(resolved.execution_root), selection.path),
+                                          settings, resolution=selection.resolution,
+                                          atmos_format=selection.format,
+                                          launch_kwargs=launch_kwargs, max_threads=max_threads,
+                                          cancel_token=cancel_token)
+        windows = resolved.windows or (None,)
+        padded = resolved.padded_windows or (None,)
+        for index, (window, run_window) in enumerate(zip(windows, padded)):
+            if nlte:
+                run = synthesise(departures, settings=settings, window=run_window,
+                                 launch_kwargs=launch_kwargs, max_threads=max_threads,
+                                 cancel_token=cancel_token)
+            else:
+                item = deepcopy(settings)
+                if run_window is not None:
+                    item.setdefault('spectrum_params', {}).update(
+                        aa_blue=float(run_window[0]), aa_red=float(run_window[1]))
+                run = synthesise_snapshot(request.prefs.get('synth_output_dir') or 'synth',
+                                          _resolved_path(Path(resolved.execution_root), selection.path),
+                                          settings=item, resolution=selection.resolution,
+                                          atmos_format=selection.format,
+                                          launch_kwargs=launch_kwargs, max_threads=max_threads,
+                                          cancel_token=cancel_token)
+            runs.append(str(Path(run.folder).resolve()))
+            spectra.append(run.crop(window=window) if window is not None else run.crop())
+    else:
+        grid = selection.grid if isinstance(selection, GridTarget) else selection.preparation_grid
+        target = request.target
+        atmos_file = None if isinstance(selection, GridTarget) else selection.path
+        if resolved.windows:
+            common, _settings, R = _prepare(target, request.prefs, [request.run_vals], grid,
+                                             atmos_file, None, window_batch=True)
+            values, run_paths = _compute_window_batch(**common, settings_list=[settings],
+                                           windows=resolved.windows, R=R,
+                                           pad=SYNTH_PAD_AA, cancel_token=cancel_token, fold=True,
+                                           preparation=artifact if isinstance(selection, GridTarget)
+                                           else None, return_runs=True)
+            spectra.extend(values[0])
+            runs.extend(run_paths)
+        else:
+            common, _settings, _ = _prepare(target, request.prefs, [request.run_vals], grid,
+                                             atmos_file, None)
+            value, run_paths = compute_spectrum(**common, settings=settings,
+                                                cancel_token=cancel_token, return_runs=True)
+            spectra.append(value)
+            runs.extend(str(path) for path in run_paths)
+    included = [(index, mask) for index, mask in enumerate(request.masks) if mask.include]
+    mapping = tuple({'window': list(window), 'mask_index': index,
+                     'feature_id': mask.feature_id}
+                    for (index, mask), window in zip(included, resolved.windows))
+    if not mapping and spectra:
+        mapping = ({'window': None, 'mask_index': None},)
+    return SynthesisResult(tuple(spectra), mapping, request, settings, artifact,
+                           departures, tuple(runs))
+
+
+def solve_request_departures(request, *, cancel_token=None):
+    """Solve only departures for one selected atmosphere; masks are deliberately ignored."""
+    clean = SynthRequest({**request.prefs, 'linelist_crop_aa': 0},
+                         run_vals=request.run_vals, selection=request.selection,
+                         expert_settings=request.expert_settings)
+    resolved = resolve_request(clean)
+    selection = resolved.request.selection
+    if isinstance(selection, GridTarget):
+        raise ValueError('Choose an individual 1D atmosphere or 3D snapshot for a saved field.')
+    if str(resolved.request.run_vals.get('mode', 'LTE')).upper() != 'NLTE':
+        raise ValueError('Departure solving requires NLTE mode.')
+    defaults = [str(_PRESETS / 'base.nml'), str(_PRESETS / 'nlte.nml')]
+    launch_kwargs = {'overwrite': False, 'verbose': 0, 'default': defaults,
+                     'cwd': resolved.execution_root}
+    from .snapshot import solve_departures
+    resolution = selection.resolution if isinstance(selection, Snapshot3D) else None
+    return solve_departures(resolved.request.prefs.get('synth_output_dir') or 'synth',
+                            _resolved_path(Path(resolved.execution_root), selection.path),
+                            resolved.settings, resolution=resolution,
+                            atmos_format=selection.format, launch_kwargs=launch_kwargs,
+                            max_threads=(int(resolved.request.prefs.get('max_threads') or 0)
+                                         or (os.cpu_count() or 1)),
+                            cancel_token=cancel_token)
+
+
 # --- fitting ---------------------------------------------------------------------------
 # atmosphere-grid axes (sampled at the discrete model-atmosphere nodes) and the index of
 # each in the discover_atmos_grid key tuple (teff, logg, feh, vmic).
@@ -684,6 +917,43 @@ def fit_line(obs, target, prefs, run_vals, symbol, guess, xmin, xmax, fit_window
             full = _grid.crop(**best)   # interpolate the grid at best-fit a + apply vshift/vdop
         except Exception:
             full = fitted
+    return out, full
+
+
+def fit_request_line(obs, request, symbol, guess, synth_window, fit_window,
+                     *, fit_post=("vshift", "vdop"), cancel_token=None):
+    """Geometry-neutral abundance fit used by mask analysis for snapshot requests."""
+    prefs, run_vals = request.prefs, request.run_vals
+    relative = bool(run_vals.get('relative_abundances', False))
+    solar, feh = abund_table(prefs), float(request.feh)
+    base_abund = str(run_vals.get('abundances', '')).strip()
+
+    def synth_point(point):
+        terms = abundance_override(symbol, point[symbol], base=base_abund,
+                                   relative=relative, feh=feh, solar=solar)
+        varied = request.with_run_vals(abundances=terms,
+                                       relative_abundances=relative).with_masks(
+            [{'fit': fit_window, 'synth': synth_window}])
+        try:
+            return execute_request(varied, cancel_token=cancel_token).spectrum
+        except (ValueError, RuntimeError):
+            return None
+
+    target = obs.crop(window=fit_window)
+    fit_post = list(fit_post)
+    guesses = {symbol: float(guess), **{p: (0.0 if p == 'vshift' else 1.0)
+                                       for p in fit_post}}
+    best, fitted, _ = adaptive_fit(
+        target, synth_point, [symbol], guesses, post_fit=fit_post,
+        spacings={symbol: float(prefs.get('abund_step') or 0.25)},
+        xtol={symbol: 0.01, **{p: 0.1 for p in fit_post}},
+        max_rounds=int(prefs.get('fit_max_rounds') or 6), cancel_token=cancel_token)
+    out = {'a': float(best[symbol]),
+           **{p: float(best[p]) for p in fit_post if p in best}}
+    full = synth_point({symbol: best[symbol]})
+    full = fitted if full is None else full
+    if full is not fitted and fit_post:
+        full = full.convolve(**{p: best[p] for p in fit_post if p in best})
     return out, full
 
 
