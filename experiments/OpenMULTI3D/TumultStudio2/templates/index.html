@@ -171,6 +171,11 @@
         <div class="linelist-head">
           <span class="section-header">Line list</span>
           <div id="linesettings-fields" class="linelist-settings">{{ linesettings_html|safe }}</div>
+          <!-- searching the reference list replaces the window's lines by the matches
+               (linenav.set_query); letters name the species, digits the wavelength -->
+          <label class="linelist-search"><i class="ti ti-search"></i>
+            <input id="linelist-search" class="field-input" type="text" spellcheck="false"
+                   placeholder="Search list, e.g. Mg I 5711" title="Species and wavelength, e.g. “Mg I 5711” or “O I 77”; Esc clears"></label>
           <button id="linelist-close" class="icon-btn" title="Close the line list"><i class="ti ti-x"></i></button>
         </div>
         <div id="linelist-table"></div>

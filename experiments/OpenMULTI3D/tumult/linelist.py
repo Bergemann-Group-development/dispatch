@@ -2,6 +2,7 @@ from io import StringIO
 from .auxfuncs import split_words
 from tumult.const import EK
 import os
+import re
 from tumult.isotopes import parse_ts, format_molec, molec_to_ts, species_elements, element_z
 import numpy as np
 import pandas as pd
@@ -382,3 +383,85 @@ def load_master(path=MASTER_PATH):
         m.attrs["strength_is_proxy"] = proxy
         _cache[path] = m
     return _cache[path]
+
+
+# --- searching a line list ---------------------------------------------------------
+def search_lines(lines, query):
+    """The rows of ``lines`` matching a free-text ``query`` such as ``"O I 77"``.
+
+    The query is split on whitespace. Purely numeric words (``77``, ``7771.9``) match the
+    wavelength ``lam0`` in Angstrom, everything else names the species: those words, joined
+    by single spaces, are matched word by word against the ``ion`` label, case-insensitively,
+    the leading words exactly and the last one as a prefix. So ``"O"`` matches every species
+    starting with O (O I, O II, OH, Os I), ``"O I"`` only O I and ``"Fe"`` both Fe I and Fe
+    II. The ionisation stage is matched exactly once a further word follows (``"O I "``).
+
+    A numeric word matches as the digits are typed: ``77`` is the leading digits of any
+    wavelength, so it finds 77xx and 77xxx Å alike, and ``777`` narrows to 777x. The
+    wavelength may be read off rounded as well as truncated (``7772`` finds 7771.959).
+    A decimal point pins the magnitude. Several numeric words match any of them.
+
+    Returns a DataFrame (empty for an empty query); ``lines`` must carry ``ion`` and
+    ``lam0`` columns.
+    """
+    words = str(query).split()
+    if not words:
+        return lines.iloc[0:0]
+    numeric = [w for w in words if _NUMERIC.fullmatch(w)]
+    species = [w for w in words if not _NUMERIC.fullmatch(w)]
+    # the species is still being typed only while it is the last thing in the query
+    complete = words[-1] not in species or str(query)[-1].isspace()
+    mask = np.ones(len(lines), dtype=bool)
+    if species:
+        mask &= _species_mask(lines.ion, species, complete)
+    if numeric:
+        lam = lines.lam0.values.astype(float)
+        hit = np.zeros(len(lines), dtype=bool)
+        for word in numeric:
+            hit |= _wavelength_mask(lam, word)
+        mask &= hit
+    return lines[mask]
+
+
+_NUMERIC = re.compile(r"\d+\.?\d*|\.\d+")
+
+
+def _species_mask(ion, words, complete):
+    """Rows whose ion label matches the species ``words`` (see :func:`search_lines`);
+    with ``complete`` the last word is matched exactly rather than as a prefix.
+
+    Matched over the distinct labels rather than the column: a master list has a few
+    hundred species over a few hundred thousand rows, and this runs on every keystroke."""
+    words = [w.lower() for w in words]
+
+    def matches(label):
+        parts = str(label).lower().split()
+        if len(parts) < len(words):
+            return False
+        head, last = words[:-1], words[-1]
+        return (parts[:len(head)] == head
+                and (parts[len(head)] == last if complete
+                     else parts[len(head)].startswith(last)))
+
+    labels = [lab for lab in ion.unique() if matches(lab)]
+    return ion.isin(labels).values
+
+
+def _wavelength_mask(lam, word):
+    """Rows whose ``lam`` reads as ``word`` when written out, truncated or rounded, to the
+    precision the word is typed at; an integer word may be the leading digits of a longer
+    wavelength. Wavelengths in Å, from 1 Å to below 1e7 Å."""
+    value = float(word)
+    if "." in word:
+        step = 10.0 ** -(len(word) - word.index(".") - 1)
+        shifts = (1.0,)
+    else:
+        step = 1.0
+        shifts = tuple(10.0 ** k for k in range(7 - len(word)))
+    mask = np.zeros(len(lam), dtype=bool)
+    for shift in shifts:
+        lo = value * shift - step * shift / 2 if shift == 1.0 else value * shift
+        # rounding at the typed precision reaches half a step below the word's value; a
+        # shifted (longer) wavelength is only ever read by its leading digits
+        mask |= (lam >= lo) & (lam < (value + step) * shift)
+    return mask

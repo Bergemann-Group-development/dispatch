@@ -25,6 +25,14 @@ strengths came from, and the right default when the source may be the proxy. Sor
 strength is a click on the header away, and is exactly what one wants once the footer says
 the numbers are a run's own.
 
+The header's search field replaces the window's lines by the reference (master) list's
+matches for a query such as ``"O I 77"`` (:func:`tumult.linelist.search_lines`), so a line
+can be reached by name from anywhere in the spectrum. The result is drawn from the plain
+list and has no strength column: it spans the whole spectrum, and no computed band covers
+that. Clicking a row jumps to the line as usual while the result stays up, so the lines of a
+multiplet can be visited in turn; a pick on the spectrum clears the search, since the row it
+asks for is not in the result.
+
 lam0 is stored in Angstrom (the usual unit); values are converted to the canvas display unit
 for filtering, display and jumping. The master list is parsed once per process (a read-only
 DataFrame, safe to share across sessions).
@@ -42,7 +50,7 @@ from bokeh.models import Span
 
 # MASTER_PATH/load_master are re-exported: this panel is where the app reaches the
 # master list, and its importers ask this module for it.
-from tumult.linelist import MASTER_PATH, load_master  # noqa: F401
+from tumult.linelist import MASTER_PATH, load_master, search_lines  # noqa: F401
 
 from tableui import SortState, sort_headers
 from units import to_value, to_range
@@ -60,13 +68,16 @@ SORT_DEFAULT = "lam0"   # wavelength: the one order that means the same thing ac
 
 
 class LineNavigator:
-    def __init__(self, canvas, strengths, on_table, on_open=None):
+    def __init__(self, canvas, strengths, on_table, on_open=None, on_query_cleared=None):
         self.canvas = canvas
         self.strengths = strengths  # linestrength.LineStrengths: the list and its strengths
         self.on_table = on_table   # callable(html) -> push the table into its slot
         self.on_open = on_open or (lambda on: None)  # show/hide the bottom panel
+        # empty the header's search field when the panel drops a query on its own
+        self.on_query_cleared = on_query_cleared or (lambda: None)
         self.sort = SortState(SORT_DEFAULT_ASC, SORT_DEFAULT)
         self.active = False        # True only while the line-list panel is open
+        self.query = ""            # the search field's text; non-empty shows its matches
         self.focus_lam0 = None     # Å of the picked line: the row the table highlights
         # how the *next* render's focused row asks the browser to scroll to it (see the
         # MutationObserver in index.html). "none" for every ordinary render — a pan, a sort —
@@ -111,6 +122,9 @@ class LineNavigator:
         was_open, self.active = self.active, True
         if not was_open:
             self.on_open(True)
+        if self.query:
+            self.query = ""
+            self.on_query_cleared()
         # the pick came from the spectrum, not from this table: the reader has no idea where
         # the row is, so bring it into view — but leave the scroll alone if it already is
         self._scroll = "ifneeded"
@@ -144,6 +158,16 @@ class LineNavigator:
         if self.sort.toggle(col):
             self.render()
 
+    def set_query(self, query):
+        """Show the master list's matches for ``query``; empty returns to the window."""
+        # leading blanks mean nothing; a trailing one completes the species word (see
+        # search_lines), so it stays
+        query = str(query).lstrip() if str(query).strip() else ""
+        if query == self.query:
+            return
+        self.query = query
+        self.render()
+
     # --- rendering --------------------------------------------------------
     def render(self):
         if not self.active:
@@ -153,6 +177,9 @@ class LineNavigator:
             self.on_table('<div class="linelist-empty">No spectrum loaded</div>')
             return
         try:
+            if self.query:
+                self.on_table(self._search_html())
+                return
             lo, hi = self._range_aa()
             # allow_compute off: a repaint runs on the document thread, and a band that is
             # not computed yet is being worked on in the background (main.warm_strengths)
@@ -191,20 +218,44 @@ class LineNavigator:
         return df.iloc[start:start + _MAX_ROWS]
 
     # --- the table --------------------------------------------------------
-    def _table_html(self, df, src):
+    def _search_html(self):
+        """The search result: the master list's matches, without strengths."""
+        df = search_lines(load_master(self.strengths.master_path), self.query)
         n = len(df)
         if n == 0:
-            return ('<div class="linelist-empty">No lines in view</div>'
-                    + self._source_html(src))
-        rows = self._shown(df)
-        header = sort_headers(self.sort, (
+            return '<div class="linelist-empty">No lines match</div>'
+        # no strength column here (see the module docstring), so a sort left on it reads
+        # as the default wavelength order
+        columns = self._columns()[:-1]
+        col, asc = self.sort.col, self.sort.asc
+        if col not in {c for _, c in columns}:
+            col, asc = SORT_DEFAULT, SORT_DEFAULT_ASC[SORT_DEFAULT]
+        rows = self._shown(df.sort_values(col, ascending=asc))
+        header = sort_headers(self.sort, columns)
+        more = (f'<div class="linelist-more">showing {len(rows):,} of {n:,} matching lines'
+                '</div>' if n > len(rows) else "")
+        return (
+            f'<table class="linelist-table"><thead><tr>{header}</tr></thead>'
+            f'<tbody>{self._body_html(rows, strength=False)}</tbody></table>{more}'
+        )
+
+    def _columns(self):
+        return (
             ("Species", None),
             (f"λ₀ [{html.escape(self.canvas.xlabel)}]", "lam0"),
             ("E<sub>low</sub> [eV]", "evi"),
             ("log gf", "loggf"),
             ('<span title="Boltzmann strength proxy: comparable between lines of the same '
              'ion only">strength</span>', "strength"),
-        ))
+        )
+
+    def _table_html(self, df, src):
+        n = len(df)
+        if n == 0:
+            return ('<div class="linelist-empty">No lines in view</div>'
+                    + self._source_html(src))
+        rows = self._shown(df)
+        header = sort_headers(self.sort, self._columns())
         body = self._body_html(rows)
         more = (f'<div class="linelist-more">showing {len(rows):,} of {n:,} lines in view'
                 f'{" around the selected one" if self.focus_lam0 is not None else ""}</div>'
@@ -230,11 +281,11 @@ class LineNavigator:
                 + (" — ordering is not comparable between species" if src.approximate else "")
                 + "</div>")
 
-    def _body_html(self, rows):
+    def _body_html(self, rows, strength=True):
         """The ``<tr>`` rows themselves, each led by the ion it belongs to."""
         lam_disp = to_value(rows.lam0.values, LAM0_UNIT, self.canvas.xunit)
         out = []
-        for lam0_aa, lam, ion, evi, loggf, strength in zip(
+        for lam0_aa, lam, ion, evi, loggf, s in zip(
                 rows.lam0.values, lam_disp, rows.ion.astype(str).values, rows.evi.values,
                 rows.loggf.values, rows.strength.values):
             focused = (self.focus_lam0 is not None
@@ -245,7 +296,8 @@ class LineNavigator:
                 f'data-lam0="{lam0_aa:.4f}">'
                 f'<td class="line-ion">{html.escape(ion)}</td>'
                 f'<td>{lam:.3f}</td><td>{evi:.3f}</td>'
-                f'<td>{loggf:.3f}</td><td>{strength:.3g}</td></tr>'
+                f'<td>{loggf:.3f}</td>' + (f'<td>{s:.3g}</td>' if strength else "")
+                + '</tr>'
             )
         return "".join(out)
 

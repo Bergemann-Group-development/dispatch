@@ -321,6 +321,10 @@ def build():
     # (the EW / Filter / Normalise tools create and own their bridges via the context)
     linelist_bridge = B.html("linelist-table")
     linelist_mode_bridge = B.cls("#main", "linelist-mode")  # the line-list bottom panel
+    # the panel's search field: its own channel, since a query holds spaces and may hold
+    # the ":" the object-actions bridge splits on; NUL-separated from the nonce
+    linesearch_actions = B.action("linelist-search")
+    linesearch_bridge = B.value("linelist-search")
     run_name_bridge = B.html("run-name")          # name shown on the "Load run" button
     run_ready_bridge = B.cls("#load-run", "ready")  # reveal it inside a run folder
     loading_bridge = B.cls("#footer", "loading")       # footer progress bar while loading

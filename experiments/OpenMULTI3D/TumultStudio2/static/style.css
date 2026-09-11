@@ -229,7 +229,13 @@ body.resizing * { pointer-events: none !important; }
 }
 .linelist-head { display: flex; align-items: center; gap: 12px; padding: 0 2px 6px; }
 .linelist-head .section-header { margin-top: 0; flex-shrink: 0; }
-.linelist-head .icon-btn { margin-left: auto; flex-shrink: 0; }
+.linelist-head .icon-btn { flex-shrink: 0; }
+/* the search field sits at the right end of the header, next to the close button, with a
+   magnifying glass drawn inside its left edge */
+.linelist-search { position: relative; margin-left: auto; flex-shrink: 0; }
+.linelist-search .ti { position: absolute; left: 7px; top: 50%; transform: translateY(-50%);
+  font-size: 13px; color: var(--text-muted); pointer-events: none; }
+.linelist-search .field-input { width: 200px; padding-left: 24px; }
 /* the panel's settings (reference star, the jump distance) sit inline in
    its header */
 .linelist-settings { display: flex; align-items: center; gap: 16px; }

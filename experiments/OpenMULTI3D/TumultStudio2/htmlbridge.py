@@ -64,6 +64,19 @@ def dialog_bridge(dialog_id, name=None):
     return bridge
 
 
+def value_bridge(input_id):
+    """Return a hidden TextInput; setting `.value` to ``text + NUL + nonce`` writes ``text``
+    into the ``.value`` of the ``<input>`` with id `input_id` — for a field the page edits
+    freely but the server occasionally resets (a search box it has stopped searching for).
+    NUL separates text and nonce because the text itself may hold anything else."""
+    bridge = TextInput(value="", visible=False)
+    bridge.js_on_change("value", CustomJS(args=dict(cid=input_id), code="""
+        const el = document.getElementById(cid);
+        if (el) el.value = cb_obj.value.split('\\0')[0];
+    """))
+    return bridge
+
+
 def class_bridge(selector, klass):
     """Return a hidden TextInput; setting `.value` to "on…"/"off…" toggles `klass`
     on the element matched by `selector`."""
@@ -105,6 +118,9 @@ class BridgeSet:
 
     def check(self, input_id):
         return self._keep(check_bridge(input_id))
+
+    def value(self, input_id):
+        return self._keep(value_bridge(input_id))
 
     def action(self, name):
         """A hidden client->server channel (a named ``TextInput`` the page writes to)."""
