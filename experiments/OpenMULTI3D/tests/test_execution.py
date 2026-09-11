@@ -1,5 +1,6 @@
 """Execution invariants: shared budgets, cancellation, cache writers and processes."""
 import concurrent.futures
+import os
 import sys
 import threading
 import time
@@ -369,7 +370,9 @@ def test_launch_runs_relative_inputs_in_execution_directory(tmp_path, monkeypatc
         'import sys\nfrom pathlib import Path\n'
         'assert Path(sys.argv[1]).is_file()\n'
         'out=Path("data")/Path(sys.argv[1]).with_suffix("")\n'
-        'out.mkdir(parents=True)\n(out/"abund.txt").write_text("done")\n')
+        # exist_ok, like dispatch.x's own mkdir -p: the launcher writes the run's
+        # job record into this folder before starting the executable.
+        'out.mkdir(parents=True, exist_ok=True)\n(out/"abund.txt").write_text("done")\n')
     executable.chmod(0o755)
     monkeypatch.chdir(client)
     output, ran = launch('cache/job', cwd=execution, verbose=0)
@@ -377,3 +380,232 @@ def test_launch_runs_relative_inputs_in_execution_directory(tmp_path, monkeypatc
     assert (execution/'cache/job.nml').exists()
     assert not (client/'cache').exists()
     assert launch('cache/job', cwd=execution, verbose=0) == (output, False)
+
+
+def _stub_dispatch(execution, body):
+    """A fake dispatch.x that runs ``body`` (Python source) in the execution directory."""
+    executable = execution / 'dispatch.x'
+    executable.write_text(f'#!{sys.executable}\n'
+                          'import sys, time\nfrom pathlib import Path\n'
+                          'out=Path("data")/Path(sys.argv[1]).with_suffix("")\n'
+                          'out.mkdir(parents=True, exist_ok=True)\n' + body)
+    executable.chmod(0o755)
+    return executable
+
+
+def test_job_record_states_a_finished_run(tmp_path, monkeypatch):
+    """A local run records itself at launch and resolves as finished afterwards."""
+    from tumult import launch
+    from tumult.synthesis import jobrecord
+
+    execution = tmp_path / 'execution'
+    execution.mkdir()
+    _stub_dispatch(execution, '(out/"abund.txt").write_text("done")\n')
+    monkeypatch.chdir(execution)
+
+    output, _ = launch('cache/job', {'atmos_params': {'nx': 7}}, verbose=0)
+    record = jobrecord.read(output)
+    assert record['state'] == 'finished' and record['pid']
+    assert record['settings'] == jobrecord.settings_hash({'atmos_params': {'nx': 7}})
+    assert jobrecord.state_of(output) == 'finished'
+    listed, = jobrecord.scan(execution / 'data')
+    assert listed['resolved'] == 'finished' and Path(listed['output']) == output
+
+
+def test_job_record_survives_a_crashed_run(tmp_path, monkeypatch):
+    """A run that never wrote abund.txt is reported failed, not silently absent."""
+    from tumult import launch
+    from tumult.synthesis import jobrecord
+
+    execution = tmp_path / 'execution'
+    execution.mkdir()
+    _stub_dispatch(execution, 'sys.exit(3)\n')
+    monkeypatch.chdir(execution)
+
+    output, _ = launch('cache/job', verbose=0)
+    assert jobrecord.state_of(output) == 'failed'
+    # and the failure is not mistaken for a cache hit on the next launch
+    assert launch('cache/job', verbose=0)[1] is True
+
+
+def test_job_record_reports_a_killed_run_as_lost(tmp_path):
+    """A record left behind by a server restart resolves from the process table."""
+    from tumult.synthesis import jobrecord
+
+    folder = tmp_path / 'run'
+    jobrecord.write(folder, {'atmos_params': {}}, pid=2 ** 30)   # no such process
+    assert jobrecord.state_of(folder) == 'lost'
+    jobrecord.write(folder, {'atmos_params': {}}, pid=os.getpid())
+    assert jobrecord.state_of(folder) == 'running'
+    (folder / 'abund.txt').write_text('done')
+    assert jobrecord.state_of(folder) == 'finished'  # the cache outranks the record
+
+
+def test_job_record_marks_a_cancelled_run(tmp_path, monkeypatch):
+    """Cancelling a run leaves a record saying so, not one that still claims to run."""
+    from tumult import launch
+    from tumult.synthesis import jobrecord
+
+    execution = tmp_path / 'execution'
+    execution.mkdir()
+    _stub_dispatch(execution, 'time.sleep(30)\n')
+    monkeypatch.chdir(execution)
+
+    token = CancelToken()
+    threading.Timer(0.4, token.cancel).start()
+    with pytest.raises(CancelledError):
+        launch('cache/job', verbose=0, cancel_token=token)
+    assert jobrecord.state_of(execution / 'data/cache/job') == 'cancelled'
+
+
+MONITOR_LOG = """\
+ ============================== LTE Iteration  ==================================
+  local =  2.7826-320, global =  0.0000E+00, lvl =   0, pos=[   0   0   0] Mg
+ ============================== Iteration  1/99 =================================
+  local =  1.2475E-04, global = -2.3649E-01, lvl =  86, pos=[   2   1 128] Mg
+  flux global =  5.8673E-01, i_nu =   1, lambda =   3112.49 AA
+ ============================== Iteration  2/99 =================================
+  local =  8.8159E-05, global = -9.1297E-02, lvl =  86, pos=[   1   3 127] Mg
+  flux global =  2.5535E-01, i_nu =   1, lambda =   3334.08 AA
+"""
+
+
+def _monitor_run(tmp_path, log=MONITOR_LOG):
+    run = tmp_path / 'run'
+    run.mkdir()
+    (run / 'params.nml').write_text(
+        "&rt_iteration_params maxiter=99 /\n&nlte_params convlim=1d-3 /\n")
+    log_file = tmp_path / 'run.log'
+    log_file.write_text(log)
+    return run, log_file
+
+
+def test_monitor_counts_iterations_not_flux_lines(tmp_path):
+    """Each NLTE iteration reports its populations and its flux; only one of them is an
+    iteration. Counting both doubled the progress and ran it past its own total."""
+    from tumult.launch import monitor
+
+    run, log_file = _monitor_run(tmp_path)
+    done, total = monitor(run, log_file)
+    assert (done, total) == (2, 99)         # two iterations after the LTE start, of maxiter
+
+
+def test_monitor_reports_what_it_can_without_a_log(tmp_path):
+    """A run launched with no log file, or read before it wrote one, must still answer."""
+    from tumult.launch import monitor
+
+    run, log_file = _monitor_run(tmp_path)
+    assert monitor(run) == (0, 0)
+    assert monitor(run, tmp_path / 'absent.log') == (0, 0)
+    assert monitor(tmp_path / 'absent') == (0, 0)
+    log_file.write_text('')                 # launched, nothing logged yet
+    assert monitor(run, log_file) == (0, 99)
+
+
+def test_progress_watch_reports_a_running_run(tmp_path):
+    """The watcher turns the run's own files into a fraction while the work blocks."""
+    from tumult.synthesis import progress
+
+    run, log_file = _monitor_run(tmp_path, log=MONITOR_LOG.split('Iteration  2')[0])
+    seen = []
+    with progress.watch(run, lambda *args: seen.append(args), log_file=log_file,
+                        interval=0.02) as watcher:
+        assert watcher.poll() and watcher.fraction == pytest.approx(1 / 99)
+        log_file.write_text(MONITOR_LOG)
+        deadline = time.time() + 3
+        while not seen and time.time() < deadline:
+            time.sleep(0.02)
+    assert seen[-1] == (2, 99, pytest.approx(2 / 99))
+
+
+def test_progress_watch_survives_a_failing_callback(tmp_path):
+    """A closed document must not take down the job whose progress it was showing."""
+    from tumult.synthesis import progress
+
+    run, log_file = _monitor_run(tmp_path, log=MONITOR_LOG.split('Iteration  1')[0])
+    calls = []
+
+    def report(*args):
+        calls.append(args)
+        raise RuntimeError('document gone')
+
+    with progress.watch(run, report, log_file=log_file, interval=0.02) as watcher:
+        log_file.write_text(MONITOR_LOG)
+        deadline = time.time() + 3
+        while not calls and time.time() < deadline:
+            time.sleep(0.02)
+    assert calls and watcher.done == 2
+
+
+def test_snapshot_phases_split_the_settings():
+    """The departures phase drops the spectrum; the spectrum phase drops the solve."""
+    from tumult.synthesis import snapshot
+
+    settings = {'atom_params': {'atom_file': 'mg.txt'},
+                'linelist_params': {'linelist_file': ['master.txt']},
+                'spectrum_params': {'R': 60000},
+                'rt_iteration_params': {'maxiter': 3}}
+
+    dep = snapshot.departure_settings(settings, '/snap', (30, 30, 128), 'MUST')
+    assert 'linelist_params' not in dep and 'spectrum_params' not in dep
+    assert dep['rt_output_params']['angle_quad'] == 'none'   # no formal solution
+    assert dep['rt_iteration_params']['maxiter'] == 99       # solve to convergence
+    assert dep['atmos_params'] == {'atmos_file': '/snap', 'save_atmos': True,
+                                   'atmos_format': 'MUST', 'nx': 30, 'ny': 30, 'nz': 128}
+    assert settings['rt_iteration_params']['maxiter'] == 3   # the caller's dict is untouched
+
+    field = snapshot.DepartureField(folder=Path('/x/data/snap/dep_ab'),
+                                    name=Path('snap/dep_ab'), snapshot='/snap',
+                                    resolution=(30, 30, 128))
+    spec = snapshot.spectrum_settings(field, settings, (5160, 5190))
+    assert spec['rt_iteration_params']['maxiter'] == 0       # populations frozen
+    assert spec['atmos_params'] == {'atmos_format': 'save', 'atmos_file': '/x/data/snap/dep_ab',
+                                    'read_departures': True}
+    assert spec['linelist_params'] == settings['linelist_params']
+    assert (spec['spectrum_params']['aa_blue'], spec['spectrum_params']['aa_red']) == (5160., 5190.)
+
+
+def test_snapshot_spectrum_identity_separates_windows():
+    """Two windows off one field are two runs; _dep_bucket's digest cannot tell them apart."""
+    from tumult.synthesis import snapshot
+    from tumult.synthesis.api import _dep_bucket
+
+    field = snapshot.DepartureField(folder=Path('/x/data/snap/dep_ab'),
+                                    name=Path('snap/dep_ab'), snapshot='/snap',
+                                    resolution=(30, 30, 128))
+    blue = snapshot.spectrum_settings(field, {}, (5160, 5190))
+    red = snapshot.spectrum_settings(field, {}, (5520, 5540))
+    assert snapshot._spectrum_name(blue) != snapshot._spectrum_name(red)
+    assert _dep_bucket('snap', blue) == _dep_bucket('snap', red)   # why the digest differs
+
+
+def test_snapshot_departures_are_reused_across_windows(tmp_path, monkeypatch):
+    """One solve, two windows: the second window must not re-enter the departures phase."""
+    import tumult as tm
+    from tumult.synthesis import snapshot
+
+    execution = tmp_path / 'execution'
+    execution.mkdir()
+    launched = execution / 'launched.txt'
+    _stub_dispatch(execution,
+                   'with open("launched.txt", "a") as f: f.write(sys.argv[1]+"\\n")\n'
+                   '(out/"save").mkdir(exist_ok=True)\n'
+                   '(out/"save"/"pop_Mg_meta.txt").write_text("")\n'
+                   '(out/"abund.txt").write_text("Mg 7.58\\n")\n')
+    monkeypatch.chdir(execution)
+    # the run reader is not under test: a stub dispatch.x writes no readable output
+    monkeypatch.setattr(tm, 'read', lambda path: SimpleNamespace(folder=path))
+
+    field = snapshot.solve_departures('snap3d', '/snap', {'atom_params': {'atom_file': 'mg'}},
+                                      resolution=(3, 3, 8), atmos_format='MUST')
+    assert field.species == ('Mg',) and field.resolution == (3, 3, 8)
+    assert field.folder == execution / 'data' / field.name
+
+    snapshot.synthesise(field, window=(5160, 5190))
+    snapshot.synthesise(field, window=(5520, 5540))
+    snapshot.synthesise(field, window=(5160, 5190))           # a repeat, served from disk
+
+    names = [line for line in launched.read_text().split() if line]
+    assert sum('dep_' in n for n in names) == 1               # one solve
+    assert len({n for n in names if 'spec_' in n}) == 2       # two distinct spectra
+    assert sum('spec_' in n for n in names) == 2              # the repeat did not re-run

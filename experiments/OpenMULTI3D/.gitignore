@@ -50,6 +50,12 @@ bin/*
 !reports/bench_ionbalance.py
 !reports/bench_table.py
 
+# The same for the 3D departure-resolution harness, its comparison script, and the
+# end-to-end check of the snapshot two-phase API against real dispatch.x runs.
+!reports/bench_departures.py
+!reports/depfield_table.py
+!reports/verify_departure_api.py
+
 # The HOP library gate and the golden data it pins (the other goldens predate these rules
 # and are tracked already; this makes a new or regenerated one visible in git status).
 !tests/test_hop.py

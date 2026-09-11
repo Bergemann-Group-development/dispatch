@@ -24,7 +24,9 @@ class ResultJobs:
     def invalidate(self, uid):
         self.current.pop(uid, None)
 
-    def submit(self, name, work, done, *, result=None, on_error=None):
+    def submit(self, name, work, done, *, result=None, on_error=None, detached=False):
+        """Submit one job. ``detached`` keeps it running when the browser tab closes,
+        for work too long to babysit; its result still only reaches a live document."""
         key = result.uid if result is not None else name
         generation = object()
         self.current[key] = generation
@@ -100,7 +102,7 @@ class ResultJobs:
             else:
                 done(outcome.result)
 
-        future = self.ctx.submit(name, run, complete)
+        future = self.ctx.submit(name, run, complete, detached=detached)
         if future is not None:
             future.add_done_callback(
                 lambda f: self.ctx.schedule(lambda: stopped("cancelled")) if f.cancelled() else None)

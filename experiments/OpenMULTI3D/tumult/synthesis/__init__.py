@@ -12,6 +12,8 @@ from .api import (PRESETS_DIR, adaptive_fit, build_stellar_grid, compute_spectru
 from .atmos_select import select_nodes
 from .cancel import CancelledError, CancelToken
 from .request import SynthRequest
+from .snapshot import (DepartureField, solve_departures,
+                       synthesise as synthesise_from_departures)
 from .runtime import ExecutionService, HOP, IO, WORKFLOWS, execution_scope
 from .executor import _make_da_jobs, _run_batch, _run_single  # noqa: F401 (legacy importers)
 from .workflows import (build_settings, compile_pattern, compute, compute_batch,
@@ -25,6 +27,7 @@ __all__ = [
     "normalise_windows", "adaptive_fit",
     "get_NLTE_correction", "get_NLTE_corrections",
     "CancelToken", "CancelledError", "SynthRequest",
+    "DepartureField", "solve_departures", "synthesise_from_departures",
     "ExecutionService", "execution_scope",
     "IO", "WORKFLOWS", "HOP",
     "select_nodes",

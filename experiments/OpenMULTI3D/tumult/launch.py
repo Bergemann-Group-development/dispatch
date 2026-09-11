@@ -113,20 +113,42 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
     if verbose == 1:
         print(f"{input_file} launching")
 
+    # tumult.synthesis.jobrecord reads run_complete from this module, so it is imported
+    # here rather than at the top: a run's record of itself belongs to the synthesis
+    # layer, and the launcher only needs it while it is starting a run.
+    from tumult.synthesis import jobrecord
+
     # Execution logic
     try:
+        # An externally scheduled or asynchronous run keeps its own execution contract:
+        # this call returns before the run does, so the record stays 'submitted' and the
+        # holder of the returned handle owns the ending. A local synchronous run is
+        # recorded as running and finished here.
         if runner:
+            jobrecord.write(output_folder, nml, state='submitted')
             return output_folder, runner.run_command(cmd, env=env)
 
         if run_async:
-            return output_folder, subprocess.Popen(cmd, cwd=cwd, env=env, stdout=log_handle, stderr=log_handle)
+            process = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=log_handle, stderr=log_handle)
+            jobrecord.write(output_folder, nml, pid=process.pid, state='submitted')
+            return output_folder, process
 
         if cancel_token is None:
-            result = subprocess.run(cmd, cwd=cwd, env=env, stdout=log_handle, stderr=log_handle)
+            process = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=log_handle, stderr=log_handle)
+            # sbatch exits as soon as the job is queued, so its pid is not the run's and
+            # its exit status does not say whether the run succeeded.
+            jobrecord.write(output_folder, nml, pid=None if slurm_script else process.pid,
+                            state='submitted' if slurm_script else 'running')
+            process.wait()
+            result = process
+            if not slurm_script:
+                jobrecord.finish(output_folder,
+                                 'finished' if result.returncode == 0 else 'failed')
         else:
             cancel_token.check()
             process = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=log_handle, stderr=log_handle,
                                        start_new_session=(os.name == 'posix'))
+            jobrecord.write(output_folder, nml, pid=process.pid)
             detach = cancel_token.watch_process(process)
             try:
                 process.wait()
@@ -139,11 +161,13 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
                 # abund.txt is written during initialisation, before completion.
                 # Failed/cancelled jobs must not become cache hits on the next run.
                 (output_folder / 'abund.txt').unlink(missing_ok=True)
+                jobrecord.finish(output_folder, 'cancelled')
                 raise
             finally:
                 detach()
             result = process
-        
+            jobrecord.finish(output_folder, 'finished')
+
         if result.returncode != 0 and log_file:
             print(f"Error: Command failed. Check {log_file} for details.")
             
@@ -154,55 +178,70 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
     return output_folder, True
 
 
+# The per-atom convergence line dispatch.x writes once per iteration:
+#   local = -3.86E-05, global = -1.22E-03, lvl =   1, pos=[...] Mg
+# A bare `global =` also matches the `flux global = ...` line that follows it, which would
+# count every iteration twice; anchoring on `local =` picks the population series, which is
+# the one the `Converged` banner is gated on.
+GLOBAL_ERROR = re.compile(r'^\s*local\s*=.*?\bglobal\s*=\s*([^,]+)', re.MULTILINE)
+
+
 def monitor(folder, log_file=None):
+    """Progress of a running dispatch job, as ``(done, total)``, from its own output files.
+
+    Two sources, added together. The log's per-iteration convergence errors give the NLTE
+    solve's progress against ``maxiter``, replaced by an extrapolated total once the last
+    few iterations are improving monotonically enough to fit. The dispatcher's queue and
+    dispatch logs give the patch tasks, which for an NLTE run means the atmosphere setup
+    only -- the iteration tasks are not written in a form these files distinguish, so they
+    contribute a fixed count rather than a rate.
+
+    Everything is optional: a run that has not written its namelist yet, or one launched
+    without a log file, reports what it can rather than failing. ``total`` is an estimate
+    and ``done`` can exceed it when a solve outruns its own extrapolation, so a caller
+    rendering a bar must clamp the ratio.
+    """
     folder = pathlib.Path(folder)
     nml_file = folder / 'params.nml'
     n = 0
     nmax = 0
-    ndone = 0
-    nleft = 0
 
-    if os.path.isfile(nml_file):
-        f = open(log_file, mode='r')
+    if nml_file.is_file() and log_file and pathlib.Path(log_file).is_file():
         nml = NameList.from_file(nml_file)
         maxiter = nml['rt_iteration_params'].get('maxiter', 0)
         convlim = nml['nlte_params'].get('convlim', None)
-        if convlim is not None:
+        if convlim is not None and maxiter > 0:
             convlim = np.log10(convlim)
-            if maxiter > 0:
-                if os.path.isfile(log_file):
-                    content = f.read()
-                    # Find all global values using regex
-                    global_pattern = r'global\s*=\s*([^,]+)'
-                    matches = re.findall(global_pattern, content)
-                    maxerr = convlim - np.log10([abs(float(m)) for m in matches[1:]])
-                    latest = maxerr[-5:]
-                    nl = len(latest)
-                    if len(maxerr) >= 3 and all(np.diff(latest) > 0):
-                        p = np.polyfit(latest, np.arange(nl), deg=2)
-                        ndone = len(maxerr)
-                        nleft = np.ceil(np.polyval(p, 0)) - nl + 1
-                        n += ndone
-                        nmax += ndone + nleft
-                    else:
-                        n += len(maxerr)
-                        nmax += maxiter
-        f.close()
+            content = pathlib.Path(log_file).read_text(errors='replace')
+            # the first entry is the LTE iteration's global = 0, whose log is -inf
+            matches = GLOBAL_ERROR.findall(content)[1:]
+            maxerr = convlim - np.log10([abs(float(m)) for m in matches]) if matches \
+                else np.empty(0)
+            latest = maxerr[-5:]
+            nl = len(latest)
+            if len(maxerr) >= 3 and all(np.diff(latest) > 0):
+                p = np.polyfit(latest, np.arange(nl), deg=2)
+                ndone = len(maxerr)
+                nleft = np.ceil(np.polyval(p, 0)) - nl + 1
+                n += ndone
+                nmax += ndone + nleft
+            else:
+                n += len(maxerr)
+                nmax += maxiter
 
+    # The `-` selects output patches, which carry negative frequency indices (see
+    # docs/GLOSSARY.md). An NLTE solve's own nlte_patch lines carry none, so on that run
+    # shape these two counts are the eight mhd_patch setup tasks and nothing else.
     file = folder / 'rank_00000.que'
     if file.is_file():
-        f = open(file, mode='r')
-        lines = f.readlines()
+        lines = file.read_text(errors='replace').splitlines()
         nmax += len([l for l in lines if 'mhd_patch'  in l])
         nmax += len([l for l in lines if 'nlte_patch' in l and '-' in l])
-        f.close()
 
     file = folder / 'rank_00000.disp'
     if file.is_file():
-        f = open(file, mode='r')
-        lines = f.readlines()
+        lines = file.read_text(errors='replace').splitlines()
         n += len([l for l in lines if 'END    mhd_patch' in l])
         n += len([l for l in lines if 'END   nlte_patch' in l and '-' in l])
-        f.close()
 
     return n, nmax

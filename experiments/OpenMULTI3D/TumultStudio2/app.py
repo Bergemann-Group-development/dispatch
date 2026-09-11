@@ -349,6 +349,10 @@ def build():
     # from `pending` because that one is a display name and a synthesis has no file at all.
     pending_paths = {}
     pending_heavy = set()  # ids whose cancel button confirms first (synthesis, fits)
+    # ids that survive the browser tab closing. A multi-hour 3D departure solve cannot
+    # assume the session stays open, so it opts out of session_closed's cancellation;
+    # its result lands in the disk run cache whether or not this document is still there.
+    pending_detached = set()
 
     def run_busy(fn):
         """Defer a UI-only callback. Computational work must use ctx.submit."""
@@ -791,11 +795,13 @@ def build():
         update_all(canvas)
 
     # --- background loading: placeholder + spinner now, real object when ready ----
-    def load_async(name, loader, on_done, executor=_EXEC, path=None):
+    def load_async(name, loader, on_done, executor=_EXEC, path=None, detached=False):
         pid = _nonce()
         pending[pid] = name
         if executor is _SYNTH_EXEC:
             pending_heavy.add(pid)  # a synthesis or fit: confirm before throwing it away
+        if detached:
+            pending_detached.add(pid)   # outlives this document; see session_closed
         if path is not None:
             pending_paths[pid] = str(path)   # a picker row spins for as long as this stands
         token = synth.CancelToken()      # cancel handle: the loader threads it into synth.*
@@ -822,16 +828,22 @@ def build():
         return pending_futures[pid]
 
     # Coordinators can overlap; the shared dispatch service enforces the CPU budget.
-    ctx.submit = lambda name, loader, on_done: load_async(name, loader, on_done,
-                                                          executor=_SYNTH_EXEC)
+    ctx.submit = lambda name, loader, on_done, detached=False: load_async(
+        name, loader, on_done, executor=_SYNTH_EXEC, detached=detached)
     ctx.execution = synth.get_runtime()
 
     def session_closed(session_context):
         ctx.closed = True
-        for token in list(pending_tokens.values()):
-            token.cancel()
-        for future in list(pending_futures.values()):
-            future.cancel()
+        # Closing a tab cancels this document's work, except the jobs that asked not to
+        # be: those keep running and write their result to the disk cache, where a
+        # reopened document finds them through their submission record (see
+        # tumult.synthesis.jobrecord).
+        for pid, token in list(pending_tokens.items()):
+            if pid not in pending_detached:
+                token.cancel()
+        for pid, future in list(pending_futures.items()):
+            if pid not in pending_detached:
+                future.cancel()
 
     curdoc().on_session_destroyed(session_closed)
 
@@ -840,6 +852,7 @@ def build():
             pending.pop(pid, None)
             pending_paths.pop(pid, None)
             pending_heavy.discard(pid)
+            pending_detached.discard(pid)
             pending_futures.pop(pid, None)
             token = pending_tokens.pop(pid, None)
             if token is not None and token.cancelled:
@@ -870,6 +883,7 @@ def build():
         name = pending.pop(pid, None)
         pending_paths.pop(pid, None)
         pending_heavy.discard(pid)
+        pending_detached.discard(pid)   # an explicit cancel overrides the detach opt-out
         if name is None:
             return
         token = pending_tokens.get(pid)
@@ -1152,5 +1166,6 @@ def build():
         form_script=FORM_SCRIPT + NUM_INPUT_SCRIPT,
         results_name=picker.results_name,
     )
+    return ctx        # local harnesses drive the document through its context
 
 

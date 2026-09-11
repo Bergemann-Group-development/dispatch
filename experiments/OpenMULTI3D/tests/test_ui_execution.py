@@ -104,7 +104,7 @@ def test_normalisation_uses_snapshot_and_discards_stale_completion():
     tool.form = SimpleNamespace(value=lambda k: values[k])
     tool.knots = SimpleNamespace(data={'x': [], 'y': []})
     tool.canvas = SimpleNamespace(set_norm_view=rendered.append)
-    tool.ctx = SimpleNamespace(submit=lambda name, run, done: queued.append((run, done)))
+    tool.ctx = SimpleNamespace(submit=lambda name, run, done, detached=False: queued.append((run, done)))
 
     tool._render_selection()
     assert not rendered  # submitting work does not change the view
@@ -164,7 +164,7 @@ def test_result_jobs_snapshot_progress_and_reject_stale_completion():
     queued, callbacks, rendered, completed = [], [], [], []
     result = SimpleNamespace(uid='fit', lines=[SimpleNamespace(a=0.)], termination='measured')
     results = {'fit': result}
-    ctx = SimpleNamespace(submit=lambda name, run, done: queued.append((run, done)),
+    ctx = SimpleNamespace(submit=lambda name, run, done, detached=False: queued.append((run, done)),
                           schedule=callbacks.append, notify=lambda *a: None, closed=False)
     jobs = ResultJobs(ctx, results.get, lambda r: rendered.append(r.lines[0].a))
 
@@ -199,7 +199,7 @@ def test_result_jobs_isolate_errors_cancel_and_closed_documents():
     from jobs import ResultJobs
     queued, callbacks, notes, completed = [], [], [], []
     result = SimpleNamespace(uid='fit', termination='measured', converged=True)
-    ctx = SimpleNamespace(submit=lambda name, run, done: queued.append((run, done)),
+    ctx = SimpleNamespace(submit=lambda name, run, done, detached=False: queued.append((run, done)),
                           schedule=callbacks.append, notify=notes.append, closed=False)
     jobs = ResultJobs(ctx, lambda uid: result, lambda r: None)
 
@@ -248,3 +248,42 @@ def test_restored_abundance_uses_identity_with_duplicate_names():
     legacy['ref_uid'] = 'old'
     tool.restore({'results': [legacy]})
     assert tool.results[0].ref_uid is None  # ambiguous names do not invent an association
+
+
+def _build_document():
+    """Build the real TumultStudio2 document headlessly; return it with its context."""
+    from bokeh.document import Document
+    from bokeh.io.state import curstate
+
+    document = Document()
+    curstate().document = document
+    import app
+    return document, app.build()
+
+
+def test_closing_a_session_spares_only_detached_jobs():
+    """A tab closing cancels this document's work, except the jobs that asked to survive:
+    a multi-hour departure solve cannot assume the tab stays open."""
+    import threading
+
+    document, ctx = _build_document()
+    tokens, started, release = {}, threading.Event(), threading.Event()
+
+    def loader(name):
+        def work(token):
+            tokens[name] = token
+            if len(tokens) == 2:
+                started.set()
+            release.wait(5)
+        return work
+
+    ctx.submit("keeper", loader("keeper"), lambda *_: None, detached=True)
+    ctx.submit("victim", loader("victim"), lambda *_: None)
+    assert started.wait(5), "both jobs must be running before the session closes"
+
+    for callback in list(document.session_destroyed_callbacks):
+        callback(None)          # what a closing browser tab fires
+
+    assert not tokens["keeper"].cancelled
+    assert tokens["victim"].cancelled
+    release.set()

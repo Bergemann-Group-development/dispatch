@@ -70,3 +70,11 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
   meaning; `linestrength` calls its strength sources a precedence, not a ladder.
 - *departures*: NLTE departure coefficients, solved in their own run and reused across
   windows and line lists.
+- *departure field*: one such solve as it stands on disk, together with what it was solved
+  for. `tumult.synthesis.snapshot.DepartureField` is the handle; the spectrum phase takes
+  one and adds only the formal solution.
+- *snapshot*: one 3D hydrodynamic model atmosphere, as a cube. Distinct from an *atmosphere
+  node*, which is one 1D model atmosphere at a point of the (teff, logg, feh, vmic) grid.
+  The stellar-grid path solves departures per node; the snapshot path solves them per cube.
+- *resolution*: the destination mesh `(nx, ny, nz)` a snapshot is sampled onto, which is
+  independent of the cube's own. Not spectral resolving power, which is `R`.

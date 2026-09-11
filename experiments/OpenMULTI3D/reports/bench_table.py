@@ -1,11 +1,8 @@
 """Compare ionisation-balance benchmark runs from the summary.json each one writes.
 
-Replaces the throwaway readers this comparison kept being done with, and makes the
-acceptance test in reports/review/node-linelist-crop.md executable rather than described:
-per-line abundance agreement is what says a synthesis-side change (a line-list crop, a
-scheduling change) left the measurement alone, and wall time is what says it was worth
-making. Wall time alone cannot answer the first question, because the solver amplifies a
-0.0002 dex change into a different trajectory once its residuals oscillate near tolerance.
+Reports per-line abundance agreement and wall time for user-directed comparisons.
+Free solver trajectories can differ after small measurement changes; use fixed-parameter
+runs to compare the measurements directly.
 
     bin/tpy reports/bench_table.py reports/bench/unfolded reports/bench/crop5
     bin/tpy reports/bench_table.py --diff reports/bench/hold_c0 reports/bench/hold_c5
