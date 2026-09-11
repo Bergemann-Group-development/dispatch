@@ -29,8 +29,8 @@ class AtomPicker:
 
     The DOM ids / store location default to the synthesis modal's, but are parameterised
     (``ns`` prefix, ``section``/``key``) so a second, independent picker can be embedded
-    elsewhere — e.g. the abundance-correction tool. ``single`` keeps only the most recent
-    pick (a one-atom selector); ``del_class`` is the chip delete button's CSS class.
+    elsewhere. ``single`` keeps only the most recent pick (a one-atom selector);
+    ``del_class`` is the chip delete button's CSS class.
     """
 
     def __init__(self, start_dir, on_change=None, *, ns="synth-atoms", section="synth_run",

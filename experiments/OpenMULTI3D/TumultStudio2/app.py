@@ -43,6 +43,7 @@ from synthmodal import SynthModal  # noqa: E402
 from synthsetup import SynthSetup  # noqa: E402
 from abundancetool import AbundanceTool  # noqa: E402
 from abundwizard import PROFILES  # noqa: E402  (shared EW-profile choices)
+from atomtool import AtomTool  # noqa: E402
 from abundcorrtool import AbundCorrTool  # noqa: E402
 from ionbalance import IonBalanceTool  # noqa: E402
 from tumult.synthesis import workflows as synth  # noqa: E402  (CancelToken/CancelledError for cancellable loads)
@@ -344,6 +345,7 @@ def build():
         toggle(synth_warn_bridge, has_warning)
 
     inspector = linenav = abundancetool = abundcorrtool = ionbaltool = None  # assigned after the canvas
+    atomtool = None
     warm_strengths = None   # ditto: update_all may run before it is defined
     picker = None           # ditto: the spectrum file picker, whose rows spin while loading
     pending = ctx.pending  # id -> name of each background run (the Processes panel)
@@ -414,6 +416,7 @@ def build():
                 res=filtertool.form.value("res") if has_lowpass else None,
                 fmax=filtertool.fmax if configured else None,
                 floor=filtertool.floor if configured else None),
+            atoms=[a.to_dict() for a in atomtool.atoms] if atomtool is not None else [],
             abundance=abundancetool.snapshot() if abundancetool is not None else {},
             abundcorr=abundcorrtool.snapshot() if abundcorrtool is not None else {},
             ionbal=ionbaltool.snapshot() if ionbaltool is not None else {},
@@ -693,20 +696,14 @@ def build():
                                      else None),
         master_path=master)
 
-    # the abundance-correction tool: its own synthesis setup (target/NLTE atmosphere) and its
-    # own single model-atom selector, sharing only the app-global grid registry (one grid
-    # flagged as the 1D LTE reference).
-    from atompicker import AtomPicker  # noqa: E402  (second, namespaced instance)
-    _corr_atoms_dir = Path(str(store.get_pref("dispatch_cwd") or ".")).expanduser() / "input" / "atoms"
-    corr_atoms = AtomPicker(
-        start_dir=_corr_atoms_dir if _corr_atoms_dir.is_dir() else Path.home(),
-        ns="corr-atoms", section="abundcorr_run", key="atoms",
-        picker_sel="#corr-atom-picker", section_sel="#corr-atoms",
-        actions_name="corr-atom-actions", results_id="corr-atom-results",
-        layout_name="corr_atom_picker", del_class="corr-atom-del", single=True)
+    # the abundance-correction tool: its own synthesis setup (target/NLTE atmosphere) in its
+    # modal, sharing only the app-global grid registry (one grid flagged as the 1D LTE
+    # reference). The model atom is the atom object the modal was opened from.
     corr_setup = SynthSetup(
         "corr", "abundcorr_run", synth_modal.grids,
-        atoms_provider=lambda: list(corr_atoms.selected), notify=notify)
+        atoms_provider=lambda: ([abundcorrtool._pending_atom.path]
+                                if abundcorrtool._pending_atom is not None else []),
+        notify=notify)
 
     def add_corr_spectrum(spec, name):
         color, dash = canvas.next_run_style()
@@ -716,8 +713,22 @@ def build():
         ctx,
         setup=corr_setup,
         grids=synth_modal.grids,
-        atom_provider=lambda: list(corr_atoms.selected),
         add_spectrum=add_corr_spectrum)
+
+    # the model-atom objects: Open File → Open Model Atom loads one; its view is the two
+    # tables, its panel the entry point of the correction modal, and its correction results
+    # are listed under it
+    atomtool = AtomTool(ctx, corr=abundcorrtool)
+    abundcorrtool.on_results = atomtool.render_objects
+    abundcorrtool._known_atom_paths = lambda: [a.path for a in atomtool.atoms]
+    _atoms_dir = Path(str(store.get_pref("dispatch_cwd") or ".")).expanduser() / "input" / "atoms"
+
+    def on_atom_select(filepath):
+        from tumult.atom import AtomClass
+        store.add_recent(filepath)
+        name = Path(filepath).name
+        load_async(name, lambda token=None: AtomClass(str(filepath)),
+                   lambda atom: atomtool.add(filepath, atom), path=filepath)
 
     # The ionisation-balance modal owns its grid selection and always interpolates it.  Only
     # the app-global registered-grid list and synthesis preferences are shared.
@@ -731,7 +742,7 @@ def build():
 
     # single-selection coordination between the Objects and the wizards' result lists
     def focus_spectrum(uid):
-        if tools.active_name() in ("abundance", "abundcorr", "ionbal", "linemask"):
+        if tools.active_name() in ("abundance", "abundcorr", "ionbal", "linemask", "atom"):
             tools.deactivate_active()  # selecting a spectrum leaves the wizard / mask view
         abundancetool.blur()          # leave the centre abund view, drop the result highlight
         abundcorrtool.blur()          # ditto for the correction view
@@ -755,6 +766,7 @@ def build():
     tools.register("abundance", abundancetool)
     tools.register("abundcorr", abundcorrtool)
     tools.register("ionbal", ionbaltool)
+    tools.register("atom", atomtool)
 
     # --- session save / restore -------------------------------------------
     def _restore_range(rng, vals):
@@ -823,6 +835,16 @@ def build():
         # reference to the just-restored observations (by name), so objects must exist first.
         if abundancetool is not None:
             abundancetool.restore(ws.abundance)
+        # atoms before the corrections: the results are listed under their atom
+        if atomtool is not None:
+            from tumult.atom import AtomClass
+            atomtool.atoms = []
+            for a in ws.atoms:
+                try:
+                    atomtool.add(a["path"], AtomClass(str(a["path"])), uid=a.get("uid"),
+                                 select=False)
+                except Exception:
+                    logging.exception("Could not restore the model atom %s", a["path"])
         if abundcorrtool is not None:
             abundcorrtool.restore(ws.abundcorr)
         if ionbaltool is not None:
@@ -988,6 +1010,7 @@ def build():
         "linemask":     lambda v: tools.toggle("linemask"),
         "abundance":    lambda v: tools.toggle("abundance"),
         "abundcorr":    lambda v: tools.toggle("abundcorr"),
+        "atom":         lambda v: tools.toggle("atom"),
         "ionbal":       lambda v: tools.toggle("ionbal"),
     }
 
@@ -1083,6 +1106,12 @@ def build():
                         busy_provider=pending_paths.values)
     picker.layout.name = "file_picker"
 
+    # the model-atom picker of the Open Model Atom modal, rooted at input/atoms
+    atom_picker = FilePicker(on_atom_select, container_id="atom-file-results",
+                             start_dir=_atoms_dir if _atoms_dir.is_dir() else Path.home(),
+                             busy_provider=pending_paths.values)
+    atom_picker.layout.name = "atom_file_picker"
+
     # a second FilePicker instance, embedded inline in the settings modal (no nested
     # modal) to change the navigator's master line list
     linelist_path_bridge = B.html("linelist-path")
@@ -1107,7 +1136,7 @@ def build():
                      *linejump_form.models,
                      *synth_modal.models, *range_tool.models, *normtool.models,
                      *filtertool.models, *masktool.models,
-                     *abundancetool.models, *abundcorrtool.models, *corr_atoms.models,
+                     *abundancetool.models, *abundcorrtool.models,
                      *ionbaltool.models)
     bridges.name = "bridges"
 
@@ -1120,7 +1149,7 @@ def build():
                  synth_modal.grids.picker.layout, synth_modal.atmos_picker.layout,
                  abundancetool.setup.atmos_picker.layout,
                  abundcorrtool.setup.atmos_picker.layout,
-                 corr_atoms.picker.layout, bridges):
+                 atom_picker.layout, bridges):
         doc.add_root(root)
 
     ionbaltool.refresh()      # the balance modal's target selector
@@ -1186,7 +1215,8 @@ def build():
         abund_show_file=abund_setup.show_file(),
         abund_atoms_ro_html=abund_setup.atoms_ro_html(),
         abund_file_results_name=abund_setup.atmos_picker.results_name,
-        corr_results_html=abundcorrtool.results_html(),
+        atom_objects_html=atomtool.objects_html(),
+        atom_file_results_name=atom_picker.results_name,
         corr_table_html="",
         corr1_html=abundcorrtool.form1.html(),
         corr3_html=abundcorrtool.form3.html(),
@@ -1194,8 +1224,6 @@ def build():
         corr_grid_html=corr_setup.grid_ui_html(),
         corr_show_file=corr_setup.show_file(),
         corr_file_results_name=corr_setup.atmos_picker.results_name,
-        corr_atoms_html=corr_atoms.chips_html(),
-        corr_atom_results_name=corr_atoms.results_name,
         ionbal_results_html=ionbaltool.results_html(),
         ionbal_table_html="",
         ionbal_context_html="",

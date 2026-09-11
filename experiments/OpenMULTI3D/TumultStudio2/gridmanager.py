@@ -208,7 +208,7 @@ class GridManager:
     def _ref_html(self):
         """The '1D LTE reference grid' selector, shown above the cards when grids exist.
 
-        Names the registered grid used as the LTE baseline by the abundance-correction tool.
+        Names the registered grid used as the LTE baseline by the NLTE-correction modal.
         Hidden entirely when no grids are registered (there is nothing to choose)."""
         if not self.grids:
             return ""

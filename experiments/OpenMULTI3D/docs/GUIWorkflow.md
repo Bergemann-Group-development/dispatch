@@ -6,16 +6,17 @@ with one range gesture and one synthesis modal. Terms follow `GLOSSARY.md`.
 
 ## Left sidebar: one focused object
 
-Spectra, line masks and results form one list with a single focus. Clicking an object
-opens its view: a spectrum shows the inspector, a line mask the LineMasks view, a result
-its table. No action relies on a second, implicit selection. Whenever an action needs a
+Spectra, line masks, model atoms and results form one list with a single focus. Clicking an
+object opens its view: a spectrum shows the inspector, a line mask the LineMasks view, a
+model atom the atom view, a result its table. No action relies on a second, implicit selection. Whenever an action needs a
 spectrum in addition to a mask set or range (synthesis window, measurement reference, fit
 target), it asks for it inside its modal, as the abundance and ion-balance modals do.
 
 ## Toolbar
 
-`Annot | Filter [Filtered] Normalise | Mask | Corr`. The Synth and EW buttons are removed;
-the Mask tool takes over both range gestures.
+`Annot | Filter [Filtered] Normalise | Mask`. The Synth and EW buttons are removed; the
+Mask tool takes over both range gestures. The Corr button is removed; NLTE corrections start
+from a model-atom object (see below).
 
 ## Mask tool
 
@@ -60,7 +61,8 @@ set's synth windows) and the empty landing page (blank λ fields).
   Info-tab provenance; a run from a mask set records the set name.
 
 Departure-coefficient solves are not started from this modal; their entry point is decided
-separately. Grid registration, paths and the run cache stay in Preferences → Synthesis.
+separately. NLTE abundance corrections start from a model atom (see below). Grid
+registration, paths and the run cache stay in Preferences → Synthesis.
 
 ## Fit modal
 
@@ -75,6 +77,57 @@ The same component in fit mode.
   `synth_run` section, so the next synthesis starts from them; the fitted spectrum is added
   as a synth object and the broadening is applied as the live convolution in the Edit tab.
 
+## Model atoms and NLTE corrections
+
+**Open File → Open Model Atom** reads a MULTI-format atom (`input/atoms`) into a model-atom
+object in the left sidebar: element badge, file name, and a level·line count. The object is
+path-backed, so a session restores it by re-reading the file. Loading a file that is already
+listed replaces that object.
+
+### Atom view
+
+Focusing an atom replaces the canvas (toolbar, navigator and spectrum) with two tables in a
+tab arrangement:
+
+- **Energy levels**: index, term label, stage, energy in cm⁻¹ and eV, statistical weight and
+  the number of bound-bound transitions touching the level. Ground states are emphasised.
+- **Bound-bound transitions**: index, air wavelength, lower and upper term, log gf, lower
+  excitation energy, the number of frequency points, the wide-line flag and the profile
+  keyword. Bound-free transitions are counted in the badge but not tabulated.
+
+Each tab has a search field (every token must occur in the row's text columns) and sortable
+headers; the tables are independent. A table shows at most 2000 rows and says so, since the
+search is how the rest is reached. Selecting a row does nothing to the spectrum canvas.
+
+### Right sidebar
+
+Element, file, counts, A(X) and mass from the file header, and one action, **NLTE
+corrections…**, which opens the correction modal with this atom fixed.
+
+### Correction modal
+
+- Header: the atom (element, file, counts) and the registered grid flagged as the **1D LTE
+  reference** in Preferences → Synthesis. Without a flagged grid the run is refused with a
+  hint.
+- **NLTE atmosphere**: the standard atmosphere cluster (grid, interpolate or pick, file) and
+  stellar parameters, kept in the `abundcorr_run` store section and seeded from the synthesis
+  modal on first open.
+- **Measurement**: the EW profile and the minimum EW.
+- Footer: **Compute**. One chained job: the 1D LTE reference is synthesised from the atom
+  alone and its lines measured; the reference spectrum is added to the canvas and the
+  correction object appears under the atom as soon as that stage finishes; the NLTE
+  corrections then stream into the table line by line. Cancelling from Processes stops the
+  running stage.
+
+### Correction results
+
+A correction result is listed indented under the atom it was computed from and carries the
+atom's path, so a restored session re-parents it after the atom is reloaded; a result whose
+atom is not loaded is listed in a trailing Corrections section. Removing an atom removes its
+results after confirmation. The result view has two steps, **Lines** (the reference spectrum
+over the per-line table) and **Scatter** (ΔA against the axis chosen in the sidebar), with
+the line include toggles curating the mean.
+
 ## Code consequences
 
 - `SynthPanel` is replaced by a `SynthModal` structured like the abundance modal; `FitTab`
@@ -84,3 +137,6 @@ The same component in fit mode.
 - `MaskTool._start_placing` is replaced by activating the Mask tool in add mode.
 - The right sidebar gains a `mask-active` mode class; `synth-active` and `ew-active` go.
 - The ion-balance and abundance modals are unchanged.
+- `AtomTool` (`atomtool.py`) owns the atom objects, the atom view and the panel; `AbundCorrTool`
+  loses its toolbar button, sidebar forms and atom picker and gains the modal and the chained
+  run; `AbundanceResult.atom_path` links a result to its atom.

@@ -68,6 +68,8 @@ class Workspace:
     view: dict = field(default_factory=dict)      # {"main": [lo, hi] | None, "nav": ...}
     selected: int = 0
     filter: FilterSnap = field(default_factory=FilterSnap)
+    # loaded model atoms, reloaded from their files: [{"uid": ..., "path": ...}]
+    atoms: list = field(default_factory=list)
     # tool results, each an opaque {"results": [...], "selected": uid} built by the tool itself
     # (see the snapshot() of AbundanceTool / AbundCorrTool / IonBalanceTool)
     abundance: dict = field(default_factory=dict)
@@ -83,6 +85,7 @@ class Workspace:
             view=dict(d.get("view") or {}),
             selected=int(d.get("selected") or 0),
             filter=FilterSnap.from_dict(d.get("filter") or {}),
+            atoms=[dict(a) for a in (d.get("atoms") or []) if a.get("path")],
             abundance=dict(d.get("abundance") or {}),
             abundcorr=dict(d.get("abundcorr") or {}),
             ionbal=dict(d.get("ionbal") or {}),

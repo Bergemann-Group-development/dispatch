@@ -595,13 +595,18 @@ class AbundanceWizard(Tool):
             out += f" ± {err:.{digits}f}"
         return out
 
-    def _results_rows(self, badge, item_cls, data_key, remove_key):
+    def _results_rows(self, badge, item_cls, data_key, remove_key, results=None,
+                      nested=False):
+        """Sidebar rows for ``results`` (default: all); ``nested`` indents them under the
+        object they were computed from."""
         focused = self.is_focused()
         rows = []
-        for r in self.results:
+        nest = " result-nested" if nested else ""
+        for r in (self.results if results is None else results):
             sel = " selected" if (r.uid == self.selected_uid and focused) else ""
             rows.append(
-                f'<div class="object-item result-item{item_cls}{sel}" {data_key}="{r.uid}">'
+                f'<div class="object-item result-item{item_cls}{nest}{sel}" '
+                f'{data_key}="{r.uid}">'
                 f'<span class="result-badge">{badge}</span>'
                 f'<span class="object-name" title="{html.escape(r.name)}">'
                 f'{html.escape(r.name)}</span>'

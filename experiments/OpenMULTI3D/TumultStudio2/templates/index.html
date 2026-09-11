@@ -29,11 +29,12 @@
         <div class="section-header">Objects</div>
         <!-- one entry point for every import; the menu picks which modal opens -->
         <div class="menu-wrap">
-          <button id="open-file" class="text-btn menu-btn" title="Import a spectrum or a line mask"
+          <button id="open-file" class="text-btn menu-btn" title="Import a spectrum, a line mask or a model atom"
                   aria-haspopup="true" aria-expanded="false">Open File&nbsp;<i class="ti ti-folder-open"></i></button>
           <div id="open-file-menu" class="menu">
             <button class="menu-item" data-import="spectrum"><i class="ti ti-chart-line"></i>Import Spectrum</button>
             <button class="menu-item" data-import="linemask"><i class="ti ti-columns"></i>New Line Mask</button>
+            <button class="menu-item" data-import="atom"><i class="ti ti-atom"></i>Open Model Atom</button>
           </div>
         </div>
       </div>
@@ -42,8 +43,9 @@
       <div id="linemask-objects">{{ linemask_objects_html|safe }}</div>
       <!-- non-spectral abundance result objects (see abundancetool.AbundanceTool) -->
       <div id="abund-results">{{ abund_results_html|safe }}</div>
-      <!-- abundance-correction objects (see abundcorrtool.AbundCorrTool) -->
-      <div id="corr-results">{{ corr_results_html|safe }}</div>
+      <!-- model-atom objects, each with its correction results nested under it
+           (see atomtool.AtomTool / abundcorrtool.AbundCorrTool) -->
+      <div id="atom-objects">{{ atom_objects_html|safe }}</div>
       <!-- measurement objects: a line-mask set measured on one spectrum, plus the
            ionisation-balance fit standing on it (see ionbalance.IonBalanceTool) -->
       <div id="ionbal-results">{{ ionbal_results_html|safe }}</div>
@@ -79,9 +81,6 @@
         <div class="toolbar-group">
           <button id="mask-btn" class="text-btn" title="Select a wavelength range (line mask, synthesis, fit, equivalent width)">Mask</button>
         </div>
-        <div class="toolbar-group">
-          <button id="abundcorr-btn" class="text-btn" title="NLTE abundance corrections vs 1D LTE (line by line)">Corr</button>
-        </div>
       </div>
       <div id="top-panel">
         <div id="nav-slot">{{ embed(roots.nav_fig) }}</div>
@@ -100,7 +99,7 @@
           <div class="empty-actions">
             <button id="empty-open" class="text-btn"><i class="ti ti-folder-open"></i>&nbsp;Open spectrum</button>
             <button id="empty-synth" class="text-btn">Synthesise new</button>
-            <button id="empty-corr" class="text-btn" title="NLTE abundance corrections vs 1D LTE (line by line)">NLTE corrections</button>
+            <button id="empty-atom" class="text-btn" title="Open a model atom (levels, transitions, NLTE corrections)">Open model atom</button>
           </div>
         </div>
       </div>
@@ -135,18 +134,36 @@
           <button class="step-tab abund-step-btn" data-step="2">Uncertainties</button>
         </div>
       </div>
-      <!-- abundance-correction view: reference spectrum (steps 1-2) or ΔA scatter (step 3),
+      <!-- abundance-correction view: reference spectrum (Lines) or ΔA scatter (Scatter),
            the per-line table below, and a step switcher footer -->
       <div id="corr-scatter">{{ embed(roots.corr_fig) }}</div>
       <div id="corr-bottom">
         <div class="splitter splitter-row" data-resize="bottom" title="Drag to resize"></div>
         <div id="corr-table">{{ corr_table_html|safe }}</div></div>
       <div id="corr-steps">
-        <div class="step-tabs" title="Abundance-correction workflow steps">
-          <button class="step-tab corr-step-btn" data-step="1">1 · Reference &amp; lines</button>
-          <button class="step-tab corr-step-btn" data-step="2">2 · NLTE corrections</button>
-          <button class="step-tab corr-step-btn" data-step="3">3 · Scatter</button>
+        <div class="step-tabs" title="Abundance-correction views">
+          <button class="step-tab corr-step-btn" data-step="1">Lines</button>
+          <button class="step-tab corr-step-btn" data-step="2">Scatter</button>
         </div>
+      </div>
+      <!-- atom view: the energy levels and the bound-bound transitions of the focused model
+           atom as two searchable tables in a tab arrangement, in place of the canvas
+           (#main.atom-mode; the open tab is the atom-tab-<name> class on #main) -->
+      <div id="atom-view">
+        <div class="atom-head">
+          <div class="step-tabs" title="Model atom tables">
+            <button class="step-tab atom-tab-btn" data-tab="levels">Energy levels</button>
+            <button class="step-tab atom-tab-btn" data-tab="trans">Bound-bound transitions</button>
+          </div>
+          <label class="linelist-search atom-search" data-tab="levels"><i class="ti ti-search"></i>
+            <input class="field-input" type="text" spellcheck="false"
+                   placeholder="Search levels, e.g. 3d6 4s" title="Label, stage or index; Esc clears"></label>
+          <label class="linelist-search atom-search" data-tab="trans"><i class="ti ti-search"></i>
+            <input class="field-input" type="text" spellcheck="false"
+                   placeholder="Search lines, e.g. 5711" title="Wavelength, level labels or index; Esc clears"></label>
+        </div>
+        <div id="atom-levels-table" class="atom-table-wrap"></div>
+        <div id="atom-trans-table" class="atom-table-wrap"></div>
       </div>
       <!-- measurement view: the two balance panels (the tab it opens on, so the fit is
            watched as it runs) or the target spectrum with the synthesised lines drawn on it
@@ -263,49 +280,23 @@
       </div>
       <div class="abundcorr-panel">
         <div class="abund-panel-head">
-          <span class="section-header">Abundance corrections</span>
+          <span class="section-header">NLTE corrections</span>
           <button class="icon-btn abundcorr-close" title="Close"><i class="ti ti-x"></i></button>
         </div>
-        <!-- step 1 · target atmosphere + model atom, then compute the 1D LTE reference -->
-        <div class="corr-step-panel corr-step-1-panel">
-          <div class="section-header">Target atmosphere (NLTE)</div>
-          <div id="corr-grid" class="synth-grid">{{ corr_grid_html|safe }}</div>
-          <div id="corr-file-picker" class="inline-picker-auto{{ ' open' if corr_show_file }}"
-               data-results="{{ corr_file_results_name }}">
-            {{ embed(roots.corr_file_picker) }}
-            <div id="corr-file-results" class="file-results"></div>
-          </div>
-          <div class="section-header">Stellar parameters</div>
-          <div id="corrparams-fields">{{ corr_params_html|safe }}</div>
-          <div class="section-header">Model atom</div>
-          <div class="path-row">
-            <div id="corr-atoms-list" class="chips">{{ corr_atoms_html|safe }}</div>
-            <button id="corr-browse-atom" class="icon-btn" title="Choose a model atom"><i class="ti ti-folder-open"></i></button>
-          </div>
-          <div id="corr-atom-picker" class="inline-picker">
-            {{ embed(roots.corr_atom_picker) }}
-            <div id="corr-atom-results" class="file-results"></div>
-          </div>
-          <div class="section-header">Measurement</div>
-          <div id="corr1-fields">{{ corr1_html|safe }}</div>
-          <button class="text-btn corr-run-ref">Compute reference &amp; lines</button>
-          <div class="hint">Synthesises the 1D LTE reference from the model atom above (the 1D LTE
-            grid is set in Preferences → Synthesis) — the atom defines the spectrum and its
-            wavelength range — then measures every atom line's EW on it.</div>
+        <div class="hint">Computed from a model atom — open one in the left sidebar and use its
+          <b>NLTE corrections…</b> action. Click a row to jump to the line on the 1D LTE
+          reference; untick a line to leave it out of the mean.</div>
+        <div id="corr3-fields">{{ corr3_html|safe }}</div>
+        <div class="hint">The Scatter step shows the line-to-line scatter of the corrections, with
+          the mean ΔA and its population σ.</div>
+      </div>
+      <!-- the model-atom panel: what it is, and the entry point of the correction modal -->
+      <div class="atom-panel">
+        <div class="abund-panel-head">
+          <span class="section-header">Model atom</span>
+          <button class="icon-btn atom-close" title="Close"><i class="ti ti-x"></i></button>
         </div>
-        <!-- step 2 · NLTE corrections (EW match, line by line) -->
-        <div class="corr-step-panel corr-step-2-panel">
-          <button class="text-btn corr-run-corr">Run corrections</button>
-          <div class="hint">For each line, builds an NLTE curve of growth on the target atmosphere
-            and inverts it to the abundance reproducing the reference EW — that shift is ΔA. The
-            table fills in row by row as results land.</div>
-        </div>
-        <!-- step 3 · line-to-line scatter -->
-        <div class="corr-step-panel corr-step-3-panel">
-          <div id="corr3-fields">{{ corr3_html|safe }}</div>
-          <div class="hint">Line-to-line scatter of the corrections, with the mean ΔA and its
-            population σ.</div>
-        </div>
+        <div id="atom-panel-content"></div>
       </div>
       <!-- the measurement object's panel: what it is, the fit standing on it, and the
            refit action (the fit's settings all live in the modal) -->
@@ -580,6 +571,57 @@
   <div class="modal-footer" id="abund-modal-actions">{{ abund_actions_html|safe }}</div>
 </dialog>
 
+<dialog id="atom-modal" class="modal modal-lg">
+  <div class="modal-header">
+    <span class="modal-title">Open model atom</span>
+    <button id="close-atom" class="icon-btn" title="Close"><i class="ti ti-x"></i></button>
+  </div>
+  <div class="modal-body">
+    {{ embed(roots.atom_file_picker) }}
+    <div id="atom-file-results" class="file-results"></div>
+    <div class="hint">Reads a MULTI-format model atom (<code>input/atoms</code>): its energy levels
+      and bound-bound transitions open as tables, and NLTE corrections are computed from it.</div>
+  </div>
+</dialog>
+
+<!-- NLTE corrections: opened from a model atom's panel. The atom is fixed; the modal owns the
+     NLTE target atmosphere and the measurement settings, and names the flagged 1D LTE
+     reference grid (Preferences → Synthesis). -->
+<dialog id="corr-modal" class="modal modal-lg">
+  <div class="modal-header">
+    <span class="modal-title">NLTE corrections</span>
+    <button id="close-corr" class="icon-btn" title="Close"><i class="ti ti-x"></i></button>
+  </div>
+  <div class="modal-body">
+    <div id="corr-context" class="corr-context"></div>
+    <div class="modal-cols">
+      <div class="modal-col">
+        <div class="section-header">NLTE atmosphere</div>
+        <div id="corr-grid" class="synth-grid">{{ corr_grid_html|safe }}</div>
+        <div id="corr-file-picker" class="inline-picker-auto{{ ' open' if corr_show_file }}"
+             data-results="{{ corr_file_results_name }}">
+          {{ embed(roots.corr_file_picker) }}
+          <div id="corr-file-results" class="file-results"></div>
+        </div>
+        <div class="section-header">Stellar parameters</div>
+        <div id="corrparams-fields">{{ corr_params_html|safe }}</div>
+      </div>
+      <div class="modal-col">
+        <div class="section-header">Measurement</div>
+        <div id="corr1-fields">{{ corr1_html|safe }}</div>
+        <div class="hint">The 1D LTE reference is synthesised from the atom alone at these
+          parameters and every line's EW measured on it. For each line an NLTE curve of growth
+          is then built on the atmosphere chosen here and inverted to the abundance reproducing
+          that EW: the shift is ΔA. The reference spectrum lands on the canvas as soon as it is
+          ready; the corrections stream into the table line by line.</div>
+      </div>
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button class="text-btn corr-run">Compute</button>
+  </div>
+</dialog>
+
 <!-- Fit ionisation balance: opened from the LineMasks sidebar (a new measurement) or
      from a measurement object's panel (a refit of the one it already holds). The fit owns
      its synthesis context; registered grids and physical input paths come from Preferences. -->
@@ -826,9 +868,12 @@
   var openLinemaskModal = wireModal(null, 'close-linemask', 'linemask-modal', function () {
     seedResults('{{ linemask_results_name }}', 'linemask-results');
   });
+  var openAtomModal = wireModal(null, 'close-atom', 'atom-modal', function () {
+    seedResults('{{ atom_file_results_name }}', 'atom-file-results');
+  });
   wireNav('#linemask-modal');
 
-  // "Open File ▾": a small dropdown choosing which of the two is imported
+  // "Open File ▾": a small dropdown choosing what is imported
   var openFileBtn = document.getElementById('open-file');
   var openFileMenu = document.getElementById('open-file-menu');
   function setMenu(open) {
@@ -844,6 +889,7 @@
     if (!item) return;
     setMenu(false);
     if (item.dataset.import === 'linemask') openLinemaskModal();
+    else if (item.dataset.import === 'atom') openAtomModal();
     else openSpectrumModal();
   });
   // any click elsewhere (or Esc) dismisses the menu
@@ -893,7 +939,7 @@
   // empty-state quick actions: reuse the existing Open spectrum modal / Synth toggle
   document.getElementById('empty-open').addEventListener('click', openSpectrumModal);
   document.getElementById('empty-synth').addEventListener('click', function () { ewAction('synth-new'); });
-  document.getElementById('empty-corr').addEventListener('click', function () { ewAction('abundcorr'); });
+  document.getElementById('empty-atom').addEventListener('click', openAtomModal);
 
   // delegated click for any file-picker result row (reusable across pickers)
   document.addEventListener('click', function (ev) {
@@ -914,7 +960,7 @@
     // the abundance tables share the .line-sort header class but report through their own
     // channels (below), so ignore their headers here
     var sortth = ev.target.closest('.line-sort');
-    if (sortth && !sortth.closest('.abund-table')) {
+    if (sortth && !sortth.closest('.abund-table') && !sortth.closest('.atom-table')) {
       m.setv({ value: 'linesort:' + sortth.dataset.sortcol + ':' + Date.now() });
       return;
     }
@@ -1260,11 +1306,10 @@
     var m = Bokeh.documents[0].get_model_by_name('corr-actions');
     if (m) m.setv({ value: kind + ':' + (arg || '') + ':' + Date.now() });
   }
-  document.getElementById('abundcorr-btn').addEventListener('click', function () { ewAction('abundcorr'); });
+  wireModal(null, 'close-corr', 'corr-modal');
   document.addEventListener('click', function (ev) {
     if (ev.target.closest('.abundcorr-close')) { ewAction('abundcorr'); return; }
-    if (ev.target.closest('.corr-run-ref')) { corrAction('run-ref'); return; }
-    if (ev.target.closest('.corr-run-corr')) { corrAction('run-corr'); return; }
+    if (ev.target.closest('.corr-run')) { corrAction('run'); return; }
     var step = ev.target.closest('.corr-step-btn');
     if (step) { corrAction('step', step.dataset.step); return; }
     var rem = ev.target.closest('[data-corr-remove]');
@@ -1285,24 +1330,50 @@
     if (chk) { corrAction('toggle-line', chk.dataset.line); }
   });
 
-  // Corr model-atom selector: reveal the inline picker, and delete chips
-  document.getElementById('corr-browse-atom').addEventListener('click', function () {
-    var panel = document.getElementById('corr-atom-picker');
-    panel.classList.toggle('open');
-    if (panel.classList.contains('open')) {
-      var rb = Bokeh.documents[0].get_model_by_name('{{ corr_atom_results_name }}');
-      var el = document.getElementById('corr-atom-results');
-      if (rb && el) el.innerHTML = rb.value;  // js_on_change only fires on change
+  // model atoms: the left-sidebar objects (select / remove), the panel's corrections action,
+  // the view's tab switch, header sorts and the per-table search fields. Space-delimited so a
+  // query keeps its spaces; only the trailing nonce is stripped server-side.
+  function atomAction(kind, arg) {
+    var m = Bokeh.documents[0].get_model_by_name('atomobj-actions');
+    if (m) m.setv({ value: kind + ' ' + (arg || '') + ' ' + Date.now() });
+  }
+  document.addEventListener('click', function (ev) {
+    if (ev.target.closest('.atom-close')) { ewAction('atom'); return; }
+    if (ev.target.closest('.atom-corr')) { atomAction('corr'); return; }
+    var rem = ev.target.closest('[data-atom-remove]');
+    if (rem) {
+      ev.stopPropagation();
+      var item = rem.closest('.atom-item');
+      var n = item ? +item.dataset.atomResults : 0;
+      if (!n || confirm('Remove this atom and the ' + n + ' correction result' + (n === 1 ? '' : 's') + ' computed from it?')) {
+        atomAction('remove', rem.dataset.atomRemove);
+      }
+      return;
+    }
+    var aitem = ev.target.closest('.atom-item');
+    if (aitem) { atomAction('select', aitem.dataset.atom); return; }
+    var tab = ev.target.closest('.atom-tab-btn');
+    if (tab) { atomAction('tab', tab.dataset.tab); return; }
+    var asort = ev.target.closest('.atom-table .line-sort');
+    if (asort) {
+      var wrap = asort.closest('.atom-table-wrap');
+      atomAction('sort', (wrap.id === 'atom-trans-table' ? 'trans' : 'levels') + ' ' + asort.dataset.sortcol);
     }
   });
-  document.addEventListener('click', function (ev) {
-    var del = ev.target.closest('.corr-atom-del');
-    if (!del) return;
-    var m = Bokeh.documents[0].get_model_by_name('corr-atom-actions');
-    if (m) m.setv({ value: 'del ' + del.dataset.path + ' ' + Date.now() });
+  document.querySelectorAll('.atom-search').forEach(function (label) {
+    var box = label.querySelector('input'), timer = null;
+    function send() { timer = null; atomAction('search', label.dataset.tab + ' ' + box.value); }
+    box.addEventListener('input', function () {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(send, 150);
+    });
+    box.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Escape') { box.value = ''; send(); box.blur(); ev.stopPropagation(); }
+      else if (ev.key === 'Enter') { if (timer) clearTimeout(timer); send(); }
+    });
   });
 
-  // Corr Setup: atmosphere grid select / source / format / file (mirrors the synthesis modal)
+  // Corr modal: atmosphere grid select / source / format / file (mirrors the synthesis modal)
   function corrGridAction(kind, arg) {
     var m = Bokeh.documents[0].get_model_by_name('corr-grid-actions');
     if (m) m.setv({ value: kind + ' ' + (arg || '') + ' ' + Date.now() });

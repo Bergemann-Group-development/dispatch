@@ -375,6 +375,7 @@ class AbundanceResult(MeasuredLines):
     relative: bool = True              # True → ``a`` is [X/Fe]; False → A(X)
     uid: str = ""
     name: str = ""
+    atom_path: str = ""                # the model atom a correction run was computed from
 
 
 
@@ -830,8 +831,8 @@ def measure_reference_lines(request, atom, *, ref_grid, opts=None, cancel_token=
         stage="lines", profile=profile, uid=uuid.uuid4().hex[:8], relative=True)
     result.teff, result.logg, result.feh, result.vmic = target
     result.ref_spec = ref_spec
-    result.atom_name = Path(atom).name
-    result.name = result.atom_name
+    result.atom_path = str(atom)
+    result.name = Path(atom).name
     return result
 
 
