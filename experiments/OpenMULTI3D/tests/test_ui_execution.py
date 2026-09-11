@@ -159,6 +159,23 @@ def test_ion_balance_setup_is_private_and_interpolation_only(monkeypatch):
     assert context.run_vals["abundances"] == ""
 
 
+def test_synthesis_geometry_is_inferred_from_model_format(tmp_path):
+    from synthsetup import model_is_3d
+
+    assert not model_is_3d("Marcs")
+    assert not model_is_3d("Text")
+    assert model_is_3d("Stagger")
+    assert model_is_3d("Co5bold")
+    assert model_is_3d("M3DIS")
+
+    saved = tmp_path / "saved"
+    saved.mkdir()
+    (saved / "atmos_mesh.txt").write_text("1 1 128\n")
+    assert not model_is_3d("save", saved)
+    (saved / "atmos_mesh.txt").write_text("8 8 128\n")
+    assert model_is_3d("save", saved)
+
+
 def test_result_jobs_snapshot_progress_and_reject_stale_completion():
     from jobs import ResultJobs
     queued, callbacks, rendered, completed = [], [], [], []

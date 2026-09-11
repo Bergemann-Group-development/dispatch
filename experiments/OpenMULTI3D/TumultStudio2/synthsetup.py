@@ -40,8 +40,28 @@ from synthprefs import INDIVIDUAL_GRID, REPO_DIR, RUN_DEFAULTS, load_prefs, miss
 # plus the abundance/mode/atmosphere selection); the grid id is handled separately because the
 # Synthesize tab stores it under "synthesis", not its run section.
 _INHERIT_KEYS = ("teff", "logg", "feh", "vmic", "abundances", "relative_abundances", "mode",
-                 "geometry", "departure_field", "atmos_mode", "atmos_file",
+                 "departure_field", "atmos_mode", "atmos_file",
                  "atmos_individual_format")
+
+_SNAPSHOT_FORMATS = {"stagger", "stagger2", "co5bold", "m3dis", "must", "multi"}
+
+
+def model_is_3d(atmos_format, path=None, root=None):
+    """Infer dimensionality from the selected format, inspecting saved meshes as needed."""
+    fmt = str(atmos_format or "").strip().lower()
+    if fmt in _SNAPSHOT_FORMATS:
+        return True
+    if fmt != "save" or not path:
+        return False
+    model = Path(path).expanduser()
+    if not model.is_absolute() and root is not None:
+        model = Path(root).expanduser() / model
+    try:
+        nx, ny, _ = (int(value) for value in
+                     (model / "atmos_mesh.txt").read_text().splitlines()[0].split()[:3])
+        return nx * ny > 1
+    except (OSError, ValueError, IndexError):
+        return False
 
 
 class SynthSetup:
@@ -111,8 +131,6 @@ class SynthSetup:
         self.mode_form = Form(names["mode"], [
             Field("mode", "RT mode", kind="select", value=vals["mode"],
                   options=["LTE", "NLTE"], inline=True),
-            Field("geometry", "Geometry", kind="select", value=vals.get("geometry", "1D"),
-                  options=["1D", "3D snapshot"], inline=True),
             Field("departure_field", "Saved departures (optional)", kind="text",
                   value=vals.get("departure_field", ""),
                   placeholder="path to departure run"),
@@ -198,7 +216,11 @@ class SynthSetup:
 
     @property
     def is_snapshot(self):
-        return str(self.mode_form.value("geometry")).startswith("3D")
+        """Whether the selected model format represents a 3D atmosphere."""
+        fmt = str((self.active_grid() or {}).get("format") or "").strip().lower()
+        selected = (store.get_section(self.section).get("atmos_file") or "").strip()
+        root = str(load_prefs().get("dispatch_cwd") or REPO_DIR)
+        return model_is_3d(fmt, selected, root)
 
     def selected_grid(self):
         """The selected *registered* grid dict, or ``None`` (no grids, or Individual)."""
@@ -261,11 +283,16 @@ class SynthSetup:
             out.append('<div class="field-group field-inline"><label>Format</label>'
                        f'<select class="field-input {p}-format-select">{fmt_opts}</select></div>')
         else:
-            mode_opts = "".join(
-                f'<option value="{v}"{" selected" if v == mode else ""}>{lbl}</option>'
-                for v, lbl in (("interp", "Interpolate"), ("pick", "Pick file")))
-            out.append('<div class="field-group field-inline"><label>Source</label>'
-                       f'<select class="field-input {p}-mode-select">{mode_opts}</select></div>')
+            selected = self.selected_grid() or {}
+            if model_is_3d(selected.get("format")):
+                out.append('<div class="field-group field-inline"><label>Source</label>'
+                           '<div class="field-static">Snapshot file</div></div>')
+            else:
+                mode_opts = "".join(
+                    f'<option value="{v}"{" selected" if v == mode else ""}>{lbl}</option>'
+                    for v, lbl in (("interp", "Interpolate"), ("pick", "Pick file")))
+                out.append('<div class="field-group field-inline"><label>Source</label>'
+                           f'<select class="field-input {p}-mode-select">{mode_opts}</select></div>')
         return "".join(out)
 
     def atoms_ro_html(self):
@@ -351,9 +378,6 @@ class SynthSetup:
     def _save_mode(self, key, value):
         store.update_pref(self.section, key, value)
         self.render_atoms_ro()
-        if key == "geometry":
-            self._reset_atmos_picker()
-            self.render_grid_ui()
         if self.on_mode_change:
             self.on_mode_change(self.is_nlte)
 
@@ -383,7 +407,7 @@ class SynthSetup:
         self.run_form.set_values(**{k: vals[k] for k, _, _, _ in synth.STELLAR_PARAMS})
         self.base_form.set_values(abundances=vals["abundances"],
                                   relative_abundances=vals["relative_abundances"])
-        self.mode_form.set_values(mode=vals["mode"], geometry=vals.get("geometry", "1D"),
+        self.mode_form.set_values(mode=vals["mode"],
                                   departure_field=vals.get("departure_field", ""))
         self._reset_atmos_picker()
         self._seed_atmos_query()
@@ -406,7 +430,6 @@ class SynthSetup:
         rv = self.run_form.values()
         rv.update(self.base_form.values())
         rv["mode"] = self.mode_form.value("mode")
-        rv["geometry"] = self.mode_form.value("geometry")
         rv["atoms"] = list(self.atoms_provider())
         if self.is_nlte and not rv["atoms"]:
             self.reason = "NLTE needs model atoms — add them in the Synthesize tab."
