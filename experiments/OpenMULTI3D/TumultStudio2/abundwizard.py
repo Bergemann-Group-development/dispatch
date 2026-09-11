@@ -356,7 +356,7 @@ class AbundanceWizard(Tool):
                 self.actions, *self.setup.models]
 
     def activate(self):
-        # first open: seed the wizard's own synthesis setup from the Synthesize tab, then
+        # first open: seed the wizard's own synthesis setup from the synthesis modal, then
         # stay independent. Detect first open with a marker (not section-emptiness) because
         # the SynthSetup constructor pre-writes a validated atmos_grid_id.
         if not store.get_section(self.setup.section).get("_seeded"):

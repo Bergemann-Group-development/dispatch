@@ -1,50 +1,44 @@
-"""The Synthesize tool: a toolbar button that swaps the right sidebar to a small
-run-settings panel (Teff, logg, FeH, vmic, abundances, …) and computes a spectrum at
-that point, plus the reusable synthesis preferences shown in the settings modal.
+"""The synthesis modal: one dialog that synthesises or fits a spectrum over a window.
+
+It is opened on a *job* — a free wavelength range drawn with the Mask tool, the windows of
+a line-mask set, or a blank window from the empty landing page — in one of two modes:
+
+* **synth**: compute a spectrum at the configured (Teff, log g, [Fe/H], vmic), abundances
+  and RT mode, and add it to the canvas.
+* **fit**: fit a target spectrum by adaptive grid synthesis, starting from that same
+  configuration, with the Fit section (:class:`fittab.FitTab`) saying what varies. The
+  best-fit stellar parameters are written back into the setup, so the next synthesis starts
+  from them.
 
 The atmosphere + stellar-parameter + RT-mode cluster is a composed
-:class:`synthsetup.SynthSetup` (the same component the abundance / correction wizards
-own) parameterised with this tab's historical store split (run state under
-``"synth_run"``, the grid selection under ``"synthesis"``) and form names (the page
-slots ``synth-fields`` / ``synthabund-fields`` / ``synthmode-fields``). This panel adds
-what is unique to the Synthesize tab: the wavelength window, the Fit sub-tab, the run
-cache and the preference sheets.
+:class:`synthsetup.SynthSetup` (the same component the abundance / correction wizards own)
+parameterised with this modal's historical store split (run state under ``"synth_run"``,
+the grid selection under ``"synthesis"``) and form names (the page slots ``synth-fields`` /
+``synthabund-fields`` / ``synthmode-fields``). The modal also owns the app-global pieces
+that live in Preferences → Synthesis: the grid registry, the NLTE model-atom selection,
+the preference sheets and the run-cache listing. See ``docs/GUIWorkflow.md``.
 """
 from __future__ import annotations
 
 import html
 from pathlib import Path
 
-import astropy.units as u
-
 import store
-from tumult.synthesis import (Snapshot3D, solve_request_departures,
-                              submit as submit_synthesis)
+from tumult.synthesis import Snapshot3D, submit as submit_synthesis
 from tumult.synthesis import workflows as synth
 from atompicker import AtomPicker
 from controls import Field, Form
 from fittab import FitTab
 from gridmanager import GridManager
-from rangeselect import RangeSelect
+from htmlbridge import pulse
 from synthsetup import SynthSetup
-# shared prefs/constants live in synthprefs; re-exported here for back-compat with
-# older imports (`from synthpanel import RUN_DEFAULTS, ...`).
-from synthprefs import (  # noqa: F401
-    INDIVIDUAL_GRID,
-    INTERP_METHODS,
-    PATH_PREFS,
-    PREF_DEFAULTS,
+from synthprefs import (
     PREF_PAGES,
     REPO_DIR,
-    RUN_DEFAULTS,
     SELECT_OPTIONS,
     load_prefs,
     missing_prefs,
 )
-from units import to_range
-
-# the drawn synthesis band — green, to distinguish it from the EW tool's blue selection
-SYNTH_BAND = "#50c878"
 
 
 def _human_size(n):
@@ -54,26 +48,27 @@ def _human_size(n):
         n /= 1024
 
 
-class SynthPanel(RangeSelect):
-    def __init__(self, canvas, submit, add, on_mode=None, on_warn=None, notify=None,
-                 mask_store=None):
-        super().__init__(canvas, color=SYNTH_BAND, description="Select synthesis x-range")
-        self._submit = submit    # (name, loader, on_done) -> runs loader on the synth executor
-        self._add = add          # (spec, name) -> add the result to the canvas
-        self.on_mode = on_mode   # push "on"/"off" to show/hide the panel
+class SynthModal:
+    def __init__(self, ctx, submit, add, on_warn=None):
+        self.ctx = ctx
+        self.canvas = ctx.canvas
+        self._submit = submit    # (name, loader, on_done, detached=False) -> background run
+        self._add = add          # (spec, name, meta=None, conv=None) -> add to the canvas
         self.on_warn = on_warn   # push True/False when configured files go missing/found
-        self.notify = notify or (lambda *a, **k: None)  # footer info message
-        self.mask_store = mask_store
-        self.active = False
         self.missing = []        # path prefs currently pointing at non-existent files
+        self.job = None          # ("range", None) | ("masks", LineMaskSet) once opened
+        self.mode = "synth"      # "synth" | "fit"
 
+        self.dialog = ctx.bridges.dialog("synth-modal", name="synth-modal-bridge")
+        self.title_bridge = ctx.bridges.html("synth-modal-title")
+        self.context_bridge = ctx.bridges.html("synth-context")
+        self.actions_bridge = ctx.bridges.html("synth-modal-actions")
+        self.fit_mode_bridge = ctx.bridges.cls("#synth-modal", "fit-mode")
         # run-cache listing (settings modal → Cache page)
-        from htmlbridge import html_bridge
-        self.cache_bridge = html_bridge("synth-cache", name="synth-cache-render")
+        self.cache_bridge = ctx.bridges.html("synth-cache", name="synth-cache-render")
 
-        # synthesis wavelength window (Synthesize tab only): seeded from the drawn selection /
-        # visible view when the panel opens, and required before Synthesize will run. Left blank
-        # on the empty landing page (the empty canvas has no meaningful range to seed from).
+        # the wavelength window of a range job (Å); seeded from the range that opened the
+        # modal, blank from the landing page, and required before a run starts
         self.window_form = Form("synthwindow", [
             Field("xmin", "λ min [Å]", kind="number", value=None, min=0, inline=True,
                   required=True),
@@ -105,29 +100,34 @@ class SynthPanel(RangeSelect):
         atoms_dir = cwd / "input" / "atoms"
         self.atoms = AtomPicker(start_dir=atoms_dir if atoms_dir.is_dir() else cwd)
 
-        # the shared atmosphere + stellar-parameter + RT-mode cluster, with this tab's
+        # the shared atmosphere + stellar-parameter + RT-mode cluster, with this modal's
         # historical store split and page-slot form names.
         self.setup = SynthSetup(
             "synth", "synth_run", self.grids,
             atoms_provider=lambda: list(self.atoms.selected),
             notify=self.notify,
             on_mode_change=self.atoms.show,          # reveal the atom selector only for NLTE
-            on_base_change=self._on_base_change,     # keep the Fit tab's rows in sync
+            on_base_change=self._on_base_change,     # keep the Fit section's rows in sync
+            on_run_change=self._on_run_change,       # ... and their absolute display
             on_atmos_change=self._sync_fit_stellar,  # hide stellar switches for a fixed atmosphere
             grid_section="synthesis",
             form_names={"run": "synth", "base": "synthabund", "mode": "synthmode"})
 
         self._refresh_warnings(push=False)  # seed field.warn so the initial html() is correct
 
-        # Fit tab: shares RT-mode + atoms + abundances from the Synthesize tab; targets come
-        # from the canvas. Seed its display flag from the shared relative-abundances toggle.
-        self.fit = FitTab(on_run=self.run_fit)
+        # the Fit section: target + what varies; the guess is the setup itself
+        self.fit = FitTab()
         self.fit.set_catalog(prefs)
         self.fit.set_relative(bool(self.setup.base_form.value("relative_abundances")))
+        self.fit.set_feh(self.setup.run_form.value("feh"))
         self.fit.targets = [(o.uid, o.name) for o in self.canvas.objects]
         self._sync_fit_stellar()   # seed the stellar-fit switches for the current atmosphere
 
-    # --- the composed setup, exposed under the panel's historical API -------------------
+    @property
+    def notify(self):
+        return self.ctx.notify
+
+    # --- the composed setup, exposed under the modal's API ------------------------------
     @property
     def run_form(self):
         return self.setup.run_form
@@ -148,17 +148,13 @@ class SynthPanel(RangeSelect):
     def is_nlte(self):
         return self.setup.is_nlte
 
-    def selected_grid(self):
-        return self.setup.selected_grid()
-
     def grid_ui_html(self):
         return self.setup.grid_ui_html()
 
     @property
     def models(self):
         return [*self.setup.models, *self.window_form.models,
-                self.cache_bridge, *self.atoms.models, *self.fit.models,
-                *self.grids.models,
+                *self.atoms.models, *self.fit.models, *self.grids.models,
                 *(m for form in self.pref_forms.values() for m in form.models)]
 
     # --- registered grids ---------------------------------------------------------------
@@ -178,6 +174,62 @@ class SynthPanel(RangeSelect):
         """GridManager edited the registry: refresh the selector and file warnings."""
         self.setup.render_grid_ui()
         self._refresh_warnings(push=True)
+
+    # --- opening ------------------------------------------------------------------------
+    def open_range(self, xmin=None, xmax=None, mode="synth"):
+        """Open on a free window (Å); ``None`` leaves the fields blank for the user."""
+        self.job = ("range", None)
+        if xmin is not None and xmax is not None:
+            self.window_form.set_values(xmin=round(float(xmin), 3), xmax=round(float(xmax), 3))
+        else:
+            self.window_form.set_values(xmin=None, xmax=None)
+        self._open(mode)
+
+    def open_masks(self, mset, mode="synth"):
+        """Open on a line-mask set's included windows."""
+        if mset is None or not any(m.include for m in mset.masks):
+            self.notify("This line mask has no switched-on windows.")
+            return
+        self.job = ("masks", mset)
+        self._open(mode)
+
+    def _open(self, mode):
+        self.mode = mode
+        self.setup.render()
+        self.atoms.show(self.is_nlte)
+        self.refresh_targets()
+        self.fit.render()
+        pulse(self.fit_mode_bridge, "on" if mode == "fit" else "off")
+        self.title_bridge.value = "Fit spectrum" if mode == "fit" else "Synthesise spectrum"
+        self.context_bridge.value = self.context_html()
+        self.actions_bridge.value = self.actions_html()
+        pulse(self.dialog, "open")
+
+    def context_html(self):
+        """The modal's header block: the window the run covers."""
+        kind, mset = self.job or ("range", None)
+        if kind == "masks":
+            masks = [m for m in mset.masks if m.include]
+            lo, hi = self._mask_span(masks)
+            verb = "Fitting inside" if self.mode == "fit" else "Synthesising"
+            return (f'<div class="hint">{verb} <b>{len(masks)}</b> window'
+                    f'{"" if len(masks) == 1 else "s"} of <b>{html.escape(mset.name)}</b>, '
+                    f'{lo:.2f}–{hi:.2f} Å.</div>')
+        return ('<div class="section-header">Wavelength window</div>'
+                f'<div id="{self.window_form.slot_id}" class="synth-window">'
+                f'{self.window_form.html()}</div>')
+
+    def actions_html(self):
+        if self.mode == "fit":
+            return '<button class="primary-btn synth-submit">Fit</button>'
+        return '<button class="primary-btn synth-submit">Synthesise</button>'
+
+    def submit(self):
+        """The footer button: what the modal was opened for."""
+        if self.mode == "fit":
+            self.run_fit()
+        else:
+            self.synthesize()
 
     # --- Info-tab provenance ----------------------------------------------
     @staticmethod
@@ -203,29 +255,51 @@ class SynthPanel(RangeSelect):
         return {"type": "synth", "params": rows,
                 "stellar": {k: float(stellar[k]) for k in ("teff", "logg", "feh", "vmic")}}
 
-    # --- fit tab ----------------------------------------------------------
+    # --- the window --------------------------------------------------------
+    @staticmethod
+    def _mask_span(masks):
+        """The synthesis span covering ``masks``: their synth windows, falling back to the
+        fit window where a mask carries no synth bounds."""
+        los = [m.smin if m.smin == m.smin else m.lmin for m in masks]
+        his = [m.smax if m.smax == m.smax else m.lmax for m in masks]
+        return min(los), max(his)
+
+    def _window_fields(self):
+        """The λ min/max fields (Å), or (None, None) when either is blank or the pair is not
+        a valid ascending, positive interval."""
+        v = self.window_form.values()
+        try:
+            lo, hi = float(v["xmin"] or 0), float(v["xmax"] or 0)
+        except (TypeError, ValueError):
+            return None, None
+        return (lo, hi) if hi > lo > 0 else (None, None)
+
+    # --- fit -------------------------------------------------------------
     def refresh_targets(self):
-        """Re-populate the Fit tab's target dropdown from the current canvas objects."""
+        """Re-populate the Fit section's target dropdown from the current canvas objects."""
         self.fit.set_targets([(o.uid, o.name) for o in self.canvas.objects])
 
-    def run_fit(self, fittab):
+    def run_fit(self):
         """Run an adaptive grid fit of the chosen target on the synth executor."""
         if self.missing:
             self.notify(f"Cannot fit — missing files: {', '.join(self.missing)}. Check Preferences.")
             return
         # A registered grid (interpolated) or a single fixed atmosphere file (Individual /
         # picked grid member). The fixed-file case fits abundances + broadening only — the Fit
-        # tab already hides the stellar switches, so ``fit_stellar`` comes back empty.
+        # section already hides the stellar switches, so ``fit_stellar`` comes back empty.
         grid = self.setup.active_grid()
         if grid is None:
             self.notify("No atmosphere grid — register one in Preferences → Synthesis, or "
-                        "choose 'Individual atmosphere' in the Setup tab.")
+                        "choose 'Individual atmosphere'.")
+            return
+        if self.setup.is_snapshot:
+            self.notify("Fitting is available for 1D atmospheres and grids only.")
             return
         atmos_file = self.setup.atmos_file()
         if self.setup.show_file() and not atmos_file:
-            self.notify("Pick an atmosphere file in the Setup tab to fit against it.")
+            self.notify("Pick an atmosphere file to fit against it.")
             return
-        c = fittab.collect()
+        c = self.fit.collect()
         obj = self.canvas._find(c["target"]) if c["target"] else None
         if obj is None:
             self.notify("Select a target spectrum to fit.")
@@ -237,22 +311,28 @@ class SynthPanel(RangeSelect):
         if str(mode).upper() == "NLTE" and not self.atoms.selected:
             self.notify("NLTE fit needs model atoms — add them via the RT mode selector.")
             return
+        xmin, xmax, windows = self._fit_windows()
+        if xmin is None:
+            self.notify("Set the wavelength window (λ min/max) first.")
+            return
+        guesses = {k: float(v) for k, v in self.run_form.values().items()}
         av = self.abund_form.values()  # shared Abundances + relative flag (one source of truth)
         abundances, relative = av["abundances"], bool(av["relative_abundances"])
-        run_vals = {**c["guesses"], "abundances": abundances,
+        run_vals = {**guesses, "abundances": abundances,
                     "relative_abundances": relative, "mode": mode,
                     "atoms": list(self.atoms.selected)}
         target = obj.spectrum
         prefs = load_prefs()
-        xmin, xmax = self._window_aa()
         name = f"fit·{obj.name}"
 
         def on_done(result):
             best, raw, post = result
-            fittab.populate(best)
-            # Info-tab provenance: the best-fit stellar params + fitted abundances. The
-            # broadening (post) is applied as a live convolution, shown in the Edit tab.
-            stellar = {k: best.get(k, c["guesses"][k]) for k in ("teff", "logg", "feh", "vmic")}
+            self.fit.populate(best)
+            # the best-fit stellar parameters become the setup, so the next synthesis (or
+            # fit) starts from them; the broadening (post) is applied as a live convolution,
+            # shown in the Edit tab.
+            stellar = {k: float(best.get(k, guesses[k])) for k in ("teff", "logg", "feh", "vmic")}
+            self.adopt_stellar(stellar)
             terms = synth.fitted_abundance_terms(
                 best, c["abund_fits"], base=abundances, relative=relative,
                 feh=float(stellar["feh"]), solar=synth.abund_table(prefs))
@@ -261,12 +341,32 @@ class SynthPanel(RangeSelect):
                                     xmin=xmin, xmax=xmax)
             self._add(raw, name, meta=meta, conv=post)
 
+        pulse(self.dialog, "close")
         self._submit(
             name,
             lambda token=None: synth.fit(target, prefs, run_vals, c["fit_stellar"],
                                          c["abund_fits"], c["fit_post"], xmin, xmax,
-                                         grid=grid, atmos_file=atmos_file, cancel_token=token),
+                                         windows=windows, grid=grid, atmos_file=atmos_file,
+                                         cancel_token=token),
             on_done)
+
+    def _fit_windows(self):
+        """``(xmin, xmax, windows)`` for the fit: the synthesis span, and the fit windows the
+        target is compared inside (``None`` for a free range, which is compared throughout)."""
+        kind, mset = self.job or ("range", None)
+        if kind == "masks":
+            masks = [m for m in mset.masks if m.include]
+            xmin, xmax = self._mask_span(masks)
+            return xmin, xmax, [(m.lmin, m.lmax) for m in masks]
+        xmin, xmax = self._window_fields()
+        return xmin, xmax, None
+
+    def adopt_stellar(self, stellar):
+        """Write ``{teff, logg, feh, vmic}`` into the setup (form + store)."""
+        self.run_form.set_values(**stellar)
+        for k, v in stellar.items():
+            store.update_pref("synth_run", k, v)
+        self.fit.set_feh(stellar["feh"])
 
     # --- run cache --------------------------------------------------------
     @staticmethod
@@ -335,13 +435,18 @@ class SynthPanel(RangeSelect):
     # --- persistence ------------------------------------------------------
     def _on_base_change(self, key, value):
         """The shared Abundances / relative flag changed (persisted by the setup); keep the
-        Fit tab's per-element row display in the same convention."""
+        Fit section's per-element row display in the same convention."""
         if key == "relative_abundances":
             self.fit.set_relative(bool(value))
 
+    def _on_run_change(self, key, value):
+        if key == "feh":
+            self.fit.set_feh(value)
+
     def _sync_fit_stellar(self):
         """Stellar params can only be fit by interpolating a grid; when the atmosphere is a
-        concrete file (Individual, or a picked grid member) the Fit tab hides those switches."""
+        concrete file (Individual, or a picked grid member) the Fit section hides those
+        switches."""
         if hasattr(self, "fit"):
             self.fit.set_can_fit_stellar(not self.setup.show_file())
 
@@ -361,101 +466,36 @@ class SynthPanel(RangeSelect):
         if push and self.on_warn:
             self.on_warn(self.has_warning)
 
-    # --- panel toggle + x-range selection ---------------------------------
-    def toggle(self):
-        """Synth button: open the panel and arm the x-range select tool, or close it."""
-        self.cancel() if self.active else self.activate()
-
-    def activate(self):
-        self.active = True
-        self.arm()                       # arm the box-select tool (RangeSelect)
-        self._seed_window()              # fill λ min/max from the current view (blank if empty)
-        if self.on_mode:
-            self.on_mode("on")
-
-    def _seed_window(self):
-        """Fill the λ min/max fields from the drawn selection, else the visible view (both in
-        Å). With nothing loaded the canvas only has a placeholder range, so leave them blank —
-        the user must set a window before synthesising (see ``synthesize``)."""
-        lo = hi = None
-        if self.selection is not None:
-            lo, hi = to_range(self.selection[0], self.selection[1], self.canvas.xunit, u.AA)
-        elif self.canvas.objects:
-            r = self.main.x_range
-            if r.start is not None and r.end is not None:
-                lo, hi = to_range(r.start, r.end, self.canvas.xunit, u.AA)
-        if lo is not None and hi is not None:
-            self.window_form.set_values(xmin=round(min(lo, hi), 3), xmax=round(max(lo, hi), 3))
-        else:
-            self.window_form.set_values(xmin=None, xmax=None)
-
-    def on_select(self, x0, x1):
-        """A range was drawn on the canvas: shade it and mirror it into the λ min/max fields."""
-        self.show_band(x0, x1)
-        lo, hi = to_range(self.selection[0], self.selection[1], self.canvas.xunit, u.AA)
-        self.window_form.set_values(xmin=round(min(lo, hi), 3), xmax=round(max(lo, hi), 3))
-
-    def cancel(self):
-        """Leave synth mode: drop the drawn range, hide the band, release the tool."""
-        was = self.active or self.selection is not None
-        self.active = False
-        self.clear_selection()
-        self.disarm()                    # restore panning
-        if was and self.on_mode:
-            self.on_mode("off")
-
-    # uniform ToolManager interface (the synth-cancel action / Esc path uses cancel())
-    deactivate = cancel
-
-    def _window_aa(self):
-        """Synthesis window in Angstrom: the drawn range, else the current canvas view.
-        Used by the Fit tab (the Synthesize tab reads its explicit fields instead)."""
-        if self.selection is not None:
-            x0, x1 = self.selection
-        else:
-            r = self.main.x_range
-            if r.start is None or r.end is None:
-                return None, None
-            x0, x1 = r.start, r.end
-        return to_range(x0, x1, self.canvas.xunit, u.AA)
-
-    def _window_fields(self):
-        """The Synthesize tab's λ min/max (Å), or (None, None) when either is blank or the
-        pair is not a valid ascending, positive interval."""
-        v = self.window_form.values()
-        try:
-            lo, hi = float(v["xmin"] or 0), float(v["xmax"] or 0)
-        except (TypeError, ValueError):
-            return None, None
-        return (lo, hi) if hi > lo > 0 else (None, None)
-
     # --- launch -----------------------------------------------------------
     def synthesize(self):
-        ctx = self.synth_context()
-        if ctx is None:
+        request = self.setup.context()
+        if request is None:
             self.notify(self.setup.reason
                         or "Cannot synthesize — check Preferences → Synthesis.")
             return
-        masks = tuple(self.mask_store.masks) if self.mask_store is not None else ()
-        selected_masks = tuple(mask for mask in masks if mask.include)
-        xmin, xmax = self._window_fields()
+        kind, mset = self.job or ("range", None)
+        selected_masks = tuple(m for m in mset.masks if m.include) if kind == "masks" else ()
+        xmin, xmax = (None, None) if selected_masks else self._window_fields()
         if not selected_masks and xmin is None:
             self.notify("Set the synthesis wavelength window (λ min/max) first.")
             return
-        rv, grid, target = ctx.run_vals, ctx.grid, ctx.target
-        atmos_file, prefs = ctx.atmos_file, ctx.prefs
+        rv, grid, target = request.run_vals, request.grid, request.target
+        atmos_file, prefs = request.atmos_file, request.prefs
         name = (f"t{target[0]:.0f}g{target[1]:.1f}m{target[2]:+.1f}v{target[3]:.1f}"
                 + ("·NLTE" if str(rv.get("mode")).upper() == "NLTE" else ""))
-        shown_min = min((m.smin for m in selected_masks), default=xmin)
-        shown_max = max((m.smax for m in selected_masks), default=xmax)
+        shown_min, shown_max = (self._mask_span(selected_masks) if selected_masks
+                                else (xmin, xmax))
         meta = self._synth_meta(
             {"teff": target[0], "logg": target[1], "feh": target[2], "vmic": target[3]},
             mode=rv["mode"], abundances=rv["abundances"],
             relative=rv["relative_abundances"], atoms=rv["atoms"],
             xmin=shown_min, xmax=shown_max)
-        if selected_masks or isinstance(ctx.selection, Snapshot3D):
+        if selected_masks:
+            meta["params"].append(["Line mask", mset.name])
+        pulse(self.dialog, "close")
+        if selected_masks or isinstance(request.selection, Snapshot3D):
             request_masks = selected_masks or ({"fit": (xmin, xmax), "synth": (xmin, xmax)},)
-            request = ctx.with_masks(request_masks)
+            request = request.with_masks(request_masks)
 
             def add_result(result):
                 for index, spec in enumerate(result.spectra, start=1):
@@ -477,29 +517,3 @@ class SynthPanel(RangeSelect):
                                                            grid=grid, atmos_file=atmos_file,
                                                            cancel_token=token),
                          lambda spec: self._add(spec, name, meta=meta))
-
-    def synth_context(self):
-        """Current synthesis configuration — delegated to the composed setup, which is the
-        single source of truth (same grid, stellar params, RT mode, atoms and abundances).
-
-        Returns ``None`` when synthesis is not runnable (``self.setup.reason`` says why);
-        otherwise a dict ``{prefs, grid, run_vals, target, atmos_file}`` ready for
-        ``synth.compute``.
-        """
-        return self.setup.context()
-
-    def solve_departures(self):
-        """Launch a mask-independent departure field for the chosen atmosphere."""
-        request = self.synth_context()
-        if request is None:
-            self.notify(self.setup.reason or "Configure the synthesis setup first.")
-            return
-        if str(request.run_vals.get("mode", "LTE")).upper() != "NLTE":
-            self.notify("Switch RT mode to NLTE before solving departures.")
-            return
-
-        self._submit(
-            "solve departures",
-            lambda token=None: solve_request_departures(request, cancel_token=token),
-            lambda field: self.notify(f"Saved departures: {field.folder}", level="success"),
-            detached=True)

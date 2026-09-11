@@ -162,3 +162,15 @@ def test_progress_streams_every_line(monkeypatch, request_):
                                 progress=lambda r: seen.append(len(r.history)))
     assert len(seen) >= 3          # two lines plus the iteration's own status
     assert seen[-1] == 1           # the last report carries the finished iteration
+
+
+def test_fit_windows_restrict_the_target_samples():
+    """A line-mask fit compares only inside the fit windows: the samples between them are
+    dropped from the target, while the synthesised span stays continuous."""
+    from tumult.synthesis.workflows import _inside_windows
+
+    x = np.arange(5000., 5010., 0.5)
+    spec = Spectrum(x, np.ones_like(x))
+    sub = _inside_windows(spec, [(5001.0, 5002.0), (5008.0, 5009.0)])
+    assert list(sub.values[0]) == [5001.0, 5001.5, 5002.0, 5008.0, 5008.5, 5009.0]
+    assert sub.xunit == spec.xunit and sub.yunit == spec.yunit

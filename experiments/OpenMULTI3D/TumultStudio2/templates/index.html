@@ -74,13 +74,12 @@
           </span>
           <button id="normalise-btn" class="text-btn" title="Continuum normalise (spline)">Normalise</button>
         </div>
-        <!-- temporary / selection tools that act on a transient selection (EW, ...) -->
+        <!-- the Mask tool: drag a wavelength range, then start a line mask, a synthesis, a
+             fit or an equivalent-width measurement from it (see rangetool.RangeTool) -->
         <div class="toolbar-group">
-          <button id="ew-btn" class="text-btn" title="Equivalent width (select an x-range first)">EW</button>
+          <button id="mask-btn" class="text-btn" title="Select a wavelength range (line mask, synthesis, fit, equivalent width)">Mask</button>
         </div>
-        <!-- synthesis: compute a spectrum at given stellar parameters -->
         <div class="toolbar-group">
-          <button id="synth-btn" class="text-btn" title="Synthesize a spectrum at given (Teff, logg, [Fe/H], vmic)">Synth</button>
           <button id="abundcorr-btn" class="text-btn" title="NLTE abundance corrections vs 1D LTE (line by line)">Corr</button>
         </div>
       </div>
@@ -100,7 +99,7 @@
           <div class="session-hint">Click a save to load it — or start fresh:</div>
           <div class="empty-actions">
             <button id="empty-open" class="text-btn"><i class="ti ti-folder-open"></i>&nbsp;Open spectrum</button>
-            <button id="empty-synth" class="text-btn">Synthesize new</button>
+            <button id="empty-synth" class="text-btn">Synthesise new</button>
             <button id="empty-corr" class="text-btn" title="NLTE abundance corrections vs 1D LTE (line by line)">NLTE corrections</button>
           </div>
         </div>
@@ -197,13 +196,14 @@
         </div>
         <div class="tab-panel" data-panel="info"><div id="inspector">{{ inspector_html|safe }}</div></div>
       </div>
-      <div class="ew-panel">
-        <div class="ew-panel-head">
-          <span class="section-header">Equivalent width</span>
-          <button id="ew-close" class="icon-btn" title="Cancel (Esc)"><i class="ti ti-x"></i></button>
+      <!-- the Mask tool's panel: the drawn range and what to do with it (rangetool.RangeTool) -->
+      <div class="range-panel">
+        <div class="range-panel-head">
+          <span class="section-header">Mask</span>
+          <button id="range-close" class="icon-btn" title="Done (Esc)"><i class="ti ti-x"></i></button>
         </div>
-        <div id="ew-panel-content"></div>
-        <div class="hint">Esc to cancel the selection</div>
+        <div id="range-panel-content"></div>
+        <div class="hint">Esc leaves the tool</div>
       </div>
       <div class="norm-panel">
         <div class="norm-panel-head">
@@ -310,69 +310,6 @@
           <button class="icon-btn ionbal-close" title="Close"><i class="ti ti-x"></i></button>
         </div>
         <div id="ionbal-panel-content"></div>
-      </div>
-      <div class="synth-panel">
-        <div class="synth-panel-head">
-          <span class="section-header">Synthesize spectrum</span>
-          <button id="synth-close" class="icon-btn" title="Close"><i class="ti ti-x"></i></button>
-        </div>
-        <div class="tab-bar">
-          <button class="tab active" data-panel="synthesize">Synthesize</button>
-          <button class="tab" data-panel="fit">Fit</button>
-        </div>
-        <!-- atmosphere grid: which grid + interpolate vs pick a specific file (shared) -->
-        <div class="synth-rt">
-          <div class="section-header">Atmosphere</div>
-          <div id="synth-grid" class="synth-grid">{{ synth_grid_html|safe }}</div>
-          <div id="synth-file-picker" class="inline-picker-auto{{ ' open' if synth_show_file }}"
-               data-results="{{ synth_file_results_name }}">
-            {{ embed(roots.synth_file_picker) }}
-            <div id="synth-file-results" class="file-results"></div>
-          </div>
-        </div>
-        <div class="tab-content">
-          <div class="tab-panel active" data-panel="synthesize">
-            <div class="section-header">Stellar parameters</div>
-            <div id="synth-fields">{{ synth_run_html|safe }}</div>
-            <div class="section-header">Wavelength window</div>
-            <div id="synthwindow-fields">{{ synth_window_html|safe }}</div>
-          </div>
-          <div class="tab-panel" data-panel="fit">
-            <div id="fit-fields">{{ fit_fields_html|safe }}</div>
-          </div>
-        </div>
-        <!-- Abundances + RT mode + NLTE atoms: below the per-tab parameters, shared by both tabs -->
-        <div class="synth-rt">
-          <div class="section-header">Abundances</div>
-          <div id="synthabund-fields">{{ synth_abund_html|safe }}</div>
-          <div class="section-header">Radiative transfer</div>
-          <div id="synthmode-fields">{{ synth_mode_html|safe }}</div>
-          <div id="synth-atoms" class="synth-atoms{{ ' on' if synth_is_nlte }}">
-            <div class="section-header">Model atoms (NLTE)</div>
-            <div class="path-row">
-              <div id="synth-atoms-list" class="chips">{{ synth_atoms_html|safe }}</div>
-              <button id="browse-atom" class="icon-btn" title="Add a model atom"><i class="ti ti-plus"></i></button>
-            </div>
-            <div id="atom-picker" class="inline-picker">
-              {{ embed(roots.atom_picker) }}
-              <div id="atom-results" class="file-results"></div>
-            </div>
-          </div>
-        </div>
-        <div class="tab-content">
-          <div class="tab-panel active" data-panel="synthesize">
-            <button id="synth-run" class="primary-btn">Synthesize</button>
-            <button id="synth-departures" class="text-btn">Solve departures</button>
-            <div class="hint">Set the wavelength window above — it is seeded from the current
-              view (or a range you drag on the plot) and is required. Configure paths in
-              Preferences.</div>
-          </div>
-          <div class="tab-panel" data-panel="fit">
-            <button id="fit-run" class="primary-btn">Fit</button>
-            <div class="hint">Iterative grid fit of the target spectrum. Drag an x-range
-              to set the fit window.</div>
-          </div>
-        </div>
       </div>
     </aside>
 
@@ -539,6 +476,63 @@
 <!-- Measure abundances: opened from the LineMasks sidebar with the set to measure. The
      measurement is what the abundance object is made of; the synthesis that stands on it is
      configured in the object's own panel. -->
+<!-- Synthesise / fit a spectrum over a window: opened from the Mask tool's range, the
+     LineMasks sidebar (the set's windows) or the empty landing page (synthmodal.SynthModal).
+     The atmosphere + stellar parameters + abundances + RT mode cluster is the setup every
+     run starts from; the Fit column is shown in fit mode only. -->
+<dialog id="synth-modal" class="modal modal-lg">
+  <div class="modal-header">
+    <span class="modal-title" id="synth-modal-title">Synthesise spectrum</span>
+    <button id="close-synth" class="icon-btn" title="Close"><i class="ti ti-x"></i></button>
+  </div>
+  <div class="modal-body">
+    <div class="synth-context" id="synth-context">{{ synth_context_html|safe }}</div>
+    <div id="fit-target" class="synth-fit-only">{{ fit_html.target|safe }}</div>
+    <div class="modal-cols">
+      <div class="modal-col">
+        <div class="section-header">Atmosphere</div>
+        <div id="synth-grid" class="synth-grid">{{ synth_grid_html|safe }}</div>
+        <div id="synth-file-picker" class="inline-picker-auto{{ ' open' if synth_show_file }}"
+             data-results="{{ synth_file_results_name }}">
+          {{ embed(roots.synth_file_picker) }}
+          <div id="synth-file-results" class="file-results"></div>
+        </div>
+        <div class="section-header">Stellar parameters</div>
+        <div id="synth-fields">{{ synth_run_html|safe }}</div>
+        <div id="fit-stellar" class="synth-fit-only">{{ fit_html.stellar|safe }}</div>
+      </div>
+      <div class="modal-col">
+        <div class="section-header">Abundances</div>
+        <div id="synthabund-fields">{{ synth_abund_html|safe }}</div>
+        <div class="section-header">Radiative transfer</div>
+        <div id="synthmode-fields">{{ synth_mode_html|safe }}</div>
+        <div id="synth-atoms" class="synth-atoms{{ ' on' if synth_is_nlte }}">
+          <div class="section-header">Model atoms (NLTE)</div>
+          <div class="path-row">
+            <div id="synth-atoms-list" class="chips">{{ synth_atoms_html|safe }}</div>
+            <button id="browse-atom" class="icon-btn" title="Add a model atom"><i class="ti ti-plus"></i></button>
+          </div>
+          <div id="atom-picker" class="inline-picker">
+            {{ embed(roots.atom_picker) }}
+            <div id="atom-results" class="file-results"></div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-col synth-fit-only">
+        <div class="section-header">RV &amp; broadening</div>
+        <div id="fit-post">{{ fit_html.post|safe }}</div>
+      </div>
+      <div class="modal-col synth-fit-only">
+        <div class="section-header">Fit abundances</div>
+        <div id="fit-abund">{{ fit_html.abund|safe }}</div>
+        <div class="hint">Iterative grid fit of the target spectrum inside the window, starting
+          from the setup on the left.</div>
+      </div>
+    </div>
+  </div>
+  <div class="modal-footer" id="synth-modal-actions">{{ synth_actions_html|safe }}</div>
+</dialog>
+
 <dialog id="abund-modal" class="modal modal-lg">
   <div class="modal-header">
     <span class="modal-title">Measure abundances</span>
@@ -740,7 +734,7 @@
     gridAction('folder');
   });
 
-  // synth panel: grid select / source mode / clear-file go through "synth-grid-actions"
+  // synthesis modal: grid select / source mode / clear-file go through "synth-grid-actions"
   function synthGridAction(kind, arg) {
     var m = Bokeh.documents[0].get_model_by_name('synth-grid-actions');
     if (m) m.setv({ value: kind + ' ' + (arg || '') + ' ' + Date.now() });
@@ -790,23 +784,23 @@
     if (m) m.setv({ value: 'del ' + del.dataset.path + ' ' + Date.now() });
   });
 
-  // Fit tab: run button + per-row abundance removal go through the "fit-actions" channel
+  // the modal's Fit section: per-row abundance removal goes through the "fit-actions" channel
   function fitAction(kind, arg) {
     var m = Bokeh.documents[0].get_model_by_name('fit-actions');
     if (m) m.setv({ value: kind + ' ' + (arg || '') + ' ' + Date.now() });
   }
-  document.getElementById('fit-run').addEventListener('click', function () { fitAction('run'); });
   document.addEventListener('click', function (ev) {
     var del = ev.target.closest('.fit-abund-del');
     if (del) fitAction('del', del.dataset.el);
   });
 
-  // Edit tab: "Fit to target" button (rendered dynamically) -> "edit-actions" channel
+  // Edit tab: "Fit to target" / "Mask full range" (rendered dynamically) -> "edit-actions"
   document.addEventListener('click', function (ev) {
-    if (ev.target.closest('.edit-fit-btn')) {
-      var m = Bokeh.documents[0].get_model_by_name('edit-actions');
-      if (m) m.setv({ value: 'fit ' + Date.now() });
-    }
+    var kind = ev.target.closest('.edit-fit-btn') ? 'fit' :
+               ev.target.closest('.edit-mask-btn') ? 'mask' : null;
+    if (!kind) return;
+    var m = Bokeh.documents[0].get_model_by_name('edit-actions');
+    if (m) m.setv({ value: kind + ' ' + Date.now() });
   });
 
   // reveal the file picker inline inside the settings modal (no nested modal)
@@ -893,7 +887,7 @@
 
   // empty-state quick actions: reuse the existing Open spectrum modal / Synth toggle
   document.getElementById('empty-open').addEventListener('click', openSpectrumModal);
-  document.getElementById('empty-synth').addEventListener('click', function () { ewAction('synth-toggle'); });
+  document.getElementById('empty-synth').addEventListener('click', function () { ewAction('synth-new'); });
   document.getElementById('empty-corr').addEventListener('click', function () { ewAction('abundcorr'); });
 
   // delegated click for any file-picker result row (reusable across pickers)
@@ -950,12 +944,10 @@
     }
   });
 
-  // generic tab switching, scoped per group (a .tab-bar and its adjacent .tab-content) so
-  // the inspector (Edit/Style/Info) and the synth panel (Synthesize/Fit) don't cross-talk
+  // generic tab switching, scoped per group (a .tab-bar and its adjacent .tab-content)
   document.querySelectorAll('.tab-bar').forEach(function (bar) {
-    // a panel may have more than one .tab-content sibling (the synth panel splits its
-    // per-tab fields and the action button around the shared RT-mode block) — switch the
-    // active panel in every one of them together
+    // a panel may have more than one .tab-content sibling — switch the active panel in
+    // every one of them together
     var contents = bar.parentElement.querySelectorAll(':scope > .tab-content');
     bar.querySelectorAll('.tab').forEach(function (tab) {
       tab.addEventListener('click', function () {
@@ -969,19 +961,28 @@
     });
   });
 
-  // equivalent-width: open from the toolbar, cancel via × or Esc
+  // named actions on the "object-actions" channel (tool toggles, panel buttons, …)
   function ewAction(name) {
     var m = Bokeh.documents[0].get_model_by_name('object-actions');
     if (m) m.setv({ value: name + ':-:' + Date.now() });
   }
-  document.getElementById('ew-btn').addEventListener('click', function () { ewAction('ew-toggle'); });
-  document.getElementById('ew-close').addEventListener('click', function () { ewAction('ew-cancel'); });
+  // the Mask tool: toggle from the toolbar, leave via × or Esc; the panel's actions are
+  // rendered dynamically, so they are delegated
+  document.getElementById('mask-btn').addEventListener('click', function () { ewAction('mask-toggle'); });
+  document.getElementById('range-close').addEventListener('click', function () { ewAction('range-cancel'); });
+  document.addEventListener('click', function (ev) {
+    if (ev.target.closest('.range-new-mask')) ewAction('range-new-mask');
+    else if (ev.target.closest('.range-synth')) ewAction('range-synth');
+    else if (ev.target.closest('.range-fit')) ewAction('range-fit');
+    else if (ev.target.closest('.range-ew')) ewAction('range-ew');
+    else if (ev.target.closest('.range-add')) ewAction('range-add');
+  });
 
-  // synthesis: open the run panel from the toolbar, launch / close from the panel
-  document.getElementById('synth-btn').addEventListener('click', function () { ewAction('synth-toggle'); });
-  document.getElementById('synth-close').addEventListener('click', function () { ewAction('synth-cancel'); });
-  document.getElementById('synth-run').addEventListener('click', function () { ewAction('synthesize'); });
-  document.getElementById('synth-departures').addEventListener('click', function () { ewAction('solve-departures'); });
+  // the synthesis modal: close via × / backdrop, submit via the footer button
+  wireModal(null, 'close-synth', 'synth-modal');
+  document.addEventListener('click', function (ev) {
+    if (ev.target.closest('.synth-submit')) ewAction('synth-submit');
+  });
 
   // noise filter: toggle the panel/feautrier view / clear the applied filter
   // line-position indicators: show/hide whatever the open view attached
@@ -1068,6 +1069,7 @@
     if (msitem) { linemaskAction('set-select', msitem.dataset.maskset); return; }
     if (ev.target.closest('.lm-new')) { linemaskAction('new'); return; }
     if (ev.target.closest('.lm-synthesize')) { linemaskAction('synthesize'); return; }
+    if (ev.target.closest('.lm-fit')) { linemaskAction('fit'); return; }
     if (ev.target.closest('.lm-measure-abund')) { linemaskAction('measure-abund'); return; }
     if (ev.target.closest('.lm-fit-balance')) { linemaskAction('fit-balance'); return; }
     if (ev.target.closest('.lm-revert')) {
@@ -1207,7 +1209,7 @@
     if (chk) { abundAction('toggle-line', chk.dataset.line); }
   });
 
-  // Abund Setup tab: atmosphere grid select / source / format / file (mirrors the synth panel)
+  // Abund Setup tab: atmosphere grid select / source / format / file (mirrors the synthesis modal)
   function abundGridAction(kind, arg) {
     var m = Bokeh.documents[0].get_model_by_name('abund-grid-actions');
     if (m) m.setv({ value: kind + ' ' + (arg || '') + ' ' + Date.now() });
@@ -1266,7 +1268,7 @@
     if (m) m.setv({ value: 'del ' + del.dataset.path + ' ' + Date.now() });
   });
 
-  // Corr Setup: atmosphere grid select / source / format / file (mirrors the synth panel)
+  // Corr Setup: atmosphere grid select / source / format / file (mirrors the synthesis modal)
   function corrGridAction(kind, arg) {
     var m = Bokeh.documents[0].get_model_by_name('corr-grid-actions');
     if (m) m.setv({ value: kind + ' ' + (arg || '') + ' ' + Date.now() });
@@ -1314,7 +1316,7 @@
   });
 
   document.addEventListener('keydown', function (ev) {
-    if (ev.key === 'Escape' && !document.querySelector('dialog[open]')) ewAction('ew-cancel');
+    if (ev.key === 'Escape' && !document.querySelector('dialog[open]')) ewAction('range-cancel');
   });
 
   // ---- draggable splitter for the centre bottom panel (the sidebars are fixed-width) ----

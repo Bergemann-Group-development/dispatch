@@ -1,10 +1,10 @@
-"""Equivalent-width measurement.
+"""Equivalent-width measurement over a drawn range.
 
-Workflow: drag an x-range with the select tool (marks a region, no compute) →
-click the EW button in the app toolbar → the inspector switches to an EW panel
-showing the method selector, the equivalent width and the reduced EW, and the
-integrated area is hatched on the canvas. Changing the method recomputes live.
-Esc clears the selection and restores the inspector.
+The measurement is one of the things a range drawn with the Mask tool (:mod:`rangetool`)
+can be used for, so this is a sub-panel of that tool rather than a tool of its own: the
+tool hands it the range, and it measures the focused spectrum there, hatches the integrated
+area on the canvas and renders its fields (method, SNR, continuum uncertainty) plus the
+width and reduced width into the tool's sidebar panel. Changing a field recomputes live.
 """
 from __future__ import annotations
 
@@ -19,40 +19,32 @@ from tumult.utils import fit_line_profile
 
 from tumult import abundance as ab
 from controls import num_input
-from rangeselect import RangeSelect
-from tool import Tool
 from units import to_range
 
 ACCENT = "#4a90e2"
 
-# Profiles the EW tool offers, in menu order — a curated subset of tumult's profile registry
+# Profiles the EW panel offers, in menu order — a curated subset of tumult's profile registry
 # (which is the single home for the valid set). Each value is the string the tumult fitter /
 # ``get_weq`` expect, so it can be passed straight through.
 EW_PROFILES = tuple(p for p in ("trapz", "gauss", "voigt", "asym_gauss") if p in profile_names())
 
 
-class EquivalentWidth(Tool, RangeSelect):
-    name = "ew"
-
+class EquivalentWidth:
     def __init__(self, ctx):
-        Tool.__init__(self, ctx)
-        RangeSelect.__init__(self, ctx.canvas, color=ACCENT, description="Select x-range",
-                             fill_alpha=0.06)
-        self.own_panel("ew-panel-content")
-        self.own_mode_bridges((".sidebar-right", "ew-active"), ("#ew-btn", "active"))
-        # the EW follows whichever spectrum (filtered/unfiltered) the canvas shows
-        ctx.subscribe("filter-state", lambda **_: self.update())
+        self.ctx = ctx
+        self.canvas = ctx.canvas
+        self.main = ctx.canvas.main
         self.profile = "voigt"
-        self._active_uid = None
+        self.selection = None     # (x0, x1) in display units while a range is measured
         self._weq = self._rew = self._weq_err = None
         # optional error inputs: SNR (photon term) and continuum-offset % (systematic term).
-        # Both off by default — the EW then shows a bare width, exactly as before; set either and
-        # the panel shows W ± σ using the same measurement path as the abundance wizards.
+        # Both off by default — the EW then shows a bare width; set either and the panel
+        # shows W ± σ using the same measurement path as the abundance wizards.
         self.snr = None
         self.cont_pct = 0.0
         self._fit = None          # (profile, func, xd, yd, a, b) for redrawing
 
-        # integrated-area hatch + its continuum/profile boundary (EW mode only)
+        # integrated-area hatch + its continuum/profile boundary
         self.area_source = ColumnDataSource(dict(x=[], y1=[], y2=[]))
         self.main.varea(x="x", y1="y1", y2="y2", source=self.area_source,
                         fill_color=ACCENT, fill_alpha=0.10,
@@ -64,45 +56,49 @@ class EquivalentWidth(Tool, RangeSelect):
         self.main.x_range.on_change("start", lambda a, o, n: self._redraw())
         self.main.x_range.on_change("end", lambda a, o, n: self._redraw())
 
-    # --- x-range selection (no compute) -----------------------------------
-    def on_select(self, x0, x1):
-        self.show_band(x0, x1)
-        if self.active:  # already in EW mode -> recompute for the new region
-            self._compute()
+    # notify resolves through the context, so the footer notifier main installs later is used
+    @property
+    def notify(self):
+        return self.ctx.notify
 
-    # --- EW mode: activate / deactivate / method --------------------------
-    def activate(self):
-        """Enter EW mode: arm the x-range select tool and show the panel."""
-        self.active = True
-        self.arm()                                  # select the x-range tool
-        obj = self.canvas.selected()
-        self._active_uid = obj.uid if obj else None
+    # --- the spectrum measured ----------------------------------------------------------
+    def target(self):
+        """The focused spectrum object, or ``None`` when the left-sidebar focus is not a
+        spectrum (a line mask or a result is open)."""
+        if getattr(self.ctx, "focus_kind", "spectrum") != "spectrum":
+            return None
+        return self.canvas.selected()
+
+    def _unavailable(self):
+        """Why nothing can be measured right now ("" when it can)."""
+        obj = self.target()
+        if obj is None:
+            return "Select a spectrum in the left sidebar to measure its equivalent width."
+        if self.canvas.effective(obj).yunit != u.dimensionless_unscaled:
+            return "Equivalent width needs a normalised spectrum (dimensionless flux)."
+        return ""
+
+    # --- range in / clear ---------------------------------------------------------------
+    def measure(self, x0, x1):
+        """Measure the focused spectrum over ``(x0, x1)`` (display units)."""
+        self.selection = (min(x0, x1), max(x0, x1))
+        self._compute()
+
+    def clear(self):
+        self.selection = None
+        self._fit = self._weq = self._rew = self._weq_err = None
+        self.area_source.data = dict(x=[], y1=[], y2=[])
+
+    def update(self):
+        """The canvas changed (focus, units, filter state): re-measure the current range."""
         if self.selection is not None:
             self._compute()
-        else:
-            self.push_panel()          # show the (empty) panel until a range is drawn
-        self.push_mode("on")
-
-    def deactivate(self):
-        """Leave EW mode: drop the selection, clear the hatch, deselect the tool."""
-        was = self.active or self.selection is not None
-        self.active = False
-        self._fit = self._weq = self._rew = self._weq_err = None
-        self.clear_selection()                      # hide the band, drop the range
-        self.area_source.data = dict(x=[], y1=[], y2=[])
-        self.disarm()                               # restore panning
-        if was:
-            self.push_mode("off")
-
-    # the Esc-key path still calls cancel(); it is the same as leaving the mode
-    cancel = deactivate
 
     def set_profile(self, name):
         if name not in EW_PROFILES:
             return
         self.profile = name
-        if self.active:
-            self._compute()
+        self.update()
 
     def set_snr(self, raw):
         """SNR for the photon EW error (blank clears it — no photon term)."""
@@ -113,8 +109,7 @@ class EquivalentWidth(Tool, RangeSelect):
             return
         if self.snr is not None and self.snr <= 0:
             self.snr = None
-        if self.active:
-            self._compute()
+        self.update()
 
     def set_cont(self, raw):
         """Continuum-offset uncertainty [%] for the systematic EW error (blank / 0 clears it)."""
@@ -123,24 +118,12 @@ class EquivalentWidth(Tool, RangeSelect):
             self.cont_pct = float(raw) if raw else 0.0
         except ValueError:
             return
-        if self.active:
-            self._compute()
-
-    def update(self):
-        """Re-evaluate the EW for the current canvas state (selection target, and the
-        filtered/unfiltered spectrum); leave EW mode if the target is no longer valid."""
-        if not self.active:
-            return
-        obj = self.canvas.selected()
-        if (obj is None or obj.uid != self._active_uid
-                or self.canvas.effective(obj).yunit != u.dimensionless_unscaled):
-            self.cancel()
-        elif self.selection is not None:
-            self._compute()
+        self.update()
 
     def panel_html(self):
-        if not self.active:
-            return ""
+        why = self._unavailable()
+        if why:
+            return f'<div class="hint">{why}</div>'
         opts = "".join(
             f'<option value="{p}"{" selected" if p == self.profile else ""}>{p}</option>'
             for p in EW_PROFILES
@@ -174,16 +157,12 @@ class EquivalentWidth(Tool, RangeSelect):
 
     # --- computation + drawing --------------------------------------------
     def _compute(self):
-        obj = self.canvas.selected()
-        if obj is None or self.selection is None:
-            return
-        spec = self.canvas.effective(obj)  # filtered or unfiltered, per the canvas state
-        if spec.yunit != u.dimensionless_unscaled:  # EW needs normalized flux
+        obj = self.target()
+        if obj is None or self.selection is None or self._unavailable():
             self._weq = self._rew = self._weq_err = self._fit = None
             self.area_source.data = dict(x=[], y1=[], y2=[])
-            self.push_panel()
-            self.notify("Equivalent width needs a normalized spectrum (dimensionless flux).")
             return
+        spec = self.canvas.effective(obj)  # filtered or unfiltered, per the canvas state
         try:
             x0, x1 = self.selection
             native = spec.xunit
@@ -207,10 +186,19 @@ class EquivalentWidth(Tool, RangeSelect):
             a, b = min(x0, x1), max(x0, x1)
             func = None
             if self.profile != "trapz":
-                _, _, func = fit_line_profile(xd, yd, x0=0.5 * (a + b), profile=self.profile)
+                try:
+                    _, _, func = fit_line_profile(xd, yd, x0=0.5 * (a + b),
+                                                  profile=self.profile)
+                except ValueError:
+                    func = None    # no profile in this range: hatch the data itself
             self._fit = dict(profile=self.profile, func=func, xd=xd, yd=yd, a=a, b=b)
             self._redraw()
-            self.push_panel()
+        except ValueError as exc:
+            # a range without a fittable line (continuum, a blend the profile rejects): the
+            # measurement is undefined, which is a state of the panel, not an error
+            self._weq = self._rew = self._weq_err = self._fit = None
+            self.area_source.data = dict(x=[], y1=[], y2=[])
+            self.notify(f"No equivalent width in this range: {exc}")
         except Exception:
             logging.exception("Equivalent width computation failed")
 

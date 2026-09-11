@@ -215,7 +215,7 @@ class AbundanceTool(AbundanceWizard):
 
         ``get_observation`` already returns the filter-effective reference, so this just re-runs
         the (cheap) EW measurement over each line's stored fit window and repaints the table — the
-        EW tool does the same live via :meth:`EquivalentWidth.update`. Restricted to the ``"lines"``
+        Mask tool's EW panel does the same live via :meth:`EquivalentWidth.update`. Restricted to the ``"lines"``
         stage on purpose: once synthesis has run, the abundances were inverted against the EW
         measured at selection, so silently re-measuring under a new filter would misrepresent them.
         Windows / flags / include-toggles are left untouched, so user curation survives."""

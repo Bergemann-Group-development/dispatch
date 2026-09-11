@@ -1,13 +1,18 @@
-"""The Synth panel's "Fit" tab: fit a target spectrum by adaptive grid synthesis.
+"""The synthesis modal's Fit section: what to fit, against which target.
 
-A self-contained view + state holder. It renders its own HTML into the ``fit-fields`` slot
-and reports edits through the shared ``controls`` convention (a hidden ``synthfit-input``
-TextInput fed by the delegated ``FORM_SCRIPT`` listener), so every ``<input>``/``<select>``
-carries ``data-form="synthfit" data-field="<key>"``. Dynamic abundance-row removal and the
-Fit button go through a dedicated ``fit-actions`` channel.
+A self-contained view + state holder. It renders its own HTML into four slots of the modal
+(the target row ``fit-target``, the stellar switches ``fit-stellar`` below the Stellar
+parameters, and the ``fit-post`` / ``fit-abund`` columns) and reports edits through the
+shared ``controls`` convention (a hidden ``synthfit-input`` TextInput fed by the delegated
+``FORM_SCRIPT`` listener), so every ``<input>``/``<select>`` carries ``data-form="synthfit"
+data-field="<key>"``. Dynamic abundance-row removal goes through a dedicated ``fit-actions``
+channel.
 
-The owning ``SynthPanel`` supplies the shared RT-mode + atoms and runs the actual fit
-(``run_fit``); this component only collects the inputs and writes the results back.
+The initial guess for the stellar parameters is the modal's Stellar parameters section, so
+this section only holds their fit switches; the post-processing parameters (vshift, vmac,
+vrot) carry a guess and a switch each, and every abundance row is fitted. The owning
+:class:`synthmodal.SynthModal` supplies the shared setup and runs the fit (``run_fit``);
+this component only collects the inputs and writes the results back.
 """
 from __future__ import annotations
 
@@ -20,19 +25,18 @@ from tumult.synthesis import workflows as synth
 from controls import num_input
 from htmlbridge import html_bridge, parse_action
 
-# stellar axes (label, step), shared with the Synthesize tab; the post-processing params
-# (label, step); 'vmac' is the UI name for the macroturbulence param the engine calls
-# 'zeta_rt'.
-_STELLAR = [(k, lab, step) for k, lab, step, _ in synth.STELLAR_PARAMS]
+# the stellar axes (key, label), shared with the modal's Stellar parameters section; the
+# post-processing params (key, label, step); 'vmac' is the UI name for the macroturbulence
+# param the engine calls 'zeta_rt'.
+_STELLAR = [(k, lab) for k, lab, _, _ in synth.STELLAR_PARAMS]
 _POST = [("vshift", "vshift [km/s]", 0.1), ("vmac", "vmac ζ [km/s]", 0.1),
          ("vrot", "vrot [km/s]", 0.1)]
 POST_ENGINE = {"vshift": "vshift", "vmac": "zeta_rt", "vrot": "vrot"}
 
 # the free-text Abundances override + the relative-abundances flag are NOT here: they live
-# on the shared abundance form owned by SynthPanel (one source of truth across both tabs).
-# This tab keeps only the per-element fit rows, displayed against that shared ``relative``.
-FIT_DEFAULTS = {**{k: d for k, _, _, d in synth.STELLAR_PARAMS},
-                "vshift": 0.0, "vmac": 0.0, "vrot": 0.0}
+# on the shared abundance form owned by the modal (one source of truth). This section keeps
+# only the per-element fit rows, displayed against that shared ``relative``.
+FIT_DEFAULTS = {"vshift": 0.0, "vmac": 0.0, "vrot": 0.0}
 
 
 def _num(key, value, step):
@@ -48,31 +52,24 @@ def _switch(key, on, title="Fit this parameter"):
             f'<span class="switch-track"></span></label>')
 
 
-def _fit_row(key, label, value, fit_on, step, show_switch=True):
-    # stellar rows drop the switch entirely when the atmosphere is a concrete file (Individual
-    # or a picked grid member): there is nothing to interpolate over, so those params can't be fit.
-    switch = _switch("fit_" + key, fit_on) if show_switch else ""
-    return (f'<div class="field-group fit-row"><label>{html.escape(label)}</label>'
-            f'{_num(key, value, step)}{switch}</div>')
-
-
 class FitTab:
-    def __init__(self, on_run):
-        self.on_run = on_run                       # called with self when the Fit button fires
+    def __init__(self):
         saved = dict(store.get_section("synth_fit"))
         self.vals = dict(FIT_DEFAULTS)
         self.vals.update({k: saved[k] for k in FIT_DEFAULTS if k in saved})
         self.flags = {k: bool(saved.get(f"fit_{k}", False))
                       for k, *_ in _STELLAR + _POST}
-        self.relative = True       # shared relative-abundances flag, synced by SynthPanel
+        self.relative = True       # shared relative-abundances flag, synced by the modal
+        self.feh = 0.0             # the modal's [Fe/H] guess, for the absolute display
         self.can_fit_stellar = True    # False when a concrete atmosphere file is selected
-        self.abund_rows = dict(saved.get("abund_rows", {}))   # {element: guess}
+        self.abund_rows = dict(saved.get("abund_rows", {}))   # {element: guess, as [X/Fe]}
         self.target = saved.get("target", "")     # selected target uid
         self.targets = []                          # [(uid, name)] from the canvas
         self.elements = []                         # available abundance elements
         self.solar = {}                            # {element: A(X)} for default guesses
 
-        self.fields_bridge = html_bridge("fit-fields", name="fit-fields-render")
+        self.bridges = {slot: html_bridge(f"fit-{slot}", name=f"fit-{slot}-render")
+                        for slot in ("target", "stellar", "post", "abund")}
         self.input = TextInput(value="", visible=False, name="synthfit-input")
         self.input.on_change("value", self._on_input)
         self.actions = TextInput(value="", visible=False, name="fit-actions")
@@ -81,7 +78,7 @@ class FitTab:
     # --- doc wiring -------------------------------------------------------
     @property
     def models(self):
-        return [self.fields_bridge, self.input, self.actions]
+        return [*self.bridges.values(), self.input, self.actions]
 
     def set_catalog(self, prefs):
         """Load the abundance element list + solar values from preferences."""
@@ -98,12 +95,23 @@ class FitTab:
             self.render()
 
     def set_relative(self, rel):
-        """Sync the shared relative-abundances flag (owned by SynthPanel); re-render the fit
+        """Sync the shared relative-abundances flag (owned by the modal); re-render the fit
         rows if it changed (they are stored as [X/Fe] but displayed as A(X) when off)."""
         rel = bool(rel)
         if rel != self.relative:
             self.relative = rel
             self.render()
+
+    def set_feh(self, feh):
+        """The modal's [Fe/H] guess changed: the absolute A(X) display of each row follows."""
+        try:
+            feh = float(feh)
+        except (TypeError, ValueError):
+            return
+        if feh != self.feh:
+            self.feh = feh
+            if not self.relative and self.abund_rows:
+                self.render()
 
     def set_targets(self, targets):
         """``targets`` = [(uid, name)] of current canvas objects; keep the selection valid.
@@ -121,7 +129,7 @@ class FitTab:
         self.render()
 
     # --- rendering --------------------------------------------------------
-    def _target_select(self):
+    def target_html(self):
         if not self.targets:
             opts = '<option value="">(load a spectrum first)</option>'
         else:
@@ -129,19 +137,18 @@ class FitTab:
                 f'<option value="{html.escape(u)}"'
                 f'{" selected" if u == self.target else ""}>{html.escape(n)}</option>'
                 for u, n in self.targets)
-        return ('<div class="field-group"><label>Target</label>'
+        return ('<div class="field-group"><label>Target spectrum</label>'
                 f'<select class="field-input" data-form="synthfit" data-field="target">'
                 f'{opts}</select></div>')
 
-    def _abund_rows_html(self):
+    def abund_html(self):
         # rows are stored canonically as [X/Fe] (the fit grid is always [X/Fe]); the shared
         # relative switch only changes how they are displayed/entered (absolute A(X) when off).
         rel = self.relative
-        feh = float(self.vals.get("feh") or 0.0)
         rows = []
         for el, xfe in self.abund_rows.items():
             lab = f"[{el}/Fe]" if rel else f"{el}/H"
-            disp = xfe if rel else synth.xfe_to_abund(xfe, el, feh, self.solar)
+            disp = xfe if rel else synth.xfe_to_abund(xfe, el, self.feh, self.solar)
             rows.append(
                 f'<div class="field-group fit-row"><label>{lab}</label>'
                 f'{_num("abund_" + el, float(disp), 0.05)}'
@@ -155,27 +162,30 @@ class FitTab:
                + '</select></div>')
         return "".join(rows) + add
 
-    def html(self):
+    def stellar_html(self):
+        """The fit switches of the four stellar axes (the values above are the guess)."""
+        if not self.can_fit_stellar:
+            return ('<div class="hint">Fixed by the selected atmosphere file &mdash; '
+                    'choose an interpolated grid to fit these.</div>')
+        return "".join(
+            f'<div class="field-group fit-row"><label>Fit {html.escape(lab)}</label>'
+            f'{_switch("fit_" + k, self.flags[k])}</div>' for k, lab in _STELLAR)
+
+    def post_html(self):
         v = self.vals
-        stellar_note = ("" if self.can_fit_stellar else
-                        '<div class="hint">Fixed by the selected atmosphere &mdash; switch to '
-                        'an interpolated grid to fit these.</div>')
-        return (
-            self._target_select()
-            + '<div class="section-header">Stellar parameters</div>'
-            + stellar_note
-            + "".join(_fit_row(k, lab, float(v[k]), self.flags[k], step,
-                               show_switch=self.can_fit_stellar)
-                      for k, lab, step in _STELLAR)
-            + '<div class="section-header">RV &amp; broadening</div>'
-            + "".join(_fit_row(k, lab, float(v[k]), self.flags[k], step)
-                      for k, lab, step in _POST)
-            + '<div class="section-header">Fit abundances</div>'
-            + self._abund_rows_html()
-        )
+        return "".join(
+            f'<div class="field-group fit-row"><label>{html.escape(lab)}</label>'
+            f'{_num(k, float(v[k]), step)}{_switch("fit_" + k, self.flags[k])}</div>'
+            for k, lab, step in _POST)
+
+    def html(self):
+        """Every slot's html, keyed by slot (for the first page render)."""
+        return {"target": self.target_html(), "stellar": self.stellar_html(),
+                "post": self.post_html(), "abund": self.abund_html()}
 
     def render(self):
-        self.fields_bridge.value = self.html()
+        for slot, markup in self.html().items():
+            self.bridges[slot].value = markup
 
     # --- state persistence ------------------------------------------------
     def _persist(self):
@@ -210,16 +220,12 @@ class FitTab:
                 if self.relative:
                     self.abund_rows[el] = disp
                 else:
-                    feh = float(self.vals.get("feh") or 0.0)
-                    self.abund_rows[el] = synth.abund_to_xfe(disp, el, feh, self.solar)
+                    self.abund_rows[el] = synth.abund_to_xfe(disp, el, self.feh, self.solar)
         elif key in self.vals:
             try:
                 self.vals[key] = float(raw)
             except ValueError:
                 self.vals[key] = raw
-            # in absolute mode the displayed A(X) of each row depends on [Fe/H]
-            if key == "feh" and not self.relative and self.abund_rows:
-                rerender = True
         self._persist()
         if rerender:
             self.render()
@@ -232,27 +238,25 @@ class FitTab:
             del self.abund_rows[arg]
             self._persist()
             self.render()
-        elif kind == "run":
-            self.on_run(self)
 
     # --- fit I/O ----------------------------------------------------------
     def collect(self):
         """Inputs for ``synth.fit`` (post param names already mapped to the engine names).
 
-        The free-text ``abundances`` override and the ``relative`` flag come from the shared
-        abundance form (SynthPanel supplies them), not from here."""
+        The stellar guesses, the free-text ``abundances`` override and the ``relative`` flag
+        come from the modal's shared setup, not from here."""
         return {
             "target": self.target,
-            "guesses": {k: float(self.vals[k]) for k, *_ in _STELLAR},
-            "fit_stellar": ([k for k, *_ in _STELLAR if self.flags[k]]
+            "fit_stellar": ([k for k, _ in _STELLAR if self.flags[k]]
                             if self.can_fit_stellar else []),
             "abund_fits": {el: float(v) for el, v in self.abund_rows.items()},
-            "fit_post": {POST_ENGINE[k]: float(self.vals[k]) for k, *_ in _POST
+            "fit_post": {POST_ENGINE[k]: float(self.vals[k]) for k, _, _ in _POST
                          if self.flags[k]},
         }
 
     def populate(self, best):
-        """Write best-fit values back into the fields (engine names mapped to UI names)."""
+        """Write the best-fit broadening and abundance rows back into the fields (engine
+        names mapped to UI names); the stellar values are the modal's to adopt."""
         eng_to_ui = {v: k for k, v in POST_ENGINE.items()}
         for name, value in best.items():
             ui = eng_to_ui.get(name, name)

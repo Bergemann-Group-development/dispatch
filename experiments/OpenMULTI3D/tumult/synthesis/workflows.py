@@ -21,6 +21,9 @@ import re
 import shutil
 from pathlib import Path
 
+import numpy as np
+
+from ..spectrum import Spectrum
 from .api import (compute_spectrum, compute_spectra,
                   compute_window_batch as _compute_window_batch,
                   PRESETS_DIR, preset, PROVENANCE_NAME)
@@ -762,7 +765,7 @@ def abund_elements(prefs):
 
 
 def fit(target, prefs, run_vals, fit_stellar, abund_fits, fit_post, xmin=None, xmax=None,
-        *, grid, atmos_file=None, cancel_token=None):
+        *, grid, atmos_file=None, windows=None, cancel_token=None):
     """Fit ``target`` (a tumult Spectrum) by adaptive grid synthesis.
 
     ``run_vals`` holds the initial guesses / fixed config (teff/logg/feh/vmic, free-text
@@ -774,7 +777,11 @@ def fit(target, prefs, run_vals, fit_stellar, abund_fits, fit_post, xmin=None, x
     are fit. Returns ``(best: dict, raw: Spectrum, post: dict)`` where ``raw`` is the best-fit
     spectrum *without* post-processing and ``post`` is ``{vshift/vrot/zeta_rt: value}`` for the
     caller to apply as a live convolution (so the canvas stores a clean spectrum and the
-    Edit tab reflects the fitted broadening). Blocking — call from a worker thread.
+    Edit tab reflects the fitted broadening). ``windows`` (a sequence of ``(lo, hi)`` in the
+    target's x unit) restricts the comparison to the target samples inside any of them —
+    a line mask's fit windows — while ``[xmin, xmax]`` stays the span synthesised; the
+    model is evaluated at the target's own samples, so the gaps between windows cost
+    nothing. Blocking — call from a worker thread.
     """
     if atmos_file:
         # single-file synthesis: no grid to interpolate, so the stellar axes have no nodes.
@@ -840,6 +847,10 @@ def fit(target, prefs, run_vals, fit_stellar, abund_fits, fit_post, xmin=None, x
 
     if xmin is not None and xmax is not None:
         target = target.crop(xmin=xmin, xmax=xmax)
+    if windows:
+        target = _inside_windows(target, windows)
+        if len(target) < 2:
+            raise ValueError("The target has no samples inside the fit windows.")
 
     xtol = {**_FIT_XTOL, **{el: 0.01 for el in abund_fits}}  # abundances to 0.01 dex
     best, fitted, _grid = adaptive_fit(
@@ -858,6 +869,15 @@ def fit(target, prefs, run_vals, fit_stellar, abund_fits, fit_post, xmin=None, x
     if raw is None:
         raw, post = fitted, {}
     return best, raw, post
+
+
+def _inside_windows(spec, windows):
+    """``spec`` reduced to the samples lying inside any of the ``(lo, hi)`` windows."""
+    x, y = spec.values
+    keep = np.zeros(len(x), dtype=bool)
+    for lo, hi in windows:
+        keep |= (x >= min(lo, hi)) & (x <= max(lo, hi))
+    return Spectrum(x[keep], y[keep], xunit=spec.xunit, yunit=spec.yunit, xref=spec.xref)
 
 
 def fit_line(obs, target, prefs, run_vals, symbol, guess, xmin, xmax, fit_window,

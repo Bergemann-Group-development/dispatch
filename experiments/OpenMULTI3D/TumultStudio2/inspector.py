@@ -62,9 +62,10 @@ def _conv_row(key, label, value, fit_on):
 
 
 class Inspector:
-    def __init__(self, canvas, on_fit=None, notify=None):
+    def __init__(self, canvas, on_fit=None, on_mask=None, notify=None):
         self.canvas = canvas
         self.on_fit = on_fit or (lambda: None)   # main.py runs the actual fit
+        self.on_mask = on_mask or (lambda: None) # main.py opens the Mask tool on the spectrum
         self.notify = notify or (lambda *a, **k: None)
         self.conv_vals = {k: 0.0 for k in CONV_KEYS}     # the selected object's conv
         self.fit_flags = {k: (k in FIT_DEFAULT_ON) for k in CONV_KEYS}  # which to fit
@@ -116,12 +117,15 @@ class Inspector:
             tail = (
                 '<div class="field-group"><label>Fit target</label>'
                 f'<select class="field-input" data-form="edit" data-field="target">{opts}</select></div>'
-                '<button class="primary-btn edit-fit-btn">Fit to target</button>'
+                '<button class="text-btn edit-fit-btn">Fit to target</button>'
                 '<div class="hint">Fits the switched-on parameters to the target over the '
                 'current view range.</div>')
         else:
             tail = '<div class="hint">Load another spectrum to fit the broadening against.</div>'
-        return rows + '<div class="section-header">Fit broadening</div>' + tail
+        return (rows + '<div class="section-header">Fit broadening</div>' + tail
+                + '<div class="section-header">Mask</div>'
+                '<button class="text-btn edit-mask-btn" title="Open the Mask tool with this '
+                'spectrum\'s full wavelength range as the range">Mask full range</button>')
 
     # --- populate the forms from the selected object -----------------
     def bind(self, obj):
@@ -162,8 +166,11 @@ class Inspector:
         self.canvas._refresh_object(obj)  # redraw both the main view and the nav overview
 
     def _on_edit_action(self, attr, old, new):
-        if new and new.partition(" ")[0] == "fit":
+        kind = new.partition(" ")[0] if new else ""
+        if kind == "fit":
             self.on_fit()
+        elif kind == "mask":
+            self.on_mask()
 
     def _apply_style(self, key, value):
         obj = self.canvas.selected()

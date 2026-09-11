@@ -20,6 +20,7 @@ def _nonce():
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE.parent))  # repo root → `import tumult` (during startup)
 
+import astropy.units as u  # noqa: E402
 import numpy as np  # noqa: E402
 from bokeh.io import curdoc  # noqa: E402
 from bokeh.layouts import column  # noqa: E402
@@ -29,7 +30,6 @@ from canvas import SpectrumCanvas, DASH_CSS, LINE  # noqa: E402
 from context import AppContext  # noqa: E402
 from controls import Field, Form, FORM_SCRIPT, NUM_INPUT_SCRIPT  # noqa: E402
 from inspector import Inspector, swatch_html  # noqa: E402
-from ew import EquivalentWidth  # noqa: E402
 from filtertool import FilterTool  # noqa: E402
 from normalisetool import NormaliseTool  # noqa: E402
 from maskstore import MaskStore  # noqa: E402
@@ -38,7 +38,8 @@ from linenav import LineNavigator  # noqa: E402
 from lineannot import LineAnnotations  # noqa: E402
 from tumult import refstars  # noqa: E402
 from tumult.linestrength import LineStrengths  # noqa: E402
-from synthpanel import SynthPanel  # noqa: E402
+from rangetool import RangeTool  # noqa: E402
+from synthmodal import SynthModal  # noqa: E402
 from synthsetup import SynthSetup  # noqa: E402
 from abundancetool import AbundanceTool  # noqa: E402
 from abundwizard import PROFILES  # noqa: E402  (shared EW-profile choices)
@@ -173,8 +174,8 @@ def objects_html(canvas, active_kind="spectrum"):
 # get a first spectrum onto the canvas
 OBJECTS_EMPTY_HINT = (
     '<div class="object-empty">No spectra yet. Open one with '
-    '<b>Open File</b> <i class="ti ti-folder-open"></i> above, or click '
-    '<b>Synth</b> to compute a new spectrum.</div>'
+    '<b>Open File</b> <i class="ti ti-folder-open"></i> above, or '
+    '<b>Synthesise new</b> to compute one.</div>'
 )
 
 
@@ -319,8 +320,6 @@ def build():
     run_ready_bridge = B.cls("#load-run", "ready")  # reveal it inside a run folder
     loading_bridge = B.cls("#footer", "loading")       # footer progress bar while loading
     empty_bridge = B.cls("#main", "empty")  # swap the empty canvas for the inline session loader
-    synth_mode_bridge = B.cls(".sidebar-right", "synth-active")  # swap to the synth panel
-    synth_btn_bridge = B.cls("#synth-btn", "active")             # toolbar button state
     synth_warn_bridge = B.cls("#settings-warning", "show")       # missing-files sign on the cog
     # (the abundance / correction wizards create and own their bridges via the context)
 
@@ -331,10 +330,6 @@ def build():
     ctx.subscribe("focus-changed",
                   lambda kind, **_: setattr(objects_bridge, "value",
                                             objects_panel_html(canvas, kind)))
-
-    def synth_on_mode(state):
-        pulse(synth_mode_bridge, state)
-        pulse(synth_btn_bridge, state)
 
     def synth_on_warn(has_warning):
         toggle(synth_warn_bridge, has_warning)
@@ -421,7 +416,7 @@ def build():
         toggle(processes_show_bridge, bool(pending))
         inspector_bridge.value = inspector_html(canvas)
         footer_bridge.value = footer_html(canvas)
-        synth_panel.refresh_targets()  # keep the Fit-tab target dropdown in sync
+        synth_modal.refresh_targets()  # keep the fit target dropdown in sync
         toggle(loading_bridge, bool(pending))
         # show the inline session loader while the canvas holds nothing (and nothing
         # is on its way in)
@@ -491,8 +486,23 @@ def build():
 
         load_async("broadening-fit", run, done, executor=_SYNTH_EXEC)
 
-    inspector = Inspector(canvas, on_fit=edit_fit, notify=notify)
-    ew = EquivalentWidth(ctx)
+    def edit_mask():
+        """Edit-tab "Mask full range": the Mask tool on the selected spectrum's extent."""
+        obj = canvas.selected()
+        if obj is None:
+            return
+        x, _ = obj.spectrum.values
+        lo, hi = to_range(float(x.min()), float(x.max()), obj.spectrum.xunit, u.AA)
+        range_tool.select_range(lo, hi)
+
+    inspector = Inspector(canvas, on_fit=edit_fit, on_mask=edit_mask, notify=notify)
+    # the Mask tool: the one range gesture, whose actions reach the line-mask view and the
+    # synthesis modal built further down (the lambdas resolve them at click time)
+    range_tool = RangeTool(
+        ctx,
+        on_new_mask=lambda lo, hi: masktool.create_from_window(lo, hi),
+        on_synth=lambda lo, hi: synth_modal.open_range(lo, hi, "synth"),
+        on_fit=lambda lo, hi: synth_modal.open_range(lo, hi, "fit"))
 
     master = store.get_pref("master_linelist")
     if not master or not Path(master).is_file():
@@ -610,11 +620,15 @@ def build():
         get_observation=lambda uid: (canvas.effective(canvas._find(uid)) if canvas._find(uid)
                                      else None),
         master_path=master, profiles=PROFILES,
+        # "+ New mask" draws its window with the Mask tool's gesture
+        place_window=range_tool.begin_add,
         # the mask view's analysis actions: hand the open set to the abundance / balance
-        # tools, which are built further down (the lambdas resolve them at click time)
+        # tools and the synthesis modal, which are built further down (the lambdas resolve
+        # them at click time)
         on_fit_balance=lambda mset: ionbaltool.open_for(mset),
         on_measure_abund=lambda mset: abundancetool.open_for(mset),
-        on_synth=lambda mset: tools.activate("synth"))
+        on_synth=lambda mset: synth_modal.open_masks(mset, "synth"),
+        on_fit=lambda mset: synth_modal.open_masks(mset, "fit"))
     settings = build_settings(canvas)
 
     def add_synth(spec, name, meta=None, conv=None):
@@ -626,27 +640,24 @@ def build():
         if conv:
             o.conv = dict(conv)
             canvas._refresh_object(o)  # update_all (in _settle) then rebinds the Edit tab
-        synth_panel.refresh_cache()  # the new run is now in the cache listing
+        synth_modal.refresh_cache()  # the new run is now in the cache listing
 
-    synth_panel = SynthPanel(
-        canvas,
+    synth_modal = SynthModal(
+        ctx,
         submit=lambda name, loader, on_done, detached=False: load_async(
             name, loader, on_done, executor=_SYNTH_EXEC, detached=detached),
         add=add_synth,
-        on_mode=synth_on_mode,
-        on_warn=synth_on_warn,
-        notify=notify,
-        mask_store=mask_store)
+        on_warn=synth_on_warn)
 
     # the Abundance tool owns its synthesis setup (its own Setup sub-tab), sharing only the
-    # app-global grid registry and the Synthesize tab's NLTE model-atom selection; it inherits
-    # the Synthesize-tab configuration on first open and is independent thereafter.
+    # app-global grid registry and the synthesis modal's NLTE model-atom selection; it inherits
+    # the modal's configuration on first open and is independent thereafter.
     # its fields live in the abundance modal, so every edit restates the setup in the object
     # panel, where the Run synthesis button stands
     _abund_note = lambda *_: (abundancetool is not None and abundancetool.push_setup_note())
     abund_setup = SynthSetup(
-        "abund", "abund_run", synth_panel.grids,
-        atoms_provider=lambda: list(synth_panel.atoms.selected), notify=notify,
+        "abund", "abund_run", synth_modal.grids,
+        atoms_provider=lambda: list(synth_modal.atoms.selected), notify=notify,
         on_run_change=_abund_note, on_base_change=_abund_note,
         on_mode_change=_abund_note, on_atmos_change=_abund_note)
     abundancetool = AbundanceTool(
@@ -671,7 +682,7 @@ def build():
         actions_name="corr-atom-actions", results_id="corr-atom-results",
         layout_name="corr_atom_picker", del_class="corr-atom-del", single=True)
     corr_setup = SynthSetup(
-        "corr", "abundcorr_run", synth_panel.grids,
+        "corr", "abundcorr_run", synth_modal.grids,
         atoms_provider=lambda: list(corr_atoms.selected), notify=notify)
 
     def add_corr_spectrum(spec, name):
@@ -681,7 +692,7 @@ def build():
     abundcorrtool = AbundCorrTool(
         ctx,
         setup=corr_setup,
-        grids=synth_panel.grids,
+        grids=synth_modal.grids,
         atom_provider=lambda: list(corr_atoms.selected),
         add_spectrum=add_corr_spectrum)
 
@@ -689,7 +700,7 @@ def build():
     # the app-global registered-grid list and synthesis preferences are shared.
     ionbaltool = IonBalanceTool(
         ctx,
-        grids=synth_panel.grids,
+        grids=synth_modal.grids,
         list_observations=lambda: [(o.uid, o.name) for o in canvas.objects],
         get_observation=lambda uid: (canvas.effective(canvas._find(uid)) if canvas._find(uid)
                                      else None),
@@ -714,8 +725,7 @@ def build():
 
     # the mutually-exclusive sidebar tools: at most one owns the right panel at a time.
     # filter's enter is wrapped in run_busy so the progress bar paints during the FFT/fit.
-    tools.register("ew", ew)
-    tools.register("synth", synth_panel)
+    tools.register("range", range_tool)
     tools.register("normalise", normtool)
     tools.register("linemask", masktool)
     tools.register("filter", filtertool, runner=run_busy)
@@ -929,15 +939,18 @@ def build():
         "cancel-pending": cancel_pending,
         "select":       focus_spectrum,
         "color":        set_color,
-        "profile":      ew.set_profile,
-        "ew-snr":       ew.set_snr,
-        "ew-cont":      ew.set_cont,
-        "ew-toggle":    lambda v: tools.toggle("ew"),
-        "ew-cancel":    lambda v: ew.deactivate(),
-        "synth-toggle": lambda v: tools.toggle("synth"),
-        "synth-cancel": lambda v: synth_panel.deactivate(),
-        "synthesize":   lambda v: synth_panel.synthesize(),
-        "solve-departures": lambda v: synth_panel.solve_departures(),
+        "profile":      lambda v: range_tool.ew_setting(range_tool.ew.set_profile, v),
+        "ew-snr":       lambda v: range_tool.ew_setting(range_tool.ew.set_snr, v),
+        "ew-cont":      lambda v: range_tool.ew_setting(range_tool.ew.set_cont, v),
+        "range-ew":     lambda v: range_tool.toggle_ew(),
+        "mask-toggle":  lambda v: tools.toggle("range"),
+        "range-cancel": lambda v: range_tool.cancel(),
+        "range-new-mask": lambda v: range_tool.new_mask(),
+        "range-synth":  lambda v: range_tool.synthesise(),
+        "range-fit":    lambda v: range_tool.fit(),
+        "range-add":    lambda v: range_tool.add_window(),
+        "synth-new":    lambda v: synth_modal.open_range(),
+        "synth-submit": lambda v: synth_modal.submit(),
         "annot-toggle": lambda v: ctx.annot.toggle_visible(),
         "linejump":     linenav.jump,
         "linesort":     linenav.set_sort,
@@ -1013,11 +1026,11 @@ def build():
         kind, _, rest = new.partition(" ")
         arg = rest.rsplit(" ", 1)[0]  # strip the trailing nonce
         if kind == "del":
-            synth_panel.delete_cache(arg)
+            synth_modal.delete_cache(arg)
         elif kind == "clear":
-            synth_panel.clear_cache()
+            synth_modal.clear_cache()
         elif kind == "refresh":
-            synth_panel.refresh_cache()
+            synth_modal.refresh_cache()
 
     cache_actions.on_change("value", on_cache_action)
 
@@ -1069,8 +1082,8 @@ def build():
     bridges = column(*B.models,
                      *settings.models, *inspector.models, *linenav.models,
                      *linejump_form.models,
-                     *synth_panel.models, *normtool.models, *filtertool.models,
-                     *masktool.models,
+                     *synth_modal.models, *range_tool.models, *normtool.models,
+                     *filtertool.models, *masktool.models,
                      *abundancetool.models, *abundcorrtool.models, *corr_atoms.models,
                      *ionbaltool.models)
     bridges.name = "bridges"
@@ -1080,8 +1093,8 @@ def build():
     for root in (canvas.nav, canvas.main, filtertool.fig,
                  *abundancetool.figs, abundcorrtool.fig, *ionbaltool.figs, picker.layout,
                  *masktool.roots,
-                 linelist_picker.layout, synth_panel.atoms.picker.layout,
-                 synth_panel.grids.picker.layout, synth_panel.atmos_picker.layout,
+                 linelist_picker.layout, synth_modal.atoms.picker.layout,
+                 synth_modal.grids.picker.layout, synth_modal.atmos_picker.layout,
                  abundancetool.setup.atmos_picker.layout,
                  abundcorrtool.setup.atmos_picker.layout,
                  corr_atoms.picker.layout, bridges):
@@ -1104,23 +1117,24 @@ def build():
         edit_html=inspector.edit_html(),
         style_html=inspector.style_form.html(),
         settings_html=settings.html(),
-        synth_run_html=synth_panel.run_form.html(),
-        synth_window_html=synth_panel.window_form.html(),
-        synth_abund_html=synth_panel.abund_form.html(),
-        synth_mode_html=synth_panel.mode_form.html(),
-        synth_prefs_html=synth_panel.pref_forms["synthprefs"].html(),
-        synth_engine_html=synth_panel.pref_forms["synthengine"].html(),
-        grid_list_html=synth_panel.grids.list_html(),
-        grid_results_name=synth_panel.grids.results_name,
-        synth_grid_html=synth_panel.grid_ui_html(),
-        synth_show_file=synth_panel.setup.show_file(),
-        synth_file_results_name=synth_panel.atmos_picker.results_name,
-        synth_cache_html=synth_panel.cache_html(),
-        synth_warning=synth_panel.has_warning,
-        synth_atoms_html=synth_panel.atoms.chips_html(),
-        synth_is_nlte=synth_panel.is_nlte,
-        atom_results_name=synth_panel.atoms.results_name,
-        fit_fields_html=synth_panel.fit.html(),
+        synth_run_html=synth_modal.run_form.html(),
+        synth_context_html=synth_modal.context_html(),
+        synth_actions_html=synth_modal.actions_html(),
+        synth_abund_html=synth_modal.abund_form.html(),
+        synth_mode_html=synth_modal.mode_form.html(),
+        synth_prefs_html=synth_modal.pref_forms["synthprefs"].html(),
+        synth_engine_html=synth_modal.pref_forms["synthengine"].html(),
+        grid_list_html=synth_modal.grids.list_html(),
+        grid_results_name=synth_modal.grids.results_name,
+        synth_grid_html=synth_modal.grid_ui_html(),
+        synth_show_file=synth_modal.setup.show_file(),
+        synth_file_results_name=synth_modal.atmos_picker.results_name,
+        synth_cache_html=synth_modal.cache_html(),
+        synth_warning=synth_modal.has_warning,
+        synth_atoms_html=synth_modal.atoms.chips_html(),
+        synth_is_nlte=synth_modal.is_nlte,
+        atom_results_name=synth_modal.atoms.results_name,
+        fit_html=synth_modal.fit.html(),
         annot_label=ctx.annot.button_html(),
         linesettings_html=linejump_form.html(),
         linelist_path=html.escape(Path(strengths.master_path).name),

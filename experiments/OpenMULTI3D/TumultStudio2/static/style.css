@@ -159,10 +159,8 @@ body.resizing * { pointer-events: none !important; }
 #main.empty #canvas-empty { display: flex; flex: 1; min-height: 0; align-items: center; justify-content: center; }
 /* nothing loaded -> the inspector has nothing to act on, so hide the right sidebar and let
    the empty-state card take the full width. Keep it visible when a tool panel that works
-   without objects is open (e.g. Synth, reached via the empty card's "Synthesize new"). */
+   without objects is open. */
 #main.empty ~ .sidebar-right { display: none; }
-#main.empty ~ .sidebar-right.ew-active,
-#main.empty ~ .sidebar-right.synth-active,
 #main.empty ~ .sidebar-right.norm-active,
 #main.empty ~ .sidebar-right.filter-active,
 #main.empty ~ .sidebar-right.linemask-active,
@@ -184,7 +182,7 @@ body.resizing * { pointer-events: none !important; }
 #main.filter-mode #canvas-wrap { display: none; }
 #main.filter-mode #feautrier-wrap { display: flex; }
 #filter-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-#ew-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+#mask-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 .feautrier-head { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; }
 
 /* "Filtered" toggle switch (STYLE_REFERENCE.md §6.3) — shown once a filter exists */
@@ -288,26 +286,39 @@ body.resizing * { pointer-events: none !important; }
   color: var(--text-muted); font-size: 11px; font-weight: 600; cursor: pointer;
 }
 .text-btn:hover { border-color: var(--accent); color: var(--accent); }
-.ew-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; }
-.sidebar-right.ew-active .tab-bar,
-.sidebar-right.ew-active .tab-content { display: none; }
-.sidebar-right.ew-active .ew-panel { display: flex; }
-.ew-panel-head { display: flex; align-items: center; justify-content: space-between; }
+/* action buttons in the right-sidebar panels (Mask, Normalise, Filter, LineMasks, the
+   inspector's Fit to target, …) are full-width and stacked with one consistent gap; a
+   row that places buttons side by side (.lm-actions) spaces them with its own gap */
+.sidebar-right :is(.text-btn, .primary-btn) { display: block; width: 100%; margin-top: 8px; }
+/* containers that space their children with a flex gap, and rows that place buttons side by
+   side (the Normalise panel's own id-scoped rhythm rule outranks this one by itself) */
+.sidebar-right :is(.lm-actions, .abund-step-panel, .corr-step-panel)
+  > :is(.text-btn, .primary-btn) { margin-top: 0; }
+/* the Mask tool's panel: the drawn range, its actions and the equivalent width */
+.range-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; overflow-y: auto; }
+.sidebar-right.range-active .tab-bar,
+.sidebar-right.range-active .tab-content { display: none; }
+.sidebar-right.range-active .range-panel { display: flex; }
+.range-panel-head { display: flex; align-items: center; justify-content: space-between; }
+.range-actions { display: flex; flex-direction: column; }
+.range-ew.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 .ew-value { font-size: 13px; font-variant-numeric: tabular-nums; }
 .hint { font-size: 10px; color: var(--text-muted); margin-top: 4px; }
-/* synthesis run panel — same swap behaviour as the EW panel */
-.synth-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; overflow-y: auto; }
-/* hide only the inspector's own (direct-child) tabs; the synth panel has its own nested tabs */
-.sidebar-right.synth-active > .tab-bar,
-.sidebar-right.synth-active > .tab-content { display: none; }
-.sidebar-right.synth-active .synth-panel { display: flex; }
-.synth-panel-head { display: flex; align-items: center; justify-content: space-between; }
-/* synth panel's own tabs: no border (the panel head already separates), flush layout */
-.synth-panel .tab-bar { margin-bottom: 4px; }
-/* the synth panel has two tab-content sections (fields / action button) around the shared
-   RT-mode block; size each to its content so they stack instead of splitting flex space */
-.synth-panel .tab-content { overflow: visible; flex: 0 0 auto; }
-.synth-panel .tab-panel { padding: 0; }
+/* the synthesis modal's fit-only parts (target row, stellar switches, the two extra
+   columns) are shown in fit mode only */
+#synth-modal .synth-fit-only { display: none; }
+#synth-modal.fit-mode .synth-fit-only { display: flex; flex-direction: column; gap: 6px; }
+.synth-context { display: flex; flex-direction: column; gap: 4px; }
+/* λ min / λ max sit side by side at their natural width, not spread over the modal */
+.synth-window { display: flex; gap: 16px; align-items: center; }
+.synth-window .field-group.field-inline { flex: 0 0 auto; gap: 8px; }
+.synth-window .field-group.field-inline > label:not(.switch) { flex: 0 0 auto; }
+/* the modal grows with its columns (four in fit mode), each of which needs a minimal width;
+   a field group in the full-width rows above the columns (window, target) spans at most two */
+#synth-modal { --modal-col: 200px; width: fit-content; min-width: min(560px, 92vw); max-width: 92vw; }
+#synth-modal .modal-col { flex: 1 0 var(--modal-col); min-width: var(--modal-col); }
+#synth-modal .modal-body > :not(.modal-cols) .field-group,
+#synth-modal .synth-window { max-width: calc(2 * var(--modal-col) + 16px); }
 /* a fit row: label, number input, and an inline "fit" switch */
 .field-group.fit-row { flex-direction: row; align-items: center; gap: 6px; }
 .fit-row label:not(.switch) { flex: 1; min-width: 0; }
@@ -334,8 +345,6 @@ body.resizing * { pointer-events: none !important; }
 .norm-panel-head { display: flex; align-items: center; justify-content: space-between; }
 /* consistent spacing between the panel's fields, buttons and hint */
 #norm-panel-content > * + * { margin-top: 12px; }
-/* full-width stacked buttons so Initialise / Clear are clearly separated */
-#norm-panel-content .primary-btn, #norm-panel-content .text-btn { display: block; width: 100%; }
 
 /* Filter inspector panel (method selector + low-pass cutoff) — same pattern as Normalise */
 .filter-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; overflow-y: auto; }
@@ -358,7 +367,7 @@ body.resizing * { pointer-events: none !important; }
 .linemask-panel .lm-row { cursor: pointer; }
 .linemask-panel .lm-row:hover { background: #333; }
 .linemask-panel .lm-row.lm-active { background: rgba(74,144,226,0.15); }
-.linemask-panel .lm-actions { display: flex; gap: 6px; margin-top: 8px; }
+.linemask-panel .lm-actions { display: flex; gap: 8px; margin-top: 8px; }
 .linemask-panel .lm-actions .text-btn { flex: 1; }
 
 /* LineMasks centre view: the mask table below the spectrum (mirrors #abund-bottom) */
@@ -391,11 +400,6 @@ body.resizing * { pointer-events: none !important; }
 .lm-table tfoot td { position: sticky; bottom: 0; z-index: 2; padding: 6px 8px;
   background: var(--bg); border-top: 1px solid var(--border); }
 .lm-add-row .text-btn { width: 100%; height: 26px; }
-/* while waiting for the box gesture the row reads as armed, not as a button to press */
-.lm-add-row.lm-placing .text-btn {
-  border-color: var(--accent); color: var(--accent);
-  background: rgba(74,144,226,0.12);
-}
 .lm-table-empty { width: 100%; }
 
 /* the open set's name + its edited-since-import flag (right sidebar) */
@@ -416,7 +420,6 @@ body.resizing * { pointer-events: none !important; }
 /* the same flag on the left-sidebar object row, compressed to a dot */
 .lm-dot { flex: 0 0 auto; font-size: 9px; color: #e0a030; }
 
-#filter-panel-content .text-btn { display: block; width: 100%; }
 /* greyed-out look for controls disabled while 'Already normalised' is on */
 .field-input:disabled, .primary-btn:disabled, .text-btn:disabled {
   opacity: 0.45; cursor: not-allowed;
@@ -426,7 +429,6 @@ body.resizing * { pointer-events: none !important; }
 /* bottom-align each group's content so the inputs line up even when one label wraps */
 .field-row .field-group { flex: 1; min-width: 0; justify-content: flex-end; }
 #normalise-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-#synth-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 .primary-btn {
   height: 28px; padding: 0 12px; margin-top: 6px;
   background: var(--accent); border: 1px solid var(--accent); border-radius: 3px;
@@ -575,6 +577,7 @@ body.resizing * { pointer-events: none !important; }
    the extra descendant makes them win the cascade wherever this rule is repeated. */
 .field-group:not(:first-child) { margin-top: 12px; }
 .field-row > .field-group,
+.synth-window > .field-group,
 .linelist-settings > .field-group { margin-top: 0; }
 .field-group label { font-size: 10px; color: var(--text-muted); }
 .field-static {
@@ -738,9 +741,6 @@ num-input[disabled] .num-spin button { cursor: not-allowed; }
 .inline-picker-auto .file-results { display: none; max-height: 200px; margin-top: 0; }
 .inline-picker-auto.open.results-open .file-results { display: block; }
 
-/* shared RT-mode + atoms area, between the synth tab-bar and the tab content */
-.synth-rt { display: flex; flex-direction: column; gap: 8px; }
-
 /* NLTE model-atom selector: a chip list shown only when RT mode is NLTE */
 .synth-atoms { display: none; flex-direction: column; gap: 6px; }
 .synth-atoms.on { display: flex; }
@@ -824,7 +824,7 @@ num-input[disabled] .num-spin button { cursor: not-allowed; }
    result objects, and the centre abundance view (scatter + per-line table).
    --------------------------------------------------------------------------- */
 
-/* right-sidebar control panel (mirrors .ew-panel / .synth-panel) */
+/* right-sidebar control panel (mirrors .range-panel) */
 .abund-panel { display: none; flex-direction: column; gap: 8px; padding: 10px; overflow-y: auto; }
 .sidebar-right.abund-active > .tab-bar,
 .sidebar-right.abund-active > .tab-content { display: none; }

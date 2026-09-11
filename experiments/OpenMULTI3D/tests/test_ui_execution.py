@@ -304,3 +304,47 @@ def test_closing_a_session_spares_only_detached_jobs():
     assert not tokens["keeper"].cancelled
     assert tokens["victim"].cancelled
     release.set()
+
+
+def test_mask_tool_range_feeds_line_masks_and_the_synthesis_modal():
+    """One drawn range starts a line mask, extends it through "+ New mask", and opens the
+    synthesis modal on either the free range or the set's windows (docs/GUIWorkflow.md)."""
+    document, ctx = _build_document()
+    messages = []
+    ctx.notify = lambda text, level="info": messages.append(text)
+    x = np.arange(5000., 5010., .01)
+    ctx.canvas.add_object(Spectrum(x, 1 - 0.5 * np.exp(-0.5 * ((x - 5005) / 0.1) ** 2)),
+                          name="obs", source=("file", "/nowhere/obs.fits"))
+    tools = ctx.tools
+    range_tool, masks_view = tools._tools["range"], tools._tools["linemask"]
+
+    tools.toggle("range")
+    range_tool._on_select(5004.5, 5005.5)
+    assert range_tool.selection == (5004.5, 5005.5)
+    panel = range_tool.panel_html()
+    assert "range-new-mask" in panel and "ew-method-select" not in panel
+    range_tool.toggle_ew()                      # the EW is measured only on request
+    assert range_tool.ew._weq is not None and "ew-method-select" in range_tool.panel_html()
+    range_tool.toggle_ew()                      # ... and hidden again
+    assert range_tool.ew._weq is None and "ew-method-select" not in range_tool.panel_html()
+
+    range_tool.new_mask()                       # always a fresh set, opened in its view
+    assert tools.active_name() == "linemask"
+    assert [(s.name, len(s.masks)) for s in ctx.masks.listed] == [("New line mask", 1)]
+
+    masks_view.actions.value = "new 1"           # "+ New mask" reuses the gesture in add mode
+    assert tools.active_name() == "range" and range_tool._add[0] == "New line mask"
+    range_tool._on_select(5001.0, 5002.0)
+    assert "range-add" in range_tool.panel_html()
+    range_tool.add_window()
+    assert tools.active_name() == "linemask"
+    assert [(m.lmin, m.lmax) for m in ctx.masks.masks] == [(5004.5, 5005.5), (5001.0, 5002.0)]
+
+    modal = masks_view.on_synth.__closure__[0].cell_contents
+    modal.open_range(5004.5, 5005.5, "synth")
+    assert modal.window_form.values() == {"xmin": 5004.5, "xmax": 5005.5}
+    assert "Synthesise" in modal.actions_html()
+    modal.open_masks(ctx.masks.mset, "fit")
+    assert "Fit" in modal.actions_html()
+    # the fit synthesises the span of the synth windows and compares inside the fit windows
+    assert modal._fit_windows() == (5000.5, 5006.0, [(5004.5, 5005.5), (5001.0, 5002.0)])

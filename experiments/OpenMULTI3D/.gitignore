@@ -6,7 +6,9 @@
 !SUBAGENTS.md
 !docs/
 docs/*
+!docs/FAQ.md
 !docs/GLOSSARY.md
+!docs/GUIWorkflow.md
 !docs/PythonNamingConventions.md
 !tests/
 tests/*

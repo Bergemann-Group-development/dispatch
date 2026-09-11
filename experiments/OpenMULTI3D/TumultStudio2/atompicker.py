@@ -5,7 +5,7 @@ in ``input/atoms/``, remove via a per-chip button. The selection is persisted in
 ``synth_run`` store section and fed to the synthesis as ``atom_params.atom_file`` (a list).
 
 Mirrors the settings-modal line-list picker (``main.py``: an inline ``FilePicker`` plus a
-``class_bridge`` open toggle) and the cache-delete chip pattern (``synthpanel.py`` /
+``class_bridge`` open toggle) and the cache-delete chip pattern (``synthmodal.py`` /
 ``templates/index.html``: a delegated click on a ``data-path`` button into a dedicated
 ``TextInput`` action channel).
 """
@@ -27,7 +27,7 @@ class AtomPicker:
     ``start_dir`` is where the embedded picker opens (``<dispatch_cwd>/input/atoms``).
     ``on_change`` (optional) is called with the new list after every change.
 
-    The DOM ids / store location default to the Synthesize tab's, but are parameterised
+    The DOM ids / store location default to the synthesis modal's, but are parameterised
     (``ns`` prefix, ``section``/``key``) so a second, independent picker can be embedded
     elsewhere — e.g. the abundance-correction tool. ``single`` keeps only the most recent
     pick (a one-atom selector); ``del_class`` is the chip delete button's CSS class.

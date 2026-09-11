@@ -17,8 +17,10 @@ The canvas draws the current set while the view is open: each mask's synth/visua
 faint red band, its fit window amber, and the active mask accented. Clicking a row snaps the
 view to that mask's synth window (plus a small margin) and makes it the editable one — its
 window is changed *only* by dragging the box's left/right edge handles, so an existing mask
-can never be overwritten by a stray drag across the plot. Box-select is armed for one gesture
-at a time, and only after **+ New mask**, to place a mask that does not exist yet.
+can never be overwritten by a stray drag across the plot. A mask that does not exist yet is
+drawn with the Mask tool's range gesture (:mod:`rangetool`): **+ New mask** hands over to it
+in add mode, and the drawn window comes back through :meth:`MaskTool.add_window`; the same
+tool starts a brand-new set from a range through :meth:`MaskTool.create_from_window`.
 
 An edited set is flagged as modified against the file it came from; the sidebar offers a revert
 to that file and a "save as" that writes a new one and adopts it as the new origin.
@@ -33,12 +35,10 @@ import astropy.units as u
 import numpy as np
 from bokeh.models import TextInput
 
-from canvas import ACCENT
 from controls import Field, Form
 from htmlbridge import parse_action, pulse
 from tumult.linemask import is_element, seed_cont_markers
 from masksources import AutoSource, BlankSource, FileSource
-from rangeselect import RangeSelect
 from tool import Tool
 from units import to_range
 
@@ -57,16 +57,20 @@ class MaskTool(Tool):
     name = "linemask"
 
     def __init__(self, ctx, store, input_dir, *, list_observations=None,
-                 get_observation=None, master_path="", profiles=(),
-                 on_fit_balance=None, on_measure_abund=None, on_synth=None):
+                 get_observation=None, master_path="", profiles=(), place_window=None,
+                 on_fit_balance=None, on_measure_abund=None, on_synth=None, on_fit=None):
         super().__init__(ctx)
         self.store = store                      # shared MaskStore (also ctx.masks)
         # what the sidebar's analysis actions hand the current set to — each opens its own
-        # modal on it (ionbalance.IonBalanceTool, abundancetool.AbundanceTool). Injected, so
-        # the mask view stays unaware of the analyses.
+        # modal on it (ionbalance.IonBalanceTool, abundancetool.AbundanceTool, the synthesis
+        # modal). Injected, so the mask view stays unaware of the analyses.
         self.on_fit_balance = on_fit_balance
         self.on_measure_abund = on_measure_abund
         self.on_synth = on_synth
+        self.on_fit = on_fit
+        # ``place_window(set_name, callback)`` arms the Mask tool's range gesture in add mode;
+        # the drawn window arrives as ``callback(xmin, xmax)`` in Å (see rangetool.RangeTool)
+        self.place_window = place_window
         self.input_dir = str(input_dir)
         self._renorm_uid = None                 # spectrum currently carrying the local renorm
         self.own_panel("linemask-panel-content")   # sidebar: pad / save controls
@@ -99,13 +103,6 @@ class MaskTool(Tool):
         # per-row / save / revert actions come back on a dedicated space-delimited channel
         self.actions = TextInput(value="", visible=False, name="linemask-actions")
         self.actions.on_change("value", self._on_action)
-
-        # box-select places a *new* mask only: it is armed for a single gesture by "+ New mask"
-        # and disarmed again as soon as the box is drawn (or the tool is left). Resizing an
-        # existing mask goes through the canvas's draggable edit-box handles instead.
-        self.range = RangeSelect(self.canvas, ACCENT, "Draw a new line-mask window")
-        self.range.on_select = self._on_range
-        self._placing = False        # True while waiting for the "+ New mask" box gesture
 
         ctx.subscribe("masks-changed", lambda **_: self._on_masks_changed())
         # another list took (or gave back) the single left-sidebar selection: restyle our rows
@@ -140,11 +137,9 @@ class MaskTool(Tool):
         if not self.active:
             return
         self.active = False
-        self._stop_placing()
         if self.ctx.annot is not None:
             self.ctx.annot.detach(self.name)
         self.canvas.on_window_resize = None
-        self.range.clear_selection()
         self.canvas.clear_windows()
         self.push_mode("off")
         self._push_focus("spectrum")
@@ -253,7 +248,7 @@ class MaskTool(Tool):
 
     def _render_canvas(self):
         self.canvas.highlight_windows(self.store.masks, self.store.active,
-                                      editable=self.active and not self._placing)
+                                      editable=self.active)
 
     def _render_objects(self):
         self._objects_bridge.value = self.objects_html()
@@ -315,31 +310,28 @@ class MaskTool(Tool):
             pass
 
     def _start_placing(self):
-        """Arm box-select for one gesture, to draw the window of a brand-new mask."""
-        self._placing = True
-        self.store.set_active(None)    # nothing is editable while the new window is drawn
-        self.range.arm()
-        self.notify("Draw a box on the spectrum to place the new mask.", level="info")
-
-    def _stop_placing(self):
-        self._placing = False
-        self.range.disarm()
-
-    def _on_range(self, x0, x1):
-        """The "+ New mask" box was drawn: create the mask and hand editing back to the
-        edge handles. ``x0``/``x1`` are in the canvas display unit; masks store Å."""
-        self._stop_placing()
-        self.range.clear_selection()   # the mask band now shows the window
-        if not self._placing_valid(x0, x1):
-            self._render_canvas()      # nothing drawn: just restore the editable box
+        """"+ New mask": hand over to the Mask tool's range gesture in add mode. The window
+        comes back through :meth:`add_window`, which reopens this view."""
+        if self.place_window is None:
             return
-        lo, hi = to_range(x0, x1, self.canvas.xunit, u.AA)
+        self.store.set_active(None)    # nothing is editable while the new window is drawn
+        self.place_window(self.store.mset.name, self.add_window)
+
+    def add_window(self, lo, hi):
+        """Append the drawn window (Å) to the open set and return to this view."""
         self.store.add(lo, hi, lam0=0.5 * (lo + hi))
+        self.ctx.tools.activate("linemask")
         self.notify(f"Added mask {lo:.3f}–{hi:.3f} Å.", level="success")
 
-    @staticmethod
-    def _placing_valid(x0, x1):
-        return np.isfinite(x0) and np.isfinite(x1) and x0 != x1
+    def create_from_window(self, lo, hi):
+        """The Mask tool's "New line mask": a fresh set holding the drawn window (Å),
+        opened in this view so its element can be set."""
+        mset = self.store.add_set(BlankSource.DEFAULT_NAME)
+        self.store.add(lo, hi, lam0=0.5 * (lo + hi))
+        self.ctx.tools.activate("linemask")
+        self._jump_to_active()
+        self.notify(f"Started line mask \u201c{mset.name}\u201d with {lo:.3f}–{hi:.3f} Å.",
+                    level="success")
 
     def _on_edge_drag(self, x0, x1):
         """An edge handle of the active mask's box was dragged (display units): resize that
@@ -399,6 +391,8 @@ class MaskTool(Tool):
             self._hand_over(self.on_measure_abund)
         elif kind == "synthesize":
             self._hand_over(self.on_synth)
+        elif kind == "fit":
+            self._hand_over(self.on_fit)
         elif kind == "save-as":
             self._save_as(arg)
         elif kind == "revert":
@@ -490,10 +484,14 @@ class MaskTool(Tool):
         result), because everything it holds depends on the spectrum it was measured on, not
         on these windows.
         """
-        actions = [(self.on_synth, "lm-synthesize", "Synthesise selected features",
-                    "Open synthesis with these curated windows",
-                    '<div class="hint">Uses the included synth windows and prepares their '
-                    'line list automatically.</div>'),
+        actions = [(self.on_synth, "lm-synthesize", "Synthesise windows\u2026",
+                    "Synthesise a spectrum over these windows",
+                    '<div class="hint">Synthesises the included synth windows on an '
+                    'atmosphere of your choice.</div>'),
+                   (self.on_fit, "lm-fit", "Fit windows\u2026",
+                    "Fit a target spectrum inside these windows",
+                    '<div class="hint">Fits stellar parameters, abundances or broadening to '
+                    'a target spectrum, comparing inside the included fit windows.</div>'),
                    (self.on_measure_abund, "lm-measure-abund", "Measure abundances",
                     "Measure these windows on a reference and invert each EW to an abundance",
                     '<div class="hint">Measures these windows on a reference observation, then '
@@ -529,11 +527,8 @@ class MaskTool(Tool):
         about them belongs to the analysis that measured it, not to this set.
         """
         masks = self.store.masks
-        add_label = ("Draw the box on the spectrum…" if self._placing
-                     else "＋ New mask — then draw a box on the spectrum")
-        add_row = (f'<tr class="lm-add-row{" lm-placing" if self._placing else ""}">'
-                   f'<td colspan="7"><button class="text-btn lm-new">{add_label}</button>'
-                   f'</td></tr>')
+        add_row = ('<tr class="lm-add-row"><td colspan="7"><button class="text-btn lm-new">'
+                   '＋ New mask — then drag a range on the spectrum</button></td></tr>')
         if not masks:
             return ('<table class="linelist-table lm-table lm-table-empty">'
                     '<tbody><tr><td class="lm-empty">This set is empty — add a mask '

@@ -1,12 +1,12 @@
 """A reusable *synthesis setup* component: the atmosphere + stellar-parameter + RT-mode
 cluster shared by any tool that needs to drive ``synth.compute``.
 
-It is a generalisation of the cluster originally embedded in :class:`synthpanel.SynthPanel`
-(grid selector + Interpolate/Pick toggle + Format + atmosphere file picker with filename→param
-auto-fill, plus the Teff/logg/[Fe/H]/vmic, abundances and LTE/NLTE forms). Parameterised by a
-``prefix`` (DOM-id / form-name / action-channel namespace) and a store ``section`` (where this
+It is the cluster of the synthesis modal (:class:`synthmodal.SynthModal`): grid selector +
+Interpolate/Pick toggle + Format + atmosphere file picker with filename→param auto-fill, plus
+the Teff/logg/[Fe/H]/vmic, abundances and LTE/NLTE forms. Parameterised by a ``prefix``
+(DOM-id / form-name / action-channel namespace) and a store ``section`` (where this
 instance's per-target state lives), so several independent setups can coexist — e.g. the
-Synthesize tab (``synthpanel``, untouched) and the Abundance tool's own Setup tab.
+synthesis modal and the Abundance tool's own modal.
 
 The app-global **grid registry** (folders/patterns/formats) is *not* duplicated: a shared
 :class:`gridmanager.GridManager` is passed in and used read-only; only the *selection*
@@ -38,7 +38,7 @@ from synthprefs import INDIVIDUAL_GRID, REPO_DIR, RUN_DEFAULTS, load_prefs, miss
 
 # keys copied when a setup inherits another section's configuration (the four stellar axes
 # plus the abundance/mode/atmosphere selection); the grid id is handled separately because the
-# Synthesize tab stores it under "synthesis", not its run section.
+# synthesis modal stores it under "synthesis", not its run section.
 _INHERIT_KEYS = ("teff", "logg", "feh", "vmic", "abundances", "relative_abundances", "mode",
                  "departure_field", "atmos_mode", "atmos_file",
                  "atmos_individual_format")
@@ -79,7 +79,7 @@ class SynthSetup:
         The shared, app-global grid registry (used read-only).
     atoms_provider : callable | None
         ``() -> list[str]`` returning the current NLTE model atoms (shared, e.g. the
-        Synthesize tab's selection). Used by :meth:`context` and the read-only display.
+        synthesis modal's selection). Used by :meth:`context` and the read-only display.
     notify : callable | None
         Footer message sink.
     on_mode_change : callable | None
@@ -93,7 +93,7 @@ class SynthSetup:
         that states the setup elsewhere, e.g. the Abundance object panel, can restate it).
     grid_section : str | None
         Store section holding the grid *selection* (``atmos_grid_id``). Defaults to
-        ``section``; the Synthesize tab historically keeps it under ``"synthesis"``.
+        ``section``; the synthesis modal historically keeps it under ``"synthesis"``.
     form_names : dict | None
         Overrides for the three form names (keys ``"run"``/``"base"``/``"mode"``), for
         hosts whose page slots predate the ``{prefix}params``… convention.
@@ -152,7 +152,7 @@ class SynthSetup:
         self.atmos_picker.layout.name = f"{prefix}_file_picker"
         # seed the single field with the persisted selection so it shows the current file
         self._seed_atmos_query()
-        # read-only NLTE atoms note (shared with the Synthesize tab)
+        # read-only NLTE atoms note (shared with the synthesis modal)
         self.atoms_ro_bridge = html_bridge(f"{prefix}-atoms-ro",
                                             name=f"{prefix}-atoms-ro-render")
 
@@ -303,11 +303,11 @@ class SynthSetup:
         atoms = list(self.atoms_provider())
         if not atoms:
             return ('<div class="field-static">NLTE selected — add model atoms in the '
-                    'Synthesize tab; this run reuses them.</div>')
+                    'synthesis modal; this run reuses them.</div>')
         chips = "".join(
             f'<span class="chip"><span class="chip-label">{html.escape(Path(a).name)}</span>'
             '</span>' for a in atoms)
-        return ('<div class="hint">NLTE model atoms (shared with the Synthesize tab):</div>'
+        return ('<div class="hint">NLTE model atoms (shared with the synthesis modal):</div>'
                 f'<div class="chips">{chips}</div>')
 
     # --- action handling --------------------------------------------------------------
@@ -386,14 +386,14 @@ class SynthSetup:
                      grid_key="atmos_grid_id", *, force=False):
         """Seed this setup from another section's configuration. By default only fills keys
         this section does not already have (first-open inheritance); ``force=True`` overwrites
-        (the explicit 'Copy from Synthesize tab' action)."""
+        (the explicit 'Copy from the synthesis setup' action)."""
         dest = dict(store.get_section(self.section))  # keeps the _seeded marker, if set
         src = store.get_section(run_section)
         for k in _INHERIT_KEYS:
             if k in src and (force or k not in dest):
                 dest[k] = src[k]
         # always adopt the source's grid *selection* on inherit (the construction-time default
-        # in this section must not suppress it); the Synthesize tab stores the id under
+        # in this section must not suppress it); the synthesis modal stores the id under
         # ``grid_section``/``grid_key`` ("synthesis"/"atmos_grid_id"), not its run section.
         gid = store.get_section(grid_section).get(grid_key)
         if gid:
@@ -425,22 +425,21 @@ class SynthSetup:
         grid = self.active_grid()
         if grid is None:
             self.reason = ("No atmosphere grid — register one in Preferences → Synthesis, "
-                           "or choose 'Individual atmosphere' in the Setup tab.")
+                           "or choose 'Individual atmosphere'.")
             return None
         rv = self.run_form.values()
         rv.update(self.base_form.values())
         rv["mode"] = self.mode_form.value("mode")
         rv["atoms"] = list(self.atoms_provider())
         if self.is_nlte and not rv["atoms"]:
-            self.reason = "NLTE needs model atoms — add them in the Synthesize tab."
+            self.reason = "NLTE needs model atoms — add them in the synthesis modal."
             return None
         sect = store.get_section(self.section)
         atmos_file = None
         if self.is_snapshot or self.is_individual or sect.get("atmos_mode", "interp") == "pick":
             atmos_file = (sect.get("atmos_file") or "").strip() or None
             if atmos_file is None:
-                self.reason = ("Choose a grid to interpolate, or pick an atmosphere file, "
-                               "in the Setup tab.")
+                self.reason = "Choose a grid to interpolate, or pick an atmosphere file."
                 return None
         target = (float(rv["teff"]), float(rv["logg"]), float(rv["feh"]), float(rv["vmic"]))
         self.reason = None

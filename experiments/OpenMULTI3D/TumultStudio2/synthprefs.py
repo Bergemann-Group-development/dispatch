@@ -1,9 +1,9 @@
 """Shared synthesis preferences: the reusable namelist setup and its defaults.
 
-Extracted from synthpanel.py so the neutral pieces — pref pages, run defaults, path
-checks — are importable by both :class:`synthpanel.SynthPanel` and
-:class:`synthsetup.SynthSetup` without either importing the other (synthsetup used to
-import these *from* synthpanel, inverting the intended layering).
+Kept apart from synthmodal.py so the neutral pieces — pref pages, run defaults, path
+checks — are importable by both :class:`synthmodal.SynthModal` and
+:class:`synthsetup.SynthSetup` without either importing the other (so that neither has to
+import them from the other).
 """
 from __future__ import annotations
 
