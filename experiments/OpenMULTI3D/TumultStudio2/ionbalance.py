@@ -171,7 +171,6 @@ class IonBalanceTool(AbundanceWizard):
     name = "ionbal"
     prefix = "ionbal"
     kind = "ionbal"
-    btn_selector = "#ionbal-btn"     # no toolbar button: the objects are the entry point
     section = "ionbal"
     steps = 2                        # lines, balance
     empty_table_msg = "No measurement selected"

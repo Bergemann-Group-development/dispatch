@@ -214,11 +214,6 @@ class MaskStore:
             self.masks[index].renorm = bool(on)
             self._changed()
 
-    def set_cont_pts(self, index, pts):
-        if 0 <= index < len(self.masks):
-            self.masks[index].cont_pts = tuple(tuple(float(c) for c in p) for p in pts)
-            self._changed()
-
     # --- session persistence ------------------------------------------------------------
     def snapshot(self) -> dict:
         """The ``masks`` section of a workspace slot: every set (baseline included, so the

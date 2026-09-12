@@ -1,4 +1,5 @@
-"""Parser + round-trip tests for the LineMask model (TumultStudio2/linemask.py).
+"""Parser + round-trip tests for the LineMask model (``tumult/linemask.py``) and the
+GUI's ``MaskStore`` (``TumultStudio2/maskstore.py``) that edits its sets.
 
 Every file under ``input/linemasks/`` must parse into sane, ascending-bound masks with
 wavelengths normalised to Å, and the canonical writer must round-trip them.
@@ -9,8 +10,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from tumult import linemask
-from tumult.linemask import LineMask, LineMaskSet, parse_linemask_file, write_linemask_file
+from tumult.linemask import (LineMask, LineMaskSet, parse_linemask_file, seed_cont_markers,
+                             write_linemask_file)
 
 ROOT = Path(__file__).resolve().parent.parent
 LMASK_DIR = ROOT / "input" / "linemasks"
@@ -172,7 +173,6 @@ class _Raw:
 
 
 def test_seed_cont_markers_fits_sloped_continuum_over_core():
-    from linemask import seed_cont_markers
     x = np.linspace(5000.0, 5001.0, 201)
     cont = 1.0 + 0.5 * (x - 5000.0)          # a sloped continuum
     y = cont.copy()

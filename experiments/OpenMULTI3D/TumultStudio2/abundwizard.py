@@ -143,7 +143,6 @@ class AbundanceWizard(Tool):
     prefix = ""            # DOM/bridge namespace: "abund" | "corr"
     steps = 3              # how many step panels the wizard's switcher drives
     kind = ""              # ctx.focus_kind value while a result owns the centre view
-    btn_selector = ""      # toolbar button, e.g. "#abundcorr-btn" ("" = entered elsewhere)
     section = ""           # store section for the wizard's own form values
     empty_table_msg = "No result selected"
     y_axis_label = "A(X)"
@@ -172,10 +171,7 @@ class AbundanceWizard(Tool):
         self.sort_keys = {**self.BASE_SORT_KEYS, **self.extra_sort_keys}
         self.sort = SortState({**self.BASE_SORT_ASC, **self.extra_sort_asc}, "lam0")
         self.setup = setup                # SynthSetup: the wizard's own synthesis config
-        panels = [(".sidebar-right", f"{self.prefix}-active")]
-        if self.btn_selector:
-            panels.append((self.btn_selector, "active"))
-        self.own_mode_bridges(*panels)
+        self.own_mode_bridges((".sidebar-right", f"{self.prefix}-active"))
         self._view_bridge = ctx.bridges.cls("#main", f"{self.prefix}-mode")
         self._step_bridges = [ctx.bridges.cls("#main", f"{self.prefix}-step-{i}")
                               for i in range(1, self.steps + 1)]
@@ -460,9 +456,6 @@ class AbundanceWizard(Tool):
 
     def selected(self):
         return self._find(self.selected_uid)
-
-    def has_results(self):
-        return bool(self.results)
 
     # --- session persistence: the envelope every result list shares ----------------------
     # The result objects themselves are built by the subclass's factory and relinked by

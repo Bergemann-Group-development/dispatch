@@ -445,14 +445,6 @@ class SpectrumCanvas:
     def _on_nav_range(self, attr, old, new):
         self._debounce("nav", self._refresh_nav)
 
-    def reset_nav_view(self):
-        """Return the nav overview to the full spectral extent (the line navigator
-        zooms it to a single line, so leaving the line view restores the overview)."""
-        if not self.objects:
-            return
-        lo, hi = self.display_bounds()
-        self.nav.x_range.start, self.nav.x_range.end = lo, hi
-
     # --- decimated redraws (window in native units, convert the result) ----
     def _window(self, spectrum, x_range, n, conv=None, convert_y=True):
         # convolution (crop kwargs) is cheap here: crop happens first, so only the
