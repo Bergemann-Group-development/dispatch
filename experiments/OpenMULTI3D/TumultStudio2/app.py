@@ -43,14 +43,17 @@ from synthmodal import SynthModal  # noqa: E402
 from synthsetup import SynthSetup  # noqa: E402
 from abundancetool import AbundanceTool  # noqa: E402
 from abundwizard import PROFILES  # noqa: E402  (shared EW-profile choices)
-from atomtool import AtomTool  # noqa: E402
+from atomtool import AtomTool, AtomObject  # noqa: E402
 from abundcorrtool import AbundCorrTool  # noqa: E402
 from ionbalance import IonBalanceTool  # noqa: E402
 from tumult.synthesis import workflows as synth  # noqa: E402  (CancelToken/CancelledError for cancellable loads)
 from tumult.synthesis import submit as submit_synthesis  # noqa: E402
 from filepicker import FilePicker  # noqa: E402
 from toolmanager import ToolManager  # noqa: E402
-from session import Workspace, ObjectSnap, FilterSnap  # noqa: E402
+import session  # noqa: E402
+from session import (Workspace, SpectrumSnap, MaskSnap, AtomSnap, ResultsSnap, ViewSnap,  # noqa: E402
+                     FilterSnap, FocusSnap, ToolsSnap, PreparedWorkspace, PreparedSpectrum,
+                     PreparedAtom, FOCUS_TOOL, RESULT_TOOLS)
 from htmlbridge import BridgeSet, pulse, toggle  # noqa: E402
 from jobs import Job, QUEUED, RUNNING, CANCELLING, FINISHED, FAILED, CANCELLED  # noqa: E402
 from debounce import Trailing  # noqa: E402
@@ -96,12 +99,11 @@ def sessions_html(slots):
         return '<div class="file-empty">No saved sessions yet — make one below.</div>'
     rows = []
     for s in slots:
-        n = len((s.get("snapshot") or {}).get("objects") or [])
         try:
             when = datetime.fromtimestamp(s.get("saved_at", 0)).strftime("%Y-%m-%d %H:%M")
         except (OSError, ValueError, OverflowError):
             when = ""
-        sub = f'{n} object{"" if n == 1 else "s"}' + (f' · {when}' if when else "")
+        sub = session.summary(s.get("snapshot")) + (f' · {when}' if when else "")
         rows.append(
             f'<div class="session-item" data-sid="{s["id"]}" title="Load this save">'
             f'<i class="ti ti-device-floppy"></i>'
@@ -358,55 +360,68 @@ def build():
         curdoc().add_next_tick_callback(work)
 
     def _range(r):
-        return [r.start, r.end] if r.start is not None and r.end is not None else None
+        """``[start, end]`` of a Bokeh range when it holds an explicit finite interval."""
+        lo, hi = r.start, r.end
+        if not all(isinstance(v, (int, float)) and np.isfinite(v) for v in (lo, hi)):
+            return None
+        return [float(lo), float(hi)] if lo < hi else None
 
     def snapshot():
-        objs = []
+        """The live workspace as a :class:`session.Workspace` dict."""
+        specs = []
         for o in canvas.objects:
-            if not o.source:
-                continue
-            kind = o.source[0]
-            # synth runs are interpolated (no backing file), so embed their data;
-            # file/run objects need a path to reload from. Anything else can't be restored.
+            kind, path = o.source if o.source else (None, None)
             if kind == "synth":
-                data = o.raw.to_dict()
-            elif o.source[1]:
+                data, path = o.raw.to_dict(), ""
+            elif kind in ("file", "run") and path:
                 data = None
             else:
-                continue
+                continue          # nothing to restore it from
             g = o.line.glyph
             knots = ({"x": list(map(float, o.norm_knots[0])),
                       "y": list(map(float, o.norm_knots[1]))}
                      if o.norm_knots is not None else None)
             # synth params are tiny and have no source file, so persist them; FITS metadata
             # is large and re-read from disk on restore, so isn't stored.
-            meta = o.meta if kind == "synth" else None
-            objs.append(ObjectSnap(uid=o.uid,
-                kind=kind, path=o.source[1] or "", name=o.name, data=data, meta=meta,
+            specs.append(SpectrumSnap(
+                uid=o.uid, kind=kind, name=o.name, path=path, data=data,
+                meta=o.meta if kind == "synth" else None,
                 color=g.line_color, dash=o.dash, width=g.line_width, alpha=g.line_alpha,
-                visible=o.visible, conv=o.conv, norm_knots=knots,
-                already_normalised=o.already_normalised))
-        sel = canvas.selected()
-        idx = next((i for i, o in enumerate(canvas.objects) if o is sel), 0)
-        configured = filtertool is not None and filtertool._configured
+                visible=o.visible, conv=dict(o.conv), norm_knots=knots,
+                already_normalised=bool(o.already_normalised)))
+        saved_uids = {sp.uid for sp in specs}
+        spectrum_selected = canvas.selected_uid if canvas.selected_uid in saved_uids else None
+        configured = filtertool._configured
         # only persist a low-pass cutoff when a low-pass filter actually exists
-        has_lowpass = (filtertool is not None and filtertool.method == "lowpass"
+        has_lowpass = (filtertool.method == "lowpass"
                        and any(o.filtered is not None for o in canvas.objects))
+        focus_kind = ctx.focus_kind
+        if focus_kind == "spectrum":
+            focus_uid = spectrum_selected
+        elif focus_kind == "linemask":
+            focus_uid = mask_store.current_uid
+        elif focus_kind == "atom":
+            focus_uid = atomtool.selected_uid
+        else:
+            focus_uid = wizards[FOCUS_TOOL[focus_kind]].selected_uid
         return Workspace(
-            objects=objs,
-            units={"x": canvas.xlabel, "y": canvas.ylabel},
-            view={"main": _range(canvas.main.x_range), "nav": _range(canvas.nav.x_range)},
-            selected=idx,
+            spectra=specs, spectrum_selected=spectrum_selected,
+            masks=MaskSnap(**mask_store.snapshot()),
+            atoms=[AtomSnap(uid=a.uid, path=a.path) for a in atomtool.atoms],
+            atom_selected=atomtool.selected_uid,
+            results={name: ResultsSnap(**w.snapshot()) for name, w in wizards.items()},
+            view=ViewSnap(xunit=canvas.xlabel, yunit=canvas.ylabel,
+                          main_x=_range(canvas.main.x_range), main_y=_range(canvas.main.y_range),
+                          nav_x=_range(canvas.nav.x_range), nav_y=_range(canvas.nav.y_range)),
             filter=FilterSnap(
-                active=canvas.show_filtered,
-                method=filtertool.method if filtertool else "brault",
+                active=canvas.show_filtered, method=filtertool.method,
                 res=filtertool.form.value("res") if has_lowpass else None,
                 fmax=filtertool.fmax if configured else None,
                 floor=filtertool.floor if configured else None),
-            atoms=[a.to_dict() for a in atomtool.atoms] if atomtool is not None else [],
-            abundance=abundancetool.snapshot() if abundancetool is not None else {},
-            abundcorr=abundcorrtool.snapshot() if abundcorrtool is not None else {},
-            ionbal=ionbaltool.snapshot() if ionbaltool is not None else {},
+            focus=FocusSnap(kind=focus_kind, uid=focus_uid),
+            tools=ToolsSnap(active=tools.active_name(), atom_tab=atomtool.tab,
+                            steps={name: w.step for name, w in wizards.items()},
+                            jumped={name: w._jumped for name, w in wizards.items()}),
         ).to_dict()
 
     def update_all(canvas):
@@ -762,8 +777,12 @@ def build():
     tools.register("atom", atomtool)
 
     # --- session save / restore -------------------------------------------
+    # the three result lists, by the name of their tool (the session's result sections)
+    wizards = {"abundance": abundancetool, "abundcorr": abundcorrtool, "ionbal": ionbaltool}
+    assert tuple(wizards) == RESULT_TOOLS
+
     def _restore_range(rng, vals):
-        if not vals or vals[0] is None or vals[1] is None:
+        if not vals:
             return
         lo, hi = vals
         if rng.bounds:
@@ -771,81 +790,167 @@ def build():
         if lo < hi:
             rng.start, rng.end = lo, hi
 
-    def restore_workspace(snap):
+    def prepare_workspace(snap):
+        """Validate a slot and build its objects off the live workspace
+        (:func:`session.prepare`); :class:`SessionError` when the slot is unusable."""
+        from tumult.atom import AtomClass
         ws = Workspace.from_dict(snap)
-        if not ws.objects:
-            return
-        # a workspace boundary: work admitted before this cannot deliver into the
-        # restored workspace (its Processes row still settles)
-        ctx.advance_generation()
+        return session.prepare(ws, load_spectrum=_load_obj,
+                               load_atom=lambda path: AtomClass(str(path)), tools=wizards)
+
+    def _capture_live():
+        """The live workspace as a prepared one (no file reads): what a failed commit
+        re-applies."""
+        ws = Workspace.from_dict(snapshot())
+        by_uid = {o.uid: o for o in canvas.objects}
+        return PreparedWorkspace(
+            spectra=[PreparedSpectrum(sp, by_uid[sp.uid].raw, by_uid[sp.uid].meta)
+                     for sp in ws.spectra],
+            spectrum_selected=ws.spectrum_selected,
+            mask_sets=list(mask_store.sets), mask_current=mask_store.current_uid,
+            mask_active=mask_store.active,
+            atoms=[PreparedAtom(AtomSnap(uid=a.uid, path=a.path), a.atom)
+                   for a in atomtool.atoms],
+            atom_selected=atomtool.selected_uid,
+            results={name: (list(w.results), w.selected_uid) for name, w in wizards.items()},
+            view=ws.view, filter=ws.filter, focus=ws.focus, tools=ws.tools)
+
+    def _place_spectrum(ps):
+        snap, spec = ps.snap, ps.spectrum
+        o = canvas.add_object(spec, name=snap.name, color=snap.color, dash=snap.dash,
+                              source=(snap.kind, snap.path or None), meta=ps.meta,
+                              uid=snap.uid)
+        if snap.width is not None or snap.alpha is not None:
+            canvas.set_style(o, width=snap.width, alpha=snap.alpha)
+        knots = snap.norm_knots
+        o.already_normalised = snap.already_normalised
+        if knots and knots["x"]:
+            o.norm_knots = (np.asarray(knots["x"], float), np.asarray(knots["y"], float))
+        if o.already_normalised or (knots and knots["x"]):
+            canvas.normalise_object(o)
+        o.conv = dict(snap.conv)
+        if o.conv or o.already_normalised or (knots and knots["x"]):
+            canvas._refresh_object(o)  # apply conv/normalisation to main + nav
+        if not snap.visible:
+            canvas.toggle_object(o.uid)
+
+    def _apply_workspace(p):
+        """Replace every collection with the prepared workspace ``p`` and restore its
+        view, selections and focus. Every collection is replaced, empty ones included;
+        spectra, masks and atoms land before the results that refer to them."""
+        tools.deactivate_active()           # whatever view was open, the canvas returns
+        for w in wizards.values():
+            w.blur()
+        ctx.focus_kind = "spectrum"
         filtertool.clear()
         for o in list(canvas.objects):
             canvas.remove_object(o.uid)
-        for obj in ws.objects:
-            try:
-                spec = _load_obj(obj)
-            except Exception:
-                logging.exception("Could not restore %s", obj.path)
-                continue
-            # synth meta is restored from the slot; FITS meta rides along on the reloaded spec
-            meta = obj.meta if obj.kind == "synth" else getattr(spec, "meta", None)
-            o = canvas.add_object(spec, name=obj.name, color=obj.color, dash=obj.dash,
-                                       source=(obj.kind, obj.path or None), meta=meta, uid=obj.uid)
-            if obj.width is not None or obj.alpha is not None:
-                canvas.set_style(o, width=obj.width, alpha=obj.alpha)
-            knots = obj.norm_knots
-            o.already_normalised = bool(obj.already_normalised)
-            if knots and knots.get("x"):
-                o.norm_knots = (np.asarray(knots["x"], float),
-                                np.asarray(knots["y"], float))
-            if o.already_normalised or (knots and knots.get("x")):
-                canvas.normalise_object(o)
-            o.conv = obj.conv or {}
-            if o.conv or o.already_normalised or (knots and knots.get("x")):
-                canvas._refresh_object(o)  # apply conv/normalisation to main + nav
-            if not obj.visible:
-                canvas.toggle_object(o.uid)
-        if not canvas.objects:
-            return
-        u = ws.units
-        if u.get("x"):
-            canvas.set_xunit(u["x"])
-        if u.get("y"):
-            canvas.set_yunit(u["y"])
-        _restore_range(canvas.nav.x_range, ws.view.get("nav"))
-        _restore_range(canvas.main.x_range, ws.view.get("main"))
-        idx = ws.selected
-        if 0 <= idx < len(canvas.objects):
-            canvas.select_object(canvas.objects[idx].uid)
-        f = ws.filter
-        if f.method == "lowpass" and f.res is not None:
+        for ps in p.spectra:
+            _place_spectrum(ps)
+        canvas.selected_uid = p.spectrum_selected     # None when none was, or it is gone
+        mask_store.restore(p.mask_sets, p.mask_current, p.mask_active)
+        atomtool.atoms = [AtomObject(path=a.snap.path, atom=a.atom, uid=a.snap.uid)
+                          for a in p.atoms]
+        atomtool.selected_uid = p.atom_selected
+        atomtool.set_tab(p.tools.atom_tab)
+        for name, w in wizards.items():
+            results, selected = p.results[name]
+            w.restore(results, selected)
+            if name in p.tools.steps:
+                w.set_step(p.tools.steps[name])
+        atomtool.render_objects()
+        v = p.view
+        if v.xunit:
+            canvas.set_xunit(v.xunit)
+        if v.yunit:
+            canvas.set_yunit(v.yunit)
+        settings.set_values(xunit=canvas.xlabel, yunit=canvas.ylabel)  # sync the prefs form
+        f = p.filter
+        if canvas.objects and f.method == "lowpass" and f.res is not None:
             filtertool.apply_saved_lowpass(f.res)
             if not f.active:
                 filtertool.set_visible(False)
-        elif f.fmax is not None and f.floor is not None:
+        elif canvas.objects and f.fmax is not None and f.floor is not None:
             filtertool.apply_saved(f.fmax, f.floor)
             if not f.active:
                 filtertool.set_visible(False)
-        settings.set_values(xunit=canvas.xlabel, yunit=canvas.ylabel)  # sync the prefs form
-        # restore the wizard results last: the abund/params tools re-link each result's
-        # reference to the just-restored observations (by name), so objects must exist first.
-        if abundancetool is not None:
-            abundancetool.restore(ws.abundance)
-        # atoms before the corrections: the results are listed under their atom
-        if atomtool is not None:
-            from tumult.atom import AtomClass
-            atomtool.atoms = []
-            for a in ws.atoms:
-                try:
-                    atomtool.add(a["path"], AtomClass(str(a["path"])), uid=a.get("uid"),
-                                 select=False)
-                except Exception:
-                    logging.exception("Could not restore the model atom %s", a["path"])
-        if abundcorrtool is not None:
-            abundcorrtool.restore(ws.abundcorr)
-        if ionbaltool is not None:
-            ionbaltool.restore(ws.ionbal)
+        # the focus, through the same routing a click takes, so the panels it opens are
+        # the ones the user had; a cleared focus leaves the plain canvas
+        focus = p.focus
+        if focus.kind == "spectrum":
+            if focus.uid is not None:
+                focus_spectrum(focus.uid)
+        elif focus.kind == "linemask":
+            masktool.select_set(focus.uid)
+        elif focus.kind == "atom":
+            atomtool.select(focus.uid)
+        elif focus.uid is not None:
+            wizards[FOCUS_TOOL[focus.kind]].select_result(focus.uid)
+        for name, w in wizards.items():
+            jumped = p.tools.jumped.get(name)
+            res = w.selected()
+            if jumped is None or res is None or jumped >= len(res.lines):
+                continue
+            if w.active and w.is_focused():
+                w._jump_line(str(jumped))      # the accent, hatch and CoG of that line
+            else:
+                w._jumped = jumped             # painted when its view is next opened
+        # a panel open beside the canvas (a wizard's steps, the mask or atom view) is
+        # reopened; the range, filter and normalise gestures are transient and stay closed
+        active = p.tools.active
+        if active in ("abundance", "abundcorr", "ionbal", "linemask", "atom") \
+                and tools.active_name() != active:
+            tools.activate(active)
+        # the explicit ranges last, after everything above that moves the view
+        _restore_range(canvas.nav.x_range, v.nav_x)
+        _restore_range(canvas.main.x_range, v.main_x)
+        _restore_range(canvas.main.y_range, v.main_y)
+        _restore_range(canvas.nav.y_range, v.nav_y)
         update_all(canvas)
+
+    def restore_workspace(snap, name="save"):
+        """Load a slot as one document operation. The slot is validated and its objects
+        built first (a broken slot changes nothing); the commit then marks a workspace
+        boundary (new generation, old result subscriptions forgotten, this document's
+        non-detached jobs cancelled) and replaces every collection. If applying fails,
+        the previous workspace is put back. Returns the :class:`session.LoadReport`, or
+        ``None`` when nothing was loaded."""
+        try:
+            prepared = prepare_workspace(snap)
+            live = _capture_live()
+        except Exception as exc:      # SessionError names the field; anything else is logged
+            logging.exception("The saved workspace %r cannot be loaded", name)
+            notify(f"Could not load “{name}”: {exc}", level="danger", revert_ms=10000)
+            return None
+        ctx.advance_generation()
+        cancelled = [job.name for job in jobs.active if not job.detached]
+        for job in list(jobs.active):
+            if not job.detached:
+                jobs.request_cancel(job.pid)
+        try:
+            _apply_workspace(prepared)
+        except Exception as exc:
+            logging.exception("Applying the saved workspace %r failed; restoring the "
+                              "previous workspace", name)
+            try:
+                _apply_workspace(live)
+            except Exception:
+                logging.exception("The previous workspace could not be restored either")
+                notify(f"Loading “{name}” failed: {exc}; the previous workspace could not "
+                       "be restored", level="danger", revert_ms=10000)
+                return None
+            notify(f"Loading “{name}” failed: {exc}; the previous workspace was restored",
+                   level="danger", revert_ms=10000)
+            return None
+        report = session.LoadReport(name, prepared.counts(), prepared.skipped,
+                                    prepared.unresolved, cancelled)
+        for line in report.details():
+            log.warning("%s", line)
+        notify(report.message(), level="warn" if report.partial else "success",
+               revert_ms=12000 if report.partial else 4000)
+        return report
+
+    ctx.restore_workspace = restore_workspace   # local harnesses load slots through it
 
     # --- background work: a Processes row now, the outcome delivered on the document ----
     def _admit(name, *, heavy=False, detached=False, path=None):
@@ -1127,7 +1232,8 @@ def build():
                 notify("That save is no longer available.", level="danger")
                 render_sessions()
             else:
-                restore_workspace(snap)
+                slot = next((s for s in store.list_sessions() if s["id"] == int(arg)), None)
+                restore_workspace(snap, slot["name"] if slot else "save")
         elif kind == "delete":
             try:
                 found = store.delete_session(int(arg))

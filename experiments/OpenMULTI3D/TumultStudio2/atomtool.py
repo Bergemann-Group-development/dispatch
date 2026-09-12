@@ -77,9 +77,6 @@ class AtomObject:
         a = self.atom
         return int(a.nk), int(a.nline), int(a.ncont)
 
-    def to_dict(self):
-        return {"uid": self.uid, "path": self.path}
-
 
 class AtomTool(Tool):
     """The tool behind the atom objects: the list, the two-table view and the panel."""

@@ -59,6 +59,44 @@ reports *Saved* only after the replacement succeeded; a failed save or delete sh
 destination and cause in the footer and leaves the previous file and the live workspace
 as they were, so the action can be retried once the cause is fixed.
 
+### What a save slot holds
+
+A slot is the whole object workspace (`TumultStudio2/session.py`, schema version 2):
+
+- every spectrum by its uid: file and run objects by path (re-read on load), synth
+  objects with their data and provenance embedded; colour, dash, width, alpha,
+  visibility, convolution, continuum knots and the already-normalised flag;
+- every line-mask set by its integer uid, with its baseline, so an edited set comes
+  back marked modified and can still be reverted; the current set and the active mask;
+- every model atom by uid and path (re-read on load);
+- the abundance, correction and ionisation-balance result lists with their selected
+  result; results refer to their observation, mask set and atom by identity only;
+- the display units, the explicit main and navigation ranges (x and y), the filter
+  state, the sidebar focus (which list, which object), the open tool, the atom view's
+  tab, each result view's step and its selected diagnostic line.
+
+Loading validates the slot completely first, then builds every object off the live
+workspace, and only then commits: the workspace generation advances, the document's
+non-detached jobs are cancelled (a late outcome adds nothing), and every collection is
+replaced, empty ones included, so an atom-only, mask-only, result-only or empty slot is a
+valid replacement. A slot with an unsupported version, a wrong shape or a broken embedded
+object is refused with the field named and changes nothing. A spectrum or atom file that
+can no longer be read is the one partial case: that object is skipped, the footer and the
+log name its identity, path and reason, the references pointing at it are cleared (a
+result's reference observation, a balance's mask set; a correction whose atom is missing
+is listed under Corrections), and a selection or focus that named it is cleared rather
+than moved to another object. If applying the prepared workspace fails part-way, the
+previous workspace is put back. The Sessions list describes each slot's contents, or says
+that its format is unsupported.
+
+Boundaries: the synthesis, correction and abundance forms remain global preferences, not
+slot state, so an older slot does not recover the form values it was made with. The Mask
+tool's range gesture, the EW panel and the filter/normalise panels are transient and reset
+on load. Slots are path-backed workspace saves, not portable archives: external spectra
+and atoms are re-read from their paths without a content check. There is no slot export,
+import, rename or overwrite, and no resumable scientific calculation in a slot; running
+jobs are not saved.
+
 ## Toolbar
 
 `Annot | Filter [Filtered] Normalise | Mask`. The Synth and EW buttons are removed; the

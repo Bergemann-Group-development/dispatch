@@ -155,7 +155,9 @@ def test_maskstore_snapshot_round_trip():
     store.set_renorm(0, True)
     snap = store.snapshot()
     store2 = MaskStore(_StubCtx())
-    store2.restore(snap)
+    from tumult.linemask import LineMaskSet
+    store2.restore([LineMaskSet.from_dict(d) for d in snap["sets"]],
+                   snap["current"], snap["active"])
     assert len(store2.masks) == len(store.masks)
     assert store2.masks[0].renorm and store2.active == store.active
 

@@ -56,13 +56,17 @@ class MeasuredLines:
 
     @classmethod
     def from_dict(cls, data):
-        """Read current records and the unversioned flat records saved by the GUI."""
+        """Read a record written by :meth:`to_dict`; any other version is rejected."""
         from .abundance import LineResult
         from .spectrum import Spectrum
 
-        data = deepcopy(data or {})
-        if data.get("schema_version", 0) not in (0, 1):
-            raise ValueError("Unsupported scientific result schema version.")
+        if not isinstance(data, dict):
+            raise ValueError("A scientific result record must be an object.")
+        data = deepcopy(data)
+        version = data.get("schema_version")
+        if version != 1:
+            raise ValueError(f"Unsupported scientific result schema version {version!r} "
+                             "(expected 1).")
         names = {f.name for f in fields(cls)}
         values = {k: v for k, v in data.items() if k in names}
         values["lines"] = [LineResult.from_dict(ln) for ln in data.get("lines", [])]

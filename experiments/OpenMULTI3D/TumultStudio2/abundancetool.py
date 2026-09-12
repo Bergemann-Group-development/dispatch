@@ -244,34 +244,10 @@ class AbundanceTool(AbundanceWizard):
         if changed:
             self._render_selected()
 
-    # --- session persistence (whole computed results, saved into the session slot) ------
-    def snapshot(self):
-        """Serialise the computed results + selection for the session slot. Each result records
-        its reference observation by name too, so it can be re-linked after restore mints new uids."""
-        obs = dict(self.list_observations())    # uid -> name
-        out = []
-        for r in self.results:
-            d = r.to_dict()
-            d["ref_name"] = obs.get(getattr(r, "ref_uid", None))
-            out.append(d)
-        return {"results": out, "selected": self.selected_uid}
-
-    def restore(self, data):
-        """Rebuild the results (and left-sidebar list) from a saved snapshot."""
-        data = data or {}
-        observations = dict(self.list_observations())
-        results = []
-        for d in (data.get("results") or []):
-            res = ab.AbundanceResult.from_dict(d)
-            if res.ref_uid not in observations:
-                # Legacy snapshots lacked stable identities. Only an unambiguous name links.
-                matches = [uid for uid, name in observations.items() if name == res.ref_name]
-                res.ref_uid = matches[0] if len(matches) == 1 else None
-            results.append(res)
-        self.results = results
-        uids = {r.uid for r in results}
-        self.selected_uid = data.get("selected") if data.get("selected") in uids else None
-        self.push_results()
+    # --- session persistence ------------------------------------------------------------
+    # the envelope, the factory and the observation relink are AbundanceWizard's: a result
+    # names its reference observation by uid alone, cleared when that spectrum is not
+    # restored.
 
     # --- state persistence -------------------------------------------------------------
     def _on_field(self, key, value):
@@ -376,6 +352,7 @@ class AbundanceTool(AbundanceWizard):
         res = ab.measure_lines(mset, ref_spec, linelist=self.master_path,
                                profile=profile, snr=snr, cont_pct=cont_pct)
         res.ref_uid = ref_uid
+        res.ref_name = dict(self.list_observations()).get(ref_uid, "")  # for messages only
         res.snr, res.cont_pct = snr, cont_pct
         return res
 

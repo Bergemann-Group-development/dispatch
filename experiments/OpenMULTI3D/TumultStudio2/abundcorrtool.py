@@ -229,20 +229,17 @@ class AbundCorrTool(AbundanceWizard):
     def push_results(self):
         self.on_results()
 
-    # --- session persistence (whole computed results, saved into the session slot) ------
-    def snapshot(self):
-        """Serialise the computed corrections + selection for the session slot. Each result
-        carries its own synthetic 1D LTE reference (``ref_spec``), so it is self-contained."""
-        return {"results": [r.to_dict() for r in self.results],
-                "selected": self.selected_uid}
-
-    def restore(self, data):
-        """Rebuild the corrections (and left-sidebar list) from a saved snapshot."""
-        data = data or {}
-        self.results = [ab.AbundanceResult.from_dict(d) for d in (data.get("results") or [])]
-        uids = {r.uid for r in self.results}
-        self.selected_uid = data.get("selected") if data.get("selected") in uids else None
-        self.push_results()
+    # --- session persistence ------------------------------------------------------------
+    # the envelope and the factory are AbundanceWizard's. A correction carries its own
+    # reference spectrum (``ref_spec``) and names its atom by path; a result whose atom is
+    # not restored stays listed in the trailing Corrections section (see results_for).
+    def relink(self, results, spectrum_uids, maskset_uids, atom_paths):
+        notes = super().relink(results, spectrum_uids, maskset_uids, atom_paths)
+        for res in results:
+            if res.atom_path and res.atom_path not in atom_paths:
+                notes.append(f"correction {res.name or res.uid}: model atom "
+                             f"{res.atom_path} is not loaded; listed under Corrections")
+        return notes
 
     # --- state persistence -------------------------------------------------------------
     def _on_field(self, key, value):

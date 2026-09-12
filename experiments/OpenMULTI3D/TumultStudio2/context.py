@@ -25,6 +25,8 @@ hand-threaded through ``update_all``. The context replaces that plumbing:
 * ``ctx.generation`` - the workspace generation; work captures it when admitted and a
   delivery for another generation is dropped. ``advance_generation`` marks a workspace
   boundary (a session load).
+* ``ctx.restore_workspace`` - load a saved workspace slot as one document operation
+  (installed by main; see ``session.py`` for the schema and the load policy).
 * ``ctx.busy``    - raise/lower the footer progress bar without deferring anything, for
   work that already owns a tick of its own (``run_busy`` is this plus the deferral).
 * ``ctx.emit`` / ``ctx.subscribe`` - a minimal synchronous event bus. Events in use:
@@ -61,6 +63,7 @@ class AppContext:
         self.busy = lambda on: None
         self.submit = None
         self.submit_workflow = None  # (name, request, on_done) -> WorkflowHandle; by main
+        self.restore_workspace = None  # (snapshot, name) -> session.LoadReport; by main
         self.execution = None       # shared dispatch service; bound by main
         self._subscribers = {}
 

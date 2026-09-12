@@ -221,20 +221,22 @@ class MaskStore:
 
     # --- session persistence ------------------------------------------------------------
     def snapshot(self) -> dict:
+        """The ``masks`` section of a workspace slot: every set (baseline included, so the
+        clean/modified state survives), the current set and the active mask index."""
         return {"sets": [s.to_dict() for s in self.sets],
                 "current": self.current_uid, "active": self.active}
 
-    def restore(self, data):
-        data = data or {}
-        # accept the old single-set snapshot ({"mset": …}) as well as the multi-set one
-        raw = data.get("sets") or ([data["mset"]] if data.get("mset") else [])
-        self.sets = [LineMaskSet.from_dict(d) for d in raw] or [LineMaskSet()]
+    def restore(self, sets, current=None, active=None):
+        """Replace every set with the prepared ``sets`` (``LineMaskSet`` objects carrying
+        their saved uids; see ``session.prepare``). An empty list leaves one fresh scratch
+        set, as a new document has. ``current`` must be a uid of ``sets`` or ``None`` (the
+        last set); ``active`` an index into the current set's masks or ``None``."""
+        self.sets = list(sets) or [LineMaskSet()]
         for s in self.sets:
             if not s.uid:
                 s.uid = next(self._uids)
         self._uids = itertools.count(max(s.uid for s in self.sets) + 1)
-        cur = data.get("current")
-        self.current_uid = cur if self.find(cur) else self.sets[-1].uid
-        act = data.get("active")
-        self.active = act if (act is not None and 0 <= act < len(self.masks)) else None
+        self.current_uid = current if self.find(current) is not None else self.sets[-1].uid
+        self.active = (active if active is not None and 0 <= active < len(self.masks)
+                       else None)
         self._changed()

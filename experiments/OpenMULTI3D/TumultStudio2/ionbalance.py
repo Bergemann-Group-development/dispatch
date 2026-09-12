@@ -436,16 +436,21 @@ class IonBalanceTool(AbundanceWizard):
             self.open_refit(arg or None)
 
     # --- session persistence ----------------------------------------------------------------
-    def snapshot(self):
-        return {"results": [r.to_dict() for r in self.results],
-                "selected": self.selected_uid}
+    # --- session persistence ------------------------------------------------------------
+    result_from_dict = staticmethod(ms.BalanceResult.from_dict)
 
-    def restore(self, data):
-        data = data or {}
-        self.results = [ms.BalanceResult.from_dict(d) for d in (data.get("results") or [])]
-        uids = {r.uid for r in self.results}
-        self.selected_uid = data.get("selected") if data.get("selected") in uids else None
-        self.push_results()
+    def relink(self, results, spectrum_uids, maskset_uids, atom_paths):
+        """Besides the reference observation, a balance names the mask set it was measured
+        from (as a string uid); the link is cleared when that set is not restored, so the
+        panel stops offering a refit against windows that are not there."""
+        notes = super().relink(results, spectrum_uids, maskset_uids, atom_paths)
+        known = {str(uid) for uid in maskset_uids}
+        for res in results:
+            if res.maskset_uid and res.maskset_uid not in known:
+                notes.append(f"balance {res.name or res.uid}: line mask "
+                             f"{res.maskset_name or res.maskset_uid} is not loaded")
+                res.maskset_uid = ""
+        return notes
 
     # --- shared-machinery hooks --------------------------------------------------------------
     def _toggle_line(self, token):
@@ -513,14 +518,8 @@ class IonBalanceTool(AbundanceWizard):
         self._render_decor()
 
     def _spec_of(self, res):
-        """Resolve stable identity; migrate only unambiguous legacy name references."""
-        if res.ref_uid is not None:
-            return self.get_observation(res.ref_uid)
-        matches = [uid for uid, name in self.list_observations() if name == res.ref_name]
-        if len(matches) == 1:
-            res.ref_uid = matches[0]
-            return self.get_observation(res.ref_uid)
-        return None
+        """The reference observation, by identity alone (``None`` once it is gone)."""
+        return self.get_observation(res.ref_uid) if res.ref_uid is not None else None
 
     def _source_set(self, res):
         """The live mask set this measurement came from, or None once it is gone.

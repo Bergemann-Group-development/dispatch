@@ -1,4 +1,6 @@
 """Background computations must not apply stale UI state or wait on HOP locks."""
+import html
+from pathlib import Path
 from types import SimpleNamespace
 from concurrent.futures import ThreadPoolExecutor
 
@@ -288,23 +290,6 @@ def test_result_jobs_isolate_errors_cancel_and_closed_documents():
     ctx.closed = True
     done(outcome)
     assert not completed
-
-
-def test_restored_abundance_uses_identity_with_duplicate_names():
-    from abundancetool import AbundanceTool
-    from tumult.abundance import AbundanceResult
-    tool = AbundanceTool.__new__(AbundanceTool)
-    tool.list_observations = lambda: [('one', 'same'), ('two', 'same')]
-    tool.push_results = lambda: None
-    result = AbundanceResult(element='Fe', symbol='Fe', summary={}, ref_uid='two',
-                             ref_name='same', uid='result')
-    tool.restore({'results': [result.to_dict()]})
-    assert tool.results[0].ref_uid == 'two'
-    legacy = result.to_dict()
-    legacy.pop('schema_version')
-    legacy['ref_uid'] = 'old'
-    tool.restore({'results': [legacy]})
-    assert tool.results[0].ref_uid is None  # ambiguous names do not invent an association
 
 
 def _build_document():
@@ -961,3 +946,342 @@ def test_broken_config_is_reported_and_never_replaced_from_the_gui(tmp_path, mon
         assert "version 7 is not supported" in footer and str(path) in footer, action
     assert '"version": 7' in path.read_text()
     assert [o.name for o in ctx.canvas.objects] == ["obs"]
+
+
+# --- save slots: the whole object workspace, restored transactionally -----------------
+ATOM_FIXTURE = Path(__file__).resolve().parents[1] / "input" / "atoms" / "atom.ba06"
+
+
+def _spectrum_file(tmp_path, name="obs.txt", n=400):
+    path = tmp_path / name
+    path.write_text("".join(f"{5000 + 0.01 * i:.3f} {1.0 - 0.3 * (i % 50 == 25):.3f}\n"
+                            for i in range(n)))
+    return path
+
+
+def _mask_file(tmp_path, name="fe-lines.txt"):
+    path = tmp_path / name
+    path.write_text("; element: Fe\n5001.0 5000.5 5001.5 Fe I\n5002.0 5001.8 5002.2 Fe II\n")
+    return path
+
+
+def _diag_line(lo=5000.5, hi=5001.5):
+    from tumult.abundance import LineResult
+    from tumult.linemask import LineMask
+    mask = LineMask(lam0=0.5 * (lo + hi))
+    mask.set_fit(lo, hi, 0.5)
+    return LineResult(lam0=0.5 * (lo + hi), ion="Fe I", e_low=1.0, loggf=-1.0, ew=50.0,
+                      mask=mask)
+
+
+def _populate(ctx, tmp_path):
+    """Fill a document with one object of every kind, edited: a file spectrum, a synth
+    spectrum (knots, convolution, hidden), an imported mask set edited away from its
+    file, a model atom, and one result per tool; the correction result is focused on its
+    Lines step with its first line jumped to. Returns the identities to check later."""
+    from tumult.abundance import AbundanceResult
+    from tumult.atom import AtomClass
+    from tumult.measurement import BalanceResult
+    from tumult.spectrum_io import load_file
+
+    canvas, tools = ctx.canvas, ctx.tools
+    obs_path = _spectrum_file(tmp_path)
+    obs = canvas.add_object(load_file(obs_path), name="obs", source=("file", str(obs_path)))
+    canvas.set_style(obs, color="#ff8800", width=2.0)
+    x = np.linspace(5000., 5004., 401)
+    synth = canvas.add_object(Spectrum(x, 2.0 * np.ones_like(x)), name="model",
+                              source=("synth", None), meta={"teff": 5400})
+    synth.norm_knots = (np.array([5000.0, 5004.0]), np.array([2.0, 2.0]))
+    canvas.normalise_object(synth)
+    synth.conv = {"vshift": 1.5}
+    canvas._refresh_object(synth)
+    canvas.toggle_object(synth.uid)                  # hidden
+
+    mset = ctx.masks.load_file(_mask_file(tmp_path))
+    ctx.masks.set_fit(0, 5000.4, 5001.6)             # edited: the set reads as modified
+    assert mset.dirty
+    atomtool = tools._tools["atom"]
+    atom = atomtool.add(str(ATOM_FIXTURE), AtomClass(str(ATOM_FIXTURE)), select=False)
+
+    abund, corr, ionbal = (tools._tools[k] for k in ("abundance", "abundcorr", "ionbal"))
+    res_a = AbundanceResult(element="Fe", symbol="Fe", summary={}, uid="res-a", name="Fe A",
+                            ref_uid=obs.uid, ref_name="obs", lines=[_diag_line()])
+    res_b = BalanceResult(element="Fe", uid="res-b", name="Fe balance", ref_uid=obs.uid,
+                          ref_name="obs", maskset_uid=str(mset.uid), maskset_name=mset.name,
+                          lines=[_diag_line()])
+    res_c = AbundanceResult(element="Ba", symbol="Ba", summary={}, uid="res-c", name="Ba corr",
+                            atom_path=str(ATOM_FIXTURE), lines=[_diag_line(), _diag_line(5002., 5003.)])
+    abund.results.append(res_a)
+    abund.selected_uid = res_a.uid
+    ionbal.results.append(res_b)
+    corr.results.append(res_c)
+    corr.select_result(res_c.uid)
+    corr.set_step(1)
+    corr._jump_line("1")
+    canvas.main.x_range.start, canvas.main.x_range.end = 5001.0, 5002.5
+    return SimpleNamespace(obs=obs.uid, synth=synth.uid, mset=mset.uid, atom=atom.uid,
+                           obs_path=str(obs_path))
+
+
+def _saved_slot(tmp_path, monkeypatch, populate=_populate):
+    """Save a populated document into a fresh config; return the ids and the slot."""
+    import store
+    monkeypatch.setattr(store, "CONFIG_PATH", tmp_path / "cfg.json")
+    document, ctx = _build_document()
+    ids = populate(ctx, tmp_path)
+    _session_action(document, "save mixed 1")
+    assert "Saved “mixed”" in _footer(document)
+    return ids, store.get_session(1)
+
+
+def _state(ctx):
+    """What a restored document must reproduce, keyed for comparison."""
+    canvas, tools = ctx.canvas, ctx.tools
+    abund, corr, ionbal = (tools._tools[k] for k in ("abundance", "abundcorr", "ionbal"))
+    return {
+        "objects": [(o.uid, o.name, o.visible, o.line.glyph.line_color, o.line.glyph.line_width,
+                     o.conv, o.already_normalised,
+                     None if o.norm_knots is None else np.round(o.norm_knots[0], 6).tolist())
+                    for o in canvas.objects],
+        "selected": canvas.selected_uid,
+        "masks": [(s.uid, s.name, s.element, s.dirty, [(m.lmin, m.lmax) for m in s.masks])
+                  for s in ctx.masks.listed],
+        "mask_current": (ctx.masks.current_uid, ctx.masks.active),
+        "atoms": [(a.uid, a.path) for a in tools._tools["atom"].atoms],
+        "results": {name: ([(r.uid, r.ref_uid) for r in w.results], w.selected_uid, w.step)
+                    for name, w in (("abundance", abund), ("abundcorr", corr),
+                                    ("ionbal", ionbal))},
+        "balance_mask": [r.maskset_uid for r in ionbal.results],
+        "focus": (ctx.focus_kind, tools.active_name()),
+        "jumped": corr._jumped,
+        "main_x": (round(canvas.main.x_range.start, 3), round(canvas.main.x_range.end, 3)),
+        "units": (canvas.xlabel, canvas.ylabel),
+    }
+
+
+@pytest.mark.skipif(not ATOM_FIXTURE.is_file(), reason="input/atoms/atom.ba06 is absent")
+def test_mixed_workspace_round_trips_into_a_fresh_document(tmp_path, monkeypatch):
+    """Every collection, its edits, the selections, the focused view and the explicit
+    range come back in a fresh document; identities are the saved ones."""
+    ids, slot = _saved_slot(tmp_path, monkeypatch)
+    assert slot["schema_version"] == 2 and slot["focus"] == {"kind": "corr", "uid": "res-c"}
+    assert slot["tools"]["jumped"]["abundcorr"] == 1
+
+    document, ctx = _build_document()
+    expected_ids = ids
+    before = ctx.generation
+    _session_action(document, "load 1 2")
+    footer = _footer(document)
+    assert "Loaded “mixed”: 2 spectra, 1 line mask, 1 atom, 3 results" in footer
+    assert "skipped" not in footer and ctx.generation is not before
+    state = _state(ctx)
+    assert [o[0] for o in state["objects"]] == [expected_ids.obs, expected_ids.synth]
+    assert state["objects"][0][2:5] == (True, "#ff8800", 2.0)
+    assert state["objects"][1][2] is False and state["objects"][1][5] == {"vshift": 1.5}
+    assert state["objects"][1][7] == [5000.0, 5004.0]
+    assert state["masks"] == [(expected_ids.mset, "fe-lines", "Fe", True,
+                               [(5000.4, 5001.6), (5001.8, 5002.2)])]
+    assert state["mask_current"] == (expected_ids.mset, 0)
+    assert state["atoms"] == [(expected_ids.atom, str(ATOM_FIXTURE))]
+    assert state["results"] == {"abundance": ([("res-a", expected_ids.obs)], "res-a", 1),
+                                "abundcorr": ([("res-c", None)], "res-c", 1),
+                                "ionbal": ([("res-b", expected_ids.obs)], None, 1)}
+    assert state["balance_mask"] == [str(expected_ids.mset)]
+    assert state["focus"] == ("corr", "abundcorr") and state["jumped"] == 1
+    assert state["main_x"] == (5001.0, 5002.5)
+    # the correction is listed under its atom, and the reference spectrum relinked
+    atom_objects = ctx.tools._tools["atom"].objects_html()
+    assert 'data-atom-results="1"' in atom_objects and "Corrections" not in atom_objects
+    assert ctx.tools._tools["ionbal"]._source_set(ctx.tools._tools["ionbal"].results[0]) \
+        is ctx.masks.mset
+
+
+@pytest.mark.skipif(not ATOM_FIXTURE.is_file(), reason="input/atoms/atom.ba06 is absent")
+def test_loading_replaces_an_unrelated_workspace_and_an_empty_slot_clears_it(tmp_path,
+                                                                             monkeypatch):
+    import store
+    ids, slot = _saved_slot(tmp_path, monkeypatch)
+    document, ctx = _build_document()
+    x = np.arange(5000., 5010., .01)
+    ctx.canvas.add_object(Spectrum(x, np.ones_like(x)), name="other",
+                          source=("file", "/nowhere/other.fits"))
+    ctx.masks.add_set("scratch", "Ni")
+    ctx.masks.add(5003., 5004.)
+    tools = ctx.tools
+    tools._tools["abundance"].results.append(
+        __import__("tumult.abundance", fromlist=["AbundanceResult"]).AbundanceResult(
+            element="Ni", symbol="Ni", summary={}, uid="other-res", name="Ni"))
+    tools.toggle("linemask")
+    _session_action(document, "save other 2")
+    assert tools.active_name() == "linemask" and ctx.focus_kind == "linemask"
+
+    _session_action(document, "load 1 3")
+    state = _state(ctx)
+    assert [o[1] for o in state["objects"]] == ["obs", "model"]
+    assert [m[1] for m in state["masks"]] == ["fe-lines"]
+    assert state["results"]["abundance"][0] == [("res-a", ids.obs)]
+    assert state["focus"] == ("corr", "abundcorr")
+
+    # the empty slot: every collection replaced by nothing, the plain canvas back
+    store.save_session("empty", {"schema_version": 2})
+    _session_action(document, "load 3 4")
+    assert "Loaded “empty”: 0 spectra, 0 line masks, 0 atoms, 0 results" in _footer(document)
+    state = _state(ctx)
+    assert state["objects"] == [] and state["masks"] == [] and state["atoms"] == []
+    assert all(r[0] == [] and r[1] is None for r in state["results"].values())
+    assert state["focus"] == ("spectrum", None) and state["selected"] is None
+    # and the other way round: loading the "other" slot into the emptied document
+    _session_action(document, "load 2 5")
+    assert "skipped spectrum other (/nowhere/other.fits)" in _footer(document)
+    state = _state(ctx)
+    assert state["objects"] == [] and [m[1:3] for m in state["masks"]] == [("scratch", "Ni")]
+    assert state["results"]["abundance"][0] == [("other-res", None)]
+    assert state["focus"] == ("linemask", "linemask")
+
+
+@pytest.mark.skipif(not ATOM_FIXTURE.is_file(), reason="input/atoms/atom.ba06 is absent")
+def test_missing_files_skip_their_objects_and_clear_what_pointed_at_them(tmp_path,
+                                                                         monkeypatch):
+    """The partial-load policy: a spectrum or atom file that is gone is skipped and named
+    with its path and reason; independent objects load; references and the focus that
+    named a skipped object are cleared, never redirected."""
+    import store
+
+    def populate(ctx, tmp_path):
+        ids = _populate(ctx, tmp_path)
+        ctx.tools._tools["range"]  # noqa: the focus goes to the file spectrum
+        ctx.canvas.select_object(ids.obs)
+        ctx.tools.deactivate_active()
+        ctx.tools._tools["abundcorr"].blur()
+        ctx.focus_kind = "spectrum"
+        return ids
+    ids, slot = _saved_slot(tmp_path, monkeypatch, populate)
+    assert slot["focus"] == {"kind": "spectrum", "uid": ids.obs}
+    Path(ids.obs_path).unlink()
+    slot["atoms"][0]["path"] = str(tmp_path / "no-such-atom")
+    store.save_session("broken links", slot)
+
+    document, ctx = _build_document()
+    _session_action(document, "load 2 2")
+    footer = html.unescape(_footer(document))
+    assert "1 spectrum, 1 line mask, 0 atoms, 3 results" in footer
+    assert f"skipped spectrum obs ({ids.obs_path}): FileNotFoundError" in footer
+    assert f"atom no-such-atom ({tmp_path / 'no-such-atom'}): FileNotFoundError" in footer
+    assert "3 references cleared" in footer
+    state = _state(ctx)
+    assert [o[1] for o in state["objects"]] == ["model"] and state["selected"] is None
+    assert state["focus"] == ("spectrum", None)
+    assert state["results"]["abundance"][0] == [("res-a", None)]
+    assert state["results"]["ionbal"][0] == [("res-b", None)]
+    assert state["balance_mask"] == [str(ids.mset)]           # the mask set did load
+    assert "Corrections" in ctx.tools._tools["atom"].objects_html()   # orphaned, still listed
+
+    # every spectrum missing: masks, atoms and results still load
+    slot["spectra"][1]["kind"], slot["spectra"][1]["path"] = "file", "/nowhere/model.txt"
+    slot["spectra"][1]["data"] = None
+    slot["atoms"][0]["path"] = str(ATOM_FIXTURE)
+    store.save_session("no spectra", slot)
+    _session_action(document, "load 3 3")
+    state = _state(ctx)
+    assert state["objects"] == [] and [m[1] for m in state["masks"]] == ["fe-lines"]
+    assert [a[1] for a in state["atoms"]] == [str(ATOM_FIXTURE)]
+    assert state["results"]["abundcorr"][0] == [("res-c", None)]
+    assert 'data-atom-results="1"' in ctx.tools._tools["atom"].objects_html()
+
+
+def test_broken_slots_are_refused_before_the_workspace_changes(tmp_path, monkeypatch):
+    import store
+
+    monkeypatch.setattr(store, "CONFIG_PATH", tmp_path / "cfg.json")
+    document, ctx = _build_document()
+    _with_spectrum(ctx)
+    ctx.masks.add_set("kept", "Fe")
+    before = _state(ctx)
+    generation = ctx.generation
+    store.save_session("old format", {"schema_version": 1, "objects": []})
+    store.save_session("bad knots", {"schema_version": 2, "spectra": [
+        {"uid": "s", "kind": "synth", "name": "m",
+         "data": Spectrum(np.linspace(1., 2., 5), np.ones(5)).to_dict(),
+         "norm_knots": {"x": [1.0, 2.0], "y": [1.0]}}]})
+    store.save_session("bad result", {"schema_version": 2, "results": {"ionbal": {
+        "results": [{"uid": "r", "schema_version": 1, "lines": ["not a line"]}]}}})
+    store.save_session("dangling focus", {"schema_version": 2,
+                                          "focus": {"kind": "result", "uid": "ghost"}})
+    for sid, cause in ((1, "version 1 is not supported"), (2, "norm_knots"),
+                       (3, "results.ionbal"), (4, "focus: result 'ghost'")):
+        _session_action(document, f"load {sid} {sid}")
+        footer = html.unescape(_footer(document))
+        assert "Could not load" in footer and cause in footer, sid
+        assert _state(ctx) == before and ctx.generation is generation
+    _session_action(document, "refresh 5")
+    assert "unsupported format (version 1)" in _session_list(document)
+
+
+def test_failed_application_restores_the_previous_workspace(tmp_path, monkeypatch):
+    """When applying a prepared workspace fails part-way, the previous one is put back
+    (its objects, masks, results and focus); the boundary itself (generation, cancelled
+    jobs) stands, since the old work's outcome had already been disowned."""
+    import store
+
+    monkeypatch.setattr(store, "CONFIG_PATH", tmp_path / "cfg.json")
+    document, ctx = _build_document()
+    ctx.canvas.add_object(Spectrum(np.linspace(5000., 5001., 50), np.ones(50)), name="one",
+                          source=("synth", None))
+    _session_action(document, "save lowpass 1")
+    slot = store.get_session(1)
+    slot["filter"] = {"active": True, "method": "lowpass", "res": 10000.0}
+    store.save_session("with filter", slot)
+
+    ctx.canvas.remove_object(ctx.canvas.objects[0].uid)
+    kept = ctx.canvas.add_object(Spectrum(np.linspace(5002., 5003., 50), np.ones(50)),
+                                 name="kept", source=("synth", None))
+    ctx.masks.add_set("kept masks", "Ni")
+    from tumult.abundance import AbundanceResult
+    abund = ctx.tools._tools["abundance"]
+    abund.results.append(AbundanceResult(element="Ni", symbol="Ni", summary={}, uid="kept-r",
+                                         name="Ni", ref_uid=kept.uid))
+    abund.select_result("kept-r")
+    before = _state(ctx)
+    filtertool = ctx.tools._tools["filter"]
+
+    def explode(res):
+        raise RuntimeError("no filter today")
+    monkeypatch.setattr(filtertool, "apply_saved_lowpass", explode)
+    generation = ctx.generation
+    _session_action(document, "load 2 2")
+    footer = _footer(document)
+    assert "Loading “with filter” failed: no filter today" in footer
+    assert "the previous workspace was restored" in footer
+    assert _state(ctx) == before and ctx.generation is not generation
+    assert [o.uid for o in ctx.canvas.objects] == [kept.uid]
+
+
+def test_a_worker_finishing_after_a_load_adds_nothing_to_the_new_workspace(tmp_path,
+                                                                            monkeypatch):
+    """Loading a slot is a workspace boundary: the document's pending jobs are cancelled,
+    a late result is dropped, and the row settles as cancelled."""
+    import threading
+    import store
+    from jobs import CANCELLED
+    from tumult.spectrum_io import load_file
+
+    monkeypatch.setattr(store, "CONFIG_PATH", tmp_path / "cfg.json")
+    document, ctx = _build_document()
+    path = _spectrum_file(tmp_path)
+    ctx.canvas.add_object(load_file(path), name="obs", source=("file", str(path)))
+    _session_action(document, "save one 1")
+    ticks = _Ticks(document, monkeypatch)
+    release, delivered = threading.Event(), []
+
+    def slow(token):
+        assert release.wait(10)
+        return Spectrum(np.linspace(5000., 5001., 20), np.ones(20))
+
+    ctx.submit("late-load", slow,
+               lambda spec: delivered.append(ctx.canvas.add_object(spec, name="late")))
+    job = ctx.jobs.active[0]
+    ctx.restore_workspace(store.get_session(1), "one")
+    assert job.token.cancelled
+    release.set()
+    assert ticks.settle(lambda: job.state == CANCELLED)
+    assert not delivered and [o.name for o in ctx.canvas.objects] == ["obs"]

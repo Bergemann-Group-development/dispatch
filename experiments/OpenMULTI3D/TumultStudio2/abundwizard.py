@@ -407,6 +407,42 @@ class AbundanceWizard(Tool):
     def has_results(self):
         return bool(self.results)
 
+    # --- session persistence: the envelope every result list shares ----------------------
+    # The result objects themselves are built by the subclass's factory and relinked by
+    # its ``relink``; only the list/selected-uid envelope and its validation live here.
+    result_from_dict = staticmethod(ab.AbundanceResult.from_dict)
+
+    def snapshot(self):
+        """``{"results": [...], "selected": uid}`` for the session slot."""
+        return {"results": [r.to_dict() for r in self.results], "selected": self.selected_uid}
+
+    def deserialise(self, results):
+        """The result objects of a saved envelope (no live state touched); a malformed
+        record raises."""
+        return [self.result_from_dict(d) for d in results]
+
+    def relink(self, results, spectrum_uids, maskset_uids, atom_paths):
+        """Clear the references of ``results`` that name objects a load does not restore;
+        returns one line per cleared reference. The base clears the reference observation
+        (``ref_uid``); subclasses add their own links."""
+        notes = []
+        for res in results:
+            if res.ref_uid is not None and res.ref_uid not in spectrum_uids:
+                notes.append(f"{self.name} result {res.name or res.uid}: reference spectrum "
+                             f"{res.ref_name or res.ref_uid} is not loaded")
+                res.ref_uid = None
+        return notes
+
+    def restore(self, results, selected):
+        """Replace the result list (and repaint the sidebar); ``selected`` must be one of
+        them or ``None``. Pending result jobs of the old list are forgotten."""
+        self.jobs.current.clear()
+        self.results = list(results)
+        uids = {r.uid for r in self.results}
+        self.selected_uid = selected if selected in uids else None
+        self._jumped = None
+        self.push_results()
+
     def select_result(self, uid):
         if self._find(uid) is None:
             return
