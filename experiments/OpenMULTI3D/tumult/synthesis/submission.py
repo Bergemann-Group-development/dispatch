@@ -60,6 +60,16 @@ class WorkflowHandle:
     def status(self):
         return self._record()['state']
 
+    @property
+    def label(self):
+        """The display name the submitter gave the workflow, else its id."""
+        return self._record().get('label') or self.id
+
+    @property
+    def meta(self):
+        """The submitter's display annotations (a JSON object), or ``None``."""
+        return deepcopy(self._record().get('meta'))
+
     def _native_runs(self, record):
         """State and progress of each native run this workflow has scheduled so far."""
         from . import jobrecord
@@ -177,8 +187,12 @@ class WorkflowHandle:
         return self._record()
 
 
-def submit(request, *, root=None):
-    """Copy, resolve and queue ``request``; return immediately with a durable handle."""
+def submit(request, *, root=None, label=None, meta=None):
+    """Copy, resolve and queue ``request``; return immediately with a durable handle.
+
+    ``label`` and ``meta`` are the submitter's display name and annotations (JSON), kept
+    in the record so a later process can list and present the workflow as it was
+    submitted."""
     from .workflows import execute_request, resolve_request
     resolved = request if isinstance(request, ResolvedSynthRequest) else resolve_request(request)
     # JSON round-trip proves that no mutable masks/settings remain shared with the caller.
@@ -189,7 +203,7 @@ def submit(request, *, root=None):
     folder = base / identity
     record = {'version': 1, 'id': identity, 'state': 'queued', 'phase': 'queued',
               'submitted': time.time(), 'request': resolved.to_dict(), 'runs': [],
-              'result': None}
+              'result': None, 'label': label, 'meta': deepcopy(meta)}
     _atomic(folder / RECORD, record)
     token = CancelToken()
 
@@ -265,8 +279,12 @@ def open_workflow(path, *, root=None):
 
 
 def discover_workflows(root, limit=None):
-    """Newest workflow handles, including recoverable completed results."""
-    folders = [path.parent for path in Path(root).expanduser().resolve().rglob(RECORD)]
+    """Newest workflow handles under ``<root>/_workflows``, whatever their state: live
+    ones (this process still holds their handle), finished results, and records left
+    queued or running by a process that no longer exists, which report ``interrupted``.
+    Only that folder is scanned, never the run cache beside it."""
+    base = Path(root).expanduser().resolve() / '_workflows'
+    folders = [path.parent for path in base.glob(f'*/{RECORD}')]
     folders.sort(key=lambda path: (_read(path) or {}).get('submitted', 0), reverse=True)
     handles = [open_workflow(path) for path in folders]
     return handles[:limit] if limit else handles

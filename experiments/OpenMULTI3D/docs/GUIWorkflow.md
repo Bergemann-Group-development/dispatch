@@ -39,6 +39,36 @@ but adds nothing to the workspace. Closing the tab cancels the document's jobs e
 detached ones (durable workflows, long departure solves), which keep running and write
 their result to disk; an explicit cancel from the panel still ends a detached job.
 
+### Recovering durable workflows after a reconnect
+
+A durable workflow (a mask-set or 3D-snapshot synthesis submitted through
+`tumult.synthesis.submit`) writes `workflow.json` under
+`<dispatch_cwd>/<synth_output_dir>/_workflows/<id>/` with the name and Info-tab
+annotations it was submitted with, and its result under `result/`. The document that
+submitted it keeps a reference beside the workspace (`ctx.workflow_refs`: id, folder,
+name, whether the result has reached the workspace), and every save slot stores those
+references next to its snapshot. Recovery is scoped to that configured root; nothing
+else is scanned.
+
+- A new document lists, at build, the workflows the server is still running (they are
+  live in this process). The panel header's Recover button (`workflow-discover`) lists
+  the newest records of every state, minus the ones this document follows or has
+  imported. Each row names the record's true state: a *running* or *queued* one offers
+  *attach*, a *finished* one *import*, an *interrupted* one (left queued or running by a
+  server that no longer exists) only its logs, a failed one its error; any row can be
+  forgotten from the panel without touching the disk.
+- *Attach* creates a job under the current workspace generation whose row cancels the
+  workflow through its handle and whose completion is delivered once, as the original
+  submission would have. *Import* loads a finished result off the document thread and
+  adds its spectra once; a workflow already imported into this document is refused.
+- Loading a slot replaces the references: a referenced workflow still running is followed
+  again (the row already following it in the same document is re-subscribed under the new
+  generation rather than duplicated), a finished one whose result the slot does not hold
+  is offered for import, an interrupted, failed or cancelled one is shown as such, and one
+  whose record folder is gone is reported as skipped. The footer names each outcome.
+- Recovery never resumes a native calculation and never signals a process id read from an
+  old record: an interrupted record cannot be attached or cancelled, only read.
+
 Server shutdown (`app_hooks.on_server_unloaded` → `tumult.synthesis.runtime.shutdown`)
 stops admission, cancels queued and live workflows, kills the dispatch children of leaf
 jobs and waits at most `runtime.SHUTDOWN_TIMEOUT_S` (10 s) for the pool workers. Work
@@ -94,8 +124,10 @@ slot state, so an older slot does not recover the form values it was made with. 
 tool's range gesture, the EW panel and the filter/normalise panels are transient and reset
 on load. Slots are path-backed workspace saves, not portable archives: external spectra
 and atoms are re-read from their paths without a content check. There is no slot export,
-import, rename or overwrite, and no resumable scientific calculation in a slot; running
-jobs are not saved.
+import, rename or overwrite, and no resumable scientific calculation in a slot. Running
+jobs are not saved, except that the slot references the durable workflows the document
+was attached to (see "Recovering durable workflows after a reconnect"); the config file
+is version 2 for that field.
 
 ## Toolbar
 

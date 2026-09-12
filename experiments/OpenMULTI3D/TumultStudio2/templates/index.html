@@ -52,9 +52,15 @@
       <!-- background work this document admitted (loads, synthesis, line strengths):
            queued and running rows cancel their job, a cancelling row waits for its
            worker, a failed row keeps its error until dismissed (see app.processes_html).
-           Hidden while the list is empty. -->
+           Recover lists the durable workflow records under the configured synthesis
+           root (running ones to attach, finished ones to import, interrupted ones as
+           such) for a document that reconnected after its tab or server went away. -->
       <div class="processes-panel">
-        <div class="section-header">Processes</div>
+        <div class="section-header processes-header">Processes
+          <button class="object-btn" data-action="workflow-discover" data-uid="-"
+                  title="Recover: list the workflow records under the synthesis output root">
+            <i class="ti ti-refresh"></i></button>
+        </div>
         <div id="processes">{{ processes_html|safe }}</div>
       </div>
     </aside>

@@ -289,16 +289,18 @@ result under `.../result/`. `progress` labels its counts `estimated`; a full bar
 convergence. A record left `queued` or `running` by a process that no longer exists reports
 `interrupted`; nothing resumes automatically, and a saved PID is never signalled.
 
-**In the GUI**, a synthesis launched from a mask set and a departure solve are submitted
-this way and keep running when the browser tab closes. The Processes panel shows the
-session's own jobs with a spinner and a cancel button.
+**In the GUI**, a synthesis launched from a mask set or a 3D snapshot is submitted this
+way and keeps running when the browser tab closes. The Processes panel shows the
+session's own jobs with their phase, elapsed time, run count and log names, and a
+reconnecting document can attach to a workflow the server still runs, import a finished
+result once, and see interrupted records as such (see `docs/GUIWorkflow.md`, "Recovering
+durable workflows after a reconnect").
 
 Missing pieces:
 
-- The Processes panel does not scan `_workflows` on connection, so a job started in a
-  closed session is not listed when the browser reconnects, and its finished result is not
-  delivered to the new document. Use `open_workflow` from Python in the meantime.
-- Phase, elapsed time, iteration diagnostics and log access are not shown in the GUI.
+- Free-range 1D synthesis and fits are not durable workflows yet; they are cancelled when
+  the tab closes.
+- Iteration diagnostics (`progress`) are not shown in the GUI, only in Python.
 - Slurm submission through `tumult.launch(slurm_script=...)` exists for single runs but is not
   connected to workflow records.
 

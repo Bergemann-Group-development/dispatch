@@ -492,12 +492,19 @@ body.resizing * { pointer-events: none !important; }
   border-radius: 2px; animation: indeterminate 1.1s ease-in-out infinite; }
 @keyframes indeterminate { 0% { margin-left: -40%; } 100% { margin-left: 100%; } }
 
-/* Processes panel: background work still running, pinned to the bottom of the left
-   sidebar and shown only while there is something in it (see main.processes_html) */
-.processes-panel { display: none; margin-top: auto; padding-top: 8px;
-  border-top: 1px solid var(--border); }
-.processes-panel.show { display: block; }
+/* Processes panel: background work and recoverable workflow records, pinned to the
+   bottom of the left sidebar; its header carries the Recover button (see
+   app.processes_html) */
+.processes-panel { margin-top: auto; padding-top: 8px; border-top: 1px solid var(--border); }
 .processes-panel .section-header { margin-bottom: 4px; }
+.processes-header { display: flex; align-items: center; justify-content: space-between; }
+.processes-header .object-btn { cursor: pointer; }
+/* a record found on disk after a reconnect: attach (live), import (finished) or forget */
+.object-item.process.recoverable { opacity: 1; }
+.object-item.process.recoverable > .ti { color: var(--text-muted); flex-shrink: 0; }
+.object-item.process.recoverable[data-state="interrupted"] > .ti,
+.object-item.process.recoverable[data-state="failed"] > .ti { color: #e05c5c; }
+.object-item.process.recoverable[data-state="finished"] > .ti { color: var(--accent); }
 .object-item.process { opacity: 0.8; cursor: default; }
 .object-item.process:hover { border-color: transparent; }
 .object-item.process .object-name { font-size: 11px; color: var(--text-muted); }

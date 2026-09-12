@@ -22,6 +22,10 @@ hand-threaded through ``update_all``. The context replaces that plumbing:
   to this document when it settles.
 * ``ctx.jobs``    - the :class:`jobs.JobTable`: every background operation this document
   admitted, with its queued/running/cancelling/terminal state (the Processes panel).
+* ``ctx.workflow_refs`` - the :class:`jobs.WorkflowRefs` this document is attached to,
+  saved beside the workspace in a slot; ``ctx.recovery`` the :class:`jobs.Recovery`
+  records offered after a reconnect. ``ctx.discover_workflows``, ``ctx.attach_workflow``
+  and ``ctx.import_workflow`` (installed by main) are the recovery actions.
 * ``ctx.generation`` - the workspace generation; work captures it when admitted and a
   delivery for another generation is dropped. ``advance_generation`` marks a workspace
   boundary (a session load).
@@ -44,7 +48,7 @@ from __future__ import annotations
 
 import logging
 
-from jobs import JobTable
+from jobs import JobTable, Recovery, WorkflowRefs
 
 
 class AppContext:
@@ -57,13 +61,18 @@ class AppContext:
         self.annot = None      # LineAnnotations, installed by main once the canvas exists
         self.strengths = None  # LineStrengths, installed by main alongside it
         self.jobs = JobTable()
+        self.workflow_refs = WorkflowRefs()
+        self.recovery = Recovery()
         self.generation = object()
         self.notify = lambda *a, **k: None
         self.run_busy = lambda fn: fn()
         self.busy = lambda on: None
         self.submit = None
         self.submit_workflow = None  # (name, request, on_done) -> WorkflowHandle; by main
-        self.restore_workspace = None  # (snapshot, name) -> session.LoadReport; by main
+        self.restore_workspace = None  # (snapshot, name, workflows) -> LoadReport; by main
+        self.discover_workflows = None  # () -> offered ids; by main
+        self.attach_workflow = None     # (id) -> Job | None; by main
+        self.import_workflow = None     # (id) -> future | None; by main
         self.execution = None       # shared dispatch service; bound by main
         self._subscribers = {}
 

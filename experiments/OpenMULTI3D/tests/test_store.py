@@ -42,15 +42,15 @@ def test_missing_config_starts_empty_and_first_write_creates_a_versioned_file(co
     ("[]", "not a JSON object"),
     ('{"preferences": {}, "recent_files": [], "sessions": []}', "version None"),
     ('{"version": 99, "preferences": {}, "recent_files": [], "sessions": []}', "version 99"),
-    ('{"version": 1, "preferences": [], "recent_files": [], "sessions": []}',
+    ('{"version": 2, "preferences": [], "recent_files": [], "sessions": []}',
      "'preferences'"),
-    ('{"version": 1, "preferences": {}, "recent_files": [3], "sessions": []}',
+    ('{"version": 2, "preferences": {}, "recent_files": [3], "sessions": []}',
      "'recent_files'"),
-    ('{"version": 1, "preferences": {}, "recent_files": [], "sessions": [{"id": "1"}]}',
+    ('{"version": 2, "preferences": {}, "recent_files": [], "sessions": [{"id": "1"}]}',
      "malformed slot"),
-    ('{"version": 1, "preferences": {}, "recent_files": [], "sessions": ['
-     '{"id": 1, "name": "a", "saved_at": 1, "snapshot": {}},'
-     '{"id": 1, "name": "b", "saved_at": 2, "snapshot": {}}]}', "occurs twice"),
+    ('{"version": 2, "preferences": {}, "recent_files": [], "sessions": ['
+     '{"id": 1, "name": "a", "saved_at": 1, "snapshot": {}, "workflows": []},'
+     '{"id": 1, "name": "b", "saved_at": 2, "snapshot": {}, "workflows": []}]}', "occurs twice"),
 ])
 def test_broken_config_is_rejected_by_readers_and_writers_alike(config, text, cause):
     """Only an absent file means defaults; anything else names the path and the cause,
@@ -208,3 +208,27 @@ def test_lock_held_elsewhere_times_out_with_a_clear_error(config, monkeypatch):
     assert not config.exists()
     store.set_pref("k", 1)  # released: the next transaction goes through
     assert store.get_pref("k") == 1
+
+
+def test_slots_carry_workflow_references_beside_the_snapshot(config):
+    """A slot's workflow references are saved and read back as given, outside the
+    snapshot; a malformed reference makes the whole config unreadable."""
+    ref = store.workflow_reference("20260901T000000-abc", "/runs/_workflows/x", "t5750")
+    assert ref == {"id": "20260901T000000-abc", "folder": "/runs/_workflows/x",
+                   "name": "t5750", "imported": False}
+    store.save_session("s", {"schema_version": 2}, [ref])
+    store.save_session("plain", {"schema_version": 2})
+    slot = store.get_slot(1)
+    assert slot["workflows"] == [ref] and slot["snapshot"] == {"schema_version": 2}
+    assert store.get_slot(2)["workflows"] == [] and store.get_slot(3) is None
+    assert store.get_session(1) == {"schema_version": 2}
+
+    data = _read(config)
+    data["sessions"][0]["workflows"] = [{"id": 1, "folder": "f", "name": "n", "imported": 0}]
+    config.write_text(json.dumps(data))
+    with pytest.raises(store.ConfigError, match="malformed workflow reference"):
+        store.list_sessions()
+    del data["sessions"][0]["workflows"]
+    config.write_text(json.dumps(data))
+    with pytest.raises(store.ConfigError, match="malformed slot"):
+        store.list_sessions()

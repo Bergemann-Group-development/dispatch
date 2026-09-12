@@ -14,8 +14,12 @@ complete old or new file.
 Config contract: a missing file means empty defaults. An unreadable, malformed or
 structurally invalid file, or one with an unsupported ``version``, raises `ConfigError`
 naming the path and the cause; nothing starts from defaults in that case. Slots are
-``{"id", "name", "saved_at", "snapshot"}`` inside the file; the snapshot content is
-the workspace schema's business (`session.py`) and is not validated here.
+``{"id", "name", "saved_at", "snapshot", "workflows"}`` inside the file; the snapshot
+content is the workspace schema's business (`session.py`) and is not validated here.
+``workflows`` lists the durable synthesis workflows the saved document was attached to,
+beside the workspace rather than inside it: ``{"id", "folder", "name", "imported"}``
+each, where ``imported`` records that the workflow's result already reached the
+workspace, so a load offers it for import only once.
 """
 from __future__ import annotations
 
@@ -28,11 +32,12 @@ import time
 from pathlib import Path
 
 CONFIG_PATH = Path(os.environ.get("TUMULT_CONFIG", Path.cwd() / ".tumultstudio.json"))
-CONFIG_VERSION = 1
+CONFIG_VERSION = 2
 RECENT_MAX = 15
 LOCK_TIMEOUT_S = 10.0
 _SECTIONS = {"preferences": dict, "recent_files": list, "sessions": list}
-_SLOT_FIELDS = {"id": int, "name": str, "saved_at": (int, float)}
+_SLOT_FIELDS = {"id": int, "name": str, "saved_at": (int, float), "workflows": list}
+_WORKFLOW_FIELDS = {"id": str, "folder": str, "name": str, "imported": bool}
 _thread_lock = threading.Lock()
 
 
@@ -72,6 +77,13 @@ def _validate(data, path) -> dict:
         if slot["id"] in ids:
             raise ConfigError(path, f"Config slot id {slot['id']} occurs twice")
         ids.add(slot["id"])
+        for ref in slot["workflows"]:
+            if not isinstance(ref, dict) or any(
+                    not isinstance(ref.get(field), kind)
+                    or (kind is not bool and isinstance(ref.get(field), bool))
+                    for field, kind in _WORKFLOW_FIELDS.items()):
+                raise ConfigError(path, f"Config slot {slot['id']} holds a malformed "
+                                        f"workflow reference")
     return data
 
 
@@ -203,23 +215,36 @@ def list_sessions() -> list[dict]:
     return sorted(_load()["sessions"], key=lambda s: s["saved_at"], reverse=True)
 
 
-def save_session(name, snapshot) -> dict:
+def workflow_reference(id, folder, name, imported=False) -> dict:
+    """One slot entry naming a durable workflow the document is attached to."""
+    return {"id": str(id), "folder": str(folder), "name": str(name), "imported": bool(imported)}
+
+
+def save_session(name, snapshot, workflows=()) -> dict:
     """Add a new save slot and return it once the config has been replaced on disk.
-    Names need not be unique; the id is allocated inside the transaction."""
+    Names need not be unique; the id is allocated inside the transaction. ``workflows``
+    are `workflow_reference` entries saved beside the snapshot."""
     with transaction() as data:
         slots = data["sessions"]
         sid = max((s["id"] for s in slots), default=0) + 1
-        slot = {"id": sid, "name": str(name), "saved_at": time.time(), "snapshot": snapshot}
+        slot = {"id": sid, "name": str(name), "saved_at": time.time(), "snapshot": snapshot,
+                "workflows": [dict(ref) for ref in workflows]}
         slots.append(slot)
     return slot
 
 
-def get_session(sid) -> dict | None:
-    """The snapshot for slot ``sid`` (or ``None`` if it's gone)."""
+def get_slot(sid) -> dict | None:
+    """The whole slot ``sid`` (name, snapshot and workflow references), or ``None``."""
     for s in _load()["sessions"]:
         if s["id"] == sid:
-            return s["snapshot"]
+            return s
     return None
+
+
+def get_session(sid) -> dict | None:
+    """The snapshot for slot ``sid`` (or ``None`` if it's gone)."""
+    slot = get_slot(sid)
+    return None if slot is None else slot["snapshot"]
 
 
 def delete_session(sid) -> bool:

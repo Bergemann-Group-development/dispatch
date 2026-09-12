@@ -53,7 +53,8 @@ class SynthModal:
         self.ctx = ctx
         self.canvas = ctx.canvas
         self._submit = submit    # (name, loader, on_done, detached=False) -> background run
-        # (name, request, on_done) -> WorkflowHandle: one durable, detached synthesis
+        # (name, request, on_done, meta) -> WorkflowHandle: one durable, detached
+        # synthesis; the name and meta go into its record for recovery by a later document
         self._submit_workflow = submit_workflow
         self._add = add          # (spec, name, meta=None, conv=None) -> add to the canvas
         self.on_warn = on_warn   # push True/False when configured files go missing/found
@@ -535,7 +536,7 @@ class SynthModal:
                     suffix = f"·{index}" if len(result.spectra) > 1 else ""
                     self._add(spec, name + suffix, meta=meta)
 
-            self._submit_workflow(name, request, add_result)
+            self._submit_workflow(name, request, add_result, meta)
         else:
             self._submit(name,
                          lambda token=None: synth.compute(target, prefs, rv, xmin, xmax,

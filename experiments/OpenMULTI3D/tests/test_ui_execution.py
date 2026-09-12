@@ -724,7 +724,7 @@ def test_admission_failures_settle_as_failed_rows(monkeypatch, tmp_path):
     assert job.state == "failed" and "RuntimeError" in job.error
     assert not ctx.jobs.active
 
-    def refuse(request):
+    def refuse(request, **kwargs):
         raise OSError("workflow root is read-only")
 
     monkeypatch.setattr(app, "submit_synthesis", refuse)
@@ -1285,3 +1285,222 @@ def test_a_worker_finishing_after_a_load_adds_nothing_to_the_new_workspace(tmp_p
     release.set()
     assert ticks.settle(lambda: job.state == CANCELLED)
     assert not delivered and [o.name for o in ctx.canvas.objects] == ["obs"]
+
+
+# --- recovering detached workflows after a reconnect -----------------------------------
+def _reconnecting_document(tmp_path, monkeypatch):
+    """A fresh document whose configured synthesis root is ``tmp_path/synth``, where the
+    stub requests of this file write their workflow records."""
+    import store
+    store.set_section("synthesis", {"dispatch_cwd": str(tmp_path)})
+    document, ctx = _build_document()
+    return document, ctx, _Ticks(document, monkeypatch)
+
+
+def _blocking_execute(monkeypatch):
+    """Stub execution that waits for ``release`` and honours its token; returns the
+    events and the tokens it saw."""
+    import threading
+    from tumult.synthesis import workflows
+    started, release, tokens = threading.Event(), threading.Event(), []
+
+    def execute(resolved, cancel_token=None):
+        tokens.append(cancel_token)
+        started.set()
+        assert release.wait(10)
+        cancel_token.check()
+        return _stub_result(resolved)
+
+    monkeypatch.setattr(workflows, "execute_request", execute)
+    return started, release, tokens
+
+
+def _destroy(document):
+    for callback in list(document.session_destroyed_callbacks):
+        callback(None)
+
+
+def test_a_running_workflow_is_recovered_by_a_new_document_and_cancelled(tmp_path, monkeypatch):
+    """The tab that submitted a workflow goes away; a reconnecting document finds the
+    live record, attaches to it (a job of its own, cancellable through the handle) and
+    its cancellation reaches the worker's token. The old document delivers nothing."""
+    from jobs import CANCELLED
+
+    started, release, tokens = _blocking_execute(monkeypatch)
+    old_document, old_ctx, _ = _reconnecting_document(tmp_path, monkeypatch)
+    old_delivered = []
+    handle = old_ctx.submit_workflow("first", _stub_request(tmp_path), old_delivered.append)
+    assert started.wait(10)
+    assert old_ctx.workflow_refs.to_list() == [
+        {"id": handle.id, "folder": str(handle.folder), "name": "first", "imported": False}]
+    _destroy(old_document)
+
+    document, ctx, ticks = _reconnecting_document(tmp_path, monkeypatch)
+    entry, = ctx.recovery              # offered at build: the server still runs it
+    assert entry.id == handle.id and entry.state == "running" and entry.name == "first"
+    assert 'data-action="workflow-attach"' in _processes(document)
+    assert not ctx.jobs.active
+    _send_action(document, f"workflow-attach:{handle.id}:1")
+    job, = ctx.jobs.active
+    assert job.workflow_id == handle.id and job.generation is ctx.generation
+    assert not len(ctx.recovery) and handle.id in ctx.workflow_refs
+    assert "running" in _processes(document) and "cancel-pending" in _processes(document)
+
+    _send_action(document, f"cancel-pending:{job.pid}:1")
+    assert tokens[0].cancelled
+    release.set()
+    assert ticks.settle(lambda: job.state == CANCELLED)
+    assert handle.status == "cancelled" and not old_delivered
+    assert not ctx.canvas.objects
+
+
+def test_a_recovered_completion_is_imported_once_per_document(tmp_path, monkeypatch):
+    """A reattached workflow delivers its result to the new document once; the record
+    is then neither offered nor importable again there, while a third document that
+    never saw it can import it explicitly, also once."""
+    started, release, _ = _blocking_execute(monkeypatch)
+    old_document, old_ctx, _ = _reconnecting_document(tmp_path, monkeypatch)
+    old_delivered = []
+    handle = old_ctx.submit_workflow("t5750", _stub_request(tmp_path), old_delivered.append,
+                                     meta={"type": "synth", "params": [["RT mode", "LTE"]]})
+    assert started.wait(10)
+    _destroy(old_document)
+
+    document, ctx, ticks = _reconnecting_document(tmp_path, monkeypatch)
+    assert ctx.attach_workflow(handle.id) is not None
+    release.set()
+    assert ticks.settle(lambda: not ctx.jobs.active)
+    assert [o.name for o in ctx.canvas.objects] == ["t5750"]
+    assert ctx.canvas.objects[0].meta == {"type": "synth", "params": [["RT mode", "LTE"]]}
+    assert ctx.workflow_refs.imported(handle.id) and not old_delivered
+    assert ctx.discover_workflows() == [] and not len(ctx.recovery)
+    assert ctx.import_workflow(handle.id) is None
+    assert "already imported" in _footer(document)
+    assert [o.name for o in ctx.canvas.objects] == ["t5750"]
+
+    other_document, other, other_ticks = _reconnecting_document(tmp_path, monkeypatch)
+    assert other.discover_workflows() == [handle.id]
+    assert 'data-action="workflow-import"' in _processes(other_document)
+    _send_action(other_document, f"workflow-import:{handle.id}:1")
+    assert other_ticks.settle(lambda: not other.jobs.active)
+    assert [o.name for o in other.canvas.objects] == ["t5750"]
+    assert other.import_workflow(handle.id) is None
+    assert [o.name for o in other.canvas.objects] == ["t5750"]
+
+
+def test_slot_references_reattach_a_running_workflow_after_a_load(tmp_path, monkeypatch):
+    """A save made while a workflow runs references it beside the workspace; loading that
+    slot in a new document follows the workflow again under the new generation, and in
+    the submitting document re-subscribes the existing row rather than duplicating it."""
+    import store
+    from tumult.spectrum_io import load_file
+
+    started, release, _ = _blocking_execute(monkeypatch)
+    old_document, old_ctx, old_ticks = _reconnecting_document(tmp_path, monkeypatch)
+    path = _spectrum_file(tmp_path)
+    old_ctx.canvas.add_object(load_file(path), name="obs", source=("file", str(path)))
+    handle = old_ctx.submit_workflow("saved", _stub_request(tmp_path), lambda r: None)
+    assert started.wait(10)
+    _session_action(old_document, "save with-workflow 1")
+    slot = store.get_slot(1)
+    assert slot["workflows"] == [{"id": handle.id, "folder": str(handle.folder),
+                                  "name": "saved", "imported": False}]
+    assert "workflows" not in slot["snapshot"]
+
+    # the same document: the load boundary keeps the detached row and re-subscribes it
+    report = old_ctx.restore_workspace(slot["snapshot"], "with-workflow", slot["workflows"])
+    assert report.workflows == ["saved (running, followed)"]
+    job, = old_ctx.jobs.active
+    assert job.workflow_id == handle.id and job.generation is old_ctx.generation
+    _destroy(old_document)
+
+    document, ctx, ticks = _reconnecting_document(tmp_path, monkeypatch)
+    _session_action(document, "load 1 2")
+    assert "reattached" in _footer(document)
+    job, = ctx.jobs.active
+    assert job.workflow_id == handle.id and job.generation is ctx.generation
+    release.set()
+    assert ticks.settle(lambda: not ctx.jobs.active)
+    assert [o.name for o in ctx.canvas.objects] == ["obs", "saved"]
+    assert ctx.workflow_refs.imported(handle.id)
+    _session_action(document, "save after 3")
+    assert store.get_slot(2)["workflows"][0]["imported"] is True
+
+    # the old document's row settled too, but delivered nothing to a closed document
+    assert old_ticks.settle(lambda: not old_ctx.jobs.active)
+    assert [o.name for o in old_ctx.canvas.objects] == ["obs"]
+
+
+def _record_fixture(tmp_path, ident, state, **extra):
+    """An on-disk workflow record as another server process would have left it."""
+    import json
+    folder = tmp_path / "synth" / "_workflows" / ident
+    folder.mkdir(parents=True)
+    log = tmp_path / "synth" / f"run-{ident}.log"
+    log.write_text("dispatch log\n")
+    run = tmp_path / "synth" / f"run-{ident}"
+    record = {"version": 1, "id": ident, "state": state, "phase": state,
+              "submitted": 1_700_000_000.0, "started": 1_700_000_001.0,
+              "request": {}, "runs": [str(run)], "result": None, "label": f"{state}-job",
+              "meta": None, **extra}
+    (folder / "workflow.json").write_text(json.dumps(record))
+    return folder
+
+
+def test_on_disk_records_are_shown_by_their_true_state_after_a_restart(tmp_path, monkeypatch):
+    """After a server restart, a record left running is interrupted (its logs are offered,
+    nothing is resumed or signalled), a failed one keeps its error, and a finished one
+    written by a previous server imports into this document."""
+    from tumult.synthesis import submission, workflows
+
+    interrupted = _record_fixture(tmp_path, "20260901T000000-interrupted", "running")
+    _record_fixture(tmp_path, "20260901T000001-failed", "failed",
+                    error="RuntimeError: dispatch exited with status 3", ended=1_700_000_100.0)
+    monkeypatch.setattr(workflows, "execute_request",
+                        lambda resolved, cancel_token=None: _stub_result(resolved))
+    finished = submission.submit(_stub_request(tmp_path), label="done-job")
+    finished.result(timeout=10)
+    assert finished.id not in submission._live
+
+    document, ctx, ticks = _reconnecting_document(tmp_path, monkeypatch)
+    assert not len(ctx.recovery)                   # nothing is live in this server
+    _send_action(document, "workflow-discover:-:1")
+    states = {entry.id: entry.state for entry in ctx.recovery}
+    assert states == {"20260901T000000-interrupted": "interrupted",
+                      "20260901T000001-failed": "failed", finished.id: "finished"}
+    body = _processes(document)
+    assert "the server that ran it is gone" in body and "status 3" in body
+    assert f"run-{interrupted.name}.log" in body
+    assert body.count('data-action="workflow-import"') == 1
+    assert 'data-action="workflow-attach"' not in body
+
+    assert ctx.attach_workflow(interrupted.name) is None
+    assert "cannot be attached" in _footer(document)
+    assert submission.open_workflow(interrupted).cancel() is False
+    assert ctx.import_workflow(interrupted.name) is not None
+    assert ticks.settle(lambda: ctx.jobs.retained)
+    assert "is interrupted" in ctx.jobs.retained[0].error and not ctx.canvas.objects
+
+    _send_action(document, f"workflow-import:{finished.id}:2")
+    assert ticks.settle(lambda: ctx.canvas.objects)
+    assert [o.name for o in ctx.canvas.objects] == ["done-job"]
+    _send_action(document, "workflow-forget:20260901T000001-failed:3")
+    assert [entry.id for entry in ctx.recovery] == []
+    assert "status 3" not in _processes(document)
+
+
+def test_a_slot_whose_workflow_record_is_gone_reports_it(tmp_path, monkeypatch):
+    """A referenced workflow whose folder no longer exists is reported as skipped, with
+    its folder, and offered nowhere; the reference itself is kept for the next save."""
+    import store
+
+    document, ctx, ticks = _reconnecting_document(tmp_path, monkeypatch)
+    _with_spectrum(ctx)
+    _session_action(document, "save plain 1")
+    gone = store.workflow_reference("20260901T000000-gone", str(tmp_path / "nowhere"), "gone")
+    store.save_session("dangling", store.get_session(1), [gone])
+    _session_action(document, "load 2 2")
+    footer = _footer(document)
+    assert "workflow gone" in footer and "no record" in footer
+    assert str(tmp_path / "nowhere") in footer
+    assert not len(ctx.recovery) and "20260901T000000-gone" in ctx.workflow_refs

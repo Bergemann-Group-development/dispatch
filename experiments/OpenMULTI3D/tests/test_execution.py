@@ -818,3 +818,34 @@ def test_shutdown_is_bounded_and_reports_uninterruptible_work(tmp_path, monkeypa
     gate.set()
     native.result(5)
     blocker.result(5)
+
+
+def test_discovery_is_scoped_to_the_workflow_folder_and_keeps_the_label(tmp_path, monkeypatch):
+    """``discover_workflows`` lists only ``<root>/_workflows/*``, newest first, with the
+    submitter's label and meta; a record left running by a vanished process reports
+    ``interrupted`` and cannot be cancelled (no PID is ever signalled)."""
+    import json
+    from tumult.synthesis import submission, workflows
+
+    monkeypatch.setattr(workflows, 'execute_request',
+                        lambda resolved, cancel_token=None: _stub_result(resolved))
+    handle = submission.submit(_stub_request(tmp_path), label='t5750', meta={'k': [1]})
+    handle.result(timeout=5)
+    assert handle.label == 't5750' and handle.meta == {'k': [1]}
+
+    stale = tmp_path / 'synth' / '_workflows' / '20260901T000000-stale'
+    stale.mkdir(parents=True)
+    (stale / submission.RECORD).write_text(json.dumps(
+        {'version': 1, 'id': stale.name, 'state': 'running', 'phase': 'synthesis',
+         'submitted': 1.0, 'request': {}, 'runs': [], 'result': None}))
+    elsewhere = tmp_path / 'synth' / 'cache' / 'run' / '_workflows' / 'x'
+    elsewhere.mkdir(parents=True)
+    (elsewhere / submission.RECORD).write_text('{"state": "finished", "submitted": 9e9}')
+
+    found = submission.discover_workflows(tmp_path / 'synth')
+    assert [h.id for h in found] == [handle.id, stale.name]
+    assert found[1].status == 'interrupted' and found[1].label == stale.name
+    assert found[1].done and found[1].cancel() is False
+    with pytest.raises(RuntimeError, match='interrupted'):
+        found[1].result()
+    assert [h.id for h in submission.discover_workflows(tmp_path / 'synth', limit=1)] == [handle.id]

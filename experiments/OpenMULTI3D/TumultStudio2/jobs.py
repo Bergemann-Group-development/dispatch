@@ -12,6 +12,13 @@ a durable workflow) and the states it passes through::
 its token stays there until it returns, and the row says so instead of claiming the work
 has stopped. Failed jobs are retained with their error and native logs until dismissed;
 finished and cancelled ones leave the table when they settle.
+
+A durable workflow outlives the document: :class:`WorkflowRefs` remembers which ones this
+document is attached to (saved beside the workspace in a slot), and :class:`Recovery`
+lists on-disk records found after a reconnect that the user may attach to, import the
+result of, or forget. Nothing here resumes a native calculation or signals a process
+from an old record; a record left queued or running by a server that is gone is shown
+as interrupted.
 """
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -101,6 +108,10 @@ class JobTable:
     def paths(self):
         return [job.path for job in self.active if job.path is not None]
 
+    def find_workflow(self, workflow_id):
+        """The active job attached to workflow ``workflow_id``, if any."""
+        return next((job for job in self.active if job.workflow_id == workflow_id), None)
+
     def request_cancel(self, pid):
         """Ask a job to stop. A job whose future is still queued settles as cancelled
         at once; a running one becomes ``cancelling`` until its worker settles it. An
@@ -133,6 +144,136 @@ class JobTable:
         if job is not None and job.terminal:
             del self._jobs[pid]
         return job
+
+
+@dataclass
+class WorkflowRef:
+    """A durable workflow this document is attached to: enough to reopen it later
+    (``folder``), name it, and know whether its result already reached the workspace."""
+    id: str
+    folder: str
+    name: str
+    imported: bool = False
+
+    def to_dict(self):
+        return {"id": self.id, "folder": self.folder, "name": self.name,
+                "imported": self.imported}
+
+    @classmethod
+    def from_dict(cls, value):
+        return cls(str(value["id"]), str(value["folder"]), str(value["name"]),
+                   bool(value.get("imported", False)))
+
+
+class WorkflowRefs:
+    """The workflow references kept beside the workspace: every workflow this document
+    submitted or attached to, and which of them have delivered. A save slot stores them
+    (``store.save_session(..., workflows=refs.to_list())``); a load replaces them."""
+
+    def __init__(self):
+        self._refs = {}
+
+    def attach(self, handle, name, imported=False):
+        ref = self._refs.get(handle.id)
+        if ref is None:
+            ref = self._refs[handle.id] = WorkflowRef(handle.id, str(handle.folder), name)
+        ref.imported = ref.imported or imported
+        return ref
+
+    def mark_imported(self, workflow_id):
+        ref = self._refs.get(workflow_id)
+        if ref is not None:
+            ref.imported = True
+        return ref
+
+    def imported(self, workflow_id):
+        ref = self._refs.get(workflow_id)
+        return ref is not None and ref.imported
+
+    def get(self, workflow_id):
+        return self._refs.get(workflow_id)
+
+    def __contains__(self, workflow_id):
+        return workflow_id in self._refs
+
+    def __iter__(self):
+        return iter(list(self._refs.values()))
+
+    def __len__(self):
+        return len(self._refs)
+
+    def replace(self, refs):
+        """Adopt a slot's references (dicts or :class:`WorkflowRef`) wholesale."""
+        self._refs = {}
+        for ref in refs:
+            ref = ref if isinstance(ref, WorkflowRef) else WorkflowRef.from_dict(ref)
+            self._refs[ref.id] = ref
+
+    def to_list(self):
+        return [ref.to_dict() for ref in self._refs.values()]
+
+
+@dataclass(eq=False)
+class Recoverable:
+    """An on-disk workflow record offered for recovery, as read once when listed: a live
+    one can be attached (a new generation-bound subscription with cancellation), a
+    finished one imported, and any of them forgotten. ``interrupted`` is a record left
+    queued or running by a process that no longer exists; the only honest offer is its
+    logs. ``referenced`` says a loaded slot named it."""
+    handle: object
+    name: str
+    state: str
+    referenced: bool = False
+    error: str | None = None
+    logs: tuple = ()
+    phase: str | None = None
+    elapsed: float = 0.0
+    runs: int = 0
+
+    @property
+    def id(self):
+        return self.handle.id
+
+    @property
+    def live(self):
+        return self.state in (QUEUED, RUNNING)
+
+    @classmethod
+    def from_handle(cls, handle, referenced=False):
+        record = handle.to_dict()
+        state = handle.status
+        ended = record.get("ended") or time.time()
+        return cls(handle, handle.label, state, referenced, record.get("error"),
+                   handle.logs, record.get("phase"),
+                   max(0.0, ended - record.get("submitted", ended)),
+                   len(record.get("runs") or ()))
+
+
+class Recovery:
+    """The recoverable records shown under the jobs in the Processes panel, keyed by
+    workflow id, in the order offered."""
+
+    def __init__(self):
+        self._entries = {}
+
+    def offer(self, entry):
+        self._entries[entry.id] = entry
+        return entry
+
+    def get(self, workflow_id):
+        return self._entries.get(workflow_id)
+
+    def forget(self, workflow_id):
+        return self._entries.pop(workflow_id, None)
+
+    def __contains__(self, workflow_id):
+        return workflow_id in self._entries
+
+    def __iter__(self):
+        return iter(list(self._entries.values()))
+
+    def __len__(self):
+        return len(self._entries)
 
 
 @dataclass

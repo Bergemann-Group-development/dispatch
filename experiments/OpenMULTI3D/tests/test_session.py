@@ -295,3 +295,17 @@ def test_empty_and_single_collection_slots_prepare(tmp_path):
     prepared = _prepare(Workspace.from_dict(only_results))
     assert prepared.counts()["results"] == 3 and prepared.focus.uid == "r-b"
     assert len(prepared.unresolved) == 4      # two observations, one mask set, one atom
+
+
+def test_load_report_lists_workflow_outcomes_and_missing_records():
+    from session import LoadReport, Skipped
+    report = LoadReport("s", {"spectra": 1, "masks": 0, "atoms": 0, "results": 0},
+                        skipped=[Skipped("workflow", "id-1", "gone", "/x/_workflows/id-1",
+                                         "no record")],
+                        workflows=["t5750 (running, reattached)", "old (finished, result to import)"])
+    message = report.message()
+    assert report.partial
+    assert "skipped workflow gone (/x/_workflows/id-1): no record" in message
+    assert message.endswith("workflows: t5750 (running, reattached), "
+                            "old (finished, result to import)")
+    assert report.details() == ["Loading “s” skipped workflow gone (/x/_workflows/id-1): no record"]

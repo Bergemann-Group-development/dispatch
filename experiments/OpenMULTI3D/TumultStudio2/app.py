@@ -48,6 +48,8 @@ from abundcorrtool import AbundCorrTool  # noqa: E402
 from ionbalance import IonBalanceTool  # noqa: E402
 from tumult.synthesis import workflows as synth  # noqa: E402  (CancelToken/CancelledError for cancellable loads)
 from tumult.synthesis import submit as submit_synthesis  # noqa: E402
+from tumult.synthesis import submission  # noqa: E402  (open/discover workflows on reconnect)
+from synthprefs import load_prefs  # noqa: E402  (the configured workflow root)
 from filepicker import FilePicker  # noqa: E402
 from toolmanager import ToolManager  # noqa: E402
 import session  # noqa: E402
@@ -55,7 +57,8 @@ from session import (Workspace, SpectrumSnap, MaskSnap, AtomSnap, ResultsSnap, V
                      FilterSnap, FocusSnap, ToolsSnap, PreparedWorkspace, PreparedSpectrum,
                      PreparedAtom, FOCUS_TOOL, RESULT_TOOLS)
 from htmlbridge import BridgeSet, pulse, toggle  # noqa: E402
-from jobs import Job, QUEUED, RUNNING, CANCELLING, FINISHED, FAILED, CANCELLED  # noqa: E402
+from jobs import (Job, Recoverable, QUEUED, RUNNING, CANCELLING, FINISHED, FAILED,  # noqa: E402
+                  CANCELLED)
 from debounce import Trailing  # noqa: E402
 from units import X_UNITS, Y_UNITS, to_range  # noqa: E402
 from tumult import linestrength
@@ -84,6 +87,14 @@ def picker_start_dir():
         if folder.is_dir():
             return folder
     return Path.home()
+
+
+def workflow_roots():
+    """Where durable workflow records are looked for: the synthesis output root the
+    preferences configure (``<dispatch_cwd>/<synth_output_dir>``), which is where
+    ``tumult.synthesis.submit`` writes ``_workflows/``. Discovery never leaves it."""
+    prefs = load_prefs()
+    return [synth.execution_root(prefs) / (prefs.get("synth_output_dir") or "synth")]
 
 
 def _load_obj(obj):
@@ -227,35 +238,73 @@ def footer_html(canvas):
     return f'<span class="pill">{len(objs)} {noun}</span><span class="pill">{rng}</span>'
 
 
-def processes_html(jobs):
+def _elapsed(seconds):
+    seconds = int(max(0.0, seconds))
+    if seconds < 60:
+        return f"{seconds} s"
+    if seconds < 3600:
+        return f"{seconds // 60} min"
+    return f"{seconds // 3600} h {seconds % 3600 // 60:02d} min"
+
+
+def _log_links(paths):
+    return "".join(
+        f'<span class="process-log" title="{html.escape(path)}">'
+        f'{html.escape(Path(path).name)}</span>' for path in paths)
+
+
+def _workflow_progress(job):
+    """The phase, elapsed time and native-run count of a durable workflow, from its
+    record alone (no log parsing on a repaint), and its log names."""
+    try:
+        record = job.handle.to_dict()
+    except (OSError, ValueError):
+        return "", ""
+    ended = record.get("ended") or time.time()
+    parts = [record.get("phase") or job.state, _elapsed(ended - record.get("submitted", ended))]
+    runs = len(record.get("runs") or ())
+    if runs:
+        parts.append(f"{runs} run{'' if runs == 1 else 's'}")
+    return " · ".join(parts), _log_links(job.handle.logs)
+
+
+def processes_html(jobs, recovery=()):
     """The Processes panel body: one row per job this document admitted and has not yet
-    dismissed (see :class:`jobs.JobTable`).
+    dismissed (see :class:`jobs.JobTable`), then one per recoverable workflow record
+    offered after a reconnect (:class:`jobs.Recovery`).
 
     An active row spins and carries a cancel button (data-uid = the job id) that asks for
     confirmation first when losing the job costs real work (a synthesis, a fit). A row
     whose cancellation was requested keeps spinning, labelled, without the button until
     its worker settles: a native call that ignores its token is still occupying it. A
-    failed row is kept with its concise error and native log paths until dismissed."""
+    durable workflow's row shows its phase, elapsed time, run count and log names. A
+    failed row is kept with its concise error and native log paths until dismissed.
+
+    A recoverable record's row names its state honestly: a live one offers *attach*, a
+    finished one *import*; an interrupted one (left queued or running by a server that
+    is gone), a failed or a cancelled one only its logs; every one can be forgotten."""
     rows = []
     for job in jobs:
         state = job.display_state()
         name = html.escape(job.name)
         if state == FAILED:
             error = html.escape(job.error or "failed")
-            logs = "".join(
-                f'<span class="process-log" title="{html.escape(path)}">'
-                f'{html.escape(Path(path).name)}</span>' for path in job.logs)
             rows.append(
                 f'<div class="object-item process failed" data-pid="{job.pid}" '
                 f'data-state="{state}">'
                 '<i class="ti ti-alert-circle"></i>'
                 f'<div class="process-meta"><span class="object-name" title="{name}">{name}</span>'
-                f'<span class="process-error" title="{error}">{error}</span>{logs}</div>'
+                f'<span class="process-error" title="{error}">{error}</span>'
+                f'{_log_links(job.logs)}</div>'
                 f'<button class="object-btn" data-action="dismiss-job" data-uid="{job.pid}" '
                 f'title="Dismiss"><i class="ti ti-x"></i></button>'
                 '</div>')
             continue
         label = {QUEUED: "queued", CANCELLING: "cancelling…"}.get(state, "")
+        logs = ""
+        if job.handle is not None:
+            progress, logs = _workflow_progress(job)
+            label = f"{label} · {progress}" if label and progress else (label or progress)
         button = "" if state == CANCELLING else (
             f'<button class="object-btn danger" data-action="cancel-pending" '
             f'data-uid="{job.pid}" data-confirm="{1 if job.heavy else 0}" '
@@ -264,8 +313,39 @@ def processes_html(jobs):
             f'<div class="object-item process" data-pid="{job.pid}" data-state="{state}">'
             '<span class="spinner"></span>'
             f'<div class="process-meta"><span class="object-name" title="{name}">{name}</span>'
-            + (f'<span class="process-state">{label}</span>' if label else "")
-            + f'</div>{button}</div>')
+            + (f'<span class="process-state">{html.escape(label)}</span>' if label else "")
+            + f'{logs}</div>{button}</div>')
+    for entry in recovery:
+        name = html.escape(entry.name)
+        wid = html.escape(entry.id)
+        if entry.live:
+            icon, note = "ti-plug", f"{entry.state} · {_elapsed(entry.elapsed)} · not attached"
+            action = ('<button class="object-btn" data-action="workflow-attach" '
+                      f'data-uid="{wid}" title="Attach: follow it here and allow cancelling">'
+                      '<i class="ti ti-plug-connected"></i></button>')
+        elif entry.state == FINISHED:
+            icon, note = "ti-package", f"finished · {_elapsed(entry.elapsed)} · result on disk"
+            action = ('<button class="object-btn" data-action="workflow-import" '
+                      f'data-uid="{wid}" title="Import its result into the workspace">'
+                      '<i class="ti ti-download"></i></button>')
+        elif entry.state == "interrupted":
+            icon, action = "ti-plug-x", ""
+            note = "interrupted: the server that ran it is gone; nothing resumes"
+        else:
+            icon, action = "ti-alert-circle" if entry.state == FAILED else "ti-ban", ""
+            note = entry.state + (f": {entry.error}" if entry.error else "")
+        if entry.referenced:
+            note += " · from the loaded save"
+        rows.append(
+            f'<div class="object-item process recoverable" data-wid="{wid}" '
+            f'data-state="{html.escape(entry.state)}">'
+            f'<i class="ti {icon}"></i>'
+            f'<div class="process-meta"><span class="object-name" title="{wid}">{name}</span>'
+            f'<span class="process-state" title="{html.escape(note)}">{html.escape(note)}</span>'
+            f'{_log_links(entry.logs)}</div>{action}'
+            f'<button class="object-btn" data-action="workflow-forget" data-uid="{wid}" '
+            f'title="Forget this record here (it stays on disk)"><i class="ti ti-x"></i>'
+            '</button></div>')
     return "".join(rows)
 
 
@@ -286,7 +366,6 @@ def build():
     objects_bridge = B.html("objects")
     # the job list, bottom left; named so a harness can read what the panel shows
     processes_bridge = B.html("processes", name="processes")
-    processes_show_bridge = B.cls(".processes-panel", "show")  # hidden while nothing runs
     inspector_bridge = B.html("inspector")
     footer_bridge = B.html("footer-info")
     # transient info messages (left of footer); named for the same reason
@@ -426,8 +505,7 @@ def build():
 
     def update_all(canvas):
         objects_bridge.value = objects_panel_html(canvas, ctx.focus_kind)
-        processes_bridge.value = processes_html(jobs)
-        toggle(processes_show_bridge, len(jobs) > 0)
+        processes_bridge.value = processes_html(jobs, ctx.recovery)
         inspector_bridge.value = inspector_html(canvas)
         footer_bridge.value = footer_html(canvas)
         synth_modal.refresh_targets()  # keep the fit target dropdown in sync
@@ -678,8 +756,8 @@ def build():
         ctx,
         submit=lambda name, loader, on_done, detached=False: load_async(
             name, loader, on_done, executor=_SYNTH_EXEC, detached=detached),
-        submit_workflow=lambda name, request, on_done: submit_workflow(
-            name, request, on_done),
+        submit_workflow=lambda name, request, on_done, meta=None: submit_workflow(
+            name, request, on_done, meta),
         add=add_synth,
         on_warn=synth_on_warn)
 
@@ -908,13 +986,14 @@ def build():
         _restore_range(canvas.nav.y_range, v.nav_y)
         update_all(canvas)
 
-    def restore_workspace(snap, name="save"):
+    def restore_workspace(snap, name="save", workflows=()):
         """Load a slot as one document operation. The slot is validated and its objects
         built first (a broken slot changes nothing); the commit then marks a workspace
         boundary (new generation, old result subscriptions forgotten, this document's
         non-detached jobs cancelled) and replaces every collection. If applying fails,
-        the previous workspace is put back. Returns the :class:`session.LoadReport`, or
-        ``None`` when nothing was loaded."""
+        the previous workspace is put back. The slot's ``workflows`` references then
+        replace this document's (see ``_reattach``). Returns the
+        :class:`session.LoadReport`, or ``None`` when nothing was loaded."""
         try:
             prepared = prepare_workspace(snap)
             live = _capture_live()
@@ -942,8 +1021,10 @@ def build():
             notify(f"Loading “{name}” failed: {exc}; the previous workspace was restored",
                    level="danger", revert_ms=10000)
             return None
-        report = session.LoadReport(name, prepared.counts(), prepared.skipped,
-                                    prepared.unresolved, cancelled)
+        outcomes, gone = _reattach(workflows)
+        report = session.LoadReport(name, prepared.counts(), prepared.skipped + gone,
+                                    prepared.unresolved, cancelled, outcomes)
+        update_all(canvas)
         for line in report.details():
             log.warning("%s", line)
         notify(report.message(), level="warn" if report.partial else "success",
@@ -1004,24 +1085,21 @@ def build():
         name, loader, on_done, executor=_SYNTH_EXEC, detached=detached)
     ctx.execution = synth.get_runtime()
 
-    def submit_workflow(name, request, on_done):
-        """Queue one durable synthesis workflow and deliver its result to this document
-        once its handle settles. Submission happens here, once; nothing waits on the
-        workflow from another pool thread, and the document thread never blocks on the
-        result. The workflow is detached: closing the tab leaves it running, and only its
-        Processes row cancels it, through the handle. Returns the handle, or ``None``
-        when submission failed (the row keeps the reason)."""
-        job = _admit(name, heavy=True, detached=True)
-        # the row's cancel token forwards to the handle, so a settle can tell a cancelled
-        # workflow's late outcome from a wanted one the same way it does for loads
-        try:
-            handle = submit_synthesis(request)
-        except Exception as exc:
-            _admission_failed(job, exc)
-            return None
-        job.handle = handle
-        job.token.add_callback(handle.cancel)
-        update_all(canvas)
+    def _import_result(handle):
+        """The delivery of a workflow this document did not submit: add every spectrum
+        of its result under the name and annotations recorded at submission."""
+        def deliver(result):
+            for index, spec in enumerate(result.spectra, start=1):
+                suffix = f"·{index}" if len(result.spectra) > 1 else ""
+                add_synth(spec, handle.label + suffix, meta=handle.meta)
+        return deliver
+
+    def _subscribe(job, handle, on_done):
+        """Deliver ``handle``'s outcome to ``job`` once it settles; the delivery marks
+        the workflow imported so a later load does not offer its result again."""
+        def deliver(result):
+            on_done(result)
+            ctx.workflow_refs.mark_imported(handle.id)
 
         def settled(handle):             # worker thread (or the canceller's), never waits
             try:
@@ -1031,12 +1109,159 @@ def build():
             except Exception as exc:
                 _settle(job, None, None, exc)
             else:
-                _settle(job, result, on_done, None)
+                _settle(job, result, deliver, None)
 
         handle.add_done_callback(settled)
+
+    def submit_workflow(name, request, on_done, meta=None):
+        """Queue one durable synthesis workflow and deliver its result to this document
+        once its handle settles. Submission happens here, once; nothing waits on the
+        workflow from another pool thread, and the document thread never blocks on the
+        result. The workflow is detached: closing the tab leaves it running, and only its
+        Processes row cancels it, through the handle. ``name`` and ``meta`` go into the
+        record, so a later document lists and imports it as it was submitted, and the
+        workflow is referenced beside the workspace from now on. Returns the handle, or
+        ``None`` when submission failed (the row keeps the reason)."""
+        job = _admit(name, heavy=True, detached=True)
+        # the row's cancel token forwards to the handle, so a settle can tell a cancelled
+        # workflow's late outcome from a wanted one the same way it does for loads
+        try:
+            handle = submit_synthesis(request, label=name, meta=meta)
+        except Exception as exc:
+            _admission_failed(job, exc)
+            return None
+        job.handle = handle
+        job.token.add_callback(handle.cancel)
+        ctx.workflow_refs.attach(handle, name)
+        update_all(canvas)
+        _subscribe(job, handle, on_done)
         return handle
 
     ctx.submit_workflow = submit_workflow
+
+    # --- recovery of durable workflows after a reconnect ------------------------------
+    def _offer(handle, referenced=False):
+        """List ``handle`` under the jobs unless this document already follows it or has
+        imported its result. Returns the entry, or ``None``."""
+        if jobs.find_workflow(handle.id) is not None or ctx.workflow_refs.imported(handle.id):
+            return None
+        try:
+            entry = Recoverable.from_handle(handle, referenced)
+        except (OSError, ValueError, KeyError) as exc:
+            log.warning("Workflow record %s cannot be read: %s", handle.folder, exc)
+            return None
+        return ctx.recovery.offer(entry)
+
+    def discover_workflows(limit=20):
+        """Scan the configured roots for workflow records and offer the newest ones this
+        document neither follows nor has imported. Returns the ids offered."""
+        offered = []
+        for root in workflow_roots():
+            for handle in submission.discover_workflows(root, limit=limit):
+                entry = _offer(handle, referenced=handle.id in ctx.workflow_refs)
+                if entry is not None:
+                    offered.append(entry.id)
+        update_all(canvas)
+        n = len(ctx.recovery)
+        notify(f"{n} recoverable workflow{'' if n == 1 else 's'} under "
+               + ", ".join(str(root / "_workflows") for root in workflow_roots()),
+               level="info")
+        return offered
+
+    def _reopen(workflow_id):
+        """The handle for an offered or referenced workflow; ``None`` if it is unknown."""
+        entry = ctx.recovery.get(workflow_id)
+        if entry is not None:
+            return entry.handle
+        ref = ctx.workflow_refs.get(workflow_id)
+        return submission.open_workflow(ref.folder) if ref is not None else None
+
+    def attach_workflow(workflow_id):
+        """Follow a live workflow from here: a new job under the current generation whose
+        row can cancel it through the handle and whose completion is delivered once. A
+        record that is not live cannot be attached; nothing is resumed or signalled."""
+        handle = _reopen(workflow_id)
+        if handle is None:
+            return None
+        job = jobs.find_workflow(workflow_id)
+        if job is not None:
+            return job
+        try:
+            state = handle.status
+        except OSError as exc:
+            notify(f"Workflow {workflow_id} cannot be read: {exc}", level="danger")
+            return None
+        if handle.done or state not in (QUEUED, RUNNING):
+            notify(f"{handle.label} is {state}; it cannot be attached", level="warn")
+            return None
+        job = _admit(handle.label, heavy=True, detached=True)
+        job.handle = handle
+        job.token.add_callback(handle.cancel)
+        ctx.workflow_refs.attach(handle, handle.label)
+        ctx.recovery.forget(workflow_id)
+        _subscribe(job, handle, _import_result(handle))
+        update_all(canvas)
+        return job
+
+    def import_workflow(workflow_id):
+        """Load a finished workflow's saved result off the document thread and add its
+        spectra once; a workflow already imported is refused."""
+        handle = _reopen(workflow_id)
+        if handle is None:
+            return None
+        if ctx.workflow_refs.imported(workflow_id):
+            notify(f"{handle.label} was already imported", level="warn")
+            ctx.recovery.forget(workflow_id)
+            update_all(canvas)
+            return None
+        deliver = _import_result(handle)
+
+        def done(result):
+            deliver(result)
+            ctx.workflow_refs.attach(handle, handle.label, imported=True)
+
+        ctx.recovery.forget(workflow_id)
+        return load_async(f"import {handle.label}", lambda token=None: handle.result(), done)
+
+    def forget_workflow(workflow_id):
+        if ctx.recovery.forget(workflow_id) is not None:
+            update_all(canvas)
+
+    def _reattach(refs):
+        """Adopt a loaded slot's workflow references: a live one is followed again (a job
+        already following it is re-subscribed under the new generation), a finished one
+        not yet imported is offered for import, an interrupted, failed or cancelled one is
+        shown as such. Returns the outcome lines for the load report and the references
+        whose record is gone."""
+        ctx.workflow_refs.replace(refs)
+        outcomes, gone = [], []
+        for ref in ctx.workflow_refs:
+            handle = submission.open_workflow(ref.folder)
+            try:
+                state = handle.status
+            except (OSError, ValueError) as exc:
+                gone.append(session.Skipped("workflow", ref.id, ref.name, ref.folder,
+                                            "no record" if isinstance(exc, FileNotFoundError)
+                                            else str(exc)))
+                continue
+            job = jobs.find_workflow(ref.id)
+            if job is not None and not handle.done:
+                job.generation = ctx.generation      # the slot names it: subscribe anew
+                ctx.recovery.forget(ref.id)
+                outcomes.append(f"{ref.name} ({state}, followed)")
+            elif not handle.done and state in (QUEUED, RUNNING):
+                attach_workflow(ref.id)
+                outcomes.append(f"{ref.name} ({state}, reattached)")
+            elif ref.imported:
+                continue                              # its spectra are in the slot itself
+            elif _offer(handle, referenced=True) is not None:
+                outcomes.append(f"{ref.name} ({state}"
+                                + (", result to import)" if state == FINISHED else ")"))
+        return outcomes, gone
+
+    ctx.discover_workflows = discover_workflows
+    ctx.attach_workflow = attach_workflow
+    ctx.import_workflow = import_workflow
 
     def session_closed(session_context):
         ctx.closed = True
@@ -1143,6 +1368,10 @@ def build():
         "remove":       canvas.remove_object,
         "cancel-pending": cancel_pending,
         "dismiss-job":  dismiss_job,
+        "workflow-discover": lambda v: discover_workflows(),
+        "workflow-attach": attach_workflow,
+        "workflow-import": import_workflow,
+        "workflow-forget": forget_workflow,
         "select":       focus_spectrum,
         "color":        set_color,
         "profile":      lambda v: range_tool.ew_setting(range_tool.ew.set_profile, v),
@@ -1214,7 +1443,7 @@ def build():
         if kind == "save":
             name = arg.strip() or time.strftime("Save %Y-%m-%d %H:%M")
             try:
-                store.save_session(name, snapshot())
+                store.save_session(name, snapshot(), workflows=ctx.workflow_refs.to_list())
             except store.ConfigError as exc:
                 logging.exception("Could not save the session %r", name)
                 notify(f"Save “{name}” failed: {exc}", level="danger")
@@ -1223,17 +1452,16 @@ def build():
             notify(f"Saved “{name}”", level="success")
         elif kind == "load":
             try:
-                snap = store.get_session(int(arg))
+                slot = store.get_slot(int(arg))
             except store.ConfigError as exc:
                 logging.exception("Could not read the saved session %s", arg)
                 notify(f"Could not read the save: {exc}", level="danger")
                 return
-            if snap is None:
+            if slot is None:
                 notify("That save is no longer available.", level="danger")
                 render_sessions()
             else:
-                slot = next((s for s in store.list_sessions() if s["id"] == int(arg)), None)
-                restore_workspace(snap, slot["name"] if slot else "save")
+                restore_workspace(slot["snapshot"], slot["name"], slot["workflows"])
         elif kind == "delete":
             try:
                 found = store.delete_session(int(arg))
@@ -1345,6 +1573,20 @@ def build():
 
     ionbaltool.refresh()      # the balance modal's target selector
 
+    # a reconnect: workflows still running in this server are offered at once (their
+    # number is bounded by the pool); finished and interrupted records wait for Recover
+    for root in workflow_roots():
+        try:
+            handles = submission.discover_workflows(root)
+        except OSError:
+            logging.exception("Could not scan %s for workflows", root)
+            continue
+        for handle in handles:
+            if not handle.done:
+                _offer(handle)
+    if len(ctx.recovery):
+        processes_bridge.value = processes_html(jobs, ctx.recovery)
+
     inspector.bind(canvas.selected())
     sel = canvas.selected()
     active_color = sel.line.glyph.line_color if sel else None
@@ -1353,7 +1595,7 @@ def build():
         css=(HERE / "static" / "style.css").read_text(),
         main_empty=not canvas.objects,  # bake the empty-state class into the first paint
         objects_html=objects_panel_html(canvas),
-        processes_html=processes_html(jobs),
+        processes_html=processes_html(jobs, ctx.recovery),
         inspector_html=inspector_html(canvas),
         footer_html=footer_html(canvas),
         swatches_html=swatch_html(active_color),

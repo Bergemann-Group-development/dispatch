@@ -430,7 +430,7 @@ def plural(n, noun, plural=None):
 # --- preparation: live objects, off the live workspace ------------------------------
 @dataclass
 class Skipped:
-    kind: str          # "spectrum" | "atom"
+    kind: str          # "spectrum" | "atom" | "workflow"
     uid: str
     name: str
     path: str
@@ -557,13 +557,16 @@ def prepare(ws, *, load_spectrum, load_atom, tools):
 @dataclass
 class LoadReport:
     """What a committed load did: the counts restored, the objects skipped (with their
-    identity, path and reason), the references cleared and the jobs the boundary
-    cancelled. ``message()`` is the footer line, ``details()`` one line per item."""
+    identity, path and reason), the references cleared, the jobs the boundary
+    cancelled and what became of the slot's workflow references (``"<name>: <outcome>"``;
+    a reference whose record is gone is a ``Skipped`` of kind ``workflow``).
+    ``message()`` is the footer line, ``details()`` one line per item."""
     name: str
     counts: dict
     skipped: list = field(default_factory=list)
     unresolved: list = field(default_factory=list)
     cancelled_jobs: list = field(default_factory=list)
+    workflows: list = field(default_factory=list)
 
     @property
     def partial(self):
@@ -581,6 +584,8 @@ class LoadReport:
             text += f"; {n} reference{'' if n == 1 else 's'} cleared (see the log)"
         if self.cancelled_jobs:
             text += f"; cancelled {', '.join(self.cancelled_jobs)}"
+        if self.workflows:
+            text += f"; workflows: {', '.join(self.workflows)}"
         return text
 
     def details(self):
