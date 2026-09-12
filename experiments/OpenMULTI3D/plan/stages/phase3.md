@@ -56,7 +56,6 @@ Worktree, `/Users/hoppe/Documents/dispatch/experiments/OpenMULTI3D/.venv/bin/pyt
 
 - `-m pytest tests/test_execution.py tests/test_ui_execution.py -q`: 56 passed before;
   with `tests/test_store.py` added, 76 passed after (17 store + 3 UI new), 22 s.
-- `pyflakes` on `store.py` and `test_store.py`: clean.
 - Temporary directories, injected `os.replace`/permission failures and a Python
   subprocess writer only. No physical validation, golden suites, Fortran build or browser.
 
@@ -73,12 +72,11 @@ Worktree, `/Users/hoppe/Documents/dispatch/experiments/OpenMULTI3D/.venv/bin/pyt
   so such an error propagates to Bokeh's callback logging and aborts the action (the file
   is not opened). Deciding whether a recent-file failure should block opening a file
   belongs to whoever next touches those sites.
-- `transaction()` is not reentrant; a store call inside another transaction deadlocks on
-  the thread lock. Nested use does not exist in the tree.
+- `transaction()` is not reentrant (no nested use exists in the tree).
 - Phase 4: keep validating the snapshot in `session.py` and do it before any live change;
-  `store.get_session` returns the raw dict or `None`, and `save_session(name, snapshot)`
-  expects JSON-serialisable content (a `ConfigError` otherwise, written nothing). Use
-  `store.transaction()` for any new multi-field update rather than several writers.
+  `store.get_session` returns the raw dict or `None`; `save_session(name, snapshot)` needs
+  JSON-serialisable content (`ConfigError` otherwise, nothing written). Use
+  `store.transaction()` for a new multi-field update rather than several writers.
 - Phase 5: workflow references belong in a new top-level section or inside the slot
   envelope; add the section to `_SECTIONS` (with its type) and the envelope fields to
   `_SLOT_FIELDS` so structural validation covers them, and bump `CONFIG_VERSION` when the
