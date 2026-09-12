@@ -50,13 +50,12 @@ report follows in its own commit. Roadmap section 5.
 - `docs/GUIWorkflow.md` (new "Recovering durable workflows after a reconnect", slot
   boundary note), `docs/FAQ.md` (GUI recovery paragraph).
 - Tests: `test_ui_execution.py` (running workflow recovered by a new document and
-  cancelled through its token; reattached completion imported once, third document imports
-  once; slot references followed/reattached across a load with the old document delivering
-  nothing; on-disk interrupted/failed/finished fixtures shown by true state, attach refused,
-  import of the finished one, forget; missing record reported), `test_execution.py`
-  (scoped discovery, label/meta, interrupted handle), `test_store.py` (references beside
-  the snapshot, malformed reference and missing field rejected), `test_session.py`
-  (`LoadReport` workflow lines).
+  cancelled through its token; reattached completion imported once and a third document
+  importing once; slot references followed/reattached across a load, old document delivers
+  nothing; interrupted/failed/finished fixtures shown by true state, attach refused, import,
+  forget; missing record reported), `test_execution.py` (scoped discovery, label/meta,
+  interrupted handle), `test_store.py` (references, malformed reference rejected),
+  `test_session.py` (`LoadReport` workflow lines).
 
 ## Verification
 
@@ -66,8 +65,8 @@ Worktree, `/Users/hoppe/Documents/dispatch/experiments/OpenMULTI3D/.venv/bin/pyt
 - `-m pytest tests/test_execution.py tests/test_ui_execution.py tests/test_store.py
   tests/test_session.py -q`: 94 passed before, 102 passed after (8 new), 62 s.
 - `-m pytest tests/test_synthesis_contract.py -q`: 9 passed.
-- Stub workers, temporary config/workflow roots and hand-written record fixtures only;
-  waits bounded (10 s). No physical validation, golden suites, build or browser session.
+- Stub workers, temporary roots and record fixtures only; waits bounded (10 s). No
+  physical validation, golden suites, build or browser session.
 
 ## Limits and notes for later phases
 
@@ -80,5 +79,4 @@ Worktree, `/Users/hoppe/Documents/dispatch/experiments/OpenMULTI3D/.venv/bin/pyt
   spectra with, so give each mode a stable name and JSON meta. Fits that stay
   document-owned need no reference. A workflow that finishes after a load is dropped by
   the generation check and reappears under Recover as importable.
-- `Recoverable` is read once when offered; a live entry's state refreshes only on the next
-  Recover. `_reattach` runs after the commit, so a failure there cannot roll back a load.
+- A `Recoverable` is read once when offered; `_reattach` runs after the commit.
