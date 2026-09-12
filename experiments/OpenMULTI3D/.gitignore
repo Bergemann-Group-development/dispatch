@@ -15,6 +15,7 @@ tests/*
 !tests/test_execution.py
 !tests/test_ui_execution.py
 !tests/test_ui_events.py
+!tests/test_ui_scenario.py
 !tests/test_store.py
 !tests/test_session.py
 !tests/test_flux_sets.py
