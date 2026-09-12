@@ -245,6 +245,46 @@ def measure_ew(spec, window=None, snr=None, cont_pct=0.0, profile="trapz", x0=No
         return measure_profile(sub, profile="trapz", x0=x0, sigma=sigma, syst=syst)
 
 
+@dataclass(frozen=True)
+class EwRefresh:
+    """What :func:`refresh_ews` did to a list of lines, by position in that list.
+
+    ``changed`` holds the indices whose ``ew``/``ew_err`` were reassigned, ``skipped`` those
+    without a finite fit window (no EW to refresh) and ``failed`` maps the indices whose
+    measurement raised to the error message; those lines keep their previous values.
+    """
+    changed: tuple = ()
+    skipped: tuple = ()
+    failed: dict = field(default_factory=dict)
+
+
+def refresh_ews(spec, lines, *, profile, snr=None, cont_pct=0.0):
+    """Re-measure each line's EW on ``spec`` over its stored fit window, in place.
+
+    The remeasurement the abundance and ionisation-balance tools share when the
+    observation they were measured on changes appearance (the canvas filter). Only ``ew``
+    and ``ew_err`` are written; windows, flags, ``include`` and every fitted quantity are
+    left as curated. Whether the lines *should* be refreshed (the result's stage, its
+    selection) is the caller's decision. A line whose measurement raises is reported in
+    the returned :class:`EwRefresh` rather than silently skipped.
+    """
+    changed, skipped, failed = [], [], {}
+    for i, ln in enumerate(lines):
+        if not np.isfinite(ln.fit_window[0]):
+            skipped.append(i)
+            continue
+        try:
+            prof = measure_ew(spec, window=ln.fit_window, snr=snr, cont_pct=cont_pct,
+                              profile=profile, x0=ln.lam0)
+        except Exception as exc:
+            logging.warning("EW refresh failed for line %d (%.3f A): %s", i, ln.lam0, exc)
+            failed[i] = f"{type(exc).__name__}: {exc}"
+            continue
+        ln.ew, ln.ew_err = prof.maa, prof.width_err_maa
+        changed.append(i)
+    return EwRefresh(tuple(changed), tuple(skipped), failed)
+
+
 def build_cog(synth_line_fn, a_ladder, window=None, profile="trapz", x0=None,
               batch_synth_fn=None, renorm=False):
     """Synthesise the line at each abundance in ``a_ladder`` and measure its *width* EW.

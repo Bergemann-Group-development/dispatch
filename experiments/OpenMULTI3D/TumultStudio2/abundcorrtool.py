@@ -223,8 +223,7 @@ class AbundCorrTool(AbundanceWizard):
         return []
 
     def result_rows(self, results, nested=False):
-        return self._results_rows("Δ", " corr-result-item", "data-corr-result",
-                                  "data-corr-remove", results=results, nested=nested)
+        return self._results_rows("Δ", results=results, nested=nested)
 
     def push_results(self):
         self.on_results()
@@ -504,7 +503,7 @@ class AbundCorrTool(AbundanceWizard):
         self._set_mean(s.get("a_mean", np.nan), self._summary_sigma(s))
 
     def table_html(self, res):
-        head = self._table_head("corr-mask-chk", (
+        head = self._table_head((
             ("λ₀ [Å]", "lam0"), ("ion", "ion"), ("E<sub>low</sub>", "e_low"),
             ("log gf", "loggf"), ("EW [mÅ]", "ew"), ("REW", "rew"), ("ΔA", "a"),
             ("flags", None)))
@@ -523,7 +522,7 @@ class AbundCorrTool(AbundanceWizard):
             fl = ", ".join(ln.flags)
             body.append(
                 f'<tr class="corr-row{cls}" data-line="{i}">'
-                f'<td><input type="checkbox" class="corr-line-chk" data-line="{i}"{chk}></td>'
+                f'<td><input type="checkbox" class="line-include-chk" data-line="{i}"{chk}></td>'
                 f'<td>{ln.lam0:.3f}</td><td>{html.escape(ln.ion)}</td>'
                 f'<td>{ln.e_low:.2f}</td><td>{ln.loggf:.2f}</td><td>{ew}</td>'
                 f'<td>{rew}</td><td>{da}</td>'
@@ -539,6 +538,6 @@ class AbundCorrTool(AbundanceWizard):
             foot = (f'<div class="abund-summary">⟨ΔA({html.escape(res.symbol)})⟩ = '
                     f'{s["a_mean"]:+.3f} ± {self._summary_sigma(s):.3f}'
                     f'<span class="abund-budget"> ({budget})</span></div>')
-        return (f'<table class="linelist-table abund-table corr-lines">'
+        return (f'<table class="linelist-table abund-table corr-lines" data-tool="corr">'
                 f'<thead>{head}</thead>'
                 f'<tbody>{"".join(body)}</tbody></table>{foot}')

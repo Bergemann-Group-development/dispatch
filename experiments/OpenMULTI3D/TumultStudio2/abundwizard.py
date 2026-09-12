@@ -89,6 +89,51 @@ if (rect.top < top || rect.bottom > box.bottom) {
 }
 """
 
+# The shared client->server wiring of every wizard and of the ionisation-balance tool,
+# emitted once through the ``analysis_script`` template variable. Each tool's markup scopes
+# itself with ``data-tool="<prefix>"`` (the step tabs, the results rows, the lines table);
+# the binder reads the prefix from the closest scope and writes ``"<kind>:<arg>:<nonce>"``
+# to the ``<prefix>-actions`` channel, which :meth:`AbundanceWizard._on_action` splits on
+# colons (uids and line indices contain none). A row click jumps to its line; a click on the
+# row's include checkbox only toggles the line. The tools' own run/refit buttons and the
+# atom sidebar (which removes its nested corrections) stay in the page script.
+ANALYSIS_SCRIPT = r"""
+(function () {
+  var seq = 0;   // a repeated identical action within one millisecond is still a new value
+  function analysisAction(prefix, kind, arg) {
+    var m = Bokeh.documents[0].get_model_by_name(prefix + '-actions');
+    if (m) m.setv({ value: kind + ':' + (arg || '') + ':' + Date.now() + '.' + (++seq) });
+  }
+  document.addEventListener('click', function (ev) {
+    var scope = ev.target.closest('[data-tool]');
+    if (!scope) return;
+    var prefix = scope.dataset.tool;
+    var step = ev.target.closest('.step-tab[data-step]');
+    if (step) { analysisAction(prefix, 'step', step.dataset.step); return; }
+    var rem = ev.target.closest('[data-result-remove]');
+    if (rem) { analysisAction(prefix, 'remove', rem.dataset.resultRemove); return; }
+    var item = ev.target.closest('[data-result]');
+    if (item) { analysisAction(prefix, 'select', item.dataset.result); return; }
+    var sort = ev.target.closest('.line-sort[data-sortcol]');
+    if (sort) { analysisAction(prefix, 'sort', sort.dataset.sortcol); return; }
+    var row = ev.target.closest('tr[data-line]');
+    if (!row || ev.target.closest('.line-include-chk')) return;
+    scope.querySelectorAll('tr.row-selected')
+         .forEach(function (r) { r.classList.remove('row-selected'); });
+    row.classList.add('row-selected');
+    analysisAction(prefix, 'jump-line', row.dataset.line);
+  });
+  document.addEventListener('change', function (ev) {
+    var scope = ev.target.closest('[data-tool]');
+    if (!scope) return;
+    var prefix = scope.dataset.tool;
+    if (ev.target.closest('.analysis-mask-chk')) { analysisAction(prefix, 'mask-toggle'); return; }
+    var chk = ev.target.closest('.line-include-chk');
+    if (chk) analysisAction(prefix, 'toggle-line', chk.dataset.line);
+  });
+})();
+"""
+
 
 from jobs import ResultJobs
 
@@ -397,6 +442,18 @@ class AbundanceWizard(Tool):
     def _extra_action(self, kind, arg):
         """Subclass hook: the wizard-specific run actions."""
 
+    # --- the shared EW refresh --------------------------------------------------------------
+    def report_refresh(self, res, outcome):
+        """Repaint ``res`` after :func:`tumult.abundance.refresh_ews` changed any of its
+        lines, and name the lines whose measurement failed (they keep their old EW)."""
+        if outcome.changed:
+            self._render_selected()
+        if outcome.failed:
+            lams = ", ".join(f"{res.lines[i].lam0:.2f}" for i in sorted(outcome.failed))
+            self.notify(f"{res.name}: EW refresh failed for {len(outcome.failed)} "
+                        f"line{'s' if len(outcome.failed) != 1 else ''} ({lams} Å); the "
+                        "previous values were kept.")
+
     # --- results list / selection ---------------------------------------------------------
     def _find(self, uid):
         return next((r for r in self.results if r.uid == uid), None)
@@ -526,14 +583,14 @@ class AbundanceWizard(Tool):
         """
         return self.sort.order(res.lines, self.sort_keys[self.sort.col])
 
-    def _table_head(self, mask_class, columns):
+    def _table_head(self, columns):
         """The clickable ``<thead>`` row: a leading mask checkbox, then ``columns``.
 
         ``columns`` is a sequence of ``(label, sort-col | None)`` pairs; a ``None`` column
         (e.g. the flags column) renders as a plain, non-sortable header.
         """
         checked = " checked" if self.show_toggled_only else ""
-        chk = (f'<input type="checkbox" class="{mask_class}"{checked} '
+        chk = (f'<input type="checkbox" class="analysis-mask-chk"{checked} '
                'title="Show only included lines">')
         return "<tr>" + sort_headers(self.sort, [(chk, None), *columns]) + "</tr>"
 
@@ -614,21 +671,22 @@ class AbundanceWizard(Tool):
             out += f" ± {err:.{digits}f}"
         return out
 
-    def _results_rows(self, badge, item_cls, data_key, remove_key, results=None,
-                      nested=False):
+    def _results_rows(self, badge, results=None, nested=False):
         """Sidebar rows for ``results`` (default: all); ``nested`` indents them under the
-        object they were computed from."""
+        object they were computed from. The row carries ``data-tool`` (this wizard's
+        prefix) and ``data-result`` (the uid), its button ``data-result-remove``: the
+        attributes the page's analysis binder routes select/remove clicks by."""
         focused = self.is_focused()
         rows = []
         nest = " result-nested" if nested else ""
         for r in (self.results if results is None else results):
             sel = " selected" if (r.uid == self.selected_uid and focused) else ""
             rows.append(
-                f'<div class="object-item result-item{item_cls}{nest}{sel}" '
-                f'{data_key}="{r.uid}">'
+                f'<div class="object-item result-item{nest}{sel}" '
+                f'data-tool="{self.prefix}" data-result="{r.uid}">'
                 f'<span class="result-badge">{badge}</span>'
                 f'<span class="object-name" title="{html.escape(r.name)}">'
                 f'{html.escape(r.name)}</span>'
-                f'<button class="result-btn" {remove_key}="{r.uid}" '
+                f'<button class="result-btn" data-result-remove="{r.uid}" '
                 f'title="Remove"><i class="ti ti-x"></i></button></div>')
         return rows

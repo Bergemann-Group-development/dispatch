@@ -532,9 +532,10 @@ class IonBalanceTool(AbundanceWizard):
         return next((m for m in masks.sets if str(m.uid) == str(res.maskset_uid)), None)
 
     def on_filter_changed(self):
-        """Re-measure the selected measurement's EWs when the canvas Filtered switch toggles —
-        only before a fit stands on them (a solved result's abundances were inverted against
-        the EWs measured then)."""
+        """Re-measure the selected measurement's EWs when the canvas Filtered switch toggles,
+        with the SNR and continuum uncertainty the measurement was made with. Only before a
+        fit stands on the lines: a solved result's abundances were inverted against the EWs
+        measured then."""
         if not self.active:
             return
         res = self.selected()
@@ -543,19 +544,9 @@ class IonBalanceTool(AbundanceWizard):
         spec = self._spec_of(res)
         if spec is None or spec.yunit != u.dimensionless_unscaled:
             return
-        changed = False
-        for ln in res.lines:
-            if not np.isfinite(ln.fit_window[0]):
-                continue
-            try:
-                prof = ab.measure_ew(spec, window=ln.fit_window, snr=res.snr,
-                                     cont_pct=res.cont_pct, profile=res.profile, x0=ln.lam0)
-            except Exception:
-                continue
-            ln.ew, ln.ew_err = prof.maa, prof.width_err_maa
-            changed = True
-        if changed:
-            self._render_selected()
+        outcome = ab.refresh_ews(spec, res.lines, profile=res.profile, snr=res.snr,
+                                 cont_pct=res.cont_pct)
+        self.report_refresh(res, outcome)
 
     # --- the run ------------------------------------------------------------------------------
     def run(self):
@@ -715,8 +706,7 @@ class IonBalanceTool(AbundanceWizard):
     def results_html(self):
         if not self.results:
             return ""
-        rows = self._results_rows("B", " ionbal-result-item", "data-ionbal-result",
-                                  "data-ionbal-remove")
+        rows = self._results_rows("B")
         return ('<div class="section-header result-section-head">Ionisation balance</div>'
                 + "".join(rows))
 
@@ -820,7 +810,7 @@ class IonBalanceTool(AbundanceWizard):
 
     def table_html(self, res):
         el = html.escape(res.element or "X")
-        head = self._table_head("ionbal-mask-chk", (
+        head = self._table_head((
             ("λ₀ [Å]", "lam0"), ("ion", "ion"), ("E<sub>low</sub>", "e_low"),
             ("log gf", "loggf"), ("EW [mÅ]", "ew"), ("blend", "blend"),
             (f"A({el})", "a"), ("flags", None)))
@@ -839,7 +829,7 @@ class IonBalanceTool(AbundanceWizard):
             fl = ", ".join(ln.flags)
             body.append(
                 f'<tr class="ionbal-row{cls}" data-line="{i}">'
-                f'<td><input type="checkbox" class="ionbal-line-chk" data-line="{i}"{chk}></td>'
+                f'<td><input type="checkbox" class="line-include-chk" data-line="{i}"{chk}></td>'
                 f'<td>{ln.lam0:.3f}</td><td>{html.escape(ln.ion)}</td>'
                 f'<td>{ln.e_low:.2f}</td><td>{ln.loggf:.2f}</td><td>{ew}</td>'
                 f'<td>{blend}</td><td>{a}</td>'
@@ -848,6 +838,6 @@ class IonBalanceTool(AbundanceWizard):
             return (f'<div class="linelist-empty">Measuring {el} windows…</div>'
                     if not res.lines else
                     '<div class="linelist-empty">Every line is switched off.</div>')
-        return (f'<table class="linelist-table abund-table ionbal-lines">'
+        return (f'<table class="linelist-table abund-table ionbal-lines" data-tool="ionbal">'
                 f'<thead>{head}</thead>'
                 f'<tbody>{"".join(body)}</tbody></table>{self._status_html(res)}')

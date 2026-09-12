@@ -74,7 +74,8 @@ class SynthSetup:
     prefix : str
         Namespace for DOM ids / form names / the grid-action channel (e.g. ``"abund"`` →
         ``#abund-grid``, ``abund-grid-actions``, forms ``abundparams``/``abundbase``/
-        ``abundmode``). Choose CSS-class-safe values; the page JS keys on ``.{prefix}-…``.
+        ``abundmode``). The atmosphere selects carry ``data-atmos="{prefix}"``, which is
+        how :data:`ATMOS_SCRIPT` finds the channel; choose CSS-class-safe values.
     section : str
         Store section holding this setup's per-target state (e.g. ``"abund_run"``).
     grids : gridmanager.GridManager
@@ -275,8 +276,9 @@ class SynthSetup:
         """Grid selector (registered grids + 'Individual atmosphere'); then a Source toggle
         (Interpolate / Pick file) for a registered grid, or a Format selector for Individual.
         The chosen file itself lives in the always-on path field below this block (revealed by
-        :meth:`show_file`), so no chip/browse button is rendered here. Namespaced by
-        ``self.prefix``."""
+        :meth:`show_file`), so no chip/browse button is rendered here. Each select carries
+        ``data-atmos`` (this setup's prefix) and ``data-atmos-key`` (``grid``/``mode``/
+        ``format``), the attributes :data:`ATMOS_SCRIPT` routes a change by."""
         p = self.prefix
         sel = self.selected_grid_id()
         run = store.get_section(self.section)
@@ -288,7 +290,8 @@ class SynthSetup:
                       f'{" selected" if sel == INDIVIDUAL_GRID else ""}>'
                       'Individual atmosphere</option>')
         out = ['<div class="field-group"><label>Grid</label>'
-               f'<select class="field-input {p}-grid-select">{grid_opts}</select></div>']
+               f'<select class="field-input" data-atmos="{p}" data-atmos-key="grid">'
+               f'{grid_opts}</select></div>']
 
         if sel == INDIVIDUAL_GRID:
             fmt = run.get("atmos_individual_format") or ATMOS_FORMATS[0]
@@ -296,7 +299,8 @@ class SynthSetup:
                 f'<option value="{html.escape(f)}"{" selected" if f == fmt else ""}>'
                 f'{html.escape(f)}</option>' for f in ATMOS_FORMATS)
             out.append('<div class="field-group field-inline"><label>Format</label>'
-                       f'<select class="field-input {p}-format-select">{fmt_opts}</select></div>')
+                       f'<select class="field-input" data-atmos="{p}" data-atmos-key="format">'
+                       f'{fmt_opts}</select></div>')
         else:
             selected = self.selected_grid() or {}
             if model_is_3d(selected.get("format")) and not is_snapshot_grid(selected):
@@ -307,7 +311,8 @@ class SynthSetup:
                     f'<option value="{v}"{" selected" if v == mode else ""}>{lbl}</option>'
                     for v, lbl in (("interp", "Interpolate"), ("pick", "Pick file")))
                 out.append('<div class="field-group field-inline"><label>Source</label>'
-                           f'<select class="field-input {p}-mode-select">{mode_opts}</select></div>')
+                           f'<select class="field-input" data-atmos="{p}" '
+                           f'data-atmos-key="mode">{mode_opts}</select></div>')
         return "".join(out)
 
     def atoms_ro_html(self):
@@ -496,3 +501,21 @@ class SynthSetup:
         except ValueError as exc:
             self.reason = str(exc)
             return None
+
+
+# One delegated listener drives the atmosphere selects of every SynthSetup on the page
+# (the synthesis modal, the abundance modal's Setup tab, the corrections modal). Emitted once
+# through the ``atmos_script`` template variable, beside the Form script. The payload is the
+# space-delimited ``"<key> <value> <nonce>"`` that :func:`htmlbridge.parse_action` reads, so
+# a value keeps its spaces; the file picker's own path field is not part of this.
+ATMOS_SCRIPT = r"""
+(function () {
+  var seq = 0;   // a repeated identical choice within one millisecond is still a new value
+  document.addEventListener('change', function (ev) {
+    var el = ev.target.closest('select[data-atmos]');
+    if (!el) return;
+    var m = Bokeh.documents[0].get_model_by_name(el.dataset.atmos + '-grid-actions');
+    if (m) m.setv({ value: el.dataset.atmosKey + ' ' + el.value + ' ' + Date.now() + '.' + (++seq) });
+  });
+})();
+"""

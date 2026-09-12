@@ -141,7 +141,7 @@
         <div class="splitter splitter-row" data-resize="bottom" title="Drag to resize"></div>
         <div id="abund-table">{{ abund_table_html|safe }}</div></div>
       <div id="abund-steps">
-        <div class="step-tabs" title="Abundance workflow steps">
+        <div class="step-tabs" data-tool="abund" title="Abundance workflow steps">
           <button class="step-tab abund-step-btn" data-step="1">Lines</button>
           <button class="step-tab abund-step-btn" data-step="2">Uncertainties</button>
         </div>
@@ -157,7 +157,7 @@
         <div class="splitter splitter-row" data-resize="bottom" title="Drag to resize"></div>
         <div id="corr-table">{{ corr_table_html|safe }}</div></div>
       <div id="corr-steps">
-        <div class="step-tabs" title="Abundance-correction views">
+        <div class="step-tabs" data-tool="corr" title="Abundance-correction views">
           <button class="step-tab corr-step-btn" data-step="1">Lines</button>
           <button class="step-tab corr-step-btn" data-step="2">Scatter</button>
         </div>
@@ -192,7 +192,7 @@
         <div class="splitter splitter-row" data-resize="bottom" title="Drag to resize"></div>
         <div id="ionbal-table">{{ ionbal_table_html|safe }}</div></div>
       <div id="ionbal-steps">
-        <div class="step-tabs" title="What the top pane shows">
+        <div class="step-tabs" data-tool="ionbal" title="What the top pane shows">
           <button class="step-tab ionbal-step-btn" data-step="1">Balance</button>
           <button class="step-tab ionbal-step-btn" data-step="2">Lines</button>
         </div>
@@ -878,16 +878,8 @@
     if (del) { gridAction('del', del.dataset.gridId); return; }
   });
 
-  // synthesis modal: grid select / source mode / clear-file go through "synth-grid-actions"
-  function synthGridAction(kind, arg) {
-    var m = Bokeh.documents[0].get_model_by_name('synth-grid-actions');
-    if (m) m.setv({ value: kind + ' ' + (arg || '') + ' ' + Date.now() });
-  }
-  document.addEventListener('change', function (ev) {
-    if (ev.target.closest('.synth-grid-select')) { synthGridAction('grid', ev.target.value); }
-    else if (ev.target.closest('.synth-mode-select')) { synthGridAction('mode', ev.target.value); }
-    else if (ev.target.closest('.synth-format-select')) { synthGridAction('format', ev.target.value); }
-  });
+  // the atmosphere selects of every synthesis setup (synth / abund / corr modals) are
+  // driven by the delegated atmos_script below (select[data-atmos] -> "<prefix>-grid-actions")
   // inline atmosphere file pickers (synth / abund / corr): the "Type a path…" field is
   // always shown while a concrete file is in play; its result list drops down while the
   // field is focused and — crucially — stays open while folders in the list are clicked
@@ -1329,13 +1321,6 @@
     document.querySelectorAll('.' + prefix + '-row.row-hover')
             .forEach(function (r) { r.classList.remove('row-hover'); });
   }
-  function selectAnalysisRow(prefix, row) {
-    var table = document.getElementById(prefix + '-table');
-    if (!table || !row) return;
-    table.querySelectorAll('.' + prefix + '-row.row-selected')
-         .forEach(function (r) { r.classList.remove('row-selected'); });
-    row.classList.add('row-selected');
-  }
   ['abund', 'corr', 'ionbal'].forEach(function (prefix) {
     var table = document.getElementById(prefix + '-table');
     var pane = document.getElementById(prefix + '-scatter');
@@ -1351,82 +1336,34 @@
     if (pane) pane.addEventListener('mouseleave', function () { clearMarks(prefix); });
   });
 
-  // abundance tool: own client->server channel for run / reference / result clicks / line toggles
-  function abundAction(kind, arg) {
-    var m = Bokeh.documents[0].get_model_by_name('abund-actions');
+  // The analysis tools' shared interactions (step / select / remove / sort / row jump /
+  // include toggles) are bound once by the delegated analysis_script below, keyed by the
+  // data-tool scope of the markup. What follows is each tool's own run and close wiring,
+  // on the same "<prefix>-actions" channel.
+  function analysisAction(prefix, kind, arg) {
+    var m = Bokeh.documents[0].get_model_by_name(prefix + '-actions');
     if (m) m.setv({ value: kind + ':' + (arg || '') + ':' + Date.now() });
   }
+
+  // abundance tool: the panel's run buttons, the settings modal and the reference select
   wireModal(null, 'close-abund', 'abund-modal');
   document.addEventListener('click', function (ev) {
     if (ev.target.closest('.abund-close')) { ewAction('abundance'); return; }
-    if (ev.target.closest('.abund-settings')) { abundAction('settings'); return; }
-    if (ev.target.closest('.abund-run-lines')) { abundAction('run-lines'); return; }
-    if (ev.target.closest('.abund-run-synth')) { abundAction('run-synth'); return; }
-    if (ev.target.closest('.abund-run-uncert')) { abundAction('run-uncert'); return; }
-    var step = ev.target.closest('.abund-step-btn');
-    if (step) { abundAction('step', step.dataset.step); return; }
-    var rem = ev.target.closest('[data-result-remove]');
-    if (rem) { abundAction('remove', rem.dataset.resultRemove); return; }
-    var ritem = ev.target.closest('.result-item');
-    if (ritem && ritem.dataset.result) { abundAction('select', ritem.dataset.result); return; }
-    var asort = ev.target.closest('.abund-lines .line-sort');
-    if (asort) { abundAction('sort', asort.dataset.sortcol); return; }
-    // a table row-click (but not the include checkbox) jumps the figure to that line
-    var lrow = ev.target.closest('.abund-row');
-    if (lrow && !ev.target.closest('.abund-line-chk')) {
-      selectAnalysisRow('abund', lrow);
-      abundAction('jump-line', lrow.dataset.line);
-    }
+    if (ev.target.closest('.abund-settings')) { analysisAction('abund', 'settings'); return; }
+    if (ev.target.closest('.abund-run-lines')) { analysisAction('abund', 'run-lines'); return; }
+    if (ev.target.closest('.abund-run-synth')) { analysisAction('abund', 'run-synth'); return; }
+    if (ev.target.closest('.abund-run-uncert')) { analysisAction('abund', 'run-uncert'); }
   });
   document.addEventListener('change', function (ev) {
     var ref = ev.target.closest('.abund-ref-select');
-    if (ref) { abundAction('ref', ref.value); return; }
-    var mask = ev.target.closest('.abund-mask-chk');
-    if (mask) { abundAction('mask-toggle'); return; }
-    var chk = ev.target.closest('.abund-line-chk');
-    if (chk) { abundAction('toggle-line', chk.dataset.line); }
+    if (ref) analysisAction('abund', 'ref', ref.value);
   });
 
-  // Abund Setup tab: atmosphere grid select / source / format / file (mirrors the synthesis modal)
-  function abundGridAction(kind, arg) {
-    var m = Bokeh.documents[0].get_model_by_name('abund-grid-actions');
-    if (m) m.setv({ value: kind + ' ' + (arg || '') + ' ' + Date.now() });
-  }
-  document.addEventListener('change', function (ev) {
-    if (ev.target.closest('.abund-grid-select')) { abundGridAction('grid', ev.target.value); }
-    else if (ev.target.closest('.abund-mode-select')) { abundGridAction('mode', ev.target.value); }
-    else if (ev.target.closest('.abund-format-select')) { abundGridAction('format', ev.target.value); }
-  });
-  // (the inline path field's show/hide is handled by the shared .inline-picker-auto logic above)
-
-  // abundance-correction tool: own client->server channel (run / step / select / line clicks)
-  function corrAction(kind, arg) {
-    var m = Bokeh.documents[0].get_model_by_name('corr-actions');
-    if (m) m.setv({ value: kind + ':' + (arg || '') + ':' + Date.now() });
-  }
+  // abundance-correction tool: the modal's Compute button
   wireModal(null, 'close-corr', 'corr-modal');
   document.addEventListener('click', function (ev) {
     if (ev.target.closest('.abundcorr-close')) { ewAction('abundcorr'); return; }
-    if (ev.target.closest('.corr-run')) { corrAction('run'); return; }
-    var step = ev.target.closest('.corr-step-btn');
-    if (step) { corrAction('step', step.dataset.step); return; }
-    var rem = ev.target.closest('[data-corr-remove]');
-    if (rem) { corrAction('remove', rem.dataset.corrRemove); return; }
-    var ritem = ev.target.closest('.corr-result-item');
-    if (ritem && ritem.dataset.corrResult) { corrAction('select', ritem.dataset.corrResult); return; }
-    var csort = ev.target.closest('.corr-lines .line-sort');
-    if (csort) { corrAction('sort', csort.dataset.sortcol); return; }
-    var lrow = ev.target.closest('.corr-row');
-    if (lrow && !ev.target.closest('.corr-line-chk')) {
-      selectAnalysisRow('corr', lrow);
-      corrAction('jump-line', lrow.dataset.line);
-    }
-  });
-  document.addEventListener('change', function (ev) {
-    var mask = ev.target.closest('.corr-mask-chk');
-    if (mask) { corrAction('mask-toggle'); return; }
-    var chk = ev.target.closest('.corr-line-chk');
-    if (chk) { corrAction('toggle-line', chk.dataset.line); }
+    if (ev.target.closest('.corr-run')) { analysisAction('corr', 'run'); }
   });
 
   // model atoms: the left-sidebar objects (select / remove), the panel's corrections action,
@@ -1472,51 +1409,15 @@
     });
   });
 
-  // Corr modal: atmosphere grid select / source / format / file (mirrors the synthesis modal)
-  function corrGridAction(kind, arg) {
-    var m = Bokeh.documents[0].get_model_by_name('corr-grid-actions');
-    if (m) m.setv({ value: kind + ' ' + (arg || '') + ' ' + Date.now() });
-  }
-  document.addEventListener('change', function (ev) {
-    if (ev.target.closest('.corr-grid-select')) { corrGridAction('grid', ev.target.value); }
-    else if (ev.target.closest('.corr-mode-select')) { corrGridAction('mode', ev.target.value); }
-    else if (ev.target.closest('.corr-format-select')) { corrGridAction('format', ev.target.value); }
-  });
-  // (the inline path field's show/hide is handled by the shared .inline-picker-auto logic above)
-
-  // ionisation balance: own client->server channel (view switch / select / line clicks /
-  // the modal's run button). The tool has no toolbar button — a measurement object in the
-  // left sidebar is what opens it.
-  function ionbalAction(kind, arg) {
-    var m = Bokeh.documents[0].get_model_by_name('ionbal-actions');
-    if (m) m.setv({ value: kind + ':' + (arg || '') + ':' + Date.now() });
-  }
+  // ionisation balance: the modal's run button and the panel's refit. The tool has no
+  // toolbar button — a measurement object in the left sidebar is what opens it.
   wireModal(null, 'close-ionbal', 'ionbal-modal');
   document.getElementById('ionbal-run').addEventListener('click', function () {
-    ionbalAction('run');
+    analysisAction('ionbal', 'run');
   });
   document.addEventListener('click', function (ev) {
     if (ev.target.closest('.ionbal-close')) { ewAction('ionbal'); return; }
-    if (ev.target.closest('.ionbal-refit')) { ionbalAction('refit'); return; }
-    var step = ev.target.closest('.ionbal-step-btn');
-    if (step) { ionbalAction('step', step.dataset.step); return; }
-    var rem = ev.target.closest('[data-ionbal-remove]');
-    if (rem) { ev.stopPropagation(); ionbalAction('remove', rem.dataset.ionbalRemove); return; }
-    var ritem = ev.target.closest('.ionbal-result-item');
-    if (ritem && ritem.dataset.ionbalResult) { ionbalAction('select', ritem.dataset.ionbalResult); return; }
-    var ssort = ev.target.closest('.ionbal-lines .line-sort');
-    if (ssort) { ionbalAction('sort', ssort.dataset.sortcol); return; }
-    var lrow = ev.target.closest('.ionbal-row');
-    if (lrow && !ev.target.closest('.ionbal-line-chk')) {
-      selectAnalysisRow('ionbal', lrow);
-      ionbalAction('jump-line', lrow.dataset.line);
-    }
-  });
-  document.addEventListener('change', function (ev) {
-    var mask = ev.target.closest('.ionbal-mask-chk');
-    if (mask) { ionbalAction('mask-toggle'); return; }
-    var chk = ev.target.closest('.ionbal-line-chk');
-    if (chk) { ionbalAction('toggle-line', chk.dataset.line); }
+    if (ev.target.closest('.ionbal-refit')) { analysisAction('ionbal', 'refit'); }
   });
 
   document.addEventListener('keydown', function (ev) {
@@ -1570,4 +1471,8 @@
 
 <!-- one delegated listener drives every controls.Form on the page -->
 <script>{{ form_script|safe }}</script>
+<!-- one for the atmosphere selects of every synthsetup.SynthSetup ... -->
+<script>{{ atmos_script|safe }}</script>
+<!-- ... and one for the shared interactions of the analysis tools (abundwizard) -->
+<script>{{ analysis_script|safe }}</script>
 {% endblock %}

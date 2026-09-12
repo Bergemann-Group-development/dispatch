@@ -40,9 +40,9 @@ from tumult import refstars  # noqa: E402
 from tumult.linestrength import LineStrengths  # noqa: E402
 from rangetool import RangeTool  # noqa: E402
 from synthmodal import SynthModal  # noqa: E402
-from synthsetup import SynthSetup  # noqa: E402
+from synthsetup import ATMOS_SCRIPT, SynthSetup  # noqa: E402
 from abundancetool import AbundanceTool  # noqa: E402
-from abundwizard import PROFILES  # noqa: E402  (shared EW-profile choices)
+from abundwizard import ANALYSIS_SCRIPT, PROFILES  # noqa: E402  (shared EW-profile choices)
 from atomtool import AtomTool, AtomObject  # noqa: E402
 from abundcorrtool import AbundCorrTool  # noqa: E402
 from ionbalance import IonBalanceTool  # noqa: E402
@@ -1663,6 +1663,8 @@ def build():
         ionbalsetup_html=ionbaltool.setup.form.html(),
         ionbaladv_html=ionbaltool.formadv.html(),
         form_script=FORM_SCRIPT + NUM_INPUT_SCRIPT,
+        atmos_script=ATMOS_SCRIPT,
+        analysis_script=ANALYSIS_SCRIPT,
         results_name=picker.results_name,
     )
     return ctx        # local harnesses drive the document through its context

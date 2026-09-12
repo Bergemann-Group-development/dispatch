@@ -213,12 +213,12 @@ class AbundanceTool(AbundanceWizard):
     def on_filter_changed(self):
         """Re-measure the selected result's EWs when the canvas Filtered switch toggles.
 
-        ``get_observation`` already returns the filter-effective reference, so this just re-runs
-        the (cheap) EW measurement over each line's stored fit window and repaints the table — the
-        Mask tool's EW panel does the same live via :meth:`EquivalentWidth.update`. Restricted to the ``"lines"``
-        stage on purpose: once synthesis has run, the abundances were inverted against the EW
-        measured at selection, so silently re-measuring under a new filter would misrepresent them.
-        Windows / flags / include-toggles are left untouched, so user curation survives."""
+        ``get_observation`` already returns the filter-effective reference, so this re-runs the
+        shared :func:`tumult.abundance.refresh_ews` over each line's stored fit window with the
+        live uncertainty controls and repaints the table when anything changed. Restricted to
+        the ``"lines"`` stage on purpose: once synthesis has run, the abundances were inverted
+        against the EW measured at selection, so silently re-measuring under a new filter
+        would misrepresent them. Windows, flags and include toggles are left untouched."""
         if not self.active:
             return
         res = self.selected()
@@ -228,21 +228,9 @@ class AbundanceTool(AbundanceWizard):
         if spec is None or spec.yunit != u.dimensionless_unscaled:
             return
         v = self.form1.values()
-        snr = float(v["snr"]) or None
-        cont_pct = float(v["cont_pct"])
-        changed = False
-        for ln in res.lines:
-            if not np.isfinite(ln.fit_window[0]):
-                continue          # a no-window line carries no EW to refresh
-            try:
-                prof = ab.measure_ew(spec, window=ln.fit_window, snr=snr,
-                                     cont_pct=cont_pct, profile=res.profile, x0=ln.lam0)
-            except Exception:
-                continue
-            ln.ew, ln.ew_err = prof.maa, prof.width_err_maa
-            changed = True
-        if changed:
-            self._render_selected()
+        outcome = ab.refresh_ews(spec, res.lines, profile=res.profile,
+                                 snr=float(v["snr"]) or None, cont_pct=float(v["cont_pct"]))
+        self.report_refresh(res, outcome)
 
     # --- session persistence ------------------------------------------------------------
     # the envelope, the factory and the observation relink are AbundanceWizard's: a result
@@ -469,12 +457,12 @@ class AbundanceTool(AbundanceWizard):
     def results_html(self):
         if not self.results:
             return ""
-        rows = self._results_rows("A", "", "data-result", "data-result-remove")
+        rows = self._results_rows("A")
         return ('<div class="section-header result-section-head">Abundances</div>'
                 + "".join(rows))
 
     def table_html(self, res):
-        head = self._table_head("abund-mask-chk", (
+        head = self._table_head((
             ("λ₀ [Å]", "lam0"), ("ion", "ion"), ("E<sub>low</sub>", "e_low"),
             ("log gf", "loggf"), ("EW [mÅ]", "ew"), ("blend", "blend"),
             (html.escape(self.value_label(res)), "a"),
@@ -495,7 +483,7 @@ class AbundanceTool(AbundanceWizard):
             fl = ", ".join(ln.flags)
             body.append(
                 f'<tr class="abund-row{cls}" data-line="{i}">'
-                f'<td><input type="checkbox" class="abund-line-chk" data-line="{i}"{chk}></td>'
+                f'<td><input type="checkbox" class="line-include-chk" data-line="{i}"{chk}></td>'
                 f'<td>{ln.lam0:.3f}</td><td>{html.escape(ln.ion)}</td>'
                 f'<td>{ln.e_low:.2f}</td><td>{ln.loggf:.2f}</td><td>{ew}</td>'
                 f'<td>{blend}</td><td>{a}</td><td>{vshift}</td><td>{vdop}</td>'
@@ -508,6 +496,6 @@ class AbundanceTool(AbundanceWizard):
                     f'<span class="abund-budget"> (photon {s["sigma_phot"]:.3f} · '
                     f'continuum {s["sigma_cont"]:.3f} · scatter {s["sigma_scatter"]:.3f} · '
                     f'n={s["n"]})</span></div>')
-        return (f'<table class="linelist-table abund-table abund-lines">'
+        return (f'<table class="linelist-table abund-table abund-lines" data-tool="abund">'
                 f'<thead>{head}</thead>'
                 f'<tbody>{"".join(body)}</tbody></table>{foot}')

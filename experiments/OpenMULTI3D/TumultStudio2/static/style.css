@@ -935,7 +935,7 @@ num-input[disabled] .num-spin button { cursor: not-allowed; }
 .abund-row:hover td, .abund-row.row-hover td,
 .abund-row.row-selected td { background: rgba(74, 144, 226, 0.14); }
 .abund-row.line-excluded { opacity: 0.4; }
-.abund-mask-chk { cursor: pointer; vertical-align: middle; }
+.analysis-mask-chk { cursor: pointer; vertical-align: middle; }
 .abund-flags { color: #e0a05c; }
 .abund-summary { padding: 8px 4px 2px; font-weight: 600; }
 .abund-budget { font-weight: 400; color: var(--text-muted); }
@@ -1012,7 +1012,6 @@ num-input[disabled] .num-spin button { cursor: not-allowed; }
 .corr-row:hover td, .corr-row.row-hover td,
 .corr-row.row-selected td { background: rgba(74, 144, 226, 0.14); }
 .corr-row.line-excluded { opacity: 0.4; }
-.corr-mask-chk { cursor: pointer; vertical-align: middle; }
 
 /* ---------------------------------------------------------------------------
    Ionisation balance: the measurement objects (left sidebar), their centre view
@@ -1046,7 +1045,6 @@ num-input[disabled] .num-spin button { cursor: not-allowed; }
 .ionbal-row:hover td, .ionbal-row.row-hover td,
 .ionbal-row.row-selected td { background: rgba(74, 144, 226, 0.14); }
 .ionbal-row.line-excluded { opacity: 0.4; }
-.ionbal-mask-chk { cursor: pointer; vertical-align: middle; }
 /* the streaming iteration/convergence line under the table */
 .ionbal-status { border-top: 1px solid var(--border); margin-top: 4px; }
 
