@@ -221,3 +221,17 @@ bokeh serve --show TumultStudio2
 ```
 
 Run Bokeh from here so the repository package is importable.
+
+The GUI keeps its preferences, recent files and saved sessions in `.tumultstudio.json`
+in the directory Bokeh was started from (`TUMULT_CONFIG` names another file). The file
+is created on first use; keep it out of version control.
+
+### GUI tests
+
+`python -m pytest tests/test_ui_execution.py tests/test_ui_events.py tests/test_store.py
+tests/test_session.py` exercises the document, the job table, the config store and the
+save slots headlessly, with stub workers and a temporary config. The browser half of
+`tests/test_ui_events.py` additionally needs `node` and the `playwright` npm package with
+its Chromium: it looks in the `npx` cache (`~/.npm/_npx/*/node_modules`) or under
+`TUMULT_NODE_PATH`, and skips when neither has it. `npx playwright install chromium`
+populates the cache; no Python Playwright is required.

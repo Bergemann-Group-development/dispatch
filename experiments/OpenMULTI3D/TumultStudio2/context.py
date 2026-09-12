@@ -1,39 +1,43 @@
 """AppContext - the one shared services object for the TumultStudio2 GUI.
 
-Before the Phase 4 consolidation, ``main.build()`` wired every tool with a bundle of
-closure lambdas (AbundanceTool took 15 of them), and cross-tool reactions were
-hand-threaded through ``update_all``. The context replaces that plumbing:
+``app.build`` creates the context first and installs the document-level services on it
+as they come into existence; every tool is then built against the context rather than a
+bundle of closures, and cross-tool reactions go through its event bus:
 
 * ``ctx.bridges`` - the shared :class:`htmlbridge.BridgeSet`; each tool creates and
   owns its hidden server->client bridges here (they are all collected into the single
-  document-root column by main).
+  document-root column by ``app.build``).
 * ``ctx.tools``   - the :class:`toolmanager.ToolManager` (mutual exclusion).
-* ``ctx.canvas``  - the shared :class:`canvas.SpectrumCanvas` (set by main right after
-  it is constructed; tools are built after that).
+* ``ctx.canvas``  - the shared :class:`canvas.SpectrumCanvas` (set right after it is
+  constructed; tools are built after that).
 * ``ctx.annot``   - the shared :class:`lineannot.LineAnnotations` overlay (line positions
   drawn over the spectrum); a tool attaches to it while its view is open.
-* ``ctx.strengths`` - the shared :class:`linestrength.LineStrengths` provider: which line
-  list, and whose strengths, the overlay ranks by and the line-list panel shows.
-* ``ctx.notify``  - the footer status message (installed by main once the footer
-  bridge exists; safe to call before that - it no-ops).
+* ``ctx.strengths`` - the shared :class:`tumult.linestrength.LineStrengths` provider:
+  which line list, and whose strengths, the overlay ranks by and the line-list panel shows.
+* ``ctx.notify``  - the footer status message (installed once the footer bridge exists;
+  safe to call before that - it no-ops).
 * ``ctx.run_busy`` / ``ctx.schedule`` / ``ctx.submit`` - deferred-work helpers
-  (installed by main; ``submit`` is the background loader ``load_async``).
-* ``ctx.submit_workflow`` - queue one durable synthesis request and deliver its result
-  to this document when it settles. ``ctx.synth_modal`` is the :class:`synthmodal.SynthModal`
-  that collects synthesis and fit requests (installed by main).
+  (``submit`` is the background loader ``app.load_async``: a document-owned job on the
+  IO pool, cancelled when the session closes unless admitted as detached).
+* ``ctx.submit_workflow`` - queue one durable synthesis request (every synthesis of the
+  modal) and deliver its result to this document when it settles; the workflow keeps
+  running when the session closes. ``ctx.synth_modal`` is the
+  :class:`synthmodal.SynthModal` that collects synthesis and fit requests.
 * ``ctx.jobs``    - the :class:`jobs.JobTable`: every background operation this document
   admitted, with its queued/running/cancelling/terminal state (the Processes panel).
 * ``ctx.workflow_refs`` - the :class:`jobs.WorkflowRefs` this document is attached to,
   saved beside the workspace in a slot; ``ctx.recovery`` the :class:`jobs.Recovery`
   records offered after a reconnect. ``ctx.discover_workflows``, ``ctx.attach_workflow``
-  and ``ctx.import_workflow`` (installed by main) are the recovery actions.
+  and ``ctx.import_workflow`` are the recovery actions.
 * ``ctx.generation`` - the workspace generation; work captures it when admitted and a
   delivery for another generation is dropped. ``advance_generation`` marks a workspace
   boundary (a session load).
 * ``ctx.restore_workspace`` - load a saved workspace slot as one document operation
-  (installed by main; see ``session.py`` for the schema and the load policy).
+  (see ``session.py`` for the schema and the load policy).
 * ``ctx.busy``    - raise/lower the footer progress bar without deferring anything, for
   work that already owns a tick of its own (``run_busy`` is this plus the deferral).
+* ``ctx.execution`` - the shared :class:`tumult.synthesis.runtime.ExecutionService`
+  behind the dispatch runs.
 * ``ctx.emit`` / ``ctx.subscribe`` - a minimal synchronous event bus. Events in use:
 
   - ``"changed"``       - the workspace changed (an object was added/removed/selected,

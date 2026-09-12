@@ -1,15 +1,19 @@
-"""The formal base class for the mutually-exclusive sidebar tools.
+"""The base class of the tools that take turns owning the right sidebar.
 
-The EW / Filter / Normalise / Synth / Abundance tools always shared an implicit
-protocol - ``active``, ``activate()``, ``deactivate()`` (what ``ToolManager``
-duck-types), a panel bridge, a pair of on/off mode bridges, and an ``update()``
-called when the workspace changes. ``Tool`` makes that protocol explicit and owns the
-common plumbing; the activation/deactivation *logic* stays with each tool (it is the
-source of truth for its own ``active`` flag, including deferred or refused entries).
+The canvas gestures (``RangeTool`` for the Mask tool's range, ``FilterTool``,
+``NormaliseTool``), the object views (``MaskTool``, ``AtomTool``) and the three
+analysis wizards (``AbundanceTool``, ``AbundCorrTool``, ``IonBalanceTool``) share one
+protocol: ``active``, ``activate()`` and ``deactivate()``, which ``ToolManager`` drives
+for mutual exclusion; a panel bridge for the sidebar body; on/off class bridges for the
+sidebar mode and, where the tool has one, its toolbar button; and ``update()``, called
+on the context's ``"changed"`` event when the workspace changes. ``Tool`` owns that
+plumbing. Each tool keeps the activation logic and is the source of truth for its own
+``active`` flag, including a deferred entry (Filter activates on the next tick) and a
+refused one (a missing precondition leaves the flag down).
 
-Subclasses set ``name`` and typically call :meth:`own_mode_bridges` /
-:meth:`own_panel` in ``__init__``; ``push_mode``/``push_panel`` then drive them.
-``update()`` is subscribed to the context's ``"changed"`` event automatically.
+Subclasses set ``name`` and call :meth:`own_mode_bridges` / :meth:`own_panel` in
+``__init__``; ``push_mode`` / ``push_panel`` then drive them. :func:`suppress_callbacks`
+is the shared guard for setters whose Bokeh writes would otherwise re-enter a drag handler.
 """
 from __future__ import annotations
 

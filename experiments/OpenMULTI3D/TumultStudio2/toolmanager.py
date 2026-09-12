@@ -1,11 +1,9 @@
-"""Mutual-exclusion registry for the canvas's interactive tools.
+"""Mutual-exclusion registry for the tools that own the right sidebar.
 
-The EW, Synthesize, Normalise and Filter tools all share the right sidebar / the
-canvas select gesture, so at most one may be active at a time. Previously every
-toggle in ``main.on_action`` hand-wired "stand down all the others" — O(n²) coupling
-that a new tool had to be threaded into by editing every existing branch.
-
-``ToolManager`` owns that invariant instead. A *tool* is any object exposing:
+The range, normalise, filter, line-mask, atom and the three analysis tools (registered
+by ``app.build``) all share the right sidebar and the canvas select gesture, so at most
+one may be active at a time. ``ToolManager`` owns that invariant, so a tool never has to
+know which others exist. A *tool* is any object exposing:
 
 * ``active``      — bool, True while it owns the sidebar
 * ``activate()``  — enter the tool (may no-op and leave ``active`` False if a

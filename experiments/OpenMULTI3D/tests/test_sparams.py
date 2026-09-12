@@ -407,13 +407,19 @@ def test_measurement_can_seed_independent_abundance_and_balance_fits():
     assert restored.lines[0].ew == measurement.lines[0].ew
 
 
-def test_legacy_balance_does_not_restore_unconstrained_success():
+def test_balance_record_without_a_termination_is_not_restored_as_converged():
     data = _measurement().to_dict()
-    data.pop('schema_version')
     data.pop('termination')
     restored = ms.BalanceResult.from_dict(data)
     assert not restored.converged
     assert restored.termination == 'undetermined'
+
+
+def test_unversioned_balance_record_is_refused():
+    data = _measurement().to_dict()
+    data.pop('schema_version')
+    with pytest.raises(ValueError, match='schema version'):
+        ms.BalanceResult.from_dict(data)
 
 
 def test_abundance_override_replaces_existing_element():

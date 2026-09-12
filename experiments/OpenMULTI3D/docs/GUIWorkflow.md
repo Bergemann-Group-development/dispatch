@@ -1,8 +1,9 @@
 # TumultStudio2 workflow: ranges, line masks, synthesis and fits
 
-Target design for the canvas tools and the synthesis entry points. It replaces the
-Synthesize sidebar panel (`TumultStudio2/synthpanel.py`) and the separate EW toolbar tool
-with one range gesture and one synthesis modal. Terms follow `GLOSSARY.md`.
+The canvas tools, the synthesis entry points, the Processes panel and the saved sessions
+as TumultStudio2 implements them: one range gesture, one synthesis modal, one job table,
+one workspace slot format. Terms follow `GLOSSARY.md`; the code owners are listed at the
+end.
 
 ## Left sidebar: one focused object
 
@@ -88,7 +89,11 @@ malformed, structurally invalid or unsupported-`version` file is a `store.Config
 naming the path and cause, and no writer replaces it with defaults. The Sessions modal
 reports *Saved* only after the replacement succeeded; a failed save or delete shows the
 destination and cause in the footer and leaves the previous file and the live workspace
-as they were, so the action can be retried once the cause is fixed.
+as they were, so the action can be retried once the cause is fixed. The recent-files
+list is the one exception: opening a spectrum, run or model atom records it as a
+convenience, so a rejected config there is reported in the footer at warn level and the
+open goes ahead. Preference forms write through the same store and a rejected config
+fails their write loudly in the server log.
 
 ### What a save slot holds
 
@@ -132,9 +137,9 @@ is version 2 for that field.
 
 ## Toolbar
 
-`Annot | Filter [Filtered] Normalise | Mask`. The Synth and EW buttons are removed; the
-Mask tool takes over both range gestures. The Corr button is removed; NLTE corrections start
-from a model-atom object (see below).
+`Annot | Filter [Filtered] Normalise | Mask`. There is no synthesis, EW or correction
+button: the Mask tool owns every range gesture (line mask, synthesis, fit, equivalent
+width), and NLTE corrections start from a model-atom object (see below).
 
 ## Mask tool
 
@@ -288,15 +293,30 @@ with the selected line's curve-of-growth inversion beside it, over the per-line 
 **Scatter** (ΔA against excitation energy and against reduced EW, side by side), with the
 line include toggles curating the mean.
 
-## Code consequences
+## Code owners
 
-- `SynthPanel` is replaced by a `SynthModal` structured like the abundance modal; `FitTab`
-  becomes its Fit section; the departure-solve action is dropped from the GUI for now.
-- `RangeSelect` is owned by the Mask tool alone. `EquivalentWidth` becomes a sub-panel of
-  the Mask tool instead of a toolbar tool.
-- `MaskTool._start_placing` is replaced by activating the Mask tool in add mode.
-- The right sidebar gains a `mask-active` mode class; `synth-active` and `ew-active` go.
-- The ion-balance and abundance modals are unchanged.
-- `AtomTool` (`atomtool.py`) owns the atom objects, the atom view and the panel; `AbundCorrTool`
-  loses its toolbar button, sidebar forms and atom picker and gains the modal and the chained
-  run; `AbundanceResult.atom_path` links a result to its atom.
+- `app.py` builds the document: the `AppContext` (`context.py`) with its services, the
+  canvas, the tools, the Processes panel, `load_async`, `submit_workflow`, the recovery
+  actions, `snapshot`/`restore_workspace` and the Sessions bridge. `main.py` only calls
+  `app.build()`; `app_hooks.py` holds the Bokeh server lifecycle hooks.
+- `jobs.py` owns the job table (`Job`, `JobTable`), the workflow references and the
+  recovery records; `session.py` the workspace schema, its validation and its headless
+  preparation; `store.py` the config file (preferences, recent files, slots).
+- `tool.py` and `toolmanager.py` own the sidebar-tool protocol and mutual exclusion.
+  `RangeTool` (`rangetool.py`) is the Mask tool of the toolbar: it owns `RangeSelect` and
+  hosts `EquivalentWidth` (`ew.py`) as its sub-panel. `MaskTool` (`masktool.py`) owns the
+  LineMasks view over `MaskStore` (`maskstore.py`) and hands "+ New mask" to the range
+  tool in add mode.
+- `SynthModal` (`synthmodal.py`) collects both modal modes from `SynthSetup`
+  (`synthsetup.py`) with `FitTab` (`fittab.py`) as its Fit section; there is no
+  departure-solve action in the GUI.
+- `AbundanceWizard` (`abundwizard.py`) is the base of the abundance, correction and
+  ionisation-balance tools: the step/result/table markup, the delegated analysis binder,
+  the result jobs (`ResultJobs` in `jobs.py`), the shared EW refresh report and the slot
+  envelope. `AtomTool`
+  (`atomtool.py`) owns the atom objects, the atom view and the correction entry point;
+  `AbundanceResult.atom_path` links a correction result to its atom.
+- The headless owners are in `tumult/`: `synthesis` (requests, submission, records,
+  runtime), `abundance`, `measurement`, `sparams`, `linediag`, `linestrength`,
+  `refstars`, `linemask` and `spectrum_io`. The GUI imports them directly; there are no
+  re-export modules under `TumultStudio2/`.
