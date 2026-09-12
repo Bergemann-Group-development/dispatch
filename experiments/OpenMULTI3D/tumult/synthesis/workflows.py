@@ -10,7 +10,9 @@ The split of inputs (see the plan):
   atom/abund/absmet/linelist files, solver/output/runtime knobs;
 - **run settings** (right-sidebar panel): only Teff, logg, FeH, vmic, the abundances
   override string, the relative-abundances flag, and LTE/NLTE;
-- the wavelength window comes from the current canvas x-range (passed as xmin/xmax).
+- the wavelength windows come from the caller: a :class:`~tumult.synthesis.SynthRequest`
+  carries them as masks (:func:`resolve_request`, :func:`execute_request`, :func:`fit`),
+  while the older ``compute*`` entry points still take one ``xmin/xmax`` pair.
 """
 from __future__ import annotations
 
@@ -34,8 +36,9 @@ from ..abundance import (
 from .api import adaptive_fit
 from .cancel import CancelToken, CancelledError
 from .runtime import get_runtime
-from .request import (Atmosphere1D, GridTarget, ResolvedSynthRequest, Snapshot3D,
-                      SynthesisResult, SynthRequest)
+from .request import (Atmosphere1D, FitRequest, GridTarget, MaskWindow,
+                      ResolvedSynthRequest, Snapshot3D, SynthesisResult, SynthRequest,
+                      check_request)
 from .snapshot_grid import discover_grid
 from ..auxfuncs import update_dict
 
@@ -751,6 +754,7 @@ def resolve_request(request: SynthRequest) -> ResolvedSynthRequest:
     if not isinstance(request, SynthRequest):
         raise TypeError('resolve_request expects a SynthRequest')
     request = SynthRequest.from_dict(request.to_dict())  # submission-time ownership
+    check_request(request)
     root = execution_root(request.prefs).resolve()
     prefs = deepcopy(request.prefs)
     for key in ('linelist', 'absmet', 'abund_file'):
@@ -963,47 +967,39 @@ def abund_elements(prefs):
     return [el for el in abund_table(prefs) if el not in ("H", "Fe")]
 
 
-def fit(target, prefs, run_vals, fit_stellar, abund_fits, fit_post, xmin=None, xmax=None,
-        *, grid, atmos_file=None, windows=None, cancel_token=None):
-    """Fit ``target`` (a tumult Spectrum) by adaptive grid synthesis.
+def fit(observation, request, *, cancel_token=None):
+    """Fit ``observation`` (a tumult Spectrum) by adaptive grid synthesis around
+    ``request`` (a :class:`~tumult.synthesis.request.FitRequest`).
 
-    ``run_vals`` holds the initial guesses / fixed config (teff/logg/feh/vmic, free-text
-    ``abundances``, ``relative_abundances``, ``mode``, ``atoms``). ``fit_stellar`` is the set
-    of switched stellar axes; ``abund_fits`` is ``{element: guess}`` (each always fitted);
-    ``fit_post`` is ``{post_name: guess}`` for switched vshift/vrot/zeta_rt. With ``atmos_file``
-    given the atmosphere is that single file (Individual, or a picked grid member): the stellar
-    params are fixed by the file, so ``fit_stellar`` must be empty and only abundances/broadening
-    are fit. Returns ``(best: dict, raw: Spectrum, post: dict)`` where ``raw`` is the best-fit
-    spectrum *without* post-processing and ``post`` is ``{vshift/vrot/zeta_rt: value}`` for the
-    caller to apply as a live convolution (so the canvas stores a clean spectrum and the
-    Edit tab reflects the fitted broadening). ``windows`` (a sequence of ``(lo, hi)`` in the
-    target's x unit) restricts the comparison to the target samples inside any of them —
-    a line mask's fit windows — while ``[xmin, xmax]`` stays the span synthesised; the
-    model is evaluated at the target's own samples, so the gaps between windows cost
-    nothing. Blocking — call from a worker thread.
+    Every trial point is the fit's synthesis request at that point's stellar parameters
+    and abundance terms, executed through :func:`execute_request` over the one continuous
+    span of the request's synth windows, so the point inherits the request's preferences,
+    expert settings, sampling and dispatch padding. The observation is cropped to that
+    span and then reduced to the samples inside the request's fit windows; the model is
+    evaluated at those samples, so the gaps between windows cost nothing. Returns
+    ``(best: dict, raw: Spectrum, post: dict)``: ``raw`` is the best-fit spectrum
+    *without* post-processing and ``post`` is ``{vshift/vrot/zeta_rt: value}`` for the
+    caller to apply as a live convolution, so a canvas stores a clean spectrum and
+    shows the fitted broadening as an edit. Blocking; call from a worker thread.
     """
-    if atmos_file:
-        # single-file synthesis: no grid to interpolate, so the stellar axes have no nodes.
-        if fit_stellar:
-            raise ValueError("Stellar parameters can't be fit from a single atmosphere file.")
-        atmos = {}
-    else:
-        folder = grid.get("folder")
-        if not folder:
+    if not isinstance(request, FitRequest):
+        raise TypeError("fit expects a FitRequest")
+    synthesis = request.synthesis
+    prefs, run_vals, selection = synthesis.prefs, synthesis.run_vals, synthesis.selection
+    fit_stellar, abund_fits = request.fit_stellar, request.abund_fits
+    fit_post = request.fit_post
+    axes = request.axes
+    # the stellar axes are sampled at the grid's nodes; a single file has none (FitRequest
+    # already refused fit_stellar for it)
+    atmos = {}
+    if isinstance(selection, GridTarget) and fit_stellar:
+        if not selection.grid.get("folder"):
             raise ValueError("No atmosphere grid folder configured (Preferences → Synthesis).")
-        atmos = discover_grid(grid)
-
-    axes = list(fit_stellar) + list(abund_fits)
-    if not axes and not fit_post:
-        raise ValueError("Select at least one parameter to fit.")
-    # NLTE is solved from model atoms; without one there is nothing to depart from, and the
-    # run would silently come back LTE.
-    if str(run_vals.get("mode", "LTE")).upper() == "NLTE" and not run_vals.get("atoms"):
-        raise ValueError("An NLTE fit needs model atoms.")
+        atmos = discover_grid(selection.grid, execution_root(prefs))
 
     guesses = {p: float(run_vals[p]) for p in fit_stellar}
-    guesses.update({el: float(v) for el, v in abund_fits.items()})
-    guesses.update({p: float(v) for p, v in fit_post.items()})
+    guesses.update(abund_fits)
+    guesses.update(fit_post)
 
     # Teff/logg/[Fe/H] are sampled at the discrete atmosphere-grid nodes; vmic and the
     # abundances are continuous overrides with a lattice step.
@@ -1022,13 +1018,12 @@ def fit(target, prefs, run_vals, fit_stellar, abund_fits, fit_post, xmin=None, x
     free_abund = str(run_vals.get("abundances", "")).strip()
     relative = bool(run_vals.get("relative_abundances", False))
     solar = abund_table(prefs)
+    span = request.synth_span
+    span_window = MaskWindow(span, span)
 
     def synth_point_fn(point):
-        rv = dict(run_vals)
-        teff = point.get("teff", run_vals["teff"])
-        logg = point.get("logg", run_vals["logg"])
+        stellar = {key: float(point.get(key, run_vals[key])) for key in fit_stellar}
         feh = float(point.get("feh", run_vals["feh"]))
-        vmic = point.get("vmic", run_vals["vmic"])
         terms = [free_abund] if free_abund else []
         for el in abund_fits:
             if el not in point:
@@ -1036,20 +1031,17 @@ def fit(target, prefs, run_vals, fit_stellar, abund_fits, fit_post, xmin=None, x
             xfe = point[el]
             val = xfe if relative else xfe_to_abund(xfe, el, feh, solar)
             terms.append(f"{el}={val:.4f}")
-        rv["abundances"] = " ".join(terms)
-        tgt = (float(teff), float(logg), feh, float(vmic))
+        varied = synthesis.with_stellar(**stellar).with_run_vals(
+            abundances=" ".join(terms)).with_masks([span_window])
         try:
-            return compute(tgt, prefs, rv, xmin, xmax, grid=grid, atmos_file=atmos_file,
-                           cancel_token=cancel_token)
+            return execute_request(varied, cancel_token=cancel_token).spectrum
         except (ValueError, RuntimeError):
             return None  # outside the atmosphere hull etc. -> drop this grid point
 
-    if xmin is not None and xmax is not None:
-        target = target.crop(xmin=xmin, xmax=xmax)
-    if windows:
-        target = _inside_windows(target, windows)
-        if len(target) < 2:
-            raise ValueError("The target has no samples inside the fit windows.")
+    target = observation.crop(xmin=span[0], xmax=span[1])
+    target = _inside_windows(target, request.fit_windows)
+    if len(target) < 2:
+        raise ValueError("The target has no samples inside the fit windows.")
 
     xtol = {**_FIT_XTOL, **{el: 0.01 for el in abund_fits}}  # abundances to 0.01 dex
     best, fitted, _grid = adaptive_fit(

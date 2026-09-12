@@ -4,11 +4,22 @@ It is opened on a *job* — a free wavelength range drawn with the Mask tool, th
 a line-mask set, or a blank window from the empty landing page — in one of two modes:
 
 * **synth**: compute a spectrum at the configured (Teff, log g, [Fe/H], vmic), abundances
-  and RT mode, and add it to the canvas.
+  and RT mode, and add it to the canvas. Every synthesis, whatever its atmosphere or
+  window, is one durable workflow (``ctx.submit_workflow``): it is detached from the
+  document, so closing the tab leaves it running and a later document can recover it.
 * **fit**: fit a target spectrum by adaptive grid synthesis, starting from that same
   configuration, with the Fit section (:class:`fittab.FitTab`) saying what varies. The
   best-fit stellar parameters are written back into the setup, so the next synthesis starts
-  from them.
+  from them. A fit is a document-owned job (``ctx.submit``), cancelled when the tab closes,
+  since its result has no durable contract yet.
+
+Both modes collect one owned :class:`~tumult.synthesis.SynthRequest` through
+:meth:`synthsetup.SynthSetup.context` and add the job's windows to it: a free range is one
+:class:`~tumult.synthesis.MaskWindow` whose fit and synth bounds coincide, a mask set
+contributes its included masks with their distinct fit and synth windows. Unsupported
+combinations (a saved departure field outside NLTE or with a grid, a fit with a snapshot
+or a saved departure field, ...) are refused before anything is submitted, with the
+reason in the footer and the dialog left open.
 
 The atmosphere + stellar-parameter + RT-mode cluster is a composed
 :class:`synthsetup.SynthSetup` (the same component the abundance / correction wizards own)
@@ -24,7 +35,7 @@ import html
 from pathlib import Path
 
 import store
-from tumult.synthesis import GridTarget, Snapshot3D
+from tumult.synthesis import FitRequest, GridTarget, MaskWindow, check_request
 from tumult.synthesis import workflows as synth
 from atompicker import AtomPicker
 from controls import Field, Form
@@ -49,13 +60,9 @@ def _human_size(n):
 
 
 class SynthModal:
-    def __init__(self, ctx, submit, submit_workflow, add, on_warn=None):
+    def __init__(self, ctx, add, on_warn=None):
         self.ctx = ctx
         self.canvas = ctx.canvas
-        self._submit = submit    # (name, loader, on_done, detached=False) -> background run
-        # (name, request, on_done, meta) -> WorkflowHandle: one durable, detached
-        # synthesis; the name and meta go into its record for recovery by a later document
-        self._submit_workflow = submit_workflow
         self._add = add          # (spec, name, meta=None, conv=None) -> add to the canvas
         self.on_warn = on_warn   # push True/False when configured files go missing/found
         self.missing = []        # path prefs currently pointing at non-existent files
@@ -312,49 +319,37 @@ class SynthModal:
         self.fit.set_targets([(o.uid, o.name) for o in self.canvas.objects])
 
     def run_fit(self):
-        """Run an adaptive grid fit of the chosen target on the synth executor."""
-        if self.missing:
-            self.notify(f"Cannot fit — missing files: {', '.join(self.missing)}. Check Preferences.")
+        """Fit the chosen target on the WORKFLOWS pool as a document-owned job.
+
+        The request is the setup's, with the job's windows; :class:`FitRequest` refuses
+        what fitting does not support (a snapshot, a saved departure field, stellar axes
+        with a fixed file) before the job is admitted."""
+        request = self.setup.context()
+        if request is None:
+            self.notify(self.setup.reason or "Cannot fit — check Preferences → Synthesis.")
             return
-        # A registered grid (interpolated) or a single fixed atmosphere file (Individual /
-        # picked grid member). The fixed-file case fits abundances + broadening only — the Fit
-        # section already hides the stellar switches, so ``fit_stellar`` comes back empty.
-        grid = self.setup.active_grid()
-        if grid is None:
-            self.notify("No atmosphere grid — register one in Preferences → Synthesis, or "
-                        "choose 'Individual atmosphere'.")
-            return
-        if self.setup.is_snapshot:
-            self.notify("Fitting is available for 1D atmospheres and grids only.")
-            return
-        atmos_file = self.setup.atmos_file()
-        if self.setup.show_file() and not atmos_file:
-            self.notify("Pick an atmosphere file to fit against it.")
+        windows = self._job_windows()
+        if not windows:
+            self.notify("Set the wavelength window (λ min/max) first.")
             return
         c = self.fit.collect()
         obj = self.canvas._find(c["target"]) if c["target"] else None
         if obj is None:
             self.notify("Select a target spectrum to fit.")
             return
-        if not c["fit_stellar"] and not c["abund_fits"] and not c["fit_post"]:
-            self.notify("Switch on at least one parameter (or add an abundance) to fit.")
+        try:
+            fit_request = FitRequest(request.with_masks(windows),
+                                     fit_stellar=c["fit_stellar"],
+                                     abund_fits=c["abund_fits"], fit_post=c["fit_post"])
+        except ValueError as exc:
+            self.notify(f"Cannot fit: {exc}")
             return
-        mode = self.mode_form.value("mode")
-        if str(mode).upper() == "NLTE" and not self.atoms.selected:
-            self.notify("NLTE fit needs model atoms — add them via the RT mode selector.")
-            return
-        xmin, xmax, windows = self._fit_windows()
-        if xmin is None:
-            self.notify("Set the wavelength window (λ min/max) first.")
-            return
-        guesses = {k: float(v) for k, v in self.run_form.values().items()}
-        av = self.abund_form.values()  # shared Abundances + relative flag (one source of truth)
-        abundances, relative = av["abundances"], bool(av["relative_abundances"])
-        run_vals = {**guesses, "abundances": abundances,
-                    "relative_abundances": relative, "mode": mode,
-                    "atoms": list(self.atoms.selected)}
-        target = obj.spectrum
-        prefs = load_prefs()
+        synthesis = fit_request.synthesis
+        rv, grid = synthesis.run_vals, self.setup.active_grid()
+        guesses = {k: float(rv[k]) for k in ("teff", "logg", "feh", "vmic")}
+        abundances, relative = rv["abundances"], bool(rv["relative_abundances"])
+        observation = obj.spectrum
+        xmin, xmax = fit_request.synth_span
         name = f"fit·{obj.name}"
 
         def on_done(result):
@@ -363,36 +358,38 @@ class SynthModal:
             # the best-fit stellar parameters become the setup, so the next synthesis (or
             # fit) starts from them; the broadening (post) is applied as a live convolution,
             # shown in the Edit tab.
-            stellar = {k: float(best.get(k, guesses[k])) for k in ("teff", "logg", "feh", "vmic")}
+            stellar = {k: float(best.get(k, guesses[k])) for k in guesses}
             self.adopt_stellar(stellar)
             terms = synth.fitted_abundance_terms(
-                best, c["abund_fits"], base=abundances, relative=relative,
-                feh=float(stellar["feh"]), solar=synth.abund_table(prefs))
-            meta = self._synth_meta(stellar, mode=mode, abundances=terms,
-                                    relative=relative, atoms=run_vals["atoms"],
+                best, fit_request.abund_fits, base=abundances, relative=relative,
+                feh=float(stellar["feh"]), solar=synth.abund_table(synthesis.prefs))
+            meta = self._synth_meta(stellar, mode=rv["mode"], abundances=terms,
+                                    relative=relative, atoms=rv["atoms"],
                                     xmin=xmin, xmax=xmax,
-                                    atmosphere=self._atmosphere_rows(grid, atmos_file))
+                                    atmosphere=self._selection_rows(synthesis.selection, grid))
             self._add(raw, name, meta=meta, conv=post)
 
         pulse(self.dialog, "close")
-        self._submit(
-            name,
-            lambda token=None: synth.fit(target, prefs, run_vals, c["fit_stellar"],
-                                         c["abund_fits"], c["fit_post"], xmin, xmax,
-                                         windows=windows, grid=grid, atmos_file=atmos_file,
-                                         cancel_token=token),
-            on_done)
+        self.ctx.submit(name, lambda token=None: synth.fit(observation, fit_request,
+                                                           cancel_token=token), on_done)
 
-    def _fit_windows(self):
-        """``(xmin, xmax, windows)`` for the fit: the synthesis span, and the fit windows the
-        target is compared inside (``None`` for a free range, which is compared throughout)."""
+    def _job_windows(self):
+        """The job's windows as :class:`MaskWindow` objects: a mask set's included masks
+        with their own fit and synth windows (a mask without synth bounds spans its fit
+        window), or the free range as one window with coinciding bounds. Empty when the
+        range fields do not hold a valid interval."""
         kind, mset = self.job or ("range", None)
         if kind == "masks":
-            masks = [m for m in mset.masks if m.include]
-            xmin, xmax = self._mask_span(masks)
-            return xmin, xmax, [(m.lmin, m.lmax) for m in masks]
+            windows = []
+            for m in mset.masks:
+                if not m.include:
+                    continue
+                synth_window = ((m.smin, m.smax) if m.smin == m.smin and m.smax == m.smax
+                                else (m.lmin, m.lmax))
+                windows.append(MaskWindow((m.lmin, m.lmax), synth_window))
+            return tuple(windows)
         xmin, xmax = self._window_fields()
-        return xmin, xmax, None
+        return () if xmin is None else (MaskWindow((xmin, xmax), (xmin, xmax)),)
 
     def adopt_stellar(self, stellar):
         """Write ``{teff, logg, feh, vmic}`` into the setup (form + store)."""
@@ -501,45 +498,42 @@ class SynthModal:
 
     # --- launch -----------------------------------------------------------
     def synthesize(self):
+        """Submit the job as one durable synthesis workflow, whatever its atmosphere."""
         request = self.setup.context()
         if request is None:
             self.notify(self.setup.reason
                         or "Cannot synthesize — check Preferences → Synthesis.")
             return
-        kind, mset = self.job or ("range", None)
-        selected_masks = tuple(m for m in mset.masks if m.include) if kind == "masks" else ()
-        xmin, xmax = (None, None) if selected_masks else self._window_fields()
-        if not selected_masks and xmin is None:
+        windows = self._job_windows()
+        if not windows:
             self.notify("Set the synthesis wavelength window (λ min/max) first.")
             return
-        rv, grid, target = request.run_vals, request.grid, request.target
-        atmos_file, prefs = request.atmos_file, request.prefs
+        try:
+            request = check_request(request.with_masks(windows))
+        except ValueError as exc:
+            self.notify(f"Cannot synthesize: {exc}")
+            return
+        kind, mset = self.job or ("range", None)
+        rv, target = request.run_vals, request.target
         name = (f"t{target[0]:.0f}g{target[1]:.1f}m{target[2]:+.1f}v{target[3]:.1f}"
                 + ("·NLTE" if str(rv.get("mode")).upper() == "NLTE" else ""))
-        shown_min, shown_max = (self._mask_span(selected_masks) if selected_masks
-                                else (xmin, xmax))
+        shown_min = min(w.synth[0] for w in windows)
+        shown_max = max(w.synth[1] for w in windows)
+        atmosphere = self._selection_rows(request.selection, self.setup.active_grid())
+        if request.departure_field is not None:
+            atmosphere.append(["Saved departures", str(request.departure_field.folder)])
         meta = self._synth_meta(
             {"teff": target[0], "logg": target[1], "feh": target[2], "vmic": target[3]},
             mode=rv["mode"], abundances=rv["abundances"],
             relative=rv["relative_abundances"], atoms=rv["atoms"],
-            xmin=shown_min, xmax=shown_max,
-            atmosphere=self._selection_rows(request.selection, self.setup.active_grid()))
-        if selected_masks:
+            xmin=shown_min, xmax=shown_max, atmosphere=atmosphere)
+        if kind == "masks":
             meta["params"].append(["Line mask", mset.name])
+
+        def add_result(result):
+            for index, spec in enumerate(result.spectra, start=1):
+                suffix = f"·{index}" if len(result.spectra) > 1 else ""
+                self._add(spec, name + suffix, meta=meta)
+
         pulse(self.dialog, "close")
-        if selected_masks or isinstance(request.selection, Snapshot3D):
-            request_masks = selected_masks or ({"fit": (xmin, xmax), "synth": (xmin, xmax)},)
-            request = request.with_masks(request_masks)
-
-            def add_result(result):
-                for index, spec in enumerate(result.spectra, start=1):
-                    suffix = f"·{index}" if len(result.spectra) > 1 else ""
-                    self._add(spec, name + suffix, meta=meta)
-
-            self._submit_workflow(name, request, add_result, meta)
-        else:
-            self._submit(name,
-                         lambda token=None: synth.compute(target, prefs, rv, xmin, xmax,
-                                                           grid=grid, atmos_file=atmos_file,
-                                                           cancel_token=token),
-                         lambda spec: self._add(spec, name, meta=meta))
+        self.ctx.submit_workflow(name, request, add_result, meta)

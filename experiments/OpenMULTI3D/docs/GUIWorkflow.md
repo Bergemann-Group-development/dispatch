@@ -35,13 +35,14 @@ left sidebar from admission to its terminal state:
 Deliveries are guarded by the document's lifetime and by the workspace generation
 (`ctx.generation`) captured when the job was admitted: a completion arriving after the
 session closed, or after a session load advanced the generation, still settles its row
-but adds nothing to the workspace. Closing the tab cancels the document's jobs except
-detached ones (durable workflows, long departure solves), which keep running and write
-their result to disk; an explicit cancel from the panel still ends a detached job.
+but adds nothing to the workspace. Closing the tab cancels the document's jobs (loads,
+fits, analysis jobs) except detached ones (every synthesis, which is a durable workflow,
+and long departure solves), which keep running and write their result to disk; an
+explicit cancel from the panel still ends a detached job.
 
 ### Recovering durable workflows after a reconnect
 
-A durable workflow (a mask-set or 3D-snapshot synthesis submitted through
+A durable workflow (any synthesis from the modal, submitted through
 `tumult.synthesis.submit`) writes `workflow.json` under
 `<dispatch_cwd>/<synth_output_dir>/_workflows/<id>/` with the name and Info-tab
 annotations it was submitted with, and its result under `result/`. The document that
@@ -174,11 +175,20 @@ set's synth windows) and the empty landing page (blank λ fields).
 - Body: Atmosphere (grid, interpolate or pick, file), Stellar parameters, Abundances,
   Radiative transfer (model atoms in NLTE). Values persist in the `synth_run` store
   section so the modal reopens with the last configuration.
-- Footer: **Synthesise**, Cancel. The result is a synth object on the canvas with the
-  Info-tab provenance; a run from a mask set records the set name. A mask-set or 3D
-  snapshot synthesis is submitted once as a durable workflow (`tumult.synthesis.submit`)
-  whose record lives under the synthesis output's `_workflows/`; its Processes row holds
-  the handle, cancels it whether queued or running, and closing the tab leaves it running.
+- Footer: **Synthesise**, Cancel. Both modes collect one request from the setup
+  (`SynthSetup.context()`, a `tumult.synthesis.SynthRequest`) and add the job's windows:
+  a free range is one `MaskWindow` whose fit and synth bounds coincide, a mask set
+  contributes its included masks with their own fit and synth windows. Every synthesis,
+  whatever its atmosphere (interpolated grid, picked file, 3D snapshot) and window, is
+  submitted once as a durable workflow (`tumult.synthesis.submit`) whose record, under the
+  synthesis output's `_workflows/`, carries the object name and the Info-tab rows; its
+  Processes row holds the handle, cancels it whether queued or running, and closing the
+  tab leaves it running (it is recoverable, see the Processes panel). The result is a
+  synth object on the canvas with the Info-tab provenance; a run from a mask set records
+  the set name, and a run reusing saved departures records their folder. A combination no
+  execution path supports (saved departures in LTE mode or with a grid, NLTE without model
+  atoms) is refused in the footer with the reason, the dialog left open and nothing
+  submitted.
 
 Departure-coefficient solves are not started from this modal; their entry point is decided
 separately. NLTE abundance corrections start from a model atom (see below). Grid
@@ -193,9 +203,17 @@ The same component in fit mode.
 - Body: the four synthesis sections as the initial guess, plus a **Fit** section with the
   switches for Teff / log g / [Fe/H] / vmic (hidden for a fixed atmosphere file), the
   per-element abundance rows and vshift / vmac / vrot.
-- Footer: **Fit**, Cancel. On completion the best-fit values are written back into the
-  `synth_run` section, so the next synthesis starts from them; the fitted spectrum is added
-  as a synth object and the broadening is applied as the live convolution in the Edit tab.
+- Footer: **Fit**, Cancel. The same setup request, with the job's windows and the Fit
+  section's axes, becomes a `tumult.synthesis.FitRequest`: every trial point synthesises
+  the span of the synth windows and is compared with the target inside the fit windows,
+  which stay distinct. Fitting is supported for 1D atmospheres and grids; a 3D snapshot,
+  a saved departure field, or stellar switches with a fixed atmosphere file are refused
+  before anything is submitted, with the reason in the footer. The fit runs as a
+  document-owned job (`ctx.submit`): it is cancelled when the tab closes, since its result
+  has no durable record a later document could import. On completion the best-fit values
+  are written back into the `synth_run` section, so the next synthesis starts from them;
+  the fitted spectrum is added as a synth object with the request's provenance and the
+  broadening is applied as the live convolution in the Edit tab.
 
 ## Model atoms and NLTE corrections
 

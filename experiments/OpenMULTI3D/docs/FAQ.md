@@ -127,15 +127,27 @@ directories, `result.preparation` the prepared line list and `result.departures`
 departure field, if either was used. `result.save(folder)` and `SynthesisResult.load(folder)`
 round-trip all of this without Bokeh.
 
-To synthesise one continuous range instead of masks, leave `masks` empty and call
-`request.compute(xmin, xmax)`; this returns a single `Spectrum`.
+To synthesise one continuous range instead of masks, give the request one
+`MaskWindow((xmin, xmax), (xmin, xmax))`; the result then holds a single spectrum, reachable
+as `result.spectrum`. Leaving `masks` empty synthesises the whole line list. A request
+whose combination no path supports (a saved departure field in LTE mode or with a grid,
+NLTE without model atoms) is refused by `tumult.synthesis.check_request` when it is
+resolved, before `submit` writes a record.
+
+To fit an observation instead, wrap the same request in a
+`tumult.synthesis.FitRequest(request, fit_stellar=..., abund_fits=..., fit_post=...)` and call
+`tumult.synthesis.fit(observation, fit_request)`. Every trial point is the request at that
+point's parameters, synthesised over the span of the masks' synth windows and compared with
+the observation inside their fit windows. Fitting is supported for 1D atmospheres and grids
+without a saved departure field; other combinations are refused at construction.
 
 **In the GUI** (`bokeh serve --show TumultStudio2`): open an observation and a line-mask set
 through **Open File**, open the set in the LineMasks view, edit windows and continuum markers,
 then choose **Synthesise windows…** in its sidebar. This opens the synthesis modal on the
-set's included windows; its **Synthesise** button submits them through the same request. A
-single continuous range is synthesised from the **Mask** tool instead: drag the range on the
-spectrum and choose **Synthesise…** in its sidebar (see `GUIWorkflow.md`).
+set's included windows; its **Synthesise** button submits them through the same request as
+one durable workflow. A single continuous range is synthesised from the **Mask** tool
+instead: drag the range on the spectrum and choose **Synthesise…** in its sidebar; it
+becomes one `MaskWindow` and the same kind of workflow (see `GUIWorkflow.md`).
 
 Caveat: the modal shows the atmosphere, mode, atoms and abundances but does not yet display
 the resolved inputs (preparation references, padded windows) before launch.
@@ -289,8 +301,10 @@ result under `.../result/`. `progress` labels its counts `estimated`; a full bar
 convergence. A record left `queued` or `running` by a process that no longer exists reports
 `interrupted`; nothing resumes automatically, and a saved PID is never signalled.
 
-**In the GUI**, a synthesis launched from a mask set or a 3D snapshot is submitted this
-way and keeps running when the browser tab closes. The Processes panel shows the
+**In the GUI**, every synthesis the modal launches (a free range, a mask set, a 1D grid
+or file, a 3D snapshot) is submitted this way and keeps running when the browser tab
+closes; a fit is a document-owned job and is cancelled with the tab, since its result has
+no durable record yet. The Processes panel shows the
 session's own jobs with their phase, elapsed time, run count and log names, and a
 reconnecting document can attach to a workflow the server still runs, import a finished
 result once, and see interrupted records as such (see `docs/GUIWorkflow.md`, "Recovering
@@ -298,8 +312,7 @@ durable workflows after a reconnect").
 
 Missing pieces:
 
-- Free-range 1D synthesis and fits are not durable workflows yet; they are cancelled when
-  the tab closes.
+- Fits are not durable workflows; they are cancelled when the tab closes.
 - Iteration diagnostics (`progress`) are not shown in the GUI, only in Python.
 - Slurm submission through `tumult.launch(slurm_script=...)` exists for single runs but is not
   connected to workflow records.

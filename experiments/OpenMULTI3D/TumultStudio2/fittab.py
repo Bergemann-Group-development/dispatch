@@ -241,7 +241,8 @@ class FitTab:
 
     # --- fit I/O ----------------------------------------------------------
     def collect(self):
-        """Inputs for ``synth.fit`` (post param names already mapped to the engine names).
+        """The fit axes for a :class:`tumult.synthesis.FitRequest` (post param names
+        already mapped to the engine names), plus the target uid.
 
         The stellar guesses, the free-text ``abundances`` override and the ``relative`` flag
         come from the modal's shared setup, not from here."""

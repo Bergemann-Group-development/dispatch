@@ -14,7 +14,8 @@ def calls(monkeypatch, tmp_path):
     monkeypatch.setattr(synth, '_absmet_files', lambda *a: None)
     def record(**kwargs):
         recorded.append(kwargs)
-        return kwargs
+        # execute_request unpacks (spectra per window, runs) from a window batch
+        return ([[kwargs] * len(kwargs['windows'])], ()) if kwargs.get('return_runs') else kwargs
     for name in ('compute_spectrum', 'compute_spectra', '_compute_window_batch'):
         monkeypatch.setattr(synth, name, record)
     return recorded
@@ -49,8 +50,8 @@ def test_request_owns_nested_inputs(calls):
     prefs['R'] = -1.
     assert request.run_vals['atoms'] == ['Fe.atom']
     assert request.run_vals['teff'] == 5750.
-    request.compute(5000.,5001.)
-    assert len(calls) == 1
+    request.with_masks([{'fit': (5000., 5001.), 'synth': (5000., 5001.)}]).execute()
+    assert len(calls) == 1 and calls[0]['windows'] == ((5000., 5001.),)
 
 
 def test_cache_roots_follow_execution_directory(tmp_path, monkeypatch):

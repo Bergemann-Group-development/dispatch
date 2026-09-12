@@ -11,8 +11,9 @@ from .api import (PRESETS_DIR, adaptive_fit, build_stellar_grid, compute_spectru
                   get_NLTE_corrections, normalise_windows, preset)
 from .atmos_select import select_nodes
 from .cancel import CancelledError, CancelToken
-from .request import (Atmosphere1D, GridTarget, MaskWindow, ResolvedSynthRequest,
-                      Snapshot3D, SynthesisResult, SynthRequest, capture_masks)
+from .request import (Atmosphere1D, FitRequest, GridTarget, MaskWindow,
+                      ResolvedSynthRequest, Snapshot3D, SynthesisResult, SynthRequest,
+                      capture_masks, check_request)
 from .snapshot import (DepartureField, solve_departures, synthesise_snapshot,
                        synthesise as synthesise_from_departures)
 from .runtime import ExecutionService, HOP, IO, WORKFLOWS, execution_scope
@@ -31,7 +32,8 @@ __all__ = [
     "normalise_windows", "adaptive_fit",
     "get_NLTE_correction", "get_NLTE_corrections",
     "CancelToken", "CancelledError", "SynthRequest", "GridTarget", "Atmosphere1D",
-    "Snapshot3D", "MaskWindow", "capture_masks", "ResolvedSynthRequest",
+    "Snapshot3D", "MaskWindow", "capture_masks", "check_request", "FitRequest",
+    "ResolvedSynthRequest",
     "SynthesisResult", "resolve_request", "execute_request",
     "solve_request_departures",
     "DepartureField", "solve_departures", "synthesise_from_departures",

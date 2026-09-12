@@ -1,5 +1,5 @@
 """A reusable *synthesis setup* component: the atmosphere + stellar-parameter + RT-mode
-cluster shared by any tool that needs to drive ``synth.compute``.
+cluster shared by any tool that builds a :class:`~tumult.synthesis.SynthRequest`.
 
 It is the cluster of the synthesis modal (:class:`synthmodal.SynthModal`): grid selector +
 Interpolate/Pick toggle + Format + atmosphere file picker with filename→param auto-fill, plus
@@ -15,8 +15,9 @@ likewise treated as a global, physics-level choice: instead of spawning a second
 ``AtomPicker``, an ``atoms_provider`` callable supplies the current selection for
 :meth:`context` and a read-only display.
 
-``context()`` returns the ``{prefs, grid, run_vals, target, atmos_file}`` dict that
-``synth.compute`` consumes (or ``None`` with a ``reason`` when no atmosphere resolves).
+``context()`` returns the owned :class:`~tumult.synthesis.SynthRequest` (without windows;
+the caller adds its masks) that both the synthesis and the fit mode of the modal start
+from, or ``None`` with a ``reason`` when the setup does not resolve to a supported request.
 """
 from __future__ import annotations
 
@@ -26,7 +27,7 @@ from pathlib import Path
 from bokeh.models import TextInput
 
 from tumult.synthesis import (Atmosphere1D, DepartureField, GridTarget, Snapshot3D,
-                              SynthRequest)
+                              SynthRequest, check_request)
 from tumult.synthesis.snapshot_grid import is_snapshot_grid
 
 import store
@@ -441,7 +442,9 @@ class SynthSetup:
     # --- the payload ------------------------------------------------------------------
     def context(self):
         """A :class:`~tumult.synthesis.SynthRequest` for the headless workflows, or ``None``
-        (with :attr:`reason` set) when synthesis is not yet runnable."""
+        (with :attr:`reason` set) when synthesis is not yet runnable or the setup names a
+        combination no execution path supports (:func:`tumult.synthesis.check_request`).
+        The request carries no windows; the caller adds its masks."""
         prefs = load_prefs()
         if missing_prefs(prefs):
             self.reason = "Synthesis paths are missing — check Preferences → Synthesis."
@@ -486,5 +489,10 @@ class SynthSetup:
                                      self.grids.reference_grid())
         else:
             selection = GridTarget(grid, target, self.grids.reference_grid())
-        return SynthRequest(prefs=prefs, run_vals=rv, selection=selection,
-                            departure_field=departure_field)
+        request = SynthRequest(prefs=prefs, run_vals=rv, selection=selection,
+                               departure_field=departure_field)
+        try:
+            return check_request(request)
+        except ValueError as exc:
+            self.reason = str(exc)
+            return None

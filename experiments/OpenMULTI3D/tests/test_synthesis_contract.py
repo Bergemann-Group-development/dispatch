@@ -3,6 +3,7 @@ import time
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from tumult import Spectrum
 from tumult.synthesis import (Atmosphere1D, GridTarget, MaskWindow, ResolvedSynthRequest, Snapshot3D,
@@ -179,3 +180,143 @@ def test_window_batch_reports_runs_without_a_ladder(tmp_path, monkeypatch):
         launch_kwargs={'cwd': str(tmp_path)}, max_threads=1, return_runs=True)
     assert values == [[(5000., 5002.), (5100., 5102.)]]
     assert len(runs) == 2 and len(set(runs)) == 2
+
+
+# --- unsupported combinations are refused before submission ----------------------------
+def _departure_field(tmp_path):
+    from tumult.synthesis import DepartureField
+    folder = tmp_path / 'dep'
+    (folder / 'save').mkdir(parents=True)
+    (folder / 'save' / 'pop_Mg_meta.txt').write_text('')
+    (folder / 'params.nml').write_text(
+        "&atmos_params\n atmos_file='one.mod' nx=1 ny=1 nz=6\n/\n"
+        "&composition_params\n abundances='Mg=0.2'\n/\n")
+    return DepartureField.load(folder)
+
+
+def test_check_request_refuses_unsupported_combinations_before_a_record_exists(tmp_path):
+    from tumult.synthesis import check_request, submission
+    prefs = {'dispatch_cwd': str(tmp_path), 'synth_output_dir': 'out', 'R': 50000}
+    field = _departure_field(tmp_path)
+    one = Atmosphere1D('one.mod', (5750, 4.5, 0, 1))
+    window = [MaskWindow((5000, 5001), (5000, 5001))]
+    supported = SynthRequest(prefs, run_vals={'mode': 'NLTE', 'atoms': ['mg.atom']},
+                             selection=one, masks=window, departure_field=field)
+    assert check_request(supported) is supported
+    rejected = [
+        (SynthRequest(prefs, run_vals={'mode': 'LTE'}, selection=one, masks=window,
+                      departure_field=field), 'NLTE mode'),
+        (SynthRequest(prefs, run_vals={'mode': 'NLTE', 'atoms': ['mg.atom']},
+                      selection=GridTarget({'folder': ''}, (5750, 4.5, 0, 1)), masks=window,
+                      departure_field=field), 'not a grid'),
+        (SynthRequest(prefs, run_vals={'mode': 'NLTE', 'atoms': []}, selection=one,
+                      masks=window), 'model atoms'),
+    ]
+    for request, cause in rejected:
+        with pytest.raises(ValueError, match=cause):
+            check_request(request)
+        with pytest.raises(ValueError, match=cause):
+            request.resolve()
+        with pytest.raises(ValueError, match=cause):
+            submission.submit(request, root=tmp_path / 'jobs')
+    assert not (tmp_path / 'jobs').exists()      # nothing was recorded for a refused request
+
+
+def test_fit_request_refuses_what_fitting_does_not_support(tmp_path):
+    from tumult.synthesis import FitRequest
+    prefs = {'dispatch_cwd': str(tmp_path), 'R': 50000}
+    masks = [MaskWindow((5000.2, 5000.8), (5000, 5001)),
+             MaskWindow((5002.2, 5002.6), (5002, 5003))]
+    grid = SynthRequest(prefs, run_vals={'mode': 'LTE', 'abundances': ''},
+                        selection=GridTarget({'folder': 'grid'}, (5750, 4.5, 0, 1)),
+                        masks=masks)
+    fit = FitRequest(grid, fit_stellar=['teff'], abund_fits={'Mg': 0.1},
+                     fit_post={'vshift': 0})
+    assert fit.synth_span == (5000., 5003.)               # the span every trial synthesises
+    assert fit.fit_windows == ((5000.2, 5000.8), (5002.2, 5002.6))   # compared inside
+    assert FitRequest.from_dict(fit.to_dict()).to_dict() == fit.to_dict()
+    assert fit.axes == ['teff', 'Mg']
+
+    one = Atmosphere1D('one.mod', (5750, 4.5, 0, 1))
+    with pytest.raises(ValueError, match='1D atmospheres and grids'):
+        FitRequest(SynthRequest(prefs, run_vals={'mode': 'LTE'}, masks=masks,
+                                selection=Snapshot3D('cube.dat', (5750, 4.5, 0), (4, 4, 8))),
+                   fit_post={'vshift': 0})
+    with pytest.raises(ValueError, match='saved departure field'):
+        FitRequest(SynthRequest(prefs, run_vals={'mode': 'NLTE', 'atoms': ['mg.atom']},
+                                selection=one, masks=masks,
+                                departure_field=_departure_field(tmp_path)),
+                   abund_fits={'Mg': 0.0})
+    with pytest.raises(ValueError, match='single atmosphere file'):
+        FitRequest(SynthRequest(prefs, run_vals={'mode': 'LTE'}, selection=one, masks=masks),
+                   fit_stellar=['teff'])
+    with pytest.raises(ValueError, match='at least one parameter'):
+        FitRequest(SynthRequest(prefs, run_vals={'mode': 'LTE'}, selection=one, masks=masks))
+    with pytest.raises(ValueError, match='window'):
+        FitRequest(SynthRequest(prefs, run_vals={'mode': 'LTE'}, selection=one),
+                   abund_fits={'Mg': 0.0})
+    with pytest.raises(ValueError, match='model atoms'):    # check_request applies too
+        FitRequest(SynthRequest(prefs, run_vals={'mode': 'NLTE'}, selection=one, masks=masks),
+                   abund_fits={'Mg': 0.0})
+
+
+def test_fit_executes_each_trial_point_as_the_request_over_the_span(tmp_path, monkeypatch):
+    """Every trial point is the fit's own request at that point, over one span window, so
+    preferences, expert settings, sampling and padding reach dispatch unchanged; the
+    observation is compared only inside the fit windows."""
+    from tumult.synthesis import FitRequest, workflows
+    prefs = {'dispatch_cwd': str(tmp_path), 'R': 50000, 'abund_file': None,
+             'abund_step': 0.5, 'fit_max_rounds': 3}
+    masks = [MaskWindow((5000.2, 5000.8), (5000, 5001)),
+             MaskWindow((5002.2, 5002.6), (5002, 5003))]
+    synthesis = SynthRequest(prefs, run_vals={'mode': 'LTE', 'abundances': 'Ca=0.1',
+                                              'relative_abundances': True},
+                             selection=GridTarget({'folder': 'grid', 'format': 'Marcs'},
+                                                  (5750, 4.5, 0, 1)),
+                             masks=masks, expert_settings={'spectrum_params': {'daa': 0.01}})
+    request = FitRequest(synthesis, fit_stellar=['teff'], abund_fits={'Mg': 0.0},
+                         fit_post={'vshift': 0.0})
+    executed = []
+
+    def execute(varied, cancel_token=None):
+        executed.append(varied)
+        xx = np.linspace(5000., 5003., 31)
+        return SynthesisResult((Spectrum(xx, np.ones_like(xx)),),
+                               ({'window': [5000., 5003.]},), varied, {})
+
+    nodes = {(5500., 4.5, 0., 1.): 'a', (6000., 4.5, 0., 1.): 'b'}
+    monkeypatch.setattr(workflows, 'execute_request', execute)
+    monkeypatch.setattr(workflows, 'discover_grid', lambda grid, root=None: nodes)
+    seen = {}
+
+    def adaptive(target, synth_point_fn, axes, guesses, **kwargs):
+        seen.update(target=target, axes=axes, guesses=guesses, **kwargs)
+        for teff in (5500., 6000.):
+            synth_point_fn({'teff': teff, 'Mg': 0.25})
+        best = {'teff': 5600., 'Mg': 0.25, 'vshift': 1.5}
+        return best, synth_point_fn(best), None
+
+    monkeypatch.setattr(workflows, 'adaptive_fit', adaptive)
+    xx = np.arange(4999., 5004., 0.1)
+    observation = Spectrum(xx, np.ones_like(xx))
+    best, raw, post = workflows.fit(observation, request)
+
+    assert best['teff'] == 5600. and post == {'vshift': 1.5}
+    assert seen['axes'] == ['teff', 'Mg'] and seen['post_fit'] == ['vshift']
+    assert seen['axis_nodes'] == {'teff': [5500., 6000.]} and seen['spacings'] == {'Mg': 0.5}
+    assert seen['max_rounds'] == 3
+    inside = seen['target'].values[0]
+    assert inside.min() >= 5000.2 and inside.max() <= 5002.6
+    assert not ((inside > 5000.8) & (inside < 5002.2)).any()   # the gap is dropped
+    # the trial points (and the raw recompute of the best one): the request at each point
+    # over the one span window
+    trial = executed[0]
+    assert [v.selection.stellar[0] for v in executed] == [5500., 6000., 5600., 5600.]
+    assert trial.run_vals['teff'] == 5500. and trial.masks == (MaskWindow((5000., 5003.),
+                                                                          (5000., 5003.)),)
+    assert trial.run_vals['abundances'] == 'Ca=0.1 Mg=0.2500'
+    assert trial.prefs == synthesis.prefs
+    assert trial.expert_settings == synthesis.expert_settings
+    assert type(trial.selection) is GridTarget
+    assert trial.selection.grid == synthesis.selection.grid
+    assert raw.values[0][0] == 5000. and raw.values[0][-1] == 5003.

@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field, replace
 import json
+import math
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -77,7 +78,8 @@ class MaskWindow:
     def __post_init__(self):
         for name in ("fit", "synth"):
             bounds = tuple(float(v) for v in getattr(self, name))
-            if len(bounds) != 2 or bounds[0] >= bounds[1]:
+            if (len(bounds) != 2 or not all(math.isfinite(v) for v in bounds)
+                    or bounds[0] >= bounds[1]):
                 raise ValueError(f"{name} window must contain increasing wavelength bounds.")
             object.__setattr__(self, name, bounds)
 
@@ -124,8 +126,11 @@ def _selection_from_dict(value):
 class SynthRequest:
     """A request independent of Bokeh and mutable caller state.
 
-    ``selection=`` is preferred. Positional ``prefs, grid, run_vals, target,
-    atmos_file`` remains accepted for existing callers.
+    ``masks`` are the windows synthesised, one output spectrum each; a single continuous
+    range is one :class:`MaskWindow` whose fit and synth bounds coincide, and no masks
+    means the full range of the line list. ``selection=`` is preferred. Positional
+    ``prefs, grid, run_vals, target, atmos_file`` remains accepted for existing callers.
+    :func:`check_request` names the combinations no execution path supports.
     """
     prefs: dict
     run_vals: dict
@@ -189,6 +194,27 @@ class SynthRequest:
                             masks=masks, expert_settings=self.expert_settings,
                             departure_field=self.departure_field)
 
+    def with_stellar(self, **values):
+        """This request at other stellar parameters (``teff``, ``logg``, ``feh``,
+        ``vmic``): the selection's stellar tuple moves with them, since it is what
+        fixes ``run_vals`` at construction. A snapshot keeps its three and takes
+        ``vmic`` in ``run_vals`` alone."""
+        keys = ("teff", "logg", "feh", "vmic")
+        unknown = set(values) - set(keys)
+        if unknown:
+            raise ValueError(f"Unknown stellar parameters: {sorted(unknown)}")
+        current = dict(zip(keys, self.target or ()))
+        current.update((key, float(value)) for key, value in values.items())
+        stellar = getattr(self.selection, "stellar", None)
+        selection = self.selection
+        if stellar is not None:
+            selection = replace(selection,
+                                stellar=tuple(current[key] for key in keys[:len(stellar)]))
+        run_vals = {**self.run_vals, **current}
+        return SynthRequest(self.prefs, run_vals=run_vals, selection=selection,
+                            masks=self.masks, expert_settings=self.expert_settings,
+                            departure_field=self.departure_field)
+
     def resolve(self):
         from .workflows import resolve_request
         return resolve_request(self)
@@ -196,14 +222,6 @@ class SynthRequest:
     def execute(self, *, cancel_token=None):
         from .workflows import execute_request
         return execute_request(self, cancel_token=cancel_token)
-
-    def compute(self, xmin=None, xmax=None, *, cancel_token=None):
-        from .workflows import compute
-        if isinstance(self.selection, Snapshot3D):
-            return self.execute(cancel_token=cancel_token)
-        return compute(self.target, self.prefs, self.run_vals, xmin, xmax,
-                       grid=self.grid, atmos_file=self.atmos_file,
-                       cancel_token=cancel_token)
 
     def to_dict(self):
         departure = self.departure_field
@@ -240,6 +258,109 @@ class SynthRequest:
         path = Path(raw) if "\n" not in raw else None
         text = path.read_text() if path is not None and path.is_file() else raw
         return cls.from_dict(json.loads(text))
+
+
+def _is_nlte(request):
+    return str(request.run_vals.get("mode", "LTE")).upper() == "NLTE"
+
+
+def check_request(request):
+    """Reject the request combinations no execution path supports, before a record is
+    written or a worker is spent: NLTE without model atoms, and a saved departure field
+    outside NLTE or with a grid (the field was solved for one atmosphere). Raises
+    ``ValueError`` naming the cause; returns ``request``."""
+    if not isinstance(request, SynthRequest):
+        raise TypeError("check_request expects a SynthRequest")
+    nlte = _is_nlte(request)
+    if nlte and not request.run_vals.get("atoms"):
+        raise ValueError("NLTE synthesis needs model atoms.")
+    if request.departure_field is not None:
+        if not nlte:
+            raise ValueError("Saved departures can only be reused in NLTE mode.")
+        if isinstance(request.selection, GridTarget):
+            raise ValueError("Saved departures were solved for one atmosphere; choose an "
+                             "individual 1D atmosphere or a 3D snapshot, not a grid.")
+    return request
+
+
+STELLAR_AXES = ("teff", "logg", "feh", "vmic")
+
+
+@dataclass(frozen=True)
+class FitRequest:
+    """One observation fitted by adaptive synthesis around an owned :class:`SynthRequest`.
+
+    ``synthesis`` holds the initial guess and the fixed configuration. Its masks give two
+    distinct sets of windows: the span of their synth windows is what every trial point
+    synthesises, and their fit windows are where the observation is compared. Keeping the
+    request's provenance, sampling and padding fields means a trial point is executed
+    exactly as the same request would be synthesised. ``fit_stellar`` names the stellar
+    axes that vary (only with a grid), ``abund_fits`` maps each fitted element to its
+    [X/Fe] guess and ``fit_post`` each fitted broadening parameter to its guess.
+
+    Fitting is supported for 1D atmospheres and grids without a saved departure field;
+    other combinations are rejected here, at construction, with the reason.
+    """
+    synthesis: SynthRequest
+    fit_stellar: tuple[str, ...] = ()
+    abund_fits: dict = field(default_factory=dict)
+    fit_post: dict = field(default_factory=dict)
+
+    def __post_init__(self):
+        check_request(self.synthesis)
+        object.__setattr__(self, "fit_stellar", tuple(str(v) for v in self.fit_stellar))
+        object.__setattr__(self, "abund_fits",
+                           {str(k): float(v) for k, v in dict(self.abund_fits).items()})
+        object.__setattr__(self, "fit_post",
+                           {str(k): float(v) for k, v in dict(self.fit_post).items()})
+        selection = self.synthesis.selection
+        if isinstance(selection, Snapshot3D):
+            raise ValueError("Fitting is available for 1D atmospheres and grids only.")
+        if self.synthesis.departure_field is not None:
+            raise ValueError("Fitting with a saved departure field is not supported; "
+                             "clear the saved departures or synthesise instead.")
+        unknown = set(self.fit_stellar) - set(STELLAR_AXES)
+        if unknown:
+            raise ValueError(f"Unknown stellar axes: {sorted(unknown)}")
+        if self.fit_stellar and isinstance(selection, Atmosphere1D):
+            raise ValueError("Stellar parameters can't be fit from a single atmosphere file.")
+        if not self.fit_stellar and not self.abund_fits and not self.fit_post:
+            raise ValueError("Select at least one parameter to fit.")
+        if not self.windows:
+            raise ValueError("A fit needs at least one switched-on window.")
+
+    @property
+    def windows(self):
+        return tuple(mask for mask in self.synthesis.masks if mask.include)
+
+    @property
+    def synth_span(self):
+        """The one continuous range every trial point synthesises: the span of the
+        included synth windows."""
+        return (min(mask.synth[0] for mask in self.windows),
+                max(mask.synth[1] for mask in self.windows))
+
+    @property
+    def fit_windows(self):
+        """The ranges the observation is compared inside, distinct from the span."""
+        return tuple(mask.fit for mask in self.windows)
+
+    @property
+    def axes(self):
+        return list(self.fit_stellar) + list(self.abund_fits)
+
+    def to_dict(self):
+        return {"version": 1, "synthesis": self.synthesis.to_dict(),
+                "fit_stellar": list(self.fit_stellar),
+                "abund_fits": dict(self.abund_fits), "fit_post": dict(self.fit_post)}
+
+    @classmethod
+    def from_dict(cls, value):
+        value = deepcopy(dict(value))
+        return cls(SynthRequest.from_dict(value["synthesis"]),
+                   fit_stellar=value.get("fit_stellar", ()),
+                   abund_fits=value.get("abund_fits") or {},
+                   fit_post=value.get("fit_post") or {})
 
 
 @dataclass(frozen=True)

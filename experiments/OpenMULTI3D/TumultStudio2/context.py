@@ -19,7 +19,8 @@ hand-threaded through ``update_all``. The context replaces that plumbing:
 * ``ctx.run_busy`` / ``ctx.schedule`` / ``ctx.submit`` - deferred-work helpers
   (installed by main; ``submit`` is the background loader ``load_async``).
 * ``ctx.submit_workflow`` - queue one durable synthesis request and deliver its result
-  to this document when it settles.
+  to this document when it settles. ``ctx.synth_modal`` is the :class:`synthmodal.SynthModal`
+  that collects synthesis and fit requests (installed by main).
 * ``ctx.jobs``    - the :class:`jobs.JobTable`: every background operation this document
   admitted, with its queued/running/cancelling/terminal state (the Processes panel).
 * ``ctx.workflow_refs`` - the :class:`jobs.WorkflowRefs` this document is attached to,

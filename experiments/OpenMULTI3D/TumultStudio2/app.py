@@ -752,14 +752,10 @@ def build():
             canvas._refresh_object(o)  # update_all (in _settle) then rebinds the Edit tab
         synth_modal.refresh_cache()  # the new run is now in the cache listing
 
-    synth_modal = SynthModal(
-        ctx,
-        submit=lambda name, loader, on_done, detached=False: load_async(
-            name, loader, on_done, executor=_SYNTH_EXEC, detached=detached),
-        submit_workflow=lambda name, request, on_done, meta=None: submit_workflow(
-            name, request, on_done, meta),
-        add=add_synth,
-        on_warn=synth_on_warn)
+    # every synthesis goes through ctx.submit_workflow (durable, detached); a fit through
+    # ctx.submit (document-owned); both are installed below, before any submission can run
+    synth_modal = SynthModal(ctx, add=add_synth, on_warn=synth_on_warn)
+    ctx.synth_modal = synth_modal      # local harnesses drive the modal through it
 
     # the Abundance tool owns its synthesis setup (its own Setup sub-tab), sharing only the
     # app-global grid registry and the synthesis modal's NLTE model-atom selection; it inherits
@@ -1080,7 +1076,9 @@ def build():
             return None
         return job.future
 
-    # Coordinators can overlap; the shared dispatch service enforces the CPU budget.
+    # Coordinators can overlap; the shared dispatch service enforces the CPU budget. A fit
+    # is submitted here, document-owned: it is cancelled when the session closes, since
+    # its (best, raw, post) result has no durable record a later document could import.
     ctx.submit = lambda name, loader, on_done, detached=False: load_async(
         name, loader, on_done, executor=_SYNTH_EXEC, detached=detached)
     ctx.execution = synth.get_runtime()
@@ -1265,9 +1263,10 @@ def build():
 
     def session_closed(session_context):
         ctx.closed = True
-        # Closing a tab cancels this document's work, except the jobs that asked not to
-        # be: a durable workflow keeps running and writes its record and result under
-        # its `_workflows/` folder, where a later document can reopen it by id.
+        # Closing a tab cancels this document's work (loads, fits, analysis jobs), except
+        # the jobs that asked not to be: every synthesis is a durable workflow that keeps
+        # running and writes its record and result under its `_workflows/` folder, where
+        # a later document can reopen it by id.
         for job in jobs.active:
             if not job.detached:
                 jobs.request_cancel(job.pid)

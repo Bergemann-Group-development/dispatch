@@ -1,5 +1,6 @@
 """Background computations must not apply stale UI state or wait on HOP locks."""
 import html
+import itertools
 from pathlib import Path
 from types import SimpleNamespace
 from concurrent.futures import ThreadPoolExecutor
@@ -371,8 +372,10 @@ def test_mask_tool_range_feeds_line_masks_and_the_synthesis_modal():
     assert "Synthesise" in modal.actions_html()
     modal.open_masks(ctx.masks.mset, "fit")
     assert "Fit" in modal.actions_html()
-    # the fit synthesises the span of the synth windows and compares inside the fit windows
-    assert modal._fit_windows() == (5000.5, 5006.0, [(5004.5, 5005.5), (5001.0, 5002.0)])
+    # the job's windows keep each mask's fit and synth bounds apart; a fit synthesises the
+    # span of the synth windows and compares inside the fit windows
+    assert [(w.fit, w.synth) for w in modal._job_windows()] == [
+        ((5004.5, 5005.5), (5004.0, 5006.0)), ((5001.0, 5002.0), (5000.5, 5002.5))]
 
 
 # --- durable synthesis workflows on the document ---------------------------------------
@@ -1504,3 +1507,255 @@ def test_a_slot_whose_workflow_record_is_gone_reports_it(tmp_path, monkeypatch):
     assert "workflow gone" in footer and "no record" in footer
     assert str(tmp_path / "nowhere") in footer
     assert not len(ctx.recovery) and "20260901T000000-gone" in ctx.workflow_refs
+
+
+# --- synthesis and fit requests collected by the modal -----------------------------------
+_GRID = {"id": "g1", "name": "Test grid", "folder": "", "pattern": "", "format": "Marcs"}
+
+
+def _synth_document(tmp_path, monkeypatch, run=None, grid_id="g1", executed=None):
+    """A document whose synthesis setup resolves without files on disk: one registered
+    grid (or the Individual pseudo-grid), no line list, and the workflow root under
+    ``tmp_path``. ``run`` overrides the ``synth_run`` section; ``executed`` collects the
+    resolved request of every workflow the stubbed execution receives."""
+    import store
+    from tumult.synthesis import workflows
+    store.set_section("synthesis", {
+        "dispatch_cwd": str(tmp_path), "synth_output_dir": "synth", "linelist": "",
+        "abund_file": "", "absmet": "", "atmos_grids": [dict(_GRID)],
+        "atmos_grid_id": grid_id, "ref_grid_id": "g1"})
+    store.set_section("synth_run", {"teff": 5750.0, "logg": 4.4, "feh": 0.0, "vmic": 1.0,
+                                    "mode": "LTE", "abundances": "", "atoms": [],
+                                    "relative_abundances": True, **(run or {})})
+    if executed is not None:
+        def execute(resolved, cancel_token=None):
+            executed.append(resolved.request)
+            return _stub_result(resolved)
+        monkeypatch.setattr(workflows, "execute_request", execute)
+    document, ctx = _build_document()
+    messages = []
+    ctx.notify = lambda text, level="info", **_: messages.append(text)
+    return document, ctx, messages
+
+
+def _departure_folder(tmp_path):
+    folder = tmp_path / "dep"
+    (folder / "save").mkdir(parents=True)
+    (folder / "save" / "pop_Mg_meta.txt").write_text("")
+    (folder / "params.nml").write_text(
+        "&atmos_params\n atmos_file='one.mod' nx=1 ny=1 nz=6\n/\n"
+        "&composition_params\n abundances=''\n/\n")
+    return folder
+
+
+_presses = itertools.count()
+
+
+def _submit_modal(document, ctx):
+    """Press the modal's footer button through the document's action channel; the number
+    of jobs the document admitted for it."""
+    before = len(ctx.jobs)
+    _send_action(document, f"synth-submit:{next(_presses)}")
+    return len(ctx.jobs) - before
+
+
+def test_free_range_synthesis_is_one_durable_window_workflow(tmp_path, monkeypatch):
+    """A free range is one MaskWindow with coinciding bounds, submitted as a detached
+    durable workflow whose record carries the modal's name and Info-tab meta; its result
+    reaches the canvas as a synth object."""
+    from tumult.synthesis import GridTarget
+    executed = []
+    document, ctx, messages = _synth_document(tmp_path, monkeypatch, executed=executed)
+    ticks = _Ticks(document, monkeypatch)
+    modal = ctx.synth_modal
+    modal.open_range(5000.0, 5001.0, "synth")
+    assert _submit_modal(document, ctx) == 1
+    job, = ctx.jobs.active
+    assert job.detached and job.handle is not None and job.name == "t5750g4.4m+0.0v1.0"
+    assert ticks.settle(lambda: not ctx.jobs.active)
+    request, = executed
+    assert [(w.fit, w.synth) for w in request.masks] == [((5000., 5001.), (5000., 5001.))]
+    assert isinstance(request.selection, GridTarget) and request.target == (5750., 4.4, 0., 1.)
+    assert request.departure_field is None
+    obj, = ctx.canvas.objects
+    assert obj.name == "t5750g4.4m+0.0v1.0" and obj.source == ("synth", None)
+    assert ["Window", "5000.00–5001.00 Å"] in obj.meta["params"]
+    assert job.handle.meta == obj.meta and job.handle.label == obj.name
+    assert not messages
+
+
+def test_mask_set_synthesis_keeps_fit_and_synth_windows_apart(tmp_path, monkeypatch):
+    executed = []
+    document, ctx, messages = _synth_document(tmp_path, monkeypatch, executed=executed)
+    ticks = _Ticks(document, monkeypatch)
+    x = np.arange(5000., 5010., .01)
+    ctx.canvas.add_object(Spectrum(x, np.ones_like(x)), name="obs",
+                          source=("file", "/nowhere/obs.fits"))
+    range_tool = ctx.tools._tools["range"]
+    ctx.tools.toggle("range")
+    range_tool._on_select(5004.5, 5005.5)
+    range_tool.new_mask()
+    mset = ctx.masks.mset
+    mset.masks[0].include = True
+    ctx.synth_modal.open_masks(mset, "synth")
+    assert _submit_modal(document, ctx) == 1
+    assert ticks.settle(lambda: not ctx.jobs.active)
+    request, = executed
+    assert [(w.fit, w.synth) for w in request.masks] == [((5004.5, 5005.5), (5004.0, 5006.0))]
+    synth, = [o for o in ctx.canvas.objects if o.source[0] == "synth"]
+    assert ["Line mask", mset.name] in synth.meta["params"]
+
+
+def test_fixed_file_snapshot_and_nlte_requests_are_captured_from_the_setup(tmp_path,
+                                                                            monkeypatch):
+    """The same context() yields a picked 1D file, a 3D snapshot of the Individual
+    pseudo-grid and an NLTE request whose saved departure field is forwarded; each is
+    submitted as a durable workflow and the field survives the record's JSON round trip."""
+    from tumult.synthesis import Atmosphere1D, Snapshot3D
+    one = tmp_path / "one.mod"
+    one.write_text("")
+    executed = []
+    document, ctx, messages = _synth_document(
+        tmp_path, monkeypatch, executed=executed,
+        run={"atmos_mode": "pick", "atmos_file": str(one)})
+    ticks = _Ticks(document, monkeypatch)
+    modal = ctx.synth_modal
+    modal.open_range(5000.0, 5001.0, "synth")
+    assert _submit_modal(document, ctx) == 1
+    assert ticks.settle(lambda: not ctx.jobs.active)
+    picked = executed[-1]
+    assert isinstance(picked.selection, Atmosphere1D)
+    assert picked.selection.path == str(one) and picked.selection.format == "Marcs"
+
+    import store
+    store.update_pref("synthesis", "atmos_grid_id", "__individual__")
+    store.update_pref("synth_run", "atmos_individual_format", "stagger")
+    modal.setup.reload()
+    assert modal.setup.is_snapshot
+    modal.open_range(5000.0, 5001.0, "synth")
+    assert _submit_modal(document, ctx) == 1
+    assert ticks.settle(lambda: not ctx.jobs.active)
+    cube = executed[-1]
+    assert isinstance(cube.selection, Snapshot3D) and cube.selection.format == "stagger"
+    assert cube.selection.resolution == (30, 30, 128) and cube.masks[0].synth == (5000., 5001.)
+
+    store.update_pref("synth_run", "atmos_individual_format", "Marcs")
+    modal.setup.reload()
+    modal.mode_form.set_values(mode="NLTE", departure_field=str(_departure_folder(tmp_path)))
+    modal.atoms.selected = ["/atoms/mg.atom"]
+    modal.open_range(5000.0, 5001.0, "synth")
+    assert _submit_modal(document, ctx) == 1
+    job, = ctx.jobs.active
+    assert ticks.settle(lambda: not ctx.jobs.active)
+    nlte = executed[-1]
+    assert nlte.run_vals["mode"] == "NLTE" and nlte.run_vals["atoms"] == ["/atoms/mg.atom"]
+    assert nlte.departure_field is not None and nlte.departure_field.species == ("Mg",)
+    assert ["Saved departures", str(nlte.departure_field.folder)] in job.handle.meta["params"]
+    assert ["Model atoms", "mg.atom"] in job.handle.meta["params"]
+    assert [o.name for o in ctx.canvas.objects][-1] == "t5750g4.4m+0.0v1.0·NLTE"
+    assert not messages
+
+
+def test_unsupported_requests_are_refused_before_submission(tmp_path, monkeypatch):
+    """A saved departure field outside NLTE, and a fit with a snapshot or a saved
+    departure field, are refused with the reason and admit no job."""
+    from tumult.synthesis import workflows
+    one = tmp_path / "one.mod"
+    one.write_text("")
+    document, ctx, messages = _synth_document(
+        tmp_path, monkeypatch, grid_id="__individual__",
+        run={"atmos_file": str(one), "departure_field": str(_departure_folder(tmp_path))})
+    monkeypatch.setattr(workflows, "execute_request",
+                        lambda *a, **k: pytest.fail("a refused request was executed"))
+    monkeypatch.setattr(workflows, "fit", lambda *a, **k: pytest.fail("a refused fit ran"))
+    ticks = _Ticks(document, monkeypatch)
+    modal = ctx.synth_modal
+    x = np.arange(4999., 5002., .01)
+    ctx.canvas.add_object(Spectrum(x, np.ones_like(x)), name="obs",
+                          source=("file", "/nowhere/obs.fits"))
+    modal.fit.target = ctx.canvas.objects[0].uid
+    modal.fit.abund_rows = {"Mg": 0.0}
+
+    modal.open_range(5000.0, 5001.0, "synth")        # LTE with a saved departure field
+    assert _submit_modal(document, ctx) == 0
+    assert messages[-1] == "Saved departures can only be reused in NLTE mode."
+
+    modal.mode_form.set_values(mode="NLTE")
+    modal.atoms.selected = ["/atoms/mg.atom"]
+    modal.open_range(5000.0, 5001.0, "fit")          # a fit with a saved departure field
+    assert _submit_modal(document, ctx) == 0
+    assert messages[-1].startswith("Cannot fit: Fitting with a saved departure field")
+
+    import store
+    store.update_pref("synth_run", "atmos_individual_format", "stagger")
+    modal.setup.reload()
+    modal.mode_form.set_values(mode="LTE", departure_field="")
+    modal.open_range(5000.0, 5001.0, "fit")          # a fit of a 3D snapshot
+    assert _submit_modal(document, ctx) == 0
+    assert messages[-1] == ("Cannot fit: Fitting is available for 1D atmospheres and "
+                            "grids only.")
+    assert not len(ctx.jobs)
+
+
+def test_fit_is_a_document_owned_job_built_from_the_same_request(tmp_path, monkeypatch):
+    """A fit collects the setup's request plus the job's windows into a FitRequest, runs
+    document-owned (not detached, cancelled on session close) and adds the raw best-fit
+    spectrum with the broadening as its live convolution and the request's provenance."""
+    import threading
+    from tumult.synthesis import FitRequest, GridTarget, workflows
+    document, ctx, messages = _synth_document(tmp_path, monkeypatch)
+    ticks = _Ticks(document, monkeypatch)
+    modal = ctx.synth_modal
+    x = np.arange(4999., 5003., .01)
+    ctx.canvas.add_object(Spectrum(x, np.ones_like(x)), name="obs",
+                          source=("file", "/nowhere/obs.fits"))
+    modal.fit.target = ctx.canvas.objects[0].uid
+    modal.fit.abund_rows = {"Mg": 0.2}
+    modal.fit.flags["vshift"] = True
+    modal.fit.flags["teff"] = True
+    fitted, started, release = [], threading.Event(), threading.Event()
+
+    def fit(observation, request, cancel_token=None):
+        fitted.append((observation, request, cancel_token))
+        started.set()
+        assert release.wait(10)
+        cancel_token.check()
+        xx = np.linspace(5000., 5001., 5)
+        return ({"teff": 5600., "Mg": 0.35, "vshift": 1.5}, Spectrum(xx, np.ones_like(xx)),
+                {"vshift": 1.5})
+
+    monkeypatch.setattr(workflows, "fit", fit)
+    modal.open_range(5000.0, 5001.0, "fit")
+    assert _submit_modal(document, ctx) == 1
+    job, = ctx.jobs.active
+    assert job.name == "fit·obs" and job.heavy and not job.detached and job.handle is None
+    assert started.wait(10)
+    observation, request, token = fitted[0]
+    assert isinstance(request, FitRequest) and token is job.token
+    assert request.fit_stellar == ("teff",) and request.abund_fits == {"Mg": 0.2}
+    assert request.fit_post == {"vshift": 0.0}
+    assert request.synth_span == (5000., 5001.) and request.fit_windows == ((5000., 5001.),)
+    assert isinstance(request.synthesis.selection, GridTarget)
+    assert request.synthesis.prefs["dispatch_cwd"] == str(tmp_path)
+    assert observation is ctx.canvas.objects[0].spectrum
+    release.set()
+    assert ticks.settle(lambda: not ctx.jobs.active)
+    synth, = [o for o in ctx.canvas.objects if o.source[0] == "synth"]
+    assert synth.name == "fit·obs" and synth.conv == {"vshift": 1.5}
+    assert synth.meta["stellar"]["teff"] == 5600.
+    assert ["Atmosphere", "Test grid grid, interpolated"] in synth.meta["params"]
+    assert ["Abundances ([X/Fe])", "Mg=+0.35"] in synth.meta["params"]
+    assert modal.run_form.value("teff") == 5600.        # the best fit becomes the setup
+
+    # a second fit is cancelled by the session closing, as a document-owned job
+    started.clear()
+    release.clear()
+    modal.open_range(5000.0, 5001.0, "fit")
+    assert _submit_modal(document, ctx) == 1
+    assert started.wait(10)
+    for callback in list(document.session_destroyed_callbacks):
+        callback(None)
+    assert fitted[1][2].cancelled
+    release.set()
+    assert ticks.settle(lambda: not ctx.jobs.active)
+    assert ctx.jobs.retained == [] or all(j.state == "cancelled" for j in ctx.jobs.retained)
