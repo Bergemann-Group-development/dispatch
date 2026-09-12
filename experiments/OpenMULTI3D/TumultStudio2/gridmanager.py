@@ -287,8 +287,8 @@ class GridManager:
             self._editing = arg
             g = self._find(arg)
             start = (g.get("folder") or "").strip() if g else ""
-            self.picker.query.value = ""
-            self.picker._scan(f"{Path(start).expanduser()}/" if start else "")
+            # the field shows the folder being browsed, its contents drop down under it
+            self.picker.preset(f"{Path(start).expanduser()}/" if start else "")
             pulse(self.open_bridge, "on")
         elif kind == "folder":
             # "Select this folder": adopt the picker's current directory for the editing grid

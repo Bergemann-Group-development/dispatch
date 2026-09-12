@@ -743,10 +743,14 @@ num-input[disabled] .num-spin button { cursor: not-allowed; }
 
 /* auto file picker (atmosphere): the query field is always shown while a concrete file is in
    play (`open`); the result list only drops down while the field is focused (`results-open`). */
-.inline-picker-auto { display: none; flex-direction: column; gap: 8px; margin-top: 8px; }
+.inline-picker-auto { display: none; flex-direction: column; margin-top: 8px; }
 .inline-picker-auto.open { display: flex; }
+/* the dropdown hangs straight off the field; anything else in the block keeps a gap */
+.inline-picker-auto > * + *:not(.file-results) { margin-top: 8px; }
 .inline-picker-auto .file-results { display: none; max-height: 200px; margin-top: 0; }
 .inline-picker-auto.open.results-open .file-results { display: block; }
+/* the grid folder picker is moved into the card being edited, under its folder row */
+.grid-card .inline-picker-auto { margin-top: 6px; }
 
 /* NLTE model-atom selector: a chip list shown only when RT mode is NLTE */
 .synth-atoms { display: none; flex-direction: column; gap: 6px; }

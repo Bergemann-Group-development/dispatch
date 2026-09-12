@@ -364,7 +364,9 @@
       <div class="settings-page" data-page="synthesis">
         <div class="section-header">Atmosphere grids</div>
         <div id="grid-list" class="grid-list">{{ grid_list_html|safe }}</div>
-        <div id="grid-picker" class="inline-picker">
+        <!-- the folder picker of the grid being edited; moved under that card's folder row
+             when its browse button is clicked (one Bokeh picker serves every card) -->
+        <div id="grid-picker" class="inline-picker-auto" data-results="{{ grid_results_name }}">
           {{ embed(roots.grid_picker) }}
           <div id="grid-results" class="file-results"></div>
           <button id="grid-select-folder" class="text-btn">Use this folder</button>
@@ -694,6 +696,7 @@
   // (…/Marcs/model), which only takes once the box is laid out: on every modal open and
   // whenever a box is left. The boxes are Bokeh widgets, so the walk descends shadow roots.
   function tailPaths(root) {
+    root.querySelectorAll('input.grid-folder').forEach(function (i) { i.scrollLeft = i.scrollWidth; });
     root.querySelectorAll('*').forEach(function (n) {
       if (!n.shadowRoot) return;
       n.shadowRoot.querySelectorAll('input.bk-input[type="text"]').forEach(function (i) {
@@ -704,17 +707,23 @@
   }
   document.addEventListener('focusout', function (ev) {
     var el = ev.composedPath()[0];
-    if (el && el.tagName === 'INPUT' && el.classList.contains('bk-input')) {
+    if (el && el.tagName === 'INPUT'
+        && (el.classList.contains('bk-input') || el.classList.contains('grid-folder'))) {
       setTimeout(function () { el.scrollLeft = el.scrollWidth; }, 0);
     }
   }, true);
-  // modals open from the page (wireModal) and from the server (dialog bridges) alike, so
-  // watch the dialogs' open attribute rather than either path
-  document.querySelectorAll('dialog').forEach(function (d) {
-    new MutationObserver(function () {
-      if (d.open) setTimeout(function () { tailPaths(d); }, 0);
-    }).observe(d, { attributes: true, attributeFilter: ['open'] });
-  });
+  // a box scrolls once it is laid out, so watch what reveals one: a dialog opening (from
+  // the page or a server bridge alike), an inline picker gaining its open class, a
+  // settings page or tab panel becoming the active one
+  new MutationObserver(function (muts) {
+    muts.forEach(function (m) {
+      var t = m.target;
+      if ((t.tagName === 'DIALOG' && t.open)
+          || t.classList.contains('open') || t.classList.contains('active')) {
+        setTimeout(function () { tailPaths(t); }, 0);
+      }
+    });
+  }).observe(document.body, { attributes: true, subtree: true, attributeFilter: ['open', 'class'] });
 
   function wireModal(openId, closeId, modalId, onOpen) {
     var m = document.getElementById(modalId);
@@ -790,6 +799,20 @@
   document.addEventListener('change', function (ev) {
     if (ev.target.closest('.grid-ref-select')) gridAction('setref', ev.target.value);
   });
+  // the one folder picker lives under the folder row of the card it is browsing for. The
+  // card list is re-rendered from the server on every edit, which detaches the picker, so
+  // it is put back after each render (the node survives; Bokeh's view stays bound to it).
+  var gridPicker = document.getElementById('grid-picker'), gridList = document.getElementById('grid-list');
+  function placeGridPicker() {
+    var card = gridPicker.dataset.gridId
+      && gridList.querySelector('.grid-card[data-grid-id="' + gridPicker.dataset.gridId + '"]');
+    if (card) card.querySelector('.path-row').after(gridPicker);
+    else gridList.after(gridPicker);
+  }
+  new MutationObserver(function () {
+    if (!gridPicker.isConnected) placeGridPicker();
+    tailPaths(gridList);
+  }).observe(gridList, { childList: true });
   // add / remove / browse-folder buttons (rendered dynamically into #grid-list)
   document.addEventListener('click', function (ev) {
     if (ev.target.closest('.grid-add')) { gridAction('add'); return; }
@@ -797,10 +820,9 @@
     if (del) { gridAction('del', del.dataset.gridId); return; }
     var br = ev.target.closest('.grid-browse');
     if (br) {
+      gridPicker.dataset.gridId = br.dataset.gridId;
+      placeGridPicker();
       gridAction('browse', br.dataset.gridId);
-      var rb = Bokeh.documents[0].get_model_by_name('{{ grid_results_name }}');
-      var rl = document.getElementById('grid-results');
-      if (rb && rl) rl.innerHTML = rb.value;  // js_on_change only fires on change
     }
   });
   // "Use this folder" adopts the picker's current directory for the grid being edited
