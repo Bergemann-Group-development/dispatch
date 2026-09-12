@@ -47,8 +47,7 @@ report follows in its own commit. Roadmap section 5.
   save/load bridge, build-time offer; the panel's show bridge is gone (always visible).
 - `TumultStudio2/store.py`, `session.py` (`LoadReport.workflows`, `Skipped` kind),
   `synthmodal.py` (passes `meta`), `templates/index.html`, `static/style.css`.
-- `docs/GUIWorkflow.md` (new "Recovering durable workflows after a reconnect", slot
-  boundary note), `docs/FAQ.md` (GUI recovery paragraph).
+- `docs/GUIWorkflow.md` ("Recovering durable workflows after a reconnect"), `docs/FAQ.md`.
 - Tests: `test_ui_execution.py` (running workflow recovered by a new document and
   cancelled through its token; reattached completion imported once and a third document
   importing once; slot references followed/reattached across a load, old document delivers
@@ -72,8 +71,8 @@ Worktree, `/Users/hoppe/Documents/dispatch/experiments/OpenMULTI3D/.venv/bin/pyt
 
 - Existing `.tumultstudio.json` files (version 1) are refused until `"version": 2` is set
   and each slot has a `"workflows": []` field, or the file is moved aside (no migration).
-- Discovery covers one root, the current synthesis preferences; a workflow submitted
-  under other preferences is only reachable through its slot reference.
+- Discovery covers one root (the current synthesis preferences); other roots are reached
+  only through slot references.
 - Phase 6: route every synthesis through `ctx.submit_workflow(name, request, on_done,
   meta)`; the label/meta in the record are what recovery names and annotates the imported
   spectra with, so give each mode a stable name and JSON meta. Fits that stay
