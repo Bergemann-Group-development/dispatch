@@ -58,12 +58,11 @@ report follows in its own commit. Roadmap section 5.
 
 ## Verification
 
-Worktree, `/Users/hoppe/Documents/dispatch/experiments/OpenMULTI3D/.venv/bin/python`
-(`tumult` resolves into the worktree), `MPLCONFIGDIR=/tmp/tumult-mpl`:
-
+Worktree, main checkout's `.venv/bin/python` (`tumult` resolves into the worktree),
+`MPLCONFIGDIR=/tmp/tumult-mpl`:
 - `-m pytest tests/test_execution.py tests/test_ui_execution.py tests/test_store.py
-  tests/test_session.py -q`: 94 passed before, 102 passed after (8 new), 62 s.
-- `-m pytest tests/test_synthesis_contract.py -q`: 9 passed.
+  tests/test_session.py -q`: 94 passed before, 102 passed after (8 new), 62 s;
+  `tests/test_synthesis_contract.py`: 9 passed.
 - Stub workers, temporary roots and record fixtures only; waits bounded (10 s). No
   physical validation, golden suites, build or browser session.
 
