@@ -357,7 +357,8 @@
           they compare correctly across atoms and molecules. Which star that is — a G dwarf,
           a red giant, a supergiant — is the <b>Reference star</b> dropdown in the line list
           header; on <i>Auto</i> it follows the spectrum's own parameters where it states
-          any, and is solar where it does not.</div>
+          any, and is solar where it does not. Molecular lists are included for views up to
+          100 Å wide; wider views use atomic lines only.</div>
       </div>
 
       <div class="settings-page" data-page="synthesis">
@@ -689,6 +690,32 @@
 (function () {
   // wire a <dialog>: `openId` may be null for a modal opened from a menu instead of a
   // dedicated button — the returned function opens it either way.
+  // a file-picker box holding a path longer than itself shows the path's tail
+  // (…/Marcs/model), which only takes once the box is laid out: on every modal open and
+  // whenever a box is left. The boxes are Bokeh widgets, so the walk descends shadow roots.
+  function tailPaths(root) {
+    root.querySelectorAll('*').forEach(function (n) {
+      if (!n.shadowRoot) return;
+      n.shadowRoot.querySelectorAll('input.bk-input[type="text"]').forEach(function (i) {
+        i.scrollLeft = i.scrollWidth;
+      });
+      tailPaths(n.shadowRoot);
+    });
+  }
+  document.addEventListener('focusout', function (ev) {
+    var el = ev.composedPath()[0];
+    if (el && el.tagName === 'INPUT' && el.classList.contains('bk-input')) {
+      setTimeout(function () { el.scrollLeft = el.scrollWidth; }, 0);
+    }
+  }, true);
+  // modals open from the page (wireModal) and from the server (dialog bridges) alike, so
+  // watch the dialogs' open attribute rather than either path
+  document.querySelectorAll('dialog').forEach(function (d) {
+    new MutationObserver(function () {
+      if (d.open) setTimeout(function () { tailPaths(d); }, 0);
+    }).observe(d, { attributes: true, attributeFilter: ['open'] });
+  });
+
   function wireModal(openId, closeId, modalId, onOpen) {
     var m = document.getElementById(modalId);
     function open() { m.showModal(); if (onOpen) onOpen(); }

@@ -26,8 +26,6 @@ from copy import deepcopy
 
 import html
 import logging
-from pathlib import Path
-
 import numpy as np
 from bokeh.models import ColumnDataSource
 
@@ -179,9 +177,20 @@ class AbundCorrTool(AbundanceWizard):
         return sig
 
     def _result_label(self, res):
-        # correction objects are named after the model atom they were computed from
-        # (falls back to the persisted name for sessions saved without the atom path)
-        return Path(res.atom_path).name if res.atom_path else res.name
+        """Correction objects sit under their atom, so they are named by what
+        distinguishes them: the target stellar parameters and the atmosphere format."""
+        if not np.isfinite(res.teff):
+            return res.name
+        fmt = self._atmos_format(res.synthesis)
+        label = f"{res.teff:.0f} K · {res.logg:.2f} · {res.feh:+.2f} · ξ {res.vmic:.1f}"
+        return f"{label} · {fmt}" if fmt else label
+
+    @staticmethod
+    def _atmos_format(synthesis):
+        """The atmosphere format of a serialised request (``asdict(SynthRequest)``): a
+        picked file or snapshot carries its own, an interpolated grid its registry entry."""
+        sel = (synthesis or {}).get("selection") or {}
+        return str(sel.get("format") or (sel.get("grid") or {}).get("format") or "")
 
     def _jump_decor(self, res, ln):
         # the best-fit NLTE synthesis at the inverted abundance, over the line window
@@ -221,6 +230,9 @@ class AbundCorrTool(AbundanceWizard):
                          lambda result: self._on_reference_done(result, request))
 
     def _on_reference_done(self, result, request):
+        from dataclasses import asdict
+        result.synthesis = asdict(request)     # what names the result (stage 2 rewrites it)
+        result.name = self._result_label(result)
         self.results.append(result)
         self.selected_uid = result.uid
         # show the reference spectrum on the canvas so lines can be inspected/jumped to

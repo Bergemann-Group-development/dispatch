@@ -258,7 +258,6 @@ class AtomTool(Tool):
                 f'data-atom-results="{len(results)}" title="{html.escape(title)}">'
                 f'<span class="result-badge atom-badge">{html.escape(a.symbol)}</span>'
                 f'<span class="object-name">{html.escape(a.name)}</span>'
-                f'<span class="maskset-count" title="levels · lines">{nk}·{nl}</span>'
                 f'<button class="result-btn" data-atom-remove="{a.uid}" '
                 f'title="Remove"><i class="ti ti-x"></i></button></div>')
             rows.extend(self.corr.result_rows(results, nested=True))

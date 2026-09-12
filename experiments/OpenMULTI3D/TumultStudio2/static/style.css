@@ -798,7 +798,13 @@ num-input[disabled] .num-spin button { cursor: not-allowed; }
 .file-item:hover { background: rgba(74,144,226,0.12); border-color: var(--accent); color: var(--accent); }
 .file-item i { color: var(--text-muted); }
 .file-item:hover i { color: var(--accent); }
-.file-item span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* a long path is elided at its head, so the file name and the folders nearest it stay
+   readable (…/Documents/Marcs/model): the RTL direction moves the ellipsis to the start
+   while the LTR text itself still reads left to right */
+.file-item span {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  direction: rtl; text-align: left;
+}
 /* a picked file spins in place of its icon until its load has landed, so picking several
    in a row shows which are still coming (the footer bar only says that something is) */
 .file-item.is-busy { color: var(--accent); cursor: progress; }

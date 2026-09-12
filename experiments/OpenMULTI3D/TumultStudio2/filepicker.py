@@ -31,7 +31,7 @@ import os
 from pathlib import Path
 
 from bokeh.layouts import column
-from bokeh.models import InlineStyleSheet, TextInput
+from bokeh.models import CustomJS, InlineStyleSheet, TextInput
 
 from htmlbridge import html_bridge
 
@@ -47,6 +47,13 @@ input.bk-input {
 }
 input.bk-input:focus { outline: none; border-color: #4a90e2; }
 input.bk-input::placeholder { color: #888; }
+"""
+
+# scroll the query box to the end of its value once the new value is laid out
+TAIL_JS = """
+const view = Bokeh.index.find_one(cb_obj);
+const el = view && view.input_el;
+if (el) setTimeout(() => { el.scrollLeft = el.scrollWidth; }, 0);
 """
 
 _counter = 0
@@ -87,6 +94,9 @@ class FilePicker:
                                stylesheets=[InlineStyleSheet(css=QUERY_CSS)],
                                margin=0,  # drop Bokeh's default 5px so it lines up with siblings
                                sizing_mode="stretch_width")
+        # a chosen path longer than the box shows its tail (…/Marcs/model) rather than its
+        # head; the page's tailPaths() does the same when a modal opens or the box is left
+        self.query.js_on_change("value", CustomJS(code=TAIL_JS))
         self.results = html_bridge(container_id, name=self.results_name)
         self.pick = TextInput(value="", name=self.name, visible=False)
 
@@ -206,7 +216,9 @@ class FilePicker:
                 f'data-path="{html.escape(str(path), quote=True)}" '
                 f'data-dir="{1 if is_dir else 0}" '
                 f'title="{html.escape(label, quote=True)}">'
-                f'{mark}<span>{html.escape(label)}</span></li>')
+                # the row is laid out right-to-left so a long path is elided at its head
+                # (see style.css); the marks keep leading/trailing punctuation in place
+                f'{mark}<span>&lrm;{html.escape(label)}&lrm;</span></li>')
 
     # --- which rows are working -------------------------------------------
     def refresh_busy(self):
