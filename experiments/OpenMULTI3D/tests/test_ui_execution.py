@@ -426,6 +426,19 @@ class _Ticks:
         while self.queued:
             self.queued.pop(0)()
 
+    def settle(self, predicate, timeout=10):
+        """Run callbacks as they arrive until ``predicate()`` holds; whether it did."""
+        import time
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            self.run()
+            if predicate():
+                return True
+            self.arrived.wait(0.2)
+            self.arrived.clear()
+        self.run()
+        return predicate()
+
 
 def _send_action(document, value):
     """What the page does when a sidebar button is clicked: write the action channel."""
@@ -450,14 +463,16 @@ def test_four_overlapping_workflow_submissions_settle_on_the_document(tmp_path, 
     delivered = []
     handles = [ctx.submit_workflow(f"synth-{i}", _stub_request(tmp_path), delivered.append)
                for i in range(4)]
-    assert len(ctx.pending) == 4 and set(ctx.workflows.values()) == set(handles)
+    active = ctx.jobs.active
+    assert len(active) == 4 and [job.handle for job in active] == handles
+    assert [job.workflow_id for job in active] == [h.id for h in handles]
     assert len({h.id for h in handles}) == 4
     assert ticks.wait(4), "every workflow must settle and schedule its delivery"
     assert all(h.done and h.status == "finished" for h in handles)
     assert not delivered                    # nothing reaches the workspace off-thread
     ticks.run()
     assert len(delivered) == 4 and all(len(r.spectra) == 1 for r in delivered)
-    assert not ctx.pending and not ctx.workflows
+    assert not len(ctx.jobs)
 
 
 def test_queued_workflow_cancelled_from_the_processes_panel_settles(tmp_path, monkeypatch):
@@ -478,14 +493,14 @@ def test_queued_workflow_cancelled_from_the_processes_panel_settles(tmp_path, mo
     try:
         delivered = []
         handle = ctx.submit_workflow("queued", _stub_request(tmp_path), delivered.append)
-        (pid, name), = ctx.pending.items()
-        assert name == "queued" and handle.status == "queued"
-        _send_action(document, f"cancel-pending:{pid}:1")
+        job, = ctx.jobs.active
+        assert job.name == "queued" and handle.status == "queued"
+        assert job.display_state() == "queued"
+        _send_action(document, f"cancel-pending:{job.pid}:1")
         assert handle.done and handle.status == "cancelled"
         assert handle.id not in submission._live
-        assert ticks.wait(1)
-        ticks.run()
-        assert not ctx.pending and not ctx.workflows and not delivered
+        assert ticks.settle(lambda: not len(ctx.jobs))
+        assert job.state == "cancelled" and not delivered
     finally:
         gate.set()
         blocker.result(10)
@@ -549,22 +564,31 @@ def _correction_tool(ctx, monkeypatch, tmp_path):
 def test_correction_options_are_captured_when_the_modal_submits(tmp_path, monkeypatch):
     """Both stages run on the options captured at submission; editing the reopened modal
     while the reference runs cannot change the admitted correction."""
+    import threading
+    import abundcorrtool
+
     document, ctx = _build_document()
     ticks = _Ticks(document, monkeypatch)
     tool, calls = _correction_tool(ctx, monkeypatch, tmp_path)
     tool.form1.set_values(profile="gauss", ew_min=7.0, limit=0.75, line_grid=False,
                           linelist=True)
+    started, release = threading.Event(), threading.Event()
+    measure = abundcorrtool.measure_reference_lines
 
+    def slow_measure(*args, **kwargs):
+        started.set()
+        assert release.wait(10)
+        return measure(*args, **kwargs)
+
+    monkeypatch.setattr(abundcorrtool, "measure_reference_lines", slow_measure)
     tool.run()
-    assert ticks.wait(1)                    # the reference settled off-thread
+    assert started.wait(10)                 # the reference is running
     tool.form1.set_values(limit=2.5, profile="trapz", ew_min=1.0)
-    ticks.run()                             # delivers the reference, admits stage 2
-    assert ticks.wait(2) and len(calls["corrections"]) == 1
-    ticks.run()
+    release.set()
+    assert ticks.settle(lambda: len(calls["corrections"]) == 1 and not len(ctx.jobs))
     for opts in calls["reference"] + calls["corrections"]:
         assert (opts.profile, opts.ew_min, opts.limit, opts.line_grid, opts.linelist) == (
             "gauss", 7.0, 0.75, False, True)
-    assert not ctx.pending
 
 
 def test_cancelling_the_reference_stage_prevents_the_correction_stage(tmp_path, monkeypatch):
@@ -587,13 +611,14 @@ def test_cancelling_the_reference_stage_prevents_the_correction_stage(tmp_path, 
     monkeypatch.setattr(abundcorrtool, "measure_reference_lines", slow_measure)
     tool.run()
     assert started.wait(10)
-    (pid, _), = ctx.pending.items()
-    _send_action(document, f"cancel-pending:{pid}:1")
+    job, = ctx.jobs.active
+    _send_action(document, f"cancel-pending:{job.pid}:1")
+    assert job.state == "cancelling"        # the worker has not noticed yet
     release.set()
-    assert ticks.wait(2)                    # the cancel notice, then the worker's settle
-    ticks.run()
+    assert ticks.settle(lambda: not len(ctx.jobs))
+    assert job.state == "cancelled"
     assert len(calls["reference"]) == 1 and not calls["corrections"]
-    assert not tool.results and not ctx.pending
+    assert not tool.results
 
 
 # --- programmatic writes to the drag sources -------------------------------------------
@@ -646,3 +671,200 @@ def test_callback_suppression_restores_the_previous_flag():
     assert dragged == ["refit"] and norm.knots.data["x"] == [1., 2.]
     norm.knots.data = dict(x=[1.], y=[1.])
     assert len(dragged) == 2 and norm._suppress is False
+
+
+# --- job outcomes and diagnostics -------------------------------------------------------
+def _footer(document):
+    return document.select_one({"name": "footer-status"}).value
+
+
+def _processes(document):
+    return document.select_one({"name": "processes"}).value
+
+
+def test_failed_loader_keeps_a_row_with_the_error_until_dismissed(monkeypatch, caplog):
+    """A loader exception is logged with its traceback from the worker; the Processes
+    row survives with the concise error, the footer points at it, and the row leaves
+    on its dismiss button."""
+    import logging
+    from concurrent.futures import ThreadPoolExecutor
+
+    document, ctx = _build_document()
+    ticks = _Ticks(document, monkeypatch)
+    added = []
+
+    def loader(token):
+        raise ValueError("bad spectrum file")
+
+    with caplog.at_level(logging.ERROR, logger="tumultstudio.jobs"):
+        with ThreadPoolExecutor(1) as pool:
+            future = ctx.submit("broken-load", loader, added.append)
+            future.result(10)
+        assert ticks.settle(lambda: not ctx.jobs.active)
+    record, = [r for r in caplog.records if "broken-load" in r.getMessage()]
+    assert record.exc_info and record.exc_info[0] is ValueError
+    job, = ctx.jobs.retained
+    assert job.state == "failed" and job.error == "ValueError: bad spectrum file"
+    assert not added
+    panel = _processes(document)
+    assert "bad spectrum file" in panel and "dismiss-job" in panel
+    assert "cancel-pending" not in panel and "spinner" not in panel
+    assert "broken-load failed" in _footer(document) and "Processes" in _footer(document)
+
+    _send_action(document, f"dismiss-job:{job.pid}:1")
+    assert not len(ctx.jobs) and "dismiss-job" not in _processes(document)
+
+
+def test_admission_failures_settle_as_failed_rows(monkeypatch, tmp_path):
+    """A pool that refuses the job, or a workflow submission that raises, ends on the
+    same terminal path as a failure in flight: no spinner, a retained row with the cause."""
+    from concurrent.futures import ThreadPoolExecutor
+    import app
+
+    document, ctx = _build_document()
+    _Ticks(document, monkeypatch)
+    closed = ThreadPoolExecutor(1)
+    closed.shutdown()
+    monkeypatch.setattr(app, "_SYNTH_EXEC", closed)
+    assert ctx.submit("refused", lambda token: None, lambda *_: None) is None
+    job, = ctx.jobs
+    assert job.state == "failed" and "RuntimeError" in job.error
+    assert not ctx.jobs.active
+
+    def refuse(request):
+        raise OSError("workflow root is read-only")
+
+    monkeypatch.setattr(app, "submit_synthesis", refuse)
+    assert ctx.submit_workflow("unsubmittable", _stub_request(tmp_path), lambda r: None) is None
+    _, job = ctx.jobs
+    assert job.state == "failed" and job.error == "OSError: workflow root is read-only"
+    assert "workflow root is read-only" in _processes(document)
+    assert "see Processes" in _footer(document)
+
+
+def test_cancellation_request_stays_visible_until_the_worker_settles(monkeypatch):
+    """A worker that never looks at its token keeps its row, labelled as cancelling and
+    without a cancel button, until it returns; only then is the job cancelled."""
+    import threading
+
+    document, ctx = _build_document()
+    ticks = _Ticks(document, monkeypatch)
+    started, release = threading.Event(), threading.Event()
+    delivered = []
+
+    def native(token):
+        started.set()
+        assert release.wait(10)             # an uninterruptible call
+        return "late value"
+
+    ctx.submit("native", native, delivered.append)
+    assert started.wait(10)
+    assert ticks.settle(lambda: ctx.jobs.active[0].state == "running")
+    job, = ctx.jobs.active
+    _send_action(document, f"cancel-pending:{job.pid}:1")
+    assert job.state == "cancelling" and job.token.cancelled
+    panel = _processes(document)
+    assert "cancelling" in panel and "spinner" in panel and "cancel-pending" not in panel
+    assert "Cancelling native" in _footer(document)
+    _send_action(document, f"cancel-pending:{job.pid}:2")    # a second click is a no-op
+    assert job.state == "cancelling"
+    release.set()
+    assert ticks.settle(lambda: not len(ctx.jobs))
+    assert job.state == "cancelled" and not delivered
+
+
+def test_failure_after_document_destruction_is_still_logged(monkeypatch, caplog):
+    """A detached job failing after its session closed logs the traceback and records
+    the terminal state without touching the closed document."""
+    import logging
+    import threading
+
+    document, ctx = _build_document()
+    ticks = _Ticks(document, monkeypatch)
+    started, release = threading.Event(), threading.Event()
+
+    def detached(token):
+        started.set()
+        assert release.wait(10)
+        raise RuntimeError("dispatch exited with status 3: /runs/job.log")
+
+    with caplog.at_level(logging.ERROR, logger="tumultstudio.jobs"):
+        future = ctx.submit("survivor", detached, lambda *_: None, detached=True)
+        assert started.wait(10)
+        for callback in list(document.session_destroyed_callbacks):
+            callback(None)
+        assert ctx.closed
+        scheduled = ticks.total
+        release.set()
+        future.result(10)                   # work() reports; it does not raise
+    job, = ctx.jobs
+    assert job.state == "failed" and "status 3" in job.error
+    assert ticks.total == scheduled         # nothing scheduled on the closed document
+    record, = [r for r in caplog.records if "survivor" in r.getMessage()]
+    assert record.exc_info and record.exc_info[0] is RuntimeError
+
+
+def test_errors_reach_only_their_own_document(monkeypatch):
+    """Two documents on one server: a failure in one leaves the other's footer alone."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    doc_a, ctx_a = _build_document()
+    ticks_a = _Ticks(doc_a, monkeypatch)
+    doc_b, ctx_b = _build_document()
+    ticks_b = _Ticks(doc_b, monkeypatch)
+
+    def loader(token):
+        raise ValueError("only document A asked for this")
+
+    with ThreadPoolExecutor(1):
+        future = ctx_a.submit("private-failure", loader, lambda *_: None)
+        future.result(10)
+    assert ticks_a.settle(lambda: not ctx_a.jobs.active)
+    assert "private-failure failed" in _footer(doc_a)
+    assert ticks_b.total == 0 and not len(ctx_b.jobs)
+    assert "private-failure" not in _footer(doc_b)
+    assert not [h for h in __import__("logging").getLogger().handlers
+                if type(h).__name__ == "FooterErrorHandler"]
+
+
+def test_late_completion_cannot_mutate_a_superseded_workspace(monkeypatch):
+    """Work admitted before a workspace boundary settles its row but delivers nothing;
+    result-job progress published under the old generation is dropped as well."""
+    import threading
+    from jobs import ResultJobs
+
+    document, ctx = _build_document()
+    ticks = _Ticks(document, monkeypatch)
+    release, delivered = threading.Event(), []
+
+    def slow(token):
+        assert release.wait(10)
+        return "stale"
+
+    ctx.submit("stale-load", slow, delivered.append)
+    old = ctx.generation
+    ctx.advance_generation()                # what a session load does at its commit
+    assert ctx.jobs.active[0].generation is old
+    release.set()
+    assert ticks.settle(lambda: not len(ctx.jobs))
+    assert not delivered
+
+    queued, callbacks, rendered, completed = [], [], [], []
+    result = SimpleNamespace(uid="fit", lines=[SimpleNamespace(a=0.)], termination="measured")
+    stub = SimpleNamespace(submit=lambda name, run, done, detached=False: queued.append((run, done)),
+                           schedule=callbacks.append, notify=lambda *a: None, closed=False,
+                           generation=object())
+    jobs = ResultJobs(stub, lambda uid: result, lambda r: rendered.append(r.lines[0].a))
+
+    def work(working, token, progress):
+        working.lines[0].a = 1.
+        progress(working)
+        return working
+
+    jobs.submit("fit", work, completed.append, result=result)
+    run, done = queued.pop()
+    outcome = run(CancelToken())
+    stub.generation = object()              # the workspace was replaced meanwhile
+    callbacks.pop()()
+    done(outcome)
+    assert result.lines[0].a == 0. and not rendered and not completed

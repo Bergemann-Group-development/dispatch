@@ -52,6 +52,7 @@ from filepicker import FilePicker  # noqa: E402
 from toolmanager import ToolManager  # noqa: E402
 from session import Workspace, ObjectSnap, FilterSnap  # noqa: E402
 from htmlbridge import BridgeSet, pulse, toggle  # noqa: E402
+from jobs import Job, QUEUED, RUNNING, CANCELLING, FINISHED, FAILED, CANCELLED  # noqa: E402
 from debounce import Trailing  # noqa: E402
 from units import X_UNITS, Y_UNITS, to_range  # noqa: E402
 from tumult import linestrength
@@ -64,32 +65,11 @@ STRENGTH_DELAY_MS = 400
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)-7s %(name)s: %(message)s")
-
-
-class FooterErrorHandler(logging.Handler):
-    """Surface any logged error (a caught exception, an ``logging.exception``/``error``
-    call) as a footer warning that points the user at the console for the traceback.
-
-    The console still gets the full record via the root logger's stream handler; this
-    just flags that *something* went wrong so it isn't missed. The notify is scheduled
-    onto the document thread, so it is safe to fire from background worker threads."""
-
-    def __init__(self, doc, notify):
-        super().__init__(level=logging.ERROR)
-        self._doc = doc
-        self._notify = notify
-
-    def emit(self, record):
-        def show():
-            try:
-                self._notify("Something went wrong — check the console for details.",
-                             level="danger")
-            except Exception:
-                pass  # never let the footer notify re-raise into the logging machinery
-        try:
-            self._doc.add_next_tick_callback(show)
-        except Exception:
-            pass  # document/session already gone, or its callback queue is closed
+# Job failures are logged here from the worker thread, traceback included, whether or not
+# the document that admitted them still exists; the user-facing report goes through the
+# owning document's Processes row and footer alone. No root-logger handler is installed
+# per document, so one session's errors never reach another session's footer.
+log = logging.getLogger("tumultstudio.jobs")
 
 
 def picker_start_dir():
@@ -245,23 +225,46 @@ def footer_html(canvas):
     return f'<span class="pill">{len(objs)} {noun}</span><span class="pill">{rng}</span>'
 
 
-def processes_html(pending, heavy=()):
-    """The Processes panel body: one row per background run, each with a cancel button
-    (data-uid = the pending id) that drops the run and discards its result.
+def processes_html(jobs):
+    """The Processes panel body: one row per job this document admitted and has not yet
+    dismissed (see :class:`jobs.JobTable`).
 
-    A run in ``heavy`` is one whose loss actually costs something (a synthesis, a fit),
-    and its row asks for confirmation before cancelling; the cheap ones (a file load, a
-    line-strength band) cancel on the first click."""
-    return "".join(
-        f'<div class="object-item process" data-pid="{pid}">'
-        '<span class="spinner"></span>'
-        f'<span class="object-name" title="{html.escape(name)}">{html.escape(name)}</span>'
-        f'<button class="object-btn danger" data-action="cancel-pending" data-uid="{pid}" '
-        f'data-confirm="{1 if pid in heavy else 0}" '
-        f'title="Cancel"><i class="ti ti-x"></i></button>'
-        f'</div>'
-        for pid, name in pending.items()
-    )
+    An active row spins and carries a cancel button (data-uid = the job id) that asks for
+    confirmation first when losing the job costs real work (a synthesis, a fit). A row
+    whose cancellation was requested keeps spinning, labelled, without the button until
+    its worker settles: a native call that ignores its token is still occupying it. A
+    failed row is kept with its concise error and native log paths until dismissed."""
+    rows = []
+    for job in jobs:
+        state = job.display_state()
+        name = html.escape(job.name)
+        if state == FAILED:
+            error = html.escape(job.error or "failed")
+            logs = "".join(
+                f'<span class="process-log" title="{html.escape(path)}">'
+                f'{html.escape(Path(path).name)}</span>' for path in job.logs)
+            rows.append(
+                f'<div class="object-item process failed" data-pid="{job.pid}" '
+                f'data-state="{state}">'
+                '<i class="ti ti-alert-circle"></i>'
+                f'<div class="process-meta"><span class="object-name" title="{name}">{name}</span>'
+                f'<span class="process-error" title="{error}">{error}</span>{logs}</div>'
+                f'<button class="object-btn" data-action="dismiss-job" data-uid="{job.pid}" '
+                f'title="Dismiss"><i class="ti ti-x"></i></button>'
+                '</div>')
+            continue
+        label = {QUEUED: "queued", CANCELLING: "cancelling…"}.get(state, "")
+        button = "" if state == CANCELLING else (
+            f'<button class="object-btn danger" data-action="cancel-pending" '
+            f'data-uid="{job.pid}" data-confirm="{1 if job.heavy else 0}" '
+            f'title="Cancel"><i class="ti ti-x"></i></button>')
+        rows.append(
+            f'<div class="object-item process" data-pid="{job.pid}" data-state="{state}">'
+            '<span class="spinner"></span>'
+            f'<div class="process-meta"><span class="object-name" title="{name}">{name}</span>'
+            + (f'<span class="process-state">{label}</span>' if label else "")
+            + f'</div>{button}</div>')
+    return "".join(rows)
 
 
 def build():
@@ -279,11 +282,13 @@ def build():
     ctx = AppContext(curdoc(), B, tools)
 
     objects_bridge = B.html("objects")
-    processes_bridge = B.html("processes")            # the running-work list, bottom left
+    # the job list, bottom left; named so a harness can read what the panel shows
+    processes_bridge = B.html("processes", name="processes")
     processes_show_bridge = B.cls(".processes-panel", "show")  # hidden while nothing runs
     inspector_bridge = B.html("inspector")
     footer_bridge = B.html("footer-info")
-    status_bridge = B.html("footer-status")  # transient info messages (left of footer)
+    # transient info messages (left of footer); named for the same reason
+    status_bridge = B.html("footer-status", name="footer-status")
 
     # show a short message in the footer status slot, then quietly revert to "Ready".
     # the token guards against an earlier message's revert wiping out a newer one.
@@ -307,18 +312,9 @@ def build():
                 status_bridge.value = "Ready"
 
         try:
-            curdoc().add_timeout_callback(restore, revert_ms)
+            ctx.doc.add_timeout_callback(restore, revert_ms)
         except Exception:
             pass
-
-    # route any logged error to the footer so caught exceptions aren't lost to the
-    # console alone; tear it down with the session so dead documents aren't notified.
-    # Capture the logger in a local (the closure must not rely on the module global
-    # `logging`, which Bokeh has already cleared by session-destroy time).
-    _root_logger = logging.getLogger()
-    _err_handler = FooterErrorHandler(curdoc(), notify)
-    _root_logger.addHandler(_err_handler)
-    curdoc().on_session_destroyed(lambda ctx: _root_logger.removeHandler(_err_handler))
 
     # (the EW / Filter / Normalise tools create and own their bridges via the context)
     linelist_bridge = B.html("linelist-table")
@@ -349,20 +345,7 @@ def build():
     atomtool = None
     warm_strengths = None   # ditto: update_all may run before it is defined
     picker = None           # ditto: the spectrum file picker, whose rows spin while loading
-    pending = ctx.pending  # id -> name of each background run (the Processes panel)
-    pending_futures = {}  # id -> Future, so a still-queued run can be cancelled before it starts
-    pending_tokens = {}   # id -> synth.CancelToken, to hard-kill a running synthesis
-    # id -> WorkflowHandle of a durable synthesis; the handle owns that workflow's future
-    # and token, and its stable id names the on-disk record a later document can reopen
-    pending_workflows = ctx.workflows
-    # id -> the file a pending load came from, for the picker's per-row spinners. Separate
-    # from `pending` because that one is a display name and a synthesis has no file at all.
-    pending_paths = {}
-    pending_heavy = set()  # ids whose cancel button confirms first (synthesis, fits)
-    # ids that survive the browser tab closing. A multi-hour 3D departure solve cannot
-    # assume the session stays open, so it opts out of session_closed's cancellation;
-    # its result lands in the disk run cache whether or not this document is still there.
-    pending_detached = set()
+    jobs = ctx.jobs         # every background operation this document admitted
 
     def run_busy(fn):
         """Defer a UI-only callback. Computational work must use ctx.submit."""
@@ -428,15 +411,16 @@ def build():
 
     def update_all(canvas):
         objects_bridge.value = objects_panel_html(canvas, ctx.focus_kind)
-        processes_bridge.value = processes_html(pending, pending_heavy)
-        toggle(processes_show_bridge, bool(pending))
+        processes_bridge.value = processes_html(jobs)
+        toggle(processes_show_bridge, len(jobs) > 0)
         inspector_bridge.value = inspector_html(canvas)
         footer_bridge.value = footer_html(canvas)
         synth_modal.refresh_targets()  # keep the fit target dropdown in sync
-        toggle(loading_bridge, bool(pending))
+        active = bool(jobs.active)
+        toggle(loading_bridge, active)
         # show the inline session loader while the canvas holds nothing (and nothing
         # is on its way in)
-        toggle(empty_bridge, not canvas.objects and not pending)
+        toggle(empty_bridge, not canvas.objects and not active)
         if inspector is not None:
             inspector.bind(canvas.selected())
         if picker is not None:
@@ -628,6 +612,9 @@ def build():
         # Schedule after this callback, avoiding recursive update_all during submit.
         def submit_warm():
             future = load_async("line-strengths", run, done, executor=_HOP_EXEC)
+            if future is None:          # refused by the pool: the row says why
+                strength_pending.discard(request)
+                return
             future.add_done_callback(
                 lambda _: ctx.schedule(lambda: strength_pending.discard(request)))
         ctx.schedule(submit_warm)
@@ -788,6 +775,9 @@ def build():
         ws = Workspace.from_dict(snap)
         if not ws.objects:
             return
+        # a workspace boundary: work admitted before this cannot deliver into the
+        # restored workspace (its Processes row still settles)
+        ctx.advance_generation()
         filtertool.clear()
         for o in list(canvas.objects):
             canvas.remove_object(o.uid)
@@ -857,38 +847,52 @@ def build():
             ionbaltool.restore(ws.ionbal)
         update_all(canvas)
 
-    # --- background loading: placeholder + spinner now, real object when ready ----
+    # --- background work: a Processes row now, the outcome delivered on the document ----
+    def _admit(name, *, heavy=False, detached=False, path=None):
+        job = Job(_nonce(), name, synth.CancelToken(), ctx.generation,
+                  heavy=heavy, detached=detached, path=str(path) if path else None)
+        return jobs.add(job)
+
+    def _admission_failed(job, exc):
+        """The pool refused the job: the same terminal path as a failure in flight, so
+        the spinner clears and the row keeps the reason."""
+        log.exception("%s (job %d) could not be admitted", job.name, job.pid)
+        jobs.settle(job.pid, FAILED, error=f"{type(exc).__name__}: {exc}")
+        notify(f"{job.name} could not start: {exc} — see Processes", level="danger")
+        update_all(canvas)
+
     def load_async(name, loader, on_done, executor=_EXEC, path=None, detached=False):
-        pid = _nonce()
-        pending[pid] = name
-        if executor is _SYNTH_EXEC:
-            pending_heavy.add(pid)  # a synthesis or fit: confirm before throwing it away
-        if detached:
-            pending_detached.add(pid)   # outlives this document; see session_closed
-        if path is not None:
-            pending_paths[pid] = str(path)   # a picker row spins for as long as this stands
-        token = synth.CancelToken()      # cancel handle: the loader threads it into synth.*
-        pending_tokens[pid] = token
-        update_all(canvas)               # show the spinner placeholder immediately
-        doc = curdoc()
+        """Run ``loader(token)`` on ``executor`` and hand its value to ``on_done`` on the
+        document thread. Returns the pool future, or ``None`` when the pool refused it."""
+        job = _admit(name, heavy=executor is _SYNTH_EXEC, detached=detached, path=path)
+        token = job.token                # the loader threads it into synth.* for hard cancel
+        update_all(canvas)               # show the queued row immediately
 
         def work():                      # runs in a worker thread
             if token.cancelled:          # cancelled before the worker even started
-                _settle(doc, pid, name, None, None, None)
+                _settle(job, None, None, None)
                 return
+            if job.state == QUEUED:
+                job.state = RUNNING
+                ctx.schedule(lambda: update_all(canvas))
             try:
-                # loaders take the token so synthesis can be hard-cancelled; non-synth
-                # loaders accept it and ignore it.
                 result = profiled(name, lambda: loader(token))
             except synth.CancelledError:
-                _settle(doc, pid, name, None, None, None)  # token.cancelled -> dropped
+                _settle(job, None, None, None)  # token.cancelled -> dropped
             except Exception as exc:
-                _settle(doc, pid, name, None, None, exc)
+                # the full traceback belongs to the server log whether or not the
+                # document that asked still exists; the row gets the concise message
+                log.exception("%s (job %d) failed", name, job.pid)
+                _settle(job, None, None, exc)
             else:
-                _settle(doc, pid, name, result, on_done, None)
+                _settle(job, result, on_done, None)
 
-        pending_futures[pid] = executor.submit(work)
-        return pending_futures[pid]
+        try:
+            job.future = executor.submit(work)
+        except Exception as exc:
+            _admission_failed(job, exc)
+            return None
+        return job.future
 
     # Coordinators can overlap; the shared dispatch service enforces the CPU budget.
     ctx.submit = lambda name, loader, on_done, detached=False: load_async(
@@ -900,35 +904,29 @@ def build():
         once its handle settles. Submission happens here, once; nothing waits on the
         workflow from another pool thread, and the document thread never blocks on the
         result. The workflow is detached: closing the tab leaves it running, and only its
-        Processes row cancels it, through the handle."""
-        pid = _nonce()
+        Processes row cancels it, through the handle. Returns the handle, or ``None``
+        when submission failed (the row keeps the reason)."""
+        job = _admit(name, heavy=True, detached=True)
+        # the row's cancel token forwards to the handle, so a settle can tell a cancelled
+        # workflow's late outcome from a wanted one the same way it does for loads
         try:
             handle = submit_synthesis(request)
         except Exception as exc:
-            logging.exception("Could not submit %s", name)
-            notify(f"Could not submit {name}: {exc}", level="danger")
+            _admission_failed(job, exc)
             return None
-        pending[pid] = name
-        pending_heavy.add(pid)
-        pending_detached.add(pid)
-        pending_workflows[pid] = handle
-        # the row's cancel token forwards to the handle, so _settle can tell a cancelled
-        # workflow's late outcome from a wanted one the same way it does for loads
-        token = synth.CancelToken()
-        token.add_callback(handle.cancel)
-        pending_tokens[pid] = token
+        job.handle = handle
+        job.token.add_callback(handle.cancel)
         update_all(canvas)
-        doc = curdoc()
 
         def settled(handle):             # worker thread (or the canceller's), never waits
             try:
                 result = handle.result()
             except synth.CancelledError:
-                _settle(doc, pid, name, None, None, None)
+                _settle(job, None, None, None)
             except Exception as exc:
-                _settle(doc, pid, name, None, None, exc)
+                _settle(job, None, None, exc)
             else:
-                _settle(doc, pid, name, result, on_done, None)
+                _settle(job, result, on_done, None)
 
         handle.add_done_callback(settled)
         return handle
@@ -938,70 +936,78 @@ def build():
     def session_closed(session_context):
         ctx.closed = True
         # Closing a tab cancels this document's work, except the jobs that asked not to
-        # be: those keep running and write their result to the disk cache, where a
-        # reopened document finds them through their submission record (see
-        # tumult.synthesis.jobrecord).
-        for pid, token in list(pending_tokens.items()):
-            if pid not in pending_detached:
-                token.cancel()
-        for pid, future in list(pending_futures.items()):
-            if pid not in pending_detached:
-                future.cancel()
+        # be: a durable workflow keeps running and writes its record and result under
+        # its `_workflows/` folder, where a later document can reopen it by id.
+        for job in jobs.active:
+            if not job.detached:
+                jobs.request_cancel(job.pid)
 
-    curdoc().on_session_destroyed(session_closed)
+    ctx.doc.on_session_destroyed(session_closed)
 
-    def _settle(doc, pid, name, result, on_done, exc):
+    def _settle(job, result, on_done, exc):
+        """Deliver a job's outcome on the document thread. Called from the worker (or,
+        for a queued cancellation, the cancelling thread); the state and any delivery
+        are applied on the document, guarded by its lifetime and the workspace
+        generation the job was admitted under. A closed document only records."""
         def apply():
-            pending.pop(pid, None)
-            pending_paths.pop(pid, None)
-            pending_heavy.discard(pid)
-            pending_detached.discard(pid)
-            pending_futures.pop(pid, None)
-            pending_workflows.pop(pid, None)
-            token = pending_tokens.pop(pid, None)
-            if token is not None and token.cancelled:
-                update_all(canvas)       # user cancelled: drop whatever the run returned
-                return
-            if exc is not None:
-                logging.error("Failed to load %s: %s", name, exc)
-            elif on_done is not None:
-                try:
-                    on_done(result)      # add_object -> on_change -> update_all
-                except Exception:
-                    logging.exception("Failed to add %s", name)
-            update_all(canvas)           # clear the spinner (and show the new object)
+            if job.token.cancelled:
+                jobs.settle(job.pid, CANCELLED)   # user cancelled: drop whatever arrived
+            elif exc is not None:
+                logs = job.handle.logs if job.handle is not None else ()
+                jobs.settle(job.pid, FAILED, error=f"{type(exc).__name__}: {exc}", logs=logs)
+            else:
+                jobs.settle(job.pid, FINISHED)
+            if ctx.closed:
+                return                       # recorded; there is no document to tell
+            if job.state == FAILED:
+                notify(f"{job.name} failed: {exc} — see Processes", level="danger")
+            elif job.state == FINISHED:
+                if job.generation is not ctx.generation:
+                    log.info("%s (job %d) finished after its workspace was replaced; dropped",
+                             job.name, job.pid)
+                elif on_done is not None:
+                    try:
+                        on_done(result)      # add_object -> on_change -> update_all
+                    except Exception as err:
+                        log.exception("Failed to add %s (job %d)", job.name, job.pid)
+                        notify(f"{job.name} could not be added: {err}", level="danger")
+            update_all(canvas)               # clear the spinner (and show the new object)
+
+        if ctx.closed:
+            apply()                      # no document to deliver to: record only
+            return
         try:
-            doc.add_next_tick_callback(apply)
+            ctx.doc.add_next_tick_callback(apply)
         except Exception:
-            pass  # session/document already gone
+            apply()                      # the document went away under us
 
     def cancel_pending(pid):
-        """Cancel a running background job from its row in the Processes panel. Drops the
-        row now and cancels this workflow's dispatch subscriptions. Unshared subprocesses are killed;
-        shared jobs continue for their other subscribers. Queued work is cancelled too.
-        Either way the result (if any still arrives) is discarded in _settle."""
+        """Cancel a job from its row in the Processes panel. A still-queued job settles
+        at once; a running one is told through its token (a dispatch child is killed, a
+        shared dispatch job continues for its other subscribers) and its row shows
+        the request until the worker settles. Its result, if any still arrives, is
+        dropped in _settle."""
         try:
             pid = int(pid)
         except (TypeError, ValueError):
             return
-        name = pending.pop(pid, None)
-        pending_paths.pop(pid, None)
-        pending_heavy.discard(pid)
-        pending_detached.discard(pid)   # an explicit cancel overrides the detach opt-out
-        if name is None:
+        job = jobs.request_cancel(pid)
+        if job is None:
             return
-        token = pending_tokens.get(pid)
-        if token is not None:
-            # kill the dispatch process tree if it is running; a durable workflow's token
-            # forwards to its handle, which also cancels its still-queued future
-            token.cancel()
-        fut = pending_futures.get(pid)
-        if fut is not None and fut.cancel():
-            # still queued (never started): work()/_settle won't run, so clean up here
-            pending_futures.pop(pid, None)
-            pending_tokens.pop(pid, None)
-        update_all(canvas)               # remove the spinner immediately
-        notify(f"Cancelled {name}", level="info")
+        update_all(canvas)
+        if job.terminal:
+            notify(f"Cancelled {job.name}", level="info")
+        else:
+            notify(f"Cancelling {job.name}…", level="info")
+
+    def dismiss_job(pid):
+        """Drop a retained (failed) row from the Processes panel."""
+        try:
+            pid = int(pid)
+        except (TypeError, ValueError):
+            return
+        if jobs.dismiss(pid) is not None:
+            update_all(canvas)
 
     def on_select(filepath):
         store.add_recent(filepath)
@@ -1031,6 +1037,7 @@ def build():
         "toggle":       canvas.toggle_object,
         "remove":       canvas.remove_object,
         "cancel-pending": cancel_pending,
+        "dismiss-job":  dismiss_job,
         "select":       focus_spectrum,
         "color":        set_color,
         "profile":      lambda v: range_tool.ew_setting(range_tool.ew.set_profile, v),
@@ -1149,16 +1156,16 @@ def build():
         load_async(name, lambda token=None: load_run(folder), add)
 
     # `busy_provider`: on_select hands the read to a worker thread and returns at once, so
-    # the row's spinner is carried by the pending registry until the object lands
+    # the row's spinner is carried by the job table until the object lands
     picker = FilePicker(on_select, container_id="file-results", start_dir=start_dir,
                         on_dir=on_picker_dir, recent_provider=store.recent_files,
-                        busy_provider=pending_paths.values)
+                        busy_provider=jobs.paths)
     picker.layout.name = "file_picker"
 
     # the model-atom picker of the Open Model Atom modal, rooted at input/atoms
     atom_picker = FilePicker(on_atom_select, container_id="atom-file-results",
                              start_dir=_atoms_dir if _atoms_dir.is_dir() else Path.home(),
-                             busy_provider=pending_paths.values)
+                             busy_provider=jobs.paths)
     atom_picker.layout.name = "atom_file_picker"
 
     # a second FilePicker instance, embedded inline in the settings modal (no nested
@@ -1214,7 +1221,7 @@ def build():
         css=(HERE / "static" / "style.css").read_text(),
         main_empty=not canvas.objects,  # bake the empty-state class into the first paint
         objects_html=objects_panel_html(canvas),
-        processes_html=processes_html(pending, pending_heavy),
+        processes_html=processes_html(jobs),
         inspector_html=inspector_html(canvas),
         footer_html=footer_html(canvas),
         swatches_html=swatch_html(active_color),

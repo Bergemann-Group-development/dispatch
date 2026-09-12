@@ -62,13 +62,15 @@ def write(folder, namelist, *, pid=None, slurm_id=None, state="running"):
     return record
 
 
-def finish(folder, state):
-    """Mark a recorded run ended. Absent record, nothing to do."""
+def finish(folder, state, **details):
+    """Mark a recorded run ended. ``details`` (exit status, log path, error text) are
+    stored with the state so a failed run keeps its diagnostics. Absent record, nothing to do."""
     path = Path(folder) / JOB_NAME
     try:
         record = json.loads(path.read_text())
         record["state"] = state
         record["ended"] = time.time()
+        record.update(details)
         _write_json(path, record)
     except (OSError, ValueError):
         logging.debug("no %s to finish in %s", JOB_NAME, folder)

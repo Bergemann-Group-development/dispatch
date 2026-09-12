@@ -12,6 +12,39 @@ model atom the atom view, a result its table. No action relies on a second, impl
 spectrum in addition to a mask set or range (synthesis window, measurement reference, fit
 target), it asks for it inside its modal, as the abundance and ion-balance modals do.
 
+## Processes panel
+
+Every background operation a document admits (a file load, a synthesis, a fit, a durable
+workflow, a line-strength band) is a `jobs.Job` in `ctx.jobs`, shown at the bottom of the
+left sidebar from admission to its terminal state:
+
+- *queued* and *running* rows spin and carry a cancel button; a synthesis or fit asks for
+  confirmation first. Cancelling a queued job settles it at once. Cancelling a running one
+  cancels its token (a dispatch child is killed; a shared dispatch job continues for its
+  other subscribers; a durable workflow is cancelled through its handle).
+- a *cancelling* row is a request the worker has not yet honoured. It keeps spinning,
+  without the button, until the worker returns: a native call that ignores its token is
+  still occupying it, and the panel never claims otherwise. Whatever the worker then
+  returns is dropped and the row leaves as cancelled.
+- a *failed* row is retained with the operation, the concise error and the names of any
+  native logs (hover for the path) until its dismiss button. The footer message points
+  here; the full traceback is in the server log, written from the worker thread whether
+  or not the document still exists. A job the pool refuses at admission ends the same way.
+- finished and cancelled rows leave the panel when they settle.
+
+Deliveries are guarded by the document's lifetime and by the workspace generation
+(`ctx.generation`) captured when the job was admitted: a completion arriving after the
+session closed, or after a session load advanced the generation, still settles its row
+but adds nothing to the workspace. Closing the tab cancels the document's jobs except
+detached ones (durable workflows, long departure solves), which keep running and write
+their result to disk; an explicit cancel from the panel still ends a detached job.
+
+Server shutdown (`app_hooks.on_server_unloaded` → `tumult.synthesis.runtime.shutdown`)
+stops admission, cancels queued and live workflows, kills the dispatch children of leaf
+jobs and waits at most `runtime.SHUTDOWN_TIMEOUT_S` (10 s) for the pool workers. Work
+still running after that, such as an in-process HOP calculation, is reported by thread
+name in the log and left to finish on its own; it is never claimed stopped.
+
 ## Toolbar
 
 `Annot | Filter [Filtered] Normalise | Mask`. The Synth and EW buttons are removed; the

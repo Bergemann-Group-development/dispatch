@@ -501,6 +501,18 @@ body.resizing * { pointer-events: none !important; }
 .object-item.process { opacity: 0.8; cursor: default; }
 .object-item.process:hover { border-color: transparent; }
 .object-item.process .object-name { font-size: 11px; color: var(--text-muted); }
+.process-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+/* the job's state when it is not simply running: queued, or asked to cancel and still
+   occupying its worker */
+.process-state { font-size: 10px; color: var(--text-muted); font-style: italic; }
+.object-item.process[data-state="queued"] .spinner { opacity: 0.45; animation-duration: 1.6s; }
+/* a failed job stays listed with its error and native log names until dismissed */
+.object-item.process.failed { opacity: 1; }
+.object-item.process.failed > .ti { color: #e05c5c; flex-shrink: 0; }
+.process-error { font-size: 10px; color: #e05c5c;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.process-log { font-size: 10px; color: var(--text-muted); font-family: monospace;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .spinner { flex-shrink: 0; width: 12px; height: 12px; border-radius: 50%;
   border: 2px solid var(--border); border-top-color: var(--accent);
   animation: spin 0.7s linear infinite; }

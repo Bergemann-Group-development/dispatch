@@ -1,10 +1,138 @@
-"""Document-owned result jobs with isolated inputs and coalesced progress."""
+"""Document-owned background work: the job table behind the Processes panel, and the
+result jobs that stream progress into a displayed result.
+
+A :class:`Job` is one operation this document admitted (a file load, a synthesis, a fit,
+a durable workflow) and the states it passes through::
+
+    queued -> running -> finished | failed | cancelled
+    queued -> cancelled                 (its future cancelled before a worker took it)
+    queued | running -> cancelling -> cancelled
+
+``cancelling`` is a request the worker has not yet honoured; a native call that ignores
+its token stays there until it returns, and the row says so instead of claiming the work
+has stopped. Failed jobs are retained with their error and native logs until dismissed;
+finished and cancelled ones leave the table when they settle.
+"""
 from copy import deepcopy
+from dataclasses import dataclass, field
 import logging
-from dataclasses import dataclass
 from threading import Lock
+import time
 
 from tumult.synthesis.cancel import CancelToken, CancelledError
+
+QUEUED, RUNNING, CANCELLING = "queued", "running", "cancelling"
+FINISHED, FAILED, CANCELLED = "finished", "failed", "cancelled"
+TERMINAL = frozenset({FINISHED, FAILED, CANCELLED})
+
+
+@dataclass(eq=False)
+class Job:
+    """One background operation, from admission to its terminal state.
+
+    ``generation`` is the workspace generation the job was admitted under; a delivery
+    for another generation is dropped. ``future`` is the pool future when the work runs
+    on a plain pool; ``handle`` the :class:`WorkflowHandle` of a durable synthesis, whose
+    stable id names the on-disk record a later document can reopen."""
+    pid: int
+    name: str
+    token: CancelToken
+    generation: object
+    heavy: bool = False          # confirm before cancelling (a synthesis, a fit)
+    detached: bool = False       # survives the session closing; see session_closed
+    path: str | None = None      # the file a load came from (picker row spinners)
+    future: object = None
+    handle: object = None
+    state: str = QUEUED
+    error: str | None = None
+    logs: tuple = ()
+    submitted: float = field(default_factory=time.time)
+    ended: float | None = None
+
+    @property
+    def terminal(self):
+        return self.state in TERMINAL
+
+    @property
+    def workflow_id(self):
+        return self.handle.id if self.handle is not None else None
+
+    def display_state(self):
+        """The state to show: a queued durable workflow reads whether its worker has
+        started from its record, since the pool gives no start notification."""
+        if self.state == QUEUED and self.handle is not None:
+            try:
+                if self.handle.status == RUNNING:
+                    self.state = RUNNING
+            except OSError:
+                pass
+        return self.state
+
+
+class JobTable:
+    """The jobs one document admitted, in admission order (the Processes panel)."""
+
+    def __init__(self):
+        self._jobs = {}
+
+    def add(self, job):
+        self._jobs[job.pid] = job
+        return job
+
+    def get(self, pid):
+        return self._jobs.get(pid)
+
+    def __iter__(self):
+        return iter(list(self._jobs.values()))
+
+    def __len__(self):
+        return len(self._jobs)
+
+    @property
+    def active(self):
+        """Jobs still owed an outcome: queued, running or cancelling."""
+        return [job for job in self._jobs.values() if not job.terminal]
+
+    @property
+    def retained(self):
+        """Terminal jobs kept on display (failures) until dismissed."""
+        return [job for job in self._jobs.values() if job.terminal]
+
+    def paths(self):
+        return [job.path for job in self.active if job.path is not None]
+
+    def request_cancel(self, pid):
+        """Ask a job to stop. A job whose future is still queued settles as cancelled
+        at once; a running one becomes ``cancelling`` until its worker settles it. An
+        explicit request overrides the detach opt-out. Returns the job, or ``None``
+        when there is nothing to cancel."""
+        job = self._jobs.get(pid)
+        if job is None or job.terminal or job.state == CANCELLING:
+            return None
+        job.detached = False
+        job.token.cancel()          # kills a dispatch child; forwards to a workflow handle
+        if job.future is not None and job.future.cancel():
+            self.settle(pid, CANCELLED)
+        else:
+            job.state = CANCELLING
+        return job
+
+    def settle(self, pid, state, error=None, logs=()):
+        """Record a terminal state; failed jobs stay listed, the others leave."""
+        job = self._jobs.get(pid)
+        if job is None:
+            return None
+        job.state, job.error, job.logs, job.ended = state, error, tuple(logs), time.time()
+        if state != FAILED:
+            self._jobs.pop(pid, None)
+        return job
+
+    def dismiss(self, pid):
+        """Drop a terminal entry from display; an active job is left alone."""
+        job = self._jobs.get(pid)
+        if job is not None and job.terminal:
+            del self._jobs[pid]
+        return job
 
 
 @dataclass
@@ -31,6 +159,7 @@ class ResultJobs:
         key = result.uid if result is not None else name
         generation = object()
         self.current[key] = generation
+        workspace = getattr(self.ctx, "generation", None)   # captured at admission
         working = deepcopy(result)
         lock = Lock()
         pending = []
@@ -38,6 +167,7 @@ class ResultJobs:
 
         def valid():
             return (not getattr(self.ctx, "closed", False)
+                    and getattr(self.ctx, "generation", None) is workspace
                     and self.current.get(key) is generation
                     and (result is None or self.find(key) is result))
 

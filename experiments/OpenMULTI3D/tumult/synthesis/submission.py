@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 import json
+import logging
 import os
 from pathlib import Path
 import threading
@@ -225,6 +226,9 @@ def submit(request, *, root=None):
             update(state='cancelled', phase='cancelled', ended=time.time())
             raise
         except BaseException as exc:
+            # the traceback belongs to the server log whichever document, if any, is
+            # still waiting; the record keeps the concise cause for its Processes row
+            logging.getLogger(__name__).exception('workflow %s failed', identity)
             update(state='failed', phase='failed', ended=time.time(),
                    error=f'{type(exc).__name__}: {exc}')
             raise
@@ -240,6 +244,15 @@ def submit(request, *, root=None):
             handle._settle_unstarted('failed', error=f'{type(exc).__name__}: {exc}')
             raise
     return handle
+
+
+def cancel_live_workflows():
+    """Cancel every workflow this process still holds live, for server shutdown; returns
+    how many were told. Queued ones settle as ``cancelled`` at once, running ones when
+    their worker notices the token."""
+    with _lock:
+        handles = list(_live.values())
+    return sum(handle.cancel() for handle in handles)
 
 
 def open_workflow(path, *, root=None):

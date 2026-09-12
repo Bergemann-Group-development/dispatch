@@ -10,6 +10,21 @@ class CancelledError(Exception):
     """An explicit cancellation, distinct from a failed numerical trial."""
 
 
+def kill_process(process):
+    """Kill a Popen child launched with ``start_new_session=True``: its whole process
+    group on POSIX, so dispatch's own OpenMP children go with it. A child that has already
+    exited, or was reaped meanwhile, is left alone."""
+    if process.poll() is not None:
+        return
+    try:
+        if os.name == "posix":
+            os.killpg(process.pid, signal.SIGKILL)
+        else:
+            process.kill()
+    except ProcessLookupError:
+        pass
+
+
 class CancelToken:
     def __init__(self):
         self._cancelled = False
@@ -45,17 +60,7 @@ class CancelToken:
 
     def watch_process(self, process):
         """Watch a Popen child launched with start_new_session=True on POSIX."""
-        def kill():
-            if process.poll() is not None:
-                return
-            try:
-                if os.name == "posix":
-                    os.killpg(process.pid, signal.SIGKILL)
-                else:
-                    process.kill()
-            except ProcessLookupError:
-                pass
-        return self.add_callback(kill)
+        return self.add_callback(lambda: kill_process(process))
 
     def cancel(self):
         with self._lock:

@@ -11,8 +11,10 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from contextlib import contextmanager
 from contextvars import ContextVar
+import logging
 import os
 import threading
+import time
 
 from .cancel import CancelToken, CancelledError
 
@@ -150,7 +152,12 @@ class ExecutionService:
                     future.set_exception(exc)
             self._pump()
 
-    def shutdown(self, wait=True):
+    def shutdown(self, wait=True, timeout=None):
+        """Refuse new jobs, cancel every subscriber (which kills the dispatch children of
+        unshared running jobs) and, when ``wait``, join the workers for at most ``timeout``
+        seconds (unbounded when ``None``). Returns the output keys of jobs still running
+        when it gives up: a native call that ignores its token cannot be interrupted, and
+        its thread keeps running after this returns."""
         with self._lock:
             self._closed = True
             tasks = set(self._tasks.values()) | self._running
@@ -158,13 +165,28 @@ class ExecutionService:
                 for future in list(task.subscribers):
                     self._cancel(task, future)
             self._queues.clear()
-        self._executor.shutdown(wait=wait, cancel_futures=True)
+        self._executor.shutdown(wait=False, cancel_futures=True)
+        if wait:
+            join_workers(self._executor, timeout)
+        with self._lock:
+            return tuple(task.key for task in self._running)
 
     def __enter__(self):
         return self
 
     def __exit__(self, *_):
         self.shutdown()
+
+
+def join_workers(pool, timeout=None):
+    """Join a shut-down ``ThreadPoolExecutor``'s worker threads for at most ``timeout``
+    seconds in total; return the ones still alive. The standard library offers only an
+    unbounded wait, so this reads the pool's worker set (``_threads``, stable since 3.8)."""
+    deadline = None if timeout is None else time.monotonic() + timeout
+    threads = list(getattr(pool, "_threads", ()))
+    for thread in threads:
+        thread.join(None if deadline is None else max(0.0, deadline - time.monotonic()))
+    return [thread for thread in threads if thread.is_alive()]
 
 
 _default = None
@@ -227,8 +249,40 @@ def note_run(output):
         observer(output)
 
 
-def shutdown():
-    """Shut down the process-wide leaf service and coordinator pools."""
-    get_runtime().shutdown()
-    for pool in (WORKFLOWS, HOP, IO):
-        pool.shutdown(wait=True, cancel_futures=True)
+# How long a server shutdown waits for running work before reporting what is still
+# running. Cancellable work (a dispatch child, a token-checking coordinator) settles well
+# within this; a native HOP call cannot be interrupted and is reported instead.
+SHUTDOWN_TIMEOUT_S = 10.0
+
+
+def shutdown(timeout=SHUTDOWN_TIMEOUT_S):
+    """Shut down the process-wide pools within a bounded wait.
+
+    In order: the WORKFLOWS pool stops admitting coordinators and its queued futures are
+    cancelled; every live durable workflow is cancelled through its handle (queued ones
+    settle as ``cancelled`` without a worker, running ones through their token); the leaf
+    service cancels its jobs, which kills their dispatch children; the HOP and IO pools
+    refuse new work. Then the workers of all pools are joined for at most ``timeout``
+    seconds in total. The returned report says whether everything ``stopped`` and names
+    the ``running`` work otherwise; a thread that ignores its token (an in-process HOP
+    calculation) keeps running after this returns and is never claimed stopped.
+    """
+    from .submission import cancel_live_workflows
+    started = time.monotonic()
+    WORKFLOWS.shutdown(wait=False)               # stop admission before cancelling
+    cancelled = cancel_live_workflows()
+    WORKFLOWS.shutdown(wait=False, cancel_futures=True)
+    for pool in (HOP, IO):
+        pool.shutdown(wait=False, cancel_futures=True)
+    leaf = get_runtime().shutdown(timeout=timeout)
+    running = list(leaf)
+    for name, pool in (("workflows", WORKFLOWS), ("hop", HOP), ("io", IO)):
+        remaining = None if timeout is None else max(0.0, timeout - (time.monotonic() - started))
+        running += [f"{name}:{thread.name}" for thread in join_workers(pool, remaining)]
+    report = {"stopped": not running, "running": running, "cancelled_workflows": cancelled,
+              "elapsed": time.monotonic() - started}
+    if running:
+        logging.getLogger(__name__).warning(
+            "shutdown: %d thread(s) still running after %.1fs: %s",
+            len(running), report["elapsed"], ", ".join(running))
+    return report

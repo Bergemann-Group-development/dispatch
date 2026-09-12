@@ -49,8 +49,10 @@
       <!-- measurement objects: a line-mask set measured on one spectrum, plus the
            ionisation-balance fit standing on it (see ionbalance.IonBalanceTool) -->
       <div id="ionbal-results">{{ ionbal_results_html|safe }}</div>
-      <!-- background work still running (loads, synthesis, line strengths); each row
-           cancels its run (see main.processes_html). Hidden while nothing runs. -->
+      <!-- background work this document admitted (loads, synthesis, line strengths):
+           queued and running rows cancel their job, a cancelling row waits for its
+           worker, a failed row keeps its error until dismissed (see app.processes_html).
+           Hidden while the list is empty. -->
       <div class="processes-panel">
         <div class="section-header">Processes</div>
         <div id="processes">{{ processes_html|safe }}</div>
@@ -1072,7 +1074,8 @@
     var btn = ev.target.closest('.object-btn');
     if (btn) {
       // losing an in-flight synthesis or fit costs real work, so those rows confirm
-      // (data-confirm); a file load or a line-strength band cancels straight away
+      // (data-confirm); a file load or a line-strength band cancels straight away.
+      // dismiss-job drops a retained (failed) Processes row.
       if (btn.dataset.action === 'cancel-pending' && btn.dataset.confirm === '1' &&
           !confirm('Cancel this run?')) return;
       m.setv({ value: btn.dataset.action + ':' + btn.dataset.uid + ':' + Date.now() });

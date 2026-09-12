@@ -707,3 +707,114 @@ def test_workflow_submission_failure_is_recorded(tmp_path, monkeypatch):
     assert [h.status for h in handles] == ['failed']
     assert handles[0].id not in submission._live
     assert 'RuntimeError' in handles[0].to_dict()['error']
+
+
+# --- termination causes of a cancellable native run -----------------------------------
+def test_cancellable_launch_records_success_failure_and_cancellation(tmp_path, monkeypatch):
+    """The token-managed launch branch keeps the original cause: a clean exit is
+    finished, a nonzero status is failed with its exit code and log, and only an
+    explicit cancellation is recorded as cancelled (the killed child's status is not)."""
+    from tumult import launch
+    from tumult.synthesis import jobrecord
+
+    execution = tmp_path / 'execution'
+    execution.mkdir()
+    monkeypatch.chdir(execution)
+    _stub_dispatch(execution, '(out/"abund.txt").write_text("done")\n')
+    output, _ = launch('cache/ok', verbose=0, cancel_token=CancelToken())
+    assert jobrecord.state_of(output) == 'finished'
+
+    _stub_dispatch(execution, '(out/"abund.txt").write_text("partial")\nsys.exit(3)\n')
+    token = CancelToken()
+    with pytest.raises(RuntimeError, match='status 3'):
+        launch('cache/crash', verbose=0, cancel_token=token)
+    record = jobrecord.read(execution / 'data/cache/crash')
+    assert jobrecord.state_of(execution / 'data/cache/crash') == 'failed'
+    assert record['returncode'] == 3 and record['error'].startswith('RuntimeError')
+    assert Path(record['log']).name == 'crash.log' and Path(record['log']).is_file()
+    assert not token.cancelled                     # a crash is not a cancellation
+    assert not (execution / 'data/cache/crash/abund.txt').exists()
+
+    _stub_dispatch(execution, 'time.sleep(30)\n')
+    token = CancelToken()
+    threading.Timer(0.4, token.cancel).start()
+    with pytest.raises(CancelledError):
+        launch('cache/stopped', verbose=0, cancel_token=token)
+    record = jobrecord.read(execution / 'data/cache/stopped')
+    assert record['state'] == 'cancelled' and record['returncode'] < 0
+    assert record['error'] is None
+
+
+# --- bounded server shutdown ------------------------------------------------------------
+def test_shutdown_is_bounded_and_reports_uninterruptible_work(tmp_path, monkeypatch):
+    """Shutdown stops admission, cancels queued workflows, kills a cancellable dispatch
+    child and returns within its bound, naming the native worker that ignored it."""
+    from tumult import launch
+    from tumult.synthesis import runtime, submission, workflows
+    from tumult.synthesis import jobrecord
+
+    pools = {name: concurrent.futures.ThreadPoolExecutor(2, thread_name_prefix=f'test-{name}')
+             for name in ('WORKFLOWS', 'HOP', 'IO')}
+    for name, pool in pools.items():
+        monkeypatch.setattr(runtime, name, pool)
+    monkeypatch.setattr(submission, 'WORKFLOWS', pools['WORKFLOWS'])
+    monkeypatch.setattr(runtime, '_default', ExecutionService(2))
+
+    # 1. an in-process native call that cannot be interrupted
+    release = threading.Event()
+    native = pools['HOP'].submit(release.wait, 30)
+
+    # 2. a running workflow honouring its token, and one queued behind it
+    started = threading.Event()
+
+    def execute(resolved, cancel_token=None):
+        started.set()
+        while not cancel_token.cancelled:
+            time.sleep(0.01)
+        cancel_token.check()
+
+    monkeypatch.setattr(workflows, 'execute_request', execute)
+    pools['WORKFLOWS'].submit(lambda: None).result(5)
+    gate = threading.Event()
+    blocker = pools['WORKFLOWS'].submit(gate.wait, 30)      # occupies the second thread
+    running = submission.submit(_stub_request(tmp_path))
+    assert started.wait(5)
+    queued = submission.submit(_stub_request(tmp_path))
+    assert queued.status == 'queued'
+
+    # 3. a cancellable dispatch child on the leaf service
+    execution = tmp_path / 'execution'
+    execution.mkdir()
+    ready = tmp_path / 'ready'
+    _stub_dispatch(execution, f'Path({str(ready)!r}).touch()\ntime.sleep(30)\n')
+
+    def run(token, slots):
+        return launch('cache/child', verbose=0, cwd=execution, cancel_token=token)
+
+    child = runtime.get_runtime().submit('child', 'sig', 'owner', run, token=CancelToken())
+    deadline = time.monotonic() + 5
+    while not ready.exists() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert ready.exists()
+
+    t0 = time.monotonic()
+    report = runtime.shutdown(timeout=2.0)
+    elapsed = time.monotonic() - t0
+    assert elapsed < 4.0, elapsed
+    assert report['stopped'] is False
+    # the two threads that ignored everything: the HOP call and the pool blocker
+    assert sorted(name.split(':')[0] for name in report['running']) == ['hop', 'workflows']
+    assert report['cancelled_workflows'] == 2
+    assert queued.status == 'cancelled' and running.status == 'cancelled'
+    with pytest.raises(CancelledError):
+        child.result(1)
+    assert jobrecord.state_of(execution / 'data/cache/child') == 'cancelled'
+    with pytest.raises(RuntimeError):
+        submission.submit(_stub_request(tmp_path))        # admission is closed
+    with pytest.raises(RuntimeError):
+        runtime.get_runtime().submit('late', 'sig', 'owner', run)
+    assert not native.done()                               # never claimed stopped
+    release.set()
+    gate.set()
+    native.result(5)
+    blocker.result(5)

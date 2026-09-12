@@ -117,6 +117,7 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
     # here rather than at the top: a run's record of itself belongs to the synthesis
     # layer, and the launcher only needs it while it is starting a run.
     from tumult.synthesis import jobrecord
+    from tumult.synthesis.cancel import CancelledError, kill_process
 
     # Execution logic
     try:
@@ -152,16 +153,24 @@ def launch(input_name, nml_settings=None, default=None, overwrite=False, threads
             detach = cancel_token.watch_process(process)
             try:
                 process.wait()
+                # The termination cause is read here, before any cleanup touches the token:
+                # a cancelled token means the user (or session) ended the run, whatever the
+                # killed child's exit status says; otherwise a nonzero status is a failure.
                 cancel_token.check()
                 if process.returncode:
                     raise RuntimeError(f"dispatch exited with status {process.returncode}: {log_file}")
-            except BaseException:
-                cancel_token.cancel()
-                process.wait()  # reap the child before releasing its CPU allocation
+            except BaseException as exc:
+                cancelled = isinstance(exc, CancelledError)
+                if not cancelled:
+                    kill_process(process)   # an interrupted wait must not leave the child running
+                process.wait()       # reap the child before releasing its CPU allocation
                 # abund.txt is written during initialisation, before completion.
                 # Failed/cancelled jobs must not become cache hits on the next run.
                 (output_folder / 'abund.txt').unlink(missing_ok=True)
-                jobrecord.finish(output_folder, 'cancelled')
+                jobrecord.finish(output_folder, 'cancelled' if cancelled else 'failed',
+                                 returncode=process.returncode,
+                                 log=str(log_file) if log_file else None,
+                                 error=None if cancelled else f'{type(exc).__name__}: {exc}')
                 raise
             finally:
                 detach()
