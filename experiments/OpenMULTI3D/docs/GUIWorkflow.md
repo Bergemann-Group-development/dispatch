@@ -112,7 +112,26 @@ corrections…**, which opens the correction modal with this atom fixed.
 - **NLTE atmosphere**: the standard atmosphere cluster (grid, interpolate or pick, file) and
   stellar parameters, kept in the `abundcorr_run` store section and seeded from the synthesis
   modal on first open.
-- **Measurement**: the EW profile and the minimum EW.
+- **Measurement**: the EW profile (default **trapz**, the width integrated over each
+  line's window, which needs the line grid), the minimum EW, the **CoG limit** (the NLTE
+  curve of growth spans ±limit dex about the reference, on the `abund_step` lattice from
+  Preferences → Engine; rungs are solved at −limit, 0, +limit and then wherever a line's
+  correction needs bracketing) and **Line grid from opacity profiles** (on by default). With it on, the atom's bound-bound wavelength grid and each line's window
+  are generated from the line opacities on the reference model nearest the target
+  (`tumult/line_quadrature.py`, cached under `synth/_preparation/`), and used by both the
+  LTE reference and the NLTE ladder; each line's window is its fit and synthesis window.
+  The synth window is the atom's own span (its `qmax`); the fit window starts as that span
+  too, except where two atom lines' windows overlap and the line list is off, in which case
+  it is cut at the reference flux maxima nearest the centre, so a blended line is integrated
+  over its own profile and not its neighbour's core. On the Lines step the jumped-to line's
+  fit window can be resized by its edge handles, as in the LineMasks view, within the synth
+  window; the reference EW and the stored NLTE rungs are re-read over the new window and the
+  line's correction, the table, the scatter and the mean follow without another solve.
+  Off, the atom's own `nq qmax q0` sample the lines and the windows come from the auto-crop
+  of the reference profile. **Include the line list** (off by default) synthesises the
+  configured line list together with the atom in both stages; while such a result is shown,
+  the canvas annotates the lines of the reference run's `linelist_out.txt`, and a result
+  computed without the list shows no line annotations at all.
 - Footer: **Compute**. One chained job: the 1D LTE reference is synthesised from the atom
   alone and its lines measured; the reference spectrum is added to the canvas and the
   correction object appears under the atom as soon as that stage finishes; the NLTE
@@ -125,8 +144,9 @@ A correction result is listed indented under the atom it was computed from and c
 atom's path, so a restored session re-parents it after the atom is reloaded; a result whose
 atom is not loaded is listed in a trailing Corrections section. Removing an atom removes its
 results after confirmation. The result view has two steps, **Lines** (the reference spectrum
-over the per-line table) and **Scatter** (ΔA against the axis chosen in the sidebar), with
-the line include toggles curating the mean.
+with the selected line's curve-of-growth inversion beside it, over the per-line table) and
+**Scatter** (ΔA against excitation energy and against reduced EW, side by side), with the
+line include toggles curating the mean.
 
 ## Code consequences
 

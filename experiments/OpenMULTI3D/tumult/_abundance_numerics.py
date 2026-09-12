@@ -21,46 +21,66 @@ from .profile import get_profile_class, reduced_ew  # noqa: F401 (reduced_ew re-
 from .utils import pchip_mono
 
 
-def cog_invert(a_grid, ew_grid, ew_meas, ew_err=0.0):
+def cog_invert(a_grid, ew_grid, ew_meas, ew_err=0.0, lam0_aa=None):
     """Interpolate an abundance from a measured EW on a curve of growth.
+
+    The inversion is done in reduced equivalent width, ``REW = log10(W/λ)``, against the
+    abundance in dex: a weak line's CoG is a straight line in that plane and a saturating
+    one bends smoothly, so the shape-preserving PCHIP interpolant (:func:`pchip_mono`)
+    through the rungs reproduces the physical curve where interpolating in W would not.
+    The measured EW's error propagates as ``σ_REW = σ_W / (W ln10)`` through ``dA/dREW``.
 
     Parameters
     ----------
     a_grid, ew_grid : array_like
-        The curve of growth: abundances and the synthetic EW each produces (same units
-        for ``ew_grid`` and ``ew_meas``). Need not be sorted; monotonic EW(A) assumed.
+        The curve of growth: abundances [dex] and the synthetic EW each produces (same
+        units for ``ew_grid`` and ``ew_meas``, positive). Need not be sorted; monotonic
+        EW(A) assumed.
     ew_meas : float
         The measured equivalent width.
     ew_err : float, optional
-        1σ uncertainty on ``ew_meas``. Propagated to ``sigma_a`` via the local slope.
+        1σ uncertainty on ``ew_meas``.
+    lam0_aa : float, optional
+        The line centre [Å] when ``ew_grid``/``ew_meas`` are in mÅ, so the returned ``rew``
+        is the true reduced EW. The inversion itself does not depend on it: for one line
+        REW differs from ``log10 W`` by a constant, which shifts the interpolant's abscissa
+        without changing the solution or the slope.
 
     Returns
     -------
     dict with keys
         ``a`` : interpolated abundance at ``ew_meas``.
-        ``sigma_a`` : ``ew_err * |dA/dEW|`` at the measured point (∞-prone on saturation).
-        ``dadew`` : the local ``dA/dEW`` slope (1/EW-unit).
+        ``sigma_a`` : ``σ_REW · |dA/dREW|`` at the measured point (∞-prone on saturation).
+        ``dadrew`` : the local ``dA/dREW`` slope [dex per dex].
+        ``dadew`` : the same slope per EW unit, ``dA/dREW / (W ln10)``.
+        ``rew`` : the measured reduced EW (``log10 W`` when ``lam0_aa`` is not given).
         ``out_of_range`` : True if ``ew_meas`` falls outside the synthesised CoG span.
     """
     a = np.asarray(a_grid, dtype=float)
     w = np.asarray(ew_grid, dtype=float)
     if a.size < 2 or a.size != w.size:
         raise ValueError("cog_invert needs matching a_grid/ew_grid of length >= 2.")
+    if not (np.all(w > 0) and ew_meas > 0):
+        raise ValueError("cog_invert needs positive equivalent widths (REW is a log).")
     order = np.argsort(w)
     w, a = w[order], a[order]
+    offset = -3.0 - np.log10(lam0_aa) if lam0_aa else 0.0   # mÅ over Å → W/λ
+    x = np.log10(w) + offset
+    x_meas = float(np.log10(ew_meas) + offset)
 
-    # monotone piecewise-cubic (PCHIP) interpolant A(EW): shape-preserving so it neither
-    # overshoots nor introduces spurious extrema on a monotonic CoG, and its analytic
-    # derivative gives a smooth local dA/dEW slope for the error propagation.
-    spline = pchip_mono(w, a)
-    a_val = float(spline(ew_meas))
-    dadew = float(spline.derivative()(ew_meas))
-    sigma_a = float(abs(ew_err * dadew)) if np.isfinite(dadew) else np.inf
+    spline = pchip_mono(x, a)
+    a_val = float(spline(x_meas))
+    dadrew = float(spline.derivative()(x_meas))
+    dadew = dadrew / (ew_meas * np.log(10.0))
+    rew_err = ew_err / (ew_meas * np.log(10.0))
+    sigma_a = float(abs(rew_err * dadrew)) if np.isfinite(dadrew) else np.inf
     return {
         "a": a_val,
         "sigma_a": sigma_a,
+        "dadrew": dadrew,
         "dadew": float(dadew),
-        "out_of_range": bool(ew_meas < w[0] or ew_meas > w[-1]),
+        "rew": x_meas,
+        "out_of_range": bool(x_meas < x[0] or x_meas > x[-1]),
     }
 
 

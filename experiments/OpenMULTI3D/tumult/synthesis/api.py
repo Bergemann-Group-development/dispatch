@@ -871,7 +871,7 @@ def compute_spectra(top, star, atmos_files, *, settings_list, absmet_files=None,
                     method='Delaunay', max_threads=None, launch_kwargs=None,
                     xmin=None, xmax=None, pad=None, vmic_step=0.5, vmic_points=2,
                     nlte=None, cancel_token=None, crop=None, preparation=None,
-                    return_runs=False):
+                    return_runs=False, fold=True):
     """Batched :func:`compute_spectrum` for a list of settings variants that share the same
     star/atmospheres (e.g. a curve-of-growth's abundance ladder).
 
@@ -889,6 +889,11 @@ def compute_spectra(top, star, atmos_files, *, settings_list, absmet_files=None,
 
     ``crop`` (optional) asks for the per-node line-list crop described in
     :func:`_node_linelists`, and is part of these runs' cache identity.
+
+    Variants differing only in abundances fold into one run whose departures are solved at
+    the first variant's abundance and whose other rungs are opacity scalings of it (see
+    :func:`_foldable_ladder`). ``fold=False`` keeps every variant its own run, so an NLTE
+    ladder gets a departure solve per rung.
     """
     if not settings_list:
         return []
@@ -912,9 +917,8 @@ def compute_spectra(top, star, atmos_files, *, settings_list, absmet_files=None,
         windowed.append(item)
     nlte_values = [bool(_is_nlte(s) if nlte is None else nlte) for s in windowed]
 
-    fold = None
-    if len(set(nlte_values)) == 1 and len(set(labels)) == 1:
-        fold = _foldable_ladder(windowed, launch_kwargs, nlte_values[0])
+    fold = (_foldable_ladder(windowed, launch_kwargs, nlte_values[0])
+            if fold and len(set(nlte_values)) == 1 and len(set(labels)) == 1 else None)
     crop_windows = ([(float(min(xmin, xmax)), float(max(xmin, xmax)))]
                     if xmin is not None and xmax is not None else [])
     if fold is not None:

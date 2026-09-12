@@ -973,9 +973,13 @@ num-input[disabled] .num-spin button { cursor: not-allowed; }
 .sidebar-right.corr-active .abundcorr-panel { display: flex; }
 .sidebar-right.corr-active .lines-panel { display: none; }
 
-/* centre correction view: reference spectrum (Lines) or ΔA scatter (Scatter) on top,
-   per-line table below, and a step-switcher footer. Reuses #canvas-wrap for the spectrum. */
-#corr-scatter, #corr-bottom, #corr-steps { display: none; }
+/* centre correction view: reference spectrum with the selected line's CoG inversion
+   beside it (Lines) or the two ΔA diagnostic panels (Scatter) on top, per-line table below,
+   and a step-switcher footer. Reuses #canvas-wrap for the spectrum; the CoG pane lives
+   inside it and only shows in this view's Lines step. */
+#corr-scatter, #corr-bottom, #corr-steps, #corr-cog { display: none; }
+#main.corr-mode.corr-step-1 #corr-cog { display: flex; flex: 0 0 36%; }
+#corr-cog > * { flex: 1; min-width: 0; min-height: 0; }
 #main.corr-mode #top-panel { display: none; }
 #main.corr-mode #canvas-wrap { display: flex; }
 #main.corr-mode #corr-bottom { display: flex; flex: 0 0 var(--bottom-h); min-height: 0; flex-direction: column; }
@@ -986,7 +990,8 @@ num-input[disabled] .num-spin button { cursor: not-allowed; }
 #main.corr-step-1 .corr-step-btn[data-step="1"],
 #main.corr-step-2 .corr-step-btn[data-step="2"] { color: var(--text); border-bottom-color: var(--accent); }
 .corr-row { cursor: pointer; }
-.corr-row:hover td { background: rgba(74, 144, 226, 0.14); }
+.corr-row:hover td, .corr-row.row-hover td,
+.corr-row.row-selected td { background: rgba(74, 144, 226, 0.14); }
 .corr-row.line-excluded { opacity: 0.4; }
 .corr-mask-chk { cursor: pointer; vertical-align: middle; }
 

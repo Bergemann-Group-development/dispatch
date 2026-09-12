@@ -125,6 +125,8 @@ class LineResult:
     blend_frac: float = float("nan")  # contaminant EW fraction in the window (0 = clean)
     a_grid: tuple = ()          # (optional) curve of growth: abundances …
     ew_grid: tuple = ()         # … and the EW each produced (mÅ)
+    cog_specs: dict = field(default_factory=dict)  # offset -> rung Spectrum over the synth
+                                # window, so the fit window can be re-read after the run
     fit_spec: object = None     # best-fit synthetic Spectrum, for the jump overlay
     fit_func: object = None     # fitted profile f(λ_Å)->flux, for the EW-area hatch on jump
     method: str = "fit"         # "fit" (direct) or "cog"
@@ -155,6 +157,8 @@ class LineResult:
             v = getattr(self, f.name)
             if f.name == "fit_spec":
                 v = v.to_dict() if v is not None else None
+            elif f.name == "cog_specs":
+                v = {str(a): sp.to_dict() for a, sp in v.items()}
             elif f.name == "mask":
                 v = v.to_dict()
             elif f.name in self._TUPLE_FIELDS:
@@ -171,6 +175,8 @@ class LineResult:
                 d[k] = tuple(d[k])
         if d.get("fit_spec") is not None:
             d["fit_spec"] = Spectrum.from_dict(d["fit_spec"])
+        d["cog_specs"] = {float(a): Spectrum.from_dict(sp)
+                          for a, sp in (d.get("cog_specs") or {}).items()}
         if d.get("mask") is not None:
             d["mask"] = LineMask.from_dict(d["mask"])
         return cls(**d)
@@ -337,6 +343,51 @@ def auto_window(spec, lam0, exclude_wing=False, fallback=0.4, resolution=None):
     return (float(lam0 - fallback), float(lam0 + fallback)), False
 
 
+def local_max_window(spec, lam0, window, tol=1e-4):
+    """Narrow ``window`` to the flux maxima nearest ``lam0`` on either side.
+
+    From the sample nearest ``lam0`` the walk first descends to the line's own minimum,
+    then climbs outwards on each side and stops where the flux has fallen by ``tol`` below
+    the highest value passed; the edge is that highest sample. A side whose flux never
+    falls keeps the window's edge. Between two blended lines the stop is the flux maximum
+    separating them, so the returned span holds the line's own profile and none of its
+    neighbour's core. ``tol`` (in the spectrum's normalised flux) lets the walk cross a
+    flat continuum or a saturated flat core without stopping on numerical ripple. Returns
+    ``(lo, hi)`` in the spectrum's wavelength unit, never wider than ``window``.
+    """
+    xx, yy = _crop(spec, window).values
+    xx, yy = np.asarray(xx, float), np.asarray(yy, float)
+    if xx.size < 3:
+        return float(window[0]), float(window[1])
+    k0 = int(np.argmin(np.abs(xx - lam0)))
+
+    def climb(step):
+        k, last = k0, xx.size - 1 if step > 0 else 0
+        while k != last and yy[k + step] < yy[k]:
+            k += step                       # down to the core
+        top = k
+        while k != last and yy[k + step] >= yy[top] - tol:
+            k += step
+            if yy[k] > yy[top]:
+                top = k
+        return last if k == last else top
+
+    return float(xx[climb(-1)]), float(xx[climb(+1)])
+
+
+def overlapping_windows(windows):
+    """The keys of ``windows`` (``{key: (lo, hi)}``) whose span overlaps another's."""
+    items = sorted(windows.items(), key=lambda kv: kv[1][0])
+    hit, reach, prev = set(), -np.inf, None
+    for key, (lo, hi) in items:
+        if lo < reach:
+            hit.add(key)
+            hit.add(prev)
+        if hi > reach:
+            reach, prev = hi, key
+    return hit
+
+
 def screen(ew_maa, blend_frac, lam0_aa, *, ew_min=5.0, logrw_max=-4.8, blend_max=0.30):
     """Flag a candidate line as too weak / saturated / blended; return ``(flags, ok)``.
 
@@ -376,6 +427,9 @@ class AbundanceResult(MeasuredLines):
     uid: str = ""
     name: str = ""
     atom_path: str = ""                # the model atom a correction run was computed from
+    quadrature: dict = field(default_factory=dict)  # PreparedLineQuadrature the stages share
+    with_linelist: bool = False        # the synthesis line list was included in the runs
+    linelist_dump: str = ""            # the reference run's linelist_out.txt, when it was
 
 
 
@@ -389,10 +443,15 @@ class Thresholds:
 
 # --- staged pipeline (the 3-step wizard drives these one stage at a time) -----------------
 
-def measure_line(ref_spec, line, profile="gauss", fallback=0.4, resolution=None):
+def measure_line(ref_spec, line, profile="gauss", fallback=0.4, resolution=None,
+                 window=None):
     """Stage 1: fit a line on the reference and return the bound Profile plus its windows.
 
-    Independent of any stellar parameters. Returns ``(prof, window, fit_window, flags)``:
+    Independent of any stellar parameters. With ``window`` given, both the fit and the
+    synthesis window are that span (the line's own window from its model atom, say) and no
+    auto-crop runs; that is also the only way an integrating profile (``"trapz"``) can be
+    used here, since it has no fitted centre or FWHM to derive a window from. Returns
+    ``(prof, window, fit_window, flags)``:
     ``prof`` is the fitted :class:`tumult.profile.Profile` — it carries the EW (``.maa``),
     the FWHM, the model ``.func`` (for hatching the integrated area on jump) **and the
     fit-covariance EW error** (``.width_err_maa``; with no per-pixel noise given, the
@@ -410,7 +469,14 @@ def measure_line(ref_spec, line, profile="gauss", fallback=0.4, resolution=None)
     a hard fit failure (too few points), so the caller can drop the line entirely.
     """
     lam0 = float(line["lam0"])
-    fit_window, found = auto_window(ref_spec, lam0, fallback=fallback, resolution=resolution)
+    cls = get_profile_class(profile)
+    if window is None and not cls.fitted:
+        raise ValueError(f"profile {profile!r} needs an explicit window")
+    if window is not None:
+        fit_window, found = (float(window[0]), float(window[1])), True
+    else:
+        fit_window, found = auto_window(ref_spec, lam0, fallback=fallback,
+                                        resolution=resolution)
     if not found:
         # no fittable core resolved: there is no trustworthy window, so don't measure an EW
         # at all — return it flagged (no Profile / NaN windows), to keep but exclude.
@@ -419,16 +485,22 @@ def measure_line(ref_spec, line, profile="gauss", fallback=0.4, resolution=None)
     sub = _crop(ref_spec, fit_window)
     xx, yy = sub.values
     try:
-        prof = get_profile_class(profile).measure(
-            np.asarray(xx, float), np.asarray(yy, float), x0=lam0, xunit=sub.xunit)
+        prof = cls.measure(np.asarray(xx, float), np.asarray(yy, float), x0=lam0,
+                           xunit=sub.xunit)
     except ValueError as exc:
         raise RuntimeError(f"profile fit failed at {lam0:.3f}") from exc
+    if not cls.fitted:
+        # an integrated width: the window is the measurement, nothing to centre or flag
+        return prof, fit_window, fit_window, ()
     center = float(prof.params[0])
     hwhm = 0.5 * float(prof.fwhm)
     # synth window: SYNTH_HWHM_MULT HWHM about the fitted centre, but at least FIT_MARGIN_HWHM
     # HWHM beyond the fit window on each side so the fit region is always enclosed.
-    synth_lo = min(center - SYNTH_HWHM_MULT * hwhm, fit_window[0] - FIT_MARGIN_HWHM * hwhm)
-    synth_hi = max(center + SYNTH_HWHM_MULT * hwhm, fit_window[1] + FIT_MARGIN_HWHM * hwhm)
+    if window is not None:
+        synth_lo, synth_hi = fit_window
+    else:
+        synth_lo = min(center - SYNTH_HWHM_MULT * hwhm, fit_window[0] - FIT_MARGIN_HWHM * hwhm)
+        synth_hi = max(center + SYNTH_HWHM_MULT * hwhm, fit_window[1] + FIT_MARGIN_HWHM * hwhm)
     flags = []
     if not (fit_window[0] <= center <= fit_window[1]):
         flags.append("off_center")
@@ -713,20 +785,33 @@ def finalize_result(result, ref_spec, snr, cont_pct):
 # to the abundance reproducing the reference EW. The reference sits at [X/Fe]=0, so that
 # abundance *is* the correction dA = A(NLTE) - A(LTE).
 
-CORR_SPAN = 0.6        # curve-of-growth spans +/-CORR_SPAN dex in [X/Fe] about the reference
-CORR_N = 7             # number of ladder points (kept small - each is an NLTE solve)
+CORR_LIMIT = 1.0       # the curve of growth spans +/-CORR_LIMIT dex in [X/Fe] about the reference
+CORR_MAX_ROUNDS = 8    # bracketing rounds before giving up (each round is a batch of NLTE solves)
 MIN_FIT_POINTS = 7     # a fit region sampled by fewer reference points than this is too sparse
                        # to trust - flag "few_points" and exclude the line by default
 
 
 @dataclass
 class CorrectionOpts:
-    """Thresholds and ladder shape for the NLTE-correction workflow."""
-    profile: str = "gauss"
+    """Thresholds and ladder shape for the NLTE-correction workflow.
+
+    The default profile is the trapezoidal width over each line's window: with the windows
+    coming from the model atom (``line_grid``) the measurement is the same integral on the
+    reference and on every ladder rung, which a fitted shape on a blended or damped line is
+    not. It does couple lines whose windows overlap. A fitted profile needs ``line_grid``
+    off, or accepts the atom windows as its fit region."""
+    profile: str = "trapz"
     ew_min: float = 5.0                      # maa - reference lines weaker than this are dropped
-    span: float = CORR_SPAN
-    points: int = CORR_N
+    limit: float = CORR_LIMIT               # dex; the rungs stay within +-limit
+    max_rounds: int = CORR_MAX_ROUNDS
     min_fit_points: int = MIN_FIT_POINTS
+    # generate the bound-bound grid and line windows from the atom's opacity profiles on
+    # the reference model (tumult.line_quadrature) instead of the atom's own q0/qmax; the
+    # windows then also set the line masks
+    line_grid: bool = True
+    # synthesise the configured line list (blends from the other species) together with
+    # the atom, in the reference and in every NLTE rung; off, the atom alone is synthesised
+    linelist: bool = False
 
 
 def correction_summary(lines):
@@ -766,6 +851,19 @@ def measure_reference_lines(request, atom, *, ref_grid, opts=None, cancel_token=
     coverage, so no window is imposed - the reference spans the atom's full synthesised range,
     and that run's ``linelist_out.txt`` supplies the candidate lines.
 
+    With ``opts.line_grid`` (the default) the bound-bound wavelength grid and the line
+    windows come from :func:`tumult.line_quadrature.prepare_line_quadrature` on the
+    reference model nearest the target, and the reference is synthesised on that grid with
+    the atom copy carrying the windows; each line's window is then its fit and synthesis
+    window (its line mask). Where the windows of two atom lines overlap, and the reference
+    holds nothing but the atom (``opts.linelist`` off), each such line's window is narrowed
+    to the reference flux maxima nearest its centre (:func:`local_max_window`), so the EW
+    integrates the line's own profile and not its neighbour's core; with the line list in,
+    the flux maxima belong to other species as much as to the atom, so the opacity windows
+    are kept as they are. Stage 2 reuses the same preparation, recorded in
+    ``result.quadrature``, so LTE reference and NLTE ladder share one grid and one set of
+    windows, and measures the rungs over the same (narrowed) fit windows.
+
     Returns an :class:`AbundanceResult` at stage ``"lines"``, carrying the reference spectrum
     as ``ref_spec``. Raises :class:`ValueError` when the reference yields nothing measurable.
     """
@@ -777,26 +875,65 @@ def measure_reference_lines(request, atom, *, ref_grid, opts=None, cancel_token=
     profile, ew_min = str(opts.profile), float(opts.ew_min)
     prefs, target = request.prefs, request.target
 
-    ref_spec, run_dirs = synth.compute_reference(target, prefs, atom, ref_grid,
-                                                 cancel_token=cancel_token, return_runs=True)
+    quadrature, windows, run_atom = None, {}, atom
+    if opts.line_grid:
+        quadrature = _prepare_quadrature(request, atom, ref_grid)
+        windows = _mask_windows(quadrature)
+        run_atom = quadrature.atom_file
+    ref_spec, run_dirs = synth.compute_reference(
+        target, prefs, run_atom, ref_grid, cancel_token=cancel_token, return_runs=True,
+        line_grid=quadrature.grid_file if quadrature else None,
+        with_linelist=bool(opts.linelist))
     llist = synth.read_reference_linelist(run_dirs)
     if llist is None or len(llist) == 0:
         raise ValueError("No linelist_out.txt was produced by the reference run.")
-    cand = llist.sort_values("lam0")
+    # with the line list included the dump holds every species; the candidates are the
+    # atom's own lines
+    element = atom_element(atom)
+    species = llist["ion"].map(lambda ion: species_symbol(ion)[1])
+    cand = llist[species == element]
+    if {"i", "j"} <= set(cand.columns):
+        # a transition split into isotopic / hyperfine components by the run's isotope data
+        # is one line: keep its strongest record, centred on the atom's own wavelength when
+        # the atom copy is at hand
+        if "strength" in cand.columns:
+            cand = cand.sort_values("strength", ascending=False)
+        cand = cand.drop_duplicates(subset=["i", "j"])
+        if windows:
+            centres = _mask_centres(quadrature)
+            cand = cand.assign(lam0=[centres.get((int(i), int(j)), l0) for i, j, l0
+                                     in zip(cand["i"], cand["j"], cand["lam0"])])
+    cand = cand.sort_values("lam0")
     if cand.empty:
         raise ValueError("The reference run produced no atom lines.")
+    if windows and not {"i", "j"} <= set(cand.columns):
+        raise ValueError("The reference linelist_out.txt carries no level indices.")
 
+    blended = overlapping_windows(windows) if windows and not opts.linelist else set()
     lines = []
     for row in cand.itertuples():
         species, _symbol = species_symbol(getattr(row, "ion", ""))
+        window = windows.get((int(row.i), int(row.j))) if windows else None
+        if windows and window is None:
+            continue
+        fit = window
+        if (int(row.i), int(row.j)) in blended:
+            fit = local_max_window(ref_spec, float(row.lam0), window)
         try:
             lprof, win, fit_window, flags = measure_line(
-                ref_spec, {"lam0": float(row.lam0)}, profile=profile)
+                ref_spec, {"lam0": float(row.lam0)}, profile=profile, window=fit)
         except Exception:
             continue
+        if window is not None:
+            win = window          # the synth window stays the atom's own (its qmax span)
         if "no_window" in flags or lprof is None or not np.isfinite(lprof.maa):
             continue
-        ew, fwhm, func = lprof.maa, float(lprof.fwhm), lprof.func
+        ew, func = lprof.maa, lprof.func
+        fwhm = float(lprof.fwhm) if lprof.fitted else float("nan")
+        # below the EW threshold a line is no candidate at all, whatever else is flagged;
+        # listing it excluded would only pad the table with the atom's negligible lines
+        if ew < ew_min:
+            continue
         # a fit region resolved from too few reference samples can't be fitted reliably;
         # flag it (and exclude it) so it doesn't skew the corrections.
         flags = list(flags)
@@ -813,8 +950,6 @@ def measure_reference_lines(request, atom, *, ref_grid, opts=None, cancel_token=
         # ew_err > ew means the measurement is not trustworthy.
         if np.isfinite(ew_err) and ew > 0 and ew_err > ew:
             flags.append("ew_unc")
-        if not flags and ew < ew_min:
-            continue
         lines.append(LineResult(
             lam0=float(row.lam0), ion=species, e_low=float(getattr(row, "evi", np.nan)),
             loggf=float(getattr(row, "loggf", np.nan)), ew=ew,
@@ -832,8 +967,107 @@ def measure_reference_lines(request, atom, *, ref_grid, opts=None, cancel_token=
     result.teff, result.logg, result.feh, result.vmic = target
     result.ref_spec = ref_spec
     result.atom_path = str(atom)
+    result.quadrature = quadrature.to_dict() if quadrature else {}
+    result.with_linelist = bool(opts.linelist)
+    if opts.linelist:
+        result.linelist_dump = str(Path(run_dirs[0]) / "linelist_out.txt")
     result.name = Path(atom).name
     return result
+
+
+def atom_element(atom):
+    """The element symbol a classic model atom declares on its first entry line."""
+    for line in Path(atom).read_text().splitlines():
+        text = line.strip()
+        if text and not text.startswith("*"):
+            return text.split()[0].capitalize()
+    raise ValueError(f"{atom} declares no element")
+
+
+def _prepare_quadrature(request, atom, ref_grid):
+    """The bound-bound grid and atom copy for ``atom`` on the reference model nearest the
+    request's target, generated once and cached (see :mod:`tumult.line_quadrature`)."""
+    from .line_quadrature import prepare_line_quadrature
+    from .synthesis import workflows as synth
+
+    prefs, target = request.prefs, request.target
+    atmos = synth.nearest_marcs_atmosphere(ref_grid, target, prefs)
+    vmic = float(target[3]) if len(target) > 3 and float(target[3]) > 0 else 1.0
+    return prepare_line_quadrature(synth.preparation_root(prefs), atom, atmos,
+                                   vmic=vmic, feh=float(request.feh))
+
+
+def _mask_centres(quadrature):
+    """``{(i, j): lam0}`` line centres of a preparation's atom copy, in air AA."""
+    from .line_quadrature import line_windows
+    from .physics import vac2air
+
+    return {key: float(vac2air(lam0))
+            for key, (lam0, _lo, _hi) in line_windows(quadrature.atom_file).items()}
+
+
+def _mask_windows(quadrature):
+    """``{(i, j): (lo, hi)}`` line windows of a preparation, in air AA as the masks are."""
+    from .line_quadrature import line_windows
+    from .physics import vac2air
+
+    return {key: (float(vac2air(lo)), float(vac2air(hi)))
+            for key, (_lam0, lo, hi) in line_windows(quadrature.atom_file).items()}
+
+
+def _solution_spec(ln):
+    """The line's rungs interpolated at its inverted abundance, over its synth window."""
+    offsets = sorted(ln.cog_specs)
+    return cog_spectrum(offsets, [ln.cog_specs[a] for a in offsets], ln.a)
+
+
+def refit_line_window(result, ln, lo, hi, *, min_fit_points=MIN_FIT_POINTS):
+    """Re-read one line after its fit window was moved to ``[lo, hi]`` (air Å), in place.
+
+    The window is clamped to the line's synth window, which stays what the atom set. The
+    reference EW is measured again over it; when the line carries its rungs
+    (``cog_specs``, from :func:`run_nlte_corrections`) the curve of growth is re-read over
+    the same window and inverted again, so the correction follows the edit without another
+    solve. The reference-stage flags (``few_points``, ``ew_unc``) and the inversion's
+    ``out_of_range`` are re-derived; the user's include toggle is kept unless the line
+    falls out of range. The result's summary is refreshed.
+    """
+    smin, smax = ln.window
+    if np.isfinite(smin) and np.isfinite(smax):
+        lo, hi = max(float(lo), smin), min(float(hi), smax)
+    if not hi > lo:
+        return ln
+    ln.mask.lmin, ln.mask.lmax = float(lo), float(hi)
+    flags = []                      # every flag is re-derived below
+    prof = measure_profile(result.ref_spec, (lo, hi), profile=result.profile, x0=ln.lam0)
+    ln.ew, ln.ew_err = float(prof.maa), float(prof.width_err_maa)
+    ln.fwhm = float(prof.fwhm) if prof.fitted else float("nan")
+    ln.fit_func = prof.func
+    n_pts = len(_crop(result.ref_spec, (lo, hi)).values[0])
+    if n_pts < int(min_fit_points):
+        flags.append("few_points")
+    if np.isfinite(ln.ew_err) and ln.ew > 0 and ln.ew_err > ln.ew:
+        flags.append("ew_unc")
+    if ln.cog_specs:
+        renorm = bool(getattr(ln.mask, "renorm", False))
+        offsets = sorted(ln.cog_specs)
+        ews = [_ew(ln.cog_specs[a], (lo, hi), result.profile, ln.lam0, renorm)
+               for a in offsets]
+        ln.a_grid, ln.ew_grid = tuple(offsets), tuple(float(w) for w in ews)
+        if not (min(ews) <= ln.ew <= max(ews)):
+            ln.a, ln.sigma_a, ln.fit_spec = float("nan"), float("nan"), None
+            flags.append("out_of_range")
+            ln.include = False
+        else:
+            ew_err = ln.ew_err if np.isfinite(ln.ew_err) else 0.0
+            inv = cog_invert(offsets, ews, ln.ew, ew_err=ew_err, lam0_aa=ln.lam0)
+            ln.a = float(np.clip(inv["a"], offsets[0], offsets[-1]))
+            ln.sigma_a = float(inv["sigma_a"])
+            ln.sigma_a_phot, ln.sigma_a_cont = ln.sigma_a, 0.0
+            ln.fit_spec = _solution_spec(ln)
+    ln.flags = tuple(flags)
+    result.summary = correction_summary(result.lines)
+    return ln
 
 
 def run_nlte_corrections(request, result, atom, *, opts=None, progress=None,
@@ -842,96 +1076,139 @@ def run_nlte_corrections(request, result, atom, *, opts=None, progress=None,
 
     ``request`` is a :class:`~tumult.synthesis.SynthRequest` naming the *NLTE target*
     atmosphere; ``result`` the stage-1 :class:`AbundanceResult` whose lines carry the
-    reference EWs. Every included line gets an NLTE ladder on the picked atmosphere (model
-    atom only), which is inverted at the reference EW to give ``ln.a`` = dA.
+    reference EWs measured at [X/Fe] = 0.
 
-    ``progress(result)`` is called as each line lands, so a caller can stream partial results;
-    it must not raise. Returns ``result`` at stage ``"corr"`` with its summary aggregated.
+    Every rung of the curve of growth is a full NLTE solve at its own abundance offset, and
+    all lines share the rungs: one run per offset synthesises the atom's whole range, and each
+    line's EW is measured over its own window on it. The offsets lie on the preferences'
+    abundance lattice (``abund_step``) within ``+-opts.limit``. Rounds: the initial set is
+    {-limit, 0, +limit}; each line's guess is the PCHIP inversion of the rungs computed so
+    far; whatever lattice points bracket a guess and are not yet computed are solved next,
+    and the loop ends when every line's guess is bracketed by computed rungs (or after
+    ``opts.max_rounds``). A line whose reference EW lies outside the CoG at ``+-limit`` is
+    flagged ``out_of_range`` and requests nothing more.
+
+    ``progress(result)`` is called after every round, so a caller can stream the current
+    guesses; it must not raise. Returns ``result`` at stage ``"corr"`` with its summary
+    aggregated.
     """
     from dataclasses import asdict
     result.synthesis = asdict(request)
     from .synthesis import workflows as synth
     from .synthesis.cancel import CancelledError
+    from .synthesis.request import Snapshot3D
 
     opts = opts or CorrectionOpts()
     report = progress or (lambda _result: None)
     prefs, grid = request.prefs, request.grid
     target, atmos_file = request.target, request.atmos_file
     symbol = result.symbol
-    span = float(opts.span)
-    ladder = np.linspace(-span, span, int(opts.points))
-    from .synthesis.request import Snapshot3D
+    step = float(prefs.get("abund_step") or 0.25)
+    if not step > 0:
+        raise ValueError("abund_step must be positive")
     common_result = isinstance(request.selection, Snapshot3D) or request.departure_field is not None
 
+    # the grid and atom copy stage 1 prepared, so both stages see the same line windows
+    run_atom, line_grid = atom, None
+    if result.quadrature:
+        from .line_quadrature import PreparedLineQuadrature
+        quadrature = PreparedLineQuadrature.from_dict(result.quadrature)
+        if not (Path(quadrature.grid_file).is_file() and Path(quadrature.atom_file).is_file()):
+            raise FileNotFoundError("The reference stage's bound-bound grid is gone; "
+                                    "recompute the reference.")
+        run_atom, line_grid = quadrature.atom_file, quadrature.grid_file
+
     def _rv(a):
-        return {"mode": "NLTE", "only_atom": True, "atoms": [atom],
-                "abundances": f"{symbol}={a:.4f}", "relative_abundances": True}
+        rv = {"mode": "NLTE", "only_atom": not result.with_linelist, "atom_lines": True,
+              "atoms": [run_atom], "abundances": f"{symbol}={a:.4f}",
+              "relative_abundances": True}
+        if line_grid:
+            rv["line_grid"] = line_grid
+        return rv
 
-    # set_spectrum=False leaves spectrum_params without R/daa, so only the aa_blue/aa_red
-    # window is passed: the Fortran samples the line on the model atom's own frequency grid
-    # (matching the 1D LTE reference) and crops it to the synth window, rather than
-    # resampling onto a uniform R grid. This is also why the ladder cannot ride a segmented
-    # window_file run (compute_window_batch), which fixes a constant-R grid per window.
-    def nlte_synth(a, window):
+    # set_spectrum=False leaves spectrum_params without R/daa and no window is given, so
+    # every rung is the atom's whole range on its own frequency grid (the reference's
+    # sampling); fold=False keeps each rung a departure solve of its own.
+    def synth_offsets(offsets):
         if common_result:
-            return request.with_run_vals(**_rv(a)).with_masks(
-                [{'fit': window, 'synth': window}]).execute(
-                    cancel_token=cancel_token).spectrum
-        return synth.compute(target, prefs, _rv(a), *padded_window(window), grid=grid,
-                             atmos_file=atmos_file, set_spectrum=False,
-                             cancel_token=cancel_token)
+            return [request.with_run_vals(**_rv(a)).with_masks([]).execute(
+                cancel_token=cancel_token).spectrum for a in offsets]
+        return synth.compute_batch(target, prefs, [_rv(a) for a in offsets], grid=grid,
+                                   atmos_file=atmos_file, set_spectrum=False,
+                                   cancel_token=cancel_token, fold=False)
 
-    # the whole abundance ladder for one line synthesised in a single call, so every point's
-    # dispatch run is fanned across one shared process pool instead of being issued one after
-    # another (results are identical to the serial nlte_synth loop).
-    def batch_nlte_synth(a_list, window):
-        if common_result:
-            return [request.with_run_vals(**_rv(a)).with_masks(
-                [{'fit': window, 'synth': window}]).execute(cancel_token=cancel_token).spectrum
-                    for a in a_list]
-        return synth.compute_batch(target, prefs, [_rv(a) for a in a_list],
-                                   *padded_window(window), grid=grid, atmos_file=atmos_file,
-                                   set_spectrum=False, cancel_token=cancel_token)
+    def snap(x):
+        return float(round(float(np.round(x / step) * step), 10))
 
-    for ln in result.lines:
+    limit = snap(max(step, np.floor(float(opts.limit) / step + 1e-9) * step))
+    rungs = {}                         # offset -> full-range Spectrum
+
+    def solve(offsets):
+        offsets = sorted(set(snap(a) for a in offsets) - set(rungs))
+        if not offsets:
+            return
         if cancel_token is not None and cancel_token.cancelled:
             raise CancelledError()
-        if not ln.include:
-            continue
-        try:
-            a_grid, ew_grid = build_cog(
-                None, ladder, window=ln.fit_window, profile=result.profile, x0=ln.lam0,
-                batch_synth_fn=lambda a_list, _w=ln.window: batch_nlte_synth(a_list, _w),
-                renorm=bool(getattr(ln.mask, "renorm", False)))
-            # propagate the reference EW's fit-covariance error through the local CoG slope:
-            # sigma(dA) = sigma_EW * |dA/dEW|. All of it is fit/model error (no continuum
-            # term on a synthetic reference).
-            ew_err = float(ln.ew_err) if np.isfinite(ln.ew_err) else 0.0
-            inv = cog_invert(a_grid, ew_grid, ln.ew, ew_err=ew_err)
-            ln.a = float(inv["a"])
-            ln.sigma_a = float(inv["sigma_a"])
-            ln.sigma_a_phot, ln.sigma_a_cont = ln.sigma_a, 0.0
-            ln.a_grid, ln.ew_grid = tuple(a_grid), tuple(ew_grid)
-            if inv["out_of_range"]:
-                ln.flags = ("out_of_range",)
-                ln.include = False
-            else:
-                # overlay the best-fit NLTE line - synthesised at the inverted abundance - so
-                # jumping to a row shows its fit against the reference, mirroring the
-                # abundance tool. A failed overlay must not discard the (successful)
-                # correction, so guard it separately.
-                try:
-                    ln.fit_spec = nlte_synth(ln.a, ln.window)
-                except CancelledError:
-                    raise
-                except Exception:
-                    logging.exception("Correction: overlay synth failed %.3f", ln.lam0)
-        except CancelledError:
-            raise
-        except Exception:
-            logging.exception("Correction: line %.3f failed", ln.lam0)
-            ln.flags = ("synth_failed",)
+        for a, spec in zip(offsets, synth_offsets(offsets)):
+            rungs[a] = spec
+
+    def widths(ln, offsets):
+        renorm = bool(getattr(ln.mask, "renorm", False))
+        return np.array([_ew(rungs[a], ln.fit_window, result.profile, ln.lam0, renorm)
+                         for a in offsets])
+
+    lines = [ln for ln in result.lines if ln.include]
+    for ln in lines:
+        ln.method = "cog"
+    solve([-limit, 0.0, limit])
+    for _round in range(int(opts.max_rounds)):
+        needed = set()
+        offsets = sorted(rungs)
+        for ln in lines:
+            if not ln.include:
+                continue
+            try:
+                ews = widths(ln, offsets)
+                ln.a_grid, ln.ew_grid = tuple(offsets), tuple(float(w) for w in ews)
+                lo_ew, hi_ew = ews[offsets.index(-limit)], ews[offsets.index(limit)]
+                if not (min(lo_ew, hi_ew) <= ln.ew <= max(lo_ew, hi_ew)):
+                    ln.a, ln.sigma_a = float("nan"), float("nan")
+                    ln.flags, ln.include = ("out_of_range",), False
+                    continue
+                ew_err = float(ln.ew_err) if np.isfinite(ln.ew_err) else 0.0
+                inv = cog_invert(offsets, ews, ln.ew, ew_err=ew_err, lam0_aa=ln.lam0)
+                ln.a = float(np.clip(inv["a"], -limit, limit))
+                ln.sigma_a = float(inv["sigma_a"])
+                ln.sigma_a_phot, ln.sigma_a_cont = ln.sigma_a, 0.0
+            except CancelledError:
+                raise
+            except Exception:
+                logging.exception("Correction: line %.3f failed", ln.lam0)
+                ln.flags, ln.include = ("synth_failed",), False
+                continue
+            # the lattice cell holding the guess; a guess on a lattice point is bracketed
+            # by that point alone
+            k = ln.a / step
+            lo = float(np.clip(np.floor(k + 1e-9) * step, -limit, limit))
+            hi = float(np.clip(np.ceil(k - 1e-9) * step, -limit, limit))
+            needed.update(a for a in (lo, hi) if snap(a) not in rungs)
         report(result)
+        if not needed:
+            break
+        solve(needed)
+    else:
+        logging.warning("Correction: %d rounds without bracketing every line", opts.max_rounds)
+
+    # every line keeps its rungs over its synth window, so a later fit-window edit can
+    # re-read the curve of growth without another solve (:func:`refit_line_window`); the
+    # overlay for the jump view is the two bracketing rungs interpolated at the solution
+    for ln in lines:
+        lo, hi = ln.window
+        if np.isfinite(lo) and np.isfinite(hi):
+            ln.cog_specs = {a: rungs[a].crop(xmin=lo, xmax=hi) for a in ln.a_grid}
+        if not ln.include or not np.isfinite(ln.a):
+            continue
+        ln.fit_spec = _solution_spec(ln)
 
     result.stage = "corr"
     result.summary = correction_summary(result.lines)

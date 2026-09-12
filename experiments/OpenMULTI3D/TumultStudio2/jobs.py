@@ -1,5 +1,6 @@
 """Document-owned result jobs with isolated inputs and coalesced progress."""
 from copy import deepcopy
+import logging
 from dataclasses import dataclass
 from threading import Lock
 
@@ -79,6 +80,8 @@ class ResultJobs:
             except CancelledError:
                 raise
             except Exception as exc:
+                # the toast shows only the message; the traceback goes to the server log
+                logging.exception("%s failed", name)
                 return _Outcome(error=exc)
             finally:
                 detach()

@@ -9,16 +9,35 @@ Preferences → Synthesis). Its one **Compute** button runs both stages as a cha
 1. **Reference.** :func:`tumult.abundance.measure_reference_lines` interpolates the flagged
    1D LTE grid at the target parameters, synthesises the reference **straight from the model
    atom** (no line list) and measures every candidate line from that run's
-   ``linelist_out.txt``. The reference spectrum lands on the canvas and the result object
-   appears under its atom in the left sidebar as soon as this stage finishes.
-2. **Corrections.** :func:`tumult.abundance.run_nlte_corrections` builds an NLTE curve of
-   growth per line on the picked atmosphere (model atom only) and inverts it to the abundance
-   reproducing the reference EW. The reference sits at ``[X/Fe]=0``, so that abundance **is**
-   the correction ΔA = A(NLTE) − A(LTE). Rows stream into the table via the ``progress`` hook.
+   ``linelist_out.txt``. By default (*Line grid from opacity profiles*) the bound-bound
+   wavelength grid and the per-line windows are generated first from the atom's line
+   opacities on the reference model nearest the target (:mod:`tumult.line_quadrature`);
+   those windows are the line masks, and stage 2 runs on the same grid. Without the line
+   list, a window that overlaps a neighbouring atom line's is narrowed to the reference
+   flux maxima nearest the centre, so a blended line is integrated over its own profile.
+   The reference spectrum lands on the canvas and the result object appears under its atom in the left
+   sidebar as soon as this stage finishes.
+   With **Include the line list** on, the configured synthesis line list is synthesised
+   with the atom (reference and every NLTE rung), and the reference run's ``linelist_out.txt``
+   is what the canvas annotates while the result is shown; off, the canvas shows no line
+   annotations for it, since the spectrum holds nothing but the atom's lines.
+2. **Corrections.** :func:`tumult.abundance.run_nlte_corrections` builds one NLTE curve of
+   growth for all lines on the picked atmosphere: each rung is a full NLTE solve at an
+   abundance offset on the preferences' ``abund_step`` lattice within the modal's **CoG
+   limit**, synthesising the atom's whole range, and the rungs are added round by round
+   until every line's inverted correction is bracketed by two computed rungs. The
+   reference sits at ``[X/Fe]=0``, so the inverted abundance **is** the correction
+   ΔA = A(NLTE) − A(LTE). Rows stream into the table via the ``progress`` hook after every
+   round.
 
-The result view has two steps: **Lines** (the reference spectrum over the per-line table) and
-**Scatter** (the line-to-line scatter of the corrections, mean ± population σ). Both stages
-are headless: what is left here is the modal, the submission and the rendering.
+The result view has two steps: **Lines** (the reference spectrum, with the selected line's
+curve-of-growth inversion beside it, over the per-line table) and **Scatter** (the
+line-to-line scatter of the corrections against excitation energy and reduced EW, mean ± σ).
+On the Lines step the jumped-to line's fit window is the accented box and its edges can be
+dragged, within the synth window the atom fixes; :func:`tumult.abundance.refit_line_window`
+re-reads the reference EW and the stored rungs over the new window, so the correction
+follows the edit without another solve. Both stages are headless: what is left here is the
+modal, the submission and the rendering.
 """
 from __future__ import annotations
 
@@ -26,18 +45,32 @@ from copy import deepcopy
 
 import html
 import logging
+from pathlib import Path
+
 import numpy as np
-from bokeh.models import ColumnDataSource
+from bokeh.models import BoxAnnotation, ColumnDataSource, HoverTool, Range1d, Span
+from bokeh.plotting import figure
 
 from tumult import abundance as ab
+from tumult.utils import pchip_mono
 import store
-from abundwizard import PROFILES, X_AXES, AbundanceWizard
+from abundwizard import PROFILES, AbundanceWizard
+from canvas import ACCENT, SYNTH_FIT, style_dark
 from controls import Field, Form
 from htmlbridge import pulse
 from tumult.abundance import (CorrectionOpts, correction_summary,
-                              measure_reference_lines, run_nlte_corrections)
+                              measure_reference_lines, reduced_ew, refit_line_window,
+                              run_nlte_corrections)
+from units import to_range
 
-DEFAULTS = {"profile": "gauss", "ew_min": 5.0, "xaxis": "evi"}
+import astropy.units as u
+
+# the trapezoidal width integrates each line over its atom window, so it needs the line
+# grid; the fitted profiles work either way (see tumult.abundance.CorrectionOpts)
+CORR_PROFILES = ["trapz"] + PROFILES
+DEFAULTS = {"profile": "trapz", "ew_min": 5.0, "limit": 1.0, "line_grid": True,
+            "linelist": False}
+COG_CURVE_POINTS = 80        # samples of the PCHIP interpolant drawn through the rungs
 
 
 class AbundCorrTool(AbundanceWizard):
@@ -48,6 +81,8 @@ class AbundCorrTool(AbundanceWizard):
     empty_table_msg = "No correction selected"
     y_axis_label = "ΔA (NLTE − LTE)"
     final_stage = "corr"
+    extra_sort_keys = {"rew": lambda ln: reduced_ew(ln.ew, ln.lam0)}
+    extra_sort_asc = {"rew": False}
 
     def __init__(self, ctx, *, setup, grids, add_spectrum):
         self.grids = grids                  # GridManager: reference_grid() is the 1D LTE grid
@@ -56,15 +91,17 @@ class AbundCorrTool(AbundanceWizard):
 
         saved = dict(store.get_section("abundcorr"))
         vals = {**DEFAULTS, **{k: saved[k] for k in DEFAULTS if k in saved}}
-        # the measurement settings live in the modal; the scatter axis in the result panel
+        # the measurement settings live in the modal
         self.form1 = Form("corr1", [
             Field("profile", "EW profile", kind="select", value=vals["profile"],
-                  options=PROFILES),
+                  options=CORR_PROFILES),
             Field("ew_min", "Min EW [mÅ]", kind="number", value=vals["ew_min"], min=0),
-        ], on_change=self._on_field)
-        self.form3 = Form("corr3", [
-            Field("xaxis", "Scatter x-axis", kind="select", value=vals["xaxis"],
-                  options=list(X_AXES)),
+            Field("limit", "CoG limit [dex]", kind="number", value=vals["limit"], min=0,
+                  step=0.25),
+            Field("line_grid", "Line grid from opacity profiles", kind="checkbox",
+                  value=vals["line_grid"]),
+            Field("linelist", "Include the line list", kind="checkbox",
+                  value=vals["linelist"]),
         ], on_change=self._on_field)
 
         super().__init__(ctx, setup=setup)
@@ -73,12 +110,101 @@ class AbundCorrTool(AbundanceWizard):
         self._pending_atom = None           # the AtomObject the open modal computes for
         # per-line error bars: the corrections carry a formal sigma(dA) since the
         # reference EW's fit-covariance error propagates through the CoG slope
-        src = ColumnDataSource(dict(x=[], a=[], lo=[], hi=[], lam=[], ion=[]))
-        fig = self._build_fig(src)
-        from bokeh.models import Whisker
-        from canvas import ACCENT
-        fig.add_layout(Whisker(base="x", upper="hi", lower="lo", source=src,
-                               line_color=ACCENT, line_width=1.2))
+        self._build_figs(ColumnDataSource(self.empty_points()))
+        self._add_whiskers(self.src, ACCENT)
+        self._build_cog_fig()
+
+    # --- the CoG-inversion panel (Lines step, beside the spectrum) ------------------------
+    def _build_cog_fig(self):
+        """The selected line's curve of growth in the plane the inversion works in,
+        reduced EW against ΔA: the NLTE rungs, the PCHIP interpolant the inversion reads
+        (:func:`tumult.abundance.cog_invert`), the measured reference REW with its ±1σ
+        band and the inverted ΔA with its propagated ±σ band."""
+        fig = figure(sizing_mode="stretch_both", output_backend="webgl",
+                     tools="pan,wheel_zoom,box_zoom,reset", active_scroll="wheel_zoom",
+                     min_border_left=62, min_border_bottom=42,
+                     x_range=Range1d(-1.0, 1.0), y_range=Range1d(0.0, 1.0))
+        style_dark(fig)
+        fig.title.text_color = "#cfd2d6"
+        fig.title.text_font_size = "11px"
+        fig.name = "corr_cog"
+        fig.xaxis.axis_label = "ΔA [dex]"
+        fig.yaxis.axis_label = "Reduced EW  log(W/λ)"
+        self.cog_curve = ColumnDataSource(dict(a=[], rew=[]))
+        self.cog_rungs = ColumnDataSource(dict(a=[], rew=[], ew=[]))
+        fig.line("a", "rew", source=self.cog_curve, line_color=SYNTH_FIT, line_width=1.5)
+        rungs = fig.scatter("a", "rew", source=self.cog_rungs, size=8, fill_color=SYNTH_FIT,
+                            line_color="#fff", line_width=1)
+        fig.add_tools(HoverTool(renderers=[rungs],
+                                tooltips=[("ΔA", "@a{+0.00} dex"), ("REW", "@rew{0.000}"),
+                                          ("EW", "@ew{0.0} mÅ")]))
+        # the measurement (horizontal) and its solution (vertical), each with a ±1σ band
+        self.cog_ew_band = BoxAnnotation(fill_color=ACCENT, fill_alpha=0.12, visible=False)
+        self.cog_ew_line = Span(location=0, dimension="width", line_color=ACCENT,
+                                line_width=1.2, line_dash="dashed", visible=False)
+        self.cog_a_band = BoxAnnotation(fill_color="#e05c5c", fill_alpha=0.12, visible=False)
+        self.cog_a_line = Span(location=0, dimension="height", line_color="#e05c5c",
+                               line_width=1.2, line_dash="dashed", visible=False)
+        for layout in (self.cog_ew_band, self.cog_ew_line, self.cog_a_band,
+                       self.cog_a_line):
+            fig.add_layout(layout)
+        self.cog_fig = fig
+        return fig
+
+    def _render_cog(self, ln):
+        """Draw ``ln``'s curve of growth, or clear the panel when the line has none (the
+        reference stage has not been inverted yet, or the line was dropped before the
+        rungs were measured)."""
+        a_grid = np.asarray(ln.a_grid, dtype=float)
+        ew_grid = np.asarray(ln.ew_grid, dtype=float)
+        if a_grid.size < 2 or a_grid.size != ew_grid.size:
+            self._clear_cog()
+            return
+        if not (np.all(ew_grid > 0) and ln.ew > 0):
+            self._clear_cog()          # a non-positive width has no reduced EW
+            return
+        rew_grid = np.array([reduced_ew(w, ln.lam0) for w in ew_grid])
+        self.cog_rungs.data = dict(a=a_grid.tolist(), rew=rew_grid.tolist(),
+                                   ew=ew_grid.tolist())
+        # the inversion reads A(REW) off a PCHIP interpolant through the rungs sorted by
+        # REW (:func:`tumult.abundance.cog_invert`); the same interpolant is drawn, sampled
+        # in REW, so the curve shows exactly what the solution was read from
+        order = np.argsort(rew_grid)
+        x, a = rew_grid[order], a_grid[order]
+        curve_rew = np.linspace(x[0], x[-1], COG_CURVE_POINTS)
+        curve_a = pchip_mono(x, a)(curve_rew)
+        self.cog_curve.data = dict(a=np.asarray(curve_a).tolist(), rew=curve_rew.tolist())
+        ys = list(rew_grid)
+        # the measured REW and its error, σ_REW = σ_W / (W ln10)
+        rew = reduced_ew(ln.ew, ln.lam0)
+        err = float(ln.ew_err) / (ln.ew * np.log(10.0)) if np.isfinite(ln.ew_err) else 0.0
+        self.cog_ew_line.visible = self.cog_ew_band.visible = True
+        self.cog_ew_line.location = rew
+        self.cog_ew_band.bottom, self.cog_ew_band.top = rew - err, rew + err
+        ys += [rew - err, rew + err]
+        a_ok = np.isfinite(ln.a)
+        self.cog_a_line.visible = self.cog_a_band.visible = bool(a_ok)
+        if a_ok:
+            sig = float(ln.sigma_a) if np.isfinite(ln.sigma_a) else 0.0
+            self.cog_a_line.location = float(ln.a)
+            self.cog_a_band.left, self.cog_a_band.right = ln.a - sig, ln.a + sig
+        title = f"{ln.ion} {ln.lam0:.3f} Å"
+        if a_ok:
+            title += f"   ΔA = {self._fmt(ln.a, ln.sigma_a, plus=True)}"
+        self.cog_fig.title.text = title
+        self._crop_scatter(list(a_grid), ys, self.cog_fig)
+
+    def _clear_cog(self):
+        self.cog_rungs.data = dict(a=[], rew=[], ew=[])
+        self.cog_curve.data = dict(a=[], rew=[])
+        self.cog_fig.title.text = ""
+        for layout in (self.cog_ew_band, self.cog_ew_line, self.cog_a_band,
+                       self.cog_a_line):
+            layout.visible = False
+
+    def _clear_line_decor(self):
+        super()._clear_line_decor()
+        self._clear_cog()
 
     def refresh(self):
         pass
@@ -121,9 +247,6 @@ class AbundCorrTool(AbundanceWizard):
     # --- state persistence -------------------------------------------------------------
     def _on_field(self, key, value):
         store.update_pref("abundcorr", key, value)
-        if key == "xaxis":
-            self.fig.xaxis.axis_label = X_AXES[str(value)][0]
-            self._render_scatter()
 
     def _extra_action(self, kind, arg):
         if kind == "run":
@@ -160,7 +283,11 @@ class AbundCorrTool(AbundanceWizard):
                         'at the parameters below (flagged in Preferences → Synthesis).</div>')
         return (f'<div class="hint">NLTE corrections for <b>{html.escape(obj.symbol)}</b> '
                 f'({html.escape(obj.name)}) — {nl} bound-bound transitions between {nk} '
-                'levels. The atom defines the spectrum and its wavelength range.</div>'
+                'levels. The atom defines the spectrum and its wavelength range. With the '
+                'line grid on, its bound-bound sampling and each line\'s window are built '
+                'from the line opacities on the reference model nearest the target, and '
+                'those windows are the line masks; without the line list, overlapping '
+                'windows are cut at the reference flux maxima around each line.</div>'
                 + ref_html)
 
     # --- shared-machinery hooks -----------------------------------------------------------
@@ -193,16 +320,104 @@ class AbundCorrTool(AbundanceWizard):
         return str(sel.get("format") or (sel.get("grid") or {}).get("format") or "")
 
     def _jump_decor(self, res, ln):
-        # the best-fit NLTE synthesis at the inverted abundance, over the line window
-        self.canvas.set_abund_overlay(ln.fit_spec, ln.window)
+        self._jumped = next((i for i, l in enumerate(res.lines) if l is ln), None)
+        self._render_line_decor(ln)
+
+    def _render_line_decor(self, ln):
+        """The jumped-to line's overlays: the rungs interpolated at its correction, the
+        EW-area hatch of the reference fit, its windows and its curve of growth. The fit
+        window is the accented box and can be dragged by its edges (:meth:`_on_fit_drag`);
+        the synth window is the atom's own and only displayed. The edges are shown at their
+        true extents, not snapped to the reference's samples, which can be coarse."""
+        if ln.fit_spec is not None:
+            self.canvas.set_abund_overlay(ln.fit_spec, ln.window)
+        else:
+            self.canvas.clear_abund_overlay()
         if ln.fit_func is not None:
-            self.canvas.set_abund_hatch(ln.fit_func, ln.window)
-        # highlight the fit window (inner, from auto_crop_core) and synth window (outer,
-        # HWHM-based) at their true extents. Unlike AbundTool we do NOT snap the edges to the
-        # reference spectrum's samples: the synthetic reference can be coarsely sampled, and
-        # snapping to a coarse grid would misrepresent the auto_crop_core / HWHM extents the
-        # windows come from.
-        self.canvas.highlight_windows([ln.mask], active=0)
+            self.canvas.set_abund_hatch(ln.fit_func, ln.fit_window)
+        else:
+            self.canvas.clear_abund_hatch()
+        self.canvas.highlight_windows([ln.mask], active=0, editable=True)
+        self._render_cog(ln)
+
+    def _on_fit_drag(self, x0, x1):
+        """An edge of the accented fit window was dragged (display units): re-read the
+        line over the new window, clamped to its synth window, and repaint everything that
+        shows it - the table row, the scatter, the CoG panel and the mean."""
+        res = self.selected()
+        if res is None or self._jumped is None or not self.is_focused():
+            return
+        try:
+            ln = res.lines[self._jumped]
+        except IndexError:
+            return
+        lo, hi = to_range(x0, x1, self.canvas.xunit, u.AA)
+        refit_line_window(res, ln, min(lo, hi), max(lo, hi))
+        self._render_line_decor(ln)
+        self.push_table(self.table_html(res))
+        self._render_scatter()
+        self.push_results()
+
+    # --- line annotations: the reference run's own dump, or none ------------------------
+    def select_result(self, uid):
+        super().select_result(uid)
+        self._jumped = None
+        self.canvas.on_window_resize = self._on_fit_drag
+        self._attach_annotations()
+
+    def blur(self):
+        super().blur()
+        self.canvas.on_window_resize = None
+        self._detach_annotations()
+
+    def deactivate(self):
+        super().deactivate()
+        self.canvas.on_window_resize = None
+        self._detach_annotations()
+
+    def remove_result(self, uid):
+        super().remove_result(uid)      # re-selects (and re-attaches) when one is left
+        if self.selected() is None:
+            self.canvas.on_window_resize = None
+            self._detach_annotations()
+
+    def _attach_annotations(self):
+        """Own the line-position overlay while a correction is shown: the transitions the
+        reference run actually used (its ``linelist_out.txt``, every species with HOP's
+        strengths) when the line list was included, and nothing at all otherwise — an
+        atom-only reference has no other species to name, and the default whole-list overlay
+        would suggest lines the spectrum does not contain."""
+        annot = self.ctx.annot
+        res = self.selected()
+        if annot is None or res is None:
+            return
+        lines = self._dump_lines(res)
+        annot.attach(self.name, lines=lines, title=res.symbol if len(lines) else "")
+
+    def _detach_annotations(self):
+        if self.ctx.annot is not None:
+            self.ctx.annot.detach(self.name)
+
+    def _dump_lines(self, res):
+        """``lam0``/``ion``/``strength`` of the result's reference dump, cached per result;
+        an empty frame when the run had no line list or the dump is gone."""
+        import pandas as pd
+        cache = self.__dict__.setdefault("_dump_cache", {})
+        dump = str(getattr(res, "linelist_dump", "") or "")
+        if dump not in cache:
+            frame = pd.DataFrame({"lam0": [], "ion": [], "strength": []})
+            if dump and Path(dump).is_file():
+                try:
+                    from tumult.linelist import LineList
+                    llist = LineList.from_tumult_format(dump).reset_index()
+                    if "strength" not in llist.columns:
+                        llist["strength"] = 1.0
+                    frame = llist[["lam0", "ion", "strength"]].copy()
+                    frame["ion"] = frame.ion.astype(str).str.strip()
+                except Exception:
+                    logging.exception("Could not read the reference dump %s", dump)
+            cache[dump] = frame
+        return cache[dump]
 
     # --- the modal's run: reference, then corrections, as one chained job ---------------
     def run(self):
@@ -217,15 +432,23 @@ class AbundCorrTool(AbundanceWizard):
         if ref_grid is None:
             self.notify("Flag a 1D LTE reference grid in Preferences → Synthesis first.")
             return
-        pulse(self._modal, "close")
         v = self.form1.values()
         profile, ew_min = str(v["profile"]), float(v["ew_min"])
+        line_grid = bool(v.get("line_grid", True))
+        linelist = bool(v.get("linelist", False))
+        if profile == "trapz" and not line_grid:
+            self.notify("The trapezoidal width needs the line grid for its windows; "
+                        "switch it on or pick a fitted profile.")
+            return
+        pulse(self._modal, "close")
         self.notify(f"Computing the 1D LTE reference for {obj.symbol}…")
         ref_grid = deepcopy(ref_grid)
         atom = obj.path
         loader = lambda _res, token, progress: measure_reference_lines(
             request, atom, ref_grid=ref_grid,
-            opts=CorrectionOpts(profile=profile, ew_min=ew_min), cancel_token=token)
+            opts=CorrectionOpts(profile=profile, ew_min=ew_min, line_grid=line_grid,
+                                linelist=linelist),
+            cancel_token=token)
         self.jobs.submit(f"corr-reference:{obj.symbol}", loader,
                          lambda result: self._on_reference_done(result, request))
 
@@ -248,8 +471,9 @@ class AbundCorrTool(AbundanceWizard):
 
     def _run_corrections(self, res, request):
         atom = res.atom_path
+        limit = float(self.form1.values().get("limit") or DEFAULTS["limit"])
         loader = lambda working, token, progress: run_nlte_corrections(
-            request, working, atom, opts=CorrectionOpts(profile=working.profile),
+            request, working, atom, opts=CorrectionOpts(profile=working.profile, limit=limit),
             progress=progress, cancel_token=token)
         self.jobs.submit(f"corr-synth:{res.symbol}", loader, self._on_corr_done, result=res)
 
@@ -259,43 +483,35 @@ class AbundCorrTool(AbundanceWizard):
         self.push_results()
         if self.selected() is result:
             self._render_selected()
+            if self._jumped is not None and self._jumped < len(result.lines):
+                self._render_line_decor(result.lines[self._jumped])
         if np.isfinite(s["a_mean"]):
             self.notify(f"{result.symbol}: ⟨ΔA⟩ = {s['a_mean']:+.3f} ± "
                         f"{self._summary_sigma(s):.3f} (n={s['n']}) — see the Scatter step.")
 
     # --- rendering ----------------------------------------------------------------------
     def _render_scatter(self):
+        """Repaint both diagnostic panels (ΔA against E_low and against reduced EW) from
+        the included, inverted lines; whiskers of zero length stand in for a missing
+        formal error (legacy sessions)."""
         res = self.selected()
-        inc = [ln for ln in res.lines if ln.include and np.isfinite(ln.a)] if res else []
+        inc = [(i, ln) for i, ln in enumerate(res.lines)
+               if ln.include and np.isfinite(ln.a)] if res else []
         if not inc:
-            self.src.data = dict(x=[], a=[], lo=[], hi=[], lam=[], ion=[])
-            self.mean_line.visible = self.mean_band.visible = False
+            self.src.data = self.empty_points()
+            self._set_mean(None)
             return
-        xf = X_AXES[str(self.form3.value("xaxis"))][1]
-        xs = [xf(ln) for ln in inc]
-        # zero-length whiskers for lines without a formal error (legacy sessions)
-        sig = [ln.sigma_a if np.isfinite(ln.sigma_a) else 0.0 for ln in inc]
-        los = [ln.a - s for ln, s in zip(inc, sig)]
-        his = [ln.a + s for ln, s in zip(inc, sig)]
-        self.src.data = dict(x=xs, a=[ln.a for ln in inc], lo=los, hi=his,
-                             lam=[ln.lam0 for ln in inc], ion=[ln.ion for ln in inc])
-        self._crop_scatter(xs, los + his)
+        data = self._pack_points(inc)
+        self.src.data = data
+        self._crop_panels((data,))
         s = res.summary
-        if np.isfinite(s.get("a_mean", np.nan)):
-            self.mean_line.location = s["a_mean"]
-            self.mean_line.visible = True
-            band = self._summary_sigma(s)
-            band = band if np.isfinite(band) else 0.0
-            self.mean_band.top = s["a_mean"] + band
-            self.mean_band.bottom = s["a_mean"] - band
-            self.mean_band.visible = True
-        else:
-            self.mean_line.visible = self.mean_band.visible = False
+        self._set_mean(s.get("a_mean", np.nan), self._summary_sigma(s))
 
     def table_html(self, res):
         head = self._table_head("corr-mask-chk", (
             ("λ₀ [Å]", "lam0"), ("ion", "ion"), ("E<sub>low</sub>", "e_low"),
-            ("log gf", "loggf"), ("EW [mÅ]", "ew"), ("ΔA", "a"), ("flags", None)))
+            ("log gf", "loggf"), ("EW [mÅ]", "ew"), ("REW", "rew"), ("ΔA", "a"),
+            ("flags", None)))
         body = []
         for i in self._line_order(res):
             ln = res.lines[i]
@@ -303,7 +519,10 @@ class AbundCorrTool(AbundanceWizard):
                 continue
             chk = " checked" if ln.include else ""
             cls = "" if ln.include else " line-excluded"
+            if self._jumped == i:
+                cls += " row-selected"
             ew = self._fmt(ln.ew, ln.ew_err, digits=1)
+            rew = self._fmt(reduced_ew(ln.ew, ln.lam0) if ln.ew > 0 else float("nan"))
             da = self._fmt(ln.a, ln.sigma_a if res.stage == "corr" else None, plus=True)
             fl = ", ".join(ln.flags)
             body.append(
@@ -311,7 +530,7 @@ class AbundCorrTool(AbundanceWizard):
                 f'<td><input type="checkbox" class="corr-line-chk" data-line="{i}"{chk}></td>'
                 f'<td>{ln.lam0:.3f}</td><td>{html.escape(ln.ion)}</td>'
                 f'<td>{ln.e_low:.2f}</td><td>{ln.loggf:.2f}</td><td>{ew}</td>'
-                f'<td>{da}</td>'
+                f'<td>{rew}</td><td>{da}</td>'
                 f'<td class="abund-flags">{html.escape(fl)}</td></tr>')
         foot = ""
         if res.stage == "corr" and np.isfinite(res.summary.get("a_mean", np.nan)):

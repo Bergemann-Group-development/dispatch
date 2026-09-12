@@ -8,7 +8,8 @@ full setup:
 2. **Python stack** — the `tumult/` synthesis library and the `TumultStudio2/`
    Bokeh GUI built on top of it.
 
-Follow the steps below in order.
+Follow the steps below in order. Once set up, [docs/FAQ.md](docs/FAQ.md) answers
+workflow questions (masked synthesis, 3D snapshots, departures, long jobs, abundances).
 
 ---
 

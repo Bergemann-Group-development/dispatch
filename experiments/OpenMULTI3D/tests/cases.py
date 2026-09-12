@@ -141,7 +141,8 @@ def abundance_cases():
     from tumult.spectrum import Spectrum
 
     out = {}
-    # curve-of-growth inversion on a mildly nonlinear monotone CoG
+    # curve-of-growth inversion on a CoG that is exactly linear in (REW, A), so the REW-space
+    # inversion recovers log10(50/55)/0.62
     a_grid = np.linspace(-0.6, 0.6, 7)
     ew_grid = 55.0 * 10 ** (0.62 * a_grid)  # maa
     inv = cog_invert(a_grid, ew_grid, ew_meas=50.0, ew_err=2.5)

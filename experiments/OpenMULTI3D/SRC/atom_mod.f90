@@ -210,6 +210,13 @@ MODULE atom_mod
     real(8), public :: sor_w=1d0
     integer, public :: nq_min=0, nq_max=huge(1)
     real(4), public :: nq_fac=1.0
+    ! Bound-bound wavelength grid read from a file (vacuum AA, one value per record,
+    ! '#' or '!' comments) instead of being assembled from the per-line q0/qmax
+    ! quadratures; those then only fix each line's lam_min/lam_max, i.e. the interval
+    ! of the shared grid its rates are integrated over. tumult/line_quadrature.py
+    ! writes the grid together with a matching atom copy.
+    character(len=256), public :: line_grid_file=''
+    real(8), dimension(:), allocatable, private, save :: line_grid
     integer, public :: cswitch=1
     ! Ng acceleration schedule:
     !   < 0  off (default)
@@ -2101,12 +2108,19 @@ MODULE atom_mod
     type(cont_type), pointer :: cnt
     integer :: i,nnu,js,je
     real(8), dimension(:), allocatable :: lam
+    logical :: use_grid
     integer, save:: itimer=0
     !-----------------------------------------------------------------------------
     call trace%begin('atom_trans_t%append_transitions', itimer=itimer)
     ! compute total number of frequencies
+    use_grid = option(bb) .and. line_grid_file /= ''
+    if (use_grid .and. .not. allocated(line_grid)) call read_line_grid()
     nnu = sp%nnu
-    if (option(bb)) nnu = nnu + sum(self%line%nnu, self%line%active)
+    if (use_grid) then
+      nnu = nnu + size(line_grid)
+    elseif (option(bb)) then
+      nnu = nnu + sum(self%line%nnu, self%line%active)
+    endif
     if (option(bf)) nnu = nnu + sum(self%cont%nnu, self%cont%active)
 
     ! save all frequencies
@@ -2114,7 +2128,12 @@ MODULE atom_mod
     if (allocated(sp%lam)) lam(1:sp%nnu) = sp%lam
 
     je=sp%nnu
-    if (option(bb)) then
+    if (use_grid) then
+      ! the caller sorts the grid, and set_ired_iblue then locates every line on it
+      js=je+1
+      je=js+size(line_grid)-1
+      lam(js:je)=line_grid
+    elseif (option(bb)) then
       do i=1, size(self%line)
         lin => self%line(i)
         if (.not. lin%active) cycle
@@ -2141,6 +2160,47 @@ MODULE atom_mod
     call sp%reset(lam=lam)
     call trace%end(itimer)
   END SUBROUTINE append_transitions
+
+  !===============================================================================
+  ! Read line_grid_file into line_grid: one vacuum wavelength [AA] per record,
+  ! blank lines and lines starting with '#' or '!' skipped.
+  !===============================================================================
+  SUBROUTINE read_line_grid
+    character(len=256) :: text
+    integer :: lunit, iostat, n
+    !-----------------------------------------------------------------------------
+    call os%check_file(line_grid_file)
+    open(newunit=lunit, file=trim(line_grid_file), form='FORMATTED', status='old')
+    n = 0
+    do
+      read(lunit, '(A)', iostat=iostat) text
+      if (iostat /= 0) exit
+      if (is_grid_record(text)) n = n + 1
+    end do
+    if (n == 0) then
+      print '(A,A)', 'ERROR: no wavelengths in line_grid_file ', trim(line_grid_file)
+      stop 'abort in atom_mod%read_line_grid'
+    endif
+    allocate(line_grid(n))
+    rewind(lunit)
+    n = 0
+    do
+      read(lunit, '(A)', iostat=iostat) text
+      if (iostat /= 0) exit
+      if (.not. is_grid_record(text)) cycle
+      n = n + 1
+      read(text, *) line_grid(n)
+    end do
+    close(lunit)
+    print '(A,I0,A,A)', 'Line grid: ', n, ' wavelengths from ', trim(line_grid_file)
+  contains
+    logical function is_grid_record(text)
+      character(len=*), intent(in) :: text
+      character(len=len(text)) :: t
+      t = adjustl(text)
+      is_grid_record = len_trim(t) > 0 .and. t(1:1) /= '#' .and. t(1:1) /= '!'
+    end function is_grid_record
+  END SUBROUTINE read_line_grid
 
   !===============================================================================
   SUBROUTINE set_ired_iblue (self, sp, bb, bf, set_active)

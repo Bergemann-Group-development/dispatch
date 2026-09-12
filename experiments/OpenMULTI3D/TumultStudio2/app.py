@@ -517,12 +517,14 @@ def build():
         on_fit=lambda lo, hi: synth_modal.open_range(lo, hi, "fit"))
 
     master = store.get_pref("master_linelist")
-    if not master or not Path(master).is_file():
+    custom_master = bool(master and Path(master).is_file())
+    if not custom_master:
         master = MASTER_PATH
-    # where every strength comes from: HOP, on the MARCS model nearest the object's star,
-    # computed per band of spectrum on demand (see linestrength for why it matters)
+    # HOP uses the complete per-species folder by default; the compact master remains the
+    # immediate proxy/search source. A line list explicitly chosen in Settings serves both.
     strengths = LineStrengths(
         master_path=master,
+        linelist=master if custom_master else linestrength.ANNOTATION_PATH,
         refstar=store.get_pref("strength_refstar", refstars.AUTO_KEY))
     ctx.strengths = strengths
 
@@ -602,9 +604,7 @@ def build():
 
         # Snapshot the reference and band on the document thread. Do not read
         # canvas objects or form values from the HOP worker.
-        star = strengths.star_for(obj)
-        linelist = strengths.linelist
-        band = linestrength.band_bounds(lo, hi)
+        star, linelist, band = strengths.request_for(obj, lo, hi)
         request = (star.key, linelist, band)
         if request in strength_pending:
             return False
@@ -1125,8 +1125,10 @@ def build():
             linelist_path_bridge.value = html.escape(Path(filepath).name)
             pulse(linelist_open_bridge, "off")  # collapse the inline picker
 
-    linelist_picker = FilePicker(on_linelist_select, container_id="linelist-results",
-                                 start_dir=Path(strengths.master_path).parent)
+    annotation_path = Path(strengths.linelist)
+    linelist_picker = FilePicker(
+        on_linelist_select, container_id="linelist-results",
+        start_dir=annotation_path if annotation_path.is_dir() else annotation_path.parent)
     linelist_picker.layout.name = "linelist_picker"
 
     # every html control is a hidden model collected under one root: the bridges/actions
@@ -1143,7 +1145,8 @@ def build():
     doc = curdoc()
     doc.title = "TUMULT Studio"
     for root in (canvas.nav, canvas.main, filtertool.fig,
-                 *abundancetool.figs, abundcorrtool.fig, *ionbaltool.figs, picker.layout,
+                 *abundancetool.figs, *abundcorrtool.figs, abundcorrtool.cog_fig,
+                 *ionbaltool.figs, picker.layout,
                  *masktool.roots,
                  linelist_picker.layout, synth_modal.atoms.picker.layout,
                  synth_modal.grids.picker.layout, synth_modal.atmos_picker.layout,
@@ -1189,7 +1192,7 @@ def build():
         fit_html=synth_modal.fit.html(),
         annot_label=ctx.annot.button_html(),
         linesettings_html=linejump_form.html(),
-        linelist_path=html.escape(Path(strengths.master_path).name),
+        linelist_path=html.escape(Path(strengths.linelist).name),
         linelist_results_name=linelist_picker.results_name,
         linemask_results_name=masktool.source("file").results_name,
         # the Auto-generate pane is only rendered while that source exists
@@ -1219,7 +1222,6 @@ def build():
         atom_file_results_name=atom_picker.results_name,
         corr_table_html="",
         corr1_html=abundcorrtool.form1.html(),
-        corr3_html=abundcorrtool.form3.html(),
         corr_params_html=corr_setup.run_form.html(),
         corr_grid_html=corr_setup.grid_ui_html(),
         corr_show_file=corr_setup.show_file(),

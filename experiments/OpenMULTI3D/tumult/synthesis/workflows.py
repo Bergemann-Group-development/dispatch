@@ -405,15 +405,19 @@ def build_settings(prefs, run_vals, atmos_format=None):
 
     ``prefs`` is the persisted preferences dict; ``run_vals`` holds the per-run values
     from the run panel (``teff/logg/feh/vmic/abundances/relative_abundances/mode`` and, for
-    NLTE, ``atoms`` — a list of model-atom file paths). ``atmos_format`` is the selected
+    NLTE, ``atoms`` — a list of model-atom file paths — and optionally ``line_grid``, a
+    generated bound-bound wavelength grid). ``atmos_format`` is the selected
     grid's format. The atmosphere file, FeH and vmic are filled per node by
     ``build_stellar_grid``.
     """
     nlte = str(run_vals.get("mode", "LTE")).upper() == "NLTE"
     # ``only_atom``: synthesise from the model atom's own transitions with NO external line
     # list (used by the abundance-correction tool so an LTE reference and an NLTE spectrum
-    # differ only by LTE-vs-NLTE). The atom block is emitted below even in LTE mode.
+    # differ only by LTE-vs-NLTE). ``atom_lines`` keeps the line list and adds the atom's
+    # transitions to it (the Fortran drops the atom's species from the list). Either emits
+    # the atom block below even in LTE mode.
     only_atom = bool(run_vals.get("only_atom", False))
+    atom_lines = only_atom or bool(run_vals.get("atom_lines", False))
 
     atmos = {}
     fmt = atmos_format or prefs.get("atmos_format")
@@ -456,13 +460,19 @@ def build_settings(prefs, run_vals, atmos_format=None):
     if composition:
         settings["composition_params"] = composition
 
-    if nlte or only_atom:
+    if nlte or atom_lines:
         atoms = run_vals.get("atoms") or []
         if isinstance(atoms, str):
             atoms = [atoms]
         # a one-element list still serialises to a Fortran array (see NameList); the
         # Fortran atom_params namelist accepts an array of atom_file entries.
         atom = {"atom_file": [str(a) for a in atoms]}
+        # a generated bound-bound grid (tumult.line_quadrature) replaces the atoms' own
+        # quadratures; the atom copy that goes with it expresses its windows in QNORM_KMS
+        if run_vals.get("line_grid"):
+            from ..line_quadrature import QNORM_KMS
+            atom["line_grid_file"] = str(run_vals["line_grid"])
+            atom["qnorm"] = float(QNORM_KMS)
         if prefs.get("convlim"):
             atom["convlim"] = float(prefs["convlim"])
         if prefs.get("convmax"):
@@ -591,7 +601,8 @@ def compute(target, prefs, run_vals, xmin=None, xmax=None, *, grid, atmos_file=N
 
 
 def compute_batch(target, prefs, run_vals_list, xmin=None, xmax=None, *, grid,
-                  atmos_file=None, extra_presets=None, set_spectrum=True, cancel_token=None):
+                  atmos_file=None, extra_presets=None, set_spectrum=True, cancel_token=None,
+                  fold=True):
     """Batched :func:`compute`: synthesise several ``run_vals`` variants (e.g. a curve-of-
     growth's abundance ladder) that share the target atmosphere, fanning *every* dispatch run
     through the shared execution service via :func:`tumult.synthesis.compute_spectra`. Returns a list of
@@ -601,14 +612,15 @@ def compute_batch(target, prefs, run_vals_list, xmin=None, xmax=None, *, grid,
     :func:`compute`, so a variant's runs are byte-identical to the ``compute`` call it replaces
     — the batch only changes scheduling (all points run concurrently instead of one at a time),
     not results. All variants must share the synthesis mode (LTE/NLTE) and preset/line-list
-    config; only per-point knobs (typically ``abundances``) should differ.
+    config; only per-point knobs (typically ``abundances``) should differ. ``fold=False``
+    gives every variant its own departure solve (see :func:`tumult.synthesis.compute_spectra`).
     """
     if not run_vals_list:
         return []
     common, settings, _ = _prepare(target, prefs, run_vals_list, grid, atmos_file,
                                     extra_presets, set_spectrum=set_spectrum)
     return compute_spectra(**common, settings_list=settings, xmin=xmin, xmax=xmax,
-                           cancel_token=cancel_token)
+                           cancel_token=cancel_token, fold=fold)
 
 
 def compute_window_batch(target, prefs, run_vals_list, windows, *, grid,
@@ -677,6 +689,27 @@ def _nearest_grid_path(atmospheres, stellar, vmic=0.0):
     return min(candidates,
                key=lambda item: (abs((float(item[0][3]) if len(item[0]) > 3 else 0.0)
                                     - float(vmic)), str(item[1])))[1]
+
+
+def nearest_marcs_atmosphere(grid, target, prefs):
+    """The MARCS model of ``grid`` nearest to ``target`` (teff, logg, feh[, vmic]).
+
+    Used by preparations that need one representative 1D model of a star, such as the
+    bound-bound grid for its NLTE corrections; ``grid`` must be a MARCS-format grid record.
+    """
+    if str(grid.get('format', 'Marcs')).lower() != 'marcs':
+        raise ValueError('A MARCS-format grid is needed to pick a reference model.')
+    root = execution_root(prefs).resolve()
+    atmospheres = discover_atmos_grid(_resolved_path(root, grid['folder']),
+                                      grid.get('pattern') or DEFAULT_PATTERN)
+    vmic = float(target[3]) if len(target) > 3 else 0.0
+    return str(_resolved_path(root, _nearest_grid_path(atmospheres, target, vmic)))
+
+
+def preparation_root(prefs):
+    """Where HOP preparations (line-list crops, bound-bound grids) are cached."""
+    root = execution_root(prefs).resolve()
+    return _resolved_path(root, prefs.get('synth_output_dir') or 'synth') / '_preparation'
 
 
 def _reference_atmospheres(selection, prefs, root, prefs_vmic=1.0):
@@ -762,7 +795,7 @@ def _prepare_artifact(resolved):
         return None
     from ..linestrength import prepare_linelist
     settings = resolved.settings.get('composition_params', {}) or {}
-    return prepare_linelist(Path(resolved.output_root) / '_preparation',
+    return prepare_linelist(preparation_root(prefs),
                             resolved.preparation_references, prefs['linelist'], windows,
                             R=float(resolved.settings['spectrum_params']['R']), dlam=skirt,
                             vmic=float(resolved.request.run_vals.get('vmic', 1.0)),
@@ -1146,21 +1179,29 @@ def fit_request_line(obs, request, symbol, guess, synth_window, fit_window,
 # --- 1D LTE reference (abundance corrections) ------------------------------------------
 
 def compute_reference(target, prefs, atom, grid, xmin=None, xmax=None, *,
-                      cancel_token=None, return_runs=False):
-    """Synthesise the 1D LTE reference spectrum straight from a model ``atom`` (no line list).
+                      cancel_token=None, return_runs=False, line_grid=None,
+                      with_linelist=False):
+    """Synthesise the 1D LTE reference spectrum from a model ``atom``.
 
     Interpolates ``grid`` (the flagged 1D LTE reference grid) at ``target`` and runs LTE +
     atom-only via the ``corr_ref.nml`` preset (``maxiter=0``, empty line list, relative
     abundances). The atom's own bound-bound transitions are the lines, and the run also writes
-    ``linelist_out.txt`` — read it back with :func:`read_reference_linelist`. Returns the
-    normalised reference :class:`Spectrum`. Blocking — call from a worker thread.
+    ``linelist_out.txt`` — read it back with :func:`read_reference_linelist`. ``line_grid``
+    (optional) is a generated bound-bound grid the run samples instead of the atom's own
+    quadrature. ``with_linelist`` adds the configured synthesis line list (blends from the
+    other species) to the atom's transitions; otherwise the atom alone is synthesised.
+    Returns the normalised reference :class:`Spectrum`. Blocking — call from a worker
+    thread.
     """
     run_vals = {
         "mode": "LTE",
-        "only_atom": True,
+        "only_atom": not with_linelist,
+        "atom_lines": True,
         "atoms": [str(atom)],
         "relative_abundances": True,
     }
+    if line_grid:
+        run_vals["line_grid"] = str(line_grid)
     return compute(target, prefs, run_vals, xmin, xmax, grid=grid,
                    extra_presets=[_CORR_REF_PRESET], set_spectrum=False,
                    cancel_token=cancel_token, return_runs=return_runs)
@@ -1178,7 +1219,8 @@ def read_reference_linelist(run_dirs):
         raise ValueError("The reference spectrum has no producing runs.")
     dump = Path(run_dirs[0]) / "linelist_out.txt"
     frame = LineList.from_tumult_format(str(dump)).reset_index()
-    return frame[[c for c in ("ion", "lam0", "evi", "loggf") if c in frame.columns]]
+    return frame[[c for c in ("ion", "lam0", "evi", "loggf", "strength", "i", "j")
+                  if c in frame.columns]]
 
 
 # --- run cache management --------------------------------------------------------------

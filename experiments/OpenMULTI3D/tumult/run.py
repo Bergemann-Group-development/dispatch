@@ -9,6 +9,7 @@ spectra, departures, contribution functions, plotting).
 from .atom import AtomClass
 from .auxfuncs import (assign_group_indices, compute_tau_scale, empty, interp_tau,
                        rotate_array)
+from .utils import pchip_mono
 from .physics import vac2air
 from .decorators import broadcast_arguments
 from .plotting_scripts import plot_line_annotations, plt_kwargs, set_title
@@ -535,7 +536,10 @@ class Run(object):
         lte_weqs = lte_weqs[order]
         lte_abnd = lte_abnd[order]
 
-        a0 = np.interp(weq, lte_weqs, lte_abnd)
+        # invert on the LTE curve of growth in reduced EW (log W; the line's λ only shifts
+        # the abscissa by a constant) with the shape-preserving PCHIP interpolant, as the
+        # abundance pipeline does (tumult.abundance.cog_invert)
+        a0 = float(pchip_mono(np.log10(lte_weqs), lte_abnd)(np.log10(weq)))
         corr = abnd - a0
 
         return corr, lte_weqs, lte_abnd, weq, abnd

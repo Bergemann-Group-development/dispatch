@@ -48,6 +48,11 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
   from the window edge. The two paddings are successive and calibrated apart.
 - *window file*: requested wavelength ranges handed to the Fortran, which builds one
   constant-resolution *segment* per window and gives each its own output patch.
+- *line window*: the span `[lam_min, lam_max]` of the shared frequency grid an NLTE run
+  integrates one bound-bound transition's rates over; set by the model atom's `qmax` (in
+  units of `qnorm`). A *line grid* (`line_grid_file`, written by
+  `tumult/line_quadrature.py`) replaces the per-line quadrature points with one shared
+  wavelength list, leaving the line windows to a matching atom copy.
 
 **Line Masks**
 

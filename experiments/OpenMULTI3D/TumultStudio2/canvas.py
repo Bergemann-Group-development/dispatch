@@ -64,7 +64,9 @@ def _style(p):
     p.axis.minor_tick_line_color = None
     p.axis.major_label_text_color = MUTED
     p.axis.axis_label_text_color = MUTED
-    p.toolbar.logo = None
+    # no Bokeh toolbar anywhere: the tools stay usable (wheel zoom, pan, tap, hover, the
+    # active drag the tools switch) and the page's own toolbar holds every button
+    p.toolbar_location = None
 
 
 # public alias so other panels (e.g. the abundance scatter) get the same dark theme
@@ -145,7 +147,7 @@ class SpectrumCanvas:
         # --- nav (overview) plot -------------------------------------------
         nav_wheel = WheelZoomTool(dimensions="width", maintain_focus=False)
         nav = figure(height=96, sizing_mode="stretch_width", output_backend="webgl",
-                     tools=[nav_wheel], active_scroll=nav_wheel, toolbar_location=None,
+                     tools=[nav_wheel], active_scroll=nav_wheel,
                      x_range=Range1d(wmin, wmax, bounds=(wmin, wmax)),
                      y_range=Range1d(0.0, NAV_Y_MAX),  # autofit each refresh, top capped
                      min_border_left=62)  # align the overview frame with the main frame
@@ -206,7 +208,7 @@ class SpectrumCanvas:
 
         # the accented window's fit span is its own box rather than one of the pooled ones: it
         # is the one the view is about (the mask being edited, the line jumped to), and in the
-        # LineMasks view it is also the one the user drags by its left/right edge handles
+        # LineMasks and correction views it is also the one the user drags by its edge handles
         # (`resizable="x"`, `movable="none"` — the window may be widened or narrowed, never
         # slid wholesale, and no other mask can be changed by accident). Bokeh writes the
         # dragged `left`/`right` straight back to the model, which `on_window_resize` picks up;
@@ -637,8 +639,8 @@ class SpectrumCanvas:
         it is met: its synth/visual span a faint red full-height highlight, its fit span amber,
         and both faded to a dashed outline when the mask is switched off (``include`` False).
         The mask at index ``active`` is accented instead, in the separate :attr:`accent_box`,
-        whose edges are draggable when ``editable`` (only the LineMasks view sets that, along
-        with :attr:`on_window_resize`).
+        whose edges are draggable when ``editable`` (the LineMasks view and the correction
+        view set that, along with :attr:`on_window_resize`).
 
         ``windows`` is any sequence of :class:`~tumult.linemask.LineMask`; a per-line result
         carries the one it was measured over, so a view can pass its own masks or the set's.

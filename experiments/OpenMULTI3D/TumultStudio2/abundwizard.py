@@ -32,16 +32,15 @@ from units import to_range
 
 import astropy.units as u
 
-# scatter x-axis options: (key, axis label, per-line value fn) - shared by both wizards
+# scatter x axes: key -> (axis label, per-line value fn)
 X_AXES = {
     "evi": ("Excitation E_low [eV]", lambda ln: ln.e_low),
     "rew": ("Reduced EW  log(W/λ)", lambda ln: ab.reduced_ew(ln.ew, ln.lam0)),
-    "lam0": ("Wavelength λ₀ [Å]", lambda ln: ln.lam0),
 }
 
 # the two diagnostics every abundance fit is read against, shown as a pair of panels: the
 # abundance against excitation energy (a temperature diagnostic) and against reduced EW (a
-# microturbulence one). A tool that shows the pair has no x-axis selector.
+# microturbulence one).
 PANEL_AXES = ("evi", "rew")
 
 # a fitted profile (not trapz) is required - the FWHM window comes from it (see abundance.py)
@@ -153,9 +152,10 @@ class AbundanceWizard(Tool):
 
     # --- window highlights ---------------------------------------------------------------
     # A result's windows belong to the result, not to a jump: a wizard that paints them shows
-    # them for as long as it owns the centre view, with the jumped-to line accented but never
-    # draggable (windows are edited in the LineMasks view). The call sites are the subclass's,
-    # so a wizard whose lines carry no user-drawn windows paints nothing.
+    # them for as long as it owns the centre view, with the jumped-to line accented. Only the
+    # corrections wizard lets that accent be dragged (its fit windows are its own to edit);
+    # the others' windows are edited in the LineMasks view. The call sites are the
+    # subclass's, so a wizard whose lines carry no user-drawn windows paints nothing.
     def _result_masks(self, res):
         """The masks to highlight for ``res``: its lines' windows, carrying the *line's*
         include state, so a row switched off in the table is drawn switched off."""
@@ -214,11 +214,9 @@ class AbundanceWizard(Tool):
             toggle(bridge, i == self.step)
 
     # --- dark scatter figures (the centre view's diagnostic pane) ------------------------
-    # A fit reads its parameters off two diagnostics at once, so both are drawn: the tools
-    # that show a fit build the pair (:meth:`_build_figs`), the corrections wizard — whose
-    # scatter is a distribution, not a fit — keeps a single selectable axis
-    # (:meth:`_build_fig`). Both draw from one ColumnDataSource carrying an ``x_<axis>``
-    # column per panel, so a single data push repaints every panel.
+    # Every wizard shows the pair of diagnostics (:data:`PANEL_AXES`) side by side
+    # (:meth:`_build_figs`), drawn from one ColumnDataSource carrying an ``x_<axis>``
+    # column per panel, so a single data push repaints both.
     def _new_fig(self, xkey):
         fig = figure(sizing_mode="stretch_both", output_backend="webgl",
                      tools="pan,wheel_zoom,box_zoom,tap,reset", active_scroll="wheel_zoom",
@@ -234,18 +232,6 @@ class AbundanceWizard(Tool):
         self.figs.append(fig)
         self.mean_lines.append(span)
         self.mean_bands.append(band)
-        return fig
-
-    def _build_fig(self, source):
-        """One panel, on the axis ``form3`` selects."""
-        self.src = source
-        self.figs, self.mean_lines, self.mean_bands = [], [], []
-        fig = self._new_fig("x")
-        self._add_series(source, ACCENT, xkeys=["x"])
-        fig.xaxis.axis_label = X_AXES[str(self.form3.value("xaxis"))][0]
-        fig.name = f"{self.prefix}_fig"
-        self.fig = fig
-        self.mean_line, self.mean_band = self.mean_lines[0], self.mean_bands[0]
         return fig
 
     def _build_figs(self, source):
@@ -348,12 +334,9 @@ class AbundanceWizard(Tool):
                 band.top, band.bottom = float(value) + err, float(value) - err
 
     # --- Tool protocol -------------------------------------------------------------------
-    form3 = None            # subclass: the scatter-axis selector, where the axis is a choice
-
     @property
     def models(self):
-        return [*self.form1.models, *(self.form3.models if self.form3 else []),
-                self.actions, *self.setup.models]
+        return [*self.form1.models, self.actions, *self.setup.models]
 
     def activate(self):
         # first open: seed the wizard's own synthesis setup from the synthesis modal, then

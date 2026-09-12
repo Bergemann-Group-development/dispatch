@@ -1,14 +1,15 @@
-"""Pin the NLTE-correction workflow extracted out of the Corr wizard.
+"""Pin the NLTE-correction workflow (stage 2 of :mod:`tumult.abundance`).
 
 The reference is a synthetic 1D LTE spectrum; the NLTE arm is the same line displaced by a
-known offset. Inverting the curve of growth at the reference EW must recover that offset, so
-these drive :func:`tumult.abundance.run_nlte_corrections` against a stubbed synthesis layer —
-no dispatch runs, and nothing imported from ``TumultStudio2``.
+known offset. Inverting the curve of growth at the reference EW must recover that offset,
+so these drive :func:`tumult.abundance.run_nlte_corrections` against a stubbed synthesis
+layer — no dispatch runs, and nothing imported from ``TumultStudio2``.
 
-``set_spectrum=False`` is asserted because it is load-bearing: it leaves ``spectrum_params``
-without R/daa so the Fortran samples on the model atom's own frequency grid, matching the
-reference. It is also why this ladder cannot ride a segmented ``window_file`` run, which fixes
-a constant-R grid per window.
+What is load-bearing and therefore asserted: every rung is its own NLTE solve
+(``fold=False``), synthesised over the atom's whole range (no window) on the atom's own
+grid (``set_spectrum=False``); the rungs lie on the preferences' ``abund_step`` lattice
+within the limit; and the loop stops only once each line's correction is bracketed by two
+computed rungs.
 """
 import astropy.units as u
 import numpy as np
@@ -19,11 +20,12 @@ from tumult.spectrum import Spectrum
 from tumult.synthesis import SynthRequest
 
 LAM0 = 5000.0
+RANGE = (LAM0 - 5.0, LAM0 + 5.0)
 
 
-def _line_spec(a, window, *, sigma=0.08, depth0=0.30, slope=0.6):
+def _line_spec(a, window=RANGE, *, sigma=0.08, depth0=0.30, slope=0.6):
     """A Gaussian line on a flat continuum whose depth grows with abundance ``a`` (dex)."""
-    x = np.linspace(window[0], window[1], 400)
+    x = np.linspace(window[0], window[1], 2000)
     depth = depth0 * 10 ** (slope * a)
     return Spectrum(x, 1.0 - depth * np.exp(-0.5 * ((x - LAM0) / sigma) ** 2),
                     xunit=u.angstrom)
@@ -31,39 +33,34 @@ def _line_spec(a, window, *, sigma=0.08, depth0=0.30, slope=0.6):
 
 @pytest.fixture
 def stub_synth(monkeypatch):
-    """Stub ``workflows.compute``/``compute_batch``; record the flags they were called with."""
+    """Stub ``workflows.compute_batch``; record the offsets and flags of every call."""
     from tumult.synthesis import workflows as synth
 
-    calls = {"compute": 0, "batch": 0, "set_spectrum": set(), "windows": []}
+    calls = {"batch": 0, "set_spectrum": set(), "fold": set(), "windows": [], "rounds": []}
 
-    def fake_compute(target, prefs, rv, xmin, xmax, *, grid, atmos_file=None,
-                     set_spectrum=True, cancel_token=None, **kw):
-        calls["compute"] += 1
-        calls["set_spectrum"].add(set_spectrum)
-        calls["windows"].append((xmin, xmax))
-        a = float(rv["abundances"].split("=")[1])
-        return _line_spec(a - fake_compute.offset, (xmin, xmax))
-
-    def fake_batch(target, prefs, rvs, xmin, xmax, *, grid, atmos_file=None,
-                   set_spectrum=True, cancel_token=None, **kw):
+    def fake_batch(target, prefs, rvs, xmin=None, xmax=None, *, grid, atmos_file=None,
+                   set_spectrum=True, cancel_token=None, fold=True, **kw):
         calls["batch"] += 1
-        return [fake_compute(target, prefs, rv, xmin, xmax, grid=grid,
-                             atmos_file=atmos_file, set_spectrum=set_spectrum)
-                for rv in rvs]
+        calls["set_spectrum"].add(set_spectrum)
+        calls["fold"].add(fold)
+        calls["windows"].append((xmin, xmax))
+        offsets = [float(rv["abundances"].split("=")[1]) for rv in rvs]
+        calls["rounds"].append(offsets)
+        return [_line_spec(a - fake_batch.offset) for a in offsets]
 
-    fake_compute.offset = 0.0
-    monkeypatch.setattr(synth, "compute", fake_compute)
+    fake_batch.offset = 0.0
     monkeypatch.setattr(synth, "compute_batch", fake_batch)
-    return fake_compute, calls
+    return fake_batch, calls
 
 
-def _stage1(profile="gauss"):
-    """A stage-1 result: one line measured on the [X/Fe]=0 reference."""
-    ref = _line_spec(0.0, (LAM0 - 1.0, LAM0 + 1.0))
-    prof, win, fitw, _flags = ab.measure_line(ref, {"lam0": LAM0}, profile=profile)
+def _stage1(profile="trapz", window=(LAM0 - 0.5, LAM0 + 0.5)):
+    """A stage-1 result: one line measured on the [X/Fe]=0 reference over its window."""
+    ref = _line_spec(0.0)
+    prof, win, fitw, _flags = ab.measure_line(ref, {"lam0": LAM0}, profile=profile,
+                                              window=window)
     line = ab.LineResult(
         lam0=LAM0, ion="O I", e_low=0.0, loggf=0.0, ew=prof.maa,
-        ew_err=float(prof.width_err_maa), fwhm=float(prof.fwhm),
+        ew_err=float(prof.width_err_maa),
         mask=ab.LineMask(lam0=LAM0, lmin=fitw[0], lmax=fitw[1],
                          smin=win[0], smax=win[1], note="O I"))
     res = ab.AbundanceResult(element="O", symbol="O", lines=[line],
@@ -73,79 +70,95 @@ def _stage1(profile="gauss"):
     return res
 
 
-def _request():
-    return SynthRequest(prefs={}, grid={"folder": "grid"}, run_vals={},
+def _request(step=0.1):
+    return SynthRequest(prefs={"abund_step": step}, grid={"folder": "grid"}, run_vals={},
                         target=(5777.0, 4.4, 0.0, 1.0))
 
 
-@pytest.mark.parametrize("offset", [0.0, 0.20, -0.15])
+def _computed(calls):
+    return sorted(a for offsets in calls["rounds"] for a in offsets)
+
+
+@pytest.mark.parametrize("offset", [0.0, 0.20, -0.15, 0.43])
 def test_correction_recovers_the_injected_offset(stub_synth, offset):
-    """A line displaced by ``offset`` dex inverts back to exactly that correction."""
-    fake_compute, _calls = stub_synth
-    fake_compute.offset = offset
+    """A line displaced by ``offset`` dex inverts back to that correction, bracketed."""
+    fake, calls = stub_synth
+    fake.offset = offset
     res = ab.run_nlte_corrections(_request(), _stage1(), "o.atom")
     ln = res.lines[0]
-    assert ln.a == pytest.approx(offset, abs=0.02)
+    assert ln.a == pytest.approx(offset, abs=0.01)
     assert res.stage == "corr"
-    assert res.summary["a_mean"] == pytest.approx(offset, abs=0.02)
-    assert res.summary["n"] == 1
+    assert res.summary["a_mean"] == pytest.approx(offset, abs=0.01)
+    computed = _computed(calls)
+    lo, hi = np.floor(offset / 0.1 + 1e-9) * 0.1, np.ceil(offset / 0.1 - 1e-9) * 0.1
+    assert any(abs(a - lo) < 1e-9 for a in computed)
+    assert any(abs(a - hi) < 1e-9 for a in computed)
+    assert tuple(ln.a_grid) == tuple(computed)
 
 
-def test_ladder_shape_follows_the_options(stub_synth):
-    fake_compute, _calls = stub_synth
-    fake_compute.offset = 0.1
-    opts = ab.CorrectionOpts(span=0.4, points=5)
-    res = ab.run_nlte_corrections(_request(), _stage1(), "o.atom", opts=opts)
-    grid = res.lines[0].a_grid
-    assert len(grid) == 5
-    assert grid[0] == pytest.approx(-0.4) and grid[-1] == pytest.approx(0.4)
+def test_rungs_are_lattice_points_within_the_limit(stub_synth):
+    fake, calls = stub_synth
+    fake.offset = 0.27
+    opts = ab.CorrectionOpts(limit=0.5)
+    ab.run_nlte_corrections(_request(step=0.1), _stage1(), "o.atom", opts=opts)
+    first = calls["rounds"][0]
+    assert first == pytest.approx([-0.5, 0.0, 0.5])
+    for a in _computed(calls):
+        assert abs(a) <= 0.5 + 1e-9
+        assert abs(a / 0.1 - round(a / 0.1)) < 1e-9
+    assert len(set(_computed(calls))) == len(_computed(calls))    # no rung solved twice
 
 
-def test_samples_on_the_atom_grid_and_pads_the_window(stub_synth):
-    """set_spectrum=False on every synthesis, and each window padded by SYNTH_PAD_AA."""
-    fake_compute, calls = stub_synth
-    fake_compute.offset = 0.1
-    res = _stage1()
-    win = res.lines[0].window
-    ab.run_nlte_corrections(_request(), res, "o.atom")
+def test_every_rung_is_its_own_full_range_solve(stub_synth):
+    fake, calls = stub_synth
+    fake.offset = 0.1
+    ab.run_nlte_corrections(_request(), _stage1(), "o.atom")
     assert calls["set_spectrum"] == {False}
-    assert calls["windows"]
-    for xmin, xmax in calls["windows"]:
-        assert xmin == pytest.approx(win[0] - ab.SYNTH_PAD_AA)
-        assert xmax == pytest.approx(win[1] + ab.SYNTH_PAD_AA)
+    assert calls["fold"] == {False}
+    assert all(w == (None, None) for w in calls["windows"])
+
+
+def test_out_of_range_line_requests_no_more_rungs(stub_synth):
+    fake, calls = stub_synth
+    fake.offset = 1.6                                     # beyond the +-1 dex limit
+    res = ab.run_nlte_corrections(_request(), _stage1(), "o.atom")
+    ln = res.lines[0]
+    assert ln.flags == ("out_of_range",) and not ln.include
+    assert calls["batch"] == 1                            # the initial three rungs only
 
 
 def test_progress_streams_and_overlay_is_attached(stub_synth):
-    fake_compute, _calls = stub_synth
-    fake_compute.offset = 0.1
+    fake, _calls = stub_synth
+    fake.offset = 0.1
     seen = []
     res = ab.run_nlte_corrections(_request(), _stage1(), "o.atom",
                                   progress=lambda r: seen.append(r.lines[0].a))
-    assert len(seen) == 1
+    assert len(seen) >= 1 and np.isfinite(seen[-1])
     assert res.lines[0].fit_spec is not None
+    x, _y = res.lines[0].fit_spec.values
+    assert min(x) >= LAM0 - 0.5 - 1e-6 and max(x) <= LAM0 + 0.5 + 1e-6
 
 
 def test_excluded_lines_are_left_untouched(stub_synth):
-    fake_compute, calls = stub_synth
-    fake_compute.offset = 0.1
+    fake, calls = stub_synth
+    fake.offset = 0.1
     res = _stage1()
     res.lines[0].include = False
     ab.run_nlte_corrections(_request(), res, "o.atom")
     assert np.isnan(res.lines[0].a)
-    assert calls["batch"] == 0
+    assert calls["batch"] == 1          # the initial rungs are solved for the atom, not a line
 
 
-def test_a_failed_line_is_flagged_not_raised(stub_synth, monkeypatch):
-    """A synthesis blowing up marks the line and lets the rest of the run finish."""
+def test_a_failed_synthesis_raises(stub_synth, monkeypatch):
+    """The rungs serve every line, so a synthesis failure ends the stage."""
     from tumult.synthesis import workflows as synth
 
     def boom(*a, **kw):
         raise RuntimeError("dispatch failed")
 
     monkeypatch.setattr(synth, "compute_batch", boom)
-    res = ab.run_nlte_corrections(_request(), _stage1(), "o.atom")
-    assert res.lines[0].flags == ("synth_failed",)
-    assert res.stage == "corr"
+    with pytest.raises(RuntimeError):
+        ab.run_nlte_corrections(_request(), _stage1(), "o.atom")
 
 
 def test_cancellation_propagates(stub_synth):
@@ -155,3 +168,72 @@ def test_cancellation_propagates(stub_synth):
     token.cancel()
     with pytest.raises(CancelledError):
         ab.run_nlte_corrections(_request(), _stage1(), "o.atom", cancel_token=token)
+
+
+# --- blended atom lines: the fit window stops at the flux maximum between them ------------
+
+def _blend_spec():
+    x = np.linspace(4999.0, 5003.0, 801)
+    g = lambda c, d, w: d * np.exp(-0.5 * ((x - c) / w) ** 2)
+    return Spectrum(x, 1.0 - g(5000.0, 0.5, 0.1) - g(5000.6, 0.6, 0.1) - g(5002.0, 0.3, 0.1),
+                    xunit=u.AA)
+
+
+def test_local_max_window_stops_at_the_separating_maximum():
+    spec = _blend_spec()
+    lo, hi = ab.local_max_window(spec, 5000.0, (4999.2, 5001.0))
+    assert lo == pytest.approx(4999.2)          # the continuum side keeps the window edge
+    assert 5000.25 < hi < 5000.35               # the maximum between the two blended lines
+    lo2, hi2 = ab.local_max_window(spec, 5000.6, (4999.8, 5001.5))
+    assert lo2 == pytest.approx(hi)             # the neighbour stops at the same maximum
+    assert hi2 == pytest.approx(5001.5)
+
+
+def test_local_max_window_walks_a_flat_core_and_ripple():
+    x = np.linspace(4999.0, 5003.0, 801)
+    g = lambda c, d, w: d * np.exp(-0.5 * ((x - c) / w) ** 2)
+    y = np.clip(1.0 - g(5000.0, 1.5, 0.15) - g(5000.7, 0.6, 0.1), 0.0, None)
+    y += 2e-5 * np.sin(300.0 * x)
+    lo, hi = ab.local_max_window(Spectrum(x, y, xunit=u.AA), 5000.0, (4999.2, 5001.0))
+    assert lo == pytest.approx(4999.2)
+    assert 5000.35 < hi < 5000.5
+
+
+def test_overlapping_windows_flags_both_partners_only():
+    hit = ab.overlapping_windows({1: (1, 2), 2: (1.5, 3), 3: (4, 5), 4: (4.5, 4.7),
+                                  5: (6, 7)})
+    assert hit == {1, 2, 3, 4}
+
+
+# --- moving the fit window after the run re-reads the rungs, never the synth window ------
+
+def test_refit_line_window_follows_the_edit_without_a_solve(stub_synth):
+    fake, calls = stub_synth
+    fake.offset = 0.20
+    res = ab.run_nlte_corrections(_request(), _stage1(window=(LAM0 - 0.5, LAM0 + 0.5)),
+                                  "o.atom")
+    ln = res.lines[0]
+    assert ln.cog_specs and set(ln.cog_specs) == set(ln.a_grid)
+    n_batches = calls["batch"]
+    # a narrower window: the reference and every rung lose the same wing, and the
+    # displaced line still inverts to its offset
+    ab.refit_line_window(res, ln, LAM0 - 0.15, LAM0 + 0.15)
+    assert calls["batch"] == n_batches
+    assert ln.fit_window == pytest.approx((LAM0 - 0.15, LAM0 + 0.15))
+    assert ln.window == pytest.approx((LAM0 - 0.5, LAM0 + 0.5))
+    assert ln.a == pytest.approx(0.20, abs=0.01)
+    assert res.summary["a_mean"] == pytest.approx(0.20, abs=0.01)
+    # the edit cannot leave the synth window
+    ab.refit_line_window(res, ln, LAM0 - 2.0, LAM0 + 2.0)
+    assert ln.fit_window == pytest.approx((LAM0 - 0.5, LAM0 + 0.5))
+
+
+def test_refit_survives_a_session_round_trip(stub_synth):
+    fake, calls = stub_synth
+    fake.offset = -0.15
+    res = ab.run_nlte_corrections(_request(), _stage1(), "o.atom")
+    back = ab.AbundanceResult.from_dict(res.to_dict())
+    ln = back.lines[0]
+    assert set(ln.cog_specs) == set(res.lines[0].cog_specs)
+    ab.refit_line_window(back, ln, LAM0 - 0.2, LAM0 + 0.2)
+    assert ln.a == pytest.approx(-0.15, abs=0.01)

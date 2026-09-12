@@ -23,6 +23,7 @@ tests/*
 !tests/test_nlte_corrections.py
 !tests/test_continuum.py
 !tests/test_spectrum_io.py
+!tests/test_line_quadrature.py
 
 # Keep development plans visible under the parent experiment ignore rule.
 !plan/

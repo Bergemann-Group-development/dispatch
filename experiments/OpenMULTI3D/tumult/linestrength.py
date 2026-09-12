@@ -38,10 +38,10 @@ list: all 155 lines matched, **Spearman 0.978**, and the ratio to the run's valu
 constant 1.21 (10-90% spread 1.21-1.33) — an offset from using a 1D MARCS structure where
 the run had its own, which a ranking does not care about.
 
-Cost, for the single-file master list: 0.06 s for a 20 A band, 0.08 s for 100 A, 0.32 s for
-500 A, and 3.3 s for the whole 4000-9000 A at once, because only :data:`NDEPTH` depths are
-passed. A folder of per-species lists is ~5x that, dominated by reading the files. Bands are
-snapped to a grid and cached process-wide, so panning inside one costs nothing at all.
+The GUI uses the full per-species ``master_linelists/`` folder by default. Molecular lists
+dominate its size, so annotation views wider than :data:`MOLECULE_VIEW_LIMIT_AA` use the
+folder's atomic files only; focused views retain every molecule. Bands are snapped to a grid
+and cached process-wide, so panning inside one costs nothing at all.
 
 Every band returns the same frame — ``ion``/``lam0``/``evi``/``loggf``/``strength``
 ascending in lam0 — as :func:`tumult.linelist.load_master` does with its proxy column, so a
@@ -64,11 +64,13 @@ import re
 import threading
 import hashlib
 from dataclasses import asdict, dataclass
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
 
 from . import refstars
+from .isotopes import species_elements
 from .linelist import MASTER_PATH, load_master
 from tumult.synthesis.api import PROVENANCE_NAME
 from tumult.synthesis.runtime import HOP_LOCK
@@ -86,6 +88,15 @@ DLAM_AA = 2.0                # wing search radius handed to HOP's line-list read
 MAX_BANDS = 8                # bands kept in the process-wide cache
 NDEPTH = 8                   # depths of the reference atmospheres (see read_marcs)
 PARAMS_NAME = "params.nml"
+MOLECULE_VIEW_LIMIT_AA = 100.0
+ANNOTATION_PATH = os.environ.get(
+    "TUMULT_ANNOTATION_LINELIST",
+    os.environ.get(
+        "TUMULT_MASTER_LINELIST",
+        str(Path(__file__).resolve().parent.parent
+            / "input" / "linelists" / "master_linelists"),
+    ),
+)
 
 _ATMOS_RE = re.compile(r"ATMOS_FILE='\s*([^']*?)\s*'", re.I)
 _FEH_RE = re.compile(r"\bFEH=\s*([-+\d.Ee]+)")
@@ -95,6 +106,65 @@ _FEH_RE = re.compile(r"\bFEH=\s*([-+\d.Ee]+)")
 # caller check readiness while another thread is inside HOP.
 _bands_lock = threading.Lock()
 _bands = {}      # (star, linelist, lo, hi) -> frame, most recent last
+
+
+def _linelist_key(linelist):
+    """Hashable identity for a file, folder, or explicit sequence of files."""
+    if isinstance(linelist, (str, Path)):
+        return str(linelist)
+    return tuple(str(path) for path in linelist)
+
+
+def _species_header(path):
+    """The first quoted species label in a Tumult line-list file."""
+    with Path(path).open(errors="ignore") as stream:
+        header = stream.readline().strip()
+    if "'" in header:
+        return header.split("'", 2)[1].strip()
+    return header.split()[0] if header.split() else ""
+
+
+def _is_molecule(species):
+    """Whether a species label has more than one constituent; unknown labels are kept."""
+    try:
+        return len(species_elements(species)) > 1
+    except (IndexError, ValueError):
+        return False
+
+
+@lru_cache(maxsize=8)
+def _atomic_files(folder):
+    """Files in ``folder`` whose first species is atomic.
+
+    A conventional atomic label has one constituent (``Fe I`` -> Fe), whereas molecular
+    labels have several (``TiO`` -> Ti + O). Files with an unfamiliar header stay in the
+    selection: omitting an unclassified input would silently lose annotations.
+    """
+    files = []
+    for path in sorted(item for item in Path(folder).iterdir() if item.is_file()):
+        try:
+            molecular = _is_molecule(_species_header(path))
+        except OSError:
+            logging.warning("Could not classify line-list file %s; keeping it", path)
+            molecular = False
+        if not molecular:
+            files.append(path)
+    return tuple(files)
+
+
+def annotation_linelist(linelist, lo, hi):
+    """Line-list input for an annotation view spanning ``lo`` to ``hi`` Å.
+
+    Narrow views use every file. Above :data:`MOLECULE_VIEW_LIMIT_AA`, a folder is reduced
+    to its atomic files because the large molecular lists dominate construction time.
+    Single-file inputs are left untouched: there is no reliable way to omit only their
+    molecular blocks without producing another list.
+    """
+    path = Path(linelist) if isinstance(linelist, (str, Path)) else None
+    if abs(float(hi) - float(lo)) > MOLECULE_VIEW_LIMIT_AA and path is not None \
+            and path.is_dir():
+        return _atomic_files(path)
+    return linelist
 
 
 def _file_identity(path):
@@ -267,7 +337,7 @@ def compute_band(star, linelist, lo, hi):
     process-wide singleton. A separate short-lived cache lock lets the UI check readiness while
     another thread computes a band.
     """
-    key = (star.key, str(linelist), lo, hi)
+    key = (star.key, _linelist_key(linelist), lo, hi)
     with _bands_lock:
         if key in _bands:
             return _bands[key]
@@ -282,7 +352,7 @@ def compute_band(star, linelist, lo, hi):
             hop = tm.HopEOS(feh=0.0)
             try:
                 hop.load_state(star.T, rho=star.rho)
-                df = hop.line_strengths(lam, str(linelist), dlam=DLAM_AA, vmic=1.0)
+                df = hop.line_strengths(lam, linelist, dlam=DLAM_AA, vmic=1.0)
             finally:
                 hop.close()
             frame = _sorted_frame(df[(df.lam0 >= lo) & (df.lam0 <= hi)])
@@ -300,7 +370,7 @@ def compute_band(star, linelist, lo, hi):
 def band_ready(star, linelist, lo, hi):
     """Whether :func:`compute_band` would return without computing anything."""
     with _bands_lock:
-        return (star.key, str(linelist), lo, hi) in _bands
+        return (star.key, _linelist_key(linelist), lo, hi) in _bands
 
 
 def cached_band(star, linelist, lo, hi):
@@ -310,7 +380,7 @@ def cached_band(star, linelist, lo, hi):
     :func:`band_ready` check and a separate read another thread can evict the band.
     """
     with _bands_lock:
-        return _bands.get((star.key, str(linelist), lo, hi))
+        return _bands.get((star.key, _linelist_key(linelist), lo, hi))
 
 
 # --- cropping a line list to an atmosphere ------------------------------------------------
@@ -446,8 +516,8 @@ class LineStrengths:
     def __init__(self, master_path=MASTER_PATH, linelist=None,
                  refstar=refstars.AUTO_KEY):
         self.master_path = str(master_path)
-        # what HOP computes strengths *for*: the master list unless told otherwise, so the
-        # ranking and the table describe the same transitions
+        # HOP's input may be the complete per-species folder while master_path remains the
+        # compact fallback/search catalogue used until a computed band is ready.
         self.linelist = str(linelist or master_path)
         # the chosen reference atmosphere, or AUTO_KEY to follow each spectrum's own. Via
         # the setter, because this normally arrives from a stored preference and a key that
@@ -455,12 +525,14 @@ class LineStrengths:
         self.refstar = refstars.AUTO_KEY
         self.set_refstar(refstar)
         self._proxy = None
+        self._atomic_proxy = None
 
     # --- configuration ---------------------------------------------------------------
     def set_master_path(self, path):
         self.master_path = str(path)
         self.linelist = str(path)
         self._proxy = None
+        self._atomic_proxy = None
 
     def set_refstar(self, key):
         """Choose the reference atmosphere, by :mod:`refstars` key or ``auto``.
@@ -507,6 +579,11 @@ class LineStrengths:
         params = self.params_of(obj)
         return refstars.nearest(*params) if params else refstars.get(refstars.DEFAULT_KEY)
 
+    def request_for(self, obj, lo, hi):
+        """Resolved ``(star, line-list input, cache band)`` for an annotation view."""
+        return (self.star_for(obj), annotation_linelist(self.linelist, lo, hi),
+                band_bounds(lo, hi))
+
     # --- source precedence -----------------------------------------------------------
     def lines_for(self, obj, lo, hi, allow_compute=False):
         """The best :class:`Source` for ``obj`` over ``[lo, hi]`` Å.
@@ -516,19 +593,20 @@ class LineStrengths:
         :meth:`warm` does the computing in the background, after which the next repaint gets
         the real thing.
         """
-        star = self.star_for(obj)
-        band = band_bounds(lo, hi)
+        star, linelist, band = self.request_for(obj, lo, hi)
         if allow_compute:
-            frame = compute_band(star, self.linelist, *band)
+            frame = compute_band(star, linelist, *band)
         else:
             # Never enter compute_band from a repaint, even if another thread
             # evicts a previously ready band between the readiness check and read.
-            frame = cached_band(star, self.linelist, *band)
+            frame = cached_band(star, linelist, *band)
+        atomic_only = _linelist_key(linelist) != _linelist_key(self.linelist)
         if frame is not None and len(frame):
-            return Source(frame, f"HOP · {star.label} ({star.summary})",
+            scope = " · atomic lines" if atomic_only else ""
+            return Source(frame, f"HOP · {star.label} ({star.summary}){scope}",
                           "computed", (star.teff, star.logg, star.feh),
-                          key=("hop", star.key, self.linelist, band))
-        return self._proxy_source()
+                          key=("hop", star.key, _linelist_key(linelist), band))
+        return self._proxy_source(atomic_only=atomic_only)
 
     def warm(self, obj, lo, hi):
         """Compute what :meth:`lines_for` wants, blocking. Call off the document thread."""
@@ -536,7 +614,8 @@ class LineStrengths:
 
     def pending(self, obj, lo, hi):
         """True when :meth:`warm` would change the answer — i.e. the band is not computed."""
-        return not band_ready(self.star_for(obj), self.linelist, *band_bounds(lo, hi))
+        star, linelist, band = self.request_for(obj, lo, hi)
+        return not band_ready(star, linelist, *band)
 
     def describe(self, obj, lo, hi):
         """One short line naming the source in play, for the panel footer."""
@@ -545,7 +624,7 @@ class LineStrengths:
                 else f"strengths: {src.label}")
 
     # --- the proxy source ----------------------------------------------------------------
-    def _proxy_source(self):
+    def _proxy_source(self, atomic_only=False):
         """The configured master list, with whatever strength column it has.
 
         Normally the plain 6-column form, so this is the Boltzmann proxy ``load_master``
@@ -566,4 +645,12 @@ class LineStrengths:
                                      f"{name} (approximate)" if proxy else name,
                                      "proxy" if proxy else "computed",
                                      key=("master", self.master_path))
-        return self._proxy
+        if not atomic_only or self._proxy.lines is None:
+            return self._proxy
+        if self._atomic_proxy is None:
+            keep = ~self._proxy.lines.ion.map(_is_molecule)
+            self._atomic_proxy = Source(
+                self._proxy.lines[keep].reset_index(drop=True),
+                f"{self._proxy.label} · atomic lines", self._proxy.kind,
+                self._proxy.params, key=(*self._proxy.key, "atomic"))
+        return self._atomic_proxy

@@ -72,7 +72,26 @@ def ensure_unit(value, unit=None, target_unit=None):
     return val
 
 
+def _pchip_end_slope(h0, h1, d0, d1):
+    """Shape-preserving endpoint derivative (Fritsch & Butland): the three-point estimate
+    from the first two intervals, zeroed when it opposes the first secant and capped at
+    three times it across a change of slope sign, so the end segment never overshoots."""
+    d = ((2 * h0 + h1) * d0 - h0 * d1) / (h0 + h1)
+    d = d * (np.sign(d) == np.sign(d0))
+    cap = (np.sign(d0) != np.sign(d1)) & (abs(d) > 3 * abs(d0))
+    # plain values, like the interior slopes (np.min strips a Quantity's unit there)
+    return np.asarray(np.where(cap, 3 * d0, d))
+
+
 def pchip_mono(xx, yy, axis=0, **kwargs):
+    """Monotone (shape-preserving) piecewise-cubic Hermite interpolant along ``axis``.
+
+    Interior derivatives are limited to twice the smaller neighbouring secant and to the
+    weighted three-point average, and vanish across a change of slope sign; the endpoint
+    derivatives follow :func:`_pchip_end_slope`. Between two data points the interpolant
+    therefore stays within their values, which is what a curve of growth, a continuum or a
+    grid interpolation needs.
+    """
     xx = np.moveaxis(xx, axis, -1)
     yy = np.moveaxis(yy, axis, -1)
 
@@ -85,12 +104,8 @@ def pchip_mono(xx, yy, axis=0, **kwargs):
         dxup = dx[..., :-1]
         dxdn = dx[..., 1:]
         dydx = (dydn * dxup + dyup * dxdn) / (dxup + dxdn)
-        lim1 = 2 * dlin[..., :1]
-        limn = 2 * dlin[..., -1:]
-        d1 = lim1 - dydx[..., :1]
-        dn = limn - dydx[..., -1:]
-        d1 = np.sign(d1) * np.min([abs(d1), abs(lim1)], axis=0)
-        dn = np.sign(dn) * np.min([abs(dn), abs(limn)], axis=0)
+        d1 = _pchip_end_slope(dx[..., :1], dx[..., 1:2], dlin[..., :1], dlin[..., 1:2])
+        dn = _pchip_end_slope(dx[..., -1:], dx[..., -2:-1], dlin[..., -1:], dlin[..., -2:-1])
         dydx = (np.sign(dyup) + np.sign(dydn)) * np.min(
             [abs(dyup), abs(dydn), abs(0.5 * dydx)], axis=0
         )

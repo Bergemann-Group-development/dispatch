@@ -85,7 +85,11 @@
       <div id="top-panel">
         <div id="nav-slot">{{ embed(roots.nav_fig) }}</div>
       </div>
-      <div id="canvas-wrap">{{ embed(roots.main_fig) }}</div>
+      <div id="canvas-wrap">{{ embed(roots.main_fig) }}
+        <!-- the correction view's Lines step: the selected line's CoG inversion beside the
+             reference spectrum (#main.corr-mode.corr-step-1) -->
+        <div id="corr-cog">{{ embed(roots.corr_cog) }}</div>
+      </div>
       <!-- shown in place of the (empty) canvas when nothing is loaded: an inline
            version of the Sessions modal, plus quick ways to get a first spectrum -->
       <div id="canvas-empty">
@@ -134,9 +138,13 @@
           <button class="step-tab abund-step-btn" data-step="2">Uncertainties</button>
         </div>
       </div>
-      <!-- abundance-correction view: reference spectrum (Lines) or ΔA scatter (Scatter),
-           the per-line table below, and a step switcher footer -->
-      <div id="corr-scatter">{{ embed(roots.corr_fig) }}</div>
+      <!-- abundance-correction view: reference spectrum + CoG inversion (Lines) or the two
+           ΔA diagnostic panels (Scatter), the per-line table below, and a step switcher
+           footer -->
+      <div id="corr-scatter">
+        <div class="scatter-pane">{{ embed(roots.corr_fig) }}</div>
+        <div class="scatter-pane">{{ embed(roots.corr_fig2) }}</div>
+      </div>
       <div id="corr-bottom">
         <div class="splitter splitter-row" data-resize="bottom" title="Drag to resize"></div>
         <div id="corr-table">{{ corr_table_html|safe }}</div></div>
@@ -285,10 +293,10 @@
         </div>
         <div class="hint">Computed from a model atom — open one in the left sidebar and use its
           <b>NLTE corrections…</b> action. Click a row to jump to the line on the 1D LTE
-          reference; untick a line to leave it out of the mean.</div>
-        <div id="corr3-fields">{{ corr3_html|safe }}</div>
-        <div class="hint">The Scatter step shows the line-to-line scatter of the corrections, with
-          the mean ΔA and its population σ.</div>
+          reference and see its curve-of-growth inversion beside it; untick a line to leave
+          it out of the mean.</div>
+        <div class="hint">The Scatter step shows the line-to-line scatter of the corrections
+          against excitation energy and reduced EW, with the mean ΔA and its σ.</div>
       </div>
       <!-- the model-atom panel: what it is, and the entry point of the correction modal -->
       <div class="atom-panel">
@@ -1319,7 +1327,7 @@
          .forEach(function (r) { r.classList.remove('row-selected'); });
     row.classList.add('row-selected');
   }
-  ['abund', 'ionbal'].forEach(function (prefix) {
+  ['abund', 'corr', 'ionbal'].forEach(function (prefix) {
     var table = document.getElementById(prefix + '-table');
     var pane = document.getElementById(prefix + '-scatter');
     if (table) {
@@ -1401,6 +1409,7 @@
     if (csort) { corrAction('sort', csort.dataset.sortcol); return; }
     var lrow = ev.target.closest('.corr-row');
     if (lrow && !ev.target.closest('.corr-line-chk')) {
+      selectAnalysisRow('corr', lrow);
       corrAction('jump-line', lrow.dataset.line);
     }
   });

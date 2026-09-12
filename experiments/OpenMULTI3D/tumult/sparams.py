@@ -593,7 +593,7 @@ def _solve_balance(request, result, opts, progress, cancel_token):
                     None, ladder, window=ln.fit_window, profile=result.profile,
                     x0=ln.lam0, batch_synth_fn=lambda _a, _s=specs: _s, renorm=renorm)
                 ew_err = float(ln.ew_err) if np.isfinite(ln.ew_err) else 0.0
-                inv = ab.cog_invert(a_grid, ew_grid, ln.ew, ew_err=ew_err)
+                inv = ab.cog_invert(a_grid, ew_grid, ln.ew, ew_err=ew_err, lam0_aa=ln.lam0)
                 if inv["out_of_range"]:
                     # recentre a doubled ladder on the extrapolated abundance and try once
                     # more — the guess may simply be far off at first
@@ -605,7 +605,7 @@ def _solve_balance(request, result, opts, progress, cancel_token):
                     a_grid, ew_grid = ab.build_cog(
                         None, ladder2, window=ln.fit_window, profile=result.profile,
                         x0=ln.lam0, batch_synth_fn=lambda _a, _s=specs: _s, renorm=renorm)
-                    inv = ab.cog_invert(a_grid, ew_grid, ln.ew, ew_err=ew_err)
+                    inv = ab.cog_invert(a_grid, ew_grid, ln.ew, ew_err=ew_err, lam0_aa=ln.lam0)
                 if inv["out_of_range"]:
                     ln.a = float("nan")
                     ln.flags = tuple(f for f in ln.flags if f != "out_of_range") \

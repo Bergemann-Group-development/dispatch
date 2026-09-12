@@ -12,7 +12,7 @@ MODULE nlte_patch_mod
     red_cut, blue_cut, logf_cut, atom_data_t, atom_trans_t, &
     nq_fac, nq_min, nq_max, disable_bf, disable_bb, level_partf, &
     fmin, cbbesc, cbfesc, cbbhsc, cbfhsc, colscale, ch0_hmip, &
-    ng_step, ng_start, ng_global, save_rate_matrix, legacy_freql, sor_w
+    ng_step, ng_start, ng_global, save_rate_matrix, legacy_freql, sor_w, line_grid_file
   USE trans_mod, only: line_type, cont_type, transition_type
   USE const_mod, only: CC
   USE ion_mod, only: ion_type, particle_type, debye_shield, massive_type
@@ -125,7 +125,7 @@ contains
       overlapping_bb, detailed_absmet, &
       nq_fac, nq_min, nq_max, cbbesc, cbfesc, cbbhsc, cbfhsc, colscale, &
       disable_bf, disable_bb, fmin, &
-      ch0_hmip, legacy_freql
+      ch0_hmip, legacy_freql, line_grid_file
     namelist /line_mask/ in_lines
     !-----------------------------------------------------------------------------
     call trace%begin('nlte_patch_t%pre_init_atom', itimer=itimer)
@@ -376,7 +376,8 @@ contains
       do i=1, size(atoms)
         call atoms(i)%trans%append_transitions(sp, bb=bb, bf=bf)
       end do
-      if (sort) call sp%sort()
+      ! a file grid is shared by all lines, so it has to be located by wavelength
+      if (sort .or. (bb .and. line_grid_file /= '')) call sp%sort()
       ! restrict the output grid to a bare aa_red/aa_blue window (crop_output); a no-op
       ! otherwise. Must precede set_ired_iblue, which is recomputed against this grid.
       if (option(crop)) call sp%crop()

@@ -91,6 +91,38 @@ def test_band_ready_does_not_wait_for_native_calculation():
         assert worker.submit(linestrength.band_ready, star, 'none', 1, 2).result(1) is False
 
 
+def test_annotation_folder_omits_molecules_only_above_view_limit(tmp_path):
+    from pathlib import Path
+    from tumult.linestrength import LineStrengths, MOLECULE_VIEW_LIMIT_AA
+
+    def line_file(name, species):
+        path = tmp_path / name
+        path.write_text(f"'{species}'\n'0' 0\n")
+        return path
+
+    atom = line_file("atoms.txt", "Fe I")
+    hydrogen = line_file("hydrogen", "H I  descriptive header")
+    line_file("tio.txt", "TiO")
+    strengths = LineStrengths(master_path=atom, linelist=tmp_path, refstar="gdwarf")
+    obj = SimpleNamespace(meta={})
+
+    _star, narrow, _band = strengths.request_for(
+        obj, 5000.0, 5000.0 + MOLECULE_VIEW_LIMIT_AA)
+    assert Path(narrow) == tmp_path
+
+    _star, wide, _band = strengths.request_for(
+        obj, 5000.0, 5000.0 + MOLECULE_VIEW_LIMIT_AA + 0.01)
+    assert tuple(path.name for path in wide) == (atom.name, hydrogen.name)
+
+    catalog = tmp_path.parent / "catalog.txt"
+    catalog.write_text(
+        "'Fe I'\n'0' 1\n5000.0 1.0 -1.0 0 0 0 0 0\n"
+        "'TiO'\n'0' 1\n5001.0 1.0 -1.0 0 0 0 0 0\n")
+    strengths.master_path = str(catalog)
+    source = strengths.lines_for(obj, 5000.0, 5000.0 + MOLECULE_VIEW_LIMIT_AA + 0.01)
+    assert source.lines.ion.tolist() == ["Fe I"]
+
+
 def test_normalisation_uses_snapshot_and_discards_stale_completion():
     from normalisetool import NormaliseTool
     tool = NormaliseTool.__new__(NormaliseTool)
