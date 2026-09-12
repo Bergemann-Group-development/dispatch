@@ -951,6 +951,27 @@ def test_broken_config_is_reported_and_never_replaced_from_the_gui(tmp_path, mon
     assert [o.name for o in ctx.canvas.objects] == ["obs"]
 
 
+def test_a_rejected_config_does_not_block_opening_a_file(tmp_path, monkeypatch):
+    """The recent-files entry is a convenience: when the store refuses the config, the
+    footer says so at warn level, the config is left alone and the pick still loads."""
+    import store
+
+    path = tmp_path / "cfg.json"
+    monkeypatch.setattr(store, "CONFIG_PATH", path)
+    document, ctx = _build_document()
+    ticks = _Ticks(document, monkeypatch)
+    path.write_text('{"version": 7, "preferences": {}, "recent_files": [], "sessions": []}')
+    spectrum = _spectrum_file(tmp_path)
+    picker = document.select_one({"name": "file_picker"})
+    picker.children[2].value = f"{spectrum}\x001"
+    assert ticks.settle(lambda: [o.name for o in ctx.canvas.objects] == ["obs.txt"])
+    footer = _footer(document)
+    assert "Recent files not updated" in footer and "version 7 is not supported" in footer
+    assert "status-warn" in footer
+    assert '"recent_files": []' in path.read_text()
+    assert not ctx.jobs.retained
+
+
 # --- save slots: the whole object workspace, restored transactionally -----------------
 ATOM_FIXTURE = Path(__file__).resolve().parents[1] / "input" / "atoms" / "atom.ba06"
 
@@ -1024,6 +1045,25 @@ def _populate(ctx, tmp_path):
     canvas.main.x_range.start, canvas.main.x_range.end = 5001.0, 5002.5
     return SimpleNamespace(obs=obs.uid, synth=synth.uid, mset=mset.uid, atom=atom.uid,
                            obs_path=str(obs_path))
+
+
+def test_object_panel_close_actions_leave_each_view(tmp_path, monkeypatch):
+    """The × of every object view (mask set, atom, the three result views) reaches the
+    ``object-actions`` channel as the tool's name and stands the tool down, leaving the
+    sidebar without an active tool and the mode class off."""
+    document, ctx = _build_document()
+    ids = _populate(ctx, tmp_path)
+    tools = ctx.tools
+    tools._tools["atom"].select(ids.atom)
+    tools._tools["ionbal"].select_result(tools._tools["ionbal"].results[0].uid)
+    for name in ("linemask", "atom", "abundance", "abundcorr", "ionbal"):
+        tool = tools._tools[name]
+        tools.activate(name)
+        assert tools.active_name() == name, name
+        assert all(b.value.startswith("on:") for b in tool._mode_bridges), name
+        _send_action(document, f"{name}:-:{name}")
+        assert tools.active_name() is None and not tool.active, name
+        assert all(b.value.startswith("off:") for b in tool._mode_bridges), name
 
 
 def _saved_slot(tmp_path, monkeypatch, populate=_populate):

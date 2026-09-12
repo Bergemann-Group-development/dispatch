@@ -397,7 +397,17 @@ def build():
         except Exception:
             pass
 
-    # (the EW / Filter / Normalise tools create and own their bridges via the context)
+    def remember_recent(path):
+        """Add ``path`` to the recent-files list. The list is a convenience, so a config
+        the store rejects (unreadable, unsupported or unwritable) is reported in the footer
+        and logged, and the open that asked for it goes ahead."""
+        try:
+            store.add_recent(path)
+        except store.ConfigError as exc:
+            logging.exception("Could not record %s as a recent file", path)
+            notify(f"Recent files not updated: {exc}", level="warn")
+
+    # (the Filter / Normalise / Mask tools create and own their bridges via the context)
     linelist_bridge = B.html("linelist-table")
     linelist_mode_bridge = B.cls("#main", "linelist-mode")  # the line-list bottom panel
     # the panel's search field: its own channel, since a query holds spaces and may hold
@@ -807,7 +817,7 @@ def build():
 
     def on_atom_select(filepath):
         from tumult.atom import AtomClass
-        store.add_recent(filepath)
+        remember_recent(filepath)
         name = Path(filepath).name
         load_async(name, lambda token=None: AtomClass(str(filepath)),
                    lambda atom: atomtool.add(filepath, atom), path=filepath)
@@ -1339,7 +1349,7 @@ def build():
             update_all(canvas)
 
     def on_select(filepath):
-        store.add_recent(filepath)
+        remember_recent(filepath)
         name = Path(filepath).name
         load_async(name, lambda token=None: load_file(filepath),
                    lambda spec: canvas.add_object(spec, name=name,
@@ -1504,7 +1514,7 @@ def build():
         folder = getattr(picker, "current_dir", None)
         if folder is None or not is_run(folder):
             return
-        store.add_recent(folder)
+        remember_recent(folder)
         name = Path(folder).name
 
         def add(spec):
