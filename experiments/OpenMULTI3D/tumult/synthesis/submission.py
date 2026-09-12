@@ -1,7 +1,6 @@
 """Durable asynchronous submission of the same resolved calculation used synchronously."""
 from __future__ import annotations
 
-from concurrent.futures import Future
 from copy import deepcopy
 import json
 import os
@@ -37,11 +36,14 @@ def _read(folder):
 class WorkflowHandle:
     """Stable job identity with status, cancellation and durable result retrieval."""
 
-    def __init__(self, folder, future=None, token=None):
+    def __init__(self, folder, future=None, token=None, update=None):
         self.folder = Path(folder).expanduser().resolve()
         self.id = self.folder.name
         self._future = future
         self._token = token
+        # writes terminal state for a workflow whose worker never runs (queued cancellation)
+        self._update = update
+        self._callbacks = []    # done callbacks owed after a queued cancellation
 
     def _record(self):
         record = _read(self.folder)
@@ -103,18 +105,71 @@ class WorkflowHandle:
         return tuple(dict.fromkeys(logs))
 
     def cancel(self):
-        """Cancel this subscriber's calculation; never signal an unverified saved PID."""
+        """Cancel this subscriber's calculation; never signal an unverified saved PID.
+
+        A workflow still queued behind other pool work has its future cancelled, so the
+        worker never starts; its record still settles as ``cancelled``. A running one is
+        told through its token and settles when the worker notices."""
         if self._token is None or self._future is None or self._future.done():
             return False
         self._token.cancel()
+        if self._future.cancel():
+            self._settle_unstarted('cancelled')
         return True
 
+    def _settle_unstarted(self, state, error=None):
+        """Persist the terminal state of a workflow whose worker never ran, then tell
+        its done callbacks; they observe the settled record, not the queued one."""
+        values = dict(state=state, phase=state, ended=time.time())
+        if error is not None:
+            values['error'] = error
+        with _lock:
+            if self._update is not None:
+                self._update(**values)
+            _live.pop(self.id, None)
+            owed, self._callbacks = self._callbacks, None
+        for callback in owed:
+            callback(self)
+
+    @property
+    def done(self):
+        """Whether the worker has settled, or never will (opened without a live future)."""
+        return self._future is None or self._future.done()
+
+    def add_done_callback(self, callback):
+        """Call ``callback(handle)`` once the workflow settles, from the worker thread
+        or, for a queued cancellation, the cancelling one; immediately if it already has.
+        Never blocks, and the record is terminal by the time the callback runs."""
+        if self._future is None:
+            callback(self)
+            return
+        with _lock:
+            if self._callbacks is not None:
+                self._callbacks.append(callback)
+                # a worker-run future settles its own record before completing; a
+                # cancelled one is reported by _settle_unstarted instead
+                self._future.add_done_callback(
+                    lambda future: None if future.cancelled() else callback(self))
+                return
+        callback(self)      # settled by a queued cancellation before registration
+
     def result(self, timeout=None):
+        """The saved result. Raises :class:`CancelledError` for a cancelled workflow and
+        ``RuntimeError`` for a failed or interrupted one; waits on a live future only if
+        the workflow has not settled, so a done callback may call this freely."""
         if self._future is not None:
-            self._future.result(timeout=timeout)
+            try:
+                self._future.result(timeout=timeout)
+            except TimeoutError:
+                raise
+            except BaseException:
+                pass    # cancelled or failed: the record below names the outcome
         state = self.status
+        if state == 'cancelled':
+            raise CancelledError(f'Workflow {self.id} was cancelled')
         if state != 'finished':
-            raise RuntimeError(f'Workflow {self.id} is {state}')
+            raise RuntimeError(f'Workflow {self.id} is {state}: '
+                               f'{self._record().get("error") or "no result"}')
         return SynthesisResult.load(self.folder / 'result')
 
     def to_dict(self):
@@ -136,13 +191,14 @@ def submit(request, *, root=None):
               'result': None}
     _atomic(folder / RECORD, record)
     token = CancelToken()
-    handle = WorkflowHandle(folder, token=token)
 
     def update(**values):
         with _lock:
             current = _read(folder) or record
             current.update(values)
             _atomic(folder / RECORD, current)
+
+    handle = WorkflowHandle(folder, token=token, update=update)
 
     runs = []
 
@@ -178,7 +234,11 @@ def submit(request, *, root=None):
 
     with _lock:
         _live[identity] = handle
-        handle._future = WORKFLOWS.submit(work)
+        try:
+            handle._future = WORKFLOWS.submit(work)
+        except BaseException as exc:
+            handle._settle_unstarted('failed', error=f'{type(exc).__name__}: {exc}')
+            raise
     return handle
 
 

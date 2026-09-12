@@ -432,11 +432,14 @@ class AbundCorrTool(AbundanceWizard):
         if ref_grid is None:
             self.notify("Flag a 1D LTE reference grid in Preferences → Synthesis first.")
             return
+        # every option is captured now and carried through both stages: reopening the
+        # modal while the reference runs must not alter the admitted calculation
         v = self.form1.values()
-        profile, ew_min = str(v["profile"]), float(v["ew_min"])
-        line_grid = bool(v.get("line_grid", True))
-        linelist = bool(v.get("linelist", False))
-        if profile == "trapz" and not line_grid:
+        opts = CorrectionOpts(profile=str(v["profile"]), ew_min=float(v["ew_min"]),
+                              limit=float(v.get("limit") or DEFAULTS["limit"]),
+                              line_grid=bool(v.get("line_grid", True)),
+                              linelist=bool(v.get("linelist", False)))
+        if opts.profile == "trapz" and not opts.line_grid:
             self.notify("The trapezoidal width needs the line grid for its windows; "
                         "switch it on or pick a fitted profile.")
             return
@@ -445,14 +448,11 @@ class AbundCorrTool(AbundanceWizard):
         ref_grid = deepcopy(ref_grid)
         atom = obj.path
         loader = lambda _res, token, progress: measure_reference_lines(
-            request, atom, ref_grid=ref_grid,
-            opts=CorrectionOpts(profile=profile, ew_min=ew_min, line_grid=line_grid,
-                                linelist=linelist),
-            cancel_token=token)
+            request, atom, ref_grid=ref_grid, opts=opts, cancel_token=token)
         self.jobs.submit(f"corr-reference:{obj.symbol}", loader,
-                         lambda result: self._on_reference_done(result, request))
+                         lambda result: self._on_reference_done(result, request, opts))
 
-    def _on_reference_done(self, result, request):
+    def _on_reference_done(self, result, request, opts):
         from dataclasses import asdict
         result.synthesis = asdict(request)     # what names the result (stage 2 rewrites it)
         result.name = self._result_label(result)
@@ -467,14 +467,13 @@ class AbundCorrTool(AbundanceWizard):
         self.select_result(result.uid)
         self.notify(f"{result.symbol}: {len(result.lines)} reference lines — computing "
                     "NLTE corrections…")
-        self._run_corrections(result, request)
+        self._run_corrections(result, request, opts)
 
-    def _run_corrections(self, res, request):
+    def _run_corrections(self, res, request, opts):
+        """Stage 2 on the options stage 1 was admitted with; the live form is not read."""
         atom = res.atom_path
-        limit = float(self.form1.values().get("limit") or DEFAULTS["limit"])
         loader = lambda working, token, progress: run_nlte_corrections(
-            request, working, atom, opts=CorrectionOpts(profile=working.profile, limit=limit),
-            progress=progress, cancel_token=token)
+            request, working, atom, opts=opts, progress=progress, cancel_token=token)
         self.jobs.submit(f"corr-synth:{res.symbol}", loader, self._on_corr_done, result=res)
 
     def _on_corr_done(self, result):

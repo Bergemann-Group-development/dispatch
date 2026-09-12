@@ -58,7 +58,10 @@ set's synth windows) and the empty landing page (blank λ fields).
   Radiative transfer (model atoms in NLTE). Values persist in the `synth_run` store
   section so the modal reopens with the last configuration.
 - Footer: **Synthesise**, Cancel. The result is a synth object on the canvas with the
-  Info-tab provenance; a run from a mask set records the set name.
+  Info-tab provenance; a run from a mask set records the set name. A mask-set or 3D
+  snapshot synthesis is submitted once as a durable workflow (`tumult.synthesis.submit`)
+  whose record lives under the synthesis output's `_workflows/`; its Processes row holds
+  the handle, cancels it whether queued or running, and closing the tab leaves it running.
 
 Departure-coefficient solves are not started from this modal; their entry point is decided
 separately. NLTE abundance corrections start from a model atom (see below). Grid
@@ -135,8 +138,10 @@ corrections…**, which opens the correction modal with this atom fixed.
 - Footer: **Compute**. One chained job: the 1D LTE reference is synthesised from the atom
   alone and its lines measured; the reference spectrum is added to the canvas and the
   correction object appears under the atom as soon as that stage finishes; the NLTE
-  corrections then stream into the table line by line. Cancelling from Processes stops the
-  running stage.
+  corrections then stream into the table line by line. Every measurement setting is
+  captured when Compute is pressed and carried through both stages, so reopening the modal
+  and editing it while the reference runs does not alter that calculation. Cancelling from
+  Processes stops the running stage and prevents the next one from starting.
 
 ### Correction results
 

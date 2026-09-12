@@ -13,7 +13,26 @@ Subclasses set ``name`` and typically call :meth:`own_mode_bridges` /
 """
 from __future__ import annotations
 
+from functools import wraps
+
 from htmlbridge import pulse
+
+
+def suppress_callbacks(method):
+    """Run a synchronous setter with ``self._suppress`` raised, so the Bokeh change
+    callbacks its writes trigger (a knot or crosshair drag handler) do not refit.
+
+    The previous flag is restored in ``finally``, so a failing write cannot leave later
+    user drags ignored and a nested suppressed call leaves the outer one suppressed."""
+    @wraps(method)
+    def wrapped(self, *args, **kwargs):
+        previous = self._suppress
+        self._suppress = True
+        try:
+            return method(self, *args, **kwargs)
+        finally:
+            self._suppress = previous
+    return wrapped
 
 
 class Tool:

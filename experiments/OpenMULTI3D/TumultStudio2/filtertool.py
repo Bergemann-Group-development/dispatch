@@ -32,7 +32,7 @@ from controls import Field, Form
 from debounce import Debouncer
 from htmlbridge import pulse, toggle
 from tumult.spectrum_io import Spectrum
-from tool import Tool
+from tool import Tool, suppress_callbacks
 
 N_DISPLAY = 4000   # decimate power spectra for plotting
 RED = "#e05c5c"
@@ -301,12 +301,11 @@ class FilterTool(Tool):
             self._lines[obj.uid] = r
 
     # --- crosshair drag -> debounced refit --------------------------------
+    @suppress_callbacks
     def _set_cross(self, x, y):
-        self._suppress = True
         self.cross.data = dict(x=[x], y=[y])
         self.vline.location = x
         self.hline.location = y
-        self._suppress = False
 
     def _on_drag(self, attr, old, new):
         if self._suppress or not self.active:

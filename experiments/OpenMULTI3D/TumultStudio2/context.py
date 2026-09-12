@@ -18,6 +18,8 @@ hand-threaded through ``update_all``. The context replaces that plumbing:
   bridge exists; safe to call before that - it no-ops).
 * ``ctx.run_busy`` / ``ctx.schedule`` / ``ctx.submit`` - deferred-work helpers
   (installed by main; ``submit`` is the background loader ``load_async``).
+* ``ctx.submit_workflow`` - queue one durable synthesis request and deliver its result
+  to this document when it settles; ``ctx.workflows`` keeps the pending handles.
 * ``ctx.busy``    - raise/lower the footer progress bar without deferring anything, for
   work that already owns a tick of its own (``run_busy`` is this plus the deferral).
 * ``ctx.emit`` / ``ctx.subscribe`` - a minimal synchronous event bus. Events in use:
@@ -46,10 +48,12 @@ class AppContext:
         self.annot = None      # LineAnnotations, installed by main once the canvas exists
         self.strengths = None  # LineStrengths, installed by main alongside it
         self.pending = {}      # id -> name of each background run (the Processes panel)
+        self.workflows = {}    # id -> WorkflowHandle of each pending durable synthesis
         self.notify = lambda *a, **k: None
         self.run_busy = lambda fn: fn()
         self.busy = lambda on: None
         self.submit = None
+        self.submit_workflow = None  # (name, request, on_done) -> WorkflowHandle; by main
         self.execution = None       # shared dispatch service; bound by main
         self._subscribers = {}
 

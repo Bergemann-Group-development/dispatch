@@ -610,3 +610,100 @@ def test_snapshot_departures_are_reused_across_windows(tmp_path, monkeypatch):
     assert sum('dep_' in n for n in names) == 1               # one solve
     assert len({n for n in names if 'spec_' in n}) == 2       # two distinct spectra
     assert sum('spec_' in n for n in names) == 2              # the repeat did not re-run
+
+
+# --- durable workflow handles ------------------------------------------------------------
+def _stub_request(root):
+    """A resolvable request whose execution is stubbed; nothing here runs dispatch."""
+    from tumult.synthesis.request import SynthRequest
+    return SynthRequest(prefs={'abund_file': None, 'dispatch_cwd': str(root)},
+                        grid={'folder': ''},
+                        run_vals={'abundances': '', 'relative_abundances': False,
+                                  'mode': 'LTE'},
+                        target=(5750.0, 4.4, 0.0, 1.0),
+                        masks=({'fit': (5000., 5001.), 'synth': (5000., 5001.)},))
+
+
+def _stub_result(resolved):
+    import numpy as np
+    from tumult.spectrum import Spectrum
+    from tumult.synthesis.request import SynthesisResult
+    xx = np.linspace(5000., 5001., 5)
+    return SynthesisResult((Spectrum(xx, np.ones_like(xx)),), (), resolved.request, {})
+
+
+def test_workflow_cancelled_while_queued_settles_without_a_worker(tmp_path, monkeypatch):
+    """Cancelling a queued workflow cancels its future, so no pool thread is ever spent
+    on it, and its record still ends as cancelled; the live handle table lets it go."""
+    from tumult.synthesis import submission, workflows
+
+    ran = []
+    monkeypatch.setattr(workflows, 'execute_request',
+                        lambda resolved, cancel_token=None: ran.append(1) or _stub_result(resolved))
+    gate = threading.Event()
+    pool = concurrent.futures.ThreadPoolExecutor(1)
+    monkeypatch.setattr(submission, 'WORKFLOWS', pool)
+    blocker = pool.submit(gate.wait, 5)
+    try:
+        handle = submission.submit(_stub_request(tmp_path))
+        seen = []
+        handle.add_done_callback(lambda h: seen.append(h.status))
+        assert handle.status == 'queued' and handle.id in submission._live
+        assert handle.cancel() is True
+        assert seen == ['cancelled']        # the callback sees the settled record
+        assert handle.done and handle.status == 'cancelled'
+        handle.add_done_callback(lambda h: seen.append(h.status))   # late registration
+        assert seen == ['cancelled'] * 2
+        assert handle.id not in submission._live
+        with pytest.raises(CancelledError):
+            handle.result()
+        assert handle.cancel() is False              # already settled
+    finally:
+        gate.set()
+        blocker.result(3)
+        pool.shutdown(wait=True)
+    assert not ran
+    reopened = submission.open_workflow(handle.folder)
+    assert reopened.status == 'cancelled' and reopened.done
+
+
+def test_workflow_cancelled_while_running_and_settled_result_is_reloadable(tmp_path, monkeypatch):
+    from tumult.synthesis import submission, workflows
+
+    started, release = threading.Event(), threading.Event()
+
+    def execute(resolved, cancel_token=None):
+        started.set()
+        assert release.wait(5)
+        cancel_token.check()
+        return _stub_result(resolved)
+
+    monkeypatch.setattr(workflows, 'execute_request', execute)
+    handle = submission.submit(_stub_request(tmp_path))
+    assert started.wait(5) and handle.status == 'running'
+    assert handle.cancel() is True
+    release.set()
+    with pytest.raises(CancelledError):
+        handle.result(timeout=5)
+    assert handle.status == 'cancelled' and handle.id not in submission._live
+
+    started.clear()
+    release.set()
+    handle = submission.submit(_stub_request(tmp_path))
+    result = handle.result(timeout=5)
+    assert handle.status == 'finished' and len(result.spectra) == 1
+    assert submission.open_workflow(handle.folder).result().spectra[0].values[0][0] == 5000.
+
+
+def test_workflow_submission_failure_is_recorded(tmp_path, monkeypatch):
+    from tumult.synthesis import submission
+
+    pool = concurrent.futures.ThreadPoolExecutor(1)
+    pool.shutdown()
+    monkeypatch.setattr(submission, 'WORKFLOWS', pool)
+    with pytest.raises(RuntimeError):
+        submission.submit(_stub_request(tmp_path))
+    handles = submission.discover_workflows(tmp_path / 'synth')
+    assert [h.status for h in handles] == ['failed']
+    assert handles[0].id not in submission._live
+    assert 'RuntimeError' in handles[0].to_dict()['error']

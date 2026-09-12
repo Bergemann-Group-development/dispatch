@@ -24,7 +24,7 @@ import html
 from pathlib import Path
 
 import store
-from tumult.synthesis import GridTarget, Snapshot3D, submit as submit_synthesis
+from tumult.synthesis import GridTarget, Snapshot3D
 from tumult.synthesis import workflows as synth
 from atompicker import AtomPicker
 from controls import Field, Form
@@ -49,10 +49,12 @@ def _human_size(n):
 
 
 class SynthModal:
-    def __init__(self, ctx, submit, add, on_warn=None):
+    def __init__(self, ctx, submit, submit_workflow, add, on_warn=None):
         self.ctx = ctx
         self.canvas = ctx.canvas
         self._submit = submit    # (name, loader, on_done, detached=False) -> background run
+        # (name, request, on_done) -> WorkflowHandle: one durable, detached synthesis
+        self._submit_workflow = submit_workflow
         self._add = add          # (spec, name, meta=None, conv=None) -> add to the canvas
         self.on_warn = on_warn   # push True/False when configured files go missing/found
         self.missing = []        # path prefs currently pointing at non-existent files
@@ -533,15 +535,7 @@ class SynthModal:
                     suffix = f"·{index}" if len(result.spectra) > 1 else ""
                     self._add(spec, name + suffix, meta=meta)
 
-            def run_request(token=None):
-                handle = submit_synthesis(request)
-                detach = token.add_callback(handle.cancel) if token is not None else lambda: None
-                try:
-                    return handle.result()
-                finally:
-                    detach()
-
-            self._submit(name, run_request, add_result, detached=True)
+            self._submit_workflow(name, request, add_result)
         else:
             self._submit(name,
                          lambda token=None: synth.compute(target, prefs, rv, xmin, xmax,

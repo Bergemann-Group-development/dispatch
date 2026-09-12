@@ -380,3 +380,269 @@ def test_mask_tool_range_feeds_line_masks_and_the_synthesis_modal():
     assert "Fit" in modal.actions_html()
     # the fit synthesises the span of the synth windows and compares inside the fit windows
     assert modal._fit_windows() == (5000.5, 5006.0, [(5004.5, 5005.5), (5001.0, 5002.0)])
+
+
+# --- durable synthesis workflows on the document ---------------------------------------
+def _stub_request(root):
+    """A resolvable synthesis request whose execution the tests stub out."""
+    from tumult.synthesis.request import SynthRequest
+    return SynthRequest(prefs={"abund_file": None, "dispatch_cwd": str(root)},
+                        grid={"folder": ""},
+                        run_vals={"abundances": "", "relative_abundances": False,
+                                  "mode": "LTE"},
+                        target=(5750.0, 4.4, 0.0, 1.0),
+                        masks=({"fit": (5000., 5001.), "synth": (5000., 5001.)},))
+
+
+def _stub_result(resolved):
+    from tumult.synthesis.request import SynthesisResult
+    xx = np.linspace(5000., 5001., 5)
+    return SynthesisResult((Spectrum(xx, np.ones_like(xx)),), (), resolved.request, {})
+
+
+class _Ticks:
+    """Collects the document's next-tick callbacks so a test runs them deliberately."""
+
+    def __init__(self, document, monkeypatch):
+        import threading
+        self.queued, self.arrived, self.total = [], threading.Event(), 0
+
+        def add(callback):
+            self.queued.append(callback)
+            self.total += 1
+            self.arrived.set()
+        monkeypatch.setattr(document, "add_next_tick_callback", add)
+
+    def wait(self, total, timeout=10):
+        """Whether ``total`` callbacks have been scheduled so far, within ``timeout``."""
+        import time
+        deadline = time.monotonic() + timeout
+        while self.total < total and time.monotonic() < deadline:
+            self.arrived.wait(0.2)
+            self.arrived.clear()
+        return self.total >= total
+
+    def run(self):
+        while self.queued:
+            self.queued.pop(0)()
+
+
+def _send_action(document, value):
+    """What the page does when a sidebar button is clicked: write the action channel."""
+    document.select_one({"name": "object-actions"}).value = value
+
+
+def test_four_overlapping_workflow_submissions_settle_on_the_document(tmp_path, monkeypatch):
+    """Each durable synthesis is submitted once to the WORKFLOWS pool; four at once all
+    run concurrently (none waits on another queued job) and deliver to the document."""
+    import threading
+    from tumult.synthesis import workflows
+
+    document, ctx = _build_document()
+    ticks = _Ticks(document, monkeypatch)
+    barrier = threading.Barrier(4, timeout=10)
+
+    def execute(resolved, cancel_token=None):
+        barrier.wait()                      # deadlocks unless all four workers are live
+        return _stub_result(resolved)
+
+    monkeypatch.setattr(workflows, "execute_request", execute)
+    delivered = []
+    handles = [ctx.submit_workflow(f"synth-{i}", _stub_request(tmp_path), delivered.append)
+               for i in range(4)]
+    assert len(ctx.pending) == 4 and set(ctx.workflows.values()) == set(handles)
+    assert len({h.id for h in handles}) == 4
+    assert ticks.wait(4), "every workflow must settle and schedule its delivery"
+    assert all(h.done and h.status == "finished" for h in handles)
+    assert not delivered                    # nothing reaches the workspace off-thread
+    ticks.run()
+    assert len(delivered) == 4 and all(len(r.spectra) == 1 for r in delivered)
+    assert not ctx.pending and not ctx.workflows
+
+
+def test_queued_workflow_cancelled_from_the_processes_panel_settles(tmp_path, monkeypatch):
+    """Cancelling a still-queued workflow through its Processes row cancels its future,
+    records it as cancelled, and clears the row and the live handle without a worker."""
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    from tumult.synthesis import submission, workflows
+
+    document, ctx = _build_document()
+    ticks = _Ticks(document, monkeypatch)
+    monkeypatch.setattr(workflows, "execute_request",
+                        lambda *a, **k: pytest.fail("a cancelled workflow ran"))
+    gate = threading.Event()
+    pool = ThreadPoolExecutor(1)
+    monkeypatch.setattr(submission, "WORKFLOWS", pool)
+    blocker = pool.submit(gate.wait, 10)
+    try:
+        delivered = []
+        handle = ctx.submit_workflow("queued", _stub_request(tmp_path), delivered.append)
+        (pid, name), = ctx.pending.items()
+        assert name == "queued" and handle.status == "queued"
+        _send_action(document, f"cancel-pending:{pid}:1")
+        assert handle.done and handle.status == "cancelled"
+        assert handle.id not in submission._live
+        assert ticks.wait(1)
+        ticks.run()
+        assert not ctx.pending and not ctx.workflows and not delivered
+    finally:
+        gate.set()
+        blocker.result(10)
+        pool.shutdown(wait=True)
+
+
+def test_closing_a_session_leaves_a_durable_workflow_running(tmp_path, monkeypatch):
+    import threading
+    from tumult.synthesis import workflows
+
+    document, ctx = _build_document()
+    _Ticks(document, monkeypatch)
+    started, release, tokens = threading.Event(), threading.Event(), []
+
+    def execute(resolved, cancel_token=None):
+        tokens.append(cancel_token)
+        started.set()
+        assert release.wait(10)
+        return _stub_result(resolved)
+
+    monkeypatch.setattr(workflows, "execute_request", execute)
+    handle = ctx.submit_workflow("detached", _stub_request(tmp_path), lambda r: None)
+    assert started.wait(10)
+    for callback in list(document.session_destroyed_callbacks):
+        callback(None)
+    assert not tokens[0].cancelled
+    release.set()
+    assert handle.result(timeout=10).spectra
+
+
+# --- the correction tool's chained stages ----------------------------------------------
+def _correction_tool(ctx, monkeypatch, tmp_path):
+    """The document's correction tool with its modal inputs and result rendering stubbed."""
+    import abundcorrtool
+    from tumult.abundance import AbundanceResult
+
+    tool = ctx.tools._tools["abundcorr"]
+    tool._pending_atom = SimpleNamespace(symbol="Mg", path=str(tmp_path / "mg.atom"))
+    monkeypatch.setattr(tool.setup, "context", lambda: _stub_request(tmp_path))
+    monkeypatch.setattr(tool.grids, "reference_grid", lambda: {"folder": str(tmp_path)})
+    for name in ("add_spectrum", "set_step", "select_result", "_on_corr_done"):
+        monkeypatch.setattr(tool, name, lambda *a, **k: None)
+    calls = {"reference": [], "corrections": []}
+
+    def measure(request, atom, *, ref_grid, opts=None, cancel_token=None):
+        calls["reference"].append(opts)
+        result = AbundanceResult(element="Mg", symbol="Mg", summary={}, uid="corr",
+                                 atom_path=atom, profile=opts.profile)
+        result.ref_spec = None              # the stage attaches the reference spectrum
+        return result
+
+    def correct(request, working, atom, *, opts=None, progress=None, cancel_token=None):
+        calls["corrections"].append(opts)
+        return working
+
+    monkeypatch.setattr(abundcorrtool, "measure_reference_lines", measure)
+    monkeypatch.setattr(abundcorrtool, "run_nlte_corrections", correct)
+    return tool, calls
+
+
+def test_correction_options_are_captured_when_the_modal_submits(tmp_path, monkeypatch):
+    """Both stages run on the options captured at submission; editing the reopened modal
+    while the reference runs cannot change the admitted correction."""
+    document, ctx = _build_document()
+    ticks = _Ticks(document, monkeypatch)
+    tool, calls = _correction_tool(ctx, monkeypatch, tmp_path)
+    tool.form1.set_values(profile="gauss", ew_min=7.0, limit=0.75, line_grid=False,
+                          linelist=True)
+
+    tool.run()
+    assert ticks.wait(1)                    # the reference settled off-thread
+    tool.form1.set_values(limit=2.5, profile="trapz", ew_min=1.0)
+    ticks.run()                             # delivers the reference, admits stage 2
+    assert ticks.wait(2) and len(calls["corrections"]) == 1
+    ticks.run()
+    for opts in calls["reference"] + calls["corrections"]:
+        assert (opts.profile, opts.ew_min, opts.limit, opts.line_grid, opts.linelist) == (
+            "gauss", 7.0, 0.75, False, True)
+    assert not ctx.pending
+
+
+def test_cancelling_the_reference_stage_prevents_the_correction_stage(tmp_path, monkeypatch):
+    import threading
+    import abundcorrtool
+
+    document, ctx = _build_document()
+    ticks = _Ticks(document, monkeypatch)
+    tool, calls = _correction_tool(ctx, monkeypatch, tmp_path)
+    started, release = threading.Event(), threading.Event()
+    measure = abundcorrtool.measure_reference_lines
+
+    def slow_measure(*args, **kwargs):
+        started.set()
+        assert release.wait(10)
+        return measure(*args, **kwargs)     # a worker that never looks at its token
+
+    monkeypatch.setattr(abundcorrtool, "run_nlte_corrections",
+                        lambda *a, **k: pytest.fail("stage 2 admitted after cancellation"))
+    monkeypatch.setattr(abundcorrtool, "measure_reference_lines", slow_measure)
+    tool.run()
+    assert started.wait(10)
+    (pid, _), = ctx.pending.items()
+    _send_action(document, f"cancel-pending:{pid}:1")
+    release.set()
+    assert ticks.wait(2)                    # the cancel notice, then the worker's settle
+    ticks.run()
+    assert len(calls["reference"]) == 1 and not calls["corrections"]
+    assert not tool.results and not ctx.pending
+
+
+# --- programmatic writes to the drag sources -------------------------------------------
+def test_callback_suppression_restores_the_previous_flag():
+    from filtertool import FilterTool
+    from normalisetool import NormaliseTool
+    from tool import suppress_callbacks
+
+    class Failing:
+        _suppress = False
+
+        @suppress_callbacks
+        def write(self):
+            assert self._suppress
+            raise ValueError("write failed")
+
+        @suppress_callbacks
+        def outer(self):
+            self.inner()
+            return self._suppress
+
+        @suppress_callbacks
+        def inner(self):
+            return "inner"
+
+    obj = Failing()
+    with pytest.raises(ValueError):
+        obj.write()
+    assert obj._suppress is False           # a failed write cannot mute later drags
+    assert obj.outer() is True and obj._suppress is False
+
+    dragged = []
+    filt = FilterTool.__new__(FilterTool)
+    filt._suppress, filt.active = False, True
+    filt.cross = ColumnDataSource(dict(x=[0.], y=[0.]))
+    filt.vline, filt.hline = SimpleNamespace(location=0.), SimpleNamespace(location=0.)
+    filt._debounce = lambda key, fn: dragged.append(key)
+    filt.cross.on_change("data", filt._on_drag)
+    filt._set_cross(1., 2.)
+    assert not dragged and filt.cross.data["x"] == [1.]
+    filt.cross.data = dict(x=[3.], y=[4.])  # a user drag still refits
+    assert dragged == ["refit"]
+
+    norm = NormaliseTool.__new__(NormaliseTool)
+    norm._suppress, norm.active = False, True
+    norm.knots = ColumnDataSource(dict(x=[], y=[]))
+    norm._debounce = lambda key, fn: dragged.append(key)
+    norm.knots.on_change("data", norm._on_knots)
+    norm._set_knots([1., 2.], [1., 1.])
+    assert dragged == ["refit"] and norm.knots.data["x"] == [1., 2.]
+    norm.knots.data = dict(x=[1.], y=[1.])
+    assert len(dragged) == 2 and norm._suppress is False

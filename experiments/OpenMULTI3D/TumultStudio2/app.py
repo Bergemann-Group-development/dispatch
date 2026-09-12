@@ -47,6 +47,7 @@ from atomtool import AtomTool  # noqa: E402
 from abundcorrtool import AbundCorrTool  # noqa: E402
 from ionbalance import IonBalanceTool  # noqa: E402
 from tumult.synthesis import workflows as synth  # noqa: E402  (CancelToken/CancelledError for cancellable loads)
+from tumult.synthesis import submit as submit_synthesis  # noqa: E402
 from filepicker import FilePicker  # noqa: E402
 from toolmanager import ToolManager  # noqa: E402
 from session import Workspace, ObjectSnap, FilterSnap  # noqa: E402
@@ -351,6 +352,9 @@ def build():
     pending = ctx.pending  # id -> name of each background run (the Processes panel)
     pending_futures = {}  # id -> Future, so a still-queued run can be cancelled before it starts
     pending_tokens = {}   # id -> synth.CancelToken, to hard-kill a running synthesis
+    # id -> WorkflowHandle of a durable synthesis; the handle owns that workflow's future
+    # and token, and its stable id names the on-disk record a later document can reopen
+    pending_workflows = ctx.workflows
     # id -> the file a pending load came from, for the picker's per-row spinners. Separate
     # from `pending` because that one is a display name and a synthesis has no file at all.
     pending_paths = {}
@@ -672,6 +676,8 @@ def build():
         ctx,
         submit=lambda name, loader, on_done, detached=False: load_async(
             name, loader, on_done, executor=_SYNTH_EXEC, detached=detached),
+        submit_workflow=lambda name, request, on_done: submit_workflow(
+            name, request, on_done),
         add=add_synth,
         on_warn=synth_on_warn)
 
@@ -889,6 +895,46 @@ def build():
         name, loader, on_done, executor=_SYNTH_EXEC, detached=detached)
     ctx.execution = synth.get_runtime()
 
+    def submit_workflow(name, request, on_done):
+        """Queue one durable synthesis workflow and deliver its result to this document
+        once its handle settles. Submission happens here, once; nothing waits on the
+        workflow from another pool thread, and the document thread never blocks on the
+        result. The workflow is detached: closing the tab leaves it running, and only its
+        Processes row cancels it, through the handle."""
+        pid = _nonce()
+        try:
+            handle = submit_synthesis(request)
+        except Exception as exc:
+            logging.exception("Could not submit %s", name)
+            notify(f"Could not submit {name}: {exc}", level="danger")
+            return None
+        pending[pid] = name
+        pending_heavy.add(pid)
+        pending_detached.add(pid)
+        pending_workflows[pid] = handle
+        # the row's cancel token forwards to the handle, so _settle can tell a cancelled
+        # workflow's late outcome from a wanted one the same way it does for loads
+        token = synth.CancelToken()
+        token.add_callback(handle.cancel)
+        pending_tokens[pid] = token
+        update_all(canvas)
+        doc = curdoc()
+
+        def settled(handle):             # worker thread (or the canceller's), never waits
+            try:
+                result = handle.result()
+            except synth.CancelledError:
+                _settle(doc, pid, name, None, None, None)
+            except Exception as exc:
+                _settle(doc, pid, name, None, None, exc)
+            else:
+                _settle(doc, pid, name, result, on_done, None)
+
+        handle.add_done_callback(settled)
+        return handle
+
+    ctx.submit_workflow = submit_workflow
+
     def session_closed(session_context):
         ctx.closed = True
         # Closing a tab cancels this document's work, except the jobs that asked not to
@@ -911,6 +957,7 @@ def build():
             pending_heavy.discard(pid)
             pending_detached.discard(pid)
             pending_futures.pop(pid, None)
+            pending_workflows.pop(pid, None)
             token = pending_tokens.pop(pid, None)
             if token is not None and token.cancelled:
                 update_all(canvas)       # user cancelled: drop whatever the run returned
@@ -945,7 +992,9 @@ def build():
             return
         token = pending_tokens.get(pid)
         if token is not None:
-            token.cancel()               # kill the dispatch process tree if it is running
+            # kill the dispatch process tree if it is running; a durable workflow's token
+            # forwards to its handle, which also cancels its still-queued future
+            token.cancel()
         fut = pending_futures.get(pid)
         if fut is not None and fut.cancel():
             # still queued (never started): work()/_settle won't run, so clean up here

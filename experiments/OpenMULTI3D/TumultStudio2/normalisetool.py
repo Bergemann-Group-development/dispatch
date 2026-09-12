@@ -23,7 +23,7 @@ from tumult.utils import pchip_mono
 from canvas import ACCENT
 from controls import Field, Form
 from debounce import Debouncer
-from tool import Tool
+from tool import Tool, suppress_callbacks
 from units import to_value
 
 RED = "#e05c5c"
@@ -335,9 +335,6 @@ class NormaliseTool(Tool):
         self._set_knots(to_value(np.asarray(kx_nat, float), obj.raw.xunit,
                                  self.canvas.xunit), ky)
 
+    @suppress_callbacks
     def _set_knots(self, kx, ky):
-        self._suppress = True
-        try:
-            self.knots.data = dict(x=list(map(float, kx)), y=list(map(float, ky)))
-        finally:
-            self._suppress = False
+        self.knots.data = dict(x=list(map(float, kx)), y=list(map(float, ky)))
