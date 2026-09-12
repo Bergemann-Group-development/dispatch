@@ -45,6 +45,20 @@ jobs and waits at most `runtime.SHUTDOWN_TIMEOUT_S` (10 s) for the pool workers.
 still running after that, such as an in-process HOP calculation, is reported by thread
 name in the log and left to finish on its own; it is never claimed stopped.
 
+## Saved sessions and preferences
+
+Save slots, preferences and recent files share one JSON config file (`.tumultstudio.json`
+in the server's working directory, or `TUMULT_CONFIG`), written by `store.py`. Every
+writer runs one serialised read-modify-write transaction under a process lock and a
+`flock` on `<config>.lock`, so tabs, threads and other local server processes sharing
+the path allocate distinct slot ids and lose no change; the file is replaced atomically
+from a writer-specific temporary file. A missing file starts empty; an unreadable,
+malformed, structurally invalid or unsupported-`version` file is a `store.ConfigError`
+naming the path and cause, and no writer replaces it with defaults. The Sessions modal
+reports *Saved* only after the replacement succeeded; a failed save or delete shows the
+destination and cause in the footer and leaves the previous file and the live workspace
+as they were, so the action can be retried once the cause is fixed.
+
 ## Toolbar
 
 `Annot | Filter [Filtered] Normalise | Mask`. The Synth and EW buttons are removed; the

@@ -14,6 +14,7 @@ docs/*
 tests/*
 !tests/test_execution.py
 !tests/test_ui_execution.py
+!tests/test_store.py
 !tests/test_flux_sets.py
 !tests/test_linemask.py
 !tests/test_linediag.py

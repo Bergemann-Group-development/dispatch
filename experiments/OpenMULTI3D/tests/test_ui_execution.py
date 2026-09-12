@@ -10,6 +10,14 @@ from tumult import Spectrum
 from tumult.synthesis.cancel import CancelToken
 
 
+@pytest.fixture(autouse=True)
+def _temporary_config(tmp_path, monkeypatch):
+    """Every document built here reads and writes a config of its own; the project's
+    ``.tumultstudio.json`` is neither consulted nor polluted."""
+    import store
+    monkeypatch.setattr(store, "CONFIG_PATH", tmp_path / "tumultstudio.json")
+
+
 def test_scatter_ranges_include_error_bars():
     from abundwizard import AbundanceWizard, PANEL_AXES
 
@@ -868,3 +876,88 @@ def test_late_completion_cannot_mutate_a_superseded_workspace(monkeypatch):
     callbacks.pop()()
     done(outcome)
     assert result.lines[0].a == 0. and not rendered and not completed
+
+
+# --- save slots: acknowledgements follow what happened on disk ----------------------
+def _session_action(document, value):
+    document.select_one({"name": "session-actions"}).value = value
+
+
+def _session_list(document):
+    return document.select_one({"name": "session-render"}).value
+
+
+def _with_spectrum(ctx):
+    x = np.arange(5000., 5010., .01)
+    ctx.canvas.add_object(Spectrum(x, np.ones_like(x)), name="obs",
+                          source=("file", "/nowhere/obs.fits"))
+
+
+def test_save_is_acknowledged_only_after_the_config_is_replaced(tmp_path, monkeypatch):
+    """A failed replacement reports the destination and cause, leaves the previous config
+    and the live workspace untouched, and the retry after the cause is fixed succeeds."""
+    import store
+
+    monkeypatch.setattr(store, "CONFIG_PATH", tmp_path / "cfg.json")
+    document, ctx = _build_document()
+    _with_spectrum(ctx)
+    _session_action(document, "save first 1")
+    assert "Saved “first”" in _footer(document)
+    assert 'data-sid="1"' in _session_list(document)
+    before = store.CONFIG_PATH.read_text()
+    replace = store.os.replace
+
+    def fail(src, dst):
+        raise OSError(28, "No space left on device")
+    monkeypatch.setattr(store.os, "replace", fail)
+    _session_action(document, "save second try 2")
+    footer = _footer(document)
+    assert "Save “second try” failed" in footer and "No space left on device" in footer
+    assert str(store.CONFIG_PATH) in footer
+    assert store.CONFIG_PATH.read_text() == before
+    assert 'data-sid="2"' not in _session_list(document)
+    assert [o.name for o in ctx.canvas.objects] == ["obs"]
+    assert not list(tmp_path.glob("*.tmp"))
+
+    monkeypatch.setattr(store.os, "replace", replace)  # the disk has room again
+    _session_action(document, "save second try 3")
+    assert "Saved “second try”" in _footer(document)
+    assert 'data-sid="2"' in _session_list(document)
+    assert [s["name"] for s in store.list_sessions()] == ["second try", "first"]
+
+
+def test_delete_failure_is_visible_and_keeps_the_slot(tmp_path, monkeypatch):
+    import store
+
+    monkeypatch.setattr(store, "CONFIG_PATH", tmp_path / "cfg.json")
+    document, ctx = _build_document()
+    _session_action(document, "save keep 1")
+    before = store.CONFIG_PATH.read_text()
+
+    def fail(src, dst):
+        raise PermissionError(13, "Permission denied")
+    monkeypatch.setattr(store.os, "replace", fail)
+    _session_action(document, "delete 1 2")
+    footer = _footer(document)
+    assert "Delete failed" in footer and "Permission denied" in footer
+    assert store.CONFIG_PATH.read_text() == before
+    assert 'data-sid="1"' in _session_list(document)
+    assert store.get_session(1) is not None
+
+
+def test_broken_config_is_reported_and_never_replaced_from_the_gui(tmp_path, monkeypatch):
+    """A config the store rejects (here an unsupported version) blocks saving, loading,
+    deleting and refreshing with the same named cause; the file is left as it was."""
+    import store
+
+    path = tmp_path / "cfg.json"
+    monkeypatch.setattr(store, "CONFIG_PATH", path)
+    document, ctx = _build_document()
+    _with_spectrum(ctx)
+    path.write_text('{"version": 7, "preferences": {}, "recent_files": [], "sessions": []}')
+    for action in ("save x 1", "load 1 2", "delete 1 3", "refresh 4"):
+        _session_action(document, action)
+        footer = _footer(document)
+        assert "version 7 is not supported" in footer and str(path) in footer, action
+    assert '"version": 7' in path.read_text()
+    assert [o.name for o in ctx.canvas.objects] == ["obs"]

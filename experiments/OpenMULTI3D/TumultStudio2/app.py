@@ -1090,28 +1090,54 @@ def build():
     sessions_bridge.value = sessions_html(store.list_sessions())  # seed initial list
 
     def render_sessions():
-        sessions_bridge.value = sessions_html(store.list_sessions())
+        """Re-read the slots into every session list; a config the store rejects leaves
+        the list as it was and reports why."""
+        try:
+            sessions_bridge.value = sessions_html(store.list_sessions())
+        except store.ConfigError as exc:
+            logging.exception("Could not list the saved sessions")
+            notify(f"Could not read saved sessions: {exc}", level="danger")
 
     def on_session_action(attr, old, new):
         if not new:
             return
         kind, _, rest = new.partition(" ")
         arg = rest.rsplit(" ", 1)[0]  # strip the trailing nonce
+        # every store call may raise ConfigError (unreadable/invalid config, failed
+        # replacement, lock timeout); the message names the path and the cause, and the
+        # live workspace stays as it is so the user can retry after fixing the cause.
         if kind == "save":
             name = arg.strip() or time.strftime("Save %Y-%m-%d %H:%M")
-            store.save_session(name, snapshot())
+            try:
+                store.save_session(name, snapshot())
+            except store.ConfigError as exc:
+                logging.exception("Could not save the session %r", name)
+                notify(f"Save “{name}” failed: {exc}", level="danger")
+                return
             render_sessions()
             notify(f"Saved “{name}”", level="success")
         elif kind == "load":
-            snap = store.get_session(int(arg))
+            try:
+                snap = store.get_session(int(arg))
+            except store.ConfigError as exc:
+                logging.exception("Could not read the saved session %s", arg)
+                notify(f"Could not read the save: {exc}", level="danger")
+                return
             if snap is None:
                 notify("That save is no longer available.", level="danger")
                 render_sessions()
             else:
                 restore_workspace(snap)
         elif kind == "delete":
-            store.delete_session(int(arg))
+            try:
+                found = store.delete_session(int(arg))
+            except store.ConfigError as exc:
+                logging.exception("Could not delete the saved session %s", arg)
+                notify(f"Delete failed: {exc}", level="danger")
+                return
             render_sessions()
+            if not found:
+                notify("That save was already gone.", level="warn")
         elif kind == "refresh":
             render_sessions()  # re-read slots (another tab may have changed them)
 
