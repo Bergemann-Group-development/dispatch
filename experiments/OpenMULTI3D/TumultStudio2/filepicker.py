@@ -62,7 +62,7 @@ _counter = 0
 class FilePicker:
     def __init__(self, on_select, container_id, start_dir="~", max_items=300,
                  on_dir=None, recent_provider=None, root=None, busy_provider=None,
-                 on_busy=None):
+                 on_busy=None, pick_dirs=False):
         global _counter
         _counter += 1
         self.name = f"filepicker_{_counter}"          # data-picker / pick model name
@@ -77,6 +77,9 @@ class FilePicker:
         # row spinner and lowered with it — a picker whose loads are synchronous has no other
         # way to say so, since nothing else in the app knows the work is running
         self.on_busy = on_busy
+        # a directory picker: every listing leads with a row that selects the listed
+        # directory itself (folders otherwise only navigate)
+        self.pick_dirs = pick_dirs
         self._busy = frozenset()      # paths currently drawn with a spinner
         # picks handed to on_select but not finished with it. A set, not one slot: clicking
         # a second file before the first has been handed over must not blank the first row
@@ -175,6 +178,8 @@ class FilePicker:
         # a ".." entry to climb to the parent (only when not filtering, and not at root)
         if not pl and base.parent != base:
             dirs.insert(0, ("../", base.parent, True, "folder"))
+        if self.pick_dirs and not pl:
+            dirs.insert(0, (f"Use this folder ({base.name or base})", base, False, "check"))
 
         self._list((dirs + files)[:self.max_items], "No matching files")
 
@@ -244,7 +249,9 @@ class FilePicker:
             return
         path = new.split("\x00", 1)[0]  # strip the nonce used to force a change
         p = Path(path)
-        if p.is_dir():
+        if self.pick_dirs and p == self.current_dir:
+            self._load(p)              # the listing's own "use this folder" row
+        elif p.is_dir():
             nav = f"{p}/"  # trailing sep so the next scan lists this directory
             self.query.value = nav
             self._scan(nav)

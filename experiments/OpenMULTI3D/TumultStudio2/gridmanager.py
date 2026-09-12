@@ -7,7 +7,7 @@ within the folder tree; ``tumult.synthesis.FORMAT_PATTERNS`` holds the stock pat
 format starts from. The list
 lives under the ``synthesis`` store section key ``atmos_grids`` (with ``atmos_grid_id``
 naming the one selected in the Synth panel). This component renders an editable card per
-grid — name / folder (+ an embedded :class:`FilePicker` to browse to it) / format / the
+grid — name / folder (its field hands over to an embedded :class:`FilePicker`) / format / the
 layout controls the format needs — plus an "add grid" button, and persists every edit.
 
 Mirrors :class:`atompicker.AtomPicker`: a server-rendered list pushed through an
@@ -65,7 +65,7 @@ class GridManager:
         self.actions.on_change("value", self._on_action)
 
         self.picker = FilePicker(self._on_folder_pick, container_id="grid-results",
-                                 start_dir=start_dir)
+                                 start_dir=start_dir, pick_dirs=True)
         self.picker.layout.name = "grid_picker"
 
     # --- doc wiring -------------------------------------------------------
@@ -168,12 +168,12 @@ class GridManager:
             f'placeholder="Grid name">'
             f'<button class="icon-btn grid-del" data-grid-id="{gid}" '
             f'title="Remove grid"><i class="ti ti-trash"></i></button></div>'
-            f'<div class="path-row">'
+            # the folder row: focusing the field swaps in the shared folder picker (the
+            # page moves #grid-picker here), whose listing drops down under it
+            f'<div class="path-row grid-folder-row" data-grid-id="{gid}">'
             f'<input type="text" class="{folder_cls}" data-grid-id="{gid}" '
             f'data-grid-key="folder" value="{html.escape(folder)}" '
-            f'placeholder="Atmosphere folder">'
-            f'<button class="icon-btn grid-browse" data-grid-id="{gid}" '
-            f'title="Browse for the grid folder"><i class="ti ti-folder-open"></i></button>'
+            f'placeholder="Atmosphere folder" title="Click to browse">'
             f'</div>'
             f'<select class="field-input grid-format" data-grid-id="{gid}" '
             f'data-grid-key="format">{opts}</select>'
@@ -290,14 +290,12 @@ class GridManager:
             # the field shows the folder being browsed, its contents drop down under it
             self.picker.preset(f"{Path(start).expanduser()}/" if start else "")
             pulse(self.open_bridge, "on")
-        elif kind == "folder":
-            # "Select this folder": adopt the picker's current directory for the editing grid
-            self._adopt_folder(self.picker.current_dir)
 
     def _on_folder_pick(self, filepath):
-        # FilePicker only fires on_select for files; folders navigate. Allow picking a file
-        # too — adopt its parent directory as the grid folder.
-        self._adopt_folder(Path(filepath).parent)
+        # the listing's "use this folder" row selects a directory; a file picked instead
+        # stands for its parent directory
+        p = Path(filepath)
+        self._adopt_folder(p if p.is_dir() else p.parent)
 
     def _adopt_folder(self, folder):
         g = self._find(self._editing)

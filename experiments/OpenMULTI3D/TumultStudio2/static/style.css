@@ -749,8 +749,9 @@ num-input[disabled] .num-spin button { cursor: not-allowed; }
 .inline-picker-auto > * + *:not(.file-results) { margin-top: 8px; }
 .inline-picker-auto .file-results { display: none; max-height: 200px; margin-top: 0; }
 .inline-picker-auto.open.results-open .file-results { display: block; }
-/* the grid folder picker is moved into the card being edited, under its folder row */
-.grid-card .inline-picker-auto { margin-top: 6px; }
+/* the grid folder picker takes the place of the folder field it is browsing for */
+.grid-folder-row.editing .grid-folder { display: none; }
+.grid-folder-row .inline-picker-auto { flex: 1; min-width: 0; margin-top: 0; }
 
 /* NLTE model-atom selector: a chip list shown only when RT mode is NLTE */
 .synth-atoms { display: none; flex-direction: column; gap: 6px; }
@@ -783,7 +784,6 @@ num-input[disabled] .num-spin button { cursor: not-allowed; }
 .grid-card-head .grid-name { flex: 1; min-width: 0; font-weight: 600; }
 .grid-card .field-warn-input { border-color: #c0392b; }
 .grid-add { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; }
-#grid-select-folder { align-self: flex-start; }
 
 /* ---- synth panel: grid selector + source mode ---------------------------- */
 .synth-grid { display: flex; flex-direction: column; gap: 6px; }

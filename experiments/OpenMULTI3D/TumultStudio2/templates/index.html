@@ -364,12 +364,11 @@
       <div class="settings-page" data-page="synthesis">
         <div class="section-header">Atmosphere grids</div>
         <div id="grid-list" class="grid-list">{{ grid_list_html|safe }}</div>
-        <!-- the folder picker of the grid being edited; moved under that card's folder row
-             when its browse button is clicked (one Bokeh picker serves every card) -->
+        <!-- the folder picker of the grid being edited; moved into that card's folder row
+             when its field is focused (one Bokeh picker serves every card) -->
         <div id="grid-picker" class="inline-picker-auto" data-results="{{ grid_results_name }}">
           {{ embed(roots.grid_picker) }}
           <div id="grid-results" class="file-results"></div>
-          <button id="grid-select-folder" class="text-btn">Use this folder</button>
         </div>
         <div class="section-header">Lines &amp; interpolation</div>
         <div id="synthprefs-fields">{{ synth_prefs_html|safe }}</div>
@@ -799,35 +798,68 @@
   document.addEventListener('change', function (ev) {
     if (ev.target.closest('.grid-ref-select')) gridAction('setref', ev.target.value);
   });
-  // the one folder picker lives under the folder row of the card it is browsing for. The
-  // card list is re-rendered from the server on every edit, which detaches the picker, so
-  // it is put back after each render (the node survives; Bokeh's view stays bound to it).
+  // the folder row of a grid card is the folder picker: focusing its field hands the row to
+  // the one shared picker (#grid-picker, moved into the row in place of the plain field),
+  // whose listing drops down under it and leads with a "use this folder" row. Leaving the
+  // picker without choosing gives the row its plain field back. The card list is
+  // re-rendered from the server on every edit, which detaches the picker, so it is put back
+  // after each render (the node survives; Bokeh's view stays bound to it).
   var gridPicker = document.getElementById('grid-picker'), gridList = document.getElementById('grid-list');
+  function gridPickerInput() {
+    var found = null;
+    (function walk(root) {
+      root.querySelectorAll('*').forEach(function (n) {
+        if (found || !n.shadowRoot) return;
+        found = n.shadowRoot.querySelector('input.bk-input') || null;
+        if (!found) walk(n.shadowRoot);
+      });
+    })(gridPicker);
+    return found;
+  }
   function placeGridPicker() {
-    var card = gridPicker.dataset.gridId
-      && gridList.querySelector('.grid-card[data-grid-id="' + gridPicker.dataset.gridId + '"]');
-    if (card) card.querySelector('.path-row').after(gridPicker);
-    else gridList.after(gridPicker);
+    var row = gridPicker.dataset.gridId
+      && gridList.querySelector('.grid-folder-row[data-grid-id="' + gridPicker.dataset.gridId + '"]');
+    gridList.querySelectorAll('.grid-folder-row.editing').forEach(function (r) {
+      if (r !== row) r.classList.remove('editing');
+    });
+    if (row) { row.classList.add('editing'); row.appendChild(gridPicker); }
+    else { gridPicker.classList.remove('open'); gridList.after(gridPicker); }
+  }
+  function leaveGridPicker() {
+    gridPicker.dataset.gridId = '';
+    placeGridPicker();
   }
   new MutationObserver(function () {
     if (!gridPicker.isConnected) placeGridPicker();
     tailPaths(gridList);
   }).observe(gridList, { childList: true });
-  // add / remove / browse-folder buttons (rendered dynamically into #grid-list)
+  // the server closes the picker once a folder is adopted
+  new MutationObserver(function () {
+    if (gridPicker.dataset.gridId && !gridPicker.classList.contains('open')) leaveGridPicker();
+  }).observe(gridPicker, { attributes: true, attributeFilter: ['class'] });
+  document.addEventListener('focusin', function (ev) {
+    var field = ev.target.closest && ev.target.closest('input.grid-folder');
+    if (!field) return;
+    gridPicker.dataset.gridId = field.dataset.gridId;
+    placeGridPicker();
+    gridPicker.classList.add('open');
+    gridAction('browse', field.dataset.gridId);   // the picker lists the row's folder
+    var inp = gridPickerInput();
+    if (inp) inp.focus();
+  });
+  document.addEventListener('focusout', function (ev) {
+    if (!gridPicker.dataset.gridId || !ev.composedPath().includes(gridPicker)) return;
+    // focus moving within the picker (its list keeps focus via mousedown) is not a leave
+    setTimeout(function () {
+      var active = document.activeElement;
+      if (!gridPicker.contains(active)) leaveGridPicker();
+    }, 0);
+  });
+  // add / remove buttons (rendered dynamically into #grid-list)
   document.addEventListener('click', function (ev) {
     if (ev.target.closest('.grid-add')) { gridAction('add'); return; }
     var del = ev.target.closest('.grid-del');
     if (del) { gridAction('del', del.dataset.gridId); return; }
-    var br = ev.target.closest('.grid-browse');
-    if (br) {
-      gridPicker.dataset.gridId = br.dataset.gridId;
-      placeGridPicker();
-      gridAction('browse', br.dataset.gridId);
-    }
-  });
-  // "Use this folder" adopts the picker's current directory for the grid being edited
-  document.getElementById('grid-select-folder').addEventListener('click', function () {
-    gridAction('folder');
   });
 
   // synthesis modal: grid select / source mode / clear-file go through "synth-grid-actions"
