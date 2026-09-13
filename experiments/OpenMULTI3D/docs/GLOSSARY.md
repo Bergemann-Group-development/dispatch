@@ -87,5 +87,14 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
   the same path pattern scan as a 1D grid (`tumult.synthesis.snapshot_grid`). Its nodes
   interpolate like a 1D grid's, each node's spectrum being the mean over its selected
   snapshots; there is no vmic lattice, since the velocity field replaces microturbulence.
+- *snapshot count*: the policy `snapshots="k"` of a snapshot grid, and the `--snapshots k`
+  of a grid download (`tumult.synthesis.grid_catalog`). Both take the first `k` entries of
+  `snapshot_grid.halton_order`, an Owen-scrambled base-2 Halton ordering of the node's
+  available snapshots with a fixed seed: prefixes nest (fetching or selecting `k + 1`
+  keeps the `k`) and spread over the time series without equal spacing, which would alias
+  against oscillations. Not "the first k in snapshot order".
+- *grid catalogue*: the published grids `grid_catalog` knows how to fetch (MARCS, Stagger
+  2.0 dwarfs and giants, M3DIS PLATO) and the registered-grid record each yields; a fetched
+  folder carries a `grid_manifest.json` naming its catalogue entry and fetched snapshots.
 - *resolution*: the destination mesh `(nx, ny, nz)` a snapshot is sampled onto, which is
   independent of the cube's own. Not spectral resolving power, which is `R`.

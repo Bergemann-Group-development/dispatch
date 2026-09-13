@@ -146,7 +146,7 @@ class BalanceSynthesis:
             return None
         grid = self.selected_grid()
         if grid is None:
-            self.reason = ("Register an atmosphere grid in Preferences → Synthesis, then "
+            self.reason = ("Download or register an atmosphere grid in Preferences → Atmosphere grids, then "
                            "select it in this dialog.")
             return None
         if not str(grid.get("folder") or "").strip():

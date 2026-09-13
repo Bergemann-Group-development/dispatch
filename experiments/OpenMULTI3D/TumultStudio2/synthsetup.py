@@ -456,7 +456,7 @@ class SynthSetup:
             return None
         grid = self.active_grid()
         if grid is None:
-            self.reason = ("No atmosphere grid — register one in Preferences → Synthesis, "
+            self.reason = ("No atmosphere grid — download or register one in Preferences → Atmosphere grids, "
                            "or choose 'Individual atmosphere'.")
             return None
         rv = self.run_form.values()

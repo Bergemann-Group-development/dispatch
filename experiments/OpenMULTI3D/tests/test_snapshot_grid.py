@@ -69,9 +69,10 @@ def test_recursive_discovery_selects_snapshots_per_node_and_prefers_new_models(g
     _node(grid, 't55g45m10', snaps=(1,))            # superseded by t55g45m10_new
     nodes = _discover(grid, '2')
     assert set(nodes) == {(5000., 4.5, 0.), (5500., 4.5, 0.), (5000., 4.5, -1.),
-                          (5500., 4.5, -1.)}      # t5777g44m30 needs a 4-digit token
+                          (5500., 4.5, -1.), (5777., 4.4, -3.)}
+    # a count picks the leading entries of snapshot_grid.halton_order, in snapshot order
     assert [p.name for p in nodes[(5500., 4.5, -1.)]] == [
-        'atm3d.t55g45m1005_00008_80x80x240', 'atm3d.t55g45m1005_00031_80x80x240']
+        'atm3d.t55g45m1005_00008_80x80x240', 'atm3d.t55g45m1005_00032_80x80x240']
     assert len(_discover(grid, 'all')[(5000., 4.5, 0.)]) == 3
     picked = _discover(grid, '8, 32')[(5000., 4.5, 0.)]
     assert [_snap(p.name) for p in picked] == ['00008', '00032']
@@ -98,7 +99,7 @@ def test_snapshot_nodes_have_no_vmic_lattice_and_share_the_spatial_weight(grid):
     assert abs(sum(node[5] for node in nodes) - 1.0) < 1e-12
     spatial = {node[0][0] for node in nodes}
     assert spatial == {(5000., 4.5, 0.), (5500., 4.5, 0.)}
-    assert {_snap(node[0][1]) for node in nodes} == {'00008', '00031'}
+    assert {_snap(node[0][1]) for node in nodes} == {'00008', '00032'}
     assert all(Path(node[6]).name.startswith('atm3d.') for node in nodes)
 
 
@@ -110,7 +111,7 @@ def test_snapshot_node_jobs_name_each_snapshot_and_write_no_vmic(grid):
                                                  nodes, Path('synth'), False, {})
     names = [path.name for _key, path, _nml in jobs]
     assert names == ['t5000g450m+00_atm3d_t50g45m0005_00008_80x80x240',
-                     't5000g450m+00_atm3d_t50g45m0005_00031_80x80x240']
+                     't5000g450m+00_atm3d_t50g45m0005_00032_80x80x240']
     for _key, _path, nml in jobs:
         assert 'vmic' not in nml['atmos_params']
         assert nml['atmos_params']['atmos_format'] == 'Stagger2'

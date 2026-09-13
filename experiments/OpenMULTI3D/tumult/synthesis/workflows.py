@@ -67,16 +67,21 @@ _CORR_REF_PRESET = preset("corr_ref.nml")
 STELLAR_PARAMS = [("teff", "Teff [K]", 1, 5777), ("logg", "log g", 0.01, 4.4),
                   ("feh", "[Fe/H]", 0.01, 0.0), ("vmic", "vmic [km/s]", 0.1, 1.0)]
 
-# the Marcs naming convention used in the old TumultStudio atmosphere-grid importer
+# the MARCS naming: p5777_g+4.4_m0.0_t01_st_z+0.00_a+0.00_....mod
 DEFAULT_PATTERN = "{Teff:d}_g{logg:+.1f}_m{:3}_t{vmic:02d}_st_z{FeH:+.2f}"
-# the post-processed Stagger grid: atm3d.t50g45m0005_00008_80x80x240 is Teff=5000,
-# log g=4.5, [Fe/H]=0.0, model version 05, snapshot 8 (see the grid's INSTRUCTIONS.md).
-# Two-digit names truncate the quarter-step log g values (g47 reads as 4.7), and the solar
-# models write Teff out in full (t5777), which this two-digit token does not match.
-STAGGER_PATTERN = "atm3d.t{Teff/100:02d}g{logg*10:02d}{FeH*10:+03d}{}_{snap:05d}"
+# the post-processed Stagger grid: t50g45m00/atm3d.t50g45m0005_00008_80x80x240 is
+# Teff=5000, log g=4.5, [Fe/H]=0.0, model version 05, snapshot 8; the solar models write
+# Teff in full (t5777g44m00), hence the first alternative. Two-digit names truncate the
+# quarter-step log g values (g47 reads as 4.7). See the grid's INSTRUCTIONS.md.
+STAGGER_PATTERN = ("atm3d.t{Teff:04d}g{logg*10:02d}{FeH*10:+03d}{}_{snap:05d}"
+                   "|atm3d.t{Teff/100:02d}g{logg*10:02d}{FeH*10:+03d}{}_{snap:05d}")
+# the M3DIS server layout: PLATO_t45.48g39.64m0.000_v1.0/m3dis_319.atmos is Teff=4548,
+# log g=3.964, [Fe/H]=0.0, snapshot 319 (the reader finds the mesh beside it)
+M3DIS_PATTERN = "_t{Teff/100:.2f}g{logg*10:.2f}m{FeH:.3f}_{}/m3dis_{snap:d}.atmos"
 
 # the pattern a registered grid starts from, by atmos_format (case-insensitive)
-FORMAT_PATTERNS = {"marcs": DEFAULT_PATTERN, "stagger2": STAGGER_PATTERN}
+FORMAT_PATTERNS = {"marcs": DEFAULT_PATTERN, "stagger2": STAGGER_PATTERN,
+                   "m3dis": M3DIS_PATTERN}
 
 
 def default_pattern(atmos_format):
@@ -190,7 +195,9 @@ class _Field:
         if raw and raw[0] in "+-pPmM":
             sign = -1.0 if raw[0] in "-mM" else 1.0
             raw = raw[1:]
-        return sign * (float(raw) * self.scale + self.offset) + 0.0
+        # rounded so that inverting a scaled token (t65.26 -> 6526) lands on the value
+        # the name was written from, which keys the node
+        return round(sign * (float(raw) * self.scale + self.offset), 9) + 0.0
 
 
 class _Pattern:
@@ -325,9 +332,10 @@ def _select_snapshots(items, policy, has_snap):
     several subfolders map to the same node (an updated model beside its predecessor),
     the lexically last folder wins, as the last matching file wins for a 1D grid. Within
     it, ``policy`` (see :func:`snapshot_grid.parse_snapshot_selection`) picks by the
-    bound snapshot number, or by name order when the pattern binds none.
+    bound snapshot number, or by name order when the pattern binds none; a count takes
+    the leading entries of :func:`snapshot_grid.halton_order` over that sequence.
     """
-    from .snapshot_grid import parse_snapshot_selection
+    from .snapshot_grid import parse_snapshot_selection, select_count
     kind, arg = parse_snapshot_selection(policy)
     parent = max(item[0] for item in items)
     files = sorted(((snap, path) for folder, snap, path in items if folder == parent),
@@ -335,7 +343,7 @@ def _select_snapshots(items, policy, has_snap):
     if kind == "all":
         chosen = files
     elif kind == "count":
-        chosen = files[:arg]
+        chosen = select_count(files, arg)
     else:
         if not has_snap:
             raise ValueError("Selecting snapshots by number needs a pattern that binds "

@@ -19,6 +19,8 @@ bundle of closures, and cross-tool reactions go through its event bus:
 * ``ctx.run_busy`` / ``ctx.schedule`` / ``ctx.submit`` - deferred-work helpers
   (``submit`` is the background loader ``app.load_async``: a document-owned job on the
   IO pool, cancelled when the session closes unless admitted as detached).
+* ``ctx.submit_io`` - the same for work that waits on the network or disk (a grid
+  download), on the IO pool rather than the CPU-budgeted one.
 * ``ctx.submit_workflow`` - queue one durable synthesis request (every synthesis of the
   modal) and deliver its result to this document when it settles; the workflow keeps
   running when the session closes. ``ctx.synth_modal`` is the
@@ -73,6 +75,7 @@ class AppContext:
         self.run_busy = lambda fn: fn()
         self.busy = lambda on: None
         self.submit = None
+        self.submit_io = None
         self.submit_workflow = None  # (name, request, on_done) -> WorkflowHandle; by main
         self.restore_workspace = None  # (snapshot, name, workflows) -> LoadReport; by main
         self.discover_workflows = None  # () -> offered ids; by main

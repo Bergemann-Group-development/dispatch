@@ -1145,6 +1145,8 @@ def build():
     # its (best, raw, post) result has no durable record a later document could import.
     ctx.submit = lambda name, loader, on_done, detached=False: load_async(
         name, loader, on_done, executor=_SYNTH_EXEC, detached=detached)
+    # network transfers (a grid download) wait on I/O, not the CPU budget: the IO pool
+    ctx.submit_io = lambda name, loader, on_done: load_async(name, loader, on_done)
     ctx.execution = synth.get_runtime()
 
     def _import_result(handle):

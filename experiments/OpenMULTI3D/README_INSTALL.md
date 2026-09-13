@@ -177,14 +177,48 @@ result = open_workflow(job.folder).result()             # also works after recon
 result.spectrum.plot()
 ```
 
+### Published grids
+
+`tumult.synthesis.grid_catalog` fetches the published grids OpenMULTI3D reads and returns
+the record that registers each: the standard-composition MARCS grid
+(`marcs`, marcs.astro.uu.se), the Stagger 2.0 dwarfs and giants (`stagger-dwarfs`,
+`stagger-giants`, Zenodo) and the M3DIS PLATO grid (`m3dis-plato`, gemini-web.mpia.de).
+The 3D grids are fetched in parts, out of their archives, so a stellar parameter box and a
+snapshot count per model keep a download small (one snapshot is 33 MB for Stagger and
+100 to 200 MB for M3DIS; a whole grid at one snapshot per model is a few GB for Stagger and
+about 30 GB for M3DIS):
+
+```bash
+bin/tpy -m tumult.synthesis.grid_catalog list
+bin/tpy -m tumult.synthesis.grid_catalog models m3dis-plato
+bin/tpy -m tumult.synthesis.grid_catalog plan  m3dis-plato input/atmos/M3DIS_PLATO \
+    --snapshots 2 --teff 5000:6500 --logg 4:5
+bin/tpy -m tumult.synthesis.grid_catalog fetch m3dis-plato input/atmos/M3DIS_PLATO \
+    --model PLATO_t57.77g44.40m0.000_v1.0 --snapshots 2
+```
+
+`models` lists a grid; `plan` shows which models and snapshots a fetch would take without
+transferring anything; `fetch` is resumable and records what it fetched in the folder's
+`grid_manifest.json`. Running it again with a larger count only adds snapshots: a count
+selects the leading entries of a fixed scrambled Halton ordering of each model's snapshots
+(`tumult.synthesis.snapshot_grid.halton_order`), nested and spread over the time series,
+and the run-time policy `"snapshots": "k"` selects the same entries. Grids fetched under
+`input/atmos/` register themselves in TumultStudio2. Its Preferences → Atmosphere grids
+page sets one storage folder and one snapshot count for every grid, lists the supported
+grids with what is on disk (download all, models, delete), and per grid the models with a
+download or delete button each; custom grid folders register there too.
+
+### Grid records
+
 A grid of 3D models registers like a MARCS grid and interpolates between its nodes the same
 way. Grid patterns match each file's path relative to the grid folder, listed recursively,
 so a directory-per-node layout binds its parameters from the directory name;
 `tumult.synthesis.STAGGER_PATTERN` covers the post-processed Stagger naming (`t50g47m00`,
-`t5777g44m30`, `_new` models, `atm3d.*` snapshots). A pattern reads like the Python format
-that wrote the name, `atm3d.t{Teff/100:02d}g{logg*10:02d}{FeH*10:+03d}{}_{snap:05d}`, with
-head and tail implicitly wild and `p`/`m` accepted as signs; `compile_pattern` documents
-the details (`|` alternatives, `{snap}`). A snapshot grid's record also
+`t5777g44m30`, `_new` models, `atm3d.*` snapshots) and `M3DIS_PATTERN` the M3DIS server
+layout (`PLATO_t57.77g44.40m0.000_v1.0/m3dis_318.atmos`). A pattern reads like the Python
+format that wrote the name, `atm3d.t{Teff/100:02d}g{logg*10:02d}{FeH*10:+03d}{}_{snap:05d}`,
+with head and tail implicitly wild and `p`/`m` accepted as signs; `compile_pattern`
+documents the details (`|` alternatives, `{snap}`). A snapshot grid's record also
 names the snapshots representing each node and, optionally, the mesh the cubes are
 sampled onto:
 
@@ -193,7 +227,7 @@ from tumult.synthesis import STAGGER_PATTERN
 
 stagger = {"folder": "~/Atmospheres/Stagger/dwarfs", "format": "Stagger2",
            "pattern": STAGGER_PATTERN,
-           "snapshots": "3",             # first three per node; "all"; or numbers "8,31"
+           "snapshots": "3",             # three per node in Halton order; "all"; or "8,31"
            "resolution": [80, 80, 240]}  # blank: the nx/ny/nz preferences
 marcs = {"folder": "input/atmos/MARCS", "format": "Marcs"}
 selection = GridTarget(stagger, (5250, 4.5, 0.0, 1.0), preparation_grid=marcs)

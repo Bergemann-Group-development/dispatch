@@ -803,6 +803,23 @@ num-input[disabled] .num-spin button { cursor: not-allowed; }
 .grid-card-head .grid-name { flex: 1; min-width: 0; font-weight: 600; }
 .grid-card .field-warn-input { border-color: #c0392b; }
 .grid-add { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; }
+.grid-status { min-height: 1.2em; white-space: pre-line; }
+.grid-status:empty { display: none; }
+.grid-count .field-input { width: 5em; }
+.grid-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 8px; background: var(--bg);
+  border: 1px solid var(--border); border-radius: 4px;
+}
+.grid-row-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.grid-row-name { font-weight: 600; }
+.grid-row-state { color: var(--text-muted); font-size: 12px; }
+.grid-row .icon-btn[disabled] { opacity: 0.4; cursor: default; }
+/* the model table reuses the sortable line-list table; the name column reads as text */
+.grid-models { max-height: 420px; overflow: auto; background: var(--bg); border: 1px solid var(--border); border-radius: 3px; }
+.grid-models td.line-ion { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.grid-models td:last-child { white-space: nowrap; }
+.grid-models .icon-btn[disabled] { opacity: 0.4; cursor: default; }
 
 /* ---- synth panel: grid selector + source mode ---------------------------- */
 .synth-grid { display: flex; flex-direction: column; gap: 6px; }

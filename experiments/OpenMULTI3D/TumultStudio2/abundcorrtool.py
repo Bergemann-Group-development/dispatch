@@ -4,7 +4,7 @@ The entry point is a model-atom object (:mod:`atomtool`): its panel's **NLTE cor
 action opens this tool's modal with the atom fixed. The modal holds the NLTE target
 atmosphere and stellar parameters (a :class:`synthsetup.SynthSetup` cluster), the measurement
 settings, and states which registered grid is flagged as the **1D LTE reference** (set in
-Preferences → Synthesis). Its one **Compute** button runs both stages as a chained job:
+Preferences → Atmosphere grids). Its one **Compute** button runs both stages as a chained job:
 
 1. **Reference.** :func:`tumult.abundance.measure_reference_lines` interpolates the flagged
    1D LTE grid at the target parameters, synthesises the reference **straight from the model
@@ -272,11 +272,11 @@ class AbundCorrTool(AbundanceWizard):
         ref = self.grids.reference_grid()
         if ref is None:
             ref_html = ('<div class="hint hint-warn">No 1D LTE reference grid — register a '
-                        'grid and flag it in Preferences → Synthesis.</div>')
+                        'grid and flag it in Preferences → Atmosphere grids.</div>')
         else:
             ref_name = html.escape(ref.get("name") or ref["id"])
             ref_html = (f'<div class="hint">1D LTE reference: <b>{ref_name}</b>, interpolated '
-                        'at the parameters below (flagged in Preferences → Synthesis).</div>')
+                        'at the parameters below (flagged in Preferences → Atmosphere grids).</div>')
         return (f'<div class="hint">NLTE corrections for <b>{html.escape(obj.symbol)}</b> '
                 f'({html.escape(obj.name)}) — {nl} bound-bound transitions between {nk} '
                 'levels. The atom defines the spectrum and its wavelength range. With the '
@@ -426,7 +426,7 @@ class AbundCorrTool(AbundanceWizard):
             return
         ref_grid = self.grids.reference_grid()
         if ref_grid is None:
-            self.notify("Flag a 1D LTE reference grid in Preferences → Synthesis first.")
+            self.notify("Flag a 1D LTE reference grid in Preferences → Atmosphere grids first.")
             return
         # every option is captured now and carried through both stages: reopening the
         # modal while the reference runs must not alter the admitted calculation

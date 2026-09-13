@@ -26,8 +26,8 @@ The atmosphere + stellar-parameter + RT-mode cluster is a composed
 parameterised with this modal's historical store split (run state under ``"synth_run"``,
 the grid selection under ``"synthesis"``) and form names (the page slots ``synth-fields`` /
 ``synthabund-fields`` / ``synthmode-fields``). The modal also owns the app-global pieces
-that live in Preferences → Synthesis: the grid registry, the NLTE model-atom selection,
-the preference sheets and the run-cache listing. See ``docs/GUIWorkflow.md``.
+that live in Preferences (the Atmosphere grids page, the NLTE model-atom selection,
+the preference sheets and the run-cache listing). See ``docs/GUIWorkflow.md``.
 """
 from __future__ import annotations
 
@@ -96,15 +96,14 @@ class SynthModal:
             for name, fields in PREF_PAGES.items()
         }
 
-        # registered atmosphere grids (Preferences → Synthesis); the setup's grid selector,
-        # source-mode toggle and direct-file picker read the current selection from it. The
-        # bundled MARCS grid under <dispatch_cwd>/input/atmos/MARCS is auto-registered on
-        # first launch when present, so a fresh checkout works after fetching the input data.
+        # atmosphere grids (Preferences → Atmosphere grids); the setup's grid selector,
+        # source-mode toggle and direct-file picker read the current selection from it.
+        # Downloads go under <dispatch_cwd>/input/atmos unless a storage folder is set, so
+        # the bundled MARCS grid there is registered from the start.
         cwd = Path(str(prefs.get("dispatch_cwd") or REPO_DIR)).expanduser()
         self.grids = GridManager(default_pattern=synth.DEFAULT_PATTERN,
                                  on_change=self._on_grids_changed,
-                                 start_dir=self._grid_start_dir(),
-                                 builtin_dir=cwd / "input" / "atmos")
+                                 default_storage=cwd / "input" / "atmos", ctx=ctx)
 
         # NLTE model-atom selector: opens in <dispatch_cwd>/input/atoms, shown only in NLTE.
         atoms_dir = cwd / "input" / "atoms"
@@ -168,18 +167,6 @@ class SynthModal:
                 *(m for form in self.pref_forms.values() for m in form.models)]
 
     # --- registered grids ---------------------------------------------------------------
-    def _grid_start_dir(self):
-        """Where the grid-folder picker first opens: the selected grid's folder (falling back
-        to the first registered grid, then home). Reads the store directly so it is safe to
-        call before ``self.setup`` exists."""
-        grids = store.get_section("synthesis").get("atmos_grids", [])
-        if not grids:
-            return Path("~")
-        gid = store.get_section("synthesis").get("atmos_grid_id")
-        g = next((x for x in grids if x.get("id") == gid), grids[0])
-        folder = (g.get("folder") or "").strip()
-        return Path(folder).expanduser() if folder else Path("~")
-
     def _on_grids_changed(self):
         """GridManager edited the registry: refresh the selector and file warnings."""
         self.setup.render_grid_ui()

@@ -345,6 +345,7 @@
     <nav class="settings-nav">
       <button class="settings-nav-item active" data-page="general">General</button>
       <button class="settings-nav-item" data-page="synthesis">Synthesis</button>
+      <button class="settings-nav-item" data-page="grids">Atmosphere grids</button>
       <button class="settings-nav-item" data-page="engine">Engine</button>
       <button class="settings-nav-item" data-page="cache">Run cache</button>
     </nav>
@@ -377,15 +378,17 @@
           100 Å wide; wider views use atomic lines only.</div>
       </div>
 
-      <div class="settings-page" data-page="synthesis">
-        <div class="section-header">Atmosphere grids</div>
+      <div class="settings-page" data-page="grids">
         <div id="grid-list" class="grid-list">{{ grid_list_html|safe }}</div>
-        <!-- the folder picker of the grid being edited; moved into that card's folder row
-             when its field is focused (one Bokeh picker serves every card) -->
+        <!-- the folder picker of the storage or custom-grid folder being edited; moved
+             into that folder row when its field is focused (one Bokeh picker serves all) -->
         <div id="grid-picker" class="inline-picker-auto" data-results="{{ grid_results_name }}">
           {{ embed(roots.grid_picker) }}
           <div id="grid-results" class="file-results"></div>
         </div>
+      </div>
+
+      <div class="settings-page" data-page="synthesis">
         <div class="section-header">Lines &amp; interpolation</div>
         <div id="synthprefs-fields">{{ synth_prefs_html|safe }}</div>
       </div>
@@ -798,12 +801,12 @@
     if (del) cacheAction('del', del.dataset.path);
   });
 
-  // registered atmosphere grids (Preferences → Synthesis)
+  // atmosphere grids (Preferences → Atmosphere grids)
   function gridAction(kind, arg) {
     var m = Bokeh.documents[0].get_model_by_name('grid-actions');
     if (m) m.setv({ value: kind + ' ' + (arg || '') + ' ' + Date.now() });
   }
-  // edit a grid card field (name/folder/pattern/format) -> "grid-fields-input"
+  // edit a field of the storage settings or a custom grid card -> "grid-fields-input"
   document.addEventListener('change', function (ev) {
     var el = ev.target.closest('[data-grid-key]');
     if (!el) return;
@@ -871,11 +874,25 @@
       if (!gridPicker.contains(active)) leaveGridPicker();
     }, 0);
   });
-  // add / remove buttons (rendered dynamically into #grid-list)
+  // the grid rows, model rows and custom cards (rendered dynamically into #grid-list):
+  // "<kind> <grid id> [<model>]"; deleting files asks first
   document.addEventListener('click', function (ev) {
-    if (ev.target.closest('.grid-add')) { gridAction('add'); return; }
-    var del = ev.target.closest('.grid-del');
-    if (del) { gridAction('del', del.dataset.gridId); return; }
+    var sortth = ev.target.closest('#grid-list .grid-models .line-sort');
+    if (sortth) { gridAction('sort', sortth.dataset.sortcol); return; }
+    var btn = ev.target.closest('#grid-list button');
+    if (!btn || btn.disabled) return;
+    var gid = btn.dataset.gridId || '', model = btn.dataset.model || '';
+    if (btn.classList.contains('grid-add')) gridAction('add');
+    else if (btn.classList.contains('grid-del')) gridAction('del', gid);
+    else if (btn.classList.contains('grid-back')) gridAction('back');
+    else if (btn.classList.contains('grid-edit')) gridAction('edit', gid);
+    else if (btn.classList.contains('grid-fetch-all')) gridAction('fetch-all', gid);
+    else if (btn.classList.contains('grid-fetch-model')) gridAction('fetch-model', gid + ' ' + model);
+    else if (btn.classList.contains('grid-del-catalog')) {
+      if (confirm('Delete every downloaded file of ' + btn.dataset.name + '?')) gridAction('del-catalog', gid);
+    } else if (btn.classList.contains('grid-del-model')) {
+      if (confirm('Delete the downloaded model ' + btn.dataset.name + '?')) gridAction('del-model', gid + ' ' + model);
+    }
   });
 
   // the atmosphere selects of every synthesis setup (synth / abund / corr modals) are
@@ -1049,7 +1066,8 @@
     // the abundance tables share the .line-sort header class but report through their own
     // channels (below), so ignore their headers here
     var sortth = ev.target.closest('.line-sort');
-    if (sortth && !sortth.closest('.abund-table') && !sortth.closest('.atom-table')) {
+    if (sortth && !sortth.closest('.abund-table') && !sortth.closest('.atom-table')
+        && !sortth.closest('.grid-models')) {
       m.setv({ value: 'linesort:' + sortth.dataset.sortcol + ':' + Date.now() });
       return;
     }

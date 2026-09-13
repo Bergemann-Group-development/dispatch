@@ -23,8 +23,8 @@ REPO_DIR = str(Path(__file__).resolve().parent.parent)
 
 # --- preferences: the reusable namelist setup, grouped into modal pages -----------------
 # each page is one controls.Form; (key, label, kind, default) per field. The atmosphere
-# grids themselves (folder/pattern/format) are registered separately via GridManager and
-# stored under the "synthesis" section key "atmos_grids".
+# grids themselves are the Atmosphere grids page (GridManager): the catalogue grids on
+# disk plus custom records stored under the "synthesis" section key "atmos_grids".
 INTERP_METHODS = ["NaturalNeighbor", "Delaunay"]   # NN: smoother (more nodes); Delaunay: fast
 # where synthesis workflows run (tumult.synthesis.submission): "local" is the worker
 # daemon on this machine, which outlives the server; "slurm" submits each workflow through

@@ -216,8 +216,9 @@ set's synth windows) and the empty landing page (blank λ fields).
   submitted.
 
 Departure-coefficient solves are not started from this modal; their entry point is decided
-separately. NLTE abundance corrections start from a model atom (see below). Grid
-registration, paths and the run cache stay in Preferences → Synthesis.
+separately. NLTE abundance corrections start from a model atom (see below). Atmosphere
+grids (downloading the published ones, custom folders, the 1D LTE reference) are the
+Preferences → Atmosphere grids page; paths and the run cache stay in Preferences → Synthesis.
 
 ## Fit modal
 
@@ -270,7 +271,7 @@ corrections…**, which opens the correction modal with this atom fixed.
 ### Correction modal
 
 - Header: the atom (element, file, counts) and the registered grid flagged as the **1D LTE
-  reference** in Preferences → Synthesis. Without a flagged grid the run is refused with a
+  reference** in Preferences → Atmosphere grids. Without a flagged grid the run is refused with a
   hint.
 - **NLTE atmosphere**: the standard atmosphere cluster (grid, interpolate or pick, file) and
   stellar parameters, kept in the `abundcorr_run` store section and seeded from the synthesis
