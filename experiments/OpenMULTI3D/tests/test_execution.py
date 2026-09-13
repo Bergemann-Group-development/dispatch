@@ -1,6 +1,7 @@
 """Execution invariants: shared budgets, cancellation, cache writers and processes."""
 import concurrent.futures
 import os
+import socket
 import sys
 import threading
 import time
@@ -439,6 +440,59 @@ def test_job_record_reports_a_killed_run_as_lost(tmp_path):
     assert jobrecord.state_of(folder) == 'running'
     (folder / 'abund.txt').write_text('done')
     assert jobrecord.state_of(folder) == 'finished'  # the cache outranks the record
+
+
+def _native_record(folder, **fields):
+    """What SRC/job_record_mod.f90 writes, with the given fields overriding."""
+    values = {'state': 'running', 'pid': os.getpid(), 'host': socket.gethostname(),
+              'cwd': '/work', 'input': 'run.nml', 'started': '2026-09-13T11:15:20+02:00',
+              'ended': '', 'mpi_size': 1, 'omp_threads': 4, 'slurm_job_id': '',
+              'dispatch_hash': 'c098fe60', **fields}
+    lines = ['&job_record']
+    for key, value in values.items():
+        lines.append(f' {key}={value!r},' if isinstance(value, str) else f' {key}={value},')
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / 'job.nml').write_text('\n'.join(lines) + '\n /\n')
+
+
+def test_dispatch_own_record_makes_a_shell_run_discoverable(tmp_path):
+    """A run started outside the launcher has only job.nml; it is listed, attributed
+    and resolved from the process table like a launched one."""
+    from tumult.synthesis import jobrecord
+    folder = tmp_path / 'data' / 'dep_x'
+    _native_record(folder)
+    record = jobrecord.read(folder)
+    assert record['pid'] == os.getpid() and record['input'] == 'run.nml'
+    assert record['dispatch_hash'] == 'c098fe60' and record['slurm_id'] is None
+    assert jobrecord.state_of(folder) == 'running'
+    listed, = jobrecord.scan(tmp_path / 'data')
+    assert listed['resolved'] == 'running' and Path(listed['output']) == folder
+    _native_record(folder, pid=2 ** 30)
+    assert jobrecord.state_of(folder) == 'lost'
+    _native_record(folder, pid=2 ** 30, host='elsewhere')
+    assert jobrecord.state_of(folder) == 'running'      # not inspectable from here
+    _native_record(folder, state='finished', ended='2026-09-13T11:15:29+02:00')
+    assert jobrecord.state_of(folder) == 'finished'     # a normal exit, even before abund.txt
+
+
+def test_launcher_and_dispatch_records_merge(tmp_path, monkeypatch):
+    """The launcher's terminal states outrank dispatch's stale 'running'; dispatch's pid
+    outranks the launcher's, which under sbatch or mpirun is not the run's."""
+    from tumult.synthesis import jobrecord, scheduler
+    folder = tmp_path / 'run'
+    jobrecord.write(folder, {'atmos_params': {}}, pid=12345)
+    _native_record(folder)
+    assert jobrecord.read(folder)['pid'] == os.getpid()
+    assert jobrecord.read(folder)['launcher_pid'] == 12345
+    jobrecord.finish(folder, 'cancelled')
+    assert jobrecord.state_of(folder) == 'cancelled'
+    # a Slurm run is resolved through the scheduler, whichever writer named the job
+    _native_record(folder, slurm_job_id='4242')
+    jobrecord.write(folder, {'atmos_params': {}}, state='submitted')
+    monkeypatch.setattr(scheduler, 'state', lambda job_id: 'running' if job_id == '4242' else None)
+    assert jobrecord.state_of(folder) == 'running'
+    monkeypatch.setattr(scheduler, 'state', lambda job_id: None)
+    assert jobrecord.state_of(folder) == 'lost'
 
 
 def test_job_record_marks_a_cancelled_run(tmp_path, monkeypatch):

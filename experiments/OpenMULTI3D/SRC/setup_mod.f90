@@ -15,6 +15,7 @@ MODULE setup_mod
   USE mpi_mesg_mod
   USE scaling_mod
   USE trace_mod
+  USE job_record_mod
   implicit none
   private
   type, public:: setup_t
@@ -33,6 +34,7 @@ CONTAINS
 SUBROUTINE init (self)
   class(setup_t):: self
   call io%init                          ! I/O system
+  call job_record%start                 ! needs io%run_dir
   call mpi_mesg%init                    ! needs locks
   call trace%begin ('setup_t%init')     ! needs timer
   call scaling%init                     ! Scaling to code units
@@ -51,6 +53,7 @@ SUBROUTINE end (self)
   class(setup_t):: self
   !.............................................................................
   call trace%begin ('setup_t%end')
+  call job_record%finish                ! a normal exit; a crash never gets here
   call mpi%end
   call trace%end()
 END SUBROUTINE end
