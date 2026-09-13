@@ -36,7 +36,7 @@ SELECT_OPTIONS = {"interp_method": INTERP_METHODS, "workflow_runner": WORKFLOW_R
 PREF_PAGES = {
     "synthprefs": [   # "Synthesis" page — the science inputs
         ("interp_method", "Interpolation", "select", "NaturalNeighbor"),
-        ("linelist", "Synthesis line list (file or folder)", "text", "./input/abund/linelists/master_linelists/"),
+        ("linelist", "Line list (file or folder)", "text", "./input/linelists/master_linelists/"),
         ("abund_file", "Solar abundance file", "text", "./input/abund/abund_magg22"),
         ("absmet", "Absmet file or folder", "text", ""),
     ],
@@ -57,7 +57,7 @@ PREF_PAGES = {
         # window a line may still contribute. 0 disables the crop and every run reads the
         # whole list. 5 A keeps the measured EW error at ~0.06% mean with the local
         # continuum fit, where 20 A is no better and 1 A starts clipping strong wings.
-        ("linelist_crop_aa", "Line-list crop skirt [A] (0 = off)", "number", 5.0),
+        ("linelist_crop_aa", "Line-list padding [Å] (0 = off)", "number", 5.0),
         ("fit_max_rounds", "Fit: max refinement rounds", "number", 6),
         ("max_threads", "Max threads (0 = all cores)", "number", 0),
         # Both runners keep a synthesis alive across a server restart; the Slurm script
@@ -73,6 +73,10 @@ PREF_DEFAULTS = {key: default
 # path prefs that must exist on disk if non-empty (output dir is created on demand);
 # relative ones resolve against dispatch_cwd. (Grid folders are checked by GridManager.)
 PATH_PREFS = ["linelist", "abund_file", "absmet", "dispatch_cwd", "slurm_script"]
+# which of them may be a folder (the Preferences pickers offer "Use this folder" there)
+PATH_PICKERS = {"linelist": True, "abund_file": False, "absmet": True, "dispatch_cwd": True,
+                "slurm_script": False}
+PREF_LABELS = {key: label for fields in PREF_PAGES.values() for key, label, _, _ in fields}
 
 # --- run settings: only the per-target knobs ----------------------------------------
 # the four stellar axes come from the shared synth.STELLAR_PARAMS spec (see fittab too).

@@ -65,7 +65,7 @@ class Inspector:
     def __init__(self, canvas, on_fit=None, on_mask=None, notify=None):
         self.canvas = canvas
         self.on_fit = on_fit or (lambda: None)   # main.py runs the actual fit
-        self.on_mask = on_mask or (lambda: None) # main.py opens the Mask tool on the spectrum
+        self.on_mask = on_mask or (lambda: None) # main.py opens the Select range tool on the spectrum
         self.notify = notify or (lambda *a, **k: None)
         self.conv_vals = {k: 0.0 for k in CONV_KEYS}     # the selected object's conv
         self.fit_flags = {k: (k in FIT_DEFAULT_ON) for k in CONV_KEYS}  # which to fit
@@ -122,10 +122,11 @@ class Inspector:
                 'current view range.</div>')
         else:
             tail = '<div class="hint">Load another spectrum to fit the broadening against.</div>'
-        return (rows + '<div class="section-header">Fit broadening</div>' + tail
+        status = self.canvas.preparation_html(self.canvas.selected_uid)
+        return (status + rows + '<div class="section-header">Fit broadening</div>' + tail
                 + '<div class="section-header">Mask</div>'
-                '<button class="text-btn edit-mask-btn" title="Open the Mask tool with this '
-                'spectrum\'s full wavelength range as the range">Mask full range</button>')
+                '<button class="text-btn edit-mask-btn" title="Open the Select range tool with this '
+                'spectrum\'s full wavelength range as the range">Select full range</button>')
 
     # --- populate the forms from the selected object -----------------
     def bind(self, obj):

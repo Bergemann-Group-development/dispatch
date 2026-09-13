@@ -65,7 +65,7 @@ _CORR_REF_PRESET = preset("corr_ref.nml")
 # (key, UI label, input step, default) — the four interpolated stellar axes,
 # shared by the Synthesize run form (synthpanel) and the Fit tab (fittab).
 STELLAR_PARAMS = [("teff", "Teff [K]", 1, 5777), ("logg", "log g", 0.01, 4.4),
-                  ("feh", "[Fe/H]", 0.01, 0.0), ("vmic", "vmic [km/s]", 0.1, 1.0)]
+                  ("feh", "[Fe/H]", 0.01, 0.0), ("vmic", "Microturbulence ξ [km/s]", 0.1, 1.0)]
 
 # the MARCS naming: p5777_g+4.4_m0.0_t01_st_z+0.00_a+0.00_....mod
 DEFAULT_PATTERN = "{Teff:d}_g{logg:+.1f}_m{:3}_t{vmic:02d}_st_z{FeH:+.2f}"
@@ -447,7 +447,7 @@ def build_settings(prefs, run_vals, atmos_format=None):
 
     # atom-only runs carry no external line list (the corr_ref.nml preset also blanks it);
     # everything else uses the configured synthesis line list plus the element switches.
-    linelist = {} if only_atom else _linelist_settings(prefs.get("linelist"))
+    linelist = {"linelist_file": [""], "linelist_folder": ""} if only_atom else _linelist_settings(prefs.get("linelist"))
     # element line-selection switches (Fortran /linelist_params/): a space-separated list of
     # element symbols. Used by the abundance pipeline's blend metric — synthesise a window
     # with the target element dropped (``exclude_elements``) or in isolation (``only_elements``).
@@ -786,7 +786,8 @@ def resolve_request(request: SynthRequest) -> ResolvedSynthRequest:
                    for window in windows)
     references, aliases = _reference_atmospheres(
         selection, prefs, root, prefs_vmic=float(request.run_vals.get('vmic') or 1.0))
-    if (float(prefs.get('linelist_crop_aa') or 0.0) > 0 and prefs.get('linelist')
+    if (not request.run_vals.get('only_atom')
+            and float(prefs.get('linelist_crop_aa') or 0.0) > 0 and prefs.get('linelist')
             and not references):
         raise ValueError('Automatic line-list preparation has no MARCS reference grid. '
                          'Configure a reference grid or set linelist_crop_aa=0 to use the full list.')
@@ -801,6 +802,8 @@ def resolve_request(request: SynthRequest) -> ResolvedSynthRequest:
 
 
 def _prepare_artifact(resolved):
+    if resolved.request.run_vals.get("only_atom"):
+        return None
     prefs, windows = resolved.request.prefs, resolved.padded_windows
     skirt = float(prefs.get('linelist_crop_aa') or 0.0)
     if not (skirt > 0 and windows and resolved.preparation_references and prefs.get('linelist')):

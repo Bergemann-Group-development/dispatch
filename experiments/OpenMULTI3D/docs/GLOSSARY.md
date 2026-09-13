@@ -36,6 +36,18 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
   one species and misleads between two.
 - *band*: a wavelength span, snapped to a grid, over which strengths are computed and
   cached in one HOP call.
+- *line list*: the one configured source of transitions (Preferences → Synthesis, a file
+  or a folder of per-species files). Synthesis, navigation, annotation and blend screening
+  all resolve it; there is no separate "master" or "navigator" list. A run's own
+  `linelist_out.txt` is a derived result, labelled by its provenance when browsed.
+- *use line list*: the per-calculation choice to synthesise the model atoms together with
+  the line list (background transitions and blends) rather than the atoms alone. Off is
+  `only_atom` in the request; it never blanks the configured path.
+- *target spectrum*: the spectrum a calculation measures or fits (the GUI's input label).
+  The 1D LTE spectrum a correction measures against is the *reference spectrum*.
+- *preparation*: the processing a target spectrum carries into a measurement: its
+  continuum state (automatic scaling, spline continuum, already normalised) and whether
+  noise filtering is active. Recorded with measured lines (`MeasuredLines.preparation`).
 
 **Windows.** Several distinct spans are all called windows, so each has its own name.
 
@@ -59,6 +71,14 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
 - *line mask*: one line feature's curated fit and synth windows.
 - *line mask set*: the masks for one element on one spectrum, together with the diagnostics that
   measured them. Unrelated to the run *set axis* below.
+
+**Workspace**
+
+- *saved workspace*: one save slot, the object workspace as `session.py` snapshots it.
+  Loading one replaces the workspace; calculation settings are not part of it.
+- *calculation draft*: a modal's edits to a calculation's last-used settings before it is
+  submitted (`draft.CalculationDraft`). Submitting commits them, dismissing discards them.
+  Preferences pages are not drafts: they save on every change.
 
 **Runs**
 

@@ -5,6 +5,19 @@ as TumultStudio2 implements them: one range gesture, one synthesis modal, one jo
 one workspace slot format. Terms follow `GLOSSARY.md`; the code owners are listed at the
 end.
 
+## Workspace actions: Open and New
+
+The canvas toolbar starts with two menu buttons that stay visible in every view, the
+empty and atom views included: **Open ▾** (Spectrum…, Model atom…, Line mask set…) adds
+an existing object to the workspace; **New ▾** (Line mask set…, Synthesise spectrum…)
+creates one. The empty landing page repeats the same commands. Open → Spectrum browses
+the server's filesystem; a click selects a row, **Open** (or Enter, or a double click)
+opens it, and **Open run** opens the current folder as a tumult run. New → Line mask set
+asks for a name and element, creates the empty set and arms the window gesture when a
+spectrum is in view; without one the set stays usable and the footer says to open a
+spectrum first. New → Synthesise spectrum opens the synthesis modal with blank λ fields
+and the last-used atmosphere setup, labelled as such.
+
 ## Left sidebar: one focused object
 
 Spectra, line masks, model atoms and results form one list with a single focus. Clicking an
@@ -106,8 +119,8 @@ writer runs one serialised read-modify-write transaction under a process lock an
 the path allocate distinct slot ids and lose no change; the file is replaced atomically
 from a writer-specific temporary file. A missing file starts empty; an unreadable,
 malformed, structurally invalid or unsupported-`version` file is a `store.ConfigError`
-naming the path and cause, and no writer replaces it with defaults. The Sessions modal
-reports *Saved* only after the replacement succeeded; a failed save or delete shows the
+naming the path and cause, and no writer replaces it with defaults. The Saved workspaces
+modal reports *Saved* only after the replacement succeeded; a failed save or delete shows the
 destination and cause in the footer and leaves the previous file and the live workspace
 as they were, so the action can be retried once the cause is fixed. The recent-files
 list is the one exception: opening a spectrum, run or model atom records it as a
@@ -142,11 +155,21 @@ log name its identity, path and reason, the references pointing at it are cleare
 result's reference observation, a balance's mask set; a correction whose atom is missing
 is listed under Corrections), and a selection or focus that named it is cleared rather
 than moved to another object. If applying the prepared workspace fails part-way, the
-previous workspace is put back. The Sessions list describes each slot's contents, or says
-that its format is unsupported.
+previous workspace is put back. The Saved workspaces list describes each slot's contents,
+or says that its format is unsupported. Loading is explicit: a row is selected first and
+**Load workspace** loads it; when the live workspace differs from its last save or load,
+a prompt offers *Save and load*, *Discard and load* or *Cancel*. Deleting a save asks for
+confirmation, as does deleting a cached run from disk.
 
-Boundaries: the synthesis, correction and abundance forms remain global preferences, not
-slot state, so an older slot does not recover the form values it was made with. The Mask
+Boundaries: the synthesis, correction, abundance and ion-balance forms remain global
+last-used preferences, not slot state, so an older slot does not recover the form values
+it was made with. Each calculation modal edits a draft of those preferences
+(`draft.CalculationDraft`): submitting commits the draft as the next last-used values,
+while Cancel, Escape and a backdrop click discard the edits. Preferences pages, by
+contrast, save every change immediately and say so; their path preferences (line list,
+solar abundances, absmet, working directory, Slurm script) are inline file pickers of
+the atmosphere-picker kind, offering "Use this folder" where a folder is accepted and
+reddening their label when the target is missing. The Mask
 tool's range gesture, the EW panel and the filter/normalise panels are transient and reset
 on load. Slots are path-backed workspace saves, not portable archives: external spectra
 and atoms are re-read from their paths without a content check. There is no slot export,
@@ -157,15 +180,29 @@ is version 2 for that field.
 
 ## Toolbar
 
-`Annot | Filter [Filtered] Normalise | Mask`. There is no synthesis, EW or correction
-button: the Mask tool owns every range gesture (line mask, synthesis, fit, equivalent
-width), and NLTE corrections start from a model-atom object (see below).
+`Open ▾ New ▾ | Line list Annot | Select range`. There is no synthesis, EW or correction
+button: the Select range tool owns every range gesture (line mask, synthesis, fit,
+equivalent width), and NLTE corrections start from a model-atom object (see below).
+**Line list** opens and closes the searchable line-list pane and is highlighted while it is open; clicking a line indicator
+remains the shortcut to the same pane at that transition. The Show/Hide lines button
+states its action in its label and carries no highlighted state.
 
-## Mask tool
+Spectrum preparation is contextual rather than a toolbar group: the selected spectrum's
+Edit tab carries a collapsed **Prepare spectrum** section with **Filter**, the
+**Filtering active** switch and **Normalise**. The inspector states the displayed flux
+state (automatic continuum scaling, spline continuum or already normalised) and whether
+filtering is active, and the measurement modals repeat that summary for their target,
+because filtering applies to every spectrum and feeds the measurements, not only the
+display. Measurement results record this preparation and the line list they used.
+Normalise shows "Editing continuum: <spectrum>", isolates that spectrum while the
+continuum is edited and returns through **Done**; Filter and Normalise are refused with
+a footer message, and the current view kept, when no spectrum is selected.
 
-1. Clicking **Mask** makes width-only box-select the active drag and the right sidebar
-   shows "Drag a wavelength range". Esc or clicking **Mask** again leaves the tool and
-   clears the band.
+## Select range tool
+
+1. Clicking **Select range** makes width-only box-select the active drag and the right
+   sidebar shows "Drag a wavelength range". Esc or clicking **Select range** again leaves
+   the tool and clears the band.
 2. After a drag the band stays shaded and the sidebar shows the range as editable
    λ min / λ max fields with these actions:
    - **New line mask**: creates a blank line-mask set holding this window (fit window =
@@ -186,20 +223,25 @@ windows…**, **Fit windows…**, **Measure abundances** and **Fit ionisation ba
 The centre shows the mask table below the spectrum; existing windows are resized by their
 edge handles only.
 
-**+ New mask** in the table arms the Mask tool's gesture in *add* mode: the sidebar shows
-the drawn range with a single action, **Add window to <set>**. Leaving the tool returns to
-the LineMasks view. Creating and extending a set therefore use the same drag.
+**+ New mask** in the table arms the Select range tool's gesture in *add* mode: the sidebar
+shows the drawn range with a single action, **Add window to <set>**. Leaving the tool
+returns to the LineMasks view. Creating and extending a set therefore use the same drag.
+The table's **Local continuum** column toggles local renormalisation per window.
 
 ## Synthesis modal
 
-One component, opened from the Mask tool sidebar (free range), the LineMasks view (the
-set's synth windows) and the empty landing page (blank λ fields).
+One component, opened from the Select range sidebar (free range), the LineMasks view (the
+set's synth windows) and New → Synthesise spectrum (blank λ fields).
 
 - Header: what will be computed, e.g. "5700.00–5720.00 Å" or "7 windows of Fe-lines.txt,
   5480–6720 Å".
 - Body: Atmosphere (grid, interpolate or pick, file), Stellar parameters, Abundances,
-  Radiative transfer (model atoms in NLTE). Values persist in the `synth_run` store
-  section so the modal reopens with the last configuration.
+  Radiative transfer (LTE/NLTE, and in NLTE the model atoms, the **Use line list** switch
+  and the **Saved departures** field). Values are a draft of the
+  `synth_run` store section: submitting makes them the configuration the modal reopens
+  with, Cancel discards the edits. **Use line list** off synthesises the model atoms
+  alone (`only_atom`): no external list, no line-list preparation, recorded as "Line
+  list: Off (model atom only)" in the result's Info rows.
 - Footer: **Synthesise**, Cancel. Both modes collect one request from the setup
   (`SynthSetup.context()`, a `tumult.synthesis.SynthRequest`) and add the job's windows:
   a free range is one `MaskWindow` whose fit and synth bounds coincide, a mask set
@@ -243,7 +285,7 @@ The same component in fit mode.
 
 ## Model atoms and NLTE corrections
 
-**Open File → Open Model Atom** reads a MULTI-format atom (`input/atoms`) into a model-atom
+**Open → Model atom** reads a MULTI-format atom (`input/atoms`) into a model-atom
 object in the left sidebar: element badge, file name, and a level·line count. The object is
 path-backed, so a session restores it by re-reading the file. Loading a file that is already
 listed replaces that object.
@@ -292,7 +334,7 @@ corrections…**, which opens the correction modal with this atom fixed.
   window; the reference EW and the stored NLTE rungs are re-read over the new window and the
   line's correction, the table, the scatter and the mean follow without another solve.
   Off, the atom's own `nq qmax q0` sample the lines and the windows come from the auto-crop
-  of the reference profile. **Include the line list** (off by default) synthesises the
+  of the reference profile. **Use line list** (off by default) synthesises the
   configured line list together with the atom in both stages; while such a result is shown,
   the canvas annotates the lines of the reference run's `linelist_out.txt`, and a result
   computed without the list shows no line annotations at all.
@@ -318,13 +360,13 @@ line include toggles curating the mean.
 
 - `app.py` builds the document: the `AppContext` (`context.py`) with its services, the
   canvas, the tools, the Processes panel, `load_async`, `submit_workflow`, the recovery
-  actions, `snapshot`/`restore_workspace` and the Sessions bridge. `main.py` only calls
+  actions, `snapshot`/`restore_workspace` and the Saved workspaces bridge. `main.py` only calls
   `app.build()`; `app_hooks.py` holds the Bokeh server lifecycle hooks.
 - `jobs.py` owns the job table (`Job`, `JobTable`), the workflow references and the
   recovery records; `session.py` the workspace schema, its validation and its headless
   preparation; `store.py` the config file (preferences, recent files, slots).
 - `tool.py` and `toolmanager.py` own the sidebar-tool protocol and mutual exclusion.
-  `RangeTool` (`rangetool.py`) is the Mask tool of the toolbar: it owns `RangeSelect` and
+  `RangeTool` (`rangetool.py`) is the Select range tool of the toolbar: it owns `RangeSelect` and
   hosts `EquivalentWidth` (`ew.py`) as its sub-panel. `MaskTool` (`masktool.py`) owns the
   LineMasks view over `MaskStore` (`maskstore.py`) and hands "+ New mask" to the range
   tool in add mode.

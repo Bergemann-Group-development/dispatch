@@ -48,6 +48,7 @@ class Job:
     heavy: bool = False          # confirm before cancelling (a synthesis, a fit)
     detached: bool = False       # survives the session closing; see session_closed
     path: str | None = None      # the file a load came from (picker row spinners)
+    delivers: bool = True        # its outcome lands on the canvas (a load, a synthesis)
     future: object = None
     handle: object = None
     state: str = QUEUED

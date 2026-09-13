@@ -359,12 +359,19 @@ def test_browser_events_route_through_the_shared_binder_to_each_tool(tmp_path, m
     from htmlbridge import parse_action
     grid_payload = next(v for v in sent if v.get("channel") == "synth-grid-actions")["value"]
     assert parse_action(grid_payload) == ("grid", spaced)
+    # atmosphere edits are a calculation draft: the setup reflects them at once, the
+    # preference store only once the calculation is submitted (setup.commit)
     apply("grid")
-    assert store.get_section("synthesis")["atmos_grid_id"] == spaced
     assert synth_setup.selected_grid_id() == spaced
-    apply("mode"); assert store.get_section("abund_run")["atmos_mode"] == "pick"
-    assert abund_setup.show_file()
+    assert store.get_section("synthesis").get("atmos_grid_id") != spaced
+    synth_setup.commit()
+    assert store.get_section("synthesis")["atmos_grid_id"] == spaced
+    apply("mode"); assert abund_setup.show_file()
+    assert store.get_section("abund_run").get("atmos_mode") != "pick"
+    abund_setup.commit(); assert store.get_section("abund_run")["atmos_mode"] == "pick"
     apply("format")
+    assert "atmos_individual_format" not in store.get_section("abundcorr_run")
+    corr_setup.commit()
     assert store.get_section("abundcorr_run")["atmos_individual_format"] == "Text"
     apply("jump-line"); assert jumps[-1] == ("ionbal", "0")
     assert next(values, None) is None

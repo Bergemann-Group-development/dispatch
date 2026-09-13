@@ -11,6 +11,7 @@ continuum-normalised spectrum (continuum at ~1).
 from __future__ import annotations
 
 import logging
+import html
 
 import numpy as np
 from bokeh.io import curdoc
@@ -55,7 +56,7 @@ class NormaliseTool(Tool):
             Field("win", "Outlier window [Å]", kind="number", value=50.0, min=0),
             Field("pct", "Keep percentile (0=off)", kind="number", value=98.0, min=0, max=100),
             Field("peak", "Peak spacing [Å]", kind="number", value=5.0, min=0.1),
-        ], on_change=self._on_field)
+        ], on_change=self._on_field, groups=[("Continuum detection settings", ("res", "win", "pct", "peak"))])
 
         # the drawn continuum curve + the draggable knots, both in display x / native flux
         self.spline_source = ColumnDataSource(dict(x=[], y=[]))
@@ -258,17 +259,11 @@ class NormaliseTool(Tool):
         for k in ("res", "win", "pct", "peak"):   # everything else is moot when pre-normalised
             f[k].disabled = prenorm
         dis = " disabled" if prenorm else ""
-        fields_html = (
-            f["prenorm"].render("norm")
-            + f["res"].render("norm")
-            + '<div class="field-row">'
-            + f["win"].render("norm") + f["pct"].render("norm")
-            + '</div>'
-            + f["peak"].render("norm")
-        )
+        fields_html = self.form.html()
         return (
+            f'<div class="hint">Editing continuum: {html.escape(self._obs().name)}. Other spectra are temporarily hidden.</div>'
             f'{fields_html}'
-            f'<button class="primary-btn norm-init"{dis}>Initialise spline</button>'
+            f'<button class="primary-btn norm-init"{dis}>Place continuum automatically</button>'
             f'<button class="text-btn norm-clear"{dis}>Clear spline</button>'
             f'<div class="hint">Resolution cut and the running-mean outlier window / '
             f'percentile shape the rendered spectrum the spline is fit to. Initialise (or '

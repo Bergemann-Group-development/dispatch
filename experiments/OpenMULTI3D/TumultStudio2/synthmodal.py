@@ -1,6 +1,6 @@
 """The synthesis modal: one dialog that synthesises or fits a spectrum over a window.
 
-It is opened on a *job* — a free wavelength range drawn with the Mask tool, the windows of
+It is opened on a *job* — a free wavelength range drawn with the Select range tool, the windows of
 a line-mask set, or a blank window from the empty landing page — in one of two modes:
 
 * **synth**: compute a spectrum at the configured (Teff, log g, [Fe/H], vmic), abundances
@@ -41,9 +41,11 @@ from atompicker import AtomPicker
 from controls import Field, Form
 from fittab import FitTab
 from gridmanager import GridManager
-from htmlbridge import pulse
+from filepicker import FilePicker
+from htmlbridge import pulse, toggle
 from synthsetup import SynthSetup
 from synthprefs import (
+    PATH_PICKERS,
     PREF_PAGES,
     REPO_DIR,
     SELECT_OPTIONS,
@@ -64,6 +66,7 @@ class SynthModal:
         self.ctx = ctx
         self.canvas = ctx.canvas
         self._add = add          # (spec, name, meta=None, conv=None) -> add to the canvas
+        self.on_inputs_change = lambda: None
         self.on_warn = on_warn   # push True/False when configured files go missing/found
         self.missing = []        # path prefs currently pointing at non-existent files
         self.job = None          # ("range", None) | ("masks", LineMaskSet) once opened
@@ -95,6 +98,31 @@ class SynthModal:
             ], on_change=self._save_pref)
             for name, fields in PREF_PAGES.items()
         }
+
+        self.pref_forms["synthengine"].groups = [
+            ("Execution", ("synth_output_dir", "workflow_runner", "max_threads")),
+            ("Spectral sampling", ("R", "linelist_crop_aa")),
+            ("Atmosphere mesh (horizontal columns apply to 3D)", ("nx", "ny", "nz")),
+            ("Fit settings", ("vmic_step", "abund_step", "fit_max_rounds"))]
+        # the path preferences are picked, not typed: each has an inline file picker beside
+        # its page's form (a Bokeh root, so it lives in the template rather than in the
+        # re-rendered form) and its text field is hidden. Folders may be picked where the
+        # preference accepts one.
+        self.pref_pickers, self._pref_results, self._pref_warn = {}, {}, {}
+        root = self._prefs_root(prefs)
+        for key, dirs in PATH_PICKERS.items():
+            form = next(f for f in self.pref_forms.values() if key in f.fields)
+            form.fields[key].hidden = True
+            picker = FilePicker(lambda path, key=key: self._on_pick_pref(key, path),
+                                container_id=f"pref-{key}-results", pick_dirs=dirs,
+                                root=None if key == "dispatch_cwd" else root, start_dir=root)
+            picker.layout.name = f"pref_{key}_picker"
+            picker.preset(str(prefs.get(key) or ""))
+            self.pref_pickers[key] = picker
+            self._pref_results[key] = ctx.bridges.cls(f"#pref-{key}-picker", "results-open")
+            self._pref_warn[key] = ctx.bridges.cls(f"#pref-{key}-block", "field-warn")
+        self._slurm_bridge = ctx.bridges.cls("#pref-slurm_script-block", "off")
+        toggle(self._slurm_bridge, prefs.get("workflow_runner") != "slurm")
 
         # atmosphere grids (Preferences → Atmosphere grids); the setup's grid selector,
         # source-mode toggle and direct-file picker read the current selection from it.
@@ -191,7 +219,10 @@ class SynthModal:
         self._open(mode)
 
     def _open(self, mode):
+        self.draft.begin()
         self.mode = mode
+        self.setup.allow_departures = mode != "fit"
+        self.setup.allow_atom_only = mode != "fit"
         self.setup.render()
         self.atoms.show(self.is_nlte)
         self.refresh_targets()
@@ -213,6 +244,7 @@ class SynthModal:
                     f'{"" if len(masks) == 1 else "s"} of <b>{html.escape(mset.name)}</b>, '
                     f'{lo:.2f}–{hi:.2f} Å.</div>')
         return ('<div class="section-header">Wavelength window</div>'
+                '<div class="hint">Last-used atmosphere setup. Synthesis continues after closing the tab; spectrum fits stop.</div>'
                 f'<div id="{self.window_form.slot_id}" class="synth-window">'
                 f'{self.window_form.html()}</div>')
 
@@ -267,7 +299,7 @@ class SynthModal:
         rows = [["Teff [K]", f"{float(stellar['teff']):.0f}"],
                 ["log g", f"{float(stellar['logg']):.2f}"],
                 ["[Fe/H]", f"{float(stellar['feh']):+.2f}"],
-                ["vmic [km/s]", f"{float(stellar['vmic']):.2f}"],
+                ["Microturbulence ξ [km/s]", f"{float(stellar['vmic']):.2f}"],
                 *atmosphere,
                 ["RT mode", str(mode).upper()]]
         if str(abundances).strip():
@@ -356,6 +388,8 @@ class SynthModal:
                                     atmosphere=self._selection_rows(synthesis.selection, grid))
             self._add(raw, name, meta=meta, conv=post)
 
+        self.draft.commit()
+        self.fit.commit()
         pulse(self.dialog, "close")
         self.ctx.submit(name, lambda token=None: synth.fit(observation, fit_request,
                                                            cancel_token=token), on_done)
@@ -469,7 +503,33 @@ class SynthModal:
 
     def _save_pref(self, key, value):
         store.update_pref("synthesis", key, value)
+        prefs = load_prefs()
+        if key == "dispatch_cwd":
+            # the other path pickers browse relative to the working directory
+            root = self._prefs_root(prefs)
+            for other, picker in self.pref_pickers.items():
+                if other != "dispatch_cwd":
+                    picker.set_root(root)
+                    picker.preset(str(prefs.get(other) or ""))
+        if key in ("linelist", "dispatch_cwd"):
+            self.on_inputs_change()
+        toggle(self._slurm_bridge, prefs.get("workflow_runner") != "slurm")
         self._refresh_warnings(push=True)
+
+    @staticmethod
+    def _prefs_root(prefs):
+        return Path(str(prefs.get("dispatch_cwd") or REPO_DIR)).expanduser()
+
+    def _on_pick_pref(self, key, path):
+        """A path preference was picked: show it in its field, persist it, fold the list."""
+        value = str(path)
+        self.pref_pickers[key].query.value = value
+        self._save_pref(key, value)
+        pulse(self._pref_results[key], "off")
+
+    def pref_picker_results(self):
+        """``{key: results-bridge name}`` for the template's inline pickers."""
+        return {key: picker.results_name for key, picker in self.pref_pickers.items()}
 
     # --- file-existence warnings ------------------------------------------
     def _refresh_warnings(self, push):
@@ -480,6 +540,8 @@ class SynthModal:
                 field.warn = key in self.missing
             if push:
                 form.render()
+        for key, bridge in self._pref_warn.items():
+            toggle(bridge, key in self.missing)
         if push and self.on_warn:
             self.on_warn(self.has_warning)
 
@@ -514,6 +576,7 @@ class SynthModal:
             mode=rv["mode"], abundances=rv["abundances"],
             relative=rv["relative_abundances"], atoms=rv["atoms"],
             xmin=shown_min, xmax=shown_max, atmosphere=atmosphere)
+        meta["params"].append(["Line list", "Off (model atom only)" if rv.get("only_atom") else str(request.prefs.get("linelist", ""))])
         if kind == "masks":
             meta["params"].append(["Line mask", mset.name])
 
@@ -522,5 +585,7 @@ class SynthModal:
                 suffix = f"·{index}" if len(result.spectra) > 1 else ""
                 self._add(spec, name + suffix, meta=meta)
 
+        self.draft.commit()
+        self.fit.commit()
         pulse(self.dialog, "close")
         self.ctx.submit_workflow(name, request, add_result, meta)

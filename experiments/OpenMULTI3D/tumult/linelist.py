@@ -1,4 +1,6 @@
 from io import StringIO
+from functools import lru_cache
+import logging
 from .auxfuncs import split_words
 from tumult.const import EK
 import os
@@ -364,8 +366,77 @@ _DUMMY_T = 5000.0   # excitation temperature of the strength proxy below
 _cache = {}  # path -> parsed DataFrame (process-wide, read-only, shared across sessions)
 
 
+def species_header(path):
+    """The first quoted species label in a Tumult line-list file."""
+    with Path(path).open(errors="ignore") as stream:
+        header = stream.readline().strip()
+    if "'" in header:
+        return header.split("'", 2)[1].strip()
+    return header.split()[0] if header.split() else ""
+
+
+def is_molecule(species):
+    """Whether a species label has more than one constituent; unknown labels are kept."""
+    try:
+        return len(species_elements(species)) > 1
+    except (IndexError, ValueError):
+        return False
+
+
+@lru_cache(maxsize=8)
+def atomic_files(folder):
+    """Files in ``folder`` whose first species is atomic.
+
+    A conventional atomic label has one constituent (``Fe I`` -> Fe), whereas molecular
+    labels have several (``TiO`` -> Ti + O). Files with an unfamiliar header stay in the
+    selection: omitting an unclassified input would silently lose annotations.
+    """
+    files = []
+    for path in sorted(item for item in Path(folder).iterdir()
+                       if item.is_file() and not item.name.startswith(".")):
+        try:
+            molecular = is_molecule(species_header(path))
+        except OSError:
+            logging.warning("Could not classify line-list file %s; keeping it", path)
+            molecular = False
+        if not molecular:
+            files.append(path)
+    return tuple(files)
+
+
+HLINEDATA_NAME = "Hlinedata"   # HOP's dedicated hydrogen file (composition_mod add_h_block)
+
+
+def _read_hlinedata(path):
+    """The dedicated hydrogen file in the frame layout of :meth:`LineList.from_tumult_format`.
+
+    Its columns are ``lam_air, i, j, lower_ev, upper_ev, loggf, label, ga``; HOP selects
+    this layout by the file name, so the generic reader must not see it.
+    """
+    with Path(path).open() as stream:
+        stream.readline()                      # the descriptive header
+        nlines = int(split_words(stream.readline())[1])
+        table = "".join(stream.readline() for _ in range(nlines))
+    df = pd.read_csv(StringIO(table), header=None, sep=r"\s+", quotechar="'",
+                     names=["lam0", "i", "j", "evi", "eup", "loggf", "label", "ga"])
+    df["ion"], df["iso"] = "H I", 0
+    return df[["ion", "iso", "lam0", "evi", "loggf", "i", "j", "ga"]]
+
+
+def _read_list(path):
+    path = Path(path)
+    if path.name == HLINEDATA_NAME:
+        return _read_hlinedata(path)
+    return LineList.from_tumult_format(path).reset_index()
+
+
 def load_master(path=MASTER_PATH):
     """Parse a line list once per path, ensuring it carries a ``strength`` column.
+
+    ``path`` is a file or a folder of per-species files, the same input the synthesis
+    takes. A folder is read as its atomic files plus :data:`HLINEDATA_NAME`: the whole
+    frame is held in memory for searching, and the molecular lists (hundreds of MB for
+    the default folder) belong to the synthesis, which crops them to its windows.
 
     A ``linelist_out.txt`` written by a run already has one — HOP's line-centre over
     continuum extinction, which compares across species — and it is kept as it is. Only a
@@ -376,10 +447,14 @@ def load_master(path=MASTER_PATH):
     """
     path = str(path)
     if path not in _cache:
-        m = LineList.from_tumult_format(path).reset_index()
+        source = Path(path)
+        files = atomic_files(source) if source.is_dir() else (source,)
+        if not files:
+            raise ValueError(f"No line lists in {source}")
+        m = pd.concat([_read_list(f) for f in files], ignore_index=True)
         proxy = "strength" not in m.columns or not m.strength.notna().any()
         if proxy:
-            m["strength"] = m.lam0 * np.exp(-m.evi * EK / _DUMMY_T) * 10 ** m.loggf
+            m["strength"] = m.lam0 * np.exp(-m.evi * EK / _DUMMY_T) * 10.0 ** m.loggf
         m.attrs["strength_is_proxy"] = proxy
         _cache[path] = m
     return _cache[path]

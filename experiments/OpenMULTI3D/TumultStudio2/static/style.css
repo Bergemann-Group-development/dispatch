@@ -153,7 +153,6 @@ body.resizing * { pointer-events: none !important; }
 /* empty state: no spectra loaded -> hide the (blank) toolbar + figures and show an
    inline copy of the Sessions loader, centred in the canvas area */
 #canvas-empty { display: none; }
-#main.empty #canvas-toolbar,
 #main.empty #top-panel,
 #main.empty #canvas-wrap { display: none; }
 #main.empty #canvas-empty { display: flex; flex: 1; min-height: 0; align-items: center; justify-content: center; }
@@ -174,8 +173,8 @@ body.resizing * { pointer-events: none !important; }
 .empty-card-head { display: flex; align-items: center; gap: 8px; }
 .empty-card-head i { color: var(--text-muted); }
 .empty-session-results { margin-top: 0; max-height: 320px; }
-.empty-actions { display: flex; gap: 8px; }
-.empty-actions .text-btn { flex: 1; display: inline-flex; align-items: center; justify-content: center; }
+.empty-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.empty-actions .text-btn { flex: 1 1 auto; display: inline-flex; align-items: center; justify-content: center; white-space: nowrap; }
 
 /* filter mode swaps the spectrum figure (and top panel) for the feautrier view */
 #feautrier-wrap { display: none; flex: 1; min-height: 0; flex-direction: column; gap: 6px; }
@@ -183,7 +182,7 @@ body.resizing * { pointer-events: none !important; }
 #main.filter-mode #canvas-wrap { display: none; }
 #main.filter-mode #feautrier-wrap { display: flex; }
 #filter-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-#mask-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+#mask-btn.active, #line-list-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 .feautrier-head { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; }
 
 /* "Filtered" toggle switch (STYLE_REFERENCE.md §6.3) — shown once a filter exists */
@@ -217,8 +216,6 @@ body.resizing * { pointer-events: none !important; }
    lines to draw — for a view that attached its own selection, or on a deep enough zoom. */
 #annot-btn { display: none; }
 #main.annot-mode #annot-btn { display: inline-flex; align-items: center; }
-#annot-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-#canvas-toolbar #annot-btn.active:hover { background: #5a9fe8; border-color: var(--accent); color: #fff; }
 
 /* the line list, in the bottom half of the workspace: opened by picking one of those
    indicators, so it stacks under whichever tool table is already down there rather than
@@ -531,7 +528,7 @@ body.resizing * { pointer-events: none !important; }
   text-transform: uppercase; letter-spacing: 0.04em;
   color: var(--text-muted);
 }
-.section-header:not(:first-child) { margin-top: 16px; }
+.section-header:not(:first-child) { margin-top: 16px; }   /* stacked only: the row list below zeroes it */
 /* a section title with a right-aligned action button (e.g. Objects + open) */
 .section-head-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 .section-head-row .icon-btn { flex-shrink: 0; }
@@ -598,13 +595,16 @@ body.resizing * { pointer-events: none !important; }
 
 .field-group { display: flex; flex-direction: column; gap: 2px; }
 /* space every field-group after the first, even when buttons/other blocks sit between.
-   Only stacked groups: in a horizontal container the neighbour sits beside, not above, so
-   the margin would just push it off the row's baseline. Those containers are listed below —
-   the extra descendant makes them win the cascade wherever this rule is repeated. */
+   Only stacked groups, like the section header above: in a row container the neighbour
+   sits beside, not above, so the margin would just push it off the row's baseline. CSS
+   cannot read the parent's flex direction, so the row containers that hold headers or
+   field groups are listed here; add to the list when a new row layout takes one. The
+   child combinator makes these win the cascade wherever the stacked rule is repeated. */
 .field-group:not(:first-child) { margin-top: 12px; }
-.field-row > .field-group,
-.synth-window > .field-group,
-.linelist-settings > .field-group { margin-top: 0; }
+:is(.field-row, .synth-window, .linelist-settings, .linelist-head, .section-head-row,
+    .grid-card-head, .empty-card-head, .cache-head, .path-row, .processes-header,
+    .modal-cols, .modal-header, .modal-footer)
+  > :is(.section-header, .field-group) { margin-top: 0; }
 .field-group label { font-size: 10px; color: var(--text-muted); }
 .field-static {
   background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
@@ -697,7 +697,8 @@ num-input[disabled] .num-spin button { cursor: not-allowed; }
   padding: 0;
 }
 .modal-lg { width: min(560px, 92vw); }
-#settings-modal { width: min(640px, 92vw); height: min(520px, 88vh); }
+/* wide enough for the model table of the Atmosphere grids page */
+#settings-modal { width: min(760px, 92vw); height: min(520px, 88vh); }
 
 /* settings modal: left nav rail + content pane (docs-nav style) */
 .settings-layout { flex: 1; display: flex; min-height: 0; overflow: hidden; }
@@ -803,8 +804,6 @@ num-input[disabled] .num-spin button { cursor: not-allowed; }
 .grid-card-head .grid-name { flex: 1; min-width: 0; font-weight: 600; }
 .grid-card .field-warn-input { border-color: #c0392b; }
 .grid-add { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; }
-.grid-status { min-height: 1.2em; white-space: pre-line; }
-.grid-status:empty { display: none; }
 .grid-count .field-input { width: 5em; }
 .grid-row {
   display: flex; align-items: center; gap: 6px;
@@ -814,12 +813,19 @@ num-input[disabled] .num-spin button { cursor: not-allowed; }
 .grid-row-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .grid-row-name { font-weight: 600; }
 .grid-row-state { color: var(--text-muted); font-size: 12px; }
-.grid-row .icon-btn[disabled] { opacity: 0.4; cursor: default; }
+/* a running download replaces the row's buttons by a ring that fills clockwise with the
+   job's percentage (--p, pushed live by the grid-progress bridge) */
+.grid-progress {
+  flex-shrink: 0; display: inline-block; vertical-align: middle;
+  width: 16px; height: 16px; margin: 4px; border-radius: 50%;
+  background: conic-gradient(var(--accent) calc(var(--p, 0) * 1%), var(--border) 0);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3.5px), #000 calc(100% - 3px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 3.5px), #000 calc(100% - 3px));
+}
 /* the model table reuses the sortable line-list table; the name column reads as text */
 .grid-models { max-height: 420px; overflow: auto; background: var(--bg); border: 1px solid var(--border); border-radius: 3px; }
 .grid-models td.line-ion { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .grid-models td:last-child { white-space: nowrap; }
-.grid-models .icon-btn[disabled] { opacity: 0.4; cursor: default; }
 
 /* ---- synth panel: grid selector + source mode ---------------------------- */
 .synth-grid { display: flex; flex-direction: column; gap: 6px; }
@@ -861,9 +867,14 @@ num-input[disabled] .num-spin button { cursor: not-allowed; }
   padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;
 }
 .modal-footer {
-  flex-shrink: 0; display: flex; justify-content: flex-end;
+  flex-shrink: 0; display: flex; justify-content: flex-end; align-items: center; gap: 8px;
   padding: 10px 16px 14px; border-top: 1px solid var(--border);
 }
+/* server-rendered action slots sit inside the footer's own row, and every footer button
+   shares the text button's geometry (the corrections modal's Cancel / Compute pair is the
+   template); the primary action keeps its accent */
+#synth-modal-actions, #abund-modal-actions { display: contents; }
+.modal-footer :is(.text-btn, .primary-btn) { height: 24px; margin-top: 0; padding: 0 10px; font-size: 11px; }
 /* contextual: only shown when the picker sits inside a tumult run folder */
 #load-run { display: none; }
 #load-run.ready {
@@ -978,7 +989,6 @@ num-input[disabled] .num-spin button { cursor: not-allowed; }
    Replaces the whole canvas (an atom has no wavelength axis of its own), and stands in for
    the empty-state card when no spectrum is loaded. */
 #atom-view { display: none; flex: 1; min-height: 0; flex-direction: column; gap: 6px; }
-#main.atom-mode #canvas-toolbar,
 #main.atom-mode #top-panel,
 #main.atom-mode #canvas-wrap,
 #main.atom-mode #canvas-empty { display: none; }
@@ -1073,3 +1083,47 @@ num-input[disabled] .num-spin button { cursor: not-allowed; }
 .modal-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .ionbal-context, .abund-context, .corr-context { display: flex; flex-direction: column; gap: 4px; }
 @media (max-width: 720px) { .modal-cols { flex-direction: column; } }
+
+/* Workspace entry points stay available independently of the active scientific view. */
+#main.empty #canvas-toolbar > :not(.workspace-actions),
+#main.atom-mode #canvas-toolbar > :not(.workspace-actions) { display: none; }
+#linemask-modal .settings-nav { display: none; }
+#linemask-modal .settings-layout { display: block; }
+.advanced { margin: 8px 0; border-top: 1px solid var(--border); padding-top: 8px; }
+.advanced > summary {
+  cursor: pointer; padding: 5px 0;
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.advanced > summary:hover { color: var(--text); }
+:where(button, input, select, summary, [tabindex]):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.preparation-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+#canvas-toolbar { flex-wrap: wrap; }
+.modal-cols { flex-wrap: wrap; }
+.modal-col { min-width: min(230px, 100%); }
+
+/* the selected row of an Open dialog or workspace list: the same tint-and-outline the
+   Objects list uses for its selected item, so the muted subtitle stays readable */
+/* Preferences path pickers: the field is the preference; a missing target reddens its
+   label (the input itself sits in Bokeh's shadow DOM) and shows the hint */
+.pref-path .field-warn-hint { display: none; }
+.pref-path.field-warn .field-warn-hint { display: block; }
+.pref-path.field-warn > label { color: #e05c5c; }
+.pref-path.off { display: none; }
+.pref-path .inline-picker-auto { margin-top: 0; }
+.file-item.selected, .session-item.selected {
+  background: rgba(74,144,226,0.18); border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.file-item.selected i, .session-item.selected > i { color: var(--accent); }
+
+#abund-modal.reconfigure .abund-measure-fields { display: none; }
+
+/* a closed section's current values: ordinary text under the header-styled title */
+.advanced-values {
+  display: block; margin-top: 2px; font-size: 11px; font-weight: 400; color: var(--text-muted);
+  text-transform: none; letter-spacing: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.advanced[open] > summary .advanced-values { display: none; }
+.empty-card .session-load { margin-top: 0; }

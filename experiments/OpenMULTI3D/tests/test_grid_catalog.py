@@ -163,7 +163,9 @@ class _SyncContext:
 
     def __init__(self):
         self.notes = []
-        self.notify = self.notes.append
+
+    def notify(self, message, level="warn"):
+        self.notes.append(message)
 
     def submit_io(self, name, work, done):
         from tumult.synthesis.cancel import CancelToken
@@ -207,7 +209,12 @@ def test_grid_page_downloads_lists_deletes_and_registers(served, tmp_path, monke
     assert re.findall(r'class="line-ion" title="([^"]+)"', gm.list_html())[0] == "t45g35m30_new"
     gm.actions.value = "fetch-model stagger-dwarfs t50g45m00 2"
     assert ctx.notes == ["t50g45m00 downloaded"]
-    assert "1 / 3" in gm.list_html() and gm.list_html().count("grid-del-model") == 1
+    # the fetched model holds its count: delete replaces its download button
+    page = gm.list_html()
+    assert "1 / 3" in page and page.count("grid-del-model") == 1
+    assert page.count("grid-fetch-model") == 2 and "grid-progress" not in page
+    # every model row states what its download fetches at the shared count
+    assert page.count("<td title=\"of the 1 snapshots a download fetches\">") == 3
     record = gm._find("stagger-dwarfs")
     assert record["folder"] == str(tmp_path / "atmos" / "Stagger2_dwarfs")
     assert record["snapshots"] == "1" and [g["id"] for g in gm.grids] == ["stagger-dwarfs", "g1"]

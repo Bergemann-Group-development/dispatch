@@ -873,6 +873,13 @@ def _session_action(document, value):
     document.select_one({"name": "session-actions"}).value = value
 
 
+def _session_load(document, sid, nonce):
+    """Load slot ``sid`` the way the page does: a workspace with unsaved changes gets the
+    Save / Discard / Cancel prompt first, and these tests always discard."""
+    _session_action(document, f"load {sid} {nonce}")
+    _session_action(document, f"load-discard {nonce}")
+
+
 def _session_list(document):
     return document.select_one({"name": "session-render"}).value
 
@@ -946,7 +953,10 @@ def test_broken_config_is_reported_and_never_replaced_from_the_gui(tmp_path, mon
     _with_spectrum(ctx)
     path.write_text('{"version": 7, "preferences": {}, "recent_files": [], "sessions": []}')
     for action in ("save x 1", "load 1 2", "delete 1 3", "refresh 4"):
-        _session_action(document, action)
+        if action.startswith("load"):
+            _session_load(document, *action.split()[1:])
+        else:
+            _session_action(document, action)
         footer = _footer(document)
         assert "version 7 is not supported" in footer and str(path) in footer, action
     assert '"version": 7' in path.read_text()
@@ -1115,7 +1125,7 @@ def test_mixed_workspace_round_trips_into_a_fresh_document(tmp_path, monkeypatch
     document, ctx = _build_document()
     expected_ids = ids
     before = ctx.generation
-    _session_action(document, "load 1 2")
+    _session_load(document, 1, 2)
     footer = _footer(document)
     assert "Loaded “mixed”: 2 spectra, 1 line mask, 1 atom, 3 results" in footer
     assert "skipped" not in footer and ctx.generation is not before
@@ -1160,7 +1170,7 @@ def test_loading_replaces_an_unrelated_workspace_and_an_empty_slot_clears_it(tmp
     _session_action(document, "save other 2")
     assert tools.active_name() == "linemask" and ctx.focus_kind == "linemask"
 
-    _session_action(document, "load 1 3")
+    _session_load(document, 1, 3)
     state = _state(ctx)
     assert [o[1] for o in state["objects"]] == ["obs", "model"]
     assert [m[1] for m in state["masks"]] == ["fe-lines"]
@@ -1169,14 +1179,14 @@ def test_loading_replaces_an_unrelated_workspace_and_an_empty_slot_clears_it(tmp
 
     # the empty slot: every collection replaced by nothing, the plain canvas back
     store.save_session("empty", {"schema_version": 2})
-    _session_action(document, "load 3 4")
+    _session_load(document, 3, 4)
     assert "Loaded “empty”: 0 spectra, 0 line masks, 0 atoms, 0 results" in _footer(document)
     state = _state(ctx)
     assert state["objects"] == [] and state["masks"] == [] and state["atoms"] == []
     assert all(r[0] == [] and r[1] is None for r in state["results"].values())
     assert state["focus"] == ("spectrum", None) and state["selected"] is None
     # and the other way round: loading the "other" slot into the emptied document
-    _session_action(document, "load 2 5")
+    _session_load(document, 2, 5)
     assert "skipped spectrum other (/nowhere/other.fits)" in _footer(document)
     state = _state(ctx)
     assert state["objects"] == [] and [m[1:3] for m in state["masks"]] == [("scratch", "Ni")]
@@ -1207,7 +1217,7 @@ def test_missing_files_skip_their_objects_and_clear_what_pointed_at_them(tmp_pat
     store.save_session("broken links", slot)
 
     document, ctx = _build_document()
-    _session_action(document, "load 2 2")
+    _session_load(document, 2, 2)
     footer = html.unescape(_footer(document))
     assert "1 spectrum, 1 line mask, 0 atoms, 3 results" in footer
     assert f"skipped spectrum obs ({ids.obs_path}): FileNotFoundError" in footer
@@ -1226,7 +1236,7 @@ def test_missing_files_skip_their_objects_and_clear_what_pointed_at_them(tmp_pat
     slot["spectra"][1]["data"] = None
     slot["atoms"][0]["path"] = str(ATOM_FIXTURE)
     store.save_session("no spectra", slot)
-    _session_action(document, "load 3 3")
+    _session_load(document, 3, 3)
     state = _state(ctx)
     assert state["objects"] == [] and [m[1] for m in state["masks"]] == ["fe-lines"]
     assert [a[1] for a in state["atoms"]] == [str(ATOM_FIXTURE)]
@@ -1254,7 +1264,7 @@ def test_broken_slots_are_refused_before_the_workspace_changes(tmp_path, monkeyp
                                           "focus": {"kind": "result", "uid": "ghost"}})
     for sid, cause in ((1, "version 1 is not supported"), (2, "norm_knots"),
                        (3, "results.ionbal"), (4, "focus: result 'ghost'")):
-        _session_action(document, f"load {sid} {sid}")
+        _session_load(document, sid, sid)
         footer = html.unescape(_footer(document))
         assert "Could not load" in footer and cause in footer, sid
         assert _state(ctx) == before and ctx.generation is generation
@@ -1293,7 +1303,7 @@ def test_failed_application_restores_the_previous_workspace(tmp_path, monkeypatc
         raise RuntimeError("no filter today")
     monkeypatch.setattr(filtertool, "apply_saved_lowpass", explode)
     generation = ctx.generation
-    _session_action(document, "load 2 2")
+    _session_load(document, 2, 2)
     footer = _footer(document)
     assert "Loading “with filter” failed: no filter today" in footer
     assert "the previous workspace was restored" in footer
@@ -1552,7 +1562,7 @@ def test_slot_references_reattach_a_running_workflow_after_a_load(tmp_path, monk
     _destroy(old_document)
 
     document, ctx, ticks = _reconnecting_document(tmp_path, monkeypatch)
-    _session_action(document, "load 1 2")
+    _session_load(document, 1, 2)
     assert "reattached" in _footer(document)
     job, = ctx.jobs.active
     assert job.workflow_id == handle.id and job.generation is ctx.generation
@@ -1636,7 +1646,7 @@ def test_a_slot_whose_workflow_record_is_gone_reports_it(tmp_path, monkeypatch):
     _session_action(document, "save plain 1")
     gone = store.workflow_reference("20260901T000000-gone", str(tmp_path / "nowhere"), "gone")
     store.save_session("dangling", store.get_session(1), [gone])
-    _session_action(document, "load 2 2")
+    _session_load(document, 2, 2)
     footer = _footer(document)
     assert "workflow gone" in footer and "no record" in footer
     assert str(tmp_path / "nowhere") in footer
@@ -1765,7 +1775,7 @@ def test_fixed_file_snapshot_and_nlte_requests_are_captured_from_the_setup(tmp_p
     import store
     store.update_pref("synthesis", "atmos_grid_id", "__individual__")
     store.update_pref("synth_run", "atmos_individual_format", "stagger")
-    modal.setup.reload()
+    modal.setup.discard()        # re-read the store: the setup holds a draft of it
     assert modal.setup.is_snapshot
     modal.open_range(5000.0, 5001.0, "synth")
     assert _submit_modal(document, ctx) == 1
@@ -1775,7 +1785,7 @@ def test_fixed_file_snapshot_and_nlte_requests_are_captured_from_the_setup(tmp_p
     assert cube.selection.resolution == (30, 30, 128) and cube.masks[0].synth == (5000., 5001.)
 
     store.update_pref("synth_run", "atmos_individual_format", "Marcs")
-    modal.setup.reload()
+    modal.setup.discard()
     modal.mode_form.set_values(mode="NLTE", departure_field=str(_departure_folder(tmp_path)))
     modal.atoms.selected = ["/atoms/mg.atom"]
     modal.open_range(5000.0, 5001.0, "synth")
@@ -1792,18 +1802,20 @@ def test_fixed_file_snapshot_and_nlte_requests_are_captured_from_the_setup(tmp_p
 
 
 def test_unsupported_requests_are_refused_before_submission(tmp_path, monkeypatch):
-    """A saved departure field outside NLTE, and a fit with a snapshot or a saved
-    departure field, are refused with the reason and admit no job."""
+    """A fit of a 3D snapshot is refused with the reason and admits no job. A saved
+    departure field is not offered outside NLTE synthesis (the field is hidden for LTE and
+    for fits), so a stored one is ignored there rather than refused."""
     from tumult.synthesis import workflows
     one = tmp_path / "one.mod"
     one.write_text("")
     document, ctx, messages = _synth_document(
         tmp_path, monkeypatch, grid_id="__individual__",
-        run={"atmos_file": str(one), "departure_field": str(_departure_folder(tmp_path))})
+        run={"atmos_file": str(one), "departure_field": str(_departure_folder(tmp_path)),
+             "atmos_individual_format": "stagger"})
     monkeypatch.setattr(workflows, "execute_request",
                         lambda *a, **k: pytest.fail("a refused request was executed"))
     monkeypatch.setattr(workflows, "fit", lambda *a, **k: pytest.fail("a refused fit ran"))
-    ticks = _Ticks(document, monkeypatch)
+    _Ticks(document, monkeypatch)
     modal = ctx.synth_modal
     x = np.arange(4999., 5002., .01)
     ctx.canvas.add_object(Spectrum(x, np.ones_like(x)), name="obs",
@@ -1811,21 +1823,8 @@ def test_unsupported_requests_are_refused_before_submission(tmp_path, monkeypatc
     modal.fit.target = ctx.canvas.objects[0].uid
     modal.fit.abund_rows = {"Mg": 0.0}
 
-    modal.open_range(5000.0, 5001.0, "synth")        # LTE with a saved departure field
-    assert _submit_modal(document, ctx) == 0
-    assert messages[-1] == "Saved departures can only be reused in NLTE mode."
-
-    modal.mode_form.set_values(mode="NLTE")
-    modal.atoms.selected = ["/atoms/mg.atom"]
-    modal.open_range(5000.0, 5001.0, "fit")          # a fit with a saved departure field
-    assert _submit_modal(document, ctx) == 0
-    assert messages[-1].startswith("Cannot fit: Fitting with a saved departure field")
-
-    import store
-    store.update_pref("synth_run", "atmos_individual_format", "stagger")
-    modal.setup.reload()
-    modal.mode_form.set_values(mode="LTE", departure_field="")
     modal.open_range(5000.0, 5001.0, "fit")          # a fit of a 3D snapshot
+    assert modal.setup.mode_form.fields["departure_field"].hidden
     assert _submit_modal(document, ctx) == 0
     assert messages[-1] == ("Cannot fit: Fitting is available for 1D atmospheres and "
                             "grids only.")

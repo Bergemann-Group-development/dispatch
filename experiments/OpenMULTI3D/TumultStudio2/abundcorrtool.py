@@ -17,7 +17,7 @@ Preferences → Atmosphere grids). Its one **Compute** button runs both stages a
    flux maxima nearest the centre, so a blended line is integrated over its own profile.
    The reference spectrum lands on the canvas and the result object appears under its atom in the left
    sidebar as soon as this stage finishes.
-   With **Include the line list** on, the configured synthesis line list is synthesised
+   With **Use line list** on, the configured synthesis line list is synthesised
    with the atom (reference and every NLTE rung), and the reference run's ``linelist_out.txt``
    is what the canvas annotates while the result is shown; off, the canvas shows no line
    annotations for it, since the spectrum holds nothing but the atom's lines.
@@ -57,6 +57,7 @@ import store
 from abundwizard import PROFILES, AbundanceWizard
 from canvas import ACCENT, SYNTH_FIT, style_dark
 from controls import Field, Form
+from ew import profile_options
 from htmlbridge import pulse
 from tumult.abundance import (CorrectionOpts, correction_summary,
                               measure_reference_lines, reduced_ew, refit_line_window,
@@ -94,13 +95,13 @@ class AbundCorrTool(AbundanceWizard):
         # the measurement settings live in the modal
         self.form1 = Form("corr1", [
             Field("profile", "EW profile", kind="select", value=vals["profile"],
-                  options=CORR_PROFILES),
+                  options=profile_options(CORR_PROFILES)),
             Field("ew_min", "Min EW [mÅ]", kind="number", value=vals["ew_min"], min=0),
-            Field("limit", "CoG limit [dex]", kind="number", value=vals["limit"], min=0,
+            Field("limit", "Curve-of-growth half-span [dex]", kind="number", value=vals["limit"], min=0,
                   step=0.25),
             Field("line_grid", "Line grid from opacity profiles", kind="checkbox",
                   value=vals["line_grid"]),
-            Field("linelist", "Include the line list", kind="checkbox",
+            Field("linelist", "Use line list", kind="checkbox",
                   value=vals["linelist"]),
         ], on_change=self._on_field)
 
@@ -242,7 +243,7 @@ class AbundCorrTool(AbundanceWizard):
 
     # --- state persistence -------------------------------------------------------------
     def _on_field(self, key, value):
-        store.update_pref("abundcorr", key, value)
+        pass  # The calculation draft is persisted on submission.
 
     def _extra_action(self, kind, arg):
         if kind == "run":
@@ -252,6 +253,7 @@ class AbundCorrTool(AbundanceWizard):
     def open_for(self, atom_obj):
         """Open the modal to compute corrections from ``atom_obj`` (the atom panel action)."""
         self._pending_atom = atom_obj
+        self.draft.begin()
         if not store.get_section(self.setup.section).get("_seeded"):
             self.setup.inherit_from()
             store.update_pref(self.setup.section, "_seeded", True)
@@ -439,6 +441,7 @@ class AbundCorrTool(AbundanceWizard):
             self.notify("The trapezoidal width needs the line grid for its windows; "
                         "switch it on or pick a fitted profile.")
             return
+        self.draft.commit()
         pulse(self._modal, "close")
         self.notify(f"Computing the 1D LTE reference for {obj.symbol}…")
         ref_grid = deepcopy(ref_grid)

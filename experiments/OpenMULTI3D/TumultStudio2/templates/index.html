@@ -27,16 +27,7 @@
     <aside class="sidebar-left">
       <div class="section-head-row">
         <div class="section-header">Objects</div>
-        <!-- one entry point for every import; the menu picks which modal opens -->
-        <div class="menu-wrap">
-          <button id="open-file" class="text-btn menu-btn" title="Import a spectrum, a line mask or a model atom"
-                  aria-haspopup="true" aria-expanded="false">Open File&nbsp;<i class="ti ti-folder-open"></i></button>
-          <div id="open-file-menu" class="menu">
-            <button class="menu-item" data-import="spectrum"><i class="ti ti-chart-line"></i>Import Spectrum</button>
-            <button class="menu-item" data-import="linemask"><i class="ti ti-columns"></i>New Line Mask</button>
-            <button class="menu-item" data-import="atom"><i class="ti ti-atom"></i>Open Model Atom</button>
-          </div>
-        </div>
+
       </div>
       <div id="objects">{{ objects_html|safe }}</div>
       <!-- imported line-mask sets (see masktool.MaskTool.objects_html) -->
@@ -67,27 +58,37 @@
 
     <div id="main" class="{{ 'empty' if main_empty else '' }}">
       <div id="canvas-toolbar">
+        <div class="toolbar-group workspace-actions">
+          <div class="menu-wrap">
+            <button id="open-file" class="text-btn menu-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="open-file-menu">Open ▾</button>
+            <div id="open-file-menu" class="menu" role="menu">
+              <button class="menu-item" role="menuitem" data-import="spectrum">Spectrum…</button>
+              <button class="menu-item" role="menuitem" data-import="atom">Model atom…</button>
+              <button class="menu-item" role="menuitem" data-import="linemask">Line mask set…</button>
+            </div>
+          </div>
+          <div class="menu-wrap">
+            <button id="new-object" class="text-btn menu-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="new-object-menu">New ▾</button>
+            <div id="new-object-menu" class="menu" role="menu">
+              <button class="menu-item" role="menuitem" data-new="mask">Line mask set…</button>
+              <button class="menu-item" role="menuitem" data-new="spectrum">Synthesise spectrum…</button>
+            </div>
+          </div>
+        </div>
+
         <!-- line-position indicators over the spectrum (see lineannot.LineAnnotations);
              clicking one opens the line list in #linelist-bottom -->
         <div class="toolbar-group">
+          <button id="line-list-btn" class="text-btn">Line list</button>
           <button id="annot-btn" class="text-btn"
                   title="Mark the line list's transitions on the spectrum">
             <span id="annot-btn-label">{{ annot_label|safe }}</span>
           </button>
         </div>
-        <!-- adjustment tools that change the spectra (filter, future normalisation, ...) -->
-        <div class="toolbar-group">
-          <button id="filter-btn" class="text-btn" title="Noise filter (feautrier space)">Filter</button>
-          <span class="filter-switch-wrap" title="Show filtered spectra in the canvas">
-            <span class="filter-switch-label">Filtered</span>
-            <label class="switch"><input type="checkbox" id="filter-switch-input"><span class="switch-track"></span></label>
-          </span>
-          <button id="normalise-btn" class="text-btn" title="Continuum normalise (spline)">Normalise</button>
-        </div>
         <!-- the Mask tool: drag a wavelength range, then start a line mask, a synthesis, a
              fit or an equivalent-width measurement from it (see rangetool.RangeTool) -->
         <div class="toolbar-group">
-          <button id="mask-btn" class="text-btn" title="Select a wavelength range (line mask, synthesis, fit, equivalent width)">Mask</button>
+          <button id="mask-btn" class="text-btn" title="Select a wavelength range (line mask, synthesis, fit, equivalent width)">Select range</button>
         </div>
       </div>
       <div id="top-panel">
@@ -104,13 +105,14 @@
         <div class="empty-card">
           <div class="empty-card-head">
             <i class="ti ti-device-floppy"></i>
-            <span class="modal-title">Load a session</span>
+            <span class="modal-title">Saved workspaces</span>
           </div>
           <div class="empty-session-results file-results js-session-results">{{ sessions_html|safe }}</div>
-          <div class="session-hint">Click a save to load it — or start fresh:</div>
+          <div class="session-hint">Select a saved workspace, or start fresh:</div>
+          <button class="primary-btn session-load" disabled>Load workspace</button>
           <div class="empty-actions">
             <button id="empty-open" class="text-btn"><i class="ti ti-folder-open"></i>&nbsp;Open spectrum</button>
-            <button id="empty-synth" class="text-btn">Synthesise new</button>
+            <button id="empty-synth" class="text-btn">Synthesise spectrum…</button>
             <button id="empty-atom" class="text-btn" title="Open a model atom (levels, transitions, NLTE corrections)">Open model atom</button>
           </div>
         </div>
@@ -143,7 +145,7 @@
       <div id="abund-steps">
         <div class="step-tabs" data-tool="abund" title="Abundance workflow steps">
           <button class="step-tab abund-step-btn" data-step="1">Lines</button>
-          <button class="step-tab abund-step-btn" data-step="2">Uncertainties</button>
+          <button class="step-tab abund-step-btn" data-step="2">Diagnostics</button>
         </div>
       </div>
       <!-- abundance-correction view: reference spectrum + CoG inversion (Lines) or the two
@@ -159,7 +161,7 @@
       <div id="corr-steps">
         <div class="step-tabs" data-tool="corr" title="Abundance-correction views">
           <button class="step-tab corr-step-btn" data-step="1">Lines</button>
-          <button class="step-tab corr-step-btn" data-step="2">Scatter</button>
+          <button class="step-tab corr-step-btn" data-step="2">Diagnostics</button>
         </div>
       </div>
       <!-- atom view: the energy levels and the bound-bound transitions of the focused model
@@ -193,7 +195,7 @@
         <div id="ionbal-table">{{ ionbal_table_html|safe }}</div></div>
       <div id="ionbal-steps">
         <div class="step-tabs" data-tool="ionbal" title="What the top pane shows">
-          <button class="step-tab ionbal-step-btn" data-step="1">Balance</button>
+          <button class="step-tab ionbal-step-btn" data-step="1">Diagnostics</button>
           <button class="step-tab ionbal-step-btn" data-step="2">Lines</button>
         </div>
       </div>
@@ -224,20 +226,29 @@
       <div class="tab-content">
         <div class="tab-panel active" data-panel="edit">
           <div id="edit-fields">{{ edit_html|safe }}</div>
+<details class="advanced"><summary>Prepare spectrum</summary>        <div class="preparation-actions">
+          <button id="filter-btn" class="text-btn" title="Noise filter (feautrier space)">Filter</button>
+          <span class="filter-switch-wrap" title="Use filtered spectra for display and measurements">
+            <span class="filter-switch-label">Filtering active</span>
+            <label class="switch"><input type="checkbox" id="filter-switch-input"><span class="switch-track"></span></label>
+          </span>
+          <button id="normalise-btn" class="text-btn" title="Continuum normalise (spline)">Normalise</button>
+        </div>
+<div class="hint">Filtering applies to all spectra and affects measurements. Continuum editing temporarily isolates the selected spectrum.</div></details>
         </div>
         <div class="tab-panel" data-panel="style">
           <div class="field-group">
             <label>Line color</label>
             <div id="style-swatches" class="swatch-row">{{ swatches_html|safe }}</div>
           </div>
-          <div id="style-fields">{{ style_html|safe }}</div>
+          <details class="advanced"><summary>Appearance</summary><div id="style-fields">{{ style_html|safe }}</div></details>
         </div>
         <div class="tab-panel" data-panel="info"><div id="inspector">{{ inspector_html|safe }}</div></div>
       </div>
       <!-- the Mask tool's panel: the drawn range and what to do with it (rangetool.RangeTool) -->
       <div class="range-panel">
         <div class="range-panel-head">
-          <span class="section-header">Mask</span>
+          <span class="section-header">Select range</span>
           <button id="range-close" class="icon-btn" title="Done (Esc)"><i class="ti ti-x"></i></button>
         </div>
         <div id="range-panel-content"></div>
@@ -245,8 +256,8 @@
       </div>
       <div class="norm-panel">
         <div class="norm-panel-head">
-          <span class="section-header">Normalise — continuum spline</span>
-          <button class="icon-btn norm-close" title="Done"><i class="ti ti-x"></i></button>
+          <span class="section-header">Edit continuum</span>
+          <button class="text-btn norm-close">Done</button>
         </div>
         <div id="norm-panel-content"></div>
       </div>
@@ -263,8 +274,8 @@
           <button class="icon-btn linemask-close" title="Done"><i class="ti ti-x"></i></button>
         </div>
         <div id="linemask-panel-content"></div>
-        <div class="hint">Import more sets with <b>Open File → Import Line Mask</b>. Click a
-          row to snap the view to its synth window; toggle <b>rn</b> for local
+        <div class="hint">Import more sets with <b>Open → Line mask set</b>. Click a
+          row to snap the view to its synth window; toggle <b>Local continuum</b> for local
           renormalisation.</div>
       </div>
       <div class="abund-panel">
@@ -351,21 +362,8 @@
     </nav>
     <div class="settings-pages">
       <div class="settings-page active" data-page="general">
-        <div class="section-header">Axis units</div>
+        <div class="hint">Changes saved automatically.</div><div class="section-header">Axis units</div>
         <div id="settings-fields">{{ settings_html|safe }}</div>
-
-        <div class="section-header">Line navigator</div>
-        <div class="field-group">
-          <label>Master line list</label>
-          <div class="path-row">
-            <div id="linelist-path" class="field-static">{{ linelist_path }}</div>
-            <button id="browse-linelist" class="icon-btn" title="Choose a line list"><i class="ti ti-folder-open"></i></button>
-          </div>
-        </div>
-        <div id="linelist-picker" class="inline-picker">
-          {{ embed(roots.linelist_picker) }}
-          <div id="linelist-results" class="file-results"></div>
-        </div>
 
         <!-- the master list names its own lines over the spectrum once it is zoomed in
              far enough, ranked by strength (lineannot / linestrength) -->
@@ -388,13 +386,33 @@
         </div>
       </div>
 
+{% macro pref_picker(key, root, hint='', hidden=False) -%}
+        <div id="pref-{{ key }}-block" class="field-group pref-path{{ ' field-warn' if key in pref_missing }}{{ ' off' if hidden }}">
+          <label>{{ pref_labels[key] }}</label>
+          <div id="pref-{{ key }}-picker" class="inline-picker-auto open" data-results="{{ pref_picker_results[key] }}">
+            {{ embed(root) }}
+            <div id="pref-{{ key }}-results" class="file-results"></div>
+          </div>
+          <div class="field-warn-hint">File not found</div>
+          {% if hint %}<div class="hint">{{ hint }}</div>{% endif %}
+        </div>
+{%- endmacro %}
       <div class="settings-page" data-page="synthesis">
-        <div class="section-header">Lines &amp; interpolation</div>
+        <div class="hint">Changes saved automatically. Paths are picked below; relative
+          paths resolve against the working directory (Engine).</div>
+        <div class="section-header">Inputs</div>
+        {{ pref_picker('linelist', roots.pref_linelist_picker, 'A file, or a folder of per-species files. Synthesis, navigation and annotation all use this list.') }}
+        {{ pref_picker('abund_file', roots.pref_abund_file_picker) }}
+        {{ pref_picker('absmet', roots.pref_absmet_picker) }}
+        <div class="section-header">Interpolation</div>
         <div id="synthprefs-fields">{{ synth_prefs_html|safe }}</div>
       </div>
 
       <div class="settings-page" data-page="engine">
-        <div class="section-header">Paths &amp; runtime</div>
+        <div class="hint">Changes saved automatically.</div>
+        <div class="section-header">Paths</div>
+        {{ pref_picker('dispatch_cwd', roots.pref_dispatch_cwd_picker) }}
+        {{ pref_picker('slurm_script', roots.pref_slurm_script_picker, hidden=not pref_show_slurm) }}
         <div id="synthengine-fields">{{ synth_engine_html|safe }}</div>
       </div>
 
@@ -415,17 +433,18 @@
     <button id="close-file" class="icon-btn" title="Close"><i class="ti ti-x"></i></button>
   </div>
   <div class="modal-body">
+    <div class="hint">Browse files on the machine running TUMULT Studio.</div>
     {{ embed(roots.file_picker) }}
     <div id="file-results" class="file-results"></div>
   </div>
   <div class="modal-footer">
-    <button id="load-run" class="text-btn" title="Load this folder as a tumult run">Load run <span id="run-name"></span></button>
+    <button class="text-btn picker-open" disabled>Open</button><button id="load-run" class="text-btn" title="Load this folder as a tumult run">Open run <span id="run-name"></span></button>
   </div>
 </dialog>
 
-<dialog id="linemask-modal" class="modal modal-lg">
+<dialog id="linemask-modal" class="modal modal-lg mask-open">
   <div class="modal-header">
-    <span class="modal-title">New line mask</span>
+    <span class="modal-title">Open line mask set</span>
     <button id="close-linemask" class="icon-btn" title="Close"><i class="ti ti-x"></i></button>
   </div>
   <!-- one pane per masksources.MaskSource; the rail switches between them (same markup as
@@ -443,17 +462,18 @@
       <div class="settings-page active" data-page="file">
         <div class="section-header">Import from a line-mask table</div>
         {{ embed(roots.linemask_picker) }}
-        <div id="linemask-results" class="file-results"></div>
+        <div id="linemask-results" class="file-results"></div><button class="text-btn picker-open" disabled>Open</button>
         <div class="hint">Reads fit windows from a linemask file (<code>input/linemasks</code>).
           The element is taken from the file where it says so, else guessed from its name.</div>
       </div>
       <div class="settings-page" data-page="blank">
-        <div class="section-header">Start from nothing</div>
+        <div class="section-header">New line mask set</div>
         <div class="field-group">
           <label>Name</label>
           <input id="linemask-new-name" class="field-input" type="text"
-                 placeholder="New line mask" maxlength="60">
+                 placeholder="New line mask set" maxlength="60">
         </div>
+        <div class="field-group"><label for="linemask-new-element">Element</label><input id="linemask-new-element" class="field-input" placeholder="e.g. Fe"></div>
         <button id="linemask-new-set" class="text-btn">Create empty set</button>
         <div class="hint">Opens an empty set and arms the box gesture, so you can draw the
           first window straight onto the spectrum.</div>
@@ -547,7 +567,7 @@
       </div>
     </div>
   </div>
-  <div class="modal-footer" id="synth-modal-actions">{{ synth_actions_html|safe }}</div>
+  <div class="modal-footer"><button class="text-btn modal-cancel">Cancel</button><div id="synth-modal-actions">{{ synth_actions_html|safe }}</div></div>
 </dialog>
 
 <dialog id="abund-modal" class="modal modal-lg">
@@ -561,7 +581,7 @@
       <div class="modal-col">
         <div class="section-header">Measurement</div>
         <div id="abund-ref">{{ abund_ref_html|safe }}</div>
-        <div id="abund1-fields">{{ abund1_html|safe }}</div>
+        <div class="abund-measure-fields"><div id="abund1-fields">{{ abund1_html|safe }}</div></div>
         <div class="hint">Measures every switched-on window's EW + FWHM (and its EW uncertainty
           from the SNR + continuum-%) on the reference; the result appears in the left sidebar.
           Lines whose photon EW error exceeds their EW are flagged and excluded. Click a row to
@@ -583,13 +603,21 @@
         <div id="abundbase-fields">{{ abund_base_html|safe }}</div>
         <div class="section-header">Radiative transfer</div>
         <div id="abundmode-fields">{{ abund_mode_html|safe }}</div>
-        <div id="abund-atoms-ro">{{ abund_atoms_ro_html|safe }}</div>
+        <div id="abund-atoms" class="synth-atoms{{ ' on' if abund_is_nlte }}">
+          <div class="section-header">Model atoms (NLTE)</div>
+          <div id="abund-atoms-list" class="chips">{{ abund_atoms_html|safe }}</div>
+          <button id="browse-abund-atom" class="text-btn">Add model atom…</button>
+          <div id="abund-atom-picker" class="inline-picker">
+            {{ embed(roots.abund_atom_picker) }}
+            <div id="abund-atom-results" class="file-results"></div>
+          </div>
+        </div>
         <div class="hint">Each line's curve of growth is synthesised on this atmosphere and
           inverted to the abundance reproducing its measured EW.</div>
       </div>
     </div>
   </div>
-  <div class="modal-footer" id="abund-modal-actions">{{ abund_actions_html|safe }}</div>
+  <div class="modal-footer"><button class="text-btn modal-cancel">Cancel</button><div id="abund-modal-actions">{{ abund_actions_html|safe }}</div></div>
 </dialog>
 
 <dialog id="atom-modal" class="modal modal-lg">
@@ -599,7 +627,7 @@
   </div>
   <div class="modal-body">
     {{ embed(roots.atom_file_picker) }}
-    <div id="atom-file-results" class="file-results"></div>
+    <div id="atom-file-results" class="file-results"></div><button class="text-btn picker-open" disabled>Open</button>
     <div class="hint">Reads a MULTI-format model atom (<code>input/atoms</code>): its energy levels
       and bound-bound transitions open as tables, and NLTE corrections are computed from it.</div>
   </div>
@@ -630,7 +658,7 @@
       <div class="modal-col">
         <div class="section-header">Measurement</div>
         <div id="corr1-fields">{{ corr1_html|safe }}</div>
-        <div class="hint">The 1D LTE reference is synthesised from the atom alone at these
+        <div class="hint">The 1D LTE reference is synthesised from the atom, with background transitions when Use line list is enabled, at these
           parameters and every line's EW measured on it. For each line an NLTE curve of growth
           is then built on the atmosphere chosen here and inverted to the abundance reproducing
           that EW: the shift is ΔA. The reference spectrum lands on the canvas as soon as it is
@@ -639,7 +667,7 @@
     </div>
   </div>
   <div class="modal-footer">
-    <button class="text-btn corr-run">Compute</button>
+    <button class="text-btn modal-cancel">Cancel</button><button class="text-btn corr-run">Compute</button>
   </div>
 </dialog>
 
@@ -661,7 +689,7 @@
           measurement object of their own. A refit reuses them.</div>
       </div>
       <div class="modal-col">
-        <div class="section-header">Entry point</div>
+        <div class="section-header">Starting parameters</div>
         <div id="ionbal2-fields">{{ ionbal2_html|safe }}</div>
         <div class="hint">Choosing a class fills in its parameters (ξ from an approximate
           Teff/log g relation); typing over them switches to your own numbers. A parameter
@@ -676,7 +704,7 @@
           point. Individual atmospheres and picked grid files cannot determine atmospheric
           parameters and are intentionally unavailable here.</div>
         <div class="section-header">Solver</div>
-        <div id="ionbaladv-fields">{{ ionbaladv_html|safe }}</div>
+        <details class="advanced"><summary>Solver settings</summary><div id="ionbaladv-fields">{{ ionbaladv_html|safe }}</div></details>
         <div class="hint">Each iteration inverts every line's EW to A(X) through a curve of
           growth at the trial parameters, then steps the free parameters along their own
           diagnostic. Iteration 1 also blend-screens the lines.</div>
@@ -684,26 +712,36 @@
     </div>
   </div>
   <div class="modal-footer">
-    <button id="ionbal-run" class="text-btn">Measure &amp; fit</button>
+    <button class="text-btn modal-cancel">Cancel</button><button id="ionbal-run" class="text-btn">Measure &amp; fit</button>
   </div>
 </dialog>
 
 <dialog id="session-modal" class="modal modal-lg">
   <div class="modal-header">
-    <span class="modal-title">Sessions</span>
+    <span class="modal-title">Saved workspaces</span>
     <button id="close-session" class="icon-btn" title="Close"><i class="ti ti-x"></i></button>
   </div>
   <div class="modal-body">
     <div id="session-results" class="file-results js-session-results">{{ sessions_html|safe }}</div>
-    <div class="session-hint">Click a save to load it — loading replaces your current workspace.</div>
+    <div class="session-hint">Select a saved workspace, then load it. External files are re-read; calculation settings are last-used preferences.</div>
   </div>
+  <div class="modal-footer"><button class="primary-btn session-load" disabled>Load workspace</button></div>
   <div class="modal-footer session-newrow">
     <input id="session-name" class="field-input" type="text" placeholder="Name this save…"
            maxlength="60">
-    <button id="session-save" class="text-btn">Add save</button>
+    <button id="session-save" class="text-btn">Save workspace</button>
   </div>
 </dialog>
 
+<dialog id="workspace-load-modal" class="modal">
+  <div class="modal-header"><span class="modal-title">Load saved workspace?</span></div>
+  <div class="modal-body">Your current workspace has unsaved changes. Loading replaces it.</div>
+  <div class="modal-footer">
+    <button class="text-btn modal-cancel">Cancel</button>
+    <button class="text-btn" data-workspace-load="load-discard">Discard and load</button>
+    <button class="primary-btn" data-workspace-load="load-save">Save and load</button>
+  </div>
+</dialog>
 <div style="display:none">{{ embed(roots.bridges) }}</div>
 
 <script>
@@ -743,9 +781,47 @@
     });
   }).observe(document.body, { attributes: true, subtree: true, attributeFilter: ['open', 'class'] });
 
+  document.addEventListener('click', function(ev) {
+    if (ev.target.closest('.modal-cancel')) ev.target.closest('dialog').close();
+  });
+  // collapsed advanced sections (controls.Form groups): a form re-renders on every server
+  // edit, so remember each section's open state and put it back on the rebuilt markup
+  var disclosures = new Map();
+  document.addEventListener('toggle', function(ev) {
+    if (ev.target.matches('details[data-disclosure]')) disclosures.set(ev.target.dataset.disclosure, ev.target.open);
+  }, true);
+  new MutationObserver(function (muts) {
+    muts.forEach(function (m) {
+      m.addedNodes.forEach(function (node) {
+        if (node.nodeType !== 1) return;
+        var found = node.matches('details[data-disclosure]') ? [node]
+                  : Array.from(node.querySelectorAll('details[data-disclosure]'));
+        found.forEach(function (d) { if (disclosures.get(d.dataset.disclosure)) d.open = true; });
+      });
+    });
+  }).observe(document.body, { childList: true, subtree: true });
+  var statusObserver = new MutationObserver(function() {
+    var status = document.querySelector('#footer-status');
+    document.querySelectorAll('dialog[open]').forEach(function(dialog) {
+      var slot = dialog.querySelector('.modal-status');
+      if (slot && status) slot.textContent = status.textContent;
+    });
+  });
+  statusObserver.observe(document.getElementById('footer-status'), {childList: true, subtree: true});
+  document.addEventListener('invalid', function(ev) {
+    var section = ev.target.closest('details'); if (section) section.open = true;
+  }, true);
   function wireModal(openId, closeId, modalId, onOpen) {
     var m = document.getElementById(modalId);
-    function open() { m.showModal(); if (onOpen) onOpen(); }
+    var opener;
+    var status = document.createElement('div'); status.className = 'modal-status hint';
+    status.setAttribute('role', 'status'); m.appendChild(status);
+    m.addEventListener('close', function() {
+      var channel = Bokeh.documents[0].get_model_by_name('dialog-actions');
+      if (channel) channel.value = modalId + ' ' + Date.now();
+      if (opener && opener.isConnected) opener.focus();
+    });
+    function open() { opener = document.activeElement; m.showModal(); if (onOpen) onOpen(); }
     var o = openId && document.getElementById(openId);
     if (o) o.addEventListener('click', open);
     var c = document.getElementById(closeId);
@@ -762,6 +838,7 @@
     if (rb && el) el.innerHTML = rb.value;
   }
 
+  wireModal(null, null, 'workspace-load-modal');
   wireModal('open-settings', 'close-settings', 'settings-modal');
 
   // cache page actions go through the dedicated "cache-actions" channel
@@ -798,7 +875,7 @@
   });
   document.addEventListener('click', function (ev) {
     var del = ev.target.closest('.cache-del');
-    if (del) cacheAction('del', del.dataset.path);
+    if (del && confirm('Delete this cached run from disk?')) cacheAction('del', del.dataset.path);
   });
 
   // atmosphere grids (Preferences → Atmosphere grids)
@@ -947,6 +1024,15 @@
     if (del) fitAction('del', del.dataset.el);
   });
 
+  document.getElementById('browse-abund-atom').addEventListener('click', function() {
+    document.getElementById('abund-atom-picker').classList.toggle('open');
+    seedResults('{{ abund_atoms_results_name }}', 'abund-atom-results');
+  });
+  document.addEventListener('click', function(ev) {
+    var del = ev.target.closest('.abund-atom-del'); if (!del) return;
+    var m = Bokeh.documents[0].get_model_by_name('abund-atom-actions');
+    if (m) m.value = 'del ' + del.dataset.path + ' ' + Date.now();
+  });
   // Edit tab: "Fit to target" / "Mask full range" (rendered dynamically) -> "edit-actions"
   document.addEventListener('click', function (ev) {
     var kind = ev.target.closest('.edit-fit-btn') ? 'fit' :
@@ -957,15 +1043,6 @@
   });
 
   // reveal the file picker inline inside the settings modal (no nested modal)
-  document.getElementById('browse-linelist').addEventListener('click', function () {
-    var panel = document.getElementById('linelist-picker');
-    panel.classList.toggle('open');
-    if (panel.classList.contains('open')) {
-      var rb = Bokeh.documents[0].get_model_by_name('{{ linelist_results_name }}');
-      var el = document.getElementById('linelist-results');
-      if (rb && el) el.innerHTML = rb.value;  // js_on_change only fires on change
-    }
-  });
 
   // the two import modals; both are opened from the Objects "Open File" menu
   var openSpectrumModal = wireModal(null, 'close-file', 'file-modal', function () {
@@ -979,28 +1056,53 @@
   });
   wireNav('#linemask-modal');
 
-  // "Open File ▾": a small dropdown choosing what is imported
-  var openFileBtn = document.getElementById('open-file');
-  var openFileMenu = document.getElementById('open-file-menu');
-  function setMenu(open) {
-    openFileMenu.classList.toggle('open', open);
-    openFileBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  function openMaskSource(source) {
+    var modal = document.getElementById('linemask-modal');
+    modal.classList.toggle('mask-open', source === 'file');
+    modal.classList.toggle('mask-new', source === 'blank');
+    modal.querySelector('.modal-title').textContent = source === 'file' ? 'Open line mask set' : 'New line mask set';
+    modal.querySelector('[data-page="' + source + '"].settings-nav-item').click();
+    openLinemaskModal();
   }
-  openFileBtn.addEventListener('click', function (ev) {
-    ev.stopPropagation();
-    setMenu(!openFileMenu.classList.contains('open'));
-  });
-  openFileMenu.addEventListener('click', function (ev) {
-    var item = ev.target.closest('.menu-item');
-    if (!item) return;
-    setMenu(false);
-    if (item.dataset.import === 'linemask') openLinemaskModal();
+  function wireMenu(buttonId, menuId, action) {
+    var button = document.getElementById(buttonId), menu = document.getElementById(menuId);
+    var items = Array.from(menu.querySelectorAll('[role="menuitem"]'));
+    function close(focus) {
+      menu.classList.remove('open'); button.setAttribute('aria-expanded', 'false');
+      if (focus) button.focus();
+    }
+    button.addEventListener('click', function(ev) {
+      ev.stopPropagation();
+      var open = !menu.classList.contains('open');
+      document.querySelectorAll('.menu.open').forEach(function(m) { m.classList.remove('open'); });
+      document.querySelectorAll('.menu-btn').forEach(function(b) { b.setAttribute('aria-expanded', 'false'); });
+      menu.classList.toggle('open', open); button.setAttribute('aria-expanded', String(open));
+      if (open) items[0].focus();
+    });
+    button.addEventListener('keydown', function(ev) { if (ev.key === 'ArrowDown') { ev.preventDefault(); button.click(); } });
+    menu.addEventListener('keydown', function(ev) {
+      var i = items.indexOf(document.activeElement);
+      if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); close(true); }
+      else if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+        ev.preventDefault(); items[(i + (ev.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length].focus();
+      } else if (ev.key === 'Tab') close(false);
+    });
+    menu.addEventListener('click', function(ev) {
+      var item = ev.target.closest('.menu-item'); if (!item) return;
+      close(true); action(item);
+    });
+    document.addEventListener('click', function() { close(false); });
+  }
+  wireMenu('open-file', 'open-file-menu', function(item) {
+    if (item.dataset.import === 'linemask') openMaskSource('file');
     else if (item.dataset.import === 'atom') openAtomModal();
     else openSpectrumModal();
   });
-  // any click elsewhere (or Esc) dismisses the menu
-  document.addEventListener('click', function () { setMenu(false); });
-  document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') setMenu(false); });
+  wireMenu('new-object', 'new-object-menu', function(item) {
+    if (item.dataset.new === 'mask') openMaskSource('blank');
+    else ewAction('synth-new');
+  });
+  document.getElementById('line-list-btn').addEventListener('click', function() { ewAction('lineopen'); });
   // session actions (save/load/delete/refresh) go through the "session-actions"
   // channel: space-delimited so a save name may contain spaces or colons
   function sessionAction(kind, arg) {
@@ -1033,13 +1135,20 @@
   // modal and the inline empty-state loader shown over the canvas
   document.addEventListener('click', function (ev) {
     var del = ev.target.closest('.session-del');
-    if (del) { ev.stopPropagation(); sessionAction('delete', del.dataset.sid); return; }
+    if (del) { ev.stopPropagation(); if (confirm('Delete this saved workspace?')) sessionAction('delete', del.dataset.sid); return; }
     var item = ev.target.closest('.session-item');
     if (item) {
-      sessionAction('load', item.dataset.sid);
-      var modal = document.getElementById('session-modal');
-      if (modal.open) modal.close();
+      var panel = item.closest('.empty-card, dialog');
+      panel.querySelectorAll('.session-item.selected').forEach(function(r) { r.classList.remove('selected'); });
+      item.classList.add('selected'); panel.querySelector('.session-load').disabled = false;
     }
+    var load = ev.target.closest('.session-load');
+    if (load) {
+      var selected = load.closest('.empty-card, dialog').querySelector('.session-item.selected');
+      if (selected) sessionAction('load', selected.dataset.sid);
+    }
+    var choice = ev.target.closest('[data-workspace-load]');
+    if (choice) sessionAction(choice.dataset.workspaceLoad);
   });
 
   // empty-state quick actions: reuse the existing Open spectrum modal / Synth toggle
@@ -1047,14 +1156,41 @@
   document.getElementById('empty-synth').addEventListener('click', function () { ewAction('synth-new'); });
   document.getElementById('empty-atom').addEventListener('click', openAtomModal);
 
-  // delegated click for any file-picker result row (reusable across pickers)
-  document.addEventListener('click', function (ev) {
-    var li = ev.target.closest('.file-item');
-    if (!li) return;
+  function pickFile(li) {
     var m = Bokeh.documents[0].get_model_by_name(li.dataset.picker);
-    if (m) m.setv({ value: li.dataset.path + '\u0000' + Date.now() });
+    if (m) m.value = li.dataset.path + '\u0000' + Date.now();
+  }
+  function isOpenPicker(li) {
+    var dialog = li.closest('dialog');
+    return dialog && ['file-modal', 'atom-modal', 'linemask-modal'].includes(dialog.id);
+  }
+  document.addEventListener('click', function(ev) {
+    var li = ev.target.closest('.file-item');
+    if (li) {
+      if (!isOpenPicker(li) || li.dataset.dir === '1') { pickFile(li); return; }
+      var dialog = li.closest('dialog');
+      dialog.querySelectorAll('.file-item.selected').forEach(function(r) { r.classList.remove('selected'); });
+      li.classList.add('selected');
+      var button = dialog.querySelector('.picker-open'); if (button) button.disabled = false;
+    }
+    var open = ev.target.closest('.picker-open');
+    if (open) {
+      var selected = open.closest('dialog').querySelector('.file-item.selected');
+      if (selected) pickFile(selected);
+    }
   });
-
+  document.addEventListener('dblclick', function(ev) {
+    var li = ev.target.closest('.file-item');
+    if (li && isOpenPicker(li) && li.dataset.dir !== '1') pickFile(li);
+  });
+  document.addEventListener('keydown', function(ev) {
+    var li = ev.target.closest('.file-item'); if (!li) return;
+    if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); pickFile(li); }
+    if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+      ev.preventDefault(); var rows = Array.from(li.parentNode.children), i = rows.indexOf(li);
+      rows[(i + (ev.key === 'ArrowDown' ? 1 : rows.length - 1)) % rows.length].focus();
+    }
+  });
   // where a clicked line-list row sat when it was clicked ({lam0, off} in pixels from the
   // top of the scroll box), set on the click and consumed by the render it provoked
   var linelistAnchor = null;
@@ -1283,7 +1419,7 @@
   // the Empty-set pane: create a blank set instead of importing a file
   function newMaskSet() {
     var inp = document.getElementById('linemask-new-name');
-    linemaskAction('new-set', (inp.value || '').trim());
+    linemaskAction('new-set', JSON.stringify({name: (inp.value || '').trim(), element: document.getElementById('linemask-new-element').value.trim()}));
     inp.value = '';
   }
   document.getElementById('linemask-new-set').addEventListener('click', newMaskSet);
@@ -1439,6 +1575,7 @@
   });
 
   document.addEventListener('keydown', function (ev) {
+    if ((ev.key === 'Enter' || ev.key === ' ') && ev.target.matches('.session-item')) { ev.preventDefault(); ev.target.click(); }
     if (ev.key === 'Escape' && !document.querySelector('dialog[open]')) ewAction('range-cancel');
   });
 

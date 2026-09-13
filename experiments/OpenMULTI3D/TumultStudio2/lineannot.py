@@ -251,7 +251,6 @@ class LineAnnotations:
         self.hit_source.selected.on_change("indices", self._on_pick)
 
         self.mode_bridge = ctx.bridges.cls("#main", "annot-mode")   # reveal the button
-        self.btn_bridge = ctx.bridges.cls("#annot-btn", "active")   # button on/off state
         self.text_bridge = ctx.bridges.html("annot-btn-label")      # "Show Fe lines" / "Hide …"
 
         # repaint whenever the visible window changes, and when the browser reports the frame
@@ -398,6 +397,8 @@ class LineAnnotations:
         background, and the next repaint sees the computed band and rebuilds here.
         """
         obj = self.canvas.selected()
+        if obj is None:          # an empty canvas: a mask set may exist before any spectrum
+            return None
         lo, hi = self._window_aa()
         src = self.strengths.lines_for(obj, lo, hi, allow_compute=False)
         key = src.key
@@ -746,8 +747,7 @@ class LineAnnotations:
         self.ctx.emit("line-picked", lam0_aa=float(lam0[i]), ion=str(ions[i]))
 
     def _push_button(self):
-        self.text_bridge.value = self.button_html()
-        toggle(self.btn_bridge, self.visible)
+        self.text_bridge.value = self.button_html()   # the label carries the state
 
     def _push_mode(self, mode):
         """Reveal the Show/Hide button while there is something to show or hide — a tool's

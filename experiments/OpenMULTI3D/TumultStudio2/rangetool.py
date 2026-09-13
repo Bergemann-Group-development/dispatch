@@ -1,4 +1,4 @@
-"""The Mask tool: one range gesture on the canvas, and the things a range can start.
+"""The Select range tool: one range gesture on the canvas, and the things a range can start.
 
 Clicking **Mask** in the toolbar makes width-only box-select the active drag and swaps the
 right sidebar to this tool's panel. Once a range is drawn its band stays shaded and the

@@ -64,14 +64,12 @@ import re
 import threading
 import hashlib
 from dataclasses import asdict, dataclass
-from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
 
 from . import refstars
-from .isotopes import species_elements
-from .linelist import MASTER_PATH, load_master
+from .linelist import MASTER_PATH, atomic_files, is_molecule, load_master
 from tumult.synthesis.api import PROVENANCE_NAME
 from tumult.synthesis.runtime import HOP_LOCK
 
@@ -115,41 +113,27 @@ def _linelist_key(linelist):
     return tuple(str(path) for path in linelist)
 
 
-def _species_header(path):
-    """The first quoted species label in a Tumult line-list file."""
-    with Path(path).open(errors="ignore") as stream:
-        header = stream.readline().strip()
-    if "'" in header:
-        return header.split("'", 2)[1].strip()
-    return header.split()[0] if header.split() else ""
-
-
-def _is_molecule(species):
-    """Whether a species label has more than one constituent; unknown labels are kept."""
-    try:
-        return len(species_elements(species)) > 1
-    except (IndexError, ValueError):
-        return False
-
-
-@lru_cache(maxsize=8)
-def _atomic_files(folder):
-    """Files in ``folder`` whose first species is atomic.
-
-    A conventional atomic label has one constituent (``Fe I`` -> Fe), whereas molecular
-    labels have several (``TiO`` -> Ti + O). Files with an unfamiliar header stay in the
-    selection: omitting an unclassified input would silently lose annotations.
+def usable_linelist(path):
+    """Whether ``path`` is something HOP can be handed: a Tumult line-list file (its first
+    line a quoted species label) or a folder holding at least one. HOP aborts the process
+    on unreadable input, so a preference that is empty, missing or pointing elsewhere must
+    be caught here rather than there.
     """
-    files = []
-    for path in sorted(item for item in Path(folder).iterdir() if item.is_file()):
+    if not path:
+        return False
+    path = Path(path).expanduser()
+    if not path.exists():
+        return False
+    files = [path] if path.is_file() else [
+        f for f in path.iterdir() if f.is_file() and not f.name.startswith(".")]
+    for f in files:
         try:
-            molecular = _is_molecule(_species_header(path))
+            with f.open(errors="ignore") as stream:
+                if stream.readline().lstrip().startswith("'"):
+                    return True
         except OSError:
-            logging.warning("Could not classify line-list file %s; keeping it", path)
-            molecular = False
-        if not molecular:
-            files.append(path)
-    return tuple(files)
+            continue
+    return False
 
 
 def annotation_linelist(linelist, lo, hi):
@@ -163,7 +147,7 @@ def annotation_linelist(linelist, lo, hi):
     path = Path(linelist) if isinstance(linelist, (str, Path)) else None
     if abs(float(hi) - float(lo)) > MOLECULE_VIEW_LIMIT_AA and path is not None \
             and path.is_dir():
-        return _atomic_files(path)
+        return atomic_files(path)
     return linelist
 
 
@@ -519,6 +503,7 @@ class LineStrengths:
         # HOP's input may be the complete per-species folder while master_path remains the
         # compact fallback/search catalogue used until a computed band is ready.
         self.linelist = str(linelist or master_path)
+        self.linelist_usable = usable_linelist(self.linelist)
         # the chosen reference atmosphere, or AUTO_KEY to follow each spectrum's own. Via
         # the setter, because this normally arrives from a stored preference and a key that
         # has since left the table has to land on auto, not on an unrelated star.
@@ -531,6 +516,7 @@ class LineStrengths:
     def set_master_path(self, path):
         self.master_path = str(path)
         self.linelist = str(path)
+        self.linelist_usable = usable_linelist(self.linelist)
         self._proxy = None
         self._atomic_proxy = None
 
@@ -593,6 +579,8 @@ class LineStrengths:
         :meth:`warm` does the computing in the background, after which the next repaint gets
         the real thing.
         """
+        if not self.linelist_usable:
+            return self._proxy_source()
         star, linelist, band = self.request_for(obj, lo, hi)
         if allow_compute:
             frame = compute_band(star, linelist, *band)
@@ -614,6 +602,8 @@ class LineStrengths:
 
     def pending(self, obj, lo, hi):
         """True when :meth:`warm` would change the answer — i.e. the band is not computed."""
+        if not self.linelist_usable:
+            return False
         star, linelist, band = self.request_for(obj, lo, hi)
         return not band_ready(star, linelist, *band)
 
@@ -648,7 +638,7 @@ class LineStrengths:
         if not atomic_only or self._proxy.lines is None:
             return self._proxy
         if self._atomic_proxy is None:
-            keep = ~self._proxy.lines.ion.map(_is_molecule)
+            keep = ~self._proxy.lines.ion.map(is_molecule)
             self._atomic_proxy = Source(
                 self._proxy.lines[keep].reset_index(drop=True),
                 f"{self._proxy.label} · atomic lines", self._proxy.kind,

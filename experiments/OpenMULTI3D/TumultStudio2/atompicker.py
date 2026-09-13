@@ -82,7 +82,6 @@ class AtomPicker:
 
     # --- state ------------------------------------------------------------
     def _persist(self):
-        store.update_pref(self.section, self.key, list(self.selected))
         if self.on_change:
             self.on_change(list(self.selected))
 

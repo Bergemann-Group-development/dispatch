@@ -114,6 +114,15 @@ class Model:
     def available(self):
         return sorted(self.snapshots)
 
+    def picks(self, count):
+        """The ``count`` snapshots a download fetches: the Halton prefix, sorted."""
+        available = self.available
+        return sorted(available[i] for i in halton_order(len(available))[:count])
+
+    def size(self, count):
+        """The bytes of the ``count`` snapshots :meth:`picks` chooses."""
+        return sum(f.size for snap in self.picks(count) for f in self.snapshots[snap])
+
     def on_disk(self, dest):
         """The snapshot numbers whose files are complete under ``dest``."""
         dest = Path(dest)
@@ -304,8 +313,7 @@ def plan(listing, dest, snapshots=None, models=None):
         m for m in listing.models if m.name in set(models)]
     chosen, files = {}, []
     for model in wanted:
-        available = model.available
-        picks = sorted(available[i] for i in halton_order(len(available))[:count])
+        picks = model.picks(count)
         chosen[model.name] = picks
         for snap in picks:
             files.extend(model.snapshots[snap])

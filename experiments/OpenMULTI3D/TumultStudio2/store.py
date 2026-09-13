@@ -196,7 +196,7 @@ def set_section(name, values: dict) -> None:
         data["preferences"][name] = dict(values)
 
 
-# --- recent files (most-recent-first) ---------------------------------------
+# --- recent files (most-recent-first): the spectrum picker's history ---------
 def recent_files() -> list[str]:
     return _load()["recent_files"]
 

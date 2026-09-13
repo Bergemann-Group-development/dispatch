@@ -1,6 +1,6 @@
 """Equivalent-width measurement over a drawn range.
 
-The measurement is one of the things a range drawn with the Mask tool (:mod:`rangetool`)
+The measurement is one of the things a range drawn with the Select range tool (:mod:`rangetool`)
 can be used for, so this is a sub-panel of that tool rather than a tool of its own: the
 tool hands it the range, and it measures the focused spectrum there, hatches the integrated
 area on the canvas and renders its fields (method, SNR, continuum uncertainty) plus the
@@ -27,6 +27,15 @@ ACCENT = "#4a90e2"
 # (which is the single home for the valid set). Each value is the string the tumult fitter /
 # ``get_weq`` expect, so it can be passed straight through.
 EW_PROFILES = tuple(p for p in ("trapz", "gauss", "voigt", "asym_gauss") if p in profile_names())
+
+# the same profile shown under the same name in every EW selector; the fitter keeps the keys
+PROFILE_LABELS = {"trapz": "Direct integration", "gauss": "Gaussian", "voigt": "Voigt",
+                  "asym_gauss": "Asymmetric Gaussian"}
+
+
+def profile_options(names):
+    """``(value, label)`` select options for the profile ``names``."""
+    return [(name, PROFILE_LABELS.get(name, name)) for name in names]
 
 
 class EquivalentWidth:
@@ -125,8 +134,8 @@ class EquivalentWidth:
         if why:
             return f'<div class="hint">{why}</div>'
         opts = "".join(
-            f'<option value="{p}"{" selected" if p == self.profile else ""}>{p}</option>'
-            for p in EW_PROFILES
+            f'<option value="{p}"{" selected" if p == self.profile else ""}>{label}</option>'
+            for p, label in profile_options(EW_PROFILES)
         )
         snr = "" if self.snr is None else f"{self.snr:g}"
         cont = f"{self.cont_pct:g}"

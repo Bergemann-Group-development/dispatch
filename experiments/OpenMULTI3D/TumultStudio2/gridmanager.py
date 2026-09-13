@@ -2,8 +2,11 @@
 
 The page holds one storage folder and one snapshot count for every grid, then the
 published grids of :mod:`tumult.synthesis.grid_catalog`, one row each with what is on disk
-and *Download all* / *Edit* / *Delete*; *Edit* lists the grid's models with a download or
-delete button per model. Custom grids (a folder we do not host) keep an editable card:
+and *Download all* / *Edit* / *Delete*; *Edit* lists the grid's models with a download and
+a delete button per model, each shown only while it has something to do: download while
+snapshots are missing, delete while files are on disk. Every row states the size of what
+its download fetches. While a download runs, the rows it covers show a progress ring in
+place of their buttons; the other rows keep theirs, so downloads queue up on the pool. Custom grids (a folder we do not host) keep an editable card:
 name / folder (its field hands over to an embedded :class:`FilePicker`) / format / the
 layout controls the format needs; ``tumult.synthesis.FORMAT_PATTERNS`` holds the stock
 pattern each format starts from.
@@ -16,7 +19,8 @@ plus the custom records. The store's ``synthesis`` section keeps ``grid_storage`
 ``ref_grid_id`` naming the grid selected in the Synth panel and the 1D LTE reference.
 
 Listing a grid and every download run as document jobs on the IO pool
-(``ctx.submit_io``); progress lands in the page's status line. Mirrors
+(``ctx.submit_io``); progress lands, as a percentage per ring, in the ``grid-progress``
+bridge, and outcomes in the footer through ``ctx.notify``. Mirrors
 :class:`atompicker.AtomPicker`: a server-rendered page pushed through an ``html_bridge``,
 a hidden ``TextInput`` action channel for delegated clicks, a ``class_bridge`` to reveal
 the inline picker, and an embedded :class:`FilePicker`. Rows are dynamic, so the controls
@@ -26,11 +30,12 @@ from __future__ import annotations
 
 import html
 import itertools
+import json
 from pathlib import Path
 import re
 import time
 
-from bokeh.models import TextInput
+from bokeh.models import CustomJS, TextInput
 
 import store
 from tumult.synthesis import grid_catalog
@@ -84,14 +89,21 @@ class GridManager:
         self._open = None         # catalogue id whose model list is open
         self._listings = {}       # catalogue id -> Listing, once listed this session
         self._failed = {}         # catalogue id -> why its last listing failed
-        self._running = {}        # catalogue id -> the job's status text while it runs
-        self._status = ""
+        self._running = {}        # catalogue id -> the _Job of each running download
         # the model table's order, shared by every grid: stellar parameters, name, held
         self._sort = SortState({"teff": True, "logg": True, "feh": True, "name": True,
-                                "held": False}, "teff")
+                                "held": False, "size": False}, "teff")
 
         self.list_bridge = html_bridge("grid-list", name="grid-list-render")
-        self.status_bridge = html_bridge("grid-status")
+        # "{ring key: percent}" -> the --p of every progress ring the page shows; a ring's
+        # key is the catalogue id, or "<id> <model>" for a model row
+        self.progress_bridge = TextInput(value="", visible=False)
+        self.progress_bridge.js_on_change("value", CustomJS(code="""
+            const pct = JSON.parse(cb_obj.value || '{}');
+            document.querySelectorAll('#grid-list .grid-progress').forEach(function (el) {
+                if (el.dataset.key in pct) el.style.setProperty('--p', pct[el.dataset.key]);
+            });
+        """))
         self.open_bridge = class_bridge("#grid-picker", "open")
         self.fields_input = TextInput(value="", visible=False, name="grid-fields-input")
         self.actions = TextInput(value="", visible=False, name="grid-actions")
@@ -105,7 +117,7 @@ class GridManager:
     # --- doc wiring -------------------------------------------------------
     @property
     def models(self):
-        return [self.list_bridge, self.status_bridge, self.open_bridge, self.fields_input,
+        return [self.list_bridge, self.progress_bridge, self.open_bridge, self.fields_input,
                 self.actions]
 
     @property
@@ -182,8 +194,7 @@ class GridManager:
                     + "".join(self._card_html(g) for g in self.custom)
                     + '<button class="text-btn grid-add"><i class="ti ti-plus"></i> '
                     'Add custom grid</button>' + self._ref_html())
-        return (f'<div id="grid-status" class="field-static grid-status">'
-                f'{html.escape(self._status)}</div>' + body)
+        return body
 
     def render(self):
         self.list_bridge.value = self.list_html()
@@ -211,38 +222,74 @@ class GridManager:
             gid = html.escape(spec.id)
             on_disk = grid_catalog.models_on_disk(spec, self.storage)
             listing = self._listings.get(spec.id)
-            if spec.id in self._running:
-                state = self._running[spec.id]
-            elif not on_disk:
+            jobs = self._running.get(spec.id, [])
+            if not on_disk:
                 state = "not downloaded"
             elif listing is not None:
                 state = f"{len(on_disk)} of {len(listing.models)} models on disk"
             else:
                 state = f"{len(on_disk)} models on disk"
-            busy = " disabled" if spec.id in self._running else ""
+            size = self._grid_size(spec.id)
+            if size:
+                state += f" · {grid_catalog.human(size)}"
             edit = (f'<button class="icon-btn grid-edit" data-grid-id="{gid}" '
                     f'title="Models"><i class="ti ti-list"></i></button>' if spec.snapshots
                     else "")
-            delete = (f'<button class="icon-btn grid-del-catalog" data-grid-id="{gid}" '
-                      f'data-name="{html.escape(spec.name)}" title="Delete the downloaded '
-                      f'files"{busy}><i class="ti ti-trash"></i></button>' if on_disk else "")
+            if jobs:
+                buttons = _ring(spec.id, _percent(jobs))
+            else:
+                buttons = ""
+                if not self._complete(spec.id, on_disk):
+                    buttons += (f'<button class="icon-btn grid-fetch-all" data-grid-id="{gid}" '
+                                f'title="Download all models"><i class="ti ti-download"></i>'
+                                '</button>')
+                if on_disk:
+                    buttons += (f'<button class="icon-btn grid-del-catalog" data-grid-id="{gid}" '
+                                f'data-name="{html.escape(spec.name)}" title="Delete the '
+                                f'downloaded files"><i class="ti ti-trash"></i></button>')
             rows.append(
                 f'<div class="grid-row" data-grid-id="{gid}">'
                 f'<div class="grid-row-meta"><span class="grid-row-name" '
                 f'title="{html.escape(spec.citation)}">{html.escape(spec.name)}</span>'
                 f'<span class="grid-row-state">{html.escape(spec.format)} · '
                 f'{html.escape(state)}</span></div>'
-                f'<button class="icon-btn grid-fetch-all" data-grid-id="{gid}" '
-                f'title="Download all models"{busy}><i class="ti ti-download"></i></button>'
-                f'{edit}{delete}</div>')
+                f'{buttons}{edit}</div>')
         return "".join(rows)
+
+    def _wanted(self, model):
+        """How many snapshots of ``model`` the shared count asks for."""
+        return min(int(self.snapshots), len(model.available))
+
+    def _grid_size(self, gid):
+        """The bytes a full download of ``gid`` at the shared count fetches, once the
+        grid is listed (the 1D grid: its archive); 0 before."""
+        listing = self._listings.get(gid)
+        if listing is None:
+            return 0
+        if not listing.spec.snapshots:
+            return listing.size
+        return sum(m.size(self._wanted(m)) for m in listing.models)
+
+    def _complete(self, gid, on_disk):
+        """Whether a download of ``gid`` would fetch nothing: the 1D grid's manifest
+        says so; a snapshot grid needs its listing and the shared count of every model.
+        Unlisted, the grid keeps its download button."""
+        spec = grid_catalog.CATALOG[gid]
+        if not spec.snapshots:
+            return bool(grid_catalog.read_manifest(
+                grid_catalog.grid_folder(spec, self.storage)).get("complete"))
+        listing = self._listings.get(gid)
+        if listing is None or not on_disk:
+            return False
+        folder = grid_catalog.grid_folder(spec, self.storage)
+        return all(len(m.on_disk(folder)) >= self._wanted(m) for m in listing.models)
 
     def _models_html(self, gid):
         spec = grid_catalog.CATALOG[gid]
         listing = self._listings.get(gid)
         head = (f'<div class="grid-card-head"><button class="icon-btn grid-back" '
                 f'title="Back to the grids"><i class="ti ti-arrow-left"></i></button>'
-                f'<span class="field-static grid-row-name">{html.escape(spec.name)}</span>'
+                f'<span class="section-header">{html.escape(spec.name)}</span>'
                 f'<a class="hint" href="{html.escape(spec.page)}" target="_blank" '
                 f'rel="noopener">{html.escape(spec.page)}</a></div>')
         if listing is None:
@@ -253,29 +300,40 @@ class GridManager:
                         '<i class="ti ti-refresh"></i> Retry</button>')
             return head + '<div class="field-static">Listing the grid…</div>'
         folder = grid_catalog.grid_folder(spec, self.storage)
-        busy = " disabled" if gid in self._running else ""
+        jobs = self._running.get(gid, [])
         held = {m.name: len(m.on_disk(folder)) for m in listing.models}
+        size = {m.name: m.size(self._wanted(m)) for m in listing.models}
         keys = {"teff": lambda m: m.teff, "logg": lambda m: m.logg, "feh": lambda m: m.feh,
-                "name": lambda m: m.name, "held": lambda m: held[m.name]}
+                "name": lambda m: m.name, "held": lambda m: held[m.name],
+                "size": lambda m: size[m.name]}
         order = self._sort.order(listing.models, keys[self._sort.col])
         rows = ['<div class="grid-models"><table class="linelist-table"><thead><tr>'
                 + sort_headers(self._sort, [("Model", "name"), ("T<sub>eff</sub>", "teff"),
                                             ("log g", "logg"), ("[Fe/H]", "feh"),
-                                            ("Snapshots", "held")])
+                                            ("Snapshots", "held"), ("Size", "size")])
                 + '<th></th></tr></thead><tbody>']
         for m in (listing.models[i] for i in order):
             name = html.escape(m.name)
-            fetch = (f'<button class="icon-btn grid-fetch-model" data-grid-id="{gid}" '
-                     f'data-model="{name}" title="Download"{busy}>'
-                     f'<i class="ti ti-download"></i></button>')
-            delete = (f'<button class="icon-btn grid-del-model" data-grid-id="{gid}" '
-                      f'data-model="{name}" data-name="{name}" title="Delete"{busy}>'
-                      f'<i class="ti ti-trash"></i></button>' if held[m.name] else "")
+            job = next((j for j in jobs if m.name in j), None)
+            if job is not None:
+                buttons = _ring(f"{gid} {m.name}", job.percent(m.name))
+            else:
+                buttons = ""
+                if held[m.name] < self._wanted(m):
+                    buttons += (f'<button class="icon-btn grid-fetch-model" data-grid-id="{gid}" '
+                                f'data-model="{name}" title="Download">'
+                                f'<i class="ti ti-download"></i></button>')
+                if held[m.name]:
+                    buttons += (f'<button class="icon-btn grid-del-model" data-grid-id="{gid}" '
+                                f'data-model="{name}" data-name="{name}" title="Delete">'
+                                f'<i class="ti ti-trash"></i></button>')
             rows.append(
                 f'<tr><td class="line-ion" title="{name}">{name}</td><td>{m.teff:.0f}</td>'
                 f'<td>{m.logg:.2f}</td><td>{m.feh:+.2f}</td>'
                 f'<td title="on disk / available">{held[m.name]} / {len(m.available)}</td>'
-                f'<td>{fetch}{delete}</td></tr>')
+                f'<td title="of the {self._wanted(m)} snapshots a download fetches">'
+                f'{grid_catalog.human(size[m.name])}</td>'
+                f'<td>{buttons}</td></tr>')
         rows.append('</tbody></table></div>')
         return head + "".join(rows)
 
@@ -359,9 +417,9 @@ class GridManager:
         if self.on_change:
             self.on_change()
 
-    def _set_status(self, text):
-        self._status = text
-        self.status_bridge.value = html.escape(text)
+    def _notify(self, text, level="info"):
+        if self.ctx is not None:
+            self.ctx.notify(text, level=level)
 
     def _custom(self, gid):
         return next((g for g in self.custom if g.get("id") == gid), None)
@@ -459,14 +517,14 @@ class GridManager:
             self._fetch(gid, None)
         elif kind == "fetch-model" and catalog and model:
             self._fetch(gid, model)
-        elif kind == "del-catalog" and catalog and gid not in self._running:
+        elif kind == "del-catalog" and catalog and not self._running.get(gid):
             grid_catalog.delete_grid(grid_catalog.CATALOG[gid], self.storage)
-            self._set_status(f"Deleted {grid_catalog.CATALOG[gid].name}")
+            self._notify(f"Deleted {grid_catalog.CATALOG[gid].name}")
             self._changed()
             self.render()
-        elif kind == "del-model" and catalog and model and gid not in self._running:
+        elif kind == "del-model" and catalog and model and not self._downloading(gid, model):
             grid_catalog.delete_model(grid_catalog.CATALOG[gid], self.storage, model)
-            self._set_status(f"Deleted {model}")
+            self._notify(f"Deleted {model}")
             self._changed()
             self.render()
 
@@ -519,25 +577,37 @@ class GridManager:
         """The listing job raised: the page says why instead of waiting; the Processes
         row keeps the failure too."""
         self._failed[gid] = str(exc)
-        self._set_status(f"Could not list {grid_catalog.CATALOG[gid].name}: {exc}")
+        self._notify(f"Could not list {grid_catalog.CATALOG[gid].name}: {exc}", "warn")
         self.render()
 
+    def _downloading(self, gid, model):
+        return any(model in job for job in self._running.get(gid, []))
+
     def _fetch(self, gid, model):
-        """Fetch every model of ``gid`` (``model`` None) or one, with the shared count."""
-        if self.ctx is None or gid in self._running:
+        """Fetch every model of ``gid`` (``model`` None) or one, with the shared count.
+        Models a running download already covers are left to it; the 1D grid's single
+        archive runs one download at a time."""
+        if self.ctx is None:
             return
         if gid not in self._listings:
             self._list(gid, lambda listing: self._fetch(gid, model))
             return
         spec = grid_catalog.CATALOG[gid]
-        plan = grid_catalog.plan(self._listings[gid], grid_catalog.grid_folder(spec, self.storage),
-                                 int(self.snapshots), None if model is None else [model])
+        listing = self._listings[gid]
         what = spec.name if model is None else model
-        if not plan.pending:
-            self._set_status(f"{what} is already on disk")
+        if not spec.snapshots and self._running.get(gid):
             return
-        self._running[gid] = f"downloading {grid_catalog.human(plan.pending_bytes)}"
-        self._set_status(f"Downloading {what}: {grid_catalog.human(plan.pending_bytes)}")
+        names = [m.name for m in listing.models] if model is None else [model]
+        names = [n for n in names if not self._downloading(gid, n)]
+        if spec.snapshots and not names:
+            return
+        plan = grid_catalog.plan(listing, grid_catalog.grid_folder(spec, self.storage),
+                                 int(self.snapshots), names)
+        if not plan.pending:
+            self._notify(f"{what} is already on disk")
+            return
+        job = _Job(plan)
+        self._running.setdefault(gid, []).append(job)
         self.render()
         last = [0.0]
 
@@ -546,26 +616,96 @@ class GridManager:
             if now - last[0] < 0.5:
                 return
             last[0] = now
-            pct = 100 * done / total if total else 0
-            text = (f"Downloading {what}: {pct:.0f}% · {grid_catalog.human(done)} of "
-                    f"{grid_catalog.human(total)} · {label}")
-            self.ctx.schedule(lambda: self._set_status(text))
+            job.advance(done, label)
+            self.ctx.schedule(lambda: self._show_progress(gid))
 
         def work(token):
             try:
                 return grid_catalog.fetch(plan, progress=progress, cancel=token)
             finally:
-                self.ctx.schedule(lambda: self._settled(gid))
+                self.ctx.schedule(lambda: self._settled(gid, job))
 
         def done(record):
-            self._set_status(f"Downloaded {what}")
-            self.ctx.notify(f"{what} downloaded")
+            self._notify(f"{what} downloaded", "success")
         if self.ctx.submit_io(f"download {what}", work, done) is None:
-            self._settled(gid)
+            self._settled(gid, job)
 
-    def _settled(self, gid):
-        """The download of ``gid`` ended (finished, failed or cancelled): the rows show
+    def _show_progress(self, gid):
+        jobs = self._running.get(gid, [])
+        rings = {gid: _percent(jobs)}
+        for job in jobs:
+            rings.update(job.rings(gid))
+        self.progress_bridge.value = json.dumps(rings)
+
+    def _settled(self, gid, job):
+        """A download of ``gid`` ended (finished, failed or cancelled): the rows show
         what is on disk now and the registry may have gained the grid."""
-        self._running.pop(gid, None)
+        jobs = self._running.get(gid, [])
+        if job in jobs:
+            jobs.remove(job)
+        if not jobs:
+            self._running.pop(gid, None)
         self._changed()
         self.render()
+
+
+def _percent(jobs):
+    """The percentage of the bytes of ``jobs`` together."""
+    total = sum(j.plan.total_bytes for j in jobs)
+    return 100 * sum(j.done for j in jobs) / total if total else 0
+
+
+def _ring(key, percent):
+    """A progress ring in a button's place, filled to ``percent`` by ``--p``."""
+    return (f'<span class="grid-progress" data-key="{html.escape(key)}" '
+            f'style="--p:{percent:.0f}" title="Downloading, {percent:.0f}%"></span>')
+
+
+class _Job:
+    """A running download: which models it covers and how far each has come, derived
+    from :func:`grid_catalog.fetch`'s cumulative byte count and the file it is on."""
+
+    def __init__(self, plan):
+        self.plan = plan
+        self.owner = {}                  # file path -> model name
+        for name, snaps in plan.chosen.items():
+            model = next(m for m in plan.models if m.name == name)
+            for snap in snaps:
+                for f in model.snapshots[snap]:
+                    self.owner[f.path] = name
+        self.pending = plan.pending
+        self.done = plan.present_bytes
+        self.label = None
+
+    def __contains__(self, model):
+        return model in self.plan.chosen
+
+    def advance(self, done, label):
+        self.done, self.label = done, label
+
+    def percent(self, model):
+        """The whole job's percentage (``model`` None) or one model's."""
+        if model is None:
+            total = self.plan.total_bytes
+            return 100 * self.done / total if total else 0
+        files = [f for f in self.plan.files if self.owner.get(f.path) == model]
+        total = sum(f.size for f in files)
+        if not total:
+            return 0
+        pending = {f.path for f in self.pending}
+        got = sum(f.size for f in files if f.path not in pending)
+        if self.label is not None:
+            passed = self.done - self.plan.present_bytes
+            for f in self.pending:
+                if f.path == self.label:
+                    if self.owner.get(f.path) == model:
+                        got += max(0, passed)
+                    break
+                if self.owner.get(f.path) == model:
+                    got += f.size
+                passed -= f.size
+        return min(100, 100 * got / total)
+
+    def rings(self, gid):
+        """The percentage of each model row this job covers, by ring key."""
+        return {f"{gid} {name}": self.percent(name) for name in self.plan.chosen}

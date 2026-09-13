@@ -272,6 +272,8 @@ def check_request(request):
     if not isinstance(request, SynthRequest):
         raise TypeError("check_request expects a SynthRequest")
     nlte = _is_nlte(request)
+    if request.run_vals.get("only_atom") and not request.run_vals.get("atoms"):
+        raise ValueError("Atom-only synthesis needs model atoms.")
     if nlte and not request.run_vals.get("atoms"):
         raise ValueError("NLTE synthesis needs model atoms.")
     if request.departure_field is not None:

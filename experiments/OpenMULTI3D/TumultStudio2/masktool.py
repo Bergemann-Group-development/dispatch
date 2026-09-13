@@ -1,8 +1,8 @@
 """The LineMasks view: import, view and edit the sets of fit/synth windows.
 
-A line-mask set comes from the Objects sidebar's **Open File → New Line Mask** menu, whose modal
-offers one pane per :class:`masksources.MaskSource` — read from a file, started empty, and later
-generated from a reference spectrum. However it was born it becomes a *line-mask object* listed in
+A line-mask set comes from the toolbar's **Open → Line mask set…** (read from a file) or
+**New → Line mask set…** (started empty) commands, one pane per :class:`masksources.MaskSource`
+in the same modal; generation from a reference spectrum is a third, currently disabled source. However it was born it becomes a *line-mask object* listed in
 the left sidebar under its name, carrying the element it diagnoses. Clicking one of those objects opens this view: the right sidebar gets the
 mask controls (synth-window padding, save-as / revert) and the centre gets the mask table below
 the spectrum, with every window drawn on the canvas.
@@ -18,7 +18,7 @@ faint red band, its fit window amber, and the active mask accented. Clicking a r
 view to that mask's synth window (plus a small margin) and makes it the editable one — its
 window is changed *only* by dragging the box's left/right edge handles, so an existing mask
 can never be overwritten by a stray drag across the plot. A mask that does not exist yet is
-drawn with the Mask tool's range gesture (:mod:`rangetool`): **+ New mask** hands over to it
+drawn with the Select range tool's range gesture (:mod:`rangetool`): **+ New mask** hands over to it
 in add mode, and the drawn window comes back through :meth:`MaskTool.add_window`; the same
 tool starts a brand-new set from a range through :meth:`MaskTool.create_from_window`.
 
@@ -68,7 +68,7 @@ class MaskTool(Tool):
         self.on_measure_abund = on_measure_abund
         self.on_synth = on_synth
         self.on_fit = on_fit
-        # ``place_window(set_name, callback)`` arms the Mask tool's range gesture in add mode;
+        # ``place_window(set_name, callback)`` arms the Select range tool's range gesture in add mode;
         # the drawn window arrives as ``callback(xmin, xmax)`` in Å (see rangetool.RangeTool)
         self.place_window = place_window
         self.input_dir = str(input_dir)
@@ -212,7 +212,7 @@ class MaskTool(Tool):
                 f'<span class="object-name">{name}</span>{dot}'
                 f'<span class="maskset-count">{n}</span>'
                 f'<button class="result-btn" data-maskset-remove="{s.uid}" '
-                f'title="Remove"><i class="ti ti-x"></i></button></div>')
+                f'title="Remove from workspace"><i class="ti ti-x"></i></button></div>')
         return ('<div class="section-header result-section-head">Line masks</div>'
                 + "".join(rows))
 
@@ -310,7 +310,7 @@ class MaskTool(Tool):
             pass
 
     def _start_placing(self):
-        """"+ New mask": hand over to the Mask tool's range gesture in add mode. The window
+        """"+ New mask": hand over to the Select range tool's range gesture in add mode. The window
         comes back through :meth:`add_window`, which reopens this view."""
         if self.place_window is None:
             return
@@ -324,7 +324,7 @@ class MaskTool(Tool):
         self.notify(f"Added mask {lo:.3f}–{hi:.3f} Å.", level="success")
 
     def create_from_window(self, lo, hi):
-        """The Mask tool's "New line mask": a fresh set holding the drawn window (Å),
+        """The Select range tool's "New line mask": a fresh set holding the drawn window (Å),
         opened in this view so its element can be set."""
         mset = self.store.add_set(BlankSource.DEFAULT_NAME)
         self.store.add(lo, hi, lam0=0.5 * (lo + hi))
@@ -352,8 +352,10 @@ class MaskTool(Tool):
         self.ctx.tools.activate("linemask")
         if mset.masks:
             self._jump_to_active()
+        elif self.canvas.objects:
+            self._start_placing()
         else:
-            self._start_placing()      # a blank set is only useful once a box is drawn
+            message += " Open a spectrum to draw windows."
         self.notify(message or f"Added line mask \u201c{mset.name}\u201d.", level="success")
 
     def _on_action(self, attr, old, new):
@@ -557,7 +559,7 @@ class MaskTool(Tool):
             '<table class="linelist-table lm-table">'
             '<thead><tr><th title="Use this mask"></th><th>λ₀ [Å]</th>'
             '<th>fit window [Å]</th><th>synth window [Å]</th>'
-            '<th>note</th><th title="Local renormalisation">rn</th><th></th></tr></thead>'
+            '<th>note</th><th title="Local renormalisation">Local continuum</th><th></th></tr></thead>'
             f'<tbody>{"".join(rows)}</tbody>'
             f'<tfoot>{add_row}</tfoot></table>')
 

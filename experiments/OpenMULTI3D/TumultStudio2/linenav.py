@@ -48,9 +48,7 @@ import numpy as np
 from bokeh.io import curdoc
 from bokeh.models import Span
 
-# MASTER_PATH/load_master are re-exported: this panel is where the app reaches the
-# master list, and its importers ask this module for it.
-from tumult.linelist import MASTER_PATH, load_master, search_lines  # noqa: F401
+from tumult.linelist import load_master, search_lines
 
 from tableui import SortState, sort_headers
 from units import to_value, to_range
@@ -139,19 +137,6 @@ class LineNavigator:
         self.active = False
         self.focus_lam0 = None
         self.on_open(False)
-
-    def set_master_path(self, path):
-        """Validate a newly chosen master line list (from settings). Returns True on success.
-
-        The provider owns which list is actually used; this only checks that the file parses
-        before the setting is committed, and repaints."""
-        try:
-            load_master(str(path))
-        except Exception:
-            logging.exception("Failed to load line list %s", path)
-            return False
-        self.render()
-        return True
 
     def set_sort(self, col):
         """Clicking a column header sorts by it; clicking the active column flips order."""

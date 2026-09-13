@@ -1,6 +1,6 @@
 """The base class of the tools that take turns owning the right sidebar.
 
-The canvas gestures (``RangeTool`` for the Mask tool's range, ``FilterTool``,
+The canvas gestures (``RangeTool`` for the Select range tool's range, ``FilterTool``,
 ``NormaliseTool``), the object views (``MaskTool``, ``AtomTool``) and the three
 analysis wizards (``AbundanceTool``, ``AbundCorrTool``, ``IonBalanceTool``) share one
 protocol: ``active``, ``activate()`` and ``deactivate()``, which ``ToolManager`` drives

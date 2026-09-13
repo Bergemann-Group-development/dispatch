@@ -48,9 +48,10 @@ from bokeh.models import ColumnDataSource
 from tumult import abundance as ab
 import store
 from tumult.synthesis import workflows as synth
-from abundwizard import PROFILES, AbundanceWizard
+from abundwizard import PROFILES, AbundanceWizard, preparation_note
 from canvas import ACCENT
 from controls import Field, Form
+from ew import profile_options
 from htmlbridge import pulse
 
 DEFAULTS = {
@@ -90,13 +91,14 @@ class AbundanceTool(AbundanceWizard):
         # tool's.
         self.form1 = Form("abund1", [
             Field("profile", "EW profile", kind="select", value=vals["profile"],
-                  options=PROFILES),
+                  options=profile_options(PROFILES)),
             Field("snr", "SNR (observation)", kind="number", value=vals["snr"], min=0),
             Field("cont_pct", "Continuum uncertainty [%]", kind="number",
                   value=vals["cont_pct"], min=0, step=0.1),
-        ], on_change=self._on_field)
+        ], on_change=self._on_field, groups=[("Measurement uncertainty", ("snr", "cont_pct"))])
         super().__init__(ctx, setup=setup)
         self._ref_bridge = ctx.bridges.html("abund-ref")   # the modal's reference selector
+        self._reconfigure = ctx.bridges.cls("#abund-modal", "reconfigure")
         self._modal = ctx.bridges.dialog("abund-modal", name="abund-modal-bridge")
         self._context_bridge = ctx.bridges.html_all(".abund-context")
         self._pending_set = None      # the mask set the open modal will measure and synthesise
@@ -156,7 +158,9 @@ class AbundanceTool(AbundanceWizard):
         self._open_modal()
 
     def _open_modal(self):
+        self.draft.begin()
         self.refresh()
+        pulse(self._reconfigure, "on" if self._settings_uid else "off")
         self.setup.render()          # the synthesis half lives in the modal
         self._push_modal_context()
         pulse(self._modal, "open")
@@ -207,7 +211,8 @@ class AbundanceTool(AbundanceWizard):
         file_note = ""
         if self.setup.atmos_file():
             file_note = f" · {html.escape(Path(self.setup.atmos_file()).name)}"
-        return (f'<div class="hint">Synthesis: {html.escape(name)}{file_note} · {params} · '
+        return (preparation_note(self.selected())
+                + f'<div class="hint">Synthesis: {html.escape(name)}{file_note} · {params} · '
                 f'{mode}.</div>')
 
     def on_filter_changed(self):
@@ -239,12 +244,11 @@ class AbundanceTool(AbundanceWizard):
 
     # --- state persistence -------------------------------------------------------------
     def _on_field(self, key, value):
-        store.update_pref("abundance", key, value)
+        pass  # The calculation draft is persisted on submission.
 
     def _extra_action(self, kind, arg):
         if kind == "ref":
             self.ref_uid = arg or None
-            store.update_pref("abundance", "ref_uid", self.ref_uid or "")
         elif kind == "run-lines":
             self.run_lines()
         elif kind == "settings":
@@ -327,12 +331,18 @@ class AbundanceTool(AbundanceWizard):
             self.notify(self.setup.reason or "Configure the synthesis setup first.")
             return
         v = self.form1.values()
+        preparation = self.ctx.canvas.preparation(self.ctx.canvas._find(ref_uid))
+        preparation["line_list"] = str(self.master_path)
+        self.draft.commit()
+        pulse(self._modal, "close")
         self.notify(f"Measuring {mset.element} windows on the reference…")
         mset, ref_spec = deepcopy(mset), deepcopy(ref_spec)
         loader = lambda _res, token, progress: self._measure_lines(
             ref_uid, ref_spec, mset, str(v["profile"]), float(v["snr"]) or None,
             float(v["cont_pct"]))
-        done = lambda res: self._on_lines_done(res, request, ref_spec)
+        def done(res):
+            res.preparation = preparation
+            self._on_lines_done(res, request, ref_spec)
         self.jobs.submit(f"abund-lines:{mset.element}", loader, done)
 
     def _measure_lines(self, ref_uid, ref_spec, mset, profile, snr, cont_pct):
@@ -345,7 +355,6 @@ class AbundanceTool(AbundanceWizard):
         return res
 
     def _on_lines_done(self, result, request, observation):
-        pulse(self._modal, "close")
         self.results.append(result)
         self.selected_uid = result.uid
         self.set_step(1)                 # the synthesis is what stands on the measurement now
@@ -363,7 +372,6 @@ class AbundanceTool(AbundanceWizard):
         if ctx is None:
             self.notify(self.setup.reason or "Configure the synthesis setup first.")
             return
-        pulse(self._modal, "close")      # a no-op unless this is the modal's own submit
         self._settings_uid = None
         self.push_setup_note()
         self.notify(f"Synthesising {res.element} lines…")
@@ -371,10 +379,12 @@ class AbundanceTool(AbundanceWizard):
         if obs is None:
             self.notify("The reference observation is no longer loaded.")
             return
+        if request is None:
+            self.draft.commit()
+            pulse(self._modal, "close")
         obs = deepcopy(obs)
         if uncertainty is None:
-            v = self.form1.values()
-            uncertainty = (float(v["snr"]) or None, float(v["cont_pct"]))
+            uncertainty = (res.snr, res.cont_pct)
         snr, cont_pct = uncertainty
 
         def work(working, token, progress):
@@ -445,14 +455,19 @@ class AbundanceTool(AbundanceWizard):
         self._set_mean(s.get("a_mean", np.nan), s.get("sigma_mean", 0.0))
 
     def ref_html(self):
+        if self._settings_uid:
+            res = self._find(self._settings_uid)
+            if res is not None:
+                return f'<div class="hint">Reusing measured widths from {html.escape(res.ref_name)}. Start from the line mask set to measure again.</div>'
         obs = self.list_observations()
         cur = self.ref_uid or (obs[0][0] if obs else None)
         opts = "".join(
             f'<option value="{html.escape(str(uid))}"'
             f'{" selected" if uid == cur else ""}>{html.escape(name)}</option>'
             for uid, name in obs) or '<option value="">— no observation loaded —</option>'
-        return ('<div class="field-group"><label>Reference (observation)</label>'
-                f'<select class="field-input abund-ref-select">{opts}</select></div>')
+        return ('<div class="field-group"><label>Target spectrum</label>'
+                f'<select class="field-input abund-ref-select" aria-label="Target spectrum">{opts}</select></div>'
+                + self.ctx.canvas.preparation_html(cur))
 
     def results_html(self):
         if not self.results:

@@ -18,11 +18,13 @@ the behaviour behind that pane, not its markup.
 from __future__ import annotations
 
 import html
+import json
 import logging
 from pathlib import Path
 
 from tumult import linediag
 from controls import Field, Form
+from ew import profile_options
 from jobs import ResultJobs
 from filepicker import FilePicker
 from tumult.linemask import is_element
@@ -104,8 +106,9 @@ class BlankSource(MaskSource):
     DEFAULT_NAME = "New line mask"
 
     def submit(self, arg=""):
-        name = str(arg).strip() or self.DEFAULT_NAME
-        mset = self.store.add_set(name)
+        values = json.loads(arg) if str(arg).startswith("{") else {"name": arg}
+        name = str(values.get("name", "")).strip() or "New line mask set"
+        mset = self.store.add_set(name, element=str(values.get("element", "")).strip())
         self._created(mset, f"Started an empty line mask “{mset.name}”.")
 
 
@@ -146,7 +149,7 @@ class AutoSource(MaskSource):
             Field("element", "Element", kind="text", value=self.DEFAULTS["element"],
                   placeholder="e.g. Fe"),
             Field("profile", "EW profile", kind="select", value=self.DEFAULTS["profile"],
-                  options=list(profiles)),
+                  options=profile_options(profiles)),
             Field("ew_min", "Min EW [mÅ]", kind="number", value=self.DEFAULTS["ew_min"], min=0),
             Field("snr", "SNR (observation)", kind="number", value=self.DEFAULTS["snr"], min=0),
             Field("cont_pct", "Continuum uncertainty [%]", kind="number",

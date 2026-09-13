@@ -189,6 +189,9 @@ class FitTab:
 
     # --- state persistence ------------------------------------------------
     def _persist(self):
+        pass  # Last-used fitting settings are committed with the calculation.
+
+    def commit(self):
         store.set_section("synth_fit", {
             **{k: self.vals[k] for k in FIT_DEFAULTS},
             **{f"fit_{k}": self.flags[k] for k in self.flags},

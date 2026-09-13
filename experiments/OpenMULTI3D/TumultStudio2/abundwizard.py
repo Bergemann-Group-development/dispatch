@@ -15,6 +15,7 @@ implement the hooks marked "subclass".
 from __future__ import annotations
 
 import html
+from pathlib import Path
 from dataclasses import replace
 
 import numpy as np
@@ -136,6 +137,20 @@ ANALYSIS_SCRIPT = r"""
 
 
 from jobs import ResultJobs
+
+
+def preparation_note(res):
+    """The processing a result's lines were measured under (``MeasuredLines.preparation``,
+    written by the measuring tool from ``canvas.preparation``), as a hint; empty when the
+    result predates that record."""
+    prep = getattr(res, "preparation", None) or {}
+    if not prep:
+        return ""
+    parts = [str(prep.get("normalisation", "")).capitalize(),
+             "filtered" if prep.get("filtered") else "unfiltered"]
+    if prep.get("line_list"):
+        parts.append(f"line list {Path(str(prep['line_list'])).name}")
+    return f'<div class="hint">Measured with: {html.escape(" · ".join(p for p in parts if p))}.</div>'
 
 
 class AbundanceWizard(Tool):
@@ -681,5 +696,5 @@ class AbundanceWizard(Tool):
                 f'<span class="object-name" title="{html.escape(r.name)}">'
                 f'{html.escape(r.name)}</span>'
                 f'<button class="result-btn" data-result-remove="{r.uid}" '
-                f'title="Remove"><i class="ti ti-x"></i></button></div>')
+                f'title="Remove from workspace"><i class="ti ti-x"></i></button></div>')
         return rows

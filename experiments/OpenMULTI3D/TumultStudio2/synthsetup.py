@@ -105,9 +105,12 @@ class SynthSetup:
     def __init__(self, prefix, section, grids, *, atoms_provider=None, notify=None,
                  on_mode_change=None, on_base_change=None, on_atmos_change=None,
                  on_run_change=None, grid_section=None, form_names=None):
+        self.allow_departures = prefix == "synth"
+        self.allow_atom_only = prefix == "synth"
         self.prefix = prefix
         self.section = section
         self.grid_section = grid_section or section
+        self._sections = {name: store.get_section(name) for name in {section, self.grid_section}}
         self.grids = grids
         self.atoms_provider = atoms_provider or (lambda: [])
         self.notify = notify or (lambda *a, **k: None)
@@ -132,7 +135,8 @@ class SynthSetup:
                   value=vals["relative_abundances"]),
         ], on_change=self._save_base)
         self.mode_form = Form(names["mode"], [
-            Field("mode", "RT mode", kind="select", value=vals["mode"],
+            Field("use_linelist", "Use line list", kind="checkbox", value=vals.get("use_linelist", True)),
+            Field("mode", "Radiative transfer", kind="select", value=vals["mode"],
                   options=["LTE", "NLTE"], inline=True),
             Field("departure_field", "Saved departures (optional)", kind="text",
                   value=vals.get("departure_field", ""),
@@ -155,24 +159,22 @@ class SynthSetup:
         self.atmos_picker.layout.name = f"{prefix}_file_picker"
         # seed the single field with the persisted selection so it shows the current file
         self._seed_atmos_query()
-        # read-only NLTE atoms note (shared with the synthesis modal)
-        self.atoms_ro_bridge = html_bridge(f"{prefix}-atoms-ro",
-                                            name=f"{prefix}-atoms-ro-render")
 
     # --- models / rendering -----------------------------------------------------------
     @property
     def models(self):
         return [*self.run_form.models, *self.base_form.models, *self.mode_form.models,
                 self.grid_bridge, self.grid_actions, self.file_open_bridge,
-                self.file_results_bridge, self.atoms_ro_bridge]
+                self.file_results_bridge]
 
     def render(self):
-        """Push every server-rendered surface (forms + grid + atoms note) to the client."""
+        """Push every server-rendered surface (forms + grid) to the client."""
         self.run_form.render()
         self.base_form.render()
+        self.mode_form.fields["use_linelist"].hidden = not self.allow_atom_only or not self.is_nlte
+        self.mode_form.fields["departure_field"].hidden = not self.is_nlte or not self.allow_departures
         self.mode_form.render()
         self.render_grid_ui()
-        self.render_atoms_ro()
 
     def render_grid_ui(self):
         self.grid_bridge.value = self.grid_ui_html()
@@ -188,25 +190,22 @@ class SynthSetup:
         grid in 'Pick file' mode — i.e. when the inline path field should be shown."""
         if self.is_snapshot or self.is_individual:
             return True
-        return store.get_section(self.section).get("atmos_mode", "interp") == "pick"
+        return self._sections[self.section].get("atmos_mode", "interp") == "pick"
 
     def _seed_atmos_query(self):
         """Show the currently-chosen file in the path field (empty when none / not picking)."""
-        picked = (store.get_section(self.section).get("atmos_file") or "").strip()
+        picked = (self._sections[self.section].get("atmos_file") or "").strip()
         self.atmos_picker.preset(picked if self.show_file() else "")
-
-    def render_atoms_ro(self):
-        self.atoms_ro_bridge.value = self.atoms_ro_html()
 
     # --- grid selection (per-section) -------------------------------------------------
     def selected_grid_id(self):
         """The selected grid id, validated against the live registry plus the Individual
         pseudo-grid (falls back to the first registered grid, else Individual)."""
         ids = [gid for gid, _ in self.grids.names] + [INDIVIDUAL_GRID]
-        cur = store.get_section(self.grid_section).get("atmos_grid_id")
+        cur = self._sections[self.grid_section].get("atmos_grid_id")
         if cur not in ids:
             cur = ids[0]
-            store.update_pref(self.grid_section, "atmos_grid_id", cur)
+            self._update(self.grid_section, "atmos_grid_id", cur)
         return cur
 
     @property
@@ -221,7 +220,7 @@ class SynthSetup:
     def is_3d_format(self):
         """Whether the selected grid or individual format represents 3D atmospheres."""
         fmt = str((self.active_grid() or {}).get("format") or "").strip().lower()
-        selected = (store.get_section(self.section).get("atmos_file") or "").strip()
+        selected = (self._sections[self.section].get("atmos_file") or "").strip()
         root = str(load_prefs().get("dispatch_cwd") or REPO_DIR)
         return model_is_3d(fmt, selected, root)
 
@@ -236,7 +235,7 @@ class SynthSetup:
             return True
         grid = self.selected_grid() or {}
         return (not is_snapshot_grid(grid)
-                or store.get_section(self.section).get("atmos_mode", "interp") == "pick")
+                or self._sections[self.section].get("atmos_mode", "interp") == "pick")
 
     def selected_grid(self):
         """The selected *registered* grid dict, or ``None`` (no grids, or Individual)."""
@@ -246,7 +245,7 @@ class SynthSetup:
         """The grid dict to synthesise with: a registered grid, or a synthetic dict for the
         Individual pseudo-grid (no folder/pattern; format from the Format selector)."""
         if self.is_individual:
-            fmt = store.get_section(self.section).get("atmos_individual_format") or ATMOS_FORMATS[0]
+            fmt = self._sections[self.section].get("atmos_individual_format") or ATMOS_FORMATS[0]
             return {"name": "Individual", "folder": "", "pattern": "", "format": fmt}
         return self.grids._find(self.selected_grid_id())
 
@@ -255,7 +254,7 @@ class SynthSetup:
         member), else ``None`` — the caller then interpolates the grid."""
         if not self.show_file():
             return None
-        return (store.get_section(self.section).get("atmos_file") or "").strip() or None
+        return (self._sections[self.section].get("atmos_file") or "").strip() or None
 
     def _individual_dir(self):
         cwd = Path(str(load_prefs().get("dispatch_cwd") or REPO_DIR)).expanduser()
@@ -281,7 +280,7 @@ class SynthSetup:
         ``format``), the attributes :data:`ATMOS_SCRIPT` routes a change by."""
         p = self.prefix
         sel = self.selected_grid_id()
-        run = store.get_section(self.section)
+        run = self._sections[self.section]
         mode = run.get("atmos_mode", "interp")
         grid_opts = "".join(
             f'<option value="{html.escape(gid)}"{" selected" if gid == sel else ""}>'
@@ -315,40 +314,25 @@ class SynthSetup:
                            f'data-atmos-key="mode">{mode_opts}</select></div>')
         return "".join(out)
 
-    def atoms_ro_html(self):
-        """Read-only NLTE model-atom display (the selection is shared with the Synthesize
-        tab, so it is managed there, not here)."""
-        if not self.is_nlte:
-            return ""
-        atoms = list(self.atoms_provider())
-        if not atoms:
-            return ('<div class="field-static">NLTE selected — add model atoms in the '
-                    'synthesis modal; this run reuses them.</div>')
-        chips = "".join(
-            f'<span class="chip"><span class="chip-label">{html.escape(Path(a).name)}</span>'
-            '</span>' for a in atoms)
-        return ('<div class="hint">NLTE model atoms (shared with the synthesis modal):</div>'
-                f'<div class="chips">{chips}</div>')
-
     # --- action handling --------------------------------------------------------------
     def _on_grid_action(self, attr, old, new):
         if not new:
             return
         kind, arg = parse_action(new)
         if kind == "grid":
-            store.update_pref(self.grid_section, "atmos_grid_id", arg)
-            store.update_pref(self.section, "atmos_file", "")  # drop a stale cross-grid file
+            self._update(self.grid_section, "atmos_grid_id", arg)
+            self._update(self.section, "atmos_file", "")  # drop a stale cross-grid file
             self._reset_atmos_picker()
             self._seed_atmos_query()
             self.render_grid_ui()
         elif kind == "mode":
-            store.update_pref(self.section, "atmos_mode", arg)
+            self._update(self.section, "atmos_mode", arg)
             self._seed_atmos_query()   # entering 'pick' shows the stored file (if any)
             self.render_grid_ui()
         elif kind == "format":
-            store.update_pref(self.section, "atmos_individual_format", arg)
+            self._update(self.section, "atmos_individual_format", arg)
         elif kind == "clearfile":
-            store.update_pref(self.section, "atmos_file", "")
+            self._update(self.section, "atmos_file", "")
             self._seed_atmos_query()
             self.render_grid_ui()
 
@@ -357,7 +341,7 @@ class SynthSetup:
         from the filename via the grid's pattern (editable; non-matching files leave the
         fields as-is)."""
         path = str(filepath)
-        store.update_pref(self.section, "atmos_file", path)
+        self._update(self.section, "atmos_file", path)
         self.atmos_picker.query.value = path   # the single field now shows the chosen file
         grid = self.selected_grid()
         if grid and grid.get("pattern"):
@@ -379,18 +363,18 @@ class SynthSetup:
                     vals["vmic"] = vmic
                 self.run_form.set_values(**vals)
                 for k, v in vals.items():
-                    store.update_pref(self.section, k, v)
+                    self._update(self.section, k, v)
         self.render_grid_ui()
         pulse(self.file_results_bridge, "off")   # collapse the dropdown, keep the field
 
     # --- persistence ------------------------------------------------------------------
     def _save_run(self, key, value):
-        store.update_pref(self.section, key, value)
+        self._update(self.section, key, value)
         if self.on_run_change:
             self.on_run_change(key, value)
 
     def _save_base(self, key, value):
-        store.update_pref(self.section, key, value)
+        self._update(self.section, key, value)
         if key == "relative_abundances":
             # convert fixed overrides so the physical abundance is preserved, anchored at
             # the synthesis [Fe/H].
@@ -401,13 +385,15 @@ class SynthSetup:
                 converted = synth.convert_abundances(text, to_relative=bool(value),
                                                      feh=feh, solar=solar)
                 self.base_form.set_values(abundances=converted)
-                store.update_pref(self.section, "abundances", converted)
+                self._update(self.section, "abundances", converted)
         if self.on_base_change:
             self.on_base_change(key, value)
 
     def _save_mode(self, key, value):
-        store.update_pref(self.section, key, value)
-        self.render_atoms_ro()
+        self._update(self.section, key, value)
+        self.mode_form.fields["use_linelist"].hidden = not self.allow_atom_only or not self.is_nlte
+        self.mode_form.fields["departure_field"].hidden = not self.is_nlte or not self.allow_departures
+        self.mode_form.render()
         if self.on_mode_change:
             self.on_mode_change(self.is_nlte)
 
@@ -417,7 +403,7 @@ class SynthSetup:
         """Seed this setup from another section's configuration. By default only fills keys
         this section does not already have (first-open inheritance); ``force=True`` overwrites
         (the explicit 'Copy from the synthesis setup' action)."""
-        dest = dict(store.get_section(self.section))  # keeps the _seeded marker, if set
+        dest = dict(self._sections[self.section])  # keeps the _seeded marker, if set
         src = store.get_section(run_section)
         for k in _INHERIT_KEYS:
             if k in src and (force or k not in dest):
@@ -428,21 +414,40 @@ class SynthSetup:
         gid = store.get_section(grid_section).get(grid_key)
         if gid:
             dest["atmos_grid_id"] = gid
-        store.set_section(self.section, dest)
+        self._sections[self.section] = dest
+        self.reload()
+
+    def _update(self, section, key, value):
+        self._sections[section][key] = value
+
+    def commit(self):
+        """Remember the submitted setup without persisting unrelated preference keys."""
+        self._sections[self.section].update(self.run_form.values())
+        self._sections[self.section].update(self.base_form.values())
+        self._sections[self.section].update(self.mode_form.values())
+        with store.transaction() as data:
+            prefs = data["preferences"]
+            prefs.setdefault(self.section, {}).update(self._sections[self.section])
+            if self.grid_section != self.section:
+                prefs.setdefault(self.grid_section, {})["atmos_grid_id"] = self.selected_grid_id()
+
+    def discard(self):
+        """Restore the last submitted configuration after dismissing a draft."""
+        self._sections = {name: store.get_section(name)
+                          for name in {self.section, self.grid_section}}
         self.reload()
 
     def reload(self):
         """Re-seed the forms + atmosphere UI from the (possibly just-changed) store section."""
-        vals = {**RUN_DEFAULTS, **store.get_section(self.section)}
+        vals = {**RUN_DEFAULTS, **self._sections[self.section]}
         self.run_form.set_values(**{k: vals[k] for k, _, _, _ in synth.STELLAR_PARAMS})
         self.base_form.set_values(abundances=vals["abundances"],
                                   relative_abundances=vals["relative_abundances"])
-        self.mode_form.set_values(mode=vals["mode"],
+        self.mode_form.set_values(mode=vals["mode"], use_linelist=vals.get("use_linelist", True),
                                   departure_field=vals.get("departure_field", ""))
         self._reset_atmos_picker()
         self._seed_atmos_query()
         self.render_grid_ui()
-        self.render_atoms_ro()
 
     # --- the payload ------------------------------------------------------------------
     def context(self):
@@ -463,10 +468,12 @@ class SynthSetup:
         rv.update(self.base_form.values())
         rv["mode"] = self.mode_form.value("mode")
         rv["atoms"] = list(self.atoms_provider())
+        if self.allow_atom_only and self.is_nlte:
+            rv["only_atom"] = not bool(self.mode_form.value("use_linelist"))
         if self.is_nlte and not rv["atoms"]:
-            self.reason = "NLTE needs model atoms — add them in the synthesis modal."
+            self.reason = "NLTE needs model atoms — add them in this calculation."
             return None
-        sect = store.get_section(self.section)
+        sect = self._sections[self.section]
         atmos_file = None
         if self.is_snapshot or self.is_individual or sect.get("atmos_mode", "interp") == "pick":
             atmos_file = (sect.get("atmos_file") or "").strip() or None
@@ -475,7 +482,7 @@ class SynthSetup:
                 return None
         target = (float(rv["teff"]), float(rv["logg"]), float(rv["feh"]), float(rv["vmic"]))
         self.reason = None
-        saved = str(self.mode_form.value("departure_field") or "").strip()
+        saved = str((self.mode_form.value("departure_field") if not self.mode_form.fields["departure_field"].hidden else "") or "").strip()
         try:
             departure_field = DepartureField.load(saved) if saved else None
         except (OSError, ValueError) as exc:

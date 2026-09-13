@@ -1,4 +1,4 @@
-"""The model-atom objects: **Open File → Open Model Atom** loads a MULTI-format atom into the
+"""The model-atom objects: **Open → Model atom** loads a MULTI-format atom into the
 left sidebar; focusing it opens the atom view, two tables in a tab arrangement (the energy
 levels and the bound-bound transitions) in place of the spectrum canvas.
 
@@ -256,7 +256,7 @@ class AtomTool(Tool):
                 f'<span class="result-badge atom-badge">{html.escape(a.symbol)}</span>'
                 f'<span class="object-name">{html.escape(a.name)}</span>'
                 f'<button class="result-btn" data-atom-remove="{a.uid}" '
-                f'title="Remove"><i class="ti ti-x"></i></button></div>')
+                f'title="Remove from workspace (its correction results go with it)"><i class="ti ti-x"></i></button></div>')
             rows.extend(self.corr.result_rows(results, nested=True))
         orphans = self.corr.results_for(None)
         if orphans:

@@ -46,6 +46,10 @@ class ToolManager:
         """Activate ``name``, first standing down any other active tool."""
         if self.active_name() == name:
             return
+        tool = self._tools[name]
+        if name in ("filter", "normalise") and tool.canvas.selected() is None:
+            tool.notify("Open and select a spectrum first.")
+            return
         self.deactivate_active()
         runner = self._runners.get(name, lambda fn: fn())
         runner(self._tools[name].activate)

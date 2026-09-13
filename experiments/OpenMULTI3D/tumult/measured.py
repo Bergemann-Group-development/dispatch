@@ -20,6 +20,7 @@ class MeasuredLines:
     maskset_uid: str = ""
     maskset_name: str = ""
     maskset_key: str = ""
+    preparation: dict = field(default_factory=dict)
     ident_star: str = ""
     ident_note: str = ""
 

@@ -265,6 +265,16 @@ def _records(tmp_path):
             for path in (tmp_path / "synth" / "_workflows").glob("*/workflow.json")}
 
 
+
+def _load_workspace(browser, panel, sid):
+    """Select a saved workspace and load it; discard when the unsaved-changes prompt opens."""
+    browser.click(f'{panel} .session-item[data-sid="{sid}"]')
+    browser.click(f'{panel} .session-load')
+    browser.eval("(function () { var d = document.getElementById('workspace-load-modal');"
+                 " if (d.open) d.querySelector('[data-workspace-load=\"load-discard\"]').click();"
+                 " return d.open; })()")
+
+
 def test_browser_scenario_submit_cancel_fail_save_replace_reconnect_import(
         tmp_path, server, browser):
     url, ctrl, config = server
@@ -317,14 +327,15 @@ def test_browser_scenario_submit_cancel_fail_save_replace_reconnect_import(
     browser.fill('#file-modal input[type="text"]', str(spectrum))
     browser.step("dispatch", selector='#file-modal input[type="text"]', event="input")
     browser.wait(f"document.querySelector('#file-modal .file-item[data-path=\"{spectrum}\"]')")
-    browser.click(f'#file-modal .file-item[data-path="{spectrum}"]')
+    browser.click(f'#file-modal .file-item[data-path="{spectrum}"]')   # selects the row
+    browser.click("#file-modal .picker-open")                             # opens it
     browser.wait(f"{OBJECTS} === 1")
     browser.click("#close-file")
     browser.click("#open-session")
     browser.fill("#session-name", "obs")
     browser.click("#session-save")
     browser.wait("document.querySelectorAll('.session-item').length >= 2")
-    browser.click('#session-modal .session-item[data-sid="1"]')
+    _load_workspace(browser, '#session-modal', 1)
     browser.wait(f"{OBJECTS} === 0")
     assert "Loaded" in browser.text("#footer-status")
     assert browser.count("#processes .process:not(.recoverable)") == 1
@@ -339,7 +350,7 @@ def test_browser_scenario_submit_cancel_fail_save_replace_reconnect_import(
     while _records(tmp_path)[running_id] != "finished" and time.monotonic() < deadline:
         time.sleep(0.2)
     assert _records(tmp_path)[running_id] == "finished"
-    browser.click('#canvas-empty .session-item[data-sid="2"]')
+    _load_workspace(browser, '#canvas-empty', 2)
     browser.wait(f"{OBJECTS} === 1")
     browser.click('[data-action="workflow-discover"]')
     browser.wait("document.querySelector('#processes .recoverable[data-state=\"finished\"]')")

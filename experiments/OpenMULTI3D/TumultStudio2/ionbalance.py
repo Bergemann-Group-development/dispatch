@@ -51,9 +51,10 @@ from tumult import refstars
 from tumult import sparams as sp
 import store
 from tumult.synthesis import workflows as synth
-from abundwizard import PANEL_AXES, PROFILES, AbundanceWizard
+from abundwizard import PANEL_AXES, PROFILES, AbundanceWizard, preparation_note
 from canvas import ACCENT, MUTED
 from controls import Field, Form
+from ew import profile_options
 from htmlbridge import pulse
 from synthprefs import RUN_DEFAULTS, load_prefs, missing_prefs
 from tumult.synthesis import SynthRequest
@@ -122,7 +123,6 @@ class BalanceSynthesis:
         return self.form.models
 
     def _changed(self, key, value):
-        store.update_pref("ionbal", key, value)
         if self.on_change:
             self.on_change()
 
@@ -195,15 +195,15 @@ class IonBalanceTool(AbundanceWizard):
 
         # --- the modal's three forms: what is measured, where the solve starts, how it runs
         self.form1 = Form("ionbal1", [
-            Field("target", "Target (observation)", kind="select", value="", options=[]),
+            Field("target", "Target spectrum", kind="select", value="", options=[]),
             Field("profile", "EW profile", kind="select", value=vals["profile"],
-                  options=PROFILES),
+                  options=profile_options(PROFILES)),
             Field("snr", "SNR (observation)", kind="number", value=vals["snr"], min=0),
             Field("cont_pct", "Continuum uncertainty [%]", kind="number",
                   value=vals["cont_pct"], min=0, step=0.1),
-        ], on_change=self._on_field)
+        ], on_change=self._on_field, groups=[("Measurement uncertainty", ("snr", "cont_pct"))])
         self.form2 = Form("ionbal2", [
-            Field("entry", "Entry point", kind="select", value=vals["entry"],
+            Field("entry", "Preset", kind="select", value=vals["entry"],
                   options=self._entry_options()),
             Field("teff", "Teff [K]", kind="number", value=vals["teff"], step=50,
                   inline=True),
@@ -211,7 +211,7 @@ class IonBalanceTool(AbundanceWizard):
                   inline=True),
             Field("feh", "[Fe/H]", kind="number", value=vals["feh"], step=0.1,
                   inline=True),
-            Field("vmic", "ξ [km/s]", kind="number", value=vals["vmic"], step=0.1,
+            Field("vmic", "Microturbulence ξ [km/s]", kind="number", value=vals["vmic"], step=0.1,
                   inline=True),
             Field("fit_teff", "Fit Teff", kind="checkbox", value=vals["fit_teff"]),
             Field("fit_logg", "Fit log g", kind="checkbox", value=vals["fit_logg"]),
@@ -221,7 +221,7 @@ class IonBalanceTool(AbundanceWizard):
         self.formadv = Form("ionbaladv", [
             Field("max_iter", "Max iterations", kind="number", value=vals["max_iter"],
                   min=1, step=1),
-            Field("span", "CoG half-span [dex]", kind="number", value=vals["span"],
+            Field("span", "Curve-of-growth half-span [dex]", kind="number", value=vals["span"],
                   min=0.05, step=0.05),
             Field("points", "CoG points", kind="number", value=vals["points"],
                   min=2, step=1),
@@ -340,6 +340,7 @@ class IonBalanceTool(AbundanceWizard):
         self._open_modal()
 
     def _open_modal(self):
+        self.draft.begin()
         self._sync_targets()
         self.setup.refresh()
         # a stored entry point is a *rule* ("the nearest class"), so resolve it against the
@@ -355,7 +356,8 @@ class IonBalanceTool(AbundanceWizard):
 
     def _push_modal_context(self):
         if hasattr(self, "_context_bridge"):
-            self._context_bridge.value = self.context_html() + self.setup_html()
+            self._context_bridge.value = (self.context_html() + self.setup_html()
+                + self.ctx.canvas.preparation_html(self.form1.value("target")))
 
     def setup_html(self):
         """Compact statement of the modal-owned, interpolation-only synthesis context."""
@@ -413,19 +415,15 @@ class IonBalanceTool(AbundanceWizard):
 
     # --- state persistence ------------------------------------------------------------------
     def _on_field(self, key, value):
-        store.update_pref(self.section, key, value)
         if key == "entry":
             _, spec, _ = self._target()
             params = self._entry_params(str(value), spec)
             if params is not None:
                 self.form2.set_values(**params)
-                for k, v in params.items():
-                    store.update_pref(self.section, k, v)
         elif key in sp.PARAM_KEYS and str(self.form2.value("entry")) != ENTRY_MANUAL:
             # typing over a class's numbers is what "manual" means — say so rather than
             # letting the next repaint silently put the class's values back
             self.form2.set_values(entry=ENTRY_MANUAL)
-            store.update_pref(self.section, "entry", ENTRY_MANUAL)
             self._render_scatter()
 
     def _extra_action(self, kind, arg):
@@ -584,6 +582,8 @@ class IonBalanceTool(AbundanceWizard):
                 .get(ref_uid, str(ref_uid)),
                 profile=str(v1["profile"]), snr=float(v1["snr"]) or None,
                 cont_pct=float(v1["cont_pct"]))
+            res.preparation = self.ctx.canvas.preparation(self.ctx.canvas._find(ref_uid))
+            res.preparation["line_list"] = str(self.master_path)
             res.name = f"{res.element} balance · measuring…"
             self.results.append(res)
             self.selected_uid = res.uid
@@ -594,6 +594,7 @@ class IonBalanceTool(AbundanceWizard):
         res.stage = ms.STAGE_MEASURED
         res.history, res.diags, res.sigmas, res.converged = [], {}, {}, False
 
+        self.draft.commit()
         pulse(self._modal, "close")
         self.push_results()
         self.set_step(1)             # land on the balance panels: the fit is what to watch
@@ -723,7 +724,8 @@ class IonBalanceTool(AbundanceWizard):
         rows = [f'<div class="lm-title"><span class="section-header">{el} balance</span>'
                 f'{stale}</div>',
                 f'<div class="hint">{len(res.lines)} windows from {src}, measured on '
-                f'{html.escape(res.ref_name)} · {n1} {el} I, {n2} {el} II included.</div>']
+                f'{html.escape(res.ref_name)} · {n1} {el} I, {n2} {el} II included.</div>',
+                preparation_note(res)]
         if res.lines and not res.has_both_stages():
             rows.append('<div class="hint hint-warn">Only one ionisation stage among the '
                         'included windows — the II−I offset, and with it log g, cannot be '

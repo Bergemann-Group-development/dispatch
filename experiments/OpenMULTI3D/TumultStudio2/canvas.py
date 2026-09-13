@@ -255,7 +255,7 @@ class SpectrumCanvas:
         return RUN_COLORS[n % len(RUN_COLORS)], DASHES[n % len(DASHES)]
 
     def add_object(self, spectrum, name=None, color=None, dash=None, source=None, meta=None,
-                   uid=None):
+                   uid=None, select=True):
         first = not self.objects
         name = name or f"Object {len(self.objects) + 1}"
         color = color or LINE
@@ -288,13 +288,14 @@ class SpectrumCanvas:
         obj.nav_line = self.nav.line("x", "y", source=obj.nav_source,
                                      color=color, line_width=1, line_dash=dash)
         self.objects.append(obj)
-        self.selected_uid = obj.uid  # newly loaded becomes the selected/inspected one
+        if select or first:
+            self.selected_uid = obj.uid
 
         lo, hi = self.display_bounds()
         self.main.x_range.bounds = (lo, hi)
         self.nav.x_range.bounds = (lo, hi)
         self.nav.x_range.start, self.nav.x_range.end = lo, hi  # overview shows everything
-        if first or (source and source[0] == "file"):
+        if first or (select and source and source[0] == "file"):
             # a newly loaded object, or the first object on a previously empty canvas:
             # focus the detail view on its wavelength range (the placeholder range that
             # an empty canvas carries has nothing worth preserving)
@@ -764,6 +765,23 @@ class SpectrumCanvas:
                 logging.exception("canvas view listener failed")
 
     # --- reversible filtering ---------------------------------------------
+    def preparation(self, obj):
+        """Processing applied to a measurement target, suitable for result provenance."""
+        if obj is None:
+            return {}
+        return {"normalisation": "already normalised" if obj.already_normalised else
+                "spline continuum" if obj.norm_knots is not None else "automatic continuum scaling",
+                "filtered": bool(self.show_filtered and obj.filtered is not None),
+                "convolution": dict(obj.conv)}
+
+    def preparation_html(self, uid):
+        """One-line statement of :meth:`preparation` for the inspector and measurement forms."""
+        state = self.preparation(self._find(uid))
+        if not state:
+            return ""
+        return (f'<div class="hint">{state["normalisation"].capitalize()} · '
+                f'Filtering {"active for measurements" if state["filtered"] else "off"}</div>')
+
     def effective(self, obj):
         """The spectrum currently shown for obj (the filtered one when filtering is on)."""
         if self.show_filtered and obj.filtered is not None:

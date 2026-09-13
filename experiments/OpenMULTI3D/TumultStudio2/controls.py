@@ -78,6 +78,7 @@ class Field:
         self.placeholder = placeholder  # text only
         self.required = required  # mandatory: empty (:invalid) inputs get a red outline in CSS
         self.warn = False  # set true to flag the field (e.g. a path that doesn't exist)
+        self.hidden = False
         self.disabled = False  # set true to render the control greyed-out / non-editable
 
     # --- coercion / display ----------------------------------------------
@@ -106,10 +107,12 @@ class Field:
 
     # --- rendering --------------------------------------------------------
     def render(self, form):
+        if self.hidden:
+            return ""
         lab = html.escape(self.label)
         dis = " disabled" if self.disabled else ""
         req = " required" if self.required else ""
-        attrs = f'class="field-input" data-form="{form}" data-field="{self.key}"{dis}{req}'
+        attrs = f'aria-label="{lab}" class="field-input" data-form="{form}" data-field="{self.key}"{dis}{req}'
         if self.kind == "select":
             cur = str(self.value)
             # an option is either a plain value (shown as itself) or a (value, label) pair,
@@ -147,8 +150,9 @@ class Form:
     """A set of Fields rendered into ``<div id="{name}-fields">``, reporting edits
     through a hidden ``TextInput`` named ``{name}-input``."""
 
-    def __init__(self, name, fields, on_change=None):
+    def __init__(self, name, fields, on_change=None, groups=()):
         self.name = name
+        self.groups = groups
         self.fields = {f.key: f for f in fields}
         self.on_change = on_change  # called as on_change(key, value) per edit
         self.render_bridge = html_bridge(f"{name}-fields", name=f"{name}-render")
@@ -164,7 +168,24 @@ class Form:
         return f"{self.name}-fields"
 
     def html(self):
-        return "".join(f.render(self.name) for f in self.fields.values())
+        """The fields in order, with each ``groups`` entry ``(label, keys)`` rendered as a
+        collapsed section whose summary shows the current values. A group left with a
+        single visible field is rendered in place instead: collapsing one input only
+        hides it."""
+        grouped = {key for _, keys in self.groups for key in keys}
+        body = "".join(f.render(self.name) for key, f in self.fields.items() if key not in grouped)
+        for label, keys in self.groups:
+            fields = [self.fields[k] for k in keys if not self.fields[k].hidden]
+            if not fields:
+                continue
+            if len(fields) == 1:
+                body += fields[0].render(self.name)
+                continue
+            values = "; ".join(f"{f.label}: {f._display()}" for f in fields)
+            body += (f'<details class="advanced" data-disclosure="{self.name}-{keys[0]}">'
+                     f'<summary>{html.escape(label)}<span class="advanced-values" title="{html.escape(values)}">{html.escape(values)}</span></summary>'
+                     + "".join(f.render(self.name) for f in fields) + '</details>')
+        return body
 
     def render(self):
         self.render_bridge.value = self.html()
@@ -218,6 +239,7 @@ class NumInput extends HTMLElement {
     if (this._input) return;                      // already upgraded
     const inp = document.createElement('input');
     inp.type = 'number';
+    if (this.hasAttribute('aria-label')) inp.setAttribute('aria-label', this.getAttribute('aria-label'));
     ['value', 'min', 'max', 'step', 'placeholder'].forEach(a => {
       if (this.hasAttribute(a)) inp.setAttribute(a, this.getAttribute(a));
     });

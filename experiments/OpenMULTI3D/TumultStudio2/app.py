@@ -49,7 +49,7 @@ from ionbalance import IonBalanceTool  # noqa: E402
 from tumult.synthesis import workflows as synth  # noqa: E402  (CancelToken/CancelledError for cancellable loads)
 from tumult.synthesis import submit as submit_synthesis  # noqa: E402
 from tumult.synthesis import submission  # noqa: E402  (open/discover workflows on reconnect)
-from synthprefs import load_prefs  # noqa: E402  (the configured workflow root)
+from synthprefs import PREF_LABELS, load_prefs, _resolve_path  # noqa: E402  (the configured workflow root)
 from filepicker import FilePicker  # noqa: E402
 from toolmanager import ToolManager  # noqa: E402
 import session  # noqa: E402
@@ -116,12 +116,12 @@ def sessions_html(slots):
             when = ""
         sub = session.summary(s.get("snapshot")) + (f' · {when}' if when else "")
         rows.append(
-            f'<div class="session-item" data-sid="{s["id"]}" title="Load this save">'
+            f'<div class="session-item" data-sid="{s["id"]}" tabindex="0" role="button" title="Select saved workspace">'
             f'<i class="ti ti-device-floppy"></i>'
             f'<div class="session-meta"><span class="session-name">{html.escape(s["name"])}</span>'
             f'<span class="session-sub">{html.escape(sub)}</span></div>'
             f'<button class="session-del" data-sid="{s["id"]}" '
-            f'title="Delete this save"><i class="ti ti-trash"></i></button>'
+            f'title="Delete saved workspace"><i class="ti ti-trash"></i></button>'
             f'</div>')
     return '<div class="session-list">' + "".join(rows) + "</div>"
 
@@ -159,7 +159,7 @@ def objects_html(canvas, active_kind="spectrum"):
             f'<button class="object-btn" data-action="toggle" data-uid="{obj.uid}" '
             f'title="Hide / show"><i class="ti ti-{eye}"></i></button>'
             f'<button class="object-btn" data-action="remove" data-uid="{obj.uid}" '
-            f'title="Remove"><i class="ti ti-x"></i></button>'
+            f'title="Remove from workspace (the file stays on disk)"><i class="ti ti-x"></i></button>'
             f'</div>'
         )
     return "".join(rows)
@@ -169,8 +169,8 @@ def objects_html(canvas, active_kind="spectrum"):
 # get a first spectrum onto the canvas
 OBJECTS_EMPTY_HINT = (
     '<div class="object-empty">No spectra yet. Open one with '
-    '<b>Open File</b> <i class="ti ti-folder-open"></i> above, or '
-    '<b>Synthesise new</b> to compute one.</div>'
+    '<b>Open → Spectrum</b> <i class="ti ti-folder-open"></i> above, or '
+    '<b>New → Synthesise spectrum</b> to compute one.</div>'
 )
 
 
@@ -404,8 +404,6 @@ def _external_run_row(entry, name, wid):
 
 
 def build():
-    from linenav import MASTER_PATH
-
     # the canvas starts empty — the user opens or synthesizes the first spectrum
     start_dir = picker_start_dir()
 
@@ -452,7 +450,9 @@ def build():
             pass
 
     def remember_recent(path):
-        """Add ``path`` to the recent-files list. The list is a convenience, so a config
+        """Add ``path`` to the recent-files list: the Open spectrum picker's history (spectra
+        and run folders), which is also where that picker starts. Model atoms are opened
+        from their own rooted picker and are not recorded. The list is a convenience, so a config
         the store rejects (unreadable, unsupported or unwritable) is reported in the footer
         and logged, and the open that asked for it goes ahead."""
         try:
@@ -464,6 +464,7 @@ def build():
     # (the Filter / Normalise / Mask tools create and own their bridges via the context)
     linelist_bridge = B.html("linelist-table")
     linelist_mode_bridge = B.cls("#main", "linelist-mode")  # the line-list bottom panel
+    linelist_btn_bridge = B.cls("#line-list-btn", "active")  # its toolbar toggle
     # the panel's search field: its own channel, since a query holds spaces and may hold
     # the ":" the object-actions bridge splits on; NUL-separated from the nonce
     linesearch_actions = B.action("linelist-search")
@@ -576,8 +577,9 @@ def build():
         active = bool(jobs.active)
         toggle(loading_bridge, active)
         # show the inline session loader while the canvas holds nothing (and nothing
-        # is on its way in)
-        toggle(empty_bridge, not canvas.objects and not active)
+        # is on its way in; a grid download or listing delivers nothing to the canvas)
+        toggle(empty_bridge, not canvas.objects
+               and not any(job.delivers for job in jobs.active))
         if inspector is not None:
             inspector.bind(canvas.selected())
         if picker is not None:
@@ -644,7 +646,7 @@ def build():
         load_async("broadening-fit", run, done, executor=_SYNTH_EXEC)
 
     def edit_mask():
-        """Edit-tab "Mask full range": the Mask tool on the selected spectrum's extent."""
+        """Edit-tab "Select full range": the Select range tool on the selected spectrum's extent."""
         obj = canvas.selected()
         if obj is None:
             return
@@ -653,7 +655,7 @@ def build():
         range_tool.select_range(lo, hi)
 
     inspector = Inspector(canvas, on_fit=edit_fit, on_mask=edit_mask, notify=notify)
-    # the Mask tool: the one range gesture, whose actions reach the line-mask view and the
+    # the Select range tool: the one range gesture, whose actions reach the line-mask view and the
     # synthesis modal built further down (the lambdas resolve them at click time)
     range_tool = RangeTool(
         ctx,
@@ -661,21 +663,16 @@ def build():
         on_synth=lambda lo, hi: synth_modal.open_range(lo, hi, "synth"),
         on_fit=lambda lo, hi: synth_modal.open_range(lo, hi, "fit"))
 
-    master = store.get_pref("master_linelist")
-    custom_master = bool(master and Path(master).is_file())
-    if not custom_master:
-        master = MASTER_PATH
-    # HOP uses the complete per-species folder by default; the compact master remains the
-    # immediate proxy/search source. A line list explicitly chosen in Settings serves both.
-    strengths = LineStrengths(
-        master_path=master,
-        linelist=master if custom_master else linestrength.ANNOTATION_PATH,
-        refstar=store.get_pref("strength_refstar", refstars.AUTO_KEY))
+
+    prefs = load_prefs()
+    master = str(_resolve_path(prefs, prefs["linelist"]))
+    strengths = LineStrengths(master_path=master, linelist=master,
+                              refstar=store.get_pref("strength_refstar", refstars.AUTO_KEY))
     ctx.strengths = strengths
 
     linenav = LineNavigator(
         canvas, strengths, on_table=lambda h: setattr(linelist_bridge, "value", h),
-        on_open=lambda on: toggle(linelist_mode_bridge, on),
+        on_open=lambda on: (toggle(linelist_mode_bridge, on), toggle(linelist_btn_bridge, on)),
         on_query_cleared=lambda: setattr(linesearch_bridge, "value", f"\0{time.time()}"))
     linesearch_actions.on_change(
         "value", lambda attr, old, new: linenav.set_query(new.split("\0")[0]))
@@ -794,7 +791,7 @@ def build():
         get_observation=lambda uid: (canvas.effective(canvas._find(uid)) if canvas._find(uid)
                                      else None),
         master_path=master, profiles=PROFILES,
-        # "+ New mask" draws its window with the Mask tool's gesture
+        # "+ New mask" draws its window with the Select range tool's gesture
         place_window=range_tool.begin_add,
         # the mask view's analysis actions: hand the open set to the abundance / balance
         # tools and the synthesis modal, which are built further down (the lambdas resolve
@@ -827,11 +824,16 @@ def build():
     # its fields live in the abundance modal, so every edit restates the setup in the object
     # panel, where the Run synthesis button stands
     _abund_note = lambda *_: (abundancetool is not None and abundancetool.push_setup_note())
+    from atompicker import AtomPicker
+    abund_atoms = AtomPicker(Path(load_prefs()["dispatch_cwd"]) / "input" / "atoms", ns="abund-atoms", section="abund_run",
+        picker_sel="#abund-atom-picker", section_sel="#abund-atoms",
+        actions_name="abund-atom-actions", results_id="abund-atom-results",
+        layout_name="abund_atom_picker", del_class="abund-atom-del")
     abund_setup = SynthSetup(
         "abund", "abund_run", synth_modal.grids,
-        atoms_provider=lambda: list(synth_modal.atoms.selected), notify=notify,
+        atoms_provider=lambda: list(abund_atoms.selected), notify=notify,
         on_run_change=_abund_note, on_base_change=_abund_note,
-        on_mode_change=_abund_note, on_atmos_change=_abund_note)
+        on_mode_change=lambda on: (abund_atoms.show(on), _abund_note()), on_atmos_change=_abund_note)
     abundancetool = AbundanceTool(
         ctx,
         setup=abund_setup,
@@ -861,7 +863,7 @@ def build():
         grids=synth_modal.grids,
         add_spectrum=add_corr_spectrum)
 
-    # the model-atom objects: Open File → Open Model Atom loads one; its view is the two
+    # the model-atom objects: Open → Model atom loads one; its view is the two
     # tables, its panel the entry point of the correction modal, and its correction results
     # are listed under it
     atomtool = AtomTool(ctx, corr=abundcorrtool)
@@ -871,7 +873,6 @@ def build():
 
     def on_atom_select(filepath):
         from tumult.atom import AtomClass
-        remember_recent(filepath)
         name = Path(filepath).name
         load_async(name, lambda token=None: AtomClass(str(filepath)),
                    lambda atom: atomtool.add(filepath, atom), path=filepath)
@@ -1094,9 +1095,10 @@ def build():
     ctx.restore_workspace = restore_workspace   # local harnesses load slots through it
 
     # --- background work: a Processes row now, the outcome delivered on the document ----
-    def _admit(name, *, heavy=False, detached=False, path=None):
+    def _admit(name, *, heavy=False, detached=False, path=None, delivers=True):
         job = Job(_nonce(), name, synth.CancelToken(), ctx.generation,
-                  heavy=heavy, detached=detached, path=str(path) if path else None)
+                  heavy=heavy, detached=detached, path=str(path) if path else None,
+                  delivers=delivers)
         return jobs.add(job)
 
     def _admission_failed(job, exc):
@@ -1107,10 +1109,14 @@ def build():
         notify(f"{job.name} could not start: {exc} — see Processes", level="danger")
         update_all(canvas)
 
-    def load_async(name, loader, on_done, executor=_EXEC, path=None, detached=False):
+    def load_async(name, loader, on_done, executor=_EXEC, path=None, detached=False,
+                   delivers=True):
         """Run ``loader(token)`` on ``executor`` and hand its value to ``on_done`` on the
-        document thread. Returns the pool future, or ``None`` when the pool refused it."""
-        job = _admit(name, heavy=executor is _SYNTH_EXEC, detached=detached, path=path)
+        document thread. Returns the pool future, or ``None`` when the pool refused it.
+        ``delivers`` False marks work whose outcome stays off the canvas (a grid
+        download), so the empty state does not wait for it."""
+        job = _admit(name, heavy=executor is _SYNTH_EXEC, detached=detached, path=path,
+                     delivers=delivers)
         token = job.token                # the loader threads it into synth.* for hard cancel
         update_all(canvas)               # show the queued row immediately
 
@@ -1146,7 +1152,8 @@ def build():
     ctx.submit = lambda name, loader, on_done, detached=False: load_async(
         name, loader, on_done, executor=_SYNTH_EXEC, detached=detached)
     # network transfers (a grid download) wait on I/O, not the CPU budget: the IO pool
-    ctx.submit_io = lambda name, loader, on_done: load_async(name, loader, on_done)
+    ctx.submit_io = lambda name, loader, on_done: load_async(name, loader, on_done,
+                                                            delivers=False)
     ctx.execution = synth.get_runtime()
 
     def _import_result(handle):
@@ -1482,11 +1489,17 @@ def build():
     def on_select(filepath):
         remember_recent(filepath)
         name = Path(filepath).name
-        load_async(name, lambda token=None: load_file(filepath),
-                   lambda spec: canvas.add_object(spec, name=name,
-                                                       source=("file", str(filepath)),
-                                                       meta=getattr(spec, "meta", None)),
-                   path=filepath)
+        def focus_state():
+            return (ctx.focus_kind, canvas.selected_uid, tools.active_name(),
+                    canvas.main.x_range.start, canvas.main.x_range.end)
+        initial = focus_state()
+        def add_loaded(spec):
+            select = focus_state() == initial
+            canvas.add_object(spec, name=name, source=("file", str(filepath)),
+                              meta=getattr(spec, "meta", None), select=select)
+            if not select:
+                notify(f"Opened {name}; select it in Objects to view it.", level="info")
+        load_async(name, lambda token=None: load_file(filepath), add_loaded, path=filepath)
 
     # client -> server channel for the sidebar hide/remove buttons ("action:uid:nonce")
     actions = B.action("object-actions")
@@ -1533,6 +1546,7 @@ def build():
         "linejump":     linenav.jump,
         "linesort":     linenav.set_sort,
         "lineclose":    lambda v: linenav.close(),
+        "lineopen":     lambda v: linenav.close() if linenav.active else linenav.open_at(),
         "loadrun":      lambda v: load_current_run(),
         "filter":       lambda v: tools.toggle("filter"),
         "filter-clear": lambda v: filtertool.clear(),
@@ -1575,6 +1589,10 @@ def build():
             logging.exception("Could not list the saved sessions")
             notify(f"Could not read saved sessions: {exc}", level="danger")
 
+    saved_workspace = {"snapshot": snapshot(), "pending": None}
+    load_prompt = B.dialog("workspace-load-modal")
+    sessions_dialog = B.dialog("session-modal")
+
     def on_session_action(attr, old, new):
         if not new:
             return
@@ -1591,9 +1609,26 @@ def build():
                 logging.exception("Could not save the session %r", name)
                 notify(f"Save “{name}” failed: {exc}", level="danger")
                 return
+            saved_workspace["snapshot"] = snapshot()
             render_sessions()
             notify(f"Saved “{name}”", level="success")
-        elif kind == "load":
+        elif kind in ("load", "load-discard", "load-save"):
+            if kind == "load" and snapshot() != saved_workspace["snapshot"]:
+                saved_workspace["pending"] = arg
+                pulse(load_prompt, "open")
+                return
+            if kind != "load":
+                arg = saved_workspace["pending"]
+                if arg is None:
+                    return
+                if kind == "load-save":
+                    try:
+                        store.save_session(time.strftime("Workspace %Y-%m-%d %H:%M"),
+                                           snapshot(), workflows=ctx.workflow_refs.to_list())
+                    except store.ConfigError as exc:
+                        notify(f"Could not save workspace: {exc}", level="danger")
+                        return
+                pulse(load_prompt, "close")
             try:
                 slot = store.get_slot(int(arg))
             except store.ConfigError as exc:
@@ -1604,7 +1639,11 @@ def build():
                 notify("That save is no longer available.", level="danger")
                 render_sessions()
             else:
-                restore_workspace(slot["snapshot"], slot["name"], slot["workflows"])
+                report = restore_workspace(slot["snapshot"], slot["name"], slot["workflows"])
+                if report is not None:
+                    saved_workspace["snapshot"] = snapshot()
+                    saved_workspace["pending"] = None
+                    pulse(sessions_dialog, "close")
         elif kind == "delete":
             try:
                 found = store.delete_session(int(arg))
@@ -1671,29 +1710,46 @@ def build():
                              busy_provider=jobs.paths)
     atom_picker.layout.name = "atom_file_picker"
 
-    # a second FilePicker instance, embedded inline in the settings modal (no nested
-    # modal) to change the navigator's master line list
-    linelist_path_bridge = B.html("linelist-path")
-    linelist_open_bridge = B.cls("#linelist-picker", "open")
+    def sync_linelist():
+        prefs = load_prefs()
+        path = str(_resolve_path(prefs, prefs["linelist"]))
+        strengths.set_master_path(path)
+        abundancetool.master_path = path
+        ionbaltool.master_path = path
+        auto = masktool.source("auto")
+        if auto is not None:
+            auto.linelist_path = path
+        ctx.annot.resync()
+        linenav.render()
 
-    def on_linelist_select(filepath):
-        strengths.set_master_path(filepath)
-        if linenav.set_master_path(filepath):
-            store.set_pref("master_linelist", str(filepath))
-            ctx.annot.resync()
-            linelist_path_bridge.value = html.escape(Path(filepath).name)
-            pulse(linelist_open_bridge, "off")  # collapse the inline picker
+    synth_modal.on_inputs_change = sync_linelist
+    if store.get_pref("master_linelist") is not None:
+        with store.transaction() as data:
+            data["preferences"].pop("master_linelist", None)
+        notify("Navigation and analysis now use the synthesis Line list in Preferences.")
 
-    annotation_path = Path(strengths.linelist)
-    linelist_picker = FilePicker(
-        on_linelist_select, container_id="linelist-results",
-        start_dir=annotation_path if annotation_path.is_dir() else annotation_path.parent)
-    linelist_picker.layout.name = "linelist_picker"
+    from draft import CalculationDraft
+    synth_modal.draft = CalculationDraft(setup=synth_modal.setup, atoms=synth_modal.atoms,
+        owner=synth_modal.fit, attributes=("vals", "flags", "abund_rows", "target"))
+    abundancetool.draft = CalculationDraft(forms=[("abundance", abundancetool.form1)],
+        setup=abundancetool.setup, atoms=abund_atoms, owner=abundancetool, attributes=("ref_uid",))
+    abundcorrtool.draft = CalculationDraft(forms=[("abundcorr", abundcorrtool.form1)],
+        setup=abundcorrtool.setup)
+    ionbaltool.draft = CalculationDraft(forms=[("ionbal", form) for form in
+        (ionbaltool.form1, ionbaltool.form2, ionbaltool.formadv, ionbaltool.setup.form)])
+    drafts = {"synth-modal": synth_modal.draft, "abund-modal": abundancetool.draft,
+              "corr-modal": abundcorrtool.draft, "ionbal-modal": ionbaltool.draft}
+    dialog_actions = B.action("dialog-actions")
+    def close_draft(attr, old, new):
+        draft = drafts.get(new.split(" ")[0])
+        if draft is not None:
+            draft.discard()
+    dialog_actions.on_change("value", close_draft)
 
     # every html control is a hidden model collected under one root: the bridges/actions
     # `B` gathered as they were created, plus each component's own form/bridge models
     bridges = column(*B.models,
-                     *settings.models, *inspector.models, *linenav.models,
+                     *settings.models, *inspector.models, *linenav.models, *abund_atoms.models,
                      *linejump_form.models,
                      *synth_modal.models, *range_tool.models, *normtool.models,
                      *filtertool.models, *masktool.models,
@@ -1707,7 +1763,8 @@ def build():
                  *abundancetool.figs, *abundcorrtool.figs, abundcorrtool.cog_fig,
                  *ionbaltool.figs, picker.layout,
                  *masktool.roots,
-                 linelist_picker.layout, synth_modal.atoms.picker.layout,
+                 synth_modal.atoms.picker.layout, abund_atoms.picker.layout,
+                 *(p.layout for p in synth_modal.pref_pickers.values()),
                  synth_modal.grids.picker.layout, synth_modal.atmos_picker.layout,
                  abundancetool.setup.atmos_picker.layout,
                  abundcorrtool.setup.atmos_picker.layout,
@@ -1752,6 +1809,10 @@ def build():
         synth_mode_html=synth_modal.mode_form.html(),
         synth_prefs_html=synth_modal.pref_forms["synthprefs"].html(),
         synth_engine_html=synth_modal.pref_forms["synthengine"].html(),
+        pref_picker_results=synth_modal.pref_picker_results(),
+        pref_labels=PREF_LABELS,
+        pref_missing=set(synth_modal.missing),
+        pref_show_slurm=load_prefs().get("workflow_runner") == "slurm",
         grid_list_html=synth_modal.grids.list_html(),
         grid_results_name=synth_modal.grids.results_name,
         synth_grid_html=synth_modal.grid_ui_html(),
@@ -1765,8 +1826,6 @@ def build():
         fit_html=synth_modal.fit.html(),
         annot_label=ctx.annot.button_html(),
         linesettings_html=linejump_form.html(),
-        linelist_path=html.escape(Path(strengths.linelist).name),
-        linelist_results_name=linelist_picker.results_name,
         linemask_results_name=masktool.source("file").results_name,
         # the Auto-generate pane is only rendered while that source exists
         # (masktool.AUTO_MASKS); its fields are undefined otherwise
@@ -1789,7 +1848,9 @@ def build():
         abund_mode_html=abund_setup.mode_form.html(),
         abund_grid_html=abund_setup.grid_ui_html(),
         abund_show_file=abund_setup.show_file(),
-        abund_atoms_ro_html=abund_setup.atoms_ro_html(),
+        abund_atoms_html=abund_atoms.chips_html(),
+        abund_atoms_results_name=abund_atoms.results_name,
+        abund_is_nlte=abund_setup.is_nlte,
         abund_file_results_name=abund_setup.atmos_picker.results_name,
         atom_objects_html=atomtool.objects_html(),
         atom_file_results_name=atom_picker.results_name,

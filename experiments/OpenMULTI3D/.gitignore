@@ -73,3 +73,5 @@ bin/*
 !tests/golden/
 tests/golden/*
 !tests/golden/*.npz
+
+!tests/test_gui_usability.py

@@ -217,7 +217,7 @@ class FilePicker:
         busy = self._key(path) in self._busy
         mark = ('<span class="spinner"></span>' if busy
                 else f'<i class="ti ti-{icon}"></i>')
-        return (f'<li class="file-item{" is-busy" if busy else ""}" data-picker="{self.name}" '
+        return (f'<li tabindex="0" role="button" class="file-item{" is-busy" if busy else ""}" data-picker="{self.name}" '
                 f'data-path="{html.escape(str(path), quote=True)}" '
                 f'data-dir="{1 if is_dir else 0}" '
                 f'title="{html.escape(label, quote=True)}">'
