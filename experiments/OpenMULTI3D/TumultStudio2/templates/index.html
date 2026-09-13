@@ -110,6 +110,9 @@
           <div class="empty-session-results file-results js-session-results">{{ sessions_html|safe }}</div>
           <div class="session-hint">Select a saved workspace, or start fresh:</div>
           <button class="primary-btn session-load" disabled>Load workspace</button>
+          <!-- shown by CSS while the list holds the autosave slot (the workspace of the
+               last document, kept current while it ran): one click puts it back -->
+          <button id="empty-resume" class="text-btn" title="Reload the workspace as the last document left it"><i class="ti ti-history"></i>&nbsp;Resume last session</button>
           <div class="empty-actions">
             <button id="empty-open" class="text-btn"><i class="ti ti-folder-open"></i>&nbsp;Open spectrum</button>
             <button id="empty-synth" class="text-btn">Synthesise spectrum…</button>
@@ -1187,6 +1190,10 @@
   });
 
   // empty-state quick actions: reuse the existing Open spectrum modal / Synth toggle
+  document.getElementById('empty-resume').addEventListener('click', function () {
+    var auto = document.querySelector('#canvas-empty .session-item.autosave');
+    if (auto) sessionAction('load', auto.dataset.sid);
+  });
   document.getElementById('empty-open').addEventListener('click', openSpectrumModal);
   document.getElementById('empty-synth').addEventListener('click', function () { ewAction('synth-new'); });
   document.getElementById('empty-atom').addEventListener('click', openAtomModal);

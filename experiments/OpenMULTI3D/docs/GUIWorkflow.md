@@ -161,6 +161,14 @@ or says that its format is unsupported. Loading is explicit: a row is selected f
 a prompt offers *Save and load*, *Discard and load* or *Cancel*. Deleting a save asks for
 confirmation, as does deleting a cached run from disk.
 
+The running document also keeps one slot of its own, **Last session** (id 0, flagged
+`autosave`, listed ahead of the manual saves): every workspace change is written there
+two seconds after the burst settles, and closing the tab writes at once. A blank
+workspace is never written, so a fresh tab does not replace the last real session, and
+a snapshot equal to the last one written is skipped. The empty state's **Resume last
+session** loads it in one click; it loads and deletes like any slot. Autosaving does
+not count as saving for the unsaved-changes prompt.
+
 Boundaries: the synthesis, correction, abundance and ion-balance forms remain global
 last-used preferences, not slot state, so an older slot does not recover the form values
 it was made with. Each calculation modal edits a draft of those preferences

@@ -309,3 +309,14 @@ def test_load_report_lists_workflow_outcomes_and_missing_records():
     assert message.endswith("workflows: t5750 (running, reattached), "
                             "old (finished, result to import)")
     assert report.details() == ["Loading “s” skipped workflow gone (/x/_workflows/id-1): no record"]
+
+
+def test_blank_workspaces_are_recognised():
+    """The autosave skips a workspace with nothing to resume: a fresh document is blank,
+    one with any spectrum, atom, named or filled mask set or result is not."""
+    from session import Workspace, is_blank
+    assert is_blank(Workspace().to_dict())
+    assert is_blank({"schema_version": 2, "masks": {"sets": [{"label": "", "masks": []}]}})
+    assert not is_blank({"schema_version": 2, "spectra": [{}]})
+    assert not is_blank({"schema_version": 2, "masks": {"sets": [{"label": "Fe"}]}})
+    assert not is_blank({"schema_version": 2, "results": {"ionbal": {"results": [{}]}}})

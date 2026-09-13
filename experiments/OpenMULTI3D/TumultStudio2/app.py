@@ -117,9 +117,11 @@ def sessions_html(slots):
         except (OSError, ValueError, OverflowError):
             when = ""
         sub = session.summary(s.get("snapshot")) + (f' · {when}' if when else "")
+        auto = s.get("autosave", False)     # the running document's own slot, listed first
         rows.append(
-            f'<div class="session-item" data-sid="{s["id"]}" tabindex="0" role="button" title="Select saved workspace">'
-            f'<i class="ti ti-device-floppy"></i>'
+            f'<div class="session-item{" autosave" if auto else ""}" data-sid="{s["id"]}" '
+            f'tabindex="0" role="button" title="{"The last session, kept current while a document runs" if auto else "Select saved workspace"}">'
+            f'<i class="ti ti-{"history" if auto else "device-floppy"}"></i>'
             f'<div class="session-meta"><span class="session-name">{html.escape(s["name"])}</span>'
             f'<span class="session-sub">{html.escape(sub)}</span></div>'
             f'<button class="session-del" data-sid="{s["id"]}" '
@@ -493,6 +495,7 @@ def build():
     atomtool = None
     warm_strengths = None   # ditto: update_all may run before it is defined
     picker = None           # ditto: the spectrum file picker, whose rows spin while loading
+    autosave = None         # ditto: the workspace autosave, defined with the session actions
     jobs = ctx.jobs         # every background operation this document admitted
 
     def run_busy(fn):
@@ -598,6 +601,8 @@ def build():
             abundancetool.refresh()  # keep the abundance modal's reference selector in sync
         if ionbaltool is not None:
             ionbaltool.refresh()     # ditto for the balance modal's target selector
+        if autosave is not None:
+            autosave()               # the workspace changed: keep the autosave slot current
 
     canvas = SpectrumCanvas(on_change=update_all)  # empty until a spectrum is opened
     ctx.canvas = canvas
@@ -1452,6 +1457,7 @@ def build():
     ctx.import_workflow = import_workflow
 
     def session_closed(session_context):
+        autosave(now=True)      # the document's last state, for Resume last session
         ctx.closed = True
         # Closing a tab cancels this document's work (loads, fits, analysis jobs), except
         # the jobs that asked not to be: every synthesis is a durable workflow that keeps
@@ -1634,6 +1640,33 @@ def build():
     saved_workspace = {"snapshot": snapshot(), "pending": None}
     load_prompt = B.dialog("workspace-load-modal")
     sessions_dialog = B.dialog("session-modal")
+
+    # --- autosave: the live workspace kept in one slot, so a closed tab resumes ---------
+    # Every update_all (a load, a result, a view change) schedules a write once the burst
+    # settles; the session-destroyed hook writes at once. A blank workspace is never
+    # written, so a fresh tab does not replace the last real session, and a snapshot equal
+    # to the last one written is skipped. Failures are logged: this must never interrupt
+    # the operation that triggered it.
+    AUTOSAVE_DELAY_MS = 2000
+    autosave_delay = Trailing(AUTOSAVE_DELAY_MS)
+    autosaved = {"snapshot": None}
+
+    def write_autosave():
+        try:
+            snap = snapshot()
+            if session.is_blank(snap) or snap == autosaved["snapshot"]:
+                return
+            store.save_autosave(snap, workflows=ctx.workflow_refs.to_list())
+            autosaved["snapshot"] = snap
+        except Exception:
+            logging.exception("Autosave failed")
+
+    def autosave(now=False):
+        if now:
+            autosave_delay.cancel("autosave")
+            write_autosave()
+        else:
+            autosave_delay("autosave", write_autosave)
 
     def on_session_action(attr, old, new):
         if not new:

@@ -423,6 +423,21 @@ def summary(snapshot):
     return " · ".join(parts)
 
 
+def is_blank(snapshot):
+    """Whether a workspace dict holds nothing worth keeping: no spectra, atoms, named or
+    filled line-mask sets or tool results. A fresh document is blank; the autosave skips
+    it so an accidental new tab does not overwrite the last real session."""
+    if not isinstance(snapshot, dict):
+        return True
+    masks = snapshot.get("masks") if isinstance(snapshot.get("masks"), dict) else {}
+    sets = masks.get("sets") if isinstance(masks.get("sets"), list) else []
+    results = snapshot.get("results") if isinstance(snapshot.get("results"), dict) else {}
+    return not (snapshot.get("spectra") or snapshot.get("atoms")
+                or any(isinstance(s, dict) and (s.get("label") or s.get("masks")) for s in sets)
+                or any((results.get(t) or {}).get("results") for t in RESULT_TOOLS
+                       if isinstance(results.get(t), dict)))
+
+
 def plural(n, noun, plural=None):
     return f"{n} {noun if n == 1 else (plural or noun + 's')}"
 

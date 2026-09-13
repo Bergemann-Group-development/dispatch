@@ -1653,6 +1653,53 @@ def test_a_slot_whose_workflow_record_is_gone_reports_it(tmp_path, monkeypatch):
     assert not len(ctx.recovery) and "20260901T000000-gone" in ctx.workflow_refs
 
 
+def _fire_timeouts(document):
+    """Run the document's pending timeout callbacks (the debounced autosave) now."""
+    for callback in list(document.session_callbacks):
+        if type(callback).__name__ == "TimeoutCallback":
+            document.remove_timeout_callback(callback)
+            callback.callback()
+
+
+def test_the_workspace_is_autosaved_after_a_change_and_on_close(tmp_path, monkeypatch):
+    """A fresh document writes no autosave (a blank workspace must not replace the last
+    real one); the first change writes one slot, later changes update that slot in place,
+    it lists first as the autosave, and closing the tab writes the last state at once."""
+    import store
+
+    document, ctx = _build_document()
+    _fire_timeouts(document)
+    assert store.autosave_slot() is None
+
+    from tumult.spectrum_io import load_file
+    obs_path = _spectrum_file(tmp_path)
+    ctx.canvas.add_object(load_file(obs_path), name="obs", source=("file", str(obs_path)))
+    _fire_timeouts(document)
+    slot = store.autosave_slot()
+    assert slot is not None and slot["name"] == store.AUTOSAVE_NAME
+    assert len(slot["snapshot"]["spectra"]) == 1
+    sid = slot["id"]
+
+    _session_action(document, "save named 1")                # a manual save is another slot
+    x = np.arange(5000., 5010., .01)
+    ctx.canvas.add_object(Spectrum(x, np.ones_like(x)), name="second", source=("synth", None))
+    _fire_timeouts(document)
+    slots = store.list_sessions()
+    assert [s["id"] for s in slots][0] == sid and slots[0]["autosave"]
+    assert len(store.autosave_slot()["snapshot"]["spectra"]) == 2
+    assert len(slots) == 2
+
+    ctx.canvas.remove_object(ctx.canvas.objects[-1].uid)
+    for callback in list(document.session_destroyed_callbacks):
+        callback(None)                                       # the tab closes: no debounce
+    assert len(store.autosave_slot()["snapshot"]["spectra"]) == 1
+
+    # the next document resumes from it
+    document, ctx = _build_document()
+    _session_load(document, sid, 3)
+    assert [o.name for o in ctx.canvas.objects] == ["obs"]
+
+
 # --- synthesis and fit requests collected by the modal -----------------------------------
 _GRID = {"id": "g1", "name": "Test grid", "folder": "", "pattern": "", "format": "Marcs"}
 

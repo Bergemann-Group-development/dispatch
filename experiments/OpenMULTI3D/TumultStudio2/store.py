@@ -37,6 +37,8 @@ RECENT_MAX = 15
 LOCK_TIMEOUT_S = 10.0
 _SECTIONS = {"preferences": dict, "recent_files": list, "sessions": list}
 _SLOT_FIELDS = {"id": int, "name": str, "saved_at": (int, float), "workflows": list}
+AUTOSAVE_NAME = "Last session"      # the one slot the running document keeps current
+AUTOSAVE_ID = 0                     # its fixed id; manual saves count up from 1
 _WORKFLOW_FIELDS = {"id": str, "folder": str, "name": str, "imported": bool}
 _thread_lock = threading.Lock()
 
@@ -74,6 +76,8 @@ def _validate(data, path) -> dict:
                 not isinstance(slot.get(field), kind) or isinstance(slot.get(field), bool)
                 for field, kind in _SLOT_FIELDS.items()):
             raise ConfigError(path, "Config section 'sessions' holds a malformed slot")
+        if not isinstance(slot.get("autosave", False), bool):
+            raise ConfigError(path, f"Config slot {slot['id']} has a malformed autosave flag")
         if slot["id"] in ids:
             raise ConfigError(path, f"Config slot id {slot['id']} occurs twice")
         ids.add(slot["id"])
@@ -211,8 +215,9 @@ def add_recent(path) -> None:
 
 # --- sessions (named save slots, stored in the config file) -----------------
 def list_sessions() -> list[dict]:
-    """Saved slots, most-recently-saved first."""
-    return sorted(_load()["sessions"], key=lambda s: s["saved_at"], reverse=True)
+    """Saved slots, most-recently-saved first, the autosave slot ahead of all of them."""
+    return sorted(_load()["sessions"],
+                  key=lambda s: (s.get("autosave", False), s["saved_at"]), reverse=True)
 
 
 def workflow_reference(id, folder, name, imported=False) -> dict:
@@ -226,11 +231,32 @@ def save_session(name, snapshot, workflows=()) -> dict:
     are `workflow_reference` entries saved beside the snapshot."""
     with transaction() as data:
         slots = data["sessions"]
-        sid = max((s["id"] for s in slots), default=0) + 1
+        sid = max((s["id"] for s in slots), default=AUTOSAVE_ID) + 1
         slot = {"id": sid, "name": str(name), "saved_at": time.time(), "snapshot": snapshot,
                 "workflows": [dict(ref) for ref in workflows]}
         slots.append(slot)
     return slot
+
+
+def save_autosave(snapshot, workflows=()) -> dict:
+    """Replace the autosave slot with ``snapshot`` (creating it the first time) and return
+    it. It is one slot under :data:`AUTOSAVE_NAME` with the fixed id :data:`AUTOSAVE_ID`,
+    flagged ``autosave``, outside the ids manual saves allocate; loading and deleting it
+    work as for any other slot."""
+    with transaction() as data:
+        slots = data["sessions"]
+        slot = next((s for s in slots if s.get("autosave")), None)
+        if slot is None:
+            slot = {"id": AUTOSAVE_ID, "name": AUTOSAVE_NAME, "autosave": True}
+            slots.append(slot)
+        slot.update(saved_at=time.time(), snapshot=snapshot,
+                    workflows=[dict(ref) for ref in workflows])
+    return slot
+
+
+def autosave_slot() -> dict | None:
+    """The autosave slot, or ``None`` before the first autosave (or after its deletion)."""
+    return next((s for s in _load()["sessions"] if s.get("autosave")), None)
 
 
 def get_slot(sid) -> dict | None:

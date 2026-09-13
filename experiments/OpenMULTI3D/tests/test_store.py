@@ -232,3 +232,21 @@ def test_slots_carry_workflow_references_beside_the_snapshot(config):
     config.write_text(json.dumps(data))
     with pytest.raises(store.ConfigError, match="malformed slot"):
         store.list_sessions()
+
+
+def test_the_autosave_is_one_slot_with_a_fixed_id_listed_first(config):
+    """Autosaves replace one slot with id 0 rather than adding; manual saves keep counting
+    from 1 around it; the list puts the autosave ahead of newer manual saves; it loads
+    and deletes as any slot."""
+    store.save_session("first", {"schema_version": 2, "n": 1})
+    auto = store.save_autosave({"schema_version": 2, "n": 2})
+    assert auto["id"] == store.AUTOSAVE_ID and auto["autosave"]
+    assert auto["name"] == store.AUTOSAVE_NAME
+    store.save_autosave({"schema_version": 2, "n": 3}, [store.workflow_reference("w", "/f", "w")])
+    store.save_session("second", {"schema_version": 2, "n": 4})
+    assert [s["id"] for s in store.list_sessions()] == [0, 2, 1]
+    slot = store.autosave_slot()
+    assert slot["snapshot"] == {"schema_version": 2, "n": 3} and slot["workflows"][0]["id"] == "w"
+    assert store.get_session(0) == slot["snapshot"]
+    assert store.delete_session(0) and store.autosave_slot() is None
+    assert [s["id"] for s in store.list_sessions()] == [2, 1]
