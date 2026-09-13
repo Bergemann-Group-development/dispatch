@@ -241,8 +241,8 @@ set's synth windows) and New → Synthesise spectrum (blank λ fields).
   the picker lists what the grid's pattern matched, one row per model (per snapshot on a
   3D grid) as `5750 K · log g 4.50 · [Fe/H] +0.00 · ξ 1`, filtered by every fragment
   typed into its box; picking one fills the stellar parameters. The Individual atmosphere
-  browses a folder instead. Stellar parameters lead with a **Reference star** dropdown
-  (the Preferences → Reference stars catalogue): choosing an entry fills the four fields,
+  browses a folder instead. Stellar parameters lead with a **Preset** dropdown listing the
+  Preferences → Reference stars catalogue: choosing an entry fills the four fields,
   editing any field puts the dropdown back on *Custom*, and values written back by a fit
   or a picked model select the entry they match. Values are a draft of the
   `synth_run` store section: submitting makes them the configuration the modal reopens
@@ -269,7 +269,7 @@ separately. NLTE abundance corrections start from a model atom (see below). Atmo
 grids (downloading the published ones, custom folders, the 1D LTE reference) are the
 Preferences → Atmosphere grids page; paths and the run cache stay in Preferences → Synthesis.
 Preferences → Reference stars edits the one catalogue of named stellar parameters
-(`tumult.refstars`): every setup's Reference star dropdown, the ionisation balance's entry
+(`tumult.refstars`): every setup's Preset dropdown, the ionisation balance's entry
 point and the line-strength ranking read it, and the line strengths take the atmosphere
 of an entry from the nearest model of the registered MARCS grid.
 

@@ -213,11 +213,13 @@ class FilePicker:
         """
         return os.path.abspath(os.path.expanduser(str(path)))
 
+    row_class = "file-item"       # a subclass may add a class to every row it lists
+
     def _row(self, label, path, is_dir, icon):
         busy = self._key(path) in self._busy
         mark = ('<span class="spinner"></span>' if busy
                 else f'<i class="ti ti-{icon}"></i>')
-        return (f'<li tabindex="0" role="button" class="file-item{" is-busy" if busy else ""}" data-picker="{self.name}" '
+        return (f'<li tabindex="0" role="button" class="{self.row_class}{" is-busy" if busy else ""}" data-picker="{self.name}" '
                 f'data-path="{html.escape(str(path), quote=True)}" '
                 f'data-dir="{1 if is_dir else 0}" '
                 f'title="{html.escape(label, quote=True)}">'

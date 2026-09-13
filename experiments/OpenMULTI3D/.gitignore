@@ -30,6 +30,7 @@ tests/*
 !tests/test_spectrum_io.py
 !tests/test_line_quadrature.py
 !tests/test_grid_catalog.py
+!tests/test_reference_stars.py
 
 # Keep development plans visible under the parent experiment ignore rule.
 !plan/

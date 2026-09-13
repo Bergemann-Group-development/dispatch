@@ -670,16 +670,18 @@ class LineStrengths:
         :meth:`warm` does the computing in the background, after which the next repaint gets
         the real thing.
         """
-        if not self.linelist_usable or not self.computable:
+        if not self.linelist_usable:
             return self._proxy_source()
         star, linelist, band = self.request_for(obj, lo, hi)
+        atomic_only = _linelist_key(linelist) != _linelist_key(self.linelist)
+        if not self.computable:
+            return self._proxy_source(atomic_only=atomic_only)
         if allow_compute:
             frame = compute_band(star, linelist, *band)
         else:
             # Never enter compute_band from a repaint, even if another thread
             # evicts a previously ready band between the readiness check and read.
             frame = cached_band(star, linelist, *band)
-        atomic_only = _linelist_key(linelist) != _linelist_key(self.linelist)
         if frame is not None and len(frame):
             scope = " · atomic lines" if atomic_only else ""
             return Source(frame, f"HOP · {star.label} ({star.summary}){scope}",

@@ -3,11 +3,12 @@ cluster shared by any tool that builds a :class:`~tumult.synthesis.SynthRequest`
 
 It is the cluster of the synthesis modal (:class:`synthmodal.SynthModal`): grid selector +
 Interpolate/Pick toggle + Format + atmosphere picker with filename→param auto-fill, plus
-the reference-star dropdown, the Teff/logg/[Fe/H]/vmic, abundances and LTE/NLTE forms.
-The picker (:class:`atmospicker.AtmosPicker`) lists a registered grid's parsed models and
-browses a folder for the Individual atmosphere. The reference-star dropdown
-(:mod:`tumult.refstars`) fills the four parameter fields from an entry and shows *Custom*
-whenever the fields hold anything else, so the two stay in step in both directions.
+the Preset dropdown, the Teff/logg/[Fe/H]/vmic, abundances and LTE/NLTE forms. The
+picker (:class:`atmospicker.AtmosPicker`) lists a registered grid's parsed models and
+browses a folder for the Individual atmosphere. The Preset dropdown lists the reference
+stars (:mod:`tumult.refstars`): it fills the four parameter fields from an entry and shows
+*Custom* whenever the fields hold anything else, so the two stay in step in both
+directions.
 
 Parameterised by a ``prefix`` (DOM-id / form-name / action-channel namespace) and a store
 ``section`` (where this instance's per-target state lives), so several independent setups
@@ -130,8 +131,10 @@ class SynthSetup:
                  "mode": f"{prefix}mode", **(form_names or {})}
         vals = {**RUN_DEFAULTS, **store.get_section(section)}
         self.run_form = Form(names["run"], [
-            Field("refstar", "Reference star", kind="select", value=refstars.CUSTOM_KEY,
-                  options=self._refstar_options(), inline=True),
+            # the reference-star catalogue as presets, full width like the Grid select
+            # above it since the entry names are long
+            Field("refstar", "Preset", kind="select", value=refstars.CUSTOM_KEY,
+                  options=self._refstar_options()),
             *(Field(key, label, kind="number", value=vals[key], step=step, inline=True,
                     min=0 if key == "vmic" else None)
               for key, label, step, _ in synth.STELLAR_PARAMS),
@@ -236,7 +239,7 @@ class SynthSetup:
                 self.run_form.render()
 
     def refresh_refstars(self):
-        """The catalogue changed (Preferences → Reference stars): rebuild the dropdown."""
+        """The catalogue changed (Preferences → Reference stars): rebuild the presets."""
         self.run_form.fields["refstar"].options = self._refstar_options()
         self._sync_refstar(render=False)
         self.run_form.render()

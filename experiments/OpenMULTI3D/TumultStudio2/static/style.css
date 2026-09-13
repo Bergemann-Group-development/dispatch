@@ -863,6 +863,8 @@ num-input[disabled] .num-spin button { cursor: not-allowed; }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   direction: rtl; text-align: left;
 }
+/* a grid model's row leads with its Teff, so it is elided at the tail instead */
+.file-item.model-item span { direction: ltr; }
 /* a picked file spins in place of its icon until its load has landed, so picking several
    in a row shows which are still coming (the footer bar only says that something is) */
 .file-item.is-busy { color: var(--accent); cursor: progress; }

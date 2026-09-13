@@ -3,10 +3,10 @@
 What a reference star is
 ------------------------
 One entry is a label and ``(Teff, log g, [Fe/H], vmic)``. The list serves three places:
-the *Reference star* dropdown of every synthesis setup, which fills the stellar-parameter
-fields from an entry; the ionisation-balance entry point, which starts a solve from one;
-and the line-strength ranking, which computes strengths on the reference atmosphere and
-picks the entry nearest to a spectrum's own parameters when none is chosen.
+the *Preset* dropdown of every synthesis setup, which fills the stellar-parameter fields
+from an entry; the ionisation-balance entry point, which starts a solve from one; and the
+line-strength ranking, which computes strengths on the reference atmosphere and picks the
+entry nearest to a spectrum's own parameters when none is chosen.
 
 The list is editable (Preferences → Reference stars): the GUI stores it and installs it
 here with :func:`set_stars`, so every consumer reads one catalogue. :data:`DEFAULT_STARS`
