@@ -26,7 +26,10 @@ REPO_DIR = str(Path(__file__).resolve().parent.parent)
 # grids themselves (folder/pattern/format) are registered separately via GridManager and
 # stored under the "synthesis" section key "atmos_grids".
 INTERP_METHODS = ["NaturalNeighbor", "Delaunay"]   # NN: smoother (more nodes); Delaunay: fast
-SELECT_OPTIONS = {"interp_method": INTERP_METHODS}
+# where a synthesis workflow runs (tumult.synthesis.submission): a thread of this server,
+# a driver process that outlives it, or that driver submitted through sbatch
+WORKFLOW_RUNNERS = ["in-process", "process", "slurm"]
+SELECT_OPTIONS = {"interp_method": INTERP_METHODS, "workflow_runner": WORKFLOW_RUNNERS}
 # defaults follow the Fortran namelist defaults (composition/atom/atmos/spectrum _params);
 # file paths may be relative to the Dispatch run directory (resolved for existence checks).
 PREF_PAGES = {
@@ -56,6 +59,10 @@ PREF_PAGES = {
         ("linelist_crop_aa", "Line-list crop skirt [A] (0 = off)", "number", 5.0),
         ("fit_max_rounds", "Fit: max refinement rounds", "number", 6),
         ("max_threads", "Max threads (0 = all cores)", "number", 0),
+        # Detached runners keep a synthesis alive across a server restart; the Slurm
+        # script must run `python -m tumult.synthesis.driver "$1"` (see docs/FAQ.md).
+        ("workflow_runner", "Run synthesis workflows", "select", "in-process"),
+        ("slurm_script", "Slurm batch script for workflows", "text", ""),
     ],
 }
 PREF_DEFAULTS = {key: default
@@ -64,7 +71,7 @@ PREF_DEFAULTS = {key: default
 
 # path prefs that must exist on disk if non-empty (output dir is created on demand);
 # relative ones resolve against dispatch_cwd. (Grid folders are checked by GridManager.)
-PATH_PREFS = ["linelist", "abund_file", "absmet", "dispatch_cwd"]
+PATH_PREFS = ["linelist", "abund_file", "absmet", "dispatch_cwd", "slurm_script"]
 
 # --- run settings: only the per-target knobs ----------------------------------------
 # the four stellar axes come from the shared synth.STELLAR_PARAMS spec (see fittab too).

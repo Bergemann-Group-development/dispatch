@@ -52,13 +52,13 @@ name, whether the result has reached the workspace), and every save slot stores 
 references next to its snapshot. Recovery is scoped to that configured root; nothing
 else is scanned.
 
-- A new document lists, at build, the workflows the server is still running (they are
-  live in this process). The panel header's Recover button (`workflow-discover`) lists
-  the newest records of every state, minus the ones this document follows or has
-  imported. Each row names the record's true state: a *running* or *queued* one offers
-  *attach*, a *finished* one *import*, an *interrupted* one (left queued or running by a
-  server that no longer exists) only its logs, a failed one its error; any row can be
-  forgotten from the panel without touching the disk.
+- A new document lists, at build, the workflows still running: in this server, or under
+  a detached driver that still exists. The panel header's Recover button
+  (`workflow-discover`) lists the newest records of every state, minus the ones this
+  document follows or has imported. Each row names the record's true state: a *running*
+  or *queued* one offers *attach*, a *finished* one *import*, an *interrupted* one (left
+  queued or running by a server or driver that no longer exists) only its logs, a failed
+  one its error; any row can be forgotten from the panel without touching the disk.
 - *Attach* creates a job under the current workspace generation whose row cancels the
   workflow through its handle and whose completion is delivered once, as the original
   submission would have. *Import* loads a finished result off the document thread and
@@ -68,11 +68,22 @@ else is scanned.
   generation rather than duplicated), a finished one whose result the slot does not hold
   is offered for import, an interrupted, failed or cancelled one is shown as such, and one
   whose record folder is gone is reported as skipped. The footer names each outcome.
-- Recovery never resumes a native calculation and never signals a process id read from an
-  old record: an interrupted record cannot be attached or cancelled, only read.
+- Recovery never resumes a native calculation. A detached record is signalled only once
+  its driver is verified (the pid still runs `tumult.synthesis.driver` for that
+  workflow id on this host, or `squeue` lists the Slurm job); an interrupted record
+  cannot be attached or cancelled, only read.
+
+Preferences → Engine chooses where a synthesis workflow runs (`workflow_runner`):
+*in-process* (a thread of this server, ended by a server shutdown), *process* (a
+`tumult.synthesis.driver` child in its own session that outlives the server) or *slurm*
+(that driver submitted through the configured batch script). A detached workflow is
+followed by a polling watcher rather than a future; its row and cancel button behave as
+for an in-process one, and it can be attached again after a server restart. See
+`docs/FAQ.md`, "How do I launch a long calculation and come back later?".
 
 Server shutdown (`app_hooks.on_server_unloaded` → `tumult.synthesis.runtime.shutdown`)
-stops admission, cancels queued and live workflows, kills the dispatch children of leaf
+stops admission, cancels queued and live in-process workflows (detached ones keep
+running), kills the dispatch children of leaf
 jobs and waits at most `runtime.SHUTDOWN_TIMEOUT_S` (10 s) for the pool workers. Work
 still running after that, such as an in-process HOP calculation, is reported by thread
 name in the log and left to finish on its own; it is never claimed stopped.

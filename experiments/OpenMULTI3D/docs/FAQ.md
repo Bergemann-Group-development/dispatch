@@ -69,6 +69,26 @@ tumult.read(folder).crop().plot()
 `cancel_token` are documented in `tumult/launch.py`. `tumult.monitor(folder)` returns a
 `(done, total)` estimate for a running job.
 
+### How do I find runs that are still going, whoever started them?
+
+**Available.** `dispatch.x` writes `job.nml` into its run directory at startup (process
+id, host, working directory, input file, start time, MPI size, thread count, Slurm job id,
+code hash) and rewrites it as `finished` on a normal exit, so a run started from a shell,
+a notebook or a batch script is as visible as one the GUI launched. `tumult.launch` adds
+`job.json` with what dispatch cannot know (queued, cancelled, exit status).
+
+```python
+from tumult.synthesis import jobrecord
+for run in jobrecord.scan('synth'):          # newest first
+    print(run['resolved'], run['output'], run.get('pid'), run.get('host'))
+print(jobrecord.state_of('synth/dep_fe607'))  # finished | running | submitted | lost | ...
+```
+
+`state_of` checks the completed output first, then the launcher's verdict, then the
+process table on the recording host or `squeue` for a Slurm id. A run recorded on another
+host is reported as its record says. A binary built before `job.nml` existed leaves only
+the launcher's `job.json`, if it was launched through Python at all.
+
 ---
 
 ## Synthesising selected features
@@ -299,23 +319,54 @@ for job in discover_workflows('synth'):    # newest first
 Records live under `<synth_output_dir>/_workflows/<id>/workflow.json` and the finished
 result under `.../result/`. `progress` labels its counts `estimated`; a full bar is not
 convergence. A record left `queued` or `running` by a process that no longer exists reports
-`interrupted`; nothing resumes automatically, and a saved PID is never signalled.
+`interrupted`; nothing resumes automatically.
+
+By default the workflow runs in a thread of the submitting process and ends with it. Two
+detached drivers outlive the submitter (POSIX only):
+
+```python
+job = submit(request, detach='process')                  # own session on this host
+job = submit(request, detach='slurm', slurm_script='driver.sbatch')
+```
+
+`process` starts `python -m tumult.synthesis.driver <folder>` with its own log,
+`<folder>/driver.log`. `slurm` runs `sbatch <slurm_script> <folder>`; the script supplies
+the resources and must run the driver on the allocation, for example
+
+```sh
+#!/bin/sh
+#SBATCH --cpus-per-task=32 --time=12:00:00
+python -m tumult.synthesis.driver "$1"
+```
+
+The driver executes the recorded request, records its pid and host in the `driver` block
+of `workflow.json`, and settles the record itself. `open_workflow` from any later process
+reports the true state: `running` while the pid still runs that driver on this host
+(checked by command line, so a reused pid is not mistaken for it) or `squeue` lists the
+job, `interrupted` once neither does. `cancel()` sends SIGTERM to the driver's process
+group or calls `scancel`; the driver cancels through its own token, so the dispatch child
+is killed and its partial cache entry removed as for an in-process cancel. An interrupted
+record is never signalled. Without the argument, `request.prefs['workflow_runner']`
+(`in-process`, `process`, `slurm`) and `request.prefs['slurm_script']` choose the driver.
 
 **In the GUI**, every synthesis the modal launches (a free range, a mask set, a 1D grid
 or file, a 3D snapshot) is submitted this way and keeps running when the browser tab
 closes; a fit is a document-owned job and is cancelled with the tab, since its result has
-no durable record yet. The Processes panel shows the
-session's own jobs with their phase, elapsed time, run count and log names, and a
-reconnecting document can attach to a workflow the server still runs, import a finished
-result once, and see interrupted records as such (see `docs/GUIWorkflow.md`, "Recovering
-durable workflows after a reconnect").
+no durable record yet. Preferences → Engine → *Run synthesis workflows* picks the driver;
+with *process* or *slurm* the workflow also survives stopping the server, and a document
+opened later can attach to it, cancel it and import its result. The Processes panel
+shows the session's own jobs with their phase, elapsed time, run count and log names,
+and a reconnecting document can attach to a workflow that still runs, import a finished
+result once, and see interrupted records as such (see `docs/GUIWorkflow.md`,
+"Recovering durable workflows after a reconnect").
 
 Missing pieces:
 
 - Fits are not durable workflows; they are cancelled when the tab closes.
 - Iteration diagnostics (`progress`) are not shown in the GUI, only in Python.
-- Slurm submission through `tumult.launch(slurm_script=...)` exists for single runs but is not
-  connected to workflow records.
+- A Slurm driver runs every native run of the workflow on its one allocation; per-run
+  `sbatch` through `tumult.launch(slurm_script=...)` is not connected to workflow records.
+- A standalone departure solve as a detached workflow needs the GUI entry point above.
 
 ---
 

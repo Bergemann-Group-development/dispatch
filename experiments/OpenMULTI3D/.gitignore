@@ -12,6 +12,7 @@ docs/*
 !docs/PythonNamingConventions.md
 !tests/
 tests/*
+!tests/test_detached_workflows.py
 !tests/test_execution.py
 !tests/test_ui_execution.py
 !tests/test_ui_events.py

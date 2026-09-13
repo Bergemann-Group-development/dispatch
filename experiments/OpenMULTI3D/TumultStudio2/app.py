@@ -1186,8 +1186,10 @@ def build():
 
     def attach_workflow(workflow_id):
         """Follow a live workflow from here: a new job under the current generation whose
-        row can cancel it through the handle and whose completion is delivered once. A
-        record that is not live cannot be attached; nothing is resumed or signalled."""
+        row can cancel it through the handle and whose completion is delivered once. Live
+        means a workflow this server runs or a detached driver (process or Slurm job)
+        that still exists; a record without one cannot be attached and nothing is
+        resumed."""
         handle = _reopen(workflow_id)
         if handle is None:
             return None
@@ -1582,8 +1584,8 @@ def build():
 
     ionbaltool.refresh()      # the balance modal's target selector
 
-    # a reconnect: workflows still running in this server are offered at once (their
-    # number is bounded by the pool); finished and interrupted records wait for Recover
+    # a reconnect: workflows still running, in this server or under a detached driver,
+    # are offered at once; finished and interrupted records wait for Recover
     for root in workflow_roots():
         try:
             handles = submission.discover_workflows(root)
