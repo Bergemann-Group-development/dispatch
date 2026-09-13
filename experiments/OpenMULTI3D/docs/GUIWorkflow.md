@@ -73,13 +73,22 @@ else is scanned.
   workflow id on this host, or `squeue` lists the Slurm job); an interrupted record
   cannot be attached or cancelled, only read.
 
-Preferences → Engine chooses where a synthesis workflow runs (`workflow_runner`):
-*in-process* (a thread of this server, ended by a server shutdown), *process* (a
-`tumult.synthesis.driver` child in its own session that outlives the server) or *slurm*
-(that driver submitted through the configured batch script). A detached workflow is
-followed by a polling watcher rather than a future; its row and cancel button behave as
-for an in-process one, and it can be attached again after a server restart. See
-`docs/FAQ.md`, "How do I launch a long calculation and come back later?".
+Preferences → Engine chooses where synthesis workflows run (`workflow_runner`): *local*,
+the machine's worker daemon (`tumult.synthesis.daemon`, started on demand, outliving the
+server, exiting when idle), or *slurm* (the per-workflow driver submitted through the
+configured batch script). Tests set *in-process* to keep a stubbed execution in the
+server. A detached workflow is followed by a polling watcher rather than a future; its
+row shows the driver and its cancel button behaves as for an in-process one, and it can
+be attached again after a server restart. See `docs/FAQ.md`, "How do I launch a long
+calculation and come back later?".
+
+Recover also lists *external runs*: dispatch runs under the same root that no workflow
+record names, found by the `job.nml` dispatch writes for itself, when they are running,
+queued or lost. A live one offers *end* (`jobrecord.cancel`: `scancel`, or SIGTERM to a
+pid the process table confirms still runs that input), a departure solve offers *use as
+saved departures* (fills the modal's field and switches it to NLTE), a lost spectrum run
+offers *open*; any can be forgotten. Finished runs are not listed; the file picker opens
+them.
 
 Server shutdown (`app_hooks.on_server_unloaded` → `tumult.synthesis.runtime.shutdown`)
 stops admission, cancels queued and live in-process workflows (detached ones keep

@@ -34,7 +34,9 @@ import hashlib
 import json
 import logging
 import os
+import signal
 import socket
+import subprocess
 import time
 from pathlib import Path
 
@@ -135,6 +137,56 @@ def read(folder):
         else:
             record["state"] = "finished" if native.get("state") == "finished" else "running"
     return record
+
+
+def process_runs(pid, marker):
+    """Whether ``pid`` is alive and its command line still names ``marker``, which
+    rules out an unrelated process that reused the id. ``None`` when the command line
+    cannot be inspected on this platform."""
+    try:
+        os.kill(int(pid), 0)
+    except (OSError, TypeError, ValueError):
+        return False
+    if os.name != "posix":
+        return None
+    try:
+        out = subprocess.run(["ps", "-o", "command=", "-p", str(int(pid))],
+                             capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return marker in out
+
+
+def cancel(folder, record=None):
+    """End a recorded run that is still going: ``scancel`` its Slurm job, else SIGTERM
+    its process on this host once the process table confirms the pid still runs with the
+    recorded input file on its command line. Returns whether anything was signalled; the
+    launcher record is then marked ``cancelled`` so the folder does not read as lost."""
+    record = record if record is not None else read(folder)
+    if record is None or state_of(folder, record) not in ("running", "submitted"):
+        return False
+    if record.get("slurm_id"):
+        from . import scheduler
+        try:
+            sent = scheduler.scancel(record["slurm_id"])
+        except OSError:
+            return False
+    else:
+        pid, marker = record.get("pid"), Path(record.get("input") or "").name
+        if not pid or not marker or record.get("host") not in (None, socket.gethostname()):
+            return False
+        if process_runs(pid, marker) is not True:
+            return False
+        try:
+            os.kill(int(pid), signal.SIGTERM)
+        except OSError:
+            return False
+        sent = True
+    if sent:
+        if read_launcher(folder) is None:
+            write(folder, {}, pid=record.get("pid"), slurm_id=record.get("slurm_id"))
+        finish(folder, "cancelled")
+    return sent
 
 
 def alive(pid, host=None):

@@ -26,9 +26,10 @@ REPO_DIR = str(Path(__file__).resolve().parent.parent)
 # grids themselves (folder/pattern/format) are registered separately via GridManager and
 # stored under the "synthesis" section key "atmos_grids".
 INTERP_METHODS = ["NaturalNeighbor", "Delaunay"]   # NN: smoother (more nodes); Delaunay: fast
-# where a synthesis workflow runs (tumult.synthesis.submission): a thread of this server,
-# a driver process that outlives it, or that driver submitted through sbatch
-WORKFLOW_RUNNERS = ["in-process", "process", "slurm"]
+# where synthesis workflows run (tumult.synthesis.submission): "local" is the worker
+# daemon on this machine, which outlives the server; "slurm" submits each workflow through
+# the batch script. Tests set "in-process" to keep the stubbed execution in the server.
+WORKFLOW_RUNNERS = ["local", "slurm"]
 SELECT_OPTIONS = {"interp_method": INTERP_METHODS, "workflow_runner": WORKFLOW_RUNNERS}
 # defaults follow the Fortran namelist defaults (composition/atom/atmos/spectrum _params);
 # file paths may be relative to the Dispatch run directory (resolved for existence checks).
@@ -59,9 +60,9 @@ PREF_PAGES = {
         ("linelist_crop_aa", "Line-list crop skirt [A] (0 = off)", "number", 5.0),
         ("fit_max_rounds", "Fit: max refinement rounds", "number", 6),
         ("max_threads", "Max threads (0 = all cores)", "number", 0),
-        # Detached runners keep a synthesis alive across a server restart; the Slurm
-        # script must run `python -m tumult.synthesis.driver "$1"` (see docs/FAQ.md).
-        ("workflow_runner", "Run synthesis workflows", "select", "in-process"),
+        # Both runners keep a synthesis alive across a server restart; the Slurm script
+        # must run `python -m tumult.synthesis.driver "$1"` (see docs/FAQ.md).
+        ("workflow_runner", "Run synthesis workflows", "select", "local"),
         ("slurm_script", "Slurm batch script for workflows", "text", ""),
     ],
 }

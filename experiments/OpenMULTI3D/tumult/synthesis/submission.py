@@ -5,13 +5,16 @@ of three drivers, chosen at submission:
 
 * in-process (the default): a thread of this process's ``WORKFLOWS`` pool. It ends with
   the process; a server shutdown cancels it.
+* ``daemon``: the long-lived worker of :mod:`tumult.synthesis.daemon` serving this root,
+  started on demand. It outlives the submitter without a per-workflow interpreter start;
+  a cancel is a ``cancel_requested`` flag in the record, which the daemon honours.
 * ``process``: ``python -m tumult.synthesis.driver <folder>`` in its own session on this
   host. It outlives the submitter, and a later process cancels it by signalling the
   recorded process group once the pid is verified to still run that driver.
 * ``slurm``: the same driver submitted through ``sbatch <script> <folder>``; the
   scheduler owns liveness (``squeue``) and cancellation (``scancel``).
 
-Both detached drivers settle the record themselves, so the record is shared between
+The detached drivers settle the record themselves, so the record is shared between
 processes and every update takes the folder's file lock. A handle opened on a detached
 record reports its state from the driver's liveness; callbacks on such a handle are
 delivered by a polling watcher rather than by a future.
@@ -33,13 +36,17 @@ import time
 import uuid
 
 from .cancel import CancelToken, CancelledError
+from .jobrecord import process_runs as _process_alive
 from .request import ResolvedSynthRequest, SynthesisResult, SynthRequest
 from .runtime import WORKFLOWS, observe_runs
 
 RECORD = 'workflow.json'
 LOCK = 'workflow.lock'
 DRIVER_LOG = 'driver.log'
-DETACHED = ('process', 'slurm')
+DETACHED = ('daemon', 'process', 'slurm')
+# preference spellings of the driver choice (TumultStudio2 Preferences -> Engine)
+RUNNER_PREFS = {'local': 'daemon', 'daemon': 'daemon', 'process': 'process',
+                'slurm': 'slurm', 'in-process': None, '': None}
 TERMINAL = ('finished', 'failed', 'cancelled', 'interrupted')
 POLL_S = 3.0        # how often the watcher re-reads detached records for callbacks
 _live = {}
@@ -104,30 +111,18 @@ def mutate_record(folder, change):
 
 
 # --- the driver's liveness -------------------------------------------------------------
-def _process_alive(pid, marker):
-    """Whether ``pid`` is alive and its command line still names ``marker`` (the
-    workflow id), which rules out an unrelated process that reused the id. ``None``
-    when the command line cannot be inspected on this platform."""
-    try:
-        os.kill(int(pid), 0)
-    except (OSError, TypeError, ValueError):
-        return False
-    if os.name != 'posix':
-        return None
-    try:
-        out = subprocess.run(['ps', '-o', 'command=', '-p', str(int(pid))],
-                             capture_output=True, text=True, timeout=5).stdout
-    except (OSError, subprocess.SubprocessError):
-        return None
-    return marker in out
-
-
 def driver_state(record):
     """The live state of a detached record's driver: ``queued``, ``running``, ``False``
     (gone) or ``None`` (not observable from here: an in-process record, a process driver
     on another host, a platform without ``ps``)."""
     driver = record.get('driver') or {}
     kind = driver.get('kind')
+    if kind == 'daemon':
+        from . import daemon
+        if daemon.status(driver.get('root')) is not None:
+            return 'running' if record.get('state') == 'running' else 'queued'
+        # no daemon: a queued record waits for the next one, a claimed run is gone
+        return 'queued' if record.get('state') == 'queued' else False
     if kind == 'slurm':
         if not driver.get('slurm_id'):
             return False
@@ -268,6 +263,19 @@ class WorkflowHandle:
         driver = record.get('driver') or {}
         if record.get('state') not in ('queued', 'running') or not driver:
             return False
+        if driver.get('kind') == 'daemon':
+            live = driver_state(record)
+            if live is False:
+                return False
+            if live == 'queued' and not (driver.get('pid')):
+                from . import daemon
+                if daemon.status(driver.get('root')) is None:
+                    # nobody will claim it; settle the record here
+                    update_record(self.folder, state='cancelled', phase='cancelled',
+                                  ended=time.time())
+                    return True
+            update_record(self.folder, cancel_requested=True)
+            return True
         if driver.get('kind') == 'process':
             if driver_state(record) != 'running':
                 return False
@@ -477,6 +485,12 @@ def _start_driver(folder, record, detach, slurm_script):
         part for part in (package_root, env.get('PYTHONPATH')) if part)
     driver = {'kind': detach, 'pid': None, 'host': None, 'slurm_id': None,
               'script': None, 'cwd': os.getcwd(), 'python': sys.executable}
+    if detach == 'daemon':
+        from . import daemon
+        driver['root'] = str(folder.parent.parent)
+        update_record(folder, record, driver=driver)     # visible before the daemon looks
+        daemon.ensure(driver['root'])
+        return _read(folder)
     if detach == 'process':
         log_path = folder / DRIVER_LOG
         with open(log_path, 'ab') as log_file:
@@ -502,10 +516,12 @@ def submit(request, *, root=None, label=None, meta=None, detach=None, slurm_scri
 
     ``label`` and ``meta`` are the submitter's display name and annotations (JSON), kept
     in the record so a later process can list and present the workflow as it was
-    submitted. ``detach`` picks the driver: ``None`` runs in this process, ``'process'``
-    starts a driver that outlives it, ``'slurm'`` submits that driver through
+    submitted. ``detach`` picks the driver: ``None`` runs in this process, ``'daemon'``
+    hands it to the root's worker daemon (started if needed), ``'process'`` starts a
+    driver that outlives it, ``'slurm'`` submits that driver through
     ``sbatch slurm_script <folder>``. Absent an argument, ``request.prefs`` may name the
-    driver as ``workflow_runner`` and the script as ``slurm_script``."""
+    driver as ``workflow_runner`` (``local`` means the daemon, ``in-process`` none) and
+    the script as ``slurm_script``."""
     from .workflows import resolve_request
     resolved = request if isinstance(request, ResolvedSynthRequest) else resolve_request(request)
     # JSON round-trip proves that no mutable masks/settings remain shared with the caller.
@@ -513,9 +529,8 @@ def submit(request, *, root=None, label=None, meta=None, detach=None, slurm_scri
     resolved = resolve_request(owned)
     prefs = owned.prefs or {}
     if detach is None:
-        detach = prefs.get('workflow_runner') or None
-        if detach in ('', 'in-process'):
-            detach = None
+        choice = str(prefs.get('workflow_runner') or '')
+        detach = RUNNER_PREFS.get(choice, choice)
     if detach is not None and detach not in DETACHED:
         raise ValueError(f'detach must be one of {DETACHED} or None, not {detach!r}')
     if detach == 'slurm' and slurm_script is None and prefs.get('slurm_script'):
@@ -581,17 +596,28 @@ def open_workflow(path, *, root=None):
         return _live.get(folder.name) or WorkflowHandle(folder)
 
 
-def discover_workflows(root, limit=None):
+def discover_workflows(root, limit=None, revive=True):
     """Newest workflow handles under ``<root>/_workflows``, whatever their state: live
     ones (this process holds their handle, or their detached driver still runs),
     finished results, and records left queued or running by a driver that no longer
     exists, which report ``interrupted``. Only that folder is scanned, never the run
-    cache beside it."""
+    cache beside it. With ``revive``, a queued daemon workflow whose daemon has gone
+    gets a new daemon started."""
     base = Path(root).expanduser().resolve() / '_workflows'
     folders = [path.parent for path in base.glob(f'*/{RECORD}')]
     folders.sort(key=lambda path: (_read(path) or {}).get('submitted', 0), reverse=True)
     handles = [open_workflow(path) for path in folders]
+    if revive and any(_waits_for_daemon(handle) for handle in handles):
+        from . import daemon
+        daemon.ensure(base.parent)      # queued daemon work with no daemon: start one
     return handles[:limit] if limit else handles
+
+
+def _waits_for_daemon(handle):
+    record = _read(handle.folder) or {}
+    driver = record.get('driver') or {}
+    return (driver.get('kind') == 'daemon' and record.get('state') == 'queued'
+            and not driver.get('pid'))
 
 
 def run(request, *, cancel_token=None):

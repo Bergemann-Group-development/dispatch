@@ -249,9 +249,48 @@ class Recoverable:
                    len(record.get("runs") or ()))
 
 
+@dataclass(eq=False)
+class ExternalRun:
+    """A dispatch run found by its own record (``job.nml``, see
+    ``tumult.synthesis.jobrecord``) rather than by a workflow: one started from a shell,
+    a notebook or a batch script. It is listed with the recoverable records so a run
+    launched outside the GUI can be watched, cancelled, opened as a spectrum or, for a
+    departure solve, handed to the synthesis modal as saved departures."""
+    folder: str
+    name: str
+    state: str          # running | submitted | lost (finished runs are opened as files)
+    pid: int | None = None
+    host: str | None = None
+    slurm_id: str | None = None
+    input: str | None = None
+    started: str | None = None
+    logs: tuple = ()
+    departures: bool = False
+
+    @property
+    def id(self):
+        # opaque and colon-free: the ":"-delimited action channel carries it
+        import hashlib
+        return "run-" + hashlib.sha1(self.folder.encode()).hexdigest()[:12]
+
+    @property
+    def live(self):
+        return self.state in ("running", "submitted")
+
+    @classmethod
+    def from_record(cls, record):
+        from pathlib import Path
+        folder = Path(record["output"])
+        log = folder.with_suffix(".log")
+        return cls(str(folder), folder.name, record["resolved"], record.get("pid"),
+                   record.get("host"), record.get("slurm_id"), record.get("input"),
+                   record.get("started"), (str(log),) if log.is_file() else (),
+                   (folder / "save").is_dir() and any((folder / "save").glob("pop_*")))
+
+
 class Recovery:
-    """The recoverable records shown under the jobs in the Processes panel, keyed by
-    workflow id, in the order offered."""
+    """The recoverable records and external runs shown under the jobs in the Processes
+    panel, keyed by workflow id or the external run's id, in the order offered."""
 
     def __init__(self):
         self._entries = {}

@@ -57,7 +57,7 @@ from session import (Workspace, SpectrumSnap, MaskSnap, AtomSnap, ResultsSnap, V
                      FilterSnap, FocusSnap, ToolsSnap, PreparedWorkspace, PreparedSpectrum,
                      PreparedAtom, FOCUS_TOOL, RESULT_TOOLS)
 from htmlbridge import BridgeSet, pulse, toggle  # noqa: E402
-from jobs import (Job, Recoverable, QUEUED, RUNNING, CANCELLING, FINISHED, FAILED,  # noqa: E402
+from jobs import (ExternalRun, Job, Recoverable, QUEUED, RUNNING, CANCELLING, FINISHED, FAILED,  # noqa: E402
                   CANCELLED)
 from debounce import Trailing  # noqa: E402
 from units import X_UNITS, Y_UNITS, to_range  # noqa: E402
@@ -265,7 +265,20 @@ def _workflow_progress(job):
     runs = len(record.get("runs") or ())
     if runs:
         parts.append(f"{runs} run{'' if runs == 1 else 's'}")
+    tag = _driver_tag(record)
+    if tag:
+        parts.append(tag)
     return " · ".join(parts), _log_links(job.handle.logs)
+
+
+def _driver_tag(record):
+    """How a detached workflow runs, for its row: the daemon, its own process or a
+    Slurm job (with the id once the scheduler gave one)."""
+    driver = record.get("driver") or {}
+    kind = driver.get("kind")
+    if kind == "slurm":
+        return f"Slurm {driver['slurm_id']}" if driver.get("slurm_id") else "Slurm"
+    return {"daemon": "detached", "process": "own process"}.get(kind, "")
 
 
 def processes_html(jobs, recovery=()):
@@ -318,6 +331,9 @@ def processes_html(jobs, recovery=()):
     for entry in recovery:
         name = html.escape(entry.name)
         wid = html.escape(entry.id)
+        if isinstance(entry, ExternalRun):
+            rows.append(_external_run_row(entry, name, wid))
+            continue
         if entry.live:
             icon, note = "ti-plug", f"{entry.state} · {_elapsed(entry.elapsed)} · not attached"
             action = ('<button class="object-btn" data-action="workflow-attach" '
@@ -330,7 +346,7 @@ def processes_html(jobs, recovery=()):
                       '<i class="ti ti-download"></i></button>')
         elif entry.state == "interrupted":
             icon, action = "ti-plug-x", ""
-            note = "interrupted: the server that ran it is gone; nothing resumes"
+            note = "interrupted: the process that ran it is gone; nothing resumes"
         else:
             icon, action = "ti-alert-circle" if entry.state == FAILED else "ti-ban", ""
             note = entry.state + (f": {entry.error}" if entry.error else "")
@@ -347,6 +363,44 @@ def processes_html(jobs, recovery=()):
             f'title="Forget this record here (it stays on disk)"><i class="ti ti-x"></i>'
             '</button></div>')
     return "".join(rows)
+
+
+def _external_run_row(entry, name, wid):
+    """A run found by its own record: where it runs, then cancel (live), open (a spectrum
+    run) or use as saved departures (a departure solve), and forget."""
+    where = []
+    if entry.slurm_id:
+        where.append(f"Slurm {entry.slurm_id}")
+    elif entry.pid:
+        where.append(f"pid {entry.pid}" + (f" on {entry.host}" if entry.host else ""))
+    note = " · ".join([entry.state, *where, "started outside this session"])
+    if entry.state == "lost":
+        note = "lost: recorded as running but its process is gone" + (
+            f" (pid {entry.pid})" if entry.pid else "")
+    actions = []
+    if entry.live:
+        actions.append('<button class="object-btn danger" data-action="run-cancel" '
+                       f'data-uid="{wid}" data-confirm="1" title="End this run">'
+                       '<i class="ti ti-player-stop"></i></button>')
+    if entry.departures:
+        actions.append('<button class="object-btn" data-action="run-departures" '
+                       f'data-uid="{wid}" title="Use as saved departures in the synthesis modal">'
+                       '<i class="ti ti-arrow-bar-to-right"></i></button>')
+    elif not entry.live:
+        actions.append('<button class="object-btn" data-action="run-open" '
+                       f'data-uid="{wid}" title="Open the run as a spectrum">'
+                       '<i class="ti ti-download"></i></button>')
+    icon = "ti-terminal-2" if entry.live else "ti-plug-x"
+    return (f'<div class="object-item process recoverable external" data-wid="{wid}" '
+            f'data-state="{html.escape(entry.state)}">'
+            f'<i class="ti {icon}"></i>'
+            f'<div class="process-meta"><span class="object-name" title="{html.escape(entry.folder)}">'
+            f'{name}</span>'
+            f'<span class="process-state" title="{html.escape(note)}">{html.escape(note)}</span>'
+            f'{_log_links(entry.logs)}</div>{"".join(actions)}'
+            f'<button class="object-btn" data-action="workflow-forget" data-uid="{wid}" '
+            f'title="Forget this run here (it stays on disk)"><i class="ti ti-x"></i>'
+            '</button></div>')
 
 
 def build():
@@ -1162,19 +1216,92 @@ def build():
 
     def discover_workflows(limit=20):
         """Scan the configured roots for workflow records and offer the newest ones this
-        document neither follows nor has imported. Returns the ids offered."""
+        document neither follows nor has imported, then the dispatch runs under the same
+        roots that no workflow accounts for (see :func:`discover_runs`). Returns the ids
+        offered."""
         offered = []
         for root in workflow_roots():
             for handle in submission.discover_workflows(root, limit=limit):
                 entry = _offer(handle, referenced=handle.id in ctx.workflow_refs)
                 if entry is not None:
                     offered.append(entry.id)
+        offered.extend(discover_runs(limit=limit))
         update_all(canvas)
         n = len(ctx.recovery)
-        notify(f"{n} recoverable workflow{'' if n == 1 else 's'} under "
-               + ", ".join(str(root / "_workflows") for root in workflow_roots()),
-               level="info")
+        notify(f"{n} recoverable workflow{'' if n == 1 else 's'} or run{'' if n == 1 else 's'} under "
+               + ", ".join(str(root) for root in workflow_roots()), level="info")
         return offered
+
+    def discover_runs(limit=20):
+        """Offer the dispatch runs under the configured roots that were started outside
+        any workflow (a shell, a notebook, a batch script) and are running, queued or
+        lost; finished ones are ordinary run folders for the file picker. A run named by
+        a workflow record belongs to that workflow and is not listed twice."""
+        from tumult.synthesis import jobrecord
+        offered = []
+        for root in workflow_roots():
+            try:
+                accounted = {run for handle in submission.discover_workflows(root, revive=False)
+                             for run in handle.runs}
+                records = jobrecord.scan(root, limit=limit)
+            except OSError as exc:
+                log.warning("Could not scan %s for runs: %s", root, exc)
+                continue
+            for record in records:
+                if record["resolved"] not in ("running", "submitted", "lost"):
+                    continue
+                if str(Path(record["output"]).resolve()) in {str(Path(r).resolve()) for r in accounted}:
+                    continue
+                entry = ExternalRun.from_record(record)
+                if entry.id not in ctx.recovery:
+                    ctx.recovery.offer(entry)
+                    offered.append(entry.id)
+        return offered
+
+    def _external_run(run_id):
+        entry = ctx.recovery.get(run_id)
+        return entry if isinstance(entry, ExternalRun) else None
+
+    def cancel_run(run_id):
+        """End an external run through its record: scancel, or SIGTERM to a pid the
+        process table confirms still runs that input. The row then reads cancelled."""
+        from tumult.synthesis import jobrecord
+        entry = _external_run(run_id)
+        if entry is None:
+            return
+        if jobrecord.cancel(entry.folder):
+            notify(f"Ended {entry.name}", level="info")
+            ctx.recovery.forget(run_id)
+        else:
+            notify(f"{entry.name} could not be signalled from here; it is "
+                   f"{jobrecord.state_of(entry.folder)}", level="warn")
+        update_all(canvas)
+
+    def open_run(run_id):
+        """Open an external run's spectrum, as the file picker's Load this run does."""
+        entry = _external_run(run_id)
+        if entry is None:
+            return
+        folder = Path(entry.folder)
+
+        def add(spec):
+            color, dash = canvas.next_run_style()
+            canvas.add_object(spec, name=entry.name, color=color, dash=dash,
+                              source=("run", str(folder)))
+
+        ctx.recovery.forget(run_id)
+        update_all(canvas)
+        load_async(entry.name, lambda token=None: load_run(folder), add)
+
+    def use_run_departures(run_id):
+        """Hand a departure solve to the synthesis modal's Saved departures field."""
+        entry = _external_run(run_id)
+        if entry is None:
+            return
+        synth_modal.setup.mode_form.set_values(mode="NLTE", departure_field=entry.folder)
+        synth_modal.setup._save_mode("mode", "NLTE")
+        synth_modal.setup._save_mode("departure_field", entry.folder)
+        notify(f"Synthesis modal set to reuse departures from {entry.name}", level="info")
 
     def _reopen(workflow_id):
         """The handle for an offered or referenced workflow; ``None`` if it is unknown."""
@@ -1383,6 +1510,9 @@ def build():
         "workflow-attach": attach_workflow,
         "workflow-import": import_workflow,
         "workflow-forget": forget_workflow,
+        "run-cancel":   cancel_run,
+        "run-open":     open_run,
+        "run-departures": use_run_departures,
         "select":       focus_spectrum,
         "color":        set_color,
         "profile":      lambda v: range_tool.ew_setting(range_tool.ew.set_profile, v),

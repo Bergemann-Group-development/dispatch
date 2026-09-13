@@ -1,6 +1,7 @@
 """Background computations must not apply stale UI state or wait on HOP locks."""
 import html
 import itertools
+import os
 from pathlib import Path
 from types import SimpleNamespace
 from concurrent.futures import ThreadPoolExecutor
@@ -382,7 +383,8 @@ def test_mask_tool_range_feeds_line_masks_and_the_synthesis_modal():
 def _stub_request(root):
     """A resolvable synthesis request whose execution the tests stub out."""
     from tumult.synthesis.request import SynthRequest
-    return SynthRequest(prefs={"abund_file": None, "dispatch_cwd": str(root)},
+    return SynthRequest(prefs={"abund_file": None, "dispatch_cwd": str(root),
+                               "workflow_runner": "in-process"},
                         grid={"folder": ""},
                         run_vals={"abundances": "", "relative_abundances": False,
                                   "mode": "LTE"},
@@ -1397,6 +1399,98 @@ def test_a_running_workflow_is_recovered_by_a_new_document_and_cancelled(tmp_pat
     assert not ctx.canvas.objects
 
 
+def test_external_runs_are_offered_cancelled_and_reused_as_departures(tmp_path, monkeypatch):
+    """A dispatch run started outside the GUI is found by its own job.nml under the
+    synthesis root: a live one can be ended, a departure solve handed to the modal, a
+    lost one opened as a spectrum; a run a workflow accounts for is not listed."""
+    import json
+    import socket
+    import app
+    from jobs import ExternalRun
+    from tumult.synthesis import jobrecord
+    root = tmp_path / "synth"
+
+    def native(folder, **fields):
+        values = {"state": "running", "pid": os.getpid(), "host": socket.gethostname(),
+                  "cwd": str(tmp_path), "input": f"{folder.name}.nml",
+                  "started": "2026-09-13T11:15:20+02:00", "ended": "", "mpi_size": 1,
+                  "omp_threads": 4, "slurm_job_id": "", "dispatch_hash": "abc", **fields}
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "job.nml").write_text("&job_record\n" + "".join(
+            f" {k}={v!r},\n" if isinstance(v, str) else f" {k}={v},\n"
+            for k, v in values.items()) + " /\n")
+
+    native(root / "dep_fe607")                       # a running departure solve
+    (root / "dep_fe607" / "save").mkdir()
+    (root / "dep_fe607" / "save" / "pop_Fe_meta.txt").write_text("")
+    native(root / "lte_5000", pid=2 ** 30)           # lost: its process is gone
+    native(root / "owned", pid=2 ** 30)              # named by a workflow record: not listed
+    record = root / "_workflows" / "w1"
+    record.mkdir(parents=True)
+    (record / "workflow.json").write_text(json.dumps({
+        "id": "w1", "state": "failed", "phase": "failed", "submitted": 1.0,
+        "runs": [str(root / "owned")], "request": {}}))
+
+    document, ctx, ticks = _reconnecting_document(tmp_path, monkeypatch)
+    _send_action(document, "workflow-discover:1")
+    runs = {e.name: e for e in ctx.recovery if isinstance(e, ExternalRun)}
+    assert set(runs) == {"dep_fe607", "lte_5000"}
+    assert runs["dep_fe607"].live and runs["dep_fe607"].departures
+    assert runs["lte_5000"].state == "lost" and not runs["lte_5000"].departures
+    panel = _processes(document)
+    assert 'data-action="run-cancel"' in panel and 'data-action="run-departures"' in panel
+    assert 'data-action="run-open"' in panel
+
+    _send_action(document, f"run-departures:{runs['dep_fe607'].id}:1")
+    setup = ctx.synth_modal.setup
+    assert setup.mode_form.value("departure_field") == str(root / "dep_fe607")
+    assert setup.is_nlte
+
+    signalled = []
+    monkeypatch.setattr(jobrecord, "cancel", lambda folder: signalled.append(folder) or True)
+    _send_action(document, f"run-cancel:{runs['dep_fe607'].id}:1")
+    assert signalled == [str(root / "dep_fe607")]
+    assert runs["dep_fe607"].id not in ctx.recovery
+
+    opened = []
+    monkeypatch.setattr(app, "load_run", lambda folder: opened.append(folder)
+                        or Spectrum(np.linspace(5000., 5001., 20), np.ones(20)))
+    _send_action(document, f"run-open:{runs['lte_5000'].id}:1")
+    assert ticks.settle(lambda: not ctx.jobs.active)
+    assert opened == [Path(root / "lte_5000")]
+    assert [o.name for o in ctx.canvas.objects] == ["lte_5000"]
+
+
+def test_jobrecord_cancel_signals_only_a_verified_process(tmp_path, monkeypatch):
+    """A recorded pid is signalled only when the process table shows it still running
+    the recorded input; a Slurm id goes through scancel; the record then reads cancelled."""
+    from tumult.synthesis import jobrecord, scheduler
+    import socket
+    folder = tmp_path / "run"
+    folder.mkdir()
+    (folder / "job.nml").write_text(
+        "&job_record\n state='running', pid=%d, host='%s', input='x.nml',\n /\n"
+        % (os.getpid(), socket.gethostname()))
+    sent = []
+    monkeypatch.setattr(jobrecord, "process_runs", lambda pid, marker: False)
+    monkeypatch.setattr(jobrecord.os, "kill", lambda pid, sig: sent.append((pid, sig)))
+    assert not jobrecord.cancel(folder) and not [s for s in sent if s[1] == 15]
+    monkeypatch.setattr(jobrecord, "process_runs", lambda pid, marker: marker == "x.nml")
+    assert jobrecord.cancel(folder)
+    assert [s for s in sent if s[1] == 15] == [(os.getpid(), 15)]
+    assert jobrecord.state_of(folder) == "cancelled"
+
+    slurm = tmp_path / "slurm"
+    slurm.mkdir()
+    (slurm / "job.nml").write_text(
+        "&job_record\n state='running', pid=1, host='node7', input='y.nml', slurm_job_id='99',\n /\n")
+    cancelled = []
+    monkeypatch.setattr(scheduler, "state", lambda job_id: "running")
+    monkeypatch.setattr(scheduler, "scancel", lambda job_id: cancelled.append(job_id) or True)
+    assert jobrecord.cancel(slurm) and cancelled == ["99"]
+    assert jobrecord.state_of(slurm) == "cancelled"
+
+
 def test_a_recovered_completion_is_imported_once_per_document(tmp_path, monkeypatch):
     """A reattached workflow delivers its result to the new document once; the record
     is then neither offered nor importable again there, while a third document that
@@ -1512,7 +1606,7 @@ def test_on_disk_records_are_shown_by_their_true_state_after_a_restart(tmp_path,
     assert states == {"20260901T000000-interrupted": "interrupted",
                       "20260901T000001-failed": "failed", finished.id: "finished"}
     body = _processes(document)
-    assert "the server that ran it is gone" in body and "status 3" in body
+    assert "the process that ran it is gone" in body and "status 3" in body
     assert f"run-{interrupted.name}.log" in body
     assert body.count('data-action="workflow-import"') == 1
     assert 'data-action="workflow-attach"' not in body
@@ -1563,7 +1657,8 @@ def _synth_document(tmp_path, monkeypatch, run=None, grid_id="g1", executed=None
     store.set_section("synthesis", {
         "dispatch_cwd": str(tmp_path), "synth_output_dir": "synth", "linelist": "",
         "abund_file": "", "absmet": "", "atmos_grids": [dict(_GRID)],
-        "atmos_grid_id": grid_id, "ref_grid_id": "g1"})
+        "atmos_grid_id": grid_id, "ref_grid_id": "g1",
+        "workflow_runner": "in-process"})    # the stubbed execution lives in this process
     store.set_section("synth_run", {"teff": 5750.0, "logg": 4.4, "feh": 0.0, "vmic": 1.0,
                                     "mode": "LTE", "abundances": "", "atoms": [],
                                     "relative_abundances": True, **(run or {})})

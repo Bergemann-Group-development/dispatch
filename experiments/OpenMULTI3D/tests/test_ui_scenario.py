@@ -187,6 +187,7 @@ def _seed_config(tmp_path, monkeypatch):
     store.set_section("synthesis", {
         "dispatch_cwd": str(tmp_path), "synth_output_dir": "synth", "linelist": "",
         "abund_file": "", "absmet": "", "atmos_grids": [dict(_GRID)],
+        "workflow_runner": "in-process",     # the stubbed execution lives in the server
         "atmos_grid_id": "g1", "ref_grid_id": "g1"})
     store.set_section("synth_run", {"teff": 5750.0, "logg": 4.4, "feh": 0.0, "vmic": 1.0,
                                     "mode": "LTE", "abundances": "", "atoms": [],
