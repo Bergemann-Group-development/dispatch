@@ -2,11 +2,16 @@
 cluster shared by any tool that builds a :class:`~tumult.synthesis.SynthRequest`.
 
 It is the cluster of the synthesis modal (:class:`synthmodal.SynthModal`): grid selector +
-Interpolate/Pick toggle + Format + atmosphere file picker with filename→param auto-fill, plus
-the Teff/logg/[Fe/H]/vmic, abundances and LTE/NLTE forms. Parameterised by a ``prefix``
-(DOM-id / form-name / action-channel namespace) and a store ``section`` (where this
-instance's per-target state lives), so several independent setups can coexist — e.g. the
-synthesis modal and the Abundance tool's own modal.
+Interpolate/Pick toggle + Format + atmosphere picker with filename→param auto-fill, plus
+the reference-star dropdown, the Teff/logg/[Fe/H]/vmic, abundances and LTE/NLTE forms.
+The picker (:class:`atmospicker.AtmosPicker`) lists a registered grid's parsed models and
+browses a folder for the Individual atmosphere. The reference-star dropdown
+(:mod:`tumult.refstars`) fills the four parameter fields from an entry and shows *Custom*
+whenever the fields hold anything else, so the two stay in step in both directions.
+
+Parameterised by a ``prefix`` (DOM-id / form-name / action-channel namespace) and a store
+``section`` (where this instance's per-target state lives), so several independent setups
+can coexist — e.g. the synthesis modal and the Abundance tool's own modal.
 
 The app-global **grid registry** (folders/patterns/formats) is *not* duplicated: a shared
 :class:`gridmanager.GridManager` is passed in and used read-only; only the *selection*
@@ -26,14 +31,15 @@ from pathlib import Path
 
 from bokeh.models import TextInput
 
+from tumult import refstars
 from tumult.synthesis import (Atmosphere1D, DepartureField, GridTarget, Snapshot3D,
                               SynthRequest, check_request)
 from tumult.synthesis.snapshot_grid import is_snapshot_grid
 
 import store
 from tumult.synthesis import workflows as synth
+from atmospicker import AtmosPicker, grid_nodes
 from controls import Field, Form
-from filepicker import FilePicker
 from gridmanager import ATMOS_FORMATS
 from htmlbridge import class_bridge, html_bridge, parse_action, pulse
 from synthprefs import INDIVIDUAL_GRID, REPO_DIR, RUN_DEFAULTS, load_prefs, missing_prefs
@@ -124,10 +130,13 @@ class SynthSetup:
                  "mode": f"{prefix}mode", **(form_names or {})}
         vals = {**RUN_DEFAULTS, **store.get_section(section)}
         self.run_form = Form(names["run"], [
-            Field(key, label, kind="number", value=vals[key], step=step, inline=True,
-                  min=0 if key == "vmic" else None)
-            for key, label, step, _ in synth.STELLAR_PARAMS
+            Field("refstar", "Reference star", kind="select", value=refstars.CUSTOM_KEY,
+                  options=self._refstar_options(), inline=True),
+            *(Field(key, label, kind="number", value=vals[key], step=step, inline=True,
+                    min=0 if key == "vmic" else None)
+              for key, label, step, _ in synth.STELLAR_PARAMS),
         ], on_change=self._save_run)
+        self._sync_refstar(render=False)
         self.base_form = Form(names["base"], [
             Field("abundances", "Abundance overrides", kind="text", value=vals["abundances"],
                   placeholder="e.g. Ba=2.3, Eu=0.5"),
@@ -153,11 +162,14 @@ class SynthSetup:
         # collapsed from the server (`file_results_bridge`) once a file is picked.
         self.file_open_bridge = class_bridge(f"#{prefix}-file-picker", "open")
         self.file_results_bridge = class_bridge(f"#{prefix}-file-picker", "results-open")
-        self.atmos_picker = FilePicker(self._on_pick_atmos,
-                                       container_id=f"{prefix}-file-results",
-                                       root=self._atmos_picker_root())
+        self.atmos_picker = AtmosPicker(self._on_pick_atmos,
+                                        container_id=f"{prefix}-file-results",
+                                        root=self._individual_dir())
         self.atmos_picker.layout.name = f"{prefix}_file_picker"
-        # seed the single field with the persisted selection so it shows the current file
+        # list the selected grid's models (or the Individual folder) and seed the single
+        # field with the persisted selection so it shows the current file
+        self._nodes_stale = False
+        self._reset_atmos_picker()
         self._seed_atmos_query()
 
     # --- models / rendering -----------------------------------------------------------
@@ -187,15 +199,56 @@ class SynthSetup:
 
     def show_file(self):
         """True when a concrete atmosphere *file* is in play — Individual, or a registered
-        grid in 'Pick file' mode — i.e. when the inline path field should be shown."""
+        grid in 'Pick model' mode — i.e. when the inline picker field should be shown."""
         if self.is_snapshot or self.is_individual:
             return True
         return self._sections[self.section].get("atmos_mode", "interp") == "pick"
 
     def _seed_atmos_query(self):
-        """Show the currently-chosen file in the path field (empty when none / not picking)."""
+        """Show the currently-chosen file in the path field (empty when none / not picking):
+        its model label on a grid, its path for an Individual atmosphere."""
         picked = (self._sections[self.section].get("atmos_file") or "").strip()
-        self.atmos_picker.preset(picked if self.show_file() else "")
+        if not self.show_file():
+            picked = ""
+        elif self._nodes_stale:
+            self._reset_atmos_picker()     # the grid is listed once it is to be picked from
+        self.atmos_picker.preset(self.atmos_picker.label_for(picked) or picked)
+
+    # --- reference stars ----------------------------------------------------------
+    @staticmethod
+    def _refstar_options():
+        return [(refstars.CUSTOM_KEY, "Custom")] + [(s.key, s.label) for s in refstars.stars()]
+
+    def stellar_values(self):
+        """``{teff, logg, feh, vmic}`` as the run form holds them."""
+        return {k: self.run_form.value(k) for k, _, _, _ in synth.STELLAR_PARAMS}
+
+    def _sync_refstar(self, render=True):
+        """Point the dropdown at the entry whose parameters the fields hold, else Custom."""
+        try:
+            star = refstars.matching(**self.stellar_values())
+        except (TypeError, ValueError):
+            star = None
+        key = star.key if star else refstars.CUSTOM_KEY
+        if key != self.run_form.value("refstar"):
+            self.run_form.fields["refstar"].value = key
+            if render:
+                self.run_form.render()
+
+    def refresh_refstars(self):
+        """The catalogue changed (Preferences → Reference stars): rebuild the dropdown."""
+        self.run_form.fields["refstar"].options = self._refstar_options()
+        self._sync_refstar(render=False)
+        self.run_form.render()
+
+    def set_stellar(self, values):
+        """Write ``{teff, logg, feh, vmic}`` (any subset) into the form and this section,
+        keeping the reference-star dropdown in step."""
+        vals = {k: v for k, v in values.items() if k in self.stellar_values()}
+        self.run_form.set_values(**vals)
+        for k, v in vals.items():
+            self._update(self.section, k, v)
+        self._sync_refstar()
 
     # --- grid selection (per-section) -------------------------------------------------
     def selected_grid_id(self):
@@ -261,21 +314,37 @@ class SynthSetup:
         d = cwd / "input" / "atmos"
         return d if d.is_dir() else cwd
 
-    def _atmos_picker_root(self):
-        if self.is_individual:
-            return self._individual_dir()
-        folder = ((self.selected_grid() or {}).get("folder") or "").strip()
-        return Path(folder).expanduser() if folder else None
-
     def _reset_atmos_picker(self):
-        self.atmos_picker.set_root(self._atmos_picker_root())
+        """Browse the Individual folder, or list the selected grid's parsed models. A grid
+        is only scanned while its models are to be picked from (:meth:`show_file`); until
+        then the list is left empty and marked stale, so an interpolated setup never pays
+        for the scan."""
+        self._nodes_stale = False
+        if self.is_individual:
+            self.atmos_picker.set_root(self._individual_dir())
+            return
+        if not self.show_file():
+            self.atmos_picker.set_nodes([])
+            self._nodes_stale = True
+            return
+        grid = self.selected_grid()
+        if grid is None:
+            self.atmos_picker.set_nodes([], "No atmosphere grid registered")
+            return
+        root = str(load_prefs().get("dispatch_cwd") or REPO_DIR)
+        try:
+            rows = grid_nodes(grid, root)
+        except (OSError, ValueError) as exc:
+            self.atmos_picker.set_nodes([], f"Cannot list the grid: {exc}")
+            return
+        self.atmos_picker.set_nodes(rows)
 
     # --- atmosphere UI rendering ------------------------------------------------------
     def grid_ui_html(self):
         """Grid selector (registered grids + 'Individual atmosphere'); then a Source toggle
-        (Interpolate / Pick file) for a registered grid, or a Format selector for Individual.
-        The chosen file itself lives in the always-on path field below this block (revealed by
-        :meth:`show_file`), so no chip/browse button is rendered here. Each select carries
+        (Interpolate / Pick model) for a registered grid, or a Format selector for Individual.
+        The chosen model itself lives in the always-on picker field below this block (revealed
+        by :meth:`show_file`), so no chip/browse button is rendered here. Each select carries
         ``data-atmos`` (this setup's prefix) and ``data-atmos-key`` (``grid``/``mode``/
         ``format``), the attributes :data:`ATMOS_SCRIPT` routes a change by."""
         p = self.prefix
@@ -308,7 +377,7 @@ class SynthSetup:
             else:
                 mode_opts = "".join(
                     f'<option value="{v}"{" selected" if v == mode else ""}>{lbl}</option>'
-                    for v, lbl in (("interp", "Interpolate"), ("pick", "Pick file")))
+                    for v, lbl in (("interp", "Interpolate"), ("pick", "Pick model")))
                 out.append('<div class="field-group field-inline"><label>Source</label>'
                            f'<select class="field-input" data-atmos="{p}" '
                            f'data-atmos-key="mode">{mode_opts}</select></div>')
@@ -342,11 +411,13 @@ class SynthSetup:
         fields as-is)."""
         path = str(filepath)
         self._update(self.section, "atmos_file", path)
-        self.atmos_picker.query.value = path   # the single field now shows the chosen file
+        # the single field now shows the chosen model (its label on a grid, else its path)
+        self.atmos_picker.query.value = self.atmos_picker.label_for(path) or path
         grid = self.selected_grid()
-        if grid and grid.get("pattern"):
-            # the pattern binds the path relative to the grid folder (a directory-per-node
-            # grid names its parameters in the folder), or the bare name outside it
+        if grid:
+            # the pattern (the MARCS one when the record leaves it blank, as discovery
+            # does) binds the path relative to the grid folder (a directory-per-node grid
+            # names its parameters in the folder), or the bare name outside it
             name = Path(path).name
             folder = (grid.get("folder") or "").strip()
             if folder:
@@ -355,21 +426,32 @@ class SynthSetup:
                         Path(folder).expanduser().resolve()).as_posix()
                 except ValueError:
                     pass
-            rec = synth.recover_params(grid["pattern"], name)
+            rec = synth.recover_params(grid.get("pattern") or synth.DEFAULT_PATTERN, name)
             if rec:
                 teff, logg, feh, vmic = rec
                 vals = {"teff": teff, "logg": logg, "feh": feh}
                 if vmic is not None:
                     vals["vmic"] = vmic
-                self.run_form.set_values(**vals)
-                for k, v in vals.items():
-                    self._update(self.section, k, v)
+                self.set_stellar(vals)
         self.render_grid_ui()
         pulse(self.file_results_bridge, "off")   # collapse the dropdown, keep the field
 
     # --- persistence ------------------------------------------------------------------
     def _save_run(self, key, value):
+        if key == "refstar":
+            # choosing an entry fills the four fields from it; Custom changes nothing
+            star = refstars.by_key().get(str(value))
+            if star is None:
+                self._sync_refstar()
+                return
+            self.set_stellar(star.params)
+            for k, v in star.params.items():
+                if self.on_run_change:
+                    self.on_run_change(k, v)
+            return
         self._update(self.section, key, value)
+        # typing over an entry's numbers is what Custom means
+        self._sync_refstar()
         if self.on_run_change:
             self.on_run_change(key, value)
 
@@ -422,7 +504,7 @@ class SynthSetup:
 
     def commit(self):
         """Remember the submitted setup without persisting unrelated preference keys."""
-        self._sections[self.section].update(self.run_form.values())
+        self._sections[self.section].update(self.stellar_values())
         self._sections[self.section].update(self.base_form.values())
         self._sections[self.section].update(self.mode_form.values())
         with store.transaction() as data:
@@ -437,10 +519,18 @@ class SynthSetup:
                           for name in {self.section, self.grid_section}}
         self.reload()
 
+    def refresh_grids(self):
+        """The grid registry changed: re-list the selected grid's models and repaint the
+        selector (a grid that left the registry falls back in :meth:`selected_grid_id`)."""
+        self._reset_atmos_picker()
+        self._seed_atmos_query()
+        self.render_grid_ui()
+
     def reload(self):
         """Re-seed the forms + atmosphere UI from the (possibly just-changed) store section."""
         vals = {**RUN_DEFAULTS, **self._sections[self.section]}
         self.run_form.set_values(**{k: vals[k] for k, _, _, _ in synth.STELLAR_PARAMS})
+        self._sync_refstar()
         self.base_form.set_values(abundances=vals["abundances"],
                                   relative_abundances=vals["relative_abundances"])
         self.mode_form.set_values(mode=vals["mode"], use_linelist=vals.get("use_linelist", True),
@@ -464,7 +554,7 @@ class SynthSetup:
             self.reason = ("No atmosphere grid — download or register one in Preferences → Atmosphere grids, "
                            "or choose 'Individual atmosphere'.")
             return None
-        rv = self.run_form.values()
+        rv = self.stellar_values()
         rv.update(self.base_form.values())
         rv["mode"] = self.mode_form.value("mode")
         rv["atoms"] = list(self.atoms_provider())

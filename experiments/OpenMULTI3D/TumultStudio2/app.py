@@ -37,8 +37,10 @@ from masktool import MaskTool  # noqa: E402
 from linenav import LineNavigator  # noqa: E402
 from lineannot import LineAnnotations  # noqa: E402
 from tumult import refstars  # noqa: E402
+from tumult import linestrength  # noqa: E402
 from tumult.linestrength import LineStrengths  # noqa: E402
 from rangetool import RangeTool  # noqa: E402
+from refstarspage import RefStarsPage  # noqa: E402
 from synthmodal import SynthModal  # noqa: E402
 from synthsetup import ATMOS_SCRIPT, SynthSetup  # noqa: E402
 from abundancetool import AbundanceTool  # noqa: E402
@@ -666,6 +668,10 @@ def build():
 
     prefs = load_prefs()
     master = str(_resolve_path(prefs, prefs["linelist"]))
+    # the editable reference-star catalogue (Preferences → Reference stars) is installed
+    # into tumult.refstars here, before anything lists it; its edits repaint every dropdown
+    # that does (on_refstars_change, defined once those exist)
+    refstars_page = RefStarsPage(on_change=lambda: on_refstars_change())
     strengths = LineStrengths(master_path=master, linelist=master,
                               refstar=store.get_pref("strength_refstar", refstars.AUTO_KEY))
     ctx.strengths = strengths
@@ -818,6 +824,17 @@ def build():
     synth_modal = SynthModal(ctx, add=add_synth, on_warn=synth_on_warn)
     ctx.synth_modal = synth_modal      # local harnesses drive the modal through it
 
+    def marcs_for_strengths():
+        """Name the registered MARCS grid the line-strength reference atmospheres are read
+        from (the first one in registry order), or none."""
+        grid = next((g for g in synth_modal.grids.grids
+                     if str(g.get("format") or "").lower() == "marcs"
+                     and (g.get("folder") or "").strip()), None)
+        linestrength.set_marcs_grid(grid["folder"] if grid else None,
+                                    grid.get("pattern") if grid else None)
+
+    marcs_for_strengths()
+
     # the Abundance tool owns its synthesis setup (its own Setup sub-tab), sharing only the
     # app-global grid registry and the synthesis modal's NLTE model-atom selection; it inherits
     # the modal's configuration on first open and is independent thereafter.
@@ -886,6 +903,31 @@ def build():
         get_observation=lambda uid: (canvas.effective(canvas._find(uid)) if canvas._find(uid)
                                      else None),
         master_path=master)
+
+    def on_grids_change():
+        """The grid registry changed: every setup re-lists its grid, and the strength
+        ranking follows the MARCS grid."""
+        abund_setup.refresh_grids()
+        corr_setup.refresh_grids()
+        marcs_for_strengths()
+        warm_strengths()
+
+    synth_modal.on_grids_change = on_grids_change
+
+    def on_refstars_change():
+        """The reference-star catalogue was edited: repaint every dropdown listing it, and
+        rerank by the edited star if it is the one in use."""
+        for setup in (synth_modal.setup, abund_setup, corr_setup):
+            setup.refresh_refstars()
+        ionbaltool.refresh_refstars()
+        field = linejump_form.fields["refstar"]
+        field.options = refstars.options()
+        field.value = strengths.set_refstar(strengths.refstar)
+        store.set_pref("strength_refstar", field.value)
+        linejump_form.render()
+        if not warm_strengths():
+            ctx.annot.resync()
+            linenav.render()
 
     # single-selection coordination between the Objects and the wizards' result lists
     def focus_spectrum(uid):
@@ -1750,7 +1792,7 @@ def build():
     # `B` gathered as they were created, plus each component's own form/bridge models
     bridges = column(*B.models,
                      *settings.models, *inspector.models, *linenav.models, *abund_atoms.models,
-                     *linejump_form.models,
+                     *linejump_form.models, *refstars_page.models,
                      *synth_modal.models, *range_tool.models, *normtool.models,
                      *filtertool.models, *masktool.models,
                      *abundancetool.models, *abundcorrtool.models,
@@ -1814,6 +1856,7 @@ def build():
         pref_missing=set(synth_modal.missing),
         pref_show_slurm=load_prefs().get("workflow_runner") == "slurm",
         grid_list_html=synth_modal.grids.list_html(),
+        refstars_html=refstars_page.list_html(),
         grid_results_name=synth_modal.grids.results_name,
         synth_grid_html=synth_modal.grid_ui_html(),
         synth_show_file=synth_modal.setup.show_file(),

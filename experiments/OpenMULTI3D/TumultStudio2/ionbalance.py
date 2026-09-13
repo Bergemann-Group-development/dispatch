@@ -80,19 +80,6 @@ TOL_FIELDS = {"s_exc": "tol_exc", "s_rew": "tol_rew",
               "d_ion": "tol_ion", "d_feh": "tol_feh"}
 
 
-def seed_vmic(teff, logg):
-    """An approximate microturbulence for an entry point, from Teff and log g.
-
-    Not a calibration — a seed, so that choosing "K giant" fills in something better than a
-    constant. It follows the usual FGK trend (ξ rises towards hotter and towards lower
-    gravity) and lands near 1.0 km/s on the Sun, ~1.6 on the red giant branch and ~1.5 on an
-    F dwarf. ξ is a fitted parameter in most solves anyway; when it is held, the number is
-    the user's to type over.
-    """
-    v = 1.0 + 4.0e-4 * (float(teff) - 5500.0) - 0.45 * (float(logg) - 4.4)
-    return float(np.clip(v, 0.3, 3.0))
-
-
 class BalanceSynthesis:
     """The balance fit's private, interpolation-only synthesis configuration.
 
@@ -303,6 +290,15 @@ class IonBalanceTool(AbundanceWizard):
         return ([(ENTRY_MANUAL, "Type them in")]
                 + refstars.options("Auto (nearest class to the target)"))
 
+    def refresh_refstars(self):
+        """The reference-star catalogue changed: relist the entry points; an entry that
+        left the list becomes 'Type them in', keeping the numbers it filled."""
+        field = self.form2.fields["entry"]
+        field.options = self._entry_options()
+        if str(field.value) not in {k for k, _ in field.options}:
+            field.value = ENTRY_MANUAL
+        self.form2.render()
+
     def _sync_targets(self):
         """Repaint the target dropdown from the canvas (observations come and go)."""
         obs = self.list_observations()
@@ -396,8 +392,7 @@ class IonBalanceTool(AbundanceWizard):
             star = refstars.nearest(*params) if params else refstars.get(refstars.DEFAULT_KEY)
         else:
             star = refstars.get(key)
-        return {"teff": star.teff, "logg": star.logg, "feh": star.feh,
-                "vmic": seed_vmic(star.teff, star.logg)}
+        return star.params if star is not None else None
 
     def _target(self):
         """``(uid, spectrum, error)`` for the modal's chosen target observation."""

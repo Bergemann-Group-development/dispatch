@@ -36,6 +36,12 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
   one species and misleads between two.
 - *band*: a wavelength span, snapped to a grid, over which strengths are computed and
   cached in one HOP call.
+- *reference star*: a named set of stellar parameters (Teff, log g, [Fe/H], vmic) from the
+  editable catalogue of Preferences → Reference stars (`tumult.refstars`). A setup's
+  Reference star dropdown fills its fields from one and reads *Custom* otherwise; the
+  line-strength ranking computes on the entry nearest to a spectrum, its atmosphere being
+  the nearest model of the registered MARCS grid. Distinct from the *reference spectrum*
+  and the *1D LTE reference grid* of the correction tool.
 - *line list*: the one configured source of transitions (Preferences → Synthesis, a file
   or a folder of per-species files). Synthesis, navigation, annotation and blend screening
   all resolve it; there is no separate "master" or "navigator" list. A run's own

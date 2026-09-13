@@ -235,9 +235,16 @@ set's synth windows) and New → Synthesise spectrum (blank λ fields).
 
 - Header: what will be computed, e.g. "5700.00–5720.00 Å" or "7 windows of Fe-lines.txt,
   5480–6720 Å".
-- Body: Atmosphere (grid, interpolate or pick, file), Stellar parameters, Abundances,
+- Body: Atmosphere (grid, interpolate or pick a model), Stellar parameters, Abundances,
   Radiative transfer (LTE/NLTE, and in NLTE the model atoms, the **Use line list** switch
-  and the **Saved departures** field). Values are a draft of the
+  and the **Saved departures** field). A registered grid is picked from by parsed model:
+  the picker lists what the grid's pattern matched, one row per model (per snapshot on a
+  3D grid) as `5750 K · log g 4.50 · [Fe/H] +0.00 · ξ 1`, filtered by every fragment
+  typed into its box; picking one fills the stellar parameters. The Individual atmosphere
+  browses a folder instead. Stellar parameters lead with a **Reference star** dropdown
+  (the Preferences → Reference stars catalogue): choosing an entry fills the four fields,
+  editing any field puts the dropdown back on *Custom*, and values written back by a fit
+  or a picked model select the entry they match. Values are a draft of the
   `synth_run` store section: submitting makes them the configuration the modal reopens
   with, Cancel discards the edits. **Use line list** off synthesises the model atoms
   alone (`only_atom`): no external list, no line-list preparation, recorded as "Line
@@ -261,6 +268,10 @@ Departure-coefficient solves are not started from this modal; their entry point 
 separately. NLTE abundance corrections start from a model atom (see below). Atmosphere
 grids (downloading the published ones, custom folders, the 1D LTE reference) are the
 Preferences → Atmosphere grids page; paths and the run cache stay in Preferences → Synthesis.
+Preferences → Reference stars edits the one catalogue of named stellar parameters
+(`tumult.refstars`): every setup's Reference star dropdown, the ionisation balance's entry
+point and the line-strength ranking read it, and the line strengths take the atmosphere
+of an entry from the nearest model of the registered MARCS grid.
 
 ## Fit modal
 
@@ -315,7 +326,7 @@ corrections…**, which opens the correction modal with this atom fixed.
 - Header: the atom (element, file, counts) and the registered grid flagged as the **1D LTE
   reference** in Preferences → Atmosphere grids. Without a flagged grid the run is refused with a
   hint.
-- **NLTE atmosphere**: the standard atmosphere cluster (grid, interpolate or pick, file) and
+- **NLTE atmosphere**: the standard atmosphere cluster (grid, interpolate or pick a model) and
   stellar parameters, kept in the `abundcorr_run` store section and seeded from the synthesis
   modal on first open.
 - **Measurement**: the EW profile (default **trapz**, the width integrated over each

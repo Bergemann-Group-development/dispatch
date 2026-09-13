@@ -28,10 +28,12 @@ standalone C API (``HOP/standalone/hop_c_api.f90``) hand the same numbers back f
 state in memory. :func:`compute_band` is one EOS solve on a reference atmosphere plus one
 opacity call over a band of spectrum, and it returns the strengths of every line in it.
 
-The atmosphere is one of a handful of named classes held as a table of eight (T, rho) pairs
-in :mod:`tumult.refstars`, not read off the MARCS grid. Eight depths is all a strength needs
-(see :func:`read_marcs`), which makes the whole atmosphere sixteen floats: too little to
-justify finding, name-parsing and opening one of fifteen thousand files.
+The atmosphere is a *reference star* of :mod:`tumult.refstars` — a named set of stellar
+parameters — resolved by :func:`atmosphere_for` to the nearest node of the registered MARCS
+grid (:func:`set_marcs_grid`) and read at the eight depths :func:`read_marcs` samples. Eight
+depths is all a strength needs, so an atmosphere is sixteen floats, read once per node and
+kept. Without a MARCS grid on disk no strength can be computed and the proxy ranking below
+stands in.
 
 Measured against ``data/sed_3000-9000``'s own dump, over 5000-5002 A with that run's line
 list: all 155 lines matched, **Spearman 0.978**, and the ratio to the run's values is a near
@@ -104,6 +106,13 @@ _FEH_RE = re.compile(r"\bFEH=\s*([-+\d.Ee]+)")
 # caller check readiness while another thread is inside HOP.
 _bands_lock = threading.Lock()
 _bands = {}      # (star, linelist, lo, hi) -> frame, most recent last
+
+# the MARCS grid reference atmospheres are read from: (folder, pattern) once the GUI (or a
+# script) has named it, else None; the nodes are discovered on first use and the eight
+# (T, rho) pairs of a node are kept once read
+_marcs_grid = None
+_marcs_lock = threading.Lock()
+_structures = {}  # model path -> (T, rho)
 
 
 def _linelist_key(linelist):
@@ -257,10 +266,6 @@ def _sorted_frame(df):
 def read_marcs(path):
     """``(T[K], rho[g/cm3])`` down a MARCS model — the two columns the EOS needs.
 
-    Nothing in the app calls this: the atmospheres it uses are the table in :mod:`refstars`.
-    This is where that table came from and how it is extended — point it at a MARCS model and
-    paste the two arrays into a new :class:`refstars.RefStar`.
-
     The structure is in two tables keyed by the same depth index: T in the first, density in
     the second. A strength is a maximum over the cells of the state, so what the sampling has
     to preserve is *where that maximum lives* — and it lives anywhere: high-excitation lines
@@ -284,6 +289,84 @@ def read_marcs(path):
     T = np.array([float(lines[i1 + 1 + k].split()[4]) for k in keep])
     rho = np.array([float(lines[i2 + 1 + k].split()[3]) for k in keep])
     return T, rho
+
+
+def set_marcs_grid(folder, pattern=None):
+    """Name the MARCS grid reference atmospheres are read from (``None`` clears it).
+
+    ``pattern`` is the file-name pattern of :func:`tumult.synthesis.compile_pattern`, the
+    MARCS one by default. The GUI calls this with its registered MARCS grid whenever the
+    grid registry changes. Bands computed on an earlier grid stay cached: they are keyed by
+    the model file they were computed on.
+    """
+    global _marcs_grid
+    from tumult.synthesis.workflows import DEFAULT_PATTERN
+    with _marcs_lock:
+        _marcs_grid = (str(folder), pattern or DEFAULT_PATTERN) if folder else None
+
+
+def marcs_ready():
+    """Whether a MARCS grid has been named and its folder exists."""
+    with _marcs_lock:
+        grid = _marcs_grid
+    return grid is not None and Path(grid[0]).expanduser().is_dir()
+
+
+def _star_params(star):
+    """``(teff, logg, feh, vmic)`` of a reference star, or ``None`` for an object that has
+    only a key (which then identifies it)."""
+    try:
+        return tuple(float(getattr(star, k)) for k in refstars.PARAM_KEYS)
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
+def _star_key(star):
+    """What a band is cached under: the parameters of the star, since an editable entry
+    keeps its key while its numbers change, and two entries with one set of numbers share
+    the atmosphere."""
+    params = _star_params(star)
+    return params if params is not None else ("key", star.key)
+
+
+def marcs_node(teff, logg, feh, vmic):
+    """The registered MARCS model nearest to ``(teff, logg, feh, vmic)`` as a path.
+
+    Nearest in the scaled distance of :func:`refstars.nearest` (1000 K, 1 dex, 1 dex and
+    1 km/s alike), over every node the grid's pattern matches. Raises ``LookupError`` when
+    no grid is named, its folder is missing or nothing in it matched.
+    """
+    from tumult.synthesis.workflows import discover_atmos_grid
+    with _marcs_lock:
+        grid = _marcs_grid
+    if grid is None:
+        raise LookupError("No MARCS grid is registered for reference atmospheres.")
+    try:
+        nodes = discover_atmos_grid(grid[0], grid[1])
+    except (OSError, ValueError) as exc:
+        raise LookupError(f"MARCS grid unusable for reference atmospheres: {exc}") from exc
+    keys = list(nodes)
+    pts = np.array([(k[0], k[1], k[2], k[3] if len(k) > 3 else vmic) for k in keys], float)
+    target = np.array([teff, logg, feh, vmic], float)
+    scale = np.array([1000.0, 1.0, 1.0, 1.0])
+    d = (((pts - target) / scale) ** 2).sum(axis=1)
+    path = nodes[keys[int(np.argmin(d))]]
+    return Path(path[0] if isinstance(path, (list, tuple)) else path)
+
+
+def atmosphere_for(star):
+    """``(model path, T, rho)`` for a reference star: its nearest MARCS node, read once."""
+    params = _star_params(star)
+    if params is None:
+        raise LookupError(f"{star!r} carries no stellar parameters.")
+    path = marcs_node(*params)
+    with _marcs_lock:
+        hit = _structures.get(path)
+    if hit is None:
+        hit = read_marcs(path)
+        with _marcs_lock:
+            _structures[path] = hit
+    return path, hit[0], hit[1]
 
 
 # --- the computation ----------------------------------------------------------------------
@@ -315,13 +398,15 @@ def band_bounds(lo, hi):
 def compute_band(star, linelist, lo, hi):
     """Strengths of every line in ``[lo, hi]`` Å, from HOP on the ``star`` atmosphere.
 
-    ``star`` is a :class:`tumult.refstars.RefStar` — it carries its own T and rho, so this touches
-    no files but the line list. Blocking, and seconds at worst for a wide band, so call it
-    off the document thread. Serialised on :data:`tumult.synthesis.runtime.HOP_LOCK` because HOP is a
-    process-wide singleton. A separate short-lived cache lock lets the UI check readiness while
-    another thread computes a band.
+    ``star`` is a :class:`tumult.refstars.RefStar`; its atmosphere is the MARCS node
+    :func:`atmosphere_for` resolves it to. Blocking, and seconds at worst for a wide band,
+    so call it off the document thread. Serialised on
+    :data:`tumult.synthesis.runtime.HOP_LOCK` because HOP is a process-wide singleton. A
+    separate short-lived cache lock lets the UI check readiness while another thread
+    computes a band. ``None`` is cached for a band HOP could not compute, and for a star no
+    MARCS grid can resolve.
     """
-    key = (star.key, _linelist_key(linelist), lo, hi)
+    key = (_star_key(star), _linelist_key(linelist), lo, hi)
     with _bands_lock:
         if key in _bands:
             return _bands[key]
@@ -332,14 +417,18 @@ def compute_band(star, linelist, lo, hi):
         try:
             import tumult as tm
             from tumult.physics import air2vac
+            model, T, rho = atmosphere_for(star)
             lam = air2vac(np.arange(lo, hi, GRID_AA))
             hop = tm.HopEOS(feh=0.0)
             try:
-                hop.load_state(star.T, rho=star.rho)
+                hop.load_state(T, rho=rho)
                 df = hop.line_strengths(lam, linelist, dlam=DLAM_AA, vmic=1.0)
             finally:
                 hop.close()
             frame = _sorted_frame(df[(df.lam0 >= lo) & (df.lam0 <= hi)])
+        except LookupError as exc:
+            logging.warning("Line strengths: %s", exc)
+            frame = None
         except Exception:
             logging.exception("Line strengths: HOP failed for %s over %.1f-%.1f",
                               star.key, lo, hi)
@@ -354,7 +443,7 @@ def compute_band(star, linelist, lo, hi):
 def band_ready(star, linelist, lo, hi):
     """Whether :func:`compute_band` would return without computing anything."""
     with _bands_lock:
-        return (star.key, _linelist_key(linelist), lo, hi) in _bands
+        return (_star_key(star), _linelist_key(linelist), lo, hi) in _bands
 
 
 def cached_band(star, linelist, lo, hi):
@@ -364,7 +453,7 @@ def cached_band(star, linelist, lo, hi):
     :func:`band_ready` check and a separate read another thread can evict the band.
     """
     with _bands_lock:
-        return _bands.get((star.key, _linelist_key(linelist), lo, hi))
+        return _bands.get((_star_key(star), _linelist_key(linelist), lo, hi))
 
 
 # --- cropping a line list to an atmosphere ------------------------------------------------
@@ -528,7 +617,7 @@ class LineStrengths:
         follow the spectrum, not silently rank it as something it is not.
         """
         key = str(key)
-        self.refstar = key if (key == refstars.AUTO_KEY or key in refstars.BY_KEY) \
+        self.refstar = key if (key == refstars.AUTO_KEY or key in refstars.by_key()) \
             else refstars.AUTO_KEY
         return self.refstar
 
@@ -558,9 +647,11 @@ class LineStrengths:
         A chosen class wins outright — that is what choosing one is for, and it lets a
         spectrum be ranked deliberately against something other than itself. Under ``auto``
         the spectrum's own parameters pick the nearest class, and a spectrum that states none
-        gets the solar one, which is the honest default for an unlabelled observation.
+        gets the solar one, which is the honest default for an unlabelled observation. An
+        entry that has left the catalogue since it was chosen resolves as ``auto`` does.
+        ``None`` only on an empty catalogue.
         """
-        if self.refstar != refstars.AUTO_KEY:
+        if self.refstar != refstars.AUTO_KEY and self.refstar in refstars.by_key():
             return refstars.get(self.refstar)
         params = self.params_of(obj)
         return refstars.nearest(*params) if params else refstars.get(refstars.DEFAULT_KEY)
@@ -579,7 +670,7 @@ class LineStrengths:
         :meth:`warm` does the computing in the background, after which the next repaint gets
         the real thing.
         """
-        if not self.linelist_usable:
+        if not self.linelist_usable or not self.computable:
             return self._proxy_source()
         star, linelist, band = self.request_for(obj, lo, hi)
         if allow_compute:
@@ -593,7 +684,7 @@ class LineStrengths:
             scope = " · atomic lines" if atomic_only else ""
             return Source(frame, f"HOP · {star.label} ({star.summary}){scope}",
                           "computed", (star.teff, star.logg, star.feh),
-                          key=("hop", star.key, _linelist_key(linelist), band))
+                          key=("hop", _star_key(star), _linelist_key(linelist), band))
         return self._proxy_source(atomic_only=atomic_only)
 
     def warm(self, obj, lo, hi):
@@ -602,14 +693,24 @@ class LineStrengths:
 
     def pending(self, obj, lo, hi):
         """True when :meth:`warm` would change the answer — i.e. the band is not computed."""
-        if not self.linelist_usable:
+        if not self.linelist_usable or not self.computable:
             return False
         star, linelist, band = self.request_for(obj, lo, hi)
         return not band_ready(star, linelist, *band)
 
+    @property
+    def computable(self):
+        """Whether a band can be computed at all: a MARCS grid to read an atmosphere from
+        and at least one reference star to read it for."""
+        return marcs_ready() and bool(refstars.stars())
+
     def describe(self, obj, lo, hi):
         """One short line naming the source in play, for the panel footer."""
         src = self.lines_for(obj, lo, hi)
+        if src.approximate and self.linelist_usable and not self.computable:
+            why = ("no reference stars" if not refstars.stars()
+                   else "no MARCS grid for the reference atmosphere")
+            return f"strengths: approximate ({why})"
         return ("strengths: approximate (computing…)" if src.approximate
                 else f"strengths: {src.label}")
 

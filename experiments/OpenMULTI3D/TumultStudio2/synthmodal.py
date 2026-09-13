@@ -67,6 +67,7 @@ class SynthModal:
         self.canvas = ctx.canvas
         self._add = add          # (spec, name, meta=None, conv=None) -> add to the canvas
         self.on_inputs_change = lambda: None
+        self.on_grids_change = lambda: None   # the grid registry changed (Preferences)
         self.on_warn = on_warn   # push True/False when configured files go missing/found
         self.missing = []        # path prefs currently pointing at non-existent files
         self.job = None          # ("range", None) | ("masks", LineMaskSet) once opened
@@ -196,9 +197,11 @@ class SynthModal:
 
     # --- registered grids ---------------------------------------------------------------
     def _on_grids_changed(self):
-        """GridManager edited the registry: refresh the selector and file warnings."""
-        self.setup.render_grid_ui()
+        """GridManager edited the registry: refresh the selector, the model listing and
+        the file warnings, and tell the app (the line-strength reference grid follows)."""
+        self.setup.refresh_grids()
         self._refresh_warnings(push=True)
+        self.on_grids_change()
 
     # --- opening ------------------------------------------------------------------------
     def open_range(self, xmin=None, xmax=None, mode="synth"):
@@ -414,7 +417,7 @@ class SynthModal:
 
     def adopt_stellar(self, stellar):
         """Write ``{teff, logg, feh, vmic}`` into the setup (form + store)."""
-        self.run_form.set_values(**stellar)
+        self.setup.set_stellar(stellar)
         for k, v in stellar.items():
             store.update_pref("synth_run", k, v)
         self.fit.set_feh(stellar["feh"])

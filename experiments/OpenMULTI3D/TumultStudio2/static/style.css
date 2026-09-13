@@ -825,7 +825,19 @@ num-input[disabled] .num-spin button { cursor: not-allowed; }
 /* the model table reuses the sortable line-list table; the name column reads as text */
 .grid-models { max-height: 420px; overflow: auto; background: var(--bg); border: 1px solid var(--border); border-radius: 3px; }
 .grid-models td.line-ion { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the model name column reads as text; its sortable header aligns with the names */
+.grid-models thead th:first-child { text-align: left; }
 .grid-models td:last-child { white-space: nowrap; }
+
+/* ---- reference stars (settings) ------------------------------------------- */
+.refstars-list { display: flex; flex-direction: column; gap: 4px; }
+.refstar-row {
+  display: grid; grid-template-columns: minmax(8em, 2fr) repeat(4, minmax(4.5em, 1fr)) auto;
+  gap: 6px; align-items: center;
+}
+.refstar-row .field-input { min-width: 0; }
+.refstar-head { color: var(--text-muted); font-size: 12px; padding: 0 4px; }
+.refstar-actions { display: flex; gap: 8px; margin-top: 6px; }
 
 /* ---- synth panel: grid selector + source mode ---------------------------- */
 .synth-grid { display: flex; flex-direction: column; gap: 6px; }

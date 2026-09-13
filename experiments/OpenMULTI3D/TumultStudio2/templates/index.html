@@ -357,6 +357,7 @@
       <button class="settings-nav-item active" data-page="general">General</button>
       <button class="settings-nav-item" data-page="synthesis">Synthesis</button>
       <button class="settings-nav-item" data-page="grids">Atmosphere grids</button>
+      <button class="settings-nav-item" data-page="refstars">Reference stars</button>
       <button class="settings-nav-item" data-page="engine">Engine</button>
       <button class="settings-nav-item" data-page="cache">Run cache</button>
     </nav>
@@ -371,9 +372,22 @@
         <div class="hint">Line strengths are computed with HOP on a reference atmosphere, so
           they compare correctly across atoms and molecules. Which star that is — a G dwarf,
           a red giant, a supergiant — is the <b>Reference star</b> dropdown in the line list
-          header; on <i>Auto</i> it follows the spectrum's own parameters where it states
-          any, and is solar where it does not. Molecular lists are included for views up to
-          100 Å wide; wider views use atomic lines only.</div>
+          header, listing the <b>Reference stars</b> page; on <i>Auto</i> it follows the
+          spectrum's own parameters where it states any, and is solar where it does not.
+          The atmosphere is the nearest model of the registered MARCS grid. Molecular lists
+          are included for views up to 100 Å wide; wider views use atomic lines only.</div>
+      </div>
+
+      <!-- the editable reference-star catalogue (refstarspage.RefStarsPage): named stellar
+           parameters every setup's Reference star dropdown, the balance entry point and
+           the line-strength ranking read -->
+      <div class="settings-page" data-page="refstars">
+        <div class="hint">Changes saved automatically. A reference star is a name and its
+          Teff, log g, [Fe/H] and microturbulence: choose one in a calculation's
+          <b>Reference star</b> dropdown to fill the stellar parameters, or let the line
+          list rank by the one nearest to a spectrum. Line strengths read the atmosphere off
+          the registered MARCS grid's nearest model.</div>
+        <div id="refstars-list" class="refstars-list">{{ refstars_html|safe }}</div>
       </div>
 
       <div class="settings-page" data-page="grids">
@@ -969,6 +983,27 @@
       if (confirm('Delete every downloaded file of ' + btn.dataset.name + '?')) gridAction('del-catalog', gid);
     } else if (btn.classList.contains('grid-del-model')) {
       if (confirm('Delete the downloaded model ' + btn.dataset.name + '?')) gridAction('del-model', gid + ' ' + model);
+    }
+  });
+
+  // reference stars (Preferences → Reference stars): edits of a row's inputs report
+  // through "refstars-fields-input", the buttons through "refstars-actions"
+  document.addEventListener('change', function (ev) {
+    var el = ev.target.closest('[data-star-key][data-star-field]');
+    if (!el) return;
+    var m = Bokeh.documents[0].get_model_by_name('refstars-fields-input');
+    if (m) m.setv({ value: el.dataset.starKey + '|' + el.dataset.starField + '=' + el.value + ' ' + Date.now() });
+  });
+  document.addEventListener('click', function (ev) {
+    var btn = ev.target.closest('#refstars-list button');
+    if (!btn) return;
+    var m = Bokeh.documents[0].get_model_by_name('refstars-actions');
+    if (!m) return;
+    var act = function (kind, arg) { m.setv({ value: kind + ' ' + (arg || '') + ' ' + Date.now() }); };
+    if (btn.classList.contains('refstar-add')) act('add');
+    else if (btn.classList.contains('refstar-del')) act('del', btn.dataset.starKey);
+    else if (btn.classList.contains('refstar-reset')) {
+      if (confirm('Replace the reference stars by the default list?')) act('reset');
     }
   });
 
