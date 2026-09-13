@@ -18,7 +18,7 @@ from .snapshot import (DepartureField, solve_departures, synthesise_snapshot,
                        synthesise as synthesise_from_departures)
 from .runtime import ExecutionService, HOP, IO, WORKFLOWS, execution_scope
 from .submission import (WorkflowHandle, discover_workflows, open_workflow, run,
-                         submit)
+                         submit, submit_task)
 from .executor import _make_da_jobs, _run_batch, _run_single  # noqa: F401 (legacy importers)
 from .workflows import (STAGGER_PATTERN, M3DIS_PATTERN, FORMAT_PATTERNS, default_pattern, build_settings, compile_pattern, compute, compute_batch,
                         compute_window_batch, fitted_abundance_terms,
@@ -39,7 +39,7 @@ __all__ = [
     "DepartureField", "solve_departures", "synthesise_from_departures",
     "synthesise_snapshot",
     "ExecutionService", "execution_scope",
-    "WorkflowHandle", "submit", "run", "open_workflow", "discover_workflows",
+    "WorkflowHandle", "submit", "submit_task", "run", "open_workflow", "discover_workflows",
     "IO", "WORKFLOWS", "HOP",
     "select_nodes",
     "build_settings", "compile_pattern", "compute", "compute_batch",

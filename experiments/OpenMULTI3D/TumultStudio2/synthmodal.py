@@ -10,8 +10,8 @@ a line-mask set, or a blank window from the empty landing page — in one of two
 * **fit**: fit a target spectrum by adaptive grid synthesis, starting from that same
   configuration, with the Fit section (:class:`fittab.FitTab`) saying what varies. The
   best-fit stellar parameters are written back into the setup, so the next synthesis starts
-  from them. A fit is a document-owned job (``ctx.submit``), cancelled when the tab closes,
-  since its result has no durable contract yet.
+  from them. A fit is a durable ``fit`` workflow (``ctx.submit_task``) like a synthesis;
+  ``_import_fit`` delivers a record another document submitted.
 
 Both modes collect one owned :class:`~tumult.synthesis.SynthRequest` through
 :meth:`synthsetup.SynthSetup.context` and add the job's windows to it: a free range is one
@@ -66,6 +66,7 @@ class SynthModal:
         self.ctx = ctx
         self.canvas = ctx.canvas
         self._add = add          # (spec, name, meta=None, conv=None) -> add to the canvas
+        ctx.task_importers["fit"] = self._import_fit    # a fit record from another document
         self.on_inputs_change = lambda: None
         self.on_grids_change = lambda: None   # the grid registry changed (Preferences)
         self.on_warn = on_warn   # push True/False when configured files go missing/found
@@ -341,7 +342,7 @@ class SynthModal:
         self.fit.set_targets([(o.uid, o.name) for o in self.canvas.objects])
 
     def run_fit(self):
-        """Fit the chosen target on the WORKFLOWS pool as a document-owned job.
+        """Fit the chosen target as a durable ``fit`` workflow (``ctx.submit_task``).
 
         The request is the setup's, with the job's windows; :class:`FitRequest` refuses
         what fitting does not support (a snapshot, a saved departure field, stellar axes
@@ -394,8 +395,22 @@ class SynthModal:
         self.draft.commit()
         self.fit.commit()
         pulse(self.dialog, "close")
-        self.ctx.submit(name, lambda token=None: synth.fit(observation, fit_request,
-                                                           cancel_token=token), on_done)
+        # the fit only reads the observation inside the synth span (workflows.fit crops
+        # it), so the record carries that part, with the guesses as the annotations a
+        # document that imports the record later shows
+        meta = self._synth_meta(guesses, mode=rv["mode"], abundances=abundances,
+                                relative=relative, atoms=rv["atoms"], xmin=xmin, xmax=xmax,
+                                atmosphere=self._selection_rows(synthesis.selection, grid))
+        args = {"observation": observation.crop(xmin=xmin, xmax=xmax).to_dict(),
+                "request": fit_request.to_dict()}
+        self.ctx.submit_task(name, "fit", args, on_done, prefs=synthesis.prefs, meta=meta)
+
+    def _import_fit(self, result, handle):
+        """A fit record another document submitted: its best-fit spectrum is added under
+        the recorded name and annotations, with the broadening as a live convolution."""
+        best, raw, post = result
+        self.fit.populate(best)
+        self._add(raw, handle.label, meta=handle.meta, conv=post)
 
     def _job_windows(self):
         """The job's windows as :class:`MaskWindow` objects: a mask set's included masks

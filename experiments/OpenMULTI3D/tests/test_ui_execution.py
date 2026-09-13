@@ -531,8 +531,10 @@ def test_closing_a_session_leaves_a_durable_workflow_running(tmp_path, monkeypat
 
 # --- the correction tool's chained stages ----------------------------------------------
 def _correction_tool(ctx, monkeypatch, tmp_path):
-    """The document's correction tool with its modal inputs and result rendering stubbed."""
-    import abundcorrtool
+    """The document's correction tool with its modal inputs and result rendering stubbed.
+    The stages are patched where the task runs them (``tumult.abundance``); the record
+    runs in this process under the test preferences."""
+    from tumult import abundance as abundcorrtool
     from tumult.abundance import AbundanceResult
 
     tool = ctx.tools._tools["abundcorr"]
@@ -563,7 +565,7 @@ def test_correction_options_are_captured_when_the_modal_submits(tmp_path, monkey
     """Both stages run on the options captured at submission; editing the reopened modal
     while the reference runs cannot change the admitted correction."""
     import threading
-    import abundcorrtool
+    from tumult import abundance as abundcorrtool
 
     document, ctx = _build_document()
     ticks = _Ticks(document, monkeypatch)
@@ -591,7 +593,7 @@ def test_correction_options_are_captured_when_the_modal_submits(tmp_path, monkey
 
 def test_cancelling_the_reference_stage_prevents_the_correction_stage(tmp_path, monkeypatch):
     import threading
-    import abundcorrtool
+    from tumult import abundance as abundcorrtool
 
     document, ctx = _build_document()
     ticks = _Ticks(document, monkeypatch)
@@ -1409,6 +1411,76 @@ def test_a_running_workflow_is_recovered_by_a_new_document_and_cancelled(tmp_pat
     assert not ctx.canvas.objects
 
 
+def _periodic(document):
+    """Run the document's periodic callbacks once (the task progress poll)."""
+    for callback in list(document.session_callbacks):
+        if type(callback).__name__ == "PeriodicCallback":
+            callback.callback()
+
+
+def test_a_running_correction_is_resumed_by_a_new_document_with_its_progress(tmp_path,
+                                                                              monkeypatch):
+    """The tab that started NLTE corrections goes away while the record runs; a new
+    document attaches to it, the correction tool lists the record's stage-1 snapshot as
+    a result (its reference lines), streams the later snapshots into it and receives
+    the finished result through the tool's own delivery."""
+    import threading
+    from tumult import abundance
+    from tumult.abundance import AbundanceResult
+
+    store_root = tmp_path
+    stage1, release, seen = threading.Event(), threading.Event(), []
+
+    def measure(request, atom, *, ref_grid, opts=None, cancel_token=None):
+        return AbundanceResult(element="Mg", symbol="Mg", summary={}, uid="corr-1",
+                               atom_path=atom, profile=opts.profile, stage="lines")
+
+    def correct(request, working, atom, *, opts=None, progress=None, cancel_token=None):
+        stage1.set()
+        assert release.wait(10)
+        working.stage = "corr"
+        working.summary = {"a_mean": 0.1, "n": 0}
+        return working
+
+    monkeypatch.setattr(abundance, "measure_reference_lines", measure)
+    monkeypatch.setattr(abundance, "run_nlte_corrections", correct)
+    monkeypatch.setattr("tumult.synthesis.submission.PROGRESS_MIN_S", 0.0)
+
+    old_document, old_ctx, _ = _reconnecting_document(store_root, monkeypatch)
+    old_tool = old_ctx.tools._tools["abundcorr"]
+    old_tool._pending_atom = SimpleNamespace(symbol="Mg", path=str(tmp_path / "mg.atom"))
+    monkeypatch.setattr(old_tool.setup, "context", lambda: _stub_request(tmp_path))
+    monkeypatch.setattr(old_tool.grids, "reference_grid", lambda: {"folder": str(tmp_path)})
+    for name in ("add_spectrum", "set_step", "select_result"):
+        monkeypatch.setattr(old_tool, name, lambda *a, **k: None)
+    old_tool.run()
+    job, = old_ctx.jobs.active
+    handle = job.handle
+    assert handle.kind.name == "nlte_corrections" and stage1.wait(10)
+    _destroy(old_document)              # the old document never renders the outcome
+
+    document, ctx, ticks = _reconnecting_document(store_root, monkeypatch)
+    tool = ctx.tools._tools["abundcorr"]
+    for name in ("add_spectrum", "set_step", "select_result"):
+        monkeypatch.setattr(tool, name, lambda *a, **k: None)
+    entry, = ctx.recovery
+    assert entry.id == handle.id and entry.state == "running"
+    _send_action(document, f"workflow-attach:{handle.id}:1")
+    job, = ctx.jobs.active
+    assert job.workflow_id == handle.id and not tool.results
+    # the stage-1 snapshot is on disk: one poll reads it off the document thread
+    _periodic(document)
+    assert ticks.settle(lambda: bool(tool.results))
+    res, = tool.results
+    assert res.uid == "corr-1" and res.stage == "lines" and tool.selected_uid == "corr-1"
+
+    release.set()
+    assert ticks.settle(lambda: not ctx.jobs.active)
+    assert tool.results[0] is res and res.stage == "corr"       # updated in place
+    assert res.summary["a_mean"] == 0.1 and ctx.workflow_refs.imported(handle.id)
+    assert handle.status == "finished" and not old_tool.results
+
+
 def test_external_runs_are_offered_cancelled_and_reused_as_departures(tmp_path, monkeypatch):
     """A dispatch run started outside the GUI is found by its own job.nml under the
     synthesis root: a live one can be ended, a departure solve handed to the modal, a
@@ -1878,10 +1950,11 @@ def test_unsupported_requests_are_refused_before_submission(tmp_path, monkeypatc
     assert not len(ctx.jobs)
 
 
-def test_fit_is_a_document_owned_job_built_from_the_same_request(tmp_path, monkeypatch):
+def test_fit_is_a_durable_workflow_built_from_the_same_request(tmp_path, monkeypatch):
     """A fit collects the setup's request plus the job's windows into a FitRequest, runs
-    document-owned (not detached, cancelled on session close) and adds the raw best-fit
-    spectrum with the broadening as its live convolution and the request's provenance."""
+    as a detached ``fit`` record (it survives the session closing, its record names the
+    request and the cropped observation) and adds the raw best-fit spectrum with the
+    broadening as its live convolution and the request's provenance."""
     import threading
     from tumult.synthesis import FitRequest, GridTarget, workflows
     document, ctx, messages = _synth_document(tmp_path, monkeypatch)
@@ -1909,16 +1982,18 @@ def test_fit_is_a_document_owned_job_built_from_the_same_request(tmp_path, monke
     modal.open_range(5000.0, 5001.0, "fit")
     assert _submit_modal(document, ctx) == 1
     job, = ctx.jobs.active
-    assert job.name == "fit·obs" and job.heavy and not job.detached and job.handle is None
+    assert job.name == "fit·obs" and job.heavy and job.detached
+    assert job.handle is not None and job.handle.kind.name == "fit"
     assert started.wait(10)
     observation, request, token = fitted[0]
-    assert isinstance(request, FitRequest) and token is job.token
+    assert isinstance(request, FitRequest)
     assert request.fit_stellar == ("teff",) and request.abund_fits == {"Mg": 0.2}
     assert request.fit_post == {"vshift": 0.0}
     assert request.synth_span == (5000., 5001.) and request.fit_windows == ((5000., 5001.),)
     assert isinstance(request.synthesis.selection, GridTarget)
     assert request.synthesis.prefs["dispatch_cwd"] == str(tmp_path)
-    assert observation is ctx.canvas.objects[0].spectrum
+    ox, _ = observation.values                  # the record carries the fitted span only
+    assert ox.min() >= 5000. and ox.max() <= 5001. and len(ox) > 50
     release.set()
     assert ticks.settle(lambda: not ctx.jobs.active)
     synth, = [o for o in ctx.canvas.objects if o.source[0] == "synth"]
@@ -1927,16 +2002,18 @@ def test_fit_is_a_document_owned_job_built_from_the_same_request(tmp_path, monke
     assert ["Atmosphere", "Test grid grid, interpolated"] in synth.meta["params"]
     assert ["Abundances ([X/Fe])", "Mg=+0.35"] in synth.meta["params"]
     assert modal.run_form.value("teff") == 5600.        # the best fit becomes the setup
+    assert job.handle.id in ctx.workflow_refs and ctx.workflow_refs.imported(job.handle.id)
 
-    # a second fit is cancelled by the session closing, as a document-owned job
+    # a second fit keeps running when the session closes; its record delivers the result
     started.clear()
     release.clear()
     modal.open_range(5000.0, 5001.0, "fit")
     assert _submit_modal(document, ctx) == 1
+    job, = ctx.jobs.active
     assert started.wait(10)
     for callback in list(document.session_destroyed_callbacks):
         callback(None)
-    assert fitted[1][2].cancelled
+    assert not fitted[1][2].cancelled
     release.set()
-    assert ticks.settle(lambda: not ctx.jobs.active)
-    assert ctx.jobs.retained == [] or all(j.state == "cancelled" for j in ctx.jobs.retained)
+    best, raw, post = job.handle.result(timeout=10)
+    assert best["teff"] == 5600. and post == {"vshift": 1.5}

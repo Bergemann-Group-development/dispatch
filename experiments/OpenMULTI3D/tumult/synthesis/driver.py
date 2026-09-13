@@ -4,7 +4,7 @@
 
 This is the body of a detached workflow: the process :func:`submission.submit` starts in
 its own session, or the one a Slurm batch script runs on its allocated node. It reads the
-resolved request from ``workflow.json``, records its own pid and host beside the driver
+task from ``workflow.json``, records its own pid and host beside the driver
 block the submitter wrote, executes the request the way the in-process worker does and
 settles the record. SIGTERM, SIGINT and SIGHUP cancel its token, so ``scancel`` or a
 signal to the process group ends the run through the same path as a Processes-panel
@@ -24,7 +24,6 @@ import sys
 import time
 
 from .cancel import CancelledError, CancelToken
-from .request import ResolvedSynthRequest
 from . import submission
 
 log = logging.getLogger(__name__)
@@ -46,8 +45,8 @@ def main(argv=None):
         log.error('workflow %s is already %s', record.get('id'), record.get('state'))
         return 3
     try:
-        resolved = ResolvedSynthRequest.from_dict(record['request'])
-    except (KeyError, ValueError, TypeError) as exc:
+        kind, args = submission.decode_task(record)
+    except Exception as exc:
         submission.update_record(folder, record, state='failed', phase='failed',
                                  ended=time.time(), error=f'unreadable request: {exc}')
         log.exception('workflow %s has an unreadable request', record.get('id'))
@@ -75,7 +74,7 @@ def main(argv=None):
     log.info('workflow %s: driver pid %d on %s', record.get('id'), os.getpid(),
              socket.gethostname())
     try:
-        submission.execute_recorded(folder, resolved, token, record)
+        submission.execute_recorded(folder, kind, args, token, record)
     except CancelledError:
         return 2
     except BaseException:

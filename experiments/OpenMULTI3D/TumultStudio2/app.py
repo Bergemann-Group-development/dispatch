@@ -50,6 +50,7 @@ from abundcorrtool import AbundCorrTool  # noqa: E402
 from ionbalance import IonBalanceTool  # noqa: E402
 from tumult.synthesis import workflows as synth  # noqa: E402  (CancelToken/CancelledError for cancellable loads)
 from tumult.synthesis import submit as submit_synthesis  # noqa: E402
+from tumult.synthesis import submit_task as submit_task_record  # noqa: E402
 from tumult.synthesis import submission  # noqa: E402  (open/discover workflows on reconnect)
 from synthprefs import PREF_LABELS, load_prefs, _resolve_path  # noqa: E402  (the configured workflow root)
 from filepicker import FilePicker  # noqa: E402
@@ -824,8 +825,9 @@ def build():
             canvas._refresh_object(o)  # update_all (in _settle) then rebinds the Edit tab
         synth_modal.refresh_cache()  # the new run is now in the cache listing
 
-    # every synthesis goes through ctx.submit_workflow (durable, detached); a fit through
-    # ctx.submit (document-owned); both are installed below, before any submission can run
+    # every synthesis goes through ctx.submit_workflow and every fit through
+    # ctx.submit_task (durable, detached); both are installed below, before any
+    # submission can run
     synth_modal = SynthModal(ctx, add=add_synth, on_warn=synth_on_warn)
     ctx.synth_modal = synth_modal      # local harnesses drive the modal through it
 
@@ -1193,9 +1195,9 @@ def build():
             return None
         return job.future
 
-    # Coordinators can overlap; the shared dispatch service enforces the CPU budget. A fit
-    # is submitted here, document-owned: it is cancelled when the session closes, since
-    # its (best, raw, post) result has no durable record a later document could import.
+    # Document-owned work on the CPU-budgeted pool (a line measurement, a broadening fit,
+    # a normalisation): cancelled when the session closes. Dispatch calculations do not
+    # come through here; they are durable workflows (submit_workflow, submit_task).
     ctx.submit = lambda name, loader, on_done, detached=False: load_async(
         name, loader, on_done, executor=_SYNTH_EXEC, detached=detached)
     # network transfers (a grid download) wait on I/O, not the CPU budget: the IO pool
@@ -1204,15 +1206,30 @@ def build():
     ctx.execution = synth.get_runtime()
 
     def _import_result(handle):
-        """The delivery of a workflow this document did not submit: add every spectrum
-        of its result under the name and annotations recorded at submission."""
+        """The delivery of a workflow this document did not submit: a synthesis adds
+        every spectrum of its result under the name and annotations recorded at
+        submission; a tool calculation goes to the importer its tool registered."""
+        kind = handle.kind.name
+        if kind != "synthesis":
+            importer = ctx.task_importers.get(kind)
+            if importer is None:
+                raise ValueError(f"no tool imports a {kind} result")
+            return lambda result: importer(result, handle)
+
         def deliver(result):
             for index, spec in enumerate(result.spectra, start=1):
                 suffix = f"·{index}" if len(result.spectra) > 1 else ""
                 add_synth(spec, handle.label + suffix, meta=handle.meta)
         return deliver
 
-    def _subscribe(job, handle, on_done):
+    def _import_progress(handle):
+        """The progress delivery of a tool record this document did not submit, or
+        ``None`` for a kind without progress or without a registered tool."""
+        kind = handle.kind
+        follow = ctx.task_progress.get(kind.name) if kind.progress else None
+        return None if follow is None else (lambda snapshot: follow(snapshot, handle))
+
+    def _subscribe(job, handle, on_done, on_error=None):
         """Deliver ``handle``'s outcome to ``job`` once it settles; the delivery marks
         the workflow imported so a later load does not offer its result again."""
         def deliver(result):
@@ -1225,11 +1242,65 @@ def build():
             except synth.CancelledError:
                 _settle(job, None, None, None)
             except Exception as exc:
-                _settle(job, None, None, exc)
+                _settle(job, None, None, exc, on_error)
             else:
                 _settle(job, result, deliver, None)
 
         handle.add_done_callback(settled)
+
+    PROGRESS_POLL_MS = 2000
+
+    def _follow_progress(job, handle, on_progress):
+        """While ``job`` runs, hand every new progress snapshot of its record to
+        ``on_progress`` on the document thread. The record is polled (its writer is
+        another process); the snapshot is decoded off the document thread, since it can
+        carry a spectrum, and one read is in flight at a time. Ends with the job, the
+        document or the workspace generation."""
+        if on_progress is None or not handle.kind.progress:
+            return
+        state = {"stamp": None, "busy": False, "callback": None}
+
+        def stop():
+            callback, state["callback"] = state["callback"], None
+            if callback is not None:
+                try:
+                    ctx.doc.remove_periodic_callback(callback)
+                except Exception:
+                    pass                 # already removed, or the document is gone
+
+        def tick():
+            if job.terminal or ctx.closed or job.generation is not ctx.generation:
+                stop()
+                return
+            if state["busy"]:
+                return
+            try:
+                stamp = handle.progress_stamp()
+            except OSError:
+                return
+            if stamp is None or stamp == state["stamp"]:
+                return
+            state["busy"] = True
+
+            def read():                  # IO pool
+                try:
+                    snapshot = handle.progress_result()
+                except Exception:
+                    log.exception("%s (job %d): progress snapshot unreadable", job.name, job.pid)
+                    snapshot = None
+
+                def deliver():
+                    state["busy"], state["stamp"] = False, stamp
+                    if snapshot is None or job.terminal or job.generation is not ctx.generation:
+                        return
+                    try:
+                        on_progress(snapshot)
+                    except Exception:
+                        log.exception("%s (job %d): progress not applied", job.name, job.pid)
+                ctx.schedule(deliver)
+            _EXEC.submit(read)
+
+        state["callback"] = ctx.doc.add_periodic_callback(tick, PROGRESS_POLL_MS)
 
     def submit_workflow(name, request, on_done, meta=None):
         """Queue one durable synthesis workflow and deliver its result to this document
@@ -1256,6 +1327,32 @@ def build():
         return handle
 
     ctx.submit_workflow = submit_workflow
+
+    def submit_task(name, kind, args, on_done, *, prefs, meta=None, on_progress=None,
+                    on_error=None):
+        """Queue one tool calculation (:mod:`tumult.synthesis.tasks`) as a durable
+        workflow, as :func:`submit_workflow` does a synthesis: detached, referenced
+        beside the workspace, its result delivered to ``on_done`` once, a failure to
+        ``on_error`` after the row has recorded it, and every progress snapshot of the
+        record to ``on_progress`` while it runs. ``prefs`` are the synthesis preferences
+        the calculation was configured with (the driver and the record root follow
+        them). Returns the job, or ``None`` when submission failed (the row keeps the
+        reason)."""
+        job = _admit(name, heavy=True, detached=True)
+        try:
+            handle = submit_task_record(kind, args, prefs=prefs, label=name, meta=meta)
+        except Exception as exc:
+            _admission_failed(job, exc)
+            return None
+        job.handle = handle
+        job.token.add_callback(handle.cancel)
+        ctx.workflow_refs.attach(handle, name)
+        update_all(canvas)
+        _subscribe(job, handle, on_done, on_error)
+        _follow_progress(job, handle, on_progress)
+        return job
+
+    ctx.submit_task = submit_task
 
     # --- recovery of durable workflows after a reconnect ------------------------------
     def _offer(handle, referenced=False):
@@ -1387,12 +1484,18 @@ def build():
         if handle.done or state not in (QUEUED, RUNNING):
             notify(f"{handle.label} is {state}; it cannot be attached", level="warn")
             return None
+        try:
+            deliver = _import_result(handle)
+        except ValueError as exc:
+            notify(f"{handle.label} cannot be attached: {exc}", level="warn")
+            return None
         job = _admit(handle.label, heavy=True, detached=True)
         job.handle = handle
         job.token.add_callback(handle.cancel)
         ctx.workflow_refs.attach(handle, handle.label)
         ctx.recovery.forget(workflow_id)
-        _subscribe(job, handle, _import_result(handle))
+        _subscribe(job, handle, deliver)
+        _follow_progress(job, handle, _import_progress(handle))
         update_all(canvas)
         return job
 
@@ -1407,7 +1510,11 @@ def build():
             ctx.recovery.forget(workflow_id)
             update_all(canvas)
             return None
-        deliver = _import_result(handle)
+        try:
+            deliver = _import_result(handle)
+        except ValueError as exc:
+            notify(f"{handle.label} cannot be imported: {exc}", level="warn")
+            return None
 
         def done(result):
             deliver(result)
@@ -1469,7 +1576,7 @@ def build():
 
     ctx.doc.on_session_destroyed(session_closed)
 
-    def _settle(job, result, on_done, exc):
+    def _settle(job, result, on_done, exc, on_error=None):
         """Deliver a job's outcome on the document thread. Called from the worker (or,
         for a queued cancellation, the cancelling thread); the state and any delivery
         are applied on the document, guarded by its lifetime and the workspace
@@ -1486,6 +1593,11 @@ def build():
                 return                       # recorded; there is no document to tell
             if job.state == FAILED:
                 notify(f"{job.name} failed: {exc} — see Processes", level="danger")
+                if on_error is not None and job.generation is ctx.generation:
+                    try:
+                        on_error(exc)
+                    except Exception:
+                        log.exception("%s (job %d): failure not applied", job.name, job.pid)
             elif job.state == FINISHED:
                 if job.generation is not ctx.generation:
                     log.info("%s (job %d) finished after its workspace was replaced; dropped",

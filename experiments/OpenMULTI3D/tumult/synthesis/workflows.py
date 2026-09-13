@@ -795,7 +795,7 @@ def resolve_request(request: SynthRequest) -> ResolvedSynthRequest:
                                     masks=request.masks,
                                     expert_settings=request.expert_settings,
                                     departure_field=request.departure_field)
-    output = _resolved_path(root, prefs.get('synth_output_dir') or 'synth')
+    output = output_root(prefs)
     return ResolvedSynthRequest(resolved_request, settings, windows, padded, references,
                                 aliases,
                                 str(root), str(output))
@@ -1236,6 +1236,11 @@ _RUN_RE = re.compile(r"^t(\d+)g(\d+)m([+-]\d+)(?:v(\d+))?$")
 def execution_root(prefs):
     """Directory against which dispatch resolves its relative inputs and outputs."""
     return Path(prefs.get("dispatch_cwd") or ".").expanduser().resolve()
+
+
+def output_root(prefs):
+    """Directory the synthesis outputs and the ``_workflows/`` records live under."""
+    return _resolved_path(execution_root(prefs), prefs.get("synth_output_dir") or "synth")
 
 
 def cache_root(prefs):

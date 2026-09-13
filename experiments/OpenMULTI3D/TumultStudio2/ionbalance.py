@@ -36,8 +36,6 @@ the object owns the measurement, the fit is replaceable.
 """
 from __future__ import annotations
 
-from copy import deepcopy
-
 import html
 import logging
 
@@ -596,17 +594,16 @@ class IonBalanceTool(AbundanceWizard):
         self.select_result(res.uid)
         self.notify(f"{res.element} balance: "
                     + ("solving…" if refit is not None else "measuring the windows…"))
-        masks, spec = deepcopy(masks), deepcopy(spec)
         linelist = getattr(self.ctx.strengths, "linelist", None) or str(self.master_path)
+        args = {"request": ctx.to_dict(), "result": res.to_dict(),
+                "masks": None if masks is None else [m.to_dict() for m in masks],
+                "observation": spec.to_dict() if masks is not None else None,
+                "linelist": str(linelist), "opts": opts}
+        self.jobs.submit_task(f"ionbal:{res.element}", self.task_kind, args, self._on_done,
+                              prefs=ctx.prefs, result=res)
 
-        def work(working, token, progress):
-            if masks is not None:
-                sp.measure_balance_lines(working, masks, spec, linelist)
-                progress(working)
-            return sp.solve_ionisation_balance(
-                ctx, working, opts, cancel_token=token, progress=progress)
-
-        self.jobs.submit(f"ionbal:{res.element}", work, self._on_done, result=res)
+    task_kind = "ionisation_balance"
+    import_task_result = lambda self, result, handle: self._on_done(self._adopt(result))
 
     def _on_done(self, result):
         self.ctx.emit("masks-changed")

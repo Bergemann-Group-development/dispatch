@@ -382,17 +382,16 @@ class AbundanceTool(AbundanceWizard):
         if request is None:
             self.draft.commit()
             pulse(self._modal, "close")
-        obs = deepcopy(obs)
         if uncertainty is None:
             uncertainty = (res.snr, res.cont_pct)
         snr, cont_pct = uncertainty
+        args = {"request": ctx.to_dict(), "result": res.to_dict(), "observation": obs.to_dict(),
+                "snr": snr, "cont_pct": cont_pct}
+        self.jobs.submit_task(f"abund-synth:{res.element}", self.task_kind, args,
+                              self._on_synth_done, prefs=ctx.prefs, result=res)
 
-        def work(working, token, progress):
-            ab.run_abundance(ctx, working, obs, cancel_token=token, progress=progress)
-            ab.finalize_result(working, obs, snr, cont_pct)
-            return working
-
-        self.jobs.submit(f"abund-synth:{res.element}", work, self._on_synth_done, result=res)
+    task_kind = "abundance"
+    import_task_result = lambda self, result, handle: self._on_synth_done(self._adopt(result))
 
     def _on_synth_done(self, result):
         result.name = self._result_label(result)

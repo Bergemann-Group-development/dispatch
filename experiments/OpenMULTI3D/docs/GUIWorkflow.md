@@ -50,16 +50,24 @@ Deliveries are guarded by the document's lifetime and by the workspace generatio
 (`ctx.generation`) captured when the job was admitted: a completion arriving after the
 session closed, or after a session load advanced the generation, still settles its row
 but adds nothing to the workspace. Closing the tab cancels the document's jobs (loads,
-fits, analysis jobs) except detached ones (every synthesis, which is a durable workflow,
-and long departure solves), which keep running and write their result to disk; an
-explicit cancel from the panel still ends a detached job.
+line measurements, analysis jobs) except detached ones, which keep running and write
+their result to disk: every dispatch calculation (a synthesis, a fit, an abundance run,
+an ionisation balance, NLTE corrections) is a durable workflow, see below. An explicit
+cancel from the panel still ends a detached job.
 
 ### Recovering durable workflows after a reconnect
 
-A durable workflow (any synthesis from the modal, submitted through
-`tumult.synthesis.submit`) writes `workflow.json` under
-`<dispatch_cwd>/<synth_output_dir>/_workflows/<id>/` with the name and Info-tab
-annotations it was submitted with, and its result under `result/`. The document that
+A durable workflow writes `workflow.json` under
+`<dispatch_cwd>/<synth_output_dir>/_workflows/<id>/` with the name and annotations it
+was submitted with, and its result under `result/`. A synthesis from the modal is
+submitted through `tumult.synthesis.submit` (the record's `request`); the tools'
+calculations through `tumult.synthesis.submit_task` (`ctx.submit_task`, the record's
+`task` block naming a kind of `tumult.synthesis.tasks`: `fit`, `abundance`,
+`ionisation_balance`, `nlte_corrections`). A kind that streams its result (a balance
+iteration, a correction round, the corrections' stage-1 reference) writes the record's
+`progress.json`, which the following document polls every two seconds and hands to the
+tool as a result snapshot, so a reopened tab watches the calculation where it is. The
+document that
 submitted it keeps a reference beside the workspace (`ctx.workflow_refs`: id, folder,
 name, whether the result has reached the workspace), and every save slot stores those
 references next to its snapshot. Recovery is scoped to that configured root; nothing
@@ -74,8 +82,11 @@ else is scanned.
   one its error; any row can be forgotten from the panel without touching the disk.
 - *Attach* creates a job under the current workspace generation whose row cancels the
   workflow through its handle and whose completion is delivered once, as the original
-  submission would have. *Import* loads a finished result off the document thread and
-  adds its spectra once; a workflow already imported into this document is refused.
+  submission would have: a synthesis adds its spectra, a tool record goes to the tool
+  that registered its kind (`ctx.task_importers`, `ctx.task_progress`), which lists the
+  result under the uid the record carries or updates the listed one in place. *Import*
+  loads a finished result off the document thread and delivers it the same way once; a
+  workflow already imported into this document is refused.
 - Loading a slot replaces the references: a referenced workflow still running is followed
   again (the row already following it in the same document is re-subscribed under the new
   generation rather than duplicated), a finished one whose result the slot does not hold
@@ -86,8 +97,8 @@ else is scanned.
   workflow id on this host, or `squeue` lists the Slurm job); an interrupted record
   cannot be attached or cancelled, only read.
 
-Preferences → Engine chooses where synthesis workflows run (`workflow_runner`): *local*,
-the machine's worker daemon (`tumult.synthesis.daemon`, started on demand, outliving the
+Preferences → Engine chooses where workflows run (`workflow_runner`): *local*, the
+machine's worker daemon (`tumult.synthesis.daemon`, started on demand, outliving the
 server, exiting when idle), or *slurm* (the per-workflow driver submitted through the
 configured batch script). Tests set *in-process* to keep a stubbed execution in the
 server. A detached workflow is followed by a polling watcher rather than a future; its
@@ -296,8 +307,10 @@ The same component in fit mode.
   which stay distinct. Fitting is supported for 1D atmospheres and grids; a 3D snapshot,
   a saved departure field, or stellar switches with a fixed atmosphere file are refused
   before anything is submitted, with the reason in the footer. The fit runs as a
-  document-owned job (`ctx.submit`): it is cancelled when the tab closes, since its result
-  has no durable record a later document could import. On completion the best-fit values
+  durable `fit` workflow (`ctx.submit_task`) carrying the request and the observation
+  cropped to the synth span; closing the tab leaves it running, and a document that
+  attaches to or imports the record adds the best-fit spectrum under the recorded name
+  and annotations. On completion the best-fit values
   are written back into the `synth_run` section, so the next synthesis starts from them;
   the fitted spectrum is added as a synth object with the request's provenance and the
   broadening is applied as the live convolution in the Edit tab.

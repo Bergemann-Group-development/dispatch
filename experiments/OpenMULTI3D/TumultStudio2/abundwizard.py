@@ -197,6 +197,10 @@ class AbundanceWizard(Tool):
         self.show_toggled_only = False     # table header switch: hide excluded lines
         self.results = []                  # list[ab.AbundanceResult]
         self.jobs = ResultJobs(ctx, self._find, self._job_progress)
+        if self.task_kind:
+            # a record of this kind another document submitted lands here on a reconnect
+            ctx.task_importers[self.task_kind] = self.import_task_result
+            ctx.task_progress[self.task_kind] = self.import_task_progress
         self.selected_uid = None
         self._last_span_aa = None          # span (Å) of the last shown line, for no-window jumps
         self._jumped = None                # index of the line whose window is accented
@@ -468,6 +472,34 @@ class AbundanceWizard(Tool):
     # --- results list / selection ---------------------------------------------------------
     def _find(self, uid):
         return next((r for r in self.results if r.uid == uid), None)
+
+    # --- durable calculations: this wizard's task kind -----------------------------------
+    # The wizard's calculation runs as a workflow record of ``task_kind``
+    # (tumult.synthesis.tasks), so it outlives the tab and the server. Its snapshots
+    # and result are result objects carrying the uid of the one they continue; a uid this
+    # list does not hold (a record another document submitted) is adopted as a new
+    # result. Subclasses that submit through ``self.jobs.submit_task`` define the kind.
+    task_kind = None
+
+    def _adopt(self, incoming):
+        """The listed result ``incoming`` continues, updated in place from it, or
+        ``incoming`` itself once listed and selected."""
+        res = self._find(incoming.uid)
+        if res is None:
+            self.results.append(incoming)
+            self.selected_uid = incoming.uid
+            self.push_results()
+            return incoming
+        res.__dict__.update(incoming.__dict__)
+        return res
+
+    def import_task_progress(self, snapshot, handle):
+        self._job_progress(self._adopt(snapshot))
+
+    def import_task_result(self, result, handle):
+        res = self._adopt(result)
+        res.name = self._result_label(res)
+        self._job_progress(res)
 
     def selected(self):
         return self._find(self.selected_uid)

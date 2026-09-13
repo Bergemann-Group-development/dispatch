@@ -29,7 +29,6 @@ import threading
 import time
 
 from .cancel import CancelToken, CancelledError
-from .request import ResolvedSynthRequest
 from .runtime import WORKFLOWS
 from . import submission
 
@@ -136,8 +135,8 @@ class Daemon:
     def _claim(self, folder, record):
         identity = record.get('id') or folder.name
         try:
-            resolved = ResolvedSynthRequest.from_dict(record['request'])
-        except (KeyError, ValueError, TypeError) as exc:
+            kind, args = submission.decode_task(record)
+        except Exception as exc:
             submission.update_record(folder, record, state='failed', phase='failed',
                                      ended=time.time(), error=f'unreadable request: {exc}')
             log.exception('workflow %s has an unreadable request', identity)
@@ -162,7 +161,7 @@ class Daemon:
 
         def work():
             try:
-                submission.execute_recorded(folder, resolved, token, record)
+                submission.execute_recorded(folder, kind, args, token, record)
             except (CancelledError, Exception):
                 pass        # the record names the outcome; the traceback is in the log
 

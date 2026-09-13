@@ -13,12 +13,12 @@ its token stays there until it returns, and the row says so instead of claiming 
 has stopped. Failed jobs are retained with their error and native logs until dismissed;
 finished and cancelled ones leave the table when they settle.
 
-A durable workflow outlives the document: :class:`WorkflowRefs` remembers which ones this
-document is attached to (saved beside the workspace in a slot), and :class:`Recovery`
-lists on-disk records found after a reconnect that the user may attach to, import the
-result of, or forget. Nothing here resumes a native calculation or signals a process
-from an old record; a record left queued or running by a server that is gone is shown
-as interrupted.
+A durable workflow (every dispatch calculation: a synthesis, a fit, a tool run) outlives
+the document: :class:`WorkflowRefs` remembers which ones this document is attached to
+(saved beside the workspace in a slot), and :class:`Recovery` lists on-disk records found
+after a reconnect that the user may attach to, import the result of, or forget. Nothing
+here resumes a native calculation or signals a process from an old record; a record left
+queued or running by a server that is gone is shown as interrupted.
 """
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -421,3 +421,75 @@ class ResultJobs:
             future.add_done_callback(
                 lambda f: self.ctx.schedule(lambda: stopped("cancelled")) if f.cancelled() else None)
         return future
+
+    def submit_task(self, name, kind, args, done, *, prefs, result=None, on_progress=None,
+                    on_error=None, meta=None):
+        """Submit one calculation as a durable workflow of ``kind`` (a name in
+        :data:`tumult.synthesis.tasks.KINDS`) with JSON ``args``, through
+        ``ctx.submit_task``. It runs under the driver ``prefs`` name and outlives the tab;
+        the record's progress snapshots reach ``result`` in place (or ``on_progress``
+        when the job creates its result), the finished result reaches ``done`` and a
+        failure ``on_error`` (the Processes row already says why). Returns the job, or
+        ``None`` when submission was refused."""
+        key = result.uid if result is not None else name
+        generation = object()
+        self.current[key] = generation
+        workspace = getattr(self.ctx, "generation", None)   # captured at admission
+        finished = False
+
+        def valid():
+            return (not getattr(self.ctx, "closed", False)
+                    and getattr(self.ctx, "generation", None) is workspace
+                    and self.current.get(key) is generation
+                    and (result is None or self.find(key) is result))
+
+        def apply(snapshot):
+            result.__dict__.update(snapshot.__dict__)
+            self.render(result)
+
+        def progress(snapshot):          # document thread, one decoded snapshot
+            if finished or not valid():
+                return
+            if result is not None:
+                apply(snapshot)
+            elif on_progress is not None:
+                on_progress(snapshot)
+
+        def stopped(status):
+            nonlocal finished
+            if finished or not valid():
+                return
+            finished = True
+            self.current.pop(key, None)
+            if result is not None:
+                result.termination = status
+                if hasattr(result, "converged"):
+                    result.converged = False
+                self.render(result)
+
+        def complete(outcome):
+            nonlocal finished
+            if not valid() or finished:
+                return
+            finished = True
+            self.current.pop(key, None)
+            if result is not None:
+                apply(outcome)
+                done(result)
+            else:
+                done(outcome)
+
+        def failed(exc):
+            if finished or not valid():
+                return
+            stopped("failed")
+            if on_error is not None:
+                on_error(exc)
+
+        job = self.ctx.submit_task(name, kind, args, complete, prefs=prefs, meta=meta,
+                                   on_progress=progress, on_error=failed)
+        if job is None:
+            stopped("failed")            # refused at admission; the row keeps the reason
+            return None
+        job.token.add_callback(lambda: self.ctx.schedule(lambda: stopped("cancelled")))
+        return job

@@ -1,7 +1,9 @@
-"""Durable asynchronous submission of the same resolved calculation used synchronously.
+"""Durable asynchronous submission of the same calculations used synchronously.
 
-A workflow is recorded in ``<root>/_workflows/<id>/workflow.json`` and executed by one
-of three drivers, chosen at submission:
+A workflow is recorded in ``<root>/_workflows/<id>/workflow.json``: a synthesis
+(:func:`submit`, the record's ``request``) or one of the tool calculations of
+:mod:`tumult.synthesis.tasks` (:func:`submit_task`, the record's ``task`` block). It is
+executed by one of three drivers, chosen at submission:
 
 * in-process (the default): a thread of this process's ``WORKFLOWS`` pool. It ends with
   the process; a server shutdown cancels it.
@@ -37,8 +39,9 @@ import uuid
 
 from .cancel import CancelToken, CancelledError
 from .jobrecord import process_runs as _process_alive
-from .request import ResolvedSynthRequest, SynthesisResult, SynthRequest
+from .request import ResolvedSynthRequest, SynthRequest
 from .runtime import WORKFLOWS, observe_runs
+from . import tasks
 
 RECORD = 'workflow.json'
 LOCK = 'workflow.lock'
@@ -182,6 +185,25 @@ class WorkflowHandle:
     def detached(self):
         """The driver kind for a detached workflow, else ``None``."""
         return ((_read(self.folder) or {}).get('driver') or {}).get('kind')
+
+    @property
+    def kind(self):
+        """The :class:`tasks.TaskKind` of the calculation this record carries."""
+        return tasks.kind_of(self._record())
+
+    def progress_stamp(self):
+        """A value that changes whenever a new progress snapshot is written (its mtime),
+        or ``None`` before the first; cheap enough to poll from a document thread."""
+        try:
+            return (self.folder / tasks.PROGRESS_FILE).stat().st_mtime_ns
+        except FileNotFoundError:
+            return None
+
+    def progress_result(self):
+        """The latest intermediate result the calculation reported, decoded, or ``None``
+        for a kind without progress or before the first report."""
+        kind = self.kind
+        return tasks.read_progress(self.folder, kind) if kind.progress else None
 
     @property
     def label(self):
@@ -383,7 +405,7 @@ class WorkflowHandle:
         if state != 'finished':
             raise RuntimeError(f'Workflow {self.id} is {state}: '
                                f'{self._record().get("error") or "no result"}')
-        return SynthesisResult.load(self.folder / 'result')
+        return self.kind.load(self.folder / tasks.RESULT_DIR)
 
     def to_dict(self):
         return self._record()
@@ -433,14 +455,26 @@ _watcher = _Watcher()
 
 
 # --- execution --------------------------------------------------------------------------
-def execute_recorded(folder, resolved, token, base=None):
-    """Run ``resolved`` for the record in ``folder``, settling the record as it goes.
-    Shared by the in-process worker and the detached driver. Returns the result path;
-    raises what the calculation raised after recording it."""
-    from .workflows import execute_request
+def decode_task(record):
+    """``(kind, args)`` of a record: the task kind and its arguments decoded into the
+    live objects ``kind.run`` takes. Raises what the decoding raised."""
+    kind = tasks.kind_of(record)
+    return kind, kind.decode(tasks.args_of(record))
+
+
+PROGRESS_MIN_S = 1.0    # how often at most a running calculation rewrites progress.json
+
+
+def execute_recorded(folder, kind, args, token, base=None):
+    """Run ``kind`` on ``args`` for the record in ``folder``, settling the record as it
+    goes. Shared by the in-process worker and the detached drivers. Intermediate results
+    the calculation reports are written as the record's progress snapshot, at most every
+    ``PROGRESS_MIN_S``. Returns the result path; raises what the calculation raised after
+    recording it."""
     folder = Path(folder)
     identity = folder.name
     runs = []
+    last_progress = [0.0]
 
     def update(**values):
         return update_record(folder, base, **values)
@@ -452,16 +486,27 @@ def execute_recorded(folder, resolved, token, base=None):
             runs.append(output)
             update(runs=list(runs))
 
+    def progress(result):
+        now = time.monotonic()
+        if now - last_progress[0] < PROGRESS_MIN_S:
+            return
+        last_progress[0] = now
+        try:
+            tasks.write_progress(folder, kind, result)
+        except OSError:
+            log.exception('workflow %s: progress snapshot not written', identity)
+
     update(state='running', phase='preparation', started=time.time())
     try:
         token.check()
         update(phase='synthesis')
         with observe_runs(note):
-            result = execute_request(resolved, cancel_token=token)
+            result = kind.run(args, token, progress)
         update(phase='saving')
-        result_path = result.save(folder / 'result')
+        result_path = kind.save(result, folder / tasks.RESULT_DIR)
         update(state='finished', phase='finished', ended=time.time(),
-               result=str(result_path), runs=list(dict.fromkeys(runs + list(result.runs))))
+               result=str(result_path),
+               runs=list(dict.fromkeys(runs + list(getattr(result, 'runs', ())))))
         return str(result_path)
     except CancelledError:
         update(state='cancelled', phase='cancelled', ended=time.time())
@@ -511,23 +556,10 @@ def _start_driver(folder, record, detach, slurm_script):
     return update_record(folder, record, driver=driver)
 
 
-def submit(request, *, root=None, label=None, meta=None, detach=None, slurm_script=None):
-    """Copy, resolve and record ``request``; return immediately with a durable handle.
-
-    ``label`` and ``meta`` are the submitter's display name and annotations (JSON), kept
-    in the record so a later process can list and present the workflow as it was
-    submitted. ``detach`` picks the driver: ``None`` runs in this process, ``'daemon'``
-    hands it to the root's worker daemon (started if needed), ``'process'`` starts a
-    driver that outlives it, ``'slurm'`` submits that driver through
-    ``sbatch slurm_script <folder>``. Absent an argument, ``request.prefs`` may name the
-    driver as ``workflow_runner`` (``local`` means the daemon, ``in-process`` none) and
-    the script as ``slurm_script``."""
-    from .workflows import resolve_request
-    resolved = request if isinstance(request, ResolvedSynthRequest) else resolve_request(request)
-    # JSON round-trip proves that no mutable masks/settings remain shared with the caller.
-    owned = SynthRequest.from_dict(resolved.request.to_dict())
-    resolved = resolve_request(owned)
-    prefs = owned.prefs or {}
+def _driver_choice(prefs, detach, slurm_script):
+    """The driver a submission uses: the explicit ``detach``, else the preferences'
+    ``workflow_runner``; the Slurm script likewise falls back to ``slurm_script``."""
+    prefs = prefs or {}
     if detach is None:
         choice = str(prefs.get('workflow_runner') or '')
         detach = RUNNER_PREFS.get(choice, choice)
@@ -536,12 +568,14 @@ def submit(request, *, root=None, label=None, meta=None, detach=None, slurm_scri
     if detach == 'slurm' and slurm_script is None and prefs.get('slurm_script'):
         # a relative script path in the preferences is relative to the dispatch directory
         slurm_script = Path(prefs.get('dispatch_cwd') or '.').expanduser() / prefs['slurm_script']
-    base = Path(root or resolved.output_root) / '_workflows'
-    identity = f'{time.strftime("%Y%m%dT%H%M%S")}-{uuid.uuid4().hex[:10]}'
-    folder = base / identity
-    record = {'version': 1, 'id': identity, 'state': 'queued', 'phase': 'queued',
-              'submitted': time.time(), 'request': resolved.to_dict(), 'runs': [],
-              'result': None, 'label': label, 'meta': deepcopy(meta), 'driver': None}
+    return detach, slurm_script
+
+
+def _submit_record(base, record, kind, args, detach, slurm_script):
+    """Write ``record`` under ``base`` and hand it to its driver, or run ``kind`` on
+    ``args`` in this process; returns the handle either way."""
+    identity = record['id']
+    folder = Path(base) / identity
     _atomic(folder / RECORD, record)
 
     if detach is not None:
@@ -562,7 +596,7 @@ def submit(request, *, root=None, label=None, meta=None, detach=None, slurm_scri
 
     def work():
         try:
-            return execute_recorded(folder, resolved, token, record)
+            return execute_recorded(folder, kind, args, token, record)
         finally:
             with _lock:
                 _live.pop(identity, None)
@@ -575,6 +609,57 @@ def submit(request, *, root=None, label=None, meta=None, detach=None, slurm_scri
             handle._settle_unstarted('failed', error=f'{type(exc).__name__}: {exc}')
             raise
     return handle
+
+
+def _new_record(label, meta):
+    identity = f'{time.strftime("%Y%m%dT%H%M%S")}-{uuid.uuid4().hex[:10]}'
+    return {'version': 1, 'id': identity, 'state': 'queued', 'phase': 'queued',
+            'submitted': time.time(), 'request': None, 'task': None, 'runs': [],
+            'result': None, 'label': label, 'meta': deepcopy(meta), 'driver': None}
+
+
+def submit(request, *, root=None, label=None, meta=None, detach=None, slurm_script=None):
+    """Copy, resolve and record ``request``; return immediately with a durable handle.
+
+    ``label`` and ``meta`` are the submitter's display name and annotations (JSON), kept
+    in the record so a later process can list and present the workflow as it was
+    submitted. ``detach`` picks the driver: ``None`` runs in this process, ``'daemon'``
+    hands it to the root's worker daemon (started if needed), ``'process'`` starts a
+    driver that outlives it, ``'slurm'`` submits that driver through
+    ``sbatch slurm_script <folder>``. Absent an argument, ``request.prefs`` may name the
+    driver as ``workflow_runner`` (``local`` means the daemon, ``in-process`` none) and
+    the script as ``slurm_script``."""
+    from .workflows import resolve_request
+    resolved = request if isinstance(request, ResolvedSynthRequest) else resolve_request(request)
+    # JSON round-trip proves that no mutable masks/settings remain shared with the caller.
+    owned = SynthRequest.from_dict(resolved.request.to_dict())
+    resolved = resolve_request(owned)
+    detach, slurm_script = _driver_choice(owned.prefs, detach, slurm_script)
+    record = _new_record(label, meta)
+    record['request'] = resolved.to_dict()
+    record['task'] = {'kind': tasks.Synthesis.name}
+    base = Path(root or resolved.output_root) / '_workflows'
+    return _submit_record(base, record, tasks.KINDS[tasks.Synthesis.name], resolved,
+                          detach, slurm_script)
+
+
+def submit_task(kind, args, *, prefs, root=None, label=None, meta=None, detach=None,
+                slurm_script=None):
+    """Record a :mod:`tasks` calculation of ``kind`` (its name) with JSON ``args`` and
+    return immediately with a durable handle, the way :func:`submit` does for a
+    synthesis. ``prefs`` are the synthesis preferences the driver choice and, absent
+    ``root``, the record's root (``<dispatch_cwd>/<synth_output_dir>``) are read from.
+    The arguments are decoded here first, so an unreadable argument fails the caller
+    rather than the driver."""
+    from .workflows import output_root
+    task = tasks.KINDS[kind]
+    args = json.loads(json.dumps(args, default=tasks._json_default))   # owned, JSON-clean
+    decoded = task.decode(args)
+    detach, slurm_script = _driver_choice(prefs, detach, slurm_script)
+    record = _new_record(label, meta)
+    record['task'] = {'kind': task.name, 'args': args}
+    base = Path(root or output_root(prefs)) / '_workflows'
+    return _submit_record(base, record, task, decoded, detach, slurm_script)
 
 
 def cancel_live_workflows():

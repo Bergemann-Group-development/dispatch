@@ -4,7 +4,10 @@ The entry point is a model-atom object (:mod:`atomtool`): its panel's **NLTE cor
 action opens this tool's modal with the atom fixed. The modal holds the NLTE target
 atmosphere and stellar parameters (a :class:`synthsetup.SynthSetup` cluster), the measurement
 settings, and states which registered grid is flagged as the **1D LTE reference** (set in
-Preferences → Atmosphere grids). Its one **Compute** button runs both stages as a chained job:
+Preferences → Atmosphere grids). Its one **Compute** button runs both stages as one durable
+``nlte_corrections`` workflow (:mod:`tumult.synthesis.tasks`, through
+``ResultJobs.submit_task``), which outlives the tab: the stage-1 result arrives as the
+record's first progress snapshot, every correction round as the next ones.
 
 1. **Reference.** :func:`tumult.abundance.measure_reference_lines` interpolates the flagged
    1D LTE grid at the target parameters, synthesises the reference **straight from the model
@@ -42,6 +45,7 @@ modal, the submission and the rendering.
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import asdict
 
 import html
 import logging
@@ -59,9 +63,8 @@ from canvas import ACCENT, SYNTH_FIT, style_dark
 from controls import Field, Form
 from ew import profile_options
 from htmlbridge import pulse
-from tumult.abundance import (CorrectionOpts, correction_summary,
-                              measure_reference_lines, reduced_ew, refit_line_window,
-                              run_nlte_corrections)
+from tumult.abundance import (CorrectionOpts, correction_summary, reduced_ew,
+                              refit_line_window)
 from units import to_range
 
 import astropy.units as u
@@ -444,16 +447,32 @@ class AbundCorrTool(AbundanceWizard):
         self.draft.commit()
         pulse(self._modal, "close")
         self.notify(f"Computing the 1D LTE reference for {obj.symbol}…")
-        ref_grid = deepcopy(ref_grid)
-        atom = obj.path
-        loader = lambda _res, token, progress: measure_reference_lines(
-            request, atom, ref_grid=ref_grid, opts=opts, cancel_token=token)
-        self.jobs.submit(f"corr-reference:{obj.symbol}", loader,
-                         lambda result: self._on_reference_done(result, request, opts))
+        # one durable record runs both stages; the stage-1 result arrives as its first
+        # progress snapshot, every correction round as the next ones
+        args = {"request": request.to_dict(), "atom": obj.path, "ref_grid": deepcopy(ref_grid),
+                "opts": asdict(opts)}
+        self.jobs.submit_task(f"corr:{obj.symbol}", self.task_kind, args, self._on_task_done,
+                              prefs=request.prefs, on_progress=self._on_task_progress)
 
-    def _on_reference_done(self, result, request, opts):
-        from dataclasses import asdict
-        result.synthesis = asdict(request)     # what names the result (stage 2 rewrites it)
+    task_kind = "nlte_corrections"
+
+    def _on_task_progress(self, snapshot):
+        """A stage-1 result (the first snapshot of a run) is listed and its reference
+        spectrum shown; a later snapshot updates the listed result in place."""
+        if self._find(snapshot.uid) is None:
+            self._on_reference_ready(snapshot)
+        else:
+            self._job_progress(self._adopt(snapshot))
+
+    def _on_task_done(self, result):
+        if self._find(result.uid) is None:
+            self._on_reference_ready(result)       # its stage-1 snapshot never arrived
+        self._on_corr_done(self._adopt(result))
+
+    import_task_progress = lambda self, snapshot, handle: self._on_task_progress(snapshot)
+    import_task_result = lambda self, result, handle: self._on_task_done(result)
+
+    def _on_reference_ready(self, result):
         result.name = self._result_label(result)
         self.results.append(result)
         self.selected_uid = result.uid
@@ -466,14 +485,6 @@ class AbundCorrTool(AbundanceWizard):
         self.select_result(result.uid)
         self.notify(f"{result.symbol}: {len(result.lines)} reference lines — computing "
                     "NLTE corrections…")
-        self._run_corrections(result, request, opts)
-
-    def _run_corrections(self, res, request, opts):
-        """Stage 2 on the options stage 1 was admitted with; the live form is not read."""
-        atom = res.atom_path
-        loader = lambda working, token, progress: run_nlte_corrections(
-            request, working, atom, opts=opts, progress=progress, cancel_token=token)
-        self.jobs.submit(f"corr-synth:{res.symbol}", loader, self._on_corr_done, result=res)
 
     def _on_corr_done(self, result):
         s = result.summary
