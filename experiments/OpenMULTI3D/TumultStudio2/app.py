@@ -751,6 +751,13 @@ def build():
         """
         if not canvas.objects:
             return False
+        # While a tool owns the overlay it draws its own line frame, not the global
+        # ranking — nothing to warm unless the line-list panel is also open and reading
+        # that ranking directly. Otherwise a tool with no dump of its own (an NLTE
+        # correction run without a linelist, say) attaches windows that rarely match an
+        # already-cached band, and every click would queue a real EOS-and-opacity job.
+        if ctx.annot.owner is not None and not linenav.active:
+            return False
         obj = canvas.selected()
         lo, hi = ctx.annot._window_aa()
         if not strengths.pending(obj, lo, hi):
