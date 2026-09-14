@@ -256,6 +256,106 @@ def test_concurrent_batches_share_real_subprocess_and_cancel_independently(tmp_p
             assert (tmp_path / f'job{i}' / 'starts').read_text() == '1\n'
 
 
+def test_balanced_allocation_gives_a_single_ready_job_the_whole_budget(tmp_path, monkeypatch):
+    """plan/multi-processing.md's ready-queue table: one ready job on ``F`` free workers
+    gets all ``F`` of them, not a fixed per-job thread count."""
+    import tumult as tm
+    executable = tmp_path / 'dispatch.x'
+    executable.write_text(
+        f'#!{sys.executable}\n'
+        'import sys, os\nfrom pathlib import Path\n'
+        'p=Path(sys.argv[1]).with_suffix(""); p.mkdir(parents=True, exist_ok=True)\n'
+        '(p / "starts").write_text(os.environ["OMP_NUM_THREADS"])\n'
+        '(p / "abund.txt").write_text("finished")\n')
+    executable.chmod(0o755)
+    monkeypatch.setattr(tm, 'read', lambda path: path.name)
+    jobs = [(0, tmp_path / 'job0', {})]
+    with ExecutionService(4) as runtime:
+        result = _run_batch(jobs, {'cwd': tmp_path, 'verbose': 0}, 4, runtime=runtime)
+    assert result == {0: 'job0'}
+    assert (tmp_path / 'job0' / 'starts').read_text() == '4'
+
+
+def test_balanced_allocation_splits_free_budget_across_ready_jobs(tmp_path, monkeypatch):
+    """plan/multi-processing.md's ready-queue table: two jobs ready on seven free workers
+    split ``4, 3`` (``base = 7 // 2 = 3``, the first job getting the one-slot remainder)."""
+    import tumult as tm
+    executable = tmp_path / 'dispatch.x'
+    executable.write_text(
+        f'#!{sys.executable}\n'
+        'import sys, os\nfrom pathlib import Path\n'
+        'p=Path(sys.argv[1]).with_suffix(""); p.mkdir(parents=True, exist_ok=True)\n'
+        '(p / "starts").write_text(os.environ["OMP_NUM_THREADS"])\n'
+        '(p / "abund.txt").write_text("finished")\n')
+    executable.chmod(0o755)
+    monkeypatch.setattr(tm, 'read', lambda path: path.name)
+    jobs = [(i, tmp_path / f'job{i}', {}) for i in range(2)]
+    with ExecutionService(7) as runtime:
+        result = _run_batch(jobs, {'cwd': tmp_path, 'verbose': 0}, 7, runtime=runtime)
+    assert result == {0: 'job0', 1: 'job1'}
+    assert (tmp_path / 'job0' / 'starts').read_text() == '4'
+    assert (tmp_path / 'job1' / 'starts').read_text() == '3'
+
+
+def test_balanced_allocation_grants_freed_slots_to_a_job_unlocked_later(monkeypatch, tmp_path):
+    """With more ready jobs than free workers, the extra ones wait; a completion frees its
+    slots and the next ready job is admitted on the very same accounting, never exceeding
+    the budget (plan/multi-processing.md: "On every completion, release that job's slots,
+    update the dependency graph and immediately allocate the free slots")."""
+    from tumult.synthesis import executor
+    entered = {name: threading.Event() for name in ('job0', 'job1', 'job2', 'job3')}
+    release = {name: threading.Event() for name in ('job0', 'job1', 'job2', 'job3')}
+    seen = {}
+
+    def run(key, name, nml, kwargs):
+        name = str(name.name)
+        seen[name] = kwargs['threads']
+        entered[name].set()
+        assert release[name].wait(3)
+        return key, name
+
+    monkeypatch.setattr(executor, '_run_single', run)
+    jobs = [(i, tmp_path / f'job{i}', {}) for i in range(4)]
+    with ExecutionService(3) as runtime, concurrent.futures.ThreadPoolExecutor(1) as caller:
+        f = caller.submit(_run_batch, jobs, {}, 3, runtime=runtime)
+        for name in ('job0', 'job1', 'job2'):
+            assert entered[name].wait(3)
+        assert not entered['job3'].is_set()             # only 3 workers: it waits
+        assert seen == {'job0': 1, 'job1': 1, 'job2': 1}   # n=3 <= F=3: one thread each
+        release['job0'].set()
+        assert entered['job3'].wait(3)                   # job0's freed slot admits it
+        assert seen['job3'] == 1
+        for name in ('job1', 'job2', 'job3'):
+            release[name].set()
+        assert f.result(3) == {0: 'job0', 1: 'job1', 2: 'job2', 3: 'job3'}
+
+
+def test_cache_hit_gets_no_allocation_and_does_not_shrink_others(monkeypatch, tmp_path):
+    """plan/multi-processing.md: "Identify valid disk-cache hits ... load them without
+    assigning native CPU slots" and cache hits must not reduce uncached jobs' share."""
+    from tumult.synthesis import executor
+    cached = tmp_path / 'cached'
+    (cached / 'inner').mkdir(parents=True)
+    (cached / 'inner' / 'abund.txt').write_text('done')     # already a finished run
+    entered = threading.Event()
+    seen = {}
+
+    def run(key, name, nml, kwargs):
+        if name.name == 'inner':
+            return key, 'cached-result'
+        seen['fresh'] = kwargs['threads']
+        entered.set()
+        return key, 'fresh-result'
+
+    monkeypatch.setattr(executor, '_run_single', run)
+    jobs = [(0, cached / 'inner', {}), (1, tmp_path / 'fresh', {})]
+    with ExecutionService(5) as runtime:
+        result = _run_batch(jobs, {'cwd': tmp_path}, 5, runtime=runtime)
+    assert result == {0: 'cached-result', 1: 'fresh-result'}
+    assert entered.is_set()
+    assert seen['fresh'] == 5      # the sole uncached job gets the full free budget
+
+
 def test_compute_spectra_folds_abundance_only_batch(monkeypatch, tmp_path):
     from tumult.synthesis import api
     submitted = []

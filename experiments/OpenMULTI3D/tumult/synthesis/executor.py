@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+from collections import deque
 from concurrent.futures import wait, FIRST_COMPLETED
 import json
 from pathlib import Path
@@ -47,11 +48,21 @@ def _output_folder(nml_name, nml):
 
 
 def _run_batch(jobs, launch_kwargs, max_threads, cancel_token=None, *, runtime=None):
-    """Submit a bounded batch; preserve job keys and deduplicate shared outputs.
+    """Submit every job of a batch with a balanced share of the free CPU budget.
 
-    The service owns the global CPU budget. ``max_threads`` additionally limits
-    this batch's outstanding work. Cached outputs are read by the same supervisor
-    path, so a file written by an in-flight job is never mistaken for a cache hit.
+    Follows the ready-queue allocation of ``plan/multi-processing.md``: with ``F``
+    slots free (here, this batch's own ceiling ``min(max_threads, runtime.budget)``)
+    and ``n`` jobs ready to launch, ``width = min(n, F)`` of them start at once, ``F``
+    slots split as evenly as possible (``base = F // width``, the first ``F % width``
+    getting one extra). A job's allocation is fixed once it starts; as jobs finish and
+    free their slots, the same split is recomputed for whatever is still waiting. Two
+    jobs sharing one output (the same node requested by two callers) are always
+    submitted as separate subscribers of that shared task — see
+    :class:`runtime.ExecutionService` — so only the first occurrence of an output
+    consumes a slot from this batch's own accounting; duplicates ride along free.
+    Jobs whose output is already a complete, reusable run (and every caller asking for
+    it) are submitted at once outside the balanced split, since reading a finished run
+    costs no native CPU slot.
     """
     if not jobs:
         return {}
@@ -59,32 +70,43 @@ def _run_batch(jobs, launch_kwargs, max_threads, cancel_token=None, *, runtime=N
     batch_token = CancelToken()
     detach = cancel_token.add_callback(batch_token.cancel) if cancel_token else lambda: None
     max_threads = max(1, int(max_threads))
-    threads = min(max_threads, max(1, int(launch_kwargs.get("threads") or 1)))
-    outstanding = max(1, min(max_threads, runtime.budget) // threads)
     owner = cancel_token or batch_token
-    pending = {}
-    remaining = iter(jobs)
+    pending = {}         # future -> job key
     results = {}
 
-    def submit_next():
+    # Resolve every job's output/signature once, own its input snapshot (workflows may
+    # keep changing their live settings after this), and group by output so a node
+    # requested twice in one batch shares one native run without inflating the count of
+    # "ready" jobs the width/base/remainder split below is computed against.
+    by_output = {}        # output -> [(key, name, nml, kwargs, signature), ...]
+    cached_outputs = []
+    waiting_outputs = deque()
+    for key, name, nml in jobs:
         batch_token.check()
-        try:
-            key, name, nml = next(remaining)
-        except StopIteration:
-            return False
-        # Own the input snapshot: workflows may continue changing their settings.
         nml = copy.deepcopy(nml)
         kwargs = copy.deepcopy(launch_kwargs)
         prepared = prepare_input(nml, kwargs.get('default'))
         output = str((Path(kwargs.get('cwd') or '.') /
                       _output_folder(name, prepared)).resolve())
-        note_run(output)
         # CPU allocation is scheduling metadata, not part of a spectrum's identity.
         signature = json.dumps([prepared, {k: v for k, v in kwargs.items()
                                            if k not in ('threads', 'verbose', 'log_file')}],
                                sort_keys=True, default=str)
+        entry = (key, name, nml, kwargs, signature)
+        if output not in by_output:
+            by_output[output] = [entry]
+            note_run(output)
+            if not kwargs.get('overwrite') and run_complete(output):
+                cached_outputs.append(output)
+            else:
+                waiting_outputs.append(output)
+        else:
+            by_output[output].append(entry)
 
-        def run(token, slots):
+    future_output = {}    # future -> output, to release that output's slots exactly once
+
+    def submit_entry(name, nml, kwargs, signature, output, slots):
+        def run(token, slots=slots):
             token.check()
             options = dict(kwargs, threads=slots)
             # External runners retain their own execution/cancellation contract.
@@ -94,23 +116,46 @@ def _run_batch(jobs, launch_kwargs, max_threads, cancel_token=None, *, runtime=N
             result = _run_single(None, name, nml, options)[1]
             token.check()
             return result
+        return runtime.submit(output, signature, owner, run, threads=slots, token=batch_token)
 
-        future = runtime.submit(output, signature, owner, run,
-                                threads=threads, token=batch_token)
-        pending[future] = key
-        return True
+    def submit_output(output, slots):
+        for key, name, nml, kwargs, signature in by_output[output]:
+            future = submit_entry(name, nml, kwargs, signature, output, slots)
+            pending[future] = key
+            future_output[future] = output
+
+    free = max(1, min(max_threads, runtime.budget))
+    launched_slots = {}    # output -> slots granted from `free` (cache hits are not here)
+
+    def allocate_ready():
+        nonlocal free
+        n = len(waiting_outputs)
+        if n == 0 or free <= 0:
+            return
+        width = min(n, free)
+        base, remainder = divmod(free, width)
+        for i in range(width):
+            output = waiting_outputs.popleft()
+            slots = base + (1 if i < remainder else 0)
+            launched_slots[output] = slots
+            free -= slots
+            submit_output(output, slots)
 
     try:
-        for _ in range(outstanding):
-            if not submit_next():
-                break
+        for output in cached_outputs:
+            submit_output(output, 1)      # a cache read costs no native CPU slot
+        allocate_ready()
         while pending:
             done, _ = wait(pending, return_when=FIRST_COMPLETED)
             batch_token.check()
             for future in done:
                 key = pending.pop(future)
                 results[key] = future.result()
-                submit_next()
+                output = future_output.pop(future)
+                slots = launched_slots.pop(output, None)  # None for a cache-hit output
+                if slots is not None:
+                    free += slots
+            allocate_ready()
         return results
     finally:
         batch_token.cancel()  # also detach outstanding subscribers on an error
