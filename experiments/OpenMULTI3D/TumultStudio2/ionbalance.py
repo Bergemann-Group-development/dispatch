@@ -376,8 +376,10 @@ class IonBalanceTool(AbundanceWizard):
         n = sum(1 for m in mset.masks if m.include)
         return (f'<div class="hint">Measuring <b>{html.escape(mset.name)}</b> — {n} '
                 f'switched-on window{"" if n == 1 else "s"} of '
-                f'<b>{html.escape(mset.element)}</b>. Both ionisation stages have to be '
-                f'present among them for the balance to close.</div>')
+                f'<b>{html.escape(mset.element)}</b> on the target spectrum, then fitting '
+                f'(Teff, log g, [Fe/H], ξ) to their excitation and ionisation balance. Both '
+                f'ionisation stages have to be present among them for the balance to '
+                f'close.</div>')
 
     # --- entry point ----------------------------------------------------------------------
     def _entry_params(self, key, target_spec):

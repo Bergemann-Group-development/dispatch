@@ -243,10 +243,14 @@ class SynthModal:
         if kind == "masks":
             masks = [m for m in mset.masks if m.include]
             lo, hi = self._mask_span(masks)
-            verb = "Fitting inside" if self.mode == "fit" else "Synthesising"
-            return (f'<div class="hint">{verb} <b>{len(masks)}</b> window'
-                    f'{"" if len(masks) == 1 else "s"} of <b>{html.escape(mset.name)}</b>, '
-                    f'{lo:.2f}–{hi:.2f} Å.</div>')
+            what = (f'<b>{len(masks)}</b> window{"" if len(masks) == 1 else "s"} of '
+                    f'<b>{html.escape(mset.name)}</b>, {lo:.2f}–{hi:.2f} Å')
+            if self.mode == "fit":
+                return (f'<div class="hint">Fitting stellar parameters, abundances or '
+                        f'broadening to a target spectrum, compared inside the fit windows '
+                        f'of {what}.</div>')
+            return (f'<div class="hint">Synthesising the synth windows of {what}, on the '
+                    f'atmosphere chosen below.</div>')
         return ('<div class="section-header">Wavelength window</div>'
                 '<div class="hint">Last-used atmosphere setup. Synthesis continues after closing the tab; spectrum fits stop.</div>'
                 f'<div id="{self.window_form.slot_id}" class="synth-window">'

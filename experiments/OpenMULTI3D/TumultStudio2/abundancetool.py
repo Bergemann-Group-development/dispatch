@@ -183,8 +183,9 @@ class AbundanceTool(AbundanceWizard):
         return (f'<div class="hint">Measuring <b>{html.escape(mset.name)}</b> — {n} '
                 f'switched-on window{"" if n == 1 else "s"} of '
                 f'<b>{html.escape(mset.element)}</b> on the reference below, then synthesising '
-                f'each line on the atmosphere beside it. The windows are taken as curated; the '
-                f'result is an abundance object of its own.</div>')
+                f'each line on the atmosphere beside it to invert its EW to '
+                f'A({html.escape(mset.element)}) with an error budget. The windows are taken '
+                f'as curated; the result is an abundance object of its own.</div>')
 
     def actions_html(self):
         """The modal's footer: one submit, doing what the modal was opened for."""

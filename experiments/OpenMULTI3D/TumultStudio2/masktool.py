@@ -486,25 +486,15 @@ class MaskTool(Tool):
         result), because everything it holds depends on the spectrum it was measured on, not
         on these windows.
         """
+        # what each analysis does is stated in the header of the modal it opens
         actions = [(self.on_synth, "lm-synthesize", "Synthesise windows\u2026",
-                    "Synthesise a spectrum over these windows",
-                    '<div class="hint">Synthesises the included synth windows on an '
-                    'atmosphere of your choice.</div>'),
+                    "Synthesise a spectrum over these windows"),
                    (self.on_fit, "lm-fit", "Fit windows\u2026",
-                    "Fit a target spectrum inside these windows",
-                    '<div class="hint">Fits stellar parameters, abundances or broadening to '
-                    'a target spectrum, comparing inside the included fit windows.</div>'),
+                    "Fit a target spectrum inside these windows"),
                    (self.on_measure_abund, "lm-measure-abund", "Measure abundances",
-                    "Measure these windows on a reference and invert each EW to an abundance",
-                    '<div class="hint">Measures these windows on a reference observation, then '
-                    f'synthesises each line to invert its EW to A({html.escape(mset.element)}) '
-                    'with an error budget.</div>'),
+                    "Measure these windows on a reference and invert each EW to an abundance"),
                    (self.on_fit_balance, "lm-fit-balance", "Fit ionisation balance",
-                    "Measure these windows on a spectrum and fit stellar parameters",
-                    '<div class="hint">Measures these windows on a target spectrum and fits '
-                    '(Teff, log g, [Fe/H], ξ) to the excitation and ionisation balance of '
-                    f'{html.escape(mset.element)}. Both stages have to be among the windows.'
-                    '</div>')]
+                    "Measure these windows on a spectrum and fit stellar parameters")]
         actions = [a for a in actions if a[0] is not None]
         if not actions:
             return ""
@@ -512,13 +502,11 @@ class MaskTool(Tool):
         why = ("Set the element these windows diagnose first." if not mset.element else
                "Switch on at least one window." if not n else "")
         out = ['<div class="section-header">Analysis</div>']
-        for _, cls, label, title, hint in actions:
+        for _, cls, label, title in actions:
             out.append(f'<button class="text-btn {cls}"{" disabled" if why else ""} '
                        f'title="{html.escape(why or title)}">{label}</button>')
-            if not why:
-                out.append(hint)          # what this analysis does with the set
         if why:
-            out.append(f'<div class="hint">{html.escape(why)}</div>')   # ... once, for both
+            out.append(f'<div class="hint">{html.escape(why)}</div>')   # ... once, for all
         return "".join(out)
 
     def table_html(self):
