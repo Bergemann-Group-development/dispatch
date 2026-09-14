@@ -537,7 +537,12 @@ class MaskTool(Tool):
                     'below, then drag its edges on the spectrum to size the window.</td>'
                     f'</tr></tbody><tfoot>{add_row}</tfoot></table>')
         rows = []
-        for i, m in enumerate(masks):
+        # rows read in wavelength order; each keeps its store index as data-idx, which is
+        # what the row actions address
+        order = sorted(range(len(masks)), key=lambda i: (
+            masks[i].lam0 if np.isfinite(masks[i].lam0) else 0.5 * (masks[i].lmin + masks[i].lmax)))
+        for i in order:
+            m = masks[i]
             sel = " lm-active" if i == self.store.active else ""
             off = "" if m.include else " lm-off"
             lam0 = f"{m.lam0:.3f}" if m.lam0 == m.lam0 else "—"   # NaN check
