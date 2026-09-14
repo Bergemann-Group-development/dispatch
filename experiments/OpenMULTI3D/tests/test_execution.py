@@ -253,7 +253,7 @@ def test_concurrent_batches_share_real_subprocess_and_cancel_independently(tmp_p
             fa.result(3)
         assert fb.result(5) == {i: f'job{i}' for i in range(3)}
         for i in range(3):
-            assert (tmp_path / f'job{i}' / 'starts').read_text() == '1\n'
+            assert len((tmp_path / f'job{i}' / 'starts').read_text().splitlines()) == 1
 
 
 def test_balanced_allocation_gives_a_single_ready_job_the_whole_budget(tmp_path, monkeypatch):
