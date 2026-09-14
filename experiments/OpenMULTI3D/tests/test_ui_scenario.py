@@ -1,7 +1,8 @@
 """One browser scenario over a live TumultStudio2 server.
 
 A Bokeh server runs the real directory app in a subprocess with a temporary config and
-workflow root and a stubbed synthesis execution (no dispatch, no HOP); headless Chromium
+workflow root, the workflow daemon in a thread of that process and a stubbed synthesis
+execution (no dispatch, no HOP); headless Chromium
 drives the page through its own buttons, rows and modals, so every step exercises the
 template's delegated events and the document callbacks behind them. Covered in order:
 submitting a synthesis from the modal, cancelling it from its Processes row, a failed
@@ -56,6 +57,12 @@ def execute(resolved, cancel_token=None):
 
 
 workflows.execute_request = execute
+import threading
+from tumult.synthesis import daemon
+worker = daemon.Daemon(exit_when_idle=False)       # the stub runs where the daemon does
+threading.Thread(target=worker.serve, daemon=True).start()
+while not (daemon.directory() / daemon.SOCKET).exists():
+    time.sleep(0.02)
 from bokeh.application import Application
 from bokeh.application.handlers.directory import DirectoryHandler
 from bokeh.server.server import Server
@@ -187,7 +194,6 @@ def _seed_config(tmp_path, monkeypatch):
     store.set_section("synthesis", {
         "dispatch_cwd": str(tmp_path), "synth_output_dir": "synth", "linelist": "",
         "abund_file": "", "absmet": "", "atmos_grids": [dict(_GRID)],
-        "workflow_runner": "in-process",     # the stubbed execution lives in the server
         "atmos_grid_id": "g1", "ref_grid_id": "g1"})
     store.set_section("synth_run", {"teff": 5750.0, "logg": 4.4, "feh": 0.0, "vmic": 1.0,
                                     "mode": "LTE", "abundances": "", "atoms": [],
@@ -340,11 +346,12 @@ def test_browser_scenario_submit_cancel_fail_save_replace_reconnect_import(
     assert "Loaded" in browser.text("#footer-status")
     assert browser.count("#processes .process:not(.recoverable)") == 1
 
-    # reconnect: a new session finds the record still running; once it finishes on the
-    # server, loading the "obs" slot and pressing Recover offers the result for import
+    # reconnect: a new session shows the workflow still running in the daemon as a row of
+    # its own; once it finishes, loading the "obs" slot and pressing Recover offers the
+    # result for import
     browser.step("goto", url=url)
-    browser.wait("document.querySelector('#processes .recoverable[data-state=\"running\"]')")
-    assert browser.count('#processes [data-action="workflow-attach"]') == 1
+    browser.wait("document.querySelector('#processes [data-action=\"workflow-cancel\"]')")
+    assert browser.count('#processes [data-action="workflow-cancel"]') == 1
     (ctrl / "release2").write_text("")
     deadline = time.monotonic() + 20
     while _records(tmp_path)[running_id] != "finished" and time.monotonic() < deadline:
@@ -353,19 +360,18 @@ def test_browser_scenario_submit_cancel_fail_save_replace_reconnect_import(
     _load_workspace(browser, '#canvas-empty', 2)
     browser.wait(f"{OBJECTS} === 1")
     browser.click('[data-action="workflow-discover"]')
-    browser.wait("document.querySelector('#processes .recoverable[data-state=\"finished\"]')")
-    browser.click('#processes [data-action="workflow-import"]')
+    browser.wait("document.querySelector('#recovery-list .recoverable[data-state=\"finished\"]')")
+    browser.click('#recovery-list [data-action="workflow-import"]')
     browser.wait(f"{OBJECTS} === 2")
+    browser.click("#recovery-modal .modal-cancel")
     names = browser.eval("Array.from(document.querySelectorAll('#objects .object-name'))"
                          ".map(e => e.textContent)")
     assert names == ["obs.txt", "t5750g4.4m+0.0v1.0"]
     # once imported, the record is neither offered again nor importable: a second scan
-    # (its footer report is a new message) lists no import button
-    before = browser.eval("document.getElementById('footer-status').innerHTML")
+    # opens the recovery modal without an import button
+    browser.wait("!document.getElementById('recovery-modal').open")
     browser.click('[data-action="workflow-discover"]')
-    browser.wait("document.getElementById('footer-status').innerHTML !== "
-                 + json.dumps(before) + " && document.getElementById('footer-status')"
-                 ".textContent.includes('recoverable')")
-    assert browser.count('#processes [data-action="workflow-import"]') == 0
+    browser.wait("document.getElementById('recovery-modal').open")
+    assert browser.count('#recovery-list [data-action="workflow-import"]') == 0
     assert browser.count("#objects .object-item") == 2
     assert not browser.page_errors

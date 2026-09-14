@@ -30,7 +30,22 @@ target), it asks for it inside its modal, as the abundance and ion-balance modal
 
 Every background operation a document admits (a file load, a synthesis, a fit, a durable
 workflow, a line-strength band) is a `jobs.Job` in `ctx.jobs`, shown at the bottom of the
-left sidebar from admission to its terminal state:
+left sidebar from admission to its terminal state (`processes.processes_html`). Each row
+has two lines: the kind and name (`Synthesis · Sun 3D NLTE`, `Abundance synthesis · Fe`),
+then how it runs (`8 threads`, `queued`, `stopping…`, `failed · <error>`, `Slurm <id>`),
+followed by the elapsed time once the job has lasted 10 s. A job settling within half a
+second is never drawn. Python jobs of the server (loads, line strengths, broadening fits,
+normalisations, grid transfers) run on one thread and are not counted in the header; the
+header shows the daemon's threads in use plus those of live external runs on this host,
+over the daemon's budget, so the total can exceed it.
+
+Below this document's jobs come the daemon's running and queued workflows that it does not
+follow (another tab's, a script's) and the live external runs; they can be cancelled from
+their row. Durable workflows, external runs and failed jobs carry a details button that
+opens the job modal: progress phase and runs, threads and driver, timing, the inputs the
+submitter recorded, the run table, log tails, and the actions that apply (cancel, attach,
+copy the id, open the folder; for an external departure solve, use it as saved
+departures).
 
 - *queued* and *running* rows spin and carry a cancel button; a synthesis or fit asks for
   confirmation first. Cancelling a queued job settles it at once. Cancelling a running one
@@ -55,7 +70,7 @@ their result to disk: every dispatch calculation (a synthesis, a fit, an abundan
 an ionisation balance, NLTE corrections) is a durable workflow, see below. An explicit
 cancel from the panel still ends a detached job.
 
-### Recovering durable workflows after a reconnect
+### Durable workflows and recovery
 
 A durable workflow writes `workflow.json` under
 `<dispatch_cwd>/<synth_output_dir>/_workflows/<id>/` with the name and annotations it
@@ -63,63 +78,64 @@ was submitted with, and its result under `result/`. A synthesis from the modal i
 submitted through `tumult.synthesis.submit` (the record's `request`); the tools'
 calculations through `tumult.synthesis.submit_task` (`ctx.submit_task`, the record's
 `task` block naming a kind of `tumult.synthesis.tasks`: `fit`, `abundance`,
-`ionisation_balance`, `nlte_corrections`). A kind that streams its result (a balance
-iteration, a correction round, the corrections' stage-1 reference) writes the record's
-`progress.json`, which the following document polls every two seconds and hands to the
-tool as a result snapshot, so a reopened tab watches the calculation where it is. The
-document that
-submitted it keeps a reference beside the workspace (`ctx.workflow_refs`: id, folder,
-name, whether the result has reached the workspace), and every save slot stores those
-references next to its snapshot. Recovery is scoped to that configured root; nothing
-else is scanned.
+`ionisation_balance`, `nlte_corrections`). Both hand the record to the workflow daemon
+(`tumult.synthesis.daemon`), which runs one workflow at a time with the whole budget and
+reports state, threads and progress to the server as events, so a result reaches the
+canvas as soon as it is saved. A kind that streams its result (a balance iteration, a
+correction round, the corrections' stage-1 reference) writes the record's `progress.json`;
+the daemon announces each snapshot and the following document reads it off the document
+thread and hands it to the tool, so a reopened tab watches the calculation where it is.
+The document that submitted a workflow keeps a reference beside the workspace
+(`ctx.workflow_refs`: id, folder, name, whether the result has reached the workspace), and
+every save slot stores those references next to its snapshot.
 
-- A new document lists, at build, the workflows still running: in this server, or under
-  a detached driver that still exists. The panel header's Recover button
-  (`workflow-discover`) lists the newest records of every state, minus the ones this
-  document follows or has imported. Each row names the record's true state: a *running*
-  or *queued* one offers *attach*, a *finished* one *import*, an *interrupted* one (left
-  queued or running by a server or driver that no longer exists) only its logs, a failed
-  one its error; any row can be forgotten from the panel without touching the disk.
-- *Attach* creates a job under the current workspace generation whose row cancels the
-  workflow through its handle and whose completion is delivered once, as the original
-  submission would have: a synthesis adds its spectra, a tool record goes to the tool
-  that registered its kind (`ctx.task_importers`, `ctx.task_progress`), which lists the
-  result under the uid the record carries or updates the listed one in place. *Import*
-  loads a finished result off the document thread and delivers it the same way once; a
-  workflow already imported into this document is refused.
+- A new document shows the daemon's running and queued workflows as rows from its first
+  paint. *Attach* in a row's details creates a job under the current workspace generation
+  whose row cancels the workflow through its handle and whose completion is delivered
+  once, as the original submission would have: a synthesis adds its spectra, a tool record
+  goes to the tool that registered its kind (`ctx.task_importers`, `ctx.task_progress`),
+  which lists the result under the uid the record carries or updates the listed one in
+  place.
+- The header's Recover button (`workflow-discover`) asks the daemon for the newest settled
+  records under the configured root and opens the recovery modal on those this document
+  has not imported; the panel shows a count link while any wait there. A *finished* record
+  offers *import*, which loads the result off the document thread and delivers it once;
+  an *interrupted* one (its daemon exited while it ran) only its details and logs, a
+  failed one its error. Any entry can be forgotten without touching the disk.
 - Loading a slot replaces the references: a referenced workflow still running is followed
   again (the row already following it in the same document is re-subscribed under the new
   generation rather than duplicated), a finished one whose result the slot does not hold
-  is offered for import, an interrupted, failed or cancelled one is shown as such, and one
-  whose record folder is gone is reported as skipped. The footer names each outcome.
-- Recovery never resumes a native calculation. A detached record is signalled only once
-  its driver is verified (the pid still runs `tumult.synthesis.driver` for that
-  workflow id on this host, or `squeue` lists the Slurm job); an interrupted record
-  cannot be attached or cancelled, only read.
+  is offered for recovery, an interrupted, failed or cancelled one is shown as such, and
+  one whose record folder is gone is reported as skipped. The footer names each outcome.
+- Recovery never resumes a native calculation. A record queued when its daemon exited is
+  run by the next daemon; one that was running is marked interrupted.
 
-Preferences → Engine chooses where workflows run (`workflow_runner`): *local*, the
-machine's worker daemon (`tumult.synthesis.daemon`, started on demand, outliving the
-server, exiting when idle), or *slurm* (the per-workflow driver submitted through the
-configured batch script). Tests set *in-process* to keep a stubbed execution in the
-server. A detached workflow is followed by a polling watcher rather than a future; its
-row shows the driver and its cancel button behaves as for an in-process one, and it can
-be attached again after a server restart. See `docs/FAQ.md`, "How do I launch a long
-calculation and come back later?".
+The daemon's socket, locks and log live in `/tmp/tumult-<uid>/` (`$TUMULT_DAEMON_DIR`
+overrides it). The Bokeh server connects when it loads (`app_hooks.on_server_loaded`) as a
+*server*, which keeps the daemon alive, registers the output root and sets the budget from
+Preferences → Engine → *Max threads*; changing that preference reconfigures the running
+daemon. The daemon exits once no workflow runs or waits and no server is connected, so it
+finishes the work of a server that was stopped, and a restarted server reconnects to it or
+starts a new one. Scripts submit visible jobs with `tumult.synthesis.submit` or
+`submit_task` as *clients*: they show up in every document's panel, can be cancelled from
+there, and a script may exit after submitting. `workflow_runner` chooses *local* (the
+daemon) or *slurm* (the per-workflow driver submitted through the configured batch
+script, whose record is polled and whose row shows its Slurm id). See `docs/FAQ.md`, "How
+do I launch a long calculation and come back later?".
 
-Recover also lists *external runs*: dispatch runs under the same root that no workflow
-record names, found by the `job.nml` dispatch writes for itself, when they are running,
-queued or lost. A live one offers *end* (`jobrecord.cancel`: `scancel`, or SIGTERM to a
-pid the process table confirms still runs that input), a departure solve offers *use as
-saved departures* (fills the modal's field and switches it to NLTE), a lost spectrum run
-offers *open*; any can be forgotten. Finished runs are not listed; the file picker opens
-them.
+External runs are dispatch runs under the registered roots that no workflow record names,
+found by the `job.nml` dispatch writes for itself. While a server is connected, the daemon
+scans for live ones every 10 s. Ending one uses `jobrecord.cancel` (`scancel`, or SIGTERM
+to a pid the process table confirms still runs that input); a departure solve can be used
+as the synthesis modal's saved departures. Finished runs are not listed; the file picker
+opens them.
 
-Server shutdown (`app_hooks.on_server_unloaded` → `tumult.synthesis.runtime.shutdown`)
-stops admission, cancels queued and live in-process workflows (detached ones keep
-running), kills the dispatch children of leaf
-jobs and waits at most `runtime.SHUTDOWN_TIMEOUT_S` (10 s) for the pool workers. Work
-still running after that, such as an in-process HOP calculation, is reported by thread
-name in the log and left to finish on its own; it is never claimed stopped.
+Server shutdown (`app_hooks.on_server_unloaded`) closes the daemon connection, leaving
+workflows to the daemon, then `tumult.synthesis.runtime.shutdown` stops admission to the
+server's pools, kills the dispatch children of its leaf jobs and waits at most
+`runtime.SHUTDOWN_TIMEOUT_S` (10 s) for the pool workers. Work still running after that,
+such as an in-process HOP calculation, is reported by thread name in the log and left to
+finish on its own; it is never claimed stopped.
 
 ## Saved sessions and preferences
 
@@ -194,7 +210,7 @@ on load. Slots are path-backed workspace saves, not portable archives: external 
 and atoms are re-read from their paths without a content check. There is no slot export,
 import, rename or overwrite, and no resumable scientific calculation in a slot. Running
 jobs are not saved, except that the slot references the durable workflows the document
-was attached to (see "Recovering durable workflows after a reconnect"); the config file
+was attached to (see "Durable workflows and recovery"); the config file
 is version 2 for that field.
 
 ## Toolbar

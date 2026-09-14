@@ -26,9 +26,9 @@ REPO_DIR = str(Path(__file__).resolve().parent.parent)
 # grids themselves are the Atmosphere grids page (GridManager): the catalogue grids on
 # disk plus custom records stored under the "synthesis" section key "atmos_grids".
 INTERP_METHODS = ["NaturalNeighbor", "Delaunay"]   # NN: smoother (more nodes); Delaunay: fast
-# where synthesis workflows run (tumult.synthesis.submission): "local" is the worker
-# daemon on this machine, which outlives the server; "slurm" submits each workflow through
-# the batch script. Tests set "in-process" to keep the stubbed execution in the server.
+# where synthesis workflows run (tumult.synthesis.submission): "local" is this user's
+# workflow daemon on this machine, which outlives the server; "slurm" submits each
+# workflow through the batch script. "max_threads" is the daemon's CPU budget.
 WORKFLOW_RUNNERS = ["local", "slurm"]
 SELECT_OPTIONS = {"interp_method": INTERP_METHODS, "workflow_runner": WORKFLOW_RUNNERS}
 # defaults follow the Fortran namelist defaults (composition/atom/atmos/spectrum _params);

@@ -32,6 +32,7 @@ the preference sheets and the run-cache listing). See ``docs/GUIWorkflow.md``.
 from __future__ import annotations
 
 import html
+import logging
 from pathlib import Path
 
 import store
@@ -537,8 +538,24 @@ class SynthModal:
                     picker.preset(str(prefs.get(other) or ""))
         if key in ("linelist", "dispatch_cwd"):
             self.on_inputs_change()
+        if key == "max_threads":
+            self._configure_daemon(prefs)
         toggle(self._slurm_bridge, prefs.get("workflow_runner") != "slurm")
         self._refresh_warnings(push=True)
+
+    @staticmethod
+    def _configure_daemon(prefs):
+        """The Engine thread preference is the workflow daemon's budget; tell the daemon
+        through this server's connection (a harness without one has no daemon to tell)."""
+        from tumult.synthesis import daemon
+        connection = daemon.current()
+        if connection is None or connection.role != "server":
+            return
+        try:
+            connection.request("configure", max_threads=int(prefs.get("max_threads") or 0))
+        except (OSError, ValueError, daemon.DaemonError):
+            logging.getLogger(__name__).warning("The daemon budget was not changed",
+                                                exc_info=True)
 
     @staticmethod
     def _prefs_root(prefs):

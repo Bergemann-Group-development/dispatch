@@ -40,17 +40,18 @@
       <!-- measurement objects: a line-mask set measured on one spectrum, plus the
            ionisation-balance fit standing on it (see ionbalance.IonBalanceTool) -->
       <div id="ionbal-results">{{ ionbal_results_html|safe }}</div>
-      <!-- background work this document admitted (loads, synthesis, line strengths):
-           queued and running rows cancel their job, a cancelling row waits for its
-           worker, a failed row keeps its error until dismissed (see app.processes_html).
-           Recover lists the durable workflow records under the configured synthesis
-           root (running ones to attach, finished ones to import, interrupted ones as
-           such) for a document that reconnected after its tab or server went away. -->
+      <!-- background work: this document's jobs, then the workflow daemon's jobs of
+           other tabs and scripts and dispatch runs started outside any workflow (see
+           processes.processes_html). The header counts the daemon's threads in use over
+           its budget; Recover opens the settled workflow records to import or forget. -->
       <div class="processes-panel">
         <div class="section-header processes-header">Processes
-          <button class="object-btn" data-action="workflow-discover" data-uid="-"
-                  title="Recover: list the workflow records under the synthesis output root">
-            <i class="ti ti-refresh"></i></button>
+          <span class="processes-tools">
+            <span id="processes-usage" class="processes-usage">{{ processes_usage_html }}</span>
+            <button class="object-btn" data-action="workflow-discover" data-uid="-"
+                    title="Recover: the settled workflow records under the synthesis output root">
+              <i class="ti ti-refresh"></i></button>
+          </span>
         </div>
         <div id="processes">{{ processes_html|safe }}</div>
       </div>
@@ -749,6 +750,21 @@
   </div>
 </dialog>
 
+<!-- a Processes row's details: progress, threads and driver, timing, inputs, runs, log
+     tails and the actions that apply (processes.workflow_details_html and friends) -->
+<dialog id="job-modal" class="modal modal-lg">
+  <div class="modal-header"><span class="modal-title">Job details</span></div>
+  <div class="modal-body job-details" id="job-details"></div>
+  <div class="modal-footer"><button class="text-btn modal-cancel">Close</button></div>
+</dialog>
+
+<!-- settled workflow records this document has not imported (processes.recovery_html) -->
+<dialog id="recovery-modal" class="modal modal-lg">
+  <div class="modal-header"><span class="modal-title">Recover workflow records</span></div>
+  <div class="modal-body" id="recovery-list"></div>
+  <div class="modal-footer"><button class="text-btn modal-cancel">Close</button></div>
+</dialog>
+
 <dialog id="workspace-load-modal" class="modal">
   <div class="modal-header"><span class="modal-title">Load saved workspace?</span></div>
   <div class="modal-body">Your current workspace has unsaved changes. Loading replaces it.</div>
@@ -855,6 +871,25 @@
   }
 
   wireModal(null, null, 'workspace-load-modal');
+  wireModal(null, null, 'job-modal');
+  wireModal(null, null, 'recovery-modal');
+
+  // a Processes row names when its job started (data-since, epoch seconds); after 10 s
+  // the elapsed time follows its state, refreshed here rather than by the server
+  function formatElapsed(seconds) {
+    seconds = Math.floor(seconds);
+    if (seconds < 60) return seconds + ' s';
+    if (seconds < 3600) return Math.floor(seconds / 60) + ' min';
+    var minutes = Math.floor(seconds % 3600 / 60);
+    return Math.floor(seconds / 3600) + ' h ' + (minutes < 10 ? '0' : '') + minutes + ' min';
+  }
+  setInterval(function () {
+    var now = Date.now() / 1000;
+    document.querySelectorAll('#processes .process-elapsed[data-since]').forEach(function (el) {
+      var seconds = now - parseFloat(el.dataset.since);
+      el.textContent = seconds >= 10 ? ' · ' + formatElapsed(seconds) : '';
+    });
+  }, 1000);
   wireModal('open-settings', 'close-settings', 'settings-modal');
 
   // cache page actions go through the dedicated "cache-actions" channel
@@ -1262,6 +1297,17 @@
     var swatch = ev.target.closest('.color-swatch');
     if (swatch) {
       m.setv({ value: 'color:' + swatch.dataset.color + ':' + Date.now() });
+      return;
+    }
+    var copy = ev.target.closest('.job-copy');
+    if (copy) {
+      if (navigator.clipboard) navigator.clipboard.writeText(copy.dataset.copy);
+      return;
+    }
+    var jobAction = ev.target.closest('.job-action');
+    if (jobAction) {
+      if (jobAction.classList.contains('danger') && !confirm(jobAction.textContent + '?')) return;
+      m.setv({ value: jobAction.dataset.action + ':' + jobAction.dataset.uid + ':' + Date.now() });
       return;
     }
     var btn = ev.target.closest('.object-btn');

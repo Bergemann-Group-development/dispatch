@@ -325,23 +325,21 @@ result under `.../result/`. `progress` labels its counts `estimated`; a full bar
 convergence. A record left `queued` or `running` by a process that no longer exists reports
 `interrupted`; nothing resumes automatically.
 
-By default the workflow runs in a thread of the submitting process and ends with it.
-Three detached drivers outlive the submitter (POSIX only):
+The workflow runs in this user's workflow daemon on this host (POSIX only), which outlives
+the submitter, or in a Slurm job:
 
 ```python
-job = submit(request, detach='daemon')                   # this machine's worker daemon
-job = submit(request, detach='process')                  # own process, own session
+job = submit(request)                                        # the workflow daemon
 job = submit(request, detach='slurm', slurm_script='driver.sbatch')
 ```
 
-`daemon` hands the record to `python -m tumult.synthesis.daemon <root>`, one long-lived
-worker per output root that is started when none is alive, serves every queued record,
-shares identical dispatch runs and one thread budget between workflows as the server
-does, and exits after ten idle minutes (`_workflows/daemon.json` names it,
-`daemon.log` is its log). Interpreter startup is paid once, so short syntheses are not
-delayed; this is what the GUI uses. `process` starts `python -m tumult.synthesis.driver
-<folder>` per workflow with its own log, `<folder>/driver.log`, at the cost of a few
-seconds of startup each. `slurm` runs `sbatch <slurm_script> <folder>`; the script
+The daemon is started on first use and listens on a Unix socket in `/tmp/tumult-<uid>/`,
+where `daemon.log` is its log. It runs one workflow at a time, first come first served,
+with the whole CPU budget: `cpu_count - 1` unless a TumultStudio2 server set its Engine
+preference. A script connects as a *client*, so it may submit and exit; the daemon exits
+once nothing runs or waits and no server is connected. Interpreter startup is paid once,
+so short syntheses are not delayed, and a GUI document shows script jobs in its Processes
+panel and can cancel them. `slurm` runs `sbatch <slurm_script> <folder>`; the script
 supplies the resources and must run the driver on the allocation, for example
 
 ```sh
@@ -350,44 +348,34 @@ supplies the resources and must run the driver on the allocation, for example
 python -m tumult.synthesis.driver "$1"
 ```
 
-The driver executes the recorded request, records its pid and host in the `driver` block
-of `workflow.json`, and settles the record itself. `open_workflow` from any later process
-reports the true state: `running` while the pid still runs that driver on this host
-(checked by command line, so a reused pid is not mistaken for it) or `squeue` lists the
-job, `interrupted` once neither does. `cancel()` sets `cancel_requested` for the daemon,
-sends SIGTERM to a driver's process group or calls `scancel`; the worker cancels through
-its own token, so the dispatch child is killed and its partial cache entry removed as for
-an in-process cancel. An interrupted record is never signalled. A daemon record queued
-when its daemon died stays `queued` and is claimed by the next daemon, which
-`discover_workflows` starts on finding such a record. Without the argument,
-`request.prefs['workflow_runner']` (`local` for the daemon, `slurm`, `in-process`) and
-`request.prefs['slurm_script']` choose the driver.
+The daemon or driver records its pid and host in the `driver` block of `workflow.json`
+and settles the record. `open_workflow` from any later process reports the true state:
+`running` while the daemon that claimed it still runs (its lock is held) or `squeue` lists
+the job, `interrupted` once neither holds. `result()` waits on the daemon's events, so it
+returns as soon as the record settles. `cancel()` asks the daemon, or calls `scancel`;
+the worker cancels through its own token, so the dispatch child is killed and its partial
+cache entry removed. A record queued when its daemon died stays `queued` and is run by the
+next daemon. Without the argument, `request.prefs['workflow_runner']` (`local` for the
+daemon, `slurm`) and `request.prefs['slurm_script']` choose the driver. For a calculation
+without a record or a daemon, call `run_synthesis` (blocking, in this process); its
+dispatch runs still appear in the GUI as external runs.
 
-**In the GUI**, every synthesis the modal launches (a free range, a mask set, a 1D grid
-or file, a 3D snapshot) is submitted this way and keeps running when the browser tab
-closes; a fit is a document-owned job and is cancelled with the tab, since its result has
-no durable record yet. Preferences → Engine → *Run synthesis workflows* is *local* (the
-daemon) or *slurm*; either way the workflow survives stopping the server, and a document
-opened later can attach to it, cancel it and import its result. The Processes panel
-shows the session's own jobs with their phase, elapsed time, run count, driver and log
-names, and a reconnecting document can attach to a workflow that still runs, import a
-finished result once, and see interrupted records as such. Its Recover button also lists
-dispatch runs started outside the GUI (found by their `job.nml`) that are running,
-queued or lost: a live one can be ended, a departure solve handed to the modal's *Saved
-departures* field, a lost spectrum run opened (see `docs/GUIWorkflow.md`, "Recovering
-durable workflows after a reconnect").
+**In the GUI**, every dispatch calculation (a synthesis from the modal, a fit, an
+abundance run, an ionisation balance, NLTE corrections) is submitted this way and keeps
+running when the browser tab closes or the server stops. The Processes panel shows the
+session's own jobs, the daemon's other jobs and live dispatch runs started outside the
+GUI, each with threads and elapsed time, and a details modal with progress, runs, inputs
+and log tails; Recover offers finished results for import once (see
+`docs/GUIWorkflow.md`, "Durable workflows and recovery").
 
 Missing pieces:
 
-- Fits are not durable workflows; they are cancelled when the tab closes.
-- Iteration diagnostics (`progress`) are not shown in the GUI, only in Python.
+- Iteration diagnostics (`progress`) are not shown in the GUI beyond the details modal.
 - A Slurm driver runs every native run of the workflow on its one allocation; per-run
   `sbatch` through `tumult.launch(slurm_script=...)` is not connected to workflow records.
-- A standalone departure solve as a detached workflow needs the GUI entry point above;
-  a solve started from a shell is reachable through Recover in the meantime.
-- The daemon and the server's own leaf jobs (fits, abundance measurements) do not share
-  in-flight runs; an identical run started by both at the same moment would collide in
-  the cache folder. Finished runs are shared through the disk cache as before.
+- The daemon and a GUI server's own leaf jobs (broadening fits, line measurements) do not
+  share in-flight runs; an identical run started by both at the same moment would collide
+  in the cache folder. Finished runs are shared through the disk cache as before.
 
 ---
 

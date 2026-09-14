@@ -33,7 +33,7 @@ bundle of closures, and cross-tool reactions go through its event bus:
   admitted, with its queued/running/cancelling/terminal state (the Processes panel).
 * ``ctx.workflow_refs`` - the :class:`jobs.WorkflowRefs` this document is attached to,
   saved beside the workspace in a slot; ``ctx.recovery`` the :class:`jobs.Recovery`
-  records offered after a reconnect. ``ctx.discover_workflows``, ``ctx.attach_workflow``
+  records the recovery modal offers. ``ctx.discover_workflows``, ``ctx.attach_workflow``
   and ``ctx.import_workflow`` are the recovery actions.
 * ``ctx.generation`` - the workspace generation; work captures it when admitted and a
   delivery for another generation is dropped. ``advance_generation`` marks a workspace

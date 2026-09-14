@@ -489,14 +489,33 @@ body.resizing * { pointer-events: none !important; }
   border-radius: 2px; animation: indeterminate 1.1s ease-in-out infinite; }
 @keyframes indeterminate { 0% { margin-left: -40%; } 100% { margin-left: 100%; } }
 
-/* Processes panel: background work and recoverable workflow records, pinned to the
-   bottom of the left sidebar; its header carries the Recover button (see
-   app.processes_html) */
+/* Processes panel: background work pinned to the bottom of the left sidebar; its header
+   carries the thread count and the Recover button (see processes.processes_html) */
 .processes-panel { margin-top: auto; padding-top: 8px; border-top: 1px solid var(--border); }
 .processes-panel .section-header { margin-bottom: 4px; }
 .processes-header { display: flex; align-items: center; justify-content: space-between; }
 .processes-header .object-btn { cursor: pointer; }
-/* a record found on disk after a reconnect: attach (live), import (finished) or forget */
+.processes-tools { display: inline-flex; align-items: center; gap: 6px; }
+.processes-usage { font-size: 10px; color: var(--text-muted); font-weight: normal;
+  text-transform: none; letter-spacing: 0; }
+.object-btn.process-recover { width: 100%; justify-content: flex-start; font-size: 10px;
+  color: var(--accent); padding: 2px 4px; }
+/* the job details modal (processes.workflow_details_html) */
+.job-details { display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+.job-title { font-weight: 600; }
+.job-section-title { font-size: 10px; text-transform: uppercase; color: var(--text-muted);
+  margin-bottom: 2px; }
+.job-pairs, .job-runs { font-size: 11px; border-collapse: collapse; width: 100%; }
+.job-pairs th { text-align: left; font-weight: normal; color: var(--text-muted);
+  padding-right: 10px; white-space: nowrap; vertical-align: top; width: 1%; }
+.job-pairs td { word-break: break-all; }
+.job-runs th { text-align: left; font-weight: normal; color: var(--text-muted); }
+.job-log pre { font-size: 10px; max-height: 160px; overflow: auto; white-space: pre-wrap;
+  background: var(--bg); padding: 4px; margin: 2px 0; }
+.job-log summary { font-size: 11px; font-family: monospace; cursor: pointer; }
+.job-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.text-btn.job-action.danger { color: #e05c5c; }
+/* a settled record in the recovery modal: import (finished), details or forget */
 .object-item.process.recoverable { opacity: 1; }
 .object-item.process.recoverable > .ti { color: var(--text-muted); flex-shrink: 0; }
 .object-item.process.recoverable[data-state="interrupted"] > .ti,

@@ -51,7 +51,8 @@ from ionbalance import IonBalanceTool  # noqa: E402
 from tumult.synthesis import workflows as synth  # noqa: E402  (CancelToken/CancelledError for cancellable loads)
 from tumult.synthesis import submit as submit_synthesis  # noqa: E402
 from tumult.synthesis import submit_task as submit_task_record  # noqa: E402
-from tumult.synthesis import submission  # noqa: E402  (open/discover workflows on reconnect)
+from tumult.synthesis import submission  # noqa: E402  (open workflows on reconnect)
+from tumult.synthesis import daemon as workflow_daemon  # noqa: E402
 from synthprefs import PREF_LABELS, load_prefs, _resolve_path  # noqa: E402  (the configured workflow root)
 from filepicker import FilePicker  # noqa: E402
 from toolmanager import ToolManager  # noqa: E402
@@ -62,6 +63,8 @@ from session import (Workspace, SpectrumSnap, MaskSnap, AtomSnap, ResultsSnap, V
 from htmlbridge import BridgeSet, pulse, toggle  # noqa: E402
 from jobs import (ExternalRun, Job, Recoverable, QUEUED, RUNNING, CANCELLING, FINISHED, FAILED,  # noqa: E402
                   CANCELLED)
+import processes  # noqa: E402
+from processes import processes_html  # noqa: E402
 from debounce import Trailing  # noqa: E402
 from units import X_UNITS, Y_UNITS, to_range  # noqa: E402
 from tumult import linestrength
@@ -244,171 +247,6 @@ def footer_html(canvas):
     return f'<span class="pill">{len(objs)} {noun}</span><span class="pill">{rng}</span>'
 
 
-def _elapsed(seconds):
-    seconds = int(max(0.0, seconds))
-    if seconds < 60:
-        return f"{seconds} s"
-    if seconds < 3600:
-        return f"{seconds // 60} min"
-    return f"{seconds // 3600} h {seconds % 3600 // 60:02d} min"
-
-
-def _log_links(paths):
-    return "".join(
-        f'<span class="process-log" title="{html.escape(path)}">'
-        f'{html.escape(Path(path).name)}</span>' for path in paths)
-
-
-def _workflow_progress(job):
-    """The phase, elapsed time and native-run count of a durable workflow, from its
-    record alone (no log parsing on a repaint), and its log names."""
-    try:
-        record = job.handle.to_dict()
-    except (OSError, ValueError):
-        return "", ""
-    ended = record.get("ended") or time.time()
-    parts = [record.get("phase") or job.state, _elapsed(ended - record.get("submitted", ended))]
-    runs = len(record.get("runs") or ())
-    if runs:
-        parts.append(f"{runs} run{'' if runs == 1 else 's'}")
-    tag = _driver_tag(record)
-    if tag:
-        parts.append(tag)
-    return " · ".join(parts), _log_links(job.handle.logs)
-
-
-def _driver_tag(record):
-    """How a detached workflow runs, for its row: the daemon, its own process or a
-    Slurm job (with the id once the scheduler gave one)."""
-    driver = record.get("driver") or {}
-    kind = driver.get("kind")
-    if kind == "slurm":
-        return f"Slurm {driver['slurm_id']}" if driver.get("slurm_id") else "Slurm"
-    return {"daemon": "detached", "process": "own process"}.get(kind, "")
-
-
-def processes_html(jobs, recovery=()):
-    """The Processes panel body: one row per job this document admitted and has not yet
-    dismissed (see :class:`jobs.JobTable`), then one per recoverable workflow record
-    offered after a reconnect (:class:`jobs.Recovery`).
-
-    An active row spins and carries a cancel button (data-uid = the job id) that asks for
-    confirmation first when losing the job costs real work (a synthesis, a fit). A row
-    whose cancellation was requested keeps spinning, labelled, without the button until
-    its worker settles: a native call that ignores its token is still occupying it. A
-    durable workflow's row shows its phase, elapsed time, run count and log names. A
-    failed row is kept with its concise error and native log paths until dismissed.
-
-    A recoverable record's row names its state honestly: a live one offers *attach*, a
-    finished one *import*; an interrupted one (left queued or running by a server that
-    is gone), a failed or a cancelled one only its logs; every one can be forgotten."""
-    rows = []
-    for job in jobs:
-        state = job.display_state()
-        name = html.escape(job.name)
-        if state == FAILED:
-            error = html.escape(job.error or "failed")
-            rows.append(
-                f'<div class="object-item process failed" data-pid="{job.pid}" '
-                f'data-state="{state}">'
-                '<i class="ti ti-alert-circle"></i>'
-                f'<div class="process-meta"><span class="object-name" title="{name}">{name}</span>'
-                f'<span class="process-error" title="{error}">{error}</span>'
-                f'{_log_links(job.logs)}</div>'
-                f'<button class="object-btn" data-action="dismiss-job" data-uid="{job.pid}" '
-                f'title="Dismiss"><i class="ti ti-x"></i></button>'
-                '</div>')
-            continue
-        label = {QUEUED: "queued", CANCELLING: "cancelling…"}.get(state, "")
-        logs = ""
-        if job.handle is not None:
-            progress, logs = _workflow_progress(job)
-            label = f"{label} · {progress}" if label and progress else (label or progress)
-        button = "" if state == CANCELLING else (
-            f'<button class="object-btn danger" data-action="cancel-pending" '
-            f'data-uid="{job.pid}" data-confirm="{1 if job.heavy else 0}" '
-            f'title="Cancel"><i class="ti ti-x"></i></button>')
-        rows.append(
-            f'<div class="object-item process" data-pid="{job.pid}" data-state="{state}">'
-            '<span class="spinner"></span>'
-            f'<div class="process-meta"><span class="object-name" title="{name}">{name}</span>'
-            + (f'<span class="process-state">{html.escape(label)}</span>' if label else "")
-            + f'{logs}</div>{button}</div>')
-    for entry in recovery:
-        name = html.escape(entry.name)
-        wid = html.escape(entry.id)
-        if isinstance(entry, ExternalRun):
-            rows.append(_external_run_row(entry, name, wid))
-            continue
-        if entry.live:
-            icon, note = "ti-plug", f"{entry.state} · {_elapsed(entry.elapsed)} · not attached"
-            action = ('<button class="object-btn" data-action="workflow-attach" '
-                      f'data-uid="{wid}" title="Attach: follow it here and allow cancelling">'
-                      '<i class="ti ti-plug-connected"></i></button>')
-        elif entry.state == FINISHED:
-            icon, note = "ti-package", f"finished · {_elapsed(entry.elapsed)} · result on disk"
-            action = ('<button class="object-btn" data-action="workflow-import" '
-                      f'data-uid="{wid}" title="Import its result into the workspace">'
-                      '<i class="ti ti-download"></i></button>')
-        elif entry.state == "interrupted":
-            icon, action = "ti-plug-x", ""
-            note = "interrupted: the process that ran it is gone; nothing resumes"
-        else:
-            icon, action = "ti-alert-circle" if entry.state == FAILED else "ti-ban", ""
-            note = entry.state + (f": {entry.error}" if entry.error else "")
-        if entry.referenced:
-            note += " · from the loaded save"
-        rows.append(
-            f'<div class="object-item process recoverable" data-wid="{wid}" '
-            f'data-state="{html.escape(entry.state)}">'
-            f'<i class="ti {icon}"></i>'
-            f'<div class="process-meta"><span class="object-name" title="{wid}">{name}</span>'
-            f'<span class="process-state" title="{html.escape(note)}">{html.escape(note)}</span>'
-            f'{_log_links(entry.logs)}</div>{action}'
-            f'<button class="object-btn" data-action="workflow-forget" data-uid="{wid}" '
-            f'title="Forget this record here (it stays on disk)"><i class="ti ti-x"></i>'
-            '</button></div>')
-    return "".join(rows)
-
-
-def _external_run_row(entry, name, wid):
-    """A run found by its own record: where it runs, then cancel (live), open (a spectrum
-    run) or use as saved departures (a departure solve), and forget."""
-    where = []
-    if entry.slurm_id:
-        where.append(f"Slurm {entry.slurm_id}")
-    elif entry.pid:
-        where.append(f"pid {entry.pid}" + (f" on {entry.host}" if entry.host else ""))
-    note = " · ".join([entry.state, *where, "started outside this session"])
-    if entry.state == "lost":
-        note = "lost: recorded as running but its process is gone" + (
-            f" (pid {entry.pid})" if entry.pid else "")
-    actions = []
-    if entry.live:
-        actions.append('<button class="object-btn danger" data-action="run-cancel" '
-                       f'data-uid="{wid}" data-confirm="1" title="End this run">'
-                       '<i class="ti ti-player-stop"></i></button>')
-    if entry.departures:
-        actions.append('<button class="object-btn" data-action="run-departures" '
-                       f'data-uid="{wid}" title="Use as saved departures in the synthesis modal">'
-                       '<i class="ti ti-arrow-bar-to-right"></i></button>')
-    elif not entry.live:
-        actions.append('<button class="object-btn" data-action="run-open" '
-                       f'data-uid="{wid}" title="Open the run as a spectrum">'
-                       '<i class="ti ti-download"></i></button>')
-    icon = "ti-terminal-2" if entry.live else "ti-plug-x"
-    return (f'<div class="object-item process recoverable external" data-wid="{wid}" '
-            f'data-state="{html.escape(entry.state)}">'
-            f'<i class="ti {icon}"></i>'
-            f'<div class="process-meta"><span class="object-name" title="{html.escape(entry.folder)}">'
-            f'{name}</span>'
-            f'<span class="process-state" title="{html.escape(note)}">{html.escape(note)}</span>'
-            f'{_log_links(entry.logs)}</div>{"".join(actions)}'
-            f'<button class="object-btn" data-action="workflow-forget" data-uid="{wid}" '
-            f'title="Forget this run here (it stays on disk)"><i class="ti ti-x"></i>'
-            '</button></div>')
-
-
 def build():
     # the canvas starts empty — the user opens or synthesizes the first spectrum
     start_dir = picker_start_dir()
@@ -424,6 +262,12 @@ def build():
     objects_bridge = B.html("objects")
     # the job list, bottom left; named so a harness can read what the panel shows
     processes_bridge = B.html("processes", name="processes")
+    processes_usage_bridge = B.html("processes-usage", name="processes-usage")
+    # the job details and recovery modals, filled before they open
+    job_details_bridge = B.html("job-details", name="job-details")
+    job_modal = B.dialog("job-modal")
+    recovery_bridge = B.html("recovery-list", name="recovery-list")
+    recovery_modal = B.dialog("recovery-modal")
     inspector_bridge = B.html("inspector")
     footer_bridge = B.html("footer-info")
     # transient info messages (left of footer); named for the same reason
@@ -575,9 +419,41 @@ def build():
                             jumped={name: w._jumped for name, w in wizards.items()}),
         ).to_dict()
 
+    # the daemon's running and queued jobs and its thread use, once this process holds a
+    # daemon connection (a Bokeh server connects when it loads, a harness when it first
+    # submits); each change repaints the Processes panel, coalesced per tick
+    live_view = {"view": None, "unwatch": None, "repaint": False}
+
+    def live():
+        try:
+            view = workflow_daemon.live_jobs()
+        except (OSError, workflow_daemon.DaemonError):
+            log.warning("The workflow daemon cannot be reached", exc_info=True)
+            return None
+        if view is not None and view is not live_view["view"]:
+            if live_view["unwatch"] is not None:
+                live_view["unwatch"]()
+            live_view["view"], live_view["unwatch"] = view, view.watch(_on_live_event)
+        return view
+
+    def _on_live_event(event):
+        if ctx.closed or live_view["repaint"]:
+            return
+        live_view["repaint"] = True
+
+        def apply():
+            live_view["repaint"] = False
+            repaint_processes()
+        ctx.schedule(apply)
+
+    def repaint_processes():
+        view = live()
+        processes_bridge.value = processes_html(jobs, view, ctx.recovery)
+        processes_usage_bridge.value = processes.usage_html(view)
+
     def update_all(canvas):
         objects_bridge.value = objects_panel_html(canvas, ctx.focus_kind)
-        processes_bridge.value = processes_html(jobs, ctx.recovery)
+        repaint_processes()
         inspector_bridge.value = inspector_html(canvas)
         footer_bridge.value = footer_html(canvas)
         synth_modal.refresh_targets()  # keep the fit target dropdown in sync
@@ -1156,7 +1032,15 @@ def build():
         job = Job(_nonce(), name, synth.CancelToken(), ctx.generation,
                   heavy=heavy, detached=detached, path=str(path) if path else None,
                   delivers=delivers)
-        return jobs.add(job)
+        jobs.add(job)
+        # the row appears once the job has lasted SHOW_AFTER_S (see processes_html)
+        try:
+            ctx.doc.add_timeout_callback(lambda: None if job.terminal or ctx.closed
+                                         else repaint_processes(),
+                                         int(processes.SHOW_AFTER_S * 1000) + 20)
+        except Exception:
+            pass                     # the document went away
+        return job
 
     def _admission_failed(job, exc):
         """The pool refused the job: the same terminal path as a failure in flight, so
@@ -1182,7 +1066,7 @@ def build():
                 _settle(job, None, None, None)
                 return
             if job.state == QUEUED:
-                job.state = RUNNING
+                job.state, job.started = RUNNING, time.time()
                 ctx.schedule(lambda: update_all(canvas))
             try:
                 result = profiled(name, lambda: loader(token))
@@ -1256,23 +1140,24 @@ def build():
 
         handle.add_done_callback(settled)
 
-    PROGRESS_POLL_MS = 2000
+    PROGRESS_POLL_MS = 2000        # Slurm records only; the daemon reports its snapshots
 
     def _follow_progress(job, handle, on_progress):
         """While ``job`` runs, hand every new progress snapshot of its record to
-        ``on_progress`` on the document thread. The record is polled (its writer is
-        another process); the snapshot is decoded off the document thread, since it can
-        carry a spectrum, and one read is in flight at a time. Ends with the job, the
-        document or the workspace generation."""
+        ``on_progress`` on the document thread. The daemon reports each snapshot's stamp
+        (a Slurm record is polled instead); the snapshot is decoded off the document
+        thread, since it can carry a spectrum, one read at a time, and a stamp that
+        arrives during a read is read next. Ends with the job, the document or the
+        workspace generation."""
         if on_progress is None or not handle.kind.progress:
             return
-        state = {"stamp": None, "busy": False, "callback": None}
+        state = {"stamp": None, "busy": False, "stop": None}
 
         def stop():
-            callback, state["callback"] = state["callback"], None
-            if callback is not None:
+            stopper, state["stop"] = state["stop"], None
+            if stopper is not None:
                 try:
-                    ctx.doc.remove_periodic_callback(callback)
+                    stopper()
                 except Exception:
                     pass                 # already removed, or the document is gone
 
@@ -1305,10 +1190,16 @@ def build():
                         on_progress(snapshot)
                     except Exception:
                         log.exception("%s (job %d): progress not applied", job.name, job.pid)
+                    tick()               # a newer snapshot written during the read
                 ctx.schedule(deliver)
             _EXEC.submit(read)
 
-        state["callback"] = ctx.doc.add_periodic_callback(tick, PROGRESS_POLL_MS)
+        if handle.detached == "slurm":
+            callback = ctx.doc.add_periodic_callback(tick, PROGRESS_POLL_MS)
+            state["stop"] = lambda: ctx.doc.remove_periodic_callback(callback)
+        else:
+            state["stop"] = handle.on_progress(lambda stamp: ctx.schedule(tick))
+            ctx.schedule(tick)           # a snapshot written before this document followed
 
     def submit_workflow(name, request, on_done, meta=None):
         """Queue one durable synthesis workflow and deliver its result to this document
@@ -1364,7 +1255,7 @@ def build():
 
     # --- recovery of durable workflows after a reconnect ------------------------------
     def _offer(handle, referenced=False):
-        """List ``handle`` under the jobs unless this document already follows it or has
+        """List ``handle`` for recovery unless this document already follows it or has
         imported its result. Returns the entry, or ``None``."""
         if jobs.find_workflow(handle.id) is not None or ctx.workflow_refs.imported(handle.id):
             return None
@@ -1376,83 +1267,81 @@ def build():
         return ctx.recovery.offer(entry)
 
     def discover_workflows(limit=20):
-        """Scan the configured roots for workflow records and offer the newest ones this
-        document neither follows nor has imported, then the dispatch runs under the same
-        roots that no workflow accounts for (see :func:`discover_runs`). Returns the ids
-        offered."""
+        """Ask the daemon for the newest settled records under the configured roots and
+        offer the ones this document has not imported in the recovery modal, which opens
+        on them. Running and queued workflows are rows of the panel already. Returns the
+        ids offered."""
+        try:
+            workflow_daemon.client()
+            view = live()
+            reply = view.refresh(workflow_roots(), limit) if view is not None else {"jobs": []}
+        except (OSError, workflow_daemon.DaemonError) as exc:
+            notify(f"The workflow daemon cannot be reached: {exc}", level="danger")
+            return []
         offered = []
-        for root in workflow_roots():
-            for handle in submission.discover_workflows(root, limit=limit):
-                entry = _offer(handle, referenced=handle.id in ctx.workflow_refs)
-                if entry is not None:
-                    offered.append(entry.id)
-        offered.extend(discover_runs(limit=limit))
-        update_all(canvas)
-        n = len(ctx.recovery)
-        notify(f"{n} recoverable workflow{'' if n == 1 else 's'} or run{'' if n == 1 else 's'} under "
-               + ", ".join(str(root) for root in workflow_roots()), level="info")
+        for summary in reply["jobs"]:
+            if summary["type"] != "workflow" or summary["state"] in (QUEUED, RUNNING):
+                continue
+            handle = submission.open_workflow(summary["folder"])
+            entry = _offer(handle, referenced=handle.id in ctx.workflow_refs)
+            if entry is not None:
+                offered.append(entry.id)
+        show_recovery()
         return offered
 
-    def discover_runs(limit=20):
-        """Offer the dispatch runs under the configured roots that were started outside
-        any workflow (a shell, a notebook, a batch script) and are running, queued or
-        lost; finished ones are ordinary run folders for the file picker. A run named by
-        a workflow record belongs to that workflow and is not listed twice."""
-        from tumult.synthesis import jobrecord
-        offered = []
-        for root in workflow_roots():
-            try:
-                accounted = {run for handle in submission.discover_workflows(root, revive=False)
-                             for run in handle.runs}
-                records = jobrecord.scan(root, limit=limit)
-            except OSError as exc:
-                log.warning("Could not scan %s for runs: %s", root, exc)
-                continue
-            for record in records:
-                if record["resolved"] not in ("running", "submitted", "lost"):
-                    continue
-                if str(Path(record["output"]).resolve()) in {str(Path(r).resolve()) for r in accounted}:
-                    continue
-                entry = ExternalRun.from_record(record)
-                if entry.id not in ctx.recovery:
-                    ctx.recovery.offer(entry)
-                    offered.append(entry.id)
-        return offered
+    def show_recovery():
+        recovery_bridge.value = processes.recovery_html(ctx.recovery)
+        repaint_processes()
+        pulse(recovery_modal, "open")
+
+    def _live_summary(job_id):
+        view = live()
+        return view.get(job_id) if view is not None else None
 
     def _external_run(run_id):
-        entry = ctx.recovery.get(run_id)
-        return entry if isinstance(entry, ExternalRun) else None
+        summary = _live_summary(run_id)
+        if summary is None or summary["type"] != "external":
+            return None
+        return ExternalRun.from_summary(summary)
 
     def cancel_run(run_id):
-        """End an external run through its record: scancel, or SIGTERM to a pid the
-        process table confirms still runs that input. The row then reads cancelled."""
-        from tumult.synthesis import jobrecord
+        """End an external run through the daemon, which signals it only when the process
+        table confirms the recorded pid still runs that input (or scancels it)."""
         entry = _external_run(run_id)
         if entry is None:
             return
-        if jobrecord.cancel(entry.folder):
+        try:
+            state = workflow_daemon.client().request("cancel", job=run_id)["state"]
+        except (OSError, workflow_daemon.DaemonError) as exc:
+            notify(f"{entry.name} could not be ended: {exc}", level="danger")
+            return
+        if state == CANCELLED:
             notify(f"Ended {entry.name}", level="info")
-            ctx.recovery.forget(run_id)
+            pulse(job_modal, "close")
         else:
-            notify(f"{entry.name} could not be signalled from here; it is "
-                   f"{jobrecord.state_of(entry.folder)}", level="warn")
-        update_all(canvas)
+            notify(f"{entry.name} could not be signalled from here; it is {state}", level="warn")
+        repaint_processes()
 
-    def open_run(run_id):
-        """Open an external run's spectrum, as the file picker's Load this run does."""
-        entry = _external_run(run_id)
-        if entry is None:
+    def cancel_workflow(workflow_id):
+        """Cancel a daemon workflow this document does not follow (another tab's, a
+        script's) from its row."""
+        summary = _live_summary(workflow_id)
+        folder = summary["folder"] if summary else None
+        if folder is None:
+            entry = ctx.recovery.get(workflow_id)
+            folder = entry.handle.folder if entry is not None else None
+        if folder is None:
             return
-        folder = Path(entry.folder)
-
-        def add(spec):
-            color, dash = canvas.next_run_style()
-            canvas.add_object(spec, name=entry.name, color=color, dash=dash,
-                              source=("run", str(folder)))
-
-        ctx.recovery.forget(run_id)
-        update_all(canvas)
-        load_async(entry.name, lambda token=None: load_run(folder), add)
+        handle = submission.open_workflow(folder)
+        try:
+            told = handle.cancel()
+        except (OSError, workflow_daemon.DaemonError) as exc:
+            notify(f"{handle.label} could not be cancelled: {exc}", level="danger")
+            return
+        notify(f"Cancelling {handle.label}…" if told else f"{handle.label} is {handle.status}",
+               level="info" if told else "warn")
+        pulse(job_modal, "close")
+        repaint_processes()
 
     def use_run_departures(run_id):
         """Hand a departure solve to the synthesis modal's Saved departures field."""
@@ -1464,20 +1353,93 @@ def build():
         synth_modal.setup._save_mode("departure_field", entry.folder)
         notify(f"Synthesis modal set to reuse departures from {entry.name}", level="info")
 
+    def _details_target(uid):
+        """What a details button names: ``("job", Job)``, ``("workflow", handle,
+        summary, recoverable)`` or ``("run", ExternalRun)``; ``None`` if it is gone."""
+        if uid.startswith("job-"):
+            try:
+                job = jobs.get(int(uid[4:]))
+            except ValueError:
+                return None
+            return None if job is None else ("job", job)
+        summary = _live_summary(uid)
+        if summary is not None and summary["type"] == "external":
+            return ("run", ExternalRun.from_summary(summary))
+        recoverable = ctx.recovery.get(uid)
+        if summary is not None:
+            return ("workflow", submission.open_workflow(summary["folder"]), summary, None)
+        if recoverable is not None:
+            return ("workflow", recoverable.handle, None, recoverable)
+        ref = ctx.workflow_refs.get(uid)
+        if ref is not None:
+            return ("workflow", submission.open_workflow(ref.folder), None, None)
+        return None
+
+    def show_details(uid):
+        """Fill and open the job details modal for a row's details button."""
+        target = _details_target(uid)
+        if target is None:
+            notify("That job is no longer listed", level="warn")
+            repaint_processes()
+            return
+        try:
+            if target[0] == "run":
+                body = processes.run_details_html(target[1])
+            elif target[0] == "job" and target[1].handle is None:
+                body = processes.job_details_html(target[1])
+            elif target[0] == "job":
+                job = target[1]
+                body = processes.workflow_details_html(
+                    job.handle, _live_summary(job.workflow_id), job=job)
+            else:
+                _, handle, summary, recoverable = target
+                follower = jobs.find_workflow(handle.id)
+                body = processes.workflow_details_html(handle, summary, job=follower,
+                                                       recoverable=recoverable)
+        except (OSError, ValueError, KeyError) as exc:
+            notify(f"The details cannot be read: {exc}", level="danger")
+            return
+        job_details_bridge.value = body
+        pulse(job_modal, "open")
+
+    def open_folder(uid):
+        """Show a job's folder in the file manager of the machine the server runs on."""
+        import subprocess
+        target = _details_target(uid)
+        if target is None:
+            return
+        if target[0] == "run":
+            folder = target[1].folder
+        elif target[0] == "job":
+            folder = target[1].handle.folder if target[1].handle is not None else None
+        else:
+            folder = target[1].folder
+        if folder is None:
+            return
+        opener = "open" if sys.platform == "darwin" else "xdg-open"
+        try:
+            subprocess.Popen([opener, str(folder)], stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+        except OSError as exc:
+            notify(f"Could not open {folder}: {exc}", level="warn")
+
     def _reopen(workflow_id):
-        """The handle for an offered or referenced workflow; ``None`` if it is unknown."""
+        """The handle for an offered, referenced or live workflow; ``None`` if it is
+        unknown."""
         entry = ctx.recovery.get(workflow_id)
         if entry is not None:
             return entry.handle
         ref = ctx.workflow_refs.get(workflow_id)
-        return submission.open_workflow(ref.folder) if ref is not None else None
+        if ref is not None:
+            return submission.open_workflow(ref.folder)
+        summary = _live_summary(workflow_id)
+        return submission.open_workflow(summary["folder"]) if summary is not None else None
 
     def attach_workflow(workflow_id):
         """Follow a live workflow from here: a new job under the current generation whose
         row can cancel it through the handle and whose completion is delivered once. Live
-        means a workflow this server runs or a detached driver (process or Slurm job)
-        that still exists; a record without one cannot be attached and nothing is
-        resumed."""
+        means queued or running in the daemon, or a Slurm job that still exists; a record
+        without one cannot be attached and nothing is resumed."""
         handle = _reopen(workflow_id)
         if handle is None:
             return None
@@ -1499,9 +1461,11 @@ def build():
             return None
         job = _admit(handle.label, heavy=True, detached=True)
         job.handle = handle
+        job.started = handle.to_dict().get("started")
         job.token.add_callback(handle.cancel)
         ctx.workflow_refs.attach(handle, handle.label)
         ctx.recovery.forget(workflow_id)
+        pulse(job_modal, "close")
         _subscribe(job, handle, deliver)
         _follow_progress(job, handle, _import_progress(handle))
         update_all(canvas)
@@ -1529,10 +1493,12 @@ def build():
             ctx.workflow_refs.attach(handle, handle.label, imported=True)
 
         ctx.recovery.forget(workflow_id)
+        recovery_bridge.value = processes.recovery_html(ctx.recovery)
         return load_async(f"import {handle.label}", lambda token=None: handle.result(), done)
 
     def forget_workflow(workflow_id):
         if ctx.recovery.forget(workflow_id) is not None:
+            recovery_bridge.value = processes.recovery_html(ctx.recovery)
             update_all(canvas)
 
     def _reattach(refs):
@@ -1581,6 +1547,8 @@ def build():
         for job in jobs.active:
             if not job.detached:
                 jobs.request_cancel(job.pid)
+        if live_view["unwatch"] is not None:
+            live_view["unwatch"]()
 
     ctx.doc.on_session_destroyed(session_closed)
 
@@ -1693,8 +1661,10 @@ def build():
         "workflow-attach": attach_workflow,
         "workflow-import": import_workflow,
         "workflow-forget": forget_workflow,
+        "workflow-cancel": cancel_workflow,
+        "job-details":  show_details,
+        "folder-open":  open_folder,
         "run-cancel":   cancel_run,
-        "run-open":     open_run,
         "run-departures": use_run_departures,
         "select":       focus_spectrum,
         "color":        set_color,
@@ -1968,19 +1938,7 @@ def build():
 
     ionbaltool.refresh()      # the balance modal's target selector
 
-    # a reconnect: workflows still running, in this server or under a detached driver,
-    # are offered at once; finished and interrupted records wait for Recover
-    for root in workflow_roots():
-        try:
-            handles = submission.discover_workflows(root)
-        except OSError:
-            logging.exception("Could not scan %s for workflows", root)
-            continue
-        for handle in handles:
-            if not handle.done:
-                _offer(handle)
-    if len(ctx.recovery):
-        processes_bridge.value = processes_html(jobs, ctx.recovery)
+    repaint_processes()       # the daemon's jobs are rows from the first paint on
 
     inspector.bind(canvas.selected())
     sel = canvas.selected()
@@ -1990,7 +1948,8 @@ def build():
         css=(HERE / "static" / "style.css").read_text(),
         main_empty=not canvas.objects,  # bake the empty-state class into the first paint
         objects_html=objects_panel_html(canvas),
-        processes_html=processes_html(jobs, ctx.recovery),
+        processes_html=processes_bridge.value,
+        processes_usage_html=processes_usage_bridge.value,
         inspector_html=inspector_html(canvas),
         footer_html=footer_html(canvas),
         swatches_html=swatch_html(active_color),

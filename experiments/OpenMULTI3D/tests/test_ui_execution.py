@@ -22,6 +22,16 @@ def _temporary_config(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "CONFIG_PATH", tmp_path / "tumultstudio.json")
 
 
+@pytest.fixture(autouse=True)
+def _daemon_in_this_process(workflow_daemon, monkeypatch):
+    """Workflows run on a daemon thread of the test process, where the stubbed
+    calculations live. Rows are drawn as soon as a job is admitted; the delay that hides
+    jobs settling at once has its own test."""
+    import processes
+    monkeypatch.setattr(processes, "SHOW_AFTER_S", 0.0)
+    return workflow_daemon
+
+
 def test_scatter_ranges_include_error_bars():
     from abundwizard import AbundanceWizard, PANEL_AXES
 
@@ -387,8 +397,7 @@ def test_mask_tool_range_feeds_line_masks_and_the_synthesis_modal():
 def _stub_request(root):
     """A resolvable synthesis request whose execution the tests stub out."""
     from tumult.synthesis.request import SynthRequest
-    return SynthRequest(prefs={"abund_file": None, "dispatch_cwd": str(root),
-                               "workflow_runner": "in-process"},
+    return SynthRequest(prefs={"abund_file": None, "dispatch_cwd": str(root)},
                         grid={"folder": ""},
                         run_vals={"abundances": "", "relative_abundances": False,
                                   "mode": "LTE"},
@@ -447,18 +456,17 @@ def _send_action(document, value):
     document.select_one({"name": "object-actions"}).value = value
 
 
-def test_four_overlapping_workflow_submissions_settle_on_the_document(tmp_path, monkeypatch):
-    """Each durable synthesis is submitted once to the WORKFLOWS pool; four at once all
-    run concurrently (none waits on another queued job) and deliver to the document."""
-    import threading
+def test_overlapping_workflow_submissions_settle_on_the_document(tmp_path, monkeypatch):
+    """Four durable syntheses submitted at once each run in the daemon, one after the
+    other, and deliver their result on the document thread only, once each."""
     from tumult.synthesis import workflows
 
     document, ctx = _build_document()
     ticks = _Ticks(document, monkeypatch)
-    barrier = threading.Barrier(4, timeout=10)
+    order = []
 
     def execute(resolved, cancel_token=None):
-        barrier.wait()                      # deadlocks unless all four workers are live
+        order.append(resolved)
         return _stub_result(resolved)
 
     monkeypatch.setattr(workflows, "execute_request", execute)
@@ -469,44 +477,48 @@ def test_four_overlapping_workflow_submissions_settle_on_the_document(tmp_path, 
     assert len(active) == 4 and [job.handle for job in active] == handles
     assert [job.workflow_id for job in active] == [h.id for h in handles]
     assert len({h.id for h in handles}) == 4
-    assert ticks.wait(4), "every workflow must settle and schedule its delivery"
-    assert all(h.done and h.status == "finished" for h in handles)
+    for handle in handles:
+        handle.result(timeout=10)
+    assert all(h.status == "finished" for h in handles) and len(order) == 4
     assert not delivered                    # nothing reaches the workspace off-thread
-    ticks.run()
-    assert len(delivered) == 4 and all(len(r.spectra) == 1 for r in delivered)
-    assert not len(ctx.jobs)
+    assert ticks.settle(lambda: len(delivered) == 4)
+    assert all(len(r.spectra) == 1 for r in delivered)
+    assert ticks.settle(lambda: not len(ctx.jobs))
 
 
 def test_queued_workflow_cancelled_from_the_processes_panel_settles(tmp_path, monkeypatch):
-    """Cancelling a still-queued workflow through its Processes row cancels its future,
-    records it as cancelled, and clears the row and the live handle without a worker."""
+    """A workflow queued behind a running one is cancelled from its Processes row: the
+    daemon settles its record as cancelled without running it, and the row clears."""
     import threading
-    from concurrent.futures import ThreadPoolExecutor
-    from tumult.synthesis import submission, workflows
+    from tumult.synthesis import workflows
 
     document, ctx = _build_document()
     ticks = _Ticks(document, monkeypatch)
-    monkeypatch.setattr(workflows, "execute_request",
-                        lambda *a, **k: pytest.fail("a cancelled workflow ran"))
-    gate = threading.Event()
-    pool = ThreadPoolExecutor(1)
-    monkeypatch.setattr(submission, "WORKFLOWS", pool)
-    blocker = pool.submit(gate.wait, 10)
-    try:
-        delivered = []
-        handle = ctx.submit_workflow("queued", _stub_request(tmp_path), delivered.append)
-        job, = ctx.jobs.active
-        assert job.name == "queued" and handle.status == "queued"
-        assert job.display_state() == "queued"
-        _send_action(document, f"cancel-pending:{job.pid}:1")
-        assert handle.done and handle.status == "cancelled"
-        assert handle.id not in submission._live
-        assert ticks.settle(lambda: not len(ctx.jobs))
-        assert job.state == "cancelled" and not delivered
-    finally:
-        gate.set()
-        blocker.result(10)
-        pool.shutdown(wait=True)
+    started, release = threading.Event(), threading.Event()
+
+    def execute(resolved, cancel_token=None):
+        assert resolved.request.prefs.get("first"), "a cancelled workflow ran"
+        started.set()
+        assert release.wait(10)
+        return _stub_result(resolved)
+
+    monkeypatch.setattr(workflows, "execute_request", execute)
+    first = _stub_request(tmp_path)
+    first.prefs["first"] = True
+    ctx.submit_workflow("running", first, lambda r: None)
+    assert started.wait(10)
+    delivered = []
+    handle = ctx.submit_workflow("queued", _stub_request(tmp_path), delivered.append)
+    job = ctx.jobs.find_workflow(handle.id)
+    assert job.name == "queued" and handle.status == "queued"
+    assert job.display_state() == "queued"
+    assert "Synthesis · queued" in _processes(document)
+    _send_action(document, f"cancel-pending:{job.pid}:1")
+    assert handle.done and handle.status == "cancelled"
+    assert ticks.settle(lambda: job.state == "cancelled")
+    assert not delivered
+    release.set()
+    assert ticks.settle(lambda: not ctx.jobs.active)
 
 
 def test_closing_a_session_leaves_a_durable_workflow_running(tmp_path, monkeypatch):
@@ -684,6 +696,18 @@ def _footer(document):
 
 def _processes(document):
     return document.select_one({"name": "processes"}).value
+
+
+def _usage(document):
+    return document.select_one({"name": "processes-usage"}).value
+
+
+def _details(document):
+    return document.select_one({"name": "job-details"}).value
+
+
+def _recovery(document):
+    return document.select_one({"name": "recovery-list"}).value
 
 
 def test_failed_loader_keeps_a_row_with_the_error_until_dismissed(monkeypatch, caplog):
@@ -1397,10 +1421,12 @@ def test_a_running_workflow_is_recovered_by_a_new_document_and_cancelled(tmp_pat
     _destroy(old_document)
 
     document, ctx, ticks = _reconnecting_document(tmp_path, monkeypatch)
-    entry, = ctx.recovery              # offered at build: the server still runs it
-    assert entry.id == handle.id and entry.state == "running" and entry.name == "first"
-    assert 'data-action="workflow-attach"' in _processes(document)
-    assert not ctx.jobs.active
+    panel = _processes(document)       # a row from the first paint: the daemon runs it
+    assert "Synthesis · first" in panel and f'data-action="workflow-cancel" data-uid="{handle.id}"' in panel
+    assert not ctx.jobs.active and not len(ctx.recovery)
+    _send_action(document, f"job-details:{handle.id}:1")
+    details = _details(document)
+    assert "Synthesis · first" in details and 'data-action="workflow-attach"' in details
     _send_action(document, f"workflow-attach:{handle.id}:1")
     job, = ctx.jobs.active
     assert job.workflow_id == handle.id and job.generation is ctx.generation
@@ -1413,13 +1439,6 @@ def test_a_running_workflow_is_recovered_by_a_new_document_and_cancelled(tmp_pat
     assert ticks.settle(lambda: job.state == CANCELLED)
     assert handle.status == "cancelled" and not old_delivered
     assert not ctx.canvas.objects
-
-
-def _periodic(document):
-    """Run the document's periodic callbacks once (the task progress poll)."""
-    for callback in list(document.session_callbacks):
-        if type(callback).__name__ == "PeriodicCallback":
-            callback.callback()
 
 
 def test_a_running_correction_is_resumed_by_a_new_document_with_its_progress(tmp_path,
@@ -1467,13 +1486,12 @@ def test_a_running_correction_is_resumed_by_a_new_document_with_its_progress(tmp
     tool = ctx.tools._tools["abundcorr"]
     for name in ("add_spectrum", "set_step", "select_result"):
         monkeypatch.setattr(tool, name, lambda *a, **k: None)
-    entry, = ctx.recovery
-    assert entry.id == handle.id and entry.state == "running"
+    assert "NLTE corrections · Mg" in _processes(document)
     _send_action(document, f"workflow-attach:{handle.id}:1")
     job, = ctx.jobs.active
     assert job.workflow_id == handle.id and not tool.results
-    # the stage-1 snapshot is on disk: one poll reads it off the document thread
-    _periodic(document)
+    # the stage-1 snapshot is on disk already: following the record reads it once, off
+    # the document thread
     assert ticks.settle(lambda: bool(tool.results))
     res, = tool.results
     assert res.uid == "corr-1" and res.stage == "lines" and tool.selected_uid == "corr-1"
@@ -1485,15 +1503,15 @@ def test_a_running_correction_is_resumed_by_a_new_document_with_its_progress(tmp
     assert handle.status == "finished" and not old_tool.results
 
 
-def test_external_runs_are_offered_cancelled_and_reused_as_departures(tmp_path, monkeypatch):
-    """A dispatch run started outside the GUI is found by its own job.nml under the
-    synthesis root: a live one can be ended, a departure solve handed to the modal, a
-    lost one opened as a spectrum; a run a workflow accounts for is not listed."""
+def test_external_runs_are_listed_cancelled_and_reused_as_departures(tmp_path, monkeypatch,
+                                                                    workflow_daemon):
+    """A dispatch run started outside the GUI is found by the daemon through its own
+    job.nml under the synthesis root and shown as a row: a live one can be ended through
+    the daemon, a departure solve handed to the modal; a lost run and a run a workflow
+    accounts for are not listed."""
     import json
     import socket
-    import app
-    from jobs import ExternalRun
-    from tumult.synthesis import jobrecord
+    from tumult.synthesis import daemon, jobrecord
     root = tmp_path / "synth"
 
     def native(folder, **fields):
@@ -1510,41 +1528,35 @@ def test_external_runs_are_offered_cancelled_and_reused_as_departures(tmp_path, 
     (root / "dep_fe607" / "save").mkdir()
     (root / "dep_fe607" / "save" / "pop_Fe_meta.txt").write_text("")
     native(root / "lte_5000", pid=2 ** 30)           # lost: its process is gone
-    native(root / "owned", pid=2 ** 30)              # named by a workflow record: not listed
+    native(root / "owned")                           # named by a workflow record: not listed
     record = root / "_workflows" / "w1"
     record.mkdir(parents=True)
     (record / "workflow.json").write_text(json.dumps({
         "id": "w1", "state": "failed", "phase": "failed", "submitted": 1.0,
         "runs": [str(root / "owned")], "request": {}}))
 
+    daemon.client().request("list", roots=[str(root)])
+    workflow_daemon.scan_external()
     document, ctx, ticks = _reconnecting_document(tmp_path, monkeypatch)
-    _send_action(document, "workflow-discover:1")
-    runs = {e.name: e for e in ctx.recovery if isinstance(e, ExternalRun)}
-    assert set(runs) == {"dep_fe607", "lte_5000"}
-    assert runs["dep_fe607"].live and runs["dep_fe607"].departures
-    assert runs["lte_5000"].state == "lost" and not runs["lte_5000"].departures
     panel = _processes(document)
-    assert 'data-action="run-cancel"' in panel and 'data-action="run-departures"' in panel
-    assert 'data-action="run-open"' in panel
+    run_id = jobrecord.run_id(root / "dep_fe607")
+    assert "Dispatch run · dep_fe607" in panel and "4 threads" in panel
+    assert "lte_5000" not in panel and "owned" not in panel
+    assert f'data-action="run-cancel" data-uid="{run_id}"' in panel
+    assert _usage(document).startswith("4/")        # outside the budget, still counted
+    _send_action(document, f"job-details:{run_id}:1")
+    assert 'data-action="run-departures"' in _details(document)
 
-    _send_action(document, f"run-departures:{runs['dep_fe607'].id}:1")
+    _send_action(document, f"run-departures:{run_id}:1")
     setup = ctx.synth_modal.setup
     assert setup.mode_form.value("departure_field") == str(root / "dep_fe607")
     assert setup.is_nlte
 
     signalled = []
     monkeypatch.setattr(jobrecord, "cancel", lambda folder: signalled.append(folder) or True)
-    _send_action(document, f"run-cancel:{runs['dep_fe607'].id}:1")
+    _send_action(document, f"run-cancel:{run_id}:1")
     assert signalled == [str(root / "dep_fe607")]
-    assert runs["dep_fe607"].id not in ctx.recovery
-
-    opened = []
-    monkeypatch.setattr(app, "load_run", lambda folder: opened.append(folder)
-                        or Spectrum(np.linspace(5000., 5001., 20), np.ones(20)))
-    _send_action(document, f"run-open:{runs['lte_5000'].id}:1")
-    assert ticks.settle(lambda: not ctx.jobs.active)
-    assert opened == [Path(root / "lte_5000")]
-    assert [o.name for o in ctx.canvas.objects] == ["lte_5000"]
+    assert "Ended dep_fe607" in _footer(document)
 
 
 def test_jobrecord_cancel_signals_only_a_verified_process(tmp_path, monkeypatch):
@@ -1603,7 +1615,8 @@ def test_a_recovered_completion_is_imported_once_per_document(tmp_path, monkeypa
 
     other_document, other, other_ticks = _reconnecting_document(tmp_path, monkeypatch)
     assert other.discover_workflows() == [handle.id]
-    assert 'data-action="workflow-import"' in _processes(other_document)
+    assert 'data-action="workflow-import"' in _recovery(other_document)
+    assert "1 record to recover" in _processes(other_document)
     _send_action(other_document, f"workflow-import:{handle.id}:1")
     assert other_ticks.settle(lambda: not other.jobs.active)
     assert [o.name for o in other.canvas.objects] == ["t5750"]
@@ -1683,15 +1696,14 @@ def test_on_disk_records_are_shown_by_their_true_state_after_a_restart(tmp_path,
                         lambda resolved, cancel_token=None: _stub_result(resolved))
     finished = submission.submit(_stub_request(tmp_path), label="done-job")
     finished.result(timeout=10)
-    assert finished.id not in submission._live
 
     document, ctx, ticks = _reconnecting_document(tmp_path, monkeypatch)
-    assert not len(ctx.recovery)                   # nothing is live in this server
+    assert not len(ctx.recovery)                   # records wait for Recover
     _send_action(document, "workflow-discover:-:1")
     states = {entry.id: entry.state for entry in ctx.recovery}
     assert states == {"20260901T000000-interrupted": "interrupted",
                       "20260901T000001-failed": "failed", finished.id: "finished"}
-    body = _processes(document)
+    body = _recovery(document)
     assert "the process that ran it is gone" in body and "status 3" in body
     assert f"run-{interrupted.name}.log" in body
     assert body.count('data-action="workflow-import"') == 1
@@ -1709,7 +1721,7 @@ def test_on_disk_records_are_shown_by_their_true_state_after_a_restart(tmp_path,
     assert [o.name for o in ctx.canvas.objects] == ["done-job"]
     _send_action(document, "workflow-forget:20260901T000001-failed:3")
     assert [entry.id for entry in ctx.recovery] == []
-    assert "status 3" not in _processes(document)
+    assert "status 3" not in _recovery(document)
 
 
 def test_a_slot_whose_workflow_record_is_gone_reports_it(tmp_path, monkeypatch):
@@ -1732,7 +1744,8 @@ def test_a_slot_whose_workflow_record_is_gone_reports_it(tmp_path, monkeypatch):
 def _fire_timeouts(document):
     """Run the document's pending timeout callbacks (the debounced autosave) now."""
     for callback in list(document.session_callbacks):
-        if type(callback).__name__ == "TimeoutCallback":
+        # an earlier callback of this pass may have replaced a later one (a debounce)
+        if type(callback).__name__ == "TimeoutCallback" and callback in document.session_callbacks:
             document.remove_timeout_callback(callback)
             callback.callback()
 
@@ -1790,8 +1803,7 @@ def _synth_document(tmp_path, monkeypatch, run=None, grid_id="g1", executed=None
     store.set_section("synthesis", {
         "dispatch_cwd": str(tmp_path), "synth_output_dir": "synth", "linelist": "",
         "abund_file": "", "absmet": "", "atmos_grids": [dict(_GRID)],
-        "atmos_grid_id": grid_id, "ref_grid_id": "g1",
-        "workflow_runner": "in-process"})    # the stubbed execution lives in this process
+        "atmos_grid_id": grid_id, "ref_grid_id": "g1"})
     store.set_section("synth_run", {"teff": 5750.0, "logg": 4.4, "feh": 0.0, "vmic": 1.0,
                                     "mode": "LTE", "abundances": "", "atoms": [],
                                     "relative_abundances": True, **(run or {})})
@@ -2021,3 +2033,82 @@ def test_fit_is_a_durable_workflow_built_from_the_same_request(tmp_path, monkeyp
     release.set()
     best, raw, post = job.handle.result(timeout=10)
     assert best["teff"] == 5600. and post == {"vshift": 1.5}
+
+
+# --- the Processes panel's rows and the job details modal ----------------------------------
+class _Live:
+    """Stands in for ``daemon.LiveJobs``: the daemon's live jobs and its thread use."""
+
+    def __init__(self, jobs, used=0, budget=8):
+        self._jobs, self.used, self.budget = {j["job"]: j for j in jobs}, used, budget
+
+    def jobs(self):
+        return list(self._jobs.values())
+
+    def get(self, job):
+        return self._jobs.get(job)
+
+    def external_threads(self):
+        return sum(j.get("threads") or 0 for j in self._jobs.values() if j["type"] == "external")
+
+
+def test_panel_rows_name_the_kind_and_how_each_job_runs(monkeypatch):
+    """Two lines per row: ``Kind · name``, then threads, queued, stopping… or failed; the
+    daemon's jobs of other sessions and external runs follow with details and cancel,
+    the header counts external threads over the budget, and a job admitted a moment ago
+    is not drawn."""
+    import time
+    import processes
+    from jobs import Job, JobTable
+    monkeypatch.setattr(processes, "SHOW_AFTER_S", 0.5)
+    now = time.time()
+    table = JobTable()
+    strengths = table.add(Job(1, "line-strengths", CancelToken(), None, submitted=now - 60,
+                              started=now - 30, state="running"))
+    table.add(Job(2, "obs.txt", CancelToken(), None, path="/data/obs.txt", submitted=now))
+    table.add(Job(3, "abund-synth:Fe", CancelToken(), None, submitted=now - 5,
+                  state="failed", error="RuntimeError: no lines"))
+    live = _Live([
+        {"job": "w1", "type": "workflow", "kind": "synthesis", "label": "Sun 3D NLTE",
+         "state": "running", "threads": 8, "started": now - 720, "folder": "/r/w1"},
+        {"job": "w2", "type": "workflow", "kind": "ionisation_balance", "label": "ionbal:Ti",
+         "state": "queued", "folder": "/r/w2"},
+        {"job": "run-abc", "type": "external", "kind": "dispatch", "label": "dep_fe",
+         "state": "running", "threads": 3, "started": now - 20, "folder": "/r/dep_fe"}],
+        used=8, budget=16)
+    body = processes.processes_html(table, live, now=now)
+    assert "Line strengths" in body and "1 thread<" in body
+    assert f'data-since="{strengths.started:.3f}"' in body
+    assert "obs.txt" not in body                        # admitted just now: not drawn
+    assert "Abundance synthesis · Fe" in body and "failed · RuntimeError: no lines" in body
+    assert "Synthesis · Sun 3D NLTE" in body and "8 threads" in body
+    assert "Ionisation balance · Ti" in body and ">queued<" in body
+    assert "Dispatch run · dep_fe" in body and 'data-action="run-cancel" data-uid="run-abc"' in body
+    assert body.count('data-action="job-details"') == 4    # failed, w1, w2, the external run
+    assert processes.usage_html(live) == "11/16 threads"
+    assert "Import · obs.txt" == processes.job_title("import obs.txt")
+    assert "Load · obs.txt" in processes.processes_html(table, None, now=now + 1)
+
+
+def test_the_details_modal_shows_a_workflow_record(tmp_path, monkeypatch):
+    """Progress, execution, timing, the submitter's inputs, a log tail and the actions a
+    live workflow of another session allows."""
+    import json
+    import processes
+    from tumult.synthesis import submission
+    folder = tmp_path / "synth" / "_workflows" / "w1"
+    folder.mkdir(parents=True)
+    run = tmp_path / "synth" / "run_a"
+    run.with_suffix(".log").write_text("".join(f"line {i}\n" for i in range(40)))
+    (folder / "workflow.json").write_text(json.dumps({
+        "id": "w1", "state": "queued", "phase": "queued", "submitted": 1_700_000_000.0,
+        "label": "t5750", "runs": [str(run)], "task": {"kind": "synthesis"}, "request": {},
+        "meta": {"type": "synth", "params": [["RT mode", "LTE"]]},
+        "driver": {"kind": "daemon", "host": None, "pid": None}}))
+    handle = submission.open_workflow(folder)
+    body = processes.workflow_details_html(handle, {"threads": 0, "kind": "synthesis"})
+    assert "Synthesis · t5750" in body and "RT mode" in body and "LTE" in body
+    assert "daemon" in body and "2023-11-14" in body
+    assert "line 39" in body and "line 19" not in body       # the tail only
+    assert 'data-action="workflow-attach"' in body and 'data-action="workflow-cancel"' in body
+    assert 'data-copy="w1"' in body

@@ -13,12 +13,13 @@ its token stays there until it returns, and the row says so instead of claiming 
 has stopped. Failed jobs are retained with their error and native logs until dismissed;
 finished and cancelled ones leave the table when they settle.
 
-A durable workflow (every dispatch calculation: a synthesis, a fit, a tool run) outlives
-the document: :class:`WorkflowRefs` remembers which ones this document is attached to
-(saved beside the workspace in a slot), and :class:`Recovery` lists on-disk records found
-after a reconnect that the user may attach to, import the result of, or forget. Nothing
-here resumes a native calculation or signals a process from an old record; a record left
-queued or running by a server that is gone is shown as interrupted.
+A durable workflow (every dispatch calculation: a synthesis, a fit, a tool run) runs in
+the workflow daemon and outlives the document: :class:`WorkflowRefs` remembers which ones
+this document is attached to (saved beside the workspace in a slot), and :class:`Recovery`
+lists the settled records the recovery modal offers to import or forget. The daemon's
+running and queued workflows that this document does not follow, and dispatch runs
+started outside any workflow (:class:`ExternalRun`), are shown beside its own jobs. Nothing
+here resumes a native calculation; a record whose daemon exited is shown as interrupted.
 """
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -39,8 +40,10 @@ class Job:
 
     ``generation`` is the workspace generation the job was admitted under; a delivery
     for another generation is dropped. ``future`` is the pool future when the work runs
-    on a plain pool; ``handle`` the :class:`WorkflowHandle` of a durable synthesis, whose
-    stable id names the on-disk record a later document can reopen."""
+    on a plain pool; ``handle`` the :class:`WorkflowHandle` of a durable workflow, whose
+    stable id names the on-disk record a later document can reopen. ``threads`` is what
+    the job runs on: one for a Python job of this server, the daemon's allocation for a
+    workflow. ``started`` is when it began running (epoch seconds)."""
     pid: int
     name: str
     token: CancelToken
@@ -55,7 +58,9 @@ class Job:
     error: str | None = None
     logs: tuple = ()
     submitted: float = field(default_factory=time.time)
+    started: float | None = None
     ended: float | None = None
+    threads: int = 1
 
     @property
     def terminal(self):
@@ -65,15 +70,20 @@ class Job:
     def workflow_id(self):
         return self.handle.id if self.handle is not None else None
 
-    def display_state(self):
-        """The state to show: a queued durable workflow reads whether its worker has
-        started from its record, since the pool gives no start notification."""
+    def display_state(self, summary=None):
+        """The state to show. A queued durable workflow is running once the daemon says
+        so: its ``summary`` from the daemon's live jobs when given, else its record."""
+        if self.handle is not None and summary is not None:
+            self.threads = summary.get("threads") or self.threads
+            self.started = summary.get("started") or self.started
         if self.state == QUEUED and self.handle is not None:
             try:
-                if self.handle.status == RUNNING:
-                    self.state = RUNNING
+                running = (summary.get("state") == RUNNING if summary is not None
+                           else self.handle.status == RUNNING)
             except OSError:
-                pass
+                running = False
+            if running:
+                self.state = RUNNING
         return self.state
 
 
@@ -230,6 +240,7 @@ class Recoverable:
     phase: str | None = None
     elapsed: float = 0.0
     runs: int = 0
+    kind: str | None = None
 
     @property
     def id(self):
@@ -244,54 +255,59 @@ class Recoverable:
         record = handle.to_dict()
         state = handle.status
         ended = record.get("ended") or time.time()
+        try:
+            kind = handle.kind.name
+        except KeyError:
+            kind = None
         return cls(handle, handle.label, state, referenced, record.get("error"),
                    handle.logs, record.get("phase"),
                    max(0.0, ended - record.get("submitted", ended)),
-                   len(record.get("runs") or ()))
+                   len(record.get("runs") or ()), kind)
 
 
 @dataclass(eq=False)
 class ExternalRun:
     """A dispatch run found by its own record (``job.nml``, see
     ``tumult.synthesis.jobrecord``) rather than by a workflow: one started from a shell,
-    a notebook or a batch script. It is listed with the recoverable records so a run
-    launched outside the GUI can be watched, cancelled, opened as a spectrum or, for a
-    departure solve, handed to the synthesis modal as saved departures."""
+    a notebook or a batch script, as the workflow daemon lists it. Its row can end it,
+    and a departure solve can be handed to the synthesis modal as saved departures."""
     folder: str
     name: str
-    state: str          # running | submitted | lost (finished runs are opened as files)
+    state: str          # running | submitted
     pid: int | None = None
     host: str | None = None
     slurm_id: str | None = None
     input: str | None = None
-    started: str | None = None
+    started: float | None = None
     logs: tuple = ()
     departures: bool = False
+    threads: int | None = None
 
     @property
     def id(self):
-        # opaque and colon-free: the ":"-delimited action channel carries it
-        import hashlib
-        return "run-" + hashlib.sha1(self.folder.encode()).hexdigest()[:12]
+        from tumult.synthesis.jobrecord import run_id
+        return run_id(self.folder)
 
     @property
     def live(self):
         return self.state in ("running", "submitted")
 
     @classmethod
-    def from_record(cls, record):
+    def from_summary(cls, summary):
+        """From an ``external`` job of the daemon's list."""
         from pathlib import Path
-        folder = Path(record["output"])
+        folder = Path(summary["folder"])
         log = folder.with_suffix(".log")
-        return cls(str(folder), folder.name, record["resolved"], record.get("pid"),
-                   record.get("host"), record.get("slurm_id"), record.get("input"),
-                   record.get("started"), (str(log),) if log.is_file() else (),
-                   (folder / "save").is_dir() and any((folder / "save").glob("pop_*")))
+        return cls(str(folder), folder.name, summary["state"], summary.get("pid"),
+                   summary.get("host"), summary.get("slurm_id"), summary.get("input"),
+                   summary.get("started"), (str(log),) if log.is_file() else (),
+                   (folder / "save").is_dir() and any((folder / "save").glob("pop_*")),
+                   summary.get("threads"))
 
 
 class Recovery:
-    """The recoverable records and external runs shown under the jobs in the Processes
-    panel, keyed by workflow id or the external run's id, in the order offered."""
+    """The workflow records the recovery modal offers (:class:`Recoverable`), keyed by
+    workflow id, in the order offered."""
 
     def __init__(self):
         self._entries = {}

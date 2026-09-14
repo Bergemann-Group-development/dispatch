@@ -100,12 +100,24 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
 **Runs**
 
 - *workflow*: one resolved user calculation, which may prepare inputs and schedule several
-  native runs. A durable workflow handle belongs to this level; it is not a DISPATCH task.
+  native runs. Its durable form is a record under `_workflows/` with a
+  `WorkflowHandle`, run by the workflow daemon or a Slurm driver; it is not a DISPATCH task.
 - *run*: one `dispatch.x` execution and the output directory it leaves. This is the unit the
-  on-disk cache reuses.
-- *job*: one unit of work scheduled by `ExecutionService`, usually a run.
-- *task*: DISPATCH's own `task_t` within a run. Reserved for the Fortran scheduler; do not
-  use it for Python-side work.
+  on-disk cache reuses. An *external run* is one no workflow record names (started from a
+  shell, a notebook or `submission.run`); the daemon lists the live ones.
+- *job*: means different things per component. In `tumult.synthesis.runtime` it is one unit
+  of work scheduled by `ExecutionService`, usually a run. In TumultStudio2 it is one row of
+  the Processes panel (`jobs.Job`): a file load, a line-strength band or a durable workflow
+  the document follows. In the daemon's protocol it is anything `list` returns: a workflow
+  or an external run.
+- *task*: DISPATCH's own `task_t` within a run, in the Fortran scheduler. On the Python side
+  the word survives only in the *task kind* of a workflow record (`tumult.synthesis.tasks`:
+  synthesis, fit, abundance, ionisation balance, NLTE corrections) and in `submit_task`;
+  do not use it for other Python-side work.
+- *workflow daemon*: the one process per user and host that runs durable workflows and owns
+  the CPU budget (`tumult.synthesis.daemon`). Its connections have a role: a *server* (a
+  Bokeh server process) keeps it alive while connected; a *client* (a script, a notebook)
+  does not, though the work a client submitted does.
 - *patch*: a task's subdomain, spatial or in (frequency, angle). Output patches carry
   negative frequency indices.
 - *set axis*: the Fortran axis (`sets.txt`) letting one run carry several abundances,
