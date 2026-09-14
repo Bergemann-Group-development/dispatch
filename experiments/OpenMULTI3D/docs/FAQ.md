@@ -10,13 +10,81 @@ does and, where the intended workflow goes further, what is still missing. Statu
 The intended workflows themselves are written up in
 [reports/review/user-workflows.md](../reports/review/user-workflows.md); the gaps behind the
 markers are itemised in [reports/review/README.md](../reports/review/README.md). Terms such as
-*fit window*, *synth window*, *padded window*, *run*, *workflow* and *departure field* are used
+*fit window*, *synth window*, *padded window*, *run*, *workflow* and *departures* are used
 as defined in [GLOSSARY.md](GLOSSARY.md). Setup steps (compiler, Python environment, input
 data download) are in [README_INSTALL.md](../README_INSTALL.md) and are not repeated here.
 
 Python snippets assume the repository directory is the working directory and `dispatch.x`
 has been built. Run them with the interpreter described in `README_INSTALL.md` so that the
 `tumult` package is importable.
+
+---
+
+## Scripting the workflows
+
+### What does a complete script look like?
+
+**Available.** Every calculation takes a `SynthRequest` and returns a result:
+`synthesis.synthesize`, `departures.solve`, `abundance.fit`, `abundance.nlte_corrections`
+and `sparams.ionbalance`. The worked examples are the functions of
+[benchmarks/api/intended_api.py](../benchmarks/api/intended_api.py).
+
+```python
+from tumult import abundance, departures, sparams, synthesis
+from tumult.synthesis import Atmosphere, AtmosphereGrid, Star, SynthConfig, SynthRequest
+
+config = SynthConfig(root=".", cache="synth", resolving_power=100_000,
+                     linelist="input/linelists/sun_3000-9000.txt",
+                     abundances="input/abund/abund_magg22",
+                     absmet="input/absmet_files/absmet", threads=8)
+grid = AtmosphereGrid("input/atmos/MARCS")
+request = SynthRequest(config=config, atmosphere=grid, star=Star(5700, 4.3, -0.1, 1.2))
+
+kpno = "/path/to/KPNO_4000_9000.txt"
+star = sparams.ionbalance(request, target=kpno,
+                          line_mask="input/linemasks/Fe/fe-balance-test.txt",
+                          method="cog", background_lines=False)
+deps = departures.request(request, atom="input/atoms/atom.mg86g")
+request = request.update(star=star, departures=deps)
+abnd = abundance.fit(request, target=kpno, line_mask="input/linemasks/Mg/mg-lmask.txt",
+                     method="cog", background_lines=False)
+request = request.update(windows=(5160, 5190), abundances=abnd)
+spectrum = synthesis.synthesize(request).spectrum
+```
+
+What the request means:
+
+- `SynthConfig` holds paths and numerical settings. Relative paths resolve against `root`,
+  the directory holding `dispatch.x`. Native runs land under `<root>/data/<cache>` and
+  preparations and workflow records under `<root>/<cache>`. `expert` takes namelist
+  sections merged into every run.
+- The atmosphere is an `AtmosphereGrid` (interpolated at the star), an `Atmosphere` (one 1D
+  file) or a `Snapshot` (one 3D cube with its `resolution`). A plain path is a MARCS file or
+  grid. Other formats name a MARCS `preparation` grid for the HOP preparations.
+- `star` is required for every atmosphere and never read from a model file. `windows` are
+  one `(blue, red)` pair or several, in Angstrom or as astropy quantities.
+- `abundances` (`Abundances({"Mg": 0.2})`, `[X/Fe]` by default, or an abundance result)
+  override the standard composition in every synthesis an operation issues: references,
+  screens, curve-of-growth rungs and departure solves.
+- `departures` selects the calculation: none is LTE, `Departures`/`DepartureGrid` are frozen
+  NLTE populations and `departures.request(...)` solves departures for each effective
+  request. There is no separate mode setting.
+- `request.update(...)` returns a new request and validates it; the original is unchanged.
+  A balance result passed as `star` and an abundance result passed as `abundances` are
+  reduced to their parameters and composition.
+
+`request.check()` reports missing inputs, a grid that does not cover the star and departures
+no longer on disk; every operation calls it before any native run. Results record the
+`request` they were computed from; analysis results also record their `target` (source,
+sampling, digest) and have `save(path)`/`load(path)`. `SynthesisResult.provenance` states the
+preparation atmospheres, whether the line list was pruned, the prepared quadrature and
+whether departures were loaded, solved or reused.
+
+A long operation can run in the workflow daemon instead:
+`tumult.synthesis.submit_operation("abundance.fit", request, target=..., line_mask=...)`
+returns a handle whose `result()` is what the call would return.
+
+The `NativeRequest` answers below describe the expert layer the GUI builds directly.
 
 ---
 
@@ -95,17 +163,17 @@ the launcher's `job.json`, if it was launched through Python at all.
 
 ### How do I synthesise the features in a line-mask set?
 
-**Available in Python, partial in the GUI.** A `SynthRequest` binds an atmosphere selection,
+**Available in Python, partial in the GUI.** A `NativeRequest` binds an atmosphere selection,
 physical settings and a copy of the masks; `execute` or `run_synthesis` computes every
 included synth window and returns one `SynthesisResult`.
 
 ```python
-from tumult import (GridTarget, MaskWindow, SynthRequest, run_synthesis)
+from tumult import (GridTarget, MaskWindow, NativeRequest, run_synthesis)
 
 MARCS = {'folder': 'input/atmos/MARCS',
          'pattern': '{Teff:d}_g{logg:+.1f}_m{:3}_t{vmic:02d}_st_z{FeH:+.2f}',
          'format': 'Marcs'}
-request = SynthRequest(
+request = NativeRequest(
     prefs={'dispatch_cwd': '.', 'synth_output_dir': 'synth', 'R': 300_000,
            'linelist': 'input/linelists/sun_3000-9000.txt',
            'abund_file': 'input/abund/abund_magg22',
@@ -144,13 +212,14 @@ What the request means:
 `result.spectra[i]` corresponds to `result.mapping[i]`, which records the window, the index
 of the mask in the request and its `feature_id`. `result.runs` lists the native run
 directories, `result.preparation` the prepared line list and `result.departures` the
-departure field, if either was used. `result.save(folder)` and `SynthesisResult.load(folder)`
+saved departures, if either was used. `result.save(folder)` and `SynthesisResult.load(folder)`
 round-trip all of this without Bokeh.
 
 To synthesise one continuous range instead of masks, give the request one
 `MaskWindow((xmin, xmax), (xmin, xmax))`; the result then holds a single spectrum, reachable
 as `result.spectrum`. Leaving `masks` empty synthesises the whole line list. A request
-whose combination no path supports (a saved departure field in LTE mode or with a grid,
+whose combination no path supports (saved departures in LTE mode, one atmosphere's
+departures with a grid,
 NLTE without model atoms) is refused by `tumult.synthesis.check_request` when it is
 resolved, before `submit` writes a record.
 
@@ -159,7 +228,7 @@ To fit an observation instead, wrap the same request in a
 `tumult.synthesis.fit(observation, fit_request)`. Every trial point is the request at that
 point's parameters, synthesised over the span of the masks' synth windows and compared with
 the observation inside their fit windows. Fitting is supported for 1D atmospheres and grids
-without a saved departure field; other combinations are refused at construction.
+without saved departures; other combinations are refused at construction.
 
 **In the GUI** (`bokeh serve --show TumultStudio2`): open an observation and a line-mask set
 through **Open File**, open the set in the LineMasks view, edit windows and continuum markers,
@@ -217,7 +286,7 @@ reference, and `format` is the reader (`Stagger`, `Stagger2`, `Co5bold`, `M3DIS`
 
 ```python
 from tumult import Snapshot3D
-request = SynthRequest(
+request = NativeRequest(
     prefs={..., 'nx': 30, 'ny': 30, 'nz': 128},
     run_vals={'mode': 'NLTE', 'atoms': ['input/atoms/atom.mg86e']},
     selection=Snapshot3D('input/atmos/SunLTE_t5777_g4.440_z0.000_sn779_m3dis.atmos',
@@ -246,34 +315,37 @@ choose or validate a mesh.
 
 ### How do I solve departures once and reuse them?
 
-**Available.** `solve_request_departures` ignores masks and solves NLTE populations for one
-individual atmosphere or snapshot. The returned `DepartureField` records the atmosphere,
-mesh, species, composition and resolved solver settings, and writes
-`departure-field.json` beside the native saved populations.
+**Available.** `departures.solve` prepares the model atom's wavelength quadrature on the
+request's atmosphere and solves equilibrium departures. An individual atmosphere or snapshot
+gives `Departures`, which record the atmosphere, star, composition, atom, quadrature and
+solver settings in `departures.json` beside the native populations. A grid gives a
+`DepartureGrid` with one `Departures` per node and vmic lattice point the star interpolates
+between.
 
 ```python
-from dataclasses import replace
-from tumult import DepartureField, solve_request_departures
+from tumult import departures, synthesis
+from tumult.synthesis import Atmosphere, Star, SynthRequest
 
-field = solve_request_departures(request)        # request.selection: Atmosphere1D or Snapshot3D
-print(field.folder, field.resolution, field.species, field.saved)
+one = Atmosphere("input/atmos/p5777_g+4.4_m0.0_t01_st_z+0.00_a+0.00_c+0.00_n+0.00_o+0.00_r+0.00_s+0.00.mod")
+request = SynthRequest(config=config, atmosphere=one, star=Star(5777, 4.4, 0.0, 1.0))
+solved = departures.solve(request, atom="input/atoms/atom.mg86g")
 
 # later, possibly in another process
-field = DepartureField.load(field.folder)
-reuse = replace(request.with_masks(blue_masks), departure_field=field)
-blue = run_synthesis(reuse)                      # formal solution only; no second solve
+solved = departures.load(solved.folder)
+blue = synthesis.synthesize(request.update(departures=solved, windows=(5160, 5190)))
 ```
 
-`SynthRequest` is frozen, so a field is attached by building a new request:
-`dataclasses.replace(...)`, the `departure_field=` constructor argument, or
-`SynthRequest.from_dict({**request.to_dict(), 'departure_field': field.to_dict()})`.
-A request carrying a field runs only the formal solution for each window; `mode` must
-still be `NLTE`. Identical solves are also deduplicated
-without an explicit field, since the departure phase is cached by a digest of its physics
-alone, so a second mask set on the same atmosphere reuses the first solve automatically.
+A request with solved departures runs only the formal solution for each window. Departures
+belong to the atmosphere and star they were solved for: attaching them to another atmosphere
+or updating the star raises. `departures.request(request, atom=...)` is the deferred form: it
+records only the atom and quadrature policy, and each consumer solves departures for its own
+effective request, so an updated star or abundance gets its own solve. NLTE corrections and
+NLTE abundance fits need it, because every abundance rung is an equilibrium solve of its own.
+Identical solves are served from the run cache, keyed by a digest of the departure physics.
 
-`DepartureField.load` also opens an older `dep_*` run directory from its `params.nml` and
-population files.
+`Departures.load` also opens an older `dep_*` run directory from its `params.nml` and
+population files; its star and atom are then unknown. The expert layer's
+`solve_request_departures(native_request)` returns the same object.
 
 **In the GUI**: not yet available (**Missing**); the former Solve departures button was
 removed with the Synthesize sidebar panel and its entry point is still to be decided. A
@@ -283,7 +355,7 @@ folder saved from Python can be pasted into the synthesis modal's **Saved depart
 ### Can I change the composition while keeping frozen departures?
 
 **Partial.** Yes, and the choice is recorded: `result.frozen_composition_changed` is `True`
-when the formal solution's `composition_params` differ from the field's. Whether frozen
+when the formal solution's `composition_params` differ from those of the saved departures. Whether frozen
 coefficients remain valid at the new abundance is the user's assessment. The GUI does not
 yet display this flag on the result (**Missing**).
 
@@ -383,7 +455,7 @@ Missing pieces:
 
 ### How do I measure abundances from a mask set?
 
-**Available in the GUI, partial in Python.** In the LineMasks view choose **Measure
+**Available.** In the LineMasks view choose **Measure
 abundances**. The modal takes the reference observation, the EW profile, SNR and continuum
 error, and the synthesis setup (atmosphere, stellar parameters, RT mode, abundances). One
 submission measures every included window, synthesises each feature's curve of growth and
@@ -392,13 +464,31 @@ keeps its lines; toggling a line and rerunning the synthesis step reuses the mea
 while a changed reference or changed windows is a new run from the LineMasks view. The
 Uncertainties step folds the SNR and continuum errors into per-line error bars.
 
-From Python the same three stages are `tumult.abundance.measure_lines`, `run_abundance` and
-`finalize_result`; `run_abundance` takes a `SynthRequest`, so it accepts grid, individual and
-snapshot selections and saved departures. The stages pass an `AbundanceResult` object
-between them that is documented in `tumult/abundance.py` rather than in a compact script
-example (**Partial**). The **Fit ionisation balance** action and
-`tumult.sparams.solve_ionisation_balance` fit stellar parameters, which requires a grid
-selection because the solve steps through atmosphere nodes.
+From Python, `abundance.fit(request, target=..., line_mask=..., method="cog")` measures the
+included windows, screens weak and blended lines at the request's composition and brackets
+each line's abundance with adaptive curves of growth: rungs at `(-limit, 0, +limit)` dex
+about the element's abundance, then the lattice points (`config.abundance_step`) bracketing
+each inverted guess until every line lies between its nearest computed rungs.
+`background_lines=False` synthesises the element's transitions alone; the screens still
+compare against every species. `method="profile"` is the direct fit of abundance, velocity
+shift and broadening. The result is in [X/Fe]; `termination` is `"completed"` or
+`"round_limit"` and the flags say why a line was excluded. The GUI's three stages remain as
+`measure_lines`, `run_abundance` and `finalize_result` on a `NativeRequest`.
+
+`abundance.nlte_corrections(request, method="cog")` computes `A(NLTE) - A(LTE)` for the lines
+of the atom in the request's `departures.request`: an LTE reference at the request's
+composition on `reference_atmosphere` (the request's atmosphere when 1D), then one departure
+solve per NLTE rung. The quadrature is prepared once and shared by the reference and every
+rung.
+
+`sparams.ionbalance(request, target=..., line_mask=..., method="cog")` fits Teff, log g,
+[Fe/H] and vmic on a grid from the excitation and ionisation balance of one element. Lines
+are identified on the MARCS model nearest the initial star, abundances come from the same
+adaptive curves of growth at every trial star, and the default `solver="coupled"` steps all
+free parameters through the full diagnostic Jacobian (forward differences, then Broyden
+updates, Levenberg-Marquardt damping, per-parameter clamps and the grid bounds; see
+`tumult/sparams.py`). `solver="diagonal"` is the GUI's decoupled solver. The **Fit ionisation
+balance** action uses the diagonal solver.
 
 Missing pieces:
 
@@ -414,7 +504,7 @@ Missing pieces:
 ### How do I repeat a GUI calculation from a script?
 
 **Partial.** `request.resolve().to_json(path)` writes every resolved input (paths, settings,
-windows, padded windows, preparation references). `SynthRequest.from_json(path)` and
+windows, padded windows, preparation references). `NativeRequest.from_json(path)` and
 `ResolvedSynthRequest.from_json(path)` rebuild it, and `submit`/`run_synthesis` accept both.
 Scripts vary settings with `request.with_run_vals(abundances='Fe=+0.3')` and
 `request.with_masks(...)`, which return new requests that share the prepared inputs and
@@ -437,7 +527,10 @@ spectra can be exported from the result's `Spectrum` objects and loaded through
 | `<synth_output_dir>/` | the namelists written for those runs |
 | `<synth_output_dir>/_preparation/<digest>/` | prepared line lists and `preparation.json` |
 | `<synth_output_dir>/_workflows/<id>/` | workflow records and saved results |
-| `data/<synth_output_dir>/**/dep_<digest>/` | departure solves, with `departure-field.json` |
+| `data/<synth_output_dir>/**/dep_<digest>/` | departure solves, with `departures.json` |
+| `<synth_output_dir>/_departure_grids/` | records of departure grids |
+
+`SynthConfig.cache` is the `synth_output_dir` of a script.
 
 `tumult.synthesis.workflows.list_cache(prefs)`, `delete_cache_entry` and `clear_cache`
 manage the run cache; the GUI's Preferences page has the same controls. Keep these

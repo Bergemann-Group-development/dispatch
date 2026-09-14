@@ -15,7 +15,7 @@ from tumult import sparams as sp
 from tumult.abundance import LineResult
 from tumult.linemask import LineMask
 from tumult.spectrum import Spectrum
-from tumult.synthesis import SynthRequest
+from tumult.synthesis import NativeRequest
 from tumult.synthesis.api import _foldable_ladder
 from tumult.synthesis.workflows import build_settings
 
@@ -48,7 +48,7 @@ class _Synth:
 
 @pytest.fixture
 def request_():
-    return SynthRequest(prefs={"abund_file": None}, grid={"folder": ""},
+    return NativeRequest(prefs={"abund_file": None}, grid={"folder": ""},
                         run_vals={"abundances": "", "relative_abundances": False,
                                   "mode": "LTE"},
                         target=(5750.0, 4.4, 0.0, 1.0))

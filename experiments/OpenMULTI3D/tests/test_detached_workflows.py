@@ -6,7 +6,7 @@ import time
 import numpy as np
 import pytest
 
-from tumult.synthesis import Atmosphere1D, SynthRequest, submission
+from tumult.synthesis import Atmosphere1D, NativeRequest, submission
 from tumult.synthesis.cancel import CancelledError
 
 pytestmark = pytest.mark.skipif(os.name != 'posix', reason='detached workflows need POSIX')
@@ -32,7 +32,7 @@ def test_slurm_driver_is_submitted_polled_and_cancelled(tmp_path, monkeypatch):
         calls.append(('scancel', job_id)) or live.update(state=None) or True))
     script = tmp_path / 'driver.sbatch'
     script.write_text('#!/bin/sh\npython -m tumult.synthesis.driver "$1"\n')
-    request = SynthRequest({'dispatch_cwd': str(tmp_path), 'synth_output_dir': 'out',
+    request = NativeRequest({'dispatch_cwd': str(tmp_path), 'synth_output_dir': 'out',
                             'workflow_runner': 'slurm', 'slurm_script': 'driver.sbatch'},
                            run_vals={'mode': 'LTE'},
                            selection=Atmosphere1D('one.mod', (5750, 4.5, 0, 1)))
@@ -49,7 +49,7 @@ def test_slurm_driver_is_submitted_polled_and_cancelled(tmp_path, monkeypatch):
 
 
 def test_missing_slurm_script_fails_the_record_before_submission(tmp_path):
-    request = SynthRequest({'dispatch_cwd': str(tmp_path), 'synth_output_dir': 'out'},
+    request = NativeRequest({'dispatch_cwd': str(tmp_path), 'synth_output_dir': 'out'},
                            run_vals={'mode': 'LTE'},
                            selection=Atmosphere1D('one.mod', (5750, 4.5, 0, 1)))
     with pytest.raises(ValueError):
@@ -71,7 +71,7 @@ def test_the_driver_runs_a_record_on_the_node_and_settles_it(tmp_path, monkeypat
 
     monkeypatch.setattr(workflows, 'execute_request', execute)
     monkeypatch.setenv('SLURM_JOB_ID', '77')
-    request = SynthRequest({'dispatch_cwd': str(tmp_path), 'synth_output_dir': 'out'},
+    request = NativeRequest({'dispatch_cwd': str(tmp_path), 'synth_output_dir': 'out'},
                            run_vals={'mode': 'LTE'},
                            selection=Atmosphere1D('one.mod', (5750, 4.5, 0, 1)))
     record = submission._new_record('node', None)
@@ -122,7 +122,7 @@ def _fit_args(tmp_path, release):
     from tumult.synthesis import FitRequest, MaskWindow
     prefs = {'dispatch_cwd': str(tmp_path), 'synth_output_dir': 'out',
              'release_file': str(release)}
-    request = SynthRequest(prefs, run_vals={'mode': 'LTE'},
+    request = NativeRequest(prefs, run_vals={'mode': 'LTE'},
                            selection=Atmosphere1D('one.mod', (5750, 4.5, 0, 1)),
                            masks=(MaskWindow((5000., 5001.), (5000., 5001.)),))
     fit_request = FitRequest(request, fit_post={'vshift': 0.0})
@@ -171,7 +171,7 @@ def test_task_progress_snapshots_are_written_and_read_back(tmp_path, monkeypatch
     listener = daemon.Client('client')
     listener.listen(events.append)
     prefs = {'dispatch_cwd': str(tmp_path), 'synth_output_dir': 'out'}
-    request = SynthRequest(prefs, run_vals={'mode': 'LTE'},
+    request = NativeRequest(prefs, run_vals={'mode': 'LTE'},
                            selection=Atmosphere1D('one.mod', (5750, 4.5, 0, 1)))
     result = BalanceResult(element='Fe', uid='bal-1', params0={'teff': 5000.})
     args = {'request': request.to_dict(), 'result': result.to_dict(), 'masks': None,

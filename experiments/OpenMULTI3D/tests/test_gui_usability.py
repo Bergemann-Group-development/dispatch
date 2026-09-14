@@ -14,7 +14,7 @@ from draft import CalculationDraft
 from toolmanager import ToolManager
 from tumult import Spectrum
 from tumult.linelist import load_master
-from tumult.synthesis import Atmosphere1D, SynthRequest, MaskWindow
+from tumult.synthesis import Atmosphere1D, NativeRequest, MaskWindow
 from tumult.synthesis import workflows
 
 
@@ -64,7 +64,7 @@ def test_line_list_folder_loads_atomic_files_and_hydrogen(tmp_path):
 
 
 def test_atom_only_request_skips_background_preparation(tmp_path, monkeypatch):
-    request = SynthRequest({'dispatch_cwd': str(tmp_path), 'linelist': 'background',
+    request = NativeRequest({'dispatch_cwd': str(tmp_path), 'linelist': 'background',
                             'linelist_crop_aa': 5},
         run_vals={'mode': 'NLTE', 'atoms': ['Fe.atom'], 'only_atom': True},
         selection=Atmosphere1D('science.mod', (5750, 4.5, 0, 1)),
@@ -72,7 +72,7 @@ def test_atom_only_request_skips_background_preparation(tmp_path, monkeypatch):
     resolved = request.resolve()
     assert resolved.settings['linelist_params'] == {'linelist_file': [''], 'linelist_folder': ''}
     assert workflows._prepare_artifact(resolved) is None
-    assert SynthRequest.from_json(request.to_json()).run_vals['only_atom'] is True
+    assert NativeRequest.from_json(request.to_json()).run_vals['only_atom'] is True
 
 
 def test_async_add_preserves_selection_and_wavelength_view():

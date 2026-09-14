@@ -285,7 +285,7 @@ set's synth windows) and New → Synthesise spectrum (blank λ fields).
   alone (`only_atom`): no external list, no line-list preparation, recorded as "Line
   list: Off (model atom only)" in the result's Info rows.
 - Footer: **Synthesise**, Cancel. Both modes collect one request from the setup
-  (`SynthSetup.context()`, a `tumult.synthesis.SynthRequest`) and add the job's windows:
+  (`SynthSetup.context()`, a `tumult.synthesis.NativeRequest`) and add the job's windows:
   a free range is one `MaskWindow` whose fit and synth bounds coincide, a mask set
   contributes its included masks with their own fit and synth windows. Every synthesis,
   whatever its atmosphere (interpolated grid, picked file, 3D snapshot) and window, is
@@ -321,7 +321,7 @@ The same component in fit mode.
   section's axes, becomes a `tumult.synthesis.FitRequest`: every trial point synthesises
   the span of the synth windows and is compared with the target inside the fit windows,
   which stay distinct. Fitting is supported for 1D atmospheres and grids; a 3D snapshot,
-  a saved departure field, or stellar switches with a fixed atmosphere file are refused
+  saved departures of one atmosphere, or stellar switches with a fixed atmosphere file are refused
   before anything is submitted, with the reason in the footer. The fit runs as a
   durable `fit` workflow (`ctx.submit_task`) carrying the request and the observation
   cropped to the synth span; closing the tab leaves it running, and a document that

@@ -405,6 +405,31 @@ def band_bounds(lo, hi):
     return np.floor(lo / step) * step, np.ceil(hi / step) * step
 
 
+def _hop_band(T, rho, linelist, lo, hi):
+    """HOP line strengths in ``[lo, hi]`` Å on one structure; the caller holds HOP_LOCK."""
+    import tumult as tm
+    from tumult.physics import air2vac
+    lam = air2vac(np.arange(lo, hi, GRID_AA))
+    hop = tm.HopEOS(feh=0.0)
+    try:
+        hop.load_state(T, rho=rho)
+        df = hop.line_strengths(lam, linelist, dlam=DLAM_AA, vmic=1.0)
+    finally:
+        hop.close()
+    return _sorted_frame(df[(df.lam0 >= lo) & (df.lam0 <= hi)])
+
+
+def band_on_atmosphere(atmosphere, linelist, lo, hi):
+    """Strengths of every line in ``[lo, hi]`` Å from HOP on the MARCS model ``atmosphere``.
+
+    The uncached counterpart of :func:`compute_band` for a caller that names the model
+    itself rather than a reference star resolved through the registered grid.
+    """
+    T, rho = read_marcs(atmosphere)
+    with HOP_LOCK:
+        return _hop_band(T, rho, linelist, *band_bounds(lo, hi))
+
+
 def compute_band(star, linelist, lo, hi):
     """Strengths of every line in ``[lo, hi]`` Å, from HOP on the ``star`` atmosphere.
 
@@ -425,17 +450,8 @@ def compute_band(star, linelist, lo, hi):
             if key in _bands:
                 return _bands[key]
         try:
-            import tumult as tm
-            from tumult.physics import air2vac
-            model, T, rho = atmosphere_for(star)
-            lam = air2vac(np.arange(lo, hi, GRID_AA))
-            hop = tm.HopEOS(feh=0.0)
-            try:
-                hop.load_state(T, rho=rho)
-                df = hop.line_strengths(lam, linelist, dlam=DLAM_AA, vmic=1.0)
-            finally:
-                hop.close()
-            frame = _sorted_frame(df[(df.lam0 >= lo) & (df.lam0 <= hi)])
+            _model, T, rho = atmosphere_for(star)
+            frame = _hop_band(T, rho, linelist, lo, hi)
         except LookupError as exc:
             logging.warning("Line strengths: %s", exc)
             frame = None

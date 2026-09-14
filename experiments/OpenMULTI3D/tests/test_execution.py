@@ -386,7 +386,7 @@ def test_compute_spectra_folds_abundance_only_batch(monkeypatch, tmp_path):
     ]
     result = api.compute_spectra(
         tmp_path, (5000., 4., 0., 1.), {}, settings_list=settings,
-        max_threads=1, xmin=5000., xmax=5001., nlte=False)
+        max_threads=1, xmin=5000., xmax=5001., nlte=False, fold=True)
     assert result == [2, 3]
     assert [len(batch) for batch in submitted] == [1]
     nml = submitted[0][0][2]
@@ -709,8 +709,8 @@ def test_snapshot_phases_split_the_settings():
                                    'atmos_format': 'MUST', 'nx': 30, 'ny': 30, 'nz': 128}
     assert settings['rt_iteration_params']['maxiter'] == 3   # the caller's dict is untouched
 
-    field = snapshot.DepartureField(folder=Path('/x/data/snap/dep_ab'),
-                                    name=Path('snap/dep_ab'), snapshot='/snap',
+    field = snapshot.Departures(folder=Path('/x/data/snap/dep_ab'),
+                                    name=Path('snap/dep_ab'), atmosphere='/snap',
                                     resolution=(30, 30, 128))
     spec = snapshot.spectrum_settings(field, settings, (5160, 5190))
     assert spec['rt_iteration_params']['maxiter'] == 0       # populations frozen
@@ -725,8 +725,8 @@ def test_snapshot_spectrum_identity_separates_windows():
     from tumult.synthesis import snapshot
     from tumult.synthesis.api import _dep_bucket
 
-    field = snapshot.DepartureField(folder=Path('/x/data/snap/dep_ab'),
-                                    name=Path('snap/dep_ab'), snapshot='/snap',
+    field = snapshot.Departures(folder=Path('/x/data/snap/dep_ab'),
+                                    name=Path('snap/dep_ab'), atmosphere='/snap',
                                     resolution=(30, 30, 128))
     blue = snapshot.spectrum_settings(field, {}, (5160, 5190))
     red = snapshot.spectrum_settings(field, {}, (5520, 5540))
@@ -769,8 +769,8 @@ def test_snapshot_departures_are_reused_across_windows(tmp_path, monkeypatch):
 # --- durable workflow handles ------------------------------------------------------------
 def _stub_request(root):
     """A resolvable request whose execution is stubbed; nothing here runs dispatch."""
-    from tumult.synthesis.request import SynthRequest
-    return SynthRequest(prefs={'abund_file': None, 'dispatch_cwd': str(root)},
+    from tumult.synthesis.request import NativeRequest
+    return NativeRequest(prefs={'abund_file': None, 'dispatch_cwd': str(root)},
                         grid={'folder': ''},
                         run_vals={'abundances': '', 'relative_abundances': False,
                                   'mode': 'LTE'},

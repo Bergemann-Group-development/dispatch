@@ -55,7 +55,7 @@ from controls import Field, Form
 from ew import profile_options
 from htmlbridge import pulse
 from synthprefs import RUN_DEFAULTS, load_prefs, missing_prefs
-from tumult.synthesis import SynthRequest
+from tumult.synthesis import NativeRequest
 
 ION2_COLOR = "#e05c5c"     # singly-ionised points (the neutral stage uses the shared accent)
 # entry-point choice that is not a reference-star class
@@ -152,7 +152,7 @@ class BalanceSynthesis:
         # The solver reads prefs/grid/run_vals/atmos_file; the point it synthesises at comes
         # from the fitted parameters each iteration, not from the request, so target is left
         # unset here.
-        return SynthRequest(prefs=prefs, grid=grid, run_vals=run_vals,
+        return NativeRequest(prefs=prefs, grid=grid, run_vals=run_vals,
                             target=None, atmos_file=None)
 
 

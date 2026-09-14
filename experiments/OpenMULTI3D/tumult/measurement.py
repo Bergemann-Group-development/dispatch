@@ -39,6 +39,10 @@ class BalanceResult(MeasuredLines):
     diags: dict = field(default_factory=dict)
     sigmas: dict = field(default_factory=dict)
     jac: dict = field(default_factory=dict)           # final diagonal, for re-aggregation
+    jacobian: dict = field(default_factory=dict)      # coupled: {diagnostic: {param: d/dp}}
+    covariance: dict = field(default_factory=dict)    # coupled: {param: {param: cov}}
+    method: str = ""                                  # abundance method, e.g. "cog"
+    solver: str = "diagonal"                          # "diagonal" or "coupled"
     tols: dict = field(default_factory=dict)
     termination: str = "measured"
     converged: bool = False
@@ -48,6 +52,15 @@ class BalanceResult(MeasuredLines):
     name: str = ""
 
     # --- queries ------------------------------------------------------------------------
+    def to_star(self):
+        """The solved stellar parameters as a :class:`~tumult.synthesis.inputs.Star`, so
+        ``request.update(star=result)`` continues from them. Convergence is reported by
+        ``converged`` and ``termination``, not enforced here."""
+        from .synthesis.inputs import Star
+        if not self.params:
+            raise ValueError("The balance has no solved parameters yet.")
+        return Star(**{key: self.params[key] for key in sp.PARAM_KEYS})
+
     def counts(self):
         """``(n_neutral, n_singly_ionised)`` over the included lines."""
         inc = [ln for ln in self.lines if ln.include]
@@ -102,8 +115,12 @@ class BalanceResult(MeasuredLines):
             return
         feh = float(self.params.get("feh", float("nan")))
         self.diags = sp.diagnostics(self.lines, feh, self.solar_x)
-        self.sigmas = sp.uncertainties(self.diags, self.jac or dict(sp.DEFAULT_JAC),
-                                       self.free or None)
+        if self.jacobian:
+            self.sigmas, self.covariance = sp.coupled_uncertainties(
+                self.diags, self.jacobian, self.free or None)
+        else:
+            self.sigmas = sp.uncertainties(self.diags, self.jac or dict(sp.DEFAULT_JAC),
+                                           self.free or None)
         self.converged = False
         self.termination = ("diagnostic" if self.diagnose_only else "stale")
 

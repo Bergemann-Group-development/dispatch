@@ -10,7 +10,7 @@ The split of inputs (see the plan):
   atom/abund/absmet/linelist files, solver/output/runtime knobs;
 - **run settings** (right-sidebar panel): only Teff, logg, FeH, vmic, the abundances
   override string, the relative-abundances flag, and LTE/NLTE;
-- the wavelength windows come from the caller: a :class:`~tumult.synthesis.SynthRequest`
+- the wavelength windows come from the caller: a :class:`~tumult.synthesis.NativeRequest`
   carries them as masks (:func:`resolve_request`, :func:`execute_request`, :func:`fit`),
   while the older ``compute*`` entry points still take one ``xmin/xmax`` pair.
 """
@@ -36,7 +36,7 @@ from ..abundance import (
 from .api import adaptive_fit
 from .cancel import CancelToken, CancelledError
 from .request import (Atmosphere1D, FitRequest, GridTarget, MaskWindow,
-                      ResolvedSynthRequest, Snapshot3D, SynthesisResult, SynthRequest,
+                      ResolvedSynthRequest, Snapshot3D, SynthesisResult, NativeRequest,
                       check_request)
 from .snapshot_grid import discover_grid
 from ..auxfuncs import update_dict
@@ -561,6 +561,7 @@ def _prepare(target, prefs, run_vals_list, grid, atmos_file, extra_presets,
     for rv in run_vals_list:
         settings = build_settings(prefs, rv, atmos_format=grid.get("format"))
         settings = update_dict(settings, {"atmos_params": _grid_mesh(grid)})
+        settings = update_dict(settings, deepcopy(prefs.get("expert_settings") or {}))
         if set_spectrum:
             sampling = settings.setdefault("spectrum_params", {})
             if window_batch or not any(sampling.get(k) for k in ("daa", "nnu", "lam_file")):
@@ -615,7 +616,7 @@ def compute(target, prefs, run_vals, xmin=None, xmax=None, *, grid, atmos_file=N
 
 def compute_batch(target, prefs, run_vals_list, xmin=None, xmax=None, *, grid,
                   atmos_file=None, extra_presets=None, set_spectrum=True, cancel_token=None,
-                  fold=True):
+                  fold=False):
     """Batched :func:`compute`: synthesise several ``run_vals`` variants (e.g. a curve-of-
     growth's abundance ladder) that share the target atmosphere, fanning *every* dispatch run
     through the shared execution service via :func:`tumult.synthesis.compute_spectra`. Returns a list of
@@ -625,8 +626,9 @@ def compute_batch(target, prefs, run_vals_list, xmin=None, xmax=None, *, grid,
     :func:`compute`, so a variant's runs are byte-identical to the ``compute`` call it replaces
     — the batch only changes scheduling (all points run concurrently instead of one at a time),
     not results. All variants must share the synthesis mode (LTE/NLTE) and preset/line-list
-    config; only per-point knobs (typically ``abundances``) should differ. ``fold=False``
-    gives every variant its own departure solve (see :func:`tumult.synthesis.compute_spectra`).
+    config; only per-point knobs (typically ``abundances``) should differ. Every variant
+    keeps its own run and departure solve unless an LTE caller opts into ``fold=True`` (see
+    :func:`tumult.synthesis.compute_spectra`).
     """
     if not run_vals_list:
         return []
@@ -638,13 +640,13 @@ def compute_batch(target, prefs, run_vals_list, xmin=None, xmax=None, *, grid,
 
 def compute_window_batch(target, prefs, run_vals_list, windows, *, grid,
                          atmos_file=None, extra_presets=None, cancel_token=None,
-                         crop=None, fold=True):
+                         crop=None, fold=False):
     """Batched :func:`compute` over an abundance ladder *and* several windows at once.
 
     Same contract as :func:`compute_batch` for the ladder axis, with ``windows`` a
     sequence of ``(xmin, xmax)`` bounds instead of one window. The ladder folds onto the
-    run's set axis and the windows onto its output patches, so a single synthesis covers
-    every pair. Returns ``results[variant][window]``.
+    run's output patches; each variant is its own run unless ``fold=True`` puts an LTE
+    ladder onto one run's set axis. Returns ``results[variant][window]``.
 
     Falls back to one synthesis per window when the variants cannot fold, so callers can
     use this wherever they would otherwise loop :func:`compute_batch` over windows.
@@ -652,9 +654,8 @@ def compute_window_batch(target, prefs, run_vals_list, windows, *, grid,
     ``crop`` asks for the per-node line-list crop: ``{"abundances", "relative_abundances"}``
     of the strongest rung the caller will ask for on these nodes (see :func:`_crop_spec`).
 
-    ``fold=False`` gives every variant its own run and still schedules them all together —
-    for a ladder whose rungs sit on a reusable lattice, where a run keyed on one abundance
-    is worth more than a run that pays for the atmosphere once.
+    Unfolded variants are still scheduled together, and a run keyed on one abundance is
+    reused by any later ladder that asks for the same lattice rung.
     """
     if not run_vals_list or not windows:
         return []
@@ -726,7 +727,15 @@ def preparation_root(prefs):
 
 
 def _reference_atmospheres(selection, prefs, root, prefs_vmic=1.0):
-    """Deterministically select the MARCS inputs used only for HOP preparation."""
+    """The MARCS atmospheres HOP preparations use, and which synthesis atmosphere each serves.
+
+    An individual MARCS atmosphere and the nodes of a MARCS grid are prepared on
+    themselves. Other formats use the nearest node of their preparation grid.
+    """
+    if isinstance(selection, Atmosphere1D) and \
+            str(selection.format or prefs.get('atmos_format') or 'Marcs').lower() == 'marcs':
+        source = str(_resolved_path(root, selection.path))
+        return (source,), {source: source}
     grid = _preparation_grid(selection)
     if not grid.get('folder'):
         return (), {}
@@ -759,11 +768,28 @@ def _reference_atmospheres(selection, prefs, root, prefs_vmic=1.0):
     return (reference,), {source: reference}
 
 
-def resolve_request(request: SynthRequest) -> ResolvedSynthRequest:
+def _single_atmosphere_settings(selection, prefs):
+    """What a grid node's runs are given per node (:func:`tumult.synthesis.api._node_atmos`,
+    the absmet file of its [Fe/H]) for an individual atmosphere or snapshot, whose runs
+    bypass the node selection when departures are solved or read back directly."""
+    stellar = getattr(selection, 'stellar', None)
+    if isinstance(selection, GridTarget) or stellar is None:
+        return {}
+    feh = float(stellar[2])
+    settings = {}
+    absmet = _absmet_files(prefs, {tuple(stellar[:3]): selection.path}) or {}
+    if absmet.get(feh):
+        settings['opac_table_params'] = {'absmet_file': absmet[feh]}
+    if isinstance(selection, Atmosphere1D):
+        settings['atmos_params'] = {'feh': feh, 'vmic': float(stellar[3])}
+    return settings
+
+
+def resolve_request(request: NativeRequest) -> ResolvedSynthRequest:
     """Resolve paths, boundary units, masks, settings and preparation references."""
-    if not isinstance(request, SynthRequest):
-        raise TypeError('resolve_request expects a SynthRequest')
-    request = SynthRequest.from_dict(request.to_dict())  # submission-time ownership
+    if not isinstance(request, NativeRequest):
+        raise TypeError('resolve_request expects a NativeRequest')
+    request = NativeRequest.from_dict(request.to_dict())  # submission-time ownership
     check_request(request)
     root = execution_root(request.prefs).resolve()
     prefs = deepcopy(request.prefs)
@@ -778,6 +804,7 @@ def resolve_request(request: SynthRequest) -> ResolvedSynthRequest:
     settings = build_settings(prefs, request.run_vals, atmos_format=fmt)
     if isinstance(selection, GridTarget):
         settings = update_dict(settings, {'atmos_params': _grid_mesh(selection.grid)})
+    settings = update_dict(settings, _single_atmosphere_settings(selection, prefs))
     settings = update_dict(settings, deepcopy(request.expert_settings))
     # A correction ladder without masks uses the model atom's frequency grid,
     # including a prepared line_grid_file. Injecting R alone requests an explicit
@@ -799,10 +826,10 @@ def resolve_request(request: SynthRequest) -> ResolvedSynthRequest:
             and not references):
         raise ValueError('Automatic line-list preparation has no MARCS reference grid. '
                          'Configure a reference grid or set linelist_crop_aa=0 to use the full list.')
-    resolved_request = SynthRequest(prefs, run_vals=request.run_vals, selection=selection,
+    resolved_request = NativeRequest(prefs, run_vals=request.run_vals, selection=selection,
                                     masks=request.masks,
                                     expert_settings=request.expert_settings,
-                                    departure_field=request.departure_field)
+                                    departures=request.departures)
     output = output_root(prefs)
     return ResolvedSynthRequest(resolved_request, settings, windows, padded, references,
                                 aliases,
@@ -847,10 +874,12 @@ def execute_request(request, *, cancel_token=None):
         launch_kwargs['cwd'] = resolved.execution_root
     max_threads = int(request.prefs.get('max_threads') or 0) or (os.cpu_count() or 1)
 
-    spectra, runs, departures = [], [], request.departure_field
+    spectra, runs, departures = [], [], request.departures
     if departures is not None and not nlte:
         raise ValueError('Saved departures can only be reused in NLTE mode.')
-    if isinstance(selection, Snapshot3D) or departures is not None:
+    from ..departures import DepartureGrid
+    dep_dirs = departures.folders() if isinstance(departures, DepartureGrid) else None
+    if isinstance(selection, Snapshot3D) or (departures is not None and dep_dirs is None):
         from .snapshot import solve_departures, synthesise, synthesise_snapshot
         if nlte and departures is None:
             if not isinstance(selection, Snapshot3D):
@@ -890,16 +919,17 @@ def execute_request(request, *, cancel_token=None):
                                              atmos_file, None, window_batch=True)
             values, run_paths = _compute_window_batch(**common, settings_list=[settings],
                                            windows=resolved.windows, R=R,
-                                           pad=SYNTH_PAD_AA, cancel_token=cancel_token, fold=True,
+                                           pad=SYNTH_PAD_AA, cancel_token=cancel_token,
                                            preparation=artifact if isinstance(selection, GridTarget)
-                                           else None, return_runs=True)
+                                           else None, return_runs=True, dep_dirs=dep_dirs)
             spectra.extend(values[0])
             runs.extend(run_paths)
         else:
             common, _settings, _ = _prepare(target, request.prefs, [request.run_vals], grid,
                                              atmos_file, None)
             value, run_paths = compute_spectrum(**common, settings=settings,
-                                                cancel_token=cancel_token, return_runs=True)
+                                                cancel_token=cancel_token, return_runs=True,
+                                                dep_dirs=dep_dirs)
             spectra.append(value)
             runs.extend(str(path) for path in run_paths)
     included = [(index, mask) for index, mask in enumerate(request.masks) if mask.include]
@@ -914,7 +944,7 @@ def execute_request(request, *, cancel_token=None):
 
 def solve_request_departures(request, *, cancel_token=None):
     """Solve only departures for one selected atmosphere; masks are deliberately ignored."""
-    clean = SynthRequest({**request.prefs, 'linelist_crop_aa': 0},
+    clean = NativeRequest({**request.prefs, 'linelist_crop_aa': 0},
                          run_vals=request.run_vals, selection=request.selection,
                          expert_settings=request.expert_settings)
     resolved = resolve_request(clean)
@@ -1192,29 +1222,32 @@ def fit_request_line(obs, request, symbol, guess, synth_window, fit_window,
 
 def compute_reference(target, prefs, atom, grid, xmin=None, xmax=None, *,
                       cancel_token=None, return_runs=False, line_grid=None,
-                      with_linelist=False):
+                      with_linelist=False, atmos_file=None, abundances="",
+                      relative_abundances=True):
     """Synthesise the 1D LTE reference spectrum from a model ``atom``.
 
-    Interpolates ``grid`` (the flagged 1D LTE reference grid) at ``target`` and runs LTE +
-    atom-only via the ``corr_ref.nml`` preset (``maxiter=0``, empty line list, relative
-    abundances). The atom's own bound-bound transitions are the lines, and the run also writes
-    ``linelist_out.txt`` — read it back with :func:`read_reference_linelist`. ``line_grid``
-    (optional) is a generated bound-bound grid the run samples instead of the atom's own
-    quadrature. ``with_linelist`` adds the configured synthesis line list (blends from the
-    other species) to the atom's transitions; otherwise the atom alone is synthesised.
-    Returns the normalised reference :class:`Spectrum`. Blocking — call from a worker
-    thread.
+    Interpolates ``grid`` (the 1D LTE reference grid) at ``target``, or synthesises
+    ``atmos_file`` directly, and runs LTE + atom-only via the ``corr_ref.nml`` preset
+    (``maxiter=0``, empty line list). The atom's own bound-bound transitions are the lines,
+    and the run also writes ``linelist_out.txt``, read back by
+    :func:`read_reference_linelist`. ``line_grid`` (optional) is a generated bound-bound
+    grid the run samples instead of the atom's own quadrature. ``with_linelist`` adds the
+    configured synthesis line list (blends from the other species) to the atom's
+    transitions. ``abundances`` is the override string of the composition the reference is
+    computed at, in the convention ``relative_abundances`` names. Returns the normalised
+    reference :class:`Spectrum`. Blocking; call from a worker thread.
     """
     run_vals = {
         "mode": "LTE",
         "only_atom": not with_linelist,
         "atom_lines": True,
         "atoms": [str(atom)],
-        "relative_abundances": True,
+        "abundances": str(abundances or ""),
+        "relative_abundances": bool(relative_abundances),
     }
     if line_grid:
         run_vals["line_grid"] = str(line_grid)
-    return compute(target, prefs, run_vals, xmin, xmax, grid=grid,
+    return compute(target, prefs, run_vals, xmin, xmax, grid=grid or {}, atmos_file=atmos_file,
                    extra_presets=[_CORR_REF_PRESET], set_spectrum=False,
                    cancel_token=cancel_token, return_runs=return_runs)
 

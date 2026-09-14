@@ -16,11 +16,15 @@ asserting [X/Fe] = 0. That is exactly right for Fe, defensible for most iron-pea
 and known to be wrong for the α elements at low metallicity; the choice belongs to the
 caller, which is why the solar abundance arrives as an argument.
 
-The solver is a damped quasi-Newton fixed point on the four decoupled (diagnostic,
-parameter) pairs: iteration 1 uses conservative default sensitivities, later iterations
-refine each diagonal Jacobian entry by secant from the observed diagnostic change
-(sign-guarded and magnitude-clamped, since the diagonal secant is contaminated by
-cross-coupling). Steps are clamped per iteration and to the atmosphere grid's hull.
+Two solvers step the parameters. The *diagonal* solver (:func:`solve_ionisation_balance`)
+is a damped quasi-Newton fixed point on the four decoupled (diagnostic, parameter) pairs:
+iteration 1 uses conservative default sensitivities, later iterations refine each diagonal
+Jacobian entry by secant from the observed diagnostic change (sign-guarded and
+magnitude-clamped, since the diagonal secant is contaminated by cross-coupling). The
+*coupled* solver (:func:`solve_coupled`, used by :func:`ionbalance`) treats the free
+diagnostics as one residual vector with a full Jacobian, so a Teff step that moves the
+ionisation offset is accounted for. Both clamp steps per iteration and to the atmosphere
+grid's hull.
 
 A parameter may be held *fixed*: it then never steps, and its diagnostic is still computed
 and reported but does not gate convergence — the residual at a fixed parameter is the
@@ -30,11 +34,12 @@ four turns the solve into a single diagnostic evaluation.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from dataclasses import dataclass, field
 
 import numpy as np
 
-from .abundance import reduced_ew
+from .abundance import reduced_ew, xfe_to_abund
 
 PARAM_KEYS = ("teff", "logg", "feh", "vmic")
 DIAG_KEYS = ("s_exc", "s_rew", "d_ion", "d_feh")
@@ -306,21 +311,27 @@ def entry_star(params):
     return refstars.nearest(params["teff"], params["logg"], params["feh"])
 
 
-def identify_catalog(star, lo, hi, linelist):
+def identify_catalog(star, lo, hi, linelist, atmosphere=None):
     """``(frame, note)``: the transitions in ``[lo, hi]`` Å ranked for ``star``.
 
-    HOP strengths on the reference atmosphere are what makes the identification a statement
-    about *this* star; the master line list is the fallback when HOP cannot be run (no line
-    list configured, or the band fails), and then the note says so, because a log gf-ordered
-    identification is a much weaker claim.
+    HOP strengths on a model atmosphere are what makes the identification a statement about
+    *this* star: on ``atmosphere`` (a MARCS model) when given, else on the reference
+    atmosphere ``star`` resolves to through the registered MARCS grid. The master line list
+    is the fallback when HOP cannot be run, and then the note says so, because a log
+    gf-ordered identification is a much weaker claim.
     """
     from . import linestrength
     from .linelist import load_master
     try:
-        frame = linestrength.compute_band(star, str(linelist),
-                                          *linestrength.band_bounds(lo, hi))
+        if atmosphere is not None:
+            frame = linestrength.band_on_atmosphere(atmosphere, str(linelist), lo, hi)
+            label = f"HOP strengths on {Path(atmosphere).name}"
+        else:
+            frame = linestrength.compute_band(star, str(linelist),
+                                              *linestrength.band_bounds(lo, hi))
+            label = f"HOP strengths on {star.label}"
         if frame is not None and len(frame):
-            return frame, f"HOP strengths on {star.label}"
+            return frame, label
     except Exception:
         logging.exception("Line-strength band failed; falling back to the line list")
     try:
@@ -330,8 +341,11 @@ def identify_catalog(star, lo, hi, linelist):
         return None, "no line list — identities unknown"
 
 
-def measure_balance_lines(result, masks, spec, linelist):
+def measure_balance_lines(result, masks, spec, linelist, atmosphere=None):
     """Fill ``result.lines`` from the windows, identified on the entry point's atmosphere.
+
+    ``atmosphere`` names that MARCS model; without it the reference star nearest the entry
+    point is used (see :func:`identify_catalog`).
 
     Raises :class:`ValueError` when no window could be identified as either stage of the
     element: the balance reads the *stage* off this identification, and the mask set's
@@ -340,14 +354,15 @@ def measure_balance_lines(result, masks, spec, linelist):
     the flag stays visible and the caller's toggle overrides it.
     """
     from . import linediag
-    star = entry_star(result.params0)
+    star = entry_star(result.params0) if atmosphere is None else None
     lo = min(m.lmin for m in masks)
     hi = max(m.lmax for m in masks)
-    catalog, note = identify_catalog(star, lo, hi, linelist)
+    catalog, note = identify_catalog(star, lo, hi, linelist, atmosphere)
     lines = linediag.measure_masks(spec, masks, profile=result.profile, snr=result.snr,
                                    cont_pct=result.cont_pct, catalog=catalog,
                                    element=result.element)
-    result.ident_star, result.ident_note = star.label, note
+    result.ident_star = star.label if star is not None else Path(atmosphere).name
+    result.ident_note = note
 
     for ln in lines:
         stage = is_ion_stage(ln.ion, 1) or is_ion_stage(ln.ion, 2)
@@ -389,7 +404,7 @@ def grid_bounds(grid, atmos_file=None):
 def solve_ionisation_balance(request, result, opts=None, *, progress=None, cancel_token=None):
     """Iterate the excitation-ionization balance to convergence on ``result.lines``.
 
-    ``request`` is a :class:`~tumult.synthesis.SynthRequest`; ``result`` a
+    ``request`` is a :class:`~tumult.synthesis.NativeRequest`; ``result`` a
     :class:`~tumult.measurement.Measurement` already carrying measured lines, an entry point
     (``params0``), which parameters are free and the tolerances. ``opts`` sets the ladder
     (``span``, ``points``) and ``max_iter``.
@@ -666,4 +681,314 @@ def _solve_balance(request, result, opts, progress, cancel_token):
 
     result.jac = dict(state.jac)
     result.sigmas = uncertainties(diags, state.jac, free)
+    return result
+
+
+# --- the coupled solve -----------------------------------------------------------------------
+# Numerical contract of solve_coupled:
+#
+# * residuals: the free diagnostics, each divided by its tolerance, so every component is
+#   dimensionless and "converged" means every |r_k| <= 1;
+# * variables: each free parameter divided by its finite-difference step (FD_STEPS), so the
+#   damping treats one step of every parameter alike;
+# * Jacobian: forward differences at the starting point, one evaluation per free parameter,
+#   stepping backwards where the forward point leaves the grid; after an accepted step it
+#   is updated by Broyden's rank-one formula, and it is recomputed by finite differences
+#   where a step is rejected on a Broyden estimate;
+# * step: Levenberg-Marquardt, (A^T A + lambda diag(A^T A)) dx = -A^T r, with lambda
+#   starting at LM_LAMBDA, divided by 3 on an accepted step and multiplied by 4 on a
+#   rejected one (a step is accepted when it lowers |r|); the step is scaled down as a
+#   whole to respect STEP_CLAMP and then projected onto the grid bounds;
+# * termination: "converged" (every free diagnostic within tolerance), "undetermined"
+#   (a free diagnostic or Jacobian column is not finite), "boundary" (the projected step
+#   is zero), "iteration_limit" (max_iter trial steps), "diagnostic" (nothing free).
+#   Finite-difference evaluations do not count towards max_iter.
+
+FD_STEPS = {"teff": 100.0, "logg": 0.1, "feh": 0.1, "vmic": 0.2}
+LM_LAMBDA = 1e-2
+COUPLED_MAX_ITER = 12
+
+
+@dataclass
+class CoupledOutcome:
+    """What :func:`solve_coupled` found: the accepted point and how the solve ended."""
+    params: dict
+    diags: dict
+    state: object
+    history: list
+    termination: str
+    jacobian: dict
+    sigmas: dict
+    covariance: dict
+
+    @property
+    def converged(self):
+        return self.termination == "converged"
+
+
+def coupled_uncertainties(diags, jacobian, free=None):
+    """Parameter 1σ and covariance from the diagnostic errors through the full Jacobian.
+
+    ``jacobian`` is ``{diagnostic: {parameter: d diagnostic / d parameter}}`` over the free
+    pairs. With diagonal diagnostic errors ``C_d`` the parameter covariance is
+    ``(J^T C_d^-1 J)^-1``. NaN where an error or the inversion is unusable and for fixed
+    parameters.
+    """
+    keys = [k for k in PARAM_KEYS if free is None or free.get(k, True)]
+    nan = float("nan")
+    sigmas = {k: nan for k in PARAM_KEYS}
+    covariance = {}
+    dkeys = [DIAG_FOR[k] for k in keys]
+    try:
+        J = np.array([[float(jacobian[d][k]) for k in keys] for d in dkeys])
+        err = np.array([float(diags.get(f"{d}_err", nan)) for d in dkeys])
+        if not keys or not (np.all(np.isfinite(J)) and np.all(np.isfinite(err))
+                            and np.all(err > 0)):
+            return sigmas, covariance
+        cov = np.linalg.inv(J.T @ np.diag(1.0 / err ** 2) @ J)
+    except (KeyError, TypeError, ValueError, np.linalg.LinAlgError):
+        return sigmas, covariance
+    for i, k in enumerate(keys):
+        sigmas[k] = float(np.sqrt(cov[i, i])) if cov[i, i] >= 0 else nan
+        covariance[k] = {q: float(cov[i, j]) for j, q in enumerate(keys)}
+    return sigmas, covariance
+
+
+def solve_coupled(evaluate, params0, *, free=None, bounds=None, tols=None,
+                  max_iter=COUPLED_MAX_ITER, steps=None, clamps=None, report=None,
+                  cancel_token=None):
+    """Null the free balance diagnostics with a damped, coupled Newton iteration.
+
+    ``evaluate(params) -> (diags, state)`` computes the diagnostics at a parameter point;
+    ``state`` is whatever the caller wants back for the accepted point (the per-line
+    abundances). ``free`` maps parameters to whether they are fitted, ``bounds`` gives
+    ``{param: (lo, hi)}``, ``tols`` overrides :data:`DEFAULT_TOLS`, ``steps``
+    :data:`FD_STEPS` and ``clamps`` :data:`STEP_CLAMP`. See the contract above this
+    function. ``report(history)`` is called after every evaluation.
+    """
+    from .synthesis.cancel import CancelledError
+
+    free = {k: bool((free or {}).get(k, True)) for k in PARAM_KEYS}
+    keys = [k for k in PARAM_KEYS if free[k]]
+    dkeys = [DIAG_FOR[k] for k in keys]
+    tol = {**DEFAULT_TOLS, **(tols or {})}
+    scale = np.array([float({**FD_STEPS, **(steps or {})}[k]) for k in keys])
+    clamp = np.array([float({**STEP_CLAMP, **(clamps or {})}[k]) for k in keys])
+    bounds = dict(bounds or {})
+    report = report or (lambda _history: None)
+    history = []
+
+    def project(params):
+        out = dict(params)
+        for k in PARAM_KEYS:
+            if k in bounds:
+                lo, hi = bounds[k]
+                out[k] = float(np.clip(out[k], lo, hi))
+        return out
+
+    def run(params, kind):
+        if cancel_token is not None and cancel_token.cancelled:
+            raise CancelledError()
+        diags, state = evaluate(dict(params))
+        history.append({"params": dict(params), "diags": dict(diags), "kind": kind})
+        report(history)
+        return diags, state
+
+    def residual(diags):
+        return np.array([float(diags.get(d, float("nan"))) / tol[d] for d in dkeys])
+
+    def fd_jacobian(params, r):
+        """Columns d r / d x at ``params``, x the parameters in units of their step."""
+        J = np.empty((len(dkeys), len(keys)))
+        for j, k in enumerate(keys):
+            probe = dict(params)
+            probe[k] = params[k] + scale[j]
+            lo, hi = bounds.get(k, (-np.inf, np.inf))
+            if probe[k] > hi:
+                probe[k] = params[k] - scale[j]
+            probe = project(probe)
+            dx = (probe[k] - params[k]) / scale[j]
+            if dx == 0:
+                J[:, j] = np.nan
+                continue
+            diags, _state = run(probe, "jacobian")
+            J[:, j] = (residual(diags) - r) / dx
+        return J
+
+    def outcome(termination, J):
+        jacobian = {}
+        if J is not None and np.all(np.isfinite(J)):
+            # back to diagnostic units per parameter unit
+            raw = J * np.array([tol[d] for d in dkeys])[:, None] / scale[None, :]
+            jacobian = {d: {k: float(raw[i, j]) for j, k in enumerate(keys)}
+                        for i, d in enumerate(dkeys)}
+        sigmas, covariance = coupled_uncertainties(diags, jacobian, free) \
+            if jacobian else ({k: float("nan") for k in PARAM_KEYS}, {})
+        return CoupledOutcome(dict(params), dict(diags), state, history, termination,
+                              jacobian, sigmas, covariance)
+
+    params = project({k: float(v) for k, v in params0.items()})
+    diags, state = run(params, "step")
+    if not keys:
+        return outcome("diagnostic", None)
+    J, fresh, lam = None, False, LM_LAMBDA
+    for _it in range(int(max_iter)):
+        r = residual(diags)
+        if not np.all(np.isfinite(r)):
+            return outcome("undetermined", J)
+        if converged(diags, tol, free):
+            return outcome("converged", J)
+        if J is None:
+            J, fresh = fd_jacobian(params, r), True
+            if not np.all(np.isfinite(J)):
+                return outcome("undetermined", J)
+        H, g = J.T @ J, J.T @ r
+        damped = H + lam * np.diag(np.maximum(np.diag(H), 1e-12))
+        dx = -np.linalg.lstsq(damped, g, rcond=None)[0]
+        dp = dx * scale
+        over = np.max(np.abs(dp) / clamp)
+        if over > 1:
+            dp = dp / over
+        trial = project({**params, **{k: params[k] + dp[j] for j, k in enumerate(keys)}})
+        moved = np.array([trial[k] - params[k] for k in keys])
+        if not np.any(np.abs(moved) > 1e-12):
+            return outcome("boundary", J)
+        new_diags, new_state = run(trial, "step")
+        r_new = residual(new_diags)
+        if np.all(np.isfinite(r_new)) and np.linalg.norm(r_new) < np.linalg.norm(r):
+            dxm = moved / scale
+            J = J + np.outer((r_new - r) - J @ dxm, dxm) / float(dxm @ dxm)
+            params, diags, state, fresh = trial, new_diags, new_state, False
+            lam = max(lam / 3.0, 1e-8)
+        else:
+            history[-1]["kind"] = "rejected"
+            lam *= 4.0
+            if not fresh:
+                J = None
+    r = residual(diags)
+    if not np.all(np.isfinite(r)):
+        return outcome("undetermined", J)
+    return outcome("converged" if converged(diags, tol, free) else "iteration_limit", J)
+
+
+def ionbalance(request, *, target, line_mask, method="cog", background_lines=True,
+               solver="coupled", free=None, tols=None, max_iter=COUPLED_MAX_ITER,
+               profile="voigt", snr=None, cont_pct=0.0, limit=1.0, max_rounds=8,
+               steps=None, blend_max=BLEND_MAX, weak_frac=0.10, progress=None,
+               cancel_token=None, **diagonal_opts):
+    """Infer stellar parameters from the excitation-ionisation balance of ``target``.
+
+    ``request`` is a :class:`~tumult.synthesis.SynthRequest` on an atmosphere grid; its
+    star is the solver's starting point and the atmosphere the line stages are identified
+    on. ``target`` is a spectrum or spectrum file and ``line_mask`` a mask set or mask file
+    naming the element; its windows are measured with ``profile`` (``snr``, ``cont_pct``
+    errors) and each is identified as the element's neutral or singly ionised stage from
+    the configured line list.
+
+    ``method="cog"`` determines per-line abundances by the adaptive curve of growth of
+    :func:`tumult.abundance.fit` at every trial star, with the same screens (at the
+    starting star) and ``background_lines`` choice. ``solver="coupled"`` (the default)
+    steps all free parameters through the full diagnostic Jacobian (:func:`solve_coupled`);
+    ``solver="diagonal"`` is :func:`solve_ionisation_balance` with its own shared ladder
+    (``diagonal_opts``: ``span``, ``points``). ``free`` maps parameters to whether they are
+    fitted (all by default) and ``tols`` overrides the convergence tolerances.
+
+    Returns a :class:`~tumult.measurement.BalanceResult` with the diagnostics, uncertainties,
+    Jacobian, history, ``converged`` and ``termination``; ``request.update(star=result)``
+    continues from the solved parameters.
+    """
+    from copy import deepcopy
+    from . import abundance as ab
+    from .departures import DepartureGrid, Departures
+    from .measurement import BalanceResult, STAGE_SOLVED, mask_key
+    from .synthesis.inputs import AtmosphereGrid
+    from .synthesis.operations import native_request, quadrature_atmosphere
+    from .synthesis.request import SynthRequest
+    from .synthesis.workflows import abund_table
+
+    if method != "cog":
+        raise ValueError(f"Unknown balance abundance method {method!r}; use 'cog'.")
+    if solver not in ("coupled", "diagonal"):
+        raise ValueError("solver must be 'coupled' or 'diagonal'.")
+    if not isinstance(request, SynthRequest):
+        raise TypeError("sparams.ionbalance expects a SynthRequest")
+    free = {k: bool((free or {}).get(k, True)) for k in PARAM_KEYS}
+    if any(free.values()) and not isinstance(request.atmosphere, AtmosphereGrid):
+        raise ValueError("Stellar parameters can only be fitted on an atmosphere grid; hold "
+                         "them all (free={...: False}) to evaluate the diagnostics.")
+    if isinstance(request.departures, (Departures, DepartureGrid)):
+        raise ValueError("Frozen departures do not follow the star; use departures.request.")
+    request.check()
+    spectrum, target_record = ab._target_spectrum(target)
+    mset = ab._line_mask_set(line_mask)
+    report = progress or (lambda _result: None)
+    config = request.config
+    result = BalanceResult(element=mset.element, profile=profile, snr=snr, cont_pct=cont_pct,
+                           maskset_name=mset.name, maskset_key=mask_key(mset),
+                           params0=dict(request.star), free=free, tols=dict(tols or {}),
+                           method=method, solver=solver)
+    result.request, result.target = request, target_record
+    measure_balance_lines(result, [m for m in mset.masks if m.include], spectrum,
+                          str(config.resolve(config.linelist)) if config.linelist else None,
+                          atmosphere=quadrature_atmosphere(request))
+    report(result)
+
+    native = native_request(request, **({} if background_lines
+                                        else {"only_elements": mset.element}))
+    if solver == "diagonal":
+        opts = {"max_iter": max_iter, **diagonal_opts}
+        return solve_ionisation_balance(native, result, opts, progress=progress,
+                                        cancel_token=cancel_token)
+
+    solar = abund_table(native.prefs)
+    solar_x = solar.get(mset.element)
+    if solar_x is None:
+        raise ValueError(f"No solar {mset.element} abundance; configure config.abundances.")
+    result.solar_x = float(solar_x)
+    result.termination, result.converged = "running", False
+
+    def context_at(star, lines):
+        return ab._CogContext(request.update(star=star), lines, mset.element,
+                              background_lines=background_lines, limit=limit,
+                              cancel_token=cancel_token)
+
+    ab.screen_lines(context_at(request.star, result.lines), blend_max=blend_max,
+                    weak_frac=weak_frac)
+    measured = deepcopy(result.lines)
+    report(result)
+
+    def evaluate(params):
+        lines = deepcopy(measured)
+        context = context_at(params, lines)
+        ab.fit_lines_cog(context, limit=limit, max_rounds=max_rounds, profile=profile)
+        for ln in lines:
+            if ln.include and np.isfinite(ln.a):
+                ln.a = xfe_to_abund(ln.a, mset.element, params["feh"], solar)
+        return diagnostics(lines, params["feh"], solar_x), lines
+
+    def on_evaluation(history):
+        result.history = [dict(item) for item in history]
+        report(result)
+
+    try:
+        outcome = solve_coupled(
+            evaluate, dict(request.star), free=free, bounds=grid_bounds(native.grid),
+            tols=tols, max_iter=max_iter, steps=steps, report=on_evaluation,
+            cancel_token=cancel_token)
+    except Exception as exc:
+        from .synthesis.cancel import CancelledError
+        result.converged = False
+        result.termination = "cancelled" if isinstance(exc, CancelledError) else "failed"
+        raise
+    result.lines = outcome.state
+    result.params, result.diags = outcome.params, outcome.diags
+    result.history = outcome.history
+    result.jacobian, result.covariance = outcome.jacobian, outcome.covariance
+    result.jac = {k: outcome.jacobian[DIAG_FOR[k]][k] for k in PARAM_KEYS
+                  if DIAG_FOR[k] in outcome.jacobian}
+    result.sigmas = outcome.sigmas
+    result.termination, result.converged = outcome.termination, outcome.converged
+    result.stage = STAGE_SOLVED
+    result.name = result.label()
+    report(result)
     return result

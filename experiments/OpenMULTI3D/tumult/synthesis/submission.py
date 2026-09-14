@@ -31,7 +31,7 @@ import threading
 import time
 import uuid
 
-from .request import ResolvedSynthRequest, SynthRequest
+from .request import ResolvedSynthRequest, NativeRequest
 from .runtime import observe_runs, workflow_scope
 from .cancel import CancelledError
 from . import tasks
@@ -548,7 +548,7 @@ def submit(request, *, root=None, label=None, meta=None, detach=None, slurm_scri
     from .workflows import resolve_request
     resolved = request if isinstance(request, ResolvedSynthRequest) else resolve_request(request)
     # JSON round-trip proves that no mutable masks/settings remain shared with the caller.
-    owned = SynthRequest.from_dict(resolved.request.to_dict())
+    owned = NativeRequest.from_dict(resolved.request.to_dict())
     resolved = resolve_request(owned)
     detach, slurm_script = _driver_choice(owned.prefs, detach, slurm_script)
     record = _new_record(label, meta)
@@ -575,6 +575,21 @@ def submit_task(kind, args, *, prefs, root=None, label=None, meta=None, detach=N
     record['task'] = {'kind': task.name, 'args': args}
     base = Path(root or output_root(prefs)) / '_workflows'
     return _submit_record(base, record, detach, slurm_script)
+
+
+def submit_operation(operation, request, *, label=None, meta=None, detach=None,
+                     slurm_script=None, **kwargs):
+    """Record a public operation (``"synthesis.synthesize"``, ``"departures.solve"``,
+    ``"abundance.fit"``, ``"abundance.nlte_corrections"`` or ``"sparams.ionbalance"``) on
+    ``request`` with its keyword arguments, and return a durable handle.
+
+    The driver runs the same function a script calls, with cancellation and progress;
+    ``handle.result()`` returns what that call returns. See :func:`submit_task` for the
+    driver choice."""
+    args = tasks.Operation.encode_args(operation, request, kwargs)
+    return submit_task(tasks.Operation.name, args, prefs=request.config.to_prefs(),
+                       label=label or operation, meta=meta, detach=detach,
+                       slurm_script=slurm_script)
 
 
 def open_workflow(path, *, root=None):

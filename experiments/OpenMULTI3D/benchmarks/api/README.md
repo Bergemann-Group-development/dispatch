@@ -1,0 +1,38 @@
+# API benchmarks
+
+`intended_api.py` holds the benchmark calculations of `docs/API_benchmarks.txt` as the calls
+a user writes: `single_lte`, `departure_solve`, `single_precomputed_nlte`,
+`single_ondemand_nlte`, `nlte_correction`, `abundance_fit`, `ionisation_balance` and the
+composed `stellar_analysis`. Each function takes public inputs and can be imported on its
+own:
+
+```python
+from benchmarks.api.intended_api import single_lte
+from tumult.synthesis import AtmosphereGrid, Star, SynthConfig
+
+config = SynthConfig(root=".", linelist="input/linelists/sun_3000-9000.txt",
+                     abundances="input/abund/abund_magg22", resolving_power=100_000)
+result = single_lte(config, AtmosphereGrid("input/atmos/MARCS"),
+                    Star(5777, 4.44, 0.0, 1.0), (5160, 5190))
+```
+
+`run_reference_benchmarks.py` binds the reference assets: the five supplied MARCS reference
+atmospheres, `atom.mg86g`, the solar line list, the Fe masks and a default 4000–9000 Å
+range. It preflights what the selected workflows need, times each calculation and writes a
+`benchmark.json` beside its saved result, reporting computational completion separately
+from the scientific outcome (termination, convergence, exclusions by flag). The KPNO atlas
+is not in this repository, so provide its path:
+
+```sh
+bin/tpy -m benchmarks.api.run_reference_benchmarks \
+  --target-spectrum /path/to/KPNO_4000_9000.txt --preflight
+
+bin/tpy -m benchmarks.api.run_reference_benchmarks \
+  --target-spectrum /path/to/KPNO_4000_9000.txt --only single_lte --wavelength 5160 5190
+```
+
+Repeat `--only` to select workflows. `single_precomputed_nlte` reads the departures saved by
+`departure_solve` in the same output folder. The complete run is expensive: per reference
+star an LTE synthesis, a departure solve, two NLTE syntheses and a correction ladder, then an
+abundance fit, an ionisation balance and the composed analysis on the KPNO atlas. Native
+runs share the cache under `data/synth/api_benchmarks`.

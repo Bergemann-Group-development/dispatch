@@ -40,11 +40,14 @@ tests/*
 !requirements-gui.txt
 !tests/test_synthesis_preparation.py
 !tests/test_synthesis_contract.py
+!tests/test_scripting_api.py
 !tests/test_snapshot_grid.py
 
 # Review documents are maintained source; benchmark outputs remain ignored.
 !reports/
 reports/*
+!reports/api_scripting_plan.md
+!reports/api_scripting_implementation.md
 !reports/review/
 reports/review/*
 !reports/review/*.md
@@ -64,6 +67,13 @@ bin/*
 !reports/bench_departures.py
 !reports/depfield_table.py
 !reports/verify_departure_api.py
+
+# Reusable, input-agnostic API benchmark drivers. Native outputs stay under data/.
+!benchmarks/
+benchmarks/*
+!benchmarks/api/
+!benchmarks/api/*.py
+!benchmarks/api/README.md
 
 # The HOP library gate and the golden data it pins (the other goldens predate these rules
 # and are tracked already; this makes a new or regenerated one visible in git status).

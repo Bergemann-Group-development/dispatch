@@ -1,5 +1,5 @@
 """A reusable *synthesis setup* component: the atmosphere + stellar-parameter + RT-mode
-cluster shared by any tool that builds a :class:`~tumult.synthesis.SynthRequest`.
+cluster shared by any tool that builds a :class:`~tumult.synthesis.NativeRequest`.
 
 It is the cluster of the synthesis modal (:class:`synthmodal.SynthModal`): grid selector +
 Interpolate/Pick toggle + Format + atmosphere picker with filename→param auto-fill, plus
@@ -25,7 +25,7 @@ A host running a line-mask analysis sets :attr:`SynthSetup.element`; the mode fo
 offers **Include background lines**, and switching it off restricts the line list to that
 element (``only_elements``).
 
-``context()`` returns the owned :class:`~tumult.synthesis.SynthRequest` (without windows;
+``context()`` returns the owned :class:`~tumult.synthesis.NativeRequest` (without windows;
 the caller adds its masks) that both the synthesis and the fit mode of the modal start
 from, or ``None`` with a ``reason`` when the setup does not resolve to a supported request.
 """
@@ -37,8 +37,8 @@ from pathlib import Path
 from bokeh.models import TextInput
 
 from tumult import refstars
-from tumult.synthesis import (Atmosphere1D, DepartureField, GridTarget, Snapshot3D,
-                              SynthRequest, check_request)
+from tumult.synthesis import (Atmosphere1D, Departures, GridTarget, Snapshot3D,
+                              NativeRequest, check_request)
 from tumult.synthesis.snapshot_grid import is_snapshot_grid
 
 import store
@@ -53,7 +53,7 @@ from synthprefs import INDIVIDUAL_GRID, REPO_DIR, RUN_DEFAULTS, load_prefs, miss
 # plus the abundance/mode/atmosphere selection); the grid id is handled separately because the
 # synthesis modal stores it under "synthesis", not its run section.
 _INHERIT_KEYS = ("teff", "logg", "feh", "vmic", "abundances", "relative_abundances", "mode",
-                 "departure_field", "atmos_mode", "atmos_file",
+                 "departures", "atmos_mode", "atmos_file",
                  "atmos_individual_format")
 
 _SNAPSHOT_FORMATS = {"stagger", "stagger2", "co5bold", "m3dis", "must", "multi"}
@@ -159,8 +159,8 @@ class SynthSetup:
                   value=vals.get("background_lines", True)),
             Field("mode", "Radiative transfer", kind="select", value=vals["mode"],
                   options=["LTE", "NLTE"], inline=True),
-            Field("departure_field", "Saved departures (optional)", kind="text",
-                  value=vals.get("departure_field", ""),
+            Field("departures", "Saved departures (optional)", kind="text",
+                  value=vals.get("departures", ""),
                   placeholder="path to departure run"),
         ], on_change=self._save_mode)
 
@@ -203,7 +203,7 @@ class SynthSetup:
         fields = self.mode_form.fields
         fields["use_linelist"].hidden = not self.allow_atom_only or not self.is_nlte
         fields["background_lines"].hidden = not self.element
-        fields["departure_field"].hidden = not self.is_nlte or not self.allow_departures
+        fields["departures"].hidden = not self.is_nlte or not self.allow_departures
         self.mode_form.render()
 
     def render_grid_ui(self):
@@ -551,14 +551,14 @@ class SynthSetup:
                                   relative_abundances=vals["relative_abundances"])
         self.mode_form.set_values(mode=vals["mode"], use_linelist=vals.get("use_linelist", True),
                                   background_lines=vals.get("background_lines", True),
-                                  departure_field=vals.get("departure_field", ""))
+                                  departures=vals.get("departures", ""))
         self._reset_atmos_picker()
         self._seed_atmos_query()
         self.render_grid_ui()
 
     # --- the payload ------------------------------------------------------------------
     def context(self):
-        """A :class:`~tumult.synthesis.SynthRequest` for the headless workflows, or ``None``
+        """A :class:`~tumult.synthesis.NativeRequest` for the headless workflows, or ``None``
         (with :attr:`reason` set) when synthesis is not yet runnable or the setup names a
         combination no execution path supports (:func:`tumult.synthesis.check_request`).
         The request carries no windows; the caller adds its masks."""
@@ -591,9 +591,9 @@ class SynthSetup:
                 return None
         target = (float(rv["teff"]), float(rv["logg"]), float(rv["feh"]), float(rv["vmic"]))
         self.reason = None
-        saved = str((self.mode_form.value("departure_field") if not self.mode_form.fields["departure_field"].hidden else "") or "").strip()
+        saved = str((self.mode_form.value("departures") if not self.mode_form.fields["departures"].hidden else "") or "").strip()
         try:
-            departure_field = DepartureField.load(saved) if saved else None
+            departures = Departures.load(saved) if saved else None
         except (OSError, ValueError) as exc:
             self.reason = f"Cannot open saved departures: {exc}"
             return None
@@ -610,8 +610,8 @@ class SynthSetup:
                                      self.grids.reference_grid())
         else:
             selection = GridTarget(grid, target, self.grids.reference_grid())
-        request = SynthRequest(prefs=prefs, run_vals=rv, selection=selection,
-                               departure_field=departure_field)
+        request = NativeRequest(prefs=prefs, run_vals=rv, selection=selection,
+                               departures=departures)
         try:
             return check_request(request)
         except ValueError as exc:

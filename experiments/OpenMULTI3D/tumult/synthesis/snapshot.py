@@ -31,17 +31,17 @@ Fortran changes.
 
 Coarsening the snapshot is the existing ``atmos_params`` ``nx``/``ny``/``nz`` point sampling
 through ``read_atmos_mod::interpolate_atmos``; ``resolution`` is those three numbers and
-nothing more. Users choose the sampling and assess its effect on the departure field.
+nothing more. Users choose the sampling and assess its effect on the departures.
 """
 from __future__ import annotations
 
 import copy
 import hashlib
 import json
-from dataclasses import dataclass, field as dataclass_field
 from pathlib import Path
 
 from tumult.auxfuncs import update_dict
+from tumult.departures import Departures, atom_ids
 
 from .api import _dep_bucket
 from .executor import _run_batch
@@ -50,84 +50,6 @@ from .executor import _run_batch
 # line list or a wavelength window in its settings would both slow it down and split its
 # cache by something it does not depend on. This is the whole point of the two-phase split.
 SPECTRUM_ONLY = ('linelist_params', 'spectrum_params')
-FIELD_NAME = 'departure-field.json'
-
-
-@dataclass(frozen=True)
-class DepartureField:
-    """A solved departure run on disk, and what it was solved for.
-
-    ``folder`` is the resolved run directory the spectrum phase reads back. ``name`` is the
-    same run as the launcher names it — relative to ``datadir``, which is what a job must be
-    given — and the two are separate because only one of them survives a change of working
-    directory. Everything else states what the populations in it are populations *of*, so a
-    caller holding one can tell whether it answers the question being asked.
-    """
-    folder: Path
-    name: Path
-    snapshot: str
-    resolution: tuple
-    species: tuple = ()
-    settings: dict = dataclass_field(default_factory=dict, repr=False)
-    composition: dict = dataclass_field(default_factory=dict)
-    convergence: dict = dataclass_field(default_factory=dict)
-
-    @property
-    def saved(self):
-        return (self.folder / 'save').is_dir()
-
-    def to_dict(self):
-        return {'version': 1, 'folder': str(self.folder), 'name': str(self.name),
-                'snapshot': self.snapshot, 'resolution': list(self.resolution),
-                'species': list(self.species), 'settings': copy.deepcopy(self.settings),
-                'composition': copy.deepcopy(self.composition),
-                'convergence': copy.deepcopy(self.convergence)}
-
-    def save(self, path=None):
-        """Persist public metadata alongside the native saved field, atomically."""
-        path = Path(path) if path is not None else self.folder / FIELD_NAME
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_name(f'{path.name}.partial')
-        tmp.write_text(json.dumps(self.to_dict(), indent=2, sort_keys=True, default=str) + '\n')
-        tmp.replace(path)
-        return path
-
-    @classmethod
-    def from_dict(cls, value):
-        value = dict(value)
-        value.pop('version', None)
-        value['folder'] = Path(value['folder']).expanduser().resolve()
-        value['name'] = Path(value.get('name') or value['folder'].name)
-        value['resolution'] = tuple(value.get('resolution') or ())
-        value['species'] = tuple(value.get('species') or ())
-        return cls(**value)
-
-    @classmethod
-    def load(cls, path):
-        """Open a saved field without reconstructing a private cache name.
-
-        New fields carry ``departure-field.json``. Existing run directories are also
-        inspectable from their resolved ``params.nml`` and native population files.
-        """
-        path = Path(path).expanduser().resolve()
-        manifest = path if path.is_file() else path / FIELD_NAME
-        if manifest.is_file():
-            return cls.from_dict(json.loads(manifest.read_text()))
-        folder = path.parent if path.is_file() else path
-        params = folder / 'params.nml'
-        if not params.is_file():
-            raise FileNotFoundError(f'No saved departure metadata or params.nml in {folder}')
-        from tumult.namelist import NameList
-        settings = dict(NameList.from_file(params))
-        atmos = settings.get('atmos_params', {}) or {}
-        resolution = tuple(int(atmos[k]) for k in ('nx', 'ny', 'nz') if atmos.get(k))
-        field = cls(folder=folder, name=Path(folder.name),
-                    snapshot=str(atmos.get('atmos_file') or ''), resolution=resolution,
-                    species=_atom_ids(folder), settings=settings,
-                    composition=copy.deepcopy(settings.get('composition_params', {}) or {}))
-        if not field.saved:
-            raise ValueError(f'{folder} contains no native saved departure field')
-        return field
 
 
 def _spectrum_name(nml):
@@ -139,12 +61,6 @@ def _spectrum_name(nml):
     digest = hashlib.sha1(
         json.dumps(nml, sort_keys=True, default=str).encode()).hexdigest()[:8]
     return f'spec_{digest}'
-
-
-def _atom_ids(folder):
-    """Which atoms this run wrote departures for, from the files it wrote them in."""
-    return tuple(sorted(p.name[len('pop_'):-len('_meta.txt')]
-                        for p in (Path(folder) / 'save').glob('pop_*_meta.txt')))
 
 
 def departure_settings(settings, snapshot, resolution=None, atmos_format=None):
@@ -203,7 +119,7 @@ def spectrum_settings(field, settings=None, window=None):
 
 def solve_departures(top, snapshot, settings=None, *, resolution=None, atmos_format=None,
                      launch_kwargs=None, max_threads=None, cancel_token=None):
-    """Solve NLTE populations on ``snapshot`` and return the :class:`DepartureField`.
+    """Solve NLTE populations on ``snapshot`` and return the :class:`Departures`.
 
     The run lands in a ``dep_<digest>`` directory under ``top``, digested over the
     departure-relevant namelist sections only (:func:`~tumult.synthesis.api._dep_bucket`),
@@ -221,8 +137,8 @@ def solve_departures(top, snapshot, settings=None, *, resolution=None, atmos_for
     actual = tuple(int((nml.get('atmos_params') or {}).get(k))
                    for k in ('nx', 'ny', 'nz')
                    if (nml.get('atmos_params') or {}).get(k) is not None)
-    field = DepartureField(folder=folder, name=Path(name), snapshot=str(snapshot),
-                           resolution=actual, species=_atom_ids(folder), settings=nml,
+    field = Departures(folder=folder, name=Path(name), atmosphere=str(snapshot),
+                           resolution=actual, species=atom_ids(folder), settings=nml,
                            composition=copy.deepcopy(nml.get('composition_params', {}) or {}))
     field.save()
     return field
@@ -230,7 +146,7 @@ def solve_departures(top, snapshot, settings=None, *, resolution=None, atmos_for
 
 def synthesise(field, *, settings=None, window=None, name=None, launch_kwargs=None,
                max_threads=None, cancel_token=None):
-    """Synthesise one spectrum from an already-solved :class:`DepartureField`.
+    """Synthesise one spectrum from an already-solved :class:`Departures`.
 
     Only the formal solution runs: the populations are read back and frozen. ``settings``
     carries whatever the spectrum needs and the departures did not — the line list, the

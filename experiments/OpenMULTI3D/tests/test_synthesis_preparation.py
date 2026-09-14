@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from tumult.synthesis import SynthRequest, workflows as synth
+from tumult.synthesis import NativeRequest, workflows as synth
 
 
 @pytest.fixture
@@ -45,7 +45,7 @@ def test_batch_rejects_mixed_modes_and_negative_resolution(calls):
 
 def test_request_owns_nested_inputs(calls):
     prefs, rv = {'max_threads':1}, {'atoms':['Fe.atom'],'teff':1.}
-    request = SynthRequest(prefs,{'folder':'grid'},rv,(5750.,4.5,0.,1.))
+    request = NativeRequest(prefs,{'folder':'grid'},rv,(5750.,4.5,0.,1.))
     rv['atoms'].append('Ca.atom')
     prefs['R'] = -1.
     assert request.run_vals['atoms'] == ['Fe.atom']

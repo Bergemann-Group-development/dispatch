@@ -204,7 +204,7 @@ def test_ion_balance_setup_is_private_and_interpolation_only(monkeypatch):
     assert setup.form.value("atmos_grid_id") == "stagger"
     assert [value for value, _ in setup.form.fields["atmos_grid_id"].options] == [
         "marcs", "stagger"]
-    # a SynthRequest, like synthsetup.context(): solve_ionisation_balance reads attributes,
+    # a NativeRequest, like synthsetup.context(): solve_ionisation_balance reads attributes,
     # and the dict this used to return made the solve fail on request.prefs
     assert context.grid["id"] == "stagger"
     assert context.atmos_file is None
@@ -396,8 +396,8 @@ def test_mask_tool_range_feeds_line_masks_and_the_synthesis_modal():
 # --- durable synthesis workflows on the document ---------------------------------------
 def _stub_request(root):
     """A resolvable synthesis request whose execution the tests stub out."""
-    from tumult.synthesis.request import SynthRequest
-    return SynthRequest(prefs={"abund_file": None, "dispatch_cwd": str(root)},
+    from tumult.synthesis.request import NativeRequest
+    return NativeRequest(prefs={"abund_file": None, "dispatch_cwd": str(root)},
                         grid={"folder": ""},
                         run_vals={"abundances": "", "relative_abundances": False,
                                   "mode": "LTE"},
@@ -1549,7 +1549,7 @@ def test_external_runs_are_listed_cancelled_and_reused_as_departures(tmp_path, m
 
     _send_action(document, f"run-departures:{run_id}:1")
     setup = ctx.synth_modal.setup
-    assert setup.mode_form.value("departure_field") == str(root / "dep_fe607")
+    assert setup.mode_form.value("departures") == str(root / "dep_fe607")
     assert setup.is_nlte
 
     signalled = []
@@ -1856,7 +1856,7 @@ def test_free_range_synthesis_is_one_durable_window_workflow(tmp_path, monkeypat
     request, = executed
     assert [(w.fit, w.synth) for w in request.masks] == [((5000., 5001.), (5000., 5001.))]
     assert isinstance(request.selection, GridTarget) and request.target == (5750., 4.4, 0., 1.)
-    assert request.departure_field is None
+    assert request.departures is None
     obj, = ctx.canvas.objects
     assert obj.name == "t5750g4.4m+0.0v1.0" and obj.source == ("synth", None)
     assert ["Window", "5000.00–5001.00 Å"] in obj.meta["params"]
@@ -1889,7 +1889,7 @@ def test_mask_set_synthesis_keeps_fit_and_synth_windows_apart(tmp_path, monkeypa
 def test_fixed_file_snapshot_and_nlte_requests_are_captured_from_the_setup(tmp_path,
                                                                             monkeypatch):
     """The same context() yields a picked 1D file, a 3D snapshot of the Individual
-    pseudo-grid and an NLTE request whose saved departure field is forwarded; each is
+    pseudo-grid and an NLTE request whose saved departures is forwarded; each is
     submitted as a durable workflow and the field survives the record's JSON round trip."""
     from tumult.synthesis import Atmosphere1D, Snapshot3D
     one = tmp_path / "one.mod"
@@ -1921,7 +1921,7 @@ def test_fixed_file_snapshot_and_nlte_requests_are_captured_from_the_setup(tmp_p
 
     store.update_pref("synth_run", "atmos_individual_format", "Marcs")
     modal.setup.discard()
-    modal.mode_form.set_values(mode="NLTE", departure_field=str(_departure_folder(tmp_path)))
+    modal.mode_form.set_values(mode="NLTE", departures=str(_departure_folder(tmp_path)))
     modal.atoms.selected = ["/atoms/mg.atom"]
     modal.open_range(5000.0, 5001.0, "synth")
     assert _submit_modal(document, ctx) == 1
@@ -1929,8 +1929,8 @@ def test_fixed_file_snapshot_and_nlte_requests_are_captured_from_the_setup(tmp_p
     assert ticks.settle(lambda: not ctx.jobs.active)
     nlte = executed[-1]
     assert nlte.run_vals["mode"] == "NLTE" and nlte.run_vals["atoms"] == ["/atoms/mg.atom"]
-    assert nlte.departure_field is not None and nlte.departure_field.species == ("Mg",)
-    assert ["Saved departures", str(nlte.departure_field.folder)] in job.handle.meta["params"]
+    assert nlte.departures is not None and nlte.departures.species == ("Mg",)
+    assert ["Saved departures", str(nlte.departures.folder)] in job.handle.meta["params"]
     assert ["Model atoms", "mg.atom"] in job.handle.meta["params"]
     assert [o.name for o in ctx.canvas.objects][-1] == "t5750g4.4m+0.0v1.0·NLTE"
     assert not messages
@@ -1938,14 +1938,14 @@ def test_fixed_file_snapshot_and_nlte_requests_are_captured_from_the_setup(tmp_p
 
 def test_unsupported_requests_are_refused_before_submission(tmp_path, monkeypatch):
     """A fit of a 3D snapshot is refused with the reason and admits no job. A saved
-    departure field is not offered outside NLTE synthesis (the field is hidden for LTE and
+    saved departures are not offered outside NLTE synthesis (the field is hidden for LTE and
     for fits), so a stored one is ignored there rather than refused."""
     from tumult.synthesis import workflows
     one = tmp_path / "one.mod"
     one.write_text("")
     document, ctx, messages = _synth_document(
         tmp_path, monkeypatch, grid_id="__individual__",
-        run={"atmos_file": str(one), "departure_field": str(_departure_folder(tmp_path)),
+        run={"atmos_file": str(one), "departures": str(_departure_folder(tmp_path)),
              "atmos_individual_format": "stagger"})
     monkeypatch.setattr(workflows, "execute_request",
                         lambda *a, **k: pytest.fail("a refused request was executed"))
@@ -1959,7 +1959,7 @@ def test_unsupported_requests_are_refused_before_submission(tmp_path, monkeypatc
     modal.fit.abund_rows = {"Mg": 0.0}
 
     modal.open_range(5000.0, 5001.0, "fit")          # a fit of a 3D snapshot
-    assert modal.setup.mode_form.fields["departure_field"].hidden
+    assert modal.setup.mode_form.fields["departures"].hidden
     assert _submit_modal(document, ctx) == 0
     assert messages[-1] == ("Cannot fit: Fitting is available for 1D atmospheres and "
                             "grids only.")

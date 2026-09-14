@@ -315,7 +315,7 @@ class AbundCorrTool(AbundanceWizard):
 
     @staticmethod
     def _atmos_format(synthesis):
-        """The atmosphere format of a serialised request (``asdict(SynthRequest)``): a
+        """The atmosphere format of a serialised request (``asdict(NativeRequest)``): a
         picked file or snapshot carries its own, an interpolated grid its registry entry."""
         sel = (synthesis or {}).get("selection") or {}
         return str(sel.get("format") or (sel.get("grid") or {}).get("format") or "")

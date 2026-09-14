@@ -148,32 +148,28 @@ a cached completed run instead of re-running `dispatch.x`. See
 `tumult/launch.py` for the full set of options (`threads`, `run_async`,
 `slurm_script`, etc.).
 
-### Replaying a resolved synthesis
+### Scripting a synthesis
 
-The higher-level API uses the same request for blocking and durable asynchronous work. A
-request owns a copy of its masks and settings, so later GUI or script edits cannot alter a
-submitted calculation:
+A `SynthRequest` states a calculation in physical terms and is immutable, so later GUI or
+script edits cannot alter a submitted calculation. The same request runs blocking or as a
+durable workflow in the per-user daemon:
 
 ```python
-from tumult import GridTarget, MaskWindow, SynthRequest, open_workflow, submit
+from tumult import departures, synthesis
+from tumult.synthesis import (AtmosphereGrid, Star, SynthConfig, SynthRequest,
+                              open_workflow, submit_operation)
 
-request = SynthRequest(
-    prefs={"dispatch_cwd": ".", "synth_output_dir": "synth", "R": 300_000,
-           "linelist": "input/linelist/vald_3000-10000.txt",
-           "linelist_crop_aa": 2.0},
-    run_vals={"mode": "NLTE", "atoms": ["input/atoms/MgI.atom"]},
-    selection=GridTarget(
-        {"folder": "input/atmos/MARCS",
-         "pattern": "{Teff:d}_g{logg:+.1f}_m{:3}_t{vmic:02d}_st_z{FeH:+.2f}",
-         "format": "Marcs"},
-        (5777, 4.44, 0.0, 1.0)),
-    masks=[MaskWindow(fit=(5167.0, 5168.0), synth=(5166.5, 5168.5))],
-)
+config = SynthConfig(root=".", cache="synth", resolving_power=300_000,
+                     linelist="input/linelists/sun_3000-9000.txt",
+                     abundances="input/abund/abund_magg22", linelist_skirt=2.0)
+request = SynthRequest(config=config, atmosphere=AtmosphereGrid("input/atmos/MARCS"),
+                       star=Star(5777, 4.44, 0.0, 1.0), windows=(5166.5, 5168.5))
+request = request.update(departures=departures.request(request, atom="input/atoms/atom.mg86g"))
 
-request.resolve().to_json("resolved-synthesis.json")  # inspect/replay exact inputs
-job = submit(request)
-print(job.id, job.status, job.progress)
-result = open_workflow(job.folder).result()             # also works after reconnecting
+request.to_json("synthesis-request.json")          # SynthRequest.from_json reopens it
+result = synthesis.synthesize(request)             # blocking
+job = submit_operation("synthesis.synthesize", request)
+result = open_workflow(job.folder).result()        # also works after reconnecting
 result.spectrum.plot()
 ```
 
@@ -239,10 +235,11 @@ one node, the lexically last wins (`t45g40m00_new` over `t45g40m00`). HOP line-l
 preparation still needs 1D structures, hence the MARCS `preparation_grid`. Snapshot nodes
 carry no vmic.
 
-For a single 3D calculation use `Snapshot3D(path, stellar, resolution)`. Call
-`tumult.synthesis.solve_departures(...)` without masks to create a `DepartureField`, save or
-load it with `DepartureField.save/load`, and pass it as `departure_field=` when constructing
-another request. The result records both the departure solve and formal-solution settings.
+For a single 3D calculation use `Snapshot(path, format, resolution)` in a `SynthRequest`.
+`tumult.departures.solve(request, atom=...)` creates `Departures`, which reopen with
+`departures.load` and are attached with `request.update(departures=...)`. The result
+records both the departure solve and formal-solution settings. See
+[docs/FAQ.md](docs/FAQ.md), "Scripting the workflows".
 
 ---
 

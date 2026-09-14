@@ -1,12 +1,22 @@
-"""Serializable, headless synthesis requests and geometry-neutral results."""
+"""Synthesis requests and geometry-neutral results.
+
+:class:`SynthRequest` is the public request: configuration, atmosphere, star, windows,
+abundances and departures, validated and immutable. :class:`NativeRequest` is the form the
+execution layer and the GUI build directly, in terms of the preference dictionary and the
+per-run namelist values; :func:`tumult.synthesis.operations.native_request` translates the
+first into the second.
+"""
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict, dataclass, field, fields, replace
 import json
 import math
 from pathlib import Path
 from typing import Any, Mapping
+
+from .inputs import (Abundances, Atmosphere, AtmosphereGrid, Snapshot, Star, SynthConfig,
+                     coerce_atmosphere, coerce_windows)
 
 
 def _mapping(value):
@@ -123,7 +133,7 @@ def _selection_from_dict(value):
 
 
 @dataclass(frozen=True, init=False)
-class SynthRequest:
+class NativeRequest:
     """A request independent of Bokeh and mutable caller state.
 
     ``masks`` are the windows synthesised, one output spectrum each; a single continuous
@@ -137,10 +147,10 @@ class SynthRequest:
     selection: AtmosphereSelection
     masks: tuple[MaskWindow, ...]
     expert_settings: dict
-    departure_field: Any | None
+    departures: Any | None
 
     def __init__(self, prefs=None, grid=None, run_vals=None, target=None, atmos_file=None, *,
-                 selection=None, masks=(), expert_settings=None, departure_field=None):
+                 selection=None, masks=(), expert_settings=None, departures=None):
         prefs, run_vals = _mapping(prefs), _mapping(run_vals)
         if selection is None:
             if target is None:
@@ -161,7 +171,7 @@ class SynthRequest:
         object.__setattr__(self, "selection", selection)
         object.__setattr__(self, "masks", capture_masks(masks))
         object.__setattr__(self, "expert_settings", _mapping(expert_settings))
-        object.__setattr__(self, "departure_field", deepcopy(departure_field))
+        object.__setattr__(self, "departures", deepcopy(departures))
 
     @property
     def target(self):
@@ -184,15 +194,15 @@ class SynthRequest:
         return self.target[2] if self.target is not None else None
 
     def with_run_vals(self, **overrides):
-        return SynthRequest(self.prefs, run_vals={**self.run_vals, **overrides},
+        return NativeRequest(self.prefs, run_vals={**self.run_vals, **overrides},
                             selection=self.selection, masks=self.masks,
                             expert_settings=self.expert_settings,
-                            departure_field=self.departure_field)
+                            departures=self.departures)
 
     def with_masks(self, masks):
-        return SynthRequest(self.prefs, run_vals=self.run_vals, selection=self.selection,
+        return NativeRequest(self.prefs, run_vals=self.run_vals, selection=self.selection,
                             masks=masks, expert_settings=self.expert_settings,
-                            departure_field=self.departure_field)
+                            departures=self.departures)
 
     def with_stellar(self, **values):
         """This request at other stellar parameters (``teff``, ``logg``, ``feh``,
@@ -211,9 +221,9 @@ class SynthRequest:
             selection = replace(selection,
                                 stellar=tuple(current[key] for key in keys[:len(stellar)]))
         run_vals = {**self.run_vals, **current}
-        return SynthRequest(self.prefs, run_vals=run_vals, selection=selection,
+        return NativeRequest(self.prefs, run_vals=run_vals, selection=selection,
                             masks=self.masks, expert_settings=self.expert_settings,
-                            departure_field=self.departure_field)
+                            departures=self.departures)
 
     def resolve(self):
         from .workflows import resolve_request
@@ -224,15 +234,13 @@ class SynthRequest:
         return execute_request(self, cancel_token=cancel_token)
 
     def to_dict(self):
-        departure = self.departure_field
-        if departure is not None:
-            departure = (departure.to_dict() if hasattr(departure, "to_dict") else
-                         str(getattr(departure, "folder", departure)))
+        from ..departures import to_record
+        departure = to_record(self.departures)
         return {"version": 1, "selection": _selection_dict(self.selection),
                 "prefs": deepcopy(self.prefs), "run_vals": deepcopy(self.run_vals),
                 "masks": [asdict(m) for m in self.masks],
                 "expert_settings": deepcopy(self.expert_settings),
-                "departure_field": departure}
+                "departures": departure}
 
     def to_json(self, path=None):
         text = json.dumps(self.to_dict(), indent=2, sort_keys=True, default=str)
@@ -243,14 +251,12 @@ class SynthRequest:
     @classmethod
     def from_dict(cls, value):
         value = deepcopy(dict(value))
-        departure = value.get("departure_field")
-        if isinstance(departure, Mapping):
-            from .snapshot import DepartureField
-            departure = DepartureField.from_dict(departure)
+        from ..departures import from_record
+        departure = from_record(value.get("departures"))
         return cls(value.get("prefs"), run_vals=value.get("run_vals"),
                    selection=_selection_from_dict(value["selection"]),
                    masks=value.get("masks", ()), expert_settings=value.get("expert_settings"),
-                   departure_field=departure)
+                   departures=departure)
 
     @classmethod
     def from_json(cls, value):
@@ -266,22 +272,27 @@ def _is_nlte(request):
 
 def check_request(request):
     """Reject the request combinations no execution path supports, before a record is
-    written or a worker is spent: NLTE without model atoms, and a saved departure field
-    outside NLTE or with a grid (the field was solved for one atmosphere). Raises
+    written or a worker is spent: NLTE without model atoms, saved departures outside NLTE,
+    one atmosphere's departures with a grid and a departure grid without one. Raises
     ``ValueError`` naming the cause; returns ``request``."""
-    if not isinstance(request, SynthRequest):
-        raise TypeError("check_request expects a SynthRequest")
+    if not isinstance(request, NativeRequest):
+        raise TypeError("check_request expects a NativeRequest")
     nlte = _is_nlte(request)
     if request.run_vals.get("only_atom") and not request.run_vals.get("atoms"):
         raise ValueError("Atom-only synthesis needs model atoms.")
     if nlte and not request.run_vals.get("atoms"):
         raise ValueError("NLTE synthesis needs model atoms.")
-    if request.departure_field is not None:
+    if request.departures is not None:
+        from ..departures import DepartureGrid
         if not nlte:
             raise ValueError("Saved departures can only be reused in NLTE mode.")
-        if isinstance(request.selection, GridTarget):
+        grid_departures = isinstance(request.departures, DepartureGrid)
+        if isinstance(request.selection, GridTarget) and not grid_departures:
             raise ValueError("Saved departures were solved for one atmosphere; choose an "
-                             "individual 1D atmosphere or a 3D snapshot, not a grid.")
+                             "individual 1D atmosphere or a 3D snapshot, or solve a "
+                             "DepartureGrid for the grid.")
+        if grid_departures and not isinstance(request.selection, GridTarget):
+            raise ValueError("A DepartureGrid belongs to an atmosphere grid request.")
     return request
 
 
@@ -290,7 +301,7 @@ STELLAR_AXES = ("teff", "logg", "feh", "vmic")
 
 @dataclass(frozen=True)
 class FitRequest:
-    """One observation fitted by adaptive synthesis around an owned :class:`SynthRequest`.
+    """One observation fitted by adaptive synthesis around an owned :class:`NativeRequest`.
 
     ``synthesis`` holds the initial guess and the fixed configuration. Its masks give two
     distinct sets of windows: the span of their synth windows is what every trial point
@@ -300,10 +311,10 @@ class FitRequest:
     axes that vary (only with a grid), ``abund_fits`` maps each fitted element to its
     [X/Fe] guess and ``fit_post`` each fitted broadening parameter to its guess.
 
-    Fitting is supported for 1D atmospheres and grids without a saved departure field;
+    Fitting is supported for 1D atmospheres and grids without saved departures;
     other combinations are rejected here, at construction, with the reason.
     """
-    synthesis: SynthRequest
+    synthesis: NativeRequest
     fit_stellar: tuple[str, ...] = ()
     abund_fits: dict = field(default_factory=dict)
     fit_post: dict = field(default_factory=dict)
@@ -318,8 +329,8 @@ class FitRequest:
         selection = self.synthesis.selection
         if isinstance(selection, Snapshot3D):
             raise ValueError("Fitting is available for 1D atmospheres and grids only.")
-        if self.synthesis.departure_field is not None:
-            raise ValueError("Fitting with a saved departure field is not supported; "
+        if self.synthesis.departures is not None:
+            raise ValueError("Fitting with saved departures is not supported; "
                              "clear the saved departures or synthesise instead.")
         unknown = set(self.fit_stellar) - set(STELLAR_AXES)
         if unknown:
@@ -359,7 +370,7 @@ class FitRequest:
     @classmethod
     def from_dict(cls, value):
         value = deepcopy(dict(value))
-        return cls(SynthRequest.from_dict(value["synthesis"]),
+        return cls(NativeRequest.from_dict(value["synthesis"]),
                    fit_stellar=value.get("fit_stellar", ()),
                    abund_fits=value.get("abund_fits") or {},
                    fit_post=value.get("fit_post") or {})
@@ -370,15 +381,17 @@ class SynthesisResult:
     """Common result for grid, individual-atmosphere and snapshot calculations."""
     spectra: tuple[Any, ...]
     mapping: tuple[dict, ...]
-    request: SynthRequest
+    native: NativeRequest
     resolved_settings: dict
     preparation: Any | None = None
     departures: Any | None = None
     runs: tuple[str, ...] = ()
+    request: Any | None = None
+    provenance: dict = field(default_factory=dict)
 
     @property
     def geometry(self):
-        return "3d" if isinstance(self.request.selection, Snapshot3D) else "1d"
+        return "3d" if isinstance(self.native.selection, Snapshot3D) else "1d"
 
     @property
     def spectrum(self):
@@ -396,13 +409,17 @@ class SynthesisResult:
         return solved != formal
 
     def to_dict(self):
+        from ..departures import to_record
         item = lambda value: value.to_dict() if hasattr(value, "to_dict") else value
         return {"version": 1, "geometry": self.geometry,
                 "frozen_composition_changed": self.frozen_composition_changed,
-                "request": self.request.to_dict(),
+                "native_request": self.native.to_dict(),
+                "request": None if self.request is None else self.request.to_dict(),
+                "provenance": deepcopy(self.provenance),
                 "mapping": deepcopy(list(self.mapping)),
                 "resolved_settings": deepcopy(self.resolved_settings),
-                "preparation": item(self.preparation), "departures": item(self.departures),
+                "preparation": item(self.preparation),
+                "departures": to_record(self.departures),
                 "runs": list(self.runs)}
 
     def save(self, folder):
@@ -443,23 +460,24 @@ class SynthesisResult:
                 xunit = u.Unit(xtext) if xtext else None
                 yunit = u.Unit(ytext) if ytext else None
                 spectra.append(Spectrum(data['x'], data['y'], xunit=xunit, yunit=yunit))
-        departure = value.get('departures')
-        if isinstance(departure, Mapping):
-            from .snapshot import DepartureField
-            departure = DepartureField.from_dict(departure)
+        from ..departures import from_record
+        departure = from_record(value.get('departures'))
         preparation = value.get('preparation')
         if isinstance(preparation, Mapping) and preparation.get('folder'):
             from ..linestrength import PreparedLineList
             preparation = PreparedLineList.load(preparation['folder'])
         return cls(tuple(spectra), tuple(value.get('mapping', ())),
-                   SynthRequest.from_dict(value['request']), value.get('resolved_settings', {}),
-                   preparation, departure, tuple(value.get('runs', ())))
+                   NativeRequest.from_dict(value['native_request']),
+                   value.get('resolved_settings', {}), preparation, departure,
+                   tuple(value.get('runs', ())),
+                   SynthRequest.from_dict(value['request']) if value.get('request') else None,
+                   value.get('provenance') or {})
 
 
 @dataclass(frozen=True)
 class ResolvedSynthRequest:
     """The replayable inputs after paths, windows, settings and references are resolved."""
-    request: SynthRequest
+    request: NativeRequest
     settings: dict
     windows: tuple[tuple[float, float], ...]
     padded_windows: tuple[tuple[float, float], ...]
@@ -486,7 +504,7 @@ class ResolvedSynthRequest:
     @classmethod
     def from_dict(cls, value):
         value = deepcopy(dict(value))
-        return cls(request=SynthRequest.from_dict(value['request']),
+        return cls(request=NativeRequest.from_dict(value['request']),
                    settings=value.get('settings', {}),
                    windows=tuple(tuple(w) for w in value.get('windows', ())),
                    padded_windows=tuple(tuple(w) for w in value.get('padded_windows', ())),
@@ -499,5 +517,143 @@ class ResolvedSynthRequest:
     def from_json(cls, value):
         raw = str(value)
         path = Path(raw) if '\n' not in raw else None
+        text = path.read_text() if path is not None and path.is_file() else raw
+        return cls.from_dict(json.loads(text))
+
+
+@dataclass(frozen=True)
+class SynthRequest:
+    """Everything needed to produce synthetic spectra.
+
+    ``config`` (:class:`~tumult.synthesis.inputs.SynthConfig`) states paths and numerical
+    settings; ``atmosphere`` an :class:`~tumult.synthesis.inputs.Atmosphere`,
+    :class:`~tumult.synthesis.inputs.AtmosphereGrid` or
+    :class:`~tumult.synthesis.inputs.Snapshot` (a path is taken as a MARCS file or grid);
+    ``star`` the stellar parameters, which are required for every atmosphere and never read
+    from a model file; ``windows`` the wavelength ranges of a requested spectrum (one
+    ``(blue, red)`` pair or several, Angstrom or astropy quantities); ``abundances`` the
+    overrides of the standard composition, applied in every synthesis an operation issues.
+
+    ``departures`` selects the calculation: none is LTE, solved
+    :class:`~tumult.departures.Departures` or a :class:`~tumult.departures.DepartureGrid`
+    is NLTE with those frozen populations, and a
+    :class:`~tumult.departures.DepartureRequest` is NLTE with departures solved for each
+    effective request.
+
+    The request is immutable; :meth:`update` returns a changed copy. Balance and abundance
+    results may be passed for ``star`` and ``abundances``.
+    """
+    config: SynthConfig
+    atmosphere: Atmosphere | AtmosphereGrid | Snapshot
+    star: Star
+    windows: tuple = ()
+    abundances: Abundances | None = None
+    departures: Any | None = None
+
+    def __post_init__(self):
+        from ..departures import DepartureGrid, DepartureRequest, Departures
+        set_ = lambda name, value: object.__setattr__(self, name, value)
+        set_("config", SynthConfig.coerce(self.config))
+        set_("atmosphere", coerce_atmosphere(self.atmosphere))
+        if self.star is None:
+            raise ValueError("Stellar parameters are required for every request, including "
+                             "one on an individual atmosphere.")
+        set_("star", Star.coerce(self.star))
+        set_("windows", coerce_windows(self.windows))
+        set_("abundances", Abundances.coerce(self.abundances))
+        if self.abundances is not None and not self.abundances:
+            set_("abundances", None)
+        departures = self.departures
+        if not isinstance(departures, (type(None), Departures, DepartureGrid,
+                                       DepartureRequest)):
+            raise TypeError("departures must be Departures, a DepartureGrid, a "
+                            "DepartureRequest (departures.request) or None.")
+        atmosphere = self.atmosphere
+        if self.star.vmic is None and not isinstance(atmosphere, Snapshot):
+            raise ValueError("A 1D atmosphere needs vmic in the stellar parameters.")
+        if isinstance(departures, Departures):
+            if isinstance(atmosphere, AtmosphereGrid):
+                raise ValueError("Departures were solved on one atmosphere; a grid request "
+                                 "needs a DepartureGrid (departures.solve on the grid).")
+            solved_on = Path(departures.atmosphere).expanduser()
+            if departures.atmosphere and (self.config.resolve(solved_on)
+                                          != self.config.resolve(atmosphere.path)):
+                raise ValueError(f"The departures were solved on {solved_on}, not on "
+                                 f"{atmosphere.path}.")
+            self._check_star(departures.star, "The departures were solved")
+        if isinstance(departures, DepartureGrid):
+            if not isinstance(atmosphere, AtmosphereGrid):
+                raise ValueError("A DepartureGrid belongs to an atmosphere grid request.")
+            self._check_star(departures.star, "The departure grid was solved")
+
+    def _check_star(self, solved, what):
+        if not solved:
+            return
+        mismatch = {key: (solved.get(key), self.star[key]) for key in self.star
+                    if solved.get(key) is not None
+                    and not math.isclose(float(solved[key]), self.star[key], abs_tol=1e-9)}
+        if mismatch:
+            text = ", ".join(f"{k} {a} vs {b}" for k, (a, b) in mismatch.items())
+            raise ValueError(f"{what} for other stellar parameters ({text}); frozen "
+                             "departures do not follow the star, use departures.request "
+                             "or solve again.")
+
+    def update(self, **changes):
+        """A new request with ``changes`` (``star``, ``abundances``, ``windows``,
+        ``departures``, ``atmosphere``, ``config``) applied and validated.
+
+        ``star`` may be a balance result and ``abundances`` an abundance result; both are
+        reduced to their lightweight form. The request this is called on is unchanged.
+        """
+        unknown = set(changes) - {f.name for f in fields(self)}
+        if unknown:
+            raise TypeError(f"Unknown request fields: {sorted(unknown)}")
+        return replace(self, **changes)
+
+    @property
+    def is_nlte(self):
+        return self.departures is not None
+
+    def check(self):
+        """Preflight the inputs this request names before any calculation.
+
+        Checks that ``dispatch.x`` and every configured file exist, that a grid covers the
+        star, and that solved departures are still on disk. Raises ``ValueError`` or
+        ``FileNotFoundError`` naming each problem; returns the request.
+        """
+        from .operations import preflight
+        preflight(self)
+        return self
+
+    def to_dict(self):
+        from ..departures import to_record
+        return {"version": 2, "config": self.config.to_dict(),
+                "atmosphere": self.atmosphere.to_dict(), "star": self.star.to_dict(),
+                "windows": [list(window) for window in self.windows],
+                "abundances": None if self.abundances is None else self.abundances.to_dict(),
+                "departures": to_record(self.departures)}
+
+    def to_json(self, path=None):
+        text = json.dumps(self.to_dict(), indent=2, sort_keys=True, default=str)
+        if path is not None:
+            Path(path).write_text(text + "\n")
+        return text
+
+    @classmethod
+    def from_dict(cls, value):
+        from ..departures import from_record
+        value = dict(value)
+        if value.get("version") != 2:
+            raise ValueError("Not a SynthRequest record.")
+        return cls(config=SynthConfig.from_dict(value["config"]),
+                   atmosphere=coerce_atmosphere(value["atmosphere"]),
+                   star=Star.coerce(value["star"]), windows=value.get("windows") or (),
+                   abundances=Abundances.coerce(value.get("abundances")),
+                   departures=from_record(value.get("departures")))
+
+    @classmethod
+    def from_json(cls, value):
+        raw = str(value)
+        path = Path(raw) if "\n" not in raw else None
         text = path.read_text() if path is not None and path.is_file() else raw
         return cls.from_dict(json.loads(text))

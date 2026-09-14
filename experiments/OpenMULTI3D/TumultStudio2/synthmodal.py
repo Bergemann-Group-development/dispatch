@@ -13,12 +13,12 @@ a line-mask set, or a blank window from the empty landing page — in one of two
   from them. A fit is a durable ``fit`` workflow (``ctx.submit_task``) like a synthesis;
   ``_import_fit`` delivers a record another document submitted.
 
-Both modes collect one owned :class:`~tumult.synthesis.SynthRequest` through
+Both modes collect one owned :class:`~tumult.synthesis.NativeRequest` through
 :meth:`synthsetup.SynthSetup.context` and add the job's windows to it: a free range is one
 :class:`~tumult.synthesis.MaskWindow` whose fit and synth bounds coincide, a mask set
 contributes its included masks with their distinct fit and synth windows. Unsupported
-combinations (a saved departure field outside NLTE or with a grid, a fit with a snapshot
-or a saved departure field, ...) are refused before anything is submitted, with the
+combinations (saved departures outside NLTE or with a grid, a fit with a snapshot
+or saved departures, ...) are refused before anything is submitted, with the
 reason in the footer and the dialog left open.
 
 The atmosphere + stellar-parameter + RT-mode cluster is a composed
@@ -352,7 +352,7 @@ class SynthModal:
         """Fit the chosen target as a durable ``fit`` workflow (``ctx.submit_task``).
 
         The request is the setup's, with the job's windows; :class:`FitRequest` refuses
-        what fitting does not support (a snapshot, a saved departure field, stellar axes
+        what fitting does not support (a snapshot, saved departures, stellar axes
         with a fixed file) before the job is admitted."""
         request = self.setup.context()
         if request is None:
@@ -610,8 +610,8 @@ class SynthModal:
         shown_min = min(w.synth[0] for w in windows)
         shown_max = max(w.synth[1] for w in windows)
         atmosphere = self._selection_rows(request.selection, self.setup.active_grid())
-        if request.departure_field is not None:
-            atmosphere.append(["Saved departures", str(request.departure_field.folder)])
+        if request.departures is not None:
+            atmosphere.append(["Saved departures", str(request.departures.folder)])
         meta = self._synth_meta(
             {"teff": target[0], "logg": target[1], "feh": target[2], "vmic": target[3]},
             mode=rv["mode"], abundances=rv["abundances"],

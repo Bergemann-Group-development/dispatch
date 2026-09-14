@@ -99,8 +99,8 @@ class NLTECorrections(TaskKind):
 
     def decode(self, args):
         from ..abundance import AbundanceResult, CorrectionOpts
-        from .request import SynthRequest
-        return {'request': SynthRequest.from_dict(args['request']),
+        from .request import NativeRequest
+        return {'request': NativeRequest.from_dict(args['request']),
                 'atom': str(args['atom']),
                 'ref_grid': dict(args['ref_grid'] or {}),
                 'opts': CorrectionOpts(**dict(args.get('opts') or {})),
@@ -134,8 +134,8 @@ class Abundance(TaskKind):
     def decode(self, args):
         from ..abundance import AbundanceResult
         from ..spectrum import Spectrum
-        from .request import SynthRequest
-        return {'request': SynthRequest.from_dict(args['request']),
+        from .request import NativeRequest
+        return {'request': NativeRequest.from_dict(args['request']),
                 'result': AbundanceResult.from_dict(args['result']),
                 'observation': Spectrum.from_dict(args['observation']),
                 'snr': None if args.get('snr') is None else float(args['snr']),
@@ -163,9 +163,9 @@ class IonisationBalance(TaskKind):
         from ..linemask import LineMask
         from ..measurement import BalanceResult
         from ..spectrum import Spectrum
-        from .request import SynthRequest
+        from .request import NativeRequest
         masks = args.get('masks')
-        return {'request': SynthRequest.from_dict(args['request']),
+        return {'request': NativeRequest.from_dict(args['request']),
                 'result': BalanceResult.from_dict(args['result']),
                 'masks': None if masks is None else [LineMask.from_dict(m) for m in masks],
                 'observation': (Spectrum.from_dict(args['observation'])
@@ -214,8 +214,98 @@ class Fit(TaskKind):
         return dict(data['best']), Spectrum.from_dict(data['raw']), dict(data['post'])
 
 
+# --- the public operations ---------------------------------------------------------------
+OPERATIONS = {
+    'synthesis.synthesize': ('tumult.synthesis.operations', 'synthesize', False),
+    'departures.solve': ('tumult.departures', 'solve', False),
+    'abundance.fit': ('tumult.abundance', 'fit', True),
+    'abundance.nlte_corrections': ('tumult.abundance', 'nlte_corrections', True),
+    'sparams.ionbalance': ('tumult.sparams', 'ionbalance', True),
+}
+
+
+def _operation(name):
+    import importlib
+    try:
+        module, function, progress = OPERATIONS[name]
+    except KeyError:
+        raise ValueError(f'unknown operation {name!r}; one of {sorted(OPERATIONS)}') from None
+    return getattr(importlib.import_module(module), function), progress
+
+
+class Operation(TaskKind):
+    """One public scripting operation (:data:`OPERATIONS`) on a
+    :class:`~tumult.synthesis.SynthRequest`, run exactly as the scripting call would be.
+
+    Arguments are ``{"operation", "request", "kwargs"}``: the request's ``to_dict`` and the
+    operation's keyword arguments, with a target spectrum and a line-mask set in their
+    ``to_dict`` forms (or as file paths)."""
+    name = 'operation'
+    progress = True
+
+    @staticmethod
+    def encode_args(operation, request, kwargs):
+        _operation(operation)
+        values = {}
+        for key, value in kwargs.items():
+            values[key] = value.to_dict() if hasattr(value, 'to_dict') else \
+                (str(value) if isinstance(value, Path) else value)
+        return {'operation': operation, 'request': request.to_dict(), 'kwargs': values}
+
+    def decode(self, args):
+        from ..linemask import LineMaskSet
+        from ..spectrum import Spectrum
+        from .request import SynthRequest
+        function, progress = _operation(args['operation'])
+        kwargs = dict(args.get('kwargs') or {})
+        if isinstance(kwargs.get('target'), dict):
+            kwargs['target'] = Spectrum.from_dict(kwargs['target'])
+        if isinstance(kwargs.get('line_mask'), dict):
+            kwargs['line_mask'] = LineMaskSet.from_dict(kwargs['line_mask'])
+        return {'operation': args['operation'], 'function': function, 'progress': progress,
+                'request': SynthRequest.from_dict(args['request']), 'kwargs': kwargs}
+
+    def run(self, args, token, progress):
+        extra = {'progress': progress} if args['progress'] else {}
+        return args['function'](args['request'], cancel_token=token, **extra,
+                                **args['kwargs'])
+
+    def save(self, result, folder):
+        from .request import SynthesisResult
+        if isinstance(result, SynthesisResult):
+            return result.save(folder)
+        return super().save(result, folder)
+
+    def load(self, folder):
+        from .request import SynthesisResult
+        value = json.loads((Path(folder) / RESULT_FILE).read_text())
+        if 'native_request' in value:
+            return SynthesisResult.load(Path(folder))
+        return self.decode_result(value['data'])
+
+    def encode(self, result):
+        from ..departures import to_record
+        from ..measurement import BalanceResult
+        if isinstance(result, BalanceResult):
+            return {'type': 'balance', 'data': result.to_dict()}
+        if hasattr(result, 'to_abundances'):
+            return {'type': 'abundance', 'data': result.to_dict()}
+        return {'type': 'departures', 'data': to_record(result)}
+
+    def decode_result(self, data):
+        from ..abundance import AbundanceResult
+        from ..departures import from_record
+        from ..measurement import BalanceResult
+        kind = data['type']
+        if kind == 'balance':
+            return BalanceResult.from_dict(data['data'])
+        if kind == 'abundance':
+            return AbundanceResult.from_dict(data['data'])
+        return from_record(data['data'])
+
+
 KINDS = {kind.name: kind for kind in (Synthesis(), NLTECorrections(), Abundance(),
-                                      IonisationBalance(), Fit())}
+                                      IonisationBalance(), Fit(), Operation())}
 
 
 def kind_of(record):

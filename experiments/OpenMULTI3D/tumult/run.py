@@ -416,7 +416,7 @@ class Run(object):
         spec = self.get_set_spectrum(index, ang=ang, imu=imu)
         spec = spec.crop(slc=slc, x0=x0, **kwargs)
         if norm:
-            cnt = self.get_spectrum(ang=ang, imu=imu, cont=True)
+            cnt = self.get_spectrum(ang=ang, imu=imu, cont=True, LTE=self.mode == 'LTE')
             spec = spec / cnt.crop(slc=slc, x0=x0, **kwargs)
         return spec
 

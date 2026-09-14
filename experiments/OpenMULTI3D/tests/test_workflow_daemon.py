@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from tumult.synthesis import Atmosphere1D, SynthRequest, daemon, submission
+from tumult.synthesis import Atmosphere1D, NativeRequest, daemon, submission
 from tumult.synthesis.cancel import CancelledError
 
 pytestmark = pytest.mark.skipif(os.name != 'posix', reason='the daemon needs POSIX')
@@ -58,7 +58,7 @@ def fake_env(tmp_path, monkeypatch):
 
 
 def _request(tmp_path, **prefs):
-    return SynthRequest({'dispatch_cwd': str(tmp_path), 'synth_output_dir': 'out', **prefs},
+    return NativeRequest({'dispatch_cwd': str(tmp_path), 'synth_output_dir': 'out', **prefs},
                         run_vals={'mode': 'LTE'},
                         selection=Atmosphere1D('one.mod', (5750, 4.5, 0, 1)))
 
@@ -80,9 +80,9 @@ def _daemon_pid():
 _SERVER = '''
 import sys, time
 sys.path.insert(0, {root!r})
-from tumult.synthesis import daemon, submission, SynthRequest, Atmosphere1D
+from tumult.synthesis import daemon, submission, NativeRequest, Atmosphere1D
 server = daemon.connect_server()
-request = SynthRequest({prefs!r}, run_vals={{'mode': 'LTE'}},
+request = NativeRequest({prefs!r}, run_vals={{'mode': 'LTE'}},
                        selection=Atmosphere1D('one.mod', (5750, 4.5, 0, 1)))
 handle = submission.submit(request, root={jobs!r}) if {submit!r} else None
 print(handle.id if handle else 'connected', flush=True)

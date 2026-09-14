@@ -99,6 +99,24 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
 
 **Runs**
 
+- *request*: the public `tumult.synthesis.SynthRequest`: configuration, atmosphere, star,
+  windows, abundances and departures, immutable and in physical terms. The *native request*
+  (`NativeRequest`) is the same calculation in preference and namelist terms, which the GUI
+  builds directly and `operations.native_request` derives from a request. A request never
+  holds a target spectrum; the analysis operations take that as an argument.
+- *operation*: one public scripting call on a request (`synthesis.synthesize`,
+  `departures.solve`, `abundance.fit`, `abundance.nlte_corrections`, `sparams.ionbalance`),
+  and the task kind `operation` that runs one durably.
+- *rung*: one abundance of a curve of growth, synthesised as a run of its own on the
+  abundance lattice (`SynthConfig.abundance_step`). With requested departures every rung is
+  also a departure solve.
+- *background lines*: the transitions of other species in a curve-of-growth synthesis.
+  Switched off, an abundance fit or balance synthesises the element's transitions alone
+  (`only_elements`) and a correction the model atom's alone (`only_atom`); blend screens
+  compare against every species either way.
+- *preparation atmosphere*: the MARCS model a HOP preparation (a pruned line list, an atom's
+  wavelength quadrature) is computed on: an individual MARCS atmosphere itself, the node of
+  a MARCS grid, or the nearest node of the MARCS grid named for any other format.
 - *workflow*: one resolved user calculation, which may prepare inputs and schedule several
   native runs. Its durable form is a record under `_workflows/` with a
   `WorkflowHandle`, run by the workflow daemon or a Slurm driver; it is not a DISPATCH task.
@@ -125,10 +143,13 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
 - *ladder*: a sequence of abundance offsets forming a curve of growth. This is the only
   meaning; `linestrength` calls its strength sources a precedence, not a ladder.
 - *departures*: NLTE departure coefficients, solved in their own run and reused across
-  windows and line lists.
-- *departure field*: one such solve as it stands on disk, together with what it was solved
-  for. `tumult.synthesis.snapshot.DepartureField` is the handle; the spectrum phase takes
-  one and adds only the formal solution.
+  windows and line lists. `tumult.departures.Departures` is one solve on one atmosphere as
+  it stands on disk, together with what it was solved for; the spectrum phase takes one and
+  adds only the formal solution. A `DepartureGrid` holds one per node and vmic lattice point
+  of a grid request. A *departure request* (`DepartureRequest`, from `departures.request`)
+  names the model atom and quadrature policy only, and is solved for each effective request
+  that consumes it. "Departure field" is retired: it suggested a spatial field rather than
+  a solved run.
 - *snapshot*: one 3D hydrodynamic model atmosphere, as a cube. Distinct from an *atmosphere
   node*, which is one 1D model atmosphere at a point of the (teff, logg, feh, vmic) grid.
   The stellar-grid path solves departures per node; the snapshot path solves them per cube.

@@ -104,7 +104,7 @@ def main():
     from tumult.linemask import parse_linemask_file
     from tumult.measurement import BalanceResult, mask_key
     from tumult.spectrum_io import load_spectrum
-    from tumult.synthesis import SynthRequest, execution_scope
+    from tumult.synthesis import NativeRequest, execution_scope
     from tumult.synthesis import workflows as synth
     from tumult.synthesis.executor import _output_folder, run_complete
     from synthprefs import RUN_DEFAULTS, load_prefs
@@ -177,7 +177,7 @@ def main():
     grid = next(g for g in prefs["atmos_grids"] if g["id"] == "marcs")
     run_vals = {**RUN_DEFAULTS, "mode": "LTE", "atoms": [], "abundances": "",
                 "relative_abundances": True, "atmos_mode": "interp", "atmos_file": ""}
-    request = SynthRequest(prefs=prefs, grid=grid, run_vals=run_vals,
+    request = NativeRequest(prefs=prefs, grid=grid, run_vals=run_vals,
                            target=None, atmos_file=None)
 
     spec = load_spectrum(str(ATLAS))

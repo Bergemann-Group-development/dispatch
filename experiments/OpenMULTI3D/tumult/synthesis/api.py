@@ -191,7 +191,7 @@ def _node_linelists(top, base, nodes, windows, crop, launch_kwargs, preparation=
     padded = sorted((float(min(w)) - skirt, float(max(w)) + skirt) for w in windows)
     cwd = Path((launch_kwargs or {}).get('cwd') or '.')
     out_dir = (cwd / top / '_linelists' / _crop_digest(base, windows, crop)).resolve()
-    master = (files[0] if Path(files[0]).is_absolute() else cwd / files[0]).resolve()
+    master = (cwd / files[0]).resolve()   # an absolute list path replaces cwd
     out_dir.mkdir(parents=True, exist_ok=True)
     window_file = out_dir / 'windows.txt'
     jobs, mapping = [], {}
@@ -447,11 +447,20 @@ class _LadderRunView:
         return self.run.crop_set(self.index, *args, **kwargs)
 
 
+def _given_departures(nodes, dep_dirs):
+    """The departure folders of ``nodes`` from a solved grid; every node must have one."""
+    missing = [node[0] for node in nodes if node[0] not in dep_dirs]
+    if missing:
+        raise ValueError(f"The departure grid has no departures for nodes {missing}; solve "
+                         "departures at this star.")
+    return {node[0]: str(dep_dirs[node[0]]) for node in nodes}
+
+
 def build_stellar_grid(top, star, atmos_files,
                        settings=None, absmet_files=None,
                        method='Delaunay', max_threads=None, launch_kwargs=None,
                        vmic_step=0.5, vmic_points=2, departures_top=None, nlte=None,
-                       cancel_token=None):
+                       cancel_token=None, dep_dirs=None):
     """
     Build a tm.grid for the target stellar point by finding the enclosing
     model atmospheres, launching MULTI3D runs for them in parallel, and
@@ -501,6 +510,10 @@ def build_stellar_grid(top, star, atmos_files,
         them back in the line-synthesis step. ``departures_top`` is kept independent of the
         window/line list by the caller so departures are reused across them. When omitted,
         NLTE runs as a single combined solve+synthesis (legacy behaviour).
+    dep_dirs : dict, optional
+        ``{node key: departure folder}`` of departures solved earlier (a
+        :class:`~tumult.departures.DepartureGrid`). The spectrum runs read them back and no
+        departures are solved; every selected node must be present.
     nlte : bool, optional
         Whether this is an NLTE solve. Front-ends that carry the LTE/NLTE choice out of band
         (e.g. in namelist presets rather than ``settings``) must pass it explicitly, since it
@@ -529,8 +542,9 @@ def build_stellar_grid(top, star, atmos_files,
     # NLTE step 1: solve departure coefficients per atmosphere (no line list, no output
     # spectrum), saved under `departures_top` (keyed independently of window/line list, so
     # reused across them). The synthesis step below reads them back.
-    dep_dirs = {}
-    if nlte:
+    if dep_dirs is not None:
+        dep_dirs, nlte = _given_departures(nodes, dep_dirs), True
+    elif nlte:
         dep_runs = _run_batch(_dep_jobs(base, nodes, departures_top),
                               launch_kwargs, max_threads, cancel_token=cancel_token)
         dep_failed = [n[0] for n in nodes if dep_runs.get(n[0]) is None]
@@ -538,6 +552,8 @@ def build_stellar_grid(top, star, atmos_files,
             raise RuntimeError(f"Departure runs failed for atmospheres: {dep_failed}")
         dep_dirs = {n[0]: str(dep_runs[n[0]].folder) for n in nodes}
         _save_provenance(dep_runs, nodes, base)
+    else:
+        dep_dirs = {}
 
     jobs, job_keys, job_weights, job_params = _spec_jobs(base, nodes, top, nlte, dep_dirs)
     runs = _run_batch(jobs, launch_kwargs, max_threads, cancel_token=cancel_token)
@@ -553,7 +569,7 @@ def build_stellar_grid(top, star, atmos_files,
 def compute_spectrum(top, star, atmos_files, *, settings=None, absmet_files=None,
                      method='Delaunay', max_threads=None, launch_kwargs=None,
                      xmin=None, xmax=None, pad=None, vmic_step=0.5, vmic_points=2,
-                     nlte=None, cancel_token=None, return_runs=False):
+                     nlte=None, cancel_token=None, return_runs=False, dep_dirs=None):
     """Compute a single spectrum at an arbitrary stellar point (Teff, logg, FeH, vmic).
 
     Thin wrapper over :func:`build_stellar_grid`: it synthesises the enclosing model
@@ -586,6 +602,8 @@ def compute_spectrum(top, star, atmos_files, *, settings=None, absmet_files=None
 
     return_runs : bool
         Also return the producing run directories, for consuming run artifacts.
+    dep_dirs : dict, optional
+        Departures solved earlier, per node (see :func:`build_stellar_grid`).
 
     Returns
     -------
@@ -620,7 +638,7 @@ def compute_spectrum(top, star, atmos_files, *, settings=None, absmet_files=None
                               max_threads=max_threads, launch_kwargs=launch_kwargs,
                               vmic_step=vmic_step, vmic_points=vmic_points,
                               departures_top=str(departures_top) if departures_top else None,
-                              nlte=nlte, cancel_token=cancel_token)
+                              nlte=nlte, cancel_token=cancel_token, dep_dirs=dep_dirs)
 
     spec = _interp_crop(grid, xmin, xmax, method)
     if return_runs:
@@ -733,8 +751,8 @@ def compute_windows(top, star, atmos_files, *, windows, R, settings=None, absmet
 def compute_window_batch(top, star, atmos_files, *, settings_list, windows, R,
                          absmet_files=None, method='Delaunay', max_threads=None,
                          launch_kwargs=None, pad=None, vmic_step=0.5, vmic_points=2,
-                         nlte=None, cancel_token=None, crop=None, fold=True,
-                         preparation=None, return_runs=False):
+                         nlte=None, cancel_token=None, crop=None, fold=False,
+                         preparation=None, return_runs=False, dep_dirs=None):
     """Both axes in one run: an abundance ladder across several wavelength windows.
 
     ``settings_list`` is a ladder in the sense of :func:`compute_spectra` — variants
@@ -747,6 +765,9 @@ def compute_window_batch(top, star, atmos_files, *, settings_list, windows, R,
     Returns ``results[variant][window]``, each an ordinary contiguous spectrum matching
     the requested window order.
 
+    Folding solves NLTE departures at the first variant's abundance and scales the others,
+    which is not trusted for NLTE and is therefore an explicit opt-in (``fold=True``).
+
     Falls back to :func:`compute_spectra` per window when the variants are not a foldable
     ladder (different line lists, elements switched on and off, ``sample_linelist``), so a
     caller does not have to know which of its requests can fold.
@@ -754,7 +775,10 @@ def compute_window_batch(top, star, atmos_files, *, settings_list, windows, R,
     ``crop`` (optional) asks for the per-node line-list crop described in
     :func:`_node_linelists`, and is part of these runs' cache identity.
 
-    ``fold=False`` keeps the windows on the patches but gives every variant its own run,
+    ``dep_dirs`` supplies departures solved earlier, per node (see
+    :func:`build_stellar_grid`); no departures are then solved.
+
+    ``fold=False`` (the default) keeps the windows on the patches but gives every variant its own run,
     scheduled together with the others: one :func:`_run_batch` over every
     ``(variant × node)`` pair instead of one per variant. That trades the folded run's
     shared atmosphere and background for a cache key that is one abundance rather than a
@@ -794,6 +818,10 @@ def compute_window_batch(top, star, atmos_files, *, settings_list, windows, R,
         folds.append(_foldable_ladder([prepared[i] for i in members], launch_kwargs,
                                       nlte_values[members[0]])
                      if len(nlte_group) == 1 else None)
+    if dep_dirs is not None:
+        dep_dirs = _given_departures(nodes, dep_dirs)
+        if not all(nlte_values):
+            raise ValueError("Solved grid departures are read back by NLTE settings only.")
     if any(item is None for item in folds):
         # not a ladder: nothing to fold onto the set axis, so fall back to the existing
         # per-window batching rather than pretending this is one run
@@ -805,7 +833,7 @@ def compute_window_batch(top, star, atmos_files, *, settings_list, windows, R,
                 launch_kwargs=launch_kwargs, xmin=float(min(w)), xmax=float(max(w)),
                 pad=pad, vmic_step=vmic_step, vmic_points=vmic_points, nlte=nlte,
                 cancel_token=cancel_token, crop=crop, preparation=preparation,
-                return_runs=True)
+                return_runs=True, dep_dirs=dep_dirs)
             per_window.append(specs)
             folders.extend(runs_w)
         values = [list(specs) for specs in zip(*per_window)]
@@ -838,9 +866,13 @@ def compute_window_batch(top, star, atmos_files, *, settings_list, windows, R,
 
     # every group's departures in one batch, then every group's spectra in one more, so an
     # unfolded ladder fans (rung x node) across the pool instead of a rung at a time
-    dep_dirs = {}
+    given, dep_dirs = dep_dirs, {}
+    if given is not None:
+        dep_dirs = {(gi, key): folder for gi in range(len(plans))
+                    for key, folder in given.items()}
     dep_jobs = [((gi, jkey), path, nml)
-                for gi, (_m, base, _top, nlte_v, _lists) in enumerate(plans) if nlte_v
+                for gi, (_m, base, _top, nlte_v, _lists) in enumerate(plans)
+                if nlte_v and given is None
                 for jkey, path, nml in _dep_jobs(base, nodes, _dep_bucket(top, base))]
     if dep_jobs:
         dep_runs = _run_batch(dep_jobs, launch_kwargs, max_threads,
@@ -884,7 +916,7 @@ def compute_spectra(top, star, atmos_files, *, settings_list, absmet_files=None,
                     method='Delaunay', max_threads=None, launch_kwargs=None,
                     xmin=None, xmax=None, pad=None, vmic_step=0.5, vmic_points=2,
                     nlte=None, cancel_token=None, crop=None, preparation=None,
-                    return_runs=False, fold=True):
+                    return_runs=False, fold=False, dep_dirs=None):
     """Batched :func:`compute_spectrum` for a list of settings variants that share the same
     star/atmospheres (e.g. a curve-of-growth's abundance ladder).
 
@@ -905,8 +937,12 @@ def compute_spectra(top, star, atmos_files, *, settings_list, absmet_files=None,
 
     Variants differing only in abundances fold into one run whose departures are solved at
     the first variant's abundance and whose other rungs are opacity scalings of it (see
-    :func:`_foldable_ladder`). ``fold=False`` keeps every variant its own run, so an NLTE
-    ladder gets a departure solve per rung.
+    :func:`_foldable_ladder`). That is an explicit opt-in (``fold=True``) for LTE callers:
+    by default every variant keeps its own run, so an NLTE ladder gets a departure solve
+    per rung.
+
+    ``dep_dirs`` supplies departures solved earlier, per node (see
+    :func:`build_stellar_grid`); no departures are then solved.
     """
     if not settings_list:
         return []
@@ -930,6 +966,10 @@ def compute_spectra(top, star, atmos_files, *, settings_list, absmet_files=None,
         windowed.append(item)
     nlte_values = [bool(_is_nlte(s) if nlte is None else nlte) for s in windowed]
 
+    given = None if dep_dirs is None else _given_departures(nodes, dep_dirs)
+    if given is not None:
+        nlte_values = [True] * len(windowed)
+        fold = False
     fold = (_foldable_ladder(windowed, launch_kwargs, nlte_values[0])
             if fold and len(set(nlte_values)) == 1 and len(set(labels)) == 1 else None)
     crop_windows = ([(float(min(xmin, xmax)), float(max(xmin, xmax)))]
@@ -1002,7 +1042,9 @@ def compute_spectra(top, star, atmos_files, *, settings_list, absmet_files=None,
     dep_runs = {}
     dep_jobs = []
     for vi, (s, _syn, dep_top, nlte_v, _lists) in enumerate(prepared):
-        if nlte_v:
+        if given is not None:
+            dep_dirs.update({(vi, jkey): folder for jkey, folder in given.items()})
+        elif nlte_v:
             dep_jobs += [((vi, jkey), path, nml)
                          for jkey, path, nml in _dep_jobs(s, nodes, dep_top)]
     if dep_jobs:

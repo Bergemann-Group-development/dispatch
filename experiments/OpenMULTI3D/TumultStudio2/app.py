@@ -1348,9 +1348,9 @@ def build():
         entry = _external_run(run_id)
         if entry is None:
             return
-        synth_modal.setup.mode_form.set_values(mode="NLTE", departure_field=entry.folder)
+        synth_modal.setup.mode_form.set_values(mode="NLTE", departures=entry.folder)
         synth_modal.setup._save_mode("mode", "NLTE")
-        synth_modal.setup._save_mode("departure_field", entry.folder)
+        synth_modal.setup._save_mode("departures", entry.folder)
         notify(f"Synthesis modal set to reuse departures from {entry.name}", level="info")
 
     def _details_target(uid):

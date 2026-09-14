@@ -7,11 +7,11 @@ import pytest
 
 from tumult import Spectrum
 from tumult.synthesis import (Atmosphere1D, GridTarget, MaskWindow, ResolvedSynthRequest, Snapshot3D,
-                              SynthesisResult, SynthRequest)
+                              SynthesisResult, NativeRequest)
 
 
 def _request(selection, tmp_path, masks=()):
-    return SynthRequest({'dispatch_cwd': str(tmp_path), 'synth_output_dir': 'out', 'R': 50000},
+    return NativeRequest({'dispatch_cwd': str(tmp_path), 'synth_output_dir': 'out', 'R': 50000},
                         run_vals={'mode': 'LTE'}, selection=selection, masks=masks)
 
 
@@ -23,7 +23,7 @@ def test_all_atmosphere_selections_roundtrip_and_capture_masks(tmp_path):
     for selection in selections:
         request = _request(selection, tmp_path, masks)
         masks[0]['synth'][0] = 1
-        reopened = SynthRequest.from_json(request.to_json())
+        reopened = NativeRequest.from_json(request.to_json())
         assert type(reopened.selection) is type(selection)
         assert reopened.masks[0].synth == (4999.5, 5001.5)
         masks[0]['synth'][0] = 4999.5
@@ -102,15 +102,15 @@ def test_snapshot_execution_routes_directly_without_grid_or_vmic(tmp_path, monke
     assert 'vmic_step' not in seen[0][2]
 
 
-def test_departure_field_can_be_opened_from_native_artifacts(tmp_path):
-    from tumult.synthesis import DepartureField
+def test_saved_departures_can_be_opened_from_native_artifacts(tmp_path):
+    from tumult.synthesis import Departures
     folder = tmp_path / 'dep'
     (folder / 'save').mkdir(parents=True)
     (folder / 'save' / 'pop_Mg_meta.txt').write_text('')
     (folder / 'params.nml').write_text(
         "&atmos_params\n atmos_file='cube.dat' nx=4 ny=5 nz=6\n/\n"
         "&composition_params\n abundances='Mg=0.2'\n/\n")
-    field = DepartureField.load(folder)
+    field = Departures.load(folder)
     assert field.saved and field.resolution == (4, 5, 6)
     assert field.species == ('Mg',) and field.composition['abundances'] == 'Mg=0.2'
 
@@ -186,33 +186,33 @@ def test_window_batch_reports_runs_without_a_ladder(tmp_path, monkeypatch):
 
 
 # --- unsupported combinations are refused before submission ----------------------------
-def _departure_field(tmp_path):
-    from tumult.synthesis import DepartureField
+def _saved_departures(tmp_path):
+    from tumult.synthesis import Departures
     folder = tmp_path / 'dep'
     (folder / 'save').mkdir(parents=True)
     (folder / 'save' / 'pop_Mg_meta.txt').write_text('')
     (folder / 'params.nml').write_text(
         "&atmos_params\n atmos_file='one.mod' nx=1 ny=1 nz=6\n/\n"
         "&composition_params\n abundances='Mg=0.2'\n/\n")
-    return DepartureField.load(folder)
+    return Departures.load(folder)
 
 
 def test_check_request_refuses_unsupported_combinations_before_a_record_exists(tmp_path):
     from tumult.synthesis import check_request, submission
     prefs = {'dispatch_cwd': str(tmp_path), 'synth_output_dir': 'out', 'R': 50000}
-    field = _departure_field(tmp_path)
+    field = _saved_departures(tmp_path)
     one = Atmosphere1D('one.mod', (5750, 4.5, 0, 1))
     window = [MaskWindow((5000, 5001), (5000, 5001))]
-    supported = SynthRequest(prefs, run_vals={'mode': 'NLTE', 'atoms': ['mg.atom']},
-                             selection=one, masks=window, departure_field=field)
+    supported = NativeRequest(prefs, run_vals={'mode': 'NLTE', 'atoms': ['mg.atom']},
+                             selection=one, masks=window, departures=field)
     assert check_request(supported) is supported
     rejected = [
-        (SynthRequest(prefs, run_vals={'mode': 'LTE'}, selection=one, masks=window,
-                      departure_field=field), 'NLTE mode'),
-        (SynthRequest(prefs, run_vals={'mode': 'NLTE', 'atoms': ['mg.atom']},
+        (NativeRequest(prefs, run_vals={'mode': 'LTE'}, selection=one, masks=window,
+                      departures=field), 'NLTE mode'),
+        (NativeRequest(prefs, run_vals={'mode': 'NLTE', 'atoms': ['mg.atom']},
                       selection=GridTarget({'folder': ''}, (5750, 4.5, 0, 1)), masks=window,
-                      departure_field=field), 'not a grid'),
-        (SynthRequest(prefs, run_vals={'mode': 'NLTE', 'atoms': []}, selection=one,
+                      departures=field), 'DepartureGrid'),
+        (NativeRequest(prefs, run_vals={'mode': 'NLTE', 'atoms': []}, selection=one,
                       masks=window), 'model atoms'),
     ]
     for request, cause in rejected:
@@ -230,7 +230,7 @@ def test_fit_request_refuses_what_fitting_does_not_support(tmp_path):
     prefs = {'dispatch_cwd': str(tmp_path), 'R': 50000}
     masks = [MaskWindow((5000.2, 5000.8), (5000, 5001)),
              MaskWindow((5002.2, 5002.6), (5002, 5003))]
-    grid = SynthRequest(prefs, run_vals={'mode': 'LTE', 'abundances': ''},
+    grid = NativeRequest(prefs, run_vals={'mode': 'LTE', 'abundances': ''},
                         selection=GridTarget({'folder': 'grid'}, (5750, 4.5, 0, 1)),
                         masks=masks)
     fit = FitRequest(grid, fit_stellar=['teff'], abund_fits={'Mg': 0.1},
@@ -242,24 +242,24 @@ def test_fit_request_refuses_what_fitting_does_not_support(tmp_path):
 
     one = Atmosphere1D('one.mod', (5750, 4.5, 0, 1))
     with pytest.raises(ValueError, match='1D atmospheres and grids'):
-        FitRequest(SynthRequest(prefs, run_vals={'mode': 'LTE'}, masks=masks,
+        FitRequest(NativeRequest(prefs, run_vals={'mode': 'LTE'}, masks=masks,
                                 selection=Snapshot3D('cube.dat', (5750, 4.5, 0), (4, 4, 8))),
                    fit_post={'vshift': 0})
-    with pytest.raises(ValueError, match='saved departure field'):
-        FitRequest(SynthRequest(prefs, run_vals={'mode': 'NLTE', 'atoms': ['mg.atom']},
+    with pytest.raises(ValueError, match='saved departures'):
+        FitRequest(NativeRequest(prefs, run_vals={'mode': 'NLTE', 'atoms': ['mg.atom']},
                                 selection=one, masks=masks,
-                                departure_field=_departure_field(tmp_path)),
+                                departures=_saved_departures(tmp_path)),
                    abund_fits={'Mg': 0.0})
     with pytest.raises(ValueError, match='single atmosphere file'):
-        FitRequest(SynthRequest(prefs, run_vals={'mode': 'LTE'}, selection=one, masks=masks),
+        FitRequest(NativeRequest(prefs, run_vals={'mode': 'LTE'}, selection=one, masks=masks),
                    fit_stellar=['teff'])
     with pytest.raises(ValueError, match='at least one parameter'):
-        FitRequest(SynthRequest(prefs, run_vals={'mode': 'LTE'}, selection=one, masks=masks))
+        FitRequest(NativeRequest(prefs, run_vals={'mode': 'LTE'}, selection=one, masks=masks))
     with pytest.raises(ValueError, match='window'):
-        FitRequest(SynthRequest(prefs, run_vals={'mode': 'LTE'}, selection=one),
+        FitRequest(NativeRequest(prefs, run_vals={'mode': 'LTE'}, selection=one),
                    abund_fits={'Mg': 0.0})
     with pytest.raises(ValueError, match='model atoms'):    # check_request applies too
-        FitRequest(SynthRequest(prefs, run_vals={'mode': 'NLTE'}, selection=one, masks=masks),
+        FitRequest(NativeRequest(prefs, run_vals={'mode': 'NLTE'}, selection=one, masks=masks),
                    abund_fits={'Mg': 0.0})
 
 
@@ -272,7 +272,7 @@ def test_fit_executes_each_trial_point_as_the_request_over_the_span(tmp_path, mo
              'abund_step': 0.5, 'fit_max_rounds': 3}
     masks = [MaskWindow((5000.2, 5000.8), (5000, 5001)),
              MaskWindow((5002.2, 5002.6), (5002, 5003))]
-    synthesis = SynthRequest(prefs, run_vals={'mode': 'LTE', 'abundances': 'Ca=0.1',
+    synthesis = NativeRequest(prefs, run_vals={'mode': 'LTE', 'abundances': 'Ca=0.1',
                                               'relative_abundances': True},
                              selection=GridTarget({'folder': 'grid', 'format': 'Marcs'},
                                                   (5750, 4.5, 0, 1)),
@@ -332,15 +332,15 @@ def test_snapshot_correction_uses_atom_grid_without_unbounded_resolving_power(
 
     atom = tmp_path / 'atom.ba'
     line_grid = tmp_path / 'line_grid.txt'
-    request = SynthRequest(
+    request = NativeRequest(
         {'dispatch_cwd': str(tmp_path), 'R': 1e6, 'linelist_crop_aa': 0},
         run_vals={'mode': 'NLTE', 'atoms': [str(atom)], 'atom_lines': True,
                   'only_atom': not with_linelist, 'line_grid': str(line_grid)},
         selection=Snapshot3D('cube.atmos', (4548, 3.964, 0), (20, 20, 64)))
     resolved = request.resolve()
-    field = snapshot.DepartureField(
+    field = snapshot.Departures(
         folder=tmp_path / 'departures', name=Path('synth/dep'),
-        snapshot='cube.atmos', resolution=(20, 20, 64),
+        atmosphere='cube.atmos', resolution=(20, 20, 64),
         settings=snapshot.departure_settings(resolved.settings, 'cube.atmos'))
     formal = snapshot.spectrum_settings(field, resolved.settings)
     assert not formal.get('spectrum_params', {}).get('R')
