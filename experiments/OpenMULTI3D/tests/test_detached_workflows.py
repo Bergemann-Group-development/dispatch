@@ -164,7 +164,10 @@ def stop_daemon(tmp_path):
         _wait(lambda: daemon.status(tmp_path / 'jobs') is None)
 
 
-def test_daemon_runs_workflows_off_the_server_and_is_reused(tmp_path, driver_env, stop_daemon):
+def test_daemon_runs_workflows_serially_and_reuses_the_daemon(tmp_path, driver_env, stop_daemon):
+    """The daemon runs at most one workflow at a time (plan/multi-processing.md,
+    "Serialize workflows in the daemon"): a second submission stays queued, without a
+    driver pid, until the first settles, then the same daemon claims it."""
     from tumult.synthesis import daemon
     first = submission.submit(_request(tmp_path, driver_env), root=tmp_path / 'jobs',
                               detach='daemon')
@@ -175,13 +178,39 @@ def test_daemon_runs_workflows_off_the_server_and_is_reused(tmp_path, driver_env
     assert first.to_dict()['driver']['pid'] == pid
     second = submission.submit(_request(tmp_path, driver_env), root=tmp_path / 'jobs',
                                detach='daemon')
-    assert _wait(lambda: second.status == 'running')
-    assert daemon.status(tmp_path / 'jobs')[0] == pid          # one daemon, two workflows
+    # Give the daemon several ticks to (wrongly) claim it before checking it never does.
+    assert not _wait(lambda: bool((second.to_dict()['driver'] or {}).get('pid')), timeout=2)
+    assert second.status == 'queued'
+    # Its release file is shared with the first, so once the first sees it and settles,
+    # the second is claimed and may itself finish almost immediately after — too fast to
+    # reliably observe a 'running' state in between, so wait for the settled results.
     driver_env.write_text('')
     assert np.allclose(submission.open_workflow(first.folder).result(timeout=20)
                        .spectrum.values[1], [1., .9])
     assert second.result(timeout=20) is not None
+    assert second.to_dict()['driver']['pid'] == pid            # one daemon, two workflows
     assert first.status == second.status == 'finished'
+
+
+def test_daemon_cancels_a_queued_workflow_without_claiming_it(tmp_path, driver_env, stop_daemon):
+    """Cancelling a workflow still queued behind the active one settles it as cancelled
+    without ever assigning it a driver pid or running its coordinator (plan/multi-
+    processing.md, "Cancellation, failure and shutdown": "Cancelling an unclaimed
+    workflow removes it from the FIFO queue and settles it as cancelled without
+    launching native work")."""
+    from tumult.synthesis import daemon
+    first = submission.submit(_request(tmp_path, driver_env), root=tmp_path / 'jobs',
+                              detach='daemon')
+    assert _wait(lambda: first.status == 'running')
+    second = submission.submit(_request(tmp_path, driver_env), root=tmp_path / 'jobs',
+                               detach='daemon')
+    assert second.status == 'queued'
+    assert submission.open_workflow(second.folder).cancel()
+    assert _wait(lambda: second.status == 'cancelled')
+    assert not (second.to_dict()['driver'] or {}).get('pid')
+    driver_env.write_text('')
+    assert first.result(timeout=20) is not None
+    assert first.status == 'finished'
 
 
 def test_daemon_honours_a_cancel_flag_from_any_handle(tmp_path, driver_env, stop_daemon):
@@ -204,7 +233,7 @@ def test_daemon_records_wait_queued_without_a_daemon_and_are_revived(tmp_path, m
     from tumult.synthesis import daemon
     monkeypatch.setattr(daemon, 'status', lambda root: None)
     started = []
-    monkeypatch.setattr(daemon, 'ensure', lambda root: started.append(root))
+    monkeypatch.setattr(daemon, 'ensure', lambda root, max_threads=0: started.append(root))
     request = SynthRequest({'dispatch_cwd': str(tmp_path), 'synth_output_dir': 'out'},
                            run_vals={'mode': 'LTE'},
                            selection=Atmosphere1D('one.mod', (5750, 4.5, 0, 1)))
@@ -235,7 +264,7 @@ def test_daemon_exits_when_idle_and_claims_once(tmp_path, monkeypatch):
         return SynthesisResult((spec,), ({'window': None},), resolved.request, resolved.settings)
 
     monkeypatch.setattr(workflows, 'execute_request', execute)
-    monkeypatch.setattr(daemon, 'ensure', lambda root: None)
+    monkeypatch.setattr(daemon, 'ensure', lambda root, max_threads=0: None)
     request = SynthRequest({'dispatch_cwd': str(tmp_path), 'synth_output_dir': 'out'},
                            run_vals={'mode': 'LTE'},
                            selection=Atmosphere1D('one.mod', (5750, 4.5, 0, 1)))

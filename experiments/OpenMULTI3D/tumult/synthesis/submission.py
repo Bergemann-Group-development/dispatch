@@ -520,8 +520,12 @@ def execute_recorded(folder, kind, args, token, base=None):
         raise
 
 
-def _start_driver(folder, record, detach, slurm_script):
-    """Start the detached driver for ``folder`` and record how to find it again."""
+def _start_driver(folder, record, detach, slurm_script, max_threads=0):
+    """Start the detached driver for ``folder`` and record how to find it again.
+
+    ``max_threads`` is this submission's Engine preference; a daemon not yet running
+    for ``root`` resolves its CPU budget from it at startup (see
+    :func:`daemon.ensure`). A live daemon ignores it and keeps its own resolved budget."""
     if os.name != 'posix':
         raise ValueError('Detached workflows need a POSIX host')
     env = {**os.environ}
@@ -534,7 +538,7 @@ def _start_driver(folder, record, detach, slurm_script):
         from . import daemon
         driver['root'] = str(folder.parent.parent)
         update_record(folder, record, driver=driver)     # visible before the daemon looks
-        daemon.ensure(driver['root'])
+        daemon.ensure(driver['root'], max_threads=max_threads)
         return _read(folder)
     if detach == 'process':
         log_path = folder / DRIVER_LOG
@@ -571,7 +575,7 @@ def _driver_choice(prefs, detach, slurm_script):
     return detach, slurm_script
 
 
-def _submit_record(base, record, kind, args, detach, slurm_script):
+def _submit_record(base, record, kind, args, detach, slurm_script, max_threads=0):
     """Write ``record`` under ``base`` and hand it to its driver, or run ``kind`` on
     ``args`` in this process; returns the handle either way."""
     identity = record['id']
@@ -580,7 +584,7 @@ def _submit_record(base, record, kind, args, detach, slurm_script):
 
     if detach is not None:
         try:
-            _start_driver(folder, record, detach, slurm_script)
+            _start_driver(folder, record, detach, slurm_script, max_threads)
         except BaseException as exc:
             update_record(folder, record, state='failed', phase='failed', ended=time.time(),
                           error=f'{type(exc).__name__}: {exc}')
@@ -639,8 +643,9 @@ def submit(request, *, root=None, label=None, meta=None, detach=None, slurm_scri
     record['request'] = resolved.to_dict()
     record['task'] = {'kind': tasks.Synthesis.name}
     base = Path(root or resolved.output_root) / '_workflows'
+    max_threads = int((owned.prefs or {}).get('max_threads') or 0)
     return _submit_record(base, record, tasks.KINDS[tasks.Synthesis.name], resolved,
-                          detach, slurm_script)
+                          detach, slurm_script, max_threads)
 
 
 def submit_task(kind, args, *, prefs, root=None, label=None, meta=None, detach=None,
@@ -659,7 +664,8 @@ def submit_task(kind, args, *, prefs, root=None, label=None, meta=None, detach=N
     record = _new_record(label, meta)
     record['task'] = {'kind': task.name, 'args': args}
     base = Path(root or output_root(prefs)) / '_workflows'
-    return _submit_record(base, record, task, decoded, detach, slurm_script)
+    max_threads = int((prefs or {}).get('max_threads') or 0)
+    return _submit_record(base, record, task, decoded, detach, slurm_script, max_threads)
 
 
 def cancel_live_workflows():

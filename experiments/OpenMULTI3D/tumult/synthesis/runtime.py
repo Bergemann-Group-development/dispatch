@@ -32,6 +32,24 @@ class _Task:
     allocated: int = 0
 
 
+def resolve_cpu_budget(max_threads=0):
+    """The daemon/root CPU budget, resolved once from the "CPU budget" rule of
+    ``plan/multi-processing.md``: worker count, treating one logical CPU as one slot.
+
+    ``max_threads`` falsy (``0``/``None``, the default) reserves one logical CPU by
+    returning ``max(1, cpu_count - 1)``; an explicit positive value opts into the
+    otherwise reserved CPU but is still capped at the detected logical CPU count. A
+    host that cannot report its CPU count is treated as having exactly one.
+    """
+    cpu = os.cpu_count()
+    if not cpu or cpu < 1:
+        return 1
+    max_threads = int(max_threads or 0)
+    if max_threads > 0:
+        return max(1, min(max_threads, cpu))
+    return max(1, cpu - 1)
+
+
 class ExecutionService:
     """Persistent supervisors with a shared CPU budget and per-job cancellation.
 
@@ -41,8 +59,12 @@ class ExecutionService:
     """
 
     def __init__(self, max_threads=None):
-        self._capacity = max(1, os.cpu_count() or 1, int(max_threads or 1))
-        self._budget = max(1, int(max_threads or self._capacity))
+        cpu = os.cpu_count() or 1
+        # An explicit budget is a ceiling, never an excuse to exceed the machine's
+        # logical CPU count (plan/multi-processing.md, "CPU budget").
+        self._capacity = min(int(max_threads), cpu) if max_threads else cpu
+        self._capacity = max(1, self._capacity)
+        self._budget = self._capacity
         self._executor = ThreadPoolExecutor(max_workers=self._capacity,
                                             thread_name_prefix="dispatch")
         self._lock = threading.RLock()

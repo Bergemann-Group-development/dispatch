@@ -65,7 +65,8 @@ from jobs import (ExternalRun, Job, Recoverable, QUEUED, RUNNING, CANCELLING, FI
 from debounce import Trailing  # noqa: E402
 from units import X_UNITS, Y_UNITS, to_range  # noqa: E402
 from tumult import linestrength
-from tumult.synthesis.runtime import IO as _EXEC, WORKFLOWS as _SYNTH_EXEC, HOP as _HOP_EXEC
+from tumult.synthesis.runtime import (IO as _EXEC, WORKFLOWS as _SYNTH_EXEC, HOP as _HOP_EXEC,
+                                      get_runtime as _get_runtime)
 from profiling import profiled  # noqa: E402
 import store  # noqa: E402
 
@@ -1210,7 +1211,7 @@ def build():
     # network transfers (a grid download) wait on I/O, not the CPU budget: the IO pool
     ctx.submit_io = lambda name, loader, on_done: load_async(name, loader, on_done,
                                                             delivers=False)
-    ctx.execution = synth.get_runtime()
+    ctx.execution = _get_runtime()
 
     def _import_result(handle):
         """The delivery of a workflow this document did not submit: a synthesis adds

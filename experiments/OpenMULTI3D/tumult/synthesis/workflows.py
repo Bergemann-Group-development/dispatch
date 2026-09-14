@@ -35,7 +35,6 @@ from ..abundance import (
 )
 from .api import adaptive_fit
 from .cancel import CancelToken, CancelledError
-from .runtime import get_runtime
 from .request import (Atmosphere1D, FitRequest, GridTarget, MaskWindow,
                       ResolvedSynthRequest, Snapshot3D, SynthesisResult, SynthRequest,
                       check_request)
@@ -574,8 +573,11 @@ def _prepare(target, prefs, run_vals_list, grid, atmos_file, extra_presets,
     launch_kwargs = {"overwrite": False, "verbose": 0, "default": defaults}
     if prefs.get("dispatch_cwd"):
         launch_kwargs["cwd"] = str(execution_root(prefs))
+    # This value only bounds this batch's own outstanding jobs (below, and in
+    # _run_batch's per-batch allocation); it must not mutate the shared execution
+    # service's global budget, which is resolved once by the daemon at startup
+    # (plan/multi-processing.md, "CPU budget").
     max_threads = int(prefs.get("max_threads") or 0) or (os.cpu_count() or 1)
-    get_runtime().configure(max_threads)
     common = dict(top=prefs.get("synth_output_dir") or "synth", star=star,
                   atmos_files=atmos_files, absmet_files=_absmet_files(prefs, atmos_files),
                   method=prefs.get("interp_method", "NaturalNeighbor"),
