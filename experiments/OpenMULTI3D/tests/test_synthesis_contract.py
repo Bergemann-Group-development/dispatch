@@ -47,11 +47,13 @@ def test_preparation_cache_tracks_changed_inputs(tmp_path, monkeypatch):
     atmos.write_text('atmos')
     calls = []
 
-    def crop(path, *_args, **_kwargs):
-        calls.append(Path(path))
-        Path(path).write_text('prepared')
+    def prune_batch(jobs, **_kwargs):
+        for path, _nml in jobs:
+            calls.append(Path(path))
+            Path(path).write_text('prepared')
+        return [path for path, _nml in jobs]
 
-    monkeypatch.setattr(linestrength, 'crop_linelist', crop)
+    monkeypatch.setattr('tumult.prune.prune_batch', prune_batch)
     a = linestrength.prepare_linelist(tmp_path / 'cache', [atmos], master,
                                       [(5000, 5002)], R=50000)
     b = linestrength.prepare_linelist(tmp_path / 'cache', [atmos], master,

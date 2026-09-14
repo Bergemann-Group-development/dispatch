@@ -11,6 +11,7 @@ MODULE read_atmos_mod
   USE rt_params_mod, only: pivot_z, ray_offset
   USE ray_mod, only: one_dimensional, rstar, rorigin
   USE composition_mod, only: composition_type
+  USE atmos_reader_mod, only: atmos_data_t, read_marcs_file, read_text_1d_file, read_multi_1d_file
   USE units_mod, only: cgs
   implicit none
   private
@@ -363,70 +364,31 @@ contains
   END SUBROUTINE read_stagger2
 
   !===============================================================================
+  !===============================================================================
+  !> The 1D text formats are parsed by atmos_reader_mod (shared with hop_prune.x);
+  !> the routines below apply the namelist overrides and copy the result into ia.
+  !===============================================================================
   SUBROUTINE read_marcs (file, FeH, vmic, abund)
     character(len=*), intent(in) :: file
     real(8), intent(out) :: FeH
     real(4), intent(in) :: vmic
     real(4), intent(inout), dimension(:), allocatable :: abund
-    integer :: lunit, nz, kk, k
-    real(8) :: FeH_marcs
-    real(4) :: teff, flux, vmic_Marcs, g, rmass, alpha, rluminosity
-    real(4) :: xx, yy, zz, palfa, pny, py, pbeta
-    real(4) :: lgTauR, lgTau5, pg, prad, pturb, xkapr, emu, vconv, fconv, rhox
-    real(4), dimension(:), allocatable :: temp, pe, rho
-    character(512) :: fileID
+    type(atmos_data_t) :: atmos
     !-----------------------------------------------------------------------------
-    allocate(abund(92))
-    call os%check_file(file)
-    open(newunit=lunit, file=file)
-    read(lunit,*) fileID
-    read(lunit,*) teff                  ! Teff [K].
-    read(lunit,*) flux                  ! Flux [erg/cm2/s]
-    read(lunit,*) g                     ! Surface gravity [cm/s2]
-    read(lunit,*) vmic_Marcs            ! Microturbulence parameter [km/s]
-    read(lunit,*) rmass                 ! No mass for plane-parallel models
-    read(lunit,*) FeH_marcs, alpha      ! Metallicity [Fe/H] and [alpha/Fe]
-    read(lunit,*) rstar                 ! radius [cm] (for plane-parallel models r=1)
-    read(lunit,*) rluminosity           ! Luminosity [Lsun] FOR A RADIUS OF 1 cm!
-    read(lunit,*) palfa, pny, py, pbeta ! Convection parameters: alpha, nu, y and beta
-    read(lunit,*) xx, yy, zz            ! X, Y and Z, 12C/13C=89 (=solar)
-    read(lunit,*) ! skip comment
-    read(lunit,*) abund
-    read(lunit,*) nz
-    read(lunit,*) ! skip comment
-    read(lunit,*) ! skip comment
-
-    call ia%allocate(1,1,nz)
-    allocate(temp(nz), pe(nz), rho(nz))
+    call read_parsed(read_marcs_file, file, atmos)
+    allocate(abund, source=atmos%abund)
+    rstar = atmos%radius
 
     if (FeH < -99) then
-      FeH = FeH_marcs
+      FeH = atmos%feh
       write(stdout, '(A, F6.2)') 'FeH was overwritten by Marcs model: [Fe/H] =', FeH
     endif
 
     if (vmic < 0) then
-      ia%vmic (1,1,:) = vmic_Marcs
-      write(stdout, '(A, F6.2)') 'Vmic was overwritten by Marcs model: Vmic =', vmic_Marcs
+      write(stdout, '(A, F6.2)') 'Vmic was overwritten by Marcs model: Vmic =', atmos%vmic(1,1,1)
     else
-      ia%vmic (1,1,:) = vmic
+      ia%vmic = vmic
     endif
-
-    do kk=1, nz
-      read(lunit,*) k, lgTauR, lgTau5, ia%zz(k), temp(k), pe(k), pg, prad, pturb
-      if(kk /= k) stop 'model and loop indices differ'
-    end do
-
-    read(lunit,*) ! skip comment
-
-    do kk=1, nz
-      read(lunit,*) k, lgTauR, xkapr, rho(k), emu, vconv, fconv, rhox
-      if(kk /= k) stop 'model and loop indices differ'
-    end do
-    close(lunit)
-
-    ia%ltemp(1,1,:) = log(temp)
-    ia%lpe  (1,1,:) = log(pe)
-    ia%lrho (1,1,:) = log(rho)
   END SUBROUTINE read_marcs
 
 !===============================================================================
@@ -436,51 +398,21 @@ contains
     character(len=*) :: atmos_file
     real(4), intent(in) :: vmic
     real(8), intent(out) :: FeH
-    real(8) :: feh_model
-    integer :: nwords, nz, lunit, i
-    character(128) :: text
-    real(4), dimension(:), allocatable :: temp, pe, rho
+    type(atmos_data_t) :: atmos
     !-----------------------------------------------------------------------------
-    ! Open atmosphere file and read MHD variables
-    !-----------------------------------------------------------------------------
-    call os%check_file(atmos_file)
-    open(file=atmos_file, newunit=lunit)
-    call nextentry(lunit)
-    read(lunit, *) ! skip name
-    call nextentry(lunit)
-
-    read(lunit, '(A)') text
-    call count_words(text, nwords)
-    if (nwords > 1) then
-      read(text, *) nz, feh_model
-
-      if (FeH < -99) then
-        FeH = feh_model
-        write(stdout, '(A, F6.2)') 'FeH was overwritten by model: [Fe/H] =', FeH
-      endif
-    else
-      read(text, *) nz
+    call read_parsed(read_text_1d_file, atmos_file, atmos)
+    if (atmos%has_feh .and. FeH < -99) then
+      FeH = atmos%feh
+      write(stdout, '(A, F6.2)') 'FeH was overwritten by model: [Fe/H] =', FeH
     endif
-
-    call ia%allocate(1,1,nz)
-    allocate(temp(nz), pe(nz), rho(nz))
-
-    do i=1, nz
-      call nextentry(lunit)
-      read(lunit, *) ia%zz(i), temp(i), pe(i), rho(i), ia%vmic(1,1,i)
-    end do
-    close(lunit)
 
     if (vmic >= 0) then
       ia%vmic = vmic
       write(stdout, '(A, F6.2)') 'Vmic was overwritten by namelist: Vmic =', vmic
     endif
 
-    use_ne = use_ne .and. pe(1) /= 0
-    use_rho = use_rho .and. rho(1) /= 0
-    where (temp > 0) ia%ltemp(1,1,:) = log(temp)
-    where (rho  > 0) ia%lrho (1,1,:) = log(rho)
-    where (pe   > 0) ia%lpe  (1,1,:) = log(pe)
+    use_ne = use_ne .and. atmos%has_pe
+    use_rho = use_rho .and. atmos%has_rho
   END SUBROUTINE read_text_1d
 
 !===============================================================================
@@ -489,38 +421,9 @@ contains
   SUBROUTINE read_multi_1d(atmos_file, vmic)
     character(len=*) :: atmos_file
     real(4), intent(in) :: vmic
-    real(8) :: feh_model
-    integer :: nwords, nz, lunit, i
-    character(128) :: text
-    real(4), dimension(:), allocatable :: temp, ne, vz
+    type(atmos_data_t) :: atmos
     !-----------------------------------------------------------------------------
-    ! Open atmosphere file and read MHD variables
-    !-----------------------------------------------------------------------------
-    call os%check_file(atmos_file)
-    open(file=atmos_file, newunit=lunit)
-    call nextentry(lunit)
-    read(lunit, *) ! skip name
-    call nextentry(lunit)
-
-    read(lunit, '(A)') text ! scale name
-    text = trim(text)
-    if (lowercase(text(1:1))=='m') then
-      stop 'Mass scale not supported in multi 1D atm format'
-    endif
-    call nextentry(lunit)
-    read(lunit, '(A)') text ! logg
-    call nextentry(lunit)
-    read(lunit, *) nz
-
-    call ia%allocate(1,1,nz)
-    allocate(temp(nz), ne(nz))
-
-    do i=1, nz
-      call nextentry(lunit)
-      read(lunit, *) ia%zz(i), temp(i), ne(i), ia%vz(1,1,i), ia%vmic(1,1,i)
-    end do
-    close(lunit)
-
+    call read_parsed(read_multi_1d_file, atmos_file, atmos)
     if (vmic >= 0) then
       ia%vmic = vmic
       write(stdout, '(A, F6.2)') 'Vmic was overwritten by namelist: Vmic =', vmic
@@ -528,10 +431,41 @@ contains
 
     use_ne = .true.
     use_rho = .false.
-    ia%ltemp(1,1,:) = log(temp)
-    ia%lpe  (1,1,:) = log(ne * BK * temp)
     ia%lrho = ieee_value( ia%lrho, ieee_signaling_nan )
   END SUBROUTINE read_multi_1d
+
+  !===============================================================================
+  !> Run one atmos_reader_mod parser and move its columns into ia, stopping on a
+  !> parse failure the way the readers always have.
+  !===============================================================================
+  SUBROUTINE read_parsed(reader, atmos_file, atmos)
+    interface
+      subroutine reader(atmos_file, atmos, ierr, msg)
+        import :: atmos_data_t
+        character(len=*), intent(in) :: atmos_file
+        type(atmos_data_t), intent(out) :: atmos
+        integer, intent(out) :: ierr
+        character(len=*), intent(out) :: msg
+      end subroutine reader
+    end interface
+    character(len=*), intent(in) :: atmos_file
+    type(atmos_data_t), intent(out) :: atmos
+    integer :: ierr
+    character(len=512) :: msg
+    !-----------------------------------------------------------------------------
+    call reader(atmos_file, atmos, ierr, msg)
+    if (ierr /= 0) then
+      write(stdout,*) 'Error: ', trim(msg)
+      error stop 'atmosphere read failed'
+    endif
+    call ia%allocate(atmos%nx, atmos%ny, atmos%nz)
+    ia%zz    = atmos%zz
+    ia%vz    = atmos%vz
+    ia%vmic  = atmos%vmic
+    ia%ltemp = atmos%ltemp
+    ia%lpe   = atmos%lpe
+    ia%lrho  = atmos%lrho
+  END SUBROUTINE read_parsed
 
   !===============================================================================
   SUBROUTINE read_siu_bin(atmos_file, vmic)

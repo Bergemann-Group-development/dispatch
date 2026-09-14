@@ -34,6 +34,7 @@ MODULE read_external_mod
   USE read_atmos_mod, only: ia, read_stagger, read_co5bold, read_stagger2, pchip_interpolation, &
     log_interpolation, read_marcs, read_multi_snapshot, read_text_1d, read_multi_1d, &
     read_siu_bin, timestamp
+  USE atmos_reader_mod, only: atmos_format_from_name
   USE handyfuncs_mod
   USE ray_mod, only: one_dimensional
   implicit none
@@ -139,23 +140,8 @@ contains
     atmos_format = lowercase(atmos_format)
 
     if (trim(atmos_format)=='unknown') then
-      if (index(atmos_file, '.mod') > 0) then
-        atmos_format = 'marcs'
-      elseif (index(atmos_file, 'atmos.') > 0) then
-        atmos_format = 'multi1d'
-      elseif (index(atmos_file, '.dat') > 0) then
-        atmos_format = 'siu_bin'
-      elseif (index(atmos_file, '.txt') > 0) then
-        atmos_format = 'text'
-      elseif (index(lowercase(atmos_file), 'stagger_grid2') > 0) then
-        atmos_format = 'stagger2'
-      elseif (index(lowercase(atmos_file), 'stagger') > 0) then
-        atmos_format = 'stagger'
-      elseif (index(atmos_file, '.atmos') > 0) then
-        atmos_format = 'multi'
-      elseif (index(atmos_file, 'data/') > 0) then
-        atmos_format = 'save'
-      else
+      atmos_format = atmos_format_from_name(atmos_file)
+      if (atmos_format == '') then
         write(stdout, *) 'Could not determine atmos_format from atmos_file. Please specify atmos_format in the input file. Stopping...'
         stop
       endif

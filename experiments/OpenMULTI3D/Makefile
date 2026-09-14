@@ -69,3 +69,17 @@ $(EXEC): read_external_mod.o mpi_debug_mod.o setup_mod.o rt_solvers_mod.o
 # object into the link automatically (hence the explicit prerequisite above), and its
 # compile order relative to its ancestor needs stating explicitly too.
 rt_solvers_mod.o: rt_patch_mod.o
+# The standalone HOP package (libhop.so for tumult.hop and the hop_prune.x line-list
+# pruner) is built in its own directory with -DHOP_STANDALONE, so its objects never mix
+# with the framework-enabled ones above.  Building it here keeps both executables part
+# of the normal build; the standalone Makefile is gfortran-only, so other compilers
+# skip it (make hop_prune.x still works wherever gfortran is on the PATH).
+ifeq ($(COMPILER), gfortran)
+default: hop_prune.x
+endif
+hop_prune.x:
+	$(MAKE) -C HOP/standalone hop_prune.x
+clean:: clean_standalone
+clean_standalone:
+	$(MAKE) -C HOP/standalone clean
+.PHONY: hop_prune.x clean_standalone

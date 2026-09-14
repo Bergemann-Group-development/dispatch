@@ -212,13 +212,14 @@ class PreparedLineList:
 
 def prepare_linelist(output_root, references, linelist, windows, *, R,
                      dlam=DLAM_AA, vmic=1.0, feh=0.0, abundances='',
-                     relative_abundances=True, aliases=None):
+                     relative_abundances=True, aliases=None, cwd=None, cancel_token=None):
     """Crop/thin once for all required MARCS references and return its artifact.
 
     The digest includes identities of the master list and every atmosphere, so replacing
     any input invalidates this cache without relying on a caller-selected name. HOP decides
     the retained transitions over the complete requested windows, which keeps contributors
-    from other species (blends) in the same artifact.
+    from other species (blends) in the same artifact. The references are pruned by
+    concurrent ``hop_prune.x`` children (:func:`tumult.prune.prune_batch`).
     """
     master_id = _file_identity(linelist)
     reference_ids = tuple(_file_identity(path) for path in references)
@@ -236,14 +237,23 @@ def prepare_linelist(output_root, references, linelist, windows, *, R,
     digest = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()[:16]
     folder = Path(output_root).expanduser().resolve() / digest
     folder.mkdir(parents=True, exist_ok=True)
+    from . import prune
+    jobs = []
     files = []
+    window_file = folder / 'windows.txt'
     for index, reference in enumerate(reference_ids):
         output = folder / f'reference-{index:03d}.txt'
-        if not output.is_file():
-            crop_linelist(output, reference['path'], master_id['path'], bounds, R=R,
-                          dlam=dlam, vmic=vmic, feh=feh, abundances=abundances,
-                          relative_abundances=relative_abundances)
         files.append(str(output))
+        if output.is_file():
+            continue
+        if not jobs:
+            window_file.write_text(_window_text(sorted(bounds)))
+        jobs.append((output, prune.prune_namelist(
+            output, Path(reference['path']).resolve(), [Path(master_id['path']).resolve()],
+            window_file, R=R, dlam=dlam, vmic=vmic, feh=feh, abundances=abundances,
+            relative_abundances=relative_abundances)))
+    # one hop_prune.x child per uncached reference, scheduled together
+    prune.prune_batch(jobs, cwd=cwd, cancel_token=cancel_token)
     artifact = PreparedLineList(folder, master_id['path'],
                                 tuple(item['path'] for item in reference_ids), tuple(files),
                                 bounds, settings, (master_id, *reference_ids), aliases)
@@ -458,7 +468,8 @@ def cached_band(star, linelist, lo, hi):
 
 # --- cropping a line list to an atmosphere ------------------------------------------------
 def crop_linelist(out_path, atmos_file, linelist, windows, *, R, dlam=DLAM_AA, vmic=1.0,
-                  feh=0.0, abundances="", relative_abundances=True):
+                  feh=0.0, abundances="", relative_abundances=True, base=None, cwd=None,
+                  cancel_token=None):
     """Write the lines a run on ``atmos_file`` would actually use, as an input line list.
 
     The selection a run makes is a property of its atmosphere, its windows and the
@@ -467,52 +478,49 @@ def crop_linelist(out_path, atmos_file, linelist, windows, *, R, dlam=DLAM_AA, v
     which is what this produces. The runs then read a few hundred lines instead of the whole
     master list, and none of them depends on another's output.
 
-    Two crops are applied, both HOP's own. ``windows`` (air Angstrom, expanded by ``dlam``
-    and merged) bounds which lines are read at all; then the opacity call over the windows
-    at resolving power ``R`` marks the lines that clear HOP's negligibility test on this
-    structure, and only those are written. ``R`` and ``dlam`` therefore have to match what
-    the runs will use, or the crop drops contributors they would have had.
+    The selection is made by ``hop_prune.x`` in a child process (:mod:`tumult.prune`), from
+    the same namelist groups the runs read. Two crops are applied, both HOP's own.
+    ``windows`` (air Angstrom, expanded by ``dlam`` and merged) bounds which lines are read
+    at all; then the opacity over the windows' constant-``R`` grid marks the lines that
+    clear HOP's negligibility test on this structure, and only those are written. ``R`` and
+    ``dlam`` therefore have to match what the runs will use, or the crop drops contributors
+    they would have had. ``base`` carries the runs' composition, background and line-list
+    settings into the selection; without it the executable's defaults apply, which are the
+    run defaults.
 
     Crop at the *strongest* abundance a caller will synthesise (``abundances``, in the
-    ``Fe=+0.40`` form, with ``relative_abundances`` saying which convention): strength grows
-    with abundance, so the top rung's selection covers every weaker rung, while cropping at
-    a middle rung would drop lines the strong ones need.
+    ``Fe=+0.40`` form, with ``relative_abundances`` saying which convention): the element's
+    own lines grow with its abundance, so the top rung's selection covers every weaker rung
+    for them. Lines of other species can move the other way when the override changes the
+    electron density, which is what keeps the run's own selection from the pruned list in
+    place as the final word.
 
-    Only :data:`NDEPTH` depths of the model are read (see :func:`read_marcs`), which is what
+    Only :data:`tumult.prune.SAMPLE_COUNT` depths of the model are evaluated, which is what
     makes this cheap next to the runs it feeds -- the strength is a maximum over depth, so
-    what the sampling has to do is span the structure, not resolve it.
+    what the sampling has to do is span the structure, not resolve it (see
+    :func:`read_marcs`).
     """
-    from .hop import HopEOS, wavelength_grid
-    from .physics import air2vac
-    import tumult as tm
+    from . import prune
 
     bounds = [(float(min(w)), float(max(w))) for w in windows]
     if not bounds:
         raise ValueError("crop_linelist needs at least one window")
     bounds.sort()
-    lam = np.concatenate([wavelength_grid(lo, hi, R=R) for lo, hi in bounds])
-    vac = [(float(air2vac(lo)), float(air2vac(hi))) for lo, hi in bounds]
-
-    T, rho = read_marcs(atmos_file)
-    out_path = Path(out_path)
+    out_path = Path(out_path).resolve()
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    options = {}
-    if abundances:
-        options = {"abundances": str(abundances),
-                   "relative_abundances": bool(relative_abundances)}
-    # written aside and renamed, so a cancelled or failed crop never leaves a truncated
-    # file behind for the next caller to mistake for a finished one
-    tmp = out_path.with_name(f"{out_path.name}.{os.getpid()}.partial")
-    with HOP_LOCK:
-        hop = tm.HopEOS(feh=float(feh), **options)
-        try:
-            hop.load_state(T, rho=rho, vmic=float(vmic))
-            hop.write_linelist(tmp, lam, str(linelist), dlam=float(dlam),
-                               vmic=float(vmic), windows=vac)
-        finally:
-            hop.close()
-    tmp.replace(out_path)
+    window_file = out_path.with_suffix('.windows.txt')
+    window_file.write_text(_window_text(bounds))
+    nml = prune.prune_namelist(out_path, Path(atmos_file).resolve(), [Path(linelist).resolve()],
+                               window_file, R=R, dlam=dlam, vmic=vmic, feh=feh,
+                               abundances=abundances, relative_abundances=relative_abundances,
+                               base=base)
+    prune.prune_batch([(out_path, nml)], cwd=cwd, cancel_token=cancel_token)
     return out_path
+
+
+def _window_text(bounds):
+    """The ``window_file`` body, as ``spectrum_params`` reads it (air Angstrom)."""
+    return "\n".join(["# blue_AA  red_AA", *(f"{lo:.4f}  {hi:.4f}" for lo, hi in bounds)]) + "\n"
 
 
 def run_params(folder):

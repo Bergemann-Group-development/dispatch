@@ -124,8 +124,8 @@ def test_uncropped_runs_keep_their_cache_identity(tmp_path, monkeypatch):
     assert api._node_linelists('top', folder, nodes, windows, crop, {}) is None
 
     written = []
-    monkeypatch.setattr('tumult.linestrength.crop_linelist',
-                        lambda path, *a, **kw: written.append(Path(path)) or Path(path))
+    monkeypatch.setattr('tumult.prune.prune_batch',
+                        lambda jobs, **kw: written.extend(Path(p) for p, _n in jobs) or written)
     mapping = api._node_linelists(tmp_path, base, nodes, windows, crop, {})
     assert list(mapping) == [('n', 0)]
     assert written == [Path(mapping[('n', 0)])]

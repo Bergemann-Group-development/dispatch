@@ -801,7 +801,7 @@ def resolve_request(request: SynthRequest) -> ResolvedSynthRequest:
                                 str(root), str(output))
 
 
-def _prepare_artifact(resolved):
+def _prepare_artifact(resolved, cancel_token=None):
     if resolved.request.run_vals.get("only_atom"):
         return None
     prefs, windows = resolved.request.prefs, resolved.padded_windows
@@ -817,7 +817,8 @@ def _prepare_artifact(resolved):
                             feh=float(resolved.request.run_vals.get('feh', 0.0)),
                             abundances=settings.get('abundances', ''),
                             relative_abundances=bool(settings.get('relative_abundances', True)),
-                            aliases=resolved.preparation_aliases)
+                            aliases=resolved.preparation_aliases,
+                            cwd=resolved.execution_root, cancel_token=cancel_token)
 
 
 def execute_request(request, *, cancel_token=None):
@@ -825,7 +826,7 @@ def execute_request(request, *, cancel_token=None):
     resolved = request if isinstance(request, ResolvedSynthRequest) else resolve_request(request)
     request, selection = resolved.request, resolved.request.selection
     settings = deepcopy(resolved.settings)
-    artifact = _prepare_artifact(resolved)
+    artifact = _prepare_artifact(resolved, cancel_token)
     if artifact is not None and not isinstance(selection, GridTarget):
         settings.setdefault('linelist_params', {}).pop('linelist_folder', None)
         settings['linelist_params']['linelist_file'] = [artifact.files[0]]

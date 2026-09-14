@@ -175,10 +175,14 @@ the resolved inputs (preparation references, padded windows) before launch.
 ### Which line list does a masked synthesis actually read?
 
 **Available.** With `linelist_crop_aa > 0` and a MARCS reference available, the request
-prepares a cropped and thinned line list before any run. The preparation is HOP's own
-two-stage selection: a read bound of the padded windows widened by the skirt, then HOP's
-negligibility test on the reference atmosphere's structure. Blending transitions of other
-species inside the windows survive because HOP selects over the whole window, not by element.
+prepares a pruned line list before any run. The preparation is HOP's own two-stage
+selection: a read bound of the padded windows widened by the skirt, then HOP's negligibility
+test on the reference atmosphere's structure. Blending transitions of other species inside
+the windows survive because HOP selects over the whole window, not by element. The
+selection runs in `hop_prune.x` child processes (`HOP/standalone/hop_prune.f90`, driven by
+`tumult.prune`), one per uncached reference on the workflow's CPU budget, from the same
+namelist groups the runs read; each writes `<list>.provenance.nml` beside its output. The
+executable is built by `make` (gfortran) or `make -C HOP/standalone`.
 
 The reference atmosphere is chosen automatically:
 

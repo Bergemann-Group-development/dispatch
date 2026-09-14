@@ -142,22 +142,27 @@ def _crop_digest(base, windows, crop):
         sort_keys=True, default=str).encode()).hexdigest()[:8]
 
 
-def _node_linelists(top, base, nodes, windows, crop, launch_kwargs, preparation=None):
-    """Crop the line list once per atmosphere node, and map each node key to its own file.
+def _node_linelists(top, base, nodes, windows, crop, launch_kwargs, preparation=None,
+                    cancel_token=None):
+    """Prune the line list once per atmosphere node, and map each node key to its own file.
 
     A run's line selection depends on its atmosphere, its windows and its abundances, so a
     ladder of abundance rungs on one node re-reads and re-selects the whole master list at
-    every rung. Cropping once per node -- at the ladder's strongest rung, which covers the
-    weaker ones -- makes the selection a property of the node instead
-    (:func:`tumult.linestrength.crop_linelist`), and leaves the runs independent of each
-    other: no run waits for another's ``linelist_out.txt``.
+    every rung. Pruning once per node -- at the ladder's strongest rung, which covers the
+    weaker ones -- makes the selection a property of the node instead, and leaves the runs
+    independent of each other: no run waits for another's ``linelist_out.txt``.
+
+    The selection is made by one ``hop_prune.x`` child per uncached node
+    (:mod:`tumult.prune`), fed the runs' own composition, background and line-list settings
+    from ``base`` and scheduled together on the workflow's CPU budget; ``cancel_token``
+    terminates live children and none of them publishes a partial file.
 
     ``crop`` is the caller's descriptor: ``skirt`` in Angstrom (how far outside a window a
-    line may still contribute; 0 or absent disables cropping altogether) and the
+    line may still contribute; 0 or absent disables pruning altogether) and the
     ``abundances`` / ``relative_abundances`` of the strongest rung. Returns ``None`` when
-    cropping does not apply, which leaves every run on the shared list.
+    pruning does not apply, which leaves every run on the shared list.
 
-    A crop costs about a tenth of a second against the several seconds of the runs it feeds,
+    A prune costs a fraction of a second against the several seconds of the runs it feeds,
     and is cached on disk under the digest, so a node recurring in a later iteration or
     session pays nothing.
     """
@@ -173,33 +178,41 @@ def _node_linelists(top, base, nodes, windows, crop, launch_kwargs, preparation=
         return None
     files = (base.get('linelist_params') or {}).get('linelist_file') or []
     if len(files) != 1:
-        # a line-list folder, several files, or none: the crop writes one file, and merging
+        # a line-list folder, several files, or none: the prune writes one file, and merging
         # a folder into it would change which duplicate of a line wins
         return None
     R = float((base.get('spectrum_params') or {}).get('R') or 0.0)
     if R <= 0:
         return None
-    from ..linestrength import crop_linelist
+    from .. import prune
+    from ..linestrength import _window_text
 
     skirt = float(crop['skirt'])
-    padded = [(float(min(w)) - skirt, float(max(w)) + skirt) for w in windows]
+    padded = sorted((float(min(w)) - skirt, float(max(w)) + skirt) for w in windows)
     cwd = Path((launch_kwargs or {}).get('cwd') or '.')
     out_dir = (cwd / top / '_linelists' / _crop_digest(base, windows, crop)).resolve()
-    master = files[0] if Path(files[0]).is_absolute() else cwd / files[0]
-    mapping = {}
+    master = (files[0] if Path(files[0]).is_absolute() else cwd / files[0]).resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    window_file = out_dir / 'windows.txt'
+    jobs, mapping = [], {}
     for jkey, teff_i, logg_i, feh_i, v, _w, atmos_path, _absmet in nodes:
         if v is None:
-            # HOP crops on a 1D structure; a snapshot node needs the request path's MARCS
-            # preparation references (see workflows.resolve_request) rather than a guess.
-            raise ValueError('Line-list cropping on a 3D snapshot grid needs a MARCS '
+            # hop_prune.x samples 1D structures; a snapshot node needs the request path's
+            # MARCS preparation references (see workflows.resolve_request) rather than a guess.
+            raise ValueError('Line-list pruning on a 3D snapshot grid needs a MARCS '
                              'preparation grid; pass a prepared line list or disable the crop.')
         path = out_dir / f'{_run_name(teff_i, logg_i, feh_i, v)}.txt'
-        if not path.is_file():
-            atmos = atmos_path if Path(atmos_path).is_absolute() else cwd / atmos_path
-            crop_linelist(path, atmos, master, padded, R=R, dlam=skirt, vmic=v, feh=feh_i,
-                          abundances=crop.get('abundances') or '',
-                          relative_abundances=bool(crop.get('relative_abundances', True)))
         mapping[jkey] = str(path)
+        if path.is_file():
+            continue
+        if not jobs:
+            window_file.write_text(_window_text(padded))
+        atmos = (atmos_path if Path(atmos_path).is_absolute() else cwd / atmos_path).resolve()
+        jobs.append((path, prune.prune_namelist(
+            path, atmos, [master], window_file, R=R, dlam=skirt, vmic=v, feh=feh_i,
+            abundances=crop.get('abundances') or '',
+            relative_abundances=bool(crop.get('relative_abundances', True)), base=base)))
+    prune.prune_batch(jobs, cwd=cwd, cancel_token=cancel_token)
     return mapping
 
 
@@ -802,7 +815,7 @@ def compute_window_batch(top, star, atmos_files, *, settings_list, windows, R,
     for members, (base, manifest) in zip(groups, folds):
         manifest_text = json.dumps(manifest, sort_keys=True, separators=(',', ':'))
         node_lists = _node_linelists(top, base, nodes, merged, crop, launch_kwargs,
-                                     preparation)
+                                     preparation, cancel_token)
         # the crop only enters the digest when there is one, so an uncropped batch keeps the
         # cache identity (and the folders) it had before per-node crops existed
         keys = [base, manifest_text, text]
@@ -925,7 +938,7 @@ def compute_spectra(top, star, atmos_files, *, settings_list, absmet_files=None,
         base, manifest = fold
         manifest_text = json.dumps(manifest, sort_keys=True, separators=(',', ':'))
         node_lists = _node_linelists(top, base, nodes, crop_windows, crop, launch_kwargs,
-                                     preparation) \
+                                     preparation, cancel_token) \
             if crop_windows else None
         keys = [base, manifest_text]
         if node_lists:
@@ -972,7 +985,7 @@ def compute_spectra(top, star, atmos_files, *, settings_list, absmet_files=None,
     prepared = []   # (settings, syn_top, departures_top, nlte_v, node_linelists)
     for s, label, nlte_v in zip(windowed, labels, nlte_values):
         node_lists = _node_linelists(top, s, nodes, crop_windows, crop, launch_kwargs,
-                                     preparation) \
+                                     preparation, cancel_token) \
             if crop_windows else None
         prep_key = (str(preparation.folder) if preparation is not None else
                     _crop_digest(s, crop_windows, crop))

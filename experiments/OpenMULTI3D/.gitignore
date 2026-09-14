@@ -31,6 +31,7 @@ tests/*
 !tests/test_line_quadrature.py
 !tests/test_grid_catalog.py
 !tests/test_reference_stars.py
+!tests/test_prune.py
 
 # Keep development plans visible under the parent experiment ignore rule.
 !plan/

@@ -46,6 +46,17 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
   or a folder of per-species files). Synthesis, navigation, annotation and blend screening
   all resolve it; there is no separate "master" or "navigator" list. A run's own
   `linelist_out.txt` is a derived result, labelled by its provenance when browsed.
+- *pruned line list*: the subset of the configured line list that a synthesis on one
+  atmosphere node keeps, written in the input format by `hop_prune.x`
+  (`HOP/standalone/hop_prune.f90`, driven from `tumult.prune`) so every run on that node
+  reads it as its `linelist_file`. The selection is HOP's own negligibility test on the
+  node's sampled states over the requested windows widened by the *skirt*. Older names for
+  the same thing are *crop* (`crop_linelist`, the `linelist_crop_aa` preference) and
+  *preparation* (the per-reference artifact of `prepare_linelist`). Distinct from a run's
+  `linelist_out.txt`, which is a derived diagnostic.
+- *skirt*: how far outside a requested window a transition may still be kept when pruning,
+  in Angstrom; it is handed to HOP as the line-wing search radius `dlam`, so a pruned run
+  reads wings only to that distance.
 - *use line list*: the per-calculation choice to synthesise the model atoms together with
   the line list (background transitions and blends) rather than the atoms alone. Off is
   `only_atom` in the request; it never blanks the configured path.
