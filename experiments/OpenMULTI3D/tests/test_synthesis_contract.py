@@ -322,3 +322,31 @@ def test_fit_executes_each_trial_point_as_the_request_over_the_span(tmp_path, mo
     assert type(trial.selection) is GridTarget
     assert trial.selection.grid == synthesis.selection.grid
     assert raw.values[0][0] == 5000. and raw.values[0][-1] == 5003.
+
+
+@pytest.mark.parametrize('with_linelist', [False, True])
+def test_snapshot_correction_uses_atom_grid_without_unbounded_resolving_power(
+        tmp_path, with_linelist):
+    from tumult.synthesis import snapshot
+
+    atom = tmp_path / 'atom.ba'
+    line_grid = tmp_path / 'line_grid.txt'
+    request = SynthRequest(
+        {'dispatch_cwd': str(tmp_path), 'R': 1e6, 'linelist_crop_aa': 0},
+        run_vals={'mode': 'NLTE', 'atoms': [str(atom)], 'atom_lines': True,
+                  'only_atom': not with_linelist, 'line_grid': str(line_grid)},
+        selection=Snapshot3D('cube.atmos', (4548, 3.964, 0), (20, 20, 64)))
+    resolved = request.resolve()
+    field = snapshot.DepartureField(
+        folder=tmp_path / 'departures', name=Path('synth/dep'),
+        snapshot='cube.atmos', resolution=(20, 20, 64),
+        settings=snapshot.departure_settings(resolved.settings, 'cube.atmos'))
+    formal = snapshot.spectrum_settings(field, resolved.settings)
+    assert not formal.get('spectrum_params', {}).get('R')
+    assert formal['atom_params']['line_grid_file'] == str(line_grid)
+    assert formal['atmos_params']['read_departures']
+    assert formal['rt_iteration_params']['maxiter'] == 0
+
+    # A user-selected wavelength window still needs the requested sampling.
+    windowed = request.with_masks([MaskWindow((4553, 4555), (4552, 4556))]).resolve()
+    assert windowed.settings['spectrum_params']['R'] == 1e6

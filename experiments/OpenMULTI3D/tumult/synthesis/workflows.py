@@ -777,9 +777,15 @@ def resolve_request(request: SynthRequest) -> ResolvedSynthRequest:
     if isinstance(selection, GridTarget):
         settings = update_dict(settings, {'atmos_params': _grid_mesh(selection.grid)})
     settings = update_dict(settings, deepcopy(request.expert_settings))
-    settings.setdefault('spectrum_params', {}).setdefault('R',
-                                                           float(prefs.get('R') or _DEFAULT_R))
-    if settings['spectrum_params']['R'] <= 0:
+    # A correction ladder without masks uses the model atom's frequency grid,
+    # including a prepared line_grid_file. Injecting R alone requests an explicit
+    # spectrum grid without supplying its bounds, which DISPATCH cannot construct.
+    atom_grid = (not request.masks
+                 and (request.run_vals.get('atom_lines') or request.run_vals.get('only_atom')))
+    if not atom_grid:
+        settings.setdefault('spectrum_params', {}).setdefault(
+            'R', float(prefs.get('R') or _DEFAULT_R))
+    if settings.get('spectrum_params', {}).get('R', _DEFAULT_R) <= 0:
         raise ValueError('Resolving power must be positive.')
     windows = tuple(mask.synth for mask in request.masks if mask.include)
     padded = tuple((window[0] - SYNTH_PAD_AA, window[1] + SYNTH_PAD_AA)
