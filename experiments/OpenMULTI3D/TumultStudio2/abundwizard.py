@@ -192,6 +192,8 @@ class AbundanceWizard(Tool):
                               for i in range(1, self.steps + 1)]
         self._results_bridge = ctx.bridges.html(f"{self.prefix}-results")
         self._table_bridge = ctx.bridges.html(f"{self.prefix}-table")
+        # another list took (or gave back) the single left-sidebar selection: restyle our rows
+        ctx.subscribe("focus-changed", lambda **_: self.push_results())
 
         self.step = 1
         self.show_toggled_only = False     # table header switch: hide excluded lines
