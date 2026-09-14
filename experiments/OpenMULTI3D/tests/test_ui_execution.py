@@ -189,7 +189,7 @@ def test_ion_balance_setup_is_private_and_interpolation_only(monkeypatch):
     monkeypatch.setattr(ionbalance, "missing_prefs", lambda prefs: [])
 
     setup = ionbalance.BalanceSynthesis(grids)
-    context = setup.context()
+    context = setup.context("Fe")
 
     assert setup.form.value("atmos_grid_id") == "stagger"
     assert [value for value, _ in setup.form.fields["atmos_grid_id"].options] == [
@@ -201,6 +201,10 @@ def test_ion_balance_setup_is_private_and_interpolation_only(monkeypatch):
     assert context.run_vals["atmos_mode"] == "interp"
     assert context.run_vals["mode"] == "LTE"
     assert context.run_vals["abundances"] == ""
+    # background lines are off unless switched on: the ladders hold the element's lines only
+    assert context.run_vals["only_elements"] == "Fe"
+    setup.form.fields["background_lines"].value = True
+    assert "only_elements" not in setup.context("Fe").run_vals
 
 
 def test_synthesis_geometry_is_inferred_from_model_format(tmp_path):

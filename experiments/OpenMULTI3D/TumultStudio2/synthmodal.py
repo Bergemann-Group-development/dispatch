@@ -208,6 +208,7 @@ class SynthModal:
     def open_range(self, xmin=None, xmax=None, mode="synth"):
         """Open on a free window (Å); ``None`` leaves the fields blank for the user."""
         self.job = ("range", None)
+        self.setup.element = ""
         if xmin is not None and xmax is not None:
             self.window_form.set_values(xmin=round(float(xmin), 3), xmax=round(float(xmax), 3))
         else:
@@ -220,6 +221,7 @@ class SynthModal:
             self.notify("This line mask has no switched-on windows.")
             return
         self.job = ("masks", mset)
+        self.setup.element = mset.element
         self._open(mode)
 
     def _open(self, mode):
@@ -598,7 +600,10 @@ class SynthModal:
             mode=rv["mode"], abundances=rv["abundances"],
             relative=rv["relative_abundances"], atoms=rv["atoms"],
             xmin=shown_min, xmax=shown_max, atmosphere=atmosphere)
-        meta["params"].append(["Line list", "Off (model atom only)" if rv.get("only_atom") else str(request.prefs.get("linelist", ""))])
+        linelist = ("Off (model atom only)" if rv.get("only_atom") else
+                    str(request.prefs.get("linelist", ""))
+                    + (f" ({rv['only_elements']} lines only)" if rv.get("only_elements") else ""))
+        meta["params"].append(["Line list", linelist])
         if kind == "masks":
             meta["params"].append(["Line mask", mset.name])
 

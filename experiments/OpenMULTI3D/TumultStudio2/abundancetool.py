@@ -141,6 +141,7 @@ class AbundanceTool(AbundanceWizard):
             self.notify("Set the element these windows diagnose before measuring them.")
             return
         self._pending_set, self._settings_uid = mset, None
+        self.setup.element = mset.element
         self._open_modal()
 
     def open_settings(self):
@@ -155,6 +156,7 @@ class AbundanceTool(AbundanceWizard):
             self.notify("Select an abundance object first.")
             return
         self._pending_set, self._settings_uid = None, res.uid
+        self.setup.element = res.element
         self._open_modal()
 
     def _open_modal(self):
@@ -369,6 +371,7 @@ class AbundanceTool(AbundanceWizard):
         if res is None:
             self.notify("Select an abundance object first.")
             return
+        self.setup.element = res.element
         ctx = request if request is not None else self.setup.context()
         if ctx is None:
             self.notify(self.setup.reason or "Configure the synthesis setup first.")

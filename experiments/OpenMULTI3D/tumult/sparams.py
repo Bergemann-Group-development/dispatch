@@ -446,7 +446,13 @@ def _solve_balance(request, result, opts, progress, cancel_token):
     if int(opts["max_iter"]) < 1 or float(opts["span"]) <= 0 or int(opts["points"]) < 2:
         raise ValueError("Balance needs max_iter >= 1, span > 0 and points >= 2.")
 
-    def rv_point(a_rel, feh, only=True, exclude=False, save_linelist=True):
+    # a request with ``only_elements`` (background lines switched off) synthesises the
+    # curve-of-growth ladder from the element's lines alone; the blend screen always compares
+    # the full synthesis with the element excluded
+    ladder_only = bool(base_rv.get("only_elements"))
+
+    def rv_point(a_rel, feh, only=None, exclude=False, save_linelist=True):
+        only = ladder_only if only is None else only
         rv = dict(base_rv)
         # linelist_out.txt lists the transitions the run kept, with strengths at its own
         # composition: a diagnostic, never an input. Membership is the same across a
@@ -620,7 +626,7 @@ def _solve_balance(request, result, opts, progress, cancel_token):
                     ln.method = "cog"
                     ln.flags = tuple(f for f in ln.flags if f != "out_of_range")
                     # the line as this iteration's parameters and abundance leave it, read
-                    # off the ladder it was inverted through (element-only, like the ladder)
+                    # off the ladder it was inverted through
                     ln.fit_spec = ab.cog_spectrum(a_grid, specs, a_rel)
             except CancelledError:
                 raise

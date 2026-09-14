@@ -21,6 +21,10 @@ likewise treated as a global, physics-level choice: instead of spawning a second
 ``AtomPicker``, an ``atoms_provider`` callable supplies the current selection for
 :meth:`context` and a read-only display.
 
+A host running a line-mask analysis sets :attr:`SynthSetup.element`; the mode form then
+offers **Include background lines**, and switching it off restricts the line list to that
+element (``only_elements``).
+
 ``context()`` returns the owned :class:`~tumult.synthesis.SynthRequest` (without windows;
 the caller adds its masks) that both the synthesis and the fit mode of the modal start
 from, or ``None`` with a ``reason`` when the setup does not resolve to a supported request.
@@ -114,6 +118,9 @@ class SynthSetup:
                  on_run_change=None, grid_section=None, form_names=None):
         self.allow_departures = prefix == "synth"
         self.allow_atom_only = prefix == "synth"
+        # the element a line-mask analysis diagnoses; while set, the mode form offers to
+        # synthesise that element's transitions alone (``only_elements``)
+        self.element = ""
         self.prefix = prefix
         self.section = section
         self.grid_section = grid_section or section
@@ -148,6 +155,8 @@ class SynthSetup:
         ], on_change=self._save_base)
         self.mode_form = Form(names["mode"], [
             Field("use_linelist", "Use line list", kind="checkbox", value=vals.get("use_linelist", True)),
+            Field("background_lines", "Include background lines", kind="checkbox",
+                  value=vals.get("background_lines", True)),
             Field("mode", "Radiative transfer", kind="select", value=vals["mode"],
                   options=["LTE", "NLTE"], inline=True),
             Field("departure_field", "Saved departures (optional)", kind="text",
@@ -186,10 +195,16 @@ class SynthSetup:
         """Push every server-rendered surface (forms + grid) to the client."""
         self.run_form.render()
         self.base_form.render()
-        self.mode_form.fields["use_linelist"].hidden = not self.allow_atom_only or not self.is_nlte
-        self.mode_form.fields["departure_field"].hidden = not self.is_nlte or not self.allow_departures
-        self.mode_form.render()
+        self._sync_mode_fields()
         self.render_grid_ui()
+
+    def _sync_mode_fields(self):
+        """Show the mode form's conditional fields for the current mode and job, and repaint."""
+        fields = self.mode_form.fields
+        fields["use_linelist"].hidden = not self.allow_atom_only or not self.is_nlte
+        fields["background_lines"].hidden = not self.element
+        fields["departure_field"].hidden = not self.is_nlte or not self.allow_departures
+        self.mode_form.render()
 
     def render_grid_ui(self):
         self.grid_bridge.value = self.grid_ui_html()
@@ -476,9 +491,7 @@ class SynthSetup:
 
     def _save_mode(self, key, value):
         self._update(self.section, key, value)
-        self.mode_form.fields["use_linelist"].hidden = not self.allow_atom_only or not self.is_nlte
-        self.mode_form.fields["departure_field"].hidden = not self.is_nlte or not self.allow_departures
-        self.mode_form.render()
+        self._sync_mode_fields()
         if self.on_mode_change:
             self.on_mode_change(self.is_nlte)
 
@@ -537,6 +550,7 @@ class SynthSetup:
         self.base_form.set_values(abundances=vals["abundances"],
                                   relative_abundances=vals["relative_abundances"])
         self.mode_form.set_values(mode=vals["mode"], use_linelist=vals.get("use_linelist", True),
+                                  background_lines=vals.get("background_lines", True),
                                   departure_field=vals.get("departure_field", ""))
         self._reset_atmos_picker()
         self._seed_atmos_query()
@@ -563,6 +577,8 @@ class SynthSetup:
         rv["atoms"] = list(self.atoms_provider())
         if self.allow_atom_only and self.is_nlte:
             rv["only_atom"] = not bool(self.mode_form.value("use_linelist"))
+        if self.element and not self.mode_form.value("background_lines"):
+            rv["only_elements"] = self.element
         if self.is_nlte and not rv["atoms"]:
             self.reason = "NLTE needs model atoms — add them in this calculation."
             return None

@@ -580,17 +580,21 @@ def rew_gradient(synth_fn, a0, step, window=None, profile="gauss", x0=None,
 
 def fit_line(line, *, synth_only_fn, synth_all_fn, synth_excl_fn, abund_fit_fn,
              ew_meas, a_guess=0.0, profile="gauss", weak_frac=0.10, blend_max=0.30,
-             grad_step=0.125, grad_batch_fn=None):
+             grad_step=0.125, grad_batch_fn=None, synth_full_fn=None):
     """Stage 2 (direct fit): screen the line, fit its abundance + vshift/vdop, and get ``dREW/dA``.
 
     Injected callables (synthesis-agnostic so this stays engine-independent and testable):
 
     * ``synth_only_fn(a) -> Spectrum`` — the line at abundance ``a`` with *only* the target
       species (``only_elements``); its fit-window width EW is the weak-line screen.
-    * ``synth_all_fn(a) -> Spectrum`` — the *full* synthesis at abundance ``a`` (all species), used
-      for the blend metric and the ``dREW/dA`` gradient.
+    * ``synth_all_fn(a) -> Spectrum`` — the synthesis the abundance is fitted with at abundance
+      ``a`` (all species, or the target species alone when background lines are switched off),
+      used for the ``dREW/dA`` gradient.
     * ``synth_excl_fn() -> Spectrum`` — the window with the target species removed
-      (``exclude_elements``); with ``synth_all_fn(a_guess)`` gives the blend fraction.
+      (``exclude_elements``); with ``synth_full_fn(a_guess)`` gives the blend fraction.
+    * ``synth_full_fn(a) -> Spectrum`` — the synthesis with every species, for the blend metric.
+      The observation carries its blends whatever the fit synthesises. Defaults to
+      ``synth_all_fn``.
     * ``abund_fit_fn(guess) -> (best: dict, fitted: Spectrum)`` — the adaptive fit of the abundance
       axis plus vshift/vdop against the observation over the fit window. ``best`` must expose the
       abundance under key ``"a"`` (plus ``"vshift"``/``"vdop"`` when fitted).
@@ -610,7 +614,7 @@ def fit_line(line, *, synth_only_fn, synth_all_fn, synth_excl_fn, abund_fit_fn,
         return line
 
     # 2) blend screen: contaminant width fraction in the fit window.
-    blend, _, _ = blend_fraction(synth_all_fn(a_guess), synth_excl_fn(), window=fw,
+    blend, _, _ = blend_fraction((synth_full_fn or synth_all_fn)(a_guess), synth_excl_fn(), window=fw,
                                  profile=profile, x0=x0)
     line.blend_frac = float(blend)
     if np.isfinite(blend) and blend > blend_max:
@@ -711,10 +715,12 @@ def run_abundance(request, result, observation, *, progress=None, cancel_token=N
     """Stage 2: screen and fit every included line of ``result``, in place.
 
     ``request`` is a :class:`~tumult.synthesis.SynthRequest`; ``observation`` the spectrum the
-    lines were measured on. Each line gets the four syntheses :func:`fit_line` needs — the
+    lines were measured on. Each line gets the syntheses :func:`fit_line` needs — the
     species in isolation, the full window, the window with the element removed, and the
     adaptive abundance fit — plus the dREW/dA flanks, which go in as one batch so they fold
-    onto a single run's abundance-set axis. ``progress(result)`` is called as each line
+    onto a single run's abundance-set axis. A request whose ``run_vals`` carry
+    ``only_elements`` (background lines switched off) fits and differentiates the element's
+    lines alone; the blend screen still compares against every species. ``progress(result)`` is called as each line
     lands, so a caller can stream partial results; it must not raise.
     """
     from dataclasses import asdict
@@ -735,8 +741,10 @@ def run_abundance(request, result, observation, *, progress=None, cancel_token=N
     common_result = isinstance(request.selection, Snapshot3D) or request.departure_field is not None
 
     def synth_window(rv_over, window):
+        # an override of None drops that key from the base run values
         rv = dict(base_rv)
         rv.update(rv_over)
+        rv = {k: v for k, v in rv.items() if k not in rv_over or rv_over[k] is not None}
         if common_result:
             return request.with_run_vals(**rv).with_masks(
                 [{'fit': window, 'synth': window}]).execute(
@@ -773,8 +781,13 @@ def run_abundance(request, result, observation, *, progress=None, cancel_token=N
             return synth.compute_batch(target, prefs, rvs, *padded_window(_w), grid=grid,
                                        atmos_file=atmos_file, cancel_token=cancel_token)
 
+        def synth_full_fn(a, _w=ln.window):
+            return synth_window({"abundances": abund_terms(a),
+                                 "relative_abundances": relative,
+                                 "only_elements": None}, _w)
+
         def synth_excl_fn(_w=ln.window):
-            return synth_window({"exclude_elements": symbol}, _w)
+            return synth_window({"exclude_elements": symbol, "only_elements": None}, _w)
 
         def abund_fit_fn(guess, _w=ln.window, _fw=ln.fit_window):
             if common_result:
@@ -789,7 +802,7 @@ def run_abundance(request, result, observation, *, progress=None, cancel_token=N
             fit_line(ln, synth_only_fn=synth_only_fn, synth_all_fn=synth_all_fn,
                      synth_excl_fn=synth_excl_fn, abund_fit_fn=abund_fit_fn,
                      ew_meas=ln.ew, a_guess=0.0, profile=result.profile,
-                     grad_batch_fn=synth_all_batch)
+                     grad_batch_fn=synth_all_batch, synth_full_fn=synth_full_fn)
         except CancelledError:
             raise
         except Exception:

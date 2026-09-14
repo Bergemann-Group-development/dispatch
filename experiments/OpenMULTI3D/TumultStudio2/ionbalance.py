@@ -98,9 +98,13 @@ class BalanceSynthesis:
             preferred = (store.get_section("synthesis").get("ref_grid_id")
                          if store.get_section("synthesis").get("ref_grid_id") in ids
                          else (ids[0] if ids else ""))
+        # the curve-of-growth ladders synthesise the element's lines alone unless background
+        # lines are included; off by default, as the balance was calibrated that way
         self.form = Form("ionbalsetup", [
             Field("atmos_grid_id", "Atmosphere grid", kind="select", value=preferred,
                   options=grids.names),
+            Field("background_lines", "Include background lines", kind="checkbox",
+                  value=bool(saved.get("background_lines", False))),
         ], on_change=self._changed)
 
     @property
@@ -124,7 +128,7 @@ class BalanceSynthesis:
     def selected_grid(self):
         return self.grids._find(str(self.form.value("atmos_grid_id") or ""))
 
-    def context(self):
+    def context(self, element):
         prefs = load_prefs()
         if missing_prefs(prefs):
             self.reason = "Synthesis paths are missing — check Preferences → Synthesis."
@@ -143,6 +147,8 @@ class BalanceSynthesis:
         run_vals = {**RUN_DEFAULTS, "mode": "LTE", "atoms": [], "abundances": "",
                     "relative_abundances": True, "atmos_mode": "interp",
                     "atmos_file": ""}
+        if not self.form.value("background_lines"):
+            run_vals["only_elements"] = element
         # The solver reads prefs/grid/run_vals/atmos_file; the point it synthesises at comes
         # from the fitted parameters each iteration, not from the request, so target is left
         # unset here.
@@ -357,8 +363,10 @@ class IonBalanceTool(AbundanceWizard):
         """Compact statement of the modal-owned, interpolation-only synthesis context."""
         grid = self.setup.selected_grid()
         name = (grid or {}).get("name") or "no atmosphere grid"
+        lines = ("with background lines" if self.setup.form.value("background_lines")
+                 else "element lines only")
         return (f'<div class="hint">Synthesis: interpolated {html.escape(name)} atmospheres '
-                f'· LTE · scaled-solar background.</div>')
+                f'· LTE · scaled-solar composition · {lines}.</div>')
 
     def context_html(self):
         """The modal's header block: what is about to be measured, or refitted."""
@@ -555,7 +563,7 @@ class IonBalanceTool(AbundanceWizard):
         if err:
             self.notify(err)
             return
-        ctx = self.setup.context()
+        ctx = self.setup.context(refit.element if refit is not None else mset.element)
         if ctx is None:
             self.notify(self.setup.reason or "Configure the synthesis setup first.")
             return
