@@ -189,8 +189,8 @@ class AbundanceTool(AbundanceWizard):
     def actions_html(self):
         """The modal's footer: one submit, doing what the modal was opened for."""
         if self._settings_uid:
-            return ('<button class="text-btn abund-run-synth">Synthesise again</button>')
-        return '<button class="text-btn abund-run-lines">Measure &amp; synthesise</button>'
+            return ('<button class="primary-btn abund-run-synth">Synthesise again</button>')
+        return '<button class="primary-btn abund-run-lines">Measure &amp; synthesise</button>'
 
     # --- the object panel's statement of what the synthesis runs on ---------------------
     def push_setup_note(self):

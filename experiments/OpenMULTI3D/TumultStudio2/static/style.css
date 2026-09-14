@@ -884,18 +884,14 @@ num-input[disabled] .num-spin button { cursor: not-allowed; }
   flex-shrink: 0; display: flex; justify-content: flex-end; align-items: center; gap: 8px;
   padding: 10px 16px 14px; border-top: 1px solid var(--border);
 }
-/* server-rendered action slots sit inside the footer's own row, and every footer button
-   shares the text button's geometry (the corrections modal's Cancel / Compute pair is the
-   template); the primary action keeps its accent */
+/* every modal footer follows one pattern: Cancel and other secondary actions are
+   .text-btn, the confirming action is .primary-btn, and all share the text button's
+   geometry; server-rendered action slots sit inside the footer's own row */
 #synth-modal-actions, #abund-modal-actions { display: contents; }
 .modal-footer :is(.text-btn, .primary-btn) { height: 24px; margin-top: 0; padding: 0 10px; font-size: 11px; }
 /* contextual: only shown when the picker sits inside a tumult run folder */
 #load-run { display: none; }
-#load-run.ready {
-  display: inline-flex; align-items: center; gap: 4px;
-  background: var(--accent); border-color: var(--accent); color: #fff;
-}
-#load-run.ready:hover { filter: brightness(1.1); }
+#load-run.ready { display: inline-flex; align-items: center; gap: 4px; }
 
 /* ---------------------------------------------------------------------------
    Abundance tool: toolbar button, right-sidebar control panel, left-sidebar
