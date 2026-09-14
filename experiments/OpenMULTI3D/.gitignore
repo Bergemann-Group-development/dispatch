@@ -33,10 +33,6 @@ tests/*
 !tests/test_reference_stars.py
 !tests/test_prune.py
 
-# Keep development plans visible under the parent experiment ignore rule.
-!plan/
-!plan/*.md
-
 # Nothing is needed here for tumult/, HOP/, SRC/ or TumultStudio2/: the parent
 # repository negates those directories wholesale, so new files in them are visible.
 
