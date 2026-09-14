@@ -786,42 +786,8 @@ def _stub_result(resolved):
     return SynthesisResult((Spectrum(xx, np.ones_like(xx)),), (), resolved.request, {})
 
 
-def test_workflow_cancelled_while_queued_settles_without_a_worker(tmp_path, monkeypatch):
-    """Cancelling a queued workflow cancels its future, so no pool thread is ever spent
-    on it, and its record still ends as cancelled; the live handle table lets it go."""
-    from tumult.synthesis import submission, workflows
-
-    ran = []
-    monkeypatch.setattr(workflows, 'execute_request',
-                        lambda resolved, cancel_token=None: ran.append(1) or _stub_result(resolved))
-    gate = threading.Event()
-    pool = concurrent.futures.ThreadPoolExecutor(1)
-    monkeypatch.setattr(submission, 'WORKFLOWS', pool)
-    blocker = pool.submit(gate.wait, 5)
-    try:
-        handle = submission.submit(_stub_request(tmp_path))
-        seen = []
-        handle.add_done_callback(lambda h: seen.append(h.status))
-        assert handle.status == 'queued' and handle.id in submission._live
-        assert handle.cancel() is True
-        assert seen == ['cancelled']        # the callback sees the settled record
-        assert handle.done and handle.status == 'cancelled'
-        handle.add_done_callback(lambda h: seen.append(h.status))   # late registration
-        assert seen == ['cancelled'] * 2
-        assert handle.id not in submission._live
-        with pytest.raises(CancelledError):
-            handle.result()
-        assert handle.cancel() is False              # already settled
-    finally:
-        gate.set()
-        blocker.result(3)
-        pool.shutdown(wait=True)
-    assert not ran
-    reopened = submission.open_workflow(handle.folder)
-    assert reopened.status == 'cancelled' and reopened.done
-
-
-def test_workflow_cancelled_while_running_and_settled_result_is_reloadable(tmp_path, monkeypatch):
+def test_workflow_cancelled_while_running_and_settled_result_is_reloadable(tmp_path, monkeypatch,
+                                                                         workflow_daemon):
     from tumult.synthesis import submission, workflows
 
     started, release = threading.Event(), threading.Event()
@@ -839,7 +805,7 @@ def test_workflow_cancelled_while_running_and_settled_result_is_reloadable(tmp_p
     release.set()
     with pytest.raises(CancelledError):
         handle.result(timeout=5)
-    assert handle.status == 'cancelled' and handle.id not in submission._live
+    assert handle.status == 'cancelled'
 
     started.clear()
     release.set()
@@ -850,17 +816,19 @@ def test_workflow_cancelled_while_running_and_settled_result_is_reloadable(tmp_p
 
 
 def test_workflow_submission_failure_is_recorded(tmp_path, monkeypatch):
-    from tumult.synthesis import submission
+    """A daemon that cannot be reached fails the submission and leaves the record
+    failed with the cause, so nothing waits on a job no driver will run."""
+    from tumult.synthesis import daemon, submission
 
-    pool = concurrent.futures.ThreadPoolExecutor(1)
-    pool.shutdown()
-    monkeypatch.setattr(submission, 'WORKFLOWS', pool)
-    with pytest.raises(RuntimeError):
+    def unreachable(start=True):
+        raise ConnectionError('no daemon here')
+
+    monkeypatch.setattr(daemon, 'open_socket', unreachable)
+    with pytest.raises(ConnectionError):
         submission.submit(_stub_request(tmp_path))
     handles = submission.discover_workflows(tmp_path / 'synth')
     assert [h.status for h in handles] == ['failed']
-    assert handles[0].id not in submission._live
-    assert 'RuntimeError' in handles[0].to_dict()['error']
+    assert 'no daemon here' in handles[0].to_dict()['error']
 
 
 # --- termination causes of a cancellable native run -----------------------------------
@@ -901,40 +869,25 @@ def test_cancellable_launch_records_success_failure_and_cancellation(tmp_path, m
 
 # --- bounded server shutdown ------------------------------------------------------------
 def test_shutdown_is_bounded_and_reports_uninterruptible_work(tmp_path, monkeypatch):
-    """Shutdown stops admission, cancels queued workflows, kills a cancellable dispatch
-    child and returns within its bound, naming the native worker that ignored it."""
+    """Shutdown stops admission, kills a cancellable dispatch child and returns within
+    its bound, naming the native worker that ignored it."""
     from tumult import launch
-    from tumult.synthesis import runtime, submission, workflows
+    from tumult.synthesis import runtime
     from tumult.synthesis import jobrecord
 
     pools = {name: concurrent.futures.ThreadPoolExecutor(2, thread_name_prefix=f'test-{name}')
              for name in ('WORKFLOWS', 'HOP', 'IO')}
     for name, pool in pools.items():
         monkeypatch.setattr(runtime, name, pool)
-    monkeypatch.setattr(submission, 'WORKFLOWS', pools['WORKFLOWS'])
     monkeypatch.setattr(runtime, '_default', ExecutionService(2))
 
     # 1. an in-process native call that cannot be interrupted
     release = threading.Event()
     native = pools['HOP'].submit(release.wait, 30)
 
-    # 2. a running workflow honouring its token, and one queued behind it
-    started = threading.Event()
-
-    def execute(resolved, cancel_token=None):
-        started.set()
-        while not cancel_token.cancelled:
-            time.sleep(0.01)
-        cancel_token.check()
-
-    monkeypatch.setattr(workflows, 'execute_request', execute)
-    pools['WORKFLOWS'].submit(lambda: None).result(5)
+    # 2. a pool thread that ignores everything
     gate = threading.Event()
-    blocker = pools['WORKFLOWS'].submit(gate.wait, 30)      # occupies the second thread
-    running = submission.submit(_stub_request(tmp_path))
-    assert started.wait(5)
-    queued = submission.submit(_stub_request(tmp_path))
-    assert queued.status == 'queued'
+    blocker = pools['WORKFLOWS'].submit(gate.wait, 30)
 
     # 3. a cancellable dispatch child on the leaf service
     execution = tmp_path / 'execution'
@@ -958,13 +911,11 @@ def test_shutdown_is_bounded_and_reports_uninterruptible_work(tmp_path, monkeypa
     assert report['stopped'] is False
     # the two threads that ignored everything: the HOP call and the pool blocker
     assert sorted(name.split(':')[0] for name in report['running']) == ['hop', 'workflows']
-    assert report['cancelled_workflows'] == 2
-    assert queued.status == 'cancelled' and running.status == 'cancelled'
     with pytest.raises(CancelledError):
         child.result(1)
     assert jobrecord.state_of(execution / 'data/cache/child') == 'cancelled'
     with pytest.raises(RuntimeError):
-        submission.submit(_stub_request(tmp_path))        # admission is closed
+        pools['WORKFLOWS'].submit(lambda: None)            # admission is closed
     with pytest.raises(RuntimeError):
         runtime.get_runtime().submit('late', 'sig', 'owner', run)
     assert not native.done()                               # never claimed stopped
@@ -974,7 +925,8 @@ def test_shutdown_is_bounded_and_reports_uninterruptible_work(tmp_path, monkeypa
     blocker.result(5)
 
 
-def test_discovery_is_scoped_to_the_workflow_folder_and_keeps_the_label(tmp_path, monkeypatch):
+def test_discovery_is_scoped_to_the_workflow_folder_and_keeps_the_label(tmp_path, monkeypatch,
+                                                                       workflow_daemon):
     """``discover_workflows`` lists only ``<root>/_workflows/*``, newest first, with the
     submitter's label and meta; a record left running by a vanished process reports
     ``interrupted`` and cannot be cancelled (no PID is ever signalled)."""

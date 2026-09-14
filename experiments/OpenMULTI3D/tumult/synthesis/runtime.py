@@ -56,6 +56,11 @@ class ExecutionService:
     ``fn(token, threads)`` executes outside the scheduler lock. Requests with the
     same key and signature share a result; callers must treat it as read-only.
     Lowering the budget lets existing jobs drain before admitting more work.
+
+    ``owner`` groups jobs for round-robin scheduling and for thread accounting: the
+    threads of running jobs are summed per owner, and a job shared by several owners
+    counts toward the one that submitted it first. The workflow daemon passes workflow
+    ids as owners and follows the sums through :meth:`set_listener`.
     """
 
     def __init__(self, max_threads=None):
@@ -73,16 +78,49 @@ class ExecutionService:
         self._running = set()
         self._used = 0
         self._closed = False
+        self._listener = None
+        self._published = ({}, None)    # (threads per owner, (used, budget)) last reported
 
     def configure(self, max_threads):
         with self._lock:
             self._budget = min(self._capacity, max(1, int(max_threads)))
             self._pump()
+            self._publish()
 
     @property
     def budget(self):
         with self._lock:
             return self._budget
+
+    @property
+    def used(self):
+        with self._lock:
+            return self._used
+
+    def set_listener(self, listener):
+        """Call ``listener(changed, used, budget)`` whenever the threads allocated to an
+        owner or the budget change; ``changed`` maps each affected owner to its current
+        thread count (0 once its last job ended). The listener runs with the scheduler
+        lock held, so it must return quickly and must not call back into the service."""
+        with self._lock:
+            self._listener = listener
+            self._published = ({}, None)
+            self._publish()
+
+    def _publish(self):
+        # Called with the lock held.
+        if self._listener is None:
+            return
+        current = {}
+        for task in self._running:
+            current[task.owner] = current.get(task.owner, 0) + task.allocated
+        previous, usage = self._published
+        changed = {owner: n for owner, n in current.items() if previous.get(owner) != n}
+        changed.update((owner, 0) for owner in previous if owner not in current)
+        if not changed and usage == (self._used, self._budget):
+            return
+        self._published = (current, (self._used, self._budget))
+        self._listener(changed, self._used, self._budget)
 
     def submit(self, key, signature, owner, fn, *, threads=1, token=None):
         if token is not None:
@@ -155,6 +193,7 @@ class ExecutionService:
             self._used += slots
             worker = self._executor.submit(task.fn, task.token, slots)
             worker.add_done_callback(lambda f, t=task: self._finished(t, f))
+        self._publish()
 
     def _finished(self, task, worker):
         with self._lock:
@@ -215,6 +254,7 @@ _default = None
 _default_lock = threading.Lock()
 _current = ContextVar("tumult_execution", default=None)
 _observer = ContextVar("tumult_run_observer", default=None)
+_workflow = ContextVar("tumult_workflow", default=None)
 
 # Process-wide coordinator pools. They are outside ExecutionService because their
 # tasks may wait for leaf dispatch jobs; putting them on the leaf pool can deadlock.
@@ -271,6 +311,22 @@ def note_run(output):
         observer(output)
 
 
+@contextmanager
+def workflow_scope(identity):
+    """Label the leaf jobs submitted inside this block with workflow ``identity``, so the
+    execution service accounts their threads to it (see :class:`ExecutionService`)."""
+    reset = _workflow.set(identity)
+    try:
+        yield
+    finally:
+        _workflow.reset(reset)
+
+
+def current_workflow():
+    """The workflow id of the enclosing :func:`workflow_scope`, else ``None``."""
+    return _workflow.get()
+
+
 # How long a server shutdown waits for running work before reporting what is still
 # running. Cancellable work (a dispatch child, a token-checking coordinator) settles well
 # within this; a native HOP call cannot be interrupted and is reported instead.
@@ -280,19 +336,15 @@ SHUTDOWN_TIMEOUT_S = 10.0
 def shutdown(timeout=SHUTDOWN_TIMEOUT_S):
     """Shut down the process-wide pools within a bounded wait.
 
-    In order: the WORKFLOWS pool stops admitting coordinators and its queued futures are
-    cancelled; every live durable workflow is cancelled through its handle (queued ones
-    settle as ``cancelled`` without a worker, running ones through their token); the leaf
-    service cancels its jobs, which kills their dispatch children; the HOP and IO pools
-    refuse new work. Then the workers of all pools are joined for at most ``timeout``
-    seconds in total. The returned report says whether everything ``stopped`` and names
-    the ``running`` work otherwise; a thread that ignores its token (an in-process HOP
-    calculation) keeps running after this returns and is never claimed stopped.
+    In order: the WORKFLOWS pool stops admitting work and its queued futures are
+    cancelled; the leaf service cancels its jobs, which kills their dispatch children;
+    the HOP and IO pools refuse new work. Then the workers of all pools are joined for at
+    most ``timeout`` seconds in total. The returned report says whether everything
+    ``stopped`` and names the ``running`` work otherwise; a thread that ignores its token
+    (an in-process HOP calculation) keeps running after this returns and is never claimed
+    stopped. Durable workflows run in the workflow daemon and are not affected.
     """
-    from .submission import cancel_live_workflows
     started = time.monotonic()
-    WORKFLOWS.shutdown(wait=False)               # stop admission before cancelling
-    cancelled = cancel_live_workflows()
     WORKFLOWS.shutdown(wait=False, cancel_futures=True)
     for pool in (HOP, IO):
         pool.shutdown(wait=False, cancel_futures=True)
@@ -301,7 +353,7 @@ def shutdown(timeout=SHUTDOWN_TIMEOUT_S):
     for name, pool in (("workflows", WORKFLOWS), ("hop", HOP), ("io", IO)):
         remaining = None if timeout is None else max(0.0, timeout - (time.monotonic() - started))
         running += [f"{name}:{thread.name}" for thread in join_workers(pool, remaining)]
-    report = {"stopped": not running, "running": running, "cancelled_workflows": cancelled,
+    report = {"stopped": not running, "running": running,
               "elapsed": time.monotonic() - started}
     if running:
         logging.getLogger(__name__).warning(

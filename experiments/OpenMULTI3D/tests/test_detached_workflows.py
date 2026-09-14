@@ -1,4 +1,4 @@
-"""Detached workflow drivers: a process that outlives the submitter, and Slurm."""
+"""The Slurm driver, and tool calculations recorded as workflows on the daemon."""
 import json
 import os
 import time
@@ -9,44 +9,7 @@ import pytest
 from tumult.synthesis import Atmosphere1D, SynthRequest, submission
 from tumult.synthesis.cancel import CancelledError
 
-pytestmark = pytest.mark.skipif(os.name != 'posix', reason='detached drivers need POSIX')
-
-# The driver runs in a fresh interpreter, so the calculation is replaced there through a
-# sitecustomize on its PYTHONPATH rather than by monkeypatching this process.
-_FAKE_EXECUTE = '''
-import time
-from pathlib import Path
-import numpy as np
-from tumult.synthesis import workflows
-from tumult.synthesis.request import SynthesisResult
-from tumult import Spectrum
-
-def execute(resolved, cancel_token=None):
-    release = Path(resolved.request.prefs['release_file'])
-    while not release.exists():
-        cancel_token.check()
-        time.sleep(0.05)
-    spec = Spectrum(np.array([5000., 5001.]), np.array([1., .9]))
-    return SynthesisResult((spec,), ({'window': None},), resolved.request, resolved.settings)
-
-workflows.execute_request = execute
-'''
-
-
-@pytest.fixture
-def driver_env(tmp_path, monkeypatch):
-    hook = tmp_path / 'hook'
-    hook.mkdir()
-    (hook / 'sitecustomize.py').write_text(_FAKE_EXECUTE)
-    monkeypatch.setenv('PYTHONPATH', str(hook))
-    return tmp_path / 'release'
-
-
-def _request(tmp_path, release):
-    return SynthRequest({'dispatch_cwd': str(tmp_path), 'synth_output_dir': 'out',
-                         'release_file': str(release)},
-                        run_vals={'mode': 'LTE'},
-                        selection=Atmosphere1D('one.mod', (5750, 4.5, 0, 1)))
+pytestmark = pytest.mark.skipif(os.name != 'posix', reason='detached workflows need POSIX')
 
 
 def _wait(predicate, timeout=20):
@@ -56,63 +19,6 @@ def _wait(predicate, timeout=20):
             return True
         time.sleep(0.1)
     return False
-
-
-def test_process_driver_outlives_the_submitter_and_delivers(tmp_path, driver_env):
-    handle = submission.submit(_request(tmp_path, driver_env), root=tmp_path / 'jobs',
-                               detach='process')
-    assert handle.detached == 'process'
-    assert _wait(lambda: handle.status == 'running')
-    record = handle.to_dict()
-    assert record['driver']['pid'] and record['driver']['host']
-    assert not handle.done
-    # a second process's view: nothing of the submitter is needed
-    reopened = submission.open_workflow(handle.folder)
-    assert reopened.status == 'running' and not reopened.done
-    driver_env.write_text('')
-    result = reopened.result(timeout=20)
-    assert np.allclose(result.spectrum.values[1], [1., .9])
-    assert handle.status == 'finished'
-    assert str(handle.folder / submission.DRIVER_LOG) in handle.logs
-
-
-def test_process_driver_is_cancelled_by_signal_and_settles_its_record(tmp_path, driver_env):
-    handle = submission.submit(_request(tmp_path, driver_env), root=tmp_path / 'jobs',
-                               detach='process')
-    # wait for the driver to claim the record, so the signal reaches its handler and the
-    # cancellation runs through the driver's own token rather than a startup kill
-    assert _wait(lambda: (handle.to_dict()['driver'] or {}).get('started'))
-    seen = []
-    handle.add_done_callback(lambda h: seen.append(h.status))
-    assert submission.open_workflow(handle.folder).cancel()
-    assert _wait(lambda: handle.status == 'cancelled')
-    with pytest.raises(CancelledError):
-        handle.result(timeout=5)
-    assert _wait(lambda: seen == ['cancelled'], timeout=3 * submission.POLL_S)
-    assert not handle.cancel()          # nothing left to signal
-    assert 'cancelling' in (handle.folder / submission.DRIVER_LOG).read_text()
-
-
-def test_process_driver_killed_during_startup_is_settled_by_the_canceller(tmp_path, driver_env):
-    handle = submission.submit(_request(tmp_path, driver_env), root=tmp_path / 'jobs',
-                               detach='process')
-    assert _wait(lambda: handle.status == 'running')      # the pid is alive, unclaimed
-    assert handle.cancel()
-    assert handle.status == 'cancelled'
-
-
-def test_dead_driver_reports_interrupted_and_is_never_signalled(tmp_path):
-    folder = tmp_path / 'jobs' / '_workflows' / 'w1'
-    folder.mkdir(parents=True)
-    # a pid that cannot be ours and whose command line cannot name this workflow
-    (folder / submission.RECORD).write_text(json.dumps({
-        'id': 'w1', 'state': 'running', 'phase': 'synthesis', 'submitted': time.time(),
-        'runs': [], 'driver': {'kind': 'process', 'pid': os.getpid(), 'host': None}}))
-    handle = submission.open_workflow(folder)
-    assert handle.status == 'interrupted' and handle.done
-    assert not handle.cancel()
-    with pytest.raises(RuntimeError):
-        handle.result()
 
 
 def test_slurm_driver_is_submitted_polled_and_cancelled(tmp_path, monkeypatch):
@@ -152,135 +58,34 @@ def test_missing_slurm_script_fails_the_record_before_submission(tmp_path):
     assert len(records) == 1 and json.loads(records[0].read_text())['state'] == 'failed'
 
 
-# --- the daemon --------------------------------------------------------------------------
-@pytest.fixture
-def stop_daemon(tmp_path):
-    """Whatever daemon a test started for tmp_path is ended afterwards."""
-    from tumult.synthesis import daemon
-    yield
-    live = daemon.status(tmp_path / 'jobs')
-    if live is not None:
-        os.kill(live[0], 15)
-        _wait(lambda: daemon.status(tmp_path / 'jobs') is None)
-
-
-def test_daemon_runs_workflows_serially_and_reuses_the_daemon(tmp_path, driver_env, stop_daemon):
-    """The daemon runs at most one workflow at a time (plan/multi-processing.md,
-    "Serialize workflows in the daemon"): a second submission stays queued, without a
-    driver pid, until the first settles, then the same daemon claims it."""
-    from tumult.synthesis import daemon
-    first = submission.submit(_request(tmp_path, driver_env), root=tmp_path / 'jobs',
-                              detach='daemon')
-    assert first.detached == 'daemon'
-    assert _wait(lambda: daemon.status(tmp_path / 'jobs') is not None)
-    pid, _host = daemon.status(tmp_path / 'jobs')
-    assert _wait(lambda: first.status == 'running')
-    assert first.to_dict()['driver']['pid'] == pid
-    second = submission.submit(_request(tmp_path, driver_env), root=tmp_path / 'jobs',
-                               detach='daemon')
-    # Give the daemon several ticks to (wrongly) claim it before checking it never does.
-    assert not _wait(lambda: bool((second.to_dict()['driver'] or {}).get('pid')), timeout=2)
-    assert second.status == 'queued'
-    # Its release file is shared with the first, so once the first sees it and settles,
-    # the second is claimed and may itself finish almost immediately after — too fast to
-    # reliably observe a 'running' state in between, so wait for the settled results.
-    driver_env.write_text('')
-    assert np.allclose(submission.open_workflow(first.folder).result(timeout=20)
-                       .spectrum.values[1], [1., .9])
-    assert second.result(timeout=20) is not None
-    assert second.to_dict()['driver']['pid'] == pid            # one daemon, two workflows
-    assert first.status == second.status == 'finished'
-
-
-def test_daemon_cancels_a_queued_workflow_without_claiming_it(tmp_path, driver_env, stop_daemon):
-    """Cancelling a workflow still queued behind the active one settles it as cancelled
-    without ever assigning it a driver pid or running its coordinator (plan/multi-
-    processing.md, "Cancellation, failure and shutdown": "Cancelling an unclaimed
-    workflow removes it from the FIFO queue and settles it as cancelled without
-    launching native work")."""
-    from tumult.synthesis import daemon
-    first = submission.submit(_request(tmp_path, driver_env), root=tmp_path / 'jobs',
-                              detach='daemon')
-    assert _wait(lambda: first.status == 'running')
-    second = submission.submit(_request(tmp_path, driver_env), root=tmp_path / 'jobs',
-                               detach='daemon')
-    assert second.status == 'queued'
-    assert submission.open_workflow(second.folder).cancel()
-    assert _wait(lambda: second.status == 'cancelled')
-    assert not (second.to_dict()['driver'] or {}).get('pid')
-    driver_env.write_text('')
-    assert first.result(timeout=20) is not None
-    assert first.status == 'finished'
-
-
-def test_daemon_honours_a_cancel_flag_from_any_handle(tmp_path, driver_env, stop_daemon):
-    handle = submission.submit(_request(tmp_path, driver_env), root=tmp_path / 'jobs',
-                               detach='daemon')
-    assert _wait(lambda: handle.status == 'running')
-    seen = []
-    handle.add_done_callback(lambda h: seen.append(h.status))
-    assert submission.open_workflow(handle.folder).cancel()
-    assert handle.to_dict().get('cancel_requested') is True
-    assert _wait(lambda: handle.status == 'cancelled')
-    with pytest.raises(CancelledError):
-        handle.result(timeout=5)
-    assert _wait(lambda: seen == ['cancelled'], timeout=3 * submission.POLL_S)
-
-
-def test_daemon_records_wait_queued_without_a_daemon_and_are_revived(tmp_path, monkeypatch):
-    """With no daemon, a queued record stays queued (the next daemon claims it), a claimed
-    one is interrupted, and cancelling a queued one settles it in place."""
-    from tumult.synthesis import daemon
-    monkeypatch.setattr(daemon, 'status', lambda root: None)
-    started = []
-    monkeypatch.setattr(daemon, 'ensure', lambda root, max_threads=0: started.append(root))
-    request = SynthRequest({'dispatch_cwd': str(tmp_path), 'synth_output_dir': 'out'},
-                           run_vals={'mode': 'LTE'},
-                           selection=Atmosphere1D('one.mod', (5750, 4.5, 0, 1)))
-    handle = submission.submit(request, root=tmp_path / 'jobs', detach='daemon')
-    assert started == [str((tmp_path / 'jobs').resolve())]
-    assert handle.status == 'queued' and not handle.done
-    # a reconnecting server finds the queued work and starts a daemon for it
-    submission.discover_workflows(tmp_path / 'jobs')
-    assert len(started) == 2
-    submission.mutate_record(handle.folder, lambda r: r['driver'].update(pid=4321))
-    submission.update_record(handle.folder, state='running')
-    assert handle.status == 'interrupted' and not handle.cancel()
-    submission.mutate_record(handle.folder, lambda r: r['driver'].update(pid=None))
-    submission.update_record(handle.folder, state='queued')
-    assert handle.cancel() and handle.status == 'cancelled'
-
-
-def test_daemon_exits_when_idle_and_claims_once(tmp_path, monkeypatch):
-    """The daemon class in a thread: it claims a queued record exactly once, runs it on
-    the WORKFLOWS pool with the stubbed execution, and leaves after the idle period."""
-    import threading
-    from tumult.synthesis import daemon, workflows
-    from tumult.synthesis.request import SynthesisResult
+def test_the_driver_runs_a_record_on_the_node_and_settles_it(tmp_path, monkeypatch):
+    """What the sbatch script runs: the driver claims the record with its pid and the
+    Slurm job id, executes it and exits 0 with the record finished."""
     from tumult import Spectrum
+    from tumult.synthesis import driver, workflows
+    from tumult.synthesis.request import SynthesisResult
 
     def execute(resolved, cancel_token=None):
         spec = Spectrum(np.array([5000., 5001.]), np.array([1., .9]))
         return SynthesisResult((spec,), ({'window': None},), resolved.request, resolved.settings)
 
     monkeypatch.setattr(workflows, 'execute_request', execute)
-    monkeypatch.setattr(daemon, 'ensure', lambda root, max_threads=0: None)
+    monkeypatch.setenv('SLURM_JOB_ID', '77')
     request = SynthRequest({'dispatch_cwd': str(tmp_path), 'synth_output_dir': 'out'},
                            run_vals={'mode': 'LTE'},
                            selection=Atmosphere1D('one.mod', (5750, 4.5, 0, 1)))
-    handle = submission.submit(request, root=tmp_path / 'jobs', detach='daemon')
-    worker = daemon.Daemon(tmp_path / 'jobs', idle_s=1.0)
-    thread = threading.Thread(target=worker.serve, daemon=True)
-    thread.start()
-    assert _wait(lambda: (tmp_path / 'jobs' / '_workflows' / daemon.PIDFILE).is_file())
-    assert np.allclose(handle.result(timeout=10).spectrum.values[1], [1., .9])
-    assert handle.to_dict()['driver']['pid'] == os.getpid()
-    thread.join(10)
-    assert not thread.is_alive()
-    assert not (tmp_path / 'jobs' / '_workflows' / daemon.PIDFILE).exists()
+    record = submission._new_record('node', None)
+    record['request'] = workflows.resolve_request(request).to_dict()
+    record['driver'] = {'kind': 'slurm', 'slurm_id': None}
+    folder = tmp_path / 'jobs' / '_workflows' / record['id']
+    submission._atomic(folder / submission.RECORD, record)
+    assert driver.main([str(folder)]) == 0
+    settled = submission._read(folder)
+    assert settled['state'] == 'finished' and settled['driver']['slurm_id'] == '77'
+    assert settled['driver']['pid'] == os.getpid()
 
 
-# --- task records: the tool calculations on the same drivers ------------------------------
+# --- task records: the tool calculations on the daemon -------------------------------------
 # A fit record carries the observation and the FitRequest; its stub sees the decoded
 # objects, reports one progress snapshot through the fit kind's result encoding when the
 # kind streams, and returns (best, raw, post).
@@ -325,13 +130,13 @@ def _fit_args(tmp_path, release):
     return {'observation': obs.to_dict(), 'request': fit_request.to_dict()}, prefs
 
 
-def test_task_records_run_on_the_daemon_and_load_their_kind(tmp_path, fit_env, stop_daemon):
+def test_task_records_run_on_the_daemon_and_load_their_kind(tmp_path, fit_env):
     """A fit submitted as a task record is claimed by the daemon, decoded into the live
     objects the calculation takes, and its result reopens as (best, raw, post) from any
     process; the record's task block names the kind."""
     args, prefs = _fit_args(tmp_path, fit_env)
     handle = submission.submit_task('fit', args, prefs=prefs, root=tmp_path / 'jobs',
-                                    label='fit obs', detach='daemon')
+                                    label='fit obs')
     assert handle.kind.name == 'fit' and handle.label == 'fit obs'
     record = handle.to_dict()
     assert record['task']['kind'] == 'fit' and record['request'] is None
@@ -344,10 +149,11 @@ def test_task_records_run_on_the_daemon_and_load_their_kind(tmp_path, fit_env, s
     assert handle.status == 'finished'
 
 
-def test_task_progress_snapshots_are_written_and_read_back(tmp_path, monkeypatch):
+def test_task_progress_snapshots_are_written_and_read_back(tmp_path, monkeypatch,
+                                                           workflow_daemon):
     """A streaming kind's intermediate results reach the record's progress file, at
     most every PROGRESS_MIN_S, and read back decoded; a kind without progress has none.
-    Runs in this process with a stubbed balance solver."""
+    Runs on a daemon in this process with a stubbed balance solver."""
     from tumult import sparams
     from tumult.measurement import BalanceResult
 
@@ -360,8 +166,11 @@ def test_task_progress_snapshots_are_written_and_read_back(tmp_path, monkeypatch
 
     monkeypatch.setattr(sparams, 'solve_ionisation_balance', solve)
     monkeypatch.setattr(submission, 'PROGRESS_MIN_S', 0.0)
-    prefs = {'dispatch_cwd': str(tmp_path), 'synth_output_dir': 'out',
-             'workflow_runner': 'in-process'}
+    from tumult.synthesis import daemon
+    events = []
+    listener = daemon.Client('client')
+    listener.listen(events.append)
+    prefs = {'dispatch_cwd': str(tmp_path), 'synth_output_dir': 'out'}
     request = SynthRequest(prefs, run_vals={'mode': 'LTE'},
                            selection=Atmosphere1D('one.mod', (5750, 4.5, 0, 1)))
     result = BalanceResult(element='Fe', uid='bal-1', params0={'teff': 5000.})
@@ -375,6 +184,9 @@ def test_task_progress_snapshots_are_written_and_read_back(tmp_path, monkeypatch
     snapshot = handle.progress_result()
     assert isinstance(snapshot, BalanceResult) and handle.progress_stamp() is not None
     assert 1 <= len(snapshot.history) <= 3            # whichever round was written last
+    assert _wait(lambda: [e['stamp'] for e in events if e['event'] == 'progress'
+                          and e['job'] == handle.id][-1:] == [handle.progress_stamp()], 5)
+    listener.close()
 
     with pytest.raises(KeyError, match='unknown workflow kind'):
         from tumult.synthesis import tasks

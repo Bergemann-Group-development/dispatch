@@ -1,15 +1,13 @@
-"""Run one recorded workflow to completion in this process.
+"""Run one recorded workflow to completion on a Slurm node.
 
     python -m tumult.synthesis.driver <workflow folder>
 
-This is the body of a detached workflow: the process :func:`submission.submit` starts in
-its own session, or the one a Slurm batch script runs on its allocated node. It reads the
-task from ``workflow.json``, records its own pid and host beside the driver
-block the submitter wrote, executes the request the way the in-process worker does and
-settles the record. SIGTERM, SIGINT and SIGHUP cancel its token, so ``scancel`` or a
-signal to the process group ends the run through the same path as a Processes-panel
-cancel: the dispatch child is killed, its partial cache entry removed, and the record
-reads ``cancelled``.
+This is the body of a ``detach='slurm'`` workflow: the process the batch script runs on
+its allocated node. It reads the task from ``workflow.json``, records its pid and host
+beside the driver block the submitter wrote, executes the task the way the workflow
+daemon does and settles the record. SIGTERM, SIGINT and SIGHUP cancel its token, so
+``scancel`` ends the run through the same path as a Processes-panel cancel: the dispatch
+child is killed, its partial cache entry removed, and the record reads ``cancelled``.
 
 Exit status: 0 finished, 1 failed, 2 cancelled, 3 no usable record.
 """
@@ -64,10 +62,10 @@ def main(argv=None):
             signal.signal(getattr(signal, name), on_signal)
 
     def claim(current):
-        driver = current.setdefault('driver', None) or {}
-        driver.update(pid=os.getpid(), host=socket.gethostname(), started=time.time(),
+        driver = current.get('driver') or {}
+        driver.update(kind='slurm', pid=os.getpid(), host=socket.gethostname(),
+                      started=time.time(),
                       slurm_id=driver.get('slurm_id') or os.environ.get('SLURM_JOB_ID'))
-        driver.setdefault('kind', 'slurm' if os.environ.get('SLURM_JOB_ID') else 'process')
         current['driver'] = driver
 
     submission.mutate_record(folder, claim)

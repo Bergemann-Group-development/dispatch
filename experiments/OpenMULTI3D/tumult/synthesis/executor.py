@@ -12,7 +12,7 @@ from tumult.auxfuncs import update_dict
 from tumult.launch import run_complete, prepare_input
 
 from .cancel import CancelToken
-from .runtime import get_runtime, note_run
+from .runtime import current_workflow, get_runtime, note_run
 
 
 def _run_single(key, nml_name, nml, launch_kwargs):
@@ -70,7 +70,8 @@ def _run_batch(jobs, launch_kwargs, max_threads, cancel_token=None, *, runtime=N
     batch_token = CancelToken()
     detach = cancel_token.add_callback(batch_token.cancel) if cancel_token else lambda: None
     max_threads = max(1, int(max_threads))
-    owner = cancel_token or batch_token
+    # inside a durable workflow its id labels the jobs, so their threads count toward it
+    owner = current_workflow() or cancel_token or batch_token
     pending = {}         # future -> job key
     results = {}
     by_output = {}        # output -> [(key, name, nml, kwargs, signature), ...]

@@ -115,7 +115,7 @@ def test_departure_field_can_be_opened_from_native_artifacts(tmp_path):
     assert field.species == ('Mg',) and field.composition['abundances'] == 'Mg=0.2'
 
 
-def test_durable_submission_reopens_saved_result(tmp_path, monkeypatch):
+def test_durable_submission_reopens_saved_result(tmp_path, monkeypatch, workflow_daemon):
     from tumult.synthesis import submission, workflows
     request = _request(Atmosphere1D('one.mod', (5750, 4.5, 0, 1)), tmp_path)
 
@@ -133,7 +133,8 @@ def test_durable_submission_reopens_saved_result(tmp_path, monkeypatch):
     assert reopened.progress['phase'] == 'finished'
 
 
-def test_submission_records_scheduled_runs_before_completion(tmp_path, monkeypatch):
+def test_submission_records_scheduled_runs_before_completion(tmp_path, monkeypatch,
+                                                            workflow_daemon):
     """The workflow record names its native runs as the executor schedules them."""
     import threading
     from tumult.synthesis import runtime, submission, workflows

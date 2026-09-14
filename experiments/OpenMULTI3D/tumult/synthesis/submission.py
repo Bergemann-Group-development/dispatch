@@ -2,24 +2,20 @@
 
 A workflow is recorded in ``<root>/_workflows/<id>/workflow.json``: a synthesis
 (:func:`submit`, the record's ``request``) or one of the tool calculations of
-:mod:`tumult.synthesis.tasks` (:func:`submit_task`, the record's ``task`` block). It is
-executed by one of three drivers, chosen at submission:
+:mod:`tumult.synthesis.tasks` (:func:`submit_task`, the record's ``task`` block). The
+submitter writes the record ``queued`` and hands it to one of two drivers:
 
-* in-process (the default): a thread of this process's ``WORKFLOWS`` pool. It ends with
-  the process; a server shutdown cancels it.
-* ``daemon``: the long-lived worker of :mod:`tumult.synthesis.daemon` serving this root,
-  started on demand. It outlives the submitter without a per-workflow interpreter start;
-  a cancel is a ``cancel_requested`` flag in the record, which the daemon honours.
-* ``process``: ``python -m tumult.synthesis.driver <folder>`` in its own session on this
-  host. It outlives the submitter, and a later process cancels it by signalling the
-  recorded process group once the pid is verified to still run that driver.
-* ``slurm``: the same driver submitted through ``sbatch <script> <folder>``; the
-  scheduler owns liveness (``squeue``) and cancellation (``scancel``).
+* ``daemon`` (the default): the workflow daemon of this user and host
+  (:mod:`tumult.synthesis.daemon`), started on demand. It runs workflows one at a time
+  with the whole CPU budget, outlives the submitter, and reports state, threads and
+  progress to every handle as events.
+* ``slurm``: ``python -m tumult.synthesis.driver <folder>`` submitted through
+  ``sbatch <script> <folder>``. The scheduler owns liveness (``squeue``) and cancellation
+  (``scancel``); a handle polls the record.
 
-The detached drivers settle the record themselves, so the record is shared between
-processes and every update takes the folder's file lock. A handle opened on a detached
-record reports its state from the driver's liveness; callbacks on such a handle are
-delivered by a polling watcher rather than by a future.
+The driver settles the record, and every update takes the folder's file lock. Scripts
+that want no daemon call :func:`run` (or ``compute_spectrum``) instead: blocking,
+in-process and not recorded as a workflow.
 """
 from __future__ import annotations
 
@@ -29,30 +25,25 @@ import json
 import logging
 import os
 from pathlib import Path
-import signal
 import socket
-import subprocess
 import sys
 import threading
 import time
 import uuid
 
-from .cancel import CancelToken, CancelledError
-from .jobrecord import process_runs as _process_alive
 from .request import ResolvedSynthRequest, SynthRequest
-from .runtime import WORKFLOWS, observe_runs
+from .runtime import observe_runs, workflow_scope
+from .cancel import CancelledError
 from . import tasks
 
 RECORD = 'workflow.json'
 LOCK = 'workflow.lock'
 DRIVER_LOG = 'driver.log'
-DETACHED = ('daemon', 'process', 'slurm')
+DETACHED = ('daemon', 'slurm')
 # preference spellings of the driver choice (TumultStudio2 Preferences -> Engine)
-RUNNER_PREFS = {'local': 'daemon', 'daemon': 'daemon', 'process': 'process',
-                'slurm': 'slurm', 'in-process': None, '': None}
+RUNNER_PREFS = {'local': 'daemon', 'daemon': 'daemon', 'slurm': 'slurm', '': 'daemon'}
 TERMINAL = ('finished', 'failed', 'cancelled', 'interrupted')
-POLL_S = 3.0        # how often the watcher re-reads detached records for callbacks
-_live = {}
+POLL_S = 3.0        # how often a Slurm record is re-read, and the fallback wait for results
 _lock = threading.RLock()
 log = logging.getLogger(__name__)
 
@@ -61,7 +52,7 @@ log = logging.getLogger(__name__)
 def _atomic(path, value):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f'{path.name}.{os.getpid()}.partial')
+    tmp = path.with_name(f'{path.name}.{os.getpid()}.{threading.get_ident()}.partial')
     tmp.write_text(json.dumps(value, indent=2, sort_keys=True, default=str) + '\n')
     tmp.replace(path)
 
@@ -77,7 +68,7 @@ def _read(folder):
 def _locked(folder):
     """Hold the record's advisory lock across a read-modify-write. The lock file lives
     beside the record so a driver in another process (or on another node sharing the
-    file system) serialises with the submitter and with a cancelling server."""
+    file system) serialises with the submitter."""
     with _lock:
         folder = Path(folder)
         folder.mkdir(parents=True, exist_ok=True)
@@ -115,17 +106,18 @@ def mutate_record(folder, change):
 
 # --- the driver's liveness -------------------------------------------------------------
 def driver_state(record):
-    """The live state of a detached record's driver: ``queued``, ``running``, ``False``
-    (gone) or ``None`` (not observable from here: an in-process record, a process driver
-    on another host, a platform without ``ps``)."""
+    """The live state of a record's driver: ``queued``, ``running``, ``False`` (gone) or
+    ``None`` (not observable from here: a daemon on another host, or no scheduler
+    client). A daemon record waiting in the queue stays ``queued`` whether or not a
+    daemon runs now; the next daemon to register its root runs it."""
     driver = record.get('driver') or {}
     kind = driver.get('kind')
     if kind == 'daemon':
+        if record.get('state') == 'queued':
+            return 'queued'
         from . import daemon
-        if daemon.status(driver.get('root')) is not None:
-            return 'running' if record.get('state') == 'running' else 'queued'
-        # no daemon: a queued record waits for the next one, a claimed run is gone
-        return 'queued' if record.get('state') == 'queued' else False
+        live = daemon.runs_record(driver)
+        return None if live is None else ('running' if live else False)
     if kind == 'slurm':
         if not driver.get('slurm_id'):
             return False
@@ -135,31 +127,16 @@ def driver_state(record):
         except OSError:
             return None
         return live if live else False
-    if kind == 'process':
-        if driver.get('host') not in (None, socket.gethostname()):
-            return None
-        pid = driver.get('pid')
-        if pid is None:
-            return False
-        alive = _process_alive(pid, record.get('id', ''))
-        if alive is None:
-            return None
-        return 'running' if alive else False
-    return None
+    return False        # no driver this code knows: the process that ran it is gone
 
 
 # --- handles ----------------------------------------------------------------------------
 class WorkflowHandle:
     """Stable job identity with status, cancellation and durable result retrieval."""
 
-    def __init__(self, folder, future=None, token=None, update=None):
+    def __init__(self, folder):
         self.folder = Path(folder).expanduser().resolve()
         self.id = self.folder.name
-        self._future = future
-        self._token = token
-        # writes terminal state for a workflow whose worker never runs (queued cancellation)
-        self._update = update
-        self._callbacks = []    # done callbacks owed after a queued cancellation
 
     def _record(self):
         record = _read(self.folder)
@@ -167,14 +144,12 @@ class WorkflowHandle:
             raise FileNotFoundError(f'No workflow record in {self.folder}')
         if (self.folder / 'result' / 'result.json').is_file():
             record['state'] = 'finished'
-        elif record.get('state') in ('queued', 'running') and self._future is None:
+        elif record.get('state') in ('queued', 'running'):
             live = driver_state(record)
             if live is False:
                 record['state'] = 'interrupted'
             elif live == 'running':
                 record['state'] = 'running'
-            elif live is None and not record.get('driver'):
-                record['state'] = 'interrupted'      # an in-process record of a dead process
         return record
 
     @property
@@ -183,7 +158,7 @@ class WorkflowHandle:
 
     @property
     def detached(self):
-        """The driver kind for a detached workflow, else ``None``."""
+        """The driver kind: ``daemon`` or ``slurm``."""
         return ((_read(self.folder) or {}).get('driver') or {}).get('kind')
 
     @property
@@ -193,7 +168,7 @@ class WorkflowHandle:
 
     def progress_stamp(self):
         """A value that changes whenever a new progress snapshot is written (its mtime),
-        or ``None`` before the first; cheap enough to poll from a document thread."""
+        or ``None`` before the first."""
         try:
             return (self.folder / tasks.PROGRESS_FILE).stat().st_mtime_ns
         except FileNotFoundError:
@@ -235,18 +210,19 @@ class WorkflowHandle:
         record = self._record()
         diagnostics = deepcopy(record.get('diagnostics') or {})
         phase = record.get('phase')
+        native = []
         if record.get('state') == 'running':
             try:
                 native = self._native_runs(record)
             except (OSError, KeyError, ValueError):
-                native = []
-            if native:
-                diagnostics.update(
-                    native_runs=len(native),
-                    completed=sum(item['state'] == 'finished' for item in native),
-                    done=sum(item['progress'][0] for item in native),
-                    total=sum(item['progress'][1] for item in native),
-                    estimated=True, runs=native)
+                pass
+        if native:
+            diagnostics.update(
+                native_runs=len(native),
+                completed=sum(item['state'] == 'finished' for item in native),
+                done=sum(item['progress'][0] for item in native),
+                total=sum(item['progress'][1] for item in native),
+                estimated=True, runs=native)
         return {'phase': phase, 'elapsed': max(
             0.0, (record.get('ended') or time.time()) - record['submitted']),
                 'diagnostics': diagnostics}
@@ -265,140 +241,105 @@ class WorkflowHandle:
         return tuple(dict.fromkeys(logs))
 
     def cancel(self):
-        """Cancel this workflow. Returns whether anyone was told.
-
-        In-process: a workflow still queued behind other pool work has its future
-        cancelled, so the worker never starts; its record still settles as
-        ``cancelled``. A running one is told through its token and settles when the
-        worker notices. Detached: a process driver verified to be alive on this host gets
-        SIGTERM on its process group and settles its own record; a Slurm driver is
-        ``scancel``led, and a job the scheduler never started is settled here, since no
-        driver will. An unverified pid is never signalled."""
-        if self._future is not None:
-            if self._token is None or self._future.done():
-                return False
-            self._token.cancel()
-            if self._future.cancel():
-                self._settle_unstarted('cancelled')
-            return True
-        record = _read(self.folder) or {}
+        """Cancel this workflow; returns whether anyone was told. A daemon workflow is
+        cancelled by the daemon: a queued one settles at once, a running one once its
+        worker notices the token. A Slurm job is ``scancel``led, and one the scheduler
+        never started is settled here, since no driver will. A record whose driver is
+        gone is left alone."""
+        try:
+            record = self._record()
+        except FileNotFoundError:
+            return False
         driver = record.get('driver') or {}
-        if record.get('state') not in ('queued', 'running') or not driver:
+        if record['state'] not in ('queued', 'running'):
             return False
         if driver.get('kind') == 'daemon':
-            live = driver_state(record)
-            if live is False:
-                return False
-            if live == 'queued' and not (driver.get('pid')):
-                from . import daemon
-                if daemon.status(driver.get('root')) is None:
-                    # nobody will claim it; settle the record here
-                    update_record(self.folder, state='cancelled', phase='cancelled',
-                                  ended=time.time())
-                    return True
-            update_record(self.folder, cancel_requested=True)
-            return True
-        if driver.get('kind') == 'process':
-            if driver_state(record) != 'running':
-                return False
-            os.killpg(int(driver['pid']), signal.SIGTERM)
-            self._settle_if_unclaimed()
-            return True
+            from . import daemon
+            reply = daemon.client().request('cancel', job=self.id, folder=str(self.folder))
+            return reply.get('state') in ('cancelled', 'cancelling')
         if driver.get('kind') == 'slurm':
             from . import scheduler
             if not driver.get('slurm_id') or not scheduler.scancel(driver['slurm_id']):
                 return False
-            if _read(self.folder).get('state') == 'queued':
+            if (_read(self.folder) or {}).get('state') == 'queued':
                 update_record(self.folder, state='cancelled', phase='cancelled',
                               ended=time.time())
             return True
         return False
 
-    def _settle_if_unclaimed(self):
-        """A process driver signalled while its interpreter was still starting dies
-        before it can settle anything (the handler is installed after the imports).
-        Wait briefly for it to go; if it is gone and the record is still ``queued``,
-        nobody else will write, so settle it here. A driver that has claimed the record
-        settles it itself."""
-        deadline = time.monotonic() + 2 * POLL_S
-        while time.monotonic() < deadline:
-            time.sleep(0.1)
-            record = _read(self.folder) or {}
-            if record.get('state') != 'queued':
-                return
-            if driver_state(record) is False:
-                def settle(current):
-                    if current.get('state') == 'queued':
-                        current.update(state='cancelled', phase='cancelled', ended=time.time())
-                mutate_record(self.folder, settle)
-                return
-
-    def _settle_unstarted(self, state, error=None):
-        """Persist the terminal state of a workflow whose worker never ran, then tell
-        its done callbacks; they observe the settled record, not the queued one."""
-        values = dict(state=state, phase=state, ended=time.time())
-        if error is not None:
-            values['error'] = error
-        with _lock:
-            if self._update is not None:
-                self._update(**values)
-            _live.pop(self.id, None)
-            owed, self._callbacks = self._callbacks, None
-        for callback in owed:
-            callback(self)
-
     @property
     def done(self):
-        """Whether the workflow has settled, or never will: an in-process future that is
-        done, a detached record in a terminal state or without a live driver, or a record
-        of a process that no longer exists."""
-        if self._future is not None:
-            return self._future.done()
+        """Whether the workflow has settled, or never will (its driver is gone)."""
         try:
             return self.status in TERMINAL
         except FileNotFoundError:
             return True
 
     def add_done_callback(self, callback):
-        """Call ``callback(handle)`` once the workflow settles, from the worker thread,
-        the cancelling one for a queued cancellation, or the watcher for a detached
-        workflow; immediately if it already has. Never blocks, and the record is
-        terminal by the time the callback runs."""
-        if self._future is None:
-            if self.done:
-                callback(self)
-            else:
-                _watcher.follow(self, callback)
+        """Call ``callback(handle)`` once the workflow settles: at once if it has, else
+        from the daemon client's event thread (a daemon workflow) or the polling watcher
+        (a Slurm job). Never blocks, and the record is terminal when the callback runs."""
+        if self.done:
+            callback(self)
             return
-        with _lock:
-            if self._callbacks is not None:
-                self._callbacks.append(callback)
-                # a worker-run future settles its own record before completing; a
-                # cancelled one is reported by _settle_unstarted instead
-                self._future.add_done_callback(
-                    lambda future: None if future.cancelled() else callback(self))
+        if self.detached == 'slurm':
+            _watcher.follow(self, callback)
+            return
+        from . import daemon
+        client = daemon.client()
+        fired, unfollow = [False], [None]
+
+        def check(event=None):
+            if event is not None and event.get('event') not in ('state', 'reconnect'):
                 return
-        callback(self)      # settled by a queued cancellation before registration
+            if not self.done:
+                return
+            with _lock:
+                if fired[0]:
+                    return
+                fired[0] = True
+            if unfollow[0] is not None:
+                unfollow[0]()
+            callback(self)
+
+        unfollow[0] = client.follow(self.id, check)
+        if fired[0]:
+            unfollow[0]()
+        if (_read(self.folder) or {}).get('state') == 'queued':
+            # a record queued while no daemon ran: make sure this daemon knows it
+            client.request('submit', folder=str(self.folder))
+        check()
+
+    def on_progress(self, callback):
+        """Call ``callback(stamp)`` whenever the daemon reports a new progress snapshot
+        (and once after a reconnect, which may have missed one). Returns a function that
+        stops it. Slurm records report nothing here; poll :meth:`progress_stamp`."""
+        if self.detached != 'daemon':
+            return lambda: None
+        from . import daemon
+
+        def relay(event):
+            if event.get('event') == 'progress':
+                callback(event.get('stamp'))
+            elif event.get('event') == 'reconnect':
+                callback(self.progress_stamp())
+
+        return daemon.client().follow(self.id, relay)
 
     def result(self, timeout=None):
         """The saved result. Raises :class:`CancelledError` for a cancelled workflow and
-        ``RuntimeError`` for a failed or interrupted one; waits on a live future, or polls
-        a detached record, only if the workflow has not settled, so a done callback may
-        call this freely."""
-        if self._future is not None:
-            try:
-                self._future.result(timeout=timeout)
-            except TimeoutError:
-                raise
-            except BaseException:
-                pass    # cancelled or failed: the record below names the outcome
-        else:
+        ``RuntimeError`` for a failed or interrupted one; waits for the workflow to settle
+        first (``TimeoutError`` after ``timeout`` seconds), so a done callback may call
+        this freely."""
+        if not self.done:
+            settled = threading.Event()
+            self.add_done_callback(lambda handle: settled.set())
             deadline = None if timeout is None else time.monotonic() + timeout
             while not self.done:
-                if deadline is not None and time.monotonic() >= deadline:
+                remaining = POLL_S if deadline is None else deadline - time.monotonic()
+                if remaining <= 0:
                     raise TimeoutError(f'Workflow {self.id} is still {self.status}')
-                time.sleep(min(POLL_S, 0.2 if timeout is not None and timeout < POLL_S
-                               else POLL_S))
+                settled.wait(min(POLL_S, remaining))
         state = self.status
         if state == 'cancelled':
             raise CancelledError(f'Workflow {self.id} was cancelled')
@@ -412,8 +353,8 @@ class WorkflowHandle:
 
 
 class _Watcher:
-    """One daemon thread per process that polls followed detached handles and fires
-    their callbacks once they settle. Started on the first follow."""
+    """One thread per process that polls followed Slurm handles and fires their
+    callbacks once they settle. Started on the first follow."""
 
     def __init__(self):
         self._lock = threading.Lock()
@@ -424,7 +365,7 @@ class _Watcher:
         with self._lock:
             self._followed.append((handle, callback))
             if self._thread is None:
-                self._thread = threading.Thread(target=self._run, name='tumult-workflow-watch',
+                self._thread = threading.Thread(target=self._run, name='tumult-slurm-watch',
                                                 daemon=True)
                 self._thread.start()
 
@@ -465,19 +406,24 @@ def decode_task(record):
 PROGRESS_MIN_S = 1.0    # how often at most a running calculation rewrites progress.json
 
 
-def execute_recorded(folder, kind, args, token, base=None):
+def execute_recorded(folder, kind, args, token, base=None, listener=None):
     """Run ``kind`` on ``args`` for the record in ``folder``, settling the record as it
-    goes. Shared by the in-process worker and the detached drivers. Intermediate results
-    the calculation reports are written as the record's progress snapshot, at most every
-    ``PROGRESS_MIN_S``. Returns the result path; raises what the calculation raised after
-    recording it."""
+    goes. Shared by the daemon and the Slurm driver. Intermediate results the
+    calculation reports are written as the record's progress snapshot, at most every
+    ``PROGRESS_MIN_S``. The leaf jobs it submits are labelled with the workflow id (see
+    :func:`runtime.workflow_scope`). ``listener(record)`` sees every record update as
+    written and ``listener(None, progress_stamp=...)`` every progress snapshot. Returns
+    the result path; raises what the calculation raised after recording it."""
     folder = Path(folder)
     identity = folder.name
     runs = []
     last_progress = [0.0]
 
     def update(**values):
-        return update_record(folder, base, **values)
+        record = update_record(folder, base, **values)
+        if listener is not None:
+            listener(record)
+        return record
 
     def note(output):
         # Called by the batch executor before each native run starts, cache hits included,
@@ -495,12 +441,19 @@ def execute_recorded(folder, kind, args, token, base=None):
             tasks.write_progress(folder, kind, result)
         except OSError:
             log.exception('workflow %s: progress snapshot not written', identity)
+            return
+        if listener is not None:
+            try:
+                stamp = (folder / tasks.PROGRESS_FILE).stat().st_mtime_ns
+            except OSError:
+                return
+            listener(None, progress_stamp=stamp)
 
     update(state='running', phase='preparation', started=time.time())
     try:
         token.check()
         update(phase='synthesis')
-        with observe_runs(note):
+        with observe_runs(note), workflow_scope(identity):
             result = kind.run(args, token, progress)
         update(phase='saving')
         result_path = kind.save(result, folder / tasks.RESULT_DIR)
@@ -512,51 +465,27 @@ def execute_recorded(folder, kind, args, token, base=None):
         update(state='cancelled', phase='cancelled', ended=time.time())
         raise
     except BaseException as exc:
-        # the traceback belongs to the process log whichever document, if any, is
-        # still waiting; the record keeps the concise cause for its Processes row
         log.exception('workflow %s failed', identity)
         update(state='failed', phase='failed', ended=time.time(),
                error=f'{type(exc).__name__}: {exc}')
         raise
 
 
-def _start_driver(folder, record, detach, slurm_script, max_threads=0):
-    """Start the detached driver for ``folder`` and record how to find it again.
-
-    ``max_threads`` is this submission's Engine preference; a daemon not yet running
-    for ``root`` resolves its CPU budget from it at startup (see
-    :func:`daemon.ensure`). A live daemon ignores it and keeps its own resolved budget."""
-    if os.name != 'posix':
-        raise ValueError('Detached workflows need a POSIX host')
+def _submit_slurm(folder, record, slurm_script):
+    """Submit the Slurm driver for ``folder`` and record its job id."""
+    if not slurm_script:
+        raise ValueError("detach='slurm' needs the sbatch script that runs the driver")
+    from . import scheduler
+    script = Path(slurm_script).expanduser()
+    if not script.is_file():
+        raise FileNotFoundError(f'Slurm script not found: {script}')
     env = {**os.environ}
     package_root = str(Path(__file__).resolve().parents[2])
     env['PYTHONPATH'] = os.pathsep.join(
         part for part in (package_root, env.get('PYTHONPATH')) if part)
-    driver = {'kind': detach, 'pid': None, 'host': None, 'slurm_id': None,
-              'script': None, 'cwd': os.getcwd(), 'python': sys.executable}
-    if detach == 'daemon':
-        from . import daemon
-        driver['root'] = str(folder.parent.parent)
-        update_record(folder, record, driver=driver)     # visible before the daemon looks
-        daemon.ensure(driver['root'], max_threads=max_threads)
-        return _read(folder)
-    if detach == 'process':
-        log_path = folder / DRIVER_LOG
-        with open(log_path, 'ab') as log_file:
-            child = subprocess.Popen(
-                [sys.executable, '-m', 'tumult.synthesis.driver', str(folder)],
-                cwd=driver['cwd'], env=env, stdin=subprocess.DEVNULL,
-                stdout=log_file, stderr=subprocess.STDOUT, start_new_session=True)
-        driver.update(pid=child.pid, host=socket.gethostname())
-    else:
-        if not slurm_script:
-            raise ValueError("detach='slurm' needs the sbatch script that runs the driver")
-        from . import scheduler
-        script = Path(slurm_script).expanduser()
-        if not script.is_file():
-            raise FileNotFoundError(f'Slurm script not found: {script}')
-        driver.update(script=str(script.resolve()),
-                      slurm_id=scheduler.sbatch(script, [str(folder)], env=env))
+    driver = {'kind': 'slurm', 'pid': None, 'host': None, 'script': str(script.resolve()),
+              'cwd': os.getcwd(), 'python': sys.executable,
+              'slurm_id': scheduler.sbatch(script, [str(folder)], env=env)}
     return update_record(folder, record, driver=driver)
 
 
@@ -566,8 +495,11 @@ def _driver_choice(prefs, detach, slurm_script):
     prefs = prefs or {}
     if detach is None:
         choice = str(prefs.get('workflow_runner') or '')
-        detach = RUNNER_PREFS.get(choice, choice)
-    if detach is not None and detach not in DETACHED:
+        if choice not in RUNNER_PREFS:
+            raise ValueError(f'workflow_runner must be one of {sorted(RUNNER_PREFS)}, '
+                             f'not {choice!r}')
+        detach = RUNNER_PREFS[choice]
+    if detach not in DETACHED:
         raise ValueError(f'detach must be one of {DETACHED} or None, not {detach!r}')
     if detach == 'slurm' and slurm_script is None and prefs.get('slurm_script'):
         # a relative script path in the preferences is relative to the dispatch directory
@@ -575,44 +507,24 @@ def _driver_choice(prefs, detach, slurm_script):
     return detach, slurm_script
 
 
-def _submit_record(base, record, kind, args, detach, slurm_script, max_threads=0):
-    """Write ``record`` under ``base`` and hand it to its driver, or run ``kind`` on
-    ``args`` in this process; returns the handle either way."""
-    identity = record['id']
-    folder = Path(base) / identity
+def _submit_record(base, record, detach, slurm_script):
+    """Write ``record`` under ``base`` and hand it to its driver; returns the handle. A
+    submission that fails leaves the record ``failed`` with the cause."""
+    folder = Path(base).expanduser().resolve() / record['id']
+    if detach == 'daemon':
+        record['driver'] = {'kind': 'daemon', 'host': socket.gethostname(), 'pid': None}
     _atomic(folder / RECORD, record)
-
-    if detach is not None:
-        try:
-            _start_driver(folder, record, detach, slurm_script, max_threads)
-        except BaseException as exc:
-            update_record(folder, record, state='failed', phase='failed', ended=time.time(),
-                          error=f'{type(exc).__name__}: {exc}')
-            raise
-        return WorkflowHandle(folder)
-
-    token = CancelToken()
-
-    def update(**values):
-        return update_record(folder, record, **values)
-
-    handle = WorkflowHandle(folder, token=token, update=update)
-
-    def work():
-        try:
-            return execute_recorded(folder, kind, args, token, record)
-        finally:
-            with _lock:
-                _live.pop(identity, None)
-
-    with _lock:
-        _live[identity] = handle
-        try:
-            handle._future = WORKFLOWS.submit(work)
-        except BaseException as exc:
-            handle._settle_unstarted('failed', error=f'{type(exc).__name__}: {exc}')
-            raise
-    return handle
+    try:
+        if detach == 'slurm':
+            _submit_slurm(folder, record, slurm_script)
+        else:
+            from . import daemon
+            daemon.client().request('submit', folder=str(folder))
+    except BaseException as exc:
+        update_record(folder, record, state='failed', phase='failed', ended=time.time(),
+                      error=f'{type(exc).__name__}: {exc}')
+        raise
+    return WorkflowHandle(folder)
 
 
 def _new_record(label, meta):
@@ -627,12 +539,12 @@ def submit(request, *, root=None, label=None, meta=None, detach=None, slurm_scri
 
     ``label`` and ``meta`` are the submitter's display name and annotations (JSON), kept
     in the record so a later process can list and present the workflow as it was
-    submitted. ``detach`` picks the driver: ``None`` runs in this process, ``'daemon'``
-    hands it to the root's worker daemon (started if needed), ``'process'`` starts a
-    driver that outlives it, ``'slurm'`` submits that driver through
+    submitted. ``detach`` picks the driver: ``'daemon'`` (the default) hands it to this
+    host's workflow daemon, ``'slurm'`` submits the driver through
     ``sbatch slurm_script <folder>``. Absent an argument, ``request.prefs`` may name the
-    driver as ``workflow_runner`` (``local`` means the daemon, ``in-process`` none) and
-    the script as ``slurm_script``."""
+    driver as ``workflow_runner`` (``local`` means the daemon) and the script as
+    ``slurm_script``. The daemon's CPU budget is the Bokeh server's Engine preference, or
+    ``cpu_count - 1`` while no server configured it."""
     from .workflows import resolve_request
     resolved = request if isinstance(request, ResolvedSynthRequest) else resolve_request(request)
     # JSON round-trip proves that no mutable masks/settings remain shared with the caller.
@@ -643,9 +555,7 @@ def submit(request, *, root=None, label=None, meta=None, detach=None, slurm_scri
     record['request'] = resolved.to_dict()
     record['task'] = {'kind': tasks.Synthesis.name}
     base = Path(root or resolved.output_root) / '_workflows'
-    max_threads = int((owned.prefs or {}).get('max_threads') or 0)
-    return _submit_record(base, record, tasks.KINDS[tasks.Synthesis.name], resolved,
-                          detach, slurm_script, max_threads)
+    return _submit_record(base, record, detach, slurm_script)
 
 
 def submit_task(kind, args, *, prefs, root=None, label=None, meta=None, detach=None,
@@ -659,59 +569,34 @@ def submit_task(kind, args, *, prefs, root=None, label=None, meta=None, detach=N
     from .workflows import output_root
     task = tasks.KINDS[kind]
     args = json.loads(json.dumps(args, default=tasks._json_default))   # owned, JSON-clean
-    decoded = task.decode(args)
+    task.decode(args)
     detach, slurm_script = _driver_choice(prefs, detach, slurm_script)
     record = _new_record(label, meta)
     record['task'] = {'kind': task.name, 'args': args}
     base = Path(root or output_root(prefs)) / '_workflows'
-    max_threads = int((prefs or {}).get('max_threads') or 0)
-    return _submit_record(base, record, task, decoded, detach, slurm_script, max_threads)
-
-
-def cancel_live_workflows():
-    """Cancel every in-process workflow this process still holds live, for server
-    shutdown; returns how many were told. Queued ones settle as ``cancelled`` at once,
-    running ones when their worker notices the token. Detached workflows are not held
-    here and keep running."""
-    with _lock:
-        handles = list(_live.values())
-    return sum(handle.cancel() for handle in handles)
+    return _submit_record(base, record, detach, slurm_script)
 
 
 def open_workflow(path, *, root=None):
-    """Open a workflow by folder/path or stable id after a UI reconnect."""
+    """Open a workflow by folder/path, or by stable id under ``root``."""
     path = Path(path)
     folder = ((Path(root) / '_workflows' / path) if root is not None and len(path.parts) == 1
-              else path).expanduser().resolve()
-    with _lock:
-        return _live.get(folder.name) or WorkflowHandle(folder)
+              else path)
+    return WorkflowHandle(folder)
 
 
-def discover_workflows(root, limit=None, revive=True):
-    """Newest workflow handles under ``<root>/_workflows``, whatever their state: live
-    ones (this process holds their handle, or their detached driver still runs),
-    finished results, and records left queued or running by a driver that no longer
-    exists, which report ``interrupted``. Only that folder is scanned, never the run
-    cache beside it. With ``revive``, a queued daemon workflow whose daemon has gone
-    gets a new daemon started."""
+def discover_workflows(root, limit=None):
+    """Newest workflow handles under ``<root>/_workflows``, whatever their state: running
+    and queued ones, finished results, and records whose driver is gone, which report
+    ``interrupted``. Only that folder is scanned, never the run cache beside it."""
     base = Path(root).expanduser().resolve() / '_workflows'
     folders = [path.parent for path in base.glob(f'*/{RECORD}')]
     folders.sort(key=lambda path: (_read(path) or {}).get('submitted', 0), reverse=True)
-    handles = [open_workflow(path) for path in folders]
-    if revive and any(_waits_for_daemon(handle) for handle in handles):
-        from . import daemon
-        daemon.ensure(base.parent)      # queued daemon work with no daemon: start one
+    handles = [WorkflowHandle(path) for path in folders]
     return handles[:limit] if limit else handles
 
 
-def _waits_for_daemon(handle):
-    record = _read(handle.folder) or {}
-    driver = record.get('driver') or {}
-    return (driver.get('kind') == 'daemon' and record.get('state') == 'queued'
-            and not driver.get('pid'))
-
-
 def run(request, *, cancel_token=None):
-    """Blocking counterpart to :func:`submit`."""
+    """Blocking, in-process counterpart to :func:`submit`; no record, no daemon."""
     from .workflows import execute_request
     return execute_request(request, cancel_token=cancel_token)

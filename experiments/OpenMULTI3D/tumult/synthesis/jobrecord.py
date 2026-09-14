@@ -246,13 +246,20 @@ def scan(root, limit=None):
             record["resolved"] = state_of(path.parent, record)
             found[path.parent] = record
     records = list(found.values())
-    records.sort(key=lambda r: _started(r.get("started")), reverse=True)
+    records.sort(key=started_time, reverse=True)
     return records[:limit] if limit else records
 
 
-def _started(value):
-    """A sortable start time from either writer: the launcher's epoch seconds or
-    dispatch's ISO timestamp."""
+def run_id(folder):
+    """An opaque, colon-free id for the run in ``folder``, stable across processes, for
+    the daemon's job list and the GUI's action channel."""
+    return "run-" + hashlib.sha1(str(folder).encode()).hexdigest()[:12]
+
+
+def started_time(record):
+    """A sortable start time (epoch seconds) from either writer: the launcher's epoch
+    seconds or dispatch's ISO timestamp; 0 when neither recorded one."""
+    value = record.get("started")
     if isinstance(value, (int, float)):
         return float(value)
     if isinstance(value, str):
