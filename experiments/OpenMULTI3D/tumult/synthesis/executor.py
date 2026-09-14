@@ -73,36 +73,9 @@ def _run_batch(jobs, launch_kwargs, max_threads, cancel_token=None, *, runtime=N
     owner = cancel_token or batch_token
     pending = {}         # future -> job key
     results = {}
-
-    # Resolve every job's output/signature once, own its input snapshot (workflows may
-    # keep changing their live settings after this), and group by output so a node
-    # requested twice in one batch shares one native run without inflating the count of
-    # "ready" jobs the width/base/remainder split below is computed against.
     by_output = {}        # output -> [(key, name, nml, kwargs, signature), ...]
     cached_outputs = []
     waiting_outputs = deque()
-    for key, name, nml in jobs:
-        batch_token.check()
-        nml = copy.deepcopy(nml)
-        kwargs = copy.deepcopy(launch_kwargs)
-        prepared = prepare_input(nml, kwargs.get('default'))
-        output = str((Path(kwargs.get('cwd') or '.') /
-                      _output_folder(name, prepared)).resolve())
-        # CPU allocation is scheduling metadata, not part of a spectrum's identity.
-        signature = json.dumps([prepared, {k: v for k, v in kwargs.items()
-                                           if k not in ('threads', 'verbose', 'log_file')}],
-                               sort_keys=True, default=str)
-        entry = (key, name, nml, kwargs, signature)
-        if output not in by_output:
-            by_output[output] = [entry]
-            note_run(output)
-            if not kwargs.get('overwrite') and run_complete(output):
-                cached_outputs.append(output)
-            else:
-                waiting_outputs.append(output)
-        else:
-            by_output[output].append(entry)
-
     future_output = {}    # future -> output, to release that output's slots exactly once
 
     def submit_entry(name, nml, kwargs, signature, output, slots):
@@ -142,6 +115,33 @@ def _run_batch(jobs, launch_kwargs, max_threads, cancel_token=None, *, runtime=N
             submit_output(output, slots)
 
     try:
+        # Resolve every job's output/signature, own its input snapshot (workflows may
+        # keep changing their live settings after this), and group by output so a node
+        # requested twice in one batch shares one native run without inflating the
+        # count of "ready" jobs the width/base/remainder split below is computed
+        # against. Inside the try so a cancellation here still detaches cleanly.
+        for key, name, nml in jobs:
+            batch_token.check()
+            nml = copy.deepcopy(nml)
+            kwargs = copy.deepcopy(launch_kwargs)
+            prepared = prepare_input(nml, kwargs.get('default'))
+            output = str((Path(kwargs.get('cwd') or '.') /
+                          _output_folder(name, prepared)).resolve())
+            # CPU allocation is scheduling metadata, not part of a spectrum's identity.
+            signature = json.dumps([prepared, {k: v for k, v in kwargs.items()
+                                               if k not in ('threads', 'verbose', 'log_file')}],
+                                   sort_keys=True, default=str)
+            entry = (key, name, nml, kwargs, signature)
+            if output not in by_output:
+                by_output[output] = [entry]
+                note_run(output)
+                if not kwargs.get('overwrite') and run_complete(output):
+                    cached_outputs.append(output)
+                else:
+                    waiting_outputs.append(output)
+            else:
+                by_output[output].append(entry)
+
         for output in cached_outputs:
             submit_output(output, 1)      # a cache read costs no native CPU slot
         allocate_ready()
