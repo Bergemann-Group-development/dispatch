@@ -1,5 +1,5 @@
 import astropy.units as u
-from scipy.optimize import curve_fit
+from scipy.optimize import curve_fit, leastsq
 import numpy as np
 from scipy.signal import argrelextrema
 import matplotlib.pyplot as plt
@@ -511,7 +511,7 @@ def fit_line_profile(
     plot : bool, optional
         Whether to plot the fit.
     **kwargs : dict, optional
-        Additional arguments to pass to curve_fit.
+        Additional MINPACK least-squares options.
     """
     cls = get_profile_class(profile)
     x, y, x0 = _prepare_profile_data(xx, yy, x0, dlam, auto_crop, plot=plot)
@@ -532,41 +532,123 @@ def fit_line_profile(
     # afterwards). x0 is guaranteed non-zero by _prepare_profile_data.
     p, b, scale = cls.initial_params(x0, xmin, amp, sig)
 
-    p0 = p if p0 is None else p0
+    default_p0 = p0 is None
+    p0 = p if default_p0 else p0
     bounds = b if bounds is None else bounds
-    p0 = [v / s for v, s in zip(p0, scale)]
-    lb = [v / s for v, s in zip(bounds[0], scale)]
-    ub = [v / s for v, s in zip(bounds[1], scale)]
-    bounds = (lb, ub)
-    p0 = np.clip(p0, *bounds)
+    scale = np.asarray(scale, dtype=float)
+    p0 = np.asarray(p0, dtype=float) / scale
+    lb = np.asarray(bounds[0], dtype=float) / scale
+    ub = np.asarray(bounds[1], dtype=float) / scale
+    if np.any(~np.isfinite(lb)) or np.any(~np.isfinite(ub)) or np.any(lb >= ub):
+        raise ValueError("Profile fitting requires finite, increasing parameter bounds.")
 
-    def opt_func(x, *args):
-        return cls.model(x, *args)
+    # MINPACK's LM implementation is substantially faster for these short fits. A smooth
+    # logistic parameterisation retains the physical bounds without switching algorithms.
+    def to_theta(params):
+        fraction = (np.asarray(params) - lb) / (ub - lb)
+        fraction = np.clip(fraction, 1e-12, 1.0 - 1e-12)
+        return np.log(fraction) - np.log1p(-fraction)
+
+    def from_theta(theta):
+        fraction = 1.0 / (1.0 + np.exp(-np.clip(theta, -700.0, 700.0)))
+        params = lb + (ub - lb) * fraction
+        derivative = (ub - lb) * fraction * (1.0 - fraction)
+        return params, derivative
+
+    xfit = np.asarray(x / x0, dtype=float)
+    yfit = np.asarray(y, dtype=float)
+    if sigma is None:
+        weight = None
+    else:
+        weight = 1.0 / np.asarray(sigma, dtype=float)
+
+    def residual(theta):
+        params, _ = from_theta(theta)
+        result = np.asarray(cls.model(xfit, *params), dtype=float) - yfit
+        return result if weight is None else result * weight
+
+    def jacobian(theta):
+        params, derivative = from_theta(theta)
+        jac = np.asarray(cls.model_jacobian(xfit, *params), dtype=float) * derivative
+        return jac if weight is None else jac * np.expand_dims(weight, -1)
+
+    lm_options = {}
+    if "max_nfev" in kwargs and "maxfev" not in kwargs:
+        kwargs["maxfev"] = kwargs.pop("max_nfev")
+    for key in ("ftol", "xtol", "gtol", "maxfev", "epsfcn", "factor", "diag"):
+        if key in kwargs:
+            lm_options[key] = kwargs.pop(key)
+    kwargs.pop("method", None)
+    kwargs.pop("jac", None)
+    absolute = kwargs.pop("absolute_sigma", absolute)
+    if kwargs:
+        unknown = ", ".join(sorted(kwargs))
+        raise TypeError(f"Unsupported profile-fit option(s): {unknown}")
+
+    primary = np.clip(p0, lb, ub)
+    if profile == "voigt" and default_p0:
+        primary[-1] = np.clip(0.3, lb[-1], ub[-1])
+
+    def run(seed):
+        theta, _, info, message, status = leastsq(
+            residual, to_theta(seed), Dfun=jacobian, full_output=True, **lm_options
+        )
+        params, _ = from_theta(theta)
+        rss = float(np.dot(info["fvec"], info["fvec"]))
+        if status not in (1, 2, 3, 4) or not np.all(np.isfinite(params)):
+            raise RuntimeError(message)
+        return params, rss
 
     try:
-        popt, pcov = curve_fit(
-            opt_func,
-            x / x0,
-            y,
-            p0=p0,
-            bounds=bounds,
-            sigma=sigma,
-            absolute_sigma=absolute,
-            **kwargs,
-        )
+        candidates = [run(primary)]
+        if profile == "voigt" and candidates[0][0][-1] >= ub[-1] - 1e-3:
+            for rho in (0.02, 0.7):
+                seed = primary.copy()
+                seed[-1] = np.clip(rho, lb[-1], ub[-1])
+                try:
+                    candidates.append(run(seed))
+                except Exception:
+                    pass
+        popt = min(candidates, key=lambda item: item[1])[0]
     except Exception as e:
-        print(f"Fit failed: {e}")
-        return None, None, None
+        if profile == "voigt":
+            candidates = []
+            for rho in (0.02, 0.7):
+                seed = primary.copy()
+                seed[-1] = np.clip(rho, lb[-1], ub[-1])
+                try:
+                    candidates.append(run(seed))
+                except Exception:
+                    pass
+            if candidates:
+                popt = min(candidates, key=lambda item: item[1])[0]
+            else:
+                print(f"Fit failed: {e}")
+                return None, None, None
+        else:
+            print(f"Fit failed: {e}")
+            return None, None, None
+
+    pout = np.asarray(popt) * scale
+    physical_jac = np.asarray(cls.model_jacobian(np.asarray(x, dtype=float), *pout), dtype=float)
+    physical_residual = np.asarray(cls.model(np.asarray(x, dtype=float), *pout)) - yfit
+    if weight is not None:
+        physical_jac = physical_jac * np.expand_dims(weight, -1)
+        physical_residual = physical_residual * weight
+    _, singular, vh = np.linalg.svd(physical_jac, full_matrices=False)
+    threshold = np.finfo(float).eps * max(physical_jac.shape) * singular[0]
+    keep = singular > threshold
+    pcov = (vh[keep].T / singular[keep] ** 2) @ vh[keep]
+    if not absolute and yfit.size > pout.size:
+        pcov *= np.dot(physical_residual, physical_residual) / (yfit.size - pout.size)
 
     def func(x):
-        return opt_func(x / x0, *popt)
-
-    pout = [v * s for v, s in zip(popt, scale)]
+        return cls.model(np.asarray(x, dtype=float), *pout)
 
     if plot:
         plt.plot(xx, func(xx), ls="--", zorder=10)
 
-    return pout, pcov, func
+    return pout.tolist(), pcov, func
 
 
 def get_bisector(xx, yy, x0=None, n=100, frac=0.99):

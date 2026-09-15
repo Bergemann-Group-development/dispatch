@@ -17,7 +17,7 @@ no separate result container. :func:`tumult.utils.get_weq` crops the window and 
 of these; the free functions ``line_weq`` / ``fit_line_profile`` / ``profile_fwhm`` are thin
 back-compat shims over the class.
 
-This module is numpy/scipy/astropy only (the fitter / interpolator it calls are imported
+This module is numpy/numba/scipy/astropy only (the fitter / interpolator it calls are imported
 lazily from :mod:`tumult.utils` to avoid an import cycle). The string ``name`` of each profile
 is what callers pass around, and the registry below is the single home for the valid set.
 """
@@ -25,7 +25,8 @@ from __future__ import annotations
 
 import astropy.units as u
 import numpy as np
-from scipy.special import voigt_profile as _scipy_voigt
+
+from . import _qlg
 
 _LN10 = np.log(10.0)
 _R2L2 = np.sqrt(2.0 * np.log(2.0))  # FWHM = 2·_R2L2·σ for a Gaussian
@@ -58,9 +59,10 @@ def get_profile_class(name: str) -> type["Profile"]:
 
 
 def voigt_function(a, v):
-    """scipy Voigt profile, normalised so the ``a=0`` Gaussian peaks at 1 (used by Voigt)."""
-    s2 = np.sqrt(2)
-    return _scipy_voigt(v * s2, 1, a * s2) * s2
+    """QLG-mid Voigt function in the normalization previously exposed here."""
+    vv = np.asarray(v, dtype=float)
+    result = _qlg.qlg_mid(float(a), vv) / np.sqrt(np.pi)
+    return float(result) if vv.ndim == 0 else result
 
 
 def _rew_from_ratio(ratio) -> float:
@@ -108,16 +110,10 @@ def _trapz_photon_err(xx, sigma):
 
 
 def _fit_weq_err(cls, pout, pcov):
-    """1σ width error of a fitted profile: numerical jacobian of ``weq(params)`` through ``pcov``."""
-    weq = cls.weq_from_params(*pout)
-    partials = []
-    for i, arg in enumerate(pout):
-        arg_plus = list(pout)
-        step = arg * 1e-4
-        arg_plus[i] = arg + step
-        partial = (cls.weq_from_params(*arg_plus) - weq) / step
-        partials.append(partial.value if isinstance(partial, u.Quantity) else partial)
-    return float(np.sqrt(np.dot(partials, np.dot(pcov, partials))))
+    """1σ width error propagated through the analytic equivalent-width gradient."""
+    partials = np.asarray(cls.weq_gradient(*pout), dtype=float)
+    variance = float(partials @ pcov @ partials)
+    return float(np.sqrt(max(variance, 0.0)))
 
 
 class Profile:
@@ -275,6 +271,16 @@ class FittedProfile(Profile):
         """
         raise NotImplementedError(f"{cls.name!r} is not a fitted profile")
 
+    @staticmethod
+    def model_jacobian(x, *params):
+        """Jacobian of :meth:`model` with respect to its fit parameters."""
+        raise NotImplementedError
+
+    @classmethod
+    def weq_gradient(cls, *params):
+        """Gradient of :meth:`weq_from_params` with respect to its parameters."""
+        raise NotImplementedError
+
     @classmethod
     def measure(cls, xx, yy, *, x0, sigma=None, xunit=u.AA, **kwargs):
         from .utils import fit_line_profile  # lazy: utils imports this module
@@ -319,9 +325,20 @@ class GaussProfile(FittedProfile):
     def model(x, x0, amp, sig):
         return 1 - amp * np.exp(-0.5 * ((x - x0) / sig) ** 2)
 
+    @staticmethod
+    def model_jacobian(x, x0, amp, sig):
+        zz = (np.asarray(x) - x0) / sig
+        gg = np.exp(-0.5 * zz**2)
+        return np.column_stack((-amp * gg * zz / sig, -gg, -amp * gg * zz**2 / sig))
+
     @classmethod
     def weq_from_params(cls, x0, amp, sig):
         return amp * np.sqrt(2 * np.pi) * sig
+
+    @classmethod
+    def weq_gradient(cls, x0, amp, sig):
+        scale = np.sqrt(2 * np.pi)
+        return np.array([0.0, scale * sig, scale * amp])
 
     @classmethod
     def initial_params(cls, x0, xmin, amp, sig):
@@ -347,9 +364,30 @@ class AsymGaussProfile(FittedProfile):
         y[~mask] = (x[~mask] - x0) / sig_right
         return 1 - amp * np.exp(-0.5 * y**2)
 
+    @staticmethod
+    def model_jacobian(x, x0, amp, sig_left, sig_right):
+        xx = np.asarray(x)
+        left = xx < x0
+        sig = np.where(left, sig_left, sig_right)
+        zz = (xx - x0) / sig
+        gg = np.exp(-0.5 * zz**2)
+        jac = np.zeros((xx.size, 4), dtype=float)
+        jac[:, 0] = -amp * gg * zz / sig
+        jac[:, 1] = -gg
+        width_derivative = -amp * gg * zz**2 / sig
+        jac[left, 2] = width_derivative[left]
+        jac[~left, 3] = width_derivative[~left]
+        return jac
+
     @classmethod
     def weq_from_params(cls, x0, amp, sig_left, sig_right):
         return amp * np.sqrt(2 * np.pi) * (sig_left + sig_right) * 0.5
+
+    @classmethod
+    def weq_gradient(cls, x0, amp, sig_left, sig_right):
+        scale = 0.5 * np.sqrt(2 * np.pi)
+        return np.array([0.0, scale * (sig_left + sig_right),
+                         scale * amp, scale * amp])
 
     @classmethod
     def initial_params(cls, x0, xmin, amp, sig):
@@ -371,23 +409,29 @@ class VoigtProfile(FittedProfile):
 
     @staticmethod
     def model(x, x0, amp, sigma, rho):
-        a = (rho / (1.0 - rho)) * np.sqrt(np.log(2))
-        v_peak = voigt_function(a, 0.0)
-        vv = np.array((x - x0) / (sigma * np.sqrt(2)))
-        return 1 - amp * voigt_function(a, vv) / v_peak
+        xx = np.asarray(x, dtype=float)
+        result = _qlg.profile(xx, x0, amp, sigma, rho)
+        return float(result) if xx.ndim == 0 else result
+
+    @staticmethod
+    def model_jacobian(x, x0, amp, sigma, rho):
+        xx = np.asarray(x, dtype=float)
+        return _qlg.profile_and_jacobian(xx, x0, amp, sigma, rho)[1]
 
     @classmethod
     def weq_from_params(cls, x0, amp, sigma, rho):
-        a = (rho / (1.0 - rho)) * np.sqrt(np.log(2))
-        v_peak = voigt_function(a, 0.0) / (sigma * np.sqrt(2))
-        return amp / v_peak
+        return _qlg.profile_equivalent_width(amp, sigma, rho)
+
+    @classmethod
+    def weq_gradient(cls, x0, amp, sigma, rho):
+        return _qlg.profile_equivalent_width_gradient(amp, sigma, rho)[1]
 
     @classmethod
     def initial_params(cls, x0, xmin, amp, sig):
         xlo, xhi = 0.99 * x0, 1.01 * x0
         slo, shi = 1e-8 * x0, 1000 * x0
         return ([xmin, amp, sig, 0.0],
-                [[xlo, 0, slo, 0], [xhi, 1, shi, 1]],
+                [[xlo, 0, slo, 0], [xhi, 1, shi, 0.9]],
                 [x0, 1, x0, 1])
 
 
