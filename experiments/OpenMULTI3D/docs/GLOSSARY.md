@@ -80,7 +80,8 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
   dispatch is asked to compute so a feature's wings are calculated rather than extrapolated
   from the window edge. The two paddings are successive and calibrated apart.
 - *window file*: requested wavelength ranges handed to the Fortran, which builds one
-  constant-resolution *segment* per window and gives each its own output patch.
+  constant-resolution *segment* per window. Output patches never span two segments; with
+  fewer windows than `n_nu`, each window is split into `n_nu` output patches.
 - *line window*: the span `[lam_min, lam_max]` of the shared frequency grid an NLTE run
   integrates one bound-bound transition's rates over; set by the model atom's `qmax` (in
   units of `qnorm`). A *line grid* (`line_grid_file`, written by

@@ -566,11 +566,12 @@ class Run(object):
         folder = pathlib.Path(folder) if folder else self.sfolder
         n_nu = self.nml['run_params']['n_nu']
         if self.segments and kind in OUTPUT_PATCH_KINDS:
-            # A multi-window run splits its output spectrum by window rather than by the
-            # internal n_nu, and saves each patch under abs(i_nu), so the ids run 1..
-            # n_segments. Splitting those at the internal n_nu would hand back one array
-            # per window instead of the whole spectrum. The internal kinds keep n_nu.
-            n_nu = len(self.segments)
+            # A multi-window run splits its output spectrum per window, into as many
+            # patches as the Fortran side chose (composition_pre_init), and saves each
+            # under abs(i_nu). Every one of those ids belongs to the output spectrum, so
+            # the split point must lie above all of them; the grid size is such a bound,
+            # since no patch is empty. The internal kinds keep n_nu.
+            n_nu = self.segments[-1]['last']
         return _read_patch_save(folder, kind, n_nu=n_nu,
                                 concat=concat, fdim=fdim, zdim=zdim, lazy=lazy)
 

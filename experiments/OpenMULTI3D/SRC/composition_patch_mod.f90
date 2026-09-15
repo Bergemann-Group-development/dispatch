@@ -260,30 +260,37 @@ SUBROUTINE composition_pre_init (self)
   self%n_nu = n_nu
   n_mu = size(rt_out%vec,2)
 
+  ! Output frequency patches.  A contiguous output grid is split like the internal
+  ! one, into n_nu parts.  A window_file grid is split per window, so that no patch
+  ! spans the gap between two windows (see output_patch_range).  With fewer windows
+  ! than n_nu, each window is split into n_nu parts, so the output pass still has
+  ! at least n_nu tasks per depth for the threads; the smallest window caps that
+  ! count at one point per part.
+  if (output_sp%n_segments > 0) then
+    n_nu_out = output_sp%n_segments
+    if (output_sp%n_segments < n_nu) n_nu_out = output_sp%n_segments * &
+      min(n_nu, minval(output_sp%segment_last - output_sp%segment_first + 1))
+  else
+    n_nu_out = n_nu
+  endif
+
   ! One sampled opacity table per i_nu, shared by the rt_patches created below,
   ! which differ only in i_mu and would otherwise build identical copies.  The
   ! internal spectrum uses i_nu in [1, n_nu], the bound-free half of a decoupled
-  ! continuum [n_nu+1, 2*n_nu], and the output spectrum [-n_nu, -1]; slot 0 is
-  ! A3: Note - at this point output_sp%n_segments may not yet be set (occurs later in pre_init).
-  ! We'll update n_nu_out calculation after output_sp is initialized, then use it
-  ! for allocations here. For now, allocate conservatively using n_nu lower bound.
-  ! The actual patch ID ranges will be set correctly after n_nu_out is determined.
+  ! continuum [n_nu+1, 2*n_nu], and the output spectrum [-n_nu_out, -1]; slot 0 is
   ! never used.  make_eos is excluded: save_opac_table overwrites the table in
   ! place, so those rt_patches keep a private one.
   if ((rt_iter%sample_back_opac .or. rt_out%sample_back_opac) .and. .not. make_eos) then
-    ! A3: Allocate from -n_nu to 2*n_nu to cover both output patches (-n_nu_out:-1)
-    ! and internal patches (1:n_nu and potentially higher). The tables will be keyed
-    ! by the actual patch i_nu values assigned later.
-    allocate(self%opac_tables(-n_nu:2*n_nu))
-    allocate(self%opac_locks (-n_nu:2*n_nu))
-    do i=-n_nu, 2*n_nu
+    allocate(self%opac_tables(-n_nu_out:2*n_nu))
+    allocate(self%opac_locks (-n_nu_out:2*n_nu))
+    do i=-n_nu_out, 2*n_nu
       call self%opac_locks(i)%init('opac', i)
     end do
     ! Separate LTE line-list opacity table (sample_linelist): same i_nu keying.
     if (sample_linelist) then
-      allocate(self%ll_opac_tables(-n_nu:2*n_nu))
-      allocate(self%ll_opac_locks (-n_nu:2*n_nu))
-      do i=-n_nu, 2*n_nu
+      allocate(self%ll_opac_tables(-n_nu_out:2*n_nu))
+      allocate(self%ll_opac_locks (-n_nu_out:2*n_nu))
+      do i=-n_nu_out, 2*n_nu
         call self%ll_opac_locks(i)%init('ll_opac', i)
       end do
     endif
@@ -299,15 +306,6 @@ SUBROUTINE composition_pre_init (self)
     endif
   endif
 
-  ! A3: Calculate n_nu_out from output spectrum segments (if window_file was used)
-  ! When window_file is NOT set, n_segments=0, so n_nu_out defaults to n_nu
-  ! (preserving behavior for single/old-style wavelength ranges).
-  if (output_sp%n_segments > 0) then
-    n_nu_out = output_sp%n_segments
-  else
-    n_nu_out = n_nu
-  endif
-
   ! rt_out%solver='none' disables the output pass entirely -- create no output
   ! RT patches (the final i_mu=-1 ray or the Lambda-iteration i_mu=[1,2] ones).
   if (output_sp%nnu > 0 .and. rt_out%solver /= 'none') then
@@ -319,7 +317,6 @@ SUBROUTINE composition_pre_init (self)
     endif
   endif
 
-  ! A4: Verify output patch coverage when using window_file segments
   if (output_sp%n_segments > 0) then
     call verify_output_patch_coverage(output_sp, n_nu_out)
   endif

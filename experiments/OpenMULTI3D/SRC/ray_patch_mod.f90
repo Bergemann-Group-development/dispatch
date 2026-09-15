@@ -23,12 +23,15 @@ MODULE ray_patch_mod
   USE interpol_mod, only: pchip_mono
   USE ray_mod, only: ray_type, one_dimensional
   USE m3d_patch_mod, only: m3d_patch_t, &
-    converged, print_send, atom_update_counter, comoving_frame
+    converged, print_send, atom_update_counter, comoving_frame, n_nu_out
+  USE spectrum_mod, only: spectrum_type
   USE const_mod, only: cc, over_4pi, PI
   implicit none
   private
 
   !-----------------------------------------------------------------------------
+
+  public :: output_patch_window, output_patch_range
 
   type, public, extends(m3d_patch_t) :: ray_patch_t
     type(ray_type) :: ray
@@ -58,40 +61,15 @@ contains
   !===============================================================================
   SUBROUTINE set_freq_indices (self)
     class(ray_patch_t) :: self
-    integer :: fs, fe, i, nv, i_seg, n_out
+    integer :: fs, fe, i, nv
     integer, pointer :: counter
     character(len=16) :: label
     integer, dimension(:), allocatable :: order
     integer, save, target :: counter1=-999, counter2=-999
     !-----------------------------------------------------------------------------
-    ! A3/A4: Check if this is an output patch with segment metadata.
-    ! Output patches with window_file use negative i_nu and segment boundaries.
     if (self%do_out_sp .and. self%i_nu < 0 .and. self%sp%n_segments > 0) then
-      ! This is an output patch with segmented grid (A4 patch boundary selection)
-      ! Map negative i_nu to segment index: i_nu=-1 -> segment 1, i_nu=-2 -> segment 2, etc.
-      n_out = self%sp%n_segments
-      i_seg = -self%i_nu
-
-      if (i_seg < 1 .or. i_seg > n_out) then
-        write(stderr, '(A,I0,A,I0,A,I0)') &
-          'ERROR: output patch i_nu=', self%i_nu, ' maps to segment ', i_seg, &
-          ' but n_segments=', n_out
-        error stop 'output patch index out of segment range'
-      endif
-
-      ! Use explicit segment boundaries instead of unequal_intervals
-      fs = self%sp%segment_first(i_seg)
-      fe = self%sp%segment_last(i_seg)
-
-      ! Verify segment coverage (A4 assertion)
-      if (fs < 1 .or. fe < fs .or. fe > self%sp%nnu) then
-        write(stderr, '(A,I0,A,I0,A,I0,A,I0,A,I0)') &
-          'ERROR: segment ', i_seg, ' has invalid range [', fs, ',', fe, &
-          '] with nnu=', self%sp%nnu
-        error stop 'invalid segment boundaries'
-      endif
+      call output_patch_range(self%sp, self%i_nu, n_nu_out, fs, fe)
     else
-      ! Internal patch or output patch without segment metadata: use unequal_intervals
       call unequal_intervals(self%sp%nnu, self%i_nu, self%n_nu, fs, fe)
     endif
 
@@ -114,6 +92,38 @@ contains
       counter = self%i_nu
     endif
   END SUBROUTINE set_freq_indices
+
+  !===============================================================================
+  !> Window (segment) index of output patch i_nu (in -n_out..-1) on a segmented
+  !> (window_file) grid.  The n_out patches split every window into the same number
+  !> n_out/n_segments of near-equal parts, numbered in wavelength order.
+  !===============================================================================
+  PURE INTEGER FUNCTION output_patch_window (sp, i_nu, n_out) result(i_seg)
+    class(spectrum_type), intent(in) :: sp
+    integer, intent(in) :: i_nu, n_out
+    !-----------------------------------------------------------------------------
+    i_seg = (abs(i_nu) - 1) / (n_out / sp%n_segments) + 1
+  END FUNCTION output_patch_window
+
+  !===============================================================================
+  !> Frequency range [fs, fe] of output patch i_nu on a segmented grid: part
+  !> mod(|i_nu|-1, n_split)+1 of window output_patch_window(), so no patch spans
+  !> the gap between two windows.
+  !===============================================================================
+  SUBROUTINE output_patch_range (sp, i_nu, n_out, fs, fe)
+    class(spectrum_type), intent(in) :: sp
+    integer, intent(in) :: i_nu, n_out
+    integer, intent(out) :: fs, fe
+    integer :: n_split, i_seg, first
+    !-----------------------------------------------------------------------------
+    n_split = n_out / sp%n_segments
+    i_seg = output_patch_window(sp, i_nu, n_out)
+    first = sp%segment_first(i_seg)
+    call unequal_intervals(sp%segment_last(i_seg) - first + 1, &
+                           mod(abs(i_nu) - 1, n_split) + 1, n_split, fs, fe)
+    fs = fs + first - 1
+    fe = fe + first - 1
+  END SUBROUTINE output_patch_range
 
 !===============================================================================
 !> Determine if a task is upstream.

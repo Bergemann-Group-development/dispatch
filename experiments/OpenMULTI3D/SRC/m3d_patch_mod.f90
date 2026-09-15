@@ -151,7 +151,7 @@ MODULE m3d_patch_mod
     integer, public :: nz_total
     integer, public, save :: save_id=-1
     integer, public, save :: n_nu=-1
-    integer, public, save :: n_nu_out=0   ! A3: explicit output frequency split count; 0 means not yet set
+    integer, public, save :: n_nu_out=0   ! output frequency patch count, set in composition_pre_init
     real(8), public:: convlim=1d-3, convmax=tiny(1.0)
     logical, public, save :: converged=.false., use_vel(3)=.true., premature_finish=.true.
     ! Number of nlte_patches created on this rank, and whether all of them have
@@ -271,8 +271,6 @@ MODULE m3d_patch_mod
     atomcheck, check_NaN, print_finished, print_lock, print_start, print_send, &
     diag_pops, diag_db, diag_no_scat_loop
 
-    ! Note: n_nu_out is not included in the namelist to maintain backward compatibility
-    ! with existing input files. It will be written separately to the output.
     namelist /run_params/ n_nu, comoving_frame, make_eos, rotate_atmos, &
     column_by_column, lam_tolerance
 
@@ -441,7 +439,6 @@ MODULE m3d_patch_mod
       write (io%namelist, output_params)
       write (io%namelist, m3d_debug_params)
       write (io%namelist, run_params)
-      ! A3: n_nu_out is saved via HDF5/structured output, not in the old namelist
       call echo_rt_params ()
       first_time = .false.
     endif

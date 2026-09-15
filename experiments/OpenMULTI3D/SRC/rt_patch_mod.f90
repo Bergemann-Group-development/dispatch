@@ -15,10 +15,10 @@ MODULE rt_patch_mod
   USE interpol_mod, only: pchip_mono
   USE handyfuncs_mod
   USE atom_mod, only: atom_type, atom_data_t, atom_trans_t, atomic_spectrum_type
-  USE ray_patch_mod, only: ray_patch_t
+  USE ray_patch_mod, only: ray_patch_t, output_patch_window, output_patch_range
   USE m3d_halo_mod, only: lock_mem, unlock_mem
   USE m3d_patch_mod, only: use_vel, m3d_patch_t, &
-    dlam, &
+    dlam, n_nu_out, &
     premature_finish, m3d_patch_pre_update=>pre_update, save_resolved, &
     column_by_column, rotate_atmos, save_cntrbf, depression_cntrbf, &
     decouple_continuum, initial_Jnu,  &
@@ -79,13 +79,11 @@ MODULE rt_patch_mod
   logical, allocatable, public, save :: output_set_element(:,:) ! explicit rows, including da=0
 
   !-----------------------------------------------------------------------------
-  ! A3: Separate output segmentation from internal frequency splitting.
-  ! n_nu_out is defined in m3d_patch_mod as the explicit output split count
-  ! (derived from output spectrum segments). n_nu remains the internal equal split.
-  ! Output patches use IDs -n_nu_out:-1, internal patches use 1:n_nu.
-  ! When window_file is NOT set, n_nu_out = n_nu and behavior is unchanged.
+  ! Output patches use IDs -n_nu_out:-1, internal patches use 1:n_nu.  n_nu_out
+  ! (m3d_patch_mod, set in composition_pre_init) equals n_nu for a contiguous output
+  ! grid; a window_file grid gets a whole number of patches per window.
   !-----------------------------------------------------------------------------
-  public :: verify_output_patch_coverage  ! A4: verification subroutine
+  public :: verify_output_patch_coverage
 
   !-----------------------------------------------------------------------------
   type, public, extends(ray_patch_t) :: rt_patch_t
@@ -1042,10 +1040,17 @@ contains
     real(4), intent(in), dimension(:,:,:) :: vproj
     type(rt_params_t), pointer :: rtp
     logical :: use_linelist, sample_ll, do_scat
-    integer :: i
+    integer :: i, i_seg
+    real(dp), allocatable :: window_lam(:)
     !-----------------------------------------------------------------------------
     ! detailed line list vs sampled LTE line table, per pass (rt_iter or rt_out)
     rtp => pass_params(self)
+    ! An output patch on a window_file grid visits the lines of its whole window, however
+    ! many patches that window is split into; unallocated, window_lam is absent.
+    if (self%do_out_sp .and. self%i_nu < 0 .and. self%sp%n_segments > 0) then
+      i_seg = output_patch_window(self%sp, self%i_nu, n_nu_out)
+      window_lam = self%sp%lam([self%sp%segment_first(i_seg), self%sp%segment_last(i_seg)])
+    endif
     use_linelist = comp%ll_initialised .and. rtp%include_linelist .and. .not. rtp%sample_linelist
     sample_ll = rtp%sample_linelist .and. associated(self%ll_opac)
     if (sample_ll) sample_ll = self%ll_opac%initialised
@@ -1096,10 +1101,11 @@ contains
         if (do_scat) then
           call comp%add_linelist_opacities2(self%sub_sp, xhat, ehat, dlam, vproj, &
             departures=departures, one_m_eps=self%one_m_eps, chi_scat=self%chi_scat, &
-            beta=self%beta, i_set=i_set)
+            beta=self%beta, i_set=i_set, window_lam=window_lam)
         else
           call comp%add_linelist_opacities2(self%sub_sp, xhat, ehat, dlam, vproj, &
-                                            departures=departures, i_set=i_set)
+                                            departures=departures, i_set=i_set, &
+                                            window_lam=window_lam)
         endif
       end associate
     elseif (sample_ll) then
@@ -1118,7 +1124,8 @@ contains
       if (associated(departures)) then
         associate(xhat=>self%work(:,:,:,1:self%nz,1), ehat=>self%work(:,:,:,1:self%nz,2))
           call comp%add_linelist_opacities2(self%sub_sp, xhat, ehat, dlam, vproj, &
-            departures=departures, only_departures=.true., i_set=i_set)
+            departures=departures, only_departures=.true., i_set=i_set, &
+            window_lam=window_lam)
         end associate
       endif
     endif
@@ -3389,90 +3396,42 @@ contains
   END SUBROUTINE mem_unregister
 
   !===============================================================================
-  !> A4: Verify output patch coverage when using window_file segments.
-  !> Assert that:
-  !>   - every output segment is covered exactly once
-  !>   - segments do not overlap
-  !>   - no patch is empty
-  !>   - sub_sp is log-equidistant (report if very narrow segment cannot be)
+  !> Verify that the n_nu_out output patches of a segmented (window_file) grid tile
+  !> it exactly: in i_nu order each patch is non-empty, starts where the previous
+  !> one ended (the windows are adjacent in grid index) and lies inside one window.
   !===============================================================================
   SUBROUTINE verify_output_patch_coverage(output_sp, n_nu_out)
     class(atomic_spectrum_type), intent(in) :: output_sp
     integer, intent(in) :: n_nu_out
-    integer :: i_seg, fs, fe
-    logical, dimension(:), allocatable :: segment_covered
-    integer :: prev_fe
+    integer :: i_nu, i_seg, fs, fe, prev_fe
     !---------------------------------------------------------------------------
-    if (output_sp%n_segments == 0) then
-      ! No window_file; single wavelength range. Coverage verification not needed.
-      return
-    endif
+    if (output_sp%n_segments == 0) return
 
-    if (n_nu_out /= output_sp%n_segments) then
-      write(stderr,'(A,I0,A,I0,A)') &
-        'ERROR: n_nu_out (', n_nu_out, ') != n_segments (', output_sp%n_segments, ')'
+    if (mod(n_nu_out, output_sp%n_segments) /= 0) then
+      write(stderr,'(A,I0,A,I0)') &
+        'ERROR: n_nu_out=', n_nu_out, ' is not a multiple of n_segments=', output_sp%n_segments
       error stop 'n_nu_out and n_segments mismatch'
     endif
 
-    allocate(segment_covered(n_nu_out), source=.false.)
-
-    ! Check segment coverage: each segment should have at least one point
-    ! and segments should be disjoint and ordered.
     prev_fe = 0
-    do i_seg = 1, n_nu_out
-      fs = output_sp%segment_first(i_seg)
-      fe = output_sp%segment_last(i_seg)
-
-      ! Check valid range
-      if (fs < 1 .or. fe < fs .or. fe > output_sp%nnu) then
-        write(stderr,'(A,I0,A,I0,A,I0,A,I0)') &
-          'ERROR: segment ', i_seg, ' has invalid range [', fs, ',', fe, &
-          '] with nnu=', output_sp%nnu
-        error stop 'invalid segment boundaries'
+    do i_nu = -1, -n_nu_out, -1
+      call output_patch_range(output_sp, i_nu, n_nu_out, fs, fe)
+      i_seg = output_patch_window(output_sp, i_nu, n_nu_out)
+      if (fs /= prev_fe + 1 .or. fe < fs .or. &
+          fs < output_sp%segment_first(i_seg) .or. fe > output_sp%segment_last(i_seg)) then
+        write(stderr,'(A,I0,A,I0,A,I0,A,I0)') 'ERROR: output patch i_nu=', i_nu, &
+          ' covers [', fs, ',', fe, '] in window ', i_seg
+        error stop 'output patches do not tile the windows'
       endif
-
-      ! Check non-empty (guaranteed by above, but explicit)
-      if (fs > fe) then
-        write(stderr,'(A,I0)') 'ERROR: empty patch for segment ', i_seg
-        error stop 'empty output patch'
-      endif
-
-      ! Check for gaps (previous segment should end just before this one)
-      ! Allow for gaps between windows (by design)
-      if (fs <= prev_fe) then
-        write(stderr,'(A,I0,A,I0,A,I0)') &
-          'ERROR: segment ', i_seg, ' overlaps previous (starts at ', fs, &
-          ', prev ended at ', prev_fe, ')'
-        error stop 'overlapping output segments'
-      endif
-
-      ! Check for log-equidistant property: a segment should have constant R
-      ! when sub_sp%reset is called with its local wavelengths
-      if (fe - fs + 1 >= 2) then
-        ! Only check if at least 2 points
-        ! The sub_sp%reset in rt_patch_execute will compute equidistant flag
-        ! No explicit verification needed here; we just note very narrow segments in output
-        if (fe - fs + 1 == 2) then
-          write(stdout,'(A,I0,A,I0,A)') &
-            'NOTE: output segment ', i_seg, ' has only 2 points; ', &
-            'may not reliably exercise equidistant-grid detector'
-        endif
-      endif
-
       prev_fe = fe
-      segment_covered(i_seg) = .true.
     enddo
-
-    ! Verify all segments are marked as covered (loop above covers them all)
-    if (.not. all(segment_covered)) then
-      write(stderr,'(A)') 'ERROR: not all segments are covered by output patches'
+    if (prev_fe /= output_sp%nnu) then
+      write(stderr,'(A,I0,A,I0)') 'ERROR: output patches end at ', prev_fe, ' of ', output_sp%nnu
       error stop 'incomplete segment coverage'
     endif
 
-    write(stdout,'(A,I0,A)') 'Verified: ', n_nu_out, &
-      ' output patches cover all segments exactly once'
-
-    deallocate(segment_covered)
+    write(stdout,'(A,I0,A,I0,A)') 'Verified: ', n_nu_out, ' output patches tile ', &
+      output_sp%n_segments, ' windows'
   END SUBROUTINE verify_output_patch_coverage
 
 END MODULE rt_patch_mod

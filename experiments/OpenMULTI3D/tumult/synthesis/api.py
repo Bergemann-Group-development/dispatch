@@ -715,7 +715,7 @@ def compute_windows(top, star, atmos_files, *, windows, R, settings=None, absmet
 
     The windows are normalised (:func:`normalise_windows`) and written to a window file
     the run reads, so the Fortran side builds one constant-``R`` segment per window and
-    gives each its own output patch. Overlapping requests merge into one segment; the
+    splits the output patches at window boundaries. Overlapping requests merge into one segment; the
     result is still cropped back to every window that was asked for, so the caller gets a
     list aligned with ``windows`` whether or not any merging happened.
 

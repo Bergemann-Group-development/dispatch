@@ -6,10 +6,14 @@ values that are not neighbours. These tests pin the two things that keeps honest
 segment table round-trips to the windows that were asked for, and an operation needing a
 neighbourhood refuses a spectrum that still spans several of them.
 """
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
 from tumult.flux import read_segments
+from tumult.io_binary import write_patch_save
+from tumult.run import Run
 from tumult.spectrum import Spectrum
 from tumult.synthesis import compute_windows, normalise_windows
 from tumult.synthesis.api import window_file_text
@@ -44,6 +48,23 @@ def test_segments_round_trip_to_air_windows(tmp_path):
     assert segs[1]['blue'] == pytest.approx(5180.0, abs=1e-3)
     assert segs[1]['red'] == pytest.approx(5200.0, abs=1e-3)
 
+
+
+def test_windows_split_into_several_patches_stitch_to_one_spectrum(tmp_path):
+    """With fewer windows than threads each window has several output patches, saved as
+    flux_008001..; all of them are the output spectrum, whatever the internal n_nu."""
+    segs = write_segments(tmp_path, [
+        "        1      1      8    5151.43473    5171.44006\n",
+        "        2      9     16    5181.44272    5201.44805\n",
+    ])
+    flux = np.arange(16, dtype=np.float32)
+    parts = np.split(flux, 8)   # four patches per window
+    write_patch_save(tmp_path / 'save', 'flux',
+                     {(8, i + 1): p.reshape(-1, 1) for i, p in enumerate(parts)})
+    run = SimpleNamespace(nml={'run_params': {'n_nu': 4}}, segments=segs, sfolder=tmp_path / 'save')
+    out = Run.read_patch_save(run, 'flux', lazy=False)
+    assert len(out) == 1
+    np.testing.assert_array_equal(np.asarray(out[0]).ravel(), flux)
 
 def two_window_spectrum():
     """Two disjoint windows concatenated, as a multi-window run hands them over."""
