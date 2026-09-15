@@ -74,11 +74,12 @@ cancel from the panel still ends a detached job.
 
 A durable workflow writes `workflow.json` under
 `<dispatch_cwd>/<synth_output_dir>/_workflows/<id>/` with the name and annotations it
-was submitted with, and its result under `result/`. A synthesis from the modal is
-submitted through `tumult.synthesis.submit` (the record's `request`); the tools'
-calculations through `tumult.synthesis.submit_task` (`ctx.submit_task`, the record's
-`task` block naming a kind of `tumult.synthesis.tasks`: `fit`, `abundance`,
-`ionisation_balance`, `nlte_corrections`). Both hand the record to the workflow daemon
+was submitted with, and its result under `result/`. Every calculation, a synthesis from
+the modal or a tool's, is one public operation submitted through
+`tumult.synthesis.submit_operation` (`ctx.submit_operation`, the record's `task` block
+naming the operation: `synthesis.synthesize`, `synthesis.fit`, `abundance.fit`,
+`sparams.ionbalance`, `abundance.nlte_corrections`), with the request the tool built
+from its setup. The record goes to the workflow daemon
 (`tumult.synthesis.daemon`), which runs one workflow at a time with the whole budget and
 reports state, threads and progress to the server as events, so a result reaches the
 canvas as soon as it is saved. A kind that streams its result (a balance iteration, a
@@ -92,8 +93,8 @@ every save slot stores those references next to its snapshot.
 - A new document shows the daemon's running and queued workflows as rows from its first
   paint. *Attach* in a row's details creates a job under the current workspace generation
   whose row cancels the workflow through its handle and whose completion is delivered
-  once, as the original submission would have: a synthesis adds its spectra, a tool record
-  goes to the tool that registered its kind (`ctx.task_importers`, `ctx.task_progress`),
+  once, as the original submission would have: a synthesis adds its spectra, any other
+  record goes to the tool that registered its operation (`ctx.task_importers`, `ctx.task_progress`),
   which lists the result under the uid the record carries or updates the listed one in
   place.
 - The header's Recover button (`workflow-discover`) asks the daemon for the newest settled
@@ -116,8 +117,8 @@ overrides it). The Bokeh server connects when it loads (`app_hooks.on_server_loa
 Preferences → Engine → *Max threads*; changing that preference reconfigures the running
 daemon. The daemon exits once no workflow runs or waits and no server is connected, so it
 finishes the work of a server that was stopped, and a restarted server reconnects to it or
-starts a new one. Scripts submit visible jobs with `tumult.synthesis.submit` or
-`submit_task` as *clients*: they show up in every document's panel, can be cancelled from
+starts a new one. Scripts submit visible jobs with `tumult.synthesis.submit_operation` as
+*clients*: they show up in every document's panel, can be cancelled from
 there, and a script may exit after submitting. `workflow_runner` chooses *local* (the
 daemon) or *slurm* (the per-workflow driver submitted through the configured batch
 script, whose record is polled and whose row shows its Slurm id). See `docs/FAQ.md`, "How
@@ -285,19 +286,20 @@ set's synth windows) and New → Synthesise spectrum (blank λ fields).
   alone (`only_atom`): no external list, no line-list preparation, recorded as "Line
   list: Off (model atom only)" in the result's Info rows.
 - Footer: **Synthesise**, Cancel. Both modes collect one request from the setup
-  (`SynthSetup.context()`, a `tumult.synthesis.NativeRequest`) and add the job's windows:
-  a free range is one `MaskWindow` whose fit and synth bounds coincide, a mask set
-  contributes its included masks with their own fit and synth windows. Every synthesis,
-  whatever its atmosphere (interpolated grid, picked file, 3D snapshot) and window, is
-  submitted once as a durable workflow (`tumult.synthesis.submit`) whose record, under the
+  (`SynthSetup.context()`, a `tumult.synthesis.SynthRequest`; NLTE with the selected atoms
+  is requested departures on the atoms' own quadratures, a saved-departures folder is
+  loaded as `Departures`) and give it the job's windows: a free range is one window, a
+  mask set its included masks' synth windows, while a fit also keeps their fit windows.
+  Every synthesis, whatever its atmosphere (interpolated grid, picked file, 3D snapshot)
+  and window, is submitted once as a durable `synthesis.synthesize` workflow whose record, under the
   synthesis output's `_workflows/`, carries the object name and the Info-tab rows; its
   Processes row holds the handle, cancels it whether queued or running, and closing the
   tab leaves it running (it is recoverable, see the Processes panel). The result is a
   synth object on the canvas with the Info-tab provenance; a run from a mask set records
-  the set name, and a run reusing saved departures records their folder. A combination no
-  execution path supports (saved departures in LTE mode or with a grid, NLTE without model
-  atoms) is refused in the footer with the reason, the dialog left open and nothing
-  submitted.
+  the set name, and a run reusing saved departures records their folder. A request that
+  cannot be formed (saved departures with a grid or for another star, NLTE without model
+  atoms, an unreadable abundance override) is refused in the footer with the reason, the
+  dialog left open and nothing submitted.
 
 Departure-coefficient solves are not started from this modal; their entry point is decided
 separately. NLTE abundance corrections start from a model atom (see below). Atmosphere
@@ -317,13 +319,13 @@ The same component in fit mode.
 - Body: the four synthesis sections as the initial guess, plus a **Fit** section with the
   switches for Teff / log g / [Fe/H] / vmic (hidden for a fixed atmosphere file), the
   per-element abundance rows and vshift / vmac / vrot.
-- Footer: **Fit**, Cancel. The same setup request, with the job's windows and the Fit
-  section's axes, becomes a `tumult.synthesis.FitRequest`: every trial point synthesises
-  the span of the synth windows and is compared with the target inside the fit windows,
-  which stay distinct. Fitting is supported for 1D atmospheres and grids; a 3D snapshot,
-  saved departures of one atmosphere, or stellar switches with a fixed atmosphere file are refused
-  before anything is submitted, with the reason in the footer. The fit runs as a
-  durable `fit` workflow (`ctx.submit_task`) carrying the request and the observation
+- Footer: **Fit**, Cancel. The same setup request, with the job's synth windows, goes to
+  `tumult.synthesis.fit` with the Fit section's axes and the fit windows: every trial point
+  synthesises the span of the synth windows and is compared with the target inside the fit
+  windows, which stay distinct. Fitting is supported for 1D atmospheres and grids; a 3D
+  snapshot, saved departures, or stellar switches with a fixed atmosphere file are refused
+  before anything is submitted (`synthesis.check_fit`), with the reason in the footer. The
+  fit runs as a durable `synthesis.fit` workflow carrying the request and the observation
   cropped to the synth span; closing the tab leaves it running, and a document that
   attaches to or imports the record adds the best-fit spectrum under the recorded name
   and annotations. On completion the best-fit values
@@ -386,8 +388,8 @@ corrections…**, which opens the correction modal with this atom fixed.
   configured line list together with the atom in both stages; while such a result is shown,
   the canvas annotates the lines of the reference run's `linelist_out.txt`, and a result
   computed without the list shows no line annotations at all.
-- Footer: **Compute**. One chained job: the 1D LTE reference is synthesised from the atom
-  alone and its lines measured; the reference spectrum is added to the canvas and the
+- Footer: **Compute**. One `abundance.nlte_corrections` workflow: the 1D LTE reference is
+  synthesised from the atom alone at the setup's composition and its lines measured; the reference spectrum is added to the canvas and the
   correction object appears under the atom as soon as that stage finishes; the NLTE
   corrections then stream into the table line by line. Every measurement setting is
   captured when Compute is pressed and carried through both stages, so reopening the modal
@@ -407,7 +409,7 @@ line include toggles curating the mean.
 ## Code owners
 
 - `app.py` builds the document: the `AppContext` (`context.py`) with its services, the
-  canvas, the tools, the Processes panel, `load_async`, `submit_workflow`, the recovery
+  canvas, the tools, the Processes panel, `load_async`, `submit_operation`, the recovery
   actions, `snapshot`/`restore_workspace` and the Saved workspaces bridge. `main.py` only calls
   `app.build()`; `app_hooks.py` holds the Bokeh server lifecycle hooks.
 - `jobs.py` owns the job table (`Job`, `JobTable`), the workflow references and the

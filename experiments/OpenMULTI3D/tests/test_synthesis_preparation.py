@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from tumult.synthesis import NativeRequest, workflows as synth
+from tumult.synthesis import AtmosphereGrid, SynthConfig, SynthRequest, workflows as synth
 
 
 @pytest.fixture
@@ -21,36 +21,42 @@ def calls(monkeypatch, tmp_path):
     return recorded
 
 
-def test_same_settings_for_single_and_batched_variants(calls):
-    prefs = {'R': 100000., 'max_threads': 1}
+def _request(tmp_path, **config):
+    return SynthRequest(config=SynthConfig(root=tmp_path, **config),
+                        atmosphere=AtmosphereGrid('grid'), star=(5750., 4.5, 0., 1.))
+
+
+def test_same_settings_for_single_and_batched_variants(calls, tmp_path):
+    request = _request(tmp_path, resolving_power=100000., threads=1)
     rv = {'mode': 'NLTE', 'abundances': 'Fe=0.2000', 'relative_abundances': True,
           'atoms': ['Fe.atom']}
-    target, grid = (5750.,4.5,0.,1.), {'folder': 'grid', 'format': 'Marcs'}
-    synth.compute(target,prefs,rv,5000.,5001.,grid=grid)
-    synth.compute_batch(target,prefs,[rv],5000.,5001.,grid=grid)
-    synth.compute_window_batch(target,prefs,[rv],[(5000.,5001.)],grid=grid)
+    synth.compute(request, rv, 5000., 5001.)
+    synth.compute_batch(request, [rv], 5000., 5001.)
+    synth.compute_window_batch(request, [rv], [(5000., 5001.)])
     assert calls[0]['settings'] == calls[1]['settings_list'][0] == calls[2]['settings_list'][0]
     for key in ('launch_kwargs','star','atmos_files','nlte','vmic_step'):
         assert calls[0][key] == calls[1][key] == calls[2][key]
 
 
-def test_batch_rejects_mixed_modes_and_negative_resolution(calls):
-    args = ((5750.,4.5,0.,1.), {'max_threads': 1})
+def test_batch_rejects_mixed_modes_and_negative_resolution(calls, tmp_path):
+    request = _request(tmp_path, threads=1)
     with pytest.raises(ValueError, match='mode'):
-        synth.compute_batch(*args,[{'mode':'LTE'},{'mode':'NLTE'}],grid={'folder':'grid'})
+        synth.compute_batch(request, [{'mode': 'LTE'}, {'mode': 'NLTE', 'atoms': ['a']}])
     with pytest.raises(ValueError, match='positive'):
-        synth.compute_window_batch(args[0],{'R':-1.},[{}],[(5000.,5001.)],grid={'folder':'grid'})
+        _request(tmp_path, resolving_power=-1.)
     assert not calls
 
 
-def test_request_owns_nested_inputs(calls):
-    prefs, rv = {'max_threads':1}, {'atoms':['Fe.atom'],'teff':1.}
-    request = NativeRequest(prefs,{'folder':'grid'},rv,(5750.,4.5,0.,1.))
+def test_request_owns_nested_inputs(calls, tmp_path):
+    preferences, rv = {'nx': 1}, {'atoms': ['Fe.atom'], 'mode': 'NLTE', 'teff': 1.}
+    request = _request(tmp_path, threads=1, preferences=preferences)
+    preferences['nx'] = 99
+    assert request.config.preferences == {'nx': 1}
+    resolved = synth.resolve_request(request.update(windows=[(5000., 5001.)]), rv)
     rv['atoms'].append('Ca.atom')
-    prefs['R'] = -1.
-    assert request.run_vals['atoms'] == ['Fe.atom']
-    assert request.run_vals['teff'] == 5750.
-    request.with_masks([{'fit': (5000., 5001.), 'synth': (5000., 5001.)}]).execute()
+    assert resolved.values['atoms'] == ['Fe.atom']
+    assert resolved.values['teff'] == 5750.
+    synth.execute_request(resolved)
     assert len(calls) == 1 and calls[0]['windows'] == ((5000., 5001.),)
 
 

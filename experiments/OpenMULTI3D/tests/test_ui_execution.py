@@ -11,6 +11,7 @@ import pytest
 from bokeh.models import ColumnDataSource, Range1d, TapTool
 
 from tumult import Spectrum
+from tumult.synthesis import AtmosphereGrid, SynthConfig, SynthRequest
 from tumult.synthesis.cancel import CancelToken
 
 
@@ -199,22 +200,23 @@ def test_ion_balance_setup_is_private_and_interpolation_only(monkeypatch):
     monkeypatch.setattr(ionbalance, "missing_prefs", lambda prefs: [])
 
     setup = ionbalance.BalanceSynthesis(grids)
-    context = setup.context("Fe")
+    grids.reference_grid = lambda: None
+    params = {"teff": 5750.0, "logg": 4.5, "feh": 0.0, "vmic": 1.0}
+    monkeypatch.setattr(ionbalance, "synth_config", lambda prefs: SynthConfig())
+    context = setup.context(params)
 
     assert setup.form.value("atmos_grid_id") == "stagger"
     assert [value for value, _ in setup.form.fields["atmos_grid_id"].options] == [
         "marcs", "stagger"]
-    # a NativeRequest, like synthsetup.context(): solve_ionisation_balance reads attributes,
-    # and the dict this used to return made the solve fail on request.prefs
-    assert context.grid["id"] == "stagger"
-    assert context.atmos_file is None
-    assert context.run_vals["atmos_mode"] == "interp"
-    assert context.run_vals["mode"] == "LTE"
-    assert context.run_vals["abundances"] == ""
+    # an interpolated grid, LTE and scaled-solar, starting at the entry point
+    assert isinstance(context.atmosphere, AtmosphereGrid)
+    assert context.atmosphere.folder == Path("/stagger")
+    assert context.departures is None and context.abundances is None
+    assert dict(context.star) == params
     # background lines are off unless switched on: the ladders hold the element's lines only
-    assert context.run_vals["only_elements"] == "Fe"
+    assert setup.background_lines is False
     setup.form.fields["background_lines"].value = True
-    assert "only_elements" not in setup.context("Fe").run_vals
+    assert setup.background_lines is True
 
 
 def test_synthesis_geometry_is_inferred_from_model_format(tmp_path):
@@ -389,26 +391,33 @@ def test_mask_tool_range_feeds_line_masks_and_the_synthesis_modal():
     assert "Fit" in modal.actions_html()
     # the job's windows keep each mask's fit and synth bounds apart; a fit synthesises the
     # span of the synth windows and compares inside the fit windows
-    assert [(w.fit, w.synth) for w in modal._job_windows()] == [
+    assert list(modal._job_windows()) == [
         ((5004.5, 5005.5), (5004.0, 5006.0)), ((5001.0, 5002.0), (5000.5, 5002.5))]
 
 
 # --- durable synthesis workflows on the document ---------------------------------------
-def _stub_request(root):
-    """A resolvable synthesis request whose execution the tests stub out."""
-    from tumult.synthesis.request import NativeRequest
-    return NativeRequest(prefs={"abund_file": None, "dispatch_cwd": str(root)},
-                        grid={"folder": ""},
-                        run_vals={"abundances": "", "relative_abundances": False,
-                                  "mode": "LTE"},
-                        target=(5750.0, 4.4, 0.0, 1.0),
-                        masks=({"fit": (5000., 5001.), "synth": (5000., 5001.)},))
+def _stub_request(root, windows=((5000., 5001.),), **preferences):
+    """A synthesis request whose operation the tests stub out."""
+    return SynthRequest(config=SynthConfig(root=root, preferences=preferences),
+                        atmosphere=AtmosphereGrid("grid"), star=(5750.0, 4.4, 0.0, 1.0),
+                        windows=windows)
 
 
-def _stub_result(resolved):
+def _stub_result(request):
     from tumult.synthesis.request import SynthesisResult
     xx = np.linspace(5000., 5001., 5)
-    return SynthesisResult((Spectrum(xx, np.ones_like(xx)),), (), resolved.request, {})
+    return SynthesisResult((Spectrum(xx, np.ones_like(xx)),), request.windows, request, {}, {})
+
+
+def _submit_synthesis(ctx, name, request, on_done, meta=None):
+    """Submit a synthesis through the document; its workflow handle, or ``None``."""
+    job = ctx.submit_operation(name, "synthesis.synthesize", request, on_done, meta=meta)
+    return None if job is None else job.handle
+
+
+def _stub_synthesize(monkeypatch, synthesize):
+    from tumult.synthesis import operations
+    monkeypatch.setattr(operations, "synthesize", synthesize)
 
 
 class _Ticks:
@@ -459,19 +468,18 @@ def _send_action(document, value):
 def test_overlapping_workflow_submissions_settle_on_the_document(tmp_path, monkeypatch):
     """Four durable syntheses submitted at once each run in the daemon, one after the
     other, and deliver their result on the document thread only, once each."""
-    from tumult.synthesis import workflows
 
     document, ctx = _build_document()
     ticks = _Ticks(document, monkeypatch)
     order = []
 
-    def execute(resolved, cancel_token=None):
-        order.append(resolved)
-        return _stub_result(resolved)
+    def execute(request, background_lines=True, cancel_token=None):
+        order.append(request)
+        return _stub_result(request)
 
-    monkeypatch.setattr(workflows, "execute_request", execute)
+    _stub_synthesize(monkeypatch, execute)
     delivered = []
-    handles = [ctx.submit_workflow(f"synth-{i}", _stub_request(tmp_path), delivered.append)
+    handles = [_submit_synthesis(ctx, f"synth-{i}", _stub_request(tmp_path), delivered.append)
                for i in range(4)]
     active = ctx.jobs.active
     assert len(active) == 4 and [job.handle for job in active] == handles
@@ -490,25 +498,23 @@ def test_queued_workflow_cancelled_from_the_processes_panel_settles(tmp_path, mo
     """A workflow queued behind a running one is cancelled from its Processes row: the
     daemon settles its record as cancelled without running it, and the row clears."""
     import threading
-    from tumult.synthesis import workflows
 
     document, ctx = _build_document()
     ticks = _Ticks(document, monkeypatch)
     started, release = threading.Event(), threading.Event()
 
-    def execute(resolved, cancel_token=None):
-        assert resolved.request.prefs.get("first"), "a cancelled workflow ran"
+    def execute(request, background_lines=True, cancel_token=None):
+        assert request.config.preferences.get("first"), "a cancelled workflow ran"
         started.set()
         assert release.wait(10)
-        return _stub_result(resolved)
+        return _stub_result(request)
 
-    monkeypatch.setattr(workflows, "execute_request", execute)
-    first = _stub_request(tmp_path)
-    first.prefs["first"] = True
-    ctx.submit_workflow("running", first, lambda r: None)
+    _stub_synthesize(monkeypatch, execute)
+    first = _stub_request(tmp_path, first=True)
+    _submit_synthesis(ctx, "running", first, lambda r: None)
     assert started.wait(10)
     delivered = []
-    handle = ctx.submit_workflow("queued", _stub_request(tmp_path), delivered.append)
+    handle = _submit_synthesis(ctx, "queued", _stub_request(tmp_path), delivered.append)
     job = ctx.jobs.find_workflow(handle.id)
     assert job.name == "queued" and handle.status == "queued"
     assert job.display_state() == "queued"
@@ -523,20 +529,19 @@ def test_queued_workflow_cancelled_from_the_processes_panel_settles(tmp_path, mo
 
 def test_closing_a_session_leaves_a_durable_workflow_running(tmp_path, monkeypatch):
     import threading
-    from tumult.synthesis import workflows
 
     document, ctx = _build_document()
     _Ticks(document, monkeypatch)
     started, release, tokens = threading.Event(), threading.Event(), []
 
-    def execute(resolved, cancel_token=None):
+    def execute(request, background_lines=True, cancel_token=None):
         tokens.append(cancel_token)
         started.set()
         assert release.wait(10)
-        return _stub_result(resolved)
+        return _stub_result(request)
 
-    monkeypatch.setattr(workflows, "execute_request", execute)
-    handle = ctx.submit_workflow("detached", _stub_request(tmp_path), lambda r: None)
+    _stub_synthesize(monkeypatch, execute)
+    handle = _submit_synthesis(ctx, "detached", _stub_request(tmp_path), lambda r: None)
     assert started.wait(10)
     for callback in list(document.session_destroyed_callbacks):
         callback(None)
@@ -546,6 +551,16 @@ def test_closing_a_session_leaves_a_durable_workflow_running(tmp_path, monkeypat
 
 
 # --- the correction tool's chained stages ----------------------------------------------
+def _stub_corrections_inputs(monkeypatch, tool, tmp_path):
+    """The correction tool's request without windows, a reference grid, and neither a
+    preflight nor a quadrature preparation, which need files on disk."""
+    from tumult.departures import DepartureRequest
+    monkeypatch.setattr(tool.setup, "context", lambda: _stub_request(tmp_path, windows=()))
+    monkeypatch.setattr(tool.grids, "reference_grid", lambda: {"folder": str(tmp_path)})
+    monkeypatch.setattr(SynthRequest, "check", lambda self: self)
+    monkeypatch.setattr(DepartureRequest, "prepare", lambda self, request: (None, None))
+
+
 def _correction_tool(ctx, monkeypatch, tmp_path):
     """The document's correction tool with its modal inputs and result rendering stubbed.
     The stages are patched where the task runs them (``tumult.abundance``); the record
@@ -555,13 +570,12 @@ def _correction_tool(ctx, monkeypatch, tmp_path):
 
     tool = ctx.tools._tools["abundcorr"]
     tool._pending_atom = SimpleNamespace(symbol="Mg", path=str(tmp_path / "mg.atom"))
-    monkeypatch.setattr(tool.setup, "context", lambda: _stub_request(tmp_path))
-    monkeypatch.setattr(tool.grids, "reference_grid", lambda: {"folder": str(tmp_path)})
+    _stub_corrections_inputs(monkeypatch, tool, tmp_path)
     for name in ("add_spectrum", "set_step", "select_result", "_on_corr_done"):
         monkeypatch.setattr(tool, name, lambda *a, **k: None)
     calls = {"reference": [], "corrections": []}
 
-    def measure(request, atom, *, ref_grid, opts=None, cancel_token=None):
+    def measure(request, atom, *, opts=None, quadrature=None, cancel_token=None):
         calls["reference"].append(opts)
         result = AbundanceResult(element="Mg", symbol="Mg", summary={}, uid="corr",
                                  atom_path=atom, profile=opts.profile)
@@ -759,11 +773,11 @@ def test_admission_failures_settle_as_failed_rows(monkeypatch, tmp_path):
     assert job.state == "failed" and "RuntimeError" in job.error
     assert not ctx.jobs.active
 
-    def refuse(request, **kwargs):
+    def refuse(operation, request, **kwargs):
         raise OSError("workflow root is read-only")
 
-    monkeypatch.setattr(app, "submit_synthesis", refuse)
-    assert ctx.submit_workflow("unsubmittable", _stub_request(tmp_path), lambda r: None) is None
+    monkeypatch.setattr(app, "submit_operation_record", refuse)
+    assert _submit_synthesis(ctx, "unsubmittable", _stub_request(tmp_path), lambda r: None) is None
     _, job = ctx.jobs
     assert job.state == "failed" and job.error == "OSError: workflow root is read-only"
     assert "workflow root is read-only" in _processes(document)
@@ -1386,17 +1400,16 @@ def _blocking_execute(monkeypatch):
     """Stub execution that waits for ``release`` and honours its token; returns the
     events and the tokens it saw."""
     import threading
-    from tumult.synthesis import workflows
     started, release, tokens = threading.Event(), threading.Event(), []
 
-    def execute(resolved, cancel_token=None):
+    def execute(request, background_lines=True, cancel_token=None):
         tokens.append(cancel_token)
         started.set()
         assert release.wait(10)
         cancel_token.check()
-        return _stub_result(resolved)
+        return _stub_result(request)
 
-    monkeypatch.setattr(workflows, "execute_request", execute)
+    _stub_synthesize(monkeypatch, execute)
     return started, release, tokens
 
 
@@ -1414,7 +1427,7 @@ def test_a_running_workflow_is_recovered_by_a_new_document_and_cancelled(tmp_pat
     started, release, tokens = _blocking_execute(monkeypatch)
     old_document, old_ctx, _ = _reconnecting_document(tmp_path, monkeypatch)
     old_delivered = []
-    handle = old_ctx.submit_workflow("first", _stub_request(tmp_path), old_delivered.append)
+    handle = _submit_synthesis(old_ctx, "first", _stub_request(tmp_path), old_delivered.append)
     assert started.wait(10)
     assert old_ctx.workflow_refs.to_list() == [
         {"id": handle.id, "folder": str(handle.folder), "name": "first", "imported": False}]
@@ -1454,7 +1467,7 @@ def test_a_running_correction_is_resumed_by_a_new_document_with_its_progress(tmp
     store_root = tmp_path
     stage1, release, seen = threading.Event(), threading.Event(), []
 
-    def measure(request, atom, *, ref_grid, opts=None, cancel_token=None):
+    def measure(request, atom, *, opts=None, quadrature=None, cancel_token=None):
         return AbundanceResult(element="Mg", symbol="Mg", summary={}, uid="corr-1",
                                atom_path=atom, profile=opts.profile, stage="lines")
 
@@ -1472,14 +1485,13 @@ def test_a_running_correction_is_resumed_by_a_new_document_with_its_progress(tmp
     old_document, old_ctx, _ = _reconnecting_document(store_root, monkeypatch)
     old_tool = old_ctx.tools._tools["abundcorr"]
     old_tool._pending_atom = SimpleNamespace(symbol="Mg", path=str(tmp_path / "mg.atom"))
-    monkeypatch.setattr(old_tool.setup, "context", lambda: _stub_request(tmp_path))
-    monkeypatch.setattr(old_tool.grids, "reference_grid", lambda: {"folder": str(tmp_path)})
+    _stub_corrections_inputs(monkeypatch, old_tool, tmp_path)
     for name in ("add_spectrum", "set_step", "select_result"):
         monkeypatch.setattr(old_tool, name, lambda *a, **k: None)
     old_tool.run()
     job, = old_ctx.jobs.active
     handle = job.handle
-    assert handle.kind.name == "nlte_corrections" and stage1.wait(10)
+    assert handle.kind.name == "abundance.nlte_corrections" and stage1.wait(10)
     _destroy(old_document)              # the old document never renders the outcome
 
     document, ctx, ticks = _reconnecting_document(store_root, monkeypatch)
@@ -1596,7 +1608,7 @@ def test_a_recovered_completion_is_imported_once_per_document(tmp_path, monkeypa
     started, release, _ = _blocking_execute(monkeypatch)
     old_document, old_ctx, _ = _reconnecting_document(tmp_path, monkeypatch)
     old_delivered = []
-    handle = old_ctx.submit_workflow("t5750", _stub_request(tmp_path), old_delivered.append,
+    handle = _submit_synthesis(old_ctx, "t5750", _stub_request(tmp_path), old_delivered.append,
                                      meta={"type": "synth", "params": [["RT mode", "LTE"]]})
     assert started.wait(10)
     _destroy(old_document)
@@ -1635,7 +1647,7 @@ def test_slot_references_reattach_a_running_workflow_after_a_load(tmp_path, monk
     old_document, old_ctx, old_ticks = _reconnecting_document(tmp_path, monkeypatch)
     path = _spectrum_file(tmp_path)
     old_ctx.canvas.add_object(load_file(path), name="obs", source=("file", str(path)))
-    handle = old_ctx.submit_workflow("saved", _stub_request(tmp_path), lambda r: None)
+    handle = _submit_synthesis(old_ctx, "saved", _stub_request(tmp_path), lambda r: None)
     assert started.wait(10)
     _session_action(old_document, "save with-workflow 1")
     slot = store.get_slot(1)
@@ -1677,7 +1689,8 @@ def _record_fixture(tmp_path, ident, state, **extra):
     run = tmp_path / "synth" / f"run-{ident}"
     record = {"version": 1, "id": ident, "state": state, "phase": state,
               "submitted": 1_700_000_000.0, "started": 1_700_000_001.0,
-              "request": {}, "runs": [str(run)], "result": None, "label": f"{state}-job",
+              "task": {"kind": "synthesis.synthesize", "args": {}}, "runs": [str(run)],
+              "result": None, "label": f"{state}-job",
               "meta": None, **extra}
     (folder / "workflow.json").write_text(json.dumps(record))
     return folder
@@ -1692,9 +1705,10 @@ def test_on_disk_records_are_shown_by_their_true_state_after_a_restart(tmp_path,
     interrupted = _record_fixture(tmp_path, "20260901T000000-interrupted", "running")
     _record_fixture(tmp_path, "20260901T000001-failed", "failed",
                     error="RuntimeError: dispatch exited with status 3", ended=1_700_000_100.0)
-    monkeypatch.setattr(workflows, "execute_request",
-                        lambda resolved, cancel_token=None: _stub_result(resolved))
-    finished = submission.submit(_stub_request(tmp_path), label="done-job")
+    _stub_synthesize(monkeypatch, lambda request, background_lines=True, cancel_token=None:
+                     _stub_result(request))
+    finished = submission.submit_operation("synthesis.synthesize", _stub_request(tmp_path),
+                                           label="done-job")
     finished.result(timeout=10)
 
     document, ctx, ticks = _reconnecting_document(tmp_path, monkeypatch)
@@ -1799,7 +1813,6 @@ def _synth_document(tmp_path, monkeypatch, run=None, grid_id="g1", executed=None
     ``tmp_path``. ``run`` overrides the ``synth_run`` section; ``executed`` collects the
     resolved request of every workflow the stubbed execution receives."""
     import store
-    from tumult.synthesis import workflows
     store.set_section("synthesis", {
         "dispatch_cwd": str(tmp_path), "synth_output_dir": "synth", "linelist": "",
         "abund_file": "", "absmet": "", "atmos_grids": [dict(_GRID)],
@@ -1808,10 +1821,10 @@ def _synth_document(tmp_path, monkeypatch, run=None, grid_id="g1", executed=None
                                     "mode": "LTE", "abundances": "", "atoms": [],
                                     "relative_abundances": True, **(run or {})})
     if executed is not None:
-        def execute(resolved, cancel_token=None):
-            executed.append(resolved.request)
-            return _stub_result(resolved)
-        monkeypatch.setattr(workflows, "execute_request", execute)
+        def execute(request, background_lines=True, cancel_token=None):
+            executed.append(request)
+            return _stub_result(request)
+        _stub_synthesize(monkeypatch, execute)
     document, ctx = _build_document()
     messages = []
     ctx.notify = lambda text, level="info", **_: messages.append(text)
@@ -1824,6 +1837,7 @@ def _departure_folder(tmp_path):
     (folder / "save" / "pop_Mg_meta.txt").write_text("")
     (folder / "params.nml").write_text(
         "&atmos_params\n atmos_file='one.mod' nx=1 ny=1 nz=6\n/\n"
+        "&atom_params\n atom_file='/atoms/mg.atom'\n/\n"
         "&composition_params\n abundances=''\n/\n")
     return folder
 
@@ -1840,10 +1854,9 @@ def _submit_modal(document, ctx):
 
 
 def test_free_range_synthesis_is_one_durable_window_workflow(tmp_path, monkeypatch):
-    """A free range is one MaskWindow with coinciding bounds, submitted as a detached
+    """A free range is one window, submitted as a detached
     durable workflow whose record carries the modal's name and Info-tab meta; its result
     reaches the canvas as a synth object."""
-    from tumult.synthesis import GridTarget
     executed = []
     document, ctx, messages = _synth_document(tmp_path, monkeypatch, executed=executed)
     ticks = _Ticks(document, monkeypatch)
@@ -1854,8 +1867,9 @@ def test_free_range_synthesis_is_one_durable_window_workflow(tmp_path, monkeypat
     assert job.detached and job.handle is not None and job.name == "t5750g4.4m+0.0v1.0"
     assert ticks.settle(lambda: not ctx.jobs.active)
     request, = executed
-    assert [(w.fit, w.synth) for w in request.masks] == [((5000., 5001.), (5000., 5001.))]
-    assert isinstance(request.selection, GridTarget) and request.target == (5750., 4.4, 0., 1.)
+    assert request.windows == ((5000., 5001.),)
+    assert isinstance(request.atmosphere, AtmosphereGrid)
+    assert request.star.tuple() == (5750., 4.4, 0., 1.)
     assert request.departures is None
     obj, = ctx.canvas.objects
     assert obj.name == "t5750g4.4m+0.0v1.0" and obj.source == ("synth", None)
@@ -1881,7 +1895,7 @@ def test_mask_set_synthesis_keeps_fit_and_synth_windows_apart(tmp_path, monkeypa
     assert _submit_modal(document, ctx) == 1
     assert ticks.settle(lambda: not ctx.jobs.active)
     request, = executed
-    assert [(w.fit, w.synth) for w in request.masks] == [((5004.5, 5005.5), (5004.0, 5006.0))]
+    assert request.windows == ((5004.0, 5006.0),)
     synth, = [o for o in ctx.canvas.objects if o.source[0] == "synth"]
     assert ["Line mask", mset.name] in synth.meta["params"]
 
@@ -1891,7 +1905,7 @@ def test_fixed_file_snapshot_and_nlte_requests_are_captured_from_the_setup(tmp_p
     """The same context() yields a picked 1D file, a 3D snapshot of the Individual
     pseudo-grid and an NLTE request whose saved departures is forwarded; each is
     submitted as a durable workflow and the field survives the record's JSON round trip."""
-    from tumult.synthesis import Atmosphere1D, Snapshot3D
+    from tumult.synthesis import Atmosphere, Snapshot, run_values
     one = tmp_path / "one.mod"
     one.write_text("")
     executed = []
@@ -1904,8 +1918,8 @@ def test_fixed_file_snapshot_and_nlte_requests_are_captured_from_the_setup(tmp_p
     assert _submit_modal(document, ctx) == 1
     assert ticks.settle(lambda: not ctx.jobs.active)
     picked = executed[-1]
-    assert isinstance(picked.selection, Atmosphere1D)
-    assert picked.selection.path == str(one) and picked.selection.format == "Marcs"
+    assert isinstance(picked.atmosphere, Atmosphere)
+    assert picked.atmosphere.path == one and picked.atmosphere.format == "Marcs"
 
     import store
     store.update_pref("synthesis", "atmos_grid_id", "__individual__")
@@ -1916,8 +1930,8 @@ def test_fixed_file_snapshot_and_nlte_requests_are_captured_from_the_setup(tmp_p
     assert _submit_modal(document, ctx) == 1
     assert ticks.settle(lambda: not ctx.jobs.active)
     cube = executed[-1]
-    assert isinstance(cube.selection, Snapshot3D) and cube.selection.format == "stagger"
-    assert cube.selection.resolution == (30, 30, 128) and cube.masks[0].synth == (5000., 5001.)
+    assert isinstance(cube.atmosphere, Snapshot) and cube.atmosphere.format == "stagger"
+    assert cube.atmosphere.resolution == (30, 30, 128) and cube.windows == ((5000., 5001.),)
 
     store.update_pref("synth_run", "atmos_individual_format", "Marcs")
     modal.setup.discard()
@@ -1928,7 +1942,7 @@ def test_fixed_file_snapshot_and_nlte_requests_are_captured_from_the_setup(tmp_p
     job, = ctx.jobs.active
     assert ticks.settle(lambda: not ctx.jobs.active)
     nlte = executed[-1]
-    assert nlte.run_vals["mode"] == "NLTE" and nlte.run_vals["atoms"] == ["/atoms/mg.atom"]
+    assert run_values(nlte)["mode"] == "NLTE" and run_values(nlte)["atoms"] == ["/atoms/mg.atom"]
     assert nlte.departures is not None and nlte.departures.species == ("Mg",)
     assert ["Saved departures", str(nlte.departures.folder)] in job.handle.meta["params"]
     assert ["Model atoms", "mg.atom"] in job.handle.meta["params"]
@@ -1940,16 +1954,16 @@ def test_unsupported_requests_are_refused_before_submission(tmp_path, monkeypatc
     """A fit of a 3D snapshot is refused with the reason and admits no job. A saved
     saved departures are not offered outside NLTE synthesis (the field is hidden for LTE and
     for fits), so a stored one is ignored there rather than refused."""
-    from tumult.synthesis import workflows
+    from tumult.synthesis import operations
     one = tmp_path / "one.mod"
     one.write_text("")
     document, ctx, messages = _synth_document(
         tmp_path, monkeypatch, grid_id="__individual__",
         run={"atmos_file": str(one), "departures": str(_departure_folder(tmp_path)),
              "atmos_individual_format": "stagger"})
-    monkeypatch.setattr(workflows, "execute_request",
+    monkeypatch.setattr(operations, "synthesize",
                         lambda *a, **k: pytest.fail("a refused request was executed"))
-    monkeypatch.setattr(workflows, "fit", lambda *a, **k: pytest.fail("a refused fit ran"))
+    monkeypatch.setattr(operations, "fit", lambda *a, **k: pytest.fail("a refused fit ran"))
     _Ticks(document, monkeypatch)
     modal = ctx.synth_modal
     x = np.arange(4999., 5002., .01)
@@ -1967,12 +1981,13 @@ def test_unsupported_requests_are_refused_before_submission(tmp_path, monkeypatc
 
 
 def test_fit_is_a_durable_workflow_built_from_the_same_request(tmp_path, monkeypatch):
-    """A fit collects the setup's request plus the job's windows into a FitRequest, runs
-    as a detached ``fit`` record (it survives the session closing, its record names the
+    """A fit gives the setup's request the job's windows and runs as a detached
+    ``synthesis.fit`` record (it survives the session closing, its record names the
     request and the cropped observation) and adds the raw best-fit spectrum with the
     broadening as its live convolution and the request's provenance."""
     import threading
-    from tumult.synthesis import FitRequest, GridTarget, workflows
+    from tumult.synthesis import operations
+    from tumult.synthesis.request import SpectrumFit
     document, ctx, messages = _synth_document(tmp_path, monkeypatch)
     ticks = _Ticks(document, monkeypatch)
     modal = ctx.synth_modal
@@ -1985,29 +2000,28 @@ def test_fit_is_a_durable_workflow_built_from_the_same_request(tmp_path, monkeyp
     modal.fit.flags["teff"] = True
     fitted, started, release = [], threading.Event(), threading.Event()
 
-    def fit(observation, request, cancel_token=None):
-        fitted.append((observation, request, cancel_token))
+    def fit(request, *, target, cancel_token=None, **kwargs):
+        fitted.append((target, request, kwargs, cancel_token))
         started.set()
         assert release.wait(10)
         cancel_token.check()
         xx = np.linspace(5000., 5001., 5)
-        return ({"teff": 5600., "Mg": 0.35, "vshift": 1.5}, Spectrum(xx, np.ones_like(xx)),
-                {"vshift": 1.5})
+        return SpectrumFit({"teff": 5600., "Mg": 0.35, "vshift": 1.5},
+                           Spectrum(xx, np.ones_like(xx)), {"vshift": 1.5}, request)
 
-    monkeypatch.setattr(workflows, "fit", fit)
+    monkeypatch.setattr(operations, "fit", fit)
     modal.open_range(5000.0, 5001.0, "fit")
     assert _submit_modal(document, ctx) == 1
     job, = ctx.jobs.active
     assert job.name == "fit·obs" and job.heavy and job.detached
-    assert job.handle is not None and job.handle.kind.name == "fit"
+    assert job.handle is not None and job.handle.kind.name == "synthesis.fit"
     assert started.wait(10)
-    observation, request, token = fitted[0]
-    assert isinstance(request, FitRequest)
-    assert request.fit_stellar == ("teff",) and request.abund_fits == {"Mg": 0.2}
-    assert request.fit_post == {"vshift": 0.0}
-    assert request.synth_span == (5000., 5001.) and request.fit_windows == ((5000., 5001.),)
-    assert isinstance(request.synthesis.selection, GridTarget)
-    assert request.synthesis.prefs["dispatch_cwd"] == str(tmp_path)
+    observation, request, kwargs, token = fitted[0]
+    assert kwargs["fit_stellar"] == ["teff"] and kwargs["abund_fits"] == {"Mg": 0.2}
+    assert kwargs["fit_post"] == {"vshift": 0.0}
+    assert request.windows == ((5000., 5001.),) and kwargs["fit_windows"] == [[5000., 5001.]]
+    assert isinstance(request.atmosphere, AtmosphereGrid)
+    assert request.config.root == tmp_path.resolve()
     ox, _ = observation.values                  # the record carries the fitted span only
     assert ox.min() >= 5000. and ox.max() <= 5001. and len(ox) > 50
     release.set()
@@ -2029,10 +2043,10 @@ def test_fit_is_a_durable_workflow_built_from_the_same_request(tmp_path, monkeyp
     assert started.wait(10)
     for callback in list(document.session_destroyed_callbacks):
         callback(None)
-    assert not fitted[1][2].cancelled
+    assert not fitted[1][3].cancelled
     release.set()
-    best, raw, post = job.handle.result(timeout=10)
-    assert best["teff"] == 5600. and post == {"vshift": 1.5}
+    result = job.handle.result(timeout=10)
+    assert result.best["teff"] == 5600. and result.post == {"vshift": 1.5}
 
 
 # --- the Processes panel's rows and the job details modal ----------------------------------
@@ -2069,9 +2083,9 @@ def test_panel_rows_name_the_kind_and_how_each_job_runs(monkeypatch):
     table.add(Job(3, "abund-synth:Fe", CancelToken(), None, submitted=now - 5,
                   state="failed", error="RuntimeError: no lines"))
     live = _Live([
-        {"job": "w1", "type": "workflow", "kind": "synthesis", "label": "Sun 3D NLTE",
+        {"job": "w1", "type": "workflow", "kind": "synthesis.synthesize", "label": "Sun 3D NLTE",
          "state": "running", "threads": 8, "started": now - 720, "folder": "/r/w1"},
-        {"job": "w2", "type": "workflow", "kind": "ionisation_balance", "label": "ionbal:Ti",
+        {"job": "w2", "type": "workflow", "kind": "sparams.ionbalance", "label": "ionbal:Ti",
          "state": "queued", "folder": "/r/w2"},
         {"job": "run-abc", "type": "external", "kind": "dispatch", "label": "dep_fe",
          "state": "running", "threads": 3, "started": now - 20, "folder": "/r/dep_fe"}],
@@ -2102,11 +2116,11 @@ def test_the_details_modal_shows_a_workflow_record(tmp_path, monkeypatch):
     run.with_suffix(".log").write_text("".join(f"line {i}\n" for i in range(40)))
     (folder / "workflow.json").write_text(json.dumps({
         "id": "w1", "state": "queued", "phase": "queued", "submitted": 1_700_000_000.0,
-        "label": "t5750", "runs": [str(run)], "task": {"kind": "synthesis"}, "request": {},
+        "label": "t5750", "runs": [str(run)], "task": {"kind": "synthesis.synthesize", "args": {}},
         "meta": {"type": "synth", "params": [["RT mode", "LTE"]]},
         "driver": {"kind": "daemon", "host": None, "pid": None}}))
     handle = submission.open_workflow(folder)
-    body = processes.workflow_details_html(handle, {"threads": 0, "kind": "synthesis"})
+    body = processes.workflow_details_html(handle, {"threads": 0, "kind": "synthesis.synthesize"})
     assert "Synthesis · t5750" in body and "RT mode" in body and "LTE" in body
     assert "daemon" in body and "2023-11-14" in body
     assert "line 39" in body and "line 19" not in body       # the tail only

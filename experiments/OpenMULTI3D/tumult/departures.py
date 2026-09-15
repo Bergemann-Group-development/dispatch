@@ -223,20 +223,36 @@ class DepartureGrid:
 
 @dataclass(frozen=True)
 class DepartureRequest:
-    """Equilibrium departures of ``atom``, solved for each request that consumes them.
+    """Equilibrium departures of the model ``atoms``, solved for each request that consumes
+    them.
 
-    ``line_grid`` prepares the atom's bound-bound wavelength quadrature from its opacity
-    profiles on the request's atmosphere (:func:`tumult.line_quadrature.prepare_line_quadrature`);
-    off, the atom's own ``nq``/``qmax``/``q0`` quadrature is used. ``quadrature`` holds
+    ``line_grid`` prepares the bound-bound wavelength quadrature from the atom's opacity
+    profiles on the request's atmosphere
+    (:func:`tumult.line_quadrature.prepare_line_quadrature`), which is built for one atom;
+    off, every atom keeps its own ``nq``/``qmax``/``q0`` quadrature. ``quadrature`` holds
     further generator settings (``R``, ``tol_dex``, ...).
     """
-    atom: Path
+    atoms: tuple
     line_grid: bool = True
     quadrature: dict = field(default_factory=dict)
 
     def __post_init__(self):
-        object.__setattr__(self, "atom", Path(self.atom).expanduser())
+        atoms = (self.atoms,) if isinstance(self.atoms, (str, Path)) else tuple(self.atoms)
+        if not atoms:
+            raise ValueError("Requested departures need at least one model atom.")
+        object.__setattr__(self, "atoms", tuple(Path(atom).expanduser() for atom in atoms))
         object.__setattr__(self, "quadrature", dict(self.quadrature or {}))
+        if self.line_grid and len(atoms) > 1:
+            raise ValueError("A prepared line quadrature is built for one model atom; "
+                             "request several atoms with line_grid=False.")
+
+    @property
+    def atom(self):
+        """The model atom of a single-atom request (a quadrature preparation or an NLTE
+        correction needs exactly one)."""
+        if len(self.atoms) != 1:
+            raise ValueError(f"This needs one model atom; {len(self.atoms)} were requested.")
+        return self.atoms[0]
 
     def prepare(self, request):
         """The prepared quadrature for ``request`` and the atmosphere it was prepared on.
@@ -260,13 +276,18 @@ class DepartureRequest:
         return prepared, atmosphere
 
     def run_values(self, request, prepared=None):
-        """The native run values selecting this atom, on ``prepared`` when given."""
-        if prepared is None:
-            return {"atoms": [str(request.config.resolve(self.atom))]}
-        return {"atoms": [prepared.atom_file], "line_grid": prepared.grid_file}
+        """The native run values selecting these atoms, on ``prepared`` when given.
+
+        A request for a prepared quadrature has no run values until it is prepared."""
+        if prepared is not None:
+            return {"atoms": [prepared.atom_file], "line_grid": prepared.grid_file}
+        if self.line_grid:
+            raise ValueError("The line quadrature of the requested departures is not "
+                             "prepared yet (DepartureRequest.prepare).")
+        return {"atoms": [str(request.config.resolve(atom)) for atom in self.atoms]}
 
     def to_dict(self):
-        return {"atom": str(self.atom), "line_grid": self.line_grid,
+        return {"atoms": [str(atom) for atom in self.atoms], "line_grid": self.line_grid,
                 "quadrature": dict(self.quadrature)}
 
     @classmethod
@@ -307,20 +328,22 @@ def load(path):
 
 
 def request(request, *, atom, line_grid=True, **quadrature):
-    """Describe equilibrium departures of ``atom`` for consumers to solve on demand.
+    """Describe equilibrium departures of ``atom`` (one model atom, or several with
+    ``line_grid=False``) for consumers to solve on demand.
 
-    ``request`` only validates the atom against the configuration; the returned
+    ``request`` only validates the atoms against the configuration; the returned
     :class:`DepartureRequest` does not keep it, so attaching it to an updated request
     solves at that request's star and abundances.
     """
     return _describe(request.config, atom, line_grid, quadrature)
 
 
-def _describe(config, atom, line_grid, quadrature):
-    path = config.resolve(atom)
-    if not path.is_file():
-        raise FileNotFoundError(f"Model atom not found: {path}")
-    return DepartureRequest(atom, line_grid, quadrature)
+def _describe(config, atoms, line_grid, quadrature):
+    spec = DepartureRequest(atoms, line_grid, quadrature)
+    for atom in spec.atoms:
+        if not config.resolve(atom).is_file():
+            raise FileNotFoundError(f"Model atom not found: {config.resolve(atom)}")
+    return spec
 
 
 def _status(folder, started):
@@ -338,42 +361,39 @@ def solve(request, *, atom, line_grid=True, cancel_token=None, **quadrature):
     cache under ``_departure_grids``).
     """
     from .synthesis.inputs import AtmosphereGrid
-    from .synthesis.operations import native_request
 
     if request.departures is not None:
         raise ValueError("The request already carries departures; clear them to solve anew.")
     request.check()
     spec = _describe(request.config, atom, line_grid, quadrature)
     prepared, prep_atmosphere = spec.prepare(request)
+    request = request.update(windows=())
     run_values = {"mode": "NLTE", "only_atom": True, **spec.run_values(request, prepared)}
-    native = native_request(request.update(windows=()), **run_values)
     record = dict(atom=str(request.config.resolve(spec.atom)),
                   quadrature=prepared.to_dict() if prepared else {},
                   preparation_atmosphere=str(prep_atmosphere or ""))
     started = time.time() - 1.0
     if isinstance(request.atmosphere, AtmosphereGrid):
-        return _solve_grid(request, native, record, started, cancel_token)
+        return _solve_grid(request, run_values, record, started, cancel_token)
 
     from .synthesis.workflows import solve_request_departures
-    solved = solve_request_departures(native, cancel_token=cancel_token)
+    solved = solve_request_departures(request, run_values, cancel_token=cancel_token)
     solved = replace(solved, star=dict(request.star), status=_status(solved.folder, started),
                      **record)
     solved.save()
     return solved
 
 
-def _solve_grid(request, native, record, started, cancel_token):
-    from .auxfuncs import update_dict
+def _solve_grid(request, run_values, record, started, cancel_token):
     from .synthesis.api import _dep_bucket, _dep_jobs, _save_provenance
     from .synthesis.atmos_select import select_nodes
     from .synthesis.executor import _run_batch
     from .synthesis.workflows import _prepare, resolve_request
 
-    resolved = resolve_request(native)
-    common, settings_list, _R = _prepare(native.target, native.prefs, [native.run_vals],
-                                         native.grid, None, None, set_spectrum=False)
-    settings = update_dict(settings_list[0], copy.deepcopy(native.expert_settings))
-    nodes, _vmic = select_nodes(native.target, common["atmos_files"],
+    resolved = resolve_request(request, run_values)
+    common, settings_list, _R = _prepare(request, [run_values], set_spectrum=False)
+    settings = settings_list[0]
+    nodes, _vmic = select_nodes(common["star"], common["atmos_files"],
                                 method=common["method"], vmic_step=common["vmic_step"],
                                 absmet_files=common["absmet_files"])
     jobs = _dep_jobs(settings, nodes, _dep_bucket(Path(common["top"]), settings))
@@ -395,7 +415,8 @@ def _solve_grid(request, native, record, started, cancel_token):
             status=_status(folder, started), **record)
         node.save()
         solved.append((key, node))
-    grid = DepartureGrid(star=dict(request.star), grid=native.grid, nodes=tuple(solved),
+    grid = DepartureGrid(star=dict(request.star),
+                         grid=request.atmosphere.record(request.config), nodes=tuple(solved),
                          **record)
     digest = hashlib.sha1(json.dumps([grid.star, sorted(grid.folders().values())],
                                     sort_keys=True).encode()).hexdigest()[:12]

@@ -137,9 +137,12 @@ def test_prepare_builds_snapshot_grid_settings(grid, tmp_path):
     from tumult.synthesis import workflows
     record = {'folder': str(grid), 'format': 'Stagger2', 'snapshots': '1',
               'pattern': workflows.STAGGER_PATTERN, 'resolution': [40, 40, 120]}
-    prefs = {'dispatch_cwd': str(tmp_path), 'synth_output_dir': 'synth', 'R': 50000}
-    common, settings, _ = workflows._prepare((5250., 4.5, 0.0, 1.0), prefs, [{'mode': 'LTE'}],
-                                             record, None, None)
+    from tumult.synthesis import AtmosphereGrid, SynthConfig, SynthRequest
+    atmosphere = AtmosphereGrid(grid, pattern=workflows.STAGGER_PATTERN, format='Stagger2',
+                                snapshots='1', resolution=(40, 40, 120))
+    request = SynthRequest(config=SynthConfig(root=tmp_path, resolving_power=50000),
+                           atmosphere=atmosphere, star=(5250., 4.5, 0.0, 1.0))
+    common, settings, _ = workflows._prepare(request, [{}])
     assert snapshot_grid.is_snapshot_node(common['atmos_files'])
     assert settings[0]['atmos_params'] == {'atmos_format': 'Stagger2',
                                            'nx': 40, 'ny': 40, 'nz': 120}

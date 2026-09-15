@@ -37,12 +37,12 @@ ROOT, PORT, CTRL = Path(sys.argv[1]), int(sys.argv[2]), Path(sys.argv[3])
 sys.path[:0] = [str(ROOT), str(ROOT / "TumultStudio2")]
 import numpy as np
 from tumult import Spectrum
-from tumult.synthesis import workflows
+from tumult.synthesis import operations
 from tumult.synthesis.request import SynthesisResult
 calls = itertools.count()
 
 
-def execute(resolved, cancel_token=None):
+def synthesize(request, background_lines=True, cancel_token=None):
     step = json.loads((CTRL / "plan.json").read_text())[next(calls)]
     deadline = time.monotonic() + 60
     while step.get("wait") and not (CTRL / step["wait"]).exists():
@@ -53,10 +53,10 @@ def execute(resolved, cancel_token=None):
     if step.get("fail"):
         raise RuntimeError(step["fail"])
     xx = np.linspace(5000., 5001., 5)
-    return SynthesisResult((Spectrum(xx, np.ones_like(xx)),), (), resolved.request, {})
+    return SynthesisResult((Spectrum(xx, np.ones_like(xx)),), request.windows, request, {}, {})
 
 
-workflows.execute_request = execute
+operations.synthesize = synthesize
 import threading
 from tumult.synthesis import daemon
 worker = daemon.Daemon(exit_when_idle=False)       # the stub runs where the daemon does

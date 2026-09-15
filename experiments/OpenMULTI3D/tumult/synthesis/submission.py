@@ -1,9 +1,9 @@
 """Durable asynchronous submission of the same calculations used synchronously.
 
-A workflow is recorded in ``<root>/_workflows/<id>/workflow.json``: a synthesis
-(:func:`submit`, the record's ``request``) or one of the tool calculations of
-:mod:`tumult.synthesis.tasks` (:func:`submit_task`, the record's ``task`` block). The
-submitter writes the record ``queued`` and hands it to one of two drivers:
+A workflow is recorded in ``<root>/_workflows/<id>/workflow.json``: one public operation
+of :mod:`tumult.synthesis.tasks` on a request (:func:`submit_operation`, the record's
+``task`` block). The submitter writes the record ``queued`` and hands it to one of two
+drivers:
 
 * ``daemon`` (the default): the workflow daemon of this user and host
   (:mod:`tumult.synthesis.daemon`), started on demand. It runs workflows one at a time
@@ -14,8 +14,8 @@ submitter writes the record ``queued`` and hands it to one of two drivers:
   (``scancel``); a handle polls the record.
 
 The driver settles the record, and every update takes the folder's file lock. Scripts
-that want no daemon call :func:`run` (or ``compute_spectrum``) instead: blocking,
-in-process and not recorded as a workflow.
+that want no daemon call the operation itself instead: blocking, in-process and not
+recorded as a workflow.
 """
 from __future__ import annotations
 
@@ -31,7 +31,6 @@ import threading
 import time
 import uuid
 
-from .request import ResolvedSynthRequest, NativeRequest
 from .runtime import observe_runs, workflow_scope
 from .cancel import CancelledError
 from . import tasks
@@ -530,66 +529,41 @@ def _submit_record(base, record, detach, slurm_script):
 def _new_record(label, meta):
     identity = f'{time.strftime("%Y%m%dT%H%M%S")}-{uuid.uuid4().hex[:10]}'
     return {'version': 1, 'id': identity, 'state': 'queued', 'phase': 'queued',
-            'submitted': time.time(), 'request': None, 'task': None, 'runs': [],
+            'submitted': time.time(), 'task': None, 'runs': [],
             'result': None, 'label': label, 'meta': deepcopy(meta), 'driver': None}
 
 
-def submit(request, *, root=None, label=None, meta=None, detach=None, slurm_script=None):
-    """Copy, resolve and record ``request``; return immediately with a durable handle.
+def submit_operation(operation, request, *, label=None, meta=None, root=None, detach=None,
+                     slurm_script=None, **kwargs):
+    """Record a public operation (``"synthesis.synthesize"``, ``"synthesis.fit"``,
+    ``"departures.solve"``, ``"abundance.fit"``, ``"abundance.nlte_corrections"`` or
+    ``"sparams.ionbalance"``) on ``request`` with its keyword arguments, and return a
+    durable handle at once.
 
-    ``label`` and ``meta`` are the submitter's display name and annotations (JSON), kept
-    in the record so a later process can list and present the workflow as it was
-    submitted. ``detach`` picks the driver: ``'daemon'`` (the default) hands it to this
-    host's workflow daemon, ``'slurm'`` submits the driver through
-    ``sbatch slurm_script <folder>``. Absent an argument, ``request.prefs`` may name the
-    driver as ``workflow_runner`` (``local`` means the daemon) and the script as
-    ``slurm_script``. The daemon's CPU budget is the Bokeh server's Engine preference, or
-    ``cpu_count - 1`` while no server configured it."""
-    from .workflows import resolve_request
-    resolved = request if isinstance(request, ResolvedSynthRequest) else resolve_request(request)
-    # JSON round-trip proves that no mutable masks/settings remain shared with the caller.
-    owned = NativeRequest.from_dict(resolved.request.to_dict())
-    resolved = resolve_request(owned)
-    detach, slurm_script = _driver_choice(owned.prefs, detach, slurm_script)
-    record = _new_record(label, meta)
-    record['request'] = resolved.to_dict()
-    record['task'] = {'kind': tasks.Synthesis.name}
-    base = Path(root or resolved.output_root) / '_workflows'
-    return _submit_record(base, record, detach, slurm_script)
-
-
-def submit_task(kind, args, *, prefs, root=None, label=None, meta=None, detach=None,
-                slurm_script=None):
-    """Record a :mod:`tasks` calculation of ``kind`` (its name) with JSON ``args`` and
-    return immediately with a durable handle, the way :func:`submit` does for a
-    synthesis. ``prefs`` are the synthesis preferences the driver choice and, absent
-    ``root``, the record's root (``<dispatch_cwd>/<synth_output_dir>``) are read from.
-    The arguments are decoded here first, so an unreadable argument fails the caller
-    rather than the driver."""
+    The driver runs the same function a script calls, with cancellation and progress;
+    ``handle.result()`` returns what that call returns. ``label`` and ``meta`` are the
+    submitter's display name (the operation by default) and annotations (JSON), kept in
+    the record so a later process can list and present the workflow as it was submitted.
+    The record lives under ``root``, by default the request's cache
+    (``<config.root>/<config.cache>``). ``detach`` picks the driver: ``'daemon'`` (the
+    default) hands it to this host's workflow daemon, ``'slurm'`` submits the driver
+    through ``sbatch slurm_script <folder>``; absent an argument, the configuration's
+    preferences may name the driver as ``workflow_runner`` (``local`` means the daemon)
+    and the script as ``slurm_script``. The arguments are decoded here first, so an
+    unreadable argument fails the caller rather than the driver."""
     from .workflows import output_root
-    task = tasks.KINDS[kind]
-    args = json.loads(json.dumps(args, default=tasks._json_default))   # owned, JSON-clean
+    task = tasks.KINDS.get(operation)
+    if task is None:
+        raise ValueError(f'unknown operation {operation!r}; one of {sorted(tasks.KINDS)}')
+    prefs = request.config.to_prefs()
+    args = json.loads(json.dumps(tasks.Operation.encode_args(request, kwargs),
+                                 default=tasks._json_default))   # owned, JSON-clean
     task.decode(args)
     detach, slurm_script = _driver_choice(prefs, detach, slurm_script)
-    record = _new_record(label, meta)
+    record = _new_record(label or operation, meta)
     record['task'] = {'kind': task.name, 'args': args}
     base = Path(root or output_root(prefs)) / '_workflows'
     return _submit_record(base, record, detach, slurm_script)
-
-
-def submit_operation(operation, request, *, label=None, meta=None, detach=None,
-                     slurm_script=None, **kwargs):
-    """Record a public operation (``"synthesis.synthesize"``, ``"departures.solve"``,
-    ``"abundance.fit"``, ``"abundance.nlte_corrections"`` or ``"sparams.ionbalance"``) on
-    ``request`` with its keyword arguments, and return a durable handle.
-
-    The driver runs the same function a script calls, with cancellation and progress;
-    ``handle.result()`` returns what that call returns. See :func:`submit_task` for the
-    driver choice."""
-    args = tasks.Operation.encode_args(operation, request, kwargs)
-    return submit_task(tasks.Operation.name, args, prefs=request.config.to_prefs(),
-                       label=label or operation, meta=meta, detach=detach,
-                       slurm_script=slurm_script)
 
 
 def open_workflow(path, *, root=None):
@@ -609,9 +583,3 @@ def discover_workflows(root, limit=None):
     folders.sort(key=lambda path: (_read(path) or {}).get('submitted', 0), reverse=True)
     handles = [WorkflowHandle(path) for path in folders]
     return handles[:limit] if limit else handles
-
-
-def run(request, *, cancel_token=None):
-    """Blocking, in-process counterpart to :func:`submit`; no record, no daemon."""
-    from .workflows import execute_request
-    return execute_request(request, cancel_token=cancel_token)

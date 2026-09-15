@@ -14,7 +14,7 @@ from draft import CalculationDraft
 from toolmanager import ToolManager
 from tumult import Spectrum
 from tumult.linelist import load_master
-from tumult.synthesis import Atmosphere1D, NativeRequest, MaskWindow
+from tumult.synthesis import Atmosphere, SynthConfig, SynthRequest
 from tumult.synthesis import workflows
 
 
@@ -64,15 +64,15 @@ def test_line_list_folder_loads_atomic_files_and_hydrogen(tmp_path):
 
 
 def test_atom_only_request_skips_background_preparation(tmp_path, monkeypatch):
-    request = NativeRequest({'dispatch_cwd': str(tmp_path), 'linelist': 'background',
-                            'linelist_crop_aa': 5},
-        run_vals={'mode': 'NLTE', 'atoms': ['Fe.atom'], 'only_atom': True},
-        selection=Atmosphere1D('science.mod', (5750, 4.5, 0, 1)),
-        masks=[MaskWindow((5000, 5001), (5000, 5001))])
-    resolved = request.resolve()
+    request = SynthRequest(
+        config=SynthConfig(root=tmp_path, linelist='background', linelist_skirt=5),
+        atmosphere=Atmosphere('science.mod'), star=(5750, 4.5, 0, 1), windows=[(5000, 5001)])
+    run_values = {'mode': 'NLTE', 'atoms': ['Fe.atom'], 'only_atom': True}
+    resolved = workflows.resolve_request(request, run_values)
     assert resolved.settings['linelist_params'] == {'linelist_file': [''], 'linelist_folder': ''}
     assert workflows._prepare_artifact(resolved) is None
-    assert NativeRequest.from_json(request.to_json()).run_vals['only_atom'] is True
+    reopened = type(resolved).from_json(resolved.to_json())
+    assert reopened.values['only_atom'] is True
 
 
 def test_async_add_preserves_selection_and_wavelength_view():

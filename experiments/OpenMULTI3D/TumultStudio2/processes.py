@@ -25,10 +25,11 @@ from jobs import CANCELLING, FAILED, FINISHED, QUEUED, RUNNING, ExternalRun
 SHOW_AFTER_S = 0.5
 LOG_TAIL_LINES = 20
 
-# the kind of a job, from its task kind or the prefix of its internal name
+# the kind of a job, from its operation or the prefix of its internal name
 KIND_LABELS = {
-    "synthesis": "Synthesis", "fit": "Fit", "nlte_corrections": "NLTE corrections",
-    "abundance": "Abundance synthesis", "ionisation_balance": "Ionisation balance",
+    "synthesis.synthesize": "Synthesis", "synthesis.fit": "Fit",
+    "abundance.nlte_corrections": "NLTE corrections", "abundance.fit": "Abundance synthesis",
+    "sparams.ionbalance": "Ionisation balance", "departures.solve": "Departure solve",
     "dispatch": "Dispatch run",
 }
 NAME_PREFIXES = {

@@ -5,13 +5,15 @@ action opens this tool's modal with the atom fixed. The modal holds the NLTE tar
 atmosphere and stellar parameters (a :class:`synthsetup.SynthSetup` cluster), the measurement
 settings, and states which registered grid is flagged as the **1D LTE reference** (set in
 Preferences → Atmosphere grids). Its one **Compute** button runs both stages as one durable
-``nlte_corrections`` workflow (:mod:`tumult.synthesis.tasks`, through
-``ResultJobs.submit_task``), which outlives the tab: the stage-1 result arrives as the
-record's first progress snapshot, every correction round as the next ones.
+``abundance.nlte_corrections`` workflow (:mod:`tumult.synthesis.tasks`, through
+``ResultJobs.submit_operation``) on the setup's request with the atom as requested
+departures and the flagged grid as ``reference_atmosphere``. It outlives the tab: the
+stage-1 result arrives as the record's first progress snapshot, every correction round as
+the next ones.
 
 1. **Reference.** :func:`tumult.abundance.measure_reference_lines` interpolates the flagged
-   1D LTE grid at the target parameters, synthesises the reference **straight from the model
-   atom** (no line list) and measures every candidate line from that run's
+   1D LTE grid at the target parameters and composition, synthesises the reference
+   **straight from the model atom** (no line list) and measures every candidate line from that run's
    ``linelist_out.txt``. By default (*Line grid from opacity profiles*) the bound-bound
    wavelength grid and the per-line windows are generated first from the atom's line
    opacities on the reference model nearest the target (:mod:`tumult.line_quadrature`);
@@ -28,10 +30,10 @@ record's first progress snapshot, every correction round as the next ones.
    growth for all lines on the picked atmosphere: each rung is a full NLTE solve at an
    abundance offset on the preferences' ``abund_step`` lattice within the modal's **CoG
    limit**, synthesising the atom's whole range, and the rungs are added round by round
-   until every line's inverted correction is bracketed by two computed rungs. The
-   reference sits at ``[X/Fe]=0``, so the inverted abundance **is** the correction
-   ΔA = A(NLTE) − A(LTE). Rows stream into the table via the ``progress`` hook after every
-   round.
+   until every line's inverted correction is bracketed by two computed rungs. The rungs
+   are offsets from the element's abundance in the setup's composition, the reference's
+   own, so the inverted offset **is** the correction ΔA = A(NLTE) − A(LTE). Rows stream
+   into the table via the ``progress`` hook after every round.
 
 The result view has two steps: **Lines** (the reference spectrum, with the selected line's
 curve-of-growth inversion beside it, over the per-line table) and **Scatter** (the
@@ -43,9 +45,6 @@ follows the edit without another solve. Both stages are headless: what is left h
 modal, the submission and the rendering.
 """
 from __future__ import annotations
-
-from copy import deepcopy
-from dataclasses import asdict
 
 import html
 import logging
@@ -59,6 +58,8 @@ from tumult import abundance as ab
 from tumult.utils import pchip_mono
 import store
 from abundwizard import PROFILES, AbundanceWizard
+from synthprefs import atmosphere_grid
+from tumult.departures import DepartureRequest
 from canvas import ACCENT, SYNTH_FIT, style_dark
 from controls import Field, Form
 from ew import profile_options
@@ -309,16 +310,9 @@ class AbundCorrTool(AbundanceWizard):
         distinguishes them: the target stellar parameters and the atmosphere format."""
         if not np.isfinite(res.teff):
             return res.name
-        fmt = self._atmos_format(res.synthesis)
+        fmt = res.request.atmosphere.format if res.request is not None else ""
         label = f"{res.teff:.0f} K · {res.logg:.2f} · {res.feh:+.2f} · ξ {res.vmic:.1f}"
         return f"{label} · {fmt}" if fmt else label
-
-    @staticmethod
-    def _atmos_format(synthesis):
-        """The atmosphere format of a serialised request (``asdict(NativeRequest)``): a
-        picked file or snapshot carries its own, an interpolated grid its registry entry."""
-        sel = (synthesis or {}).get("selection") or {}
-        return str(sel.get("format") or (sel.get("grid") or {}).get("format") or "")
 
     def _jump_decor(self, res, ln):
         self._jumped = next((i for i, l in enumerate(res.lines) if l is ln), None)
@@ -444,17 +438,25 @@ class AbundCorrTool(AbundanceWizard):
             self.notify("The trapezoidal width needs the line grid for its windows; "
                         "switch it on or pick a fitted profile.")
             return
+        try:
+            request = request.update(
+                departures=DepartureRequest((obj.path,), line_grid=opts.line_grid))
+        except ValueError as exc:
+            self.notify(f"Cannot compute corrections: {exc}")
+            return
         self.draft.commit()
         pulse(self._modal, "close")
         self.notify(f"Computing the 1D LTE reference for {obj.symbol}…")
         # one durable record runs both stages; the stage-1 result arrives as its first
         # progress snapshot, every correction round as the next ones
-        args = {"request": request.to_dict(), "atom": obj.path, "ref_grid": deepcopy(ref_grid),
-                "opts": asdict(opts)}
-        self.jobs.submit_task(f"corr:{obj.symbol}", self.task_kind, args, self._on_task_done,
-                              prefs=request.prefs, on_progress=self._on_task_progress)
+        kwargs = {"reference_atmosphere": atmosphere_grid(ref_grid),
+                  "background_lines": opts.linelist, "profile": opts.profile,
+                  "ew_min": opts.ew_min, "limit": opts.limit}
+        self.jobs.submit_operation(f"corr:{obj.symbol}", self.task_kind, request,
+                                   self._on_task_done, kwargs=kwargs,
+                                   on_progress=self._on_task_progress)
 
-    task_kind = "nlte_corrections"
+    task_kind = "abundance.nlte_corrections"
 
     def _on_task_progress(self, snapshot):
         """A stage-1 result (the first snapshot of a run) is listed and its reference

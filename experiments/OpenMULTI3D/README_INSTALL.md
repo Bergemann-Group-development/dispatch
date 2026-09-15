@@ -219,20 +219,19 @@ names the snapshots representing each node and, optionally, the mesh the cubes a
 sampled onto:
 
 ```python
-from tumult.synthesis import STAGGER_PATTERN
+from tumult.synthesis import STAGGER_PATTERN, AtmosphereGrid
 
-stagger = {"folder": "~/Atmospheres/Stagger/dwarfs", "format": "Stagger2",
-           "pattern": STAGGER_PATTERN,
-           "snapshots": "3",             # three per node in Halton order; "all"; or "8,31"
-           "resolution": [80, 80, 240]}  # blank: the nx/ny/nz preferences
-marcs = {"folder": "input/atmos/MARCS", "format": "Marcs"}
-selection = GridTarget(stagger, (5250, 4.5, 0.0, 1.0), preparation_grid=marcs)
+stagger = AtmosphereGrid("~/Atmospheres/Stagger/dwarfs", format="Stagger2",
+                         pattern=STAGGER_PATTERN,
+                         snapshots="3",             # three per node in Halton order; "all"; or "8,31"
+                         resolution=(80, 80, 240),  # None: the nx/ny/nz preferences
+                         preparation=AtmosphereGrid("input/atmos/MARCS"))
 ```
 
 Every selected snapshot becomes one 3D run; a node's spectrum is the mean over its snapshots
 and the nodes combine with the usual interpolation weights. When several subfolders map to
 one node, the lexically last wins (`t45g40m00_new` over `t45g40m00`). HOP line-list
-preparation still needs 1D structures, hence the MARCS `preparation_grid`. Snapshot nodes
+preparation still needs 1D structures, hence the MARCS `preparation` grid. Snapshot nodes
 carry no vmic.
 
 For a single 3D calculation use `Snapshot(path, format, resolution)` in a `SynthRequest`.

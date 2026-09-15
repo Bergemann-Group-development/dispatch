@@ -15,7 +15,7 @@ from tumult import sparams as sp
 from tumult.abundance import LineResult
 from tumult.linemask import LineMask
 from tumult.spectrum import Spectrum
-from tumult.synthesis import NativeRequest
+from tumult.synthesis import AtmosphereGrid, SynthConfig, SynthRequest, run_values
 from tumult.synthesis.api import _foldable_ladder
 from tumult.synthesis.workflows import build_settings
 
@@ -35,23 +35,22 @@ class _Synth:
     def __init__(self):
         self.batches = []
 
-    def compute_batch(self, target, prefs, run_vals_list, xmin, xmax, **kw):
-        self.batches.append([dict(rv) for rv in run_vals_list])
+    def compute_batch(self, request, run_values_list, xmin, xmax, **kw):
+        self.batches.append([dict(rv) for rv in run_values_list])
         out = []
-        for rv in run_vals_list:
+        for rv in run_values_list:
             terms = dict(t.split("=") for t in str(rv.get("abundances", "")).split() if "=" in t)
-            a = float(terms.get("Fe", SOLAR_FE)) - SOLAR_FE
+            a = float(terms.get("Fe", 0.0))           # [Fe/Fe]: the request is relative
             # element removed: a flat continuum, so the blend fraction comes out zero
             out.append(_spectrum(0.0 if rv.get("exclude_elements") else 0.35 * 10 ** (0.5 * a)))
         return out
 
 
 @pytest.fixture
-def request_():
-    return NativeRequest(prefs={"abund_file": None}, grid={"folder": ""},
-                        run_vals={"abundances": "", "relative_abundances": False,
-                                  "mode": "LTE"},
-                        target=(5750.0, 4.4, 0.0, 1.0))
+def request_(tmp_path):
+    # a grid folder that does not exist: the shared window batch cannot run against it
+    return SynthRequest(config=SynthConfig(root=tmp_path), atmosphere=AtmosphereGrid("missing"),
+                        star=(5750.0, 4.4, 0.0, 1.0))
 
 
 def _mask():
@@ -70,7 +69,8 @@ def _measurement():
 
 def _folds(run_vals_batch, request_):
     """Whether compute_spectra would fold this batch onto one run's set axis."""
-    settings = [build_settings(request_.prefs, rv) for rv in run_vals_batch]
+    settings = [build_settings(request_.config.to_prefs(), run_values(request_, **rv))
+                for rv in run_vals_batch]
     return _foldable_ladder(settings, {}, False) is not None
 
 
@@ -78,7 +78,7 @@ def test_balance_ladder_batches_are_foldable(monkeypatch, request_):
     """Iteration 1's blend screen must not travel with the ladder, or nothing folds.
 
     The stub leaves ``compute_window_batch`` alone, which cannot run against this
-    fixture's empty grid, so what is exercised here is the per-line fallback: the
+    fixture's missing grid, so what is exercised here is the per-line fallback: the
     whole ladder in one ``compute_batch``, then the two-point screen.
     """
     stub = _Synth()
@@ -133,8 +133,8 @@ def test_abundance_gradient_batch_is_foldable(monkeypatch, request_):
     stub = _Synth()
     monkeypatch.setattr("tumult.synthesis.workflows.compute_batch", stub.compute_batch)
     monkeypatch.setattr("tumult.synthesis.workflows.compute",
-                        lambda target, prefs, rv, xmin, xmax, **kw:
-                        stub.compute_batch(target, prefs, [rv], xmin, xmax, **kw)[0])
+                        lambda request, rv, xmin, xmax, **kw:
+                        stub.compute_batch(request, [rv], xmin, xmax, **kw)[0])
     monkeypatch.setattr("tumult.synthesis.workflows.abund_table", lambda prefs: {"Fe": SOLAR_FE})
     monkeypatch.setattr("tumult.synthesis.workflows.fit_line",
                         lambda *a, **k: ({"a": 0.0, "vshift": 0.0, "vdop": 0.0},
@@ -167,7 +167,7 @@ def test_progress_streams_every_line(monkeypatch, request_):
 def test_fit_windows_restrict_the_target_samples():
     """A line-mask fit compares only inside the fit windows: the samples between them are
     dropped from the target, while the synthesised span stays continuous."""
-    from tumult.synthesis.workflows import _inside_windows
+    from tumult.synthesis.operations import _inside_windows
 
     x = np.arange(5000., 5010., 0.5)
     spec = Spectrum(x, np.ones_like(x))

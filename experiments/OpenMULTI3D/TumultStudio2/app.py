@@ -49,8 +49,7 @@ from atomtool import AtomTool, AtomObject  # noqa: E402
 from abundcorrtool import AbundCorrTool  # noqa: E402
 from ionbalance import IonBalanceTool  # noqa: E402
 from tumult.synthesis import workflows as synth  # noqa: E402  (CancelToken/CancelledError for cancellable loads)
-from tumult.synthesis import submit as submit_synthesis  # noqa: E402
-from tumult.synthesis import submit_task as submit_task_record  # noqa: E402
+from tumult.synthesis import submit_operation as submit_operation_record  # noqa: E402
 from tumult.synthesis import submission  # noqa: E402  (open workflows on reconnect)
 from tumult.synthesis import daemon as workflow_daemon  # noqa: E402
 from synthprefs import PREF_LABELS, load_prefs, _resolve_path  # noqa: E402  (the configured workflow root)
@@ -709,9 +708,8 @@ def build():
             canvas._refresh_object(o)  # update_all (in _settle) then rebinds the Edit tab
         synth_modal.refresh_cache()  # the new run is now in the cache listing
 
-    # every synthesis goes through ctx.submit_workflow and every fit through
-    # ctx.submit_task (durable, detached); both are installed below, before any
-    # submission can run
+    # every synthesis and every fit goes through ctx.submit_operation (durable,
+    # detached), installed below before any submission can run
     synth_modal = SynthModal(ctx, add=add_synth, on_warn=synth_on_warn)
     ctx.synth_modal = synth_modal      # local harnesses drive the modal through it
 
@@ -1089,7 +1087,7 @@ def build():
 
     # Document-owned work on the CPU-budgeted pool (a line measurement, a broadening fit,
     # a normalisation): cancelled when the session closes. Dispatch calculations do not
-    # come through here; they are durable workflows (submit_workflow, submit_task).
+    # come through here; they are durable workflows (submit_operation).
     ctx.submit = lambda name, loader, on_done, detached=False: load_async(
         name, loader, on_done, executor=_SYNTH_EXEC, detached=detached)
     # network transfers (a grid download) wait on I/O, not the CPU budget: the IO pool
@@ -1100,9 +1098,9 @@ def build():
     def _import_result(handle):
         """The delivery of a workflow this document did not submit: a synthesis adds
         every spectrum of its result under the name and annotations recorded at
-        submission; a tool calculation goes to the importer its tool registered."""
+        submission; any other operation goes to the importer its tool registered."""
         kind = handle.kind.name
-        if kind != "synthesis":
+        if kind != "synthesis.synthesize":
             importer = ctx.task_importers.get(kind)
             if importer is None:
                 raise ValueError(f"no tool imports a {kind} result")
@@ -1201,49 +1199,29 @@ def build():
             state["stop"] = handle.on_progress(lambda stamp: ctx.schedule(tick))
             ctx.schedule(tick)           # a snapshot written before this document followed
 
-    def submit_workflow(name, request, on_done, meta=None):
-        """Queue one durable synthesis workflow and deliver its result to this document
-        once its handle settles. Submission happens here, once; nothing waits on the
-        workflow from another pool thread, and the document thread never blocks on the
-        result. The workflow is detached: closing the tab leaves it running, and only its
-        Processes row cancels it, through the handle. ``name`` and ``meta`` go into the
-        record, so a later document lists and imports it as it was submitted, and the
-        workflow is referenced beside the workspace from now on. Returns the handle, or
-        ``None`` when submission failed (the row keeps the reason)."""
+    def submit_operation(name, operation, request, on_done, *, kwargs=None, meta=None,
+                         on_progress=None, on_error=None):
+        """Queue one public operation (:mod:`tumult.synthesis.tasks`) on ``request`` as a
+        durable workflow and deliver its result to ``on_done`` once its handle settles, a
+        failure to ``on_error`` after the row has recorded it, and every progress snapshot
+        of the record to ``on_progress`` while it runs. Submission happens here, once;
+        nothing waits on the workflow from another pool thread, and the document thread
+        never blocks on the result. The workflow is detached: closing the tab leaves it
+        running, and only its Processes row cancels it, through the handle. ``name`` and
+        ``meta`` go into the record, so a later document lists and imports it as it was
+        submitted, and the workflow is referenced beside the workspace from now on. The
+        driver and the record root follow the request's configuration. Returns the job,
+        or ``None`` when submission failed (the row keeps the reason)."""
         job = _admit(name, heavy=True, detached=True)
+        try:
+            handle = submit_operation_record(operation, request, label=name, meta=meta,
+                                             **(kwargs or {}))
+        except Exception as exc:
+            _admission_failed(job, exc)
+            return None
+        job.handle = handle
         # the row's cancel token forwards to the handle, so a settle can tell a cancelled
         # workflow's late outcome from a wanted one the same way it does for loads
-        try:
-            handle = submit_synthesis(request, label=name, meta=meta)
-        except Exception as exc:
-            _admission_failed(job, exc)
-            return None
-        job.handle = handle
-        job.token.add_callback(handle.cancel)
-        ctx.workflow_refs.attach(handle, name)
-        update_all(canvas)
-        _subscribe(job, handle, on_done)
-        return handle
-
-    ctx.submit_workflow = submit_workflow
-
-    def submit_task(name, kind, args, on_done, *, prefs, meta=None, on_progress=None,
-                    on_error=None):
-        """Queue one tool calculation (:mod:`tumult.synthesis.tasks`) as a durable
-        workflow, as :func:`submit_workflow` does a synthesis: detached, referenced
-        beside the workspace, its result delivered to ``on_done`` once, a failure to
-        ``on_error`` after the row has recorded it, and every progress snapshot of the
-        record to ``on_progress`` while it runs. ``prefs`` are the synthesis preferences
-        the calculation was configured with (the driver and the record root follow
-        them). Returns the job, or ``None`` when submission failed (the row keeps the
-        reason)."""
-        job = _admit(name, heavy=True, detached=True)
-        try:
-            handle = submit_task_record(kind, args, prefs=prefs, label=name, meta=meta)
-        except Exception as exc:
-            _admission_failed(job, exc)
-            return None
-        job.handle = handle
         job.token.add_callback(handle.cancel)
         ctx.workflow_refs.attach(handle, name)
         update_all(canvas)
@@ -1251,7 +1229,7 @@ def build():
         _follow_progress(job, handle, on_progress)
         return job
 
-    ctx.submit_task = submit_task
+    ctx.submit_operation = submit_operation
 
     # --- recovery of durable workflows after a reconnect ------------------------------
     def _offer(handle, referenced=False):

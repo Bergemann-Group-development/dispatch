@@ -17,8 +17,8 @@ Implemented on 2026-09-14; the sections below remain the specification.
 
 - Request boundary: `tumult/synthesis/inputs.py` (`SynthConfig`, `Star`, `Abundances`,
   `Atmosphere`, `AtmosphereGrid`, `Snapshot`, windows) and the public `SynthRequest` in
-  `tumult/synthesis/request.py`. The former prefs/run_vals request is `NativeRequest`, which
-  the GUI keeps building; `tumult/synthesis/operations.py` translates one into the other.
+  `tumult/synthesis/request.py`. The former prefs/run_vals request was removed on 2026-09-15;
+  the GUI builds `SynthRequest` too (see the implementation report).
 - `synthesis.synthesize`, `tumult/departures.py` (`Departures`, `DepartureGrid`,
   `DepartureRequest`, `solve`, `request`, `load`), `abundance.fit`,
   `abundance.nlte_corrections`, `sparams.ionbalance` and the durable `operation` task kind

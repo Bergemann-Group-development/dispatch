@@ -1,5 +1,5 @@
 """A reusable *synthesis setup* component: the atmosphere + stellar-parameter + RT-mode
-cluster shared by any tool that builds a :class:`~tumult.synthesis.NativeRequest`.
+cluster shared by any tool that builds a :class:`~tumult.synthesis.SynthRequest`.
 
 It is the cluster of the synthesis modal (:class:`synthmodal.SynthModal`): grid selector +
 Interpolate/Pick toggle + Format + atmosphere picker with filename→param auto-fill, plus
@@ -22,12 +22,16 @@ likewise treated as a global, physics-level choice: instead of spawning a second
 :meth:`context` and a read-only display.
 
 A host running a line-mask analysis sets :attr:`SynthSetup.element`; the mode form then
-offers **Include background lines**, and switching it off restricts the line list to that
-element (``only_elements``).
+offers **Include background lines** (:attr:`SynthSetup.background_lines`), whose off state
+the host passes on as ``background_lines=False`` to restrict the syntheses to that element.
+In NLTE the synthesis modal offers **Use line list** (:attr:`SynthSetup.use_linelist`), off
+meaning the model atoms' transitions alone.
 
-``context()`` returns the owned :class:`~tumult.synthesis.NativeRequest` (without windows;
-the caller adds its masks) that both the synthesis and the fit mode of the modal start
-from, or ``None`` with a ``reason`` when the setup does not resolve to a supported request.
+``context()`` returns the :class:`~tumult.synthesis.SynthRequest` (without windows; the
+caller adds its own) that both the synthesis and the fit mode of the modal start from, or
+``None`` with a ``reason`` when the setup does not resolve to a supported request. NLTE
+with model atoms is requested departures (``line_grid=False``: the atoms' own quadratures),
+and saved departures are loaded as :class:`~tumult.departures.Departures`.
 """
 from __future__ import annotations
 
@@ -37,8 +41,8 @@ from pathlib import Path
 from bokeh.models import TextInput
 
 from tumult import refstars
-from tumult.synthesis import (Atmosphere1D, Departures, GridTarget, Snapshot3D,
-                              NativeRequest, check_request)
+from tumult.synthesis import (Abundances, Atmosphere, DepartureRequest, Departures, Snapshot,
+                              Star, SynthRequest)
 from tumult.synthesis.snapshot_grid import is_snapshot_grid
 
 import store
@@ -47,7 +51,8 @@ from atmospicker import AtmosPicker, grid_nodes
 from controls import Field, Form
 from gridmanager import ATMOS_FORMATS
 from htmlbridge import class_bridge, html_bridge, parse_action, pulse
-from synthprefs import INDIVIDUAL_GRID, REPO_DIR, RUN_DEFAULTS, load_prefs, missing_prefs
+from synthprefs import (INDIVIDUAL_GRID, REPO_DIR, RUN_DEFAULTS, atmosphere_grid, load_prefs,
+                        missing_prefs, synth_config)
 
 # keys copied when a setup inherits another section's configuration (the four stellar axes
 # plus the abundance/mode/atmosphere selection); the grid id is handled separately because the
@@ -557,11 +562,21 @@ class SynthSetup:
         self.render_grid_ui()
 
     # --- the payload ------------------------------------------------------------------
+    @property
+    def use_linelist(self):
+        """False when an NLTE synthesis is to hold the model atoms' transitions alone."""
+        return not (self.allow_atom_only and self.is_nlte
+                    and not self.mode_form.value("use_linelist"))
+
+    @property
+    def background_lines(self):
+        """False when a line-mask analysis synthesises its element's transitions alone."""
+        return not (self.element and not self.mode_form.value("background_lines"))
+
     def context(self):
-        """A :class:`~tumult.synthesis.NativeRequest` for the headless workflows, or ``None``
-        (with :attr:`reason` set) when synthesis is not yet runnable or the setup names a
-        combination no execution path supports (:func:`tumult.synthesis.check_request`).
-        The request carries no windows; the caller adds its masks."""
+        """A :class:`~tumult.synthesis.SynthRequest` for the operations, or ``None`` (with
+        :attr:`reason` set) when synthesis is not yet runnable or the setup does not form a
+        valid request. The request carries no windows; the caller adds its own."""
         prefs = load_prefs()
         if missing_prefs(prefs):
             self.reason = "Synthesis paths are missing — check Preferences → Synthesis."
@@ -571,15 +586,9 @@ class SynthSetup:
             self.reason = ("No atmosphere grid — download or register one in Preferences → Atmosphere grids, "
                            "or choose 'Individual atmosphere'.")
             return None
-        rv = self.stellar_values()
-        rv.update(self.base_form.values())
-        rv["mode"] = self.mode_form.value("mode")
-        rv["atoms"] = list(self.atoms_provider())
-        if self.allow_atom_only and self.is_nlte:
-            rv["only_atom"] = not bool(self.mode_form.value("use_linelist"))
-        if self.element and not self.mode_form.value("background_lines"):
-            rv["only_elements"] = self.element
-        if self.is_nlte and not rv["atoms"]:
+        stellar = self.stellar_values()
+        atoms = list(self.atoms_provider())
+        if self.is_nlte and not atoms:
             self.reason = "NLTE needs model atoms — add them in this calculation."
             return None
         sect = self._sections[self.section]
@@ -589,34 +598,40 @@ class SynthSetup:
             if atmos_file is None:
                 self.reason = "Choose a grid to interpolate, or pick an atmosphere file."
                 return None
-        target = (float(rv["teff"]), float(rv["logg"]), float(rv["feh"]), float(rv["vmic"]))
-        self.reason = None
         saved = str((self.mode_form.value("departures") if not self.mode_form.fields["departures"].hidden else "") or "").strip()
         try:
             departures = Departures.load(saved) if saved else None
         except (OSError, ValueError) as exc:
             self.reason = f"Cannot open saved departures: {exc}"
             return None
-        if self.is_snapshot:
-            resolution = tuple(int(v) for v in (grid.get("resolution") or
-                                                [prefs.get(k) for k in ("nx", "ny", "nz")]))
-            # active_grid() already carries the Individual selector's format or the
-            # registered grid's; a snapshot picked from a Stagger grid must not fall back
-            # to the Individual preference (which defaults to Marcs)
-            selection = Snapshot3D(atmos_file, target[:3], resolution, grid.get("format"),
-                                   self.grids.reference_grid())
-        elif atmos_file:
-            selection = Atmosphere1D(atmos_file, target, grid.get("format"),
-                                     self.grids.reference_grid())
-        else:
-            selection = GridTarget(grid, target, self.grids.reference_grid())
-        request = NativeRequest(prefs=prefs, run_vals=rv, selection=selection,
-                               departures=departures)
+        if departures is None and self.is_nlte:
+            departures = DepartureRequest(atoms, line_grid=False)
+        reference = self.grids.reference_grid()
+        preparation = atmosphere_grid(reference) if reference else None
         try:
-            return check_request(request)
-        except ValueError as exc:
+            if self.is_snapshot:
+                resolution = tuple(int(v) for v in (grid.get("resolution") or
+                                                    [prefs.get(k) for k in ("nx", "ny", "nz")]))
+                # active_grid() already carries the Individual selector's format or the
+                # registered grid's; a snapshot picked from a Stagger grid must not fall back
+                # to the Individual preference (which defaults to Marcs)
+                atmosphere = Snapshot(atmos_file, grid.get("format"), resolution, preparation)
+            elif atmos_file:
+                atmosphere = Atmosphere(atmos_file, grid.get("format") or "Marcs", preparation)
+            else:
+                atmosphere = atmosphere_grid(grid, preparation)
+            base = self.base_form.values()
+            convention = "[X/Fe]" if base["relative_abundances"] else "A(X)"
+            request = SynthRequest(
+                config=synth_config(prefs), atmosphere=atmosphere,
+                star=Star(*(float(stellar[k]) for k in ("teff", "logg", "feh", "vmic"))),
+                abundances=Abundances.from_override(base["abundances"], convention),
+                departures=departures)
+        except (TypeError, ValueError) as exc:
             self.reason = str(exc)
             return None
+        self.reason = None
+        return request
 
 
 # One delegated listener drives the atmosphere selects of every SynthSetup on the page

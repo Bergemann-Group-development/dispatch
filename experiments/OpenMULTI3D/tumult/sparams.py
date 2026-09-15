@@ -401,13 +401,15 @@ def grid_bounds(grid, atmos_file=None):
     return bounds
 
 
-def solve_ionisation_balance(request, result, opts=None, *, progress=None, cancel_token=None):
+def solve_ionisation_balance(request, result, opts=None, *, run_values=None, progress=None,
+                             cancel_token=None):
     """Iterate the excitation-ionization balance to convergence on ``result.lines``.
 
-    ``request`` is a :class:`~tumult.synthesis.NativeRequest`; ``result`` a
-    :class:`~tumult.measurement.Measurement` already carrying measured lines, an entry point
-    (``params0``), which parameters are free and the tolerances. ``opts`` sets the ladder
-    (``span``, ``points``) and ``max_iter``.
+    ``request`` is the :class:`~tumult.synthesis.SynthRequest` whose star each iteration
+    replaces and ``run_values`` what its syntheses add (:func:`tumult.synthesis.run_values`);
+    ``result`` a :class:`~tumult.measurement.BalanceResult` already carrying measured lines,
+    an entry point (``params0``), which parameters are free and the tolerances. ``opts``
+    sets the ladder (``span``, ``points``) and ``max_iter``.
 
     Each iteration synthesises a per-line abundance ladder at the trial parameters, inverts
     the measured EW through it, and steps the free parameters on the resulting diagnostics.
@@ -416,7 +418,7 @@ def solve_ionisation_balance(request, result, opts=None, *, progress=None, cance
     """
     from .synthesis.cancel import CancelledError
     try:
-        solved = _solve_balance(request, result, opts, progress, cancel_token)
+        solved = _solve_balance(request, result, opts, run_values, progress, cancel_token)
     except CancelledError:
         result.termination, result.converged = "cancelled", False
         raise
@@ -427,18 +429,24 @@ def solve_ionisation_balance(request, result, opts=None, *, progress=None, cance
     return solved
 
 
-def _solve_balance(request, result, opts, progress, cancel_token):
+def _solve_balance(request, result, opts, run_values, progress, cancel_token):
     from . import abundance as ab
     from .abundance import abundance_override, padded_window, strip_abundance, xfe_to_abund
     from .synthesis import workflows as synth
     from .synthesis.cancel import CancelledError
+    from .synthesis.inputs import AtmosphereGrid
+    from .synthesis.operations import run_values as complete_values
 
     opts = {**DEFAULT_SOLVE_OPTS, **(opts or {})}
     report = progress or (lambda _result: None)
-    prefs, grid, atmos_file = request.prefs, request.grid, request.atmos_file
+    config = request.config
+    prefs = config.to_prefs()
+    grid = request.atmosphere.record(config) \
+        if isinstance(request.atmosphere, AtmosphereGrid) else {}
     element = result.element
-    base_rv = dict(request.run_vals)
-    relative = bool(base_rv.get("relative_abundances", False))
+    extra = dict(run_values or {})
+    base_rv = complete_values(request, **extra)
+    relative = bool(base_rv.get("relative_abundances", True))
     base_abund = strip_abundance(base_rv.get("abundances", ""), element)
     solar = synth.abund_table(prefs)
     solar_x = solar.get(element)
@@ -448,10 +456,8 @@ def _solve_balance(request, result, opts, progress, cancel_token):
     free = dict(result.free) or {k: True for k in PARAM_KEYS}
     any_free = any(free.values())
     params = dict(result.params0)
-    state = SolverState(params=dict(params), bounds=grid_bounds(grid, atmos_file))
-    from dataclasses import asdict
-    result.synthesis = asdict(request)
-    result.synthesis["target"] = tuple(params[k] for k in PARAM_KEYS)
+    state = SolverState(params=dict(params), bounds=grid_bounds(grid))
+    result.request = request.update(star=params)
     result.solar_x = float(solar_x)
     result.converged = False
     result.termination = "running"
@@ -468,14 +474,14 @@ def _solve_balance(request, result, opts, progress, cancel_token):
 
     def rv_point(a_rel, feh, only=None, exclude=False, save_linelist=True):
         only = ladder_only if only is None else only
-        rv = dict(base_rv)
+        rv = dict(extra)
         # linelist_out.txt lists the transitions the run kept, with strengths at its own
         # composition: a diagnostic, never an input. Membership is the same across a
         # ladder for every line the balance uses, so one rung per node keeps it and the
         # rest pass False rather than rewrite ~150 kB each. Everything else keeps it.
         rv["save_linelist"] = bool(save_linelist)
-        rv.pop("only_elements", None)
-        rv.pop("exclude_elements", None)
+        rv["only_elements"] = None
+        rv["exclude_elements"] = None
         if exclude:
             rv["abundances"] = base_abund
             rv["exclude_elements"] = element
@@ -487,12 +493,11 @@ def _solve_balance(request, result, opts, progress, cancel_token):
         rv["relative_abundances"] = relative
         return rv
 
-    def batch(rv_list, line, target):
-        return synth.compute_batch(
-            target, prefs, rv_list, *padded_window(line.window), grid=grid,
-            atmos_file=atmos_file, cancel_token=cancel_token)
+    def batch(rv_list, line, point):
+        return synth.compute_batch(point, rv_list, *padded_window(line.window),
+                                   cancel_token=cancel_token)
 
-    def ladder_specs(ladder, centre, feh, lines, target, *, crop=None):
+    def ladder_specs(ladder, centre, feh, lines, point, *, crop=None):
         """One synthesis per lattice rung, each covering every line's window.
 
         A rung is its own run so that its identity is (atmosphere node, abundance,
@@ -511,9 +516,8 @@ def _solve_balance(request, result, opts, progress, cancel_token):
         """
         windows = [padded_window(ln.window) for ln in lines]
         rungs = [rv_point(a, feh, save_linelist=(a == centre)) for a in ladder]
-        return synth.compute_window_batch(
-            target, prefs, rungs, windows, grid=grid, atmos_file=atmos_file,
-            cancel_token=cancel_token, crop=crop, fold=False)
+        return synth.compute_window_batch(point, rungs, windows, cancel_token=cancel_token,
+                                          crop=crop, fold=False)
 
     def shared_ladder(active, centres_now):
         """The lattice rungs covering every active line's bracket.
@@ -542,13 +546,13 @@ def _solve_balance(request, result, opts, progress, cancel_token):
     max_iter = int(opts["max_iter"]) if any_free else 1
     span, npts = float(opts["span"]), int(opts["points"])
     # not "step": that name belongs to the parameter-stepping function above
-    lattice = float(opts.get("abund_step") or prefs.get("abund_step") or 0.25)
+    lattice = float(opts.get("abund_step") or config.abundance_step)
     if lattice <= 0:
         raise ValueError("Balance needs a positive abundance lattice step.")
     for it in range(1, max_iter + 1):
         if cancel_token is not None and cancel_token.cancelled:
             raise CancelledError()
-        target = tuple(params[k] for k in PARAM_KEYS)
+        point = request.update(star=params)
         feh = params["feh"]
         for ln in result.lines:
             if ln.include:
@@ -569,7 +573,7 @@ def _solve_balance(request, result, opts, progress, cancel_token):
                 "relative_abundances": relative}
         iter_specs = None
         try:
-            iter_specs = ladder_specs(ladder, c, feh, [ln for _i, ln in active], target,
+            iter_specs = ladder_specs(ladder, c, feh, [ln for _i, ln in active], point,
                                       crop=crop)
         except CancelledError:
             raise
@@ -590,10 +594,10 @@ def _solve_balance(request, result, opts, progress, cancel_token):
                     # element's abundance, which is what lets compute_spectra fold them
                     # into a single run's set axis. The blend screen's two syntheses switch
                     # elements on and off, so mixing them in would unfold the ladder.
-                    specs = batch([rv_point(a, feh) for a in ladder], ln, target)
+                    specs = batch([rv_point(a, feh) for a in ladder], ln, point)
                 if screen:
                     full, excl = batch([rv_point(c, feh, only=False),
-                                        rv_point(c, feh, exclude=True)], ln, target)
+                                        rv_point(c, feh, exclude=True)], ln, point)
                     try:
                         blend, _, _ = ab.blend_fraction(full, excl, window=ln.fit_window,
                                                         profile=result.profile, x0=ln.lam0)
@@ -622,7 +626,7 @@ def _solve_balance(request, result, opts, progress, cancel_token):
                     ladder2 = np.linspace(c2 - 2 * span, c2 + 2 * span, npts)
                     # the retry replaces the ladder, so its spectra replace the rungs the
                     # solution spectrum is later read off
-                    specs = batch([rv_point(a, feh) for a in ladder2], ln, target)
+                    specs = batch([rv_point(a, feh) for a in ladder2], ln, point)
                     a_grid, ew_grid = ab.build_cog(
                         None, ladder2, window=ln.fit_window, profile=result.profile,
                         x0=ln.lam0, batch_synth_fn=lambda _a, _s=specs: _s, renorm=renorm)
@@ -871,10 +875,10 @@ def solve_coupled(evaluate, params0, *, free=None, bounds=None, tols=None,
     return outcome("converged" if converged(diags, tol, free) else "iteration_limit", J)
 
 
-def ionbalance(request, *, target, line_mask, method="cog", background_lines=True,
-               solver="coupled", free=None, tols=None, max_iter=COUPLED_MAX_ITER,
-               profile="voigt", snr=None, cont_pct=0.0, limit=1.0, max_rounds=8,
-               steps=None, blend_max=BLEND_MAX, weak_frac=0.10, progress=None,
+def ionbalance(request, *, target, line_mask=None, measured=None, method="cog",
+               background_lines=True, solver="coupled", free=None, tols=None,
+               max_iter=COUPLED_MAX_ITER, profile="voigt", snr=None, cont_pct=0.0, limit=1.0,
+               max_rounds=8, steps=None, blend_max=BLEND_MAX, weak_frac=0.10, progress=None,
                cancel_token=None, **diagonal_opts):
     """Infer stellar parameters from the excitation-ionisation balance of ``target``.
 
@@ -883,7 +887,10 @@ def ionbalance(request, *, target, line_mask, method="cog", background_lines=Tru
     on. ``target`` is a spectrum or spectrum file and ``line_mask`` a mask set or mask file
     naming the element; its windows are measured with ``profile`` (``snr``, ``cont_pct``
     errors) and each is identified as the element's neutral or singly ionised stage from
-    the configured line list.
+    the configured line list. ``measured`` continues a :class:`~tumult.measurement.BalanceResult`
+    instead, keeping its identity and annotations: its lines, as curated, are solved on
+    without measuring again, and a result without lines has ``line_mask`` measured into it
+    with its own profile and errors.
 
     ``method="cog"`` determines per-line abundances by the adaptive curve of growth of
     :func:`tumult.abundance.fit` at every trial star, with the same screens (at the
@@ -900,9 +907,9 @@ def ionbalance(request, *, target, line_mask, method="cog", background_lines=Tru
     from copy import deepcopy
     from . import abundance as ab
     from .departures import DepartureGrid, Departures
-    from .measurement import BalanceResult, STAGE_SOLVED, mask_key
+    from .measurement import BalanceResult, STAGE_MEASURED, STAGE_SOLVED, mask_key
     from .synthesis.inputs import AtmosphereGrid
-    from .synthesis.operations import native_request, quadrature_atmosphere
+    from .synthesis.operations import quadrature_atmosphere
     from .synthesis.request import SynthRequest
     from .synthesis.workflows import abund_table
 
@@ -920,50 +927,59 @@ def ionbalance(request, *, target, line_mask, method="cog", background_lines=Tru
         raise ValueError("Frozen departures do not follow the star; use departures.request.")
     request.check()
     spectrum, target_record = ab._target_spectrum(target)
-    mset = ab._line_mask_set(line_mask)
     report = progress or (lambda _result: None)
     config = request.config
-    result = BalanceResult(element=mset.element, profile=profile, snr=snr, cont_pct=cont_pct,
-                           maskset_name=mset.name, maskset_key=mask_key(mset),
-                           params0=dict(request.star), free=free, tols=dict(tols or {}),
-                           method=method, solver=solver)
+    mset = None if measured is not None and measured.lines else ab._line_mask_set(line_mask)
+    if measured is not None:
+        result = deepcopy(measured)
+        if mset is not None:
+            result.element = mset.element
+    else:
+        result = BalanceResult(element=mset.element, profile=profile, snr=snr,
+                               cont_pct=cont_pct, maskset_name=mset.name,
+                               maskset_key=mask_key(mset))
+    element, profile = result.element, result.profile
+    result.params0, result.free, result.tols = dict(request.star), free, dict(tols or {})
+    result.method, result.solver = method, solver
+    result.stage, result.history, result.diags, result.sigmas = STAGE_MEASURED, [], {}, {}
+    result.converged = False
     result.request, result.target = request, target_record
-    measure_balance_lines(result, [m for m in mset.masks if m.include], spectrum,
-                          str(config.resolve(config.linelist)) if config.linelist else None,
-                          atmosphere=quadrature_atmosphere(request))
+    if mset is not None:
+        measure_balance_lines(result, [m for m in mset.masks if m.include], spectrum,
+                              str(config.resolve(config.linelist)) if config.linelist else None,
+                              atmosphere=quadrature_atmosphere(request))
     report(result)
 
-    native = native_request(request, **({} if background_lines
-                                        else {"only_elements": mset.element}))
+    run_values = {} if background_lines else {"only_elements": element}
     if solver == "diagonal":
         opts = {"max_iter": max_iter, **diagonal_opts}
-        return solve_ionisation_balance(native, result, opts, progress=progress,
-                                        cancel_token=cancel_token)
+        return solve_ionisation_balance(request, result, opts, run_values=run_values,
+                                        progress=progress, cancel_token=cancel_token)
 
-    solar = abund_table(native.prefs)
-    solar_x = solar.get(mset.element)
+    solar = abund_table(config.to_prefs())
+    solar_x = solar.get(element)
     if solar_x is None:
-        raise ValueError(f"No solar {mset.element} abundance; configure config.abundances.")
+        raise ValueError(f"No solar {element} abundance; configure config.abundances.")
     result.solar_x = float(solar_x)
     result.termination, result.converged = "running", False
 
     def context_at(star, lines):
-        return ab._CogContext(request.update(star=star), lines, mset.element,
+        return ab._CogContext(request.update(star=star), lines, element,
                               background_lines=background_lines, limit=limit,
                               cancel_token=cancel_token)
 
     ab.screen_lines(context_at(request.star, result.lines), blend_max=blend_max,
                     weak_frac=weak_frac)
-    measured = deepcopy(result.lines)
+    screened = deepcopy(result.lines)
     report(result)
 
     def evaluate(params):
-        lines = deepcopy(measured)
+        lines = deepcopy(screened)
         context = context_at(params, lines)
         ab.fit_lines_cog(context, limit=limit, max_rounds=max_rounds, profile=profile)
         for ln in lines:
             if ln.include and np.isfinite(ln.a):
-                ln.a = xfe_to_abund(ln.a, mset.element, params["feh"], solar)
+                ln.a = xfe_to_abund(ln.a, element, params["feh"], solar)
         return diagnostics(lines, params["feh"], solar_x), lines
 
     def on_evaluation(history):
@@ -972,7 +988,7 @@ def ionbalance(request, *, target, line_mask, method="cog", background_lines=Tru
 
     try:
         outcome = solve_coupled(
-            evaluate, dict(request.star), free=free, bounds=grid_bounds(native.grid),
+            evaluate, dict(request.star), free=free, bounds=grid_bounds(request.atmosphere.record(config)),
             tols=tols, max_iter=max_iter, steps=steps, report=on_evaluation,
             cancel_token=cancel_token)
     except Exception as exc:

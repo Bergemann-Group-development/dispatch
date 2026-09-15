@@ -8,7 +8,7 @@ below, with a DeprecationWarning):
 - running dispatch:  launch, monitor
 - data containers:   Spectrum, SpectrumGrid, LineList
 - reading spectra:   load_spectrum, load_file, is_run, load_run
-- scripting:         the domain modules `synthesis` (synthesize, SynthRequest), `departures`
+- scripting:         the domain modules `synthesis` (synthesize, fit, SynthRequest), `departures`
                      (solve, request), `abundance` (fit, nlte_corrections) and `sparams`
                      (ionbalance); see docs/FAQ.md
 - synthesis:         compute_spectrum, build_stellar_grid, get_NLTE_correction(s),
@@ -33,11 +33,9 @@ from .spectrum_io import load_spectrum, load_file, is_run, load_run
 from .spectrum_grid import SpectrumGrid
 from .synthesis import (get_NLTE_correction, get_NLTE_corrections, build_stellar_grid,
                         compute_spectrum, PRESETS_DIR, preset, CancelToken, CancelledError,
-                        Atmosphere1D, Departures, GridTarget, MaskWindow, Snapshot3D,
-                        SynthesisResult, NativeRequest, SynthRequest, WorkflowHandle,
-                        discover_workflows,
-                        execute_request, open_workflow, resolve_request, run as run_synthesis,
-                        solve_request_departures, submit)
+                        Departures, SynthesisResult, SynthRequest, WorkflowHandle,
+                        discover_workflows, execute_request, open_workflow, resolve_request,
+                        solve_request_departures, submit_operation)
 from .abundance import (cog_invert, aggregate, aggregate_unweighted, reduced_ew, profile_fwhm,
                         sigma_a_from_rew, velocity_hwhm, xfe_to_abund, abund_to_xfe,
                         convert_abundances, read_solar_abundances)
@@ -61,9 +59,8 @@ __all__ = [
     "load_spectrum", "load_file", "is_run", "load_run",
     "compute_spectrum", "build_stellar_grid", "get_NLTE_correction",
     "get_NLTE_corrections", "preset", "PRESETS_DIR", "CancelToken", "CancelledError",
-    "NativeRequest", "GridTarget", "Atmosphere1D", "Snapshot3D", "MaskWindow",
     "SynthesisResult", "Departures", "SynthRequest", "WorkflowHandle", "resolve_request",
-    "execute_request", "run_synthesis", "submit", "open_workflow", "discover_workflows",
+    "execute_request", "submit_operation", "open_workflow", "discover_workflows",
     "solve_request_departures",
     "Profile", "profile_names", "get_profile_class", "get_weq", "fit_line_profile",
     "reduced_ew", "profile_fwhm", "cog_invert", "aggregate", "aggregate_unweighted",

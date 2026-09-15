@@ -72,7 +72,7 @@ def test_dropdown_and_fields_stay_in_step(tmp_path):
     assert "refstar" not in store.get_section("test_run")
     assert store.get_section("test_run")["teff"] == 4500
     request = setup.context()
-    assert request is None or "refstar" not in request.run_vals
+    assert request is None or "refstar" not in request.config.preferences
 
 
 def test_catalogue_edits_reach_the_dropdown(tmp_path):

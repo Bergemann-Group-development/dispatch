@@ -480,7 +480,7 @@ class AbundanceWizard(Tool):
     # (tumult.synthesis.tasks), so it outlives the tab and the server. Its snapshots
     # and result are result objects carrying the uid of the one they continue; a uid this
     # list does not hold (a record another document submitted) is adopted as a new
-    # result. Subclasses that submit through ``self.jobs.submit_task`` define the kind.
+    # result. Subclasses that submit through ``self.jobs.submit_operation`` name the operation.
     task_kind = None
 
     def _adopt(self, incoming):

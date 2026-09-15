@@ -27,10 +27,11 @@ The right-sidebar panel then carries the two steps that stand on that measuremen
    energy and against reduced EW, the same pair an ionisation balance is read against, so a
    temperature or microturbulence trend left in the abundances is visible here.
 
-All three stages are :mod:`tumult.abundance` calls — :func:`~tumult.abundance.measure_lines`,
-:func:`~tumult.abundance.run_abundance`, :func:`~tumult.abundance.finalize_result` — driven
-here on the setup's atmosphere, with a ``progress`` callback streaming each line into the
-table as it lands. What is left in this module is the wizard's own machinery, shared with the
+The measurement is :func:`tumult.abundance.measure_lines`, run in this document so the lines
+can be curated; the synthesis is the ``abundance.fit`` operation with ``method="profile"``
+continuing that measurement (``measured=``) on the setup's request, as a durable workflow
+whose progress snapshots stream each line into the table as it lands; the uncertainties are
+:func:`tumult.abundance.finalize_result` again with the modal's current SNR and continuum. What is left in this module is the wizard's own machinery, shared with the
 corrections tool through :mod:`abundwizard`, and the rendering.
 """
 from __future__ import annotations
@@ -389,12 +390,13 @@ class AbundanceTool(AbundanceWizard):
         if uncertainty is None:
             uncertainty = (res.snr, res.cont_pct)
         snr, cont_pct = uncertainty
-        args = {"request": ctx.to_dict(), "result": res.to_dict(), "observation": obs.to_dict(),
-                "snr": snr, "cont_pct": cont_pct}
-        self.jobs.submit_task(f"abund-synth:{res.element}", self.task_kind, args,
-                              self._on_synth_done, prefs=ctx.prefs, result=res)
+        kwargs = {"target": obs, "measured": res, "method": "profile", "profile": res.profile,
+                  "snr": snr, "cont_pct": cont_pct,
+                  "background_lines": self.setup.background_lines}
+        self.jobs.submit_operation(f"abund-synth:{res.element}", self.task_kind, ctx,
+                                   self._on_synth_done, kwargs=kwargs, result=res)
 
-    task_kind = "abundance"
+    task_kind = "abundance.fit"
     import_task_result = lambda self, result, handle: self._on_synth_done(self._adopt(result))
 
     def _on_synth_done(self, result):

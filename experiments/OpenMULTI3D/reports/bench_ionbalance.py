@@ -104,10 +104,10 @@ def main():
     from tumult.linemask import parse_linemask_file
     from tumult.measurement import BalanceResult, mask_key
     from tumult.spectrum_io import load_spectrum
-    from tumult.synthesis import NativeRequest, execution_scope
+    from tumult.synthesis import SynthRequest, execution_scope
     from tumult.synthesis import workflows as synth
     from tumult.synthesis.executor import _output_folder, run_complete
-    from synthprefs import RUN_DEFAULTS, load_prefs
+    from synthprefs import atmosphere_grid, load_prefs, synth_config
 
     fallbacks = Fallbacks()
     logging.getLogger().addHandler(fallbacks)
@@ -123,7 +123,7 @@ def main():
 
     original_window_batch = synth.compute_window_batch
 
-    def timed_window_batch(target, prefs, rv_list, windows, **kw):
+    def timed_window_batch(request, rv_list, windows, **kw):
         # The ladder rungs differ only in the element override, so its span and point
         # count are readable from the variant list itself.
         values = [float(m.group(1)) for rv in rv_list
@@ -131,23 +131,23 @@ def main():
                   if m]
         start = time.perf_counter()
         try:
-            return original_window_batch(target, prefs, rv_list, windows, **kw)
+            return original_window_batch(request, rv_list, windows, **kw)
         finally:
             record(phase="window_batch", seconds=time.perf_counter() - start,
                    rungs=len(rv_list), windows=len(windows),
                    ladder_span=(max(values) - min(values)) if values else None,
-                   target=[float(v) for v in target])
+                   target=[float(v) for v in request.star.tuple()])
 
     original_batch = synth.compute_batch
 
-    def timed_batch(target, prefs, rv_list, *window, **kw):
+    def timed_batch(request, rv_list, *window, **kw):
         # Iteration 1's blend screen switches the element on and off (two variants); a
         # longer list here is the per-line ladder after a shared-ladder failure.
         kind = "blend_screen" if any(rv.get("exclude_elements") for rv in rv_list) \
             else "line_ladder"
         start = time.perf_counter()
         try:
-            return original_batch(target, prefs, rv_list, *window, **kw)
+            return original_batch(request, rv_list, *window, **kw)
         finally:
             record(phase="line_batch", kind=kind, seconds=time.perf_counter() - start,
                    rungs=len(rv_list), windows=1)
@@ -175,10 +175,6 @@ def main():
     t_setup = time.perf_counter()
     prefs = load_prefs()
     grid = next(g for g in prefs["atmos_grids"] if g["id"] == "marcs")
-    run_vals = {**RUN_DEFAULTS, "mode": "LTE", "atoms": [], "abundances": "",
-                "relative_abundances": True, "atmos_mode": "interp", "atmos_file": ""}
-    request = NativeRequest(prefs=prefs, grid=grid, run_vals=run_vals,
-                           target=None, atmos_file=None)
 
     spec = load_spectrum(str(ATLAS))
     mset = parse_linemask_file(str(MASKS))
@@ -204,6 +200,8 @@ def main():
     result.entry = ENTRY
     result.free = {k: not args.hold for k in sp.PARAM_KEYS}
     result.tols = dict(sp.DEFAULT_TOLS)
+    request = SynthRequest(config=synth_config(prefs), atmosphere=atmosphere_grid(grid),
+                           star=params0)
     setup_seconds = time.perf_counter() - t_setup
 
     # --- measurement, then the solve ----------------------------------------------------

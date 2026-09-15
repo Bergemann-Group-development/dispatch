@@ -52,8 +52,8 @@ records wait for the next daemon.
 
 While a server is connected, the daemon scans the registered roots every ``SCAN_S`` for
 dispatch runs recorded as live (``job.nml``/``job.json``, see :mod:`jobrecord`) that no
-workflow record names: runs started from a shell, a notebook or
-:func:`submission.run`. They are listed as ``external`` jobs and cancelled through
+workflow record names: runs started from a shell, a notebook or a script calling
+an operation directly. They are listed as ``external`` jobs and cancelled through
 :func:`jobrecord.cancel`.
 """
 from __future__ import annotations

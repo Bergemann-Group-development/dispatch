@@ -19,7 +19,7 @@ from tumult import departures, sparams, synthesis
 from tumult.spectrum import Spectrum
 from tumult.synthesis import (Abundances, Atmosphere, AtmosphereGrid, Star, SynthConfig,
                               SynthRequest)
-from tumult.synthesis.operations import native_request
+from tumult.synthesis.operations import run_values
 
 STAR = Star(5777.0, 4.44, 0.0, 1.0)
 
@@ -49,13 +49,16 @@ def _saved_departures(tmp_path, *, star=STAR, atmosphere="one.mod"):
 def test_departure_state_selects_the_calculation(tmp_path, config, atom):
     one = Atmosphere("one.mod")
     lte = SynthRequest(config=config, atmosphere=one, star=STAR, windows=(5160, 5190))
-    assert native_request(lte).run_vals["mode"] == "LTE"
-    ondemand = lte.update(departures=departures.request(lte, atom=atom))
-    assert native_request(ondemand).run_vals["mode"] == "NLTE"
-    frozen = native_request(lte.update(departures=_saved_departures(tmp_path)))
-    assert frozen.run_vals["mode"] == "NLTE"
-    assert frozen.run_vals["atoms"] == ["atom.mg"] and frozen.run_vals["line_grid"] == "grid.txt"
-    assert frozen.masks[0].synth == (5160.0, 5190.0)
+    assert run_values(lte)["mode"] == "LTE"
+    ondemand = lte.update(departures=departures.request(lte, atom=atom, line_grid=False))
+    assert run_values(ondemand)["mode"] == "NLTE"
+    assert run_values(ondemand)["atoms"] == [str(atom)]
+    prepared = lte.update(departures=departures.request(lte, atom=atom))
+    with pytest.raises(ValueError, match="not prepared"):
+        run_values(prepared)
+    frozen = run_values(lte.update(departures=_saved_departures(tmp_path)))
+    assert frozen["mode"] == "NLTE"
+    assert frozen["atoms"] == ["atom.mg"] and frozen["line_grid"] == "grid.txt"
 
 
 def test_update_returns_a_new_request_and_takes_results(config, atom):
@@ -139,8 +142,9 @@ def test_synthesize_reports_where_its_departures_came_from(tmp_path, config, mon
     seen = []
 
     def execute(resolved, cancel_token=None):
-        seen.append(resolved.request)
-        return SynthesisResult((Spectrum(np.arange(3.), np.ones(3)),), (), resolved.request, {})
+        seen.append(resolved)
+        return SynthesisResult((Spectrum(np.arange(3.), np.ones(3)),), resolved.windows,
+                               resolved.request, resolved.run_values, {})
 
     monkeypatch.setattr(workflows, "execute_request", execute)
     request = SynthRequest(config=config, atmosphere="one.mod", star=STAR, windows=(5000, 5001))
@@ -150,7 +154,7 @@ def test_synthesize_reports_where_its_departures_came_from(tmp_path, config, mon
     assert lte.provenance["preparation_atmospheres"] == [str(tmp_path / "one.mod")]
     nlte = synthesis.synthesize(request.update(departures=_saved_departures(tmp_path)))
     assert nlte.provenance["departures"] == "loaded"
-    assert seen[-1].run_vals["mode"] == "NLTE"
+    assert seen[-1].values["mode"] == "NLTE"
 
 
 def test_a_departure_grid_replaces_the_departure_solves(tmp_path, monkeypatch):
@@ -204,8 +208,9 @@ def test_every_nlte_rung_is_a_departure_solve_of_its_own(tmp_path, monkeypatch):
         submitted.append(list(jobs)) or {key: Run() for key, _path, _nml in jobs}))
     rungs = [{"mode": "NLTE", "atoms": ["atom.mg"], "abundances": f"Mg={a:.4f}",
               "relative_abundances": True} for a in (-0.25, 0.0, 0.25)]
-    workflows.compute_batch((5750.0, 4.5, 0.0, 1.0), {"dispatch_cwd": str(tmp_path)}, rungs,
-                            grid={}, atmos_file="a.mod", set_spectrum=False)
+    request = SynthRequest(config=SynthConfig(root=tmp_path), atmosphere="a.mod",
+                           star=(5750.0, 4.5, 0.0, 1.0))
+    workflows.compute_batch(request, rungs, set_spectrum=False)
     solves = [path for batch in submitted for _key, path, nml in batch
               if nml.get("rt_iteration_params", {}).get("maxiter") == 99]
     assert len(solves) == 3 and len(set(solves)) == 3
@@ -253,7 +258,7 @@ def _stub_fit(monkeypatch, a_true):
         element="Mg", symbol="Mg", summary={}, profile="trapz", lines=[_measured(a_true)]))
     variants = []
 
-    def synthesize(self, values):
+    def synthesize(self, values, *, lte=False):
         variants.extend(values)
         out = []
         for value in values:
@@ -303,13 +308,13 @@ def test_corrections_prepare_once_and_carry_the_composition(tmp_path, config, at
 
     monkeypatch.setattr(departures.DepartureRequest, "prepare", prepare)
 
-    def reference(native, atom_path, *, opts, quadrature, cancel_token, **kw):
-        calls["reference"] = (quadrature, native.run_vals["abundances"], native.run_vals["mode"])
+    def reference(reference_request, atom_path, *, opts, quadrature, cancel_token):
+        values = run_values(reference_request)
+        calls["reference"] = (quadrature, values["abundances"], values["mode"])
         return ab.AbundanceResult(symbol="Mg", summary={}, lines=[])
 
-    def rungs(native, result, atom_path, *, opts, progress, cancel_token):
-        calls["rungs"] = (native.run_vals["line_grid"], native.run_vals["abundances"],
-                          native.run_vals["mode"])
+    def rungs(nlte_request, result, atom_path, *, opts, progress, cancel_token):
+        calls["rungs"] = (nlte_request, opts.line_grid)
         return result
 
     monkeypatch.setattr(ab, "measure_reference_lines", reference)
@@ -320,17 +325,17 @@ def test_corrections_prepare_once_and_carry_the_composition(tmp_path, config, at
     result = ab.nlte_corrections(request, method="cog", background_lines=False)
     assert calls["prepare"] == 1
     assert calls["reference"] == (prepared, "Mg=0.2000 Ca=0.1000", "LTE")
-    assert calls["rungs"] == ("q/grid.txt", "Mg=0.2000 Ca=0.1000", "NLTE")
+    assert calls["rungs"] == (request, True)
     assert result.request is request
     with pytest.raises(ValueError, match="departures.request"):
         ab.nlte_corrections(request.update(departures=None))
 
 
-def test_correction_rungs_move_the_element_on_top_of_the_composition(monkeypatch):
-    from tumult.synthesis import NativeRequest, workflows
+def test_correction_rungs_move_the_element_on_top_of_the_composition(tmp_path, monkeypatch):
+    from tumult.synthesis import workflows
     offsets = []
 
-    def batch(target, prefs, rvs, *a, **kw):
+    def batch(request, rvs, *a, **kw):
         offsets.extend(rv["abundances"] for rv in rvs)
         return [_line(float(rv["abundances"].split("Mg=")[1]) - 0.2) for rv in rvs]
 
@@ -338,11 +343,10 @@ def test_correction_rungs_move_the_element_on_top_of_the_composition(monkeypatch
     line = _measured(0.0)
     stage1 = ab.AbundanceResult(element="Mg", symbol="Mg", lines=[line], summary={},
                                 profile="trapz", relative=True)
-    native = NativeRequest(prefs={"abund_step": 0.1}, grid={"folder": "grid"},
-                           run_vals={"abundances": "Ca=0.1000 Mg=0.2000",
-                                     "relative_abundances": True},
-                           target=(5777.0, 4.44, 0.0, 1.0))
-    ab.run_nlte_corrections(native, stage1, "atom.mg")
+    request = SynthRequest(config=SynthConfig(root=tmp_path, abundance_step=0.1),
+                           atmosphere=AtmosphereGrid("grid"), star=STAR,
+                           abundances={"Ca": 0.1, "Mg": 0.2})
+    ab.run_nlte_corrections(request, stage1, "atom.mg")
     assert all(text.startswith("Ca=0.1000 Mg=") for text in offsets)
     assert "Ca=0.1000 Mg=0.2000" in offsets
     assert line.a == pytest.approx(0.0, abs=0.01)
@@ -397,11 +401,15 @@ def test_operations_run_as_durable_tasks(tmp_path, config):
     from tumult.synthesis import tasks
     request = SynthRequest(config=config, atmosphere="one.mod", star=STAR)
     masks = LineMaskSet(masks=[LineMask(LAM0, LAM0 - 0.6, LAM0 + 0.6)], element="Mg")
-    args = tasks.Operation.encode_args("abundance.fit", request,
-                                       {"target": _line(0.0), "line_mask": masks,
-                                        "method": "cog"})
-    decoded = tasks.KINDS["operation"].decode(args)
-    assert decoded["function"] is ab.fit and decoded["request"] == request
+    from tumult.synthesis import submission
+    measured = ab.AbundanceResult(element="Mg", symbol="Mg", summary={}, uid="m1",
+                                  lines=[_measured(0.0)])
+    args = tasks.Operation.encode_args(request, {"target": _line(0.0), "line_mask": masks,
+                                                 "measured": measured, "method": "cog"})
+    kind = tasks.KINDS["abundance.fit"]
+    decoded = kind.decode(args)
+    assert kind.function is ab.fit and decoded["request"] == request
     assert isinstance(decoded["kwargs"]["line_mask"], LineMaskSet)
+    assert decoded["kwargs"]["measured"].uid == "m1"
     with pytest.raises(ValueError, match="unknown operation"):
-        tasks.Operation.encode_args("abundance.guess", request, {})
+        submission.submit_operation("abundance.guess", request)

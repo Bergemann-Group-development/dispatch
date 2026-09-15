@@ -99,14 +99,16 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
 
 **Runs**
 
-- *request*: the public `tumult.synthesis.SynthRequest`: configuration, atmosphere, star,
-  windows, abundances and departures, immutable and in physical terms. The *native request*
-  (`NativeRequest`) is the same calculation in preference and namelist terms, which the GUI
-  builds directly and `operations.native_request` derives from a request. A request never
-  holds a target spectrum; the analysis operations take that as an argument.
-- *operation*: one public scripting call on a request (`synthesis.synthesize`,
-  `departures.solve`, `abundance.fit`, `abundance.nlte_corrections`, `sparams.ionbalance`),
-  and the task kind `operation` that runs one durably.
+- *request*: `tumult.synthesis.SynthRequest`: configuration, atmosphere, star, windows,
+  abundances and departures, immutable and in physical terms. Scripts and the GUI's tools
+  build the same type. A request never holds a target spectrum; the analysis operations
+  take that as an argument.
+- *run values*: the namelist choices an operation varies around a request for one
+  synthesis (`only_elements`, an abundance rung, a prepared atom quadrature), passed to the
+  execution layer beside the request; `operations.run_values` combines the two.
+- *operation*: one public call on a request (`synthesis.synthesize`, `synthesis.fit`,
+  `departures.solve`, `abundance.fit`, `abundance.nlte_corrections`, `sparams.ionbalance`).
+  Its name is also the task kind of the workflow record that runs it durably.
 - *rung*: one abundance of a curve of growth, synthesised as a run of its own on the
   abundance lattice (`SynthConfig.abundance_step`). With requested departures every rung is
   also a departure solve.
@@ -122,16 +124,15 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
   `WorkflowHandle`, run by the workflow daemon or a Slurm driver; it is not a DISPATCH task.
 - *run*: one `dispatch.x` execution and the output directory it leaves. This is the unit the
   on-disk cache reuses. An *external run* is one no workflow record names (started from a
-  shell, a notebook or `submission.run`); the daemon lists the live ones.
+  shell, a notebook or a script calling an operation directly); the daemon lists the live ones.
 - *job*: means different things per component. In `tumult.synthesis.runtime` it is one unit
   of work scheduled by `ExecutionService`, usually a run. In TumultStudio2 it is one row of
   the Processes panel (`jobs.Job`): a file load, a line-strength band or a durable workflow
   the document follows. In the daemon's protocol it is anything `list` returns: a workflow
   or an external run.
 - *task*: DISPATCH's own `task_t` within a run, in the Fortran scheduler. On the Python side
-  the word survives only in the *task kind* of a workflow record (`tumult.synthesis.tasks`:
-  synthesis, fit, abundance, ionisation balance, NLTE corrections) and in `submit_task`;
-  do not use it for other Python-side work.
+  the word survives only in the *task kind* of a workflow record (`tumult.synthesis.tasks`,
+  one per operation); do not use it for other Python-side work.
 - *workflow daemon*: the one process per user and host that runs durable workflows and owns
   the CPU budget (`tumult.synthesis.daemon`). Its connections have a role: a *server* (a
   Bokeh server process) keeps it alive while connected; a *client* (a script, a notebook)

@@ -19,6 +19,12 @@ from pathlib import Path
 
 STAR_KEYS = ("teff", "logg", "feh", "vmic")
 CONVENTIONS = ("[X/Fe]", "A(X)")
+# preference key -> SynthConfig field (see SynthConfig.to_prefs)
+PREF_FIELDS = {"dispatch_cwd": "root", "synth_output_dir": "cache", "linelist": "linelist",
+               "abund_file": "abundances", "absmet": "absmet", "R": "resolving_power",
+               "linelist_crop_aa": "linelist_skirt", "abund_step": "abundance_step",
+               "vmic_step": "vmic_step", "interp_method": "interpolation",
+               "max_threads": "threads", "expert_settings": "expert"}
 
 
 def _path(value):
@@ -116,6 +122,24 @@ class SynthConfig:
             if value is not None:
                 prefs[key] = str(self.resolve(value))
         return {**self.preferences, **prefs}
+
+    @classmethod
+    def from_prefs(cls, prefs):
+        """The configuration a preference dictionary describes; the inverse of
+        :meth:`to_prefs`. Keys without a field of their own go to ``preferences``, and an
+        empty path or a zero thread count means unset."""
+        prefs = dict(prefs)
+        values = {}
+        for key, name in PREF_FIELDS.items():
+            if key in prefs:
+                values[name] = prefs.pop(key)
+        for name in ("linelist", "abundances", "absmet"):
+            if isinstance(values.get(name), str) and not values[name].strip():
+                values[name] = None
+        if "threads" in values:
+            values["threads"] = int(values["threads"] or 0) or None
+        values["expert"] = values.get("expert") or {}
+        return cls(**values, preferences=prefs)
 
     def to_dict(self):
         value = {f.name: getattr(self, f.name) for f in fields(self)}
@@ -252,6 +276,14 @@ class Abundances(Mapping):
     def with_value(self, element, value):
         return Abundances({**self.values, str(element).capitalize(): value},
                           self.convention)
+
+    @classmethod
+    def from_override(cls, text, convention="[X/Fe]"):
+        """Abundances from an ``El=value`` override string (spaces or commas between
+        terms), or ``None`` for an empty one."""
+        from .api import _parse_abundances
+        values = _parse_abundances(text)
+        return cls(values, convention) if values else None
 
     def override(self):
         """The namelist ``abundances`` string, four decimals (part of run identity)."""

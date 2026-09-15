@@ -768,38 +768,39 @@ def test_snapshot_departures_are_reused_across_windows(tmp_path, monkeypatch):
 
 # --- durable workflow handles ------------------------------------------------------------
 def _stub_request(root):
-    """A resolvable request whose execution is stubbed; nothing here runs dispatch."""
-    from tumult.synthesis.request import NativeRequest
-    return NativeRequest(prefs={'abund_file': None, 'dispatch_cwd': str(root)},
-                        grid={'folder': ''},
-                        run_vals={'abundances': '', 'relative_abundances': False,
-                                  'mode': 'LTE'},
-                        target=(5750.0, 4.4, 0.0, 1.0),
-                        masks=({'fit': (5000., 5001.), 'synth': (5000., 5001.)},))
+    """A request whose synthesis is stubbed; nothing here runs dispatch."""
+    from tumult.synthesis import AtmosphereGrid, SynthConfig, SynthRequest
+    return SynthRequest(config=SynthConfig(root=root), atmosphere=AtmosphereGrid('grid'),
+                        star=(5750.0, 4.4, 0.0, 1.0), windows=[(5000., 5001.)])
 
 
-def _stub_result(resolved):
+def _submit(request):
+    from tumult.synthesis import submission
+    return submission.submit_operation('synthesis.synthesize', request)
+
+
+def _stub_result(request):
     import numpy as np
     from tumult.spectrum import Spectrum
     from tumult.synthesis.request import SynthesisResult
     xx = np.linspace(5000., 5001., 5)
-    return SynthesisResult((Spectrum(xx, np.ones_like(xx)),), (), resolved.request, {})
+    return SynthesisResult((Spectrum(xx, np.ones_like(xx)),), request.windows, request, {}, {})
 
 
 def test_workflow_cancelled_while_running_and_settled_result_is_reloadable(tmp_path, monkeypatch,
                                                                          workflow_daemon):
-    from tumult.synthesis import submission, workflows
+    from tumult.synthesis import operations, submission
 
     started, release = threading.Event(), threading.Event()
 
-    def execute(resolved, cancel_token=None):
+    def synthesize(request, background_lines=True, cancel_token=None):
         started.set()
         assert release.wait(5)
         cancel_token.check()
-        return _stub_result(resolved)
+        return _stub_result(request)
 
-    monkeypatch.setattr(workflows, 'execute_request', execute)
-    handle = submission.submit(_stub_request(tmp_path))
+    monkeypatch.setattr(operations, 'synthesize', synthesize)
+    handle = _submit(_stub_request(tmp_path))
     assert started.wait(5) and handle.status == 'running'
     assert handle.cancel() is True
     release.set()
@@ -809,7 +810,7 @@ def test_workflow_cancelled_while_running_and_settled_result_is_reloadable(tmp_p
 
     started.clear()
     release.set()
-    handle = submission.submit(_stub_request(tmp_path))
+    handle = _submit(_stub_request(tmp_path))
     result = handle.result(timeout=5)
     assert handle.status == 'finished' and len(result.spectra) == 1
     assert submission.open_workflow(handle.folder).result().spectra[0].values[0][0] == 5000.
@@ -825,7 +826,7 @@ def test_workflow_submission_failure_is_recorded(tmp_path, monkeypatch):
 
     monkeypatch.setattr(daemon, 'open_socket', unreachable)
     with pytest.raises(ConnectionError):
-        submission.submit(_stub_request(tmp_path))
+        _submit(_stub_request(tmp_path))
     handles = submission.discover_workflows(tmp_path / 'synth')
     assert [h.status for h in handles] == ['failed']
     assert 'no daemon here' in handles[0].to_dict()['error']
@@ -931,11 +932,13 @@ def test_discovery_is_scoped_to_the_workflow_folder_and_keeps_the_label(tmp_path
     submitter's label and meta; a record left running by a vanished process reports
     ``interrupted`` and cannot be cancelled (no PID is ever signalled)."""
     import json
-    from tumult.synthesis import submission, workflows
+    from tumult.synthesis import operations, submission
 
-    monkeypatch.setattr(workflows, 'execute_request',
-                        lambda resolved, cancel_token=None: _stub_result(resolved))
-    handle = submission.submit(_stub_request(tmp_path), label='t5750', meta={'k': [1]})
+    monkeypatch.setattr(operations, 'synthesize',
+                        lambda request, background_lines=True, cancel_token=None:
+                        _stub_result(request))
+    handle = submission.submit_operation('synthesis.synthesize', _stub_request(tmp_path),
+                                         label='t5750', meta={'k': [1]})
     handle.result(timeout=5)
     assert handle.label == 't5750' and handle.meta == {'k': [1]}
 
@@ -943,7 +946,7 @@ def test_discovery_is_scoped_to_the_workflow_folder_and_keeps_the_label(tmp_path
     stale.mkdir(parents=True)
     (stale / submission.RECORD).write_text(json.dumps(
         {'version': 1, 'id': stale.name, 'state': 'running', 'phase': 'synthesis',
-         'submitted': 1.0, 'request': {}, 'runs': [], 'result': None}))
+         'submitted': 1.0, 'task': None, 'runs': [], 'result': None}))
     elsewhere = tmp_path / 'synth' / 'cache' / 'run' / '_workflows' / 'x'
     elsewhere.mkdir(parents=True)
     (elsewhere / submission.RECORD).write_text('{"state": "finished", "submitted": 9e9}')

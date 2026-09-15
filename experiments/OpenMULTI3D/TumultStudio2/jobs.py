@@ -438,15 +438,14 @@ class ResultJobs:
                 lambda f: self.ctx.schedule(lambda: stopped("cancelled")) if f.cancelled() else None)
         return future
 
-    def submit_task(self, name, kind, args, done, *, prefs, result=None, on_progress=None,
-                    on_error=None, meta=None):
-        """Submit one calculation as a durable workflow of ``kind`` (a name in
-        :data:`tumult.synthesis.tasks.KINDS`) with JSON ``args``, through
-        ``ctx.submit_task``. It runs under the driver ``prefs`` name and outlives the tab;
-        the record's progress snapshots reach ``result`` in place (or ``on_progress``
-        when the job creates its result), the finished result reaches ``done`` and a
-        failure ``on_error`` (the Processes row already says why). Returns the job, or
-        ``None`` when submission was refused."""
+    def submit_operation(self, name, operation, request, done, *, kwargs=None, result=None,
+                         on_progress=None, on_error=None, meta=None):
+        """Submit one public ``operation`` (a name in :data:`tumult.synthesis.tasks.KINDS`)
+        on ``request`` with its keyword arguments as a durable workflow, through
+        ``ctx.submit_operation``. It outlives the tab; the record's progress snapshots
+        reach ``result`` in place (or ``on_progress`` when the job creates its result), the
+        finished result reaches ``done`` and a failure ``on_error`` (the Processes row
+        already says why). Returns the job, or ``None`` when submission was refused."""
         key = result.uid if result is not None else name
         generation = object()
         self.current[key] = generation
@@ -502,8 +501,8 @@ class ResultJobs:
             if on_error is not None:
                 on_error(exc)
 
-        job = self.ctx.submit_task(name, kind, args, complete, prefs=prefs, meta=meta,
-                                   on_progress=progress, on_error=failed)
+        job = self.ctx.submit_operation(name, operation, request, complete, kwargs=kwargs,
+                                        meta=meta, on_progress=progress, on_error=failed)
         if job is None:
             stopped("failed")            # refused at admission; the row keeps the reason
             return None

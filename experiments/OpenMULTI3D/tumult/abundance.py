@@ -19,6 +19,7 @@ independent): ``σ_REW = σ_W/(W ln10)`` and ``σ_A = σ_REW / |dREW/dA|``.
 """
 from __future__ import annotations
 
+from copy import deepcopy
 import logging
 from dataclasses import dataclass, field, fields
 from pathlib import Path
@@ -456,7 +457,6 @@ class AbundanceResult(MeasuredLines):
     """
     symbol: str
     summary: dict
-    synthesis: dict = field(default_factory=dict)
     termination: str = "measured"
     stage: str = "lines"
     teff: float = float("nan")
@@ -733,46 +733,49 @@ def measure_lines(mset, ref_spec, *, linelist, profile, snr, cont_pct):
     return result
 
 
-def run_abundance(request, result, observation, *, progress=None, cancel_token=None):
+def run_abundance(request, result, observation, *, run_values=None, progress=None,
+                  cancel_token=None):
     """Stage 2: screen and fit every included line of ``result``, in place.
 
-    ``request`` is a :class:`~tumult.synthesis.NativeRequest`; ``observation`` the spectrum the
-    lines were measured on. Each line gets the syntheses :func:`fit_line` needs — the
-    species in isolation, the full window, the window with the element removed, and the
-    adaptive abundance fit — plus the dREW/dA flanks, which go in as one batch so they fold
-    onto a single run's abundance-set axis. A request whose ``run_vals`` carry
-    ``only_elements`` (background lines switched off) fits and differentiates the element's
-    lines alone; the blend screen still compares against every species. ``progress(result)`` is called as each line
-    lands, so a caller can stream partial results; it must not raise.
+    ``request`` is the :class:`~tumult.synthesis.SynthRequest` the lines are synthesised
+    for and ``run_values`` what its syntheses add (:func:`tumult.synthesis.run_values`);
+    ``observation`` is the spectrum the lines were measured on. Each line gets the
+    syntheses :func:`fit_line` needs — the species in isolation, the full window, the
+    window with the element removed, and the adaptive abundance fit — plus the dREW/dA
+    flanks, which go in as one batch so they fold onto a single run's abundance-set axis.
+    Run values carrying ``only_elements`` (background lines switched off) fit and
+    differentiate the element's lines alone; the blend screen still compares against every
+    species. ``progress(result)`` is called as each line lands, so a caller can stream
+    partial results; it must not raise.
     """
-    from dataclasses import asdict
-    result.synthesis = asdict(request)
+    from .departures import DepartureGrid, Departures
     from .synthesis import workflows as synth
     from .synthesis.cancel import CancelledError
+    from .synthesis.inputs import Snapshot
+    from .synthesis.operations import run_values as complete_values
 
+    result.request = request
     report = progress or (lambda _result: None)
-    prefs, grid = request.prefs, request.grid
-    target, atmos_file = request.target, request.atmos_file
-    base_rv = dict(request.run_vals)
-    feh = request.feh
-    relative = bool(base_rv.get("relative_abundances", False))
-    solar = synth.abund_table(prefs)
+    extra = dict(run_values or {})
+    base_rv = complete_values(request, **extra)
+    star = request.star
+    feh = star.feh
+    relative = bool(base_rv.get("relative_abundances", True))
+    solar = synth.abund_table(request.config.to_prefs())
     base_abund = str(base_rv.get("abundances", "")).strip()
     symbol = result.symbol
-    from .synthesis.request import Snapshot3D
-    common_result = isinstance(request.selection, Snapshot3D) or request.departures is not None
+    # the batch functions synthesise 1D atmospheres; a snapshot or frozen departures go
+    # through the full execution path
+    common_result = isinstance(request.atmosphere, Snapshot) or \
+        isinstance(request.departures, (Departures, DepartureGrid))
 
     def synth_window(rv_over, window):
-        # an override of None drops that key from the base run values
-        rv = dict(base_rv)
-        rv.update(rv_over)
-        rv = {k: v for k, v in rv.items() if k not in rv_over or rv_over[k] is not None}
+        # an override of None drops that key from the run values
+        rv = {**extra, **rv_over}
         if common_result:
-            return request.with_run_vals(**rv).with_masks(
-                [{'fit': window, 'synth': window}]).execute(
-                    cancel_token=cancel_token).spectrum
-        return synth.compute(target, prefs, rv, *padded_window(window), grid=grid,
-                             atmos_file=atmos_file, cancel_token=cancel_token)
+            return synth.execute_request(request.update(windows=[window]), rv,
+                                         cancel_token=cancel_token).spectrum
+        return synth.compute(request, rv, *padded_window(window), cancel_token=cancel_token)
 
     def abund_terms(a):
         return abundance_override(symbol, a, base=base_abund, relative=relative,
@@ -794,14 +797,14 @@ def run_abundance(request, result, observation, *, progress=None, cancel_token=N
                                  "relative_abundances": relative}, _w)
 
         def synth_all_batch(a_list, _w=ln.window):
-            rvs = [{**base_rv, "abundances": abund_terms(a),
+            rvs = [{**extra, "abundances": abund_terms(a),
                     "relative_abundances": relative} for a in a_list]
             if common_result:
-                return [request.with_run_vals(**rv).with_masks(
-                    [{'fit': _w, 'synth': _w}]).execute(cancel_token=cancel_token).spectrum
+                return [synth.execute_request(request.update(windows=[_w]), rv,
+                                              cancel_token=cancel_token).spectrum
                         for rv in rvs]
-            return synth.compute_batch(target, prefs, rvs, *padded_window(_w), grid=grid,
-                                       atmos_file=atmos_file, cancel_token=cancel_token)
+            return synth.compute_batch(request, rvs, *padded_window(_w),
+                                       cancel_token=cancel_token)
 
         def synth_full_fn(a, _w=ln.window):
             return synth_window({"abundances": abund_terms(a),
@@ -814,10 +817,9 @@ def run_abundance(request, result, observation, *, progress=None, cancel_token=N
         def abund_fit_fn(guess, _w=ln.window, _fw=ln.fit_window):
             if common_result:
                 return synth.fit_request_line(observation, request, symbol, guess, _w, _fw,
-                                              cancel_token=cancel_token)
-            return synth.fit_line(observation, target, prefs, base_rv, symbol, guess,
-                                  *padded_window(_w), _fw,
-                                  grid=grid, atmos_file=atmos_file,
+                                              run_values=extra, cancel_token=cancel_token)
+            return synth.fit_line(observation, request, symbol, guess,
+                                  *padded_window(_w), _fw, run_values=extra,
                                   cancel_token=cancel_token)
 
         try:
@@ -831,7 +833,8 @@ def run_abundance(request, result, observation, *, progress=None, cancel_token=N
             logging.exception("Abundance: fit for line %.3f failed", ln.lam0)
             ln.flags = ("synth_failed",)
         result.relative = relative
-        result.teff, result.logg, result.feh, result.vmic = target[0], target[1], feh, target[3]
+        result.teff, result.logg, result.feh = star.teff, star.logg, feh
+        result.vmic = float("nan") if star.vmic is None else star.vmic
         report(result)
     return result
 
@@ -917,20 +920,18 @@ def species_symbol(ion):
     return species, strip_ion_stage(species)
 
 
-def measure_reference_lines(request, atom, *, ref_grid=None, ref_atmos_file=None, opts=None,
-                            quadrature=None, cancel_token=None):
+def measure_reference_lines(request, atom, *, opts=None, quadrature=None, cancel_token=None):
     """Stage 1: synthesise the 1D LTE reference from ``atom`` and measure its lines.
 
-    ``request`` is a :class:`~tumult.synthesis.NativeRequest` naming the target parameters,
-    preferences and composition; ``ref_grid`` the grid flagged as the 1D LTE reference,
-    which is interpolated at those parameters, or ``ref_atmos_file`` one 1D atmosphere used
-    as it is. The reference is computed at the request's abundance overrides. The model atom alone defines the spectrum and its wavelength
-    coverage, so no window is imposed - the reference spans the atom's full synthesised range,
-    and that run's ``linelist_out.txt`` supplies the candidate lines.
+    ``request`` is the :class:`~tumult.synthesis.SynthRequest` of the reference: its 1D
+    atmosphere (a grid is interpolated at its star), star and composition; its departures
+    do not enter. The model atom alone defines the spectrum and its wavelength coverage, so
+    no window is imposed - the reference spans the atom's full synthesised range, and that
+    run's ``linelist_out.txt`` supplies the candidate lines.
 
     With ``opts.line_grid`` (the default) the bound-bound wavelength grid and the line
     windows come from :func:`tumult.line_quadrature.prepare_line_quadrature` on the
-    reference model nearest the target (or ``quadrature``, prepared by the caller), and the
+    reference's MARCS model nearest the star (or ``quadrature``, prepared by the caller), and the
     reference is synthesised on that grid with
     the atom copy carrying the windows; each line's window is then its fit and synthesis
     window (its line mask). Where the windows of two atom lines overlap, and the reference
@@ -947,27 +948,24 @@ def measure_reference_lines(request, atom, *, ref_grid=None, ref_atmos_file=None
     """
     import uuid
 
+    from .departures import DepartureRequest
     from .synthesis import workflows as synth
 
     opts = opts or CorrectionOpts()
     profile, ew_min = str(opts.profile), float(opts.ew_min)
-    prefs, target = request.prefs, request.target
 
     windows, run_atom = {}, atom
     if opts.line_grid and quadrature is None:
-        quadrature = _prepare_quadrature(request, atom, ref_grid)
+        quadrature, _atmosphere = DepartureRequest((atom,)).prepare(request)
     if not opts.line_grid:
         quadrature = None
     if quadrature is not None:
         windows = _mask_windows(quadrature)
         run_atom = quadrature.atom_file
-    run_vals = request.run_vals
     ref_spec, run_dirs = synth.compute_reference(
-        target, prefs, run_atom, ref_grid, cancel_token=cancel_token, return_runs=True,
+        request, run_atom, cancel_token=cancel_token, return_runs=True,
         line_grid=quadrature.grid_file if quadrature else None,
-        with_linelist=bool(opts.linelist), atmos_file=ref_atmos_file,
-        abundances=run_vals.get("abundances", ""),
-        relative_abundances=run_vals.get("relative_abundances", True))
+        with_linelist=bool(opts.linelist))
     llist = synth.read_reference_linelist(run_dirs)
     if llist is None or len(llist) == 0:
         raise ValueError("No linelist_out.txt was produced by the reference run.")
@@ -1048,7 +1046,10 @@ def measure_reference_lines(request, atom, *, ref_grid=None, ref_atmos_file=None
     result = AbundanceResult(
         element=symbol, symbol=symbol, lines=lines, summary=correction_summary([]),
         stage="lines", profile=profile, uid=uuid.uuid4().hex[:8], relative=True)
-    result.teff, result.logg, result.feh, result.vmic = target
+    star = request.star
+    result.teff, result.logg, result.feh = star.teff, star.logg, star.feh
+    result.vmic = float("nan") if star.vmic is None else star.vmic
+    result.request = request
     result.ref_spec = ref_spec
     result.atom_path = str(atom)
     result.quadrature = quadrature.to_dict() if quadrature else {}
@@ -1066,19 +1067,6 @@ def atom_element(atom):
         if text and not text.startswith("*"):
             return text.split()[0].capitalize()
     raise ValueError(f"{atom} declares no element")
-
-
-def _prepare_quadrature(request, atom, ref_grid):
-    """The bound-bound grid and atom copy for ``atom`` on the reference model nearest the
-    request's target, generated once and cached (see :mod:`tumult.line_quadrature`)."""
-    from .line_quadrature import prepare_line_quadrature
-    from .synthesis import workflows as synth
-
-    prefs, target = request.prefs, request.target
-    atmos = synth.nearest_marcs_atmosphere(ref_grid, target, prefs)
-    vmic = float(target[3]) if len(target) > 3 and float(target[3]) > 0 else 1.0
-    return prepare_line_quadrature(synth.preparation_root(prefs), atom, atmos,
-                                   vmic=vmic, feh=float(request.feh))
 
 
 def _mask_centres(quadrature):
@@ -1275,9 +1263,10 @@ def run_nlte_corrections(request, result, atom, *, opts=None, progress=None,
                          cancel_token=None):
     """Stage 2: invert an NLTE curve of growth to each line's correction, in place.
 
-    ``request`` is a :class:`~tumult.synthesis.NativeRequest` naming the *NLTE target*
-    atmosphere and the composition; ``result`` the stage-1 :class:`AbundanceResult` whose
-    lines carry the reference EWs measured at that composition.
+    ``request`` is the :class:`~tumult.synthesis.SynthRequest` naming the *NLTE target*
+    atmosphere, star and composition (its departures do not enter: every rung solves
+    ``atom``'s own); ``result`` the stage-1 :class:`AbundanceResult` whose lines carry the
+    reference EWs measured at that composition.
 
     Every rung of the curve of growth is a full NLTE solve at its own abundance offset,
     applied on top of the element's abundance in the request's composition (the standard
@@ -1291,18 +1280,17 @@ def run_nlte_corrections(request, result, atom, *, opts=None, progress=None,
     guesses; it must not raise. Returns ``result`` at stage ``"corr"`` with its summary
     aggregated and ``termination`` ``"completed"`` or ``"round_limit"``.
     """
-    from dataclasses import asdict
-    result.synthesis = asdict(request)
     from .synthesis import workflows as synth
-    from .synthesis.request import Snapshot3D
+    from .synthesis.inputs import Snapshot
+    from .synthesis.operations import run_values as complete_values
 
     opts = opts or CorrectionOpts()
     report = progress or (lambda _result: None)
-    prefs, grid = request.prefs, request.grid
-    target, atmos_file = request.target, request.atmos_file
+    result.request = request
+    request = request.update(departures=None)
     symbol = result.symbol
-    step = float(prefs.get("abund_step") or 0.25)
-    common_result = isinstance(request.selection, Snapshot3D) or request.departures is not None
+    step = request.config.abundance_step
+    snapshot = isinstance(request.atmosphere, Snapshot)
 
     # the grid and atom copy stage 1 prepared, so both stages see the same line windows
     run_atom, line_grid = atom, None
@@ -1314,11 +1302,11 @@ def run_nlte_corrections(request, result, atom, *, opts=None, progress=None,
                                     "recompute the reference.")
         run_atom, line_grid = quadrature.atom_file, quadrature.grid_file
 
-    base_rv = request.run_vals
+    base_rv = complete_values(request)
     relative = bool(base_rv.get("relative_abundances", True))
     base_abund = str(base_rv.get("abundances", "") or "")
-    solar = synth.abund_table(prefs) if not relative else {}
-    feh = float(request.feh)
+    solar = synth.abund_table(request.config.to_prefs()) if not relative else {}
+    feh = float(request.star.feh)
     base_x = element_xfe(base_abund, symbol, relative=relative, feh=feh, solar=solar)
 
     def _rv(a):
@@ -1337,13 +1325,13 @@ def run_nlte_corrections(request, result, atom, *, opts=None, progress=None,
     # every rung is the atom's whole range on its own frequency grid (the reference's
     # sampling); each rung is a run, and a departure solve, of its own.
     def synth_offsets(offsets):
-        if common_result:
-            specs = [request.with_run_vals(**_rv(a)).with_masks([]).execute(
-                cancel_token=cancel_token).spectrum for a in offsets]
+        if snapshot:
+            specs = [synth.execute_request(request.update(windows=()), _rv(a),
+                                           cancel_token=cancel_token).spectrum
+                     for a in offsets]
         else:
-            specs = synth.compute_batch(target, prefs, [_rv(a) for a in offsets], grid=grid,
-                                        atmos_file=atmos_file, set_spectrum=False,
-                                        cancel_token=cancel_token)
+            specs = synth.compute_batch(request, [_rv(a) for a in offsets],
+                                        set_spectrum=False, cancel_token=cancel_token)
         return [[spec] * len(lines) for spec in specs]
 
     _rungs, bracketed = adaptive_cog(
@@ -1357,8 +1345,8 @@ def run_nlte_corrections(request, result, atom, *, opts=None, progress=None,
 
 
 # --- complete analysis operations ----------------------------------------------------------
-# The staged functions above serve the GUI, which lets a user inspect and edit each stage.
-# The operations below take a public SynthRequest and own the whole lifecycle.
+# The staged functions above let a caller inspect and edit each stage. The operations below
+# own the whole lifecycle; the GUI's tools reuse a curated measurement through ``measured``.
 
 def _target_spectrum(target):
     """A :class:`Spectrum` from a spectrum or a file path, and a provenance record."""
@@ -1410,30 +1398,26 @@ class _CogContext:
     """
 
     def __init__(self, request, lines, element, *, background_lines, limit, cancel_token):
-        from .departures import DepartureGrid, DepartureRequest, Departures
+        from .departures import DepartureGrid, Departures
         from .synthesis import workflows as synth
         from .synthesis.inputs import Snapshot
-        from .synthesis.operations import native_request
+        from .synthesis.operations import departure_run_values, run_values
 
-        departures = request.departures
-        if isinstance(departures, (Departures, DepartureGrid)):
+        if isinstance(request.departures, (Departures, DepartureGrid)):
             raise ValueError("A curve of growth needs a departure solve per abundance rung; "
                              "attach departures.request(...) instead of solved departures.")
         if isinstance(request.atmosphere, Snapshot):
             raise ValueError("Curve-of-growth fitting runs on 1D atmospheres and grids.")
-        self.quadrature = None
-        run_values = {}
-        if isinstance(departures, DepartureRequest):
-            self.quadrature, self.quadrature_atmosphere = departures.prepare(request)
-            run_values = {**departures.run_values(request, self.quadrature),
-                          "atom_lines": True}
-        native = native_request(request, **run_values)
-        self.native, self.element = native, element
-        self.prefs, self.base = native.prefs, dict(native.run_vals)
+        self.departure_values, self.quadrature, self.quadrature_atmosphere = \
+            departure_run_values(request)
+        self.request, self.element = request, element
+        self.lte_request = request.update(departures=None)
+        base = run_values(request, **self.departure_values)
+        self.prefs = request.config.to_prefs()
         self.solar = synth.abund_table(self.prefs)
         self.feh = float(request.star.feh)
-        self.relative = bool(self.base.get("relative_abundances", True))
-        self.base_abund = str(self.base.get("abundances", "") or "")
+        self.relative = bool(base.get("relative_abundances", True))
+        self.base_abund = str(base.get("abundances", "") or "")
         self.base_x = element_xfe(self.base_abund, element, relative=self.relative,
                                   feh=self.feh, solar=self.solar)
         self.background_lines = bool(background_lines)
@@ -1448,34 +1432,32 @@ class _CogContext:
         return abundance_override(self.element, xfe, base=self.base_abund,
                                   relative=self.relative, feh=self.feh, solar=self.solar)
 
-    def variant(self, xfe, *, species="fit", lte=False):
+    def variant(self, xfe, *, species="fit"):
         """Run values at [X/Fe] ``xfe``. ``species`` is ``"fit"`` (what the curve of growth
         synthesises), ``"all"``, ``"only"`` (the element alone) or ``"excluded"``."""
-        values = dict(self.base)
-        values.pop("only_elements", None)
-        values.pop("exclude_elements", None)
         # the element's term stays in every variant, so a single-variant batch always
         # folds its windows into one run, the excluded arm included
-        values["abundances"] = self._abundances(xfe)
+        values = {"abundances": self._abundances(xfe),
+                  "relative_abundances": self.relative}
         if species == "fit":
             species = "all" if self.background_lines else "only"
         if species == "only":
             values["only_elements"] = self.element
         elif species == "excluded":
             values["exclude_elements"] = self.element
-        if lte:
-            for key in ("atoms", "line_grid", "atom_lines", "only_atom"):
-                values.pop(key, None)
-            values["mode"] = "LTE"
         return values
 
-    def synthesize(self, variants):
-        """``spectra[variant][window]`` for run-value ``variants``."""
+    def synthesize(self, variants, *, lte=False):
+        """``spectra[variant][window]`` for run-value ``variants``: LTE syntheses at the
+        request's composition with ``lte``, else with the request's departures."""
         from .synthesis import workflows as synth
-        native = self.native
+        if lte:
+            request, extra = self.lte_request, {}
+        else:
+            request, extra = self.request, self.departure_values
         return synth.compute_window_batch(
-            native.target, self.prefs, variants, self.windows, grid=native.grid,
-            atmos_file=native.atmos_file, crop=self.crop, cancel_token=self.cancel_token)
+            request, [{**extra, **variant} for variant in variants], self.windows,
+            crop=self.crop, cancel_token=self.cancel_token)
 
 
 def screen_lines(context, *, blend_max=0.30, weak_frac=0.10):
@@ -1491,9 +1473,9 @@ def screen_lines(context, *, blend_max=0.30, weak_frac=0.10):
         return
     x0 = context.base_x
     only, full, excluded = context.synthesize([
-        context.variant(x0, species="only", lte=True),
-        context.variant(x0, species="all", lte=True),
-        context.variant(x0, species="excluded", lte=True)])
+        context.variant(x0, species="only"),
+        context.variant(x0, species="all"),
+        context.variant(x0, species="excluded")], lte=True)
     for w, ln in enumerate(context.lines):
         if not ln.include:
             continue
@@ -1525,7 +1507,7 @@ def fit_lines_cog(context, *, limit, max_rounds, profile, report=None):
         return [[specs[index[id(ln)]] for ln in lines] for specs in spectra]
 
     _rungs, bracketed = adaptive_cog(
-        lines, synthesize, step=context.prefs.get("abund_step") or 0.25, limit=limit,
+        lines, synthesize, step=context.request.config.abundance_step, limit=limit,
         max_rounds=max_rounds, profile=profile, cancel_token=context.cancel_token,
         report=report)
     for ln in lines:
@@ -1535,16 +1517,20 @@ def fit_lines_cog(context, *, limit, max_rounds, profile, report=None):
     return bracketed
 
 
-def fit(request, *, target, line_mask, method="cog", background_lines=True, profile="voigt",
-        snr=None, cont_pct=0.0, limit=1.0, max_rounds=CORR_MAX_ROUNDS, blend_max=0.30,
-        weak_frac=0.10, progress=None, cancel_token=None):
+def fit(request, *, target, line_mask=None, measured=None, method="cog",
+        background_lines=True, profile="voigt", snr=None, cont_pct=0.0, limit=1.0,
+        max_rounds=CORR_MAX_ROUNDS, blend_max=0.30, weak_frac=0.10, progress=None,
+        cancel_token=None):
     """Measure ``target`` in the windows of ``line_mask`` and fit the element's abundance.
 
     ``request`` is a :class:`~tumult.synthesis.SynthRequest`; ``target`` a
     :class:`~tumult.spectrum.Spectrum` or a spectrum file, ``line_mask`` a
     :class:`~tumult.linemask.LineMaskSet` or a mask file naming its element. The mask
     windows are the measurement windows; synthesis windows are padded internally, and the
-    configured line list identifies the dominant transition of each window.
+    configured line list identifies the dominant transition of each window. ``measured``
+    instead continues a result of :func:`measure_lines` (or of an earlier fit): its lines,
+    as curated, are fitted without measuring the target again, and its identity and
+    annotations are kept.
 
     ``method="cog"`` measures each window's EW (``profile``, with ``snr`` and ``cont_pct``
     errors), screens weak and blended lines at the request's composition
@@ -1555,7 +1541,8 @@ def fit(request, *, target, line_mask, method="cog", background_lines=True, prof
     request (``departures.request``) make every rung an NLTE solve of its own.
 
     ``method="profile"`` is the direct profile fit of abundance, velocity shift and
-    broadening (:func:`run_abundance`) on the same measurement.
+    broadening (:func:`run_abundance`) on the same measurement, followed by its error
+    budget (:func:`finalize_result`).
 
     Returns a completed :class:`AbundanceResult` in [X/Fe] (profile: in the request's
     convention) whose ``request`` and ``target`` record the inputs;
@@ -1569,27 +1556,38 @@ def fit(request, *, target, line_mask, method="cog", background_lines=True, prof
         raise TypeError("abundance.fit expects a SynthRequest")
     request.check()
     spectrum, target_record = _target_spectrum(target)
-    mset = _line_mask_set(line_mask)
     config = request.config
     report = progress or (lambda _result: None)
-    result = measure_lines(mset, spectrum,
-                           linelist=str(config.resolve(config.linelist)) if config.linelist
-                           else None, profile=profile, snr=snr, cont_pct=cont_pct)
+    if measured is not None:
+        if not measured.lines:
+            raise ValueError("The measured result has no lines to fit.")
+        result = deepcopy(measured)
+        element = result.element
+    else:
+        if line_mask is None:
+            raise ValueError("Pass the line_mask to measure, or a measured result.")
+        mset = _line_mask_set(line_mask)
+        element = mset.element
+        result = measure_lines(mset, spectrum,
+                               linelist=str(config.resolve(config.linelist)) if config.linelist
+                               else None, profile=profile, snr=snr, cont_pct=cont_pct)
     result.request, result.target, result.method = request, target_record, method
     result.teff, result.logg, result.feh = request.star.teff, request.star.logg, request.star.feh
     result.vmic = float("nan") if request.star.vmic is None else request.star.vmic
     report(result)
 
     if method == "profile":
-        from .synthesis.operations import native_request
-        native = native_request(request, **({} if background_lines
-                                            else {"only_elements": mset.element}))
-        run_abundance(native, result, spectrum, progress=progress, cancel_token=cancel_token)
+        from .synthesis.operations import departure_run_values
+        run_values, _quadrature, _atmosphere = departure_run_values(request)
+        if not background_lines:
+            run_values["only_elements"] = element
+        run_abundance(request, result, spectrum, run_values=run_values, progress=progress,
+                      cancel_token=cancel_token)
         finalize_result(result, spectrum, snr, cont_pct)
         result.abundances = request.abundances.to_dict() if request.abundances else {}
         return result
 
-    context = _CogContext(request, result.lines, mset.element,
+    context = _CogContext(request, result.lines, element,
                           background_lines=background_lines, limit=limit,
                           cancel_token=cancel_token)
     screen_lines(context, blend_max=blend_max, weak_frac=weak_frac)
@@ -1665,8 +1663,6 @@ def nlte_corrections(request, *, method="cog", background_lines=False,
     ``"completed"`` when every line was bracketed and ``"round_limit"`` otherwise.
     """
     from .departures import DepartureRequest
-    from .synthesis.inputs import AtmosphereGrid
-    from .synthesis.operations import native_request
     from .synthesis.request import SynthRequest
 
     if method != "cog":
@@ -1692,17 +1688,13 @@ def nlte_corrections(request, *, method="cog", background_lines=False,
                           linelist=background_lines)
     quadrature, quadrature_atmosphere = departures.prepare(request)
     atom = request.config.resolve(departures.atom)
-    lte_native = native_request(lte_request)
-    reference_kw = ({"ref_grid": lte_native.grid} if isinstance(reference, AtmosphereGrid)
-                    else {"ref_atmos_file": str(lte_native.atmos_file)})
-    result = measure_reference_lines(lte_native, atom, opts=opts, quadrature=quadrature,
-                                     cancel_token=cancel_token, **reference_kw)
+    result = measure_reference_lines(lte_request, atom, opts=opts, quadrature=quadrature,
+                                     cancel_token=cancel_token)
     result.request, result.method = request, "cog"
     report(result)
     if cancel_token is not None:
         cancel_token.check()
-    nlte_native = native_request(request, **departures.run_values(request, quadrature))
-    run_nlte_corrections(nlte_native, result, atom, opts=opts, progress=progress,
+    run_nlte_corrections(request, result, atom, opts=opts, progress=progress,
                          cancel_token=cancel_token)
     result.request = request
     result.provenance = {

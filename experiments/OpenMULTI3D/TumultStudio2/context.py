@@ -21,13 +21,12 @@ bundle of closures, and cross-tool reactions go through its event bus:
   IO pool, cancelled when the session closes unless admitted as detached).
 * ``ctx.submit_io`` - the same for work that waits on the network or disk (a grid
   download), on the IO pool rather than the CPU-budgeted one.
-* ``ctx.submit_workflow`` - queue one durable synthesis request (every synthesis of the
-  modal) and deliver its result to this document when it settles; the workflow keeps
-  running when the session closes. ``ctx.submit_task`` does the same for the tool
-  calculations of :mod:`tumult.synthesis.tasks` (a fit, an abundance run, a balance,
-  NLTE corrections), streaming their progress snapshots back; ``ctx.task_importers``
-  and ``ctx.task_progress`` are where a tool registers how a record of its kind that
-  another document submitted is delivered to it. ``ctx.synth_modal`` is the
+* ``ctx.submit_operation`` - queue one public operation of :mod:`tumult.synthesis.tasks`
+  on a request (a synthesis, a fit, an abundance fit, a balance, NLTE corrections) as a
+  durable workflow, deliver its result to this document when it settles and stream its
+  progress snapshots back; the workflow keeps running when the session closes.
+  ``ctx.task_importers`` and ``ctx.task_progress`` are where a tool registers how a
+  record of its operation that another document submitted is delivered to it. ``ctx.synth_modal`` is the
   :class:`synthmodal.SynthModal` that collects synthesis and fit requests.
 * ``ctx.jobs``    - the :class:`jobs.JobTable`: every background operation this document
   admitted, with its queued/running/cancelling/terminal state (the Processes panel).
@@ -80,10 +79,9 @@ class AppContext:
         self.busy = lambda on: None
         self.submit = None
         self.submit_io = None
-        self.submit_workflow = None  # (name, request, on_done) -> WorkflowHandle; by main
-        self.submit_task = None      # (name, kind, args, on_done, ...) -> Job; by main
+        self.submit_operation = None  # (name, operation, request, on_done, ...) -> Job; by main
         # a tool's delivery of a record of its kind that this document did not submit
-        # (a reconnect, a loaded slot): kind name -> fn(result, handle) for the finished
+        # (a reconnect, a loaded slot): operation name -> fn(result, handle) for the finished
         # result and fn(snapshot, handle) for an intermediate one; tools register both
         self.task_importers = {}
         self.task_progress = {}

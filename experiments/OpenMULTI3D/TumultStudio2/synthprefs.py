@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import store
+from tumult.synthesis import AtmosphereGrid, SynthConfig
 from tumult.synthesis import workflows as synth
 from gridmanager import ATMOS_FORMATS
 
@@ -113,3 +114,19 @@ def load_prefs():
     prefs = dict(PREF_DEFAULTS)
     prefs.update(store.get_section("synthesis"))
     return prefs
+
+
+def synth_config(prefs=None):
+    """The :class:`~tumult.synthesis.SynthConfig` the preference pages state; the rest of
+    the ``synthesis`` section (grid registry, selections) is interface state."""
+    prefs = load_prefs() if prefs is None else prefs
+    return SynthConfig.from_prefs({key: prefs[key] for key in PREF_DEFAULTS if key in prefs})
+
+
+def atmosphere_grid(record, preparation=None):
+    """A registered grid record as an :class:`~tumult.synthesis.AtmosphereGrid`."""
+    return AtmosphereGrid(record["folder"], pattern=record.get("pattern") or None,
+                          format=record.get("format") or "Marcs",
+                          snapshots=record.get("snapshots") or None,
+                          resolution=record.get("resolution") or None,
+                          preparation=preparation)

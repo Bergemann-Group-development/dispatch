@@ -17,7 +17,7 @@ import pytest
 
 import tumult.abundance as ab
 from tumult.spectrum import Spectrum
-from tumult.synthesis import NativeRequest
+from tumult.synthesis import AtmosphereGrid, SynthConfig, SynthRequest
 
 LAM0 = 5000.0
 RANGE = (LAM0 - 5.0, LAM0 + 5.0)
@@ -38,8 +38,8 @@ def stub_synth(monkeypatch):
 
     calls = {"batch": 0, "set_spectrum": set(), "fold": set(), "windows": [], "rounds": []}
 
-    def fake_batch(target, prefs, rvs, xmin=None, xmax=None, *, grid, atmos_file=None,
-                   set_spectrum=True, cancel_token=None, fold=False, **kw):
+    def fake_batch(request, rvs, xmin=None, xmax=None, *, set_spectrum=True,
+                   cancel_token=None, fold=False, **kw):
         calls["batch"] += 1
         calls["set_spectrum"].add(set_spectrum)
         calls["fold"].add(fold)
@@ -71,8 +71,8 @@ def _stage1(profile="trapz", window=(LAM0 - 0.5, LAM0 + 0.5)):
 
 
 def _request(step=0.1):
-    return NativeRequest(prefs={"abund_step": step}, grid={"folder": "grid"}, run_vals={},
-                        target=(5777.0, 4.4, 0.0, 1.0))
+    return SynthRequest(config=SynthConfig(abundance_step=step),
+                        atmosphere=AtmosphereGrid("grid"), star=(5777.0, 4.4, 0.0, 1.0))
 
 
 def _computed(calls):

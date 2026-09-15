@@ -174,6 +174,20 @@ def _file_identity(path):
             'mtime_ns': stat.st_mtime_ns}
 
 
+def _linelist_files(path):
+    """Expand the file-or-folder preference into files accepted by ``hop_prune.x``.
+
+    Production runs hand a folder to ``composition_patch_mod``, which expands its direct
+    children before loading them.  The standalone pruner deliberately accepts explicit
+    files only, so its caller must perform the equivalent expansion.
+    """
+    path = Path(path).expanduser().resolve()
+    if path.is_dir():
+        return tuple(sorted(item for item in path.iterdir()
+                            if item.is_file() and not item.name.startswith('.')))
+    return (path,)
+
+
 @dataclass(frozen=True)
 class PreparedLineList:
     """Reusable HOP selection for one or more deterministic MARCS references."""
@@ -222,6 +236,7 @@ def prepare_linelist(output_root, references, linelist, windows, *, R,
     concurrent ``hop_prune.x`` children (:func:`tumult.prune.prune_batch`).
     """
     master_id = _file_identity(linelist)
+    master_files = _linelist_files(master_id['path'])
     reference_ids = tuple(_file_identity(path) for path in references)
     bounds = tuple((float(min(w)), float(max(w))) for w in windows)
     if not bounds:
@@ -249,7 +264,7 @@ def prepare_linelist(output_root, references, linelist, windows, *, R,
         if not jobs:
             window_file.write_text(_window_text(sorted(bounds)))
         jobs.append((output, prune.prune_namelist(
-            output, Path(reference['path']).resolve(), [Path(master_id['path']).resolve()],
+            output, Path(reference['path']).resolve(), master_files,
             window_file, R=R, dlam=dlam, vmic=vmic, feh=feh, abundances=abundances,
             relative_abundances=relative_abundances)))
     # one hop_prune.x child per uncached reference, scheduled together

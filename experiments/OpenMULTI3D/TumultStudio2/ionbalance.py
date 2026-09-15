@@ -8,13 +8,14 @@ comes back is a :class:`measurement.Measurement` — its own object in the left 
 because everything in it is spectrum-dependent — holding the measured lines and the fit that
 stands on them.
 
-Two phases, one background job:
+Two phases, one durable ``sparams.ionbalance`` workflow (``solver="diagonal"``), continuing the
+measurement object the modal creates (``measured=``) so its snapshots stream into it:
 
 1. **Measure + identify.** :func:`tumult.sparams.measure_balance_lines`: every switched-on
    window's EW, FWHM and EW error on the target, with the dominant transition in each window
-   taken from HOP line strengths computed on the entry point's atmosphere
-   (:func:`tumult.linestrength.compute_band`) rather than a raw log gf ranking — which stage a
-   window belongs to is a property of the star, and the ionization balance reads it off this.
+   taken from HOP line strengths computed on the MARCS model nearest the entry point
+   (:func:`tumult.linestrength.band_on_atmosphere`) rather than a raw log gf ranking — which
+   stage a window belongs to is a property of the star, and the ionization balance reads it off this.
    A window another species dominates is flagged ``off_element`` and switched off, and a
    window whose dominant transition is the element's third stage or above simply carries no
    diagnostic weight.
@@ -54,8 +55,8 @@ from canvas import ACCENT, MUTED
 from controls import Field, Form
 from ew import profile_options
 from htmlbridge import pulse
-from synthprefs import RUN_DEFAULTS, load_prefs, missing_prefs
-from tumult.synthesis import NativeRequest
+from synthprefs import atmosphere_grid, load_prefs, missing_prefs, synth_config
+from tumult.synthesis import Star, SynthRequest
 
 ION2_COLOR = "#e05c5c"     # singly-ionised points (the neutral stage uses the shared accent)
 # entry-point choice that is not a reference-star class
@@ -128,7 +129,9 @@ class BalanceSynthesis:
     def selected_grid(self):
         return self.grids._find(str(self.form.value("atmos_grid_id") or ""))
 
-    def context(self, element):
+    def context(self, params):
+        """The balance's :class:`~tumult.synthesis.SynthRequest` starting at ``params``
+        (``{teff, logg, feh, vmic}``), or ``None`` with :attr:`reason` set."""
         prefs = load_prefs()
         if missing_prefs(prefs):
             self.reason = "Synthesis paths are missing — check Preferences → Synthesis."
@@ -141,19 +144,24 @@ class BalanceSynthesis:
         if not str(grid.get("folder") or "").strip():
             self.reason = "The selected atmosphere grid has no folder."
             return None
+        # A balance is intentionally a reproducible LTE, scaled-solar calculation on an
+        # interpolated grid; the element abundance itself is supplied by each
+        # curve-of-growth point, and each iteration moves the star.
+        reference = self.grids.reference_grid()
+        try:
+            request = SynthRequest(
+                config=synth_config(prefs),
+                atmosphere=atmosphere_grid(grid, atmosphere_grid(reference) if reference else None),
+                star=Star(**params))
+        except (TypeError, ValueError) as exc:
+            self.reason = str(exc)
+            return None
         self.reason = None
-        # A balance is intentionally a reproducible LTE, scaled-solar calculation.  The
-        # element abundance itself is supplied by each curve-of-growth point in _solve.
-        run_vals = {**RUN_DEFAULTS, "mode": "LTE", "atoms": [], "abundances": "",
-                    "relative_abundances": True, "atmos_mode": "interp",
-                    "atmos_file": ""}
-        if not self.form.value("background_lines"):
-            run_vals["only_elements"] = element
-        # The solver reads prefs/grid/run_vals/atmos_file; the point it synthesises at comes
-        # from the fitted parameters each iteration, not from the request, so target is left
-        # unset here.
-        return NativeRequest(prefs=prefs, grid=grid, run_vals=run_vals,
-                            target=None, atmos_file=None)
+        return request
+
+    @property
+    def background_lines(self):
+        return bool(self.form.value("background_lines"))
 
 
 class IonBalanceTool(AbundanceWizard):
@@ -563,19 +571,16 @@ class IonBalanceTool(AbundanceWizard):
         if err:
             self.notify(err)
             return
-        ctx = self.setup.context(refit.element if refit is not None else mset.element)
-        if ctx is None:
-            self.notify(self.setup.reason or "Configure the synthesis setup first.")
-            return
-
         v2 = self.form2.values()
         free = {k: bool(v2[f"fit_{k}"]) for k in sp.PARAM_KEYS}
         entry = str(v2["entry"])
         params0 = {k: float(v2[k]) for k in sp.PARAM_KEYS}
+        ctx = self.setup.context(params0)
+        if ctx is None:
+            self.notify(self.setup.reason or "Configure the synthesis setup first.")
+            return
         va = self.formadv.values()
-        opts = {"max_iter": max(1, int(float(va["max_iter"]))),
-                "span": float(va["span"]), "points": max(2, int(float(va["points"]))),
-                "tols": {k: float(va[f]) for k, f in TOL_FIELDS.items()}}
+        tols = {k: float(va[f]) for k, f in TOL_FIELDS.items()}
 
         if refit is None:
             v1 = self.form1.values()
@@ -590,10 +595,9 @@ class IonBalanceTool(AbundanceWizard):
             res.name = f"{res.element} balance · measuring…"
             self.results.append(res)
             self.selected_uid = res.uid
-            masks = [m for m in mset.masks if m.include]
         else:
-            res, masks = refit, None
-        res.params0, res.entry, res.free, res.tols = dict(params0), entry, free, opts["tols"]
+            res = refit
+        res.params0, res.entry, res.free, res.tols = dict(params0), entry, free, tols
         res.stage = ms.STAGE_MEASURED
         res.history, res.diags, res.sigmas, res.converged = [], {}, {}, False
 
@@ -604,15 +608,16 @@ class IonBalanceTool(AbundanceWizard):
         self.select_result(res.uid)
         self.notify(f"{res.element} balance: "
                     + ("solving…" if refit is not None else "measuring the windows…"))
-        linelist = getattr(self.ctx.strengths, "linelist", None) or str(self.master_path)
-        args = {"request": ctx.to_dict(), "result": res.to_dict(),
-                "masks": None if masks is None else [m.to_dict() for m in masks],
-                "observation": spec.to_dict() if masks is not None else None,
-                "linelist": str(linelist), "opts": opts}
-        self.jobs.submit_task(f"ionbal:{res.element}", self.task_kind, args, self._on_done,
-                              prefs=ctx.prefs, result=res)
+        kwargs = {"target": spec, "measured": res, "solver": "diagonal", "free": free,
+                  "tols": tols, "max_iter": max(1, int(float(va["max_iter"]))),
+                  "span": float(va["span"]), "points": max(2, int(float(va["points"]))),
+                  "background_lines": self.setup.background_lines}
+        if refit is None:
+            kwargs["line_mask"] = mset
+        self.jobs.submit_operation(f"ionbal:{res.element}", self.task_kind, ctx, self._on_done,
+                                   kwargs=kwargs, result=res)
 
-    task_kind = "ionisation_balance"
+    task_kind = "sparams.ionbalance"
     import_task_result = lambda self, result, handle: self._on_done(self._adopt(result))
 
     def _on_done(self, result):
