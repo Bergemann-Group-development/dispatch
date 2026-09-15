@@ -682,8 +682,7 @@ contains
         do i_set=1, self%n_set
           call self%background(comp, i_mu, i_set, do_rotate_atmos)
           call self%back_to_work()
-          if (i_set /= self%i_set_cnt) &
-            call self%foreground(comp, i_mu, i_set, do_rotate_atmos, wmu, vproj)
+          call self%foreground(comp, i_mu, i_set, do_rotate_atmos, wmu, vproj)
           call self%work_to_transfer_units()
           call self%set_upstream_boundary(i_mu, i_set, ng)
           call self%radiative_transfer(comp, vec, do_rotate_atmos, i_mu)
@@ -701,8 +700,7 @@ contains
           vec = rt_out%vec(:,i_mu)
           call self%get_vproj(vproj, vec, do_rotate_atmos, i_mu)
           call self%back_to_work()
-          if (i_set /= self%i_set_cnt) &
-            call self%foreground(comp, i_mu, i_set, do_rotate_atmos, wmu, vproj)
+          call self%foreground(comp, i_mu, i_set, do_rotate_atmos, wmu, vproj)
           call self%work_to_transfer_units()
           call self%set_upstream_boundary(i_mu, i_set, ng)
           call self%radiative_transfer(comp, vec, do_rotate_atmos, i_mu)
@@ -1045,6 +1043,13 @@ contains
     integer :: i, i_seg
     real(dp), allocatable :: window_lam(:)
     !-----------------------------------------------------------------------------
+    ! A continuum set carries the background only, in the scattering iterations as
+    ! well as in the final pass: its Jnu, and with it the scattering term of the
+    ! continuum spectrum, must come from the line-free problem.
+    if (self%set_kind(i_set) == set_continuum) then
+      self%do_line_scat = .false.
+      return
+    endif
     ! detailed line list vs sampled LTE line table, per pass (rt_iter or rt_out)
     rtp => pass_params(self)
     ! An output patch on a window_file grid visits the lines of its whole window, however
