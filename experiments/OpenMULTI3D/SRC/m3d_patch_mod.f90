@@ -51,6 +51,18 @@ MODULE m3d_patch_mod
       integer :: key(4)
       class(key_link_t), pointer :: next => null()
     end type key_link_t
+
+    ! Detailed line-list increments to (xhat, ehat) at one output patch's own
+    ! points for one set, as add_linelist_opacities2 returns them, plus the
+    ! physical chi_scat when line_scattering is on.  Shape (fs:fe,nx,ny,nz).
+    type, public :: point_opac_set_t
+      real(4), dimension(:,:,:,:), allocatable :: chi, eta, scat
+      logical :: initialised=.false.
+    end type point_opac_set_t
+
+    type, public :: point_opac_t
+      type(point_opac_set_t), allocatable :: set(:)   ! (n_set)
+    end type point_opac_t
   
     !-----------------------------------------------------------------------------
   
@@ -72,6 +84,11 @@ MODULE m3d_patch_mod
       ! only non-departure species; same i_nu keying and lock pattern as opac.
       type(sample_optab_type), pointer :: ll_opac_tables(:) => null()   ! indexed by i_nu
       type(lock_t),            pointer :: ll_opac_locks(:)  => null()   ! same bounds
+      ! Detailed line-list opacity of the 1D output pass, stored by the first
+      ! foreground of each (i_nu, set) and copied back by the later scattering
+      ! iterations and the final pass; indexed by the output i_nu in [-n_nu_out,-1].
+      type(point_opac_t), pointer :: ll_point_tables(:) => null()
+      type(lock_t),       pointer :: ll_point_locks(:)  => null()   ! same bounds
       class(atomic_spectrum_type), pointer :: sp => null()
       type(atom_type), dimension(:), pointer :: atoms => null()
       class(key_link_t), pointer :: key_list => null()

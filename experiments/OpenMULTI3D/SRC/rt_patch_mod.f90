@@ -17,7 +17,7 @@ MODULE rt_patch_mod
   USE atom_mod, only: atom_type, atom_data_t, atom_trans_t, atomic_spectrum_type
   USE ray_patch_mod, only: ray_patch_t, output_patch_window, output_patch_range
   USE m3d_halo_mod, only: lock_mem, unlock_mem
-  USE m3d_patch_mod, only: use_vel, m3d_patch_t, &
+  USE m3d_patch_mod, only: use_vel, m3d_patch_t, point_opac_set_t, &
     dlam, n_nu_out, &
     premature_finish, m3d_patch_pre_update=>pre_update, save_resolved, &
     column_by_column, rotate_atmos, save_cntrbf, depression_cntrbf, &
@@ -212,6 +212,7 @@ MODULE rt_patch_mod
     procedure :: long_char_hermite2
     procedure :: short_char_hermite
     procedure :: get_vproj
+    procedure :: free_ll_point_table
     procedure :: print_post_update_info
     procedure :: nbor_relations => rt_patch_nbor_relations
     procedure :: init_nbors_hash
@@ -738,6 +739,7 @@ contains
     if (allocated(self%use_ll) .and. self%do_final) then
       if (any(self%use_ll)) call self%reduce_ll_diag()
     endif
+    if (self%do_final) call self%free_ll_point_table()
 
     if (end_boundary) then
       if (self%do_final .and. self%n_mu>0) then
@@ -1039,7 +1041,7 @@ contains
     real(4), intent(in) :: wmu
     real(4), intent(in), dimension(:,:,:) :: vproj
     type(rt_params_t), pointer :: rtp
-    logical :: use_linelist, sample_ll, do_scat
+    logical :: use_linelist, sample_ll, do_scat, use_store
     integer :: i, i_seg
     real(dp), allocatable :: window_lam(:)
     !-----------------------------------------------------------------------------
@@ -1058,16 +1060,7 @@ contains
     ! line_scattering: accumulate the (1-eps)-weighted LTE line opacity, then
     ! redirect that fraction of the line source from Bnu to Jnu (see below)
     do_scat = line_scattering .and. (use_linelist .or. sample_ll)
-    if (do_scat) then
-      self%chi_scat = 0.
-      if (use_linelist) then
-        ! per-stage scattering fraction on the detailed-path frequency grid
-        call compute_epsilon_stage(1, self%sub_sp%nu, comp%temp, comp%ne, &
-          self%one_m_eps(:,:,:,:,1))
-        call compute_epsilon_stage(2, self%sub_sp%nu, comp%temp, comp%ne, &
-          self%one_m_eps(:,:,:,:,2))
-      endif
-    endif
+    if (do_scat) self%chi_scat = 0.
 
     do i=1, self%natom
       associate(atom=>self%atoms(i), trans=>self%trans(i))
@@ -1095,19 +1088,16 @@ contains
       departures => self%m3d_parent%departures(:,i)
     endif
 
-    if (use_linelist) then
-      ! full detailed line list (non-sampled mode): every species, with departures
-      associate(xhat=>self%work(:,:,:,1:self%nz,1), ehat=>self%work(:,:,:,1:self%nz,2))
-        if (do_scat) then
-          call comp%add_linelist_opacities2(self%sub_sp, xhat, ehat, dlam, vproj, &
-            departures=departures, one_m_eps=self%one_m_eps, chi_scat=self%chi_scat, &
-            beta=self%beta, i_set=i_set, window_lam=window_lam)
-        else
-          call comp%add_linelist_opacities2(self%sub_sp, xhat, ehat, dlam, vproj, &
-                                            departures=departures, i_set=i_set, &
-                                            window_lam=window_lam)
-        endif
-      end associate
+    ! The stored line opacity of a 1D output patch holds for any direction as long
+    ! as the line profiles are unshifted; a moving atmosphere recomputes every call.
+    use_store = use_linelist .and. self%do_out_sp .and. &
+                associated(self%m3d_parent%ll_point_tables)
+    if (use_store) use_store = all(vproj == 0.)
+
+    if (use_store) then
+      call stored_linelist()
+    elseif (use_linelist) then
+      call detailed_linelist()
     elseif (sample_ll) then
       ! (a) non-departure (LTE) species from the sampled table, Doppler-shifted per
       ! cell, added to both work slots (xhat == ehat in LTE); the table also
@@ -1139,7 +1129,117 @@ contains
     ! no separate pass over the work arrays, and no division by beta.
     self%do_line_scat = do_scat
 
+  contains
+
+    !-----------------------------------------------------------------------------
+    ! Full detailed line list (non-sampled mode): every species, with departures.
+    ! chi_lines/eta_lines, when present, receive the increments added to the work
+    ! arrays.
+    subroutine detailed_linelist(chi_lines, eta_lines)
+      real(4), dimension(:,:,:,:), optional :: chi_lines, eta_lines
+      !---------------------------------------------------------------------------
+      associate(xhat=>self%work(:,:,:,1:self%nz,1), ehat=>self%work(:,:,:,1:self%nz,2))
+        if (do_scat) then
+          ! per-stage scattering fraction on the detailed-path frequency grid
+          call compute_epsilon_stage(1, self%sub_sp%nu, comp%temp, comp%ne, &
+            self%one_m_eps(:,:,:,:,1))
+          call compute_epsilon_stage(2, self%sub_sp%nu, comp%temp, comp%ne, &
+            self%one_m_eps(:,:,:,:,2))
+          call comp%add_linelist_opacities2(self%sub_sp, xhat, ehat, dlam, vproj, &
+            departures=departures, one_m_eps=self%one_m_eps, chi_scat=self%chi_scat, &
+            beta=self%beta, i_set=i_set, window_lam=window_lam, &
+            chi_lines=chi_lines, eta_lines=eta_lines)
+        else
+          call comp%add_linelist_opacities2(self%sub_sp, xhat, ehat, dlam, vproj, &
+                                            departures=departures, i_set=i_set, &
+                                            window_lam=window_lam, &
+                                            chi_lines=chi_lines, eta_lines=eta_lines)
+        endif
+      end associate
+    end subroutine detailed_linelist
+
+    !-----------------------------------------------------------------------------
+    ! The detailed line list of a 1D output patch, computed once per set and then
+    ! copied.  Temperature, densities and departures stay fixed through the output
+    ! scattering iterations and the final pass.  The one input that moves is the
+    ! kernels' wing-cutoff reference: work xhat carries sigma*(Jnu-Bnu), so later
+    ! passes would cut line wings against a slightly different continuum.  The store
+    ! keeps the cutoff of the first pass, where Jnu=Bnu; the difference is below
+    ! the kernel tolerance.  The first foreground of the (i_nu, set) fills the store
+    ! while its i_mu twins and the final patch wait on the lock.  Adding the stored
+    ! increments repeats the kernel's own last step.
+    subroutine stored_linelist()
+      type(point_opac_set_t), pointer :: store
+      type(lock_t), pointer :: lock
+      logical :: filled_here
+      integer :: x, y, z, f
+      !---------------------------------------------------------------------------
+      if (.not. one_dimensional) &
+        error stop 'rt_patch%foreground: the stored line-list opacity requires a 1D atmosphere'
+      lock => self%m3d_parent%ll_point_locks(self%i_nu)
+      filled_here = .false.
+      call lock%set('ll_point_table')
+      associate(table => self%m3d_parent%ll_point_tables(self%i_nu))
+        if (.not. allocated(table%set)) allocate(table%set(self%n_set))
+        store => table%set(i_set)
+      end associate
+      if (.not. store%initialised) then
+        allocate(store%chi(self%fs:self%fe,self%nx,self%ny,self%nz), &
+                 store%eta(self%fs:self%fe,self%nx,self%ny,self%nz))
+        call mem_register(store%chi, label='ll_point_table')
+        call mem_register(store%eta, label='ll_point_table')
+        call detailed_linelist(store%chi, store%eta)
+        if (do_scat) then
+          allocate(store%scat, source=self%chi_scat)
+          call mem_register(store%scat, label='ll_point_table')
+        endif
+        store%initialised = .true.
+        filled_here = .true.
+      endif
+      call lock%unset('ll_point_table')
+      if (filled_here) return
+
+      do z=1, self%nz
+        do y=1, self%ny
+          do x=1, self%nx
+            do f=self%fs, self%fe
+              self%work(f,x,y,z,2) = self%work(f,x,y,z,2) + store%eta(f,x,y,z)
+              self%work(f,x,y,z,1) = self%work(f,x,y,z,1) + store%chi(f,x,y,z)
+            end do
+          end do
+        end do
+      end do
+      if (do_scat) self%chi_scat = store%scat
+    end subroutine stored_linelist
+
   END SUBROUTINE foreground
+
+  !===============================================================================
+  !> Free the stored line-list opacity of this patch's output i_nu.  The final pass
+  !> is its last reader: the i_mu twins have finished their iterations before it runs.
+  !===============================================================================
+  SUBROUTINE free_ll_point_table (self)
+    class(rt_patch_t) :: self
+    integer :: i
+    !-----------------------------------------------------------------------------
+    if (.not. associated(self%m3d_parent%ll_point_tables)) return
+    call self%m3d_parent%ll_point_locks(self%i_nu)%set('ll_point_table')
+    associate(table => self%m3d_parent%ll_point_tables(self%i_nu))
+      if (allocated(table%set)) then
+        do i=1, size(table%set)
+          associate(store => table%set(i))
+            if (allocated(store%chi)) then
+              call mem_unregister(store%chi, label='ll_point_table')
+              call mem_unregister(store%eta, label='ll_point_table')
+            endif
+            if (allocated(store%scat)) call mem_unregister(store%scat, label='ll_point_table')
+          end associate
+        end do
+        deallocate(table%set)
+      endif
+    end associate
+    call self%m3d_parent%ll_point_locks(self%i_nu)%unset('ll_point_table')
+  END SUBROUTINE free_ll_point_table
 
   !===============================================================================
   SUBROUTINE radiative_transfer(self, comp, vec, do_rotate_atmos, i_mu)

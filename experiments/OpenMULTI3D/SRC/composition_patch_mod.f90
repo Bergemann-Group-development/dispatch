@@ -36,7 +36,7 @@ MODULE composition_patch_mod
   USE trace_mod
   USE scaling_mod
   USE units_mod
-  USE ray_mod, only: set_carlson_quadratures
+  USE ray_mod, only: set_carlson_quadratures, one_dimensional
   USE list_mod, only: list_t
   USE link_mod, only: nbor_t
   USE bits_mod
@@ -294,6 +294,17 @@ SUBROUTINE composition_pre_init (self)
         call self%ll_opac_locks(i)%init('ll_opac', i)
       end do
     endif
+  endif
+  ! In 1D the detailed line opacity of the output scattering iterations and the
+  ! final pass is computed once and stored per output i_nu (see stored_linelist in
+  ! rt_patch_mod); a column holds few enough points to keep it.
+  if (one_dimensional .and. rt_out%maxiter > 0 .and. rt_out%include_linelist .and. &
+      .not. rt_out%sample_linelist) then
+    allocate(self%ll_point_tables(-n_nu_out:-1))
+    allocate(self%ll_point_locks (-n_nu_out:-1))
+    do i=-n_nu_out, -1
+      call self%ll_point_locks(i)%init('ll_point', i)
+    end do
   endif
   if (associated(nlte_patch%atoms)) then
     if (rt_iter%maxiter > 0) then
