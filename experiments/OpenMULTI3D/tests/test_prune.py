@@ -40,7 +40,7 @@ def _records(path):
         if len(parts) >= 9:
             key = (species, round(float(parts[0]), 4), round(float(parts[1]), 4),
                    round(float(parts[2]), 3))
-            out[key] = float(parts[-1])
+            out[key] = float(parts[8])
     return out
 
 

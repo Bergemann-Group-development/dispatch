@@ -158,8 +158,10 @@ class LineList(pd.DataFrame):
     llist = pd.DataFrame()
     with open(filename) as f:
         lines = f.readlines()
-        # strength is a trailing diagnostic column written by linelist_out.txt
-        names = ['lam0', 'evi', 'loggf', 'gv', 'ga', 'gq', 'i', 'j', 'strength']
+        # strength and reach [Angstrom] are the trailing columns linelist_out.txt and
+        # hop_prune.x write: the line's peak over continuum extinction, and the half-width
+        # out to which its extinction exceeds HOP's tolerance times the continuum
+        names = ['lam0', 'evi', 'loggf', 'gv', 'ga', 'gq', 'i', 'j', 'strength', 'reach']
         df_dict = {}
         usecols = lambda col: col is None or col < len(names)
 

@@ -58,6 +58,12 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
 - *skirt*: how far outside a requested window a transition may still be kept when pruning,
   in Angstrom; it is handed to HOP as the line-wing search radius `dlam`, so a pruned run
   reads wings only to that distance.
+- *reach*: the half-width around a transition's centre, in Angstrom, out to which its
+  extinction exceeds HOP's tolerance times the continuum, maximised over the states it was
+  computed on. It is the column after *strength* in a pruned line list and in
+  `linelist_out.txt`. A run whose line list carries it visits, in each output patch, only
+  the transitions whose reach touches that patch. Distinct from the *skirt*, which is a
+  selection radius set for the whole list.
 - *use line list*: the per-calculation choice to synthesise the model atoms together with
   the line list (background transitions and blends) rather than the atoms alone. Off is
   `only_atom` in the request; it never blanks the configured path.

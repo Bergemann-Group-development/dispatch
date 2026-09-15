@@ -2372,13 +2372,13 @@ contains
   END SUBROUTINE fill_b4
 
   !===============================================================================
-  ! Push the used/strength diagnostics of the per-patch SoA lists back to the
+  ! Push the used/strength/reach diagnostics of the per-patch SoA lists back to the
   ! shared source lists (self%atoms(k)%trans%ll), which print_linelist exports.
   !-------------------------------------------------------------------------------
   SUBROUTINE reduce_ll_diag (self)
     class(rt_patch_t) :: self
     logical, allocatable :: gused(:)
-    real(4), allocatable :: gstr(:)
+    real(4), allocatable :: gstr(:), greach(:)
     integer :: k, l, gl
     !-----------------------------------------------------------------------------
     do k=1, self%natom
@@ -2391,11 +2391,13 @@ contains
         ! (multi-component entries share the same transition index)
         allocate(gused(size(self%atoms(k)%trans%line)), source=.false.)
         allocate(gstr (size(self%atoms(k)%trans%line)), source=0.)
+        allocate(greach(size(self%atoms(k)%trans%line)), source=0.)
         do l=1, pll%nline
           if (.not. pll%used(l)) cycle
           gl = lines(pll%itrans(l))%ntrans
           gused(gl) = .true.
           gstr(gl)  = max(gstr(gl), pll%strength(l))
+          greach(gl) = max(greach(gl), pll%reach(l))
         end do
         call lock_mem(self%m3d_parent, 'll_used')
         do l=1, sll%nline
@@ -2403,10 +2405,11 @@ contains
           if (gused(gl)) then
             sll%used(l)     = .true.
             sll%strength(l) = max(sll%strength(l), gstr(gl))
+            sll%reach(l)    = max(sll%reach(l), greach(gl))
           endif
         end do
         call unlock_mem(self%m3d_parent, 'll_used')
-        deallocate(gused, gstr)
+        deallocate(gused, gstr, greach)
       end associate
     end do
   END SUBROUTINE reduce_ll_diag
