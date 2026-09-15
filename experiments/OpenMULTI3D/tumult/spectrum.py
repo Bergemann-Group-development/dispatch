@@ -399,6 +399,8 @@ class Spectrum:
         vshift=None,
         newx=None,
         renorm=False,
+        continuum=None,
+        continuum_window=None,
         window=None,
         **kwargs,
     ):
@@ -426,6 +428,14 @@ class Spectrum:
         newx : array-like or astropy.units.Quantity, optional
              New x-grid to interpolate onto.
              If provided, xmin/xmax are inferred from this grid if not given.
+        continuum : array-like, optional
+            Multiply the extracted model by this continuum after broadening and shifting.
+            A one-dimensional list contains polynomial coefficients in NumPy order
+            (highest power first), evaluated on [-1, 1] across the crop window. An
+            (N, 2) array contains wavelength/flux nodes for shape-preserving PCHIP.
+        continuum_window : pair, optional
+            Fixed polynomial domain in x units; defaults to the requested crop bounds.
+            Use the original fit domain when evaluating a fitted model on a wider grid.
         kwargs : dict
             Convolution parameters (res, vrot, vdop, zeta_rt, custom); see also the
             explicit :meth:`convolve`. If provided, performs crop -> convolve -> final
@@ -522,6 +532,15 @@ class Spectrum:
             if relative:
                 s = Spectrum(s.xdata - center, s.ydata, xref=s.xref + center)
             
+        if continuum is not None:
+            from .continuum import model_continuum
+            domain = continuum_window if continuum_window is not None else (xmin, xmax)
+            domain = [ensure_unit(v, self.xunit).to_value(s.xunit) for v in domain]
+            xx = s.xdata.to_value(s.xunit)
+            if relative:
+                xx = xx + center.to_value(s.xunit)
+            s = s * model_continuum(continuum, xx, domain)
+
         if renorm:
             cntm = np.linspace(s.ydata[0], s.ydata[-1], len(s.ydata))
             s = s / cntm
@@ -550,7 +569,11 @@ class Spectrum:
         spec : Spectrum
             The observed spectrum to fit.
         fit : list, optional
-            List of parameters to fit. Default is [].
+            List of parameters to fit. Default is []. ``"continuum"`` fits polynomial
+            coefficients jointly with the other parameters. Its initial coefficient list
+            in ``p0`` determines the degree; the default is [0, 1] (linear, unity).
+            Coefficients use NumPy order on [-1, 1] across the observed fit domain.
+            The returned ``best["continuum"]`` is a coefficient list.
         bounds : dict, optional
             Dictionary of parameter bounds. Default is {}.
         p0 : dict, optional
@@ -611,15 +634,38 @@ class Spectrum:
         default_other = float(tol) if tol is not None else 1e-2
         xtols = {"vshift": 0.1, "vrot": 0.1, "zeta_rt": 0.1, "vdop": 0.1}
         xtols.update(xtol or {})
-        scale = np.array([xtols.get(f, default_other) for f in fit], dtype=float)
+        # Optimisers consume scalars; the public continuum parameter remains a list.
+        sizes = {f: 1 for f in fit}
+        if "continuum" in fit:
+            coeff = np.asarray(p0s.get("continuum", [0.0, 1.0]), dtype=float)
+            if coeff.ndim != 1 or not coeff.size or not np.all(np.isfinite(coeff)):
+                raise ValueError("p0['continuum'] must be a nonempty finite coefficient list")
+            p0s["continuum"] = coeff
+            sizes["continuum"] = coeff.size
+            lbounds.setdefault("continuum", -np.inf)
+            ubounds.setdefault("continuum", np.inf)
+            xtols.setdefault("continuum", 1e-5)
+        slices, cursor = {}, 0
+        for f in fit:
+            slices[f] = slice(cursor, cursor + sizes[f])
+            cursor += sizes[f]
 
-        lo = np.array([lbounds[f] for f in fit], dtype=float)
-        hi = np.array([ubounds[f] for f in fit], dtype=float)
-        p0 = np.clip(np.array([p0s[f] for f in fit], dtype=float), lo, hi)  # avoid OOB-guess warning
+        def packed(values):
+            return np.concatenate([np.broadcast_to(values[f], (sizes[f],)) for f in fit])
+
+        scale = packed({f: xtols.get(f, default_other) for f in fit})
+        lo, hi = packed(lbounds), packed(ubounds)
+        p0 = np.clip(packed(p0s), lo, hi)
+        crop_kwargs = dict(kwargs)
+        if "continuum" in fit or crop_kwargs.get("continuum") is not None:
+            crop_kwargs.setdefault("continuum_window", (spec.xdata.min(), spec.xdata.max()))
+
+        def unpack(args):
+            return {f: (np.asarray(args[slices[f]]).tolist() if f == "continuum"
+                        else float(args[slices[f]][0])) for f in fit}
 
         def evaluate(newx, *args):
-            ka = {f: args[i] for i, f in enumerate(fit)}
-            news = self.crop(newx=newx, **ka, **kwargs)
+            news = self.crop(newx=newx, **(crop_kwargs | unpack(np.asarray(args))))
             if news.xdata.size == 0:
                 raise ValueError("Observations outside of model wavelength range!")
             return news
@@ -648,21 +694,30 @@ class Spectrum:
                 n = len(u0)
                 simplex = np.repeat(u0[None, :], n + 1, axis=0)
                 for i in range(n):                       # non-degenerate simplex, flipped inward at a bound
-                    step = -8.0 if u0[i] + 8.0 > uhi[i] else 8.0
+                    step = (0.02 / scale[i] if "continuum" in slices
+                            and slices["continuum"].start <= i < slices["continuum"].stop
+                            else 8.0)
+                    step = -step if u0[i] + step > uhi[i] else step
                     simplex[i + 1, i] = np.clip(u0[i] + step, ulo[i], uhi[i])
+                options = {"xatol": 1.0, "fatol": np.inf, "initial_simplex": simplex}
+                if "continuum" in fit:
+                    options["maxiter"] = 1000 * n
                 res = optimize.minimize(
                     residuals, u0, bounds=np.vstack([ulo, uhi]).T, method=method,
-                    options={"xatol": 1.0, "fatol": np.inf, "initial_simplex": simplex},
+                    options=options,
                 )
             else:
                 res = optimize.minimize(
                     residuals, u0, bounds=np.vstack([ulo, uhi]).T, method=method, tol=tol)
+            if "continuum" in fit and not res.success:
+                raise RuntimeError(f"Continuum fit did not converge: {res.message}")
             return res.x * scale
 
         pfit = fit_params(spec)
         fitted = evaluate(spec.xdata, *pfit)
         # round each result to its tolerance for display (e.g. 0.01 dex, 0.1 km/s)
-        best = {f: _round_to(pfit[i], scale[i]) for i, f in enumerate(fit)}
+        rounded = np.array([_round_to(v, t) for v, t in zip(pfit, scale)])
+        best = unpack(rounded)
 
         return best, fitted
 

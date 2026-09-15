@@ -268,7 +268,7 @@ def _stub_fit(monkeypatch, a_true):
             out.append([spec] * len(self.windows))
         return out
 
-    monkeypatch.setattr(ab._CogContext, "synthesize", synthesize)
+    monkeypatch.setattr(ab._LatticeContext, "synthesize", synthesize)
     return variants
 
 
@@ -293,6 +293,51 @@ def test_abundance_fit_owns_measurement_screens_and_result(tmp_path, config, mon
                            for v in variants if v.get("only_elements") == "Mg"})
     assert rung_offsets[:1] == [-1.0] and 0.0 in rung_offsets
     assert dict(result.to_abundances()) == pytest.approx({"Ca": 0.15, "Mg": 0.52}, abs=0.01)
+
+
+def test_profile_fit_reads_abundance_and_gradient_off_the_lattice(config, monkeypatch):
+    """Every rung is a lattice point synthesised once over all windows, and dREW/dA is the
+    slope through those rungs rather than a finer finite difference."""
+    from tumult.utils import pchip_mono
+    calls = []
+    monkeypatch.setattr(SynthRequest, "check", lambda self: self)
+    lines = [_measured(0.37), _measured(0.37)]
+    lines[1].mask = ab.LineMask(lam0=LAM0, lmin=LAM0 - 0.5, lmax=LAM0 + 0.5,
+                                smin=LAM0 - 1.5, smax=LAM0 + 1.5)
+    for ln in lines:
+        ln.fwhm = 0.19
+    monkeypatch.setattr(ab, "measure_lines", lambda mset, spec, **kw: ab.AbundanceResult(
+        element="Mg", symbol="Mg", summary={}, profile="gauss", lines=lines))
+
+    def synthesize(self, values, *, lte=False):
+        calls.append((len(values), len(self.windows)))
+        out = []
+        for value in values:
+            a = float(dict(t.split("=") for t in value["abundances"].split())["Mg"])
+            spec = _line(a) if value.get("exclude_elements") != "Mg" else _line(-9.0)
+            if not value.get("exclude_elements") and not value.get("only_elements"):
+                offsets.append(a)
+            out.append([spec] * len(self.windows))
+        return out
+
+    offsets = []
+    monkeypatch.setattr(ab._LatticeContext, "synthesize", synthesize)
+    request = SynthRequest(config=config, atmosphere="one.mod", star=STAR)
+    from tumult.linemask import LineMask, LineMaskSet
+    masks = LineMaskSet(masks=[LineMask(LAM0, LAM0 - 0.6, LAM0 + 0.6)], element="Mg")
+    result = ab.fit(request, target=_line(0.37), line_mask=masks, method="profile",
+                    profile="gauss", snr=300)
+
+    assert result.method == "profile" and result.termination == "completed"
+    assert all(windows == 2 for _variants, windows in calls)
+    rungs = sorted(set(offsets))
+    assert np.allclose(np.array(rungs) / 0.25, np.round(np.array(rungs) / 0.25))
+    ln = result.lines[0]
+    assert ln.include and ln.a == pytest.approx(0.37, abs=0.01)
+    rews = [ab._rew(_line(a), ln.fit_window, "gauss", LAM0) for a in rungs]
+    slope = pchip_mono(np.array(rungs), np.array(rews)).derivative()(ln.a)
+    assert ln.drewda == pytest.approx(float(slope), rel=1e-9)
+    assert np.isfinite(ln.sigma_a) and ln.sigma_a > 0
 
 
 def test_corrections_prepare_once_and_carry_the_composition(tmp_path, config, atom,
@@ -413,3 +458,34 @@ def test_operations_run_as_durable_tasks(tmp_path, config):
     assert decoded["kwargs"]["measured"].uid == "m1"
     with pytest.raises(ValueError, match="unknown operation"):
         submission.submit_operation("abundance.guess", request)
+
+
+@pytest.mark.parametrize('balance', [False, True])
+def test_complete_edited_result_preserves_abundance_convention(config, monkeypatch, balance):
+    """Completion uses stored stellar parameters and converts A(X) rungs back to [X/Fe]."""
+    from tumult.measurement import BalanceResult
+    variants = _stub_fit(monkeypatch, .62)
+    request = SynthRequest(config=config, atmosphere='one.mod', star=STAR,
+                           abundances={'Ca': .15})
+    ln = _measured(.62)
+    shift = 7.6 if balance else 0.
+    ln.cog_specs = {a + shift: _line(a) for a in [-1., 0., 1.]}
+    ln.cog_step, ln.cog_origin = .25, shift
+    if balance:
+        result = BalanceResult(lines=[ln], element='Mg', profile='trapz', request=request,
+                                params=dict(STAR), solar_x=shift, stage='solved')
+    else:
+        result = ab.AbundanceResult(lines=[ln], element='Mg', symbol='Mg', summary={},
+                                     profile='trapz', request=request)
+    result.cog_settings = {'background_lines': False, 'limit': 1.}
+    ab.refresh_line_cog(ln, result.profile)
+    ab.complete_result_rungs(result)
+    assert ln.a == pytest.approx(.62 + shift, abs=.005)
+    assert not ln.missing_rungs
+    assert len(variants) == 2
+    assert [float(dict(t.split('=') for t in v['abundances'].split())['Mg'])
+            for v in variants] == pytest.approx([.5, .75])
+    assert all(v['only_elements'] == 'Mg' for v in variants)
+    assert result.request.star == STAR
+    if balance:
+        assert not result.converged and result.termination == 'measurement_changed'

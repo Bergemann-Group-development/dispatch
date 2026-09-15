@@ -27,12 +27,12 @@ from pathlib import Path
 
 from .api import (compute_spectrum, compute_spectra,
                   compute_window_batch as _compute_window_batch,
+                  normalise_windows, write_window_file,
                   PRESETS_DIR, preset, PROVENANCE_NAME)
 from ..abundance import (
-    SYNTH_PAD_AA, abundance_override, abund_to_xfe, convert_abundances,
+    SYNTH_PAD_AA, abund_to_xfe, convert_abundances,
     read_solar_abundances, xfe_to_abund,
 )
-from .api import adaptive_fit
 from .cancel import CancelToken, CancelledError
 from .inputs import Atmosphere, AtmosphereGrid, Snapshot
 from .request import ResolvedSynthRequest, SynthesisResult, SynthRequest
@@ -49,7 +49,6 @@ __all__ = ["discover_atmos_grid", "compile_pattern", "recover_params",
            "solve_request_departures",
            "compute_reference",
            "read_reference_linelist",
-           "fit_line", "fit_request_line",
            "abund_elements", "abund_table", "DEFAULT_PATTERN", "STAGGER_PATTERN",
            "FORMAT_PATTERNS", "default_pattern",
            "CancelToken", "CancelledError"]
@@ -894,24 +893,25 @@ def execute_request(request, run_values=None, *, cancel_token=None):
                                           atmos_format=atmosphere.format,
                                           launch_kwargs=launch_kwargs, max_threads=max_threads,
                                           cancel_token=cancel_token)
-        windows = resolved.windows or (None,)
-        padded = resolved.padded_windows or (None,)
-        for window, run_window in zip(windows, padded):
-            if nlte:
-                run = synthesise(departures, settings=settings, window=run_window,
-                                 launch_kwargs=launch_kwargs, max_threads=max_threads,
-                                 cancel_token=cancel_token)
-            else:
-                item = deepcopy(settings)
-                if run_window is not None:
-                    item.setdefault('spectrum_params', {}).update(
-                        aa_blue=float(run_window[0]), aa_red=float(run_window[1]))
-                run = synthesise_snapshot(top, path, settings=item, resolution=resolution,
-                                          atmos_format=atmosphere.format,
-                                          launch_kwargs=launch_kwargs, max_threads=max_threads,
-                                          cancel_token=cancel_token)
-            runs.append(str(Path(run.folder).resolve()))
-            spectra.append(run.crop(window=window) if window is not None else run.crop())
+        # one spectrum run covers every window through a window file, as on the 1D path;
+        # the departure solve above never sees it, since its grid comes from the model atom
+        item = deepcopy(settings)
+        if resolved.windows:
+            window_file = write_window_file(
+                Path(resolved.execution_root) / top / '_windows',
+                normalise_windows(resolved.windows, SYNTH_PAD_AA))
+            item.setdefault('spectrum_params', {})['window_file'] = str(window_file)
+        if nlte:
+            run = synthesise(departures, settings=item, launch_kwargs=launch_kwargs,
+                             max_threads=max_threads, cancel_token=cancel_token)
+        else:
+            run = synthesise_snapshot(top, path, settings=item, resolution=resolution,
+                                      atmos_format=atmosphere.format,
+                                      launch_kwargs=launch_kwargs, max_threads=max_threads,
+                                      cancel_token=cancel_token)
+        runs.append(str(Path(run.folder).resolve()))
+        spectra.extend(run.crop(window=window) if window is not None else run.crop()
+                       for window in (resolved.windows or (None,)))
     else:
         extra = [resolved.run_values]
         if resolved.windows:
@@ -995,110 +995,6 @@ def abund_table(prefs):
 def abund_elements(prefs):
     """Element symbols available for the "+" dropdown (excludes H and Fe, the ``[Fe/H]`` axis)."""
     return [el for el in abund_table(prefs) if el not in ("H", "Fe")]
-
-
-def fit_line(obs, request, symbol, guess, xmin, xmax, fit_window, *, run_values=None,
-             fit_post=("vshift", "vdop"), cancel_token=None):
-    """Fit one line's abundance (plus ``vshift``/``vdop``) by adaptive grid synthesis.
-
-    Synthesises ``request`` with ``run_values`` over the synth range ``[xmin, xmax]``,
-    varying only the ``symbol`` abundance axis, and fits it to ``obs`` cropped to the
-    narrower ``fit_window`` (co-fitting the ``fit_post`` params). An individual atmosphere
-    is synthesised as it is, a grid interpolated at the request's star.
-
-    The abundance axis follows the convention of the request's abundances, whose other
-    overrides each point keeps: a value is ``[X/Fe]`` for relative abundances, else an
-    absolute ``A(X)``. Returns ``(best, fitted)`` where ``best`` maps ``"a"`` → the best-fit
-    abundance (in that convention) plus each fitted post param, and ``fitted`` is the
-    best-fit synthetic with the post params applied, evaluated over the *whole* synth range
-    ``[xmin, xmax]`` (not just the fit window) so it can be overlaid across the full synth
-    window. Blocking — call from a worker thread.
-    """
-    from .operations import run_values as complete_values
-    extra = dict(run_values or {})
-    base = complete_values(request, **extra)
-    config = request.config
-    relative = bool(base.get("relative_abundances", True))
-    solar = abund_table(config.to_prefs())
-    feh = float(request.star.feh)
-    base_abund = str(base.get("abundances", "")).strip()
-
-    def synth_point_fn(point):
-        rv = dict(extra)
-        rv["abundances"] = abundance_override(
-            symbol, point[symbol], base=base_abund, relative=relative, feh=feh, solar=solar)
-        rv["relative_abundances"] = relative
-        try:
-            return compute(request, rv, xmin, xmax, cancel_token=cancel_token)
-        except (ValueError, RuntimeError):
-            return None  # outside the atmosphere hull etc. -> drop this grid point
-
-    tgt = obs.crop(xmin=fit_window[0], xmax=fit_window[1])
-    fit_post = list(fit_post)
-    guesses = {symbol: float(guess)}
-    guesses.update({p: (0.0 if p == "vshift" else 1.0) for p in fit_post})
-    spacings = {symbol: config.abundance_step}
-    xtol = {symbol: 0.01, **{p: 0.1 for p in fit_post}}
-
-    best, fitted, _grid = adaptive_fit(
-        tgt, synth_point_fn, [symbol], guesses,
-        post_fit=fit_post, spacings=spacings, xtol=xtol,
-        max_rounds=int(config.preferences.get("fit_max_rounds") or 6),
-        cancel_token=cancel_token,
-    )
-    out = {"a": float(best[symbol])}
-    out.update({p: float(best[p]) for p in fit_post if p in best})
-    # ``fitted`` from adaptive_fit only spans the (narrow) fit window it was fitted over.
-    # Re-evaluate the best-fit point over the *full* synth range [xmin, xmax] so the overlay
-    # shows the synthetic line across the whole synth window (the fit stays in fit_window).
-    full = fitted
-    if _grid is not None:
-        try:
-            full = _grid.crop(**best)   # interpolate the grid at best-fit a + apply vshift/vdop
-        except Exception:
-            full = fitted
-    return out, full
-
-
-def fit_request_line(obs, request, symbol, guess, synth_window, fit_window,
-                     *, run_values=None, fit_post=("vshift", "vdop"), cancel_token=None):
-    """:func:`fit_line` through :func:`execute_request`, for the requests the batch
-    functions do not synthesise: 3D snapshots and frozen departures."""
-    from .operations import run_values as complete_values
-    extra = dict(run_values or {})
-    base = complete_values(request, **extra)
-    config = request.config
-    relative = bool(base.get('relative_abundances', True))
-    solar, feh = abund_table(config.to_prefs()), float(request.star.feh)
-    base_abund = str(base.get('abundances', '')).strip()
-    windowed = request.update(windows=[synth_window])
-
-    def synth_point(point):
-        terms = abundance_override(symbol, point[symbol], base=base_abund,
-                                   relative=relative, feh=feh, solar=solar)
-        rv = {**extra, 'abundances': terms, 'relative_abundances': relative}
-        try:
-            return execute_request(windowed, rv, cancel_token=cancel_token).spectrum
-        except (ValueError, RuntimeError):
-            return None
-
-    target = obs.crop(window=fit_window)
-    fit_post = list(fit_post)
-    guesses = {symbol: float(guess), **{p: (0.0 if p == 'vshift' else 1.0)
-                                       for p in fit_post}}
-    best, fitted, _ = adaptive_fit(
-        target, synth_point, [symbol], guesses, post_fit=fit_post,
-        spacings={symbol: config.abundance_step},
-        xtol={symbol: 0.01, **{p: 0.1 for p in fit_post}},
-        max_rounds=int(config.preferences.get('fit_max_rounds') or 6),
-        cancel_token=cancel_token)
-    out = {'a': float(best[symbol]),
-           **{p: float(best[p]) for p in fit_post if p in best}}
-    full = synth_point({symbol: best[symbol]})
-    full = fitted if full is None else full
-    if full is not fitted and fit_post:
-        full = full.convolve(**{p: best[p] for p in fit_post if p in best})
-    return out, full
 
 
 # --- 1D LTE reference (abundance corrections) ------------------------------------------

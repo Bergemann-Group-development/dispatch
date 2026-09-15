@@ -298,7 +298,8 @@ class AbundanceTool(AbundanceWizard):
     def _jump_decor(self, res, ln):
         # every line's synthetic is already on the canvas — jumping hatches this line's
         # measured EW and moves the accent onto its window
-        self.canvas.set_abund_hatch(ln.fit_func, ln.window)
+        self.canvas.set_abund_hatch(ln.fit_func, ln.fit_window,
+                                        nodes=ln.continuum if ln.renorm else None)
         self._jumped = next((i for i, l in enumerate(res.lines) if l is ln), None)
         self._render_decor(self._jumped)
 
@@ -484,7 +485,7 @@ class AbundanceTool(AbundanceWizard):
     def table_html(self, res):
         head = self._table_head((
             ("λ₀ [Å]", "lam0"), ("ion", "ion"), ("E<sub>low</sub>", "e_low"),
-            ("log gf", "loggf"), ("EW [mÅ]", "ew"), ("blend", "blend"),
+            ("log gf", "loggf"), ("EW [mÅ]", "ew"), ("Local continuum", None), ("blend", "blend"),
             (html.escape(self.value_label(res)), "a"),
             ("vshift", "vshift"), ("vdop", "vdop"), ("flags", None)))
         body = []
@@ -506,7 +507,7 @@ class AbundanceTool(AbundanceWizard):
                 f'<td><input type="checkbox" class="line-include-chk" data-line="{i}"{chk}></td>'
                 f'<td>{ln.lam0:.3f}</td><td>{html.escape(ln.ion)}</td>'
                 f'<td>{ln.e_low:.2f}</td><td>{ln.loggf:.2f}</td><td>{ew}</td>'
-                f'<td>{blend}</td><td>{a}</td><td>{vshift}</td><td>{vdop}</td>'
+                f'{self.continuum_cell(ln, i)}<td>{blend}</td><td>{a}</td><td>{vshift}</td><td>{vdop}</td>'
                 f'<td class="abund-flags">{html.escape(fl)}</td></tr>')
         foot = ""
         if res.stage == "uncert" and np.isfinite(res.summary.get("a_mean", np.nan)):
@@ -518,4 +519,4 @@ class AbundanceTool(AbundanceWizard):
                     f'n={s["n"]})</span></div>')
         return (f'<table class="linelist-table abund-table abund-lines" data-tool="abund">'
                 f'<thead>{head}</thead>'
-                f'<tbody>{"".join(body)}</tbody></table>{foot}')
+                f'<tbody>{"".join(body)}</tbody></table>{foot}{self.continuum_actions(res)}')

@@ -2126,3 +2126,46 @@ def test_the_details_modal_shows_a_workflow_record(tmp_path, monkeypatch):
     assert "line 39" in body and "line 19" not in body       # the tail only
     assert 'data-action="workflow-attach"' in body and 'data-action="workflow-cancel"' in body
     assert 'data-copy="w1"' in body
+
+
+@pytest.mark.parametrize('tool_name', ['abundance', 'ionbal'])
+def test_measurement_continuum_markers_keep_target_coordinates(tool_name):
+    """The real document wires each measurement's checkbox and vertical edge markers."""
+    from tumult.abundance import AbundanceResult, LineResult
+    from tumult.measurement import BalanceResult
+    from tumult.linemask import LineMask
+    document, ctx = _build_document()
+    xx = np.linspace(4999., 5001., 401)
+    yy = (1.03 + .015 * (xx - 5000)) * (1 - .3*np.exp(-.5*((xx-5000)/.1)**2))
+    obj = ctx.canvas.add_object(Spectrum(xx, yy), name='target')
+    # The prepared target has a deliberately non-flat global continuum.
+    obj.norm_knots = (np.array([4999., 5001.]), np.array([1., 1.01]))
+    ctx.canvas.normalise_object(obj)
+    before = obj.spectrum.ydata.copy()
+    knots = tuple(v.copy() for v in obj.norm_knots)
+    ln = LineResult(5000., 'Fe I', 1., -1.,
+                    mask=LineMask(lmin=4999.5, lmax=5000.5, smin=4999., smax=5001.))
+    cls = AbundanceResult if tool_name == 'abundance' else BalanceResult
+    extra = {'symbol': 'Fe', 'summary': {}} if tool_name == 'abundance' else {}
+    res = cls(lines=[ln], element='Fe', ref_uid=obj.uid, profile='gauss',
+               snr=100., cont_pct=.5, **extra)
+    tool = ctx.tools._tools[tool_name]
+    tool.results.append(res)
+    ctx.tools.activate(tool_name)
+    tool.select_result(res.uid)
+    tool.actions.value = 'continuum:0:1'
+    assert ln.renorm and tool.continuum_markers.visible
+    assert 'line-continuum-chk' in tool.table_html(res)
+    ew = ln.ew
+    # An attempted horizontal drag is snapped back to the synth-window edge.
+    tool.continuum_source.data = dict(x=[4999.2, 5000.8],
+                                      y=[p[1] + .01 for p in ln.continuum])
+    assert [p[0] for p in ln.continuum] == [4999., 5001.]
+    assert ln.ew > ew
+    np.testing.assert_array_equal(obj.spectrum.ydata, before)
+    for original, current in zip(knots, obj.norm_knots):
+        np.testing.assert_array_equal(original, current)
+    tool.deactivate()
+    assert not tool.continuum_markers.visible
+    for callback in list(document.session_destroyed_callbacks):
+        callback(None)

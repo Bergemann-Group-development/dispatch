@@ -20,7 +20,7 @@ from dataclasses import replace
 
 import numpy as np
 from bokeh.models import (BoxAnnotation, ColumnDataSource, CustomJS, HoverTool, Range1d,
-                          Span, TextInput, Whisker)
+                          Span, TextInput, Whisker, PointDrawTool)
 from bokeh.plotting import figure
 
 from tumult import abundance as ab
@@ -29,7 +29,7 @@ import store
 from canvas import ACCENT, style_dark
 from tableui import SortState, sort_headers
 from tool import Tool
-from units import to_range
+from units import to_range, to_value
 
 import astropy.units as u
 
@@ -117,8 +117,12 @@ ANALYSIS_SCRIPT = r"""
     if (item) { analysisAction(prefix, 'select', item.dataset.result); return; }
     var sort = ev.target.closest('.line-sort[data-sortcol]');
     if (sort) { analysisAction(prefix, 'sort', sort.dataset.sortcol); return; }
+    var remaining = ev.target.closest('[data-complete-rungs]');
+    if (remaining) { analysisAction(prefix, 'complete-rungs'); return; }
+    var refit = ev.target.closest('[data-refit-continuum]');
+    if (refit) { analysisAction(prefix, 'refit-continuum'); return; }
     var row = ev.target.closest('tr[data-line]');
-    if (!row || ev.target.closest('.line-include-chk')) return;
+    if (!row || ev.target.closest('.line-include-chk, .line-continuum-chk')) return;
     scope.querySelectorAll('tr.row-selected')
          .forEach(function (r) { r.classList.remove('row-selected'); });
     row.classList.add('row-selected');
@@ -129,6 +133,8 @@ ANALYSIS_SCRIPT = r"""
     if (!scope) return;
     var prefix = scope.dataset.tool;
     if (ev.target.closest('.analysis-mask-chk')) { analysisAction(prefix, 'mask-toggle'); return; }
+    var cont = ev.target.closest('.line-continuum-chk');
+    if (cont) { analysisAction(prefix, 'continuum', cont.dataset.line); return; }
     var chk = ev.target.closest('.line-include-chk');
     if (chk) analysisAction(prefix, 'toggle-line', chk.dataset.line);
   });
@@ -211,6 +217,16 @@ class AbundanceWizard(Tool):
         # client->server channel, written as ``"<kind>:<arg>:<nonce>"``.
         self.actions = TextInput(value="", visible=False, name=f"{self.prefix}-actions")
         self.actions.on_change("value", self._on_action)
+        self._continuum_sync = False
+        self.continuum_source = ColumnDataSource(dict(x=[], y=[]))
+        self.continuum_markers = self.canvas.main.scatter(
+            "x", "y", source=self.continuum_source, size=10, color=ACCENT, visible=False)
+        self.continuum_curve = self.canvas.main.line(
+            "x", "y", source=self.continuum_source, color=ACCENT,
+            line_dash="dashed", visible=False)
+        self.continuum_drag = PointDrawTool(renderers=[self.continuum_markers], add=False)
+        self.canvas.main.add_tools(self.continuum_drag)
+        self.continuum_source.on_change("data", self._on_continuum_drag)
 
     # --- window highlights ---------------------------------------------------------------
     # A result's windows belong to the result, not to a jump: a wizard that paints them shows
@@ -248,6 +264,7 @@ class AbundanceWizard(Tool):
         accented) and the syntheses standing on them."""
         self._render_windows(active)
         self._render_overlays()
+        self._render_continuum()
 
     def _render_overlays(self, res=None):
         if not self.paint_overlays:
@@ -255,7 +272,7 @@ class AbundanceWizard(Tool):
         res = res if res is not None else self.selected()
         if not (self.active and self.is_focused()) or res is None:
             return self.canvas.clear_abund_overlay()
-        self.canvas.set_abund_overlays([(ln.fit_spec, ln.window) for ln in res.lines
+        self.canvas.set_abund_overlays([(ab.displayed_model(ln), ln.window) for ln in res.lines
                                         if ln.include and ln.fit_spec is not None])
 
     # --- focus-kind coordination (which left-sidebar list owns the selection) -----------
@@ -424,6 +441,7 @@ class AbundanceWizard(Tool):
             self.push_mode("off")
 
     def _clear_line_decor(self):
+        self._hide_continuum()
         self.canvas.clear_abund_overlay()
         self.canvas.clear_abund_hatch()
         self.canvas.clear_windows()
@@ -443,6 +461,15 @@ class AbundanceWizard(Tool):
             self.remove_result(arg)
         elif kind == "toggle-line":
             self._toggle_line(arg)
+        elif kind == "continuum":
+            self._toggle_continuum(arg)
+        elif kind == "complete-rungs":
+            self._complete_rungs()
+        elif kind == "refit-continuum":
+            if self.prefix == "abund":
+                self.run_synth(request=self.selected().request)
+            elif self.prefix == "ionbal":
+                self.open_refit()
         elif kind == "mask-toggle":
             self.show_toggled_only = not self.show_toggled_only
             self._render_selected()
@@ -732,3 +759,107 @@ class AbundanceWizard(Tool):
                 f'<button class="result-btn" data-result-remove="{r.uid}" '
                 f'title="Remove from workspace"><i class="ti ti-x"></i></button></div>')
         return rows
+
+    # --- measurement-owned local continua ------------------------------------------
+    def _hide_continuum(self):
+        self.continuum_markers.visible = self.continuum_curve.visible = False
+        if self.canvas.main.toolbar.active_drag is self.continuum_drag:
+            self.canvas.main.toolbar.active_drag = "auto"
+
+    def _render_continuum(self):
+        res = self.selected()
+        if (self.prefix not in ("abund", "ionbal") or not self.active
+                or not self.is_focused() or res is None or self._jumped is None
+                or self._jumped >= len(res.lines)):
+            return self._hide_continuum()
+        ln = res.lines[self._jumped]
+        if not ln.renorm or not ln.continuum:
+            return self._hide_continuum()
+        xx, yy = np.asarray(ln.continuum).T
+        self._continuum_sync = True
+        try:
+            self.continuum_source.data = dict(x=to_value(xx, u.AA, self.canvas.xunit), y=yy)
+        finally:
+            self._continuum_sync = False
+        self.continuum_markers.visible = self.continuum_curve.visible = True
+        self.canvas.main.toolbar.active_drag = self.continuum_drag
+        self.canvas.set_abund_hatch(ln.fit_func, ln.fit_window, nodes=ln.continuum)
+
+    def _continuum_changed(self, res, ln, **kwargs):
+        spec = self._result_spec(res)
+        if spec is None:
+            self.notify("The target spectrum is no longer loaded.")
+            return
+        try:
+            ab.set_local_continuum(res, ln, spec, **kwargs)
+        except (ValueError, RuntimeError) as exc:
+            self.notify(str(exc))
+            self._render_continuum()
+            return
+        self.jobs.invalidate(res.uid)
+        res.name = self._result_label(res)
+        self.push_results()
+        self._render_selected()
+        self._jump_decor(res, ln)
+
+    def _toggle_continuum(self, token):
+        res = self.selected()
+        if res is None or self.prefix not in ("abund", "ionbal"):
+            return
+        idx = int(token)
+        if not 0 <= idx < len(res.lines):
+            return
+        self._jumped = idx
+        ln = res.lines[idx]
+        self._continuum_changed(res, ln, enabled=not ln.renorm)
+        self._jump_line(token)
+
+    def _on_continuum_drag(self, attr, old, new):
+        if self._continuum_sync or not self.continuum_markers.visible:
+            return
+        res = self.selected()
+        if res is None or self._jumped is None:
+            return
+        ln = res.lines[self._jumped]
+        if len(new.get("y", [])) != 2:
+            self._render_continuum()
+            return
+        # The markers move vertically; their wavelengths remain at the synth edges.
+        nodes = tuple(zip(ln.window, (float(y) for y in new["y"])))
+        self._continuum_changed(res, ln, nodes=nodes)
+
+    @staticmethod
+    def continuum_cell(ln, index):
+        checked = " checked" if ln.renorm else ""
+        return (f'<td><input type="checkbox" class="line-continuum-chk" '
+                f'data-line="{index}"{checked} title="Adjust this measurement’s local continuum">'
+                '</td>')
+
+    def continuum_actions(self, res):
+        if any(ln.missing_rungs for ln in res.lines):
+            return (f'<div data-tool="{self.prefix}"><span class="hint">'
+                    'The edited EW needs additional abundance rungs. </span>'
+                    '<button class="primary-btn" data-complete-rungs>'
+                    'Compute remaining abundance rungs</button></div>')
+        if any("refit_required" in ln.flags for ln in res.lines):
+            return (f'<div data-tool="{self.prefix}"><button class="primary-btn" '
+                    'data-refit-continuum>Refit with edited continuum</button></div>')
+        return ""
+
+    def _complete_rungs(self):
+        res = self.selected()
+        if res is None or not any(ln.missing_rungs for ln in res.lines):
+            return
+        from copy import deepcopy
+        target = deepcopy(self._result_spec(res))
+        def work(working, token, progress):
+            return ab.complete_result_rungs(working, target=target,
+                                            cancel_token=token, progress=progress)
+        def done(result):
+            result.name = self._result_label(result)
+            self.push_results()
+            self._render_selected()
+            self.notify("Cached curves of growth updated." if not any(
+                ln.missing_rungs for ln in result.lines) else
+                "More abundance rungs are still needed; inspect the flagged lines.")
+        self.jobs.submit("Complete abundance rungs", work, done, result=res, detached=True)

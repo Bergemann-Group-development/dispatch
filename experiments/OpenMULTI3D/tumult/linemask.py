@@ -67,8 +67,8 @@ class LineMask:
     smax: float = _NAN          # synth/visual-window upper bound [Å]
     note: str = ""              # species / label; may host several transitions
     include: bool = True        # count this mask when fitting / aggregating
-    renorm: bool = False        # apply the local linear continuum (injected spline knots)
-    cont_pts: tuple = ()        # ((x1,y1),(x2,y2)) inner markers in native (Å, raw flux)
+    renorm: bool = False        # retained in old mask records; measurements do not apply it
+    cont_pts: tuple = ()        # retained raw-flux markers from old mask records
 
     _TUPLE_FIELDS = ("cont_pts",)
 

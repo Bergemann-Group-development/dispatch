@@ -104,6 +104,7 @@ def test_individual_atmosphere_resolves_nearest_marcs_reference(tmp_path, monkey
 
 
 def test_snapshot_execution_routes_directly_without_grid_or_vmic(tmp_path, monkeypatch):
+    """A snapshot is one run over every window, read through a window file."""
     from tumult.synthesis import snapshot, workflows
     run = type('Run', (), {'folder': tmp_path / 'run',
                            'crop': lambda self, **kwargs: ('spectrum', kwargs)})()
@@ -114,13 +115,18 @@ def test_snapshot_execution_routes_directly_without_grid_or_vmic(tmp_path, monke
         return run
 
     monkeypatch.setattr(snapshot, 'synthesise_snapshot', direct)
+    windows = [(4999.5, 5001.5), (6100.0, 6102.0)]
     request = _request(Snapshot('cube.dat', 'Stagger', (4, 5, 6)), tmp_path,
-                       [(4999.5, 5001.5)], star=(5750, 4.5, 0))
+                       windows, star=(5750, 4.5, 0))
     result = workflows.execute_request(request)
-    assert result.geometry == '3d' and len(result.spectra) == 1
+    assert result.geometry == '3d' and len(seen) == 1
+    assert [kwargs['window'] for _name, kwargs in result.spectra] == windows
     assert seen[0][1] == (tmp_path / 'cube.dat').resolve()
     assert seen[0][2]['resolution'] == (4, 5, 6)
     assert 'vmic_step' not in seen[0][2]
+    spectrum = seen[0][2]['settings']['spectrum_params']
+    assert 'aa_blue' not in spectrum
+    assert len(Path(spectrum['window_file']).read_text().splitlines()) == 3
 
 
 def test_saved_departures_can_be_opened_from_native_artifacts(tmp_path):

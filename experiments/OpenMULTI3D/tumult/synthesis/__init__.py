@@ -36,8 +36,8 @@ from .submission import WorkflowHandle, discover_workflows, open_workflow, submi
 from .executor import _make_da_jobs, _run_batch, _run_single  # noqa: F401 (legacy importers)
 from .workflows import (STAGGER_PATTERN, M3DIS_PATTERN, FORMAT_PATTERNS, default_pattern, build_settings, compile_pattern, compute, compute_batch,
                         compute_window_batch, fitted_abundance_terms,
-                        compute_reference, discover_atmos_grid, fit_line,
-                        fit_request_line, recover_params, resolve_request, execute_request,
+                        compute_reference, discover_atmos_grid,
+                        recover_params, resolve_request, execute_request,
                         solve_request_departures)
 
 __all__ = [
@@ -59,7 +59,6 @@ __all__ = [
     "select_nodes",
     "build_settings", "compile_pattern", "compute", "compute_batch",
     "fitted_abundance_terms",
-    "compute_reference", "discover_atmos_grid", "fit_line",
-    "fit_request_line",
+    "compute_reference", "discover_atmos_grid",
     "recover_params", "STAGGER_PATTERN", "M3DIS_PATTERN", "FORMAT_PATTERNS", "default_pattern",
 ]

@@ -671,7 +671,7 @@ def build():
 
     filtertool = FilterTool(ctx)
     normtool = NormaliseTool(ctx)
-    # the shared LineMask set (imported windows for fitting / local renorm), owned centrally so
+    # the shared LineMask set (imported windows for fitting), owned centrally so
     # the canvas and — later — the abundance / synth-fit workflows all read one source of truth.
     _linemask_dir = (Path(str(store.get_pref("dispatch_cwd") or HERE.parent)).expanduser()
                      / "input" / "linemasks").resolve()

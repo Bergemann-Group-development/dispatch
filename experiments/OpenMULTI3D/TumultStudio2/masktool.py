@@ -37,7 +37,7 @@ from bokeh.models import TextInput
 
 from controls import Field, Form
 from htmlbridge import parse_action, pulse
-from tumult.linemask import is_element, seed_cont_markers
+from tumult.linemask import is_element
 from masksources import AutoSource, BlankSource, FileSource
 from tool import Tool
 from units import to_range
@@ -72,7 +72,6 @@ class MaskTool(Tool):
         # the drawn window arrives as ``callback(xmin, xmax)`` in Å (see rangetool.RangeTool)
         self.place_window = place_window
         self.input_dir = str(input_dir)
-        self._renorm_uid = None                 # spectrum currently carrying the local renorm
         self.own_panel("linemask-panel-content")   # sidebar: pad / save controls
         self._table_bridge = ctx.bridges.html("linemask-table")   # centre: the mask table
         # the left-sidebar list of imported mask sets (the line-mask objects)
@@ -129,7 +128,6 @@ class MaskTool(Tool):
         self.canvas.on_window_resize = self._on_edge_drag
         self._attach_annotations()
         self._render_canvas()
-        self._apply_renorm()
         self._render_panels()
         self.push_mode("on")
 
@@ -146,14 +144,12 @@ class MaskTool(Tool):
         self._render_objects()       # drop the sidebar highlight
 
     def update(self):
-        """Canvas ``"changed"`` (unit flip, selection change …): repaint the bands and re-apply
-        the local renorm (which follows the selected spectrum)."""
+        """Repaint the windows after a unit or selection change."""
         auto = self.source("auto")
         if auto is not None:
             auto.refresh()       # the Auto-generate pane lists the loaded spectra
         if self.active:
             self._render_canvas()
-            self._apply_renorm()
 
     # --- left-sidebar line-mask objects ----------------------------------------------------
     def _push_focus(self, kind):
@@ -224,7 +220,6 @@ class MaskTool(Tool):
         if self.active:
             self._attach_annotations()   # the set's element may have just changed
             self._render_canvas()
-            self._apply_renorm()
 
     def _attach_annotations(self):
         """Point the shared line-position overlay at this set's element, so the toolbar's
@@ -258,30 +253,6 @@ class MaskTool(Tool):
         self.push_panel()
         self._render_objects()
         self._table_bridge.value = self.table_html()
-
-    def _apply_renorm(self):
-        """Fold every renorm-on mask's local linear continuum into the *selected* spectrum's
-        continuum (injected spline knots) and redraw it. The renorm follows the selection, so if
-        it moved, the previous target is reverted first."""
-        obj = self.canvas.selected()
-        # seed markers (a percentile linear fit) for any renorm mask that lacks them
-        if obj is not None:
-            for m in self.store.masks:
-                if m.renorm and not m.cont_pts:
-                    m.cont_pts = seed_cont_markers(obj.raw, m)
-        windows = [(m.smin, m.smax, m.renorm_knots()) for m in self.store.masks
-                   if m.renorm and m.renorm_knots()]
-        prev = self._renorm_uid
-        if prev and (obj is None or obj.uid != prev):
-            old = self.canvas._find(prev)
-            if old is not None:
-                old.renorm_windows = []
-                self.canvas.renormalise(old)
-            self._renorm_uid = None
-        if obj is not None:
-            obj.renorm_windows = windows
-            self.canvas.renormalise(obj)
-            self._renorm_uid = obj.uid if windows else None
 
     def _jump_to_active(self):
         """Snap the spectrum to the active mask's synth window (plus a 5% margin each side) so
@@ -367,11 +338,6 @@ class MaskTool(Tool):
             self._jump_to_active()
         elif kind == "del":
             self.store.remove(_int(arg))
-        elif kind == "renorm":
-            i = _int(arg)
-            m = self.store.masks[i] if 0 <= i < len(self.store.masks) else None
-            if m is not None:
-                self.store.set_renorm(i, not m.renorm)
         elif kind == "new":
             self._start_placing()
         elif kind == "incl":
@@ -535,7 +501,6 @@ class MaskTool(Tool):
             off = "" if m.include else " lm-off"
             lam0 = f"{m.lam0:.3f}" if m.lam0 == m.lam0 else "—"   # NaN check
             inc = " checked" if m.include else ""
-            rn = " checked" if m.renorm else ""
             rows.append(
                 f'<tr class="lm-row{sel}{off}" data-idx="{i}">'
                 f'<td><input type="checkbox" class="lm-incl" data-idx="{i}"{inc} '
@@ -544,15 +509,13 @@ class MaskTool(Tool):
                 f'<td>{m.lmin:.3f} – {m.lmax:.3f}</td>'
                 f'<td>{m.smin:.3f} – {m.smax:.3f}</td>'
                 f'<td class="lm-note">{html.escape(m.note)}</td>'
-                f'<td><input type="checkbox" class="lm-renorm" data-idx="{i}"{rn} '
-                f'title="Local renormalisation"></td>'
                 f'<td><button class="icon-btn lm-del" data-idx="{i}" title="Remove">'
                 f'<i class="ti ti-x"></i></button></td></tr>')
         return (
             '<table class="linelist-table lm-table">'
             '<thead><tr><th title="Use this mask"></th><th>λ₀ [Å]</th>'
             '<th>fit window [Å]</th><th>synth window [Å]</th>'
-            '<th>note</th><th title="Local renormalisation">Local continuum</th><th></th></tr></thead>'
+            '<th>note</th><th></th></tr></thead>'
             f'<tbody>{"".join(rows)}</tbody>'
             f'<tfoot>{add_row}</tfoot></table>')
 

@@ -120,10 +120,8 @@ def sanitise(cont):
 def local_linear(x, y, percentile=SEED_PERCENTILE):
     """The straight local pseudo-continuum under a line window, evaluated on ``x``.
 
-    The same estimator :func:`tumult.linemask.seed_cont_markers` places an observation's
-    inner markers with — an upper-envelope line over the window — so an observed and a
-    synthetic spectrum can each be divided by their *own* local continuum and still be
-    measured against the same definition of one.
+    Uses the same upper-envelope estimator as :func:`seed_local`. Measurement workflows
+    keep their nodes fixed; this function is the separate automatic array operation.
 
     What it is for: the far wings of very strong lines tens of Angstrom outside a narrow
     window depress it as a smooth pseudo-continuum rather than a feature. That depression
@@ -176,3 +174,40 @@ def reject_outliers(spec, *, resolution=None, window=None, percentile=None):
     if mask.sum() < 2:
         return base
     return Spectrum(base.xdata[mask], yy[mask], yunit=base.yunit, xref=base.xref)
+
+
+def model_continuum(continuum, x, window=None):
+    """Evaluate polynomial coefficients or (wavelength, flux) nodes on ``x``.
+
+    Polynomial coefficients follow NumPy order on a dimensionless coordinate spanning
+    [-1, 1] across ``window``. Nodes use the same x units as ``x`` and hold their endpoint
+    levels outside their span. The result multiplies a normalised model spectrum.
+    """
+    values = np.asarray(continuum, dtype=float)
+    xx = np.asarray(x, dtype=float)
+    if not np.all(np.isfinite(values)) or values.size == 0:
+        raise ValueError("Continuum values must be finite and nonempty")
+    if values.ndim == 2 and values.shape[1] == 2:
+        if len(values) < 2 or np.any(np.diff(values[:, 0]) <= 0):
+            raise ValueError("Continuum nodes need at least two increasing wavelengths")
+        return evaluate(values[:, 0], values[:, 1], xx)
+    if values.ndim != 1:
+        raise ValueError("Continuum must be a coefficient list or an (N, 2) node array")
+    lo, hi = window if window is not None else (xx.min(), xx.max())
+    if not hi > lo:
+        raise ValueError("A polynomial continuum needs a nonzero wavelength span")
+    return np.polyval(values, 2 * (xx - lo) / (hi - lo) - 1)
+
+
+def seed_local(spec, window):
+    """Two continuum nodes at the synth-window edges, seeded from the upper 10% fit."""
+    import astropy.units as u
+    sub = spec.convert_units(xunit=u.AA).crop(window=window)
+    xx, yy = sub.values
+    fit = upper_envelope_fit(xx, yy)
+    edges = np.asarray(window, dtype=float)
+    levels = (np.polyval(fit, edges) if fit is not None
+              else np.full(2, flat_level(yy, SEED_PERCENTILE)))
+    if not np.all(np.isfinite(levels)) or np.any(levels <= 0):
+        raise ValueError("Local continuum levels must be positive and finite")
+    return tuple(zip(edges.tolist(), levels.tolist()))

@@ -695,6 +695,19 @@ def window_file_text(windows):
     return "\n".join(lines) + "\n"
 
 
+def write_window_file(folder, windows):
+    """Write the ``window_file`` of normalised ``windows`` under ``folder``; its path.
+
+    The file is named by its content, so the path a namelist records identifies the
+    windows and two runs over the same windows share one cache entry.
+    """
+    text = window_file_text(windows)
+    path = Path(folder) / f"{hashlib.sha1(text.encode()).hexdigest()[:8]}.txt"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+    return path.resolve()
+
+
 def compute_windows(top, star, atmos_files, *, windows, R, settings=None, absmet_files=None,
                     method='Delaunay', max_threads=None, launch_kwargs=None, pad=None,
                     vmic_step=0.5, vmic_points=2, nlte=None, cancel_token=None):
@@ -1219,7 +1232,8 @@ def adaptive_fit(target, synth_point_fn, axes, guesses, *, post_fit=(), spacings
                 grid = tm.grid(spectra, **params)
         else:
             grid = tm.grid(spectra, **params)
-        p0 = {k: float(guesses[k]) for k in axes + post_fit if k in guesses}
+        p0 = {k: (list(guesses[k]) if k == "continuum" else float(guesses[k]))
+              for k in axes + post_fit if k in guesses}
         best, fitted = grid.fit(target, fit=axes + post_fit, p0=p0, **fit_kwargs)
 
         # per-axis: expand at a boundary optimum; for continuous axes also subdivide a coarse

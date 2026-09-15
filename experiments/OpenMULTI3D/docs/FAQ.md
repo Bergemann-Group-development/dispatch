@@ -199,7 +199,7 @@ on 1D atmospheres and grids with no or requested departures; `synthesis.check_fi
 reason for any other combination.
 
 **In the GUI** (`bokeh serve --show TumultStudio2`): open an observation and a line-mask set
-through **Open File**, open the set in the LineMasks view, edit windows and continuum markers,
+through **Open File**, open the set in the LineMasks view, edit windows,
 then choose **Synthesise windows…** in its sidebar. This opens the synthesis modal on the
 set's included windows; its **Synthesise** button submits them through the same request as
 one durable workflow. A single continuous range is synthesised from the **Mask** tool
@@ -427,20 +427,25 @@ Missing pieces:
 **Available.** In the LineMasks view choose **Measure
 abundances**. The modal takes the reference observation, the EW profile, SNR and continuum
 error, and the synthesis setup (atmosphere, stellar parameters, RT mode, abundances). One
-submission measures every included window, synthesises each feature's curve of growth and
-inverts its equivalent width; rows stream into the table as they finish. The result object
+submission measures every included window, screens the lines and fits each feature's profile
+on shared abundance rungs (`method="profile"` below); the table updates after every round of
+rungs. The result object
 keeps its lines; toggling a line and rerunning the synthesis step reuses the measurement,
 while a changed reference or changed windows is a new run from the LineMasks view. The
 Uncertainties step folds the SNR and continuum errors into per-line error bars.
 
 From Python, `abundance.fit(request, target=..., line_mask=..., method="cog")` measures the
 included windows, screens weak and blended lines at the request's composition and brackets
-each line's abundance with adaptive curves of growth: rungs at `(-limit, 0, +limit)` dex
-about the element's abundance, then the lattice points (`config.abundance_step`) bracketing
-each inverted guess until every line lies between its nearest computed rungs.
+each line's abundance on a shared lattice of rungs: `(-limit, 0, +limit)` dex about the
+element's abundance, then the lattice points (`config.abundance_step`) bracketing each line's
+solution until every line lies between its nearest computed rungs. Each rung and each screen
+is one synthesis over every window through a window file, for 1D atmospheres, grids and 3D
+snapshots alike. `method="cog"` inverts each line's curve of growth through the rungs;
+`method="profile"` fits abundance, velocity shift and broadening to the target on the same
+rungs. Both read `dREW/dA`, and so the abundance errors, off those rungs. The screens use
+solved departures when the request carries them and LTE otherwise.
 `background_lines=False` synthesises the element's transitions alone; the screens still
-compare against every species. `method="profile"` is the direct fit of abundance, velocity
-shift and broadening. The result is in [X/Fe]; `termination` is `"completed"` or
+compare against every species. The result is in [X/Fe]; `termination` is `"completed"` or
 `"round_limit"` and the flags say why a line was excluded. `measured=` continues a result of
 `measure_lines` (or an earlier fit) with its curated lines instead of measuring again; the
 Abundance tool uses it with `method="profile"`.
@@ -514,3 +519,43 @@ to the canvas with the same overlay, normalisation and measurement tools. Angle-
 spatially resolved 3D data remain reachable through `tumult.read(result.runs[i])`. Selecting
 a saved 1D and 3D result side by side from a list of completed workflows is part of the
 missing Jobs view above.
+
+
+### How do I fit a continuum with a spectrum?
+
+`Spectrum.fit` and `SpectrumGrid.fit` fit polynomial continuum coefficients alongside
+velocity, broadening or grid parameters:
+
+```python
+best, fitted = model.fit(target, fit=["vshift", "continuum"],
+                         p0={"continuum": [0, 1]})
+```
+
+Coefficients follow `numpy.polyval` order (highest power first). Their count sets the
+degree. Omitting `p0["continuum"]` starts with the linear unity continuum `[0, 1]`.
+The polynomial coordinate runs from −1 to +1 across the target's fit domain, so
+coefficients are independent of the wavelength unit. `best["continuum"]` is a list.
+Coefficient bounds can be supplied as `(lower_list, upper_list)` under the
+`"continuum"` key of `bounds`; `xtol["continuum"]` controls coefficient precision.
+
+`crop` multiplies the model by a fixed continuum after broadening and shifting:
+
+```python
+preview = model.crop(window=fit_window, continuum=[0.02, 1.0])
+# Keep the same polynomial coordinate when drawing beyond the original fit:
+preview = model.crop(continuum=best["continuum"],
+                     continuum_window=(target.xdata.min(), target.xdata.max()))
+# Alternatively, supply wavelength/flux nodes (wavelengths in the spectrum's x unit):
+preview = model.crop(continuum=[(5000, 0.99), (5001, 1.01), (5002, 1.0)])
+```
+
+Node continua use shape-preserving PCHIP and hold their endpoint levels outside the
+node span. `continuum` does not alter the input model or target.
+
+For an abundance or balance measurement, `abundance.set_local_continuum(result,
+line, target, enabled=True)` seeds fixed nodes at the synth-window edges. Pass
+`nodes=[(left, level_left), (right, level_right)]` to edit them. This remeasures the EW
+and updates the cached CoG inversion. `line.missing_rungs` identifies required
+synthesis; `abundance.complete_result_rungs(result, target=target)` computes it using
+the result's stored request. These are the same operations used by the GUI's
+[local continuum controls](GUIWorkflow.md#local-continua-in-measurements).

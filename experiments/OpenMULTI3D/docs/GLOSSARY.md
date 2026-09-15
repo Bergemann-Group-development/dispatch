@@ -66,6 +66,10 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
   continuum state (automatic scaling, spline continuum, already normalised) and whether
   noise filtering is active. Recorded with measured lines (`MeasuredLines.preparation`).
 
+- *local continuum*: a measurement's continuum placement for one line feature on its
+  prepared target. It multiplies the displayed synthetic spectrum and sets the reference
+  for the measured EW, independently of the target's global spline normalisation.
+
 **Windows.** Several distinct spans are all called windows, so each has its own name.
 
 - *fit window*: the span a line feature's profile is fitted over, derived from the

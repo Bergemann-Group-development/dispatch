@@ -499,7 +499,8 @@ class IonBalanceTool(AbundanceWizard):
         # the windows and the inverted syntheses are already on the canvas — jumping hatches
         # this line's measured profile and moves the accent onto it.
         if ln.fit_func is not None:
-            self.canvas.set_abund_hatch(ln.fit_func, ln.window)
+            self.canvas.set_abund_hatch(ln.fit_func, ln.fit_window,
+                                        nodes=ln.continuum if ln.renorm else None)
         self._jumped = next((i for i, l in enumerate(res.lines) if l is ln), None)
         self._render_decor(self._jumped)
 
@@ -820,7 +821,7 @@ class IonBalanceTool(AbundanceWizard):
         el = html.escape(res.element or "X")
         head = self._table_head((
             ("λ₀ [Å]", "lam0"), ("ion", "ion"), ("E<sub>low</sub>", "e_low"),
-            ("log gf", "loggf"), ("EW [mÅ]", "ew"), ("blend", "blend"),
+            ("log gf", "loggf"), ("EW [mÅ]", "ew"), ("Local continuum", None), ("blend", "blend"),
             (f"A({el})", "a"), ("flags", None)))
         body = []
         for i in self._line_order(res):
@@ -840,7 +841,7 @@ class IonBalanceTool(AbundanceWizard):
                 f'<td><input type="checkbox" class="line-include-chk" data-line="{i}"{chk}></td>'
                 f'<td>{ln.lam0:.3f}</td><td>{html.escape(ln.ion)}</td>'
                 f'<td>{ln.e_low:.2f}</td><td>{ln.loggf:.2f}</td><td>{ew}</td>'
-                f'<td>{blend}</td><td>{a}</td>'
+                f'{self.continuum_cell(ln, i)}<td>{blend}</td><td>{a}</td>'
                 f'<td class="abund-flags">{html.escape(fl)}</td></tr>')
         if not body:
             return (f'<div class="linelist-empty">Measuring {el} windows…</div>'
@@ -848,4 +849,4 @@ class IonBalanceTool(AbundanceWizard):
                     '<div class="linelist-empty">Every line is switched off.</div>')
         return (f'<table class="linelist-table abund-table ionbal-lines" data-tool="ionbal">'
                 f'<thead>{head}</thead>'
-                f'<tbody>{"".join(body)}</tbody></table>{self._status_html(res)}')
+                f'<tbody>{"".join(body)}</tbody></table>{self._status_html(res)}{self.continuum_actions(res)}')

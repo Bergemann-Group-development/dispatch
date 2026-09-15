@@ -80,7 +80,6 @@ class SpectrumObject:
         self.spectrum = spectrum   # the displayed, continuum-normalised spectrum (~0–1)
         self.raw = spectrum        # the originally loaded spectrum, in its native units
         self.norm_knots = None     # (kx, ky) continuum-spline knots in native units, or None
-        self.renorm_windows = []   # local-renorm masks: [(smin, smax, [(x,y)×4]) …] merged in
         self.continuum = None      # last continuum evaluated over raw.xdata (for the overlay)
         self.already_normalised = False  # treat the spectrum as pre-normalised (continuum ≡ 1)
         self.name = name
@@ -481,7 +480,7 @@ class SpectrumCanvas:
         x, y = raw.values
         if obj.already_normalised:
             cont = np.ones_like(y)   # assume the spectrum is already normalised (continuum ≡ 1)
-        elif obj.norm_knots is not None or getattr(obj, "renorm_windows", None):
+        elif obj.norm_knots is not None:
             kx, ky = self._continuum_knots(obj, np.asarray(x, float), np.asarray(y, float))
             cont = continuum.evaluate(kx, ky, x)
         elif obj.source and obj.source[0] in ("run", "synth"):
@@ -493,13 +492,9 @@ class SpectrumCanvas:
                                 xref=raw.xref)
 
     def _continuum_knots(self, obj, x, y):
-        """The spline knots for obj's continuum: its base knots (the user's global spline, or
-        a flat percentile level when none) merged with each local-renorm window's four
-        colinear knots — see :func:`tumult.continuum.merge_knots`."""
-        return continuum.merge_knots(
-            x, y, base_knots=obj.norm_knots,
-            renorm_windows=getattr(obj, "renorm_windows", None) or [],
-            percentile=NORM_PERCENTILE)
+        """The prepared target's global spline nodes."""
+        return continuum.merge_knots(x, y, base_knots=obj.norm_knots,
+                                     percentile=NORM_PERCENTILE)
 
     def renormalise(self, obj):
         """Recompute one obj's normalisation and redraw it (after its knots change)."""
@@ -581,22 +576,25 @@ class SpectrumCanvas:
         self.abund_overlay_source.data = dict(x=[], y=[])
         self.abund_overlay_line.visible = False
 
-    def set_abund_hatch(self, func, window):
+    def set_abund_hatch(self, func, window, nodes=None):
         """Hatch the fitted-profile integrated area for the jumped diagnostic line.
 
         ``func`` is the fitted profile ``f(λ_Å) -> normalised flux`` (from ``measure_line``);
-        the area between it and the continuum (=1) over ``window`` (Å) is filled and hatched
-        with the same ``/`` pattern the EW tool uses. ``func`` None / bad window clears it.
+        the area between it and its continuum over ``window`` (Å) is filled and hatched.
+        Local ``nodes`` multiply both the profile and its continuum into the prepared
+        target's coordinates. ``func`` None / bad window clears it.
         """
         if func is None or window is None or not np.isfinite(window[0]):
             return self.clear_abund_hatch()
         try:
             xg = np.linspace(float(window[0]), float(window[1]), 512)
-            y1 = np.asarray(func(xg), dtype=float)
+            cont = (continuum.model_continuum(nodes, xg) if nodes is not None
+                    else np.ones_like(xg))
+            y1 = np.asarray(func(xg), dtype=float) * cont
             xd = to_value(xg, u.AA, self.xunit)
         except Exception:
             return self.clear_abund_hatch()
-        self.abund_area_source.data = dict(x=np.asarray(xd), y1=y1, y2=np.ones_like(xg))
+        self.abund_area_source.data = dict(x=np.asarray(xd), y1=y1, y2=cont)
         self.abund_area_line.visible = True
 
     def clear_abund_hatch(self):

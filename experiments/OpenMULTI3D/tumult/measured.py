@@ -29,6 +29,7 @@ class MeasuredLines:
     maskset_name: str = ""
     maskset_key: str = ""
     preparation: dict = field(default_factory=dict)
+    cog_settings: dict = field(default_factory=dict)
     ident_star: str = ""
     ident_note: str = ""
     request: Any = None
@@ -39,7 +40,7 @@ class MeasuredLines:
 
         values = {f.name: deepcopy(getattr(self, f.name)) for f in fields(MeasuredLines)}
         measured = ("lam0", "ion", "e_low", "loggf", "ew", "ew_err", "fwhm", "mask",
-                    "fit_func", "include")
+                    "fit_func", "include", "renorm", "continuum")
         values["lines"] = [LineResult(**{k: deepcopy(getattr(ln, k)) for k in measured})
                            for ln in self.lines]
         for source, target in zip(self.lines, values["lines"]):

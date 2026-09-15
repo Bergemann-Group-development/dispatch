@@ -471,6 +471,7 @@ def _solve_balance(request, result, opts, run_values, progress, cancel_token):
     # curve-of-growth ladder from the element's lines alone; the blend screen always compares
     # the full synthesis with the element excluded
     ladder_only = bool(base_rv.get("only_elements"))
+    result.cog_settings = {"background_lines": not ladder_only, "limit": float(opts["span"])}
 
     def rv_point(a_rel, feh, only=None, exclude=False, save_linelist=True):
         only = ladder_only if only is None else only
@@ -613,10 +614,9 @@ def _solve_balance(request, result, opts, run_values, progress, cancel_token):
                         ln.include = False
                         report(result)
                         continue
-                renorm = bool(getattr(ln.mask, "renorm", False))
                 a_grid, ew_grid = ab.build_cog(
                     None, ladder, window=ln.fit_window, profile=result.profile,
-                    x0=ln.lam0, batch_synth_fn=lambda _a, _s=specs: _s, renorm=renorm)
+                    x0=ln.lam0, batch_synth_fn=lambda _a, _s=specs: _s)
                 ew_err = float(ln.ew_err) if np.isfinite(ln.ew_err) else 0.0
                 inv = ab.cog_invert(a_grid, ew_grid, ln.ew, ew_err=ew_err, lam0_aa=ln.lam0)
                 if inv["out_of_range"]:
@@ -629,7 +629,7 @@ def _solve_balance(request, result, opts, run_values, progress, cancel_token):
                     specs = batch([rv_point(a, feh) for a in ladder2], ln, point)
                     a_grid, ew_grid = ab.build_cog(
                         None, ladder2, window=ln.fit_window, profile=result.profile,
-                        x0=ln.lam0, batch_synth_fn=lambda _a, _s=specs: _s, renorm=renorm)
+                        x0=ln.lam0, batch_synth_fn=lambda _a, _s=specs: _s)
                     inv = ab.cog_invert(a_grid, ew_grid, ln.ew, ew_err=ew_err, lam0_aa=ln.lam0)
                 if inv["out_of_range"]:
                     ln.a = float("nan")
@@ -641,7 +641,12 @@ def _solve_balance(request, result, opts, run_values, progress, cancel_token):
                     ln.a = xfe_to_abund(a_rel, element, feh, solar)
                     ln.sigma_a = float(inv["sigma_a"])
                     ln.sigma_a_phot, ln.sigma_a_cont = ln.sigma_a, 0.0
-                    ln.a_grid, ln.ew_grid = tuple(a_grid), tuple(ew_grid)
+                    shift = feh + solar_x
+                    ln.a_grid = tuple(float(a) + shift for a in a_grid)
+                    ln.ew_grid = tuple(ew_grid)
+                    ln.cog_specs = {float(a) + shift: spec.crop(window=ln.window)
+                                    for a, spec in zip(a_grid, specs)}
+                    ln.cog_step, ln.cog_origin = lattice, shift
                     ln.method = "cog"
                     ln.flags = tuple(f for f in ln.flags if f != "out_of_range")
                     # the line as this iteration's parameters and abundance leave it, read
@@ -664,6 +669,7 @@ def _solve_balance(request, result, opts, run_values, progress, cancel_token):
         diags = diagnostics(result.lines, feh, solar_x)
         result.history.append({"params": dict(params), "diags": dict(diags)})
         result.params = dict(params)
+        result.request = point
         result.diags = dict(diags)
         report(result)
         result.termination = balance_status(diags, result.tols, free)
@@ -944,6 +950,7 @@ def ionbalance(request, *, target, line_mask=None, measured=None, method="cog",
     result.stage, result.history, result.diags, result.sigmas = STAGE_MEASURED, [], {}, {}
     result.converged = False
     result.request, result.target = request, target_record
+    result.cog_settings = {"background_lines": bool(background_lines), "limit": float(limit)}
     if mset is not None:
         measure_balance_lines(result, [m for m in mset.masks if m.include], spectrum,
                               str(config.resolve(config.linelist)) if config.linelist else None,
@@ -964,7 +971,7 @@ def ionbalance(request, *, target, line_mask=None, measured=None, method="cog",
     result.termination, result.converged = "running", False
 
     def context_at(star, lines):
-        return ab._CogContext(request.update(star=star), lines, element,
+        return ab._LatticeContext(request.update(star=star), lines, element,
                               background_lines=background_lines, limit=limit,
                               cancel_token=cancel_token)
 
@@ -979,7 +986,11 @@ def ionbalance(request, *, target, line_mask=None, measured=None, method="cog",
         ab.fit_lines_cog(context, limit=limit, max_rounds=max_rounds, profile=profile)
         for ln in lines:
             if ln.include and np.isfinite(ln.a):
+                shift = params["feh"] + solar_x
                 ln.a = xfe_to_abund(ln.a, element, params["feh"], solar)
+                ln.a_grid = tuple(a + shift for a in ln.a_grid)
+                ln.cog_specs = {a + shift: spec for a, spec in ln.cog_specs.items()}
+                ln.cog_origin += shift
         return diagnostics(lines, params["feh"], solar_x), lines
 
     def on_evaluation(history):

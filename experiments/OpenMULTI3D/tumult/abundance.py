@@ -4,10 +4,11 @@ The synthesis-agnostic numerics (``cog_invert``, ``aggregate``, ``reduced_ew``, 
 now live in :mod:`tumult.abundance` and are re-exported here for back-compat. This module keeps the
 synthesis-driven, application-facing pieces:
 
-* :func:`measure_line` — stage 1: fit a line on the reference to get its EW, FWHM and windows.
-* :func:`fit_line` — stage 2: screen a line (weak / blended), then determine its abundance by
-  **directly fitting** the synthetic to the observation (abundance + vshift + vdop) and measure the
-  numerical ``dREW/dA`` gradient. Synthesis is injected as callables so this stays engine-agnostic.
+* :func:`measure_lines` — stage 1: measure a mask set's windows on the reference (EW, FWHM).
+* :func:`fit` — stage 2: screen the lines (weak / blended), then determine their abundances on
+  shared lattice rungs, each rung one synthesis over every window: by curve-of-growth inversion
+  (:func:`adaptive_cog`) or by **directly fitting** the synthetic to the observation (abundance +
+  vshift + vdop, :func:`fit_profiles`). Either way ``dREW/dA`` is read off the same rungs.
 * :func:`finalize_line` / :func:`aggregate` — stage 3: fold SNR + continuum-% errors into each
   line's EW, convert to an abundance error through the REW gradient, and combine into an
   inverse-variance element mean.
@@ -116,6 +117,11 @@ class LineResult:
     ew_species: float = float("nan")  # query-species-only EW in the fit window [maa] (weak screen)
     fwhm: float = float("nan")  # fitted profile FWHM [AA]
     mask: LineMask = field(default_factory=LineMask)  # fit [lmin,lmax] + synth [smin,smax] windows
+    renorm: bool = False        # local continuum belongs to this target measurement
+    continuum: tuple = ()      # (wavelength AA, prepared-target flux) nodes
+    cog_step: float = float("nan")
+    cog_origin: float = 0.0     # origin of the abundance lattice, in a_grid's convention
+    missing_rungs: tuple = ()   # nearest lattice rungs needed after an EW edit
     a: float = float("nan")     # abundance (A(X) or [X/Fe], caller's convention)
     vshift: float = float("nan")  # best-fit radial-velocity shift [km/s]
     vdop: float = float("nan")    # best-fit Gaussian (Doppler) broadening [km/s]
@@ -135,7 +141,7 @@ class LineResult:
     include: bool = True        # user toggle: count this line in the element mean
 
     # --- window views: the fit/synth windows now live on the embedded LineMask, but the
-    # pipeline (synth.fit_line, measure_ew, the balance / correction tools) still
+    # pipeline (measure_ew, the abundance, balance and correction fits) still
     # reads them as ``ln.fit_window`` / ``ln.window`` tuples, so expose them read-only here.
     @property
     def fit_window(self) -> tuple:
@@ -146,7 +152,7 @@ class LineResult:
         return self.mask.synth_window
 
     # --- session persistence (see AbundanceResult / the session snapshot) -------------
-    _TUPLE_FIELDS = ("a_grid", "ew_grid", "flags")
+    _TUPLE_FIELDS = ("a_grid", "ew_grid", "flags", "continuum", "missing_rungs")
 
     def to_dict(self):
         """A JSON-safe view. ``fit_spec`` is embedded as a Spectrum dict; ``fit_func`` (a live
@@ -174,6 +180,8 @@ class LineResult:
         for k in cls._TUPLE_FIELDS:
             if d.get(k) is not None:
                 d[k] = tuple(d[k])
+        if d.get("continuum"):
+            d["continuum"] = tuple(tuple(p) for p in d["continuum"])
         if d.get("fit_spec") is not None:
             d["fit_spec"] = Spectrum.from_dict(d["fit_spec"])
         d["cog_specs"] = {float(a): Spectrum.from_dict(sp)
@@ -201,13 +209,9 @@ def measure_profile(spec, window=None, *, profile, x0=None, **kw):
 
 
 def _renormalised(spec, renorm):
-    """``spec`` divided by its own local straight continuum, when ``renorm`` asks for it.
+    """Explicit automatic local normalisation for standalone EW/CoG callers.
 
-    The fit spans the whole spectrum handed in — for a line that is the synth window, wider
-    than the window the width is integrated over — so the shoulders outside the feature are
-    what sets the slope. The observation gets the same treatment from its mask's markers
-    (:meth:`tumult.linemask.LineMask.renorm_knots`), fitted on its own flux rather than
-    imported from here: the two sides share the definition of a local continuum, not a level.
+    Measurement workflows instead use their fixed nodes through ``measurement_spectrum``.
     """
     if not renorm:
         return spec
@@ -275,8 +279,8 @@ def refresh_ews(spec, lines, *, profile, snr=None, cont_pct=0.0):
             skipped.append(i)
             continue
         try:
-            prof = measure_ew(spec, window=ln.fit_window, snr=snr, cont_pct=cont_pct,
-                              profile=profile, x0=ln.lam0)
+            prof = measure_ew(measurement_spectrum(spec, ln), window=ln.fit_window,
+                              snr=snr, cont_pct=cont_pct, profile=profile, x0=ln.lam0)
         except Exception as exc:
             logging.warning("EW refresh failed for line %d (%.3f A): %s", i, ln.lam0, exc)
             failed[i] = f"{type(exc).__name__}: {exc}"
@@ -300,7 +304,7 @@ def build_cog(synth_line_fn, a_ladder, window=None, profile="trapz", x0=None,
     omitted.
 
     ``renorm`` divides each rung by its own local straight continuum before integrating, to
-    match an observation measured against its mask's local continuum. Set it from the mask,
+    match an explicitly automatically normalised reference,
     so the ladder and the measurement it is inverted against agree.
     """
     a = np.asarray(a_ladder, dtype=float)
@@ -569,114 +573,16 @@ def measure_line(ref_spec, line, profile="gauss", fallback=0.4, resolution=None,
     return prof, (synth_lo, synth_hi), fit_window, tuple(flags)
 
 
-def rew_gradient(synth_fn, a0, step, window=None, profile="gauss", x0=None,
-                 batch_synth_fn=None):
-    """Numerical ``dREW/dA`` at ``a0`` by central difference of the reduced EW over ±``step``.
-
-    ``synth_fn(a) -> Spectrum`` is the full synthesis at abundance ``a`` (caller's convention).
-    The reduced EW is measured over ``window`` (the fit window) with ``profile`` and reference
-    ``x0`` using ``get_weq``'s default REW return — no manual log conversion. Returns the gradient
-    per dex (``NaN`` if either flank cannot be measured).
-
-    ``batch_synth_fn([a_hi, a_lo]) -> [Spectrum, Spectrum]`` (optional): synthesise both flanks
-    in one call so they can be fanned across a single process pool; identical result to the two
-    serial ``synth_fn`` calls, just scheduled together.
-    """
-    step = abs(float(step)) or 0.05
-    try:
-        if batch_synth_fn is not None:
-            hi, lo = batch_synth_fn([a0 + step, a0 - step])
-        else:
-            hi, lo = synth_fn(a0 + step), synth_fn(a0 - step)
-        rew_hi = _rew(hi, window, profile, x0)
-        rew_lo = _rew(lo, window, profile, x0)
-    except Exception:
-        return float("nan")
-    if not (np.isfinite(rew_hi) and np.isfinite(rew_lo)):
-        return float("nan")
-    return float((rew_hi - rew_lo) / (2.0 * step))
-
-
-# sigma_a_from_rew moved to tumult.abundance (re-exported above).
-
-
-def fit_line(line, *, synth_only_fn, synth_all_fn, synth_excl_fn, abund_fit_fn,
-             ew_meas, a_guess=0.0, profile="gauss", weak_frac=0.10, blend_max=0.30,
-             grad_step=0.125, grad_batch_fn=None, synth_full_fn=None):
-    """Stage 2 (direct fit): screen the line, fit its abundance + vshift/vdop, and get ``dREW/dA``.
-
-    Injected callables (synthesis-agnostic so this stays engine-independent and testable):
-
-    * ``synth_only_fn(a) -> Spectrum`` — the line at abundance ``a`` with *only* the target
-      species (``only_elements``); its fit-window width EW is the weak-line screen.
-    * ``synth_all_fn(a) -> Spectrum`` — the synthesis the abundance is fitted with at abundance
-      ``a`` (all species, or the target species alone when background lines are switched off),
-      used for the ``dREW/dA`` gradient.
-    * ``synth_excl_fn() -> Spectrum`` — the window with the target species removed
-      (``exclude_elements``); with ``synth_full_fn(a_guess)`` gives the blend fraction.
-    * ``synth_full_fn(a) -> Spectrum`` — the synthesis with every species, for the blend metric.
-      The observation carries its blends whatever the fit synthesises. Defaults to
-      ``synth_all_fn``.
-    * ``abund_fit_fn(guess) -> (best: dict, fitted: Spectrum)`` — the adaptive fit of the abundance
-      axis plus vshift/vdop against the observation over the fit window. ``best`` must expose the
-      abundance under key ``"a"`` (plus ``"vshift"``/``"vdop"`` when fitted).
-
-    ``ew_meas`` is the measured width EW (mÅ) from stage 1; ``line.fit_window`` bounds every
-    screen/gradient EW. Mutates ``line`` in place and returns it. A screen rejection sets a flag,
-    ``include=False`` and returns early (no fit).
-    """
-    fw, x0 = line.fit_window, line.lam0
-
-    # 1) weak-line screen: species-only width EW in the fit window vs the measured EW (a ratio).
-    ew_species = _ew(synth_only_fn(a_guess), fw, profile, x0)
-    line.ew_species = float(ew_species)
-    if not np.isfinite(ew_species) or ew_species < weak_frac * ew_meas:
-        line.flags = ("weak_line",)
-        line.include = False
-        return line
-
-    # 2) blend screen: contaminant width fraction in the fit window.
-    blend, _, _ = blend_fraction((synth_full_fn or synth_all_fn)(a_guess), synth_excl_fn(), window=fw,
-                                 profile=profile, x0=x0)
-    line.blend_frac = float(blend)
-    if np.isfinite(blend) and blend > blend_max:
-        line.flags = ("blended",)
-        line.include = False
-        return line
-
-    # 3) direct fit of abundance + vshift + vdop against the observation over the fit window.
-    best, fitted = abund_fit_fn(a_guess)
-    line.a = float(best["a"])
-    line.vshift = float(best.get("vshift", np.nan))
-    line.vdop = float(best.get("vdop", np.nan))
-    line.fit_spec = fitted
-    line.method = "fit"
-
-    # 4) numerical dREW/dA around the best-fit abundance (full synthesis, fit window). Both
-    # flanks are independent, so they go through the batch path (one shared pool) when given.
-    line.drewda = rew_gradient(synth_all_fn, line.a, grad_step, window=fw, profile=profile,
-                               x0=x0, batch_synth_fn=grad_batch_fn)
-
-    # 5) flag an implausibly large velocity shift: compare |vshift| against the line's HWHM,
-    # converted to a velocity (HWHM_λ / λ0 · c). A best fit that had to slide the synthetic by
-    # more than half a line width is suspect, so mark it and exclude it by default.
-    line.flags = ()
-    hwhm_kms = velocity_hwhm(line.fwhm, line.lam0)
-    if np.isfinite(line.vshift) and np.isfinite(hwhm_kms) and abs(line.vshift) > hwhm_kms:
-        line.flags = ("vshift",)
-        line.include = False
-    return line
-
-
 def finalize_line(line, ref_spec, snr, cont_pct, profile="gauss"):
     """Stage 3: re-measure the EW with SNR/continuum errors and propagate to ``sigma_a``.
 
-    Keeps ``line.a`` from the direct fit and converts the EW error to an abundance error through
+    Keeps ``line.a`` from stage 2 and converts the EW error to an abundance error through
     the stored REW gradient ``line.drewda`` (dREW/dA). No synthesis — fast to rerun whenever the
     SNR / continuum-% inputs change. Mutates ``line`` in place.
     """
     prof = measure_ew(
-        ref_spec, window=line.fit_window, snr=snr, cont_pct=cont_pct, profile=profile, x0=line.lam0)
+        measurement_spectrum(ref_spec, line), window=line.fit_window, snr=snr,
+        cont_pct=cont_pct, profile=profile, x0=line.lam0)
     line.ew, line.ew_err = prof.maa, prof.width_err_maa
     if not np.isfinite(getattr(line, "drewda", float("nan"))):
         return line
@@ -688,10 +594,9 @@ def finalize_line(line, ref_spec, snr, cont_pct, profile="gauss"):
 
 
 # --- the three-stage element workflow ------------------------------------------------------
-# Line selection, the per-line synthesis, and the error budget, as three calls. They are the
-# same three the GUI's abundance wizard makes, with the rendering left to the caller: what
-# comes back is the :class:`AbundanceResult`, and ``progress`` is how a caller watches it
-# fill in line by line during the long middle stage.
+# Line selection (measure_lines), the lattice synthesis (fit, with ``measured=``) and the error
+# budget (finalize_result), as the GUI's abundance wizard runs them; what comes back is the
+# :class:`AbundanceResult`, and ``progress`` is how a caller watches it fill in round by round.
 
 def measure_lines(mset, ref_spec, *, linelist, profile, snr, cont_pct):
     """Stage 1: measure a mask set's switched-on windows on the reference observation.
@@ -733,112 +638,6 @@ def measure_lines(mset, ref_spec, *, linelist, profile, snr, cont_pct):
     return result
 
 
-def run_abundance(request, result, observation, *, run_values=None, progress=None,
-                  cancel_token=None):
-    """Stage 2: screen and fit every included line of ``result``, in place.
-
-    ``request`` is the :class:`~tumult.synthesis.SynthRequest` the lines are synthesised
-    for and ``run_values`` what its syntheses add (:func:`tumult.synthesis.run_values`);
-    ``observation`` is the spectrum the lines were measured on. Each line gets the
-    syntheses :func:`fit_line` needs — the species in isolation, the full window, the
-    window with the element removed, and the adaptive abundance fit — plus the dREW/dA
-    flanks, which go in as one batch so they fold onto a single run's abundance-set axis.
-    Run values carrying ``only_elements`` (background lines switched off) fit and
-    differentiate the element's lines alone; the blend screen still compares against every
-    species. ``progress(result)`` is called as each line lands, so a caller can stream
-    partial results; it must not raise.
-    """
-    from .departures import DepartureGrid, Departures
-    from .synthesis import workflows as synth
-    from .synthesis.cancel import CancelledError
-    from .synthesis.inputs import Snapshot
-    from .synthesis.operations import run_values as complete_values
-
-    result.request = request
-    report = progress or (lambda _result: None)
-    extra = dict(run_values or {})
-    base_rv = complete_values(request, **extra)
-    star = request.star
-    feh = star.feh
-    relative = bool(base_rv.get("relative_abundances", True))
-    solar = synth.abund_table(request.config.to_prefs())
-    base_abund = str(base_rv.get("abundances", "")).strip()
-    symbol = result.symbol
-    # the batch functions synthesise 1D atmospheres; a snapshot or frozen departures go
-    # through the full execution path
-    common_result = isinstance(request.atmosphere, Snapshot) or \
-        isinstance(request.departures, (Departures, DepartureGrid))
-
-    def synth_window(rv_over, window):
-        # an override of None drops that key from the run values
-        rv = {**extra, **rv_over}
-        if common_result:
-            return synth.execute_request(request.update(windows=[window]), rv,
-                                         cancel_token=cancel_token).spectrum
-        return synth.compute(request, rv, *padded_window(window), cancel_token=cancel_token)
-
-    def abund_terms(a):
-        return abundance_override(symbol, a, base=base_abund, relative=relative,
-                                  feh=feh, solar=solar)
-
-    for ln in result.lines:
-        if cancel_token is not None and cancel_token.cancelled:
-            raise CancelledError()
-        if not ln.include:
-            continue          # skip step-1-rejected / user-excluded lines (keeps flags)
-
-        def synth_only_fn(a, _w=ln.window):
-            return synth_window({"abundances": abund_terms(a),
-                                 "relative_abundances": relative,
-                                 "only_elements": symbol}, _w)
-
-        def synth_all_fn(a, _w=ln.window):
-            return synth_window({"abundances": abund_terms(a),
-                                 "relative_abundances": relative}, _w)
-
-        def synth_all_batch(a_list, _w=ln.window):
-            rvs = [{**extra, "abundances": abund_terms(a),
-                    "relative_abundances": relative} for a in a_list]
-            if common_result:
-                return [synth.execute_request(request.update(windows=[_w]), rv,
-                                              cancel_token=cancel_token).spectrum
-                        for rv in rvs]
-            return synth.compute_batch(request, rvs, *padded_window(_w),
-                                       cancel_token=cancel_token)
-
-        def synth_full_fn(a, _w=ln.window):
-            return synth_window({"abundances": abund_terms(a),
-                                 "relative_abundances": relative,
-                                 "only_elements": None}, _w)
-
-        def synth_excl_fn(_w=ln.window):
-            return synth_window({"exclude_elements": symbol, "only_elements": None}, _w)
-
-        def abund_fit_fn(guess, _w=ln.window, _fw=ln.fit_window):
-            if common_result:
-                return synth.fit_request_line(observation, request, symbol, guess, _w, _fw,
-                                              run_values=extra, cancel_token=cancel_token)
-            return synth.fit_line(observation, request, symbol, guess,
-                                  *padded_window(_w), _fw, run_values=extra,
-                                  cancel_token=cancel_token)
-
-        try:
-            fit_line(ln, synth_only_fn=synth_only_fn, synth_all_fn=synth_all_fn,
-                     synth_excl_fn=synth_excl_fn, abund_fit_fn=abund_fit_fn,
-                     ew_meas=ln.ew, a_guess=0.0, profile=result.profile,
-                     grad_batch_fn=synth_all_batch, synth_full_fn=synth_full_fn)
-        except CancelledError:
-            raise
-        except Exception:
-            logging.exception("Abundance: fit for line %.3f failed", ln.lam0)
-            ln.flags = ("synth_failed",)
-        result.relative = relative
-        result.teff, result.logg, result.feh = star.teff, star.logg, feh
-        result.vmic = float("nan") if star.vmic is None else star.vmic
-        report(result)
-    return result
-
-
 def finalize_result(result, ref_spec, snr, cont_pct):
     """Stage 3: fold the SNR and continuum errors into every fitted line, then aggregate.
 
@@ -857,7 +656,7 @@ def finalize_result(result, ref_spec, snr, cont_pct):
 
 
 # --- NLTE abundance corrections against a 1D LTE reference ---------------------------------
-# The counterpart to measure_lines / run_abundance for the case where the "observation" is a
+# The counterpart to measure_lines / fit for the case where the "observation" is a
 # synthetic 1D LTE reference computed straight from a model atom. Stage 1 measures the atom's
 # own lines on that reference; stage 2 builds an NLTE curve of growth per line and inverts it
 # to the abundance reproducing the reference EW. The reference sits at [X/Fe]=0, so that
@@ -1121,9 +920,8 @@ def refit_line_window(result, ln, lo, hi, *, min_fit_points=MIN_FIT_POINTS):
     if np.isfinite(ln.ew_err) and ln.ew > 0 and ln.ew_err > ln.ew:
         flags.append("ew_unc")
     if ln.cog_specs:
-        renorm = bool(getattr(ln.mask, "renorm", False))
         offsets = sorted(ln.cog_specs)
-        ews = [_ew(ln.cog_specs[a], (lo, hi), result.profile, ln.lam0, renorm)
+        ews = [_ew(ln.cog_specs[a], (lo, hi), result.profile, ln.lam0)
                for a in offsets]
         ln.a_grid, ln.ew_grid = tuple(offsets), tuple(float(w) for w in ews)
         if not (min(ews) <= ln.ew <= max(ews)):
@@ -1152,40 +950,37 @@ def element_xfe(abundances, element, *, relative, feh, solar):
     return 0.0
 
 
-def adaptive_cog(lines, synthesize, *, step, limit, max_rounds, profile, cancel_token=None,
-                 report=None):
-    """Bracket every line's abundance on a lattice of curve-of-growth rungs, in place.
+def lattice_rounds(lines, synthesize, solve_line, *, step, limit, max_rounds,
+                   cancel_token=None, report=None, label="Abundance lattice"):
+    """Bracket every included line's abundance by its nearest rungs on a shared lattice.
 
-    ``lines`` carry the EW to reproduce (``ew``, ``ew_err``) and their fit windows.
     ``synthesize(offsets)`` returns, for each abundance offset [dex], the synthetic spectra
-    aligned with ``lines``; an offset is only ever requested once.
+    aligned with ``lines``; an offset is only ever requested once, and all lines share it.
+    ``solve_line(line, offsets, spectra)`` sets the line's solution from the computed rungs
+    (sorted ``offsets``, the line's own ``spectra`` aligned with them) and returns its
+    offset, or ``None`` after it has flagged and excluded the line.
 
     The offsets lie on a lattice of ``step`` dex within ``+-limit``. The first round
-    synthesises ``(-limit, 0, +limit)``. Each round inverts every line's curve of growth
-    through the computed rungs (PCHIP in reduced EW, :func:`cog_invert`), and the lattice
-    points bracketing each guess that are not computed yet are synthesised next. A line is
-    done when its guess is bracketed by its nearest computed rungs; a line whose EW lies
-    outside the curve at ``+-limit`` is flagged ``out_of_range`` and excluded. After
-    ``max_rounds`` the last guesses stand.
+    synthesises ``(-limit, 0, +limit)``; each later one synthesises the lattice points
+    bracketing every line's current solution that are not computed yet. A line is done when
+    its solution lies between its nearest computed rungs. A line whose solve raises is
+    flagged ``synth_failed`` and excluded. After ``max_rounds`` the last solutions stand.
 
-    Sets ``a`` (the offset), ``sigma_a``, ``drewda``, ``a_grid``/``ew_grid``, ``cog_specs``
-    and ``fit_spec`` on each line. Returns ``(rungs, bracketed)``: the offsets computed and
-    whether every line was bracketed.
+    Returns ``(rungs, bracketed)``: ``{offset: spectra}`` and whether every line was
+    bracketed.
     """
     from .synthesis.cancel import CancelledError
 
     report = report or (lambda: None)
     step = float(step)
-    if not step > 0:
-        raise ValueError("The abundance lattice step must be positive.")
+    limit = lattice_limit(step, limit)
 
     def snap(x):
         return float(round(float(np.round(x / step) * step), 10))
 
-    limit = snap(max(step, np.floor(float(limit) / step + 1e-9) * step))
     rungs = {}                         # offset -> spectra aligned with lines
 
-    def solve(offsets):
+    def compute(offsets):
         offsets = sorted(set(snap(a) for a in offsets) - set(rungs))
         if not offsets:
             return
@@ -1195,9 +990,7 @@ def adaptive_cog(lines, synthesize, *, step, limit, max_rounds, profile, cancel_
             rungs[a] = list(specs)
 
     active = [i for i, ln in enumerate(lines) if ln.include]
-    for i in active:
-        lines[i].method = "cog"
-    solve([-limit, 0.0, limit])
+    compute([-limit, 0.0, limit])
     bracketed = False
     for _round in range(int(max_rounds)):
         needed = set()
@@ -1207,33 +1000,19 @@ def adaptive_cog(lines, synthesize, *, step, limit, max_rounds, profile, cancel_
             if not ln.include:
                 continue
             try:
-                renorm = bool(getattr(ln.mask, "renorm", False))
-                ews = np.array([_ew(rungs[a][i], ln.fit_window, profile, ln.lam0, renorm)
-                                for a in offsets])
-                ln.a_grid, ln.ew_grid = tuple(offsets), tuple(float(w) for w in ews)
-                lo_ew, hi_ew = ews[offsets.index(-limit)], ews[offsets.index(limit)]
-                if not (min(lo_ew, hi_ew) <= ln.ew <= max(lo_ew, hi_ew)):
-                    ln.a, ln.sigma_a = float("nan"), float("nan")
-                    ln.flags = tuple(dict.fromkeys(ln.flags + ("out_of_range",)))
-                    ln.include = False
-                    continue
-                ew_err = float(ln.ew_err) if np.isfinite(ln.ew_err) else 0.0
-                inv = cog_invert(offsets, ews, ln.ew, ew_err=ew_err, lam0_aa=ln.lam0)
-                ln.a = float(np.clip(inv["a"], -limit, limit))
-                ln.sigma_a = float(inv["sigma_a"])
-                ln.sigma_a_phot, ln.sigma_a_cont = ln.sigma_a, 0.0
-                slope = float(inv["dadrew"])
-                ln.drewda = 1.0 / slope if np.isfinite(slope) and slope != 0 else float("nan")
+                a = solve_line(ln, offsets, [rungs[o][i] for o in offsets])
             except CancelledError:
                 raise
             except Exception:
-                logging.exception("Curve of growth: line %.3f failed", ln.lam0)
+                logging.exception("%s: line %.3f failed", label, ln.lam0)
                 ln.flags = tuple(dict.fromkeys(ln.flags + ("synth_failed",)))
                 ln.include = False
                 continue
-            # the lattice cell holding the guess; a guess on a lattice point is bracketed
+            if a is None:
+                continue
+            # the lattice cell holding the solution; one on a lattice point is bracketed
             # by that point alone
-            k = ln.a / step
+            k = a / step
             lo = float(np.clip(np.floor(k + 1e-9) * step, -limit, limit))
             hi = float(np.clip(np.ceil(k - 1e-9) * step, -limit, limit))
             needed.update(a for a in (lo, hi) if snap(a) not in rungs)
@@ -1241,21 +1020,139 @@ def adaptive_cog(lines, synthesize, *, step, limit, max_rounds, profile, cancel_
         if not needed:
             bracketed = True
             break
-        solve(needed)
+        compute(needed)
     else:
-        logging.warning("Curve of growth: %d rounds without bracketing every line",
-                        max_rounds)
+        logging.warning("%s: %d rounds without bracketing every line", label, max_rounds)
+    return rungs, bracketed
+
+
+def lattice_limit(step, limit):
+    """``limit`` snapped down onto the lattice of ``step`` dex, at least one step."""
+    step = float(step)
+    if not step > 0:
+        raise ValueError("The abundance lattice step must be positive.")
+    return float(round(float(max(step, np.floor(float(limit) / step + 1e-9) * step)), 10))
+
+
+def _exclude(line, flag):
+    line.a, line.sigma_a = float("nan"), float("nan")
+    line.flags = tuple(dict.fromkeys(line.flags + (flag,)))
+    line.include = False
+
+
+def adaptive_cog(lines, synthesize, *, step, limit, max_rounds, profile, cancel_token=None,
+                 report=None):
+    """Bracket every line's abundance on a lattice of curve-of-growth rungs, in place.
+
+    ``lines`` carry the EW to reproduce (``ew``, ``ew_err``) and their fit windows.
+    ``synthesize(offsets)`` returns, for each abundance offset [dex], the synthetic spectra
+    aligned with ``lines`` (see :func:`lattice_rounds`).
+
+    Each round inverts every line's curve of growth through the computed rungs (PCHIP in
+    reduced EW, :func:`cog_invert`). A line whose EW lies outside the curve at ``+-limit``
+    is flagged ``out_of_range`` and excluded.
+
+    Sets ``a`` (the offset), ``sigma_a``, ``drewda``, ``a_grid``/``ew_grid``, ``cog_specs``
+    and ``fit_spec`` on each line. Returns ``(rungs, bracketed)``: the offsets computed and
+    whether every line was bracketed.
+    """
+    active = [ln for ln in lines if ln.include]
+    for ln in active:
+        ln.method = "cog"
+        ln.cog_step, ln.cog_origin = float(step), 0.0
+    edge = lattice_limit(step, limit)
+
+    def invert(ln, offsets, specs):
+        ews = np.array([_ew(spec, ln.fit_window, profile, ln.lam0) for spec in specs])
+        ln.a_grid, ln.ew_grid = tuple(offsets), tuple(float(w) for w in ews)
+        lo_ew, hi_ew = ews[offsets.index(-edge)], ews[offsets.index(edge)]
+        if not (min(lo_ew, hi_ew) <= ln.ew <= max(lo_ew, hi_ew)):
+            _exclude(ln, "out_of_range")
+            return None
+        ew_err = float(ln.ew_err) if np.isfinite(ln.ew_err) else 0.0
+        inv = cog_invert(offsets, ews, ln.ew, ew_err=ew_err, lam0_aa=ln.lam0)
+        ln.a = float(np.clip(inv["a"], -edge, edge))
+        ln.sigma_a = float(inv["sigma_a"])
+        ln.sigma_a_phot, ln.sigma_a_cont = ln.sigma_a, 0.0
+        slope = float(inv["dadrew"])
+        ln.drewda = 1.0 / slope if np.isfinite(slope) and slope != 0 else float("nan")
+        return ln.a
+
+    rungs, bracketed = lattice_rounds(
+        lines, synthesize, invert, step=step, limit=limit, max_rounds=max_rounds,
+        cancel_token=cancel_token, report=report, label="Curve of growth")
 
     # every line keeps its rungs over its synth window, so a later fit-window edit can
     # re-read the curve of growth without another synthesis (:func:`refit_line_window`);
     # the overlay is the two bracketing rungs interpolated at the solution
-    for i in active:
-        ln = lines[i]
+    index = {id(ln): i for i, ln in enumerate(lines)}
+    for ln in active:
         lo, hi = ln.window
         if np.isfinite(lo) and np.isfinite(hi) and ln.a_grid:
-            ln.cog_specs = {a: rungs[a][i].crop(xmin=lo, xmax=hi) for a in ln.a_grid}
+            ln.cog_specs = {a: rungs[a][index[id(ln)]].crop(xmin=lo, xmax=hi)
+                            for a in ln.a_grid}
         if ln.include and np.isfinite(ln.a):
             ln.fit_spec = _solution_spec(ln)
+    return sorted(rungs), bracketed
+
+
+def fit_profiles(lines, synthesize, target, *, step, limit, max_rounds, profile,
+                 cancel_token=None, report=None):
+    """Fit every line's abundance, velocity shift and broadening on shared lattice rungs.
+
+    ``lines`` carry their fit and synth windows (and a fixed local continuum when
+    ``renorm``); ``synthesize(offsets)`` is as in :func:`lattice_rounds` and ``target`` is
+    the observation. Each round interpolates every line's computed rungs along the
+    abundance axis (monotone PCHIP per pixel, :class:`~tumult.spectrum_grid.SpectrumGrid`)
+    and fits abundance, ``vshift`` and ``vdop`` to the target inside the fit window. A
+    solution at ``+-limit`` is flagged ``out_of_range`` and excluded.
+
+    ``drewda`` is the slope of the PCHIP interpolant through the rungs' reduced EWs at
+    the solution, so the gradient and the fit rest on the same lattice. A line whose
+    ``|vshift|`` exceeds its measured half width is flagged ``vshift`` and excluded.
+
+    Sets ``a`` (the offset), ``vshift``, ``vdop``, ``drewda`` and ``fit_spec`` on each line.
+    Returns ``(rungs, bracketed)`` as :func:`adaptive_cog` does.
+    """
+    from .spectrum_grid import SpectrumGrid
+    from .utils import pchip_mono
+
+    active = [ln for ln in lines if ln.include]
+    for ln in active:
+        ln.method = "fit"
+    edge = lattice_limit(step, limit) - 1e-3
+    post = ("vshift", "vdop")
+    previous = {}                      # each line starts from its last round's solution
+
+    def fit(ln, offsets, specs):
+        grid = SpectrumGrid(specs, a=list(offsets))
+        observed = target.crop(xmin=ln.fit_window[0], xmax=ln.fit_window[1])
+        guess = previous.get(id(ln), 0.0)
+        best, _fitted = grid.fit(
+            observed, fit=["a", *post], p0={"a": guess, "vshift": 0.0, "vdop": 1.0},
+            continuum=ln.continuum if ln.renorm else None,
+            xtol={"a": 0.01, "vshift": 0.1, "vdop": 0.1})
+        ln.a = previous[id(ln)] = float(best["a"])
+        ln.vshift, ln.vdop = float(best["vshift"]), float(best["vdop"])
+        if abs(ln.a) >= edge:
+            _exclude(ln, "out_of_range")
+            return None
+        # the overlay spans the synth window, not only the fitted samples
+        ln.fit_spec = grid.crop(**best)
+        rews = [_rew(spec, ln.fit_window, profile, ln.lam0) for spec in specs]
+        ln.drewda = float(pchip_mono(np.asarray(offsets, float),
+                                     np.asarray(rews, float)).derivative()(ln.a))
+        return ln.a
+
+    rungs, bracketed = lattice_rounds(
+        lines, synthesize, fit, step=step, limit=limit, max_rounds=max_rounds,
+        cancel_token=cancel_token, report=report, label="Profile fit")
+    for ln in active:
+        hwhm_kms = velocity_hwhm(ln.fwhm, ln.lam0)
+        if (ln.include and np.isfinite(ln.vshift) and np.isfinite(hwhm_kms)
+                and abs(ln.vshift) > hwhm_kms):
+            ln.flags = tuple(dict.fromkeys(ln.flags + ("vshift",)))
+            ln.include = False
     return sorted(rungs), bracketed
 
 
@@ -1388,13 +1285,13 @@ def _check_method(method):
                          "growth) or 'profile' (direct profile fit).")
 
 
-class _CogContext:
-    """The syntheses of one curve-of-growth analysis on one request.
+class _LatticeContext:
+    """The syntheses of one lattice analysis (curve of growth or profile fit) on one request.
 
     Resolves the request once: the model atom's quadrature for requested departures, the
     element's abundance in the composition and the windows every line is synthesised over.
-    ``variant`` builds the run values of one synthesis; all syntheses of every line go out
-    as one run per variant over all windows.
+    ``variant`` builds the run values of one synthesis; every synthesis covers all lines'
+    windows in one run through a window file.
     """
 
     def __init__(self, request, lines, element, *, background_lines, limit, cancel_token):
@@ -1403,14 +1300,13 @@ class _CogContext:
         from .synthesis.inputs import Snapshot
         from .synthesis.operations import departure_run_values, run_values
 
-        if isinstance(request.departures, (Departures, DepartureGrid)):
-            raise ValueError("A curve of growth needs a departure solve per abundance rung; "
-                             "attach departures.request(...) instead of solved departures.")
-        if isinstance(request.atmosphere, Snapshot):
-            raise ValueError("Curve-of-growth fitting runs on 1D atmospheres and grids.")
         self.departure_values, self.quadrature, self.quadrature_atmosphere = \
             departure_run_values(request)
         self.request, self.element = request, element
+        self.solved_departures = isinstance(request.departures, (Departures, DepartureGrid))
+        # snapshots and solved departures run through execute_request, which reads them;
+        # the batch path schedules every variant's runs together on 1D atmospheres
+        self.direct = self.solved_departures or isinstance(request.atmosphere, Snapshot)
         self.lte_request = request.update(departures=None)
         base = run_values(request, **self.departure_values)
         self.prefs = request.config.to_prefs()
@@ -1433,8 +1329,8 @@ class _CogContext:
                                   relative=self.relative, feh=self.feh, solar=self.solar)
 
     def variant(self, xfe, *, species="fit"):
-        """Run values at [X/Fe] ``xfe``. ``species`` is ``"fit"`` (what the curve of growth
-        synthesises), ``"all"``, ``"only"`` (the element alone) or ``"excluded"``."""
+        """Run values at [X/Fe] ``xfe``. ``species`` is ``"fit"`` (what the rungs
+        synthesise), ``"all"``, ``"only"`` (the element alone) or ``"excluded"``."""
         # the element's term stays in every variant, so a single-variant batch always
         # folds its windows into one run, the excluded arm included
         values = {"abundances": self._abundances(xfe),
@@ -1455,18 +1351,35 @@ class _CogContext:
             request, extra = self.lte_request, {}
         else:
             request, extra = self.request, self.departure_values
+        if self.direct:
+            windowed = request.update(windows=self.windows)
+            return [list(synth.execute_request(windowed, {**extra, **variant},
+                                               cancel_token=self.cancel_token).spectra)
+                    for variant in variants]
         return synth.compute_window_batch(
             request, [{**extra, **variant} for variant in variants], self.windows,
             crop=self.crop, cancel_token=self.cancel_token)
+
+    def synthesize_offsets(self, lines):
+        """``synthesize(offsets)`` for :func:`lattice_rounds`: the ``"fit"`` variant at each
+        [X/Fe] offset from the composition, its spectra aligned with ``lines``."""
+        index = {id(ln): w for w, ln in enumerate(self.lines)}
+        x0 = self.base_x
+
+        def synthesize(offsets):
+            spectra = self.synthesize([self.variant(x0 + a) for a in offsets])
+            return [[specs[index[id(ln)]] for ln in lines] for specs in spectra]
+        return synthesize
 
 
 def screen_lines(context, *, blend_max=0.30, weak_frac=0.10):
     """Screen every included line of ``context`` at the request's composition, in place.
 
-    The screens are LTE diagnostics and independent of which transitions the curve of
-    growth synthesises: a line whose element-only EW is below ``weak_frac`` of the measured
-    EW is flagged ``weak_line``, and one whose EW with the element excluded exceeds
-    ``blend_max`` of the EW with every species is flagged ``blended``. Both are excluded.
+    The screens use the request's solved departures when it carries them, which costs no
+    solve, and LTE otherwise. They are independent of which transitions the rungs
+    synthesise: a line whose element-only EW is below ``weak_frac`` of the measured EW is
+    flagged ``weak_line``, and one whose EW with the element excluded exceeds ``blend_max``
+    of the EW with every species is flagged ``blended``. Both are excluded.
     """
     lines = [ln for ln in context.lines if ln.include]
     if not lines:
@@ -1475,7 +1388,7 @@ def screen_lines(context, *, blend_max=0.30, weak_frac=0.10):
     only, full, excluded = context.synthesize([
         context.variant(x0, species="only"),
         context.variant(x0, species="all"),
-        context.variant(x0, species="excluded")], lte=True)
+        context.variant(x0, species="excluded")], lte=not context.solved_departures)
     for w, ln in enumerate(context.lines):
         if not ln.include:
             continue
@@ -1490,30 +1403,55 @@ def screen_lines(context, *, blend_max=0.30, weak_frac=0.10):
             ln.flags, ln.include = tuple(dict.fromkeys(ln.flags + ("blended",))), False
 
 
+def _check_cog_request(request):
+    from .departures import DepartureGrid, Departures
+    from .synthesis.inputs import Snapshot
+    if isinstance(request.departures, (Departures, DepartureGrid)):
+        raise ValueError("A curve of growth needs a departure solve per abundance rung; "
+                         "attach departures.request(...) instead of solved departures.")
+    if isinstance(request.atmosphere, Snapshot):
+        raise ValueError("Curve-of-growth fitting runs on 1D atmospheres and grids.")
+
+
 def fit_lines_cog(context, *, limit, max_rounds, profile, report=None):
     """Adaptive curve-of-growth abundances of the included lines of ``context``, in place.
 
     Each line's ``a`` is its [X/Fe]; the rungs are [X/Fe] offsets from the element's
     abundance in the request's composition. Returns whether every line was bracketed.
     """
+    _check_cog_request(context.request)
     lines = [ln for ln in context.lines if ln.include]
     if not lines:
         return True
-    index = {id(ln): w for w, ln in enumerate(context.lines)}
     x0 = context.base_x
-
-    def synthesize(offsets):
-        spectra = context.synthesize([context.variant(x0 + a) for a in offsets])
-        return [[specs[index[id(ln)]] for ln in lines] for specs in spectra]
-
     _rungs, bracketed = adaptive_cog(
-        lines, synthesize, step=context.request.config.abundance_step, limit=limit,
-        max_rounds=max_rounds, profile=profile, cancel_token=context.cancel_token,
-        report=report)
+        lines, context.synthesize_offsets(lines), step=context.request.config.abundance_step,
+        limit=limit, max_rounds=max_rounds, profile=profile,
+        cancel_token=context.cancel_token, report=report)
     for ln in lines:
         ln.a = x0 + ln.a if np.isfinite(ln.a) else ln.a
+        ln.cog_origin += x0
         ln.a_grid = tuple(x0 + a for a in ln.a_grid)
         ln.cog_specs = {x0 + a: spec for a, spec in ln.cog_specs.items()}
+    return bracketed
+
+
+def fit_lines_profile(context, target, *, limit, max_rounds, profile, report=None):
+    """Direct profile-fit abundances of the included lines of ``context``, in place.
+
+    Each line's ``a`` is its [X/Fe], fitted to ``target`` on rungs at [X/Fe] offsets from
+    the element's abundance in the request's composition (:func:`fit_profiles`). Returns
+    whether every line was bracketed.
+    """
+    lines = [ln for ln in context.lines if ln.include]
+    if not lines:
+        return True
+    _rungs, bracketed = fit_profiles(
+        lines, context.synthesize_offsets(lines), target,
+        step=context.request.config.abundance_step, limit=limit, max_rounds=max_rounds,
+        profile=profile, cancel_token=context.cancel_token, report=report)
+    for ln in lines:
+        ln.a = context.base_x + ln.a if np.isfinite(ln.a) else ln.a
     return bracketed
 
 
@@ -1532,21 +1470,20 @@ def fit(request, *, target, line_mask=None, measured=None, method="cog",
     as curated, are fitted without measuring the target again, and its identity and
     annotations are kept.
 
-    ``method="cog"`` measures each window's EW (``profile``, with ``snr`` and ``cont_pct``
-    errors), screens weak and blended lines at the request's composition
-    (:func:`screen_lines`) and inverts adaptive curves of growth (:func:`adaptive_cog`)
-    within ``+-limit`` dex of the element's abundance in that composition. With
-    ``background_lines=False`` the curves of growth synthesise the element's transitions
-    alone; the screens always compare against every species. Departures requested on the
-    request (``departures.request``) make every rung an NLTE solve of its own.
+    Both methods measure each window's EW (``profile``, with ``snr`` and ``cont_pct``
+    errors), screen weak and blended lines at the request's composition
+    (:func:`screen_lines`) and work on rungs of ``config.abundance_step`` dex within
+    ``+-limit`` dex of the element's abundance in that composition, each rung one synthesis
+    over every window. ``method="cog"`` inverts adaptive curves of growth
+    (:func:`adaptive_cog`); ``method="profile"`` fits abundance, velocity shift and
+    broadening to the target on the same rungs (:func:`fit_profiles`). With
+    ``background_lines=False`` the rungs synthesise the element's transitions alone; the
+    screens always compare against every species. Departures requested on the request
+    (``departures.request``) make every rung an NLTE solve of its own; solved departures
+    are read back by the profile fit's rungs and screens.
 
-    ``method="profile"`` is the direct profile fit of abundance, velocity shift and
-    broadening (:func:`run_abundance`) on the same measurement, followed by its error
-    budget (:func:`finalize_result`).
-
-    Returns a completed :class:`AbundanceResult` in [X/Fe] (profile: in the request's
-    convention) whose ``request`` and ``target`` record the inputs;
-    ``request.update(abundances=result)`` carries the fitted abundance on.
+    Returns a completed :class:`AbundanceResult` in [X/Fe] whose ``request`` and ``target``
+    record the inputs; ``request.update(abundances=result)`` carries the fitted abundance on.
     """
     import uuid
     from .synthesis.request import SynthRequest
@@ -1572,28 +1509,24 @@ def fit(request, *, target, line_mask=None, measured=None, method="cog",
                                linelist=str(config.resolve(config.linelist)) if config.linelist
                                else None, profile=profile, snr=snr, cont_pct=cont_pct)
     result.request, result.target, result.method = request, target_record, method
+    result.cog_settings = {"background_lines": bool(background_lines), "limit": float(limit)}
     result.teff, result.logg, result.feh = request.star.teff, request.star.logg, request.star.feh
     result.vmic = float("nan") if request.star.vmic is None else request.star.vmic
     report(result)
 
-    if method == "profile":
-        from .synthesis.operations import departure_run_values
-        run_values, _quadrature, _atmosphere = departure_run_values(request)
-        if not background_lines:
-            run_values["only_elements"] = element
-        run_abundance(request, result, spectrum, run_values=run_values, progress=progress,
-                      cancel_token=cancel_token)
-        finalize_result(result, spectrum, snr, cont_pct)
-        result.abundances = request.abundances.to_dict() if request.abundances else {}
-        return result
-
-    context = _CogContext(request, result.lines, element,
-                          background_lines=background_lines, limit=limit,
-                          cancel_token=cancel_token)
+    if method == "cog":
+        _check_cog_request(request)
+    context = _LatticeContext(request, result.lines, element,
+                              background_lines=background_lines, limit=limit,
+                              cancel_token=cancel_token)
     screen_lines(context, blend_max=blend_max, weak_frac=weak_frac)
     report(result)
-    bracketed = fit_lines_cog(context, limit=limit, max_rounds=max_rounds, profile=profile,
-                              report=lambda: report(result))
+    if method == "cog":
+        bracketed = fit_lines_cog(context, limit=limit, max_rounds=max_rounds,
+                                  profile=profile, report=lambda: report(result))
+    else:
+        bracketed = fit_lines_profile(context, spectrum, limit=limit, max_rounds=max_rounds,
+                                      profile=profile, report=lambda: report(result))
     for ln in result.lines:
         if ln.include and np.isfinite(ln.drewda):
             finalize_line(ln, spectrum, snr, cont_pct, profile=profile)
@@ -1703,4 +1636,183 @@ def nlte_corrections(request, *, method="cog", background_lines=False,
         "departures": "per_rung", "convention": "A(NLTE) - A(LTE)",
         "quadrature": quadrature.to_dict() if quadrature is not None else None,
         "quadrature_atmosphere": quadrature_atmosphere}
+    return result
+
+
+def measurement_spectrum(spec, line):
+    """Temporary normalised view for EW integration; never changes the target spectrum."""
+    if not line.renorm:
+        return spec
+    from .continuum import model_continuum
+    cont = model_continuum(line.continuum, spec.xdata.to_value(u.AA))
+    if np.any(cont <= 0):
+        raise ValueError("Local continuum levels must be positive")
+    return spec / cont
+
+
+def displayed_model(line):
+    """The fitted spectrum in the prepared target's fixed coordinate system."""
+    if line.fit_spec is None or not line.renorm:
+        return line.fit_spec
+    from .continuum import model_continuum
+    return line.fit_spec * model_continuum(line.continuum,
+                                          line.fit_spec.xdata.to_value(u.AA))
+
+
+def refresh_line_cog(line, profile):
+    """Invert an edited EW using cached spectra and flag absent nearest lattice rungs.
+
+    Outside the cached range, request one more lattice interval. Until the nearest
+    rungs exist, no abundance or uncertainty is reported and the include choice is retained.
+    """
+    line.flags = tuple(f for f in line.flags
+                       if f not in ("missing_rungs", "out_of_range", "refit_required"))
+    line.missing_rungs = ()
+    if len(line.cog_specs) < 2:
+        line.a = line.sigma_a = line.drewda = float("nan")
+        # Keep the normalised profile as a preview while the markers move. Its
+        # abundance is invalid until explicitly refitted against the edited continuum.
+        line.flags += ("refit_required",)
+        return
+    offsets = sorted(line.cog_specs)
+    ews = [_ew(line.cog_specs[a], line.fit_window, profile, line.lam0) for a in offsets]
+    line.a_grid, line.ew_grid = tuple(offsets), tuple(ews)
+    if not line.ew > 0:
+        line.a = line.sigma_a = line.drewda = float("nan")
+        line.fit_spec = None
+        line.flags += ("out_of_range",)
+        return
+    inv = cog_invert(offsets, ews, line.ew,
+                     ew_err=line.ew_err if np.isfinite(line.ew_err) else 0.0,
+                     lam0_aa=line.lam0)
+    guess = inv["a"]
+    step = line.cog_step
+    if not np.isfinite(step) or step <= 0:
+        line.a = line.sigma_a = line.drewda = float("nan")
+        line.fit_spec = None
+        line.flags += ("refit_required",)
+        return
+    origin = line.cog_origin
+    if inv["out_of_range"]:
+        # Expand by one lattice interval; do not trust a far extrapolation on saturation.
+        needed = [offsets[0] - step if line.ew < min(ews) else offsets[-1] + step]
+    else:
+        k = (guess - origin) / step
+        needed = [origin + np.floor(k + 1e-9) * step,
+                  origin + np.ceil(k - 1e-9) * step]
+    line.missing_rungs = tuple(sorted({round(float(a), 10) for a in needed
+                                       if not any(abs(a - b) < 1e-8 for b in offsets)}))
+    if line.missing_rungs:
+        line.a = line.sigma_a = line.drewda = float("nan")
+        line.fit_spec = None
+        line.flags += ("missing_rungs",)
+        return
+    line.a, line.sigma_a = float(guess), float(inv["sigma_a"])
+    slope = inv["dadrew"]
+    line.drewda = 1 / slope if np.isfinite(slope) and slope != 0 else float("nan")
+    line.sigma_a_phot, line.sigma_a_cont = line.sigma_a, 0.0
+    line.fit_spec = _solution_spec(line)
+
+
+def set_local_continuum(result, line, target, *, enabled=None, nodes=None):
+    """Edit one measurement's fixed local continuum and immediately remeasure its EW.
+
+    Enabling seeds two synth-edge nodes from the upper 10% of the prepared target.
+    Explicit nodes stay fixed until edited again; no optimisation runs during an edit.
+    """
+    from .continuum import model_continuum, seed_local
+    target = target.convert_units(xunit=u.AA)
+    continuum = nodes if nodes is not None else line.continuum
+    on = line.renorm if enabled is None else bool(enabled)
+    if on and not len(continuum):
+        continuum = seed_local(target, line.window)
+    if len(continuum):
+        values = model_continuum(continuum, np.asarray(line.window))
+        if np.any(values <= 0):
+            raise ValueError("Local continuum levels must be positive")
+    edited = deepcopy(line)
+    edited.renorm, edited.continuum = on, tuple(tuple(p) for p in continuum)
+    prof = measure_ew(measurement_spectrum(target, edited), window=line.fit_window,
+                      profile=result.profile, snr=result.snr, cont_pct=result.cont_pct,
+                      x0=line.lam0)
+    edited.ew, edited.ew_err = prof.maa, prof.width_err_maa
+    edited.fwhm = float(prof.fwhm) if prof.fitted else float("nan")
+    edited.fit_func = prof.func
+    if edited.cog_specs or np.isfinite(edited.a) or edited.fit_spec is not None:
+        refresh_line_cog(edited, result.profile)
+        if np.isfinite(edited.a) and np.isfinite(edited.drewda):
+            edited.sigma_a, edited.sigma_a_phot, edited.sigma_a_cont = sigma_a_from_rew(
+                prof, edited.drewda)
+    line.__dict__.update(edited.__dict__)
+    if hasattr(result, "reaggregate"):
+        result.reaggregate()
+        result.converged, result.termination = False, "measurement_changed"
+    else:
+        result.summary = correction_summary(result.lines)
+    return line
+
+
+def complete_cog_rungs(lines, synthesize, *, profile, max_rounds=CORR_MAX_ROUNDS,
+                       cancel_token=None, report=None):
+    """Compute only absent rungs, re-inverting after each batch until bracketed.
+
+    ``synthesize(abundances)`` returns spectra aligned with ``lines`` for each abundance.
+    Existing spectra are retained, and no target or continuum is modified.
+    """
+    pending = [ln for ln in lines if ln.missing_rungs]
+    for _ in range(max_rounds):
+        needed = sorted({a for ln in pending for a in ln.missing_rungs})
+        if not needed:
+            break
+        if cancel_token is not None:
+            cancel_token.check()
+        batches = list(synthesize(needed))
+        if len(batches) != len(needed):
+            raise ValueError("Synthesis did not return every requested abundance rung")
+        for a, spectra in zip(needed, batches):
+            if len(spectra) != len(lines):
+                raise ValueError("Synthesis did not return every line window")
+            for ln, spec in zip(lines, spectra):
+                if any(ln is p for p in pending):
+                    ln.cog_specs.setdefault(a, spec.crop(window=ln.window))
+        for ln in pending:
+            refresh_line_cog(ln, profile)
+        if report is not None:
+            report()
+    return not any(ln.missing_rungs for ln in lines)
+
+
+def complete_result_rungs(result, *, target=None, cancel_token=None, progress=None):
+    """Complete an edited result's CoG at its stored atmosphere and composition.
+
+    This updates line abundances and diagnostics only. A balance whose EWs changed needs
+    an explicit stellar-parameter refit before it can claim convergence again.
+    """
+    if result.request is None:
+        raise ValueError("The measurement has no stored synthesis request; refit it first")
+    from .measurement import BalanceResult
+    balance = isinstance(result, BalanceResult)
+    request = result.request.update(star=result.params) if balance else result.request
+    settings = result.cog_settings
+    context = _LatticeContext(request, result.lines, result.element,
+                          background_lines=settings.get("background_lines", True),
+                          limit=settings.get("limit", 1.0), cancel_token=cancel_token)
+    lines = context.lines
+    shift = request.star.feh + result.solar_x if balance else 0.0
+
+    def synthesize(abundances):
+        return context.synthesize([context.variant(a - shift) for a in abundances])
+
+    complete_cog_rungs(lines, synthesize, profile=result.profile,
+                       cancel_token=cancel_token,
+                       report=(lambda: progress(result)) if progress else None)
+    if target is not None:
+        for ln in lines:
+            if np.isfinite(ln.a) and np.isfinite(ln.drewda):
+                finalize_line(ln, target, result.snr, result.cont_pct, result.profile)
+    if balance:
+        result.reaggregate()
+        result.converged, result.termination = False, "measurement_changed"
+    else:
+        result.summary = correction_summary(result.lines)
     return result

@@ -262,7 +262,32 @@ edge handles only.
 **+ New mask** in the table arms the Select range tool's gesture in *add* mode: the sidebar
 shows the drawn range with a single action, **Add window to <set>**. Leaving the tool
 returns to the LineMasks view. Creating and extending a set therefore use the same drag.
-The table's **Local continuum** column toggles local renormalisation per window.
+Local continuum placement belongs to abundance and ionisation-balance measurements.
+Line masks supply the fit and synth windows.
+
+### Local continua in measurements
+
+Each abundance or ionisation-balance line row has a **Local continuum** checkbox.
+Enabling it seeds a straight continuum from the upper 10% of the prepared target's
+flux in the synth window. Two markers at the synth-window edges adjust its levels;
+their wavelengths stay fixed. Marker edits are fixed continuum choices, not starting
+points for another automatic fit.
+
+The target and its global spline normalisation stay unchanged. The displayed model is
+multiplied by the local continuum, and the EW is measured internally from
+`1 − target / continuum` in the fit window. Each measurement stores its own nodes,
+so changing one spectrum's measurement does not affect another.
+
+A CoG measurement is re-inverted using its cached spectra after each edit. If its
+nearest abundance lattice rungs are missing, the row is flagged `missing_rungs` and
+**Compute remaining abundance rungs** appears. No abundance is reported until those
+rungs bracket the edited EW. The button retains existing spectra and computes the
+missing rungs. An EW outside the cached range extends the ladder one interval at a
+time, up to the calculation's round limit; unresolved lines keep the button.
+Direct profile fits instead show **Refit with edited continuum**. Changing a balance
+measurement invalidates its convergence status; completing its rungs updates the line
+abundances and diagnostics at the stored atmosphere. Use the balance refit action to
+solve the stellar parameters again.
 
 ## Synthesis modal
 

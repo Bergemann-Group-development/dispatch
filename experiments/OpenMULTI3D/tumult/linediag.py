@@ -121,7 +121,7 @@ def measure_masks(ref_spec, masks, *, profile, snr, cont_pct, catalog=None, elem
         ident, flags = _identify(catalog, m.lmin, m.lmax, element)
         ew = fwhm = float("nan")
         try:
-            prof = ab.measure_ew(_local(ref_spec, m), window=(m.lmin, m.lmax), snr=snr,
+            prof = ab.measure_ew(ref_spec, window=(m.lmin, m.lmax), snr=snr,
                                  cont_pct=cont_pct, profile=profile, x0=lam0)
             ew, fwhm = prof.maa, float(prof.fwhm)
             ew_err, ew_err_phot = prof.width_err_maa, prof.err_phot_maa
@@ -131,24 +131,6 @@ def measure_masks(ref_spec, masks, *, profile, snr, cont_pct, catalog=None, elem
         flags = _ew_unc_flag(flags, ew, ew_err_phot)
         lines.append(_line(lam0, m, ew=ew, ew_err=ew_err, fwhm=fwhm, flags=flags, **ident))
     return lines
-
-
-def _local(ref_spec, mask):
-    """``ref_spec`` divided by the mask's own local straight continuum, if it asks for one.
-
-    The measured width is only as good as the continuum it is measured against, and a narrow
-    window sits on the far wings of strong lines outside it, which depress it as a smooth
-    slope rather than as a feature. A mask with ``renorm`` set divides that slope out, fitted
-    over its *synth* window so the shoulders outside the integrated width set it, and the
-    synthetic side of a curve of growth does the same to itself
-    (:func:`tumult.abundance.build_cog`) -- the two sides share the definition of a local
-    continuum, each fitted to its own flux.
-    """
-    if not getattr(mask, "renorm", False):
-        return ref_spec
-    from .continuum import divide_local
-    window = mask.synth_window if np.isfinite(mask.smin) else (mask.lmin, mask.lmax)
-    return divide_local(ref_spec.crop(xmin=window[0], xmax=window[1]))
 
 
 def _identify(catalog, lmin, lmax, element=""):

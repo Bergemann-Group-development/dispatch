@@ -279,8 +279,8 @@
         </div>
         <div id="linemask-panel-content"></div>
         <div class="hint">Import more sets with <b>Open → Line mask set</b>. Click a
-          row to snap the view to its synth window; toggle <b>Local continuum</b> for local
-          renormalisation.</div>
+          row to snap the view to its synth window. Local continua are adjusted in
+          abundance and ionisation-balance measurements.</div>
       </div>
       <div class="abund-panel">
         <div class="abund-panel-head">
@@ -1466,7 +1466,7 @@
   });
 
   // line masks: toggle the panel from the toolbar; reveal the import picker; per-row actions
-  // (select / renorm / delete) + save / clear go through the dedicated "linemask-actions" channel
+  // (select / delete) + save / clear go through the dedicated "linemask-actions" channel
   function linemaskAction(kind, arg) {
     var m = Bokeh.documents[0].get_model_by_name('linemask-actions');
     if (m) m.setv({ value: kind + ' ' + (arg || '') + ' ' + Date.now() });
@@ -1499,7 +1499,7 @@
     if (del) { ev.stopPropagation(); linemaskAction('del', del.dataset.idx); return; }
     // both tables' rows carry the same data-idx, so either selects the mask
     var row = ev.target.closest('.lm-row');
-    if (row && !ev.target.closest('.lm-renorm') && !ev.target.closest('.lm-incl')) {
+    if (row && !ev.target.closest('.lm-incl')) {
       linemaskAction('select', row.dataset.idx);
     }
   });
@@ -1528,8 +1528,6 @@
 {% endif %}
 
   document.addEventListener('change', function (ev) {
-    var rn = ev.target.closest('.lm-renorm');
-    if (rn) { linemaskAction('renorm', rn.dataset.idx); return; }
     var inc = ev.target.closest('.lm-incl');
     if (inc) { linemaskAction('incl', inc.dataset.idx); return; }
     var ref = ev.target.closest('.lm-auto-ref');
