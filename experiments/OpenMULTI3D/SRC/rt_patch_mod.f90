@@ -1165,9 +1165,10 @@ contains
 
     !-----------------------------------------------------------------------------
     ! The detailed line list of a 1D output patch, computed once per set and then
-    ! copied.  Temperature, densities and departures stay fixed through the output
-    ! scattering iterations and the final pass.  The one input that moves is the
-    ! kernels' wing-cutoff reference: work xhat carries sigma*(Jnu-Bnu), so later
+    ! copied.  Without velocities it is isotropic, and temperature, densities and
+    ! departures stay fixed through the output scattering iterations and the final
+    ! pass, so every direction of every pass reuses it.  The one input that moves
+    ! is the kernels' wing-cutoff reference: work xhat carries sigma*(Jnu-Bnu), so later
     ! passes would cut line wings against a slightly different continuum.  The store
     ! keeps the cutoff of the first pass, where Jnu=Bnu; the difference is below
     ! the kernel tolerance.  The first foreground of the (i_nu, set) fills the store

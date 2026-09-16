@@ -295,10 +295,11 @@ SUBROUTINE composition_pre_init (self)
       end do
     endif
   endif
-  ! In 1D the detailed line opacity of the output scattering iterations and the
-  ! final pass is computed once and stored per output i_nu (see stored_linelist in
-  ! rt_patch_mod); a column holds few enough points to keep it.
-  if (one_dimensional .and. rt_out%maxiter > 0 .and. rt_out%include_linelist .and. &
+  ! In 1D the detailed line opacity is isotropic, so the output pass computes it
+  ! once per output i_nu and set and reuses it for every direction, scattering
+  ! iteration and the final pass (see stored_linelist in rt_patch_mod); a column
+  ! holds few enough points to keep it.
+  if (one_dimensional .and. rt_out%include_linelist .and. &
       .not. rt_out%sample_linelist) then
     allocate(self%ll_point_tables(-n_nu_out:-1))
     allocate(self%ll_point_locks (-n_nu_out:-1))
