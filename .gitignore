@@ -53,3 +53,5 @@ dispatch.x.*
 !experiments/OpenMULTI3D/README_INSTALL.md
 !experiments/OpenMULTI3D/requirements.txt
 !experiments/OpenMULTI3D/fetch_input_data.py
+__pycache__/
+.claude/worktrees/
