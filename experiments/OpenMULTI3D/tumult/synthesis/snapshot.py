@@ -144,7 +144,7 @@ def solve_departures(top, snapshot, settings=None, *, resolution=None, atmos_for
     return field
 
 
-def synthesise(field, *, settings=None, window=None, name=None, launch_kwargs=None,
+def synthesise(field, *, settings=None, window=None, name=None, top=None, launch_kwargs=None,
                max_threads=None, cancel_token=None):
     """Synthesise one spectrum from an already-solved :class:`Departures`.
 
@@ -154,11 +154,13 @@ def synthesise(field, *, settings=None, window=None, name=None, launch_kwargs=No
     the frozen coefficients multiply, so the line strength does follow it; whether the
     coefficients themselves may be left at another abundance's values is a scientific
     choice for the user to assess.
+
+    The run goes under ``top``, the caller's cache, and beside the departures without one.
     """
     if not field.saved:
         raise ValueError(f"{field.folder} holds no saved departures to synthesise from")
     nml = spectrum_settings(field, settings, window)
-    top = field.name.parent
+    top = Path(top) if top is not None else field.name.parent
     # The spectrum's identity is its whole namelist, departure folder included, so a second
     # window or line list against the same field is a different run and a repeat is a hit.
     name = top / (name or _spectrum_name(nml))

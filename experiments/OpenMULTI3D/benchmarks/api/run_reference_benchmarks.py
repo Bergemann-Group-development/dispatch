@@ -1,7 +1,9 @@
 """Run the scripting examples of intended_api.py on the reference assets of API_benchmarks.txt.
 
 This runner binds assets, preflights the selected workflows, times each calculation and
-writes a ``benchmark.json`` beside its result. The scientific calls are those of
+writes a ``benchmark.json`` beside its result. Every calculation gets its own cache under
+``--cache``, so none reuses another's runs or preparations; ``single_precomputed_nlte``
+takes only the departures that ``departure_solve`` saved. The scientific calls are those of
 ``intended_api``; nothing here builds intermediate state or namelist settings.
 """
 from __future__ import annotations
@@ -9,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -208,18 +211,20 @@ def run(args):
     completed = []
     for star, atmosphere in values["stars"]:
         tag = _tag(star)
+        own = lambda name: replace(config, cache=config.cache / name / tag)
         record = {"star": dict(star), "atmosphere": str(atmosphere.path),
                   "grid": str(grid.folder), "atom": atom, "windows": windows}
         folder = lambda name: output / name / tag
         if "single_lte" in selected:
             _execute(f"single_lte/{tag}", folder("single_lte"), record,
-                     lambda: api.single_lte(config, grid, star, windows),
+                     lambda: api.single_lte(own("single_lte"), grid, star, windows),
                      spectrum_summary, lambda result, path: result.save(path))
             completed.append(f"single_lte/{tag}")
         solved = None
         if "departure_solve" in selected:
             solved = _execute(f"departure_solve/{tag}", folder("departure_solve"), record,
-                              lambda: api.departure_solve(config, atmosphere, star, atom),
+                              lambda: api.departure_solve(own("departure_solve"), atmosphere,
+                                                          star, atom),
                               departures_summary,
                               lambda result, path: result.save(path / "departures.json"))
             completed.append(f"departure_solve/{tag}")
@@ -231,36 +236,39 @@ def run(args):
                                      "departure_solve first.")
                 solved = departures.load(saved)
             _execute(f"single_precomputed_nlte/{tag}", folder("single_precomputed_nlte"),
-                     record, lambda: api.single_precomputed_nlte(config, atmosphere, star,
-                                                                 solved, windows),
+                     record, lambda: api.single_precomputed_nlte(
+                         own("single_precomputed_nlte"), atmosphere, star, solved, windows),
                      spectrum_summary, lambda result, path: result.save(path))
             completed.append(f"single_precomputed_nlte/{tag}")
         if "single_ondemand_nlte" in selected:
             _execute(f"single_ondemand_nlte/{tag}", folder("single_ondemand_nlte"), record,
-                     lambda: api.single_ondemand_nlte(config, atmosphere, star, atom, windows),
+                     lambda: api.single_ondemand_nlte(own("single_ondemand_nlte"), atmosphere,
+                                                      star, atom, windows),
                      spectrum_summary, lambda result, path: result.save(path))
             completed.append(f"single_ondemand_nlte/{tag}")
         if "nlte_correction" in selected:
             _execute(f"nlte_correction/{tag}", folder("nlte_correction"), record,
-                     lambda: api.nlte_correction(config, grid, star, atom,
+                     lambda: api.nlte_correction(own("nlte_correction"), grid, star, atom,
                                                  limit=args.correction_limit),
                      lines_summary, lambda result, path: result.save(path / "result.json"))
             completed.append(f"nlte_correction/{tag}")
 
+    own = lambda name: replace(config, cache=config.cache / name)
     measurement = {"profile": args.profile, "snr": args.snr, "cont_pct": args.continuum_uncertainty}
     record = {"star": dict(values["solar"]), "grid": str(grid.folder),
               "target": values["target"], **measurement}
     if "abundance_fit" in selected:
         _execute("abundance_fit", output / "abundance_fit",
                  {**record, "line_mask": values["abundance_masks"]},
-                 lambda: api.abundance_fit(config, values["target"], values["abundance_masks"],
-                                           grid, values["solar"], **measurement),
+                 lambda: api.abundance_fit(own("abundance_fit"), values["target"],
+                                           values["abundance_masks"], grid, values["solar"],
+                                           **measurement),
                  lines_summary, lambda result, path: result.save(path / "result.json"))
         completed.append("abundance_fit")
     if "ionisation_balance" in selected:
         _execute("ionisation_balance", output / "ionisation_balance",
                  {**record, "line_mask": values["balance_masks"]},
-                 lambda: api.ionisation_balance(config, values["target"],
+                 lambda: api.ionisation_balance(own("ionisation_balance"), values["target"],
                                                 values["balance_masks"], grid,
                                                 values["solar"], max_iter=args.balance_iterations,
                                                 **measurement),
@@ -270,8 +278,8 @@ def run(args):
         _execute("stellar_analysis", output / "stellar_analysis",
                  {**record, "fe_line_mask": values["balance_masks"],
                   "line_mask": values["analysis_masks"], "atom": atom, "windows": windows},
-                 lambda: api.stellar_analysis(config, grid, values["solar"], values["target"],
-                                              values["balance_masks"], atom,
+                 lambda: api.stellar_analysis(own("stellar_analysis"), grid, values["solar"],
+                                              values["target"], values["balance_masks"], atom,
                                               values["analysis_masks"], windows),
                  analysis_summary, _save_analysis)
         completed.append("stellar_analysis")
@@ -286,7 +294,8 @@ def parser():
                    help="the continuum-normalised KPNO atlas (not in this repository)")
     p.add_argument("--output", type=Path, default=ROOT / "data/api_benchmarks")
     p.add_argument("--cache", default="synth/api_benchmarks",
-                   help="cache name: runs under data/<cache>, preparations under <cache>")
+                   help="cache name: runs under data/<cache>/<benchmark>[/<star>], "
+                        "preparations under <cache>/<benchmark>[/<star>]")
     p.add_argument("--only", action="append", choices=BENCHMARKS,
                    help="run only this benchmark; repeat to select several")
     p.add_argument("--preflight", action="store_true", help="validate inputs without running")

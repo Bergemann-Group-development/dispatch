@@ -34,5 +34,8 @@ bin/tpy -m benchmarks.api.run_reference_benchmarks \
 Repeat `--only` to select workflows. `single_precomputed_nlte` reads the departures saved by
 `departure_solve` in the same output folder. The complete run is expensive: per reference
 star an LTE synthesis, a departure solve, two NLTE syntheses and a correction ladder, then an
-abundance fit, an ionisation balance and the composed analysis on the KPNO atlas. Native
-runs share the cache under `data/synth/api_benchmarks`.
+abundance fit, an ionisation balance and the composed analysis on the KPNO atlas. Each
+calculation runs in its own cache, `data/synth/api_benchmarks/<benchmark>[/<star>]` for native
+runs and `synth/api_benchmarks/<benchmark>[/<star>]` for preparations, so no calculation reuses
+another's results. The one exception is `single_precomputed_nlte`, which reads the departures of
+`departure_solve`.

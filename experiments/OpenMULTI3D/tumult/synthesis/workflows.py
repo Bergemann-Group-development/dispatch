@@ -902,7 +902,7 @@ def execute_request(request, run_values=None, *, cancel_token=None):
                 normalise_windows(resolved.windows, SYNTH_PAD_AA))
             item.setdefault('spectrum_params', {})['window_file'] = str(window_file)
         if nlte:
-            run = synthesise(departures, settings=item, launch_kwargs=launch_kwargs,
+            run = synthesise(departures, settings=item, top=top, launch_kwargs=launch_kwargs,
                              max_threads=max_threads, cancel_token=cancel_token)
         else:
             run = synthesise_snapshot(top, path, settings=item, resolution=resolution,
