@@ -4,27 +4,21 @@ The classic spectroscopic determination of (Teff, logg, [Fe/H], vmic) from per-l
 abundances of one element in two ionization stages: Teff zeroes the slope of A(X I) vs
 excitation energy, vmic the slope of A(X I) vs reduced EW, logg the X I/X II ionization
 offset, and the metallicity the consistency of the mean A(X) with the model's. Everything
-in the first half is numpy-only; :func:`solve_ionisation_balance` at the end drives the
-syntheses that turn measured EWs into the per-line abundances those numerics consume.
+in the first half is numpy-only; :func:`ionbalance` at the end drives the syntheses that
+turn measured EWs into the per-line abundances those numerics consume.
 
-Nothing here is Fe-specific. Fe is the element the method is *usually* run on, and its
-sensitivities are the ones :data:`DEFAULT_JAC` seeds every element with (they only have to
-point the first step the right way; the secant refinement takes over from iteration 2).
-For an element other than Fe the metallicity axis closes only under a scaled-solar
+Nothing here is Fe-specific. For an element other than Fe the metallicity axis closes only
+under a scaled-solar
 assumption — ``d_feh`` compares ⟨A(X)⟩ with ``A_solar(X) + [Fe/H]_model``, so the caller is
 asserting [X/Fe] = 0. That is exactly right for Fe, defensible for most iron-peak elements
 and known to be wrong for the α elements at low metallicity; the choice belongs to the
 caller, which is why the solar abundance arrives as an argument.
 
-Two solvers step the parameters. The *diagonal* solver (:func:`solve_ionisation_balance`)
-is a damped quasi-Newton fixed point on the four decoupled (diagnostic, parameter) pairs:
-iteration 1 uses conservative default sensitivities, later iterations refine each diagonal
-Jacobian entry by secant from the observed diagnostic change (sign-guarded and
-magnitude-clamped, since the diagonal secant is contaminated by cross-coupling). The
-*coupled* solver (:func:`solve_coupled`, used by :func:`ionbalance`) treats the free
-diagnostics as one residual vector with a full Jacobian, so a Teff step that moves the
-ionisation offset is accounted for. Both clamp steps per iteration and to the atmosphere
-grid's hull.
+:func:`solve_coupled` steps the free parameters on the free diagnostics as one residual
+vector with a full Jacobian, so a Teff step that moves the ionisation offset is accounted
+for. :func:`ionbalance` computes that Jacobian from the same node runs as the diagnostics
+(the slope of each trial star's interpolation cell, see :func:`ionbalance`). Steps are clamped per iteration and to the atmosphere grid's
+hull.
 
 A parameter may be held *fixed*: it then never steps, and its diagnostic is still computed
 and reported but does not gate convergence — the residual at a fixed parameter is the
@@ -35,7 +29,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -46,28 +40,13 @@ DIAG_KEYS = ("s_exc", "s_rew", "d_ion", "d_feh")
 
 # which diagnostic drives which parameter (the classic decoupling)
 DIAG_FOR = {"teff": "s_exc", "vmic": "s_rew", "logg": "d_ion", "feh": "d_feh"}
-
-# conservative default sensitivities d(diagnostic)/d(parameter) for an FGK star, used
-# whatever the element: they only have to point iteration 1 the right way, and the secant
-# refinement below owns every step after that (widen JAC_CLAMP if some element's first step
-# ever walks the wrong way). The
-# signs encode the classic hand rules through the Newton step -d/J: a positive
-# excitation slope means Teff is too low (raise it → J_teff < 0), a positive REW slope
-# means vmic is too low (raise it → J_vmic < 0), A(Fe II) > A(Fe I) means logg is too
-# high (higher logg weakens Fe II lines via the H- continuous opacity, inflating the
-# inverted A(Fe II) → J_logg > 0), and the model [Fe/H] cancels out of the consistency
-# term almost one-to-one (J_feh ≈ -1).
-DEFAULT_JAC = {"teff": -5.0e-5,  # dex/eV per K
-               "logg": 0.40,     # dex per dex
-               "feh": -0.90,     # dex per dex
-               "vmic": -0.15}    # dex/dex(REW) per km/s
+# sign of d DIAG_FOR[p] / d p: hotter flattens the excitation slope, more vmic
+# desaturates strong lines, higher log g raises Fe II against Fe I, and a model
+# [Fe/H] step moves the mean abundance by less than itself
+DIAG_SIGN = {"teff": -1, "vmic": -1, "logg": 1, "feh": -1}
 
 # per-iteration step clamps: one bad diagnostic must not fling the solver off the grid
 STEP_CLAMP = {"teff": 250.0, "logg": 0.4, "feh": 0.3, "vmic": 0.4}
-
-# secant Jacobian guard: keep the default's sign, clamp the magnitude to this window
-# around the default (the diagonal secant picks up cross-terms and noise)
-JAC_CLAMP = (0.2, 5.0)
 
 # convergence tolerances on |diagnostic|
 DEFAULT_TOLS = {"s_exc": 0.002, "s_rew": 0.01, "d_ion": 0.01, "d_feh": 0.01}
@@ -200,88 +179,6 @@ def balance_status(diags, tols=None, free=None):
     return "converged" if converged(diags, tols, free) else "iteration_limit"
 
 
-@dataclass
-class SolverState:
-    """The quasi-Newton state carried between iterations.
-
-    ``params`` maps the four axes to their current values; ``jac`` holds the running
-    diagonal Jacobian estimates d(diag)/d(param); ``bounds`` (optional) is
-    ``{key: (lo, hi)}`` from the atmosphere grid hull.
-    """
-    params: dict
-    jac: dict = field(default_factory=lambda: dict(DEFAULT_JAC))
-    bounds: dict = field(default_factory=dict)
-    prev_params: dict | None = None
-    prev_diags: dict | None = None
-
-
-def step(state, diags, clamps=None, free=None):
-    """One damped quasi-Newton update; returns the new params dict (and mutates ``state``).
-
-    Each free parameter moves by ``-diag / J`` along its own diagnostic, clamped per
-    iteration and to the grid bounds. Before stepping, each Jacobian entry is refined by
-    secant from the previous iteration's (param, diagnostic) pair when that parameter
-    actually moved — guarded to the default's sign and a magnitude window, because the
-    diagonal secant absorbs cross-coupling between the axes. A NaN diagnostic (e.g. no
-    second-stage lines survived) holds its parameter, and so does ``free[key] is False``.
-    """
-    clamps = {**STEP_CLAMP, **(clamps or {})}
-    if state.prev_params is not None and state.prev_diags is not None:
-        for key in PARAM_KEYS:
-            dk = DIAG_FOR[key]
-            dp = state.params[key] - state.prev_params[key]
-            dd = diags.get(dk, float("nan")) - state.prev_diags.get(dk, float("nan"))
-            if not (np.isfinite(dp) and np.isfinite(dd)) or abs(dp) < 1e-12:
-                continue
-            sec = dd / dp
-            ref = DEFAULT_JAC[key]
-            if not np.isfinite(sec) or sec * ref <= 0:
-                continue                      # wrong sign / degenerate — keep the estimate
-            lo, hi = JAC_CLAMP
-            state.jac[key] = float(np.clip(abs(sec), lo * abs(ref), hi * abs(ref))) * np.sign(ref)
-
-    new = dict(state.params)
-    for key in PARAM_KEYS:
-        if free is not None and not free.get(key, True):
-            continue
-        d = diags.get(DIAG_FOR[key], float("nan"))
-        j = state.jac.get(key, DEFAULT_JAC[key])
-        if not (np.isfinite(d) and np.isfinite(j)) or j == 0:
-            continue
-        delta = float(np.clip(-d / j, -clamps[key], clamps[key]))
-        val = new[key] + delta
-        if key in state.bounds:
-            lo, hi = state.bounds[key]
-            val = float(np.clip(val, lo, hi))
-        new[key] = val
-
-    state.prev_params = dict(state.params)
-    state.prev_diags = dict(diags)
-    state.params = new
-    return new
-
-
-def uncertainties(diags, jac, free=None):
-    """Parameter 1σ from the converged diagnostics: ``σ_p = σ_diag / |J_pp|``.
-
-    First-order and diagonal-only — the honest formal error of the balance method
-    itself, not a full covariance. NaN where the diagnostic error (or Jacobian) is
-    unusable, and NaN for a parameter that was held fixed: it was not determined here, so
-    it has no error of its own (what its own diagnostic says about it is the residual).
-    """
-    out = {}
-    for key in PARAM_KEYS:
-        if free is not None and not free.get(key, True):
-            out[key] = float("nan")
-            continue
-        dk = DIAG_FOR[key]
-        err = diags.get(f"{dk}_err", float("nan"))
-        j = jac.get(key, float("nan"))
-        out[key] = float(abs(err / j)) if np.isfinite(err) and np.isfinite(j) and j != 0 \
-            else float("nan")
-    return out
-
-
 # --- the synthesis-driven solve ------------------------------------------------------------
 # Everything above is numpy on measured lines. What follows drives a synthesis: it inverts
 # each line's EW to an abundance through a curve of growth computed at the trial parameters,
@@ -289,20 +186,8 @@ def uncertainties(diags, jac, free=None):
 # in the GUI because nothing in it is about rendering — a script, a notebook or an MCP
 # adapter runs the same solve by handing it a request and a measurement.
 
-BLEND_MAX = 0.30           # iteration-1 blend screen: contaminant EW fraction ceiling
+BLEND_MAX = 0.30           # blend screen: contaminant EW fraction ceiling
 VMIC_BOUNDS = (0.1, 5.0)   # vmic is a synthesis input, not a grid axis — keep it sane
-
-DEFAULT_SOLVE_OPTS = {"max_iter": 8, "span": 0.4, "points": 3, "tols": None}
-
-
-def _is_shutdown(exc):
-    """True for a pool refusing new work because the interpreter is tearing down.
-
-    A background solve outliving its caller sees ``cannot schedule new futures after
-    interpreter shutdown``. That is a cancel, not a per-line synthesis failure, so the loop
-    aborts instead of re-issuing (and re-failing) every remaining line.
-    """
-    return isinstance(exc, RuntimeError) and "interpreter shutdown" in str(exc)
 
 
 def entry_star(params):
@@ -401,299 +286,6 @@ def grid_bounds(grid, atmos_file=None):
     return bounds
 
 
-def solve_ionisation_balance(request, result, opts=None, *, run_values=None, progress=None,
-                             cancel_token=None):
-    """Iterate the excitation-ionization balance to convergence on ``result.lines``.
-
-    ``request`` is the :class:`~tumult.synthesis.SynthRequest` whose star each iteration
-    replaces and ``run_values`` what its syntheses add (:func:`tumult.synthesis.run_values`);
-    ``result`` a :class:`~tumult.measurement.BalanceResult` already carrying measured lines,
-    an entry point (``params0``), which parameters are free and the tolerances. ``opts``
-    sets the ladder (``span``, ``points``) and ``max_iter``.
-
-    Each iteration synthesises a per-line abundance ladder at the trial parameters, inverts
-    the measured EW through it, and steps the free parameters on the resulting diagnostics.
-    ``progress(result)`` is called as each line and each iteration lands, so a caller can
-    stream partial results; it must not raise.
-    """
-    from .synthesis.cancel import CancelledError
-    try:
-        solved = _solve_balance(request, result, opts, run_values, progress, cancel_token)
-    except CancelledError:
-        result.termination, result.converged = "cancelled", False
-        raise
-    except Exception:
-        result.termination, result.converged = "failed", False
-        raise
-    result.stage = "solved"
-    return solved
-
-
-def _solve_balance(request, result, opts, run_values, progress, cancel_token):
-    from . import abundance as ab
-    from .abundance import abundance_override, padded_window, strip_abundance, xfe_to_abund
-    from .synthesis import workflows as synth
-    from .synthesis.cancel import CancelledError
-    from .synthesis.inputs import AtmosphereGrid
-    from .synthesis.operations import run_values as complete_values
-
-    opts = {**DEFAULT_SOLVE_OPTS, **(opts or {})}
-    report = progress or (lambda _result: None)
-    config = request.config
-    prefs = config.to_prefs()
-    grid = request.atmosphere.record(config) \
-        if isinstance(request.atmosphere, AtmosphereGrid) else {}
-    element = result.element
-    extra = dict(run_values or {})
-    base_rv = complete_values(request, **extra)
-    relative = bool(base_rv.get("relative_abundances", True))
-    base_abund = strip_abundance(base_rv.get("abundances", ""), element)
-    solar = synth.abund_table(prefs)
-    solar_x = solar.get(element)
-    if solar_x is None:
-        raise ValueError(f"No solar {element} abundance — configure the abundance file.")
-
-    free = dict(result.free) or {k: True for k in PARAM_KEYS}
-    any_free = any(free.values())
-    params = dict(result.params0)
-    state = SolverState(params=dict(params), bounds=grid_bounds(grid))
-    result.request = request.update(star=params)
-    result.solar_x = float(solar_x)
-    result.converged = False
-    result.termination = "running"
-    result.history = []
-    result.params = dict(params)
-    result.diags = {}
-    if int(opts["max_iter"]) < 1 or float(opts["span"]) <= 0 or int(opts["points"]) < 2:
-        raise ValueError("Balance needs max_iter >= 1, span > 0 and points >= 2.")
-
-    # a request with ``only_elements`` (background lines switched off) synthesises the
-    # curve-of-growth ladder from the element's lines alone; the blend screen always compares
-    # the full synthesis with the element excluded
-    ladder_only = bool(base_rv.get("only_elements"))
-    result.cog_settings = {"background_lines": not ladder_only, "limit": float(opts["span"])}
-
-    def rv_point(a_rel, feh, only=None, exclude=False, save_linelist=True):
-        only = ladder_only if only is None else only
-        rv = dict(extra)
-        # linelist_out.txt lists the transitions the run kept, with strengths at its own
-        # composition: a diagnostic, never an input. Membership is the same across a
-        # ladder for every line the balance uses, so one rung per node keeps it and the
-        # rest pass False rather than rewrite ~150 kB each. Everything else keeps it.
-        rv["save_linelist"] = bool(save_linelist)
-        rv["only_elements"] = None
-        rv["exclude_elements"] = None
-        if exclude:
-            rv["abundances"] = base_abund
-            rv["exclude_elements"] = element
-        else:
-            rv["abundances"] = abundance_override(
-                element, a_rel, base=base_abund, relative=relative, feh=feh, solar=solar)
-            if only:
-                rv["only_elements"] = element
-        rv["relative_abundances"] = relative
-        return rv
-
-    def batch(rv_list, line, point):
-        return synth.compute_batch(point, rv_list, *padded_window(line.window),
-                                   cancel_token=cancel_token)
-
-    def ladder_specs(ladder, centre, feh, lines, point, *, crop=None):
-        """One synthesis per lattice rung, each covering every line's window.
-
-        A rung is its own run so that its identity is (atmosphere node, abundance,
-        windows) and nothing else: the same rung recurs at the next iteration and is
-        read from the cache instead of resynthesised. Folding the ladder onto one run's
-        set axis instead would amortise the continuum and LTE sets across the rungs,
-        but its cache key is the entire ladder, which no later iteration reproduces.
-
-        The rungs still go out together (``fold=False``): every (rung x node) run is
-        issued in one batch, so the pool sees the whole iteration's work at once rather
-        than one rung's nodes at a time.
-
-        ``crop`` describes the ladder's strongest rung, so every rung on a node reads the
-        same cropped line list and no rung waits for another. Only the rung nearest
-        scaled-solar keeps its transition dump, which is the same diagnostic on all of them.
-        """
-        windows = [padded_window(ln.window) for ln in lines]
-        rungs = [rv_point(a, feh, save_linelist=(a == centre)) for a in ladder]
-        return synth.compute_window_batch(point, rungs, windows, cancel_token=cancel_token,
-                                          crop=crop, fold=False)
-
-    def shared_ladder(active, centres_now):
-        """The lattice rungs covering every active line's bracket.
-
-        Rungs sit on a global lattice of ``step`` dex, so a rung is the same run
-        whenever it is asked for again and the ladder need not repeat between
-        iterations for its points to be reused. The range spans the line-to-line
-        scatter plus each line's own +/-span, with both edges snapped outward; that
-        scatter is the balance signal, so it is coverage rather than waste. No
-        symmetry is imposed -- the lattice is absolute, not centred on the mean.
-        """
-        cs = [centres_now.get(i, 0.0) for i, _ln in active]
-        lo = np.floor((min(cs, default=0.0) - span) / lattice) * lattice
-        hi = np.ceil((max(cs, default=0.0) + span) / lattice) * lattice
-        ladder = lo + lattice * np.arange(int(round((hi - lo) / lattice)) + 1)
-        # the blend screen rides on the rung nearest scaled-solar, which is also the
-        # one rung that writes the transition dump
-        centre = float(ladder[np.argmin(np.abs(ladder))])
-        return centre, ladder
-
-    # each line's ladder centre carries over between iterations ([Fe/H]-relative)
-    centres = {}
-    diags = {}
-    # with every parameter held there is nothing to step: one pass produces the diagnostics
-    # at the given parameters, which is the point of holding them.
-    max_iter = int(opts["max_iter"]) if any_free else 1
-    span, npts = float(opts["span"]), int(opts["points"])
-    # not "step": that name belongs to the parameter-stepping function above
-    lattice = float(opts.get("abund_step") or config.abundance_step)
-    if lattice <= 0:
-        raise ValueError("Balance needs a positive abundance lattice step.")
-    for it in range(1, max_iter + 1):
-        if cancel_token is not None and cancel_token.cancelled:
-            raise CancelledError()
-        point = request.update(star=params)
-        feh = params["feh"]
-        for ln in result.lines:
-            if ln.include:
-                ln.a = float("nan")
-        active = [(i, ln) for i, ln in enumerate(result.lines)
-                  if ln.include and np.isfinite(ln.ew) and ln.ew > 0]
-        if not active:
-            break
-        # One synthesis for the whole iteration: the rungs ride the run's set axis and the
-        # lines its output patches. The ladder is shared, so it is centred on the lines'
-        # mean and widened to reach the outliers (see shared_ladder).
-        c, ladder = shared_ladder(active, centres)
-        # every rung on a node reads the same line list, cropped at the top rung: the
-        # selection covers the weaker rungs, so it is a property of the node
-        crop = {"abundances": abundance_override(element, float(ladder[-1]),
-                                                 base=base_abund, relative=relative,
-                                                 feh=feh, solar=solar),
-                "relative_abundances": relative}
-        iter_specs = None
-        try:
-            iter_specs = ladder_specs(ladder, c, feh, [ln for _i, ln in active], point,
-                                      crop=crop)
-        except CancelledError:
-            raise
-        except Exception as exc:
-            if (cancel_token is not None and cancel_token.cancelled) or _is_shutdown(exc):
-                raise
-            # fall back to the per-line path rather than losing the iteration
-            logging.exception("shared-ladder synthesis failed; falling back per line")
-        for wi, (i, ln) in enumerate(active):
-            if cancel_token is not None and cancel_token.cancelled:
-                raise CancelledError()
-            screen = it == 1        # blend screen rides along on iteration 1
-            try:
-                if iter_specs is not None:
-                    specs = [iter_specs[vi][wi] for vi in range(len(ladder))]
-                else:
-                    # the ladder goes in on its own: its points differ in nothing but the
-                    # element's abundance, which is what lets compute_spectra fold them
-                    # into a single run's set axis. The blend screen's two syntheses switch
-                    # elements on and off, so mixing them in would unfold the ladder.
-                    specs = batch([rv_point(a, feh) for a in ladder], ln, point)
-                if screen:
-                    full, excl = batch([rv_point(c, feh, only=False),
-                                        rv_point(c, feh, exclude=True)], ln, point)
-                    try:
-                        blend, _, _ = ab.blend_fraction(full, excl, window=ln.fit_window,
-                                                        profile=result.profile, x0=ln.lam0)
-                    except Exception:
-                        # the screen is an extra, not the measurement: a line whose blend
-                        # cannot be measured is reported unscreened, not lost
-                        logging.exception("blend screen failed at %.3f", ln.lam0)
-                        blend = float("nan")
-                    ln.blend_frac = float(blend)
-                    if np.isfinite(blend) and blend > BLEND_MAX:
-                        if "blended" not in ln.flags:
-                            ln.flags = ln.flags + ("blended",)
-                        ln.include = False
-                        report(result)
-                        continue
-                a_grid, ew_grid = ab.build_cog(
-                    None, ladder, window=ln.fit_window, profile=result.profile,
-                    x0=ln.lam0, batch_synth_fn=lambda _a, _s=specs: _s)
-                ew_err = float(ln.ew_err) if np.isfinite(ln.ew_err) else 0.0
-                inv = ab.cog_invert(a_grid, ew_grid, ln.ew, ew_err=ew_err, lam0_aa=ln.lam0)
-                if inv["out_of_range"]:
-                    # recentre a doubled ladder on the extrapolated abundance and try once
-                    # more — the guess may simply be far off at first
-                    c2 = float(np.clip(inv["a"], c - 3 * span, c + 3 * span))
-                    ladder2 = np.linspace(c2 - 2 * span, c2 + 2 * span, npts)
-                    # the retry replaces the ladder, so its spectra replace the rungs the
-                    # solution spectrum is later read off
-                    specs = batch([rv_point(a, feh) for a in ladder2], ln, point)
-                    a_grid, ew_grid = ab.build_cog(
-                        None, ladder2, window=ln.fit_window, profile=result.profile,
-                        x0=ln.lam0, batch_synth_fn=lambda _a, _s=specs: _s)
-                    inv = ab.cog_invert(a_grid, ew_grid, ln.ew, ew_err=ew_err, lam0_aa=ln.lam0)
-                if inv["out_of_range"]:
-                    ln.a = float("nan")
-                    ln.flags = tuple(f for f in ln.flags if f != "out_of_range") \
-                        + ("out_of_range",)
-                else:
-                    a_rel = float(inv["a"])
-                    centres[i] = a_rel
-                    ln.a = xfe_to_abund(a_rel, element, feh, solar)
-                    ln.sigma_a = float(inv["sigma_a"])
-                    ln.sigma_a_phot, ln.sigma_a_cont = ln.sigma_a, 0.0
-                    shift = feh + solar_x
-                    ln.a_grid = tuple(float(a) + shift for a in a_grid)
-                    ln.ew_grid = tuple(ew_grid)
-                    ln.cog_specs = {float(a) + shift: spec.crop(window=ln.window)
-                                    for a, spec in zip(a_grid, specs)}
-                    ln.cog_step, ln.cog_origin = lattice, shift
-                    ln.method = "cog"
-                    ln.flags = tuple(f for f in ln.flags if f != "out_of_range")
-                    # the line as this iteration's parameters and abundance leave it, read
-                    # off the ladder it was inverted through
-                    ln.fit_spec = ab.cog_spectrum(a_grid, specs, a_rel)
-            except CancelledError:
-                raise
-            except Exception as exc:
-                # a cancel can surface as a non-CancelledError — a killed pool
-                # (BrokenProcessPool/RuntimeError) mid-submit, or the executor refusing work
-                # once the interpreter is exiting. Abort the whole solve then, rather than
-                # logging (and re-issuing) every remaining line.
-                if (cancel_token is not None and cancel_token.cancelled) or _is_shutdown(exc):
-                    raise CancelledError()
-                logging.exception("%s balance: line %.3f failed", element, ln.lam0)
-                ln.a = float("nan")
-                ln.flags = ("synth_failed",)
-            report(result)
-
-        diags = diagnostics(result.lines, feh, solar_x)
-        result.history.append({"params": dict(params), "diags": dict(diags)})
-        result.params = dict(params)
-        result.request = point
-        result.diags = dict(diags)
-        report(result)
-        result.termination = balance_status(diags, result.tols, free)
-        result.converged = result.termination == "converged"
-        if result.termination != "iteration_limit":
-            break
-        if it < max_iter:
-            previous = params
-            params = step(state, diags, free=free)
-            if params == previous:
-                result.termination = "boundary"
-                break
-
-    if not result.history:
-        result.termination = "undetermined"
-    if result.termination == "undetermined" and any(
-            ln.include and "synth_failed" in ln.flags for ln in result.lines):
-        result.termination = "failed"
-
-    result.jac = dict(state.jac)
-    result.sigmas = uncertainties(diags, state.jac, free)
-    return result
-
-
 # --- the coupled solve -----------------------------------------------------------------------
 # Numerical contract of solve_coupled:
 #
@@ -701,10 +293,10 @@ def _solve_balance(request, result, opts, run_values, progress, cancel_token):
 #   dimensionless and "converged" means every |r_k| <= 1;
 # * variables: each free parameter divided by its finite-difference step (FD_STEPS), so the
 #   damping treats one step of every parameter alike;
-# * Jacobian: forward differences at the starting point, one evaluation per free parameter,
-#   stepping backwards where the forward point leaves the grid; after an accepted step it
-#   is updated by Broyden's rank-one formula, and it is recomputed by finite differences
-#   where a step is rejected on a Broyden estimate;
+# * Jacobian: the one ``evaluate`` returns with each point, whenever it is finite;
+#   otherwise forward differences at the point, one evaluation per free parameter at
+#   :func:`probe_point`, then updated by Broyden's rank-one formula after an accepted step
+#   and recomputed where a step is rejected on a Broyden estimate;
 # * step: Levenberg-Marquardt, (A^T A + lambda diag(A^T A)) dx = -A^T r, with lambda
 #   starting at LM_LAMBDA, divided by 3 on an accepted step and multiplied by 4 on a
 #   rejected one (a step is accepted when it lowers |r|); the step is scaled down as a
@@ -717,6 +309,23 @@ def _solve_balance(request, result, opts, run_values, progress, cancel_token):
 FD_STEPS = {"teff": 100.0, "logg": 0.1, "feh": 0.1, "vmic": 0.2}
 LM_LAMBDA = 1e-2
 COUPLED_MAX_ITER = 12
+PROBE_HALVINGS = 4
+
+
+def probe_point(params, key, step, bounds=None):
+    """``params`` moved by ``step`` along ``key`` for a one-sided difference, or None.
+
+    The step goes forward unless that leaves ``bounds[key]``, then backward; it is clipped
+    to the bounds, and None is returned when no move remains.
+    """
+    lo, hi = (bounds or {}).get(key, (-np.inf, np.inf))
+    value = params[key] + step
+    if value > hi:
+        value = params[key] - step
+    value = float(np.clip(value, lo, hi))
+    if value == params[key]:
+        return None
+    return {**params, key: value}
 
 
 @dataclass
@@ -769,9 +378,10 @@ def solve_coupled(evaluate, params0, *, free=None, bounds=None, tols=None,
                   cancel_token=None):
     """Null the free balance diagnostics with a damped, coupled Newton iteration.
 
-    ``evaluate(params) -> (diags, state)`` computes the diagnostics at a parameter point;
-    ``state`` is whatever the caller wants back for the accepted point (the per-line
-    abundances). ``free`` maps parameters to whether they are fitted, ``bounds`` gives
+    ``evaluate(params) -> (diags, state, jacobian)`` computes the diagnostics at a
+    parameter point; ``state`` is whatever the caller wants back for the accepted point
+    (the per-line abundances) and ``jacobian`` ``{diagnostic: {parameter: d/dp}}`` at it,
+    or None to have it differenced here. ``free`` maps parameters to whether they are fitted, ``bounds`` gives
     ``{param: (lo, hi)}``, ``tols`` overrides :data:`DEFAULT_TOLS`, ``steps``
     :data:`FD_STEPS` and ``clamps`` :data:`STEP_CLAMP`. See the contract above this
     function. ``report(history)`` is called after every evaluation.
@@ -799,10 +409,17 @@ def solve_coupled(evaluate, params0, *, free=None, bounds=None, tols=None,
     def run(params, kind):
         if cancel_token is not None and cancel_token.cancelled:
             raise CancelledError()
-        diags, state = evaluate(dict(params))
+        diags, state, jacobian = evaluate(dict(params))
         history.append({"params": dict(params), "diags": dict(diags), "kind": kind})
         report(history)
-        return diags, state
+        return diags, state, jacobian
+
+    def scaled(jacobian):
+        """``jacobian`` as d r / d x (NaN where missing), or None without one."""
+        if jacobian is None:
+            return None
+        return np.array([[float((jacobian.get(d) or {}).get(k, np.nan)) * scale[j] / tol[d]
+                          for j, k in enumerate(keys)] for d in dkeys])
 
     def residual(diags):
         return np.array([float(diags.get(d, float("nan"))) / tol[d] for d in dkeys])
@@ -811,17 +428,12 @@ def solve_coupled(evaluate, params0, *, free=None, bounds=None, tols=None,
         """Columns d r / d x at ``params``, x the parameters in units of their step."""
         J = np.empty((len(dkeys), len(keys)))
         for j, k in enumerate(keys):
-            probe = dict(params)
-            probe[k] = params[k] + scale[j]
-            lo, hi = bounds.get(k, (-np.inf, np.inf))
-            if probe[k] > hi:
-                probe[k] = params[k] - scale[j]
-            probe = project(probe)
-            dx = (probe[k] - params[k]) / scale[j]
-            if dx == 0:
+            probe = probe_point(params, k, scale[j], bounds)
+            if probe is None:
                 J[:, j] = np.nan
                 continue
-            diags, _state = run(probe, "jacobian")
+            dx = (probe[k] - params[k]) / scale[j]
+            diags, _state, _jacobian = run(probe, "jacobian")
             J[:, j] = (residual(diags) - r) / dx
         return J
 
@@ -838,7 +450,7 @@ def solve_coupled(evaluate, params0, *, free=None, bounds=None, tols=None,
                               jacobian, sigmas, covariance)
 
     params = project({k: float(v) for k, v in params0.items()})
-    diags, state = run(params, "step")
+    diags, state, given = run(params, "step")
     if not keys:
         return outcome("diagnostic", None)
     J, fresh, lam = None, False, LM_LAMBDA
@@ -847,9 +459,12 @@ def solve_coupled(evaluate, params0, *, free=None, bounds=None, tols=None,
         if not np.all(np.isfinite(r)):
             return outcome("undetermined", J)
         if converged(diags, tol, free):
-            return outcome("converged", J)
+            return outcome("converged", scaled(given) if J is None else J)
         if J is None:
-            J, fresh = fd_jacobian(params, r), True
+            J = scaled(given)
+            if J is None or not np.all(np.isfinite(J)):
+                J = fd_jacobian(params, r)
+            fresh = True
             if not np.all(np.isfinite(J)):
                 return outcome("undetermined", J)
         H, g = J.T @ J, J.T @ r
@@ -863,18 +478,22 @@ def solve_coupled(evaluate, params0, *, free=None, bounds=None, tols=None,
         moved = np.array([trial[k] - params[k] for k in keys])
         if not np.any(np.abs(moved) > 1e-12):
             return outcome("boundary", J)
-        new_diags, new_state = run(trial, "step")
+        new_diags, new_state, new_given = run(trial, "step")
         r_new = residual(new_diags)
         if np.all(np.isfinite(r_new)) and np.linalg.norm(r_new) < np.linalg.norm(r):
-            dxm = moved / scale
-            J = J + np.outer((r_new - r) - J @ dxm, dxm) / float(dxm @ dxm)
-            params, diags, state, fresh = trial, new_diags, new_state, False
+            if new_given is None:
+                dxm = moved / scale
+                J = J + np.outer((r_new - r) - J @ dxm, dxm) / float(dxm @ dxm)
+            else:
+                J = None          # the accepted point brought its own
+            params, diags, state, given, fresh = trial, new_diags, new_state, new_given, False
             lam = max(lam / 3.0, 1e-8)
         else:
             history[-1]["kind"] = "rejected"
             lam *= 4.0
             if not fresh:
                 J = None
+    J = scaled(given) if J is None else J
     r = residual(diags)
     if not np.all(np.isfinite(r)):
         return outcome("undetermined", J)
@@ -882,10 +501,9 @@ def solve_coupled(evaluate, params0, *, free=None, bounds=None, tols=None,
 
 
 def ionbalance(request, *, target, line_mask=None, measured=None, method="cog",
-               background_lines=True, solver="coupled", free=None, tols=None,
-               max_iter=COUPLED_MAX_ITER, profile="voigt", snr=None, cont_pct=0.0, limit=1.0,
-               max_rounds=8, steps=None, blend_max=BLEND_MAX, weak_frac=0.10, progress=None,
-               cancel_token=None, **diagonal_opts):
+               background_lines=True, free=None, tols=None, max_iter=COUPLED_MAX_ITER,
+               profile="voigt", snr=None, cont_pct=0.0, limit=1.0, max_rounds=8, steps=None,
+               blend_max=BLEND_MAX, weak_frac=0.10, progress=None, cancel_token=None):
     """Infer stellar parameters from the excitation-ionisation balance of ``target``.
 
     ``request`` is a :class:`~tumult.synthesis.SynthRequest` on an atmosphere grid; its
@@ -900,29 +518,34 @@ def ionbalance(request, *, target, line_mask=None, measured=None, method="cog",
 
     ``method="cog"`` determines per-line abundances by the adaptive curve of growth of
     :func:`tumult.abundance.fit` at every trial star, with the same screens (at the
-    starting star) and ``background_lines`` choice. ``solver="coupled"`` (the default)
-    steps all free parameters through the full diagnostic Jacobian (:func:`solve_coupled`);
-    ``solver="diagonal"`` is :func:`solve_ionisation_balance` with its own shared ladder
-    (``diagonal_opts``: ``span``, ``points``). ``free`` maps parameters to whether they are
-    fitted (all by default) and ``tols`` overrides the convergence tolerances.
+    starting star) and ``background_lines`` choice. :func:`solve_coupled` steps all free
+    parameters through the full diagnostic Jacobian. Every trial star also interpolates its
+    rungs at one probe star per free parameter and re-inverts each line there; the
+    differences of the diagnostics are the Jacobian, so no probe needs a curve-of-growth
+    solve of its own. A probe moves by the largest of :data:`FD_STEPS` (``steps``
+    overrides it) and its first :data:`PROBE_HALVINGS` halvings that keeps it on the
+    star's own atmosphere nodes, so the Jacobian is the slope of the star's interpolation
+    cell. Where the star sits on a grid value, the probe adds the neighbouring nodes: on the
+    side its own diagnostic moves it towards (:data:`DIAG_SIGN`) when the two sides need
+    different nodes. ``free`` maps parameters to whether they are fitted
+    (all by default) and ``tols`` overrides the convergence tolerances.
 
     Returns a :class:`~tumult.measurement.BalanceResult` with the diagnostics, uncertainties,
     Jacobian, history, ``converged`` and ``termination``; ``request.update(star=result)``
     continues from the solved parameters.
     """
-    from copy import deepcopy
+    from copy import copy, deepcopy
     from . import abundance as ab
     from .departures import DepartureGrid, Departures
     from .measurement import BalanceResult, STAGE_MEASURED, STAGE_SOLVED, mask_key
+    from .synthesis.api import NodeStore
     from .synthesis.inputs import AtmosphereGrid
     from .synthesis.operations import quadrature_atmosphere
     from .synthesis.request import SynthRequest
-    from .synthesis.workflows import abund_table
+    from .synthesis.workflows import abund_table, node_selector
 
     if method != "cog":
         raise ValueError(f"Unknown balance abundance method {method!r}; use 'cog'.")
-    if solver not in ("coupled", "diagonal"):
-        raise ValueError("solver must be 'coupled' or 'diagonal'.")
     if not isinstance(request, SynthRequest):
         raise TypeError("sparams.ionbalance expects a SynthRequest")
     free = {k: bool((free or {}).get(k, True)) for k in PARAM_KEYS}
@@ -946,7 +569,7 @@ def ionbalance(request, *, target, line_mask=None, measured=None, method="cog",
                                maskset_key=mask_key(mset))
     element, profile = result.element, result.profile
     result.params0, result.free, result.tols = dict(request.star), free, dict(tols or {})
-    result.method, result.solver = method, solver
+    result.method, result.solver = method, "coupled"
     result.stage, result.history, result.diags, result.sigmas = STAGE_MEASURED, [], {}, {}
     result.converged = False
     result.request, result.target = request, target_record
@@ -957,12 +580,6 @@ def ionbalance(request, *, target, line_mask=None, measured=None, method="cog",
                               atmosphere=quadrature_atmosphere(request))
     report(result)
 
-    run_values = {} if background_lines else {"only_elements": element}
-    if solver == "diagonal":
-        opts = {"max_iter": max_iter, **diagonal_opts}
-        return solve_ionisation_balance(request, result, opts, run_values=run_values,
-                                        progress=progress, cancel_token=cancel_token)
-
     solar = abund_table(config.to_prefs())
     solar_x = solar.get(element)
     if solar_x is None:
@@ -970,20 +587,87 @@ def ionbalance(request, *, target, line_mask=None, measured=None, method="cog",
     result.solar_x = float(solar_x)
     result.termination, result.converged = "running", False
 
-    def context_at(star, lines):
+    # one node store for the whole solve: a trial star reuses every rung run an earlier
+    # one computed on the atmosphere nodes they share
+    store = NodeStore()
+
+    bounds = grid_bounds(request.atmosphere.record(config))
+    step_sizes = {**FD_STEPS, **(steps or {})}
+
+    def context_at(star, lines, probes=()):
         return ab._LatticeContext(request.update(star=star), lines, element,
-                              background_lines=background_lines, limit=limit,
-                              cancel_token=cancel_token)
+                                  background_lines=background_lines, limit=limit,
+                                  cancel_token=cancel_token, store=store, probes=probes)
 
     ab.screen_lines(context_at(request.star, result.lines), blend_max=blend_max,
                     weak_frac=weak_frac)
     screened = deepcopy(result.lines)
     report(result)
 
-    def evaluate(params):
+    def at_probe(lines, probe, found):
+        """The diagnostics with every solved line at its probe abundance and error (the
+        diagnostics' weights move with the star too), or None when a line leaves its curve
+        of growth there."""
+        moved = []
+        for ln in lines:
+            a, sigma = found.get(id(ln), (np.nan, np.nan))
+            ln = copy(ln)
+            if ln.include and np.isfinite(ln.a):
+                if not np.isfinite(a):
+                    return None
+                ln.a, ln.sigma_a = a, sigma
+            moved.append(ln)
+        return diagnostics(moved, probe["feh"], solar_x)
+
+    select = node_selector(request, store)
+
+    def shifted(params, key, step):
+        value = params[key] + step
+        lo, hi = bounds.get(key, (-np.inf, np.inf))
+        return {**params, key: float(value)} if lo <= value <= hi else None
+
+    def within(params, key, sign, allowed):
+        """The farthest probe along ``sign`` (at most one step) whose nodes are all in
+        ``allowed``, or None."""
+        for n in range(PROBE_HALVINGS + 1):
+            probe = shifted(params, key, sign * step_sizes[key] * 0.5 ** n)
+            if probe is not None and select(probe) <= allowed:
+                return probe
+        return None
+
+    def plan_probes(params):
+        """Probes on the star's own nodes where it lies inside a cell, and for the axes it
+        is pinned on whose two sides need different nodes, the nodes each side reaches:
+        ``(probes, {key: {sign: nodes}})``."""
+        own = select(params)
+        probes, pinned = {}, {}
+        for k in PARAM_KEYS:
+            if not free[k]:
+                continue
+            probe = within(params, k, 1, own) or within(params, k, -1, own)
+            if probe is not None:
+                probes[k] = probe
+                continue
+            tiny = step_sizes[k] * 0.5 ** PROBE_HALVINGS
+            reach = {sign: own | select(probe) for sign in (1, -1)
+                     if (probe := shifted(params, k, sign * tiny)) is not None}
+            if len(reach) == 2 and reach[1] != reach[-1]:
+                pinned[k] = reach
+            elif reach:
+                # one side left, or both sides reach the same nodes
+                sign = 1 if 1 in reach else -1
+                probes[k] = within(params, k, sign, reach[sign])
+        return probes, pinned
+
+    def solve(params, probes):
+        """The star's solved lines, diagnostics and Jacobian columns from ``probes``."""
         lines = deepcopy(screened)
-        context = context_at(params, lines)
+        context = context_at(params, lines, probes=list(probes.values()))
         ab.fit_lines_cog(context, limit=limit, max_rounds=max_rounds, profile=profile)
+        # [X/Fe] -> A(X); a probe converts at its own metallicity
+        found = [{i: (xfe_to_abund(x, element, probe["feh"], solar), sigma)
+                  for i, (x, sigma) in solutions.items()}
+                 for probe, solutions in zip(probes.values(), context.probe_solutions)]
         for ln in lines:
             if ln.include and np.isfinite(ln.a):
                 shift = params["feh"] + solar_x
@@ -991,7 +675,29 @@ def ionbalance(request, *, target, line_mask=None, measured=None, method="cog",
                 ln.a_grid = tuple(a + shift for a in ln.a_grid)
                 ln.cog_specs = {a + shift: spec for a, spec in ln.cog_specs.items()}
                 ln.cog_origin += shift
-        return diagnostics(lines, params["feh"], solar_x), lines
+        diags = diagnostics(lines, params["feh"], solar_x)
+        columns = {}
+        for (k, probe), solutions in zip(probes.items(), found):
+            moved = at_probe(lines, probe, solutions)
+            if moved is not None:
+                columns[k] = {d: (moved[d] - diags[d]) / (probe[k] - params[k])
+                              for d in DIAG_KEYS}
+        return lines, diags, columns
+
+    def evaluate(params):
+        probes, pinned = plan_probes(params)
+        lines, diags, columns = solve(params, probes)
+        if pinned:
+            # a star on a grid value along an axis whose two sides need different nodes:
+            # probe on the side its own diagnostic says the first step goes
+            extra = {}
+            for k, reach in pinned.items():
+                residual = diags.get(DIAG_FOR[k], np.nan)
+                sign = -1 if np.isfinite(residual) and residual * DIAG_SIGN[k] > 0 else 1
+                extra[k] = within(params, k, sign, reach[sign])
+            columns.update(solve(params, extra)[2])
+        jacobian = {d: {k: column[d] for k, column in columns.items()} for d in DIAG_KEYS}
+        return diags, lines, jacobian
 
     def on_evaluation(history):
         result.history = [dict(item) for item in history]
@@ -999,8 +705,8 @@ def ionbalance(request, *, target, line_mask=None, measured=None, method="cog",
 
     try:
         outcome = solve_coupled(
-            evaluate, dict(request.star), free=free, bounds=grid_bounds(request.atmosphere.record(config)),
-            tols=tols, max_iter=max_iter, steps=steps, report=on_evaluation,
+            evaluate, dict(request.star), free=free, bounds=bounds, tols=tols,
+            max_iter=max_iter, steps=steps, report=on_evaluation,
             cancel_token=cancel_token)
     except Exception as exc:
         from .synthesis.cancel import CancelledError
@@ -1011,8 +717,6 @@ def ionbalance(request, *, target, line_mask=None, measured=None, method="cog",
     result.params, result.diags = outcome.params, outcome.diags
     result.history = outcome.history
     result.jacobian, result.covariance = outcome.jacobian, outcome.covariance
-    result.jac = {k: outcome.jacobian[DIAG_FOR[k]][k] for k in PARAM_KEYS
-                  if DIAG_FOR[k] in outcome.jacobian}
     result.sigmas = outcome.sigmas
     result.termination, result.converged = outcome.termination, outcome.converged
     result.stage = STAGE_SOLVED

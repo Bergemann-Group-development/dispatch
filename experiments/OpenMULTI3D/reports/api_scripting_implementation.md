@@ -62,7 +62,7 @@ These were open in the plan or arose while implementing; each is documented wher
   identity of individual-atmosphere runs.
 - An absolute line-list path crashed per-node pruning (`_node_linelists`).
 - Reading a folded LTE run printed "Cannot get NLTE spectrum" for every rung
-  (`Run.crop_set`).
+  (`Run.crop(index=...)`).
 
 ## Verification
 

@@ -193,11 +193,17 @@ def parabolic_min(xx_in, yy_in):
         print("parabolic_min: Failed to find a minimum")
         return None, None
 
-    p = np.polyfit(x, y, 2)
-    pdiff = np.polyder(p)
-    poly_root = np.roots(pdiff)
-    xmin = poly_root[0]
-    ymin = np.polyval(p, xmin)
+    # the parabola through the three points in Newton form: its curvature and its slope at
+    # the middle point give the vertex directly
+    (xa, xb, xc), (ya, yb, yc) = x.astype(float), y.astype(float)
+    d1, d2 = (yb - ya) / (xb - xa), (yc - yb) / (xc - xb)
+    curv = (d2 - d1) / (xc - xa)
+    if curv == 0:
+        print("parabolic_min: Failed to find a minimum")
+        return None, None
+    slope = d1 + curv * (xb - xa)
+    xmin = xb - slope / (2 * curv)
+    ymin = yb - slope ** 2 / (4 * curv)
 
     xmin = match_units(xmin, xx_in)
     ymin = match_units(ymin, yy_in)
@@ -282,6 +288,7 @@ def get_weq(
     syst=None,
     target_unit=None,
     return_profile=False,
+    xunit=None,
     **kwargs,
 ):
     """Measure an equivalent width over ``(xx, yy)`` (a continuum-normalised line).
@@ -292,7 +299,8 @@ def get_weq(
     the width ``W`` itself as a Quantity, the historical behaviour. With ``return_err=True`` the
     error follows the same convention: the reduced-EW error ``σ_REW = σ_W/(W ln10)`` by default,
     or the width error in ``target_unit`` otherwise. ``sigma`` adds a per-pixel photon term and
-    ``syst`` a fractional continuum-offset term to that error.
+    ``syst`` a fractional continuum-offset term to that error. ``xunit`` is the unit of a
+    plain ``xx`` (default Å); a Quantity ``xx`` brings its own.
 
     Pass ``return_profile=True`` to get the bound :class:`tumult.profile.Profile` instead — it
     carries the width, the reduced EW and the photon / continuum error split off one interface
@@ -301,7 +309,9 @@ def get_weq(
     """
     cls = get_profile_class(profile)
 
-    xunit = xx.unit if isinstance(xx, u.Quantity) else u.AA
+    if isinstance(xx, u.Quantity):
+        xunit = xx.unit
+    xunit = xunit or u.AA
 
     if x0 is not None and isinstance(xx, u.Quantity) != isinstance(x0, u.Quantity):
         raise ValueError("xx and x0 must both carry units or both be unitless.")
@@ -549,11 +559,17 @@ def fit_line_profile(
         fraction = np.clip(fraction, 1e-12, 1.0 - 1e-12)
         return np.log(fraction) - np.log1p(-fraction)
 
+    span = ub - lb
+    last = {}
+
     def from_theta(theta):
-        fraction = 1.0 / (1.0 + np.exp(-np.clip(theta, -700.0, 700.0)))
-        params = lb + (ub - lb) * fraction
-        derivative = (ub - lb) * fraction * (1.0 - fraction)
-        return params, derivative
+        # MINPACK evaluates the Jacobian at the point it just evaluated the residual at
+        key = theta.tobytes()
+        if last.get("key") != key:
+            fraction = 1.0 / (1.0 + np.exp(-np.clip(theta, -700.0, 700.0)))
+            last["key"] = key
+            last["value"] = (lb + span * fraction, span * fraction * (1.0 - fraction))
+        return last["value"]
 
     xfit = np.asarray(x / x0, dtype=float)
     yfit = np.asarray(y, dtype=float)

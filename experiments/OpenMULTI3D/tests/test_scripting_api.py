@@ -167,7 +167,7 @@ def test_a_departure_grid_replaces_the_departure_solves(tmp_path, monkeypatch):
         def __init__(self, folder):
             self.folder = folder
 
-        def crop_set(self, index, *args, **kwargs):
+        def crop(self, index=None, **kwargs):
             return index
 
     node = (((5750.0, 4.5, 0.0), 1.0), 5750.0, 4.5, 0.0, 1.0, 1.0, "a.mod", "")
@@ -258,7 +258,7 @@ def _stub_fit(monkeypatch, a_true):
         element="Mg", symbol="Mg", summary={}, profile="trapz", lines=[_measured(a_true)]))
     variants = []
 
-    def synthesize(self, values, *, lte=False):
+    def synthesize(self, values, *, lte=False, rungs=None, probes=()):
         variants.extend(values)
         out = []
         for value in values:
@@ -309,7 +309,7 @@ def test_profile_fit_reads_abundance_and_gradient_off_the_lattice(config, monkey
     monkeypatch.setattr(ab, "measure_lines", lambda mset, spec, **kw: ab.AbundanceResult(
         element="Mg", symbol="Mg", summary={}, profile="gauss", lines=lines))
 
-    def synthesize(self, values, *, lte=False):
+    def synthesize(self, values, *, lte=False, rungs=None, probes=()):
         calls.append((len(values), len(self.windows)))
         out = []
         for value in values:
@@ -409,7 +409,7 @@ def _linear_balance(params):
     diags = {d: sum(COUPLING[d][k] * (params[k] - TRUTH[k]) for k in sparams.PARAM_KEYS)
              for d in COUPLING}
     diags.update({f"{d}_err": 0.01 for d in COUPLING})
-    return diags, dict(params)
+    return diags, dict(params), None
 
 
 def test_coupled_balance_follows_the_cross_derivatives():
@@ -427,8 +427,34 @@ def test_coupled_balance_follows_the_cross_derivatives():
     assert "d_ion" not in held.jacobian
 
 
+def test_coupled_balance_uses_the_jacobian_its_evaluation_brings():
+    """A Jacobian computed with each point replaces the finite-difference probes."""
+    start = {"teff": 5450.0, "logg": 4.0, "feh": -0.3, "vmic": 1.6}
+    bounds = {"teff": (4000, 7000), "logg": (1, 5), "feh": (-2, 0.5), "vmic": (0.1, 5)}
+    out = sparams.solve_coupled(lambda p: (*_linear_balance(p)[:2], COUPLING), start,
+                                bounds=bounds)
+    assert out.converged
+    assert all(item["kind"] != "jacobian" for item in out.history)
+    for key in sparams.PARAM_KEYS:
+        assert out.params[key] == pytest.approx(TRUTH[key], abs=5 * sparams.FD_STEPS[key] / 100)
+    # a Jacobian with a missing column falls back to differencing
+    partial = {d: {k: v for k, v in row.items() if k != "vmic"} for d, row in COUPLING.items()}
+    out = sparams.solve_coupled(lambda p: (*_linear_balance(p)[:2], partial), start,
+                                bounds=bounds)
+    assert out.converged
+    assert any(item["kind"] == "jacobian" for item in out.history)
+
+
+def test_probe_point_steps_back_at_the_upper_bound():
+    params = {"teff": 5000.0, "logg": 4.0, "feh": 0.5, "vmic": 1.0}
+    bounds = {"feh": (-1.0, 0.5), "logg": (4.0, 4.0)}
+    assert sparams.probe_point(params, "teff", 100.0, bounds)["teff"] == 5100.0
+    assert sparams.probe_point(params, "feh", 0.1, bounds)["feh"] == pytest.approx(0.4)
+    assert sparams.probe_point(params, "logg", 0.1, bounds) is None
+
+
 def test_balance_termination_stays_distinguishable():
-    nan = lambda params: ({**_linear_balance(params)[0], "s_exc": float("nan")}, None)
+    nan = lambda params: ({**_linear_balance(params)[0], "s_exc": float("nan")}, None, None)
     assert sparams.solve_coupled(nan, TRUTH).termination == "undetermined"
     start = {"teff": 5000.0, "logg": 4.0, "feh": -0.5, "vmic": 2.0}
     assert sparams.solve_coupled(_linear_balance, start, max_iter=1).termination == \

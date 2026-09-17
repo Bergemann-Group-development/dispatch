@@ -18,12 +18,13 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from tumult.auxfuncs import update_dict
+from tumult.decorators import instance_cache
 import tumult as tm
 from tumult.flux import write_set_manifest
 from tumult.launch import prepare_input
 
 from .atmos_select import select_nodes
-from .executor import _make_da_jobs, _run_batch
+from .executor import _make_da_jobs, _run_batch, job_output
 
 # Bundled namelist presets (base / nlte / departures / corr_ref), co-located with the core so
 # both the library and any front-end (e.g. TumultStudio) reference one canonical location.
@@ -99,9 +100,9 @@ def _spec_jobs(base, nodes, top, nlte, dep_dirs, node_linelists=None):
     ``(jobs, job_keys, job_weights, job_params)``.
 
     ``node_linelists`` (optional) maps a node key to the line list that node's runs read
-    instead of the shared one -- the per-node crop from :func:`_node_linelists`. It replaces
-    ``linelist_params.linelist_file``, so whatever produced the mapping owns the cache
-    identity of these runs (see :func:`_crop_digest`)."""
+    instead of the shared one -- the per-node pruned list from :func:`_node_linelists`. It
+    replaces ``linelist_params.linelist_file``, so whatever produced the mapping owns the cache
+    identity of these runs (see :func:`_prune_digest`)."""
     jobs, job_keys, job_weights, job_params = [], [], [], []
     for jkey, teff_i, logg_i, feh_i, v, weight, atmos_path, absmet_file in nodes:
         if nlte:
@@ -126,23 +127,24 @@ def _spec_jobs(base, nodes, top, nlte, dep_dirs, node_linelists=None):
     return jobs, job_keys, job_weights, job_params
 
 
-def _crop_digest(base, windows, crop):
-    """Cache identity of a per-node line-list crop.
+def _prune_digest(base, windows, prune):
+    """Cache identity of a per-node pruned line list.
 
-    Everything the crop depends on except the atmosphere node, which the file name carries:
+    Everything the pruning depends on except the atmosphere node, which the file name carries:
     the master list, the windows, the skirt, the sampling the selection was made at and the
-    abundances it was made for. This goes into the *runs'* digest as well as the crop
-    directory's, because two runs on the same node with the same namelist but different
-    crops are different runs -- without it the second would be served the first's cache.
+    abundances it was made for. This goes into the *runs'* digest as well as into the name of
+    the pruned lists' directory, because two runs on the same node with the same namelist but
+    different pruned lists are different runs -- without it the second would be served the
+    first's cache.
     """
     files = (base.get('linelist_params') or {}).get('linelist_file') or []
     return hashlib.sha1(json.dumps(
-        [[str(f) for f in files], [[float(min(w)), float(max(w))] for w in windows], crop,
+        [[str(f) for f in files], [[float(min(w)), float(max(w))] for w in windows], prune,
          (base.get('spectrum_params') or {}).get('R')],
         sort_keys=True, default=str).encode()).hexdigest()[:8]
 
 
-def _node_linelists(top, base, nodes, windows, crop, launch_kwargs, preparation=None,
+def _node_linelists(top, base, nodes, windows, prune, launch_kwargs, preparation=None,
                     cancel_token=None):
     """Prune the line list once per atmosphere node, and map each node key to its own file.
 
@@ -157,7 +159,7 @@ def _node_linelists(top, base, nodes, windows, crop, launch_kwargs, preparation=
     from ``base`` and scheduled together on the workflow's CPU budget; ``cancel_token``
     terminates live children and none of them publishes a partial file.
 
-    ``crop`` is the caller's descriptor: ``skirt`` in Angstrom (how far outside a window a
+    ``prune`` is the caller's descriptor: ``skirt`` in Angstrom (how far outside a window a
     line may still contribute; 0 or absent disables pruning altogether) and the
     ``abundances`` / ``relative_abundances`` of the strongest rung. Returns ``None`` when
     pruning does not apply, which leaves every run on the shared list.
@@ -174,7 +176,7 @@ def _node_linelists(top, base, nodes, windows, crop, launch_kwargs, preparation=
             except ValueError as exc:
                 raise ValueError(f'Prepared line list has no entry for {atmos_path}') from exc
         return mapping
-    if not crop or not float(crop.get('skirt') or 0.0) > 0.0:
+    if not prune or not float(prune.get('skirt') or 0.0) > 0.0:
         return None
     files = (base.get('linelist_params') or {}).get('linelist_file') or []
     if len(files) != 1:
@@ -184,13 +186,13 @@ def _node_linelists(top, base, nodes, windows, crop, launch_kwargs, preparation=
     R = float((base.get('spectrum_params') or {}).get('R') or 0.0)
     if R <= 0:
         return None
-    from .. import prune
+    from .. import prune as hop_prune
     from ..linestrength import _window_text
 
-    skirt = float(crop['skirt'])
+    skirt = float(prune['skirt'])
     padded = sorted((float(min(w)) - skirt, float(max(w)) + skirt) for w in windows)
     cwd = Path((launch_kwargs or {}).get('cwd') or '.')
-    out_dir = (cwd / top / '_linelists' / _crop_digest(base, windows, crop)).resolve()
+    out_dir = (cwd / top / '_linelists' / _prune_digest(base, windows, prune)).resolve()
     master = (cwd / files[0]).resolve()   # an absolute list path replaces cwd
     out_dir.mkdir(parents=True, exist_ok=True)
     window_file = out_dir / 'windows.txt'
@@ -200,7 +202,7 @@ def _node_linelists(top, base, nodes, windows, crop, launch_kwargs, preparation=
             # hop_prune.x samples 1D structures; a snapshot node needs the request path's
             # MARCS preparation references (see workflows.resolve_request) rather than a guess.
             raise ValueError('Line-list pruning on a 3D snapshot grid needs a MARCS '
-                             'preparation grid; pass a prepared line list or disable the crop.')
+                             'preparation grid; pass a prepared line list or disable pruning.')
         path = out_dir / f'{_run_name(teff_i, logg_i, feh_i, v)}.txt'
         mapping[jkey] = str(path)
         if path.is_file():
@@ -208,11 +210,11 @@ def _node_linelists(top, base, nodes, windows, crop, launch_kwargs, preparation=
         if not jobs:
             window_file.write_text(_window_text(padded))
         atmos = (atmos_path if Path(atmos_path).is_absolute() else cwd / atmos_path).resolve()
-        jobs.append((path, prune.prune_namelist(
+        jobs.append((path, hop_prune.prune_namelist(
             path, atmos, [master], window_file, R=R, dlam=skirt, vmic=v, feh=feh_i,
-            abundances=crop.get('abundances') or '',
-            relative_abundances=bool(crop.get('relative_abundances', True)), base=base)))
-    prune.prune_batch(jobs, cwd=cwd, cancel_token=cancel_token)
+            abundances=prune.get('abundances') or '',
+            relative_abundances=bool(prune.get('relative_abundances', True)), base=base)))
+    hop_prune.prune_batch(jobs, cwd=cwd, cancel_token=cancel_token)
     return mapping
 
 
@@ -321,18 +323,10 @@ def _interp_crop(grid, xmin, xmax, method):
         raise RuntimeError(
             f"Synthesis produced no spectrum for: {folders}. Check the spectrum "
             f"settings (R / wavelength range) and the synthesis line list.")
-    # combine the selected nodes using the (truncated) selection weights — the same weighted
-    # average grid.crop would do, but reusing the full-grid weights directly. Pass LTE
-    # explicitly per run so an LTE run yields its (only) LTE spectrum without the "Cannot get
-    # NLTE spectrum" warning Run.get_spectrum prints on the NLTE default.
-    weights = getattr(grid, 'interp_weights', None)
-    if weights is not None:
-        spec = tm.Spectrum.combine(
-            [s.crop(xmin=xmin, xmax=xmax, LTE=(getattr(s, 'mode', 'LTE') == 'LTE'))
-             for s in grid.spectra], weights=weights)
-    else:
-        lte = all(getattr(s, 'mode', 'LTE') == 'LTE' for s in grid.spectra)
-        spec = grid.crop(xmin=xmin, xmax=xmax, method=method, LTE=lte)
+    # pass LTE explicitly so an LTE run yields its (only) LTE spectrum without the "Cannot
+    # get NLTE spectrum" warning Run.get_spectrum prints on the NLTE default
+    lte = all(getattr(s, 'mode', 'LTE') == 'LTE' for s in grid.spectra)
+    spec = grid.crop(xmin=xmin, xmax=xmax, method=method, LTE=lte)
     if len(spec) == 0:
         raise RuntimeError(
             f"Interpolated spectrum is empty over [{xmin}, {xmax}] Å — the synthesis "
@@ -435,16 +429,87 @@ def _foldable_ladder(settings_list, launch_kwargs, nlte):
 
 
 class _LadderRunView:
-    """The one set of a folded run expected by :class:`SpectrumGrid`."""
-    def __init__(self, run, index):
+    """One node spectrum as :class:`SpectrumGrid` expects it: set ``index`` of a folded run,
+    or the run's own spectrum when ``index`` is None. ``output`` is the run's resolved
+    folder as :func:`job_output` names it."""
+    def __init__(self, run, index=None, output=None):
         self.run = run
         self.index = index
-        self.has_spectrum = run.has_spectrum
-        self.mode = run.mode
+        self.has_spectrum = getattr(run, 'has_spectrum', False)
+        self.mode = getattr(run, 'mode', 'LTE')
         self.folder = run.folder
+        self.output = output
 
-    def crop(self, *args, **kwargs):
-        return self.run.crop_set(self.index, *args, **kwargs)
+    @instance_cache
+    def crop(self, **kwargs):
+        """``run.crop`` of this node's spectrum; a workflow crops the same node to the same
+        window at every trial star and lattice round, so the result is kept."""
+        return self.run.crop(index=self.index, **kwargs)
+
+
+class NodeStore:
+    """The node spectra one workflow has synthesised on an abundance lattice.
+
+    ``grid`` is a :class:`SpectrumGrid` over ``teff, logg, feh, vmic`` of the atmosphere
+    node, ``snapshot`` (a snapshot node's tag, numbered by the store; 0 for a 1D node, whose
+    vmic it replaces with 0) and ``abundance``, the element's value as written into the
+    run's namelist ([X/Fe] or A(X), whichever the workflow uses). A node already in the grid is read from
+    memory instead of being launched or read from disk again.
+
+    Within one workflow a grid point has exactly one run. The pruning descriptor is
+    therefore fixed by the first batch (``prune``), and a request whose run folder differs
+    from the stored one for the same grid point raises instead of being served either.
+    """
+    def __init__(self):
+        # a lookup table: no separable lattice is built, and it is never interpolated
+        self.grid = tm.SpectrumGrid([], separable=[])
+        self.prune = None
+        self._pruned = False
+        self._snapshots = {}
+        self._selections = {}
+
+    def select(self, star, atmos_files, **kwargs):
+        """:func:`select_nodes` of ``star``, kept for the workflow, whose atmosphere grid
+        is fixed: trial stars, probes and lattice rounds select the same stars repeatedly."""
+        frozen = {k: tuple(sorted(v.items())) if isinstance(v, dict) else v
+                  for k, v in kwargs.items()}
+        key = (tuple(float(v) for v in star), tuple(sorted(frozen.items())))
+        if key not in self._selections:
+            self._selections[key] = select_nodes(star, atmos_files, **kwargs)
+        return self._selections[key]
+
+    def pruning(self, prune):
+        """The workflow's pruning descriptor: ``prune`` on first use, the stored one after."""
+        if not self._pruned:
+            self.prune, self._pruned = prune, True
+        return self.prune
+
+    def point(self, node, abundance):
+        jkey, teff, logg, feh, vmic = node[:5]
+        snapshot = 0
+        if vmic is None:
+            snapshot = self._snapshots.setdefault(jkey[1], len(self._snapshots) + 1)
+        return {'teff': teff, 'logg': logg, 'feh': feh,
+                'vmic': 0.0 if vmic is None else vmic, 'snapshot': snapshot,
+                'abundance': abundance}
+
+    def get(self, node, abundance, output):
+        """The stored view of ``node`` at ``abundance``, or None; raises when the stored
+        run is not ``output``."""
+        view = self.grid.find(**self.point(node, abundance))
+        if view is not None and view.output != output:
+            raise RuntimeError(
+                f"Two runs for one grid point {self.point(node, abundance)}: "
+                f"{view.output} and {output}.")
+        return view
+
+    def add(self, entries):
+        """Store ``(node, abundance, view)`` entries in one grid update."""
+        if not entries:
+            return
+        points = [self.point(node, abundance) for node, abundance, _view in entries]
+        self.grid.add_data([view for _n, _a, view in entries],
+                           **{k: [p[k] for p in points] for k in points[0]})
 
 
 def _given_departures(nodes, dep_dirs):
@@ -761,11 +826,111 @@ def compute_windows(top, star, atmos_files, *, windows, R, settings=None, absmet
     return [_interp_crop(grid, float(min(w)), float(max(w)), method) for w in windows]
 
 
+def _select_all(stars, atmos_files, store=None, **kwargs):
+    """Node selections for every star in ``stars`` and the union of their nodes, in order."""
+    select = select_nodes if store is None else store.select
+    selections = [select(st, atmos_files, **kwargs) for st in stars]
+    union = {}
+    for nodes, _vmic in selections:
+        for node in nodes:
+            union.setdefault(node[0], node)
+    return selections, list(union.values())
+
+
+def _run_plans(plans, nodes, selections, stars, *, top, launch_kwargs, max_threads,
+               cancel_token, given, store, abundances, set_index, crops, method,
+               vmic_points):
+    """Run every (plan x node) pair a store does not hold yet and interpolate each star.
+
+    ``plans`` are ``(members, base, syn_top, nlte, node_lists)``: one run per node per plan,
+    its ``members`` the variants it carries (several only for a folded ladder, whose
+    variant ``slot`` is read from set ``set_index(nlte, slot)``; None reads a run's own
+    spectrum). ``nodes`` is the union of the node ``selections`` of ``stars``. Departures
+    come from ``given`` (per node) or are solved in one batch before the spectra.
+
+    Returns ``(results, views, dep_runs)`` with ``results[star][variant][crop]`` for the
+    ``(xmin, xmax)`` pairs in ``crops``.
+    """
+    stored = {}
+    if store is not None:
+        for gi, (members, base, syn_top, _nlte, _lists) in enumerate(plans):
+            abundance = abundances[members[0]]
+            for node in nodes:
+                name = syn_top / _node_name(node[0], *node[1:5])
+                view = store.get(node, abundance, job_output(name, base, launch_kwargs))
+                if view is not None:
+                    stored[(gi, node[0])] = view
+    missing = [[node for node in nodes if (gi, node[0]) not in stored]
+               for gi in range(len(plans))]
+
+    # every plan's departures in one batch, then every plan's spectra in one more, so a
+    # ladder fans (rung x node) across the pool instead of a rung at a time
+    dep_dirs, dep_runs = {}, {}
+    if given is not None:
+        dep_dirs = {(gi, key): folder for gi in range(len(plans))
+                    for key, folder in given.items()}
+    dep_jobs = [((gi, jkey), path, nml)
+                for gi, (_m, base, _top, nlte, _lists) in enumerate(plans)
+                if nlte and given is None
+                for jkey, path, nml in _dep_jobs(base, missing[gi], _dep_bucket(top, base))]
+    if dep_jobs:
+        dep_runs = _run_batch(dep_jobs, launch_kwargs, max_threads,
+                              cancel_token=cancel_token)
+        failed = [key for key, _path, _nml in dep_jobs if dep_runs.get(key) is None]
+        if failed:
+            raise RuntimeError(f"Departure runs failed: {failed}")
+        dep_dirs = {key: str(dep_runs[key].folder) for key, _path, _nml in dep_jobs}
+
+    spec_jobs = []
+    for gi, (_members, base, syn_top, nlte, node_lists) in enumerate(plans):
+        dep_v = {n[0]: dep_dirs[(gi, n[0])] for n in missing[gi]} if nlte else {}
+        jobs = _spec_jobs(base, missing[gi], syn_top, nlte, dep_v, node_lists)[0]
+        spec_jobs += [((gi, jkey), path, nml) for jkey, path, nml in jobs]
+    runs = _run_batch(spec_jobs, launch_kwargs, max_threads, cancel_token=cancel_token)
+    failed = [key for key, _path, _nml in spec_jobs if runs.get(key) is None]
+    if failed:
+        raise RuntimeError(f"Runs failed: {failed}")
+
+    n_variants = sum(len(plan[0]) for plan in plans)
+    views = {}           # (variant, node key) -> view
+    new_entries = []
+    for gi, (members, _base, _top, nlte, _lists) in enumerate(plans):
+        outputs = {key: job_output(path, nml, launch_kwargs)
+                   for (g, key), path, nml in spec_jobs if g == gi}
+        for slot, vi in enumerate(members):
+            for node in nodes:
+                key = node[0]
+                view = stored.get((gi, key))
+                if view is None:
+                    view = _LadderRunView(runs[(gi, key)], set_index(nlte, slot),
+                                          outputs[key])
+                    if store is not None:
+                        new_entries.append((node, abundances[vi], view))
+                views[(vi, key)] = view
+    if store is not None:
+        store.add(new_entries)
+
+    results = []
+    for (sel_nodes, vmic), st in zip(selections, stars):
+        keys = [node[0] for node in sel_nodes]
+        weights = [node[5] for node in sel_nodes]
+        params = [(node[1], node[2], node[3], 0.0 if node[4] is None else node[4])
+                  for node in sel_nodes]
+        per_variant = []
+        for vi in range(n_variants):
+            grid = _assemble_grid({key: views[(vi, key)] for key in keys}, st, vmic, keys,
+                                  weights, params, vmic_points)
+            per_variant.append([_interp_crop(grid, lo, hi, method) for lo, hi in crops])
+        results.append(per_variant)
+    return results, list(views.values()), dep_runs
+
+
 def compute_window_batch(top, star, atmos_files, *, settings_list, windows, R,
                          absmet_files=None, method='Delaunay', max_threads=None,
                          launch_kwargs=None, pad=None, vmic_step=0.5, vmic_points=2,
-                         nlte=None, cancel_token=None, crop=None, fold=False,
-                         preparation=None, return_runs=False, dep_dirs=None):
+                         nlte=None, cancel_token=None, prune=None, fold=False,
+                         preparation=None, return_runs=False, dep_dirs=None,
+                         store=None, abundances=None, probes=()):
     """Both axes in one run: an abundance ladder across several wavelength windows.
 
     ``settings_list`` is a ladder in the sense of :func:`compute_spectra` — variants
@@ -785,7 +950,7 @@ def compute_window_batch(top, star, atmos_files, *, settings_list, windows, R,
     ladder (different line lists, elements switched on and off, ``sample_linelist``), so a
     caller does not have to know which of its requests can fold.
 
-    ``crop`` (optional) asks for the per-node line-list crop described in
+    ``prune`` (optional) asks for the per-node line-list pruning described in
     :func:`_node_linelists`, and is part of these runs' cache identity.
 
     ``dep_dirs`` supplies departures solved earlier, per node (see
@@ -799,6 +964,16 @@ def compute_window_batch(top, star, atmos_files, *, settings_list, windows, R,
     solver iteration that does not repeat the ladder around it. Each variant's runs are
     byte-identical to the ones it would get from its own ``fold=True`` call with that one
     variant, so the two schedulings share a cache.
+
+    ``store`` (a :class:`NodeStore`, with ``fold=False``) holds the node runs of earlier
+    calls in the same workflow; ``abundances`` gives each variant's lattice coordinate in
+    it. Only the (variant x node) runs missing from the store are launched, together with
+    their departure solves, and the new ones are added to it. The store also fixes the
+    pruning descriptor for the whole workflow, overriding ``prune``.
+
+    ``probes`` are further stars interpolated from the same variants, their nodes run
+    together with the target's; the results then carry one entry per star,
+    ``results[star][variant][window]``, the target first.
     """
     if R is None or R <= 0:
         raise ValueError("compute_window_batch needs a positive R")
@@ -809,9 +984,17 @@ def compute_window_batch(top, star, atmos_files, *, settings_list, windows, R,
     if max_threads is None:
         max_threads = os.cpu_count() or 1
     merged = normalise_windows(windows, pad)
+    if store is not None:
+        if fold:
+            raise ValueError("A node store holds one run per abundance; use fold=False.")
+        if len(abundances or ()) != len(settings_list):
+            raise ValueError("A node store needs one abundance per variant.")
+        prune = store.pruning(prune)
 
-    nodes, vmic = select_nodes(star, atmos_files, method=method, vmic_step=vmic_step,
-                               absmet_files=absmet_files, vmic_points=vmic_points)
+    stars = [star, *probes]
+    selections, nodes = _select_all(stars, atmos_files, store, method=method,
+                                    vmic_step=vmic_step,
+                                    absmet_files=absmet_files, vmic_points=vmic_points)
 
     text = window_file_text(merged)
     prepared = []
@@ -836,6 +1019,9 @@ def compute_window_batch(top, star, atmos_files, *, settings_list, windows, R,
         if not all(nlte_values):
             raise ValueError("Solved grid departures are read back by NLTE settings only.")
     if any(item is None for item in folds):
+        if store is not None or probes:
+            raise ValueError("A node store and probe stars need variants that differ only "
+                             "in abundances.")
         # not a ladder: nothing to fold onto the set axis, so fall back to the existing
         # per-window batching rather than pretending this is one run
         per_window, folders = [], []
@@ -845,7 +1031,7 @@ def compute_window_batch(top, star, atmos_files, *, settings_list, windows, R,
                 absmet_files=absmet_files, method=method, max_threads=max_threads,
                 launch_kwargs=launch_kwargs, xmin=float(min(w)), xmax=float(max(w)),
                 pad=pad, vmic_step=vmic_step, vmic_points=vmic_points, nlte=nlte,
-                cancel_token=cancel_token, crop=crop, preparation=preparation,
+                cancel_token=cancel_token, prune=prune, preparation=preparation,
                 return_runs=True, dep_dirs=dep_dirs)
             per_window.append(specs)
             folders.extend(runs_w)
@@ -855,14 +1041,14 @@ def compute_window_batch(top, star, atmos_files, *, settings_list, windows, R,
     plans = []      # per group: (members, base, syn_top, nlte_v, node_lists)
     for members, (base, manifest) in zip(groups, folds):
         manifest_text = json.dumps(manifest, sort_keys=True, separators=(',', ':'))
-        node_lists = _node_linelists(top, base, nodes, merged, crop, launch_kwargs,
+        node_lists = _node_linelists(top, base, nodes, merged, prune, launch_kwargs,
                                      preparation, cancel_token)
-        # the crop only enters the digest when there is one, so an uncropped batch keeps the
-        # cache identity (and the folders) it had before per-node crops existed
+        # the pruning only enters the digest when there is one, so an unpruned batch keeps the
+        # cache identity (and the folders) it had before per-node pruning existed
         keys = [base, manifest_text, text]
         if node_lists:
             keys.append(str(preparation.folder) if preparation is not None else
-                        _crop_digest(base, merged, crop))
+                        _prune_digest(base, merged, prune))
         digest = hashlib.sha1(
             json.dumps(keys, sort_keys=True, default=str).encode()).hexdigest()[:8]
         manifest_path = (Path((launch_kwargs or {}).get('cwd') or '.') / top /
@@ -877,50 +1063,15 @@ def compute_window_batch(top, star, atmos_files, *, settings_list, windows, R,
         plans.append((members, base, top / f'win{len(merged)}_{digest}',
                       nlte_values[members[0]], node_lists))
 
-    # every group's departures in one batch, then every group's spectra in one more, so an
-    # unfolded ladder fans (rung x node) across the pool instead of a rung at a time
-    given, dep_dirs = dep_dirs, {}
-    if given is not None:
-        dep_dirs = {(gi, key): folder for gi in range(len(plans))
-                    for key, folder in given.items()}
-    dep_jobs = [((gi, jkey), path, nml)
-                for gi, (_m, base, _top, nlte_v, _lists) in enumerate(plans)
-                if nlte_v and given is None
-                for jkey, path, nml in _dep_jobs(base, nodes, _dep_bucket(top, base))]
-    if dep_jobs:
-        dep_runs = _run_batch(dep_jobs, launch_kwargs, max_threads,
-                              cancel_token=cancel_token)
-        failed = [key for key, _path, _nml in dep_jobs if dep_runs.get(key) is None]
-        if failed:
-            raise RuntimeError(f"Departure runs failed: {failed}")
-        dep_dirs = {key: str(dep_runs[key].folder) for key, _path, _nml in dep_jobs}
-
-    spec_jobs, plan_specs = [], []
-    for gi, (_members, base, syn_top, nlte_v, node_lists) in enumerate(plans):
-        dep_v = {n[0]: dep_dirs[(gi, n[0])] for n in nodes} if nlte_v else {}
-        jobs, job_keys, job_weights, job_params = _spec_jobs(
-            base, nodes, syn_top, nlte_v, dep_v, node_lists)
-        spec_jobs += [((gi, jkey), path, nml) for jkey, path, nml in jobs]
-        plan_specs.append((job_keys, job_weights, job_params))
-    runs = _run_batch(spec_jobs, launch_kwargs, max_threads, cancel_token=cancel_token)
-    failed = [key for key, _path, _nml in spec_jobs if runs.get(key) is None]
-    if failed:
-        raise RuntimeError(f"Runs failed: {failed}")
-
-    results = [None] * len(settings_list)
-    for gi, (members, _base, _top, nlte_v, _lists) in enumerate(plans):
-        job_keys, job_weights, job_params = plan_specs[gi]
-        first_ladder = 3 if nlte_v else 2
-        for slot, vi in enumerate(members):
-            views = {key: _LadderRunView(runs[(gi, key)], first_ladder + slot)
-                     for key in job_keys}
-            grid = _assemble_grid(views, star, vmic, job_keys, job_weights,
-                                  job_params, vmic_points)
-            results[vi] = [_interp_crop(grid, float(min(w)), float(max(w)), method)
-                           for w in windows]
+    results, views, _dep_runs = _run_plans(
+        plans, nodes, selections, stars, top=top, launch_kwargs=launch_kwargs,
+        max_threads=max_threads, cancel_token=cancel_token, given=dep_dirs, store=store,
+        abundances=abundances, set_index=lambda nlte, slot: (3 if nlte else 2) + slot,
+        crops=[(float(min(w)), float(max(w))) for w in windows], method=method,
+        vmic_points=vmic_points)
+    results = results if probes else results[0]
     if return_runs:
-        folders = tuple(dict.fromkeys(str(Path(run.folder).resolve())
-                                      for run in runs.values()))
+        folders = tuple(dict.fromkeys(str(Path(view.folder).resolve()) for view in views))
         return results, folders
     return results
 
@@ -928,8 +1079,9 @@ def compute_window_batch(top, star, atmos_files, *, settings_list, windows, R,
 def compute_spectra(top, star, atmos_files, *, settings_list, absmet_files=None,
                     method='Delaunay', max_threads=None, launch_kwargs=None,
                     xmin=None, xmax=None, pad=None, vmic_step=0.5, vmic_points=2,
-                    nlte=None, cancel_token=None, crop=None, preparation=None,
-                    return_runs=False, fold=False, dep_dirs=None):
+                    nlte=None, cancel_token=None, prune=None, preparation=None,
+                    return_runs=False, fold=False, dep_dirs=None, store=None,
+                    abundances=None):
     """Batched :func:`compute_spectrum` for a list of settings variants that share the same
     star/atmospheres (e.g. a curve-of-growth's abundance ladder).
 
@@ -945,7 +1097,7 @@ def compute_spectra(top, star, atmos_files, *, settings_list, absmet_files=None,
     key includes ``composition_params``), so an abundance ladder gets a full NLTE solve at
     every point, only run concurrently instead of one after another.
 
-    ``crop`` (optional) asks for the per-node line-list crop described in
+    ``prune`` (optional) asks for the per-node line-list pruning described in
     :func:`_node_linelists`, and is part of these runs' cache identity.
 
     Variants differing only in abundances fold into one run whose departures are solved at
@@ -956,6 +1108,9 @@ def compute_spectra(top, star, atmos_files, *, settings_list, absmet_files=None,
 
     ``dep_dirs`` supplies departures solved earlier, per node (see
     :func:`build_stellar_grid`); no departures are then solved.
+
+    ``store`` and ``abundances`` keep the unfolded variants' runs for a workflow, as in
+    :func:`compute_window_batch`.
     """
     if not settings_list:
         return []
@@ -963,6 +1118,12 @@ def compute_spectra(top, star, atmos_files, *, settings_list, absmet_files=None,
     launch_kwargs = launch_kwargs or {}
     if max_threads is None:
         max_threads = os.cpu_count() or 1
+    if store is not None:
+        if fold:
+            raise ValueError("A node store holds one run per abundance; use fold=False.")
+        if len(abundances or ()) != len(settings_list):
+            raise ValueError("A node store needs one abundance per variant.")
+        prune = store.pruning(prune)
 
     # atmosphere/vmic nodes depend only on the star + grid, not the per-variant settings —
     # select once and share across variants.
@@ -985,18 +1146,18 @@ def compute_spectra(top, star, atmos_files, *, settings_list, absmet_files=None,
         fold = False
     fold = (_foldable_ladder(windowed, launch_kwargs, nlte_values[0])
             if fold and len(set(nlte_values)) == 1 and len(set(labels)) == 1 else None)
-    crop_windows = ([(float(min(xmin, xmax)), float(max(xmin, xmax)))]
-                    if xmin is not None and xmax is not None else [])
+    prune_windows = ([(float(min(xmin, xmax)), float(max(xmin, xmax)))]
+                     if xmin is not None and xmax is not None else [])
     if fold is not None:
         base, manifest = fold
         manifest_text = json.dumps(manifest, sort_keys=True, separators=(',', ':'))
-        node_lists = _node_linelists(top, base, nodes, crop_windows, crop, launch_kwargs,
+        node_lists = _node_linelists(top, base, nodes, prune_windows, prune, launch_kwargs,
                                      preparation, cancel_token) \
-            if crop_windows else None
+            if prune_windows else None
         keys = [base, manifest_text]
         if node_lists:
             keys.append(str(preparation.folder) if preparation is not None else
-                        _crop_digest(base, crop_windows, crop))
+                        _prune_digest(base, prune_windows, prune))
         digest = hashlib.sha1(
             json.dumps(keys, sort_keys=True, default=str).encode()).hexdigest()[:8]
         manifest_path = (Path((launch_kwargs or {}).get('cwd') or '.') / top /
@@ -1035,63 +1196,28 @@ def compute_spectra(top, star, atmos_files, *, settings_list, absmet_files=None,
         return results
 
     # Per variant: assemble window/hash-keyed tops exactly as compute_spectrum does.
-    prepared = []   # (settings, syn_top, departures_top, nlte_v, node_linelists)
-    for s, label, nlte_v in zip(windowed, labels, nlte_values):
-        node_lists = _node_linelists(top, s, nodes, crop_windows, crop, launch_kwargs,
+    plans = []      # (members, settings, syn_top, nlte_v, node_linelists)
+    for vi, (s, label, nlte_v) in enumerate(zip(windowed, labels, nlte_values)):
+        node_lists = _node_linelists(top, s, nodes, prune_windows, prune, launch_kwargs,
                                      preparation, cancel_token) \
-            if crop_windows else None
+            if prune_windows else None
         prep_key = (str(preparation.folder) if preparation is not None else
-                    _crop_digest(s, crop_windows, crop))
+                    _prune_digest(s, prune_windows, prune))
         keys = s if node_lists is None else [s, prep_key]
         digest = hashlib.sha1(
             json.dumps(keys, sort_keys=True, default=str).encode()).hexdigest()[:8]
-        syn_top = top / f'{label}_{digest}'
-        dep_top = _dep_bucket(top, s) if nlte_v else None
-        prepared.append((s, syn_top, dep_top, bool(nlte_v), node_lists))
+        plans.append(([vi], s, top / f'{label}_{digest}', bool(nlte_v), node_lists))
 
-    # Phase 1: all NLTE departure solves (node × variant) through the shared scheduler. Keys are
-    # namespaced by variant index; each variant's runs live under its own hash-keyed dir.
-    dep_dirs = {}   # (vi, jkey) -> folder
-    dep_runs = {}
-    dep_jobs = []
-    for vi, (s, _syn, dep_top, nlte_v, _lists) in enumerate(prepared):
-        if given is not None:
-            dep_dirs.update({(vi, jkey): folder for jkey, folder in given.items()})
-        elif nlte_v:
-            dep_jobs += [((vi, jkey), path, nml)
-                         for jkey, path, nml in _dep_jobs(s, nodes, dep_top)]
-    if dep_jobs:
-        dep_runs = _run_batch(dep_jobs, launch_kwargs, max_threads, cancel_token=cancel_token)
-        failed = [k for k, _p, _n in dep_jobs if dep_runs.get(k) is None]
-        if failed:
-            raise RuntimeError(f"Departure runs failed: {failed}")
-        dep_dirs = {k: str(dep_runs[k].folder) for k, _p, _n in dep_jobs}
-
-    # Phase 2: all spectrum solves (node × variant) through the shared scheduler.
-    spec_jobs = []
-    variant_specs = []   # per variant: (job_keys, job_weights, job_params)
-    for vi, (s, syn_top, _dep, nlte_v, node_lists) in enumerate(prepared):
-        dep_dirs_v = {n[0]: dep_dirs[(vi, n[0])] for n in nodes} if nlte_v else {}
-        jobs, job_keys, job_weights, job_params = _spec_jobs(s, nodes, syn_top, nlte_v,
-                                                             dep_dirs_v, node_lists)
-        spec_jobs += [((vi, jkey), path, nml) for jkey, path, nml in jobs]
-        variant_specs.append((job_keys, job_weights, job_params))
-    spec_runs = _run_batch(spec_jobs, launch_kwargs, max_threads, cancel_token=cancel_token)
-    failed = [k for k, _p, _n in spec_jobs if spec_runs.get(k) is None]
-    if failed:
-        raise RuntimeError(f"Runs failed: {failed}")
-
-    # Interpolate + crop each variant's node grid, exactly as compute_spectrum's tail.
-    results = []
-    for vi, (job_keys, job_weights, job_params) in enumerate(variant_specs):
-        runs_v = {jkey: spec_runs[(vi, jkey)] for jkey in job_keys}
-        grid = _assemble_grid(runs_v, star, vmic, job_keys, job_weights, job_params,
-                              vmic_points)
-        results.append(_interp_crop(grid, xmin, xmax, method))
+    results, views, dep_runs = _run_plans(
+        plans, nodes, [(nodes, vmic)], [star], top=top, launch_kwargs=launch_kwargs,
+        max_threads=max_threads, cancel_token=cancel_token, given=given, store=store,
+        abundances=abundances, set_index=lambda nlte, slot: None, crops=[(xmin, xmax)],
+        method=method, vmic_points=vmic_points)
+    results = [specs[0] for specs in results[0]]
     if return_runs:
         folders = tuple(dict.fromkeys(
-            str(Path(run.folder).resolve())
-            for run in (*dep_runs.values(), *spec_runs.values())))
+            str(Path(item.folder).resolve())
+            for item in (*dep_runs.values(), *views)))
         return results, folders
     return results
 

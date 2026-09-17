@@ -35,6 +35,9 @@ class SpectrumGrid(object):
         processed_kwargs = {k: ensure_list(v) for k, v in kwargs.items()}
         self.params = pd.DataFrame(processed_kwargs)
         self.p0 = {}
+        # node weights at p0 fixed by the caller (the synthesis node selection); a crop
+        # without a query point uses them instead of interpolating afresh
+        self.interp_weights = None
         self._build_grid()
 
     def _build_grid(self):
@@ -47,7 +50,6 @@ class SpectrumGrid(object):
         if self.params.empty or self.npoints <= 1:
             self.ndim = 0
             self.points = None
-            self.delaunay = None
             if self.npoints == 1:
                 self.reference = self.spectra[0]
             return
@@ -71,21 +73,15 @@ class SpectrumGrid(object):
         varying_names = [n for n, v in zip(self.param_names, varying) if v]
         sep_names = self._resolve_separable(varying_names)
 
-        if self.ndim > 1 and not sep_names:
-            try:
-                self.delaunay = Delaunay(self.points)
-            except Exception as e:
-                print(f"Delaunay build failed: {e}")
-                self.delaunay = None
-        else:
-            self.delaunay = None
-            if self.ndim == 1:
-                # 1D logic: Ensure sorted order for interpolation
-                self.points = self.points.ravel()
-                order = np.argsort(self.points)
-                self.points = self.points[order]
-                self.params = self.params.iloc[order].reset_index(drop=True)
-                self.spectra = [self.spectra[i] for i in order]
+        # No triangulation here: crop triangulates the node subset each query needs
+        # (get_interp_weights), so the grid only keeps the points.
+        if self.ndim == 1:
+            # 1D logic: Ensure sorted order for interpolation
+            self.points = self.points.ravel()
+            order = np.argsort(self.points)
+            self.points = self.points[order]
+            self.params = self.params.iloc[order].reset_index(drop=True)
+            self.spectra = [self.spectra[i] for i in order]
 
         if sep_names:
             self._build_separable(sep_names, varying_names)
@@ -167,36 +163,51 @@ class SpectrumGrid(object):
         # Merge and fill missing dimensions with 0
         combined = pd.concat([self.params, new_params], axis=0, ignore_index=True, sort=False).fillna(0)
 
-        # Duplicate check on physical units
-        if not self.params.empty:
-            existing_count = len(self.params)
-            unique_indices = []
-            
-            for i in range(len(new_params)):
-                new_row_val = combined.iloc[existing_count + i].values
-                existing_vals = combined.iloc[:existing_count].values
-                dist = np.linalg.norm(existing_vals - new_row_val, axis=1)
-                
-                if np.any(dist < tol):
-                    print(f"Point {new_row_val} is a duplicate. Skipping.")
-                else:
-                    unique_indices.append(i)
-            
-            if not unique_indices:
-                return
+        # Duplicate check in parameter units, against the stored points and within the
+        # batch (the first of several coincident new points is kept)
+        existing_count = len(self.params)
+        values = combined.to_numpy(dtype=float)
+        new_vals = values[existing_count:]
+        duplicate = np.zeros(len(new_vals), dtype=bool)
+        if existing_count:
+            dist, _ = cKDTree(values[:existing_count]).query(new_vals, k=1)
+            duplicate |= dist < tol
+        for i, j in cKDTree(new_vals).query_pairs(tol):
+            duplicate[max(i, j)] = True
+        for row in new_vals[duplicate]:
+            print(f"Point {row} is a duplicate. Skipping.")
+        unique_indices = np.flatnonzero(~duplicate).tolist()
+        if not unique_indices:
+            return
 
-            # Keep only the unique new spectra and the old data
-            new_spectra = [new_spectra[i] for i in unique_indices]
-            final_rows = list(range(existing_count)) + [existing_count + i for i in unique_indices]
-            self.params = combined.iloc[final_rows].reset_index(drop=True)
-        else:
-            self.params = combined
+        # Keep only the unique new spectra and the old data
+        new_spectra = [new_spectra[i] for i in unique_indices]
+        final_rows = list(range(existing_count)) + [existing_count + i for i in unique_indices]
+        self.params = combined.iloc[final_rows].reset_index(drop=True)
 
         self.spectra.extend(new_spectra)
         self._build_grid()
+
+    def find(self, tol=1e-8, **params):
+        """The spectrum stored at ``params`` (within ``tol``, in parameter units), or None.
+
+        Every grid parameter must be given; unknown names match nothing.
+        """
+        if self.params.empty or set(params) != set(self.params.columns):
+            return None
+        names = list(self.params.columns)
+        values = self.params[names].to_numpy(dtype=float)
+        query = np.array([float(params[n]) for n in names])
+        dist = np.linalg.norm(values - query, axis=1)
+        i = int(np.argmin(dist))
+        return self.spectra[i] if dist[i] < tol else None
   
     #=====================================================================
     def crop(self, *args, method='Delaunay', **kwargs):
+        if self.interp_weights is not None and not args \
+                and not set(self.params.columns) & set(kwargs):
+            return Spectrum.combine([s.crop(**kwargs) for s in self.spectra],
+                                    weights=self.interp_weights)
         if self.params.empty:
             return self.spectra[0].crop(*args, **kwargs)
 

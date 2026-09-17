@@ -951,7 +951,7 @@ def element_xfe(abundances, element, *, relative, feh, solar):
 
 
 def lattice_rounds(lines, synthesize, solve_line, *, step, limit, max_rounds,
-                   cancel_token=None, report=None, label="Abundance lattice"):
+                   cancel_token=None, report=None, label="Abundance lattice", also=None):
     """Bracket every included line's abundance by its nearest rungs on a shared lattice.
 
     ``synthesize(offsets)`` returns, for each abundance offset [dex], the synthetic spectra
@@ -966,6 +966,9 @@ def lattice_rounds(lines, synthesize, solve_line, *, step, limit, max_rounds,
     its solution lies between its nearest computed rungs. A line whose solve raises is
     flagged ``synth_failed`` and excluded. After ``max_rounds`` the last solutions stand.
 
+    ``also()`` (optional) is called after each round's solves and returns further offsets
+    whose lattice cells must be bracketed too (e.g. the same lines at other stars).
+
     Returns ``(rungs, bracketed)``: ``{offset: spectra}`` and whether every line was
     bracketed.
     """
@@ -979,6 +982,14 @@ def lattice_rounds(lines, synthesize, solve_line, *, step, limit, max_rounds,
         return float(round(float(np.round(x / step) * step), 10))
 
     rungs = {}                         # offset -> spectra aligned with lines
+
+    def cell(a):
+        """The uncomputed rungs of the lattice cell holding ``a``; one on a lattice point
+        is bracketed by that point alone."""
+        k = a / step
+        lo = float(np.clip(np.floor(k + 1e-9) * step, -limit, limit))
+        hi = float(np.clip(np.ceil(k - 1e-9) * step, -limit, limit))
+        return {x for x in (lo, hi) if snap(x) not in rungs}
 
     def compute(offsets):
         offsets = sorted(set(snap(a) for a in offsets) - set(rungs))
@@ -1010,12 +1021,11 @@ def lattice_rounds(lines, synthesize, solve_line, *, step, limit, max_rounds,
                 continue
             if a is None:
                 continue
-            # the lattice cell holding the solution; one on a lattice point is bracketed
-            # by that point alone
-            k = a / step
-            lo = float(np.clip(np.floor(k + 1e-9) * step, -limit, limit))
-            hi = float(np.clip(np.ceil(k - 1e-9) * step, -limit, limit))
-            needed.update(a for a in (lo, hi) if snap(a) not in rungs)
+            needed.update(cell(a))
+        if also is not None:
+            for a in also():
+                if np.isfinite(a):
+                    needed.update(cell(a))
         report()
         if not needed:
             bracketed = True
@@ -1041,7 +1051,7 @@ def _exclude(line, flag):
 
 
 def adaptive_cog(lines, synthesize, *, step, limit, max_rounds, profile, cancel_token=None,
-                 report=None):
+                 report=None, also=None):
     """Bracket every line's abundance on a lattice of curve-of-growth rungs, in place.
 
     ``lines`` carry the EW to reproduce (``ew``, ``ew_err``) and their fit windows.
@@ -1054,16 +1064,20 @@ def adaptive_cog(lines, synthesize, *, step, limit, max_rounds, profile, cancel_
 
     Sets ``a`` (the offset), ``sigma_a``, ``drewda``, ``a_grid``/``ew_grid``, ``cog_specs``
     and ``fit_spec`` on each line. Returns ``(rungs, bracketed)``: the offsets computed and
-    whether every line was bracketed.
+    whether every line was bracketed. ``also`` is passed to :func:`lattice_rounds`.
     """
     active = [ln for ln in lines if ln.include]
     for ln in active:
         ln.method = "cog"
         ln.cog_step, ln.cog_origin = float(step), 0.0
     edge = lattice_limit(step, limit)
+    measured = {}          # (line, offset) -> EW: a rung's spectrum never changes
 
     def invert(ln, offsets, specs):
-        ews = np.array([_ew(spec, ln.fit_window, profile, ln.lam0) for spec in specs])
+        for a, spec in zip(offsets, specs):
+            if (id(ln), a) not in measured:
+                measured[id(ln), a] = _ew(spec, ln.fit_window, profile, ln.lam0)
+        ews = np.array([measured[id(ln), a] for a in offsets])
         ln.a_grid, ln.ew_grid = tuple(offsets), tuple(float(w) for w in ews)
         lo_ew, hi_ew = ews[offsets.index(-edge)], ews[offsets.index(edge)]
         if not (min(lo_ew, hi_ew) <= ln.ew <= max(lo_ew, hi_ew)):
@@ -1080,7 +1094,7 @@ def adaptive_cog(lines, synthesize, *, step, limit, max_rounds, profile, cancel_
 
     rungs, bracketed = lattice_rounds(
         lines, synthesize, invert, step=step, limit=limit, max_rounds=max_rounds,
-        cancel_token=cancel_token, report=report, label="Curve of growth")
+        cancel_token=cancel_token, report=report, label="Curve of growth", also=also)
 
     # every line keeps its rungs over its synth window, so a later fit-window edit can
     # re-read the curve of growth without another synthesis (:func:`refit_line_window`);
@@ -1178,6 +1192,7 @@ def run_nlte_corrections(request, result, atom, *, opts=None, progress=None,
     aggregated and ``termination`` ``"completed"`` or ``"round_limit"``.
     """
     from .synthesis import workflows as synth
+    from .synthesis.api import NodeStore
     from .synthesis.inputs import Snapshot
     from .synthesis.operations import run_values as complete_values
 
@@ -1218,9 +1233,17 @@ def run_nlte_corrections(request, result, atom, *, opts=None, progress=None,
 
     lines = [ln for ln in result.lines if ln.include]
 
+    def coordinate(a):
+        """A rung's store coordinate: the element's value as :func:`abundance_override`
+        writes it."""
+        x = base_x + a
+        return round(float(x if relative else xfe_to_abund(x, symbol, feh, solar)), 4)
+
     # set_spectrum=False leaves spectrum_params without R/daa and no window is given, so
     # every rung is the atom's whole range on its own frequency grid (the reference's
     # sampling); each rung is a run, and a departure solve, of its own.
+    store = NodeStore()
+
     def synth_offsets(offsets):
         if snapshot:
             specs = [synth.execute_request(request.update(windows=()), _rv(a),
@@ -1228,7 +1251,9 @@ def run_nlte_corrections(request, result, atom, *, opts=None, progress=None,
                      for a in offsets]
         else:
             specs = synth.compute_batch(request, [_rv(a) for a in offsets],
-                                        set_spectrum=False, cancel_token=cancel_token)
+                                        set_spectrum=False, cancel_token=cancel_token,
+                                        store=store,
+                                        abundances=[coordinate(a) for a in offsets])
         return [[spec] * len(lines) for spec in specs]
 
     _rungs, bracketed = adaptive_cog(
@@ -1292,11 +1317,24 @@ class _LatticeContext:
     element's abundance in the composition and the windows every line is synthesised over.
     ``variant`` builds the run values of one synthesis; every synthesis covers all lines'
     windows in one run through a window file.
+
+    ``store`` (a :class:`~tumult.synthesis.api.NodeStore`) holds the rung runs of the
+    whole workflow, so contexts at other stars reuse the atmosphere nodes they share; a
+    context gets its own when none is given. The rungs are pruned per node at
+    ``limit`` above the composition's abundance, and the first context on a store fixes
+    that for the workflow.
+
+    ``probes`` are further stellar parameters (mappings) at which every ``"fit"`` rung is
+    also interpolated, from the same node runs and any further nodes the probes need;
+    :func:`fit_lines_cog` re-inverts each line at them (``probe_solutions``), which is
+    what a Jacobian in the stellar parameters is built from.
     """
 
-    def __init__(self, request, lines, element, *, background_lines, limit, cancel_token):
+    def __init__(self, request, lines, element, *, background_lines, limit, cancel_token,
+                 store=None, probes=()):
         from .departures import DepartureGrid, Departures
         from .synthesis import workflows as synth
+        from .synthesis.api import NodeStore
         from .synthesis.inputs import Snapshot
         from .synthesis.operations import departure_run_values, run_values
 
@@ -1321,12 +1359,22 @@ class _LatticeContext:
         self.lines = [ln for ln in lines
                       if np.isfinite(ln.window[0]) and np.isfinite(ln.window[1])]
         self.windows = [padded_window(ln.window) for ln in self.lines]
-        self.crop = {"abundances": self._abundances(self.base_x + float(limit)),
-                     "relative_abundances": self.relative}
+        self.prune = {"abundances": self._abundances(self.base_x + float(limit)),
+                      "relative_abundances": self.relative}
+        self.store = NodeStore() if store is None else store
+        self.probes = [dict(probe) for probe in probes]
+        self.probe_rungs = {}        # offset -> [probe][window] spectra
+        self.probe_solutions = []    # [probe] {id(line): ([X/Fe], sigma)}
+        self.probe_ews = {}          # (probe, id(line), offset) -> EW, measured once
 
     def _abundances(self, xfe):
         return abundance_override(self.element, xfe, base=self.base_abund,
                                   relative=self.relative, feh=self.feh, solar=self.solar)
+
+    def _coordinate(self, xfe):
+        """The element's value as :meth:`_abundances` writes it: the rung's store coordinate."""
+        value = xfe if self.relative else xfe_to_abund(xfe, self.element, self.feh, self.solar)
+        return round(float(value), 4)
 
     def variant(self, xfe, *, species="fit"):
         """Run values at [X/Fe] ``xfe``. ``species`` is ``"fit"`` (what the rungs
@@ -1343,22 +1391,30 @@ class _LatticeContext:
             values["exclude_elements"] = self.element
         return values
 
-    def synthesize(self, variants, *, lte=False):
+    def synthesize(self, variants, *, lte=False, rungs=None, probes=()):
         """``spectra[variant][window]`` for run-value ``variants``: LTE syntheses at the
-        request's composition with ``lte``, else with the request's departures."""
+        request's composition with ``lte``, else with the request's departures. ``rungs``
+        gives the [X/Fe] of each ``"fit"`` variant, whose runs then go through the store.
+        With ``probes`` the result is ``spectra[star][variant][window]``, the request's
+        star first."""
         from .synthesis import workflows as synth
         if lte:
             request, extra = self.lte_request, {}
         else:
             request, extra = self.request, self.departure_values
         if self.direct:
+            if probes:
+                raise ValueError("Probe stars need a 1D atmosphere grid without solved "
+                                 "departures.")
             windowed = request.update(windows=self.windows)
             return [list(synth.execute_request(windowed, {**extra, **variant},
                                                cancel_token=self.cancel_token).spectra)
                     for variant in variants]
+        stored = {} if rungs is None else {
+            "store": self.store, "abundances": [self._coordinate(x) for x in rungs]}
         return synth.compute_window_batch(
             request, [{**extra, **variant} for variant in variants], self.windows,
-            crop=self.crop, cancel_token=self.cancel_token)
+            prune=self.prune, cancel_token=self.cancel_token, probes=probes, **stored)
 
     def synthesize_offsets(self, lines):
         """``synthesize(offsets)`` for :func:`lattice_rounds`: the ``"fit"`` variant at each
@@ -1367,9 +1423,45 @@ class _LatticeContext:
         x0 = self.base_x
 
         def synthesize(offsets):
-            spectra = self.synthesize([self.variant(x0 + a) for a in offsets])
+            rungs = [x0 + a for a in offsets]
+            spectra = self.synthesize([self.variant(x) for x in rungs], rungs=rungs,
+                                      probes=self.probes)
+            if self.probes:
+                spectra, at_probes = spectra[0], spectra[1:]
+                for vi, a in enumerate(offsets):
+                    self.probe_rungs[a] = [probe[vi] for probe in at_probes]
             return [[specs[index[id(ln)]] for ln in lines] for specs in spectra]
         return synthesize
+
+    def solve_probes(self, lines, profile):
+        """Invert each solved line of ``lines`` through its curve of growth at every probe.
+
+        Uses the rungs each line was bracketed with (``a_grid`` as offsets), so it runs
+        after :func:`adaptive_cog` and before the offsets are shifted. Each solution is
+        ``([X/Fe], sigma_a)`` as :func:`adaptive_cog` would set them; a line whose EW leaves
+        a probe's curve gets NaN there.
+        """
+        index = {id(ln): w for w, ln in enumerate(self.lines)}
+        self.probe_solutions = []
+        for k in range(len(self.probes)):
+            solutions = {}
+            for ln in lines:
+                if not (ln.include and np.isfinite(ln.a) and ln.a_grid):
+                    continue
+                offsets = list(ln.a_grid)
+                for a in offsets:
+                    if (k, id(ln), a) not in self.probe_ews:
+                        self.probe_ews[k, id(ln), a] = _ew(
+                            self.probe_rungs[a][k][index[id(ln)]], ln.fit_window, profile,
+                            ln.lam0)
+                ews = np.array([self.probe_ews[k, id(ln), a] for a in offsets])
+                solution = (float("nan"), float("nan"))
+                if np.nanmin(ews) <= ln.ew <= np.nanmax(ews):
+                    ew_err = float(ln.ew_err) if np.isfinite(ln.ew_err) else 0.0
+                    inv = cog_invert(offsets, ews, ln.ew, ew_err=ew_err, lam0_aa=ln.lam0)
+                    solution = (self.base_x + float(inv["a"]), float(inv["sigma_a"]))
+                solutions[id(ln)] = solution
+            self.probe_solutions.append(solutions)
 
 
 def screen_lines(context, *, blend_max=0.30, weak_frac=0.10):
@@ -1424,10 +1516,20 @@ def fit_lines_cog(context, *, limit, max_rounds, profile, report=None):
     if not lines:
         return True
     x0 = context.base_x
+    def probe_offsets():
+        # the probes' solutions are bracketed like the lines' own, so every star inverts
+        # through the same complete rungs
+        context.solve_probes(lines, profile)
+        return [a - x0 for solutions in context.probe_solutions
+                for a, _sigma in solutions.values()]
+
     _rungs, bracketed = adaptive_cog(
         lines, context.synthesize_offsets(lines), step=context.request.config.abundance_step,
         limit=limit, max_rounds=max_rounds, profile=profile,
-        cancel_token=context.cancel_token, report=report)
+        cancel_token=context.cancel_token, report=report,
+        also=probe_offsets if context.probes else None)
+    if context.probes:
+        context.solve_probes(lines, profile)
     for ln in lines:
         ln.a = x0 + ln.a if np.isfinite(ln.a) else ln.a
         ln.cog_origin += x0
@@ -1795,13 +1897,14 @@ def complete_result_rungs(result, *, target=None, cancel_token=None, progress=No
     request = result.request.update(star=result.params) if balance else result.request
     settings = result.cog_settings
     context = _LatticeContext(request, result.lines, result.element,
-                          background_lines=settings.get("background_lines", True),
-                          limit=settings.get("limit", 1.0), cancel_token=cancel_token)
+                              background_lines=settings.get("background_lines", True),
+                              limit=settings.get("limit", 1.0), cancel_token=cancel_token)
     lines = context.lines
     shift = request.star.feh + result.solar_x if balance else 0.0
 
     def synthesize(abundances):
-        return context.synthesize([context.variant(a - shift) for a in abundances])
+        rungs = [a - shift for a in abundances]
+        return context.synthesize([context.variant(x) for x in rungs], rungs=rungs)
 
     complete_cog_rungs(lines, synthesize, profile=result.profile,
                        cancel_token=cancel_token,

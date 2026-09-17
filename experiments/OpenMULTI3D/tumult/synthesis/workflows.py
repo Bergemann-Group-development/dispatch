@@ -511,23 +511,23 @@ def _absmet_files(prefs, atmos_files):
     return {k[2]: str(p) for k in atmos_files} if fehs else None
 
 
-def _crop_spec(prefs, crop):
-    """The per-node line-list crop descriptor for the API, or None for no crop.
+def _prune_spec(prefs, prune):
+    """The per-node line-list pruning descriptor for the API, or None for no pruning.
 
-    Splits the decision in two: the skirt is a preference (``linelist_crop_aa``, 0 to switch
-    the crop off), because how far outside a window a line may still matter is a property of
+    Splits the decision in two: the skirt is a preference (``linelist_skirt_aa``, 0 to switch
+    pruning off), because how far outside a window a line may still matter is a property of
     the physics and not of any one caller; the abundances are the caller's, because only it
     knows which rung of its ladder is the strongest (see
-    :func:`tumult.synthesis.api._node_linelists`). A caller passing ``crop=None`` gets no
-    crop whatever the preference says.
+    :func:`tumult.synthesis.api._node_linelists`). A caller passing ``prune=None`` gets no
+    pruning whatever the preference says.
     """
-    if crop is None:
+    if prune is None:
         return None
-    skirt = float(prefs.get("linelist_crop_aa") or 0.0)
+    skirt = float(prefs.get("linelist_skirt_aa") or 0.0)
     if not skirt > 0:
         return None
-    return {"skirt": skirt, "abundances": str(crop.get("abundances") or ""),
-            "relative_abundances": bool(crop.get("relative_abundances", True))}
+    return {"skirt": skirt, "abundances": str(prune.get("abundances") or ""),
+            "relative_abundances": bool(prune.get("relative_abundances", True))}
 
 
 def _check_run_values(values):
@@ -623,7 +623,8 @@ def compute(request, run_values=None, xmin=None, xmax=None, *, extra_presets=Non
 
 
 def compute_batch(request, run_values_list, xmin=None, xmax=None, *, extra_presets=None,
-                  set_spectrum=True, cancel_token=None, fold=False):
+                  set_spectrum=True, cancel_token=None, fold=False, store=None,
+                  abundances=None):
     """Batched :func:`compute`: synthesise several run-value variants of ``request`` (e.g. a
     curve-of-growth's abundance ladder), fanning *every* dispatch run through the shared
     execution service via :func:`tumult.synthesis.compute_spectra`. Returns a list of
@@ -635,18 +636,38 @@ def compute_batch(request, run_values_list, xmin=None, xmax=None, *, extra_prese
     not results. All variants must share the synthesis mode (LTE/NLTE) and preset/line-list
     config; only per-point knobs (typically ``abundances``) should differ. Every variant
     keeps its own run and departure solve unless an LTE caller opts into ``fold=True`` (see
-    :func:`tumult.synthesis.compute_spectra`).
+    :func:`tumult.synthesis.compute_spectra`). ``store`` and ``abundances`` keep the runs in
+    memory for a workflow (see :class:`tumult.synthesis.api.NodeStore`).
     """
     if not run_values_list:
         return []
     common, settings, _ = _prepare(request, run_values_list, extra_presets,
                                     set_spectrum=set_spectrum)
     return compute_spectra(**common, settings_list=settings, xmin=xmin, xmax=xmax,
-                           cancel_token=cancel_token, fold=fold)
+                           cancel_token=cancel_token, fold=fold, store=store,
+                           abundances=abundances)
+
+
+def node_selector(request, store):
+    """``select(params) -> frozenset`` of the synthesis node keys a star on ``request``'s
+    atmosphere grid interpolates from, selected as :func:`compute_window_batch` selects
+    them and kept in ``store`` (a :class:`~tumult.synthesis.api.NodeStore`)."""
+    config = request.config
+    atmos_files = discover_grid(request.atmosphere.record(config), config.root)
+    absmet_files = _absmet_files(config.to_prefs(), atmos_files)
+
+    def select(params):
+        star = tuple(float(params[k]) for k in ("teff", "logg", "feh", "vmic"))
+        nodes, _ = store.select(star, atmos_files, method=config.interpolation,
+                                vmic_step=config.vmic_step, absmet_files=absmet_files,
+                                vmic_points=2)
+        return frozenset(node[0] for node in nodes)
+    return select
 
 
 def compute_window_batch(request, run_values_list, windows, *, extra_presets=None,
-                         cancel_token=None, crop=None, fold=False):
+                         cancel_token=None, prune=None, fold=False, store=None,
+                         abundances=None, probes=()):
     """Batched :func:`compute` over an abundance ladder *and* several windows at once.
 
     Same contract as :func:`compute_batch` for the ladder axis, with ``windows`` a
@@ -657,11 +678,15 @@ def compute_window_batch(request, run_values_list, windows, *, extra_presets=Non
     Falls back to one synthesis per window when the variants cannot fold, so callers can
     use this wherever they would otherwise loop :func:`compute_batch` over windows.
 
-    ``crop`` asks for the per-node line-list crop: ``{"abundances", "relative_abundances"}``
-    of the strongest rung the caller will ask for on these nodes (see :func:`_crop_spec`).
+    ``prune`` asks for the per-node line-list pruning: ``{"abundances", "relative_abundances"}``
+    of the strongest rung the caller will ask for on these nodes (see :func:`_prune_spec`).
 
     Unfolded variants are still scheduled together, and a run keyed on one abundance is
-    reused by any later ladder that asks for the same lattice rung.
+    reused by any later ladder that asks for the same lattice rung. ``store`` and
+    ``abundances`` keep those runs in memory for a workflow (see
+    :class:`tumult.synthesis.api.NodeStore`). ``probes`` are further stellar parameters
+    (``Star`` or mappings) interpolated from the same runs; the result then has one entry
+    per star, the request's first.
     """
     if not run_values_list or not windows:
         return []
@@ -669,7 +694,10 @@ def compute_window_batch(request, run_values_list, windows, *, extra_presets=Non
                                     window_batch=True)
     return _compute_window_batch(**common, settings_list=settings, windows=windows,
                                  R=R, cancel_token=cancel_token,
-                                 crop=_crop_spec(request.config.to_prefs(), crop), fold=fold)
+                                 prune=_prune_spec(request.config.to_prefs(), prune), fold=fold,
+                                 store=store, abundances=abundances,
+                                 probes=[_stellar(request.update(star=probe))
+                                         for probe in probes])
 
 
 def _grid_mesh(grid):
@@ -730,7 +758,7 @@ def nearest_marcs_atmosphere(grid, target, prefs):
 
 
 def preparation_root(prefs):
-    """Where HOP preparations (line-list crops, bound-bound grids) are cached."""
+    """Where HOP preparations (pruned line lists, bound-bound grids) are cached."""
     root = execution_root(prefs).resolve()
     return _resolved_path(root, prefs.get('synth_output_dir') or 'synth') / '_preparation'
 

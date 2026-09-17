@@ -11,7 +11,7 @@ choose a 1D atmosphere or 3D snapshot, LTE or NLTE, composition and any required
 There is no required automatic line-selection step or wizard.
 
 For efficient input preparation, a MARCS reference atmospheres is chose automatically based
-on the chosen atmosphere individual or grid and HOP is used for cropping and thinning the line list.
+on the chosen atmosphere individual or grid and HOP is used for pruning and thinning the line list.
 They can inspect the retained line list, including blends,
 or choose the full list. These preparation references are separate from the atmosphere used
 for the actual synthesis. The resulting spectra appear alongside the observation and can

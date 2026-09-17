@@ -372,15 +372,20 @@ class Spectrum:
         return int(self.xdata.size)
 
     def _crop(self, xmin, xmax):
-        """Internal crop method using searchsorted. Always returns subset preserving order."""
-        is_ascending = self.xdata[-1] > self.xdata[0]
+        """Internal crop method using searchsorted. Returns the subset in ascending order.
+
+        ``xmin``/``xmax`` are Quantities or plain numbers in this spectrum's x-unit.
+        """
+        xv = self.xdata.value
+        order = slice(None) if xv[-1] > xv[0] else slice(None, None, -1)
         # Work with ascending view for search
-        xsearch = self.xdata if is_ascending else self.xdata[::-1]
-        ysearch = self.ydata if is_ascending else self.ydata[::-1]
+        xsearch, ysearch = self.xdata[order], self.ydata[order]
+        lo, hi = (v.to_value(self.xunit, equivalencies=u.spectral())
+                  if isinstance(v, u.Quantity) else v for v in (xmin, xmax))
 
         # Search range (xmin to xmax)
-        i_start = np.searchsorted(xsearch, xmin, side="left")
-        i_end = np.searchsorted(xsearch, xmax, side="right")
+        i_start = np.searchsorted(xv[order], lo, side="left")
+        i_end = np.searchsorted(xv[order], hi, side="right")
 
         # Extract from sorted
         new_xdata = xsearch[i_start:i_end]
@@ -452,6 +457,11 @@ class Spectrum:
                 raise ValueError(
                     "window=(xmin, xmax) is mutually exclusive with x0/dx, xmin/xmax and slc.")
             xmin, xmax = window
+        if (xmin is not None and xmax is not None and x0 is None and dx is None
+                and slc is None and newx is None and vshift is None and continuum is None
+                and not (kwargs or relative or renorm)):
+            # a plain range: the standard crop below without its unit bookkeeping
+            return self._crop(xmin, xmax)
 
         if newx is not None:
             newx = ensure_unit(newx, self.xunit)
@@ -833,9 +843,11 @@ class Spectrum:
         """
         sub = self.crop(window=window) if window is not None else self
         sub._require_contiguous("line measurement")
-        if x0 is not None and not isinstance(x0, u.Quantity):
-            x0 = x0 * sub.xunit
-        return get_weq(*sub, profile=profile, x0=x0, return_profile=True, **kwargs)
+        # measured in bare numbers of the x-unit, which the Profile carries
+        if isinstance(x0, u.Quantity):
+            x0 = x0.to_value(sub.xunit, equivalencies=u.spectral())
+        return get_weq(*sub.values, profile=profile, x0=x0, return_profile=True,
+                       xunit=sub.xunit, **kwargs)
 
     def convolve(self, *, res=None, vrot=None, vdop=None, zeta_rt=None, custom=None,
                  vshift=None):
@@ -979,10 +991,13 @@ class Spectrum:
         # boolean context (raises "truth value of an array ... is ambiguous").
         if weights is None:
             weights = np.ones(len(spectra)) / len(spectra)
-        s = spectra[0] * weights[0]
-        for spec, weight in zip(spectra[1:], weights[1:]):
-            s += spec * weight
-        return s
+        first = spectra[0]
+        if any(len(spec) != len(first) for spec in spectra):
+            raise ValueError("Cannot perform operation on Spectra with different lengths.")
+        unit = first.ydata.unit
+        yy = np.asarray(weights, dtype=float) @ np.array(
+            [spec.ydata.to_value(unit) for spec in spectra])
+        return Spectrum(first.xdata, yy, yunit=unit)
 
     @classmethod
     def concat(cls, spectra):

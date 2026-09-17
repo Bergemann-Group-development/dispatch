@@ -29,7 +29,7 @@ def load(folder):
 
 
 def cost_table(runs):
-    head = (f"{'run':22s} {'crop':>5s} {'renorm':>6s} {'iters':>16s} {'solve':>8s} "
+    head = (f"{'run':22s} {'skirt':>5s} {'renorm':>6s} {'iters':>16s} {'solve':>8s} "
             f"{'native':>8s} {'per run':>8s} {'eff':>5s} {'ran':>5s} {'hits':>5s}")
     print(head)
     print("-" * len(head))
@@ -37,7 +37,7 @@ def cost_table(runs):
         sec, disp = d["seconds"], d["dispatch"]
         ran = disp["ran"] or 1
         term = f"{d['iterations']} {d['termination']}"
-        print(f"{label:22s} {d.get('crop_aa', 0.0):5.1f} "
+        print(f"{label:22s} {d.get('skirt_aa', 0.0):5.1f} "
               f"{'yes' if d.get('renorm') else 'no':>6s} {term:>16s} "
               f"{sec['solve']:8.1f} {sec['native_execution']:8.1f} "
               f"{sec['native_execution'] / ran:8.3f} "

@@ -365,7 +365,7 @@ def test_compute_spectra_folds_abundance_only_batch(monkeypatch, tmp_path):
         mode = 'LTE'
         folder = tmp_path / 'run'
 
-        def crop_set(self, index, *args, **kwargs):
+        def crop(self, index=None, **kwargs):
             return index
 
     monkeypatch.setattr(api, 'select_nodes', lambda *a, **k: (

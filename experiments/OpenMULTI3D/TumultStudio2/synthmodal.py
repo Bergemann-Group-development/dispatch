@@ -105,7 +105,7 @@ class SynthModal:
 
         self.pref_forms["synthengine"].groups = [
             ("Execution", ("synth_output_dir", "workflow_runner", "max_threads")),
-            ("Spectral sampling", ("R", "linelist_crop_aa")),
+            ("Spectral sampling", ("R", "linelist_skirt_aa")),
             ("Atmosphere mesh (horizontal columns apply to 3D)", ("nx", "ny", "nz")),
             ("Fit settings", ("vmic_step", "abund_step", "fit_max_rounds"))]
         # the path preferences are picked, not typed: each has an inline file picker beside

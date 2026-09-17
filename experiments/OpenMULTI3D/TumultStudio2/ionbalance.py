@@ -8,8 +8,8 @@ comes back is a :class:`measurement.Measurement` — its own object in the left 
 because everything in it is spectrum-dependent — holding the measured lines and the fit that
 stands on them.
 
-Two phases, one durable ``sparams.ionbalance`` workflow (``solver="diagonal"``), continuing the
-measurement object the modal creates (``measured=``) so its snapshots stream into it:
+Two phases, one durable ``sparams.ionbalance`` workflow, continuing the measurement object
+the modal creates (``measured=``) so its snapshots stream into it:
 
 1. **Measure + identify.** :func:`tumult.sparams.measure_balance_lines`: every switched-on
    window's EW, FWHM and EW error on the target, with the dominant transition in each window
@@ -19,9 +19,10 @@ measurement object the modal creates (``measured=``) so its snapshots stream int
    A window another species dominates is flagged ``off_element`` and switched off, and a
    window whose dominant transition is the element's third stage or above simply carries no
    diagnostic weight.
-2. **Solve.** :func:`tumult.sparams.solve_ionisation_balance`: from the entry point,
-   iterate an abundance ladder per line, invert its EW to A(X), compute the four balance
-   diagnostics and step the *free* parameters until they are all inside tolerance.
+2. **Solve.** :func:`tumult.sparams.ionbalance`: from the entry point, invert every line's
+   EW to A(X) through an adaptive curve of growth, compute the four balance diagnostics and
+   their Jacobian, and step the *free* parameters (:func:`tumult.sparams.solve_coupled`)
+   until the diagnostics are all inside tolerance.
 
 Both phases are headless — this module supplies the modal, the streaming table and the
 diagnostic panels, and passes a ``progress`` callback so rows, the panels and the iteration
@@ -67,7 +68,7 @@ DEFAULTS = {
     "entry": refstars.AUTO_KEY,
     "teff": 5750.0, "logg": 4.5, "feh": 0.0, "vmic": 1.0,
     "fit_teff": True, "fit_logg": True, "fit_feh": True, "fit_vmic": True,
-    "max_iter": 8.0, "span": 0.4, "points": 3.0,
+    "max_iter": 8.0, "limit": 1.0, "max_rounds": 8.0,
     "tol_exc": sp.DEFAULT_TOLS["s_exc"], "tol_rew": sp.DEFAULT_TOLS["s_rew"],
     "tol_ion": sp.DEFAULT_TOLS["d_ion"], "tol_feh": sp.DEFAULT_TOLS["d_feh"],
 }
@@ -220,10 +221,10 @@ class IonBalanceTool(AbundanceWizard):
         self.formadv = Form("ionbaladv", [
             Field("max_iter", "Max iterations", kind="number", value=vals["max_iter"],
                   min=1, step=1),
-            Field("span", "Curve-of-growth half-span [dex]", kind="number", value=vals["span"],
-                  min=0.05, step=0.05),
-            Field("points", "CoG points", kind="number", value=vals["points"],
-                  min=2, step=1),
+            Field("limit", "Curve-of-growth half-range [dex]", kind="number",
+                  value=vals["limit"], min=0.05, step=0.05),
+            Field("max_rounds", "Curve-of-growth rounds", kind="number",
+                  value=vals["max_rounds"], min=1, step=1),
             Field("tol_exc", "Tol: excitation slope [dex/eV]", kind="number",
                   value=vals["tol_exc"], min=0, step=0.001),
             Field("tol_rew", "Tol: REW slope [dex/dex]", kind="number",
@@ -609,9 +610,10 @@ class IonBalanceTool(AbundanceWizard):
         self.select_result(res.uid)
         self.notify(f"{res.element} balance: "
                     + ("solving…" if refit is not None else "measuring the windows…"))
-        kwargs = {"target": spec, "measured": res, "solver": "diagonal", "free": free,
+        kwargs = {"target": spec, "measured": res, "free": free,
                   "tols": tols, "max_iter": max(1, int(float(va["max_iter"]))),
-                  "span": float(va["span"]), "points": max(2, int(float(va["points"]))),
+                  "limit": float(va["limit"]),
+                  "max_rounds": max(1, int(float(va["max_rounds"]))),
                   "background_lines": self.setup.background_lines}
         if refit is None:
             kwargs["line_mask"] = mset

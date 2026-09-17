@@ -39,3 +39,23 @@ calculation runs in its own cache, `data/synth/api_benchmarks/<benchmark>[/<star
 runs and `synth/api_benchmarks/<benchmark>[/<star>]` for preparations, so no calculation reuses
 another's results. The one exception is `single_precomputed_nlte`, which reads the departures of
 `departure_solve`.
+
+## Standard timings
+
+Cold run of every benchmark with the defaults above, on an Apple M1 (4 threads, AC power),
+commit `2589b461` (wall seconds, summed over the five stars where applicable):
+
+| Benchmark | Wall |
+|---|---:|
+| `single_lte` | 28 |
+| `departure_solve` | 15 |
+| `single_precomputed_nlte` | 32 |
+| `single_ondemand_nlte` | 48 |
+| `nlte_correction` | 204 |
+| `abundance_fit` | 51 |
+| `ionisation_balance` | 84 |
+| `stellar_analysis` | 575 |
+| **Suite** | **1037** |
+
+Timings are single samples. On battery power the M1 takes about twice as long. Compare new
+timings against these only from a cold run with the same settings.

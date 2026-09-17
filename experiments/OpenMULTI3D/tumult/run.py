@@ -311,7 +311,8 @@ class Run(object):
         return line
 
     #=====================================================================
-    def get_spectrum(self, ang=None, imu=None, LTE=False, cont=False, resolved=False):
+    def get_spectrum(self, ang=None, imu=None, LTE=False, cont=False, resolved=False,
+                     index=None):
         """
         Returns a Spectrum object for the given angle (ang) or mu-index (imu).
         If ang and imu are both None, returns the flux spectrum.
@@ -328,8 +329,23 @@ class Run(object):
             If True, returns the continuum spectrum. Default is False.
         resolved: bool
             If True, returns the resolved spectrum. Default is False.
+        index: int or None
+            Zero-based component of the saved set axis (see :attr:`ladder`) instead of the
+            run's own spectrum. A set is one specific component, so ``LTE`` does not apply.
         """
-        if not LTE and self.mode=='LTE':
+        yy, yunit = self._component(ang, imu, LTE, cont, index)
+        return Spectrum(self.lam, yy, xunit=u.angstrom, yunit=yunit,
+                        segments=self.segments)
+
+    def _component(self, ang, imu, LTE, cont, index):
+        """The raw array and unit :meth:`get_spectrum` wraps."""
+        if index is not None:
+            if not hasattr(self, '_ie_sets'):
+                raise RuntimeError('run has no saved spectrum sets')
+            index = int(index)
+            if index < 0 or index >= self._ie_sets.shape[-1]:
+                raise IndexError(f'set index {index} is out of range')
+        elif not LTE and not cont and self.mode == 'LTE':
             print('Cannot get NLTE spectrum, because run was in LTE!')
             LTE = True
 
@@ -345,96 +361,65 @@ class Run(object):
         yunit = u.erg/(u.s*u.cm**2*u.angstrom)
         if not flux: yunit = yunit / u.sr
 
-        if cont:
-            if flux:
-                yy = self.flux_cnt
-            elif ang is not None:
-                yy = self.ie_cnt[:, ang]
-            elif imu is not None:
-                imu_mask = self.imus == imu
-                yy = np.mean(self.ie_cnt[:, imu_mask], axis=1)
+        if index is not None and not cont:
+            fluxes, intensities = self._flux_sets[:, index], self._ie_sets[..., index]
+        elif cont:
+            fluxes, intensities = self.flux_cnt, self.ie_cnt
         elif LTE:
-            if flux:
-                yy = self.flux_lte
-            elif ang is not None:
-                yy = self.ie_lte[:, ang]
-            elif imu is not None:
-                imu_mask = self.imus == imu
-                yy = np.mean(self.ie_lte[:, imu_mask], axis=1)
+            fluxes, intensities = self.flux_lte, self.ie_lte
         else:
-            if flux:
-                yy = self.flux
-            elif ang is not None:
-                yy = self.ie[:, ang]
-            elif imu is not None:
-                imu_mask = self.imus == imu
-                yy = np.mean(self.ie[:, imu_mask], axis=1)
+            fluxes, intensities = self.flux, self.ie
 
-        return Spectrum(self.lam, yy, xunit=u.angstrom, yunit=yunit,
-                        segments=self.segments)
-
-    def get_set_spectrum(self, index, ang=None, imu=None):
-        """Return one explicit set-axis component as a :class:`Spectrum`.
-
-        This is the ladder counterpart of :meth:`get_spectrum`; ``index`` is the
-        zero-based index reported by :attr:`ladder`.
-        """
-        if not hasattr(self, '_ie_sets'):
-            raise RuntimeError('run has no saved spectrum sets')
-        index = int(index)
-        if index < 0 or index >= self._ie_sets.shape[-1]:
-            raise IndexError(f'set index {index} is out of range')
-        if imu is not None:
-            if imu >= self.nmu:
-                raise ValueError(f'imu is out of range. Nmu = {self.nmu}')
-            if imu < 0:
-                imu = self.imus.max() + imu + 1
-        if self.n_ang == 1:
-            ang = 0
-        flux = ang is None and imu is None
         if flux:
-            yy = self._flux_sets[:, index]
+            yy = fluxes
         elif ang is not None:
-            yy = self._ie_sets[:, ang, index]
+            yy = intensities[:, ang]
         else:
-            yy = np.mean(self._ie_sets[:, self.imus == imu, index], axis=1)
-        yunit = u.erg/(u.s*u.cm**2*u.angstrom)
-        if not flux:
-            yunit = yunit / u.sr
-        return Spectrum(self.lam, yy, xunit=u.angstrom, yunit=yunit,
-                        segments=self.segments)
-
-    def crop_set(self, index, slc=None, x0=None, ang=None, imu=None, norm=True,
-                 LTE=False, **kwargs):
-        """Crop and optionally continuum-normalise one ladder set.
-
-        ``LTE`` is accepted for signature parity with :meth:`crop` and ignored: a set is
-        already a specific component of the set axis, so there is no LTE/NLTE choice left
-        to make. Without it the flag would fall through to ``Spectrum.crop``, which reads
-        leftover keywords as convolution parameters.
-        """
-        spec = self.get_set_spectrum(index, ang=ang, imu=imu)
-        spec = spec.crop(slc=slc, x0=x0, **kwargs)
-        if norm:
-            cnt = self.get_spectrum(ang=ang, imu=imu, cont=True, LTE=self.mode == 'LTE')
-            spec = spec / cnt.crop(slc=slc, x0=x0, **kwargs)
-        return spec
+            yy = np.mean(intensities[:, self.imus == imu], axis=1)
+        return yy, yunit
 
     #=====================================================================
     def crop(self, slc=None, x0=None, ang=None, imu=None, norm=True,
-             cont=False, LTE=False, line=None, **kwargs):
+             cont=False, LTE=False, line=None, index=None, xmin=None, xmax=None,
+             window=None, **kwargs):
+        """The spectrum (``index``: that set component, see :meth:`get_spectrum`) cropped
+        by :meth:`Spectrum.crop` and, with ``norm``, divided by the continuum.
+
+        A plain ``xmin``/``xmax`` or ``window`` crop slices the stored arrays before
+        building the spectrum, so it never materialises the whole run.
+        """
         #-----------------------------------------------------------------
         if line is not None:
             line.prepare()
             slc = slice(line.ib, line.ir)
             x0 = line.lam0
 
-        spec = self.get_spectrum(ang=ang, imu=imu, LTE=LTE, cont=cont)
-        spec = spec.crop(slc=slc, x0=x0, **kwargs)
+        if window is not None:
+            xmin, xmax = window
+        if slc is None and x0 is None and not kwargs and xmin is not None \
+                and xmax is not None:
+            lo, hi = (v.to_value(u.angstrom, equivalencies=u.spectral())
+                      if isinstance(v, u.Quantity) else float(v) for v in (xmin, xmax))
+            # ascending views, as Spectrum.crop searches and returns them
+            order = slice(None) if self.lam[-1] > self.lam[0] else slice(None, None, -1)
+            lam = self.lam[order]
+            part = slice(np.searchsorted(lam, lo, side='left'),
+                         np.searchsorted(lam, hi, side='right'))
+            yy, yunit = self._component(ang, imu, LTE, cont, index)
+            yy = np.asarray(yy[order][part])
+            if norm:
+                cntm = self._component(ang, imu, LTE, True, None)[0]
+                yy = yy / np.asarray(cntm[order][part])
+                yunit = u.dimensionless_unscaled
+            return Spectrum(np.asarray(lam[part]), yy, xunit=u.angstrom, yunit=yunit)
+
+        crop = dict(slc=slc, x0=x0, xmin=xmin, xmax=xmax, **kwargs)
+        spec = self.get_spectrum(ang=ang, imu=imu, LTE=LTE, cont=cont, index=index)
+        spec = spec.crop(**crop)
 
         if norm:
           cntm = self.get_spectrum(ang=ang, imu=imu, LTE=LTE, cont=True)
-          cntm = cntm.crop(slc=slc, x0=x0, **kwargs)
+          cntm = cntm.crop(**crop)
           spec = spec / cntm
 
         return spec

@@ -22,7 +22,7 @@ CONVENTIONS = ("[X/Fe]", "A(X)")
 # preference key -> SynthConfig field (see SynthConfig.to_prefs)
 PREF_FIELDS = {"dispatch_cwd": "root", "synth_output_dir": "cache", "linelist": "linelist",
                "abund_file": "abundances", "absmet": "absmet", "R": "resolving_power",
-               "linelist_crop_aa": "linelist_skirt", "abund_step": "abundance_step",
+               "linelist_skirt_aa": "linelist_skirt", "abund_step": "abundance_step",
                "vmic_step": "vmic_step", "interp_method": "interpolation",
                "max_threads": "threads", "expert_settings": "expert"}
 
@@ -111,7 +111,7 @@ class SynthConfig:
         """The preference dictionary the execution layer reads."""
         prefs = {
             "dispatch_cwd": str(self.root), "synth_output_dir": str(self.cache),
-            "R": self.resolving_power, "linelist_crop_aa": self.linelist_skirt,
+            "R": self.resolving_power, "linelist_skirt_aa": self.linelist_skirt,
             "abund_step": self.abundance_step, "vmic_step": self.vmic_step,
             "interp_method": self.interpolation, "max_threads": self.threads or 0,
             "expert_settings": self.expert,

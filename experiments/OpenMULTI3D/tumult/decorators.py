@@ -107,3 +107,21 @@ def auto_ops(attr):
             setattr(cls, name, make_method(op))
         return cls
     return decorator
+
+
+def instance_cache(method):
+    """Memoise ``method`` per instance on its (hashable) arguments.
+
+    The results live in the instance, so they are released with it; ``functools.cache``
+    on a method would keep every instance alive for the life of the process.
+    """
+    name = f"_{method.__name__}_cache"
+
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        cache = self.__dict__.setdefault(name, {})
+        key = (args, tuple(sorted(kwargs.items())))
+        if key not in cache:
+            cache[key] = method(self, *args, **kwargs)
+        return cache[key]
+    return wrapper

@@ -39,12 +39,20 @@ def _make_da_jobs(da_values, nml, name, ref, top):
     return jobs
 
 
-def _output_folder(nml_name, nml):
-    """Where launch() will write this job's run (mirrors launch.py's path logic)."""
+def _output_folder(nml_name, nml, cwd=None):
+    """The resolved folder launch() writes this job's run to, for the prepared namelist
+    ``nml`` (mirrors launch.py's path logic)."""
     datadir = nml.get('io_params', {}).get('datadir', 'data')
     if isinstance(datadir, str):
         datadir = datadir.strip()
-    return Path(datadir) / nml_name
+    return str((Path(cwd or '.') / datadir / nml_name).resolve())
+
+
+def job_output(nml_name, nml, launch_kwargs):
+    """The run folder a job writes to: the cache identity :func:`_run_batch` keys on."""
+    launch_kwargs = launch_kwargs or {}
+    return _output_folder(nml_name, prepare_input(nml, launch_kwargs.get('default')),
+                          launch_kwargs.get('cwd'))
 
 
 def _run_batch(jobs, launch_kwargs, max_threads, cancel_token=None, *, runtime=None):
@@ -126,8 +134,7 @@ def _run_batch(jobs, launch_kwargs, max_threads, cancel_token=None, *, runtime=N
             nml = copy.deepcopy(nml)
             kwargs = copy.deepcopy(launch_kwargs)
             prepared = prepare_input(nml, kwargs.get('default'))
-            output = str((Path(kwargs.get('cwd') or '.') /
-                          _output_folder(name, prepared)).resolve())
+            output = _output_folder(name, prepared, kwargs.get('cwd'))
             # CPU allocation is scheduling metadata, not part of a spectrum's identity.
             signature = json.dumps([prepared, {k: v for k, v in kwargs.items()
                                                if k not in ('threads', 'verbose', 'log_file')}],

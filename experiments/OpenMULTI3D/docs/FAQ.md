@@ -231,11 +231,11 @@ The reference atmosphere is chosen automatically:
 `tumult.synthesis.resolve_request(request)` returns the `ResolvedSynthRequest` with
 `preparation_references` and the padded windows, before anything runs. After a run, `result.preparation` is a
 `PreparedLineList`: `files` are the written lists, `references` the atmospheres they were
-made on, `settings` the crop parameters and `identities` the sizes and modification times of
+made on, `settings` the pruning parameters and `identities` the sizes and modification times of
 every consumed input. The artifact lives under `<synth_output_dir>/_preparation/<digest>/`
 and is reused whenever the same inputs, windows and settings recur.
 
-To synthesise from the full list, set `linelist_skirt=0`. A crop request without a
+To synthesise from the full list, set `linelist_skirt=0`. A pruning request without a
 usable MARCS reference raises an error rather than silently reading the full list.
 
 Caveats:
@@ -459,12 +459,21 @@ rung.
 `sparams.ionbalance(request, target=..., line_mask=..., method="cog")` fits Teff, log g,
 [Fe/H] and vmic on a grid from the excitation and ionisation balance of one element. Lines
 are identified on the MARCS model nearest the initial star, abundances come from the same
-adaptive curves of growth at every trial star, and the default `solver="coupled"` steps all
-free parameters through the full diagnostic Jacobian (forward differences, then Broyden
-updates, Levenberg-Marquardt damping, per-parameter clamps and the grid bounds; see
-`tumult/sparams.py`). `solver="diagonal"` is the decoupled solver with its own shared ladder
-(`span`, `points`). The **Fit ionisation balance** action calls this operation with the
-diagonal solver, passing its measurement object as `measured=` so a refit keeps the lines.
+adaptive curves of growth at every trial star. All free parameters step together through
+the full diagnostic Jacobian, with Levenberg-Marquardt damping, per-parameter clamps and the
+grid bounds (see `tumult/sparams.py`). The Jacobian comes with each trial star: its rungs
+are also interpolated a small step along each free parameter, and every line is inverted
+again there. The step (at most `FD_STEPS`) stays on the trial star's own atmosphere nodes,
+so the Jacobian costs no runs. Only where the star sits on a grid value does the step add
+the neighbouring nodes, on the side the parameter's own diagnostic points to. The
+**Fit ionisation balance** action calls this operation, passing its measurement object as
+`measured=` so a refit keeps the lines.
+
+Every lattice workflow (abundance fit, NLTE corrections, ionisation balance) keeps its node
+runs in one `NodeStore` for its whole duration. A rung on an atmosphere node is launched and
+read once, and a second run for the same grid point raises an error. Where the line list is
+pruned (the windowed abundance fit and balance), the first batch fixes the pruning for the
+whole workflow; NLTE corrections synthesise the atom's whole range and read the full list.
 
 Missing pieces:
 

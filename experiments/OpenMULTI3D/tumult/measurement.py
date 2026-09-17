@@ -38,11 +38,11 @@ class BalanceResult(MeasuredLines):
     history: list = field(default_factory=list)       # per iteration: {"params", "diags"}
     diags: dict = field(default_factory=dict)
     sigmas: dict = field(default_factory=dict)
-    jac: dict = field(default_factory=dict)           # final diagonal, for re-aggregation
-    jacobian: dict = field(default_factory=dict)      # coupled: {diagnostic: {param: d/dp}}
-    covariance: dict = field(default_factory=dict)    # coupled: {param: {param: cov}}
+    jac: dict = field(default_factory=dict)           # {param: d diag/d param}, older fits
+    jacobian: dict = field(default_factory=dict)      # {diagnostic: {param: d/dp}}
+    covariance: dict = field(default_factory=dict)    # {param: {param: cov}}
     method: str = ""                                  # abundance method, e.g. "cog"
-    solver: str = "diagonal"                          # "diagonal" or "coupled"
+    solver: str = "coupled"                           # "coupled"; "diagonal" in older fits
     tols: dict = field(default_factory=dict)
     termination: str = "measured"
     converged: bool = False
@@ -115,12 +115,12 @@ class BalanceResult(MeasuredLines):
             return
         feh = float(self.params.get("feh", float("nan")))
         self.diags = sp.diagnostics(self.lines, feh, self.solar_x)
-        if self.jacobian:
-            self.sigmas, self.covariance = sp.coupled_uncertainties(
-                self.diags, self.jacobian, self.free or None)
-        else:
-            self.sigmas = sp.uncertainties(self.diags, self.jac or dict(sp.DEFAULT_JAC),
-                                           self.free or None)
+        # a fit saved by the former diagonal solver carries only the diagonal entries
+        jacobian = self.jacobian or {
+            sp.DIAG_FOR[k]: {q: (v if q == k else 0.0) for q in self.jac}
+            for k, v in self.jac.items()}
+        self.sigmas, self.covariance = sp.coupled_uncertainties(
+            self.diags, jacobian, self.free or None)
         self.converged = False
         self.termination = ("diagnostic" if self.diagnose_only else "stale")
 

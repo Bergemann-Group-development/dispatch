@@ -50,10 +50,11 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
   atmosphere node keeps, written in the input format by `hop_prune.x`
   (`HOP/standalone/hop_prune.f90`, driven from `tumult.prune`) so every run on that node
   reads it as its `linelist_file`. The selection is HOP's own negligibility test on the
-  node's sampled states over the requested windows widened by the *skirt*. Older names for
-  the same thing are *crop* (`crop_linelist`, the `linelist_crop_aa` preference) and
-  *preparation* (the per-reference artifact of `prepare_linelist`). Distinct from a run's
-  `linelist_out.txt`, which is a derived diagnostic.
+  node's sampled states over the requested windows widened by the *skirt*
+  (`prune_linelist`, the `linelist_skirt_aa` preference). An older name for the same thing
+  is *preparation* (the per-reference artifact of `prepare_linelist`). *Crop* is reserved
+  for cutting a spectrum to a wavelength range. Distinct from a run's `linelist_out.txt`,
+  which is a derived diagnostic.
 - *skirt*: how far outside a requested window a transition may still be kept when pruning,
   in Angstrom; it is handed to HOP as the line-wing search radius `dlam`, so a pruned run
   reads wings only to that distance.
@@ -117,6 +118,13 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
 - *rung*: one abundance of a curve of growth, synthesised as a run of its own on the
   abundance lattice (`SynthConfig.abundance_step`). With requested departures every rung is
   also a departure solve.
+- *node store*: `synthesis.api.NodeStore`, the rung runs one workflow has made, as a
+  `SpectrumGrid` over the atmosphere node (Teff, log g, [Fe/H], vmic, snapshot) and the
+  abundance. Within a workflow a grid point has exactly one run.
+- *probe star*: stellar parameters a small step along a free parameter from a trial star,
+  chosen to stay on the trial star's atmosphere nodes (`sparams.ionbalance`). Its rungs
+  are interpolated from those node runs, and the balance Jacobian is the difference of the
+  diagnostics there. On a grid value the step adds the neighbouring nodes. Distinct from a *reference star*.
 - *background lines*: the transitions of other species in a curve-of-growth synthesis.
   Switched off, an abundance fit or balance synthesises the element's transitions alone
   (`only_elements`) and a correction the model atom's alone (`only_atom`); blend screens

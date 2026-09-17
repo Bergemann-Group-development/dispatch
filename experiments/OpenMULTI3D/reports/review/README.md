@@ -29,7 +29,7 @@ meshes or making scientific accuracy claims is outside this development scope.
 | Departure reuse | `DepartureField`, `solve_departures()` and `synthesise()` expose the two phases. The handle lacks a public loader for reopening a saved solve. `departure_settings()` unconditionally sets `maxiter=99`; caller-controlled iteration limits are lost. Spectrum overrides can change physical settings without a structured record distinguishing the solve configuration from the formal-solution configuration. |
 | Job lifecycle | [runtime.py](../../tumult/synthesis/runtime.py), [jobrecord.py](../../tumult/synthesis/jobrecord.py) and [progress.py](../../tumult/synthesis/progress.py) supply scheduling, disk records and polling. There is no common public workflow handle connecting a submission, its constituent runs, progress and retrievable result. |
 | GUI jobs | [app.py](../../TumultStudio2/app.py) supports detached submissions and session-close opt-out, but its Processes panel shows session-local names, spinners and cancellation. It does not scan durable records or wire the native progress watcher into a reopened job view. No inspected GUI caller opts into `detached=True`. |
-| Input preparation | [linestrength.crop_linelist](../../tumult/linestrength.py) uses MARCS structures and HOP to write a cropped and thinned list. [api._node_linelists](../../tumult/synthesis/api.py) attaches this to supported grid batch calls; preparation is not a shared, explicit operation for a 3D snapshot request. |
+| Input preparation | [linestrength.prune_linelist](../../tumult/linestrength.py) uses MARCS structures and HOP to write a pruned and thinned list. [api._node_linelists](../../tumult/synthesis/api.py) attaches this to supported grid batch calls; preparation is not a shared, explicit operation for a 3D snapshot request. |
 | Masks and analyses | [masktool.py](../../TumultStudio2/masktool.py) imports, edits and hands mask sets to analyses. [masksources.py](../../TumultStudio2/masksources.py) retains an automatic source that is disabled. Analysis setup and application wiring still carry wizard structure. |
 
 ## Make the public API describe the calculation
@@ -102,13 +102,13 @@ Cache preparation separately from departure solving and spectrum production. Its
 must capture the consumed master-list and MARCS inputs, windows and selection settings;
 path strings alone do not identify files replaced in place. Changing masks should prepare
 new spectral inputs without forcing an otherwise identical departure solve. Surface an
-unsupported preparation input explicitly: `_node_linelists` currently returns without a crop
+unsupported preparation input explicitly: `_node_linelists` currently returns without pruning
 for unsupported line-list configurations, which is too implicit for an inspectable plan.
 
 Model-atom reduction is a possible later preparation operation, not a present implementation
 requirement. Wavelength masks alone do not define which levels and transitions are needed
 for statistical equilibrium. Keep any future atom reduction explicit and separately specified
-by users; do not apply line-list cropping rules to atoms.
+by users; do not apply line-list pruning rules to atoms.
 
 ## Complete launching and monitoring in the GUI
 

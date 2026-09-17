@@ -2,8 +2,9 @@
 
 The predecessor (reports/profile_ionbalance.py) drove the GUI tool and measured an
 executor and per-window scheduling arrangement that has since changed. This harness
-calls tumult.sparams.solve_ionisation_balance directly, so setup, native execution and
-the solver's own arithmetic are separated from any GUI rendering cost.
+calls tumult.sparams.ionbalance directly on a measurement it makes itself, so setup,
+native execution and the solver's own arithmetic are separated from any GUI rendering
+cost.
 
     bin/tpy reports/bench_ionbalance.py --output reports/bench/cold --threads 7
 
@@ -21,7 +22,6 @@ machine-local: point ATLAS at your own copy.
 """
 import argparse
 import json
-import logging
 import os
 import re
 import resource
@@ -45,18 +45,6 @@ def maxrss_mb():
                for who in (resource.RUSAGE_SELF, resource.RUSAGE_CHILDREN)) / scale
 
 
-class Fallbacks(logging.Handler):
-    """Count the solver's per-line retries after a shared-ladder synthesis failure."""
-
-    def __init__(self):
-        super().__init__(level=logging.ERROR)
-        self.messages = []
-
-    def emit(self, record):
-        if "falling back" in record.getMessage() or "screen failed" in record.getMessage():
-            self.messages.append(record.getMessage())
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=ROOT / "reports/bench/run")
@@ -71,11 +59,12 @@ def main():
     parser.add_argument("--renorm", action="store_true",
                         help="measure every window against its own local straight continuum "
                              "(sets LineMask.renorm, both sides)")
-    parser.add_argument("--crop", type=float, default=None,
-                        help="per-node line-list crop skirt [A]; 0 switches the crop off "
-                             "(default: whatever linelist_crop_aa is set to)")
-    parser.add_argument("--span", type=float, default=0.4)
-    parser.add_argument("--points", type=int, default=3)
+    parser.add_argument("--skirt", type=float, default=None,
+                        help="per-node line-list pruning skirt [A]; 0 switches pruning off "
+                             "(default: whatever linelist_skirt_aa is set to)")
+    parser.add_argument("--limit", type=float, default=1.0,
+                        help="curve-of-growth half-range [dex]")
+    parser.add_argument("--max-rounds", type=int, default=8)
     args = parser.parse_args()
     if args.threads < 1 or args.iterations < 1 or args.lines < 0:
         parser.error("threads and iterations must be >= 1; lines must be >= 0")
@@ -92,8 +81,8 @@ def main():
     prefs_all = config["preferences"]
     prefs_all["synthesis"].update(atmos_grid_id="marcs", max_threads=args.threads,
                                   synth_output_dir=str(cache.relative_to(ROOT)))
-    if args.crop is not None:
-        prefs_all["synthesis"]["linelist_crop_aa"] = float(args.crop)
+    if args.skirt is not None:
+        prefs_all["synthesis"]["linelist_skirt_aa"] = float(args.skirt)
     config_path = out / "config.json"
     config_path.write_text(json.dumps(config, indent=2))
     os.environ["TUMULT_CONFIG"] = str(config_path)
@@ -109,9 +98,6 @@ def main():
     from tumult.synthesis.executor import _output_folder, run_complete
     from synthprefs import atmosphere_grid, load_prefs, synth_config
 
-    fallbacks = Fallbacks()
-    logging.getLogger().addHandler(fallbacks)
-
     # --- instrumentation ----------------------------------------------------------------
     events, launches = [], []
 
@@ -124,8 +110,8 @@ def main():
     original_window_batch = synth.compute_window_batch
 
     def timed_window_batch(request, rv_list, windows, **kw):
-        # The ladder rungs differ only in the element override, so its span and point
-        # count are readable from the variant list itself.
+        # The rungs differ only in the element override, so their span is readable from
+        # the variant list itself.
         values = [float(m.group(1)) for rv in rv_list
                   for m in [re.search(r"Fe=([-+0-9.]+)", str(rv.get("abundances") or ""))]
                   if m]
@@ -138,23 +124,7 @@ def main():
                    ladder_span=(max(values) - min(values)) if values else None,
                    target=[float(v) for v in request.star.tuple()])
 
-    original_batch = synth.compute_batch
-
-    def timed_batch(request, rv_list, *window, **kw):
-        # Iteration 1's blend screen switches the element on and off (two variants); a
-        # longer list here is the per-line ladder after a shared-ladder failure.
-        kind = "blend_screen" if any(rv.get("exclude_elements") for rv in rv_list) \
-            else "line_ladder"
-        start = time.perf_counter()
-        try:
-            return original_batch(request, rv_list, *window, **kw)
-        finally:
-            record(phase="line_batch", kind=kind, seconds=time.perf_counter() - start,
-                   rungs=len(rv_list), windows=1)
-
     synth.compute_window_batch = timed_window_batch
-    synth.compute_batch = timed_batch
-    sp.synth = synth   # the solver imports the module, not the function
 
     original_launch = tm.launch
 
@@ -213,11 +183,12 @@ def main():
           f"({result.counts()[0]} I + {result.counts()[1]} II) in {measure_seconds:.1f} s; "
           f"identification: {result.ident_note}", flush=True)
 
-    opts = {"max_iter": args.iterations, "span": args.span, "points": args.points,
-            "tols": dict(sp.DEFAULT_TOLS)}
     t_solve = time.perf_counter()
     with execution_scope(args.threads):
-        sp.solve_ionisation_balance(request, result, opts)
+        result = sp.ionbalance(request, target=spec, measured=result, free=result.free,
+                               tols=dict(sp.DEFAULT_TOLS), max_iter=args.iterations,
+                               limit=args.limit, max_rounds=args.max_rounds,
+                               profile=PROFILE)
     solve_seconds = time.perf_counter() - t_solve
 
     # --- what the run cost --------------------------------------------------------------
@@ -226,8 +197,8 @@ def main():
         "label": out.name,
         "warm_cache": bool(args.cache),
         "threads": args.threads, "max_iter": args.iterations,
-        "span": args.span, "points": args.points,
-        "crop_aa": float(prefs.get("linelist_crop_aa") or 0.0),
+        "limit": args.limit, "max_rounds": args.max_rounds,
+        "skirt_aa": float(prefs.get("linelist_skirt_aa") or 0.0),
         "renorm": bool(args.renorm),
         "windows": len(result.lines), "fe_i": result.counts()[0], "fe_ii": result.counts()[1],
         "included": sum(1 for ln in result.lines if ln.include),
@@ -238,17 +209,12 @@ def main():
                     "native_execution": native,
                     "window_batches": sum(e["seconds"] for e in events
                                           if e["phase"] == "window_batch"),
-                    "line_batches": sum(e["seconds"] for e in events
-                                        if e["phase"] == "line_batch"),
                     "solver_arithmetic": solve_seconds - sum(e["seconds"] for e in events)},
         "dispatch": {"jobs": len(launches),
                      "ran": sum(1 for l in launches if l["ran"]),
                      "cache_hits": sum(1 for l in launches if l["cache_hit"])},
-        "retries": fallbacks.messages,
         "ladders": [{k: e[k] for k in ("rungs", "windows", "ladder_span", "seconds")}
                     for e in events if e["phase"] == "window_batch"],
-        "line_batches": [{k: e[k] for k in ("kind", "rungs", "seconds")}
-                         for e in events if e["phase"] == "line_batch"],
         "params0": params0,
         "params": {k: float(v) for k, v in (result.params or {}).items()},
         "sigmas": {k: float(v) for k, v in (result.sigmas or {}).items()},

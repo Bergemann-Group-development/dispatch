@@ -106,12 +106,12 @@ def test_spectrum_table_preserves_first_intensity_and_units():
         assert result.get_spectrum(norm=False).yunit == u.erg/(u.s*u.cm**2*u.AA)
 
 
-def test_uncropped_runs_keep_their_cache_identity(tmp_path, monkeypatch):
-    """A per-node line-list crop must not move the folders of runs that have none.
+def test_unpruned_runs_keep_their_cache_identity(tmp_path, monkeypatch):
+    """Per-node line-list pruning must not move the folders of runs that have none.
 
-    The digest only takes the crop into account when there is one, so what this pins is the
-    condition for that: every way of asking for no crop returns None, and once there is one,
-    its identity separates it from any other crop. Without the first, every cached run in
+    The digest only takes the pruning into account when there is one, so what this pins is the
+    condition for that: every way of asking for no pruning returns None, and once there is one,
+    its identity separates it from any other pruning. Without the first, every cached run in
     every existing output directory becomes unreachable; without the second, two runs on one
     node with the same namelist and different line lists would share a folder.
     """
@@ -120,26 +120,26 @@ def test_uncropped_runs_keep_their_cache_identity(tmp_path, monkeypatch):
     base = {'linelist_params': {'linelist_file': ['master.txt']},
             'spectrum_params': {'R': 300000.}}
     windows = [(5000., 5002.)]
-    crop = {'skirt': 5.0, 'abundances': 'Fe=+0.40', 'relative_abundances': True}
+    prune = {'skirt': 5.0, 'abundances': 'Fe=+0.40', 'relative_abundances': True}
     nodes = [(('n', 0), 5750., 4.5, 0.0, 1.0, 1.0, tmp_path / 'a.mod', None)]
 
     assert api._node_linelists('top', base, nodes, windows, None, {}) is None
     assert api._node_linelists('top', base, nodes, windows, {'skirt': 0.0}, {}) is None
-    # a line-list folder cannot be cropped into one file
+    # a line-list folder cannot be pruned into one file
     folder = {**base, 'linelist_params': {'linelist_folder': 'lists/'}}
-    assert api._node_linelists('top', folder, nodes, windows, crop, {}) is None
+    assert api._node_linelists('top', folder, nodes, windows, prune, {}) is None
 
     written = []
     monkeypatch.setattr('tumult.prune.prune_batch',
                         lambda jobs, **kw: written.extend(Path(p) for p, _n in jobs) or written)
-    mapping = api._node_linelists(tmp_path, base, nodes, windows, crop, {})
+    mapping = api._node_linelists(tmp_path, base, nodes, windows, prune, {})
     assert list(mapping) == [('n', 0)]
     assert written == [Path(mapping[('n', 0)])]
     assert Path(mapping[('n', 0)]).name == 't5750g45m+00v10.txt'
-    # the skirt, the windows and the rung the crop was made at all key the crop
-    for changed in ({**crop, 'skirt': 2.0}, {**crop, 'abundances': 'Fe=+0.80'}):
-        assert api._crop_digest(base, windows, changed) != api._crop_digest(base, windows, crop)
-    assert api._crop_digest(base, [(5000., 5003.)], crop) != api._crop_digest(base, windows, crop)
+    # the skirt, the windows and the rung the pruning was made at all key the pruning
+    for changed in ({**prune, 'skirt': 2.0}, {**prune, 'abundances': 'Fe=+0.80'}):
+        assert api._prune_digest(base, windows, changed) != api._prune_digest(base, windows, prune)
+    assert api._prune_digest(base, [(5000., 5003.)], prune) != api._prune_digest(base, windows, prune)
 
 
 def test_unfolded_ladder_is_one_batch_of_per_variant_runs(tmp_path, monkeypatch):
@@ -181,3 +181,83 @@ def test_unfolded_ladder_is_one_batch_of_per_variant_runs(tmp_path, monkeypatch)
     api.compute_window_batch(tmp_path / 'synth', (5750., 4.5, 0., 1.), {}, fold=True,
                              **kwargs)
     assert len(batches) == 1 and len(batches[0]) == 1, "a folded ladder is one run per node"
+
+
+def test_node_store_launches_only_new_rungs_and_rejects_a_second_run(tmp_path, monkeypatch):
+    """A workflow's node store must serve a rung it holds and refuse a conflicting run.
+
+    A solver asks for overlapping ladders at every trial star; the rungs it already has on a
+    node must come from memory, not from another launch or disk read. One grid point has one
+    run in a workflow, so a request that would give the same point another run folder (here,
+    other windows) is an error rather than a silent second entry.
+    """
+    from tumult.synthesis import api
+
+    node = (('n', 0), 5750., 4.5, 0.0, 1.0, 1.0, str(tmp_path / 'a.mod'), None)
+    monkeypatch.setattr(api, 'select_nodes', lambda *a, **kw: ([node], 1.0))
+    monkeypatch.setattr(api, '_assemble_grid', lambda *a, **kw: object())
+    monkeypatch.setattr(api, '_interp_crop', lambda grid, lo, hi, method: (lo, hi))
+    launched = []
+
+    def fake_run_batch(jobs, *a, **kw):
+        launched.extend(nml['composition_params']['abundances'] for _key, _path, nml in jobs)
+        return {key: SimpleNamespace(has_spectrum=True, mode='LTE', folder=path)
+                for key, path, _nml in jobs}
+
+    monkeypatch.setattr(api, '_run_batch', fake_run_batch)
+    store = api.NodeStore()
+
+    def ladder(offsets, windows):
+        variants = [{'composition_params': {'abundances': f'Fe={off:.4f}'},
+                     'linelist_params': {'linelist_file': ['master.txt']}}
+                    for off in offsets]
+        return api.compute_window_batch(
+            tmp_path / 'synth', (5750., 4.5, 0., 1.), {}, settings_list=variants,
+            windows=windows, R=300000., launch_kwargs={'cwd': str(tmp_path)},
+            max_threads=1, store=store, abundances=list(offsets))
+
+    windows = [(5000., 5002.), (5100., 5102.)]
+    ladder((-0.25, 0.0, 0.25), windows)
+    assert len(launched) == 3
+    launched.clear()
+    results = ladder((0.0, 0.25, 0.5), windows)
+    assert launched == ['Fe=0.5'], "only the new rung is launched"
+    assert len(results) == 3 and all(len(r) == len(windows) for r in results)
+    with pytest.raises(RuntimeError, match="Two runs for one grid point"):
+        ladder((0.0,), [(5000., 5002.)])
+
+
+def test_probe_stars_share_the_target_runs_and_add_only_their_own_nodes(tmp_path, monkeypatch):
+    """A probe star is interpolated from the same variants' runs; a node only it needs is
+    launched with the target's, once, and every star gets its own interpolation."""
+    from tumult.synthesis import api
+
+    shared = (('a', 1.0), 5750., 4.5, 0.0, 1.0, 1.0, str(tmp_path / 'a.mod'), None)
+    extra = (('b', 1.0), 6000., 4.5, 0.0, 1.0, 1.0, str(tmp_path / 'b.mod'), None)
+
+    def select_nodes(star, *a, **kw):
+        return ([shared] if star[0] < 5800. else [shared, extra]), star[3]
+
+    monkeypatch.setattr(api, 'select_nodes', select_nodes)
+    monkeypatch.setattr(api, '_assemble_grid',
+                        lambda views, star, *a, **kw: (star[0], sorted(views)))
+    monkeypatch.setattr(api, '_interp_crop', lambda grid, lo, hi, method: grid)
+    launched = []
+
+    def fake_run_batch(jobs, *a, **kw):
+        launched.extend(key for key, _path, _nml in jobs)
+        return {key: SimpleNamespace(has_spectrum=True, mode='LTE', folder=path)
+                for key, path, _nml in jobs}
+
+    monkeypatch.setattr(api, '_run_batch', fake_run_batch)
+    variants = [{'composition_params': {'abundances': f'Fe={off:.4f}'},
+                 'linelist_params': {'linelist_file': ['master.txt']}} for off in (0.0, 0.5)]
+    results = api.compute_window_batch(
+        tmp_path / 'synth', (5750., 4.5, 0., 1.), {}, settings_list=variants,
+        windows=[(5000., 5002.)], R=300000., launch_kwargs={'cwd': str(tmp_path)},
+        max_threads=1, store=api.NodeStore(), abundances=[0.0, 0.5],
+        probes=[(5850., 4.5, 0., 1.)])
+    assert len(launched) == 4, "two variants on the union of two nodes, each once"
+    target, probe = results
+    assert target[0][0] == (5750., [('a', 1.0)])
+    assert probe[1][0] == (5850., [('a', 1.0), ('b', 1.0)])

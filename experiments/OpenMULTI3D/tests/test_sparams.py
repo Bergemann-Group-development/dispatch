@@ -129,94 +129,30 @@ def test_converged_ignores_held_parameters():
     assert not sp.converged(off, free={k: False for k in sp.PARAM_KEYS})
 
 
-# --- solver ---------------------------------------------------------------------------------
+# --- uncertainties -------------------------------------------------------------------------
 
 TRUTH = {"teff": 5900.0, "logg": 4.30, "feh": -0.20, "vmic": 1.20}
-# a fabricated diagonal linear model diag = J_true * (p - p_true), with sensitivities
-# deliberately different from sparams.DEFAULT_JAC so the secant refinement has work to do
+# diagonal sensitivities d(diagnostic)/d(parameter), as a fit of the former diagonal solver
+# stored them in ``jac``
 J_TRUE = {"teff": -8.0e-5, "logg": 0.55, "feh": -1.0, "vmic": -0.22}
 
 
-def _model_diags(params):
-    d = {}
-    for key in sp.PARAM_KEYS:
-        d[sp.DIAG_FOR[key]] = J_TRUE[key] * (params[key] - TRUTH[key])
-    return d
-
-
-def test_step_converges_on_linear_model():
-    params = {"teff": 5400.0, "logg": 4.8, "feh": 0.2, "vmic": 0.8}
-    state = sp.SolverState(params=dict(params))
-    for _ in range(15):
-        diags = _model_diags(state.params)
-        if sp.converged(diags):
-            break
-        sp.step(state, diags)
-    assert sp.converged(_model_diags(state.params))
-    assert state.params["teff"] == pytest.approx(TRUTH["teff"], abs=25.0)
-    assert state.params["logg"] == pytest.approx(TRUTH["logg"], abs=0.03)
-    assert state.params["feh"] == pytest.approx(TRUTH["feh"], abs=0.02)
-    assert state.params["vmic"] == pytest.approx(TRUTH["vmic"], abs=0.05)
-
-
-def test_step_respects_clamps_and_bounds():
-    params = {"teff": 4000.0, "logg": 4.4, "feh": 0.0, "vmic": 1.0}
-    state = sp.SolverState(params=dict(params),
-                           bounds={"teff": (3900.0, 4150.0), "feh": (-0.05, 0.05)})
-    diags = {"s_exc": 0.5, "s_rew": 0.0, "d_ion": 0.0, "d_feh": -3.0}
-    new = sp.step(state, diags)
-    # a huge excitation slope is clamped to one STEP_CLAMP, then to the grid box
-    assert new["teff"] <= 4150.0
-    assert new["teff"] - params["teff"] <= sp.STEP_CLAMP["teff"] + 1e-9
-    assert -0.05 <= new["feh"] <= 0.05
-    # untouched axes hold still on zero diagnostics
-    assert new["logg"] == params["logg"] and new["vmic"] == params["vmic"]
-
-
-def test_step_holds_fixed_parameters():
-    """A held parameter does not move, however large its diagnostic."""
-    params = {"teff": 5400.0, "logg": 4.8, "feh": 0.2, "vmic": 0.8}
-    state = sp.SolverState(params=dict(params))
-    free = {"teff": True, "logg": False, "feh": False, "vmic": True}
-    new = sp.step(state, {"s_exc": 0.05, "s_rew": 0.1, "d_ion": 0.4, "d_feh": 0.4},
-                  free=free)
-    assert new["logg"] == params["logg"] and new["feh"] == params["feh"]
-    assert new["teff"] != params["teff"] and new["vmic"] != params["vmic"]
-
-
-def test_step_holds_param_on_nan_diagnostic():
-    state = sp.SolverState(params={"teff": 5777.0, "logg": 4.4, "feh": 0.0, "vmic": 1.0})
-    new = sp.step(state, {"s_exc": float("nan"), "s_rew": 0.0,
-                          "d_ion": 0.1, "d_feh": 0.0})
-    assert new["teff"] == 5777.0
-    assert new["logg"] != 4.4
-
-
-def test_secant_updates_keep_sign_and_window():
-    state = sp.SolverState(params={"teff": 5400.0, "logg": 4.4, "feh": 0.0, "vmic": 1.0})
-    sp.step(state, _model_diags(state.params))
-    sp.step(state, _model_diags(state.params))
-    lo, hi = sp.JAC_CLAMP
-    for key in sp.PARAM_KEYS:
-        ref = sp.DEFAULT_JAC[key]
-        assert state.jac[key] * ref > 0                      # sign preserved
-        assert lo * abs(ref) - 1e-12 <= abs(state.jac[key]) <= hi * abs(ref) + 1e-12
-    # the teff entry actually moved toward the true (stronger) sensitivity
-    assert abs(state.jac["teff"]) > abs(sp.DEFAULT_JAC["teff"])
-
-
-def test_uncertainties():
+def test_diagonal_jacobian_gives_per_parameter_errors():
+    """Without cross terms the covariance reduces to sigma_p = sigma_diag / |J_pp|, which is
+    what an older fit's stored sensitivities re-aggregate to."""
     diags = {"s_exc_err": 0.004, "s_rew_err": 0.02, "d_ion_err": 0.05,
              "d_feh_err": 0.03}
-    sig = sp.uncertainties(diags, dict(J_TRUE))
+    jacobian = {sp.DIAG_FOR[k]: {q: (v if q == k else 0.0) for q in J_TRUE}
+                for k, v in J_TRUE.items()}
+    sig, _cov = sp.coupled_uncertainties(diags, jacobian)
     assert sig["teff"] == pytest.approx(0.004 / 8.0e-5)
     assert sig["logg"] == pytest.approx(0.05 / 0.55)
     assert sig["feh"] == pytest.approx(0.03)
     assert sig["vmic"] == pytest.approx(0.02 / 0.22)
-    assert np.isnan(sp.uncertainties({}, dict(J_TRUE))["teff"])
+    assert np.isnan(sp.coupled_uncertainties({}, jacobian)[0]["teff"])
     # a held parameter was not determined here, so it gets no error of its own
-    held = sp.uncertainties(diags, dict(J_TRUE),
-                            {"teff": True, "logg": False, "feh": True, "vmic": True})
+    held, _cov = sp.coupled_uncertainties(
+        diags, jacobian, {"teff": True, "logg": False, "feh": True, "vmic": True})
     assert np.isnan(held["logg"]) and held["teff"] == pytest.approx(0.004 / 8.0e-5)
 
 
@@ -304,50 +240,6 @@ def test_is_ion_stage():
     assert not sp.is_ion_stage("Fe II", 1)
     assert not sp.is_ion_stage("Fe", 1)
     assert not sp.is_ion_stage("Fe III", 2)
-
-
-# --- the shared ladder ---------------------------------------------------------------
-
-def _shared_ladder(centres, span=0.4, npts=3):
-    """The rule solve_ionisation_balance uses to build one ladder for every line."""
-    mean = float(np.mean(centres))
-    half = span + max(abs(c - mean) for c in centres)
-    n = max(npts, int(np.ceil(half / span * (npts - 1))) + 1)
-    return np.linspace(mean - half, mean + half, n)
-
-
-def test_shared_ladder_spans_every_line():
-    """It has to reach the outliers, since all lines invert against the same rungs."""
-    centres = [-0.25, -0.05, 0.10, 0.30]
-    lad = _shared_ladder(centres)
-    assert lad[0] <= min(centres) - 0.4 + 1e-9
-    assert lad[-1] >= max(centres) + 0.4 - 1e-9
-
-
-def test_shared_ladder_is_not_coarser_than_the_per_line_one():
-    """Widening the span must not cost curve-of-growth resolution."""
-    lad = _shared_ladder([-0.25, -0.05, 0.10, 0.30])
-    assert np.diff(lad).max() <= 2 * 0.4 / (3 - 1) + 1e-9
-
-
-def test_shared_ladder_inverts_like_a_per_line_ladder():
-    """The behavioural price of folding the iteration into one run.
-
-    A saturated curve of growth is where ladder spacing matters most: dEW/dA is small, so
-    an interpolation error converts into a large abundance error. The shared ladder must
-    still land within the 0.01 dex the solver's tolerances assume.
-    """
-    def ew_of(a):
-        return 40.0 * np.log1p(np.exp((a + 0.3) * 2.2))
-
-    centres = [-0.25, -0.05, 0.10, 0.30]
-    shared = _shared_ladder(centres)
-    for c in centres:
-        per_line = np.linspace(c - 0.4, c + 0.4, 3)
-        target = ew_of(c + 0.07)
-        a_per = ab.cog_invert(per_line, ew_of(per_line), target, ew_err=0.0)["a"]
-        a_shared = ab.cog_invert(shared, ew_of(shared), target, ew_err=0.0)["a"]
-        assert abs(a_per - a_shared) < 0.01
 
 
 # --- the shared abundance-override builder ------------------------------------------------

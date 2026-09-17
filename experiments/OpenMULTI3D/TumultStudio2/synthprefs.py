@@ -54,11 +54,11 @@ PREF_PAGES = {
         # fit controls: Teff/logg/[Fe/H] are sampled at the atmosphere-grid nodes (no step);
         # only the continuous overrides (vmic via vmic_step, abundances) have a lattice step.
         ("abund_step", "Fit: abundance grid step [dex]", "number", 0.25),
-        # Per-node line-list crop (tumult.synthesis.api._node_linelists): how far outside a
-        # window a line may still contribute. 0 disables the crop and every run reads the
+        # Per-node line-list pruning (tumult.synthesis.api._node_linelists): how far outside a
+        # window a line may still contribute. 0 disables pruning and every run reads the
         # whole list. 5 A keeps the measured EW error at ~0.06% mean with the local
         # continuum fit, where 20 A is no better and 1 A starts clipping strong wings.
-        ("linelist_crop_aa", "Line-list padding [Å] (0 = off)", "number", 5.0),
+        ("linelist_skirt_aa", "Line-list padding [Å] (0 = off)", "number", 5.0),
         ("fit_max_rounds", "Fit: max refinement rounds", "number", 6),
         ("max_threads", "Max threads (0 = all cores)", "number", 0),
         # Both runners keep a synthesis alive across a server restart; the Slurm script
