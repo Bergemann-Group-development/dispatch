@@ -108,7 +108,7 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
   state on entry. The continuum editor is one.
 - *out of date*: a solved result whose inputs differ from those it was solved from
   (`stale_reasons` on the result and on its tool). The target is compared by its digest and
-  recorded preparation; a balance also by `solved_key`, the fingerprint of its included lines,
+  recorded preparation (not its convolution, which measurements do not read); a balance also by `solved_key`, the fingerprint of its included lines,
   EWs and local continua. Derived on every render, never stored. Distinct from a line
   mask's *Source edited* flag, which compares a balance with the set it was measured from.
 

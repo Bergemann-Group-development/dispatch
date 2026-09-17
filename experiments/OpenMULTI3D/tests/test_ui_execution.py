@@ -3054,6 +3054,9 @@ def test_abundance_result_is_out_of_date_after_a_filter_toggle(tmp_path):
     tool.select_result(res.uid)
     stale = tool._stale_bridge
     assert stale.value == "" and "Previous solution" not in tool.table_html(res)
+    obj.conv = {"vshift": 1.0}        # display-only: the measured target is unchanged
+    ctx.emit("filter-state", exists=False, visible=False)
+    assert stale.value == "" and tool.stale_reasons(res) == {}
     x, y = obj.spectrum.values
     ctx.canvas.apply_filter({obj.uid: Spectrum(x, np.clip(y + 0.05, 0, 1))})
     ctx.emit("filter-state", exists=True, visible=True)

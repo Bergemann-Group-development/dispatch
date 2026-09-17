@@ -522,7 +522,9 @@ class AbundanceWizard(Tool):
 
     def _preparation_changes(self, res):
         """What differs between the preparation ``res`` recorded and its target's current
-        one, in words; empty when either is unknown."""
+        one, in words; empty when either is unknown. Only what the measurement reads counts:
+        the convolution stays in the record as provenance but is not applied to the target
+        the lines are measured on."""
         recorded = res.preparation or {}
         obj = self.canvas._find(res.ref_uid) if res.ref_uid is not None else None
         if not recorded or obj is None:
@@ -533,8 +535,6 @@ class AbundanceWizard(Tool):
             changes.append("filtering was switched " + ("on" if now["filtered"] else "off"))
         if recorded.get("normalisation", now["normalisation"]) != now["normalisation"]:
             changes.append(f"the target now uses {now['normalisation']}")
-        if dict(recorded.get("convolution", now["convolution"])) != now["convolution"]:
-            changes.append("the target's convolution changed")
         return changes
 
     def stale_reasons(self, res):

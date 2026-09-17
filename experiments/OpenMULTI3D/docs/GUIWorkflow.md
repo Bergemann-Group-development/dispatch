@@ -67,8 +67,9 @@ current solution first. The previous values stay visible, tagged *Previous solut
 the balance parameter block, the status line under its table and the abundance mean. The
 sidebar row carries an *Out of date* flag.
 
-- Target changes: filtering switched on or off, a different or edited continuum, a changed
-  convolution. Solving again measures the lines' EWs on the current target first
+- Target changes: filtering switched on or off, a different or edited continuum. Only
+  inputs the measurement reads count; the convolution is recorded as provenance but is not
+  applied to the measured target, so changing it leaves the result current. Solving again measures the lines' EWs on the current target first
   (`sync_target`) and records its preparation.
 - Balance lines: including or excluding a line, editing a local continuum and completing
   its rungs. The diagnostics follow these edits at once from the stored per-line
