@@ -759,15 +759,10 @@ def build():
                                 if abundcorrtool._pending_atom is not None else []),
         notify=notify)
 
-    def add_corr_spectrum(spec, name):
-        color, dash = canvas.next_run_style()
-        canvas.add_object(spec, name=name, color=color, dash=dash, source=("synth", None))
-
     abundcorrtool = AbundCorrTool(
         ctx,
         setup=corr_setup,
-        grids=synth_modal.grids,
-        add_spectrum=add_corr_spectrum)
+        grids=synth_modal.grids)
 
     # the model-atom objects: Open → Model atom loads one; its view is the two
     # tables, its panel the entry point of the correction modal, and its correction results

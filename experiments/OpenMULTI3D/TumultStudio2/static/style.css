@@ -1160,5 +1160,4 @@ num-input[disabled] .num-spin button { cursor: not-allowed; }
 }
 .advanced[open] > summary .advanced-values { display: none; }
 .empty-card .session-load { margin-top: 0; }
-.empty-card:not(:has(.session-item.autosave)) #empty-resume { display: none; }
 .session-item.autosave > i { color: var(--accent); }
