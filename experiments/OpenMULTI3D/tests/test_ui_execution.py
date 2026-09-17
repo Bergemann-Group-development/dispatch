@@ -429,6 +429,28 @@ def test_mask_tool_range_feeds_line_masks_and_the_synthesis_modal():
         ((5004.5, 5005.5), (5004.0, 5006.0)), ((5001.0, 5002.0), (5000.5, 5002.5))]
 
 
+def test_mask_actions_require_an_element_only_where_the_analysis_diagnoses_one():
+    """Synthesising or fitting a set's windows needs no element; measuring abundances and
+    fitting an ionisation balance do."""
+    import re
+    from masktool import MaskTool
+
+    tool = MaskTool.__new__(MaskTool)
+    tool.on_synth = tool.on_fit = tool.on_measure_abund = tool.on_fit_balance = print
+    mset = SimpleNamespace(element="", masks=[SimpleNamespace(include=True)])
+
+    def disabled(mset):
+        buttons = re.findall(r'<button class="text-btn (lm-[\w-]+)"([^>]*)>', tool._analysis_html(mset))
+        return {cls: " disabled" in attrs for cls, attrs in buttons}
+
+    assert disabled(mset) == {"lm-synthesize": False, "lm-fit": False,
+                              "lm-measure-abund": True, "lm-fit-balance": True}
+    mset.element = "Fe"
+    assert not any(disabled(mset).values())
+    mset.masks[0].include = False
+    assert all(disabled(mset).values())
+
+
 def test_range_fields_always_show_the_active_range():
     """An edit to λ min / λ max that does not make a range is refused and the fields are
     put back, so Synthesise acts on the range the panel shows."""

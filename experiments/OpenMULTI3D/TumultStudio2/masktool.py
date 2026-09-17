@@ -452,27 +452,32 @@ class MaskTool(Tool):
         result), because everything it holds depends on the spectrum it was measured on, not
         on these windows.
         """
-        # what each analysis does is stated in the header of the modal it opens
+        # what each analysis does is stated in the header of the modal it opens; the flag
+        # marks the analyses that diagnose one element and so need the set to name it
         actions = [(self.on_synth, "lm-synthesize", "Synthesise windows\u2026",
-                    "Synthesise a spectrum over these windows"),
+                    "Synthesise a spectrum over these windows", False),
                    (self.on_fit, "lm-fit", "Fit windows\u2026",
-                    "Fit a target spectrum inside these windows"),
+                    "Fit a target spectrum inside these windows", False),
                    (self.on_measure_abund, "lm-measure-abund", "Measure abundances",
-                    "Measure these windows on a reference and invert each EW to an abundance"),
+                    "Measure these windows on a reference and invert each EW to an abundance",
+                    True),
                    (self.on_fit_balance, "lm-fit-balance", "Fit ionisation balance",
-                    "Measure these windows on a spectrum and fit stellar parameters")]
+                    "Measure these windows on a spectrum and fit stellar parameters", True)]
         actions = [a for a in actions if a[0] is not None]
         if not actions:
             return ""
-        n = sum(1 for m in mset.masks if m.include)
-        why = ("Set the element these windows diagnose first." if not mset.element else
-               "Switch on at least one window." if not n else "")
+        no_windows = ("Switch on at least one window."
+                      if not any(m.include for m in mset.masks) else "")
+        no_element = "" if mset.element else "Set the element these windows diagnose first."
         out = ['<div class="section-header">Analysis</div>']
-        for _, cls, label, title in actions:
+        hints = []
+        for _, cls, label, title, needs_element in actions:
+            why = no_windows or (no_element if needs_element else "")
             out.append(f'<button class="text-btn {cls}"{" disabled" if why else ""} '
                        f'title="{html.escape(why or title)}">{label}</button>')
-        if why:
-            out.append(f'<div class="hint">{html.escape(why)}</div>')   # ... once, for all
+            if why and why not in hints:
+                hints.append(why)
+        out += [f'<div class="hint">{html.escape(why)}</div>' for why in hints]
         return "".join(out)
 
     def table_html(self):
