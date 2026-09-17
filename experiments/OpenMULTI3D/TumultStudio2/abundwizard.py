@@ -971,6 +971,19 @@ class AbundanceWizard(Tool):
         self.continuum_markers.visible = self.continuum_curve.visible = False
         self.canvas.release_edit_tool(self.continuum_drag)
 
+    def _set_hatch(self, res, ln):
+        """Hatch ``ln``'s measured EW area, through its local continuum when enabled. A line
+        restored from a task or session has no live profile; it is measured again here."""
+        if ln.fit_func is None and np.all(np.isfinite(ln.fit_window)):
+            spec = self._result_spec(res)
+            if spec is not None:
+                try:
+                    ln.fit_func = ab.measured_profile_func(ln, spec, res.profile)
+                except (ValueError, RuntimeError):
+                    pass
+        self.canvas.set_abund_hatch(ln.fit_func, ln.fit_window,
+                                    nodes=ln.continuum if ln.renorm else None)
+
     def _render_continuum(self):
         res = self.selected()
         if (self.prefix not in ("abund", "ionbal") or not self.active
@@ -988,7 +1001,7 @@ class AbundanceWizard(Tool):
             self._continuum_sync = False
         self.continuum_markers.visible = self.continuum_curve.visible = True
         self.canvas.claim_edit_tool(self.continuum_drag)
-        self.canvas.set_abund_hatch(ln.fit_func, ln.fit_window, nodes=ln.continuum)
+        self._set_hatch(res, ln)
 
     def _continuum_changed(self, res, ln, **kwargs):
         spec = self._result_spec(res)

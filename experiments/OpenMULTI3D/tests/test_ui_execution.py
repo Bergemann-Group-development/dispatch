@@ -2472,6 +2472,52 @@ def test_measurement_continuum_markers_keep_target_coordinates(tool_name):
         callback(None)
 
 
+@pytest.mark.parametrize('tool_name', ['abundance', 'ionbal'])
+def test_the_ew_hatch_follows_the_local_continuum_toggle(tool_name):
+    """A line restored without its live profile is hatched when jumped to, on the unit
+    continuum; the local continuum toggle moves the hatch onto its nodes and back."""
+    from tumult import continuum as cont
+    from tumult.abundance import AbundanceResult, LineResult
+    from tumult.measurement import BalanceResult
+    from tumult.linemask import LineMask
+    document, ctx = _build_document()
+    xx = np.linspace(4999., 5001., 401)
+    yy = (1.03 + .015 * (xx - 5000)) * (1 - .3*np.exp(-.5*((xx-5000)/.1)**2))
+    obj = ctx.canvas.add_object(Spectrum(xx, yy), name='target')
+    ln = LineResult(5000., 'Fe I', 1., -1.,
+                    mask=LineMask(lmin=4999.5, lmax=5000.5, smin=4999., smax=5001.))
+    assert ln.fit_func is None
+    cls = AbundanceResult if tool_name == 'abundance' else BalanceResult
+    extra = {'symbol': 'Fe', 'summary': {}} if tool_name == 'abundance' else {}
+    res = cls(lines=[ln], element='Fe', ref_uid=obj.uid, profile='gauss',
+               snr=100., cont_pct=.5, **extra)
+    tool = ctx.tools._tools[tool_name]
+    tool.results.append(res)
+    ctx.tools.activate(tool_name)
+    tool.select_result(res.uid)
+    hatch = ctx.canvas.abund_area_source
+
+    tool.actions.value = 'jump-line:0:1'
+    assert ctx.canvas.abund_area_line.visible
+    np.testing.assert_array_equal(hatch.data['y2'], 1.)
+    tool.actions.value = 'continuum:0:2'
+    assert ln.renorm
+    np.testing.assert_allclose(hatch.data['y2'], cont.model_continuum(
+        ln.continuum, np.linspace(4999.5, 5000.5, 512)))
+    tool.actions.value = 'continuum:0:3'
+    assert not ln.renorm and ctx.canvas.abund_area_line.visible
+    np.testing.assert_array_equal(hatch.data['y2'], 1.)
+    # the column header's select all/none switches it the same way
+    tool.actions.value = 'check-all:continuum:4'
+    assert ln.renorm and 'data-checkact="none"' in tool.table_html(res)
+    assert not np.all(hatch.data['y2'] == 1.)
+    tool.actions.value = 'check-none:continuum:5'
+    assert not ln.renorm
+    np.testing.assert_array_equal(hatch.data['y2'], 1.)
+    for callback in list(document.session_destroyed_callbacks):
+        callback(None)
+
+
 def test_a_fit_reads_the_filtered_target_and_records_its_preparation(tmp_path, monkeypatch):
     """With filtering active, the synthesis fit is submitted the filtered flux the canvas
     shows (as the abundance tools measure it), and its record names that preparation."""

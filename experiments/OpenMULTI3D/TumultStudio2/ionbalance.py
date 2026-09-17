@@ -507,9 +507,7 @@ class IonBalanceTool(AbundanceWizard):
     def _jump_decor(self, res, ln):
         # the windows and the inverted syntheses are already on the canvas — jumping hatches
         # this line's measured profile and moves the accent onto it.
-        if ln.fit_func is not None:
-            self.canvas.set_abund_hatch(ln.fit_func, ln.fit_window,
-                                        nodes=ln.continuum if ln.renorm else None)
+        self._set_hatch(res, ln)
         self._jumped = next((i for i, l in enumerate(res.lines) if l is ln), None)
         self._render_decor(self._jumped)
 

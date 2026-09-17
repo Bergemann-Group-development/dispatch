@@ -117,8 +117,9 @@ def sanitise(cont):
     return np.where(np.isfinite(cont) & (cont != 0.0), cont, np.nan)
 
 
-def local_linear(x, y, percentile=SEED_PERCENTILE):
-    """The straight local pseudo-continuum under a line window, evaluated on ``x``.
+def local_linear(x, y, percentile=SEED_PERCENTILE, at=None):
+    """The straight local pseudo-continuum fitted to ``(x, y)``, evaluated on ``at``
+    (default ``x``).
 
     Uses the same upper-envelope estimator as :func:`seed_local`. Measurement workflows
     keep their nodes fixed; this function is the separate automatic array operation.
@@ -132,24 +133,27 @@ def local_linear(x, y, percentile=SEED_PERCENTILE):
     Falls back to a flat :func:`flat_level` when a line cannot be fitted.
     """
     x = np.asarray(x, float)
+    at = x if at is None else np.asarray(at, float)
     fit = upper_envelope_fit(x, y, percentile)
     if fit is None:
         level = flat_level(y, percentile) if x.size else 1.0
-        return np.full(x.shape, level if np.isfinite(level) and level != 0 else 1.0)
+        return np.full(at.shape, level if np.isfinite(level) and level != 0 else 1.0)
     slope, intercept = fit
-    return slope * x + intercept
+    return slope * at + intercept
 
 
-def divide_local(spec, percentile=SEED_PERCENTILE):
+def divide_local(spec, percentile=SEED_PERCENTILE, window=None):
     """``spec`` divided by its own local straight pseudo-continuum (see :func:`local_linear`).
 
-    The whole extent of ``spec`` is the fit region, so a caller crops to the window whose
-    continuum it wants before calling — for a line that is the synth/visual window, wider
-    than the one the width is integrated over, exactly as the markers are placed.
+    The continuum is fitted over ``window`` (in ``spec``'s x unit; its whole extent when
+    omitted) and divided out everywhere. For a line that window is the synth window, wider
+    than the one the width is integrated over, exactly as the markers are placed; a
+    synthesis padded beyond it keeps its padding for convolution.
     """
     x, y = (np.asarray(v, float) for v in spec.values[:2])
-    cont = local_linear(x, y, percentile)
-    return Spectrum(x, y / np.where(cont == 0, 1.0, cont), yunit=spec.yunit)
+    inside = slice(None) if window is None else (x >= window[0]) & (x <= window[1])
+    cont = local_linear(x[inside], y[inside], percentile, at=x)
+    return spec / np.where(cont == 0, 1.0, cont)
 
 
 def reject_outliers(spec, *, resolution=None, window=None, percentile=None):

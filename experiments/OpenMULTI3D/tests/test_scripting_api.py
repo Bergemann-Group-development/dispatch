@@ -497,6 +497,7 @@ def test_complete_edited_result_preserves_abundance_convention(config, monkeypat
     shift = 7.6 if balance else 0.
     ln.cog_specs = {a + shift: _line(a) for a in [-1., 0., 1.]}
     ln.cog_step, ln.cog_origin = .25, shift
+    ln.method = 'cog'
     if balance:
         result = BalanceResult(lines=[ln], element='Mg', profile='trapz', request=request,
                                 params=dict(STAR), solar_x=shift, stage='solved',

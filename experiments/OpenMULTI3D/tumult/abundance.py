@@ -221,6 +221,21 @@ def _renormalised(spec, renorm):
     return divide_local(spec)
 
 
+def line_synthesis(line, spec):
+    """A synthetic spectrum as ``line`` compares it with its target.
+
+    With the line's local continuum enabled, the synthesis may carry a pseudo-continuum of
+    its own (the far wings of lines outside the window), so it is divided by its own
+    straight continuum, fitted to its upper envelope over the synth window
+    (:func:`~tumult.continuum.divide_local`), the estimator that seeds the target's nodes.
+    Stored rungs stay raw, so switching the continuum off restores the plain comparison.
+    """
+    if not line.renorm:
+        return spec
+    from .continuum import divide_local
+    return divide_local(spec.convert_units(xunit=u.AA), window=line.window)
+
+
 def _ew(spec, window=None, profile="trapz", x0=None, renorm=False):
     """Noiseless *width* EW of a (synthetic) spectrum over ``window``, in mÅ."""
     return measure_profile(_renormalised(spec, renorm), window,
@@ -904,7 +919,8 @@ def _mask_windows(quadrature):
 def _solution_spec(ln):
     """The line's rungs interpolated at its inverted abundance, over its synth window."""
     offsets = sorted(ln.cog_specs)
-    return cog_spectrum(offsets, [ln.cog_specs[a] for a in offsets], ln.a)
+    return cog_spectrum(offsets, [line_synthesis(ln, ln.cog_specs[a]) for a in offsets],
+                        ln.a)
 
 
 def refit_line_window(result, ln, lo, hi, *, min_fit_points=MIN_FIT_POINTS):
@@ -938,7 +954,7 @@ def refit_line_window(result, ln, lo, hi, *, min_fit_points=MIN_FIT_POINTS):
         flags.append("ew_unc")
     if ln.cog_specs:
         offsets = sorted(ln.cog_specs)
-        ews = [_ew(ln.cog_specs[a], (lo, hi), result.profile, ln.lam0)
+        ews = [_ew(line_synthesis(ln, ln.cog_specs[a]), (lo, hi), result.profile, ln.lam0)
                for a in offsets]
         ln.a_grid, ln.ew_grid = tuple(offsets), tuple(float(w) for w in ews)
         if not (min(ews) <= ln.ew <= max(ews)):
@@ -1112,7 +1128,8 @@ def adaptive_cog(lines, synthesize, *, step, limit, max_rounds, profile, cancel_
     def invert(ln, offsets, specs):
         for a, spec in zip(offsets, specs):
             if (id(ln), a) not in measured:
-                measured[id(ln), a] = _ew(spec, ln.fit_window, profile, ln.lam0)
+                measured[id(ln), a] = _ew(line_synthesis(ln, spec), ln.fit_window, profile,
+                                          ln.lam0)
         ews = np.array([measured[id(ln), a] for a in offsets])
         ln.a_grid, ln.ew_grid = tuple(offsets), tuple(float(w) for w in ews)
         lo_ew, hi_ew = ews[offsets.index(-edge)], ews[offsets.index(edge)]
@@ -1146,6 +1163,36 @@ def adaptive_cog(lines, synthesize, *, step, limit, max_rounds, profile, cancel_
     return sorted(rungs), bracketed
 
 
+def _fit_line_profile(ln, offsets, specs, target, *, guess):
+    """Fit ``ln``'s abundance, ``vshift`` and ``vdop`` to ``target`` inside its fit window,
+    interpolating its rungs ``specs`` at ``offsets`` along the abundance axis. A fixed local
+    continuum (``renorm``) multiplies the model. Sets ``a``, ``vshift`` and ``vdop``;
+    returns ``(grid, best)``."""
+    from .spectrum_grid import SpectrumGrid
+
+    grid = SpectrumGrid(specs, a=list(offsets))
+    observed = target.crop(xmin=ln.fit_window[0], xmax=ln.fit_window[1])
+    best, _fitted = grid.fit(
+        observed, fit=["a", "vshift", "vdop"],
+        p0={"a": guess, "vshift": 0.0, "vdop": 1.0},
+        continuum=ln.continuum if ln.renorm else None,
+        xtol={"a": 0.01, "vshift": 0.1, "vdop": 0.1})
+    ln.a = float(best["a"])
+    ln.vshift, ln.vdop = float(best["vshift"]), float(best["vdop"])
+    return grid, best
+
+
+def _profile_solution(ln, grid, best, offsets, specs, profile):
+    """The accepted profile fit's overlay (over the synth window, normalised) and ``drewda``,
+    the slope of the PCHIP interpolant through the rungs' reduced EWs at the solution."""
+    from .utils import pchip_mono
+
+    ln.fit_spec = grid.crop(**best)
+    rews = [_rew(spec, ln.fit_window, profile, ln.lam0) for spec in specs]
+    ln.drewda = float(pchip_mono(np.asarray(offsets, float),
+                                 np.asarray(rews, float)).derivative()(ln.a))
+
+
 def fit_profiles(lines, synthesize, target, *, step, limit, max_rounds, profile,
                  cancel_token=None, report=None):
     """Fit every line's abundance, velocity shift and broadening on shared lattice rungs.
@@ -1161,42 +1208,39 @@ def fit_profiles(lines, synthesize, target, *, step, limit, max_rounds, profile,
     the solution, so the gradient and the fit rest on the same lattice. A line whose
     ``|vshift|`` exceeds its measured half width is flagged ``vshift`` and excluded.
 
-    Sets ``a`` (the offset), ``vshift``, ``vdop``, ``drewda`` and ``fit_spec`` on each line.
-    Returns ``(rungs, bracketed)`` as :func:`adaptive_cog` does.
+    Sets ``a`` (the offset), ``vshift``, ``vdop``, ``drewda`` and ``fit_spec`` on each line,
+    and keeps its rungs over its synth window (``cog_specs``, ``cog_step``, ``cog_origin``)
+    so an edited local continuum can be fitted again without another synthesis
+    (:func:`refit_line_profile`). Returns ``(rungs, bracketed)`` as :func:`adaptive_cog`
+    does.
     """
-    from .spectrum_grid import SpectrumGrid
-    from .utils import pchip_mono
-
     active = [ln for ln in lines if ln.include]
     for ln in active:
         ln.method = "fit"
+        ln.cog_step, ln.cog_origin = float(step), 0.0
     edge = lattice_limit(step, limit) - 1e-3
-    post = ("vshift", "vdop")
     previous = {}                      # each line starts from its last round's solution
 
     def fit(ln, offsets, specs):
-        grid = SpectrumGrid(specs, a=list(offsets))
-        observed = target.crop(xmin=ln.fit_window[0], xmax=ln.fit_window[1])
-        guess = previous.get(id(ln), 0.0)
-        best, _fitted = grid.fit(
-            observed, fit=["a", *post], p0={"a": guess, "vshift": 0.0, "vdop": 1.0},
-            continuum=ln.continuum if ln.renorm else None,
-            xtol={"a": 0.01, "vshift": 0.1, "vdop": 0.1})
-        ln.a = previous[id(ln)] = float(best["a"])
-        ln.vshift, ln.vdop = float(best["vshift"]), float(best["vdop"])
+        specs = [line_synthesis(ln, spec) for spec in specs]
+        grid, best = _fit_line_profile(ln, offsets, specs, target,
+                                       guess=previous.get(id(ln), 0.0))
+        previous[id(ln)] = ln.a
         if abs(ln.a) >= edge:
             _exclude(ln, "out_of_range")
             return None
-        # the overlay spans the synth window, not only the fitted samples
-        ln.fit_spec = grid.crop(**best)
-        rews = [_rew(spec, ln.fit_window, profile, ln.lam0) for spec in specs]
-        ln.drewda = float(pchip_mono(np.asarray(offsets, float),
-                                     np.asarray(rews, float)).derivative()(ln.a))
+        _profile_solution(ln, grid, best, offsets, specs, profile)
         return ln.a
 
     rungs, bracketed = lattice_rounds(
         lines, synthesize, fit, step=step, limit=limit, max_rounds=max_rounds,
         cancel_token=cancel_token, report=report, label="Profile fit")
+    index = {id(ln): i for i, ln in enumerate(lines)}
+    for ln in active:
+        lo, hi = ln.window
+        if np.isfinite(lo) and np.isfinite(hi):
+            ln.cog_specs = {a: specs[index[id(ln)]].crop(xmin=lo, xmax=hi)
+                            for a, specs in rungs.items()}
     for ln in active:
         hwhm_kms = velocity_hwhm(ln.fwhm, ln.lam0)
         if (ln.include and np.isfinite(ln.vshift) and np.isfinite(hwhm_kms)
@@ -1492,8 +1536,8 @@ class _LatticeContext:
                 for a in offsets:
                     if (k, id(ln), a) not in self.probe_ews:
                         self.probe_ews[k, id(ln), a] = _ew(
-                            self.probe_rungs[a][k][index[id(ln)]], ln.fit_window, profile,
-                            ln.lam0)
+                            line_synthesis(ln, self.probe_rungs[a][k][index[id(ln)]]),
+                            ln.fit_window, profile, ln.lam0)
                 ews = np.array([self.probe_ews[k, id(ln), a] for a in offsets])
                 solution = (float("nan"), float("nan"))
                 if np.nanmin(ews) <= ln.ew <= np.nanmax(ews):
@@ -1525,11 +1569,12 @@ def screen_lines(context, *, blend_max=0.30, weak_frac=0.10):
         if not ln.include:
             continue
         fw = ln.fit_window
-        ln.ew_species = float(_ew(only[w], fw, "trapz", ln.lam0))
+        ln.ew_species = float(_ew(line_synthesis(ln, only[w]), fw, "trapz", ln.lam0))
         if not np.isfinite(ln.ew_species) or ln.ew_species < weak_frac * ln.ew:
             ln.flags, ln.include = tuple(dict.fromkeys(ln.flags + ("weak_line",))), False
             continue
-        blend, _, _ = blend_fraction(full[w], excluded[w], window=fw, x0=ln.lam0)
+        blend, _, _ = blend_fraction(line_synthesis(ln, full[w]),
+                                     line_synthesis(ln, excluded[w]), window=fw, x0=ln.lam0)
         ln.blend_frac = float(blend)
         if np.isfinite(blend) and blend > blend_max:
             ln.flags, ln.include = tuple(dict.fromkeys(ln.flags + ("blended",))), False
@@ -1592,8 +1637,11 @@ def fit_lines_profile(context, target, *, limit, max_rounds, profile, report=Non
         lines, context.synthesize_offsets(lines), target,
         step=context.request.config.abundance_step, limit=limit, max_rounds=max_rounds,
         profile=profile, cancel_token=context.cancel_token, report=report)
+    x0 = context.base_x
     for ln in lines:
-        ln.a = context.base_x + ln.a if np.isfinite(ln.a) else ln.a
+        ln.a = x0 + ln.a if np.isfinite(ln.a) else ln.a
+        ln.cog_origin += x0
+        ln.cog_specs = {x0 + a: spec for a, spec in ln.cog_specs.items()}
     return bracketed
 
 
@@ -1792,6 +1840,15 @@ def measurement_spectrum(spec, line):
     return spec / cont
 
 
+def measured_profile_func(line, target, profile):
+    """The profile ``f(λ_Å) -> normalised flux`` measured for ``line`` on ``target`` over
+    its fit window (through its local continuum), for a line that does not carry it:
+    ``fit_func`` is a live callable and does not survive serialisation."""
+    target = target.convert_units(xunit=u.AA)
+    return measure_ew(measurement_spectrum(target, line), window=line.fit_window,
+                      profile=profile, x0=line.lam0).func
+
+
 def displayed_model(line):
     """The fitted spectrum in the prepared target's fixed coordinate system."""
     if line.fit_spec is None or not line.renorm:
@@ -1801,23 +1858,90 @@ def displayed_model(line):
                                           line.fit_spec.xdata.to_value(u.AA))
 
 
+def refresh_line(line, profile, target=None):
+    """Solve an edited line again on its cached rungs, by the method it was solved with:
+    :func:`refit_line_profile` (which needs the ``target``) for a profile fit, else
+    :func:`refresh_line_cog`."""
+    if line.method == "fit":
+        if target is None:
+            raise ValueError("A profile-fitted line needs its target to be fitted again")
+        refit_line_profile(line, target, profile)
+    else:
+        refresh_line_cog(line, profile)
+
+
+def _start_refresh(line):
+    """Clear an edited line's refresh flags; False (flagged ``refit_required``, without an
+    abundance) when it lacks the cached lattice a refresh needs. A profile overlay stays as
+    a preview while the markers move."""
+    line.flags = tuple(f for f in line.flags
+                       if f not in ("missing_rungs", "out_of_range", "refit_required"))
+    line.missing_rungs = ()
+    step = line.cog_step
+    if len(line.cog_specs) < 2 or not (np.isfinite(step) and step > 0):
+        line.a = line.sigma_a = line.drewda = float("nan")
+        line.flags += ("refit_required",)
+        return False
+    return True
+
+
+def _missing_rungs(line, needed):
+    """Record the ``needed`` rungs ``line`` has not cached; True (and no abundance) when
+    there are any."""
+    offsets = line.cog_specs
+    line.missing_rungs = tuple(sorted({round(float(a), 10) for a in needed
+                                       if not any(abs(a - b) < 1e-8 for b in offsets)}))
+    if not line.missing_rungs:
+        return False
+    line.a = line.sigma_a = line.drewda = float("nan")
+    line.fit_spec = None
+    line.flags += ("missing_rungs",)
+    return True
+
+
+def _lattice_cell(line, a):
+    """The lattice points of ``line``'s rungs that bracket ``a``."""
+    k = (a - line.cog_origin) / line.cog_step
+    return [line.cog_origin + np.floor(k + 1e-9) * line.cog_step,
+            line.cog_origin + np.ceil(k - 1e-9) * line.cog_step]
+
+
+def refit_line_profile(line, target, profile):
+    """Fit a profile-fitted line again on its cached rungs, with its current local continuum.
+
+    No synthesis runs. The rungs span the fit's whole abundance range, so a solution at
+    either end is flagged ``out_of_range``. A solution in a lattice cell whose rungs are
+    not cached requests them (``missing_rungs``). Either way no abundance is reported, and
+    the include choice is retained.
+    """
+    if not _start_refresh(line):
+        return
+    offsets = sorted(line.cog_specs)
+    specs = [line_synthesis(line, line.cog_specs[a]) for a in offsets]
+    lo, hi = offsets[0], offsets[-1]
+    guess = line.a if np.isfinite(line.a) and lo <= line.a <= hi else offsets[len(offsets) // 2]
+    grid, best = _fit_line_profile(line, offsets, specs, target, guess=guess)
+    if not lo + 1e-3 < line.a < hi - 1e-3:
+        line.a = line.sigma_a = line.drewda = float("nan")
+        line.fit_spec = None
+        line.flags += ("out_of_range",)
+        return
+    if _missing_rungs(line, _lattice_cell(line, line.a)):
+        return
+    _profile_solution(line, grid, best, offsets, specs, profile)
+
+
 def refresh_line_cog(line, profile):
     """Invert an edited EW using cached spectra and flag absent nearest lattice rungs.
 
     Outside the cached range, request one more lattice interval. Until the nearest
     rungs exist, no abundance or uncertainty is reported and the include choice is retained.
     """
-    line.flags = tuple(f for f in line.flags
-                       if f not in ("missing_rungs", "out_of_range", "refit_required"))
-    line.missing_rungs = ()
-    if len(line.cog_specs) < 2:
-        line.a = line.sigma_a = line.drewda = float("nan")
-        # Keep the normalised profile as a preview while the markers move. Its
-        # abundance is invalid until explicitly refitted against the edited continuum.
-        line.flags += ("refit_required",)
+    if not _start_refresh(line):
         return
     offsets = sorted(line.cog_specs)
-    ews = [_ew(line.cog_specs[a], line.fit_window, profile, line.lam0) for a in offsets]
+    ews = [_ew(line_synthesis(line, line.cog_specs[a]), line.fit_window, profile, line.lam0)
+           for a in offsets]
     line.a_grid, line.ew_grid = tuple(offsets), tuple(ews)
     if not line.ew > 0:
         line.a = line.sigma_a = line.drewda = float("nan")
@@ -1829,25 +1953,12 @@ def refresh_line_cog(line, profile):
                      lam0_aa=line.lam0)
     guess = inv["a"]
     step = line.cog_step
-    if not np.isfinite(step) or step <= 0:
-        line.a = line.sigma_a = line.drewda = float("nan")
-        line.fit_spec = None
-        line.flags += ("refit_required",)
-        return
-    origin = line.cog_origin
     if inv["out_of_range"]:
         # Expand by one lattice interval; do not trust a far extrapolation on saturation.
         needed = [offsets[0] - step if line.ew < min(ews) else offsets[-1] + step]
     else:
-        k = (guess - origin) / step
-        needed = [origin + np.floor(k + 1e-9) * step,
-                  origin + np.ceil(k - 1e-9) * step]
-    line.missing_rungs = tuple(sorted({round(float(a), 10) for a in needed
-                                       if not any(abs(a - b) < 1e-8 for b in offsets)}))
-    if line.missing_rungs:
-        line.a = line.sigma_a = line.drewda = float("nan")
-        line.fit_spec = None
-        line.flags += ("missing_rungs",)
+        needed = _lattice_cell(line, guess)
+    if _missing_rungs(line, needed):
         return
     line.a, line.sigma_a = float(guess), float(inv["sigma_a"])
     slope = inv["dadrew"]
@@ -1881,7 +1992,7 @@ def set_local_continuum(result, line, target, *, enabled=None, nodes=None):
     edited.fwhm = float(prof.fwhm) if prof.fitted else float("nan")
     edited.fit_func = prof.func
     if edited.cog_specs or np.isfinite(edited.a) or edited.fit_spec is not None:
-        refresh_line_cog(edited, result.profile)
+        refresh_line(edited, result.profile, target)
         if np.isfinite(edited.a) and np.isfinite(edited.drewda):
             edited.sigma_a, edited.sigma_a_phot, edited.sigma_a_cont = sigma_a_from_rew(
                 prof, edited.drewda)
@@ -1893,12 +2004,13 @@ def set_local_continuum(result, line, target, *, enabled=None, nodes=None):
     return line
 
 
-def complete_cog_rungs(lines, synthesize, *, profile, max_rounds=CORR_MAX_ROUNDS,
-                       cancel_token=None, report=None):
-    """Compute only absent rungs, re-inverting after each batch until bracketed.
+def complete_cog_rungs(lines, synthesize, *, profile, target=None,
+                       max_rounds=CORR_MAX_ROUNDS, cancel_token=None, report=None):
+    """Compute only absent rungs, solving each line again after each batch until bracketed.
 
     ``synthesize(abundances)`` returns spectra aligned with ``lines`` for each abundance.
-    Existing spectra are retained, and no target or continuum is modified.
+    Lines are solved by their own method (:func:`refresh_line`); a profile fit needs the
+    ``target``. Existing spectra are retained, and no target or continuum is modified.
     """
     pending = [ln for ln in lines if ln.missing_rungs]
     for _ in range(max_rounds):
@@ -1917,7 +2029,7 @@ def complete_cog_rungs(lines, synthesize, *, profile, max_rounds=CORR_MAX_ROUNDS
                 if any(ln is p for p in pending):
                     ln.cog_specs.setdefault(a, spec.crop(window=ln.window))
         for ln in pending:
-            refresh_line_cog(ln, profile)
+            refresh_line(ln, profile, target)
         if report is not None:
             report()
     return not any(ln.missing_rungs for ln in lines)
@@ -1945,7 +2057,8 @@ def complete_result_rungs(result, *, target=None, cancel_token=None, progress=No
         rungs = [a - shift for a in abundances]
         return context.synthesize([context.variant(x) for x in rungs], rungs=rungs)
 
-    complete_cog_rungs(lines, synthesize, profile=result.profile,
+    prepared = None if target is None else target.convert_units(xunit=u.AA)
+    complete_cog_rungs(lines, synthesize, profile=result.profile, target=prepared,
                        cancel_token=cancel_token,
                        report=(lambda: progress(result)) if progress else None)
     if target is not None:

@@ -396,19 +396,27 @@ flux in the synth window. Two markers at the synth-window edges adjust its level
 their wavelengths stay fixed. Marker edits are fixed continuum choices, not starting
 points for another automatic fit.
 
-The target and its global spline normalisation stay unchanged. The displayed model is
-multiplied by the local continuum, and the EW is measured internally from
-`1 − target / continuum` in the fit window. Each measurement stores its own nodes,
+The target and its global spline normalisation stay unchanged. The EW is measured
+internally from `1 − target / continuum` in the fit window. The synthesis may carry a
+pseudo-continuum of its own, so each synthetic spectrum the line is compared with is
+divided by a straight continuum fitted to its own upper 10% over the synth window, the
+estimator that seeds the markers. The displayed model is that normalised synthesis
+multiplied by the local continuum. The same holds for the weak-line and blend screens. Each measurement stores its own nodes,
 so changing one spectrum's measurement does not affect another.
 
-A CoG measurement is re-inverted using its cached spectra after each edit. If its
-nearest abundance lattice rungs are missing, the row is flagged `missing_rungs` and
-**Compute remaining abundance rungs** appears in the result's out-of-date banner. No
-abundance is reported until those rungs bracket the edited EW. The button retains existing spectra and computes the
-missing rungs. An EW outside the cached range extends the ladder one interval at a
-time, up to the calculation's round limit; unresolved lines keep the button.
-Direct profile fits instead leave the line without an abundance until **Synthesise
-again**. Editing a balance measurement makes its parameters out of date; completing its
+Each edit solves the line again from its cached rungs by the method it was solved with.
+A CoG measurement inverts the edited EW. A profile fit fits the target again with the
+model multiplied by the edited continuum. Switching the continuum off returns the first
+solution. If the nearest abundance lattice rungs of the new solution are missing, the row
+is flagged `missing_rungs` and **Compute remaining abundance rungs** appears in the
+result's out-of-date banner. No abundance is reported until those rungs bracket the
+solution. The button retains existing spectra and computes the missing rungs. For a CoG
+measurement, an EW outside the cached range extends the ladder one interval at a time,
+up to the calculation's round limit; unresolved lines keep the button. A profile fit's
+rungs already span its abundance range, so a solution at either end is flagged
+`out_of_range`. A line without cached rungs is left without an abundance until
+**Synthesise again**.
+Editing a balance measurement makes its parameters out of date; completing its
 rungs updates the line abundances and diagnostics at the stored atmosphere, and
 **Refit…** solves the stellar parameters again (see "Out-of-date results").
 

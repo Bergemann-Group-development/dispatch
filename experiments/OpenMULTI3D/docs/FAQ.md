@@ -564,7 +564,7 @@ node span. `continuum` does not alter the input model or target.
 For an abundance or balance measurement, `abundance.set_local_continuum(result,
 line, target, enabled=True)` seeds fixed nodes at the synth-window edges. Pass
 `nodes=[(left, level_left), (right, level_right)]` to edit them. This remeasures the EW
-and updates the cached CoG inversion. `line.missing_rungs` identifies required
+and solves the line again on its cached rungs (a CoG inversion or a profile fit). `line.missing_rungs` identifies required
 synthesis; `abundance.complete_result_rungs(result, target=target)` computes it using
 the result's stored request. These are the same operations used by the GUI's
 [local continuum controls](GUIWorkflow.md#local-continua-in-measurements).

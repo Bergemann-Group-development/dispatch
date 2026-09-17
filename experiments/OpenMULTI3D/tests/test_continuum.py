@@ -203,6 +203,7 @@ def test_edited_ew_requests_only_missing_nearest_rungs():
     xx = model.values[0]
     def spectrum(a):
         return Spectrum(xx, 1 - .2 * 10**(.4*a) * np.exp(-.5*((xx-5000)/.1)**2))
+    ln.method = 'cog'
     ln.cog_specs = {a: spectrum(a) for a in [-1., 0., 1.]}
     ln.cog_step = .25
     ln.ew = ab.measure_ew(spectrum(.62), ln.fit_window).maa
@@ -226,7 +227,7 @@ def test_edited_ew_requests_only_missing_nearest_rungs():
     assert ln.missing_rungs == () and ln.a == pytest.approx(.55, abs=1e-6)
 
 
-def test_local_edit_invalidates_a_direct_fit():
+def test_local_edit_without_rungs_invalidates_a_direct_fit():
     from tumult import abundance as ab
     model, target, ln, res = _local_measurement()
     ln.a, ln.drewda, ln.sigma_a, ln.fit_spec = .1, .4, .02, model
