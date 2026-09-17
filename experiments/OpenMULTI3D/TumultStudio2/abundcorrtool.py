@@ -92,13 +92,8 @@ class AbundCorrTool(AbundanceWizard):
     extra_sort_keys = {"rew": lambda ln: reduced_ew(ln.ew, ln.lam0)}
     extra_sort_asc = {"rew": False}
 
-    def __init__(self, ctx, *, setup, grids, add_spectrum=None):
+    def __init__(self, ctx, *, setup, grids):
         self.grids = grids                  # GridManager: reference_grid() is the 1D LTE grid
-        # Unused: the reference used to be added as its own sidebar spectrum via this
-        # callback (see _render_reference for where it is drawn now). Kept as an accepted
-        # (optional) argument so callers passing it do not break; app.py's add_corr_spectrum
-        # closure is now dead code and can be dropped.
-        self.add_spectrum = add_spectrum
         self.on_results = lambda: None      # installed by main: repaints the atom list
 
         saved = dict(store.get_section("abundcorr"))
@@ -122,11 +117,14 @@ class AbundCorrTool(AbundanceWizard):
         self._pending_atom = None           # the AtomObject the open modal computes for
         # The reference spectrum: a renderer this view owns, not a canvas object of its own
         # (it is not user data, has no fit or window of its own, and should not persist in
-        # the sidebar once the correction result it belongs to is not being looked at).
+        # the sidebar once the correction result it belongs to is not being looked at). It
+        # does count towards the main figure's y auto-fit, unlike a tool's decorative
+        # overlays - it *is* the spectrum being viewed while this result has focus.
         self.ref_source = ColumnDataSource(dict(x=[], y=[]))
         self.ref_line = self.canvas.main.line(
             "x", "y", source=self.ref_source, color=REF_COLOR, line_width=1.2,
             line_alpha=0.8, visible=False)
+        self.canvas.include_in_y_fit(self.ref_line)
         # per-line error bars: the corrections carry a formal sigma(dA) since the
         # reference EW's fit-covariance error propagates through the CoG slope
         self._build_figs(ColumnDataSource(self.empty_points()))

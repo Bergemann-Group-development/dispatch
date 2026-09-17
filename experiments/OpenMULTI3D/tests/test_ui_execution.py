@@ -571,7 +571,7 @@ def _correction_tool(ctx, monkeypatch, tmp_path):
     tool = ctx.tools._tools["abundcorr"]
     tool._pending_atom = SimpleNamespace(symbol="Mg", path=str(tmp_path / "mg.atom"))
     _stub_corrections_inputs(monkeypatch, tool, tmp_path)
-    for name in ("add_spectrum", "set_step", "select_result", "_on_corr_done"):
+    for name in ("set_step", "select_result", "_on_corr_done"):
         monkeypatch.setattr(tool, name, lambda *a, **k: None)
     calls = {"reference": [], "corrections": []}
 
@@ -1512,7 +1512,7 @@ def test_a_running_correction_is_resumed_by_a_new_document_with_its_progress(tmp
     old_tool = old_ctx.tools._tools["abundcorr"]
     old_tool._pending_atom = SimpleNamespace(symbol="Mg", path=str(tmp_path / "mg.atom"))
     _stub_corrections_inputs(monkeypatch, old_tool, tmp_path)
-    for name in ("add_spectrum", "set_step", "select_result"):
+    for name in ("set_step", "select_result"):
         monkeypatch.setattr(old_tool, name, lambda *a, **k: None)
     old_tool.run()
     job, = old_ctx.jobs.active
@@ -1522,7 +1522,7 @@ def test_a_running_correction_is_resumed_by_a_new_document_with_its_progress(tmp
 
     document, ctx, ticks = _reconnecting_document(store_root, monkeypatch)
     tool = ctx.tools._tools["abundcorr"]
-    for name in ("add_spectrum", "set_step", "select_result"):
+    for name in ("set_step", "select_result"):
         monkeypatch.setattr(tool, name, lambda *a, **k: None)
     assert "NLTE corrections · Mg" in _processes(document)
     _send_action(document, f"workflow-attach:{handle.id}:1")
@@ -2160,6 +2160,40 @@ def test_the_details_modal_shows_a_workflow_record(tmp_path, monkeypatch):
     assert 'data-copy="w1"' in body
 
 
+def test_main_y_fit_tracks_only_spectrum_renderers():
+    """canvas.main.y_range (a DataRange1d, only_visible=True) must stay pinned to the loaded
+    spectra: a decorative overlay left out of it can move freely without perturbing the
+    y-fit (the local-continuum markers' bug - see test_measurement_continuum_markers_keep_-
+    target_coordinates), while a renderer registered through include_in_y_fit (the
+    abundance-correction tool's own reference spectrum) does count, and the fit never
+    reverts to Bokeh's "auto-include everything" empty-list sentinel once every object is
+    removed."""
+    from bokeh.models import ColumnDataSource
+    from canvas import SpectrumCanvas
+
+    canvas = SpectrumCanvas()
+    assert canvas.main.y_range.renderers == [canvas.norm_raw_line]
+
+    xx = np.linspace(5000., 5010., 20)
+    obj = canvas.add_object(Spectrum(xx, np.ones_like(xx)), name='s1')
+    assert set(canvas.main.y_range.renderers) == {canvas.norm_raw_line, obj.line, obj.markers}
+
+    # A decorative overlay glyph is not tracked by default.
+    src = ColumnDataSource(dict(x=[], y=[]))
+    overlay = canvas.main.line('x', 'y', source=src, visible=False)
+    assert overlay not in canvas.main.y_range.renderers
+
+    # include_in_y_fit / exclude_from_y_fit toggle membership explicitly (what
+    # abundcorrtool.AbundCorrTool uses for its own reference spectrum).
+    canvas.include_in_y_fit(overlay)
+    assert overlay in canvas.main.y_range.renderers
+    canvas.exclude_from_y_fit(overlay)
+    assert overlay not in canvas.main.y_range.renderers
+
+    canvas.remove_object(obj.uid)
+    assert canvas.main.y_range.renderers == [canvas.norm_raw_line]   # never reverts to []
+
+
 @pytest.mark.parametrize('tool_name', ['abundance', 'ionbal'])
 def test_measurement_continuum_markers_keep_target_coordinates(tool_name):
     """The real document wires each measurement's checkbox and vertical edge markers."""
@@ -2188,11 +2222,18 @@ def test_measurement_continuum_markers_keep_target_coordinates(tool_name):
     tool.actions.value = 'continuum:0:1'
     assert ln.renorm and tool.continuum_markers.visible
     assert 'line-continuum-chk' in tool.table_html(res)
+    # The markers are excluded from the main figure's y auto-fit (canvas.py keeps
+    # main.y_range.renderers restricted to actual spectra): were they included, every point
+    # they moved to would widen the range to include it, and a vertical drag would look like
+    # it did nothing (the axis keeps rescaling to chase the point being dragged).
+    assert tool.continuum_markers not in ctx.canvas._y_fit_renderers
     ew = ln.ew
-    # An attempted horizontal drag is snapped back to the synth-window edge.
+    # An attempted horizontal drag is snapped back to the synth-window edge; the vertical
+    # component is free to move the local continuum level.
     tool.continuum_source.data = dict(x=[4999.2, 5000.8],
                                       y=[p[1] + .01 for p in ln.continuum])
     assert [p[0] for p in ln.continuum] == [4999., 5001.]
+    assert [p[1] for p in ln.continuum] == list(tool.continuum_source.data['y'])
     assert ln.ew > ew
     np.testing.assert_array_equal(obj.spectrum.ydata, before)
     for original, current in zip(knots, obj.norm_knots):

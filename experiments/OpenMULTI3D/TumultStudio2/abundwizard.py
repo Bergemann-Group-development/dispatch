@@ -219,6 +219,9 @@ class AbundanceWizard(Tool):
         self.actions.on_change("value", self._on_action)
         self._continuum_sync = False
         self.continuum_source = ColumnDataSource(dict(x=[], y=[]))
+        # These are editable markers, not a spectrum: canvas.py keeps them off the main
+        # figure's y auto-fit (see its note on ``main.y_range.renderers``), so dragging one
+        # cannot widen the range to chase the very point being moved.
         self.continuum_markers = self.canvas.main.scatter(
             "x", "y", source=self.continuum_source, size=10, color=ACCENT, visible=False)
         self.continuum_curve = self.canvas.main.line(

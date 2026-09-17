@@ -160,12 +160,25 @@ class SpectrumCanvas:
         nav.add_tools(range_tool)
         self.nav = nav
 
+        # The main y-fit (only_visible=True above) auto-includes every glyph renderer added
+        # to `main` by default; overlays that are not spectra (line/window highlights, the
+        # abundance fit overlay and hatch, a tool's editable markers) would perturb it as they
+        # move, the same feedback loop the BoxAnnotation comment below describes for windows.
+        # Pin `main.y_range.renderers` to a tracked list instead - only real spectra participate
+        # (the loaded objects, added below, plus whatever `include_in_y_fit` registers, e.g.
+        # the abundance-correction tool's own reference). `norm_raw_line` seeds the list so it
+        # never reverts to empty (Bokeh's "auto-include everything" sentinel) once every object
+        # is removed.
+        self._y_fit_renderers = []
+
         # faint copy of the original raw spectrum, drawn behind the edited one during
         # continuum normalisation so the smoothing/selection can be compared against it
         self.norm_raw_source = ColumnDataSource(dict(x=[], y=[]))
         self.norm_raw_line = main.line("x", "y", source=self.norm_raw_source,
                                        color=LINE, line_width=1, line_alpha=0.25,
                                        level="underlay", visible=False)
+        self._y_fit_renderers.append(self.norm_raw_line)
+        main.y_range.renderers = list(self._y_fit_renderers)
 
         # the synthetic lines of a fit, drawn over the observation while the abundance /
         # balance views own the centre, so the fit quality is visible as it lands and during
@@ -238,6 +251,22 @@ class SpectrumCanvas:
             self.add_object(spectrum, name)
 
     # --- objects -----------------------------------------------------
+    def include_in_y_fit(self, renderer):
+        """Let ``renderer`` participate in the main figure's y auto-fit, alongside the loaded
+        spectra: for a renderer that *is* a spectrum being viewed (e.g. the
+        abundance-correction tool's own 1D LTE reference), not a decorative overlay. A tool's
+        editable markers, fit overlays and window highlights should not call this - see the
+        note on ``main.y_range.renderers`` above."""
+        if renderer not in self._y_fit_renderers:
+            self._y_fit_renderers.append(renderer)
+            self.main.y_range.renderers = list(self._y_fit_renderers)
+
+    def exclude_from_y_fit(self, renderer):
+        """Undo :meth:`include_in_y_fit`."""
+        if renderer in self._y_fit_renderers:
+            self._y_fit_renderers.remove(renderer)
+            self.main.y_range.renderers = list(self._y_fit_renderers)
+
     def next_run_style(self):
         """Pick a (color, dash) for a tumult run: the first unused non-gray palette
         colour, then iterate line styles once every colour is taken."""
@@ -286,6 +315,8 @@ class SpectrumCanvas:
                                         visible=False)
         obj.nav_line = self.nav.line("x", "y", source=obj.nav_source,
                                      color=color, line_width=1, line_dash=dash)
+        self._y_fit_renderers += [obj.line, obj.markers]
+        self.main.y_range.renderers = list(self._y_fit_renderers)
         self.objects.append(obj)
         if select or first:
             self.selected_uid = obj.uid
@@ -353,6 +384,9 @@ class SpectrumCanvas:
         self.main.renderers = [r for r in self.main.renderers
                                if r not in (obj.line, obj.markers)]
         self.nav.renderers = [r for r in self.nav.renderers if r is not obj.nav_line]
+        self._y_fit_renderers = [r for r in self._y_fit_renderers
+                                 if r not in (obj.line, obj.markers)]
+        self.main.y_range.renderers = list(self._y_fit_renderers)
         self.objects.remove(obj)
         if self.selected_uid == uid:
             self.selected_uid = self.objects[0].uid if self.objects else None
