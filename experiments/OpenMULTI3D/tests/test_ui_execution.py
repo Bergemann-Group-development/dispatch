@@ -2494,8 +2494,18 @@ def test_a_fit_reads_the_filtered_target_and_records_its_preparation(tmp_path, m
 
 
 # --- duplicating objects and rerunning from a result ---------------------------------------
+_edit_nonce = itertools.count()
+
+
+def _edit_menu(document, op, target, name=""):
+    """Send Edit-menu ``op`` for ``(kind, uid)``, as the page does from a menu item."""
+    kind, uid = target
+    document.select_one({"name": "edit-menu-actions"}).value = "\0".join(
+        [op, kind, str(uid), name, str(next(_edit_nonce))])
+
+
 def test_duplicates_are_independent_and_round_trip_through_a_save(tmp_path, monkeypatch):
-    """Duplicate on a result, a mask set and a spectrum adds a copy with its own identity
+    """Edit → Duplicate on a result, a mask set and a spectrum adds a copy with its own identity
     and a unique name. A rerun delivered to the copy, and edits of the copied set and
     spectrum, leave the originals as they were; the copies come back from a save slot."""
     from copy import deepcopy
@@ -2514,7 +2524,7 @@ def test_duplicates_are_independent_and_round_trip_through_a_save(tmp_path, monk
     abund.results.append(original)
     abund.select_result(original.uid)
 
-    document.select_one({"name": "abund-actions"}).value = "duplicate::1"
+    _edit_menu(document, "duplicate", ("result", original.uid))
     copy = abund.selected()
     assert copy is not original and copy.uid != original.uid and copy.name == "Fe A #2"
     assert copy.lines is not original.lines and copy.ref_uid == obs.uid
@@ -2536,7 +2546,7 @@ def test_duplicates_are_independent_and_round_trip_through_a_save(tmp_path, monk
     # a mask set: the copy is unsaved and edited on its own
     mset = ctx.masks.load_file(_mask_file(tmp_path))
     tools.activate("linemask")
-    document.select_one({"name": "linemask-actions"}).value = "duplicate  1"
+    _edit_menu(document, "duplicate", ("linemask", mset.uid))
     mcopy = ctx.masks.mset
     assert mcopy.uid != mset.uid and mcopy.name == "fe-lines #2"
     assert mcopy.source_path == "" and not mcopy.dirty and mcopy.element == "Fe"
@@ -2544,9 +2554,9 @@ def test_duplicates_are_independent_and_round_trip_through_a_save(tmp_path, monk
     assert (mcopy.masks[0].lmin, mset.masks[0].lmin) == (5000.2, 5000.5)
     assert not mset.dirty
 
-    # a spectrum from the Edit tab: a broadening edit of the copy stays on the copy
+    # a spectrum: a broadening edit of the copy stays on the copy
     canvas.select_object(obs.uid)
-    document.select_one({"name": "edit-actions"}).value = "duplicate 1"
+    _edit_menu(document, "duplicate", ("spectrum", obs.uid))
     scopy = canvas.selected()
     assert scopy is not obs and scopy.uid != obs.uid and scopy.name == "obs #2"
     assert scopy.conv == {"vshift": 1.0} and scopy.source == obs.source
@@ -2566,6 +2576,66 @@ def test_duplicates_are_independent_and_round_trip_through_a_save(tmp_path, monk
     assert [(o.uid, o.name, o.conv) for o in fctx.canvas.objects] == [
         (obs.uid, "obs", {"vshift": 1.0}), (scopy.uid, "obs #2", {"vshift": 2.0})]
     assert store.get_session(1) is not None
+
+
+def test_edit_menu_follows_the_focus_and_renames_every_kind(tmp_path, monkeypatch):
+    """The Edit menu's items name the focused object; Rename keeps names unique, a set's
+    rename does not mark it modified, a result being computed keeps its name, and a model
+    atom offers Delete only. Delete goes through the removal path, with its Undo."""
+    from tumult.abundance import AbundanceResult
+    from tumult.spectrum_io import load_file
+
+    document, ctx = _build_document()
+    canvas, tools = ctx.canvas, ctx.tools
+    items = ctx.edit_menu.html
+    obs_path = _spectrum_file(tmp_path)
+    obs = canvas.add_object(load_file(obs_path), name="obs", source=("file", str(obs_path)))
+    other = canvas.add_object(load_file(obs_path), name="other", select=False)
+    assert 'data-name="obs"' in items() and "disabled" not in items()
+
+    _edit_menu(document, "rename", ("spectrum", obs.uid), "  other ")
+    assert obs.name == "other #2"
+    _edit_menu(document, "rename", ("spectrum", obs.uid), "")
+    assert obs.name == "other #2"
+
+    mset = ctx.masks.load_file(_mask_file(tmp_path))
+    tools.activate("linemask")
+    assert f'data-uid="{mset.uid}"' in items()
+    _edit_menu(document, "rename", ("linemask", mset.uid), "iron")
+    assert mset.name == "iron" and not mset.dirty
+
+    abund = tools._tools["abundance"]
+    res = AbundanceResult(element="Fe", symbol="Fe", summary={}, uid="res-a", name="Fe A",
+                          ref_uid=obs.uid, ref_name="obs", lines=[_diag_line()])
+    abund.results.append(res)
+    abund.select_result(res.uid)
+    assert 'data-name="Fe A"' in items()
+    _edit_menu(document, "rename", ("result", res.uid), "obs")
+    assert res.name == "obs"
+    abund.jobs.current[res.uid] = object()       # a submission still bound to it
+    _edit_menu(document, "rename", ("result", res.uid), "Fe B")
+    assert res.name == "obs"
+    del abund.jobs.current[res.uid]
+
+    canvas.select_object(other.uid)
+    tools.deactivate_active()
+    _edit_menu(document, "delete", ("spectrum", other.uid))
+    assert other not in canvas.objects
+    token = ctx.removal._undo[0]
+    ctx.removal.undo(token)
+    assert canvas._find(other.uid) is other
+
+    atoms = tools._tools["atom"]
+    atoms.atoms.append(SimpleNamespace(uid="atom-1", name="fe.atom"))
+    atoms.selected_uid, ctx.focus_kind = "atom-1", "atom"
+    rendered = items()
+    assert [html.unescape(b) for b in rendered.split("</button>")[:3]] == [
+        '<button class="menu-item" role="menuitem" data-edit="rename" disabled '
+        'title="A model atom is identified by its file">Rename…',
+        '<button class="menu-item" role="menuitem" data-edit="duplicate" disabled '
+        'title="A model atom is identified by its file">Duplicate',
+        '<button class="menu-item" role="menuitem" data-edit="delete" data-kind="atom" '
+        'data-uid="atom-1" data-name="fe.atom">Delete']
 
 
 def test_rerun_from_a_spectrum_prefills_the_modal_with_its_request(tmp_path, monkeypatch):

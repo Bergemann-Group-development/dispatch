@@ -51,6 +51,7 @@ from abundcorrtool import AbundCorrTool  # noqa: E402
 from ionbalance import IonBalanceTool  # noqa: E402
 import naming  # noqa: E402
 from removal import Removal, register_workspace as register_removals  # noqa: E402
+from editmenu import EditMenu, Target as EditTarget  # noqa: E402
 from tumult.synthesis import workflows as synth  # noqa: E402  (CancelToken/CancelledError for cancellable loads)
 from tumult.synthesis import submit_operation as submit_operation_record  # noqa: E402
 from tumult.synthesis import submission  # noqa: E402  (open workflows on reconnect)
@@ -225,13 +226,8 @@ def inspector_html(canvas):
     if obj is None:
         return '<div class="field-static">No selection</div>'
     lo, hi = canvas._display_range(obj.spectrum)
-    name = html.escape(obj.name)
     return (
-        # the name is editable in place: a change is sent on the "object-rename" channel
-        '<div class="field-group"><label>Name</label>'
-        f'<input type="text" class="field-input" id="object-rename" value="{name}" '
-        f'data-uid="{html.escape(obj.uid)}" spellcheck="false" title="Rename this object">'
-        '</div>'
+        _field("Name", obj.name)   # renamed through the toolbar's Edit menu (editmenu.py)
         + _field("Range", f"{lo:.1f} – {hi:.1f} {canvas.xlabel}")
         + _field("Points", f"{len(obj.spectrum):,}")
         + _field("Native units", f"{obj.raw.xunit} / {obj.raw.yunit}")
@@ -358,6 +354,7 @@ def build():
     warm_strengths = None   # ditto: update_all may run before it is defined
     picker = None           # ditto: the spectrum file picker, whose rows spin while loading
     autosave = None         # ditto: the workspace autosave, defined with the session actions
+    edit_menu = None        # ditto: the toolbar's Edit menu, built once every list exists
     jobs = ctx.jobs         # every background operation this document admitted
 
     def run_busy(fn):
@@ -406,15 +403,9 @@ def build():
         # only persist a low-pass cutoff when a low-pass filter actually exists
         has_lowpass = (filtertool.method == "lowpass"
                        and any(o.filtered is not None for o in canvas.objects))
-        focus_kind = ctx.focus_kind
+        focus_kind, focus_uid = focused()
         if focus_kind == "spectrum":
             focus_uid = spectrum_selected
-        elif focus_kind == "linemask":
-            focus_uid = mask_store.current_uid
-        elif focus_kind == "atom":
-            focus_uid = atomtool.selected_uid
-        else:
-            focus_uid = wizards[FOCUS_TOOL[focus_kind]].selected_uid
         return Workspace(
             spectra=specs, spectrum_selected=spectrum_selected,
             masks=MaskSnap(**mask_store.snapshot()),
@@ -467,8 +458,21 @@ def build():
         processes_bridge.value = processes_html(jobs, view, ctx.recovery)
         processes_usage_bridge.value = processes.usage_html(view)
 
+    def focused():
+        """``(kind, uid)`` of the object holding the single left-sidebar focus."""
+        kind = ctx.focus_kind
+        if kind == "spectrum":
+            return kind, canvas.selected_uid
+        if kind == "linemask":
+            return kind, mask_store.current_uid
+        if kind == "atom":
+            return kind, atomtool.selected_uid
+        return kind, wizards[FOCUS_TOOL[kind]].selected_uid
+
     def update_all(canvas):
         objects_bridge.value = objects_panel_html(canvas, ctx.focus_kind)
+        if edit_menu is not None:
+            edit_menu.render()
         repaint_processes()
         inspector_bridge.value = inspector_html(canvas)
         footer_bridge.value = footer_html(canvas)
@@ -557,13 +561,10 @@ def build():
         lo, hi = to_range(float(x.min()), float(x.max()), obj.spectrum.xunit, u.AA)
         range_tool.select_range(lo, hi)
 
-    def duplicate_spectrum():
-        """Edit-tab Duplicate: the selected spectrum again under a unique name, with its
-        own copy of the data, provenance, continuum, convolution and style, selected so a
+    def duplicate_spectrum(obj):
+        """Edit → Duplicate on a spectrum: ``obj`` again under a unique name, with its own
+        copy of the data, provenance, continuum, convolution and style, selected so a
         broadening fit or a continuum edit changes the copy only."""
-        obj = canvas.selected()
-        if obj is None:
-            return
         g = obj.line.glyph
         copy = canvas.add_object(deepcopy(obj.raw), name=ctx.unique_name(obj.name, pending=False),
                                  color=g.line_color, dash=obj.dash, source=obj.source,
@@ -578,8 +579,7 @@ def build():
         canvas.select_object(copy.uid)
         notify(f"Duplicated as “{copy.name}”.", level="success")
 
-    inspector = Inspector(canvas, on_fit=edit_fit, on_mask=edit_mask,
-                          on_duplicate=duplicate_spectrum, notify=notify)
+    inspector = Inspector(canvas, on_fit=edit_fit, on_mask=edit_mask, notify=notify)
     # the Select range tool: the one range gesture, whose actions reach the line-mask view and the
     # synthesis modal built further down (the lambdas resolve them at click time)
     range_tool = RangeTool(
@@ -605,17 +605,6 @@ def build():
         on_query_cleared=lambda: setattr(linesearch_bridge, "value", f"\0{time.time()}"))
     linesearch_actions.on_change(
         "value", lambda attr, old, new: linenav.set_query(new.split("\0")[0]))
-
-    # renaming from the Info tab: "<uid>\0<name>\0<nonce>" (names may hold spaces/colons)
-    rename_actions = B.action("object-rename")
-
-    def on_rename(attr, old, new):
-        if not new:
-            return
-        uid, name = new.split("\0")[:2]
-        canvas.rename_object(uid, name)
-
-    rename_actions.on_change("value", on_rename)
 
     def on_line_setting(key, value):
         if key == "refstar":
@@ -882,14 +871,16 @@ def build():
     wizards = {"abundance": abundancetool, "abundcorr": abundcorrtool, "ionbal": ionbaltool}
     assert tuple(wizards) == RESULT_TOOLS
 
-    def unique_name(name, pending=True):
+    def unique_name(name, pending=True, own=None):
         """``name`` made unique among the spectrum and result objects (:func:`naming.unique`);
         ``pending`` also avoids the names of this document's unfinished jobs, so two
-        submissions of the same calculation deliver distinguishable objects."""
+        submissions of the same calculation deliver distinguishable objects. ``own`` is the
+        current name of an object being renamed, which does not count as taken."""
         taken = {o.name for o in canvas.objects}
         taken.update(r.name for w in wizards.values() for r in w.results)
         if pending:
             taken.update(job.name for job in jobs.active)
+        taken.discard(own)
         return naming.unique(name, taken)
 
     ctx.unique_name = unique_name
@@ -898,6 +889,35 @@ def build():
     # something and offers Undo in the status message (removal.py)
     ctx.removal = Removal(ctx, notify)
     register_removals(ctx.removal, canvas, masktool, wizards, atomtool)
+
+    def rename_spectrum(obj, name):
+        canvas.rename_object(obj.uid, unique_name(name, own=obj.name))
+
+    edit_menu = ctx.edit_menu = EditMenu(ctx, focused)
+    edit_menu.register("spectrum", EditTarget(
+        find=canvas._find, removal="spectrum",
+        rename=rename_spectrum, duplicate=duplicate_spectrum))
+
+    def duplicate_set(mset):
+        copy = mask_store.duplicate(mset.uid)
+        if copy is not None:
+            masktool.select_set(copy.uid)
+            notify(f"Duplicated as “{copy.name}”.", level="success")
+
+    edit_menu.register("linemask", EditTarget(
+        find=ctx.removal.kinds["linemask"].find, removal="linemask",
+        rename=lambda mset, name: mask_store.rename(mset.uid, name),
+        duplicate=duplicate_set))
+    for kind, tool_name in FOCUS_TOOL.items():
+        wizard = wizards[tool_name]
+        edit_menu.register(kind, EditTarget(
+            find=wizard._find, removal=tool_name,
+            rename=lambda res, name, w=wizard: w.rename_result(res.uid, name),
+            duplicate=lambda res, w=wizard: w.duplicate_result(res.uid)))
+    edit_menu.register("atom", EditTarget(
+        find=atomtool.find, removal="atom",
+        fixed_note="A model atom is identified by its file"))
+    edit_menu.render()
 
     def _restore_range(rng, vals):
         if not vals:

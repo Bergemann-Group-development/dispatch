@@ -75,6 +75,11 @@
               <button class="menu-item" role="menuitem" data-new="spectrum">Synthesise spectrum…</button>
             </div>
           </div>
+          <!-- acts on the object focused in the left sidebar; items rendered by editmenu.py -->
+          <div class="menu-wrap">
+            <button id="edit-object" class="text-btn menu-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="edit-object-menu">Edit ▾</button>
+            <div id="edit-object-menu" class="menu" role="menu" tabindex="-1"></div>
+          </div>
         </div>
 
         <!-- line-position indicators over the spectrum (see lineannot.LineAnnotations);
@@ -290,8 +295,6 @@
         <div class="hint">The lines come from a line mask — open one in the left sidebar and
           use its <b>Measure abundances</b> action. These steps act on the abundance object
           that measurement produced.</div>
-        <button class="text-btn" data-tool="abund" data-result-duplicate
-                title="Add a copy of this result to rerun or curate without changing this one">Duplicate</button>
         <div id="abund-stale"></div>
         <!-- step 1 · the lines: the spectrum, and the synthesis standing on them
              (configured in the modal, re-runnable after curation) -->
@@ -323,8 +326,6 @@
           it out of the mean.</div>
         <div class="hint">The Scatter step shows the line-to-line scatter of the corrections
           against excitation energy and reduced EW, with the mean ΔA and its σ.</div>
-        <button class="text-btn" data-tool="corr" data-result-duplicate
-                title="Add a copy of this result, e.g. to edit its fit windows without changing this one">Duplicate</button>
       </div>
       <!-- the model-atom panel: what it is, and the entry point of the correction modal -->
       <div class="atom-panel">
@@ -1114,7 +1115,7 @@
     var m = Bokeh.documents[0].get_model_by_name('abund-atom-actions');
     if (m) m.value = 'del ' + del.dataset.path + ' ' + Date.now();
   });
-  // Edit tab: "Fit to target" / "Mask full range" / "Duplicate" (rendered dynamically) ->
+  // Edit tab: "Fit to target" / "Select full range" (rendered dynamically) ->
   // "edit-actions"; the Info tab's "Rerun from this…" -> "object-actions"
   document.addEventListener('click', function (ev) {
     var rerun = ev.target.closest('.object-rerun');
@@ -1124,8 +1125,7 @@
       return;
     }
     var kind = ev.target.closest('.edit-fit-btn') ? 'fit' :
-               ev.target.closest('.edit-mask-btn') ? 'mask' :
-               ev.target.closest('.edit-duplicate-btn') ? 'duplicate' : null;
+               ev.target.closest('.edit-mask-btn') ? 'mask' : null;
     if (!kind) return;
     var m = Bokeh.documents[0].get_model_by_name('edit-actions');
     if (m) m.setv({ value: kind + ' ' + Date.now() });
@@ -1153,9 +1153,12 @@
     modal.querySelector('[data-page="' + source + '"].settings-nav-item').click();
     openLinemaskModal();
   }
-  function wireMenu(buttonId, menuId, action) {
+  function wireMenu(buttonId, menuId, action, onOpen) {
     var button = document.getElementById(buttonId), menu = document.getElementById(menuId);
-    var items = Array.from(menu.querySelectorAll('[role="menuitem"]'));
+    // read on use: a server-rendered menu (Edit) changes its items
+    function enabledItems() {
+      return Array.from(menu.querySelectorAll('[role="menuitem"]:not([disabled])'));
+    }
     function close(focus) {
       menu.classList.remove('open'); button.setAttribute('aria-expanded', 'false');
       if (focus) button.focus();
@@ -1166,18 +1169,21 @@
       document.querySelectorAll('.menu.open').forEach(function(m) { m.classList.remove('open'); });
       document.querySelectorAll('.menu-btn').forEach(function(b) { b.setAttribute('aria-expanded', 'false'); });
       menu.classList.toggle('open', open); button.setAttribute('aria-expanded', String(open));
-      if (open) items[0].focus();
+      if (open && onOpen) onOpen();
+      var items = enabledItems();
+      if (open) (items[0] || menu).focus();
     });
     button.addEventListener('keydown', function(ev) { if (ev.key === 'ArrowDown') { ev.preventDefault(); button.click(); } });
     menu.addEventListener('keydown', function(ev) {
-      var i = items.indexOf(document.activeElement);
+      var items = enabledItems(), i = items.indexOf(document.activeElement);
       if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); close(true); }
       else if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+        if (!items.length) return;
         ev.preventDefault(); items[(i + (ev.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length].focus();
       } else if (ev.key === 'Tab') close(false);
     });
     menu.addEventListener('click', function(ev) {
-      var item = ev.target.closest('.menu-item'); if (!item) return;
+      var item = ev.target.closest('.menu-item'); if (!item || item.disabled) return;
       close(true); action(item);
     });
     document.addEventListener('click', function() { close(false); });
@@ -1191,6 +1197,20 @@
     if (item.dataset.new === 'mask') openMaskSource('blank');
     else ewAction('synth-new');
   });
+  // Edit: Rename… / Duplicate / Delete on the focused object; the items carry its kind, uid
+  // and name, and are rendered again as the menu opens (editmenu.py)
+  function editAction(op, item, name) {
+    var m = Bokeh.documents[0].get_model_by_name('edit-menu-actions');
+    if (m) m.setv({ value: [op, item.dataset.kind || '', item.dataset.uid || '', name || '',
+                            Date.now()].join('\u0000') });
+  }
+  wireMenu('edit-object', 'edit-object-menu', function(item) {
+    var op = item.dataset.edit;
+    if (op === 'rename') {
+      var name = window.prompt('Rename “' + item.dataset.name + '” to:', item.dataset.name);
+      if (name !== null) editAction(op, item, name);
+    } else editAction(op, item);
+  }, function() { editAction('refresh', {dataset: {}}); });
   document.getElementById('line-list-btn').addEventListener('click', function() { ewAction('lineopen'); });
   // session actions (save/load/delete/refresh) go through the "session-actions"
   // channel: space-delimited so a save name may contain spaces or colons
@@ -1416,16 +1436,6 @@
   document.getElementById('annot-btn').addEventListener('click', function () { ewAction('annot-toggle'); });
   document.getElementById('linelist-close').addEventListener('click', function () { ewAction('lineclose'); });
 
-  // rename the selected object from the Info tab (on Enter / blur) -> "object-rename"
-  document.addEventListener('change', function (ev) {
-    var box = ev.target.closest('#object-rename');
-    if (!box) return;
-    var m = Bokeh.documents[0].get_model_by_name('object-rename');
-    if (m) m.setv({ value: box.dataset.uid + '\u0000' + box.value + '\u0000' + Date.now() });
-  });
-  document.addEventListener('keydown', function (ev) {
-    if (ev.key === 'Enter' && ev.target.closest('#object-rename')) ev.target.blur();
-  });
   // the line-list search: every keystroke is a query (after a short pause, so a word typed
   // at speed costs one search), Esc empties it and so returns the window's lines
   (function () {
@@ -1530,7 +1540,6 @@
     if (ev.target.closest('.lm-fit')) { linemaskAction('fit'); return; }
     if (ev.target.closest('.lm-measure-abund')) { linemaskAction('measure-abund'); return; }
     if (ev.target.closest('.lm-fit-balance')) { linemaskAction('fit-balance'); return; }
-    if (ev.target.closest('.lm-duplicate')) { linemaskAction('duplicate'); return; }
     if (ev.target.closest('.lm-revert')) {
       if (confirm('Discard every edit and reload this set from its file?')) linemaskAction('revert');
       return;

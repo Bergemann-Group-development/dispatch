@@ -126,6 +126,17 @@ class MaskStore:
         copy.label = naming.unique(mset.name, {s.name for s in self.sets})
         return self.adopt(copy)
 
+    def rename(self, uid, name):
+        """Give set ``uid`` the label ``name``, made unique among the sets. The label is not
+        part of the set's content, so a rename does not mark it modified."""
+        mset = self.find(uid)
+        if mset is None:
+            return None
+        mset.label = naming.unique(str(name).strip(),
+                                   {s.name for s in self.sets if s is not mset})
+        self._changed()
+        return mset
+
     def set_include(self, index, on):
         """Switch one mask on/off. The toggle curates what a save writes out and what the
         wizards measure — a flagged candidate stays visible but is left out."""

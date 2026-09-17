@@ -122,7 +122,6 @@ ANALYSIS_SCRIPT = r"""
     if (step) { analysisAction(prefix, 'step', step.dataset.step); return; }
     var rem = ev.target.closest('[data-result-remove]');
     if (rem) { analysisAction(prefix, 'remove', rem.dataset.resultRemove); return; }
-    if (ev.target.closest('[data-result-duplicate]')) { analysisAction(prefix, 'duplicate'); return; }
     var item = ev.target.closest('[data-result]');
     if (item) { analysisAction(prefix, 'select', item.dataset.result); return; }
     var sort = ev.target.closest('.line-sort[data-sortcol]');
@@ -474,8 +473,6 @@ class AbundanceWizard(Tool):
             self.select_result(arg)
         elif kind == "remove":
             self.ctx.removal.request(self.name, arg)
-        elif kind == "duplicate":
-            self.duplicate_result()
         elif kind == "toggle-line":
             self._toggle_line(arg)
         elif kind == "continuum":
@@ -581,9 +578,8 @@ class AbundanceWizard(Tool):
                 'Out of date: the values below are the previous solution</div>'
                 f'<ul>{items}</ul>'
                 f'<button class="primary-btn" data-update-result>{label}</button>{rungs}'
-                '<button class="text-btn" data-result-duplicate>Duplicate</button>'
-                f'<div class="hint">{label} replaces this solution; duplicate first to keep '
-                'it.</div></div>')
+                f'<div class="hint">{label} replaces this solution; use Edit → Duplicate '
+                'first to keep it.</div></div>')
 
     # --- the shared EW refresh --------------------------------------------------------------
     def report_refresh(self, res, outcome):
@@ -744,6 +740,21 @@ class AbundanceWizard(Tool):
         self.select_result(copy.uid)
         self.notify(f"Duplicated as \u201c{copy.name}\u201d.", level="success")
         return copy
+
+    def rename_result(self, uid, name):
+        """Give result ``uid`` the name ``name``, made unique in the document. A result still
+        being computed keeps its name: its workflow delivers to the name it was submitted
+        under."""
+        res = self._find(uid)
+        if res is None:
+            return None
+        if self.is_computing(res):
+            self.notify(f"{res.name} is still being computed; rename it once it has "
+                        "finished or been cancelled.")
+            return None
+        res.name = self.ctx.unique_name(name, own=res.name)
+        self.push_results()
+        return res
 
     def _toggle_line(self, token):
         res = self.selected()

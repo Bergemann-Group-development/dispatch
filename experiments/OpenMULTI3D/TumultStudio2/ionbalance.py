@@ -773,11 +773,9 @@ class IonBalanceTool(AbundanceWizard):
                         + '.</div>')
         rows.append(self._params_html(res))
         rows.append('<button class="text-btn ionbal-refit">Refit…</button>'
-                    '<button class="text-btn" data-tool="ionbal" data-result-duplicate>'
-                    'Duplicate</button>'
                     '<div class="hint">Refitting keeps these measured lines and their '
                     'curation (measuring their EWs again if the target changed), and '
-                    'replaces the fit standing on them; refit a duplicate to '
+                    'replaces the fit standing on them; refit a copy (Edit → Duplicate) to '
                     'keep this fit. To measure again — a different star, or edited windows '
                     '— start from the LineMasks view.</div>')
         return "".join(rows)

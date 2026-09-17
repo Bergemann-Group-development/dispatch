@@ -33,9 +33,24 @@ model atoms, and abundance overrides, e.g.
 `Fe abundance · obs.fits · fe-lines · MARCS · LTE` or `Fe corrections · T5750 g4.40 m+0.00 ξ1.00 · MARCS`.
 The Info tab and the result panels hold the full provenance. A name already used by a
 spectrum, a result or an unfinished job of the document gets a `#2`, `#3`… suffix
-(`ctx.unique_name`), and a loaded file shares that rule. The name is fixed: a result's
-sidebar row shows its current value on a second line, and names in a loaded workspace stay
-as saved.
+(`ctx.unique_name`), and a loaded file shares that rule. A calculation does not rename the
+object it updates: a result's sidebar row shows its current value on a second line, and
+names in a loaded workspace stay as saved.
+
+### The Edit menu
+
+The toolbar's **Edit** menu acts on the object focused in the left sidebar (`editmenu.py`):
+
+- **Rename…** asks for a new name. A spectrum or result name is made unique in the document
+  as above, and a mask-set name among the mask sets. Renaming a set does not mark it
+  modified. A result that is still being computed keeps its name, since its workflow
+  delivers to that name.
+- **Duplicate** adds a copy (see below).
+- **Delete** removes the object the way its sidebar remove button does (see "Removing an
+  object").
+
+A model atom is identified by its file, so for an atom only **Delete** is enabled. With
+nothing focused, every item is disabled. The Info tab shows the spectrum name read-only.
 
 ### Duplicate and rerun
 
@@ -43,10 +58,8 @@ A rerun acts on the object it is started from: an abundance result's **Synthesis
 replaces its abundances, a balance's **Refit…** its fit, a correction's fit-window edit its
 corrections, a mask edit the set, and the Edit tab's broadening fit the spectrum's
 convolution. To keep the current state for comparison, duplicate the object first and
-rerun the copy. The result, mask-set and spectrum views each offer one **Duplicate**
-button: the abundance,
-correction and balance panels, the LineMasks view (beside **Save as…**) and a spectrum's
-Edit tab. The copy is a deep copy with a fresh identity and the source name made unique
+rerun the copy with **Edit → Duplicate**, which works on results, mask sets and spectra.
+The copy is a deep copy with a fresh identity and the source name made unique
 (`Fe abundance · … #2`), added to the same list and focused. It shares no job with the
 original, so the original's running workflow keeps delivering to the original only; a
 result that is still being computed is not duplicated. A copied mask set has no file and
@@ -62,8 +75,8 @@ current state on every render (`AbundanceWizard.stale_reasons`). Nothing is reco
 automatically. When they differ, the panel opens with an **Out of date** banner. The banner
 lists what changed and offers the action that solves the result again: **Synthesise
 again** for an abundance, **Refit…** for a balance, and **Compute remaining abundance
-rungs** while an edited continuum lacks rungs. It also offers **Duplicate**, to keep the
-current solution first. The previous values stay visible, tagged *Previous solution*:
+rungs** while an edited continuum lacks rungs. Its hint points to **Edit → Duplicate**
+for keeping the current solution first. The previous values stay visible, tagged *Previous solution*:
 the balance parameter block, the status line under its table and the abundance mean. The
 sidebar row carries an *Out of date* flag.
 
@@ -85,7 +98,7 @@ the same way.
 ### Removing an object
 
 Every sidebar remove button (spectra, line mask sets, model atoms and the three result
-lists) goes through one document-level path (`removal.py`). It first works out what the
+lists) and **Edit → Delete** go through one document-level path (`removal.py`). It first works out what the
 removal would cost:
 
 - results that name the object: a spectrum they measure (`ref_uid`) or, for a balance, the mask set
@@ -540,7 +553,7 @@ atom is not loaded is listed in a trailing Corrections section. Removing an atom
 results after confirmation, and Undo restores both (see "Removing an object"). The result view has two steps, **Lines** (the reference spectrum
 with the selected line's curve-of-growth inversion beside it, over the per-line table) and
 **Scatter** (ΔA against excitation energy and against reduced EW, side by side), with the
-line include toggles curating the mean. **Duplicate** in the panel keeps the current windows
+line include toggles curating the mean. **Edit → Duplicate** keeps the current windows
 and corrections before a fit-window edit changes them; **Reset window** undoes such an edit
 line by line.
 
@@ -569,8 +582,10 @@ line by line.
   `measurement.py`). `AtomTool`
   (`atomtool.py`) owns the atom objects, the atom view and the correction entry point;
   `AbundanceResult.atom_path` links a correction result to its atom.
-  `AbundanceWizard.duplicate_result`, `MaskStore.duplicate` and the Edit tab's
-  `duplicate_spectrum` (`app.py`) are the Duplicate actions; `synthmodal.rerun_record`
+  `EditMenu` (`editmenu.py`) is the toolbar's Edit menu; `app.py` registers one `Target`
+  per focus kind. Its Duplicate actions are `AbundanceWizard.duplicate_result`,
+  `MaskStore.duplicate` and `duplicate_spectrum` (`app.py`), and its renames are
+  `AbundanceWizard.rename_result`, `MaskStore.rename` and `Canvas.rename_object`; `synthmodal.rerun_record`
   writes a spectrum's rerun record and `SynthModal.open_rerun` with
   `SynthSetup.load_request` and `FitTab.load` reads it back.
 - `Removal` (`removal.py`, `ctx.removal`) is the remove-button path: its plans, the

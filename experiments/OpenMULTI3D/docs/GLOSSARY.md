@@ -106,6 +106,9 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
 - *edit session*: a canvas tool's in-place edits to a workspace object, from entering the
   tool to leaving it (`Tool.begin_edit`). Leaving keeps them; Cancel and Esc restore the
   state on entry. The continuum editor is one.
+- *Edit menu* and *Edit tab*: the toolbar's Edit menu renames, duplicates or deletes the
+  focused object of any kind (`editmenu.py`). The inspector's Edit tab changes a spectrum's
+  convolution and fits its broadening.
 - *out of date*: a solved result whose inputs differ from those it was solved from
   (`stale_reasons` on the result and on its tool). The target is compared by its digest and
   recorded preparation (not its convolution, which measurements do not read); a balance also by `solved_key`, the fingerprint of its included lines,
