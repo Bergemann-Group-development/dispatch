@@ -31,8 +31,9 @@ The measurement is :func:`tumult.abundance.measure_lines`, run in this document 
 can be curated; the synthesis is the ``abundance.fit`` operation with ``method="profile"``
 continuing that measurement (``measured=``) on the setup's request, as a durable workflow
 whose progress snapshots stream each line into the table as it lands; the uncertainties are
-:func:`tumult.abundance.finalize_result` again with the modal's current SNR and continuum. What is left in this module is the wizard's own machinery, shared with the
-corrections tool through :mod:`abundwizard`, and the rendering.
+:func:`tumult.abundance.finalize_result` with the SNR and continuum uncertainty stored on the
+result when its windows were measured. What is left in this module is the wizard's own
+machinery, shared with the corrections tool through :mod:`abundwizard`, and the rendering.
 """
 from __future__ import annotations
 
@@ -224,7 +225,7 @@ class AbundanceTool(AbundanceWizard):
 
         ``get_observation`` already returns the filter-effective reference, so this re-runs the
         shared :func:`tumult.abundance.refresh_ews` over each line's stored fit window with the
-        live uncertainty controls and repaints the table when anything changed. Restricted to
+        SNR and continuum uncertainty the measurement was made with and repaints the table when anything changed. Restricted to
         the ``"lines"`` stage on purpose: once synthesis has run, the abundances were inverted
         against the EW measured at selection, so silently re-measuring under a new filter
         would misrepresent them. Windows, flags and include toggles are left untouched."""
@@ -236,9 +237,8 @@ class AbundanceTool(AbundanceWizard):
         spec = self.get_observation(getattr(res, "ref_uid", None))
         if spec is None or spec.yunit != u.dimensionless_unscaled:
             return
-        v = self.form1.values()
-        outcome = ab.refresh_ews(spec, res.lines, profile=res.profile,
-                                 snr=float(v["snr"]) or None, cont_pct=float(v["cont_pct"]))
+        outcome = ab.refresh_ews(spec, res.lines, profile=res.profile, snr=res.snr,
+                                 cont_pct=res.cont_pct)
         self.report_refresh(res, outcome)
 
     # --- session persistence ------------------------------------------------------------
@@ -412,7 +412,9 @@ class AbundanceTool(AbundanceWizard):
         """The error budget for ``res`` (the selected result by default).
 
         The synthesis names its own result when it chains into this, so a run that finishes
-        while another object is selected still gets its uncertainties.
+        while another object is selected still gets its uncertainties. The SNR and continuum
+        uncertainty are the ones stored on ``res`` when its windows were measured; the modal's
+        fields only apply to the next measurement.
         """
         res = res if res is not None else self.selected()
         if res is None:
@@ -425,8 +427,7 @@ class AbundanceTool(AbundanceWizard):
         if spec is None:
             self.notify("The reference observation for this result is no longer loaded.")
             return
-        v = self.form1.values()          # SNR / continuum-% are set in the modal
-        ab.finalize_result(res, spec, float(v["snr"]) or None, float(v["cont_pct"]))
+        ab.finalize_result(res, spec, res.snr, res.cont_pct)
         s = res.summary
         res.name = self._result_label(res)
         self.push_results()

@@ -60,6 +60,40 @@ def test_scatter_ranges_include_error_bars():
         assert panel.y_range.reset_end == pytest.approx(4.35)
 
 
+def test_abundance_recomputations_use_the_results_own_uncertainty(monkeypatch):
+    """A result's SNR and continuum uncertainty are part of its record: recomputing its
+    error budget or re-measuring its EWs must not pick up the modal's current values."""
+    import abundancetool
+    from abundancetool import AbundanceTool
+    from controls import Field, Form
+
+    tool = AbundanceTool.__new__(AbundanceTool)
+    tool.active = True
+    tool.form1 = Form("abund-uncert-test", [Field("snr", "SNR", value=500.0),
+                                            Field("cont_pct", "Continuum", value=2.0)])
+    spec = Spectrum(np.linspace(5000.0, 5001.0, 5), np.ones(5))
+    res = SimpleNamespace(stage="synth", ref_uid="obs", snr=40.0, cont_pct=0.3,
+                          profile="gauss", lines=[], summary={"a_mean": np.nan},
+                          element="Fe", uid="r1")
+    tool.selected = lambda: res
+    tool.get_observation = lambda uid: spec
+    tool.ctx = SimpleNamespace(notify=lambda *a, **k: None)
+    tool.push_results = tool._render_selected = lambda: None
+    tool._result_label = lambda r: "Fe"
+    seen = []
+    monkeypatch.setattr(abundancetool.ab, "finalize_result",
+                        lambda r, s, snr, cont: seen.append((snr, cont)))
+    monkeypatch.setattr(abundancetool.ab, "refresh_ews",
+                        lambda s, lines, *, profile, snr, cont_pct: seen.append((snr, cont_pct)))
+    tool.report_refresh = lambda r, outcome: None
+
+    tool.run_uncert(res)
+    res.stage = "lines"
+    tool.on_filter_changed()
+
+    assert seen == [(40.0, 0.3), (40.0, 0.3)]
+
+
 def test_abundance_line_jump_pads_fit_window():
     from abundwizard import AbundanceWizard
 
