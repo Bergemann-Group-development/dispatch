@@ -32,12 +32,14 @@ the preference sheets and the run-cache listing). See ``docs/GUIWorkflow.md``.
 from __future__ import annotations
 
 import html
+import json
 import logging
 from pathlib import Path
 
 import store
 from tumult.departures import Departures
-from tumult.synthesis import AtmosphereGrid, Snapshot, check_fit
+from tumult.linemask import LineMask, LineMaskSet
+from tumult.synthesis import AtmosphereGrid, Snapshot, SynthRequest, check_fit
 from tumult.synthesis import workflows as synth
 from atompicker import AtomPicker
 from controls import Field, Form
@@ -54,6 +56,7 @@ from synthprefs import (
     SELECT_OPTIONS,
     load_prefs,
     missing_prefs,
+    synth_config,
 )
 
 
@@ -62,6 +65,16 @@ def _human_size(n):
         if n < 1024 or unit == "GB":
             return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
         n /= 1024
+
+
+def rerun_record(request, windows, **extra):
+    """What a spectrum's Info meta keeps to be rerun (``meta["rerun"]``): the submitted
+    request without its configuration, the ``(fit, synth)`` window pairs, and ``extra``
+    (``use_linelist``, the line-mask name, a fit's :meth:`FitTab.collect` values)."""
+    request = json.loads(request.to_json())
+    del request["config"]
+    return {"request": request,
+            "windows": [[list(fit), list(synth)] for fit, synth in windows], **extra}
 
 
 class SynthModal:
@@ -75,6 +88,7 @@ class SynthModal:
         self.on_warn = on_warn   # push True/False when configured files go missing/found
         self.missing = []        # path prefs currently pointing at non-existent files
         self.job = None          # ("range", None) | ("masks", LineMaskSet) once opened
+        self.source = None       # the name of the spectrum a rerun was opened from
         self.mode = "synth"      # "synth" | "fit"
         self._pending = False    # a submission is validated and closing/closed but the
                                   # actual (slow) handoff to the daemon hasn't run yet
@@ -213,6 +227,7 @@ class SynthModal:
     def open_range(self, xmin=None, xmax=None, mode="synth"):
         """Open on a free window (Å); ``None`` leaves the fields blank for the user."""
         self.job = ("range", None)
+        self.source = None
         self.setup.element = ""
         if xmin is not None and xmax is not None:
             self.window_form.set_values(xmin=round(float(xmin), 3), xmax=round(float(xmax), 3))
@@ -226,11 +241,54 @@ class SynthModal:
             self.notify("This line mask has no switched-on windows.")
             return
         self.job = ("masks", mset)
+        self.source = None
         self.setup.element = mset.element
         self._open(mode)
 
-    def _open(self, mode):
+    def open_rerun(self, obj):
+        """Open on the request a synthesis or fit spectrum ``obj`` recorded
+        (``meta["rerun"]``, see :func:`rerun_record`): its windows, atmosphere, star,
+        abundances, RT mode and model atoms, and for a fit its target and axes, as a draft
+        of the setup. The configuration is the current Preferences. Submitting adds a new
+        spectrum; ``obj`` is left as it is."""
+        record = ((obj.meta or {}).get("rerun") or {}) if obj is not None else {}
+        if not record:
+            self.notify("This spectrum does not record the request it was computed from.")
+            return
+        try:
+            request = SynthRequest.from_dict({**record["request"],
+                                              "config": synth_config(load_prefs()).to_dict()})
+            windows = [(tuple(fit), tuple(synth)) for fit, synth in record["windows"]]
+        except (KeyError, TypeError, ValueError, OSError) as exc:
+            self.notify(f"Cannot read the request of {obj.name}: {exc}")
+            return
+        if record.get("mask") or len(windows) > 1:
+            # the recorded windows, as a set of their own: the source set may have changed
+            mset = LineMaskSet(label=record.get("mask") or obj.name, masks=[
+                LineMask(lmin=f[0], lmax=f[1], smin=s[0], smax=s[1]) for f, s in windows])
+            self.job = ("masks", mset)
+        else:
+            self.job = ("range", None)
+            self.window_form.set_values(xmin=windows[0][0][0], xmax=windows[0][0][1])
+        self.setup.element = ""
+        self.source = obj.name
+
+        def prefill():
+            reason = self.setup.load_request(request, record.get("use_linelist", True))
+            self.atoms.selected = list(naming.atoms(request))
+            self.atoms.render()
+            self.fit.set_relative(bool(self.setup.base_form.value("relative_abundances")))
+            self.fit.set_feh(self.setup.run_form.value("feh"))
+            if record.get("fit"):
+                self.fit.load(record["fit"])
+            if reason:
+                self.notify(reason)
+        self._open("fit" if record.get("fit") else "synth", prefill)
+
+    def _open(self, mode, prefill=None):
         self.draft.begin()
+        if prefill is not None:
+            prefill()
         self._pending = False   # a fresh job; any earlier submission has long since handed off
         self.mode = mode
         self.setup.allow_departures = mode != "fit"
@@ -247,6 +305,11 @@ class SynthModal:
 
     def context_html(self):
         """The modal's header block: the window the run covers."""
+        source = (f'<div class="hint">Rerun from <b>{html.escape(self.source)}</b>, as '
+                  f'recorded; submitting adds a new spectrum.</div>' if self.source else "")
+        return source + self._window_html()
+
+    def _window_html(self):
         kind, mset = self.job or ("range", None)
         if kind == "masks":
             masks = [m for m in mset.masks if m.include]
@@ -439,6 +502,8 @@ class SynthModal:
             fitted=c["abund_fits"]))
         rows = self._request_rows(request, grid)
         preparation = self.canvas.preparation(obj)
+        rerun = rerun_record(request, windows, mask=mset.name if kind == "masks" else None,
+                             fit=c)
 
         def fit_meta(stellar, terms):
             """The Info payload of the fit: the synthesis, plus the target and the
@@ -449,6 +514,7 @@ class SynthModal:
                 obj.name, preparation["normalisation"],
                 "filtered" if preparation["filtered"] else "unfiltered"))])
             meta["preparation"] = preparation
+            meta["rerun"] = rerun
             return meta
 
         def on_done(result):
@@ -687,6 +753,8 @@ class SynthModal:
         meta["params"].append(["Line list", linelist])
         if kind == "masks":
             meta["params"].append(["Line mask", mset.name])
+        meta["rerun"] = rerun_record(request, windows, use_linelist=use_linelist,
+                                     mask=mset.name if kind == "masks" else None)
 
         def add_result(result):
             for index, spec in enumerate(result.spectra, start=1):

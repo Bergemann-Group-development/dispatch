@@ -17,7 +17,10 @@ unit-tested and serialised into a session snapshot on its own.
 from __future__ import annotations
 
 import itertools
+from copy import deepcopy
 from pathlib import Path
+
+import naming
 
 from tumult.linemask import (LineMask, LineMaskSet, parse_linemask_file,
                       write_linemask_file)
@@ -110,6 +113,18 @@ class MaskStore:
         self.active = 0 if mset.masks else None
         self._changed()
         return mset
+
+    def duplicate(self, uid):
+        """Add a copy of set ``uid`` under a unique name and make it current. The copy has
+        the same windows, element and padding but neither a file nor a baseline, so it is
+        unsaved until written out and editing it leaves the original as it is."""
+        mset = self.find(uid)
+        if mset is None:
+            return None
+        copy = deepcopy(mset)
+        copy.source_path, copy.baseline = "", {}
+        copy.label = naming.unique(mset.name, {s.name for s in self.sets})
+        return self.adopt(copy)
 
     def set_include(self, index, on):
         """Switch one mask on/off. The toggle curates what a save writes out and what the

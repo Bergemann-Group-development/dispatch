@@ -41,8 +41,8 @@ from pathlib import Path
 from bokeh.models import TextInput
 
 from tumult import refstars
-from tumult.synthesis import (Abundances, Atmosphere, DepartureRequest, Departures, Snapshot,
-                              Star, SynthRequest)
+from tumult.synthesis import (Abundances, Atmosphere, AtmosphereGrid, DepartureRequest,
+                              Departures, Snapshot, Star, SynthRequest)
 from tumult.synthesis.snapshot_grid import is_snapshot_grid
 
 import store
@@ -560,6 +560,52 @@ class SynthSetup:
         self._reset_atmos_picker()
         self._seed_atmos_query()
         self.render_grid_ui()
+
+    def load_request(self, request, use_linelist=True):
+        """Show ``request``'s atmosphere, star, abundance overrides and RT mode in this
+        setup, the inverse of :meth:`context`. It edits the unsaved state only, so a draft
+        discard restores the last submitted setup. The configuration (paths, resolution)
+        stays with Preferences. Returns why the atmosphere could not be selected, or
+        ``None``."""
+        sect = self._sections[self.section]
+        sect.update({k: v for k, v in zip(("teff", "logg", "feh", "vmic"), request.star.tuple())
+                     if v is not None})
+        abundances = request.abundances
+        sect["abundances"] = ", ".join(f"{el}={value:g}"
+                                       for el, value in (abundances or {}).items())
+        if abundances is not None:
+            sect["relative_abundances"] = abundances.relative
+        sect["mode"] = "NLTE" if request.is_nlte else "LTE"
+        sect["departures"] = (str(request.departures.folder)
+                              if isinstance(request.departures, Departures) else "")
+        sect["use_linelist"] = bool(use_linelist)
+        reason = self._load_atmosphere(request.atmosphere, request.config)
+        self.reload()
+        return reason
+
+    def _load_atmosphere(self, atmosphere, config):
+        """Select the registered grid ``atmosphere`` names (interpolated), the grid holding
+        its file (picked), or the Individual atmosphere with its format."""
+        sect = self._sections[self.section]
+        grids = [(gid, self.grids._find(gid) or {}) for gid, _ in self.grids.names]
+        if isinstance(atmosphere, AtmosphereGrid):
+            folder = config.resolve(atmosphere.folder)
+            gid = next((gid for gid, g in grids
+                        if config.resolve(g.get("folder") or "") == folder), None)
+            if gid is None:
+                return (f"The atmosphere grid {atmosphere.folder} is not registered; the "
+                        "grid selection was left as it is.")
+            sect.update(atmos_mode="interp", atmos_file="")
+        else:
+            path = config.resolve(atmosphere.path)
+            gid = next((gid for gid, g in grids if g.get("folder")
+                        and path.is_relative_to(config.resolve(g["folder"]))),
+                       INDIVIDUAL_GRID)
+            sect.update(atmos_mode="pick", atmos_file=str(atmosphere.path))
+            if gid == INDIVIDUAL_GRID:
+                sect["atmos_individual_format"] = atmosphere.format
+        self._sections[self.grid_section]["atmos_grid_id"] = gid
+        return None
 
     # --- the payload ------------------------------------------------------------------
     @property

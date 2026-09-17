@@ -15,6 +15,8 @@ implement the hooks marked "subclass".
 from __future__ import annotations
 
 import html
+import uuid
+from copy import deepcopy
 from pathlib import Path
 from dataclasses import replace
 
@@ -119,6 +121,7 @@ ANALYSIS_SCRIPT = r"""
     if (step) { analysisAction(prefix, 'step', step.dataset.step); return; }
     var rem = ev.target.closest('[data-result-remove]');
     if (rem) { analysisAction(prefix, 'remove', rem.dataset.resultRemove); return; }
+    if (ev.target.closest('[data-result-duplicate]')) { analysisAction(prefix, 'duplicate'); return; }
     var item = ev.target.closest('[data-result]');
     if (item) { analysisAction(prefix, 'select', item.dataset.result); return; }
     var sort = ev.target.closest('.line-sort[data-sortcol]');
@@ -468,6 +471,8 @@ class AbundanceWizard(Tool):
             self.select_result(arg)
         elif kind == "remove":
             self.remove_result(arg)
+        elif kind == "duplicate":
+            self.duplicate_result()
         elif kind == "toggle-line":
             self._toggle_line(arg)
         elif kind == "continuum":
@@ -609,6 +614,25 @@ class AbundanceWizard(Tool):
         elif not self.results:
             self.push_view("off")
             self._clear_line_decor()
+
+    def duplicate_result(self, uid=None):
+        """Add a copy of result ``uid`` (the selected one by default) under a unique name
+        and select it. The copy has its own uid, so the original's workflow keeps reaching
+        the original only, and a rerun or curation of the copy leaves the original as it
+        is. A result still being computed is not copied."""
+        res = self._find(uid or self.selected_uid)
+        if res is None:
+            return None
+        if res.uid in self.jobs.current or res.name in self.jobs.current:
+            self.notify(f"{res.name} is still being computed; duplicate it once it has "
+                        "finished or been cancelled.")
+            return None
+        copy = deepcopy(res)
+        copy.uid = uuid.uuid4().hex[:8]
+        self._add_result(copy, res.name)
+        self.select_result(copy.uid)
+        self.notify(f"Duplicated as \u201c{copy.name}\u201d.", level="success")
+        return copy
 
     def _toggle_line(self, token):
         res = self.selected()

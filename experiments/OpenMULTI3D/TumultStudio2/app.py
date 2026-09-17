@@ -4,6 +4,7 @@ Run with:   bokeh serve --show TumultStudio2
 """
 import html
 import itertools
+from copy import deepcopy
 import logging
 import os
 import sys
@@ -233,8 +234,18 @@ def inspector_html(canvas):
         + _field("Range", f"{lo:.1f} – {hi:.1f} {canvas.xlabel}")
         + _field("Points", f"{len(obj.spectrum):,}")
         + _field("Native units", f"{obj.raw.xunit} / {obj.raw.yunit}")
+        + _rerun_html(obj)
         + _meta_html(obj.meta)
     )
+
+
+def _rerun_html(obj):
+    """The Info tab's rerun action, for a spectrum that recorded its request."""
+    if not (obj.meta or {}).get("rerun"):
+        return ""
+    return (f'<button class="text-btn object-rerun" data-uid="{html.escape(obj.uid)}" '
+            'title="Open the synthesis modal with the request this spectrum was computed '
+            'from">Rerun from this…</button>')
 
 
 def footer_html(canvas):
@@ -541,7 +552,29 @@ def build():
         lo, hi = to_range(float(x.min()), float(x.max()), obj.spectrum.xunit, u.AA)
         range_tool.select_range(lo, hi)
 
-    inspector = Inspector(canvas, on_fit=edit_fit, on_mask=edit_mask, notify=notify)
+    def duplicate_spectrum():
+        """Edit-tab Duplicate: the selected spectrum again under a unique name, with its
+        own copy of the data, provenance, continuum, convolution and style, selected so a
+        broadening fit or a continuum edit changes the copy only."""
+        obj = canvas.selected()
+        if obj is None:
+            return
+        g = obj.line.glyph
+        copy = canvas.add_object(deepcopy(obj.raw), name=ctx.unique_name(obj.name, pending=False),
+                                 color=g.line_color, dash=obj.dash, source=obj.source,
+                                 meta=deepcopy(obj.meta), select=False)
+        copy.norm_knots = deepcopy(obj.norm_knots)
+        copy.already_normalised = obj.already_normalised
+        copy.filtered = deepcopy(obj.filtered)
+        copy.conv = dict(obj.conv)
+        canvas.normalise_object(copy)
+        canvas._refresh_object(copy)
+        canvas.set_style(copy, width=g.line_width, alpha=g.line_alpha)
+        canvas.select_object(copy.uid)
+        notify(f"Duplicated as “{copy.name}”.", level="success")
+
+    inspector = Inspector(canvas, on_fit=edit_fit, on_mask=edit_mask,
+                          on_duplicate=duplicate_spectrum, notify=notify)
     # the Select range tool: the one range gesture, whose actions reach the line-mask view and the
     # synthesis modal built further down (the lambdas resolve them at click time)
     range_tool = RangeTool(
@@ -1664,6 +1697,7 @@ def build():
         "range-fit":    lambda v: range_tool.fit(),
         "range-add":    lambda v: range_tool.add_window(),
         "synth-new":    lambda v: synth_modal.open_range(),
+        "rerun":        lambda v: synth_modal.open_rerun(canvas._find(v)),
         "synth-submit": lambda v: synth_modal.submit(),
         "annot-toggle": lambda v: ctx.annot.toggle_visible(),
         "linejump":     linenav.jump,

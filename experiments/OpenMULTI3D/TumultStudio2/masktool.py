@@ -24,6 +24,7 @@ tool starts a brand-new set from a range through :meth:`MaskTool.create_from_win
 
 An edited set is flagged as modified against the file it came from; the sidebar offers a revert
 to that file and a "save as" that writes a new one and adopts it as the new origin.
+**Duplicate** adds an unsaved copy of the set to experiment on.
 """
 from __future__ import annotations
 
@@ -363,6 +364,10 @@ class MaskTool(Tool):
             self._hand_over(self.on_fit)
         elif kind == "save-as":
             self._save_as(arg)
+        elif kind == "duplicate":
+            copy = self.store.duplicate(self.store.current_uid)
+            if copy is not None:
+                self.notify(f"Duplicated as \u201c{copy.name}\u201d.", level="success")
         elif kind == "revert":
             self._revert()
         elif kind == "set-select":
@@ -438,6 +443,8 @@ class MaskTool(Tool):
                 'you type a full path">'
                 '<div class="lm-actions">'
                 '<button class="text-btn lm-saveas">Save as\u2026</button>'
+                '<button class="text-btn lm-duplicate" title="Add an unsaved copy of this '
+                'set to the workspace">Duplicate</button>'
                 f'{revert}</div>')
         return (f'<div class="lm-title"><span class="section-header">'
                 f'{html.escape(mset.name)}</span>{badge}</div>'

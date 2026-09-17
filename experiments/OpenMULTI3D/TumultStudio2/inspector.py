@@ -3,7 +3,8 @@ and Style (line appearance). Both bind to whichever object is selected in the le
 sidebar (like the original TumultStudio's shared fit form).
 
 The Edit tab mirrors the synth Fit tab's idiom: each convolution field carries a "fit
-this" switch, plus a target dropdown and a "Fit to target" button. Fitting is pure
+this" switch, plus a target dropdown and a "Fit to target" button; **Duplicate** copies the
+object first, so a fit or edit can be compared with the original. Fitting is pure
 post-processing — convolve the selected (model) spectrum to best match the target
 observation over the current view — so it needs no re-synthesis and works on any object.
 The line colour is chosen from a fixed palette of swatches (rendered as HTML so they can
@@ -62,10 +63,11 @@ def _conv_row(key, label, value, fit_on):
 
 
 class Inspector:
-    def __init__(self, canvas, on_fit=None, on_mask=None, notify=None):
+    def __init__(self, canvas, on_fit=None, on_mask=None, on_duplicate=None, notify=None):
         self.canvas = canvas
         self.on_fit = on_fit or (lambda: None)   # main.py runs the actual fit
         self.on_mask = on_mask or (lambda: None) # main.py opens the Select range tool on the spectrum
+        self.on_duplicate = on_duplicate or (lambda: None)   # app.py copies the selected object
         self.notify = notify or (lambda *a, **k: None)
         self.conv_vals = {k: 0.0 for k in CONV_KEYS}     # the selected object's conv
         self.fit_flags = {k: (k in FIT_DEFAULT_ON) for k in CONV_KEYS}  # which to fit
@@ -123,7 +125,10 @@ class Inspector:
         else:
             tail = '<div class="hint">Load another spectrum to fit the broadening against.</div>'
         status = self.canvas.preparation_html(self.canvas.selected_uid)
-        return (status + rows + '<div class="section-header">Fit broadening</div>' + tail
+        duplicate = ('<button class="text-btn edit-duplicate-btn" title="Add a copy of this '
+                     'spectrum to edit or fit without changing this one">Duplicate</button>')
+        return (status + duplicate + rows
+                + '<div class="section-header">Fit broadening</div>' + tail
                 + '<div class="section-header">Mask</div>'
                 '<button class="text-btn edit-mask-btn" title="Open the Select range tool with this '
                 'spectrum\'s full wavelength range as the range">Select full range</button>')
@@ -172,6 +177,8 @@ class Inspector:
             self.on_fit()
         elif kind == "mask":
             self.on_mask()
+        elif kind == "duplicate":
+            self.on_duplicate()
 
     def _apply_style(self, key, value):
         obj = self.canvas.selected()

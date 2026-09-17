@@ -258,6 +258,21 @@ class FitTab:
                          if self.flags[k]},
         }
 
+    def load(self, settings):
+        """Show a recorded fit's axes (the shape :meth:`collect` returns) in the section;
+        a target that is no longer loaded leaves the current one selected."""
+        if settings.get("target") in {uid for uid, _ in self.targets}:
+            self.target = settings["target"]
+        stellar = set(settings.get("fit_stellar") or ())
+        for k, _ in _STELLAR:
+            self.flags[k] = k in stellar
+        post = settings.get("fit_post") or {}
+        for k, _, _ in _POST:
+            self.flags[k] = POST_ENGINE[k] in post
+            if self.flags[k]:
+                self.vals[k] = float(post[POST_ENGINE[k]])
+        self.abund_rows = {el: float(v) for el, v in (settings.get("abund_fits") or {}).items()}
+
     def populate(self, best):
         """Write the best-fit broadening and abundance rows back into the fields (engine
         names mapped to UI names); the stellar values are the modal's to adopt."""

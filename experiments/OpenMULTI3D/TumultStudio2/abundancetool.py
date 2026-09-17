@@ -180,7 +180,8 @@ class AbundanceTool(AbundanceWizard):
         if res is not None:
             return (f'<div class="hint">Settings for <b>{html.escape(res.name)}</b> — its '
                     f'{len(res.lines)} measured lines are kept; synthesising again replaces '
-                    f'the abundances standing on them.</div>')
+                    f'the abundances standing on them. Duplicate the object first to keep '
+                    f'them.</div>')
         mset = self._pending_set
         if mset is None:
             return '<div class="hint">Nothing selected to measure.</div>'

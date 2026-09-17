@@ -287,6 +287,8 @@
         <div class="hint">The lines come from a line mask — open one in the left sidebar and
           use its <b>Measure abundances</b> action. These steps act on the abundance object
           that measurement produced.</div>
+        <button class="text-btn" data-tool="abund" data-result-duplicate
+                title="Add a copy of this result to rerun or curate without changing this one">Duplicate</button>
         <!-- step 1 · the lines: the spectrum, and the synthesis standing on them
              (configured in the modal, re-runnable after curation) -->
         <div class="abund-step-panel abund-step-1-panel">
@@ -317,6 +319,8 @@
           it out of the mean.</div>
         <div class="hint">The Scatter step shows the line-to-line scatter of the corrections
           against excitation energy and reduced EW, with the mean ΔA and its σ.</div>
+        <button class="text-btn" data-tool="corr" data-result-duplicate
+                title="Add a copy of this result, e.g. to edit its fit windows without changing this one">Duplicate</button>
       </div>
       <!-- the model-atom panel: what it is, and the entry point of the correction modal -->
       <div class="atom-panel">
@@ -1106,10 +1110,18 @@
     var m = Bokeh.documents[0].get_model_by_name('abund-atom-actions');
     if (m) m.value = 'del ' + del.dataset.path + ' ' + Date.now();
   });
-  // Edit tab: "Fit to target" / "Mask full range" (rendered dynamically) -> "edit-actions"
+  // Edit tab: "Fit to target" / "Mask full range" / "Duplicate" (rendered dynamically) ->
+  // "edit-actions"; the Info tab's "Rerun from this…" -> "object-actions"
   document.addEventListener('click', function (ev) {
+    var rerun = ev.target.closest('.object-rerun');
+    if (rerun) {
+      var o = Bokeh.documents[0].get_model_by_name('object-actions');
+      if (o) o.setv({ value: 'rerun:' + rerun.dataset.uid + ':' + Date.now() });
+      return;
+    }
     var kind = ev.target.closest('.edit-fit-btn') ? 'fit' :
-               ev.target.closest('.edit-mask-btn') ? 'mask' : null;
+               ev.target.closest('.edit-mask-btn') ? 'mask' :
+               ev.target.closest('.edit-duplicate-btn') ? 'duplicate' : null;
     if (!kind) return;
     var m = Bokeh.documents[0].get_model_by_name('edit-actions');
     if (m) m.setv({ value: kind + ' ' + Date.now() });
@@ -1504,6 +1516,7 @@
     if (ev.target.closest('.lm-fit')) { linemaskAction('fit'); return; }
     if (ev.target.closest('.lm-measure-abund')) { linemaskAction('measure-abund'); return; }
     if (ev.target.closest('.lm-fit-balance')) { linemaskAction('fit-balance'); return; }
+    if (ev.target.closest('.lm-duplicate')) { linemaskAction('duplicate'); return; }
     if (ev.target.closest('.lm-revert')) {
       if (confirm('Discard every edit and reload this set from its file?')) linemaskAction('revert');
       return;

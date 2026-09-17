@@ -32,8 +32,9 @@ with the two offsets stated as insets, so a fit is watched as it converges; **Li
 the target spectrum with every inverted line's synthetic drawn on it. A held parameter's
 diagnostic is still computed and shown, as the residual it is.
 
-Refitting from inside the object reuses its lines and overwrites the fit; launching again
-from the LineMasks view measures afresh into a new object. That is the whole identity rule:
+Refitting from inside the object reuses its lines and overwrites the fit; refitting a
+duplicate (:meth:`AbundanceWizard.duplicate_result`) keeps both fits; launching again from
+the LineMasks view measures afresh into a new object. That is the whole identity rule:
 the object owns the measurement, the fit is replaceable.
 """
 from __future__ import annotations
@@ -760,9 +761,12 @@ class IonBalanceTool(AbundanceWizard):
                         + '.</div>')
         rows.append(self._params_html(res))
         rows.append('<button class="text-btn ionbal-refit">Refit…</button>'
+                    '<button class="text-btn" data-tool="ionbal" data-result-duplicate>'
+                    'Duplicate</button>'
                     '<div class="hint">Refitting keeps these measured lines and their '
-                    'curation, and replaces the fit standing on them. To measure again — a '
-                    'different star, or edited windows — start from the LineMasks view.</div>')
+                    'curation, and replaces the fit standing on them; refit a duplicate to '
+                    'keep this fit. To measure again — a different star, or edited windows '
+                    '— start from the LineMasks view.</div>')
         return "".join(rows)
 
     @staticmethod

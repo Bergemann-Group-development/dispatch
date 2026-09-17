@@ -37,6 +37,33 @@ spectrum, a result or an unfinished job of the document gets a `#2`, `#3`… suf
 sidebar row shows its current value on a second line, and names in a loaded workspace stay
 as saved.
 
+### Duplicate and rerun
+
+A rerun acts on the object it is started from: an abundance result's **Synthesise again**
+replaces its abundances, a balance's **Refit…** its fit, a correction's fit-window edit its
+corrections, a mask edit the set, and the Edit tab's broadening fit the spectrum's
+convolution. To keep the current state for comparison, duplicate the object first and
+rerun the copy. The result, mask-set and spectrum views each offer one **Duplicate**
+button: the abundance,
+correction and balance panels, the LineMasks view (beside **Save as…**) and a spectrum's
+Edit tab. The copy is a deep copy with a fresh identity and the source name made unique
+(`Fe abundance · … #2`), added to the same list and focused. It shares no job with the
+original, so the original's running workflow keeps delivering to the original only; a
+result that is still being computed is not duplicated. A copied mask set has no file and
+no baseline, so it is unsaved until **Save as…** writes it. Copies are ordinary workspace
+objects and are saved and restored like any other.
+
+A synthesised or fitted spectrum records the request it was submitted with in its Info
+meta (`meta["rerun"]`: the request without its configuration, the fit and synth window
+pairs, the line-mask name, **Use line list** and, for a fit, the target and the fitted
+axes). Its Info tab offers **Rerun from this…**, which opens the synthesis modal in the
+same mode with those values as a draft: the window (a free range, or the recorded windows
+under the mask's name), the atmosphere (the registered grid, the grid holding a picked
+file, or the Individual atmosphere with its format), stellar parameters, abundance
+overrides, RT mode, model atoms and saved departures, and for a fit its target and switches.
+Paths and numerical settings come from the current Preferences. Submitting adds a new
+spectrum and makes those values the last-used setup; Cancel restores the previous one.
+
 ## Processes panel
 
 Every background operation a document admits (a file load, a synthesis, a fit, a durable
@@ -211,8 +238,9 @@ session** loads it in one click; it loads and deletes like any slot. Autosaving 
 not count as saving for the unsaved-changes prompt.
 
 Boundaries: the synthesis, correction, abundance and ion-balance forms remain global
-last-used preferences, not slot state, so an older slot does not recover the form values
-it was made with. Each calculation modal edits a draft of those preferences
+last-used preferences, not slot state. A synthesised or fitted spectrum carries its own
+request in its meta, so **Rerun from this…** recovers it; the other forms' values are not
+recovered from a slot. Each calculation modal edits a draft of those preferences
 (`draft.CalculationDraft`): submitting commits the draft as the next last-used values,
 while Cancel, Escape and a backdrop click discard the edits. Preferences pages, by
 contrast, save every change immediately and say so; their path preferences (line list,
@@ -267,7 +295,7 @@ a footer message, and the current view kept, when no spectrum is selected.
 ## LineMasks view
 
 Opened by focusing a line-mask object. The sidebar holds name and modified badge,
-element, synth padding, save-as / revert, and the analysis actions **Synthesise
+element, synth padding, save-as / duplicate / revert, and the analysis actions **Synthesise
 windows…**, **Fit windows…**, **Measure abundances** and **Fit ionisation balance**.
 The centre shows the mask table below the spectrum; existing windows are resized by their
 edge handles only.
@@ -305,7 +333,8 @@ solve the stellar parameters again.
 ## Synthesis modal
 
 One component, opened from the Select range sidebar (free range), the LineMasks view (the
-set's synth windows) and New → Synthesise spectrum (blank λ fields).
+set's synth windows), New → Synthesise spectrum (blank λ fields) and a synthesised or
+fitted spectrum's **Rerun from this…** (its recorded request, see "Duplicate and rerun").
 
 - Header: what will be computed, e.g. "5700.00–5720.00 Å" or "7 windows of Fe-lines.txt,
   5480–6720 Å".
@@ -442,7 +471,8 @@ atom is not loaded is listed in a trailing Corrections section. Removing an atom
 results after confirmation. The result view has two steps, **Lines** (the reference spectrum
 with the selected line's curve-of-growth inversion beside it, over the per-line table) and
 **Scatter** (ΔA against excitation energy and against reduced EW, side by side), with the
-line include toggles curating the mean.
+line include toggles curating the mean. **Duplicate** in the panel keeps the current windows
+and corrections before a fit-window edit changes them.
 
 ## Code owners
 
@@ -467,6 +497,10 @@ line include toggles curating the mean.
   envelope. `AtomTool`
   (`atomtool.py`) owns the atom objects, the atom view and the correction entry point;
   `AbundanceResult.atom_path` links a correction result to its atom.
+  `AbundanceWizard.duplicate_result`, `MaskStore.duplicate` and the Edit tab's
+  `duplicate_spectrum` (`app.py`) are the Duplicate actions; `synthmodal.rerun_record`
+  writes a spectrum's rerun record and `SynthModal.open_rerun` with
+  `SynthSetup.load_request` and `FitTab.load` reads it back.
 - The headless owners are in `tumult/`: `synthesis` (requests, submission, records,
   runtime), `abundance`, `measurement`, `sparams`, `linediag`, `linestrength`,
   `refstars`, `linemask` and `spectrum_io`. The GUI imports them directly; there are no

@@ -2278,6 +2278,9 @@ def test_fit_is_a_durable_workflow_built_from_the_same_request(tmp_path, monkeyp
     assert synth.meta["stellar"]["teff"] == 5600.
     assert ["Atmosphere", "Test grid grid, interpolated"] in synth.meta["params"]
     assert ["Abundances ([X/Fe])", "Mg=+0.35"] in synth.meta["params"]
+    assert synth.meta["rerun"]["fit"] == {"target": ctx.canvas.objects[0].uid,
+                                          "fit_stellar": ["teff"], "abund_fits": {"Mg": 0.2},
+                                          "fit_post": {"vshift": 0.0}}
     assert modal.run_form.value("teff") == 5600.        # the best fit becomes the setup
     assert job.handle.id in ctx.workflow_refs and ctx.workflow_refs.imported(job.handle.id)
 
@@ -2488,3 +2491,151 @@ def test_a_fit_reads_the_filtered_target_and_records_its_preparation(tmp_path, m
     _, y = submitted[-1][1]["target"].values
     assert np.allclose(y, raw.crop(xmin=5000.5, xmax=5001.5).values[1])
     assert submitted[-1][2]["preparation"]["filtered"] is False
+
+
+# --- duplicating objects and rerunning from a result ---------------------------------------
+def test_duplicates_are_independent_and_round_trip_through_a_save(tmp_path, monkeypatch):
+    """Duplicate on a result, a mask set and a spectrum adds a copy with its own identity
+    and a unique name. A rerun delivered to the copy, and edits of the copied set and
+    spectrum, leave the originals as they were; the copies come back from a save slot."""
+    from copy import deepcopy
+    from tumult.abundance import AbundanceResult
+    from tumult.spectrum_io import load_file
+
+    document, ctx = _build_document()
+    canvas, tools = ctx.canvas, ctx.tools
+    obs_path = _spectrum_file(tmp_path)
+    obs = canvas.add_object(load_file(obs_path), name="obs", source=("file", str(obs_path)))
+    obs.conv = {"vshift": 1.0}
+    abund = tools._tools["abundance"]
+    original = AbundanceResult(element="Fe", symbol="Fe", summary={}, uid="res-a",
+                               name="Fe A", ref_uid=obs.uid, ref_name="obs",
+                               lines=[_diag_line()])
+    abund.results.append(original)
+    abund.select_result(original.uid)
+
+    document.select_one({"name": "abund-actions"}).value = "duplicate::1"
+    copy = abund.selected()
+    assert copy is not original and copy.uid != original.uid and copy.name == "Fe A #2"
+    assert copy.lines is not original.lines and copy.ref_uid == obs.uid
+
+    # a rerun of the copy: its workflow's result reaches the copy only
+    submitted = []
+    monkeypatch.setattr(ctx, "submit_operation", lambda name, op, request, done, **kw:
+                        submitted.append(done) or SimpleNamespace(
+                            pid=1, token=SimpleNamespace(add_callback=lambda fn: None)))
+    abund.jobs.submit_operation(copy.name, abund.task_kind, _stub_request(tmp_path),
+                                abund._on_synth_done, result=copy)
+    assert abund.duplicate_result(copy.uid) is None      # not while it is being computed
+    rerun = deepcopy(copy)
+    rerun.lines[0].a, rerun.profile = 7.1, "voigt"
+    submitted[0](rerun)
+    assert (copy.lines[0].a, copy.profile, copy.name) == (7.1, "voigt", "Fe A #2")
+    assert original.lines[0].a != 7.1 and original.profile != "voigt"
+
+    # a mask set: the copy is unsaved and edited on its own
+    mset = ctx.masks.load_file(_mask_file(tmp_path))
+    tools.activate("linemask")
+    document.select_one({"name": "linemask-actions"}).value = "duplicate  1"
+    mcopy = ctx.masks.mset
+    assert mcopy.uid != mset.uid and mcopy.name == "fe-lines #2"
+    assert mcopy.source_path == "" and not mcopy.dirty and mcopy.element == "Fe"
+    ctx.masks.set_fit(0, 5000.2, 5001.8)
+    assert (mcopy.masks[0].lmin, mset.masks[0].lmin) == (5000.2, 5000.5)
+    assert not mset.dirty
+
+    # a spectrum from the Edit tab: a broadening edit of the copy stays on the copy
+    canvas.select_object(obs.uid)
+    document.select_one({"name": "edit-actions"}).value = "duplicate 1"
+    scopy = canvas.selected()
+    assert scopy is not obs and scopy.uid != obs.uid and scopy.name == "obs #2"
+    assert scopy.conv == {"vshift": 1.0} and scopy.source == obs.source
+    scopy.conv["vshift"] = 2.0
+    assert obs.conv == {"vshift": 1.0}
+
+    import store
+    _session_action(document, "save copies 1")
+    fresh, fctx = _build_document()
+    _session_load(fresh, 1, 2)
+    ftools = fctx.tools
+    assert [(r.uid, r.name, r.profile) for r in ftools._tools["abundance"].results] == [
+        (original.uid, "Fe A", original.profile), (copy.uid, "Fe A #2", "voigt")]
+    assert [(s.uid, s.name, s.dirty, s.source_path) for s in fctx.masks.listed] == [
+        (mset.uid, "fe-lines", False, str(_mask_file(tmp_path))),
+        (mcopy.uid, "fe-lines #2", False, "")]
+    assert [(o.uid, o.name, o.conv) for o in fctx.canvas.objects] == [
+        (obs.uid, "obs", {"vshift": 1.0}), (scopy.uid, "obs #2", {"vshift": 2.0})]
+    assert store.get_session(1) is not None
+
+
+def test_rerun_from_a_spectrum_prefills_the_modal_with_its_request(tmp_path, monkeypatch):
+    """"Rerun from this…" opens the modal on the request the spectrum recorded, whatever
+    was used last; submitting runs that request again as a new spectrum. A fit's record
+    reopens the fit mode with its axes, and several windows come back as a window set."""
+    from synthmodal import rerun_record
+    from tumult.synthesis import Atmosphere
+    executed = []
+    document, ctx, messages = _synth_document(
+        tmp_path, monkeypatch, executed=executed,
+        run={"abundances": "Mg=0.2", "atmos_individual_format": "Marcs"})
+    ticks = _Ticks(document, monkeypatch)
+    modal = ctx.synth_modal
+    modal.open_range(5000.0, 5001.0, "synth")
+    assert _submit_modal(document, ctx, ticks) == 1
+    assert ticks.settle(lambda: not ctx.jobs.active)
+    first, = ctx.canvas.objects
+
+    # the last-used setup moves on: another star, no overrides, another window
+    modal.open_range(6000.0, 6001.0, "synth")
+    modal.setup.set_stellar({"teff": 6100.0})
+    modal.setup.base_form.set_values(abundances="")
+    assert _submit_modal(document, ctx, ticks) == 1
+    assert ticks.settle(lambda: not ctx.jobs.active)
+    assert executed[-1].star.teff == 6100.0
+
+    _send_action(document, f"rerun:{first.uid}:1")
+    assert modal.dialog.value.startswith("open:") and modal.mode == "synth"
+    assert modal.run_form.value("teff") == 5750.0
+    assert modal.setup.base_form.value("abundances") == "Mg=0.2"
+    assert modal.window_form.values() == {"xmin": 5000.0, "xmax": 5001.0}
+    assert "Rerun from" in modal.context_bridge.value
+    modal.draft.discard()                     # Cancel restores the last-used setup
+    assert modal.run_form.value("teff") == 6100.0
+
+    _send_action(document, f"rerun:{first.uid}:2")
+    assert _submit_modal(document, ctx, ticks) == 1
+    assert ticks.settle(lambda: not ctx.jobs.active)
+    assert executed[-1] == executed[0]
+    assert ctx.canvas.objects[-1].name == first.name + " #2"
+    assert "config" not in first.meta["rerun"]["request"]
+
+    # a fit over two windows of a picked file: the fit mode, its axes and the windows
+    picked = tmp_path / "one.mod"
+    picked.write_text("")
+    request = _stub_request(tmp_path, windows=((5000., 5002.), (5003., 5005.)))
+    request = request.update(atmosphere=Atmosphere(picked, "Marcs"))
+    x = np.linspace(5000., 5001., 5)
+    target = ctx.canvas.add_object(Spectrum(x, np.ones_like(x)), name="obs",
+                                   source=("file", "/nowhere/obs.fits"))
+    fitted = ctx.canvas.add_object(Spectrum(x, np.ones_like(x)), name="fit", source=("synth", None),
+                                   meta={"type": "synth", "params": [], "rerun": rerun_record(
+                                       request, [((5000.5, 5001.5), (5000., 5002.)),
+                                                 ((5003.5, 5004.5), (5003., 5005.))],
+                                       mask="fe-lines",
+                                       fit={"target": target.uid, "fit_stellar": ["teff"],
+                                            "abund_fits": {"Mg": 0.3},
+                                            "fit_post": {"zeta_rt": 2.0}})})
+    _send_action(document, f"rerun:{fitted.uid}:3")
+    assert modal.mode == "fit" and modal.fit.target == target.uid
+    assert modal.fit.flags["teff"] and not modal.fit.flags["logg"]
+    assert modal.fit.flags["vmac"] and modal.fit.vals["vmac"] == 2.0
+    assert modal.fit.abund_rows == {"Mg": 0.3}
+    assert modal.setup.is_individual and modal.setup.atmos_file() == str(picked)
+    assert modal._job_windows() == (((5000.5, 5001.5), (5000., 5002.)),
+                                    ((5003.5, 5004.5), (5003., 5005.)))
+    assert "fe-lines" in modal.context_bridge.value
+    modal.draft.discard()
+
+    # a spectrum without a record says so
+    _send_action(document, f"rerun:{target.uid}:4")
+    assert messages[-1] == "This spectrum does not record the request it was computed from."
