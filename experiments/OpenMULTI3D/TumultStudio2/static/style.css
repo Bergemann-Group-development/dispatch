@@ -383,8 +383,11 @@ body.resizing * { pointer-events: none !important; }
   display: flex; flex: 0 0 var(--bottom-h); min-height: 0; flex-direction: column; overflow: auto;
   border-top: 1px solid var(--border); padding-top: 6px;
 }
-#linemask-tables { flex: 1; min-height: 0; overflow: auto; }
-#linemask-table { min-width: 0; }
+/* the table scrolls in its own box; the new-mask button stays below it, at the table's
+   end while the rows fit and at the panel's bottom once they scroll */
+#linemask-tables, #linemask-table { flex: 1; min-height: 0; min-width: 0;
+  display: flex; flex-direction: column; }
+.lm-scroll { flex: 0 1 auto; min-height: 0; overflow: auto; }
 /* a switched-off mask: still listed, but plainly not in play */
 .lm-table .lm-row.lm-off td { opacity: 0.4; }
 .lm-flag { display: inline-block; margin: 0 3px 1px 0; padding: 0 4px; border-radius: 3px;
@@ -401,9 +404,8 @@ body.resizing * { pointer-events: none !important; }
 .lm-table .lm-row:hover { background: #333; }
 .lm-table .lm-row.lm-active { background: rgba(74,144,226,0.15); }
 .lm-empty { padding: 16px; color: var(--text-muted); font-size: 12px; }
-/* sticky "+ New mask" footer row — the table's own append-a-row affordance */
-.lm-table tfoot td { position: sticky; bottom: 0; z-index: 2; padding: 6px 8px;
-  background: var(--bg); border-top: 1px solid var(--border); }
+/* "+ New mask" row under the table — the table's own append-a-row affordance */
+.lm-add-row { flex: 0 0 auto; padding: 6px 8px; border-top: 1px solid var(--border); }
 .lm-add-row .text-btn { width: 100%; height: 26px; }
 .lm-table-empty { width: 100%; }
 

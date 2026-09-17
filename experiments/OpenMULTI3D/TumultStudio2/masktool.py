@@ -490,19 +490,22 @@ class MaskTool(Tool):
 
     def table_html(self):
         """The mask-window table: one row per mask (click to make it the editable one), a
-        per-mask on/off toggle, closed by a sticky footer row that starts a new mask.
+        per-mask on/off toggle, followed by a button that starts a new mask. The button sits
+        below the table's own scroll box: a sticky table footer stops a subpixel short of the
+        scroll edge (its cell cannot leave the fractional-height table), so rows showed
+        beneath it.
 
         This is exactly what a save writes out: the windows themselves. What a spectrum says
         about them belongs to the analysis that measured it, not to this set.
         """
         masks = self.store.masks
-        add_row = ('<tr class="lm-add-row"><td colspan="7"><button class="text-btn lm-new">'
-                   '＋ New mask — then drag a range on the spectrum</button></td></tr>')
+        add_row = ('<div class="lm-add-row"><button class="text-btn lm-new">'
+                   '＋ New mask — then drag a range on the spectrum</button></div>')
         if not masks:
-            return ('<table class="linelist-table lm-table lm-table-empty">'
+            return ('<div class="lm-scroll"><table class="linelist-table lm-table lm-table-empty">'
                     '<tbody><tr><td class="lm-empty">This set is empty — add a mask '
                     'below, then drag its edges on the spectrum to size the window.</td>'
-                    f'</tr></tbody><tfoot>{add_row}</tfoot></table>')
+                    f'</tr></tbody></table></div>{add_row}')
         rows = []
         # rows read in wavelength order; each keeps its store index as data-idx, which is
         # what the row actions address
@@ -525,12 +528,12 @@ class MaskTool(Tool):
                 f'<td><button class="icon-btn lm-del" data-idx="{i}" title="Remove">'
                 f'<i class="ti ti-x"></i></button></td></tr>')
         return (
-            '<table class="linelist-table lm-table">'
+            '<div class="lm-scroll"><table class="linelist-table lm-table">'
             '<thead><tr><th title="Use this mask"></th><th>λ₀ [Å]</th>'
             '<th>fit window [Å]</th><th>synth window [Å]</th>'
             '<th>note</th><th></th></tr></thead>'
             f'<tbody>{"".join(rows)}</tbody>'
-            f'<tfoot>{add_row}</tfoot></table>')
+            f'</table></div>{add_row}')
 
 
 def _int(arg, default=-1):
