@@ -566,6 +566,7 @@ class IonBalanceTool(AbundanceWizard):
         mset = self._pending_set
         if refit is None and mset is None:
             self.notify("Nothing to fit — start from a line mask.")
+            pulse(self._modal, "reject")
             return
         ref_uid, spec, err = self._target() if refit is None else \
             (None, self._spec_of(refit), None)
@@ -573,6 +574,7 @@ class IonBalanceTool(AbundanceWizard):
             err = "The target observation for this measurement is no longer loaded."
         if err:
             self.notify(err)
+            pulse(self._modal, "reject")
             return
         v2 = self.form2.values()
         free = {k: bool(v2[f"fit_{k}"]) for k in sp.PARAM_KEYS}
@@ -581,6 +583,7 @@ class IonBalanceTool(AbundanceWizard):
         ctx = self.setup.context(params0)
         if ctx is None:
             self.notify(self.setup.reason or "Configure the synthesis setup first.")
+            pulse(self._modal, "reject")
             return
         va = self.formadv.values()
         tols = {k: float(va[f]) for k, f in TOL_FIELDS.items()}
@@ -618,8 +621,13 @@ class IonBalanceTool(AbundanceWizard):
                   "background_lines": self.setup.background_lines}
         if refit is None:
             kwargs["line_mask"] = mset
-        self.jobs.submit_operation(f"ionbal:{res.element}", self.task_kind, ctx, self._on_done,
-                                   kwargs=kwargs, result=res)
+        # the close patch above only reaches the browser once this callback returns, so the
+        # actual submission - a blocking round trip to the workflow daemon - is deferred one
+        # document tick (as synthmodal.SynthModal._begin_submit/_end_submit does), rather than
+        # sitting in front of it and leaving the modal looking inert until it answers
+        self.ctx.schedule(lambda: self.jobs.submit_operation(
+            f"ionbal:{res.element}", self.task_kind, ctx, self._on_done,
+            kwargs=kwargs, result=res))
 
     task_kind = "sparams.ionbalance"
     import_task_result = lambda self, result, handle: self._on_done(self._adopt(result))

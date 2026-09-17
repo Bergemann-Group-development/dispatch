@@ -458,10 +458,12 @@ class AbundCorrTool(AbundanceWizard):
         request = self.setup.context()
         if request is None:
             self.notify(self.setup.reason or "Configure the target atmosphere.")
+            pulse(self._modal, "reject")
             return
         ref_grid = self.grids.reference_grid()
         if ref_grid is None:
             self.notify("Flag a 1D LTE reference grid in Preferences → Atmosphere grids first.")
+            pulse(self._modal, "reject")
             return
         # every option is captured now and carried through both stages: reopening the
         # modal while the reference runs must not alter the admitted calculation
@@ -473,24 +475,30 @@ class AbundCorrTool(AbundanceWizard):
         if opts.profile == "trapz" and not opts.line_grid:
             self.notify("The trapezoidal width needs the line grid for its windows; "
                         "switch it on or pick a fitted profile.")
+            pulse(self._modal, "reject")
             return
         try:
             request = request.update(
                 departures=DepartureRequest((obj.path,), line_grid=opts.line_grid))
         except ValueError as exc:
             self.notify(f"Cannot compute corrections: {exc}")
+            pulse(self._modal, "reject")
             return
         self.draft.commit()
         pulse(self._modal, "close")
         self.notify(f"Computing the 1D LTE reference for {obj.symbol}…")
         # one durable record runs both stages; the stage-1 result arrives as its first
-        # progress snapshot, every correction round as the next ones
+        # progress snapshot, every correction round as the next ones. The close patch above
+        # only reaches the browser once this callback returns, so the actual submission - a
+        # blocking round trip to the workflow daemon - is deferred one document tick (as
+        # synthmodal.SynthModal._begin_submit/_end_submit does), rather than sitting in front
+        # of it and leaving the modal looking inert for however long that round trip takes.
         kwargs = {"reference_atmosphere": atmosphere_grid(ref_grid),
                   "background_lines": opts.linelist, "profile": opts.profile,
                   "ew_min": opts.ew_min, "limit": opts.limit}
-        self.jobs.submit_operation(f"corr:{obj.symbol}", self.task_kind, request,
-                                   self._on_task_done, kwargs=kwargs,
-                                   on_progress=self._on_task_progress)
+        self.ctx.schedule(lambda: self.jobs.submit_operation(
+            f"corr:{obj.symbol}", self.task_kind, request, self._on_task_done,
+            kwargs=kwargs, on_progress=self._on_task_progress))
 
     task_kind = "abundance.nlte_corrections"
 

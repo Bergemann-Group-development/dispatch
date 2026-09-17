@@ -612,6 +612,7 @@ def test_correction_options_are_captured_when_the_modal_submits(tmp_path, monkey
 
     monkeypatch.setattr(abundcorrtool, "measure_reference_lines", slow_measure)
     tool.run()
+    ticks.run()                             # the daemon handoff is deferred one tick
     assert started.wait(10)                 # the reference is running
     tool.form1.set_values(limit=2.5, profile="trapz", ew_min=1.0)
     release.set()
@@ -640,6 +641,7 @@ def test_cancelling_the_reference_stage_prevents_the_correction_stage(tmp_path, 
                         lambda *a, **k: pytest.fail("stage 2 admitted after cancellation"))
     monkeypatch.setattr(abundcorrtool, "measure_reference_lines", slow_measure)
     tool.run()
+    ticks.run()                             # the daemon handoff is deferred one tick
     assert started.wait(10)
     job, = ctx.jobs.active
     _send_action(document, f"cancel-pending:{job.pid}:1")
@@ -1508,13 +1510,14 @@ def test_a_running_correction_is_resumed_by_a_new_document_with_its_progress(tmp
     monkeypatch.setattr(abundance, "run_nlte_corrections", correct)
     monkeypatch.setattr("tumult.synthesis.submission.PROGRESS_MIN_S", 0.0)
 
-    old_document, old_ctx, _ = _reconnecting_document(store_root, monkeypatch)
+    old_document, old_ctx, old_ticks = _reconnecting_document(store_root, monkeypatch)
     old_tool = old_ctx.tools._tools["abundcorr"]
     old_tool._pending_atom = SimpleNamespace(symbol="Mg", path=str(tmp_path / "mg.atom"))
     _stub_corrections_inputs(monkeypatch, old_tool, tmp_path)
     for name in ("set_step", "select_result"):
         monkeypatch.setattr(old_tool, name, lambda *a, **k: None)
     old_tool.run()
+    old_ticks.run()                         # the daemon handoff is deferred one tick
     job, = old_ctx.jobs.active
     handle = job.handle
     assert handle.kind.name == "abundance.nlte_corrections" and stage1.wait(10)
