@@ -983,6 +983,10 @@ num-input[disabled] .num-spin button { cursor: not-allowed; }
    include checkbox and flags are right-aligned columns, so their headers follow suit. */
 .abund-table thead th:first-child,
 .abund-table thead th:last-child { text-align: right; }
+/* "Local continuum" (abund/ionbal; see abundwizard.LOCAL_CONTINUUM_HEAD) is also a checkbox
+   column - right-align its label so it lines up with the checkboxes below it, regardless of
+   the shared line-list rule's left-align for non-sortable headers or the column's position. */
+.local-continuum-head { display: block; text-align: right; }
 /* the active step mirrors the abund-step-N class on #main (no JS); see .step-tabs below */
 #main.abund-step-1 .abund-step-btn[data-step="1"],
 #main.abund-step-2 .abund-step-btn[data-step="2"] { color: var(--text); border-bottom-color: var(--accent); }

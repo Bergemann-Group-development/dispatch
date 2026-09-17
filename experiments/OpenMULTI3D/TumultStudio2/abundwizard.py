@@ -49,6 +49,12 @@ PROFILES = ["gauss", "voigt", "asym_gauss"]
 DEFAULT_JUMP_SPAN_AA = 1.0   # jump span for a no-window line when no line has been shown yet
 FIT_WINDOW_MARGIN = 0.05     # fraction of a fitted line window shown beyond either edge
 
+# The "Local continuum" header (abund/ionbal only) is one of the table's non-sortable
+# columns, so the shared line-list rule would otherwise left-align it while its checkboxes
+# below stay right-aligned (see .local-continuum-head in style.css). A class on the label
+# itself, not a column-position selector, so it survives a column being added or reordered.
+LOCAL_CONTINUUM_HEAD = '<span class="local-continuum-head">Local continuum</span>'
+
 # what a hovered point says about itself
 POINT_TOOLTIPS = [("λ₀", "@lam{0.000} Å"), ("ion", "@ion"), ("value", "@a{0.000}")]
 

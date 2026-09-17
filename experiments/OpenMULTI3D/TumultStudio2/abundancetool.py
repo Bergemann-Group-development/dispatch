@@ -49,7 +49,7 @@ from bokeh.models import ColumnDataSource
 from tumult import abundance as ab
 import store
 from tumult.synthesis import workflows as synth
-from abundwizard import PROFILES, AbundanceWizard, preparation_note
+from abundwizard import LOCAL_CONTINUUM_HEAD, PROFILES, AbundanceWizard, preparation_note
 from canvas import ACCENT
 from controls import Field, Form
 from ew import profile_options
@@ -485,7 +485,7 @@ class AbundanceTool(AbundanceWizard):
     def table_html(self, res):
         head = self._table_head((
             ("λ₀ [Å]", "lam0"), ("ion", "ion"), ("E<sub>low</sub>", "e_low"),
-            ("log gf", "loggf"), ("EW [mÅ]", "ew"), ("Local continuum", None), ("blend", "blend"),
+            ("log gf", "loggf"), ("EW [mÅ]", "ew"), (LOCAL_CONTINUUM_HEAD, None), ("blend", "blend"),
             (html.escape(self.value_label(res)), "a"),
             ("vshift", "vshift"), ("vdop", "vdop"), ("flags", None)))
         body = []
