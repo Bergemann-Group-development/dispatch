@@ -130,6 +130,8 @@ ANALYSIS_SCRIPT = r"""
     if (remaining) { analysisAction(prefix, 'complete-rungs'); return; }
     var refit = ev.target.closest('[data-refit-continuum]');
     if (refit) { analysisAction(prefix, 'refit-continuum'); return; }
+    var reset = ev.target.closest('[data-reset-window]');
+    if (reset) { analysisAction(prefix, 'reset-window', reset.dataset.resetWindow); return; }
     var row = ev.target.closest('tr[data-line]');
     if (!row || ev.target.closest('.line-include-chk, .line-continuum-chk')) return;
     scope.querySelectorAll('tr.row-selected')

@@ -258,7 +258,10 @@
       <div class="norm-panel">
         <div class="norm-panel-head">
           <span class="section-header">Edit continuum</span>
-          <button class="text-btn norm-close">Done</button>
+          <span class="norm-panel-actions">
+            <button class="text-btn norm-cancel" title="Restore the continuum as it was on entry (Esc)">Cancel</button>
+            <button class="text-btn norm-close" title="Keep the edited continuum">Done</button>
+          </span>
         </div>
         <div id="norm-panel-content"></div>
       </div>
@@ -1502,6 +1505,7 @@
   document.addEventListener('click', function (ev) {
     if (ev.target.closest('.norm-init')) ewAction('norm-init');
     else if (ev.target.closest('.norm-clear')) ewAction('norm-clear');
+    else if (ev.target.closest('.norm-cancel')) ewAction('norm-cancel');
     else if (ev.target.closest('.norm-close')) ewAction('normalise');
   });
 
@@ -1700,7 +1704,7 @@
 
   document.addEventListener('keydown', function (ev) {
     if ((ev.key === 'Enter' || ev.key === ' ') && ev.target.matches('.session-item')) { ev.preventDefault(); ev.target.click(); }
-    if (ev.key === 'Escape' && !document.querySelector('dialog[open]')) ewAction('range-cancel');
+    if (ev.key === 'Escape' && !document.querySelector('dialog[open]')) ewAction('escape');
   });
 
   // ---- draggable splitter for the centre bottom panel (the sidebars are fixed-width) ----

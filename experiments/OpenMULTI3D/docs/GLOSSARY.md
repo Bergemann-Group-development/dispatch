@@ -103,6 +103,9 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
 - *calculation draft*: a modal's edits to a calculation's last-used settings before it is
   submitted (`draft.CalculationDraft`). Submitting commits them, dismissing discards them.
   Preferences pages are not drafts: they save on every change.
+- *edit session*: a canvas tool's in-place edits to a workspace object, from entering the
+  tool to leaving it (`Tool.begin_edit`). Leaving keeps them; Cancel and Esc restore the
+  state on entry. The continuum editor is one.
 
 **Runs**
 

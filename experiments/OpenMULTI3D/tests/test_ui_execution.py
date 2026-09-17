@@ -2816,3 +2816,123 @@ def test_removing_a_model_atom_asks_and_undo_restores_its_corrections(tmp_path):
     assert not atoms.atoms and not corr.results
     _answer(document, f"undo {_undo_token(document)}")
     assert atoms.atoms == [atom] and corr.results == [first, second]
+
+
+# --- continuum editing is a session: Done keeps, Cancel and Esc restore -----------------
+def _continuum_session():
+    document, ctx = _build_document()
+    xx = np.linspace(5000., 5010., 500)
+    obj = ctx.canvas.add_object(Spectrum(xx, 2. + .1 * (xx - 5000.)), name='obs')
+    ctx.canvas.selected_uid = obj.uid
+    obj.norm_knots = (np.array([5000., 5010.]), np.array([2., 3.]))
+    ctx.canvas.normalise_object(obj)
+    tool = ctx.tools._tools['normalise']
+    _send_action(document, 'normalise:1')
+    assert tool.active
+    entry = (obj.norm_knots, obj.spectrum, obj.continuum, obj.already_normalised)
+    return document, ctx, tool, obj, entry
+
+
+def _drag_knots(tool, ys):
+    """A user drag of the knots (the debounced refit is left pending)."""
+    tool.knots.data = dict(x=list(tool.knots.data['x']), y=list(ys))
+
+
+def _assert_entry_state(obj, entry):
+    knots, spectrum, continuum, prenorm = entry
+    for original, current in zip(knots, obj.norm_knots):
+        np.testing.assert_array_equal(original, current)
+    np.testing.assert_array_equal(obj.spectrum.ydata, spectrum.ydata)
+    np.testing.assert_array_equal(obj.continuum, continuum)
+    assert obj.already_normalised is prenorm
+
+
+@pytest.mark.parametrize('leave', ['norm-cancel:1', 'escape:1'])
+def test_cancelling_a_continuum_edit_restores_the_entry_state(leave):
+    document, ctx, tool, obj, entry = _continuum_session()
+    _drag_knots(tool, [2.5, 2.5])
+    tool._refit()
+    assert not np.array_equal(obj.spectrum.ydata, entry[1].ydata)
+    tool._set_prenorm(True)
+    assert obj.norm_knots is None and obj.already_normalised
+
+    _send_action(document, leave)
+    assert not tool.active and ctx.canvas.norm_edit_uid is None
+    _assert_entry_state(obj, entry)
+
+
+def test_done_keeps_the_continuum_edit_including_a_pending_drag():
+    document, ctx, tool, obj, entry = _continuum_session()
+    _drag_knots(tool, [2.5, 2.5])
+    assert tool._debounce.pending('refit')
+    _send_action(document, 'normalise:2')       # Done
+    assert not tool.active
+    np.testing.assert_array_equal(obj.norm_knots[1], [2.5, 2.5])
+    np.testing.assert_allclose(obj.spectrum.ydata, obj.raw.ydata / 2.5)
+    _send_action(document, 'escape:2')          # nothing left to cancel
+    np.testing.assert_array_equal(obj.norm_knots[1], [2.5, 2.5])
+
+
+def test_clear_spline_returns_to_flat_scaling_until_cancelled():
+    """Clear spline drops the knots within the session (the automatic flat level, not
+    the entry state); Done keeps that, Cancel restores the entry knots."""
+    document, ctx, tool, obj, entry = _continuum_session()
+    _send_action(document, 'norm-clear:1')
+    assert obj.norm_knots is None
+    flat = ctx.canvas._flat_continuum(obj.raw)
+    np.testing.assert_allclose(obj.continuum, flat)
+    _send_action(document, 'norm-cancel:1')
+    _assert_entry_state(obj, entry)
+
+    _send_action(document, 'normalise:2')
+    _send_action(document, 'norm-clear:2')
+    _send_action(document, 'normalise:3')       # Done
+    assert not tool.active and obj.norm_knots is None
+
+
+def test_resetting_a_correction_window_restores_the_computed_line(tmp_path):
+    """Reset window re-reads the stored reference and rungs: the line's window, EW and
+    correction return to their computed values and nothing is synthesised."""
+    import astropy.units as u
+    from tumult import abundance as ab
+    from tumult.linemask import LineMask
+
+    lam0, x = 5000., np.linspace(4999., 5001., 801)
+
+    def line(a):
+        return Spectrum(x, 1 - .3 * 10 ** (.6 * a) * np.exp(-.5 * ((x - lam0) / .08) ** 2),
+                        xunit=u.AA)
+
+    offsets = (-.2, 0., .2, .4)
+    # a weak neighbour only in the reference, so the window changes the correction
+    ref = Spectrum(x, line(0.).ydata - .05 * np.exp(-.5 * ((x - 5000.35) / .05) ** 2),
+                   xunit=u.AA)
+    ln = ab.LineResult(lam0, 'O I', 0., 0., mask=LineMask(lam0=lam0, lmin=4999.5,
+                                                          lmax=5000.5, smin=4999.,
+                                                          smax=5001.),
+                       auto_fit_window=(4999.5, 5000.5),
+                       cog_specs={a: line(a - .1) for a in offsets})
+    res = ab.AbundanceResult(element='O', symbol='O', lines=[ln], summary={}, uid='corr1',
+                             stage='corr', profile='trapz', atom_path=str(tmp_path / 'o.atom'))
+    res.ref_spec = ref
+    ab.refit_line_window(res, ln, 4999.5, 5000.5)   # the computed state
+    computed = {k: getattr(ln, k) for k in ('ew', 'a', 'sigma_a', 'a_grid', 'ew_grid',
+                                            'flags', 'include')}
+    assert computed['a'] > .1 and not computed['flags']
+
+    document, ctx = _build_document()
+    tool = ctx.tools._tools['abundcorr']
+    tool.results.append(res)
+    ctx.tools.activate('abundcorr')
+    tool.select_result(res.uid)
+    tool._jumped = 0
+    assert 'data-reset-window' not in tool.table_html(res)
+    tool._on_fit_drag(4999.95, 5000.05)             # a window too narrow for the line
+    assert ln.fit_window == pytest.approx((4999.95, 5000.05))
+    assert ln.a != pytest.approx(computed['a'], abs=1e-3)
+    assert 'data-reset-window="0"' in tool.table_html(res)
+
+    tool.actions.value = 'reset-window:0:1'
+    assert ln.fit_window == (4999.5, 5000.5)
+    assert {k: getattr(ln, k) for k in computed} == computed
+    assert 'data-reset-window' not in tool.table_html(res)

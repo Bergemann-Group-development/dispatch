@@ -228,6 +228,28 @@ def test_refit_line_window_follows_the_edit_without_a_solve(stub_synth):
     assert ln.fit_window == pytest.approx((LAM0 - 0.5, LAM0 + 0.5))
 
 
+def test_resetting_the_window_reproduces_the_computed_correction(stub_synth):
+    """The rungs kept over the synth window reproduce stage 2's own inversion at the
+    window it was computed over, so a reset needs no solve."""
+    fake, calls = stub_synth
+    fake.offset = 0.20
+    res = ab.run_nlte_corrections(_request(), _stage1(), "o.atom")
+    ln = res.lines[0]
+    keys = ("ew", "ew_err", "a", "sigma_a", "a_grid", "ew_grid", "flags", "include")
+    computed = {k: getattr(ln, k) for k in keys}
+    assert ln.auto_fit_window == ln.fit_window and not ab.window_edited(ln)
+    ab.refit_line_window(res, ln, LAM0 - 0.1, LAM0 + 0.1)
+    assert ab.window_edited(ln)
+    n_batches = calls["batch"]
+    back = ab.AbundanceResult.from_dict(res.to_dict())
+    for result in (res, back):
+        line = result.lines[0]
+        ab.reset_line_window(result, line)
+        assert not ab.window_edited(line)
+        assert {k: getattr(line, k) for k in keys} == computed
+    assert calls["batch"] == n_batches
+
+
 def test_refit_survives_a_session_round_trip(stub_synth):
     fake, calls = stub_synth
     fake.offset = -0.15

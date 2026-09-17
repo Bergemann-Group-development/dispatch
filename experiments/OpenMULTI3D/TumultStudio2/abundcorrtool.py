@@ -42,7 +42,9 @@ line-to-line scatter of the corrections against excitation energy and reduced EW
 On the Lines step the jumped-to line's fit window is the accented box and its edges can be
 dragged, within the synth window the atom fixes; :func:`tumult.abundance.refit_line_window`
 re-reads the reference EW and the stored rungs over the new window, so the correction
-follows the edit without another solve. Both stages are headless: what is left here is the
+follows the edit without another solve. An edited line's row offers **Reset window**
+(:func:`tumult.abundance.reset_line_window`), which returns to the window the line was
+computed over by the same re-read. Both stages are headless: what is left here is the
 modal, the submission and the rendering.
 """
 from __future__ import annotations
@@ -67,7 +69,7 @@ from controls import Field, Form
 from ew import profile_options
 from htmlbridge import pulse
 from tumult.abundance import (CorrectionOpts, correction_summary, reduced_ew,
-                              refit_line_window)
+                              refit_line_window, reset_line_window, window_edited)
 from units import to_range
 
 import astropy.units as u
@@ -265,6 +267,8 @@ class AbundCorrTool(AbundanceWizard):
     def _extra_action(self, kind, arg):
         if kind == "run":
             self.run()
+        elif kind == "reset-window":
+            self.reset_window(int(arg))
 
     # --- the modal ----------------------------------------------------------------------
     def open_for(self, atom_obj):
@@ -358,6 +362,23 @@ class AbundCorrTool(AbundanceWizard):
             return
         lo, hi = to_range(x0, x1, self.canvas.xunit, u.AA)
         refit_line_window(res, ln, min(lo, hi), max(lo, hi))
+        self._line_window_changed(res, ln)
+
+    def reset_window(self, index):
+        """**Reset window**: return line ``index`` to the fit window it was computed over."""
+        res = self.selected()
+        if res is None or not 0 <= index < len(res.lines):
+            return
+        ln = res.lines[index]
+        if not window_edited(ln):
+            return
+        reset_line_window(res, ln)
+        self._jumped = index
+        self._line_window_changed(res, ln)
+
+    def _line_window_changed(self, res, ln):
+        """Repaint everything that shows a line's window: its overlays, the table row,
+        the scatter, the CoG panel and the mean."""
         self._render_line_decor(ln)
         self.push_table(self.table_html(res))
         self._render_scatter()
@@ -574,14 +595,17 @@ class AbundCorrTool(AbundanceWizard):
             ew = self._fmt(ln.ew, ln.ew_err, digits=1)
             rew = self._fmt(reduced_ew(ln.ew, ln.lam0) if ln.ew > 0 else float("nan"))
             da = self._fmt(ln.a, ln.sigma_a if res.stage == "corr" else None, plus=True)
-            fl = ", ".join(ln.flags)
+            fl = html.escape(", ".join(ln.flags))
+            if window_edited(ln):
+                fl += (f' <button class="text-btn" data-reset-window="{i}" title="Return to '
+                       'the window this line was computed over">Reset window</button>')
             body.append(
                 f'<tr class="corr-row{cls}" data-line="{i}">'
                 f'<td><input type="checkbox" class="line-include-chk" data-line="{i}"{chk}></td>'
                 f'<td>{ln.lam0:.3f}</td><td>{html.escape(ln.ion)}</td>'
                 f'<td>{ln.e_low:.2f}</td><td>{ln.loggf:.2f}</td><td>{ew}</td>'
                 f'<td>{rew}</td><td>{da}</td>'
-                f'<td class="abund-flags">{html.escape(fl)}</td></tr>')
+                f'<td class="abund-flags">{fl}</td></tr>')
         foot = ""
         if res.stage == "corr" and np.isfinite(res.summary.get("a_mean", np.nan)):
             s = res.summary

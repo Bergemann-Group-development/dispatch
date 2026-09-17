@@ -117,6 +117,7 @@ class LineResult:
     ew_species: float = float("nan")  # query-species-only EW in the fit window [maa] (weak screen)
     fwhm: float = float("nan")  # fitted profile FWHM [AA]
     mask: LineMask = field(default_factory=LineMask)  # fit [lmin,lmax] + synth [smin,smax] windows
+    auto_fit_window: tuple = ()  # the fit window the line was computed over, for a reset
     renorm: bool = False        # local continuum belongs to this target measurement
     continuum: tuple = ()      # (wavelength AA, prepared-target flux) nodes
     cog_step: float = float("nan")
@@ -152,7 +153,8 @@ class LineResult:
         return self.mask.synth_window
 
     # --- session persistence (see AbundanceResult / the session snapshot) -------------
-    _TUPLE_FIELDS = ("a_grid", "ew_grid", "flags", "continuum", "missing_rungs")
+    _TUPLE_FIELDS = ("a_grid", "ew_grid", "flags", "continuum", "missing_rungs",
+                     "auto_fit_window")
 
     def to_dict(self):
         """A JSON-safe view. ``fit_spec`` is embedded as a Spectrum dict; ``fit_func`` (a live
@@ -837,6 +839,7 @@ def measure_reference_lines(request, atom, *, opts=None, quadrature=None, cancel
             ew_err=ew_err, fwhm=fwhm,
             mask=LineMask(lam0=float(row.lam0), lmin=fit_window[0], lmax=fit_window[1],
                           smin=win[0], smax=win[1], note=species),
+            auto_fit_window=(float(fit_window[0]), float(fit_window[1])),
             fit_func=func, flags=tuple(flags), include=not flags))
     if not lines:
         raise ValueError(f"No atom lines above {ew_min:.0f} mÅ in the reference.")
@@ -900,8 +903,9 @@ def refit_line_window(result, ln, lo, hi, *, min_fit_points=MIN_FIT_POINTS):
     (``cog_specs``, from :func:`run_nlte_corrections`) the curve of growth is re-read over
     the same window and inverted again, so the correction follows the edit without another
     solve. The reference-stage flags (``few_points``, ``ew_unc``) and the inversion's
-    ``out_of_range`` are re-derived; the user's include toggle is kept unless the line
-    falls out of range. The result's summary is refreshed.
+    ``out_of_range`` are re-derived. The user's include toggle is kept, except that a line
+    falling out of range is excluded and one coming back into range after such an
+    exclusion is included again. The result's summary is refreshed.
     """
     smin, smax = ln.window
     if np.isfinite(smin) and np.isfinite(smax):
@@ -909,6 +913,7 @@ def refit_line_window(result, ln, lo, hi, *, min_fit_points=MIN_FIT_POINTS):
     if not hi > lo:
         return ln
     ln.mask.lmin, ln.mask.lmax = float(lo), float(hi)
+    was_out = "out_of_range" in ln.flags
     flags = []                      # every flag is re-derived below
     prof = measure_profile(result.ref_spec, (lo, hi), profile=result.profile, x0=ln.lam0)
     ln.ew, ln.ew_err = float(prof.maa), float(prof.width_err_maa)
@@ -935,9 +940,28 @@ def refit_line_window(result, ln, lo, hi, *, min_fit_points=MIN_FIT_POINTS):
             ln.sigma_a = float(inv["sigma_a"])
             ln.sigma_a_phot, ln.sigma_a_cont = ln.sigma_a, 0.0
             ln.fit_spec = _solution_spec(ln)
+            if was_out:
+                ln.include = True
     ln.flags = tuple(flags)
     result.summary = correction_summary(result.lines)
     return ln
+
+
+def window_edited(ln):
+    """Whether ``ln``'s fit window differs from the one it was computed over."""
+    return bool(ln.auto_fit_window) and tuple(ln.fit_window) != tuple(ln.auto_fit_window)
+
+
+def reset_line_window(result, ln):
+    """Move ``ln``'s fit window back to the one it was computed over, in place.
+
+    :func:`refit_line_window` re-reads the stored reference and rungs over that window, so
+    the line's EW, curve of growth and correction are those of the computation and no
+    synthesis runs.
+    """
+    if not ln.auto_fit_window:
+        raise ValueError("This line does not record the window it was computed over.")
+    return refit_line_window(result, ln, *ln.auto_fit_window)
 
 
 def element_xfe(abundances, element, *, relative, feh, solar):
@@ -1232,6 +1256,10 @@ def run_nlte_corrections(request, result, atom, *, opts=None, progress=None,
         return rv
 
     lines = [ln for ln in result.lines if ln.include]
+    # the windows the rungs are measured over are what a later window reset returns to
+    for ln in result.lines:
+        if not ln.auto_fit_window:
+            ln.auto_fit_window = tuple(float(v) for v in ln.fit_window)
 
     def coordinate(a):
         """A rung's store coordinate: the element's value as :func:`abundance_override`

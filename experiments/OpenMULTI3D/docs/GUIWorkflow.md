@@ -297,9 +297,18 @@ state (automatic continuum scaling, spline continuum or already normalised) and 
 filtering is active, and the measurement modals repeat that summary for their target,
 because filtering applies to every spectrum and feeds the measurements, not only the
 display. Measurement results record this preparation and the line list they used.
-Normalise shows "Editing continuum: <spectrum>", isolates that spectrum while the
-continuum is edited and returns through **Done**; Filter and Normalise are refused with
-a footer message, and the current view kept, when no spectrum is selected.
+Normalise shows "Editing continuum: <spectrum>" and isolates that spectrum while the
+continuum is edited. Knot edits apply to the spectrum at once. Normalise is an edit
+session: entering it snapshots the spectrum's knots, already-normalised flag and
+normalised flux. **Done** keeps the edits, and so does every other way of leaving (the
+Normalise button, another tool, selecting another object). **Cancel** and Esc restore the
+snapshot exactly and leave. **Clear spline** removes the knots within the session, so the
+spectrum returns to the automatic flat scaling; it does not return to the entry state,
+which is what Cancel is for. Filter and Normalise are refused with a footer message, and
+the current view kept, when no spectrum is selected.
+
+Esc cancels the active tool only where cancelling is defined, which is the Select range
+gesture and the continuum edit session (`Tool.cancellable`); other views stay open.
 
 ## Select range tool
 
@@ -476,6 +485,10 @@ corrections…**, which opens the correction modal with this atom fixed.
   fit window can be resized by its edge handles, as in the LineMasks view, within the synth
   window; the reference EW and the stored NLTE rungs are re-read over the new window and the
   line's correction, the table, the scatter and the mean follow without another solve.
+  An edited line's flags cell offers **Reset window**, which returns to the fit window
+  recorded when the line was computed (`LineResult.auto_fit_window`) by the same re-read.
+  The rungs cover the whole synth window, so the reset reproduces the computed EW and
+  correction exactly. Results saved before that record existed show no reset.
   Off, the atom's own `nq qmax q0` sample the lines and the windows come from the auto-crop
   of the reference profile. **Use line list** (off by default) synthesises the
   configured line list together with the atom in both stages; while such a result is shown,
@@ -498,7 +511,8 @@ results after confirmation, and Undo restores both (see "Removing an object"). T
 with the selected line's curve-of-growth inversion beside it, over the per-line table) and
 **Scatter** (ΔA against excitation energy and against reduced EW, side by side), with the
 line include toggles curating the mean. **Duplicate** in the panel keeps the current windows
-and corrections before a fit-window edit changes them.
+and corrections before a fit-window edit changes them; **Reset window** undoes such an edit
+line by line.
 
 ## Code owners
 

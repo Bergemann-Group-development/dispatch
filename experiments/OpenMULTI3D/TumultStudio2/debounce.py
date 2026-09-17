@@ -31,6 +31,10 @@ class Debouncer:
 
         curdoc().add_timeout_callback(run, self.ms)
 
+    def pending(self, key):
+        """Whether a run for ``key`` is scheduled and has not fired yet."""
+        return bool(self._pending.get(key))
+
 
 class Trailing:
     """Delay work until a burst of calls stops.

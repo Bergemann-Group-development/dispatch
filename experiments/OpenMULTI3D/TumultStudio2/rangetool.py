@@ -30,6 +30,7 @@ from units import to_range
 
 class RangeTool(Tool):
     name = "range"
+    cancellable = True
 
     def __init__(self, ctx, *, on_new_mask=None, on_synth=None, on_fit=None):
         super().__init__(ctx)

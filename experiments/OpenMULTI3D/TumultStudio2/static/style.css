@@ -347,6 +347,7 @@ body.resizing * { pointer-events: none !important; }
 .sidebar-right.norm-active .tab-content { display: none; }
 .sidebar-right.norm-active .norm-panel { display: flex; }
 .norm-panel-head { display: flex; align-items: center; justify-content: space-between; }
+.norm-panel-actions { display: flex; gap: 4px; }
 /* consistent spacing between the panel's fields, buttons and hint */
 #norm-panel-content > * + * { margin-top: 12px; }
 

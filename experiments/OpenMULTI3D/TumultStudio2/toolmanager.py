@@ -10,6 +10,9 @@ know which others exist. A *tool* is any object exposing:
                     precondition fails, e.g. no spectrum selected)
 * ``deactivate()``— leave the tool (idempotent)
 
+A tool with ``cancellable`` set also has ``cancel()``, which Esc reaches through
+:meth:`ToolManager.cancel_active`.
+
 The manager reads each tool's own ``active`` flag as the source of truth, so a
 deferred activation (e.g. Filter's ``activate`` is scheduled on the next document
 tick via ``run_busy`` so the progress bar paints first) stays correct: the flag is
@@ -41,6 +44,13 @@ class ToolManager:
         name = self.active_name()
         if name is not None:
             self._tools[name].deactivate()
+
+    def cancel_active(self):
+        """Esc: discard and leave the active tool when it is cancellable (the range
+        gesture, an edit session); other tools stay open."""
+        name = self.active_name()
+        if name is not None and getattr(self._tools[name], "cancellable", False):
+            self._tools[name].cancel()
 
     def activate(self, name):
         """Activate ``name``, first standing down any other active tool."""

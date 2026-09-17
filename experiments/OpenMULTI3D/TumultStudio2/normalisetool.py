@@ -7,6 +7,11 @@ the spline (auto-place knots at the flux peaks) and tune the peak spacing. Knots
 added / dragged / deleted directly on the canvas (a ``PointDrawTool``); the spectrum
 is divided by the monotonic spline through them, so leaving the mode shows the
 continuum-normalised spectrum (continuum at ~1).
+
+The mode is an edit session (:class:`tool.Tool`): entering it snapshots the spectrum's
+knots, already-normalised flag and normalised spectrum. **Done** keeps the edits;
+**Cancel** and Esc restore the snapshot. **Clear spline** removes the knots within the
+session, returning the spectrum to the automatic flat scaling, which Cancel undoes too.
 """
 from __future__ import annotations
 
@@ -33,6 +38,7 @@ N_SPLINE = 400   # samples of the drawn continuum curve
 
 class NormaliseTool(Tool):
     name = "normalise"
+    cancellable = True
 
     def __init__(self, ctx, debounce_ms=200):
         Tool.__init__(self, ctx)
@@ -83,6 +89,7 @@ class NormaliseTool(Tool):
             return
         self.active = True
         self._uid = obj.uid
+        self.begin_edit()
         self._seed_knots(obj)
         self.form.fields["prenorm"].value = obj.already_normalised
         self.canvas.set_norm_edit(obj.uid)   # show this spectrum raw, hide the others
@@ -94,6 +101,9 @@ class NormaliseTool(Tool):
     def deactivate(self):
         if not self.active:
             return
+        if self._edit_baseline is not None and self._debounce.pending("refit"):
+            self._refit()               # Done: apply a knot drag the debounce still holds
+        self.end_edit()
         self.active = False
         self._uid = None
         self.spline_line.visible = False
@@ -116,8 +126,24 @@ class NormaliseTool(Tool):
                 self.main.x_range.start, self.main.x_range.end = s, e
         self._saved_range = None
 
+    def capture_edit(self):
+        obj = self._obs()
+        return dict(norm_knots=obj.norm_knots, already_normalised=obj.already_normalised,
+                    continuum=obj.continuum, spectrum=obj.spectrum)
+
+    def restore_edit(self, baseline):
+        """Put the entry state back. Every edit replaces these attributes rather than
+        mutating them, so the snapshot holds the very arrays the spectrum had."""
+        obj = self._obs()
+        if obj is None:
+            return
+        for key, value in baseline.items():
+            setattr(obj, key, value)
+        self.form.fields["prenorm"].value = obj.already_normalised
+
     def clear(self):
-        """Drop the spline and restore the initial constant (flat) normalisation."""
+        """Drop the spline: the spectrum returns to the automatic flat normalisation
+        (not to the state on entry, which is what Cancel restores)."""
         obj = self._obs()
         if obj is None:
             return
@@ -266,7 +292,8 @@ class NormaliseTool(Tool):
             f'<div class="hint">Editing continuum: {html.escape(self._obs().name)}. Other spectra are temporarily hidden.</div>'
             f'{fields_html}'
             f'<button class="primary-btn norm-init"{dis}>Place continuum automatically</button>'
-            f'<button class="text-btn norm-clear"{dis}>Clear spline</button>'
+            f'<button class="text-btn norm-clear"{dis} title="Remove the knots: automatic flat '
+            f'scaling, until Done (Cancel restores the entry state)">Clear spline</button>'
             f'<div class="hint">Resolution cut and the running-mean outlier window / '
             f'percentile shape the rendered spectrum the spline is fit to. Initialise (or '
             f'the peak spacing) places the knots; drag them to adjust, click to add, '
@@ -293,7 +320,7 @@ class NormaliseTool(Tool):
         kx_nat = to_value(kx_disp, self.canvas.xunit, obj.raw.xunit)
         order = np.argsort(kx_nat)
         kx_nat, ky = kx_nat[order], ky[order]
-        uniq = np.concatenate(([True], np.diff(kx_nat) > 0))  # pchip needs increasing x
+        uniq = np.diff(kx_nat, prepend=-np.inf) > 0   # pchip needs increasing x
         kx_nat, ky = kx_nat[uniq], ky[uniq]
         if kx_nat.size < 2:
             obj.norm_knots = None

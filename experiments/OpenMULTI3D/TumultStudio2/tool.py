@@ -11,6 +11,13 @@ plumbing. Each tool keeps the activation logic and is the source of truth for it
 ``active`` flag, including a deferred entry (Filter activates on the next tick) and a
 refused one (a missing precondition leaves the flag down).
 
+A tool that edits workspace state in place (``NormaliseTool``) runs an *edit session*:
+it calls :meth:`begin_edit` on entry, which keeps what :meth:`capture_edit` returns.
+Leaving the tool by any route keeps the edits (Done, its toolbar button, switching tools,
+selecting another object); :meth:`cancel` (the panel's Cancel and Esc, which the manager
+routes to tools with ``cancellable`` set) hands that snapshot to :meth:`restore_edit`
+before leaving.
+
 Subclasses set ``name`` and call :meth:`own_mode_bridges` / :meth:`own_panel` in
 ``__init__``; ``push_mode`` / ``push_panel`` then drive them. :func:`suppress_callbacks`
 is the shared guard for setters whose Bokeh writes would otherwise re-enter a drag handler.
@@ -41,6 +48,7 @@ def suppress_callbacks(method):
 
 class Tool:
     name = ""
+    cancellable = False     # Esc reaches cancel() (see ToolManager.cancel_active)
 
     def __init__(self, ctx):
         self.ctx = ctx
@@ -48,6 +56,7 @@ class Tool:
         self.active = False
         self._mode_bridges = ()
         self._panel_bridge = None
+        self._edit_baseline = None
         ctx.subscribe("changed", lambda **_: self.update())
 
     # notify always resolves through the context, so tools built before the footer
@@ -90,6 +99,29 @@ class Tool:
     def deactivate(self):
         """Leave the tool (idempotent). Subclasses implement."""
         raise NotImplementedError
+
+    # --- edit sessions ----------------------------------------------------------
+    def begin_edit(self):
+        """Snapshot the state the tool is about to edit."""
+        self._edit_baseline = self.capture_edit()
+
+    def end_edit(self):
+        """Forget the snapshot: the edits are kept."""
+        self._edit_baseline = None
+
+    def cancel(self):
+        """Leave the tool with the edited state as it was on entry."""
+        baseline, self._edit_baseline = self._edit_baseline, None
+        if self.active and baseline is not None:
+            self.restore_edit(baseline)
+        self.deactivate()
+
+    def capture_edit(self):
+        """The state an edit session may change, as :meth:`restore_edit` takes it."""
+        return None
+
+    def restore_edit(self, baseline):
+        """Put back the state :meth:`capture_edit` returned."""
 
     def update(self):
         """The workspace changed (``"changed"`` event); resync or stand down."""
