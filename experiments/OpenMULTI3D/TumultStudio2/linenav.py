@@ -42,6 +42,7 @@ from __future__ import annotations
 import html
 import logging
 from pathlib import Path
+from urllib.parse import unquote
 
 import astropy.units as u
 import numpy as np
@@ -56,7 +57,9 @@ from units import to_value, to_range
 LAM0_UNIT = u.AA              # native unit of the master line list's lam0
 _MAX_ROWS = 500              # cap rendered rows (sorted, so "top N")
 _FLASH_MS = 1200
-_MATCH_AA = 1e-3             # how close a picked lam0 has to be to call it the same line
+# how close a row's lam0 has to be to the picked one to be that line: only the 4-decimal
+# rounding of the row's data-lam0 has to be absorbed, since the pick comes from the same list
+_MATCH_AA = 1e-3
 JUMP_DISTANCE_AA = 10.0      # default ± window (Å) shown either side of a jumped-to line
 
 # sortable columns: (df column, default ascending?) — wavelength/excitation read low→high,
@@ -76,7 +79,10 @@ class LineNavigator:
         self.sort = SortState(SORT_DEFAULT_ASC, SORT_DEFAULT)
         self.active = False        # True only while the line-list panel is open
         self.query = ""            # the search field's text; non-empty shows its matches
-        self.focus_lam0 = None     # Å of the picked line: the row the table highlights
+        # (lam0 in Å, ion) of the picked line, or None: the one row the table highlights.
+        # The ion is part of the identity because lines of different species can lie
+        # within _MATCH_AA of each other in a dense list
+        self.focus = None
         # how the *next* render's focused row asks the browser to scroll to it (see the
         # MutationObserver in index.html). "none" for every ordinary render — a pan, a sort —
         # which leaves the browser's own scroll position alone. A pick that comes from
@@ -108,15 +114,13 @@ class LineNavigator:
 
     # --- opening / closing ------------------------------------------------
     def open_at(self, lam0_aa=None, ion=None):
-        """Open the panel (lazy-loading the master list) with ``lam0_aa`` as the focused row.
+        """Open the panel (lazy-loading the master list) with the ``ion`` line at ``lam0_aa``
+        as the focused row, or with no focus when ``lam0_aa`` is None.
 
         This is what a pick on a line-position indicator lands on: the table appears in the
         bottom half and scrolls to the transition that was clicked, which is flashed on the
         canvas so it is clear which of a blend's stubs was hit."""
-        try:
-            self.focus_lam0 = None if lam0_aa is None else float(lam0_aa)
-        except (TypeError, ValueError):
-            self.focus_lam0 = None
+        self.focus = None if lam0_aa is None else (float(lam0_aa), str(ion))
         was_open, self.active = self.active, True
         if not was_open:
             self.on_open(True)
@@ -127,15 +131,15 @@ class LineNavigator:
         # the row is, so bring it into view — but leave the scroll alone if it already is
         self._scroll = "ifneeded"
         self.render()
-        if self.focus_lam0 is not None:
-            self._flash(to_value(self.focus_lam0, LAM0_UNIT, self.canvas.xunit))
+        if self.focus is not None:
+            self._flash(to_value(self.focus[0], LAM0_UNIT, self.canvas.xunit))
 
     def close(self):
         """Close the panel; it stops re-rendering and is rebuilt on the next open."""
         if not self.active:
             return
         self.active = False
-        self.focus_lam0 = None
+        self.focus = None
         self.on_open(False)
 
     def set_sort(self, col):
@@ -196,11 +200,22 @@ class LineNavigator:
         if len(df) <= _MAX_ROWS:
             return df
         start = 0
-        if self.focus_lam0 is not None:
-            hit = np.flatnonzero(np.abs(df.lam0.values - self.focus_lam0) <= _MATCH_AA)
-            if len(hit):
-                start = int(np.clip(hit[0] - _MAX_ROWS // 2, 0, len(df) - _MAX_ROWS))
+        hit = self._focus_row(df)
+        if hit is not None:
+            start = int(np.clip(hit - _MAX_ROWS // 2, 0, len(df) - _MAX_ROWS))
         return df.iloc[start:start + _MAX_ROWS]
+
+    def _focus_row(self, df):
+        """Position in ``df`` of the focused line, or None: the row of the picked ion nearest
+        the picked lam0, if it lies within :data:`_MATCH_AA`. Exactly one row, so two close
+        lines of the same ion (hyperfine components, duplicate entries) are not both marked."""
+        if self.focus is None or not len(df):
+            return None
+        lam0, ion = self.focus
+        dist = np.where(df.ion.astype(str).values == ion,
+                        np.abs(df.lam0.values - lam0), np.inf)
+        i = int(np.argmin(dist))
+        return i if dist[i] <= _MATCH_AA else None
 
     # --- the table --------------------------------------------------------
     def _search_html(self):
@@ -243,7 +258,7 @@ class LineNavigator:
         header = sort_headers(self.sort, self._columns())
         body = self._body_html(rows)
         more = (f'<div class="linelist-more">showing {len(rows):,} of {n:,} lines in view'
-                f'{" around the selected one" if self.focus_lam0 is not None else ""}</div>'
+                f'{" around the selected one" if self.focus is not None else ""}</div>'
                 if n > len(rows) else "")
         return (
             f'<table class="linelist-table"><thead><tr>{header}</tr></thead>'
@@ -269,16 +284,16 @@ class LineNavigator:
     def _body_html(self, rows, strength=True):
         """The ``<tr>`` rows themselves, each led by the ion it belongs to."""
         lam_disp = to_value(rows.lam0.values, LAM0_UNIT, self.canvas.xunit)
+        focus = self._focus_row(rows)
         out = []
-        for lam0_aa, lam, ion, evi, loggf, s in zip(
+        for k, (lam0_aa, lam, ion, evi, loggf, s) in enumerate(zip(
                 rows.lam0.values, lam_disp, rows.ion.astype(str).values, rows.evi.values,
-                rows.loggf.values, rows.strength.values):
-            focused = (self.focus_lam0 is not None
-                       and abs(float(lam0_aa) - self.focus_lam0) <= _MATCH_AA)
+                rows.loggf.values, rows.strength.values)):
+            focused = k == focus
             scroll = f' data-scroll="{self._scroll}"' if focused else ""
             out.append(
                 f'<tr class="line-row{" jump-target" if focused else ""}"{scroll} '
-                f'data-lam0="{lam0_aa:.4f}">'
+                f'data-lam0="{lam0_aa:.4f}" data-ion="{html.escape(ion)}">'
                 f'<td class="line-ion">{html.escape(ion)}</td>'
                 f'<td>{lam:.3f}</td><td>{evi:.3f}</td>'
                 f'<td>{loggf:.3f}</td>' + (f'<td>{s:.3g}</td>' if strength else "")
@@ -294,7 +309,10 @@ class LineNavigator:
         except (TypeError, ValueError):
             pass
 
-    def jump(self, lam0_aa):
+    def jump(self, value):
+        """Centre the canvas on a clicked row. ``value`` is ``"<lam0>|<ion>"``, the ion
+        URI-encoded by the page so the action channel's ``:`` delimiter cannot occur in it."""
+        lam0_aa, _, ion = value.partition("|")
         try:
             lam0_aa = float(lam0_aa)
         except (TypeError, ValueError):
@@ -313,7 +331,7 @@ class LineNavigator:
             lo, hi = min(lo, hi), max(lo, hi)
             moved = moved or (rng.start, rng.end) != (lo, hi)
             rng.start, rng.end = lo, hi
-        self.focus_lam0 = lam0_aa   # the jumped-to row stays the highlighted one
+        self.focus = (lam0_aa, unquote(ion))   # the jumped-to row stays the highlighted one
         # the click that got here was on a row of this table, so the row it names has to
         # end up back under the pointer once the narrowed window has been written out
         self._scroll = "keep"

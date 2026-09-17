@@ -14,6 +14,7 @@ docs/*
 tests/*
 !tests/test_detached_workflows.py
 !tests/test_execution.py
+!tests/test_linenav_focus.py
 !tests/test_ui_execution.py
 !tests/test_ui_events.py
 !tests/test_ui_scenario.py

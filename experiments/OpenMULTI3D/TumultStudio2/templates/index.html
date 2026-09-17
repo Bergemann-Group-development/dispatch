@@ -1301,10 +1301,11 @@
       // the jump re-cuts the table to a narrow window around this line, so remember where
       // the row sits now: the re-render puts it back there (see linelistAnchor below)
       var lslot = document.getElementById('linelist-table');
-      linelistAnchor = lslot ? { lam0: row.dataset.lam0,
+      linelistAnchor = lslot ? { lam0: row.dataset.lam0, ion: row.dataset.ion,
                                  off: row.getBoundingClientRect().top
                                       - lslot.getBoundingClientRect().top } : null;
-      m.setv({ value: 'linejump:' + row.dataset.lam0 + ':' + Date.now() });
+      m.setv({ value: 'linejump:' + row.dataset.lam0 + '|'
+                      + encodeURIComponent(row.dataset.ion) + ':' + Date.now() });
       return;
     }
     var swatch = ev.target.closest('.color-swatch');
@@ -1466,7 +1467,8 @@
         // that does not hold the clicked line at all
         var anchor = linelistAnchor;
         linelistAnchor = null;
-        if (!anchor || anchor.lam0 !== row.dataset.lam0) return;
+        if (!anchor || anchor.lam0 !== row.dataset.lam0
+            || anchor.ion !== row.dataset.ion) return;
         // clamped by the scroll extent: a row near either end cannot always be put back
         slot.scrollTop += (r.top - box.top) - anchor.off;
         return;
