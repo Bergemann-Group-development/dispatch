@@ -470,7 +470,7 @@ class AbundanceWizard(Tool):
         elif kind == "select":
             self.select_result(arg)
         elif kind == "remove":
-            self.remove_result(arg)
+            self.ctx.removal.request(self.name, arg)
         elif kind == "duplicate":
             self.duplicate_result()
         elif kind == "toggle-line":
@@ -602,10 +602,24 @@ class AbundanceWizard(Tool):
         self._clear_line_decor()
         self.push_results()                  # drop the result highlight
 
+    def is_computing(self, res):
+        """Whether a submission of this document still works on ``res``: one bound to it
+        (keyed by its uid) or the one that creates it and delivers its later stages
+        (keyed by the name it was submitted under)."""
+        return res.uid in self.jobs.current or res.name in self.jobs.current
+
     def remove_result(self, uid):
+        """Drop result ``uid`` and cancel the workflow computing it. Returns what
+        :meth:`insert_result` needs to put it back, or ``None``."""
+        res = self._find(uid)
+        if res is None:
+            return None
+        placed = {"res": res, "index": self.results.index(res),
+                  "selected": self.selected_uid == uid}
         self.jobs.invalidate(uid)
-        was_selected = self.selected_uid == uid
-        self.results = [r for r in self.results if r.uid != uid]
+        self.jobs.invalidate(res.name)
+        was_selected = placed["selected"]
+        self.results.remove(res)
         if was_selected:
             self.selected_uid = self.results[-1].uid if self.results else None
         self.push_results()
@@ -614,6 +628,18 @@ class AbundanceWizard(Tool):
         elif not self.results:
             self.push_view("off")
             self._clear_line_decor()
+        return placed
+
+    def insert_result(self, res, index, selected):
+        """Put back a result :meth:`remove_result` took out, at its position and with its
+        uid and state; ``selected`` shows it again. Its cancelled workflow stays cancelled."""
+        if self._find(res.uid) is not None:
+            raise ValueError(f"Duplicate result identity: {res.uid}")
+        self.results.insert(min(index, len(self.results)), res)
+        if selected:
+            self.select_result(res.uid)
+        else:
+            self.push_results()
 
     def duplicate_result(self, uid=None):
         """Add a copy of result ``uid`` (the selected one by default) under a unique name
@@ -623,7 +649,7 @@ class AbundanceWizard(Tool):
         res = self._find(uid or self.selected_uid)
         if res is None:
             return None
-        if res.uid in self.jobs.current or res.name in self.jobs.current:
+        if self.is_computing(res):
             self.notify(f"{res.name} is still being computed; duplicate it once it has "
                         "finished or been cancelled.")
             return None

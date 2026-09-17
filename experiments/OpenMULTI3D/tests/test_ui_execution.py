@@ -2639,3 +2639,180 @@ def test_rerun_from_a_spectrum_prefills_the_modal_with_its_request(tmp_path, mon
     # a spectrum without a record says so
     _send_action(document, f"rerun:{target.uid}:4")
     assert messages[-1] == "This spectrum does not record the request it was computed from."
+
+
+# --- removal: one path, confirmed when it costs something, undone from the status ------
+def _removal_question(ctx):
+    """The pending confirmation the page would show: ``(message, reply)``."""
+    import json
+    value = ctx.removal.confirm_bridge.value
+    return tuple(json.loads(value.split("\0")[0])) if value else None
+
+
+def _answer(document, value):
+    document.select_one({"name": "removal-actions"}).value = f"{value} {next(_nonces)}"
+
+
+def _undo_token(document):
+    import re
+    status = document.select_one({"name": "footer-status"}).value
+    found = re.search(r'data-undo="([^"]+)"', status)
+    return found.group(1) if found else None
+
+
+_nonces = itertools.count(1)
+
+
+def test_removing_a_target_spectrum_asks_and_undo_restores_it(tmp_path):
+    """A spectrum that results measure is removed only once the user has seen those
+    results listed; Undo puts it back with its identity, position, selection and state,
+    and the results find their measurement again."""
+    from tumult.abundance import AbundanceResult
+    from tumult.spectrum_io import load_file
+
+    document, ctx = _build_document()
+    canvas = ctx.canvas
+    path = _spectrum_file(tmp_path)
+    obs = canvas.add_object(load_file(path), name="obs", source=("file", str(path)))
+    other = canvas.add_object(load_file(path), name="other", select=False)
+    obs.conv = {"vshift": 1.0}
+    abund = ctx.tools._tools["abundance"]
+    res = AbundanceResult(element="Fe", symbol="Fe", summary={}, uid="res-a", name="Fe A",
+                          ref_uid=obs.uid, lines=[_diag_line()])
+    abund.results.append(res)
+    assert abund._result_spec(res) is not None
+
+    _send_action(document, f"remove:{obs.uid}:1")
+    message, reply = _removal_question(ctx)
+    assert canvas.objects == [obs, other]          # nothing removed before the answer
+    assert "“obs”" in message and "• Fe A" in message
+    _answer(document, reply)
+    assert canvas.objects == [other] and abund._result_spec(res) is None
+
+    _answer(document, f"undo {_undo_token(document)}")
+    assert canvas.objects == [obs, other] and canvas.selected_uid == obs.uid
+    assert obs.uid == res.ref_uid and obs.conv == {"vshift": 1.0}
+    assert obs.line in canvas.main.renderers and obs.nav_line in canvas.nav.renderers
+    assert abund._result_spec(res) is not None
+    _answer(document, reply)                        # a spent question does nothing
+    assert canvas.objects == [obs, other]
+
+
+def test_plain_removals_need_no_confirmation(tmp_path):
+    """A removal that loses nothing happens on the click and can be undone: a spectrum no
+    result names, a result not being computed, a mask set as saved."""
+    from tumult.abundance import AbundanceResult
+    from tumult.spectrum_io import load_file
+
+    document, ctx = _build_document()
+    obs = ctx.canvas.add_object(load_file(_spectrum_file(tmp_path)), name="obs")
+    ionbal = ctx.tools._tools["ionbal"]
+    res = AbundanceResult(element="Fe", symbol="Fe", summary={}, uid="res-b", name="Fe B")
+    ionbal.results.append(res)
+    mset = ctx.masks.load_file(_mask_file(tmp_path))
+
+    _send_action(document, f"remove:{obs.uid}:1")
+    document.select_one({"name": "ionbal-actions"}).value = "remove:res-b:2"
+    document.select_one({"name": "linemask-actions"}).value = f"set-remove {mset.uid} 3"
+    assert _removal_question(ctx) is None
+    assert not ctx.canvas.objects and not ionbal.results and mset not in ctx.masks.sets
+
+    _answer(document, f"undo {_undo_token(document)}")   # only the latest is undone
+    assert ctx.masks.listed == [mset] and ctx.masks.current_uid == mset.uid
+    assert len(ctx.masks.sets) == 2                 # the scratch set it replaced is gone
+    assert not ionbal.results and not ctx.canvas.objects
+
+
+def test_removing_an_edited_or_unsaved_mask_set_asks(tmp_path):
+    """Autosave soon records a removal, so a set whose windows exist nowhere else is
+    removed only on confirmation; an empty or saved set goes on the click."""
+    document, ctx = _build_document()
+    masks = ctx.masks
+    edited = masks.load_file(_mask_file(tmp_path))
+    masks.set_fit(0, 5000.2, 5001.8)
+    empty = masks.add_set("empty", "Fe")
+    drawn = masks.add_set("drawn", "Fe")
+    masks.add(5002.8, 5003.2)
+    saved = masks.load_file(_mask_file(tmp_path, "mg-lines.txt"))
+
+    ctx.removal.request("linemask", str(edited.uid))
+    message, reply = _removal_question(ctx)
+    assert "not been saved" in message and edited in masks.sets
+    _answer(document, reply)
+    assert edited not in masks.sets
+
+    ctx.removal.request("linemask", str(drawn.uid))
+    message, reply = _removal_question(ctx)
+    assert "never been saved" in message and drawn in masks.sets
+    _answer(document, reply)
+    assert drawn not in masks.sets
+
+    for mset in (empty, saved):
+        ctx.removal.request("linemask", str(mset.uid))
+        assert mset not in masks.sets
+    assert _removal_question(ctx) == (message, reply)     # no further question
+
+    # a saved set a balance reads its windows from asks too, naming the balance
+    from tumult.abundance import AbundanceResult
+    used = masks.load_file(_mask_file(tmp_path, "fe-balance.txt"))
+    ctx.tools._tools["ionbal"].results.append(AbundanceResult(
+        element="Fe", symbol="Fe", summary={}, uid="bal", name="Fe balance",
+        maskset_uid=str(used.uid)))
+    ctx.removal.request("linemask", str(used.uid))
+    message, reply = _removal_question(ctx)
+    assert "\u2022 Fe balance" in message and used in masks.sets
+
+
+def test_removal_cancels_a_running_calculation_only_once_confirmed(tmp_path, monkeypatch):
+    """Removing a result that is being computed cancels its workflow, which Undo cannot
+    resume, so the removal asks first and cancels nothing before the answer. Undo brings
+    the result back without its workflow."""
+    from tumult.abundance import AbundanceResult
+
+    document, ctx = _build_document()
+    abund = ctx.tools._tools["abundance"]
+    res = AbundanceResult(element="Fe", symbol="Fe", summary={}, uid="res-a", name="Fe A",
+                          lines=[_diag_line()])
+    kept = AbundanceResult(element="Fe", symbol="Fe", summary={}, uid="res-k", name="Fe K")
+    abund.results += [res, kept]
+    abund.select_result(res.uid)
+    monkeypatch.setattr(ctx, "submit_operation", lambda name, op, request, done, **kw:
+                        SimpleNamespace(pid=7, token=SimpleNamespace(add_callback=lambda fn: None)))
+    cancelled = []
+    monkeypatch.setattr(ctx.jobs, "request_cancel", cancelled.append)
+    abund.jobs.submit_operation(res.name, abund.task_kind, _stub_request(tmp_path),
+                                abund._on_synth_done, result=res)
+
+    document.select_one({"name": "abund-actions"}).value = "remove:res-a:1"
+    message, reply = _removal_question(ctx)
+    assert "cancelled" in message and "• Fe A" in message
+    assert not cancelled and abund.is_computing(res)
+    _answer(document, reply)
+    assert cancelled == [7] and abund.results == [kept] and not abund.is_computing(res)
+
+    _answer(document, f"undo {_undo_token(document)}")
+    assert abund.results == [res, kept] and abund.selected_uid == res.uid
+    assert not abund.is_computing(res)
+
+
+def test_removing_a_model_atom_asks_and_undo_restores_its_corrections(tmp_path):
+    from tumult.abundance import AbundanceResult
+    from atomtool import AtomObject
+
+    document, ctx = _build_document()
+    atoms, corr = ctx.tools._tools["atom"], ctx.tools._tools["abundcorr"]
+    atom = AtomObject(path=str(tmp_path / "mg.atom"),
+                      atom=SimpleNamespace(nk=3, nline=2, ncont=1, id="MG"))
+    atoms.atoms.append(atom)
+    first, second = (AbundanceResult(element="Mg", symbol="Mg", summary={}, uid=uid,
+                                     name=uid, atom_path=atom.path, stage="corr")
+                     for uid in ("c1", "c2"))
+    corr.results += [first, second]
+
+    document.select_one({"name": "atomobj-actions"}).value = f"remove {atom.uid} 1"
+    message, reply = _removal_question(ctx)
+    assert "• c1" in message and "• c2" in message and atoms.atoms == [atom]
+    _answer(document, reply)
+    assert not atoms.atoms and not corr.results
+    _answer(document, f"undo {_undo_token(document)}")
+    assert atoms.atoms == [atom] and corr.results == [first, second]

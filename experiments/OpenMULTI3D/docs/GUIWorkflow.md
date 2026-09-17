@@ -53,6 +53,32 @@ result that is still being computed is not duplicated. A copied mask set has no 
 no baseline, so it is unsaved until **Save as…** writes it. Copies are ordinary workspace
 objects and are saved and restored like any other.
 
+### Removing an object
+
+Every sidebar remove button (spectra, line mask sets, model atoms and the three result
+lists) goes through one document-level path (`removal.py`). It first works out what the
+removal would cost:
+
+- results that name the object: a spectrum they measure (`ref_uid`) or, for a balance, the mask set
+  it reads its windows from (`maskset_uid`); such results cannot show or recompute their measurement
+  while it is gone. A model atom's correction results are removed together with the atom;
+- unsaved windows: a mask set edited since its file was read or written, or one with masks
+  that was never written;
+- running work: the workflow computing a result, which the removal cancels.
+
+A removal that costs none of these happens on the click. Otherwise the page asks first and
+lists what is affected; nothing is removed or cancelled before the answer, and a changed
+situation (a job started meanwhile) is asked about again.
+
+Every removal says so in the status bar with an **Undo** button. Undo puts the object back
+with its identity, list position, selection and state, so the results that name it work
+again, and a removed atom brings its correction results back. Only the latest removal can be
+undone, and only while its workspace is the live one (loading a slot ends that). The
+autosave records a removal within seconds, which is why Undo exists. Undo does not restart
+a cancelled workflow, which is why cancelling one always asks. Confirmation is still used for
+references and unsaved windows because Undo lives in a status message that disappears after
+a few seconds, and the row being removed does not show what depends on it.
+
 A synthesised or fitted spectrum records the request it was submitted with in its Info
 meta (`meta["rerun"]`: the request without its configuration, the fit and synth window
 pairs, the line-mask name, **Use line list** and, for a fit, the target and the fitted
@@ -468,7 +494,7 @@ corrections…**, which opens the correction modal with this atom fixed.
 A correction result is listed indented under the atom it was computed from and carries the
 atom's path, so a restored session re-parents it after the atom is reloaded; a result whose
 atom is not loaded is listed in a trailing Corrections section. Removing an atom removes its
-results after confirmation. The result view has two steps, **Lines** (the reference spectrum
+results after confirmation, and Undo restores both (see "Removing an object"). The result view has two steps, **Lines** (the reference spectrum
 with the selected line's curve-of-growth inversion beside it, over the per-line table) and
 **Scatter** (ΔA against excitation energy and against reduced EW, side by side), with the
 line include toggles curating the mean. **Duplicate** in the panel keeps the current windows
@@ -501,6 +527,11 @@ and corrections before a fit-window edit changes them.
   `duplicate_spectrum` (`app.py`) are the Duplicate actions; `synthmodal.rerun_record`
   writes a spectrum's rerun record and `SynthModal.open_rerun` with
   `SynthSetup.load_request` and `FitTab.load` reads it back.
+- `Removal` (`removal.py`, `ctx.removal`) is the remove-button path: its plans, the
+  confirmation (`htmlbridge.confirm_bridge`) and the Undo of the latest removal. The
+  owners' `remove_object`/`restore_object` (`canvas.py`), `remove_set`/`insert_set`
+  (`maskstore.py`), `remove_result`/`insert_result` (`abundwizard.py`) and
+  `remove`/`insert` (`atomtool.py`) take an object out and put it back.
 - The headless owners are in `tumult/`: `synthesis` (requests, submission, records,
   runtime), `abundance`, `measurement`, `sparams`, `linediag`, `linestrength`,
   `refstars`, `linemask` and `spectrum_io`. The GUI imports them directly; there are no

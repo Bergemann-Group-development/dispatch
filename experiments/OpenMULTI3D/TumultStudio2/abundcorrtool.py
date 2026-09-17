@@ -384,11 +384,12 @@ class AbundCorrTool(AbundanceWizard):
         self._hide_reference()
 
     def remove_result(self, uid):
-        super().remove_result(uid)      # re-selects (and re-attaches) when one is left
+        placed = super().remove_result(uid)   # re-selects (and re-attaches) when one is left
         if self.selected() is None:
             self.canvas.on_window_resize = None
             self._detach_annotations()
             self._hide_reference()
+        return placed
 
     # --- the reference spectrum: a renderer owned by this view -----------------------------
     def _render_reference(self):

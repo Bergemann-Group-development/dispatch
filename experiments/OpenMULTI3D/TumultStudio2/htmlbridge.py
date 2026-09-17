@@ -81,6 +81,24 @@ def value_bridge(input_id):
     return bridge
 
 
+def confirm_bridge(channel, name=None):
+    """A hidden TextInput; setting ``.value`` to ``json([message, reply]) + NUL + nonce``
+    shows the browser's confirmation with ``message`` and, when accepted, writes
+    ``reply`` (plus a nonce) to the action channel named ``channel``."""
+    bridge = TextInput(value="", visible=False)
+    if name:
+        bridge.name = name
+    bridge.js_on_change("value", CustomJS(args=dict(channel=channel), code="""
+        const cut = cb_obj.value.indexOf('\\0');
+        if (cut < 0) return;
+        const [message, reply] = JSON.parse(cb_obj.value.slice(0, cut));
+        if (!window.confirm(message)) return;
+        const m = Bokeh.documents[0].get_model_by_name(channel);
+        if (m) m.setv({ value: reply + ' ' + Date.now() });
+    """))
+    return bridge
+
+
 def class_bridge(selector, klass):
     """Return a hidden TextInput; setting `.value` to "on…"/"off…" toggles `klass`
     on the element matched by `selector`."""
@@ -125,6 +143,9 @@ class BridgeSet:
 
     def value(self, input_id):
         return self._keep(value_bridge(input_id))
+
+    def confirm(self, channel, name=None):
+        return self._keep(confirm_bridge(channel, name=name))
 
     def action(self, name):
         """A hidden client->server channel (a named ``TextInput`` the page writes to)."""

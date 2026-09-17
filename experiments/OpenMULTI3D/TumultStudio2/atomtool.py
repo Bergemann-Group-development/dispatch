@@ -156,16 +156,33 @@ class AtomTool(Tool):
             self.ctx.tools.activate(self.name)   # -> activate(): the view and the panel
 
     def remove(self, uid):
+        """Drop atom ``uid`` and the correction results computed from it. Returns what
+        :meth:`insert` needs to put them back, or ``None``."""
         obj = self.find(uid)
         if obj is None:
-            return
+            return None
+        placed = {"atom": obj, "index": self.atoms.index(obj),
+                  "selected": self.selected_uid == uid, "results": []}
         for res in list(self.corr.results_for(obj.path)):
-            self.corr.remove_result(res.uid)
+            placed["results"].append(self.corr.remove_result(res.uid))
         self.atoms = [a for a in self.atoms if a.uid != uid]
         if self.selected_uid == uid:
             self.selected_uid = None
             if self.active:
                 self.ctx.tools.deactivate_active()
+        self.render_objects()
+        return placed
+
+    def insert(self, atom, index, selected, results):
+        """Put back an atom :meth:`remove` took out, with its correction results at their
+        positions; ``selected`` opens its view again."""
+        if self.find(atom.uid) is not None:
+            raise ValueError(f"Duplicate atom identity: {atom.uid}")
+        self.atoms.insert(min(index, len(self.atoms)), atom)
+        for placed in reversed(results):      # removed front to back, so back to front
+            self.corr.insert_result(**placed)
+        if selected:
+            self.select(atom.uid)
         self.render_objects()
 
     def is_focused(self):
@@ -211,7 +228,7 @@ class AtomTool(Tool):
         if kind == "select":
             self.select(arg)
         elif kind == "remove":
-            self.remove(arg)
+            self.ctx.removal.request(self.kind, arg)
         elif kind == "tab":
             self.set_tab(arg)
         elif kind == "sort":

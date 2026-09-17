@@ -178,9 +178,10 @@ class MaskTool(Tool):
         except (TypeError, ValueError):
             return
         was_current = uid == self.store.current_uid
-        self.store.remove_set(uid)
+        placed = self.store.remove_set(uid)
         if was_current and self.active:
             self.ctx.tools.deactivate_active()
+        return placed
 
     def objects_html(self):
         """The left-sidebar list of imported mask sets (empty string when there are none)."""
@@ -373,7 +374,7 @@ class MaskTool(Tool):
         elif kind == "set-select":
             self.select_set(arg)
         elif kind == "set-remove":
-            self.remove_set(arg)
+            self.ctx.removal.request("linemask", arg)
 
     def _submit_source(self, key, arg=""):
         """A source pane's action button fired (the picker panes act on their own)."""

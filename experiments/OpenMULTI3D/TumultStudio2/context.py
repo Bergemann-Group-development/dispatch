@@ -41,6 +41,8 @@ bundle of closures, and cross-tool reactions go through its event bus:
   (see ``session.py`` for the schema and the load policy).
 * ``ctx.busy``    - raise/lower the footer progress bar without deferring anything, for
   work that already owns a tick of its own (``run_busy`` is this plus the deferral).
+* ``ctx.removal`` - the :class:`removal.Removal` every sidebar remove button requests
+  through: it confirms a removal that would cost something and offers Undo.
 * ``ctx.execution`` - the shared :class:`tumult.synthesis.runtime.ExecutionService`
   behind the dispatch runs.
 * ``ctx.emit`` / ``ctx.subscribe`` - a minimal synchronous event bus. Events in use:
@@ -90,6 +92,7 @@ class AppContext:
         self.attach_workflow = None     # (id) -> Job | None; by main
         self.import_workflow = None     # (id) -> future | None; by main
         self.execution = None       # shared dispatch service; bound by main
+        self.removal = None         # removal.Removal; by main
         self._subscribers = {}
 
     def schedule(self, fn):

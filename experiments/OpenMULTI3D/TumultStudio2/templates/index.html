@@ -1308,6 +1308,13 @@
       m.setv({ value: 'color:' + swatch.dataset.color + ':' + Date.now() });
       return;
     }
+    var undo = ev.target.closest('[data-undo]');
+    if (undo) {
+      // a removal's Undo in the status message (removal.py)
+      var r = Bokeh.documents[0].get_model_by_name('removal-actions');
+      if (r) r.setv({ value: 'undo ' + undo.dataset.undo + ' ' + Date.now() });
+      return;
+    }
     var copy = ev.target.closest('.job-copy');
     if (copy) {
       if (navigator.clipboard) navigator.clipboard.writeText(copy.dataset.copy);
@@ -1653,11 +1660,8 @@
     var rem = ev.target.closest('[data-atom-remove]');
     if (rem) {
       ev.stopPropagation();
-      var item = rem.closest('.atom-item');
-      var n = item ? +item.dataset.atomResults : 0;
-      if (!n || confirm('Remove this atom and the ' + n + ' correction result' + (n === 1 ? '' : 's') + ' computed from it?')) {
-        atomAction('remove', rem.dataset.atomRemove);
-      }
+      // the server asks first when correction results go with it (removal.py)
+      atomAction('remove', rem.dataset.atomRemove);
       return;
     }
     var aitem = ev.target.closest('.atom-item');

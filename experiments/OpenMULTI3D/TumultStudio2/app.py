@@ -50,6 +50,7 @@ from atomtool import AtomTool, AtomObject  # noqa: E402
 from abundcorrtool import AbundCorrTool  # noqa: E402
 from ionbalance import IonBalanceTool  # noqa: E402
 import naming  # noqa: E402
+from removal import Removal, register_workspace as register_removals  # noqa: E402
 from tumult.synthesis import workflows as synth  # noqa: E402  (CancelToken/CancelledError for cancellable loads)
 from tumult.synthesis import submit_operation as submit_operation_record  # noqa: E402
 from tumult.synthesis import submission  # noqa: E402  (open workflows on reconnect)
@@ -292,14 +293,18 @@ def build():
     _status_last = {"n": -1}
     _status_levels = {"info", "warn", "danger", "success"}
 
-    def notify(message, level="warn", revert_ms=4000):
+    def notify(message, level="warn", revert_ms=4000, undo=None):
+        """``undo`` is a removal token (removal.py): the message then offers Undo."""
         lvl = level if level in _status_levels else "info"
         n = next(_status_token)
         _status_last["n"] = n
+        button = ("" if undo is None else
+                  f'<button class="status-action" data-undo="{html.escape(str(undo))}">'
+                  'Undo</button>')
         # trailing comment keeps the pushed string unique, so an identical repeat
         # message still fires the bridge's change event and replays the flash
         status_bridge.value = (f'<span class="status-msg status-{lvl}">'
-                               f'{html.escape(str(message))}</span><!--{n}-->')
+                               f'{html.escape(str(message))}{button}</span><!--{n}-->')
 
         def restore():
             if _status_last["n"] == n:
@@ -888,6 +893,11 @@ def build():
         return naming.unique(name, taken)
 
     ctx.unique_name = unique_name
+
+    # every sidebar remove button goes through this: it asks when the removal would cost
+    # something and offers Undo in the status message (removal.py)
+    ctx.removal = Removal(ctx, notify)
+    register_removals(ctx.removal, canvas, masktool, wizards, atomtool)
 
     def _restore_range(rng, vals):
         if not vals:
@@ -1672,7 +1682,7 @@ def build():
     # ToolManager, which owns "activate one, stand down the rest" (see toolmanager.py).
     ACTIONS = {
         "toggle":       canvas.toggle_object,
-        "remove":       canvas.remove_object,
+        "remove":       lambda uid: ctx.removal.request("spectrum", uid),
         "cancel-pending": cancel_pending,
         "dismiss-job":  dismiss_job,
         "workflow-discover": lambda v: discover_workflows(),

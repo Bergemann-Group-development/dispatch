@@ -144,17 +144,37 @@ class MaskStore:
         return True
 
     def remove_set(self, uid):
-        """Drop a whole set. The store keeps at least one (a fresh scratch set)."""
+        """Drop a whole set. The store keeps at least one (a fresh scratch set).
+        Returns what :meth:`insert_set` needs to put it back, or ``None``."""
         mset = self.find(uid)
         if mset is None:
-            return
+            return None
+        placed = {"mset": mset, "index": self.sets.index(mset),
+                  "current": self.current_uid == uid, "active": self.active, "stand_in": None}
         self.sets.remove(mset)
         if not self.sets:
-            self.sets.append(self._new_set())
+            placed["stand_in"] = self._new_set()
+            self.sets.append(placed["stand_in"])
         if self.current_uid == uid:
             self.current_uid = self.sets[-1].uid
             self.active = None
         self._changed()
+        return placed
+
+    def insert_set(self, mset, index, current, active, stand_in=None):
+        """Put back a set :meth:`remove_set` took out (its returned dict is the arguments),
+        with its uid, position and edits; ``current``/``active`` restore it as the viewed
+        set. The scratch set that stood in while the store was otherwise empty goes again
+        unless something was drawn into it."""
+        if self.find(mset.uid) is not None:
+            raise ValueError(f"Duplicate line mask set identity: {mset.uid}")
+        if stand_in is not None and not self.is_listed(stand_in) and stand_in in self.sets:
+            self.sets.remove(stand_in)
+        self.sets.insert(min(index, len(self.sets)), mset)
+        if current or self.find(self.current_uid) is None:
+            self.current_uid, self.active = mset.uid, active
+        self._changed()
+        return mset
 
     def revert(self):
         """Restore the current set to the file it was imported from / last saved to."""

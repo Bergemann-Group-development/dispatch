@@ -420,6 +420,30 @@ class SpectrumCanvas:
         if self.on_change:
             self.on_change(self)
 
+    def restore_object(self, obj, index, select=False):
+        """Put back ``obj``, which :meth:`remove_object` took out, at list position
+        ``index`` with its own renderers, data and style (the removal undo)."""
+        if self._find(obj.uid) is not None:
+            raise ValueError(f"Duplicate observation identity: {obj.uid}")
+        first = not self.objects
+        self.main.renderers = [*self.main.renderers, obj.line, obj.markers]
+        self.nav.renderers = [*self.nav.renderers, obj.nav_line]
+        self._y_fit_renderers += [obj.line, obj.markers]
+        self.main.y_range.renderers = list(self._y_fit_renderers)
+        self.objects.insert(min(index, len(self.objects)), obj)
+        if select or first:
+            self.selected_uid = obj.uid
+        lo, hi = self.display_bounds()
+        self.main.x_range.bounds = (lo, hi)
+        self.nav.x_range.bounds = (lo, hi)
+        self.nav.x_range.start, self.nav.x_range.end = lo, hi
+        if first:
+            self.main.x_range.start, self.main.x_range.end = self._display_range(obj.spectrum)
+        self._refresh_main()
+        self._refresh_nav()
+        if self.on_change:
+            self.on_change(self)
+
     def display_bounds(self):
         ranges = [self._display_range(o.spectrum) for o in self.objects]
         return min(r[0] for r in ranges), max(r[1] for r in ranges)
