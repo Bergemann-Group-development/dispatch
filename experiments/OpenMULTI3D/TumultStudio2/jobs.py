@@ -445,8 +445,14 @@ class ResultJobs:
         ``ctx.submit_operation``. It outlives the tab; the record's progress snapshots
         reach ``result`` in place (or ``on_progress`` when the job creates its result), the
         finished result reaches ``done`` and a failure ``on_error`` (the Processes row
-        already says why). Returns the job, or ``None`` when submission was refused."""
+        already says why). Returns the job, or ``None`` when submission was refused —
+        including a second submission for the same ``key`` (``result.uid`` or ``name``)
+        arriving while an earlier one is still pending: a modal's submit button gives
+        instant feedback and closes before the daemon round trip finishes, so a double
+        click that beats that round trip must not launch the job twice."""
         key = result.uid if result is not None else name
+        if key in self.current:
+            return None
         generation = object()
         self.current[key] = generation
         workspace = getattr(self.ctx, "generation", None)   # captured at admission

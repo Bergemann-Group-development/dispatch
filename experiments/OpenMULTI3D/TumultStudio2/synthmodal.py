@@ -75,6 +75,8 @@ class SynthModal:
         self.missing = []        # path prefs currently pointing at non-existent files
         self.job = None          # ("range", None) | ("masks", LineMaskSet) once opened
         self.mode = "synth"      # "synth" | "fit"
+        self._pending = False    # a submission is validated and closing/closed but the
+                                  # actual (slow) handoff to the daemon hasn't run yet
 
         self.dialog = ctx.bridges.dialog("synth-modal", name="synth-modal-bridge")
         self.title_bridge = ctx.bridges.html("synth-modal-title")
@@ -228,6 +230,7 @@ class SynthModal:
 
     def _open(self, mode):
         self.draft.begin()
+        self._pending = False   # a fresh job; any earlier submission has long since handed off
         self.mode = mode
         self.setup.allow_departures = mode != "fit"
         self.setup.allow_atom_only = mode != "fit"
@@ -266,11 +269,41 @@ class SynthModal:
         return '<button class="primary-btn synth-submit">Synthesise</button>'
 
     def submit(self):
-        """The footer button: what the modal was opened for."""
+        """The footer button: what the modal was opened for.
+
+        Ignored while an earlier click's submission is still being handed off (see
+        :meth:`_begin_submit`) — the button-side click handler already disables itself,
+        this is the belt-and-braces guard against a second ``synth-submit`` action that
+        reaches the server before that round trip closes it."""
+        if self._pending:
+            return
         if self.mode == "fit":
             self.run_fit()
         else:
             self.synthesize()
+
+    def _begin_submit(self):
+        """Validation has passed: close the dialog and mark the submission in flight
+        *before* doing the slow part (JSON-encoding the request and handing it to the
+        daemon over a socket). Returning from the action callback now, instead of after
+        that round trip, lets Bokeh flush the dialog-close patch to the browser at once —
+        closing the modal is the user's feedback that the click was received, not a side
+        effect of the submission having finished."""
+        self._pending = True
+        self.draft.commit()
+        self.fit.commit()
+        pulse(self.dialog, "close")
+
+    def _end_submit(self, fn):
+        """Run ``fn`` (the actual ``ctx.submit_operation`` call) on the next document
+        tick, after the close patch above has already gone out, and clear the in-flight
+        guard once it returns."""
+        def run():
+            try:
+                fn()
+            finally:
+                self._pending = False
+        self.ctx.schedule(run)
 
     # --- Info-tab provenance ----------------------------------------------
     @staticmethod
@@ -417,9 +450,7 @@ class SynthModal:
                                     atoms=atoms, xmin=xmin, xmax=xmax, atmosphere=rows)
             self._add(result.spectrum, name, meta=meta, conv=result.post)
 
-        self.draft.commit()
-        self.fit.commit()
-        pulse(self.dialog, "close")
+        self._begin_submit()
         # the fit only reads the observation inside the synth span, so the record carries
         # that part, with the guesses as the annotations a document that imports the
         # record later shows
@@ -429,8 +460,8 @@ class SynthModal:
                   "fit_windows": [list(fit) for fit, _synth in windows],
                   "fit_stellar": list(c["fit_stellar"]), "abund_fits": dict(c["abund_fits"]),
                   "fit_post": dict(c["fit_post"])}
-        self.ctx.submit_operation(name, "synthesis.fit", request, on_done, kwargs=kwargs,
-                                  meta=meta)
+        self._end_submit(lambda: self.ctx.submit_operation(
+            name, "synthesis.fit", request, on_done, kwargs=kwargs, meta=meta))
 
     def _import_fit(self, result, handle):
         """A fit record another document submitted: its best-fit spectrum is added under
@@ -647,8 +678,7 @@ class SynthModal:
                 suffix = f"·{index}" if len(result.spectra) > 1 else ""
                 self._add(spec, name + suffix, meta=meta)
 
-        self.draft.commit()
-        self.fit.commit()
-        pulse(self.dialog, "close")
-        self.ctx.submit_operation(name, "synthesis.synthesize", request, add_result,
-                                  kwargs={"background_lines": use_linelist}, meta=meta)
+        self._begin_submit()
+        self._end_submit(lambda: self.ctx.submit_operation(
+            name, "synthesis.synthesize", request, add_result,
+            kwargs={"background_lines": use_linelist}, meta=meta))

@@ -849,6 +849,10 @@
       var channel = Bokeh.documents[0].get_model_by_name('dialog-actions');
       if (channel) channel.value = modalId + ' ' + Date.now();
       if (opener && opener.isConnected) opener.focus();
+      // a job-launching submit button left busy (see busySubmit) is only ever inside a
+      // static footer that isn't re-rendered on reopen — reset it here, once, whatever
+      // closed the dialog (a successful submit, Cancel, Esc, or the backdrop)
+      resetBusy(m);
     });
     function open() { opener = document.activeElement; m.showModal(); if (onOpen) onOpen(); }
     var o = openId && document.getElementById(openId);
@@ -1341,6 +1345,26 @@
     var m = Bokeh.documents[0].get_model_by_name('object-actions');
     if (m) m.setv({ value: name + ':-:' + Date.now() });
   }
+
+  // a job-launching modal's submit button: the daemon round trip a click starts can take
+  // a moment, so give feedback (disabled + spinner) at once instead of leaving the button
+  // looking inert until the server gets around to closing the dialog. Returns false (and
+  // sends nothing) for a click that arrives while the button is already busy — the
+  // client-side half of the double-submit guard; jobs.py holds the server-side half.
+  function busySubmit(btn) {
+    if (!btn || btn.disabled) return false;
+    btn.disabled = true;
+    btn.dataset.busyLabel = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner"></span>&nbsp;' + btn.innerHTML;
+    return true;
+  }
+  function resetBusy(scope) {
+    (scope || document).querySelectorAll('[data-busy-label]').forEach(function (btn) {
+      btn.innerHTML = btn.dataset.busyLabel;
+      delete btn.dataset.busyLabel;
+      btn.disabled = false;
+    });
+  }
   // the Mask tool: toggle from the toolbar, leave via × or Esc; the panel's actions are
   // rendered dynamically, so they are delegated
   document.getElementById('mask-btn').addEventListener('click', function () { ewAction('mask-toggle'); });
@@ -1356,7 +1380,8 @@
   // the synthesis modal: close via × / backdrop, submit via the footer button
   wireModal(null, 'close-synth', 'synth-modal');
   document.addEventListener('click', function (ev) {
-    if (ev.target.closest('.synth-submit')) ewAction('synth-submit');
+    var btn = ev.target.closest('.synth-submit');
+    if (btn && busySubmit(btn)) ewAction('synth-submit');
   });
 
   // noise filter: toggle the panel/feautrier view / clear the applied filter
@@ -1595,7 +1620,8 @@
   wireModal(null, 'close-corr', 'corr-modal');
   document.addEventListener('click', function (ev) {
     if (ev.target.closest('.abundcorr-close')) { ewAction('abundcorr'); return; }
-    if (ev.target.closest('.corr-run')) { analysisAction('corr', 'run'); }
+    var run = ev.target.closest('.corr-run');
+    if (run && busySubmit(run)) analysisAction('corr', 'run');
   });
 
   // model atoms: the left-sidebar objects (select / remove), the panel's corrections action,
@@ -1645,7 +1671,7 @@
   // toolbar button — a measurement object in the left sidebar is what opens it.
   wireModal(null, 'close-ionbal', 'ionbal-modal');
   document.getElementById('ionbal-run').addEventListener('click', function () {
-    analysisAction('ionbal', 'run');
+    if (busySubmit(this)) analysisAction('ionbal', 'run');
   });
   document.addEventListener('click', function (ev) {
     if (ev.target.closest('.ionbal-close')) { ewAction('ionbal'); return; }

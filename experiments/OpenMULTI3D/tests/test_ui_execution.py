@@ -1845,11 +1845,14 @@ def _departure_folder(tmp_path):
 _presses = itertools.count()
 
 
-def _submit_modal(document, ctx):
-    """Press the modal's footer button through the document's action channel; the number
-    of jobs the document admitted for it."""
+def _submit_modal(document, ctx, ticks):
+    """Press the modal's footer button through the document's action channel and run the
+    next tick — the actual handoff to the daemon is deferred there now, so the dialog's
+    close patch can reach the browser before that (possibly slow) round trip, not after
+    it. Returns the number of jobs the document admitted for it."""
     before = len(ctx.jobs)
     _send_action(document, f"synth-submit:{next(_presses)}")
+    ticks.run()
     return len(ctx.jobs) - before
 
 
@@ -1862,7 +1865,7 @@ def test_free_range_synthesis_is_one_durable_window_workflow(tmp_path, monkeypat
     ticks = _Ticks(document, monkeypatch)
     modal = ctx.synth_modal
     modal.open_range(5000.0, 5001.0, "synth")
-    assert _submit_modal(document, ctx) == 1
+    assert _submit_modal(document, ctx, ticks) == 1
     job, = ctx.jobs.active
     assert job.detached and job.handle is not None and job.name == "t5750g4.4m+0.0v1.0"
     assert ticks.settle(lambda: not ctx.jobs.active)
@@ -1892,7 +1895,7 @@ def test_mask_set_synthesis_keeps_fit_and_synth_windows_apart(tmp_path, monkeypa
     mset = ctx.masks.mset
     mset.masks[0].include = True
     ctx.synth_modal.open_masks(mset, "synth")
-    assert _submit_modal(document, ctx) == 1
+    assert _submit_modal(document, ctx, ticks) == 1
     assert ticks.settle(lambda: not ctx.jobs.active)
     request, = executed
     assert request.windows == ((5004.0, 5006.0),)
@@ -1915,7 +1918,7 @@ def test_fixed_file_snapshot_and_nlte_requests_are_captured_from_the_setup(tmp_p
     ticks = _Ticks(document, monkeypatch)
     modal = ctx.synth_modal
     modal.open_range(5000.0, 5001.0, "synth")
-    assert _submit_modal(document, ctx) == 1
+    assert _submit_modal(document, ctx, ticks) == 1
     assert ticks.settle(lambda: not ctx.jobs.active)
     picked = executed[-1]
     assert isinstance(picked.atmosphere, Atmosphere)
@@ -1927,7 +1930,7 @@ def test_fixed_file_snapshot_and_nlte_requests_are_captured_from_the_setup(tmp_p
     modal.setup.discard()        # re-read the store: the setup holds a draft of it
     assert modal.setup.is_snapshot
     modal.open_range(5000.0, 5001.0, "synth")
-    assert _submit_modal(document, ctx) == 1
+    assert _submit_modal(document, ctx, ticks) == 1
     assert ticks.settle(lambda: not ctx.jobs.active)
     cube = executed[-1]
     assert isinstance(cube.atmosphere, Snapshot) and cube.atmosphere.format == "stagger"
@@ -1938,7 +1941,7 @@ def test_fixed_file_snapshot_and_nlte_requests_are_captured_from_the_setup(tmp_p
     modal.mode_form.set_values(mode="NLTE", departures=str(_departure_folder(tmp_path)))
     modal.atoms.selected = ["/atoms/mg.atom"]
     modal.open_range(5000.0, 5001.0, "synth")
-    assert _submit_modal(document, ctx) == 1
+    assert _submit_modal(document, ctx, ticks) == 1
     job, = ctx.jobs.active
     assert ticks.settle(lambda: not ctx.jobs.active)
     nlte = executed[-1]
@@ -1964,7 +1967,7 @@ def test_unsupported_requests_are_refused_before_submission(tmp_path, monkeypatc
     monkeypatch.setattr(operations, "synthesize",
                         lambda *a, **k: pytest.fail("a refused request was executed"))
     monkeypatch.setattr(operations, "fit", lambda *a, **k: pytest.fail("a refused fit ran"))
-    _Ticks(document, monkeypatch)
+    ticks = _Ticks(document, monkeypatch)
     modal = ctx.synth_modal
     x = np.arange(4999., 5002., .01)
     ctx.canvas.add_object(Spectrum(x, np.ones_like(x)), name="obs",
@@ -1974,7 +1977,7 @@ def test_unsupported_requests_are_refused_before_submission(tmp_path, monkeypatc
 
     modal.open_range(5000.0, 5001.0, "fit")          # a fit of a 3D snapshot
     assert modal.setup.mode_form.fields["departures"].hidden
-    assert _submit_modal(document, ctx) == 0
+    assert _submit_modal(document, ctx, ticks) == 0
     assert messages[-1] == ("Cannot fit: Fitting is available for 1D atmospheres and "
                             "grids only.")
     assert not len(ctx.jobs)
@@ -2011,7 +2014,7 @@ def test_fit_is_a_durable_workflow_built_from_the_same_request(tmp_path, monkeyp
 
     monkeypatch.setattr(operations, "fit", fit)
     modal.open_range(5000.0, 5001.0, "fit")
-    assert _submit_modal(document, ctx) == 1
+    assert _submit_modal(document, ctx, ticks) == 1
     job, = ctx.jobs.active
     assert job.name == "fit·obs" and job.heavy and job.detached
     assert job.handle is not None and job.handle.kind.name == "synthesis.fit"
@@ -2038,7 +2041,7 @@ def test_fit_is_a_durable_workflow_built_from_the_same_request(tmp_path, monkeyp
     started.clear()
     release.clear()
     modal.open_range(5000.0, 5001.0, "fit")
-    assert _submit_modal(document, ctx) == 1
+    assert _submit_modal(document, ctx, ticks) == 1
     job, = ctx.jobs.active
     assert started.wait(10)
     for callback in list(document.session_destroyed_callbacks):
