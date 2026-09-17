@@ -30,7 +30,7 @@ from tumult.abundance import SYNTH_PAD_AA  # noqa: F401 (the tools import it fro
 from tumult.measured import target_digest
 import store
 from canvas import ACCENT, style_dark
-from tableui import SortState, sort_headers
+from tableui import SortState, check_header, sort_header
 from tool import Tool
 from units import to_range, to_value
 
@@ -52,11 +52,8 @@ PROFILES = ["gauss", "voigt", "asym_gauss"]
 DEFAULT_JUMP_SPAN_AA = 1.0   # jump span for a no-window line when no line has been shown yet
 FIT_WINDOW_MARGIN = 0.05     # fraction of a fitted line window shown beyond either edge
 
-# The "Local continuum" header (abund/ionbal only) is one of the table's non-sortable
-# columns, so the shared line-list rule would otherwise left-align it while its checkboxes
-# below stay right-aligned (see .local-continuum-head in style.css). A class on the label
-# itself, not a column-position selector, so it survives a column being added or reordered.
-LOCAL_CONTINUUM_HEAD = '<span class="local-continuum-head">Local continuum</span>'
+# The "Local continuum" header (abund/ionbal only): a checkbox column, see check_cols.
+LOCAL_CONTINUUM_HEAD = "Local continuum"
 
 # what a hovered point says about itself
 POINT_TOOLTIPS = [("λ₀", "@lam{0.000} Å"), ("ion", "@ion"), ("value", "@a{0.000}")]
@@ -105,7 +102,8 @@ if (rect.top < top || rect.bottom > box.bottom) {
 # the binder reads the prefix from the closest scope and writes ``"<kind>:<arg>:<nonce>"``
 # to the ``<prefix>-actions`` channel, which :meth:`AbundanceWizard._on_action` splits on
 # colons (uids and line indices contain none). A row click jumps to its line; a click on the
-# row's include checkbox only toggles the line. The tools' own run/refit buttons and the
+# row's include checkbox only toggles the line; a checkbox column's header buttons select
+# all/none of the shown rows or filter them (``check-<action>:<column>``). The tools' own run/refit buttons and the
 # atom sidebar (which removes its nested corrections) stay in the page script.
 ANALYSIS_SCRIPT = r"""
 (function () {
@@ -126,6 +124,11 @@ ANALYSIS_SCRIPT = r"""
     if (item) { analysisAction(prefix, 'select', item.dataset.result); return; }
     var sort = ev.target.closest('.line-sort[data-sortcol]');
     if (sort) { analysisAction(prefix, 'sort', sort.dataset.sortcol); return; }
+    var check = ev.target.closest('.check-head-btn[data-checkcol]');
+    if (check) {
+      analysisAction(prefix, 'check-' + check.dataset.checkact, check.dataset.checkcol);
+      return;
+    }
     var remaining = ev.target.closest('[data-complete-rungs]');
     if (remaining) { analysisAction(prefix, 'complete-rungs'); return; }
     if (ev.target.closest('[data-update-result]')) { analysisAction(prefix, 'update-result'); return; }
@@ -142,7 +145,6 @@ ANALYSIS_SCRIPT = r"""
     var scope = ev.target.closest('[data-tool]');
     if (!scope) return;
     var prefix = scope.dataset.tool;
-    if (ev.target.closest('.analysis-mask-chk')) { analysisAction(prefix, 'mask-toggle'); return; }
     var cont = ev.target.closest('.line-continuum-chk');
     if (cont) { analysisAction(prefix, 'continuum', cont.dataset.line); return; }
     var chk = ev.target.closest('.line-include-chk');
@@ -212,7 +214,7 @@ class AbundanceWizard(Tool):
         ctx.subscribe("focus-changed", lambda **_: self.push_results())
 
         self.step = 1
-        self.show_toggled_only = False     # table header switch: hide excluded lines
+        self.check_filters = set()         # checkbox columns showing only checked lines
         self.results = []                  # list[ab.AbundanceResult]
         self.jobs = ResultJobs(ctx, self._find, self._job_progress)
         if self.task_kind:
@@ -481,9 +483,12 @@ class AbundanceWizard(Tool):
             self._complete_rungs()
         elif kind == "update-result":
             self.update_result()
-        elif kind == "mask-toggle":
-            self.show_toggled_only = not self.show_toggled_only
-            self._render_selected()
+        elif kind == "check-filter":
+            if arg in self.check_cols:
+                self.check_filters ^= {arg}
+                self._render_selected()
+        elif kind in ("check-all", "check-none"):
+            self._set_checks(arg, kind == "check-all")
         elif kind == "jump-line":
             self._jump_line(arg)
         elif kind == "sort":
@@ -765,12 +770,30 @@ class AbundanceWizard(Tool):
         except ValueError:
             return
         if 0 <= idx < len(res.lines):
-            self.jobs.invalidate(res.uid)
-            res.lines[idx].include = not res.lines[idx].include
-            if res.stage == self.final_stage:
-                res.summary = self._summarise(res.lines)
-                self.push_results()
-            self._render_selected()
+            self._set_include(res, [res.lines[idx]], not res.lines[idx].include)
+
+    def _set_include(self, res, lines, on):
+        self.jobs.invalidate(res.uid)
+        for ln in lines:
+            ln.include = on
+        if res.stage == self.final_stage:
+            res.summary = self._summarise(res.lines)
+            self.push_results()
+        self._render_selected()
+
+    def _set_checks(self, col, on):
+        """A header's select all/none: set checkbox column ``col`` on every shown line."""
+        res = self.selected()
+        if res is None or col not in self.check_cols:
+            return
+        lines = [res.lines[i] for i in self._line_order(res)
+                 if self.CHECK_VALUES[col](res.lines[i]) != on]
+        if not lines:
+            return
+        if col == "include":
+            self._set_include(res, lines, on)
+        else:
+            self._set_continua(res, lines, on)
 
     # subclass: the stage name after the last run, the aggregation and the sidebar summary
     final_stage = "uncert"
@@ -802,24 +825,45 @@ class AbundanceWizard(Tool):
         self._table_bridge.value = html_text
 
     # --- shared sortable-table scaffolding ------------------------------------------------
+    # the checkbox columns a table shows, and each one's per-line state
+    check_cols = ("include",)
+    CHECK_VALUES = {"include": lambda ln: ln.include, "continuum": lambda ln: ln.renorm}
+
     def _line_order(self, res):
-        """Indices into ``res.lines`` in the active sort order (NaN/None keys sort last).
+        """Indices into ``res.lines`` of the shown rows, in the active sort order (NaN/None
+        keys sort last). A filtered checkbox column hides the lines it leaves unchecked.
 
         Rows carry their *original* index as ``data-line`` so the client's toggle/jump
         actions keep addressing ``res.lines[i]`` no matter how the display is sorted.
         """
-        return self.sort.order(res.lines, self.sort_keys[self.sort.col])
+        order = self.sort.order(res.lines, self.sort_keys[self.sort.col])
+        filters = [self.CHECK_VALUES[col] for col in self.check_filters]
+        return [i for i in order if all(f(res.lines[i]) for f in filters)]
 
-    def _table_head(self, columns):
-        """The clickable ``<thead>`` row: a leading mask checkbox, then ``columns``.
+    def _table_head(self, res, columns):
+        """The clickable ``<thead>`` row: the leading include column, then ``columns``.
 
-        ``columns`` is a sequence of ``(label, sort-col | None)`` pairs; a ``None`` column
-        (e.g. the flags column) renders as a plain, non-sortable header.
+        ``columns`` is a sequence of ``(label, col)`` pairs. A ``col`` in :attr:`check_cols`
+        renders a checkbox-column header, a ``None`` column (e.g. the flags column) a plain,
+        non-sortable one, and any other a sortable one.
         """
-        checked = " checked" if self.show_toggled_only else ""
-        chk = (f'<input type="checkbox" class="analysis-mask-chk"{checked} '
-               'title="Show only included lines">')
-        return "<tr>" + sort_headers(self.sort, [(chk, None), *columns]) + "</tr>"
+        shown = [res.lines[i] for i in self._line_order(res)]
+        cells = []
+        for label, col in (("", "include"), *columns):
+            if col in self.check_cols:
+                cells.append(check_header(label, col, [self.CHECK_VALUES[col](ln) for ln in shown],
+                                          col in self.check_filters, noun="lines"))
+            else:
+                cells.append(sort_header(label, col, self.sort))
+        return "<tr>" + "".join(cells) + "</tr>"
+
+    def _filtered_out_row(self, columns):
+        """A body row saying the column filters hide every line; the header stays so the
+        filters can be switched off again."""
+        if not self.check_filters:
+            return ""
+        return (f'<tr><td class="linelist-empty" colspan="{len(columns) + 1}">'
+                'No line passes the column filters.</td></tr>')
 
     def _render_selected(self):
         res = self.selected()
@@ -961,6 +1005,26 @@ class AbundanceWizard(Tool):
         self.push_results()
         self._render_selected()
         self._jump_decor(res, ln)
+
+    def _set_continua(self, res, lines, enabled):
+        """Switch the local continuum of several lines at once; each is remeasured."""
+        spec = self._result_spec(res)
+        if spec is None:
+            self.notify("The target spectrum is no longer loaded.")
+            return
+        failed = []
+        for ln in lines:
+            try:
+                ab.set_local_continuum(res, ln, spec, enabled=enabled)
+            except (ValueError, RuntimeError) as exc:
+                failed.append(f"{ln.lam0:.3f} Å: {exc}")
+        if failed:
+            self.notify("Local continuum unchanged for " + "; ".join(failed))
+        self.jobs.invalidate(res.uid)
+        self.push_results()
+        self._render_selected()
+        if self._jumped is not None and any(ln is res.lines[self._jumped] for ln in lines):
+            self._jump_decor(res, res.lines[self._jumped])
 
     def _toggle_continuum(self, token):
         res = self.selected()

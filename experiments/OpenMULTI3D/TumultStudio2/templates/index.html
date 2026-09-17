@@ -1552,6 +1552,8 @@
       return;
     }
 
+    var check = ev.target.closest('.lm-table .check-head-btn[data-checkcol]');
+    if (check) { linemaskAction('check-' + check.dataset.checkact, check.dataset.checkcol); return; }
     var del = ev.target.closest('.lm-del');
     if (del) { ev.stopPropagation(); linemaskAction('del', del.dataset.idx); return; }
     // both tables' rows carry the same data-idx, so either selects the mask

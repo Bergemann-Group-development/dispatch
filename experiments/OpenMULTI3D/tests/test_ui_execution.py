@@ -450,6 +450,26 @@ def test_mask_actions_require_an_element_only_where_the_analysis_diagnoses_one()
     assert all(disabled(mset).values())
 
 
+def test_mask_table_header_selects_and_filters_the_shown_masks(tmp_path):
+    """The inclusion column's header filters to switched-on masks, and its select button
+    acts on the shown rows only."""
+    document, ctx = _build_document()
+    tool = ctx.tools._tools["linemask"]
+    mset = ctx.masks.load_file(_mask_file(tmp_path))
+    channel = document.select_one({"name": "linemask-actions"})
+    for n, action in enumerate(("incl 0", "check-filter include", "check-none include")):
+        channel.value = f"{action} {n}"
+    assert tool.include_filter
+    assert [m.include for m in mset.masks] == [False, False]
+    assert "Every mask is switched off" in tool.table_html()
+
+    channel.value = "check-filter include 3"
+    assert 'data-checkact="all"' in tool.table_html()
+    channel.value = "check-all include 4"
+    assert all(m.include for m in mset.masks)
+    assert 'data-checkact="none"' in tool.table_html()
+
+
 def test_range_fields_always_show_the_active_range():
     """An edit to λ min / λ max that does not make a range is refused and the fields are
     put back, so Synthesise acts on the range the panel shows."""

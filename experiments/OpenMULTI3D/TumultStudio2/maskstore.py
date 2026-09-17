@@ -137,11 +137,13 @@ class MaskStore:
         self._changed()
         return mset
 
-    def set_include(self, index, on):
-        """Switch one mask on/off. The toggle curates what a save writes out and what the
-        wizards measure — a flagged candidate stays visible but is left out."""
-        if 0 <= index < len(self.masks):
-            self.masks[index].include = bool(on)
+    def set_include(self, indices, on):
+        """Switch the masks at ``indices`` on/off. The toggle curates what a save writes out
+        and what the wizards measure — a flagged candidate stays visible but is left out."""
+        indices = [i for i in indices if 0 <= i < len(self.masks)]
+        for i in indices:
+            self.masks[i].include = bool(on)
+        if indices:
             self._changed()
 
     def set_current(self, uid):

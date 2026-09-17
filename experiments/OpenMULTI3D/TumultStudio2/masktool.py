@@ -41,6 +41,7 @@ from controls import Field, Form
 from htmlbridge import parse_action, pulse
 from tumult.linemask import is_element
 from masksources import AutoSource, BlankSource, FileSource
+from tableui import check_header
 from tool import Tool
 from units import to_range
 
@@ -75,6 +76,7 @@ class MaskTool(Tool):
         self.place_window = place_window
         self.input_dir = str(input_dir)
         self.own_panel("linemask-panel-content")   # sidebar: pad / save controls
+        self.include_filter = False             # the table shows only switched-on masks
         self._table_bridge = ctx.bridges.html("linemask-table")   # centre: the mask table
         # the left-sidebar list of imported mask sets (the line-mask objects)
         self._objects_bridge = ctx.bridges.html("linemask-objects")
@@ -347,7 +349,12 @@ class MaskTool(Tool):
             i = _int(arg)
             m = self.store.masks[i] if 0 <= i < len(self.store.masks) else None
             if m is not None:
-                self.store.set_include(i, not m.include)
+                self.store.set_include([i], not m.include)
+        elif kind == "check-filter":
+            self.include_filter = not self.include_filter
+            self._render_panels()
+        elif kind in ("check-all", "check-none"):
+            self.store.set_include(self._shown(), kind == "check-all")
         elif kind == "new-set":
             self._submit_source("blank", arg)
         elif kind == "auto-run":
@@ -483,6 +490,13 @@ class MaskTool(Tool):
         out += [f'<div class="hint">{html.escape(why)}</div>' for why in hints]
         return "".join(out)
 
+    def _shown(self):
+        """Store indices of the table's rows, in wavelength order."""
+        masks = self.store.masks
+        order = sorted(range(len(masks)), key=lambda i: (
+            masks[i].lam0 if np.isfinite(masks[i].lam0) else 0.5 * (masks[i].lmin + masks[i].lmax)))
+        return [i for i in order if masks[i].include or not self.include_filter]
+
     def table_html(self):
         """The mask-window table: one row per mask (click to make it the editable one), a
         per-mask on/off toggle, followed by a button that starts a new mask. The button sits
@@ -502,11 +516,9 @@ class MaskTool(Tool):
                     'below, then drag its edges on the spectrum to size the window.</td>'
                     f'</tr></tbody></table></div>{add_row}')
         rows = []
-        # rows read in wavelength order; each keeps its store index as data-idx, which is
-        # what the row actions address
-        order = sorted(range(len(masks)), key=lambda i: (
-            masks[i].lam0 if np.isfinite(masks[i].lam0) else 0.5 * (masks[i].lmin + masks[i].lmax)))
-        for i in order:
+        # each row keeps its store index as data-idx, which is what the row actions address
+        shown = self._shown()
+        for i in shown:
             m = masks[i]
             sel = " lm-active" if i == self.store.active else ""
             off = "" if m.include else " lm-off"
@@ -522,9 +534,13 @@ class MaskTool(Tool):
                 f'<td class="lm-note">{html.escape(m.note)}</td>'
                 f'<td><button class="icon-btn lm-del" data-idx="{i}" title="Remove">'
                 f'<i class="ti ti-x"></i></button></td></tr>')
+        if not rows:
+            rows.append('<tr><td class="lm-empty" colspan="6">Every mask is switched off.</td></tr>')
+        head = check_header("", "include", [masks[i].include for i in shown],
+                            self.include_filter, noun="masks")
         return (
             '<div class="lm-scroll"><table class="linelist-table lm-table">'
-            '<thead><tr><th title="Use this mask"></th><th>λ₀ [Å]</th>'
+            f'<thead><tr>{head}<th>λ₀ [Å]</th>'
             '<th>fit window [Å]</th><th>synth window [Å]</th>'
             '<th>note</th><th></th></tr></thead>'
             f'<tbody>{"".join(rows)}</tbody>'

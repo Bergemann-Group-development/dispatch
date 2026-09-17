@@ -71,6 +71,7 @@ class AbundanceTool(AbundanceWizard):
     steps = 2                        # synthesis, uncertainties (the lines come from the modal)
     y_axis_label = "A(X)"
     final_stage = "uncert"
+    check_cols = ("include", "continuum")
     # columns beyond the shared line attributes (see AbundanceWizard.BASE_SORT_KEYS)
     extra_sort_keys = {
         "blend": lambda ln: ln.blend_frac,
@@ -515,16 +516,15 @@ class AbundanceTool(AbundanceWizard):
                 + "".join(rows))
 
     def table_html(self, res):
-        head = self._table_head((
+        columns = (
             ("λ₀ [Å]", "lam0"), ("ion", "ion"), ("E<sub>low</sub>", "e_low"),
-            ("log gf", "loggf"), ("EW [mÅ]", "ew"), (LOCAL_CONTINUUM_HEAD, None), ("blend", "blend"),
+            ("log gf", "loggf"), ("EW [mÅ]", "ew"), (LOCAL_CONTINUUM_HEAD, "continuum"), ("blend", "blend"),
             (html.escape(self.value_label(res)), "a"),
-            ("vshift", "vshift"), ("vdop", "vdop"), ("flags", None)))
+            ("vshift", "vshift"), ("vdop", "vdop"), ("flags", None))
+        head = self._table_head(res, columns)
         body = []
         for i in self._line_order(res):
             ln = res.lines[i]
-            if self.show_toggled_only and not ln.include:
-                continue          # header mask: keep only toggled-in lines (index i unchanged)
             chk = " checked" if ln.include else ""
             cls = " row-selected" if self._jumped == i else ""
             cls += "" if ln.include else " line-excluded"
@@ -554,4 +554,4 @@ class AbundanceTool(AbundanceWizard):
                     f'n={s["n"]})</span></div>')
         return (f'<table class="linelist-table abund-table abund-lines" data-tool="abund">'
                 f'<thead>{head}</thead>'
-                f'<tbody>{"".join(body)}</tbody></table>{foot}')
+                f'<tbody>{"".join(body) or self._filtered_out_row(columns)}</tbody></table>{foot}')

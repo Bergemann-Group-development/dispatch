@@ -298,7 +298,8 @@ def test_browser_events_route_through_the_shared_binder_to_each_tool(tmp_path, m
         {"op": "click", "selector": '#corr-table tr[data-line="0"] td:last-child'},
         {"op": "observe", "selector": "#corr-table tr[data-line]", "attr": "class"},
         {"op": "click", "selector": '#ionbal-table .line-sort[data-sortcol="ew"]'},
-        {"op": "click", "selector": '#ionbal-table .analysis-mask-chk'},
+        {"op": "click", "selector": '#ionbal-table [data-checkcol="include"][data-checkact="filter"]'},
+        {"op": "click", "selector": '#corr-table [data-checkcol="include"][data-checkact="none"]'},
         {"op": "click", "selector": '#abund-results [data-result="res-a2"] .object-name'},
         {"op": "click", "selector": '#atom-objects [data-result="res-c"] .object-name'},
         {"op": "click", "selector": '#abund-results [data-result-remove="res-a"]'},
@@ -318,7 +319,8 @@ def test_browser_events_route_through_the_shared_binder_to_each_tool(tmp_path, m
     assert kinds == [
         ("abund-actions", "step"), ("abund-actions", "step"), ("corr-actions", "step"),
         ("abund-actions", "toggle-line"), ("corr-actions", "jump-line"),
-        ("ionbal-actions", "sort"), ("ionbal-actions", "mask-toggle"),
+        ("ionbal-actions", "sort"), ("ionbal-actions", "check-filter"),
+        ("corr-actions", "check-none"),
         ("abund-actions", "select"), ("corr-actions", "select"),
         ("abund-actions", "remove"), ("ionbal-actions", "remove"),
         ("synth-grid-actions", "grid"), ("abund-grid-actions", "mode"),
@@ -350,8 +352,10 @@ def test_browser_events_route_through_the_shared_binder_to_each_tool(tmp_path, m
     apply("toggle-line"); assert res_a.lines[1].include is False and res_a.lines[0].include
     apply("jump-line"); assert jumps == [("corr", "0")]
     apply("sort"); assert ionbal.sort.col == "ew"
-    assert ionbal.show_toggled_only is False
-    apply("mask-toggle"); assert ionbal.show_toggled_only is True
+    assert ionbal.check_filters == set()
+    apply("check-filter"); assert ionbal.check_filters == {"include"}
+    assert all(ln.include for ln in res_c.lines)
+    apply("check-none"); assert not any(ln.include for ln in res_c.lines)
     apply("select"); assert abund.selected_uid == "res-a2" and ctx.focus_kind == abund.kind
     apply("select"); assert corr.selected_uid == "res-c" and ctx.focus_kind == corr.kind
     apply("remove"); assert [r.uid for r in abund.results] == ["res-a2"]

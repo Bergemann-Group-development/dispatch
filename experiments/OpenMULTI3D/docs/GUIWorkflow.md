@@ -26,6 +26,10 @@ model atom the atom view, a result its table. No action relies on a second, impl
 spectrum in addition to a mask set or range (synthesis window, measurement reference, fit
 target), it asks for it inside its modal, as the abundance and ion-balance modals do.
 
+In every table a column of checkboxes (mask and line inclusion, local continuum) has two
+header buttons. One checks all shown rows, or unchecks them all when every one is checked.
+The other filters the table to the checked rows.
+
 A calculation names the object it will deliver when it is submitted (`naming.py`): the
 kind or target, the window or line mask, the atmosphere file or grid, LTE or NLTE with the
 model atoms, and abundance overrides, e.g.

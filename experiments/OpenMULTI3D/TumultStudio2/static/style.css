@@ -270,6 +270,16 @@ body.resizing * { pointer-events: none !important; }
 .linelist-table th.line-sort { cursor: pointer; user-select: none; white-space: nowrap; }
 .linelist-table th.line-sort:hover { color: var(--text); }
 .linelist-table th.line-sort.active { color: var(--accent); }
+/* a checkbox column: select all/none and show-only-checked, see tableui.check_header */
+.linelist-table th.check-head { white-space: nowrap; }
+/* right-aligned like the checkboxes below it */
+.check-head-row { display: flex; align-items: center; justify-content: flex-end; gap: 2px; }
+.check-head-label { margin-right: 2px; }
+.linelist-table .check-head-btn {
+  flex-shrink: 0; height: 18px; width: 18px;
+  border-color: transparent; background: none; font-size: 13px;
+}
+.linelist-table .check-head-btn.active { color: var(--accent); }
 .linelist-table tbody td { text-align: right; padding: 3px 8px; border-bottom: 1px solid #2c2c2c; }
 .line-row { cursor: pointer; }
 .line-row:hover td { background: rgba(74,144,226,0.12); color: var(--accent); }
@@ -1011,7 +1021,6 @@ num-input[disabled] .num-spin button { cursor: not-allowed; }
 /* "Local continuum" (abund/ionbal; see abundwizard.LOCAL_CONTINUUM_HEAD) is also a checkbox
    column - right-align its label so it lines up with the checkboxes below it, regardless of
    the shared line-list rule's left-align for non-sortable headers or the column's position. */
-.local-continuum-head { display: block; text-align: right; }
 /* the active step mirrors the abund-step-N class on #main (no JS); see .step-tabs below */
 #main.abund-step-1 .abund-step-btn[data-step="1"],
 #main.abund-step-2 .abund-step-btn[data-step="2"] { color: var(--text); border-bottom-color: var(--accent); }
@@ -1021,7 +1030,6 @@ num-input[disabled] .num-spin button { cursor: not-allowed; }
 .abund-row:hover td, .abund-row.row-hover td,
 .abund-row.row-selected td { background: rgba(74, 144, 226, 0.14); }
 .abund-row.line-excluded { opacity: 0.4; }
-.analysis-mask-chk { cursor: pointer; vertical-align: middle; }
 .abund-flags { color: #e0a05c; }
 .abund-summary { padding: 8px 4px 2px; font-weight: 600; }
 .abund-budget { font-weight: 400; color: var(--text-muted); }

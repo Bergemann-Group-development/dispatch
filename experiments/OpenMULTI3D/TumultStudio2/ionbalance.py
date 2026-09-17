@@ -180,6 +180,7 @@ class IonBalanceTool(AbundanceWizard):
     paint_overlays = True            # every inverted line is drawn on the target spectrum
     y_axis_label = "A(X)"
     final_stage = ms.STAGE_SOLVED
+    check_cols = ("include", "continuum")
     extra_sort_keys = {"blend": lambda ln: ln.blend_frac}
     extra_sort_asc = {"blend": True}
 
@@ -854,15 +855,14 @@ class IonBalanceTool(AbundanceWizard):
 
     def table_html(self, res):
         el = html.escape(res.element or "X")
-        head = self._table_head((
+        columns = (
             ("λ₀ [Å]", "lam0"), ("ion", "ion"), ("E<sub>low</sub>", "e_low"),
-            ("log gf", "loggf"), ("EW [mÅ]", "ew"), (LOCAL_CONTINUUM_HEAD, None), ("blend", "blend"),
-            (f"A({el})", "a"), ("flags", None)))
+            ("log gf", "loggf"), ("EW [mÅ]", "ew"), (LOCAL_CONTINUUM_HEAD, "continuum"), ("blend", "blend"),
+            (f"A({el})", "a"), ("flags", None))
+        head = self._table_head(res, columns)
         body = []
         for i in self._line_order(res):
             ln = res.lines[i]
-            if self.show_toggled_only and not ln.include:
-                continue
             chk = " checked" if ln.include else ""
             cls = " row-selected" if self._jumped == i else ""
             cls += "" if ln.include else " line-excluded"
@@ -878,10 +878,8 @@ class IonBalanceTool(AbundanceWizard):
                 f'<td>{ln.e_low:.2f}</td><td>{ln.loggf:.2f}</td><td>{ew}</td>'
                 f'{self.continuum_cell(ln, i)}<td>{blend}</td><td>{a}</td>'
                 f'<td class="abund-flags">{html.escape(fl)}</td></tr>')
-        if not body:
-            return (f'<div class="linelist-empty">Measuring {el} windows…</div>'
-                    if not res.lines else
-                    '<div class="linelist-empty">Every line is switched off.</div>')
+        if not res.lines:
+            return f'<div class="linelist-empty">Measuring {el} windows…</div>'
         return (f'<table class="linelist-table abund-table ionbal-lines" data-tool="ionbal">'
                 f'<thead>{head}</thead>'
-                f'<tbody>{"".join(body)}</tbody></table>{self._status_html(res)}')
+                f'<tbody>{"".join(body) or self._filtered_out_row(columns)}</tbody></table>{self._status_html(res)}')
