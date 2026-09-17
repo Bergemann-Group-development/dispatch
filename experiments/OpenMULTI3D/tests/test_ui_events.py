@@ -100,7 +100,7 @@ def test_refresh_ews_forwards_arguments_assigns_widths_and_names_failures(monkey
     assert lines[0].fit_window == (5000.5, 5001.5)
 
 
-def test_abundance_refresh_reads_the_live_controls_and_stops_after_synthesis(
+def test_abundance_refresh_uses_the_stored_uncertainties_and_stops_after_synthesis(
         tmp_path, monkeypatch):
     from tumult.abundance import AbundanceResult
     calls = _stub_measure(monkeypatch, fail_at=(5002.0,))
@@ -111,10 +111,11 @@ def test_abundance_refresh_reads_the_live_controls_and_stops_after_synthesis(
     abund = ctx.tools._tools["abundance"]
     res = AbundanceResult(element="Fe", symbol="Fe", summary={}, uid="res-a", name="Fe A",
                           ref_uid=obs.uid, ref_name="obs", stage="lines", profile="gauss",
+                          snr=120.0, cont_pct=0.7,
                           lines=[_line(5000.5, 5001.5, include=False, flags=("weak",)),
                                  _line(5002.0, 5003.0)])
     abund.results.append(res)
-    abund.form1.set_values(snr=120.0, cont_pct=0.7)
+    abund.form1.set_values(snr=999.0, cont_pct=9.0)    # the live form is not the source
 
     ctx.emit("filter-state", exists=True, visible=True)
     assert not calls                                   # an inactive tool does not measure

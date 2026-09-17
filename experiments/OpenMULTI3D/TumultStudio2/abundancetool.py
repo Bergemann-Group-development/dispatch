@@ -225,9 +225,9 @@ class AbundanceTool(AbundanceWizard):
 
         ``get_observation`` already returns the filter-effective reference, so this re-runs the
         shared :func:`tumult.abundance.refresh_ews` over each line's stored fit window with the
-        SNR and continuum uncertainty the measurement was made with and repaints the table when anything changed. Restricted to
-        the ``"lines"`` stage on purpose: once synthesis has run, the abundances were inverted
-        against the EW measured at selection, so silently re-measuring under a new filter
+        SNR and continuum uncertainty the measurement was made with and repaints the table when
+        anything changed. Restricted to the ``"lines"`` stage on purpose: once synthesis has
+        run, the abundances were inverted against the EW measured at selection, so silently re-measuring under a new filter
         would misrepresent them. Windows, flags and include toggles are left untouched."""
         if not self.active:
             return
