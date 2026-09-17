@@ -2,9 +2,7 @@ import astropy.units as u
 from scipy.optimize import curve_fit, leastsq
 import numpy as np
 from scipy.signal import argrelextrema
-import matplotlib.pyplot as plt
 from scipy.interpolate import CubicHermiteSpline
-from astropy.modeling.models import BlackBody
 import astropy.constants as const
 
 from .profile import (  # noqa: F401 (voigt_function re-exported for back-compat)
@@ -332,6 +330,7 @@ def get_weq(
         prof._err_cont = np.abs(syst * gradient)
 
     if plot:
+        import matplotlib.pyplot as plt  # deferred: only plotting pays matplotlib's import cost
         if target_unit is not None:
             w = prof.weq.to(target_unit)
             label = (rf"{w.value:.2f} $\pm$ {prof.weq_err.to(target_unit).value:.2f} "
@@ -453,6 +452,7 @@ def auto_crop_core(xx_in, yy_in, x0, exclude_wing=False, plot=False, resolution=
     y = y[mask]
 
     if plot:
+        import matplotlib.pyplot as plt  # deferred: only plotting pays matplotlib's import cost
         plt.axvline(x[0], color="k", linestyle=":", lw=0.5)
         plt.axvline(x[-1], color="k", linestyle=":", lw=0.5)
 
@@ -662,6 +662,7 @@ def fit_line_profile(
         return cls.model(np.asarray(x, dtype=float), *pout)
 
     if plot:
+        import matplotlib.pyplot as plt  # deferred: only plotting pays matplotlib's import cost
         plt.plot(xx, func(xx), ls="--", zorder=10)
 
     return pout.tolist(), pcov, func
@@ -716,6 +717,7 @@ def calc_teff(xx, yy, planck_thresh=None):
     mnan = np.isfinite(yy)
 
     if planck_thresh is not None:
+        from astropy.modeling.models import BlackBody  # deferred: astropy.modeling is ~330ms
 
         def opt_func(x, Teff):
             bb = BlackBody(Teff)

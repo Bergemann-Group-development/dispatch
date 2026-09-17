@@ -1902,17 +1902,22 @@ def build():
 
     doc = curdoc()
     doc.title = "TUMULT Studio"
-    for root in (canvas.nav, canvas.main, filtertool.fig,
-                 *abundancetool.figs, *abundcorrtool.figs, abundcorrtool.cog_fig,
-                 *ionbaltool.figs, picker.layout,
-                 *masktool.roots,
-                 synth_modal.atoms.picker.layout, abund_atoms.picker.layout,
-                 *(p.layout for p in synth_modal.pref_pickers.values()),
-                 synth_modal.grids.picker.layout, synth_modal.atmos_picker.layout,
-                 abundancetool.setup.atmos_picker.layout,
-                 abundcorrtool.setup.atmos_picker.layout,
-                 atom_picker.layout, bridges):
-        doc.add_root(root)
+    # each add_root recomputes the whole reachable-model set from scratch (bokeh
+    # Document.models.recompute); with ~25 roots that is quadratic in the final model
+    # count. `models.freeze()` defers that recomputation to a single pass after every
+    # root is in place, which is the difference between milliseconds and seconds here.
+    with doc.models.freeze():
+        for root in (canvas.nav, canvas.main, filtertool.fig,
+                     *abundancetool.figs, *abundcorrtool.figs, abundcorrtool.cog_fig,
+                     *ionbaltool.figs, picker.layout,
+                     *masktool.roots,
+                     synth_modal.atoms.picker.layout, abund_atoms.picker.layout,
+                     *(p.layout for p in synth_modal.pref_pickers.values()),
+                     synth_modal.grids.picker.layout, synth_modal.atmos_picker.layout,
+                     abundancetool.setup.atmos_picker.layout,
+                     abundcorrtool.setup.atmos_picker.layout,
+                     atom_picker.layout, bridges):
+            doc.add_root(root)
 
     ionbaltool.refresh()      # the balance modal's target selector
 

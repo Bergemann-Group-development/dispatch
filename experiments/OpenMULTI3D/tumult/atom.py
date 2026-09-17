@@ -4,7 +4,6 @@ from .level import Level
 from .collisions import Collision
 from .auxfuncs import _read
 from .const import BK, CC, EK, UU, saha_const
-import matplotlib.pyplot as plt
         
 class AtomClass(object):
     def _read(self, **kwargs):
@@ -94,6 +93,7 @@ class AtomClass(object):
         return sumn
     
     def plot_grotrian(self, trans=None, ion=None, lw=0.8, level_color='k', level_lw=1, color='lightgrey', noff=2, **kwargs):
+        import matplotlib.pyplot as plt  # deferred: only plotting pays matplotlib's import cost
         lvl_ion = np.array([lvl.ion for lvl in self.level])
         icont = np.where(np.diff(lvl_ion, prepend=-1)>0)[0]
 

@@ -5,7 +5,6 @@ import numpy as np
 import pandas as pd
 import astropy.units as u
 import astropy.constants as const
-import matplotlib.pyplot as plt
 from scipy import optimize
 from .convolutions import convolve, kernel_width
 from .utils import ensure_unit, calc_teff, get_bisector, fit_line_profile, \
@@ -275,6 +274,7 @@ class Spectrum:
         **kwargs : dict
             Keyword arguments passed to plot function.
         """
+        import matplotlib.pyplot as plt  # deferred: only plotting pays matplotlib's import cost
         if ax is None:
             ax = plt.gca()
 
@@ -1044,6 +1044,7 @@ class Spectrum:
 
 
 def adjust_max_xticks(ax=None):
+    import matplotlib.pyplot as plt  # deferred: only plotting pays matplotlib's import cost
     ax = ax or plt.gca()
     transform = ax.transData.inverted()
     xticklabels = ax.get_xticklabels()

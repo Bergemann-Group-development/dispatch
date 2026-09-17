@@ -1,6 +1,3 @@
-import matplotlib
-import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap, ListedColormap, BoundaryNorm
 from inspect import signature
 import numpy as np
 import pandas as pd
@@ -9,16 +6,48 @@ import os
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 
-plt.style.use('default')
-plt.style.use(os.path.join(current_dir, 'Bergemann2020.mplstyle'))
+# matplotlib (~250ms to import) is only needed once something in this module actually
+# plots or inspects its kwarg signatures, so it and the style rcParams it carries are
+# loaded lazily on first use rather than at import time. ``get_plt()`` is the single
+# place that does so, applying the Bergemann2020 style exactly once; every function
+# below (and every other tumult module with a matplotlib-based plot method) should
+# fetch ``plt`` through it instead of importing matplotlib.pyplot directly, so the
+# custom style is guaranteed to be active before any tumult plot is drawn.
+_plt = None
 
-plot_kwargs = signature(plt.plot).parameters
-line2d_kwargs = signature(matplotlib.lines.Line2D).parameters
-artist_properties = {
-    'alpha', 'zorder', 'label', 'visible', 'animated', 'clip_on', 
-    'clip_box', 'clip_path', 'transform', 'agg_filter', 'figure'}
-combined_kwargs = {**plot_kwargs, **line2d_kwargs}
-plt_kwargs = set(combined_kwargs.keys()).union(artist_properties)
+
+def get_plt():
+    global _plt
+    if _plt is None:
+        import matplotlib
+        import matplotlib.pyplot as plt
+        plt.style.use('default')
+        plt.style.use(os.path.join(current_dir, 'Bergemann2020.mplstyle'))
+        _plt = plt
+    return _plt
+
+
+_plt_kwargs = None
+
+
+def get_plt_kwargs():
+    """The kwarg names ``plt.plot``/``Line2D`` accept, plus generic Artist properties.
+
+    Used to split a caller's ``**kwargs`` between plot styling and everything else
+    (e.g. :meth:`tumult.run.Run.crop`'s own arguments).
+    """
+    global _plt_kwargs
+    if _plt_kwargs is None:
+        import matplotlib
+        plt = get_plt()
+        plot_kwargs = signature(plt.plot).parameters
+        line2d_kwargs = signature(matplotlib.lines.Line2D).parameters
+        artist_properties = {
+            'alpha', 'zorder', 'label', 'visible', 'animated', 'clip_on',
+            'clip_box', 'clip_path', 'transform', 'agg_filter', 'figure'}
+        combined_kwargs = {**plot_kwargs, **line2d_kwargs}
+        _plt_kwargs = set(combined_kwargs.keys()).union(artist_properties)
+    return _plt_kwargs
 
 #=====================================================================
 def set_title(title, default=None):
@@ -26,16 +55,16 @@ def set_title(title, default=None):
         title = default
 
     if title is not None:
-        plt.title(title)
+        get_plt().title(title)
 
 #=====================================================================
 def set_legend(**kwargs):
     if 'label' in kwargs:
-        plt.legend(frameon=False)
+        get_plt().legend(frameon=False)
 
 #=====================================================================
 def subplot_labels(ax=None, xlabel=None, ylabel=None, title=None):
-    if ax == None: ax = plt.gca()
+    if ax == None: ax = get_plt().gca()
     sub = ax.get_subplotspec()
     grid = sub.get_gridspec()
     if xlabel is not None:
@@ -51,6 +80,7 @@ def subplot_labels(ax=None, xlabel=None, ylabel=None, title=None):
 
 #=====================================================================
 def adjust_max_xticks(ax=None):
+    plt = get_plt()
     ax = ax or plt.gca()
     transform = ax.transData.inverted()
     xticklabels = ax.get_xticklabels()
@@ -62,6 +92,7 @@ def adjust_max_xticks(ax=None):
 
 #=====================================================================
 def comparison_scatter(xx, yy, marker='.', rasterized=True, **kwargs):
+  plt = get_plt()
   p = plt.scatter(xx, yy, marker=marker, rasterized=rasterized, **kwargs)
   xmin = min(np.nanmin(xx), np.nanmin(yy))
   xmax = max(np.nanmax(xx), np.nanmax(yy))
@@ -72,7 +103,8 @@ def comparison_scatter(xx, yy, marker='.', rasterized=True, **kwargs):
 def scatter_density(xx, yy, radius=0, cmap='binary', vmin=0, vmax=None, aspect='auto',
             xmin=None, xmax=None, ymin=None, ymax=None, interpolation='nearest', **kwargs):
   #-----------------------------------------------------------------
-  
+  plt = get_plt()
+
   mask = np.isnan(xx) | np.isnan(yy) | np.isinf(xx) | np.isinf(yy)
   xx = xx[~mask]
   yy = yy[~mask]
@@ -136,8 +168,9 @@ def scatter_density(xx, yy, radius=0, cmap='binary', vmin=0, vmax=None, aspect='
 
 #=====================================================================
 def alpha_cmap(cmap_name, clip=None):
+    from matplotlib.colors import LinearSegmentedColormap
     # Load the original colormap and extract RGB values
-    cmap = plt.get_cmap(cmap_name)
+    cmap = get_plt().get_cmap(cmap_name)
     colors = cmap(np.linspace(0, 1, cmap.N))
     
     # Separate RGB and calculate alpha based on lightness
@@ -163,18 +196,19 @@ def alpha_cmap(cmap_name, clip=None):
 
 #=====================================================================
 def create_centered_colormap(cmap_name, centers):
+    from matplotlib.colors import ListedColormap, BoundaryNorm
     # Get the colormap from the specified name
-    cmap = plt.get_cmap(cmap_name)
-    
+    cmap = get_plt().get_cmap(cmap_name)
+
     # Define the boundaries for the levels
     bounds = np.array(centers)
     diff = np.diff(centers)
     bounds = np.concatenate([bounds - diff[0]/2, [bounds[-1] + diff[-1]/2]])
     num_levels = len(bounds)
-    
+
     # Create the normalization
     norm = BoundaryNorm(bounds, num_levels)
-    
+
     # Create the stepwise colormap
     stepwise_cmap = ListedColormap(cmap(np.linspace(0, 1, num_levels)))
     
@@ -192,9 +226,10 @@ def plot_arrow(start, end, color=None, linewidth=None, markersize=None):
     - linewidth: width of the line.
     - markersize: size of the 'v' marker.
     """
+    plt = get_plt()
     # Calculate the direction vector in data coordinates
     dx, dy = end[0] - start[0], end[1] - start[1]
-    
+
     # Get axis data limits and aspect ratio correction
     ax = plt.gca()
     xlim = ax.get_xlim()
@@ -216,6 +251,7 @@ def plot_line_annotations(xx, labels, weights=None, ha='center', va='bottom',
                       rotation=90, fontfamily='serif', color='k', xmin=None, xmax=None,
                       ymin=None, ymax=None, linewidth=0.8, ntop=-1, focus='strongest', **kwargs):
     #-----------------------------------------------------------------
+    plt = get_plt()
     ax = plt.gca()
     xmn, xmx = ax.get_xlim()
     ymn, ymx = ax.get_ylim()
@@ -304,6 +340,7 @@ def quickplot(x, y, ax=None, color=None, trendline=None, xerr=None, yerr=None,
               xlog=False, ylog=False, trend_color=None, trend_alpha=1, 
               **kwargs):
 
+  plt = get_plt()
   # Error propagation for log scaling
   if xlog:
       xerr = np.asarray(xerr) / x if xerr is not None else None

@@ -4,7 +4,6 @@ from .auxfuncs import find_close, get_qmax, is_number
 from .const import CC, HC2, PI
 from .physics import vac2air
 from .plotting_scripts import set_legend, set_title
-import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 from scipy.signal import argrelextrema
 
@@ -174,6 +173,7 @@ class Transition(object):
     #=====================================================================
     def plot_clv(self, dlam=None, LTE=False, title=None, **kwargs):
         #-----------------------------------------------------------------
+        import matplotlib.pyplot as plt  # deferred: only plotting pays matplotlib's import cost
         xx, yy = self.get_clv(dlam=dlam, LTE=LTE)
 
         if not 'linestyle' in kwargs:
@@ -241,6 +241,7 @@ class Transition(object):
                 vdop=None, vshift=None, LTE=False, title=None,
                 color='k', linewidth=1, alpha=0.2, step=1, **kwargs):
         #-----------------------------------------------------------------
+        import matplotlib.pyplot as plt  # deferred: only plotting pays matplotlib's import cost
         if not self.run.nml['output_params']['save_resolved']:
             print('Resolved profiles were not saved!')
             return None

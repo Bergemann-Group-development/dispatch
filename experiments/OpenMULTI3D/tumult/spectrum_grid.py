@@ -5,8 +5,6 @@ import numpy as np
 import pandas as pd
 from scipy.spatial import Delaunay, ConvexHull, Voronoi, HalfspaceIntersection, cKDTree
 from scipy.optimize import linprog
-from matplotlib.patches import Polygon
-import matplotlib.pyplot as plt
 
 ensure_list = lambda x: x if isinstance(x, (list, np.ndarray, pd.Series)) else [x]
 
@@ -413,6 +411,12 @@ def get_nn_weights(points, query, draw=False, hull=None, vor1=None):
     ``hull`` (ConvexHull of ``points``) is reused across queries when supplied. ``vor1``
     is accepted for backward compatibility and no longer used.
     """
+    if draw:
+        # only the debug scatter path needs matplotlib; deferred so importing this
+        # module doesn't pay its ~250ms startup cost
+        import matplotlib.pyplot as plt
+        from matplotlib.patches import Polygon
+
     points = np.asarray(points, dtype=float)
     query = np.asarray(query, dtype=float)
 

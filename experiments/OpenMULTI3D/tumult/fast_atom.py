@@ -2,7 +2,6 @@ import io, types
 import pandas as pd
 from .fast_trans import TransFactory
 import numpy as np
-import matplotlib.pyplot as plt
 from .const import CC, EE, HH, UU
 from .physics import vac2air
 from .auxfuncs import get_qmax
@@ -350,6 +349,7 @@ def convert_label_to_x_axis(label: str):
         return value_to_return
 
 def plot_grotrian(lvl, bbt, ion=None, lw=0.8, level_color='k', level_lw=1, color='lightgrey', noff=2, **kwargs):
+        import matplotlib.pyplot as plt  # deferred: only plotting pays matplotlib's import cost
         icont = np.where(np.diff(lvl.ion, prepend=-1)>0)[0]
 
         if ion is not None:

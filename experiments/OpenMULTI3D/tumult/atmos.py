@@ -5,8 +5,6 @@ from .auxfuncs import (atomic_weights, compute_tau_scale, crop_inputs, interp_ta
 import pandas as pd
 from .plotting_scripts import scatter_density
 import pathlib
-from matplotlib.colors import LogNorm
-import matplotlib.pyplot as plt
 
 class AtmosClass(object):
     @property
@@ -111,6 +109,8 @@ class AtmosClass(object):
                             cmap='hot', rasterized=True, logNorm=False, contrast=False,
                             show_cuts=False, title=None, tau_contours=False):
                   #-----------------------------------------------------------------
+        import matplotlib.pyplot as plt  # deferred: only plotting pays matplotlib's import cost
+        from matplotlib.colors import LogNorm
         var = self.get_variable(var)
 
         if self.dim == '3D':
@@ -198,6 +198,7 @@ class AtmosClass(object):
     def plot_geo_cube(self, var, marker=',', linestyle='none', rasterized=True,
                                             xmin=None, xmax=None, ymin=None, ymax=None, **kwargs):
                           #-----------------------------------------------------------------
+        import matplotlib.pyplot as plt  # deferred: only plotting pays matplotlib's import cost
         var = self.get_variable(var)
         xx = (self.height * np.ones_like(self.ltau)).ravel()
         yy = var.ravel()
@@ -218,6 +219,7 @@ class AtmosClass(object):
                                             xmin=None, xmax=None, ymin=None, ymax=None, density=False,
                                             cmap='GnBu', **kwargs):
                           #-----------------------------------------------------------------
+        import matplotlib.pyplot as plt  # deferred: only plotting pays matplotlib's import cost
         var = self.get_variable(var)
         xx = self.ltau.ravel()
         yy = var.ravel()
@@ -252,6 +254,7 @@ class AtmosClass(object):
     def plot_ltau_mean(self, var, log=False, newx=None, xmin=None, xmax=None,
                                             ymin=None, ymax=None, power=None, **kwargs):
                           #-----------------------------------------------------------------
+        import matplotlib.pyplot as plt  # deferred: only plotting pays matplotlib's import cost
         xx, yy = self.get_surf_mean('ltau', var, log=log, newx=newx, power=power)
         xx, yy = crop_inputs(xx, yy, xmin, xmax, ymin, ymax)
         return plt.plot(xx, yy, **kwargs)
@@ -280,6 +283,7 @@ class AtmosClass(object):
     def plot_geo_mean(self, var, log=False, xmin=None, xmax=None,
                                             ymin=None, ymax=None, **kwargs):
                           #-----------------------------------------------------------------
+        import matplotlib.pyplot as plt  # deferred: only plotting pays matplotlib's import cost
         xx, yy = self.get_geo_mean(var, log=log)
         xx, yy = crop_inputs(xx, yy, xmin, xmax, ymin, ymax)
         return plt.plot(xx, yy, **kwargs)
@@ -305,6 +309,7 @@ class AtmosClass(object):
       #=================================================================
     def plot_ltau_hist(self, ltau, var, log=False, power=None, zaxis=-1, show_mean=False, color=None, **kwargs):
       #-----------------------------------------------------------------
+        import matplotlib.pyplot as plt  # deferred: only plotting pays matplotlib's import cost
         yy = self.get_ltau_surface(ltau, var, log=log, zaxis=zaxis)
 
         if show_mean:
@@ -318,6 +323,7 @@ class AtmosClass(object):
                                             ang=None, rasterized=True, shading='nearest', 
                                             show_labels=True, cmap='hot', rot90=0, **kwargs):
                             #-----------------------------------------------------------------
+            import matplotlib.pyplot as plt  # deferred: only plotting pays matplotlib's import cost
             if iz is not None:
                     xx = self.xx + self.dx/2
                     yy = self.yy + self.dy/2

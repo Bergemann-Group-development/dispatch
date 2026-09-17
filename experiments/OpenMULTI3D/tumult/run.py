@@ -12,7 +12,6 @@ from .auxfuncs import (assign_group_indices, compute_tau_scale, empty, interp_ta
 from .utils import pchip_mono
 from .physics import vac2air
 from .decorators import broadcast_arguments
-from .plotting_scripts import plot_line_annotations, plt_kwargs, set_title
 from .fast_atom import FastAtom, PandasAtom
 from .flux import (base_set_indices, integrate_flux, ladder_sets,
                    read_angle_quadrature, read_segments, read_set_manifest,
@@ -25,7 +24,6 @@ from .spectrum_grid import SpectrumGrid
 from .atmos import AtmosClass
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 from astropy import units as u
 import pathlib
 import functools
@@ -497,6 +495,7 @@ class Run(object):
     #=====================================================================
     def plot_depart(self, ilvl=0, iatom=0, mean=True, **kwargs):
         #-----------------------------------------------------------------
+        import matplotlib.pyplot as plt  # deferred: only plotting pays matplotlib's import cost
         atomid = self.atoms[iatom].id if type(iatom) is int else iatom
         xx, yy = self.get_depart(ilvl, atomid, mean=mean)
         plt.title(f'Departure coefficient of {atomid:} level {ilvl:}')
@@ -532,6 +531,7 @@ class Run(object):
     #=====================================================================
     def plot_cog_corr(self, element, **kwargs):
         #-----------------------------------------------------------------
+        import matplotlib.pyplot as plt  # deferred: only plotting pays matplotlib's import cost
         corr, lte_weqs, lte_abnd, weq, abnd = self.get_cog_corr(element=element,**kwargs)
         plt.scatter(lte_weqs, lte_abnd, label='LTE', color='cornflowerblue')
         label = 'NLTE\n∆A={:.2f}'.format(corr)
@@ -571,6 +571,8 @@ class Run(object):
     def plot_line_labels(self, offset=None, tol=0.02, show_atom=True,
                          show_llist=True, dry=False, xmin=None, xmax=None, **kwargs):
         #-----------------------------------------------------------------
+        import matplotlib.pyplot as plt  # deferred: only plotting pays matplotlib's import cost
+        from .plotting_scripts import plot_line_annotations
         if xmin is None or xmax is None:
             ax = plt.gca()
             xmin, xmax = ax.get_xlim()
@@ -651,6 +653,7 @@ class Run(object):
 
     #=====================================================================
     def plot_line_stem(self, bottom=1.0, scale=None, offset=None, xmin=None, xmax=None, **kwargs):
+        import matplotlib.pyplot as plt  # deferred: only plotting pays matplotlib's import cost
         def cog_func(xx):
             mask = xx < np.exp(0.5)
             yy = np.zeros_like(xx)
@@ -761,6 +764,8 @@ class Run(object):
     def plot_cntrbf(self, line=None, lam0=None, dlam=None, xmin=None, xmax=None,
                     slc=None, imu=None, ang=None, title=None, norm=False, **kwargs):
         #-----------------------------------------------------------------
+        import matplotlib.pyplot as plt  # deferred: only plotting pays matplotlib's import cost
+        from .plotting_scripts import set_title
         if slc is None:
             slc = self.get_slice(line=line, dlam=dlam, lam0=lam0, xmin=xmin, xmax=xmax)
 
@@ -789,6 +794,8 @@ class Run(object):
     #=====================================================================
     def hist_cntrbf(self, imu=None, ang=None, LTE=False, dlam=0.5, title=None, cmap='binary', **kwargs):
         #-----------------------------------------------------------------
+        import matplotlib.pyplot as plt  # deferred: only plotting pays matplotlib's import cost
+        from .plotting_scripts import set_title
         xx, slc = self.get_xx(dlam=dlam)
         slc = slice(slc.start-self.ib, slc.stop-self.ib)
 
@@ -804,7 +811,9 @@ class Run(object):
 
     #=================================================================
     def plot_fit(self, oxx, oyy, fit=[], bounds=None, p0=None, sigma=None, method='curve_fit', label=None, **kwargs):
-        crop_kwargs = {k:v for k, v in kwargs.items() if k not in plt_kwargs}
+        import matplotlib.pyplot as plt  # deferred: only plotting pays matplotlib's import cost
+        from .plotting_scripts import get_plt_kwargs
+        crop_kwargs = {k:v for k, v in kwargs.items() if k not in get_plt_kwargs()}
         plot_kwargs = {k:v for k, v in kwargs.items() if k not in crop_kwargs}
         p, fitted = self.fit_observed(oxx, oyy, fit=fit, bounds=bounds, p0=p0, sigma=sigma, method=method, **crop_kwargs)
         if label is None:
@@ -888,6 +897,7 @@ class Run(object):
 #=====================================================================
 def weq_diff(run1, run2, marker='.', linestyle='none', **kwargs):
     #-----------------------------------------------------------------
+    import matplotlib.pyplot as plt  # deferred: only plotting pays matplotlib's import cost
     weq1 = [line.calc_weq() / line.calc_weq(LTE=True) for line in run1.line]
     weq2 = [line.calc_weq() / line.calc_weq(LTE=True) for line in run2.line]
     maxw = np.max([weq1, weq2])
