@@ -651,6 +651,32 @@ def test_cancelling_the_reference_stage_prevents_the_correction_stage(tmp_path, 
     assert not tool.results
 
 
+def test_reference_spectrum_is_drawn_only_in_the_correction_view_not_the_sidebar(tmp_path):
+    """The 1D LTE reference used to land as its own sidebar spectrum (``canvas.add_object``);
+    it is now only a renderer the correction view owns, shown while its result has focus and
+    hidden otherwise, so lines can still be inspected without a spurious spectrum outliving
+    the tab in the left sidebar."""
+    from tumult.abundance import AbundanceResult
+
+    document, ctx = _build_document()
+    tool = ctx.tools._tools["abundcorr"]
+    xx = np.linspace(5000., 5010., 50)
+    ref = Spectrum(xx, np.ones_like(xx))
+    result = AbundanceResult(element="Mg", symbol="Mg", summary={}, uid="corr1",
+                             atom_path=str(tmp_path / "mg.atom"), stage="lines")
+    result.ref_spec = ref
+
+    tool._on_reference_ready(result)
+
+    assert ctx.canvas.objects == []                # no sidebar spectrum was added
+    assert tool.ref_line.visible
+    np.testing.assert_allclose(tool.ref_source.data["x"], xx)
+    np.testing.assert_allclose(tool.ref_source.data["y"], np.ones_like(xx))
+
+    tool.deactivate()
+    assert not tool.ref_line.visible
+
+
 # --- programmatic writes to the drag sources -------------------------------------------
 def test_callback_suppression_restores_the_previous_flag():
     from filtertool import FilterTool

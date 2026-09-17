@@ -20,8 +20,9 @@ the next ones.
    those windows are the line masks, and stage 2 runs on the same grid. Without the line
    list, a window that overlaps a neighbouring atom line's is narrowed to the reference
    flux maxima nearest the centre, so a blended line is integrated over its own profile.
-   The reference spectrum lands on the canvas and the result object appears under its atom in the left
-   sidebar as soon as this stage finishes.
+   The result object appears under its atom in the left sidebar as soon as this stage
+   finishes; the reference spectrum itself is drawn only while this result's correction view
+   is shown (:meth:`_render_reference`), not as a sidebar spectrum of its own.
    With **Use line list** on, the configured synthesis line list is synthesised
    with the atom (reference and every NLTE rung), and the reference run's ``linelist_out.txt``
    is what the canvas annotates while the result is shown; off, the canvas shows no line
@@ -76,6 +77,8 @@ CORR_PROFILES = ["trapz"] + PROFILES
 DEFAULTS = {"profile": "trapz", "ew_min": 5.0, "limit": 1.0, "line_grid": True,
             "linelist": False}
 COG_CURVE_POINTS = 80        # samples of the PCHIP interpolant drawn through the rungs
+REF_COLOR = "#7f8a99"        # the reference spectrum's own line: muted, so the ACCENT-drawn
+                              # fit overlays and windows still read as what the tool is about
 
 
 class AbundCorrTool(AbundanceWizard):
@@ -89,9 +92,13 @@ class AbundCorrTool(AbundanceWizard):
     extra_sort_keys = {"rew": lambda ln: reduced_ew(ln.ew, ln.lam0)}
     extra_sort_asc = {"rew": False}
 
-    def __init__(self, ctx, *, setup, grids, add_spectrum):
+    def __init__(self, ctx, *, setup, grids, add_spectrum=None):
         self.grids = grids                  # GridManager: reference_grid() is the 1D LTE grid
-        self.add_spectrum = add_spectrum    # (spec, name) -> add the reference to the canvas
+        # Unused: the reference used to be added as its own sidebar spectrum via this
+        # callback (see _render_reference for where it is drawn now). Kept as an accepted
+        # (optional) argument so callers passing it do not break; app.py's add_corr_spectrum
+        # closure is now dead code and can be dropped.
+        self.add_spectrum = add_spectrum
         self.on_results = lambda: None      # installed by main: repaints the atom list
 
         saved = dict(store.get_section("abundcorr"))
@@ -113,6 +120,13 @@ class AbundCorrTool(AbundanceWizard):
         self._modal = ctx.bridges.dialog("corr-modal", name="corr-modal-bridge")
         self._context_bridge = ctx.bridges.html("corr-context")
         self._pending_atom = None           # the AtomObject the open modal computes for
+        # The reference spectrum: a renderer this view owns, not a canvas object of its own
+        # (it is not user data, has no fit or window of its own, and should not persist in
+        # the sidebar once the correction result it belongs to is not being looked at).
+        self.ref_source = ColumnDataSource(dict(x=[], y=[]))
+        self.ref_line = self.canvas.main.line(
+            "x", "y", source=self.ref_source, color=REF_COLOR, line_width=1.2,
+            line_alpha=0.8, visible=False)
         # per-line error bars: the corrections carry a formal sigma(dA) since the
         # reference EW's fit-covariance error propagates through the CoG slope
         self._build_figs(ColumnDataSource(self.empty_points()))
@@ -359,22 +373,46 @@ class AbundCorrTool(AbundanceWizard):
         self._jumped = None
         self.canvas.on_window_resize = self._on_fit_drag
         self._attach_annotations()
+        self._render_reference()
 
     def blur(self):
         super().blur()
         self.canvas.on_window_resize = None
         self._detach_annotations()
+        self._hide_reference()
 
     def deactivate(self):
         super().deactivate()
         self.canvas.on_window_resize = None
         self._detach_annotations()
+        self._hide_reference()
 
     def remove_result(self, uid):
         super().remove_result(uid)      # re-selects (and re-attaches) when one is left
         if self.selected() is None:
             self.canvas.on_window_resize = None
             self._detach_annotations()
+            self._hide_reference()
+
+    # --- the reference spectrum: a renderer owned by this view -----------------------------
+    def _render_reference(self):
+        """Draw the selected result's 1D LTE reference on the main figure, or hide it.
+
+        The reference is not user data and carries no fit or window of its own, so it is not
+        a canvas object (no sidebar entry, nothing to toggle or remove independently) - it is
+        only ever a backdrop for whichever correction result owns the centre view."""
+        res = self.selected()
+        ref_spec = getattr(res, "ref_spec", None) if res is not None else None
+        if not (self.active and self.is_focused()) or ref_spec is None:
+            return self._hide_reference()
+        spec = ref_spec.decimate(self.canvas.n_main).convert_units(
+            xunit=self.canvas.xunit, yunit=self.canvas.yunit)
+        x, y = spec.values
+        self.ref_source.data = dict(x=np.asarray(x, dtype=float), y=np.asarray(y, dtype=float))
+        self.ref_line.visible = True
+
+    def _hide_reference(self):
+        self.ref_line.visible = False
 
     def _attach_annotations(self):
         """Own the line-position overlay while a correction is shown: the transitions the
@@ -478,12 +516,8 @@ class AbundCorrTool(AbundanceWizard):
         result.name = self._result_label(result)
         self.results.append(result)
         self.selected_uid = result.uid
-        # show the reference spectrum on the canvas so lines can be inspected/jumped to
-        try:
-            self.add_spectrum(result.ref_spec, f"{result.symbol} 1D LTE ref")
-        except Exception:
-            logging.exception("Could not add the reference spectrum to the canvas")
         self.set_step(1)
+        # draws the reference spectrum too, as this result's view is now selected
         self.select_result(result.uid)
         self.notify(f"{result.symbol}: {len(result.lines)} reference lines — computing "
                     "NLTE corrections…")
