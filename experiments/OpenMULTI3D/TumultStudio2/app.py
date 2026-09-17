@@ -505,9 +505,11 @@ def build():
         if r.start is None or r.end is None:
             notify("Set a view range to fit over.")
             return
-        lo, hi = to_range(r.start, r.end, canvas.xunit, target.spectrum.xunit)
-
-        source, observed, initial = obj.spectrum, target.spectrum, dict(obj.conv)
+        # the target is read as measured (filtered when filtering is active); the fitted
+        # object stays its own unconvolved spectrum, since the fit adjusts its convolution
+        observed = canvas.target_spectrum(target.uid)
+        lo, hi = to_range(r.start, r.end, canvas.xunit, observed.xunit)
+        source, initial = obj.spectrum, dict(obj.conv)
 
         def run(token):
             token.check()
@@ -683,8 +685,7 @@ def build():
         # the Auto-generate source runs the wizards' diagnostic line selection over a loaded
         # spectrum (no synthesis), so it needs the canvas objects and a line list
         list_observations=lambda: [(o.uid, o.name) for o in canvas.objects],
-        get_observation=lambda uid: (canvas.effective(canvas._find(uid)) if canvas._find(uid)
-                                     else None),
+        get_observation=canvas.target_spectrum,
         master_path=master, profiles=PROFILES,
         # "+ New mask" draws its window with the Select range tool's gesture
         place_window=range_tool.begin_add,
@@ -744,10 +745,7 @@ def build():
         ctx,
         setup=abund_setup,
         list_observations=lambda: [(o.uid, o.name) for o in canvas.objects],
-        # follow the canvas's Filtered switch: when filtering is on, measure/fit the filtered
-        # spectrum (so EW hatches + line fits match what is shown), else the raw observation
-        get_observation=lambda uid: (canvas.effective(canvas._find(uid)) if canvas._find(uid)
-                                     else None),
+        get_observation=canvas.target_spectrum,
         master_path=master)
 
     # the abundance-correction tool: its own synthesis setup (target/NLTE atmosphere) in its
@@ -784,8 +782,7 @@ def build():
         ctx,
         grids=synth_modal.grids,
         list_observations=lambda: [(o.uid, o.name) for o in canvas.objects],
-        get_observation=lambda uid: (canvas.effective(canvas._find(uid)) if canvas._find(uid)
-                                     else None),
+        get_observation=canvas.target_spectrum,
         master_path=master)
 
     def on_grids_change():

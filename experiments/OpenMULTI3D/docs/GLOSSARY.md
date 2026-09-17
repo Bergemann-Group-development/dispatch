@@ -65,7 +65,8 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
   The 1D LTE spectrum a correction measures against is the *reference spectrum*.
 - *preparation*: the processing a target spectrum carries into a measurement: its
   continuum state (automatic scaling, spline continuum, already normalised) and whether
-  noise filtering is active. Recorded with measured lines (`MeasuredLines.preparation`).
+  noise filtering is active. Recorded with measured lines (`MeasuredLines.preparation`)
+  and with synthesis fits (the record's `meta["preparation"]`).
 
 - *local continuum*: a measurement's continuum placement for one line feature on its
   prepared target. It multiplies the displayed synthetic spectrum and sets the reference

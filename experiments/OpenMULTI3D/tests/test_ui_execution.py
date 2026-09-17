@@ -2264,3 +2264,44 @@ def test_measurement_continuum_markers_keep_target_coordinates(tool_name):
     assert toolbar.active_drag == 'auto' and toolbar.active_tap is tapped_before
     for callback in list(document.session_destroyed_callbacks):
         callback(None)
+
+
+def test_a_fit_reads_the_filtered_target_and_records_its_preparation(tmp_path, monkeypatch):
+    """With filtering active, the synthesis fit is submitted the filtered flux the canvas
+    shows (as the abundance tools measure it), and its record names that preparation."""
+    import synthmodal
+
+    document, ctx = _build_document()
+    x = np.arange(5000., 5002., .01)
+    raw = Spectrum(x, 1 - 0.5 * np.exp(-0.5 * ((x - 5001) / 0.1) ** 2))
+    ctx.canvas.add_object(raw, name="obs", source=("file", "/nowhere/obs.fits"))
+    obj = ctx.canvas.objects[-1]
+    filtered = Spectrum(x, np.full_like(x, 0.25))
+    ctx.canvas.apply_filter({obj.uid: filtered})
+
+    modal = ctx.tools._tools["linemask"].on_synth.__closure__[0].cell_contents
+    monkeypatch.setattr(modal.setup, "context", lambda: _stub_request(tmp_path))
+    monkeypatch.setattr(modal.setup, "active_grid", lambda: None)
+    monkeypatch.setattr(modal.fit, "collect", lambda: {
+        "target": obj.uid, "fit_stellar": ["teff"], "abund_fits": {}, "fit_post": {}})
+    monkeypatch.setattr(synthmodal, "check_fit", lambda *a, **k: None)
+    monkeypatch.setattr(ctx, "schedule", lambda fn: fn())
+    submitted = []
+    monkeypatch.setattr(ctx, "submit_operation",
+                        lambda name, op, request, on_done, kwargs=None, meta=None:
+                        submitted.append((op, kwargs, meta)))
+    modal.open_range(5000.5, 5001.5, "fit")
+    modal.run_fit()
+
+    (op, kwargs, meta), = submitted
+    assert op == "synthesis.fit"
+    _, y = kwargs["target"].values
+    assert np.allclose(y, 0.25)
+    assert meta["preparation"]["filtered"] is True
+    assert ["Fit target", "obs · automatic continuum scaling · filtered"] in meta["params"]
+
+    ctx.canvas.show_filtered = False       # filtering off: the unfiltered flux, as before
+    modal.run_fit()
+    _, y = submitted[-1][1]["target"].values
+    assert np.allclose(y, raw.crop(xmin=5000.5, xmax=5001.5).values[1])
+    assert submitted[-1][2]["preparation"]["filtered"] is False

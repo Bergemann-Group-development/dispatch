@@ -441,6 +441,18 @@ class SynthModal:
         xmax = max(hi for _lo, hi in request.windows)
         name = f"fit·{obj.name}"
         rows = self._request_rows(request, grid)
+        preparation = self.canvas.preparation(obj)
+
+        def fit_meta(stellar, terms):
+            """The Info payload of the fit: the synthesis, plus the target and the
+            preparation it was measured under."""
+            meta = self._synth_meta(stellar, mode=mode, abundances=terms, relative=relative,
+                                    atoms=atoms, xmin=xmin, xmax=xmax, atmosphere=rows)
+            meta["params"].append(["Fit target", " · ".join((
+                obj.name, preparation["normalisation"],
+                "filtered" if preparation["filtered"] else "unfiltered"))])
+            meta["preparation"] = preparation
+            return meta
 
         def on_done(result):
             best = result.best
@@ -453,17 +465,15 @@ class SynthModal:
             terms = synth.fitted_abundance_terms(
                 best, c["abund_fits"], base=abundances, relative=relative,
                 feh=float(stellar["feh"]), solar=synth.abund_table(request.config.to_prefs()))
-            meta = self._synth_meta(stellar, mode=mode, abundances=terms, relative=relative,
-                                    atoms=atoms, xmin=xmin, xmax=xmax, atmosphere=rows)
-            self._add(result.spectrum, name, meta=meta, conv=result.post)
+            self._add(result.spectrum, name, meta=fit_meta(stellar, terms), conv=result.post)
 
         self._begin_submit()
-        # the fit only reads the observation inside the synth span, so the record carries
-        # that part, with the guesses as the annotations a document that imports the
-        # record later shows
-        meta = self._synth_meta(guesses, mode=mode, abundances=abundances, relative=relative,
-                                atoms=atoms, xmin=xmin, xmax=xmax, atmosphere=rows)
-        kwargs = {"target": obj.spectrum.crop(xmin=xmin, xmax=xmax),
+        # the fit only reads the target spectrum inside the synth span, so the record
+        # carries that part as measured (filtered when filtering is active), with the
+        # guesses as the annotations a document that imports the record later shows, and
+        # the target's preparation
+        meta = fit_meta(guesses, abundances)
+        kwargs = {"target": self.canvas.target_spectrum(obj.uid).crop(xmin=xmin, xmax=xmax),
                   "fit_windows": [list(fit) for fit, _synth in windows],
                   "fit_stellar": list(c["fit_stellar"]), "abund_fits": dict(c["abund_fits"]),
                   "fit_post": dict(c["fit_post"])}

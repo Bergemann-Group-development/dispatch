@@ -835,6 +835,12 @@ class SpectrumCanvas:
             return obj.filtered
         return obj.spectrum
 
+    def target_spectrum(self, uid):
+        """The spectrum every measurement and fit reads for object ``uid``: its
+        :meth:`effective` spectrum, or ``None`` when no such object exists."""
+        obj = self._find(uid)
+        return None if obj is None else self.effective(obj)
+
     def apply_filter(self, mapping):
         """Show filtered spectra (uid -> filtered Spectrum); originals are kept."""
         for uid, spec in mapping.items():
