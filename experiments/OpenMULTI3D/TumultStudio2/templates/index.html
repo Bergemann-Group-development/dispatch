@@ -1350,7 +1350,10 @@
   // a moment, so give feedback (disabled + spinner) at once instead of leaving the button
   // looking inert until the server gets around to closing the dialog. Returns false (and
   // sends nothing) for a click that arrives while the button is already busy — the
-  // client-side half of the double-submit guard; jobs.py holds the server-side half.
+  // client-side half of the double-submit guard; the synth modal's own `_pending` flag
+  // (synthmodal.py) holds the server-side half for its action. A rejected submit (the
+  // dialog stays open) resets the button through the dialog bridge's "reject" state
+  // (see htmlbridge.dialog_bridge) rather than here, since that is a server decision.
   function busySubmit(btn) {
     if (!btn || btn.disabled) return false;
     btn.disabled = true;

@@ -1981,6 +1981,9 @@ def test_unsupported_requests_are_refused_before_submission(tmp_path, monkeypatc
     assert messages[-1] == ("Cannot fit: Fitting is available for 1D atmospheres and "
                             "grids only.")
     assert not len(ctx.jobs)
+    # the dialog stayed open (nothing re-renders its footer to un-stick the submit
+    # button on its own), so the reject pulse is what resets it client-side
+    assert modal.dialog.value.startswith("reject:")
 
 
 def test_fit_is_a_durable_workflow_built_from_the_same_request(tmp_path, monkeypatch):

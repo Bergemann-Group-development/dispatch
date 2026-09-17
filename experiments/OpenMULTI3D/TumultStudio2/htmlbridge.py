@@ -50,7 +50,10 @@ def check_bridge(input_id):
 def dialog_bridge(dialog_id, name=None):
     """Return a hidden TextInput; setting `.value` to "open…"/"close…" shows or closes the
     ``<dialog>`` with id `dialog_id` — so the server can dismiss a modal once the work it
-    was opened for (e.g. importing the picked file) has actually succeeded."""
+    was opened for (e.g. importing the picked file) has actually succeeded. A third state,
+    "reject…", leaves the dialog open (server-side validation refused the submit) but
+    still resets a submit button a click left disabled and spinning — the page's own
+    ``resetBusy(el)``, called if it exists, so a plain page never has to define it."""
     bridge = TextInput(value="", visible=False)
     if name:
         bridge.name = name
@@ -60,6 +63,7 @@ def dialog_bridge(dialog_id, name=None):
         const want = cb_obj.value.split(':')[0];
         if (want === 'open' && !el.open) el.showModal();
         else if (want === 'close' && el.open) el.close();
+        else if (want === 'reject' && typeof resetBusy === 'function') resetBusy(el);
     """))
     return bridge
 

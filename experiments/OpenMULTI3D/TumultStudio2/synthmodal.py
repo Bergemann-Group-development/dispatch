@@ -305,6 +305,13 @@ class SynthModal:
                 self._pending = False
         self.ctx.schedule(run)
 
+    def _reject(self, message):
+        """Refuse the current submit attempt: report why, and reset the busy submit
+        button — the dialog stays open, so unlike a successful submit (:meth:`_begin_submit`)
+        nothing re-renders the footer or closes the dialog to do that on its own."""
+        self.notify(message)
+        pulse(self.dialog, "reject")
+
     # --- Info-tab provenance ----------------------------------------------
     @staticmethod
     def _atmosphere_rows(grid, atmos_file=None, resolution=None):
@@ -408,23 +415,23 @@ class SynthModal:
         file) before the job is admitted."""
         request = self.setup.context()
         if request is None:
-            self.notify(self.setup.reason or "Cannot fit — check Preferences → Synthesis.")
+            self._reject(self.setup.reason or "Cannot fit — check Preferences → Synthesis.")
             return
         windows = self._job_windows()
         if not windows:
-            self.notify("Set the wavelength window (λ min/max) first.")
+            self._reject("Set the wavelength window (λ min/max) first.")
             return
         c = self.fit.collect()
         obj = self.canvas._find(c["target"]) if c["target"] else None
         if obj is None:
-            self.notify("Select a target spectrum to fit.")
+            self._reject("Select a target spectrum to fit.")
             return
         try:
             request = request.update(windows=[synth for _fit, synth in windows])
             check_fit(request, fit_stellar=c["fit_stellar"], abund_fits=c["abund_fits"],
                       fit_post=c["fit_post"])
         except ValueError as exc:
-            self.notify(f"Cannot fit: {exc}")
+            self._reject(f"Cannot fit: {exc}")
             return
         grid = self.setup.active_grid()
         star = request.star
@@ -641,17 +648,17 @@ class SynthModal:
         """Submit the job as one durable synthesis workflow, whatever its atmosphere."""
         request = self.setup.context()
         if request is None:
-            self.notify(self.setup.reason
+            self._reject(self.setup.reason
                         or "Cannot synthesize — check Preferences → Synthesis.")
             return
         windows = self._job_windows()
         if not windows:
-            self.notify("Set the synthesis wavelength window (λ min/max) first.")
+            self._reject("Set the synthesis wavelength window (λ min/max) first.")
             return
         try:
             request = request.update(windows=[synth for _fit, synth in windows])
         except ValueError as exc:
-            self.notify(f"Cannot synthesize: {exc}")
+            self._reject(f"Cannot synthesize: {exc}")
             return
         kind, mset = self.job or ("range", None)
         star = request.star
