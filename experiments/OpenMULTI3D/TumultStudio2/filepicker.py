@@ -31,9 +31,13 @@ import os
 from pathlib import Path
 
 from bokeh.layouts import column
+from bokeh.io import curdoc
 from bokeh.models import CustomJS, InlineStyleSheet, TextInput
 
+from debounce import Trailing
 from htmlbridge import html_bridge
+from latestwork import LatestWork
+from tumult.synthesis.runtime import IO
 
 # plain string: a fresh InlineStyleSheet model is built per instance (a Bokeh
 # model may live in only one document, so it must not be a shared module-level singleton)
@@ -92,6 +96,9 @@ class FilePicker:
         self.root = Path(root).expanduser().resolve() if root else None
         self.current_dir = None       # the directory currently being listed
         self.max_items = max_items
+        self._scan_delay = Trailing(180)
+        self._doc = curdoc()
+        self._scan_work = LatestWork(self._submit_scan, f"scan {self.name}")
 
         self.query = TextInput(placeholder="Type a path…",
                                stylesheets=[InlineStyleSheet(css=QUERY_CSS)],
@@ -103,7 +110,9 @@ class FilePicker:
         self.results = html_bridge(container_id, name=self.results_name)
         self.pick = TextInput(value="", name=self.name, visible=False)
 
-        self.query.on_change("value_input", lambda a, o, n: self._scan(n))
+        self.query.on_change(
+            "value_input",
+            lambda a, o, n: self._scan_delay("query", lambda: self._scan(self.query.value_input)))
         self.pick.on_change("value", self._on_pick)
 
         self.layout = column(self.query, self.results, self.pick,
@@ -132,56 +141,75 @@ class FilePicker:
         self._scan("")
 
     # --- directory scan / render ------------------------------------------
+    def _submit_scan(self, name, loader, on_done):
+        """Adapt the shared I/O pool to ``LatestWork`` without touching Bokeh off-thread."""
+        class Token:
+            @staticmethod
+            def check():
+                return None
+
+        future = IO.submit(lambda: loader(Token()))
+
+        def settled(done):
+            def apply():
+                try:
+                    on_done(done.result())
+                except Exception:
+                    logging.exception("File picker scan delivery failed")
+            try:
+                self._doc.add_next_tick_callback(apply)
+            except Exception:
+                pass
+        future.add_done_callback(settled)
+        return future
+
     def _scan(self, text):
         raw = (text or "").strip()
-        if not raw and self.recent_provider:
-            self._render_recents()
-            return
-        if not raw:
-            # empty query: list the anchored root, else the process cwd
-            base, partial = (self.root or Path.cwd()), ""
-        else:
-            target = Path(raw).expanduser()
-            # a relative fragment matches inside the root (not the cwd); absolute paths and
-            # "../" still navigate anywhere, keeping files outside the root reachable
-            if not target.is_absolute() and self.root is not None:
-                target = self.root / raw
-            # an existing dir (or a trailing separator) lists its contents; otherwise the
-            # last component is a fragment to match against the parent directory
-            if raw.endswith(("/", "\\")) or target.is_dir():
-                base, partial = target, ""
+        root = self.root
+
+        def compute(token):
+            if not raw and self.recent_provider:
+                paths = [Path(p) for p in self.recent_provider()]
+                rows = [(p.name, p, False, "history") for p in paths if p.is_file()]
+                return None, rows, "No recent files"
+            if not raw:
+                base, partial = (root or Path.cwd()), ""
             else:
-                base, partial = target.parent, target.name
+                target = Path(raw).expanduser()
+                if not target.is_absolute() and root is not None:
+                    target = root / raw
+                if raw.endswith(("/", "\\")) or target.is_dir():
+                    base, partial = target, ""
+                else:
+                    base, partial = target.parent, target.name
+            try:
+                entries = sorted(base.iterdir(), key=lambda entry: entry.name.lower())
+            except OSError:
+                return base, [], "No such directory"
+            pl = partial.lower()
+            dirs, files = [], []
+            for entry in entries:
+                token.check()
+                if entry.name.startswith(".") or (pl and pl not in entry.name.lower()):
+                    continue
+                if entry.is_dir():
+                    dirs.append((entry.name + "/", entry, True, "folder"))
+                else:
+                    files.append((entry.name, entry, False, "file-text"))
+            if not pl and base.parent != base:
+                dirs.insert(0, ("../", base.parent, True, "folder"))
+            if self.pick_dirs and not pl:
+                dirs.insert(0, (f"Use this folder ({base.name or base})", base, False, "check"))
+            return base, (dirs + files)[:self.max_items], "No matching files"
 
-        self.current_dir = base
-        if self.on_dir:
-            self.on_dir(base)
+        def apply(result):
+            base, rows, empty = result
+            self.current_dir = base
+            if self.on_dir:
+                self.on_dir(base)
+            self._list(rows, empty)
 
-        try:
-            entries = sorted(base.iterdir(), key=lambda e: e.name.lower())
-        except OSError:
-            self._list([], "No such directory")
-            return
-
-        pl = partial.lower()
-        dirs, files = [], []
-        for entry in entries:
-            if entry.name.startswith("."):
-                continue
-            if pl and pl not in entry.name.lower():
-                continue
-            if entry.is_dir():
-                dirs.append((entry.name + "/", entry, True, "folder"))
-            else:
-                files.append((entry.name, entry, False, "file-text"))
-
-        # a ".." entry to climb to the parent (only when not filtering, and not at root)
-        if not pl and base.parent != base:
-            dirs.insert(0, ("../", base.parent, True, "folder"))
-        if self.pick_dirs and not pl:
-            dirs.insert(0, (f"Use this folder ({base.name or base})", base, False, "check"))
-
-        self._list((dirs + files)[:self.max_items], "No matching files")
+        self._scan_work.request(compute, apply)
 
     def _render_recents(self):
         """Show the most recently opened files (when the query box is empty)."""

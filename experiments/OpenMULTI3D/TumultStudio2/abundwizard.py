@@ -30,6 +30,8 @@ from tumult.abundance import SYNTH_PAD_AA  # noqa: F401 (the tools import it fro
 from tumult.measured import target_digest
 import store
 from canvas import ACCENT, style_dark
+from debounce import Trailing
+from latestwork import LatestWork
 from tableui import SortState, check_header, sort_header
 from tool import Tool
 from units import to_range, to_value
@@ -243,6 +245,12 @@ class AbundanceWizard(Tool):
         self.continuum_drag = PointDrawTool(renderers=[self.continuum_markers], add=False)
         self.canvas.main.add_tools(self.continuum_drag)
         self.continuum_source.on_change("data", self._on_continuum_drag)
+        self._continuum_delay = Trailing(200)
+        self._continuum_immediate = getattr(ctx.doc, "session_context", None) is None
+        self._continuum_work = LatestWork(
+            lambda *args: ctx.submit(*args), f"{self.prefix} continuum measurement",
+            lambda exc: self.notify(f"Local continuum could not be measured: {exc}"),
+            immediate=self._continuum_immediate)
 
     # --- window highlights ---------------------------------------------------------------
     # A result's windows belong to the result, not to a jump: a wizard that paints them shows
@@ -1008,16 +1016,29 @@ class AbundanceWizard(Tool):
         if spec is None:
             self.notify("The target spectrum is no longer loaded.")
             return
-        try:
-            ab.set_local_continuum(res, ln, spec, **kwargs)
-        except (ValueError, RuntimeError) as exc:
-            self.notify(str(exc))
-            self._render_continuum()
-            return
-        self.jobs.invalidate(res.uid)
-        self.push_results()
-        self._render_selected()
-        self._jump_decor(res, ln)
+        index = res.lines.index(ln)
+
+        def compute(token):
+            token.check()
+            working = deepcopy(res)
+            ab.set_local_continuum(working, working.lines[index], spec, **kwargs)
+            token.check()
+            state = {key: value for key, value in working.__dict__.items() if key != "lines"}
+            return working.lines[index], state
+
+        def apply(result):
+            if self._find(res.uid) is not res or index >= len(res.lines):
+                return
+            edited, state = result
+            res.lines[index].__dict__.update(edited.__dict__)
+            res.__dict__.update(state)
+            self.jobs.invalidate(res.uid)
+            self.push_results()
+            self._render_selected()
+            self._jump_decor(res, res.lines[index])
+            self.ctx.workspace_changed()
+
+        self._continuum_work.request(compute, apply)
 
     def _set_continua(self, res, lines, enabled):
         """Switch the local continuum of several lines at once; each is remeasured."""
@@ -1025,19 +1046,41 @@ class AbundanceWizard(Tool):
         if spec is None:
             self.notify("The target spectrum is no longer loaded.")
             return
-        failed = []
-        for ln in lines:
-            try:
-                ab.set_local_continuum(res, ln, spec, enabled=enabled)
-            except (ValueError, RuntimeError) as exc:
-                failed.append(f"{ln.lam0:.3f} Å: {exc}")
-        if failed:
-            self.notify("Local continuum unchanged for " + "; ".join(failed))
-        self.jobs.invalidate(res.uid)
-        self.push_results()
-        self._render_selected()
-        if self._jumped is not None and any(ln is res.lines[self._jumped] for ln in lines):
-            self._jump_decor(res, res.lines[self._jumped])
+        indices = [res.lines.index(ln) for ln in lines]
+
+        def compute(token):
+            token.check()
+            working = deepcopy(res)
+            edits = [(working.lines[index], {"enabled": enabled}) for index in indices]
+            failed = ab.set_local_continua(working, edits, spec)
+            failed_by_id = {id(line): exc for line, exc in failed}
+            outcome = [(index, working.lines[index], failed_by_id.get(id(working.lines[index])))
+                       for index in indices]
+            token.check()
+            state = {key: value for key, value in working.__dict__.items() if key != "lines"}
+            return outcome, state
+
+        def apply(result):
+            if self._find(res.uid) is not res:
+                return
+            outcome, state = result
+            failures = []
+            for index, edited, exc in outcome:
+                if exc is not None:
+                    failures.append(f"{res.lines[index].lam0:.3f} Å: {exc}")
+                else:
+                    res.lines[index].__dict__.update(edited.__dict__)
+            res.__dict__.update(state)
+            if failures:
+                self.notify("Local continuum unchanged for " + "; ".join(failures))
+            self.jobs.invalidate(res.uid)
+            self.push_results()
+            self._render_selected()
+            if self._jumped is not None and self._jumped in indices:
+                self._jump_decor(res, res.lines[self._jumped])
+            self.ctx.workspace_changed()
+
+        self._continuum_work.request(compute, apply)
 
     def _toggle_continuum(self, token):
         res = self.selected()
@@ -1054,10 +1097,18 @@ class AbundanceWizard(Tool):
     def _on_continuum_drag(self, attr, old, new):
         if self._continuum_sync or not self.continuum_markers.visible:
             return
+        if self._continuum_immediate:
+            self._commit_continuum_drag()
+        else:
+            self._continuum_delay("continuum-drag", self._commit_continuum_drag)
+
+    def _commit_continuum_drag(self):
+        """Measure only after the marker drag has been quiet for a short interval."""
         res = self.selected()
         if res is None or self._jumped is None:
             return
         ln = res.lines[self._jumped]
+        new = self.continuum_source.data
         if len(new.get("y", [])) != 2:
             self._render_continuum()
             return

@@ -79,6 +79,7 @@ class AppContext:
         self.notify = lambda *a, **k: None
         self.run_busy = lambda fn: fn()
         self.busy = lambda on: None
+        self.workspace_changed = lambda: None  # lightweight dirty notification; by main
         self.submit = None
         self.submit_io = None
         self.submit_operation = None  # (name, operation, request, on_done, ...) -> Job; by main

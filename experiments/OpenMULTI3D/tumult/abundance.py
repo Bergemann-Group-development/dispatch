@@ -1967,8 +1967,8 @@ def refresh_line_cog(line, profile):
     line.fit_spec = _solution_spec(line)
 
 
-def set_local_continuum(result, line, target, *, enabled=None, nodes=None):
-    """Edit one measurement's fixed local continuum and immediately remeasure its EW.
+def _local_continuum_edit(result, line, target, *, enabled=None, nodes=None):
+    """Return a remeasured copy of ``line`` with the requested local continuum.
 
     Enabling seeds two synth-edge nodes from the upper 10% of the prepared target.
     Explicit nodes stay fixed until edited again; no optimisation runs during an edit.
@@ -1996,12 +1996,41 @@ def set_local_continuum(result, line, target, *, enabled=None, nodes=None):
         if np.isfinite(edited.a) and np.isfinite(edited.drewda):
             edited.sigma_a, edited.sigma_a_phot, edited.sigma_a_cont = sigma_a_from_rew(
                 prof, edited.drewda)
-    line.__dict__.update(edited.__dict__)
+    return edited
+
+
+def _reaggregate(result):
     if hasattr(result, "reaggregate"):
         result.reaggregate()
     else:
         result.summary = correction_summary(result.lines)
+
+
+def set_local_continuum(result, line, target, *, enabled=None, nodes=None):
+    """Edit one measurement's fixed local continuum and immediately remeasure its EW."""
+    edited = _local_continuum_edit(result, line, target, enabled=enabled, nodes=nodes)
+    line.__dict__.update(edited.__dict__)
+    _reaggregate(result)
     return line
+
+
+def set_local_continua(result, edits, target):
+    """Remeasure several continuum edits, then aggregate once.
+
+    ``edits`` contains ``(line, kwargs)`` pairs. A failed measurement leaves that line
+    unchanged; failures are returned as ``(line, exception)`` pairs.
+    """
+    changed, failed = [], []
+    for line, kwargs in edits:
+        try:
+            changed.append((line, _local_continuum_edit(result, line, target, **kwargs)))
+        except (ValueError, RuntimeError) as exc:
+            failed.append((line, exc))
+    for line, edited in changed:
+        line.__dict__.update(edited.__dict__)
+    if changed:
+        _reaggregate(result)
+    return failed
 
 
 def complete_cog_rungs(lines, synthesize, *, profile, target=None,

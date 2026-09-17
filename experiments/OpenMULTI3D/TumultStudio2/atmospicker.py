@@ -19,6 +19,7 @@ from pathlib import Path
 from tumult.synthesis import workflows as synth
 from tumult.synthesis.snapshot_grid import is_snapshot_grid
 from filepicker import FilePicker
+from latestwork import LatestWork
 
 FILE_PLACEHOLDER = "Type a path…"
 NODE_PLACEHOLDER = "Filter models, e.g. 5750 4.5 -1"
@@ -67,10 +68,13 @@ class AtmosPicker(FilePicker):
         self._by_path = {}
         self._note = ""
         super().__init__(on_select, container_id, root=root, max_items=max_items)
+        self._grid_work = LatestWork(self._submit_scan, "discover atmosphere grid")
 
     # --- modes ----------------------------------------------------------------
     def set_root(self, root):
         """File mode: list ``root`` (the Individual atmosphere folder)."""
+        if hasattr(self, "_grid_work"):
+            self._grid_work.invalidate()
         self._nodes, self._problem, self._by_path = None, None, {}
         self.query.placeholder = FILE_PLACEHOLDER
         super().set_root(root)
@@ -85,6 +89,22 @@ class AtmosPicker(FilePicker):
         self.root = None
         self.query.value = ""
         self._scan("")
+
+    def set_grid(self, grid, root=None):
+        """Discover a grid away from the document and install only its latest result."""
+        marker = (dict(grid), root)
+
+        def compute(token):
+            try:
+                return grid_nodes(marker[0], marker[1]), None
+            except (OSError, ValueError) as exc:
+                return [], f"Cannot list the grid: {exc}"
+
+        def apply(result):
+            rows, problem = result
+            self.set_nodes(rows, problem)
+
+        self._grid_work.request(compute, apply)
 
     @property
     def node_mode(self):

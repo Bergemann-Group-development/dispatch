@@ -18,17 +18,19 @@ from __future__ import annotations
 import logging
 import html
 
+import astropy.units as u
 import numpy as np
 from bokeh.io import curdoc
 from bokeh.models import ColumnDataSource, PointDrawTool
 from scipy.signal import argrelextrema
 
-from tumult import continuum
+from tumult import Spectrum, continuum
 from tumult.utils import pchip_mono
 
-from canvas import ACCENT
+from canvas import ACCENT, NORM_PERCENTILE
 from controls import Field, Form
 from debounce import Debouncer
+from latestwork import LatestWork
 from tool import Tool, suppress_callbacks
 from units import to_value
 
@@ -51,6 +53,10 @@ class NormaliseTool(Tool):
         self._selection_request = 0
         self._fit_spectrum = None   # rendered spectrum the spline is fit to (smoothed+selected)
         self._debounce = Debouncer(debounce_ms)
+        self._normalise_work = LatestWork(
+            lambda *args: ctx.submit(*args), "normalise continuum",
+            lambda exc: self.notify(f"Continuum normalisation failed: {exc}"),
+            immediate=getattr(ctx.doc, "session_context", None) is None)
 
         # `prenorm` assumes the spectrum is already normalised (continuum ≡ 1) and disables
         # the rest. `res`/`win`/`pct` only shape the rendered spectrum the spline is fit to
@@ -137,6 +143,7 @@ class NormaliseTool(Tool):
         obj = self._obs()
         if obj is None:
             return
+        self._normalise_work.invalidate()
         for key, value in baseline.items():
             setattr(obj, key, value)
         self.form.fields["prenorm"].value = obj.already_normalised
@@ -149,7 +156,7 @@ class NormaliseTool(Tool):
             return
         obj.norm_knots = None
         self._set_knots([], [])
-        self.canvas.normalise_object(obj)   # back to the flat percentile continuum
+        self._recompute(obj)                # back to the flat percentile continuum
         self._render_selection()
         self._redraw_spline(obj)                 # show the flat initial-continuum guide
         self.push_panel()
@@ -179,7 +186,7 @@ class NormaliseTool(Tool):
         if on:
             obj.norm_knots = None
             self._set_knots([], [])
-        self.canvas.normalise_object(obj)
+        self._recompute(obj)
         self._sync_prenorm(obj)
         self.push_panel()
 
@@ -313,7 +320,7 @@ class NormaliseTool(Tool):
             self.push_panel()
 
     def _recompute(self, obj):
-        """Rebuild obj.norm_knots (native) from the on-canvas knots and renormalise."""
+        """Rebuild the full-resolution normalisation away from the document thread."""
         d = self.knots.data
         kx_disp = np.asarray(d.get("x", []), float)
         ky = np.asarray(d.get("y", []), float)
@@ -323,11 +330,61 @@ class NormaliseTool(Tool):
         uniq = np.diff(kx_nat, prepend=-np.inf) > 0   # pchip needs increasing x
         kx_nat, ky = kx_nat[uniq], ky[uniq]
         if kx_nat.size < 2:
-            obj.norm_knots = None
+            knots = None
         else:
-            obj.norm_knots = (kx_nat, ky)
-        self.canvas.normalise_object(obj)
-        self._redraw_spline(obj)
+            knots = (kx_nat, ky)
+        raw = obj.raw
+        source = obj.source
+        already_normalised = obj.already_normalised
+        uid = obj.uid
+        self._redraw_knots(raw, knots, obj.continuum)
+
+        def compute(token):
+            x, y = raw.values
+            token.check()
+            if already_normalised:
+                cont = np.ones_like(y)
+            elif knots is not None:
+                kx, kvals = continuum.merge_knots(
+                    np.asarray(x, float), np.asarray(y, float), base_knots=knots,
+                    percentile=NORM_PERCENTILE)
+                cont = continuum.evaluate(kx, kvals, x)
+            elif source and source[0] in ("run", "synth"):
+                cont = np.ones_like(y)
+            else:
+                cont = continuum.flat_continuum(y, NORM_PERCENTILE)
+            cont = continuum.sanitise(cont)
+            spectrum = Spectrum(raw.xdata, y / cont,
+                                yunit=u.dimensionless_unscaled, xref=raw.xref)
+            return knots, cont, spectrum
+
+        def apply(result):
+            current = self.canvas._find(uid)
+            if current is not obj or current.raw is not raw:
+                return
+            current.norm_knots, current.continuum, current.spectrum = result
+            if current.uid != self.canvas.norm_edit_uid:
+                self.canvas._refresh_object(current)
+            self._redraw_spline(current)
+            self.ctx.workspace_changed()
+
+        self._normalise_work.request(compute, apply)
+
+    def _redraw_knots(self, raw, knots, flat):
+        """Cheap spline preview while the full spectrum is being normalised."""
+        x, _ = raw.values
+        if knots is None:
+            if flat is None or len(x) < 2:
+                self.spline_source.data = dict(x=[], y=[])
+                return
+            xg = np.array([x[0], x[-1]])
+            yg = np.array([flat[0], flat[-1]])
+        else:
+            kx_nat, ky = knots
+            xg = np.linspace(kx_nat.min(), kx_nat.max(), N_SPLINE)
+            yg = pchip_mono(kx_nat, ky)(xg)
+        self.spline_source.data = dict(
+            x=to_value(xg, raw.xunit, self.canvas.xunit), y=yg)
 
     def _redraw_spline(self, obj):
         x, _ = obj.raw.values

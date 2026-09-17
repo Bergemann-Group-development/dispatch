@@ -47,7 +47,7 @@ from tumult.synthesis.snapshot_grid import is_snapshot_grid
 
 import store
 from tumult.synthesis import workflows as synth
-from atmospicker import AtmosPicker, grid_nodes
+from atmospicker import AtmosPicker
 from controls import Field, Form
 from gridmanager import ATMOS_FORMATS
 from htmlbridge import class_bridge, html_bridge, parse_action, pulse
@@ -355,12 +355,7 @@ class SynthSetup:
             self.atmos_picker.set_nodes([], "No atmosphere grid registered")
             return
         root = str(load_prefs().get("dispatch_cwd") or REPO_DIR)
-        try:
-            rows = grid_nodes(grid, root)
-        except (OSError, ValueError) as exc:
-            self.atmos_picker.set_nodes([], f"Cannot list the grid: {exc}")
-            return
-        self.atmos_picker.set_nodes(rows)
+        self.atmos_picker.set_grid(grid, root)
 
     # --- atmosphere UI rendering ------------------------------------------------------
     def grid_ui_html(self):

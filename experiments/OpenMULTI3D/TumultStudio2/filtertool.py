@@ -31,6 +31,7 @@ from canvas import ACCENT, LINE, MUTED, _style
 from controls import Field, Form
 from debounce import Debouncer
 from htmlbridge import pulse, toggle
+from latestwork import LatestWork
 from tumult.spectrum_io import Spectrum
 from tool import Tool, suppress_callbacks
 
@@ -76,6 +77,13 @@ class FilterTool(Tool):
         self._configured = False        # have we picked the default crosshair yet?
         self._suppress = False
         self._debounce = Debouncer(debounce_ms)  # coalesce crosshair-drag refits
+        immediate = getattr(ctx.doc, "session_context", None) is None
+        self._filter_work = LatestWork(lambda *args: ctx.submit(*args), "filter spectrum",
+                                       lambda exc: self.notify(f"Filtering failed: {exc}"),
+                                       immediate=immediate)
+        self._power_work = LatestWork(lambda *args: ctx.submit(*args), "build filter view",
+                                      lambda exc: self.notify(f"Filter view failed: {exc}"),
+                                      immediate=immediate)
 
         # inspector panel: method selector + (low-pass only) cutoff resolution
         self.form = Form("filter", [
@@ -170,9 +178,34 @@ class FilterTool(Tool):
         sel = self.canvas.selected()
         if sel is None:
             return
-        self._build_power_spectra()
-        _, y0, w, d = _prep(sel.spectrum)
-        s, npow = brault_power_spectrum(y0 * w, d)
+        spectra = [(o.uid, o.spectrum, o.uid == self.canvas.selected_uid)
+                   for o in self.canvas.objects]
+        selected_uid = sel.uid
+
+        def compute(token):
+            powers = []
+            for uid, spectrum, selected in spectra:
+                token.check()
+                _, y0, w, d = _prep(spectrum)
+                s, npow = brault_power_spectrum(y0 * w, d)
+                m = (s >= R_MIN) & (s <= R_MAX)
+                powers.append((uid, selected, s[m], npow[m], d))
+            return powers
+
+        def apply(powers):
+            if (not self.active or self.method != Method.BRAULT
+                    or self.canvas.selected_uid != selected_uid
+                    or [o.uid for o in self.canvas.objects] != [row[0] for row in powers]):
+                return
+            self._show_power_spectra(powers)
+            selected = next(row for row in powers if row[0] == selected_uid)
+            self._finish_enter_brault(selected, powers)
+
+        self._power_work.request(compute, apply)
+
+    def _finish_enter_brault(self, selected, powers):
+        """Finish entering the Brault view after its immutable power data arrive."""
+        _, _, s, npow, d = selected
         logp = np.log(np.clip(npow, 1e-300, None))
         nyq = float(s.max())
         if not self._configured:
@@ -189,7 +222,7 @@ class FilterTool(Tool):
             self.fmax = float(np.clip(s[cross][0] if cross.any() else 0.3 * nyq, R_MIN, R_MAX))
             self._configured = True
         # log resolution axis, limited to [R_MIN, R_MAX]
-        xmax = max(0.5 / abs(_prep(o.spectrum)[3]) for o in self.canvas.objects)
+        xmax = max(0.5 / abs(row[4]) for row in powers)
         self.fig.x_range.start, self.fig.x_range.end = R_MIN, min(nyq, R_MAX)
         self.fig.x_range.bounds = (R_MIN, min(max(xmax, nyq), R_MAX))
         # fixed y-range: with auto-range the marker drag rescales the axis (jumpy).
@@ -205,6 +238,8 @@ class FilterTool(Tool):
     def deactivate(self):
         """Leave the filter mode; the filter stays applied (clear() removes it)."""
         self.active = False
+        self._power_work.invalidate()
+        self._filter_work.invalidate()
         pulse(self._view_bridge, "off")
         self.push_mode("off")
 
@@ -227,6 +262,7 @@ class FilterTool(Tool):
         toggle(self._has_bridge, exists)
         toggle(self._check_bridge, visible)
         self.ctx.emit("filter-state", exists=exists, visible=visible)
+        self.ctx.workspace_changed()
 
     def update(self):
         """From main.update_all: keep the view in sync when the workspace changes."""
@@ -235,8 +271,7 @@ class FilterTool(Tool):
         if self.method == Method.LOWPASS:
             self._apply_lowpass()
         else:
-            self._build_power_spectra()
-            self._refit_apply()
+            self._enter_brault()
 
     # --- inspector panel --------------------------------------------------
     def _on_field(self, key, value):
@@ -277,28 +312,38 @@ class FilterTool(Tool):
         self._lowpass_filtered(res)
 
     def _lowpass_filtered(self, res):
-        filtered = {obj.uid: obj.spectrum.lowpass(res) for obj in self.canvas.objects}
-        self.canvas.apply_filter(filtered)
-        self._emit_state()
+        spectra = [(obj.uid, obj.spectrum) for obj in self.canvas.objects]
+        uids = [uid for uid, _ in spectra]
+
+        def compute(token):
+            out = {}
+            for uid, spectrum in spectra:
+                token.check()
+                out[uid] = spectrum.lowpass(res)
+            return out
+
+        def apply(filtered):
+            if [obj.uid for obj in self.canvas.objects] != uids:
+                return
+            self.canvas.apply_filter(filtered)
+            self._emit_state()
+
+        self._filter_work.request(compute, apply)
 
     # --- power-spectrum display -------------------------------------------
-    def _build_power_spectra(self):
+    def _show_power_spectra(self, powers):
+        """Install already-computed power spectra on the document thread."""
         self.fig.renderers = [r for r in self.fig.renderers
                               if r not in self._lines.values()]
         self._sources.clear()
         self._lines.clear()
-        for obj in self.canvas.objects:
-            _, y0, w, d = _prep(obj.spectrum)
-            s, npow = brault_power_spectrum(y0 * w, d)
-            m = (s >= R_MIN) & (s <= R_MAX)
-            s, npow = s[m], npow[m]
+        for uid, sel, s, npow, _ in powers:
             step = max(1, len(s) // N_DISPLAY)
             src = ColumnDataSource(dict(x=s[::step], y=npow[::step]))
-            sel = obj.uid == self.canvas.selected_uid
             r = self.fig.line("x", "y", source=src, color=LINE if sel else MUTED,
                               line_width=1.5 if sel else 1, line_alpha=1.0 if sel else 0.5)
-            self._sources[obj.uid] = src
-            self._lines[obj.uid] = r
+            self._sources[uid] = src
+            self._lines[uid] = r
 
     # --- crosshair drag -> debounced refit --------------------------------
     @suppress_callbacks
@@ -356,33 +401,40 @@ class FilterTool(Tool):
         sel = self.canvas.selected()
         if sel is None:
             return
-        _, y0_sel, w_sel, d_sel = _prep(sel.spectrum)
-        try:
+        selected_uid = sel.uid
+        spectra = [(obj.uid, obj.spectrum) for obj in self.canvas.objects]
+        uids = [uid for uid, _ in spectra]
+
+        def compute(token):
+            selected = next(spectrum for uid, spectrum in spectra if uid == selected_uid)
+            _, y0_sel, w_sel, d_sel = _prep(selected)
+            token.check()
             _, s, _, model, popt, _ = apply_brault_filter(
                 y0_sel * w_sel, d_sel, fmax=fmax, noise_floor=floor)
-        except Exception:
-            logging.exception("Brault fit failed")
-            return
+            m = (s >= R_MIN) & (s <= R_MAX)
+            sm, modm = s[m], model[m]
+            Hm = brault_filter_H(sm, popt)
+            filtered = {}
+            for uid, spectrum in spectra:
+                token.check()
+                xx, y0, w, d = _prep(spectrum)
+                y_smooth = apply_brault_popt(y0 * w, d, popt)
+                fy = y_smooth + (1.0 - w) * y0 + 1.0
+                filtered[uid] = Spectrum(xx, fy, xunit=spectrum.xunit,
+                                         yunit=spectrum.yunit,
+                                         xref=getattr(spectrum, "xref", None))
+            return sm, modm, Hm, filtered
 
-        m = (s >= R_MIN) & (s <= R_MAX)
-        sm, modm = s[m], model[m]
-        Hm = brault_filter_H(sm, popt)
-        step = max(1, len(sm) // N_DISPLAY)
-        self.model_source.data = dict(x=sm[::step],
-                                      y=np.clip(modm[::step], 1e-300, None))
-        self.h_source.data = dict(x=sm[::step],
-                                  y=np.clip((modm * Hm)[::step], 1e-300, None))
+        def apply(result):
+            if [obj.uid for obj in self.canvas.objects] != uids:
+                return
+            sm, modm, hm, filtered = result
+            step = max(1, len(sm) // N_DISPLAY)
+            self.model_source.data = dict(x=sm[::step],
+                                          y=np.clip(modm[::step], 1e-300, None))
+            self.h_source.data = dict(x=sm[::step],
+                                      y=np.clip((modm * hm)[::step], 1e-300, None))
+            self.canvas.apply_filter(filtered)
+            self._emit_state()
 
-        filtered = {}
-        for obj in self.canvas.objects:
-            xx, y0, w, d = _prep(obj.spectrum)
-            y_smooth = apply_brault_popt(y0 * w, d, popt)
-            # reverse the edge taper: subtract the (already-tapered) removed noise, so the
-            # interior is filtered and the edges keep the original. y_smooth already
-            # carries the w factor, so it must NOT be multiplied by w again.
-            fy = y_smooth + (1.0 - w) * y0 + 1.0
-            filtered[obj.uid] = Spectrum(xx, fy, xunit=obj.spectrum.xunit,
-                                         yunit=obj.spectrum.yunit,
-                                         xref=getattr(obj.spectrum, "xref", None))
-        self.canvas.apply_filter(filtered)
-        self._emit_state()
+        self._filter_work.request(compute, apply)

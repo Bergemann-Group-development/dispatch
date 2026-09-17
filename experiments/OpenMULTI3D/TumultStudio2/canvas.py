@@ -9,7 +9,7 @@ converted to the chosen display units.
 from __future__ import annotations
 
 import logging
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 
 import astropy.units as u
 import numpy as np
@@ -109,6 +109,8 @@ class SpectrumCanvas:
         self.marker_threshold = marker_threshold
         self._debounce = Debouncer(debounce_ms)  # coalesce range-driven redraws
         self.on_change = on_change  # called with the object list whenever it changes
+        self._batch_depth = 0
+        self._batch_changed = False
         self._view_listeners = []   # called after every main-view redraw (see add_view_listener)
 
         # x display unit starts at the first spectrum's native unit (Å when the canvas
@@ -336,6 +338,10 @@ class SpectrumCanvas:
         if select or first:
             self.selected_uid = obj.uid
 
+        if self._batch_depth:
+            self._batch_changed = True
+            return obj
+
         lo, hi = self.display_bounds()
         self.main.x_range.bounds = (lo, hi)
         self.nav.x_range.bounds = (lo, hi)
@@ -374,6 +380,9 @@ class SpectrumCanvas:
         obj.visible = not obj.visible
         obj.line.visible = obj.visible
         obj.nav_line.visible = obj.visible
+        if self._batch_depth:
+            self._batch_changed = True
+            return
         if obj.visible:
             self._refresh_object(obj)
         else:
@@ -405,6 +414,9 @@ class SpectrumCanvas:
         self.objects.remove(obj)
         if self.selected_uid == uid:
             self.selected_uid = self.objects[0].uid if self.objects else None
+        if self._batch_depth:
+            self._batch_changed = True
+            return
         if self.objects:
             lo, hi = self.display_bounds()
             self.main.x_range.bounds = (lo, hi)
@@ -419,6 +431,32 @@ class SpectrumCanvas:
             self._refresh_nav()
         if self.on_change:
             self.on_change(self)
+
+    @contextmanager
+    def batch_update(self):
+        """Coalesce collection bounds, redraws and ``on_change`` across bulk edits."""
+        self._batch_depth += 1
+        try:
+            yield self
+        finally:
+            self._batch_depth -= 1
+            if not self._batch_depth and self._batch_changed:
+                self._batch_changed = False
+                if self.objects:
+                    lo, hi = self.display_bounds()
+                    self.main.x_range.bounds = (lo, hi)
+                    self.nav.x_range.bounds = (lo, hi)
+                    self.nav.x_range.start, self.nav.x_range.end = lo, hi
+                    start, end = self.main.x_range.start, self.main.x_range.end
+                    if start is None or end is None or start >= hi or end <= lo:
+                        self.main.x_range.start, self.main.x_range.end = lo, hi
+                    else:
+                        self.main.x_range.start = max(lo, start)
+                        self.main.x_range.end = min(hi, end)
+                    self._refresh_main()
+                    self._refresh_nav()
+                if self.on_change:
+                    self.on_change(self)
 
     def restore_object(self, obj, index, select=False):
         """Put back ``obj``, which :meth:`remove_object` took out, at list position

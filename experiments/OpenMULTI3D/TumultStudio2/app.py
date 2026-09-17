@@ -69,6 +69,7 @@ from jobs import (ExternalRun, Job, Recoverable, QUEUED, RUNNING, CANCELLING, FI
 import processes  # noqa: E402
 from processes import processes_html  # noqa: E402
 from debounce import Trailing  # noqa: E402
+from latestwork import LatestWork  # noqa: E402
 from units import X_UNITS, Y_UNITS, to_range  # noqa: E402
 from tumult import linestrength
 from tumult.synthesis.runtime import (IO as _EXEC, WORKFLOWS as _SYNTH_EXEC, HOP as _HOP_EXEC,
@@ -469,24 +470,26 @@ def build():
             return kind, atomtool.selected_uid
         return kind, wizards[FOCUS_TOOL[kind]].selected_uid
 
+    def update_status():
+        """Refresh job/loading surfaces without invalidating scientific tool state."""
+        repaint_processes()
+        footer_bridge.value = footer_html(canvas)
+        active = bool(jobs.active)
+        toggle(loading_bridge, active)
+        toggle(empty_bridge, not canvas.objects
+               and not any(job.delivers for job in jobs.active))
+        if picker is not None:
+            picker.refresh_busy()  # a load settled or was cancelled: stop its row spinning
+
     def update_all(canvas):
         objects_bridge.value = objects_panel_html(canvas, ctx.focus_kind)
         if edit_menu is not None:
             edit_menu.render()
-        repaint_processes()
+        update_status()
         inspector_bridge.value = inspector_html(canvas)
-        footer_bridge.value = footer_html(canvas)
         synth_modal.refresh_targets()  # keep the fit target dropdown in sync
-        active = bool(jobs.active)
-        toggle(loading_bridge, active)
-        # show the inline session loader while the canvas holds nothing (and nothing
-        # is on its way in; a grid download or listing delivers nothing to the canvas)
-        toggle(empty_bridge, not canvas.objects
-               and not any(job.delivers for job in jobs.active))
         if inspector is not None:
             inspector.bind(canvas.selected())
-        if picker is not None:
-            picker.refresh_busy()  # a load settled or was cancelled: stop its row spinning
         ctx.emit("changed")  # EW / Filter / Normalise (and future tools) resync themselves
         if ctx.annot is not None:
             ctx.annot.resync()   # a different object may be a different star (linestrength)
@@ -981,10 +984,11 @@ def build():
             w.blur()
         ctx.focus_kind = "spectrum"
         filtertool.clear()
-        for o in list(canvas.objects):
-            canvas.remove_object(o.uid)
-        for ps in p.spectra:
-            _place_spectrum(ps)
+        with canvas.batch_update():
+            for o in list(canvas.objects):
+                canvas.remove_object(o.uid)
+            for ps in p.spectra:
+                _place_spectrum(ps)
         canvas.selected_uid = p.spectrum_selected     # None when none was, or it is gone
         mask_store.restore(p.mask_sets, p.mask_current, p.mask_active)
         atomtool.atoms = [AtomObject(path=a.snap.path, atom=a.atom, uid=a.snap.uid)
@@ -1046,21 +1050,10 @@ def build():
         _restore_range(canvas.nav.y_range, v.nav_y)
         update_all(canvas)
 
-    def restore_workspace(snap, name="save", workflows=()):
-        """Load a slot as one document operation. The slot is validated and its objects
-        built first (a broken slot changes nothing); the commit then marks a workspace
-        boundary (new generation, old result subscriptions forgotten, this document's
-        non-detached jobs cancelled) and replaces every collection. If applying fails,
-        the previous workspace is put back. The slot's ``workflows`` references then
-        replace this document's (see ``_reattach``). Returns the
-        :class:`session.LoadReport`, or ``None`` when nothing was loaded."""
-        try:
-            prepared = prepare_workspace(snap)
+    def _commit_workspace(prepared, name="save", workflows=(), live=None):
+        """Commit an already-prepared slot on the document thread with rollback."""
+        if live is None:
             live = _capture_live()
-        except Exception as exc:      # SessionError names the field; anything else is logged
-            logging.exception("The saved workspace %r cannot be loaded", name)
-            notify(f"Could not load “{name}”: {exc}", level="danger", revert_ms=10000)
-            return None
         ctx.advance_generation()
         cancelled = [job.name for job in jobs.active if not job.detached]
         for job in list(jobs.active):
@@ -1091,6 +1084,25 @@ def build():
                revert_ms=12000 if report.partial else 4000)
         return report
 
+    def restore_workspace(snap, name="save", workflows=()):
+        """Load a slot synchronously (used by local harnesses).
+
+        The interactive session action prepares through :func:`load_async`; both paths
+        use the same validated commit and rollback below. The commit marks a workspace
+        boundary (new generation, old result subscriptions forgotten, this document's
+        non-detached jobs cancelled) and replaces every collection. If applying fails,
+        the previous workspace is put back. The slot's ``workflows`` references then
+        replace this document's (see ``_reattach``). Returns the
+        :class:`session.LoadReport`, or ``None`` when nothing was loaded."""
+        try:
+            prepared = prepare_workspace(snap)
+            live = _capture_live()
+        except Exception as exc:      # SessionError names the field; anything else is logged
+            logging.exception("The saved workspace %r cannot be loaded", name)
+            notify(f"Could not load “{name}”: {exc}", level="danger", revert_ms=10000)
+            return None
+        return _commit_workspace(prepared, name, workflows, live)
+
     ctx.restore_workspace = restore_workspace   # local harnesses load slots through it
 
     # --- background work: a Processes row now, the outcome delivered on the document ----
@@ -1115,7 +1127,7 @@ def build():
         log.exception("%s (job %d) could not be admitted", job.name, job.pid)
         jobs.settle(job.pid, FAILED, error=f"{type(exc).__name__}: {exc}")
         notify(f"{job.name} could not start: {exc} — see Processes", level="danger")
-        update_all(canvas)
+        update_status()
 
     def load_async(name, loader, on_done, executor=_EXEC, path=None, detached=False,
                    delivers=True):
@@ -1126,7 +1138,7 @@ def build():
         job = _admit(name, heavy=executor is _SYNTH_EXEC, detached=detached, path=path,
                      delivers=delivers)
         token = job.token                # the loader threads it into synth.* for hard cancel
-        update_all(canvas)               # show the queued row immediately
+        update_status()                  # show the queued row immediately
 
         def work():                      # runs in a worker thread
             if token.cancelled:          # cancelled before the worker even started
@@ -1134,7 +1146,7 @@ def build():
                 return
             if job.state == QUEUED:
                 job.state, job.started = RUNNING, time.time()
-                ctx.schedule(lambda: update_all(canvas))
+                ctx.schedule(update_status)
             try:
                 result = profiled(name, lambda: loader(token))
             except synth.CancelledError:
@@ -1164,6 +1176,23 @@ def build():
                                                             delivers=False)
     ctx.execution = _get_runtime()
 
+    def restore_workspace_async(snap, name="save", workflows=(), on_done=None):
+        """Prepare a saved workspace on a worker, then commit the current generation."""
+        try:
+            live = _capture_live()
+        except Exception as exc:
+            logging.exception("The current workspace could not be captured")
+            notify(f"Could not start loading “{name}”: {exc}", level="danger")
+            return None
+
+        def prepared(value):
+            report = _commit_workspace(value, name, workflows, live)
+            if report is not None and on_done is not None:
+                on_done(report)
+
+        return load_async(f"load {name}", lambda token: prepare_workspace(snap), prepared,
+                          executor=_EXEC)
+
     def _import_result(handle):
         """The delivery of a workflow this document did not submit: a synthesis adds
         every spectrum of its result under the name and annotations recorded at
@@ -1176,9 +1205,10 @@ def build():
             return lambda result: importer(result, handle)
 
         def deliver(result):
-            for index, spec in enumerate(result.spectra, start=1):
-                suffix = f"·{index}" if len(result.spectra) > 1 else ""
-                add_synth(spec, handle.label + suffix, meta=handle.meta)
+            with canvas.batch_update():
+                for index, spec in enumerate(result.spectra, start=1):
+                    suffix = f"·{index}" if len(result.spectra) > 1 else ""
+                    add_synth(spec, handle.label + suffix, meta=handle.meta)
         return deliver
 
     def _import_progress(handle):
@@ -1293,7 +1323,9 @@ def build():
         # workflow's late outcome from a wanted one the same way it does for loads
         job.token.add_callback(handle.cancel)
         ctx.workflow_refs.attach(handle, name)
-        update_all(canvas)
+        update_status()
+        if autosave is not None:
+            autosave()
         _subscribe(job, handle, on_done, on_error)
         _follow_progress(job, handle, on_progress)
         return job
@@ -1515,7 +1547,9 @@ def build():
         pulse(job_modal, "close")
         _subscribe(job, handle, deliver)
         _follow_progress(job, handle, _import_progress(handle))
-        update_all(canvas)
+        update_status()
+        if autosave is not None:
+            autosave()
         return job
 
     def import_workflow(workflow_id):
@@ -1527,7 +1561,7 @@ def build():
         if ctx.workflow_refs.imported(workflow_id):
             notify(f"{handle.label} was already imported", level="warn")
             ctx.recovery.forget(workflow_id)
-            update_all(canvas)
+            update_status()
             return None
         try:
             deliver = _import_result(handle)
@@ -1546,7 +1580,7 @@ def build():
     def forget_workflow(workflow_id):
         if ctx.recovery.forget(workflow_id) is not None:
             recovery_bridge.value = processes.recovery_html(ctx.recovery)
-            update_all(canvas)
+            update_status()
 
     def _reattach(refs):
         """Adopt a loaded slot's workflow references: a live one is followed again (a job
@@ -1585,8 +1619,6 @@ def build():
     ctx.import_workflow = import_workflow
 
     def session_closed(session_context):
-        autosave(now=True)      # the document's last state, for Resume last session
-        ctx.closed = True
         # Closing a tab cancels this document's work (loads, fits, analysis jobs), except
         # the jobs that asked not to be: every synthesis is a durable workflow that keeps
         # running and writes its record and result under its `_workflows/` folder, where
@@ -1594,6 +1626,10 @@ def build():
         for job in jobs.active:
             if not job.detached:
                 jobs.request_cancel(job.pid)
+        # Cancel a queued older autosave before the synchronous durability boundary. If it
+        # is already writing, the store lock orders this newer snapshot after it.
+        autosave(now=True)      # the document's last state, for Resume last session
+        ctx.closed = True
         if live_view["unwatch"] is not None:
             live_view["unwatch"]()
 
@@ -1631,7 +1667,7 @@ def build():
                     except Exception as err:
                         log.exception("Failed to add %s (job %d)", job.name, job.pid)
                         notify(f"{job.name} could not be added: {err}", level="danger")
-            update_all(canvas)               # clear the spinner (and show the new object)
+            update_status()                  # clear the spinner without broad invalidation
 
         if ctx.closed:
             apply()                      # no document to deliver to: record only
@@ -1654,7 +1690,7 @@ def build():
         job = jobs.request_cancel(pid)
         if job is None:
             return
-        update_all(canvas)
+        update_status()
         if job.terminal:
             notify(f"Cancelled {job.name}", level="info")
         else:
@@ -1667,7 +1703,7 @@ def build():
         except (TypeError, ValueError):
             return
         if jobs.dismiss(pid) is not None:
-            update_all(canvas)
+            update_status()
 
     def on_select(filepath):
         remember_recent(filepath)
@@ -1790,24 +1826,48 @@ def build():
     # the operation that triggered it.
     AUTOSAVE_DELAY_MS = 2000
     autosave_delay = Trailing(AUTOSAVE_DELAY_MS)
-    autosaved = {"snapshot": None}
+    autosaved = {"snapshot": None, "requested": None}
+    def autosave_failed(exc):
+        autosaved["requested"] = None
+        logging.error("Autosave failed: %s", exc)
+    autosave_work = LatestWork(
+        lambda *args: ctx.submit_io(*args), "autosave workspace",
+        autosave_failed, immediate=getattr(ctx.doc, "session_context", None) is None)
 
-    def write_autosave():
+    def write_autosave(synchronous=False):
         try:
             snap = snapshot()
-            if session.is_blank(snap) or snap == autosaved["snapshot"]:
+            if (session.is_blank(snap) or snap == autosaved["snapshot"]
+                    or snap == autosaved["requested"]):
                 return
-            store.save_autosave(snap, workflows=ctx.workflow_refs.to_list())
-            autosaved["snapshot"] = snap
+            workflows = ctx.workflow_refs.to_list()
+            if synchronous:
+                store.save_autosave(snap, workflows=workflows)
+                autosaved["snapshot"] = snap
+                return
+            autosaved["requested"] = snap
+
+            def work(token):
+                store.save_autosave(snap, workflows=workflows)
+                return snap
+
+            def done(saved):
+                autosaved["snapshot"] = saved
+                if autosaved["requested"] == saved:
+                    autosaved["requested"] = None
+
+            autosave_work.request(work, done)
         except Exception:
             logging.exception("Autosave failed")
 
     def autosave(now=False):
         if now:
             autosave_delay.cancel("autosave")
-            write_autosave()
+            write_autosave(synchronous=True)
         else:
             autosave_delay("autosave", write_autosave)
+
+    ctx.workspace_changed = autosave
 
     def on_session_action(attr, old, new):
         if not new:
@@ -1819,15 +1879,21 @@ def build():
         # live workspace stays as it is so the user can retry after fixing the cause.
         if kind == "save":
             name = arg.strip() or time.strftime("Save %Y-%m-%d %H:%M")
-            try:
-                store.save_session(name, snapshot(), workflows=ctx.workflow_refs.to_list())
-            except store.ConfigError as exc:
-                logging.exception("Could not save the session %r", name)
-                notify(f"Save “{name}” failed: {exc}", level="danger")
-                return
-            saved_workspace["snapshot"] = snapshot()
-            render_sessions()
-            notify(f"Saved “{name}”", level="success")
+            snap = snapshot()
+            workflows = ctx.workflow_refs.to_list()
+
+            def saved(slot):
+                saved_workspace["snapshot"] = snap
+                render_sessions()
+                notify(f"Saved “{name}”", level="success")
+
+            if getattr(ctx.doc, "session_context", None) is None:
+                saved(store.save_session(name, snap, workflows=workflows))
+            else:
+                ctx.submit_io(f"save {name}",
+                              lambda token: store.save_session(name, snap,
+                                                               workflows=workflows),
+                              saved)
         elif kind in ("load", "load-discard", "load-save"):
             if kind == "load" and snapshot() != saved_workspace["snapshot"]:
                 saved_workspace["pending"] = arg
@@ -1855,11 +1921,18 @@ def build():
                 notify("That save is no longer available.", level="danger")
                 render_sessions()
             else:
-                report = restore_workspace(slot["snapshot"], slot["name"], slot["workflows"])
-                if report is not None:
+                def loaded(report):
                     saved_workspace["snapshot"] = snapshot()
                     saved_workspace["pending"] = None
                     pulse(sessions_dialog, "close")
+                if getattr(ctx.doc, "session_context", None) is None:
+                    report = restore_workspace(slot["snapshot"], slot["name"],
+                                               slot["workflows"])
+                    if report is not None:
+                        loaded(report)
+                else:
+                    restore_workspace_async(slot["snapshot"], slot["name"],
+                                            slot["workflows"], loaded)
         elif kind == "delete":
             try:
                 found = store.delete_session(int(arg))

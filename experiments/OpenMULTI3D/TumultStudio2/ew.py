@@ -8,18 +8,15 @@ width and reduced width into the tool's sidebar panel. Changing a field recomput
 """
 from __future__ import annotations
 
-import logging
-
 import astropy.units as u
 import numpy as np
 from bokeh.models import ColumnDataSource
 
 from tumult.profile import profile_names
-from tumult.utils import fit_line_profile
-
 from tumult import abundance as ab
 from controls import num_input
-from units import to_range
+from latestwork import LatestWork
+from units import to_range, to_value
 
 ACCENT = "#4a90e2"
 
@@ -52,6 +49,9 @@ class EquivalentWidth:
         self.snr = None
         self.cont_pct = 0.0
         self._fit = None          # (profile, func, xd, yd, a, b) for redrawing
+        self._work = LatestWork(lambda *args: ctx.submit(*args), "measure equivalent width",
+                                lambda exc: self.notify(f"Equivalent width failed: {exc}"),
+                                immediate=getattr(ctx.doc, "session_context", None) is None)
 
         # integrated-area hatch + its continuum/profile boundary
         self.area_source = ColumnDataSource(dict(x=[], y1=[], y2=[]))
@@ -172,44 +172,45 @@ class EquivalentWidth:
             self.area_source.data = dict(x=[], y1=[], y2=[])
             return
         spec = self.canvas.effective(obj)  # filtered or unfiltered, per the canvas state
-        try:
-            x0, x1 = self.selection
-            native = spec.xunit
-            b0, b1 = to_range(x0, x1, self.canvas.xunit, native)
+        x0, x1 = self.selection
+        native = spec.xunit
+        display_xunit, display_yunit = self.canvas.xunit, self.canvas.yunit
+        profile, snr, cont_pct = self.profile, self.snr, self.cont_pct
+        selection = self.selection
+
+        def compute(token):
+            b0, b1 = to_range(x0, x1, display_xunit, native)
             sub = spec.crop(xmin=b0, xmax=b1)
             if len(sub) < 3:
-                self.notify("Selected range is too narrow to measure an equivalent width.")
-                return
-            # measure the width, reduced EW and (when SNR / continuum-% are set) the error split
-            # through the same primitive the abundance wizards use, so the numbers agree exactly.
-            prof = ab.measure_ew(sub, snr=self.snr, cont_pct=self.cont_pct,
-                                 profile=self.profile, x0=0.5 * (b0 + b1))
-            self._weq = prof.maa
-            self._weq_err = prof.width_err_maa
-            self._rew = prof.rew
-
-            disp = sub.convert_units(xunit=self.canvas.xunit, yunit=self.canvas.yunit)
+                return "narrow", None
+            token.check()
+            prof = ab.measure_ew(sub, snr=snr, cont_pct=cont_pct,
+                                 profile=profile, x0=0.5 * (b0 + b1))
+            disp = sub.convert_units(xunit=display_xunit, yunit=display_yunit)
             xd, yd = disp.values
             if xd[0] > xd[-1]:
                 xd, yd = xd[::-1], yd[::-1]
             a, b = min(x0, x1), max(x0, x1)
-            func = None
-            if self.profile != "trapz":
-                try:
-                    _, _, func = fit_line_profile(xd, yd, x0=0.5 * (a + b),
-                                                  profile=self.profile)
-                except ValueError:
-                    func = None    # no profile in this range: hatch the data itself
-            self._fit = dict(profile=self.profile, func=func, xd=xd, yd=yd, a=a, b=b)
+            fit = dict(profile=profile, func=prof.func if prof.fitted else None,
+                       native=native, display_xunit=display_xunit,
+                       xd=xd, yd=yd, a=a, b=b)
+            return "ok", (prof.maa, prof.width_err_maa, prof.rew, fit)
+
+        def apply(outcome):
+            if (self.selection != selection or self.profile != profile or self.snr != snr
+                    or self.cont_pct != cont_pct or self.target() is not obj):
+                return
+            status, value = outcome
+            if status == "narrow":
+                self.notify("Selected range is too narrow to measure an equivalent width.")
+                return
+            self._weq, self._weq_err, self._rew, self._fit = value
             self._redraw()
-        except ValueError as exc:
-            # a range without a fittable line (continuum, a blend the profile rejects): the
-            # measurement is undefined, which is a state of the panel, not an error
-            self._weq = self._rew = self._weq_err = self._fit = None
-            self.area_source.data = dict(x=[], y1=[], y2=[])
-            self.notify(f"No equivalent width in this range: {exc}")
-        except Exception:
-            logging.exception("Equivalent width computation failed")
+            tool = self.ctx.tools._tools.get("range")
+            if tool is not None and tool.active:
+                tool.push_panel()
+
+        self._work.request(compute, apply)
 
     def _redraw(self):
         """trapz hatches only the selection; fitted profiles span the whole canvas."""
@@ -225,6 +226,10 @@ class EquivalentWidth:
                 return
             lo, hi = min(r.start, r.end), max(r.start, r.end)
             xg = np.linspace(lo, hi, 512)
-            y1 = f["func"](xg) if f["func"] is not None else np.interp(xg, f["xd"], f["yd"])
+            if f["func"] is not None:
+                native_x = to_value(xg, f["display_xunit"], f["native"])
+                y1 = f["func"](native_x)
+            else:
+                y1 = np.interp(xg, f["xd"], f["yd"])
         self.area_source.data = dict(x=xg, y1=np.asarray(y1, dtype=float),
                                      y2=np.ones_like(xg))
