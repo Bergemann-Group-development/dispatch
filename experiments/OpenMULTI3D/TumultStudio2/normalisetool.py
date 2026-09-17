@@ -98,8 +98,7 @@ class NormaliseTool(Tool):
         self._uid = None
         self.spline_line.visible = False
         self.knot_glyph.visible = False
-        if self.main.toolbar.active_drag is self.draw:
-            self.main.toolbar.active_drag = "auto"
+        self.canvas.release_edit_tool(self.draw)
         self.canvas.set_norm_edit(None)      # back to the normalised view
         self._restore_range()
         self.push_mode("off")
@@ -134,7 +133,10 @@ class NormaliseTool(Tool):
         on = obj.already_normalised
         self.spline_line.visible = not on
         self.knot_glyph.visible = not on
-        self.main.toolbar.active_drag = "auto" if on else self.draw
+        if on:
+            self.canvas.release_edit_tool(self.draw)
+        else:
+            self.canvas.claim_edit_tool(self.draw)
         if on:
             self.canvas.set_norm_view(None)      # show the (already-normalised) raw spectrum
         else:

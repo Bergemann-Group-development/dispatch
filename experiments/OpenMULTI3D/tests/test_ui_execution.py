@@ -2163,38 +2163,22 @@ def test_the_details_modal_shows_a_workflow_record(tmp_path, monkeypatch):
     assert 'data-copy="w1"' in body
 
 
-def test_main_y_fit_tracks_only_spectrum_renderers():
-    """canvas.main.y_range (a DataRange1d, only_visible=True) must stay pinned to the loaded
-    spectra: a decorative overlay left out of it can move freely without perturbing the
-    y-fit (the local-continuum markers' bug - see test_measurement_continuum_markers_keep_-
-    target_coordinates), while a renderer registered through include_in_y_fit (the
-    abundance-correction tool's own reference spectrum) does count, and the fit never
-    reverts to Bokeh's "auto-include everything" empty-list sentinel once every object is
-    removed."""
-    from bokeh.models import ColumnDataSource
-    from canvas import SpectrumCanvas
-
-    canvas = SpectrumCanvas()
-    assert canvas.main.y_range.renderers == [canvas.norm_raw_line]
-
-    xx = np.linspace(5000., 5010., 20)
-    obj = canvas.add_object(Spectrum(xx, np.ones_like(xx)), name='s1')
-    assert set(canvas.main.y_range.renderers) == {canvas.norm_raw_line, obj.line, obj.markers}
-
-    # A decorative overlay glyph is not tracked by default.
-    src = ColumnDataSource(dict(x=[], y=[]))
-    overlay = canvas.main.line('x', 'y', source=src, visible=False)
-    assert overlay not in canvas.main.y_range.renderers
-
-    # include_in_y_fit / exclude_from_y_fit toggle membership explicitly (what
-    # abundcorrtool.AbundCorrTool uses for its own reference spectrum).
-    canvas.include_in_y_fit(overlay)
-    assert overlay in canvas.main.y_range.renderers
-    canvas.exclude_from_y_fit(overlay)
-    assert overlay not in canvas.main.y_range.renderers
-
+def test_main_y_fit_leaves_room_for_annotations_but_not_edit_markers():
+    """The main y-fit makes room for what must be seen in full (spectra, a fit's synthetic
+    lines, the line annotations) but ignores draggable markers, which would otherwise widen
+    it to every point they are dragged to."""
+    document, ctx = _build_document()
+    canvas = ctx.canvas
+    fit = canvas.main.y_range.renderers
+    assert ctx.annot.elbows in fit and canvas.abund_overlay_line in fit
+    assert ctx.tools._tools['abundance'].continuum_markers not in fit
+    obj = canvas.add_object(Spectrum(np.linspace(5000., 5010., 20), np.ones(20)), name='s1')
+    assert obj.line in canvas.main.y_range.renderers
     canvas.remove_object(obj.uid)
-    assert canvas.main.y_range.renderers == [canvas.norm_raw_line]   # never reverts to []
+    assert obj.line not in canvas.main.y_range.renderers
+    assert canvas.main.y_range.renderers   # never Bokeh's "every renderer" sentinel
+    for callback in list(document.session_destroyed_callbacks):
+        callback(None)
 
 
 @pytest.mark.parametrize('tool_name', ['abundance', 'ionbal'])
@@ -2222,6 +2206,7 @@ def test_measurement_continuum_markers_keep_target_coordinates(tool_name):
     tool.results.append(res)
     ctx.tools.activate(tool_name)
     tool.select_result(res.uid)
+    tapped_before = ctx.canvas.main.toolbar.active_tap
     tool.actions.value = 'continuum:0:1'
     assert ln.renorm and tool.continuum_markers.visible
     assert 'line-continuum-chk' in tool.table_html(res)
@@ -2229,7 +2214,11 @@ def test_measurement_continuum_markers_keep_target_coordinates(tool_name):
     # main.y_range.renderers restricted to actual spectra): were they included, every point
     # they moved to would widen the range to include it, and a vertical drag would look like
     # it did nothing (the axis keeps rescaling to chase the point being dragged).
-    assert tool.continuum_markers not in ctx.canvas._y_fit_renderers
+    # BokehJS activates the tap gesture after the drag one, so a point-drawing tool (which
+    # handles taps too) only stays active when it holds both
+    toolbar = ctx.canvas.main.toolbar
+    assert toolbar.active_drag is tool.continuum_drag
+    assert toolbar.active_tap is tool.continuum_drag
     ew = ln.ew
     # An attempted horizontal drag is snapped back to the synth-window edge; the vertical
     # component is free to move the local continuum level.
@@ -2243,5 +2232,6 @@ def test_measurement_continuum_markers_keep_target_coordinates(tool_name):
         np.testing.assert_array_equal(original, current)
     tool.deactivate()
     assert not tool.continuum_markers.visible
+    assert toolbar.active_drag == 'auto' and toolbar.active_tap is tapped_before
     for callback in list(document.session_destroyed_callbacks):
         callback(None)

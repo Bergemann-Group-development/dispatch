@@ -161,15 +161,16 @@ class SpectrumCanvas:
         self.nav = nav
 
         # The main y-fit (only_visible=True above) auto-includes every glyph renderer added
-        # to `main` by default; overlays that are not spectra (line/window highlights, the
-        # abundance fit overlay and hatch, a tool's editable markers) would perturb it as they
-        # move, the same feedback loop the BoxAnnotation comment below describes for windows.
-        # Pin `main.y_range.renderers` to a tracked list instead - only real spectra participate
-        # (the loaded objects, added below, plus whatever `include_in_y_fit` registers, e.g.
-        # the abundance-correction tool's own reference). `norm_raw_line` seeds the list so it
-        # never reverts to empty (Bokeh's "auto-include everything" sentinel) once every object
-        # is removed.
+        # to `main` by default, so a tool's editable markers would widen it to every point
+        # they are dragged to. `main.y_range.renderers` is pinned to a tracked list instead:
+        # the loaded objects (added below) plus whatever `include_in_y_fit` registers, i.e.
+        # other spectra (a fit's synthetic lines, the correction tool's reference) and the
+        # line annotations, which need the fit to make room for them. `norm_raw_line` seeds
+        # the list so it never reverts to empty (Bokeh's "auto-include everything" sentinel)
+        # once every object is removed.
         self._y_fit_renderers = []
+        self._edit_tool = None      # the point-editing tool holding the gestures, if any
+        self._edit_tap = None       # the tap gesture it replaced
 
         # faint copy of the original raw spectrum, drawn behind the edited one during
         # continuum normalisation so the smoothing/selection can be compared against it
@@ -187,6 +188,7 @@ class SpectrumCanvas:
         self.abund_overlay_line = main.line("x", "y", source=self.abund_overlay_source,
                                             color=SYNTH_FIT, line_width=1.5, line_dash="dashed",
                                             level="overlay", visible=False)
+        self.include_in_y_fit(self.abund_overlay_line)
 
         # the fitted-profile integrated area for the jumped line, hatched exactly like the EW
         # tool so the EW measurement reviewed in step 1 reads the same on both surfaces
@@ -253,19 +255,32 @@ class SpectrumCanvas:
     # --- objects -----------------------------------------------------
     def include_in_y_fit(self, renderer):
         """Let ``renderer`` participate in the main figure's y auto-fit, alongside the loaded
-        spectra: for a renderer that *is* a spectrum being viewed (e.g. the
-        abundance-correction tool's own 1D LTE reference), not a decorative overlay. A tool's
-        editable markers, fit overlays and window highlights should not call this - see the
-        note on ``main.y_range.renderers`` above."""
+        spectra. Editable markers must not, see the note on ``main.y_range.renderers``."""
         if renderer not in self._y_fit_renderers:
             self._y_fit_renderers.append(renderer)
             self.main.y_range.renderers = list(self._y_fit_renderers)
 
-    def exclude_from_y_fit(self, renderer):
-        """Undo :meth:`include_in_y_fit`."""
-        if renderer in self._y_fit_renderers:
-            self._y_fit_renderers.remove(renderer)
-            self.main.y_range.renderers = list(self._y_fit_renderers)
+    def claim_edit_tool(self, tool):
+        """Make a ``PointDrawTool`` the main figure's drag *and* tap gesture.
+
+        BokehJS files a point-drawing tool under its multi-gesture role (tap, pan, move) and
+        activates the toolbar's gestures in a fixed order, pan before tap. Setting only
+        ``active_drag`` activates the tool, and the ``active_tap`` tool the line annotator
+        installs then deactivates it again because both handle taps, leaving no drag gesture
+        at all. The replaced tap tool is restored by :meth:`release_edit_tool`."""
+        toolbar = self.main.toolbar
+        if self._edit_tool is None:
+            self._edit_tap = toolbar.active_tap
+        self._edit_tool = tool
+        toolbar.active_drag = toolbar.active_tap = tool
+
+    def release_edit_tool(self, tool):
+        """Hand the gestures back to panning and the previous tap tool, if ``tool`` holds them."""
+        if self._edit_tool is not tool:
+            return
+        self._edit_tool = None
+        toolbar = self.main.toolbar
+        toolbar.active_drag, toolbar.active_tap = "auto", self._edit_tap
 
     def next_run_style(self):
         """Pick a (color, dash) for a tumult run: the first unused non-gray palette

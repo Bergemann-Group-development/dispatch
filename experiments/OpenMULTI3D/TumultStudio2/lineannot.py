@@ -192,6 +192,7 @@ class LineAnnotations:
             xs="xs", ys="ys", source=self.elbow_source,
             line_color=MUTED, line_alpha=ELBOW_ALPHA, line_width=ELBOW_WIDTH,
             level="annotation", visible=False)
+        self.canvas.include_in_y_fit(self.elbows)   # the fit opens up to make room for them
 
         # An invisible, fat copy of each elbow, carried up through its own name: the thing the
         # pointer actually hits. A LabelSet is an annotation and cannot be hit-tested at all,

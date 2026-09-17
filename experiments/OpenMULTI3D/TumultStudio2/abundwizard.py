@@ -772,8 +772,7 @@ class AbundanceWizard(Tool):
     # --- measurement-owned local continua ------------------------------------------
     def _hide_continuum(self):
         self.continuum_markers.visible = self.continuum_curve.visible = False
-        if self.canvas.main.toolbar.active_drag is self.continuum_drag:
-            self.canvas.main.toolbar.active_drag = "auto"
+        self.canvas.release_edit_tool(self.continuum_drag)
 
     def _render_continuum(self):
         res = self.selected()
@@ -791,7 +790,7 @@ class AbundanceWizard(Tool):
         finally:
             self._continuum_sync = False
         self.continuum_markers.visible = self.continuum_curve.visible = True
-        self.canvas.main.toolbar.active_drag = self.continuum_drag
+        self.canvas.claim_edit_tool(self.continuum_drag)
         self.canvas.set_abund_hatch(ln.fit_func, ln.fit_window, nodes=ln.continuum)
 
     def _continuum_changed(self, res, ln, **kwargs):
