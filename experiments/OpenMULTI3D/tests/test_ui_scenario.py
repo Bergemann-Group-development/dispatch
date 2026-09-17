@@ -183,6 +183,8 @@ class _Browser:
                 self.proc.kill()
 
 
+# the star part of the synthesis objects' generated names
+STAR = "T5750 g4.40 m+0.00 ξ1.00"
 _GRID = {"id": "g1", "name": "Test grid", "folder": "", "pattern": "", "format": "Marcs"}
 
 
@@ -292,7 +294,7 @@ def test_browser_scenario_submit_cancel_fail_save_replace_reconnect_import(
     # reaches the stub's token and the row leaves; the record on disk says cancelled
     _submit(browser, 5000, 5001)
     browser.wait(f"{ROWS} === 1 && document.querySelector('#processes .process .spinner')")
-    assert "t5750g4.4m+0.0v1.0" in browser.text("#processes")
+    assert STAR in browser.text("#processes")
     browser.click('#processes [data-action="cancel-pending"]')
     browser.wait(f"{ROWS} === 0", timeout=20000)
     assert list(_records(tmp_path).values()) == ["cancelled"]
@@ -303,7 +305,7 @@ def test_browser_scenario_submit_cancel_fail_save_replace_reconnect_import(
     _submit(browser, 5002, 5003)
     browser.wait("document.querySelector('#processes .process.failed')")
     panel = browser.text("#processes")
-    assert "stub exploded" in panel and "t5750g4.4m+0.0v1.0" in panel
+    assert "stub exploded" in panel and STAR in panel
     assert "Processes" in browser.text("#footer-status")
     browser.click('#processes [data-action="dismiss-job"]')
     browser.wait(f"{ROWS} === 0")
@@ -366,7 +368,7 @@ def test_browser_scenario_submit_cancel_fail_save_replace_reconnect_import(
     browser.click("#recovery-modal .modal-cancel")
     names = browser.eval("Array.from(document.querySelectorAll('#objects .object-name'))"
                          ".map(e => e.textContent)")
-    assert names == ["obs.txt", "t5750g4.4m+0.0v1.0"]
+    assert names[0] == "obs.txt" and len(names) == 2 and names[1].startswith(STAR)
     # once imported, the record is neither offered again nor importable: a second scan
     # opens the recovery modal without an import button
     browser.wait("!document.getElementById('recovery-modal').open")

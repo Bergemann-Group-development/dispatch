@@ -57,6 +57,7 @@ from bokeh.plotting import figure
 
 from tumult import abundance as ab
 from tumult.utils import pchip_mono
+import naming
 import store
 from abundwizard import PROFILES, AbundanceWizard
 from synthprefs import atmosphere_grid
@@ -317,14 +318,11 @@ class AbundCorrTool(AbundanceWizard):
             sig = s.get("sigma_scatter", float("nan"))
         return sig
 
-    def _result_label(self, res):
-        """Correction objects sit under their atom, so they are named by what
-        distinguishes them: the target stellar parameters and the atmosphere format."""
-        if not np.isfinite(res.teff):
-            return res.name
-        fmt = res.request.atmosphere.format if res.request is not None else ""
-        label = f"{res.teff:.0f} K · {res.logg:.2f} · {res.feh:+.2f} · ξ {res.vmic:.1f}"
-        return f"{label} · {fmt}" if fmt else label
+    def _result_summary(self, res):
+        s = res.summary
+        if res.stage == "corr" and np.isfinite(s.get("a_mean", np.nan)):
+            return f"⟨ΔA⟩ = {s['a_mean']:+.3f} ± {self._summary_sigma(s):.3f}"
+        return f"{len(res.lines)} reference lines"
 
     def _jump_decor(self, res, ln):
         self._jumped = next((i for i, l in enumerate(res.lines) if l is ln), None)
@@ -496,32 +494,33 @@ class AbundCorrTool(AbundanceWizard):
         kwargs = {"reference_atmosphere": atmosphere_grid(ref_grid),
                   "background_lines": opts.linelist, "profile": opts.profile,
                   "ew_min": opts.ew_min, "limit": opts.limit}
+        name = self.ctx.unique_name(naming.corrections(obj.symbol, request,
+                                                       self.setup.active_grid()))
         self.ctx.schedule(lambda: self.jobs.submit_operation(
-            f"corr:{obj.symbol}", self.task_kind, request, self._on_task_done,
-            kwargs=kwargs, on_progress=self._on_task_progress))
+            name, self.task_kind, request, lambda result: self._on_task_done(result, name),
+            kwargs=kwargs, on_progress=lambda snapshot: self._on_task_progress(snapshot, name)))
 
     task_kind = "abundance.nlte_corrections"
 
-    def _on_task_progress(self, snapshot):
-        """A stage-1 result (the first snapshot of a run) is listed and its reference
-        spectrum shown; a later snapshot updates the listed result in place."""
+    def _on_task_progress(self, snapshot, name):
+        """A stage-1 result (the first snapshot of a run) is listed as ``name`` and its
+        reference spectrum shown; a later snapshot updates the listed result in place."""
         if self._find(snapshot.uid) is None:
-            self._on_reference_ready(snapshot)
+            self._on_reference_ready(snapshot, name)
         else:
-            self._job_progress(self._adopt(snapshot))
+            self._job_progress(self._adopt(snapshot, name))
 
-    def _on_task_done(self, result):
+    def _on_task_done(self, result, name):
         if self._find(result.uid) is None:
-            self._on_reference_ready(result)       # its stage-1 snapshot never arrived
-        self._on_corr_done(self._adopt(result))
+            self._on_reference_ready(result, name)  # its stage-1 snapshot never arrived
+        self._on_corr_done(self._adopt(result, name))
 
-    import_task_progress = lambda self, snapshot, handle: self._on_task_progress(snapshot)
-    import_task_result = lambda self, result, handle: self._on_task_done(result)
+    import_task_progress = lambda self, snapshot, handle: self._on_task_progress(
+        snapshot, handle.label)
+    import_task_result = lambda self, result, handle: self._on_task_done(result, handle.label)
 
-    def _on_reference_ready(self, result):
-        result.name = self._result_label(result)
-        self.results.append(result)
-        self.selected_uid = result.uid
+    def _on_reference_ready(self, result, name):
+        self._add_result(result, name)
         self.set_step(1)
         # draws the reference spectrum too, as this result's view is now selected
         self.select_result(result.uid)
@@ -530,7 +529,6 @@ class AbundCorrTool(AbundanceWizard):
 
     def _on_corr_done(self, result):
         s = result.summary
-        result.name = self._result_label(result)
         self.push_results()
         if self.selected() is result:
             self._render_selected()

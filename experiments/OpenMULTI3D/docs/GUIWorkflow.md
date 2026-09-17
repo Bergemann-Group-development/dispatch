@@ -26,12 +26,25 @@ model atom the atom view, a result its table. No action relies on a second, impl
 spectrum in addition to a mask set or range (synthesis window, measurement reference, fit
 target), it asks for it inside its modal, as the abundance and ion-balance modals do.
 
+A calculation names the object it will deliver when it is submitted (`naming.py`): the
+kind or target, the window or line mask, the atmosphere file or grid, LTE or NLTE with the
+model atoms, and abundance overrides, e.g.
+`T5750 g4.40 m+0.00 ξ1.00 · 5000–5001 Å · MARCS · LTE`, `obs.fits fit · fe-lines · MARCS · LTE`,
+`Fe abundance · obs.fits · fe-lines · MARCS · LTE` or `Fe corrections · T5750 g4.40 m+0.00 ξ1.00 · MARCS`.
+The Info tab and the result panels hold the full provenance. A name already used by a
+spectrum, a result or an unfinished job of the document gets a `#2`, `#3`… suffix
+(`ctx.unique_name`), and a loaded file shares that rule. The name is fixed: a result's
+sidebar row shows its current value on a second line, and names in a loaded workspace stay
+as saved.
+
 ## Processes panel
 
 Every background operation a document admits (a file load, a synthesis, a fit, a durable
 workflow, a line-strength band) is a `jobs.Job` in `ctx.jobs`, shown at the bottom of the
 left sidebar from admission to its terminal state (`processes.processes_html`). Each row
-has two lines: the kind and name (`Synthesis · Sun 3D NLTE`, `Abundance synthesis · Fe`),
+has two lines: the kind and name, where a workflow's name is that of the object it
+delivers to (`Synthesis · T5750 g4.40 m+0.00 ξ1.00 · 5000–5001 Å · MARCS · LTE`,
+`Abundance synthesis · Fe abundance · obs.fits · fe-lines · MARCS · LTE`),
 then how it runs (`8 threads`, `queued`, `stopping…`, `failed · <error>`, `Slurm <id>`),
 followed by the elapsed time once the job has lasted 10 s. A job settling within half a
 second is never drawn. Python jobs of the server (loads, line strengths, broadening fits,

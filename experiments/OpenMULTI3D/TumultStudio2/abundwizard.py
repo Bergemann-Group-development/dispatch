@@ -148,7 +148,7 @@ ANALYSIS_SCRIPT = r"""
 """
 
 
-from jobs import ResultJobs
+from jobs import ResultJobs, update_kept_name
 
 
 def preparation_note(res):
@@ -519,25 +519,28 @@ class AbundanceWizard(Tool):
     # result. Subclasses that submit through ``self.jobs.submit_operation`` name the operation.
     task_kind = None
 
-    def _adopt(self, incoming):
-        """The listed result ``incoming`` continues, updated in place from it, or
-        ``incoming`` itself once listed and selected."""
+    def _adopt(self, incoming, name):
+        """The listed result ``incoming`` continues, updated in place from it (its name
+        stays), or ``incoming`` itself, listed as ``name`` and selected."""
         res = self._find(incoming.uid)
         if res is None:
-            self.results.append(incoming)
-            self.selected_uid = incoming.uid
+            self._add_result(incoming, name)
             self.push_results()
             return incoming
-        res.__dict__.update(incoming.__dict__)
+        update_kept_name(res, incoming)
         return res
 
+    def _add_result(self, res, name):
+        """List ``res`` under ``name``, made unique in the document, and select it."""
+        res.name = self.ctx.unique_name(name, pending=False)
+        self.results.append(res)
+        self.selected_uid = res.uid
+
     def import_task_progress(self, snapshot, handle):
-        self._job_progress(self._adopt(snapshot))
+        self._job_progress(self._adopt(snapshot, handle.label))
 
     def import_task_result(self, result, handle):
-        res = self._adopt(result)
-        res.name = self._result_label(res)
-        self._job_progress(res)
+        self._job_progress(self._adopt(result, handle.label))
 
     def selected(self):
         return self._find(self.selected_uid)
@@ -620,17 +623,17 @@ class AbundanceWizard(Tool):
             res.lines[idx].include = not res.lines[idx].include
             if res.stage == self.final_stage:
                 res.summary = self._summarise(res.lines)
-                res.name = self._result_label(res)
                 self.push_results()
             self._render_selected()
 
-    # subclass: the stage name after the last run, the aggregation and the sidebar label
+    # subclass: the stage name after the last run, the aggregation and the sidebar summary
     final_stage = "uncert"
 
     def _summarise(self, lines):
         raise NotImplementedError
 
-    def _result_label(self, res):
+    def _result_summary(self, res):
+        """The sidebar's second line: the result's current value or stage."""
         raise NotImplementedError
 
     # --- streaming + rendering -------------------------------------------------------------
@@ -759,12 +762,14 @@ class AbundanceWizard(Tool):
         nest = " result-nested" if nested else ""
         for r in (self.results if results is None else results):
             sel = " selected" if (r.uid == self.selected_uid and focused) else ""
+            summary = self._result_summary(r)
             rows.append(
                 f'<div class="object-item result-item{nest}{sel}" '
                 f'data-tool="{self.prefix}" data-result="{r.uid}">'
                 f'<span class="result-badge">{badge}</span>'
-                f'<span class="object-name" title="{html.escape(r.name)}">'
-                f'{html.escape(r.name)}</span>'
+                f'<span class="result-meta"><span class="object-name" '
+                f'title="{html.escape(r.name)}">{html.escape(r.name)}</span>'
+                f'<span class="result-summary">{html.escape(summary)}</span></span>'
                 f'<button class="result-btn" data-result-remove="{r.uid}" '
                 f'title="Remove from workspace"><i class="ti ti-x"></i></button></div>')
         return rows
@@ -805,7 +810,6 @@ class AbundanceWizard(Tool):
             self._render_continuum()
             return
         self.jobs.invalidate(res.uid)
-        res.name = self._result_label(res)
         self.push_results()
         self._render_selected()
         self._jump_decor(res, ln)
@@ -864,10 +868,9 @@ class AbundanceWizard(Tool):
             return ab.complete_result_rungs(working, target=target,
                                             cancel_token=token, progress=progress)
         def done(result):
-            result.name = self._result_label(result)
             self.push_results()
             self._render_selected()
             self.notify("Cached curves of growth updated." if not any(
                 ln.missing_rungs for ln in result.lines) else
                 "More abundance rungs are still needed; inspect the flagged lines.")
-        self.jobs.submit("Complete abundance rungs", work, done, result=res, detached=True)
+        self.jobs.submit(f"rungs:{res.name}", work, done, result=res, detached=True)

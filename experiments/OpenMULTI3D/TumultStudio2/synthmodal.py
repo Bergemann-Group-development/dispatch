@@ -36,7 +36,7 @@ import logging
 from pathlib import Path
 
 import store
-from tumult.departures import DepartureGrid, DepartureRequest, Departures
+from tumult.departures import Departures
 from tumult.synthesis import AtmosphereGrid, Snapshot, check_fit
 from tumult.synthesis import workflows as synth
 from atompicker import AtomPicker
@@ -45,6 +45,7 @@ from fittab import FitTab
 from gridmanager import GridManager
 from filepicker import FilePicker
 from htmlbridge import pulse, toggle
+import naming
 from synthsetup import SynthSetup
 from synthprefs import (
     PATH_PICKERS,
@@ -348,14 +349,7 @@ class SynthModal:
         abundances = request.abundances
         text = " ".join(f"{el}={value:g}" for el, value in (abundances or {}).items())
         relative = abundances.relative if abundances is not None else True
-        departures = request.departures
-        if isinstance(departures, DepartureRequest):
-            atoms = [str(atom) for atom in departures.atoms]
-        elif isinstance(departures, (Departures, DepartureGrid)):
-            atoms = departures.atom_settings[0]
-        else:
-            atoms = []
-        return ("NLTE" if request.is_nlte else "LTE"), text, relative, atoms
+        return ("NLTE" if request.is_nlte else "LTE"), text, relative, naming.atoms(request)
 
     @staticmethod
     def _synth_meta(stellar, *, mode, abundances, relative, atoms, xmin, xmax,
@@ -439,7 +433,10 @@ class SynthModal:
         mode, abundances, relative, atoms = self._request_terms(request)
         xmin = min(lo for lo, _hi in request.windows)
         xmax = max(hi for _lo, hi in request.windows)
-        name = f"fit·{obj.name}"
+        kind, mset = self.job or ("range", None)
+        name = self.ctx.unique_name(naming.fit(
+            obj.name, request, grid, window=mset.name if kind == "masks" else None,
+            fitted=c["abund_fits"]))
         rows = self._request_rows(request, grid)
         preparation = self.canvas.preparation(obj)
 
@@ -673,11 +670,12 @@ class SynthModal:
         kind, mset = self.job or ("range", None)
         star = request.star
         mode, abundances, relative, atoms = self._request_terms(request)
-        name = (f"t{star.teff:.0f}g{star.logg:.1f}m{star.feh:+.1f}v{star.vmic:.1f}"
-                + ("·NLTE" if mode == "NLTE" else ""))
+        grid = self.setup.active_grid()
+        name = self.ctx.unique_name(naming.synthesis(
+            request, grid, window=mset.name if kind == "masks" else None))
         shown_min = min(lo for lo, _hi in request.windows)
         shown_max = max(hi for _lo, hi in request.windows)
-        atmosphere = self._request_rows(request, self.setup.active_grid())
+        atmosphere = self._request_rows(request, grid)
         if isinstance(request.departures, Departures):
             atmosphere.append(["Saved departures", str(request.departures.folder)])
         meta = self._synth_meta(dict(star), mode=mode, abundances=abundances,

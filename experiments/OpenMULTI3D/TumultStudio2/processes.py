@@ -33,9 +33,8 @@ KIND_LABELS = {
     "dispatch": "Dispatch run",
 }
 NAME_PREFIXES = {
-    "corr": "NLTE corrections", "abund-synth": "Abundance synthesis",
-    "abund-lines": "Line measurement", "ionbal": "Ionisation balance",
-    "linemask-auto": "Line mask", "fit": "Fit", "import": "Import", "list": "Grid listing",
+    "abund-lines": "Line measurement", "rungs": "Abundance rungs",
+    "linemask-auto": "Line mask", "import": "Import", "list": "Grid listing",
     "download": "Grid download",
 }
 NAME_LABELS = {
@@ -45,20 +44,22 @@ NAME_LABELS = {
 
 
 def job_title(name, kind=None, path=None):
-    """``Kind · name`` for a job's internal name (``abund-synth:Fe``, ``fit·obs``,
-    ``download MARCS``) and, for a durable workflow, its task kind."""
+    """``Kind · name`` for a job's internal name and, for a durable workflow, its task
+    kind. A durable workflow's name is the name of the object it delivers to
+    (:mod:`naming`); a server-side job's name may carry a kind prefix
+    (``abund-lines:<result>``, ``download MARCS``)."""
     name = str(name or "")
     if name in NAME_LABELS:
         return NAME_LABELS[name]
+    if kind is not None:
+        return f"{KIND_LABELS.get(kind, kind)} · {name}" if name else KIND_LABELS.get(kind, kind)
     rest, label = name, None
-    for separator in (":", "·", " "):
+    for separator in (":", " "):
         prefix, found, tail = name.partition(separator)
         if found and prefix in NAME_PREFIXES:
             label, rest = NAME_PREFIXES[prefix], tail
             break
-    if kind is not None:
-        label = KIND_LABELS.get(kind, kind)
-    elif label is None and path is not None:
+    if label is None and path is not None:
         label = "Load"
     return f"{label} · {rest}" if label and rest else (label or rest)
 
@@ -100,7 +101,7 @@ def _job_row(job, live):
     """A row for one job of this document."""
     summary = live.get(job.workflow_id) if live is not None and job.handle is not None else None
     state = job.display_state(summary)
-    kind = summary.get("kind") if summary else None
+    kind = (summary.get("kind") if summary else None) or job.operation
     if job.handle is not None and kind is None:
         try:
             kind = job.handle.kind.name

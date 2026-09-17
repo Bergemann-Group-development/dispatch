@@ -52,6 +52,7 @@ class Job:
     detached: bool = False       # survives the session closing; see session_closed
     path: str | None = None      # the file a load came from (picker row spinners)
     delivers: bool = True        # its outcome lands on the canvas (a load, a synthesis)
+    operation: str | None = None  # the task kind of a durable workflow
     future: object = None
     handle: object = None
     state: str = QUEUED
@@ -338,6 +339,12 @@ class _Outcome:
     error: Exception | None = None
 
 
+def update_kept_name(result, snapshot):
+    """Update ``result`` in place from a worker's ``snapshot`` of it, except its name: the
+    document names its objects (:mod:`naming`), a calculation does not rename them."""
+    result.__dict__.update({k: v for k, v in snapshot.__dict__.items() if k != "name"})
+
+
 class ResultJobs:
     """One current submission per result; workers never mutate the displayed object.
     A result owns at most one live durable workflow (``live``): superseding or
@@ -380,7 +387,7 @@ class ResultJobs:
                     and (result is None or self.find(key) is result))
 
         def apply(snapshot):
-            result.__dict__.update(snapshot.__dict__)
+            update_kept_name(result, snapshot)
             self.render(result)
 
         def flush():
@@ -484,7 +491,7 @@ class ResultJobs:
                     and (result is None or self.find(key) is result))
 
         def apply(snapshot):
-            result.__dict__.update(snapshot.__dict__)
+            update_kept_name(result, snapshot)
             self.render(result)
 
         def progress(snapshot):          # document thread, one decoded snapshot

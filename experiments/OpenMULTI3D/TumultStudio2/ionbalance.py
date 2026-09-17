@@ -49,6 +49,7 @@ from tumult import abundance as ab
 from tumult import measurement as ms
 from tumult import refstars
 from tumult import sparams as sp
+import naming
 import store
 from tumult.synthesis import workflows as synth
 from abundwizard import (LOCAL_CONTINUUM_HEAD, PANEL_AXES, PROFILES, AbundanceWizard,
@@ -478,12 +479,11 @@ class IonBalanceTool(AbundanceWizard):
         self.jobs.invalidate(res.uid)
         res.lines[idx].include = not res.lines[idx].include
         res.reaggregate()
-        res.name = res.label()
         self.push_results()
         self.push_panel()
         self._render_selected()
 
-    def _result_label(self, res):
+    def _result_summary(self, res):
         return res.label()
 
     def select_result(self, uid):
@@ -598,9 +598,9 @@ class IonBalanceTool(AbundanceWizard):
                 cont_pct=float(v1["cont_pct"]))
             res.preparation = self.ctx.canvas.preparation(self.ctx.canvas._find(ref_uid))
             res.preparation["line_list"] = str(self.master_path)
-            res.name = f"{res.element} balance · measuring…"
-            self.results.append(res)
-            self.selected_uid = res.uid
+            self._add_result(res, naming.analysis(
+                res.element, "balance", res.ref_name, mset.name, ctx,
+                self.setup.selected_grid()))
         else:
             res = refit
         res.params0, res.entry, res.free, res.tols = dict(params0), entry, free, tols
@@ -626,16 +626,16 @@ class IonBalanceTool(AbundanceWizard):
         # document tick (as synthmodal.SynthModal._begin_submit/_end_submit does), rather than
         # sitting in front of it and leaving the modal looking inert until it answers
         self.ctx.schedule(lambda: self.jobs.submit_operation(
-            f"ionbal:{res.element}", self.task_kind, ctx, self._on_done,
+            res.name, self.task_kind, ctx, self._on_done,
             kwargs=kwargs, result=res))
 
     task_kind = "sparams.ionbalance"
-    import_task_result = lambda self, result, handle: self._on_done(self._adopt(result))
+    import_task_result = lambda self, result, handle: self._on_done(
+        self._adopt(result, handle.label))
 
     def _on_done(self, result):
         self.ctx.emit("masks-changed")
         result.stage = ms.STAGE_SOLVED
-        result.name = result.label()
         self.push_results()
         self.push_panel()
         if self.selected() is result:

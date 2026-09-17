@@ -79,7 +79,6 @@ def test_abundance_recomputations_use_the_results_own_uncertainty(monkeypatch):
     tool.get_observation = lambda uid: spec
     tool.ctx = SimpleNamespace(notify=lambda *a, **k: None)
     tool.push_results = tool._render_selected = lambda: None
-    tool._result_label = lambda r: "Fe"
     seen = []
     monkeypatch.setattr(abundancetool.ab, "finalize_result",
                         lambda r, s, snr, cont: seen.append((snr, cont)))
@@ -791,7 +790,7 @@ def test_reference_spectrum_is_drawn_only_in_the_correction_view_not_the_sidebar
                              atom_path=str(tmp_path / "mg.atom"), stage="lines")
     result.ref_spec = ref
 
-    tool._on_reference_ready(result)
+    tool._on_reference_ready(result, "Mg corrections")
 
     assert ctx.canvas.objects == []                # no sidebar spectrum was added
     assert tool.ref_line.visible
@@ -2019,7 +2018,7 @@ def test_free_range_synthesis_is_one_durable_window_workflow(tmp_path, monkeypat
     modal.open_range(5000.0, 5001.0, "synth")
     assert _submit_modal(document, ctx, ticks) == 1
     job, = ctx.jobs.active
-    assert job.detached and job.handle is not None and job.name == "t5750g4.4m+0.0v1.0"
+    assert job.detached and job.handle is not None and job.name == "T5750 g4.40 m+0.00 ξ1.00 · 5000–5001 Å · Test grid · LTE"
     assert ticks.settle(lambda: not ctx.jobs.active)
     request, = executed
     assert request.windows == ((5000., 5001.),)
@@ -2027,7 +2026,7 @@ def test_free_range_synthesis_is_one_durable_window_workflow(tmp_path, monkeypat
     assert request.star.tuple() == (5750., 4.4, 0., 1.)
     assert request.departures is None
     obj, = ctx.canvas.objects
-    assert obj.name == "t5750g4.4m+0.0v1.0" and obj.source == ("synth", None)
+    assert obj.name == "T5750 g4.40 m+0.00 ξ1.00 · 5000–5001 Å · Test grid · LTE" and obj.source == ("synth", None)
     assert ["Window", "5000.00–5001.00 Å"] in obj.meta["params"]
     assert job.handle.meta == obj.meta and job.handle.label == obj.name
     assert not messages
@@ -2101,8 +2100,98 @@ def test_fixed_file_snapshot_and_nlte_requests_are_captured_from_the_setup(tmp_p
     assert nlte.departures is not None and nlte.departures.species == ("Mg",)
     assert ["Saved departures", str(nlte.departures.folder)] in job.handle.meta["params"]
     assert ["Model atoms", "mg.atom"] in job.handle.meta["params"]
-    assert [o.name for o in ctx.canvas.objects][-1] == "t5750g4.4m+0.0v1.0·NLTE"
+    assert [o.name for o in ctx.canvas.objects][-1] == (
+        "T5750 g4.40 m+0.00 ξ1.00 · 5000–5001 Å · one.mod · NLTE mg.atom")
     assert not messages
+
+
+SYNTH_5001 = "T5750 g4.40 m+0.00 ξ1.00 · 5000–5001 Å · Test grid · LTE"
+
+
+def test_generated_names_tell_calculations_apart_and_stay_unique(tmp_path, monkeypatch):
+    """Syntheses differing in window or abundances get different names; repeating one is
+    suffixed ``#n``, also while the first is still running; each Processes row names the
+    object its workflow delivers."""
+    import threading
+    import processes
+    release = threading.Event()
+
+    def execute(request, background_lines=True, cancel_token=None):
+        assert release.wait(10)
+        return _stub_result(request)
+
+    _stub_synthesize(monkeypatch, execute)
+    document, ctx, messages = _synth_document(tmp_path, monkeypatch)
+    ticks = _Ticks(document, monkeypatch)
+    modal = ctx.synth_modal
+    for lo, hi in ((5000., 5001.), (5000., 5001.), (5000., 5002.)):
+        modal.open_range(lo, hi, "synth")
+        assert _submit_modal(document, ctx, ticks) == 1
+    modal.setup.base_form.set_values(abundances="Mg=0.2")
+    modal.open_range(5000., 5001., "synth")
+    assert _submit_modal(document, ctx, ticks) == 1
+    expected = [SYNTH_5001, f"{SYNTH_5001} #2",
+                "T5750 g4.40 m+0.00 ξ1.00 · 5000–5002 Å · Test grid · LTE",
+                f"{SYNTH_5001} · [Mg/Fe]+0.20"]
+    assert [job.name for job in ctx.jobs.active] == expected
+    body = processes.processes_html(ctx.jobs, None)
+    assert all(html.escape(f"Synthesis · {name}") in body for name in expected)
+
+    release.set()
+    assert ticks.settle(lambda: not ctx.jobs.active)
+    assert sorted(o.name for o in ctx.canvas.objects) == sorted(expected)
+    # a repeat after delivery avoids the names now on the canvas
+    modal.setup.base_form.set_values(abundances="")
+    modal.open_range(5000., 5001., "synth")
+    assert _submit_modal(document, ctx, ticks) == 1
+    assert ctx.jobs.active[0].name == f"{SYNTH_5001} #3"
+    assert ticks.settle(lambda: not ctx.jobs.active)
+    assert not messages
+
+
+def test_fit_names_state_target_window_and_overrides():
+    """Fits of different targets or windows are told apart by name; an abundance being
+    fitted is not an override."""
+    import naming
+    from tumult.synthesis.inputs import Abundances
+    grid = {"id": "g1", "name": "Test grid"}
+
+    def request(lo, hi, **abundances):
+        return SimpleNamespace(
+            star=SimpleNamespace(tuple=lambda: (5750., 4.4, 0., 1.)), windows=((lo, hi),),
+            atmosphere=AtmosphereGrid(Path("/grid"), "Marcs"), is_nlte=False, departures=None,
+            abundances=Abundances(abundances) if abundances else None)
+
+    base = naming.fit("obs", request(5000., 5001., Mg=0.2), grid)
+    assert base == "obs fit · 5000–5001 Å · Test grid · LTE · [Mg/Fe]+0.20"
+    assert naming.fit("obs", request(5000., 5001., Mg=0.2), grid, fitted=("Mg",)) == (
+        "obs fit · 5000–5001 Å · Test grid · LTE")
+    assert naming.fit("sun", request(5000., 5001., Mg=0.2), grid) != base
+    assert naming.fit("obs", request(5000., 5001.5, Mg=0.2), grid) != base
+    assert naming.unique("a #2", {"a", "a #2"}) == "a #3"
+
+
+def test_result_names_are_unique_and_kept_through_worker_updates(tmp_path, monkeypatch):
+    """A new result is listed under its unique name; a worker's snapshot of it (which
+    carries a name of its own) updates everything but the name."""
+    from tumult.abundance import AbundanceResult
+    import store
+    monkeypatch.setattr(store, "CONFIG_PATH", tmp_path / "cfg.json")
+    document, ctx = _build_document()
+    x = np.arange(5000., 5010., .01)
+    ctx.canvas.add_object(Spectrum(x, np.ones_like(x)), name="Fe abundance · obs",
+                          source=("synth", None))
+    tool = ctx.tools._tools["abundance"]
+    first = AbundanceResult(element="Fe", symbol="Fe", summary={}, uid="r1")
+    tool._adopt(first, "Fe abundance · obs")
+    snapshot = AbundanceResult(element="Fe", symbol="Fe", summary={"a_mean": 7.5, "sigma_mean": 0.05},
+                               uid="r1", name="Fe · 3 lines", stage="uncert")
+    assert tool._adopt(snapshot, "ignored") is first
+    assert first.name == "Fe abundance · obs #2" and first.stage == "uncert"
+    second = AbundanceResult(element="Fe", symbol="Fe", summary={}, uid="r2")
+    tool._adopt(second, "Fe abundance · obs")
+    assert second.name == "Fe abundance · obs #3"
+    assert "Fe abundance · obs #3" in tool.results_html()
 
 
 def test_unsupported_requests_are_refused_before_submission(tmp_path, monkeypatch):
@@ -2171,7 +2260,7 @@ def test_fit_is_a_durable_workflow_built_from_the_same_request(tmp_path, monkeyp
     modal.open_range(5000.0, 5001.0, "fit")
     assert _submit_modal(document, ctx, ticks) == 1
     job, = ctx.jobs.active
-    assert job.name == "fit·obs" and job.heavy and job.detached
+    assert job.name == "obs fit · 5000–5001 Å · Test grid · LTE" and job.heavy and job.detached
     assert job.handle is not None and job.handle.kind.name == "synthesis.fit"
     assert started.wait(10)
     observation, request, kwargs, token = fitted[0]
@@ -2185,7 +2274,7 @@ def test_fit_is_a_durable_workflow_built_from_the_same_request(tmp_path, monkeyp
     release.set()
     assert ticks.settle(lambda: not ctx.jobs.active)
     synth, = [o for o in ctx.canvas.objects if o.source[0] == "synth"]
-    assert synth.name == "fit·obs" and synth.conv == {"vshift": 1.5}
+    assert synth.name == "obs fit · 5000–5001 Å · Test grid · LTE" and synth.conv == {"vshift": 1.5}
     assert synth.meta["stellar"]["teff"] == 5600.
     assert ["Atmosphere", "Test grid grid, interpolated"] in synth.meta["params"]
     assert ["Abundances ([X/Fe])", "Mg=+0.35"] in synth.meta["params"]
@@ -2238,12 +2327,12 @@ def test_panel_rows_name_the_kind_and_how_each_job_runs(monkeypatch):
     strengths = table.add(Job(1, "line-strengths", CancelToken(), None, submitted=now - 60,
                               started=now - 30, state="running"))
     table.add(Job(2, "obs.txt", CancelToken(), None, path="/data/obs.txt", submitted=now))
-    table.add(Job(3, "abund-synth:Fe", CancelToken(), None, submitted=now - 5,
-                  state="failed", error="RuntimeError: no lines"))
+    table.add(Job(3, "Fe abundance · obs", CancelToken(), None, submitted=now - 5,
+                  state="failed", error="RuntimeError: no lines", operation="abundance.fit"))
     live = _Live([
         {"job": "w1", "type": "workflow", "kind": "synthesis.synthesize", "label": "Sun 3D NLTE",
          "state": "running", "threads": 8, "started": now - 720, "folder": "/r/w1"},
-        {"job": "w2", "type": "workflow", "kind": "sparams.ionbalance", "label": "ionbal:Ti",
+        {"job": "w2", "type": "workflow", "kind": "sparams.ionbalance", "label": "Ti balance · obs",
          "state": "queued", "folder": "/r/w2"},
         {"job": "run-abc", "type": "external", "kind": "dispatch", "label": "dep_fe",
          "state": "running", "threads": 3, "started": now - 20, "folder": "/r/dep_fe"}],
@@ -2252,9 +2341,9 @@ def test_panel_rows_name_the_kind_and_how_each_job_runs(monkeypatch):
     assert "Line strengths" in body and "1 thread<" in body
     assert f'data-since="{strengths.started:.3f}"' in body
     assert "obs.txt" not in body                        # admitted just now: not drawn
-    assert "Abundance synthesis · Fe" in body and "failed · RuntimeError: no lines" in body
+    assert "Abundance synthesis · Fe abundance · obs" in body and "failed · RuntimeError: no lines" in body
     assert "Synthesis · Sun 3D NLTE" in body and "8 threads" in body
-    assert "Ionisation balance · Ti" in body and ">queued<" in body
+    assert "Ionisation balance · Ti balance · obs" in body and ">queued<" in body
     assert "Dispatch run · dep_fe" in body and 'data-action="run-cancel" data-uid="run-abc"' in body
     assert body.count('data-action="job-details"') == 4    # failed, w1, w2, the external run
     assert processes.usage_html(live) == "11/16 threads"

@@ -55,6 +55,7 @@ from canvas import ACCENT
 from controls import Field, Form
 from ew import profile_options
 from htmlbridge import pulse
+import naming
 
 DEFAULTS = {
     "profile": "gauss", "snr": 100.0, "cont_pct": 0.5,
@@ -266,11 +267,12 @@ class AbundanceTool(AbundanceWizard):
     def _summarise(self, lines):
         return ab.aggregate(lines)
 
-    def _result_label(self, res):
+    def _result_summary(self, res):
         s = res.summary
-        return (f"{res.element}  ⟨{self.value_label(res)}⟩="
-                f"{s['a_mean']:.2f}±{s['sigma_mean']:.2f}"
-                if np.isfinite(s["a_mean"]) else f"{res.element} · uncert")
+        if np.isfinite(s.get("a_mean", np.nan)):
+            return (f"⟨{self.value_label(res)}⟩ = "
+                    f"{s['a_mean']:.2f} ± {s['sigma_mean']:.2f}")
+        return f"{len(res.lines)} lines measured" if res.stage == "lines" else ""
 
     # --- window highlights (the set's windows, as the LineMasks view draws them) --------
     def select_result(self, uid):
@@ -342,13 +344,16 @@ class AbundanceTool(AbundanceWizard):
         pulse(self._modal, "close")
         self.notify(f"Measuring {mset.element} windows on the reference…")
         mset, ref_spec = deepcopy(mset), deepcopy(ref_spec)
+        name = self.ctx.unique_name(naming.analysis(
+            mset.element, "abundance", dict(self.list_observations()).get(ref_uid, ""), mset.name,
+            request, self.setup.active_grid()))
         loader = lambda _res, token, progress: self._measure_lines(
             ref_uid, ref_spec, mset, str(v["profile"]), float(v["snr"]) or None,
             float(v["cont_pct"]))
         def done(res):
             res.preparation = preparation
-            self._on_lines_done(res, request, ref_spec)
-        self.jobs.submit(f"abund-lines:{mset.element}", loader, done)
+            self._on_lines_done(res, name, request, ref_spec)
+        self.jobs.submit(f"abund-lines:{name}", loader, done)
 
     def _measure_lines(self, ref_uid, ref_spec, mset, profile, snr, cont_pct):
         """Measure the set's switched-on windows (:func:`tumult.abundance.measure_lines`)."""
@@ -359,9 +364,8 @@ class AbundanceTool(AbundanceWizard):
         res.snr, res.cont_pct = snr, cont_pct
         return res
 
-    def _on_lines_done(self, result, request, observation):
-        self.results.append(result)
-        self.selected_uid = result.uid
+    def _on_lines_done(self, result, name, request, observation):
+        self._add_result(result, name)
         self.set_step(1)                 # the synthesis is what stands on the measurement now
         self.select_result(result.uid)   # focus it: enters abund-mode, renders the split view
         self.notify(f"{result.element}: {len(result.lines)} lines measured — synthesising…")
@@ -394,14 +398,14 @@ class AbundanceTool(AbundanceWizard):
         kwargs = {"target": obs, "measured": res, "method": "profile", "profile": res.profile,
                   "snr": snr, "cont_pct": cont_pct,
                   "background_lines": self.setup.background_lines}
-        self.jobs.submit_operation(f"abund-synth:{res.element}", self.task_kind, ctx,
+        self.jobs.submit_operation(res.name, self.task_kind, ctx,
                                    self._on_synth_done, kwargs=kwargs, result=res)
 
     task_kind = "abundance.fit"
-    import_task_result = lambda self, result, handle: self._on_synth_done(self._adopt(result))
+    import_task_result = lambda self, result, handle: self._on_synth_done(
+        self._adopt(result, handle.label))
 
     def _on_synth_done(self, result):
-        result.name = self._result_label(result)
         self.push_results()
         if self.selected() is result:
             self._render_selected()
@@ -429,7 +433,6 @@ class AbundanceTool(AbundanceWizard):
             return
         ab.finalize_result(res, spec, res.snr, res.cont_pct)
         s = res.summary
-        res.name = self._result_label(res)
         self.push_results()
         if self.selected() is res:
             self._render_selected()

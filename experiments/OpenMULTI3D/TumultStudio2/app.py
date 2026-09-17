@@ -48,6 +48,7 @@ from abundwizard import ANALYSIS_SCRIPT, PROFILES  # noqa: E402  (shared EW-prof
 from atomtool import AtomTool, AtomObject  # noqa: E402
 from abundcorrtool import AbundCorrTool  # noqa: E402
 from ionbalance import IonBalanceTool  # noqa: E402
+import naming  # noqa: E402
 from tumult.synthesis import workflows as synth  # noqa: E402  (CancelToken/CancelledError for cancellable loads)
 from tumult.synthesis import submit_operation as submit_operation_record  # noqa: E402
 from tumult.synthesis import submission  # noqa: E402  (open workflows on reconnect)
@@ -702,8 +703,8 @@ def build():
         color, dash = canvas.next_run_style()  # distinct colour, picked at add time
         # data embedded on save (source path None); a fit also passes its fitted broadening
         # as `conv`, applied live so the Edit tab shows it and the stored spectrum stays raw.
-        o = canvas.add_object(spec, name=name, color=color, dash=dash,
-                              source=("synth", None), meta=meta)
+        o = canvas.add_object(spec, name=ctx.unique_name(name, pending=False),
+                              color=color, dash=dash, source=("synth", None), meta=meta)
         if conv:
             o.conv = dict(conv)
             canvas._refresh_object(o)  # update_all (in _settle) then rebinds the Edit tab
@@ -842,6 +843,18 @@ def build():
     # the three result lists, by the name of their tool (the session's result sections)
     wizards = {"abundance": abundancetool, "abundcorr": abundcorrtool, "ionbal": ionbaltool}
     assert tuple(wizards) == RESULT_TOOLS
+
+    def unique_name(name, pending=True):
+        """``name`` made unique among the spectrum and result objects (:func:`naming.unique`);
+        ``pending`` also avoids the names of this document's unfinished jobs, so two
+        submissions of the same calculation deliver distinguishable objects."""
+        taken = {o.name for o in canvas.objects}
+        taken.update(r.name for w in wizards.values() for r in w.results)
+        if pending:
+            taken.update(job.name for job in jobs.active)
+        return naming.unique(name, taken)
+
+    ctx.unique_name = unique_name
 
     def _restore_range(rng, vals):
         if not vals:
@@ -1018,10 +1031,11 @@ def build():
     ctx.restore_workspace = restore_workspace   # local harnesses load slots through it
 
     # --- background work: a Processes row now, the outcome delivered on the document ----
-    def _admit(name, *, heavy=False, detached=False, path=None, delivers=True):
+    def _admit(name, *, heavy=False, detached=False, path=None, delivers=True,
+               operation=None):
         job = Job(_nonce(), name, synth.CancelToken(), ctx.generation,
                   heavy=heavy, detached=detached, path=str(path) if path else None,
-                  delivers=delivers)
+                  delivers=delivers, operation=operation)
         jobs.add(job)
         # the row appears once the job has lasted SHOW_AFTER_S (see processes_html)
         try:
@@ -1204,7 +1218,7 @@ def build():
         submitted, and the workflow is referenced beside the workspace from now on. The
         driver and the record root follow the request's configuration. Returns the job,
         or ``None`` when submission failed (the row keeps the reason)."""
-        job = _admit(name, heavy=True, detached=True)
+        job = _admit(name, heavy=True, detached=True, operation=operation)
         try:
             handle = submit_operation_record(operation, request, label=name, meta=meta,
                                              **(kwargs or {}))
@@ -1601,7 +1615,8 @@ def build():
         initial = focus_state()
         def add_loaded(spec):
             select = focus_state() == initial
-            canvas.add_object(spec, name=name, source=("file", str(filepath)),
+            canvas.add_object(spec, name=unique_name(name, pending=False),
+                              source=("file", str(filepath)),
                               meta=getattr(spec, "meta", None), select=select)
             if not select:
                 notify(f"Opened {name}; select it in Objects to view it.", level="info")
@@ -1827,8 +1842,8 @@ def build():
 
         def add(spec):
             color, dash = canvas.next_run_style()  # picked at add time -> no colour clashes
-            canvas.add_object(spec, name=name, color=color, dash=dash,
-                                   source=("run", str(folder)))
+            canvas.add_object(spec, name=unique_name(name, pending=False),
+                              color=color, dash=dash, source=("run", str(folder)))
 
         load_async(name, lambda token=None: load_run(folder), add)
 
