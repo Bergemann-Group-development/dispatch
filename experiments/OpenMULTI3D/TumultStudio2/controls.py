@@ -102,7 +102,9 @@ class Field:
         if self.value is None:
             return ""
         if self.kind == "number":
-            return f"{float(self.value):g}"
+            # enough digits that the input shows the value the tool acts on (a range edge
+            # at mÅ precision needs more than :g's six)
+            return f"{float(self.value):.10g}"
         return str(self.value)
 
     # --- rendering --------------------------------------------------------

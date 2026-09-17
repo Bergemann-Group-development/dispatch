@@ -395,6 +395,35 @@ def test_mask_tool_range_feeds_line_masks_and_the_synthesis_modal():
         ((5004.5, 5005.5), (5004.0, 5006.0)), ((5001.0, 5002.0), (5000.5, 5002.5))]
 
 
+def test_range_fields_always_show_the_active_range():
+    """An edit to λ min / λ max that does not make a range is refused and the fields are
+    put back, so Synthesise acts on the range the panel shows."""
+    document, ctx = _build_document()
+    messages = []
+    ctx.notify = lambda text, level="info": messages.append(text)
+    tools = ctx.tools
+    range_tool = tools._tools["range"]
+    synthesised = []
+    range_tool.on_synth = lambda lo, hi: synthesised.append((lo, hi))
+    tools.toggle("range")
+    range_tool._on_select(5004.5, 5005.5)
+    form = range_tool.window_form
+
+    def edit(key, raw):
+        form.input.value = f"{key}={raw} {len(messages)}-{raw}"
+
+    edit("xmin", "5004.1234")                   # a valid edit becomes the range, as shown
+    assert range_tool.selection == (5004.123, 5005.5)
+    assert 'value="5004.123"' in range_tool.panel_html()
+    for key, raw in (("xmin", "5006"), ("xmax", ""), ("xmin", "0"), ("xmax", "-3")):
+        edit(key, raw)
+        assert form.values() == {"xmin": 5004.123, "xmax": 5005.5}, (key, raw)
+        assert range_tool._panel_bridge.value == range_tool.panel_html()
+    assert len(messages) == 4
+    range_tool.synthesise()
+    assert synthesised == [(5004.123, 5005.5)]
+
+
 # --- durable synthesis workflows on the document ---------------------------------------
 def _stub_request(root, windows=((5000., 5001.),), **preferences):
     """A synthesis request whose operation the tests stub out."""

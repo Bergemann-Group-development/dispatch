@@ -120,15 +120,20 @@ class RangeTool(Tool):
         self._set_selection(lo, hi)
 
     def _on_field(self, key, value):
-        """λ min / λ max edited by hand."""
-        v = self.window_form.values()
-        try:
-            lo, hi = float(v["xmin"]), float(v["xmax"])
-        except (TypeError, ValueError):
+        """λ min / λ max edited by hand. The fields only ever show ``selection``: an edit
+        that does not make a range (an empty or zero edge, or λ min ≥ λ max) is refused
+        and the fields are put back, so every action acts on what the panel shows."""
+        other = self.window_form.value("xmax" if key == "xmin" else "xmin")
+        lo, hi = (value, other) if key == "xmin" else (other, value)
+        if hi > lo > 0:
+            self._set_selection(lo, hi)
             return
-        if not hi > lo > 0:
-            return
-        self._set_selection(lo, hi)
+        self.notify("λ min must be positive and below λ max; the range is unchanged.",
+                    "warn")
+        # the panel markup is the same as before the edit, so blank it first to make the
+        # browser replace the rejected input
+        self._panel_bridge.value = ""
+        self._set_selection(*self.selection)
 
     def _set_selection(self, lo, hi):
         self.selection = (round(lo, 3), round(hi, 3))
