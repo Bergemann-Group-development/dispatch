@@ -106,6 +106,11 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
 - *edit session*: a canvas tool's in-place edits to a workspace object, from entering the
   tool to leaving it (`Tool.begin_edit`). Leaving keeps them; Cancel and Esc restore the
   state on entry. The continuum editor is one.
+- *out of date*: a solved result whose inputs differ from those it was solved from
+  (`stale_reasons` on the result and on its tool). The target is compared by its digest and
+  recorded preparation; a balance also by `solved_key`, the fingerprint of its included lines,
+  EWs and local continua. Derived on every render, never stored. Distinct from a line
+  mask's *Source edited* flag, which compares a balance with the set it was measured from.
 
 **Runs**
 

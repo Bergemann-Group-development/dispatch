@@ -336,6 +336,11 @@ class IonBalanceTool(AbundanceWizard):
         self._pending_set, self._refit_uid = mset, None
         self._open_modal()
 
+    update_label = "Refit…"
+
+    def update_result(self):
+        self.open_refit()
+
     def open_refit(self, uid=None):
         """Open the modal to refit an existing measurement in place."""
         res = self._find(uid or self.selected_uid)
@@ -547,11 +552,16 @@ class IonBalanceTool(AbundanceWizard):
         """Re-measure the selected measurement's EWs when the canvas Filtered switch toggles,
         with the SNR and continuum uncertainty the measurement was made with. Only before a
         fit stands on the lines: a solved result's abundances were inverted against the EWs
-        measured then."""
+        measured then, so it is marked out of date instead and a refit measures them anew
+        (:meth:`sync_target`)."""
         if not self.active:
             return
         res = self.selected()
-        if res is None or res.stage != ms.STAGE_MEASURED:
+        if res is None:
+            return
+        if res.stage != ms.STAGE_MEASURED:
+            self.push_results()
+            self._render_selected()
             return
         spec = self._spec_of(res)
         if spec is None or spec.yunit != u.dimensionless_unscaled:
@@ -604,6 +614,7 @@ class IonBalanceTool(AbundanceWizard):
                 self.setup.selected_grid()))
         else:
             res = refit
+            self.sync_target(res, spec)
         res.params0, res.entry, res.free, res.tols = dict(params0), entry, free, tols
         res.stage = ms.STAGE_MEASURED
         res.history, res.diags, res.sigmas, res.converged = [], {}, {}, False
@@ -743,6 +754,7 @@ class IonBalanceTool(AbundanceWizard):
         src = html.escape(res.maskset_name or "—")
         rows = [f'<div class="lm-title"><span class="section-header">{el} balance</span>'
                 f'{stale}</div>',
+                self.stale_banner(res),
                 f'<div class="hint">{len(res.lines)} windows from {src}, measured on '
                 f'{html.escape(res.ref_name)} · {n1} {el} I, {n2} {el} II included.</div>',
                 preparation_note(res)]
@@ -764,7 +776,8 @@ class IonBalanceTool(AbundanceWizard):
                     '<button class="text-btn" data-tool="ionbal" data-result-duplicate>'
                     'Duplicate</button>'
                     '<div class="hint">Refitting keeps these measured lines and their '
-                    'curation, and replaces the fit standing on them; refit a duplicate to '
+                    'curation (measuring their EWs again if the target changed), and '
+                    'replaces the fit standing on them; refit a duplicate to '
                     'keep this fit. To measure again — a different star, or edited windows '
                     '— start from the LineMasks view.</div>')
         return "".join(rows)
@@ -783,6 +796,7 @@ class IonBalanceTool(AbundanceWizard):
         """The solved (or held) parameters block."""
         if res.stage != ms.STAGE_SOLVED or not res.params:
             return '<div class="hint">Not fitted yet.</div>'
+        stale = bool(self.stale_reasons(res))
         cells = []
         for k in sp.PARAM_KEYS:
             digits = 0 if k == "teff" else 2
@@ -792,9 +806,13 @@ class IonBalanceTool(AbundanceWizard):
             cells.append(f'<div class="field-group field-inline"><label>{PARAM_LABELS[k]}'
                          f'</label><span class="field-static">{val}{held}</span></div>')
         state = res.status_label
-        return (f'<div class="section-header">Parameters</div>{"".join(cells)}'
+        head = ('<div class="section-header">Parameters <span class="stale-tag">'
+                'Previous solution</span></div>' if stale else
+                '<div class="section-header">Parameters</div>')
+        return (f'<div class="params-block{" stale-block" if stale else ""}">{head}'
+                f'{"".join(cells)}'
                 f'<div class="hint">{state} after {len(res.history)} iteration'
-                f'{"" if len(res.history) == 1 else "s"}.</div>')
+                f'{"" if len(res.history) == 1 else "s"}.</div></div>')
 
     def _diag_cell(self, res, key, digits=3):
         d = res.diags or {}
@@ -820,16 +838,20 @@ class IonBalanceTool(AbundanceWizard):
         cells = " · ".join(
             f'{DIAG_LABELS[k]} {self._diag_cell(res, k)}' for k in sp.DIAG_KEYS)
         cells += f' (n = {d.get("n_1", 0)} {el} I + {d.get("n_2", 0)} {el} II)'
+        stale = False
         if res.stage == ms.STAGE_SOLVED:
             s = res.sigmas or {}
             fmt = self._fmt
             state = res.status_label
-            head = (f'<b>{state}</b> after {len(res.history)} it · '
+            stale = bool(self.stale_reasons(res))
+            head = (('<span class="stale-tag">Previous solution</span> ' if stale else "")
+                    + f'<b>{state}</b> after {len(res.history)} it · '
                     f'Teff {fmt(res.params.get("teff"), s.get("teff"), digits=0)} K · '
                     f'logg {fmt(res.params.get("logg"), s.get("logg"), digits=2)} · '
                     f'[Fe/H] {fmt(res.params.get("feh"), s.get("feh"), plus=True, digits=2)} · '
                     f'ξ {fmt(res.params.get("vmic"), s.get("vmic"), digits=2)} km/s')
-        return (f'<div class="abund-summary ionbal-status">{head}'
+        return (f'<div class="abund-summary ionbal-status{" stale-block" if stale else ""}">'
+                f'{head}'
                 f'<span class="abund-budget"> — {cells}</span></div>')
 
     def table_html(self, res):
@@ -864,4 +886,4 @@ class IonBalanceTool(AbundanceWizard):
                     '<div class="linelist-empty">Every line is switched off.</div>')
         return (f'<table class="linelist-table abund-table ionbal-lines" data-tool="ionbal">'
                 f'<thead>{head}</thead>'
-                f'<tbody>{"".join(body)}</tbody></table>{self._status_html(res)}{self.continuum_actions(res)}')
+                f'<tbody>{"".join(body)}</tbody></table>{self._status_html(res)}')

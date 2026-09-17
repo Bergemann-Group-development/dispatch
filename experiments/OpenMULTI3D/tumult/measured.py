@@ -5,6 +5,18 @@ import json
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
+
+def target_digest(spectrum):
+    """A short digest of a spectrum's sampled values, as ``MeasuredLines.target`` records it.
+
+    Two spectra share a digest when their wavelengths and fluxes are identical in their own
+    units, so a changed filter or continuum shows up as a different digest."""
+    import hashlib
+    xx, yy = (np.asarray(v, dtype=float) for v in spectrum.values)
+    return hashlib.sha1(xx.tobytes() + yy.tobytes()).hexdigest()[:16]
+
 
 @dataclass(kw_only=True)
 class MeasuredLines:
@@ -34,6 +46,24 @@ class MeasuredLines:
     ident_note: str = ""
     request: Any = None
     target: dict = field(default_factory=dict)
+
+    def stale_reasons(self, target=None):
+        """Why the solution no longer describes the inputs it would be solved from now.
+
+        Derived by comparing what the solve recorded with the current state, so it cannot
+        drift from it. ``target`` is the spectrum the result would be solved against now, or
+        its :func:`target_digest`; it differs from the recorded one when the digests do.
+        Returns ``{key: text}``; subclasses add the line-level reasons their solutions
+        depend on. A record that names no target has no target reason."""
+        reasons = {}
+        digest = (self.target or {}).get("sha1")
+        if isinstance(target, str) or target is None:
+            current = target
+        else:
+            current = target_digest(target)
+        if current is not None and digest and current != digest:
+            reasons["target"] = "the target spectrum differs from the one it was solved against"
+        return reasons
 
     def measurement(self):
         from .abundance import LineResult

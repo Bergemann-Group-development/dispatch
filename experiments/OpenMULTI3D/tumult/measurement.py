@@ -24,6 +24,17 @@ def mask_key(mset) -> str:
     return ";".join(f"{m.lmin:.4f}-{m.lmax:.4f}" for m in mset.masks if m.include)
 
 
+def lines_key(lines) -> str:
+    """A fingerprint of what a balance solution consumed from its lines: each line's include
+    choice, EW and local continuum. :func:`tumult.sparams.ionbalance` records it as
+    ``BalanceResult.solved_key``; a curation or continuum edit changes it, and undoing the
+    edit restores it."""
+    def line(ln):
+        nodes = ",".join(f"{x:.6g}:{y:.6g}" for x, y in ln.continuum) if ln.renorm else ""
+        return f"{int(bool(ln.include))}|{float(ln.ew):.6g}|{nodes}"
+    return ";".join(line(ln) for ln in lines)
+
+
 @dataclass
 class BalanceResult(MeasuredLines):
     """A stellar-parameter fit and its independently owned measured features."""
@@ -47,6 +58,7 @@ class BalanceResult(MeasuredLines):
     termination: str = "measured"
     converged: bool = False
     solar_x: float = float("nan")                     # A_solar(element) the fit used
+    solved_key: str = ""                              # lines_key(lines) of the solution
 
     uid: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
     name: str = ""
@@ -83,8 +95,27 @@ class BalanceResult(MeasuredLines):
                 "undetermined": "undetermined: insufficient diagnostics",
                 "boundary": "stopped at parameter bounds",
                 "failed": "synthesis failed", "cancelled": "cancelled",
-                "stale": "curation changed: refit required"}.get(
+                # records saved before staleness was derived from solved_key
+                "stale": "curation changed: refit required",
+                "measurement_changed": "measurement changed: refit required"}.get(
                     self.termination, self.termination)
+
+    def stale_reasons(self, target=None):
+        """:meth:`MeasuredLines.stale_reasons`, plus a changed line set: an include toggle,
+        a local-continuum edit or a refreshed EW since the parameters were solved. The
+        diagnostics follow such edits at once (:meth:`reaggregate`), the parameters only
+        after a refit. ``converged`` and ``termination`` keep describing that solve."""
+        reasons = super().stale_reasons(target)
+        if self.stage != STAGE_SOLVED or self.diagnose_only:
+            return reasons
+        if self.solved_key:
+            changed = lines_key(self.lines) != self.solved_key
+        else:
+            changed = self.termination in ("stale", "measurement_changed")
+        if changed:
+            reasons["lines"] = ("the included lines, their EWs or local continua changed "
+                                "after the parameters were solved")
+        return reasons
 
     def stale_against(self, mset):
         """True when the source set's windows have moved since this was measured."""
@@ -121,8 +152,6 @@ class BalanceResult(MeasuredLines):
             for k, v in self.jac.items()}
         self.sigmas, self.covariance = sp.coupled_uncertainties(
             self.diags, jacobian, self.free or None)
-        self.converged = False
-        self.termination = ("diagnostic" if self.diagnose_only else "stale")
 
     @classmethod
     def from_dict(cls, data):

@@ -499,7 +499,8 @@ def test_complete_edited_result_preserves_abundance_convention(config, monkeypat
     ln.cog_step, ln.cog_origin = .25, shift
     if balance:
         result = BalanceResult(lines=[ln], element='Mg', profile='trapz', request=request,
-                                params=dict(STAR), solar_x=shift, stage='solved')
+                                params=dict(STAR), solar_x=shift, stage='solved',
+                                solved_key='solved on other lines', converged=True)
     else:
         result = ab.AbundanceResult(lines=[ln], element='Mg', symbol='Mg', summary={},
                                      profile='trapz', request=request)
@@ -514,4 +515,5 @@ def test_complete_edited_result_preserves_abundance_convention(config, monkeypat
     assert all(v['only_elements'] == 'Mg' for v in variants)
     assert result.request.star == STAR
     if balance:
-        assert not result.converged and result.termination == 'measurement_changed'
+        # completing the rungs updates the diagnostics, not the solved parameters
+        assert set(result.stale_reasons()) == {'lines'}

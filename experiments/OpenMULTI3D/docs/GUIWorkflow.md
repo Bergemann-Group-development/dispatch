@@ -53,6 +53,34 @@ result that is still being computed is not duplicated. A copied mask set has no 
 no baseline, so it is unsaved until **Save as…** writes it. Copies are ordinary workspace
 objects and are saved and restored like any other.
 
+### Out-of-date results
+
+A solved abundance or balance result records what it was solved from: the target's digest
+and preparation (`MeasuredLines.target`, `.preparation`) and, for a balance, the
+fingerprint of its lines (`BalanceResult.solved_key`). Its panel compares these with the
+current state on every render (`AbundanceWizard.stale_reasons`). Nothing is recomputed
+automatically. When they differ, the panel opens with an **Out of date** banner. The banner
+lists what changed and offers the action that solves the result again: **Synthesise
+again** for an abundance, **Refit…** for a balance, and **Compute remaining abundance
+rungs** while an edited continuum lacks rungs. It also offers **Duplicate**, to keep the
+current solution first. The previous values stay visible, tagged *Previous solution*:
+the balance parameter block, the status line under its table and the abundance mean. The
+sidebar row carries an *Out of date* flag.
+
+- Target changes: filtering switched on or off, a different or edited continuum, a changed
+  convolution. Solving again measures the lines' EWs on the current target first
+  (`sync_target`) and records its preparation.
+- Balance lines: including or excluding a line, editing a local continuum and completing
+  its rungs. The diagnostics follow these edits at once from the stored per-line
+  abundances, but the parameters change only after a refit. Undoing the edit makes the
+  solution current again. `converged` and `termination` keep describing the solve itself.
+- Abundance lines: including or excluding a line only aggregates the mean again, which is
+  exact, so it leaves the result current. Lines left without an abundance by a
+  local-continuum edit make it out of date until they are refitted or their rungs computed.
+
+The recorded inputs are saved with the result, so a loaded workspace evaluates staleness
+the same way.
+
 ### Removing an object
 
 Every sidebar remove button (spectra, line mask sets, model atoms and the three result
@@ -296,7 +324,8 @@ Edit tab carries a collapsed **Prepare spectrum** section with **Filter**, the
 state (automatic continuum scaling, spline continuum or already normalised) and whether
 filtering is active, and the measurement modals repeat that summary for their target,
 because filtering applies to every spectrum and feeds the measurements, not only the
-display. Measurement results record this preparation and the line list they used.
+display. Measurement results record this preparation and the line list they used, and a
+solved result whose target preparation has changed since is shown as out of date.
 Normalise shows "Editing continuum: <spectrum>" and isolates that spectrum while the
 continuum is edited. Knot edits apply to the spectrum at once. Normalise is an edit
 session: entering it snapshots the spectrum's knots, already-normalised flag and
@@ -356,14 +385,14 @@ so changing one spectrum's measurement does not affect another.
 
 A CoG measurement is re-inverted using its cached spectra after each edit. If its
 nearest abundance lattice rungs are missing, the row is flagged `missing_rungs` and
-**Compute remaining abundance rungs** appears. No abundance is reported until those
-rungs bracket the edited EW. The button retains existing spectra and computes the
+**Compute remaining abundance rungs** appears in the result's out-of-date banner. No
+abundance is reported until those rungs bracket the edited EW. The button retains existing spectra and computes the
 missing rungs. An EW outside the cached range extends the ladder one interval at a
 time, up to the calculation's round limit; unresolved lines keep the button.
-Direct profile fits instead show **Refit with edited continuum**. Changing a balance
-measurement invalidates its convergence status; completing its rungs updates the line
-abundances and diagnostics at the stored atmosphere. Use the balance refit action to
-solve the stellar parameters again.
+Direct profile fits instead leave the line without an abundance until **Synthesise
+again**. Editing a balance measurement makes its parameters out of date; completing its
+rungs updates the line abundances and diagnostics at the stored atmosphere, and
+**Refit…** solves the stellar parameters again (see "Out-of-date results").
 
 ## Synthesis modal
 
@@ -534,7 +563,9 @@ line by line.
 - `AbundanceWizard` (`abundwizard.py`) is the base of the abundance, correction and
   ionisation-balance tools: the step/result/table markup, the delegated analysis binder,
   the result jobs (`ResultJobs` in `jobs.py`), the shared EW refresh report and the slot
-  envelope. `AtomTool`
+  envelope, and the out-of-date banner (`stale_reasons`, `stale_banner`, `sync_target`)
+  over the results' own `stale_reasons` (`tumult/measured.py`, `abundance.py`,
+  `measurement.py`). `AtomTool`
   (`atomtool.py`) owns the atom objects, the atom view and the correction entry point;
   `AbundanceResult.atom_path` links a correction result to its atom.
   `AbundanceWizard.duplicate_result`, `MaskStore.duplicate` and the Edit tab's

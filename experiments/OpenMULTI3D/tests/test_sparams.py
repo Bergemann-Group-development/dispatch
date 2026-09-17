@@ -206,14 +206,19 @@ def test_measurement_counts_and_labels():
 def test_measurement_reaggregates_without_synthesis():
     """Toggling a line off re-reads the diagnostics from the stored per-line abundances."""
     res = _measurement()
+    res.solved_key = ms.lines_key(res.lines)
     res.reaggregate()
     assert res.diags["n_1"] == 1 and res.diags["n_2"] == 1
+    assert res.stale_reasons() == {}
     res.lines[1].include = False
     res.reaggregate()
     assert res.diags["n_2"] == 0 and np.isnan(res.diags["d_ion"])
     assert res.diags["a_1"] == pytest.approx(7.4)
-    assert not res.converged
-    assert res.termination == "stale"
+    # the parameters no longer describe these lines; the solve's own record stays
+    assert set(res.stale_reasons()) == {"lines"}
+    assert res.converged
+    res.lines[1].include = True        # undoing the edit makes the solution current again
+    assert res.stale_reasons() == {}
 
 
 def test_measurement_staleness_follows_the_windows():

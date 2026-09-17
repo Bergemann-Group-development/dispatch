@@ -2936,3 +2936,155 @@ def test_resetting_a_correction_window_restores_the_computed_line(tmp_path):
     assert ln.fit_window == (4999.5, 5000.5)
     assert {k: getattr(ln, k) for k in computed} == computed
     assert 'data-reset-window' not in tool.table_html(res)
+
+
+# --- results whose inputs changed after they were solved ------------------------------------
+def _solved_balance(ctx, obj):
+    """A balance solved on ``obj`` as it is now: its target digest, preparation and line
+    fingerprint are those of the current state."""
+    from tumult import abundance as ab
+    from tumult import measurement as ms
+    lines = [_diag_line(), _diag_line(5001.8, 5002.2)]
+    lines[1].ion = "Fe II"
+    for ln, a in zip(lines, (7.45, 7.5)):
+        ln.a, ln.sigma_a = a, 0.05
+    params = {"teff": 5777.0, "logg": 4.44, "feh": 0.0, "vmic": 1.0}
+    res = ms.BalanceResult(
+        lines=lines, element="Fe", ref_uid=obj.uid, ref_name=obj.name, profile="gauss",
+        snr=100.0, cont_pct=0.5, stage=ms.STAGE_SOLVED, params=dict(params),
+        params0=dict(params), free={k: True for k in params}, solar_x=7.5,
+        history=[{"params": dict(params), "diags": {}}], termination="converged",
+        converged=True, uid="bal-1", name="Fe balance")
+    res.preparation = ctx.canvas.preparation(obj)
+    res.target = ab._target_spectrum(ctx.canvas.target_spectrum(obj.uid))[1]
+    res.solved_key = ms.lines_key(res.lines)
+    res.reaggregate()
+    return res
+
+
+def _balance_document(tmp_path):
+    from tumult.spectrum_io import load_file
+    document, ctx = _build_document()
+    path = _spectrum_file(tmp_path)
+    obj = ctx.canvas.add_object(load_file(path), name="obs", source=("file", str(path)))
+    tool = ctx.tools._tools["ionbal"]
+    res = _solved_balance(ctx, obj)
+    tool.results.append(res)
+    tool.select_result(res.uid)
+    return document, ctx, tool, res, obj
+
+
+def _shows_stale(tool, res):
+    panel = tool._panel_bridge.value
+    stale = "stale-banner" in panel
+    marked = "Previous solution" in panel and "Previous solution" in tool.table_html(res)
+    assert stale == marked
+    return stale
+
+
+@pytest.mark.parametrize("edit", ["filter", "exclude", "continuum"])
+def test_an_edit_after_a_balance_solve_marks_it_out_of_date_until_refitted(
+        edit, tmp_path, monkeypatch):
+    """A filter toggle, a line exclusion and a local-continuum edit each leave the solved
+    parameters behind: the panel says so and marks the parameter block, which stays visible.
+    The refit it offers solves on the current target and lines, and clears the banner."""
+    from copy import deepcopy
+    from tumult import abundance as ab
+    from tumult import measurement as ms
+
+    document, ctx, tool, res, obj = _balance_document(tmp_path)
+    assert not _shows_stale(tool, res)
+    ew0 = res.lines[0].ew
+    if edit == "filter":
+        x, y = obj.spectrum.values
+        ctx.canvas.apply_filter({obj.uid: Spectrum(x, np.clip(y + 0.05, 0, 1))})
+        ctx.emit("filter-state", exists=True, visible=True)
+        assert "filtering was switched on" in tool._panel_bridge.value
+    elif edit == "exclude":
+        tool.actions.value = "toggle-line:1:1"
+        assert "included lines" in tool._panel_bridge.value
+    else:
+        tool.actions.value = "continuum:0:1"
+        assert res.lines[0].renorm
+    assert _shows_stale(tool, res)
+    assert "Out of date" in tool.results_html()
+    assert "Teff" in tool._panel_bridge.value        # the previous solution stays visible
+
+    monkeypatch.setattr(tool.setup, "context", lambda params0: _stub_request(tmp_path))
+    monkeypatch.setattr(ctx, "schedule", lambda fn: fn())
+    submitted = []
+    monkeypatch.setattr(tool.jobs, "submit_operation",
+                        lambda name, kind, request, done, kwargs=None, result=None:
+                        submitted.append((done, kwargs)))
+    tool.actions.value = "update-result::2"             # the banner's Refit…
+    assert tool._refit_uid == res.uid
+    tool.run()
+    (done, kwargs), = submitted
+    if edit == "filter":
+        # the refit measures the lines on the filtered target it is submitted
+        assert res.lines[0].ew != ew0 and res.preparation["filtered"] is True
+    solved = deepcopy(kwargs["measured"])
+    solved.target = ab._target_spectrum(kwargs["target"])[1]
+    solved.solved_key = ms.lines_key(solved.lines)
+    solved.params, solved.termination, solved.converged = dict(res.params0), "converged", True
+    solved.history = [{"params": dict(res.params0), "diags": {}}]
+    done(tool._adopt(solved, res.name))
+    assert res.stage == ms.STAGE_SOLVED
+    assert not _shows_stale(tool, res)
+    for callback in list(document.session_destroyed_callbacks):
+        callback(None)
+
+
+def test_abundance_result_is_out_of_date_after_a_filter_toggle(tmp_path):
+    from tumult import abundance as ab
+    from tumult.spectrum_io import load_file
+
+    document, ctx = _build_document()
+    path = _spectrum_file(tmp_path)
+    obj = ctx.canvas.add_object(load_file(path), name="obs", source=("file", str(path)))
+    tool = ctx.tools._tools["abundance"]
+    ln = _diag_line()
+    ln.a, ln.sigma_a = 0.1, 0.05
+    res = ab.AbundanceResult(element="Fe", symbol="Fe", uid="ab-1", name="Fe A",
+                             ref_uid=obj.uid, lines=[ln], stage="uncert",
+                             summary=ab.correction_summary([ln]))
+    res.preparation = ctx.canvas.preparation(obj)
+    res.target = ab._target_spectrum(ctx.canvas.target_spectrum(obj.uid))[1]
+    tool.results.append(res)
+    tool.select_result(res.uid)
+    stale = tool._stale_bridge
+    assert stale.value == "" and "Previous solution" not in tool.table_html(res)
+    x, y = obj.spectrum.values
+    ctx.canvas.apply_filter({obj.uid: Spectrum(x, np.clip(y + 0.05, 0, 1))})
+    ctx.emit("filter-state", exists=True, visible=True)
+    assert "stale-banner" in stale.value and "Synthesise again" in stale.value
+    assert "Previous solution" in tool.table_html(res)
+    ctx.canvas.set_filter_visible(False)             # back to the target it was solved on
+    ctx.emit("filter-state", exists=True, visible=False)
+    assert stale.value == ""
+    for callback in list(document.session_destroyed_callbacks):
+        callback(None)
+
+
+def test_staleness_is_evaluated_for_a_balance_loaded_from_a_saved_workspace(tmp_path):
+    """The solve's recorded inputs travel with the save: a result saved out of date loads
+    out of date, and undoing its edit in the new document makes it current."""
+    document, ctx, tool, res, obj = _balance_document(tmp_path)
+    tool.actions.value = "toggle-line:1:1"
+    assert _shows_stale(tool, res)
+    _session_action(document, "save stale 1")
+
+    fresh, fctx = _build_document()
+    _session_load(fresh, 1, 2)
+    ftool = fctx.tools._tools["ionbal"]
+    loaded, = ftool.results
+    assert loaded.solved_key == res.solved_key and loaded.target == res.target
+    ftool.select_result(loaded.uid)
+    assert set(ftool.stale_reasons(loaded)) == {"lines"}
+    assert _shows_stale(ftool, loaded)
+    ftool.actions.value = "toggle-line:1:2"
+    assert ftool.stale_reasons(loaded) == {}
+    assert not _shows_stale(ftool, loaded)
+    for doc in (document, fresh):
+        for callback in list(doc.session_destroyed_callbacks):
+            callback(None)

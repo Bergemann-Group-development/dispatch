@@ -27,6 +27,7 @@ from bokeh.plotting import figure
 
 from tumult import abundance as ab
 from tumult.abundance import SYNTH_PAD_AA  # noqa: F401 (the tools import it from here)
+from tumult.measured import target_digest
 import store
 from canvas import ACCENT, style_dark
 from tableui import SortState, sort_headers
@@ -128,8 +129,7 @@ ANALYSIS_SCRIPT = r"""
     if (sort) { analysisAction(prefix, 'sort', sort.dataset.sortcol); return; }
     var remaining = ev.target.closest('[data-complete-rungs]');
     if (remaining) { analysisAction(prefix, 'complete-rungs'); return; }
-    var refit = ev.target.closest('[data-refit-continuum]');
-    if (refit) { analysisAction(prefix, 'refit-continuum'); return; }
+    if (ev.target.closest('[data-update-result]')) { analysisAction(prefix, 'update-result'); return; }
     var reset = ev.target.closest('[data-reset-window]');
     if (reset) { analysisAction(prefix, 'reset-window', reset.dataset.resetWindow); return; }
     var row = ev.target.closest('tr[data-line]');
@@ -223,6 +223,7 @@ class AbundanceWizard(Tool):
         self.selected_uid = None
         self._last_span_aa = None          # span (Å) of the last shown line, for no-window jumps
         self._jumped = None                # index of the line whose window is accented
+        self._digests = {}                 # id(spectrum) -> (spectrum, target_digest)
 
         # step switch / run buttons / result clicks / line toggles all report through one
         # client->server channel, written as ``"<kind>:<arg>:<nonce>"``.
@@ -481,11 +482,8 @@ class AbundanceWizard(Tool):
             self._toggle_continuum(arg)
         elif kind == "complete-rungs":
             self._complete_rungs()
-        elif kind == "refit-continuum":
-            if self.prefix == "abund":
-                self.run_synth(request=self.selected().request)
-            elif self.prefix == "ionbal":
-                self.open_refit()
+        elif kind == "update-result":
+            self.update_result()
         elif kind == "mask-toggle":
             self.show_toggled_only = not self.show_toggled_only
             self._render_selected()
@@ -501,6 +499,91 @@ class AbundanceWizard(Tool):
 
     def _extra_action(self, kind, arg):
         """Subclass hook: the wizard-specific run actions."""
+
+    # --- staleness: a solution whose inputs have changed since ------------------------------
+    # A result is out of date when what it was solved from differs from what it would be
+    # solved from now: the target spectrum (its digest and recorded preparation) or, per
+    # result type, its lines (``stale_reasons`` of the result). Nothing is recomputed; the
+    # panel says what changed and offers ``update_label``.
+    update_label = ""      # subclass: the action that solves the selected result again
+
+    def update_result(self):
+        """Subclass hook: solve the selected result again from its current inputs."""
+
+    def _target_digest(self, spec):
+        """``target_digest(spec)``, remembered per spectrum object: the canvas replaces a
+        target's spectrum object when its continuum or filter changes."""
+        cached = self._digests.get(id(spec))
+        if cached is None or cached[0] is not spec:
+            if len(self._digests) > 32:
+                self._digests.clear()
+            cached = self._digests[id(spec)] = (spec, target_digest(spec))
+        return cached[1]
+
+    def _preparation_changes(self, res):
+        """What differs between the preparation ``res`` recorded and its target's current
+        one, in words; empty when either is unknown."""
+        recorded = res.preparation or {}
+        obj = self.canvas._find(res.ref_uid) if res.ref_uid is not None else None
+        if not recorded or obj is None:
+            return []
+        now = self.canvas.preparation(obj)
+        changes = []
+        if bool(recorded.get("filtered")) != now["filtered"]:
+            changes.append("filtering was switched " + ("on" if now["filtered"] else "off"))
+        if recorded.get("normalisation", now["normalisation"]) != now["normalisation"]:
+            changes.append(f"the target now uses {now['normalisation']}")
+        if dict(recorded.get("convolution", now["convolution"])) != now["convolution"]:
+            changes.append("the target's convolution changed")
+        return changes
+
+    def stale_reasons(self, res):
+        """``{key: text}`` saying why the solved ``res`` no longer matches its inputs; empty
+        before it is solved and while it is being computed."""
+        if res is None or res.stage != self.final_stage or self.is_computing(res):
+            return {}
+        spec = self._result_spec(res) if res.ref_uid is not None else None
+        reasons = res.stale_reasons(None if spec is None else self._target_digest(spec))
+        changes = self._preparation_changes(res)
+        if changes:
+            reasons["target"] = "; ".join(changes) + " after this was solved"
+        elif "target" in reasons:
+            reasons["target"] = ("the target's continuum or filtered flux changed after this "
+                                 "was solved")
+        return reasons
+
+    def sync_target(self, res, spec):
+        """Before ``res`` is solved again on ``spec``: when its target changed, measure the
+        lines' EWs again on ``spec`` and record the current preparation, so the new solution
+        stands on the target as it is now."""
+        if "target" not in self.stale_reasons(res):
+            return
+        outcome = ab.refresh_ews(spec, res.lines, profile=res.profile, snr=res.snr,
+                                 cont_pct=res.cont_pct)
+        line_list = (res.preparation or {}).get("line_list")
+        res.preparation = self.canvas.preparation(self.canvas._find(res.ref_uid))
+        if line_list:
+            res.preparation["line_list"] = line_list
+        self.report_refresh(res, outcome)
+
+    def stale_banner(self, res):
+        """The panel's statement that ``res`` shows its previous solution: what changed and
+        the actions that bring it up to date."""
+        reasons = self.stale_reasons(res)
+        if not reasons:
+            return ""
+        items = "".join(f"<li>{html.escape(text)}</li>" for text in reasons.values())
+        rungs = ('<button class="text-btn" data-complete-rungs>Compute remaining abundance '
+                 'rungs</button>' if any(ln.missing_rungs for ln in res.lines) else "")
+        label = html.escape(self.update_label)
+        return (f'<div class="stale-banner" data-tool="{self.prefix}" role="status">'
+                '<div class="stale-banner-head"><i class="ti ti-alert-triangle"></i> '
+                'Out of date: the values below are the previous solution</div>'
+                f'<ul>{items}</ul>'
+                f'<button class="primary-btn" data-update-result>{label}</button>{rungs}'
+                '<button class="text-btn" data-result-duplicate>Duplicate</button>'
+                f'<div class="hint">{label} replaces this solution; duplicate first to keep '
+                'it.</div></div>')
 
     # --- the shared EW refresh --------------------------------------------------------------
     def report_refresh(self, res, outcome):
@@ -822,6 +905,8 @@ class AbundanceWizard(Tool):
                 f'<span class="result-meta"><span class="object-name" '
                 f'title="{html.escape(r.name)}">{html.escape(r.name)}</span>'
                 f'<span class="result-summary">{html.escape(summary)}</span></span>'
+                + ('<span class="lm-dirty" title="Its inputs changed after it was solved">'
+                   'Out of date</span>' if self.stale_reasons(r) else "") +
                 f'<button class="result-btn" data-result-remove="{r.uid}" '
                 f'title="Remove from workspace"><i class="ti ti-x"></i></button></div>')
         return rows
@@ -898,17 +983,6 @@ class AbundanceWizard(Tool):
         return (f'<td><input type="checkbox" class="line-continuum-chk" '
                 f'data-line="{index}"{checked} title="Adjust this measurement’s local continuum">'
                 '</td>')
-
-    def continuum_actions(self, res):
-        if any(ln.missing_rungs for ln in res.lines):
-            return (f'<div data-tool="{self.prefix}"><span class="hint">'
-                    'The edited EW needs additional abundance rungs. </span>'
-                    '<button class="primary-btn" data-complete-rungs>'
-                    'Compute remaining abundance rungs</button></div>')
-        if any("refit_required" in ln.flags for ln in res.lines):
-            return (f'<div data-tool="{self.prefix}"><button class="primary-btn" '
-                    'data-refit-continuum>Refit with edited continuum</button></div>')
-        return ""
 
     def _complete_rungs(self):
         res = self.selected()

@@ -108,6 +108,7 @@ class AbundanceTool(AbundanceWizard):
         self._settings_uid = None     # ... or the result whose synthesis it reconfigures
         self._actions_bridge = ctx.bridges.html("abund-modal-actions")
         self._note_bridge = ctx.bridges.html("abund-setup-note")   # panel: the run's context
+        self._stale_bridge = ctx.bridges.html("abund-stale")       # panel: out-of-date banner
         self.ref_uid = saved.get("ref_uid")
 
         # the pair of diagnostic panels (excitation and reduced EW), with the per-line
@@ -132,6 +133,7 @@ class AbundanceTool(AbundanceWizard):
     def update(self):
         self.refresh()
         if self.active:
+            self.push_stale()                  # a continuum edit may have changed the target
             self._render_decor(self._jumped)   # the highlights follow a display-unit flip
 
     # --- the modal ----------------------------------------------------------------------
@@ -229,12 +231,17 @@ class AbundanceTool(AbundanceWizard):
         shared :func:`tumult.abundance.refresh_ews` over each line's stored fit window with the
         SNR and continuum uncertainty the measurement was made with and repaints the table when
         anything changed. Restricted to the ``"lines"`` stage on purpose: once synthesis has
-        run, the abundances were inverted against the EW measured at selection, so silently re-measuring under a new filter
-        would misrepresent them. Windows, flags and include toggles are left untouched."""
+        run, the abundances were inverted against the EWs measured then, so the result is
+        marked out of date instead (:meth:`stale_banner`) and **Synthesise again** measures
+        them anew. Windows, flags and include toggles are left untouched."""
         if not self.active:
             return
         res = self.selected()
-        if res is None or res.stage != "lines":
+        if res is None:
+            return
+        if res.stage != "lines":
+            self.push_results()
+            self._render_selected()
             return
         spec = self.get_observation(getattr(res, "ref_uid", None))
         if spec is None or spec.yunit != u.dimensionless_unscaled:
@@ -284,7 +291,27 @@ class AbundanceTool(AbundanceWizard):
 
     def _render_selected(self):
         super()._render_selected()
+        self.push_stale()
         self._render_decor(self._jumped)
+
+    # --- out of date ----------------------------------------------------------------------
+    update_label = "Synthesise again"
+
+    def push_stale(self):
+        self._stale_bridge.value = self.stale_banner(self.selected())
+
+    def update_result(self):
+        """Synthesise the selected result again with the request it was computed from, after
+        measuring its EWs again when its target changed."""
+        res = self.selected()
+        if res is None:
+            return
+        spec = self.get_observation(res.ref_uid)
+        if spec is None:
+            self.notify("The reference observation is no longer loaded.")
+            return
+        self.sync_target(res, spec)
+        self.run_synth(request=res.request)
 
     def _result_spec(self, res):
         """The reference the result's lines were measured on (its points snap the window
@@ -517,11 +544,14 @@ class AbundanceTool(AbundanceWizard):
         foot = ""
         if res.stage == "uncert" and np.isfinite(res.summary.get("a_mean", np.nan)):
             s = res.summary
-            foot = (f'<div class="abund-summary">⟨{html.escape(self.value_label(res))}⟩ = '
+            stale = bool(self.stale_reasons(res))
+            foot = (f'<div class="abund-summary{" stale-block" if stale else ""}">'
+                    + ('<span class="stale-tag">Previous solution</span> ' if stale else "")
+                    + f'⟨{html.escape(self.value_label(res))}⟩ = '
                     f'{s["a_mean"]:+.3f} ± {s["sigma_mean"]:.3f}'
                     f'<span class="abund-budget"> (photon {s["sigma_phot"]:.3f} · '
                     f'continuum {s["sigma_cont"]:.3f} · scatter {s["sigma_scatter"]:.3f} · '
                     f'n={s["n"]})</span></div>')
         return (f'<table class="linelist-table abund-table abund-lines" data-tool="abund">'
                 f'<thead>{head}</thead>'
-                f'<tbody>{"".join(body)}</tbody></table>{foot}{self.continuum_actions(res)}')
+                f'<tbody>{"".join(body)}</tbody></table>{foot}')

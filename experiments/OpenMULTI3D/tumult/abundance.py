@@ -499,6 +499,18 @@ class AbundanceResult(MeasuredLines):
             base = Abundances({}, "[X/Fe]" if self.relative else "A(X)")
         return base.with_value(self.symbol, mean)
 
+    def stale_reasons(self, target=None):
+        """:meth:`MeasuredLines.stale_reasons`, plus the lines whose edited local continuum
+        left them without an abundance (``refit_required`` or ``missing_rungs``): the mean
+        omits them until they are refitted or their rungs computed. Including or excluding a
+        line needs no entry, because the mean is aggregated again from the per-line values."""
+        reasons = super().stale_reasons(target)
+        pending = sum(1 for ln in self.lines
+                      if "refit_required" in ln.flags or ln.missing_rungs)
+        if pending:
+            reasons["continuum"] = (f"edited local continuum: {pending} line"
+                                    f"{'s' if pending != 1 else ''} without an abundance")
+        return reasons
 
 
 @dataclass
@@ -1307,11 +1319,11 @@ def _target_spectrum(target):
         target = load_file(source)
     if not isinstance(target, Spectrum):
         raise TypeError("target must be a Spectrum or the path of a spectrum file.")
-    import hashlib
-    xx, yy = (np.asarray(v, dtype=float) for v in target.values)
+    from .measured import target_digest
+    xx = np.asarray(target.values[0], dtype=float)
     if xx.size < 2:
         raise ValueError("The target spectrum has fewer than two samples.")
-    digest = hashlib.sha1(xx.tobytes() + yy.tobytes()).hexdigest()[:16]
+    digest = target_digest(target)
     record = {"source": source, "points": int(xx.size),
               "range": [float(np.min(xx)), float(np.max(xx))],
               "unit": str(getattr(target, "xunit", "") or ""), "sha1": digest}
@@ -1876,7 +1888,6 @@ def set_local_continuum(result, line, target, *, enabled=None, nodes=None):
     line.__dict__.update(edited.__dict__)
     if hasattr(result, "reaggregate"):
         result.reaggregate()
-        result.converged, result.termination = False, "measurement_changed"
     else:
         result.summary = correction_summary(result.lines)
     return line
@@ -1943,7 +1954,6 @@ def complete_result_rungs(result, *, target=None, cancel_token=None, progress=No
                 finalize_line(ln, target, result.snr, result.cont_pct, result.profile)
     if balance:
         result.reaggregate()
-        result.converged, result.termination = False, "measurement_changed"
     else:
         result.summary = correction_summary(result.lines)
     return result

@@ -422,6 +422,16 @@ body.resizing * { pointer-events: none !important; }
 #linemask-modal .settings-nav { flex: 0 0 150px; }
 #linemask-modal .settings-nav-item { display: flex; align-items: center; }
 #linemask-modal .file-results { max-height: 260px; }
+/* a result whose inputs changed after it was solved: the panel banner, and the values of
+   that previous solution kept visible but marked */
+.stale-banner { margin: 8px 0; padding: 8px 10px; border-radius: 6px;
+  border: 1px solid #e0a030; background: rgba(224,160,48,0.12); }
+.stale-banner-head { font-weight: 700; color: #e0a030; margin-bottom: 4px; }
+.stale-banner ul { margin: 0 0 6px 16px; padding: 0; }
+.stale-banner .primary-btn, .stale-banner .text-btn { margin: 2px 6px 2px 0; }
+.stale-tag { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 8px;
+  color: #e0a030; border: 1px solid #e0a030; }
+.stale-block { opacity: 0.7; border-left: 3px solid #e0a030; padding-left: 6px; }
 /* the same flag on the left-sidebar object row, compressed to a dot */
 .lm-dot { flex: 0 0 auto; font-size: 9px; color: #e0a030; }
 

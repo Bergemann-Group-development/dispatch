@@ -537,7 +537,8 @@ def ionbalance(request, *, target, line_mask=None, measured=None, method="cog",
     from copy import copy, deepcopy
     from . import abundance as ab
     from .departures import DepartureGrid, Departures
-    from .measurement import BalanceResult, STAGE_MEASURED, STAGE_SOLVED, mask_key
+    from .measurement import (BalanceResult, STAGE_MEASURED, STAGE_SOLVED, lines_key,
+                              mask_key)
     from .synthesis.api import NodeStore
     from .synthesis.inputs import AtmosphereGrid
     from .synthesis.operations import quadrature_atmosphere
@@ -719,6 +720,7 @@ def ionbalance(request, *, target, line_mask=None, measured=None, method="cog",
     result.jacobian, result.covariance = outcome.jacobian, outcome.covariance
     result.sigmas = outcome.sigmas
     result.termination, result.converged = outcome.termination, outcome.converged
+    result.solved_key = lines_key(result.lines)
     result.stage = STAGE_SOLVED
     result.name = result.label()
     report(result)
