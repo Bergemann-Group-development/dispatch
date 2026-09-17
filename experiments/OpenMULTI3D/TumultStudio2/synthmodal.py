@@ -259,7 +259,7 @@ class SynthModal:
             return (f'<div class="hint">Synthesising the synth windows of {what}, on the '
                     f'atmosphere chosen below.</div>')
         return ('<div class="section-header">Wavelength window</div>'
-                '<div class="hint">Last-used atmosphere setup. Synthesis continues after closing the tab; spectrum fits stop.</div>'
+                '<div class="hint">Last-used atmosphere setup. Syntheses and fits keep running after the tab closes.</div>'
                 f'<div id="{self.window_form.slot_id}" class="synth-window">'
                 f'{self.window_form.html()}</div>')
 
