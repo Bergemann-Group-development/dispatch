@@ -387,6 +387,50 @@ def _chebyshev_center(halfspaces):
     return res.x[:d], float(res.x[-1])
 
 
+# a guessed interior point is used when it lies at least this fraction of the grid scale
+# inside the region, comfortably clear of its faces for qhull; otherwise the LP decides
+_NN_GUESS_MARGIN = 1e-6
+
+
+def _guess_interior(halfspaces, candidates, margin):
+    """The first of ``candidates`` at least ``margin`` inside ``{A x + b <= 0}``, or None."""
+    A, b = halfspaces[:, :-1], halfspaces[:, -1]
+    norms = np.linalg.norm(A, axis=1)
+    for x in candidates:
+        if np.min(-(A @ x + b) / norms) >= margin:
+            return x
+    return None
+
+
+def _query_faces(vor):
+    """``{site: centre}`` of the finite Voronoi faces ``vor`` puts around its last point."""
+    q_index = len(vor.points) - 1
+    rows = np.flatnonzero((vor.ridge_points == q_index).any(axis=1))
+    faces = {}
+    for row in rows:
+        verts = vor.ridge_vertices[row]
+        if -1 not in verts:
+            pair = vor.ridge_points[row]
+            faces[int(pair[0] if pair[1] == q_index else pair[1])] = \
+                vor.vertices[verts].mean(axis=0)
+    return faces
+
+
+def _stolen_region_guesses(centre, query, site):
+    """Likely interior points of the region ``query`` steals from ``site``.
+
+    That region borders the Voronoi face between them (``centre``, None when the face is
+    unbounded), so points between the face's centre and the query come first; points on
+    the segment from the query towards the site follow.
+    """
+    if centre is not None:
+        # thin regions only reach a short way from the face
+        for f in (0.25, 0.5, 0.1, 0.03, 0.01, 0.003, 0.001):
+            yield centre + f * (query - centre)
+    for t in (0.45, 0.35, 0.25):
+        yield query + t * (site - query)
+
+
 def _polytope_volume(halfspaces, interior):
     """``d``-volume and vertices of the convex polytope ``{A x + b <= 0}``."""
     try:
@@ -437,13 +481,19 @@ def get_nn_weights(points, query, draw=False, hull=None, vor1=None):
     tol = 1e-9 * scale
 
     hq = _nn_halfspaces(query, cand)                        # V_new(q): q beats every candidate
+    faces = _query_faces(vor2)
     weights, keep, polys = [], [], []
     for k, n in enumerate(nbors):
         others = np.delete(cand, k, axis=0)                 # n is the nearest *old* site
         hs = np.vstack([hq, _nn_halfspaces(points[n], others)]) if len(others) else hq
-        interior, radius = _chebyshev_center(hs)
-        if interior is None or radius < tol:
-            continue
+        # any interior point gives the same polytope; the LP is only needed when the
+        # guess fails, and then also decides whether the region is empty
+        guesses = _stolen_region_guesses(faces.get(int(n)), query, points[n])
+        interior = _guess_interior(hs, guesses, max(tol, _NN_GUESS_MARGIN * scale))
+        if interior is None:
+            interior, radius = _chebyshev_center(hs)
+            if interior is None or radius < tol:
+                continue
         vol, verts = _polytope_volume(hs, interior)
         if vol > 0:
             weights.append(vol); keep.append(int(n)); polys.append(verts)

@@ -62,6 +62,34 @@ def _vmic_window(vmic, step, n_points):
     return vals
 
 
+_INDEX = {}      # id(atmos_files) -> (atmos_files, size, index)
+_INDEX_SIZE = 8
+
+
+def _grid_index(atmos_files):
+    """``(spatial_keys, points, entries)`` of an atmosphere mapping, built once per mapping.
+
+    ``spatial_keys`` are the distinct ``(teff, logg, feh)`` in the mapping's order,
+    ``points`` their array and ``entries[spatial]`` the ``(grid_vmic, path)`` pairs there,
+    also in order. A grid has thousands of files, and a workflow selects nodes many times.
+    """
+    hit = _INDEX.get(id(atmos_files))
+    if hit is not None and hit[0] is atmos_files and hit[1] == len(atmos_files):
+        return hit[2]
+    entries = {}
+    for key, path in atmos_files.items():
+        spatial = tuple(float(x) for x in key[:3])
+        kvmic = float(key[3]) if len(key) == 4 else 0.0
+        entries.setdefault(spatial, []).append((kvmic, path))
+    spatial_keys = list(entries)
+    index = (spatial_keys, np.array(spatial_keys, dtype=float), entries)
+    if len(_INDEX) >= _INDEX_SIZE:
+        _INDEX.pop(next(iter(_INDEX)))
+    # the mapping is kept alive with its index, so its id cannot be reused meanwhile
+    _INDEX[id(atmos_files)] = (atmos_files, len(atmos_files), index)
+    return index
+
+
 def select_nodes(star, atmos_files, method='Delaunay', vmic_step=0.5, absmet_files=None,
                  vmic_points=2):
     """Select the synthesis nodes enclosing ``star``: atmospheres x vmic lattice points.
@@ -94,16 +122,7 @@ def select_nodes(star, atmos_files, method='Delaunay', vmic_step=0.5, absmet_fil
     teff, logg, feh = star[:3]
     vmic = star[3] if len(star) == 4 else 0.0
 
-    rep = {}  # (teff, logg, feh) -> (grid_vmic, path)
-    for key, path in atmos_files.items():
-        spatial = tuple(float(x) for x in key[:3])
-        kvmic = float(key[3]) if len(key) == 4 else 0.0
-        cur = rep.get(spatial)
-        if cur is None or abs(kvmic - vmic) < abs(cur[0] - vmic):
-            rep[spatial] = (kvmic, path)
-
-    spatial_keys = list(rep.keys())
-    points = np.array(spatial_keys, dtype=float)
+    spatial_keys, points, entries = _grid_index(atmos_files)
     query = np.array([teff, logg, feh])
 
     # select interpolation nodes (only in the dimensions where the query is off-grid)
@@ -118,7 +137,8 @@ def select_nodes(star, atmos_files, method='Delaunay', vmic_step=0.5, absmet_fil
     for w_spatial, idx in zip(weights, indices):
         spatial = spatial_keys[idx]
         teff_i, logg_i, feh_i = spatial
-        atmos_path = rep[spatial][1]
+        # the node's atmosphere with the grid vmic closest to the query (the first on a tie)
+        atmos_path = min(entries[spatial], key=lambda entry: abs(entry[0] - vmic))[1]
         absmet_file = absmet_files.get(feh_i, '') if absmet_files else ''
         if isinstance(atmos_path, (list, tuple)):
             # one node per snapshot, tagged by its file name (unique within the node)

@@ -96,6 +96,8 @@ _DEFAULT_R = 300000.0
 # memoised grid scans: (folder, pattern, snapshots) -> (tree_mtime, grid); the MARCS folder
 # has ~15k files, so re-globbing+parsing it on every synthesis is needless work.
 _GRID_MEMO = {}
+# folder -> (its mtime, its immediate subfolders), for _tree_mtime
+_SUBFOLDERS = {}
 
 
 # one {...} token in a pattern: an optional field name, an optional linear op (* / + -)
@@ -314,10 +316,20 @@ def recover_params(pattern, name):
 
 def _tree_mtime(folder):
     """The newest change of the folder or one of its immediate subfolders, which is what a
-    recursive scan of a directory-per-node grid depends on."""
-    stamps = [folder.stat().st_mtime]
-    stamps.extend(entry.stat().st_mtime for entry in folder.iterdir() if entry.is_dir())
-    return max(stamps)
+    recursive scan of a directory-per-node grid depends on.
+
+    Adding or removing a subfolder changes the folder's own mtime, so the subfolder list
+    is only listed again then; a flat grid of thousands of files costs a single stat.
+    """
+    own = folder.stat().st_mtime
+    hit = _SUBFOLDERS.get(str(folder))
+    if hit is None or hit[0] != own:
+        # os.scandir reports each entry's type from the listing itself; Path.is_dir
+        # would stat every file
+        with os.scandir(folder) as entries:
+            subfolders = [Path(entry.path) for entry in entries if entry.is_dir()]
+        _SUBFOLDERS[str(folder)] = hit = (own, subfolders)
+    return max([own, *(sub.stat().st_mtime for sub in hit[1])])
 
 
 def _select_snapshots(items, policy, has_snap):
@@ -651,17 +663,32 @@ def compute_batch(request, run_values_list, xmin=None, xmax=None, *, extra_prese
 def node_selector(request, store):
     """``select(params) -> frozenset`` of the synthesis node keys a star on ``request``'s
     atmosphere grid interpolates from, selected as :func:`compute_window_batch` selects
-    them and kept in ``store`` (a :class:`~tumult.synthesis.api.NodeStore`)."""
+    them and kept in ``store`` (a :class:`~tumult.synthesis.api.NodeStore`).
+
+    The spatial selection does not depend on vmic and the vmic lattice not on the other
+    parameters, so each is kept separately: stars that differ only in vmic share one
+    spatial selection.
+    """
+    from .atmos_select import _vmic_levels
     config = request.config
     atmos_files = discover_grid(request.atmosphere.record(config), config.root)
     absmet_files = _absmet_files(config.to_prefs(), atmos_files)
+    spatial = {}
 
     def select(params):
-        star = tuple(float(params[k]) for k in ("teff", "logg", "feh", "vmic"))
-        nodes, _ = store.select(star, atmos_files, method=config.interpolation,
-                                vmic_step=config.vmic_step, absmet_files=absmet_files,
-                                vmic_points=2)
-        return frozenset(node[0] for node in nodes)
+        position = tuple(float(params[k]) for k in ("teff", "logg", "feh"))
+        vmic = float(params["vmic"])
+        if position not in spatial:
+            nodes, _ = store.select((*position, vmic), atmos_files,
+                                    method=config.interpolation,
+                                    vmic_step=config.vmic_step, absmet_files=absmet_files,
+                                    vmic_points=2)
+            # a snapshot node has no vmic lattice; its key stands as it is
+            spatial[position] = (frozenset(n[0][0] for n in nodes if n[4] is not None),
+                                 frozenset(n[0] for n in nodes if n[4] is None))
+        lattice, fixed = spatial[position]
+        levels = [v for v, _w in _vmic_levels(vmic, config.vmic_step)]
+        return fixed | {(site, v) for site in lattice for v in levels}
     return select
 
 
