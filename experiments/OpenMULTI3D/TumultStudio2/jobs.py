@@ -339,16 +339,26 @@ class _Outcome:
 
 
 class ResultJobs:
-    """One current submission per result; workers never mutate the displayed object."""
+    """One current submission per result; workers never mutate the displayed object.
+    A result owns at most one live durable workflow (``live``): superseding or
+    invalidating the submission cancels it through the Processes path
+    (:meth:`JobTable.request_cancel`), so its record settles as cancelled."""
 
     def __init__(self, ctx, find=None, render=None):
         # ``find``/``render`` are only consulted for result-bound jobs; a job that
         # produces a new object (``result=None``) needs neither.
         self.ctx, self.find, self.render = ctx, find, render
         self.current = {}
+        self.live = {}
+
+    def _cancel_live(self, key):
+        job = self.live.pop(key, None)
+        if job is not None:
+            self.ctx.jobs.request_cancel(job.pid)
 
     def invalidate(self, uid):
         self.current.pop(uid, None)
+        self._cancel_live(uid)
 
     def submit(self, name, work, done, *, result=None, on_error=None, detached=False):
         """Submit one job. ``detached`` keeps it running when the browser tab closes,
@@ -356,6 +366,7 @@ class ResultJobs:
         key = result.uid if result is not None else name
         generation = object()
         self.current[key] = generation
+        self._cancel_live(key)
         workspace = getattr(self.ctx, "generation", None)   # captured at admission
         working = deepcopy(result)
         lock = Lock()
@@ -448,16 +459,23 @@ class ResultJobs:
         already says why). Returns the job, or ``None`` when submission was refused.
         Submitting again for the same ``key`` (``result.uid`` or ``name``) while an
         earlier one is still running is a deliberate rerun (changed settings, say): it
-        replaces the earlier submission's ``current`` entry, so that one's own delivery
-        becomes stale and is dropped by :func:`valid` instead of reaching ``result``. A
+        replaces the earlier submission's ``current`` entry first, so nothing of that one
+        reaches ``result`` any more, then cancels its workflow as its Processes row would.
+        Its record settles as cancelled and is not offered as a result to import. A
         double *click*, rather than a deliberate rerun, is guarded upstream of here — the
         submit button disables itself and the dialog closes on the first click, before a
         second can be sent."""
         key = result.uid if result is not None else name
         generation = object()
-        self.current[key] = generation
+        self.current[key] = generation       # the earlier submission is stale from here
+        self._cancel_live(key)
         workspace = getattr(self.ctx, "generation", None)   # captured at admission
         finished = False
+        job = None
+
+        def release():
+            if job is not None and self.live.get(key) is job:
+                del self.live[key]
 
         def valid():
             return (not getattr(self.ctx, "closed", False)
@@ -483,6 +501,7 @@ class ResultJobs:
                 return
             finished = True
             self.current.pop(key, None)
+            release()
             if result is not None:
                 result.termination = status
                 if hasattr(result, "converged"):
@@ -495,6 +514,7 @@ class ResultJobs:
                 return
             finished = True
             self.current.pop(key, None)
+            release()
             if result is not None:
                 apply(outcome)
                 done(result)
@@ -513,5 +533,7 @@ class ResultJobs:
         if job is None:
             stopped("failed")            # refused at admission; the row keeps the reason
             return None
+        if not finished:
+            self.live[key] = job
         job.token.add_callback(lambda: self.ctx.schedule(lambda: stopped("cancelled")))
         return job

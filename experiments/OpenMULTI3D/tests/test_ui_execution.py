@@ -612,6 +612,44 @@ def test_queued_workflow_cancelled_from_the_processes_panel_settles(tmp_path, mo
     assert ticks.settle(lambda: not ctx.jobs.active)
 
 
+def test_resubmitting_for_a_result_cancels_its_earlier_workflow(tmp_path, monkeypatch):
+    """A result owns at most one live workflow: a second submission for it cancels the
+    first, whose record settles as cancelled, and only the second reaches the result."""
+    import threading
+    from jobs import ResultJobs
+
+    document, ctx = _build_document()
+    ticks = _Ticks(document, monkeypatch)
+    started, tokens = threading.Event(), []
+
+    def execute(request, background_lines=True, cancel_token=None):
+        if request.config.preferences.get("first"):
+            tokens.append(cancel_token)
+            started.set()
+            stop = threading.Event()
+            cancel_token.add_callback(stop.set)
+            stop.wait(10)
+            cancel_token.check()
+        return _stub_result(request)
+
+    _stub_synthesize(monkeypatch, execute)
+    result = SimpleNamespace(uid="res", termination=None)
+    jobs = ResultJobs(ctx, lambda uid: result, lambda r: None)
+    delivered = []
+    first = jobs.submit_operation("synth", "synthesis.synthesize",
+                                  _stub_request(tmp_path, first=True), delivered.append,
+                                  result=result)
+    assert started.wait(10)
+    second = jobs.submit_operation("synth", "synthesis.synthesize", _stub_request(tmp_path),
+                                   delivered.append, result=result)
+    assert tokens[0].cancelled
+    second.handle.result(timeout=10)
+    assert ticks.settle(lambda: not ctx.jobs.active)
+    assert first.state == "cancelled" and first.handle.status == "cancelled"
+    assert second.state == "finished" and delivered == [result]
+    assert not jobs.live
+
+
 def test_closing_a_session_leaves_a_durable_workflow_running(tmp_path, monkeypatch):
     import threading
 
