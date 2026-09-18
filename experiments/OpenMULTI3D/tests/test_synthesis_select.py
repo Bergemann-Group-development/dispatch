@@ -1,31 +1,14 @@
-"""Unit tests for the atmosphere/vmic node selection extracted from build_stellar_grid
-(Phase 6 decomposition: tumult/synthesis/atmos_select.py). Pins the physics contracts:
-vmic-lattice bracketing with linear weights, representative-atmosphere collapse, and
-spatial x vmic weight products summing to 1."""
+"""Atmosphere and vmic node selection (tumult/synthesis/atmos_select.py).
+
+The lattice bracketing, the exactness on a lattice point, the weight sum and the clamp
+of a below-range vmic moved to `tests/science/test_interpolation.py` as requirement S12
+of `reports/test-requirements.md`. The pchip vmic window, the representative-atmosphere
+collapse and the absmet lookup remain here, and have no approved requirement of their
+own yet."""
 import numpy as np
 import pytest
 
-from tumult.synthesis.atmos_select import _vmic_levels, _vmic_window, select_nodes
-
-
-def test_vmic_levels_on_lattice_point():
-    assert _vmic_levels(1.0, 0.5) == [(1.0, 1.0)]
-    assert _vmic_levels(0.0, 0.5) == [(0.0, 1.0)]
-
-
-def test_vmic_levels_bracketing_weights():
-    levels = _vmic_levels(1.3, 0.5)
-    assert [v for v, _ in levels] == [1.0, 1.5]
-    ws = [w for _, w in levels]
-    np.testing.assert_allclose(sum(ws), 1.0, rtol=1e-15)
-    # linear interpolation: weight on 1.0 is (1.5-1.3)/0.5 = 0.4
-    np.testing.assert_allclose(ws[0], 0.4, rtol=1e-12)
-    # vmic interpolated back from the lattice reproduces the query
-    np.testing.assert_allclose(sum(v * w for v, w in levels), 1.3, rtol=1e-12)
-
-
-def test_vmic_levels_clamps_negative_to_zero():
-    assert _vmic_levels(-0.7, 0.5) == [(0.0, 1.0)]
+from tumult.synthesis.atmos_select import _vmic_window, select_nodes
 
 
 def test_vmic_window_on_lattice_is_single_point():
@@ -53,30 +36,6 @@ def atmos_grid():
         (5000.0, 4.5, 0.0): "t5000g45.mod",
         (6000.0, 4.5, 0.0): "t6000g45.mod",
     }
-
-
-def test_select_nodes_on_grid_point_is_exact(atmos_grid):
-    nodes, vmic = select_nodes((5000.0, 4.0, 0.0, 1.0), atmos_grid)
-    assert vmic == 1.0
-    assert len(nodes) == 1
-    jkey, teff, logg, feh, v, weight, path, absmet = nodes[0]
-    assert (teff, logg, feh, v) == (5000.0, 4.0, 0.0, 1.0)
-    assert weight == 1.0
-    assert path == "t5000g40.mod"
-    assert jkey == ((5000.0, 4.0, 0.0), 1.0)
-
-
-def test_select_nodes_weights_sum_to_one(atmos_grid):
-    """Off-grid in teff and vmic: 2 spatial nodes x 2 vmic levels, weights normalised."""
-    nodes, vmic = select_nodes((5400.0, 4.0, 0.0, 1.3), atmos_grid)
-    weights = np.array([n[5] for n in nodes])
-    np.testing.assert_allclose(weights.sum(), 1.0, rtol=1e-12)
-    assert len(nodes) == 4  # 2 teff nodes x 2 vmic lattice points
-    # weighted teff/vmic recover the query (linear interpolation contract)
-    teffs = np.array([n[1] for n in nodes])
-    vmics = np.array([n[4] for n in nodes])
-    np.testing.assert_allclose(np.sum(weights * teffs), 5400.0, rtol=1e-12)
-    np.testing.assert_allclose(np.sum(weights * vmics), 1.3, rtol=1e-12)
 
 
 def test_select_nodes_representative_atmosphere_by_vmic():

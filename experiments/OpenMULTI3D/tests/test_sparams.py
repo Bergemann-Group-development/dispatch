@@ -1,10 +1,9 @@
-"""Pin the excitation–ionization balance numerics: the weighted slope, the four balance
-diagnostics, the damped quasi-Newton solver (with secant Jacobian refinement, step clamps,
-grid bounds and held parameters), the uncertainty propagation, and the measurement object's
-session round-trip.
+"""Pin the excitation-ionization balance machinery: the convergence gate, the damped
+quasi-Newton solver (with secant Jacobian refinement, step clamps, grid bounds and held
+parameters), the uncertainty propagation, and the measurement object's session round-trip.
 
-The numerics are element-general — the tests use Fe, whose sensitivities seed the solver for
-every element, and one Ti case to pin that nothing is keyed to the symbol.
+The diagnostics these are built on are covered by requirement S13, in
+`tests/science/test_balance.py`.
 """
 import numpy as np
 import pytest
@@ -13,7 +12,6 @@ import tumult.abundance as ab
 from tumult import measurement as ms
 from tumult import sparams as sp
 from tumult.abundance import LineResult
-from tumult.abundance import reduced_ew
 
 SOLAR_FE = 7.50
 
@@ -23,89 +21,8 @@ def _line(lam0, ion, e_low, ew, a, sigma_a=0.05, include=True):
                       a=a, sigma_a=sigma_a, include=include)
 
 
-# --- weighted_slope -----------------------------------------------------------------------
-
-def test_weighted_slope_recovers_line():
-    x = np.linspace(0.0, 5.0, 20)
-    y = 1.3 * x - 0.7
-    slope, err, intercept = sp.weighted_slope(x, y, np.full_like(x, 0.1))
-    assert slope == pytest.approx(1.3, abs=1e-12)
-    assert intercept == pytest.approx(-0.7, abs=1e-12)
-    assert err > 0
-
-
-def test_weighted_slope_weights_matter():
-    """A discrepant point with a huge sigma must barely move the fit."""
-    x = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
-    y = 2.0 * x
-    y_off = y.copy()
-    y_off[-1] += 10.0
-    s = np.array([0.1, 0.1, 0.1, 0.1, 100.0])
-    slope, _, _ = sp.weighted_slope(x, y_off, s)
-    assert slope == pytest.approx(2.0, abs=0.01)
-
-
-def test_weighted_slope_degenerate():
-    nan = float("nan")
-    assert np.isnan(sp.weighted_slope([1.0, 1.0, 1.0], [1.0, 2.0, 3.0])[0])
-    assert np.isnan(sp.weighted_slope([1.0, 2.0], [1.0, 2.0])[0])
-    # non-finite sigmas fall back rather than poisoning the fit
-    slope, _, _ = sp.weighted_slope([0, 1, 2, 3], [0, 1, 2, 3], [0.1, nan, 0.1, 0.0])
-    assert slope == pytest.approx(1.0, abs=1e-9)
-
-
-# --- diagnostics ----------------------------------------------------------------------------
-
-def test_diagnostics_recovers_construction():
-    """Fe I lines built with a known E_low slope; Fe II offset by a known ΔA."""
-    feh = -0.5
-    a0 = SOLAR_FE + feh          # consistency-perfect mean at zero slope
-    s_true = 0.04                # dex/eV
-    d_true = 0.12
-    lines = [_line(5000 + i, "Fe I", e, ew=50.0, a=a0 + s_true * (e - 2.5))
-             for i, e in enumerate(np.linspace(0.5, 4.5, 12))]
-    lines += [_line(6000 + i, "Fe II", 3.0, ew=40.0, a=a0 + d_true) for i in range(4)]
-    d = sp.diagnostics(lines, feh, SOLAR_FE)
-    assert d["s_exc"] == pytest.approx(s_true, abs=1e-9)
-    assert d["n_1"] == 12 and d["n_2"] == 4
-    assert d["a_1"] == pytest.approx(a0, abs=1e-9)        # slope pivots about the mean
-    assert d["d_ion"] == pytest.approx(d_true, abs=1e-9)
-    # overall mean sits between the stages; d_feh measures it against solar+feh
-    assert d["d_feh"] == pytest.approx(d["a_mean"] - (SOLAR_FE + feh), abs=1e-12)
-
-
-def test_diagnostics_rew_slope():
-    """A(Fe I) rising with reduced EW must show as a positive s_rew."""
-    ews = np.linspace(20.0, 120.0, 10)
-    rews = [reduced_ew(w, 5500.0) for w in ews]
-    lines = [_line(5500.0, "Fe I", 2.0, ew=w, a=7.5 + 0.3 * (r - np.mean(rews)))
-             for w, r in zip(ews, rews)]
-    d = sp.diagnostics(lines, 0.0, SOLAR_FE)
-    assert d["s_rew"] == pytest.approx(0.3, abs=1e-6)
-
-
-def test_diagnostics_excluded_and_nan_lines_ignored():
-    lines = [_line(5000 + i, "Fe I", e, 50.0, 7.5) for i, e in enumerate([1.0, 2.0, 3.0, 4.0])]
-    lines.append(_line(5100.0, "Fe I", 2.0, 50.0, 99.0, include=False))
-    lines.append(_line(5200.0, "Fe I", 2.0, 50.0, float("nan")))
-    d = sp.diagnostics(lines, 0.0, SOLAR_FE)
-    assert d["n_1"] == 4
-    assert d["a_1"] == pytest.approx(7.5, abs=1e-12)
-    assert np.isnan(d["d_ion"])          # no Fe II lines → NaN, solver holds logg
-
-
-def test_diagnostics_are_element_agnostic():
-    """Nothing is keyed to Fe: the same construction in Ti reads back identically."""
-    solar_ti = 4.97
-    lines = [_line(5000 + i, "Ti I", e, 50.0, solar_ti - 1.0 + 0.04 * (e - 2.5))
-             for i, e in enumerate(np.linspace(0.5, 4.5, 8))]
-    lines += [_line(6000.0, "Ti II", 3.0, 40.0, solar_ti - 1.0 + 0.1)]
-    d = sp.diagnostics(lines, -1.0, solar_ti)
-    assert d["n_1"] == 8 and d["n_2"] == 1
-    assert d["s_exc"] == pytest.approx(0.04, abs=1e-9)
-    assert d["d_ion"] == pytest.approx(0.1, abs=1e-9)
-    assert d["d_feh"] == pytest.approx(d["a_mean"] - (solar_ti - 1.0), abs=1e-12)
-
+# The weighted-slope fit and the four balance diagnostics moved to
+# `tests/science/test_balance.py` as requirement S13 of `reports/test-requirements.md`.
 
 def test_converged():
     good = {"s_exc": 0.001, "s_rew": 0.005, "d_ion": 0.005, "d_feh": -0.005}

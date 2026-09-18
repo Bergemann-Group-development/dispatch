@@ -78,6 +78,29 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
   prepared target. It multiplies the displayed synthetic spectrum and sets the reference
   for the measured EW, independently of the target's global spline normalisation.
 
+- *continuum*: where the unabsorbed flux of a spectrum lies, which is what an equivalent
+  width is measured against and what a normalisation divides by. A synthetic spectrum
+  arrives normalised; an observation is given a continuum in one of two forms
+  (`tumult.continuum`). A *flat* continuum is one robust high percentile of the flux,
+  high rather than maximal so that a cosmic ray or a hot pixel cannot set the level, and
+  taken over the finite values so that gaps are ignored. A *spline* continuum is a
+  monotone cubic through knots at strictly increasing wavelengths, held at the value of
+  the outermost knot beyond them and never overshooting between two knots, since an
+  overshoot puts the flux above the continuum and turns an absorption line into
+  emission. The percentile values are tunable parameters of the placement, not part of
+  the definition.
+
+- *wavelength medium*: whether a wavelength is measured in air or in vacuum, which
+  differ by the refraction of standard air and so by one to four Angstrom across the
+  optical and near infrared. The convention is fixed per boundary. **Air** is the
+  user-facing side: synthesis and fit windows, line masks, the wavelengths of a line
+  list, and a run's `lam` axis as the reader exposes it. **Vacuum** is the native side:
+  the wavelength grids the Fortran computes on, and the bounds in `out_segments.txt`.
+  The conversion happens at the boundary between them (`tumult.physics.vac2air` and
+  `air2vac`, for standard air). State the medium wherever a number crosses that
+  boundary; a wavelength with no stated medium is ambiguous by one resolution element
+  of a high-resolution spectrograph.
+
 **Windows.** Several distinct spans are all called windows, so each has its own name.
 
 - *fit window*: the span a line feature's profile is fitted over, derived from the

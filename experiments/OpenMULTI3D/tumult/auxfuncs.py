@@ -370,7 +370,7 @@ def is_number(s):
 def voigt_profile(xx, x0, a, sigma, amp):
     # LEGACY parameterisation (un-normalised peak, different argument order); the modern
     # model is tumult.profile.VoigtProfile / tumult.utils.voigt_profile. Kept because the
-    # two are NOT numerically equivalent (see tests/test_dupes.py).
+    # two are NOT numerically equivalent.
   s2 = np.sqrt(2)
   vv = (xx-x0) / sigma
   return 1 - amp*voigt_function(a, vv)
