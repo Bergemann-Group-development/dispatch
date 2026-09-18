@@ -36,7 +36,7 @@ from ..abundance import (
 from .cancel import CancelToken, CancelledError
 from .inputs import Atmosphere, AtmosphereGrid, Snapshot
 from .request import ResolvedSynthRequest, SynthesisResult, SynthRequest
-from .snapshot_grid import discover_grid
+from .snapshot_grid import SNAPSHOT_FORMATS, discover_grid
 from ..auxfuncs import update_dict
 
 # namelist presets now live with the core (tumult/presets) so the library and this app
@@ -427,6 +427,19 @@ def build_settings(prefs, run_vals, atmos_format=None):
     generated bound-bound wavelength grid). ``atmos_format`` is the selected
     grid's format. The atmosphere file, FeH and vmic are filled per node by
     ``build_stellar_grid``.
+
+    A 3D snapshot format (:data:`~tumult.synthesis.snapshot_grid.SNAPSHOT_FORMATS`)
+    samples the background and the LTE line opacity from tables in both passes
+    (``sample_back_opac`` and ``sample_linelist`` in ``rt_iteration_params`` and
+    ``rt_output_params``). The flags go together: the Fortran allocates and builds the
+    line table only in a pass that also samples the background, and a pass with
+    ``sample_linelist`` alone reads no line opacity at all (``rt_patch_mod``). Departure
+    species are masked out of the table and computed in detail, so NLTE lines are
+    unaffected; a pass without a line list gets an empty table, which is how the departure
+    phase of a snapshot runs. The caller merges ``config.expert`` on top of this dict, so an
+    explicit value of either flag wins. The Fortran refuses an abundance ladder (a
+    ``set_file`` with more than the unperturbed sets) under ``sample_linelist``, so a 3D
+    ladder runs one process per rung (:func:`tumult.synthesis.api._foldable_ladder`).
     """
     nlte = str(run_vals.get("mode", "LTE")).upper() == "NLTE"
     # ``only_atom``: synthesise from the model atom's own transitions with NO external line
@@ -468,11 +481,15 @@ def build_settings(prefs, run_vals, atmos_format=None):
     settings = {
         "linelist_params": linelist,
     }
+    if str(fmt or "").lower() in SNAPSHOT_FORMATS:
+        sampled = {"sample_back_opac": True, "sample_linelist": True}
+        settings["rt_iteration_params"] = dict(sampled)
+        settings["rt_output_params"] = dict(sampled)
     # A curve-of-growth rung only repeats one atmosphere at another abundance; the
     # transition dump is the same diagnostic every time, so a caller synthesising a
     # ladder asks for it once. Absent means the Fortran default (write it).
     if run_vals.get("save_linelist") is False:
-        settings["rt_output_params"] = {"save_linelist": False}
+        settings.setdefault("rt_output_params", {})["save_linelist"] = False
     if atmos:
         settings["atmos_params"] = atmos
     if composition:
