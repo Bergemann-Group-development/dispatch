@@ -33,7 +33,7 @@ the target spectrum with every inverted line's synthetic drawn on it. A held par
 diagnostic is still computed and shown, as the residual it is.
 
 Refitting from inside the object reuses its lines and overwrites the fit; refitting a
-duplicate (:meth:`AbundanceWizard.duplicate_result`) keeps both fits; launching again from
+duplicate (:meth:`resultview.ResultView.duplicate_result`) keeps both fits; launching again from
 the LineMasks view measures afresh into a new object. That is the whole identity rule:
 the object owns the measurement, the fit is replaceable.
 """
@@ -53,11 +53,12 @@ from tumult import sparams as sp
 from ..workspace import naming
 from ..workspace import store
 from tumult.synthesis import workflows as synth
-from .abundwizard import (LOCAL_CONTINUUM_HEAD, PANEL_AXES, PROFILES, AbundanceWizard,
-                         preparation_note)
+from .diagnostics import PANEL_AXES, empty_points
+from .localcontinuum import LOCAL_CONTINUUM_HEAD, continuum_cell
+from .resultview import ResultView, format_value, preparation_note, value_label
 from ..spectrum.canvas import ACCENT, MUTED
 from ..ui.controls import Field, Form
-from ..spectrum.ew import profile_options
+from ..spectrum.ew import FIT_PROFILES, profile_options
 from ..ui.htmlbridge import pulse
 from ..preferences.synthprefs import atmosphere_grid, load_prefs, missing_prefs, synth_config
 from tumult.synthesis import Star, SynthRequest
@@ -168,7 +169,7 @@ class BalanceSynthesis:
         return bool(self.form.value("background_lines"))
 
 
-class IonBalanceTool(AbundanceWizard):
+class IonBalanceTool(ResultView):
     """The tool behind the measurement objects: the modal, the solve, and the object view."""
 
     name = "ionbal"
@@ -178,6 +179,7 @@ class IonBalanceTool(AbundanceWizard):
     steps = 2                        # lines, balance
     empty_table_msg = "No measurement selected"
     paint_overlays = True            # every inverted line is drawn on the target spectrum
+    local_continuum = True           # each measured line may carry its own continuum
     y_axis_label = "A(X)"
     final_stage = ms.STAGE_SOLVED
     check_cols = ("include", "continuum")
@@ -201,7 +203,7 @@ class IonBalanceTool(AbundanceWizard):
         self.form1 = Form("ionbal1", [
             Field("target", "Target spectrum", kind="select", value="", options=[]),
             Field("profile", "EW profile", kind="select", value=vals["profile"],
-                  options=profile_options(PROFILES)),
+                  options=profile_options(FIT_PROFILES)),
             Field("snr", "SNR (observation)", kind="number", value=vals["snr"], min=0),
             Field("cont_pct", "Continuum uncertainty [%]", kind="number",
                   value=vals["cont_pct"], min=0, step=0.1),
@@ -254,14 +256,14 @@ class IonBalanceTool(AbundanceWizard):
         # Neutral-stage points ride the shared source, the ionised stage a second one in red;
         # both panels get whiskers, and each carries the regression over its own *neutral*
         # points.
-        self._build_figs(ColumnDataSource(self.empty_points()))
-        self._add_whiskers(self.src, ACCENT)
-        self.src2 = ColumnDataSource(self.empty_points())
+        self.build_panels()
+        self.panels.add_whiskers(self.panels.src, ACCENT)
+        self.src2 = ColumnDataSource(empty_points())
         self.src2.name = f"{self.prefix}_points2"
-        self._add_series(self.src2, ION2_COLOR)
-        self._add_whiskers(self.src2, ION2_COLOR)
+        self.panels.add_series(self.src2, ION2_COLOR)
+        self.panels.add_whiskers(self.src2, ION2_COLOR)
         self.trends, self.insets = [], []
-        for fig in self.figs:
+        for fig in self.panels.figs:
             trend = Slope(gradient=0, y_intercept=0, line_color=ACCENT,
                           line_dash="dotted", line_width=1.4)
             trend.visible = False
@@ -288,7 +290,7 @@ class IonBalanceTool(AbundanceWizard):
         self.set_step(self.step)
         if self.selected() is not None and self.is_focused():
             self.push_view("on")
-            self._render_decor(self._jumped)
+            self._render_decor(self.jumped)
 
     def refresh(self):
         """Keep the modal's target selector in step with the loaded observations."""
@@ -299,7 +301,7 @@ class IonBalanceTool(AbundanceWizard):
         self.refresh()
         if self.active:
             self.push_panel()
-            self._render_decor(self._jumped)   # the highlights follow a display-unit flip
+            self._render_decor(self.jumped)   # the highlights follow a display-unit flip
 
     # --- the modal ------------------------------------------------------------------------
     @staticmethod
@@ -344,7 +346,7 @@ class IonBalanceTool(AbundanceWizard):
 
     def open_refit(self, uid=None):
         """Open the modal to refit an existing measurement in place."""
-        res = self._find(uid or self.selected_uid)
+        res = self.find(uid or self.results.selected)
         if res is None:
             return
         self._pending_set, self._refit_uid = None, res.uid
@@ -388,7 +390,7 @@ class IonBalanceTool(AbundanceWizard):
 
     def context_html(self):
         """The modal's header block: what is about to be measured, or refitted."""
-        res = self._find(self._refit_uid) if self._refit_uid else None
+        res = self.find(self._refit_uid) if self._refit_uid else None
         if res is not None:
             n1, n2 = res.counts()
             el = html.escape(res.element or "X")
@@ -453,22 +455,10 @@ class IonBalanceTool(AbundanceWizard):
         elif kind == "refit":
             self.open_refit(arg or None)
 
-    # --- session persistence ----------------------------------------------------------------
     # --- session persistence ------------------------------------------------------------
-    result_from_dict = staticmethod(ms.BalanceResult.from_dict)
-
-    def relink(self, results, spectrum_uids, maskset_uids, atom_paths):
-        """Besides the reference observation, a balance names the mask set it was measured
-        from (as a string uid); the link is cleared when that set is not restored, so the
-        panel stops offering a refit against windows that are not there."""
-        notes = super().relink(results, spectrum_uids, maskset_uids, atom_paths)
-        known = {str(uid) for uid in maskset_uids}
-        for res in results:
-            if res.maskset_uid and res.maskset_uid not in known:
-                notes.append(f"balance {res.name or res.uid}: line mask "
-                             f"{res.maskset_name or res.maskset_uid} is not loaded")
-                res.maskset_uid = ""
-        return notes
+    # the envelope is ResultView's; :mod:`results` builds a saved balance
+    # (:class:`tumult.measurement.BalanceResult`) and clears the links — its reference
+    # observation and the mask set it was measured from — that a load does not restore.
 
     # --- shared-machinery hooks --------------------------------------------------------------
     def _toggle_line(self, token):
@@ -497,19 +487,19 @@ class IonBalanceTool(AbundanceWizard):
         # the highlights are painted after the base implementation, which hands the centre view
         # (and with it the sidebar focus) to this result only at the very end
         super().select_result(uid)
-        self._render_decor(self._jumped)
+        self._render_decor(self.jumped)
 
     def _render_selected(self):
         self.push_panel()
         super()._render_selected()
-        self._render_decor(self._jumped)
+        self._render_decor(self.jumped)
 
     def _jump_decor(self, res, ln):
         # the windows and the inverted syntheses are already on the canvas — jumping hatches
         # this line's measured profile and moves the accent onto it.
         self._set_hatch(res, ln)
-        self._jumped = next((i for i, l in enumerate(res.lines) if l is ln), None)
-        self._render_decor(self._jumped)
+        self.jumped = next((i for i, l in enumerate(res.lines) if l is ln), None)
+        self._render_decor(self.jumped)
 
     def _result_masks(self, res):
         """The measurement's windows: each LineResult embeds the mask it was measured over,
@@ -529,7 +519,7 @@ class IonBalanceTool(AbundanceWizard):
     def _clear_line_decor(self):
         """Drop the per-line overlay/hatch and the accent; the highlights stay while a result
         is in view (``_render_decor`` clears them once it is not)."""
-        self._jumped = None
+        self.jumped = None
         super()._clear_line_decor()
         self._render_decor()
 
@@ -572,7 +562,7 @@ class IonBalanceTool(AbundanceWizard):
     # --- the run ------------------------------------------------------------------------------
     def run(self):
         """The modal's action: measure (or reuse) the lines, then solve."""
-        refit = self._find(self._refit_uid) if self._refit_uid else None
+        refit = self.find(self._refit_uid) if self._refit_uid else None
         mset = self._pending_set
         if refit is None and mset is None:
             self.notify("Nothing to fit — start from a line mask.")
@@ -684,22 +674,21 @@ class IonBalanceTool(AbundanceWizard):
         inc = [(i, ln) for i, ln in enumerate(res.lines)
                if ln.include and np.isfinite(ln.a)] if res else []
         if not inc:
-            self.src.data = self.empty_points()
-            self.src2.data = self.empty_points()
-            self._set_mean(None)
+            self.panels.src.data = empty_points()
+            self.src2.data = empty_points()
+            self.panels.set_mean(None)
             for trend, inset in zip(self.trends, self.insets):
                 trend.visible = False
                 inset.text = ""
             return
-        for fig in self.figs:
-            fig.yaxis.axis_label = self.value_label(res)
+        self.panels.set_y_label(value_label(res))
 
         st1 = [(i, ln) for i, ln in inc if sp.is_ion_stage(ln.ion, 1)]
         st2 = [(i, ln) for i, ln in inc if sp.is_ion_stage(ln.ion, 2)]
-        d1, d2 = self._pack_points(st1), self._pack_points(st2)
-        self.src.data = d1
+        d1, d2 = self.panels.pack_points(st1), self.panels.pack_points(st2)
+        self.panels.src.data = d1
         self.src2.data = d2
-        self._crop_panels((d1, d2))
+        self.panels.crop_panels((d1, d2))
 
         # each panel's own weighted regression over the neutral-stage points — the slope the
         # solver reads its temperature (E_low) and microturbulence (REW) from
@@ -715,8 +704,8 @@ class IonBalanceTool(AbundanceWizard):
             inset.text = self._inset_text(res, self.PANEL_INSETS[key])
 
         diags = res.diags or {}
-        self._set_mean(diags.get("a_mean", float("nan")),
-                       diags.get("d_feh_err", float("nan")))
+        self.panels.set_mean(diags.get("a_mean", float("nan")),
+                             diags.get("d_feh_err", float("nan")))
 
     def _inset_text(self, res, key):
         """A panel's inset: the offset diagnostic it states, with its error and pass mark."""
@@ -797,7 +786,7 @@ class IonBalanceTool(AbundanceWizard):
         cells = []
         for k in sp.PARAM_KEYS:
             digits = 0 if k == "teff" else 2
-            val = self._fmt(res.params.get(k), res.sigmas.get(k), digits=digits,
+            val = format_value(res.params.get(k), res.sigmas.get(k), digits=digits,
                             plus=(k == "feh"))
             held = "" if res.free.get(k, True) else ' <span class="lm-flag">held</span>'
             cells.append(f'<div class="field-group field-inline"><label>{PARAM_LABELS[k]}'
@@ -838,15 +827,14 @@ class IonBalanceTool(AbundanceWizard):
         stale = False
         if res.stage == ms.STAGE_SOLVED:
             s = res.sigmas or {}
-            fmt = self._fmt
             state = res.status_label
             stale = bool(self.stale_reasons(res))
             head = (('<span class="stale-tag">Previous solution</span> ' if stale else "")
                     + f'<b>{state}</b> after {len(res.history)} it · '
-                    f'Teff {fmt(res.params.get("teff"), s.get("teff"), digits=0)} K · '
-                    f'logg {fmt(res.params.get("logg"), s.get("logg"), digits=2)} · '
-                    f'[Fe/H] {fmt(res.params.get("feh"), s.get("feh"), plus=True, digits=2)} · '
-                    f'ξ {fmt(res.params.get("vmic"), s.get("vmic"), digits=2)} km/s')
+                    f'Teff {format_value(res.params.get("teff"), s.get("teff"), digits=0)} K · '
+                    f'logg {format_value(res.params.get("logg"), s.get("logg"), digits=2)} · '
+                    f'[Fe/H] {format_value(res.params.get("feh"), s.get("feh"), plus=True, digits=2)} · '
+                    f'ξ {format_value(res.params.get("vmic"), s.get("vmic"), digits=2)} km/s')
         return (f'<div class="abund-summary ionbal-status{" stale-block" if stale else ""}">'
                 f'{head}'
                 f'<span class="abund-budget"> — {cells}</span></div>')
@@ -862,11 +850,11 @@ class IonBalanceTool(AbundanceWizard):
         for i in self._line_order(res):
             ln = res.lines[i]
             chk = " checked" if ln.include else ""
-            cls = " row-selected" if self._jumped == i else ""
+            cls = " row-selected" if self.jumped == i else ""
             cls += "" if ln.include else " line-excluded"
-            ew = self._fmt(ln.ew, ln.ew_err, digits=1)
-            blend = self._fmt(ln.blend_frac, digits=2)
-            a = self._fmt(ln.a, ln.sigma_a if res.stage == ms.STAGE_SOLVED else None,
+            ew = format_value(ln.ew, ln.ew_err, digits=1)
+            blend = format_value(ln.blend_frac, digits=2)
+            a = format_value(ln.a, ln.sigma_a if res.stage == ms.STAGE_SOLVED else None,
                           plus=True)
             fl = ", ".join(ln.flags)
             body.append(
@@ -874,7 +862,7 @@ class IonBalanceTool(AbundanceWizard):
                 f'<td><input type="checkbox" class="line-include-chk" data-line="{i}"{chk}></td>'
                 f'<td>{ln.lam0:.3f}</td><td>{html.escape(ln.ion)}</td>'
                 f'<td>{ln.e_low:.2f}</td><td>{ln.loggf:.2f}</td><td>{ew}</td>'
-                f'{self.continuum_cell(ln, i)}<td>{blend}</td><td>{a}</td>'
+                f'{continuum_cell(ln, i)}<td>{blend}</td><td>{a}</td>'
                 f'<td class="abund-flags">{html.escape(fl)}</td></tr>')
         if not res.lines:
             return f'<div class="linelist-empty">Measuring {el} windows…</div>'

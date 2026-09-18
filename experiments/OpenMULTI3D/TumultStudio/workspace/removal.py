@@ -225,7 +225,7 @@ def register_workspace(removal, canvas, masktool, wizards, atomtool):
             return lambda: wizard.insert_result(**placed)
 
         removal.register(name, Kind(
-            label="result", find=wizard._find, detach=detach_result,
+            label="result", find=wizard.find, detach=detach_result,
             running=lambda res, wizard=wizard: [res.name] if wizard.is_computing(res) else []))
 
     corr = atomtool.corr

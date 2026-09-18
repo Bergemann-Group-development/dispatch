@@ -108,17 +108,22 @@ class WorkspacePersistence:
     """Snapshot, restore and autosave of one document's workspace.
 
     ``load_spectrum`` reads a saved spectrum reference (embedded synthesis data, a file or
-    a tumult run) and ``load_atom`` a model atom; preparation uses them off the document
-    thread, so a slot is interpreted without constructing any view.
+    a tumult run) and ``load_atom`` a model atom; ``deserialise_results`` and
+    ``relink_results`` build and relink a saved result section (:mod:`..analysis.results`).
+    All four are plain functions used off the document thread, so a slot is interpreted
+    without constructing any view.
     """
 
-    def __init__(self, ctx, parts, delivery, workflows, *, load_spectrum, load_atom):
+    def __init__(self, ctx, parts, delivery, workflows, *, load_spectrum, load_atom,
+                 deserialise_results, relink_results):
         self.ctx = ctx
         self.parts = parts
         self.delivery = delivery
         self.workflows = workflows
         self._load_spectrum = load_spectrum
         self._load_atom = load_atom
+        self._deserialise_results = deserialise_results
+        self._relink_results = relink_results
 
         # a dedicated space-delimited channel: names may contain spaces/colons, so the
         # ":"-delimited object-actions bridge can't carry them safely (cf. cache-actions).
@@ -208,7 +213,7 @@ class WorkspacePersistence:
             focus=FocusSnap(kind=focus_kind, uid=focus_uid),
             tools=ToolsSnap(active=self.ctx.tools.active_name(), atom_tab=atomtool.tab,
                             steps={name: w.step for name, w in wizards.items()},
-                            jumped={name: w._jumped for name, w in wizards.items()}),
+                            jumped={name: w.jumped for name, w in wizards.items()}),
         ).to_dict()
 
     # --- validate, prepare, commit ----------------------------------------------------
@@ -217,7 +222,9 @@ class WorkspacePersistence:
         (:func:`session.prepare`); :class:`session.SessionError` when it is unusable."""
         ws = Workspace.from_dict(snap)
         return session.prepare(ws, load_spectrum=self._load_spectrum,
-                               load_atom=self._load_atom, tools=self.parts.results)
+                               load_atom=self._load_atom,
+                               deserialise=self._deserialise_results,
+                               relink=self._relink_results)
 
     def capture_live(self):
         """The live workspace as a prepared one (no file reads): what a failed commit
@@ -234,7 +241,8 @@ class WorkspacePersistence:
             atoms=[PreparedAtom(AtomSnap(uid=a.uid, path=a.path), a.atom)
                    for a in self.parts.atoms.atoms],
             atom_selected=self.parts.atoms.selected_uid,
-            results={name: (list(w.results), w.selected_uid) for name, w in wizards.items()},
+            results={name: (list(w.results), w.results.selected)
+                     for name, w in wizards.items()},
             view=ws.view, filter=ws.filter, focus=ws.focus, tools=ws.tools)
 
     def _place_spectrum(self, ps):
@@ -315,9 +323,9 @@ class WorkspacePersistence:
             if jumped is None or res is None or jumped >= len(res.lines):
                 continue
             if w.active and w.is_focused():
-                w._jump_line(str(jumped))      # the accent, hatch and CoG of that line
+                w.jump_line(str(jumped))       # the accent, hatch and CoG of that line
             else:
-                w._jumped = jumped             # painted when its view is next opened
+                w.jumped = jumped              # painted when its view is next opened
         # a panel open beside the canvas (a wizard's steps, the mask or atom view) is
         # reopened; the range, filter and normalise gestures are transient and stay closed
         active = p.tools.active

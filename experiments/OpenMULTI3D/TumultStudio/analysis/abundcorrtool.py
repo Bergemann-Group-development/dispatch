@@ -59,13 +59,14 @@ from bokeh.models import ColumnDataSource
 from tumult import abundance as ab
 from ..workspace import naming
 from ..workspace import store
-from .abundwizard import PROFILES, AbundanceWizard
+from .diagnostics import empty_points
+from .resultview import ResultView, format_value
 from ..preferences.synthprefs import atmosphere_grid
 from tumult.departures import DepartureRequest
 from ..spectrum.canvas import ACCENT
 from .cogpanel import CogPanel
 from ..ui.controls import Field, Form
-from ..spectrum.ew import profile_options
+from ..spectrum.ew import FIT_PROFILES, profile_options
 from ..ui.htmlbridge import pulse
 from tumult.abundance import (CorrectionOpts, correction_summary, reduced_ew,
                               refit_line_window, reset_line_window, window_edited)
@@ -75,14 +76,14 @@ import astropy.units as u
 
 # the trapezoidal width integrates each line over its atom window, so it needs the line
 # grid; the fitted profiles work either way (see tumult.abundance.CorrectionOpts)
-CORR_PROFILES = ["trapz"] + PROFILES
+CORR_PROFILES = ["trapz"] + list(FIT_PROFILES)
 DEFAULTS = {"profile": "trapz", "ew_min": 5.0, "limit": 1.0, "line_grid": True,
             "linelist": False}
 REF_COLOR = "#7f8a99"        # the reference spectrum's own line: muted, so the ACCENT-drawn
                               # fit overlays and windows still read as what the tool is about
 
 
-class AbundCorrTool(AbundanceWizard):
+class AbundCorrTool(ResultView):
     name = "abundcorr"
     prefix = "corr"
     kind = "corr"
@@ -128,9 +129,9 @@ class AbundCorrTool(AbundanceWizard):
         self.canvas.include_in_y_fit(self.ref_line)
         # per-line error bars: the corrections carry a formal sigma(dA) since the
         # reference EW's fit-covariance error propagates through the CoG slope
-        self._build_figs(ColumnDataSource(self.empty_points()))
-        self._add_whiskers(self.src, ACCENT)
-        self.cog = CogPanel("corr_cog", crop=self._crop_scatter, fmt=self._fmt)
+        self.build_panels()
+        self.panels.add_whiskers(self.panels.src, ACCENT)
+        self.cog = CogPanel("corr_cog", crop=self.panels.crop, fmt=format_value)
 
     def _clear_line_decor(self):
         super()._clear_line_decor()
@@ -159,16 +160,10 @@ class AbundCorrTool(AbundanceWizard):
         self.on_results()
 
     # --- session persistence ------------------------------------------------------------
-    # the envelope and the factory are AbundanceWizard's. A correction carries its own
-    # reference spectrum (``ref_spec``) and names its atom by path; a result whose atom is
-    # not restored stays listed in the trailing Corrections section (see results_for).
-    def relink(self, results, spectrum_uids, maskset_uids, atom_paths):
-        notes = super().relink(results, spectrum_uids, maskset_uids, atom_paths)
-        for res in results:
-            if res.atom_path and res.atom_path not in atom_paths:
-                notes.append(f"correction {res.name or res.uid}: model atom "
-                             f"{res.atom_path} is not loaded; listed under Corrections")
-        return notes
+    # the envelope is ResultView's, the factory and the relink :mod:`results`'. A correction
+    # carries its own reference spectrum (``ref_spec``) and names its atom by path; a result
+    # whose atom is not restored stays listed in the trailing Corrections section (see
+    # results_for).
 
     # --- state persistence -------------------------------------------------------------
     def _on_field(self, key, value):
@@ -239,7 +234,7 @@ class AbundCorrTool(AbundanceWizard):
         return f"{len(res.lines)} reference lines"
 
     def _jump_decor(self, res, ln):
-        self._jumped = next((i for i, l in enumerate(res.lines) if l is ln), None)
+        self.jumped = next((i for i, l in enumerate(res.lines) if l is ln), None)
         self._render_line_decor(ln)
 
     def _render_line_decor(self, ln):
@@ -264,10 +259,10 @@ class AbundCorrTool(AbundanceWizard):
         line over the new window, clamped to its synth window, and repaint everything that
         shows it - the table row, the scatter, the CoG panel and the mean."""
         res = self.selected()
-        if res is None or self._jumped is None or not self.is_focused():
+        if res is None or self.jumped is None or not self.is_focused():
             return
         try:
-            ln = res.lines[self._jumped]
+            ln = res.lines[self.jumped]
         except IndexError:
             return
         lo, hi = to_range(x0, x1, self.canvas.xunit, u.AA)
@@ -283,7 +278,7 @@ class AbundCorrTool(AbundanceWizard):
         if not window_edited(ln):
             return
         reset_line_window(res, ln)
-        self._jumped = index
+        self.jumped = index
         self._line_window_changed(res, ln)
 
     def _line_window_changed(self, res, ln):
@@ -297,7 +292,7 @@ class AbundCorrTool(AbundanceWizard):
     # --- line annotations: the reference run's own dump, or none ------------------------
     def select_result(self, uid):
         super().select_result(uid)
-        self._jumped = None
+        self.jumped = None
         self.canvas.on_window_resize = self._on_fit_drag
         self._attach_annotations()
         self._render_reference()
@@ -437,13 +432,13 @@ class AbundCorrTool(AbundanceWizard):
     def _on_task_progress(self, snapshot, name):
         """A stage-1 result (the first snapshot of a run) is listed as ``name`` and its
         reference spectrum shown; a later snapshot updates the listed result in place."""
-        if self._find(snapshot.uid) is None:
+        if self.find(snapshot.uid) is None:
             self._on_reference_ready(snapshot, name)
         else:
             self._job_progress(self._adopt(snapshot, name))
 
     def _on_task_done(self, result, name):
-        if self._find(result.uid) is None:
+        if self.find(result.uid) is None:
             self._on_reference_ready(result, name)  # its stage-1 snapshot never arrived
         self._on_corr_done(self._adopt(result, name))
 
@@ -464,8 +459,8 @@ class AbundCorrTool(AbundanceWizard):
         self.push_results()
         if self.selected() is result:
             self._render_selected()
-            if self._jumped is not None and self._jumped < len(result.lines):
-                self._render_line_decor(result.lines[self._jumped])
+            if self.jumped is not None and self.jumped < len(result.lines):
+                self._render_line_decor(result.lines[self.jumped])
         if np.isfinite(s["a_mean"]):
             self.notify(f"{result.symbol}: ⟨ΔA⟩ = {s['a_mean']:+.3f} ± "
                         f"{self._summary_sigma(s):.3f} (n={s['n']}) — see the Scatter step.")
@@ -479,14 +474,14 @@ class AbundCorrTool(AbundanceWizard):
         inc = [(i, ln) for i, ln in enumerate(res.lines)
                if ln.include and np.isfinite(ln.a)] if res else []
         if not inc:
-            self.src.data = self.empty_points()
-            self._set_mean(None)
+            self.panels.src.data = empty_points()
+            self.panels.set_mean(None)
             return
-        data = self._pack_points(inc)
-        self.src.data = data
-        self._crop_panels((data,))
+        data = self.panels.pack_points(inc)
+        self.panels.src.data = data
+        self.panels.crop_panels((data,))
         s = res.summary
-        self._set_mean(s.get("a_mean", np.nan), self._summary_sigma(s))
+        self.panels.set_mean(s.get("a_mean", np.nan), self._summary_sigma(s))
 
     def table_html(self, res):
         columns = (
@@ -499,11 +494,11 @@ class AbundCorrTool(AbundanceWizard):
             ln = res.lines[i]
             chk = " checked" if ln.include else ""
             cls = "" if ln.include else " line-excluded"
-            if self._jumped == i:
+            if self.jumped == i:
                 cls += " row-selected"
-            ew = self._fmt(ln.ew, ln.ew_err, digits=1)
-            rew = self._fmt(reduced_ew(ln.ew, ln.lam0) if ln.ew > 0 else float("nan"))
-            da = self._fmt(ln.a, ln.sigma_a if res.stage == "corr" else None, plus=True)
+            ew = format_value(ln.ew, ln.ew_err, digits=1)
+            rew = format_value(reduced_ew(ln.ew, ln.lam0) if ln.ew > 0 else float("nan"))
+            da = format_value(ln.a, ln.sigma_a if res.stage == "corr" else None, plus=True)
             fl = html.escape(", ".join(ln.flags))
             if window_edited(ln):
                 fl += (f' <button class="text-btn" data-reset-window="{i}" title="Return to '

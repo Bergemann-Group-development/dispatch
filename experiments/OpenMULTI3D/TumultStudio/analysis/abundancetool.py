@@ -32,8 +32,10 @@ can be curated; the synthesis is the ``abundance.fit`` operation with ``method="
 continuing that measurement (``measured=``) on the setup's request, as a durable workflow
 whose progress snapshots stream each line into the table as it lands; the uncertainties are
 :func:`tumult.abundance.finalize_result` with the SNR and continuum uncertainty stored on the
-result when its windows were measured. What is left in this module is the wizard's own
-machinery, shared with the corrections tool through :mod:`abundwizard`, and the rendering.
+result when its windows were measured. What is left in this module is this
+tool's own modal, submission and rendering; the result navigation, the per-line table and the
+diagnostic panels it composes are :mod:`resultview`, :mod:`diagnostics` and
+:mod:`localcontinuum`.
 """
 from __future__ import annotations
 
@@ -45,16 +47,17 @@ from pathlib import Path
 
 import astropy.units as u
 import numpy as np
-from bokeh.models import ColumnDataSource
 
 from tumult import abundance as ab
 from ..workspace import store
 from tumult.synthesis import workflows as synth
-from .abundwizard import LOCAL_CONTINUUM_HEAD, PROFILES, AbundanceWizard, preparation_note
 from ..spectrum.canvas import ACCENT
 from .cogpanel import Chi2Panel, CogPanel
+from .diagnostics import empty_points
+from .localcontinuum import LOCAL_CONTINUUM_HEAD, continuum_cell
+from .resultview import ResultView, format_value, preparation_note, value_label
 from ..ui.controls import Field, Form
-from ..spectrum.ew import profile_options
+from ..spectrum.ew import FIT_PROFILES, profile_options
 from ..ui.htmlbridge import pulse
 from ..workspace import naming
 
@@ -66,17 +69,18 @@ DEFAULTS = {
 METHODS = [("profile", "Profile fit"), ("cog", "Curve of growth")]
 
 
-class AbundanceTool(AbundanceWizard):
+class AbundanceTool(ResultView):
     name = "abundance"
     prefix = "abund"
     kind = "result"
     empty_table_msg = "No abundance result selected"
     paint_overlays = True            # every synthesised line is drawn on the spectrum
+    local_continuum = True           # each measured line may carry its own continuum
     steps = 2                        # synthesis, uncertainties (the lines come from the modal)
     y_axis_label = "A(X)"
     final_stage = "uncert"
     check_cols = ("include", "continuum")
-    # columns beyond the shared line attributes (see AbundanceWizard.BASE_SORT_KEYS)
+    # columns beyond the shared line attributes (see ResultView.BASE_SORT_KEYS)
     extra_sort_keys = {
         "blend": lambda ln: ln.blend_frac,
         "vshift": lambda ln: ln.vshift,
@@ -107,7 +111,7 @@ class AbundanceTool(AbundanceWizard):
             Field("method", "Method", kind="select", value=vals["method"],
                   options=METHODS),
             Field("profile", "EW profile", kind="select", value=vals["profile"],
-                  options=profile_options(PROFILES)),
+                  options=profile_options(FIT_PROFILES)),
             Field("snr", "SNR (observation)", kind="number", value=vals["snr"], min=0),
             Field("cont_pct", "Continuum uncertainty [%]", kind="number",
                   value=vals["cont_pct"], min=0, step=0.1),
@@ -127,13 +131,13 @@ class AbundanceTool(AbundanceWizard):
         # the pair of diagnostic panels (excitation and reduced EW), with the per-line
         # abundance error as a bar on each — the same two the balance is read against, so a
         # trend left in either is visible here too
-        self._build_figs(ColumnDataSource(self.empty_points()))
-        self._add_whiskers(self.src, ACCENT)
+        self.build_panels()
+        self.panels.add_whiskers(self.panels.src, ACCENT)
         # where each line's abundance came from, beside the spectrum: a curve-of-growth run
         # inverts its EW through the rungs, a profile fit minimises a chi-square over them.
         # One panel per method, the other hidden (see :meth:`_render_selected`).
-        self.cog = CogPanel("abund_cog", crop=self._crop_scatter, fmt=self._fmt)
-        self.chi2 = Chi2Panel("abund_chi2", crop=self._crop_scatter, fmt=self._fmt)
+        self.cog = CogPanel("abund_cog", crop=self.panels.crop, fmt=format_value)
+        self.chi2 = Chi2Panel("abund_chi2", crop=self.panels.crop, fmt=format_value)
         self._cog_view = ctx.bridges.cls("#main", "abund-cog")
         self._chi2_view = ctx.bridges.cls("#main", "abund-chi2")
 
@@ -143,7 +147,7 @@ class AbundanceTool(AbundanceWizard):
         # view (and with it the sidebar focus) to the selected result at the very end
         super().activate()
         self.push_setup_note()
-        self._render_decor(self._jumped)
+        self._render_decor(self.jumped)
 
     def refresh(self):
         """Keep the modal's reference selector in step with the loaded observations. Pushed
@@ -154,7 +158,7 @@ class AbundanceTool(AbundanceWizard):
         self.refresh()
         if self.active:
             self.push_stale()                  # a continuum edit may have changed the target
-            self._render_decor(self._jumped)   # the highlights follow a display-unit flip
+            self._render_decor(self.jumped)   # the highlights follow a display-unit flip
 
     # --- the modal ----------------------------------------------------------------------
     def open_for(self, mset):
@@ -199,7 +203,7 @@ class AbundanceTool(AbundanceWizard):
 
     def context_html(self):
         """The modal's header block: what is about to be measured, or reconfigured."""
-        res = self._find(self._settings_uid) if self._settings_uid else None
+        res = self.find(self._settings_uid) if self._settings_uid else None
         if res is not None:
             return (f'<div class="hint">Settings for <b>{html.escape(res.name)}</b> — its '
                     f'{len(res.lines)} measured lines are kept; synthesising again replaces '
@@ -278,9 +282,9 @@ class AbundanceTool(AbundanceWizard):
         self.report_refresh(res, outcome)
 
     # --- session persistence ------------------------------------------------------------
-    # the envelope, the factory and the observation relink are AbundanceWizard's: a result
-    # names its reference observation by uid alone, cleared when that spectrum is not
-    # restored.
+    # the envelope is ResultView's; the factory and the observation relink are
+    # :mod:`results`': a result names its reference observation by uid alone, cleared when
+    # that spectrum is not restored.
 
     # --- state persistence -------------------------------------------------------------
     def _on_field(self, key, value):
@@ -305,7 +309,7 @@ class AbundanceTool(AbundanceWizard):
     def _result_summary(self, res):
         s = res.summary
         if np.isfinite(s.get("a_mean", np.nan)):
-            return (f"⟨{self.value_label(res)}⟩ = "
+            return (f"⟨{value_label(res)}⟩ = "
                     f"{s['a_mean']:.2f} ± {s['sigma_mean']:.2f}")
         return f"{len(res.lines)} lines measured" if res.stage == "lines" else ""
 
@@ -314,7 +318,7 @@ class AbundanceTool(AbundanceWizard):
         # the highlights are painted after the base implementation, which hands the centre
         # view (and with it the sidebar focus) to this result only at the very end
         super().select_result(uid)
-        self._render_decor(self._jumped)
+        self._render_decor(self.jumped)
 
     def _render_selected(self):
         super()._render_selected()
@@ -324,12 +328,12 @@ class AbundanceTool(AbundanceWizard):
         fit = res is not None and not cog
         for panel, on in ((self.cog, cog), (self.chi2, fit)):
             if on:
-                panel.set_x_label(f"{self.value_label(res)} [dex]")
+                panel.set_x_label(f"{value_label(res)} [dex]")
             else:
                 panel.clear()
         pulse(self._cog_view, "on" if cog else "off")
         pulse(self._chi2_view, "on" if fit else "off")
-        self._render_decor(self._jumped)
+        self._render_decor(self.jumped)
 
     # --- out of date ----------------------------------------------------------------------
     update_label = "Synthesise again"
@@ -358,7 +362,7 @@ class AbundanceTool(AbundanceWizard):
     def _clear_line_decor(self):
         """Drop the per-line overlay/hatch and the accent; the highlights stay while a result
         is in view (``_render_decor`` clears them once it is not)."""
-        self._jumped = None
+        self.jumped = None
         super()._clear_line_decor()
         self.cog.clear()
         self.chi2.clear()
@@ -368,9 +372,9 @@ class AbundanceTool(AbundanceWizard):
         # every line's synthetic is already on the canvas — jumping hatches this line's
         # measured EW and moves the accent onto its window
         self._set_hatch(res, ln)
-        self._jumped = next((i for i, l in enumerate(res.lines) if l is ln), None)
+        self.jumped = next((i for i, l in enumerate(res.lines) if l is ln), None)
         self._render_fit_panel(res, ln)
-        self._render_decor(self._jumped)
+        self._render_decor(self.jumped)
 
     def _set_hatch(self, res, ln):
         """The hatch states where a measured EW came from, so it belongs to the method that
@@ -388,7 +392,7 @@ class AbundanceTool(AbundanceWizard):
         runs here — on the line the user asked to see — rather than for every line of a run.
         """
         if res.method == "cog":
-            self.cog.render(ln, value_label=self.value_label(res))
+            self.cog.render(ln, value_label=value_label(res))
             return
         spec = self._result_spec(res)
         if spec is None:
@@ -399,7 +403,7 @@ class AbundanceTool(AbundanceWizard):
         except (ValueError, RuntimeError):
             self.chi2.clear()
             return
-        self.chi2.render(ln, a_grid, chi2, value_label=self.value_label(res))
+        self.chi2.render(ln, a_grid, chi2, value_label=value_label(res))
 
     # --- reference resolution ----------------------------------------------------------
     def _ref(self):
@@ -549,7 +553,7 @@ class AbundanceTool(AbundanceWizard):
         if self.selected() is res:
             self._render_selected()
         if np.isfinite(s["a_mean"]):
-            self.notify(f"{res.element}: ⟨{self.value_label(res)}⟩ = "
+            self.notify(f"{res.element}: ⟨{value_label(res)}⟩ = "
                         f"{s['a_mean']:.3f} ± {s['sigma_mean']:.3f} "
                         f"(phot {s['sigma_phot']:.3f}, cont {s['sigma_cont']:.3f}, n={s['n']})")
 
@@ -565,20 +569,19 @@ class AbundanceTool(AbundanceWizard):
         inc = [(i, ln) for i, ln in enumerate(res.lines)
                if ln.include and np.isfinite(ln.a)] if res else []
         if not inc:
-            self.src.data = self.empty_points()
-            self._set_mean(None)
+            self.panels.src.data = empty_points()
+            self.panels.set_mean(None)
             return
-        for fig in self.figs:
-            fig.yaxis.axis_label = self.value_label(res)
-        data = self._pack_points(inc)
-        self.src.data = data
-        self._crop_panels((data,))
+        self.panels.set_y_label(value_label(res))
+        data = self.panels.pack_points(inc)
+        self.panels.src.data = data
+        self.panels.crop_panels((data,))
         s = res.summary
-        self._set_mean(s.get("a_mean", np.nan), s.get("sigma_mean", 0.0))
+        self.panels.set_mean(s.get("a_mean", np.nan), s.get("sigma_mean", 0.0))
 
     def ref_html(self):
         if self._settings_uid:
-            res = self._find(self._settings_uid)
+            res = self.find(self._settings_uid)
             if res is not None:
                 return f'<div class="hint">Reusing measured widths from {html.escape(res.ref_name)}. Start from the line mask set to measure again.</div>'
         obs = self.list_observations()
@@ -607,31 +610,31 @@ class AbundanceTool(AbundanceWizard):
         columns = (
             ("λ₀ [Å]", "lam0"), ("ion", "ion"), ("E<sub>low</sub>", "e_low"),
             ("log gf", "loggf"), ("EW [mÅ]", "ew"), (LOCAL_CONTINUUM_HEAD, "continuum"), ("blend", "blend"),
-            (html.escape(self.value_label(res)), "a"),
+            (html.escape(value_label(res)), "a"),
             *fit_cols, ("flags", None))
         head = self._table_head(res, columns)
         body = []
         for i in self._line_order(res):
             ln = res.lines[i]
             chk = " checked" if ln.include else ""
-            cls = " row-selected" if self._jumped == i else ""
+            cls = " row-selected" if self.jumped == i else ""
             cls += "" if ln.include else " line-excluded"
-            ew = self._fmt(ln.ew, ln.ew_err, digits=1)   # EW error known from step 1
-            blend = self._fmt(ln.blend_frac, digits=2)
-            a = self._fmt(ln.a, ln.sigma_a if res.stage == "uncert" else None, plus=True)
+            ew = format_value(ln.ew, ln.ew_err, digits=1)   # EW error known from step 1
+            blend = format_value(ln.blend_frac, digits=2)
+            a = format_value(ln.a, ln.sigma_a if res.stage == "uncert" else None, plus=True)
             if cog:
-                cells = f'<td>{self._fmt(ab.reduced_ew(ln.ew, ln.lam0), digits=2)}</td>'
+                cells = f'<td>{format_value(ab.reduced_ew(ln.ew, ln.lam0), digits=2)}</td>'
             else:
-                cells = (f'<td>{self._fmt(ln.vshift, digits=2)}</td>'
-                         f'<td>{self._fmt(ln.vdop, digits=2)}</td>'
-                         f'<td>{self._fmt(ab.reduced_chi2(ln, res.snr), digits=2)}</td>')
+                cells = (f'<td>{format_value(ln.vshift, digits=2)}</td>'
+                         f'<td>{format_value(ln.vdop, digits=2)}</td>'
+                         f'<td>{format_value(ab.reduced_chi2(ln, res.snr), digits=2)}</td>')
             fl = ", ".join(ln.flags)
             body.append(
                 f'<tr class="abund-row{cls}" data-line="{i}">'
                 f'<td><input type="checkbox" class="line-include-chk" data-line="{i}"{chk}></td>'
                 f'<td>{ln.lam0:.3f}</td><td>{html.escape(ln.ion)}</td>'
                 f'<td>{ln.e_low:.2f}</td><td>{ln.loggf:.2f}</td><td>{ew}</td>'
-                f'{self.continuum_cell(ln, i)}<td>{blend}</td><td>{a}</td>{cells}'
+                f'{continuum_cell(ln, i)}<td>{blend}</td><td>{a}</td>{cells}'
                 f'<td class="abund-flags">{html.escape(fl)}</td></tr>')
         foot = ""
         if res.stage == "uncert" and np.isfinite(res.summary.get("a_mean", np.nan)):
@@ -639,7 +642,7 @@ class AbundanceTool(AbundanceWizard):
             stale = bool(self.stale_reasons(res))
             foot = (f'<div class="abund-summary{" stale-block" if stale else ""}">'
                     + ('<span class="stale-tag">Previous solution</span> ' if stale else "")
-                    + f'⟨{html.escape(self.value_label(res))}⟩ = '
+                    + f'⟨{html.escape(value_label(res))}⟩ = '
                     f'{s["a_mean"]:+.3f} ± {s["sigma_mean"]:.3f}'
                     f'<span class="abund-budget"> (photon {s["sigma_phot"]:.3f} · '
                     f'continuum {s["sigma_cont"]:.3f} · scatter {s["sigma_scatter"]:.3f} · '

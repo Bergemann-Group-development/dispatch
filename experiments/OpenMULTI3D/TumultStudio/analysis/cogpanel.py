@@ -34,7 +34,8 @@ SOLUTION_COLOR = "#e05c5c"   # the inverted abundance and its ±σ band
 
 class _Panel:
     """A styled figure over an abundance axis. ``crop`` fixes the ranges to the drawn values
-    (the wizard's ``_crop_scatter``) and ``fmt`` formats a value ± error (its ``_fmt``)."""
+    (:meth:`diagnostics.DiagnosticPanels.crop`) and ``fmt`` formats a value ± error
+    (:func:`resultview.format_value`)."""
 
     y_label = ""
 

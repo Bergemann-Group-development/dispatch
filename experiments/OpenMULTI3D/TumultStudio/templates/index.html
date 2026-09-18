@@ -1600,7 +1600,7 @@
   // Table <-> scatter hover link. A row and a point carry the same line index (the row as
   // data-line, the point as the source's `idx` column), so the marker source published as
   // "<prefix>_hover" can be moved onto the hovered row's point without a server round trip.
-  // The other direction is the scatter's own HoverTool callback (see abundwizard.HOVER_JS).
+  // The other direction is the scatter's own HoverTool callback (see diagnostics.HOVER_JS).
   function markPoint(prefix, line) {
     var doc = Bokeh.documents[0];
     var hov = doc.get_model_by_name(prefix + '_hover');
@@ -1775,6 +1775,6 @@
 <script>{{ form_script|safe }}</script>
 <!-- one for the atmosphere selects of every synthsetup.SynthSetup ... -->
 <script>{{ atmos_script|safe }}</script>
-<!-- ... and one for the shared interactions of the analysis tools (abundwizard) -->
+<!-- ... and one for the shared interactions of the analysis tools (resultview) -->
 <script>{{ analysis_script|safe }}</script>
 {% endblock %}

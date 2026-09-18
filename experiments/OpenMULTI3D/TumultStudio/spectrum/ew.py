@@ -25,6 +25,10 @@ ACCENT = "#4a90e2"
 # ``get_weq`` expect, so it can be passed straight through.
 EW_PROFILES = tuple(p for p in ("trapz", "gauss", "voigt", "asym_gauss") if p in profile_names())
 
+# The profiles an abundance measurement may be made with: a fitted profile (not trapz) is
+# required there, because the FWHM window comes from it (see tumult.abundance).
+FIT_PROFILES = ["gauss", "voigt", "asym_gauss"]
+
 # the same profile shown under the same name in every EW selector; the fitter keeps the keys
 PROFILE_LABELS = {"trapz": "Direct integration", "gauss": "Gaussian", "voigt": "Voigt",
                   "asym_gauss": "Asymmetric Gaussian"}

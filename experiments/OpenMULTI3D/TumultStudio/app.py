@@ -36,7 +36,9 @@ from .synthesis.draft import CalculationDraft
 from .synthesis.synthmodal import SynthModal
 from .synthesis.synthsetup import ATMOS_SCRIPT, SynthSetup
 from .analysis.abundancetool import AbundanceTool
-from .analysis.abundwizard import ANALYSIS_SCRIPT, PROFILES  # (shared EW-profile choices)
+from .analysis.resultview import ANALYSIS_SCRIPT
+from .analysis import results as analysis_results
+from .spectrum.ew import FIT_PROFILES  # (the EW profiles an abundance may be measured with)
 from .atoms.atomtool import AtomTool
 from .analysis.abundcorrtool import AbundCorrTool
 from .analysis.ionbalance import IonBalanceTool
@@ -340,7 +342,7 @@ def build():
             return kind, mask_store.current_uid
         if kind == "atom":
             return kind, atomtool.selected_uid
-        return kind, wizards[FOCUS_TOOL[kind]].selected_uid
+        return kind, wizards[FOCUS_TOOL[kind]].results.selected
 
     def update_status():
         """Refresh job/loading surfaces without invalidating scientific tool state."""
@@ -602,7 +604,7 @@ def build():
         # spectrum (no synthesis), so it needs the canvas objects and a line list
         list_observations=lambda: [(o.uid, o.name) for o in canvas.objects],
         get_observation=canvas.target_spectrum,
-        master_path=master, profiles=PROFILES,
+        master_path=master, profiles=FIT_PROFILES,
         # "+ New mask" draws its window with the Select range tool's gesture
         place_window=range_tool.begin_add,
         # the mask view's analysis actions: hand the open set to the abundance / balance
@@ -803,7 +805,7 @@ def build():
     for kind, tool_name in FOCUS_TOOL.items():
         wizard = wizards[tool_name]
         edit_menu.register(kind, EditTarget(
-            find=wizard._find, removal=tool_name,
+            find=wizard.find, removal=tool_name,
             rename=lambda res, name, w=wizard: w.rename_result(res.uid, name),
             duplicate=lambda res, w=wizard: w.duplicate_result(res.uid)))
     edit_menu.register("atom", EditTarget(
@@ -822,7 +824,9 @@ def build():
                        filter=filtertool, settings=settings, focused=focused,
                        focus_spectrum=focus_spectrum,
                        refresh=lambda: update_all(canvas)),
-        delivery, workflows, load_spectrum=_load_obj, load_atom=_load_atom)
+        delivery, workflows, load_spectrum=_load_obj, load_atom=_load_atom,
+        deserialise_results=analysis_results.deserialise,
+        relink_results=analysis_results.relink)
 
     def use_run_departures(run_id):
         """Hand a departure solve to the synthesis modal's Saved departures field."""

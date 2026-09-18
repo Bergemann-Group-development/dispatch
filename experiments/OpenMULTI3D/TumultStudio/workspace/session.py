@@ -15,9 +15,10 @@ is known to be usable:
    still untouched. External files that cannot be read are the one deliberate partial-load
    case: those objects are skipped and listed in :attr:`PreparedWorkspace.skipped` with
    their identity, path and reason, the references pointing at them are cleared through
-   the tools' explicit ``relink`` hooks and recorded in :attr:`PreparedWorkspace.unresolved`,
+   the explicit ``relink`` hook and recorded in :attr:`PreparedWorkspace.unresolved`,
    and a focus or selection that named a skipped object is cleared rather than moved to a
-   different object. A malformed embedded object (knots, a result, a mask set) is a
+   different object (``relink``; see :mod:`..analysis.results` for the result sections'
+   implementation of it). A malformed embedded object (knots, a result, a mask set) is a
    :class:`SessionError`, since the slot itself is broken.
 3. ``persistence.WorkspacePersistence`` commits the prepared workspace as one
    document operation, with the rollback and the load report.
@@ -497,16 +498,16 @@ class PreparedWorkspace:
                 "results": sum(len(r) for r, _ in self.results.values())}
 
 
-def prepare(ws, *, load_spectrum, load_atom, tools):
+def prepare(ws, *, load_spectrum, load_atom, deserialise, relink):
     """Build the live objects of validated ``ws`` without touching the workspace.
 
     ``load_spectrum(snap) -> Spectrum`` and ``load_atom(path) -> AtomClass`` read the
     external files; a failure there skips that object (the partial-load policy) and is
-    recorded with its reason. ``tools`` maps each result-tool name to its wizard, whose
-    ``deserialise(results) -> list`` builds the result objects and whose
-    ``relink(results, spectrum_uids, maskset_uids, atom_paths) -> list[str]`` clears the
-    references that point at objects this load does not restore. Every other failure is
-    a :class:`SessionError`.
+    recorded with its reason. ``deserialise(name, records) -> list`` builds one result
+    section's objects and ``relink(name, results, spectrum_uids, maskset_uids, atom_paths)
+    -> list[str]`` clears the references that point at objects this load does not restore;
+    both are plain functions of the saved records, so a slot is interpreted without
+    constructing any view. Every other failure is a :class:`SessionError`.
     """
     from tumult.linemask import LineMaskSet
 
@@ -548,13 +549,13 @@ def prepare(ws, *, load_spectrum, load_atom, tools):
     for name in RESULT_TOOLS:
         section = ws.results[name]
         try:
-            results = tools[name].deserialise(section.results)
+            results = deserialise(name, section.results)
         except SessionError:
             raise
         except Exception as exc:
             raise SessionError(f"results.{name}: {exc}") from exc
-        prepared.unresolved += tools[name].relink(results, spectrum_uids, maskset_uids,
-                                                  atom_paths)
+        prepared.unresolved += relink(name, results, spectrum_uids, maskset_uids,
+                                      atom_paths)
         prepared.results[name] = (results, section.selected)
 
     # selections and the focus follow the skip: a missing object clears them, it never

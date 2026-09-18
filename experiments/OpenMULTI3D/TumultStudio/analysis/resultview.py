@@ -1,112 +1,63 @@
-"""The shared machinery of the stepped abundance wizards.
+"""The result view every analysis tool presents: navigation, the per-line table and the
+spectrum decoration that belongs to the result in view.
 
-:class:`abundancetool.AbundanceTool` (element abundances vs an observation) and
-:class:`abundcorrtool.AbundCorrTool` (NLTE-LTE corrections vs a synthetic 1D LTE
-reference) grew as siblings with near-verbatim copies of the step switcher, the
-results-list / selection management, the action-channel dispatch, the per-line table
-scaffolding, the dark scatter figure and the jump-to-line logic. That common machinery
-lives here; the subclasses keep what is genuinely different - their forms, how many steps
-they have, their run stages (what gets synthesised and inverted) and their table columns.
+:class:`abundancetool.AbundanceTool` (element abundances against an observation),
+:class:`abundcorrtool.AbundCorrTool` (NLTE−LTE corrections against a synthetic 1D LTE
+reference) and :class:`ionbalance.IonBalanceTool` (stellar parameters from an ionisation
+balance) each produce a different scientific object, but a user reads all three the same
+way: pick a result in the left sidebar, step between its panels, sort and curate its lines,
+click a row to jump the spectrum to that line, and see whether the solution still stands on
+its inputs. :class:`ResultView` owns that: the step switcher, the single client→server
+action channel (:data:`ANALYSIS_SCRIPT`), the selection and identity operations over its
+:class:`~.results.ResultCollection`, the sortable table scaffolding with its checkbox
+columns, the jump-to-line gesture and the out-of-date banner.
+
+It composes rather than contains the rest: :class:`~.diagnostics.DiagnosticPanels` for the
+two scatter panels, :class:`~.localcontinuum.LocalContinuum` for the per-line continuum
+(the views whose lines are measured on a loaded observation set ``local_continuum``), and
+:class:`~.results.ResultReferences` for the document-side half of staleness. What is
+genuinely different between the three — their forms, how many steps they have, what a run
+synthesises and inverts, their table columns and what they draw on the spectrum — stays in
+the controller, through the hooks marked "subclass" below.
 
 Subclasses set the class attributes below (``prefix`` namespaces the DOM/bridge ids,
-``kind`` is the left-sidebar focus kind coordinated through ``ctx.focus_kind``) and
-implement the hooks marked "subclass".
+``kind`` is the left-sidebar focus kind coordinated through ``ctx.focus_kind``).
 """
 from __future__ import annotations
 
 import html
-import uuid
 from copy import deepcopy
 from pathlib import Path
 from dataclasses import replace
 
+import astropy.units as u
 import numpy as np
-from bokeh.models import (BoxAnnotation, ColumnDataSource, CustomJS, HoverTool, Range1d,
-                          Span, TextInput, Whisker, PointDrawTool)
-from bokeh.plotting import figure
+from bokeh.models import TextInput
 
 from tumult import abundance as ab
-from tumult.abundance import SYNTH_PAD_AA  # noqa: F401 (the tools import it from here)
-from tumult.measured import target_digest
-from ..workspace import store
-from ..spectrum.canvas import ACCENT, style_dark
-from ..ui.debounce import Trailing
-from ..execution.latestwork import LatestWork
+
+from ..execution.jobs import ResultJobs, update_kept_name
+from ..ui.htmlbridge import pulse, toggle
 from ..ui.tableui import SortState, check_header, sort_header
 from ..ui.tool import Tool
-from ..ui.units import to_range, to_value
+from ..ui.units import to_range
+from ..workspace import store
+from .diagnostics import DiagnosticPanels
+from .localcontinuum import LocalContinuum
+from .results import ResultCollection, ResultReferences
 
-import astropy.units as u
-
-# scatter x axes: key -> (axis label, per-line value fn)
-X_AXES = {
-    "evi": ("Excitation E_low [eV]", lambda ln: ln.e_low),
-    "rew": ("Reduced EW  log(W/λ)", lambda ln: ab.reduced_ew(ln.ew, ln.lam0)),
-}
-
-# the two diagnostics every abundance fit is read against, shown as a pair of panels: the
-# abundance against excitation energy (a temperature diagnostic) and against reduced EW (a
-# microturbulence one).
-PANEL_AXES = ("evi", "rew")
-
-# a fitted profile (not trapz) is required - the FWHM window comes from it (see abundance.py)
-PROFILES = ["gauss", "voigt", "asym_gauss"]
 DEFAULT_JUMP_SPAN_AA = 1.0   # jump span for a no-window line when no line has been shown yet
 FIT_WINDOW_MARGIN = 0.05     # fraction of a fitted line window shown beyond either edge
 
-# The "Local continuum" header (abund/ionbal only): a checkbox column, see check_cols.
-LOCAL_CONTINUUM_HEAD = "Local continuum"
-
-# what a hovered point says about itself
-POINT_TOOLTIPS = [("λ₀", "@lam{0.000} Å"), ("ion", "@ion"), ("value", "@a{0.000}")]
-
-# Hovering a point marks its table row: the point carries the index of the line it came from
-# (the ``idx`` column), which is the same index the row is addressed by, so the two views are
-# linked without a server round trip. The reverse direction (row → point) lives in the page
-# script, which writes the marker source this module publishes as ``<prefix>_hover``.
-HOVER_JS = """
-document.querySelectorAll('.' + prefix + '-row.row-hover')
-        .forEach((r) => r.classList.remove('row-hover'));
-const ix = cb_data.index.indices;
-const idx = source.data.idx;
-if (!ix.length || !idx) return;
-const row = document.querySelector(
-    '.' + prefix + '-row[data-line="' + idx[ix[0]] + '"]');
-if (row) row.classList.add('row-hover');
-"""
-
-# A scatter click selects through Bokeh's TapTool.  The source carries the original line
-# index, so the callback can mark and reveal the corresponding table row, then click it to
-# reuse the table's existing server-side jump action.
-SELECT_JS = """
-const selected = cb_obj.indices;
-if (!selected.length || !source.data.idx) return;
-const line = source.data.idx[selected[0]];
-const table = document.getElementById(prefix + '-table');
-if (!table) return;
-const row = table.querySelector('.' + prefix + '-row[data-line="' + line + '"]');
-if (!row) return;
-// Reuse the row's ordinary click path for both the persistent table selection and the
-// server-side line jump.
-row.click();
-const box = table.getBoundingClientRect();
-const rect = row.getBoundingClientRect();
-const head = table.querySelector('thead');
-const top = box.top + (head ? head.getBoundingClientRect().height : 0);
-if (rect.top < top || rect.bottom > box.bottom) {
-    table.scrollTop += (rect.top + rect.height / 2) - (top + box.bottom) / 2;
-}
-"""
-
-# The shared client->server wiring of every wizard and of the ionisation-balance tool,
-# emitted once through the ``analysis_script`` template variable. Each tool's markup scopes
-# itself with ``data-tool="<prefix>"`` (the step tabs, the results rows, the lines table);
-# the binder reads the prefix from the closest scope and writes ``"<kind>:<arg>:<nonce>"``
-# to the ``<prefix>-actions`` channel, which :meth:`AbundanceWizard._on_action` splits on
-# colons (uids and line indices contain none). A row click jumps to its line; a click on the
-# row's include checkbox only toggles the line; a checkbox column's header buttons select
-# all/none of the shown rows or filter them (``check-<action>:<column>``). The tools' own run/refit buttons and the
-# atom sidebar (which removes its nested corrections) stay in the page script.
+# The shared client->server wiring of the three analysis result views, emitted once through
+# the ``analysis_script`` template variable. Each tool's markup scopes itself with
+# ``data-tool="<prefix>"`` (the step tabs, the results rows, the lines table); the binder
+# reads the prefix from the closest scope and writes ``"<kind>:<arg>:<nonce>"`` to the
+# ``<prefix>-actions`` channel, which :meth:`ResultView._on_action` splits on colons (uids
+# and line indices contain none). A row click jumps to its line; a click on the row's include
+# checkbox only toggles the line; a checkbox column's header buttons select all/none of the
+# shown rows or filter them (``check-<action>:<column>``). The tools' own run/refit buttons
+# and the atom sidebar (which removes its nested corrections) stay in the page script.
 ANALYSIS_SCRIPT = r"""
 (function () {
   var seq = 0;   // a repeated identical action within one millisecond is still a new value
@@ -156,7 +107,30 @@ ANALYSIS_SCRIPT = r"""
 """
 
 
-from ..execution.jobs import ResultJobs, update_kept_name
+def format_value(value, err=None, plus=False, digits=3):
+    """Value ± err, or an em-dash when the stage that fills it hasn't run yet."""
+    if value is None or not np.isfinite(value):
+        return "—"
+    sign = "+" if plus else ""
+    out = f"{value:{sign}.{digits}f}"
+    if err is not None and np.isfinite(err):
+        out += f" ± {err:.{digits}f}"
+    return out
+
+
+def value_label(res):
+    """What a result's ``ln.a`` actually is, for the table header, the axis and the mean.
+
+    A run whose abundances were given relative to the model composition inverts each line
+    to [X/Fe] (``A(X) = A_solar(X) + [Fe/H] + [X/Fe]``), not to an absolute abundance;
+    for iron itself that value is the offset from the model's own [Fe/H], so it is named
+    Δ[Fe/H] rather than the meaningless [Fe/Fe]. An absolute run (the balance always,
+    which converts every inverted line back to A(X)) is labelled A(X).
+    """
+    el = getattr(res, "symbol", "") or getattr(res, "element", "") or "X"
+    if not getattr(res, "relative", False):
+        return f"A({el})"
+    return "Δ[Fe/H]" if el == "Fe" else f"[{el}/Fe]"
 
 
 def preparation_note(res):
@@ -173,19 +147,21 @@ def preparation_note(res):
     return f'<div class="hint">Measured with: {html.escape(" · ".join(p for p in parts if p))}.</div>'
 
 
-class AbundanceWizard(Tool):
+class ResultView(Tool):
     # --- subclass configuration --------------------------------------------------------
-    prefix = ""            # DOM/bridge namespace: "abund" | "corr"
-    steps = 3              # how many step panels the wizard's switcher drives
+    prefix = ""            # DOM/bridge namespace: "abund" | "corr" | "ionbal"
+    steps = 3              # how many step panels the view's switcher drives
     kind = ""              # ctx.focus_kind value while a result owns the centre view
-    section = ""           # store section for the wizard's own form values
+    section = ""           # store section for the view's own form values
     empty_table_msg = "No result selected"
     y_axis_label = "A(X)"
+    local_continuum = False   # subclass: True where a line carries a continuum of its own
 
-    # sortable per-line columns shared by both wizards: {col: sort-value(ln)}. The header
-    # markup lives in each subclass's table_html; here we own the state + the row order so
-    # both tables sort identically (and stay in step with the Line Navigator). Wavelength /
-    # excitation read low→high, EW and abundance magnitude are most useful largest-first.
+    # sortable per-line columns shared by every result table: {col: sort-value(ln)}. The
+    # header markup lives in each subclass's table_html; here we own the state + the row
+    # order so the tables sort identically (and stay in step with the Line Navigator).
+    # Wavelength / excitation read low→high, EW and abundance magnitude are most useful
+    # largest-first.
     BASE_SORT_KEYS = {
         "lam0": lambda ln: ln.lam0,
         "ion": lambda ln: ln.ion,
@@ -205,7 +181,7 @@ class AbundanceWizard(Tool):
         Tool.__init__(self, ctx)
         self.sort_keys = {**self.BASE_SORT_KEYS, **self.extra_sort_keys}
         self.sort = SortState({**self.BASE_SORT_ASC, **self.extra_sort_asc}, "lam0")
-        self.setup = setup                # SynthSetup: the wizard's own synthesis config
+        self.setup = setup                # SynthSetup: the view's own synthesis config
         self.own_mode_bridges((".sidebar-right", f"{self.prefix}-active"))
         self._view_bridge = ctx.bridges.cls("#main", f"{self.prefix}-mode")
         self._step_bridges = [ctx.bridges.cls("#main", f"{self.prefix}-step-{i}")
@@ -217,47 +193,46 @@ class AbundanceWizard(Tool):
 
         self.step = 1
         self.check_filters = set()         # checkbox columns showing only checked lines
-        self.results = []                  # list[ab.AbundanceResult]
-        self.jobs = ResultJobs(ctx, self._find, self._job_progress)
+        self.results = ResultCollection()
+        self.references = ResultReferences(self.canvas, self._result_spec)
+        self.jobs = ResultJobs(ctx, self.find, self._job_progress)
         if self.task_kind:
             # a record of this kind another document submitted lands here on a reconnect
             ctx.task_importers[self.task_kind] = self.import_task_result
             ctx.task_progress[self.task_kind] = self.import_task_progress
-        self.selected_uid = None
         self._last_span_aa = None          # span (Å) of the last shown line, for no-window jumps
-        self._jumped = None                # index of the line whose window is accented
-        self._digests = {}                 # id(spectrum) -> (spectrum, target_digest)
+        self.jumped = None                 # index of the line whose window is accented
 
         # step switch / run buttons / result clicks / line toggles all report through one
         # client->server channel, written as ``"<kind>:<arg>:<nonce>"``.
         self.actions = TextInput(value="", visible=False, name=f"{self.prefix}-actions")
         self.actions.on_change("value", self._on_action)
-        self._continuum_sync = False
-        self.continuum_source = ColumnDataSource(dict(x=[], y=[]))
-        # These are editable markers, not a spectrum: canvas.py keeps them off the main
-        # figure's y auto-fit (see its note on ``main.y_range.renderers``), so dragging one
-        # cannot widen the range to chase the very point being moved.
-        self.continuum_markers = self.canvas.main.scatter(
-            "x", "y", source=self.continuum_source, size=10, color=ACCENT, visible=False)
-        self.continuum_curve = self.canvas.main.line(
-            "x", "y", source=self.continuum_source, color=ACCENT,
-            line_dash="dashed", visible=False)
-        self.continuum_drag = PointDrawTool(renderers=[self.continuum_markers], add=False)
-        self.canvas.main.add_tools(self.continuum_drag)
-        self.continuum_source.on_change("data", self._on_continuum_drag)
-        self._continuum_delay = Trailing(200)
-        self._continuum_immediate = getattr(ctx.doc, "session_context", None) is None
-        self._continuum_work = LatestWork(
-            lambda *args: ctx.submit(*args), f"{self.prefix} continuum measurement",
-            lambda exc: self.notify(f"Local continuum could not be measured: {exc}"),
-            immediate=self._continuum_immediate)
+        self.continuum = LocalContinuum(
+            ctx, self.prefix, spec_of=self._result_spec, draw_hatch=self._set_hatch,
+            on_edited=self._continuum_edited, current=lambda: (self.selected(), self.jumped),
+            listed=lambda res: self.find(res.uid) is res) if self.local_continuum else None
+
+    # --- the diagnostic panels ------------------------------------------------------------
+    def build_panels(self, source=None):
+        """Create this view's pair of diagnostic panels (subclasses call it once they have
+        their own sources, then add whiskers and any extra series)."""
+        self.panels = DiagnosticPanels(self.prefix, self.y_axis_label, source)
+        return self.panels
+
+    @property
+    def figs(self):
+        return self.panels.figs
+
+    @property
+    def src(self):
+        return self.panels.src
 
     # --- window highlights ---------------------------------------------------------------
-    # A result's windows belong to the result, not to a jump: a wizard that paints them shows
+    # A result's windows belong to the result, not to a jump: a view that paints them shows
     # them for as long as it owns the centre view, with the jumped-to line accented. Only the
-    # corrections wizard lets that accent be dragged (its fit windows are its own to edit);
+    # corrections view lets that accent be dragged (its fit windows are its own to edit);
     # the others' windows are edited in the LineMasks view. The call sites are the
-    # subclass's, so a wizard whose lines carry no user-drawn windows paints nothing.
+    # subclass's, so a view whose lines carry no user-drawn windows paints nothing.
     def _result_masks(self, res):
         """The masks to highlight for ``res``: its lines' windows, carrying the *line's*
         include state, so a row switched off in the table is drawn switched off."""
@@ -277,7 +252,7 @@ class AbundanceWizard(Tool):
         self.canvas.highlight_windows(self._result_masks(res), active=active, xpts=xpts)
 
     # --- synthetic overlays ----------------------------------------------------------------
-    # Like the windows, the syntheses belong to the result: a wizard that keeps one per line
+    # Like the windows, the syntheses belong to the result: a view that keeps one per line
     # draws them all for as long as it owns the centre view, so the spectrum pane shows what
     # the fit is standing on and fills in as the run lands. Jumping a row then only moves the
     # accent and the EW hatch, it does not decide what is drawn.
@@ -304,137 +279,15 @@ class AbundanceWizard(Tool):
         return getattr(self.ctx, "focus_kind", "spectrum") == self.kind
 
     def push_view(self, state):
-        """Show/hide the wizard's centre view and hand the selection focus around."""
-        from ..ui.htmlbridge import pulse
+        """Show/hide the view's centre pane and hand the selection focus around."""
         pulse(self._view_bridge, state)
         self.ctx.focus_kind = self.kind if state == "on" else "spectrum"
         self.ctx.emit("focus-changed", kind=self.ctx.focus_kind)
 
     def set_step(self, n):
-        from ..ui.htmlbridge import toggle
         self.step = max(1, min(self.steps, int(n)))
         for i, bridge in enumerate(self._step_bridges, start=1):
             toggle(bridge, i == self.step)
-
-    # --- dark scatter figures (the centre view's diagnostic pane) ------------------------
-    # Every wizard shows the pair of diagnostics (:data:`PANEL_AXES`) side by side
-    # (:meth:`_build_figs`), drawn from one ColumnDataSource carrying an ``x_<axis>``
-    # column per panel, so a single data push repaints both.
-    def _new_fig(self, xkey):
-        fig = figure(sizing_mode="stretch_both", output_backend="webgl",
-                     tools="pan,wheel_zoom,box_zoom,tap,reset", active_scroll="wheel_zoom",
-                     min_border_left=62, min_border_bottom=42,
-                     x_range=Range1d(0.0, 1.0), y_range=Range1d(0.0, 1.0))
-        style_dark(fig)   # match the other Bokeh panels' dark theme
-        span = Span(location=0, dimension="width", line_color="#e05c5c",
-                    line_width=1.2, line_dash="dashed", visible=False)
-        band = BoxAnnotation(fill_color="#e05c5c", fill_alpha=0.08, visible=False)
-        fig.add_layout(span)
-        fig.add_layout(band)
-        fig.yaxis.axis_label = self.y_axis_label
-        self.figs.append(fig)
-        self.mean_lines.append(span)
-        self.mean_bands.append(band)
-        return fig
-
-    def _build_figs(self, source):
-        """The two diagnostic panels (:data:`PANEL_AXES`), side by side."""
-        self.src = source
-        source.name = f"{self.prefix}_points"
-        self.figs, self.mean_lines, self.mean_bands = [], [], []
-        for i, key in enumerate(PANEL_AXES):
-            fig = self._new_fig(f"x_{key}")
-            fig.xaxis.axis_label = X_AXES[key][0]
-            fig.name = f"{self.prefix}_fig" + ("" if i == 0 else str(i + 1))
-        # the ring the page script moves onto the point of a hovered table row, on every
-        # panel at once (it carries both panels' x, like the points themselves)
-        self.hover_src = ColumnDataSource({f"x_{k}": [] for k in PANEL_AXES} | dict(a=[]))
-        self.hover_src.name = f"{self.prefix}_hover"
-        for key, fig in zip(PANEL_AXES, self.figs):
-            fig.scatter(f"x_{key}", "a", source=self.hover_src, size=16, fill_color=None,
-                        line_color="#fff", line_width=2)
-        self._add_series(source, ACCENT)
-        self.fig, self.fig2 = self.figs
-        return self.figs
-
-    def _add_series(self, source, color, xkeys=None):
-        """Draw ``source``'s points on every panel, each linked to the per-line table."""
-        source.selected.js_on_change(
-            "indices", CustomJS(args=dict(source=source, prefix=self.prefix), code=SELECT_JS))
-        for key, fig in zip(xkeys or [f"x_{k}" for k in PANEL_AXES], self.figs):
-            r = fig.scatter(key, "a", source=source, size=8, fill_color=color,
-                            line_color="#fff", line_width=1,
-                            nonselection_fill_color=color, nonselection_fill_alpha=1.0,
-                            nonselection_line_color="#fff", nonselection_line_alpha=1.0)
-            fig.add_tools(HoverTool(
-                renderers=[r], tooltips=POINT_TOOLTIPS,
-                callback=CustomJS(args=dict(source=source, prefix=self.prefix),
-                                  code=HOVER_JS)))
-
-    def _add_whiskers(self, source, color):
-        """Error bars on both panels, from ``source``'s ``lo``/``hi`` columns."""
-        for key, fig in zip(PANEL_AXES, self.figs):
-            fig.add_layout(Whisker(base=f"x_{key}", upper="hi", lower="lo", source=source,
-                                   line_color=color, line_width=1.2))
-
-    def _pack_points(self, indexed, value_of=lambda ln: ln.a, sigma_of=lambda ln: ln.sigma_a):
-        """The scatter columns for ``indexed`` — ``(index into res.lines, line)`` pairs.
-
-        The bars are part of the data, not decoration: they go into ``lo``/``hi`` so the
-        ranges are fitted to what is drawn, including a point whose bar reaches furthest.
-        The index rides along as ``idx``, which is what links a point to its table row.
-        """
-        lines = [ln for _i, ln in indexed]
-        sig = [s if np.isfinite(s) else 0.0 for s in (float(sigma_of(ln)) for ln in lines)]
-        vals = [float(value_of(ln)) for ln in lines]
-        data = {f"x_{k}": [X_AXES[k][1](ln) for ln in lines] for k in PANEL_AXES}
-        data.update(a=vals, lo=[v - s for v, s in zip(vals, sig)],
-                    hi=[v + s for v, s in zip(vals, sig)],
-                    lam=[ln.lam0 for ln in lines], ion=[ln.ion for ln in lines],
-                    idx=[i for i, _ln in indexed])
-        return data
-
-    @staticmethod
-    def empty_points():
-        return ({f"x_{k}": [] for k in PANEL_AXES}
-                | dict(a=[], lo=[], hi=[], lam=[], ion=[], idx=[]))
-
-    @staticmethod
-    def value_label(res):
-        """What a result's ``ln.a`` actually is, for the table header, the axis and the mean.
-
-        A run whose abundances were given relative to the model composition inverts each line
-        to [X/Fe] (``A(X) = A_solar(X) + [Fe/H] + [X/Fe]``), not to an absolute abundance;
-        for iron itself that value is the offset from the model's own [Fe/H], so it is named
-        Δ[Fe/H] rather than the meaningless [Fe/Fe]. An absolute run (the balance always,
-        which converts every inverted line back to A(X)) is labelled A(X).
-        """
-        el = getattr(res, "symbol", "") or getattr(res, "element", "") or "X"
-        if not getattr(res, "relative", False):
-            return f"A({el})"
-        return "Δ[Fe/H]" if el == "Fe" else f"[{el}/Fe]"
-
-    def _crop_panels(self, series):
-        """Fit every panel to its x data and the full vertical whisker span.
-
-        Bokeh's automatic ranges do not account for ``Whisker`` annotations.  Derive the
-        shared y extent here from the lower and upper error-bar columns so callers cannot
-        accidentally crop to the point centres and clip a bar.
-        """
-        ys = [y for data in series for column in ("lo", "hi") for y in data[column]]
-        for key, fig in zip(PANEL_AXES, self.figs):
-            xs = [x for d in series for x in d[f"x_{key}"]]
-            self._crop_scatter(xs, ys, fig)
-
-    def _set_mean(self, value, err=0.0):
-        """Show the mean (and its ± band) on every panel, or hide it when there is none."""
-        ok = value is not None and np.isfinite(value)
-        err = err if np.isfinite(err) else 0.0
-        for span, band in zip(self.mean_lines, self.mean_bands):
-            span.visible = band.visible = bool(ok)
-            if ok:
-                span.location = float(value)
-                band.top, band.bottom = float(value) + err, float(value) - err
 
     # --- Tool protocol -------------------------------------------------------------------
     @property
@@ -442,7 +295,7 @@ class AbundanceWizard(Tool):
         return [*self.form1.models, self.actions, *self.setup.models]
 
     def activate(self):
-        # first open: seed the wizard's own synthesis setup from the synthesis modal, then
+        # first open: seed the view's own synthesis setup from the synthesis modal, then
         # stay independent. Detect first open with a marker (not section-emptiness) because
         # the SynthSetup constructor pre-writes a validated atmos_grid_id.
         if not store.get_section(self.setup.section).get("_seeded"):
@@ -465,7 +318,8 @@ class AbundanceWizard(Tool):
             self.push_mode("off")
 
     def _clear_line_decor(self):
-        self._hide_continuum()
+        if self.continuum is not None:
+            self.continuum.hide()
         self.canvas.clear_abund_overlay()
         self.canvas.clear_abund_hatch()
         self.canvas.clear_windows()
@@ -498,7 +352,7 @@ class AbundanceWizard(Tool):
         elif kind in ("check-all", "check-none"):
             self._set_checks(arg, kind == "check-all")
         elif kind == "jump-line":
-            self._jump_line(arg)
+            self.jump_line(arg)
         elif kind == "sort":
             if self.sort.toggle(arg):
                 res = self.selected()
@@ -508,59 +362,26 @@ class AbundanceWizard(Tool):
             self._extra_action(kind, arg)
 
     def _extra_action(self, kind, arg):
-        """Subclass hook: the wizard-specific run actions."""
+        """Subclass hook: the view-specific run actions."""
 
     # --- staleness: a solution whose inputs have changed since ------------------------------
     # A result is out of date when what it was solved from differs from what it would be
-    # solved from now: the target spectrum (its digest and recorded preparation) or, per
-    # result type, its lines (``stale_reasons`` of the result). Nothing is recomputed; the
-    # panel says what changed and offers ``update_label``.
+    # solved from now. The scientific half of that comparison is the result type's own
+    # (``stale_reasons`` of the result); the document half — which spectrum its reference
+    # names, its digest now, and how the recorded preparation differs from the current one —
+    # is :class:`~.results.ResultReferences`. Nothing is recomputed; the panel says what
+    # changed and offers ``update_label``.
     update_label = ""      # subclass: the action that solves the selected result again
 
     def update_result(self):
         """Subclass hook: solve the selected result again from its current inputs."""
-
-    def _target_digest(self, spec):
-        """``target_digest(spec)``, remembered per spectrum object: the canvas replaces a
-        target's spectrum object when its continuum or filter changes."""
-        cached = self._digests.get(id(spec))
-        if cached is None or cached[0] is not spec:
-            if len(self._digests) > 32:
-                self._digests.clear()
-            cached = self._digests[id(spec)] = (spec, target_digest(spec))
-        return cached[1]
-
-    def _preparation_changes(self, res):
-        """What differs between the preparation ``res`` recorded and its target's current
-        one, in words; empty when either is unknown. Only what the measurement reads counts:
-        the convolution stays in the record as provenance but is not applied to the target
-        the lines are measured on."""
-        recorded = res.preparation or {}
-        obj = self.canvas._find(res.ref_uid) if res.ref_uid is not None else None
-        if not recorded or obj is None:
-            return []
-        now = self.canvas.preparation(obj)
-        changes = []
-        if bool(recorded.get("filtered")) != now["filtered"]:
-            changes.append("filtering was switched " + ("on" if now["filtered"] else "off"))
-        if recorded.get("normalisation", now["normalisation"]) != now["normalisation"]:
-            changes.append(f"the target now uses {now['normalisation']}")
-        return changes
 
     def stale_reasons(self, res):
         """``{key: text}`` saying why the solved ``res`` no longer matches its inputs; empty
         before it is solved and while it is being computed."""
         if res is None or res.stage != self.final_stage or self.is_computing(res):
             return {}
-        spec = self._result_spec(res) if res.ref_uid is not None else None
-        reasons = res.stale_reasons(None if spec is None else self._target_digest(spec))
-        changes = self._preparation_changes(res)
-        if changes:
-            reasons["target"] = "; ".join(changes) + " after this was solved"
-        elif "target" in reasons:
-            reasons["target"] = ("the target's continuum or filtered flux changed after this "
-                                 "was solved")
-        return reasons
+        return self.references.reasons(res)
 
     def sync_target(self, res, spec):
         """Before ``res`` is solved again on ``spec``: when its target changed, measure the
@@ -607,11 +428,14 @@ class AbundanceWizard(Tool):
                         "previous values were kept.")
 
     # --- results list / selection ---------------------------------------------------------
-    def _find(self, uid):
-        return next((r for r in self.results if r.uid == uid), None)
+    def find(self, uid):
+        return self.results.find(uid)
 
-    # --- durable calculations: this wizard's task kind -----------------------------------
-    # The wizard's calculation runs as a workflow record of ``task_kind``
+    def selected(self):
+        return self.results.selected_result()
+
+    # --- durable calculations: this view's task kind -----------------------------------
+    # The view's calculation runs as a workflow record of ``task_kind``
     # (tumult.synthesis.tasks), so it outlives the tab and the server. Its snapshots
     # and result are result objects carrying the uid of the one they continue; a uid this
     # list does not hold (a record another document submitted) is adopted as a new
@@ -621,7 +445,7 @@ class AbundanceWizard(Tool):
     def _adopt(self, incoming, name):
         """The listed result ``incoming`` continues, updated in place from it (its name
         stays), or ``incoming`` itself, listed as ``name`` and selected."""
-        res = self._find(incoming.uid)
+        res = self.find(incoming.uid)
         if res is None:
             self._add_result(incoming, name)
             self.push_results()
@@ -633,7 +457,6 @@ class AbundanceWizard(Tool):
         """List ``res`` under ``name``, made unique in the document, and select it."""
         res.name = self.ctx.unique_name(name, pending=False)
         self.results.append(res)
-        self.selected_uid = res.uid
 
     def import_task_progress(self, snapshot, handle):
         self._job_progress(self._adopt(snapshot, handle.label))
@@ -641,49 +464,25 @@ class AbundanceWizard(Tool):
     def import_task_result(self, result, handle):
         self._job_progress(self._adopt(result, handle.label))
 
-    def selected(self):
-        return self._find(self.selected_uid)
-
     # --- session persistence: the envelope every result list shares ----------------------
-    # The result objects themselves are built by the subclass's factory and relinked by
-    # its ``relink``; only the list/selected-uid envelope and its validation live here.
-    result_from_dict = staticmethod(ab.AbundanceResult.from_dict)
-
+    # The result objects themselves are built and relinked by :mod:`.results`, without a
+    # view; only the list/selected-uid envelope and what it takes to show it live here.
     def snapshot(self):
         """``{"results": [...], "selected": uid}`` for the session slot."""
-        return {"results": [r.to_dict() for r in self.results], "selected": self.selected_uid}
-
-    def deserialise(self, results):
-        """The result objects of a saved envelope (no live state touched); a malformed
-        record raises."""
-        return [self.result_from_dict(d) for d in results]
-
-    def relink(self, results, spectrum_uids, maskset_uids, atom_paths):
-        """Clear the references of ``results`` that name objects a load does not restore;
-        returns one line per cleared reference. The base clears the reference observation
-        (``ref_uid``); subclasses add their own links."""
-        notes = []
-        for res in results:
-            if res.ref_uid is not None and res.ref_uid not in spectrum_uids:
-                notes.append(f"{self.name} result {res.name or res.uid}: reference spectrum "
-                             f"{res.ref_name or res.ref_uid} is not loaded")
-                res.ref_uid = None
-        return notes
+        return self.results.snapshot()
 
     def restore(self, results, selected):
         """Replace the result list (and repaint the sidebar); ``selected`` must be one of
         them or ``None``. Pending result jobs of the old list are forgotten."""
         self.jobs.current.clear()
-        self.results = list(results)
-        uids = {r.uid for r in self.results}
-        self.selected_uid = selected if selected in uids else None
-        self._jumped = None
+        self.results.replace(results, selected)
+        self.jumped = None
         self.push_results()
 
     def select_result(self, uid):
-        if self._find(uid) is None:
+        if self.find(uid) is None:
             return
-        self.selected_uid = uid
+        self.results.selected = uid
         self.ctx.tools.activate(self.name)   # a result click opens the panel (no toolbar needed)
         self._clear_line_decor()
         self.push_results()
@@ -705,21 +504,18 @@ class AbundanceWizard(Tool):
     def remove_result(self, uid):
         """Drop result ``uid`` and cancel the workflow computing it. Returns what
         :meth:`insert_result` needs to put it back, or ``None``."""
-        res = self._find(uid)
+        res = self.find(uid)
         if res is None:
             return None
         placed = {"res": res, "index": self.results.index(res),
-                  "selected": self.selected_uid == uid}
+                  "selected": self.results.selected == uid}
         self.jobs.invalidate(uid)
         self.jobs.invalidate(res.name)
-        was_selected = placed["selected"]
-        self.results.remove(res)
-        if was_selected:
-            self.selected_uid = self.results[-1].uid if self.results else None
+        was_selected = self.results.remove(res)
         self.push_results()
-        if self.selected_uid and was_selected:
-            self.select_result(self.selected_uid)
-        elif not self.results:
+        if self.results.selected and was_selected:
+            self.select_result(self.results.selected)
+        elif not len(self.results):
             self.push_view("off")
             self._clear_line_decor()
         return placed
@@ -727,9 +523,7 @@ class AbundanceWizard(Tool):
     def insert_result(self, res, index, selected):
         """Put back a result :meth:`remove_result` took out, at its position and with its
         uid and state; ``selected`` shows it again. Its cancelled workflow stays cancelled."""
-        if self._find(res.uid) is not None:
-            raise ValueError(f"Duplicate result identity: {res.uid}")
-        self.results.insert(min(index, len(self.results)), res)
+        self.results.insert(res, index)
         if selected:
             self.select_result(res.uid)
         else:
@@ -740,25 +534,24 @@ class AbundanceWizard(Tool):
         and select it. The copy has its own uid, so the original's workflow keeps reaching
         the original only, and a rerun or curation of the copy leaves the original as it
         is. A result still being computed is not copied."""
-        res = self._find(uid or self.selected_uid)
+        res = self.find(uid or self.results.selected)
         if res is None:
             return None
         if self.is_computing(res):
             self.notify(f"{res.name} is still being computed; duplicate it once it has "
                         "finished or been cancelled.")
             return None
-        copy = deepcopy(res)
-        copy.uid = uuid.uuid4().hex[:8]
+        copy = self.results.duplicate(res)
         self._add_result(copy, res.name)
         self.select_result(copy.uid)
-        self.notify(f"Duplicated as \u201c{copy.name}\u201d.", level="success")
+        self.notify(f"Duplicated as “{copy.name}”.", level="success")
         return copy
 
     def rename_result(self, uid, name):
         """Give result ``uid`` the name ``name``, made unique in the document. A result still
         being computed keeps its name: its workflow delivers to the name it was submitted
         under."""
-        res = self._find(uid)
+        res = self.find(uid)
         if res is None:
             return None
         if self.is_computing(res):
@@ -800,8 +593,8 @@ class AbundanceWizard(Tool):
             return
         if col == "include":
             self._set_include(res, lines, on)
-        else:
-            self._set_continua(res, lines, on)
+        elif self.continuum is not None:
+            self.continuum.set_enabled(res, lines, on)
 
     # subclass: the stage name after the last run, the aggregation and the sidebar summary
     final_stage = "uncert"
@@ -882,26 +675,10 @@ class AbundanceWizard(Tool):
         self._render_scatter()
         self.push_table(self.table_html(res))
 
-    def _crop_scatter(self, xs, ys, fig=None):
-        """Fix a panel's ranges to the shown values with a 5% margin each side."""
-        fig = fig if fig is not None else self.fig
-        xs = np.asarray(xs, dtype=float)
-        ys = np.asarray(ys, dtype=float)
-        xs, ys = xs[np.isfinite(xs)], ys[np.isfinite(ys)]
-        if xs.size == 0 or ys.size == 0:
-            return
-        for rng, lo, hi in ((fig.x_range, xs.min(), xs.max()),
-                            (fig.y_range, ys.min(), ys.max())):
-            pad = 0.05 * (hi - lo) or 0.05 * (abs(hi) or 1.0)
-            start, end = float(lo - pad), float(hi + pad)
-            rng.start, rng.end = start, end
-            # Keep Reset useful after replacing Bokeh's auto-ranging DataRange1d with the
-            # fixed range required for Whisker extents.
-            if isinstance(rng, Range1d):
-                rng.reset_start, rng.reset_end = start, end
-
     # --- jump-to-line -----------------------------------------------------------------------
-    def _jump_line(self, token):
+    def jump_line(self, token):
+        """Show line ``token`` of the selected result: move the view onto its window and
+        paint the decor that belongs to it."""
         res = self.selected()
         if res is None:
             return
@@ -938,28 +715,17 @@ class AbundanceWizard(Tool):
             if s < e:
                 rng.start, rng.end = s, e
 
-    # --- shared formatting --------------------------------------------------------------------
-    @staticmethod
-    def _fmt(value, err=None, plus=False, digits=3):
-        """Value ± err, or an em-dash when the stage that fills it hasn't run yet."""
-        if value is None or not np.isfinite(value):
-            return "—"
-        sign = "+" if plus else ""
-        out = f"{value:{sign}.{digits}f}"
-        if err is not None and np.isfinite(err):
-            out += f" ± {err:.{digits}f}"
-        return out
-
+    # --- the left sidebar's rows ---------------------------------------------------------
     def _results_rows(self, badge, results=None, nested=False):
         """Sidebar rows for ``results`` (default: all); ``nested`` indents them under the
-        object they were computed from. The row carries ``data-tool`` (this wizard's
+        object they were computed from. The row carries ``data-tool`` (this view's
         prefix) and ``data-result`` (the uid), its button ``data-result-remove``: the
         attributes the page's analysis binder routes select/remove clicks by."""
         focused = self.is_focused()
         rows = []
         nest = " result-nested" if nested else ""
         for r in (self.results if results is None else results):
-            sel = " selected" if (r.uid == self.selected_uid and focused) else ""
+            sel = " selected" if (r.uid == self.results.selected and focused) else ""
             summary = self._result_summary(r)
             rows.append(
                 f'<div class="object-item result-item{nest}{sel}" '
@@ -975,10 +741,6 @@ class AbundanceWizard(Tool):
         return rows
 
     # --- measurement-owned local continua ------------------------------------------
-    def _hide_continuum(self):
-        self.continuum_markers.visible = self.continuum_curve.visible = False
-        self.canvas.release_edit_tool(self.continuum_drag)
-
     def _set_hatch(self, res, ln):
         """Hatch the area ``ln``'s measured EW stands for, through its local continuum when
         enabled. A line restored from a task or session has no live profile; it is measured
@@ -1000,149 +762,52 @@ class AbundanceWizard(Tool):
                                     nodes=ln.continuum if ln.renorm else None)
 
     def _render_continuum(self):
+        """Show the local-continuum markers of the line in view, or hide them."""
+        if self.continuum is None:
+            return
         res = self.selected()
-        if (self.prefix not in ("abund", "ionbal") or not self.active
-                or not self.is_focused() or res is None or self._jumped is None
-                or self._jumped >= len(res.lines)):
-            return self._hide_continuum()
-        ln = res.lines[self._jumped]
-        if not ln.renorm or not ln.continuum:
-            return self._hide_continuum()
-        xx, yy = np.asarray(ln.continuum).T
-        self._continuum_sync = True
-        try:
-            self.continuum_source.data = dict(x=to_value(xx, u.AA, self.canvas.xunit), y=yy)
-        finally:
-            self._continuum_sync = False
-        self.continuum_markers.visible = self.continuum_curve.visible = True
-        self.canvas.claim_edit_tool(self.continuum_drag)
-        self._set_hatch(res, ln)
+        if (not self.active or not self.is_focused() or res is None or self.jumped is None
+                or self.jumped >= len(res.lines)):
+            return self.continuum.hide()
+        self.continuum.render(res, self.jumped)
 
-    def _continuum_changed(self, res, ln, **kwargs):
-        spec = self._result_spec(res)
-        if spec is None:
-            self.notify("The target spectrum is no longer loaded.")
-            return
-        index = res.lines.index(ln)
-
-        def compute(token):
-            token.check()
-            working = deepcopy(res)
-            ab.set_local_continuum(working, working.lines[index], spec, **kwargs)
-            token.check()
-            state = {key: value for key, value in working.__dict__.items() if key != "lines"}
-            return working.lines[index], state
-
-        def apply(result):
-            if self._find(res.uid) is not res or index >= len(res.lines):
-                return
-            edited, state = result
-            res.lines[index].__dict__.update(edited.__dict__)
-            res.__dict__.update(state)
-            self.jobs.invalidate(res.uid)
-            self.push_results()
-            self._render_selected()
-            self._jump_decor(res, res.lines[index])
-            self.ctx.workspace_changed()
-
-        self._continuum_work.request(compute, apply)
-
-    def _set_continua(self, res, lines, enabled):
-        """Switch the local continuum of several lines at once; each is remeasured."""
-        spec = self._result_spec(res)
-        if spec is None:
-            self.notify("The target spectrum is no longer loaded.")
-            return
-        indices = [res.lines.index(ln) for ln in lines]
-
-        def compute(token):
-            token.check()
-            working = deepcopy(res)
-            edits = [(working.lines[index], {"enabled": enabled}) for index in indices]
-            failed = ab.set_local_continua(working, edits, spec)
-            failed_by_id = {id(line): exc for line, exc in failed}
-            outcome = [(index, working.lines[index], failed_by_id.get(id(working.lines[index])))
-                       for index in indices]
-            token.check()
-            state = {key: value for key, value in working.__dict__.items() if key != "lines"}
-            return outcome, state
-
-        def apply(result):
-            if self._find(res.uid) is not res:
-                return
-            outcome, state = result
-            failures = []
-            for index, edited, exc in outcome:
-                if exc is not None:
-                    failures.append(f"{res.lines[index].lam0:.3f} Å: {exc}")
-                else:
-                    res.lines[index].__dict__.update(edited.__dict__)
-            res.__dict__.update(state)
-            if failures:
-                self.notify("Local continuum unchanged for " + "; ".join(failures))
-            self.jobs.invalidate(res.uid)
-            self.push_results()
-            self._render_selected()
-            if self._jumped is not None and self._jumped in indices:
-                self._jump_decor(res, res.lines[self._jumped])
-            self.ctx.workspace_changed()
-
-        self._continuum_work.request(compute, apply)
+    def _continuum_edited(self, res, indices):
+        """A local-continuum measurement landed on lines ``indices`` of ``res``: the
+        solution standing on them is superseded, so the pending run is dropped and
+        everything that shows them is repainted."""
+        self.jobs.invalidate(res.uid)
+        self.push_results()
+        self._render_selected()
+        if self.jumped is not None and self.jumped in indices:
+            self._jump_decor(res, res.lines[self.jumped])
+        self.ctx.workspace_changed()
 
     def _toggle_continuum(self, token):
         res = self.selected()
-        if res is None or self.prefix not in ("abund", "ionbal"):
+        if res is None or self.continuum is None:
             return
         idx = int(token)
         if not 0 <= idx < len(res.lines):
             return
-        self._jumped = idx
-        ln = res.lines[idx]
-        self._continuum_changed(res, ln, enabled=not ln.renorm)
-        self._jump_line(token)
-
-    def _on_continuum_drag(self, attr, old, new):
-        if self._continuum_sync or not self.continuum_markers.visible:
-            return
-        if self._continuum_immediate:
-            self._commit_continuum_drag()
-        else:
-            self._continuum_delay("continuum-drag", self._commit_continuum_drag)
-
-    def _commit_continuum_drag(self):
-        """Measure only after the marker drag has been quiet for a short interval."""
-        res = self.selected()
-        if res is None or self._jumped is None:
-            return
-        ln = res.lines[self._jumped]
-        new = self.continuum_source.data
-        if len(new.get("y", [])) != 2:
-            self._render_continuum()
-            return
-        # The markers move vertically; their wavelengths remain at the synth edges.
-        nodes = tuple(zip(ln.window, (float(y) for y in new["y"])))
-        self._continuum_changed(res, ln, nodes=nodes)
-
-    @staticmethod
-    def continuum_cell(ln, index):
-        checked = " checked" if ln.renorm else ""
-        return (f'<td><input type="checkbox" class="line-continuum-chk" '
-                f'data-line="{index}"{checked} title="Adjust this measurement’s local continuum">'
-                '</td>')
+        self.jumped = idx
+        self.continuum.edit(res, idx, enabled=not res.lines[idx].renorm)
+        self.jump_line(token)
 
     def _complete_rungs(self):
         res = self.selected()
         if res is None or not any(ln.missing_rungs for ln in res.lines):
             return
-        from copy import deepcopy
         target = deepcopy(self._result_spec(res))
+
         def work(working, token, progress):
             return ab.complete_result_rungs(working, target=target,
                                             cancel_token=token, progress=progress)
+
         def done(result):
             self.push_results()
             self._render_selected()
             self.notify("Cached curves of growth updated." if not any(
                 ln.missing_rungs for ln in result.lines) else
                 "More abundance rungs are still needed; inspect the flagged lines.")
+
         self.jobs.submit(f"rungs:{res.name}", work, done, result=res, detached=True)
