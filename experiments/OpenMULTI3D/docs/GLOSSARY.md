@@ -162,8 +162,8 @@ Reserve `mask` for a boolean selector or a line mask, never for an index array.
   on-disk cache reuses. An *external run* is one no workflow record names (started from a
   shell, a notebook or a script calling an operation directly); the daemon lists the live ones.
 - *job*: means different things per component. In `tumult.synthesis.runtime` it is one unit
-  of work scheduled by `ExecutionService`, usually a run. In TumultStudio2 it is one row of
-  the Processes panel (`jobs.Job`): a file load, a line-strength band or a durable workflow
+  of work scheduled by `ExecutionService`, usually a run. In TumultStudio it is one row of
+  the Processes panel (`TumultStudio.execution.jobs.Job`): a file load, a line-strength band or a durable workflow
   the document follows. In the daemon's protocol it is anything `list` returns: a workflow
   or an external run.
 - *task*: DISPATCH's own `task_t` within a run, in the Fortran scheduler. On the Python side

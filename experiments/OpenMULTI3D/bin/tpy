@@ -1,9 +1,9 @@
 #!/bin/sh
 # Run Python with this checkout importable, on an interpreter that has its dependencies.
 #
-# Ad-hoc scripts need the repository root on sys.path, and TumultStudio2 as well for the
-# preference and tool modules, which are imported by the bare names a Bokeh directory app
-# gives them. The test suite gets the same two paths from tests/conftest.py instead.
+# Ad-hoc scripts need the project directory on sys.path so that `tumult` and
+# `TumultStudio` import by their real names. The test suite gets the same path from
+# pytest, which puts the project directory there for the test packages under tests/.
 #
 # Resolution order: $TUMULT_PYTHON, the checkout's own .venv, the conda environment named
 # by $TUMULT_ENV (default tumult_studio), then python3 on PATH. Do not prepend a conda
@@ -38,7 +38,7 @@ if [ -z "$py" ]; then
     exit 127
 fi
 
-PYTHONPATH="$root:$root/TumultStudio2${PYTHONPATH:+:$PYTHONPATH}"
+PYTHONPATH="$root${PYTHONPATH:+:$PYTHONPATH}"
 export PYTHONPATH
 if [ "$1" = "--which" ]; then
     printf '%s\nPYTHONPATH=%s\n' "$py" "$PYTHONPATH"

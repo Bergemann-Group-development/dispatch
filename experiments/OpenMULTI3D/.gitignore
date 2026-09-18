@@ -1,5 +1,5 @@
-# The parent repository ignores new experiment files by default. Keep the
-# execution regression tests reviewable without exposing generated artifacts.
+# The parent repository ignores new experiment files by default. Keep the test
+# source and its reviewed fixtures visible without exposing generated artifacts.
 !.gitignore
 !AGENTS.md
 !CLAUDE.md
@@ -12,37 +12,40 @@ docs/*
 !docs/PythonNamingConventions.md
 !tests/
 tests/*
-!tests/test_detached_workflows.py
-!tests/test_execution.py
-!tests/test_linenav_focus.py
-!tests/test_ui_execution.py
-!tests/test_ui_events.py
-!tests/test_ui_scenario.py
-!tests/test_store.py
-!tests/test_session.py
-!tests/test_flux_sets.py
-!tests/test_linemask.py
-!tests/test_linediag.py
-!tests/test_sparams.py
-!tests/test_ladder_workflows.py
-!tests/test_segments.py
-!tests/test_nlte_corrections.py
-!tests/test_continuum.py
-!tests/test_spectrum_io.py
-!tests/test_line_quadrature.py
-!tests/test_grid_catalog.py
-!tests/test_reference_stars.py
-!tests/test_prune.py
+!tests/README.md
+!tests/*.py
+!tests/support/
+!tests/fixtures/
+!tests/science/
+!tests/io/
+!tests/workflows/
+!tests/execution/
+!tests/studio/
+!tests/browser/
+!tests/native/
 
-# Nothing is needed here for tumult/, HOP/, SRC/ or TumultStudio2/: the parent
-# repository negates those directories wholesale, so new files in them are visible.
+# Reviewed example inputs are source whatever their extension; the broad *.txt and
+# similar data rules above would otherwise hide them.
+!tests/fixtures/**
 
-# The parent repository ignores *.txt as data; the GUI extras file is source.
+# Golden data, until the references are reviewed and given provenance.
+!tests/golden/
+tests/golden/*
+!tests/golden/*.npz
+
+# Caches and anything a test run writes stay out, at any depth.
+tests/**/__pycache__/
+tests/**/.pytest_cache/
+tests/**/*.pyc
+
+# Nothing is needed here for tumult/, HOP/, SRC/, TumultStudio/ or TumultStudio2/:
+# the parent repository negates those directories wholesale, so new files in them
+# are visible.
+
+# The parent repository ignores *.txt as data; these are source.
 !requirements-gui.txt
-!tests/test_synthesis_preparation.py
-!tests/test_synthesis_contract.py
-!tests/test_scripting_api.py
-!tests/test_snapshot_grid.py
+!requirements-test.txt
+!pytest.ini
 
 # Review documents are maintained source; benchmark outputs remain ignored.
 !reports/
@@ -76,12 +79,3 @@ benchmarks/*
 !benchmarks/api/
 !benchmarks/api/*.py
 !benchmarks/api/README.md
-
-# The HOP library gate and the golden data it pins (the other goldens predate these rules
-# and are tracked already; this makes a new or regenerated one visible in git status).
-!tests/test_hop.py
-!tests/golden/
-tests/golden/*
-!tests/golden/*.npz
-
-!tests/test_gui_usability.py

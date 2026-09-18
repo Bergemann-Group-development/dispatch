@@ -1,7 +1,7 @@
 # Python naming conventions
 
 Fortran conventions are `F90CodeConventions.tex`, which comes from DISPATCH upstream and
-governs `SRC/` and `HOP/`. This file covers the Python in `tumult/` and `TumultStudio2/`.
+governs `SRC/` and `HOP/`. This file covers the Python in `tumult/` and `TumultStudio/`.
 What the names *mean* is `GLOSSARY.md`; this is how they are spelled.
 
 The conventions below are the practice in the tree, not an aspiration. The outliers that

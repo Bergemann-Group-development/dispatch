@@ -5,7 +5,7 @@ full setup:
 
 1. **Fortran radiative-transfer code** (`SRC/`, `HOP/`) — compiles into the
    `dispatch.x` executable that runs the synthesis.
-2. **Python stack** — the `tumult/` synthesis library and the `TumultStudio2/`
+2. **Python stack** — the `tumult/` synthesis library and the `TumultStudio/`
    Bokeh GUI built on top of it.
 
 Follow the steps below in order. Once set up, [docs/FAQ.md](docs/FAQ.md) answers
@@ -45,7 +45,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-This installs the headless `tumult/` stack. For TumultStudio2 and notebook
+This installs the headless `tumult/` stack. For TumultStudio and notebook
 support, install the GUI extras instead:
 
 ```bash
@@ -199,7 +199,7 @@ transferring anything; `fetch` is resumable and records what it fetched in the f
 selects the leading entries of a fixed scrambled Halton ordering of each model's snapshots
 (`tumult.synthesis.snapshot_grid.halton_order`), nested and spread over the time series,
 and the run-time policy `"snapshots": "k"` selects the same entries. Grids fetched under
-`input/atmos/` register themselves in TumultStudio2. Its Preferences → Atmosphere grids
+`input/atmos/` register themselves in TumultStudio. Its Preferences → Atmosphere grids
 page sets one storage folder and one snapshot count for every grid, lists the supported
 grids with what is on disk (download all, models, delete), and per grid the models with a
 download or delete button each; custom grid folders register there too.
@@ -242,12 +242,12 @@ records both the departure solve and formal-solution settings. See
 
 ---
 
-## 5. Launch TumultStudio2 (optional GUI)
+## 5. Launch TumultStudio (optional GUI)
 
 From the repository root (the directory containing this file):
 
 ```bash
-bokeh serve --show TumultStudio2
+bokeh serve --show TumultStudio
 ```
 
 Run Bokeh from here so the repository package is importable.
@@ -256,12 +256,20 @@ The GUI keeps its preferences, recent files and saved sessions in `.tumultstudio
 in the directory Bokeh was started from (`TUMULT_CONFIG` names another file). The file
 is created on first use; keep it out of version control.
 
-### GUI tests
+## 6. Tests
 
-`python -m pytest tests/test_ui_execution.py tests/test_ui_events.py tests/test_store.py
-tests/test_session.py` exercises the document, the job table, the config store and the
-save slots headlessly, with stub workers and a temporary config. The browser half of
-`tests/test_ui_events.py` additionally needs `node` and the `playwright` npm package with
-its Chromium: it looks in the `npx` cache (`~/.npm/_npx/*/node_modules`) or under
-`TUMULT_NODE_PATH`, and skips when neither has it. `npx playwright install chromium`
-populates the cache; no Python Playwright is required.
+```bash
+pip install -r requirements-test.txt
+python -m pytest                    # headless gate: science, I/O and workflows
+python -m pytest tests/studio       # GUI components; needs requirements-gui.txt
+python -m pytest tests/browser      # browser journeys through TumultStudio
+```
+
+Run these from this directory. `pytest.ini` selects the headless directories by default;
+every other suite is given by path. The browser suite needs `node` and the `playwright`
+npm package with its Chromium: `npx playwright install chromium` populates the `npx`
+cache (`~/.npm/_npx/*/node_modules`), and `TUMULT_NODE_PATH` names another location. No
+Python Playwright package is required.
+
+[tests/README.md](tests/README.md) describes the suites, their prerequisites and the
+policy for admitting a test or a reference dataset.

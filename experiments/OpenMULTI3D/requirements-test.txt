@@ -1,0 +1,19 @@
+# Test dependencies for the default headless gate:
+#   python -m pytest            (tests/science tests/io tests/workflows)
+#
+# Everything the headless tests import beyond the standard library comes from
+# requirements.txt (numpy, scipy, pandas, astropy, numba, cffi); only the test
+# runner is added here. Bokeh stays out so the gate can run without a GUI install.
+#
+#   pip install -r requirements-test.txt
+#
+# The explicitly selected suites need more:
+#   tests/execution                a POSIX process environment; the daemon and its
+#                                  subprocesses run for real
+#   tests/studio                   requirements-gui.txt (Bokeh)
+#   tests/browser                  node with the playwright npm package and its
+#                                  Chromium; this is not a Python dependency
+#   tests/native                   a built libhop and dispatch.x, plus input data
+-r requirements.txt
+
+pytest>=8.0

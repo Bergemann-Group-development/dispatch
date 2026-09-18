@@ -198,7 +198,7 @@ with the observation inside `fit_windows` (the request's windows by default). It
 on 1D atmospheres and grids with no or requested departures; `synthesis.check_fit` names the
 reason for any other combination.
 
-**In the GUI** (`bokeh serve --show TumultStudio2`): open an observation and a line-mask set
+**In the GUI** (`bokeh serve --show TumultStudio`): open an observation and a line-mask set
 through **Open File**, open the set in the LineMasks view, edit windows,
 then choose **Synthesise windows…** in its sidebar. This opens the synthesis modal on the
 set's included windows; its **Synthesise** button submits them through the same request as
@@ -376,7 +376,7 @@ job = submit_operation("synthesis.synthesize", request, detach='slurm',
 
 The daemon is started on first use and listens on a Unix socket in `/tmp/tumult-<uid>/`,
 where `daemon.log` is its log. It runs one workflow at a time, first come first served,
-with the whole CPU budget: `cpu_count - 1` unless a TumultStudio2 server set its Engine
+with the whole CPU budget: `cpu_count - 1` unless a TumultStudio server set its Engine
 preference. A script connects as a *client*, so it may submit and exit; the daemon exits
 once nothing runs or waits and no server is connected. Interpreter startup is paid once,
 so short syntheses are not delayed, and a GUI document shows script jobs in its Processes
@@ -496,7 +496,7 @@ syntheses share prepared inputs and departures through the caches.
 windows and preparation references.
 
 The GUI does not yet offer an **Export setup** action; the request it builds is the return
-value of `SynthSetup.context()` in `TumultStudio2/synthsetup.py`, and writing it out from a
+value of `SynthSetup.context()` in `TumultStudio/synthesis/synthsetup.py`, and writing it out from a
 Bokeh session requires calling that method (**Missing** as a user action). Opening a saved
 `SynthesisResult` or workflow folder in the GUI as a synthetic spectrum is also **Missing**;
 spectra can be exported from the result's `Spectrum` objects and loaded through
